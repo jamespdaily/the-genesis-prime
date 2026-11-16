@@ -1550,6 +1550,63 @@ pub fn unread_types(prerequisite prerequisite: Prerequisite) -> List(Int) {
   |> list.unique
 }
 
+/// Whether the unit a gate is tested on holds all the state this condition reads itself: its
+/// level (1), class (3), factions (4 and 250), fight state (28), vitals (71 and 73) or
+/// difficulty (179), or, for a nested row, every condition of that row.
+fn held_by_the_unit(condition condition: Condition) -> Bool {
+  case condition {
+    Nested(row: Some(nested), ..) -> checked_by_creature(prerequisite: nested)
+    UnitLevel(..)
+    | UnitClass(..)
+    | CurrentFaction(..)
+    | BaseFaction(..)
+    | InCombat(..)
+    | VitalPercent(..)
+    | VitalCurrent(..)
+    | Difficulty(..) -> True
+    Nested(row: None, ..)
+    | TargetOfLiveCast(..)
+    | UnderCastBy(..)
+    | StackCount(..)
+    | Roll(..)
+    | ResourceSlot(..)
+    | UnderGroup(..)
+    | Stealthed(..)
+    | PlayerRace(..)
+    | InZone(..)
+    | IsPlayer(..)
+    | PlayerPath(..)
+    | Gender(..)
+    | InWorld(..)
+    | QuestState(..)
+    | ObjectiveDone(..)
+    | ObjectiveOpen(..)
+    | TargetCounted(..)
+    | ObjectiveProgress(..)
+    | NeverMet
+    | ServerGated
+    | IsCreature(..)
+    | SpellKnown(..)
+    | ItemHeld(..)
+    | WorldDifficulty(..)
+    | ObjectiveStatus(..)
+    | CarriesCasterGroup(..)
+    | InArc(..)
+    | ChallengeFlag(..)
+    | NoCase
+    | Unread(..) -> False
+  }
+}
+
+/// Whether the creature a gate is tested on can check all of it from the state it holds
+/// itself: every condition, and every condition of a row it nests, reads only that state
+/// (`held_by_the_unit`). A condition that reads the casts held on the unit (15, 59, 129),
+/// draws a roll (37) or reads anything else is left to the caster's check.
+pub fn checked_by_creature(prerequisite prerequisite: Prerequisite) -> Bool {
+  prerequisite.conditions != []
+  && list.all(prerequisite.conditions, held_by_the_unit)
+}
+
 /// The bytes of one roll: 4, a draw r of a multiple of 2^-32 in [0, 1).
 pub const roll_bytes = 4
 

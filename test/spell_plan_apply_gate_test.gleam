@@ -275,6 +275,126 @@ pub fn ccstateset_row_behind_an_apply_prerequisite_is_read_with_its_gates_test()
     as "a state behind a caster gate the server cannot read fails the plan"
 }
 
+/// Kept edit: a Prerequisite made one condition of type 28, whether the unit is in combat
+/// (comparison 1), which reads the state the unit it is tested on holds itself
+/// (`prerequisite.checked_by_creature`).
+const in_combat_gate = [
+  #("prerequisiteTypeId0", planted_table.Integer(28)),
+  #("prerequisiteComparisonId0", planted_table.Integer(1)),
+  #("objectId0", planted_table.Integer(0)),
+  #("value0", planted_table.Integer(0)),
+]
+
+/// The rows with the cells of one row changed.
+fn changed_rows(
+  rows rows: fixture_tables.Rows,
+  table table: String,
+  id id: Int,
+  with changes: List(#(String, planted_table.Cell)),
+) -> fixture_tables.Rows {
+  let assert Ok(rows) = fixture_tables.change(rows:, table:, id:, with: changes)
+    as "the fixture holds the row and its columns"
+  rows
+}
+
+/// Kept edits: Prerequisite 3476, the target gate of damage row 38307 (targetFlags 4, the
+/// area), made the type 28 condition above; and ForcedMove row 38308 of the same spell,
+/// which shares the gate and which the plan reads for the cast alone, given no target apply
+/// prerequisite so that the spell plans.
+fn rows_with_the_gate_made_in_combat() -> fixture_tables.Rows {
+  changed_rows(
+    rows: changed_rows(
+      rows: fixture_tables.rows(),
+      table: "Prerequisite",
+      id: 3476,
+      with: in_combat_gate,
+    ),
+    table: "Spell4Effects",
+    id: 38_308,
+    with: [#("prerequisiteIdTargetApply", planted_table.Integer(0))],
+  )
+}
+
+pub fn damage_row_past_the_caster_behind_a_creature_state_gate_is_left_to_the_creature_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use tables <- fixture_tables.on_rows(
+    rows: rows_with_the_gate_made_in_combat(),
+    reaching: [],
+  )
+  let assert Ok(spell_area.Once(effect:)) =
+    spell_area.damage_row_of(
+      tables:,
+      spell4_id: 23_980,
+      effect: effect_row_in(tables:, id: 38_307),
+    )
+    as "a damage row behind a gate on each creature's own state is read"
+  assert effect.condition == Always
+    as "the strike checks no gate of the row itself: the creature it names does"
+  let assert Ok(spell) = plan_of(tables:, spell4_id: 23_980)
+    as "the spell plans"
+  let assert [gate] = spell.struck_gates
+    as "the spell tells the gate to the creatures its strike reaches"
+  assert gate.effect_id == Spell4EffectsId(38_307)
+  assert prerequisite.id(gate.prerequisite) == PrerequisiteId(3476)
+    as "Spell4Effects.38307: prerequisiteIdTargetApply 3476"
+  assert gate.aim == spell_plan.AimsAtArea
+    as "Spell4Effects.38307: targetFlags 4, the area"
+  assert is_read_by_the_measure(tables:, id: 38_307)
+    as "the coverage measure counts the row as read"
+}
+
+pub fn periodic_damage_row_left_out_as_until_removed_tells_no_gate_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Kept edit: damage row 38307 given a tickTime and flags bit 2 (until removed), which the
+  // area load leaves out, on the rows `rows_with_the_gate_made_in_combat` makes.
+  use tables <- fixture_tables.on_rows(
+    rows: changed_rows(
+      rows: rows_with_the_gate_made_in_combat(),
+      table: "Spell4Effects",
+      id: 38_307,
+      with: [
+        #("tickTime", planted_table.Integer(1000)),
+        #("durationTime", planted_table.Integer(0)),
+        #("flags", planted_table.Integer(2)),
+      ],
+    ),
+    reaching: [],
+  )
+  let assert Ok(spell) = plan_of(tables:, spell4_id: 23_980)
+    as "the spell plans"
+  assert spell.struck_gates == []
+    as "a row the area load leaves out has no creature to ask, so no strike round is run for it"
+}
+
+pub fn ccstateset_row_past_the_caster_behind_a_creature_state_gate_is_left_to_the_creature_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Kept edit: Prerequisite 24214, the target gate of CCStateSet row 122821 (targetFlags 4,
+  // the area), made the type 28 condition above.
+  use tables <- fixture_tables.changed(
+    table: "Prerequisite",
+    id: 24_214,
+    with: in_combat_gate,
+  )
+  let assert Ok(spell) = plan_of(tables:, spell4_id: 51_989)
+    as "a state behind a gate on each creature's own state plans"
+  let assert Ok(control) =
+    list.find(spell.controls, fn(row) {
+      row.effect_id == Spell4EffectsId(122_821)
+    })
+    as "the plan lists the row among the spell's states"
+  assert control.condition == Always
+    as "the strike checks no gate of the row itself: the creature it names does"
+  let assert Ok(gate) =
+    list.find(spell.struck_gates, fn(gate) {
+      gate.effect_id == Spell4EffectsId(122_821)
+    })
+    as "the spell tells the row's gate to the creatures its strike reaches"
+  assert prerequisite.id(gate.prerequisite) == PrerequisiteId(24_214)
+    as "Spell4Effects.122821: prerequisiteIdTargetApply 24214"
+  assert gate.aim == spell_plan.AimsAtArea
+    as "Spell4Effects.122821: targetFlags 4, the area"
+}
+
 pub fn no_planned_spell_holds_a_refused_damage_or_control_row_test() -> Nil {
   use <- owned_test.run(300_000)
   use <- unitest.guard(client_tables.present())
@@ -288,14 +408,23 @@ pub fn no_planned_spell_holds_a_refused_damage_or_control_row_test() -> Nil {
   let rows =
     list.flat_map(planned, fn(spell) {
       let Spell4Id(value:) = spell.spell4_id
+      // A row whose target gate the creatures it strikes check holds none of it: the
+      // spell lists the row's id among its struck gates instead.
+      let row = fn(effect_id, condition) {
+        #(
+          effect_id,
+          condition,
+          list.any(spell.struck_gates, fn(gate) { gate.effect_id == effect_id }),
+        )
+      }
       let damage = case dict.get(areas, value) {
         Ok(area) ->
           list.append(
             list.map(area.damage, fn(effect) {
-              #(effect.effect_id, effect.condition)
+              row(effect.effect_id, effect.condition)
             }),
-            list.map(area.ticking, fn(row) {
-              #(row.damage.effect_id, row.damage.condition)
+            list.map(area.ticking, fn(ticking) {
+              row(ticking.damage.effect_id, ticking.damage.condition)
             }),
           )
         Error(Nil) -> []
@@ -303,19 +432,19 @@ pub fn no_planned_spell_holds_a_refused_damage_or_control_row_test() -> Nil {
       list.append(
         damage,
         list.map(spell.controls, fn(control) {
-          #(control.effect_id, control.condition)
+          row(control.effect_id, control.condition)
         }),
       )
     })
   assert rows != [] as "the planned trees hold damage and crowd-control rows"
   let disagreeing =
-    list.filter(rows, fn(row: #(id.Spell4EffectsId, Condition)) {
+    list.filter(rows, fn(row: #(id.Spell4EffectsId, Condition, Bool)) {
       let effect = effect_row_in(tables:, id: { row.0 }.value)
       let gated =
         effect.prerequisite_id_caster_apply != 0
-        || effect.prerequisite_id_target_apply != 0
+        || { effect.prerequisite_id_target_apply != 0 && !row.2 }
       gated == { row.1 == Always }
     })
   assert disagreeing == []
-    as "every planned row holds the condition its apply prerequisites make: none is gated by a prerequisite it dropped"
+    as "every planned row holds the condition its apply prerequisites make, or its spell tells the target gate to the creatures: none is gated by a prerequisite it dropped"
 }

@@ -347,11 +347,12 @@ fn area_selection(
 
 /// The seed bytes the selection's strikes take: 12 for each unit, then 4 for each roll
 /// the gates of its rows may take (`cast.strike_rolls_needed`), counted for every selected
-/// unit a row may reach.
+/// unit a row may reach. A gate the creature checks (`Selection.gates`) takes no roll but
+/// still tells its unit a strike, so a phase of such gates alone takes the 12 bytes.
 pub fn entropy_needed(selection selection: Selection) -> Int {
-  case selection.blows, selection.ticking, selection.controls {
-    [], [], [] -> 0
-    _, _, _ -> {
+  case selection.blows, selection.ticking, selection.controls, selection.gates {
+    [], [], [], [] -> 0
+    _, _, _, _ -> {
       let units = list.length(selection.units)
       let conditions =
         list.flatten([
@@ -489,16 +490,7 @@ fn reach_of(
     |> result.map(fn(bytes) { prerequisite.rolls_of(bytes:) })
     |> result.unwrap([])
   let everyone = list.map(selection.units, fn(aimed) { aimed.unit_id })
-  let aimed_at = fn(aim) {
-    let named =
-      spell_plan.units_aimed_at(
-        aim:,
-        caster: attacker.unit_id,
-        primary_target: selection.asked.primary_target,
-        area: selection.area,
-      )
-    list.filter(everyone, fn(unit_id) { list.contains(named, unit_id) })
-  }
+  let aimed_at = fn(aim) { selected_aimed_at(selection:, attacker:, aim:) }
   let #(blows, blow_logs, rolls) =
     gated(
       rows: selection.blows,
@@ -674,19 +666,66 @@ fn tell_of(
   )
 }
 
-/// The gates each selected unit is told: for each unit, the gates of the selection whose
-/// aim names it (`spell_plan.units_aimed_at`), as the prerequisite parsed and the row's
-/// effect id, in the selection's order; a unit no gate names has none. A gate takes no
-/// roll: the creature's subject holds none. A selection with no gate tells none.
+/// The selected units an effect aimed by `aim` names, in selection order
+/// (`spell_plan.units_aimed_at`).
+fn selected_aimed_at(
+  selection selection: Selection,
+  attacker attacker: Attacker,
+  aim aim: spell_plan.Aim,
+) -> List(Int) {
+  let named =
+    spell_plan.units_aimed_at(
+      aim:,
+      caster: attacker.unit_id,
+      primary_target: selection.asked.primary_target,
+      area: selection.area,
+    )
+  list.filter_map(selection.units, fn(aimed) {
+    case list.contains(named, aimed.unit_id) {
+      True -> Ok(aimed.unit_id)
+      False -> Error(Nil)
+    }
+  })
+}
+
+/// The gates each selected unit is told: for each unit, the gates of the selection that
+/// name it, as the prerequisite parsed and the row's effect id, in the selection's order; a
+/// unit no gate names has none. A gate names the units its row's aim names
+/// (`spell_plan.units_aimed_at`), but a gate of a damage row names every selected unit, as
+/// the row's blow is told to each (`reach_of`). A gate takes no roll: the creature's subject
+/// holds none. A selection with no gate tells none.
 fn gates_told(
   selection selection: Selection,
-  attacker _attacker: Attacker,
+  attacker attacker: Attacker,
 ) -> List(#(Int, List(strike_tell.Gate))) {
-  case selection.gates {
-    [] -> []
-    [_, ..] ->
-      panic as "shape: cast side (selection, round) fills gates_told: the units each gate's aim names, in selection order, as strike_tell.Gate"
-  }
+  let named =
+    list.map(selection.gates, fn(gate) {
+      let blow = fn(row: spell_area.DamageEffect) {
+        row.effect_id == gate.effect_id
+      }
+      let units = case list.any(selection.blows, blow) {
+        True -> list.map(selection.units, fn(aimed) { aimed.unit_id })
+        False -> selected_aimed_at(selection:, attacker:, aim: gate.aim)
+      }
+      #(gate, units)
+    })
+  list.filter_map(selection.units, fn(aimed) {
+    let told =
+      list.filter_map(named, fn(entry) {
+        case list.contains(entry.1, aimed.unit_id) {
+          True ->
+            Ok(strike_tell.Gate(
+              effect_id: { entry.0 }.effect_id.value,
+              prerequisite: { entry.0 }.prerequisite,
+            ))
+          False -> Error(Nil)
+        }
+      })
+    case told {
+      [] -> Error(Nil)
+      [_, ..] -> Ok(#(aimed.unit_id, told))
+    }
+  })
 }
 
 /// A tick of a periodic row begins its round of one unit: a strike told to the unit
