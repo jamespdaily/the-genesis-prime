@@ -699,7 +699,7 @@ pub fn then_procs(
 }
 
 /// The same, each chance draw and gate roll taken from these lists in the order the
-/// procs are matched (`cast.proc_draws_needed`).
+/// procs are matched (`cast_proc.proc_draws_needed`).
 pub fn then_procs_drawn(
   step step: #(State, List(Effect)),
   caster caster: Caster,

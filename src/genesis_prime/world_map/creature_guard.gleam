@@ -53,7 +53,7 @@
 ////   `controlled` is true while `opened`: Spell4 85469 prerequisiteIdCasterCast 41722), so no second
 ////   interrupt reaches `Interrupted`; one that does (two inputs in one step) opens nothing more.
 //// - **Casts take ids with the fight's.** The guard's casts are ids of the unit's id space
-////   (`cast.cast_id`) taken with `cast.mint`, given the fight's live casts, and the fight's take
+////   (`cast_state.cast_id`) taken with `cast_state.mint`, given the fight's live casts, and the fight's take
 ////   the guard's (`live_casts`), so neither holds an id the other still has. The interrupted
 ////   charge's id still counts as live when the opening takes its own, so the opening's id differs
 ////   from the id of the 0x7f9 that was just sent.
@@ -192,7 +192,7 @@ pub fn opened(state state: State) -> Bool {
 }
 
 /// The ids of the casts the guard holds live, which the fight's casts take no id of
-/// (`cast.mint`).
+/// (`cast_state.mint`).
 pub fn live_casts(state state: State) -> List(Int) {
   case state.phase {
     Bare | Dormant -> []

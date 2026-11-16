@@ -21,7 +21,7 @@
 ////   the Interrupt Armor it hit, the result and the cast data (caster, target, Spell4,
 ////   combat result). The coordinator's decision on the issue: the caster writes it with
 ////   the go (removed 0) and when the state ends (removed 1), and none when the unit left
-////   its sight first (`cast.unit_removed`).
+////   its sight first (`cast_proc.unit_removed`).
 
 import cast_support as support
 import crowd_control_support

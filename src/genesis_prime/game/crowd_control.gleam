@@ -54,12 +54,12 @@ const numbers_per_caster = 4095
 /// The instance id of the `count`th state the unit `caster_unit_id` told: its unit id
 /// times 4096 plus `count` wrapped into 1 to 4095.
 ///
-/// - Within 32 bits: a unit id is below 2^20, the bound `cast.cast_id` already holds
+/// - Within 32 bits: a unit id is below 2^20, the bound `cast_state.cast_id` already holds
 ///   (its 2^31 + unit id x 2^11 stays in 32 bits), and 4095 + 4096 x (2^20 - 1) is
 ///   2^32 - 1.
 /// - Non-zero: the low part is 1 to 4095, and unit ids start at 1, so an id is also
 ///   4096 or more, which no damage or Fluff instance id is (those number from 1 for
-///   each unit in one go, `cast.target_info`).
+///   each unit in one go, `cast_frame.target_info`).
 /// - Unique on a unit across casters: two casters differ in the quotient by 4096,
 ///   since the low part is below 4096.
 /// - Unique for one caster: two of its ids on one unit are equal only when its counts

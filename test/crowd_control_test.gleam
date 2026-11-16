@@ -3,7 +3,7 @@
 //// waits for by instance id alone among every effect held on the unit, from any caster,
 //// and 0 matches the first effect found, so an id is non-zero and no two effects on a
 //// unit share one; the id is 32 bits on the wire (`opcode.0x87f`); a unit id is below
-//// 2^20, the bound the cast ids already hold (`cast.cast_id`).
+//// 2^20, the bound the cast ids already hold (`cast_state.cast_id`).
 
 import fixture_tables
 import genesis_prime/game/cast/state as cast_state

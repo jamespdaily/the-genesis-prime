@@ -5,7 +5,7 @@
 ////
 //// - **Casts** are a feature of their own (genesis_prime/game/cast): the player's
 ////   `Entered` keeps its cast state, the routing table sends 0x9a, 0x4DB and 0x801 to it
-////   from inside 0x038C with the player in the world, and the timers `cast.owns`
+////   from inside 0x038C with the player in the world, and the timers `cast_state.owns`
 ////   names are its (`other_timer_fired`). The rule turns its
 ////   effects into writes to the caster, tells of news to the viewers
 ////   (`CastStarted`, `CastWent`, `CastFinished`, in the run of the player's map),
@@ -1149,7 +1149,7 @@ fn carried_out(
 
 /// The held procs fire for the events the input raised (genesis_prime/game/cast
 /// `State.pending`), after the input's own effects: the connection draws what the pending
-/// events need from its seed (`cast.proc_draws_needed`: the chance words first, then the
+/// events need from its seed (`cast_proc.proc_draws_needed`: the chance words first, then the
 /// gate rolls) and gives the rule the poses, checklist indexes and kinds of the units the
 /// events name that its picture holds, then carries out the effects of the fires, which end
 /// in the same pass for what they raise. A fire's own go is a later input, so the passes end:

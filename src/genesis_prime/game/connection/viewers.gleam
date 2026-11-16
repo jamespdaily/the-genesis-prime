@@ -1082,7 +1082,7 @@ fn unit_forgotten(session session: Session, unit_id unit_id: Int) -> Session {
 }
 
 /// The player's casts told that a unit its client no longer shows is gone, so
-/// their nodes on it end (genesis_prime/game/cast `unit_removed`): the session with
+/// their nodes on it end (genesis_prime/game/cast/proc `unit_removed`): the session with
 /// the new cast state and what the cast rule asks written.
 fn cast_loses_unit(
   session session: Session,

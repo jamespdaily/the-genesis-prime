@@ -8,7 +8,7 @@
 //// ```
 //// plan: a ForcedMove row aimed at other units (targetFlags 2, 4 or 6) is a `spell_plan.StruckMove`
 ////   (`of_row` decodes its columns when the plan loads; a target apply prerequisite fails the load)
-//// cast go, for each creature the go Hit in the row's aim (`cast.struck_moves_armed`):
+//// cast go, for each creature the go Hit in the row's aim (`cast_control.struck_moves_armed`):
 ////   delay 0: `ForcedMoveStarts(unit_id, life, struck_at_ms, move)` in the go's step
 ////   else:    `Due.ForcedMoveStart(on, move, struck_at_ms)`, a cast timer at go + delay_time,
 ////            which fires `ForcedMoveStarts`; the end of the cast's node on that creature cancels it

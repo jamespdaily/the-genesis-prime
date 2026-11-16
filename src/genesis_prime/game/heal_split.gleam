@@ -1,6 +1,6 @@
 //// What a heal of the player's own vital comes to: the amount after the heal multipliers,
 //// the part the shield takes, the part the health takes and the part the vital had no
-//// room for. The go (genesis_prime/game/cast `healed_by`) tells the client this amount and
+//// room for. The go (genesis_prime/game/cast/heal `healed_by`) tells the client this amount and
 //// overheal, and the life (genesis_prime/game/player_life `healed`) raises the vital by
 //// the same split, so what the client shows is what the health does.
 ////

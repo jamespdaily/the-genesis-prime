@@ -593,7 +593,7 @@ pub type RefusedLife {
 }
 
 /// The life of the caster, dead or alive, that the spell's caster condition refuses, when
-/// it refuses it: the press (`cast.verdict`) and a proc's cast (`cast.proc_cast`) both ask
+/// it refuses it: the press (`cast_press.verdict`) and a proc's cast (`cast.proc_cast`) both ask
 /// this (`Spell4.spell4ConditionsIdCaster`, `cast.dead_player`).
 pub fn refused_life(
   spell spell: Spell,
@@ -1031,7 +1031,7 @@ pub type ForcedMove {
 /// prerequisite against the caster, its target apply prerequisite against each struck
 /// unit it throws), and when its `tag` holds for the points
 /// the cast spent (genesis_prime/game/spend). The cast throws each creature the go
-/// `Hit` (genesis_prime/game/cast `struck_moves_armed`); a unit that is the caster or
+/// `Hit` (genesis_prime/game/cast/control `struck_moves_armed`); a unit that is the caster or
 /// another player is not thrown until a move of another player is built (issue 570).
 pub type StruckMove {
   StruckMove(
@@ -4617,7 +4617,7 @@ pub fn stealth_change_of(
 /// A spell whose caster or target Spell4Conditions row tests stealth (mask bit 16) fails
 /// the load: the client refuses such a cast with 65 or 114, and the server does not
 /// check those results (`Spell4Conditions.conditionMask.16`). The place for the check,
-/// when a spell needs it, is `cast.verdict` after the dead test.
+/// when a spell needs it, is `cast_press.verdict` after the dead test.
 pub fn stealth_conditions_read(
   spell4_id spell4_id: Int,
   conditions conditions: List(Option(spell4_conditions.Spell4Conditions)),

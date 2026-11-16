@@ -585,7 +585,7 @@ pub type Subject {
     difficulty: Option(Int),
     /// Whether the subject is stealthed, which only a player's cast rule holds: `None`
     /// for a creature's side, so type 116 is not read for it
-    /// (genesis_prime/game/cast `stealthed`).
+    /// (genesis_prime/game/cast/state `stealthed`).
     stealthed: Option(Bool),
     /// The caster's resource slots by slot number, which only a player's cast rule
     /// holds: `None` for a creature's side, so type 64 is not read for it. A slot

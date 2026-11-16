@@ -1,6 +1,6 @@
 //// A go's strike checks the apply prerequisite of each damage, periodic damage and
 //// crowd-control row for each unit it would reach (`genesis_prime/game/strike` `begin`),
-//// with the gate the cast rule builds in the caster's picture (`cast.strike_gate`), run as
+//// with the gate the cast rule builds in the caster's picture (`cast_tick.strike_gate`), run as
 //// the pure rule it is: the effect lists are the whole observation. Expected values come
 //// from these places.
 //// - `Spell4Effects.prerequisiteIdTargetApply` and `prerequisiteIdCasterApply`: a row lands

@@ -297,7 +297,7 @@ import gleam/set.{type Set}
 /// attack ticks and the run's game numbers, which are fixed for its life; what its held
 /// crowd-control states stop it doing now, which the creature's rule gives each step
 /// (genesis_prime/world_map/creature_control); and the ids of the guard's live casts
-/// (`creature_guard.live_casts`), which its casts take no id of (`cast.mint`). An opened
+/// (`creature_guard.live_casts`), which its casts take no id of (`cast_state.mint`). An opened
 /// creature (genesis_prime/world_map/creature_guard `opened`) is stopped in all three.
 /// - `still`: it holds a state that stops its run (genesis_prime/game/crowd_control
 ///   `stopping_mask`), so `chase` starts no path, `leash` starts no walk and a state that
@@ -351,7 +351,7 @@ pub type Threat {
   Threat(unit_id: Int, stay: Stay, amount: Float)
 }
 
-/// The round the creature waits on: the number of its cast (`cast.cast_id`, the 0x7ff,
+/// The round the creature waits on: the number of its cast (`cast_state.cast_id`, the 0x7ff,
 /// 0x7f4 and 0x7fe of the round name it) and where it stands.
 pub type Round {
   Round(cast_id: Int, stage: Stage)
@@ -787,7 +787,7 @@ pub fn refusal(state state: State) -> Result(Nil, strike_tell.Refusal) {
 }
 
 /// The id of the cast the fight holds live: the open round's, which the guard's casts take no id
-/// of (`cast.mint`); none with no round open.
+/// of (`cast_state.mint`); none with no round open.
 pub fn live_casts(state state: State) -> List(Int) {
   case state.status {
     Fighting(round: Some(Round(cast_id:, ..)), ..) -> [cast_id]

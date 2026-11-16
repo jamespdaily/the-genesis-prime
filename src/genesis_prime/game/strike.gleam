@@ -136,7 +136,7 @@ import gleam/option.{type Option, None, Some}
 import gleam/result
 
 /// The one strike timer of a connection: the connection's own timers are below the
-/// cast rule's, which start at 1000 (genesis_prime/game/cast `first_timer`).
+/// cast rule's, which start at 1000 (genesis_prime/game/cast/state `first_timer`).
 pub const strike_timer = TimerId(3)
 
 /// The seed bytes a strike takes for each selected unit: 4 for each of the three
@@ -349,7 +349,7 @@ fn area_selection(
 }
 
 /// The seed bytes the selection's strikes take: 12 for each unit, then 4 for each roll
-/// the gates of its rows may take (`cast.strike_rolls_needed`), counted for every selected
+/// the gates of its rows may take (`cast_gate.strike_rolls_needed`), counted for every selected
 /// unit a row may reach. A gate the creature checks (`Selection.gates`) takes no roll but
 /// still tells its unit a strike, so a phase of such gates alone takes the 12 bytes.
 pub fn entropy_needed(selection selection: Selection) -> Int {
@@ -478,7 +478,7 @@ type Reach {
 /// The units each row of the go reaches past its gates, checked row by row (the damage
 /// rows, the periodic rows, then the states) and for each row its caster side once, then
 /// each unit its aim names in selection order; each check takes the rolls of its type 37
-/// conditions in turn from the seed bytes after the units' own (`cast.strike_rolls_needed`).
+/// conditions in turn from the seed bytes after the units' own (`cast_gate.strike_rolls_needed`).
 /// A damage row names every selected unit, as its blow is told to each; a periodic row and
 /// a state name the units their aim names.
 fn reach_of(
@@ -537,7 +537,7 @@ fn reach_of(
 
 /// Each row with the units of its candidates that pass its gates, the debug lines of the
 /// checks the server cannot tell, and the rolls left. A row whose caster side fails or
-/// cannot be told reaches none of them. Not `cast.gated`: a strike draws the rolls of the
+/// cannot be told reaches none of them. Not `cast_gate.gated`: a strike draws the rolls of the
 /// caster, then of each unit, row by row, where a cast draws every caster gate first.
 fn gated(
   rows rows: List(row),
@@ -576,7 +576,7 @@ fn gated(
 }
 
 /// The units of a row that pass its target gate, in order, a debug line for each the server
-/// cannot tell, and the rolls left. Not `cast.reaching`, for the same roll order as `gated`.
+/// cannot tell, and the rolls left. Not `cast_gate.reaching`, for the same roll order as `gated`.
 fn passing_units(
   units units: List(Int),
   condition condition: spell_plan.Condition,

@@ -151,7 +151,7 @@ pub type Refusal {
 
 /// The timer that starts the move once the cast's frames are carried out. The
 /// connection's own timers are below the cast rule's, which start at 1000
-/// (genesis_prime/game/cast `first_timer`).
+/// (genesis_prime/game/cast/state `first_timer`).
 pub const timer = TimerId(12)
 
 /// Whether the timer is this rule's, for the connection to hand it to

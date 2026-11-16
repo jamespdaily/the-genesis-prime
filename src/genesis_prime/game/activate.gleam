@@ -212,7 +212,7 @@ pub type Planned {
   /// the target that the activate cast drops, its Spell4 limits and its cast group
   /// (Spell4Base.targetGroupIdCastGroup, 0 for none; `passes_cast_group` tests it). A
   /// spell of a method the cast rule does not
-  /// build is held too: the press is refused as an ability's is (`cast.verdict`).
+  /// build is held too: the press is refused as an ability's is (`cast_press.verdict`).
   Planned(
     spell: Spell,
     effects: List(ActivateEffect),
@@ -528,7 +528,7 @@ fn reaches_past_caster(effect effect: Spell4Effects) -> Bool {
 ///
 /// A Heal row aimed at the target or an area does not refuse the spell either, and the
 /// activate cast drops it: the server restores only the caster's own vitals, so a heal
-/// aimed at a creature lands nothing in any cast (`cast.healed_by`), and the activate
+/// aimed at a creature lands nothing in any cast (`cast_heal.healed_by`), and the activate
 /// cast strikes no one. Six activate spells of the tables hold one (Spell4 34519, 39299,
 /// 39536, 54204, 66484 and 66599); refusing them would make a creature's use, which a
 /// quest objective counts, unreachable.
