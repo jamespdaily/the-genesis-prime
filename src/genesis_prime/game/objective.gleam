@@ -5,7 +5,7 @@
 //// counts each unit once, by the unit's checklist index: type 14 is a use and type 18 a
 //// talk of a unit in the TargetGroup of its data, type 28 a use of the creature of the
 //// PathSoldierActivate row of its data (when that row makes it a checklist,
-//// `quest_log.is_checklist`); the use or talk sets the bit of the unit's index in the
+//// `objective_kind.is_checklist`); the use or talk sets the bit of the unit's index in the
 //// objective's mask, and a unit whose bit is set counts for nothing
 //// (`opcode.0x361`, `0x140611680`). A kill counts for the
 //// objectives of `0x140550c50`: type 2 for a unit of the Creature2 id in its data,

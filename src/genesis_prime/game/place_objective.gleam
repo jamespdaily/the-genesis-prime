@@ -17,6 +17,7 @@
 //// `objective_place_test` and `place_objective_test`.
 
 import genesis_prime/game/activate
+import genesis_prime/game/objective_kind
 import genesis_prime/game/objective_link
 import genesis_prime/game/shown
 import genesis_prime/game/start_place.{type Place}
@@ -37,12 +38,6 @@ import gleam/dict.{type Dict}
 import gleam/float
 import gleam/list
 import gleam/result
-
-/// The objective type of a place.
-const place_type = 22
-
-/// The objective type of a checklist use.
-const checklist_use_type = 14
 
 /// Whether the place the player stands at is at the WorldLocation2 row.
 ///
@@ -116,7 +111,7 @@ pub fn markers(
 pub fn unmarked(tables tables: table_store.Tables) -> List(QuestObjective) {
   quest_objective.all(tables)
   |> list.filter(fn(row) {
-    row.type_ == place_type && markers(tables:, objective: row) == []
+    is_place(row:) && markers(tables:, objective: row) == []
   })
 }
 
@@ -125,9 +120,7 @@ pub fn unmarked(tables tables: table_store.Tables) -> List(QuestObjective) {
 pub fn repeated(tables tables: table_store.Tables) -> List(QuestObjective) {
   quest_objective.all(tables)
   |> list.filter(fn(row) {
-    row.type_ == place_type
-    && row.count > 1
-    && markers(tables:, objective: row) != []
+    is_place(row:) && row.count > 1 && markers(tables:, objective: row) != []
   })
 }
 
@@ -140,7 +133,7 @@ pub fn at_marker(
 ) -> Bool {
   case quest_objective.get(tables:, id: QuestObjectiveId(objective_id)) {
     Ok(row) ->
-      row.type_ == place_type
+      is_place(row:)
       && list.any(markers(tables:, objective: row), fn(location) {
         reached(location:, place:)
       })
@@ -161,20 +154,26 @@ fn is_place_counted(
   tables tables: table_store.Tables,
   objective objective: QuestObjective,
 ) -> Bool {
-  use <- bool.guard(
-    objective.type_ != checklist_use_type || objective.quest_direction_id == 0,
-    False,
-  )
-  case target_group.creatures_of(tables:, group: objective.data) {
-    [] -> False
-    creatures ->
-      list.all(creatures, fn(creature_id) {
-        case creature2.get(tables:, id: creature_id) {
-          Ok(row) -> never_offered(row:)
-          Error(Nil) -> False
-        }
-      })
+  use <- bool.guard(objective.quest_direction_id == 0, False)
+  case objective_kind.used_checklist_group(objective_kind.of_row(objective)) {
+    Ok(target_group_id) ->
+      case target_group.creatures_of(tables:, group: target_group_id.value) {
+        [] -> False
+        creatures ->
+          list.all(creatures, fn(creature_id) {
+            case creature2.get(tables:, id: creature_id) {
+              Ok(row) -> never_offered(row:)
+              Error(Nil) -> False
+            }
+          })
+      }
+    Error(Nil) -> False
   }
+}
+
+/// Whether the objective is one of a place (type 22).
+fn is_place(row row: QuestObjective) -> Bool {
+  objective_kind.of_row(row) == objective_kind.ReachPlace
 }
 
 /// Whether nothing of the creature's row makes the client offer a use of it: no

@@ -2626,9 +2626,7 @@ pub fn type_23_is_handled_with_no_gap_test() -> Nil {
     )
     as "the fact file is in the repository"
   let declared = coverage_support.engine_named("Quest objectives")
-  let assert Listed(ids:) = declared.handled
-    as "the quest objective engine lists its handled types"
-  assert list.contains(ids, 23)
+  assert engine.handles(engine: declared, type_number: 23)
     as "type 23 is handled: a use of a unit of the objective's group counts it, once for each unit (QuestObjective.type.23)"
   assert list.find(declared.partial, fn(gap) { gap.type_number == 23 })
     == Error(Nil)
