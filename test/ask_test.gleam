@@ -10,6 +10,7 @@
 
 import ask_support
 import asking_rule
+import event_wait
 import gate_rule
 import genesis_prime/connection/script
 import genesis_prime/service
@@ -266,7 +267,7 @@ pub fn an_answer_after_the_deadline_gives_the_rule_no_input_and_is_never_taken_f
   ask_support.stop(server)
 }
 
-pub fn a_replied_ask_leaves_no_monitor_on_the_target_test() -> Nil {
+pub fn a_replied_ask_monitors_its_target_while_it_waits_and_leaves_no_monitor_after_test() -> Nil {
   use <- owned_test.run(30_000)
   let gate = process.new_name("gate")
   let server = start_with(gate:, shutdown_ms: 1000)
@@ -281,8 +282,11 @@ pub fn a_replied_ask_leaves_no_monitor_on_the_target_test() -> Nil {
   let assert [connection] = ask_support.connections(server)
     as "one connection process"
   let assert Ok(gate_pid) = process.named(gate) as "the gate runs"
-  assert list.contains(mailbox_support.monitored(connection), gate_pid)
-    as "while the shell waits it monitors the gate"
+  // The rule writes the asked record before the shell sends the ask and
+  // monitors the gate, so the record can reach the client first.
+  event_wait.until("the shell monitors the gate while it waits", fn() {
+    list.contains(mailbox_support.monitored(connection), gate_pid)
+  })
   let _waiting = ask_support.open_key(gate, 1)
   let outcome = ask_support.read_record(client)
   assert outcome.code == asking_rule.code_opened
