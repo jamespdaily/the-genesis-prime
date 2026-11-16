@@ -247,6 +247,7 @@ import genesis_prime/world_map/creature_life.{
   StopNow,
 }
 import genesis_prime/world_map/creature_unit
+import genesis_prime/world_map/creature_unit_type
 import genesis_prime/world_map/game_number.{type GameNumbers}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/spawn.{type Spawn, Spawn}
@@ -1480,7 +1481,10 @@ fn fighter_of(state state: State) -> Fighter {
       unit_id: creature.unit_id,
       life: creature.life,
     ),
-    unit_type: state.settings.spawn.unit_type,
+    can_move: creature_unit_type.can_move(
+      unit_type: state.settings.spawn.unit_type,
+      world_object_id: state.settings.spawn.world_object_id,
+    ),
     home: state.settings.spawn.place,
     attack: state.body.combat.attack,
     interval_ms: state.settings.kind.attack_interval_ms,
