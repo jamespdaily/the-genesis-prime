@@ -6,6 +6,7 @@
 
 import genesis_prime/game/start_place.{type Place, Facing}
 import genesis_prime/world_map/creature_path.{Standing, Timed}
+import gleam/list
 import gleam/option.{None, Some}
 import owned_test
 import place_support
@@ -121,4 +122,43 @@ pub fn a_throw_that_turns_the_creature_faces_it_during_and_after_the_flight_test
   assert creature_path.rest_of(path: turning_path(), now_ms: 1300)
     == Standing(at: creature_path.end(path: turning_path()))
     as "a viewer arriving once it is run is sent the turned end"
+}
+
+/// A speed of 0 is a root (Spell4Effects 1781) and one below 0 is what stacked
+/// negative flats leave (Spell4Effects 192472): the creature does not run, which for
+/// a speed below 0 is the server's choice.
+pub fn arrives_ms_refuses_a_speed_of_zero_or_below_test() -> Nil {
+  use <- owned_test.run(5000)
+  let from = at(x: 0.0, y: 0.0, z: 0.0)
+  let target = at(x: 30.0, y: 0.0, z: 0.0)
+  let circle = creature_path.Circle(centre: from, radius: 55.0)
+  list.each([0.0, -0.1, -1.0], fn(speed) {
+    let chase =
+      creature_path.toward(
+        from:,
+        target:,
+        stop_short: 4.0,
+        circle:,
+        speed:,
+        now_ms: 5000,
+      )
+    let walk = creature_path.straight(from:, to: target, speed:, now_ms: 5000)
+    assert chase == Standing(at: from)
+      as "a chase at that speed leaves the creature where it is"
+    assert walk == Standing(at: from)
+      as "a walk at that speed leaves the creature where it is"
+    assert creature_path.arrives_ms(path: walk, now_ms: 6000) == 6000
+      as "so no arrival is computed from the speed"
+  })
+  assert creature_path.straight(
+      from: target,
+      to: target,
+      speed: 0.0,
+      now_ms: 5000,
+    )
+    == Standing(at: target)
+    as "a creature already at its target is there, whatever its speed"
+  assert creature_path.straight(from:, to: target, speed: 10.0, now_ms: 5000)
+    == creature_path.Running(from:, to: target, started_ms: 5000, speed: 10.0)
+    as "a speed above 0 runs"
 }
