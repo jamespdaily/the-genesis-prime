@@ -493,6 +493,7 @@ pub fn landing_of(
           row: row.row,
         )
       }),
+      gates: [],
     )
   creature_control.land(
     state: creature_control.new(),

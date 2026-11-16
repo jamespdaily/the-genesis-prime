@@ -244,7 +244,12 @@ pub fn struck(
             life: Dead,
             answer: Answered(
               key: strike.key,
-              outcome: Landed(descriptions:, controls: [], armor_removed: 0),
+              outcome: Landed(
+                descriptions:,
+                controls: [],
+                armor_removed: 0,
+                gates_failed: [],
+              ),
             ),
             news: [Health(health: left, dead: True), Died],
             corpse_for_ms: Some(body.respawn_ms),
@@ -254,7 +259,12 @@ pub fn struck(
             life: Alive(health: left),
             answer: Answered(
               key: strike.key,
-              outcome: Landed(descriptions:, controls: [], armor_removed: 0),
+              outcome: Landed(
+                descriptions:,
+                controls: [],
+                armor_removed: 0,
+                gates_failed: [],
+              ),
             ),
             news: [Health(health: left, dead: False)],
             corpse_for_ms: None,

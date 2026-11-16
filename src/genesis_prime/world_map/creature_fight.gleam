@@ -1374,6 +1374,7 @@ fn strikes(
             striker: CreatureStriker,
             offence: fighter.attack.offence,
             controls: [],
+            gates: [],
           ),
         ),
       ),
@@ -1638,6 +1639,7 @@ fn charge_ended(
                   striker: CreatureStriker,
                   offence: fighter.attack.offence,
                   controls: [],
+                  gates: [],
                 ),
               ),
             )

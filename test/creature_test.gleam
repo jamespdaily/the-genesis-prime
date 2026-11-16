@@ -324,6 +324,7 @@ fn typed_strike(
         rolls: Rolls(crit: 0.5, deflect: 0.5, glance: 0.5),
       ),
       controls: [],
+      gates: [],
     ),
   )
 }

@@ -127,6 +127,7 @@ pub fn child(spell4_id spell4_id: Int, base base: Int) -> Spell {
     press_proxies: [],
     cooldown_start: AtFirstGo,
     cooldown_phase: None,
+    struck_gates: [],
   )
 }
 
@@ -1305,6 +1306,7 @@ pub fn went_of_spell(
     indexes: dict.new(),
     units: dict.new(),
     rolls: [],
+    gates_failed: dict.new(),
   )
 }
 
@@ -1415,6 +1417,7 @@ pub fn answered_known(
             indexes: dict.new(),
             units:,
             rolls:,
+            gates_failed: dict.new(),
           )
           |> then_procs_known(caster:, at: ms, poses:, units:, drawn: None)
         let #(state, more) =

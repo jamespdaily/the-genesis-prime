@@ -797,6 +797,7 @@ pub fn struck(
                       descriptions:,
                       controls: [],
                       armor_removed: 0,
+                      gates_failed: [],
                     ),
                   ),
                 ),

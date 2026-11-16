@@ -723,6 +723,44 @@ pub fn of_target(
   )
 }
 
+/// What a creature holds of its own and of the strike it checks a gate of (genesis_prime/game/strike_tell
+/// `Gate`), for the subject `of_creature` makes.
+pub type CreatureFacts {
+  CreatureFacts(
+    /// The creature as the client's player record reads it for types 1, 3 and 39: its level,
+    /// and class 23, the class a creature has there.
+    player: Player,
+    /// Its two factions.
+    factions: Factions,
+    /// Whether it fights.
+    in_combat: Bool,
+    /// Its vitals: 1 (health), 2 (shield, 0), 3 (breath, 100) and 20 (Interrupt Armor, the
+    /// current armor). Types 71 and 73 read them: 71 is a percent, `NotRead` at a maximum
+    /// of 0, and 73 is the cut whole number.
+    vitals: Dict(Int, Vital),
+    /// Its Creature2Difficulty, type 179.
+    difficulty: Int,
+    /// Its Creature2 row, type 38.
+    creature_id: Int,
+    /// What the strike's caster's casts hold on it.
+    under: List(lasting.Held),
+    /// The strike's caster, the check's second unit.
+    caster_unit: Int,
+    /// The creature's pose and the caster's, for type 108; the caster's is `None` when it
+    /// is not held.
+    creature: Pose,
+    caster: Option(Pose),
+  )
+}
+
+/// The subject of a creature that checks a gate of a strike it was told: the creature first,
+/// with `facts`, and the caster second. The caster's own facts are not in it: a gate that
+/// reads them is not a creature gate and stays on the caster's side
+/// (genesis_prime/game/spell_plan `struck_gates_in_phase`).
+pub fn of_creature(facts _facts: CreatureFacts) -> Subject {
+  panic as "shape: creature side fills of_creature: the Subject with seen WholeUnit, first_unit NonPlayer(creature_id), the vitals, factions, difficulty and the two poses"
+}
+
 /// A subject that holds only this difficulty: under no cast, out of combat, with
 /// no vital and no roll. A creature's side checks the prerequisites of its
 /// attack's effects against it (genesis_prime/world_map/creature_attack).

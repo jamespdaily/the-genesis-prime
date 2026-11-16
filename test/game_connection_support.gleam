@@ -2155,6 +2155,7 @@ pub fn landed(
       descriptions: [],
       controls: [],
       armor_removed: 0,
+      gates_failed: [],
     ),
   )
 }
@@ -2188,6 +2189,7 @@ pub fn landed_with_damage(
       ],
       controls: [],
       armor_removed: 0,
+      gates_failed: [],
     ),
   )
 }
@@ -2243,6 +2245,7 @@ pub fn a_beast_strike(unit_id: Int) -> Event(ConnectionEvent(Message, Answer)) {
         striker: strike_tell.CreatureStriker,
         offence: spawn_support.beast_attack().offence,
         controls: [],
+        gates: [],
       ),
     ),
   )
@@ -2280,6 +2283,7 @@ pub fn a_creatures_blow(
           strikethrough: 0.0,
         ),
         controls: [],
+        gates: [],
       ),
     ),
   )
@@ -2326,6 +2330,7 @@ pub fn a_killing_strike() -> Event(ConnectionEvent(Message, Answer)) {
         striker: strike_tell.CreatureStriker,
         offence: spawn_support.dealing(offence:, damage: 100_000),
         controls: [],
+        gates: [],
       ),
     ),
   )
@@ -2664,6 +2669,7 @@ pub fn landing_with_its_blows(
             descriptions: described,
             controls: [],
             armor_removed: 0,
+            gates_failed: [],
           ),
         ),
       )

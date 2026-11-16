@@ -73,6 +73,7 @@ fn strike_of(
       rolls:,
     ),
     controls: [],
+    gates: [],
   )
 }
 
@@ -93,7 +94,12 @@ pub fn a_hit_that_leaves_health_sends_the_new_health_and_no_death_test() -> Nil 
   assert reaction.corpse_for_ms == None
   let assert Answered(
     key: Key(cast_id: 1, ..),
-    outcome: Landed(descriptions: [description], controls: [], armor_removed: 0),
+    outcome: Landed(
+      descriptions: [description],
+      controls: [],
+      armor_removed: 0,
+      gates_failed: [],
+    ),
   ) = reaction.answer
   assert description.damage.killed == 0
 }
@@ -156,8 +162,12 @@ pub fn a_hit_that_kills_sends_health_with_the_dead_bit_then_the_death_and_starts
     as "0x937 with the dead bit, then 0x88c (opcode.0x937, opcode.0x88c)"
   assert reaction.corpse_for_ms == Some(60_000)
     as "the corpse stays for the kind's respawn time"
-  let assert Landed(descriptions: [description], controls: [], armor_removed: 0) =
-    reaction.answer.outcome
+  let assert Landed(
+    descriptions: [description],
+    controls: [],
+    armor_removed: 0,
+    gates_failed: [],
+  ) = reaction.answer.outcome
   assert description.damage.killed == 1 && description.damage.overkill == 8
     as "killed exactly at 0; the overkill is the damage beyond the health before: 60 - 52"
 }

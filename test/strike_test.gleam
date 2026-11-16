@@ -89,6 +89,7 @@ fn selection(
     },
     controls: [],
     ticking: [],
+    gates: [],
   )
 }
 
@@ -130,7 +131,7 @@ fn answer(
 }
 
 fn landed() -> strike_tell.Outcome {
-  Landed(descriptions: [], controls: [], armor_removed: 0)
+  Landed(descriptions: [], controls: [], armor_removed: 0, gates_failed: [])
 }
 
 fn tells(effects effects: List(Effect)) -> List(strike.Effect) {
@@ -152,7 +153,8 @@ fn tells(effects effects: List(Effect)) -> List(strike.Effect) {
 fn went(effects effects: List(Effect)) -> List(#(Int, Int, List(cast.Struck))) {
   list.filter_map(effects, fn(effect) {
     case effect {
-      strike.Went(asked:, struck:) -> Ok(#(asked.cast_id, asked.phase, struck))
+      strike.Went(asked:, struck:, ..) ->
+        Ok(#(asked.cast_id, asked.phase, struck))
       strike.TellStrike(..)
       | strike.StartTimer(..)
       | strike.CancelTimer(..)
@@ -298,6 +300,7 @@ pub fn a_strike_carries_the_casters_blows_by_the_clients_formula_with_its_gear_a
         blows: [paralytic_surge, telekinetic_strike],
         controls: [],
         ticking: [],
+        gates: [],
       ),
       attacker: Attacker(..strike_support.attacker(), stats: novice),
       formulas: rating_support.formulas(),
@@ -1384,7 +1387,12 @@ pub fn a_state_aimed_at_the_primary_target_is_told_to_it_alone_test() -> Nil {
     answer(
       state:,
       key: Key(cast_id: 5, occasion: strike_tell.AtGo(phase: 0), unit_id: 11),
-      outcome: Landed(descriptions: [], controls: [landed], armor_removed: 0),
+      outcome: Landed(
+        descriptions: [],
+        controls: [landed],
+        armor_removed: 0,
+        gates_failed: [],
+      ),
       now_ms: 1050,
     )
   assert went(effects: closed)
@@ -1468,6 +1476,7 @@ fn offence_of_caster_with(
         blows: [blow],
         controls: [],
         ticking: [],
+        gates: [],
       ),
       attacker: Attacker(..strike_support.attacker(), properties:),
       formulas: rating_support.formulas(),

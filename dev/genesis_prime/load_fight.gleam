@@ -442,6 +442,7 @@ fn hear(
                 descriptions: [],
                 controls: [],
                 armor_removed: 0,
+                gates_failed: [],
               ),
             )),
           )

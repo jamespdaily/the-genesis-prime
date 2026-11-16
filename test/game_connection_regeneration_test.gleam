@@ -105,6 +105,7 @@ fn blow(damage damage: Int) -> Event(ConnectionEvent(Message, Answer)) {
           damage:,
         ),
         controls: [],
+        gates: [],
       ),
     ),
   )

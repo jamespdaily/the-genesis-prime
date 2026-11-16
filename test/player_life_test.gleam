@@ -57,6 +57,7 @@ fn attack(cast_id: Int) -> strike_tell.Tell {
     striker: CreatureStriker,
     offence: spawn_support.beast_attack().offence,
     controls: [],
+    gates: [],
   )
 }
 
@@ -137,6 +138,7 @@ pub fn a_creatures_hit_takes_the_shield_first_up_to_its_share_and_the_rest_from_
           descriptions: [description],
           controls: [],
           armor_removed: 0,
+          gates_failed: [],
         ),
         ..,
       ),
@@ -179,6 +181,7 @@ pub fn health_is_floored_at_0_the_answer_is_landed_and_killed_and_a_later_strike
           descriptions: [description],
           controls: [],
           armor_removed: 0,
+          gates_failed: [],
         ),
         ..,
       ),

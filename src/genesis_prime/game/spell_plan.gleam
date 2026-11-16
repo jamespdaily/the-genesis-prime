@@ -713,6 +713,12 @@ pub type Spell {
     /// The ForcedMove effects aimed at other units, which the go throws the creatures it
     /// hit with (`StruckMove`).
     struck_moves: List(StruckMove),
+    /// The target apply prerequisites of rows aimed past the caster whose conditions all
+    /// read the struck creature's own state, which the creature checks when the strike
+    /// reaches it (`StruckGate`, genesis_prime/game/prerequisite `of_creature`). Every
+    /// such row is here, whatever it does (damage, a crowd-control state or a go row),
+    /// and its `condition` holds none of the gate.
+    struck_gates: List(StruckGate),
     /// The non-zero cooldown groups of the Spell4 row (`spellCoolDownId00` to `02`),
     /// each a SpellCoolDown row, which a selector 3 of a cooldown effect tests.
     cooldown_groups: List(Int),
@@ -991,6 +997,22 @@ pub type StruckMove {
     move: forced_move.Move,
     aim: Aim,
     condition: Condition,
+    tag: spend.Tag,
+  )
+}
+
+/// The target apply prerequisite of one row aimed past the caster, which the struck
+/// creature checks against its own state (`Spell4Effects.prerequisiteIdTargetApply`): the
+/// row's Spell4Effects id, the phases of `phase_flags` it applies in, who it aims at, the
+/// prerequisite as the load parsed it, and the `tag` that chooses it by the points the cast
+/// spent (genesis_prime/game/spend). The strike tells each unit `aim` names the gate
+/// (genesis_prime/game/strike_tell `Gate`).
+pub type StruckGate {
+  StruckGate(
+    effect_id: Spell4EffectsId,
+    phase_flags: Int,
+    aim: Aim,
+    prerequisite: Prerequisite,
     tag: spend.Tag,
   )
 }
@@ -2572,6 +2594,9 @@ fn spell_of(
       modifiers: list.append(lists.modifiers, lists.armors),
       forced_moves: lists.forced_moves,
       struck_moves: lists.struck_moves,
+      // Empty until the load reads the gates of rows aimed past the caster as
+      // `StruckGate`s (issue 817, cast side).
+      struck_gates: [],
       cooldown_groups:,
       cooldown_modifiers: lists.cooldown_modifiers,
       stealth: lists.stealth,
@@ -5610,6 +5635,23 @@ pub fn forced_moves_in_phase(
     rows: spell.forced_moves,
     phase_flags: fn(forced_move) { forced_move.phase_flags },
     tag: fn(forced_move) { forced_move.tag },
+    phase:,
+    spent:,
+  )
+}
+
+/// The target apply prerequisites of the spell's rows aimed past the caster that apply in
+/// phase `phase`, those whose tag holds for the points the cast spent: the gates the
+/// strike tells the units its rows reach.
+pub fn struck_gates_in_phase(
+  spell spell: Spell,
+  phase phase: Int,
+  spent spent: Option(Int),
+) -> List(StruckGate) {
+  in_phase(
+    rows: spell.struck_gates,
+    phase_flags: fn(gate) { gate.phase_flags },
+    tag: fn(gate) { gate.tag },
     phase:,
     spent:,
   )

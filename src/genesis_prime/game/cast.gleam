@@ -5749,7 +5749,9 @@ fn lifted_gains(proxy proxy: Proxy) -> List(spell_plan.Gain) {
 /// unit id (`prerequisite.FirstUnit`), which a type 38 condition of that gate reads; a unit
 /// with none is unknown to the check. `rolls` are the
 /// rolls the go's type 37 conditions take (`rolls_needed`), in the order the conditions
-/// are checked.
+/// are checked. `gates_failed` are the effect ids of the gates each struck unit failed, by unit
+/// id (genesis_prime/game/strike `Went`): the go starts no go row of a failed id on that unit
+/// and lists none.
 pub fn went(
   cast cast: State,
   caster caster: Caster,
@@ -5758,11 +5760,13 @@ pub fn went(
   phase phase: Int,
   spell asked_spell: Result(Spell, Nil),
   struck struck: List(Struck),
+  gates_failed gates_failed: Dict(Int, List(Int)),
   poses poses: Dict(Int, area.Pose),
   indexes indexes: Dict(Int, Int),
   units units: Dict(Int, prerequisite.FirstUnit),
   rolls rolls: List(Int),
 ) -> #(State, List(Effect)) {
+  use <- no_gate_failed(gates_failed:)
   let own =
     holder_of(cast:, cast_id:)
     |> result.map(fn(holder) { holder.spell })
@@ -5787,6 +5791,19 @@ pub fn went(
     now_ms: now.monotonic_ms,
   )
   |> continued(caster:, now_ms: now.monotonic_ms)
+}
+
+/// Runs the rest of a go that no unit failed a gate of. A go with a failed gate starts no go
+/// row of it (`TargetChangeStarts` and its siblings) and lists none.
+fn no_gate_failed(
+  gates_failed gates_failed: Dict(Int, List(Int)),
+  next next: fn() -> #(State, List(Effect)),
+) -> #(State, List(Effect)) {
+  case dict.is_empty(gates_failed) {
+    True -> next()
+    False ->
+      panic as "shape: cast side (go) fills went: no go row of a failed effect id starts on that unit, and the go lists none"
+  }
 }
 
 /// A go of a live cast is asked: its first go pays the cast's reserved costs, then

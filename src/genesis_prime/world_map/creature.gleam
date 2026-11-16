@@ -35,7 +35,9 @@
 //// the run's end (WatchEnded(run)) ─▶ Stop                             (the map is gone: so are its players)
 ////
 //// caster's connection c0
-//// Strike(key, c0, striker, offence) ─▶ the hit rule on its health (genesis_prime/world_map/creature_life)
+//// Strike(key, c0, striker, offence, controls, gates) ─▶ each gate checked against `prerequisite.of_creature`
+////                                    (a failed gate's blows and states are dropped, its effect id is answered in `gates_failed`),
+////                                    then the hit rule on its health (genesis_prime/world_map/creature_life)
 ////                                    alive: Send(c0, Struck(Landed | Deflected))   Send(each viewer, Health(h', dead))
 ////                                    landed: the fight takes StruckBy (genesis_prime/world_map/creature_fight)
 ////                                    killed: Send(each viewer, Died); StartServiceTimer(corpse, respawn_ms); the fight takes Killed
@@ -84,6 +86,13 @@
 ////   lives and whose Interrupt Armor is already 0 (a strike on armor above 0 wears it down
 ////   instead), and the answer's `Landed` names the ones that did; while the creature holds one it does not act
 ////   (genesis_prime/world_map/creature_control).
+//// - **A strike's gates** are the target apply prerequisites of its rows that read this
+////   creature's own state (genesis_prime/game/strike_tell `Gate`). They are checked when the
+////   strike arrives, before the hit rule, against the creature's level, factions, combat state,
+////   vitals, difficulty and Creature2 row and the caster as the second unit
+////   (genesis_prime/game/prerequisite `of_creature`). A corpse reads none: it answers
+////   `Refused(Dead)`. The effect ids that failed are in the answer's `gates_failed`, and the
+////   blows and states of their rows are in neither its descriptions nor its states.
 //// - **A strike** is told by the connection of the caster through the creature
 ////   registry with no watch (genesis_prime/world_map/creature_registry `tell`), and
 ////   answered by a send to that connection. A strike for a creature that has ended is
@@ -195,6 +204,7 @@ import genesis_prime/client_connection.{
   type PeerNews, CreatureAppeared, PeerNews, Removed,
 }
 import genesis_prime/game/forced_move
+import genesis_prime/game/prerequisite
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{
   type Answered, type Fight, type Tell as StrikeTell, Answered, CreatureStriker,
@@ -924,6 +934,15 @@ fn struck(
       )),
     )
     Ok(Nil) -> {
+      // The gates are read before the hit rule, and not for a corpse, which the hit rule
+      // answers `Refused(Dead)`.
+      let #(tell, gates_failed) = case
+        tell.gates,
+        creature_life.is_dead(life: state.life)
+      {
+        [], _ | _, True -> #(tell, [])
+        [_, ..], False -> gates_checked(state:, tell:)
+      }
       let reaction = case creature_guard.guarded(state: state.guard) {
         True ->
           creature_life.Reaction(
@@ -934,8 +953,14 @@ fn struck(
                   descriptions: [],
                   controls: [],
                   armor_removed: 0,
+                  gates_failed: [],
                 )
-              [_, ..] -> strike_tell.Immune(controls: [], armor_removed: 0)
+              [_, ..] ->
+                strike_tell.Immune(
+                  controls: [],
+                  armor_removed: 0,
+                  gates_failed: [],
+                )
             }),
             news: [],
             corpse_for_ms: None,
@@ -945,6 +970,11 @@ fn struck(
       }
       let #(state, answered, controlled) =
         controls_after(state:, tell:, reaction:, now_ms:)
+      let answered =
+        Answered(
+          key: answered.key,
+          outcome: with_gates_failed(outcome: answered.outcome, gates_failed:),
+        )
       // The answer goes first: the caster's connection then knows the strike
       // before it is told the health it left, one sender in one order.
       let answer = answer_to(tell:, answered:)
@@ -1113,11 +1143,61 @@ fn with_controls(
   armor_removed armor_removed: Int,
 ) -> strike_tell.Outcome {
   case outcome {
-    strike_tell.Landed(descriptions:, ..) ->
-      strike_tell.Landed(descriptions:, controls:, armor_removed:)
-    strike_tell.Immune(..) -> strike_tell.Immune(controls:, armor_removed:)
+    strike_tell.Landed(descriptions:, gates_failed:, ..) ->
+      strike_tell.Landed(
+        descriptions:,
+        controls:,
+        armor_removed:,
+        gates_failed:,
+      )
+    strike_tell.Immune(gates_failed:, ..) ->
+      strike_tell.Immune(controls:, armor_removed:, gates_failed:)
     strike_tell.Deflected | strike_tell.Refused(..) -> outcome
   }
+}
+
+/// The outcome of a strike that landed or met the immunity, naming the effect ids of the
+/// gates the creature failed.
+fn with_gates_failed(
+  outcome outcome: strike_tell.Outcome,
+  gates_failed gates_failed: List(Int),
+) -> strike_tell.Outcome {
+  case outcome {
+    strike_tell.Landed(descriptions:, controls:, armor_removed:, ..) ->
+      strike_tell.Landed(
+        descriptions:,
+        controls:,
+        armor_removed:,
+        gates_failed:,
+      )
+    strike_tell.Immune(controls:, armor_removed:, ..) ->
+      strike_tell.Immune(controls:, armor_removed:, gates_failed:)
+    strike_tell.Deflected | strike_tell.Refused(..) -> outcome
+  }
+}
+
+/// The strike's gates checked against the creature's own subject
+/// (`prerequisite.of_creature`: its level, factions, combat state, vitals, difficulty and
+/// Creature2 row, and the caster as the second unit), in the strike's order: the strike
+/// without the blows (`hit.Blow.spell4_effects_id`) and states (`ControlTell.effect_id`) of
+/// the rows that failed, which the hit rule then sees, and the effect ids that failed. A
+/// gate that reads something the subject does not hold (`prerequisite.NotRead`) fails.
+fn gates_checked(
+  state state: State,
+  tell tell: StrikeTell,
+) -> #(StrikeTell, List(Int)) {
+  let _subject = prerequisite.of_creature(facts: creature_facts(state:, tell:))
+  panic as "shape: creature side fills gates_checked: prerequisite.check for each gate against the subject, and the strike without the failed rows"
+}
+
+/// What the creature holds that its gates read, for `prerequisite.of_creature`: its level and
+/// class, factions, combat state, vitals, difficulty and Creature2 row, what the strike's
+/// caster's casts hold on it, and the two poses.
+fn creature_facts(
+  state _state: State,
+  tell _tell: StrikeTell,
+) -> prerequisite.CreatureFacts {
+  panic as "shape: creature side fills creature_facts: the creature's own values for each field"
 }
 
 /// The effects the creature's controls ask for, carried out: news to every viewer and
