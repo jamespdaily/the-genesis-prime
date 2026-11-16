@@ -93,24 +93,24 @@ import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{
   type Aimed, type AimedPress, type Applied, type Caster, type Effect, type Fact,
   type HeldProc, type Holder, type Interaction, type Listed, type Live,
-  type Message, type Refusal, type Resolution, type Restricting, type Role,
-  type State, type Struck, type TargetVerdict, type TickAsked, type UsedUnit,
-  Accept, Activated, Activating, Activation, Aimed, AimedPress, AnswerSucceeded,
-  Answered, AwaitingAnswer, Base, Cancelled, CannotTell, CastClears,
-  CasterChangeEnds, CasterChangeStarts, ChargeLevel, Child, CooldownEnds,
-  CooldownModifierEnds, CooldownModifierStarts, Deflected, Finish,
-  ForcedMoveStart, GateFails, Go, GoAsked, Held, HeldProc, Hit, Hold,
-  HoldForCast, Holding, Immune, ItemsIssue, KeyHeld, Lingering, Listed, Live,
-  Log, ModifierEnd, ModifierStart, NoClientCastId, NoInteraction,
-  NoInteractionWaits, NoItemSpell, NodesEnd, NotBuilt, NotDecoded,
-  NotSentByClient, Passive, PrerequisitesIssue, Pressed, PressedAt, ProcDue,
-  Refuse, RepeatHeld, Resolution, ResourceMoved, RestrictionEnd, Send, Shortcut,
-  ShortcutCast, SpellsIssue, Stage, StartChild, StartHeld, StartedMoving, Starts,
-  State, StateEnd, StealthChanged, Strike, TargetModifierStart, Tell, Threshold,
-  Tick, TickKey, Ticking, UnbuiltItemCharges, UnbuiltItemSpell, UnbuiltShortcut,
-  UnbuiltSpell, UnknownAnswer, UnknownCancel, UnreadItemPrerequisite,
-  UnreadLinkPrerequisite, UnreadPrerequisite, UnreadShortcutPick, UsedUnit,
-  WindowEnd, WrongAnswerSpell,
+  type Message, type Reached, type Refusal, type Resolution, type Restricting,
+  type Role, type State, type Struck, type TargetVerdict, type TickAsked,
+  type UsedUnit, Accept, Activated, Activating, Activation, Aimed, AimedPress,
+  AnswerSucceeded, Answered, AwaitingAnswer, Base, Cancelled, CannotTell,
+  CastClears, CasterChangeEnds, CasterChangeStarts, ChargeLevel, Child,
+  CooldownEnds, CooldownKept, CooldownModifierEnds, CooldownModifierStarts,
+  Deflected, Finish, ForcedMoveStart, GateFails, Go, GoAsked, Healing, Held,
+  HeldProc, Hit, Hold, HoldForCast, Holding, Immune, ItemsIssue, KeyHeld,
+  Lingering, Listed, Live, Log, ModifierEnd, ModifierStart, NoClientCastId,
+  NoInteraction, NoInteractionWaits, NoItemSpell, NodesEnd, NotBuilt, NotDecoded,
+  NotSentByClient, Passive, Plain, PrerequisitesIssue, Pressed, PressedAt,
+  ProcDue, Reached, Refuse, RepeatHeld, Resolution, ResourceMoved,
+  RestrictionEnd, Send, Shortcut, ShortcutCast, SpellsIssue, Stage, StartChild,
+  StartHeld, StartedMoving, Starts, State, StateEnd, StealthChanged, Strike,
+  TargetModifierStart, Tell, Threshold, Tick, TickKey, Ticking,
+  UnbuiltItemCharges, UnbuiltItemSpell, UnbuiltShortcut, UnbuiltSpell,
+  UnknownAnswer, UnknownCancel, UnreadItemPrerequisite, UnreadLinkPrerequisite,
+  UnreadPrerequisite, UnreadShortcutPick, UsedUnit, WindowEnd, WrongAnswerSpell,
 } as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/class_resource.{type Payment}
@@ -3677,7 +3677,7 @@ fn go(
         cast_control.struck_moves_armed(
           cast:,
           cast_id:,
-          thrown: aimed.thrown,
+          reached: aimed.reached,
           struck:,
         )
       let #(cast, healing) = cast_control.heals_armed(cast:, cast_id:, aimed:)
@@ -3815,9 +3815,24 @@ fn stealth_changed_by_go(
   last_go last_go: Bool,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
-  let stealth = cast_state.passed_of(applied:, as_kind: spell_plan.as_stealth)
-  let remove_stealth =
-    cast_state.passed_of(applied:, as_kind: spell_plan.as_remove_stealth)
+  let #(stealth, remove_stealth) =
+    list.fold_right(applied.passed, #([], []), fn(rows, planned) {
+      case planned.kind {
+        spell_plan.StealthEffect(stealth: row) -> #([row, ..rows.0], rows.1)
+        spell_plan.RemoveStealthEffect(remove: row) -> #(rows.0, [row, ..rows.1])
+        spell_plan.ProxyEffect(..)
+        | spell_plan.GainEffect(..)
+        | spell_plan.LastingEffect(..)
+        | spell_plan.RemoveEffect(..)
+        | spell_plan.ModifierEffect(..)
+        | spell_plan.ForcedMoveEffect(..)
+        | spell_plan.StruckMoveEffect(..)
+        | spell_plan.CooldownEffect(..)
+        | spell_plan.ProcEffect(..)
+        | spell_plan.HealEffect(..)
+        | spell_plan.ControlEffect(..) -> rows
+      }
+    })
   case cast_state.stealthed(cast:), stealth, remove_stealth {
     False, [], [] -> #(cast, [])
     _, _, _ -> {
@@ -3878,22 +3893,6 @@ fn activation_listed_at(
       bit: spell_effect.phase_bit(phase:),
     )
   }
-}
-
-/// One effect of a go that reaches a unit: the planned effect, the unit it stands on (the
-/// caster's for a row that stands on the caster alone) and what the reach stage made of it.
-type Reached {
-  Reached(
-    effect: spell_effect.PlannedEffect(spell_plan.Kind),
-    unit_id: Int,
-    product: Product,
-  )
-}
-
-/// What the reach stage made of an effect beside its unit.
-type Product {
-  /// Nothing: the effect stands on its unit as it is.
-  Plain
 }
 
 /// The walk of `reached_by`: the effects reached so far in rank order, the debug lines of
@@ -4078,19 +4077,56 @@ fn reach_units(
   )
 }
 
-/// The reached effects of one kind with the unit each stands on, in rank order (`as_kind` is
-/// the kind's projection, such as `spell_plan.as_heal`): what `Aimed` holds for the kind.
-fn reached_of(
+/// What the reach stage made of each effect it reached beside its unit, and the debug lines
+/// of the heals it left: a heal on the caster is worked out (`cast_heal.healed_on`) and a
+/// cooldown row is told whether it is kept for the cooldowns that start later
+/// (`cast_control.cooldown_kept`); any other effect stands as it is.
+fn products_made(
   reached reached: List(Reached),
-  as_kind as_kind: fn(spell_plan.Kind) -> Result(payload, Nil),
-) -> List(#(payload, Int)) {
-  list.filter_map(reached, fn(entry) {
-    as_kind(entry.effect.kind)
-    |> result.map(fn(row) { #(row, entry.unit_id) })
-  })
+  caster caster: Caster,
+  longer_of_delay_and_duration longer_of_delay_and_duration: Bool,
+) -> #(List(Reached), List(Effect)) {
+  let made =
+    list.map(reached, fn(entry) {
+      case entry.effect.kind {
+        spell_plan.HealEffect(heal: row) -> {
+          let #(product, logs) =
+            cast_heal.healed_on(row:, unit_id: entry.unit_id, caster:)
+          #(Reached(..entry, product:), logs)
+        }
+        spell_plan.CooldownEffect(modifier: row) -> #(
+          Reached(
+            ..entry,
+            product: CooldownKept(kept: cast_control.cooldown_kept(
+              row:,
+              longer_of_delay_and_duration:,
+            )),
+          ),
+          [],
+        )
+        spell_plan.ProxyEffect(..)
+        | spell_plan.GainEffect(..)
+        | spell_plan.LastingEffect(..)
+        | spell_plan.RemoveEffect(..)
+        | spell_plan.ModifierEffect(..)
+        | spell_plan.ForcedMoveEffect(..)
+        | spell_plan.StruckMoveEffect(..)
+        | spell_plan.StealthEffect(..)
+        | spell_plan.RemoveStealthEffect(..)
+        | spell_plan.ProcEffect(..)
+        | spell_plan.ControlEffect(..) -> #(entry, [])
+      }
+    })
+  #(
+    list.map(made, fn(entry) { entry.0 }),
+    list.flat_map(made, fn(entry) { entry.1 }),
+  )
 }
 
-fn aimed_at(
+/// What a go reaches: the effects it reaches (`reached_by`) with what the reach stage made
+/// of each (`products_made`), the units the go lists them on and the crowd-control states
+/// and restrictions it holds, with the rolls the target gates left.
+pub fn aimed_at(
   applied applied: Applied,
   caster caster: Caster,
   live live: Live,
@@ -4111,35 +4147,14 @@ fn aimed_at(
       target_verdict:,
       rolls:,
     )
-  let lasting =
-    reached_of(reached: walk.reached, as_kind: spell_plan.as_lasting)
-  let removes = reached_of(reached: walk.reached, as_kind: spell_plan.as_remove)
-  let modifiers =
-    reached_of(reached: walk.reached, as_kind: spell_plan.as_modifier)
-  let thrown =
-    reached_of(reached: walk.reached, as_kind: spell_plan.as_struck_move)
-  let forced_moves =
-    reached_of(reached: walk.reached, as_kind: spell_plan.as_forced_move)
-  let reached_heals =
-    reached_of(reached: walk.reached, as_kind: spell_plan.as_heal)
+  let #(reached, heal_logs) =
+    products_made(
+      reached: walk.reached,
+      caster:,
+      longer_of_delay_and_duration: live.spell.longer_of_delay_and_duration,
+    )
   let rolls = walk.rolls
   let controls = cast_control.controls_landed(struck:)
-  let cooldowns =
-    reached_of(reached: walk.reached, as_kind: spell_plan.as_cooldown_modifier)
-    |> list.map(fn(entry) {
-      #(
-        entry.0,
-        entry.1,
-        cast_control.cooldown_kept(
-          row: entry.0,
-          longer_of_delay_and_duration: live.spell.longer_of_delay_and_duration,
-        ),
-      )
-    })
-  let stealth =
-    reached_of(reached: walk.reached, as_kind: spell_plan.as_stealth)
-  let procs = reached_of(reached: walk.reached, as_kind: spell_plan.as_proc)
-  let #(heals, heal_logs) = cast_heal.healed_by(entries: reached_heals, caster:)
   let restrictions = list.map(restricting, fn(one) { #(one, caster.unit_id) })
   let ticking =
     list.append(
@@ -4148,109 +4163,11 @@ fn aimed_at(
         spell: live.spell,
         gates_passed:,
       )),
-      cast_heal.ticking_heals(entries: reached_heals, caster:),
+      cast_heal.ticking_heals(reached:, caster:),
     )
   let listed =
     list.flatten([
-      list.map(stealth, fn(entry) {
-        #(
-          entry.1,
-          Listed(
-            effect_id: entry.0.effect_id,
-            delay_ms: entry.0.row.delay_ms,
-            instance_id: None,
-            damage: None,
-          ),
-        )
-      }),
-      list.map(procs, fn(entry) {
-        #(
-          entry.1,
-          Listed(
-            effect_id: entry.0.effect_id,
-            delay_ms: entry.0.row.delay_ms,
-            instance_id: None,
-            damage: None,
-          ),
-        )
-      }),
-      list.map(lasting, fn(entry) {
-        #(
-          entry.1,
-          Listed(
-            effect_id: entry.0.effect_id,
-            delay_ms: entry.0.row.delay_ms,
-            instance_id: None,
-            damage: None,
-          ),
-        )
-      }),
-      list.map(modifiers, fn(entry) {
-        #(
-          entry.1,
-          Listed(
-            effect_id: entry.0.effect_id,
-            delay_ms: entry.0.row.delay_ms,
-            instance_id: None,
-            damage: None,
-          ),
-        )
-      }),
-      list.map(forced_moves, fn(entry) {
-        #(
-          entry.1,
-          Listed(
-            effect_id: entry.0.effect_id,
-            delay_ms: entry.0.delay_ms,
-            instance_id: None,
-            damage: None,
-          ),
-        )
-      }),
-      list.map(thrown, fn(entry) {
-        #(
-          entry.1,
-          Listed(
-            effect_id: entry.0.effect_id,
-            delay_ms: entry.0.delay_ms,
-            instance_id: None,
-            damage: None,
-          ),
-        )
-      }),
-      list.map(cooldowns, fn(entry) {
-        #(
-          entry.1,
-          Listed(
-            effect_id: entry.0.effect_id,
-            delay_ms: entry.0.row.delay_ms,
-            instance_id: None,
-            damage: None,
-          ),
-        )
-      }),
-      list.map(removes, fn(entry) {
-        #(
-          entry.1,
-          Listed(
-            effect_id: entry.0.effect_id,
-            delay_ms: 0,
-            instance_id: None,
-            damage: None,
-          ),
-        )
-      }),
-      list.map(heals, fn(entry) {
-        #(
-          entry.1,
-          Listed(
-            effect_id: entry.0.effect_id,
-            delay_ms: entry.0.delay_ms,
-            instance_id: None,
-            damage: Some(cast_heal.heal_description(healed: entry.0)),
-          ),
-        )
-      }),
+      reached_listed(reached:),
       list.map(ticking, fn(row) {
         #(
           row.unit_id,
@@ -4312,20 +4229,69 @@ fn aimed_at(
     })
   Aimed(
     units:,
-    lasting:,
-    removes:,
-    modifiers:,
-    cooldowns:,
-    stealth:,
-    heals:,
+    reached:,
     reach_logs: list.append(walk.logs, heal_logs),
-    thrown:,
-    procs:,
     controls:,
     restrictions:,
     ticking:,
     rolls_left: rolls,
   )
+}
+
+/// What the effects a go reached are listed as on their units, in the order the client's
+/// list shows them: a Stealth row, a Proc row, a Fluff row, a property modifier, a forced
+/// move on the caster, a struck move, a cooldown row, a SpellForceRemove row and a heal that
+/// lands on the caster, each kind's rows in the order they were reached. This is not the
+/// plan's rank order, so the kind's place is named here. An effect the go does not list (a
+/// Proxy, a gain, a RemoveStealth, a crowd-control state, a periodic or another unit's
+/// heal) is left out.
+fn reached_listed(reached reached: List(Reached)) -> List(#(Int, Listed)) {
+  reached
+  |> list.filter_map(fn(entry) {
+    let listed = fn(place: Int, delay_ms: Int, damage: Option(_)) {
+      Ok(#(
+        place,
+        entry.unit_id,
+        Listed(
+          effect_id: entry.effect.effect_id,
+          delay_ms:,
+          instance_id: None,
+          damage:,
+        ),
+      ))
+    }
+    case entry.effect.kind, entry.product {
+      spell_plan.StealthEffect(stealth: row), _ ->
+        listed(0, row.row.delay_ms, None)
+      spell_plan.ProcEffect(proc: row), _ -> listed(1, row.row.delay_ms, None)
+      spell_plan.LastingEffect(lasting: row), _ ->
+        listed(2, row.row.delay_ms, None)
+      spell_plan.ModifierEffect(modifier: row), _ ->
+        listed(3, row.row.delay_ms, None)
+      spell_plan.ForcedMoveEffect(forced_move: row), _ ->
+        listed(4, row.delay_ms, None)
+      spell_plan.StruckMoveEffect(struck_move: row), _ ->
+        listed(5, row.delay_ms, None)
+      spell_plan.CooldownEffect(modifier: row), _ ->
+        listed(6, row.row.delay_ms, None)
+      spell_plan.RemoveEffect(..), _ -> listed(7, 0, None)
+      spell_plan.HealEffect(..), Healing(healed:) ->
+        listed(8, healed.delay_ms, Some(cast_heal.heal_description(healed:)))
+      spell_plan.HealEffect(..), Plain
+      | spell_plan.HealEffect(..), CooldownKept(..)
+      | spell_plan.ProxyEffect(..), _
+      | spell_plan.GainEffect(..), _
+      | spell_plan.RemoveStealthEffect(..), _
+      | spell_plan.ControlEffect(..), _
+      -> Error(Nil)
+    }
+  })
+  |> list.index_map(fn(entry, index) { #(entry, index) })
+  |> list.sort(fn(a, b) {
+    int.compare(a.0.0, b.0.0)
+    |> order.break_tie(int.compare(a.1, b.1))
+  })
+  |> list.map(fn(entry) { #(entry.0.1, entry.0.2) })
 }
 
 /// The type 80 effects of a go taken off the units they aim at, in order: each takes
@@ -4336,18 +4302,34 @@ fn removed_by_go(
   aimed aimed: Aimed,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
-  list.fold(aimed.removes, #(cast, []), fn(so_far, entry) {
+  list.fold(aimed.reached, #(cast, []), fn(so_far, entry) {
     let #(cast, effects) = so_far
-    let #(row, unit_id) = entry
-    let removals =
-      lasting.removals(
-        holds: cast_tick.holds_on(cast:, unit_id:),
-        selector: row.selector,
-        count: row.count,
-        unit_id:,
-      )
-    let #(cast, more) = cast_proc.apply_removals(cast:, removals:, now_ms:)
-    #(cast, list.append(effects, more))
+    case entry.effect.kind {
+      spell_plan.RemoveEffect(remove: row) -> {
+        let unit_id = entry.unit_id
+        let removals =
+          lasting.removals(
+            holds: cast_tick.holds_on(cast:, unit_id:),
+            selector: row.selector,
+            count: row.count,
+            unit_id:,
+          )
+        let #(cast, more) = cast_proc.apply_removals(cast:, removals:, now_ms:)
+        #(cast, list.append(effects, more))
+      }
+      spell_plan.ProxyEffect(..)
+      | spell_plan.GainEffect(..)
+      | spell_plan.LastingEffect(..)
+      | spell_plan.ModifierEffect(..)
+      | spell_plan.ForcedMoveEffect(..)
+      | spell_plan.StruckMoveEffect(..)
+      | spell_plan.CooldownEffect(..)
+      | spell_plan.StealthEffect(..)
+      | spell_plan.RemoveStealthEffect(..)
+      | spell_plan.ProcEffect(..)
+      | spell_plan.HealEffect(..)
+      | spell_plan.ControlEffect(..) -> so_far
+    }
   })
 }
 
@@ -4363,41 +4345,80 @@ fn cooldowns_armed(
   longer_of_delay_and_duration longer_of_delay_and_duration: Bool,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
-  list.fold(aimed.cooldowns, #(cast, []), fn(so_far, entry) {
+  list.fold(aimed.reached, #(cast, []), fn(so_far, entry) {
     let #(cast, effects) = so_far
-    let row = entry.0
-    let source = unit_properties.Source(cast_id:, effect_id: row.effect_id)
-    let #(cast, cancels) = cast_state.cancel_source_timers(cast:, source:)
-    let lifetime_ms =
-      lasting.lifetime_of(row: row.row, longer_of_delay_and_duration:)
-    let kept = entry.2
-    let #(cast, starting) = case row.row.delay_ms > 0 {
-      True -> {
-        let #(cast, _, start) =
-          cast_state.armed(
+    case entry.effect.kind {
+      spell_plan.CooldownEffect(modifier: row) -> {
+        let assert CooldownKept(kept:) = entry.product
+          as "the reach stage tells each cooldown row whether it is kept"
+        let #(cast, armed) =
+          cooldown_row_armed(
             cast:,
-            due: CooldownModifierStarts(source:, modifier: row.modifier, kept:),
-            after_ms: row.row.delay_ms,
+            cast_id:,
+            row:,
+            kept:,
+            longer_of_delay_and_duration:,
+            now_ms:,
           )
-        #(cast, [start])
+        #(cast, list.append(effects, armed))
       }
-      False ->
-        cooldown_applied(cast:, source:, modifier: row.modifier, kept:, now_ms:)
+      spell_plan.ProxyEffect(..)
+      | spell_plan.GainEffect(..)
+      | spell_plan.LastingEffect(..)
+      | spell_plan.RemoveEffect(..)
+      | spell_plan.ModifierEffect(..)
+      | spell_plan.ForcedMoveEffect(..)
+      | spell_plan.StruckMoveEffect(..)
+      | spell_plan.StealthEffect(..)
+      | spell_plan.RemoveStealthEffect(..)
+      | spell_plan.ProcEffect(..)
+      | spell_plan.HealEffect(..)
+      | spell_plan.ControlEffect(..) -> so_far
     }
-    let #(cast, ending) = case kept && !row.row.until_removed {
-      True -> {
-        let #(cast, _, start) =
-          cast_state.armed(
-            cast:,
-            due: CooldownModifierEnds(source:),
-            after_ms: lifetime_ms,
-          )
-        #(cast, [start])
-      }
-      False -> #(cast, [])
-    }
-    #(cast, list.flatten([effects, cancels, starting, ending]))
   })
+}
+
+/// One cooldown row armed from this go: its earlier timers cancelled, its start applied
+/// at once or on a timer of its delay, and, when it is kept and not until removed, its drop on
+/// a timer at the end of its lifetime.
+fn cooldown_row_armed(
+  cast cast: State,
+  cast_id cast_id: Int,
+  row row: spell_plan.CooldownModifier,
+  kept kept: Bool,
+  longer_of_delay_and_duration longer_of_delay_and_duration: Bool,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  let source = unit_properties.Source(cast_id:, effect_id: row.effect_id)
+  let #(cast, cancels) = cast_state.cancel_source_timers(cast:, source:)
+  let lifetime_ms =
+    lasting.lifetime_of(row: row.row, longer_of_delay_and_duration:)
+  let #(cast, starting) = case row.row.delay_ms > 0 {
+    True -> {
+      let #(cast, _, start) =
+        cast_state.armed(
+          cast:,
+          due: CooldownModifierStarts(source:, modifier: row.modifier, kept:),
+          after_ms: row.row.delay_ms,
+        )
+      #(cast, [start])
+    }
+    False ->
+      cooldown_applied(cast:, source:, modifier: row.modifier, kept:, now_ms:)
+  }
+  let #(cast, ending) = case kept && !row.row.until_removed {
+    True -> {
+      let #(cast, _, start) =
+        cast_state.armed(
+          cast:,
+          due: CooldownModifierEnds(source:),
+          after_ms: lifetime_ms,
+        )
+      #(cast, [start])
+    }
+    False -> #(cast, [])
+  }
+  #(cast, list.flatten([cancels, starting, ending]))
 }
 
 /// A cooldown effect takes effect: it is kept for the cooldowns that start later when
@@ -4495,37 +4516,58 @@ fn cooldowns_started_at_node_end(
     when: !list.contains(unit_ids, cast_state.caster_of(cast_id:)),
     return: #(cast, []),
   )
-  list.fold(
-    spell_plan.payloads(spell:, as_kind: spell_plan.as_cooldown_modifier),
-    #(cast, []),
-    fn(so_far, row) {
-      let #(cast, effects) = so_far
-      let source = unit_properties.Source(cast_id:, effect_id: row.effect_id)
-      let #(cast, cancels) =
-        cast_state.cancel_timers(cast:, matching: fn(due) {
-          due
-          == CooldownModifierStarts(
-            source:,
-            modifier: row.modifier,
-            kept: False,
-          )
-        })
-      case cancels {
-        [] -> #(cast, effects)
-        [_, ..] -> {
-          let #(cast, applied) =
-            cooldown_applied(
-              cast:,
-              source:,
-              modifier: row.modifier,
-              kept: False,
-              now_ms:,
-            )
-          #(cast, list.flatten([effects, cancels, applied]))
-        }
+  list.fold(spell.effects, #(cast, []), fn(so_far, planned) {
+    let #(cast, effects) = so_far
+    case planned.kind {
+      spell_plan.CooldownEffect(modifier: row) -> {
+        let #(cast, started) =
+          cooldown_row_started(cast:, cast_id:, row:, now_ms:)
+        #(cast, list.append(effects, started))
       }
-    },
-  )
+      spell_plan.ProxyEffect(..)
+      | spell_plan.GainEffect(..)
+      | spell_plan.LastingEffect(..)
+      | spell_plan.RemoveEffect(..)
+      | spell_plan.ModifierEffect(..)
+      | spell_plan.ForcedMoveEffect(..)
+      | spell_plan.StruckMoveEffect(..)
+      | spell_plan.StealthEffect(..)
+      | spell_plan.RemoveStealthEffect(..)
+      | spell_plan.ProcEffect(..)
+      | spell_plan.HealEffect(..)
+      | spell_plan.ControlEffect(..) -> #(cast, effects)
+    }
+  })
+}
+
+/// One cooldown row whose start a timer still waits for: the timer is cancelled and the
+/// start taken effect now; a row with no timer waiting has nothing to start.
+fn cooldown_row_started(
+  cast cast: State,
+  cast_id cast_id: Int,
+  row row: spell_plan.CooldownModifier,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  let source = unit_properties.Source(cast_id:, effect_id: row.effect_id)
+  let #(cast, cancels) =
+    cast_state.cancel_timers(cast:, matching: fn(due) {
+      due
+      == CooldownModifierStarts(source:, modifier: row.modifier, kept: False)
+    })
+  case cancels {
+    [] -> #(cast, [])
+    [_, ..] -> {
+      let #(cast, applied) =
+        cooldown_applied(
+          cast:,
+          source:,
+          modifier: row.modifier,
+          kept: False,
+          now_ms:,
+        )
+      #(cast, list.append(cancels, applied))
+    }
+  }
 }
 
 /// A Proxy of a go: a Proxy aimed at the area starts one child for each Hit unit of

@@ -430,12 +430,9 @@ pub fn procs_held(
   applied applied: Applied,
 ) -> #(State, List(Effect)) {
   let #(never, held) =
-    list.partition(
-      cast_state.passed_of(applied:, as_kind: spell_plan.as_proc),
-      fn(row) {
-        row.trigger == spell_plan.Died && cast.passive != Some(cast_id)
-      },
-    )
+    list.partition(proc_rows(applied:), fn(row) {
+      row.trigger == spell_plan.Died && cast.passive != Some(cast_id)
+    })
   let procs =
     list.fold(held, cast.procs, fn(procs, row) {
       let source = unit_properties.Source(cast_id:, effect_id: row.effect_id)
@@ -457,6 +454,27 @@ pub fn procs_held(
       )
     }),
   )
+}
+
+/// The Proc rows among the effects a go let pass, in rank order.
+fn proc_rows(applied applied: Applied) -> List(spell_plan.ProcRow) {
+  list.flat_map(applied.passed, fn(planned) {
+    case planned.kind {
+      spell_plan.ProcEffect(proc: row) -> [row]
+      spell_plan.ProxyEffect(..)
+      | spell_plan.GainEffect(..)
+      | spell_plan.LastingEffect(..)
+      | spell_plan.RemoveEffect(..)
+      | spell_plan.ModifierEffect(..)
+      | spell_plan.ForcedMoveEffect(..)
+      | spell_plan.StruckMoveEffect(..)
+      | spell_plan.CooldownEffect(..)
+      | spell_plan.StealthEffect(..)
+      | spell_plan.RemoveStealthEffect(..)
+      | spell_plan.HealEffect(..)
+      | spell_plan.ControlEffect(..) -> []
+    }
+  })
 }
 
 /// The cast's nodes after some left: a lingering cast with none left is dropped; any
@@ -785,23 +803,42 @@ pub fn effects_ended(
   spell spell: Spell,
 ) -> #(State, List(Effect)) {
   let endings =
-    list.append(
-      list.map(cast_control.caster_rows(spell:), fn(row) {
-        CasterChangeEnding(
-          source: unit_properties.Source(cast_id:, effect_id: row.effect_id),
-          until_removed: row.row.until_removed,
-        )
-      }),
-      list.map(
-        spell_plan.payloads(spell:, as_kind: spell_plan.as_cooldown_modifier),
-        fn(row) {
+    list.flat_map(spell.effects, fn(planned) {
+      case planned.kind {
+        spell_plan.ModifierEffect(modifier: row) ->
+          case row.change {
+            spell_plan.StruckChange(..) -> []
+            spell_plan.PropertyChange(..)
+            | spell_plan.LookChange(..)
+            | spell_plan.AbsorbChange(..) -> [
+              CasterChangeEnding(
+                source: unit_properties.Source(
+                  cast_id:,
+                  effect_id: row.effect_id,
+                ),
+                until_removed: row.row.until_removed,
+              ),
+            ]
+          }
+        spell_plan.CooldownEffect(modifier: row) -> [
           CooldownEnding(source: unit_properties.Source(
             cast_id:,
             effect_id: row.effect_id,
-          ))
-        },
-      ),
-    )
+          )),
+        ]
+        spell_plan.ProxyEffect(..)
+        | spell_plan.GainEffect(..)
+        | spell_plan.LastingEffect(..)
+        | spell_plan.RemoveEffect(..)
+        | spell_plan.ForcedMoveEffect(..)
+        | spell_plan.StruckMoveEffect(..)
+        | spell_plan.StealthEffect(..)
+        | spell_plan.RemoveStealthEffect(..)
+        | spell_plan.ProcEffect(..)
+        | spell_plan.HealEffect(..)
+        | spell_plan.ControlEffect(..) -> []
+      }
+    })
   let #(cast, effects) =
     list.fold(endings, #(cast, []), fn(so_far, ending) {
       let #(cast, effects) = so_far

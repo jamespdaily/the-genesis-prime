@@ -759,3 +759,66 @@ pub fn applied_passed_holds_the_rows_each_gate_passed_in_rank_order_test() -> Ni
     == 3
     as "one type 37 condition on each of the three rows, each reaching the caster alone: three rolls, as many as `lasting_applied` drew above"
 }
+
+/// A property modifier with no life (no durationTime, flags bit 2 clear) and a lasting
+/// effect, both aimed at the caster in every phase behind this condition, given in the
+/// order modifier, lasting.
+fn lifeless_modifier_and_lasting(
+  condition condition: spell_plan.Condition,
+) -> Spell {
+  support.with_effects(
+    spell: Spell(..support.exempt(), cast_time_ms: 0),
+    kinds: [
+      spell_plan.ModifierEffect(
+        spell_plan.PropertyModifier(..lifeless_modifier(), condition:),
+      ),
+      spell_plan.LastingEffect(spell_plan.Lasting(
+        effect_id: Spell4EffectsId(1),
+        phase_flags: -1,
+        aim: spell_plan.AimsAtCaster,
+        row: lasting.LastingRow(
+          delay_ms: 0,
+          duration_ms: 0,
+          until_removed: True,
+        ),
+        condition:,
+        tag: spend.always,
+      )),
+    ],
+  )
+}
+
+/// A property modifier whose row has neither a durationTime nor flags bit 2.
+fn lifeless_modifier() -> spell_plan.PropertyModifier {
+  spell_plan.PropertyModifier(
+    ..support.falling_row(),
+    effect_id: Spell4EffectsId(2),
+    phase_flags: -1,
+    row: lasting.LastingRow(delay_ms: 0, duration_ms: 0, until_removed: False),
+  )
+}
+
+pub fn rolls_needed_counts_no_roll_for_a_modifier_with_no_life_test() -> Nil {
+  use <- owned_test.run(5000)
+  let spell =
+    lifeless_modifier_and_lasting(
+      condition: spell_plan.GatedOnCaster(gates: [chance_gate()]),
+    )
+  let #(state, asked) = live_go_of(spell:)
+  assert cast_gate.rolls_needed(
+      cast: state,
+      caster: support.caster().unit_id,
+      cast_id: asked.cast_id,
+      phase: asked.phase,
+      struck: [],
+    )
+    == 1
+    as "`lasting.has_life`: a property modifier with neither a durationTime nor flags bit 2 is no time to be changed for, so the go checks no gate for it and its type 37 condition draws no roll; the lasting row's alone is counted"
+  assert passed_with(spell:, rolls: [50, 51]) == #([1], [51])
+    as "the lasting row's gate takes the go's first roll (Prerequisite 4585 passes a roll of at most 50) and the second roll is left"
+  assert cast_gate.gates_checked_on_caster(
+      kind: spell_plan.ModifierEffect(modifier: lifeless_modifier()),
+    )
+    == Error(Nil)
+    as "one filter decides the count and the check: a modifier with no life has no gates"
+}

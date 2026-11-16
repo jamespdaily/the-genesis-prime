@@ -31,6 +31,7 @@ import genesis_prime/game/cast/state.{
   GateFails, Given, Hit, HitCreature, Immune, Log, NotApplied, Starts, Withheld,
 } as cast_state
 import genesis_prime/game/class_resource
+import genesis_prime/game/lasting
 import genesis_prime/game/prerequisite
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/spell_area
@@ -599,7 +600,10 @@ pub fn gates_checked_on_caster(
     spell_plan.RemoveEffect(remove: row) ->
       Ok(caster_gates(condition: row.condition))
     spell_plan.ModifierEffect(modifier: row) ->
-      Ok(caster_gates(condition: row.condition))
+      case lasting.has_life(row: row.row) {
+        True -> Ok(caster_gates(condition: row.condition))
+        False -> Error(Nil)
+      }
     spell_plan.StruckMoveEffect(struck_move: row) ->
       Ok(caster_gates(condition: row.condition))
     spell_plan.HealEffect(heal: row) ->

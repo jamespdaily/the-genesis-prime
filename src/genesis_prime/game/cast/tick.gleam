@@ -18,16 +18,16 @@ import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/heal as cast_heal
 import genesis_prime/game/cast/state.{
   type Aimed, type Caster, type Effect, type GateDecision, type Holder,
-  type Paid, type State, type StrikeGate, type Struck, type TargetVerdict,
-  type TickAsked, type TickKey, type Ticking, type TickingOn, type Verdict,
-  Absorb, Accept, CancelTimer, Caster, CasterChangeStarts, CasterSide,
-  ChargeLevel, CooldownModifierEnds, CooldownModifierStarts, DamageTick,
-  Deflected, Finish, ForcedMoveStart, Go, Heal, HealTick, Healed, Hit, Immune,
-  Lingering, Live, Look, ModifierEnd, ModifierStart, NodesEnd, NotBuilt,
-  PrerequisitesIssue, ProcDue, Property, Refuse, RepeatHeld, RestrictionEnd,
-  Send, StartChild, StartHeld, Starts, State, StateEnd, TargetChangeEnds,
-  TargetModifierStart, Tell, Tick, TickAsked, TickKey, TickStrike, Ticking,
-  UnitSide, WindowEnd,
+  type Paid, type Reached, type State, type StrikeGate, type Struck,
+  type TargetVerdict, type TickAsked, type TickKey, type Ticking, type TickingOn,
+  type Verdict, Absorb, Accept, CancelTimer, Caster, CasterChangeStarts,
+  CasterSide, ChargeLevel, CooldownModifierEnds, CooldownModifierStarts,
+  DamageTick, Deflected, Finish, ForcedMoveStart, Go, Heal, HealTick, Healed,
+  Hit, Immune, Lingering, Live, Look, ModifierEnd, ModifierStart, NodesEnd,
+  NotBuilt, PrerequisitesIssue, ProcDue, Property, Refuse, RepeatHeld,
+  RestrictionEnd, Send, StartChild, StartHeld, Starts, State, StateEnd,
+  TargetChangeEnds, TargetModifierStart, Tell, Tick, TickAsked, TickKey,
+  TickStrike, Ticking, UnitSide, WindowEnd,
 } as cast_state
 import genesis_prime/game/class_resource
 import genesis_prime/game/cooldown
@@ -1145,17 +1145,45 @@ pub fn split_cast(
 pub fn nodes_aimed(aimed aimed: Aimed) -> List(Int) {
   list.unique(
     list.flatten([
-      list.map(aimed.lasting, fn(entry) { entry.1 }),
-      list.map(aimed.modifiers, fn(entry) { entry.1 }),
-      list.map(aimed.cooldowns, fn(entry) { entry.1 }),
-      list.map(aimed.stealth, fn(entry) { entry.1 }),
-      list.map(aimed.procs, fn(entry) { entry.1 }),
-      list.map(aimed.heals, fn(entry) { entry.1 }),
+      list.filter_map(aimed.reached, fn(entry) {
+        node_row_of(entry:) |> result.map(fn(_) { entry.unit_id })
+      }),
       list.map(aimed.controls, fn(entry) { entry.1 }),
       list.map(aimed.restrictions, fn(entry) { entry.1 }),
       list.map(aimed.ticking, fn(row) { row.unit_id }),
     ]),
   )
+}
+
+/// The life a reached effect gives the node on its unit: a Fluff row, a property or
+/// cooldown modifier, a stealth and a proc row live their own delay and duration, a heal
+/// applied at once lives its delay so the 0x7fe waits for it. The other kinds give the node
+/// no life: they land at the go, or their own state (a crowd-control state, a periodic
+/// row) gives it.
+fn node_row_of(entry entry: Reached) -> Result(lasting.LastingRow, Nil) {
+  case entry.effect.kind, entry.product {
+    spell_plan.LastingEffect(lasting: row), _ -> Ok(row.row)
+    spell_plan.ModifierEffect(modifier: row), _ -> Ok(row.row)
+    spell_plan.CooldownEffect(modifier: row), _ -> Ok(row.row)
+    spell_plan.StealthEffect(stealth: row), _ -> Ok(row.row)
+    spell_plan.ProcEffect(proc: row), _ -> Ok(row.row)
+    spell_plan.HealEffect(..), cast_state.Healing(healed:) ->
+      Ok(lasting.LastingRow(
+        delay_ms: healed.delay_ms,
+        duration_ms: 0,
+        until_removed: False,
+      ))
+    spell_plan.HealEffect(..), cast_state.Plain
+    | spell_plan.HealEffect(..), cast_state.CooldownKept(..)
+    | spell_plan.ProxyEffect(..), _
+    | spell_plan.GainEffect(..), _
+    | spell_plan.RemoveEffect(..), _
+    | spell_plan.ForcedMoveEffect(..), _
+    | spell_plan.StruckMoveEffect(..), _
+    | spell_plan.RemoveStealthEffect(..), _
+    | spell_plan.ControlEffect(..), _
+    -> Error(Nil)
+  }
 }
 
 /// The node a go gives one unit from the node its cast holds there and the Fluff rows
@@ -1171,49 +1199,12 @@ pub fn node_of(
   now_ms now_ms: Int,
 ) -> Result(lasting.Node, Nil) {
   let rows =
-    list.flatten([
-      list.filter_map(aimed.lasting, fn(entry) {
-        case entry.1 == unit_id {
-          True -> Ok(entry.0.row)
-          False -> Error(Nil)
-        }
-      }),
-      list.filter_map(aimed.modifiers, fn(entry) {
-        case entry.1 == unit_id {
-          True -> Ok(entry.0.row)
-          False -> Error(Nil)
-        }
-      }),
-      list.filter_map(aimed.cooldowns, fn(entry) {
-        case entry.1 == unit_id {
-          True -> Ok(entry.0.row)
-          False -> Error(Nil)
-        }
-      }),
-      list.filter_map(aimed.stealth, fn(entry) {
-        case entry.1 == unit_id {
-          True -> Ok(entry.0.row)
-          False -> Error(Nil)
-        }
-      }),
-      list.filter_map(aimed.procs, fn(entry) {
-        case entry.1 == unit_id {
-          True -> Ok(entry.0.row)
-          False -> Error(Nil)
-        }
-      }),
-      list.filter_map(aimed.heals, fn(entry) {
-        case entry.1 == unit_id {
-          True ->
-            Ok(lasting.LastingRow(
-              delay_ms: { entry.0 }.delay_ms,
-              duration_ms: 0,
-              until_removed: False,
-            ))
-          False -> Error(Nil)
-        }
-      }),
-    ])
+    list.filter_map(aimed.reached, fn(entry) {
+      case entry.unit_id == unit_id {
+        True -> node_row_of(entry:)
+        False -> Error(Nil)
+      }
+    })
   let rows =
     list.append(
       rows,
