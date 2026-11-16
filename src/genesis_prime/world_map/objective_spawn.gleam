@@ -63,6 +63,7 @@
 
 import genesis_prime/content/refusal.{type Refusal}
 import genesis_prime/game/objective
+import genesis_prime/game/objective_kind
 import genesis_prime/game/objective_link
 import genesis_prime/game/place_objective
 import genesis_prime/game/quest_log
@@ -139,12 +140,6 @@ pub type Why {
   NotStarted(creature_id: Int, unit_type: Int)
 }
 
-/// The objective types of a kill that names a creature or a group of them, with
-/// a marker: 2 names a Creature2 id, 8 and 16 a TargetGroup.
-fn is_placed_kind(objective objective: QuestObjective) -> Bool {
-  objective.type_ == 2 || objective.type_ == 8 || objective.type_ == 16
-}
-
 /// A marker of an objective: its row and the place its centre is.
 type Marker {
   Marker(row: WorldLocation2, place: Place)
@@ -180,11 +175,16 @@ pub fn place(
 ) -> Placed {
   let objectives =
     quest_objective.all(tables)
-    |> list.filter(fn(objective) { is_placed_kind(objective:) })
+    |> list.filter_map(fn(objective) {
+      result.map(
+        objective_kind.placed_target(objective_kind.of_row(objective)),
+        fn(named) { #(objective, named) },
+      )
+    })
   let worlds = set.from_list(list.map(stored, fn(row) { row.world_id }))
   let planned =
-    list.map(objectives, fn(objective) {
-      plan(tables:, worlds:, kinds:, objective:)
+    list.map(objectives, fn(pair) {
+      plan(tables:, worlds:, kinds:, objective: pair.0, named: pair.1)
     })
   let skipped =
     planned
@@ -455,14 +455,16 @@ fn plan(
   worlds worlds: Set(Int),
   kinds kinds: Kinds,
   objective objective: QuestObjective,
+  named named: objective_kind.PlacedTarget,
 ) -> #(option.Option(Job), List(Skipped)) {
   let marker_ids = place_objective.marker_ids(objective:)
   case marker_ids {
     [] -> #(None, [])
     _ -> {
-      let creature_ids = case objective.type_ {
-        2 -> [objective.data]
-        _ -> target_group.listed_creatures(tables:, group: objective.data)
+      let creature_ids = case named {
+        objective_kind.OneCreature(creature2_id:) -> [creature2_id.value]
+        objective_kind.GroupOf(target_group_id:) ->
+          target_group.listed_creatures(tables:, group: target_group_id.value)
       }
       let no_group = case creature_ids {
         [] -> [Skipped(objective.id, NamesNoCreature(group_id: objective.data))]

@@ -76,9 +76,9 @@ import genesis_prime/game/damage
 import genesis_prime/game/faction_level
 import genesis_prime/game/hit
 import genesis_prime/game/hit_radius
+import genesis_prime/game/objective_kind
 import genesis_prime/game/objective_link
 import genesis_prime/game/prerequisite.{type Prerequisite}
-import genesis_prime/game/quest_log
 import genesis_prime/game/rating.{type Formulas}
 import genesis_prime/game/spell_area
 import genesis_prime/game/start_place.{type Place}
@@ -331,7 +331,7 @@ pub fn world_spawns(
 }
 
 /// The spawns that go with a used object, for each spawn of the world, creature or
-/// static object, whose creature a type 12 objective of the tables names (`quest_log.use_a_creature_type`,
+/// static object, whose creature a type 12 objective of the tables names (`objective_kind.UseCreature`,
 /// the objective's data): the spawns of the same world at the same x and z, within
 /// 0.01 m, whose own creature no type 12 objective names, in spawn id order. y is
 /// not compared, since a captive stands up to 1.3 m off its trap. A spawn with no
@@ -343,8 +343,10 @@ pub fn captives(
 ) -> Dict(SpawnId, List(SpawnId)) {
   let named =
     quest_objective.all(tables)
-    |> list.filter(fn(row) { row.type_ == quest_log.use_a_creature_type })
-    |> list.map(fn(row) { row.data })
+    |> list.filter_map(fn(row) {
+      objective_kind.used_creature(objective_kind.of_row(row))
+      |> result.map(fn(creature2_id) { creature2_id.value })
+    })
     |> set.from_list
   let is_named = fn(creature_id: Creature2Id) {
     set.contains(named, creature_id.value)

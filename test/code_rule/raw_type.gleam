@@ -49,12 +49,6 @@ pub type Gap {
 /// Every site in `src/`, and the open issue whose work removes it.
 pub const known_gaps = [
   Gap(
-    path: "src/genesis_prime/game/departures.gleam",
-    function: "counts_its_terminal",
-    sites: 1,
-    issue: 888,
-  ),
-  Gap(
     path: "src/genesis_prime/game/equip_requirement.gleam",
     function: "offered",
     sites: 1,
@@ -151,36 +145,6 @@ pub const known_gaps = [
     issue: 890,
   ),
   Gap(
-    path: "src/genesis_prime/game/place_objective.gleam",
-    function: "at_marker",
-    sites: 1,
-    issue: 888,
-  ),
-  Gap(
-    path: "src/genesis_prime/game/place_objective.gleam",
-    function: "is_place_counted",
-    sites: 1,
-    issue: 888,
-  ),
-  Gap(
-    path: "src/genesis_prime/game/place_objective.gleam",
-    function: "repeated",
-    sites: 1,
-    issue: 888,
-  ),
-  Gap(
-    path: "src/genesis_prime/game/place_objective.gleam",
-    function: "unmarked",
-    sites: 1,
-    issue: 888,
-  ),
-  Gap(
-    path: "src/genesis_prime/game/projector.gleam",
-    function: "objective_broken",
-    sites: 1,
-    issue: 888,
-  ),
-  Gap(
     path: "src/genesis_prime/game/quest_log.gleam",
     function: "as_logged",
     sites: 1,
@@ -194,27 +158,9 @@ pub const known_gaps = [
   ),
   Gap(
     path: "src/genesis_prime/game/quest_log.gleam",
-    function: "is_checklist",
-    sites: 1,
-    issue: 888,
-  ),
-  Gap(
-    path: "src/genesis_prime/game/quest_log.gleam",
     function: "is_percent_kind",
     sites: 1,
     issue: 890,
-  ),
-  Gap(
-    path: "src/genesis_prime/game/quest_log.gleam",
-    function: "is_placeholder",
-    sites: 1,
-    issue: 888,
-  ),
-  Gap(
-    path: "src/genesis_prime/game/quest_log.gleam",
-    function: "reused_unit_objectives",
-    sites: 1,
-    issue: 888,
   ),
   Gap(
     path: "src/genesis_prime/game/quest_turn_in.gleam",
@@ -245,12 +191,6 @@ pub const known_gaps = [
     function: "accepted",
     sites: 1,
     issue: 891,
-  ),
-  Gap(
-    path: "src/genesis_prime/game/shortcut_spell.gleam",
-    function: "build",
-    sites: 1,
-    issue: 888,
   ),
   Gap(
     path: "src/genesis_prime/game/shortcut_spell.gleam",
@@ -295,18 +235,6 @@ pub const known_gaps = [
     issue: 891,
   ),
   Gap(
-    path: "src/genesis_prime/world_map/checklist_index.gleam",
-    function: "checklists",
-    sites: 1,
-    issue: 888,
-  ),
-  Gap(
-    path: "src/genesis_prime/world_map/checklist_index.gleam",
-    function: "is_target",
-    sites: 1,
-    issue: 888,
-  ),
-  Gap(
     path: "src/genesis_prime/world_map/creature_guard_spells.gleam",
     function: "guard_of",
     sites: 1,
@@ -320,27 +248,9 @@ pub const known_gaps = [
   ),
   Gap(
     path: "src/genesis_prime/world_map/objective_spawn.gleam",
-    function: "is_placed_kind",
-    sites: 3,
-    issue: 888,
-  ),
-  Gap(
-    path: "src/genesis_prime/world_map/objective_spawn.gleam",
     function: "paired_unit_type",
     sites: 1,
     issue: 891,
-  ),
-  Gap(
-    path: "src/genesis_prime/world_map/objective_spawn.gleam",
-    function: "plan",
-    sites: 1,
-    issue: 888,
-  ),
-  Gap(
-    path: "src/genesis_prime/world_map/spawn.gleam",
-    function: "captives",
-    sites: 1,
-    issue: 888,
   ),
   Gap(
     path: "src/genesis_prime/world_map/spawn.gleam",
