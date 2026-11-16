@@ -34,6 +34,7 @@ import genesis_prime/game/class_resource
 import genesis_prime/game/prerequisite
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/spell_area
+import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{type Proxy, type Spell}
 import genesis_prime/step.{LogDebug}
 import genesis_prime/table/id.{type Spell4EffectsId}
@@ -61,142 +62,82 @@ pub fn rolls_needed(
 ) -> Int {
   case dict.get(cast.casts, cast_id) {
     Error(Nil) -> 0
-    Ok(live) -> {
-      let spell = live.spell
-      let proxies =
-        proxies_with_targets(spell:, phase:, struck:, spent: live.spent)
-      int.sum(
-        list.flatten([
-          list.map(proxies, fn(proxy) {
-            strike_rolls_needed(
-              condition: proxy.condition,
-              units: case proxy.target {
-                spell_plan.OnCaster -> 1
-                spell_plan.OnEachStruck -> list.length(hit_units(struck:))
-              },
-            )
-          }),
-          list.map(
-            gains_of(spell:, phase:, proxies:, spent: live.spent),
-            gain_rolls_needed,
-          ),
-          list.map(
-            spell_plan.lasting_in_phase(spell:, phase:, spent: live.spent),
-            fn(row) {
-              strike_rolls_needed(
-                condition: row.condition,
-                units: units_reached(
-                  aim: row.aim,
-                  caster:,
-                  primary_target: live.primary_target,
-                  struck:,
-                ),
-              )
-            },
-          ),
-          list.map(
-            spell_plan.removes_in_phase(spell:, phase:, spent: live.spent),
-            fn(row) {
-              strike_rolls_needed(
-                condition: row.condition,
-                units: units_reached(
-                  aim: row.aim,
-                  caster:,
-                  primary_target: live.primary_target,
-                  struck:,
-                ),
-              )
-            },
-          ),
-          list.map(
-            spell_plan.modifiers_in_phase(spell:, phase:, spent: live.spent),
-            fn(row) {
-              strike_rolls_needed(
-                condition: row.condition,
-                units: units_reached(
-                  aim: spell_plan.modifier_aim(modifier: row),
-                  caster:,
-                  primary_target: live.primary_target,
-                  struck:,
-                ),
-              )
-            },
-          ),
-          list.map(
-            spell_plan.forced_moves_in_phase(spell:, phase:, spent: live.spent),
-            fn(row) {
-              gates_rolls_needed(only_on_caster_gates(condition: row.condition))
-            },
-          ),
-          list.map(
-            spell_plan.struck_moves_in_phase(spell:, phase:, spent: live.spent),
-            fn(row) {
-              strike_rolls_needed(
-                condition: row.condition,
-                units: units_reached(
-                  aim: row.aim,
-                  caster:,
-                  primary_target: live.primary_target,
-                  struck:,
-                ),
-              )
-            },
-          ),
-          list.map(
-            spell_plan.cooldown_modifiers_in_phase(
-              spell:,
-              phase:,
-              spent: live.spent,
-            ),
-            fn(row) {
-              gates_rolls_needed(only_on_caster_gates(condition: row.condition))
-            },
-          ),
-          list.map(
-            spell_plan.stealth_in_phase(spell:, phase:, spent: live.spent),
-            fn(row) {
-              gates_rolls_needed(only_on_caster_gates(condition: row.condition))
-            },
-          ),
-          list.map(
-            spell_plan.remove_stealth_in_phase(
-              spell:,
-              phase:,
-              spent: live.spent,
-            ),
-            fn(row) {
-              gates_rolls_needed(only_on_caster_gates(condition: row.condition))
-            },
-          ),
-          list.map(
-            spell_plan.procs_in_phase(spell:, phase:, spent: live.spent),
-            fn(row) {
-              gates_rolls_needed(only_on_caster_gates(condition: row.condition))
-            },
-          ),
-          list.map(
-            spell_plan.heals_in_phase(spell:, phase:, spent: live.spent),
-            fn(row) {
-              strike_rolls_needed(
-                condition: row.condition,
-                units: units_reached(
-                  aim: row.aim,
-                  caster:,
-                  primary_target: live.primary_target,
-                  struck:,
-                ),
-              )
-            },
-          ),
-          list.map(
-            spell_plan.restrictions_in_phase(spell:, phase:, spent: live.spent),
-            fn(row) {
-              gates_rolls_needed(only_on_caster_gates(condition: row.condition))
-            },
-          ),
-        ]),
+    Ok(live) ->
+      spell_effect.in_phase(
+        effects: live.spell.effects,
+        phase:,
+        spent: live.spent,
       )
-    }
+      |> list.map(fn(planned) {
+        effect_rolls_needed(
+          kind: planned.kind,
+          caster:,
+          primary_target: live.primary_target,
+          struck:,
+        )
+      })
+      |> int.sum
+  }
+}
+
+/// The rolls the go takes for one effect of its phase, by its kind: a Proxy that has a unit
+/// to start a child on takes those of its gate and of the gains lifted onto it; a gain, those
+/// of its caster-side gates; the other kinds those of their gates for each unit they reach
+/// (`strike_rolls_needed`) or against the caster alone (`only_on_caster_gates`). A crowd-control
+/// row takes none unless it reaches the caster: the strike's own rolls count the others.
+fn effect_rolls_needed(
+  kind kind: spell_plan.Kind,
+  caster caster: Int,
+  primary_target primary_target: Int,
+  struck struck: List(Struck),
+) -> Int {
+  let reached = fn(aim) {
+    units_reached(aim:, caster:, primary_target:, struck:)
+  }
+  case kind {
+    spell_plan.ProxyEffect(proxy:) ->
+      case starts_a_child(proxy:, hit: hit_units(struck:) != []) {
+        False -> 0
+        True ->
+          strike_rolls_needed(
+            condition: proxy.condition,
+            units: case proxy.target {
+              spell_plan.OnCaster -> 1
+              spell_plan.OnEachStruck -> list.length(hit_units(struck:))
+            },
+          )
+          + int.sum(list.map(lifted_gains(proxy:), gain_rolls_needed))
+      }
+    spell_plan.GainEffect(gain:) -> gain_rolls_needed(gain)
+    spell_plan.LastingEffect(lasting: row) ->
+      strike_rolls_needed(condition: row.condition, units: reached(row.aim))
+    spell_plan.RemoveEffect(remove: row) ->
+      strike_rolls_needed(condition: row.condition, units: reached(row.aim))
+    spell_plan.ModifierEffect(modifier: row) ->
+      strike_rolls_needed(
+        condition: row.condition,
+        units: reached(spell_plan.modifier_aim(modifier: row)),
+      )
+    spell_plan.StruckMoveEffect(struck_move: row) ->
+      strike_rolls_needed(condition: row.condition, units: reached(row.aim))
+    spell_plan.HealEffect(heal: row) ->
+      strike_rolls_needed(condition: row.condition, units: reached(row.aim))
+    spell_plan.ForcedMoveEffect(forced_move: row) ->
+      gates_rolls_needed(only_on_caster_gates(condition: row.condition))
+    spell_plan.CooldownEffect(modifier: row) ->
+      gates_rolls_needed(only_on_caster_gates(condition: row.condition))
+    spell_plan.StealthEffect(stealth: row) ->
+      gates_rolls_needed(only_on_caster_gates(condition: row.condition))
+    spell_plan.RemoveStealthEffect(remove: row) ->
+      gates_rolls_needed(only_on_caster_gates(condition: row.condition))
+    spell_plan.ProcEffect(proc: row) ->
+      gates_rolls_needed(only_on_caster_gates(condition: row.condition))
+    spell_plan.ControlEffect(control: row) ->
+      case spell_plan.reaches_caster(aim: row.aim) {
+        True ->
+          gates_rolls_needed(only_on_caster_gates(condition: row.condition))
+        False -> 0
+      }
   }
 }
 
@@ -275,11 +216,17 @@ pub fn proxies_with_targets(
 ) -> List(Proxy) {
   let hit = hit_units(struck:) != []
   list.filter(spell_plan.proxies_in_phase(spell:, phase:, spent:), fn(proxy) {
-    case proxy.target {
-      spell_plan.OnCaster -> True
-      spell_plan.OnEachStruck -> hit
-    }
+    starts_a_child(proxy:, hit:)
   })
+}
+
+/// Whether a Proxy has a unit to start a child on: one aimed at the caster always has, one
+/// aimed at each struck unit when the round has a Hit.
+fn starts_a_child(proxy proxy: Proxy, hit hit: Bool) -> Bool {
+  case proxy.target {
+    spell_plan.OnCaster -> True
+    spell_plan.OnEachStruck -> hit
+  }
 }
 
 /// The gains of a Proxy's child that the go of its parent gives once (the gains the

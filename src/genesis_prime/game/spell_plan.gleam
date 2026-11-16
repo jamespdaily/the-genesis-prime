@@ -6181,16 +6181,6 @@ pub fn units_aimed_at(
   list.unique(list.flatten([caster_unit, target_unit, area_units]))
 }
 
-/// The Proc effects of the spell that apply in phase `phase`, those whose tag holds for
-/// the points the cast spent.
-pub fn procs_in_phase(
-  spell spell: Spell,
-  phase phase: Int,
-  spent spent: Option(Int),
-) -> List(ProcRow) {
-  view(spell:, phase:, spent:, as_kind: as_proc)
-}
-
 /// The Fluff effects of the spell that apply in phase `phase`, those whose tag holds
 /// for the points the cast spent.
 pub fn lasting_in_phase(
@@ -6267,36 +6257,6 @@ pub fn cooldown_modifiers_in_phase(
   spent spent: Option(Int),
 ) -> List(CooldownModifier) {
   view(spell:, phase:, spent:, as_kind: as_cooldown_modifier)
-}
-
-/// The SpellForceRemove effects of the spell that apply in phase `phase`, those
-/// whose tag holds for the points the cast spent.
-pub fn removes_in_phase(
-  spell spell: Spell,
-  phase phase: Int,
-  spent spent: Option(Int),
-) -> List(ForceRemove) {
-  view(spell:, phase:, spent:, as_kind: as_remove)
-}
-
-/// The Stealth effects of the spell that apply in phase `phase`, those whose tag holds
-/// for the points the cast spent.
-pub fn stealth_in_phase(
-  spell spell: Spell,
-  phase phase: Int,
-  spent spent: Option(Int),
-) -> List(StealthRow) {
-  view(spell:, phase:, spent:, as_kind: as_stealth)
-}
-
-/// The RemoveStealth effects of the spell that apply in phase `phase`, those whose tag
-/// holds for the points the cast spent.
-pub fn remove_stealth_in_phase(
-  spell spell: Spell,
-  phase phase: Int,
-  spent spent: Option(Int),
-) -> List(RemoveStealthRow) {
-  view(spell:, phase:, spent:, as_kind: as_remove_stealth)
 }
 
 /// The CCStateSet effects of the spell aimed at creatures that apply in phase `phase`,

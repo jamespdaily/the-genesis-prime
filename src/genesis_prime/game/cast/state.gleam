@@ -27,6 +27,7 @@ import genesis_prime/game/proc
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/shortcut_spell
 import genesis_prime/game/spell_area
+import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{type Proxy, type Spell}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
@@ -1066,22 +1067,22 @@ pub fn next_cast_id(cast cast: State, caster caster: Caster) -> Int {
   )
 }
 
-/// The Fluff and SpellForceRemove effects of a go that apply, after their gates
-/// against the caster.
+/// The effects of a go that apply once their gates against the caster have passed: the
+/// Fluff, SpellForceRemove, property modifier, forced move, struck move, cooldown, Stealth,
+/// RemoveStealth, Proc, heal and crowd-control effects (a Proxy's and a gain's gates are
+/// `cast_gate.proxy_gates` and `cast_gate.gains_given`), in the plan's rank order
+/// (`spell_plan.kind_rank`), which is the order their gates were checked in.
 pub type Applied {
-  Applied(
-    lasting: List(spell_plan.Lasting),
-    removes: List(spell_plan.ForceRemove),
-    modifiers: List(spell_plan.PropertyModifier),
-    forced_moves: List(spell_plan.ForcedMove),
-    struck_moves: List(spell_plan.StruckMove),
-    cooldowns: List(spell_plan.CooldownModifier),
-    stealth: List(spell_plan.StealthRow),
-    remove_stealth: List(spell_plan.RemoveStealthRow),
-    procs: List(spell_plan.ProcRow),
-    heals: List(spell_plan.Heal),
-    restrictions: List(spell_plan.CrowdControl),
-  )
+  Applied(passed: List(spell_effect.PlannedEffect(spell_plan.Kind)))
+}
+
+/// The rows of one kind among the effects a go let pass, in rank order (`as_kind` is the
+/// kind's projection, such as `spell_plan.as_proc`).
+pub fn passed_of(
+  applied applied: Applied,
+  as_kind as_kind: fn(spell_plan.Kind) -> Result(payload, Nil),
+) -> List(payload) {
+  list.filter_map(applied.passed, fn(planned) { as_kind(planned.kind) })
 }
 
 /// What a go lists on one unit beside the damage it struck: the effect, its delay
