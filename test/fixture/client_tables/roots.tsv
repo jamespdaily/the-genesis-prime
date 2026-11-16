@@ -915,3 +915,5 @@ Spell4	34717	Spellslinger Charged Shot press of base 20683 with two gated Proxy 
 Spell4	34011	the ChargeRelease spell a proxy press resolves to, with 4000 ms and four threshold rows	cast_proxy_press_test
 Spell4	34719	Spellslinger Charged Shot, Surged: the alternate of a Surge press, with its own ChargeRelease threshold	cast_proxy_press_test
 Spell4	1421	Warrior Sword Strike, auto attack 2: a threshold-kind spell with no Proxy that stays refused	spell_plan_proxy_press_test
+Quest2	6296	quest of a kill, a use of a creature and a hidden scripted objective	objective_hidden_test
+Creature2	45639	Lucy Lazarin, the receiver of quest 6296	objective_hidden_test

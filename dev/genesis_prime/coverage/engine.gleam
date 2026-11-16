@@ -203,7 +203,7 @@ fn quest_objectives() -> EngineDeclaration {
       ),
       Missing(
         type_number: 5,
-        reason: "a use of a creature linked to the objective by its row (a finished activate cast, or a use with no activate spell) counts one, which is a guess; 250 of the 1556 rows have a linked creature, and the rest have no source; the 12 linked creatures whose Collect click sends 0x14f are not counted, and a linked creature with no stored spawn is not placed (the issue \"A click target with no spawn stands at its objective's marker\")",
+        reason: "a use of a creature linked to the objective by its row (a finished activate cast, or a use with no activate spell) counts one, which is a guess; 250 of the 1556 rows have a linked creature, and the rest have no source; the 12 linked creatures whose Collect click sends 0x14f are not counted, and a linked creature with no stored spawn is not placed (the issue \"A click target with no spawn stands at its objective's marker\"); a hidden row (flag 8) with data 0 that no creature links, 91 hidden data 0 rows less the 8 whose slot a creature links, is completed by the server once its quest's other required objectives are done, which is a server choice (the issue \"A hidden scripted objective with no target completes once its quest's other required objectives are done\")",
         fact_key: "QuestObjective.type.5",
       ),
       Missing(
