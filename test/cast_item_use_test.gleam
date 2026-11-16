@@ -22,7 +22,8 @@ import cast_support as support
 import fixture_tables
 import genesis_prime/client_connection.{CastStarted}
 import genesis_prime/game/activate.{type Target, Body, NoLink, Usable}
-import genesis_prime/game/cast.{type Effect, type State}
+import genesis_prime/game/cast
+import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
 import genesis_prime/game/item_use
 import genesis_prime/game/prerequisite
 import genesis_prime/game/quest_log.{type QuestLog}
@@ -82,7 +83,7 @@ fn tables() -> table_store.Tables {
 }
 
 /// A level 20 player who holds quest 4743, accepted.
-fn throwing() -> cast.Caster {
+fn throwing() -> cast_state.Caster {
   standing(
     level: 20,
     quests: quest_support.log_of(rows: [
@@ -92,9 +93,9 @@ fn throwing() -> cast.Caster {
 }
 
 /// The caster stands at a place of exactly representable numbers.
-fn standing(level level: Int, quests quests: QuestLog) -> cast.Caster {
+fn standing(level level: Int, quests quests: QuestLog) -> cast_state.Caster {
   let caster = support.caster()
-  cast.Caster(
+  cast_state.Caster(
     ..caster,
     place: place_support.at(
       world_id: 3460,
@@ -163,12 +164,12 @@ fn the_body(
 fn use_with(
   tables tables: table_store.Tables,
   state state: State,
-  caster caster: cast.Caster,
+  caster caster: cast_state.Caster,
   held held: Option(Int),
   body body: BitArray,
   target target: Target,
   at ms: Int,
-) -> Result(#(State, List(Effect)), cast.Refusal) {
+) -> Result(#(State, List(Effect)), cast_state.Refusal) {
   cast.use_item(
     cast: state,
     body:,
@@ -225,11 +226,11 @@ fn use_with(
 /// The use of item `item`, held at its place, at the unit `its_unit`.
 fn use_item_at(
   state state: State,
-  caster caster: cast.Caster,
+  caster caster: cast_state.Caster,
   item item: Int,
   target target: Target,
   at ms: Int,
-) -> Result(#(State, List(Effect)), cast.Refusal) {
+) -> Result(#(State, List(Effect)), cast_state.Refusal) {
   use_item_in(tables: tables(), state:, caster:, item:, target:, at: ms)
 }
 
@@ -237,11 +238,11 @@ fn use_item_at(
 fn use_item_in(
   tables tables: table_store.Tables,
   state state: State,
-  caster caster: cast.Caster,
+  caster caster: cast_state.Caster,
   item item: Int,
   target target: Target,
   at ms: Int,
-) -> Result(#(State, List(Effect)), cast.Refusal) {
+) -> Result(#(State, List(Effect)), cast_state.Refusal) {
   use_with(
     tables:,
     state:,
@@ -275,7 +276,7 @@ fn refused_with(effects effects: List(Effect)) -> List(#(Int, Int, Int)) {
 
 /// The use is taken, and answered with the one refusal and nothing else.
 fn refusal_of(
-  taken taken: Result(#(State, List(Effect)), cast.Refusal),
+  taken taken: Result(#(State, List(Effect)), cast_state.Refusal),
 ) -> #(Int, Int) {
   let assert Ok(#(_, effects)) = taken as "an item use that fits is answered"
   let assert [#(cast_id, spell4_id, result)] = refused_with(effects:)
@@ -293,7 +294,7 @@ pub fn item_use_with_client_cast_id_0_ends_the_connection_test() -> Nil {
   use <- owned_test.run(10_000)
   assert use_with(
       tables: tables(),
-      state: cast.new(),
+      state: cast_state.new(),
       caster: throwing(),
       held: Some(grenade),
       body: the_body(
@@ -304,7 +305,7 @@ pub fn item_use_with_client_cast_id_0_ends_the_connection_test() -> Nil {
       target: shown(creature_id: a_slaver_shack, metres: 10.0),
       at: 1000,
     )
-    == Error(cast.NoClientCastId)
+    == Error(cast_state.NoClientCastId)
     as "the client's cast counter starts at 1, so a 0x943 of cast id 0 is not the client's"
   Nil
 }
@@ -319,10 +320,10 @@ pub fn item_use_the_reader_refuses_ends_the_connection_test() -> Nil {
     )
   let assert Ok(short) = bit_array.slice(body, 0, bit_array.byte_size(body) - 1)
     as "the body has a last byte to drop"
-  let assert Error(cast.NotDecoded(..)) =
+  let assert Error(cast_state.NotDecoded(..)) =
     use_with(
       tables: tables(),
-      state: cast.new(),
+      state: cast_state.new(),
       caster: throwing(),
       held: Some(grenade),
       body: short,
@@ -335,7 +336,7 @@ pub fn item_use_the_reader_refuses_ends_the_connection_test() -> Nil {
 
 pub fn item_use_at_an_empty_place_is_refused_22_test() -> Nil {
   use <- owned_test.run(10_000)
-  let state = cast.new()
+  let state = cast_state.new()
   let assert Ok(#(after, effects)) =
     use_with(
       tables: tables(),
@@ -366,7 +367,7 @@ pub fn item_use_of_an_item_with_no_spell_ends_the_connection_test() -> Nil {
   ])
   assert use_with(
       tables:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: throwing(),
       held: Some(grenade),
       body: the_body(
@@ -377,7 +378,7 @@ pub fn item_use_of_an_item_with_no_spell_ends_the_connection_test() -> Nil {
       target: shown(creature_id: a_slaver_shack, metres: 10.0),
       at: 1000,
     )
-    == Error(cast.NoItemSpell)
+    == Error(cast_state.NoItemSpell)
     as "UseItem 0x1403998e0 sends no 0x943 for an item with no spell (it answers 0x35b or 0x17), so a held item with none is not the client's"
   Nil
 }
@@ -386,7 +387,7 @@ pub fn the_grenade_at_a_slaver_shack_starts_the_activate_cast_test() -> Nil {
   use <- owned_test.run(10_000)
   let assert Ok(#(_, effects)) =
     use_item_at(
-      state: cast.new(),
+      state: cast_state.new(),
       caster: throwing(),
       item: grenade,
       target: shown(creature_id: a_slaver_shack, metres: 10.0),
@@ -416,7 +417,7 @@ pub fn the_grenade_go_raises_activated_for_the_shack_test() -> Nil {
   use <- owned_test.run(10_000)
   let assert Ok(#(_, effects)) =
     use_item_at(
-      state: cast.new(),
+      state: cast_state.new(),
       caster: throwing(),
       item: grenade,
       target: shown(creature_id: a_slaver_shack, metres: 10.0),
@@ -436,7 +437,7 @@ pub fn the_grenade_go_raises_activated_for_the_shack_test() -> Nil {
     == [#(its_unit, [43_805])]
     as "the go names the shack with the effect info of Spell4Effects 43805, the spell's Activate row"
   let activated =
-    cast.Activated(
+    cast_state.Activated(
       unit_id: its_unit,
       creature_id: a_slaver_shack,
       alive_at_press: True,
@@ -449,7 +450,7 @@ pub fn the_grenade_go_raises_activated_for_the_shack_test() -> Nil {
 pub fn the_grenade_at_a_unit_outside_its_cast_group_is_refused_89_test() -> Nil {
   use <- owned_test.run(10_000)
   assert refusal_of(taken: use_item_at(
-      state: cast.new(),
+      state: cast_state.new(),
       caster: throwing(),
       item: grenade,
       target: shown(creature_id: a_farmhand, metres: 10.0),
@@ -481,7 +482,7 @@ fn grenade_at_a_farmhand_in_a_state(
     as "shown gives a usable target"
   refusal_of(taken: use_item_in(
     tables:,
-    state: cast.new(),
+    state: cast_state.new(),
     caster: throwing(),
     item: grenade,
     target: Usable(..farmhand, held:, alive:),
@@ -525,7 +526,7 @@ pub fn an_item_spell_at_a_held_creature_outside_its_cast_group_is_refused_its_st
 pub fn the_grenade_at_another_players_unit_is_refused_100_test() -> Nil {
   use <- owned_test.run(10_000)
   assert refusal_of(taken: use_item_at(
-      state: cast.new(),
+      state: cast_state.new(),
       caster: throwing(),
       item: grenade,
       target: activate.AnotherPlayer,
@@ -543,7 +544,7 @@ pub fn a_checklist_item_at_another_players_unit_is_refused_28_test() -> Nil {
   ])
   assert refusal_of(taken: use_item_in(
       tables:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: standing(
         level: 20,
         quests: quest_support.log_of(rows: [
@@ -562,7 +563,7 @@ pub fn a_spell_with_no_cast_group_at_a_creature_with_flags_bit_0_is_refused_89_t
   use <- owned_test.run(10_000)
   let caster = standing(level: 20, quests: quest_support.log_of(rows: []))
   assert refusal_of(taken: use_item_at(
-      state: cast.new(),
+      state: cast_state.new(),
       caster:,
       item: generic_item,
       target: shown(creature_id: a_slaver_shack, metres: 4.0),
@@ -586,7 +587,7 @@ pub fn a_creature_whose_activate_spell_is_the_items_spell_passes_the_cast_group_
   }
   let assert Ok(#(_, outside)) =
     use_item_at(
-      state: cast.new(),
+      state: cast_state.new(),
       caster: throwing(),
       item: grenade,
       target: own(26_663, a_farmhand),
@@ -597,7 +598,7 @@ pub fn a_creature_whose_activate_spell_is_the_items_spell_passes_the_cast_group_
     as "the farmhand is outside TargetGroup 1691, but its activate spell is the grenade's: the check passes whatever the group"
   let assert Ok(#(_, flagged)) =
     use_item_at(
-      state: cast.new(),
+      state: cast_state.new(),
       caster: standing(level: 20, quests: quest_support.log_of(rows: [])),
       item: generic_item,
       target: own(1545, a_slaver_shack),
@@ -612,7 +613,7 @@ pub fn the_grenade_with_no_target_is_refused_91_test() -> Nil {
   use <- owned_test.run(10_000)
   assert refusal_of(taken: use_with(
       tables: tables(),
-      state: cast.new(),
+      state: cast_state.new(),
       caster: throwing(),
       held: Some(grenade),
       body: the_body(
@@ -626,7 +627,7 @@ pub fn the_grenade_with_no_target_is_refused_91_test() -> Nil {
     == #(26_663, 91)
     as "CheckCast gives NoTarget (91) with no target for a spell of targetType 1 (`0x14039a040`)"
   assert refusal_of(taken: use_item_at(
-      state: cast.new(),
+      state: cast_state.new(),
       caster: throwing(),
       item: grenade,
       target: activate.Unseen,
@@ -641,7 +642,7 @@ pub fn the_grenade_with_no_target_is_refused_91_test() -> Nil {
 fn thrown_at(metres metres: Float) -> Result(Nil, #(Int, Int)) {
   let assert Ok(#(_, effects)) =
     use_item_at(
-      state: cast.new(),
+      state: cast_state.new(),
       caster: throwing(),
       item: grenade,
       target: shown(creature_id: a_slaver_shack, metres:),
@@ -666,7 +667,7 @@ pub fn the_grenade_beyond_30_m_is_refused_105_test() -> Nil {
 pub fn an_item_check_refusal_carries_the_items_spell_test() -> Nil {
   use <- owned_test.run(10_000)
   assert refusal_of(taken: use_item_at(
-      state: cast.new(),
+      state: cast_state.new(),
       caster: standing(level: 20, quests: quest_support.log_of(rows: [])),
       item: grenade,
       target: shown(creature_id: a_slaver_shack, metres: 10.0),
@@ -702,7 +703,7 @@ pub fn an_item_whose_prerequisite_fails_is_refused_17_test() -> Nil {
   let thrown = fn(level) {
     use_item_in(
       tables:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: standing(level:, quests: throwing().quests),
       item: grenade,
       target: shown(creature_id: a_slaver_shack, metres: 10.0),
@@ -736,7 +737,7 @@ pub fn an_item_whose_prerequisite_the_server_cannot_read_is_refused_285_and_logg
       as "the use is answered"
     taken
   }
-  let #(state, first) = thrown(cast.new(), 1000)
+  let #(state, first) = thrown(cast_state.new(), 1000)
   let #(_, second) = thrown(state, 2000)
   assert refused_with(effects: first) == [#(clients_cast_id, 26_663, 285)]
     && refused_with(effects: second) == [#(clients_cast_id, 26_663, 285)]
@@ -764,7 +765,7 @@ pub fn an_item_with_charges_is_refused_285_and_logged_once_test() -> Nil {
   let no_target = activate.Unseen
   let assert Ok(#(state, first)) =
     use_item_at(
-      state: cast.new(),
+      state: cast_state.new(),
       caster:,
       item: charged_item,
       target: no_target,
@@ -794,7 +795,7 @@ pub fn the_grenade_again_within_its_2_s_cooldown_is_refused_15_test() -> Nil {
   let target = shown(creature_id: a_slaver_shack, metres: 10.0)
   let assert Ok(#(state, first)) =
     use_item_at(
-      state: cast.new(),
+      state: cast_state.new(),
       caster: throwing(),
       item: grenade,
       target:,
@@ -848,7 +849,7 @@ pub fn an_item_spell_with_no_activate_effect_is_refused_285_and_logged_once_test
   let no_target = activate.Unseen
   let assert Ok(#(state, first)) =
     use_item_at(
-      state: cast.new(),
+      state: cast_state.new(),
       caster:,
       item: objective_item,
       target: no_target,
@@ -879,7 +880,7 @@ pub fn the_generic_quest_spell_item_at_a_farmhand_starts_within_5_m_test() -> Ni
   let caster = standing(level: 20, quests: quest_support.log_of(rows: []))
   let assert Ok(#(_, effects)) =
     use_item_at(
-      state: cast.new(),
+      state: cast_state.new(),
       caster:,
       item: generic_item,
       target: shown(creature_id: a_farmhand, metres: 4.5),
@@ -894,7 +895,7 @@ pub fn the_generic_quest_spell_item_at_a_farmhand_starts_within_5_m_test() -> Ni
   assert started.spell4_id == 1545 as "the cast is Spell4 1545"
   assert list.contains(
     effects,
-    cast.Activated(
+    cast_state.Activated(
       unit_id: its_unit,
       creature_id: a_farmhand,
       alive_at_press: True,
@@ -903,7 +904,7 @@ pub fn the_generic_quest_spell_item_at_a_farmhand_starts_within_5_m_test() -> Ni
   )
     as "the go raises Activated for the farmhand"
   assert refusal_of(taken: use_item_at(
-      state: cast.new(),
+      state: cast_state.new(),
       caster:,
       item: generic_item,
       target: shown(creature_id: a_farmhand, metres: 5.5),

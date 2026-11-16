@@ -3,7 +3,7 @@
 
 import attacker_support
 import genesis_prime/game/area.{Point, Pose}
-import genesis_prime/game/cast
+import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/damage
 import genesis_prime/game/shown.{Exile}
 import genesis_prime/game/spell_area.{DamageEffect}
@@ -57,6 +57,6 @@ pub fn damage_effect() -> spell_area.DamageEffect {
 
 /// A gate that lets every row start for every unit and takes no roll: the rows of the
 /// tests that are behind no apply prerequisite.
-pub fn passes_all() -> cast.StrikeGate {
-  fn(_, _, _, rolls) { #(cast.Starts, rolls) }
+pub fn passes_all() -> cast_state.StrikeGate {
+  fn(_, _, _, rolls) { #(cast_state.Starts, rolls) }
 }

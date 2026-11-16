@@ -4,7 +4,7 @@
 //// path, creation and removal, and the leave of the world.
 
 import genesis_prime/connection/frame.{type Frame, Frame}
-import genesis_prime/game/cast
+import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/look
 import genesis_prime/game/player_life
 import genesis_prime/game/start_place.{type Place}
@@ -391,7 +391,7 @@ pub fn appearance_at(
     ..entered.unit,
     tail: UnitCreateTail(
       ..entered.unit.tail,
-      create_flags: case cast.stealthed(cast: entered.cast) {
+      create_flags: case cast_state.stealthed(cast: entered.cast) {
         True ->
           int.bitwise_or(entered.unit.tail.create_flags, stealthed_create_flag)
         False -> entered.unit.tail.create_flags

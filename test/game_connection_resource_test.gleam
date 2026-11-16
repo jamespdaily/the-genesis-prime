@@ -16,7 +16,7 @@ import game_client
 import game_connection_support
 import genesis_prime/client_connection.{type Request}
 import genesis_prime/connection/frame.{type Frame}
-import genesis_prime/game/cast
+import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/class_resource
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/hit
@@ -515,7 +515,7 @@ pub fn a_gamma_rays_cancelled_by_a_jump_before_its_go_leaves_the_actuators_and_w
         step.Read(game_connection_support.world_message(
           message_id: 0x0801,
           body: cast_support.cancel_body(
-            cast_id: cast.cast_id(unit_id:, number: 0),
+            cast_id: cast_state.cast_id(unit_id:, number: 0),
             reason: cast_result.from_value(11),
             bit: 1,
           ),

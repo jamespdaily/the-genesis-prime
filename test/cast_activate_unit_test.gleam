@@ -18,7 +18,8 @@
 import cast_support as support
 import fixture_tables
 import genesis_prime/game/activate
-import genesis_prime/game/cast.{type Effect}
+import genesis_prime/game/cast
+import genesis_prime/game/cast/state.{type Effect} as cast_state
 import genesis_prime/game/objective_link
 import genesis_prime/game/quest_log
 import genesis_prime/message/client_activate_unit.{ClientActivateUnit}
@@ -49,8 +50,8 @@ const caster_radius = 0.5
 const unit_radius = 0.25
 
 /// The caster stands at a place of exactly representable numbers.
-fn standing() -> cast.Caster {
-  cast.Caster(
+fn standing() -> cast_state.Caster {
+  cast_state.Caster(
     ..support.caster(),
     place: place_support.at(
       world_id: 3460,
@@ -68,11 +69,11 @@ fn unit(
   checklist_index checklist_index: Int,
   east east: Float,
   offered offered: Bool,
-) -> cast.UsedUnit {
+) -> cast_state.UsedUnit {
   let assert Ok(row) =
     creature2.get(fixture_tables.shared(), Creature2Id(creature))
     as "the fixture holds the creature's row"
-  cast.UsedUnit(
+  cast_state.UsedUnit(
     creature_id: creature,
     creature: activate.creature_of(row:),
     checklist_index:,
@@ -95,8 +96,8 @@ fn unit(
 /// What the caster's 0xb3 for `unit_id` gives, when the units its client shows are these,
 /// by unit id.
 fn used_by(
-  caster caster: cast.Caster,
-  seen seen: List(#(Int, cast.UsedUnit)),
+  caster caster: cast_state.Caster,
+  seen seen: List(#(Int, cast_state.UsedUnit)),
   unit_id unit_id: Int,
 ) -> List(Effect) {
   let units = dict.from_list(seen)
@@ -105,7 +106,7 @@ fn used_by(
     as "a unit id fits the message"
   let assert Ok(effects) =
     cast.activate_unit(
-      cast: cast.new(),
+      cast: cast_state.new(),
       body:,
       caster:,
       activations: activate.activations(tables: fixture_tables.shared()),
@@ -117,7 +118,7 @@ fn used_by(
 }
 
 fn used(
-  seen seen: List(#(Int, cast.UsedUnit)),
+  seen seen: List(#(Int, cast_state.UsedUnit)),
   unit_id unit_id: Int,
 ) -> List(Effect) {
   used_by(caster: standing(), seen:, unit_id:)
@@ -125,7 +126,7 @@ fn used(
 
 /// The one warning a refused 0xb3 gives: nothing else is done.
 fn refusal_text(effects effects: List(Effect)) -> String {
-  let assert [cast.Log(level: LogWarning, text:)] = effects
+  let assert [cast_state.Log(level: LogWarning, text:)] = effects
     as "a refused use is logged and nothing else: no Activated, no write"
   text
 }
@@ -147,7 +148,7 @@ pub fn a_client_activate_unit_on_a_unit_with_no_activate_spell_is_used_at_once_t
       unit_id: its_unit,
     )
     == [
-      cast.Activated(
+      cast_state.Activated(
         unit_id: its_unit,
         creature_id: a_manifestation,
         alive_at_press: True,
@@ -220,7 +221,7 @@ pub fn a_client_activate_unit_is_refused_out_of_the_interaction_range_test() -> 
   }
   assert used_at(5.75)
     == [
-      cast.Activated(
+      cast_state.Activated(
         unit_id: its_unit,
         creature_id: a_manifestation,
         alive_at_press: True,
@@ -258,7 +259,7 @@ pub fn a_client_activate_unit_on_a_unit_the_server_does_not_offer_is_refused_tes
 pub fn a_client_activate_unit_on_a_dead_creature_is_refused_test() -> Nil {
   use <- owned_test.run(10_000)
   let dead =
-    cast.UsedUnit(
+    cast_state.UsedUnit(
       ..unit(
         creature: a_manifestation,
         checklist_index: 2,
@@ -276,7 +277,7 @@ pub fn a_client_activate_unit_on_a_dead_creature_is_refused_test() -> Nil {
 /// holds this progress for its one objective.
 fn market_terminal_used(progress progress: Int) -> List(Effect) {
   used_by(
-    caster: cast.Caster(
+    caster: cast_state.Caster(
       ..standing(),
       quests: quest_support.log_of(rows: [
         quest_support.accepted(quest_id: market_quest, progress: [progress]),
@@ -306,7 +307,7 @@ pub fn a_client_activate_unit_picks_with_the_checklist_bit_of_the_unit_test() ->
     as "bit 5 of quest 7153's objective is clear: Prerequisite 13244 passes and the column's spell is picked"
   assert market_terminal_used(progress: 32)
     == [
-      cast.Activated(
+      cast_state.Activated(
         unit_id: its_unit,
         creature_id: a_market_terminal,
         alive_at_press: True,
@@ -322,7 +323,7 @@ pub fn a_client_activate_unit_picks_with_the_checklist_bit_of_the_unit_test() ->
 /// it (genesis_prime/game/objective_link `of`).
 fn linked_creature_used(quests quests: quest_log.QuestLog) -> List(Effect) {
   let tables = fixture_tables.shared()
-  let caster = cast.Caster(..standing(), quests:)
+  let caster = cast_state.Caster(..standing(), quests:)
   let assert Ok(row) =
     creature2.get(tables:, id: Creature2Id(a_linked_creature))
     as "the fixture holds the creature's row"
@@ -331,7 +332,7 @@ fn linked_creature_used(quests quests: quest_log.QuestLog) -> List(Effect) {
       tables:,
       activations: activate.activations(tables:),
       subject: cast.subject_for_use(
-        cast: cast.new(),
+        cast: cast_state.new(),
         caster:,
         unit_id: its_unit,
         checklist_index: 0,
@@ -345,7 +346,7 @@ fn linked_creature_used(quests quests: quest_log.QuestLog) -> List(Effect) {
     seen: [
       #(
         its_unit,
-        cast.UsedUnit(
+        cast_state.UsedUnit(
           ..unit(
             creature: a_linked_creature,
             checklist_index: 0,
@@ -368,7 +369,7 @@ pub fn a_use_of_a_creature_with_no_open_link_is_refused_test() -> Nil {
       ]),
     )
     == [
-      cast.Activated(
+      cast_state.Activated(
         unit_id: its_unit,
         creature_id: a_linked_creature,
         alive_at_press: True,

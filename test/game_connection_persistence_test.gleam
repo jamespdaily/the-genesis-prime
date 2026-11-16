@@ -25,7 +25,7 @@ import connection_rule_support as support
 import fixture_tables
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{type Request}
-import genesis_prime/game/cast
+import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/class_resource
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
@@ -279,7 +279,8 @@ pub fn a_cast_timer_that_starts_a_held_press_in_combat_ends_its_cast_after_the_t
     pressed_at(state:, bag_index:, client_cast_id: 10, ms: 1900)
   assert ids(taken: held) == []
     as "a press within 500 ms of the cooldown's end is held with nothing written"
-  let assert [timer] = list.filter(support.timers_started(held), cast.owns)
+  let assert [timer] =
+    list.filter(support.timers_started(held), cast_state.owns)
     as "its start waits on a timer of the cast rule"
   let #(_, taken) = at(state:, ms: 2250, event: OwnEvent(TimerFired(timer:)))
   assert ids(taken:) == list.append(press_written, failed_then_finished)

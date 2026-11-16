@@ -25,7 +25,8 @@
 ////   cast's node; a camp writes nothing.
 
 import cast_support as support
-import genesis_prime/game/cast.{type Caster, type Effect, type State}
+import genesis_prime/game/cast
+import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/lasting
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{
@@ -59,7 +60,7 @@ const bag_of_base_2 = 10
 const bag_of_base_3 = 11
 
 fn caster() -> Caster {
-  cast.Caster(
+  cast_state.Caster(
     ..support.caster(),
     abilities: list.append(support.abilities(), [Spell4BaseId(30_075)]),
   )
@@ -121,7 +122,7 @@ fn kept() -> Spell {
 fn trace(effects effects: List(Effect)) -> List(String) {
   list.filter_map(effects, fn(effect) {
     case effect {
-      cast.Send(frame:) ->
+      cast_state.Send(frame:) ->
         case frame.message_id {
           0x07FF -> Ok("start")
           0x07F4 -> Ok("go")
@@ -129,23 +130,23 @@ fn trace(effects effects: List(Effect)) -> List(String) {
           0x07FE -> Ok("end")
           _ -> Error(Nil)
         }
-      cast.StealthChanged(stealthed: True) -> Ok("stealth on")
-      cast.StealthChanged(stealthed: False) -> Ok("stealth off")
-      cast.Tell(..)
-      | cast.StartTimer(..)
-      | cast.CancelTimer(..)
-      | cast.Strike(..)
-      | cast.TickStrike(..)
-      | cast.Log(..)
-      | cast.Pay(..)
-      | cast.Gain(..)
-      | cast.CasterChangeStarts(..)
-      | cast.CasterChangeEnds(..)
-      | cast.TargetChangeStarts(..)
-      | cast.TargetChangeEnds(..)
-      | cast.ForcedMoveStarts(..)
-      | cast.Activated(..)
-      | cast.ShortcutCast(..) -> Error(Nil)
+      cast_state.StealthChanged(stealthed: True) -> Ok("stealth on")
+      cast_state.StealthChanged(stealthed: False) -> Ok("stealth off")
+      cast_state.Tell(..)
+      | cast_state.StartTimer(..)
+      | cast_state.CancelTimer(..)
+      | cast_state.Strike(..)
+      | cast_state.TickStrike(..)
+      | cast_state.Log(..)
+      | cast_state.Pay(..)
+      | cast_state.Gain(..)
+      | cast_state.CasterChangeStarts(..)
+      | cast_state.CasterChangeEnds(..)
+      | cast_state.TargetChangeStarts(..)
+      | cast_state.TargetChangeEnds(..)
+      | cast_state.ForcedMoveStarts(..)
+      | cast_state.Activated(..)
+      | cast_state.ShortcutCast(..) -> Error(Nil)
     }
   })
 }
@@ -154,23 +155,23 @@ fn trace(effects effects: List(Effect)) -> List(String) {
 fn changes(effects effects: List(Effect)) -> List(Bool) {
   list.filter_map(effects, fn(effect) {
     case effect {
-      cast.StealthChanged(stealthed:) -> Ok(stealthed)
-      cast.Send(..)
-      | cast.Tell(..)
-      | cast.StartTimer(..)
-      | cast.CancelTimer(..)
-      | cast.Strike(..)
-      | cast.TickStrike(..)
-      | cast.Log(..)
-      | cast.Pay(..)
-      | cast.Gain(..)
-      | cast.CasterChangeStarts(..)
-      | cast.CasterChangeEnds(..)
-      | cast.TargetChangeStarts(..)
-      | cast.TargetChangeEnds(..)
-      | cast.ForcedMoveStarts(..)
-      | cast.Activated(..)
-      | cast.ShortcutCast(..) -> Error(Nil)
+      cast_state.StealthChanged(stealthed:) -> Ok(stealthed)
+      cast_state.Send(..)
+      | cast_state.Tell(..)
+      | cast_state.StartTimer(..)
+      | cast_state.CancelTimer(..)
+      | cast_state.Strike(..)
+      | cast_state.TickStrike(..)
+      | cast_state.Log(..)
+      | cast_state.Pay(..)
+      | cast_state.Gain(..)
+      | cast_state.CasterChangeStarts(..)
+      | cast_state.CasterChangeEnds(..)
+      | cast_state.TargetChangeStarts(..)
+      | cast_state.TargetChangeEnds(..)
+      | cast_state.ForcedMoveStarts(..)
+      | cast_state.Activated(..)
+      | cast_state.ShortcutCast(..) -> Error(Nil)
     }
   })
 }
@@ -284,7 +285,7 @@ fn goes_apart(
   list.fold(effects, #(state, []), fn(so_far, effect) {
     let #(state, inputs) = so_far
     case effect {
-      cast.Strike(asked:) -> {
+      cast_state.Strike(asked:) -> {
         let #(state, going) =
           support.went(
             cast: state,
@@ -297,22 +298,22 @@ fn goes_apart(
         let #(state, later) = goes_apart(state:, effects: going, at: ms)
         #(state, list.append(inputs, [going, ..later]))
       }
-      cast.Send(..)
-      | cast.Tell(..)
-      | cast.StartTimer(..)
-      | cast.CancelTimer(..)
-      | cast.Log(..)
-      | cast.Pay(..)
-      | cast.Gain(..)
-      | cast.CasterChangeStarts(..)
-      | cast.CasterChangeEnds(..)
-      | cast.TargetChangeStarts(..)
-      | cast.TargetChangeEnds(..)
-      | cast.ForcedMoveStarts(..)
-      | cast.Activated(..)
-      | cast.ShortcutCast(..)
-      | cast.TickStrike(..)
-      | cast.StealthChanged(..) -> so_far
+      cast_state.Send(..)
+      | cast_state.Tell(..)
+      | cast_state.StartTimer(..)
+      | cast_state.CancelTimer(..)
+      | cast_state.Log(..)
+      | cast_state.Pay(..)
+      | cast_state.Gain(..)
+      | cast_state.CasterChangeStarts(..)
+      | cast_state.CasterChangeEnds(..)
+      | cast_state.TargetChangeStarts(..)
+      | cast_state.TargetChangeEnds(..)
+      | cast_state.ForcedMoveStarts(..)
+      | cast_state.Activated(..)
+      | cast_state.ShortcutCast(..)
+      | cast_state.TickStrike(..)
+      | cast_state.StealthChanged(..) -> so_far
     }
   })
 }
@@ -322,7 +323,7 @@ fn toggled() -> #(State, List(Effect)) {
   support.press_by(
     caster: caster(),
     plans: plans_of([]),
-    state: cast.new(),
+    state: cast_state.new(),
     bag: toggle_bag,
     at: 1000,
   )
@@ -341,7 +342,7 @@ pub fn a_press_of_the_toggle_when_not_stealthed_starts_38784_whose_go_lists_8383
     as "95774 is behind 16153, the caster under 59389, which it is not"
   assert list.contains(listed, 159_128)
     as "159128 changes the cooldown of group 182 (behind 390, not in combat)"
-  assert cast.stealthed(cast: state) as "the caster holds the stealth"
+  assert cast_state.stealthed(cast: state) as "the caster holds the stealth"
   assert !list.contains(support.finished_ids(support.writes(effects:)), on)
     as "the stealth's node lasts until removed, so 38784's 0x7fe waits"
   assert support.started_timers(effects:) == []
@@ -354,7 +355,7 @@ pub fn the_stealth_change_is_the_last_effect_of_38784s_go_test() -> Nil {
   let #(_, inputs) =
     press_by_inputs(
       plans: plans_of([]),
-      state: cast.new(),
+      state: cast_state.new(),
       bag: toggle_bag,
       at: 1000,
     )
@@ -391,7 +392,7 @@ pub fn a_press_of_the_toggle_when_stealthed_takes_38784_off_and_ends_the_stealth
   assert list.drop(trace(effects: last_input), 1)
     == ["off", "end", "stealth off"]
     as "38783's go writes its 0x7f4, the 0x811 of 38784, the 0x7fe that ends 38783 itself (it holds no node), and the change is last"
-  assert !cast.stealthed(cast: state)
+  assert !cast_state.stealthed(cast: state)
   // A third press enters stealth again; 159130 cleared the cooldown again.
   let #(state, again) =
     support.press_by(
@@ -403,7 +404,7 @@ pub fn a_press_of_the_toggle_when_stealthed_takes_38784_off_and_ends_the_stealth
     )
   assert children_started(effects: again) == [38_784]
   assert changes(effects: again) == [True]
-  assert cast.stealthed(cast: state)
+  assert cast_state.stealthed(cast: state)
 }
 
 // ---- a cast ends stealth after its go ----
@@ -418,7 +419,7 @@ fn stealthed_by_base_1(
     support.press_by(
       caster: caster(),
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       bag: bag_of_base_1,
       at: 1000,
     )
@@ -488,7 +489,7 @@ pub fn an_attack_from_stealth_reads_the_stealth_in_its_gates_then_ends_it_after_
     as "38585 passes against the caster stealthed before the go and 38587 fails: only 39427 starts, though the cast ends the stealth"
   assert support.removed_targets(support.writes(effects:)) == [#(held, [7])]
     as "the cast that holds the stealth is taken off the caster: 0x811"
-  assert !cast.stealthed(cast: state)
+  assert !cast_state.stealthed(cast: state)
   assert changes(effects:) == [False]
   let lines = trace(effects:)
   assert last_of(lines:, line: "go") < first_of(lines:, line: "off")
@@ -555,7 +556,7 @@ pub fn an_attack_of_value_1_with_two_phases_reads_the_stealth_in_its_second_phas
     as "the Proxies are phase 1's: the first go starts none"
   assert changes(effects: first) == [] as "the first go ends no stealth"
   assert support.removed_targets(support.writes(effects: first)) == []
-  assert cast.stealthed(cast: state)
+  assert cast_state.stealthed(cast: state)
     as "the stealth holds while the cast's last go is yet to come"
   let #(state, second) = support.fired(state:, timer: second_go, at: 2300)
   assert children_started(effects: second) == [39_427]
@@ -564,7 +565,7 @@ pub fn an_attack_of_value_1_with_two_phases_reads_the_stealth_in_its_second_phas
     == [#(support.pressed_id(effects: entered), [7])]
     as "the cast that holds the stealth comes off the caster after the last go"
   assert changes(effects: second) == [False]
-  assert !cast.stealthed(cast: state)
+  assert !cast_state.stealthed(cast: state)
   let lines = trace(effects: second)
   assert last_of(lines:, line: "go") < first_of(lines:, line: "off")
     as "the 0x811 follows every go of the phase"
@@ -584,7 +585,7 @@ pub fn an_attack_of_value_0_with_two_phases_ends_the_stealth_at_its_first_go_tes
   assert support.removed_targets(support.writes(effects: first))
     == [#(support.pressed_id(effects: entered), [7])]
   assert changes(effects: first) == [False]
-  assert !cast.stealthed(cast: state)
+  assert !cast_state.stealthed(cast: state)
   let #(_, second) = support.fired(state:, timer: second_go, at: 2300)
   assert children_started(effects: second) == [39_426]
     as "38587 passes and 38585 fails once the stealth is gone"
@@ -617,7 +618,7 @@ pub fn a_cast_cancelled_after_one_of_its_goes_ends_the_stealth_as_it_stops_test(
     as "the cast that holds the stealth comes off the caster"
   assert changes(effects: cancelled) == [False]
   assert list.last(trace(effects: cancelled)) == Ok("stealth off")
-  assert !cast.stealthed(cast: state)
+  assert !cast_state.stealthed(cast: state)
 }
 
 pub fn a_cast_cancelled_before_its_first_go_keeps_the_stealth_test() -> Nil {
@@ -651,7 +652,7 @@ pub fn a_cast_cancelled_before_its_first_go_keeps_the_stealth_test() -> Nil {
     )
   assert support.removed_targets(support.writes(effects: cancelled)) == []
   assert changes(effects: cancelled) == []
-  assert cast.stealthed(cast: state)
+  assert cast_state.stealthed(cast: state)
 }
 
 pub fn a_stealth_row_of_a_later_phase_of_a_value_1_spell_is_kept_when_the_older_source_ends_test() -> Nil {
@@ -671,13 +672,13 @@ pub fn a_stealth_row_of_a_later_phase_of_a_value_1_spell_is_kept_when_the_older_
     )
   let #(_, state, entered, first, second_go) = first_phase_gone(spell: makes)
   assert changes(effects: first) == []
-  assert cast.stealthed(cast: state)
+  assert cast_state.stealthed(cast: state)
   let #(state, second) = support.fired(state:, timer: second_go, at: 2300)
   assert support.removed_targets(support.writes(effects: second))
     == [#(support.pressed_id(effects: entered), [7])]
     as "the older source's cast comes off and the phase's own source stays"
   assert changes(effects: second) == []
-  assert cast.stealthed(cast: state)
+  assert cast_state.stealthed(cast: state)
 }
 
 pub fn an_attack_of_value_1_or_0_ends_the_stealth_the_same_way_test() -> Nil {
@@ -709,7 +710,7 @@ pub fn an_attack_of_value_1_or_0_ends_the_stealth_the_same_way_test() -> Nil {
           <> " ends the stealth with the 0x811 of the cast that holds it"
         }
       assert changes(effects:) == [False]
-      assert !cast.stealthed(cast: state)
+      assert !cast_state.stealthed(cast: state)
     },
   )
 }
@@ -731,7 +732,7 @@ pub fn a_spell_of_value_2_cast_on_its_own_ends_nothing_test() -> Nil {
     )
   assert support.removed_targets(support.writes(effects:)) == []
   assert changes(effects:) == []
-  assert cast.stealthed(cast: state) as "the stealth holds"
+  assert cast_state.stealthed(cast: state) as "the stealth holds"
 }
 
 pub fn a_stealth_row_the_same_go_applied_is_kept_and_only_the_older_source_ends_test() -> Nil {
@@ -750,19 +751,19 @@ pub fn a_stealth_row_the_same_go_applied_is_kept_and_only_the_older_source_ends_
     support.press_by(
       caster: caster(),
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       bag: bag_of_base_2,
       at: 1000,
     )
   assert changes(effects: alone) == [True]
     as "from no stealth the go makes it, and its break ends none"
   assert support.removed_targets(support.writes(effects: alone)) == []
-  assert cast.stealthed(cast: state)
+  assert cast_state.stealthed(cast: state)
   let #(state, first) =
     support.press_by(
       caster: caster(),
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       bag: bag_of_base_1,
       at: 1000,
     )
@@ -779,7 +780,7 @@ pub fn a_stealth_row_the_same_go_applied_is_kept_and_only_the_older_source_ends_
     as "the older source's cast comes off and the go's own stays"
   assert changes(effects:) == []
     as "the caster is stealthed before and after the go: no change is written"
-  assert cast.stealthed(cast: state)
+  assert cast_state.stealthed(cast: state)
 }
 
 pub fn a_go_after_the_stealth_ended_finds_nothing_to_end_test() -> Nil {
@@ -823,7 +824,7 @@ pub fn damage_takes_the_cast_of_a_source_it_breaks_off_and_ends_the_stealth_test
     as "the stealth cast's node comes off the caster: 0x811 (Spell4Effects.effectType.83: dataBits02 0)"
   assert changes(effects:) == [False]
   assert list.last(trace(effects:)) == Ok("stealth off")
-  assert !cast.stealthed(cast: state)
+  assert !cast_state.stealthed(cast: state)
   let #(_, again) = damaged(state:, at: 3001)
   assert again == [] as "a second blow finds nothing to end"
 }
@@ -835,14 +836,14 @@ pub fn damage_does_not_end_a_stealth_kept_on_damage_or_one_not_held_test() -> Ni
     support.press_by(
       caster: caster(),
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       bag: bag_of_base_3,
       at: 1000,
     )
   let #(state, effects) = damaged(state:, at: 3000)
   assert effects == [] as "dataBits02 1: damage does not end it"
-  assert cast.stealthed(cast: state)
-  let #(_, none) = damaged(state: cast.new(), at: 3000)
+  assert cast_state.stealthed(cast: state)
+  let #(_, none) = damaged(state: cast_state.new(), at: 3000)
   assert none == [] as "a caster that holds no stealth is told nothing"
 }
 
@@ -863,7 +864,7 @@ pub fn damage_ends_the_cast_it_breaks_and_keeps_the_stealth_another_cast_holds_t
     as "only the cast whose source damage breaks comes off"
   assert changes(effects:) == []
     as "the kept source still holds the stealth: no change"
-  assert cast.stealthed(cast: state)
+  assert cast_state.stealthed(cast: state)
 }
 
 pub fn a_cast_that_holds_both_a_broken_and_a_kept_source_loses_both_with_its_node_test() -> Nil {
@@ -879,13 +880,13 @@ pub fn a_cast_that_holds_both_a_broken_and_a_kept_source_loses_both_with_its_nod
     support.press_by(
       caster: caster(),
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       bag: bag_of_base_1,
       at: 1000,
     )
   let #(state, effects) = damaged(state:, at: 3000)
   assert changes(effects:) == [False]
-  assert !cast.stealthed(cast: state)
+  assert !cast_state.stealthed(cast: state)
     as "the node leaves the caster and takes the cast's two sources with it"
 }
 
@@ -929,7 +930,7 @@ pub fn a_remove_stealth_row_on_the_caster_ends_a_broken_source_and_a_kept_one_wi
     ]
     as "both casts come off, the older first (Spell4Effects.effectType.84)"
   assert changes(effects:) == [False] as "one change for the one input"
-  assert !cast.stealthed(cast: state)
+  assert !cast_state.stealthed(cast: state)
 }
 
 // ---- settled once for each input ----
@@ -945,7 +946,7 @@ pub fn a_second_stealth_cast_at_the_stack_cap_takes_the_first_off_with_no_change
     support.press_by(
       caster: caster(),
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       bag: bag_of_base_1,
       at: 1000,
     )
@@ -962,7 +963,7 @@ pub fn a_second_stealth_cast_at_the_stack_cap_takes_the_first_off_with_no_change
     as "the cap takes the first cast's node off: one 0x811"
   assert changes(effects: second) == []
     as "stealthed before and after the input: no 0x8f5"
-  assert cast.stealthed(cast: state)
+  assert cast_state.stealthed(cast: state)
   let #(state, cancel) =
     support.press_by(
       caster: caster(),
@@ -974,7 +975,7 @@ pub fn a_second_stealth_cast_at_the_stack_cap_takes_the_first_off_with_no_change
   assert support.removed_targets(support.writes(effects: cancel))
     == [#(support.pressed_id(effects: second), [7])]
   assert changes(effects: cancel) == [False] as "one cancel, one change"
-  assert !cast.stealthed(cast: state)
+  assert !cast_state.stealthed(cast: state)
 }
 
 // ---- death and leaving ----
@@ -986,7 +987,7 @@ pub fn a_death_while_stealthed_by_a_kept_on_damage_source_ends_the_casts_then_ch
     support.press_by(
       caster: caster(),
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       bag: bag_of_base_3,
       at: 1000,
     )
@@ -1006,10 +1007,10 @@ pub fn a_death_while_stealthed_by_a_kept_on_damage_source_ends_the_casts_then_ch
   assert list.last(lines) == Ok("stealth off")
     as "and it is the last effect, after the casts' 0x7fe"
   assert last_of(lines:, line: "end") < first_of(lines:, line: "stealth off")
-  assert !cast.stealthed(cast: state)
+  assert !cast_state.stealthed(cast: state)
   let #(_, healthy) =
     cast.died(
-      cast: cast.new(),
+      cast: cast_state.new(),
       caster: support.dead_caster(),
       now: support.at(ms: 2000),
     )
@@ -1023,8 +1024,8 @@ pub fn leaving_while_stealthed_writes_nothing_and_the_next_stay_starts_unstealth
   let #(left, effects) = cast.left(cast: state)
   assert support.writes(effects:) == []
   assert changes(effects:) == []
-  assert !cast.stealthed(cast: left)
-  assert !cast.stealthed(cast: cast.new())
+  assert !cast_state.stealthed(cast: left)
+  assert !cast_state.stealthed(cast: cast_state.new())
 }
 
 // ---- a Stealth row behind a target apply prerequisite ----
@@ -1047,22 +1048,22 @@ pub fn a_stealth_row_behind_a_target_gate_is_applied_only_when_the_caster_passes
     support.press_as(
       caster: support.caster_in_combat(in_combat: False),
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       bag: bag_of_base_1,
       at: 1000,
     )
   assert changes(effects: out_of_combat) == []
     as "not in combat: the target gate fails on the caster, so no stealth starts"
-  assert !cast.stealthed(cast: state)
+  assert !cast_state.stealthed(cast: state)
   let #(state, in_combat) =
     support.press_as(
       caster: support.caster_in_combat(in_combat: True),
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       bag: bag_of_base_1,
       at: 1000,
     )
   assert changes(effects: in_combat) == [True]
     as "in combat: the gate passes on the caster, so the stealth starts"
-  assert cast.stealthed(cast: state)
+  assert cast_state.stealthed(cast: state)
 }

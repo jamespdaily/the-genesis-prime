@@ -15,7 +15,8 @@ import game_client
 import genesis_prime/client_connection.{type News}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/area.{type Pose}
-import genesis_prime/game/cast.{type Caster, type Effect, type State}
+import genesis_prime/game/cast
+import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/class_resource
 import genesis_prime/game/damage
 import genesis_prime/game/heal_split
@@ -331,7 +332,7 @@ pub fn ability(base base: Int) -> Spell {
 /// 2 and 3, standing at the live character's place, holding `full_slot_1`.
 pub fn caster() -> Caster {
   let place = place_support.live_character_place()
-  cast.Caster(
+  cast_state.Caster(
     unit_id: 7,
     place:,
     abilities: abilities(),
@@ -364,7 +365,7 @@ pub fn caster() -> Caster {
 /// The same player dead, as the connection builds it when it tells the rule of its
 /// death (`genesis_prime/game/connection/casting.caster_of`).
 pub fn dead_caster() -> Caster {
-  cast.Caster(..caster(), dead: True)
+  cast_state.Caster(..caster(), dead: True)
 }
 
 /// A planted resource of 1000 points in slot 1, full: it meets every level-1 cost
@@ -387,7 +388,7 @@ pub fn full_slot_1() -> class_resource.Resource {
 
 /// The caster holding `resources` in place of `full_slot_1`.
 pub fn caster_holding(resources resources: class_resource.Resources) -> Caster {
-  cast.Caster(..caster(), resources:)
+  cast_state.Caster(..caster(), resources:)
 }
 
 /// The class's resource with its slot at `value`.
@@ -426,23 +427,23 @@ pub fn refusal_results(effects effects: List(Effect)) -> List(Int) {
 pub fn payments(effects effects: List(Effect)) -> List(class_resource.Payment) {
   list.flat_map(effects, fn(effect) {
     case effect {
-      cast.Pay(payments:) -> payments
-      cast.Send(..)
-      | cast.Tell(..)
-      | cast.StartTimer(..)
-      | cast.CancelTimer(..)
-      | cast.Strike(..)
-      | cast.Gain(..)
-      | cast.Log(..)
-      | cast.CasterChangeStarts(..)
-      | cast.CasterChangeEnds(..)
-      | cast.TargetChangeStarts(..)
-      | cast.TargetChangeEnds(..)
-      | cast.ForcedMoveStarts(..)
-      | cast.Activated(..)
-      | cast.ShortcutCast(..)
-      | cast.TickStrike(..)
-      | cast.StealthChanged(..) -> []
+      cast_state.Pay(payments:) -> payments
+      cast_state.Send(..)
+      | cast_state.Tell(..)
+      | cast_state.StartTimer(..)
+      | cast_state.CancelTimer(..)
+      | cast_state.Strike(..)
+      | cast_state.Gain(..)
+      | cast_state.Log(..)
+      | cast_state.CasterChangeStarts(..)
+      | cast_state.CasterChangeEnds(..)
+      | cast_state.TargetChangeStarts(..)
+      | cast_state.TargetChangeEnds(..)
+      | cast_state.ForcedMoveStarts(..)
+      | cast_state.Activated(..)
+      | cast_state.ShortcutCast(..)
+      | cast_state.TickStrike(..)
+      | cast_state.StealthChanged(..) -> []
     }
   })
 }
@@ -451,23 +452,23 @@ pub fn payments(effects effects: List(Effect)) -> List(class_resource.Payment) {
 pub fn shortcut_casts(effects effects: List(Effect)) -> List(Effect) {
   list.filter(effects, fn(effect) {
     case effect {
-      cast.ShortcutCast(..) -> True
-      cast.Send(..)
-      | cast.Tell(..)
-      | cast.StartTimer(..)
-      | cast.CancelTimer(..)
-      | cast.Strike(..)
-      | cast.Pay(..)
-      | cast.Gain(..)
-      | cast.Log(..)
-      | cast.CasterChangeStarts(..)
-      | cast.CasterChangeEnds(..)
-      | cast.TargetChangeStarts(..)
-      | cast.TargetChangeEnds(..)
-      | cast.ForcedMoveStarts(..)
-      | cast.Activated(..)
-      | cast.TickStrike(..)
-      | cast.StealthChanged(..) -> False
+      cast_state.ShortcutCast(..) -> True
+      cast_state.Send(..)
+      | cast_state.Tell(..)
+      | cast_state.StartTimer(..)
+      | cast_state.CancelTimer(..)
+      | cast_state.Strike(..)
+      | cast_state.Pay(..)
+      | cast_state.Gain(..)
+      | cast_state.Log(..)
+      | cast_state.CasterChangeStarts(..)
+      | cast_state.CasterChangeEnds(..)
+      | cast_state.TargetChangeStarts(..)
+      | cast_state.TargetChangeEnds(..)
+      | cast_state.ForcedMoveStarts(..)
+      | cast_state.Activated(..)
+      | cast_state.TickStrike(..)
+      | cast_state.StealthChanged(..) -> False
     }
   })
 }
@@ -476,23 +477,23 @@ pub fn shortcut_casts(effects effects: List(Effect)) -> List(Effect) {
 pub fn gains(effects effects: List(Effect)) -> List(List(class_resource.Gain)) {
   list.filter_map(effects, fn(effect) {
     case effect {
-      cast.Gain(gains:) -> Ok(gains)
-      cast.Send(..)
-      | cast.Tell(..)
-      | cast.StartTimer(..)
-      | cast.CancelTimer(..)
-      | cast.Strike(..)
-      | cast.Pay(..)
-      | cast.Log(..)
-      | cast.CasterChangeStarts(..)
-      | cast.CasterChangeEnds(..)
-      | cast.TargetChangeStarts(..)
-      | cast.TargetChangeEnds(..)
-      | cast.ForcedMoveStarts(..)
-      | cast.Activated(..)
-      | cast.ShortcutCast(..)
-      | cast.TickStrike(..)
-      | cast.StealthChanged(..) -> Error(Nil)
+      cast_state.Gain(gains:) -> Ok(gains)
+      cast_state.Send(..)
+      | cast_state.Tell(..)
+      | cast_state.StartTimer(..)
+      | cast_state.CancelTimer(..)
+      | cast_state.Strike(..)
+      | cast_state.Pay(..)
+      | cast_state.Log(..)
+      | cast_state.CasterChangeStarts(..)
+      | cast_state.CasterChangeEnds(..)
+      | cast_state.TargetChangeStarts(..)
+      | cast_state.TargetChangeEnds(..)
+      | cast_state.ForcedMoveStarts(..)
+      | cast_state.Activated(..)
+      | cast_state.ShortcutCast(..)
+      | cast_state.TickStrike(..)
+      | cast_state.StealthChanged(..) -> Error(Nil)
     }
   })
 }
@@ -503,23 +504,23 @@ pub fn caster_change_ends(
 ) -> List(unit_properties.Source) {
   list.filter_map(effects, fn(effect) {
     case effect {
-      cast.CasterChangeEnds(source:) -> Ok(source)
-      cast.Send(..)
-      | cast.Tell(..)
-      | cast.StartTimer(..)
-      | cast.CancelTimer(..)
-      | cast.Strike(..)
-      | cast.Pay(..)
-      | cast.Gain(..)
-      | cast.Log(..)
-      | cast.CasterChangeStarts(..)
-      | cast.TargetChangeStarts(..)
-      | cast.TargetChangeEnds(..)
-      | cast.ForcedMoveStarts(..)
-      | cast.Activated(..)
-      | cast.ShortcutCast(..)
-      | cast.TickStrike(..)
-      | cast.StealthChanged(..) -> Error(Nil)
+      cast_state.CasterChangeEnds(source:) -> Ok(source)
+      cast_state.Send(..)
+      | cast_state.Tell(..)
+      | cast_state.StartTimer(..)
+      | cast_state.CancelTimer(..)
+      | cast_state.Strike(..)
+      | cast_state.Pay(..)
+      | cast_state.Gain(..)
+      | cast_state.Log(..)
+      | cast_state.CasterChangeStarts(..)
+      | cast_state.TargetChangeStarts(..)
+      | cast_state.TargetChangeEnds(..)
+      | cast_state.ForcedMoveStarts(..)
+      | cast_state.Activated(..)
+      | cast_state.ShortcutCast(..)
+      | cast_state.TickStrike(..)
+      | cast_state.StealthChanged(..) -> Error(Nil)
     }
   })
 }
@@ -527,26 +528,26 @@ pub fn caster_change_ends(
 /// The changes of the caster's own that the effects start, with their sources, in order.
 pub fn caster_change_starts(
   effects effects: List(Effect),
-) -> List(#(unit_properties.Source, cast.CasterChange)) {
+) -> List(#(unit_properties.Source, cast_state.CasterChange)) {
   list.filter_map(effects, fn(effect) {
     case effect {
-      cast.CasterChangeStarts(source:, change:) -> Ok(#(source, change))
-      cast.CasterChangeEnds(..)
-      | cast.Send(..)
-      | cast.Tell(..)
-      | cast.StartTimer(..)
-      | cast.CancelTimer(..)
-      | cast.Strike(..)
-      | cast.Pay(..)
-      | cast.Gain(..)
-      | cast.Log(..)
-      | cast.TargetChangeStarts(..)
-      | cast.TargetChangeEnds(..)
-      | cast.ForcedMoveStarts(..)
-      | cast.Activated(..)
-      | cast.ShortcutCast(..)
-      | cast.TickStrike(..)
-      | cast.StealthChanged(..) -> Error(Nil)
+      cast_state.CasterChangeStarts(source:, change:) -> Ok(#(source, change))
+      cast_state.CasterChangeEnds(..)
+      | cast_state.Send(..)
+      | cast_state.Tell(..)
+      | cast_state.StartTimer(..)
+      | cast_state.CancelTimer(..)
+      | cast_state.Strike(..)
+      | cast_state.Pay(..)
+      | cast_state.Gain(..)
+      | cast_state.Log(..)
+      | cast_state.TargetChangeStarts(..)
+      | cast_state.TargetChangeEnds(..)
+      | cast_state.ForcedMoveStarts(..)
+      | cast_state.Activated(..)
+      | cast_state.ShortcutCast(..)
+      | cast_state.TickStrike(..)
+      | cast_state.StealthChanged(..) -> Error(Nil)
     }
   })
 }
@@ -565,8 +566,9 @@ pub fn property_starts(
 ) -> List(#(unit_properties.Source, unit_properties.Modifier)) {
   list.filter_map(caster_change_starts(effects:), fn(start) {
     case start.1 {
-      cast.Property(modifier:) -> Ok(#(start.0, modifier))
-      cast.Heal(..) | cast.Look(..) | cast.Absorb(..) -> Error(Nil)
+      cast_state.Property(modifier:) -> Ok(#(start.0, modifier))
+      cast_state.Heal(..) | cast_state.Look(..) | cast_state.Absorb(..) ->
+        Error(Nil)
     }
   })
 }
@@ -575,22 +577,23 @@ pub fn property_starts(
 pub fn target_changes(effects effects: List(Effect)) -> List(Effect) {
   list.filter(effects, fn(effect) {
     case effect {
-      cast.TargetChangeStarts(..) | cast.TargetChangeEnds(..) -> True
-      cast.ForcedMoveStarts(..)
-      | cast.Send(..)
-      | cast.Tell(..)
-      | cast.StartTimer(..)
-      | cast.CancelTimer(..)
-      | cast.Strike(..)
-      | cast.Pay(..)
-      | cast.Gain(..)
-      | cast.Log(..)
-      | cast.CasterChangeStarts(..)
-      | cast.CasterChangeEnds(..)
-      | cast.Activated(..)
-      | cast.ShortcutCast(..)
-      | cast.TickStrike(..)
-      | cast.StealthChanged(..) -> False
+      cast_state.TargetChangeStarts(..) | cast_state.TargetChangeEnds(..) ->
+        True
+      cast_state.ForcedMoveStarts(..)
+      | cast_state.Send(..)
+      | cast_state.Tell(..)
+      | cast_state.StartTimer(..)
+      | cast_state.CancelTimer(..)
+      | cast_state.Strike(..)
+      | cast_state.Pay(..)
+      | cast_state.Gain(..)
+      | cast_state.Log(..)
+      | cast_state.CasterChangeStarts(..)
+      | cast_state.CasterChangeEnds(..)
+      | cast_state.Activated(..)
+      | cast_state.ShortcutCast(..)
+      | cast_state.TickStrike(..)
+      | cast_state.StealthChanged(..) -> False
     }
   })
 }
@@ -609,23 +612,23 @@ pub fn target_timeline(
 pub fn throws(effects effects: List(Effect)) -> List(Effect) {
   list.filter(effects, fn(effect) {
     case effect {
-      cast.ForcedMoveStarts(..) -> True
-      cast.TargetChangeStarts(..)
-      | cast.TargetChangeEnds(..)
-      | cast.Send(..)
-      | cast.Tell(..)
-      | cast.StartTimer(..)
-      | cast.CancelTimer(..)
-      | cast.Strike(..)
-      | cast.Pay(..)
-      | cast.Gain(..)
-      | cast.Log(..)
-      | cast.CasterChangeStarts(..)
-      | cast.CasterChangeEnds(..)
-      | cast.Activated(..)
-      | cast.ShortcutCast(..)
-      | cast.TickStrike(..)
-      | cast.StealthChanged(..) -> False
+      cast_state.ForcedMoveStarts(..) -> True
+      cast_state.TargetChangeStarts(..)
+      | cast_state.TargetChangeEnds(..)
+      | cast_state.Send(..)
+      | cast_state.Tell(..)
+      | cast_state.StartTimer(..)
+      | cast_state.CancelTimer(..)
+      | cast_state.Strike(..)
+      | cast_state.Pay(..)
+      | cast_state.Gain(..)
+      | cast_state.Log(..)
+      | cast_state.CasterChangeStarts(..)
+      | cast_state.CasterChangeEnds(..)
+      | cast_state.Activated(..)
+      | cast_state.ShortcutCast(..)
+      | cast_state.TickStrike(..)
+      | cast_state.StealthChanged(..) -> False
     }
   })
 }
@@ -782,7 +785,7 @@ pub fn key_raw_in(
   let assert Ok(taken) =
     cast.take(
       cast: state,
-      message: cast.KeyHeld,
+      message: cast_state.KeyHeld,
       body: hold_body(bag_index:, target: 0, held:),
       caster: caster(),
       plans:,
@@ -908,14 +911,14 @@ pub fn press_as(
 
 /// The caster, in or out of combat.
 pub fn caster_in_combat(in_combat in_combat: Bool) -> Caster {
-  cast.Caster(..caster(), in_combat:)
+  cast_state.Caster(..caster(), in_combat:)
 }
 
 /// Each struck unit as a hit on a creature's first life, struck at time 0, with no
 /// descriptions and no controls.
-pub fn hits(units: List(Int)) -> List(cast.Struck) {
+pub fn hits(units: List(Int)) -> List(cast_state.Struck) {
   list.map(units, fn(unit_id) {
-    cast.Hit(
+    cast_state.Hit(
       unit_id:,
       unit: first_life,
       descriptions: [],
@@ -927,13 +930,13 @@ pub fn hits(units: List(Int)) -> List(cast.Struck) {
 }
 
 /// A creature in its first life, struck by a go at time 0.
-pub const first_life = cast.HitCreature(life: 1, struck_at_ms: 0)
+pub const first_life = cast_state.HitCreature(life: 1, struck_at_ms: 0)
 
 /// A press whose go, and each go it leads to at once, strikes these units.
 pub fn pressed_striking(
   state state: State,
   bag_index bag_index: Int,
-  struck struck: List(cast.Struck),
+  struck struck: List(cast_state.Struck),
   at ms: Int,
 ) -> #(State, List(Effect)) {
   let #(state, effects) =
@@ -965,7 +968,7 @@ pub fn pressed_raw_in(
   let assert Ok(taken) =
     cast.take(
       cast: state,
-      message: cast.Pressed,
+      message: cast_state.Pressed,
       body: press_body(client_cast_id: 9, bag_index:, target:, press: 1),
       caster:,
       plans:,
@@ -982,10 +985,10 @@ pub fn cancelled(
   reason reason: CastResult,
   bit bit: Int,
   at ms: Int,
-) -> Result(#(State, List(Effect)), cast.Refusal) {
+) -> Result(#(State, List(Effect)), cast_state.Refusal) {
   cast.take(
     cast: state,
-    message: cast.Cancelled,
+    message: cast_state.Cancelled,
     body: cancel_body(cast_id:, reason:, bit:),
     caster: caster(),
     plans: plans(),
@@ -1002,10 +1005,10 @@ pub fn cancelled_in(
   reason reason: CastResult,
   bit bit: Int,
   at ms: Int,
-) -> Result(#(State, List(Effect)), cast.Refusal) {
+) -> Result(#(State, List(Effect)), cast_state.Refusal) {
   cast.take(
     cast: state,
-    message: cast.Cancelled,
+    message: cast_state.Cancelled,
     body: cancel_body(cast_id:, reason:, bit:),
     caster: caster(),
     plans:,
@@ -1018,23 +1021,23 @@ pub fn cancelled_in(
 pub fn writes(effects effects: List(Effect)) -> List(Frame) {
   list.filter_map(effects, fn(effect) {
     case effect {
-      cast.Send(frame:) -> Ok(frame)
-      cast.Tell(..)
-      | cast.StartTimer(..)
-      | cast.CancelTimer(..)
-      | cast.Strike(..)
-      | cast.Log(..)
-      | cast.Pay(..)
-      | cast.Gain(..)
-      | cast.CasterChangeStarts(..)
-      | cast.CasterChangeEnds(..)
-      | cast.TargetChangeStarts(..)
-      | cast.TargetChangeEnds(..)
-      | cast.ForcedMoveStarts(..)
-      | cast.Activated(..)
-      | cast.ShortcutCast(..)
-      | cast.TickStrike(..)
-      | cast.StealthChanged(..) -> Error(Nil)
+      cast_state.Send(frame:) -> Ok(frame)
+      cast_state.Tell(..)
+      | cast_state.StartTimer(..)
+      | cast_state.CancelTimer(..)
+      | cast_state.Strike(..)
+      | cast_state.Log(..)
+      | cast_state.Pay(..)
+      | cast_state.Gain(..)
+      | cast_state.CasterChangeStarts(..)
+      | cast_state.CasterChangeEnds(..)
+      | cast_state.TargetChangeStarts(..)
+      | cast_state.TargetChangeEnds(..)
+      | cast_state.ForcedMoveStarts(..)
+      | cast_state.Activated(..)
+      | cast_state.ShortcutCast(..)
+      | cast_state.TickStrike(..)
+      | cast_state.StealthChanged(..) -> Error(Nil)
     }
   })
 }
@@ -1100,23 +1103,23 @@ pub fn removed_stacks(frames: List(Frame)) -> List(#(Int, Int)) {
 pub fn tells(effects effects: List(Effect)) -> List(#(ConnectionId, News)) {
   list.filter_map(effects, fn(effect) {
     case effect {
-      cast.Tell(to:, news:) -> Ok(#(to, news))
-      cast.Send(..)
-      | cast.StartTimer(..)
-      | cast.CancelTimer(..)
-      | cast.Strike(..)
-      | cast.Log(..)
-      | cast.Pay(..)
-      | cast.Gain(..)
-      | cast.CasterChangeStarts(..)
-      | cast.CasterChangeEnds(..)
-      | cast.TargetChangeStarts(..)
-      | cast.TargetChangeEnds(..)
-      | cast.ForcedMoveStarts(..)
-      | cast.Activated(..)
-      | cast.ShortcutCast(..)
-      | cast.TickStrike(..)
-      | cast.StealthChanged(..) -> Error(Nil)
+      cast_state.Tell(to:, news:) -> Ok(#(to, news))
+      cast_state.Send(..)
+      | cast_state.StartTimer(..)
+      | cast_state.CancelTimer(..)
+      | cast_state.Strike(..)
+      | cast_state.Log(..)
+      | cast_state.Pay(..)
+      | cast_state.Gain(..)
+      | cast_state.CasterChangeStarts(..)
+      | cast_state.CasterChangeEnds(..)
+      | cast_state.TargetChangeStarts(..)
+      | cast_state.TargetChangeEnds(..)
+      | cast_state.ForcedMoveStarts(..)
+      | cast_state.Activated(..)
+      | cast_state.ShortcutCast(..)
+      | cast_state.TickStrike(..)
+      | cast_state.StealthChanged(..) -> Error(Nil)
     }
   })
 }
@@ -1125,48 +1128,48 @@ pub fn tells(effects effects: List(Effect)) -> List(#(ConnectionId, News)) {
 pub fn logs(effects effects: List(Effect)) -> List(#(LogLevel, String)) {
   list.filter_map(effects, fn(effect) {
     case effect {
-      cast.Log(level:, text:) -> Ok(#(level, text))
-      cast.Send(..)
-      | cast.Tell(..)
-      | cast.StartTimer(..)
-      | cast.CancelTimer(..)
-      | cast.Strike(..)
-      | cast.Pay(..)
-      | cast.Gain(..)
-      | cast.CasterChangeStarts(..)
-      | cast.CasterChangeEnds(..)
-      | cast.TargetChangeStarts(..)
-      | cast.TargetChangeEnds(..)
-      | cast.ForcedMoveStarts(..)
-      | cast.Activated(..)
-      | cast.ShortcutCast(..)
-      | cast.TickStrike(..)
-      | cast.StealthChanged(..) -> Error(Nil)
+      cast_state.Log(level:, text:) -> Ok(#(level, text))
+      cast_state.Send(..)
+      | cast_state.Tell(..)
+      | cast_state.StartTimer(..)
+      | cast_state.CancelTimer(..)
+      | cast_state.Strike(..)
+      | cast_state.Pay(..)
+      | cast_state.Gain(..)
+      | cast_state.CasterChangeStarts(..)
+      | cast_state.CasterChangeEnds(..)
+      | cast_state.TargetChangeStarts(..)
+      | cast_state.TargetChangeEnds(..)
+      | cast_state.ForcedMoveStarts(..)
+      | cast_state.Activated(..)
+      | cast_state.ShortcutCast(..)
+      | cast_state.TickStrike(..)
+      | cast_state.StealthChanged(..) -> Error(Nil)
     }
   })
 }
 
 /// The goes the effects ask for, in order: the strikes the connection has not yet answered.
-pub fn goes_asked(effects effects: List(Effect)) -> List(cast.GoAsked) {
+pub fn goes_asked(effects effects: List(Effect)) -> List(cast_state.GoAsked) {
   list.filter_map(effects, fn(effect) {
     case effect {
-      cast.Strike(asked:) -> Ok(asked)
-      cast.Send(..)
-      | cast.Tell(..)
-      | cast.StartTimer(..)
-      | cast.CancelTimer(..)
-      | cast.Log(..)
-      | cast.Pay(..)
-      | cast.Gain(..)
-      | cast.CasterChangeStarts(..)
-      | cast.CasterChangeEnds(..)
-      | cast.TargetChangeStarts(..)
-      | cast.TargetChangeEnds(..)
-      | cast.ForcedMoveStarts(..)
-      | cast.Activated(..)
-      | cast.ShortcutCast(..)
-      | cast.TickStrike(..)
-      | cast.StealthChanged(..) -> Error(Nil)
+      cast_state.Strike(asked:) -> Ok(asked)
+      cast_state.Send(..)
+      | cast_state.Tell(..)
+      | cast_state.StartTimer(..)
+      | cast_state.CancelTimer(..)
+      | cast_state.Log(..)
+      | cast_state.Pay(..)
+      | cast_state.Gain(..)
+      | cast_state.CasterChangeStarts(..)
+      | cast_state.CasterChangeEnds(..)
+      | cast_state.TargetChangeStarts(..)
+      | cast_state.TargetChangeEnds(..)
+      | cast_state.ForcedMoveStarts(..)
+      | cast_state.Activated(..)
+      | cast_state.ShortcutCast(..)
+      | cast_state.TickStrike(..)
+      | cast_state.StealthChanged(..) -> Error(Nil)
     }
   })
 }
@@ -1175,23 +1178,23 @@ pub fn goes_asked(effects effects: List(Effect)) -> List(cast.GoAsked) {
 pub fn started_timers(effects effects: List(Effect)) -> List(#(TimerId, Int)) {
   list.filter_map(effects, fn(effect) {
     case effect {
-      cast.StartTimer(timer:, after_ms:) -> Ok(#(timer, after_ms))
-      cast.Send(..)
-      | cast.Tell(..)
-      | cast.CancelTimer(..)
-      | cast.Strike(..)
-      | cast.Log(..)
-      | cast.Pay(..)
-      | cast.Gain(..)
-      | cast.CasterChangeStarts(..)
-      | cast.CasterChangeEnds(..)
-      | cast.TargetChangeStarts(..)
-      | cast.TargetChangeEnds(..)
-      | cast.ForcedMoveStarts(..)
-      | cast.Activated(..)
-      | cast.ShortcutCast(..)
-      | cast.TickStrike(..)
-      | cast.StealthChanged(..) -> Error(Nil)
+      cast_state.StartTimer(timer:, after_ms:) -> Ok(#(timer, after_ms))
+      cast_state.Send(..)
+      | cast_state.Tell(..)
+      | cast_state.CancelTimer(..)
+      | cast_state.Strike(..)
+      | cast_state.Log(..)
+      | cast_state.Pay(..)
+      | cast_state.Gain(..)
+      | cast_state.CasterChangeStarts(..)
+      | cast_state.CasterChangeEnds(..)
+      | cast_state.TargetChangeStarts(..)
+      | cast_state.TargetChangeEnds(..)
+      | cast_state.ForcedMoveStarts(..)
+      | cast_state.Activated(..)
+      | cast_state.ShortcutCast(..)
+      | cast_state.TickStrike(..)
+      | cast_state.StealthChanged(..) -> Error(Nil)
     }
   })
 }
@@ -1200,23 +1203,23 @@ pub fn started_timers(effects effects: List(Effect)) -> List(#(TimerId, Int)) {
 pub fn cancelled_timers(effects effects: List(Effect)) -> List(TimerId) {
   list.filter_map(effects, fn(effect) {
     case effect {
-      cast.CancelTimer(timer:) -> Ok(timer)
-      cast.Send(..)
-      | cast.Tell(..)
-      | cast.StartTimer(..)
-      | cast.Strike(..)
-      | cast.Log(..)
-      | cast.Pay(..)
-      | cast.Gain(..)
-      | cast.CasterChangeStarts(..)
-      | cast.CasterChangeEnds(..)
-      | cast.TargetChangeStarts(..)
-      | cast.TargetChangeEnds(..)
-      | cast.ForcedMoveStarts(..)
-      | cast.Activated(..)
-      | cast.ShortcutCast(..)
-      | cast.TickStrike(..)
-      | cast.StealthChanged(..) -> Error(Nil)
+      cast_state.CancelTimer(timer:) -> Ok(timer)
+      cast_state.Send(..)
+      | cast_state.Tell(..)
+      | cast_state.StartTimer(..)
+      | cast_state.Strike(..)
+      | cast_state.Log(..)
+      | cast_state.Pay(..)
+      | cast_state.Gain(..)
+      | cast_state.CasterChangeStarts(..)
+      | cast_state.CasterChangeEnds(..)
+      | cast_state.TargetChangeStarts(..)
+      | cast_state.TargetChangeEnds(..)
+      | cast_state.ForcedMoveStarts(..)
+      | cast_state.Activated(..)
+      | cast_state.ShortcutCast(..)
+      | cast_state.TickStrike(..)
+      | cast_state.StealthChanged(..) -> Error(Nil)
     }
   })
 }
@@ -1271,7 +1274,7 @@ pub fn went(
   now now: Now,
   cast_id cast_id: Int,
   phase phase: Int,
-  struck struck: List(cast.Struck),
+  struck struck: List(cast_state.Struck),
 ) -> #(State, List(Effect)) {
   went_of_spell(
     cast:,
@@ -1292,7 +1295,7 @@ pub fn went_of_spell(
   cast_id cast_id: Int,
   phase phase: Int,
   spell spell: Result(Spell, Nil),
-  struck struck: List(cast.Struck),
+  struck struck: List(cast_state.Struck),
 ) -> #(State, List(Effect)) {
   cast.went(
     cast:,
@@ -1316,7 +1319,7 @@ pub fn answered_by(
   state state: State,
   effects effects: List(Effect),
   at ms: Int,
-  struck struck: List(cast.Struck),
+  struck struck: List(cast_state.Struck),
 ) -> #(State, List(Effect)) {
   answered_as(caster: caster(), state:, effects:, at: ms, struck:, rolls: [])
 }
@@ -1328,7 +1331,7 @@ pub fn answered_as(
   state state: State,
   effects effects: List(Effect),
   at ms: Int,
-  struck struck: List(cast.Struck),
+  struck struck: List(cast_state.Struck),
   rolls rolls: List(Int),
 ) -> #(State, List(Effect)) {
   answered_posed(
@@ -1349,7 +1352,7 @@ pub fn answered_posed(
   state state: State,
   effects effects: List(Effect),
   at ms: Int,
-  struck struck: List(cast.Struck),
+  struck struck: List(cast_state.Struck),
   rolls rolls: List(Int),
   poses poses: dict.Dict(Int, Pose),
 ) -> #(State, List(Effect)) {
@@ -1371,7 +1374,7 @@ pub fn answered_each(
   state state: State,
   effects effects: List(Effect),
   at ms: Int,
-  struck_of struck_of: fn(cast.GoAsked) -> List(cast.Struck),
+  struck_of struck_of: fn(cast_state.GoAsked) -> List(cast_state.Struck),
   rolls rolls: List(Int),
   poses poses: dict.Dict(Int, Pose),
 ) -> #(State, List(Effect)) {
@@ -1395,7 +1398,7 @@ pub fn answered_known(
   state state: State,
   effects effects: List(Effect),
   at ms: Int,
-  struck_of struck_of: fn(cast.GoAsked) -> List(cast.Struck),
+  struck_of struck_of: fn(cast_state.GoAsked) -> List(cast_state.Struck),
   rolls rolls: List(Int),
   poses poses: dict.Dict(Int, Pose),
   units units: dict.Dict(Int, prerequisite.FirstUnit),
@@ -1403,7 +1406,7 @@ pub fn answered_known(
   list.fold(effects, #(state, []), fn(so_far, effect) {
     let #(state, done) = so_far
     case effect {
-      cast.Strike(asked:) -> {
+      cast_state.Strike(asked:) -> {
         let #(state, going) =
           cast.went(
             cast: state,
@@ -1433,22 +1436,22 @@ pub fn answered_known(
           )
         #(state, list.append(done, more))
       }
-      cast.Send(..)
-      | cast.Tell(..)
-      | cast.StartTimer(..)
-      | cast.CancelTimer(..)
-      | cast.Log(..)
-      | cast.Pay(..)
-      | cast.Gain(..)
-      | cast.CasterChangeStarts(..)
-      | cast.CasterChangeEnds(..)
-      | cast.TargetChangeStarts(..)
-      | cast.TargetChangeEnds(..)
-      | cast.ForcedMoveStarts(..)
-      | cast.Activated(..)
-      | cast.ShortcutCast(..)
-      | cast.TickStrike(..)
-      | cast.StealthChanged(..) -> #(state, list.append(done, [effect]))
+      cast_state.Send(..)
+      | cast_state.Tell(..)
+      | cast_state.StartTimer(..)
+      | cast_state.CancelTimer(..)
+      | cast_state.Log(..)
+      | cast_state.Pay(..)
+      | cast_state.Gain(..)
+      | cast_state.CasterChangeStarts(..)
+      | cast_state.CasterChangeEnds(..)
+      | cast_state.TargetChangeStarts(..)
+      | cast_state.TargetChangeEnds(..)
+      | cast_state.ForcedMoveStarts(..)
+      | cast_state.Activated(..)
+      | cast_state.ShortcutCast(..)
+      | cast_state.TickStrike(..)
+      | cast_state.StealthChanged(..) -> #(state, list.append(done, [effect]))
     }
   })
 }
@@ -1466,7 +1469,7 @@ pub fn ids(frames frames: List(Frame)) -> List(Int) {
 /// One timer that fired: the time it fired at, the goes the rule asked for (before they
 /// were answered) and the effects of its answered step.
 pub type Fired {
-  Fired(at_ms: Int, asked: List(cast.GoAsked), effects: List(Effect))
+  Fired(at_ms: Int, asked: List(cast_state.GoAsked), effects: List(Effect))
 }
 
 /// Fires every timer a step started, earliest first, and each timer those steps
@@ -1485,7 +1488,7 @@ pub fn run_timers_striking(
   state state: State,
   effects effects: List(Effect),
   from_ms from_ms: Int,
-  struck struck: List(cast.Struck),
+  struck struck: List(cast_state.Struck),
 ) -> #(State, List(#(Int, List(Effect)))) {
   run_timers_each(
     caster: caster(),
@@ -1502,7 +1505,7 @@ pub fn run_timers_each(
   state state: State,
   effects effects: List(Effect),
   from_ms from_ms: Int,
-  struck_of struck_of: fn(cast.GoAsked) -> List(cast.Struck),
+  struck_of struck_of: fn(cast_state.GoAsked) -> List(cast_state.Struck),
 ) -> #(State, List(#(Int, List(Effect)))) {
   let #(state, fired) =
     run_timers_asking(
@@ -1522,7 +1525,7 @@ pub fn run_timers_asking(
   state state: State,
   effects effects: List(Effect),
   from_ms from_ms: Int,
-  struck_at struck_at: fn(Int, cast.GoAsked) -> List(cast.Struck),
+  struck_at struck_at: fn(Int, cast_state.GoAsked) -> List(cast_state.Struck),
 ) -> #(State, List(Fired)) {
   run_timers_posed(
     caster:,
@@ -1543,7 +1546,7 @@ pub fn run_timers_posed(
   state state: State,
   effects effects: List(Effect),
   from_ms from_ms: Int,
-  struck_at struck_at: fn(Int, cast.GoAsked) -> List(cast.Struck),
+  struck_at struck_at: fn(Int, cast_state.GoAsked) -> List(cast_state.Struck),
   poses poses: dict.Dict(Int, Pose),
   until_ms until_ms: Option(Int),
 ) -> #(State, List(Fired)) {
@@ -1606,7 +1609,7 @@ fn run_pending(
   state state: State,
   pending pending: List(#(Int, TimerId)),
   fired_so_far fired_so_far: List(Fired),
-  struck_at struck_at: fn(Int, cast.GoAsked) -> List(cast.Struck),
+  struck_at struck_at: fn(Int, cast_state.GoAsked) -> List(cast_state.Struck),
   poses poses: dict.Dict(Int, Pose),
   until_ms until_ms: Option(Int),
 ) -> #(State, List(Fired)) {
@@ -1786,26 +1789,28 @@ pub fn raising_interrupt_armor_threshold(
 }
 
 /// The tick strikes among `effects`, in order.
-pub fn tick_strikes(effects effects: List(Effect)) -> List(cast.TickAsked) {
+pub fn tick_strikes(
+  effects effects: List(Effect),
+) -> List(cast_state.TickAsked) {
   list.filter_map(effects, fn(effect) {
     case effect {
-      cast.TickStrike(asked:) -> Ok(asked)
-      cast.Send(..)
-      | cast.Tell(..)
-      | cast.StartTimer(..)
-      | cast.CancelTimer(..)
-      | cast.Log(..)
-      | cast.Strike(..)
-      | cast.Pay(..)
-      | cast.Gain(..)
-      | cast.CasterChangeStarts(..)
-      | cast.CasterChangeEnds(..)
-      | cast.TargetChangeStarts(..)
-      | cast.TargetChangeEnds(..)
-      | cast.ForcedMoveStarts(..)
-      | cast.Activated(..)
-      | cast.ShortcutCast(..)
-      | cast.StealthChanged(..) -> Error(Nil)
+      cast_state.TickStrike(asked:) -> Ok(asked)
+      cast_state.Send(..)
+      | cast_state.Tell(..)
+      | cast_state.StartTimer(..)
+      | cast_state.CancelTimer(..)
+      | cast_state.Log(..)
+      | cast_state.Strike(..)
+      | cast_state.Pay(..)
+      | cast_state.Gain(..)
+      | cast_state.CasterChangeStarts(..)
+      | cast_state.CasterChangeEnds(..)
+      | cast_state.TargetChangeStarts(..)
+      | cast_state.TargetChangeEnds(..)
+      | cast_state.ForcedMoveStarts(..)
+      | cast_state.Activated(..)
+      | cast_state.ShortcutCast(..)
+      | cast_state.StealthChanged(..) -> Error(Nil)
     }
   })
 }

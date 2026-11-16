@@ -6,7 +6,7 @@
 //// 2^20, the bound the cast ids already hold (`cast.cast_id`).
 
 import fixture_tables
-import genesis_prime/game/cast
+import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/crowd_control
 import genesis_prime/message/crowd_control_state
 import genesis_prime/table/cc_states
@@ -62,7 +62,7 @@ pub fn one_casters_ids_within_4095_counts_differ_test() -> Nil {
 
 pub fn the_bound_on_unit_ids_is_the_cast_ids_test() -> Nil {
   use <- owned_test.run(5000)
-  assert cast.cast_id(unit_id: 1_048_575, number: 2047) < 4_294_967_296
+  assert cast_state.cast_id(unit_id: 1_048_575, number: 2047) < 4_294_967_296
     as "a unit id of 2^20 - 1 is the largest whose cast ids fit 32 bits, so the largest the instance ids need"
 }
 

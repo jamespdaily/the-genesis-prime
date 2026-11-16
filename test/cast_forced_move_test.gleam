@@ -24,7 +24,8 @@
 ////   cast's node on the creature, so the node's end cancels one still waiting.
 
 import cast_support as support
-import genesis_prime/game/cast.{type State}
+import genesis_prime/game/cast
+import genesis_prime/game/cast/state.{type State} as cast_state
 import genesis_prime/game/forced_move
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/prerequisite
@@ -65,10 +66,10 @@ fn holder(
 // The planted base 3 is bag index 11 (`cast_support.abilities`).
 const bag_of_base_3 = 11
 
-fn press(spell spell: Spell) -> #(State, List(cast.Effect)) {
+fn press(spell spell: Spell) -> #(State, List(cast_state.Effect)) {
   support.pressed_in(
     plans: support.plans_with(spell:),
-    state: cast.new(),
+    state: cast_state.new(),
     caster: support.caster(),
     bag_index: bag_of_base_3,
     target: 0,
@@ -79,7 +80,7 @@ fn press(spell spell: Spell) -> #(State, List(cast.Effect)) {
 /// The effects the go's target info of the unit lists, with each one's delay, and the
 /// unit.
 fn listed(
-  effects effects: List(cast.Effect),
+  effects effects: List(cast_state.Effect),
 ) -> List(#(Int, List(#(Int, Int)))) {
   let assert [go] = support.frames_of(message_id: spell_go.message_id, effects:)
   let assert Ok(decoded) = spell_go.decode(go.body)
@@ -95,24 +96,24 @@ fn listed(
 }
 
 /// Whether the effect starts or ends a change of one of the caster's properties.
-fn changes_a_property(effect effect: cast.Effect) -> Bool {
+fn changes_a_property(effect effect: cast_state.Effect) -> Bool {
   case effect {
-    cast.CasterChangeStarts(..) | cast.CasterChangeEnds(..) -> True
-    cast.Send(..)
-    | cast.Tell(..)
-    | cast.StartTimer(..)
-    | cast.CancelTimer(..)
-    | cast.Log(..)
-    | cast.Strike(..)
-    | cast.TickStrike(..)
-    | cast.Pay(..)
-    | cast.TargetChangeStarts(..)
-    | cast.TargetChangeEnds(..)
-    | cast.ForcedMoveStarts(..)
-    | cast.Activated(..)
-    | cast.ShortcutCast(..)
-    | cast.StealthChanged(..)
-    | cast.Gain(..) -> False
+    cast_state.CasterChangeStarts(..) | cast_state.CasterChangeEnds(..) -> True
+    cast_state.Send(..)
+    | cast_state.Tell(..)
+    | cast_state.StartTimer(..)
+    | cast_state.CancelTimer(..)
+    | cast_state.Log(..)
+    | cast_state.Strike(..)
+    | cast_state.TickStrike(..)
+    | cast_state.Pay(..)
+    | cast_state.TargetChangeStarts(..)
+    | cast_state.TargetChangeEnds(..)
+    | cast_state.ForcedMoveStarts(..)
+    | cast_state.Activated(..)
+    | cast_state.ShortcutCast(..)
+    | cast_state.StealthChanged(..)
+    | cast_state.Gain(..) -> False
   }
 }
 
@@ -192,7 +193,7 @@ pub fn a_forced_move_behind_a_type_37_gate_takes_one_roll_and_is_listed_when_it_
   let #(state, raw) =
     support.pressed_raw_in(
       plans: support.plans_with(spell:),
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster(),
       bag_index: bag_of_base_3,
       target: 0,
@@ -201,23 +202,23 @@ pub fn a_forced_move_behind_a_type_37_gate_takes_one_roll_and_is_listed_when_it_
   let assert [asked] =
     list.filter_map(raw, fn(effect) {
       case effect {
-        cast.Strike(asked:) -> Ok(asked)
-        cast.Send(..)
-        | cast.Tell(..)
-        | cast.StartTimer(..)
-        | cast.CancelTimer(..)
-        | cast.Log(..)
-        | cast.Pay(..)
-        | cast.Gain(..)
-        | cast.CasterChangeStarts(..)
-        | cast.CasterChangeEnds(..)
-        | cast.TargetChangeStarts(..)
-        | cast.TargetChangeEnds(..)
-        | cast.ForcedMoveStarts(..)
-        | cast.Activated(..)
-        | cast.ShortcutCast(..)
-        | cast.TickStrike(..)
-        | cast.StealthChanged(..) -> Error(Nil)
+        cast_state.Strike(asked:) -> Ok(asked)
+        cast_state.Send(..)
+        | cast_state.Tell(..)
+        | cast_state.StartTimer(..)
+        | cast_state.CancelTimer(..)
+        | cast_state.Log(..)
+        | cast_state.Pay(..)
+        | cast_state.Gain(..)
+        | cast_state.CasterChangeStarts(..)
+        | cast_state.CasterChangeEnds(..)
+        | cast_state.TargetChangeStarts(..)
+        | cast_state.TargetChangeEnds(..)
+        | cast_state.ForcedMoveStarts(..)
+        | cast_state.Activated(..)
+        | cast_state.ShortcutCast(..)
+        | cast_state.TickStrike(..)
+        | cast_state.StealthChanged(..) -> Error(Nil)
       }
     })
   assert cast.rolls_needed(
@@ -277,10 +278,10 @@ fn throwing_row(delay_ms delay_ms: Int) -> spell_plan.StruckMove {
 }
 
 /// A creature the round hit in `life` at the monotonic time 1000.
-fn hit(unit_id unit_id: Int, life life: Int) -> cast.Struck {
-  cast.Hit(
+fn hit(unit_id unit_id: Int, life life: Int) -> cast_state.Struck {
+  cast_state.Hit(
     unit_id:,
-    unit: cast.HitCreature(life:, struck_at_ms: 1000),
+    unit: cast_state.HitCreature(life:, struck_at_ms: 1000),
     descriptions: [],
     controls: [],
     armor_removed: 0,
@@ -291,12 +292,12 @@ fn hit(unit_id unit_id: Int, life life: Int) -> cast.Struck {
 /// The effects of the press and of the go that the round `struck` answers.
 fn thrown_by(
   spell spell: Spell,
-  struck struck: List(cast.Struck),
-) -> #(State, List(cast.Effect)) {
+  struck struck: List(cast_state.Struck),
+) -> #(State, List(cast_state.Effect)) {
   let #(state, effects) =
     support.pressed_raw_in(
       plans: support.plans_with(spell:),
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster(),
       bag_index: bag_of_base_3,
       target: 0,
@@ -314,8 +315,13 @@ fn thrower(rows rows: List(spell_plan.StruckMove)) -> Spell {
   )
 }
 
-fn thrown(unit_id: Int, life: Int) -> cast.Effect {
-  cast.ForcedMoveStarts(unit_id:, life:, struck_at_ms: 1000, move: knockback())
+fn thrown(unit_id: Int, life: Int) -> cast_state.Effect {
+  cast_state.ForcedMoveStarts(
+    unit_id:,
+    life:,
+    struck_at_ms: 1000,
+    move: knockback(),
+  )
 }
 
 pub fn a_go_tells_each_hit_creature_its_throw_in_the_same_step_test() -> Nil {
@@ -354,7 +360,7 @@ pub fn a_deflected_creature_is_not_thrown_test() -> Nil {
   use <- owned_test.run(5000)
   let #(_, effects) =
     thrown_by(spell: thrower(rows: [throwing_row(delay_ms: 0)]), struck: [
-      cast.Deflected(unit_id: 21),
+      cast_state.Deflected(unit_id: 21),
       hit(unit_id: 23, life: 5),
     ])
   assert support.throws(effects:) == [thrown(23, 5)]
@@ -418,7 +424,7 @@ pub fn a_go_lists_each_throw_on_the_creature_it_throws_with_its_delay_test() -> 
   use <- owned_test.run(5000)
   let #(_, effects) =
     thrown_by(spell: thrower(rows: [throwing_row(delay_ms: 200)]), struck: [
-      cast.Deflected(unit_id: 21),
+      cast_state.Deflected(unit_id: 21),
       hit(unit_id: 23, life: 5),
     ])
   assert listed(effects:) == [#(23, [#(73_826, 200)])]
@@ -444,7 +450,7 @@ pub fn a_throw_behind_a_type_37_gate_takes_one_roll_and_is_thrown_when_it_passes
   let #(state, raw) =
     support.pressed_raw_in(
       plans: support.plans_with(spell: chance_throw()),
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster(),
       bag_index: bag_of_base_3,
       target: 0,
@@ -520,7 +526,7 @@ pub fn a_throw_behind_a_type_37_target_gate_takes_one_roll_for_each_creature_it_
   let #(state, raw) =
     support.pressed_raw_in(
       plans: support.plans_with(spell:),
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster(),
       bag_index: bag_of_base_3,
       target: 0,
@@ -586,7 +592,7 @@ pub fn forced_move_past_the_caster_behind_a_target_gate_moves_only_passing_units
   let #(state, raw) =
     support.pressed_raw_in(
       plans: support.plans_with(spell:),
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster(),
       bag_index: bag_of_base_3,
       target: 0,

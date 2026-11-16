@@ -19,6 +19,7 @@
 
 import cast_support as support
 import genesis_prime/game/cast
+import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/lasting.{type LastingRow, LastingRow}
 import genesis_prime/game/spell_plan.{AimsAtCaster, Always, InterruptArmor}
 import genesis_prime/game/spend
@@ -77,7 +78,7 @@ pub fn a_go_with_interrupt_armor_lists_it_on_the_caster_and_gives_the_node_its_t
       ]),
     ])
   let #(state, effects) =
-    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_base_3, at: 1000)
   let assert [go] = support.frames_of(message_id: spell_go.message_id, effects:)
   let assert Ok(decoded) = spell_go.decode(go.body)
   let assert [info] = decoded.targets
@@ -114,7 +115,7 @@ pub fn interrupt_armor_with_no_delay_starts_in_the_gos_step_and_ends_after_its_d
       ]),
     ])
   let #(state, effects) =
-    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_base_3, at: 1000)
   let id = support.pressed_id(effects:)
   let source = support.source_of(cast_id: id, effect_id: 199_192)
   assert support.property_starts(effects:)
@@ -141,7 +142,7 @@ pub fn interrupt_armor_with_a_delay_starts_on_a_timer_test() -> Nil {
       support.spell_holding(spell4_id: 79_917, base: 3, modifiers: [delayed]),
     ])
   let #(state, effects) =
-    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_base_3, at: 1000)
   let id = support.pressed_id(effects:)
   let source = support.source_of(cast_id: id, effect_id: 210_961)
   assert support.property_starts(effects:) == []
@@ -181,7 +182,7 @@ pub fn interrupt_armor_ends_at_once_when_its_node_is_taken_off_or_its_persistenc
       ]),
     ])
   let #(state, first) =
-    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_base_3, at: 1000)
   let id = support.pressed_id(effects: first)
   assert list.length(support.property_starts(effects: first)) == 1
     as "the armor started in the press's go"
@@ -211,11 +212,11 @@ pub fn interrupt_armor_ends_at_once_when_its_node_is_taken_off_or_its_persistenc
         caster_persistence: Some(in_combat),
       ),
     ])
-  let fighting = cast.Caster(..support.caster(), in_combat: True)
+  let fighting = cast_state.Caster(..support.caster(), in_combat: True)
   let #(lingering, pressed) =
     support.pressed_in(
       plans: guarded,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: fighting,
       bag_index: bag_of_base_3,
       target: 0,
@@ -227,7 +228,7 @@ pub fn interrupt_armor_ends_at_once_when_its_node_is_taken_off_or_its_persistenc
   let #(_, ended) =
     cast.persisted(
       cast: lingering,
-      caster: cast.Caster(..support.caster(), in_combat: False),
+      caster: cast_state.Caster(..support.caster(), in_combat: False),
       now: support.at(ms: 2000),
     )
   assert support.caster_change_ends(effects: ended)
@@ -259,7 +260,7 @@ pub fn the_casters_death_ends_its_interrupt_armor_test() -> Nil {
       support.spell_holding(spell4_id: 79_917, base: 1, modifiers: [delayed]),
     ])
   let #(state, first) =
-    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_base_3, at: 1000)
   assert list.length(support.property_starts(effects: first)) == 1
     as "the first cast's armor started in its go"
   let #(state, second) =
@@ -296,7 +297,7 @@ pub fn a_later_go_of_the_same_cast_arms_the_armor_again_and_holds_it_once_test()
       ),
     ])
   let #(state, effects) =
-    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_base_3, at: 1000)
   let id = support.pressed_id(effects:)
   let source = support.source_of(cast_id: id, effect_id: 199_192)
   assert list.map(support.property_starts(effects:), fn(start) { start.0 })

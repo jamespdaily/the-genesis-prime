@@ -80,6 +80,7 @@ import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/activate
 import genesis_prime/game/area
 import genesis_prime/game/cast
+import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection/absorption as connection_absorption
 import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/healing as connection_healing
@@ -142,7 +143,7 @@ pub fn cast_message(
   now now: Now,
   entered entered: world_entry.Entered,
   inner inner: Frame,
-  message message: cast.Message,
+  message message: cast_state.Message,
 ) -> client_connection.Handled(Session) {
   case
     cast.take(
@@ -285,7 +286,7 @@ pub fn shortcut_message(
 /// radius of its body and what each unit is to the player (`activate_target`).
 type WorldCast {
   WorldCast(
-    caster: cast.Caster,
+    caster: cast_state.Caster,
     caster_radius: Float,
     target_of: fn(Int) -> activate.Target,
   )
@@ -383,7 +384,7 @@ fn used_unit(
   entered entered: world_entry.Entered,
   link_of link_of: fn(Int, creature2.Creature2, Int) -> activate.Link,
   now_ms now_ms: Int,
-) -> fn(Int) -> Result(cast.UsedUnit, Nil) {
+) -> fn(Int) -> Result(cast_state.UsedUnit, Nil) {
   let use_targets = objective.use_targets(log: quests, tables:)
   fn(unit_id) {
     use one <- result.try(dict.get(picture, unit_id))
@@ -439,7 +440,7 @@ fn used_unit_at(
   link_of link_of: fn(creature2.Creature2, Int) -> activate.Link,
   alive alive: Bool,
   body body: activate.Body,
-) -> Result(cast.UsedUnit, Nil) {
+) -> Result(cast_state.UsedUnit, Nil) {
   use #(unit, checklist_index) <- result.try(shown.target_of(
     tables:,
     shown: one,
@@ -450,7 +451,7 @@ fn used_unit_at(
     checklist_index:,
     link_of:,
   ))
-  cast.UsedUnit(
+  cast_state.UsedUnit(
     creature_id: unit.creature_id.value,
     creature:,
     checklist_index:,
@@ -479,8 +480,8 @@ fn creature_and_link(
 fn link_of(
   tables tables: table_store.Tables,
   activations activations: activate.Activations,
-  state state: cast.State,
-  caster caster: cast.Caster,
+  state state: cast_state.State,
+  caster caster: cast_state.Caster,
 ) -> fn(Int, creature2.Creature2, Int) -> activate.Link {
   fn(unit_id, row, checklist_index) {
     objective_link.of(
@@ -736,9 +737,9 @@ pub fn persisted(
 pub fn caster_of(
   tables tables: table_store.Tables,
   entered entered: world_entry.Entered,
-) -> cast.Caster {
+) -> cast_state.Caster {
   let life = entered.life
-  cast.Caster(
+  cast_state.Caster(
     unit_id: entered.unit_id,
     place: movement.place(entered.movement),
     abilities: loadout.bag(loadout: entered.loadout),
@@ -754,14 +755,14 @@ pub fn caster_of(
     in_combat: player_life.in_combat(life:),
     life_vitals: dict.from_list([
       #(
-        cast.health_vital,
+        cast_state.health_vital,
         prerequisite.Vital(
           current: int.to_float(player_life.health(life:)),
           maximum: int.to_float(player_life.max_health(life:)),
         ),
       ),
       #(
-        cast.shield_vital,
+        cast_state.shield_vital,
         prerequisite.Vital(
           current: int.to_float(player_life.shield(life:)),
           maximum: int.to_float(player_life.max_shield(life:)),
@@ -791,7 +792,10 @@ fn stats_of(entered entered: world_entry.Entered) -> damage.Attacker {
 }
 
 /// The session with the player's cast state replaced.
-pub fn with_cast(session session: Session, cast cast: cast.State) -> Session {
+pub fn with_cast(
+  session session: Session,
+  cast cast: cast_state.State,
+) -> Session {
   connection_state.with_entered(session:, change: fn(entered) {
     world_entry.Entered(..entered, cast:)
   })
@@ -801,7 +805,7 @@ pub fn with_cast(session session: Session, cast cast: cast.State) -> Session {
 fn carry_cast(
   session session: Session,
   now now: Now,
-  effects effects: List(cast.Effect),
+  effects effects: List(cast_state.Effect),
 ) -> client_connection.Handled(Session) {
   let #(session, written) = cast_effects(session:, now:, effects:)
   Continue(session, written)
@@ -834,7 +838,7 @@ fn counted_target(
 pub fn cast_effects(
   session session: Session,
   now now: Now,
-  effects effects: List(cast.Effect),
+  effects effects: List(cast_state.Effect),
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
   carried_out(session:, now:, effects:)
   |> procs_fired(now:)
@@ -866,7 +870,9 @@ pub fn moved(
           raised(
             session: with_cast(
               session:,
-              cast: cast.raised(cast: entered.cast, facts: [cast.StartedMoving]),
+              cast: cast.raised(cast: entered.cast, facts: [
+                cast_state.StartedMoving,
+              ]),
             ),
             now:,
           )
@@ -882,7 +888,7 @@ pub fn moved(
 fn carried_out(
   session session: Session,
   now now: Now,
-  effects effects: List(cast.Effect),
+  effects effects: List(cast_state.Effect),
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
   list.fold(effects, #(session, []), fn(so_far, effect) {
     let #(session, done) = so_far
@@ -890,30 +896,32 @@ fn carried_out(
       effect,
       connection_state.entered_of(session.status)
     {
-      cast.Send(frame:), _ -> #(session, [
+      cast_state.Send(frame:), _ -> #(session, [
         connection_state.to_client(session, frame),
       ])
-      cast.Tell(to:, news:), Some(entered) -> #(
+      cast_state.Tell(to:, news:), Some(entered) -> #(
         session,
         connection_state.news_to_connection(entered:, connection: to, news:),
       )
-      cast.Tell(..), None -> #(session, [])
-      cast.StartTimer(timer:, after_ms:), _ -> #(session, [
+      cast_state.Tell(..), None -> #(session, [])
+      cast_state.StartTimer(timer:, after_ms:), _ -> #(session, [
         OwnEffect(StartTimer(timer:, after_ms:)),
       ])
-      cast.CancelTimer(timer:), _ -> #(session, [
+      cast_state.CancelTimer(timer:), _ -> #(session, [
         OwnEffect(CancelTimer(timer:)),
       ])
-      cast.Log(level:, text:), _ -> #(session, [
+      cast_state.Log(level:, text:), _ -> #(session, [
         connection_state.log(session:, level:, text:),
       ])
-      cast.Strike(asked:), Some(entered) ->
+      cast_state.Strike(asked:), Some(entered) ->
         strike_begins(session:, now:, entered:, asked:)
-      cast.Strike(..), None -> #(session, [])
-      cast.TickStrike(asked:), Some(entered) ->
+      cast_state.Strike(..), None -> #(session, [])
+      cast_state.TickStrike(asked:), Some(entered) ->
         tick_strike_begins(session:, now:, entered:, asked:)
-      cast.TickStrike(..), None -> #(session, [])
-      cast.Activated(unit_id:, alive_at_press:, by_item:, ..), Some(entered) ->
+      cast_state.TickStrike(..), None -> #(session, [])
+      cast_state.Activated(unit_id:, alive_at_press:, by_item:, ..),
+        Some(entered)
+      ->
         // The go is raised even when the unit has left the picture or died, and a use
         // of a creature the player no longer sees, or that died since the press, counts
         // for no objective (`SetUnitDeathState` 0x14045e740 cancels the player's current
@@ -957,16 +965,16 @@ fn carried_out(
           }
           Error(Nil) -> #(session, [])
         }
-      cast.Activated(..), None -> #(session, [])
-      cast.ShortcutCast(spell4_id:, target: None), Some(_) ->
+      cast_state.Activated(..), None -> #(session, [])
+      cast_state.ShortcutCast(spell4_id:, target: None), Some(_) ->
         connection_objective.counted(
           session:,
           now:,
           event: objective.Cast(spell4_id: Spell4Id(spell4_id), target: None),
         )
-      cast.ShortcutCast(
+      cast_state.ShortcutCast(
         spell4_id:,
-        target: Some(cast.PressedAt(unit_id:, alive_at_press:)),
+        target: Some(cast_state.PressedAt(unit_id:, alive_at_press:)),
       ),
         Some(entered)
       ->
@@ -994,18 +1002,32 @@ fn carried_out(
             )
           Error(Nil) -> #(session, [])
         }
-      cast.ShortcutCast(..), None -> #(session, [])
-      cast.Pay(payments:), _ -> connection_resource.paid(session:, payments:)
-      cast.Gain(gains:), _ -> connection_resource.gained(session:, gains:)
-      cast.CasterChangeStarts(source:, change: cast.Property(modifier:)), _ ->
-        connection_properties.started(session:, now:, source:, modifier:)
-      cast.CasterChangeStarts(change: cast.Heal(vital:, amount:), ..), _ ->
-        connection_healing.healed(session:, now:, vital:, amount:)
-      cast.CasterChangeStarts(source:, change: cast.Absorb(amount:, mask:)), _
+      cast_state.ShortcutCast(..), None -> #(session, [])
+      cast_state.Pay(payments:), _ ->
+        connection_resource.paid(session:, payments:)
+      cast_state.Gain(gains:), _ -> connection_resource.gained(session:, gains:)
+      cast_state.CasterChangeStarts(
+        source:,
+        change: cast_state.Property(modifier:),
+      ),
+        _
+      -> connection_properties.started(session:, now:, source:, modifier:)
+      cast_state.CasterChangeStarts(
+        change: cast_state.Heal(vital:, amount:),
+        ..,
+      ),
+        _
+      -> connection_healing.healed(session:, now:, vital:, amount:)
+      cast_state.CasterChangeStarts(
+        source:,
+        change: cast_state.Absorb(amount:, mask:),
+      ),
+        _
       -> connection_absorption.started(session:, now:, source:, amount:, mask:)
-      cast.CasterChangeStarts(source:, change: cast.Look(disguise:)), _ ->
-        connection_look.started(session:, source:, disguise:)
-      cast.CasterChangeEnds(source:), _ -> {
+      cast_state.CasterChangeStarts(source:, change: cast_state.Look(disguise:)),
+        _
+      -> connection_look.started(session:, source:, disguise:)
+      cast_state.CasterChangeEnds(source:), _ -> {
         let #(session, properties) =
           connection_properties.ended(session:, now:, source:)
         let #(session, look) = connection_look.ended(session:, source:)
@@ -1013,7 +1035,7 @@ fn carried_out(
           connection_absorption.ended(session:, now:, source:)
         #(session, list.flatten([properties, look, absorption]))
       }
-      cast.StealthChanged(stealthed:), Some(entered) -> #(
+      cast_state.StealthChanged(stealthed:), Some(entered) -> #(
         session,
         list.flatten([
           [
@@ -1043,8 +1065,8 @@ fn carried_out(
           ],
         ]),
       )
-      cast.StealthChanged(..), None -> #(session, [])
-      cast.TargetChangeStarts(
+      cast_state.StealthChanged(..), None -> #(session, [])
+      cast_state.TargetChangeStarts(
         unit_id:,
         life:,
         struck_at_ms:,
@@ -1065,8 +1087,8 @@ fn carried_out(
           ),
         ),
       ])
-      cast.TargetChangeStarts(..), None -> #(session, [])
-      cast.TargetChangeEnds(unit_id:, life:, source:), Some(entered) -> #(
+      cast_state.TargetChangeStarts(..), None -> #(session, [])
+      cast_state.TargetChangeEnds(unit_id:, life:, source:), Some(entered) -> #(
         session,
         [
           tells_the_creature(
@@ -1078,8 +1100,8 @@ fn carried_out(
           ),
         ],
       )
-      cast.TargetChangeEnds(..), None -> #(session, [])
-      cast.ForcedMoveStarts(unit_id:, life:, struck_at_ms:, move:),
+      cast_state.TargetChangeEnds(..), None -> #(session, [])
+      cast_state.ForcedMoveStarts(unit_id:, life:, struck_at_ms:, move:),
         Some(entered)
       -> {
         let #(session, tell) =
@@ -1093,7 +1115,7 @@ fn carried_out(
           )
         #(session, [tell])
       }
-      cast.ForcedMoveStarts(..), None -> #(session, [])
+      cast_state.ForcedMoveStarts(..), None -> #(session, [])
     }
     #(session, list.append(done, more))
   })
@@ -1246,7 +1268,7 @@ fn strike_begins(
   session session: Session,
   now now: Now,
   entered entered: world_entry.Entered,
-  asked asked: cast.GoAsked,
+  asked asked: cast_state.GoAsked,
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
   let tables = session.settings.tables
   let attacker = attacker_of(session:, entered:)
@@ -1300,7 +1322,7 @@ fn tick_strike_begins(
   session session: Session,
   now now: Now,
   entered entered: world_entry.Entered,
-  asked asked: cast.TickAsked,
+  asked asked: cast_state.TickAsked,
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
   let #(link, entropy) =
     client_connection.draw(session.link, strike.tick_entropy_needed)

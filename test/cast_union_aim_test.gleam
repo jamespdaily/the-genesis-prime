@@ -23,7 +23,7 @@
 ////   row aimed at the primary target start the client's spell that way.
 
 import cast_support as support
-import genesis_prime/game/cast.{type Effect, type State}
+import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
 import genesis_prime/game/class_resource
 import genesis_prime/game/spell_plan.{type Spell, Spell}
 import genesis_prime/message/spell_go
@@ -78,7 +78,7 @@ fn pressed_and_struck(
   let #(pressed, raw) =
     support.pressed_raw_in(
       plans: support.plans_of([in_base_3]),
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster(),
       bag_index: bag_of_base_3,
       target: 0,
@@ -104,7 +104,7 @@ fn started_on_20(
   let #(pressed, raw) =
     support.pressed_raw_in(
       plans: support.plans_starting_on_each_struck(started:),
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster(),
       bag_index: bag_of_base_3,
       target: 0,
@@ -151,12 +151,13 @@ pub fn union_property_modifier_changes_the_caster_and_the_target_creature_test()
   // (`spell_area.PhaseStrike.strikes_primary_target`), and a change on a creature starts
   // only on a creature the go struck.
   let #(state, effects) = started_on_20(started: spell, struck: [20])
-  let assert [#(started_by, cast.Property(modifier: _))] =
+  let assert [#(started_by, cast_state.Property(modifier: _))] =
     support.caster_change_starts(effects:)
     as "the caster's own property changes once"
   assert started_by.effect_id == Spell4EffectsId(9717)
-  let assert [cast.TargetChangeStarts(unit_id: 20, source: target_source, ..)] =
-    support.target_changes(effects:)
+  let assert [
+    cast_state.TargetChangeStarts(unit_id: 20, source: target_source, ..),
+  ] = support.target_changes(effects:)
     as "and the creature 20 the child's primary target takes the same row's change once"
   assert target_source == started_by
     as "both changes are the row 9717 of the one cast, so one timer's end removes each"
@@ -184,8 +185,9 @@ pub fn union_heal_reaches_each_unit_once_and_heals_only_the_caster_test() -> Nil
   let #(_, effects) = started_on_20(started: spell, struck: [21])
   assert list.count(support.caster_change_starts(effects:), fn(start) {
       case start.1 {
-        cast.Heal(..) -> True
-        cast.Property(..) | cast.Absorb(..) | cast.Look(..) -> False
+        cast_state.Heal(..) -> True
+        cast_state.Property(..) | cast_state.Absorb(..) | cast_state.Look(..) ->
+          False
       }
     })
     == 1
@@ -257,7 +259,7 @@ pub fn union_forced_move_moves_the_caster_and_the_struck_creature_test() -> Nil 
   let #(_, effects) = pressed_and_struck(spell:, struck: [21])
   assert support.throws(effects:)
     == [
-      cast.ForcedMoveStarts(
+      cast_state.ForcedMoveStarts(
         unit_id: 21,
         life: 1,
         struck_at_ms: 0,

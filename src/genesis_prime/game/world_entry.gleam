@@ -138,7 +138,7 @@
 import genesis_prime/client_connection
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/camp
-import genesis_prime/game/cast
+import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/character_state
 import genesis_prime/game/chat
 import genesis_prime/game/chat_tell
@@ -398,7 +398,7 @@ pub type Entered {
     look: look.Look,
     resources: class_resource.Resources,
     camp: camp.Camp,
-    cast: cast.State,
+    cast: cast_state.State,
     strike: strike.State,
     chat: chat.Chat,
     /// The visibility prerequisites of the world that fail for the player, as the
@@ -846,7 +846,7 @@ pub fn joined(
               look: look.new(base: unit.tail.item_visuals),
               resources: class_resource.new(resource:),
               camp: camp.none(),
-              cast: cast.new(),
+              cast: cast_state.new(),
               strike: strike.new(),
               chat: chat.new(
                 speaker: chat_tell.Speaker(

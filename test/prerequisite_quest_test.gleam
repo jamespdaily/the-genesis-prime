@@ -29,7 +29,7 @@ import cast_support as support
 import character_support
 import character_tables
 import fixture_tables
-import genesis_prime/game/cast.{type Caster, type Effect}
+import genesis_prime/game/cast/state.{type Caster, type Effect} as cast_state
 import genesis_prime/game/connection/casting
 import genesis_prime/game/prerequisite.{
   type Prerequisite, type Subject, type Verdict, Fails, NotRead, Passes, Subject,
@@ -739,8 +739,9 @@ pub fn a_cast_gate_reads_the_caster_quest_log_test() -> Nil {
     == entered.quests
     as "and the log it holds when none was changed"
   // A caster-side gate.
-  let accepted_caster = cast.Caster(..support.caster(), quests: in_log)
-  let empty_caster = cast.Caster(..support.caster(), quests: log_of(rows: []))
+  let accepted_caster = cast_state.Caster(..support.caster(), quests: in_log)
+  let empty_caster =
+    cast_state.Caster(..support.caster(), quests: log_of(rows: []))
   assert refusals_of_press(caster: accepted_caster) == []
     as "type 6 on 1949 with value 1 passes while 1949 is Accepted and not done (0x1405fbc40)"
   assert refusals_of_press(caster: empty_caster) == [151]
@@ -768,10 +769,10 @@ fn plans_gated() -> Plans {
 }
 
 fn refusals_of_press(caster caster: Caster) -> List(Int) {
-  let #(_, effects): #(cast.State, List(Effect)) =
+  let #(_, effects): #(cast_state.State, List(Effect)) =
     support.pressed_in(
       plans: plans_gated(),
-      state: cast.new(),
+      state: cast_state.new(),
       caster:,
       bag_index: 8,
       target: 0,
@@ -801,7 +802,7 @@ fn struck_children(caster caster: Caster) -> List(#(Int, Int)) {
   let #(state, raw) =
     support.pressed_raw_in(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster:,
       bag_index: 10,
       target: 0,
@@ -814,9 +815,9 @@ fn struck_children(caster caster: Caster) -> List(#(Int, Int)) {
       effects: raw,
       at: 2000,
       struck: [
-        cast.Hit(
+        cast_state.Hit(
           unit_id: 20,
-          unit: cast.HitCreature(life: 1, struck_at_ms: 0),
+          unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
           descriptions: [],
           controls: [],
           armor_removed: 0,

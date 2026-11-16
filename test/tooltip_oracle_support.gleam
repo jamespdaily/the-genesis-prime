@@ -9,7 +9,7 @@ import cast_support as support
 import fixture_tables
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/area
-import genesis_prime/game/cast
+import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/hit
 import genesis_prime/game/spell_plan.{type Plans, type Spell}
 import genesis_prime/game/strike_tell
@@ -268,17 +268,20 @@ pub type Drive {
 
 /// The units a go asked for at a time strikes.
 pub type Strikes =
-  fn(Int, cast.GoAsked) -> List(cast.Struck)
+  fn(Int, cast_state.GoAsked) -> List(cast_state.Struck)
 
 /// No go strikes a unit.
-pub fn striking_none(_at_ms: Int, _asked: cast.GoAsked) -> List(cast.Struck) {
+pub fn striking_none(
+  _at_ms: Int,
+  _asked: cast_state.GoAsked,
+) -> List(cast_state.Struck) {
   []
 }
 
 /// A player in combat that holds only this ability, in the bag's first place: a cast
 /// condition that asks for combat (Spectral Form's) passes.
-pub fn caster_of(base base: Int) -> cast.Caster {
-  cast.Caster(
+pub fn caster_of(base base: Int) -> cast_state.Caster {
+  cast_state.Caster(
     ..support.caster(),
     abilities: [Spell4BaseId(base)],
     in_combat: True,
@@ -298,7 +301,7 @@ pub fn drive(
 
 /// The same press made by this caster, which holds the ability in the bag's first place.
 pub fn drive_as(
-  caster caster: cast.Caster,
+  caster caster: cast_state.Caster,
   plans plans: Plans,
   strikes strikes: Strikes,
 ) -> Result(Drive, List(Int)) {
@@ -309,13 +312,13 @@ pub fn drive_as(
 /// with the units `strikes` gives with the poses: the state and the press's step, or the
 /// results of a refusal.
 pub fn pressed_at(
-  caster caster: cast.Caster,
+  caster caster: cast_state.Caster,
   plans plans: Plans,
-  state state: cast.State,
+  state state: cast_state.State,
   at_ms at_ms: Int,
   strikes strikes: Strikes,
   poses poses: dict.Dict(Int, area.Pose),
-) -> Result(#(cast.State, support.Fired), List(Int)) {
+) -> Result(#(cast_state.State, support.Fired), List(Int)) {
   let #(state, raw) =
     support.pressed_raw_in(
       plans:,
@@ -348,7 +351,7 @@ pub fn pressed_at(
 
 /// The same, with the poses the struck units have in the caster's picture at the press's go.
 pub fn drive_posed(
-  caster caster: cast.Caster,
+  caster caster: cast_state.Caster,
   plans plans: Plans,
   strikes strikes: Strikes,
   poses poses: dict.Dict(Int, area.Pose),
@@ -356,7 +359,7 @@ pub fn drive_posed(
   use #(state, pressed) <- result.map(pressed_at(
     caster:,
     plans:,
-    state: cast.new(),
+    state: cast_state.new(),
     at_ms: start_ms,
     strikes:,
     poses:,
@@ -382,7 +385,7 @@ pub fn drive_posed(
 /// drive holds. The level is reached after the thresholdDuration of each row from the second
 /// to the row of the level.
 pub fn drive_released(
-  caster caster: cast.Caster,
+  caster caster: cast_state.Caster,
   plans plans: Plans,
   base base: Int,
   level level: Int,
@@ -400,7 +403,7 @@ pub fn drive_released(
   use #(state, charging) <- result.try(pressed_at(
     caster:,
     plans:,
-    state: cast.new(),
+    state: cast_state.new(),
     at_ms: start_ms,
     strikes: striking_none,
     poses: dict.new(),
@@ -438,7 +441,7 @@ pub fn drive_released(
 /// Each go strikes the unit and lands on it the crowd-control rows of the spell the go
 /// is of, as `creature_control` lands them on a creature of no armor at the go's time.
 pub fn striking_with_states(root root: Spell) -> Strikes {
-  fn(at_ms: Int, asked: cast.GoAsked) {
+  fn(at_ms: Int, asked: cast_state.GoAsked) {
     let controls = case
       list.find(
         spell_plan.tree(spell: root, started: fn(_) { True }),
@@ -449,9 +452,9 @@ pub fn striking_with_states(root root: Spell) -> Strikes {
       Error(Nil) -> []
     }
     [
-      cast.Hit(
+      cast_state.Hit(
         unit_id: struck_unit,
-        unit: cast.HitCreature(life: 1, struck_at_ms: 0),
+        unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
         descriptions: [],
         controls:,
         armor_removed: 0,

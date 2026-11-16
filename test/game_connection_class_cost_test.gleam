@@ -19,7 +19,7 @@ import connection_rule_support as support
 import fixture_tables
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{type Request}
-import genesis_prime/game/cast
+import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/class_resource
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
@@ -136,7 +136,8 @@ fn charged_to_level_1(
 ) -> game_connection.State {
   let #(state, pressed) =
     press_at(state:, bag_index:, client_cast_id: 9, ms: 1000)
-  let assert [timer] = list.filter(support.timers_started(pressed), cast.owns)
+  let assert [timer] =
+    list.filter(support.timers_started(pressed), cast_state.owns)
     as "the press opens the charge: one timer of the cast rule, the level 1 timer"
   let #(state, _) = connection_support.fired_at(state:, timer:, ms: 2000)
   state

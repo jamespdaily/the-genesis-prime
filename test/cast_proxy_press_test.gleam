@@ -39,7 +39,8 @@ import cast_support as support
 import fixture_tables
 import game_client
 import genesis_prime/client_connection.{CastStarted}
-import genesis_prime/game/cast.{type Caster, type Effect, type State}
+import genesis_prime/game/cast
+import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/spell_plan.{type Plans, type Spell}
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/id.{type Spell4BaseId, Spell4BaseId}
@@ -67,7 +68,7 @@ fn bag() -> List(Spell4BaseId) {
 
 /// The player holding the stack spell and the press, in or out of combat.
 fn caster_of(in_combat in_combat: Bool) -> Caster {
-  cast.Caster(
+  cast_state.Caster(
     ..support.caster_in_combat(in_combat:),
     abilities: bag(),
     book: bag(),
@@ -105,7 +106,7 @@ fn stacked(
   stacks stacks: Int,
 ) -> State {
   list.repeat(Nil, stacks)
-  |> list.index_fold(cast.new(), fn(state, _, index) {
+  |> list.index_fold(cast_state.new(), fn(state, _, index) {
     let #(state, effects) =
       support.press_as(
         plans:,
@@ -197,7 +198,7 @@ pub fn threshold_press_with_two_passing_proxies_takes_the_first_in_row_order_tes
 
 /// The player holding only the healer's ability of Spell4Base 22327, in or out of combat.
 fn healer(in_combat in_combat: Bool) -> Caster {
-  cast.Caster(
+  cast_state.Caster(
     ..support.caster_in_combat(in_combat:),
     abilities: [Spell4BaseId(22_327)],
     book: [Spell4BaseId(22_327)],
@@ -210,7 +211,12 @@ fn healed(spell4_id spell4_id: Int, in_combat in_combat: Bool) -> List(Effect) {
     support.with_spells(plans: support.plans(), spells: [
       ability_of(tables: fixture_tables.shared(), spell4_id:),
     ])
-  press_at_5000(plans:, state: cast.new(), caster: healer(in_combat:), bag: 0)
+  press_at_5000(
+    plans:,
+    state: cast_state.new(),
+    caster: healer(in_combat:),
+    bag: 0,
+  )
 }
 
 pub fn threshold_press_with_no_passing_proxy_is_refused_285_test() -> Nil {
@@ -243,7 +249,7 @@ pub fn threshold_press_never_casts_a_proxy_with_caster_apply_zero_test() -> Nil 
 /// The Spellslinger at 100 Spell Power holding Spell Surge (Spell4Base 31213) and the
 /// ability of Spell4Base 20683, whose alternate is Spell4Base 20685.
 fn spellslinger() -> Caster {
-  cast.Caster(
+  cast_state.Caster(
     ..support.caster_holding(resources: support.holding(
       class_id: 7,
       value: 100.0,
@@ -262,7 +268,7 @@ pub fn surged_press_of_a_proxy_press_casts_the_alternates_own_threshold_test() -
   let #(surging, surge_press) =
     support.press_as(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: spellslinger(),
       bag: 0,
       at: 1000,
@@ -275,7 +281,12 @@ pub fn surged_press_of_a_proxy_press_casts_the_alternates_own_threshold_test() -
   assert started(effects: surged) == [#(34_719, 34_719, 0)]
     as "a node of 47439 and base 20685 in the book: 0x14039a040 swaps the press for the alternate 34719 before the resolve (0x1405e7e50), and 34719's thresholdTime 7100 is its own, so the press casts 34719 and none of 34717's Proxy rows"
   let plain =
-    press_at_5000(plans:, state: cast.new(), caster: spellslinger(), bag: 1)
+    press_at_5000(
+      plans:,
+      state: cast_state.new(),
+      caster: spellslinger(),
+      bag: 1,
+    )
   assert support.refusal_results(effects: plain) == []
   assert started(effects: plain) == [#(34_718, 34_717, 0)]
     as "with no Surge the press resolves: gate 11164 (three type 64 conditions, slots 1 to 3 equal 0) passes for a Spellslinger, whose Spell Power is slot 4, so row 69036's spell 34718 is cast, and gate 10937 of row 69037 is not reached"
@@ -303,8 +314,8 @@ fn held_press(
 ) -> List(List(Effect)) {
   let assert Ok(#(state, down)) =
     cast.take(
-      cast: cast.new(),
-      message: cast.KeyHeld,
+      cast: cast_state.new(),
+      message: cast_state.KeyHeld,
       body: support.hold_body(bag_index: press_bag, target: 0, held: 1),
       caster:,
       plans:,
@@ -437,7 +448,7 @@ pub fn held_rapid_tap_repeat_resolves_the_proxy_again_test() -> Nil {
 
 /// The player holding only the ability of Spell4Base 20006, out of combat.
 fn charger() -> Caster {
-  cast.Caster(
+  cast_state.Caster(
     ..support.caster_in_combat(in_combat: False),
     abilities: [Spell4BaseId(20_006)],
     book: [Spell4BaseId(20_006)],
@@ -453,7 +464,7 @@ pub fn proxy_child_with_its_own_threshold_opens_that_threshold_test() -> Nil {
   let #(state, pressed) =
     support.press_as(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: charger(),
       bag: 0,
       at: 5000,
@@ -579,8 +590,8 @@ pub fn proxy_resolved_cast_needs_the_same_go_rolls_as_its_child_test() -> Nil {
             ability_of(tables:, spell4_id: 42_605),
             stack_spell(),
           ]),
-          state: cast.new(),
-          caster: cast.Caster(
+          state: cast_state.new(),
+          caster: cast_state.Caster(
             ..support.caster_in_combat(in_combat: False),
             abilities: [Spell4BaseId(26_795)],
             book: [Spell4BaseId(26_795)],

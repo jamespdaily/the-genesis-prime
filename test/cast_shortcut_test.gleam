@@ -24,7 +24,8 @@ import client_tables
 import fixture_tables
 import genesis_prime/client_connection.{CastStarted}
 import genesis_prime/game/activate.{type Target, Body, Usable}
-import genesis_prime/game/cast.{type Effect, type State}
+import genesis_prime/game/cast
+import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
 import genesis_prime/game/shortcut_spell
 import genesis_prime/game/shown
 import genesis_prime/game/start_place
@@ -216,7 +217,7 @@ fn press_in(
   client_cast_id client_cast_id: Int,
   target target: Int,
   at ms: Int,
-) -> Result(#(State, List(Effect)), cast.Refusal) {
+) -> Result(#(State, List(Effect)), cast_state.Refusal) {
   let picture = picture_of(scene:)
   cast.shortcut(
     cast: state,
@@ -246,7 +247,7 @@ fn press_holding(
   client_cast_id client_cast_id: Int,
   target target: Int,
   at ms: Int,
-) -> Result(#(State, List(Effect)), cast.Refusal) {
+) -> Result(#(State, List(Effect)), cast_state.Refusal) {
   press_in(
     shortcuts: shortcuts(),
     scene: nothing_shown(),
@@ -343,7 +344,7 @@ fn flattened(steps steps: List(#(Int, List(Effect)))) -> List(Effect) {
 pub fn a_press_of_a_held_self_spell_casts_on_the_caster_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, pressed) =
-    press(state: cast.new(), spell4_id: the_self_spell, at: 1000)
+    press(state: cast_state.new(), spell4_id: the_self_spell, at: 1000)
   assert support.ids(frames: support.writes(effects: pressed)) == [0x07FD]
     as "opcode.0x9d: the caster is told its cast started"
   let assert [frame] = support.writes(effects: pressed)
@@ -374,7 +375,7 @@ pub fn a_press_of_a_held_self_spell_casts_on_the_caster_test() -> Nil {
     == [0x07F4, 0x07FE]
     as "the go's finish 0x7fe is written before the count its go raises"
   assert support.shortcut_casts(effects:)
-    == [cast.ShortcutCast(spell4_id: the_self_spell, target: None)]
+    == [cast_state.ShortcutCast(spell4_id: the_self_spell, target: None)]
     as "the go raises ShortcutCast for the spell, once, with no unit: it was cast on the caster"
 }
 
@@ -382,7 +383,7 @@ pub fn a_press_of_a_spell_not_held_is_refused_with_result_1_test() -> Nil {
   use <- owned_test.run(10_000)
   let assert Ok(#(state, effects)) =
     press_holding(
-      state: cast.new(),
+      state: cast_state.new(),
       spell4_id: the_self_spell,
       held: set.new(),
       client_cast_id: clients_cast_id,
@@ -399,31 +400,31 @@ pub fn a_press_of_a_spell_not_held_is_refused_with_result_1_test() -> Nil {
     as "0x14039b340: the client's own refusal of a spell it holds no shortcut for is result 1"
   assert support.tells(effects:) == [] && support.started_timers(effects:) == []
     as "no cast starts"
-  assert state == cast.new() as "the state is unchanged"
+  assert state == cast_state.new() as "the state is unchanged"
 }
 
 pub fn a_shortcut_press_with_cast_id_0_ends_the_connection_test() -> Nil {
   use <- owned_test.run(10_000)
   assert press_holding(
-      state: cast.new(),
+      state: cast_state.new(),
       spell4_id: the_self_spell,
       held: set.from_list([the_self_spell]),
       client_cast_id: 0,
       target: 0,
       at: 1000,
     )
-    == Error(cast.NoClientCastId)
+    == Error(cast_state.NoClientCastId)
     as "opcode.0x9d: the cast id is the client's counter, which never gives 0"
 }
 
 pub fn a_cancelled_shortcut_cast_counts_nothing_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, pressed) =
-    press(state: cast.new(), spell4_id: the_self_spell, at: 1000)
+    press(state: cast_state.new(), spell4_id: the_self_spell, at: 1000)
   let #(_, left_alone) =
     support.run_timers(state:, effects: pressed, from_ms: 1000)
   assert support.shortcut_casts(effects: flattened(steps: left_alone))
-    == [cast.ShortcutCast(spell4_id: the_self_spell, target: None)]
+    == [cast_state.ShortcutCast(spell4_id: the_self_spell, target: None)]
     as "the same press left alone counts at its go, so the nothing below is the cancel's"
   let id = support.pressed_id(effects: pressed)
   let assert Ok(#(cancelled, effects)) =
@@ -447,7 +448,7 @@ pub fn a_cancelled_shortcut_cast_counts_nothing_test() -> Nil {
 pub fn a_shortcut_press_whose_caster_cast_prerequisite_fails_is_refused_151_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(_, effects) =
-    press(state: cast.new(), spell4_id: the_prerequisite_spell, at: 1000)
+    press(state: cast_state.new(), spell4_id: the_prerequisite_spell, at: 1000)
   assert support.refusal_results(effects:)
     == [cast_result.to_value(cast_result.PrereqCasterCast)]
     as "Spell4 34448's prerequisiteIdCasterCast is Prerequisite 11700, which the caster with no quest fails: 0x1403ace00 refuses with 151"
@@ -458,7 +459,7 @@ pub fn a_shortcut_press_whose_caster_cast_prerequisite_fails_is_refused_151_test
 pub fn a_client_side_interaction_shortcut_cast_counts_after_its_answer_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, pressed) =
-    press(state: cast.new(), spell4_id: the_interaction_spell, at: 1000)
+    press(state: cast_state.new(), spell4_id: the_interaction_spell, at: 1000)
   assert support.ids(frames: support.writes(effects: pressed)) == [0x07FD]
     as "opcode.0x7fd.csi: the caster is told the start, and no go: the cast waits for the client's answer"
   assert support.started_timers(effects: pressed) == []
@@ -478,7 +479,7 @@ pub fn a_client_side_interaction_shortcut_cast_counts_after_its_answer_test() ->
     == [0x07F4, 0x07FE]
     as "the success answer sends the go, then the finish"
   assert support.shortcut_casts(effects: succeeded)
-    == [cast.ShortcutCast(spell4_id: the_interaction_spell, target: None)]
+    == [cast_state.ShortcutCast(spell4_id: the_interaction_spell, target: None)]
     as "the go raises ShortcutCast for the spell, once"
   let #(_, failed) = answer(interaction_result.Failed)
   assert support.shortcut_casts(effects: failed) == []
@@ -489,7 +490,7 @@ pub fn a_client_side_interaction_shortcut_cast_counts_after_its_answer_test() ->
 pub fn a_second_answer_while_the_first_success_strikes_is_refused_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, pressed) =
-    press(state: cast.new(), spell4_id: the_interaction_spell, at: 1000)
+    press(state: cast_state.new(), spell4_id: the_interaction_spell, at: 1000)
   let id = support.pressed_id(effects: pressed)
   let assert Ok(#(answered, _)) =
     interaction_answered(
@@ -503,16 +504,16 @@ pub fn a_second_answer_while_the_first_success_strikes_is_refused_test() -> Nil 
       cast_id: id,
       result: interaction_result.Succeeded,
     )
-    == Error(cast.NoInteractionWaits(cast_id: id))
+    == Error(cast_state.NoInteractionWaits(cast_id: id))
     as "csi.ends: one interaction sends exactly one of 0, 1 or 2, so a second answer, before the strike round of the first one is answered, names no waiting interaction"
 }
 
 /// The client's 0x805 for the interaction spell's cast, at 1200 ms.
 fn interaction_answered(
-  state state: cast.State,
+  state state: cast_state.State,
   cast_id cast_id: Int,
   result result: interaction_result.InteractionResult,
-) -> Result(#(cast.State, List(Effect)), cast.Refusal) {
+) -> Result(#(cast_state.State, List(Effect)), cast_state.Refusal) {
   let assert Ok(body) =
     client_side_interaction_result.encode(ClientSideInteractionResult(
       cast_id:,
@@ -522,7 +523,7 @@ fn interaction_answered(
     as "the answer fits the message"
   cast.take(
     cast: state,
-    message: cast.Answered,
+    message: cast_state.Answered,
     body:,
     caster: support.caster(),
     plans: support.plans(),
@@ -574,7 +575,7 @@ fn refused_with(
     press_at_with(
       shortcuts:,
       scene:,
-      state: cast.new(),
+      state: cast_state.new(),
       spell4_id:,
       target:,
       at: 1000,
@@ -595,7 +596,7 @@ pub fn a_press_of_a_targeted_spell_at_a_cast_group_unit_starts_on_it_test() -> N
   let #(state, pressed) =
     press_at(
       scene:,
-      state: cast.new(),
+      state: cast_state.new(),
       spell4_id: the_hologram_spell,
       target: 900,
       at: 1000,
@@ -618,9 +619,9 @@ pub fn a_press_of_a_targeted_spell_at_a_cast_group_unit_starts_on_it_test() -> N
     as "Spell4 42735 has castTime 0: the start, the go, then the finish"
   assert support.shortcut_casts(effects:)
     == [
-      cast.ShortcutCast(
+      cast_state.ShortcutCast(
         spell4_id: the_hologram_spell,
-        target: Some(cast.PressedAt(unit_id: 900, alive_at_press: True)),
+        target: Some(cast_state.PressedAt(unit_id: 900, alive_at_press: True)),
       ),
     ]
     as "the go raises ShortcutCast with the unit the press named, alive"
@@ -674,7 +675,7 @@ pub fn with_no_cast_group_a_creature_only_its_own_spells_may_target_test() -> Ni
   let #(_, started) =
     press_at(
       scene: own,
-      state: cast.new(),
+      state: cast_state.new(),
       spell4_id: 41_218,
       target: 903,
       at: 1000,
@@ -692,7 +693,7 @@ pub fn with_no_cast_group_a_creature_only_its_own_spells_may_target_test() -> Ni
   let #(_, free) =
     press_at(
       scene: plain,
-      state: cast.new(),
+      state: cast_state.new(),
       spell4_id: 30_485,
       target: 905,
       at: 1000,
@@ -716,7 +717,7 @@ pub fn a_targeted_press_too_close_or_too_far_is_refused_104_or_105_test() -> Nil
   let #(_, effects) =
     press_at(
       scene: at(10.0),
-      state: cast.new(),
+      state: cast_state.new(),
       spell4_id: 36_050,
       target: 906,
       at: 1000,
@@ -747,7 +748,7 @@ pub fn a_targeted_press_at_a_dead_unit_is_refused_106_and_a_living_one_107_test(
   let #(_, effects) =
     press_at(
       scene: dead(34_081, 3.0),
-      state: cast.new(),
+      state: cast_state.new(),
       spell4_id: 38_090,
       target: 907,
       at: 1000,
@@ -770,7 +771,7 @@ pub fn a_targeted_press_at_a_unit_in_combat_is_refused_108_test() -> Nil {
   let #(_, effects) =
     press_at(
       scene: fighting(False),
-      state: cast.new(),
+      state: cast_state.new(),
       spell4_id: 36_212,
       target: 908,
       at: 1000,
@@ -794,7 +795,7 @@ pub fn a_press_at_a_player_that_reaches_the_faction_test_is_not_built_test() -> 
   let #(_, effects) =
     press_at(
       scene:,
-      state: cast.new(),
+      state: cast_state.new(),
       spell4_id: 30_485,
       target: 909,
       at: 1000,
@@ -811,7 +812,7 @@ pub fn a_press_at_a_player_that_reaches_the_faction_test_is_not_built_test() -> 
   let #(_, own) =
     press_at(
       scene: nothing_shown(),
-      state: cast.new(),
+      state: cast_state.new(),
       spell4_id: 77_268,
       target: the_caster,
       at: 1000,
@@ -920,7 +921,7 @@ pub fn a_pressed_creatures_id_reaches_its_target_check_test() -> Nil {
     press_at_with(
       shortcuts:,
       scene:,
-      state: cast.new(),
+      state: cast_state.new(),
       spell4_id: 77_268,
       target: 910,
       at: 1000,
@@ -932,7 +933,7 @@ pub fn a_pressed_creatures_id_reaches_its_target_check_test() -> Nil {
     press_at_with(
       shortcuts:,
       scene:,
-      state: cast.new(),
+      state: cast_state.new(),
       spell4_id: 77_268,
       target: 911,
       at: 1000,
@@ -951,7 +952,7 @@ pub fn a_target_condition_the_server_does_not_hold_refuses_as_not_built_test() -
   let #(state, first) =
     press_at(
       scene:,
-      state: cast.new(),
+      state: cast_state.new(),
       spell4_id: 43_164,
       target: 911,
       at: 1000,
@@ -979,7 +980,7 @@ pub fn a_caster_condition_of_an_unread_type_refuses_as_not_built_test() -> Nil {
   let #(_, effects) =
     press_at(
       scene:,
-      state: cast.new(),
+      state: cast_state.new(),
       spell4_id: 32_581,
       target: 912,
       at: 1000,
@@ -1008,7 +1009,7 @@ pub fn a_press_of_a_targeted_spell_that_cannot_be_planned_stays_not_built_test()
     press_at_with(
       shortcuts: shortcut_spell.shortcuts(tables:),
       scene:,
-      state: cast.new(),
+      state: cast_state.new(),
       spell4_id: 35_436,
       target: 913,
       at: 1000,
@@ -1032,7 +1033,7 @@ pub fn a_press_of_a_spell_whose_state_lasts_until_removed_starts_and_logs_the_dr
   let #(state, pressed) =
     press_at(
       scene:,
-      state: cast.new(),
+      state: cast_state.new(),
       spell4_id: 35_436,
       target: 913,
       at: 1000,
@@ -1067,7 +1068,7 @@ pub fn a_press_of_a_target_type_3_spell_tests_its_faction_cast_group_test() -> N
   let #(_, effects) =
     press_at(
       scene: of_faction(390),
-      state: cast.new(),
+      state: cast_state.new(),
       spell4_id: 30_832,
       target: 914,
       at: 1000,
@@ -1087,7 +1088,7 @@ pub fn a_press_of_a_target_type_5_spell_starts_on_its_target_test() -> Nil {
   let #(state, pressed) =
     press_at(
       scene:,
-      state: cast.new(),
+      state: cast_state.new(),
       spell4_id: 25_207,
       target: 915,
       at: 1000,
@@ -1099,9 +1100,9 @@ pub fn a_press_of_a_target_type_5_spell_starts_on_its_target_test() -> Nil {
   assert times == [3000] as "Spell4 25207's castTime is 2000, pressed at 1000"
   assert support.shortcut_casts(effects:)
     == [
-      cast.ShortcutCast(
+      cast_state.ShortcutCast(
         spell4_id: 25_207,
-        target: Some(cast.PressedAt(unit_id: 915, alive_at_press: True)),
+        target: Some(cast_state.PressedAt(unit_id: 915, alive_at_press: True)),
       ),
     ]
     as "the go at 3000 raises ShortcutCast with the unit"
@@ -1112,7 +1113,13 @@ pub fn a_channelled_objective_spell_goes_twice_and_raises_one_cast_test() -> Nil
   let scene =
     Scene(..nothing_shown(), units: [unit(id: 916, of: 8047, at: 5.0)])
   let #(state, pressed) =
-    press_at(scene:, state: cast.new(), spell4_id: 5725, target: 916, at: 1000)
+    press_at(
+      scene:,
+      state: cast_state.new(),
+      spell4_id: 5725,
+      target: 916,
+      at: 1000,
+    )
   let #(_, effects) = played(state:, pressed:, at: 1000)
   assert support.ids(frames: support.writes(effects: pressed)) == [0x07FD]
     as "the caster is told its cast started"
@@ -1121,9 +1128,9 @@ pub fn a_channelled_objective_spell_goes_twice_and_raises_one_cast_test() -> Nil
     as "Spell4 5725 channels 3000 ms: after the start two goes within it, then the finish"
   assert support.shortcut_casts(effects:)
     == [
-      cast.ShortcutCast(
+      cast_state.ShortcutCast(
         spell4_id: 5725,
-        target: Some(cast.PressedAt(unit_id: 916, alive_at_press: True)),
+        target: Some(cast_state.PressedAt(unit_id: 916, alive_at_press: True)),
       ),
     ]
     as "a channel counts once, at its first go"
@@ -1165,7 +1172,7 @@ pub fn an_aimed_press_at_a_held_creature_is_refused_test() -> Nil {
     press_at_with(
       shortcuts:,
       scene: stunned([], 10.0),
-      state: cast.new(),
+      state: cast_state.new(),
       spell4_id: the_stun_refusing_spell,
       target: 920,
       at: 1000,
@@ -1185,7 +1192,7 @@ pub fn an_aimed_press_at_a_held_creature_is_refused_test() -> Nil {
     press_at_with(
       shortcuts:,
       scene: stunned([crowd_control_state.Snare], 10.0),
-      state: cast.new(),
+      state: cast_state.new(),
       spell4_id: the_stun_refusing_spell,
       target: 920,
       at: 1000,

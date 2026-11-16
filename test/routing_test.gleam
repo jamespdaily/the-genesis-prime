@@ -18,7 +18,7 @@
 import code_rule/source.{SourceFile}
 import code_rule/syntax
 import genesis_prime/game/camp
-import genesis_prime/game/cast
+import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/character_select
 import genesis_prime/game/dropped
 import genesis_prime/game/innate_choice
@@ -47,10 +47,10 @@ const movement_rows = [
 const camp_rows = [#(0x00BF, camp.CampAsked), #(0x00C0, camp.CampOver)]
 
 const cast_rows = [
-  #(0x009A, cast.Pressed),
-  #(0x04DB, cast.KeyHeld),
-  #(0x0801, cast.Cancelled),
-  #(0x0805, cast.Answered),
+  #(0x009A, cast_state.Pressed),
+  #(0x04DB, cast_state.KeyHeld),
+  #(0x0801, cast_state.Cancelled),
+  #(0x0805, cast_state.Answered),
 ]
 
 pub fn movement_messages_are_rows_taken_inside_0x038c_with_the_player_in_the_world_test() -> Nil {

@@ -109,7 +109,8 @@
 
 import genesis_prime/client_connection.{type News}
 import genesis_prime/game/area.{type Pose, Pose}
-import genesis_prime/game/cast.{type GoAsked, type Struck, type TickAsked}
+import genesis_prime/game/cast
+import genesis_prime/game/cast/state.{type GoAsked, type Struck, type TickAsked} as cast_state
 import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
 import genesis_prime/game/hit
@@ -387,7 +388,7 @@ pub fn begin(
   attacker attacker: Attacker,
   formulas formulas: Formulas,
   entropy entropy: BitArray,
-  gate gate: cast.StrikeGate,
+  gate gate: cast_state.StrikeGate,
   now now: Now,
 ) -> #(State, List(Effect)) {
   let reach = reach_of(selection:, attacker:, entropy:, gate:)
@@ -406,9 +407,9 @@ pub fn begin(
         [], [], [], [] -> #(
           [
             Answered(
-              struck: cast.Hit(
+              struck: cast_state.Hit(
                 unit_id:,
-                unit: cast.HitCreature(
+                unit: cast_state.HitCreature(
                   life: aimed.life,
                   struck_at_ms: now.monotonic_ms,
                 ),
@@ -484,7 +485,7 @@ fn reach_of(
   selection selection: Selection,
   attacker attacker: Attacker,
   entropy entropy: BitArray,
-  gate gate: cast.StrikeGate,
+  gate gate: cast_state.StrikeGate,
 ) -> Reach {
   let own = list.length(selection.units) * bytes_per_unit
   let rolls =
@@ -543,7 +544,7 @@ fn gated(
   condition condition: fn(row) -> spell_plan.Condition,
   what what: fn(row) -> String,
   units units: fn(row) -> List(Int),
-  gate gate: cast.StrikeGate,
+  gate gate: cast_state.StrikeGate,
   rolls rolls: List(Int),
 ) -> #(List(#(row, List(Int))), List(Effect), List(Int)) {
   let #(reached, logs, rolls) =
@@ -551,9 +552,10 @@ fn gated(
       let #(reached, logs, rolls) = so_far
       let condition = condition(row)
       let what = what(row)
-      let #(caster_side, rolls) = gate(condition, cast.CasterSide, what, rolls)
+      let #(caster_side, rolls) =
+        gate(condition, cast_state.CasterSide, what, rolls)
       case caster_side {
-        cast.Starts -> {
+        cast_state.Starts -> {
           let #(passing, unit_logs, rolls) =
             passing_units(units: units(row), condition:, what:, gate:, rolls:)
           #(
@@ -562,8 +564,8 @@ fn gated(
             rolls,
           )
         }
-        cast.GateFails -> #([#(row, []), ..reached], logs, rolls)
-        cast.CannotTell(why:) -> #(
+        cast_state.GateFails -> #([#(row, []), ..reached], logs, rolls)
+        cast_state.CannotTell(why:) -> #(
           [#(row, []), ..reached],
           [debug(why), ..logs],
           rolls,
@@ -579,18 +581,18 @@ fn passing_units(
   units units: List(Int),
   condition condition: spell_plan.Condition,
   what what: String,
-  gate gate: cast.StrikeGate,
+  gate gate: cast_state.StrikeGate,
   rolls rolls: List(Int),
 ) -> #(List(Int), List(Effect), List(Int)) {
   let #(passing, logs, rolls) =
     list.fold(units, #([], [], rolls), fn(so_far, unit_id) {
       let #(passing, logs, rolls) = so_far
       let #(verdict, rolls) =
-        gate(condition, cast.UnitSide(unit_id:), what, rolls)
+        gate(condition, cast_state.UnitSide(unit_id:), what, rolls)
       case verdict {
-        cast.Starts -> #([unit_id, ..passing], logs, rolls)
-        cast.GateFails -> #(passing, logs, rolls)
-        cast.CannotTell(why:) -> #(passing, [debug(why), ..logs], rolls)
+        cast_state.Starts -> #([unit_id, ..passing], logs, rolls)
+        cast_state.GateFails -> #(passing, logs, rolls)
+        cast_state.CannotTell(why:) -> #(passing, [debug(why), ..logs], rolls)
       }
     })
   #(list.reverse(passing), list.reverse(logs), rolls)
@@ -968,9 +970,9 @@ fn filled(
   case outcome {
     strike_tell.Landed(descriptions:, controls:, armor_removed:, gates_passed:) ->
       Answered(
-        struck: cast.Hit(
+        struck: cast_state.Hit(
           unit_id:,
-          unit: cast.HitCreature(life:, struck_at_ms:),
+          unit: cast_state.HitCreature(life:, struck_at_ms:),
           descriptions:,
           controls:,
           armor_removed:,
@@ -980,9 +982,9 @@ fn filled(
       )
     strike_tell.Immune(controls:, armor_removed:, gates_passed:) ->
       Answered(
-        struck: cast.Immune(
+        struck: cast_state.Immune(
           unit_id:,
-          unit: cast.HitCreature(life:, struck_at_ms:),
+          unit: cast_state.HitCreature(life:, struck_at_ms:),
           controls:,
           armor_removed:,
           ticking:,
@@ -990,7 +992,7 @@ fn filled(
         gates_passed:,
       )
     strike_tell.Deflected(gates_passed:) ->
-      Answered(struck: cast.Deflected(unit_id:), gates_passed:)
+      Answered(struck: cast_state.Deflected(unit_id:), gates_passed:)
     strike_tell.Refused(..) -> LeftOut(unit_id:)
   }
 }
@@ -1046,9 +1048,9 @@ fn in_round(round round: Round, unit_id unit_id: Int) -> Bool {
 
 fn unit_of(struck: Struck) -> Int {
   case struck {
-    cast.Hit(unit_id:, ..)
-    | cast.Immune(unit_id:, ..)
-    | cast.Deflected(unit_id:) -> unit_id
+    cast_state.Hit(unit_id:, ..)
+    | cast_state.Immune(unit_id:, ..)
+    | cast_state.Deflected(unit_id:) -> unit_id
   }
 }
 

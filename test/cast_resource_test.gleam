@@ -19,6 +19,7 @@
 import cast_support as support
 import class_resource_support
 import genesis_prime/game/cast
+import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/class_resource.{type Resources, Payment, Resource}
 import genesis_prime/game/spell_plan.{type Spell, Requirement, Spell}
 import gleam/int
@@ -52,7 +53,7 @@ fn press_in(
   let #(state, effects) =
     support.pressed_raw_in(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster_holding(resources:),
       bag_index:,
       target: 0,
@@ -62,7 +63,7 @@ fn press_in(
   let effects =
     list.append(
       effects,
-      list.flat_map(steps, fn(step: #(Int, List(cast.Effect))) { step.1 }),
+      list.flat_map(steps, fn(step: #(Int, List(cast_state.Effect))) { step.1 }),
     )
   #(support.refusal_results(effects:), support.payments(effects:))
 }
@@ -416,7 +417,7 @@ pub fn a_press_failing_two_checks_gets_the_first_the_clients_order_gives_test() 
   let #(state, _) =
     support.pressed_in(
       plans: support.plans(),
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster(),
       bag_index: kick,
       target: 0,
@@ -440,14 +441,14 @@ pub fn a_press_failing_two_checks_gets_the_first_the_clients_order_gives_test() 
   assert result == 15
     as "0x1403afb10.order: the cooldowns before the requirement: Kick's own 20 s cooldown runs, 15"
   let unarmed =
-    cast.Caster(
+    cast_state.Caster(
       ..support.caster_holding(support.holding(class_id: 5, value: 0.0)),
       weapon: None,
     )
   let #(_, effects) =
     support.pressed_raw_in(
       plans: support.plans(),
-      state: cast.new(),
+      state: cast_state.new(),
       caster: unarmed,
       bag_index: support.impale,
       target: 0,
@@ -461,7 +462,7 @@ pub fn a_press_refused_for_its_cost_pays_nothing_test() -> Nil {
   use <- owned_test.run(5000)
   let #(_, effects) =
     support.pressed_raw(
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster_holding(support.holding(class_id: 5, value: 20.0)),
       bag_index: support.impale,
       target: 0,
@@ -504,8 +505,8 @@ pub fn two_presses_accepted_in_one_step_cannot_spend_one_payment_test() -> Nil {
   // Telekinetic Strike's 1250 ms cast bar is the current cast from 1000.
   let #(state, started) =
     take(
-      cast.new(),
-      cast.Pressed,
+      cast_state.new(),
+      cast_state.Pressed,
       support.press_body(client_cast_id: 8, bag_index: 0, target: 0, press: 1),
       1000,
     )
@@ -514,7 +515,7 @@ pub fn two_presses_accepted_in_one_step_cannot_spend_one_payment_test() -> Nil {
   let #(state, _) =
     take(
       state,
-      cast.Pressed,
+      cast_state.Pressed,
       support.press_body(
         client_cast_id: 9,
         bag_index: support.impale,
@@ -526,7 +527,7 @@ pub fn two_presses_accepted_in_one_step_cannot_spend_one_payment_test() -> Nil {
   let #(state, _) =
     take(
       state,
-      cast.KeyHeld,
+      cast_state.KeyHeld,
       support.hold_body(bag_index: support.impale, target: 0, held: 1),
       1900,
     )
@@ -538,7 +539,7 @@ pub fn two_presses_accepted_in_one_step_cannot_spend_one_payment_test() -> Nil {
       caster:,
       now: support.at(ms: 2250),
     )
-  let assert [cast.Strike(asked:)] = fired as "the go is asked"
+  let assert [cast_state.Strike(asked:)] = fired as "the go is asked"
   // The go's round closes and clears the current cast: the held press and then
   // the hold's press are both taken in this one step, against 40 Suit Power.
   let #(_, effects) =

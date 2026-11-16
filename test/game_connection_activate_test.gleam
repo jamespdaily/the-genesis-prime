@@ -27,7 +27,7 @@ import fixture_tables
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{type Request}
 import genesis_prime/connection/frame.{type Frame}
-import genesis_prime/game/cast
+import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/routing
@@ -280,7 +280,7 @@ pub fn an_interaction_answer_reaches_the_cast_rule_test() -> Nil {
       routing.InsideWorldMessage,
       client_side_interaction_result.message_id,
     )
-    == Ok(routing.Cast(message: cast.Answered))
+    == Ok(routing.Cast(message: cast_state.Answered))
     as "opcode.0x805: a 0x805 inside 0x038C is a cast row in the world"
   let #(_, answered) =
     terminal_clicked_and_answered(

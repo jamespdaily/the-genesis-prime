@@ -27,7 +27,8 @@ import genesis_prime/game/activate.{
   type Target, Activations, Body, CannotBePlanned, Column, Creature,
   HostileToPlayer, InCombat, NoSpell4Row, Planned, Usable,
 }
-import genesis_prime/game/cast.{type Effect, type State}
+import genesis_prime/game/cast
+import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
 import genesis_prime/game/objective_link
 import genesis_prime/game/prerequisite
 import genesis_prime/game/quest_log
@@ -73,8 +74,8 @@ const its_unit = 5000
 const clients_cast_id = 9
 
 /// The caster stands at a place of exactly representable numbers, so a gap of 3.0 is exact.
-fn standing() -> cast.Caster {
-  cast.Caster(
+fn standing() -> cast_state.Caster {
+  cast_state.Caster(
     ..support.caster(),
     place: place_support.at(
       world_id: 3460,
@@ -205,7 +206,7 @@ fn right_click(
   unit_id unit_id: Int,
   target target: Target,
   at ms: Int,
-) -> Result(#(State, List(Effect)), cast.Refusal) {
+) -> Result(#(State, List(Effect)), cast_state.Refusal) {
   right_click_by(
     caster: standing(),
     state:,
@@ -218,13 +219,13 @@ fn right_click(
 
 /// The right-click of the unit `unit_id` at the time, by this caster.
 fn right_click_by(
-  caster caster: cast.Caster,
+  caster caster: cast_state.Caster,
   state state: State,
   activations activations: activate.Activations,
   unit_id unit_id: Int,
   target target: Target,
   at ms: Int,
-) -> Result(#(State, List(Effect)), cast.Refusal) {
+) -> Result(#(State, List(Effect)), cast_state.Refusal) {
   let assert Ok(body) =
     cast_activate.encode(CastActivate(
       client_cast_id: clients_cast_id,
@@ -268,7 +269,13 @@ fn refused_with(
   unit_id unit_id: Int,
 ) -> Int {
   let assert Ok(#(_, effects)) =
-    right_click(state: cast.new(), activations:, unit_id:, target:, at: 1000)
+    right_click(
+      state: cast_state.new(),
+      activations:,
+      unit_id:,
+      target:,
+      at: 1000,
+    )
     as "a refusal is an answer, not an error"
   let assert [result] = support.refusal_results(effects:) as "one 0x7fc"
   assert list.length(support.writes(effects:)) == 1
@@ -281,7 +288,7 @@ fn refused_with(
 pub fn activate_starts_with_activate_bit_and_creature_cast_time_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(_, effects) =
-    right_click_mollusk(state: cast.new(), east: 1.0, at: 1000)
+    right_click_mollusk(state: cast_state.new(), east: 1.0, at: 1000)
   let assert [confirmed_frame] =
     support.frames_of(message_id: spell_cast_confirmed.message_id, effects:)
     as "the caster is written one 0x7fd"
@@ -354,7 +361,7 @@ fn with_planned(
 pub fn activate_go_raises_activated_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, pressed) =
-    right_click_mollusk(state: cast.new(), east: 1.0, at: 1000)
+    right_click_mollusk(state: cast_state.new(), east: 1.0, at: 1000)
   let #(_, steps) = support.run_timers(state:, effects: pressed, from_ms: 1000)
   assert list.map(steps, fn(step) { step.0 }) == [3000]
     as "the go and the finish come at the accept plus Creature2 26462's activateSpellCastTime, 2000"
@@ -376,7 +383,7 @@ pub fn activate_go_raises_activated_test() -> Nil {
     as "opcode.0x7f4.target_info: the go names the unit with the effect info of Spell4 1817's Activate row, Spell4Effects 2821 (delay 0), never the unit with no effect info"
   assert list.count(effects, fn(effect) {
       effect
-      == cast.Activated(
+      == cast_state.Activated(
         unit_id: its_unit,
         creature_id: the_mollusk,
         alive_at_press: True,
@@ -398,7 +405,7 @@ pub fn activate_go_raises_activated_test() -> Nil {
     )
   let assert Ok(#(state, pressed)) =
     right_click(
-      state: cast.new(),
+      state: cast_state.new(),
       activations: the_activations(),
       unit_id: its_unit,
       target: object(creature: plain, east: 0.5, up: 0.0),
@@ -439,7 +446,7 @@ fn used(
 ) -> #(List(Effect), List(#(Int, List(Effect)))) {
   let assert Ok(#(state, clicked)) =
     right_click(
-      state: cast.new(),
+      state: cast_state.new(),
       activations: the_activations(),
       unit_id: its_unit,
       target: object_of(
@@ -495,7 +502,7 @@ pub fn an_activate_cast_of_a_channel_stays_a_channel_test() -> Nil {
     as "the go at 2999 ms is the channel's second"
   assert list.count(flattened(steps:), fn(effect) {
       effect
-      == cast.Activated(
+      == cast_state.Activated(
         unit_id: its_unit,
         creature_id: a_scanning_crystal,
         alive_at_press: True,
@@ -562,7 +569,7 @@ pub fn a_channel_activation_stopped_before_its_last_go_counts_nothing_test() -> 
   // before its last counts nothing either.
   let assert Ok(#(state, clicked)) =
     right_click(
-      state: cast.new(),
+      state: cast_state.new(),
       activations: the_activations(),
       unit_id: its_unit,
       target: object_of(
@@ -591,7 +598,7 @@ pub fn a_channel_activation_stopped_before_its_last_go_counts_nothing_test() -> 
   let everything = list.append(stopped, flattened(steps:))
   assert !list.contains(
     everything,
-    cast.Activated(
+    cast_state.Activated(
       unit_id: its_unit,
       creature_id: a_scanning_crystal,
       alive_at_press: True,
@@ -614,7 +621,7 @@ pub fn a_creatures_activate_cast_time_does_not_time_the_default_spell_test() -> 
   // at once, so only a creature whose four columns are all gated falls to the default.
   let assert Ok(#(state, clicked)) =
     right_click(
-      state: cast.new(),
+      state: cast_state.new(),
       activations: the_activations(),
       unit_id: its_unit,
       target: object_of(
@@ -649,7 +656,7 @@ fn market_terminal_pressed(progress progress: Int) -> List(Effect) {
     )
     as "Creature2 34758 is a root of the fixture"
   let caster =
-    cast.Caster(
+    cast_state.Caster(
       ..standing(),
       quests: quest_support.log_of(rows: [
         quest_support.accepted(quest_id: market_quest, progress: [progress]),
@@ -658,7 +665,7 @@ fn market_terminal_pressed(progress progress: Int) -> List(Effect) {
   let assert Ok(#(_, effects)) =
     right_click_by(
       caster:,
-      state: cast.new(),
+      state: cast_state.new(),
       activations: the_activations(),
       unit_id: its_unit,
       target: object_of(
@@ -695,7 +702,7 @@ fn range_answer(
 ) -> Result(Nil, Int) {
   let assert Ok(#(_, effects)) =
     right_click(
-      state: cast.new(),
+      state: cast_state.new(),
       activations:,
       unit_id: its_unit,
       target: object(creature:, east:, up:),
@@ -834,7 +841,7 @@ pub fn an_activate_cast_whose_spell_allows_the_dead_starts_on_a_dead_creature_te
     as "its first activate spell is Spell4 6772, whose target row is Spell4Conditions 4 (mask 0)"
   let assert Ok(#(_, effects)) =
     right_click(
-      state: cast.new(),
+      state: cast_state.new(),
       activations: the_activations(),
       unit_id: its_unit,
       target: usable_in_state(
@@ -882,7 +889,7 @@ pub fn an_activate_cast_that_needs_a_dead_target_is_refused_on_a_living_creature
             unit_id: its_unit,
           ),
           right_click(
-            state: cast.new(),
+            state: cast_state.new(),
             activations:,
             unit_id: its_unit,
             target: mollusk_in_state(east: 1.0, alive: False, withheld: None),
@@ -945,7 +952,7 @@ pub fn an_activate_cast_at_a_held_creature_is_refused_its_state_test() -> Nil {
   let started = fn(states) {
     let assert Ok(#(_, effects)) =
       right_click(
-        state: cast.new(),
+        state: cast_state.new(),
         activations:,
         unit_id: its_unit,
         target: canister_holding(states:, east: 0.5),
@@ -971,7 +978,7 @@ pub fn an_activate_cast_at_a_held_creature_is_refused_its_state_test() -> Nil {
 fn withheld_press(why why: activate.Withheld) -> List(Effect) {
   let assert Ok(#(_, effects)) =
     right_click(
-      state: cast.new(),
+      state: cast_state.new(),
       activations: the_activations(),
       unit_id: its_unit,
       target: mollusk_in_state(east: 1.0, alive: True, withheld: Some(why)),
@@ -1045,7 +1052,7 @@ pub fn activate_refuses_unknown_and_unbuilt_spells_test() -> Nil {
     )
   let assert Ok(#(state, first)) =
     right_click(
-      state: cast.new(),
+      state: cast_state.new(),
       activations: interaction,
       unit_id: its_unit,
       target: object(creature: mollusk(), east: 1.0, up: 0.0),
@@ -1083,7 +1090,7 @@ pub fn activate_refuses_unknown_and_unbuilt_spells_test() -> Nil {
     as "a spell the plan cannot build is refused as not built"
   let assert Ok(#(_, struck)) =
     right_click(
-      state: cast.new(),
+      state: cast_state.new(),
       activations: the_activations(),
       unit_id: its_unit,
       target: object(creature: creature_of_spell(38_392), east: 1.0, up: 0.0),
@@ -1106,7 +1113,7 @@ pub fn activate_refuses_unknown_and_unbuilt_spells_test() -> Nil {
   let #(_, pressed) =
     support.pressed_raw_in(
       plans: support.plans_with(spell: interaction_spell),
-      state: cast.new(),
+      state: cast_state.new(),
       caster: standing(),
       bag_index: support.unbuilt_bag_index,
       target: 0,
@@ -1172,7 +1179,7 @@ pub fn activate_logs_each_unread_prerequisite_type_once_test() -> Nil {
     taken
   }
   let #(state, first) =
-    click(cast.new(), behind(prerequisite_id: 900_001), 1000)
+    click(cast_state.new(), behind(prerequisite_id: 900_001), 1000)
   assert support.refusal_results(effects: first)
     == [cast_result.to_value(cast_result.IllegalSpellCast)]
     as "a creature that activates through a condition the server does not read is refused as not built"
@@ -1241,7 +1248,7 @@ fn clicked(
   quests quests: quest_log.QuestLog,
 ) -> List(Effect) {
   let tables = fixture_tables.shared()
-  let caster = cast.Caster(..standing(), quests:)
+  let caster = cast_state.Caster(..standing(), quests:)
   let activations = the_activations()
   let assert Ok(row) = creature2.get(tables:, id: Creature2Id(creature_id))
     as "the creature is a root of the fixture"
@@ -1250,7 +1257,7 @@ fn clicked(
       tables:,
       activations:,
       subject: cast.subject_for_use(
-        cast: cast.new(),
+        cast: cast_state.new(),
         caster:,
         unit_id: its_unit,
         checklist_index: 0,
@@ -1262,7 +1269,7 @@ fn clicked(
   let assert Ok(#(_, effects)) =
     right_click_by(
       caster:,
-      state: cast.new(),
+      state: cast_state.new(),
       activations:,
       unit_id: its_unit,
       target: object_of(
@@ -1374,7 +1381,7 @@ pub fn an_activate_cast_logs_the_ravel_signals_it_drops_once_test() -> Nil {
   // (targetFlags 2) and a third, 227177, aimed at the caster (targetFlags 1): the activate
   // cast strikes no one, so the two aimed at the target are dropped, and the log names
   // the spell, the effects and the unit.
-  let #(state, first) = mine_clicked(state: cast.new(), at: 1000)
+  let #(state, first) = mine_clicked(state: cast_state.new(), at: 1000)
   assert support.refusal_results(effects: first) == []
     as "a dropped signal refuses nothing"
   let #(state, first_steps) =
@@ -1407,7 +1414,7 @@ pub fn an_activate_cast_logs_the_ravel_signals_it_drops_once_test() -> Nil {
 pub fn activate_cancelled_raises_nothing_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, pressed) =
-    right_click_mollusk(state: cast.new(), east: 1.0, at: 1000)
+    right_click_mollusk(state: cast_state.new(), east: 1.0, at: 1000)
   let id = support.pressed_id(effects: pressed)
   let assert Ok(#(_, effects)) =
     support.cancelled(
@@ -1424,7 +1431,7 @@ pub fn activate_cancelled_raises_nothing_test() -> Nil {
     as "the go's timer is cancelled"
   assert !list.contains(
     effects,
-    cast.Activated(
+    cast_state.Activated(
       unit_id: its_unit,
       creature_id: the_mollusk,
       alive_at_press: True,
@@ -1493,7 +1500,7 @@ fn answered(
   result result: InteractionResult,
   word word: Int,
   at ms: Int,
-) -> Result(#(State, List(Effect)), cast.Refusal) {
+) -> Result(#(State, List(Effect)), cast_state.Refusal) {
   let assert Ok(body) =
     client_side_interaction_result.encode(ClientSideInteractionResult(
       cast_id:,
@@ -1503,7 +1510,7 @@ fn answered(
     as "the answer fits the message"
   cast.take(
     cast: state,
-    message: cast.Answered,
+    message: cast_state.Answered,
     body:,
     caster: standing(),
     plans: support.plans(),
@@ -1527,7 +1534,7 @@ fn answered_ok(
 fn activated_by(effects effects: List(Effect)) -> Int {
   list.count(effects, fn(effect) {
     effect
-    == cast.Activated(
+    == cast_state.Activated(
       unit_id: its_unit,
       creature_id: the_terminal,
       alive_at_press: True,
@@ -1555,7 +1562,7 @@ fn assert_went_and_finished(effects effects: List(Effect)) -> Nil {
     as "opcode.0x7f4.activate: the go names the unit with the effect info of Spell4 34681's Activate row, Spell4Effects 68913 (delay 0)"
   assert list.count(effects, fn(effect) {
       effect
-      == cast.Activated(
+      == cast_state.Activated(
         unit_id: its_unit,
         creature_id: the_terminal,
         alive_at_press: True,
@@ -1577,7 +1584,7 @@ fn assert_nothing_happened(effects effects: List(Effect)) -> Nil {
 pub fn a_client_side_interaction_activate_cast_starts_and_waits_for_the_answer_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, effects) =
-    click_terminal(state: cast.new(), creature: terminal(), at: 1000)
+    click_terminal(state: cast_state.new(), creature: terminal(), at: 1000)
   assert support.ids(frames: support.writes(effects:)) == [0x07FD]
     as "opcode.0x7fd.csi: the caster is written the start, and no go or finish: the client's interaction opens on the 0x7fd and the cast waits for its answer"
   let assert [frame] = support.writes(effects:)
@@ -1613,7 +1620,7 @@ pub fn a_client_side_interaction_activate_cast_starts_and_waits_for_the_answer_t
 pub fn a_success_answer_sends_the_go_and_the_finish_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, pressed) =
-    click_terminal(state: cast.new(), creature: terminal(), at: 1000)
+    click_terminal(state: cast_state.new(), creature: terminal(), at: 1000)
   let id = support.pressed_id(effects: pressed)
   let #(_, effects) =
     answered_ok(
@@ -1630,7 +1637,7 @@ pub fn a_success_answer_sends_the_go_and_the_finish_test() -> Nil {
 pub fn a_failed_or_cancelled_answer_fails_the_cast_with_146_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, pressed) =
-    click_terminal(state: cast.new(), creature: terminal(), at: 1000)
+    click_terminal(state: cast_state.new(), creature: terminal(), at: 1000)
   let id = support.pressed_id(effects: pressed)
   let fails = fn(result) {
     let #(_, effects) = answered_ok(state:, cast_id: id, result:, at: 1200)
@@ -1650,7 +1657,7 @@ pub fn a_failed_or_cancelled_answer_fails_the_cast_with_146_test() -> Nil {
 pub fn a_started_answer_changes_nothing_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, pressed) =
-    click_terminal(state: cast.new(), creature: terminal(), at: 1000)
+    click_terminal(state: cast_state.new(), creature: terminal(), at: 1000)
   let id = support.pressed_id(effects: pressed)
   let #(state, started) =
     answered_ok(
@@ -1681,7 +1688,7 @@ pub fn a_started_answer_changes_nothing_test() -> Nil {
 pub fn a_timed_interaction_goes_when_an_early_answer_succeeds_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, pressed) =
-    click_terminal(state: cast.new(), creature: timed_terminal(), at: 0)
+    click_terminal(state: cast_state.new(), creature: timed_terminal(), at: 0)
   let id = support.pressed_id(effects: pressed)
   let assert [#(go_timer, 2000)] = support.started_timers(effects: pressed)
     as "opcode.0x7ff.csi_cast_bar: the cast's time is the creature's activateSpellCastTime, 2000, and its go waits on one timer"
@@ -1702,7 +1709,7 @@ pub fn a_timed_interaction_goes_when_an_early_answer_succeeds_test() -> Nil {
 pub fn an_activate_right_after_an_early_success_is_accepted_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, pressed) =
-    click_terminal(state: cast.new(), creature: timed_terminal(), at: 0)
+    click_terminal(state: cast_state.new(), creature: timed_terminal(), at: 0)
   let #(state, _) =
     answered_ok(
       state:,
@@ -1720,7 +1727,7 @@ pub fn an_activate_right_after_an_early_success_is_accepted_test() -> Nil {
 pub fn a_cancelled_go_timer_firing_after_an_early_success_does_nothing_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, pressed) =
-    click_terminal(state: cast.new(), creature: timed_terminal(), at: 0)
+    click_terminal(state: cast_state.new(), creature: timed_terminal(), at: 0)
   let assert [#(go_timer, 2000)] = support.started_timers(effects: pressed)
     as "the go waits on one timer"
   let #(state, _) =
@@ -1737,7 +1744,7 @@ pub fn a_cancelled_go_timer_firing_after_an_early_success_does_nothing_test() ->
 pub fn a_timed_interaction_waits_for_the_answer_after_its_cast_time_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, pressed) =
-    click_terminal(state: cast.new(), creature: timed_terminal(), at: 0)
+    click_terminal(state: cast_state.new(), creature: timed_terminal(), at: 0)
   let id = support.pressed_id(effects: pressed)
   let #(state, steps) = support.run_timers(state:, effects: pressed, from_ms: 0)
   assert list.map(steps, fn(step) { step.0 }) == [2000]
@@ -1759,7 +1766,8 @@ pub fn a_client_side_interaction_cast_shows_a_cast_bar_only_with_a_cast_time_tes
   // cast, which refuses the caster's next press with 13 (SpellAlreadyCasting) while it
   // has more than the queue window left.
   let next_press_refused_with = fn(creature) {
-    let #(state, _) = click_terminal(state: cast.new(), creature:, at: 1000)
+    let #(state, _) =
+      click_terminal(state: cast_state.new(), creature:, at: 1000)
     let #(_, effects) =
       support.pressed_raw_in(
         plans: support.plans(),
@@ -1781,7 +1789,11 @@ pub fn a_client_side_interaction_cast_shows_a_cast_bar_only_with_a_cast_time_tes
 pub fn an_answer_for_a_cast_that_is_not_live_is_dropped_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, pressed) =
-    click_terminal(state: cast.new(), creature: timed_terminal(), at: 1000)
+    click_terminal(
+      state: cast_state.new(),
+      creature: timed_terminal(),
+      at: 1000,
+    )
   let id = support.pressed_id(effects: pressed)
   let assert Ok(#(ended, _)) =
     support.cancelled(
@@ -1807,13 +1819,13 @@ pub fn an_answer_for_a_cast_that_is_not_live_is_dropped_test() -> Nil {
     Nil
   }
   dropped(ended, id)
-  dropped(cast.new(), 12_345)
+  dropped(cast_state.new(), 12_345)
 }
 
 pub fn an_answer_naming_no_waiting_interaction_is_refused_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(normal, normal_pressed) =
-    right_click_mollusk(state: cast.new(), east: 1.0, at: 1000)
+    right_click_mollusk(state: cast_state.new(), east: 1.0, at: 1000)
   let normal_id = support.pressed_id(effects: normal_pressed)
   assert answered(
       state: normal,
@@ -1822,10 +1834,14 @@ pub fn an_answer_naming_no_waiting_interaction_is_refused_test() -> Nil {
       word: the_terminals_word,
       at: 1100,
     )
-    == Error(cast.NoInteractionWaits(cast_id: normal_id))
+    == Error(cast_state.NoInteractionWaits(cast_id: normal_id))
     as "opcode.0x805.fields: the client sends 0x805 only for a castMethod 5 cast, and the mollusk's cast is a Normal one"
   let #(state, pressed) =
-    click_terminal(state: cast.new(), creature: timed_terminal(), at: 1000)
+    click_terminal(
+      state: cast_state.new(),
+      creature: timed_terminal(),
+      at: 1000,
+    )
   let id = support.pressed_id(effects: pressed)
   assert answered(
       state:,
@@ -1834,7 +1850,7 @@ pub fn an_answer_naming_no_waiting_interaction_is_refused_test() -> Nil {
       word: 20_651,
       at: 1100,
     )
-    == Error(cast.WrongAnswerSpell(
+    == Error(cast_state.WrongAnswerSpell(
       cast_id: id,
       sent: 20_651,
       expected: the_terminals_word,
@@ -1845,7 +1861,7 @@ pub fn an_answer_naming_no_waiting_interaction_is_refused_test() -> Nil {
 pub fn an_answer_result_the_client_never_sends_is_refused_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, pressed) =
-    click_terminal(state: cast.new(), creature: terminal(), at: 1000)
+    click_terminal(state: cast_state.new(), creature: terminal(), at: 1000)
   let id = support.pressed_id(effects: pressed)
   list.each([4, 5, 6, 7], fn(result) {
     assert answered(
@@ -1855,7 +1871,7 @@ pub fn an_answer_result_the_client_never_sends_is_refused_test() -> Nil {
         word: the_terminals_word,
         at: 1100,
       )
-      == Error(cast.UnknownAnswer(result:))
+      == Error(cast_state.UnknownAnswer(result:))
       as "opcode.0x805.fields: the client's results are 0, 1, 2 and 3, and nothing else"
   })
 }
@@ -1863,7 +1879,11 @@ pub fn an_answer_result_the_client_never_sends_is_refused_test() -> Nil {
 pub fn a_cancel_ends_a_waiting_interaction_cast_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, pressed) =
-    click_terminal(state: cast.new(), creature: timed_terminal(), at: 1000)
+    click_terminal(
+      state: cast_state.new(),
+      creature: timed_terminal(),
+      at: 1000,
+    )
   let id = support.pressed_id(effects: pressed)
   let assert Ok(#(state, effects)) =
     support.cancelled(
@@ -1892,7 +1912,11 @@ pub fn a_cancel_ends_a_waiting_interaction_cast_test() -> Nil {
 pub fn a_second_activate_while_an_interaction_waits_is_refused_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, _) =
-    click_terminal(state: cast.new(), creature: timed_terminal(), at: 1000)
+    click_terminal(
+      state: cast_state.new(),
+      creature: timed_terminal(),
+      at: 1000,
+    )
   let assert Ok(#(_, effects)) =
     right_click(
       state:,
@@ -1911,7 +1935,7 @@ pub fn a_second_activate_while_an_interaction_waits_is_refused_test() -> Nil {
 pub fn a_second_activate_while_an_untimed_interaction_waits_is_refused_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, pressed) =
-    click_terminal(state: cast.new(), creature: terminal(), at: 1000)
+    click_terminal(state: cast_state.new(), creature: terminal(), at: 1000)
   let id = support.pressed_id(effects: pressed)
   let assert Ok(#(refused_state, effects)) =
     right_click(
@@ -1956,7 +1980,7 @@ fn pressed_electrocute(
 /// with no answer yet.
 fn held_press_after_the_bar() -> #(State, Int) {
   let #(state, pressed) =
-    click_terminal(state: cast.new(), creature: timed_terminal(), at: 0)
+    click_terminal(state: cast_state.new(), creature: timed_terminal(), at: 0)
   let id = support.pressed_id(effects: pressed)
   let #(state, held) = pressed_electrocute(state:, at: 1800)
   assert support.writes(effects: held) == []
@@ -1987,7 +2011,7 @@ pub fn a_held_press_starts_when_the_answer_succeeds_test() -> Nil {
 pub fn a_held_press_starts_when_an_early_answer_succeeds_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, pressed) =
-    click_terminal(state: cast.new(), creature: timed_terminal(), at: 0)
+    click_terminal(state: cast_state.new(), creature: timed_terminal(), at: 0)
   let id = support.pressed_id(effects: pressed)
   let #(state, held) = pressed_electrocute(state:, at: 1800)
   assert support.writes(effects: held) == []
@@ -2023,7 +2047,7 @@ pub fn a_held_press_starts_when_the_answer_fails_test() -> Nil {
 pub fn a_press_after_the_bar_while_the_answer_is_out_is_refused_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, pressed) =
-    click_terminal(state: cast.new(), creature: timed_terminal(), at: 0)
+    click_terminal(state: cast_state.new(), creature: timed_terminal(), at: 0)
   let #(state, _) = support.run_timers(state:, effects: pressed, from_ms: 0)
   let #(_, effects) = pressed_electrocute(state:, at: 3000)
   assert support.refusal_results(effects:)
@@ -2042,7 +2066,7 @@ fn hoverboard_clicked() -> List(Effect) {
     as "Creature2 73419 is a root of the fixture"
   let assert Ok(#(state, clicked)) =
     right_click(
-      state: cast.new(),
+      state: cast_state.new(),
       activations: activate.activations(tables:),
       unit_id: its_unit,
       target: object_of(

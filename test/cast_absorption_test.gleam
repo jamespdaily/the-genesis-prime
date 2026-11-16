@@ -23,7 +23,8 @@
 
 import attacker_support
 import cast_support as support
-import genesis_prime/game/cast.{type Effect}
+import genesis_prime/game/cast
+import genesis_prime/game/cast/state.{type Effect} as cast_state
 import genesis_prime/game/damage.{Formula, Parameter}
 import genesis_prime/game/lasting.{type LastingRow, LastingRow}
 import genesis_prime/game/spell_plan.{Absorption, AimsAtCaster, Always}
@@ -44,8 +45,8 @@ const bag_of_base_3 = 11
 const bag_of_base_1 = 8
 
 /// A level-1 Novice: Assault Rating 203.0625 and Support Rating 55.6875.
-fn novice() -> cast.Caster {
-  cast.Caster(..support.caster(), stats: attacker_support.novice())
+fn novice() -> cast_state.Caster {
+  cast_state.Caster(..support.caster(), stats: attacker_support.novice())
 }
 
 /// Row 178144's formula as the client holds it.
@@ -91,8 +92,9 @@ fn absorb_row(
 fn starts(effects effects: List(Effect)) -> List(#(Source, Int, Int)) {
   list.filter_map(support.caster_change_starts(effects:), fn(start) {
     case start.1 {
-      cast.Absorb(amount:, mask:) -> Ok(#(start.0, amount, mask))
-      cast.Property(..) | cast.Heal(..) | cast.Look(..) -> Error(Nil)
+      cast_state.Absorb(amount:, mask:) -> Ok(#(start.0, amount, mask))
+      cast_state.Property(..) | cast_state.Heal(..) | cast_state.Look(..) ->
+        Error(Nil)
     }
   })
 }
@@ -109,7 +111,7 @@ pub fn spectral_forms_go_lists_its_absorb_on_the_caster_and_starts_it_for_five_s
     support.press_as(
       caster: novice(),
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       bag: bag_of_base_3,
       at: 1000,
     )
@@ -160,7 +162,7 @@ pub fn a_delayed_absorb_starts_on_a_timer_test() -> Nil {
     support.press_as(
       caster: novice(),
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       bag: bag_of_base_3,
       at: 1000,
     )
@@ -201,7 +203,7 @@ pub fn an_absorb_ends_at_once_when_its_node_is_taken_off_or_its_persistence_fail
     support.press_as(
       caster: novice(),
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       bag: bag_of_base_3,
       at: 1000,
     )
@@ -240,11 +242,11 @@ pub fn an_absorb_ends_at_once_when_its_node_is_taken_off_or_its_persistence_fail
         caster_persistence: Some(in_combat),
       ),
     ])
-  let fighting = cast.Caster(..novice(), in_combat: True)
+  let fighting = cast_state.Caster(..novice(), in_combat: True)
   let #(lingering, raw) =
     support.pressed_raw_in(
       plans: guarded,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: fighting,
       bag_index: bag_of_base_3,
       target: 0,
@@ -263,7 +265,7 @@ pub fn an_absorb_ends_at_once_when_its_node_is_taken_off_or_its_persistence_fail
   let #(_, ended) =
     cast.persisted(
       cast: lingering,
-      caster: cast.Caster(..novice(), in_combat: False),
+      caster: cast_state.Caster(..novice(), in_combat: False),
       now: support.at(ms: 2000),
     )
   assert support.caster_change_ends(effects: ended)
@@ -294,7 +296,7 @@ pub fn an_absorb_ends_at_once_when_its_node_is_taken_off_or_its_persistence_fail
     support.press_as(
       caster: novice(),
       plans: both,
-      state: cast.new(),
+      state: cast_state.new(),
       bag: bag_of_base_3,
       at: 1000,
     )
@@ -366,7 +368,7 @@ pub fn the_absorb_amount_reads_the_caster_before_the_gos_own_effects_test() -> N
     support.press_as(
       caster: novice(),
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       bag: bag_of_base_3,
       at: 1000,
     )
@@ -375,26 +377,26 @@ pub fn the_absorb_amount_reads_the_caster_before_the_gos_own_effects_test() -> N
     as "the absorb waits for its delay; the raised rating starts in the go's step"
   assert list.any(effects, fn(effect) {
     case effect {
-      cast.CasterChangeStarts(change: cast.Property(..), ..) -> True
-      cast.CasterChangeStarts(change: cast.Absorb(..), ..)
-      | cast.CasterChangeStarts(change: cast.Heal(..), ..)
-      | cast.CasterChangeStarts(change: cast.Look(..), ..)
-      | cast.CasterChangeEnds(..)
-      | cast.Send(..)
-      | cast.Tell(..)
-      | cast.StartTimer(..)
-      | cast.CancelTimer(..)
-      | cast.Log(..)
-      | cast.Strike(..)
-      | cast.TickStrike(..)
-      | cast.Pay(..)
-      | cast.TargetChangeStarts(..)
-      | cast.TargetChangeEnds(..)
-      | cast.ForcedMoveStarts(..)
-      | cast.Activated(..)
-      | cast.ShortcutCast(..)
-      | cast.StealthChanged(..)
-      | cast.Gain(..) -> False
+      cast_state.CasterChangeStarts(change: cast_state.Property(..), ..) -> True
+      cast_state.CasterChangeStarts(change: cast_state.Absorb(..), ..)
+      | cast_state.CasterChangeStarts(change: cast_state.Heal(..), ..)
+      | cast_state.CasterChangeStarts(change: cast_state.Look(..), ..)
+      | cast_state.CasterChangeEnds(..)
+      | cast_state.Send(..)
+      | cast_state.Tell(..)
+      | cast_state.StartTimer(..)
+      | cast_state.CancelTimer(..)
+      | cast_state.Log(..)
+      | cast_state.Strike(..)
+      | cast_state.TickStrike(..)
+      | cast_state.Pay(..)
+      | cast_state.TargetChangeStarts(..)
+      | cast_state.TargetChangeEnds(..)
+      | cast_state.ForcedMoveStarts(..)
+      | cast_state.Activated(..)
+      | cast_state.ShortcutCast(..)
+      | cast_state.StealthChanged(..)
+      | cast_state.Gain(..) -> False
     }
   })
     as "and the raised rating does start in the same go"

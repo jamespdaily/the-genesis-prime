@@ -12,7 +12,8 @@ import attacker_support
 import cast_support as support
 import genesis_prime/client_connection.{type News, CastTicked}
 import genesis_prime/connection/frame.{type Frame}
-import genesis_prime/game/cast.{type Caster, type Effect, type State}
+import genesis_prime/game/cast
+import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/damage.{Formula, Parameter}
 import genesis_prime/game/effect_kind
 import genesis_prime/game/hit
@@ -90,10 +91,10 @@ fn surge() -> Spell {
 fn hit_ticking(
   unit_id unit_id: Int,
   ticking ticking: List(spell_area.TickingDamage),
-) -> cast.Struck {
-  cast.Hit(
+) -> cast_state.Struck {
+  cast_state.Hit(
     unit_id:,
-    unit: cast.HitCreature(life: 3, struck_at_ms: press_ms),
+    unit: cast_state.HitCreature(life: 3, struck_at_ms: press_ms),
     descriptions: [],
     controls: [],
     armor_removed: 0,
@@ -106,7 +107,7 @@ fn hit_ticking(
 /// What the creature answers a tick's strike: its round closes at once with this, or
 /// stays open.
 type Answer {
-  Answered(struck: Option(cast.Struck))
+  Answered(struck: Option(cast_state.Struck))
   Held
 }
 
@@ -117,7 +118,7 @@ type Run {
     state: State,
     steps: List(#(Int, List(Effect))),
     pending: List(#(Int, TimerId)),
-    held: List(cast.TickAsked),
+    held: List(cast_state.TickAsked),
   )
 }
 
@@ -126,13 +127,13 @@ type Run {
 fn pressed(
   plans plans: spell_plan.Plans,
   caster caster: Caster,
-  struck struck: List(cast.Struck),
-  answer answer: fn(Int, cast.TickAsked) -> Answer,
+  struck struck: List(cast_state.Struck),
+  answer answer: fn(Int, cast_state.TickAsked) -> Answer,
 ) -> Run {
   let #(state, raw) =
     support.pressed_raw_in(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster:,
       bag_index: bag_of_base_3,
       target: 0,
@@ -155,8 +156,8 @@ fn ran(
   caster caster: Caster,
   run run: Run,
   until_ms until_ms: Int,
-  struck struck: List(cast.Struck),
-  answer answer: fn(Int, cast.TickAsked) -> Answer,
+  struck struck: List(cast_state.Struck),
+  answer answer: fn(Int, cast_state.TickAsked) -> Answer,
 ) -> Run {
   case list.sort(run.pending, by_due) {
     [#(due, timer), ..rest] if due <= until_ms -> {
@@ -223,9 +224,9 @@ fn settled(
   state state: State,
   effects effects: List(Effect),
   at at: Int,
-  struck struck: List(cast.Struck),
-  answer answer: fn(Int, cast.TickAsked) -> Answer,
-) -> #(State, List(Effect), List(cast.TickAsked)) {
+  struck struck: List(cast_state.Struck),
+  answer answer: fn(Int, cast_state.TickAsked) -> Answer,
+) -> #(State, List(Effect), List(cast_state.TickAsked)) {
   let #(state, effects) =
     support.answered_as(caster:, state:, effects:, at:, struck:, rolls: [])
   list.fold(
@@ -252,16 +253,19 @@ fn settled(
 }
 
 /// Every tick lands on its unit for 8 health, killing it when `killed` is 1.
-fn landed(killed killed: Int) -> fn(Int, cast.TickAsked) -> Answer {
-  fn(_, asked: cast.TickAsked) {
+fn landed(killed killed: Int) -> fn(Int, cast_state.TickAsked) -> Answer {
+  fn(_, asked: cast_state.TickAsked) {
     Answered(struck: Some(tick_hit(asked:, killed:)))
   }
 }
 
-fn tick_hit(asked asked: cast.TickAsked, killed killed: Int) -> cast.Struck {
-  cast.Hit(
+fn tick_hit(
+  asked asked: cast_state.TickAsked,
+  killed killed: Int,
+) -> cast_state.Struck {
+  cast_state.Hit(
     unit_id: asked.unit_id,
-    unit: cast.HitCreature(life: asked.life, struck_at_ms: 0),
+    unit: cast_state.HitCreature(life: asked.life, struck_at_ms: 0),
     descriptions: [
       hit.Description(
         spell4_effects_id: asked.effect_id.value,
@@ -291,7 +295,7 @@ fn tick_damage(killed killed: Int) -> SpellDamageDescription {
   )
 }
 
-fn held(_: Int, _: cast.TickAsked) -> Answer {
+fn held(_: Int, _: cast_state.TickAsked) -> Answer {
   Held
 }
 
@@ -387,7 +391,7 @@ fn no_tick_after_finish(run run: Run) -> Nil {
 }
 
 /// A run of the surge on creature 10 to its end, every tick landing.
-fn surge_run(answer answer: fn(Int, cast.TickAsked) -> Answer) -> Run {
+fn surge_run(answer answer: fn(Int, cast_state.TickAsked) -> Answer) -> Run {
   let struck = [hit_ticking(unit_id: 10, ticking: surge_ticking())]
   pressed(
     plans: support.plans_of([surge()]),
@@ -550,7 +554,7 @@ fn longer_time_spell() -> Spell {
 /// A press of the 0x2000 spell whose go hits creature 10 with row 82888, its tick
 /// strikes answered by `answer`, run to `until_ms`.
 fn atomic_surge_run(
-  answer answer: fn(Int, cast.TickAsked) -> Answer,
+  answer answer: fn(Int, cast_state.TickAsked) -> Answer,
   until_ms until_ms: Int,
 ) -> Run {
   let struck = [hit_ticking(unit_id: 10, ticking: atomic_surge_ticking())]
@@ -675,10 +679,10 @@ pub fn only_a_hit_or_immune_unit_gets_ticks_test() -> Nil {
   use <- owned_test.run(5000)
   let struck = [
     hit_ticking(unit_id: 10, ticking: surge_ticking()),
-    cast.Deflected(unit_id: 11),
-    cast.Immune(
+    cast_state.Deflected(unit_id: 11),
+    cast_state.Immune(
       unit_id: 12,
-      unit: cast.HitCreature(life: 1, struck_at_ms: press_ms),
+      unit: cast_state.HitCreature(life: 1, struck_at_ms: press_ms),
       controls: [],
       armor_removed: 0,
       ticking: surge_ticking(),
@@ -886,7 +890,7 @@ pub fn ticks_due_together_go_in_key_order_test() -> Nil {
           health_heal(schedule: every_two_seconds()),
         ]),
       ]),
-      state: cast.new(),
+      state: cast_state.new(),
       caster: healing_caster(),
       bag_index: bag_of_base_3,
       target: 0,
@@ -1082,7 +1086,7 @@ pub fn a_dead_caster_ends_its_ticks_test() -> Nil {
   let plans = support.plans_of([passive])
   let #(state, raw) =
     cast.passive_started(
-      cast: cast.new(),
+      cast: cast_state.new(),
       caster: healing_caster(),
       plans:,
       base: Spell4BaseId(250_020),
@@ -1102,14 +1106,14 @@ pub fn a_dead_caster_ends_its_ticks_test() -> Nil {
   let #(state, dying) =
     cast.died(
       cast: state,
-      caster: cast.Caster(..healing_caster(), dead: True),
+      caster: cast_state.Caster(..healing_caster(), dead: True),
       now: support.at(ms: 1500),
     )
   assert !list.contains(support.cancelled_timers(effects: dying), tick_timer)
     as "the passive's tick survives the death"
   let #(_, fired) =
     support.fired_raw_as(
-      caster: cast.Caster(..healing_caster(), dead: True),
+      caster: cast_state.Caster(..healing_caster(), dead: True),
       state:,
       timer: tick_timer,
       at: 2000,
@@ -1311,7 +1315,7 @@ fn shield_heal(schedule schedule: ticking.Schedule) -> spell_plan.Heal {
 /// its 450 shield: Mind Over Body's formula reads it as round(0.3281 x 100) + 17.51 x 5 =
 /// 33 + 87.55 = 120.55, which is 121 (the stat part is rounded alone, `0x140565600`).
 fn healing_caster() -> Caster {
-  cast.Caster(
+  cast_state.Caster(
     ..support.caster(),
     stats: damage.Attacker(
       ..attacker_support.fresh(),
@@ -1368,9 +1372,10 @@ fn heals(
 ) -> List(#(Int, effect_kind.Vital, Int)) {
   list.filter_map(support.caster_change_starts(effects:), fn(start) {
     case start.1 {
-      cast.Heal(vital:, amount:) ->
+      cast_state.Heal(vital:, amount:) ->
         Ok(#({ start.0 }.effect_id.value, vital, amount))
-      cast.Property(..) | cast.Look(..) | cast.Absorb(..) -> Error(Nil)
+      cast_state.Property(..) | cast_state.Look(..) | cast_state.Absorb(..) ->
+        Error(Nil)
     }
   })
 }

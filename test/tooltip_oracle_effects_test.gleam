@@ -49,6 +49,7 @@ import cast_support as support
 import fixture_tables
 import genesis_prime/game/area
 import genesis_prime/game/cast
+import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/class_resource
 import genesis_prime/game/cooldown
 import genesis_prime/game/lasting
@@ -174,16 +175,16 @@ fn input_tokens(asked asked: List(Asked)) -> List(Asked) {
 /// The first press of the attempt, made by the plain caster and then by a caster of each
 /// playable class holding the resource, that the rule does not refuse.
 fn first_taken(
-  casters casters: List(cast.Caster),
-  attempt attempt: fn(cast.Caster) -> Result(Drive, List(Int)),
+  casters casters: List(cast_state.Caster),
+  attempt attempt: fn(cast_state.Caster) -> Result(Drive, List(Int)),
 ) -> Result(Drive, Unread) {
   taking(casters:, attempt:, last: NoPayment)
 }
 
 /// The first press of the casters the rule does not refuse; else why the last was refused.
 fn taking(
-  casters casters: List(cast.Caster),
-  attempt attempt: fn(cast.Caster) -> Result(Drive, List(Int)),
+  casters casters: List(cast_state.Caster),
+  attempt attempt: fn(cast_state.Caster) -> Result(Drive, List(Int)),
   last last: Unread,
 ) -> Result(Drive, Unread) {
   case casters {
@@ -613,12 +614,12 @@ fn unplanned_property(
 /// The effects of the passive's start and of the two presses of the stealth ability, as the
 /// client's player makes them (`cast.passive_started`, two 0x9a presses of the ability's
 /// place in the bag), each answered with no unit struck.
-fn leaving_stealth(rows rows: Rows) -> Result(List(cast.Effect), Unread) {
+fn leaving_stealth(rows rows: Rows) -> Result(List(cast_state.Effect), Unread) {
   let caster =
-    cast.Caster(..oracle.caster_of(base: stealth_base), in_combat: False)
+    cast_state.Caster(..oracle.caster_of(base: stealth_base), in_combat: False)
   let #(state, joined) =
     cast.passive_started(
-      cast: cast.new(),
+      cast: cast_state.new(),
       caster:,
       plans: rows.plans,
       base: Spell4BaseId(stealth_passive_base),
@@ -679,7 +680,7 @@ fn started_bits(
 
 /// The bits of column `index` of the one property modifier the effects start from the row.
 fn bits_started(
-  effects effects: List(cast.Effect),
+  effects effects: List(cast_state.Effect),
   entry entry: Asked,
   index index: Int,
 ) -> Result(Int, Unread) {
@@ -952,7 +953,7 @@ fn selected(
     })
     |> dict.from_list
   strike.select(
-    asked: cast.GoAsked(
+    asked: cast_state.GoAsked(
       cast_id: 5,
       phase:,
       spell4_id: spell.spell4_id,
@@ -1100,8 +1101,8 @@ type Kept {
 
 /// The holds of the group (or of the spell) the caster has on itself.
 fn group_holds(
-  state state: cast.State,
-  caster caster: cast.Caster,
+  state state: cast_state.State,
+  caster caster: cast_state.Caster,
   stacked stacked: Stacked,
 ) -> List(lasting.Hold) {
   cast.holds_on(cast: state, unit_id: caster.unit_id)
@@ -1123,7 +1124,7 @@ fn kept_after_the_cap_and_one(
   use #(_, before_last, held) <- result.try(
     list.try_fold(
       numbers(count: stacked.cap + 1),
-      #(cast.new(), [], []),
+      #(cast_state.new(), [], []),
       fn(so_far, number) {
         let at_ms = number * between_presses_ms
         use #(state, pressed) <- result.try(
@@ -1213,7 +1214,7 @@ fn own_class_holding(
   rows rows: Rows,
   base base: Int,
   value value: Int,
-) -> List(cast.Caster) {
+) -> List(cast_state.Caster) {
   let assert Ok(base_row) =
     spell4_base.get(tables: rows.tables, id: Spell4BaseId(base))
     as "a planned ability has a Spell4Base row"
@@ -1221,7 +1222,7 @@ fn own_class_holding(
     list.contains(class_resource.playable_class_ids(), base_row.class_id_player)
   {
     True -> [
-      cast.Caster(
+      cast_state.Caster(
         ..oracle.caster_of(base:),
         resources: support.holding(
           class_id: base_row.class_id_player,
@@ -1239,7 +1240,7 @@ fn paying_casters(
   rows rows: Rows,
   base base: Int,
   amounts amounts: List(Int),
-) -> List(cast.Caster) {
+) -> List(cast_state.Caster) {
   [
     oracle.caster_of(base:),
     ..list.flat_map(amounts, fn(value) {
@@ -1442,7 +1443,10 @@ pub fn pulse_blast_in_combat_gives_15_of_slot_1_through_the_server_proxy_row_its
     as "a Pulse Blast in combat gives slot 1 the 15 the text prints, through the server's Proxy row"
   let assert Ok(quiet) =
     oracle.drive_as(
-      caster: cast.Caster(..oracle.caster_of(base: 26_468), in_combat: False),
+      caster: cast_state.Caster(
+        ..oracle.caster_of(base: 26_468),
+        in_combat: False,
+      ),
       plans: rows.plans,
       strikes: oracle.striking_with_states(root:),
     )

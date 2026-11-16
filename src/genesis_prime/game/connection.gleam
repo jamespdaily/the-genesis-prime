@@ -142,7 +142,7 @@ import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{GameWrapper}
 import genesis_prime/connection/frame.{type Frame, type FrameError}
 import genesis_prime/connection/hello
-import genesis_prime/game/cast
+import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/character_select
 import genesis_prime/game/chat
 import genesis_prime/game/class_resource
@@ -1328,7 +1328,7 @@ fn other_timer_fired(
   timer timer: TimerId,
 ) -> client_connection.Handled(Session) {
   case
-    cast.owns(timer),
+    cast_state.owns(timer),
     strike.owns(timer),
     class_resource.owns(timer:),
     player_life.owns(timer:),

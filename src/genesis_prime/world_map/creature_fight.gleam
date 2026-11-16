@@ -266,6 +266,7 @@
 import genesis_prime/client_connection.{type News}
 import genesis_prime/game/area.{type Inside, type Row}
 import genesis_prime/game/cast
+import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/forced_move
 import genesis_prime/game/hit.{type Offence}
 import genesis_prime/game/start_place.{type Place}
@@ -370,7 +371,7 @@ pub type Stage {
   Striking(
     deadline: Int,
     awaiting: Dict(Key, ConnectionId),
-    struck: List(cast.Struck),
+    struck: List(cast_state.Struck),
   )
 }
 
@@ -1351,7 +1352,7 @@ fn strikes(
   here here: Place,
 ) -> #(State, List(Effect)) {
   let cast_id =
-    cast.mint(
+    cast_state.mint(
       unit_id: fighter.unit_id,
       number: state.next_cast,
       live: fighter.guard_casts,
@@ -1370,7 +1371,7 @@ fn strikes(
   #(
     State(
       ..state,
-      next_cast: cast.number_of(cast_id:) + 1,
+      next_cast: cast_state.number_of(cast_id:) + 1,
       status: Fighting(..fighting, round: Some(Round(cast_id:, stage:))),
     ),
     [
@@ -1477,7 +1478,9 @@ fn with_round(state state: State, round round: Round) -> State {
 /// What the target's answer was: what struck for the round's go, whether the entry
 /// ends (a kill or a refusal), and whether the target is dead (a kill or a `Dead`
 /// refusal).
-fn answer_of(answered answered: Answered) -> #(List(cast.Struck), Bool, Bool) {
+fn answer_of(
+  answered answered: Answered,
+) -> #(List(cast_state.Struck), Bool, Bool) {
   let unit_id = answered.key.unit_id
   case answered.outcome {
     strike_tell.Landed(descriptions:, ..) -> {
@@ -1487,9 +1490,9 @@ fn answer_of(answered answered: Answered) -> #(List(cast.Struck), Bool, Bool) {
         })
       #(
         [
-          cast.Hit(
+          cast_state.Hit(
             unit_id:,
-            unit: cast.HitPlayer,
+            unit: cast_state.HitPlayer,
             descriptions:,
             controls: [],
             armor_removed: 0,
@@ -1502,7 +1505,11 @@ fn answer_of(answered answered: Answered) -> #(List(cast.Struck), Bool, Bool) {
     }
     strike_tell.Immune(..) ->
       panic as "a player is never guarded: only a creature answers Immune"
-    strike_tell.Deflected(..) -> #([cast.Deflected(unit_id:)], False, False)
+    strike_tell.Deflected(..) -> #(
+      [cast_state.Deflected(unit_id:)],
+      False,
+      False,
+    )
     strike_tell.Refused(why: strike_tell.Dead) -> #([], True, True)
     strike_tell.Refused(why: strike_tell.Returning) -> #([], True, False)
   }
@@ -1513,7 +1520,7 @@ fn answer_of(answered answered: Answered) -> #(List(cast.Struck), Bool, Bool) {
 fn round_closed(
   state state: State,
   round round: Round,
-  struck struck: List(cast.Struck),
+  struck struck: List(cast_state.Struck),
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
   let assert Fighting(..) as fighting = state.status
@@ -1557,7 +1564,7 @@ fn charges(
   inside inside: Inside,
 ) -> #(State, List(Effect)) {
   let cast_id =
-    cast.mint(
+    cast_state.mint(
       unit_id: fighter.unit_id,
       number: state.next_cast,
       live: fighter.guard_casts,
@@ -1570,7 +1577,7 @@ fn charges(
   #(
     State(
       ..state,
-      next_cast: cast.number_of(cast_id:) + 1,
+      next_cast: cast_state.number_of(cast_id:) + 1,
       status: Fighting(..fighting, round: Some(round), tick:),
     ),
     [

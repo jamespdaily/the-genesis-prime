@@ -11,7 +11,8 @@
 //// - Telekinetic Strike: bag index 0, a cast time of 1250 ms (`Spell4.32893`).
 
 import cast_support as support
-import genesis_prime/game/cast.{Deflected, GoAsked, Hit}
+import genesis_prime/game/cast
+import genesis_prime/game/cast/state.{Deflected, GoAsked, Hit} as cast_state
 import genesis_prime/game/hit.{type Description, Description}
 import genesis_prime/message/cast_result
 import genesis_prime/message/combat_result
@@ -35,10 +36,10 @@ const first_cast = 2_147_497_984
 
 /// The state and effects after Telekinetic Strike is pressed and its go timer
 /// fires at 2250 ms.
-fn gone() -> #(cast.State, List(cast.Effect)) {
+fn gone() -> #(cast_state.State, List(cast_state.Effect)) {
   let #(state, pressed) =
     support.pressed_raw(
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster(),
       bag_index: 0,
       target: 0,
@@ -54,7 +55,7 @@ pub fn a_go_with_damage_asks_for_its_targets_and_writes_nothing_until_the_round_
   let #(_, effects) = gone()
   assert list.contains(
     effects,
-    cast.Strike(asked: GoAsked(
+    cast_state.Strike(asked: GoAsked(
       cast_id: first_cast,
       phase: 0,
       spell4_id: Spell4Id(32_893),
@@ -192,7 +193,7 @@ pub fn another_casters_0x801_with_reason_6_ends_only_its_own_cast_and_the_first_
   let assert Ok(#(second_state, ended)) =
     cast.take(
       cast: second_state,
-      message: cast.Cancelled,
+      message: cast_state.Cancelled,
       body: support.cancel_body(
         cast_id: first_cast,
         reason: cast_result.SpellCancelled,
@@ -280,7 +281,7 @@ pub fn a_0x801_while_a_round_is_open_leaves_the_close_with_nothing_to_write_test
   let assert Ok(#(state, _)) =
     cast.take(
       cast: state,
-      message: cast.Cancelled,
+      message: cast_state.Cancelled,
       body: support.cancel_body(
         cast_id: first_cast,
         reason: cast_result.SpellCancelled,

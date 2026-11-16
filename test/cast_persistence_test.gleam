@@ -20,7 +20,8 @@
 import cast_support as support
 import client_tables
 import genesis_prime/client_connection.{CastFinished}
-import genesis_prime/game/cast.{type Caster, type Effect, type State}
+import genesis_prime/game/cast
+import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/spell_plan.{
@@ -115,7 +116,7 @@ fn finished_ids(effects effects: List(Effect)) -> List(Int) {
 // ---- the Spell Surge buff ----
 
 fn spellslinger(power power: Float) -> Caster {
-  cast.Caster(
+  cast_state.Caster(
     ..support.caster_holding(resources: support.holding(
       class_id: 7,
       value: power,
@@ -131,7 +132,7 @@ pub fn a_step_that_leaves_spell_power_at_24_ends_the_spell_surge_buff_and_at_25_
   let #(state, pressed) =
     support.press_by(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: spellslinger(power: 25.0),
       bag: 0,
       at: 1000,
@@ -216,7 +217,7 @@ pub fn a_lingering_casts_nodes_end_timer_is_cancelled_when_its_persistence_ends_
   let #(state, pressed) =
     support.press_by(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster_in_combat(in_combat: True),
       bag: bag_of_base_3,
       at: 1000,
@@ -248,7 +249,7 @@ pub fn a_live_cast_whose_persistence_ends_clears_the_current_cast_cancels_its_go
   let #(state, pressed) =
     support.press_by(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: fighting,
       bag: bag_of_base_3,
       at: 1000,
@@ -301,7 +302,7 @@ pub fn a_persistence_of_a_type_not_read_keeps_the_cast_with_one_debug_line_for_t
   let #(state, pressed) =
     support.press_by(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: fighting,
       bag: bag_of_base_3,
       at: 1000,
@@ -351,7 +352,7 @@ pub fn a_target_persistence_on_a_cast_whose_primary_target_is_a_creature_is_not_
   let #(state, raw) =
     support.pressed_raw_in(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: fighting,
       bag_index: bag_of_base_3,
       target: 0,
@@ -364,9 +365,9 @@ pub fn a_target_persistence_on_a_cast_whose_primary_target_is_a_creature_is_not_
       effects: raw,
       at: 1000,
       struck: [
-        cast.Hit(
+        cast_state.Hit(
           unit_id: 99,
-          unit: cast.HitCreature(life: 1, struck_at_ms: 0),
+          unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
           descriptions: [],
           controls: [],
           armor_removed: 0,
@@ -408,7 +409,7 @@ pub fn a_target_persistence_on_a_cast_the_caster_is_the_target_of_ends_it_with_2
   let #(state, pressed) =
     support.press_by(
       plans: target_only,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: fighting,
       bag: bag_of_base_3,
       at: 1000,
@@ -432,7 +433,7 @@ pub fn a_target_persistence_on_a_cast_the_caster_is_the_target_of_ends_it_with_2
   let #(state, pressed) =
     support.press_by(
       plans: both,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: fighting,
       bag: bag_of_base_3,
       at: 1000,
@@ -469,7 +470,7 @@ pub fn two_casts_whose_persistence_fails_in_one_input_end_in_cast_id_order_test(
   let #(state, one) =
     support.press_by(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: fighting,
       bag: bag_of_base_3,
       at: 1000,
@@ -519,7 +520,7 @@ pub fn a_cast_whose_type_15_persistence_names_another_casts_spell_ends_in_the_sa
   let #(state, pressed_b) =
     support.press_by(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: fighting,
       bag: bag_of_base_3,
       at: 1000,
@@ -590,7 +591,7 @@ pub fn an_empowering_probes_buff_persists_while_its_caster_holds_a_group_704_cas
   let #(state, pressed_base) =
     support.press_by(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster:,
       bag: bag_of_base_3,
       at: 1000,
@@ -605,7 +606,7 @@ pub fn an_empowering_probes_buff_persists_while_its_caster_holds_a_group_704_cas
   let #(alone, _) =
     support.press_by(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster:,
       bag: bag_of_base_1,
       at: 1000,
@@ -675,13 +676,13 @@ pub fn an_ended_casts_stealth_source_drops_and_stealth_changed_comes_last_test()
   let #(state, pressed) =
     support.press_by(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster_in_combat(in_combat: True),
       bag: bag_of_base_3,
       at: 1000,
     )
-  assert cast.stealthed(cast: state)
-    && list.contains(pressed, cast.StealthChanged(stealthed: True))
+  assert cast_state.stealthed(cast: state)
+    && list.contains(pressed, cast_state.StealthChanged(stealthed: True))
     as "the planted spell's Stealth row hides the caster"
   let #(ended, effects) =
     persisted(
@@ -689,9 +690,9 @@ pub fn an_ended_casts_stealth_source_drops_and_stealth_changed_comes_last_test()
       caster: support.caster_in_combat(in_combat: False),
       at: 1100,
     )
-  assert !cast.stealthed(cast: ended)
+  assert !cast_state.stealthed(cast: ended)
     as "the cast's stealth source leaves with the cast"
-  assert list.last(effects) == Ok(cast.StealthChanged(stealthed: False))
+  assert list.last(effects) == Ok(cast_state.StealthChanged(stealthed: False))
     as "and StealthChanged is the last effect of the input"
   assert failed(effects:) != []
 }
@@ -710,7 +711,7 @@ pub fn the_base_cast_of_an_open_charge_ends_with_its_threshold_test() -> Nil {
   let #(state, pressed) =
     support.press_by(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: fighting,
       bag: support.charged_shot,
       at: 1000,
@@ -758,7 +759,7 @@ pub fn a_caster_that_left_or_died_has_no_cast_left_for_the_check_to_end_test() -
   let #(state, _) =
     support.press_by(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster_in_combat(in_combat: True),
       bag: bag_of_base_3,
       at: 1000,
@@ -784,7 +785,7 @@ pub fn a_state_with_no_persistence_column_changes_nothing_test() -> Nil {
   let #(state, _) =
     support.press_by(
       plans: support.plans(),
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster(),
       bag: 0,
       at: 1000,
@@ -808,8 +809,8 @@ pub fn a_held_key_whose_cast_the_persistence_ended_casts_again_at_once_test() ->
   let fighting = support.caster_in_combat(in_combat: True)
   let assert Ok(#(state, down)) =
     cast.take(
-      cast: cast.new(),
-      message: cast.KeyHeld,
+      cast: cast_state.new(),
+      message: cast_state.KeyHeld,
       body: support.hold_body(bag_index: bag_of_base_3, target: 0, held: 1),
       caster: fighting,
       plans:,

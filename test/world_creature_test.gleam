@@ -32,7 +32,7 @@ import genesis_prime/client_connection.{
   type Message, CreatureAppeared, ForStay, PeerNews, SentByMap, SentByPeer,
 }
 import genesis_prime/connection/frame.{Frame}
-import genesis_prime/game/cast
+import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection/frames
 import genesis_prime/game/damage
 import genesis_prime/game/forced_move
@@ -1136,34 +1136,41 @@ fn tell_change(
   world world: World,
   run run: MapProcess,
   connection connection: Int,
-  effect effect: cast.Effect,
+  effect effect: cast_state.Effect,
 ) -> client_connection.TargetChange {
   let #(unit_id, life, change) = case effect {
-    cast.TargetChangeStarts(unit_id:, life:, struck_at_ms:, source:, modifier:) -> #(
+    cast_state.TargetChangeStarts(
+      unit_id:,
+      life:,
+      struck_at_ms:,
+      source:,
+      modifier:,
+    ) -> #(
       unit_id,
       life,
       client_connection.ChangeStarts(source:, modifier:, struck_at_ms:),
     )
-    cast.TargetChangeEnds(unit_id:, life:, source:) -> #(
+    cast_state.TargetChangeEnds(unit_id:, life:, source:) -> #(
       unit_id,
       life,
       client_connection.ChangeEnds(source:),
     )
-    cast.ForcedMoveStarts(..)
-    | cast.Send(..)
-    | cast.Tell(..)
-    | cast.StartTimer(..)
-    | cast.CancelTimer(..)
-    | cast.Strike(..)
-    | cast.Pay(..)
-    | cast.Gain(..)
-    | cast.Log(..)
-    | cast.CasterChangeStarts(..)
-    | cast.CasterChangeEnds(..)
-    | cast.Activated(..)
-    | cast.ShortcutCast(..)
-    | cast.TickStrike(..)
-    | cast.StealthChanged(..) -> panic as "not a change of a creature's property"
+    cast_state.ForcedMoveStarts(..)
+    | cast_state.Send(..)
+    | cast_state.Tell(..)
+    | cast_state.StartTimer(..)
+    | cast_state.CancelTimer(..)
+    | cast_state.Strike(..)
+    | cast_state.Pay(..)
+    | cast_state.Gain(..)
+    | cast_state.Log(..)
+    | cast_state.CasterChangeStarts(..)
+    | cast_state.CasterChangeEnds(..)
+    | cast_state.Activated(..)
+    | cast_state.ShortcutCast(..)
+    | cast_state.TickStrike(..)
+    | cast_state.StealthChanged(..) ->
+      panic as "not a change of a creature's property"
   }
   let assert Ok(Nil) =
     server.tell_creature(
@@ -1255,9 +1262,9 @@ pub fn fissure_on_creature_raises_tech_damage_taken_test() -> Nil {
   // What the cast rule does with Fissure's debuff on this creature: a go that
   // strikes it starts the row's modifier at once and ends it with the node.
   let struck = [
-    cast.Hit(
+    cast_state.Hit(
       unit_id:,
-      unit: cast.HitCreature(life: 2, struck_at_ms: 1000),
+      unit: cast_state.HitCreature(life: 2, struck_at_ms: 1000),
       descriptions: [],
       controls: [],
       armor_removed: 0,
@@ -1267,7 +1274,7 @@ pub fn fissure_on_creature_raises_tech_damage_taken_test() -> Nil {
   let #(state, pressed) =
     cast_support.pressed_raw_in(
       plans: fissure_plans(),
-      state: cast.new(),
+      state: cast_state.new(),
       caster: cast_support.caster(),
       bag_index: 11,
       target: unit_id,
@@ -1287,9 +1294,9 @@ pub fn fissure_on_creature_raises_tech_damage_taken_test() -> Nil {
     )
   let assert [last, ..earlier] = list.reverse(changes)
   let earlier = list.reverse(earlier)
-  let assert cast.TargetChangeEnds(..) = last
+  let assert cast_state.TargetChangeEnds(..) = last
     as "the cast's last change ends the debuff with its node"
-  let assert [cast.TargetChangeStarts(..), ..] = earlier
+  let assert [cast_state.TargetChangeStarts(..), ..] = earlier
     as "the first change is the go's own start of the row's modifier"
   // The same Tech blow before, during and after the debuff.
   strike_with(
@@ -1630,9 +1637,9 @@ pub fn a_knockback_spell_on_a_creature_shows_its_flight_to_a_watching_client_tes
   let shell.ServiceTime(clock:, ..) = driven_time.service_time(time)
   let step.Now(monotonic_ms: go_ms, ..) = clock()
   let struck = [
-    cast.Hit(
+    cast_state.Hit(
       unit_id:,
-      unit: cast.HitCreature(life: 2, struck_at_ms: go_ms),
+      unit: cast_state.HitCreature(life: 2, struck_at_ms: go_ms),
       descriptions: [],
       controls: [],
       armor_removed: 0,
@@ -1642,7 +1649,7 @@ pub fn a_knockback_spell_on_a_creature_shows_its_flight_to_a_watching_client_tes
   let #(state, pressed) =
     cast_support.pressed_raw_in(
       plans: knockback_plans(),
-      state: cast.new(),
+      state: cast_state.new(),
       caster: cast_support.caster(),
       bag_index: 11,
       target: unit_id,
@@ -1659,7 +1666,7 @@ pub fn a_knockback_spell_on_a_creature_shows_its_flight_to_a_watching_client_tes
       poses: dict.new(),
     )
   let assert [
-    cast.ForcedMoveStarts(unit_id: thrown, life:, struck_at_ms:, move:),
+    cast_state.ForcedMoveStarts(unit_id: thrown, life:, struck_at_ms:, move:),
   ] = cast_support.throws(effects: list.append(pressed, answered))
     as "the row's delayTime is 0, so the go tells the one creature it hit its throw at once"
   // The client reads the throw's ForcedMove effect from the 0x7f4's target info of the

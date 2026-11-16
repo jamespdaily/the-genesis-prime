@@ -11,6 +11,7 @@
 import cast_support as support
 import genesis_prime/client_connection.{CastStarted}
 import genesis_prime/game/cast
+import genesis_prime/game/cast/state as cast_state
 import genesis_prime/message/cast_result
 import genesis_prime/message/spell_cast_refused
 import genesis_prime/message/spell_started
@@ -32,11 +33,11 @@ const kick = 3
 /// The key of the bag index goes down or up, with Mind Burst costless
 /// (`cast_support.plans_with_costless_mind_burst`), a go asked and not yet answered.
 fn key_raw(
-  state state: cast.State,
+  state state: cast_state.State,
   bag_index bag_index: Int,
   held held: Int,
   at ms: Int,
-) -> #(cast.State, List(cast.Effect)) {
+) -> #(cast_state.State, List(cast_state.Effect)) {
   support.key_raw_in(
     plans: support.plans_with_costless_mind_burst(),
     state:,
@@ -48,11 +49,11 @@ fn key_raw(
 
 /// The same with each go answered as a round that struck nobody.
 fn key(
-  state state: cast.State,
+  state state: cast_state.State,
   bag_index bag_index: Int,
   held held: Int,
   at ms: Int,
-) -> #(cast.State, List(cast.Effect)) {
+) -> #(cast_state.State, List(cast_state.Effect)) {
   support.key_in(
     plans: support.plans_with_costless_mind_burst(),
     state:,
@@ -64,14 +65,14 @@ fn key(
 
 /// The lines a client reads of the writes of these steps, as `cast_lines` makes
 /// them.
-fn lines(steps steps: List(#(Int, List(cast.Effect)))) -> List(String) {
+fn lines(steps steps: List(#(Int, List(cast_state.Effect)))) -> List(String) {
   support.cast_lines(
     frames: list.flat_map(steps, fn(step) { support.writes(effects: step.1) }),
   )
 }
 
 /// The cast ids of the 0x7ff among the writes, in order.
-fn started_ids(effects effects: List(cast.Effect)) -> List(Int) {
+fn started_ids(effects effects: List(cast_state.Effect)) -> List(Int) {
   list.filter_map(support.writes(effects:), fn(frame) {
     case frame.message_id {
       0x07FF -> {
@@ -86,7 +87,7 @@ fn started_ids(effects effects: List(cast.Effect)) -> List(Int) {
 pub fn a_held_press_of_a_normal_ability_starts_it_with_a_server_cast_id_and_no_0x7fd_test() -> Nil {
   use <- owned_test.run(5000)
   let #(_, effects) =
-    key(state: cast.new(), bag_index: mind_burst, held: 1, at: 1000)
+    key(state: cast_state.new(), bag_index: mind_burst, held: 1, at: 1000)
   let frames = support.writes(effects:)
   assert support.ids(frames:) == [0x07FF, 0x07F4, 0x07FE]
     as "cast.hold_answer: 0x7ff, then 0x7f4 and 0x7fe as for a 0x9a cast, and no 0x7fd, which needs a pending cast the client makes only for 0x9a"
@@ -110,7 +111,8 @@ pub fn a_held_press_of_a_normal_ability_starts_it_with_a_server_cast_id_and_no_0
 
 pub fn a_held_press_the_rule_refuses_gets_0x7fc_with_client_cast_id_0_and_no_hold_test() -> Nil {
   use <- owned_test.run(5000)
-  let #(state, _) = key(state: cast.new(), bag_index: kick, held: 1, at: 1000)
+  let #(state, _) =
+    key(state: cast_state.new(), bag_index: kick, held: 1, at: 1000)
   let #(state, _) = key(state:, bag_index: kick, held: 0, at: 1100)
   let #(state, effects) = key(state:, bag_index: kick, held: 1, at: 10_000)
   let assert [frame] = support.writes(effects:)
@@ -124,11 +126,11 @@ pub fn a_held_press_the_rule_refuses_gets_0x7fc_with_client_cast_id_0_and_no_hol
     as "a refusal starts no timer: the hold ends with it"
   let #(_, later) = key(state:, bag_index: kick, held: 0, at: 10_100)
   assert later == [] as "the release of a refused hold changes nothing"
-  let unarmed = cast.Caster(..support.caster(), weapon: None)
+  let unarmed = cast_state.Caster(..support.caster(), weapon: None)
   let assert Ok(#(_, effects)) =
     cast.take(
-      cast: cast.new(),
-      message: cast.KeyHeld,
+      cast: cast_state.new(),
+      message: cast_state.KeyHeld,
       body: support.hold_body(bag_index: 9, target: 0, held: 1),
       caster: unarmed,
       plans: support.plans(),
@@ -146,7 +148,7 @@ fn cast_result_value(refused: spell_cast_refused.SpellCastRefused) -> Int {
 pub fn a_held_ability_starts_again_each_time_its_cast_ends_and_its_global_cooldown_has_run_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, first) =
-    key(state: cast.new(), bag_index: mind_burst, held: 1, at: 1000)
+    key(state: cast_state.new(), bag_index: mind_burst, held: 1, at: 1000)
   assert support.delays_of(effects: first) == [1250]
     as "SpellCoolDown 104: the global cooldown of Spell4.32809 is 1250 ms, so the next cast waits for it on one timer"
   let assert [#(timer, _)] = support.started_timers(effects: first)
@@ -180,7 +182,12 @@ pub fn a_held_ability_starts_again_each_time_its_cast_ends_and_its_global_cooldo
 pub fn a_release_before_the_cast_ends_lets_it_finish_and_starts_no_repeat_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, down) =
-    key_raw(state: cast.new(), bag_index: telekinetic_strike, held: 1, at: 1000)
+    key_raw(
+      state: cast_state.new(),
+      bag_index: telekinetic_strike,
+      held: 1,
+      at: 1000,
+    )
   let assert [#(go, 1250)] = support.started_timers(effects: down)
     as "Spell4.32893: a cast time of 1250 ms, whose go is the one timer"
   let #(state, up) =
@@ -198,7 +205,7 @@ pub fn a_release_before_the_cast_ends_lets_it_finish_and_starts_no_repeat_test()
 pub fn a_repeat_timer_that_fires_after_the_release_starts_nothing_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, down) =
-    key(state: cast.new(), bag_index: mind_burst, held: 1, at: 1000)
+    key(state: cast_state.new(), bag_index: mind_burst, held: 1, at: 1000)
   let assert [#(timer, 1250)] = support.started_timers(effects: down)
   let #(state, up) = key(state:, bag_index: mind_burst, held: 0, at: 1500)
   assert support.cancelled_timers(effects: up) == [timer]
@@ -212,7 +219,7 @@ pub fn a_held_press_during_another_cast_waits_for_its_end_and_is_never_refused_1
   use <- owned_test.run(5000)
   let #(state, pressed) =
     support.pressed_raw(
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster(),
       bag_index: telekinetic_strike,
       target: 0,
@@ -238,7 +245,12 @@ pub fn a_held_press_during_another_cast_waits_for_its_end_and_is_never_refused_1
 pub fn a_second_abilitys_held_press_replaces_the_held_one_and_the_firsts_release_changes_nothing_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, first) =
-    key_raw(state: cast.new(), bag_index: telekinetic_strike, held: 1, at: 1000)
+    key_raw(
+      state: cast_state.new(),
+      bag_index: telekinetic_strike,
+      held: 1,
+      at: 1000,
+    )
   let assert [#(go, 1250)] = support.started_timers(effects: first)
   let #(state, second) =
     key_raw(state:, bag_index: mind_burst, held: 1, at: 1100)
@@ -269,7 +281,7 @@ pub fn a_second_abilitys_held_press_replaces_the_held_one_and_the_firsts_release
 pub fn a_held_key_down_twice_without_a_release_is_one_hold_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, first) =
-    key(state: cast.new(), bag_index: mind_burst, held: 1, at: 1000)
+    key(state: cast_state.new(), bag_index: mind_burst, held: 1, at: 1000)
   let assert [#(timer, 1250)] = support.started_timers(effects: first)
   let #(state, second) = key(state:, bag_index: mind_burst, held: 1, at: 1100)
   assert second == []
@@ -285,7 +297,7 @@ pub fn a_held_key_down_twice_without_a_release_is_one_hold_test() -> Nil {
 pub fn shred_taps_the_first_stage_then_each_next_stage_within_the_window_and_the_release_stops_the_taps_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, first) =
-    key(state: cast.new(), bag_index: support.shred, held: 1, at: 1000)
+    key(state: cast_state.new(), bag_index: support.shred, held: 1, at: 1000)
   let #(state, steps) =
     support.run_timers_until(
       state:,
@@ -337,7 +349,12 @@ pub fn shred_taps_the_first_stage_then_each_next_stage_within_the_window_and_the
 pub fn a_cancel_of_a_held_charge_ends_the_hold_so_nothing_restarts_and_the_release_fires_nothing_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, down) =
-    key(state: cast.new(), bag_index: support.charged_shot, held: 1, at: 1000)
+    key(
+      state: cast_state.new(),
+      bag_index: support.charged_shot,
+      held: 1,
+      at: 1000,
+    )
   let assert [charge] = started_ids(effects: down)
   let assert Ok(#(state, cancelled)) =
     support.cancelled(
@@ -363,7 +380,12 @@ pub fn a_cancel_of_a_held_charge_ends_the_hold_so_nothing_restarts_and_the_relea
 pub fn a_cancel_of_a_held_normal_cast_ends_the_hold_and_stops_its_repeats_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, down) =
-    key_raw(state: cast.new(), bag_index: telekinetic_strike, held: 1, at: 1000)
+    key_raw(
+      state: cast_state.new(),
+      bag_index: telekinetic_strike,
+      held: 1,
+      at: 1000,
+    )
   let assert [cast_id] = started_ids(effects: down)
   let assert Ok(#(state, cancelled)) =
     support.cancelled(
@@ -386,7 +408,12 @@ pub fn a_cancel_of_a_held_normal_cast_ends_the_hold_and_stops_its_repeats_test()
 pub fn charged_shot_is_charged_by_the_press_and_fired_at_its_stage_by_the_release_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, down) =
-    key(state: cast.new(), bag_index: support.charged_shot, held: 1, at: 1000)
+    key(
+      state: cast_state.new(),
+      bag_index: support.charged_shot,
+      held: 1,
+      at: 1000,
+    )
   assert lines(steps: [#(1000, down)])
     == ["started k1 34718 root 34718 parent 0", "opened 34718 k1"]
     as "cast.hold_by_method: held 1 starts the charge, opening the threshold with the cast's id (opcode.0x816) and no go (cast.charge_release_base)"
@@ -405,7 +432,12 @@ pub fn charged_shot_is_charged_by_the_press_and_fired_at_its_stage_by_the_releas
 pub fn a_held_pulse_blast_goes_in_its_two_phases_and_a_held_discharge_pulses_three_times_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, down) =
-    key(state: cast.new(), bag_index: support.pulse_blast, held: 1, at: 1000)
+    key(
+      state: cast_state.new(),
+      bag_index: support.pulse_blast,
+      held: 1,
+      at: 1000,
+    )
   let #(state, _) =
     key(state:, bag_index: support.pulse_blast, held: 0, at: 1000)
   let #(_, steps) = support.run_timers(state:, effects: down, from_ms: 1000)
@@ -426,7 +458,12 @@ pub fn a_held_pulse_blast_goes_in_its_two_phases_and_a_held_discharge_pulses_thr
     ]
     as "SpellPhase 5390 and 5391: Pulse Blast's phases 0 and 1; Spell4Effects 95881 proxies 37302 in phase 1: the same gos and phases as the 0x9a press, and the release between them cut nothing short"
   let #(state, down) =
-    key(state: cast.new(), bag_index: support.discharge, held: 1, at: 1000)
+    key(
+      state: cast_state.new(),
+      bag_index: support.discharge,
+      held: 1,
+      at: 1000,
+    )
   let #(state, _) = key(state:, bag_index: support.discharge, held: 0, at: 1000)
   let #(_, steps) = support.run_timers(state:, effects: down, from_ms: 1000)
   assert lines(steps: [#(1000, down), ..steps])
@@ -463,7 +500,7 @@ pub fn a_held_press_of_a_method_the_rule_does_not_cast_is_refused_285_and_logged
   use <- owned_test.run(5000)
   let #(state, effects) =
     key(
-      state: cast.new(),
+      state: cast_state.new(),
       bag_index: support.unbuilt_bag_index,
       held: 1,
       at: 1000,
@@ -483,10 +520,10 @@ pub fn a_hold_body_the_clients_reader_refuses_ends_the_connection_test() -> Nil 
   use <- owned_test.run(5000)
   let valid = support.hold_body(bag_index: 2, target: 0x12345, held: 1)
   list.each([<<valid:bits, 0>>, <<1, 2, 3>>, <<>>], fn(body) {
-    let assert Error(cast.NotDecoded(..)) =
+    let assert Error(cast_state.NotDecoded(..)) =
       cast.take(
-        cast: cast.new(),
-        message: cast.KeyHeld,
+        cast: cast_state.new(),
+        message: cast_state.KeyHeld,
         body:,
         caster: support.caster(),
         plans: support.plans(),
@@ -499,7 +536,7 @@ pub fn a_hold_body_the_clients_reader_refuses_ends_the_connection_test() -> Nil 
 pub fn a_bag_index_with_no_ability_is_refused_0x7fc_with_spell_id_0_and_result_4_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, effects) =
-    key(state: cast.new(), bag_index: 99, held: 1, at: 1000)
+    key(state: cast_state.new(), bag_index: 99, held: 1, at: 1000)
   let assert [frame] = support.writes(effects:)
   let assert Ok(refused) = spell_cast_refused.decode(frame.body)
   assert refused.client_cast_id == 0
@@ -514,7 +551,7 @@ pub fn a_bag_index_with_no_ability_is_refused_0x7fc_with_spell_id_0_and_result_4
 pub fn the_player_leaving_the_world_mid_hold_ends_the_hold_and_every_timer_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, down) =
-    key(state: cast.new(), bag_index: mind_burst, held: 1, at: 1000)
+    key(state: cast_state.new(), bag_index: mind_burst, held: 1, at: 1000)
   let assert [#(timer, 1250)] = support.started_timers(effects: down)
   let #(state, effects) = cast.left(cast: state)
   assert support.cancelled_timers(effects:) == [timer]

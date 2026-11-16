@@ -80,6 +80,7 @@
 
 import genesis_prime/client_connection.{type News}
 import genesis_prime/game/cast
+import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/message/spell_targets_removed.{SpellTargetsRemoved}
@@ -161,7 +162,7 @@ pub type Effect {
 /// first cast id of the unit's id space no live cast holds (the fight has none yet).
 pub fn new(guard guard: Option(Guard), unit_id unit_id: Int) -> State {
   let phase = case guard {
-    Some(..) -> Guarded(cast_id: cast.mint(unit_id:, number: 1, live: []))
+    Some(..) -> Guarded(cast_id: cast_state.mint(unit_id:, number: 1, live: []))
     None -> Bare
   }
   State(
@@ -294,12 +295,12 @@ fn raised(
   live live: List(Int),
   place place: Place,
 ) -> #(State, List(Effect)) {
-  let cast_id = cast.mint(unit_id:, number: state.next_cast, live:)
+  let cast_id = cast_state.mint(unit_id:, number: state.next_cast, live:)
   let state =
     State(
       ..state,
       phase: Guarded(cast_id:),
-      next_cast: cast.number_of(cast_id:) + 1,
+      next_cast: cast_state.number_of(cast_id:) + 1,
       next_instance: state.next_instance + 1,
       guard_instance: state.next_instance,
     )
@@ -321,7 +322,10 @@ fn opens(
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
   let cast_id =
-    cast.mint(unit_id:, number: state.next_cast, live: [guard_cast, ..live])
+    cast_state.mint(unit_id:, number: state.next_cast, live: [
+      guard_cast,
+      ..live
+    ])
   let #(next_instance, held) =
     list.map_fold(
       guard.opening.effects,
@@ -350,7 +354,7 @@ fn opens(
       ),
       next_generation: generation + 1,
       next_instance:,
-      next_cast: cast.number_of(cast_id:) + 1,
+      next_cast: cast_state.number_of(cast_id:) + 1,
     )
   #(
     state,
@@ -404,7 +408,7 @@ fn guard_cast(
         place:,
         target_unit_id: unit_id,
         effects: [
-          cast.CreatureEffect(
+          cast_state.CreatureEffect(
             effect_id: guard.effect_id,
             instance_id: state.guard_instance,
             lifetime_ms: 0,
@@ -438,7 +442,7 @@ fn opening_cast(
       place:,
       target_unit_id: unit_id,
       effects: list.map(held, fn(effect) {
-        cast.CreatureEffect(
+        cast_state.CreatureEffect(
           effect_id: effect.effect_id,
           instance_id: effect.instance_id,
           lifetime_ms: int.max(1, effect.lifetime_ms - elapsed_ms),

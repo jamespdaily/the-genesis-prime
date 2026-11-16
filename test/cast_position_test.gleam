@@ -21,7 +21,8 @@
 import cast_support as support
 import character_tables
 import genesis_prime/game/area.{type Pose}
-import genesis_prime/game/cast.{type Caster, type Effect, type State}
+import genesis_prime/game/cast
+import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/lasting
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{
@@ -153,7 +154,7 @@ fn plans_with(spell spell: Spell) -> Plans {
 /// The caster, unit 7, standing at x and z, facing yaw 0.
 fn caster_at(x x: Float, z z: Float) -> Caster {
   let caster = support.caster()
-  cast.Caster(
+  cast_state.Caster(
     ..caster,
     place: start_place.moved(
       place: caster.place,
@@ -164,10 +165,10 @@ fn caster_at(x x: Float, z z: Float) -> Caster {
   )
 }
 
-fn hit(unit_id unit_id: Int) -> cast.Struck {
-  cast.Hit(
+fn hit(unit_id unit_id: Int) -> cast_state.Struck {
+  cast_state.Hit(
     unit_id:,
-    unit: cast.HitCreature(life: 1, struck_at_ms: 0),
+    unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
     descriptions: [],
     controls: [],
     armor_removed: 0,
@@ -194,11 +195,11 @@ fn children_started(effects effects: List(Effect)) -> List(#(Int, Int)) {
 /// The state after the caster pressed the base 1 spell, which stealths it, when `stealthed`.
 fn stealthed_or_not(plans plans: Plans, stealthed stealthed: Bool) -> State {
   case stealthed {
-    False -> cast.new()
+    False -> cast_state.new()
     True ->
       support.pressed_in(
         plans:,
-        state: cast.new(),
+        state: cast_state.new(),
         caster: caster_at(x: 0.0, z: 5.0),
         bag_index: bag_of_base_1,
         target: 0,
@@ -527,7 +528,7 @@ pub fn a_proxy_on_the_caster_reads_the_casters_own_yaw_test() -> Nil {
   // its own point is outside it.
   let caster = caster_at(x: 0.0, z: 5.0)
   let turned =
-    cast.Caster(
+    cast_state.Caster(
       ..caster,
       place: start_place.turned(
         place: caster.place,
@@ -657,7 +658,7 @@ pub fn cripples_second_hit_needs_the_casters_own_group_464_cast_test() -> Nil {
     let #(state, first) =
       support.pressed_raw_in(
         plans:,
-        state: cast.new(),
+        state: cast_state.new(),
         caster:,
         bag_index: bag_of_base_1,
         target: 0,
@@ -729,7 +730,7 @@ pub fn the_caster_gates_of_a_target_gated_proxy_take_their_rolls_in_order_and_th
   let #(state, raw) =
     support.pressed_raw_in(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster:,
       bag_index: bag_of_base_2,
       target: 0,

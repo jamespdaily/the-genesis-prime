@@ -8,6 +8,7 @@ import client_tables
 import fixture_tables
 import genesis_prime/game/activate.{CannotBePlanned, NoSpell4Row, Planned}
 import genesis_prime/game/cast
+import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/damage
 import genesis_prime/game/effect_kind
 import genesis_prime/game/spell_plan.{AliveOrDead, CannotBeDead, MustBeDead}
@@ -137,7 +138,9 @@ pub fn an_activate_spell_whose_target_row_is_a_heal_is_planned_test() -> Nil {
 /// whose caster holds 500 of its 736 health and 250 of its 450 shield, with the timed steps
 /// that follow it: the first step is the press itself, at 1000 ms. The spell is named by
 /// the creature's one column behind no prerequisite, and a cast time of 2000 ms.
-fn activated(spell4_id spell4_id: Int) -> List(#(Int, List(cast.Effect))) {
+fn activated(
+  spell4_id spell4_id: Int,
+) -> List(#(Int, List(cast_state.Effect))) {
   let activations = activate.activations(tables: client_tables.shared())
   let place =
     place_support.at(
@@ -148,7 +151,7 @@ fn activated(spell4_id spell4_id: Int) -> List(#(Int, List(cast.Effect))) {
       z: 512.0,
     )
   let caster =
-    cast.Caster(
+    cast_state.Caster(
       ..cast_support.caster(),
       place:,
       vitals: damage.Vitals(
@@ -163,7 +166,7 @@ fn activated(spell4_id spell4_id: Int) -> List(#(Int, List(cast.Effect))) {
     as "the message fits"
   let assert Ok(#(state, pressed)) =
     cast.activate(
-      cast: cast.new(),
+      cast: cast_state.new(),
       body:,
       caster:,
       activations:,
@@ -203,7 +206,7 @@ fn activated(spell4_id spell4_id: Int) -> List(#(Int, List(cast.Effect))) {
 
 /// The go of the cast, decoded, and the time of the step that wrote it.
 fn go_of(
-  steps steps: List(#(Int, List(cast.Effect))),
+  steps steps: List(#(Int, List(cast_state.Effect))),
 ) -> #(Int, spell_go.SpellGo) {
   let assert [#(at_ms, go)] =
     list.flat_map(steps, fn(step) {
@@ -220,7 +223,7 @@ fn go_of(
 
 /// The time of each step that starts this heal of the caster.
 fn heals_started(
-  steps steps: List(#(Int, List(cast.Effect))),
+  steps steps: List(#(Int, List(cast_state.Effect))),
   cast_id cast_id: Int,
   effect_id effect_id: Int,
   amount amount: Int,
@@ -229,9 +232,9 @@ fn heals_started(
     case
       list.contains(
         step.1,
-        cast.CasterChangeStarts(
+        cast_state.CasterChangeStarts(
           source: cast_support.source_of(cast_id:, effect_id:),
-          change: cast.Heal(vital: effect_kind.Health, amount:),
+          change: cast_state.Heal(vital: effect_kind.Health, amount:),
         ),
       )
     {
@@ -460,7 +463,7 @@ pub fn an_activate_spell_whose_target_row_tests_a_bit_the_plan_does_not_model_is
 /// The effects of a press at a creature of Spell4 1817 standing in range.
 fn pressed_with(
   activations activations: activate.Activations,
-) -> List(cast.Effect) {
+) -> List(cast_state.Effect) {
   let place =
     place_support.at(
       world_id: 3460,
@@ -474,9 +477,9 @@ fn pressed_with(
     as "the message fits"
   let assert Ok(#(_, effects)) =
     cast.activate(
-      cast: cast.new(),
+      cast: cast_state.new(),
       body:,
-      caster: cast.Caster(..cast_support.caster(), place:),
+      caster: cast_state.Caster(..cast_support.caster(), place:),
       activations:,
       target_of: fn(_) {
         activate.Usable(
