@@ -432,10 +432,11 @@ pub fn a_hidden_objective_a_creature_links_is_left_to_that_creature_test() -> Ni
     as "a hidden objective with a creature to use is that creature's to complete, so the rule leaves it and the quest Accepted"
 }
 
-/// Nature's Uprising as quest 3315 is shaped: objective 0 (9658) a hidden script (type 5,
-/// flag 8, data 0, count 1), objective 1 (9659) a use with the flags the client's row of
-/// 3315's objective 4314 has, 3, and objective 2 (16132) an optional kill, so the script
-/// is the quest's only objective the server completes. `locked_flags` is objective 1's
+/// Nature's Uprising (6296) edited to the shape of quest 3315 with a third, optional
+/// objective that 3315 lacks: objective 0 (9658) a hidden script (type 5, flag 8, data 0,
+/// count 1), objective 1 (9659) a use with the flags the client's row of 3315's objective
+/// 4314 has, 3, and objective 2 (16132) an optional kill, so the script is the quest's
+/// only objective the server completes. `locked_flags` is objective 1's
 /// flags: 3 keeps it closed until the script is done (`0x140553790`, bit 2), 1 does not.
 fn with_script_then(
   locked_flags locked_flags: Int,
@@ -511,6 +512,55 @@ pub fn a_hidden_script_still_waits_for_an_open_objective_test() -> Nil {
     as "the script waits for every other required objective that can be done before it, as the server's rule says"
 }
 
+pub fn a_hidden_script_behind_a_visible_objective_completes_once_that_objective_is_done_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Objective 2 is a second hidden script with flags 11 (bits 8, 2 and 1), as the second
+  // script of quests 9282 and 9839 has: bit 2 keeps it closed until objective 1, the
+  // visible use after the first script, is done (`0x140553790`).
+  use tables <- with_objectives(edits: [
+    #(9658, "type", 5),
+    #(9658, "flags", 8),
+    #(9658, "data", 0),
+    #(9658, "count", 1),
+    #(9659, "flags", 3),
+    #(16_132, "type", 5),
+    #(16_132, "flags", 11),
+    #(16_132, "data", 0),
+    #(16_132, "count", 1),
+  ])
+  let assert Ok(quest) = quest_log.quest_of(tables:, id: nature)
+  let logged = fn(done_mask, progress) {
+    let assert Ok(log) =
+      quest_log.from_rows(
+        rows: [
+          quest_support.active(
+            quest_id: nature,
+            state: 1,
+            placeholder: 0,
+            tracked: False,
+            done_mask:,
+            progress:,
+          ),
+        ],
+        tables:,
+      )
+    log
+  }
+  let first = settled(log: logged(0, [0, 0, 0]), tables:)
+  assert first.effects
+    == [SendProgress(quest_id: nature, objective_index: 0, progress: 1)]
+    as "opcode.0x361 for the first script alone: the second stays closed behind objective 1, which is not done (0x140553790)"
+  assert !quest_log.objective_done(log: first.log, quest:, index: 2)
+    as "an objective the client keeps closed is not marked done"
+  let second = settled(log: logged(3, [1, 4, 0]), tables:)
+  assert second.effects
+    == [
+      SendProgress(quest_id: nature, objective_index: 2, progress: 1),
+      SendState(quest_id: nature, state: 2),
+    ]
+    as "with objective 1 done the second script is reachable, so it completes and the quest is Achieved (0x1405fbc40)"
+}
+
 pub fn every_hidden_script_quest_can_finish_test() -> Nil {
   use <- owned_test.run(300_000)
   use <- unitest.guard(client_tables.present())
@@ -518,7 +568,8 @@ pub fn every_hidden_script_quest_can_finish_test() -> Nil {
   // Each quest with an unlinked hidden script, a player having done every required
   // objective that is open and is not such a script, until none more is open
   // (`0x140553790` through `quest_log.objective_open`): the scripts are then the only
-  // required objectives left, and the rule must complete each.
+  // required objectives left, and the rule must complete each, over as many settles as
+  // the player's work between them needs.
   let stuck =
     quest2.all(tables)
     |> list.filter_map(fn(row) {
@@ -561,8 +612,21 @@ fn completes_every_script(
   quest quest: quest_log.Quest,
   scripts scripts: List(Int),
 ) -> Bool {
-  let log = player_done(tables:, quest:, scripts:, done_mask: 0)
-  let sent =
+  completes_over_settles(tables:, quest:, scripts:, done_mask: 0, sent: [])
+}
+
+/// Settles with the player's work done, again with the scripts that settle sent done and
+/// the objectives they opened done, while a settle sends a script not sent before: a script the client
+/// keeps closed behind an objective is sent by a later settle (`0x140553790`).
+fn completes_over_settles(
+  tables tables: table_store.Tables,
+  quest quest: quest_log.Quest,
+  scripts scripts: List(Int),
+  done_mask done_mask: Int,
+  sent sent: List(Int),
+) -> Bool {
+  let log = player_done(tables:, quest:, scripts:, done_mask:)
+  let now_sent =
     settled_holding(log:, tables:, items: held_for(tables:, quest:)).effects
     |> list.filter_map(fn(effect) {
       case effect {
@@ -570,7 +634,30 @@ fn completes_every_script(
         SendState(..) | CompleteByServer(..) -> Error(Nil)
       }
     })
-  list.all(scripts, list.contains(sent, _))
+  let new_scripts =
+    list.filter(now_sent, fn(index) {
+      list.contains(scripts, index) && !list.contains(sent, index)
+    })
+  let sent = list.append(sent, now_sent)
+  case new_scripts {
+    [] -> list.all(scripts, list.contains(sent, _))
+    _ ->
+      completes_over_settles(
+        tables:,
+        quest:,
+        scripts:,
+        done_mask: list.index_fold(quest.objectives, 0, fn(mask, _, index) {
+          case
+            quest_log.objective_done(log:, quest:, index:)
+            || list.contains(now_sent, index)
+          {
+            True -> int.bitwise_or(mask, int.bitwise_shift_left(1, index))
+            False -> mask
+          }
+        }),
+        sent:,
+      )
+  }
 }
 
 /// The items a player who did the quest's collect (type 4) and make (type 33) objectives

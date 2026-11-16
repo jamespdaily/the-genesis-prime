@@ -840,13 +840,15 @@ fn opened(
 
 /// The quest's hidden scripted objectives with no target, each done once every other
 /// objective of the quest without flag 0x20 is done, except one the client keeps closed
-/// until the script is done (`other_required_objectives_done`): the objectives of type 5 with flag 8
-/// (hidden) and data 0 that no creature links (`objective_link.is_linked`). Such an
-/// objective is done by nothing the client or a player does, and the Achieved rule
-/// (`0x1405fbc40`) waits for it, so the quest would stay Accepted for ever; this
+/// until a script is done (`other_required_objectives_done`): the objectives of type 5
+/// with flag 8 (hidden) and data 0 that no creature links (`objective_link.is_linked`).
+/// Such an objective is done by nothing the client or a player does, and the Achieved
+/// rule (`0x1405fbc40`) waits for it, so the quest would stay Accepted for ever; this
 /// completion is a server choice. Another such objective of the quest is not one to wait
-/// for, so a quest with several completes them together, and a quest with no other
-/// required objective completes at once. A done objective is not counted again.
+/// for, so a quest with several completes the ones that are open together, and a quest
+/// with no other required objective completes at once. A script the client keeps closed
+/// (`0x140553790`) behind an objective that is not done stays open for a later settle,
+/// and a done objective is not counted again.
 fn hidden_scripts(
   settling settling: Settling,
   quest quest: quest_log.Quest,
@@ -866,7 +868,7 @@ fn hidden_scripts(
     })
   let waiting =
     list.filter(scripts, fn(pair) {
-      !quest_log.objective_done(log: settling.log, quest:, index: pair.0)
+      quest_log.objective_open(log: settling.log, quest:, index: pair.0)
     })
   case
     waiting != []

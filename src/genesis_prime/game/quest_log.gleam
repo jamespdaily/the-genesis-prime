@@ -1333,7 +1333,8 @@ fn reachable(log log: QuestLog, quest quest: Quest, index index: Int) -> Bool {
 /// The objectives of the quest that stay unreachable (`0x140553790`) while the objectives
 /// at `holding` are not done, though every other objective is: the ones the client keeps
 /// closed behind them, directly by flag 2 or through a flag 1 chain. An objective
-/// at or before the first held one is never among them. A quest read as the log holds it.
+/// at or before the first held one is never among them. The quest is read as the log holds
+/// it: the placeholder row stands in the type 31 slot.
 pub fn locked_behind(
   log log: QuestLog,
   quest quest: Quest,
