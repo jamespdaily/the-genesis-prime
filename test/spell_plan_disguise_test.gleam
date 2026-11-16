@@ -256,10 +256,12 @@ pub fn mode_eradicates_two_exosuit_rows_are_read_from_the_clients_tables_test() 
   let assert Ok(mode) = spell_plan.in_plans(plans:, base: Spell4BaseId(31_779))
     as "Mode: Eradicate, 47866, is of Spell4Base 31779 (`-- Spell4 47866`)"
   let assert Ok(proxy) =
-    list.find(mode.proxies, fn(proxy) {
-      proxy.spell.spell4_id == id.Spell4Id(eradication)
-    })
-  let assert [exile, dominion] = proxy.spell.modifiers
+    list.find(
+      spell_plan.payloads(spell: mode, as_kind: spell_plan.as_proxy),
+      fn(proxy) { proxy.spell.spell4_id == id.Spell4Id(eradication) },
+    )
+  let assert [exile, dominion] =
+    spell_plan.payloads(spell: proxy.spell, as_kind: spell_plan.as_modifier)
   assert exile.effect_id == Spell4EffectsId(112_543)
   assert exile.change == LookChange(disguise: suit(display: 4807))
   assert exile.row

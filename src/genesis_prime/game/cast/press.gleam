@@ -97,6 +97,7 @@ import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/crowd_control
 import genesis_prime/game/prerequisite
 import genesis_prime/game/shortcut_spell
+import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{type Plans, type Spell}
 import genesis_prime/game/unit_properties
 import genesis_prime/message/cast_result
@@ -180,7 +181,7 @@ fn press_at_player_unbuilt(
 pub fn aimed_at_the_caster(
   press press: AimedPress,
 ) -> Result(#(State, List(Effect)), Refusal) {
-  case spell_plan.has_flag(flags: press.aim.mechanics_flags, bit: 2) {
+  case spell_effect.has_flag(flags: press.aim.mechanics_flags, bit: 2) {
     False ->
       press_refused(press:, result: cast_result.CasterCannotBePrimaryTarget)
     True ->
@@ -202,7 +203,7 @@ pub fn aimed_at_a_player(
     press.spell.target_death != spell_plan.AliveOrDead
     || press.aim.target_combat == shortcut_spell.OutOfCombatOnly
   case
-    spell_plan.has_flag(flags: press.aim.valid_targets, bit: 1),
+    spell_effect.has_flag(flags: press.aim.valid_targets, bit: 1),
     tests_life_or_combat
   {
     True, _ -> press_refused(press:, result: cast_result.TargetCannotBePlayer)

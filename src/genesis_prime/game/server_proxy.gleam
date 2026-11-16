@@ -53,6 +53,7 @@
 //// | the plans hold the base's ability but no go starts a child at once | the Proxy is planted into the ability's own go |
 
 import genesis_prime/content/refusal.{type Refusal, Refusal, RowName}
+import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{type Plans, type Proxy, type Spell}
 import genesis_prime/table/id.{Spell4BaseId}
 import genesis_prime/table/loader/store as table_store
@@ -214,38 +215,50 @@ pub fn planted_into(
 fn planted_in(ability ability: Spell, planned planned: Planned) -> Spell {
   case host_of(ability:, phase: planned.phase) {
     Ok(host) ->
-      spell_plan.Spell(
-        ..ability,
-        proxies: list.map(ability.proxies, fn(proxy) {
-          case proxy.effect_id == host.effect_id {
-            True ->
-              spell_plan.Proxy(
-                ..proxy,
-                spell: spell_plan.Spell(
-                  ..proxy.spell,
-                  proxies: list.append(proxy.spell.proxies, [
-                    spell_plan.server_proxy(
-                      child: planned.spell,
-                      phase_flags: spell_plan.phase_bit(phase: last_go_of(
+      spell_plan.with_proxies(
+        spell: ability,
+        proxies: list.map(
+          spell_plan.payloads(spell: ability, as_kind: spell_plan.as_proxy),
+          fn(proxy) {
+            case proxy.effect_id == host.effect_id {
+              True ->
+                spell_plan.Proxy(
+                  ..proxy,
+                  spell: spell_plan.with_proxies(
+                    spell: proxy.spell,
+                    proxies: list.append(
+                      spell_plan.payloads(
                         spell: proxy.spell,
-                      )),
+                        as_kind: spell_plan.as_proxy,
+                      ),
+                      [
+                        spell_plan.server_proxy(
+                          child: planned.spell,
+                          phase_flags: spell_effect.phase_bit(phase: last_go_of(
+                            spell: proxy.spell,
+                          )),
+                        ),
+                      ],
                     ),
-                  ]),
-                ),
-              )
-            False -> proxy
-          }
-        }),
+                  ),
+                )
+              False -> proxy
+            }
+          },
+        ),
       )
     Error(Nil) ->
-      spell_plan.Spell(
-        ..ability,
-        proxies: list.append(ability.proxies, [
-          spell_plan.server_proxy(
-            child: planned.spell,
-            phase_flags: spell_plan.phase_bit(phase: planned.phase),
-          ),
-        ]),
+      spell_plan.with_proxies(
+        spell: ability,
+        proxies: list.append(
+          spell_plan.payloads(spell: ability, as_kind: spell_plan.as_proxy),
+          [
+            spell_plan.server_proxy(
+              child: planned.spell,
+              phase_flags: spell_effect.phase_bit(phase: planned.phase),
+            ),
+          ],
+        ),
       )
   }
 }

@@ -56,10 +56,12 @@ fn holder(
   forced_moves forced_moves: List(spell_plan.ForcedMove),
   modifiers modifiers: List(spell_plan.PropertyModifier),
 ) -> Spell {
-  spell_plan.Spell(
-    ..support.child(spell4_id: 34_355, base: 3),
-    forced_moves:,
-    modifiers:,
+  support.with_effects(
+    spell: support.with_effects(
+      spell: support.child(spell4_id: 34_355, base: 3),
+      kinds: list.map(forced_moves, spell_plan.ForcedMoveEffect),
+    ),
+    kinds: list.map(modifiers, spell_plan.ModifierEffect),
   )
 }
 
@@ -309,9 +311,9 @@ fn thrown_by(
 }
 
 fn thrower(rows rows: List(spell_plan.StruckMove)) -> Spell {
-  spell_plan.Spell(
-    ..support.child(spell4_id: 34_355, base: 3),
-    struck_moves: rows,
+  support.with_effects(
+    spell: support.child(spell4_id: 34_355, base: 3),
+    kinds: list.map(rows, spell_plan.StruckMoveEffect),
   )
 }
 
@@ -392,9 +394,10 @@ pub fn a_delayed_throw_is_cancelled_with_its_cast_node_test() -> Nil {
     )
   let creatures = [hit(unit_id: 21, life: 3)]
   let holding = fn(delay_ms) {
-    spell_plan.Spell(..thrower(rows: [throwing_row(delay_ms:)]), modifiers: [
-      lasting_row,
-    ])
+    support.with_effects(
+      spell: thrower(rows: [throwing_row(delay_ms:)]),
+      kinds: [spell_plan.ModifierEffect(lasting_row)],
+    )
   }
   let #(state, effects) = thrown_by(spell: holding(7000), struck: creatures)
   let #(_, fired) =

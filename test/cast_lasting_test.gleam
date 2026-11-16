@@ -66,7 +66,10 @@ fn buff(
   base base: Int,
   lasting lasting: List(spell_plan.Lasting),
 ) -> Spell {
-  spell_plan.Spell(..support.child(spell4_id:, base:), lasting:)
+  support.with_effects(
+    spell: support.child(spell4_id:, base:),
+    kinds: list.map(lasting, spell_plan.LastingEffect),
+  )
 }
 
 /// A spell whose go takes the casts of the Spell4 `selector` names off the caster.
@@ -77,8 +80,8 @@ fn remover(
   count count: Int,
   condition condition: spell_plan.Condition,
 ) -> Spell {
-  spell_plan.Spell(..support.child(spell4_id:, base:), removes: [
-    ForceRemove(
+  support.with_effects(spell: support.child(spell4_id:, base:), kinds: [
+    spell_plan.RemoveEffect(ForceRemove(
       effect_id: Spell4EffectsId(196_521),
       phase_flags: -1,
       aim: spell_plan.AimsAtCaster,
@@ -86,7 +89,7 @@ fn remover(
       count:,
       condition:,
       tag: spend.always,
-    ),
+    )),
   ])
 }
 

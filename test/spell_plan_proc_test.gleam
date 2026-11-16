@@ -168,14 +168,17 @@ pub fn the_stalkers_passive_holds_its_five_procs_on_the_caster_in_row_order_with
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
   let procs =
-    list.map(passive().procs, fn(proc) {
-      #(
-        proc.effect_id.value,
-        proc.trigger,
-        proc.spell.spell4_id.value,
-        proc.limit,
-      )
-    })
+    list.map(
+      spell_plan.payloads(spell: passive(), as_kind: spell_plan.as_proc),
+      fn(proc) {
+        #(
+          proc.effect_id.value,
+          proc.trigger,
+          proc.spell.spell4_id.value,
+          proc.limit,
+        )
+      },
+    )
   assert procs
     == [
       #(147_119, EnteredStealth, 60_724, InWindow(window_ms: 500, count: 1)),
@@ -185,23 +188,30 @@ pub fn the_stalkers_passive_holds_its_five_procs_on_the_caster_in_row_order_with
       #(211_002, LeftStealth, 79_932, InWindow(window_ms: 500, count: 1)),
     ]
     as "Spell4Effects 147119, 147132, 159136, 202043 and 211002 in orderIndex order: dataBits00 217, 218, 44, 0 and 218, dataBits01 the spell cast, dataBits04 the window and dataBits05 the count"
-  assert list.all(passive().procs, fn(proc) {
-    proc.row == LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True)
-    && proc.condition == Always
-    && proc.phase_flags == -1
-    && proc.chance == 1.0
-    && proc.filter == spell_plan.AnySpell
-    && proc.event_gate == None
-    && proc.holder_gate == None
-    && proc.delay_ms == 0
-  })
+  assert list.all(
+    spell_plan.payloads(spell: passive(), as_kind: spell_plan.as_proc),
+    fn(proc) {
+      proc.row == LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True)
+      && proc.condition == Always
+      && proc.phase_flags == -1
+      && proc.chance == 1.0
+      && proc.filter == spell_plan.AnySpell
+      && proc.event_gate == None
+      && proc.holder_gate == None
+      && proc.delay_ms == 0
+    },
+  )
     as "durationTime 0 with flags 2 (until removed), no caster apply prerequisite, every phase, chance 1.0 and no filter, gate or delay on each of the five rows"
 }
 
 pub fn a_proc_of_a_kind_not_read_is_in_no_list_and_the_load_succeeds_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
-  assert spell_named(spell4_id: 38_784).procs == []
+  assert spell_plan.payloads(
+      spell: spell_named(spell4_id: 38_784),
+      as_kind: spell_plan.as_proc,
+    )
+    == []
     as "38784 'Stealth - On' holds 178239, kind 16: it is skipped until the next step"
 }
 
@@ -214,17 +224,29 @@ pub fn a_procs_spell_is_planned_as_its_tree_and_the_tree_walks_it_test() -> Nil 
     |> set.from_list
   assert set.is_subset(set.from_list([60_724, 60_769, 79_932, 63_366]), of: ids)
     as "dataBits01 of each Proc row is a spell of the passive's tree, with the Proxy child 60724 it already held"
-  assert list.length(spell_named(spell4_id: 60_769).removes) == 1
+  assert list.length(spell_plan.payloads(
+      spell: spell_named(spell4_id: 60_769),
+      as_kind: spell_plan.as_remove,
+    ))
+    == 1
     as "60769's one row, 147136, is a SpellForceRemove (type 80)"
-  assert list.map(spell_named(spell4_id: 79_932).modifiers, fn(row) {
-      row.effect_id.value
-    })
+  assert list.map(
+      spell_plan.payloads(
+        spell: spell_named(spell4_id: 79_932),
+        as_kind: spell_plan.as_modifier,
+      ),
+      fn(row) { row.effect_id.value },
+    )
     |> list.sort(int.compare)
     == [210_998, 212_528, 212_529, 212_530]
     as "79932's four UnitPropertyModifier rows (Spell4.79932)"
-  assert list.map(spell_named(spell4_id: 63_366).cooldown_modifiers, fn(row) {
-      row.effect_id.value
-    })
+  assert list.map(
+      spell_plan.payloads(
+        spell: spell_named(spell4_id: 63_366),
+        as_kind: spell_plan.as_cooldown_modifier,
+      ),
+      fn(row) { row.effect_id.value },
+    )
     == [159_134]
     as "63366's one row, 159134, is a ModifySpellCooldown (type 73)"
 }
@@ -639,7 +661,11 @@ pub fn the_first_column_the_plan_does_not_read_is_the_one_named_test() -> Nil {
 pub fn the_starting_abilities_plan_with_178239_and_208200_and_leave_out_123744_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
-  let assert [stalker_damage] = spell_named(spell4_id: 79_229).procs
+  let assert [stalker_damage] =
+    spell_plan.payloads(
+      spell: spell_named(spell4_id: 79_229),
+      as_kind: spell_plan.as_proc,
+    )
     as "Spell4 79229 'Stalker Proc Damage Tier 1' holds the one Proc row 208200"
   assert stalker_damage.effect_id.value == 208_200
   assert stalker_damage.trigger == LandsHit as "dataBits00 12"
@@ -654,7 +680,11 @@ pub fn the_starting_abilities_plan_with_178239_and_208200_and_leave_out_123744_t
     as "dataBits06 37038 is a gate on the struck creature"
   assert prerequisite.id(gate).value == 37_038
   assert stalker_damage.holder_gate == None
-  assert spell_named(spell4_id: 52_371).procs == []
+  assert spell_plan.payloads(
+      spell: spell_named(spell4_id: 52_371),
+      as_kind: spell_plan.as_proc,
+    )
+    == []
     as "52371's 123744 is behind caster persistence 28926: it is left out and the load passes"
   let tables = client_tables.shared()
   let assert Ok(stealth_on) =
@@ -670,7 +700,11 @@ pub fn the_starting_abilities_plan_with_178239_and_208200_and_leave_out_123744_t
     )
     == Ok(spell_plan.LeftOut(why: spell_plan.ProcOfAnotherKind(kind: 16)))
     as "the plan leaves 178239 out as a Proc of another kind, a gap issue 828 closes"
-  assert spell_named(spell4_id: 38_784).procs == []
+  assert spell_plan.payloads(
+      spell: spell_named(spell4_id: 38_784),
+      as_kind: spell_plan.as_proc,
+    )
+    == []
     as "so 38784 holds no Proc until issue 828"
 }
 

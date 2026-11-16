@@ -152,7 +152,10 @@ fn healing_caster(health health: Int) -> Caster {
 
 /// The planted base 3's spell with these heals.
 fn healer(heals heals: List(spell_plan.Heal)) -> Spell {
-  spell_plan.Spell(..support.child(spell4_id: 69_450, base: 3), heals: heals)
+  support.with_effects(
+    spell: support.child(spell4_id: 69_450, base: 3),
+    kinds: list.map(heals, spell_plan.HealEffect),
+  )
 }
 
 /// The caster with 250 of its 450 shield and 500 of its 736 health, which no go of the
@@ -380,9 +383,10 @@ pub fn the_amount_reads_the_caster_as_it_stood_before_the_gos_own_effects_test()
     )
   let plans =
     support.plans_of([
-      spell_plan.Spell(..healer(heals: [energize(delay_ms: 0)]), modifiers: [
-        raising,
-      ]),
+      support.with_effects(
+        spell: healer(heals: [energize(delay_ms: 0)]),
+        kinds: [spell_plan.ModifierEffect(raising)],
+      ),
     ])
   let #(_, effects) =
     support.press_as(
@@ -572,8 +576,8 @@ pub fn a_pending_shield_heal_is_dropped_when_the_caster_dies_or_its_node_is_take
   assert timeline(fired: later) == [] as "no heal lands after the death"
   // A type 80 removal of the cast before the delay.
   let remover =
-    spell_plan.Spell(..support.child(spell4_id: 301, base: 1), removes: [
-      spell_plan.ForceRemove(
+    support.with_effects(spell: support.child(spell4_id: 301, base: 1), kinds: [
+      spell_plan.RemoveEffect(spell_plan.ForceRemove(
         effect_id: Spell4EffectsId(196_521),
         phase_flags: -1,
         aim: AimsAtCaster,
@@ -581,7 +585,7 @@ pub fn a_pending_shield_heal_is_dropped_when_the_caster_dies_or_its_node_is_take
         count: 1,
         condition: Always,
         tag: spend.always,
-      ),
+      )),
     ])
   let plans = support.plans_of([delayed, remover])
   let #(state, first) =
@@ -1033,20 +1037,29 @@ pub fn a_heal_aimed_at_another_unit_lands_nothing_test() -> Nil {
   // plan refuses the second from the client's tables; this builds it to show the rule's
   // own answer (`Spell4ValidTargets.targetBitmask`; other players come with #570).
   let child =
-    spell_plan.Spell(..support.child(spell4_id: 90_001, base: 90_001), heals: [
-      health_heal(id: 62_019, delay_ms: 0, aim: AimsAtPrimaryTarget),
-    ])
+    support.with_effects(
+      spell: support.child(spell4_id: 90_001, base: 90_001),
+      kinds: [
+        spell_plan.HealEffect(health_heal(
+          id: 62_019,
+          delay_ms: 0,
+          aim: AimsAtPrimaryTarget,
+        )),
+      ],
+    )
   let parent = fn(target) {
-    spell_plan.Spell(..healer(heals: []), proxies: [
-      spell_plan.Proxy(
-        effect_id: Spell4EffectsId(90_002),
-        delay_ms: 0,
-        phase_flags: -1,
-        condition: Always,
-        tag: spend.always,
-        target:,
-        spell: child,
-        gains: [],
+    support.with_effects(spell: healer(heals: []), kinds: [
+      spell_plan.ProxyEffect(
+        spell_plan.Proxy(
+          effect_id: Spell4EffectsId(90_002),
+          delay_ms: 0,
+          phase_flags: -1,
+          condition: Always,
+          tag: spend.always,
+          target:,
+          spell: child,
+          gains: [],
+        ),
       ),
     ])
   }

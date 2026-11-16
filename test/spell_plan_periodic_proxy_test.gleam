@@ -33,10 +33,19 @@ pub fn a_proxy_with_data_bits00_0_and_its_spell_in_data_bits01_builds_no_child_a
       effect: periodic,
     ))
     as "a periodic Proxy does not fail the load"
-  assert list.map(with.proxies, fn(proxy) { proxy.spell.spell4_id })
-    == list.map(without.proxies, fn(proxy) { proxy.spell.spell4_id })
+  assert list.map(
+      spell_plan.payloads(spell: with, as_kind: spell_plan.as_proxy),
+      fn(proxy) { proxy.spell.spell4_id },
+    )
+    == list.map(
+      spell_plan.payloads(spell: without, as_kind: spell_plan.as_proxy),
+      fn(proxy) { proxy.spell.spell4_id },
+    )
     as "the tree holds the Proxies the client's tables start and none for the periodic row"
-  assert list.map(with.proxies, fn(proxy) { proxy.spell.spell4_id })
+  assert list.map(
+      spell_plan.payloads(spell: with, as_kind: spell_plan.as_proxy),
+      fn(proxy) { proxy.spell.spell4_id },
+    )
     == [Spell4Id(30_900)]
     as "Telekinetic Strike's one Proxy, 62204 to 30900, is read; the periodic row, which names 30900 in dataBits01, is not a second child"
   assert spell_plan.go_times_ms(spell: with) == [1250]

@@ -88,14 +88,16 @@ fn gate_of(id id: Int, aim aim: spell_plan.Aim) -> spell_plan.StruckGate {
 /// A spell whose go has a gated row aimed at `gated_aim`, an ungated one aimed at the area
 /// and one aimed at the caster.
 fn spell_gated_at(gated_aim gated_aim: spell_plan.Aim) -> Spell {
-  spell_plan.Spell(
-    ..support.child(spell4_id: 101, base: 3),
-    lasting: [
-      marker_row(id: gated_id, aim: gated_aim),
-      marker_row(id: ungated_id, aim: AimsAtArea),
-      marker_row(id: own_id, aim: AimsAtCaster),
+  support.with_effects(
+    spell: spell_plan.Spell(
+      ..support.child(spell4_id: 101, base: 3),
+      struck_gates: [gate_of(id: gated_id, aim: gated_aim)],
+    ),
+    kinds: [
+      spell_plan.LastingEffect(marker_row(id: gated_id, aim: gated_aim)),
+      spell_plan.LastingEffect(marker_row(id: ungated_id, aim: AimsAtArea)),
+      spell_plan.LastingEffect(marker_row(id: own_id, aim: AimsAtCaster)),
     ],
-    struck_gates: [gate_of(id: gated_id, aim: gated_aim)],
   )
 }
 
@@ -367,7 +369,7 @@ pub fn ungated_go_rows_send_no_strike_test() -> Nil {
 
 /// A hostile UnitPropertyModifier aimed at the caster and the area (targetFlags 5): the plan
 /// holds it as two entries of one effect id, a `PropertyChange` on the caster and a
-/// `StruckChange` on the area (`spell_plan.PlannedBoth`), and the strike carries the gate of
+/// `StruckChange` on the area (`spell_plan.ReadEffects`), and the strike carries the gate of
 /// the struck part alone.
 fn split_modifier_spell() -> Spell {
   let modifier =
@@ -389,13 +391,17 @@ fn split_modifier_spell() -> Spell {
       armor: None,
     )
   }
-  spell_plan.Spell(
-    ..support.child(spell4_id: 101, base: 3),
-    modifiers: [
-      row(spell_plan.PropertyChange(modifier:)),
-      row(spell_plan.StruckChange(modifier:, aim: AimsAtArea)),
+  support.with_effects(
+    spell: spell_plan.Spell(
+      ..support.child(spell4_id: 101, base: 3),
+      struck_gates: [gate_of(id: gated_id, aim: AimsAtArea)],
+    ),
+    kinds: [
+      spell_plan.ModifierEffect(row(spell_plan.PropertyChange(modifier:))),
+      spell_plan.ModifierEffect(
+        row(spell_plan.StruckChange(modifier:, aim: AimsAtArea)),
+      ),
     ],
-    struck_gates: [gate_of(id: gated_id, aim: AimsAtArea)],
   )
 }
 
@@ -447,17 +453,23 @@ pub fn struck_move_failing_its_gate_is_not_thrown_test() -> Nil {
       chain: [],
     )
     as "a ForcedMove row behind a faction gate the creature holds plans"
-  let assert [thrown_row] = planned.struck_moves
+  let assert [thrown_row] =
+    spell_plan.payloads(spell: planned, as_kind: spell_plan.as_struck_move)
   assert thrown_row.effect_id == Spell4EffectsId(53_184)
     as "Spell4Effects.53184 is the spell's one ForcedMove row"
   assert list.map(planned.struck_gates, fn(gate) { gate.effect_id })
     == [Spell4EffectsId(53_184)]
     as "the strike tells the creature the move's gate"
   let spell =
-    spell_plan.Spell(
-      ..support.child(spell4_id: 101, base: 3),
-      struck_moves: planned.struck_moves,
-      struck_gates: planned.struck_gates,
+    support.with_effects(
+      spell: spell_plan.Spell(
+        ..support.child(spell4_id: 101, base: 3),
+        struck_gates: planned.struck_gates,
+      ),
+      kinds: list.map(
+        spell_plan.payloads(spell: planned, as_kind: spell_plan.as_struck_move),
+        spell_plan.StruckMoveEffect,
+      ),
     )
   let #(cast, asked) = pressed(spell:, target: 20)
   let #(state, _) =

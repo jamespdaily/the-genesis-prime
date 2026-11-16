@@ -32,6 +32,7 @@ import genesis_prime/table/spell4_group_list
 import gleam/int
 import gleam/list
 import gleam/option
+import gleam/result
 import gleam/string
 import owned_test
 import planted_table.{type Cell, Integer}
@@ -82,7 +83,7 @@ pub fn a_fluff_row_aimed_at_the_caster_that_lasts_until_removed_is_read_test() -
         ]),
       ),
     )
-  assert spell.lasting
+  assert spell_plan.payloads(spell:, as_kind: spell_plan.as_lasting)
     == [
       spell_plan.Lasting(
         effect_id: Spell4EffectsId(99_050),
@@ -108,7 +109,8 @@ pub fn a_fluff_row_reads_its_delay_and_duration_test() -> Nil {
         ]),
       ),
     )
-  let assert [lasting] = spell.lasting
+  let assert [lasting] =
+    spell_plan.payloads(spell:, as_kind: spell_plan.as_lasting)
   assert lasting.row
     == LastingRow(delay_ms: 100, duration_ms: 8000, until_removed: False)
 }
@@ -167,13 +169,15 @@ pub fn a_fluff_row_behind_a_caster_prerequisite_is_gated_on_the_caster_and_behin
     spell_tables.planned_strike(
       rows: with_gate([#("prerequisiteIdCasterApply", Integer(17_302))]),
     )
-  let assert [row] = caster.lasting
+  let assert [row] =
+    spell_plan.payloads(spell: caster, as_kind: spell_plan.as_lasting)
   let assert GatedOnCaster(gates: [_]) = row.condition
   let assert Ok(target) =
     spell_tables.planned_strike(
       rows: with_gate([#("prerequisiteIdTargetApply", Integer(5))]),
     )
-  let assert [row] = target.lasting
+  let assert [row] =
+    spell_plan.payloads(spell: target, as_kind: spell_plan.as_lasting)
   let assert GatedOnTarget(prerequisite: gate) = row.condition
   assert prerequisite.id(prerequisite: gate) == PrerequisiteId(5)
 }
@@ -202,7 +206,8 @@ pub fn a_removal_of_a_spell4_is_read_with_its_count_test() -> Nil {
         effect: removal(selector: 2, named: 30_900, counts: #(3, 3)),
       ),
     )
-  let assert [remove] = spell.removes
+  let assert [remove] =
+    spell_plan.payloads(spell:, as_kind: spell_plan.as_remove)
   assert remove.selector == Spell(Spell4Id(30_900))
   assert remove.count == 3
   assert remove.aim == spell_plan.AimsAtCaster
@@ -217,7 +222,8 @@ pub fn a_removal_of_a_spell4_base_and_of_a_group_are_read_test() -> Nil {
         effect: removal(selector: 3, named: 19_102, counts: #(1, 1)),
       ),
     )
-  let assert [remove] = by_base.removes
+  let assert [remove] =
+    spell_plan.payloads(spell: by_base, as_kind: spell_plan.as_remove)
   assert remove.selector == lasting.Base(Spell4BaseId(19_102))
   let group_row =
     planted_table.row(spell4_group_list.schema, [
@@ -236,7 +242,8 @@ pub fn a_removal_of_a_spell4_base_and_of_a_group_are_read_test() -> Nil {
         ]),
       ),
     )
-  let assert [remove] = by_group.removes
+  let assert [remove] =
+    spell_plan.payloads(spell: by_group, as_kind: spell_plan.as_remove)
   assert remove.selector == Group(spell_group_id: 51)
 }
 
@@ -376,9 +383,10 @@ pub fn power_charge_holds_its_fluff_and_80383_removes_3_stacks_of_it_test() -> N
   let assert Ok(power_charge) =
     list.find(tree, fn(spell) { spell.spell4_id == Spell4Id(42_569) })
     as "Power Charge is in Discharge's tree"
-  assert list.map(power_charge.lasting, fn(row) {
-      #(row.effect_id, row.aim, row.row, row.condition)
-    })
+  assert list.map(
+      spell_plan.payloads(spell: power_charge, as_kind: spell_plan.as_lasting),
+      fn(row) { #(row.effect_id, row.aim, row.row, row.condition) },
+    )
     == [
       #(
         Spell4EffectsId(96_819),
@@ -393,9 +401,12 @@ pub fn power_charge_holds_its_fluff_and_80383_removes_3_stacks_of_it_test() -> N
   let assert Ok(actuator_build) =
     list.find(tree, fn(spell) { spell.spell4_id == Spell4Id(80_383) })
     as "80383 is in Discharge's tree"
-  assert list.map(actuator_build.removes, fn(row) {
-      #(row.effect_id, row.selector, row.count, row.aim, row.condition)
-    })
+  assert list.map(
+      spell_plan.payloads(spell: actuator_build, as_kind: spell_plan.as_remove),
+      fn(row) {
+        #(row.effect_id, row.selector, row.count, row.aim, row.condition)
+      },
+    )
     == [
       #(
         Spell4EffectsId(212_836),
@@ -421,9 +432,10 @@ pub fn quick_draws_removal_is_gated_on_the_caster_under_its_marker_test() -> Nil
   let tree = spell_plan.tree(spell: quick_draw, started: fn(_) { True })
   let assert Ok(row) =
     list.find_map(tree, fn(spell) {
-      list.find(spell.removes, fn(row) {
-        row.effect_id == Spell4EffectsId(196_521)
-      })
+      list.find(
+        spell_plan.payloads(spell:, as_kind: spell_plan.as_remove),
+        fn(row) { row.effect_id == Spell4EffectsId(196_521) },
+      )
     })
     as "Spell4Effects 196521 is in Quick Draw's tree"
   assert row.selector == Spell(Spell4Id(43_500))
@@ -459,7 +471,7 @@ pub fn a_crowd_control_row_is_read_with_its_state_time_armor_and_aim_test() -> N
         effect: knockdown_row(state: 8, target_flags: 4, columns: []),
       ),
     )
-  assert spell.controls
+  assert spell_plan.payloads(spell:, as_kind: spell_plan.as_control)
     == [
       spell_plan.CrowdControl(
         effect_id: Spell4EffectsId(99_040),
@@ -508,7 +520,7 @@ pub fn a_caster_ability_restriction_row_is_read_until_removed_test() -> Nil {
         ),
       ),
     )
-  assert spell.controls
+  assert spell_plan.payloads(spell:, as_kind: spell_plan.as_control)
     == [
       spell_plan.CrowdControl(
         effect_id: Spell4EffectsId(99_041),
@@ -543,7 +555,10 @@ pub fn a_caster_ability_restriction_row_is_read_until_removed_test() -> Nil {
         ]),
       ),
     )
-  assert list.map(timed.controls, fn(control) { control.row.until_removed })
+  assert list.map(
+      spell_plan.payloads(spell: timed, as_kind: spell_plan.as_control),
+      fn(control) { control.row.until_removed },
+    )
     == [False]
     as "a row without flags bit 2 is not held until removed"
 }
@@ -597,7 +612,7 @@ pub fn every_state_is_read_on_every_simple_aim_test() -> Nil {
           <> int.to_string(flags)
           <> " is read"
         }
-      assert spell.controls
+      assert spell_plan.payloads(spell:, as_kind: spell_plan.as_control)
         == [
           spell_plan.CrowdControl(
             effect_id: Spell4EffectsId(99_040),
@@ -653,7 +668,7 @@ pub fn a_state_until_removed_on_another_unit_is_dropped_and_the_spell_plans_test
         ),
       )
       as "the spell plans without the row: the server ends no creature's state when its cast's node ends, and the issue that will end it is open"
-    assert spell.controls == []
+    assert spell_plan.payloads(spell:, as_kind: spell_plan.as_control) == []
       as "cc_state.instance_id: flags bit 2 never times out, so the row lands nothing until the issue that ends it is built"
     assert spell.dropped_controls == [Spell4EffectsId(99_040)]
       as "the plan names the row it drops, which the cast logs as a gap"
@@ -668,7 +683,10 @@ pub fn a_state_until_removed_on_another_unit_is_dropped_and_the_spell_plans_test
       ),
     )
     as "a state on the caster ends with its cast's node (cast.restrictions)"
-  assert list.map(on_caster.controls, fn(control) { control.row.until_removed })
+  assert list.map(
+      spell_plan.payloads(spell: on_caster, as_kind: spell_plan.as_control),
+      fn(control) { control.row.until_removed },
+    )
     == [True]
   assert on_caster.dropped_controls == []
     as "a row on the caster is read, not dropped"
@@ -707,9 +725,10 @@ pub fn the_six_spells_held_only_by_an_until_removed_state_plan_as_they_did_test(
           <> int.to_string(spell4_id)
           <> " drops"
         }
-      assert list.filter(planned.controls, fn(control) {
-          control.effect_id == Spell4EffectsId(effect_id)
-        })
+      assert list.filter(
+          spell_plan.payloads(spell: planned, as_kind: spell_plan.as_control),
+          fn(control) { control.effect_id == Spell4EffectsId(effect_id) },
+        )
         == []
         as "and no control of the plan holds it"
     },
@@ -725,7 +744,9 @@ pub fn a_state_that_times_out_is_not_dropped_test() -> Nil {
       ),
     )
     as "a timed state on another unit plans"
-  assert list.length(spell.controls) == 1 && spell.dropped_controls == []
+  assert list.length(spell_plan.payloads(spell:, as_kind: spell_plan.as_control))
+    == 1
+    && spell.dropped_controls == []
     as "flags bit 2 clear: the row is read as before"
 }
 
@@ -765,7 +786,11 @@ pub fn a_persistence_prerequisite_on_another_unit_is_refused_test() -> Nil {
       ),
     )
     as "a row aimed at the caster still plans: the caster's own state is held by the cast"
-  assert list.length(on_caster.controls) == 1
+  assert list.length(spell_plan.payloads(
+      spell: on_caster,
+      as_kind: spell_plan.as_control,
+    ))
+    == 1
 }
 
 pub fn every_ability_restriction_row_on_the_caster_is_read_test() -> Nil {
@@ -790,8 +815,8 @@ pub fn every_ability_restriction_row_on_the_caster_is_read_test() -> Nil {
       )
     })
   assert list.count(readings, fn(reading) {
-      case reading {
-        Ok(spell_plan.Applied(spell_plan.PlannedControl(control:))) ->
+      case result.map(reading, spell_tables.planned_kinds) {
+        Ok([spell_plan.ControlEffect(control:)]) ->
           control.aim == spell_plan.AimsAtCaster
           && control.row.state == crowd_control_state.AbilityRestriction
         _ -> False
@@ -802,8 +827,8 @@ pub fn every_ability_restriction_row_on_the_caster_is_read_test() -> Nil {
   let gated =
     list.zip(rows, readings)
     |> list.filter_map(fn(pair) {
-      case pair.1 {
-        Ok(spell_plan.Applied(spell_plan.PlannedControl(control:))) ->
+      case result.map(pair.1, spell_tables.planned_kinds) {
+        Ok([spell_plan.ControlEffect(control:)]) ->
           case control.condition {
             spell_plan.Always -> Error(Nil)
             spell_plan.GatedOnCaster(..)

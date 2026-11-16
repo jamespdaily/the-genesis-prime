@@ -29,6 +29,7 @@ import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
 import genesis_prime/game/objective_kind
 import genesis_prime/game/shortcut_spell
 import genesis_prime/game/shown
+import genesis_prime/game/spell_plan
 import genesis_prime/game/start_place
 import genesis_prime/message/cast_objective_ability.{CastObjectiveAbility}
 import genesis_prime/message/cast_result
@@ -1056,7 +1057,7 @@ pub fn a_press_of_a_spell_whose_state_lasts_until_removed_starts_and_logs_the_dr
   let assert Ok(shortcut_spell.Aimed(spell:, ..)) =
     shortcut_spell.planned_of(shortcuts: shortcuts(), spell4_id: 35_436)
     as "the spell plans as an aimed one"
-  assert spell.controls == []
+  assert spell_plan.payloads(spell:, as_kind: spell_plan.as_control) == []
     && spell.dropped_controls == [Spell4EffectsId(212_028)]
     as "Spell4Effects 212028 lands nothing: it is the one row dropped"
 }

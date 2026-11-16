@@ -89,7 +89,10 @@ fn lasting_row(
   spell spell: spell_plan.Spell,
   id id: Int,
 ) -> Result(spell_plan.Lasting, Nil) {
-  list.find(spell.lasting, fn(row) { row.effect_id == Spell4EffectsId(id) })
+  list.find(
+    spell_plan.payloads(spell:, as_kind: spell_plan.as_lasting),
+    fn(row) { row.effect_id == Spell4EffectsId(id) },
+  )
 }
 
 // ---- the decode ----
@@ -271,9 +274,10 @@ pub fn a_property_conversion_row_is_a_modifier_that_converts_47_into_60_at_a_qua
       ),
     )
   let assert Ok(row) =
-    list.find(spell.modifiers, fn(row) {
-      row.effect_id == Spell4EffectsId(99_074)
-    })
+    list.find(
+      spell_plan.payloads(spell:, as_kind: spell_plan.as_modifier),
+      fn(row) { row.effect_id == Spell4EffectsId(99_074) },
+    )
   assert row.change
     == spell_plan.PropertyChange(unit_properties.Conversion(
       from: UnitProperty2Id(47),
@@ -396,9 +400,10 @@ pub fn the_engineers_passive_holds_229304_as_a_conversion_from_47_to_60_until_re
   // Spell4Base 29076 is the Engineer's innate passive (Class 2), whose spell is 45000.
   let spell = in_tree(base: 29_076, spell4_id: 45_000)
   let assert Ok(row) =
-    list.find(spell.modifiers, fn(row) {
-      row.effect_id == Spell4EffectsId(229_304)
-    })
+    list.find(
+      spell_plan.payloads(spell:, as_kind: spell_plan.as_modifier),
+      fn(row) { row.effect_id == Spell4EffectsId(229_304) },
+    )
   assert row.change
     == spell_plan.PropertyChange(unit_properties.Conversion(
       from: UnitProperty2Id(47),
@@ -435,8 +440,14 @@ pub fn the_plans_hold_every_type_18_81_and_145_row_of_the_trees_test() -> Nil {
   let held =
     list.flat_map(spells, fn(spell) {
       list.flatten([
-        list.map(spell.lasting, fn(row) { row.effect_id.value }),
-        list.map(spell.modifiers, fn(row) { row.effect_id.value }),
+        list.map(
+          spell_plan.payloads(spell:, as_kind: spell_plan.as_lasting),
+          fn(row) { row.effect_id.value },
+        ),
+        list.map(
+          spell_plan.payloads(spell:, as_kind: spell_plan.as_modifier),
+          fn(row) { row.effect_id.value },
+        ),
       ])
     })
   list.each(rows_in_the_trees, fn(id) {
@@ -565,10 +576,14 @@ pub fn the_measure_counts_an_item_visual_swap_row_with_a_delay_not_read_and_one_
     )
     == Ok(
       spell_plan.Held(
-        spell_plan.PlannedLasting(lasting: held_row(
-          spell: spell_tables.client_spell(spell4_id: 48_373),
-          id: 122_321,
-        )),
+        spell_plan.ReadEffects(effects: [
+          spell_plan.effect_of(
+            kind: spell_plan.LastingEffect(lasting: held_row(
+              spell: spell_tables.client_spell(spell4_id: 48_373),
+              id: 122_321,
+            )),
+          ),
+        ]),
       ),
     )
     as "a delayed row stays in the spell's lasting list with its delay, which the go lists, and is Held: no go applies it on the client"

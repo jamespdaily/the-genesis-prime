@@ -108,25 +108,35 @@ pub fn remove_lands_only_on_the_unit_carrying_the_casters_group_test() -> Nil {
   // The remove is the client's row 144869 with its selector a group the planted markers
   // hold, since a planted spell takes the Spell4Base of an ability of the bag.
   let real = spell_tables.client_spell(spell4_id: 38_841)
-  let assert [row] = real.removes as "Ruin's tree holds the one remove 144869"
+  let assert [row] =
+    spell_plan.payloads(spell: real, as_kind: spell_plan.as_remove)
+    as "Ruin's tree holds the one remove 144869"
   assert row.effect_id == Spell4EffectsId(144_869)
   let assert GatedOnTarget(..) = row.condition
     as "the remove keeps its target apply prerequisite 13148"
   let ruin =
-    spell_plan.Spell(..support.child(spell4_id: 38_841, base: 1), removes: [
-      spell_plan.ForceRemove(..row, selector: lasting.Group(23_183)),
-    ])
+    support.with_effects(
+      spell: support.child(spell4_id: 38_841, base: 1),
+      kinds: [
+        spell_plan.RemoveEffect(
+          spell_plan.ForceRemove(..row, selector: lasting.Group(23_183)),
+        ),
+      ],
+    )
   let marked_twice =
-    spell_plan.Spell(
-      ..support.child(spell4_id: 101, base: 3),
-      groups: [464, 23_183],
-      lasting: [marker_row(id: 1)],
+    support.with_effects(
+      spell: spell_plan.Spell(..support.child(spell4_id: 101, base: 3), groups: [
+        464,
+        23_183,
+      ]),
+      kinds: [spell_plan.LastingEffect(marker_row(id: 1))],
     )
   let marked_once =
-    spell_plan.Spell(
-      ..support.child(spell4_id: 102, base: 2),
-      groups: [23_183],
-      lasting: [marker_row(id: 2)],
+    support.with_effects(
+      spell: spell_plan.Spell(..support.child(spell4_id: 102, base: 2), groups: [
+        23_183,
+      ]),
+      kinds: [spell_plan.LastingEffect(marker_row(id: 2))],
     )
   let plans = support.plans_of([ruin, marked_twice, marked_once])
   let press = fn(state, bag, struck, at) {
@@ -219,16 +229,18 @@ pub fn a_gate_that_asks_for_another_creature_passes_the_casters_own_unit_test() 
   // caster is a player, so the gate fails a unit that is the creature and would pass the
   // caster if it were read as the first unit.
   let spell =
-    spell_plan.Spell(..support.child(spell4_id: 101, base: 3), lasting: [
-      spell_plan.Lasting(
-        ..marker_row(id: 7),
-        condition: GatedOnTarget(
-          prerequisite: prerequisite_support.single(id: 5001, condition: #(
-            38,
-            2,
-            0,
-            48_404,
-          )),
+    support.with_effects(spell: support.child(spell4_id: 101, base: 3), kinds: [
+      spell_plan.LastingEffect(
+        spell_plan.Lasting(
+          ..marker_row(id: 7),
+          condition: GatedOnTarget(
+            prerequisite: prerequisite_support.single(id: 5001, condition: #(
+              38,
+              2,
+              0,
+              48_404,
+            )),
+          ),
         ),
       ),
     ])
@@ -305,11 +317,13 @@ fn chance_spell(aim aim: spell_plan.Aim) -> Spell {
 
 /// The same as a child of its own base, for a Proxy to start.
 fn chance_child(aim aim: spell_plan.Aim) -> Spell {
-  spell_plan.Spell(..support.child(spell4_id: 101, base: 101), lasting: [
-    spell_plan.Lasting(
-      ..marker_row(id: 7),
-      aim:,
-      condition: GatedOnTarget(prerequisite: chance_gate()),
+  support.with_effects(spell: support.child(spell4_id: 101, base: 101), kinds: [
+    spell_plan.LastingEffect(
+      spell_plan.Lasting(
+        ..marker_row(id: 7),
+        aim:,
+        condition: GatedOnTarget(prerequisite: chance_gate()),
+      ),
     ),
   ])
 }
@@ -514,10 +528,12 @@ pub fn struck_unit_with_no_pose_leaves_a_positional_gate_unread_test() -> Nil {
       arcs: [prerequisite_support.behind_arc()],
     )
   let spell =
-    spell_plan.Spell(..support.child(spell4_id: 101, base: 3), lasting: [
-      spell_plan.Lasting(
-        ..marker_row(id: 7),
-        condition: GatedOnTarget(prerequisite: behind),
+    support.with_effects(spell: support.child(spell4_id: 101, base: 3), kinds: [
+      spell_plan.LastingEffect(
+        spell_plan.Lasting(
+          ..marker_row(id: 7),
+          condition: GatedOnTarget(prerequisite: behind),
+        ),
       ),
     ])
   let plans = support.plans_of([spell])
@@ -617,19 +633,21 @@ pub fn heal_and_modifier_behind_target_gate_reach_only_passing_units_test() -> N
       armor: None,
     )
   let spell =
-    spell_plan.Spell(
-      ..support.child(spell4_id: 101, base: 3),
-      heals: [
-        healing(
-          id: 58_547,
-          gate: creature_gate(id: 8757, comparison: 2, creature: 25_708),
-        ),
-        healing(
-          id: 67_780,
-          gate: creature_gate(id: 10_849, comparison: 1, creature: 25_708),
-        ),
-      ],
-      modifiers: [slowing],
+    support.with_effects(
+      spell: support.with_effects(
+        spell: support.child(spell4_id: 101, base: 3),
+        kinds: [
+          spell_plan.HealEffect(healing(
+            id: 58_547,
+            gate: creature_gate(id: 8757, comparison: 2, creature: 25_708),
+          )),
+          spell_plan.HealEffect(healing(
+            id: 67_780,
+            gate: creature_gate(id: 10_849, comparison: 1, creature: 25_708),
+          )),
+        ],
+      ),
+      kinds: [spell_plan.ModifierEffect(slowing)],
     )
   let plans: Plans = support.plans_of([spell])
   let #(state, raw) =

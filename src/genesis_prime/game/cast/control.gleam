@@ -932,7 +932,8 @@ pub fn heals_armed(
 /// The modifier rows of a spell that change the caster: the rows aimed at struck units
 /// are the creature's (`creature_modifiers_ended`).
 pub fn caster_rows(spell spell: Spell) -> List(spell_plan.PropertyModifier) {
-  list.filter(spell.modifiers, fn(row) {
+  spell_plan.payloads(spell:, as_kind: spell_plan.as_modifier)
+  |> list.filter(fn(row) {
     case row.change {
       spell_plan.StruckChange(..) -> False
       spell_plan.PropertyChange(..)

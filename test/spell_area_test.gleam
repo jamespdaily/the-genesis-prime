@@ -565,7 +565,7 @@ pub fn until_removed_periodic_rows_are_left_out_test() -> Nil {
       spell.spell4_id == Spell4Id(69_450)
     })
     as "its tree holds Energize, spell 69450"
-  assert energize.heals == []
+  assert spell_plan.payloads(spell: energize, as_kind: spell_plan.as_heal) == []
     as "Energize's one heal row lasts until removed, so the plan leaves it out"
   assert spell_plan.heal_of(
       spell4_id: 69_450,

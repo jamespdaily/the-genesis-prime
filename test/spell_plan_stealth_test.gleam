@@ -74,14 +74,18 @@ pub fn the_toggles_two_stealth_rows_and_its_spells_stealth_changes_are_read_as_t
   let toggle = plans_spell(base: toggle_base)
   assert toggle.stealth_change == KeepsStealth
     as "46073 holds spellCastStealthChange 2 (Spell4.spellCastStealthChange)"
-  let assert [on, cancel] = list.map(toggle.proxies, fn(proxy) { proxy.spell })
+  let assert [on, cancel] =
+    list.map(
+      spell_plan.payloads(spell: toggle, as_kind: spell_plan.as_proxy),
+      fn(proxy) { proxy.spell },
+    )
   assert on.spell4_id.value == 38_784
   assert cancel.spell4_id.value == 38_783
   assert on.stealth_change == KeepsStealth
     as "38784 holds 2: the toggle's own spells do not end the stealth they make"
   assert cancel.stealth_change == EndsStealthAtEachGo
     as "38783 holds 0, and 0 ends stealth (Spell4.spellCastStealthChange.break)"
-  assert on.stealth
+  assert spell_plan.payloads(spell: on, as_kind: spell_plan.as_stealth)
     == [
       StealthRow(
         effect_id: Spell4EffectsId(83_834),
@@ -105,8 +109,10 @@ pub fn the_toggles_two_stealth_rows_and_its_spells_stealth_changes_are_read_as_t
       ),
     ]
     as "83834 breaks on damage (dataBits02 0) behind 16152 and 95774 is kept (dataBits02 1) behind 16153; both have no durationTime, so they last until removed"
-  assert on.remove_stealth == []
-  assert cancel.stealth == []
+  assert spell_plan.payloads(spell: on, as_kind: spell_plan.as_remove_stealth)
+    == []
+  assert spell_plan.payloads(spell: cancel, as_kind: spell_plan.as_stealth)
+    == []
   assert plans_spell(base: impale_base).stealth_change == EndsStealthAfterLastGo
     as "Impale 38779 holds 1, and 1 ends stealth after the cast's last go"
 }
@@ -152,7 +158,7 @@ pub fn a_remove_stealth_row_aimed_at_the_caster_is_read_in_its_phases_with_its_g
     ])
   let assert Ok(spell) =
     spell_tables.planned_strike(rows: spell_tables.rows_with_effect(effect: row))
-  assert spell.remove_stealth
+  assert spell_plan.payloads(spell:, as_kind: spell_plan.as_remove_stealth)
     == [
       RemoveStealthRow(
         effect_id: Spell4EffectsId(99_841),

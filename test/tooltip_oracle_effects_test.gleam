@@ -446,8 +446,11 @@ fn gaining_rows(root root: Spell, slot slot: Int) -> List(Int) {
   spell_plan.tree(spell: root, started: fn(_) { True })
   |> list.flat_map(fn(spell) {
     list.append(
-      into(spell.gains),
-      list.flat_map(spell.proxies, fn(proxy) { into(proxy.gains) }),
+      into(spell_plan.payloads(spell:, as_kind: spell_plan.as_gain)),
+      list.flat_map(
+        spell_plan.payloads(spell:, as_kind: spell_plan.as_proxy),
+        fn(proxy) { into(proxy.gains) },
+      ),
     )
   })
   |> list.unique
@@ -463,10 +466,15 @@ fn gain_of(
   list.find_map(
     spell_plan.tree(spell: root, started: fn(_) { True }),
     fn(spell) {
-      case list.find(spell.gains, is) {
+      case
+        list.find(spell_plan.payloads(spell:, as_kind: spell_plan.as_gain), is)
+      {
         Ok(gain) -> Ok(gain)
         Error(Nil) ->
-          list.find_map(spell.proxies, fn(proxy) { list.find(proxy.gains, is) })
+          list.find_map(
+            spell_plan.payloads(spell:, as_kind: spell_plan.as_proxy),
+            fn(proxy) { list.find(proxy.gains, is) },
+          )
       }
     },
   )
@@ -803,9 +811,13 @@ fn cooldown_outcome(
     Error(Nil) -> Unobserved(asked: entry, why: NotInPlan)
     Ok(#(holder, _)) ->
       case
-        list.find(holder.cooldown_modifiers, fn(planned) {
-          planned.effect_id.value == entry.token.id
-        })
+        list.find(
+          spell_plan.payloads(
+            spell: holder,
+            as_kind: spell_plan.as_cooldown_modifier,
+          ),
+          fn(planned) { planned.effect_id.value == entry.token.id },
+        )
       {
         Error(Nil) -> Unobserved(asked: entry, why: NotInPlan)
         Ok(planned) -> planned_change(entry:, row:, planned:)

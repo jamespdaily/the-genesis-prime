@@ -63,7 +63,7 @@ fn forced_move_row(
 fn forced_moves_of(row row: List(Cell)) -> List(spell_plan.ForcedMove) {
   let assert Ok(spell) =
     spell_tables.planned_strike(rows: spell_tables.rows_with_effect(effect: row))
-  spell.forced_moves
+  spell_plan.payloads(spell:, as_kind: spell_plan.as_forced_move)
 }
 
 // ---- the rows of the plan ----
@@ -129,7 +129,7 @@ pub fn a_row_aimed_at_the_primary_target_or_the_area_is_read_test() -> Nil {
             ]),
           ),
         )
-      assert spell.struck_moves
+      assert spell_plan.payloads(spell:, as_kind: spell_plan.as_struck_move)
         == [
           spell_plan.StruckMove(
             effect_id: Spell4EffectsId(99_061),
@@ -142,7 +142,8 @@ pub fn a_row_aimed_at_the_primary_target_or_the_area_is_read_test() -> Nil {
           ),
         ]
         as "a row aimed at the units a strike hits is a struck move, its columns decoded"
-      assert spell.forced_moves == []
+      assert spell_plan.payloads(spell:, as_kind: spell_plan.as_forced_move)
+        == []
         as "and no move of the caster's: the caster is not an aim of the row"
     },
   )
@@ -166,10 +167,17 @@ pub fn a_row_aimed_at_the_primary_target_or_the_area_is_read_test() -> Nil {
             ),
           ),
         )
-      assert list.map(spell.struck_moves, fn(move) { move.aim })
+      assert list.map(
+          spell_plan.payloads(spell:, as_kind: spell_plan.as_struck_move),
+          fn(move) { move.aim },
+        )
         == [past_the_caster]
         as "a row that includes the caster moves the units its other bits name"
-      assert list.length(spell.forced_moves) == 1
+      assert list.length(spell_plan.payloads(
+          spell:,
+          as_kind: spell_plan.as_forced_move,
+        ))
+        == 1
         as "and the caster's part is a move of its own"
     },
   )
@@ -197,7 +205,8 @@ pub fn a_row_behind_a_target_apply_prerequisite_keeps_it_as_its_condition_test()
       ]),
     )
   let assert Ok(spell) = spell_tables.planned_strike(rows:)
-  let assert [row] = spell.struck_moves
+  let assert [row] =
+    spell_plan.payloads(spell:, as_kind: spell_plan.as_struck_move)
   let assert spell_plan.GatedOnTarget(prerequisite: gate) = row.condition
   assert prerequisite.id(gate).value == 99_907
     as "the row is read with the gate it names, not refused"
@@ -284,7 +293,7 @@ pub fn gates_two_caster_rows_are_read_from_the_clients_tables_test() -> Nil {
   let plans = spell_plan.plans(tables: client_tables.shared())
   // Gate, 20325, whose own spell 34355 holds 67776 and 67777.
   let assert Ok(gate) = spell_plan.in_plans(plans:, base: Spell4BaseId(20_325))
-  assert gate.forced_moves
+  assert spell_plan.payloads(spell: gate, as_kind: spell_plan.as_forced_move)
     == [
       spell_plan.ForcedMove(
         effect_id: Spell4EffectsId(67_776),
@@ -294,7 +303,8 @@ pub fn gates_two_caster_rows_are_read_from_the_clients_tables_test() -> Nil {
         tag: spend.EqualTo(value: 0),
       ),
     ]
-  let assert [falling] = gate.modifiers
+  let assert [falling] =
+    spell_plan.payloads(spell: gate, as_kind: spell_plan.as_modifier)
   assert falling.effect_id == Spell4EffectsId(67_777)
   assert falling.change
     == spell_plan.PropertyChange(Change(
