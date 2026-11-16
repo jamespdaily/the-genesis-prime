@@ -1840,23 +1840,6 @@ pub fn an_answer_naming_no_waiting_interaction_is_refused_test() -> Nil {
       expected: the_terminals_word,
     ))
     as "opcode.0x805.fields: the third field is the cast's Spell4Base id plus 1, 20652 for Spell4Base 20651, not 20651"
-  let #(answered_once, _) =
-    answered_ok(
-      state:,
-      cast_id: id,
-      result: interaction_result.Succeeded,
-      at: 1200,
-    )
-  let assert Ok(#(_, repeated)) =
-    answered(
-      state: answered_once,
-      cast_id: id,
-      result: interaction_result.Succeeded,
-      word: the_terminals_word,
-      at: 1300,
-    )
-    as "csi.ends: one interaction sends exactly one of 0, 1 or 2, and the 1 sent the go and the finish, so a second answer names a cast that is not live and is dropped"
-  assert_nothing_happened(effects: repeated)
 }
 
 pub fn an_answer_result_the_client_never_sends_is_refused_test() -> Nil {

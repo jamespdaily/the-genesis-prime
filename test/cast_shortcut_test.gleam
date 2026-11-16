@@ -466,22 +466,7 @@ pub fn a_client_side_interaction_shortcut_cast_counts_after_its_answer_test() ->
     as "castMethod 5 has no cast time to wait out, and nothing counts yet"
   let id = support.pressed_id(effects: pressed)
   let answer = fn(result) {
-    let assert Ok(body) =
-      client_side_interaction_result.encode(ClientSideInteractionResult(
-        cast_id: id,
-        result:,
-        spell4_base_id_plus_one: the_interaction_word,
-      ))
-      as "the answer fits the message"
-    let assert Ok(taken) =
-      cast.take(
-        cast: state,
-        message: cast.Answered,
-        body:,
-        caster: support.caster(),
-        plans: support.plans(),
-        now: support.at(ms: 1200),
-      )
+    let assert Ok(taken) = interaction_answered(state:, cast_id: id, result:)
       as "an answer naming the waiting interaction and its spell is taken"
     taken
   }
@@ -499,6 +484,50 @@ pub fn a_client_side_interaction_shortcut_cast_counts_after_its_answer_test() ->
   assert support.shortcut_casts(effects: failed) == []
     && support.ids(frames: support.writes(effects: failed)) == [0x07F9, 0x07FE]
     as "opcode.0x7fe.csi: a failed interaction fails the cast with 0x7f9 and its finish, and counts nothing"
+}
+
+pub fn a_second_answer_while_the_first_success_strikes_is_refused_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, pressed) =
+    press(state: cast.new(), spell4_id: the_interaction_spell, at: 1000)
+  let id = support.pressed_id(effects: pressed)
+  let assert Ok(#(answered, _)) =
+    interaction_answered(
+      state:,
+      cast_id: id,
+      result: interaction_result.Succeeded,
+    )
+    as "the first answer is taken"
+  assert interaction_answered(
+      state: answered,
+      cast_id: id,
+      result: interaction_result.Succeeded,
+    )
+    == Error(cast.NoInteractionWaits(cast_id: id))
+    as "csi.ends: one interaction sends exactly one of 0, 1 or 2, so a second answer, before the strike round of the first one is answered, names no waiting interaction"
+}
+
+/// The client's 0x805 for the interaction spell's cast, at 1200 ms.
+fn interaction_answered(
+  state state: cast.State,
+  cast_id cast_id: Int,
+  result result: interaction_result.InteractionResult,
+) -> Result(#(cast.State, List(Effect)), cast.Refusal) {
+  let assert Ok(body) =
+    client_side_interaction_result.encode(ClientSideInteractionResult(
+      cast_id:,
+      result:,
+      spell4_base_id_plus_one: the_interaction_word,
+    ))
+    as "the answer fits the message"
+  cast.take(
+    cast: state,
+    message: cast.Answered,
+    body:,
+    caster: support.caster(),
+    plans: support.plans(),
+    now: support.at(ms: 1200),
+  )
 }
 
 /// The primary target unit of each 0x7fd the effects write.
