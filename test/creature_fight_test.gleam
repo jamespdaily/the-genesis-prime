@@ -5012,6 +5012,54 @@ pub fn a_creature_placed_as_part_of_a_map_object_leaves_combat_in_place_when_its
     as "it stands at its spawn point"
 }
 
+pub fn a_creature_placed_as_part_of_a_map_object_is_not_moved_by_a_forced_move_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Its run speed is 10, so only its link keeps it where it is: a knockback (away, in
+  // flight), a pull (toward a unit at x = 20, in flight) and a push (away, at once).
+  let moves = [
+    #("knockback", forced_move.Away, forced_move.Flight, at(-5.0)),
+    #("pull", forced_move.Toward, forced_move.Flight, at(20.0)),
+    #("push", forced_move.Away, forced_move.AtOnce, at(-5.0)),
+  ]
+  list.each(moves, fn(one) {
+    let #(name, way, mover, unit_at) = one
+    let #(state, aggro) =
+      tell(
+        state: fern(viewers: [2]),
+        at_ms: 0,
+        message: approached(number: 2, x: 5.0, seq: 1),
+      )
+    let #(state, thrown) =
+      tell(
+        state:,
+        at_ms: 100,
+        message: creature.Thrown(
+          move: forced_move.Move(
+            way:,
+            mover:,
+            min_distance: 10.0,
+            max_distance: 10.0,
+            flight_ms: 375,
+            gravity: 0.0,
+            flags: 0,
+            height: 0.0,
+          ),
+          draws: forced_move.Draws(distance: 0.0, angle: 0.0),
+          reference: forced_move.Reference(place: unit_at, radius: 0.0),
+          struck_at_ms: start_ms + 100,
+        ),
+      )
+    assert said(thrown) == [] && timers(thrown) == []
+      as { name <> ": no path, no flight timer, no news" }
+    assert stands_at(state:, at_ms: 100) == 0.0
+      && stands_at(state:, at_ms: 1000) == 0.0
+      as { name <> ": it stands at its spawn point" }
+    let #(_, struck) = fire(state:, at_ms: 1500, timer: timer_for(aggro, 1500))
+    assert said(struck) == ["0x7ff to 2", "Attacks to 2"]
+      as { name <> ": the fight goes on as it was" }
+  })
+}
+
 pub fn the_same_creature_placed_with_no_map_object_chases_test() -> Nil {
   use <- owned_test.run(5000)
   let free =

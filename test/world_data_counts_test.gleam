@@ -228,10 +228,38 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
     list.filter(started, fn(one) {
       one.unit_type == creature_unit_type.NonPlayer && one.world_object_id != 0
     })
-  assert list.length(linked_started) == 412
-    as "the linked rows that start: the load's own count, the other 218 of the 630 being left out by the selection as it leaves out other rows (the reasons above); no separate script has counted it"
   assert list.all(linked_started, fn(one) { one.combat.attack.run_speed == 0.0 })
     as "none of them moves"
+  // Every linked row is either started or left out for one of the selection's reasons
+  // (friendly to both, a service link, health 0), so the 630 are all explained.
+  let linked_selection =
+    spawn.select(
+      rows: linked_rows,
+      tables:,
+      formulas: rating.formulas(tables:),
+      kinds: spawn_support.kinds(),
+      vendors: vendor.none(),
+      factions: spawn_support.the_boss_is_given_233(tables:),
+    )
+  assert linked_selection.refusals == []
+    as "no linked row is refused, so none is missing from the count"
+  let linked_started_count =
+    list.fold(linked_selection.coverage, 0, fn(total, world) {
+      total + world.started
+    })
+  let linked_left_out_count = fn(reason) {
+    list.flat_map(linked_selection.coverage, fn(world) { world.left_out })
+    |> list.filter(fn(entry) { entry.0 == reason })
+    |> list.fold(0, fn(total, entry) { total + entry.1 })
+  }
+  assert linked_started_count
+    + linked_left_out_count(spawn.FriendlyToBoth)
+    + linked_left_out_count(spawn.ServiceLink)
+    + linked_left_out_count(spawn.Dead)
+    == 630
+    as "the linked rows that start, plus those left out as friendly to both, with a service link and dead, are the 630 rows"
+  assert linked_started_count == list.length(linked_started)
+    as "the linked rows the load starts are the ones the selection starts"
   // The rows left out in all worlds are the selection's own count over the same
   // rows and tables: the load keeps the selection's spawns and logs these.
   let selection =
