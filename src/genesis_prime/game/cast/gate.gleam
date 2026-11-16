@@ -92,6 +92,7 @@ fn effect_rolls_needed(
   primary_target primary_target: Int,
   struck struck: List(Struck),
 ) -> Int {
+  use <- bool.guard(when: !applied_by_go(kind:), return: 0)
   let reached = fn(aim) {
     units_reached(aim:, caster:, primary_target:, struck:)
   }
@@ -584,15 +585,29 @@ fn only_on_caster_gates(
   }
 }
 
+/// Whether a go applies an effect of this kind at all: a property modifier with no life
+/// (`lasting.has_life`) is applied by none, so the go checks no gate of it, caster or
+/// target, and draws no roll for it. The roll count (`effect_rolls_needed`) and the check
+/// (`gates_checked_on_caster`, which leaves such a row out of the rows the go reaches) both
+/// ask it.
+fn applied_by_go(kind kind: spell_plan.Kind) -> Bool {
+  case spell_plan.as_modifier(kind:) {
+    Ok(row) -> lasting.has_life(row: row.row)
+    Error(Nil) -> True
+  }
+}
+
 /// The gates a go checks against the caster's own unit for an effect of this kind, the one
 /// choice between `caster_gates` (a row that may reach other units) and `only_on_caster_gates`
 /// (a row that reaches only the caster) for each kind: the roll count (`effect_rolls_needed`)
 /// and the check (`control.lasting_applied`) both ask it, so they cannot differ. A Proxy's and
-/// a gain's gates are checked apart (`proxy_gates`, `gains_given`) and a crowd-control state
-/// that does not reach the caster is the strike's, so those have none.
+/// a gain's gates are checked apart (`proxy_gates`, `gains_given`), a crowd-control state
+/// that does not reach the caster is the strike's, and a property modifier with no life is
+/// applied by no go (`applied_by_go`), so those have none.
 pub fn gates_checked_on_caster(
   kind kind: spell_plan.Kind,
 ) -> Result(List(prerequisite.Prerequisite), Nil) {
+  use <- bool.guard(when: !applied_by_go(kind:), return: Error(Nil))
   case kind {
     spell_plan.ProxyEffect(..) | spell_plan.GainEffect(..) -> Error(Nil)
     spell_plan.LastingEffect(lasting: row) ->
@@ -600,10 +615,7 @@ pub fn gates_checked_on_caster(
     spell_plan.RemoveEffect(remove: row) ->
       Ok(caster_gates(condition: row.condition))
     spell_plan.ModifierEffect(modifier: row) ->
-      case lasting.has_life(row: row.row) {
-        True -> Ok(caster_gates(condition: row.condition))
-        False -> Error(Nil)
-      }
+      Ok(caster_gates(condition: row.condition))
     spell_plan.StruckMoveEffect(struck_move: row) ->
       Ok(caster_gates(condition: row.condition))
     spell_plan.HealEffect(heal: row) ->

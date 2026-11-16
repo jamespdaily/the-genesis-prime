@@ -3680,7 +3680,7 @@ fn go(
           reached: aimed.reached,
           struck:,
         )
-      let #(cast, healing) = cast_control.heals_armed(cast:, cast_id:, aimed:)
+      let #(cast, healing) = cast_heal.heals_armed(cast:, cast_id:, aimed:)
       let #(cast, restriction_timers) =
         cast_control.restrictions_armed(cast:, cast_id:, restricting:)
       let #(cast, cooldowns) =
@@ -3815,24 +3815,9 @@ fn stealth_changed_by_go(
   last_go last_go: Bool,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
-  let #(stealth, remove_stealth) =
-    list.fold_right(applied.passed, #([], []), fn(rows, planned) {
-      case planned.kind {
-        spell_plan.StealthEffect(stealth: row) -> #([row, ..rows.0], rows.1)
-        spell_plan.RemoveStealthEffect(remove: row) -> #(rows.0, [row, ..rows.1])
-        spell_plan.ProxyEffect(..)
-        | spell_plan.GainEffect(..)
-        | spell_plan.LastingEffect(..)
-        | spell_plan.RemoveEffect(..)
-        | spell_plan.ModifierEffect(..)
-        | spell_plan.ForcedMoveEffect(..)
-        | spell_plan.StruckMoveEffect(..)
-        | spell_plan.CooldownEffect(..)
-        | spell_plan.ProcEffect(..)
-        | spell_plan.HealEffect(..)
-        | spell_plan.ControlEffect(..) -> rows
-      }
-    })
+  let stealth = cast_state.passed_of(applied:, as_kind: spell_plan.as_stealth)
+  let remove_stealth =
+    cast_state.passed_of(applied:, as_kind: spell_plan.as_remove_stealth)
   case cast_state.stealthed(cast:), stealth, remove_stealth {
     False, [], [] -> #(cast, [])
     _, _, _ -> {
@@ -4347,8 +4332,8 @@ fn cooldowns_armed(
 ) -> #(State, List(Effect)) {
   list.fold(aimed.reached, #(cast, []), fn(so_far, entry) {
     let #(cast, effects) = so_far
-    case entry.effect.kind {
-      spell_plan.CooldownEffect(modifier: row) -> {
+    case spell_plan.as_cooldown_modifier(entry.effect.kind) {
+      Ok(row) -> {
         let assert CooldownKept(kept:) = entry.product
           as "the reach stage tells each cooldown row whether it is kept"
         let #(cast, armed) =
@@ -4362,18 +4347,7 @@ fn cooldowns_armed(
           )
         #(cast, list.append(effects, armed))
       }
-      spell_plan.ProxyEffect(..)
-      | spell_plan.GainEffect(..)
-      | spell_plan.LastingEffect(..)
-      | spell_plan.RemoveEffect(..)
-      | spell_plan.ModifierEffect(..)
-      | spell_plan.ForcedMoveEffect(..)
-      | spell_plan.StruckMoveEffect(..)
-      | spell_plan.StealthEffect(..)
-      | spell_plan.RemoveStealthEffect(..)
-      | spell_plan.ProcEffect(..)
-      | spell_plan.HealEffect(..)
-      | spell_plan.ControlEffect(..) -> so_far
+      Error(Nil) -> so_far
     }
   })
 }

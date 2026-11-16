@@ -24,15 +24,17 @@
 ////   it (the server's choice; the crit of a heal is #336).
 
 import genesis_prime/game/cast/state.{
-  type Caster, type Effect, type Healed, type Product, type Reached, type Struck,
-  type TickingOn, DamageTick, Deflected, HealTick, Healed, Healing, Hit,
-  HitCreature, HitPlayer, Immune, Log, Plain, TickingOn,
-}
+  type Aimed, type Caster, type Effect, type Healed, type Product, type Reached,
+  type State, type Struck, type TickingOn, CasterChangeStarts, CooldownKept,
+  DamageTick, Deflected, Heal, HealTick, Healed, Healing, Hit, HitCreature,
+  HitPlayer, Immune, Log, ModifierStart, Plain, TickingOn,
+} as cast_state
 import genesis_prime/game/damage
 import genesis_prime/game/effect_kind
 import genesis_prime/game/heal_split
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan
+import genesis_prime/game/unit_properties
 import genesis_prime/message/combat_result
 import genesis_prime/message/damage_type
 import genesis_prime/message/spell_damage_description.{
@@ -204,4 +206,51 @@ pub fn heal_description(healed healed: Healed) -> SpellDamageDescription {
     },
     hits: [],
   )
+}
+
+/// The heals a go applies: a heal with no delay lands in this step, after the go's
+/// 0x7f4, and any other on a timer of its delay (the client adds the delay before it
+/// applies a result, `0x1405d77a0`). Each go's heal is its own, so a later go of the cast
+/// heals again and no earlier heal is cancelled; a pending heal is dropped with the node
+/// of the cast on the caster (`cast_proc.effects_ended`), and lands when the node ends by time
+/// (`cast_tick.heals_landed_at_node_end`).
+pub fn heals_armed(
+  cast cast: State,
+  cast_id cast_id: Int,
+  aimed aimed: Aimed,
+) -> #(State, List(Effect)) {
+  list.fold(aimed.reached, #(cast, []), fn(so_far, entry) {
+    let #(cast, effects) = so_far
+    case entry.product {
+      Healing(healed:) -> {
+        let #(cast, armed) = heal_armed(cast:, cast_id:, healed:)
+        #(cast, list.append(effects, armed))
+      }
+      // A heal that lands nothing (a periodic one ticks; another unit's is not built),
+      // and any effect that is no heal.
+      Plain | CooldownKept(..) -> so_far
+    }
+  })
+}
+
+/// One heal applied by a go: in this step with no delay, else on a timer of its delay.
+fn heal_armed(
+  cast cast: State,
+  cast_id cast_id: Int,
+  healed healed: Healed,
+) -> #(State, List(Effect)) {
+  let source = unit_properties.Source(cast_id:, effect_id: healed.effect_id)
+  let change = Heal(vital: healed.vital, amount: healed.amount)
+  case healed.delay_ms > 0 {
+    True -> {
+      let #(cast, _, start) =
+        cast_state.armed(
+          cast:,
+          due: ModifierStart(source:, change:),
+          after_ms: healed.delay_ms,
+        )
+      #(cast, [start])
+    }
+    False -> #(cast, [CasterChangeStarts(source:, change:)])
+  }
 }

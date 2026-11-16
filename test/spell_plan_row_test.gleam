@@ -254,7 +254,7 @@ pub fn a_row_whose_prerequisites_nest_each_other_is_not_read_test() -> Nil {
 pub fn a_property_row_with_no_life_is_held_whatever_its_type_test() -> Nil {
   use <- owned_test.run(60_000)
   // `lasting.has_life`: a durationTime or flags bit 2; the cast rule drops a modifier with
-  // neither (`modifier_has_life`). Planted: a type 11, 145 and 52 row each with and
+  // neither (`lasting.has_life`). Planted: a type 11, 145 and 52 row each with and
   // without a durationTime, aimed at the caster.
   let timed = [#("durationTime", Integer(5000))]
   let rows = [
