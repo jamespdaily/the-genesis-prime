@@ -31,6 +31,7 @@ import genesis_prime/game/equip_requirement.{
 import genesis_prime/game/item_property
 import genesis_prime/table/id.{Item2Id}
 import genesis_prime/table/loader/store
+import genesis_prime/table/quest2_reward.{type Quest2Reward, Quest2Reward}
 import gleam/list
 import owned_test
 import planted_table.{Integer}
@@ -261,4 +262,49 @@ pub fn the_clients_items_name_only_prerequisites_and_item_specials_it_holds_test
     })
     == []
     as "every Item2 and ItemSpecial row of the client's own tables names only Prerequisite and ItemSpecial rows it holds, so the load's requirements pass on it"
+}
+
+/// A Quest2Reward row of the type, object and flags; the ids and amount are not read.
+fn reward_row(
+  type_number type_number: Int,
+  object_id object_id: Int,
+  flags flags: Int,
+) -> Quest2Reward {
+  Quest2Reward(
+    id: 1,
+    quest2_id: 1,
+    quest2_reward_type_id: type_number,
+    object_id:,
+    object_amount: 1,
+    flags:,
+  )
+}
+
+pub fn only_an_item_choice_is_held_to_the_wearers_race_class_and_proficiency_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tables = fixture_tables.shared()
+  let wearer = equip_requirement_support.engineer()
+  let offered = fn(reward) {
+    equip_requirement.offered(tables:, reward:, wearer:)
+  }
+  // Item2 12769 is for class 64 (see the top of this file) and 50770 asks nothing of the
+  // Engineer's race, class or proficiency. 0x140551c60 (IsRewardChoiceOffered): a row
+  // without flag bit 0 (a fixed reward), a row with bit 1 (offered to all) and a row that
+  // is not an item (type 1) are offered without the item's Item2 row being read.
+  assert offered(reward_row(type_number: 1, object_id: 12_769, flags: 0))
+    as "0x140551c60: a fixed row is offered whatever its item"
+  assert offered(reward_row(type_number: 1, object_id: 12_769, flags: 3))
+    as "0x140551c60: a choice with bit 1 is offered to all"
+  list.each([2, 3, 4, 5, 7, 10, 6, 0], fn(type_number) {
+    assert offered(reward_row(type_number:, object_id: 999_999_999, flags: 1))
+      as "0x140551c60: a choice row whose type is not 1 is offered, and its object is no Item2 row"
+  })
+  assert !offered(reward_row(type_number: 1, object_id: 12_769, flags: 1))
+    as "an item choice for class 64 is not offered to class 2"
+  assert !offered(reward_row(type_number: 1, object_id: 1229, flags: 1))
+    as "an item choice whose category needs proficiency 4 is not offered to 66"
+  assert offered(reward_row(type_number: 1, object_id: 50_770, flags: 1))
+    as "an item choice the Engineer may wear is offered"
+  assert !offered(reward_row(type_number: 1, object_id: 999_999_999, flags: 1))
+    as "an item choice with no Item2 row is not offered"
 }

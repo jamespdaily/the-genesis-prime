@@ -49,88 +49,40 @@ pub type Gap {
 /// Every site in `src/`, and the open issue whose work removes it.
 pub const known_gaps = [
   Gap(
-    path: "src/genesis_prime/game/equip_requirement.gleam",
-    function: "offered",
-    sites: 1,
-    issue: 891,
-  ),
-  Gap(
-    path: "src/genesis_prime/game/item_price.gleam",
-    function: "paid",
-    sites: 1,
-    issue: 891,
-  ),
-  Gap(
-    path: "src/genesis_prime/game/item_price.gleam",
-    function: "sell_price",
-    sites: 2,
-    issue: 891,
-  ),
-  Gap(
-    path: "src/genesis_prime/game/quest_turn_in.gleam",
-    function: "is_credits",
-    sites: 1,
-    issue: 891,
-  ),
-  Gap(
-    path: "src/genesis_prime/game/quest_turn_in.gleam",
-    function: "left_out",
-    sites: 3,
-    issue: 891,
-  ),
-  Gap(
-    path: "src/genesis_prime/game/quest_turn_in.gleam",
-    function: "place_items",
-    sites: 1,
-    issue: 891,
-  ),
-  Gap(
-    path: "src/genesis_prime/game/quest_turn_in.gleam",
-    function: "rewarded",
-    sites: 1,
-    issue: 891,
-  ),
-  Gap(
     path: "src/genesis_prime/game/shortcut_spell.gleam",
     function: "planned",
     sites: 1,
-    issue: 891,
+    issue: 898,
   ),
   Gap(
     path: "src/genesis_prime/game/spell_plan.gleam",
     function: "cast_bar_of",
     sites: 1,
-    issue: 891,
+    issue: 886,
   ),
   Gap(
     path: "src/genesis_prime/game/spell_plan.gleam",
     function: "heal_of",
     sites: 1,
-    issue: 891,
-  ),
-  Gap(
-    path: "src/genesis_prime/game/vendor_sale.gleam",
-    function: "junk_stack",
-    sites: 1,
-    issue: 891,
+    issue: 886,
   ),
   Gap(
     path: "src/genesis_prime/world_map/creature_guard_spells.gleam",
     function: "guard_of",
     sites: 1,
-    issue: 891,
+    issue: 898,
   ),
   Gap(
     path: "src/genesis_prime/world_map/objective_spawn.gleam",
     function: "paired_unit_type",
     sites: 1,
-    issue: 891,
+    issue: 898,
   ),
   Gap(
     path: "src/genesis_prime/world_map/spawn.gleam",
     function: "valid_creature",
     sites: 1,
-    issue: 891,
+    issue: 898,
   ),
 ]
 
