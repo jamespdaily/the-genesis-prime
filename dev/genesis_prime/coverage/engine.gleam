@@ -187,7 +187,7 @@ fn quest_objectives() -> EngineDeclaration {
     // player's zone chain, both after every change of either. A use of a creature whose
     // row names the objective counts a scripted objective (type 5) or a collectible
     // (type 32), which the partial list states the gaps of. Checklist objectives (types
-    // 14 and 18 by a TargetGroup, type 28 by a PathSoldierActivate row) count a talk to or
+    // 14 and 18 by a TargetGroup, types 27 and 28 by a PathSoldierActivate row) count a talk to or
     // an activate of a target as the target's bit of the objective's 32-bit mask, and the
     // objective is done at its count of bits
     // (genesis_prime/game/objective; the index of each target is

@@ -3,8 +3,8 @@
 //// type 12 objective a use, and the data of both is a Creature2 id
 //// (`QuestObjective.type.3`, `0x1404dd4c0.objective_creature`). A checklist objective
 //// counts each unit once, by the unit's checklist index: type 14 is a use and type 18 a
-//// talk of a unit in the TargetGroup of its data, type 28 a use of the creature of the
-//// PathSoldierActivate row of its data (when that row makes it a checklist,
+//// talk of a unit in the TargetGroup of its data, types 27 and 28 a use of the creature of
+//// the PathSoldierActivate row of its data (when that row makes it a checklist,
 //// `objective_kind.is_checklist`); the use or talk sets the bit of the unit's index in the
 //// objective's mask, and a unit whose bit is set counts for nothing
 //// (`opcode.0x361`, `0x140611680`). A kill counts for the
@@ -896,7 +896,7 @@ pub fn visible_script_broken(
       False -> [
         "QuestObjective "
         <> int.to_string(objective.objective_id)
-        <> " is not 5 (a scripted objective)",
+        <> " is of a type that is not 5 (a scripted objective)",
       ]
     },
     case int.bitwise_and(objective.flags, hidden_flag) != 0 {
@@ -993,7 +993,7 @@ fn arrivals(
     quest_log.open_objectives(log: settling.log, quest:)
     |> list.filter(fn(open) {
       let #(_, objective) = open
-      objective.kind == objective_kind.ReachPlace
+      is_place(objective:)
       && objective.count == 1
       && place_objective.at_marker(
         tables:,
@@ -1014,7 +1014,7 @@ fn arrivals(
     quest_log.open_objectives(log: at_markers.log, quest:)
     |> list.filter(fn(open) {
       let #(_, objective) = open
-      objective.kind == objective_kind.ReachPlace
+      is_place(objective:)
       && objective.count == 1
       && int.bitwise_and(objective.flags, quest_log.optional_flag) != 0
       && required_sibling_arrived(
@@ -1058,6 +1058,11 @@ fn arrivals(
   }
 }
 
+/// Whether the held objective is one of a place (type 22).
+fn is_place(objective objective: quest_log.Objective) -> Bool {
+  objective.kind == objective_kind.ReachPlace
+}
+
 /// Whether a required type 22 objective of the quest with the optional one's non-zero
 /// data is done and its marker is where the player is. The optional objectives of the
 /// tutorial's places (rotate the camera, follow the arrow, double-jump) hint at what a
@@ -1076,7 +1081,7 @@ fn required_sibling_arrived(
   })
   |> list.any(fn(sibling) {
     let #(index, objective) = sibling
-    objective.kind == objective_kind.ReachPlace
+    is_place(objective:)
     && objective.data == optional.data
     && int.bitwise_and(objective.flags, quest_log.optional_flag) == 0
     && quest_log.objective_progress(log: settling.log, quest:, index:)

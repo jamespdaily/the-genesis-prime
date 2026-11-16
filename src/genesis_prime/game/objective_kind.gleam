@@ -618,11 +618,11 @@ pub fn is_checklist(
 }
 
 /// Whether a rule of the server advances an objective of this type: the coverage
-/// measure's "handled". Types 11 (a cast of the objective's spell), 10, 13, 15, 27, 31
-/// and 46 differ from the decode: 10, 13, 15, 31 and 46 decode but advance no objective
+/// measure's "handled". Types 11 (a cast of the objective's spell), 10, 13, 15, 31 and
+/// 46 differ from the decode: 10, 13, 15, 31 and 46 decode but advance no objective
 /// (progress of 10 and 13 comes only from the server, no kill advances 15 or 46, 31 is
-/// not shown); type 27 decodes as 28, but its one row is in no quest
-/// (`QuestObjective.type.27`), so it is not counted.
+/// not shown). Types 27 and 28 both count a use of the creature of their
+/// PathSoldierActivate row (`0x1405517a0`).
 pub fn is_counted(type_number type_number: Int) -> Bool {
   case kind_of(type_number:, data: 0) {
     KillCreature(_)
@@ -639,8 +639,8 @@ pub fn is_counted(type_number type_number: Int) -> Bool {
     | UseGroup(_)
     | FinishQuest(_)
     | CollectVirtualItem(_)
-    | CraftItem(_) -> True
-    ChecklistActivate(_) -> type_number == 28
+    | CraftItem(_)
+    | ChecklistActivate(_) -> True
     Unconditional
     | ServerChecklist
     | KillByCluster(_)

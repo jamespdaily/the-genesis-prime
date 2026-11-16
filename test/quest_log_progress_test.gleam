@@ -386,7 +386,7 @@ fn kill_objective(count count: Int) -> quest_log.Quest {
       kind: objective_kind.KillCreature(creature2_id: Creature2Id(5006)),
       flags: 0,
       count:,
-      data: 5006,
+      data: 0,
       reward_pane: 0,
       checklist: False,
       time_limit_ms: 0,
