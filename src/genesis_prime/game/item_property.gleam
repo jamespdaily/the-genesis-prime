@@ -76,13 +76,15 @@
 ////   entry (a property crafting picks) gives nothing: the open issue #53
 ////   closes that, and no client row mixes it with a kind-2 entry.
 
+import genesis_prime/game/item_stat_kind.{type Kind}
 import genesis_prime/game/random_stat_word
 import genesis_prime/message/float32
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{
-  type UnitProperty2Id, GameFormulaId, Item2CategoryId, Item2FamilyId, Item2Id,
-  Item2TypeId, ItemBudgetId, ItemProficiencyId, ItemSlotId, ItemSpecialId,
-  ItemStatId, PrerequisiteId, UnitProperty2Id,
+  type ItemRandomStatGroupId, type UnitProperty2Id, GameFormulaId,
+  Item2CategoryId, Item2FamilyId, Item2Id, Item2TypeId, ItemBudgetId,
+  ItemProficiencyId, ItemSlotId, ItemSpecialId, ItemStatId, PrerequisiteId,
+  UnitProperty2Id,
 }
 import genesis_prime/table/item2
 import genesis_prime/table/item2_category
@@ -696,22 +698,12 @@ fn budget_requirements() -> List(table_store.Requirement) {
   )
 }
 
-/// The columns of an ItemStat's five entries' data, in the order of `stat_entries`.
+/// The columns of an ItemStat's five entries' data, in the order of
+/// `item_stat_kind.of_stat`.
 const stat_data_columns = [
   "itemStatData00", "itemStatData01", "itemStatData02", "itemStatData03",
   "itemStatData04",
 ]
-
-/// The kind and the data of each of an ItemStat's five entries.
-fn stat_entries(stat stat: item_stat.ItemStat) -> List(#(Int, Int)) {
-  [
-    #(stat.item_stat_type_enum00, stat.item_stat_data00),
-    #(stat.item_stat_type_enum01, stat.item_stat_data01),
-    #(stat.item_stat_type_enum02, stat.item_stat_data02),
-    #(stat.item_stat_type_enum03, stat.item_stat_data03),
-    #(stat.item_stat_type_enum04, stat.item_stat_data04),
-  ]
-}
 
 /// The check that the UnitProperty2 row the `index`th entry of an ItemStat names
 /// exists, for the entries of kind 1, the data of which is a property.
@@ -726,18 +718,12 @@ fn stat_property_requirement(
     missing: fn(tables) {
       item_stat.all(tables)
       |> list.filter_map(fn(stat) {
-        stat_entries(stat:) |> list.drop(index) |> list.first
+        item_stat_kind.of_stat(stat) |> list.drop(index) |> list.first
       })
-      |> list.filter_map(fn(pair) {
-        let #(kind, property_id) = pair
-        case
-          kind == 1
-          && result.is_error(unit_property2.get(
-            tables:,
-            id: UnitProperty2Id(property_id),
-          ))
-        {
-          True -> Ok(property_id)
+      |> list.filter_map(fn(kind) {
+        use property_id <- result.try(item_stat_kind.property_of(kind))
+        case result.is_error(unit_property2.get(tables:, id: property_id)) {
+          True -> Ok(property_id.value)
           False -> Error(Nil)
         }
       })
@@ -1044,13 +1030,12 @@ fn budget(
   |> result.map(fn(given) { Given(..given, values: list.reverse(given.values)) })
 }
 
-/// The entries of an ItemStat: each kind, property and share of the ItemBudget.
+/// The entries of an ItemStat: each kind and share of the ItemBudget.
 fn entries(
   stat stat: item_stat.ItemStat,
   shares shares: List(Float),
-) -> List(#(Int, Int, Float)) {
-  list.zip(stat_entries(stat:), shares)
-  |> list.map(fn(entry) { #(entry.0.0, entry.0.1, entry.1) })
+) -> List(#(Kind, Float)) {
+  list.zip(item_stat_kind.of_stat(stat), shares)
 }
 
 /// What the item's random-stat word chooses for one entry: nothing when the word
@@ -1075,24 +1060,22 @@ fn give_entry(
   builder builder: Builder,
   scale scale: Float,
   given given: Given,
-  entry entry: #(Int, Int, Float),
+  entry entry: #(Kind, Float),
   choice choice: Choice,
 ) -> Result(Given, ItemPropertyError) {
-  let #(kind, property_id, share) = entry
+  let #(kind, share) = entry
   case kind {
     // None.
-    0 -> Ok(given)
+    item_stat_kind.NoStat -> Ok(given)
     // A random property crafting picks: nothing is given until crafting is
     // built (open issue #53).
-    4 -> Ok(given)
+    item_stat_kind.CraftingSocket -> Ok(given)
     // A random stat group: the word's choice picks the row.
-    2 ->
+    item_stat_kind.RandomGroup(item_random_stat_group_id: group_id) ->
       case choice {
         NoData -> Ok(given)
         Chosen(entry: index, row:, word:) ->
-          case
-            list.drop(random_group(tables:, group_id: property_id), row - 1)
-          {
+          case list.drop(random_group(tables:, group_id:), row - 1) {
             [picked, ..] if row >= 1 ->
               give_picked(tables:, builder:, scale:, given:, share:, picked:)
             _ ->
@@ -1104,8 +1087,17 @@ fn give_entry(
           }
       }
     // A property.
-    1 -> give_property(tables:, builder:, scale:, given:, property_id:, share:)
-    _ -> Error(Unread(item2_id: builder.item.id, gap: StatKind(kind:)))
+    item_stat_kind.Property(unit_property2_id:) ->
+      give_property(
+        tables:,
+        builder:,
+        scale:,
+        given:,
+        property_id: unit_property2_id.value,
+        share:,
+      )
+    item_stat_kind.Unread(kind_number:) ->
+      Error(Unread(item2_id: builder.item.id, gap: StatKind(kind: kind_number)))
   }
 }
 
@@ -1117,17 +1109,25 @@ fn give_picked(
   share share: Float,
   picked picked: item_random_stat.ItemRandomStat,
 ) -> Result(Given, ItemPropertyError) {
-  case picked.item_stat_type_enum {
-    1 ->
+  let kind = item_stat_kind.of_random_row(picked)
+  case kind {
+    item_stat_kind.Property(unit_property2_id:) ->
       give_property(
         tables:,
         builder:,
         scale:,
         given:,
-        property_id: picked.item_stat_data,
+        property_id: unit_property2_id.value,
         share:,
       )
-    kind -> Error(Unread(item2_id: builder.item.id, gap: StatKind(kind:)))
+    item_stat_kind.NoStat
+    | item_stat_kind.RandomGroup(_)
+    | item_stat_kind.CraftingSocket
+    | item_stat_kind.Unread(_) ->
+      Error(Unread(
+        item2_id: builder.item.id,
+        gap: StatKind(kind: item_stat_kind.number_of(kind)),
+      ))
   }
 }
 
@@ -1147,18 +1147,18 @@ fn give_property(
 /// them in: the row a choice b names is the b-th (`ItemRandomStat.itemRandomStatGroupId`).
 pub fn random_group(
   tables tables: table_store.Tables,
-  group_id group_id: Int,
+  group_id group_id: ItemRandomStatGroupId,
 ) -> List(item_random_stat.ItemRandomStat) {
   item_random_stat.all(tables)
-  |> list.filter(fn(row) { row.item_random_stat_group_id == group_id })
+  |> list.filter(fn(row) { row.item_random_stat_group_id == group_id.value })
 }
 
-/// The kind and data of each of an item's five ItemStat entries, none for an item with no
+/// The kind of each of an item's five ItemStat entries, none for an item with no
 /// ItemStat.
 pub fn stat_entries_of(
   tables tables: table_store.Tables,
   item2_id item2_id: Int,
-) -> Result(List(#(Int, Int)), ItemPropertyError) {
+) -> Result(List(Kind), ItemPropertyError) {
   use item <- result.try(
     item2.get(tables:, id: Item2Id(item2_id))
     |> result.replace_error(NoRow(table: "Item2", id: item2_id)),
@@ -1166,7 +1166,7 @@ pub fn stat_entries_of(
   use <- bool.guard(item.item_stat_id == 0, Ok([]))
   item_stat.get(tables:, id: ItemStatId(item.item_stat_id))
   |> result.replace_error(NoRow(table: "ItemStat", id: item.item_stat_id))
-  |> result.map(fn(stat) { stat_entries(stat:) })
+  |> result.map(item_stat_kind.of_stat)
 }
 
 /// Whether the client's builder accepts the property for an entry of the item: `False`

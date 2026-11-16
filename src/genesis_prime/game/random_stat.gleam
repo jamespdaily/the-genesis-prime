@@ -39,10 +39,11 @@
 ////   Item2 row GameFormula 1214 names, which has no ItemStat (`0x1404445d0.proxy`).
 
 import genesis_prime/game/item_property
+import genesis_prime/game/item_stat_kind
 import genesis_prime/game/random_stat_word
 import genesis_prime/random
 import genesis_prime/store.{type NewStack}
-import genesis_prime/table/id.{Item2Id}
+import genesis_prime/table/id.{type ItemRandomStatGroupId, Item2Id}
 import genesis_prime/table/item2
 import genesis_prime/table/item_random_stat.{type ItemRandomStat}
 import genesis_prime/table/loader/store as table_store
@@ -148,13 +149,16 @@ fn choices(
   let assert Ok(entries) = item_property.stat_entries_of(tables:, item2_id:)
     as "the item's ItemStat is a row of the ItemStat table"
   use <- bool.guard(item_property.is_proxy(item), Error(Nil))
-  use <- bool.guard(list.any(entries, fn(entry) { entry.0 == 4 }), Error(Nil))
+  use <- bool.guard(
+    list.any(entries, item_stat_kind.is_crafting_socket),
+    Error(Nil),
+  )
   list.try_fold(
     entries,
     Fold(chosen: [], left: fractions, taken: dict.new(), used: 0),
     fn(fold, entry) {
       case entry {
-        #(2, group_id) -> {
+        item_stat_kind.RandomGroup(item_random_stat_group_id: group_id) -> {
           let #(fraction, left) = case fold.left {
             [first, ..rest] -> #(first, rest)
             [] -> #(0.0, [])
@@ -173,7 +177,11 @@ fn choices(
             used: fold.used + 1,
           )
         }
-        _ -> Ok(Fold(..fold, chosen: [0, ..fold.chosen]))
+        item_stat_kind.NoStat
+        | item_stat_kind.Property(_)
+        | item_stat_kind.CraftingSocket
+        | item_stat_kind.Unread(_) ->
+          Ok(Fold(..fold, chosen: [0, ..fold.chosen]))
       }
     },
   )
@@ -185,11 +193,11 @@ fn choices(
 fn pick(
   tables tables: table_store.Tables,
   item2_id item2_id: Int,
-  group_id group_id: Int,
+  group_id group_id: ItemRandomStatGroupId,
   taken taken: Dict(Int, List(Int)),
   fraction fraction: Float,
 ) -> Result(#(Int, Dict(Int, List(Int))), Nil) {
-  let held = result.unwrap(dict.get(taken, group_id), [])
+  let held = result.unwrap(dict.get(taken, group_id.value), [])
   let candidates =
     item_property.random_group(tables:, group_id:)
     |> list.index_map(fn(row, index) { #(index + 1, row) })
@@ -206,7 +214,7 @@ fn pick(
         })
       let position =
         weighted(candidates:, target: fraction *. total, before: 0.0)
-      Ok(#(position, dict.insert(taken, group_id, [position, ..held])))
+      Ok(#(position, dict.insert(taken, group_id.value, [position, ..held])))
     }
   }
 }
@@ -239,13 +247,20 @@ fn accepted(
   item2_id item2_id: Int,
   row row: ItemRandomStat,
 ) -> Bool {
-  use <- bool.guard(row.item_stat_type_enum != 1, False)
-  let assert Ok(takes) =
-    item_property.takes_property(
-      tables:,
-      item2_id:,
-      property_id: row.item_stat_data,
-    )
-    as "the builder accepts or refuses the property"
-  takes
+  case item_stat_kind.of_random_row(row) {
+    item_stat_kind.Property(unit_property2_id:) -> {
+      let assert Ok(takes) =
+        item_property.takes_property(
+          tables:,
+          item2_id:,
+          property_id: unit_property2_id.value,
+        )
+        as "the builder accepts or refuses the property"
+      takes
+    }
+    item_stat_kind.NoStat
+    | item_stat_kind.RandomGroup(_)
+    | item_stat_kind.CraftingSocket
+    | item_stat_kind.Unread(_) -> False
+  }
 }

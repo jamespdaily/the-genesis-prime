@@ -146,7 +146,7 @@ pub fn target_group_membership_follows_the_clients_cases_test() -> Nil {
 
   assert [90_021, 90_022, 90_023, 90_024, 90_025, 90_026, 90_027]
     |> list.all(fn(group) { !member(group) })
-    as "types 5 to 9 and any type the client has no case for are never members"
+    as "types 5 to 9 are never members, a gap of the server (it holds no race, class or 0x262 set value; 58 type 9 groups are reached by a server rule, open issue #897 until the coordinator files the one that closes it); any type the client has no case for is never a member"
   assert !member(99_998) as "a group with no row is not a member"
 
   assert target_group.contains(
@@ -175,4 +175,54 @@ pub fn target_group_membership_follows_the_clients_cases_test() -> Nil {
     )
     == False
     as "and not race 171"
+}
+
+pub fn creatures_of_a_group_are_the_non_zero_words_of_a_type_1_group_only_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use tables <- with_groups(groups: [
+    #(90_101, 1, [0, 5, 7]),
+    #(90_102, 2, [5]),
+    #(90_103, 3, [5]),
+    #(90_104, 5, [5]),
+    #(90_105, 9, [5]),
+    #(90_106, 10, [90_101]),
+    #(90_107, 12, [5]),
+  ])
+  assert target_group.creatures_of(tables:, group: 90_101)
+    == [Creature2Id(5), Creature2Id(7)]
+    as "0x1403b4a20: a type 1 group tests its non-zero words against the unit's Creature2 id"
+  assert list.flat_map(
+      [90_102, 90_103, 90_104, 90_105, 90_106, 90_107, 99_998],
+      fn(group) { target_group.creatures_of(tables:, group:) },
+    )
+    == []
+    as "a group of another type names no Creature2 ids, and a group with no row none"
+}
+
+pub fn listed_creatures_follow_type_1_words_and_the_sub_groups_of_types_10_and_11_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use tables <- with_groups(groups: [
+    #(90_101, 1, [0, 5, 7]),
+    #(90_102, 2, [5]),
+    #(90_103, 3, [5]),
+    #(90_104, 5, [5]),
+    #(90_105, 9, [5]),
+    #(90_107, 12, [5]),
+    #(90_111, 1, [7, 9]),
+    #(90_112, 11, [90_101, 90_102, 90_111]),
+    #(90_113, 10, [90_113, 90_111, 90_101]),
+    #(90_114, 11, [90_115]),
+    #(90_115, 11, [90_114, 90_111]),
+  ])
+  let listed = fn(group) { target_group.listed_creatures(tables:, group:) }
+  assert listed(90_101) == [5, 7] as "a type 1 group lists its non-zero words"
+  assert list.flat_map([90_102, 90_103, 90_104, 90_105, 90_107, 99_998], listed)
+    == []
+    as "the other types hold a unit by a test of something else, so they list none; a missing row lists none"
+  assert listed(90_112) == [5, 7, 9]
+    as "a type 11 group lists its sub-groups' creatures depth first, each once"
+  assert listed(90_113) == [7, 9, 5]
+    as "a type 10 group lists its sub-groups too, skipping its own id and the creature 7 it already listed"
+  assert listed(90_114) == [7, 9]
+    as "two groups naming each other end where the first is met again"
 }

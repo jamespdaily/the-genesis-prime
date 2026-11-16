@@ -16,6 +16,7 @@
 import client_tables
 import fixture_tables
 import genesis_prime/game/item_property
+import genesis_prime/game/item_stat_kind
 import genesis_prime/game/random_stat
 import genesis_prime/game/random_stat_word
 import genesis_prime/table/item2
@@ -245,7 +246,15 @@ pub fn every_client_random_stat_row_rolls_to_a_word_the_client_accepts_or_none_w
     list.filter(item2.all(tables), fn(item) {
       item_property.stat_entries_of(tables:, item2_id: item.id)
       |> result.map(fn(entries) {
-        list.any(entries, fn(entry) { entry.0 == 2 })
+        list.any(entries, fn(entry) {
+          case entry {
+            item_stat_kind.RandomGroup(_) -> True
+            item_stat_kind.NoStat
+            | item_stat_kind.Property(_)
+            | item_stat_kind.CraftingSocket
+            | item_stat_kind.Unread(_) -> False
+          }
+        })
       })
       |> result.unwrap(or: False)
     })
@@ -309,4 +318,64 @@ pub fn every_client_random_stat_row_rolls_to_a_word_the_client_accepts_or_none_w
     })
     == []
     as "a rolled word never turns an item the reader gives into one it refuses, and an unread item stays unread for its own reason"
+}
+
+/// A row the roll takes as a candidate is a kind 1 row whose property the builder takes;
+/// a row of another kind is no candidate, since the client's builder fails a word naming
+/// it with 0x70 (`0x14040e6d0`, `0x14040d5d0`). Item2 48169's group 11 has rows 34 to 38
+/// of properties 34, 47, 32, 29 and 57. With row 34 changed to kind 2, entry 0 at
+/// fraction 0 takes the first row left, position 2, where the table as the client has it
+/// gives position 1; with every row of the group changed the item gets no roll.
+pub fn a_random_row_of_another_kind_than_1_is_no_candidate_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let item2_id = fixture_tables.root("Item2", bracer)
+  let assert Ok(rows) =
+    fixture_tables.change(
+      rows: fixture_tables.rows(),
+      table: "ItemRandomStat",
+      id: 34,
+      with: [#("itemStatTypeEnum", Integer(2))],
+    )
+    as "ItemRandomStat 34 is in the fixture"
+  use without_first <- fixture_tables.on_rows(rows:, reaching: [])
+  assert random_stat.roll(tables: without_first, item2_id:, entropy: <<
+      0:size(96),
+    >>)
+    == 0x0100000000040302
+    as "the rows left are positions 2 to 5: the entries at fraction 0 take 2, 3 and 4"
+  assert random_stat.roll_bytes(tables: without_first, item2_id:) == 12
+    as "the item still rolls three entries"
+  let assert Ok(all_rows) =
+    list.try_fold([34, 35, 36, 37, 38], fixture_tables.rows(), fn(rows, id) {
+      fixture_tables.change(rows:, table: "ItemRandomStat", id:, with: [
+        #("itemStatTypeEnum", Integer(3)),
+      ])
+    })
+    as "rows 34 to 38 are in the fixture"
+  use none <- fixture_tables.on_rows(rows: all_rows, reaching: [])
+  assert random_stat.roll_bytes(tables: none, item2_id:) == 0
+    as "no row of group 11 is a candidate: no bytes are drawn"
+  assert random_stat.roll(tables: none, item2_id:, entropy: <<>>) == 0
+    as "the word is 0, which the client reads as no data"
+}
+
+/// Each kind-2 entry takes one fraction, in entry order, and an entry of another kind
+/// takes none (`0x14040e6d0`: byte i serves entry i alone). ItemStat 432 with entry 0
+/// changed to kind 1: entries 1 and 2 take the first two fractions.
+pub fn each_kind_2_entry_takes_one_fraction_in_entry_order_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let item2_id = fixture_tables.root("Item2", bracer)
+  use tables <- fixture_tables.changed(table: "ItemStat", id: 432, with: [
+    #("itemStatTypeEnum00", Integer(1)),
+    #("itemStatData00", Integer(35)),
+  ])
+  // Entry 1 at 0.5 picks from the five rows of group 11: its target is 2.5, and the
+  // running weights 1, 2, 3 put the third, row 3, first above it. Entry 2 at 0.0 picks
+  // the first row left, row 1.
+  assert random_stat.roll(tables:, item2_id:, entropy: <<
+      0x80000000:size(32),
+      0x00000000:size(32),
+    >>)
+    == 0x0100000000010300
+    as "entry 0 (kind 1) holds 0; entry 1 takes the first fraction and entry 2 the second"
 }
