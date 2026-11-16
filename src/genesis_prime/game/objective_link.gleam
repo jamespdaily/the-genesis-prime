@@ -35,6 +35,7 @@ import gleam/bool
 import gleam/dict
 import gleam/list
 import gleam/result
+import gleam/set.{type Set}
 
 /// The index a questAnim column holds to name the quest alone.
 const quest_alone = -1
@@ -56,6 +57,34 @@ pub fn links(
         ),
       )
   }
+}
+
+/// The key of the linked objectives in the tables' store.
+const linked_key: table_store.DerivedKey(Set(#(Int, Int))) =
+  table_store.DerivedKey("LinkedObjectives")
+
+/// The set of linked objectives as a value the tables' load builds once, under the tables'
+/// key, after the activations whose prerequisites it reads.
+pub fn derivation() -> table_store.Derivation {
+  table_store.derivation(key: linked_key, build: fn(tables) {
+    Ok(
+      creature2.all(tables)
+      |> list.filter(has_link)
+      |> list.flat_map(fn(row) {
+        links(tables:, creature_id: creature2.id(row))
+      })
+      |> set.from_list,
+    )
+  })
+}
+
+/// Whether some creature's row links the quest's objective at `index` (`links`).
+pub fn is_linked(
+  tables tables: table_store.Tables,
+  quest_id quest_id: Int,
+  index index: Int,
+) -> Bool {
+  set.contains(table_store.derived(tables:, key: linked_key), #(quest_id, index))
 }
 
 /// Whether the creature's row names a quest animation or an animation prerequisite
