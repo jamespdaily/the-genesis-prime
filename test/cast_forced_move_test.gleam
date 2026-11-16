@@ -222,6 +222,7 @@ pub fn a_forced_move_behind_a_type_37_gate_takes_one_roll_and_is_listed_when_it_
     })
   assert cast.rolls_needed(
       cast: state,
+      caster: support.caster().unit_id,
       cast_id: asked.cast_id,
       phase: asked.phase,
       struck: [],
@@ -452,6 +453,7 @@ pub fn a_throw_behind_a_type_37_gate_takes_one_roll_and_is_thrown_when_it_passes
   let assert [asked] = support.goes_asked(effects: raw)
   assert cast.rolls_needed(
       cast: state,
+      caster: support.caster().unit_id,
       cast_id: asked.cast_id,
       phase: asked.phase,
       struck: creatures,
@@ -528,6 +530,7 @@ pub fn a_throw_behind_a_type_37_target_gate_takes_one_roll_for_each_creature_it_
   let rolls_for = fn(struck) {
     cast.rolls_needed(
       cast: state,
+      caster: support.caster().unit_id,
       cast_id: asked.cast_id,
       phase: asked.phase,
       struck:,

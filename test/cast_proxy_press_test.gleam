@@ -541,6 +541,7 @@ fn go_of(
     asked.spell4_id.value,
     cast.rolls_needed(
       cast: pressed,
+      caster: support.caster().unit_id,
       cast_id: asked.cast_id,
       phase: asked.phase,
       struck: support.hits([99]),

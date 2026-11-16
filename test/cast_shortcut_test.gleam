@@ -966,12 +966,12 @@ pub fn a_caster_condition_of_an_unread_type_refuses_as_not_built_test() -> Nil {
 
 pub fn a_press_of_a_targeted_spell_that_cannot_be_planned_stays_not_built_test() -> Nil {
   use <- owned_test.run(10_000)
-  // Spell4 35436's Spell4Effects 212028 aimed by a union flag (targetFlags 3), which
+  // Spell4 35436's Spell4Effects 212028 aimed by a flag with bit 8 (targetFlags 9), which
   // `spell_plan.aim_of` does not read, so the spell cannot be planned.
   use tables <- fixture_tables.changed(
     table: "Spell4Effects",
     id: 212_028,
-    with: [#("targetFlags", Integer(3))],
+    with: [#("targetFlags", Integer(9))],
   )
   let scene =
     Scene(..nothing_shown(), units: [unit(id: 913, of: 32_668, at: 10.0)])
@@ -986,7 +986,7 @@ pub fn a_press_of_a_targeted_spell_that_cannot_be_planned_stays_not_built_test()
     )
   assert support.refusal_results(effects:)
     == [code(cast_result.IllegalSpellCast)]
-    as "a union aim is not read, so the plan refuses the spell and its press is refused 285"
+    as "a bit-8 aim is not read, so the plan refuses the spell and its press is refused 285"
   let assert [line] = warnings(effects:)
   assert string.contains(line, "35436") && string.contains(line, "(#336)")
     as "the log names the spell and the issue that will close the gap, #336"

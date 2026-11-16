@@ -873,6 +873,38 @@ Spell4	48373	Blessing of Dominus: six caster-aimed ItemVisualSwap rows (122321 t
 Spell4	36149	one ItemVisualSwap row 74394 with no delay, no duration and no flags	cast_listed_effect_test
 Creature2	32852	Varonia Cazalon (Dominion Arkship Tutorial): activate spell 48373, cast time 0, anim state quest 7007 objective index 1	game_connection_activate_test
 Quest2	7007	the quest whose objective index 1 (QuestObjective 16063) opens Varonia Cazalon's link	game_connection_activate_test
+Spell4Effects	196409	a damage row (Spell4 75957, type 8) aimed by flags 5	spell_plan_union_aim_test
+Spell4Effects	196408	a Proxy (Spell4 75957, type 26) aimed by flags 5, in a spell that hits foes	spell_plan_union_aim_test, cast_union_aim_test
+Spell4Effects	60607	a crowd control row (Spell4 32236, type 4) aimed by flags 5	spell_plan_union_aim_test
+Spell4Effects	64390	a Proxy (Spell4 33262, type 26) aimed by flags 5, in a spell that hits no foes	spell_plan_union_aim_test
+Spell4Effects	43635	a Fluff row (Spell4 26579, type 17) aimed by flags 5, in a spell that hits no foes	spell_plan_union_aim_test
+Spell4Effects	47702	a Fluff row (Spell4 28003, type 17) aimed by flags 7, in a spell that hits no foes	spell_plan_union_aim_test
+Spell4Effects	121485	a Fluff row (Spell4 51546, type 17) aimed by flags 3, in a spell that hits no foes	spell_plan_union_aim_test
+Spell4Effects	72210	a Fluff row (Spell4 35662, type 17) aimed by flags 7, in a spell that hits foes	spell_plan_union_aim_test, cast_union_aim_test
+Spell4Effects	121619	a SpellForceRemove row (Spell4 51524, type 80) aimed by flags 5, in a spell that hits foes	spell_plan_union_aim_test
+Spell4Effects	112871	a Scale row (Spell4 47982, type 81) aimed by flags 7, in a spell that hits foes	spell_plan_union_aim_test
+Spell4Effects	111951	a ravel row (Spell4 47658, type 18) aimed by flags 3, in a spell that hits no foes	spell_plan_union_aim_test
+Spell4Effects	90024	a Proxy (Spell4 40529, type 26) aimed by flags 3, in a spell that hits no foes	spell_plan_union_aim_test
+Spell4Effects	123870	urgency (Spell4 52400, type 10) aimed by flags 7, in a spell that hits no foes	spell_plan_union_aim_test, cast_union_aim_test
+Spell4Effects	55294	Shield Surge (Spell4 30356, type 118) aimed by flags 5, in a spell that hits no foes	spell_plan_union_aim_test
+Spell4Effects	3639	a UnitPropertyModifier (Spell4 2252, type 11) aimed by flags 5, in a spell that hits no foes	spell_plan_union_aim_test, cast_union_aim_test
+Spell4Effects	9717	a UnitPropertyModifier (Spell4 5425, type 11) aimed by flags 3, in a spell that hits no foes	spell_plan_union_aim_test
+Spell4Effects	11846	a damage row (Spell4 6518, type 8) aimed by flags 7	spell_plan_union_aim_test, spell_area_test
+Spell4Effects	182108	a crowd control row (Spell4 71091, type 4) aimed by flags 3 that lasts until removed	spell_plan_union_aim_test
+Spell4Effects	49023	a ForcedMove row (Spell4 28467, type 3) aimed by flags 5, in a spell that hits foes	spell_plan_union_aim_test, cast_union_aim_test
+Spell4Effects	49040	a crowd control row (Spell4 28467, type 4) aimed at the area, which makes that spell hit foes	spell_plan_union_aim_test, cast_union_aim_test
+Spell4Effects	72206	a damage row (Spell4 35662, type 8) aimed at the area, which makes that spell hit foes	spell_plan_union_aim_test, cast_union_aim_test
+Spell4Effects	112868	a damage row (Spell4 47982, type 8) aimed by flags 6, which makes that spell hit foes	spell_plan_union_aim_test
+Spell4Effects	121395	a damage row (Spell4 51524, type 8) aimed at the area, which makes that spell hit foes	spell_plan_union_aim_test
+Spell4GroupList	1159	the row that holds spell group 429, which SpellForceRemove row 121619 names as its selector	spell_plan_union_aim_test
+Spell4	75957	a spell with a damage row and a Proxy, both aimed by flags 5	spell_plan_union_aim_test, cast_union_aim_test
+Spell4	32236	a spell with a crowd-control row aimed by flags 5	spell_plan_union_aim_test
+Spell4	6518	a spell with a damage row aimed by flags 7	spell_area_test
+Spell4	28467	a spell with a ForcedMove row aimed by flags 5 and a crowd-control row at the area	spell_plan_union_aim_test, cast_union_aim_test
+Spell4	71091	a spell with a crowd-control row aimed by flags 3 that lasts until removed	spell_plan_union_aim_test
+Spell4	35662	a spell with a Fluff row aimed by flags 7 and a damage row at the area	cast_union_aim_test
+Spell4	5425	a spell with a property modifier row aimed by flags 3	cast_union_aim_test
+Spell4	52400	a spell with a Heal row aimed by flags 7 and no damage or crowd-control row	cast_union_aim_test
 Spell4	42603	Precision Fire Test A (a RapidTap press with no threshold time and three caster-gated Proxy rows 96985, 96992 and 96993, to spells 42604, 42605 and 42606)	spell_plan_proxy_press_test, cast_proxy_press_test, game_connection_proxy_press_test
 Spell4	42605	Precision Fire Test A, tier 1: the spell the second Proxy of 42603 casts	spell_plan_proxy_press_test, cast_proxy_press_test, game_connection_proxy_press_test
 Spell4	36942	Soothe, Heal Proxy 3: a press whose gate 5060 is a type 28 condition, Proxy rows 78288 and 200559 to spell 32822	cast_proxy_press_test

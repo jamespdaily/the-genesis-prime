@@ -377,6 +377,7 @@ pub fn a_row_behind_a_type_37_gate_takes_one_roll_and_is_listed_when_it_passes_t
     })
   assert cast.rolls_needed(
       cast: state,
+      caster: support.caster().unit_id,
       cast_id: asked.cast_id,
       phase: asked.phase,
       struck: [],

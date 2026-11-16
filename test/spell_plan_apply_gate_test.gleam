@@ -48,7 +48,7 @@ fn effect_row_in(
 
 /// The place of a spell no Proxy starts on each struck unit, whose costs spend nothing.
 fn no_proxy_place() -> spell_plan.RowPlace {
-  spell_plan.RowPlace(struck_by: None, spends_all: False)
+  spell_plan.RowPlace(struck_by: None, spends_all: False, hits_foes: False)
 }
 
 /// Whether the coverage measure counts the client's row `id` as read in `tables`.

@@ -10,11 +10,14 @@ import client_tables
 import coverage_support
 import database_support
 import genesis_prime/coverage/checklist
+import genesis_prime/coverage/effect_row
 import genesis_prime/coverage/engine.{type EngineDeclaration}
 import genesis_prime/coverage/measurement.{
   type Measurement, type TypeLine, HandledWithGap, Measured,
 }
+import genesis_prime/game/spell_plan
 import genesis_prime/table/spell4_effects
+import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/string
@@ -102,8 +105,8 @@ pub fn the_measure_counts_a_proxy_that_names_no_spell_or_aims_elsewhere_as_not_r
   use <- unitest.guard(client_tables.present())
   let #(rows, unread, starting, starting_unread) = counted(type_number: 26)
   assert rows == 16_929 as "scratch count: effectType=26 holds 16,929 rows"
-  assert unread == 1986
-    as "scratch count: 1,808 rows hold a dataBits00 of 0, which names no spell (`Spell4Effects.effectType.26` counts the same 1,808), 170 more aim by a flag other than 1, 2, 4 and 6 and 8 more, otherwise read, hold a phaseFlags of 0, which no phase selects: 1,986 of 16,929"
+  assert unread == 1984
+    as "scratch count: 1,808 rows hold a dataBits00 of 0, which names no spell (`Spell4Effects.effectType.26` counts the same 1,808), 170 more aim by a flag other than 1, 2, 4 and 6 and 8 more, otherwise read, hold a phaseFlags of 0, which no phase selects: 1,986 of 16,929, less the 2 Proxies aimed by 3, 5 or 7 that a spell hitting foes now starts on its struck units (#794; the 167 more in a spell that hits no foes stay refused, `FriendlyAreaNotRead`, #834): 1,984"
   assert #(starting, starting_unread) == #(81, 2)
     as "scratch count over the starting rows: 72 of type 26 and the 9 Proxy rows of 76002, the alternate Spell Surge swaps 43468 for (Spell4.spell4IdMechanicAlternateSpell), and 121345 and 178429 hold a dataBits00 of 0"
 }
@@ -165,8 +168,8 @@ pub fn the_measure_counts_a_force_remove_whose_selector_names_no_row_as_not_read
   use <- owned_test.run(600_000)
   use <- unitest.tags(["dev_tool", "coverage"])
   use <- unitest.guard(client_tables.present())
-  assert counted(type_number: 80).1 == 396
-    as "scratch count over `table_rows -- Spell4Effects effectType=80`, in the order the plan checks a row: 58 aimed by a flag other than 1, 2, 4 and 6, 35 more whose dataBits00 and dataBits01 name no spell group (685 group ids in Spell4GroupList), Spell4 or Spell4Base, 220 more whose dataBits03 and dataBits04 differ, 77 more behind a target apply prerequisite that holds a type the plan does not read or, aimed past the caster, one that reads a struck unit's own state (145 of the 243 behind one are read), and 9 more, otherwise read, behind a caster apply prerequisite that holds a type the plan does not read (a go cannot tell whether the caster passes it): 399 of 2,294, less 181558 (Prerequisite 30070), 204279 (15243) and 222419 (40421), each behind a target apply whose one condition is type 50, which a struck subject decides now (`prerequisite_struck_test`): 396 of 2,294"
+  assert counted(type_number: 80).1 == 375
+    as "scratch count over `table_rows -- Spell4Effects effectType=80`, in the order the plan checks a row: 58 aimed by a flag other than 1, 2, 4 and 6, 35 more whose dataBits00 and dataBits01 name no spell group (685 group ids in Spell4GroupList), Spell4 or Spell4Base, 220 more whose dataBits03 and dataBits04 differ, 77 more behind a target apply prerequisite that holds a type the plan does not read or, aimed past the caster, one that reads a struck unit's own state (145 of the 243 behind one are read), and 9 more, otherwise read, behind a caster apply prerequisite that holds a type the plan does not read (a go cannot tell whether the caster passes it): 399 of 2,294, less 181558 (Prerequisite 30070), 204279 (15243) and 222419 (40421), each behind a target apply whose one condition is type 50, which a struck subject decides now (`prerequisite_struck_test`): 396 of 2,294; the 57 aimed by 3, 5 or 7 (#794): 21 are read now, 26 stay refused in a spell that hits no foes (`FriendlyAreaNotRead`, #834) and 10 on another gate (a selector that names no row, 8 rows, a Spell4 the table lacks, 30731, and 76677 behind a target apply prerequisite); the other 10 of the 31 the flags alone would free (the brief) were counted before those gates: 375 of 2,294"
 }
 
 pub fn the_measure_totals_match_the_plan_test() -> Nil {
@@ -200,6 +203,81 @@ pub fn the_coverage_measure_leaves_295_type_3_rows_unread_test() -> Nil {
     as "the gap names the rows still unread and the issue that will read them"
   assert !string.contains(reason, "(#336)")
     as "the rows aimed at other units are no longer the gap"
+}
+
+pub fn coverage_counts_the_union_rows_as_read_test() -> Nil {
+  use <- owned_test.run(600_000)
+  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.every_table()
+  let effects = spell4_effects.all(client_tables.shared())
+  let spell_groups = spell_plan.spell_groups(tables:)
+  let place_of = effect_row.places(tables:, effects:)
+  let union_rows =
+    list.filter(effects, fn(row) {
+      list.contains([3, 5, 7], row.target_flags)
+      && list.contains([4, 8, 17, 18, 26, 80, 81], row.effect_type)
+    })
+  let read =
+    list.filter(union_rows, fn(row) {
+      effect_row.is_read(
+        tables:,
+        spell_groups:,
+        place: place_of(row.spell_id),
+        effect: row,
+      )
+    })
+  let friendly_area =
+    list.filter(union_rows, fn(row) {
+      spell_plan.read_row(
+        tables:,
+        spell_groups:,
+        place: place_of(row.spell_id),
+        effect: row,
+      )
+      == Error(spell_plan.FriendlyAreaNotRead(
+        spell4_id: row.spell_id,
+        effect_id: row.id,
+        target_flags: row.target_flags,
+      ))
+    })
+  assert by_type(read)
+    == [#(4, 8), #(8, 13), #(17, 169), #(18, 2), #(26, 2), #(80, 21), #(81, 59)]
+    as "scratch count, a row-by-row comparison of the plan on main (every one of these rows refused, `aim_of` read 1 to 7 as 1, 2, 4, 6 only) with this one: 274 of the 294 rows the brief counted by their flags alone are read now; of the other 20, 7 damage rows (type 8) fail the area load on its other gates, 10 force removes (type 80) fail theirs (a selector that names no row, a missing Spell4, a target apply prerequisite) and 3 rows (type 81) sit behind an apply prerequisite the plan cannot check (25911, 26254, 26256)"
+  assert by_type(friendly_area)
+    == [#(17, 84), #(18, 3), #(26, 167), #(80, 26), #(81, 21)]
+    as "scratch count over the same rows: 301 rows aimed by 3, 5 or 7 in a spell that hits no foes (a row of kind Damage or CrowdControl aimed by 2 to 7) are refused for their area bit (#834), the brief's 301 by type"
+  let unread = effect_row.unread_by_type(tables:, effects:)
+  let unread_of = fn(type_number) {
+    let assert Ok(count) = dict.get(unread, type_number)
+      as "the type still has rows the plan does not read"
+    count
+  }
+  assert list.map([1, 3, 10, 11, 29, 52, 118], unread_of)
+    == [1367, 153, 1056, 307, 257, 2, 83]
+    as "the reviewer's measurement of the rows unread by type 1, 3, 10, 11, 29, 52 and 118, equal on main and on this branch: the union reading moves none of them, and no absorb or Interrupt Armor row aimed by flags 3 or 7 sits in a spell a Proxy starts on each struck unit (no_absorb_or_armor_row_aimed_by_flags_3_or_7_is_in_a_child_started_on_each_struck_unit_test), so the struck-unit refusal moves none either"
+  let proxies_naming_no_spell =
+    list.filter(union_rows, fn(row) {
+      row.effect_type == 26
+      && spell_plan.read_row(
+        tables:,
+        spell_groups:,
+        place: place_of(row.spell_id),
+        effect: row,
+      )
+      == Ok(spell_plan.LeftOut(why: spell_plan.ProxyNamesNoSpell))
+    })
+  assert list.length(proxies_naming_no_spell) == 49
+    as "the Proxy rows aimed by 3, 5 or 7 whose dataBits00 names no spell stay 49 (the brief's count): the union reading changes which unit a row reaches, not which Proxy names a spell"
+}
+
+/// How many of the rows hold each effect type, as #(type, count) in type order.
+fn by_type(rows: List(spell4_effects.Spell4Effects)) -> List(#(Int, Int)) {
+  rows
+  |> list.group(fn(row) { row.effect_type })
+  |> dict.map_values(fn(_, group) { list.length(group) })
+  |> dict.to_list
+  |> list.sort(fn(a, b) { int.compare(a.0, b.0) })
 }
 
 // ---- the gaps the engine states ----

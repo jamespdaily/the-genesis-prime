@@ -141,13 +141,13 @@ pub fn a_fluff_row_aimed_by_flags_that_are_not_read_fails_the_load_test() -> Nil
   use <- owned_test.run(60_000)
   assert plan_error(
       rows: spell_tables.rows_with_effect(
-        effect: effect(id: 99_010, type_: 17, target_flags: 3, columns: []),
+        effect: effect(id: 99_010, type_: 17, target_flags: 9, columns: []),
       ),
     )
     == spell_plan.LastingAimNotRead(
       spell4_id: strike,
       effect_id: 99_010,
-      target_flags: 3,
+      target_flags: 9,
     )
 }
 
@@ -579,7 +579,7 @@ pub fn every_state_is_read_on_every_simple_aim_test() -> Nil {
     #(1, spell_plan.AimsAtCaster),
     #(2, spell_plan.AimsAtPrimaryTarget),
     #(4, spell_plan.AimsAtArea),
-    #(6, spell_plan.AimsAtBoth),
+    #(6, spell_plan.AimsAtPrimaryTargetAndArea),
   ]
   list.each(aims, fn(aim) {
     let #(flags, expected_aim) = aim
@@ -619,9 +619,9 @@ pub fn every_state_is_read_on_every_simple_aim_test() -> Nil {
   })
 }
 
-pub fn union_and_bit_eight_aims_stay_refused_test() -> Nil {
+pub fn bit_eight_aims_stay_refused_test() -> Nil {
   use <- owned_test.run(60_000)
-  list.each([3, 5, 7, 9], fn(flags) {
+  list.each([9, 10, 12], fn(flags) {
     let error =
       plan_error(
         rows: spell_tables.rows_with_effect(
@@ -634,13 +634,9 @@ pub fn union_and_bit_eight_aims_stay_refused_test() -> Nil {
         effect_id: 99_040,
         target_flags: flags,
       )
-      as "aim_of reads targetFlags 1, 2, 4 and 6 only"
-    let named = case flags {
-      9 -> "#336"
-      _ -> "#794"
-    }
-    assert string.contains(spell_plan.describe(error:), named)
-      as "the refusal names the issue that will read the aim: the union aims 3, 5 and 7 are #794, bit eight (9) is #336"
+      as "aim_of reads targetFlags 1 to 7 only; a flag with bit 8 is refused"
+    assert string.contains(spell_plan.describe(error:), "#336")
+      as "the refusal names the issue that will read bit 8"
   })
 }
 

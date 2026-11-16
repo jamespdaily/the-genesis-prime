@@ -57,6 +57,7 @@ import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_base
 import genesis_prime/table/spell4_conditions
+import genesis_prime/table/spell4_effects.{type Spell4Effects}
 import genesis_prime/world_map/creature_path
 import gleam/bool
 import gleam/dict.{type Dict}
@@ -504,6 +505,16 @@ type ActivateRows {
   )
 }
 
+/// Whether a row's effect reaches a unit past the caster: its aim names the primary target or
+/// the area, or its flags are one no aim reads (which a row of a kind the plan reads then
+/// refuses itself).
+fn reaches_past_caster(effect effect: Spell4Effects) -> Bool {
+  case spell_plan.aim_of(target_flags: effect.target_flags) {
+    Ok(aim) -> spell_plan.reaches_past_caster(aim:)
+    Error(Nil) -> True
+  }
+}
+
 /// The Activate rows of the spell and the RavelSignal rows it drops, or the first effect
 /// that aims at the target or an area and that the strike would apply.
 ///
@@ -540,15 +551,13 @@ fn activate_rows_of(
     })
   let #(signals, others) =
     list.partition(others, fn(effect) {
-      spell_plan.aim_of(target_flags: effect.target_flags)
-      != spell_plan.AimsAtCaster
+      reaches_past_caster(effect:)
       && effect_kind.kind_of(effect_type: effect.effect_type)
       == effect_kind.RavelSignal
     })
   case
     list.find(others, fn(effect) {
-      spell_plan.aim_of(target_flags: effect.target_flags)
-      != spell_plan.AimsAtCaster
+      reaches_past_caster(effect:)
       && !is_heal(effect_type: effect.effect_type)
       && effect_kind.is_row_read(
         effect_type: effect.effect_type,

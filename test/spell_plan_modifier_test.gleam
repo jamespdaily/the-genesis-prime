@@ -269,7 +269,7 @@ pub fn row_aimed_at_struck_units_is_planned_test() -> Nil {
     #(
       99_063,
       6,
-      spell_plan.AimsAtBoth,
+      spell_plan.AimsAtPrimaryTargetAndArea,
       [
         #("dataBits00", Integer(130)),
         #("dataBits01", Integer(1)),
@@ -306,26 +306,40 @@ pub fn row_aimed_at_struck_units_is_planned_test() -> Nil {
   })
 }
 
-pub fn a_row_aimed_at_the_caster_and_others_is_read_for_the_caster_test() -> Nil {
+pub fn a_row_aimed_at_the_caster_and_others_is_read_for_the_caster_and_for_the_others_test() -> Nil {
   use <- owned_test.run(60_000)
-  // 3, 5 and 7 include the caster (449 rows): the caster's part is read, the rest is
-  // not applied (#570 and #569 hold the others).
-  list.each([3, 5, 7], fn(flags) {
-    let assert [row] =
-      modifiers_of(
-        row: modifier_row(id: 99_046, target_flags: flags, columns: []),
-      )
-    assert row.effect_id == Spell4EffectsId(99_046)
-    assert row.change
-      == spell_plan.PropertyChange(Change(
-        property: UnitProperty2Id(102),
-        mode: 3,
-        multiplier: 1.0,
-        flat: 0.0,
-        per_level: 0.0,
-      ))
-      as "a row that includes the caster changes the caster only"
-  })
+  // 3, 5 and 7 hold the caster's bit and others' (449 rows, `Spell4Effects.targetFlags`):
+  // the row is two, the caster's change and the others' change (#794); the stacking of
+  // casters' modifiers on one creature is not built (#569).
+  let change =
+    Change(
+      property: UnitProperty2Id(102),
+      mode: 3,
+      multiplier: 1.0,
+      flat: 0.0,
+      per_level: 0.0,
+    )
+  list.each(
+    [
+      #(3, spell_plan.AimsAtPrimaryTarget),
+      #(5, spell_plan.AimsAtArea),
+      #(7, spell_plan.AimsAtPrimaryTargetAndArea),
+    ],
+    fn(shape) {
+      let #(flags, past_the_caster) = shape
+      let assert [caster_part, others_part] =
+        modifiers_of(
+          row: modifier_row(id: 99_046, target_flags: flags, columns: []),
+        )
+      assert caster_part.effect_id == Spell4EffectsId(99_046)
+      assert caster_part.change == spell_plan.PropertyChange(change)
+        as "the caster takes the row's change"
+      assert others_part.effect_id == Spell4EffectsId(99_046)
+      assert others_part.change
+        == spell_plan.StruckChange(modifier: change, aim: past_the_caster)
+        as "the units the flag's other bits name take the same change"
+    },
+  )
 }
 
 pub fn a_row_with_flags_bit_2_lasts_until_removed_test() -> Nil {

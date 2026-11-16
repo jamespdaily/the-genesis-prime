@@ -207,11 +207,26 @@ pub fn an_absorption_row_aimed_at_the_primary_target_is_read_in_a_spell_cast_on_
     ))
     as "the spell's primary target is a struck unit, and an absorb on one is not built"
   assert spell_tables.read_row(
-      effect: Spell4Effects(..row, target_flags: 3),
+      effect: Spell4Effects(..row, target_flags: 1),
       place: on_each_struck,
     )
     |> result.is_ok
-    as "a row that includes the caster reaches the caster, whichever unit the spell is cast on"
+    as "a row that names the caster alone reaches the caster, whichever unit the spell is cast on"
+  assert list.map([3, 7], fn(flags) {
+      spell_tables.read_row(
+        effect: Spell4Effects(..row, target_flags: flags),
+        place: on_each_struck,
+      )
+    })
+    == list.repeat(
+      Error(spell_plan.AbsorptionOnStruckUnit(
+        spell4_id: 58_586,
+        proxy_effect_id: 178_143,
+        effect_id: 93_774,
+      )),
+      2,
+    )
+    as "a row that names the caster and the primary target also names the struck unit, which no absorb is built on, so the load fails as it does for flags 2"
   // The planted Telekinetic Strike holds Proxy 62204 aimed at the area (targetFlags 4),
   // which starts 30900 on each unit it strikes (`spell_tables`).
   assert plan_error(

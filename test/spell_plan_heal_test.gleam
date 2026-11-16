@@ -41,9 +41,9 @@ import genesis_prime/game/damage.{Formula, Parameter}
 import genesis_prime/game/effect_kind
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/spell_plan.{
-  AimedAtOtherUnits, AimsAtArea, AimsAtCaster, AimsAtPrimaryTarget, Always,
-  Applied, Heal, Held, Lasting, LeftOut, PlannedHeal, PlannedLasting,
-  ReadByActivation, ReadByArea, TickingHeal,
+  AimedAtOtherUnits, AimsAtArea, AimsAtCaster, AimsAtCasterAndPrimaryTarget,
+  AimsAtPrimaryTarget, Always, Applied, Heal, Held, Lasting, LeftOut,
+  PlannedHeal, PlannedLasting, ReadByActivation, ReadByArea, TickingHeal,
 }
 import genesis_prime/game/spend
 import genesis_prime/game/ticking
@@ -196,7 +196,7 @@ pub fn a_heal_shields_row_aimed_at_the_primary_target_of_a_child_on_each_struck_
     as "a row that includes the caster heals the caster, whichever unit the child is cast on"
 }
 
-pub fn a_heal_shields_row_aimed_only_at_other_units_is_left_out_and_one_with_the_caster_bit_keeps_its_caster_part_test() -> Nil {
+pub fn a_heal_shields_row_aimed_only_at_other_units_is_left_out_and_one_with_the_caster_bit_keeps_its_aim_test() -> Nil {
   use <- owned_test.run(5000)
   let rows =
     list.map([4, 5, 6, 7], fn(flags) {
@@ -209,8 +209,9 @@ pub fn a_heal_shields_row_aimed_only_at_other_units_is_left_out_and_one_with_the
   let heals = heals_of(effects: rows)
   assert heal_ids(heals:) == [146_895, 146_897]
     as "targetFlags 4 (row 146893's) and 6 aim only at other units; 5 and 7 include the caster"
-  assert list.map(heals, fn(heal) { heal.aim }) == [AimsAtCaster, AimsAtCaster]
-    as "the caster part only"
+  assert list.map(heals, fn(heal) { heal.aim })
+    == [AimsAtCaster, AimsAtCasterAndPrimaryTarget]
+    as "5 (the caster and the area) keeps the caster alone, the area being a friendly spell's (#834); 7 keeps the caster and the primary target, whose heal lands nothing until #570"
 }
 
 pub fn a_periodic_heal_shields_row_is_held_as_ticking_and_not_applied_test() -> Nil {
@@ -599,7 +600,22 @@ pub fn a_heal_row_on_each_struck_unit_is_refused_test() -> Nil {
       place: on_each_struck,
     )
     |> result.is_ok
-    as "a row that includes the caster heals the caster, whichever unit the child is cast on"
+    as "a row that names the caster alone heals the caster, whichever unit the child is cast on"
+  assert list.map([3, 7], fn(flags) {
+      spell_tables.read_row(
+        effect: Spell4Effects(..mind_over_body_row(), target_flags: flags),
+        place: on_each_struck,
+      )
+    })
+    == list.repeat(
+      Error(spell_plan.HealOnStruckUnit(
+        spell4_id: 57_685,
+        proxy_effect_id: 137_988,
+        effect_id: 62_019,
+      )),
+      2,
+    )
+    as "a row that names the caster and the primary target also names the struck unit, so the load fails as it does for flags 2"
 }
 
 // ---- the client's tables ----

@@ -49,7 +49,9 @@ import genesis_prime/game/start_place
 import genesis_prime/game/unit_properties
 import genesis_prime/message/spell_go
 import genesis_prime/step.{LogDebug}
-import genesis_prime/table/id.{Spell4EffectsId, UnitProperty2Id}
+import genesis_prime/table/id.{
+  Spell4BaseId, Spell4EffectsId, Spell4Id, UnitProperty2Id,
+}
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -296,7 +298,12 @@ fn chance_gate() -> prerequisite.Prerequisite {
 /// A planted spell holding one marker row with this aim behind the chance gate as its
 /// target apply prerequisite.
 fn chance_spell(aim aim: spell_plan.Aim) -> Spell {
-  spell_plan.Spell(..support.child(spell4_id: 101, base: 3), lasting: [
+  spell_plan.Spell(..chance_child(aim:), spell4_base_id: Spell4BaseId(3))
+}
+
+/// The same as a child of its own base, for a Proxy to start.
+fn chance_child(aim aim: spell_plan.Aim) -> Spell {
+  spell_plan.Spell(..support.child(spell4_id: 101, base: 101), lasting: [
     spell_plan.Lasting(
       ..marker_row(id: 7),
       aim:,
@@ -320,6 +327,7 @@ pub fn a_caster_row_behind_a_type_37_target_gate_takes_one_roll_and_lands_when_i
   let assert [asked] = support.goes_asked(effects: raw)
   assert cast.rolls_needed(
       cast: state,
+      caster: support.caster().unit_id,
       cast_id: asked.cast_id,
       phase: asked.phase,
       struck: [],
@@ -358,6 +366,7 @@ pub fn each_unit_a_row_past_the_caster_reaches_takes_a_roll_of_its_own_in_unit_o
   let struck = support.hits([20, 21, 22])
   assert cast.rolls_needed(
       cast: state,
+      caster: support.caster().unit_id,
       cast_id: asked.cast_id,
       phase: asked.phase,
       struck:,
@@ -366,6 +375,7 @@ pub fn each_unit_a_row_past_the_caster_reaches_takes_a_roll_of_its_own_in_unit_o
     as "Prerequisite 4585 is type 37 and the row reaches three units, each tested once: three rolls"
   assert cast.rolls_needed(
       cast: state,
+      caster: support.caster().unit_id,
       cast_id: asked.cast_id,
       phase: asked.phase,
       struck: support.hits([20]),
@@ -400,6 +410,79 @@ pub fn each_unit_a_row_past_the_caster_reaches_takes_a_roll_of_its_own_in_unit_o
     })
   assert list.length(lines) == 2
     as "one debug line for each of units 21 and 22 says the row is behind a prerequisite of type 37, which is not read"
+}
+
+pub fn rolls_needed_counts_a_union_row_once_for_each_unit_it_reaches_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // `Spell4Effects.targetFlags` 3 names bit 1 (the caster) and bit 2 (the primary target).
+  // A press has the caster as its own primary target, so the cast whose primary target is
+  // another unit is the child a Proxy starts on the creature 20 the parent struck: its
+  // row behind the type 37 gate reaches the caster, unit 7, and the creature, unit 20, and
+  // the gate is tested once for each, so the child's go takes two rolls.
+  let assert Ok(union) = spell_plan.aim_of(target_flags: 3)
+  let plans =
+    support.plans_starting_on_each_struck(started: chance_child(aim: union))
+  let #(pressed, raw) =
+    support.pressed_raw_in(
+      plans:,
+      state: cast.new(),
+      caster: support.caster(),
+      bag_index: bag_of_base_3,
+      target: 0,
+      at: 1000,
+    )
+  let assert [parent_asked] = support.goes_asked(effects: raw)
+  let #(state, started) =
+    cast.went(
+      cast: pressed,
+      caster: support.caster(),
+      now: support.at(ms: 1000),
+      cast_id: parent_asked.cast_id,
+      phase: parent_asked.phase,
+      spell: Error(Nil),
+      struck: support.hits([20]),
+      poses: dict.new(),
+      indexes: dict.new(),
+      units: dict.new(),
+      rolls: [],
+    )
+  let assert [child_asked] = support.goes_asked(effects: started)
+    as "the parent's go starts the child, which asks for its own go"
+  assert child_asked.primary_target == 20
+    as "the child's primary target is the creature the parent struck"
+  assert cast.rolls_needed(
+      cast: state,
+      caster: support.caster().unit_id,
+      cast_id: child_asked.cast_id,
+      phase: child_asked.phase,
+      struck: [],
+    )
+    == 2
+    as "Prerequisite 4585 is type 37 and the row reaches the caster and the creature, each tested once: two rolls"
+  let went = fn(rolls) {
+    let #(_, effects) =
+      support.answered_each(
+        caster: support.caster(),
+        state: pressed,
+        effects: raw,
+        at: 1000,
+        struck_of: fn(asked) {
+          case asked.spell4_id == Spell4Id(101) {
+            True -> []
+            False -> support.hits([20])
+          }
+        },
+        rolls:,
+        poses: dict.new(),
+      )
+    support.child_go_listing(effects: list.append(raw, effects))
+  }
+  assert went([50, 51]) == [#(7, [7])]
+    as "the caster takes the first roll, 50, which passes comparison 6 on 50, and the creature the second, 51, which fails"
+  assert went([51, 50]) == [#(20, [7])]
+    as "the rolls the other way round land the row on the creature: the go takes exactly one roll for each unit, caster first"
+  assert went([1, 1]) == [#(7, [7]), #(20, [7])]
+    as "every roll passes: the row lands on both units"
 }
 
 // ---- a positional gate ----

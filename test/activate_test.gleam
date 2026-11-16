@@ -203,14 +203,14 @@ pub fn every_client_side_interaction_activate_spell_is_planned_or_names_its_gap_
   let count_of = fn(reason) {
     list.count(refusals, fn(found) { found == reason })
   }
-  assert count_of("aimed at the target") == 32
-    as "32 hold a Spell4Effects row aimed at the target or an area that the strike applies, which an activate cast strikes no one with (Spell4Effects targetFlags), among them Spell4 87571 (effect 229208, a Fluff row, which comes before its until-removed Knockdown row 229281 that the plan drops) and Spell4 29217 (its CCStateSet row 163681); the other 39 of the 72 held only a RavelSignal row aimed there, which the plan drops with a log when the cast starts (Spell4Effects.effectType.81)"
+  assert count_of("aimed at the target") == 34
+    as "34 hold a Spell4Effects row aimed at the target or an area that the strike applies, which an activate cast strikes no one with (Spell4Effects targetFlags), among them Spell4 87571 (effect 229208, a Fluff row, which comes before its until-removed Knockdown row 229281 that the plan drops), Spell4 29217 (its CCStateSet row 163681) and Spell4 29659 and 47304 (their until-removed or lasting rows 52518 and 134966, flags 3, which hold the bit of the primary target as well as the caster bit: the plan refused them as an unread aim before #794); the other 39 of the 74 held only a RavelSignal row aimed there, which the plan drops with a log when the cast starts (Spell4Effects.effectType.81)"
   assert count_of("disguise") == 4
     as "4 hold a DisguiseOutfit effect the server does not read (Spell4Effects.effectType.112). Gap: the issue Spells work in depth on the real client (#336) owns it"
   assert count_of("force remove counts") == 2
     as "2 hold a SpellForceRemove effect whose dataBits03 differs from its dataBits04 (Spell4Effects.effectType.80). Gap: the issue Spells work in depth on the real client (#336) owns it"
-  assert count_of("lasting aim") == 2
-    as "2 hold a Fluff, SpellForceRemove, Scale, ItemVisualSwap or RavelSignal effect aimed by flags the server does not read (Spell4Effects.targetFlags). Gap: the issue Spells work in depth on the real client (#336) owns it"
+  assert count_of("lasting aim") == 0
+    as "none holds a Fluff, SpellForceRemove, Scale, ItemVisualSwap or RavelSignal effect aimed by flags the server does not read: Spell4 29659 (effect 52518, effectType 17, flags 3) and 47304 (effect 134966, effectType 17, flags 3) did before #794 and are now refused for their aim at the target (read with `table_rows -- Spell4Effects spellId=<id>`)"
   assert count_of("stealth condition") == 1
     as "1 holds a Spell4Conditions row whose mask tests stealth, with the refusals 65 and 114 not checked. Gap: the issue Spells work in depth on the real client (#336) owns it"
   assert list.all([33_716, 33_966], fn(spell4_id) {

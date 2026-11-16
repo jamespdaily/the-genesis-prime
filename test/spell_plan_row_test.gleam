@@ -72,7 +72,7 @@ fn planted() -> List(List(Cell)) {
     row(id: 90_007, effect_type: 73, target_flags: 1, columns: [
       #("dataBits02", Integer(0)),
     ]),
-    row(id: 90_008, effect_type: 83, target_flags: 1, columns: []),
+    row(id: 90_018, effect_type: 83, target_flags: 1, columns: []),
     row(id: 90_009, effect_type: 84, target_flags: 1, columns: []),
     row(id: 90_010, effect_type: 118, target_flags: 1, columns: [
       #("dataBits00", Integer(one_as_float_bits)),
@@ -163,8 +163,8 @@ pub fn a_planted_spell_lists_the_applied_and_held_rows_and_the_measure_counts_on
     |> list.filter(planted_between(id: _, low: 90_000, high: 91_000))
     |> list.sort(int.compare)
     == [
-      90_001, 90_002, 90_003, 90_004, 90_005, 90_006, 90_007, 90_008, 90_009,
-      90_010, 90_011, 90_012, 90_013, 90_014,
+      90_001, 90_002, 90_003, 90_004, 90_005, 90_006, 90_007, 90_009, 90_010,
+      90_011, 90_012, 90_013, 90_014, 90_018,
     ]
     as "the lists hold the twelve read rows, the row behind a target apply prerequisite (90013, which a go applies to the units that pass it) and the periodic heal (90014, a `TickingHeal` that ticks every 1000 ms for 8000 ms); the Proc of kind 16 (`proc_read`, a kind not read) and the Proxy that names no spell are in no list"
   spell_tables.with_loaded(
@@ -201,8 +201,8 @@ pub fn a_planted_spell_lists_the_applied_and_held_rows_and_the_measure_counts_on
         == list.append(
           list.map(
             [
-              90_001, 90_002, 90_003, 90_004, 90_005, 90_006, 90_007, 90_008,
-              90_009, 90_010, 90_011, 90_012, 90_013,
+              90_001, 90_002, 90_003, 90_004, 90_005, 90_006, 90_007, 90_009,
+              90_010, 90_011, 90_012, 90_013,
             ],
             fn(id) { #(id, "applied") },
           ),
@@ -210,6 +210,7 @@ pub fn a_planted_spell_lists_the_applied_and_held_rows_and_the_measure_counts_on
             #(90_014, "applied"),
             #(90_015, "left out"),
             #(90_016, "left out"),
+            #(90_018, "applied"),
           ],
         )
         as "the rule each row checks: a row behind a target apply prerequisite is applied, a periodic heal with a tickTime is applied, a Proc of a kind not read and a Proxy that names no spell"
@@ -258,7 +259,8 @@ pub fn a_spend_all_spell_refuses_an_effect_tag_the_rule_does_not_read_test() -> 
     Spell4Effects(..effect_of(61_993), emm_comparison: 2, emm_value: 0)
   let read = Spell4Effects(..effect_of(61_994), emm_comparison: 1, emm_value: 0)
   let effects = [refused, read]
-  let spends = spell_plan.RowPlace(struck_by: None, spends_all: True)
+  let spends =
+    spell_plan.RowPlace(struck_by: None, spends_all: True, hits_foes: False)
   assert spell_plan.read_row(
       tables:,
       spell_groups: spell_plan.spell_groups(tables:),

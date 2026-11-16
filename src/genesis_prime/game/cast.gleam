@@ -231,8 +231,10 @@
 ////   innate passive's, and every one still pending but the passive's; a later go of the cast arms each again from that go; the player
 ////   leaving ends none, since the connection's properties go with its player. These
 ////   are the server's choices: the client works out no property.
-//// - **A go's property modifiers on creatures** (type 11 rows with targetFlags 2, 4 or 6,
-////   a `StruckChange`): each is aimed at the creatures the go hit, in the life and at the
+//// - **A go's property modifiers on creatures** (type 11 rows whose targetFlags name a
+////   unit other than the caster, a `StruckChange`; 3, 5 and 7 also change the caster, in
+////   a row of their own, and a unit the flag names twice takes it once): each is aimed
+////   at the creatures the go hit, and at the primary target when the flag's bit 2 names it, in the life and at the
 ////   time the go struck them (`HitCreature`), listed on each like a Fluff effect and
 ////   giving its node the row's life. The cast owns the time and the creature the values:
 ////   the rule tells the creature `TargetChangeStarts` at the go plus the row's delay, in
@@ -246,8 +248,9 @@
 ////   again from that go. A row aimed at another player is left out until a modifier on
 ////   another player is built (#570), and the stacking of casters' modifiers on one
 ////   creature is not built (#569).
-//// - **A go's throws of creatures** (type 3 rows with targetFlags 2, 4 or 6, a
-////   `StruckMove`, genesis_prime/game/forced_move): each is aimed at the creatures the go
+//// - **A go's throws of creatures** (type 3 rows whose targetFlags name a unit other than
+////   the caster, a `StruckMove`, genesis_prime/game/forced_move; 3, 5 and 7 also move
+////   the caster): each is aimed at the creatures the go
 ////   hit, in the life and at the time the go struck them. The rule tells
 ////   `ForcedMoveStarts` at the go's own step when the row has no delay, and else arms a
 ////   `ForcedMoveStart` timer for the go plus the row's delay; the end of the cast's node
@@ -5489,8 +5492,10 @@ fn creatures_ended(
 /// for each type 37 condition of that prerequisite for each unit the row's aim names
 /// (`target_rolls_needed`). The connection draws that many from its seed and no others,
 /// so a go with no type 37 condition moves no roll. A cast that is not live takes none.
+/// `caster` is the casting unit, which a row aimed at it and past it reaches once.
 pub fn rolls_needed(
   cast cast: State,
+  caster caster: Int,
   cast_id cast_id: Int,
   phase phase: Int,
   struck struck: List(Struck),
@@ -5523,6 +5528,7 @@ pub fn rolls_needed(
                 condition: row.condition,
                 units: units_reached(
                   aim: row.aim,
+                  caster:,
                   primary_target: live.primary_target,
                   struck:,
                 ),
@@ -5536,6 +5542,7 @@ pub fn rolls_needed(
                 condition: row.condition,
                 units: units_reached(
                   aim: row.aim,
+                  caster:,
                   primary_target: live.primary_target,
                   struck:,
                 ),
@@ -5549,6 +5556,7 @@ pub fn rolls_needed(
                 condition: row.condition,
                 units: units_reached(
                   aim: spell_plan.modifier_aim(modifier: row),
+                  caster:,
                   primary_target: live.primary_target,
                   struck:,
                 ),
@@ -5568,6 +5576,7 @@ pub fn rolls_needed(
                 condition: row.condition,
                 units: units_reached(
                   aim: row.aim,
+                  caster:,
                   primary_target: live.primary_target,
                   struck:,
                 ),
@@ -5613,6 +5622,7 @@ pub fn rolls_needed(
                 condition: row.condition,
                 units: units_reached(
                   aim: row.aim,
+                  caster:,
                   primary_target: live.primary_target,
                   struck:,
                 ),
@@ -5649,15 +5659,16 @@ fn target_rolls_needed(
 }
 
 /// How many units a row aimed by `aim` reaches in a round that closed with `struck`
-/// (`units_aimed_at`; which unit the caster is does not change the count).
+/// (`units_aimed_at`: a caster that is its own primary target, or struck, is one unit).
 fn units_reached(
   aim aim: spell_plan.Aim,
+  caster caster: Int,
   primary_target primary_target: Int,
   struck struck: List(Struck),
 ) -> Int {
   list.length(spell_plan.units_aimed_at(
     aim:,
-    caster: primary_target,
+    caster:,
     primary_target:,
     area: hit_units(struck:),
   ))
@@ -8835,8 +8846,9 @@ type Healed {
   )
 }
 
-/// The units an effect aims at (`Spell4Effects.targetFlags`): the caster, the cast's
-/// primary target, the units the round Hit, or the target and those.
+/// The units an effect aims at (`Spell4Effects.targetFlags`): each unit the aim's bits name
+/// (the caster, the primary target, the units the round hit), once each, in that order
+/// (`spell_plan.units_aimed_at`).
 fn units_aimed_at(
   aim aim: spell_plan.Aim,
   caster caster: Caster,
@@ -8865,11 +8877,15 @@ fn rows_with_units(
   })
 }
 
-/// Whether a modifier row takes effect on the unit its aim names: a change of the
-/// caster's own (a property, a look, an absorb) on the caster, and a property modifier
-/// aimed at struck units on a creature the go hit. One aimed at a unit that is the
-/// caster or another player is left out until a modifier on another player is built
-/// (#570).
+/// Whether a modifier row takes effect on `unit_id`, one of the units its aim names.
+/// - A property, look, absorb or Interrupt Armor change lands on the caster alone: the
+///   server gives no other unit a property, a look, a pool or armor. A part of the aim past
+///   the caster (the primary target when it is another unit, the units the round hit) is
+///   left out here with no log line; the plan refuses the row where that part would be the
+///   unit a Proxy's child is started on (`spell_plan.not_on_a_struck_unit`), and the
+///   client's absorb and Interrupt Armor rows with flags 3 or 7 are in no such child.
+/// - A property modifier aimed at struck units (`StruckChange`) lands on a creature the go
+///   hit; a player it names is left out until a modifier on another player is built (#570).
 fn modifier_applies(
   row row: spell_plan.PropertyModifier,
   unit_id unit_id: Int,
@@ -9468,10 +9484,10 @@ fn ticking_heals(
 /// vitals and stats give: the caster as it stood before the go's own effects, the rule of
 /// every gate of the go (`subject_of`), and the overheal the vital's room leaves. A row's
 /// units are those its aim names (`units_aimed_at`) and only the caster is healed: the
-/// plan reads a row aimed at the primary target only in a spell cast on the caster
-/// (genesis_prime/game/spell_plan `read_row`), and the server gives no other unit a
-/// heal; a heal aimed at another unit is left, with a debug line naming its row (other
-/// players come with #570).
+/// server gives no other unit a heal, so a heal aimed at another unit (the primary target
+/// of a cast on someone else, a unit the round hit) is left, with a debug line naming its
+/// row (other players come with #570). The plan refuses a heal that names the primary
+/// target in a child started on each struck unit (`spell_plan.not_on_a_struck_unit`).
 fn healed_by(
   entries entries: List(#(spell_plan.Heal, Int)),
   caster caster: Caster,

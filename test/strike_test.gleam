@@ -1310,6 +1310,55 @@ pub fn two_casters_instance_ids_for_one_creature_differ_test() -> Nil {
     as "7 x 4096 + 1 and 8 x 4096 + 1: no id is shared, and none is 0"
 }
 
+pub fn union_control_row_is_both_a_restriction_and_a_told_state_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Spell4Effects 60607 (`table_rows -- Spell4Effects 60607`): spell 32236, effectType 4,
+  // targetFlags 5 (the caster and the area), state 0 (Stun), durationTime 3000, dataBits03
+  // 1, phaseFlags 1.
+  let spell = spell_tables.client_spell(spell4_id: 32_236)
+  let ids = fn(rows: List(spell_plan.CrowdControl)) {
+    list.map(rows, fn(control) { control.effect_id.value })
+  }
+  assert list.contains(
+    ids(spell_plan.restrictions_in_phase(spell:, phase: 0, spent: None)),
+    60_607,
+  )
+    as "targetFlags 5 names the caster, so the state is one of the caster's restrictions"
+  let told = spell_plan.controls_in_phase(spell:, phase: 0, spent: None)
+  let assert [control] =
+    list.filter(told, fn(control) { control.effect_id.value == 60_607 })
+    as "targetFlags 5 names the area, so the state is one of the creatures' states"
+  assert control.aim == spell_plan.AimsAtCasterAndArea
+  assert control.row
+    == crowd_control.Row(
+      state: crowd_control_state.Stun,
+      delay_ms: 0,
+      duration_ms: 3000,
+      armor_removed: 1,
+      until_removed: False,
+    )
+    as "dataBits00 the state, durationTime the time, dataBits03 the armor"
+  // The caster is unit 7 (`strike_support.attacker`); the area holds units 10 and 11.
+  let chosen =
+    Selection(
+      ..selection(
+        asked: asked(cast_id: 5, phase: 0),
+        units: [10, 11],
+        damaging: False,
+      ),
+      controls: [control],
+    )
+  let #(_, effects) =
+    begun(state: strike.new(), selection: chosen, now_ms: 1000)
+  let assert [
+    strike.TellStrike(unit_id: 10, tell: first, ..),
+    strike.TellStrike(unit_id: 11, tell: second, ..),
+  ] = tells(effects:)
+    as "the state is told to each struck creature and to nobody else: the caster is not told"
+  assert list.map(first.controls, fn(told) { told.effect_id }) == [60_607]
+  assert list.map(second.controls, fn(told) { told.effect_id }) == [60_607]
+}
+
 pub fn a_state_aimed_at_the_primary_target_is_told_to_it_alone_test() -> Nil {
   use <- owned_test.run(5000)
   let goes = GoAsked(..asked(cast_id: 5, phase: 0), primary_target: 11)
@@ -1391,7 +1440,7 @@ pub fn a_state_aimed_at_the_area_does_not_reach_a_primary_target_outside_it_but_
   }
   assert told_to(AimsAtArea) == [10]
     as "Spell4Effects.targetFlags 4 aims at the units the area selected"
-  assert told_to(spell_plan.AimsAtBoth) == [10, 11]
+  assert told_to(spell_plan.AimsAtPrimaryTargetAndArea) == [10, 11]
     as "targetFlags 6 aims at the area's units and the cast's target"
   assert told_to(spell_plan.AimsAtPrimaryTarget) == [11]
     as "targetFlags 2 aims at the cast's target alone"

@@ -88,7 +88,8 @@
 ////   flags bit 2, which start and end the change and give the caster's node of the cast
 ////   its life. A row aimed only at other units (targetFlags 2, 4 or 6) is a `StruckChange`
 ////   that changes the creatures a strike hits, and a row that names the caster and others
-////   (3, 5 or 7) changes the caster only. Its caster apply
+////   (3, 5 or 7) changes the caster in a `PropertyModifier` row and the others in a
+////   `StruckChange` row. Its caster apply
 ////   prerequisite, phases and spend tag are a Fluff effect's. A UnitPropertyConversion
 ////   effect (`Spell4Effects.effectType.145`) whose targetFlags include the caster is a
 ////   `PropertyModifier` row too, whose change is a `Conversion` of property dataBits00
@@ -111,8 +112,8 @@
 ////   Its delay, durationTime, flags bit 2, caster apply prerequisite, phases and spend
 ////   tag are a type 11 row's. A dataBits01 other than 0 and 1 fails the load. A row aimed
 ////   only at other units is not read. A child a Proxy starts on each struck unit that
-////   holds a row aimed at its primary target fails the load: Interrupt Armor on a struck
-////   unit is not built. 36 of the 38 type 52 rows are read.
+////   holds a row whose aim names its primary target (flags 2, 3 or 7) fails the load:
+////   Interrupt Armor on a struck unit is not built. 36 of the 38 type 52 rows are read.
 //// - **The absorbs.** An Absorption effect (`Spell4Effects.effectType.29`) whose targetFlags
 ////   include the caster (bit 1), or are the primary target alone (2) in a spell cast on the
 ////   caster, is a `PropertyModifier` row whose change is an `AbsorbChange`: the formula of
@@ -121,8 +122,8 @@
 ////   `absorption_formula_of`), the damage types it takes (dataBits04 as a mask) and its
 ////   aim. It starts, ends and gives the node its life as a type 11 row does. A row with a
 ////   tickTime, with neither a durationTime nor flags bit 2, with a non-finite number or a
-////   parameter kind not read fails the load, as does one aimed at the primary target in a
-////   child a Proxy starts on each struck unit (`AbsorptionPeriodic`,
+////   parameter kind not read fails the load, as does one whose aim names the primary target in
+////   a child a Proxy starts on each struck unit (`AbsorptionPeriodic`,
 ////   `AbsorptionHasNoLifetime`, `AbsorptionNumberNotFinite`, `AbsorptionParameterNotRead`,
 ////   `AbsorptionOnStruckUnit`); a row aimed only at other units is not read.
 //// - **The heals.** A Heal effect (`Spell4Effects.effectType.10`) or a HealShields effect
@@ -135,8 +136,8 @@
 ////   checks for the unit the row heals; a row with a tickTime is a `TickingHeal`, with the schedule of
 ////   its ticks (genesis_prime/game/ticking), each tick its own 0x7f8. A periodic row that
 ////   lasts until removed (flags bit 2) is left out (`HealUntilRemoved`, issue 803). A row
-////   aimed only at other units (4 and 6) is not read. A child a Proxy starts on each struck unit that holds a heal aimed at
-////   its primary target fails the load: a heal on a struck unit is not built.
+////   aimed only at other units (4 and 6) is not read. A child a Proxy starts on each struck unit that holds a heal whose
+////   aim names its primary target (flags 2, 3 or 7) fails the load: a heal on a struck unit is not built.
 //// - **The shield overloads.** A ShieldOverload effect (`Spell4Effects.effectType.64`)
 ////   aimed at the area (targetFlags 4) is a `Lasting` row, listed on each struck unit for
 ////   its durationTime as a Fluff effect is: the client marks the unit overloaded and
@@ -439,27 +440,108 @@ pub type Gain {
 }
 
 /// Who an effect aims at (`Spell4Effects.targetFlags`), read once for the effects a
-/// spell holds: the Proxies of the plan and the damage of the areas.
+/// spell holds: each constructor names the bits its flags hold (bit 1 the caster, bit 2
+/// the primary target, bit 4 the area), and a row reaches every unit its bits name.
 pub type Aim {
   AimsAtCaster
   AimsAtPrimaryTarget
+  AimsAtCasterAndPrimaryTarget
   AimsAtArea
-  AimsAtBoth
-  /// A flag value no effect of a level-1 ability's tree holds: the load refuses an
-  /// effect with it.
-  OtherAim(flags: Int)
+  AimsAtCasterAndArea
+  AimsAtPrimaryTargetAndArea
+  AimsAtCasterPrimaryTargetAndArea
 }
 
-/// The aim of an effect's `targetFlags`: 1 the caster, 2 the primary target, 4 the area,
-/// 6 the primary target and the area.
-pub fn aim_of(target_flags target_flags: Int) -> Aim {
+/// The aim of an effect's `targetFlags`: each of 1 to 7 as the bits it holds, the caster
+/// (1), the primary target (2) and the area (4). 0 and every value with bit 8 or above
+/// have no aim: the client refuses 0 (`Spell4Effects.targetFlags.load`), and bit 8's
+/// meaning is not known ([B8]: the guess is that no row holds it in a spell the server
+/// plays; it waits for the question under #336).
+///
+/// [C] That 3, 5 and 7 are the union of their bits is a guess: the client's load
+/// refuses only 0 and no other reader of the column was found.
+pub fn aim_of(target_flags target_flags: Int) -> Result(Aim, Nil) {
   case target_flags {
-    1 -> AimsAtCaster
-    2 -> AimsAtPrimaryTarget
-    4 -> AimsAtArea
-    6 -> AimsAtBoth
-    flags -> OtherAim(flags:)
+    1 -> Ok(AimsAtCaster)
+    2 -> Ok(AimsAtPrimaryTarget)
+    3 -> Ok(AimsAtCasterAndPrimaryTarget)
+    4 -> Ok(AimsAtArea)
+    5 -> Ok(AimsAtCasterAndArea)
+    6 -> Ok(AimsAtPrimaryTargetAndArea)
+    7 -> Ok(AimsAtCasterPrimaryTargetAndArea)
+    _ -> Error(Nil)
   }
+}
+
+/// Whether the aim names the caster.
+pub fn reaches_caster(aim aim: Aim) -> Bool {
+  case aim {
+    AimsAtCaster
+    | AimsAtCasterAndPrimaryTarget
+    | AimsAtCasterAndArea
+    | AimsAtCasterPrimaryTargetAndArea -> True
+    AimsAtPrimaryTarget | AimsAtArea | AimsAtPrimaryTargetAndArea -> False
+  }
+}
+
+/// Whether the aim names the cast's primary target.
+pub fn reaches_primary_target(aim aim: Aim) -> Bool {
+  case aim {
+    AimsAtPrimaryTarget
+    | AimsAtCasterAndPrimaryTarget
+    | AimsAtPrimaryTargetAndArea
+    | AimsAtCasterPrimaryTargetAndArea -> True
+    AimsAtCaster | AimsAtArea | AimsAtCasterAndArea -> False
+  }
+}
+
+/// Whether the aim names the units the strike hits.
+pub fn reaches_area(aim aim: Aim) -> Bool {
+  case aim {
+    AimsAtArea
+    | AimsAtCasterAndArea
+    | AimsAtPrimaryTargetAndArea
+    | AimsAtCasterPrimaryTargetAndArea -> True
+    AimsAtCaster | AimsAtPrimaryTarget | AimsAtCasterAndPrimaryTarget -> False
+  }
+}
+
+/// Whether the aim names a unit other than the caster: the primary target or the area.
+pub fn reaches_past_caster(aim aim: Aim) -> Bool {
+  reaches_primary_target(aim:) || reaches_area(aim:)
+}
+
+/// The aim with the caster's bit taken away, which is what a row does to the units a
+/// strike hits and to the primary target while its caster's part is a row of its own.
+/// A caster-only aim has nothing left.
+fn past_the_caster(aim aim: Aim) -> Result(Aim, Nil) {
+  case aim {
+    AimsAtCaster -> Error(Nil)
+    AimsAtCasterAndPrimaryTarget -> Ok(AimsAtPrimaryTarget)
+    AimsAtCasterAndArea -> Ok(AimsAtArea)
+    AimsAtCasterPrimaryTargetAndArea -> Ok(AimsAtPrimaryTargetAndArea)
+    AimsAtPrimaryTarget | AimsAtArea | AimsAtPrimaryTargetAndArea -> Ok(aim)
+  }
+}
+
+/// The aim of a row that holds the caster's bit and the area's bit, read in a spell that
+/// hits no foes ([F] `spell_hits_foes`): the area's bit is left out, since a friendly
+/// spell's area waits for #834. An aim without the caster's bit is as it is.
+fn without_friendly_area(aim aim: Aim) -> Aim {
+  case aim {
+    AimsAtCasterAndArea -> AimsAtCaster
+    AimsAtCasterPrimaryTargetAndArea -> AimsAtCasterAndPrimaryTarget
+    AimsAtCaster
+    | AimsAtPrimaryTarget
+    | AimsAtCasterAndPrimaryTarget
+    | AimsAtArea
+    | AimsAtPrimaryTargetAndArea -> aim
+  }
+}
+
+/// Whether the aim holds the area's bit together with the caster's.
+fn names_caster_and_area(aim aim: Aim) -> Bool {
+  reaches_caster(aim:) && reaches_area(aim:)
 }
 
 /// Which unit a Proxy's child cast is made on.
@@ -1154,11 +1236,42 @@ pub type Proxy {
   )
 }
 
-/// Where a spell is planned, which two of an effect row's refusals depend on: a spell a
-/// Proxy starts on each struck unit (`struck_by`) and a spell that spends every point held
-/// (`spends_all`).
+/// Where a spell is planned, which three of an effect row's refusals depend on: a spell a
+/// Proxy starts on each struck unit (`struck_by`), a spell that spends every point held
+/// (`spends_all`) and a spell that hits foes (`hits_foes`, `spell_hits_foes`).
 pub type RowPlace {
-  RowPlace(struck_by: Option(StruckBy), spends_all: Bool)
+  RowPlace(struck_by: Option(StruckBy), spends_all: Bool, hits_foes: Bool)
+}
+
+/// Whether a spell hits foes, from its own Spell4Effects rows: one of its damage (8) or
+/// crowd control (4) rows has a targetFlags from 2 to 7, which names the primary target or
+/// the area.
+///
+/// [F] What "hits foes" means is the server's choice, made by Jim: the client's tables
+/// hold no flag for it. A spell that hits none has an area the server reads as a friendly
+/// spell's, which waits for #834 ("A friendly spell's area finds the caster's allies").
+pub fn spell_hits_foes(
+  effects effects: List(spell4_effects.Spell4Effects),
+) -> Bool {
+  list.any(effects, fn(effect) {
+    let kind = effect_kind.kind_of(effect_type: effect.effect_type)
+    { kind == effect_kind.Damage || kind == effect_kind.CrowdControl }
+    && effect.target_flags >= 2
+    && effect.target_flags <= 7
+  })
+}
+
+/// The Spell4 ids of the spells that hit foes (`spell_hits_foes`), among the Spell4Effects
+/// rows given.
+pub fn spells_that_hit_foes(
+  effects effects: List(spell4_effects.Spell4Effects),
+) -> Set(Int) {
+  list.fold(effects, set.new(), fn(found, effect) {
+    case spell_hits_foes(effects: [effect]) {
+      True -> set.insert(found, effect.spell_id)
+      False -> found
+    }
+  })
 }
 
 /// The Proxy that starts a spell as a child on each unit its area strikes: `spell4_id`
@@ -1252,7 +1365,13 @@ pub type PlannedRow {
     event_gate: Option(Prerequisite),
     holder_gate: Option(Prerequisite),
   )
-  PlannedProxy(target: ProxyTarget, condition: Condition)
+  /// A Proxy row: the units it starts its child on, the caster, each struck unit or both
+  /// (`target_of`), with one `Proxy` of the spell for each.
+  PlannedProxy(targets: List(ProxyTarget), condition: Condition)
+  /// A row aimed at the caster and at other units, whose two parts are rows of two lists:
+  /// the part on the caster and the part past it. Both keep the row's effect id, which the
+  /// coverage measure counts once.
+  PlannedBoth(caster_part: PlannedRow, past_the_caster: PlannedRow)
 }
 
 /// Why a DisguiseOutfit row cannot be drawn with 0x933 (`Spell4Effects.effectType.112`).
@@ -1333,11 +1452,15 @@ pub type PlanError {
   /// A CCStateSet effect of a tree holds a value that is no state of
   /// `Unit.CodeEnumCCState` (0 to 27).
   ControlStateNotRead(spell4_id: Int, effect_id: Int, state: Int)
-  /// A CCStateSet effect of a tree is aimed by a flag value that is not one of the
-  /// four `aim_of` reads (`Spell4Effects.targetFlags` 1, 2, 4 and 6): the union aims 3, 5
-  /// and 7 are not read (the issue "An effect aimed by a combined flag reaches every unit
-  /// each of its bits names" closes them), and neither is any other value.
+  /// A CCStateSet effect of a tree is aimed by a flag value `aim_of` does not read
+  /// (`Spell4Effects.targetFlags` 0, or a value with bit 8).
   ControlAimNotRead(spell4_id: Int, effect_id: Int, target_flags: Int)
+  /// An effect of a spell that hits no foes (`spell_hits_foes`) is aimed by a flag value
+  /// that holds the caster's bit and the area's bit (5 or 7), and the effect's kind keeps a
+  /// state or a child on the area's units: a friendly spell's area finds the caster's
+  /// allies, which the issue "A friendly spell's area finds the caster's allies" (#834)
+  /// builds.
+  FriendlyAreaNotRead(spell4_id: Int, effect_id: Int, target_flags: Int)
   /// A CCStateSet effect of a tree aimed at another unit keeps its state through a death
   /// or a leave by a caster persistence, target persistence or target suspend
   /// prerequisite, which no rule of the server holds (the issue "An effect behind an
@@ -1382,16 +1505,16 @@ pub type PlanError {
   /// (genesis_prime/game/ticking `NoTick`).
   HealNoTick(spell4_id: Int, effect_id: Int, tick_ms: Int, duration_ms: Int)
   /// A Proxy of a tree starts a child on each unit its area strikes, and the child holds
-  /// a Heal or HealShields effect aimed at its primary target, a struck unit: `spell4_id` is the
-  /// spell with the Proxy `proxy_effect_id`, and `effect_id` the heal's row.
+  /// a Heal or HealShields effect whose aim names its primary target, a struck unit:
+  /// `spell4_id` is the spell with the Proxy `proxy_effect_id`, and `effect_id` the heal's row.
   HealOnStruckUnit(spell4_id: Int, proxy_effect_id: Int, effect_id: Int)
   /// A ModifyInterruptArmor effect of a tree has a dataBits01 that is not 0 or 1, the two
   /// values that say whether the armor is taken back when it ends
   /// (`Spell4Effects.effectType.52`).
   InterruptArmorTakeBackNotRead(spell4_id: Int, effect_id: Int, value: Int)
   /// A Proxy of a tree starts a child on each unit its area strikes, and the child holds a
-  /// ModifyInterruptArmor effect aimed at its primary target, a struck unit: `spell4_id` is
-  /// the spell with the Proxy `proxy_effect_id`, and `effect_id` the row.
+  /// ModifyInterruptArmor effect whose aim names its primary target, a struck unit:
+  /// `spell4_id` is the spell with the Proxy `proxy_effect_id`, and `effect_id` the row.
   InterruptArmorOnStruckUnit(
     spell4_id: Int,
     proxy_effect_id: Int,
@@ -1418,8 +1541,8 @@ pub type PlanError {
   /// with no lifetime is not known (`Spell4Effects.effectType.29`).
   AbsorptionHasNoLifetime(spell4_id: Int, effect_id: Int)
   /// A Proxy of a tree starts a child on each unit its area strikes, and the child holds an
-  /// Absorption effect aimed at its primary target, a struck unit: `spell4_id` is the spell
-  /// with the Proxy `proxy_effect_id`, and `effect_id` the row.
+  /// Absorption effect whose aim names its primary target, a struck unit: `spell4_id` is the
+  /// spell with the Proxy `proxy_effect_id`, and `effect_id` the row.
   AbsorptionOnStruckUnit(spell4_id: Int, proxy_effect_id: Int, effect_id: Int)
   /// A Proc effect of a kind the server does not read (`proc_read`): the row is in no
   /// list of its spell and the load goes on, so this error is a skip, never a failure.
@@ -1435,6 +1558,16 @@ pub type PlanError {
   /// A Prerequisite row a spell or effect names nests itself through the rows it
   /// nests (type 11): the ids from the named row to the one that repeats.
   PrerequisiteCycle(path: List(Int))
+}
+
+/// What an aim refusal says of the flag values `aim_of` reads: 1 to 7, and for a value with
+/// bit 8 the question that holds it.
+pub fn aim_values_read_text(target_flags target_flags: Int) -> String {
+  use <- bool.guard(
+    when: target_flags >= 8,
+    return: "and only the values 1 to 7 are read; bit 8's meaning waits for the bit-8 question of #336",
+  )
+  "and only the values 1 to 7 are read; the client refuses 0"
 }
 
 /// A sentence that says why the plans cannot be built, naming the table and the
@@ -1457,7 +1590,8 @@ pub fn describe(error error: PlanError) -> String {
       <> int.to_string(effect_id)
       <> " aimed by flags "
       <> int.to_string(target_flags)
-      <> ", which are not read"
+      <> ", "
+      <> aim_values_read_text(target_flags:)
     UnreadCost(spell4_id:, cost_type:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -1561,7 +1695,8 @@ pub fn describe(error error: PlanError) -> String {
       <> int.to_string(effect_id)
       <> " aimed by flags "
       <> int.to_string(target_flags)
-      <> ", which are not read"
+      <> ", "
+      <> aim_values_read_text(target_flags:)
     ControlStateNotRead(spell4_id:, effect_id:, state:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -1577,11 +1712,16 @@ pub fn describe(error error: PlanError) -> String {
       <> int.to_string(effect_id)
       <> " aimed by flags "
       <> int.to_string(target_flags)
-      <> ", and only the caster (1), the primary target (2), the area (4) and both (6) are read; "
-      <> case target_flags {
-        3 | 5 | 7 -> "a union aim waits for #794"
-        _ -> "this aim waits for #336"
-      }
+      <> ", "
+      <> aim_values_read_text(target_flags:)
+    FriendlyAreaNotRead(spell4_id:, effect_id:, target_flags:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " hits no foes and has an effect "
+      <> int.to_string(effect_id)
+      <> " aimed by flags "
+      <> int.to_string(target_flags)
+      <> ", which hold the caster and the area: a friendly spell's area finds the caster's allies, which the server does not read yet (#834)"
     ControlPersistenceNotRead(spell4_id:, effect_id:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -1681,7 +1821,7 @@ pub fn describe(error error: PlanError) -> String {
       <> int.to_string(proxy_effect_id)
       <> " that starts a child on each struck unit, which holds the Heal or HealShields effect "
       <> int.to_string(effect_id)
-      <> " aimed at that unit, and a heal on a struck unit is not built"
+      <> " whose aim names that unit, and a heal on a struck unit is not built"
     InterruptArmorTakeBackNotRead(spell4_id:, effect_id:, value:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -1697,7 +1837,7 @@ pub fn describe(error error: PlanError) -> String {
       <> int.to_string(proxy_effect_id)
       <> " that starts a child on each struck unit, which holds the ModifyInterruptArmor effect "
       <> int.to_string(effect_id)
-      <> " aimed at that unit, and Interrupt Armor on a struck unit is not built"
+      <> " whose aim names that unit, and Interrupt Armor on a struck unit is not built"
     AbsorptionParameterNotRead(spell4_id:, effect_id:, parameter_kind:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -1739,7 +1879,7 @@ pub fn describe(error error: PlanError) -> String {
       <> int.to_string(proxy_effect_id)
       <> " that starts a child on each struck unit, which holds the Absorption effect "
       <> int.to_string(effect_id)
-      <> " aimed at that unit, and an absorb on a struck unit is not built"
+      <> " whose aim names that unit, and an absorb on a struck unit is not built"
     ProcKindNotRead(spell4_id:, effect_id:, kind:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -2259,7 +2399,12 @@ fn spell_of(
     ]),
   )
   let effects = dict.get(sources.effects, spell4_id) |> result.unwrap([])
-  let place = RowPlace(struck_by:, spends_all: spends_all_of(costs:))
+  let place =
+    RowPlace(
+      struck_by:,
+      spends_all: spends_all_of(costs:),
+      hits_foes: spell_hits_foes(effects:),
+    )
   use Nil <- result.try(
     list.try_each(effects, spend_tag_read(place:, effect: _)),
   )
@@ -2330,18 +2475,19 @@ fn spell_of(
         let #(effect, reading) = row
         use reading <- result.try(reading)
         case reading {
-          Applied(PlannedProxy(target:, condition:))
-          | Held(PlannedProxy(target:, condition:)) ->
-            proxy_of(
-              tables:,
-              sources:,
-              spell4_id:,
-              chain:,
-              effect:,
-              target:,
-              condition:,
-            )
-            |> result.map(fn(proxy) { [proxy] })
+          Applied(PlannedProxy(targets:, condition:))
+          | Held(PlannedProxy(targets:, condition:)) ->
+            list.try_map(targets, fn(target) {
+              proxy_of(
+                tables:,
+                sources:,
+                spell4_id:,
+                chain:,
+                effect:,
+                target:,
+                condition:,
+              )
+            })
           Applied(..)
           | Held(..)
           | LeftOut(..)
@@ -2522,8 +2668,8 @@ fn gain_row_of(
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(Gain, PlanError) {
   use slot <- result.try(case aim_of(target_flags: effect.target_flags) {
-    AimsAtCaster -> gain_slot_of(spell4_id:, effect:)
-    AimsAtPrimaryTarget | AimsAtArea | AimsAtBoth | OtherAim(..) ->
+    Ok(AimsAtCaster) -> gain_slot_of(spell4_id:, effect:)
+    Ok(_) | Error(Nil) ->
       Error(GainAimNotRead(
         spell4_id:,
         effect_id: effect.id,
@@ -2628,10 +2774,11 @@ pub fn heal_of(
 /// `.18`, `.76` and `.81`).
 fn lasting_of(
   tables tables: table_store.Tables,
+  place place: RowPlace,
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(Lasting, PlanError) {
-  use aim <- result.try(lasting_aim_of(spell4_id:, effect:))
+  use aim <- result.try(lasting_aim_of(place:, spell4_id:, effect:))
   use condition <- result.map(applied_condition_of(
     tables:,
     effect:,
@@ -2665,10 +2812,11 @@ pub fn lasting_row_of(
 fn remove_of(
   tables tables: table_store.Tables,
   spell_groups spell_groups: Set(Int),
+  place place: RowPlace,
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(ForceRemove, PlanError) {
-  use aim <- result.try(lasting_aim_of(spell4_id:, effect:))
+  use aim <- result.try(lasting_aim_of(place:, spell4_id:, effect:))
   use selector <- result.try(selector_of(
     tables:,
     spell_groups:,
@@ -2712,11 +2860,12 @@ fn force_remove_counts_read(
 
 /// One CCStateSet row (`Spell4Effects.effectType.4`): dataBits00 is one of the 28
 /// states (`Unit.CodeEnumCCState`, 0 to 27), aimed at the
-/// caster, the primary target, the area or both (`aim_of`), behind the apply
+/// units its flags name (`aim_of`), behind the apply
 /// prerequisites `row_condition_of` reads. Its delayTime, durationTime,
 /// flags bit 2 (a state that never times out) and the armor it removes (dataBits03) are
-/// read as they are. A row aimed at another unit that holds its state until removed (no
-/// rule ends a creature's state with its cast's node) is `None`, a row the plan drops,
+/// read as they are. A row that reaches a unit other than the caster and holds its state
+/// until removed (no rule ends a creature's state with its cast's node) is `None`, a row
+/// the plan drops,
 /// and one that keeps its state through a death or a leave by a caster persistence,
 /// target persistence or target suspend prerequisite is refused (no creature rule holds
 /// that); on the caster both are the cast's own (`cast.restrictions`).
@@ -2731,31 +2880,24 @@ fn control_of(
     other ->
       Error(ControlStateNotRead(spell4_id:, effect_id: effect.id, state: other))
   })
-  use aim <- result.try(case aim_of(target_flags: effect.target_flags) {
-    OtherAim(..) ->
-      Error(ControlAimNotRead(
-        spell4_id:,
-        effect_id: effect.id,
-        target_flags: effect.target_flags,
-      ))
-    AimsAtCaster -> Ok(AimsAtCaster)
-    AimsAtPrimaryTarget -> Ok(AimsAtPrimaryTarget)
-    AimsAtArea -> Ok(AimsAtArea)
-    AimsAtBoth -> Ok(AimsAtBoth)
-  })
+  use aim <- result.try(
+    aim_of(target_flags: effect.target_flags)
+    |> result.replace_error(ControlAimNotRead(
+      spell4_id:,
+      effect_id: effect.id,
+      target_flags: effect.target_flags,
+    )),
+  )
   let until_removed = has_flag(flags: effect.flags, bit: 2)
   let persists =
     effect.prerequisite_id_caster_persistence != 0
     || effect.prerequisite_id_target_persistence != 0
     || effect.prerequisite_id_target_suspend != 0
-  use <- bool.guard(
-    when: until_removed && aim != AimsAtCaster,
-    return: Ok(None),
-  )
-  use Nil <- result.try(case aim, persists {
-    AimsAtCaster, _ | _, False -> Ok(Nil)
-    _, True ->
-      Error(ControlPersistenceNotRead(spell4_id:, effect_id: effect.id))
+  let past_the_caster = reaches_past_caster(aim:)
+  use <- bool.guard(when: until_removed && past_the_caster, return: Ok(None))
+  use Nil <- result.try(case past_the_caster && persists {
+    False -> Ok(Nil)
+    True -> Error(ControlPersistenceNotRead(spell4_id:, effect_id: effect.id))
   })
   use condition <- result.map(row_condition_of(tables:, effect:, aim:))
   Some(CrowdControl(
@@ -2805,7 +2947,8 @@ pub fn modifier_of(
           False ->
             StruckChange(
               modifier:,
-              aim: aim_of(target_flags: effect.target_flags),
+              aim: aim_of(target_flags: effect.target_flags)
+                |> result.unwrap(AimsAtPrimaryTarget),
             )
         }
       })
@@ -2982,15 +3125,18 @@ pub fn modifier_aim(modifier modifier: PropertyModifier) -> Aim {
   }
 }
 
-/// The unit a row aims at when its targetFlags reach the caster or the primary target: the
-/// caster when they include it (bit 1), else the primary target, which a spell cast on the
-/// caster makes the caster.
+/// The units a heal, armor or absorb row aims at when its targetFlags reach the caster or
+/// the primary target: what `aim_of` reads, and for a value with bit 8 and the caster's bit
+/// (9, 11, 13, 15, which the rows are read as today) the caster alone. A row without the
+/// caster's bit aims at the primary target, which a spell cast on the caster makes the
+/// caster.
 fn reached_aim_of(effect effect: spell4_effects.Spell4Effects) -> Aim {
   use <- bool.guard(
-    when: has_flag(flags: effect.target_flags, bit: 1),
-    return: AimsAtCaster,
+    when: !has_flag(flags: effect.target_flags, bit: 1),
+    return: AimsAtPrimaryTarget,
   )
-  AimsAtPrimaryTarget
+  aim_of(target_flags: effect.target_flags)
+  |> result.unwrap(AimsAtCaster)
 }
 
 /// A formula the caster's own value reads: `formula` as the row gave it, or `not_finite`
@@ -3049,22 +3195,19 @@ fn absorption_read(
 }
 
 /// A spell a Proxy starts on each unit its area strikes has that unit as its primary
-/// target, so a heal, an Interrupt Armor row or an absorb of the spell aimed at it
-/// fails the load: none is built on a struck unit. A spell started on the caster, and a row
-/// that includes the caster, are read (`place`).
+/// target, so a heal, an Interrupt Armor row or an absorb of the spell whose aim names the
+/// primary target, alone or with the caster, fails the load: none is built on a struck
+/// unit, and a row that names one would otherwise lose that part without a word. A spell
+/// started on the caster, and a row aimed at the caster alone or at the caster and the area,
+/// are read (`place`).
 fn not_on_a_struck_unit(
   place place: RowPlace,
   aim aim: Aim,
   refused refused: fn(StruckBy) -> PlanError,
 ) -> Result(Nil, PlanError) {
-  case place.struck_by, aim {
-    Some(by), AimsAtPrimaryTarget -> Error(refused(by))
-    Some(..), AimsAtCaster
-    | Some(..), AimsAtArea
-    | Some(..), AimsAtBoth
-    | Some(..), OtherAim(..)
-    | None, _
-    -> Ok(Nil)
+  case place.struck_by, reaches_primary_target(aim:) {
+    Some(by), True -> Error(refused(by))
+    Some(..), False | None, _ -> Ok(Nil)
   }
 }
 
@@ -3213,14 +3356,16 @@ fn forced_move_of(
   )
 }
 
-/// One ForcedMove row aimed only at the units a strike hits (targetFlags 2, 4 or 6;
-/// `effect_kind.is_row_read`): its columns as a `forced_move.Move` (`forced_move.of_row`; a
-/// dataBits00 above 15 or a float column that is no number fails the load), its aim, and its
-/// apply prerequisites as a Fluff effect's are (`condition_of`), the target one read for
-/// each struck unit it throws.
+/// The part of a ForcedMove row that moves the units other than the caster (targetFlags
+/// 2, 4 or 6, or the part of 3, 5 or 7 past the caster's bit; `effect_kind.is_row_read`):
+/// its columns as a `forced_move.Move` (`forced_move.of_row`; a dataBits00 above 15 or a
+/// float column that is no number fails the load), the `aim` it was given, and its apply
+/// prerequisites as a Fluff effect's are (`condition_of`), the target one read for each
+/// struck unit it throws.
 fn struck_move_of(
   tables tables: table_store.Tables,
   effect effect: spell4_effects.Spell4Effects,
+  aim aim: Aim,
 ) -> Result(StruckMove, PlanError) {
   use move <- result.try(
     forced_move.of_row(row: effect)
@@ -3243,7 +3388,7 @@ fn struck_move_of(
     phase_flags: effect.phase_flags,
     delay_ms: effect.delay_time,
     move:,
-    aim: aim_of(target_flags: effect.target_flags),
+    aim:,
     condition:,
     tag: tag_of(effect:),
   )
@@ -3348,8 +3493,8 @@ pub fn stealth_on_the_caster(
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(Nil, PlanError) {
   case aim_of(target_flags: effect.target_flags) {
-    AimsAtCaster -> Ok(Nil)
-    AimsAtPrimaryTarget | AimsAtArea | AimsAtBoth | OtherAim(..) ->
+    Ok(AimsAtCaster) -> Ok(Nil)
+    Ok(_) | Error(Nil) ->
       Error(StealthAimNotRead(
         spell4_id:,
         effect_id: effect.id,
@@ -3549,34 +3694,32 @@ fn proc_filter_of(
 }
 
 /// The Spell4 ids among `effects` that a Proxy starts as a child on each struck unit: a
-/// Proxy aimed at the area, or at the area and the primary target (`target_of`), each with
-/// the first such Proxy in `effects` order.
+/// Proxy whose aim holds the area (`target_of`), each with the first such Proxy in
+/// `effects` order. A Proxy of a spell that hits no foes (`spell_hits_foes`) does so only
+/// when its aim has no caster's bit, since the area bit of the others is not read there.
 pub fn struck_unit_children(
   effects effects: List(spell4_effects.Spell4Effects),
 ) -> Dict(Int, StruckBy) {
+  let hitting = spells_that_hit_foes(effects:)
   list.fold(effects, dict.new(), fn(found, effect) {
-    case
+    let starts_on_struck_units = case
       effect_kind.kind_of(effect.effect_type) == effect_kind.Proxy
-      && effect.data_bits00 != 0
+      && effect.data_bits00 != 0,
+      aim_of(target_flags: effect.target_flags)
     {
-      True ->
-        case aim_of(target_flags: effect.target_flags) {
-          AimsAtArea | AimsAtBoth ->
-            case dict.has_key(found, effect.data_bits00) {
-              True -> found
-              False ->
-                dict.insert(
-                  found,
-                  effect.data_bits00,
-                  StruckBy(
-                    spell4_id: effect.spell_id,
-                    proxy_effect_id: effect.id,
-                  ),
-                )
-            }
-          AimsAtCaster | AimsAtPrimaryTarget | OtherAim(..) -> found
-        }
-      False -> found
+      True, Ok(aim) ->
+        reaches_area(aim:)
+        && { !reaches_caster(aim:) || set.contains(hitting, effect.spell_id) }
+      True, Error(Nil) | False, _ -> False
+    }
+    case starts_on_struck_units, dict.has_key(found, effect.data_bits00) {
+      True, False ->
+        dict.insert(
+          found,
+          effect.data_bits00,
+          StruckBy(spell4_id: effect.spell_id, proxy_effect_id: effect.id),
+        )
+      True, True | False, _ -> found
     }
   })
 }
@@ -3693,46 +3836,7 @@ fn lists_of(
   let lists =
     list.fold(readings, empty, fn(lists, row) {
       case row.1 {
-        Ok(Applied(planned)) | Ok(Held(planned)) ->
-          case planned {
-            PlannedGain(gain:) ->
-              RowLists(..lists, gains: [gain, ..lists.gains])
-            PlannedLasting(lasting:) ->
-              RowLists(..lists, lasting: [lasting, ..lists.lasting])
-            PlannedRemove(remove:) ->
-              RowLists(..lists, removes: [remove, ..lists.removes])
-            PlannedControl(control:) ->
-              RowLists(..lists, controls: [control, ..lists.controls])
-            PlannedModifier(modifier:) ->
-              case modifier.armor {
-                Some(..) ->
-                  RowLists(..lists, armors: [modifier, ..lists.armors])
-                None ->
-                  RowLists(..lists, modifiers: [modifier, ..lists.modifiers])
-              }
-            PlannedForcedMove(forced_move:) ->
-              RowLists(..lists, forced_moves: [
-                forced_move,
-                ..lists.forced_moves
-              ])
-            PlannedStruckMove(struck_move:) ->
-              RowLists(..lists, struck_moves: [
-                struck_move,
-                ..lists.struck_moves
-              ])
-            PlannedCooldownModifier(modifier:) ->
-              RowLists(..lists, cooldown_modifiers: [
-                modifier,
-                ..lists.cooldown_modifiers
-              ])
-            PlannedStealth(stealth:) ->
-              RowLists(..lists, stealth: [stealth, ..lists.stealth])
-            PlannedRemoveStealth(remove:) ->
-              RowLists(..lists, remove_stealth: [remove, ..lists.remove_stealth])
-            PlannedHeal(heal:) ->
-              RowLists(..lists, heals: [heal, ..lists.heals])
-            PlannedProc(..) | PlannedProxy(..) -> lists
-          }
+        Ok(Applied(planned)) | Ok(Held(planned)) -> listed(lists:, planned:)
         Ok(LeftOut(..)) | Ok(ReadByArea) | Ok(ReadByActivation) | Error(..) ->
           lists
       }
@@ -3751,6 +3855,45 @@ fn lists_of(
     remove_stealth: list.reverse(lists.remove_stealth),
     heals: list.reverse(lists.heals),
   )
+}
+
+/// The lists with one planned row added, in reverse row order; a row aimed at the caster
+/// and past it adds both its parts.
+fn listed(lists lists: RowLists, planned planned: PlannedRow) -> RowLists {
+  case planned {
+    PlannedGain(gain:) -> RowLists(..lists, gains: [gain, ..lists.gains])
+    PlannedLasting(lasting:) ->
+      RowLists(..lists, lasting: [lasting, ..lists.lasting])
+    PlannedRemove(remove:) ->
+      RowLists(..lists, removes: [remove, ..lists.removes])
+    PlannedControl(control:) ->
+      RowLists(..lists, controls: [control, ..lists.controls])
+    PlannedModifier(modifier:) ->
+      case modifier.armor {
+        Some(..) -> RowLists(..lists, armors: [modifier, ..lists.armors])
+        None -> RowLists(..lists, modifiers: [modifier, ..lists.modifiers])
+      }
+    PlannedForcedMove(forced_move:) ->
+      RowLists(..lists, forced_moves: [forced_move, ..lists.forced_moves])
+    PlannedStruckMove(struck_move:) ->
+      RowLists(..lists, struck_moves: [struck_move, ..lists.struck_moves])
+    PlannedCooldownModifier(modifier:) ->
+      RowLists(..lists, cooldown_modifiers: [
+        modifier,
+        ..lists.cooldown_modifiers
+      ])
+    PlannedStealth(stealth:) ->
+      RowLists(..lists, stealth: [stealth, ..lists.stealth])
+    PlannedRemoveStealth(remove:) ->
+      RowLists(..lists, remove_stealth: [remove, ..lists.remove_stealth])
+    PlannedHeal(heal:) -> RowLists(..lists, heals: [heal, ..lists.heals])
+    PlannedBoth(caster_part:, past_the_caster:) ->
+      listed(
+        lists: listed(lists:, planned: caster_part),
+        planned: past_the_caster,
+      )
+    PlannedProc(..) | PlannedProxy(..) -> lists
+  }
 }
 
 /// The CCStateSet rows the plan drops (`StateUntilRemovedNotRead`), in row order.
@@ -3860,16 +4003,16 @@ fn kind_reading(
         }
       })
     effect_kind.Fluff | effect_kind.Scale | effect_kind.RavelSignal ->
-      lasting_reading(tables:, spell4_id:, effect:)
+      lasting_reading(tables:, place:, spell4_id:, effect:)
     effect_kind.ItemVisualSwap ->
-      lasting_reading(tables:, spell4_id:, effect:)
+      lasting_reading(tables:, place:, spell4_id:, effect:)
       |> result.map(held_while_delayed(reading: _, effect:))
     effect_kind.ShieldOverload -> {
       use <- when_reached(reaches:)
-      lasting_reading(tables:, spell4_id:, effect:)
+      lasting_reading(tables:, place:, spell4_id:, effect:)
     }
     effect_kind.ForceRemove ->
-      remove_of(tables:, spell_groups:, spell4_id:, effect:)
+      remove_of(tables:, spell_groups:, place:, spell4_id:, effect:)
       |> result.map(fn(remove) { Applied(PlannedRemove(remove:)) })
     effect_kind.CrowdControl ->
       control_of(tables:, spell4_id:, effect:)
@@ -3892,18 +4035,18 @@ fn kind_reading(
     }
     effect_kind.ForcedMove -> {
       use <- when_reached(reaches:)
-      case has_flag(flags: effect.target_flags, bit: 1) {
-        True ->
+      planned_in_parts(
+        aim: row_aim_of(place:, effect:),
+        caster_part: fn() {
           forced_move_of(tables:, effect:)
-          |> result.map(fn(forced_move) {
-            Applied(PlannedForcedMove(forced_move:))
-          })
-        False ->
-          struck_move_of(tables:, effect:)
-          |> result.map(fn(struck_move) {
-            Applied(PlannedStruckMove(struck_move:))
-          })
-      }
+          |> result.map(fn(forced_move) { PlannedForcedMove(forced_move:) })
+        },
+        past_part: fn(aim) {
+          struck_move_of(tables:, effect:, aim:)
+          |> result.map(fn(struck_move) { PlannedStruckMove(struck_move:) })
+        },
+      )
+      |> result.map(Applied)
     }
     effect_kind.CooldownModifier -> {
       use <- when_reached(reaches:)
@@ -3925,9 +4068,9 @@ fn kind_reading(
       case effect.data_bits00 {
         0 -> Ok(LeftOut(why: ProxyNamesNoSpell))
         _ -> {
-          use target <- result.try(target_of(spell4_id:, effect:))
+          use targets <- result.try(target_of(place:, spell4_id:, effect:))
           use condition <- result.map(proxy_condition_of(tables:, effect:))
-          Applied(PlannedProxy(target:, condition:))
+          Applied(PlannedProxy(targets:, condition:))
         }
       }
     effect_kind.Damage -> Ok(ReadByArea)
@@ -3964,10 +4107,11 @@ fn held_while_delayed(
 /// A Fluff, Scale, ItemVisualSwap, RavelSignal or area ShieldOverload row as a lasting row.
 fn lasting_reading(
   tables tables: table_store.Tables,
+  place place: RowPlace,
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(RowReading, PlanError) {
-  lasting_of(tables:, spell4_id:, effect:)
+  lasting_of(tables:, place:, spell4_id:, effect:)
   |> result.map(fn(lasting) { Applied(PlannedLasting(lasting:)) })
 }
 
@@ -3980,19 +4124,143 @@ fn modifier_reading(
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(RowReading, PlanError) {
-  use condition <- result.try(applied_condition_of(
-    tables:,
-    effect:,
-    reach: reach_of_flags(target_flags: effect.target_flags),
-  ))
-  use modifier <- result.try(modifier_of(
-    tables:,
-    spell4_id:,
-    effect:,
-    condition:,
-  ))
-  use Nil <- result.map(modifier_not_on_a_struck_unit(place:, modifier:))
-  by_life(modifier:)
+  case effect_kind.kind_of(effect.effect_type) == effect_kind.PropertyModifier {
+    True -> property_modifier_reading(tables:, place:, spell4_id:, effect:)
+    False -> {
+      use condition <- result.try(applied_condition_of(
+        tables:,
+        effect:,
+        reach: reach_of_flags(target_flags: effect.target_flags),
+      ))
+      use modifier <- result.try(modifier_of(
+        tables:,
+        spell4_id:,
+        effect:,
+        condition:,
+      ))
+      let modifier = modifier_in_place(place:, modifier:)
+      use Nil <- result.map(modifier_not_on_a_struck_unit(place:, modifier:))
+      by_life(modifier:)
+    }
+  }
+}
+
+/// A UnitPropertyModifier row (`Spell4Effects.effectType.11`): a `PropertyChange` on the
+/// caster when its aim names the caster, and a `StruckChange` on the units it names past the
+/// caster, each behind the condition its units are checked by (the target apply
+/// prerequisite is read for the caster alone in the one and for struck units in the other).
+fn property_modifier_reading(
+  tables tables: table_store.Tables,
+  place place: RowPlace,
+  spell4_id spell4_id: Int,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(RowReading, PlanError) {
+  let modifier_with = fn(reach, change_of_modifier) {
+    use condition <- result.try(applied_condition_of(tables:, effect:, reach:))
+    use modifier <- result.map(modifier_of(
+      tables:,
+      spell4_id:,
+      effect:,
+      condition:,
+    ))
+    PlannedModifier(
+      modifier: PropertyModifier(
+        ..modifier,
+        change: change_of_modifier(modifier.change),
+      ),
+    )
+  }
+  planned_in_parts(
+    aim: row_aim_of(place:, effect:),
+    caster_part: fn() { modifier_with(OnlyTheCaster, fn(change) { change }) },
+    past_part: fn(aim) {
+      modifier_with(PastTheCaster, fn(change) {
+        case change {
+          PropertyChange(modifier:) | StruckChange(modifier:, ..) ->
+            StruckChange(modifier:, aim:)
+          LookChange(..) | AbsorbChange(..) -> change
+        }
+      })
+    },
+  )
+  |> result.map(fn(planned) {
+    case lasting.has_life(row: lasting_row_of(effect:)) {
+      True -> Applied(planned)
+      False -> Held(planned)
+    }
+  })
+}
+
+/// A row aimed at the caster and past it as its two parts, each planned by the part's own
+/// reading: the caster's alone for an aim at the caster, the part past it alone for an aim
+/// that does not name the caster, and `PlannedBoth` for one that names both. `past_part`
+/// is given the aim without the caster's bit (`past_the_caster`).
+fn planned_in_parts(
+  aim aim: Aim,
+  caster_part caster_part: fn() -> Result(PlannedRow, PlanError),
+  past_part past_part: fn(Aim) -> Result(PlannedRow, PlanError),
+) -> Result(PlannedRow, PlanError) {
+  case past_the_caster(aim:) {
+    Error(Nil) -> caster_part()
+    Ok(past) ->
+      case reaches_caster(aim:) {
+        False -> past_part(past)
+        True -> {
+          use caster <- result.try(caster_part())
+          use past <- result.map(past_part(past))
+          PlannedBoth(caster_part: caster, past_the_caster: past)
+        }
+      }
+  }
+}
+
+/// The aim of a row of a kind the plan reads for the caster and the units past it
+/// (`effect_kind.is_row_read`), in this place: what `aim_of` reads, with a friendly spell's
+/// area left out (`aim_in_place`), and the caster alone for a value with bit 8 and the
+/// caster's bit (9, 11, 13, 15), which the rows are read as today ([B8]).
+fn row_aim_of(
+  place place: RowPlace,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Aim {
+  aim_of(target_flags: effect.target_flags)
+  |> result.map(aim_in_place(place:, aim: _))
+  |> result.unwrap(AimsAtCaster)
+}
+
+/// The aim in a place: the area's bit is read only in a spell that hits foes. A friendly
+/// spell's area waits for #834, so a row of a kind that reads the caster and the units
+/// past it keeps its caster and primary target parts ([F] `spell_hits_foes`).
+fn aim_in_place(place place: RowPlace, aim aim: Aim) -> Aim {
+  use <- bool.guard(when: place.hits_foes, return: aim)
+  without_friendly_area(aim:)
+}
+
+/// The modifier with its absorb's or armor's aim as the place reads it (`aim_in_place`).
+fn modifier_in_place(
+  place place: RowPlace,
+  modifier modifier: PropertyModifier,
+) -> PropertyModifier {
+  case modifier.armor, modifier.change {
+    Some(armor), _ ->
+      PropertyModifier(
+        ..modifier,
+        armor: Some(
+          InterruptArmor(..armor, aim: aim_in_place(place:, aim: armor.aim)),
+        ),
+      )
+    None, AbsorbChange(absorption:) ->
+      PropertyModifier(
+        ..modifier,
+        change: AbsorbChange(
+          Absorption(
+            ..absorption,
+            aim: aim_in_place(place:, aim: absorption.aim),
+          ),
+        ),
+      )
+    None, PropertyChange(..) | None, StruckChange(..) | None, LookChange(..) ->
+      modifier
+  }
 }
 
 /// A property row as `Held` when it has no life (`lasting.has_life`), which the cast rule
@@ -4018,6 +4286,7 @@ fn interrupt_armor_reading(
     reach: reach_of_flags(target_flags: effect.target_flags),
   ))
   use modifier <- result.try(interrupt_armor_of(spell4_id:, effect:, condition:))
+  let modifier = modifier_in_place(place:, modifier:)
   use Nil <- result.map(modifier_not_on_a_struck_unit(place:, modifier:))
   by_life(modifier:)
 }
@@ -4036,6 +4305,7 @@ fn heal_reading(
     reach: reach_of_flags(target_flags: effect.target_flags),
   ))
   use heal <- try_heal(heal_of(spell4_id:, effect:, condition:))
+  let heal = heal_in_place(place:, heal:)
   use Nil <- result.map(
     not_on_a_struck_unit(place:, aim: heal.aim, refused: fn(by) {
       HealOnStruckUnit(
@@ -4046,6 +4316,15 @@ fn heal_reading(
     }),
   )
   Applied(PlannedHeal(heal:))
+}
+
+/// The heal with its aim as the place reads it (`aim_in_place`).
+fn heal_in_place(place place: RowPlace, heal heal: Heal) -> Heal {
+  let aim = aim_in_place(place:, aim: heal.aim)
+  case heal {
+    Heal(..) -> Heal(..heal, aim:)
+    TickingHeal(..) -> TickingHeal(..heal, aim:)
+  }
 }
 
 /// Goes on with a heal, or leaves out a periodic heal that lasts until removed.
@@ -4204,24 +4483,42 @@ fn modifier_number(
   ))
 }
 
-/// The aim of a Fluff, SpellForceRemove, Scale, ItemVisualSwap or RavelSignal effect: the caster, the
-/// primary target, the area or both of those; any other flag value fails the load.
+/// The aim of a Fluff, SpellForceRemove, Scale, ItemVisualSwap or RavelSignal effect: the
+/// units its flags name (`aim_of`); any other flag value fails the load, and so does one
+/// with the caster's bit and the area's in a spell that hits no foes (`FriendlyAreaNotRead`).
 fn lasting_aim_of(
+  place place: RowPlace,
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(Aim, PlanError) {
-  case aim_of(target_flags: effect.target_flags) {
-    OtherAim(flags:) ->
-      Error(LastingAimNotRead(
-        spell4_id:,
-        effect_id: effect.id,
-        target_flags: flags,
-      ))
-    AimsAtCaster -> Ok(AimsAtCaster)
-    AimsAtPrimaryTarget -> Ok(AimsAtPrimaryTarget)
-    AimsAtArea -> Ok(AimsAtArea)
-    AimsAtBoth -> Ok(AimsAtBoth)
-  }
+  use aim <- result.try(
+    aim_of(target_flags: effect.target_flags)
+    |> result.replace_error(LastingAimNotRead(
+      spell4_id:,
+      effect_id: effect.id,
+      target_flags: effect.target_flags,
+    )),
+  )
+  friendly_area_read(place:, spell4_id:, effect:, aim:)
+}
+
+/// The aim itself, or `FriendlyAreaNotRead` for an aim that holds the caster's bit and the
+/// area's in a spell that hits no foes ([F] `spell_hits_foes`).
+fn friendly_area_read(
+  place place: RowPlace,
+  spell4_id spell4_id: Int,
+  effect effect: spell4_effects.Spell4Effects,
+  aim aim: Aim,
+) -> Result(Aim, PlanError) {
+  use <- bool.guard(
+    when: !names_caster_and_area(aim:) || place.hits_foes,
+    return: Ok(aim),
+  )
+  Error(FriendlyAreaNotRead(
+    spell4_id:,
+    effect_id: effect.id,
+    target_flags: effect.target_flags,
+  ))
 }
 
 /// The selector of a type 80 row, whose dataBits01 must name a spell group (one that
@@ -4509,23 +4806,33 @@ fn weapon_of(weapon_slot: Int) -> WeaponSlot {
   }
 }
 
-/// A Proxy aimed at the area (`aim_of`: 4 or 6) starts its child on each struck unit,
-/// one aimed at the caster or the primary target on the caster
-/// (`Spell4Effects.targetFlags`); another value is refused.
+/// The units a Proxy starts its child on (`Spell4Effects.targetFlags`): each struck unit
+/// for an aim at the area (`aim_of`: 4 or 6), the caster for one at the caster or the
+/// primary target (1, 2, 3), and both for one that holds the caster's bit and the area's
+/// (5, 7), which a spell that hits no foes refuses (`FriendlyAreaNotRead`). Another value is
+/// refused.
 fn target_of(
+  place place: RowPlace,
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
-) -> Result(ProxyTarget, PlanError) {
-  case aim_of(target_flags: effect.target_flags) {
-    AimsAtArea | AimsAtBoth -> Ok(OnEachStruck)
-    AimsAtCaster | AimsAtPrimaryTarget -> Ok(OnCaster)
-    OtherAim(flags:) ->
-      Error(ProxyAimNotRead(
-        spell4_id:,
-        effect_id: effect.id,
-        target_flags: flags,
-      ))
-  }
+) -> Result(List(ProxyTarget), PlanError) {
+  use aim <- result.try(
+    aim_of(target_flags: effect.target_flags)
+    |> result.replace_error(ProxyAimNotRead(
+      spell4_id:,
+      effect_id: effect.id,
+      target_flags: effect.target_flags,
+    )),
+  )
+  use aim <- result.map(friendly_area_read(place:, spell4_id:, effect:, aim:))
+  [
+    #(OnCaster, reaches_caster(aim:)),
+    #(OnCaster, !reaches_area(aim:) && !reaches_caster(aim:)),
+    #(OnEachStruck, reaches_area(aim:)),
+  ]
+  |> list.filter(fn(target) { target.1 })
+  |> list.map(fn(target) { target.0 })
+  |> list.unique
 }
 
 /// Which units a row lands on, for what its target apply prerequisite may read.
@@ -4538,11 +4845,8 @@ type Reach {
 
 /// The reach of a row of this aim.
 fn reach_of_aim(aim aim: Aim) -> Reach {
-  case aim {
-    AimsAtCaster -> OnlyTheCaster
-    AimsAtPrimaryTarget | AimsAtArea | AimsAtBoth -> PastTheCaster
-    OtherAim(..) -> PastTheCaster
-  }
+  use <- bool.guard(when: reaches_past_caster(aim:), return: PastTheCaster)
+  OnlyTheCaster
 }
 
 /// The reach of a row of a kind the plan reads for the caster when its targetFlags
@@ -5207,21 +5511,28 @@ pub fn tree(
 }
 
 /// The units an effect aimed by `aim` reaches (`Spell4Effects.targetFlags`): the caster,
-/// the cast's primary target, the units of the area, or the primary target and those.
-/// One rule for the cast's lasting rows and the strike's crowd-control states.
+/// the cast's primary target and the units of the area, each of those its bits name, in
+/// that order and each once (a caster that is its own target, or in the area, is one
+/// unit). One rule for the cast's lasting rows and the strike's crowd-control states.
 pub fn units_aimed_at(
   aim aim: Aim,
   caster caster: Int,
   primary_target primary_target: Int,
   area area: List(Int),
 ) -> List(Int) {
-  case aim {
-    AimsAtCaster -> [caster]
-    AimsAtPrimaryTarget -> [primary_target]
-    AimsAtArea -> area
-    AimsAtBoth -> list.unique([primary_target, ..area])
-    OtherAim(..) -> []
+  let caster_unit = case reaches_caster(aim:) {
+    True -> [caster]
+    False -> []
   }
+  let target_unit = case reaches_primary_target(aim:) {
+    True -> [primary_target]
+    False -> []
+  }
+  let area_units = case reaches_area(aim:) {
+    True -> area
+    False -> []
+  }
+  list.unique(list.flatten([caster_unit, target_unit, area_units]))
 }
 
 /// The Proc effects of the spell that apply in phase `phase`, those whose tag holds for
@@ -5385,8 +5696,9 @@ pub fn remove_stealth_in_phase(
 }
 
 /// The CCStateSet effects of the spell aimed at creatures that apply in phase `phase`,
-/// those whose tag holds for the points the cast spent. The states on the caster are
-/// `restrictions_in_phase`.
+/// those whose tag holds for the points the cast spent: a row whose aim names the primary
+/// target or the area, a row that names the caster as well among them. The states on the
+/// caster are `restrictions_in_phase`.
 pub fn controls_in_phase(
   spell spell: Spell,
   phase phase: Int,
@@ -5394,7 +5706,7 @@ pub fn controls_in_phase(
 ) -> List(CrowdControl) {
   in_phase(
     rows: list.filter(spell.controls, fn(control) {
-      control.aim != AimsAtCaster
+      reaches_past_caster(aim: control.aim)
     }),
     phase_flags: fn(control) { control.phase_flags },
     tag: fn(control) { control.tag },
@@ -5404,7 +5716,8 @@ pub fn controls_in_phase(
 }
 
 /// The CCStateSet effects of the spell aimed at the caster that apply in phase `phase`,
-/// those whose tag holds for the points the cast spent.
+/// those whose tag holds for the points the cast spent: a row whose aim names the caster,
+/// a row that names other units as well among them.
 pub fn restrictions_in_phase(
   spell spell: Spell,
   phase phase: Int,
@@ -5412,7 +5725,7 @@ pub fn restrictions_in_phase(
 ) -> List(CrowdControl) {
   in_phase(
     rows: list.filter(spell.controls, fn(control) {
-      control.aim == AimsAtCaster
+      reaches_caster(aim: control.aim)
     }),
     phase_flags: fn(control) { control.phase_flags },
     tag: fn(control) { control.tag },
