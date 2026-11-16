@@ -329,6 +329,89 @@ pub fn a_creatures_stat_part_is_summed_and_cut_in_32_bit_floats_test() -> Nil {
     as "a 64-bit sum is 639.49998, which rounds to 639 and gives 1386.5"
 }
 
+pub fn a_creature_formula_runs_in_32_bit_floats_test() -> Nil {
+  use <- owned_test.run(5000)
+  // 0x1405659f5: the creature path's cap, the exponential branch, the division by
+  // GameFormula 712's fourth value and S + R are 32-bit floats, S and R divided apart.
+  // Row 115620 (Spell4Effects, spell 48982) at level 25: Assault Power (12) x 0x3f7c154d
+  // (0.9847000241279602), the level (10) x 0x41ef3333 (29.899999618530273), dataBits00
+  // 1.0, dataBits01 0. GameFormula 712 is 70, 100, 1, 1. The cap c is
+  // (25 x 70 + 100) x 0.9847 = 1821.695068359375 as a 32-bit float; R is 25 x 29.9 = 747.5.
+  // An Assault Power of 1900 gives S = 1871 (1870.93 + 0.5, cut), above c, so S becomes
+  // ((1 - e^(-(S - c) / c)) x 1 + 1) x (c / 1) held in 32 bits after each step, and
+  // 32-bit 2617.8388671875 is the sum with 747.5 (the steps worked by hand in single
+  // precision, each rounded once). The same steps in 64-bit floats give 2617.83874.
+  let formula = client_formula(id: 115_620)
+  let beast = fn(assault_power) {
+    damage.Creature(level: 25, strength: 0.0, assault_power:)
+  }
+  let scaling = fn(divisor) {
+    damage.CreatureScaling(
+      per_level: 70.0,
+      base: 100.0,
+      overflow: 1.0,
+      divisor:,
+    )
+  }
+  assert damage.creature_value(
+      formula:,
+      creature: beast(1900.0),
+      scaling: scaling(1.0),
+      multiplier: 1.0,
+    )
+    == 2617.8388671875
+    as "beyond the cap every step is a 32-bit float"
+  // GameFormula 712's fourth value is 1.0 in the client's table, but the client divides
+  // by whatever it holds. An Assault Power of 400 gives S = 394 (393.88 + 0.5), under c.
+  // With a divisor of 3.0 (a value no row holds), S / 3 = 131.33333 and R / 3 =
+  // 249.16667 are 32-bit floats each, and their 32-bit sum is 380.5; dividing the 64-bit
+  // sum (394 + 747.5) / 3 gives 380.49999682.
+  assert damage.creature_value(
+      formula:,
+      creature: beast(400.0),
+      scaling: scaling(3.0),
+      multiplier: 1.0,
+    )
+    == 380.5
+    as "under the cap S and R are divided apart, each a 32-bit float"
+}
+
+pub fn a_row_base_is_read_as_an_unsigned_32_bit_integer_test() -> Nil {
+  use <- owned_test.run(5000)
+  // 0x140565782: the base (dataBits01) is `mov eax, r9d; cvtsi2ss xmm10, rax`, an
+  // unsigned 32-bit integer made a 32-bit float, so -1000 (top bit set) is
+  // 2^32 - 1000 = 4294966296, which a 32-bit float holds as 4294966272 (above 2^31
+  // its steps are 256). The tables' integer columns are signed 32-bit values. No
+  // damage, heal or shield row of the client has the top bit set in dataBits01 (293
+  // other Spell4Effects rows have, none of effect type 8, 10, 12, 33, 118 or 138), so the
+  // row is row 115620 changed, its two parameters made 0.0 so the base alone is read.
+  let row =
+    spell4_effects.Spell4Effects(
+      ..client_row(id: 115_620),
+      data_bits01: -1000,
+      parameter_value00: 0.0,
+      parameter_value01: 0.0,
+    )
+  let assert Ok(formula) = damage.formula_of(effect: row)
+    as "the row's dataBits00 is the float 1.0"
+  assert damage.value(formula:, attacker: attacker_support.fresh())
+    == 4_294_966_272.0
+    as "a player's row base is unsigned"
+  assert damage.creature_value(
+      formula:,
+      creature: damage.Creature(level: 25, strength: 0.0, assault_power: 0.0),
+      scaling: damage.CreatureScaling(
+        per_level: 70.0,
+        base: 100.0,
+        overflow: 1.0,
+        divisor: 1.0,
+      ),
+      multiplier: 1.0,
+    )
+    == 4_294_966_272.0
+    as "a creature's row base is unsigned"
+}
+
 pub fn the_flat_part_is_summed_in_32_bit_floats_test() -> Nil {
   use <- owned_test.run(5000)
   // Row 45661 (Spell4Effects, damage): dataBits00 1.0, dataBits01 0, type 7 (the
