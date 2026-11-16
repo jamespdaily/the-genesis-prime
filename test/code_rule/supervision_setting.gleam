@@ -7,7 +7,7 @@ import code_rule/syntax
 import glance.{type Expression}
 import gleam/int
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option
 import gleam/result
 import gleam/string
 
@@ -89,24 +89,15 @@ fn unstated(file: SourceFile, kinds: List(Kind)) -> List(Breach) {
   |> list.map(fn(found) { found.1 })
 }
 
-/// The names the file gives a module it imports: its own last segment, or its
-/// alias. A module imported under a discarded alias cannot be called.
+/// The names the file gives a module it imports (`syntax.import_name`).
 fn qualifiers(module: glance.Module, name: String) -> List(String) {
   list.filter_map(module.imports, fn(definition) {
     let import_ = definition.definition
-    case import_.module == name, import_.alias {
-      True, None -> Ok(last_segment(name))
-      True, Some(glance.Named(alias)) -> Ok(alias)
-      True, Some(glance.Discarded(_)) | False, _ -> Error(Nil)
+    case import_.module == name {
+      True -> option.to_result(syntax.import_name(import_), Nil)
+      False -> Error(Nil)
     }
   })
-}
-
-fn last_segment(module: String) -> String {
-  case list.last(string.split(module, "/")) {
-    Ok(segment) -> segment
-    Error(Nil) -> module
-  }
 }
 
 /// The location and the function of a call or a capture.
