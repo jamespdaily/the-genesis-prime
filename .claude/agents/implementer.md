@@ -26,7 +26,7 @@ Write the tests from the list first, then the code, running only the named tests
 
 Run `gleam build`, the tests you touch and `./check fast` as you go; never `./check` (CI is the gate). Push after every commit; at your first push, open a draft pull request (title: the issue's title, body: the issue's number) so CI runs, and hand back once CI on your last commit has ended. A check that fails once is reported with its cause, not rerun until green. Keep each command's output in a log in your scratch subfolder and read only the failing lines.
 
-Hand back once, as a comment on the step's issue, then return the same text. A lost or compacted message then loses nothing. (The Podman step's hand-back never arrived and the coordinator waited two hours, 2026-11-06.) Use this block, every field filled or "none":
+Hand back once, as a comment on the step's issue, then return under 150 words: the commit, CI's result, and any deviation or finding outside the list, with the comment's link. A lost or compacted message then loses nothing. (The Podman step's hand-back never arrived and the coordinator waited two hours, 2026-11-06.) Use this block, every field filled or "none":
 
 ```
 **Hand-back** <branch> @ <commit>
