@@ -1574,33 +1574,32 @@ fn knockback_plans() -> spell_plan.Plans {
   // aimed at the primary target (targetFlags 2) runs in a child a Proxy starts on each
   // unit the parent struck (`ProxyTarget.OnEachStruck`), whose primary target is that unit.
   let knockback =
-    cast_support.replacing(
+    cast_support.with_effects(
       spell: cast_support.child(spell4_id: 36_010, base: 21_614),
-      as_kind: spell_plan.as_struck_move,
       kinds: list.map(
         spell_plan.payloads(spell: planned, as_kind: spell_plan.as_struck_move),
         spell_plan.StruckMoveEffect,
       ),
     )
-  cast_support.plans_with(spell: cast_support.replacing(
-    spell: cast_support.child(spell4_id: 34_355, base: 3),
-    as_kind: spell_plan.as_proxy,
-    kinds: list.map(
-      [
-        spell_plan.Proxy(
-          effect_id: Spell4EffectsId(99_060),
-          delay_ms: 0,
-          phase_flags: -1,
-          condition: spell_plan.Always,
-          tag: spend.always,
-          target: spell_plan.OnEachStruck,
-          spell: knockback,
-          gains: [],
+  cast_support.plans_with(
+    spell: cast_support.with_effects(
+      spell: cast_support.child(spell4_id: 34_355, base: 3),
+      kinds: [
+        spell_plan.ProxyEffect(
+          spell_plan.Proxy(
+            effect_id: Spell4EffectsId(99_060),
+            delay_ms: 0,
+            phase_flags: -1,
+            condition: spell_plan.Always,
+            tag: spend.always,
+            target: spell_plan.OnEachStruck,
+            spell: knockback,
+            gains: [],
+          ),
         ),
       ],
-      spell_plan.ProxyEffect,
     ),
-  ))
+  )
 }
 
 /// The path of a creature's flight as the connection was sent it.

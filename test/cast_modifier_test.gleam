@@ -261,23 +261,19 @@ pub fn a_type_80_removal_of_the_cast_ends_its_modifiers_and_cancels_their_timers
   let plans =
     support.plans_of([
       support.spell_holding(spell4_id: 57_030, base: 3, modifiers: [crit_row()]),
-      support.replacing(
+      support.with_effects(
         spell: support.child(spell4_id: 301, base: 1),
-        as_kind: spell_plan.as_remove,
-        kinds: list.map(
-          [
-            spell_plan.ForceRemove(
-              effect_id: Spell4EffectsId(196_521),
-              phase_flags: -1,
-              aim: spell_plan.AimsAtCaster,
-              selector: lasting.Spell(Spell4Id(57_030)),
-              count: 1,
-              condition: Always,
-              tag: spend.always,
-            ),
-          ],
-          spell_plan.RemoveEffect,
-        ),
+        kinds: [
+          spell_plan.RemoveEffect(spell_plan.ForceRemove(
+            effect_id: Spell4EffectsId(196_521),
+            phase_flags: -1,
+            aim: spell_plan.AimsAtCaster,
+            selector: lasting.Spell(Spell4Id(57_030)),
+            count: 1,
+            condition: Always,
+            tag: spend.always,
+          )),
+        ],
       ),
     ])
   let #(state, first) =
@@ -559,23 +555,19 @@ pub fn removal_ends_creature_modifier_test() -> Nil {
       support.spell_holding(spell4_id: 671, base: 3, modifiers: [
         immediate_row(effect_id: 7711),
       ]),
-      support.replacing(
+      support.with_effects(
         spell: support.child(spell4_id: 301, base: 1),
-        as_kind: spell_plan.as_remove,
-        kinds: list.map(
-          [
-            spell_plan.ForceRemove(
-              effect_id: Spell4EffectsId(196_521),
-              phase_flags: -1,
-              aim: spell_plan.AimsAtArea,
-              selector: lasting.Spell(Spell4Id(671)),
-              count: 1,
-              condition: Always,
-              tag: spend.always,
-            ),
-          ],
-          spell_plan.RemoveEffect,
-        ),
+        kinds: [
+          spell_plan.RemoveEffect(spell_plan.ForceRemove(
+            effect_id: Spell4EffectsId(196_521),
+            phase_flags: -1,
+            aim: spell_plan.AimsAtArea,
+            selector: lasting.Spell(Spell4Id(671)),
+            count: 1,
+            condition: Always,
+            tag: spend.always,
+          )),
+        ],
       ),
     ])
   let #(state, first) =
@@ -620,23 +612,19 @@ pub fn removal_before_the_delay_ran_out_starts_nothing_on_the_creature_test() ->
   let plans =
     support.plans_of([
       support.spell_holding(spell4_id: 671, base: 3, modifiers: [slowing_row()]),
-      support.replacing(
+      support.with_effects(
         spell: support.child(spell4_id: 301, base: 1),
-        as_kind: spell_plan.as_remove,
-        kinds: list.map(
-          [
-            spell_plan.ForceRemove(
-              effect_id: Spell4EffectsId(196_521),
-              phase_flags: -1,
-              aim: spell_plan.AimsAtArea,
-              selector: lasting.Spell(Spell4Id(671)),
-              count: 1,
-              condition: Always,
-              tag: spend.always,
-            ),
-          ],
-          spell_plan.RemoveEffect,
-        ),
+        kinds: [
+          spell_plan.RemoveEffect(spell_plan.ForceRemove(
+            effect_id: Spell4EffectsId(196_521),
+            phase_flags: -1,
+            aim: spell_plan.AimsAtArea,
+            selector: lasting.Spell(Spell4Id(671)),
+            count: 1,
+            condition: Always,
+            tag: spend.always,
+          )),
+        ],
       ),
     ])
   let #(state, first) =

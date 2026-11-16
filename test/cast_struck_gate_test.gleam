@@ -88,20 +88,16 @@ fn gate_of(id id: Int, aim aim: spell_plan.Aim) -> spell_plan.StruckGate {
 /// A spell whose go has a gated row aimed at `gated_aim`, an ungated one aimed at the area
 /// and one aimed at the caster.
 fn spell_gated_at(gated_aim gated_aim: spell_plan.Aim) -> Spell {
-  support.replacing(
+  support.with_effects(
     spell: spell_plan.Spell(
       ..support.child(spell4_id: 101, base: 3),
       struck_gates: [gate_of(id: gated_id, aim: gated_aim)],
     ),
-    as_kind: spell_plan.as_lasting,
-    kinds: list.map(
-      [
-        marker_row(id: gated_id, aim: gated_aim),
-        marker_row(id: ungated_id, aim: AimsAtArea),
-        marker_row(id: own_id, aim: AimsAtCaster),
-      ],
-      spell_plan.LastingEffect,
-    ),
+    kinds: [
+      spell_plan.LastingEffect(marker_row(id: gated_id, aim: gated_aim)),
+      spell_plan.LastingEffect(marker_row(id: ungated_id, aim: AimsAtArea)),
+      spell_plan.LastingEffect(marker_row(id: own_id, aim: AimsAtCaster)),
+    ],
   )
 }
 
@@ -395,19 +391,17 @@ fn split_modifier_spell() -> Spell {
       armor: None,
     )
   }
-  support.replacing(
+  support.with_effects(
     spell: spell_plan.Spell(
       ..support.child(spell4_id: 101, base: 3),
       struck_gates: [gate_of(id: gated_id, aim: AimsAtArea)],
     ),
-    as_kind: spell_plan.as_modifier,
-    kinds: list.map(
-      [
-        row(spell_plan.PropertyChange(modifier:)),
+    kinds: [
+      spell_plan.ModifierEffect(row(spell_plan.PropertyChange(modifier:))),
+      spell_plan.ModifierEffect(
         row(spell_plan.StruckChange(modifier:, aim: AimsAtArea)),
-      ],
-      spell_plan.ModifierEffect,
-    ),
+      ),
+    ],
   )
 }
 
@@ -467,12 +461,11 @@ pub fn struck_move_failing_its_gate_is_not_thrown_test() -> Nil {
     == [Spell4EffectsId(53_184)]
     as "the strike tells the creature the move's gate"
   let spell =
-    support.replacing(
+    support.with_effects(
       spell: spell_plan.Spell(
         ..support.child(spell4_id: 101, base: 3),
         struck_gates: planned.struck_gates,
       ),
-      as_kind: spell_plan.as_struck_move,
       kinds: list.map(
         spell_plan.payloads(spell: planned, as_kind: spell_plan.as_struck_move),
         spell_plan.StruckMoveEffect,

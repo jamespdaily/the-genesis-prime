@@ -120,6 +120,7 @@ import genesis_prime/game/lasting
 import genesis_prime/game/prerequisite
 import genesis_prime/game/proc
 import genesis_prime/game/shortcut_spell
+import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{type Plans, type Proxy, type Spell}
 import genesis_prime/game/unit_properties
 import genesis_prime/message/ability_hold
@@ -3869,9 +3870,9 @@ fn activation_listed_at(
 ) -> fn(activate.ActivateEffect) -> Bool {
   fn(effect: activate.ActivateEffect) {
     live.spell.method != spell_plan.Channeled
-    || spell_plan.has_flag(
+    || spell_effect.has_flag(
       flags: effect.phase_flags,
-      bit: spell_plan.phase_bit(phase:),
+      bit: spell_effect.phase_bit(phase:),
     )
   }
 }

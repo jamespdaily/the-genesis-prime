@@ -73,6 +73,7 @@ import genesis_prime/game/area.{
 }
 import genesis_prime/game/damage.{type Formula}
 import genesis_prime/game/effect_kind
+import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{type Aim, type Spell}
 import genesis_prime/game/spend
 import genesis_prime/game/ticking
@@ -500,17 +501,17 @@ pub fn hit_shapes_of(
   )
   let twins =
     list.filter(rows, fn(row) {
-      spell_plan.has_flag(flags: row.telegraph_damage_flags, bit: 0x40)
+      spell_effect.has_flag(flags: row.telegraph_damage_flags, bit: 0x40)
     })
   let chosen = case twins {
     [] -> {
       let drawn =
         list.filter(rows, fn(row) {
-          !spell_plan.has_flag(flags: row.telegraph_damage_flags, bit: 0x100)
+          !spell_effect.has_flag(flags: row.telegraph_damage_flags, bit: 0x100)
         })
       case
         list.filter(drawn, fn(row) {
-          !spell_plan.has_flag(flags: row.telegraph_damage_flags, bit: 0x20)
+          !spell_effect.has_flag(flags: row.telegraph_damage_flags, bit: 0x20)
         })
       {
         [] -> drawn
@@ -685,9 +686,9 @@ fn phase_of(
   phase phase: Int,
   spent spent: Option(Int),
 ) -> PhaseStrike {
-  let bit = spell_plan.phase_bit(phase:)
+  let bit = spell_effect.phase_bit(phase:)
   let fires = fn(effect: DamageEffect) {
-    spell_plan.has_flag(flags: effect.phase_flags, bit:)
+    spell_effect.has_flag(flags: effect.phase_flags, bit:)
     && spend.applies(tag: effect.tag, spent:)
   }
   let firing = list.filter(spell.damage, fires)

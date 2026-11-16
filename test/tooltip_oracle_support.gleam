@@ -666,88 +666,46 @@ pub fn holder_of(
   )
 }
 
+/// How the spell holds the Spell4Effects row, read off the kind of each effect that names it:
+/// a crowd-control, lasting or property row before any other, the others by the name of their
+/// list. A stealth removal and a struck unit's move are held in no list the oracle reads.
 pub fn held_in(
   spell spell: Spell,
   effect_id effect_id: Int,
 ) -> Result(Held, Nil) {
-  let is = fn(row_id: id.Spell4EffectsId) { row_id.value == effect_id }
-  let elsewhere = [
-    #(
-      "stealth",
-      list.any(
-        spell_plan.payloads(spell:, as_kind: spell_plan.as_stealth),
-        fn(row) { is(row.effect_id) },
-      ),
-    ),
-    #(
-      "proc",
-      list.any(
-        spell_plan.payloads(spell:, as_kind: spell_plan.as_proc),
-        fn(row) { is(row.effect_id) },
-      ),
-    ),
-    #(
-      "cooldown modifier",
-      list.any(
-        spell_plan.payloads(spell:, as_kind: spell_plan.as_cooldown_modifier),
-        fn(row) { is(row.effect_id) },
-      ),
-    ),
-    #(
-      "shield heal",
-      list.any(
-        spell_plan.payloads(spell:, as_kind: spell_plan.as_heal),
-        fn(row) { is(row.effect_id) },
-      ),
-    ),
-    #(
-      "gain",
-      list.any(
-        spell_plan.payloads(spell:, as_kind: spell_plan.as_gain),
-        fn(row) { is(row.effect_id) },
-      ),
-    ),
-    #(
-      "forced move",
-      list.any(
-        spell_plan.payloads(spell:, as_kind: spell_plan.as_forced_move),
-        fn(row) { is(row.effect_id) },
-      ),
-    ),
-    #(
-      "removal",
-      list.any(
-        spell_plan.payloads(spell:, as_kind: spell_plan.as_remove),
-        fn(row) { is(row.effect_id) },
-      ),
-    ),
-    #(
-      "proxy",
-      list.any(
-        spell_plan.payloads(spell:, as_kind: spell_plan.as_proxy),
-        fn(row) { is(row.effect_id) },
-      ),
-    ),
-  ]
-  case
-    list.find(
-      spell_plan.payloads(spell:, as_kind: spell_plan.as_control),
-      fn(row) { is(row.effect_id) },
-    ),
-    list.find(
-      spell_plan.payloads(spell:, as_kind: spell_plan.as_lasting),
-      fn(row) { is(row.effect_id) },
-    ),
-    list.find(
-      spell_plan.payloads(spell:, as_kind: spell_plan.as_modifier),
-      fn(row) { is(row.effect_id) },
-    ),
-    list.find(elsewhere, fn(entry) { entry.1 })
-  {
-    Ok(row), _, _, _ -> Ok(HeldControl(row:))
-    _, Ok(row), _, _ -> Ok(HeldLasting(row:))
-    _, _, Ok(row), _ -> Ok(HeldModifier(row:))
-    _, _, _, Ok(#(name, _)) -> Ok(HeldElsewhere(list: name))
-    _, _, _, _ -> Error(Nil)
+  spell.effects
+  |> list.filter(fn(planned) { planned.effect_id.value == effect_id })
+  |> list.filter_map(fn(planned) { held_of(kind: planned.kind) })
+  |> list.sort(fn(one, other) {
+    int.compare(held_rank(held: one), held_rank(held: other))
+  })
+  |> list.first
+}
+
+fn held_of(kind kind: spell_plan.Kind) -> Result(Held, Nil) {
+  case kind {
+    spell_plan.ControlEffect(control:) -> Ok(HeldControl(row: control))
+    spell_plan.LastingEffect(lasting:) -> Ok(HeldLasting(row: lasting))
+    spell_plan.ModifierEffect(modifier:) -> Ok(HeldModifier(row: modifier))
+    spell_plan.StealthEffect(..) -> Ok(HeldElsewhere(list: "stealth"))
+    spell_plan.ProcEffect(..) -> Ok(HeldElsewhere(list: "proc"))
+    spell_plan.CooldownEffect(..) ->
+      Ok(HeldElsewhere(list: "cooldown modifier"))
+    spell_plan.HealEffect(..) -> Ok(HeldElsewhere(list: "shield heal"))
+    spell_plan.GainEffect(..) -> Ok(HeldElsewhere(list: "gain"))
+    spell_plan.ForcedMoveEffect(..) -> Ok(HeldElsewhere(list: "forced move"))
+    spell_plan.RemoveEffect(..) -> Ok(HeldElsewhere(list: "removal"))
+    spell_plan.ProxyEffect(..) -> Ok(HeldElsewhere(list: "proxy"))
+    spell_plan.RemoveStealthEffect(..) | spell_plan.StruckMoveEffect(..) ->
+      Error(Nil)
+  }
+}
+
+fn held_rank(held held: Held) -> Int {
+  case held {
+    HeldControl(..) -> 0
+    HeldLasting(..) -> 1
+    HeldModifier(..) -> 2
+    HeldElsewhere(..) -> 3
   }
 }

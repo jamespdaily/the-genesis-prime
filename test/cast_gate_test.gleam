@@ -60,13 +60,11 @@ fn spell_with(
   proxies proxies: List(Proxy),
   gains gains: List(spell_plan.Gain),
 ) -> Spell {
-  support.replacing(
-    spell: support.replacing(
+  support.with_effects(
+    spell: support.with_effects(
       spell: Spell(..support.exempt(), cast_time_ms: 0),
-      as_kind: spell_plan.as_proxy,
       kinds: list.map(proxies, spell_plan.ProxyEffect),
     ),
-    as_kind: spell_plan.as_gain,
     kinds: list.map(gains, spell_plan.GainEffect),
   )
 }

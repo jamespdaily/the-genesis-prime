@@ -57,44 +57,38 @@ fn listed(effects effects: List(Effect)) -> List(#(Int, List(Int))) {
 /// The client's spell with the rows the cast rule reads, as a spell of its own base.
 fn client_spell(spell4_id spell4_id: Int) -> Spell {
   let real = spell_tables.client_spell(spell4_id:)
-  support.replacing(
-    spell: support.replacing(
-      spell: support.replacing(
-        spell: support.replacing(
-          spell: support.replacing(
-            spell: support.replacing(
+  support.with_effects(
+    spell: support.with_effects(
+      spell: support.with_effects(
+        spell: support.with_effects(
+          spell: support.with_effects(
+            spell: support.with_effects(
               spell: support.child(spell4_id:, base: spell4_id),
-              as_kind: spell_plan.as_lasting,
               kinds: list.map(
                 spell_plan.payloads(spell: real, as_kind: spell_plan.as_lasting),
                 spell_plan.LastingEffect,
               ),
             ),
-            as_kind: spell_plan.as_modifier,
             kinds: list.map(
               spell_plan.payloads(spell: real, as_kind: spell_plan.as_modifier),
               spell_plan.ModifierEffect,
             ),
           ),
-          as_kind: spell_plan.as_heal,
           kinds: list.map(
             spell_plan.payloads(spell: real, as_kind: spell_plan.as_heal),
             spell_plan.HealEffect,
           ),
         ),
-        as_kind: spell_plan.as_proxy,
         kinds: list.map(
           spell_plan.payloads(spell: real, as_kind: spell_plan.as_proxy),
           spell_plan.ProxyEffect,
         ),
       ),
-      as_kind: spell_plan.as_forced_move,
       kinds: list.map(
         spell_plan.payloads(spell: real, as_kind: spell_plan.as_forced_move),
         spell_plan.ForcedMoveEffect,
       ),
     ),
-    as_kind: spell_plan.as_struck_move,
     kinds: list.map(
       spell_plan.payloads(spell: real, as_kind: spell_plan.as_struck_move),
       spell_plan.StruckMoveEffect,
@@ -276,13 +270,11 @@ pub fn union_proxy_starts_its_child_on_the_caster_and_on_each_struck_unit_test()
       },
     )
   let spell =
-    support.replacing(
-      spell: support.replacing(
+    support.with_effects(
+      spell: support.without_effects(
         spell: client_spell(spell4_id: 75_957),
         as_kind: spell_plan.as_lasting,
-        kinds: [],
       ),
-      as_kind: spell_plan.as_proxy,
       kinds: list.map(gaining, spell_plan.ProxyEffect),
     )
   let #(_, effects) = pressed_and_struck(spell:, struck: [20, 21])

@@ -797,10 +797,9 @@ fn struck_children(caster caster: Caster) -> List(#(Int, Int)) {
     )
   let plans =
     support.with_spells(plans: support.plans(), spells: [
-      support.replacing(
+      support.with_effects(
         spell: support.child(spell4_id: 38_779, base: 2),
-        as_kind: spell_plan.as_proxy,
-        kinds: list.map([proxy], spell_plan.ProxyEffect),
+        kinds: [spell_plan.ProxyEffect(proxy)],
       ),
     ])
   let #(state, raw) =

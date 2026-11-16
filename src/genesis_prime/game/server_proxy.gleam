@@ -53,6 +53,7 @@
 //// | the plans hold the base's ability but no go starts a child at once | the Proxy is planted into the ability's own go |
 
 import genesis_prime/content/refusal.{type Refusal, Refusal, RowName}
+import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{type Plans, type Proxy, type Spell}
 import genesis_prime/table/id.{Spell4BaseId}
 import genesis_prime/table/loader/store as table_store
@@ -233,7 +234,7 @@ fn planted_in(ability ability: Spell, planned planned: Planned) -> Spell {
                       [
                         spell_plan.server_proxy(
                           child: planned.spell,
-                          phase_flags: spell_plan.phase_bit(phase: last_go_of(
+                          phase_flags: spell_effect.phase_bit(phase: last_go_of(
                             spell: proxy.spell,
                           )),
                         ),
@@ -254,7 +255,7 @@ fn planted_in(ability ability: Spell, planned planned: Planned) -> Spell {
           [
             spell_plan.server_proxy(
               child: planned.spell,
-              phase_flags: spell_plan.phase_bit(phase: planned.phase),
+              phase_flags: spell_effect.phase_bit(phase: planned.phase),
             ),
           ],
         ),

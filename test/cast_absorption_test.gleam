@@ -187,23 +187,19 @@ pub fn an_absorb_ends_at_once_when_its_node_is_taken_off_or_its_persistence_fail
       support.spell_holding(spell4_id: 58_586, base: 3, modifiers: [
         spectral_form_row(),
       ]),
-      support.replacing(
+      support.with_effects(
         spell: support.child(spell4_id: 301, base: 1),
-        as_kind: spell_plan.as_remove,
-        kinds: list.map(
-          [
-            spell_plan.ForceRemove(
-              effect_id: Spell4EffectsId(196_521),
-              phase_flags: -1,
-              aim: spell_plan.AimsAtCaster,
-              selector: lasting.Spell(Spell4Id(58_586)),
-              count: 1,
-              condition: Always,
-              tag: spend.always,
-            ),
-          ],
-          spell_plan.RemoveEffect,
-        ),
+        kinds: [
+          spell_plan.RemoveEffect(spell_plan.ForceRemove(
+            effect_id: Spell4EffectsId(196_521),
+            phase_flags: -1,
+            aim: spell_plan.AimsAtCaster,
+            selector: lasting.Spell(Spell4Id(58_586)),
+            count: 1,
+            condition: Always,
+            tag: spend.always,
+          )),
+        ],
       ),
     ])
   let #(state, first) =

@@ -67,10 +67,9 @@ fn spell_of(
     spell_tables.planned_strike(rows: spell_tables.rows_with_effect(effect: row))
     as "the plan builds"
   let wanted = Spell4EffectsId(id)
-  support.replacing(
-    spell: support.replacing(
+  support.with_effects(
+    spell: support.with_effects(
       spell: support.child(spell4_id:, base:),
-      as_kind: spell_plan.as_lasting,
       kinds: list.map(
         list.filter(
           spell_plan.payloads(spell: planned, as_kind: spell_plan.as_lasting),
@@ -79,7 +78,6 @@ fn spell_of(
         spell_plan.LastingEffect,
       ),
     ),
-    as_kind: spell_plan.as_modifier,
     kinds: list.map(
       list.filter(
         spell_plan.payloads(spell: planned, as_kind: spell_plan.as_modifier),
@@ -589,9 +587,8 @@ pub fn a_timed_item_visual_swap_node_ends_with_targets_removed_while_another_nod
     support.client_lasting(spell4_id: 26_567, base: 3, effect_ids: [43_533])
   let plans =
     support.plans_of([
-      support.replacing(
+      support.with_effects(
         spell: swap,
-        as_kind: spell_plan.as_lasting,
         kinds: list.map(
           list.append(
             spell_plan.payloads(spell: swap, as_kind: spell_plan.as_lasting),
@@ -623,24 +620,17 @@ fn remover(
   base base: Int,
   selector selector: lasting.Selector,
 ) -> Spell {
-  support.replacing(
-    spell: support.child(spell4_id:, base:),
-    as_kind: spell_plan.as_remove,
-    kinds: list.map(
-      [
-        ForceRemove(
-          effect_id: Spell4EffectsId(99_202),
-          phase_flags: -1,
-          aim: spell_plan.AimsAtCaster,
-          selector:,
-          count: 1,
-          condition: spell_plan.Always,
-          tag: spend.always,
-        ),
-      ],
-      spell_plan.RemoveEffect,
-    ),
-  )
+  support.with_effects(spell: support.child(spell4_id:, base:), kinds: [
+    spell_plan.RemoveEffect(ForceRemove(
+      effect_id: Spell4EffectsId(99_202),
+      phase_flags: -1,
+      aim: spell_plan.AimsAtCaster,
+      selector:,
+      count: 1,
+      condition: spell_plan.Always,
+      tag: spend.always,
+    )),
+  ])
 }
 
 pub fn a_force_remove_takes_off_a_flags_2_item_visual_swap_node_test() -> Nil {

@@ -343,12 +343,11 @@ fn marker_row() -> spell_plan.Lasting {
 /// planted spell of that group presses and its go lists the unit.
 fn carrying_group_465(unit_id unit_id: Int) -> cast_state.State {
   let marker =
-    support.replacing(
+    support.with_effects(
       spell: spell_plan.Spell(..support.child(spell4_id: 101, base: 3), groups: [
         465,
       ]),
-      as_kind: spell_plan.as_lasting,
-      kinds: list.map([marker_row()], spell_plan.LastingEffect),
+      kinds: [spell_plan.LastingEffect(marker_row())],
     )
   let #(state, raw) =
     support.pressed_raw_in(

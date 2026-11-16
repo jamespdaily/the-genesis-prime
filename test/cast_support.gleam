@@ -73,41 +73,41 @@ pub fn client_lasting(
     )
   assert list.length(rows) == list.length(effect_ids)
     as "the client's spell holds each of the rows"
-  with_kinds(
+  with_effects(
     spell: child(spell4_id:, base:),
     kinds: list.map(rows, spell_plan.LastingEffect),
   )
 }
 
-/// The spell with these effects added to its list, ranked as a plan's are.
-pub fn with_kinds(
+/// The spell with its effects of the kinds given replaced by these, the effects of its other
+/// kinds kept, all ranked as a plan's are. A kind is told by its rank, so an empty list
+/// replaces nothing: a spell loses a kind with `without_effects`.
+pub fn with_effects(
   spell spell: Spell,
   kinds kinds: List(spell_plan.Kind),
 ) -> Spell {
+  let ranks = list.map(kinds, spell_plan.kind_rank)
   Spell(
     ..spell,
     effects: spell_plan.ranked(effects: list.append(
-      spell.effects,
+      list.filter(spell.effects, fn(planned) {
+        !list.contains(ranks, spell_plan.kind_rank(planned.kind))
+      }),
       list.map(kinds, spell_plan.effect_of),
     )),
   )
 }
 
-/// The spell with its effects of the kind `as_kind` reads replaced by these: what a record
-/// update of that kind's own list did before the spell held one list.
-pub fn replacing(
+/// The spell without its effects of the kind `as_kind` reads.
+pub fn without_effects(
   spell spell: Spell,
   as_kind as_kind: fn(spell_plan.Kind) -> Result(payload, Nil),
-  kinds kinds: List(spell_plan.Kind),
 ) -> Spell {
   Spell(
     ..spell,
-    effects: spell_plan.ranked(effects: list.append(
-      list.filter(spell.effects, fn(planned) {
-        result.is_error(as_kind(planned.kind))
-      }),
-      list.map(kinds, spell_plan.effect_of),
-    )),
+    effects: list.filter(spell.effects, fn(planned) {
+      result.is_error(as_kind(planned.kind))
+    }),
   )
 }
 
@@ -195,7 +195,7 @@ pub fn stealthing(
   rows rows: List(spell_plan.StealthRow),
 ) -> Spell {
   Spell(
-    ..with_kinds(
+    ..with_effects(
       spell: child(spell4_id:, base:),
       kinds: list.map(rows, spell_plan.StealthEffect),
     ),
@@ -354,7 +354,7 @@ pub fn spell_holding(
   base base: Int,
   modifiers modifiers: List(spell_plan.PropertyModifier),
 ) -> Spell {
-  with_kinds(
+  with_effects(
     spell: child(spell4_id:, base:),
     kinds: list.map(modifiers, spell_plan.ModifierEffect),
   )

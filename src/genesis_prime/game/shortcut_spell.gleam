@@ -16,6 +16,7 @@
 ////   spell that no ability roots.
 
 import genesis_prime/game/activate
+import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{type Spell}
 import genesis_prime/table/id.{
   Spell4ConditionsId, Spell4Id, Spell4TargetMechanicsId, Spell4ValidTargetsId,
@@ -242,8 +243,8 @@ fn combat_of(
   conditions conditions: spell4_conditions.Spell4Conditions,
 ) -> Result(TargetCombat, AimError) {
   case
-    spell_plan.has_flag(flags: conditions.condition_mask, bit: 2),
-    spell_plan.has_flag(flags: conditions.condition_value, bit: 2)
+    spell_effect.has_flag(flags: conditions.condition_mask, bit: 2),
+    spell_effect.has_flag(flags: conditions.condition_value, bit: 2)
   {
     False, _ -> Ok(CombatAllowed)
     True, False -> Ok(OutOfCombatOnly)

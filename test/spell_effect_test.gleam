@@ -1,5 +1,5 @@
 //// A planned spell holds its effect rows as one list (`spell_plan.Spell.effects`), each an
-//// envelope (`genesis_prime/game/spell_effect`) round a kind. Expected values come from
+//// envelope (`genesis_prime/game/spell_effect`) around a kind. Expected values come from
 //// these places.
 //// - The order the gates draw their rolls and a go lists its effects in
 ////   (`cast/gate.rolls_needed`, `cast/control.lasting_applied`): the Proxies, the gains,
@@ -16,14 +16,13 @@
 
 import fixture_tables
 import genesis_prime/game/effect_kind
-import genesis_prime/game/spell_effect.{Pulsed, Scheduled}
+import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{
   Applied, ControlEffect, CooldownEffect, ForcedMoveEffect, GainEffect,
   HealEffect, Held, LastingEffect, LeftOut, ModifierEffect, ProcEffect,
   ProxyEffect, ReadByActivation, ReadByArea, ReadEffects, ReadProc, ReadProxy,
   RemoveEffect, RemoveStealthEffect, StealthEffect, StruckMoveEffect,
 }
-import genesis_prime/game/ticking
 import genesis_prime/table/spell4_effects
 import gleam/bool
 import gleam/list
@@ -238,27 +237,14 @@ pub fn a_ticking_heal_and_a_ticking_gain_keep_their_tick_and_duration_test() -> 
         #("durationTime", Integer(4000)),
       ]),
     ])
-  let timing_of = fn(id) {
-    let assert Ok(planted) =
-      list.find(spell.effects, fn(planted) { planted.effect_id.value == id })
-      as "the planted row is in the list"
-    planted.timing
-  }
-  assert timing_of(90_014)
-    == Scheduled(ticking.Schedule(
-      delay_ms: 0,
-      tick_ms: 1000,
-      duration_ms: 8000,
-      count: 8,
-    ))
-    as "the heal's tick 1000 and life 8000 give 8 ticks"
-  assert timing_of(90_040) == Pulsed(tick_ms: 500, duration_ms: 4000)
-    as "the gain keeps its tick and life, with no delay or count the plan reads"
   let assert [spell_plan.TickingHeal(schedule:, ..)] =
     spell_plan.heals_in_phase(spell:, phase: 0, spent: None)
     |> list.filter(fn(heal) { heal.effect_id.value == 90_014 })
     as "the heals view holds the ticking heal"
-  assert schedule.tick_ms == 1000 && schedule.duration_ms == 8000
+  assert schedule.tick_ms == 1000
+    && schedule.duration_ms == 8000
+    && schedule.count == 8
+    as "the heal's tick 1000 and life 8000 give 8 ticks"
   let assert [spell_plan.TickingGain(tick_ms:, duration_ms:, ..)] =
     spell_plan.gains_in_phase(spell:, phase: 0, spent: None)
     |> list.filter(fn(gain) { gain.effect_id.value == 90_040 })

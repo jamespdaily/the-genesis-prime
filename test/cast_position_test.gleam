@@ -137,9 +137,8 @@ fn impales_proxies() -> List(spell_plan.Proxy) {
 
 /// A spell of base 2 with these Proxies, in the place of the planted base 2 spell.
 fn spell_with(proxies proxies: List(spell_plan.Proxy)) -> Spell {
-  support.replacing(
+  support.with_effects(
     spell: support.child(spell4_id: 38_779, base: 2),
-    as_kind: spell_plan.as_proxy,
     kinds: list.map(proxies, spell_plan.ProxyEffect),
   )
 }
@@ -642,26 +641,22 @@ pub fn cripples_second_hit_needs_the_casters_own_group_464_cast_test() -> Nil {
   // minute. Then the Whiplash press closes a round that struck units 20 and 21.
   let started_on = fn(groups) {
     let marking =
-      support.replacing(
+      support.with_effects(
         spell: Spell(..support.child(spell4_id: 38_784, base: 1), groups:),
-        as_kind: spell_plan.as_lasting,
-        kinds: list.map(
-          [
-            spell_plan.Lasting(
-              effect_id: Spell4EffectsId(1),
-              phase_flags: -1,
-              aim: spell_plan.AimsAtArea,
-              row: lasting.LastingRow(
-                delay_ms: 0,
-                duration_ms: 60_000,
-                until_removed: False,
-              ),
-              condition: spell_plan.Always,
-              tag: spend.always,
+        kinds: [
+          spell_plan.LastingEffect(spell_plan.Lasting(
+            effect_id: Spell4EffectsId(1),
+            phase_flags: -1,
+            aim: spell_plan.AimsAtArea,
+            row: lasting.LastingRow(
+              delay_ms: 0,
+              duration_ms: 60_000,
+              until_removed: False,
             ),
-          ],
-          spell_plan.LastingEffect,
-        ),
+            condition: spell_plan.Always,
+            tag: spend.always,
+          )),
+        ],
       )
     let plans =
       support.with_spells(plans: support.plans(), spells: [whiplash, marking])

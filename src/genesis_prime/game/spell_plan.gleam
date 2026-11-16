@@ -1311,7 +1311,7 @@ pub type Kind {
   ControlEffect(control: CrowdControl)
 }
 
-/// The effect a payload is: its row, phases, tag and timing, read from the payload itself.
+/// The effect a payload is: its row, phases and tag, read from the payload itself.
 pub fn effect_of(kind kind: Kind) -> PlannedEffect(Kind) {
   case kind {
     ProxyEffect(proxy:) ->
@@ -1319,7 +1319,6 @@ pub fn effect_of(kind kind: Kind) -> PlannedEffect(Kind) {
         effect_id: proxy.effect_id,
         phase_flags: proxy.phase_flags,
         tag: proxy.tag,
-        timing: spell_effect.Delayed(delay_ms: proxy.delay_ms),
         kind:,
       )
     GainEffect(gain:) ->
@@ -1327,11 +1326,6 @@ pub fn effect_of(kind kind: Kind) -> PlannedEffect(Kind) {
         effect_id: gain.effect_id,
         phase_flags: gain.phase_flags,
         tag: gain.tag,
-        timing: case gain {
-          Gain(..) -> spell_effect.Immediate
-          TickingGain(tick_ms:, duration_ms:, ..) ->
-            spell_effect.Pulsed(tick_ms:, duration_ms:)
-        },
         kind:,
       )
     LastingEffect(lasting:) ->
@@ -1339,7 +1333,6 @@ pub fn effect_of(kind kind: Kind) -> PlannedEffect(Kind) {
         effect_id: lasting.effect_id,
         phase_flags: lasting.phase_flags,
         tag: lasting.tag,
-        timing: spell_effect.Lasts(row: lasting.row),
         kind:,
       )
     RemoveEffect(remove:) ->
@@ -1347,7 +1340,6 @@ pub fn effect_of(kind kind: Kind) -> PlannedEffect(Kind) {
         effect_id: remove.effect_id,
         phase_flags: remove.phase_flags,
         tag: remove.tag,
-        timing: spell_effect.Immediate,
         kind:,
       )
     ModifierEffect(modifier:) ->
@@ -1355,7 +1347,6 @@ pub fn effect_of(kind kind: Kind) -> PlannedEffect(Kind) {
         effect_id: modifier.effect_id,
         phase_flags: modifier.phase_flags,
         tag: modifier.tag,
-        timing: spell_effect.Lasts(row: modifier.row),
         kind:,
       )
     ForcedMoveEffect(forced_move:) ->
@@ -1363,7 +1354,6 @@ pub fn effect_of(kind kind: Kind) -> PlannedEffect(Kind) {
         effect_id: forced_move.effect_id,
         phase_flags: forced_move.phase_flags,
         tag: forced_move.tag,
-        timing: spell_effect.Delayed(delay_ms: forced_move.delay_ms),
         kind:,
       )
     StruckMoveEffect(struck_move:) ->
@@ -1371,7 +1361,6 @@ pub fn effect_of(kind kind: Kind) -> PlannedEffect(Kind) {
         effect_id: struck_move.effect_id,
         phase_flags: struck_move.phase_flags,
         tag: struck_move.tag,
-        timing: spell_effect.Delayed(delay_ms: struck_move.delay_ms),
         kind:,
       )
     CooldownEffect(modifier:) ->
@@ -1379,7 +1368,6 @@ pub fn effect_of(kind kind: Kind) -> PlannedEffect(Kind) {
         effect_id: modifier.effect_id,
         phase_flags: modifier.phase_flags,
         tag: modifier.tag,
-        timing: spell_effect.Lasts(row: modifier.row),
         kind:,
       )
     StealthEffect(stealth:) ->
@@ -1387,7 +1375,6 @@ pub fn effect_of(kind kind: Kind) -> PlannedEffect(Kind) {
         effect_id: stealth.effect_id,
         phase_flags: stealth.phase_flags,
         tag: stealth.tag,
-        timing: spell_effect.Lasts(row: stealth.row),
         kind:,
       )
     RemoveStealthEffect(remove:) ->
@@ -1395,7 +1382,6 @@ pub fn effect_of(kind kind: Kind) -> PlannedEffect(Kind) {
         effect_id: remove.effect_id,
         phase_flags: remove.phase_flags,
         tag: remove.tag,
-        timing: spell_effect.Immediate,
         kind:,
       )
     ProcEffect(proc:) ->
@@ -1403,7 +1389,6 @@ pub fn effect_of(kind kind: Kind) -> PlannedEffect(Kind) {
         effect_id: proc.effect_id,
         phase_flags: proc.phase_flags,
         tag: proc.tag,
-        timing: spell_effect.Lasts(row: proc.row),
         kind:,
       )
     HealEffect(heal:) ->
@@ -1411,10 +1396,6 @@ pub fn effect_of(kind kind: Kind) -> PlannedEffect(Kind) {
         effect_id: heal.effect_id,
         phase_flags: heal.phase_flags,
         tag: heal.tag,
-        timing: case heal {
-          Heal(delay_ms:, ..) -> spell_effect.Delayed(delay_ms:)
-          TickingHeal(schedule:, ..) -> spell_effect.Scheduled(schedule:)
-        },
         kind:,
       )
     ControlEffect(control:) ->
@@ -1422,11 +1403,6 @@ pub fn effect_of(kind kind: Kind) -> PlannedEffect(Kind) {
         effect_id: control.effect_id,
         phase_flags: control.phase_flags,
         tag: control.tag,
-        timing: spell_effect.Lasts(row: lasting.LastingRow(
-          delay_ms: control.row.delay_ms,
-          duration_ms: control.row.duration_ms,
-          until_removed: control.row.until_removed,
-        )),
         kind:,
       )
   }
@@ -1444,17 +1420,15 @@ pub fn ranked(
   spell_effect.ranked(effects, rank:)
 }
 
-fn rank(kind kind: Kind) -> Int {
+/// Where the kind sorts among a plan's effects, in tens: every property change shares one
+/// rank, so the effects of one kind are the effects of one rank.
+pub fn kind_rank(kind kind: Kind) -> Int {
   case kind {
     ProxyEffect(..) -> 10
     GainEffect(..) -> 20
     LastingEffect(..) -> 30
     RemoveEffect(..) -> 40
-    ModifierEffect(modifier:) ->
-      case modifier.armor {
-        None -> 50
-        Some(..) -> 55
-      }
+    ModifierEffect(..) -> 50
     ForcedMoveEffect(..) -> 60
     StruckMoveEffect(..) -> 70
     CooldownEffect(..) -> 80
@@ -1463,6 +1437,30 @@ fn rank(kind kind: Kind) -> Int {
     ProcEffect(..) -> 110
     HealEffect(..) -> 120
     ControlEffect(..) -> 130
+  }
+}
+
+/// The sort key of an effect: its kind's rank, a property change with armor 5 after one
+/// without.
+fn rank(kind kind: Kind) -> Int {
+  let armored = case kind {
+    ModifierEffect(modifier:) -> option.is_some(modifier.armor)
+    ProxyEffect(..)
+    | GainEffect(..)
+    | LastingEffect(..)
+    | RemoveEffect(..)
+    | ForcedMoveEffect(..)
+    | StruckMoveEffect(..)
+    | CooldownEffect(..)
+    | StealthEffect(..)
+    | RemoveStealthEffect(..)
+    | ProcEffect(..)
+    | HealEffect(..)
+    | ControlEffect(..) -> False
+  }
+  case armored {
+    True -> kind_rank(kind:) + 5
+    False -> kind_rank(kind:)
   }
 }
 
@@ -2765,7 +2763,7 @@ fn proxy_of(
     OnEachStruck ->
       list.partition(child.effects, fn(planned) {
         result.is_ok(as_gain(kind: planned.kind))
-        && has_flag(flags: planned.phase_flags, bit: 1)
+        && spell_effect.has_flag(flags: planned.phase_flags, bit: 1)
       })
     OnCaster -> #([], child.effects)
   }
@@ -3018,10 +3016,16 @@ fn spell_of(
       cooldown_start: cooldown_start_of(method:, phases:),
       cooldown_phase: cooldown_phase_of(method:, phases:),
       cast_bar: cast_bar_of(method:, row:, base:),
-      free_while_live: has_flag(flags: row.property_flags, bit: 0x40),
-      ignores_casting: has_flag(flags: row.property_flags, bit: 0x10)
-        || has_flag(flags: row.property_flags, bit: 0x1),
-      longer_of_delay_and_duration: has_flag(
+      free_while_live: spell_effect.has_flag(
+        flags: row.property_flags,
+        bit: 0x40,
+      ),
+      ignores_casting: spell_effect.has_flag(
+        flags: row.property_flags,
+        bit: 0x10,
+      )
+        || spell_effect.has_flag(flags: row.property_flags, bit: 0x1),
+      longer_of_delay_and_duration: spell_effect.has_flag(
         flags: row.property_flags,
         bit: 0x2000,
       ),
@@ -3277,7 +3281,7 @@ pub fn lasting_row_of(
   lasting.LastingRow(
     delay_ms: effect.delay_time,
     duration_ms: effect.duration_time,
-    until_removed: has_flag(flags: effect.flags, bit: 2),
+    until_removed: spell_effect.has_flag(flags: effect.flags, bit: 2),
   )
 }
 
@@ -3364,7 +3368,7 @@ fn control_of(
       target_flags: effect.target_flags,
     )),
   )
-  let until_removed = has_flag(flags: effect.flags, bit: 2)
+  let until_removed = spell_effect.has_flag(flags: effect.flags, bit: 2)
   let persists =
     effect.prerequisite_id_caster_persistence != 0
     || effect.prerequisite_id_target_persistence != 0
@@ -3422,7 +3426,7 @@ pub fn modifier_of(
     effect_kind.PropertyModifier ->
       change_of(tables:, spell4_id:, effect:)
       |> result.map(fn(modifier) {
-        case has_flag(flags: effect.target_flags, bit: 1) {
+        case spell_effect.has_flag(flags: effect.target_flags, bit: 1) {
           True -> PropertyChange(modifier:)
           False ->
             StruckChange(
@@ -3612,7 +3616,7 @@ pub fn modifier_aim(modifier modifier: PropertyModifier) -> Aim {
 /// caster.
 fn reached_aim_of(effect effect: spell4_effects.Spell4Effects) -> Aim {
   use <- bool.guard(
-    when: !has_flag(flags: effect.target_flags, bit: 1),
+    when: !spell_effect.has_flag(flags: effect.target_flags, bit: 1),
     return: AimsAtPrimaryTarget,
   )
   aim_of(target_flags: effect.target_flags)
@@ -4150,7 +4154,8 @@ fn proc_read_of_a_kind_to_read(
     ),
     #(unit_bits >= 32 || unit_bits < 0, ProcAimNotRead(data_bits03: unit_bits)),
     #(
-      effect.duration_time <= 0 && !has_flag(flags: effect.flags, bit: 2),
+      effect.duration_time <= 0
+        && !spell_effect.has_flag(flags: effect.flags, bit: 2),
       ProcWithoutLife,
     ),
   ]
@@ -4983,7 +4988,7 @@ pub fn stealth_conditions_read(
   list.try_each(conditions, fn(conditions) {
     case conditions {
       Some(condition) ->
-        case has_flag(flags: condition.condition_mask, bit: 16) {
+        case spell_effect.has_flag(flags: condition.condition_mask, bit: 16) {
           True ->
             Error(StealthConditionNotRead(
               spell4_id:,
@@ -5169,22 +5174,6 @@ fn gain_slot_of(
   }
 }
 
-/// The rows that apply in phase `phase`: bit n of their `phase_flags` is phase n (every
-/// bit for -1), and their tag holds for the points the cast spent
-/// (genesis_prime/game/spend `applies`).
-fn in_phase(
-  rows rows: List(row),
-  phase_flags phase_flags: fn(row) -> Int,
-  tag tag: fn(row) -> spend.Tag,
-  phase phase: Int,
-  spent spent: Option(Int),
-) -> List(row) {
-  list.filter(rows, fn(row) {
-    has_flag(flags: phase_flags(row), bit: phase_bit(phase:))
-    && spend.applies(tag: tag(row), spent:)
-  })
-}
-
 /// The payloads of the spell's effects of one kind that apply in phase `phase`, in the order
 /// of its list (`spell_effect.in_phase`): `as_kind` is the kind's projection.
 fn view(
@@ -5284,7 +5273,10 @@ fn cooldown_start_of(
     Multiphase ->
       case
         list.any(phases, fn(phase) {
-          has_flag(flags: phase.flags, bit: cooldown_at_last_phase_flag)
+          spell_effect.has_flag(
+            flags: phase.flags,
+            bit: cooldown_at_last_phase_flag,
+          )
         })
       {
         True -> AtLastGo
@@ -5310,7 +5302,10 @@ fn cooldown_phase_of(
     Multiphase ->
       list.index_map(phases, fn(phase, index) { #(index, phase) })
       |> list.find(fn(pair) {
-        has_flag(flags: { pair.1 }.flags, bit: cooldown_at_last_phase_flag)
+        spell_effect.has_flag(
+          flags: { pair.1 }.flags,
+          bit: cooldown_at_last_phase_flag,
+        )
       })
       |> result.map(fn(pair) { pair.0 })
       |> option.from_result
@@ -5480,7 +5475,7 @@ fn reach_in_place(place place: RowPlace, aim aim: Aim) -> Reach {
 /// (`effect_kind.is_row_read`).
 fn reach_of_flags(target_flags target_flags: Int) -> Reach {
   use <- bool.guard(
-    when: has_flag(flags: target_flags, bit: 1),
+    when: spell_effect.has_flag(flags: target_flags, bit: 1),
     return: OnlyTheCaster,
   )
   PastTheCaster
@@ -5740,7 +5735,7 @@ pub fn caster_cast_of(
   case column {
     None -> NoCasterCast
     Some(prerequisite) ->
-      case has_flag(flags: property_flags, bit: 0x4) && has_block {
+      case spell_effect.has_flag(flags: property_flags, bit: 0x4) && has_block {
         True -> RequirementWaiver(prerequisite:)
         False -> CastGate(prerequisite:)
       }
@@ -5797,8 +5792,8 @@ fn caster_death_of(
     None -> AliveOrDead
     Some(condition) ->
       case
-        has_flag(flags: condition.condition_mask, bit: 1),
-        has_flag(flags: condition.condition_value, bit: 1)
+        spell_effect.has_flag(flags: condition.condition_mask, bit: 1),
+        spell_effect.has_flag(flags: condition.condition_value, bit: 1)
       {
         False, _ -> AliveOrDead
         True, False -> CannotBeDead
@@ -6002,16 +5997,6 @@ fn comparison_of(eval eval: Int) -> Comparison {
     4 | 9 -> AtMost
     other -> NeverPasses(eval: other)
   }
-}
-
-/// The Spell4Effects phase flag of a go: bit n is phase n.
-pub fn phase_bit(phase phase: Int) -> Int {
-  spell_effect.phase_bit(phase:)
-}
-
-/// Whether the flags hold the bit.
-pub fn has_flag(flags flags: Int, bit bit: Int) -> Bool {
-  spell_effect.has_flag(flags:, bit:)
 }
 
 /// The plans the tables' load built, which a rule reads by `in_plans`.
@@ -6254,13 +6239,14 @@ pub fn struck_gates_in_phase(
   phase phase: Int,
   spent spent: Option(Int),
 ) -> List(StruckGate) {
-  in_phase(
-    rows: spell.struck_gates,
-    phase_flags: fn(gate) { gate.phase_flags },
-    tag: fn(gate) { gate.tag },
-    phase:,
-    spent:,
-  )
+  list.filter(spell.struck_gates, fn(gate) {
+    spell_effect.applies_in_phase(
+      phase_flags: gate.phase_flags,
+      tag: gate.tag,
+      phase:,
+      spent:,
+    )
+  })
 }
 
 /// The ForcedMove effects aimed at other units of the spell that apply in phase `phase`,

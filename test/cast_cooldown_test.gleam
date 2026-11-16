@@ -66,9 +66,8 @@ fn holder_of(
   base base: Int,
   rows rows: List(spell_plan.CooldownModifier),
 ) -> Spell {
-  support.replacing(
+  support.with_effects(
     spell: support.child(spell4_id:, base:),
-    as_kind: spell_plan.as_cooldown_modifier,
     kinds: list.map(rows, spell_plan.CooldownEffect),
   )
 }
@@ -113,24 +112,17 @@ fn plans_holding(rows rows: List(spell_plan.CooldownModifier)) -> Plans {
 /// A removal of the base 1 spell's casts from the caster, as a type 80 row aimed at the
 /// caster does (`Spell4Effects.effectType.80`).
 fn remover() -> Spell {
-  support.replacing(
-    spell: support.child(spell4_id: 2, base: 2),
-    as_kind: spell_plan.as_remove,
-    kinds: list.map(
-      [
-        spell_plan.ForceRemove(
-          effect_id: Spell4EffectsId(196_521),
-          phase_flags: -1,
-          aim: spell_plan.AimsAtCaster,
-          selector: lasting.Spell(Spell4Id(1)),
-          count: 1,
-          condition: Always,
-          tag: spend.always,
-        ),
-      ],
-      spell_plan.RemoveEffect,
-    ),
-  )
+  support.with_effects(spell: support.child(spell4_id: 2, base: 2), kinds: [
+    spell_plan.RemoveEffect(spell_plan.ForceRemove(
+      effect_id: Spell4EffectsId(196_521),
+      phase_flags: -1,
+      aim: spell_plan.AimsAtCaster,
+      selector: lasting.Spell(Spell4Id(1)),
+      count: 1,
+      condition: Always,
+      tag: spend.always,
+    )),
+  ])
 }
 
 /// The slow spell pressed at the time and its go fired: its cooldown runs for 5000 ms
