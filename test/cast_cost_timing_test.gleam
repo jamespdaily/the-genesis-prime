@@ -21,6 +21,7 @@
 
 import cast_support as support
 import genesis_prime/game/cast
+import genesis_prime/game/cast/cost as cast_cost
 import genesis_prime/game/cast/state.{type Effect} as cast_state
 import genesis_prime/game/class_resource.{type Resources, Payment}
 import genesis_prime/game/spell_area
@@ -654,7 +655,7 @@ pub fn a_go_pays_its_cost_before_it_gives_its_gains_test() -> Nil {
     )
   let #(timer, _) = go_timer(effects: pressed)
   let #(_, going) = went(state:, caster:, timer:, at: 2250)
-  let resources = cast.after_payments(caster:, effects: going).resources
+  let resources = cast_cost.after_payments(caster:, effects: going).resources
   assert class_resource.value(resources:, slot: 1) == 3.0
     as "the design: 4 less the cost 2 is 2, and the go's +1 makes 3; a gain first would clamp at the maximum 4 and leave 2"
 }
