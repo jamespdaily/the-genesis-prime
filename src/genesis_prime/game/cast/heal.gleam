@@ -1,4 +1,27 @@
 //// How the heals of a spell's ticking effects are split and described.
+////
+//// - **A go's heals** (`Spell4Effects.effectType.10` and `.118`): each Heal or HealShields
+////   effect of the phase that reaches the caster (genesis_prime/game/spell_plan `Heal`)
+////   whose gate against the caster passes is listed in the caster's target info with a
+////   damage description of its amount (type Heal or HealShields, result Hit, the amount as
+////   the raw, the scaled raw and the health change, and as the overheal what the amount
+////   leaves over the vital's room), which the client shows as a floater and logs itself
+////   as a heal with that overheal, and never applies (`spell.heal_result_log`). The amount
+////   is worked out at the go from the caster's own shield, health and stats as they stood
+////   before the go's own effects (genesis_prime/game/damage `amount_on_caster`: Energize
+////   is 0.3 of the missing shield), and lands at the go plus the row's delay as
+////   `CasterChangeStarts` with a `Heal` change carrying the vital, for the connection to
+////   raise the player's health or shield by (genesis_prime/game/player_life `healed`): in
+////   the go's step, after its 0x7f4, with no delay, else on a timer. A heal gives the
+////   caster's node a life of its delay, so the 0x7fe waits for it; when the node's end and
+////   a pending heal are due in the same millisecond the end lands the heal first. A node
+////   taken off the caster, a persistence that stops holding and the caster's death drop a
+////   pending heal with its timer; a later go of the cast heals again and cancels no
+////   earlier heal. A periodic heal (a tickTime) heals the caster at each tick, after
+////   the tick's 0x7f8 (`ticking_heals`). A heal on a unit other than the caster (a child on a
+////   struck unit) lands nothing and a debug line says so (#570). The server rolls no
+////   critical for a heal: the description is always a Hit, so the seed draws nothing for
+////   it (the server's choice; the crit of a heal is #336).
 
 import genesis_prime/game/cast/state.{
   type Caster, type Effect, type Healed, type Struck, type TickingOn, DamageTick,

@@ -1,4 +1,79 @@
 //// Pressing, holding and charging an ability: the thresholds, the key's repeats and the refusals of a press.
+////
+//// - **The press** is 0x9a inside 0x038C: the client's cast id, the ability's bag
+////   index, the target and the press bit (`opcode.0x9a`). A cast id of 0 is one
+////   the client never sends, and ends the connection. A press bit of 0 is a
+////   console setting's; the press is logged and ignored. A bag index the player
+////   does not hold is answered 0x7fc with Spell4 id 0 and result 4
+////   (`0x14039a040`; the server's choice, which the client allows).
+//// - **The hold** is 0x4db: the client sends it instead of 0x9a under its default
+////   hold-to-continue-casting setting, once with held 1 at key down and once with
+////   held 0 at key up, with no cast id of its own (`opcode.0x4db`). A held 1 is the
+////   same press as a 0x9a's with two differences: the server mints the cast id and
+////   writes 0x7ff in place of 0x7fd (a 0x7fd names a pending cast the client does
+////   not make), and a refusal is a 0x7fc with client cast id 0
+////   (`cast.hold_answer`). The client holds no repeat timer, so while the key is
+////   held the server casts the ability again, when its last cast is over and the
+////   global cooldown it started and the ability's own cooldown have ended, on a
+////   timer of the rule; a press behind another cast waits for its end, never
+////   refused 13, which the client hides under the setting (`cast.hold_repeat`; the
+////   server's choice). A second ability's held 1 replaces the held one, and a second
+////   held 1 of the held ability is the same hold. Held 0 ends the repeats and cuts
+////   no cast or channel short; for a ChargeRelease ability it fires the charged
+////   stage, and a RapidTap ability's repeats are its next stages inside its
+////   threshold (`cast.hold_by_method`, `cast.hold_stop`). A refused repeat ends the
+////   hold, and so does a 0x801 naming the hold's last cast (the server's choice: a
+////   cancel is the player's intent to stop, so a cancelled charge neither restarts
+////   nor fires at the held 0 that follows). A bag index with no ability is answered as a 0x9a's is.
+//// - **The target** of every cast is the caster: no level-1 ability needs a
+////   target the client picks (`Spell4TargetMechanics.targetType`: the client makes
+////   the caster the target of a spell of kind 0, 2, 6 or 7 before it sends), so
+////   the press's target is not read, and the target checks of the client (91, 105)
+////   wait for the first ability that needs one. Who a spell strikes is the area its
+////   effects name, which a later step reads.
+//// - **The current cast** is the client's: a cast whose spell shows a cast bar
+////   (`spell_plan.shows_cast_bar`) is the caster's current cast from its start. Its
+////   go clears it for a Normal cast with a cast time and no parent, and a cast
+////   that is itself the current cast clears it at its go unless its method is
+////   Multiphase, ChargeRelease or PressHold or it is a channel; any cast's finish
+////   clears it, and a 0x801 clears it whatever cast it names. The client refuses
+////   a press with 13 only against it, and not when its spell is free while live or
+////   the pressed spell ignores casting (`cast.current_cast`, `Spell4.propertyFlags`,
+////   `0x1403afb10`). The server keeps the same in `current`.
+//// - **A press during the current cast is the server's choice.** The client itself
+////   never refuses an ability press with 13 and never queues one behind its current
+////   cast: its casting test runs only for a request whose word 0x14 is non-zero,
+////   which a press leaves 0 (`cast.press_queue`). The server models that unused test
+////   with the same window as the cooldown queue: a press with more than 500 ms of
+////   the current cast left (its start plus its duration, `spell_plan.duration_ms`,
+////   less the time now) is refused 13, and one with 500 ms or less left is held and
+////   starts at the go or finish that clears the current cast, not from a timer. A
+////   cast that has no end of its own, a charge held until its release, always
+////   refuses.
+//// - **A press within 500 ms of a cooldown's end** is held: the client queues it
+////   (317) and sends it (`0x1403b14c0`), so the server starts it when the
+////   cooldown ends, from a timer, and answers nothing before. A second press
+////   while one is held is refused 13 (the server's choice). The held press keeps
+////   the stage it resolved to when it came, as the client does. The release of a
+////   ChargeRelease threshold is resolved before any caster check, so a held press
+////   neither refuses it nor is changed by it (`0x1403bfd60`).
+//// - **A RapidTap threshold** opens with the first tap's 0x816 and lasts the
+////   ability's thresholdTime from a timer the server mirrors, since the client
+////   closes it by itself then (`opcode.0x816`). Each later tap casts the stage at
+////   the threshold's index, with root the ability and parent the ability
+////   (`cast.stage_root_parent`), and the next index goes in 0x817; the last stage
+////   closes the threshold with 0x814 and the bit set, which starts the ability's
+////   cooldown. The window ending closes it, writes nothing and starts the cooldown
+////   (`opcode.0x814`, `opcode.0x817`, `0x1403bfd60`).
+//// - **A ChargeRelease threshold** opens with the first press's 0x816; the press's
+////   cast, the base cast, stays live with no go until the release or a cancel
+////   (`cast.charge_release_base`). Each later row's thresholdDuration after the
+////   one before, a timer sends the next level in 0x817. The release is the next
+////   press, which casts the row at the level reached; its first go starts the
+////   ability's cooldown, and after its finish 0x814 closes the threshold and the
+////   base cast ends with 0x7fe. The client marks the charge full at the ability's
+////   thresholdTime and sends nothing, so the server holds the charge until a
+////   release or a cancel.
 
 import genesis_prime/game/cast/cost as cast_cost
 import genesis_prime/game/cast/frame as cast_frame

@@ -1,4 +1,11 @@
 //// The messages the cast rule writes to the client and the frames it tells the viewers: a cast starting, going and finishing, a refusal, ticks, removed targets, crowd control and the combat log.
+////
+//// - **The cast bar and cooldowns** are the client's own: 0x7fd and 0x7ff start
+////   the caster's global cooldown (`0x14046afc0`, kinds 0 and 1), and a go starts
+////   the spell's own (`0x14046b1e0`), so the server sends no 0x804. The server
+////   keeps the same, to refuse what the client would: the global cooldown from the
+////   accept for the SpellCoolDown time, the spell's own where its method says
+////   (`spell_plan.CooldownStart`, `0x14053e5a0`), the child casts none (kind 3).
 
 import genesis_prime/client_connection
 import genesis_prime/connection/frame.{type Frame, Frame}

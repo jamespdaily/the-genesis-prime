@@ -1,4 +1,77 @@
 //// Whether a press may start a cast: the spell's conditions, what it costs and the verdict of each check.
+////
+//// - **The refusals** are the client's own checks, answered 0x7fc with the
+////   client's result and clearing the client's global cooldown: 57 for a dead
+////   caster's press of a spell whose caster condition row has the dead bit, and
+////   58 for a living caster's press of one whose row asks for a dead caster
+////   (`Spell4.spell4ConditionsIdCaster`, `cast.dead_player`; the row's other
+////   conditions are not checked); 13 while the
+////   caster's current cast is live (below); the caster result of the lowest state the
+////   caster holds that the spell's Spell4CCConditions caster row masks (73 for Stun,
+////   302 for Ability Restriction, and so on, `crowd_control.caster_result`) while a cast
+////   of the caster holds it on the caster, checked after 13 and before the cooldowns
+////   (`CheckSpellCCConditions`, `0x1403b2c40`; `0x1403afb10.order`); 14 while the global cooldown has more
+////   than 500 ms left, for kinds 0 and 2; 15 while the spell's own cooldown has
+////   more than 500 ms left (`0x1403b14c0`); a caster requirement's result when the
+////   caster's resource fails it and the spell's waiver does not pass (`0x1403b1780`,
+////   `Rampage` 51 below 250 Kinetic Energy unless the caster is under Overdrive 42908);
+////   50 + the resource slot for a cost the caster's class
+////   resource cannot pay (`0x1403b3320`, `0x1405e7980`,
+////   `Spell4CastResult.vital_cost`); 169 for a spell that needs the weapon when
+////   slot 16 holds none (`0x1403afb10`); 151 for a spell whose CasterCast fails and
+////   281 for one whose TargetCast does, the last checks of the press (`0x1403ace00`,
+////   below); and 285 for a spell whose method is not
+////   one of Normal, Multiphase, Channeled, RapidTap and ChargeRelease
+////   (`Spell.CodeEnumCastMethod`). A cost in a vital the server does not hold, a cast
+////   condition it cannot read and a method not built are each logged once on the
+////   connection for the coverage measure. The caster's checks run in the client's
+////   order (`Verdict`). A class vital cost (types 4, 12, 13, 14, 18 and 19 on a Spell4
+////   row, 18 and 19 on a threshold row) is looked up in the casting class's own slots
+////   (`Class.vitalEnumResource00` to `07`, `class_resource.class_cost` and
+////   `row_class_cost`): the innate cost passes at the first slot naming the vital whose
+////   value less the cost lies in [0, that slot's maximum] and pays from it, and is
+////   refused with the last such slot's 50 + slot (177 for slot 7); a class with no slot
+////   naming the vital passes and pays nothing (`0x1405e7980`). A threshold row's cost
+////   passes at most the whole points of the first slot holding above 0, with no maximum,
+////   and is refused with that slot's result, or 175 when the vital's slots hold nothing
+////   (`0x1403c0620`, `0x1405e78c0`, `0x1403d3650`).
+//// - **The cast conditions** are the spell's prerequisiteIdCasterCast and
+////   prerequisiteIdTargetCast, which the client checks after every other check of the
+////   press, CasterCast first (`0x1403ace00`, `Spell4.prerequisiteIdCasterCast`), so a press
+////   that fails several gets the client's first failure; the check runs only on the path
+////   that would accept, since a press the client queues (317) is sent unchecked. The first
+////   unit is the caster, and the second unit too: the server reads no target and the client
+////   makes the caster the target of every spell it presses. A press held for a cooldown or
+////   behind the current cast is checked when it starts, as one the client sent unchecked is
+////   (`Spell4.prerequisiteIdCasterCast`), and a held key's repeat each time. A spell with a
+////   caster requirement block and propertyFlags bit 2 is not gated by its CasterCast: that
+////   prerequisite only waives a failed requirement (`0x1403b1780`). A condition of a type
+////   the server does not read, or a type 37 roll (a press draws none), refuses with the
+////   check's result and a warning once for the spell (the server's choice, as for a cost in
+////   a vital it does not hold).
+//// - **A cost is checked at the accept and paid at the cast's first go** (`Pay`): the
+////   client checks a cost only before it sends a press, lowers no resource itself and
+////   shows only what 0x935 says, so when to pay is the server's
+////   (`Spell4.innateCost0.timing`), and a retail video shows the Actuators of Gamma
+////   Rays dropping when its beams go off. The accept checks the costs against the slot
+////   less what the live casts have reserved (`unreserved`) and keeps them on its live
+////   cast (`Live.reserved`); the first go pays them as its strike begins, so the round's
+////   hits are always paid for and the go's gates and gains read the paid caster, as
+////   one 0x935. A cast that ends before its first go (a 0x801, death, leaving) pays
+////   nothing, and its reservation ends with it. A spell whose first go is at once, or
+////   that has no go of its own, pays at its accept, in the step of its check
+////   (`pays_at_accept`). A second press taken in the same step is checked against what
+////   the first left (genesis_prime/game/class_resource).
+//// - **A spend of every point held** (`spell_plan.SpendAllCost`, genesis_prime/game/spend):
+////   the check is of the base cost alone, as the client's is (`0x1403b3320`), and the
+////   accept then reserves every whole point the slot holds less the reserved, which the
+////   first go takes and whose new value the client is sent (`opcode.0x935`). The points
+////   above the base cost are the cast's n, fixed at the accept (at the start of a held
+////   press, which is checked and reserved then), kept on
+////   the live cast, and read at each go: the go's strike (`GoAsked.spent`), gains and
+////   Proxies are the ones whose tag holds for n. A child a Proxy starts has no n and
+////   keeps every effect. A cost with an EMM id the server does not read
+////   (`spell_plan.UnreadSpendCost`) is refused with the cost's result and logged once.
 
 import genesis_prime/game/cast/state.{
   type Caster, type CostRefusal, type Effect, type Paid, type State,

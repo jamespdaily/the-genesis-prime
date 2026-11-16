@@ -1,4 +1,157 @@
 //// The procs and passives a cast holds, and the breaking of stealth.
+////
+//// - **A player's stealth** is the Stealth rows (effect type 83) its casts hold on it,
+////   by cast id and effect id (`State.stealth`), kept with whether damage ends each
+////   (`spell_plan.Breaks`); the player is stealthed while it holds any (`stealthed`).
+////   A go lists each Stealth row of its phase whose gate passes against the caster in
+////   the caster's target info and holds the caster's node until it is removed (a Stealth
+////   row with no durationTime lasts until removed), and adds its source; a RemoveStealth
+////   row (type 84) ends every source. After the go's effects, a spell whose
+////   `stealth_change` ends stealth at that go (value 0 at each go, value 1 at the cast's
+////   last) ends every source of the other casts (`Spell4.spellCastStealthChange.break`;
+////   the server's rule): the cast of each loses its node on the caster as a type 80 removal takes it off (0x811, and
+////   the 0x7fe of a lingering cast of a method the client keeps, `node_off`; a Normal
+////   cast the client destroys with the 0x811), so the buff that stands for the stealth
+////   never outlives it. A node that leaves the caster takes its cast's sources
+////   with it (`effects_ended`), `damage_taken` ends the sources damage breaks, and
+////   death and leaving drop all. Each input (a press, a timer, a go, the player's death,
+////   a blow) compares the stealth before and after and ends with one `StealthChanged`
+////   when it moved, so the connection's 0x8f5 follows the 0x811 and 0x7fe it causes and
+////   precedes the procs it fires. A
+////   caster's type 116 prerequisite reads the stealth as it stood before the go's own
+////   effects, as every gate does (`subject_of`).
+//// - **A player's procs** are the Proc rows (effect type 14, `spell_plan.ProcRow`) its casts hold on
+////   it, by cast id and effect id (`State.procs`), each with the times it fired at. A go lists each
+////   Proc row of its phase whose gate passes in the caster's target info and holds the caster's node
+////   until the row's life ends, as a Stealth row does (`Spell4Effects.effectType.14.lifetime`), and
+////   adds its source; a source leaves where a stealth source leaves (`effects_ended`), at the
+////   caster's death but for the innate passive's, and at leaving. Each input ends in `settled`,
+////   which records its events as pending (`State.pending`), in order: the input's own (`Died` for
+////   `died`, `LeftCombat` for `combat_left`, and the hits of the strike round a go or a tick
+////   settles, `hit_events`), a `LandsHeal` for each Heal change its effects start on the caster,
+////   and its stealth change (`EnteredStealth` or `LeftStealth`). A hit is an event for each
+////   damage description that landed on a creature: `LandsHit`, `LandsMeleeHit` when the spell is of
+////   school 1, `LandsCritical` for a critical and `Kills` for a kill (a guess:
+////   `Spell4Effects.effectType.14.client_evaluation`); a spell that only selects a unit raises none.
+////   The rule decides nothing about a draw: the connection asks `proc_draws_needed` how many
+////   chance words and gate rolls the pending events need, one draw for all, and hands them to
+////   `procs_fire`, which matches each event, in order and then source order, against the proc rows
+////   held when the input's own work was done (the server's choice, `.dataBits00.217_218`, `.0_44`):
+////   a proc whose node the same input took off does not fire, and one the input applied does.
+////   `proc.decide` checks, in this order, the limit (at most `count` fires in any `window_ms`, a
+////   fire exactly `window_ms` after the last allowed, the server's choice of the edge,
+////   `Spell4Effects.effectType.14.limits`), the filter, the holder gate, the event gate and the
+////   chance (a word's fraction below the chance fires; a chance of 1.0 takes no word). A fire is
+////   counted at the event; a proc with a delay starts a timer (`Due.ProcDue`) that casts the
+////   spell when it fires, and the holder's cast ending cancels the timers of its procs. The cast
+////   starts as a child's does, from the caster at its aim (`.dataBits03`): a 0x7ff with the holder's
+////   spell as root and parent and no 0x7fd (`opcode.0x7ff.root_parent`). Its go and finish are
+////   inputs of their own, so a fire's events are matched in a later step and no proc cascades inside
+////   one. A spell whose caster condition refuses the caster's life (row 1, mask 225, refuses a dead
+////   caster: `Spell4.spell4ConditionsIdCaster`, `cast.dead_player`) does not fire and records no
+////   fire, with a debug line. A death leaves the passive's procs with the passive and ends every
+////   other cast before the procs are matched, so a `Died` proc of any other cast is never held: its
+////   go writes a debug line (the plan cannot tell the passive, so the rule enforces it,
+////   `procs_held`); a camp drops the procs and their fire times.
+//// - **A unit that leaves the caster's sight** takes its nodes with it on the client
+////   (`0x1404550d0`), so the rule drops them too and a lingering cast left with no node
+////   ends with its 0x7fe (`unit_removed`).
+//// - **The innate passive** is a cast the client never makes: `passive_started` starts it
+////   at each join with a 0x7ff and no 0x7fd, as `Passive`, which starts no global
+////   cooldown, is never the current cast, opens no threshold and runs no check of the
+////   caster. Its go runs as any cast's, and the cast lingers with no 0x7fe, even when
+////   no node of it lives, for the whole stay. The three passives hold caster condition
+////   row 4 (mask 0: alive or dead) and propertyFlags 0x100 (the cast stays when its
+////   caster is removed), so a death leaves it with its nodes and modifiers
+////   (`Class.spell4IdInnateAbilityPassive00`, `Spell4.spell4ConditionsIdCaster`;
+////   the server's choice for what death does to a cast no press made), and a camp, which
+////   leaves every cast, drops it, so the next join starts it again.
+////
+//// What happens at each failure point of a cast:
+////
+//// | Point | What happens |
+//// |---|---|
+//// | a 0x9a body the client's reader refuses, or a cast id of 0 | the connection ends, nothing written |
+//// | a 0x4db body the client's reader refuses | the connection ends, nothing written |
+//// | a 0x4db whose bag index holds no ability | 0x7fc {0, 0, 4} for held 1, a debug line for held 0 |
+//// | a 0x4db held 1 of the ability already held | the same hold: nothing written |
+//// | a held cast refused, at the first press or a repeat | the 0x7fc, and the hold ends |
+//// | the repeat timer fires after the release | nothing: the release cancelled it, and a firing that was already sent finds no hold |
+//// | a press whose bag index the player does not hold | 0x7fc {client id, 0, 4} |
+//// | a press past the last stage of an open threshold | 0x7fc {client id, the ability, 4} |
+//// | a refusal of the client's own checks | 0x7fc with the result; nothing else changes |
+//// | a spell whose cost has an EMM id the server does not read | 0x7fc with the cost's result, a warning once for the spell on the connection; nothing is paid |
+//// | a cast with a cost ends before its first go: a 0x801, the caster's death or leaving | nothing is paid and nothing is sent for the cost; its reservation ends with the cast |
+//// | a press needs points that a live cast has reserved | 0x7fc with the cost's result, as for a slot that holds too little |
+//// | a threshold row's class cost of a vital the class's slots hold nothing of (a Charged Shot release at 0 Spell Power) | 0x7fc with 175; nothing is paid |
+//// | the slot holds less than a live cast reserved when its first go comes (the Esper's empty, the Warrior's drain) | the go pays what the slot holds, down to 0 |
+//// | a 0x801 ends a cast while the round of its first go is open | the cost was paid as the strike began; the round's answer finds no live cast: no go is written, the hits stand |
+//// | a press whose CasterCast or TargetCast fails | 0x7fc {client id, spell, 151 or 281}, after every other check; nothing else changes |
+//// | a press whose cast condition is of a type the server does not read | 0x7fc 151 or 281, a warning once for the spell |
+//// | a held press, or a held key's repeat, whose cast condition fails when it starts | 0x7fc {client id, or 0 for a key, spell, 151}; nothing started, a key's hold ends |
+//// | a caster requirement fails and the spell's waiver passes | the requirement is waived; the next is checked |
+//// | a caster requirement fails and its waiver is not read | 0x7fc with the requirement's result, a warning once for the spell |
+//// | a lasting cast's persistence fails | 0x7f9 {cast id, 282 or 283, caster, 0}, 0x7fe, CastFinished to each viewer; timers and modifiers end; the current cast clears; a press held for it starts |
+//// | a persistence not read, or a target persistence on a creature | the cast goes on; a debug line once for the spell |
+//// | two casts whose persistence fails in one input, or one that fails because the other ended | both end in that input, the lower cast id first |
+//// | a persistence check while the player is leaving or dead | nothing: `left` and `died` have already dropped every cast |
+//// | a press while one is held | 0x7fc 13 |
+//// | a press of a spell whose caster conditions mask Ability Restriction while the caster holds it | 0x7fc 302, ahead of the cooldowns; a spell whose mask lacks bit 27 passes |
+//// | a go gives the caster Ability Restriction | 0x87f to the caster and its audience, once for the effect; a `RestrictionEnd` timer at the row's delay plus duration, none for flag 2; the cast lingers until its persistence ends (the server reads no ride, so the hoverboard's ends in the go's own input: gap, #336) |
+//// | a `RestrictionEnd` fires for a state the caster holds | 0x880 with the cast and the instance id of its 0x87f, before the cast's node ends; a row of duration 0 without flag 2 ends in the go's own step |
+//// | a cast that holds Ability Restriction ends (its persistence fails, a type 80 removal takes its node off, its node ends by time) | the `RestrictionEnd` timers cancelled, and 0x880 for a state the row's end has not already ended, after the 0x7f9 or the 0x811; a death or a leave drops the state and writes nothing |
+//// | a 0x805 result 3 of an activate cast of castMethod 5 | nothing: the interaction only began |
+//// | a 0x805 result 1 before or after the cast time has run | the go and the finish at the later of the two: at the answer, or at the go's timer when the answer came first |
+//// | a 0x805 result 0 or 2 | 0x7f9 146, 0x7fe, the go's timer cancelled; no go and no `Activated` |
+//// | a 0x805 for a cast that is not live (the client's 0 as a finish closes its window) | nothing; a debug line |
+//// | a 0x805 for a live cast that waits for no answer, naming another spell, or with a result of 4 to 7 | the connection ends |
+//// | a go lists a heal while the caster's vital is full | the description carries the whole amount as its overheal; the vital writes nothing (genesis_prime/game/player_life) |
+//// | a heal's timer fires after its cast's node was taken off, the caster died or its persistence ended | no timer: it was cancelled with the node; nothing lands |
+//// | a heal's start and its node's end fire in either order | the heal lands once, in the step of whichever is delivered first |
+//// | a go lists an absorb and its connection restarts before the start | no pool: the connection enters with none and the client is created again |
+//// | an absorb's start timer fires after its cast's node was taken off, the caster died or its persistence ended | no timer: it was cancelled with the node; nothing starts |
+//// | an absorb's end timer fires after the pool was used up, or the death dropped it | the end writes nothing (genesis_prime/game/player_life) |
+//// | a go of the cast arms its absorb while the earlier go's pool is held | the pool is refilled to the new amount, its end timer set again |
+//// | an absorb's end and a blow reach the connection in one millisecond | arrival order: the pool soaks and then ends, or ends first |
+//// | a go adds a Stealth source while the stack cap of its spell takes the first cast off | one source left, one 0x811, no `StealthChanged` |
+//// | a go of a spell that ends stealth after the stealth ended | nothing to end, nothing written |
+//// | a 0x801 ends a cast of `EndsStealthAfterLastGo` after one of its goes and before its last | the other casts' stealth ends as the cast stops, the 0x811 and the change after the cast's own end |
+//// | a 0x801 ends a cast of `EndsStealthAfterLastGo` before its first go | the stealth stays held, nothing written |
+//// | the caster dies stealthed | every cast ends, the sources drop, `StealthChanged` last |
+//// | the player leaves stealthed | the sources drop, nothing is written |
+//// | a proc's trigger happens inside its window | nothing is cast, no fire is recorded |
+//// | a proc's chance word is not below its chance | nothing is cast, no fire is recorded |
+//// | a go's hit names a creature with no damage description | no event, no proc fires |
+//// | a hit's trigger is matched while its proc's delay runs | the fire is counted at the event; the cast starts when its `ProcDue` timer fires, and is cancelled with the holder's cast |
+//// | a proc's trigger and the removal of its holder's node in one input | the removed proc does not fire: procs are matched after the input's work |
+//// | a proc's trigger happens for a caster its spell's condition refuses (a dead caster) | a debug line naming the row and the spell, no cast and no fire recorded |
+//// | a go of a cast that is not the innate passive applies a `Died` proc | the proc is not held, with a debug line: a death ends the cast before it could fire |
+//// | the caster dies in combat | `combat_left`, then `died`: 63366 twice, each under its own limit |
+//// | the caster camps or leaves stealthed | the procs drop with every cast, nothing is cast or written |
+//// | a press with 500 ms or less of the current cast left | held, nothing written; taken at the go or finish that clears the current cast |
+//// | a 0x801 for a cast that is not live, or one already finished | no change, a debug line |
+//// | a 0x801 (0, 0) naming no open threshold | no change, a debug line |
+//// | a 0x801 with a reason and bit the client never sends | the connection ends |
+//// | a parent cast finishes with a child's timer pending | the child starts when its timer fires, with the root and parent it was made with |
+//// | a threshold's window ends with taps left | the threshold closes, nothing is written, the cooldown starts |
+//// | the player camps with casts, children or a threshold pending | every timer is cancelled and nothing is written: the viewers' clients drop the cast with the unit (the connection writes each viewer's 0x7fe before its 0x355) |
+//// | the caster's connection ends, a key held | its timers and the hold end with it; the map's `Gone` removes the unit from each viewer, which finishes its casts first |
+//// | the caster dies with casts live | each ends with its timers cancelled and 0x7fe to the caster and its audience; the hold and every other timer end, but the innate passive's cast, its nodes, modifiers and pending children (`died`) |
+//// | the innate passive's plan is missing | a warning and no cast: the plans hold every class's passive, or the load fails |
+//// | a timer fires after its cast ended | a go finds no live cast and does nothing; the cast's end cancels its go timers |
+//// | a timer fires in a status that holds no player in the world | dropped; the world is left already |
+//// | the answer of a store ask comes after a timer's due time | the timer is taken after the answer: the go and finish are late by the ask, never lost |
+//// | a viewer is told a go or finish of a cast it did not write | dropped (genesis_prime/game/connection) |
+//// | the audience's connection has ended | the tell is dropped by the shell |
+//// | a go lists a lasting effect, the last go leaves a node with life | the cast lingers with no 0x7fe; the timer of its earliest ending node starts |
+//// | a lingering cast's timer fires with no node ended, or after a removal took the cast off | nothing is written; the timer starts again for the nodes left, or finds no cast |
+//// | two nodes of a lingering cast end at the same time | one 0x811 naming both units |
+//// | a removal and a lingering cast's timer in one step | the removal first; the timer finds nothing |
+//// | the caster dies with a lingering cast | its 0x7fe to the caster and the audience, with the live casts' (server choice: the client has no death path) |
+//// | the caster leaves with a lingering cast | every timer is cancelled and nothing is written; each viewer's 0x355 ends the cast on its client |
+//// | the client cancels a cast that holds a node with life left | its pending gos are cancelled and it lingers, with no 0x7fe until the node ends |
+//// | a live cast's node ends while the cast goes on | 0x811 for the unit; the cast's later gos go on |
+//// | a unit holding a node of a cast leaves the caster's sight | the node is dropped with no frame; a lingering cast left with no node ends with its 0x7fe |
 
 import genesis_prime/game/cast/control as cast_control
 import genesis_prime/game/cast/state.{

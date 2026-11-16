@@ -1,4 +1,14 @@
 //// The ticks and nodes of a cast, their removals and their ends.
+////
+//// - **A cast that lingers** is one whose last go has gone while a node of it still
+////   has life: every step of its end runs (the current cast cleared, a channel's
+////   cooldown, a stage's threshold closed) and only its 0x7fe waits, since the client
+////   ends no buff on time (`cast.target_node_end`). A timer of the rule ends the
+////   nodes as their time runs out, 0x811 for the units whose node ends and the 0x7fe
+////   with the last. A lingering cast holds its id until then. A live cast's nodes end
+////   on the same timer, 0x811 for the unit while the cast goes on, and a 0x801 stops a
+////   cast the same way: its pending gos are cancelled and it lingers if a node has life
+////   left, since a cancel ends no buff.
 
 import genesis_prime/client_connection
 import genesis_prime/game/area

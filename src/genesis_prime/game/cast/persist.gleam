@@ -1,4 +1,24 @@
 //// The persistence checks of a lasting cast: whether what it needs still holds, and the end when it does not.
+////
+//// - **Persistence** is the server's alone: the client never evaluates
+////   prerequisiteIdCasterPersistence or prerequisiteIdTargetPersistence, which it keeps
+////   to word the results 282 and 283 (`Spell4.prerequisiteIdCasterPersistence`,
+////   `0x1405648a0`). The connection calls `persisted` at the end of each input of a player
+////   in the world, which is exact and needs no timer or interval (the tables give none).
+////   Each live or lingering cast, lowest id first, whose spell's condition fails ends
+////   (checked again after each end, since one can break another's): 0x7f9 {cast id, 282 or
+////   283, the caster, 0}, which destroys the nodes the cast holds so its buff goes and leaves
+////   the cast filed, then the 0x7fe that takes it out of the client's table, told to the
+////   audience as a finish (`opcode.0x7f9`, `cast.target_node_end`; which message retail sent
+////   is not known). The cast's go, finish and NodesEnd timers are cancelled, its property
+////   modifiers and cooldown effects end, its stealth sources drop (the input's last effect
+////   is `StealthChanged`), the current cast clears when it was this one, an open threshold
+////   it is the base cast of closes as a 0x801 closes it, and a press held for the clear
+////   starts. CasterPersistence (282) is checked before TargetPersistence (283), the caster
+////   the first unit and the cast's primary target the second; TargetPersistence is checked
+////   only for a cast whose primary target is the caster, since the connection holds no
+////   creature's state. A condition of a type not read, a roll and a creature target keep the
+////   cast, with one debug line for the spell.
 
 import genesis_prime/game/cast/cost as cast_cost
 import genesis_prime/game/cast/frame as cast_frame

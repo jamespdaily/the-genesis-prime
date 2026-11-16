@@ -1,4 +1,29 @@
 //// Which rolls a cast needs, and which of its effects pass their gates on the units it reaches.
+////
+//// - **A go's gains** (`Gain`) are the spell's own gains of the phase and, once
+////   for the go and not once per unit, the gains of each Proxy of the phase aimed
+////   at each struck unit when the round has a Hit and the Proxy's gate passes
+////   (`spell_plan.Gain`). Each is given when its caster apply and target apply
+////   prerequisites pass against the caster, the only unit a gain reaches
+////   (genesis_prime/game/prerequisite): the spells of the caster's own live
+////   casts whose primary target it is, whether it is in combat, its health, shield
+////   and the class resource slot it holds as the vitals 1, 3 and 5 to 11, and the
+////   rolls the connection drew. A prerequisite of a type or a vital not read, and a
+////   ticking gain, give nothing and a debug line. A creature's cast on the player is not
+////   held here, so a prerequisite cannot find one (no kit prerequisite tests a
+////   creature's spell).
+//// - **A go's gates read the caster as it stood before the go's own effects.** The
+////   gates of its Proxies and of its gains see the live casts with this go counted,
+////   but not the children the go starts and not the cast's removal at its finish: a
+////   server choice, since the client applies no Proxy itself
+////   (`Spell4Effects.effectType.26.dataBits06`). A gain that asks to be "not under"
+////   a spell this same go starts is given (`cast_gate_test`).
+//// - **A go's rolls** are one for each type 37 condition among the gates of the
+////   Proxies that start a child, of the gains that may be given and of the lasting
+////   effects of the phase, and, for a row behind a target apply prerequisite, one set for
+////   each unit the row reaches (`rolls_needed`); the connection draws that many from its
+////   seed before it calls `went`, and none when there is no such condition, so no other
+////   roll of the connection moves.
 
 import genesis_prime/game/cast/state.{
   type Caster, type Effect, type GainVerdict, type GateDecision, type Live,

@@ -1,4 +1,14 @@
 //// What the cast rule keeps and how it names things: its types, its constants, the ids of casts and timers, and the helpers every other part of the rule shares.
+////
+//// - **The cast id** is 2^31 + unit id x 2^11 + n mod 2^11, skipping an id a live
+////   cast of the caster holds: unique among the live casts of every unit, since
+////   the client keeps one table of casts (`0x140561c30`) and unit ids are below
+////   2^20, and never 0. The client's own counter makes no collision: its
+////   pending casts live apart (`cast.pending_table`). A child takes the next id.
+//// - **Timers** are the connection's: this rule starts them with ids from
+////   `first_timer`, one for each go, finish, child, held press, threshold window
+////   and charge level waiting, and owns the ids from there up (`owns`).
+////
 
 import genesis_prime/client_connection.{type News}
 import genesis_prime/connection/frame.{type Frame}
