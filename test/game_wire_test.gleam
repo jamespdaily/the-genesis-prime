@@ -62,6 +62,9 @@ import genesis_prime/message/cast_result.{TargetIsNotUseable}
 import genesis_prime/message/character_list
 import genesis_prime/message/character_list_entry
 import genesis_prime/message/chat_line_accepted
+import genesis_prime/message/client_side_interaction_result.{
+  ClientSideInteractionResult,
+}
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/create_character_result
 import genesis_prime/message/create_result
@@ -76,6 +79,7 @@ import genesis_prime/message/enter_world
 import genesis_prime/message/experience_gained
 import genesis_prime/message/float32
 import genesis_prime/message/interaction_request.{InteractionRequest}
+import genesis_prime/message/interaction_result
 import genesis_prime/message/item_move
 import genesis_prime/message/item_place
 import genesis_prime/message/item_visual.{ItemVisual}
@@ -93,6 +97,7 @@ import genesis_prime/message/relayed_movement
 import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
 import genesis_prime/message/rename_result
+import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_started
 import genesis_prime/message/start_movement
 import genesis_prime/message/static_unit_type
@@ -7867,5 +7872,193 @@ pub fn a_spellslinger_over_a_socket_casts_surged_quick_draw_test() -> Nil {
     == [float32.to_bits(75.0)]
     as "opcode.0x935: 76002's innate cost (19, 25) takes 25 from the Spellslinger's 100 Spell Power (stat 6, slot 4); the writes after it are the slot refilling over time (class_resource, `Over time`)"
   game_client.close(game:)
+  login_support.stop(started)
+}
+
+/// The creature of this Creature2 that stands at the x and z of the place, within 0.01.
+fn creature_standing_at(
+  creatures creatures: List(unit_create_creature.UnitCreateCreature),
+  creature_id creature_id: Int,
+  place place: #(Float, Float),
+) -> Result(unit_create_creature.UnitCreateCreature, Nil) {
+  list.find(creatures, fn(creature) {
+    let #(x, _, z) = game_client.placed_by_tail(tail: creature.tail)
+    creature.creature_id == creature_id
+    && float.absolute_value(x -. place.0) <. 0.01
+    && float.absolute_value(z -. place.1) <. 0.01
+  })
+}
+
+/// The unit ids the 0x355 among the messages remove, in the order sent.
+fn removed_in(frames frames: List(Frame)) -> List(Int) {
+  list.filter_map(frames, fn(frame) {
+    case frame.message_id {
+      0x0355 ->
+        unit_destroyed.decode(frame.body)
+        |> result.map(fn(destroyed) { destroyed.unit_id })
+        |> result.replace_error(Nil)
+      _ -> Error(Nil)
+    }
+  })
+}
+
+pub fn rescuing_an_exile_removes_the_trap_and_the_exile_for_another_player_too_then_both_return_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Quest 6296's objective 9659 (QuestObjective: type 12, data Creature2 27768, the
+  // Bramble Trap, count 4) is credited by the go of a use of a trap, which the creature's
+  // activateSpellCastTime of 2000 ms and activateSpellMaxRange of 3.0 allow. The world
+  // data's rows 10449, 10451, 10453 and 10454 are four of its traps (so the objective
+  // counts each unit once, not the same unit again), and rows 10603 to 10606 are the
+  // Trapped Mordesh (Creature2 28112) that stand at the traps' x and z, 0.2 to 0.9 below
+  // them. The use releases the trap and the Mordesh together, and 30000 ms later both are
+  // back (a server choice, `used_object_release_ms`). Another player in sight is told 0x355
+  // for both and 0x262 for both again.
+  let time = driven_time.new()
+  let started =
+    start_with_world_data_by(
+      folder: "test/fixture/world_data_nature",
+      adjusted: fn(settings) { driven_by(settings:, time:) },
+    )
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let #(first, first_character) =
+    new_player_at_level(
+      started:,
+      number: 1,
+      character_name: "Zed Qu",
+      class_id: 4,
+      level: 1,
+    )
+  let #(second, second_character) =
+    new_player_at_level(
+      started:,
+      number: 2,
+      character_name: "Ann Qu",
+      class_id: 4,
+      level: 1,
+    )
+  let assert Ok(_) =
+    pog.query(
+      "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left, kill_mask) values ($1, 6296, 1, 0, true, 0, '{0,0,0}', 0, '{0,0,0}', '{0,0,0,0,0,0}')",
+    )
+    |> pog.parameter(pog.int(first_character))
+    |> pog.execute(pool)
+    as "the first character holds quest 6296 with nothing done"
+  // The trap of row 10451 and the Mordesh of row 10604 stand at this x and z.
+  let place = #(-467.3149, -2775.65)
+  character_support.move_to(
+    pool:,
+    character_id: first_character,
+    world_id: 990,
+    world_zone_id: 1415,
+    position: #(-465.8149, -991.1788, -2775.65),
+  )
+  character_support.move_to(
+    pool:,
+    character_id: second_character,
+    world_id: 990,
+    world_zone_id: 1415,
+    position: #(-467.3149, -991.1788, -2767.65),
+  )
+  let both_in = fn(frames) {
+    let creatures = game_client.creatures_created_in(frames:)
+    result.is_ok(creature_standing_at(creatures:, creature_id: 27_768, place:))
+    && result.is_ok(creature_standing_at(
+      creatures:,
+      creature_id: 28_112,
+      place:,
+    ))
+  }
+  send_play(game: first, character_id: first_character)
+  let #(first_entry, first_have) =
+    game_client.read_until(game: first, have: <<>>, found: both_in)
+  send_play(game: second, character_id: second_character)
+  let #(second_entry, second_have) =
+    game_client.read_until(game: second, have: <<>>, found: both_in)
+  let seen = fn(frames) {
+    let creatures = game_client.creatures_created_in(frames:)
+    let assert Ok(trap) =
+      creature_standing_at(creatures:, creature_id: 27_768, place:)
+    let assert Ok(mordesh) =
+      creature_standing_at(creatures:, creature_id: 28_112, place:)
+    #(trap.unit_id, mordesh.unit_id)
+  }
+  let #(trap, mordesh) = seen(first_entry)
+  assert seen(second_entry) == #(trap, mordesh)
+    as "both players are shown the same units for the trap and the Mordesh"
+  let assert Ok(press) =
+    cast_activate.encode(CastActivate(client_cast_id: 1, target_unit_id: trap))
+    as "the right-click fits the message"
+  game_client.send_world(
+    game: first,
+    message_id: cast_activate.message_id,
+    body: press,
+  )
+  let #(pressed, first_have) =
+    game_client.read_until_pong(game: first, have: first_have, number: 1)
+  assert list.any(pressed, fn(frame) { frame.message_id == 0x07FD })
+    as "opcode.0x7fd: the press on the trap is confirmed"
+  // The bar runs 2000 ms (Creature2 27768's activateSpellCastTime), and the spell the trap
+  // casts for a character at the start of the quest is Spell4 33673 of Spell4Base 19657,
+  // castMethod 5: its go waits for the client's answer, which names the base plus one.
+  let assert Ok(confirmed) =
+    list.find(pressed, fn(frame) { frame.message_id == 0x07FD })
+    as "the confirmation of the press"
+  let assert Ok(confirmed) = spell_cast_confirmed.decode(confirmed.body)
+  driven_time.advance(time:, ms: 2000)
+  let assert Ok(answer) =
+    client_side_interaction_result.encode(ClientSideInteractionResult(
+      cast_id: confirmed.server_cast_id,
+      result: interaction_result.Succeeded,
+      spell4_base_id_plus_one: 19_658,
+    ))
+    as "the answer fits the message"
+  game_client.send_world(
+    game: first,
+    message_id: client_side_interaction_result.message_id,
+    body: answer,
+  )
+  let gone = fn(frames) {
+    let removed = removed_in(frames:)
+    list.contains(removed, trap) && list.contains(removed, mordesh)
+  }
+  let #(went, first_have) =
+    game_client.read_until(game: first, have: first_have, found: fn(frames) {
+      gone(frames) && list.any(frames, fn(frame) { frame.message_id == 0x0361 })
+    })
+  assert list.filter(went, fn(frame) { frame.message_id == 0x0361 })
+    == [
+      Frame(
+        message_id: 0x0361,
+        body: message_support.packed([#(15, 6296), #(32, 1), #(32, 1)]),
+      ),
+    ]
+    as "opcode.0x361: the go of the use counts one of objective 9659's four, in quest 6296"
+  let #(seen_gone, second_have) =
+    game_client.read_until(game: second, have: second_have, found: gone)
+  assert list.sort(removed_in(frames: seen_gone), int.compare)
+    == list.sort([trap, mordesh], int.compare)
+    as "opcode.0x355: the player who did not use the trap is told the trap and the Mordesh are gone, each once"
+  // The restart timer is the release's 30000 ms, started when the units went.
+  driven_time.advance(time:, ms: 30_000)
+  let #(back, _) =
+    game_client.read_until(game: second, have: second_have, found: both_in)
+  let creatures = game_client.creatures_created_in(frames: back)
+  assert result.is_ok(creature_standing_at(
+      creatures:,
+      creature_id: 27_768,
+      place:,
+    ))
+    && result.is_ok(creature_standing_at(
+      creatures:,
+      creature_id: 28_112,
+      place:,
+    ))
+    as "opcode.0x262: the trap and the Mordesh are created again for the other player after the release time"
+  let #(first_back, _) =
+    game_client.read_until(game: first, have: first_have, found: both_in)
+  assert both_in(first_back)
+    as "opcode.0x262: the player who used the trap is shown both again as well"
+  game_client.close(game: first)
+  game_client.close(game: second)
   login_support.stop(started)
 }

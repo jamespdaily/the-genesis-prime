@@ -536,9 +536,9 @@ import genesis_prime/step.{
   type CallerId, type ConnectionId, type Effect, type ServiceEffect,
   type ServiceInput, type ServiceRule, type ServiceStep, type WatchId, Asked,
   CancelServiceTimer, Connection, ConnectionId, CreatureStart, Effects, Log,
-  LogError, LogLine, OwnEffect, OwnEvent, Reply, Send, ServiceTimerFired,
-  StartCreature, StartServiceTimer, Started, Stop, Stopping, TimerId, Told,
-  Unwatch, Watch, WatchEnded, WatchId,
+  LogError, LogInfo, LogLine, OwnEffect, OwnEvent, Reply, Send,
+  ServiceTimerFired, StartCreature, StartServiceTimer, Started, Stop, Stopping,
+  TimerId, Told, Unwatch, Watch, WatchEnded, WatchId,
 }
 import genesis_prime/store.{type Character, CharacterId}
 import genesis_prime/table/id.{type Creature2Id, type PrerequisiteId}
@@ -799,6 +799,8 @@ pub type Notice {
 /// has had this run, the next unit id and the next watch id, neither of which goes
 /// back, and the monotonic time the map started at, which its clock counts from
 /// (`Joined` carries it). A dormant spawn is a spawn with no entry in `spawns`.
+/// `captives` are the spawns that go with a used object's spawn
+/// (`spawn.captives`), found once when the map is built.
 pub opaque type State {
   State(
     settings: Settings,
@@ -807,6 +809,7 @@ pub opaque type State {
     spawns: Dict(SpawnId, SpawnState),
     creature_watches: Dict(WatchId, SpawnId),
     unit_of_spawn: Dict(SpawnId, Int),
+    captives: Dict(SpawnId, List(SpawnId)),
     run_spawns: Dict(SpawnId, Spawn),
     summoning: Dict(SpawnId, Summoning),
     next_run_only_id: SpawnId,
@@ -980,6 +983,7 @@ pub fn new(settings: Settings) -> State {
     spawns: dict.new(),
     creature_watches: dict.new(),
     unit_of_spawn: dict.new(),
+    captives: spawn.captives(world: settings.spawns, tables: settings.tables),
     run_spawns: dict.new(),
     summoning: dict.new(),
     next_run_only_id: spawn_source.first_run_only_id,
@@ -1387,29 +1391,20 @@ fn creature_ended(
     State(..state, creature_watches: dict.delete(state.creature_watches, watch))
   case dict.get(state.spawns, spawn) {
     Ok(Live(unit_id:, ..)) -> {
-      let SpawnId(number) = spawn
-      let gone =
-        list.map(players_in_order(state), fn(player) {
-          notify(to: player, notice: Gone(unit_id:))
-        })
       use <- bool.lazy_guard(
         when: dict.has_key(state.run_spawns, spawn),
-        return: fn() { #(without_run_spawn(state:, spawn:), Effects(gone)) },
+        return: fn() {
+          #(
+            without_run_spawn(state:, spawn:),
+            Effects(gone_to_every_player(state:, unit_id:)),
+          )
+        },
       )
-      #(
-        State(
-          ..state,
-          spawns: dict.insert(state.spawns, spawn, WaitingForRestart),
-          unit_of_spawn: dict.delete(state.unit_of_spawn, spawn),
-        ),
-        Effects(
-          list.append(gone, [
-            OwnEffect(StartServiceTimer(
-              timer: TimerId(number),
-              after_ms: restart_ms(state:, spawn:),
-            )),
-          ]),
-        ),
+      waiting_for_restart(
+        state:,
+        spawn:,
+        unit_id:,
+        after_ms: restart_ms(state:, spawn:),
       )
     }
     Ok(Retiring(..)) -> started_for_those_who_see(state:, spawn:)
@@ -1452,6 +1447,26 @@ fn restart_due(
   }
 }
 
+/// The unit and life of a spawn whose creature a release can end: live, and not
+/// one of a fight's run spawns.
+fn releasable(
+  state state: State,
+  spawn spawn: SpawnId,
+) -> Result(#(SpawnId, Int, Int), Nil) {
+  use <- bool.guard(
+    when: dict.has_key(state.run_spawns, spawn),
+    return: Error(Nil),
+  )
+  case dict.get(state.spawns, spawn) {
+    Ok(Live(unit_id:, life:, ..)) -> Ok(#(spawn, unit_id, life))
+    Ok(Retiring(..))
+    | Ok(Releasing(..))
+    | Ok(WaitingForRestart)
+    | Ok(Failed)
+    | Error(Nil) -> Error(Nil)
+  }
+}
+
 /// A player's use released the unit `unit_id` (`Released`). A live creature's
 /// spawn becomes `Releasing` with the release time as its wait and its creature is
 /// told `Retire`, as the sweep tells an idle one, and so are the live creatures of
@@ -1463,7 +1478,72 @@ fn released(
   state state: State,
   unit_id unit_id: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
-  todo as "#856: a release ends a live creature and its captives through Retire"
+  case spawn_of_unit(state:, unit_id:) {
+    Error(Nil) -> #(state, Effects([]))
+    Ok(spawn) ->
+      case dict.get(state.spawns, spawn) {
+        Ok(Live(..)) -> {
+          let released =
+            [spawn, ..dict.get(state.captives, spawn) |> result.unwrap([])]
+            |> list.filter_map(fn(spawn) { releasable(state:, spawn:) })
+          let wait_ms = state.settings.numbers.used_object_release_ms
+          #(
+            State(
+              ..state,
+              spawns: list.fold(released, state.spawns, fn(spawns, found) {
+                dict.insert(
+                  spawns,
+                  found.0,
+                  Releasing(unit_id: found.1, life: found.2, wait_ms:),
+                )
+              }),
+            ),
+            Effects(
+              list.map(released, fn(found) {
+                tell_creature(
+                  state:,
+                  unit_id: found.1,
+                  life: found.2,
+                  message: Retire,
+                )
+              }),
+            ),
+          )
+        }
+        Ok(Retiring(..))
+        | Ok(Releasing(..))
+        | Ok(WaitingForRestart)
+        | Ok(Failed)
+        | Error(Nil) ->
+          case dict.has_key(state.settings.spawns.objects, spawn) {
+            True -> #(
+              state,
+              Effects([
+                Log(LogLine(
+                  level: LogInfo,
+                  text: "a used static object is left in place until the step that releases static objects (#861)",
+                  about: step.About(
+                    ..step.no_one,
+                    map: Some(state.settings.map),
+                  ),
+                )),
+              ]),
+            )
+            False -> #(state, Effects([]))
+          }
+      }
+  }
+}
+
+/// The spawn whose creature or static object has the unit id `unit_id` this run,
+/// the one `unit_of_spawn` holds it for.
+fn spawn_of_unit(
+  state state: State,
+  unit_id unit_id: Int,
+) -> Result(SpawnId, Nil) {
+  dict.to_list(state.unit_of_spawn)
+  |> list.find(fn(entry) { entry.1 == unit_id })
+  |> result.map(fn(entry) { entry.0 })
 }
 
 /// The `Releasing` creature of the spawn ended, whether it stopped at once or at
@@ -1476,7 +1556,40 @@ fn released_ended(
   unit_id unit_id: Int,
   wait_ms wait_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
-  todo as "#856: a released creature ends, its spawn waits the release time"
+  waiting_for_restart(state:, spawn:, unit_id:, after_ms: wait_ms)
+}
+
+/// Every player is sent `Gone` of the unit `unit_id`, the unit id is given up, and
+/// the spawn waits `after_ms` for its restart timer.
+fn waiting_for_restart(
+  state state: State,
+  spawn spawn: SpawnId,
+  unit_id unit_id: Int,
+  after_ms after_ms: Int,
+) -> #(State, ServiceStep(Outgoing)) {
+  let SpawnId(number) = spawn
+  #(
+    State(
+      ..state,
+      spawns: dict.insert(state.spawns, spawn, WaitingForRestart),
+      unit_of_spawn: dict.delete(state.unit_of_spawn, spawn),
+    ),
+    Effects(
+      list.append(gone_to_every_player(state:, unit_id:), [
+        OwnEffect(StartServiceTimer(timer: TimerId(number), after_ms:)),
+      ]),
+    ),
+  )
+}
+
+/// `Gone` of the unit `unit_id` to each player in the map, in connection order.
+fn gone_to_every_player(
+  state state: State,
+  unit_id unit_id: Int,
+) -> List(Effect(ServiceEffect(Outgoing))) {
+  list.map(players_in_order(state), fn(player) {
+    notify(to: player, notice: Gone(unit_id:))
+  })
 }
 
 /// The spawn is dormant when no player sees it from where it stands, and

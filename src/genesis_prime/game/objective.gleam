@@ -280,7 +280,21 @@ pub fn credits_a_used_unit(
   event event: Event,
   reused reused: Set(Int),
 ) -> Bool {
-  todo as "#856: a use that credits a type 12 objective that counts each unit once"
+  case event {
+    Used(..) ->
+      list.any(quest_log.active_ids(log:), fn(quest_id) {
+        let quest = quest_of(tables:, quest_id:)
+        quest_log.open_objectives(log:, quest:)
+        |> list.any(fn(open) {
+          let #(index, objective) = open
+          objective.type_ == quest_log.use_a_creature_type
+          && quest_log.counted_by_unit(objective, reused)
+          && counts(tables:, event:, quest_id: quest.id, index:, objective:)
+          && !counted_already(log:, quest:, index:, event:)
+        })
+      })
+    TalkedTo(..) | Killed(..) | Cast(..) -> False
+  }
 }
 
 fn counted_by(
