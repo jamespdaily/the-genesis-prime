@@ -47,11 +47,14 @@
 ////   from zero (a HealShields effect aimed at the caster, genesis_prime/game/cast).
 //// - **A creature caster** has its own formula (`creature_value`): the stat part
 ////   reads Strength and Assault Power and is held under a cap that grows with the
-////   level by GameFormula 712 (`0x140565600`).
+////   level by GameFormula 712, and the stat part and the row part (the same R as a
+////   player's) are each divided by its fourth value, added and multiplied, every step a
+////   32-bit float (`0x140565600`, `0x1405659f5`).
 
 import genesis_prime/game/unit_properties
 import genesis_prime/message/float32
 import genesis_prime/table/spell4_effects
+import gleam/bool
 import gleam/float
 import gleam/int
 import gleam/list
@@ -65,8 +68,8 @@ pub type Parameter {
 }
 
 /// An effect's row as the formula reads it: the multiplier dataBits00 as a float, the
-/// flat base dataBits01 (an integer for a damage or heal row, a float for an Absorption
-/// row) and the four parameters.
+/// flat base dataBits01 (an unsigned 32-bit integer made a 32-bit float for a damage or
+/// heal row, a float for an Absorption row) and the four parameters.
 pub type Formula {
   Formula(multiplier: Float, base: Float, parameters: List(Parameter))
 }
@@ -74,14 +77,16 @@ pub type Formula {
 /// A damage effect's row as the formula reads it, or an error when its dataBits00,
 /// read as a 32-bit float, is not finite: the one build of the formula, for a
 /// player's spells (genesis_prime/game/spell_area) and a creature's attack
-/// (genesis_prime/world_map/spawn).
+/// (genesis_prime/world_map/spawn). The base dataBits01 is read as an unsigned 32-bit
+/// integer for both (`0x140565782`), so a column with its top bit set is 2^32 less its
+/// size.
 pub fn formula_of(
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(Formula, Nil) {
   use multiplier <- result.map(float32.of_column(number: effect.data_bits00))
   Formula(
     multiplier:,
-    base: int.to_float(effect.data_bits01),
+    base: unsigned_unit_value(number: effect.data_bits01),
     parameters: parameters_of(effect:),
   )
 }
@@ -232,11 +237,17 @@ fn first_unread(
 /// Paralytic Surge 8.14 and Stagger 3.0 at level 1 and rating 0.
 pub fn value(formula formula: Formula, attacker attacker: Attacker) -> Float {
   value_with(formula:, attacker:, flat_of: fn(kind) {
-    case kind {
-      10 -> unsigned_unit_value(number: attacker.level)
-      _ -> 0.0
-    }
+    level_value(level: attacker.level, kind:)
   })
+}
+
+/// What the flat part reads of a caster that holds only its level: the level for type 10,
+/// 0.0 for any other type (`0x140566ad0`).
+fn level_value(level level: Int, kind kind: Int) -> Float {
+  case kind {
+    10 -> unsigned_unit_value(number: level)
+    _ -> 0.0
+  }
 }
 
 /// The value of a player caster's effect, the flat part reading what `flat_of` gives for
@@ -254,17 +265,39 @@ fn value_with(
     stat_part: whole_stat_part(stat_part),
     base: formula.base,
     multiplier: formula.multiplier,
-    flat_terms: list.map(formula.parameters, fn(parameter) {
-      float32.product(left: parameter.value, right: flat_of(parameter.kind))
-    }),
+    flat_terms: flat_terms_of(parameters: formula.parameters, flat_of:),
   )
 }
 
-/// The value from its parts, in 32-bit floats (`0x140565600`): the flat terms summed in
-/// order from 0.0 (`0x140566ad0`), the row part (the base as a float + the flat sum) x
-/// the multiplier, and the stat part added. The player's M is 1.0, so it changes nothing.
+/// Each parameter's value times the unit value `flat_of` gives for its type, in 32-bit
+/// floats and in parameter order (`0x140566ad0`).
+fn flat_terms_of(
+  parameters parameters: List(Parameter),
+  flat_of flat_of: fn(Int) -> Float,
+) -> List(Float) {
+  list.map(parameters, fn(parameter) {
+    float32.product(left: parameter.value, right: flat_of(parameter.kind))
+  })
+}
+
+/// The value from its parts, in 32-bit floats (`0x140565600`): the row part and the stat
+/// part added. The player's M is 1.0, so it changes nothing.
 fn value_of_parts(
   stat_part stat_part: Int,
+  base base: Float,
+  multiplier multiplier: Float,
+  flat_terms flat_terms: List(Float),
+) -> Float {
+  float32.sum(
+    left: int.to_float(stat_part),
+    right: row_part_of(base:, multiplier:, flat_terms:),
+  )
+}
+
+/// The row part R, in 32-bit floats (`0x140565782`): the flat terms summed in order from
+/// 0.0 (`0x140566ad0`), the base (already an unsigned integer made a float) + the flat
+/// sum, times the row's multiplier. A player and a creature share it.
+fn row_part_of(
   base base: Float,
   multiplier multiplier: Float,
   flat_terms flat_terms: List(Float),
@@ -273,12 +306,10 @@ fn value_of_parts(
     list.fold(flat_terms, 0.0, fn(sum, term) {
       float32.sum(left: sum, right: term)
     })
-  let row_part =
-    float32.product(
-      left: float32.sum(left: float32.rounded(base), right: flat_part),
-      right: multiplier,
-    )
-  float32.sum(left: int.to_float(stat_part), right: row_part)
+  float32.product(
+    left: float32.sum(left: float32.rounded(base), right: flat_part),
+    right: multiplier,
+  )
 }
 
 /// A unit value or difference as the flat part reads it: an unsigned 32-bit integer made
@@ -487,15 +518,33 @@ pub fn amount_on_caster(
   int.max(0, float.round(value_on_caster(formula:, caster:)))
 }
 
-/// A stat part above the creature's cap: ((1 - e^(-(S - c) / c)) x overflow + 1) x
-/// c (`0x140565600`).
+/// A stat part above the creature's cap, in 32-bit floats: ((1 - e^(-(S - c) / c)) x
+/// overflow + 1) x (c / divisor) (`0x140565600`, `0x1405659f5`; the exponential is
+/// `ExpF`, `0x1408fc7f0`).
 fn beyond_the_cap(
   stat_part stat_part: Float,
   cap cap: Float,
-  overflow overflow: Float,
+  scaling scaling: CreatureScaling,
 ) -> Float {
-  let over = { stat_part -. cap } /. cap
-  { { 1.0 -. float.exponential(0.0 -. over) } *. overflow +. 1.0 } *. cap
+  let over =
+    quotient(left: float32.difference(left: stat_part, right: cap), right: cap)
+  let decay = float32.rounded(float.exponential(0.0 -. over))
+  float32.sum(
+    left: float32.product(
+      left: float32.difference(left: 1.0, right: decay),
+      right: scaling.overflow,
+    ),
+    right: 1.0,
+  )
+  |> float32.product(right: quotient(left: cap, right: scaling.divisor))
+}
+
+/// The 32-bit quotient of two 32-bit floats: the exact 64-bit quotient rounded once to 32
+/// bits, as the client's single-precision divide gives. A divisor of 0.0 gives 0.0, as
+/// the client's test of each divisor and of the cap against 0.0 does (`0x140565923`).
+fn quotient(left left: Float, right right: Float) -> Float {
+  use <- bool.guard(when: right == 0.0, return: 0.0)
+  float32.rounded(value: left /. right)
 }
 
 /// What the creature formula reads of a creature caster: its level, its Strength
@@ -507,8 +556,8 @@ pub type Creature {
 }
 
 /// GameFormula 712's four values, which scale a creature's stat part
-/// (`0x140565600`): c = (level x `per_level` + `base`) x the mean of the stat
-/// parameters; a stat part above c grows only to ((1 - e^(-(S - c) / c)) x
+/// (`0x140565600`): c = (level x `per_level` + `base`) x the absolute value of the
+/// mean of the stat parameters; a stat part above c grows only to ((1 - e^(-(S - c) / c)) x
 /// `overflow` + 1) x c; and the stat and row parts are divided by `divisor`.
 pub type CreatureScaling {
   CreatureScaling(
@@ -530,9 +579,10 @@ fn is_read_for_a_creature(kind: Int) -> Bool {
 }
 
 /// The effect's value for a creature caster, before any rounding to a whole number
-/// (`0x140565600`): the stat part cut as a player's is (`0x140566d40`), held under the
-/// creature's cap, plus the row part, both divided by GameFormula 712's fourth
-/// value, times `multiplier`, the creature's DamageDealtMultiplier of the effect's
+/// (`0x140565600`), every step a 32-bit float (`0x1405659f5`): the stat part cut as a
+/// player's is (`0x140566d40`), held under the creature's cap, and the row part
+/// (`row_part_of`, as a player's), each divided by GameFormula 712's fourth value, added,
+/// and multiplied by `multiplier`, the creature's DamageDealtMultiplier of the effect's
 /// damage type (UnitProperty2 140 + damage type, 1.0 for a type with none).
 /// Effect 184741 of a level-1 Virtual Battle Beast (Strength and Assault Power
 /// 10.47, multiplier 1.0) is 12.
@@ -542,10 +592,6 @@ pub fn creature_value(
   scaling scaling: CreatureScaling,
   multiplier multiplier: Float,
 ) -> Float {
-  let stat_parameters =
-    list.filter(formula.parameters, fn(parameter) {
-      parameter.kind == 1 || parameter.kind == 12
-    })
   let stat_part =
     stat_part_of(parameters: formula.parameters, stat_of: fn(kind) {
       case kind {
@@ -556,28 +602,65 @@ pub fn creature_value(
     })
     |> whole_stat_part
     |> int.to_float
+  let cap = cap_of(formula:, level: creature.level, scaling:)
+  let capped = case stat_part <=. cap {
+    True -> quotient(left: stat_part, right: scaling.divisor)
+    False -> beyond_the_cap(stat_part:, cap:, scaling:)
+  }
+  let row_part =
+    row_part_of(
+      base: formula.base,
+      multiplier: formula.multiplier,
+      flat_terms: flat_terms_of(
+        parameters: formula.parameters,
+        flat_of: fn(kind) { level_value(level: creature.level, kind:) },
+      ),
+    )
+  float32.product(
+    left: multiplier,
+    right: float32.sum(
+      left: capped,
+      right: quotient(left: row_part, right: scaling.divisor),
+    ),
+  )
+}
+
+/// The creature's cap c on the stat part, in 32-bit floats (`0x140565600`, `0x1405659f5`):
+/// (level x `per_level` + `base`) x |mean|, the level read as an unsigned 32-bit integer.
+/// The mean is taken over every parameter whose type is a stat type (1 to 5, 11, 12 or
+/// 13), a value of 0 included, and the absolute value is taken once, after the division;
+/// with no such parameter the mean is 0 (`0x140565683`, `0x1405657e3`).
+fn cap_of(
+  formula formula: Formula,
+  level level: Int,
+  scaling scaling: CreatureScaling,
+) -> Float {
+  let stat_parameters = list.filter(formula.parameters, is_stat_parameter)
   let mean = case stat_parameters {
     [] -> 0.0
     _ ->
-      list.fold(stat_parameters, 0.0, fn(sum, parameter) {
-        sum +. parameter.value
-      })
-      /. int.to_float(list.length(stat_parameters))
+      quotient(
+        left: list.fold(stat_parameters, 0.0, fn(sum, parameter) {
+          float32.sum(left: sum, right: parameter.value)
+        }),
+        right: int.to_float(list.length(stat_parameters)),
+      )
   }
-  let cap =
-    { int.to_float(creature.level) *. scaling.per_level +. scaling.base }
-    *. mean
-  let capped = case stat_part <=. cap || cap <=. 0.0 {
-    True -> stat_part
-    False -> beyond_the_cap(stat_part:, cap:, overflow: scaling.overflow)
-  }
-  let flat_part =
-    list.fold(formula.parameters, 0.0, fn(sum, parameter) {
-      case parameter.kind {
-        10 -> sum +. parameter.value *. int.to_float(creature.level)
-        _ -> sum
-      }
-    })
-  let row_part = { formula.base +. flat_part } *. formula.multiplier
-  { capped +. row_part } /. scaling.divisor *. multiplier
+  float32.product(
+    left: float32.sum(
+      left: float32.product(
+        left: unsigned_unit_value(number: level),
+        right: scaling.per_level,
+      ),
+      right: scaling.base,
+    ),
+    right: float.absolute_value(mean),
+  )
+}
+
+/// Whether a parameter's type is one the cap's mean counts (`0x140565683`): 1 to 5, 11, 12
+/// or 13, the stat types of the stat part.
+fn is_stat_parameter(parameter: Parameter) -> Bool {
+  let kind = parameter.kind
+  { kind >= 1 && kind <= 5 } || { kind >= 11 && kind <= 13 }
 }
