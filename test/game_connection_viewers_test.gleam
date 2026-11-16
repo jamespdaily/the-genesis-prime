@@ -1479,3 +1479,35 @@ pub fn a_viewer_writes_the_creatures_kind_3_flight_test() -> Nil {
     )
     as "kind 0 at 1000 - 600, then kind 3 with the times 400 and 775 and the two points"
 }
+
+pub fn an_object_unseen_and_seen_again_under_the_same_id_writes_a_0x355_then_a_0x262_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The client removes a unit with a 0x355 (0x1403d9590) and ignores a 0x262 for a
+  // unit it holds (0x1403d9760): a released static object comes back under its id
+  // only if the removal made the connection forget it, and it never becomes gone.
+  let seen =
+    game_connection_support.sent_by_the_map(
+      ObjectsSeen(units: [object_unit(20)]),
+    )
+  let #(state, _) =
+    game_connection_support.feed(game_connection_support.in_world(), seen)
+  let #(state, taken) =
+    game_connection_support.feed(
+      state,
+      game_connection_support.sent_by_the_map(ObjectsUnseen(unit_ids: [20])),
+    )
+  assert game_connection_support.written_ids(taken) == [0x0355]
+    as "the removal is a 0x355"
+  let #(state, taken) = game_connection_support.feed(state, seen)
+  let written =
+    game_connection_support.heard(taken, game_connection_support.keyed())
+  assert list.map(written, fn(frame) {
+      unit_create_static.decode(frame.body)
+      |> result.map(fn(unit) { unit.unit_id })
+    })
+    == [Ok(20)]
+    as "the object is created again under the same unit id"
+  let #(_, again) = game_connection_support.feed(state, seen)
+  assert support.writes(again) == []
+    as "a second notice of the shown object writes nothing"
+}

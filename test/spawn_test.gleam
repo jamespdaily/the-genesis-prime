@@ -1779,3 +1779,54 @@ pub fn a_creature_row_placed_as_part_of_a_map_object_starts_with_the_link_and_no
   assert free.combat.attack.run_speed == 10.0
     as "the same creature with no link runs at its display's runLand 10 (Creature2DisplayInfo 26565)"
 }
+
+/// QuestObjective 9659 (type 12) names Creature2 27768, 21324 and 21354 name 73419,
+/// and 21325 and 21356 name 73735; Creature2 28112 and 73619 are named by no
+/// objective (the fixture's `QuestObjective` rows). A captive is a spawn at the
+/// key's x and z, within 0.01 m, whether a creature or a static object.
+pub fn captives_key_on_static_objects_too_and_leave_out_a_neighbour_a_type_12_objective_names_test() -> Nil {
+  use <- owned_test.run(5000)
+  let at = fn(x: Float, z: Float, up: Float) {
+    place_support.at(
+      world_id: 3460,
+      world_zone_id: spawn_support.warfare_woods,
+      x:,
+      y: up,
+      z:,
+    )
+  }
+  let creature = fn(number, creature, place) {
+    spawn.Spawn(
+      ..spawn_support.battle_beast(number:, x: 0.0),
+      creature_id: Creature2Id(creature),
+      place:,
+    )
+  }
+  let object = fn(number, creature, place) {
+    StaticObject(
+      ..spawn_support.holoring(number:, place:),
+      creature_id: Creature2Id(creature),
+    )
+  }
+  let world =
+    spawn.world_spawns(
+      spawns: [
+        creature(2, 28_112, at(0.0, 0.0, 0.07)),
+        creature(6, 27_768, at(5000.0, 0.0, 0.0)),
+        creature(7, 28_112, at(5000.0, 0.0, 0.07)),
+      ],
+      objects: [
+        object(1, 73_419, at(0.0, 0.0, 0.0)),
+        object(3, 73_619, at(0.0, 0.0, 2.3)),
+        object(4, 73_735, at(0.0, 0.0, 0.0)),
+        object(5, 73_619, at(0.02, 0.0, 0.0)),
+      ],
+    )
+  let found = spawn.captives(world:, tables: character_tables.shared())
+  assert dict.get(found, SpawnId(1)) == Ok([SpawnId(2), SpawnId(3)])
+    as "a static key has the creature and the static neighbour at its x and z, in spawn id order; 73735, which an objective names, is none, and 73619 0.02 m off in x is none"
+  assert dict.get(found, SpawnId(6)) == Ok([SpawnId(7)])
+    as "a creature key keeps its captive"
+  assert dict.get(found, SpawnId(3)) == Error(Nil)
+    as "a spawn whose creature no objective names is no key"
+}
