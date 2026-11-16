@@ -10,7 +10,7 @@
 //// - The fixture's rows: objective 1962 (quest 1859, type 5, flags 0, data 0, unmarked,
 ////   unlinked) is a stand-in; 16132 (quest 6296, flags 8) is hidden; 9659 (type 12) is
 ////   linked by Creature2 27768; 9658 (type 8, markers 21383 and 21384) is marked.
-//// - Migration 0034: 130 rows from the design's measured table, 88 of kind `instance_run`
+//// - Migration 0034: 130 rows, 88 of kind `instance_run`
 ////   and 42 of kind `pvp_match`, each a `server_choice` with its reason; the other
 ////   constraints follow migration 0031's pattern.
 
@@ -180,8 +180,7 @@ pub fn the_held_migration_seeds_130_server_choice_rows_test() -> Nil {
   let assert Ok(rows) =
     content_held_objective.rows(db: content_support.connect(database:))
     as "the query ran"
-  assert list.length(rows) == 130
-    as "the design's measured table holds 130 rows"
+  assert list.length(rows) == 130 as "the migration seeds 130 rows"
   assert content_support.count(
       database:,
       sql: "select count(*) from held_objective where kind = 'instance_run'",

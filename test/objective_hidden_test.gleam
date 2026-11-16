@@ -866,9 +866,9 @@ fn named_by_prerequisite(
 // `worldLocationsIdIndicator`, no creature linking it, and any data. The client completes
 // it by nothing but the server's 0x361 (`QuestObjective.type.5`), and the Achieved rule
 // (`0x1405fbc40`) waits for it, so it is completed the way a hidden script is, once the
-// quest's other required objectives are done (Jim's rule 2: a script the server can
-// complete is completed). The scripts only an instance run or a PvP match can complete
-// are held: the settle leaves them open (Jim's rule 1).
+// quest's other required objectives are done (a script the server can complete is
+// completed). The scripts only an instance run or a PvP match can complete are held:
+// the settle leaves them open.
 
 /// The edits that make QuestObjective `id` a visible script as quest 9060's objective
 /// 16317 is: type 5, the given flags, data 0, count 1, no marker.
@@ -1280,8 +1280,8 @@ pub fn a_linked_marked_optional_or_other_type_objective_is_untouched_test() -> N
 pub fn an_optional_hidden_script_still_completes_only_while_open_test() -> Nil {
   use <- owned_test.run(60_000)
   // Objective 2 (16132) is a hidden script that is also optional (flags 0x28). It is
-  // done once it is open and the other required objectives are, as a hidden script is
-  // (issue 874); the visible half does not take it (it needs flag 0x20 clear).
+  // done once it is open and the other required objectives are, as a hidden script is;
+  // the visible half does not take it (it needs flag 0x20 clear).
   use tables <- quest_support.with_objectives(edits: [#(16_132, "flags", 0x28)])
   let waiting = nature_log(tables:, done_mask: 1, progress: [1000, 3, 0])
   assert settled(log: waiting, tables:) == Advanced(log: waiting, effects: [])

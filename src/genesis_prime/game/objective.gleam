@@ -851,8 +851,7 @@ fn opened(
 /// with flags 0x8 and 0x20 clear, no marker and no creature link, whatever the data. Such
 /// an objective is done by nothing the client or a player does, and the Achieved rule
 /// (`0x1405fbc40`) waits for it, so the quest would stay Accepted for ever; this
-/// completion is a server choice (Jim's rule: a script the server can complete is
-/// completed). The visible ones that only an instance run or a PvP match completes are
+/// completion is a server choice: a script the server can complete is completed. The visible ones that only an instance run or a PvP match completes are
 /// the `held_objectives`: they stay open, and the quest with them. Another stand-in of
 /// the quest, held or not, is not one to wait for, so a quest with several completes the
 /// free ones that are open together, and a quest with no other required objective
