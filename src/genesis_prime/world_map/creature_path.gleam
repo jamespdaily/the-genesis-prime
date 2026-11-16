@@ -97,9 +97,17 @@ fn facing_of_turn(
   }
 }
 
+/// Whether a creature runs at `speed`: only a speed above 0 moves it. A root leaves property
+/// 100 at 0 (Spell4Effects 1781), and stacked negative flats take it below 0
+/// (Spell4Effects 192472, 213219, 5181, 230841). A creature at a speed below 0 stands
+/// as at 0: a server's choice, since no client fact covers a negative speed.
+pub fn runs(speed speed: Float) -> Bool {
+  speed >. 0.0
+}
+
 /// The path from `from` toward `target` started at `now_ms` at `speed`, ending
 /// `stop_short` units before the target and clipped at `circle`; `Standing(from)`
-/// when that end is `from` itself.
+/// when that end is `from` itself, or when the creature does not run at `speed`.
 pub fn toward(
   from from: Place,
   target target: Place,
@@ -108,6 +116,7 @@ pub fn toward(
   speed speed: Float,
   now_ms now_ms: Int,
 ) -> Path {
+  use <- bool.guard(when: !runs(speed:), return: Standing(at: from))
   let length = distance(from: from, to: target)
   let wanted = case length <=. stop_short {
     True -> from
@@ -122,6 +131,8 @@ pub fn toward(
 }
 
 /// The path from `from` to `to` itself, started at `now_ms` at `speed`: a walk home.
+/// A creature already at `to` stands there at any speed; one that does not run at
+/// `speed` stands at `from`.
 pub fn straight(
   from from: Place,
   to to: Place,
@@ -132,20 +143,25 @@ pub fn straight(
     when: distance(from: from, to: to) <=. 0.0,
     return: Standing(at: to),
   )
+  use <- bool.guard(when: !runs(speed:), return: Standing(at: from))
   Running(from:, to:, started_ms: now_ms, speed:)
 }
 
 /// The monotonic time the path is run by: `started_ms` plus its length over its
-/// speed, rounded up to the millisecond; `now_ms` for a standing path.
+/// speed, rounded up to the millisecond; `now_ms` for a standing path. The builders
+/// (`toward`, `straight`) make no running path of a speed that is not above 0, so a
+/// running path of one is a bug and crashes here rather than arriving at once.
 pub fn arrives_ms(path path: Path, now_ms now_ms: Int) -> Int {
   case path {
     Standing(..) -> now_ms
     Timed(first:, rest:, ..) -> last_of(first:, rest:).0
-    Running(from:, to:, started_ms:, speed:) ->
+    Running(from:, to:, started_ms:, speed:) -> {
+      let assert True = runs(speed:) as "a running path has a speed above 0"
       started_ms
       + float.truncate(float.ceiling(
         distance(from: from, to: to) /. speed *. 1000.0,
       ))
+    }
   }
 }
 

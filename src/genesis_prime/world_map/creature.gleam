@@ -190,6 +190,8 @@
 //// | the creature crashes in flight | its `FlightEnds` timer goes with the process; the map's `Gone` removes the unit from each viewer and the spawn starts again at home |
 //// | the creature respawns after a throw | the corpse timer stands it at home (`a_creature_respawned_after_a_throw_stands_at_home_test`) |
 //// | a `FlightEnds` timer fires | the fight takes it (`the_flight_end_timer_has_its_own_id_test` for its id); one of an older generation does nothing |
+//// | a chase or a walk home at a run speed of 0 or below | the creature stands where it is, with no path and no arrival timer (`chase_with_zero_run_speed_stands_still_test`, `walk_home_with_zero_run_speed_stands_still_test`, `negative_run_speed_stands_still_test`); it goes on from there when the speed is above 0 again (`run_speed_restored_moves_again_test`, `run_speed_restored_walks_home_again_test`), and not while a state holds it until the state ends (`speed_restored_while_held_stays_until_control_ends_test`) |
+//// | a creature at a run speed of 0 or below is out of reach of a target | it leashes when the target is beyond the leash range from home, as a turret does (`creature_that_cannot_run_leashes_by_the_turret_rule_test`); at home it rests at once (`rooted_creature_leashing_at_home_rests_test`); away from home it holds, since it has no walk (`rooted_creature_at_the_circle_does_not_leash_test`) |
 
 import genesis_prime/client_connection.{
   type PeerNews, CreatureAppeared, PeerNews, Removed,
@@ -743,7 +745,9 @@ fn stood_again(
 /// falls to it, with a 0x937 for the viewers; a lower maximum that is raised again
 /// adds none. An Interrupt Armor maximum that changed goes to the controls, which keep
 /// the armor in use and the viewers' stat 21 one value. A run speed that changed goes
-/// to the fight, which runs on the path it holds at the new speed. The property news is
+/// to the fight, which runs on the path it holds at the new speed, stops it where the
+/// creature stands when the speed is not above 0, and starts a chase or a walk home again
+/// from where the creature stands when the speed is above 0 again. The property news is
 /// the caller's.
 fn revalued(
   state state: State,
