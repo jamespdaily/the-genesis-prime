@@ -57,6 +57,7 @@ fn blow(cast_id cast_id: Int, damage damage: Int) -> strike_tell.Tell {
       damage:,
     ),
     controls: [],
+    gates: [],
   )
 }
 

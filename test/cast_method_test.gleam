@@ -465,6 +465,7 @@ pub fn a_strike_round_that_never_closes_does_not_hold_the_channel_open_test() ->
       blows: [strike_support.damage_effect()],
       controls: [],
       ticking: [],
+      gates: [],
     )
   let #(round, begun) =
     strike.begin(
@@ -481,7 +482,7 @@ pub fn a_strike_round_that_never_closes_does_not_hold_the_channel_open_test() ->
   let deadline_ms = 2230 + strike_tell.deadline_ms
   let #(_, timed_out) =
     strike.timer_fired(strike: round, now: support.at(ms: deadline_ms))
-  let assert [strike.Went(asked: closed, struck:)] =
+  let assert [strike.Went(asked: closed, struck:, ..)] =
     closed_rounds(effects: timed_out)
     as "strike: the round closes at its deadline, 1 s after the go (strike_test), and names the unit that did not answer by leaving it out"
   assert closed == asked

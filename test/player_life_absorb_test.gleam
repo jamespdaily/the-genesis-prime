@@ -375,6 +375,7 @@ pub fn a_deflected_strike_leaves_the_absorbs_and_writes_no_stat_22_test() -> Nil
           crit_chance: 0.0,
         ),
         controls: [],
+        gates: [],
       ),
       rolls: hit.Rolls(crit: 0.5, deflect: 0.5, glance: 0.5),
       place: player_life_support.place(),

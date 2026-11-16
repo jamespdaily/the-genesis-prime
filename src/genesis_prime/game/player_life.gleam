@@ -764,7 +764,10 @@ pub fn struck(
         hit.Deflected -> #(life, [
           Answer(
             to: strike.from,
-            answered: Answered(key: strike.key, outcome: strike_tell.Deflected),
+            answered: Answered(
+              key: strike.key,
+              outcome: strike_tell.Deflected(gates_passed: []),
+            ),
           ),
         ])
         hit.Landed(descriptions:, health: left, shield:, absorbs:, ..) -> {
@@ -797,6 +800,7 @@ pub fn struck(
                       descriptions:,
                       controls: [],
                       armor_removed: 0,
+                      gates_passed: [],
                     ),
                   ),
                 ),

@@ -87,6 +87,7 @@ pub fn struck(
       striker: strike_tell.CreatureStriker,
       offence:,
       controls: [],
+      gates: [],
     ),
     rolls:,
     place: place(),

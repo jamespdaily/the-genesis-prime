@@ -11,14 +11,16 @@
 ////   select(asked, attacker, picture, areas) ─▶ Selection: the units, nearest first
 ////   the connection draws 12 bytes of its seed for each unit
 ////   begin: a round for (k, phase), its deadline now + 1 s
-////     for each unit in selection order, the spell having damage:
-////       TellStrike(Ci, Strike(key, from, offence, rolls)) ─────────────────────────────▶ hit rule
+////     for each unit in selection order, the spell having damage, states or a gated row:
+////       TellStrike(Ci, Strike(key, from, offence, rolls, controls, gates)) ───────────▶ gates checked
+////                                                                                        (of_creature), then
+////                                                                                        the hit rule
 ////     StartTimer(strike timer) to the earliest open deadline, when it is not set
-////   ◀──────────────────────────── Answered(key, Landed | Deflected | Refused) ◀─────────┘
-////   answered: the unit's place in the round is filled
+////   ◀── Answered(key, Landed(.., gates_passed) | Immune(.., gates_passed) | Deflected(gates_passed) | Refused) ◀──┘
+////   answered: the unit's place in the round is filled, with the effect ids its gates passed
 ////   the round closes: all answered, or the deadline passed, and every earlier round of k closed
 ////     the timer's effects (cancel, start) first, since the go may begin a round of its own
-////     Went(asked, struck) ─▶ the connection calls cast.went(k, phase, struck)
+////     Went(asked, struck, gates_passed) ─▶ the connection calls cast.went(k, phase, struck, gates_passed)
 ////     Released(unit, news) for the health news held for the round's units
 ////   forget(unit): the client's 0x355 for a unit drops the news held for it
 //// cast rule tick timer ─▶ Effect TickStrike(TickAsked k, row, unit, tick)
@@ -46,6 +48,28 @@
 ////   the caster's own count of the states it told (genesis_prime/game/crowd_control
 ////   `instance_id`), and the creature that takes the state answers with it, so the
 ////   go lists only the states that landed (genesis_prime/world_map/creature_control).
+//// - **Gated rows** (`Selection.gates`, from `spell_plan.struck_gates_in_phase`): a row of
+////   the phase aimed at struck units whose target apply prerequisite reads the struck
+////   creature's own state is told to each unit its aim names as a `strike_tell.Gate`, with
+////   the damage and states or alone, and the creature checks it against its own state
+////   (genesis_prime/world_map/creature). A unit's place holds the effect ids it passed,
+////   and `Went.gates_passed` lists them by unit, so `cast.went` applies a gated row on a unit
+////   only when that unit's entry lists it: this holds for a row aimed at the primary target
+////   too, which `cast.went` reaches whatever the round's outcome. A unit that deflected
+////   still lists what it passed; a unit that refused, never answered by the deadline or
+////   answered after the round closed has no entry and passes no gate. A round has no new
+////   process, call or timer: its one deadline covers the check. Failure rows:
+////   - a creature killed before the strike arrives, as one that died between the picture and
+////     the strike, answers `Refused(Dead)` and reads no gate, so none of its gated rows apply;
+////   - a creature restarted or stalled before it answers is dropped from the go at the
+////     deadline, so none of its gated rows apply;
+////   - two strikes of one cast at once are answered in turn, each checked against the
+////     creature as the earlier left it;
+////   - an answer that comes after the deadline is dropped with its passed gates, and the unit
+////     is left out of the go as for any late answer;
+////   - a gated go row aimed at the primary target applies when the creature deflected and
+////     passed the gate, and does not when it refused or timed out;
+////   - a gate that reads something the subject does not hold fails (`prerequisite.NotRead`).
 //// - **One round for each go and for each tick.** The key of a strike is (cast,
 ////   occasion, unit): the occasion is the go's phase or the tick's row and number
 ////   (genesis_prime/game/strike_tell `Occasion`). A go's round holds a place for each
@@ -103,6 +127,7 @@ import genesis_prime/step.{
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/bit_array
 import gleam/bool
+import gleam/dict.{type Dict}
 import gleam/float
 import gleam/int
 import gleam/list
@@ -147,8 +172,10 @@ pub type Aimed {
 /// What a go strikes: the units, nearest first with the primary target after the
 /// area's, which of them the area selected, the damage each is struck with, the
 /// periodic damage rows each is reached by and the crowd-control states each is told,
-/// both by the aim of their row. A spell with no damage effect and no state in the
-/// phase selects units and tells none of them.
+/// both by the aim of their row, and the gates of its rows that the struck creature
+/// checks (`gates`: damage, state and go rows alike, each told to the units its aim
+/// names). A spell with no damage effect, no state and no gate in the phase selects units
+/// and tells none of them.
 pub type Selection {
   Selection(
     asked: GoAsked,
@@ -157,6 +184,7 @@ pub type Selection {
     blows: List(spell_area.DamageEffect),
     ticking: List(spell_area.TickingDamage),
     controls: List(spell_plan.CrowdControl),
+    gates: List(spell_plan.StruckGate),
   )
 }
 
@@ -176,7 +204,11 @@ pub type Effect {
   StartTimer(timer: TimerId, after_ms: Int)
   CancelTimer(timer: TimerId)
   /// A round closed: the connection answers the cast rule with `cast.went`.
-  Went(asked: GoAsked, struck: List(Struck))
+  /// `gates_passed` is, by unit id, the effect ids of the gates a struck unit passed
+  /// (`strike_tell.Landed`, `Immune` and `Deflected` carry them), for the units that passed
+  /// any: the go applies a gated row on a unit only when its entry lists the row, and a unit
+  /// that refused, never answered or passed none has no entry.
+  Went(asked: GoAsked, struck: List(Struck), gates_passed: Dict(Int, List(Int)))
   /// A tick's round closed: the connection answers the cast rule with `cast.ticked`.
   /// `None` when the unit refused or never answered.
   Ticked(asked: TickAsked, struck: Option(Struck))
@@ -211,8 +243,9 @@ pub type Place {
   /// The creature, in its life `life`, has not answered; a hit that lands carries the
   /// periodic rows that reach it (`ticking`).
   Waiting(unit_id: Int, life: Int, ticking: List(spell_area.TickingDamage))
-  /// The creature answered, or the unit needed no strike.
-  Answered(struck: Struck)
+  /// The creature answered, or the unit needed no strike: the strike's outcome as a hit,
+  /// and the effect ids of the gates the creature passed (`[]` when none).
+  Answered(struck: Struck, gates_passed: List(Int))
   /// The creature refused, or the deadline passed: the unit is left out of the go.
   LeftOut(unit_id: Int)
 }
@@ -238,7 +271,15 @@ pub fn select(
   now_ms now_ms: Int,
 ) -> Selection {
   let empty =
-    Selection(asked:, units: [], area: [], blows: [], ticking: [], controls: [])
+    Selection(
+      asked:,
+      units: [],
+      area: [],
+      blows: [],
+      ticking: [],
+      controls: [],
+      gates: [],
+    )
   case
     spell_area.of_spell(areas:, spell4_id: asked.spell4_id)
     |> result.try(fn(area) {
@@ -277,6 +318,7 @@ pub fn select(
         blows: phase.damage,
         ticking: phase.ticking,
         controls: phase.controls,
+        gates: phase.gates,
       )
     }
   }
@@ -305,11 +347,12 @@ fn area_selection(
 
 /// The seed bytes the selection's strikes take: 12 for each unit, then 4 for each roll
 /// the gates of its rows may take (`cast.strike_rolls_needed`), counted for every selected
-/// unit a row may reach.
+/// unit a row may reach. A gate the creature checks (`Selection.gates`) takes no roll but
+/// still tells its unit a strike, so a phase of such gates alone takes the 12 bytes.
 pub fn entropy_needed(selection selection: Selection) -> Int {
-  case selection.blows, selection.ticking, selection.controls {
-    [], [], [] -> 0
-    _, _, _ -> {
+  case selection.blows, selection.ticking, selection.controls, selection.gates {
+    [], [], [], [] -> 0
+    _, _, _, _ -> {
       let units = list.length(selection.units)
       let conditions =
         list.flatten([
@@ -348,6 +391,7 @@ pub fn begin(
   let reach = reach_of(selection:, attacker:, entropy:, gate:)
   let #(strike, told) =
     controls_told(strike:, selection:, attacker:, reached: reach.controls)
+  let gates = gates_told(selection:, attacker:)
   let #(places, tells) =
     list.index_fold(selection.units, #([], []), fn(so_far, aimed, index) {
       let #(places, tells) = so_far
@@ -355,11 +399,12 @@ pub fn begin(
       let blows = rows_reaching_unit(rows: reach.blows, unit_id:)
       let ticking = rows_reaching_unit(rows: reach.ticking, unit_id:)
       let controls = list.key_find(told, unit_id) |> result.unwrap([])
-      case blows, ticking, controls {
-        [], [], [] -> #(
+      let unit_gates = list.key_find(gates, unit_id) |> result.unwrap([])
+      case blows, ticking, controls, unit_gates {
+        [], [], [], [] -> #(
           [
             Answered(
-              cast.Hit(
+              struck: cast.Hit(
                 unit_id:,
                 unit: cast.HitCreature(
                   life: aimed.life,
@@ -370,12 +415,13 @@ pub fn begin(
                 armor_removed: 0,
                 ticking: [],
               ),
+              gates_passed: [],
             ),
             ..places
           ],
           tells,
         )
-        _, _, _ ->
+        _, _, _, _ ->
           case rolls_at(entropy:, index:) {
             Ok(rolls) -> #(
               [Waiting(unit_id:, life: aimed.life, ticking:), ..places],
@@ -393,6 +439,7 @@ pub fn begin(
                     rolls:,
                     offence: offence_of(blows:, attacker:, formulas:),
                     controls:,
+                    gates: unit_gates,
                   ),
                 ),
                 ..tells
@@ -443,16 +490,7 @@ fn reach_of(
     |> result.map(fn(bytes) { prerequisite.rolls_of(bytes:) })
     |> result.unwrap([])
   let everyone = list.map(selection.units, fn(aimed) { aimed.unit_id })
-  let aimed_at = fn(aim) {
-    let named =
-      spell_plan.units_aimed_at(
-        aim:,
-        caster: attacker.unit_id,
-        primary_target: selection.asked.primary_target,
-        area: selection.area,
-      )
-    list.filter(everyone, fn(unit_id) { list.contains(named, unit_id) })
-  }
+  let aimed_at = fn(aim) { selected_aimed_at(selection:, attacker:, aim:) }
   let #(blows, blow_logs, rolls) =
     gated(
       rows: selection.blows,
@@ -602,13 +640,14 @@ fn opened(
 }
 
 /// The strike the player tells a unit: answered to the player's connection, from where it
-/// stands, with its rolls, its offence and the states it tells.
+/// stands, with its rolls, its offence, the states it tells and the gates the unit checks.
 fn tell_of(
   key key: strike_tell.Key,
   attacker attacker: Attacker,
   rolls rolls: hit.Rolls,
   offence offence: hit.Offence,
   controls controls: List(strike_tell.ControlTell),
+  gates gates: List(strike_tell.Gate),
 ) -> Tell {
   strike_tell.Strike(
     key:,
@@ -623,7 +662,70 @@ fn tell_of(
     ),
     offence:,
     controls:,
+    gates:,
   )
+}
+
+/// The selected units an effect aimed by `aim` names, in selection order
+/// (`spell_plan.units_aimed_at`).
+fn selected_aimed_at(
+  selection selection: Selection,
+  attacker attacker: Attacker,
+  aim aim: spell_plan.Aim,
+) -> List(Int) {
+  let named =
+    spell_plan.units_aimed_at(
+      aim:,
+      caster: attacker.unit_id,
+      primary_target: selection.asked.primary_target,
+      area: selection.area,
+    )
+  list.filter_map(selection.units, fn(aimed) {
+    case list.contains(named, aimed.unit_id) {
+      True -> Ok(aimed.unit_id)
+      False -> Error(Nil)
+    }
+  })
+}
+
+/// The gates each selected unit is told: for each unit, the gates of the selection that
+/// name it, as the prerequisite parsed and the row's effect id, in the selection's order; a
+/// unit no gate names has none. A gate names the units its row's aim names
+/// (`spell_plan.units_aimed_at`), but a gate of a damage row names every selected unit, as
+/// the row's blow is told to each (`reach_of`). A gate takes no roll: the creature's subject
+/// holds none. A selection with no gate tells none.
+fn gates_told(
+  selection selection: Selection,
+  attacker attacker: Attacker,
+) -> List(#(Int, List(strike_tell.Gate))) {
+  let named =
+    list.map(selection.gates, fn(gate) {
+      let blow = fn(row: spell_area.DamageEffect) {
+        row.effect_id == gate.effect_id
+      }
+      let units = case list.any(selection.blows, blow) {
+        True -> list.map(selection.units, fn(aimed) { aimed.unit_id })
+        False -> selected_aimed_at(selection:, attacker:, aim: gate.aim)
+      }
+      #(gate, units)
+    })
+  list.filter_map(selection.units, fn(aimed) {
+    let told =
+      list.filter_map(named, fn(entry) {
+        case list.contains(entry.1, aimed.unit_id) {
+          True ->
+            Ok(strike_tell.Gate(
+              effect_id: { entry.0 }.effect_id.value,
+              prerequisite: { entry.0 }.prerequisite,
+            ))
+          False -> Error(Nil)
+        }
+      })
+    case told {
+      [] -> Error(Nil)
+      [_, ..] -> Ok(#(aimed.unit_id, told))
+    }
+  })
 }
 
 /// A tick of a periodic row begins its round of one unit: a strike told to the unit
@@ -661,6 +763,7 @@ pub fn begin_tick(
             rolls:,
             offence: offence_of(blows: [asked.blow], attacker:, formulas:),
             controls: [],
+            gates: [],
           ),
         ),
       ],
@@ -850,24 +953,31 @@ fn filled(
   outcome outcome: strike_tell.Outcome,
 ) -> Place {
   case outcome {
-    strike_tell.Landed(descriptions:, controls:, armor_removed:) ->
-      Answered(struck: cast.Hit(
-        unit_id:,
-        unit: cast.HitCreature(life:, struck_at_ms:),
-        descriptions:,
-        controls:,
-        armor_removed:,
-        ticking:,
-      ))
-    strike_tell.Immune(controls:, armor_removed:) ->
-      Answered(struck: cast.Immune(
-        unit_id:,
-        unit: cast.HitCreature(life:, struck_at_ms:),
-        controls:,
-        armor_removed:,
-        ticking:,
-      ))
-    strike_tell.Deflected -> Answered(struck: cast.Deflected(unit_id:))
+    strike_tell.Landed(descriptions:, controls:, armor_removed:, gates_passed:) ->
+      Answered(
+        struck: cast.Hit(
+          unit_id:,
+          unit: cast.HitCreature(life:, struck_at_ms:),
+          descriptions:,
+          controls:,
+          armor_removed:,
+          ticking:,
+        ),
+        gates_passed:,
+      )
+    strike_tell.Immune(controls:, armor_removed:, gates_passed:) ->
+      Answered(
+        struck: cast.Immune(
+          unit_id:,
+          unit: cast.HitCreature(life:, struck_at_ms:),
+          controls:,
+          armor_removed:,
+          ticking:,
+        ),
+        gates_passed:,
+      )
+    strike_tell.Deflected(gates_passed:) ->
+      Answered(struck: cast.Deflected(unit_id:), gates_passed:)
     strike_tell.Refused(..) -> LeftOut(unit_id:)
   }
 }
@@ -916,7 +1026,7 @@ fn in_round(round round: Round, unit_id unit_id: Int) -> Bool {
   list.any(round.places, fn(place) {
     case place {
       Waiting(unit_id: held, ..) | LeftOut(unit_id: held) -> held == unit_id
-      Answered(struck:) -> unit_of(struck) == unit_id
+      Answered(struck:, ..) -> unit_of(struck) == unit_id
     }
   })
 }
@@ -962,12 +1072,22 @@ fn settle(state state: State, now now: Now) -> #(State, List(Effect)) {
       let struck =
         list.filter_map(round.places, fn(place) {
           case place {
-            Answered(struck:) -> Ok(struck)
+            Answered(struck:, ..) -> Ok(struck)
             Waiting(..) | LeftOut(..) -> Error(Nil)
           }
         })
+      let gates_passed =
+        list.filter_map(round.places, fn(place) {
+          case place {
+            Answered(struck:, gates_passed: [_, ..] as passed) ->
+              Ok(#(unit_of(struck), passed))
+            Answered(gates_passed: [], ..) | Waiting(..) | LeftOut(..) ->
+              Error(Nil)
+          }
+        })
+        |> dict.from_list
       case round.asked {
-        ForGo(asked:) -> Went(asked:, struck:)
+        ForGo(asked:) -> Went(asked:, struck:, gates_passed:)
         ForTick(asked:) ->
           Ticked(asked:, struck: list.first(struck) |> option.from_result)
       }
@@ -977,7 +1097,7 @@ fn settle(state state: State, now now: Now) -> #(State, List(Effect)) {
       list.map(round.places, fn(place) {
         case place {
           Waiting(unit_id:, ..) | LeftOut(unit_id:) -> unit_id
-          Answered(struck:) -> unit_of(struck)
+          Answered(struck:, ..) -> unit_of(struck)
         }
       })
     })

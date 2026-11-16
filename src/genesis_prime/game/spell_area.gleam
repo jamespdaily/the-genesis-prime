@@ -132,6 +132,11 @@ pub type PhaseStrike {
     /// The crowd-control states that fire in the phase, which aim at the area, the
     /// cast's target or both.
     controls: List(spell_plan.CrowdControl),
+    /// The target apply prerequisites of the rows of the phase aimed past the caster that
+    /// the struck creature checks (`spell_plan.StruckGate`), whatever the row does: the
+    /// strike tells each unit a gate's aim names the gate, so a phase with a gated go row
+    /// and nothing else still strikes.
+    gates: List(spell_plan.StruckGate),
     /// Whether the phase selects units from the area: a damage effect (periodic or
     /// not), a crowd-control state or a property change of struck units aimed at the area, or a
     /// Proxy that starts its spell on each struck unit (genesis_prime/game/spell_plan
@@ -701,8 +706,11 @@ fn phase_of(
       spell_plan.struck_moves_in_phase(spell: spell.spell, phase:, spent:),
       fn(move) { move.aim },
     )
+  let gates =
+    spell_plan.struck_gates_in_phase(spell: spell.spell, phase:, spent:)
   let strikes = fn(reaches: fn(Aim) -> Bool) {
     list.any(firing, fn(effect) { reaches(effect.aim) })
+    || list.any(gates, fn(gate) { reaches(gate.aim) })
     || list.any(throws, reaches)
     || list.any(ticking_firing, fn(row) { reaches(row.damage.aim) })
     || list.any(controls, fn(control) { reaches(control.aim) })
@@ -716,6 +724,7 @@ fn phase_of(
       spell_plan.reaches_past_caster(aim: row.damage.aim)
     }),
     controls:,
+    gates:,
     selects_area: strikes(fn(aim) { spell_plan.reaches_area(aim:) })
       || list.any(
       spell_plan.proxies_in_phase(spell: spell.spell, phase:, spent:),

@@ -265,7 +265,9 @@
 ////   aimed other than at the caster, of a vital other than 6 or 8, or behind a
 ////   target apply prerequisite, an effect behind a target apply prerequisite with a
 ////   condition of a type not read (issue 818) or, past the caster, of a type that reads
-////   a struck creature's own state (issue 817), and an effect of a spell that spends
+////   what the casts held on a struck creature hold (issue 569) or, on a row that does not
+////   reach struck units alone or that the strike does not carry to the creature, the
+////   creature's own state (issue 851), and an effect of a spell that spends
 ////   every point held with an emmComparison other than 0 or 1; a Fluff or SpellForceRemove effect
 ////   aimed other than at the caster, the primary target or the area; a type 80
 ////   effect with a dataBits00 other than 1 to 3, naming no group, Spell4 or
@@ -401,7 +403,9 @@ pub type Condition {
   /// struck unit first and the caster second (`Spell4Effects.prerequisiteIdTargetApply`);
   /// the cast rule checks it for each unit the row reaches, in the caster's picture of the
   /// world. The plan holds it only where the cast can read it for those units
-  /// (`target_gate_read`). Only an effect that is not a Proxy has it.
+  /// (`target_gate_read`); a row aimed only at units past the caster whose gate reads each
+  /// creature's own state has no condition for it, and the spell's `struck_gates` holds
+  /// it instead. Only an effect that is not a Proxy has it.
   GatedOnTarget(prerequisite: Prerequisite)
   /// Only a Proxy has it. The Proxy starts its child on a unit when every one of these caster gates passes
   /// against the caster and the target gate passes against that unit, the struck unit for
@@ -713,6 +717,12 @@ pub type Spell {
     /// The ForcedMove effects aimed at other units, which the go throws the creatures it
     /// hit with (`StruckMove`).
     struck_moves: List(StruckMove),
+    /// The target apply prerequisites of rows aimed only at units past the caster whose
+    /// conditions all read the struck creature's own state, which the creature checks when
+    /// the strike reaches it (`StruckGate`, `prerequisite.checked_by_creature`). Every
+    /// such row is here, whatever it does (damage, a crowd-control state or a go row),
+    /// and its `condition` holds none of the gate.
+    struck_gates: List(StruckGate),
     /// The non-zero cooldown groups of the Spell4 row (`spellCoolDownId00` to `02`),
     /// each a SpellCoolDown row, which a selector 3 of a cooldown effect tests.
     cooldown_groups: List(Int),
@@ -991,6 +1001,23 @@ pub type StruckMove {
     move: forced_move.Move,
     aim: Aim,
     condition: Condition,
+    tag: spend.Tag,
+  )
+}
+
+/// The target apply prerequisite of one row aimed past the caster, which the struck
+/// creature checks against its own state (`Spell4Effects.prerequisiteIdTargetApply`): the
+/// row's Spell4Effects id, the phases of `phase_flags` it applies in, who it aims at, the
+/// prerequisite as the load parsed it, and the `tag` that chooses it by the points the cast
+/// spent (genesis_prime/game/spend). The strike tells each unit `aim` names the gate
+/// (genesis_prime/game/strike_tell `Gate`), and a go row with a gate applies on a unit only
+/// when that unit's answer lists the row's id as passed (genesis_prime/game/cast `went`).
+pub type StruckGate {
+  StruckGate(
+    effect_id: Spell4EffectsId,
+    phase_flags: Int,
+    aim: Aim,
+    prerequisite: Prerequisite,
     tag: spend.Tag,
   )
 }
@@ -1419,9 +1446,11 @@ pub type PlanError {
     prerequisite_type: Int,
   )
   /// An effect of a tree aimed past the caster is behind a target apply prerequisite with a
-  /// condition that reads a struck creature's own state (`prerequisite.struck_unread_types`):
-  /// the issue "A target prerequisite that reads a struck creature's own state is checked
-  /// against that creature" (#817) reads it.
+  /// condition that reads what a struck creature holds, and nobody can check it: either the
+  /// casts held on it, which the creature does not hold yet (`prerequisite.struck_unread_types`,
+  /// issue 569), or the creature's own state, on a row that does not reach struck units alone
+  /// or that the strike does not carry, so the caster's check is the only one and it holds none
+  /// of that state (`prerequisite.unread_on_a_struck_unit`, issue 851).
   TargetPrerequisiteReadsStruckUnit(
     spell4_id: Int,
     effect_id: Int,
@@ -1647,7 +1676,12 @@ pub fn describe(error error: PlanError) -> String {
       <> int.to_string(effect_id)
       <> " aimed past the caster behind a target apply prerequisite with a condition of type "
       <> int.to_string(prerequisite_type)
-      <> ", which reads the state of the creature it strikes (#817)"
+      <> case prerequisite_type {
+        15 | 59 | 129 ->
+          ", which reads what the casts held on the creature it strikes hold (#569)"
+        _ ->
+          ", which reads the state of the creature it strikes, and the row is not one its strike carries to the creature (#851)"
+      }
     StruckMoveNotRead(spell4_id:, effect_id:, error:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -2450,6 +2484,7 @@ fn spell_of(
     ),
   )
   let lists = lists_of(readings:)
+  use struck_gates <- result.try(struck_gates_of(tables:, place:, readings:))
   use stealth_change <- result.try(stealth_change_of(
     spell4_id:,
     value: row.spell_cast_stealth_change,
@@ -2572,6 +2607,7 @@ fn spell_of(
       modifiers: list.append(lists.modifiers, lists.armors),
       forced_moves: lists.forced_moves,
       struck_moves: lists.struck_moves,
+      struck_gates:,
       cooldown_groups:,
       cooldown_modifiers: lists.cooldown_modifiers,
       stealth: lists.stealth,
@@ -2782,7 +2818,7 @@ fn lasting_of(
   use condition <- result.map(applied_condition_of(
     tables:,
     effect:,
-    reach: reach_of_aim(aim:),
+    reach: reach_in_place(place:, aim:),
   ))
   Lasting(
     effect_id: Spell4EffectsId(effect.id),
@@ -2827,7 +2863,7 @@ fn remove_of(
   use condition <- result.map(applied_condition_of(
     tables:,
     effect:,
-    reach: reach_of_aim(aim:),
+    reach: reach_in_place(place:, aim:),
   ))
   ForceRemove(
     effect_id: Spell4EffectsId(effect.id),
@@ -2871,6 +2907,7 @@ fn force_remove_counts_read(
 /// that); on the caster both are the cast's own (`cast.restrictions`).
 fn control_of(
   tables tables: table_store.Tables,
+  place place: RowPlace,
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(Option(CrowdControl), PlanError) {
@@ -2899,7 +2936,11 @@ fn control_of(
     False -> Ok(Nil)
     True -> Error(ControlPersistenceNotRead(spell4_id:, effect_id: effect.id))
   })
-  use condition <- result.map(row_condition_of(tables:, effect:, aim:))
+  use condition <- result.map(applied_condition_of(
+    tables:,
+    effect:,
+    reach: reach_in_place(place:, aim:),
+  ))
   Some(CrowdControl(
     effect_id: Spell4EffectsId(effect.id),
     phase_flags: effect.phase_flags,
@@ -3361,9 +3402,11 @@ fn forced_move_of(
 /// its columns as a `forced_move.Move` (`forced_move.of_row`; a dataBits00 above 15 or a
 /// float column that is no number fails the load), the `aim` it was given, and its apply
 /// prerequisites as a Fluff effect's are (`condition_of`), the target one read for each
-/// struck unit it throws.
+/// struck unit it throws, or checked by each creature that holds all it reads
+/// (`struck_gates_of`).
 fn struck_move_of(
   tables tables: table_store.Tables,
+  place place: RowPlace,
   effect effect: spell4_effects.Spell4Effects,
   aim aim: Aim,
 ) -> Result(StruckMove, PlanError) {
@@ -3380,7 +3423,7 @@ fn struck_move_of(
   use condition <- result.map(condition_of(
     tables:,
     effect:,
-    reach: PastTheCaster,
+    reach: reach_in_place(place:, aim:),
     data_bits06_names_a_gate: False,
   ))
   StruckMove(
@@ -3896,6 +3939,91 @@ fn listed(lists lists: RowLists, planned planned: PlannedRow) -> RowLists {
   }
 }
 
+/// The `StruckGate` of each row whose target apply prerequisite the load left to the
+/// creatures it strikes (`condition_of`: reach `StruckUnits` and
+/// `prerequisite.checked_by_creature`), in row order. A damage row is read by the area
+/// load with the reach of its aim alone (`row_condition_of`), and one it leaves out
+/// (`TickingUntilRemoved`) has no gate.
+fn struck_gates_of(
+  tables tables: table_store.Tables,
+  place place: RowPlace,
+  readings readings: List(#(spell4_effects.Spell4Effects, Reading)),
+) -> Result(List(StruckGate), PlanError) {
+  list.try_map(readings, fn(row) {
+    let effect = row.0
+    let aimed = case row.1 {
+      Ok(Applied(planned)) ->
+        struck_aim_of(planned:)
+        |> result.map(fn(aim) { #(aim, reach_in_place(place:, aim:)) })
+      Ok(ReadByArea) ->
+        case damage_left_out(effect:) {
+          True -> Error(Nil)
+          False ->
+            aim_of(target_flags: effect.target_flags)
+            |> result.map(fn(aim) { #(aim, reach_of_aim(aim:)) })
+        }
+      Ok(Held(..)) | Ok(LeftOut(..)) | Ok(ReadByActivation) | Error(..) ->
+        Error(Nil)
+    }
+    case aimed, effect.prerequisite_id_target_apply {
+      Ok(#(aim, StruckUnits)), id if id != 0 -> {
+        use target <- result.map(prerequisite_of(tables:, id:))
+        case prerequisite.checked_by_creature(prerequisite: target) {
+          True -> [
+            StruckGate(
+              effect_id: Spell4EffectsId(effect.id),
+              phase_flags: effect.phase_flags,
+              aim:,
+              prerequisite: target,
+              tag: tag_of(effect:),
+            ),
+          ]
+          False -> []
+        }
+      }
+      _, _ -> Ok([])
+    }
+  })
+  |> result.map(list.flatten)
+}
+
+/// The aim of the part of a planned row that a creature the go struck is checked for, when
+/// its kind has one: a lasting, remove or crowd-control row, a struck move, or the struck
+/// part of a property modifier.
+fn struck_aim_of(planned planned: PlannedRow) -> Result(Aim, Nil) {
+  case planned {
+    PlannedLasting(lasting:) -> Ok(lasting.aim)
+    PlannedRemove(remove:) -> Ok(remove.aim)
+    PlannedControl(control:) -> Ok(control.aim)
+    PlannedStruckMove(struck_move:) -> Ok(struck_move.aim)
+    PlannedModifier(modifier:) ->
+      case modifier.change {
+        StruckChange(aim:, ..) -> Ok(aim)
+        PropertyChange(..) | LookChange(..) | AbsorbChange(..) -> Error(Nil)
+      }
+    PlannedBoth(past_the_caster:, ..) -> struck_aim_of(planned: past_the_caster)
+    PlannedGain(..)
+    | PlannedForcedMove(..)
+    | PlannedCooldownModifier(..)
+    | PlannedStealth(..)
+    | PlannedRemoveStealth(..)
+    | PlannedHeal(..)
+    | PlannedProc(..)
+    | PlannedProxy(..) -> Error(Nil)
+  }
+}
+
+/// Whether the area load leaves this damage row out: a periodic row that lasts until
+/// removed (`ticking.schedule_of`).
+fn damage_left_out(effect effect: spell4_effects.Spell4Effects) -> Bool {
+  effect.tick_time != 0
+  && ticking.schedule_of(
+    row: lasting_row_of(effect:),
+    tick_ms: effect.tick_time,
+  )
+  == Error(ticking.UntilRemoved)
+}
+
 /// The CCStateSet rows the plan drops (`StateUntilRemovedNotRead`), in row order.
 fn dropped_controls_of(
   readings readings: List(#(spell4_effects.Spell4Effects, Reading)),
@@ -4015,7 +4143,7 @@ fn kind_reading(
       remove_of(tables:, spell_groups:, place:, spell4_id:, effect:)
       |> result.map(fn(remove) { Applied(PlannedRemove(remove:)) })
     effect_kind.CrowdControl ->
-      control_of(tables:, spell4_id:, effect:)
+      control_of(tables:, place:, spell4_id:, effect:)
       |> result.map(fn(control) {
         case control {
           Some(control) -> Applied(PlannedControl(control:))
@@ -4042,7 +4170,7 @@ fn kind_reading(
           |> result.map(fn(forced_move) { PlannedForcedMove(forced_move:) })
         },
         past_part: fn(aim) {
-          struck_move_of(tables:, effect:, aim:)
+          struck_move_of(tables:, place:, effect:, aim:)
           |> result.map(fn(struck_move) { PlannedStruckMove(struck_move:) })
         },
       )
@@ -4174,7 +4302,7 @@ fn property_modifier_reading(
     aim: row_aim_of(place:, effect:),
     caster_part: fn() { modifier_with(OnlyTheCaster, fn(change) { change }) },
     past_part: fn(aim) {
-      modifier_with(PastTheCaster, fn(change) {
+      modifier_with(reach_in_place(place:, aim:), fn(change) {
         case change {
           PropertyChange(modifier:) | StruckChange(modifier:, ..) ->
             StruckChange(modifier:, aim:)
@@ -4839,14 +4967,41 @@ fn target_of(
 type Reach {
   /// Only the caster, whose whole unit the prerequisite reads.
   OnlyTheCaster
-  /// Units other than the caster too: creatures the go struck.
+  /// Only creatures the go struck: each one checks a prerequisite that reads its own state
+  /// against itself and tells the cast rule whether it passed (`StruckGate`,
+  /// `prerequisite.checked_by_creature`).
+  StruckUnits
+  /// The caster and creatures the go struck under one prerequisite, or a unit no strike
+  /// names (the primary target of a press, which is the caster), or a row of a kind that
+  /// reads its aim from its flags: the cast rule cannot check a prerequisite that reads a
+  /// creature's state for these.
   PastTheCaster
 }
 
 /// The reach of a row of this aim.
 fn reach_of_aim(aim aim: Aim) -> Reach {
-  use <- bool.guard(when: reaches_past_caster(aim:), return: PastTheCaster)
-  OnlyTheCaster
+  use <- bool.guard(when: !reaches_past_caster(aim:), return: OnlyTheCaster)
+  case reaches_caster(aim:) {
+    True -> PastTheCaster
+    False -> StruckUnits
+  }
+}
+
+/// The reach of a row of this aim in this place: a press has the caster itself as its
+/// primary target, whom no strike names, so a row of a kind the go applies that aims at the
+/// primary target there has no creature to check its gate
+/// (`StruckUnits` becomes `PastTheCaster`). A spell a Proxy starts on a struck unit has
+/// that creature as its primary target.
+fn reach_in_place(place place: RowPlace, aim aim: Aim) -> Reach {
+  case reach_of_aim(aim:) {
+    StruckUnits ->
+      case place.struck_by, reaches_primary_target(aim:) {
+        None, True -> PastTheCaster
+        None, False | Some(..), _ -> StruckUnits
+      }
+    OnlyTheCaster -> OnlyTheCaster
+    PastTheCaster -> PastTheCaster
+  }
 }
 
 /// The reach of a row of a kind the plan reads for the caster when its targetFlags
@@ -4865,7 +5020,9 @@ fn reach_of_flags(target_flags target_flags: Int) -> Reach {
 /// a reading of the rows, since the client applies no Proxy itself), checked against the
 /// caster, and its target apply prerequisite, which the cast rule checks for each unit the
 /// row lands on, the unit first and the caster second
-/// (`Spell4Effects.prerequisiteIdTargetApply`). The dataBits06 of a Fluff or SpellForceRemove
+/// (`Spell4Effects.prerequisiteIdTargetApply`), except a target prerequisite of a row that
+/// reaches only struck units and reads only each creature's own state, which the creature
+/// checks (`StruckUnits`, `struck_gates_of`). The dataBits06 of a Fluff or SpellForceRemove
 /// effect is no prerequisite. A prerequisite the table lacks fails the load, and so does a
 /// target prerequisite the cast rule cannot read for the units the row reaches
 /// (`target_gate_read`).
@@ -4885,6 +5042,28 @@ fn condition_of(
     0, [_, ..] -> Ok(GatedOnCaster(gates: caster))
     target, _ -> {
       use target <- result.try(prerequisite_of(tables:, id: target))
+      target_condition_of(effect:, reach:, caster:, target:)
+    }
+  }
+}
+
+/// The condition of a row behind a target apply prerequisite: the creatures a row that
+/// reaches only struck units checks it itself when it reads only their own state, so the
+/// condition holds the caster gates alone, and else the cast rule checks it, where it can
+/// read it (`target_gate_read`).
+fn target_condition_of(
+  effect effect: spell4_effects.Spell4Effects,
+  reach reach: Reach,
+  caster caster: List(Prerequisite),
+  target target: Prerequisite,
+) -> Result(Condition, PlanError) {
+  case reach, prerequisite.checked_by_creature(prerequisite: target) {
+    StruckUnits, True ->
+      Ok(case caster {
+        [] -> Always
+        [_, ..] -> GatedOnCaster(gates: caster)
+      })
+    StruckUnits, False | OnlyTheCaster, _ | PastTheCaster, _ -> {
       use Nil <- result.map(target_gate_read(target:, effect:, reach:))
       case caster {
         [] -> GatedOnTarget(prerequisite: target)
@@ -4937,8 +5116,10 @@ pub fn row_condition_of(
 
 /// Whether the cast rule can check a target apply prerequisite for the units a row
 /// reaches: a condition type the server has not decoded is refused, and so is one that
-/// reads the state of the creature it strikes, for a row that lands past the caster
-/// (`prerequisite.unread_types`, `prerequisite.struck_unread_types`).
+/// reads what the casts held on the creature it strikes hold or the state it holds itself,
+/// for a row that lands past the caster and that the creature does not check: the caster's
+/// check knows the unit by its place alone (`prerequisite.unread_types`,
+/// `prerequisite.struck_unread_types`, `prerequisite.unread_on_a_struck_unit`).
 fn target_gate_read(
   target target: Prerequisite,
   effect effect: spell4_effects.Spell4Effects,
@@ -4952,8 +5133,13 @@ fn target_gate_read(
         prerequisite_type:,
       ))
     [], OnlyTheCaster -> Ok(Nil)
-    [], PastTheCaster ->
-      case prerequisite.struck_unread_types(prerequisite: target) {
+    [], StruckUnits | [], PastTheCaster -> {
+      let #(casts, own_state) =
+        list.partition(
+          prerequisite.unread_on_a_struck_unit(prerequisite: target),
+          list.contains(prerequisite.casts_held_types, _),
+        )
+      case list.append(casts, own_state) {
         [prerequisite_type, ..] ->
           Error(TargetPrerequisiteReadsStruckUnit(
             spell4_id: effect.spell_id,
@@ -4962,6 +5148,7 @@ fn target_gate_read(
           ))
         [] -> Ok(Nil)
       }
+    }
   }
 }
 
@@ -5610,6 +5797,23 @@ pub fn forced_moves_in_phase(
     rows: spell.forced_moves,
     phase_flags: fn(forced_move) { forced_move.phase_flags },
     tag: fn(forced_move) { forced_move.tag },
+    phase:,
+    spent:,
+  )
+}
+
+/// The target apply prerequisites of the spell's rows aimed past the caster that apply in
+/// phase `phase`, those whose tag holds for the points the cast spent: the gates the
+/// strike tells the units its rows reach.
+pub fn struck_gates_in_phase(
+  spell spell: Spell,
+  phase phase: Int,
+  spent spent: Option(Int),
+) -> List(StruckGate) {
+  in_phase(
+    rows: spell.struck_gates,
+    phase_flags: fn(gate) { gate.phase_flags },
+    tag: fn(gate) { gate.tag },
     phase:,
     spent:,
   )

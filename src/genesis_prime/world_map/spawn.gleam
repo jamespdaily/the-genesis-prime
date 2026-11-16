@@ -218,13 +218,15 @@ pub type Spawn {
 /// with from its properties, so a change of a property needs no table at run time:
 /// the rating formulas, the creature damage scaling (GameFormula 712, `0x140565600`),
 /// each damage effect of its attack with its formula, and its display's
-/// Creature2DisplayInfo.runLand.
+/// Creature2DisplayInfo.runLand, and its Creature2 row's creature2DifficultyId, which a
+/// strike's gate of prerequisite type 179 compares.
 pub type CombatContext {
   CombatContext(
     formulas: Formulas,
     scaling: damage.CreatureScaling,
     attack: List(AttackEffect),
     run_land: Float,
+    difficulty_id: Int,
   )
 }
 
@@ -251,7 +253,7 @@ pub fn values_of(
   let value = fn(number) {
     unit_properties.value(properties:, property: UnitProperty2Id(number))
   }
-  let CombatContext(formulas:, scaling:, attack: effects, run_land:) =
+  let CombatContext(formulas:, scaling:, attack: effects, run_land:, ..) =
     spawn.context
   let combat = spawn.combat
   let blows =
@@ -1066,6 +1068,7 @@ fn combat_of(
       scaling:,
       attack: attack_effects,
       run_land: run_land_of(display:, unit_type:),
+      difficulty_id: creature.creature2_difficulty_id,
     )
   let combat =
     Combat(
