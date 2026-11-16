@@ -112,8 +112,8 @@
 ////   Its delay, durationTime, flags bit 2, caster apply prerequisite, phases and spend
 ////   tag are a type 11 row's. A dataBits01 other than 0 and 1 fails the load. A row aimed
 ////   only at other units is not read. A child a Proxy starts on each struck unit that
-////   holds a row aimed at its primary target fails the load: Interrupt Armor on a struck
-////   unit is not built. 36 of the 38 type 52 rows are read.
+////   holds a row whose aim names its primary target (flags 2, 3 or 7) fails the load:
+////   Interrupt Armor on a struck unit is not built. 36 of the 38 type 52 rows are read.
 //// - **The absorbs.** An Absorption effect (`Spell4Effects.effectType.29`) whose targetFlags
 ////   include the caster (bit 1), or are the primary target alone (2) in a spell cast on the
 ////   caster, is a `PropertyModifier` row whose change is an `AbsorbChange`: the formula of
@@ -122,8 +122,8 @@
 ////   `absorption_formula_of`), the damage types it takes (dataBits04 as a mask) and its
 ////   aim. It starts, ends and gives the node its life as a type 11 row does. A row with a
 ////   tickTime, with neither a durationTime nor flags bit 2, with a non-finite number or a
-////   parameter kind not read fails the load, as does one aimed at the primary target in a
-////   child a Proxy starts on each struck unit (`AbsorptionPeriodic`,
+////   parameter kind not read fails the load, as does one whose aim names the primary target in
+////   a child a Proxy starts on each struck unit (`AbsorptionPeriodic`,
 ////   `AbsorptionHasNoLifetime`, `AbsorptionNumberNotFinite`, `AbsorptionParameterNotRead`,
 ////   `AbsorptionOnStruckUnit`); a row aimed only at other units is not read.
 //// - **The heals.** A Heal effect (`Spell4Effects.effectType.10`) or a HealShields effect
@@ -136,8 +136,8 @@
 ////   checks for the unit the row heals; a row with a tickTime is a `TickingHeal`, with the schedule of
 ////   its ticks (genesis_prime/game/ticking), each tick its own 0x7f8. A periodic row that
 ////   lasts until removed (flags bit 2) is left out (`HealUntilRemoved`, issue 803). A row
-////   aimed only at other units (4 and 6) is not read. A child a Proxy starts on each struck unit that holds a heal aimed at
-////   its primary target fails the load: a heal on a struck unit is not built.
+////   aimed only at other units (4 and 6) is not read. A child a Proxy starts on each struck unit that holds a heal whose
+////   aim names its primary target (flags 2, 3 or 7) fails the load: a heal on a struck unit is not built.
 //// - **The shield overloads.** A ShieldOverload effect (`Spell4Effects.effectType.64`)
 ////   aimed at the area (targetFlags 4) is a `Lasting` row, listed on each struck unit for
 ////   its durationTime as a Fluff effect is: the client marks the unit overloaded and
@@ -1505,16 +1505,16 @@ pub type PlanError {
   /// (genesis_prime/game/ticking `NoTick`).
   HealNoTick(spell4_id: Int, effect_id: Int, tick_ms: Int, duration_ms: Int)
   /// A Proxy of a tree starts a child on each unit its area strikes, and the child holds
-  /// a Heal or HealShields effect aimed at its primary target, a struck unit: `spell4_id` is the
-  /// spell with the Proxy `proxy_effect_id`, and `effect_id` the heal's row.
+  /// a Heal or HealShields effect whose aim names its primary target, a struck unit:
+  /// `spell4_id` is the spell with the Proxy `proxy_effect_id`, and `effect_id` the heal's row.
   HealOnStruckUnit(spell4_id: Int, proxy_effect_id: Int, effect_id: Int)
   /// A ModifyInterruptArmor effect of a tree has a dataBits01 that is not 0 or 1, the two
   /// values that say whether the armor is taken back when it ends
   /// (`Spell4Effects.effectType.52`).
   InterruptArmorTakeBackNotRead(spell4_id: Int, effect_id: Int, value: Int)
   /// A Proxy of a tree starts a child on each unit its area strikes, and the child holds a
-  /// ModifyInterruptArmor effect aimed at its primary target, a struck unit: `spell4_id` is
-  /// the spell with the Proxy `proxy_effect_id`, and `effect_id` the row.
+  /// ModifyInterruptArmor effect whose aim names its primary target, a struck unit:
+  /// `spell4_id` is the spell with the Proxy `proxy_effect_id`, and `effect_id` the row.
   InterruptArmorOnStruckUnit(
     spell4_id: Int,
     proxy_effect_id: Int,
@@ -1541,8 +1541,8 @@ pub type PlanError {
   /// with no lifetime is not known (`Spell4Effects.effectType.29`).
   AbsorptionHasNoLifetime(spell4_id: Int, effect_id: Int)
   /// A Proxy of a tree starts a child on each unit its area strikes, and the child holds an
-  /// Absorption effect aimed at its primary target, a struck unit: `spell4_id` is the spell
-  /// with the Proxy `proxy_effect_id`, and `effect_id` the row.
+  /// Absorption effect whose aim names its primary target, a struck unit: `spell4_id` is the
+  /// spell with the Proxy `proxy_effect_id`, and `effect_id` the row.
   AbsorptionOnStruckUnit(spell4_id: Int, proxy_effect_id: Int, effect_id: Int)
   /// A Proc effect of a kind the server does not read (`proc_read`): the row is in no
   /// list of its spell and the load goes on, so this error is a skip, never a failure.
@@ -1821,7 +1821,7 @@ pub fn describe(error error: PlanError) -> String {
       <> int.to_string(proxy_effect_id)
       <> " that starts a child on each struck unit, which holds the Heal or HealShields effect "
       <> int.to_string(effect_id)
-      <> " aimed at that unit, and a heal on a struck unit is not built"
+      <> " whose aim names that unit, and a heal on a struck unit is not built"
     InterruptArmorTakeBackNotRead(spell4_id:, effect_id:, value:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -1837,7 +1837,7 @@ pub fn describe(error error: PlanError) -> String {
       <> int.to_string(proxy_effect_id)
       <> " that starts a child on each struck unit, which holds the ModifyInterruptArmor effect "
       <> int.to_string(effect_id)
-      <> " aimed at that unit, and Interrupt Armor on a struck unit is not built"
+      <> " whose aim names that unit, and Interrupt Armor on a struck unit is not built"
     AbsorptionParameterNotRead(spell4_id:, effect_id:, parameter_kind:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -1879,7 +1879,7 @@ pub fn describe(error error: PlanError) -> String {
       <> int.to_string(proxy_effect_id)
       <> " that starts a child on each struck unit, which holds the Absorption effect "
       <> int.to_string(effect_id)
-      <> " aimed at that unit, and an absorb on a struck unit is not built"
+      <> " whose aim names that unit, and an absorb on a struck unit is not built"
     ProcKindNotRead(spell4_id:, effect_id:, kind:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -3195,17 +3195,19 @@ fn absorption_read(
 }
 
 /// A spell a Proxy starts on each unit its area strikes has that unit as its primary
-/// target, so a heal, an Interrupt Armor row or an absorb of the spell aimed at it
-/// fails the load: none is built on a struck unit. A spell started on the caster, and a row
-/// that includes the caster, alone or with other units, are read (`place`).
+/// target, so a heal, an Interrupt Armor row or an absorb of the spell whose aim names the
+/// primary target, alone or with the caster, fails the load: none is built on a struck
+/// unit, and a row that names one would otherwise lose that part without a word. A spell
+/// started on the caster, and a row aimed at the caster alone or at the caster and the area,
+/// are read (`place`).
 fn not_on_a_struck_unit(
   place place: RowPlace,
   aim aim: Aim,
   refused refused: fn(StruckBy) -> PlanError,
 ) -> Result(Nil, PlanError) {
-  case place.struck_by, aim {
-    Some(by), AimsAtPrimaryTarget -> Error(refused(by))
-    Some(..), _ | None, _ -> Ok(Nil)
+  case place.struck_by, reaches_primary_target(aim:) {
+    Some(by), True -> Error(refused(by))
+    Some(..), False | None, _ -> Ok(Nil)
   }
 }
 

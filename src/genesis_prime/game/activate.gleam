@@ -505,6 +505,16 @@ type ActivateRows {
   )
 }
 
+/// Whether a row's effect reaches a unit past the caster: its aim names the primary target or
+/// the area, or its flags are one no aim reads (which a row of a kind the plan reads then
+/// refuses itself).
+fn reaches_past_caster(effect effect: Spell4Effects) -> Bool {
+  case spell_plan.aim_of(target_flags: effect.target_flags) {
+    Ok(aim) -> spell_plan.reaches_past_caster(aim:)
+    Error(Nil) -> True
+  }
+}
+
 /// The Activate rows of the spell and the RavelSignal rows it drops, or the first effect
 /// that aims at the target or an area and that the strike would apply.
 ///
@@ -523,16 +533,6 @@ type ActivateRows {
 /// 39536, 54204, 66484 and 66599); refusing them would make a creature's use, which a
 /// quest objective counts, unreachable.
 ///
-/// Whether a row's effect reaches a unit past the caster: its aim names the primary target or
-/// the area, or its flags are one no aim reads (which a row of a kind the plan reads then
-/// refuses itself).
-fn reaches_past_caster(effect effect: Spell4Effects) -> Bool {
-  case spell_plan.aim_of(target_flags: effect.target_flags) {
-    Ok(aim) -> spell_plan.reaches_past_caster(aim:)
-    Error(Nil) -> True
-  }
-}
-
 /// A RavelSignal row aimed at the target does not refuse the spell, and the activate cast
 /// drops it: the row starts a script on the server (`Spell4Effects.effectType.81`), and
 /// the server has none to start until the issue for spells in depth (#336) builds them;

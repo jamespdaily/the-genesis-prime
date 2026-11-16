@@ -8846,8 +8846,9 @@ type Healed {
   )
 }
 
-/// The units an effect aims at (`Spell4Effects.targetFlags`): the caster, the cast's
-/// primary target, the units the round Hit, or the target and those.
+/// The units an effect aims at (`Spell4Effects.targetFlags`): each unit the aim's bits name
+/// (the caster, the primary target, the units the round hit), once each, in that order
+/// (`spell_plan.units_aimed_at`).
 fn units_aimed_at(
   aim aim: spell_plan.Aim,
   caster caster: Caster,
@@ -8876,11 +8877,15 @@ fn rows_with_units(
   })
 }
 
-/// Whether a modifier row takes effect on the unit its aim names: a change of the
-/// caster's own (a property, a look, an absorb) on the caster, and a property modifier
-/// aimed at struck units on a creature the go hit. One aimed at a unit that is the
-/// caster or another player is left out until a modifier on another player is built
-/// (#570).
+/// Whether a modifier row takes effect on `unit_id`, one of the units its aim names.
+/// - A property, look, absorb or Interrupt Armor change lands on the caster alone: the
+///   server gives no other unit a property, a look, a pool or armor. A part of the aim past
+///   the caster (the primary target when it is another unit, the units the round hit) is
+///   left out here with no log line; the plan refuses the row where that part would be the
+///   unit a Proxy's child is started on (`spell_plan.not_on_a_struck_unit`), and the
+///   client's absorb and Interrupt Armor rows with flags 3 or 7 are in no such child.
+/// - A property modifier aimed at struck units (`StruckChange`) lands on a creature the go
+///   hit; a player it names is left out until a modifier on another player is built (#570).
 fn modifier_applies(
   row row: spell_plan.PropertyModifier,
   unit_id unit_id: Int,
@@ -9479,10 +9484,10 @@ fn ticking_heals(
 /// vitals and stats give: the caster as it stood before the go's own effects, the rule of
 /// every gate of the go (`subject_of`), and the overheal the vital's room leaves. A row's
 /// units are those its aim names (`units_aimed_at`) and only the caster is healed: the
-/// plan reads a row aimed at the primary target only in a spell cast on the caster
-/// (genesis_prime/game/spell_plan `read_row`), and the server gives no other unit a
-/// heal; a heal aimed at another unit is left, with a debug line naming its row (other
-/// players come with #570).
+/// server gives no other unit a heal, so a heal aimed at another unit (the primary target
+/// of a cast on someone else, a unit the round hit) is left, with a debug line naming its
+/// row (other players come with #570). The plan refuses a heal that names the primary
+/// target in a child started on each struck unit (`spell_plan.not_on_a_struck_unit`).
 fn healed_by(
   entries entries: List(#(spell_plan.Heal, Int)),
   caster caster: Caster,

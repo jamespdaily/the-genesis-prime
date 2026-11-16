@@ -247,6 +247,28 @@ pub fn coverage_counts_the_union_rows_as_read_test() -> Nil {
   assert by_type(friendly_area)
     == [#(17, 84), #(18, 3), #(26, 167), #(80, 26), #(81, 21)]
     as "scratch count over the same rows: 301 rows aimed by 3, 5 or 7 in a spell that hits no foes (a row of kind Damage or CrowdControl aimed by 2 to 7) are refused for their area bit (#834), the brief's 301 by type"
+  let unread = effect_row.unread_by_type(tables:, effects:)
+  let unread_of = fn(type_number) {
+    let assert Ok(count) = dict.get(unread, type_number)
+      as "the type still has rows the plan does not read"
+    count
+  }
+  assert list.map([1, 3, 10, 11, 29, 52, 118], unread_of)
+    == [1367, 153, 1056, 307, 257, 2, 83]
+    as "the reviewer's measurement of the rows unread by type 1, 3, 10, 11, 29, 52 and 118, equal on main and on this branch: the union reading moves none of them, and no absorb or Interrupt Armor row aimed by flags 3 or 7 sits in a spell a Proxy starts on each struck unit (no_absorb_or_armor_row_aimed_by_flags_3_or_7_is_in_a_child_started_on_each_struck_unit_test), so the struck-unit refusal moves none either"
+  let proxies_naming_no_spell =
+    list.filter(union_rows, fn(row) {
+      row.effect_type == 26
+      && spell_plan.read_row(
+        tables:,
+        spell_groups:,
+        place: place_of(row.spell_id),
+        effect: row,
+      )
+      == Ok(spell_plan.LeftOut(why: spell_plan.ProxyNamesNoSpell))
+    })
+  assert list.length(proxies_naming_no_spell) == 49
+    as "the Proxy rows aimed by 3, 5 or 7 whose dataBits00 names no spell stay 49 (the brief's count): the union reading changes which unit a row reaches, not which Proxy names a spell"
 }
 
 /// How many of the rows hold each effect type, as #(type, count) in type order.

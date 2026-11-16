@@ -16,6 +16,7 @@
 //// - `spell_plan.spell_hits_foes` (the server's choice, Jim's decision of 2026-11-15): a
 ////   spell hits foes when a damage or crowd-control row of it has flags 2 to 7.
 
+import client_tables
 import fixture_tables
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan.{
@@ -27,11 +28,13 @@ import genesis_prime/game/spell_plan.{
 import genesis_prime/table/id.{Spell4EffectsId}
 import genesis_prime/table/loader/store
 import genesis_prime/table/spell4_effects
+import gleam/int
 import gleam/list
 import gleam/set
 import gleam/string
 import owned_test
 import spell_tables
+import unitest
 
 fn effect_row_in(
   tables tables: store.Tables,
@@ -439,4 +442,26 @@ pub fn until_removed_union_control_row_is_left_out_test() -> Nil {
   assert read_client_row(id: 182_108, place: spell_tables.pressed)
     == Ok(spell_plan.LeftOut(why: spell_plan.StateUntilRemovedNotRead))
     as "CCStateSet row 182108 has flags bit 2, so it lasts until removed: the server drops it, as it drops a flag 2 row of that kind, whatever its aim"
+}
+
+pub fn no_absorb_or_armor_row_aimed_by_flags_3_or_7_is_in_a_child_started_on_each_struck_unit_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  let effects = spell4_effects.all(client_tables.shared())
+  let rows =
+    effects
+    |> list.filter(fn(effect) {
+      { effect.effect_type == 29 || effect.effect_type == 52 }
+      && { effect.target_flags == 3 || effect.target_flags == 7 }
+    })
+    |> list.sort(fn(a, b) { int.compare(a.id, b.id) })
+    |> list.map(fn(effect) { #(effect.effect_type, effect.id, effect.spell_id) })
+  assert rows == [#(29, 10_457, 5844), #(29, 14_809, 8285)]
+    as "table_rows -- Spell4Effects effectType=29 holds two rows with targetFlags 3 or 7, 10457 (Spell4 5844, flags 7) and 14809 (Spell4 8285, flags 3), and effectType=52 holds none"
+  assert list.filter(effects, fn(effect) {
+      effect.effect_type == 26
+      && list.contains([5844, 8285], effect.data_bits00)
+    })
+    == []
+    as "table_rows -- Spell4Effects dataBits00=5844 and dataBits00=8285 find no row, so no Proxy starts either spell, on each struck unit or otherwise"
 }

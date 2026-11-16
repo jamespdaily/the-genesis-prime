@@ -188,12 +188,32 @@ pub fn an_interrupt_armor_row_aimed_at_the_primary_target_of_a_child_on_each_str
         id: 199_192,
         spell: 76_766,
         effect_type: 52,
-        target_flags: 3,
+        target_flags: 1,
       ),
       place: on_each_struck,
     )
     |> result.is_ok
-    as "a row that includes the caster reaches the caster, whichever unit the child is cast on"
+    as "a row that names the caster alone reaches the caster, whichever unit the child is cast on"
+  assert list.map([3, 7], fn(flags) {
+      spell_tables.read_row(
+        effect: spell_tables.blank_effect(
+          id: 199_192,
+          spell: 76_766,
+          effect_type: 52,
+          target_flags: flags,
+        ),
+        place: on_each_struck,
+      )
+    })
+    == list.repeat(
+      Error(spell_plan.InterruptArmorOnStruckUnit(
+        spell4_id: 58_586,
+        proxy_effect_id: 178_143,
+        effect_id: 199_192,
+      )),
+      2,
+    )
+    as "a row that names the caster and the primary target also names the struck unit, which no armor is built on, so the load fails as it does for flags 2"
 }
 
 pub fn a_planted_area_proxys_child_holding_an_interrupt_armor_row_on_its_primary_target_fails_the_plan_test() -> Nil {
@@ -213,15 +233,19 @@ pub fn a_planted_area_proxys_child_holding_an_interrupt_armor_row_on_its_primary
       effect_id: 99_054,
     )
     as "the child's primary target is a struck unit, so the load fails, naming the Proxy and the row"
-  assert modifiers_of(
+  assert plan_error(
       row: armor_row(id: 99_055, target_flags: 3, columns: [
         #("spellId", Integer(30_900)),
         #("dataBits00", Integer(1)),
         #("durationTime", Integer(5000)),
       ]),
     )
-    == []
-    as "a row that includes the caster loads: the strike's own spell holds no armor row"
+    == spell_plan.InterruptArmorOnStruckUnit(
+      spell4_id: strike,
+      proxy_effect_id: 62_204,
+      effect_id: 99_055,
+    )
+    as "a row that includes the caster also names the primary target, a struck unit, so the load fails as it does for flags 2"
 }
 
 pub fn an_interrupt_armor_row_aimed_only_at_struck_units_is_left_out_test() -> Nil {

@@ -997,7 +997,7 @@ pub fn phase_with_a_union_damage_row_selects_the_area_and_strikes_the_target_tes
   assert phase.strikes_primary_target
     as "bit 2 aims at the cast's target, so the phase strikes it"
   assert phase.damage == [damage]
-    as "the row is in the phase's damage: its blow lands on the selected units, which are never the caster"
+    as "the row is in the phase's damage, to land on the units the phase selects"
 }
 
 pub fn a_modifier_only_child_aimed_at_the_target_strikes_the_primary_target_test() -> Nil {
