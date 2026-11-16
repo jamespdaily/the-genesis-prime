@@ -1508,12 +1508,14 @@ pub fn press_unread_types(
 pub fn struck_unread_types(
   prerequisite prerequisite: Prerequisite,
 ) -> List(Int) {
-  list.filter(unread_on_a_struck_unit(prerequisite:), fn(prerequisite_type) {
-    prerequisite_type == 15
-    || prerequisite_type == 59
-    || prerequisite_type == 129
-  })
+  list.filter(unread_on_a_struck_unit(prerequisite:), list.contains(
+    casts_held_types,
+    _,
+  ))
 }
+
+/// The PrerequisiteTypes that read every caster's casts on a unit: 15, 59 and 129.
+pub const casts_held_types = [15, 59, 129]
 
 /// The PrerequisiteTypes of the conditions the client decides and the server does
 /// not read, in the prerequisite and the rows it nests, each once.
@@ -1574,78 +1576,57 @@ pub fn unread_on_a_struck_unit(
   prerequisite prerequisite: Prerequisite,
 ) -> List(Int) {
   list.flat_map(prerequisite.conditions, fn(condition) {
-    case condition {
-      Nested(row: Some(nested), ..) ->
-        unread_on_a_struck_unit(prerequisite: nested)
-      Difficulty(..) -> [179]
-      CurrentFaction(..) -> [4]
-      BaseFaction(..) -> [250]
-      TargetOfLiveCast(..)
-      | UnderCastBy(..)
-      | StackCount(..)
-      | InCombat(..)
-      | VitalPercent(..)
-      | VitalCurrent(..)
-      | UnderGroup(..)
-      | UnitLevel(..)
-      | UnitClass(..) -> option.values([reads_held_state(condition:)])
-      Nested(row: None, ..)
-      | Roll(..)
-      | ResourceSlot(..)
-      | Stealthed(..)
-      | PlayerRace(..)
-      | InZone(..)
-      | IsPlayer(..)
-      | PlayerPath(..)
-      | Gender(..)
-      | InWorld(..)
-      | QuestState(..)
-      | ObjectiveDone(..)
-      | ObjectiveOpen(..)
-      | TargetCounted(..)
-      | ObjectiveProgress(..)
-      | NeverMet
-      | ServerGated
-      | IsCreature(..)
-      | SpellKnown(..)
-      | ItemHeld(..)
-      | WorldDifficulty(..)
-      | ObjectiveStatus(..)
-      | CarriesCasterGroup(..)
-      | InArc(..)
-      | ChallengeFlag(..)
-      | NoCase
-      | Unread(..) -> []
+    case reading_of(condition:) {
+      OwnState(prerequisite_type:) | CastsHeld(prerequisite_type:) -> [
+        prerequisite_type,
+      ]
+      NestedRow(row:) -> unread_on_a_struck_unit(prerequisite: row)
+      WhoItIs | ReadElsewhere -> []
     }
   })
   |> list.unique
 }
 
-/// Whether the unit a gate is tested on holds all the state this condition reads itself: its
-/// level (1), class (3), factions (4 and 250), fight state (28), vitals (71 and 73) or
-/// difficulty (179), or, for a nested row, every condition of that row.
-fn held_by_the_unit(condition condition: Condition) -> Bool {
+/// What a condition reads of the unit a gate is tested on: the state the unit holds itself,
+/// the casts held on it, who it is, a row it nests, or something else.
+type Reading {
+  /// The unit's level (1), class (3), factions (4 and 250), fight state (28), vitals (71 and
+  /// 73) or difficulty (179).
+  OwnState(prerequisite_type: Int)
+  /// The casts held on the unit (15, 59 and 129).
+  CastsHeld(prerequisite_type: Int)
+  /// Whether the unit is a player (39) or which Creature2 row it is (38): known from its place
+  /// alone, and held by a creature.
+  WhoItIs
+  /// A row the condition nests.
+  NestedRow(row: Prerequisite)
+  /// A roll, the second unit's casts, the player's own facts, or a condition the server
+  /// does not read: nothing the unit holds.
+  ReadElsewhere
+}
+
+fn reading_of(condition condition: Condition) -> Reading {
   case condition {
-    Nested(row: Some(nested), ..) -> checked_by_creature(prerequisite: nested)
-    UnitLevel(..)
-    | UnitClass(..)
-    | CurrentFaction(..)
-    | BaseFaction(..)
-    | InCombat(..)
-    | VitalPercent(..)
-    | VitalCurrent(..)
-    | Difficulty(..) -> True
+    Nested(row: Some(nested), ..) -> NestedRow(row: nested)
+    Difficulty(..) -> OwnState(prerequisite_type: 179)
+    CurrentFaction(..) -> OwnState(prerequisite_type: 4)
+    BaseFaction(..) -> OwnState(prerequisite_type: 250)
+    InCombat(..) -> OwnState(prerequisite_type: 28)
+    VitalPercent(..) -> OwnState(prerequisite_type: 71)
+    VitalCurrent(..) -> OwnState(prerequisite_type: 73)
+    UnitLevel(..) -> OwnState(prerequisite_type: 1)
+    UnitClass(..) -> OwnState(prerequisite_type: 3)
+    TargetOfLiveCast(..) -> CastsHeld(prerequisite_type: 15)
+    StackCount(..) -> CastsHeld(prerequisite_type: 59)
+    UnderGroup(..) -> CastsHeld(prerequisite_type: 129)
+    IsCreature(..) | IsPlayer(..) -> WhoItIs
     Nested(row: None, ..)
-    | TargetOfLiveCast(..)
     | UnderCastBy(..)
-    | StackCount(..)
     | Roll(..)
     | ResourceSlot(..)
-    | UnderGroup(..)
     | Stealthed(..)
     | PlayerRace(..)
     | InZone(..)
-    | IsPlayer(..)
     | PlayerPath(..)
     | Gender(..)
     | InWorld(..)
@@ -1656,7 +1637,6 @@ fn held_by_the_unit(condition condition: Condition) -> Bool {
     | ObjectiveProgress(..)
     | NeverMet
     | ServerGated
-    | IsCreature(..)
     | SpellKnown(..)
     | ItemHeld(..)
     | WorldDifficulty(..)
@@ -1665,17 +1645,29 @@ fn held_by_the_unit(condition condition: Condition) -> Bool {
     | InArc(..)
     | ChallengeFlag(..)
     | NoCase
-    | Unread(..) -> False
+    | Unread(..) -> ReadElsewhere
   }
 }
 
 /// Whether the creature a gate is tested on can check all of it from the state it holds
-/// itself: every condition, and every condition of a row it nests, reads only that state
-/// (`held_by_the_unit`). A condition that reads the casts held on the unit (15, 59, 129),
-/// draws a roll (37) or reads anything else is left to the caster's check.
+/// itself: every condition, and every condition of a row it nests, reads only that state or
+/// who the creature is (38 and 39), and at least one reads the state; a gate of who the unit
+/// is alone stays with the caster, which knows that from its place. A condition that reads the
+/// casts held on the unit (15, 59, 129), draws a roll (37) or reads anything else is left to
+/// the caster's check.
 pub fn checked_by_creature(prerequisite prerequisite: Prerequisite) -> Bool {
-  prerequisite.conditions != []
-  && list.all(prerequisite.conditions, held_by_the_unit)
+  let readings =
+    list.map(prerequisite.conditions, fn(condition) { reading_of(condition:) })
+  list.all(readings, held_by_the_unit)
+  && list.any(readings, fn(reading) { reading != WhoItIs })
+}
+
+fn held_by_the_unit(reading reading: Reading) -> Bool {
+  case reading {
+    OwnState(..) | WhoItIs -> True
+    NestedRow(row:) -> checked_by_creature(prerequisite: row)
+    CastsHeld(..) | ReadElsewhere -> False
+  }
 }
 
 /// The bytes of one roll: 4, a draw r of a multiple of 2^-32 in [0, 1).

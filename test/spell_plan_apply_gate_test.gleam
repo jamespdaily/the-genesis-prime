@@ -15,7 +15,7 @@
 ////   only where its prerequisites pass, so a row whose prerequisite the server cannot read
 ////   cannot be applied and fails the load, naming the issue that will read it.
 //// - `Prerequisite.prerequisiteTypeId.12`: the server has not decoded it (#818). Type 15
-////   reads the state of the creature it is tested on (#817), which a strike's picture does not
+////   reads what the casts held on the creature it is tested on hold (#569), which a strike's picture does not
 ////   hold (`prerequisite.struck_unread_types`).
 
 import client_tables

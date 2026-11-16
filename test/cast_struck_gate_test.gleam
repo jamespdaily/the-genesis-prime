@@ -18,6 +18,7 @@
 ////   bytes of each unit and nothing more.
 
 import cast_support as support
+import fixture_tables
 import genesis_prime/game/cast
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/spell_plan.{
@@ -26,9 +27,10 @@ import genesis_prime/game/spell_plan.{
 import genesis_prime/game/spend
 import genesis_prime/game/strike.{Aimed, Selection}
 import genesis_prime/game/strike_tell.{Answered, Landed, Refused}
+import genesis_prime/game/unit_properties
 import genesis_prime/message/spell_go
 import genesis_prime/step.{Now}
-import genesis_prime/table/id.{Spell4EffectsId}
+import genesis_prime/table/id.{Spell4EffectsId, UnitProperty2Id}
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -233,12 +235,12 @@ fn closed(
   })
 }
 
-/// The go the cast rule writes for a round that closed so.
-fn written(
+/// What the cast rule does for a round that closed so.
+fn went_effects(
   state state: cast.State,
   asked asked: cast.GoAsked,
   round round: #(List(cast.Struck), dict.Dict(Int, List(Int))),
-) -> List(#(Int, List(Int))) {
+) -> List(cast.Effect) {
   let #(_, effects) =
     cast.went(
       cast: state,
@@ -254,7 +256,16 @@ fn written(
       units: dict.new(),
       rolls: [],
     )
-  listed(effects:)
+  effects
+}
+
+/// The go the cast rule writes for a round that closed so.
+fn written(
+  state state: cast.State,
+  asked asked: cast.GoAsked,
+  round round: #(List(cast.Struck), dict.Dict(Int, List(Int))),
+) -> List(#(Int, List(Int))) {
+  listed(effects: went_effects(state:, asked:, round:))
 }
 
 // ---- rows applied at the go ----
@@ -348,6 +359,122 @@ pub fn ungated_go_rows_send_no_strike_test() -> Nil {
       #(21, [gated_id, ungated_id]),
     ]
     as "the go lists every row on every unit its aim names, as it did before"
+}
+
+// ---- a gated row aimed at the caster and the area ----
+
+/// A hostile UnitPropertyModifier aimed at the caster and the area (targetFlags 5): the plan
+/// holds it as two entries of one effect id, a `PropertyChange` on the caster and a
+/// `StruckChange` on the area (`spell_plan.PlannedBoth`), and the strike carries the gate of
+/// the struck part alone.
+fn split_modifier_spell() -> Spell {
+  let modifier =
+    unit_properties.Change(
+      property: UnitProperty2Id(100),
+      mode: 2,
+      multiplier: 0.5,
+      flat: 0.0,
+      per_level: 0.0,
+    )
+  let row = fn(change) {
+    spell_plan.PropertyModifier(
+      effect_id: Spell4EffectsId(gated_id),
+      phase_flags: -1,
+      change:,
+      row: LastingRow(delay_ms: 0, duration_ms: 5000, until_removed: False),
+      condition: spell_plan.Always,
+      tag: spend.always,
+      armor: None,
+    )
+  }
+  spell_plan.Spell(
+    ..support.child(spell4_id: 101, base: 3),
+    modifiers: [
+      row(spell_plan.PropertyChange(modifier:)),
+      row(spell_plan.StruckChange(modifier:, aim: AimsAtArea)),
+    ],
+    struck_gates: [gate_of(id: gated_id, aim: AimsAtArea)],
+  )
+}
+
+pub fn split_gated_modifier_keeps_its_caster_half_test() -> Nil {
+  use <- owned_test.run(5000)
+  let spell = split_modifier_spell()
+  let #(cast, asked) = pressed(spell:, target: 20)
+  let answers = [
+    #("passed the gate", passed(ids: [gated_id])),
+    #("failed the gate", passed(ids: [])),
+    #("refused", Refused(why: strike_tell.Dead)),
+  ]
+  list.each(answers, fn(answered) {
+    let #(state, _) =
+      begun(selection: selection_of(spell:, asked:, units: [20]))
+    let #(_, last) = answer(state:, asked:, unit_id: 20, outcome: answered.1)
+    let assert Ok(round) = closed(effects: last)
+    let effects = went_effects(state: cast, asked:, round:)
+    assert list.map(support.property_starts(effects:), fn(start) { start.0 })
+      == [support.source_of(cast_id: asked.cast_id, effect_id: gated_id)]
+      as {
+        "the caster's own half is its modifier whatever unit 20 answered: "
+        <> answered.0
+      }
+    assert list.length(support.target_changes(effects:))
+      == case answered.0 {
+        "passed the gate" -> 1
+        _ -> 0
+      }
+      as {
+        "the struck half starts on unit 20 only when it passed the gate: "
+        <> answered.0
+      }
+  })
+}
+
+pub fn struck_move_failing_its_gate_is_not_thrown_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4 29856 (`table_rows -- Spell4Effects spellId=29856`): its ForcedMove row 53184 has
+  // targetFlags 4 (the area), phaseFlags 1, delayTime 0 and target apply 6802, which is one
+  // condition of type 4 (comparison 2, value 174; `table_rows -- Prerequisite 6802`): a
+  // faction the creature itself holds, so the creature checks it and the plan keeps the row.
+  let tables = fixture_tables.shared()
+  let assert Ok(planned) =
+    spell_plan.spell_alone(
+      tables:,
+      sources: spell_plan.sources_of(tables:),
+      spell4_id: 29_856,
+      chain: [],
+    )
+    as "a ForcedMove row behind a faction gate the creature holds plans"
+  let assert [thrown_row] = planned.struck_moves
+  assert thrown_row.effect_id == Spell4EffectsId(53_184)
+    as "Spell4Effects.53184 is the spell's one ForcedMove row"
+  assert list.map(planned.struck_gates, fn(gate) { gate.effect_id })
+    == [Spell4EffectsId(53_184)]
+    as "the strike tells the creature the move's gate"
+  let spell =
+    spell_plan.Spell(
+      ..support.child(spell4_id: 101, base: 3),
+      struck_moves: planned.struck_moves,
+      struck_gates: planned.struck_gates,
+    )
+  let #(cast, asked) = pressed(spell:, target: 20)
+  let #(state, _) =
+    begun(selection: selection_of(spell:, asked:, units: [20, 21]))
+  let #(state, _) =
+    answer(state:, asked:, unit_id: 20, outcome: passed(ids: [53_184]))
+  let #(_, last) = answer(state:, asked:, unit_id: 21, outcome: passed(ids: []))
+  let assert Ok(round) = closed(effects: last)
+  let thrown_units =
+    list.map(
+      support.throws(effects: went_effects(state: cast, asked:, round:)),
+      fn(effect) {
+        let assert cast.ForcedMoveStarts(unit_id:, ..) = effect
+          as "throws lists only throws"
+        unit_id
+      },
+    )
+  assert thrown_units == [20]
+    as "Spell4Effects.prerequisiteIdTargetApply: unit 20 passed the gate and is thrown; unit 21 failed it and stays"
 }
 
 // ---- a gated row aimed at the primary target ----

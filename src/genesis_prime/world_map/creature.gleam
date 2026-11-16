@@ -173,7 +173,7 @@
 //// | a strike carries a gate its creature fails | the blows and states of that row are not dealt or taken, the answer's `gates_passed` leaves its id out (`strike_row_failing_its_gate_lands_nothing_test`) |
 //// | a strike carries a gate its creature passes | the row lands as an ungated one does and its id is in `gates_passed` (`strike_row_passing_its_gate_lands_as_before_test`) |
 //// | a gate reads the creature's health, factions, level, Creature2 row or difficulty | it reads them when the strike arrives, not when the cast was made (`gate_reads_the_creature_when_the_strike_arrives_test`, `strike_gates_read_the_creature_row_and_the_spawn_it_names_test`, `gate_reads_the_difficulty_of_the_creature_row_test`) |
-//// | a gate reads the combat or the Interrupt Armor the creature wears | the first strike's own fight state starts the combat the later gate reads, and worn armor is the current one (`gate_reads_the_combat_the_first_strike_starts_test`, `gate_reads_the_interrupt_armor_the_creature_wears_test`) |
+//// | a gate reads the combat or the Interrupt Armor the creature wears | the first strike's own fight state starts the combat the later gate reads, and worn armor is the current one (`strike_with_every_gate_failed_does_not_pull_the_creature_test`, `gate_reads_the_interrupt_armor_the_creature_wears_test`) |
 //// | a gate reads what the creature does not hold (`prerequisite.NotRead`) | it does not pass (`gate_of_a_type_the_creature_does_not_read_passes_nothing_test`) |
 //// | the strike is deflected | the gates are still checked, and the answer's `Deflected` names the ones that passed (`deflected_strike_still_answers_the_gates_it_passed_test`) |
 //// | two strikes reach it one after the other, each with gates | each is checked against the creature the one before left (`two_strikes_in_turn_each_get_their_own_answer_and_gates_test`) |
@@ -931,7 +931,11 @@ fn changed_news(
 
 /// A strike on the creature: refused while it walks home; else the hit rule on its
 /// health, the answer first, then the health news, the corpse timer, and the fight's
-/// part: a landed player's strike adds its threat, a kill ends the fight.
+/// part: a landed player's strike adds its threat, a kill ends the fight. A strike whose
+/// every row failed its gate left nothing that reaches the creature: it answers a landing
+/// of nothing, rolls no hit, sends no health and starts no fight. That is the server's
+/// choice: neither the client nor a retail record says whether a cast whose effects all
+/// fail their target gate pulls the creature.
 fn struck(
   state state: State,
   tell tell: StrikeTell,
@@ -955,8 +959,32 @@ fn struck(
         [], _ | _, True -> #(tell, [])
         [_, ..], False -> gates_checked(state:, tell:, now_ms:)
       }
-      let reaction = case creature_guard.guarded(state: state.guard) {
-        True ->
+      let nothing_reached =
+        tell.gates != []
+        && gates_passed == []
+        && tell.offence.blows == []
+        && tell.controls == []
+        && !creature_life.is_dead(life: state.life)
+      let reaction = case
+        nothing_reached,
+        creature_guard.guarded(state: state.guard)
+      {
+        True, _ ->
+          creature_life.Reaction(
+            life: state.life,
+            answer: Answered(
+              key: tell.key,
+              outcome: strike_tell.Landed(
+                descriptions: [],
+                controls: [],
+                armor_removed: 0,
+                gates_passed: [],
+              ),
+            ),
+            news: [],
+            corpse_for_ms: None,
+          )
+        False, True ->
           creature_life.Reaction(
             life: state.life,
             answer: Answered(key: tell.key, outcome: case tell.offence.blows {
@@ -977,7 +1005,7 @@ fn struck(
             news: [],
             corpse_for_ms: None,
           )
-        False ->
+        False, False ->
           creature_life.struck(life: state.life, body: state.body, strike: tell)
       }
       let #(state, answered, controlled) =
@@ -1004,10 +1032,12 @@ fn struck(
       let state = State(..state, life: reaction.life)
       // A strike that landed, or that the guard took no damage from, threatens the
       // creature by the descriptions it left (none for a guarded one).
-      let landed = case reaction.answer.outcome {
-        strike_tell.Landed(descriptions:, ..) -> Some(descriptions)
-        strike_tell.Immune(..) -> Some([])
-        strike_tell.Deflected(..) | strike_tell.Refused(..) -> None
+      let landed = case nothing_reached, reaction.answer.outcome {
+        True, _ -> None
+        False, strike_tell.Landed(descriptions:, ..) -> Some(descriptions)
+        False, strike_tell.Immune(..) -> Some([])
+        False, strike_tell.Deflected(..) | False, strike_tell.Refused(..) ->
+          None
       }
       let input = case landed, tell.striker, tell.from, reaction.corpse_for_ms {
         _, _, _, Some(..) -> Some(creature_fight.Killed)
@@ -1203,20 +1233,15 @@ fn gates_checked(
 ) -> #(StrikeTell, List(Int)) {
   let subject =
     prerequisite.of_creature(facts: creature_facts(state:, tell:, now_ms:))
-  let passed =
-    list.filter_map(tell.gates, fn(gate) {
+  let #(passing, failing) =
+    list.partition(tell.gates, fn(gate) {
       case prerequisite.check(prerequisite: gate.prerequisite, subject:) {
-        prerequisite.Passes -> Ok(gate.effect_id)
-        prerequisite.Fails | prerequisite.NotRead(..) -> Error(Nil)
+        prerequisite.Passes -> True
+        prerequisite.Fails | prerequisite.NotRead(..) -> False
       }
     })
-  let failed =
-    list.filter_map(tell.gates, fn(gate) {
-      case list.contains(passed, gate.effect_id) {
-        True -> Error(Nil)
-        False -> Ok(gate.effect_id)
-      }
-    })
+  let passed = list.map(passing, fn(gate) { gate.effect_id })
+  let failed = list.map(failing, fn(gate) { gate.effect_id })
   let offence =
     hit.Offence(
       ..tell.offence,

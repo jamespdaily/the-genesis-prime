@@ -9141,15 +9141,19 @@ fn reaching(
 
 /// The entries of rows whose gate on the struck creature the unit passed: a row with no
 /// gate (`Spell.struck_gates`) reaches every unit its aim names, and one with a gate
-/// reaches a unit only when that unit's answer lists the row's effect id.
+/// reaches a unit only when that unit's answer lists the row's effect id. The gate is the
+/// struck creatures' alone, so the entry of a row aimed at the caster as well as past it
+/// that stands on the caster passes it (its caster prerequisite is read by `reaching`).
 fn passing_struck_gates(
   entries entries: List(#(row, Int)),
   effect_id effect_id: fn(row) -> Spell4EffectsId,
   spell spell: Spell,
+  caster_unit_id caster_unit_id: Int,
   gates_passed gates_passed: Dict(Int, List(Int)),
 ) -> List(#(row, Int)) {
   list.filter(entries, fn(entry) {
-    gate_passed(
+    entry.1 == caster_unit_id
+    || gate_passed(
       effect_id: effect_id(entry.0),
       unit_id: entry.1,
       spell:,
@@ -9225,6 +9229,7 @@ fn aimed_at(
     |> passing_struck_gates(
       effect_id: fn(row: spell_plan.Lasting) { row.effect_id },
       spell: live.spell,
+      caster_unit_id: caster.unit_id,
       gates_passed:,
     )
     |> reaching(
@@ -9246,6 +9251,7 @@ fn aimed_at(
     |> passing_struck_gates(
       effect_id: fn(row: spell_plan.ForceRemove) { row.effect_id },
       spell: live.spell,
+      caster_unit_id: caster.unit_id,
       gates_passed:,
     )
     |> reaching(
@@ -9271,6 +9277,7 @@ fn aimed_at(
     |> passing_struck_gates(
       effect_id: fn(row: spell_plan.PropertyModifier) { row.effect_id },
       spell: live.spell,
+      caster_unit_id: caster.unit_id,
       gates_passed:,
     )
     |> reaching(
@@ -9299,6 +9306,7 @@ fn aimed_at(
     |> passing_struck_gates(
       effect_id: fn(row: spell_plan.StruckMove) { row.effect_id },
       spell: live.spell,
+      caster_unit_id: caster.unit_id,
       gates_passed:,
     )
     |> reaching(
@@ -9333,6 +9341,7 @@ fn aimed_at(
     |> passing_struck_gates(
       effect_id: fn(heal: spell_plan.Heal) { heal.effect_id },
       spell: live.spell,
+      caster_unit_id: caster.unit_id,
       gates_passed:,
     )
     |> reaching(

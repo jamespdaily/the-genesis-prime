@@ -1738,11 +1738,8 @@ pub fn gated_strike_on_a_creature_shows_no_hit_test() -> Nil {
   let #(effects, healths, stats) = heard_of_the_beast(frames:)
   assert effects == []
     as "Spell4Effects.prerequisiteIdTargetApply: the Beast fails the gate, so the go lists no effect on it"
-  assert list.length(list.unique(healths)) == 1
-    && list.all(healths, fn(health) {
-      list.all(hit_healths, fn(hit) { health > hit })
-    })
-    as "the Beast takes no damage, so the health the client is told never moves and stays above every health the hits left"
+  assert healths == []
+    as "nothing reached the Beast, so it rolls no hit and the client is told no health of it"
   assert stats == 0
     as "the Beast takes no damage, so the client is told no stat change of it"
   let goes = game_connection_support.decoded(frames, 0x07F4, spell_go.decode)

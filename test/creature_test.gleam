@@ -1873,8 +1873,10 @@ pub fn gate_reads_the_difficulty_of_the_creature_row_test() -> Nil {
     as "difficulty 1 equals the objectId 1, not 2"
 }
 
-pub fn gate_reads_the_combat_the_first_strike_starts_test() -> Nil {
+pub fn strike_with_every_gate_failed_does_not_pull_the_creature_test() -> Nil {
   use <- owned_test.run(5000)
+  // The server's choice: no client or retail source says whether a cast whose rows all fail
+  // their target gate pulls the creature. Nothing reached it, so it is not pulled.
   let in_combat = [gate(effect_id: 1, condition: #(28, 1, 0, 0))]
   let #(state, first) =
     told(
@@ -1882,16 +1884,36 @@ pub fn gate_reads_the_combat_the_first_strike_starts_test() -> Nil {
       at_ms: 6000,
       message: gated(strike: strike_of(damage: 1, cast_id: 1), gates: in_combat),
     )
-  assert passed(answer_of(first)) == []
-    as "the creature is at home when the first strike arrives"
-  let #(_, second) =
+  assert answer_of(first)
+    == Landed(
+      descriptions: [],
+      controls: [],
+      armor_removed: 0,
+      gates_passed: [],
+    )
+    as "the creature is at home, so the one gated row fails and the answer lands nothing"
+  assert health_news(first) == []
+    as "nothing reached the creature, so no hit is rolled and no health is sent"
+  let #(state, second) =
     told(
       state:,
       at_ms: 6100,
       message: gated(strike: strike_of(damage: 1, cast_id: 2), gates: in_combat),
     )
-  assert passed(answer_of(second)) == [1]
-    as "the first strike's landing put it in a fight: the second finds it in combat"
+  assert passed(answer_of(second)) == []
+    as "the first strike put the creature in no fight: the second still finds it at home"
+  let #(state, ungated) =
+    told(state:, at_ms: 6200, message: strike_of(damage: 1, cast_id: 3))
+  assert health_news(ungated) != []
+    as "a strike with a row no gate holds back still lands and is shown"
+  let #(_, after) =
+    told(
+      state:,
+      at_ms: 6300,
+      message: gated(strike: strike_of(damage: 1, cast_id: 4), gates: in_combat),
+    )
+  assert passed(answer_of(after)) == [1]
+    as "that landing put the creature in a fight: the gate now passes"
 }
 
 pub fn gate_reads_the_interrupt_armor_the_creature_wears_test() -> Nil {

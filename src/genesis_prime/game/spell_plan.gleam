@@ -265,7 +265,9 @@
 ////   aimed other than at the caster, of a vital other than 6 or 8, or behind a
 ////   target apply prerequisite, an effect behind a target apply prerequisite with a
 ////   condition of a type not read (issue 818) or, past the caster, of a type that reads
-////   what the casts held on a struck creature hold (issue 569), and an effect of a spell that spends
+////   what the casts held on a struck creature hold (issue 569) or, on a row that does not
+////   reach struck units alone or that the strike does not carry to the creature, the
+////   creature's own state (issue 851), and an effect of a spell that spends
 ////   every point held with an emmComparison other than 0 or 1; a Fluff or SpellForceRemove effect
 ////   aimed other than at the caster, the primary target or the area; a type 80
 ////   effect with a dataBits00 other than 1 to 3, naming no group, Spell4 or
@@ -1448,7 +1450,7 @@ pub type PlanError {
   /// casts held on it, which the creature does not hold yet (`prerequisite.struck_unread_types`,
   /// issue 569), or the creature's own state, on a row that does not reach struck units alone
   /// or that the strike does not carry, so the caster's check is the only one and it holds none
-  /// of that state (`prerequisite.unread_on_a_struck_unit`, issue 817).
+  /// of that state (`prerequisite.unread_on_a_struck_unit`, issue 851).
   TargetPrerequisiteReadsStruckUnit(
     spell4_id: Int,
     effect_id: Int,
@@ -1678,7 +1680,7 @@ pub fn describe(error error: PlanError) -> String {
         15 | 59 | 129 ->
           ", which reads what the casts held on the creature it strikes hold (#569)"
         _ ->
-          ", which reads the state of the creature it strikes, and the row is not one its strike carries to the creature (#817)"
+          ", which reads the state of the creature it strikes, and the row is not one its strike carries to the creature (#851)"
       }
     StruckMoveNotRead(spell4_id:, effect_id:, error:) ->
       "the Spell4 row "
@@ -3400,9 +3402,11 @@ fn forced_move_of(
 /// its columns as a `forced_move.Move` (`forced_move.of_row`; a dataBits00 above 15 or a
 /// float column that is no number fails the load), the `aim` it was given, and its apply
 /// prerequisites as a Fluff effect's are (`condition_of`), the target one read for each
-/// struck unit it throws.
+/// struck unit it throws, or checked by each creature that holds all it reads
+/// (`struck_gates_of`).
 fn struck_move_of(
   tables tables: table_store.Tables,
+  place place: RowPlace,
   effect effect: spell4_effects.Spell4Effects,
   aim aim: Aim,
 ) -> Result(StruckMove, PlanError) {
@@ -3419,7 +3423,7 @@ fn struck_move_of(
   use condition <- result.map(condition_of(
     tables:,
     effect:,
-    reach: PastTheCaster,
+    reach: reach_in_place(place:, aim:),
     data_bits06_names_a_gate: False,
   ))
   StruckMove(
@@ -3984,13 +3988,14 @@ fn struck_gates_of(
 }
 
 /// The aim of the part of a planned row that a creature the go struck is checked for, when
-/// its kind has one: a lasting, remove or crowd-control row, or the struck part of a
-/// property modifier.
+/// its kind has one: a lasting, remove or crowd-control row, a struck move, or the struck
+/// part of a property modifier.
 fn struck_aim_of(planned planned: PlannedRow) -> Result(Aim, Nil) {
   case planned {
     PlannedLasting(lasting:) -> Ok(lasting.aim)
     PlannedRemove(remove:) -> Ok(remove.aim)
     PlannedControl(control:) -> Ok(control.aim)
+    PlannedStruckMove(struck_move:) -> Ok(struck_move.aim)
     PlannedModifier(modifier:) ->
       case modifier.change {
         StruckChange(aim:, ..) -> Ok(aim)
@@ -3999,7 +4004,6 @@ fn struck_aim_of(planned planned: PlannedRow) -> Result(Aim, Nil) {
     PlannedBoth(past_the_caster:, ..) -> struck_aim_of(planned: past_the_caster)
     PlannedGain(..)
     | PlannedForcedMove(..)
-    | PlannedStruckMove(..)
     | PlannedCooldownModifier(..)
     | PlannedStealth(..)
     | PlannedRemoveStealth(..)
@@ -4166,7 +4170,7 @@ fn kind_reading(
           |> result.map(fn(forced_move) { PlannedForcedMove(forced_move:) })
         },
         past_part: fn(aim) {
-          struck_move_of(tables:, effect:, aim:)
+          struck_move_of(tables:, place:, effect:, aim:)
           |> result.map(fn(struck_move) { PlannedStruckMove(struck_move:) })
         },
       )
@@ -5129,13 +5133,13 @@ fn target_gate_read(
         prerequisite_type:,
       ))
     [], OnlyTheCaster -> Ok(Nil)
-    [], StruckUnits | [], PastTheCaster ->
-      case
-        list.append(
-          prerequisite.struck_unread_types(prerequisite: target),
+    [], StruckUnits | [], PastTheCaster -> {
+      let #(casts, own_state) =
+        list.partition(
           prerequisite.unread_on_a_struck_unit(prerequisite: target),
+          list.contains(prerequisite.casts_held_types, _),
         )
-      {
+      case list.append(casts, own_state) {
         [prerequisite_type, ..] ->
           Error(TargetPrerequisiteReadsStruckUnit(
             spell4_id: effect.spell_id,
@@ -5144,6 +5148,7 @@ fn target_gate_read(
           ))
         [] -> Ok(Nil)
       }
+    }
   }
 }
 

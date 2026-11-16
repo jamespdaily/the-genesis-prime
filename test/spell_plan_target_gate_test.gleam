@@ -427,3 +427,22 @@ pub fn remove_on_the_primary_target_of_a_press_behind_a_creature_state_gate_stay
     as "in a child started on a struck unit the primary target is that creature"
   assert remove.condition == spell_plan.Always
 }
+
+pub fn gate_with_a_creature2_condition_is_checked_by_the_creature_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4 27656 (`table_rows -- Spell4Effects spellId=27656`): its crowd control row 49004
+  // (effectType 4, targetFlags 4, phaseFlags 1) has target apply 6780 = type 4, comparison 1,
+  // value 171, and type 38, comparison 2, value 18721. The creature holds its faction and its
+  // Creature2 row, so it checks the whole gate.
+  let assert Ok(spell) = plan_of(spell4_id: 27_656)
+    as "a spell whose row is gated on a faction and a Creature2 row plans"
+  let assert Ok(gate) =
+    list.find(spell.struck_gates, fn(gate) {
+      gate.effect_id == Spell4EffectsId(49_004)
+    })
+    as "the strike carries the gate of row 49004 to the creatures it reaches"
+  assert prerequisite.id(gate.prerequisite) == PrerequisiteId(6780)
+    as "Spell4Effects.49004: prerequisiteIdTargetApply 6780"
+  assert gate.aim == spell_plan.AimsAtArea
+    as "Spell4Effects.49004: targetFlags 4, the area"
+}
