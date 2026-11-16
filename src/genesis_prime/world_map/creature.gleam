@@ -170,6 +170,14 @@
 //// | the creature is told `Retire` | it stops, and the map's watch ends; the map takes that as a clean stop |
 //// | the creature is told `Retire` while dead | it stops at its respawn, and the map's watch ends then |
 //// | the creature is struck while dead | the strike is answered `Refused(Dead)`; no health changes and no news is sent |
+//// | a strike carries a gate its creature fails | the blows and states of that row are not dealt or taken, the answer's `gates_passed` leaves its id out (`strike_row_failing_its_gate_lands_nothing_test`) |
+//// | a strike carries a gate its creature passes | the row lands as an ungated one does and its id is in `gates_passed` (`strike_row_passing_its_gate_lands_as_before_test`) |
+//// | a gate reads the creature's health, factions, level, Creature2 row or difficulty | it reads them when the strike arrives, not when the cast was made (`gate_reads_the_creature_when_the_strike_arrives_test`, `strike_gates_read_the_creature_row_and_the_spawn_it_names_test`, `gate_reads_the_difficulty_of_the_creature_row_test`) |
+//// | a gate reads the combat or the Interrupt Armor the creature wears | the first strike's own fight state starts the combat the later gate reads, and worn armor is the current one (`gate_reads_the_combat_the_first_strike_starts_test`, `gate_reads_the_interrupt_armor_the_creature_wears_test`) |
+//// | a gate reads what the creature does not hold (`prerequisite.NotRead`) | it does not pass (`gate_of_a_type_the_creature_does_not_read_passes_nothing_test`) |
+//// | the strike is deflected | the gates are still checked, and the answer's `Deflected` names the ones that passed (`deflected_strike_still_answers_the_gates_it_passed_test`) |
+//// | two strikes reach it one after the other, each with gates | each is checked against the creature the one before left (`two_strikes_in_turn_each_get_their_own_answer_and_gates_test`) |
+//// | a gated strike reaches a dead creature | it is answered `Refused(Dead)` with no gate read (`dead_creature_refuses_a_gated_strike_test`) |
 //// | two strikes reach it one after the other | each is answered in turn on the health the one before left; the second finds a corpse if the first killed |
 //// | the caster's connection has ended when the creature answers | the send is dropped by the registry; the hit and its news stand |
 //// | the killing blow's caster has left the world, or its stay has changed, when the credit arrives | the connection drops the credit (`stay_sent`): no experience is given, the death and its news stand |
@@ -205,7 +213,9 @@
 import genesis_prime/client_connection.{
   type PeerNews, CreatureAppeared, PeerNews, Removed,
 }
+import genesis_prime/game/area
 import genesis_prime/game/forced_move
+import genesis_prime/game/hit
 import genesis_prime/game/prerequisite
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{
@@ -943,7 +953,7 @@ fn struck(
         creature_life.is_dead(life: state.life)
       {
         [], _ | _, True -> #(tell, [])
-        [_, ..], False -> gates_checked(state:, tell:)
+        [_, ..], False -> gates_checked(state:, tell:, now_ms:)
       }
       let reaction = case creature_guard.guarded(state: state.guard) {
         True ->
@@ -1189,19 +1199,99 @@ fn with_gates_passed(
 fn gates_checked(
   state state: State,
   tell tell: StrikeTell,
+  now_ms now_ms: Int,
 ) -> #(StrikeTell, List(Int)) {
-  let _subject = prerequisite.of_creature(facts: creature_facts(state:, tell:))
-  panic as "shape: creature side fills gates_checked: prerequisite.check for each gate against the subject, the strike without the rows that did not pass, and the passed effect ids"
+  let subject =
+    prerequisite.of_creature(facts: creature_facts(state:, tell:, now_ms:))
+  let passed =
+    list.filter_map(tell.gates, fn(gate) {
+      case prerequisite.check(prerequisite: gate.prerequisite, subject:) {
+        prerequisite.Passes -> Ok(gate.effect_id)
+        prerequisite.Fails | prerequisite.NotRead(..) -> Error(Nil)
+      }
+    })
+  let failed =
+    list.filter_map(tell.gates, fn(gate) {
+      case list.contains(passed, gate.effect_id) {
+        True -> Error(Nil)
+        False -> Ok(gate.effect_id)
+      }
+    })
+  let offence =
+    hit.Offence(
+      ..tell.offence,
+      blows: list.filter(tell.offence.blows, fn(blow) {
+        !list.contains(failed, blow.spell4_effects_id)
+      }),
+    )
+  let controls =
+    list.filter(tell.controls, fn(control) {
+      !list.contains(failed, control.effect_id)
+    })
+  #(strike_tell.Strike(..tell, offence:, controls:), passed)
 }
 
 /// What the creature holds that its gates read, for `prerequisite.of_creature`: its level and
-/// class, factions, combat state, vitals, difficulty and Creature2 row, what the strike's
-/// caster's casts hold on it, and the two poses.
+/// class, factions, combat state, vitals, difficulty and Creature2 row, and the two poses.
+/// What the strike's caster's casts hold on it is not held (`under` is empty, gap: issue
+/// 569), and the zones it stands in are its place's own zone, without the zones above it.
 fn creature_facts(
-  state _state: State,
-  tell _tell: StrikeTell,
+  state state: State,
+  tell tell: StrikeTell,
+  now_ms now_ms: Int,
 ) -> prerequisite.CreatureFacts {
-  panic as "shape: creature side fills creature_facts: the creature's own values for each field"
+  let spawn = state.settings.spawn
+  let armor = state.body.combat.interrupt_armor
+  let armor_current =
+    creature_control.armor_now(state: state.control, armor:)
+    |> option.unwrap(0)
+    |> int.to_float
+  let armor_maximum = case armor {
+    creature_life.Armor(points:) -> int.to_float(points)
+    creature_life.InfiniteArmor -> -1.0
+    creature_life.NoArmor -> 0.0
+  }
+  let #(caster_unit, caster) = case tell.striker {
+    PlayerStriker(unit_id:, place:, ..) -> #(
+      unit_id,
+      Some(area.pose_of(place:)),
+    )
+    CreatureStriker -> #(0, None)
+  }
+  prerequisite.CreatureFacts(
+    player: prerequisite.Player(
+      race_id: 0,
+      class_id: prerequisite.creature_class_id,
+      level: spawn.level,
+      path: 0,
+      gender: 0,
+      world_id: start_place.world_id(spawn.place),
+      zones: [start_place.world_zone_id(spawn.place)],
+    ),
+    factions: prerequisite.Factions(
+      current: spawn.faction_id,
+      base: spawn.base_faction_id,
+    ),
+    in_combat: creature_fight.in_combat(state: state.fight),
+    health: prerequisite.Vital(
+      current: int.to_float(creature_life.health(life: state.life)),
+      maximum: int.to_float(state.body.max_health),
+    ),
+    shield_maximum: unit_properties.value(
+      properties: state.properties,
+      property: unit_properties.shield_capacity_max,
+    ),
+    armor: prerequisite.Vital(current: armor_current, maximum: armor_maximum),
+    difficulty: spawn.context.difficulty_id,
+    creature_id: spawn.creature_id.value,
+    under: [],
+    caster_unit:,
+    creature: area.pose_of(place: creature_fight.place_at(
+      state: state.fight,
+      now_ms:,
+    )),
+    caster:,
+  )
 }
 
 /// The effects the creature's controls ask for, carried out: news to every viewer and

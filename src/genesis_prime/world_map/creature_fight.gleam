@@ -791,6 +791,15 @@ pub fn live_casts(state state: State) -> List(Int) {
   }
 }
 
+/// Whether the creature is in combat, as its combat flag (0x89a) tells its viewers: True
+/// while Fighting, False at rest and on the way home.
+pub fn in_combat(state state: State) -> Bool {
+  case state.status {
+    Fighting(..) -> True
+    Resting | Returning(..) -> False
+  }
+}
+
 /// The connections on the threat list: none unless Fighting.
 pub fn threatened(state state: State) -> Set(ConnectionId) {
   case state.status {
