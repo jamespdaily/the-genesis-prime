@@ -1,6 +1,7 @@
 //// Whether a unit is in a TargetGroup row (`0x1403b4a20`, which a quest objective's kill
 //// test calls for its data and its reward pane).
 
+import genesis_prime/game/target_group_kind
 import genesis_prime/table/id.{
   type Creature2Id, type Faction2Id, type UnitRaceId, Creature2Id, TargetGroupId,
 }
@@ -9,9 +10,6 @@ import genesis_prime/table/target_group.{type TargetGroup}
 import gleam/bool
 import gleam/list
 import gleam/result
-
-/// The TargetGroup type whose words are Creature2 ids.
-const creature_group_type = 1
 
 /// What the client's tester reads of a unit (`0x140b66440`): the unit's Creature2 id,
 /// its current Faction2 id (the one its 0x262 gave it, which its spawn row holds) and
@@ -31,7 +29,8 @@ pub type Unit {
 /// negations. Type 10 needs every sub-group its words name (not its own id) and type 11
 /// any. A missing row, or a type the client has no case for, is not a member. Types 5 to
 /// 9 read the unit's race, class and the third tagged value of its 0x262, which the
-/// server does not hold, so they are never members here.
+/// server does not hold, so they are never members here: a gap of the server, though
+/// server rules reach type 9 groups (open issue #901).
 pub fn contains(
   tables tables: table_store.Tables,
   group group: Int,
@@ -62,17 +61,12 @@ fn listed(
   case target_group.get(tables:, id: TargetGroupId(group)) {
     Error(Nil) -> []
     Ok(row) -> {
-      let words = words_of(row:)
-      case row.type_ {
-        1 ->
-          list.map(creatures_of(tables:, group:), fn(creature) {
-            creature.value
-          })
-        10 | 11 ->
-          list.flat_map(others(words:, row:), fn(sub) {
+      case target_group_kind.names_sub_groups(target_group_kind.of_row(row)) {
+        True ->
+          list.flat_map(others(words: words_of(row:), row:), fn(sub) {
             listed(tables:, group: sub, path: [group, ..path])
           })
-        _ -> []
+        False -> list.map(creatures_in(row:), fn(creature) { creature.value })
       }
     }
   }
@@ -99,22 +93,31 @@ fn row_has(
   path path: List(Int),
 ) -> Bool {
   let words = words_of(row:)
-  case row.type_ {
-    1 -> names(words:, value: unit.creature_id.value)
-    2 -> !names(words:, value: unit.creature_id.value)
-    3 -> by_faction(words:, unit:, wanted: True)
-    4 -> by_faction(words:, unit:, wanted: False)
-    12 -> names(words:, value: unit.unit_race_id.value)
-    13 -> !names(words:, value: unit.unit_race_id.value)
-    10 ->
+  case target_group_kind.of_row(row) {
+    target_group_kind.ByCreature -> names(words:, value: unit.creature_id.value)
+    target_group_kind.NotCreature ->
+      !names(words:, value: unit.creature_id.value)
+    target_group_kind.ByFaction -> by_faction(words:, unit:, wanted: True)
+    target_group_kind.NotFaction -> by_faction(words:, unit:, wanted: False)
+    target_group_kind.ByUnitRace ->
+      names(words:, value: unit.unit_race_id.value)
+    target_group_kind.NotUnitRace ->
+      !names(words:, value: unit.unit_race_id.value)
+    target_group_kind.AllOf ->
       list.all(others(words:, row:), fn(sub) {
         member(tables:, group: sub, unit:, path:)
       })
-    11 ->
+    target_group_kind.AnyOf ->
       list.any(others(words:, row:), fn(sub) {
         member(tables:, group: sub, unit:, path:)
       })
-    _ -> False
+    // The unit's race, class and 0x262 set value are not held: never members.
+    target_group_kind.ByRace
+    | target_group_kind.NotRace
+    | target_group_kind.ByClass
+    | target_group_kind.NotClass
+    | target_group_kind.BySet
+    | target_group_kind.Unread(_) -> False
   }
 }
 
@@ -130,11 +133,20 @@ pub fn creatures_of(
   group group: Int,
 ) -> List(Creature2Id) {
   case target_group.get(tables:, id: TargetGroupId(group)) {
-    Ok(row) if row.type_ == creature_group_type ->
+    Ok(row) -> creatures_in(row:)
+    Error(Nil) -> []
+  }
+}
+
+/// The Creature2 ids a row names: its non-zero words when it is of type 1, none for
+/// any other type.
+fn creatures_in(row row: TargetGroup) -> List(Creature2Id) {
+  case target_group_kind.names_creatures(target_group_kind.of_row(row)) {
+    True ->
       words_of(row:)
       |> list.filter(fn(word) { word != 0 })
       |> list.map(Creature2Id)
-    Ok(_) | Error(Nil) -> []
+    False -> []
   }
 }
 

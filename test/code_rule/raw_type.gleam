@@ -49,18 +49,6 @@ pub type Gap {
 /// Every site in `src/`, and the open issue whose work removes it.
 pub const known_gaps = [
   Gap(
-    path: "src/genesis_prime/game/item_property.gleam",
-    function: "give_picked",
-    sites: 1,
-    issue: 897,
-  ),
-  Gap(
-    path: "src/genesis_prime/game/random_stat.gleam",
-    function: "accepted",
-    sites: 1,
-    issue: 897,
-  ),
-  Gap(
     path: "src/genesis_prime/game/shortcut_spell.gleam",
     function: "planned",
     sites: 1,
@@ -77,24 +65,6 @@ pub const known_gaps = [
     function: "heal_of",
     sites: 1,
     issue: 886,
-  ),
-  Gap(
-    path: "src/genesis_prime/game/target_group.gleam",
-    function: "creatures_of",
-    sites: 1,
-    issue: 897,
-  ),
-  Gap(
-    path: "src/genesis_prime/game/target_group.gleam",
-    function: "listed",
-    sites: 1,
-    issue: 897,
-  ),
-  Gap(
-    path: "src/genesis_prime/game/target_group.gleam",
-    function: "row_has",
-    sites: 1,
-    issue: 897,
   ),
   Gap(
     path: "src/genesis_prime/world_map/creature_guard_spells.gleam",

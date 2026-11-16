@@ -1129,3 +1129,102 @@ pub fn a_random_stat_entry_gives_nothing_while_the_item_holds_no_roll_test() -> 
   assert given_with(tables:, item2_id:, random_stats: 0) == item
     as "an entry of kind 0 gives the same"
 }
+
+/// Item2 48169's ItemStat 432 has three kind-2 entries on ItemRandomStatGroup 11, whose
+/// rows 34 to 38 are properties. With the word that picks rows 1, 2 and 3, entry 0 reads
+/// ItemRandomStat 34: a row of kind 1 gives its property, and a row of any other kind
+/// fails the client's builder with 0x70 (`0x14040e6d0` reads a random row's own kind;
+/// `0x14040d5d0`), so the item is unread for the row's own kind number.
+pub fn a_picked_random_row_of_another_kind_than_1_is_unread_with_its_kind_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let item2_id = fixture_tables.root("Item2", 48_169)
+  let word = 0x0100000000030201
+  assert result.is_ok(item_property.of_item(
+    tables: fixture_tables.shared(),
+    level: 1,
+    item2_id:,
+    random_stats: word,
+  ))
+    as "the rows of group 11 are kind 1: the item is given"
+  list.each([0, 2, 3, 4], fn(kind) {
+    use tables <- fixture_tables.changed(table: "ItemRandomStat", id: 34, with: [
+      #("itemStatTypeEnum", Integer(kind)),
+    ])
+    assert item_property.of_item(
+        tables:,
+        level: 1,
+        item2_id:,
+        random_stats: word,
+      )
+      == Error(item_property.Unread(
+        item2_id:,
+        gap: item_property.StatKind(kind:),
+      ))
+      as {
+        "0x14040e6d0: the picked row of kind "
+        <> int.to_string(kind)
+        <> " is not read"
+      }
+  })
+}
+
+/// An entry of kind 0 adds nothing, kind 4 adds nothing (nothing is given until crafting
+/// is built), kind 2 with no random-stat word adds nothing, and any other kind fails the
+/// client's builder with 0x70 (`0x14040ca70`). Item2 1375 with ItemStat 4's one entry
+/// changed: the kinds 0, 2 and 4 leave it no budget, and kind 3 makes it unread for 3.
+pub fn an_item_stat_entry_gives_nothing_for_kinds_0_2_and_4_and_is_unread_for_any_other_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let item2_id = fixture_tables.root("Item2", 1375)
+  list.each([0, 2, 4], fn(kind) {
+    use tables <- fixture_tables.changed(table: "ItemStat", id: 4, with: [
+      #("itemStatTypeEnum00", Integer(kind)),
+    ])
+    assert budget_ids(properties: given(tables:, item2_id:)) == []
+      as {
+        "0x14040ca70: an entry of kind "
+        <> int.to_string(kind)
+        <> " adds no property"
+      }
+  })
+  list.each([3, 5, 7], fn(kind) {
+    use tables <- fixture_tables.changed(table: "ItemStat", id: 4, with: [
+      #("itemStatTypeEnum00", Integer(kind)),
+    ])
+    assert item_property.of_item(tables:, level: 1, item2_id:, random_stats: 0)
+      == Error(item_property.Unread(
+        item2_id:,
+        gap: item_property.StatKind(kind:),
+      ))
+      as {
+        "0x14040ca70: an entry of kind "
+        <> int.to_string(kind)
+        <> " fails with 0x70"
+      }
+  })
+}
+
+/// Only an entry of kind 1 names a UnitProperty2 row, so the load checks no row for the
+/// data of an entry of another kind. Item2 1375's ItemStat 4 names UnitProperty2 34 in
+/// entry 0, whose data is changed to an id no UnitProperty2 row holds: the load fails for
+/// kind 1 and passes for kinds 0, 2 and 4 (`0x14040ca70`, `0x14040e6d0`: the data of
+/// kind 2 is a group id and that of kind 4 is not a property).
+pub fn only_an_entry_of_kind_1_needs_its_property_row_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let loaded = fn(kind) {
+    let assert Ok(rows) =
+      fixture_tables.change(
+        rows: fixture_tables.rows(),
+        table: "ItemStat",
+        id: 4,
+        with: [
+          #("itemStatTypeEnum00", Integer(kind)),
+          #("itemStatData00", Integer(999_999_999)),
+        ],
+      )
+      as "ItemStat 4 is in the fixture"
+    fixture_tables.load(rows:) |> result.is_ok
+  }
+  assert !loaded(1) as "a kind 1 entry names a property row that is missing"
+  assert loaded(0) && loaded(2) && loaded(4)
+    as "an entry of kind 0, 2 or 4 names no property row"
+}
