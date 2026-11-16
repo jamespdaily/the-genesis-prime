@@ -3815,13 +3815,16 @@ fn stealth_changed_by_go(
   last_go last_go: Bool,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
-  case cast_state.stealthed(cast:), applied.stealth, applied.remove_stealth {
+  let stealth = cast_state.passed_of(applied:, as_kind: spell_plan.as_stealth)
+  let remove_stealth =
+    cast_state.passed_of(applied:, as_kind: spell_plan.as_remove_stealth)
+  case cast_state.stealthed(cast:), stealth, remove_stealth {
     False, [], [] -> #(cast, [])
     _, _, _ -> {
       let cast =
         State(
           ..cast,
-          stealth: list.fold(applied.stealth, cast.stealth, fn(held, row) {
+          stealth: list.fold(stealth, cast.stealth, fn(held, row) {
             dict.insert(
               held,
               unit_properties.Source(cast_id:, effect_id: row.effect_id),
@@ -3829,7 +3832,7 @@ fn stealth_changed_by_go(
             )
           }),
         )
-      let #(cast, removed) = case applied.remove_stealth {
+      let #(cast, removed) = case remove_stealth {
         [] -> #(cast, [])
         [_, ..] ->
           cast_proc.stealth_ended(
@@ -3877,6 +3880,216 @@ fn activation_listed_at(
   }
 }
 
+/// One effect of a go that reaches a unit: the planned effect, the unit it stands on (the
+/// caster's for a row that stands on the caster alone) and what the reach stage made of it.
+type Reached {
+  Reached(
+    effect: spell_effect.PlannedEffect(spell_plan.Kind),
+    unit_id: Int,
+    product: Product,
+  )
+}
+
+/// What the reach stage made of an effect beside its unit.
+type Product {
+  /// Nothing: the effect stands on its unit as it is.
+  Plain
+}
+
+/// The walk of `reached_by`: the effects reached so far in rank order, the debug lines of
+/// the target gates in the order the effects were walked, and the rolls left.
+type Walk {
+  Walk(reached: List(Reached), logs: List(Effect), rolls: List(Int))
+}
+
+/// The units each applied effect reaches, walking the effects in rank order, which is the order
+/// their target gates draw rolls in. A row aimed at units is taken to each unit its aim names
+/// that stands past the struck gates and the row's target apply prerequisite (`reach_units`);
+/// a row that stands on the caster alone is kept on the caster.
+fn reached_by(
+  applied applied: Applied,
+  caster caster: Caster,
+  live live: Live,
+  struck struck: List(Struck),
+  gates_passed gates_passed: Dict(Int, List(Int)),
+  target_verdict target_verdict: TargetVerdict,
+  rolls rolls: List(Int),
+) -> Walk {
+  list.fold(
+    applied.passed,
+    Walk(reached: [], logs: [], rolls:),
+    fn(walk, planned) {
+      case planned.kind {
+        spell_plan.ProxyEffect(..)
+        | spell_plan.GainEffect(..)
+        | spell_plan.RemoveStealthEffect(..)
+        | spell_plan.ControlEffect(..) -> walk
+        spell_plan.LastingEffect(lasting: row) ->
+          reach_units(
+            walk:,
+            planned:,
+            row:,
+            aim: row.aim,
+            stands: fn(_) { True },
+            condition: row.condition,
+            what: "the lasting effect " <> int.to_string(row.effect_id.value),
+            caster:,
+            live:,
+            struck:,
+            gates_passed:,
+            target_verdict:,
+          )
+        spell_plan.RemoveEffect(remove: row) ->
+          reach_units(
+            walk:,
+            planned:,
+            row:,
+            aim: row.aim,
+            stands: fn(_) { True },
+            condition: row.condition,
+            what: "the SpellForceRemove effect "
+              <> int.to_string(row.effect_id.value),
+            caster:,
+            live:,
+            struck:,
+            gates_passed:,
+            target_verdict:,
+          )
+        spell_plan.ModifierEffect(modifier: row) ->
+          reach_units(
+            walk:,
+            planned:,
+            row:,
+            aim: spell_plan.modifier_aim(modifier: row),
+            stands: fn(entry) {
+              cast_gate.modifier_applies(
+                row: entry.0,
+                unit_id: entry.1,
+                caster:,
+                struck:,
+              )
+            },
+            condition: row.condition,
+            what: "the "
+              <> cast_control.modifier_kind_named(row:)
+              <> " effect "
+              <> int.to_string(row.effect_id.value),
+            caster:,
+            live:,
+            struck:,
+            gates_passed:,
+            target_verdict:,
+          )
+        spell_plan.StruckMoveEffect(struck_move: row) ->
+          reach_units(
+            walk:,
+            planned:,
+            row:,
+            aim: row.aim,
+            stands: fn(entry) {
+              result.is_ok(cast_gate.creature_hit(struck:, unit_id: entry.1))
+            },
+            condition: row.condition,
+            what: "the ForcedMove effect " <> int.to_string(row.effect_id.value),
+            caster:,
+            live:,
+            struck:,
+            gates_passed:,
+            target_verdict:,
+          )
+        spell_plan.HealEffect(heal: row) ->
+          reach_units(
+            walk:,
+            planned:,
+            row:,
+            aim: row.aim,
+            stands: fn(_) { True },
+            condition: row.condition,
+            what: "the Heal or HealShields effect "
+              <> int.to_string(row.effect_id.value),
+            caster:,
+            live:,
+            struck:,
+            gates_passed:,
+            target_verdict:,
+          )
+        spell_plan.ForcedMoveEffect(..)
+        | spell_plan.CooldownEffect(..)
+        | spell_plan.StealthEffect(..)
+        | spell_plan.ProcEffect(..) ->
+          Walk(
+            ..walk,
+            reached: list.append(walk.reached, [
+              Reached(effect: planned, unit_id: caster.unit_id, product: Plain),
+            ]),
+          )
+      }
+    },
+  )
+}
+
+/// The walk after one row: an entry for the row on each unit its aim names that `stands`,
+/// passes the struck gates and passes the row's target apply prerequisite, a debug line for
+/// each the server cannot tell, and the rolls left (`cast_gate.reaching`).
+fn reach_units(
+  walk walk: Walk,
+  planned planned: spell_effect.PlannedEffect(spell_plan.Kind),
+  row row: row,
+  aim aim: spell_plan.Aim,
+  stands stands: fn(#(row, Int)) -> Bool,
+  condition condition: spell_plan.Condition,
+  what what: String,
+  caster caster: Caster,
+  live live: Live,
+  struck struck: List(Struck),
+  gates_passed gates_passed: Dict(Int, List(Int)),
+  target_verdict target_verdict: TargetVerdict,
+) -> Walk {
+  let #(entries, logs, rolls) =
+    cast_gate.rows_with_units(
+      rows: [row],
+      aim: fn(_) { aim },
+      caster:,
+      primary_target: live.primary_target,
+      struck:,
+    )
+    |> list.filter(stands)
+    |> cast_gate.passing_struck_gates(
+      effect_id: fn(_) { planned.effect_id },
+      spell: live.spell,
+      caster_unit_id: caster.unit_id,
+      gates_passed:,
+    )
+    |> cast_gate.reaching(
+      condition: fn(_) { condition },
+      what: fn(_) { what },
+      target_verdict:,
+      rolls: walk.rolls,
+    )
+  Walk(
+    reached: list.append(
+      walk.reached,
+      list.map(entries, fn(entry) {
+        Reached(effect: planned, unit_id: entry.1, product: Plain)
+      }),
+    ),
+    logs: list.append(walk.logs, logs),
+    rolls:,
+  )
+}
+
+/// The reached effects of one kind with the unit each stands on, in rank order (`as_kind` is
+/// the kind's projection, such as `spell_plan.as_heal`): what `Aimed` holds for the kind.
+fn reached_of(
+  reached reached: List(Reached),
+  as_kind as_kind: fn(spell_plan.Kind) -> Result(payload, Nil),
+) -> List(#(payload, Int)) {
+  list.filter_map(reached, fn(entry) {
+    as_kind(entry.effect.kind)
+    |> result.map(fn(row) { #(row, entry.unit_id) })
+  })
+}
+
 fn aimed_at(
   applied applied: Applied,
   caster caster: Caster,
@@ -3888,145 +4101,44 @@ fn aimed_at(
   target_verdict target_verdict: TargetVerdict,
   rolls rolls: List(Int),
 ) -> Aimed {
-  let #(lasting, lasting_logs, rolls) =
-    cast_gate.rows_with_units(
-      rows: applied.lasting,
-      aim: fn(row) { row.aim },
+  let walk =
+    reached_by(
+      applied:,
       caster:,
-      primary_target: live.primary_target,
+      live:,
       struck:,
-    )
-    |> cast_gate.passing_struck_gates(
-      effect_id: fn(row: spell_plan.Lasting) { row.effect_id },
-      spell: live.spell,
-      caster_unit_id: caster.unit_id,
       gates_passed:,
-    )
-    |> cast_gate.reaching(
-      condition: fn(row: spell_plan.Lasting) { row.condition },
-      what: fn(row: spell_plan.Lasting) {
-        "the lasting effect " <> int.to_string(row.effect_id.value)
-      },
       target_verdict:,
       rolls:,
     )
-  let #(removes, remove_logs, rolls) =
-    cast_gate.rows_with_units(
-      rows: applied.removes,
-      aim: fn(row) { row.aim },
-      caster:,
-      primary_target: live.primary_target,
-      struck:,
-    )
-    |> cast_gate.passing_struck_gates(
-      effect_id: fn(row: spell_plan.ForceRemove) { row.effect_id },
-      spell: live.spell,
-      caster_unit_id: caster.unit_id,
-      gates_passed:,
-    )
-    |> cast_gate.reaching(
-      condition: fn(row: spell_plan.ForceRemove) { row.condition },
-      what: fn(row: spell_plan.ForceRemove) {
-        "the SpellForceRemove effect " <> int.to_string(row.effect_id.value)
-      },
-      target_verdict:,
-      rolls:,
-    )
+  let lasting =
+    reached_of(reached: walk.reached, as_kind: spell_plan.as_lasting)
+  let removes = reached_of(reached: walk.reached, as_kind: spell_plan.as_remove)
+  let modifiers =
+    reached_of(reached: walk.reached, as_kind: spell_plan.as_modifier)
+  let thrown =
+    reached_of(reached: walk.reached, as_kind: spell_plan.as_struck_move)
+  let forced_moves =
+    reached_of(reached: walk.reached, as_kind: spell_plan.as_forced_move)
+  let reached_heals =
+    reached_of(reached: walk.reached, as_kind: spell_plan.as_heal)
+  let rolls = walk.rolls
   let controls = cast_control.controls_landed(struck:)
-  let #(modifiers, modifier_logs, rolls) =
-    cast_gate.rows_with_units(
-      rows: applied.modifiers,
-      aim: fn(row) { spell_plan.modifier_aim(modifier: row) },
-      caster:,
-      primary_target: live.primary_target,
-      struck:,
-    )
-    |> list.filter(fn(entry) {
-      cast_gate.modifier_applies(
-        row: entry.0,
-        unit_id: entry.1,
-        caster:,
-        struck:,
-      )
-    })
-    |> cast_gate.passing_struck_gates(
-      effect_id: fn(row: spell_plan.PropertyModifier) { row.effect_id },
-      spell: live.spell,
-      caster_unit_id: caster.unit_id,
-      gates_passed:,
-    )
-    |> cast_gate.reaching(
-      condition: fn(row: spell_plan.PropertyModifier) { row.condition },
-      what: fn(row: spell_plan.PropertyModifier) {
-        "the "
-        <> cast_control.modifier_kind_named(row:)
-        <> " effect "
-        <> int.to_string(row.effect_id.value)
-      },
-      target_verdict:,
-      rolls:,
-    )
-  let forced_moves = applied.forced_moves
-  let #(thrown, thrown_logs, rolls) =
-    cast_gate.rows_with_units(
-      rows: applied.struck_moves,
-      aim: fn(row: spell_plan.StruckMove) { row.aim },
-      caster:,
-      primary_target: live.primary_target,
-      struck:,
-    )
-    |> list.filter(fn(entry) {
-      result.is_ok(cast_gate.creature_hit(struck:, unit_id: entry.1))
-    })
-    |> cast_gate.passing_struck_gates(
-      effect_id: fn(row: spell_plan.StruckMove) { row.effect_id },
-      spell: live.spell,
-      caster_unit_id: caster.unit_id,
-      gates_passed:,
-    )
-    |> cast_gate.reaching(
-      condition: fn(row: spell_plan.StruckMove) { row.condition },
-      what: fn(row: spell_plan.StruckMove) {
-        "the ForcedMove effect " <> int.to_string(row.effect_id.value)
-      },
-      target_verdict:,
-      rolls:,
-    )
   let cooldowns =
-    list.map(applied.cooldowns, fn(row) {
+    reached_of(reached: walk.reached, as_kind: spell_plan.as_cooldown_modifier)
+    |> list.map(fn(entry) {
       #(
-        row,
-        caster.unit_id,
+        entry.0,
+        entry.1,
         cast_control.cooldown_kept(
-          row:,
+          row: entry.0,
           longer_of_delay_and_duration: live.spell.longer_of_delay_and_duration,
         ),
       )
     })
-  let stealth = list.map(applied.stealth, fn(row) { #(row, caster.unit_id) })
-  let procs = list.map(applied.procs, fn(row) { #(row, caster.unit_id) })
-  let #(reached_heals, heal_reach_logs, rolls) =
-    cast_gate.rows_with_units(
-      rows: applied.heals,
-      aim: fn(heal: spell_plan.Heal) { heal.aim },
-      caster:,
-      primary_target: live.primary_target,
-      struck:,
-    )
-    |> cast_gate.passing_struck_gates(
-      effect_id: fn(heal: spell_plan.Heal) { heal.effect_id },
-      spell: live.spell,
-      caster_unit_id: caster.unit_id,
-      gates_passed:,
-    )
-    |> cast_gate.reaching(
-      condition: fn(heal: spell_plan.Heal) { heal.condition },
-      what: fn(heal: spell_plan.Heal) {
-        "the Heal or HealShields effect " <> int.to_string(heal.effect_id.value)
-      },
-      target_verdict:,
-      rolls:,
-    )
+  let stealth =
+    reached_of(reached: walk.reached, as_kind: spell_plan.as_stealth)
+  let procs = reached_of(reached: walk.reached, as_kind: spell_plan.as_proc)
   let #(heals, heal_logs) = cast_heal.healed_by(entries: reached_heals, caster:)
   let restrictions = list.map(restricting, fn(one) { #(one, caster.unit_id) })
   let ticking =
@@ -4084,12 +4196,12 @@ fn aimed_at(
           ),
         )
       }),
-      list.map(forced_moves, fn(row) {
+      list.map(forced_moves, fn(entry) {
         #(
-          caster.unit_id,
+          entry.1,
           Listed(
-            effect_id: row.effect_id,
-            delay_ms: row.delay_ms,
+            effect_id: entry.0.effect_id,
+            delay_ms: entry.0.delay_ms,
             instance_id: None,
             damage: None,
           ),
@@ -4206,14 +4318,7 @@ fn aimed_at(
     cooldowns:,
     stealth:,
     heals:,
-    reach_logs: list.flatten([
-      lasting_logs,
-      remove_logs,
-      modifier_logs,
-      thrown_logs,
-      heal_reach_logs,
-      heal_logs,
-    ]),
+    reach_logs: list.append(walk.logs, heal_logs),
     thrown:,
     procs:,
     controls:,

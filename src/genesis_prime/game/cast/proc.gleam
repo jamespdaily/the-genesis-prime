@@ -430,9 +430,12 @@ pub fn procs_held(
   applied applied: Applied,
 ) -> #(State, List(Effect)) {
   let #(never, held) =
-    list.partition(applied.procs, fn(row) {
-      row.trigger == spell_plan.Died && cast.passive != Some(cast_id)
-    })
+    list.partition(
+      cast_state.passed_of(applied:, as_kind: spell_plan.as_proc),
+      fn(row) {
+        row.trigger == spell_plan.Died && cast.passive != Some(cast_id)
+      },
+    )
   let procs =
     list.fold(held, cast.procs, fn(procs, row) {
       let source = unit_properties.Source(cast_id:, effect_id: row.effect_id)

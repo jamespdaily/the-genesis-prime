@@ -21,18 +21,23 @@
 //// cast time and one Proxy.
 
 import cast_support as support
+import genesis_prime/game/cast/control as cast_control
 import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/class_resource.{Gain}
+import genesis_prime/game/damage
+import genesis_prime/game/effect_kind
+import genesis_prime/game/lasting
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{type Proxy, type Spell, Proxy, Spell}
 import genesis_prime/game/spend
 import genesis_prime/message/spell_started
 import genesis_prime/step.{LogDebug}
-import genesis_prime/table/id.{Spell4EffectsId}
+import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import gleam/dict
 import gleam/int
 import gleam/list
+import gleam/option.{None}
 import gleam/string
 import owned_test
 import prerequisite_support
@@ -649,4 +654,108 @@ pub fn a_gain_behind_the_units_difficulty_is_not_given_to_a_player_and_leaves_a_
   assert support.gains(effects:) == []
     as "0x14049eeb0: type 179 reads the unit's difficulty, which only a creature's side supplies; a player's subject holds none, so the prerequisite is not read"
   assert list.length(debug_lines(effects)) == 1 as "and one debug line says so"
+}
+
+// ---- the one list of effects: the order the gates walk it in ----
+
+/// A lasting effect, a removal and a heal, all aimed at the caster in every phase, each
+/// behind this condition; given in the scrambled order heal, removal, lasting.
+fn lasting_remove_and_heal(condition condition: spell_plan.Condition) -> Spell {
+  support.with_effects(
+    spell: Spell(..support.exempt(), cast_time_ms: 0),
+    kinds: [
+      spell_plan.HealEffect(spell_plan.Heal(
+        effect_id: Spell4EffectsId(3),
+        vital: effect_kind.Health,
+        phase_flags: -1,
+        aim: spell_plan.AimsAtCaster,
+        condition:,
+        tag: spend.always,
+        formula: damage.Formula(multiplier: 1.0, base: 0.0, parameters: []),
+        delay_ms: 0,
+      )),
+      spell_plan.RemoveEffect(spell_plan.ForceRemove(
+        effect_id: Spell4EffectsId(2),
+        phase_flags: -1,
+        aim: spell_plan.AimsAtCaster,
+        selector: lasting.Spell(Spell4Id(7)),
+        count: 1,
+        condition:,
+        tag: spend.always,
+      )),
+      spell_plan.LastingEffect(spell_plan.Lasting(
+        effect_id: Spell4EffectsId(1),
+        phase_flags: -1,
+        aim: spell_plan.AimsAtCaster,
+        row: lasting.LastingRow(
+          delay_ms: 0,
+          duration_ms: 0,
+          until_removed: True,
+        ),
+        condition:,
+        tag: spend.always,
+      )),
+    ],
+  )
+}
+
+/// The effect ids of the rows `lasting_applied` let pass at the go of phase 0, with the
+/// rolls it left, given these rolls.
+fn passed_with(
+  spell spell: Spell,
+  rolls rolls: List(Int),
+) -> #(List(Int), List(Int)) {
+  let #(applied, _, left) =
+    cast_control.lasting_applied(
+      spell:,
+      phase: 0,
+      spent: None,
+      subject: prerequisite_support.holding(held: [], second_unit: None),
+      rolls:,
+    )
+  #(
+    list.map(applied.passed, fn(planned) {
+      case planned.kind {
+        spell_plan.LastingEffect(lasting: row) -> row.effect_id.value
+        spell_plan.RemoveEffect(remove: row) -> row.effect_id.value
+        spell_plan.HealEffect(heal: row) -> row.effect_id.value
+        spell_plan.ProxyEffect(..)
+        | spell_plan.GainEffect(..)
+        | spell_plan.ModifierEffect(..)
+        | spell_plan.ForcedMoveEffect(..)
+        | spell_plan.StruckMoveEffect(..)
+        | spell_plan.CooldownEffect(..)
+        | spell_plan.StealthEffect(..)
+        | spell_plan.RemoveStealthEffect(..)
+        | spell_plan.ProcEffect(..)
+        | spell_plan.ControlEffect(..) -> -1
+      }
+    }),
+    left,
+  )
+}
+
+pub fn applied_passed_holds_the_rows_each_gate_passed_in_rank_order_test() -> Nil {
+  use <- owned_test.run(5000)
+  let always = lasting_remove_and_heal(condition: spell_plan.Always)
+  assert passed_with(spell: always, rolls: []) == #([1, 2, 3], [])
+    as "rows given heal, removal, lasting are held in the plan's rank order: lasting (1), removal (2), heal (3), the order `gate.rolls_needed` and `lasting_applied` took the kinds in"
+  let chancy =
+    lasting_remove_and_heal(
+      condition: spell_plan.GatedOnCaster(gates: [chance_gate()]),
+    )
+  assert passed_with(spell: chancy, rolls: [50, 51, 51]) == #([1], [])
+    as "Prerequisite 4585 passes a roll of at most 50: the first roll of the go is the lasting effect's, the second the removal's, the third the heal's"
+  assert passed_with(spell: chancy, rolls: [51, 51, 50]) == #([3], [])
+    as "the same rolls reversed pass the heal alone: the heal's gate is checked last"
+  let #(state, asked) = live_go_of(spell: chancy)
+  assert cast_gate.rolls_needed(
+      cast: state,
+      caster: support.caster().unit_id,
+      cast_id: asked.cast_id,
+      phase: asked.phase,
+      struck: [],
+    )
+    == 3
+    as "one type 37 condition on each of the three rows, each reaching the caster alone: three rolls, as many as `lasting_applied` drew above"
 }
