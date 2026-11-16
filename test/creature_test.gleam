@@ -52,6 +52,7 @@ import gleam/option.{None}
 import map_support
 import owned_test
 import place_support
+import prerequisite_support
 import spawn_support
 
 const ship = MapId(world_id: 3460, instance: 0)
@@ -1660,4 +1661,366 @@ pub fn the_flight_end_timer_has_its_own_id_test() -> Nil {
   let #(_, landed) = fired(state:, at_ms: 6375, timer: landing)
   assert timers_started(landed) == []
     as "firing it lands the creature, which, with no player near, starts nothing"
+}
+
+// ---- a strike's gates (issue 817) ----
+//
+// The expected values are the Creature2 row 73464's (`table_rows -- Creature2 73464`:
+// level 1, faction 1441, creature2DifficultyId 1) and the client's comparison codes
+// (1 equal, 2 not equal, 3 greater, 4 at least, 5 less, 6 at most), not what the
+// support feeds in.
+
+/// The gate of the row `effect_id` with one condition, as (type, comparison, objectId,
+/// value).
+fn gate(
+  effect_id effect_id: Int,
+  condition condition: #(Int, Int, Int, Int),
+) -> strike_tell.Gate {
+  strike_tell.Gate(
+    effect_id:,
+    prerequisite: prerequisite_support.single(id: effect_id, condition:),
+  )
+}
+
+/// The same strike with these gates.
+fn gated(
+  strike strike: creature.Message,
+  gates gates: List(strike_tell.Gate),
+) -> creature.Message {
+  let assert creature.Strike(tell:) = strike
+  creature.Strike(tell: Strike(..tell, gates:))
+}
+
+/// The answer the step sends the caster's connection 2.
+fn answer_of(taken: ServiceStep(creature.Outgoing)) -> strike_tell.Outcome {
+  let answers =
+    list.filter_map(support.sends(taken), fn(one) {
+      case one {
+        #(2, creature.Struck(answered: Answered(outcome:, ..), ..)) ->
+          Ok(outcome)
+        _ -> Error(Nil)
+      }
+    })
+  let assert [outcome] = answers as "the strike is answered once, to its caster"
+  outcome
+}
+
+/// The effect ids a landed, immune or deflected answer names as passed.
+fn passed(outcome: strike_tell.Outcome) -> List(Int) {
+  case outcome {
+    Landed(gates_passed:, ..)
+    | strike_tell.Immune(gates_passed:, ..)
+    | strike_tell.Deflected(gates_passed:) -> gates_passed
+    Refused(..) -> []
+  }
+}
+
+pub fn strike_row_failing_its_gate_lands_nothing_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The Beast is level 1: a gate of level 2 fails.
+  let #(_, taken) =
+    told(
+      state: watched_by_two(),
+      at_ms: 6000,
+      message: gated(strike: strike_of(damage: 10, cast_id: 1), gates: [
+        gate(effect_id: 1, condition: #(1, 1, 0, 2)),
+      ]),
+    )
+  assert answer_of(taken)
+    == Landed(
+      descriptions: [],
+      controls: [],
+      armor_removed: 0,
+      gates_passed: [],
+    )
+    as "the blow of the failed row is dealt nothing and no gate passed"
+  assert list.all(health_news(taken), fn(news) { news.1 == 52 })
+    as "the Beast keeps its 52 health"
+  // A failed row's state is not taken either, and wears no armor down.
+  let #(_, stunned) =
+    told(
+      state: armored_by_two(points: 3),
+      at_ms: 6000,
+      message: gated(strike: stunning_strike(cast_id: 2), gates: [
+        gate(effect_id: 83_827, condition: #(1, 1, 0, 2)),
+      ]),
+    )
+  let assert Landed(controls:, gates_passed:, ..) = answer_of(stunned)
+  assert controls == [] as "the stun of the failed row is not taken"
+  assert gates_passed == [] as "no gate passed"
+  assert armor_left(stunned) == []
+    as "and it destroyed no point of the 3 Interrupt Armor"
+}
+
+pub fn strike_row_passing_its_gate_lands_as_before_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(_, ungated) =
+    told(
+      state: watched_by_two(),
+      at_ms: 6000,
+      message: strike_of(damage: 10, cast_id: 1),
+    )
+  let #(_, taken) =
+    told(
+      state: watched_by_two(),
+      at_ms: 6000,
+      message: gated(strike: strike_of(damage: 10, cast_id: 1), gates: [
+        gate(effect_id: 1, condition: #(1, 1, 0, 1)),
+      ]),
+    )
+  let assert Landed(descriptions:, ..) = answer_of(ungated)
+  assert list.length(descriptions) == 1 as "the strike has one blow"
+  assert answer_of(taken)
+    == Landed(descriptions:, controls: [], armor_removed: 0, gates_passed: [1])
+    as "level 1 is the Beast's: the gate passes and the blow lands as without it"
+  assert health_news(taken) == health_news(ungated)
+    as "the health news is the ungated strike's"
+}
+
+pub fn gate_reads_the_creature_when_the_strike_arrives_test() -> Nil {
+  use <- owned_test.run(5000)
+  // At most 39 health: the Beast has 52 now and 39 after a strike of 13.
+  let at_most_39 = [gate(effect_id: 1, condition: #(73, 6, 1, 39))]
+  let #(state, first) =
+    told(
+      state: watched_by_two(),
+      at_ms: 6000,
+      message: gated(
+        strike: strike_of(damage: 10, cast_id: 1),
+        gates: at_most_39,
+      ),
+    )
+  assert passed(answer_of(first)) == []
+    as "52 health is above 39: the first strike's gate fails"
+  let #(state, _) =
+    told(state:, at_ms: 6100, message: strike_of(damage: 13, cast_id: 2))
+  let #(_, third) =
+    told(
+      state:,
+      at_ms: 6200,
+      message: gated(
+        strike: strike_of(damage: 10, cast_id: 3),
+        gates: at_most_39,
+      ),
+    )
+  assert passed(answer_of(third)) == [1]
+    as "39 health is at most 39 when this strike arrives: its gate passes"
+  assert health_news(third) == [#(2, 29, False), #(5, 29, False)]
+    as "and its blow of 10 lands on the 39"
+  // 75 percent of 52 is 39: the same health read as a percentage.
+  let #(_, percent) =
+    told(
+      state:,
+      at_ms: 6200,
+      message: gated(strike: strike_of(damage: 10, cast_id: 4), gates: [
+        gate(effect_id: 1, condition: #(71, 1, 1, 75)),
+      ]),
+    )
+  assert passed(answer_of(percent)) == [1]
+    as "39 of 52 is 75.0 percent: equal to 75"
+}
+
+pub fn strike_gates_read_the_creature_row_and_the_spawn_it_names_test() -> Nil {
+  use <- owned_test.run(5000)
+  // One strike with a gate for each type, all out of combat. The effect ids name the gate
+  // only: no blow or state carries them.
+  let #(_, taken) =
+    told(
+      state: watched_by_two(),
+      at_ms: 6000,
+      message: gated(strike: strike_of(damage: 1, cast_id: 1), gates: [
+        gate(effect_id: 11, condition: #(1, 1, 0, 1)),
+        gate(effect_id: 12, condition: #(4, 1, 0, 1441)),
+        gate(effect_id: 13, condition: #(250, 1, 0, 1441)),
+        gate(effect_id: 14, condition: #(38, 1, 0, 73_464)),
+        gate(effect_id: 15, condition: #(3, 2, 0, 5)),
+        gate(effect_id: 16, condition: #(3, 1, 0, 5)),
+        gate(effect_id: 17, condition: #(28, 1, 0, 0)),
+        gate(effect_id: 18, condition: #(28, 2, 0, 0)),
+        gate(effect_id: 19, condition: #(73, 1, 1, 52)),
+        gate(effect_id: 20, condition: #(73, 1, 3, 0)),
+        gate(effect_id: 21, condition: #(73, 1, 2, 100)),
+        gate(effect_id: 22, condition: #(39, 1, 0, 0)),
+      ]),
+    )
+  assert passed(answer_of(taken)) == [11, 12, 13, 14, 15, 18, 19, 20, 21]
+    as "level 1, faction 1441, base faction 1441, Creature2 73464, class 23 (no Class row), not in combat, 52 health, no shield and full breath pass; class equal to 5, in combat and being a player do not"
+}
+
+pub fn gate_reads_the_difficulty_of_the_creature_row_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Creature2 73464 has creature2DifficultyId 1 (`table_rows -- Creature2 73464`), and the
+  // spawn is the Beast as the load builds it.
+  let #(state, _) =
+    feed(
+      state: creature_at(spawn: spawn_support.loaded_beast(), viewers: [
+        ConnectionId(2),
+        ConnectionId(5),
+      ]),
+      at_ms: 5000,
+      event: OwnEvent(Started),
+    )
+  let #(_, taken) =
+    told(
+      state:,
+      at_ms: 6000,
+      message: gated(strike: strike_of(damage: 1, cast_id: 1), gates: [
+        gate(effect_id: 11, condition: #(179, 1, 1, 0)),
+        gate(effect_id: 12, condition: #(179, 1, 2, 0)),
+      ]),
+    )
+  assert passed(answer_of(taken)) == [11]
+    as "difficulty 1 equals the objectId 1, not 2"
+}
+
+pub fn gate_reads_the_combat_the_first_strike_starts_test() -> Nil {
+  use <- owned_test.run(5000)
+  let in_combat = [gate(effect_id: 1, condition: #(28, 1, 0, 0))]
+  let #(state, first) =
+    told(
+      state: watched_by_two(),
+      at_ms: 6000,
+      message: gated(strike: strike_of(damage: 1, cast_id: 1), gates: in_combat),
+    )
+  assert passed(answer_of(first)) == []
+    as "the creature is at home when the first strike arrives"
+  let #(_, second) =
+    told(
+      state:,
+      at_ms: 6100,
+      message: gated(strike: strike_of(damage: 1, cast_id: 2), gates: in_combat),
+    )
+  assert passed(answer_of(second)) == [1]
+    as "the first strike's landing put it in a fight: the second finds it in combat"
+}
+
+pub fn gate_reads_the_interrupt_armor_the_creature_wears_test() -> Nil {
+  use <- owned_test.run(5000)
+  let armor_is = fn(points) {
+    [gate(effect_id: 1, condition: #(73, 1, 20, points))]
+  }
+  let #(state, first) =
+    told(
+      state: armored_by_two(points: 3),
+      at_ms: 6000,
+      message: gated(
+        strike: strike_of(damage: 1, cast_id: 1),
+        gates: armor_is(3),
+      ),
+    )
+  assert passed(answer_of(first)) == [1] as "3 points of armor worn"
+  let #(state, _) =
+    told(state:, at_ms: 6100, message: stunning_strike(cast_id: 2))
+  let #(_, after) =
+    told(
+      state:,
+      at_ms: 6200,
+      message: gated(
+        strike: strike_of(damage: 1, cast_id: 3),
+        gates: armor_is(2),
+      ),
+    )
+  assert passed(answer_of(after)) == [1]
+    as "the stun destroyed 1 point: 2 are worn when this strike arrives"
+  let #(_, bare) =
+    told(
+      state: watched_by_two(),
+      at_ms: 6000,
+      message: gated(
+        strike: strike_of(damage: 1, cast_id: 4),
+        gates: armor_is(0),
+      ),
+    )
+  assert passed(answer_of(bare)) == [1] as "no armor: Vital 20 reads 0"
+}
+
+pub fn gate_of_a_type_the_creature_does_not_read_passes_nothing_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Type 64 reads a player's resource slot, which a creature has none of: the check says it
+  // cannot read it (`NotRead`), and an unread gate does not pass.
+  let #(_, taken) =
+    told(
+      state: watched_by_two(),
+      at_ms: 6000,
+      message: gated(strike: strike_of(damage: 10, cast_id: 1), gates: [
+        gate(effect_id: 1, condition: #(64, 1, 1, 0)),
+      ]),
+    )
+  assert answer_of(taken)
+    == Landed(
+      descriptions: [],
+      controls: [],
+      armor_removed: 0,
+      gates_passed: [],
+    )
+    as "the row of an unread gate lands nothing"
+}
+
+pub fn two_strikes_in_turn_each_get_their_own_answer_and_gates_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, first) =
+    told(
+      state: watched_by_two(),
+      at_ms: 6000,
+      message: gated(strike: strike_of(damage: 10, cast_id: 1), gates: [
+        gate(effect_id: 1, condition: #(1, 1, 0, 2)),
+      ]),
+    )
+  let #(_, second) =
+    told(
+      state:,
+      at_ms: 6000,
+      message: gated(strike: strike_of(damage: 10, cast_id: 2), gates: [
+        gate(effect_id: 1, condition: #(1, 1, 0, 1)),
+      ]),
+    )
+  assert passed(answer_of(first)) == []
+  assert passed(answer_of(second)) == [1]
+    as "the second strike is checked on its own gate, whatever the first's"
+}
+
+pub fn deflected_strike_still_answers_the_gates_it_passed_test() -> Nil {
+  use <- owned_test.run(5000)
+  // A deflect roll of 0.01 is below the Beast's deflect chance of 0.016
+  // (`Creature2.73464.crit_deflect_glance`).
+  let assert creature.Strike(tell:) = strike_of(damage: 10, cast_id: 1)
+  let assert strike_tell.PlayerStriker(..) as striker = tell.striker
+  let deflected =
+    creature.Strike(
+      tell: Strike(
+        ..tell,
+        striker: strike_tell.PlayerStriker(
+          ..striker,
+          rolls: Rolls(crit: 0.5, deflect: 0.01, glance: 0.5),
+        ),
+        gates: [
+          gate(effect_id: 11, condition: #(1, 1, 0, 1)),
+          gate(effect_id: 12, condition: #(1, 1, 0, 2)),
+        ],
+      ),
+    )
+  let #(_, taken) =
+    told(state: watched_by_two(), at_ms: 6000, message: deflected)
+  assert answer_of(taken) == strike_tell.Deflected(gates_passed: [11])
+    as "the deflect checked the gates: the one that holds is answered, the other is not"
+}
+
+pub fn dead_creature_refuses_a_gated_strike_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(dead, _) =
+    told(
+      state: watched_by_two(),
+      at_ms: 6000,
+      message: strike_of(damage: 60, cast_id: 1),
+    )
+  let #(_, taken) =
+    told(
+      state: dead,
+      at_ms: 6100,
+      message: gated(strike: strike_of(damage: 10, cast_id: 2), gates: [
+        gate(effect_id: 1, condition: #(1, 1, 0, 1)),
+      ]),
+    )
+  assert answer_of(taken) == Refused(why: strike_tell.Dead)
+    as "a corpse reads no gate: it refuses, though the gate would hold"
 }

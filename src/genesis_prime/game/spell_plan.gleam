@@ -265,7 +265,7 @@
 ////   aimed other than at the caster, of a vital other than 6 or 8, or behind a
 ////   target apply prerequisite, an effect behind a target apply prerequisite with a
 ////   condition of a type not read (issue 818) or, past the caster, of a type that reads
-////   a struck creature's own state (issue 817), and an effect of a spell that spends
+////   what the casts held on a struck creature hold (issue 569), and an effect of a spell that spends
 ////   every point held with an emmComparison other than 0 or 1; a Fluff or SpellForceRemove effect
 ////   aimed other than at the caster, the primary target or the area; a type 80
 ////   effect with a dataBits00 other than 1 to 3, naming no group, Spell4 or
@@ -1444,9 +1444,8 @@ pub type PlanError {
     prerequisite_type: Int,
   )
   /// An effect of a tree aimed past the caster is behind a target apply prerequisite with a
-  /// condition that reads a struck creature's own state (`prerequisite.struck_unread_types`):
-  /// the issue "A target prerequisite that reads a struck creature's own state is checked
-  /// against that creature" (#817) reads it.
+  /// condition that reads what a struck creature holds and the creature does not
+  /// (`prerequisite.struck_unread_types`: what the caster's casts hold on it, issue 569).
   TargetPrerequisiteReadsStruckUnit(
     spell4_id: Int,
     effect_id: Int,
@@ -1672,7 +1671,7 @@ pub fn describe(error error: PlanError) -> String {
       <> int.to_string(effect_id)
       <> " aimed past the caster behind a target apply prerequisite with a condition of type "
       <> int.to_string(prerequisite_type)
-      <> ", which reads the state of the creature it strikes (#817)"
+      <> ", which reads what the casts held on the creature it strikes hold (#569)"
     StruckMoveNotRead(spell4_id:, effect_id:, error:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -5105,7 +5104,7 @@ pub fn row_condition_of(
 
 /// Whether the cast rule can check a target apply prerequisite for the units a row
 /// reaches: a condition type the server has not decoded is refused, and so is one that
-/// reads the state of the creature it strikes, for a row that lands past the caster
+/// reads what the casts held on the creature it strikes hold, for a row that lands past the caster
 /// (`prerequisite.unread_types`, `prerequisite.struck_unread_types`).
 fn target_gate_read(
   target target: Prerequisite,
