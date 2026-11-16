@@ -25,7 +25,7 @@
 ////   (`cast.subject_of`), with the checker: the items, the ability book and the
 ////   world difficulty.
 
-import genesis_prime/game/cast
+import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/prerequisite.{type Prerequisite, type Subject}
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/start_place.{type Place}
@@ -75,7 +75,7 @@ pub fn hidden_at_entry(
       level: character.level,
     )
   let subject =
-    cast.entering_subject(
+    cast_gate.entering_subject(
       player:,
       factions: prerequisite.Factions(
         current: character.faction_id,

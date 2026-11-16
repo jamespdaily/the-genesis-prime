@@ -33,6 +33,7 @@
 
 import cast_support as support
 import genesis_prime/game/cast
+import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
 import genesis_prime/game/cooldown.{
   type Operation, AddMs, Base, Modifier, NoLonger, SetMs,
@@ -377,7 +378,7 @@ pub fn a_row_behind_a_type_37_gate_takes_one_roll_and_is_listed_when_it_passes_t
         | cast_state.StealthChanged(..) -> Error(Nil)
       }
     })
-  assert cast.rolls_needed(
+  assert cast_gate.rolls_needed(
       cast: state,
       caster: support.caster().unit_id,
       cast_id: asked.cast_id,

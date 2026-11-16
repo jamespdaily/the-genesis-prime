@@ -22,6 +22,7 @@
 import cast_support as support
 import fixture_tables
 import genesis_prime/game/cast
+import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/state.{type GoAsked} as cast_state
 import genesis_prime/game/class_resource.{type Resources, Payment}
 import genesis_prime/game/lasting
@@ -266,7 +267,7 @@ pub fn the_gate_of_a_proxy_that_n_does_not_choose_is_not_checked_test() -> Nil {
     )
   let rolls_taken = fn(points) {
     let #(state, _) = press(spell:, points:)
-    cast.rolls_needed(
+    cast_gate.rolls_needed(
       cast: state,
       caster: support.caster().unit_id,
       cast_id: first_cast,

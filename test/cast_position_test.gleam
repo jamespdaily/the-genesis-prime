@@ -21,7 +21,7 @@
 import cast_support as support
 import character_tables
 import genesis_prime/game/area.{type Pose}
-import genesis_prime/game/cast
+import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/lasting
 import genesis_prime/game/prerequisite
@@ -738,7 +738,7 @@ pub fn the_caster_gates_of_a_target_gated_proxy_take_their_rolls_in_order_and_th
     )
   let assert [asked, ..] = support.goes_asked(effects: raw)
     as "the press asks for its go"
-  assert cast.rolls_needed(
+  assert cast_gate.rolls_needed(
       cast: state,
       caster: support.caster().unit_id,
       cast_id: asked.cast_id,

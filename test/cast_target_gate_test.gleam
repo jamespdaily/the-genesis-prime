@@ -37,6 +37,7 @@
 import cast_support as support
 import genesis_prime/game/area.{type Pose}
 import genesis_prime/game/cast
+import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/state.{type Caster, type Effect, type Struck} as cast_state
 import genesis_prime/game/damage.{Formula, Parameter}
 import genesis_prime/game/effect_kind
@@ -326,7 +327,7 @@ pub fn a_caster_row_behind_a_type_37_target_gate_takes_one_roll_and_lands_when_i
       at: 1000,
     )
   let assert [asked] = support.goes_asked(effects: raw)
-  assert cast.rolls_needed(
+  assert cast_gate.rolls_needed(
       cast: state,
       caster: support.caster().unit_id,
       cast_id: asked.cast_id,
@@ -365,7 +366,7 @@ pub fn each_unit_a_row_past_the_caster_reaches_takes_a_roll_of_its_own_in_unit_o
     )
   let assert [asked] = support.goes_asked(effects: raw)
   let struck = support.hits([20, 21, 22])
-  assert cast.rolls_needed(
+  assert cast_gate.rolls_needed(
       cast: state,
       caster: support.caster().unit_id,
       cast_id: asked.cast_id,
@@ -374,7 +375,7 @@ pub fn each_unit_a_row_past_the_caster_reaches_takes_a_roll_of_its_own_in_unit_o
     )
     == 3
     as "Prerequisite 4585 is type 37 and the row reaches three units, each tested once: three rolls"
-  assert cast.rolls_needed(
+  assert cast_gate.rolls_needed(
       cast: state,
       caster: support.caster().unit_id,
       cast_id: asked.cast_id,
@@ -452,7 +453,7 @@ pub fn rolls_needed_counts_a_union_row_once_for_each_unit_it_reaches_test() -> N
     as "the parent's go starts the child, which asks for its own go"
   assert child_asked.primary_target == 20
     as "the child's primary target is the creature the parent struck"
-  assert cast.rolls_needed(
+  assert cast_gate.rolls_needed(
       cast: state,
       caster: support.caster().unit_id,
       cast_id: child_asked.cast_id,

@@ -21,7 +21,7 @@
 //// cast time and one Proxy.
 
 import cast_support as support
-import genesis_prime/game/cast
+import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/class_resource.{Gain}
 import genesis_prime/game/prerequisite
@@ -252,7 +252,7 @@ pub fn a_type_37_target_gate_of_a_proxy_on_the_caster_takes_one_roll_test() -> N
       gains: [],
     )
   let #(state, asked) = live_go_of(spell:)
-  assert cast.rolls_needed(
+  assert cast_gate.rolls_needed(
       cast: state,
       caster: support.caster().unit_id,
       cast_id: asked.cast_id,
@@ -314,7 +314,7 @@ pub fn a_go_takes_a_roll_for_each_type_37_condition_it_may_check_and_none_otherw
   use <- owned_test.run(5000)
   let needing = spell_with(proxies: [gated_on([chance_gate()])], gains: [])
   let #(state, asked) = live_go_of(spell: needing)
-  assert cast.rolls_needed(
+  assert cast_gate.rolls_needed(
       cast: state,
       caster: support.caster().unit_id,
       cast_id: asked.cast_id,
@@ -333,7 +333,7 @@ pub fn a_go_takes_a_roll_for_each_type_37_condition_it_may_check_and_none_otherw
       gains: [],
     )
   let #(state, asked) = live_go_of(spell: none)
-  assert cast.rolls_needed(
+  assert cast_gate.rolls_needed(
       cast: state,
       caster: support.caster().unit_id,
       cast_id: asked.cast_id,
@@ -346,7 +346,7 @@ pub fn a_go_takes_a_roll_for_each_type_37_condition_it_may_check_and_none_otherw
     live_go_of(
       spell: spell_with(proxies: [proxy(spell_plan.Always)], gains: []),
     )
-  assert cast.rolls_needed(
+  assert cast_gate.rolls_needed(
       cast: state,
       caster: support.caster().unit_id,
       cast_id: asked.cast_id,
@@ -356,7 +356,7 @@ pub fn a_go_takes_a_roll_for_each_type_37_condition_it_may_check_and_none_otherw
     == 0
     as "a Proxy with no gate takes none"
   let not_there =
-    cast.rolls_needed(
+    cast_gate.rolls_needed(
       cast: state,
       caster: support.caster().unit_id,
       cast_id: asked.cast_id + 1000,
@@ -431,7 +431,7 @@ pub fn a_gain_needs_both_its_gates_and_takes_a_roll_for_a_type_37_target_gate_te
       )),
     ])
   let #(state, asked) = live_go_of(spell:)
-  assert cast.rolls_needed(
+  assert cast_gate.rolls_needed(
       cast: state,
       caster: support.caster().unit_id,
       cast_id: asked.cast_id,

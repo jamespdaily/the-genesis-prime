@@ -81,6 +81,7 @@ import genesis_prime/game/activate
 import genesis_prime/game/area
 import genesis_prime/game/cast
 import genesis_prime/game/cast/frame as cast_frame
+import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection/absorption as connection_absorption
 import genesis_prime/game/connection/frames as connection_frames
@@ -1448,7 +1449,7 @@ fn strike_carried_out(
       ])
       strike.Went(asked:, struck:, gates_passed:), Some(entered) -> {
         let needed =
-          cast.rolls_needed(
+          cast_gate.rolls_needed(
             cast: entered.cast,
             caster: entered.unit_id,
             cast_id: asked.cast_id,
@@ -1460,7 +1461,7 @@ fn strike_carried_out(
         // A row aimed at the primary target reaches it though no hit names it (it
         // deflected the strike), and its target apply prerequisite reads that unit too.
         let unit_ids =
-          list.unique([asked.primary_target, ..cast.hit_units(struck:)])
+          list.unique([asked.primary_target, ..cast_gate.hit_units(struck:)])
         let #(updated, cast_effects_out) =
           cast.went(
             cast: entered.cast,

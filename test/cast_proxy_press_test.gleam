@@ -40,6 +40,7 @@ import fixture_tables
 import game_client
 import genesis_prime/client_connection.{CastStarted}
 import genesis_prime/game/cast
+import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/spell_plan.{type Plans, type Spell}
 import genesis_prime/step.{ConnectionId}
@@ -550,7 +551,7 @@ fn go_of(
     as "the press asks for exactly one go, its resolved spell's"
   #(
     asked.spell4_id.value,
-    cast.rolls_needed(
+    cast_gate.rolls_needed(
       cast: pressed,
       caster: support.caster().unit_id,
       cast_id: asked.cast_id,

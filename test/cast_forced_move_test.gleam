@@ -24,7 +24,7 @@
 ////   cast's node on the creature, so the node's end cancels one still waiting.
 
 import cast_support as support
-import genesis_prime/game/cast
+import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/state.{type State} as cast_state
 import genesis_prime/game/forced_move
 import genesis_prime/game/lasting.{LastingRow}
@@ -221,7 +221,7 @@ pub fn a_forced_move_behind_a_type_37_gate_takes_one_roll_and_is_listed_when_it_
         | cast_state.StealthChanged(..) -> Error(Nil)
       }
     })
-  assert cast.rolls_needed(
+  assert cast_gate.rolls_needed(
       cast: state,
       caster: support.caster().unit_id,
       cast_id: asked.cast_id,
@@ -457,7 +457,7 @@ pub fn a_throw_behind_a_type_37_gate_takes_one_roll_and_is_thrown_when_it_passes
       at: 1000,
     )
   let assert [asked] = support.goes_asked(effects: raw)
-  assert cast.rolls_needed(
+  assert cast_gate.rolls_needed(
       cast: state,
       caster: support.caster().unit_id,
       cast_id: asked.cast_id,
@@ -534,7 +534,7 @@ pub fn a_throw_behind_a_type_37_target_gate_takes_one_roll_for_each_creature_it_
     )
   let assert [asked] = support.goes_asked(effects: raw)
   let rolls_for = fn(struck) {
-    cast.rolls_needed(
+    cast_gate.rolls_needed(
       cast: state,
       caster: support.caster().unit_id,
       cast_id: asked.cast_id,

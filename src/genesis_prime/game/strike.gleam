@@ -109,7 +109,7 @@
 
 import genesis_prime/client_connection.{type News}
 import genesis_prime/game/area.{type Pose, Pose}
-import genesis_prime/game/cast
+import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/state.{type GoAsked, type Struck, type TickAsked} as cast_state
 import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
@@ -366,7 +366,7 @@ pub fn entropy_needed(selection selection: Selection) -> Int {
       let rolls =
         int.sum(
           list.map(conditions, fn(condition) {
-            cast.strike_rolls_needed(condition:, units:)
+            cast_gate.strike_rolls_needed(condition:, units:)
           }),
         )
       units * bytes_per_unit + rolls * prerequisite.roll_bytes

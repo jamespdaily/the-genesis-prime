@@ -27,6 +27,7 @@ import cast_support as support
 import crowd_control_support
 import genesis_prime/client_connection
 import genesis_prime/game/cast
+import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
 import genesis_prime/game/crowd_control
 import genesis_prime/game/lasting
@@ -466,7 +467,7 @@ pub fn a_restriction_behind_a_type_37_caster_gate_takes_one_roll_and_is_applied_
       at: 1000,
     )
   let assert [asked] = support.goes_asked(effects: raw)
-  assert cast.rolls_needed(
+  assert cast_gate.rolls_needed(
       cast: state,
       caster: support.caster().unit_id,
       cast_id: asked.cast_id,

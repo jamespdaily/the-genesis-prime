@@ -33,6 +33,7 @@ import client_tables
 import crowd_control_support
 import genesis_prime/client_connection
 import genesis_prime/game/cast
+import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/class_resource
 import genesis_prime/game/damage
@@ -881,7 +882,7 @@ pub fn a_fire_draws_no_roll_and_a_held_proc_changes_no_go_rolls_test() -> Nil {
       now: support.at(ms: 1000),
     )
   let assert [cast_state.Strike(passive_go)] = list.filter(started, is_strike)
-  assert cast.rolls_needed(
+  assert cast_gate.rolls_needed(
       cast: held,
       caster: support.caster().unit_id,
       cast_id: passive_go.cast_id,
@@ -911,7 +912,7 @@ pub fn a_fire_draws_no_roll_and_a_held_proc_changes_no_go_rolls_test() -> Nil {
       struck: [],
     )
   let assert [cast_state.Strike(stealth_go)] = list.filter(going, is_strike)
-  assert cast.rolls_needed(
+  assert cast_gate.rolls_needed(
       cast: state,
       caster: support.caster().unit_id,
       cast_id: stealth_go.cast_id,
