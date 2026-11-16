@@ -54,6 +54,7 @@
 import genesis_prime/game/unit_properties
 import genesis_prime/message/float32
 import genesis_prime/table/spell4_effects
+import gleam/bool
 import gleam/float
 import gleam/int
 import gleam/list
@@ -540,9 +541,9 @@ fn beyond_the_cap(
 
 /// The 32-bit quotient of two 32-bit floats: the exact 64-bit quotient rounded once to 32
 /// bits, as the client's single-precision divide gives. A divisor of 0.0 gives 0.0, as
-/// the client's test of each divisor against 0.0 does (`0x140565600`) and Gleam's `/.`
-/// does.
+/// the client's test of each divisor and of the cap against 0.0 does (`0x140565923`).
 fn quotient(left left: Float, right right: Float) -> Float {
+  use <- bool.guard(when: right == 0.0, return: 0.0)
   float32.rounded(value: left /. right)
 }
 
@@ -555,8 +556,8 @@ pub type Creature {
 }
 
 /// GameFormula 712's four values, which scale a creature's stat part
-/// (`0x140565600`): c = (level x `per_level` + `base`) x the mean of the stat
-/// parameters; a stat part above c grows only to ((1 - e^(-(S - c) / c)) x
+/// (`0x140565600`): c = (level x `per_level` + `base`) x the absolute value of the
+/// mean of the stat parameters; a stat part above c grows only to ((1 - e^(-(S - c) / c)) x
 /// `overflow` + 1) x c; and the stat and row parts are divided by `divisor`.
 pub type CreatureScaling {
   CreatureScaling(
@@ -625,17 +626,16 @@ pub fn creature_value(
 }
 
 /// The creature's cap c on the stat part, in 32-bit floats (`0x140565600`, `0x1405659f5`):
-/// (level x `per_level` + `base`) x the mean of the stat parameters' values, the level
-/// read as an unsigned 32-bit integer.
+/// (level x `per_level` + `base`) x |mean|, the level read as an unsigned 32-bit integer.
+/// The mean is taken over every parameter whose type is a stat type (1 to 5, 11, 12 or
+/// 13), a value of 0 included, and the absolute value is taken once, after the division;
+/// with no such parameter the mean is 0 (`0x140565683`, `0x1405657e3`).
 fn cap_of(
   formula formula: Formula,
   level level: Int,
   scaling scaling: CreatureScaling,
 ) -> Float {
-  let stat_parameters =
-    list.filter(formula.parameters, fn(parameter) {
-      parameter.kind == 1 || parameter.kind == 12
-    })
+  let stat_parameters = list.filter(formula.parameters, is_stat_parameter)
   let mean = case stat_parameters {
     [] -> 0.0
     _ ->
@@ -654,6 +654,13 @@ fn cap_of(
       ),
       right: scaling.base,
     ),
-    right: mean,
+    right: float.absolute_value(mean),
   )
+}
+
+/// Whether a parameter's type is one the cap's mean counts (`0x140565683`): 1 to 5, 11, 12
+/// or 13, the stat types of the stat part.
+fn is_stat_parameter(parameter: Parameter) -> Bool {
+  let kind = parameter.kind
+  { kind >= 1 && kind <= 5 } || { kind >= 11 && kind <= 13 }
 }

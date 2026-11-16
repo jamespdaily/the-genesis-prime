@@ -376,6 +376,116 @@ pub fn a_creature_formula_runs_in_32_bit_floats_test() -> Nil {
     as "under the cap S and R are divided apart, each a 32-bit float"
 }
 
+/// A creature at level 10 with the given Strength, GameFormula 712's shipped values
+/// (70, 100, 1, 1) except the divisor, for the cap tests: (10 x 70 + 100) = 800 times the
+/// absolute value of the mean of the formula's stat parameters.
+fn creature_value_of(
+  formula formula: damage.Formula,
+  strength strength: Float,
+  divisor divisor: Float,
+) -> Float {
+  damage.creature_value(
+    formula:,
+    creature: damage.Creature(level: 10, strength:, assault_power: 0.0),
+    scaling: damage.CreatureScaling(
+      per_level: 70.0,
+      base: 100.0,
+      overflow: 1.0,
+      divisor:,
+    ),
+    multiplier: 1.0,
+  )
+}
+
+pub fn a_creatures_cap_averages_every_stat_type_parameter_zero_included_test() -> Nil {
+  use <- owned_test.run(5000)
+  // 0x140565683: the cap's mean counts every parameter of type 1 to 5, 11, 12 or 13 and
+  // adds its value, so a type 2 parameter of value 0 halves a lone type 1's 1.0; a type 0
+  // parameter is left out of both. Level 10 gives 800 x the mean.
+  // Strength 600 (type 2 reads 0): with 1.0 and 0.0 the mean is 0.5 and c = 400, below
+  // S = 600, so S becomes ((1 - e^(-(600 - 400) / 400)) x 1 + 1) x 400 =
+  // 400 x (2 - e^-0.5) = 557.3877.
+  let with_a_zero_stat_parameter =
+    Formula(multiplier: 1.0, base: 0.0, parameters: [
+      Parameter(kind: 1, value: 1.0),
+      Parameter(kind: 2, value: 0.0),
+    ])
+  assert float.loosely_equals(
+    creature_value_of(
+      formula: with_a_zero_stat_parameter,
+      strength: 600.0,
+      divisor: 1.0,
+    ),
+    with: 557.3877,
+    tolerating: 0.001,
+  )
+    as "a zero-valued stat parameter still counts toward the mean"
+  // A type 0 parameter leaves the mean at 1.0: c = 800 is above S = 600, so S stays.
+  let with_a_type_zero_parameter =
+    Formula(multiplier: 1.0, base: 0.0, parameters: [
+      Parameter(kind: 1, value: 1.0),
+      Parameter(kind: 0, value: 0.0),
+    ])
+  assert creature_value_of(
+      formula: with_a_type_zero_parameter,
+      strength: 600.0,
+      divisor: 1.0,
+    )
+    == 600.0
+    as "a type 0 parameter is left out of the mean"
+}
+
+pub fn a_creatures_cap_is_the_absolute_value_of_the_mean_test() -> Nil {
+  use <- owned_test.run(5000)
+  // 0x1405657e3: the mean is masked to its absolute value once, after the division. A
+  // type 1 factor 2.0 and a type 2 factor -4.0 give a mean of -1.0, so c = 800 x 1.0.
+  // Strength 1000 gives S = 2000, above c, so S becomes
+  // 800 x (2 - e^(-(2000 - 800) / 800)) = 800 x (2 - e^-1.5) = 1421.4959. A negative
+  // cap of -800 would give a different value, and a mean of 2.0 (type 1 alone) a cap of
+  // 1600.
+  let formula =
+    Formula(multiplier: 1.0, base: 0.0, parameters: [
+      Parameter(kind: 1, value: 2.0),
+      Parameter(kind: 2, value: -4.0),
+    ])
+  assert float.loosely_equals(
+    creature_value_of(formula:, strength: 1000.0, divisor: 1.0),
+    with: 1421.4959,
+    tolerating: 0.001,
+  )
+    as "a negative mean gives a positive cap"
+}
+
+pub fn a_zero_divisor_makes_a_creatures_stat_and_row_parts_zero_test() -> Nil {
+  use <- owned_test.run(5000)
+  // 0x140565923: when GameFormula 712's fourth value is 0 the stat part and the row part
+  // are both 0, under the cap (S = 100 below c = 800) and beyond it (S = 1000), whatever
+  // the row's base (5.0 here would give R = 5).
+  let formula =
+    Formula(multiplier: 1.0, base: 5.0, parameters: [
+      Parameter(kind: 1, value: 1.0),
+    ])
+  assert creature_value_of(formula:, strength: 100.0, divisor: 0.0) == 0.0
+    as "under the cap a zero divisor gives 0"
+  assert creature_value_of(formula:, strength: 1000.0, divisor: 0.0) == 0.0
+    as "beyond the cap a zero divisor gives 0"
+}
+
+pub fn a_zero_cap_makes_a_creatures_stat_part_zero_test() -> Nil {
+  use <- owned_test.run(5000)
+  // 0x140565923: when the cap is 0 and S is above it the exponent is 0, so the factor is
+  // (1 - 1) x 1 + 1 = 1 and S becomes 1 x (0 / 1) = 0. A type 1 factor 1.0 and a type 2
+  // factor -1.0 give a mean of 0, so c = 0; Strength 50 gives S = 50. The row part is
+  // base 5.0 x multiplier 1.0, so the value is 0 + 5.
+  let formula =
+    Formula(multiplier: 1.0, base: 5.0, parameters: [
+      Parameter(kind: 1, value: 1.0),
+      Parameter(kind: 2, value: -1.0),
+    ])
+  assert creature_value_of(formula:, strength: 50.0, divisor: 1.0) == 5.0
+    as "a stat part above a zero cap is 0"
+}
+
 pub fn a_row_base_is_read_as_an_unsigned_32_bit_integer_test() -> Nil {
   use <- owned_test.run(5000)
   // 0x140565782: the base (dataBits01) is `mov eax, r9d; cvtsi2ss xmm10, rax`, an
