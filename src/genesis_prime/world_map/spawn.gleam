@@ -328,6 +328,20 @@ pub fn world_spawns(
   )
 }
 
+/// The spawns that go with a used object, for each creature spawn of the world
+/// whose creature a type 12 objective of the tables names (`quest_log.use_a_creature_type`,
+/// the objective's data): the spawns of the same world at the same x and z, within
+/// 0.01 m, whose own creature no type 12 objective names, in spawn id order. y is
+/// not compared, since a captive stands up to 1.3 m off its trap. A spawn with no
+/// such neighbour has no entry. The world's spawns hold creatures and static
+/// objects both, so a captive may be either.
+pub fn captives(
+  world world: WorldSpawns,
+  tables tables: table_store.Tables,
+) -> Dict(SpawnId, List(SpawnId)) {
+  todo as "#856: the spawns at the x and z of a used object's spawn"
+}
+
 /// A world with no spawn.
 pub fn no_spawns() -> WorldSpawns {
   WorldSpawns(by_id: dict.new(), objects: dict.new(), cells: spawn_cell.empty())

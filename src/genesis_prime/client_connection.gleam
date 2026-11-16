@@ -114,6 +114,13 @@ pub type Request {
   /// fail. Told only when the set changed, once per change, after the step's own
   /// frames; never asked.
   TellVisibilityChanged(connection: ConnectionId, hidden: Set(PrerequisiteId))
+  /// What a `Tell` effect sends the run of a map: a use of the unit `unit_id` by a
+  /// player credited a type 12 objective that counts each unit once
+  /// (genesis_prime/world_map/map `Released`, genesis_prime/game/objective
+  /// `credits_a_used_unit`), so the map takes the unit out of every player's sight
+  /// until the release time has passed. Told once per crediting use, after the
+  /// use's own frames; never asked.
+  TellReleased(unit_id: Int)
   /// What a `Tell` effect sends the connection of a player who sees this one
   /// (genesis_prime/step `Connection`): news of this player's unit, which that
   /// connection writes as 0x262, 0x638 or 0x355 when its client can take it, for

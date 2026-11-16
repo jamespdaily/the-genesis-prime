@@ -122,6 +122,31 @@
 //// CreatureNotStarted(w)        ─▶ error line; the spawn stays empty for the run
 //// ```
 ////
+//// A use releases a unit, a tell with no answer: the connection's count of the use
+//// credited a type 12 objective that counts each unit once, and the map ends the
+//// creature of the unit and the creatures at its x and z through the stop path of
+//// an idle one, then keeps the spawns waiting for the release time:
+////
+//// ```
+//// connection c1                 map                                         creature
+////   a use credited a type 12 objective (genesis_prime/game/objective `credits_a_used_unit`)
+////   Released(u)               ─▶ Told ─▶ u is a live creature's unit, spawn s:
+////                                         s and each spawn in `spawn.captives` of s, live:
+////                                           s becomes Releasing(u, life, release time)
+////                                           Send(Creature(.., u, life), Retire) ─────▶ Stop
+////                                         u is no live creature's unit (a second release, or a unit the map
+////                                         does not hold): nothing; a static object's unit: an info line,
+////                                         nothing changes
+//// WatchEnded(life) of a Releasing creature
+////                              ─▶ Gone(u) to every player in the map; u is given up
+////                                 s becomes WaitingForRestart; StartServiceTimer(s's number, the release time)
+//// the spawn's timer fires      ─▶ restart_due: players see the spawn now: a new unit id, a creature
+////                                 as for a dormant spawn; none: dormant
+//// the new creature dies        ─▶ its kind's respawn time, as every creature's: the release time is
+////                                 spent with the one restart
+//// a map that restarts          ─▶ rebuilt from storage: every spawn starts at once, the release is lost
+//// ```
+////
 //// The rings: which ready players stand within a hostile creature's aggro range, so
 //// the creature can fight them (genesis_prime/world_map/creature_fight). Decided on
 //// each `Moved` beside the spawns in sight:
@@ -353,7 +378,7 @@
 ////   (`viewers`), so the two always agree.
 //// - **A creature** is a process of its own (genesis_prime/world_map/creature):
 ////   the map keeps, for each spawn that is not dormant, whether its creature is
-////   live, retiring, waiting for its restart or failed (`SpawnState`), and sends it
+////   live, retiring, released, waiting for its restart or failed (`SpawnState`), and sends it
 ////   `Watched`, `Unwatched` and `Retire`, so the creature sends the 0x262 and the
 ////   0x355 of its own unit itself and decides nothing about its own life. Sight of
 ////   a creature is decided at its spawn's place, also while it runs (at most the
@@ -642,6 +667,15 @@ pub type Message {
   /// sent nothing. Taken only from a connection that is in the map, and a set equal
   /// to the one held changes nothing.
   VisibilityChanged(connection: ConnectionId, hidden: Set(PrerequisiteId))
+  /// A player's use of the unit `unit_id` credited a type 12 objective that counts
+  /// each unit once (genesis_prime/game/objective `credits_a_used_unit`): the
+  /// spawn of that unit, and each spawn standing at its x and z (`spawn.captives`),
+  /// vanish for every player in the map and stand again after the release time
+  /// (`GameNumbers.used_object_release_ms`) under new unit ids. A tell, with no
+  /// answer. A unit with no live creature in the map changes nothing (a second
+  /// release of it, or a unit the map does not hold), and the unit of a static
+  /// object stays where it is, with an info line.
+  Released(unit_id: Int)
   /// A development command of the connection's player: start `creature_id` as a
   /// run-only spawn at the place and facing the map holds for the player, and
   /// show it to the players who see that place, at `level` when there is one and
@@ -799,6 +833,12 @@ pub type SpawnState {
   /// The creature was told `Retire` and has not ended. The players who see the
   /// spawn meanwhile are the players whose `seen` holds it, found when it ends.
   Retiring(unit_id: Int, life: Int)
+  /// The creature was told `Retire` because a player's use released its unit
+  /// (`Released`) and has not ended. When it ends, every player is sent `Gone` and
+  /// the spawn waits `wait_ms`, the release time, in place of its kind's respawn
+  /// time: the override lasts this one restart, since the spawn's next creature
+  /// is `Live` with no override.
+  Releasing(unit_id: Int, life: Int, wait_ms: Int)
   /// The creature crashed: the unit was sent `Gone`, and the spawn's restart
   /// timer runs.
   WaitingForRestart
@@ -1006,6 +1046,7 @@ pub fn step(
         hidden:,
         now_ms: input.now.monotonic_ms,
       )
+    OwnEvent(Told(message: Released(unit_id:))) -> released(state:, unit_id:)
     OwnEvent(Asked(caller:, message: Summon(connection:, creature_id:, level:))) ->
       summoned(state:, caller:, connection:, creature_id:, level:)
     OwnEvent(Asked(message: Moved(..), ..))
@@ -1013,10 +1054,11 @@ pub fn step(
     | OwnEvent(Asked(message: StealthChanged(..), ..))
     | OwnEvent(Asked(message: LifeChanged(..), ..))
     | OwnEvent(Asked(message: VisibilityChanged(..), ..))
+    | OwnEvent(Asked(message: Released(..), ..))
     | OwnEvent(Told(message: Join(..)))
     | OwnEvent(Told(message: Leave(..)))
     | OwnEvent(Told(message: Summon(..))) ->
-      panic as "a map is asked Join, Leave and Summon and told Moved, Ready, StealthChanged, LifeChanged and VisibilityChanged only"
+      panic as "a map is asked Join, Leave and Summon and told Moved, Ready, StealthChanged, LifeChanged, VisibilityChanged and Released only"
     WatchEnded(watch:) ->
       case dict.get(state.creature_watches, watch) {
         Ok(spawn) -> creature_ended(state:, spawn:, watch:)
@@ -1292,7 +1334,8 @@ fn swept(
         Live(unit_id:, life:, idle_since_ms: Some(since_ms), ..)
           if now_ms - since_ms >= state.settings.idle_stop_ms
         -> Ok(#(entry.0, unit_id, life))
-        Live(..) | Retiring(..) | WaitingForRestart | Failed -> Error(Nil)
+        Live(..) | Retiring(..) | Releasing(..) | WaitingForRestart | Failed ->
+          Error(Nil)
       }
     })
     |> list.filter(fn(idle) { !dict.has_key(state.run_spawns, idle.0) })
@@ -1370,8 +1413,10 @@ fn creature_ended(
       )
     }
     Ok(Retiring(..)) -> started_for_those_who_see(state:, spawn:)
+    Ok(Releasing(unit_id:, wait_ms:, ..)) ->
+      released_ended(state:, spawn:, unit_id:, wait_ms:)
     Ok(WaitingForRestart) | Ok(Failed) | Error(Nil) ->
-      panic as "a watch ended for a creature the map holds no live or retiring spawn for"
+      panic as "a watch ended for a creature the map holds no live, retiring or released spawn for"
   }
 }
 
@@ -1398,9 +1443,40 @@ fn restart_due(
 ) -> #(State, ServiceStep(Outgoing)) {
   case dict.get(state.spawns, spawn) {
     Ok(WaitingForRestart) -> started_for_those_who_see(state:, spawn:)
-    Ok(Live(..)) | Ok(Retiring(..)) | Ok(Failed) | Error(Nil) ->
+    Ok(Live(..))
+    | Ok(Retiring(..))
+    | Ok(Releasing(..))
+    | Ok(Failed)
+    | Error(Nil) ->
       panic as "a restart timer fired for a spawn that does not wait for one"
   }
+}
+
+/// A player's use released the unit `unit_id` (`Released`). A live creature's
+/// spawn becomes `Releasing` with the release time as its wait and its creature is
+/// told `Retire`, as the sweep tells an idle one, and so are the live creatures of
+/// the spawns that stand at its x and z (`spawn.captives`, found when the map was
+/// built); `creature_ended` then sends everyone `Gone`. A unit with no live spawn
+/// (a second release of it, or one the map no longer holds) changes nothing, and a
+/// static object's unit is left in place with an info line.
+fn released(
+  state state: State,
+  unit_id unit_id: Int,
+) -> #(State, ServiceStep(Outgoing)) {
+  todo as "#856: a release ends a live creature and its captives through Retire"
+}
+
+/// The `Releasing` creature of the spawn ended, whether it stopped at once or at
+/// its corpse timer: every player is sent `Gone` of its unit, the unit id is given
+/// up, and the spawn's restart timer starts for `wait_ms` in place of its kind's
+/// respawn time; `restart_due` then starts a creature there under a new unit id.
+fn released_ended(
+  state state: State,
+  spawn spawn: SpawnId,
+  unit_id unit_id: Int,
+  wait_ms wait_ms: Int,
+) -> #(State, ServiceStep(Outgoing)) {
+  todo as "#856: a released creature ends, its spawn waits the release time"
 }
 
 /// The spawn is dormant when no player sees it from where it stands, and
@@ -1443,7 +1519,11 @@ fn approaches_at_start(
           message: approached(state:, connection: player.0, player: player.1),
         )
       })
-    Ok(Retiring(..)) | Ok(WaitingForRestart) | Ok(Failed) | Error(Nil) -> []
+    Ok(Retiring(..))
+    | Ok(Releasing(..))
+    | Ok(WaitingForRestart)
+    | Ok(Failed)
+    | Error(Nil) -> []
   }
 }
 
@@ -1774,7 +1854,10 @@ fn spawns_decided(
             ..sends
           ],
         )
-        Ok(Retiring(..)) | Ok(WaitingForRestart) | Ok(Failed) -> held
+        Ok(Retiring(..))
+        | Ok(Releasing(..))
+        | Ok(WaitingForRestart)
+        | Ok(Failed) -> held
       }
     })
   let #(state, sends) =
@@ -1807,10 +1890,11 @@ fn spawns_decided(
             ],
           )
         }
-        Ok(Retiring(..)) | Ok(WaitingForRestart) | Ok(Failed) | Error(Nil) -> #(
-          state,
-          sends,
-        )
+        Ok(Retiring(..))
+        | Ok(Releasing(..))
+        | Ok(WaitingForRestart)
+        | Ok(Failed)
+        | Error(Nil) -> #(state, sends)
       }
     })
   #(state, list.append(list.reverse(starts), list.reverse(sends)))
@@ -2194,7 +2278,11 @@ fn tell_live(
     Ok(Live(unit_id:, life:, ..)) -> [
       tell_creature(state:, unit_id:, life:, message:),
     ]
-    Ok(Retiring(..)) | Ok(WaitingForRestart) | Ok(Failed) | Error(Nil) -> []
+    Ok(Retiring(..))
+    | Ok(Releasing(..))
+    | Ok(WaitingForRestart)
+    | Ok(Failed)
+    | Error(Nil) -> []
   }
 }
 

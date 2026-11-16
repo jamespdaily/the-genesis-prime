@@ -264,6 +264,22 @@ pub fn use_targets(
   }
 }
 
+/// Whether the event is a use that credits an open type 12 objective of the log that
+/// counts each unit once (`quest_log.counted_by_unit`, so none of the `reused`
+/// objectives): the use counts for it (`counts`) and its unit has not counted
+/// already (`counted_already`). Asked of the log before the event is counted, since
+/// the count can close the objective. A use that credits only a type 12 objective
+/// that counts the same unit again, a checklist or group objective, or nothing, is
+/// not one, and neither is an event that is not a use.
+pub fn credits_a_used_unit(
+  log log: QuestLog,
+  tables tables: table_store.Tables,
+  event event: Event,
+  reused reused: Set(Int),
+) -> Bool {
+  todo as "#856: a use that credits a type 12 objective that counts each unit once"
+}
+
 fn counted_by(
   log log: QuestLog,
   tables tables: table_store.Tables,

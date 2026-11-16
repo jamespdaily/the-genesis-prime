@@ -105,9 +105,9 @@ import genesis_prime/client_connection.{
   AskMapRun, AskSessions, AskStore, ChangeEnds, ChangeStarts, ForStay,
   FromHandOff, FromMap, FromSessions, FromStore, SentByChat, SentByFoe,
   SentByKill, SentByMap, SentByPeer, SentBySessions, SentByTarget, TellChat,
-  TellLifeChanged, TellMoved, TellPeer, TellReady, TellStealthChanged,
-  TellStrike, TellStrikeAnswered, TellTargetChange, TellTargetMoved, TellThrown,
-  TellVisibilityChanged,
+  TellLifeChanged, TellMoved, TellPeer, TellReady, TellReleased,
+  TellStealthChanged, TellStrike, TellStrikeAnswered, TellTargetChange,
+  TellTargetMoved, TellThrown, TellVisibilityChanged,
 }
 import genesis_prime/connection/closer
 import genesis_prime/connection/listener.{Listener}
@@ -362,6 +362,7 @@ fn directory(settings: Settings) -> Directory {
       | TellStealthChanged(..)
       | TellLifeChanged(..)
       | TellVisibilityChanged(..)
+      | TellReleased(..)
       | TellPeer(..)
       | TellChat(..)
       | TellStrike(..)
@@ -471,6 +472,7 @@ fn tell_the_connection(pid pid: process.Pid, request request: Request) -> Nil {
     | TellStealthChanged(..)
     | TellLifeChanged(..)
     | TellVisibilityChanged(..)
+    | TellReleased(..)
     | TellPeer(..)
     | TellStrike(..)
     | TellTargetMoved(..)
@@ -526,6 +528,10 @@ pub fn tell_the_run(
     TellLifeChanged(connection:, alive:) -> {
       let _sent =
         service.tell_subject(subject, map.LifeChanged(connection:, alive:))
+      Nil
+    }
+    TellReleased(unit_id:) -> {
+      let _sent = service.tell_subject(subject, map.Released(unit_id:))
       Nil
     }
     TellPeer(..)
@@ -611,6 +617,7 @@ fn creature_told(request: Request) -> Result(creature.Message, Nil) {
     | TellStealthChanged(..)
     | TellLifeChanged(..)
     | TellVisibilityChanged(..)
+    | TellReleased(..)
     | AskStore(..)
     | AskHandOff(..)
     | AskSessions(..)
@@ -660,6 +667,7 @@ fn connection_deliver(
       | TellStealthChanged(..), _
       | TellLifeChanged(..), _
       | TellVisibilityChanged(..), _
+      | TellReleased(..), _
       | AskStore(..), _
       | AskHandOff(..), _
       | AskSessions(..), _
