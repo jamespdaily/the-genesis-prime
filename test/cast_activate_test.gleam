@@ -1678,23 +1678,60 @@ pub fn a_started_answer_changes_nothing_test() -> Nil {
   assert_went_and_finished(effects:)
 }
 
-pub fn a_timed_interaction_goes_at_its_cast_time_after_an_early_answer_test() -> Nil {
+pub fn a_timed_interaction_goes_when_an_early_answer_succeeds_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, pressed) =
     click_terminal(state: cast.new(), creature: timed_terminal(), at: 0)
   let id = support.pressed_id(effects: pressed)
-  let #(state, early) =
+  let assert [#(go_timer, 2000)] = support.started_timers(effects: pressed)
+    as "opcode.0x7ff.csi_cast_bar: the cast's time is the creature's activateSpellCastTime, 2000, and its go waits on one timer"
+  let #(_, early) =
     answered_ok(
       state:,
       cast_id: id,
       result: interaction_result.Succeeded,
       at: 500,
     )
-  assert_nothing_happened(effects: early)
-  let #(_, steps) = support.run_timers(state:, effects: pressed, from_ms: 0)
-  assert list.map(steps, fn(step) { step.0 }) == [2000]
-    as "opcode.0x7ff.csi_cast_bar: the cast's time is the creature's activateSpellCastTime, 2000"
-  assert_went_and_finished(effects: flattened(steps:))
+  assert_went_and_finished(effects: early)
+  assert support.finished_ids(support.writes(effects: early)) == [id]
+    as "the finish names the cast"
+  assert support.cancelled_timers(effects: early) == [go_timer]
+    as "the go that happened at the answer cancels the go that waited for the cast time"
+}
+
+pub fn an_activate_right_after_an_early_success_is_accepted_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, pressed) =
+    click_terminal(state: cast.new(), creature: timed_terminal(), at: 0)
+  let #(state, _) =
+    answered_ok(
+      state:,
+      cast_id: support.pressed_id(effects: pressed),
+      result: interaction_result.Succeeded,
+      at: 500,
+    )
+  let #(_, next) = click_terminal(state:, creature: timed_terminal(), at: 650)
+  assert support.refusal_results(effects: next) == []
+    as "the live sitting's second right-click, 153 ms after the client's success, was refused SpellAlreadyCasting (13) while the go waited: after the early go nothing is live"
+  assert support.ids(frames: support.writes(effects: next)) == [0x07FD]
+    as "opcode.0x7fd.csi: the second right-click is confirmed and its cast starts"
+}
+
+pub fn a_cancelled_go_timer_firing_after_an_early_success_does_nothing_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, pressed) =
+    click_terminal(state: cast.new(), creature: timed_terminal(), at: 0)
+  let assert [#(go_timer, 2000)] = support.started_timers(effects: pressed)
+    as "the go waits on one timer"
+  let #(state, _) =
+    answered_ok(
+      state:,
+      cast_id: support.pressed_id(effects: pressed),
+      result: interaction_result.Succeeded,
+      at: 500,
+    )
+  let #(_, late) = support.fired(state:, timer: go_timer, at: 2000)
+  assert_nothing_happened(effects: late)
 }
 
 pub fn a_timed_interaction_waits_for_the_answer_after_its_cast_time_test() -> Nil {
@@ -1810,15 +1847,16 @@ pub fn an_answer_naming_no_waiting_interaction_is_refused_test() -> Nil {
       result: interaction_result.Succeeded,
       at: 1200,
     )
-  assert answered(
+  let assert Ok(#(_, repeated)) =
+    answered(
       state: answered_once,
       cast_id: id,
       result: interaction_result.Succeeded,
       word: the_terminals_word,
       at: 1300,
     )
-    == Error(cast.NoInteractionWaits(cast_id: id))
-    as "csi.ends: one interaction sends exactly one of 0, 1 or 2, so a second answer after the 1 names no waiting interaction"
+    as "csi.ends: one interaction sends exactly one of 0, 1 or 2, and the 1 sent the go and the finish, so a second answer names a cast that is not live and is dropped"
+  assert_nothing_happened(effects: repeated)
 }
 
 pub fn an_answer_result_the_client_never_sends_is_refused_test() -> Nil {
@@ -1961,6 +1999,27 @@ pub fn a_held_press_starts_when_the_answer_succeeds_test() -> Nil {
   assert list.take(support.ids(frames: support.writes(effects:)), 3)
     == [0x07F4, 0x07FE, 0x07FD]
     as "the go and the finish end the cast, and the held press starts after them (cast.press_queue)"
+}
+
+pub fn a_held_press_starts_when_an_early_answer_succeeds_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, pressed) =
+    click_terminal(state: cast.new(), creature: timed_terminal(), at: 0)
+  let id = support.pressed_id(effects: pressed)
+  let #(state, held) = pressed_electrocute(state:, at: 1800)
+  assert support.writes(effects: held) == []
+    && support.refusal_results(effects: held) == []
+    as "cast.press_queue: 200 ms of the bar are left, within the queue window: the press is held"
+  let #(_, effects) =
+    answered_ok(
+      state:,
+      cast_id: id,
+      result: interaction_result.Succeeded,
+      at: 1900,
+    )
+  assert list.take(support.ids(frames: support.writes(effects:)), 3)
+    == [0x07F4, 0x07FE, 0x07FD]
+    as "the go and the finish end the cast before its time, and the held press starts after them (cast.press_queue)"
 }
 
 pub fn a_held_press_starts_when_the_answer_fails_test() -> Nil {

@@ -1166,8 +1166,8 @@ pub type Activating {
 }
 
 /// Where the client's interaction of an activate or shortcut cast stands: the go of a
-/// castMethod 5 spell waits for both the cast time and the client's answer 1
-/// (`opcode.0x805.fields`).
+/// castMethod 5 spell waits for the client's answer 1 (`opcode.0x805.fields`), which
+/// sends it at once, and for the answer after the cast time when that has run first.
 pub type Interaction {
   /// The spell is not of castMethod 5: its go waits for the cast time alone.
   NoInteraction
@@ -5007,8 +5007,8 @@ fn cancelled(
 }
 
 /// The client's 0x805, the answer of the interaction an activate cast of castMethod 5
-/// opened (`opcode.0x805.fields`): 3 says it began and changes nothing; 1 lets the go
-/// happen once the cast time has run; 0 and 2 fail the cast with 146
+/// opened (`opcode.0x805.fields`): 3 says it began and changes nothing; 1 sends the go
+/// at once, cancelling the go that waited for the cast time; 0 and 2 fail the cast with 146
 /// (ClientSideInteractionFail), which ends it with no go. An answer for a cast that is not
 /// live is dropped, since the client sends 0 when a finish closes its window
 /// (`opcode.0x7fe.csi`); one for a live cast that waits for no answer, one that names
@@ -5089,10 +5089,10 @@ fn answer_taken(
       let succeeded = Live(..live, interaction: AnswerSucceeded)
       let cast =
         State(..cast, casts: dict.insert(cast.casts, cast_id, succeeded))
-      case go_waits(cast:, cast_id:) {
-        True -> Ok(#(cast, []))
-        False -> Ok(asked(cast:, caster:, now_ms:, cast_id:, phase: 0))
-      }
+      let #(cast, cancelled) =
+        cancel_timers(cast:, matching: fn(due) { due == Go(cast_id:, phase: 0) })
+      let #(cast, going) = asked(cast:, caster:, now_ms:, cast_id:, phase: 0)
+      Ok(#(cast, list.append(cancelled, going)))
     }
     interaction_result.Failed | interaction_result.CancelledBeforeStart ->
       Ok(persistence_end(

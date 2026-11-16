@@ -23,6 +23,7 @@
 ////   server writes no 0x933.
 
 import connection_rule_support as support
+import fixture_tables
 import game_connection_support as connection_support
 import genesis_prime/client_connection
 import genesis_prime/connection/frame.{type Frame}
@@ -48,6 +49,7 @@ import genesis_prime/world_map/static_object.{type Created, StaticObject}
 import gleam/list
 import gleam/option
 import owned_test
+import planted_table
 import quest_support
 import spawn_support
 import vendor_support
@@ -272,6 +274,67 @@ pub fn an_interaction_answer_reaches_the_cast_rule_test() -> Nil {
   assert connection_support.written_ids(answered)
     == [0x07F4, 0x07FE, 0x0361, 0x0361, 0x035C]
     as "opcode.0x805, opcode.0x7f4: the answer 1 sends the go and the finish to the player, and the terminal's travel and choice objectives count (QuestObjective.type.23): two progress frames and the quest's state"
+}
+
+pub fn a_rapid_tap_success_before_the_cast_time_goes_at_once_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The terminal's activateSpellCastTime is 0; a client row with castMethod 5 and a
+  // cast time is Creature2 27768 (the Bramble Trap), which the fixture does not hold.
+  use tables <- fixture_tables.changed(table: "Creature2", id: 73_605, with: [
+    #("activateSpellCastTime", planted_table.Integer(2000)),
+  ])
+  let #(entered, _) =
+    connection_support.entered_with_quests_on(tables:, quests: [
+      quest_support.active(
+        10_528,
+        state: 1,
+        placeholder: 0,
+        tracked: False,
+        done_mask: 1,
+        progress: [1, 0, 0, 0, 0],
+      ),
+    ])
+  let #(seeing, _) =
+    connection_support.feed(
+      entered,
+      connection_support.sent_by_the_map(ObjectsSeen(units: [terminal()])),
+    )
+  let #(clicked, started) =
+    connection_support.read(
+      state: seeing,
+      bytes: right_click_bytes(client_cast_id: clients_cast_id, unit_id: nearby),
+    )
+  assert connection_support.written_ids(started) == confirmed_start
+    as "opcode.0x7fd.csi: the right-click writes the start and no go"
+  assert list.length(support.timers_started(started)) == 1
+    as "Creature2 73605 with activateSpellCastTime 2000: the go waits on the cast time's timer"
+  let assert [confirmed] =
+    list.filter(
+      connection_support.heard(
+        taken: started,
+        cipher: connection_support.keyed(),
+      ),
+      fn(frame) { frame.message_id == spell_cast_confirmed.message_id },
+    )
+  let assert Ok(confirmed) = spell_cast_confirmed.decode(confirmed.body)
+  let assert Ok(body) =
+    client_side_interaction_result.encode(ClientSideInteractionResult(
+      cast_id: confirmed.server_cast_id,
+      result: interaction_result.Succeeded,
+      spell4_base_id_plus_one: 20_652,
+    ))
+    as "the answer fits the message"
+  let #(_, answered) =
+    connection_support.read(
+      state: clicked,
+      bytes: connection_support.world_message(
+        message_id: client_side_interaction_result.message_id,
+        body:,
+      ),
+    )
+  assert connection_support.written_ids(answered)
+    == [0x07F4, 0x07FE, 0x0361, 0x0361, 0x035C]
+    as "opcode.0x805, opcode.0x7f4: the answer 1 at once, with the cast time not run, sends the go and the finish, and the objectives count"
 }
 
 /// Creature2 11070, a Trapped Survivor: activate spell 1817 behind its quest's link,
