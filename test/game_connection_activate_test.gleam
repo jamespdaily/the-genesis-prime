@@ -23,8 +23,9 @@
 ////   server writes no 0x933.
 
 import connection_rule_support as support
+import fixture_tables
 import game_connection_support as connection_support
-import genesis_prime/client_connection
+import genesis_prime/client_connection.{type Request}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/cast
 import genesis_prime/game/connection as game_connection
@@ -39,7 +40,8 @@ import genesis_prime/message/client_side_interaction_result.{
 import genesis_prime/message/interaction_result
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_go
-import genesis_prime/step
+import genesis_prime/step.{type ConnectionStep}
+import genesis_prime/store.{type QuestRow}
 import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/world_map/creature_life
 import genesis_prime/world_map/creature_path
@@ -48,6 +50,7 @@ import genesis_prime/world_map/static_object.{type Created, StaticObject}
 import gleam/list
 import gleam/option
 import owned_test
+import planted_table
 import quest_support
 import spawn_support
 import vendor_support
@@ -211,31 +214,29 @@ fn terminal() -> Created {
   )
 }
 
-pub fn an_interaction_answer_reaches_the_cast_rule_test() -> Nil {
-  use <- owned_test.run(10_000)
-  assert routing.route(
-      routing.AtWorld,
-      routing.InsideWorldMessage,
-      client_side_interaction_result.message_id,
-    )
-    == Ok(routing.Cast(message: cast.Answered))
-    as "opcode.0x805: a 0x805 inside 0x038C is a cast row in the world"
-  // The terminal's Prerequisite 41793 (the objective 1 of quest 10528 open, or quest
-  // 10528 in state 2 or 3) is its anim prerequisite column, so the client offers it
-  // only to a player whose objective 1 of quest 10528 is open, and the player here holds
-  // the quest Accepted with objective 0 done.
+/// The quest that makes the Departures Terminal offered. Its Prerequisite 41793 (the objective 1
+/// of quest 10528 open, or quest 10528 in state 2 or 3) is the anim prerequisite column, so the
+/// client offers the terminal only to a player whose objective 1 of quest 10528 is open: the
+/// quest here is Accepted with objective 0 done.
+fn the_terminals_quest() -> QuestRow {
+  quest_support.active(
+    10_528,
+    state: 1,
+    placeholder: 0,
+    tracked: False,
+    done_mask: 1,
+    progress: [1, 0, 0, 0, 0],
+  )
+}
+
+/// The player in the world sees the terminal, right-clicks it, and the client answers the
+/// interaction 1: the step of the right-click and the step of the answer.
+fn terminal_clicked_and_answered(
+  entered entered: game_connection.State,
+) -> #(ConnectionStep(Request), ConnectionStep(Request)) {
   let #(seeing, _) =
     connection_support.feed(
-      connection_support.in_world_as_exile_holding(quests: [
-        quest_support.active(
-          10_528,
-          state: 1,
-          placeholder: 0,
-          tracked: False,
-          done_mask: 1,
-          progress: [1, 0, 0, 0, 0],
-        ),
-      ]),
+      entered,
       connection_support.sent_by_the_map(ObjectsSeen(units: [terminal()])),
     )
   let #(clicked, started) =
@@ -244,7 +245,7 @@ pub fn an_interaction_answer_reaches_the_cast_rule_test() -> Nil {
       bytes: right_click_bytes(client_cast_id: clients_cast_id, unit_id: nearby),
     )
   assert connection_support.written_ids(started) == confirmed_start
-    as "opcode.0x7fd.csi: the right-click of the terminal writes the start, and no go yet: the cast waits for the client's answer"
+    as "opcode.0x7fd.csi: the right-click of the terminal writes the start, and no go: the cast waits for the client's answer"
   let assert [confirmed] =
     list.filter(
       connection_support.heard(
@@ -269,9 +270,46 @@ pub fn an_interaction_answer_reaches_the_cast_rule_test() -> Nil {
         body:,
       ),
     )
+  #(started, answered)
+}
+
+pub fn an_interaction_answer_reaches_the_cast_rule_test() -> Nil {
+  use <- owned_test.run(10_000)
+  assert routing.route(
+      routing.AtWorld,
+      routing.InsideWorldMessage,
+      client_side_interaction_result.message_id,
+    )
+    == Ok(routing.Cast(message: cast.Answered))
+    as "opcode.0x805: a 0x805 inside 0x038C is a cast row in the world"
+  let #(_, answered) =
+    terminal_clicked_and_answered(
+      entered: connection_support.in_world_as_exile_holding(quests: [
+        the_terminals_quest(),
+      ]),
+    )
   assert connection_support.written_ids(answered)
     == [0x07F4, 0x07FE, 0x0361, 0x0361, 0x035C]
     as "opcode.0x805, opcode.0x7f4: the answer 1 sends the go and the finish to the player, and the terminal's travel and choice objectives count (QuestObjective.type.23): two progress frames and the quest's state"
+}
+
+pub fn a_rapid_tap_success_before_the_cast_time_goes_at_once_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The terminal's activateSpellCastTime is 0; a client row with castMethod 5 and a
+  // cast time is Creature2 27768 (the Bramble Trap), which the fixture does not hold.
+  use tables <- fixture_tables.changed(table: "Creature2", id: 73_605, with: [
+    #("activateSpellCastTime", planted_table.Integer(2000)),
+  ])
+  let #(entered, _) =
+    connection_support.entered_with_quests_on(tables:, quests: [
+      the_terminals_quest(),
+    ])
+  let #(started, answered) = terminal_clicked_and_answered(entered:)
+  assert list.length(support.timers_started(started)) == 1
+    as "Creature2 73605 with activateSpellCastTime 2000: the go waits on the cast time's timer"
+  assert connection_support.written_ids(answered)
+    == [0x07F4, 0x07FE, 0x0361, 0x0361, 0x035C]
+    as "opcode.0x805, opcode.0x7f4: the answer 1 at once, with the cast time not run, sends the go and the finish, and the objectives count"
 }
 
 /// Creature2 11070, a Trapped Survivor: activate spell 1817 behind its quest's link,
