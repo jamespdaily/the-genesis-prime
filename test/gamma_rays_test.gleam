@@ -56,6 +56,7 @@ fn gamma_caster(x x: Float, z z: Float, yaw yaw: Float) -> Attacker {
     hit_radius: place_support.player_hit_radius,
     faction: Exile,
     stats: attacker_support.fresh(),
+    vitals: attacker_support.novice_vitals(),
     properties: properties_support.fresh(level: 1),
   )
 }

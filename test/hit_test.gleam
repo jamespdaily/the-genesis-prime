@@ -19,9 +19,10 @@
 ////   server's choice (the effect type's gap).
 //// - ShieldMitigationMax is 0.625 for a Novice (`player.level1_gear_properties`).
 
+import genesis_prime/game/damage
 import genesis_prime/game/hit.{
   type Defence, type Offence, type Rolls, Blow, Defence, Deflected, Landed,
-  Offence, Rolls,
+  Offence, Rolls, Worked,
 }
 import genesis_prime/game/unit_properties
 import genesis_prime/message/combat_result
@@ -33,6 +34,11 @@ import gleam/list
 import owned_test
 import player_life_support
 import qcheck
+
+/// A target with `health` and `shield`, whose maxima are what it holds.
+fn vitals(health health: Int, shield shield: Int) -> damage.Vitals {
+  damage.Vitals(health:, max_health: health, shield:, max_shield: shield)
+}
 
 const beast =
   Defence(
@@ -74,9 +80,8 @@ pub fn health_stays_in_range_and_killed_is_set_exactly_at_zero_test() -> Nil {
       let #(health, damage) = drawn
       let assert Landed(descriptions: [description], health: left, killed:, ..) =
         hit.apply(
-          shield: 0,
+          target: vitals(health: health, shield: 0),
           absorbs: [],
-          health:,
           offence: player_life_support.offence_of(
             damage:,
             damage_type: 3,
@@ -99,9 +104,8 @@ pub fn a_crit_lands_only_when_its_roll_is_below_the_crit_chance_test() -> Nil {
   let struck = fn(roll) {
     let assert Landed(descriptions: [description], ..) =
       hit.apply(
-        shield: 0,
+        target: vitals(health: 100, shield: 0),
         absorbs: [],
-        health: 100,
         offence: player_life_support.offence_of(
           damage: 18,
           damage_type: 3,
@@ -123,9 +127,8 @@ pub fn a_deflect_lands_when_its_roll_is_below_the_targets_chance_test() -> Nil {
   use <- owned_test.run(5000)
   let by = fn(roll) {
     hit.apply(
-      shield: 0,
+      target: vitals(health: 52, shield: 0),
       absorbs: [],
-      health: 52,
       offence: player_life_support.offence_of(
         damage: 18,
         damage_type: 3,
@@ -151,9 +154,8 @@ pub fn strikethrough_takes_off_the_deflect_chance_and_crit_deflect_the_crit_chan
       strikethrough: 0.016,
     )
   assert hit.apply(
-      shield: 0,
+      target: vitals(health: 52, shield: 0),
       absorbs: [],
-      health: 52,
       offence: piercing,
       defence: beast,
       rolls: Rolls(..no_luck, deflect: 0.0),
@@ -162,9 +164,8 @@ pub fn strikethrough_takes_off_the_deflect_chance_and_crit_deflect_the_crit_chan
     as "0.016 deflect less 0.016 strikethrough is 0"
   let assert Landed(descriptions: [description], ..) =
     hit.apply(
-      shield: 0,
+      target: vitals(health: 52, shield: 0),
       absorbs: [],
-      health: 52,
       offence: player_life_support.offence_of(
         damage: 18,
         damage_type: 3,
@@ -181,9 +182,8 @@ pub fn a_glance_takes_the_glance_amount_off_the_damage_test() -> Nil {
   use <- owned_test.run(5000)
   let assert Landed(descriptions: [description], health:, ..) =
     hit.apply(
-      shield: 0,
+      target: vitals(health: 52, shield: 0),
       absorbs: [],
-      health: 52,
       offence: player_life_support.offence_of(
         damage: 20,
         damage_type: 3,
@@ -206,9 +206,8 @@ pub fn mitigation_takes_its_damage_types_share_off_the_damage_test() -> Nil {
   let taken = fn(damage_type) {
     let assert Landed(descriptions: [description], ..) =
       hit.apply(
-        shield: 0,
+        target: vitals(health: 52, shield: 0),
         absorbs: [],
-        health: 52,
         offence: player_life_support.offence_of(
           damage: 20,
           damage_type:,
@@ -230,9 +229,8 @@ pub fn the_beasts_numbers_pass_a_blow_through_unchanged_test() -> Nil {
   use <- owned_test.run(5000)
   let assert Landed(descriptions: descriptions, health:, killed: False, ..) =
     hit.apply(
-      shield: 0,
+      target: vitals(health: 52, shield: 0),
       absorbs: [],
-      health: 52,
       offence: player_life_support.offence_of(
         damage: 18,
         damage_type: 3,
@@ -285,7 +283,7 @@ fn strike_of(damages damages: List(Int)) -> hit.Offence {
       Blow(
         spell4_effects_id: 62_159,
         damage_type: 3,
-        damage:,
+        damage: Worked(damage),
         delay_ms: 0,
         threat_multiplier: 1.0,
       )
@@ -300,8 +298,7 @@ pub fn a_blow_is_taken_by_the_absorb_then_the_shields_share_of_the_rest_then_hea
   // of the 100 it holds; the health takes the other 15.
   let assert Landed(descriptions: [description], health:, shield:, absorbs:, ..) =
     hit.apply(
-      health: 100,
-      shield: 100,
+      target: vitals(health: 100, shield: 100),
       absorbs: [pool(cast_id: 1, left: 50, mask: 7)],
       offence: strike_of(damages: [90]),
       defence: shielded,
@@ -316,8 +313,7 @@ pub fn a_blow_is_taken_by_the_absorb_then_the_shields_share_of_the_rest_then_hea
   // With a Magic mitigation of 0.1 a blow of 100 is 90 after mitigation: 10 mitigated.
   let assert Landed(descriptions: [mitigated], ..) =
     hit.apply(
-      health: 100,
-      shield: 100,
+      target: vitals(health: 100, shield: 100),
       absorbs: [pool(cast_id: 1, left: 50, mask: 7)],
       offence: strike_of(damages: [100]),
       defence: Defence(..shielded, magic_mitigation: 0.1),
@@ -335,8 +331,7 @@ pub fn a_blow_of_a_type_outside_the_mask_passes_the_absorb_test() -> Nil {
   let blow_of = fn(damage_type, mask) {
     let assert Landed(descriptions: [description], absorbs:, ..) =
       hit.apply(
-        health: 100,
-        shield: 0,
+        target: vitals(health: 100, shield: 0),
         absorbs: [pool(cast_id: 1, left: 50, mask:)],
         offence: player_life_support.offence_of(
           damage: 20,
@@ -374,8 +369,7 @@ pub fn the_oldest_absorb_soaks_first_and_the_next_takes_the_rest_test() -> Nil {
   let apply = fn(damage) {
     let assert Landed(descriptions: [description], health:, absorbs:, ..) =
       hit.apply(
-        health: 100,
-        shield: 0,
+        target: vitals(health: 100, shield: 0),
         absorbs: pools,
         offence: strike_of(damages: [damage]),
         defence: hit.unprotected,
@@ -395,8 +389,7 @@ pub fn the_oldest_absorb_soaks_first_and_the_next_takes_the_rest_test() -> Nil {
     as "100: 30 and 50 soaked, both dropped, and the other 20 reaches the health"
   let assert Landed(absorbs:, ..) =
     hit.apply(
-      health: 100,
-      shield: 0,
+      target: vitals(health: 100, shield: 0),
       absorbs: [
         pool(cast_id: 1, left: 30, mask: 1),
         pool(cast_id: 2, left: 50, mask: 4),
@@ -426,8 +419,7 @@ pub fn an_absorb_used_up_by_one_blow_leaves_the_next_blow_of_the_strike_to_the_s
     ..,
   ) =
     hit.apply(
-      health: 100,
-      shield: 100,
+      target: vitals(health: 100, shield: 100),
       absorbs: [pool(cast_id: 1, left: 30, mask: 7)],
       offence: strike_of(damages: [30, 40]),
       defence: shielded,
@@ -451,8 +443,7 @@ pub fn an_absorb_used_up_by_one_blow_leaves_the_next_blow_of_the_strike_to_the_s
 pub fn a_deflected_strike_leaves_the_absorbs_test() -> Nil {
   use <- owned_test.run(5000)
   assert hit.apply(
-      health: 100,
-      shield: 100,
+      target: vitals(health: 100, shield: 100),
       absorbs: [pool(cast_id: 1, left: 50, mask: 7)],
       offence: strike_of(damages: [90]),
       defence: Defence(..shielded, deflect_chance: 1.0),
@@ -491,10 +482,12 @@ fn old_apply(
       let #(done, left, shield_left, killed) =
         list.fold(offence.blows, #([], health, shield, False), fn(so_far, blow) {
           let #(done, left, shield_left, killed) = so_far
+          let assert Worked(base_damage) = blow.damage
+            as "the old rule knows no blow left to its target"
           let raw = case critical {
             True ->
-              float.round(int.to_float(blow.damage) *. offence.crit_severity)
-            False -> blow.damage
+              float.round(int.to_float(base_damage) *. offence.crit_severity)
+            False -> base_damage
           }
           let glanced = case glancing {
             True -> float.round(int.to_float(raw) *. defence.glance_amount)
@@ -549,7 +542,15 @@ fn new_apply(
   defence defence: Defence,
   rolls rolls: Rolls,
 ) -> Taken {
-  case hit.apply(health:, shield:, absorbs: [], offence:, defence:, rolls:) {
+  case
+    hit.apply(
+      target: vitals(health: health, shield: shield),
+      absorbs: [],
+      offence:,
+      defence:,
+      rolls:,
+    )
+  {
     Deflected -> #([], health, shield, False)
     Landed(descriptions:, health: left, shield: shield_left, absorbs:, killed:) -> {
       assert absorbs == [] as "no pool in, none out"
@@ -637,7 +638,7 @@ fn agree(drawn drawn: Drawn, share share: fn(Float) -> Int) -> Bool {
         Blow(
           spell4_effects_id: 62_159,
           damage_type: drawn.damage_type,
-          damage:,
+          damage: Worked(damage),
           delay_ms: 0,
           threat_multiplier: 1.0,
         )
@@ -724,7 +725,7 @@ fn typed_strike(
     Blow(
       spell4_effects_id: 62_159,
       damage_type:,
-      damage:,
+      damage: Worked(damage),
       delay_ms: 0,
       threat_multiplier: 1.0,
     ),
@@ -742,8 +743,7 @@ fn after_blow(
 ) -> #(Int, Int, Int) {
   let assert Landed(descriptions: [description], health: left, shield: kept, ..) =
     hit.apply(
-      health:,
-      shield:,
+      target: vitals(health: health, shield: shield),
       absorbs: [],
       offence: typed_strike(damage_type:, damage:),
       defence:,

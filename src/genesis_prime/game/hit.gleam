@@ -9,9 +9,10 @@
 //// caster (genesis_prime/game/strike)                  struck unit's owner
 ////   blows from the effects' formulas (genesis_prime/game/damage)
 ////   crit and strikethrough (genesis_prime/game/rating)
-////   rolls from the connection's seed ───────────────▶ apply(health, shield, absorbs, offence, defence, rolls)
+////   rolls from the connection's seed ───────────────▶ apply(target vitals, absorbs, offence, defence, rolls)
 ////                                                      deflect roll < deflect chance - strikethrough ─▶ Deflected
-////                                                      each blow: crit roll < crit chance - crit deflect ─▶ x severity
+////                                                      each blow: ByTarget ─▶ finish with the vitals as the fold holds them
+////                                                                 crit roll < crit chance - crit deflect ─▶ x severity
 ////                                                                 glance roll < glance chance ─▶ less the glance amount
 ////                                                                 x (1 - mitigation of its damage type)
 ////                                                                 x damage taken multiplier + damage taken offset, never below 0
@@ -20,6 +21,21 @@
 ////                                                      health' = max(0, health - damage); killed at 0
 //// ```
 ////
+//// - **A blow that waits for its target** is one whose formula names a target kind
+////   (genesis_prime/game/damage `Partial`). The sequence of one such blow, for a go or a
+////   tick:
+////
+////   ```
+////   go ─▶ damage.partial(formula, caster's stats and vitals at the go)
+////      ─▶ Tell(Blow(damage: ByTarget(partial))) to the struck unit's owner
+////      ─▶ the owner's apply, on the target's vitals now
+////      ─▶ damage.finish(partial, the vitals as the fold holds them when this blow lands)
+////      ─▶ rounded half away from zero, then crit, glance, mitigation as for a Worked blow
+////   ```
+////
+////   A blow worked out at the caster (`Worked`) never reads the target's vitals. A later
+////   blow of one strike reads the health and shield an earlier blow left (a guess: the
+////   client holds no server-side order of blows).
 //// - **The order** is deflect, base damage, crit, glance, mitigation (the step's
 ////   design, 274 section 4: the client has each percentage, not their combination, so
 ////   the order and what each multiplies are the server's choice).
@@ -75,6 +91,7 @@
 //// - **One roll triple for each strike.** A strike with several blows rolls once, so
 ////   a deflect misses all, a critical hit multiplies all and a glance reduces all.
 
+import genesis_prime/game/damage
 import genesis_prime/game/unit_properties
 import genesis_prime/message/combat_result.{Critical, Hit}
 import genesis_prime/message/damage_type
@@ -87,17 +104,25 @@ import gleam/int
 import gleam/list
 
 /// One damage effect as the caster worked it out: the Spell4Effects row, the
-/// damage type, the damage before any critical hit as a whole number, the
-/// effect's delay (the client applies the description after it), and the
-/// effect's `threatMultiplier`, which the struck creature's threat reads.
+/// damage type, the damage before any critical hit, the effect's delay (the client
+/// applies the description after it), and the effect's `threatMultiplier`, which the
+/// struck creature's threat reads.
 pub type Blow {
   Blow(
     spell4_effects_id: Int,
     damage_type: Int,
-    damage: Int,
+    damage: Amount,
     delay_ms: Int,
     threat_multiplier: Float,
   )
+}
+
+/// A blow's damage before any critical hit: a whole number the caster worked out
+/// (`Worked`), or a formula whose target kinds the struck unit's owner finishes with
+/// its vitals when the blow lands (`ByTarget`, genesis_prime/game/damage `Partial`).
+pub type Amount {
+  Worked(Int)
+  ByTarget(damage.Partial)
 }
 
 /// What the caster brings to a strike: its blows, its critical hit chance and
@@ -222,13 +247,12 @@ pub fn rolls_of(bytes bytes: BitArray) -> Result(Rolls, Nil) {
   }
 }
 
-/// The hit rule: what `offence` does to a unit with `health`, `shield`, `absorbs` and
+/// The hit rule: what `offence` does to a unit with `target` vitals, `absorbs` and
 /// `defence`, on `rolls`. A health of 0 is a dead unit, which no strike reaches
 /// (genesis_prime/world_map/creature_life and genesis_prime/game/player_life refuse
 /// it first). A unit that holds no pool passes `[]`.
 pub fn apply(
-  health health: Int,
-  shield shield: Int,
+  target target: damage.Vitals,
   absorbs absorbs: List(Absorb),
   offence offence: Offence,
   defence defence: Defence,
@@ -246,13 +270,25 @@ pub fn apply(
       let #(descriptions, left, shield_left, absorbs_left, killed) =
         list.fold(
           offence.blows,
-          #([], health, shield, absorbs, False),
+          #([], target.health, target.shield, absorbs, False),
           fn(so_far, blow) {
             let #(done, left, shield_left, absorbs_left, killed) = so_far
+            let base_damage = case blow.damage {
+              Worked(whole) -> whole
+              ByTarget(partial) ->
+                float.round(damage.finish(
+                  partial:,
+                  target: damage.Vitals(
+                    ..target,
+                    health: left,
+                    shield: shield_left,
+                  ),
+                ))
+            }
             let raw = case critical {
               True ->
-                float.round(int.to_float(blow.damage) *. offence.crit_severity)
-              False -> blow.damage
+                float.round(int.to_float(base_damage) *. offence.crit_severity)
+              False -> base_damage
             }
             let glanced = case glancing {
               True -> float.round(int.to_float(raw) *. defence.glance_amount)

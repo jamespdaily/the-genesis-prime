@@ -27,7 +27,7 @@ import genesis_prime/game/cast.{type GoAsked, GoAsked}
 import genesis_prime/game/class_resource.{Resource}
 import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
-import genesis_prime/game/hit.{type Offence, Blow, Offence, Rolls}
+import genesis_prime/game/hit.{type Offence, Blow, Offence, Rolls, Worked}
 import genesis_prime/game/shown.{ShownCreature, ShownPlayer}
 import genesis_prime/game/spell_area.{DamageEffect}
 import genesis_prime/game/spell_plan.{AimsAtArea}
@@ -317,14 +317,14 @@ pub fn a_strike_carries_the_casters_blows_by_the_clients_formula_with_its_gear_a
         Blow(
           spell4_effects_id: 96_125,
           damage_type: 2,
-          damage: 14,
+          damage: Worked(14),
           delay_ms: 0,
           threat_multiplier: 1.0,
         ),
         Blow(
           spell4_effects_id: 62_159,
           damage_type: 3,
-          damage: 35,
+          damage: Worked(35),
           delay_ms: 0,
           threat_multiplier: 2.0,
         ),
@@ -1534,8 +1534,12 @@ pub fn a_planted_100_percent_crit_modifier_makes_every_blow_crit_test() -> Nil {
   let roll = Rolls(crit: 0.99, deflect: 0.5, glance: 0.5)
   let outcome = fn(properties) {
     hit.apply(
-      health: 100,
-      shield: 0,
+      target: damage.Vitals(
+        health: 100,
+        max_health: 100,
+        shield: 0,
+        max_shield: 0,
+      ),
       absorbs: [],
       offence: offence_of_caster_with(properties:),
       defence: hit.unprotected,
@@ -1662,7 +1666,7 @@ fn surge_tick_blow(damage damage: Int) -> hit.Blow {
   Blow(
     spell4_effects_id: 96_125,
     damage_type: 2,
-    damage:,
+    damage: Worked(damage),
     delay_ms: 0,
     threat_multiplier: 1.0,
   )

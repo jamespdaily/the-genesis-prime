@@ -31,7 +31,7 @@ import character_tables
 import fixture_tables
 import genesis_prime/content/refusal.{Refusal}
 import genesis_prime/game/faction_level
-import genesis_prime/game/hit.{Blow}
+import genesis_prime/game/hit.{Blow, Worked}
 import genesis_prime/game/prerequisite
 import genesis_prime/game/start_place
 import genesis_prime/game/vendor
@@ -1282,7 +1282,7 @@ pub fn a_creature_of_difficulty_1_strikes_with_effect_184741_for_12_test() -> Ni
       Blow(
         spell4_effects_id: 184_741,
         damage_type: 1,
-        damage: 12,
+        damage: Worked(12),
         delay_ms: 0,
         threat_multiplier: 1.0,
       ),
@@ -1322,7 +1322,7 @@ pub fn a_creature_of_difficulty_7_strikes_with_effect_184777_for_17_test() -> Ni
       Blow(
         spell4_effects_id: 184_777,
         damage_type: 1,
-        damage: 17,
+        damage: Worked(17),
         delay_ms: 0,
         threat_multiplier: 1.0,
       ),

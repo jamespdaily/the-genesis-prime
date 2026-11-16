@@ -114,6 +114,23 @@ pub fn gives_nothing(formula formula: Formula) -> Bool {
   !stat && { formula.multiplier == 0.0 || { formula.base == 0.0 && !flat } }
 }
 
+/// Whether the formula reads a vital of the target, not the caster
+/// (`0x140566ad0`: 7 the maximum health, 15 the shield, 17 the maximum shield, 19 the
+/// health, 21 the maximum health less the health, 22 the maximum shield less the
+/// shield), by a parameter that has a factor.
+pub fn names_target_kind(formula formula: Formula) -> Bool {
+  list.any(formula.parameters, fn(parameter) {
+    parameter.value != 0.0 && is_target_kind(parameter.kind)
+  })
+}
+
+fn is_target_kind(kind: Int) -> Bool {
+  case kind {
+    7 | 15 | 17 | 19 | 21 | 22 -> True
+    _ -> False
+  }
+}
+
 /// What the formula reads of the caster: its level, its two ratings and its six
 /// attributes.
 pub type Attacker {
@@ -344,6 +361,37 @@ pub fn value_on_caster(
       _ -> 0.0
     }
   })
+}
+
+/// A formula after the caster's part is worked out and the target's is not: the stat
+/// part as the client cuts it to a whole number, the row's base and multiplier, and the
+/// flat terms in parameter order. `finish` adds the target's vitals to it
+/// (`0x140565600`, `0x140566ad0`).
+pub type Partial {
+  Partial(stat_part: Int, base: Float, multiplier: Float, terms: List(Term))
+}
+
+/// One parameter's flat term, in the order the client sums them (`0x140566ad0`): the
+/// value the caster's own level and vitals give (`Known`, the parameter's factor times
+/// the unit value), or the target's vital kind it still waits for (`OfTarget`, with the
+/// parameter's factor).
+pub type Term {
+  Known(Float)
+  OfTarget(kind: Int, factor: Float)
+}
+
+/// The formula worked out as far as the caster's side goes: the stat part, and each flat
+/// term from the caster's level and vitals (kinds 8, 10, 14, 16, 23, 25 and 26), while
+/// the target's kinds (7, 15, 17, 19, 21 and 22) stay `OfTarget`
+/// (`0x140566ad0`: param_1 is the caster, param_2 the target).
+pub fn partial(formula _formula: Formula, caster _caster: OnCaster) -> Partial {
+  panic as "damage.partial has no body yet"
+}
+
+/// The value of the formula once the target's vitals are known, the flat terms summed in
+/// parameter order in 64-bit floats as `value_on_caster` sums them (`0x140566ad0`).
+pub fn finish(partial _partial: Partial, target _target: Vitals) -> Float {
+  panic as "damage.finish has no body yet"
 }
 
 /// The whole number an effect on its caster gives: `value_on_caster` rounded half away

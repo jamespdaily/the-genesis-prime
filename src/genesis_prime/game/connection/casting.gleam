@@ -773,12 +773,7 @@ pub fn caster_of(
       base: entered.unit.tail.base_faction_id,
     ),
     stats: stats_of(entered:),
-    vitals: damage.Vitals(
-      health: player_life.health(life:),
-      max_health: player_life.max_health(life:),
-      shield: player_life.shield(life:),
-      max_shield: player_life.max_shield(life:),
-    ),
+    vitals: player_life.vitals(life:),
     heal_scaling: heal_split.scaling_of(properties: entered.properties),
     quests: entered.quests,
     player: prerequisite_player.of(tables:, entered:),
@@ -1291,7 +1286,8 @@ fn tick_strike_begins(
 
 /// The player as its strikes take it: who it is, where it stands and faces, which
 /// player faction it is of, what its damage reads of it (its level and its Assault and
-/// Support Rating) and its properties.
+/// Support Rating), its health and shield as they are now (a formula's caster kinds
+/// read them) and its properties.
 fn attacker_of(
   session session: Session,
   entered entered: world_entry.Entered,
@@ -1312,6 +1308,7 @@ fn attacker_of(
     ),
     faction:,
     stats: stats_of(entered:),
+    vitals: player_life.vitals(life: entered.life),
     properties: entered.properties,
   )
 }

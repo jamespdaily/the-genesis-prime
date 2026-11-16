@@ -23,7 +23,7 @@ import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/cast
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{type Settings, Settings}
-import genesis_prime/game/hit.{Blow, Offence}
+import genesis_prime/game/hit.{Blow, Offence, Worked}
 import genesis_prime/game/loadout
 import genesis_prime/game/server_proxy
 import genesis_prime/game/start_place.{type Place}
@@ -2274,7 +2274,7 @@ pub fn a_creatures_blow(
             Blow(
               spell4_effects_id: 62_159,
               damage_type:,
-              damage:,
+              damage: Worked(damage),
               delay_ms: 0,
               threat_multiplier: 1.0,
             ),
@@ -2646,15 +2646,17 @@ pub fn landing_with_its_blows(
     let #(state, steps) = so_far
     let described =
       list.map(tell.offence.blows, fn(blow) {
+        let assert Worked(whole) = blow.damage
+          as "a creature's blow is worked out at the creature"
         hit.Description(
           spell4_effects_id: blow.spell4_effects_id,
           delay_ms: blow.delay_ms,
           damage: spell_damage_description.SpellDamageDescription(
-            raw_damage: blow.damage,
-            scaled_raw_damage: blow.damage,
+            raw_damage: whole,
+            scaled_raw_damage: whole,
             absorbed: 0,
             shield_absorbed: 0,
-            health_damage_with_overkill: blow.damage,
+            health_damage_with_overkill: whole,
             overkill: 0,
             glance: 0,
             killed: 0,

@@ -14,7 +14,7 @@
 ////   stands stops at once; at its respawn a creature that was told to retire ends
 ////   and any other stands again at full health (`death.creature_respawn`).
 
-import genesis_prime/game/hit.{Blow, Offence, Rolls}
+import genesis_prime/game/hit.{Blow, Offence, Rolls, Worked}
 import genesis_prime/game/strike_tell.{
   Answered, Dead, Deflected, Key, Landed, Refused, Strike,
 }
@@ -49,7 +49,7 @@ fn strike_of(
         Blow(
           spell4_effects_id: 1,
           damage_type: 3,
-          damage:,
+          damage: Worked(damage),
           delay_ms: 0,
           threat_multiplier: 1.0,
         ),
@@ -122,7 +122,7 @@ pub fn a_creatures_life_passes_no_absorb_test() -> Nil {
               Blow(
                 spell4_effects_id: 1,
                 damage_type:,
-                damage: 18,
+                damage: Worked(18),
                 delay_ms: 0,
                 threat_multiplier: 1.0,
               ),

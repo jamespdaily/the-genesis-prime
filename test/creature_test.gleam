@@ -20,7 +20,7 @@ import genesis_prime/client_connection.{
   Removed,
 }
 import genesis_prime/game/forced_move
-import genesis_prime/game/hit.{Blow, Offence, Rolls}
+import genesis_prime/game/hit.{Blow, Offence, Rolls, Worked}
 import genesis_prime/game/start_place
 import genesis_prime/game/strike_tell.{Answered, Key, Landed, Refused, Strike}
 import genesis_prime/game/unit_properties.{type Modifier, type Source, Change}
@@ -301,7 +301,7 @@ fn typed_strike(
           Blow(
             spell4_effects_id: 1,
             damage_type:,
-            damage:,
+            damage: Worked(damage),
             delay_ms: 0,
             threat_multiplier: 1.0,
           ),

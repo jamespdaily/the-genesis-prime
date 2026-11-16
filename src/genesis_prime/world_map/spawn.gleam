@@ -1421,7 +1421,7 @@ fn attack_of(
   Ok(#(attack, creature_scaling, attack_effects))
 }
 
-/// One effect's damage from the creature's properties: the creature formula
+/// One effect's damage, worked out here, from the creature's properties: the creature formula
 /// (`0x140565600`) from its Strength (0) and Assault Rating (35), times its
 /// DamageDealtMultiplier of the effect's damage type (140 + type) for the types
 /// physical, tech and magic. Any other type has no multiplier, which is a choice: the
@@ -1433,7 +1433,7 @@ fn blow_damage(
   level level: Int,
   scaling scaling: damage.CreatureScaling,
   value value: Value,
-) -> Int {
+) -> hit.Amount {
   let multiplier = case damage_type.from_value(damage_type) {
     damage_type.Physical | damage_type.Tech | damage_type.Magic ->
       value(unit_properties.damage_dealt_multiplier_spell.value + damage_type)
@@ -1443,18 +1443,20 @@ fn blow_damage(
     | damage_type.Suffocate
     | damage_type.Other(..) -> 1.0
   }
-  float.round(damage.creature_value(
-    formula:,
-    creature: damage.Creature(
-      level:,
-      strength: value(0),
-      assault_power: damage.power_of(rating: value(
-        unit_properties.assault_rating.value,
-      )),
-    ),
-    scaling:,
-    multiplier:,
-  ))
+  hit.Worked(
+    float.round(damage.creature_value(
+      formula:,
+      creature: damage.Creature(
+        level:,
+        strength: value(0),
+        assault_power: damage.power_of(rating: value(
+          unit_properties.assault_rating.value,
+        )),
+      ),
+      scaling:,
+      multiplier:,
+    )),
+  )
 }
 
 /// The creature's offence: `blows`, and its critical hit chance, severity and

@@ -1008,6 +1008,7 @@ fn caster_of_the_go(unit_id unit_id: Int) -> strike.Attacker {
     hit_radius: place_support.player_hit_radius,
     faction: shown.Exile,
     stats: attacker_support.novice(),
+    vitals: attacker_support.novice_vitals(),
     properties: properties_support.fresh(level: 1),
   )
 }

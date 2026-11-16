@@ -34,7 +34,7 @@ import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/cast
 import genesis_prime/game/connection/frames
 import genesis_prime/game/forced_move
-import genesis_prime/game/hit.{Blow, Offence, Rolls}
+import genesis_prime/game/hit.{Blow, Offence, Rolls, Worked}
 import genesis_prime/game/hit_radius
 import genesis_prime/game/spell_plan
 import genesis_prime/game/spend
@@ -721,7 +721,7 @@ fn strike_message(
           Blow(
             spell4_effects_id: 1,
             damage_type:,
-            damage:,
+            damage: Worked(damage),
             delay_ms: 0,
             threat_multiplier: 1.0,
           ),
