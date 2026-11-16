@@ -56,3 +56,11 @@ pub fn the_same_seed_gives_the_same_values_and_two_seeds_give_different_ones_tes
   assert draw(support.seed(first: 1)) != draw(support.seed(first: 9))
     as "a different seed gives different bytes"
 }
+
+pub fn words_are_the_big_endian_32_bit_numbers_of_the_bytes_and_leftover_bytes_are_dropped_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert random.words(bytes: <<1:size(32), 4_294_967_295:size(32), 9, 9>>)
+    == [1, 4_294_967_295]
+    as "4 bytes are one number, the high byte first; the 2 bytes left over are no number"
+  assert random.words(bytes: <<>>) == [] as "no bytes, no number"
+}

@@ -9427,11 +9427,59 @@ grade = "fairly sure"
 gap = "The seven other functions that mention offset 0x10a0 were matched by the number, not each read to rule out another object with that offset meaning a unit's rotation; and whether a creature's animation turns its model toward its velocity is not read. A live run that sends a chasing creature a 0x638 with kind 18 naming the player, and sees it face the player while it runs and strikes, would settle it."
 
 ["0x1403acd90"]
-statement = "Finds the client's spell object for a Spell4 id: none for id 0; for the player or the unit it controls, first the player's own copy of that spell, else the shared spell store. The object holds the spell record that FillSpellRecord fills at 0x70 and the spell's effect copies (0xa8 bytes each, by CopySpellEffectRow) at 0x30, with their count at 0x28."
-proof = "Saved C 0x1403acd90.c (hash 8eb22adb6de47956): param_2 == 0 -> 0; param_3 equal to game 0x78 (the player) or game 0x6490 (the controlled unit) -> the player's lookup first; else the store's lookup. Offsets from its callers: ResolveProxyByCasterApply 0x1403d3520 (8eb22adb6de47956) reads object 0x70 -> record 0x18 (cast method) and 0x184 (thresholdTime), object 0x28 (count) and 0x30 + i * 0xa8 (effect type at 0x10, dataBits00 at 0x40); LuaGetCasterInnateCosts 0x1405ea980 reads object 0x70 -> 0xa8..0xb4."
+statement = "Finds the client's spell object for a Spell4 id (the id itself: not a Spell4Base id, not a tier). Id 0 gives none. When the unit given is the player's unit or the unit the player controls, the player's ModifySpell copy of that spell comes first (FindPlayerSpellCopy 0x1405a5b90); otherwise, or when the player has none, the spell registry's object (FindRegistrySpell 0x1407a0fd0). It reads no ability book, ability bag, shortcut or other server-given spell list, so the player need not know the spell. It fails only when the id is 0 or the registry holds no object for the id: no Spell4 row has it, or the row was refused at load by CheckSpellRecord 0x140568260. A player copy is made only for a spell the registry holds (BuildPlayerSpellCopies 0x1403d4210), so a copy never turns a registry miss into a hit. The object holds the spell record that FillSpellRecord fills at 0x70 and the spell's effect copies (0xa8 bytes each, by CopySpellEffectRow) at 0x30, with their count at 0x28."
+proof = "Listing (llvm-objdump of WildStar64.exe) 0x1403acd90-0x1403acdf0: test edx, edx -> 0; r8 (the unit) compared with [game + 0x78] and [game + 0x6490] (game DAT_140c65898); on a match rcx = game and call 0x1405a5b90 with the id still in edx; non-null returns it; else rcx = the first argument and jmp 0x1407a0fd0. ResolveProxyByCasterApply 0x1403d3520 (saved C, 6ba38d868f75acff) passes the registry DAT_140c65b70, the Proxy effect copy's word 0x40 (dataBits00) and its own unit argument. Offsets: ResolveProxyByCasterApply reads object 0x70 -> record 0x18 (cast method) and 0x184 (thresholdTime), object 0x28 (count) and 0x30 + i * 0xa8 (effect type at 0x10, dataBits00 at 0x40); LuaGetCasterInnateCosts 0x1405ea980 reads object 0x70 -> 0xa8..0xb4."
 grade = "fairly sure"
-gap = "Read from the decompile; the two lookups it calls are not read, only their use."
+gap = "Not run. The failure cases rest on the registry's loader, read from the decompile (see 0x1407a0fd0)."
 name = "FindSpell"
+
+["0x1405a5b90"]
+statement = "Finds the player's own copy of a spell by Spell4 id: the copies ModifySpell effects (effect type 55) on the player have made. None when the player has no copy of that spell."
+proof = "Listing 0x1403acdd6 call 0x1405a5b90 with rcx the game. Saved C 0x1405a5b90.c (hash 8eb22adb6de47956): an ordered-tree search of game 0x7d18 (the head of the map at game 0x7d10; node key uint at 0x20, value at 0x28), the head itself meaning not found -> 0. Game 0x7d10 is filled only by BuildPlayerSpellCopies 0x1403d4210 (from RebuildPlayerSpellCopies 0x1403cbc80): the listing's only lea/stores of game 0x7d10 or 0x7d18 are 0x1403cbc9e, 0x1403cbcb8, 0x1403cbcd7 (that function), 0x1403e275a (in the game's constructor 0x1403e1400), 0x1403e4ae3 (in its destructor 0x1403e3350) and 0x1403e5c5c (in 0x1403e5ae0, which clears it on a move to another world); every other use in the saved C is a read."
+grade = "sure"
+name = "FindPlayerSpellCopy"
+
+["0x1407a0fd0"]
+statement = "Finds the spell registry's object for a Spell4 id. Id 0 gives none. The registry holds one object for each Spell4 row that passed CheckSpellRecord 0x140568260 when the spell tables were built at load (BuildSpellTables 0x14055e180); a row refused there is filed, with the check's code, in the registry's refused set, which MakeCast 0x140561780 tests (refusal 4), and is not found here. Nothing the server sends adds to it."
+proof = "Saved C 0x1407a0fd0.c (hash 8eb22adb6de47956): id 0 -> 0; the hash map at registry 0x540 (hash by its slot 0x18, compare by slot 0x20, buckets at 0x10, bucket count at 8), value node word 3. Saved C 0x14055e180.c (hash 8eb22adb6de47956) lines 1236-1273: per Spell4 row (Spell4Base by row word 4) LinkSpellRecords and FillSpellRecord, then iVar17 = CheckSpellRecord; lines 1487-1507 (iVar17 == 0) add {id, object} to the map at 0x540; lines 1508-1530 (else) add {id, code iVar17} to the map at 0x570."
+grade = "fairly sure"
+gap = "The branch structure at lines 1273 and 1508 is read from the decompile, not the listing; not run. Whether any Spell4 row is refused in the shipped data is not counted (an emulator run of CheckSpellRecord over every row would count it)."
+name = "FindRegistrySpell"
+
+["0x140568260"]
+statement = "Checks a spell the loader has built from its Spell4 row: 0 accepts it into the spell registry; any other value refuses it, and the value is filed as the spell's refusal code."
+proof = "Saved C 0x140568260.c (hash 8eb22adb6de47956): returns 0x30 when record 0x110 has bits 4 and 8 both set; 0x31 when record 0x10c bit 0x10000000 is set and record 0x7c is above 6 or not in the mask 0x6a; 0x32 when the cast method (record 0x18) is above 10; 0x33 for cast method 3 and 0x5e for cast method 10 when record 0x7c is 6, below 2 or above 8; 0x5f for method 10 without the object's word 0x48; further tests follow. Its one caller BuildSpellTables 0x14055e180 (line 1272) files a non-zero result in the refused set at 0x570."
+grade = "fairly sure"
+gap = "Only the first tests are read; the rest of the function and the columns behind record 0x7c and the flag bits are not named."
+name = "CheckSpellRecord"
+
+["0x1403d4210"]
+statement = "Builds the player's spell copies: for each Spell4 id in the player's ModifySpell modifier map that has at least one modifier, it takes the registry's spell for that id (FindRegistrySpell 0x1407a0fd0; none, no copy), makes a copy of it, or reuses the copy already there, and files it in the player's copy map under that id."
+proof = "Saved C 0x1403d4210.c (hash 8eb22adb6de47956): walks the tree given as its second argument (game 0x7cd0 from RebuildPlayerSpellCopies 0x1403cbc80, listing 0x1403cbcd0 lea rdx, [rsi + 0x7cd0] and 0x1403cbcd7 lea r8, [rsi + 0x7d10]); a node with a non-zero count at 0x30 gets FUN_1407a0fd0(registry, key); when found, a search of the third argument's tree; absent -> AllocMemory(0x88), class 0x140b667d0, filled from the registry spell by 0x1403d8810, and added under the key by 0x140055f80 at the end; the modifier list at node 0x28 (sorted by each entry's word 8) is then applied."
+grade = "fairly sure"
+gap = "How the modifiers change the copy (the middle of the function, from LAB_1403d43a0) is not read."
+name = "BuildPlayerSpellCopies"
+
+["0x1403cbc80"]
+statement = "Rebuilds the player's spell and spell effect copies: drops every existing spell copy and effect copy, then builds both again from the ModifySpell modifier maps. HandleWorldMessage 0x1403ec6a0 calls it for message 0x143, and nothing else calls it."
+proof = "Listing 0x1403cbc80-0x1403cbd07: 0x140566240 over registry 0x7a0 with callback 0x14055c760 and game 0x7d10; 0x1403d40e0 (game 0x7d10, frees each copy) and 0x1403d4180 (game 0x7d30); BuildPlayerSpellCopies 0x1403d4210 (rdx game 0x7cd0, r8 game 0x7d10) and 0x1403d4910 (rdx game 0x7cf0, r8 game 0x7d30). Its one call is 0x1403ef183, the case target of HandleWorldMessage's switch entry 226 (id 0x61 + 226 = 0x143; jump_tables.read_function on 0x1403ec6a0, scratch jt.py)."
+grade = "fairly sure"
+gap = "The body of message 0x143 and when the server must send it are not read; the callback 0x14055c760's call on each registry cast is not named."
+name = "RebuildPlayerSpellCopies"
+
+["0x1405da820"]
+statement = "When a ModifySpell effect (effect type 55) is made on the player's unit or the unit the player controls, adds each of its spell modifiers to the player's ModifySpell modifier map, which BuildPlayerSpellCopies 0x1403d4210 reads; on any other unit the effect adds none."
+proof = "Effect object switch 0x140718120 case 0x37 (55, 'ModifySpell' in Spell.CodeEnumSpellEffectType, bytes at 0x140c34140, scratch enum142.py): after InitSpellEffect, when the effect's unit id (word 0x5c) is the player's or the controlled unit's, 0x1405da6b0 with the table 0x140b6df00, whose first word is 0x1405da820. Saved C 0x1405da820.c (hash 8eb22adb6de47956): for each list entry, 0x1403fcb30(id, entry, game + 0x7cd0). The removal twin 0x1405da890 (table word 0x140b6df08, used at 0x1405d8db8) calls 0x1403fcd20 likewise."
+grade = "fairly sure"
+gap = "What 0x1405da6b0 builds the list from (the effect's data) and what 0x1403fcb30 keeps per modifier are not read; whether adding rebuilds the copies at once or waits for message 0x143 is not read."
+name = "AddModifySpellModifiers"
+
+["0x1405da890"]
+statement = "When a ModifySpell effect on the player's unit (or controlled unit) is removed, takes each of its spell modifiers out of the player's ModifySpell modifier map."
+proof = "Saved C 0x1405da890.c (hash 8eb22adb6de47956): for each list entry, 0x1403fcd20(id, entry, game + 0x7cd0). Reached through the table word 0x140b6df08, which the listing loads at 0x1405d8db8 (in 0x1405d8d60) before the call to 0x1405da6b0 at 0x1405d8dd5, under the same player-unit test."
+grade = "fairly sure"
+gap = "0x1403fcd20 is not read; that 0x1405d8d60 is the ModifySpell effect's removal is from its use of the table, not from its class slot."
+name = "RemoveModifySpellModifiers"
 
 ["0x1405ea980"]
 statement = "The Lua method GetCasterInnateCosts of a Game.Spell: finds the spell for the player and returns a table with one entry for each of the spell's two innate costs whose type is 1 to 30 and whose cost is not 0, built from that cost's type and value. The innate cost EMM ids are never read, so the UI is never told of any spend above the base cost."
@@ -15434,3 +15482,34 @@ statement = "When a Knockback, Pushback, Pull or PositionSwitch state ends (mess
 proof = "EndUnitCCStateBehaviour 0x14045e1d0 (its record): the switch index at 0x14045e3a8 sends 16 to 19 to case 5, which returns. cc_state.end: only 0x880, SetUnitDead and RemoveUnit remove entries. SampleTimedPathKeys 0x140783e10: past the last time, the last point."
 grade = "fairly sure"
 gap = "Read, not run. Whether the 0x880 should come when the flight lands or at the state's own duration is the server's choice; the client accepts either."
+
+["Spell.CodeEnumSchool"]
+statement = "The Lua enum of a spell's school (Spell4Base.school): 0 Spell, 1 Melee, 2 Ranged, 3 Unarmed. The client accepts schools 0 to 5 in a spell record (CheckSpellRecord refuses a school above 5 with 0x35); 4 and 5 have no name."
+proof = "Saved C 0x1405e8230.c (hash 8eb22adb6de47956) lines 275-318: 'CodeEnumSchool', then 'Spell' = 0.0, 'Melee' = 1.0, 'Ranged' = 2.0, 'Unarmed' = 3.0. CheckSpellRecord 0x140568260.c (hash cabfc399c345589f) line 49: record 0xf4 > 5 -> 0x35. Spell4Base (45,046 rows): school 0 33,946; 1 8,063; 2 2,742; 3 74; 4 215; 5 6."
+grade = "fairly sure"
+gap = "Read from the saved C and table counts, not the instructions; no run."
+
+["Spell4Base.school"]
+statement = "Spell4Base.school is the spell's school (Spell.CodeEnumSchool), the only thing in the client that marks a spell melee or ranged. CheckCastCaster refuses a Melee or Ranged spell (1, 2) for a disarmed caster with 39 CCDisarm, a Spell-school spell (0) for a silenced one with 40 CCSilence, and all but Unarmed (3) for a subdued one with 268 CCSubdue, each when the spell's caster ccStateMask holds that state. Lua Spell:GetSchool returns it."
+proof = "FillSpellRecord 0x140568540.c (hash 2580df99bb1ce2aa) line 75: record 0xf4 = Spell4Base row offset 84 (school). CheckCastCaster 0x1403afb10.c lines 307-356 (bit 24 / school != 3 -> 0x10c; bit 3 / school - 1 < 2 -> 0x27; bit 4 / school == 0 -> 0x28). Result names from CodeEnumCastResult at 0x140c2f290. Grep of the saved C for reads of record +0xf4: only CheckCastCaster, FillSpellRecord, CheckSpellRecord and 0x1405ec110."
+grade = "fairly sure"
+gap = "A reader through an alias or a class-table slot would not be found by the grep."
+
+["0x1405ec110"]
+statement = "Lua Spell:GetSchool: returns the spell's school (Spell4Base.school) as an integer."
+proof = "Saved C 0x1405ec110.c (hash 6ba38d868f75acff) lines 17-24; name pair at 0x140c5a660 ('GetSchool' at 0x140b230f8)."
+grade = "fairly sure"
+gap = "Read from the saved C, not the instructions; no run."
+name = "LuaSpellGetSchool"
+
+["Spell4Effects.effectType.14.dataBits00.13_school"]
+statement = "Not in the client; read from rows and texts. Every kind-13 Proc row that names a spell group (14 of 38) names one whose spells are all school 1 (670, 668, 724, 730), or group 333 with item texts saying 'with a Melee attack'. So a melee hit reads as a landed hit by a school-1 spell."
+proof = "Spell4Effects kind-13 rows (dataBits07 2, dataBits08 333/668/670/724/730); Spell4GroupList lists 767, 835, 1454, 934, 936, 817; their Spell4Base rows all school 1. Texts 303021, 759856, 759933, 547403."
+grade = "guess"
+gap = "A retail recording of a kind-13 proc on a school-2 hit settles it."
+
+["Spell4Base.school.level_one"]
+statement = "The 90 Spell4 rows the level-1 abilities' trees and class innates reach: 41 school 0, 31 school 1, 16 school 2, 2 school 3. targetMaxRange: school 1 spans 0 to 20 m, school 2 10 to 35 m, school 0 0 to 99 m."
+proof = "coverage starting_ability:spells/1 on the built beams; Spell4 and Spell4Base rows of those ids."
+grade = "fairly sure"
+gap = "Counted from rows by the coverage tool, not from client instructions."

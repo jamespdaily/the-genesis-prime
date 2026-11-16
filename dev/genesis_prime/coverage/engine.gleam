@@ -270,7 +270,7 @@ fn unread_effect_rows(tables: store.Tables) -> Dict(Int, Int) {
 /// by flags the plan refuses, and none behind a target apply prerequisite the plan cannot
 /// check.
 const lasting_gap =
-  "rows aimed by flags the plan refuses or behind an apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses"
+  "rows aimed by a flag with bit 8 (#336) or by 3, 5 or 7 in a spell that hits no foes (#834) or behind an apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses"
 
 /// The same for type 76, whose rows with a delayTime the client does not apply from the
 /// go: the server lists them with their delay and the measure counts them not read.
@@ -280,11 +280,11 @@ const item_visual_swap_gap =
 /// The same for type 80, whose rows the plan also refuses where the two columns that hold
 /// the count of stacks differ or a selector names no row.
 const force_remove_gap =
-  "rows aimed by flags the plan refuses, behind an apply prerequisite whose conditions the plan cannot check (#817, #818), with differing stack counts (dataBits03 and dataBits04) or a selector that names no spell group, Spell4 or Spell4Base, which the plan refuses"
+  "rows aimed by a flag with bit 8 (#336) or by 3, 5 or 7 in a spell that hits no foes (#834), behind an apply prerequisite whose conditions the plan cannot check (#817, #818), with differing stack counts (dataBits03 and dataBits04) or a selector that names no spell group, Spell4 or Spell4Base, which the plan refuses"
 
 /// The same for type 81, whose script the client does not hold either.
 const signal_gap =
-  "rows aimed by flags the plan refuses or behind an apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses; the script a signal stands for is not in the client"
+  "rows aimed by a flag with bit 8 (#336) or by 3, 5 or 7 in a spell that hits no foes (#834) or behind an apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses; the script a signal stands for is not in the client"
 
 /// What type 145 reads of a row, whose computation is the server's choice.
 const conversion_gap =
@@ -320,12 +320,12 @@ fn spell_effects() -> EngineDeclaration {
       ),
       Missing(
         type_number: 3,
-        reason: "rows aimed at another unit behind a target apply prerequisite, which the plan refuses (#815); rows aimed by a union flag, 3, 5 or 7, whose part aimed at others is left out (#794); rows behind a prerequisite whose conditions the plan cannot check (#817, #818)",
+        reason: "rows aimed at another unit behind a target apply prerequisite, which the plan refuses (#815); rows behind a prerequisite whose conditions the plan cannot check (#817, #818)",
         fact_key: "Spell4Effects.effectType.3",
       ),
       Missing(
         type_number: 4,
-        reason: "rows behind an apply prerequisite (#787); rows aimed at another unit that last until removed (#803) or hold a persistence prerequisite (#787); rows aimed by a union flag, 3, 5 or 7 (#794), or by 9 (#336); rows with a phaseFlags of 0, which no phase selects",
+        reason: "rows behind an apply prerequisite (#787); rows aimed at another unit that last until removed (#803) or hold a persistence prerequisite (#787); rows aimed by 9, 10 or 12, which hold bit 8 (#336); rows with a phaseFlags of 0, which no phase selects",
         fact_key: "Spell4Effects.effectType.4",
       ),
       Missing(
@@ -345,7 +345,7 @@ fn spell_effects() -> EngineDeclaration {
       ),
       Missing(
         type_number: 14,
-        reason: "kinds other than entering and leaving stealth, leaving combat and dying, and rows with a chance, a filter, a gate, another unit or a delay, which the plan refuses",
+        reason: "kinds other than entering and leaving stealth, leaving combat, dying, and the hits, criticals, kills and heals the holder lands, and rows held by another unit, behind a persistence or target apply prerequisite, with a group and no filter kind, with an aim of 32 or above, with no life or naming a Spell4 the tables lack, which the plan leaves out or refuses",
         fact_key: "Spell4Effects.effectType.14",
       ),
       Missing(
@@ -360,7 +360,7 @@ fn spell_effects() -> EngineDeclaration {
       ),
       Missing(
         type_number: 26,
-        reason: "rows whose dataBits00 names no spell (the plan holds no Proxy for them) or that are aimed by a flag the plan refuses",
+        reason: "rows whose dataBits00 names no spell (the plan holds no Proxy for them) or that are aimed by a flag with bit 8 (#336) or by 3, 5 or 7 in a spell that hits no foes (#834)",
         fact_key: "Spell4Effects.effectType.26",
       ),
       Missing(

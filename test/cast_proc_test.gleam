@@ -26,31 +26,40 @@
 //// Skipped where the client's tables are not on the machine, but for the tests that plant the
 //// holder.
 
+import attacker_support
 import cast_support as support
 import client_tables
 import genesis_prime/client_connection
 import genesis_prime/game/cast.{type Caster, type Effect, type State}
+import genesis_prime/game/damage
+import genesis_prime/game/effect_kind
+import genesis_prime/game/hit
 import genesis_prime/game/lasting.{LastingRow}
+import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan.{
-  type Plans, type ProcRow, type Spell, AliveOrDead, Always, BrokenByDamage,
-  Died, EnteredStealth, KeepsStealth, KeptOnDamage, LeftCombat, LeftStealth,
-  ProcRow, RemoveStealthRow, Spell, StealthRow,
+  type Plans, type ProcRow, type Spell, AliveOrDead, Always, AnySpell, AtHolder,
+  BrokenByDamage, Died, EnteredStealth, InWindow, KeepsStealth, KeptOnDamage,
+  LeftCombat, LeftStealth, ProcRow, RemoveStealthRow, Spell, StealthRow,
 }
 import genesis_prime/game/spend
+import genesis_prime/game/ticking
 import genesis_prime/game/unit_properties
 import genesis_prime/message/cast_result
+import genesis_prime/message/combat_result
+import genesis_prime/message/damage_type
 import genesis_prime/message/spell_cast_confirmed
+import genesis_prime/message/spell_damage_description.{SpellDamageDescription}
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started
 import genesis_prime/message/spell_targets_removed
-import genesis_prime/step.{ConnectionId, LogDebug}
+import genesis_prime/step.{type Now, type TimerId, ConnectionId, LogDebug}
 import genesis_prime/table/id.{
-  Spell4BaseId, Spell4EffectsId, Spell4Id, UnitProperty2Id,
+  type Spell4BaseId, Spell4BaseId, Spell4EffectsId, Spell4Id, UnitProperty2Id,
 }
 import gleam/dict
 import gleam/int
 import gleam/list
-import gleam/option.{Some}
+import gleam/option.{None, Some}
 import gleam/string
 import owned_test
 import prerequisite_support
@@ -84,7 +93,7 @@ fn answered(
 /// The Stalker's passive started at the time, its go answered with no unit struck.
 fn joined(caster caster: Caster, at ms: Int) -> #(State, List(Effect)) {
   let #(state, effects) =
-    cast.passive_started(
+    passive_started(
       cast: cast.new(),
       caster:,
       plans: support.real_plans(),
@@ -128,6 +137,59 @@ fn shredded(
       at: ms,
     )
   answered(caster:, state:, effects:, at: ms)
+}
+
+// ---- the inputs, each followed by the pass that matches the procs ----
+
+fn then_procs(
+  step step: #(State, List(Effect)),
+  caster caster: Caster,
+  now now: Now,
+) -> #(State, List(Effect)) {
+  support.then_procs(step:, caster:, at: now.monotonic_ms)
+}
+
+fn passive_started(
+  cast cast: State,
+  caster caster: Caster,
+  plans plans: Plans,
+  base base: Spell4BaseId,
+  now now: Now,
+) -> #(State, List(Effect)) {
+  cast.passive_started(cast:, caster:, plans:, base:, now:)
+  |> then_procs(caster:, now:)
+}
+
+fn died(
+  cast cast: State,
+  caster caster: Caster,
+  now now: Now,
+) -> #(State, List(Effect)) {
+  cast.died(cast:, caster:, now:) |> then_procs(caster:, now:)
+}
+
+fn combat_left(
+  cast cast: State,
+  caster caster: Caster,
+  now now: Now,
+) -> #(State, List(Effect)) {
+  cast.combat_left(cast:, caster:, now:) |> then_procs(caster:, now:)
+}
+
+fn damage_taken(
+  cast cast: State,
+  caster caster: Caster,
+  now now: Now,
+) -> #(State, List(Effect)) {
+  cast.damage_taken(cast:, caster:, now:) |> then_procs(caster:, now:)
+}
+
+fn persisted(
+  cast cast: State,
+  caster caster: Caster,
+  now now: Now,
+) -> #(State, List(Effect)) {
+  cast.persisted(cast:, caster:, now:) |> then_procs(caster:, now:)
 }
 
 // ---- reading what a step did ----
@@ -314,8 +376,13 @@ fn proc(
     phase_flags: -1,
     trigger:,
     spell: casts,
-    window_ms:,
-    count:,
+    chance: 1.0,
+    limit: InWindow(window_ms:, count:),
+    filter: AnySpell,
+    aim: AtHolder,
+    event_gate: None,
+    holder_gate: None,
+    delay_ms: 0,
     row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
     condition: Always,
     tag: spend.always,
@@ -350,7 +417,7 @@ fn planted_joined(
 ) -> #(State, List(Effect)) {
   let caster = planted_caster()
   let #(state, effects) =
-    cast.passive_started(
+    passive_started(
       cast: cast.new(),
       caster:,
       plans:,
@@ -612,7 +679,7 @@ pub fn leaving_stealth_by_damage_casts_the_procs_after_the_0x8f5_test() -> Nil {
   let #(state, joined_effects) = joined(caster:, at: 1000)
   let #(state, entered) = toggled(state:, caster:, at: 2000)
   let #(state, struck) =
-    cast.damage_taken(cast: state, caster:, now: support.at(ms: 2500))
+    damage_taken(cast: state, caster:, now: support.at(ms: 2500))
   let #(_, effects) = answered(caster:, state:, effects: struck, at: 2500)
   assert trace(effects:, earlier: [joined_effects, entered], pressed: 0)
     == [
@@ -701,7 +768,7 @@ pub fn a_proc_fires_again_only_when_its_window_has_passed_a_fire_at_exactly_its_
   let caster = planted_caster()
   let damaged = fn(state, at) {
     let #(state, effects) =
-      cast.damage_taken(cast: state, caster:, now: support.at(ms: at))
+      damage_taken(cast: state, caster:, now: support.at(ms: at))
     answered(caster:, state:, effects:, at:)
   }
   let #(state, _) = planted_joined(plans:, spell: holder, at: 1000)
@@ -750,7 +817,7 @@ pub fn two_procs_of_one_trigger_each_keep_their_own_window_test() -> Nil {
   let cycle = fn(state, at) {
     let #(state, _) = planted_press(plans:, state:, bag: bag_of_base_1, at:)
     let #(state, struck) =
-      cast.damage_taken(cast: state, caster:, now: support.at(ms: at + 100))
+      damage_taken(cast: state, caster:, now: support.at(ms: at + 100))
     answered(caster:, state:, effects: struck, at: at + 100)
   }
   let #(state, first) = cycle(state, 2000)
@@ -777,7 +844,7 @@ pub fn a_proc_with_a_count_above_1_fires_that_often_in_its_window_test() -> Nil 
   let #(state, _) = planted_joined(plans:, spell: holder, at: 0)
   let leaves = fn(state, at) {
     let #(state, effects) =
-      cast.combat_left(cast: state, caster:, now: support.at(ms: at))
+      combat_left(cast: state, caster:, now: support.at(ms: at))
     let #(state, effects) = answered(caster:, state:, effects:, at:)
     #(state, starts_of(spell4_id: 250_201, effects:))
   }
@@ -798,7 +865,7 @@ pub fn a_fire_draws_no_roll_and_a_held_proc_changes_no_go_rolls_test() -> Nil {
   // The passive's go applies the five procs; the stealth go of 38784 is the input that
   // fires 60724.
   let #(held, started) =
-    cast.passive_started(
+    passive_started(
       cast: cast.new(),
       caster:,
       plans: support.real_plans(),
@@ -859,7 +926,7 @@ pub fn a_procs_cast_names_the_player_as_its_primary_target_for_every_unit_bit_te
   assert started_of(spell4_id: 60_724, effects:).primary_target_unit_id == 7
     as "dataBits03 1 (Spell4Effects.effectType.14.dataBits03)"
   let #(state, dying) =
-    cast.died(cast: entered, caster: dead(caster:), now: support.at(ms: 3000))
+    died(cast: entered, caster: dead(caster:), now: support.at(ms: 3000))
   let #(_, after) =
     answered(caster: dead(caster:), state:, effects: dying, at: 3000)
   assert started_of(spell4_id: 63_366, effects: after).primary_target_unit_id
@@ -879,11 +946,7 @@ pub fn a_lethal_blow_on_a_stealthed_stalker_casts_neither_218_proc_and_writes_a_
   let #(state, _) = joined(caster:, at: 1000)
   let #(state, _) = toggled(state:, caster:, at: 2000)
   let #(state, struck) =
-    cast.damage_taken(
-      cast: state,
-      caster: dead(caster:),
-      now: support.at(ms: 2100),
-    )
+    damage_taken(cast: state, caster: dead(caster:), now: support.at(ms: 2100))
   let #(_, effects) =
     answered(caster: dead(caster:), state:, effects: struck, at: 2100)
   assert starts_of(spell4_id: 60_769, effects:) == 0
@@ -921,17 +984,13 @@ pub fn a_fire_a_dead_holder_was_refused_holds_back_no_later_fire_test() -> Nil {
   let #(state, _) = planted_joined(plans:, spell: holder, at: 1000)
   let #(state, _) = planted_press(plans:, state:, bag: bag_of_base_1, at: 2000)
   let #(state, struck) =
-    cast.damage_taken(
-      cast: state,
-      caster: dead(caster:),
-      now: support.at(ms: 2100),
-    )
+    damage_taken(cast: state, caster: dead(caster:), now: support.at(ms: 2100))
   let #(state, refused) =
     answered(caster: dead(caster:), state:, effects: struck, at: 2100)
   assert starts_of(spell4_id: 250_202, effects: refused) == 0
   let #(state, _) = planted_press(plans:, state:, bag: bag_of_base_1, at: 2200)
   let #(state, struck) =
-    cast.damage_taken(cast: state, caster:, now: support.at(ms: 2300))
+    damage_taken(cast: state, caster:, now: support.at(ms: 2300))
   let #(_, later) = answered(caster:, state:, effects: struck, at: 2300)
   assert starts_of(spell4_id: 250_202, effects: later) == 1
     as "200 ms after the refused fire the living caster's 218 proc fires"
@@ -946,8 +1005,7 @@ fn dies(
   at ms: Int,
 ) -> #(State, List(Effect)) {
   let dead = dead(caster:)
-  let #(state, effects) =
-    cast.died(cast: state, caster: dead, now: support.at(ms:))
+  let #(state, effects) = died(cast: state, caster: dead, now: support.at(ms:))
   answered(caster: dead, state:, effects:, at: ms)
 }
 
@@ -985,7 +1043,7 @@ pub fn death_casts_63366_after_the_casts_it_ends_and_cuts_the_stealth_cooldown_t
     as "the cooldown left is 150 ms, inside the 500 ms window the client queues"
   let #(without, _) = toggled(state: cast.new(), caster: in_combat, at: 1000)
   let #(without, _) =
-    cast.died(
+    died(
       cast: without,
       caster: dead(caster: in_combat),
       now: support.at(ms: 3000),
@@ -1023,7 +1081,7 @@ pub fn leaving_combat_casts_63366_once_a_second_and_cuts_the_stealth_cooldown_to
     as "the control: in combat the Stealth button's 25000 ms cooldown stands"
   let leaves = fn(state, at) {
     let #(state, effects) =
-      cast.combat_left(cast: state, caster: out, now: support.at(ms: at))
+      combat_left(cast: state, caster: out, now: support.at(ms: at))
     answered(caster: out, state:, effects:, at:)
   }
   let #(state, first) = leaves(state, 5000)
@@ -1071,8 +1129,7 @@ pub fn a_death_casts_the_died_proc_before_the_proc_for_the_stealth_it_ends_test(
   let #(state, entered) =
     planted_press(plans:, state:, bag: bag_of_base_1, at: 2000)
   let caster = dead(caster: planted_caster())
-  let #(state, effects) =
-    cast.died(cast: state, caster:, now: support.at(ms: 3000))
+  let #(state, effects) = died(cast: state, caster:, now: support.at(ms: 3000))
   let #(_, effects) = answered(caster:, state:, effects:, at: 3000)
   let lines =
     trace(effects:, earlier: [joined_effects, entered], pressed: 38_913)
@@ -1247,7 +1304,7 @@ pub fn a_camp_drops_the_procs_fires_nothing_and_the_next_passive_holds_them_with
     as "a camp writes nothing, and leaving stealth is no event"
   assert list.filter(left, is_strike) == []
   let #(state, started) =
-    cast.passive_started(
+    passive_started(
       cast: state,
       caster:,
       plans: support.real_plans(),
@@ -1307,7 +1364,7 @@ pub fn a_proc_lasts_as_long_as_its_node_a_timed_one_ends_with_it_and_a_removal_d
     planted_press(plans:, state: cast.new(), bag: bag_of_base_1, at: 0)
   let leaves = fn(state, at) {
     let #(state, effects) =
-      cast.combat_left(cast: state, caster:, now: support.at(ms: at))
+      combat_left(cast: state, caster:, now: support.at(ms: at))
     let #(state, effects) = answered(caster:, state:, effects:, at:)
     #(state, starts_of(spell4_id: 250_201, effects:))
   }
@@ -1351,7 +1408,7 @@ pub fn a_camp_ends_a_procs_fire_history_with_the_proc_test() -> Nil {
   assert starts_of(spell4_id: 250_201, effects: first) == 1
   let #(state, _) = cast.left(cast: state)
   let #(state, started) =
-    cast.passive_started(
+    passive_started(
       cast: state,
       caster:,
       plans:,
@@ -1396,7 +1453,7 @@ pub fn a_stealth_ended_by_a_failing_persistence_fires_the_procs_for_leaving_it_t
     )
   assert cast.stealthed(cast: state)
   let #(state, effects) =
-    cast.persisted(cast: state, caster: out, now: support.at(ms: 3000))
+    persisted(cast: state, caster: out, now: support.at(ms: 3000))
   let #(_, effects) = answered(caster: out, state:, effects:, at: 3000)
   let lines =
     trace(effects:, earlier: [joined_effects, pressed], pressed: 38_913)
@@ -1423,8 +1480,1395 @@ pub fn a_died_proc_of_a_cast_that_is_not_the_innate_passive_is_not_held_and_says
   })
     as "the go says the proc is not held"
   let #(state, dying) =
-    cast.died(cast: state, caster: dead(caster:), now: support.at(ms: 2000))
+    died(cast: state, caster: dead(caster:), now: support.at(ms: 2000))
   let #(_, effects) =
     answered(caster: dead(caster:), state:, effects: dying, at: 2000)
   assert starts_of(spell4_id: 250_201, effects:) == 0
+}
+
+// ---- the events of the holder's own casts ----
+
+/// The spell of Spell4 250301 that lands the hits: base 2 (bag index 10), no cast time, of
+/// this school (`Spell4Base.school`).
+const hitter_spell4 = 250_301
+
+fn hitter(school school: Int) -> Spell {
+  Spell(..support.child(spell4_id: hitter_spell4, base: 2), school:)
+}
+
+/// A proc of this trigger that casts the planted spell `casts` at `aim`, with a limit no
+/// test reaches, so what a test shows is the event.
+fn firing(
+  id id: Int,
+  trigger trigger: spell_plan.Trigger,
+  casts casts: Int,
+  aim aim: spell_plan.ProcAim,
+) -> ProcRow {
+  ProcRow(
+    ..proc(
+      id:,
+      trigger:,
+      casts: cast_of_proc(spell4_id: casts),
+      window_ms: 500,
+      count: 1,
+    ),
+    limit: spell_plan.ForLife(count: 1000),
+    aim:,
+  )
+}
+
+/// A hit on the creature in its first life with these blows.
+fn creature_hit(
+  unit_id unit_id: Int,
+  descriptions descriptions: List(hit.Description),
+) -> cast.Struck {
+  cast.Hit(
+    unit_id:,
+    unit: support.first_life,
+    descriptions:,
+    controls: [],
+    armor_removed: 0,
+    ticking: [],
+  )
+}
+
+/// A hit on the creature in its first life with one plain blow: the damage a go's row lands
+/// on it. A hit with no blow (a spell that only selects the unit) raises no event.
+fn plain_hit(unit_id unit_id: Int) -> cast.Struck {
+  creature_hit(unit_id:, descriptions: [
+    blow(result: combat_result.Hit, killed: 0),
+  ])
+}
+
+/// A blow of this combat result that killed its unit when `killed` is 1.
+fn blow(
+  result result: combat_result.CombatResult,
+  killed killed: Int,
+) -> hit.Description {
+  hit.Description(
+    spell4_effects_id: 1,
+    delay_ms: 0,
+    damage: SpellDamageDescription(
+      raw_damage: 8,
+      scaled_raw_damage: 8,
+      absorbed: 0,
+      shield_absorbed: 0,
+      health_damage_with_overkill: 8,
+      overkill: 0,
+      glance: 0,
+      killed:,
+      combat_result: result,
+      damage_type: damage_type.Tech,
+      hits: [],
+    ),
+  )
+}
+
+/// The units the casts of this Spell4 are aimed at, one for each 0x7ff that starts one.
+fn starts_at(
+  spell4_id spell4_id: Int,
+  effects effects: List(Effect),
+) -> List(Int) {
+  list.filter_map(support.frames_of(message_id: 0x07FF, effects:), fn(frame) {
+    let assert Ok(start) = spell_started.decode(frame.body)
+      as "a 0x7ff the rule wrote decodes"
+    case start.spell4_id == spell4_id {
+      True -> Ok(start.primary_target_unit_id)
+      False -> Error(Nil)
+    }
+  })
+}
+
+/// The time of each cast of the Spell4 that the steps start.
+fn started_when(
+  spell4_id spell4_id: Int,
+  steps steps: List(#(Int, List(Effect))),
+) -> List(Int) {
+  list.flat_map(steps, fn(step) {
+    list.map(starts_at(spell4_id:, effects: step.1), fn(_) { step.0 })
+  })
+}
+
+/// What a go of the Spell4 strikes, and nothing else does.
+fn only(
+  spell4_id spell4_id: Int,
+  struck struck: List(cast.Struck),
+) -> fn(cast.GoAsked) -> List(cast.Struck) {
+  fn(asked: cast.GoAsked) {
+    case asked.spell4_id == Spell4Id(spell4_id) {
+      True -> struck
+      False -> []
+    }
+  }
+}
+
+/// A press of the bag index whose go strikes `struck`, every other go striking none.
+fn striking(
+  plans plans: Plans,
+  state state: State,
+  bag bag: Int,
+  by spell4_id: Int,
+  struck struck: List(cast.Struck),
+  at ms: Int,
+) -> #(State, List(Effect)) {
+  let caster = planted_caster()
+  let #(state, effects) =
+    support.pressed_raw_in(
+      plans:,
+      state:,
+      caster:,
+      bag_index: bag,
+      target: 0,
+      at: ms,
+    )
+  support.answered_each(
+    caster:,
+    state:,
+    effects:,
+    at: ms,
+    struck_of: only(spell4_id:, struck:),
+    rolls: [],
+    poses: dict.new(),
+  )
+}
+
+/// A press of the hitter whose go strikes `struck`.
+fn hit_with(
+  plans plans: Plans,
+  state state: State,
+  struck struck: List(cast.Struck),
+  at ms: Int,
+) -> #(State, List(Effect)) {
+  striking(
+    plans:,
+    state:,
+    bag: bag_of_base_2,
+    by: hitter_spell4,
+    struck:,
+    at: ms,
+  )
+}
+
+/// The plans of a holder of these procs and a hitter of this school, and the holder's
+/// state once its passive is started at 500.
+fn holder_and_hitter(
+  procs procs: List(ProcRow),
+  school school: Int,
+) -> #(Plans, State) {
+  let holder = holding(spell4_id: 250_101, procs:)
+  let plans = support.plans_of([holder, hitter(school:)])
+  let #(state, _) = planted_joined(plans:, spell: holder, at: 500)
+  #(plans, state)
+}
+
+pub fn a_kind_12_proc_fires_its_spell_on_every_hit_the_holder_lands_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4Effects.effectType.14.client_evaluation: the client reads no Proc row, so the
+  // fire is an ordinary cast: a 0x7ff of a non-zero parent and its go, and no 0x7fd.
+  let #(plans, state) =
+    holder_and_hitter(
+      procs: [
+        proc(
+          id: 1,
+          trigger: spell_plan.LandsHit,
+          casts: cast_of_proc(spell4_id: 250_201),
+          window_ms: 500,
+          count: 1,
+        ),
+      ],
+      school: 2,
+    )
+  let #(state, first) =
+    hit_with(plans:, state:, struck: [plain_hit(unit_id: 31)], at: 1000)
+  let lines = trace(effects: first, earlier: [], pressed: hitter_spell4)
+  assert list.filter(lines, fn(line) {
+      line == "start 250201" || line == "go 250201"
+    })
+    == ["start 250201", "go 250201"]
+    as "the proc's spell starts, then goes"
+  assert !list.contains(
+    list.take_while(lines, fn(line) { line != "go 250301" }),
+    "start 250201",
+  )
+    as "the fire comes after the go that hit"
+  assert list.count(support.written_ids(effects: first), fn(id) { id == 0x07FD })
+    == 1
+    as "only the press is confirmed with a 0x7fd"
+  let start = started_of(spell4_id: 250_201, effects: first)
+  assert start.parent_spell4_id == 250_101 && start.root_spell4_id == 250_101
+    as "opcode.0x7ff.root_parent: a cast no press made names the holder's spell as root and parent"
+  let #(_, second) =
+    hit_with(plans:, state:, struck: [plain_hit(unit_id: 31)], at: 2000)
+  assert starts_of(spell4_id: 250_201, effects: second) == 1
+    as "1000 ms after the first fire the 500 ms window is free: every hit fires"
+}
+
+pub fn a_deflected_or_immune_unit_raises_no_hit_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // A guess: no client code reads a Proc row, so the server takes a deflected unit and a
+  // guarded one as no landed hit.
+  let #(plans, state) =
+    holder_and_hitter(
+      procs: [
+        firing(
+          id: 1,
+          trigger: spell_plan.LandsHit,
+          casts: 250_201,
+          aim: spell_plan.AtOtherUnit,
+        ),
+      ],
+      school: 2,
+    )
+  let struck = [
+    cast.Deflected(unit_id: 31),
+    cast.Immune(
+      unit_id: 32,
+      unit: support.first_life,
+      controls: [],
+      armor_removed: 0,
+      ticking: [],
+    ),
+    plain_hit(unit_id: 33),
+  ]
+  let #(_, effects) = hit_with(plans:, state:, struck:, at: 1000)
+  assert starts_at(spell4_id: 250_201, effects:) == [33]
+    as "only the creature the strike hit raises a hit"
+}
+
+pub fn a_hit_by_a_school_1_spell_raises_a_melee_hit_and_one_by_a_school_2_spell_does_not_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // A guess (Spell4Effects.effectType.14.dataBits00.13_school): kind 13 is a hit by a
+  // spell of Spell4Base.school 1, Melee (Spell.CodeEnumSchool).
+  let procs = [
+    firing(
+      id: 1,
+      trigger: spell_plan.LandsHit,
+      casts: 250_201,
+      aim: spell_plan.AtHolder,
+    ),
+    firing(
+      id: 2,
+      trigger: spell_plan.LandsMeleeHit,
+      casts: 250_202,
+      aim: spell_plan.AtHolder,
+    ),
+  ]
+  let hit_by = fn(school) {
+    let #(plans, state) = holder_and_hitter(procs:, school:)
+    let #(_, effects) =
+      hit_with(plans:, state:, struck: [plain_hit(unit_id: 31)], at: 1000)
+    #(
+      starts_of(spell4_id: 250_201, effects:),
+      starts_of(spell4_id: 250_202, effects:),
+    )
+  }
+  assert hit_by(1) == #(1, 1)
+    as "school 1 raises both the hit and the melee hit"
+  assert hit_by(2) == #(1, 0) as "school 2 raises the hit alone"
+}
+
+pub fn a_go_hitting_two_creatures_raises_one_hit_each_in_selection_order_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(plans, state) =
+    holder_and_hitter(
+      procs: [
+        firing(
+          id: 1,
+          trigger: spell_plan.LandsHit,
+          casts: 250_201,
+          aim: spell_plan.AtOtherUnit,
+        ),
+      ],
+      school: 2,
+    )
+  let #(_, effects) =
+    hit_with(
+      plans:,
+      state:,
+      struck: [plain_hit(unit_id: 32), plain_hit(unit_id: 31)],
+      at: 1000,
+    )
+  assert starts_at(spell4_id: 250_201, effects:) == [32, 31]
+    as "one fire for each creature, in the order the strike round lists them"
+}
+
+pub fn each_damage_description_raises_a_hit_and_a_hit_with_none_raises_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(plans, state) =
+    holder_and_hitter(
+      procs: [
+        firing(
+          id: 1,
+          trigger: spell_plan.LandsHit,
+          casts: 250_201,
+          aim: spell_plan.AtOtherUnit,
+        ),
+      ],
+      school: 2,
+    )
+  let #(_, effects) =
+    hit_with(
+      plans:,
+      state:,
+      struck: [
+        creature_hit(unit_id: 31, descriptions: [
+          blow(result: combat_result.Hit, killed: 0),
+          blow(result: combat_result.Hit, killed: 0),
+        ]),
+        creature_hit(unit_id: 32, descriptions: []),
+      ],
+      at: 1000,
+    )
+  assert starts_at(spell4_id: 250_201, effects:) == [31, 31]
+    as "a go with two damage rows on creature 31 raises two hits, and creature 32, which the go only selects (no description, as Crush's first spell does), raises none"
+}
+
+pub fn a_critical_description_raises_a_critical_and_a_hit_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(plans, state) =
+    holder_and_hitter(
+      procs: [
+        firing(
+          id: 1,
+          trigger: spell_plan.LandsCritical,
+          casts: 250_201,
+          aim: spell_plan.AtHolder,
+        ),
+        firing(
+          id: 2,
+          trigger: spell_plan.LandsHit,
+          casts: 250_202,
+          aim: spell_plan.AtHolder,
+        ),
+      ],
+      school: 2,
+    )
+  let hit_with_blow = fn(result) {
+    let #(_, effects) =
+      hit_with(
+        plans:,
+        state:,
+        struck: [
+          creature_hit(unit_id: 31, descriptions: [blow(result:, killed: 0)]),
+        ],
+        at: 1000,
+      )
+    #(
+      starts_of(spell4_id: 250_201, effects:),
+      starts_of(spell4_id: 250_202, effects:),
+    )
+  }
+  assert hit_with_blow(combat_result.Critical) == #(1, 1)
+    as "a blow whose combat result is a critical raises both"
+  assert hit_with_blow(combat_result.Hit) == #(0, 1)
+    as "a plain hit raises the hit alone"
+}
+
+pub fn a_killing_description_raises_a_kill_at_the_killed_creature_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(plans, state) =
+    holder_and_hitter(
+      procs: [
+        firing(
+          id: 1,
+          trigger: spell_plan.Kills,
+          casts: 250_201,
+          aim: spell_plan.AtOtherUnit,
+        ),
+      ],
+      school: 2,
+    )
+  let #(_, effects) =
+    hit_with(
+      plans:,
+      state:,
+      struck: [
+        creature_hit(unit_id: 31, descriptions: [
+          blow(result: combat_result.Hit, killed: 0),
+        ]),
+        creature_hit(unit_id: 32, descriptions: [
+          blow(result: combat_result.Hit, killed: 1),
+        ]),
+      ],
+      at: 1000,
+    )
+  assert starts_at(spell4_id: 250_201, effects:) == [32]
+    as "the description of killed 1 is the kill, and it is at the creature it killed"
+}
+
+// ---- ticks ----
+
+/// Paralytic Surge's damage row ticking every 2000 ms for 6000 ms: three ticks, 2000,
+/// 4000 and 6000 ms after the go.
+fn periodic() -> List(spell_area.TickingDamage) {
+  [
+    spell_area.TickingDamage(
+      damage: spell_area.DamageEffect(
+        effect_id: Spell4EffectsId(96_125),
+        damage_type: 2,
+        delay_ms: 0,
+        phase_flags: -1,
+        aim: spell_plan.AimsAtArea,
+        formula: damage.Formula(multiplier: 1.0, base: 0.0, parameters: [
+          damage.Parameter(kind: 10, value: 8.14),
+        ]),
+        threat_multiplier: 1.0,
+        condition: Always,
+        tag: spend.always,
+      ),
+      schedule: ticking.Schedule(
+        delay_ms: 0,
+        tick_ms: 2000,
+        duration_ms: 6000,
+        count: 3,
+      ),
+    ),
+  ]
+}
+
+/// The strike round of a tick: it lands for 8 health, and kills the creature when
+/// `killed` is 1.
+fn landed_tick(asked asked: cast.TickAsked, killed killed: Int) -> cast.Struck {
+  cast.Hit(
+    unit_id: asked.unit_id,
+    unit: cast.HitCreature(life: asked.life, struck_at_ms: 0),
+    descriptions: [
+      hit.Description(
+        ..blow(result: combat_result.Hit, killed:),
+        spell4_effects_id: asked.effect_id.value,
+      ),
+    ],
+    controls: [],
+    armor_removed: 0,
+    ticking: [],
+  )
+}
+
+/// A step answered: its goes struck as `struck` says, and each tick strike it asks
+/// landed on its creature, killing it at `kills_at`.
+fn tick_settled(
+  caster caster: Caster,
+  state state: State,
+  effects effects: List(Effect),
+  at ms: Int,
+  struck struck: List(cast.Struck),
+  kills_at kills_at: Int,
+) -> #(State, List(Effect)) {
+  let #(state, effects) =
+    support.answered_each(
+      caster:,
+      state:,
+      effects:,
+      at: ms,
+      struck_of: only(spell4_id: hitter_spell4, struck:),
+      rolls: [],
+      poses: dict.new(),
+    )
+  list.fold(
+    support.tick_strikes(effects:),
+    #(state, effects),
+    fn(so_far, asked) {
+      let #(state, done) = so_far
+      let killed = case ms == kills_at {
+        True -> 1
+        False -> 0
+      }
+      let #(state, round) =
+        cast.ticked(
+          cast: state,
+          caster:,
+          now: support.at(ms:),
+          asked:,
+          struck: Some(landed_tick(asked:, killed:)),
+        )
+        |> support.then_procs(caster:, at: ms)
+      let #(state, round) =
+        support.answered_each(
+          caster:,
+          state:,
+          effects: round,
+          at: ms,
+          struck_of: fn(_) { [] },
+          rolls: [],
+          poses: dict.new(),
+        )
+      #(state, list.append(done, round))
+    },
+  )
+}
+
+/// Every timer due by `until` ms fires, earliest first, each step settled as
+/// `tick_settled` does; the steps with their times.
+fn tick_loop(
+  caster caster: Caster,
+  state state: State,
+  pending pending: List(#(Int, TimerId)),
+  steps steps: List(#(Int, List(Effect))),
+  struck struck: List(cast.Struck),
+  kills_at kills_at: Int,
+  until until: Int,
+) -> List(#(Int, List(Effect))) {
+  case list.sort(pending, fn(a, b) { int.compare(a.0, b.0) }) {
+    [#(due, timer), ..rest] if due <= until -> {
+      let #(state, raw) = support.fired_raw_as(caster:, state:, timer:, at: due)
+      let #(state, effects) =
+        tick_settled(caster:, state:, effects: raw, at: due, struck:, kills_at:)
+      let cancelled = support.cancelled_timers(effects:)
+      tick_loop(
+        caster:,
+        state:,
+        pending: list.append(
+          list.filter(rest, fn(other) { !list.contains(cancelled, other.1) }),
+          support.due_of(effects:, now_ms: due),
+        ),
+        steps: list.append(steps, [#(due, effects)]),
+        struck:,
+        kills_at:,
+        until:,
+      )
+    }
+    _ -> steps
+  }
+}
+
+pub fn a_periodic_tick_raises_a_hit_and_a_kill_by_a_tick_raises_a_kill_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // A guess for the hit: no source says a periodic damage tick is a hit for a Proc. The
+  // go lands a hit with no blow of its own and ticks at 3000, 5000 and 7000; the last tick
+  // kills.
+  let #(plans, state) =
+    holder_and_hitter(
+      procs: [
+        firing(
+          id: 1,
+          trigger: spell_plan.LandsHit,
+          casts: 250_201,
+          aim: spell_plan.AtOtherUnit,
+        ),
+        firing(
+          id: 2,
+          trigger: spell_plan.Kills,
+          casts: 250_202,
+          aim: spell_plan.AtOtherUnit,
+        ),
+      ],
+      school: 2,
+    )
+  let caster = planted_caster()
+  let struck = [
+    cast.Hit(
+      unit_id: 31,
+      unit: cast.HitCreature(life: 3, struck_at_ms: 1000),
+      descriptions: [blow(result: combat_result.Hit, killed: 0)],
+      controls: [],
+      armor_removed: 0,
+      ticking: periodic(),
+    ),
+  ]
+  let #(state, raw) =
+    support.pressed_raw_in(
+      plans:,
+      state:,
+      caster:,
+      bag_index: bag_of_base_2,
+      target: 0,
+      at: 1000,
+    )
+  let #(state, first) =
+    tick_settled(
+      caster:,
+      state:,
+      effects: raw,
+      at: 1000,
+      struck:,
+      kills_at: 7000,
+    )
+  let steps =
+    tick_loop(
+      caster:,
+      state:,
+      pending: support.due_of(effects: first, now_ms: 1000),
+      steps: [#(1000, first)],
+      struck:,
+      kills_at: 7000,
+      until: 9000,
+    )
+  assert started_when(spell4_id: 250_201, steps:) == [1000, 3000, 5000, 7000]
+    as "the go's hit and each of the three ticks that landed"
+  assert started_when(spell4_id: 250_202, steps:) == [7000]
+    as "the kill is the last tick's"
+}
+
+// ---- heals ----
+
+fn health_formula() -> damage.Formula {
+  damage.Formula(multiplier: 1.0, base: 0.0, parameters: [
+    damage.Parameter(kind: 13, value: 0.3281),
+    damage.Parameter(kind: 10, value: 17.51),
+    damage.Parameter(kind: 0, value: 0.0),
+    damage.Parameter(kind: 0, value: 0.0),
+  ])
+}
+
+fn heal(id id: Int, delay_ms delay_ms: Int) -> spell_plan.Heal {
+  spell_plan.Heal(
+    effect_id: Spell4EffectsId(id),
+    vital: effect_kind.Health,
+    phase_flags: -1,
+    aim: spell_plan.AimsAtCaster,
+    condition: Always,
+    tag: spend.always,
+    formula: health_formula(),
+    delay_ms:,
+  )
+}
+
+fn ticking_heal(id id: Int) -> spell_plan.Heal {
+  spell_plan.TickingHeal(
+    effect_id: Spell4EffectsId(id),
+    vital: effect_kind.Health,
+    phase_flags: -1,
+    aim: spell_plan.AimsAtCaster,
+    condition: Always,
+    tag: spend.always,
+    formula: health_formula(),
+    schedule: ticking.Schedule(
+      delay_ms: 0,
+      tick_ms: 2000,
+      duration_ms: 6000,
+      count: 3,
+    ),
+  )
+}
+
+/// The caster of level 5 and 400 Support Rating with this much of its 736 health.
+fn healer(health health: Int) -> Caster {
+  cast.Caster(
+    ..support.caster(),
+    stats: damage.Attacker(
+      ..attacker_support.fresh(),
+      level: 5,
+      assault_rating: 0.0,
+      support_rating: 400.0,
+    ),
+    vitals: damage.Vitals(
+      health:,
+      max_health: 736,
+      shield: 250,
+      max_shield: 450,
+    ),
+  )
+}
+
+/// The steps of a press at 1000 ms of a spell of these heal rows, by a holder of these
+/// procs, every timer fired to its end.
+fn healed_steps(
+  health health: Int,
+  rows rows: List(spell_plan.Heal),
+  procs procs: List(ProcRow),
+) -> List(#(Int, List(Effect))) {
+  let holder = holding(spell4_id: 250_101, procs:)
+  let healing = Spell(..support.child(spell4_id: 250_303, base: 3), heals: rows)
+  let plans = support.plans_of([holder, healing])
+  let caster = healer(health:)
+  let #(state, started) =
+    passive_started(
+      cast: cast.new(),
+      caster:,
+      plans:,
+      base: holder.spell4_base_id,
+      now: support.at(ms: 500),
+    )
+  let #(state, _) = answered(caster:, state:, effects: started, at: 500)
+  let #(state, raw) =
+    support.pressed_raw_in(
+      plans:,
+      state:,
+      caster:,
+      bag_index: bag_of_base_3,
+      target: 0,
+      at: 1000,
+    )
+  let #(state, effects) = answered(caster:, state:, effects: raw, at: 1000)
+  let #(_, later) =
+    support.run_timers_each(
+      caster:,
+      state:,
+      effects:,
+      from_ms: 1000,
+      struck_of: fn(_) { [] },
+    )
+  [#(1000, effects), ..later]
+}
+
+pub fn a_heal_at_the_go_on_a_timer_and_at_a_tick_each_raise_a_heal_at_the_holder_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let steps =
+    healed_steps(
+      health: 500,
+      rows: [
+        heal(id: 1, delay_ms: 0),
+        heal(id: 2, delay_ms: 500),
+        ticking_heal(id: 3),
+      ],
+      procs: [
+        firing(
+          id: 1,
+          trigger: spell_plan.LandsHeal,
+          casts: 250_201,
+          aim: spell_plan.AtHolder,
+        ),
+      ],
+    )
+  assert started_when(spell4_id: 250_201, steps:)
+    == [1000, 1500, 3000, 5000, 7000]
+    as "the heal of the go, the one 500 ms on, and the three ticks of the third"
+  assert list.all(
+    list.flat_map(steps, fn(step) {
+      starts_at(spell4_id: 250_201, effects: step.1)
+    }),
+    fn(unit) { unit == 7 },
+  )
+    as "each fire is at the holder, who is the unit healed"
+}
+
+pub fn a_heal_that_moves_nothing_still_raises_a_heal_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // A guess: the caster is at full health, so the heal changes nothing, and the Proc
+  // still sees a heal landed (the client reads no Proc row to say otherwise).
+  let steps =
+    healed_steps(health: 736, rows: [heal(id: 1, delay_ms: 0)], procs: [
+      firing(
+        id: 1,
+        trigger: spell_plan.LandsHeal,
+        casts: 250_201,
+        aim: spell_plan.AtHolder,
+      ),
+    ])
+  assert started_when(spell4_id: 250_201, steps:) == [1000]
+}
+
+pub fn no_critical_heal_is_raised_while_heals_never_crit_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The 69 kind-147 rows are read and silent: no heal is rolled a critical until the issue
+  // that closes this gap (issue 830), so a heal raises only the plain heal.
+  let steps =
+    healed_steps(health: 500, rows: [heal(id: 1, delay_ms: 0)], procs: [
+      firing(
+        id: 1,
+        trigger: spell_plan.LandsCriticalHeal,
+        casts: 250_201,
+        aim: spell_plan.AtHolder,
+      ),
+      firing(
+        id: 2,
+        trigger: spell_plan.LandsHeal,
+        casts: 250_202,
+        aim: spell_plan.AtHolder,
+      ),
+    ])
+  assert started_when(spell4_id: 250_201, steps:) == []
+    as "the critical-heal proc never fires"
+  assert started_when(spell4_id: 250_202, steps:) == [1000]
+    as "the heal proc of the same heal does"
+}
+
+// ---- where a fire is aimed, and the creature's gate ----
+
+pub fn a_bit_4_hit_proc_casts_at_the_struck_creature_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Row 208200 has dataBits03 4 (Spell4Effects.effectType.14.dataBits03): its damage is
+  // cast at the creature the hit struck; a row without bit 4 casts at the holder.
+  let #(plans, state) =
+    holder_and_hitter(
+      procs: [
+        firing(
+          id: 1,
+          trigger: spell_plan.LandsHit,
+          casts: 250_201,
+          aim: spell_plan.AtOtherUnit,
+        ),
+        firing(
+          id: 2,
+          trigger: spell_plan.LandsHit,
+          casts: 250_202,
+          aim: spell_plan.AtHolder,
+        ),
+      ],
+      school: 2,
+    )
+  let #(_, effects) =
+    hit_with(plans:, state:, struck: [plain_hit(unit_id: 31)], at: 1000)
+  assert starts_at(spell4_id: 250_201, effects:) == [31]
+  assert starts_at(spell4_id: 250_202, effects:) == [7]
+}
+
+/// The spell of any tree of the client's plans.
+fn real_spell(spell4_id spell4_id: Int) -> Spell {
+  let assert Ok(spell) =
+    list.flat_map(dict.values(support.real_plans()), fn(ability) {
+      spell_plan.tree(spell: ability, started: fn(_) { True })
+    })
+    |> list.find(fn(spell) { spell.spell4_id.value == spell4_id })
+    as "a tree of the plans holds the spell"
+  spell
+}
+
+pub fn the_208200_gate_passes_only_while_the_holders_79220_holds_a_node_on_the_creature_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  // Prerequisite 37038 (`Prerequisite.prerequisiteTypeId.50`): type 50, comparison 1, value
+  // 79220: the creature is under the holder's cast of Spell4 79220.
+  let assert [stalker_damage] = real_spell(spell4_id: 79_229).procs
+    as "79229 holds the one Proc row 208200"
+  let holder = holding(spell4_id: 250_101, procs: [stalker_damage])
+  let marking =
+    Spell(..support.child(spell4_id: 79_220, base: 3), lasting: [
+      spell_plan.Lasting(
+        effect_id: Spell4EffectsId(250_901),
+        phase_flags: -1,
+        aim: spell_plan.AimsAtArea,
+        row: LastingRow(delay_ms: 0, duration_ms: 8000, until_removed: False),
+        condition: Always,
+        tag: spend.always,
+      ),
+    ])
+  let striker = Spell(..hitter(school: 2), groups: [463])
+  let plans = support.plans_of([holder, marking, striker])
+  let #(state, _) = planted_joined(plans:, spell: holder, at: 500)
+  let #(state, bare) =
+    hit_with(plans:, state:, struck: [plain_hit(unit_id: 31)], at: 1000)
+  assert starts_at(spell4_id: 79_221, effects: bare) == []
+    as "no 79220 holds a node on the creature: the gate fails"
+  let #(state, marked) =
+    striking(
+      plans:,
+      state:,
+      bag: bag_of_base_3,
+      by: 79_220,
+      struck: [plain_hit(unit_id: 31)],
+      at: 2000,
+    )
+  assert starts_at(spell4_id: 79_221, effects: marked) == []
+    as "79220 is not in group 463, so its own hit fires nothing"
+  assert list.map(cast.holds_on(cast: state, unit_id: 31), fn(hold) {
+      hold.spell4_id.value
+    })
+    == [79_220]
+    as "79220's go gave its node to the creature it struck"
+  let #(state, held) =
+    hit_with(plans:, state:, struck: [plain_hit(unit_id: 31)], at: 3000)
+  assert starts_at(spell4_id: 79_221, effects: held) == [31]
+    as "while 79220's node is on the creature the proc casts 79221 at it"
+  let #(state, other) =
+    hit_with(plans:, state:, struck: [plain_hit(unit_id: 32)], at: 4000)
+  assert starts_at(spell4_id: 79_221, effects: other) == []
+    as "a creature 79220 does not hold fails"
+  let #(state, _) = support.run_timers(state:, effects: marked, from_ms: 2000)
+  let #(_, after) =
+    hit_with(plans:, state:, struck: [plain_hit(unit_id: 31)], at: 12_000)
+  assert starts_at(spell4_id: 79_221, effects: after) == []
+    as "once the node has ended (8000 ms) the gate fails again"
+}
+
+// ---- delayed fires ----
+
+pub fn a_proc_with_delay_1000_casts_1_second_after_its_event_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let delayed =
+    ProcRow(
+      ..firing(
+        id: 1,
+        trigger: spell_plan.LandsHit,
+        casts: 250_201,
+        aim: spell_plan.AtHolder,
+      ),
+      delay_ms: 1000,
+    )
+  let #(plans, state) = holder_and_hitter(procs: [delayed], school: 2)
+  let #(state, effects) =
+    hit_with(plans:, state:, struck: [plain_hit(unit_id: 31)], at: 1000)
+  assert starts_of(spell4_id: 250_201, effects:) == 0
+    as "nothing starts at the event"
+  assert list.count(support.started_timers(effects:), fn(started) {
+      started.1 == 1000
+    })
+    == 1
+    as "one timer of 1000 ms is armed"
+  let #(_, later) = support.run_timers(state:, effects:, from_ms: 1000)
+  assert list.map(later, fn(step) {
+      #(step.0, starts_of(spell4_id: 250_201, effects: step.1))
+    })
+    == [#(2000, 1)]
+    as "the cast starts once, 1000 ms after the event"
+}
+
+pub fn a_delayed_fire_counts_against_the_limit_at_its_event_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let delayed =
+    ProcRow(
+      ..proc(
+        id: 1,
+        trigger: spell_plan.LandsHit,
+        casts: cast_of_proc(spell4_id: 250_201),
+        window_ms: 3000,
+        count: 1,
+      ),
+      delay_ms: 1000,
+    )
+  let #(plans, state) = holder_and_hitter(procs: [delayed], school: 2)
+  let armed = fn(effects) {
+    list.count(support.started_timers(effects:), fn(started) {
+      started.1 == 1000
+    })
+  }
+  let #(state, first) =
+    hit_with(plans:, state:, struck: [plain_hit(unit_id: 31)], at: 1000)
+  assert armed(first) == 1
+  let #(state, second) =
+    hit_with(plans:, state:, struck: [plain_hit(unit_id: 31)], at: 1500)
+  assert armed(second) == 0
+    as "the fire is counted at its event, 1000, so a hit at 1500, before it casts at 2000, is over the limit"
+  let #(_, third) =
+    hit_with(plans:, state:, struck: [plain_hit(unit_id: 31)], at: 4000)
+  assert armed(third) == 1 as "3000 ms after the event the window is free"
+}
+
+pub fn a_delayed_fire_is_dropped_with_its_timer_when_the_procs_node_ends_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Design: a delayed fire is dropped, and its timer cancelled, when the proc's node ends,
+  // as a pending heal is. The node of the timed row lasts 3000 ms.
+  let timed =
+    ProcRow(
+      ..firing(
+        id: 1,
+        trigger: spell_plan.LandsHit,
+        casts: 250_201,
+        aim: spell_plan.AtHolder,
+      ),
+      row: LastingRow(delay_ms: 0, duration_ms: 3000, until_removed: False),
+      delay_ms: 1000,
+    )
+  let holder = pressable(spell4_id: 250_101, base: 1, procs: [timed])
+  let plans = support.plans_of([holder, hitter(school: 2)])
+  let caster = planted_caster()
+  let #(state, pressed) =
+    planted_press(plans:, state: cast.new(), bag: bag_of_base_1, at: 0)
+  let #(state, hit) =
+    hit_with(plans:, state:, struck: [plain_hit(unit_id: 31)], at: 2500)
+  let assert [#(fire_timer, _)] =
+    list.filter(support.started_timers(effects: hit), fn(started) {
+      started.1 == 1000
+    })
+    as "the hit arms the delayed fire, due at 3500"
+  let assert Ok(#(_, node_end)) =
+    list.find(support.due_of(effects: pressed, now_ms: 0), fn(due) {
+      due.0 == 3000
+    })
+    as "the holder's node ends at 3000"
+  let #(state, ended) =
+    support.fired_raw_as(caster:, state:, timer: node_end, at: 3000)
+  assert list.contains(support.cancelled_timers(effects: ended), fire_timer)
+    as "the node's end cancels the delayed fire's timer"
+  let #(_, stale) =
+    support.fired_raw_as(caster:, state:, timer: fire_timer, at: 3500)
+  assert starts_of(spell4_id: 250_201, effects: stale) == 0
+    as "and a timer that was already on its way casts nothing"
+}
+
+pub fn a_delayed_fire_is_dropped_when_the_holder_dies_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // A pressed holder's casts end with its death, so its delayed fire's timer is cancelled
+  // with them (the innate passive's casts stay, and so do its timers).
+  let delayed =
+    ProcRow(
+      ..firing(
+        id: 1,
+        trigger: spell_plan.LandsHit,
+        casts: 250_201,
+        aim: spell_plan.AtHolder,
+      ),
+      delay_ms: 1000,
+    )
+  let holder = pressable(spell4_id: 250_101, base: 1, procs: [delayed])
+  let plans = support.plans_of([holder, hitter(school: 2)])
+  let caster = planted_caster()
+  let #(state, _) =
+    planted_press(plans:, state: cast.new(), bag: bag_of_base_1, at: 0)
+  let #(state, hit) =
+    hit_with(plans:, state:, struck: [plain_hit(unit_id: 31)], at: 1000)
+  let assert [#(fire_timer, _)] =
+    list.filter(support.started_timers(effects: hit), fn(started) {
+      started.1 == 1000
+    })
+    as "the hit arms the delayed fire, due at 2000"
+  let #(state, death) = died(cast: state, caster:, now: support.at(ms: 1500))
+  assert list.contains(support.cancelled_timers(effects: death), fire_timer)
+    as "the holder's death cancels the timer"
+  let #(_, stale) =
+    support.fired_raw_as(
+      caster: dead(caster:),
+      state:,
+      timer: fire_timer,
+      at: 2000,
+    )
+  assert starts_of(spell4_id: 250_201, effects: stale) == 0
+    as "a timer already on its way casts nothing"
+}
+
+pub fn a_delayed_fire_of_the_innate_passives_proc_is_dropped_when_its_holder_dies_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The passive's cast stays through a death with its other timers, but a fire that waits on
+  // its delay is dropped: the holder is gone, so nothing is cast for its hit.
+  let delayed =
+    ProcRow(
+      ..firing(
+        id: 1,
+        trigger: spell_plan.LandsHit,
+        casts: 250_201,
+        aim: spell_plan.AtHolder,
+      ),
+      delay_ms: 1000,
+    )
+  let #(plans, state) = holder_and_hitter(procs: [delayed], school: 2)
+  let #(state, hit) =
+    hit_with(plans:, state:, struck: [plain_hit(unit_id: 31)], at: 1000)
+  let assert [#(fire_timer, _)] =
+    list.filter(support.started_timers(effects: hit), fn(started) {
+      started.1 == 1000
+    })
+    as "the hit arms the delayed fire, due at 2000"
+  let caster = planted_caster()
+  let #(state, death) = died(cast: state, caster:, now: support.at(ms: 1500))
+  assert list.contains(support.cancelled_timers(effects: death), fire_timer)
+    as "the holder's death cancels the timer"
+  let #(_, stale) =
+    support.fired_raw_as(
+      caster: dead(caster:),
+      state:,
+      timer: fire_timer,
+      at: 2000,
+    )
+  assert starts_of(spell4_id: 250_201, effects: stale) == 0
+    as "a timer already on its way casts nothing"
+}
+
+pub fn a_hit_answered_after_the_client_ended_the_cast_still_fires_the_procs_the_cast_lingers_to_hold_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The hitter holds a Proc until removed, so its cast lingers when the client cancels it
+  // (0x801) while its second round is open; the hit then answered is the holder's hit all
+  // the same, and the cast's spell is still known (`holder_of`).
+  let lasting =
+    Spell(
+      ..hitter(school: 2),
+      method: spell_plan.Multiphase,
+      phase_delays_ms: [0, 500],
+      procs: [
+        firing(
+          id: 1,
+          trigger: spell_plan.LandsHit,
+          casts: 250_201,
+          aim: spell_plan.AtHolder,
+        ),
+      ],
+    )
+  let plans = support.plans_of([lasting])
+  let caster = planted_caster()
+  let #(state, pressed) =
+    support.pressed_raw_in(
+      plans:,
+      state: cast.new(),
+      caster:,
+      bag_index: bag_of_base_2,
+      target: 0,
+      at: 1000,
+    )
+  let cast_id = support.pressed_id(effects: pressed)
+  let #(state, first) = answered(caster:, state:, effects: pressed, at: 1000)
+  let assert [#(second_go, _)] =
+    list.filter(support.started_timers(effects: first), fn(started) {
+      started.1 == 500
+    })
+    as "the first go arms the second, due at 1500"
+  let #(state, asking) =
+    support.fired_raw_as(caster:, state:, timer: second_go, at: 1500)
+  let assert [cast.Strike(asked)] = list.filter(asking, is_strike)
+    as "the second go asks for its targets"
+  let assert Ok(#(state, _)) =
+    cast.take(
+      cast: state,
+      message: cast.Cancelled,
+      body: support.cancel_body(
+        cast_id:,
+        reason: cast_result.SpellCancelled,
+        bit: 1,
+      ),
+      caster:,
+      plans:,
+      now: support.at(ms: 1600),
+    )
+    as "the client ends the cast with reason 6 (opcode.0x801)"
+  let #(_, late) =
+    support.then_procs(
+      step: support.went(
+        cast: state,
+        caster:,
+        now: support.at(ms: 1700),
+        cast_id: asked.cast_id,
+        phase: asked.phase,
+        struck: [plain_hit(unit_id: 31)],
+      ),
+      caster:,
+      at: 1700,
+    )
+  assert starts_of(spell4_id: 250_201, effects: late) == 1
+    as "the lingering cast's own proc fires for the hit it landed"
+}
+
+pub fn a_hit_answered_after_the_client_ended_a_cast_that_holds_no_node_still_fires_the_holders_proc_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The hitter is a one-phase spell with no lasting row, so its cast is gone from the
+  // rule once the client cancels it (0x801) while its round is open; the hit the round
+  // then answers is still the holder's hit, and the go names its spell (`GoAsked`).
+  let #(plans, state) =
+    holder_and_hitter(
+      procs: [
+        firing(
+          id: 1,
+          trigger: spell_plan.LandsHit,
+          casts: 250_201,
+          aim: spell_plan.AtOtherUnit,
+        ),
+      ],
+      school: 2,
+    )
+  let caster = planted_caster()
+  let #(state, pressed) =
+    support.pressed_raw_in(
+      plans:,
+      state:,
+      caster:,
+      bag_index: bag_of_base_2,
+      target: 0,
+      at: 1000,
+    )
+  let cast_id = support.pressed_id(effects: pressed)
+  let assert [cast.Strike(asked)] = list.filter(pressed, is_strike)
+    as "the press asks for the targets of its one go"
+  let assert Ok(#(state, _)) =
+    cast.take(
+      cast: state,
+      message: cast.Cancelled,
+      body: support.cancel_body(
+        cast_id:,
+        reason: cast_result.SpellCancelled,
+        bit: 1,
+      ),
+      caster:,
+      plans:,
+      now: support.at(ms: 1100),
+    )
+    as "the client ends the cast with reason 6 (opcode.0x801)"
+  let #(_, late) =
+    support.then_procs(
+      step: support.went_of_spell(
+        cast: state,
+        caster:,
+        now: support.at(ms: 1200),
+        cast_id: asked.cast_id,
+        phase: asked.phase,
+        spell: Ok(hitter(school: 2)),
+        struck: [plain_hit(unit_id: 31)],
+      ),
+      caster:,
+      at: 1200,
+    )
+  assert starts_at(spell4_id: 250_201, effects: late) == [31]
+    as "the holder's proc fires at the creature the late hit struck"
+}
+
+// ---- no cascade, the draws, the order ----
+
+pub fn a_fired_spells_own_hits_fire_procs_only_at_its_own_go_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The fire's go is a later input: its hits are matched when it goes, not inside the pass
+  // that fired it, so a proc whose spell hits what it hit fires once for each go.
+  let holder =
+    holding(spell4_id: 250_101, procs: [
+      proc(
+        id: 1,
+        trigger: spell_plan.LandsHit,
+        casts: cast_of_proc(spell4_id: 250_201),
+        window_ms: 1000,
+        count: 2,
+      ),
+    ])
+  let plans = support.plans_of([holder, hitter(school: 2)])
+  let caster = planted_caster()
+  let #(state, _) = planted_joined(plans:, spell: holder, at: 500)
+  let #(state, raw) =
+    support.pressed_raw_in(
+      plans:,
+      state:,
+      caster:,
+      bag_index: bag_of_base_2,
+      target: 0,
+      at: 1000,
+    )
+  let assert [cast.Strike(asked)] = list.filter(raw, is_strike)
+    as "the press asks for its go"
+  let go = fn(state, asked: cast.GoAsked) {
+    let #(state, went) =
+      support.went(
+        cast: state,
+        caster:,
+        now: support.at(ms: 1000),
+        cast_id: asked.cast_id,
+        phase: asked.phase,
+        struck: [plain_hit(unit_id: 31)],
+      )
+    assert cast.has_pending(cast: state)
+      as "the go's hit is waiting to be matched"
+    let #(state, fired) =
+      support.then_procs(step: #(state, went), caster:, at: 1000)
+    assert !cast.has_pending(cast: state)
+      as "one pass matches it and the fire raises nothing inside it"
+    #(state, fired)
+  }
+  let #(state, first) = go(state, asked)
+  assert starts_of(spell4_id: 250_201, effects: first) == 1
+  let assert [cast.Strike(own)] = list.filter(first, is_strike)
+    as "the fire's go is asked, not answered inside the pass"
+  let #(state, second) = go(state, own)
+  assert starts_of(spell4_id: 250_201, effects: second) == 1
+    as "the fire's own go hit the creature, and that fires the proc a second time"
+  let assert [cast.Strike(own)] = list.filter(second, is_strike)
+  let #(_, third) = go(state, own)
+  assert starts_of(spell4_id: 250_201, effects: third) == 0
+    as "a third fire is over the limit of 2 in 1000 ms"
+}
+
+pub fn proc_draws_needed_is_0_with_nothing_pending_and_counts_each_matching_proc_otherwise_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let half = fn(id, trigger, casts) {
+    ProcRow(
+      ..firing(id:, trigger:, casts:, aim: spell_plan.AtHolder),
+      chance: 0.5,
+    )
+  }
+  let holder =
+    holding(spell4_id: 250_101, procs: [
+      half(1, spell_plan.LandsHit, 250_201),
+      firing(
+        id: 2,
+        trigger: spell_plan.LandsHit,
+        casts: 250_202,
+        aim: spell_plan.AtHolder,
+      ),
+      half(3, spell_plan.LandsCritical, 250_203),
+    ])
+  let plans = support.plans_of([holder, hitter(school: 2)])
+  let caster = planted_caster()
+  let #(state, _) = planted_joined(plans:, spell: holder, at: 500)
+  assert cast.proc_draws_needed(cast: state) == #(0, 0)
+    as "nothing is pending after the passive's own pass"
+  let #(state, raw) =
+    support.pressed_raw_in(
+      plans:,
+      state:,
+      caster:,
+      bag_index: bag_of_base_2,
+      target: 0,
+      at: 1000,
+    )
+  let assert [cast.Strike(asked)] = list.filter(raw, is_strike)
+  let #(state, went) =
+    support.went(
+      cast: state,
+      caster:,
+      now: support.at(ms: 1000),
+      cast_id: asked.cast_id,
+      phase: asked.phase,
+      struck: [
+        creature_hit(unit_id: 31, descriptions: [
+          blow(result: combat_result.Hit, killed: 0),
+        ]),
+        creature_hit(unit_id: 32, descriptions: [
+          blow(result: combat_result.Critical, killed: 0),
+        ]),
+      ],
+    )
+  assert cast.proc_draws_needed(cast: state) == #(3, 0)
+    as "creature 31: a hit, the 0.5 proc takes a word and the 1.0 proc none; creature 32: a hit and a critical, a word each"
+  let #(state, _) = support.then_procs(step: #(state, went), caster:, at: 1000)
+  assert cast.proc_draws_needed(cast: state) == #(0, 0)
+    as "the pass clears what it matched"
+}
+
+pub fn the_old_triggers_keep_their_order_after_the_inputs_events_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // An input's own events come first, then its heals, then its stealth change: a go that
+  // hits and enters stealth casts the hit's proc before the stealth's.
+  let entering =
+    Spell(
+      ..hitter(school: 2),
+      stealth: [stealth_row(id: 250_902, breaks: KeptOnDamage)],
+      stealth_change: KeepsStealth,
+    )
+  let holder =
+    holding(spell4_id: 250_101, procs: [
+      firing(
+        id: 1,
+        trigger: EnteredStealth,
+        casts: 250_202,
+        aim: spell_plan.AtHolder,
+      ),
+      firing(
+        id: 2,
+        trigger: spell_plan.LandsHit,
+        casts: 250_201,
+        aim: spell_plan.AtHolder,
+      ),
+    ])
+  let plans = support.plans_of([holder, entering])
+  let #(state, _) = planted_joined(plans:, spell: holder, at: 500)
+  let #(_, effects) =
+    hit_with(plans:, state:, struck: [plain_hit(unit_id: 31)], at: 1000)
+  let lines = trace(effects:, earlier: [], pressed: hitter_spell4)
+  assert list.filter(lines, fn(line) {
+      line == "start 250201" || line == "start 250202"
+    })
+    == ["start 250201", "start 250202"]
+    as "the hit's proc is cast before the stealth's, whatever order the holder lists them in"
+}
+
+pub fn the_stalkers_178239_takes_no_effect_from_its_own_hits_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  // Spell4Effects.effectType.14.dataBits00: 178239 (Spell4 38784) is kind 16, 'takes
+  // damage': the plan leaves it out until the blows-taken step (issue 828), so the
+  // Stalker's own hit casts nothing of 72838.
+  let caster = stalker(in_combat: False)
+  let #(state, _) = joined(caster:, at: 1000)
+  let #(state, pressed) =
+    support.pressed_raw_in(
+      plans: support.real_plans(),
+      state:,
+      caster:,
+      bag_index: 0,
+      target: 0,
+      at: 2000,
+    )
+  let #(state, effects) =
+    support.answered_each(
+      caster:,
+      state:,
+      effects: pressed,
+      at: 2000,
+      struck_of: fn(_) { [plain_hit(unit_id: 31)] },
+      rolls: [],
+      poses: dict.new(),
+    )
+  assert starts_of(spell4_id: 72_838, effects:) == 0
+  assert !cast.has_pending(cast: state)
 }

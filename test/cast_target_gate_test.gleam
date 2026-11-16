@@ -439,6 +439,7 @@ pub fn rolls_needed_counts_a_union_row_once_for_each_unit_it_reaches_test() -> N
       now: support.at(ms: 1000),
       cast_id: parent_asked.cast_id,
       phase: parent_asked.phase,
+      spell: Error(Nil),
       struck: support.hits([20]),
       poses: dict.new(),
       indexes: dict.new(),

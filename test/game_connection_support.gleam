@@ -50,7 +50,7 @@ import genesis_prime/message/movement_state_flags.{MovementStateFlags}
 import genesis_prime/message/play_character.{PlayCharacter}
 import genesis_prime/message/relayed_movement
 import genesis_prime/message/spell_cast_refused
-import genesis_prime/message/spell_damage_description
+import genesis_prime/message/spell_damage_description.{SpellDamageDescription}
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_position
 import genesis_prime/message/spell_started
@@ -2065,6 +2065,26 @@ pub fn strikes_told(
   })
 }
 
+/// The rolls of the strikes the steps tell creatures, in order.
+pub fn strike_rolls(steps: List(ConnectionStep(Request))) -> List(hit.Rolls) {
+  list.flat_map(steps, fn(taken) {
+    list.filter_map(support.effects_of(taken), fn(effect) {
+      case effect {
+        OwnEffect(step.Tell(
+          to: step.Creature(..),
+          request: client_connection.TellStrike(tell:),
+        )) ->
+          case tell.striker {
+            strike_tell.PlayerStriker(rolls:, ..) -> Ok(rolls)
+            strike_tell.CreatureStriker -> Error(Nil)
+          }
+        OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+          Error(Nil)
+      }
+    })
+  })
+}
+
 /// The strikes a step tells the creatures, as the creature's unit and the Spell4Effects id of
 /// each damage row the strike carries.
 pub fn strike_blows_told(
@@ -2133,6 +2153,39 @@ pub fn landed(
     key:,
     outcome: strike_tell.Landed(
       descriptions: [],
+      controls: [],
+      armor_removed: 0,
+    ),
+  )
+}
+
+/// The creature's answer that a strike landed with one plain blow of damage: the one
+/// description that each hit a proc watches for counts.
+pub fn landed_with_damage(
+  key key: strike_tell.Key,
+) -> Event(ConnectionEvent(Message, Answer)) {
+  answered(
+    key:,
+    outcome: strike_tell.Landed(
+      descriptions: [
+        hit.Description(
+          spell4_effects_id: 1,
+          delay_ms: 0,
+          damage: SpellDamageDescription(
+            raw_damage: 8,
+            scaled_raw_damage: 8,
+            absorbed: 0,
+            shield_absorbed: 0,
+            health_damage_with_overkill: 8,
+            overkill: 0,
+            glance: 0,
+            killed: 0,
+            combat_result: combat_result.Hit,
+            damage_type: damage_type.Tech,
+            hits: [],
+          ),
+        ),
+      ],
       controls: [],
       armor_removed: 0,
     ),

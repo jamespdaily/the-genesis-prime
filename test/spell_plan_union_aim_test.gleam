@@ -62,7 +62,10 @@ fn planned_parts(reading reading: RowReading) -> List(PlannedRow) {
         planned_parts(reading: Applied(past_the_caster)),
       )
     Applied(row) -> [row]
-    _ -> []
+    spell_plan.Held(_)
+    | spell_plan.LeftOut(_)
+    | spell_plan.ReadByArea
+    | spell_plan.ReadByActivation -> []
   }
 }
 
@@ -74,7 +77,16 @@ fn aims_of(reading reading: RowReading) -> List(Aim) {
       spell_plan.PlannedControl(control:) -> Ok(control.aim)
       spell_plan.PlannedHeal(heal: spell_plan.Heal(aim:, ..)) -> Ok(aim)
       spell_plan.PlannedHeal(heal: spell_plan.TickingHeal(aim:, ..)) -> Ok(aim)
-      _ -> Error(Nil)
+      spell_plan.PlannedGain(..)
+      | spell_plan.PlannedModifier(..)
+      | spell_plan.PlannedForcedMove(..)
+      | spell_plan.PlannedStruckMove(..)
+      | spell_plan.PlannedCooldownModifier(..)
+      | spell_plan.PlannedStealth(..)
+      | spell_plan.PlannedRemoveStealth(..)
+      | spell_plan.PlannedProc(..)
+      | spell_plan.PlannedProxy(..)
+      | spell_plan.PlannedBoth(..) -> Error(Nil)
     }
   })
 }

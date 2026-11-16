@@ -37,6 +37,15 @@ pub fn fraction(number: Int) -> Float {
   int.to_float(number) /. 4_294_967_296.0
 }
 
+/// The 32-bit numbers the bytes make, big-endian, one for each 4 bytes; bytes left over
+/// after the last whole number are dropped. A draw is such a number (`fraction`).
+pub fn words(bytes bytes: BitArray) -> List(Int) {
+  case bytes {
+    <<word:size(32), rest:bytes>> -> [word, ..words(bytes: rest)]
+    _ -> []
+  }
+}
+
 /// HMAC-SHA256's output is 32 bytes.
 const block_size = 32
 

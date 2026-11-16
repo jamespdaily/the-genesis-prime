@@ -1,4 +1,7 @@
 ID	phaseDelay	phaseFlags	orderIndex	spell4IdOwner
+120	0	0	0	30665
+121	10	0	1	30665
+122	250	0	2	30665
 920	183	0	0	35360
 921	83	0	1	35360
 922	83	0	2	35360

@@ -206,6 +206,7 @@ import genesis_prime/game/quest_log.{
 }
 import genesis_prime/game/top_zone
 import genesis_prime/message/float32
+import genesis_prime/random
 import genesis_prime/store.{type Character, type HeldItem}
 import genesis_prime/table/id.{
   type PrerequisiteId, type Spell4BaseId, type Spell4Id, PrerequisiteId,
@@ -647,7 +648,7 @@ pub type Seen {
 /// holds none of them either: a condition that reads what else it holds is `NotRead`
 /// (`PlaceOnly`), where an empty `under` would read as "under no cast" and pass a
 /// condition that asks for the absence of one. The exception is type 130, which reads
-/// the second unit's casts alone: `under` holds the caster's casts on the struck unit and
+/// the second unit's casts alone, as type 50 does: `under` holds the caster's casts on the struck unit and
 /// the caster is the second unit. `unit` is who the struck unit is, and `checker` is what
 /// the caster holds of its own.
 pub fn of_struck(
@@ -1353,6 +1354,61 @@ pub fn objective_links(
   })
 }
 
+/// The PrerequisiteTypes, in the prerequisite and the rows it nests, that a press cannot
+/// check a gate of a Proxy with, each once: a type the server has not decoded
+/// (`unread_types`), type 37, which draws a roll, and types 50, 108 and 130, which read the
+/// second unit, which the client sets to the target of the unit that presses
+/// (`ResolveProxyByCasterApply` `0x1403d3520`) while the subject here holds the caster.
+pub fn press_unread_types(
+  prerequisite prerequisite: Prerequisite,
+) -> List(Int) {
+  list.flat_map(prerequisite.conditions, fn(condition) {
+    case condition {
+      Nested(row: Some(nested), ..) -> press_unread_types(prerequisite: nested)
+      Unread(prerequisite_type:) -> [prerequisite_type]
+      Roll(..) -> [37]
+      UnderCastBy(..) -> [50]
+      InArc(..) -> [108]
+      CarriesCasterGroup(..) -> [130]
+      Nested(row: None, ..)
+      | TargetOfLiveCast(..)
+      | StackCount(..)
+      | InCombat(..)
+      | VitalPercent(..)
+      | VitalCurrent(..)
+      | ResourceSlot(..)
+      | UnderGroup(..)
+      | Stealthed(..)
+      | Difficulty(..)
+      | CurrentFaction(..)
+      | BaseFaction(..)
+      | UnitLevel(..)
+      | PlayerRace(..)
+      | UnitClass(..)
+      | InZone(..)
+      | IsPlayer(..)
+      | PlayerPath(..)
+      | Gender(..)
+      | InWorld(..)
+      | QuestState(..)
+      | ObjectiveDone(..)
+      | ObjectiveOpen(..)
+      | TargetCounted(..)
+      | ObjectiveProgress(..)
+      | ChallengeFlag(..)
+      | NeverMet
+      | ServerGated
+      | IsCreature(..)
+      | SpellKnown(..)
+      | ItemHeld(..)
+      | WorldDifficulty(..)
+      | ObjectiveStatus(..)
+      | NoCase -> []
+    }
+  })
+  |> list.unique
+}
+
 /// The PrerequisiteTypes, in the prerequisite and the rows it nests, that a unit the
 /// caster struck cannot be checked against, each once: the types its subject, known by its
 /// place alone (`Seen`), reads as `NotRead`, and the factions and difficulty it holds none of.
@@ -1464,13 +1520,7 @@ pub const roll_bytes = 4
 /// (`Prerequisite.prerequisiteTypeId.37`). Bytes left over after the last whole
 /// roll are dropped.
 pub fn rolls_of(bytes bytes: BitArray) -> List(Int) {
-  case bytes {
-    <<word:size(32), rest:bytes>> -> [
-      1 + word * 100 / 4_294_967_296,
-      ..rolls_of(bytes: rest)
-    ]
-    _ -> []
-  }
+  list.map(random.words(bytes:), fn(word) { 1 + word * 100 / 4_294_967_296 })
 }
 
 /// The prerequisite checked against its subject (`0x1404a1ca0`).
@@ -1548,7 +1598,9 @@ fn condition_check(
 }
 
 /// The type of a condition that reads the casts, combat state or vitals of its unit,
-/// which a subject known by its place alone does not hold. A roll is no state of the unit
+/// which a subject known by its place alone does not hold. A type 50 condition reads the
+/// casts of the second unit alone (`is_under_cast_by`), which the subject holds as a type
+/// 130 condition's do, so it is decided. A roll is no state of the unit
 /// (`Prerequisite.prerequisiteTypeId.37`: the units are not read), so a type 37 condition
 /// is given its roll for any subject. A nested row decides by
 /// its own conditions, and a resource slot, a stealth and a difficulty that the subject
@@ -1556,7 +1608,6 @@ fn condition_check(
 fn reads_held_state(condition condition: Condition) -> Option(Int) {
   case condition {
     TargetOfLiveCast(..) -> Some(15)
-    UnderCastBy(..) -> Some(50)
     StackCount(..) -> Some(59)
     InCombat(..) -> Some(28)
     VitalPercent(..) -> Some(71)
@@ -1565,6 +1616,7 @@ fn reads_held_state(condition condition: Condition) -> Option(Int) {
     UnitLevel(..) -> Some(1)
     UnitClass(..) -> Some(3)
     Nested(..)
+    | UnderCastBy(..)
     | Roll(..)
     | IsPlayer(..)
     | ResourceSlot(..)

@@ -146,20 +146,33 @@ pub fn a_row_aimed_at_the_primary_target_or_the_area_is_read_test() -> Nil {
         as "and no move of the caster's: the caster is not an aim of the row"
     },
   )
-  // 3, 5 and 7 include the caster: the caster's part is the `ForcedMove`, and the
-  // struck units' part is not applied (the cast moves the creatures a row aimed
-  // only at them names).
-  list.each([3, 5, 7], fn(flags) {
-    let assert Ok(spell) =
-      spell_tables.planned_strike(
-        rows: spell_tables.rows_with_effect(
-          effect: forced_move_row(id: 99_063, target_flags: flags, columns: []),
-        ),
-      )
-    assert spell.struck_moves == []
-      as "a row that includes the caster moves the caster only"
-    assert list.length(spell.forced_moves) == 1
-  })
+  // 3, 5 and 7 include the caster: the caster's part is the `ForcedMove` and the part
+  // past the caster, the primary target's, the area's or both, is a `StruckMove` (#794).
+  list.each(
+    [
+      #(3, spell_plan.AimsAtPrimaryTarget),
+      #(5, spell_plan.AimsAtArea),
+      #(7, spell_plan.AimsAtPrimaryTargetAndArea),
+    ],
+    fn(shape) {
+      let #(flags, past_the_caster) = shape
+      let assert Ok(spell) =
+        spell_tables.planned_strike(
+          rows: spell_tables.rows_with_effect(
+            effect: forced_move_row(
+              id: 99_063,
+              target_flags: flags,
+              columns: [],
+            ),
+          ),
+        )
+      assert list.map(spell.struck_moves, fn(move) { move.aim })
+        == [past_the_caster]
+        as "a row that includes the caster moves the units its other bits name"
+      assert list.length(spell.forced_moves) == 1
+        as "and the caster's part is a move of its own"
+    },
+  )
 }
 
 pub fn a_row_behind_a_target_apply_prerequisite_keeps_it_as_its_condition_test() -> Nil {

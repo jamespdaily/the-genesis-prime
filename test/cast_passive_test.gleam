@@ -374,12 +374,15 @@ pub fn the_passives_pending_child_survives_a_death_and_starts_when_its_timer_fir
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
   let #(state, effects) = started(base: 29_131)
+  // The connection matches the death's event against the passive's procs (63366 for the
+  // `Died` proc) as it does after every input; the child's timer is what the test follows.
   let #(state, _) =
     cast.died(
       cast: state,
       caster: support.dead_caster(),
       now: support.at(ms: 1020),
     )
+    |> support.then_procs(caster: support.dead_caster(), at: 1020)
   let #(_, steps) = support.run_timers(state:, effects:, from_ms: 1000)
   let assert [#(due, child)] = steps
     as "the Proxy to 60724 waited 50 ms (Spell4Effects 147125) and the death 20 ms after the start left its timer"

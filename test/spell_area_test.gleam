@@ -396,12 +396,12 @@ pub fn a_damage_multiplier_that_is_not_a_finite_float_fails_the_load_naming_the_
 
 pub fn a_damage_effect_aimed_by_a_flag_value_not_read_fails_the_load_test() -> Nil {
   use <- owned_test.run(60_000)
-  // No level-1 tree spell has a damage effect with targetFlags 3.
+  // No level-1 tree spell has a damage effect with targetFlags 9.
   assert area_tables.built(
-      kick: area_tables.Kick(..area_tables.kick(), effect_target_flags: 3),
+      kick: area_tables.Kick(..area_tables.kick(), effect_target_flags: 9),
     )
-    == Error(AimNotRead(spell4_id: 58_591, effect_id: 140_383, target_flags: 3))
-    as "Spell4Effects.targetFlags: 1, 2, 4 and 6 are the values the rows hold"
+    == Error(AimNotRead(spell4_id: 58_591, effect_id: 140_383, target_flags: 9))
+    as "Spell4Effects.targetFlags: 1 to 7 are the aims the plan reads; 9 holds bit 8"
 }
 
 /// Spell4Effects 61198 as the client holds it, with a formula the player's value reads
@@ -621,9 +621,9 @@ pub fn a_damage_row_the_area_load_refuses_is_not_read_test() -> Nil {
         "dataBits00 0x7F800000 is an infinity, not a multiplier",
       ),
       #(
-        area_tables.Kick(..area_tables.kick(), effect_target_flags: 3),
-        AimNotRead(spell4_id: 58_591, effect_id: 140_383, target_flags: 3),
-        "Spell4Effects.targetFlags: 1, 2, 4 and 6 are the values the rows hold",
+        area_tables.Kick(..area_tables.kick(), effect_target_flags: 9),
+        AimNotRead(spell4_id: 58_591, effect_id: 140_383, target_flags: 9),
+        "Spell4Effects.targetFlags: 1 to 7 are the aims the plan reads; 9 holds bit 8",
       ),
       #(
         area_tables.Kick(..area_tables.kick(), parameters: [#(7, 0.5)]),

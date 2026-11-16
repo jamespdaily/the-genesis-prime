@@ -191,18 +191,18 @@ pub fn a_proxy_aimed_by_flags_that_are_not_read_fails_the_load_naming_the_effect
         id: 99_003,
         spell: 32_893,
         type_: 26,
-        target_flags: 3,
+        target_flags: 9,
         delay: 0,
         phases: -1,
         data: 30_900,
         order: 1,
       )),
     )
-    as "Spell4Effects.targetFlags 3 is neither the caster, the primary target nor the area: the plan and the areas read one aim, so the load fails rather than guess where the child starts"
+    as "Spell4Effects.targetFlags 9 holds bit 8, which no plan or area reads, so the load fails rather than guess where the child starts"
   let reason = table_store.describe(error)
   assert string.contains(reason, "32893")
     && string.contains(reason, "99003")
-    && string.contains(reason, "flags 3")
+    && string.contains(reason, "flags 9")
     as "the load names the spell, the effect and the flags"
 }
 

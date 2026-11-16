@@ -182,13 +182,12 @@ pub fn union_heal_reaches_each_unit_once_and_heals_only_the_caster_test() -> Nil
   use <- owned_test.run(60_000)
   let spell = client_spell(spell4_id: 52_400)
   let #(_, effects) = started_on_20(started: spell, struck: [21])
-  assert list.filter(support.caster_change_starts(effects:), fn(start) {
+  assert list.count(support.caster_change_starts(effects:), fn(start) {
       case start.1 {
         cast.Heal(..) -> True
-        _ -> False
+        cast.Property(..) | cast.Absorb(..) | cast.Look(..) -> False
       }
     })
-    |> list.length
     == 1
     as "the caster is healed once, though flags 7 name it, the creature 20 and the area"
   let assert [#(LogDebug, line)] = support.logs(effects:)

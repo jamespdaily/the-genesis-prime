@@ -222,33 +222,33 @@ pub fn a_ravel_signal_row_behind_a_target_prerequisite_is_gated_on_the_target_te
     as "an effect behind a target apply prerequisite is checked for each unit it reaches"
 }
 
-pub fn a_scale_row_aimed_by_3_and_a_ravel_signal_row_aimed_by_7_fail_the_load_test() -> Nil {
+pub fn a_scale_row_aimed_by_9_and_a_ravel_signal_row_aimed_by_12_fail_the_load_test() -> Nil {
   use <- owned_test.run(60_000)
   assert plan_error(
       row: spell_tables.effect_row_with(
         id: 99_103,
         effect_type: 18,
-        target_flags: 3,
+        target_flags: 9,
         columns: [],
       ),
     )
     == spell_plan.LastingAimNotRead(
       spell4_id: strike,
       effect_id: 99_103,
-      target_flags: 3,
+      target_flags: 9,
     )
   assert plan_error(
       row: spell_tables.effect_row_with(
         id: 99_104,
         effect_type: 81,
-        target_flags: 7,
+        target_flags: 12,
         columns: [],
       ),
     )
     == spell_plan.LastingAimNotRead(
       spell4_id: strike,
       effect_id: 99_104,
-      target_flags: 7,
+      target_flags: 12,
     )
 }
 
@@ -574,14 +574,14 @@ pub fn the_measure_counts_an_item_visual_swap_row_with_a_delay_not_read_and_one_
     as "a delayed row stays in the spell's lasting list with its delay, which the go lists, and is Held: no go applies it on the client"
 }
 
-pub fn an_item_visual_swap_row_aimed_by_3_fails_the_load_with_lasting_aim_not_read_test() -> Nil {
+pub fn an_item_visual_swap_row_aimed_by_9_fails_the_load_with_lasting_aim_not_read_test() -> Nil {
   use <- owned_test.run(60_000)
   let error =
     plan_error(
       row: spell_tables.effect_row_with(
         id: 99_108,
         effect_type: 76,
-        target_flags: 3,
+        target_flags: 9,
         columns: [],
       ),
     )
@@ -589,9 +589,9 @@ pub fn an_item_visual_swap_row_aimed_by_3_fails_the_load_with_lasting_aim_not_re
     == spell_plan.LastingAimNotRead(
       spell4_id: strike,
       effect_id: 99_108,
-      target_flags: 3,
+      target_flags: 9,
     )
-    as "targetFlags 3 is not an aim the plan reads (1, 2, 4 or 6), as for a Scale row"
+    as "targetFlags 9 holds bit 8, which the plan does not read (1 to 7), as for a Scale row"
   assert string.contains(spell_plan.describe(error:), "ItemVisualSwap")
     as "the refusal's sentence names the kind it refuses"
 }

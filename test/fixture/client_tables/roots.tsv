@@ -905,3 +905,13 @@ Spell4	71091	a spell with a crowd-control row aimed by flags 3 that lasts until 
 Spell4	35662	a spell with a Fluff row aimed by flags 7 and a damage row at the area	cast_union_aim_test
 Spell4	5425	a spell with a property modifier row aimed by flags 3	cast_union_aim_test
 Spell4	52400	a spell with a Heal row aimed by flags 7 and no damage or crowd-control row	cast_union_aim_test
+Spell4	42603	Precision Fire Test A (a RapidTap press with no threshold time and three caster-gated Proxy rows 96985, 96992 and 96993, to spells 42604, 42605 and 42606)	spell_plan_proxy_press_test, cast_proxy_press_test, game_connection_proxy_press_test
+Spell4	42605	Precision Fire Test A, tier 1: the spell the second Proxy of 42603 casts	spell_plan_proxy_press_test, cast_proxy_press_test, game_connection_proxy_press_test
+Spell4	36942	Soothe, Heal Proxy 3: a press whose gate 5060 is a type 28 condition, Proxy rows 78288 and 200559 to spell 32822	cast_proxy_press_test
+Spell4	54281	Soothe, Heal Proxy 3 tier 9: a gated Proxy 128339, an ungated Proxy 130591 and a gated Proxy 177914	cast_proxy_press_test
+Spell4	30646	a threshold spell with no threshold time whose only Proxy rows have no caster gate	spell_plan_proxy_press_test
+Spell4	34032	a ChargeRelease press with no threshold time whose Proxy row 66751 passes gate 7863 and casts spell 34011, a ChargeRelease with its own threshold	cast_proxy_press_test
+Spell4	34717	Spellslinger Charged Shot press of base 20683 with two gated Proxy rows (69036 to spell 34718, 69037 to spell 34719)	spell_plan_proxy_press_test, cast_proxy_press_test
+Spell4	34011	the ChargeRelease spell a proxy press resolves to, with 4000 ms and four threshold rows	cast_proxy_press_test
+Spell4	34719	Spellslinger Charged Shot, Surged: the alternate of a Surge press, with its own ChargeRelease threshold	cast_proxy_press_test
+Spell4	1421	Warrior Sword Strike, auto attack 2: a threshold-kind spell with no Proxy that stays refused	spell_plan_proxy_press_test

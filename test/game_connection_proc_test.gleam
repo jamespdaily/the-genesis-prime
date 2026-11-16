@@ -18,21 +18,26 @@
 import cast_support
 import client_tables
 import connection_rule_support as support
+import fixture_tables
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{type Request, CastStarted, PeerNews}
 import genesis_prime/game/connection as game_connection
+import genesis_prime/game/connection/state.{Settings}
+import genesis_prime/game/hit
 import genesis_prime/game/strike_tell
 import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started
 import genesis_prime/message/unit_combat_state.{UnitCombatState}
 import genesis_prime/message/unit_properties_changed
+import genesis_prime/random
 import genesis_prime/step.{type ConnectionStep, OwnEvent}
 import genesis_prime/world_map/map
 import gleam/int
 import gleam/list
 import gleam/option.{None}
 import owned_test
+import planted_table
 import unitest
 
 /// A press of the bag index at this monotonic time, as the client sends it.
@@ -140,9 +145,9 @@ pub fn a_stalker_pressing_stealth_twice_gets_the_procs_casts_and_empower_for_3_s
     )
   let frames = connection_support.written(taken: entering)
   assert connection_support.stealth_bits(frames:) == [1]
-  assert list.take(connection_support.from_id(frames:, id: 0x08F5), 4)
-    == [0x08F5, 0x07FF, 0x07F4, 0x07FE]
-    as "0x8f5 {P, 1}, then Proc 147119's cast of 60724: its 0x7ff, 0x7f4 and 0x7fe"
+  assert list.take(connection_support.from_id(frames:, id: 0x08F5), 5)
+    == [0x08F5, 0x07FE, 0x07FF, 0x07F4, 0x07FE]
+    as "0x8f5 {P, 1}, the toggle's own 0x7fe, then Proc 147119's cast of 60724 after the input's own effects: its 0x7ff, 0x7f4 and 0x7fe"
   assert list.last(connection_support.started_spells(frames:)) == Ok(60_724)
     as "the cast after the 0x8f5 is 60724"
   let #(state, leaving) =
@@ -453,4 +458,205 @@ pub fn a_stalker_alone_in_sight_gets_empower_listed_on_it_when_a_blow_ends_the_s
     )
     == [210_998, 212_528, 212_529, 212_530]
     as "Spell4.79932: its four type 11 rows (210998, 212528 to 212530) are listed on the caster in a 0x7f4 with no viewer in sight"
+}
+
+// ---- a hit's proc: the connection's draws and its due timer ----
+
+/// Impale's bag index on the Stalker's bar (Spell4Base 23161).
+const impale_bag_index = 1
+
+/// The id of the Proc row `with_hit_proc` adds to the Stalker's passive. A go's
+/// `spell4_effects_id` is 19 bits wide, so the id is below 524288.
+const hit_proc_id = 400_001
+
+/// The 32 bits of this float, as a Proc row's dataBits02 holds its chance
+/// (`Spell4Effects.effectType.14.dataBits02`).
+fn float_bits(value value: Float) -> Int {
+  let assert <<bits:size(32)>> = <<value:float-size(32)>>
+    as "a float32 is 32 bits"
+  bits
+}
+
+/// Runs the body with a Stalker of the fixture's rows in the world and the Beast unit 40
+/// in front of it, on tables whose Nano Skin: Lethal passive 45057 holds one more Proc: a
+/// kind 12 (a hit its holder lands) at this chance and delay that casts 63366, copied
+/// from its Proc 202043 and limited to 60 fires in 250 ms.
+fn with_hit_proc(
+  chance chance: Float,
+  delay_ms delay_ms: Int,
+  body body: fn(game_connection.State) -> a,
+) -> a {
+  let assert Ok(rows) =
+    fixture_tables.add(
+      rows: fixture_tables.rows(),
+      table: "Spell4Effects",
+      copy_of: 202_043,
+      id: hit_proc_id,
+      with: [
+        #("dataBits00", planted_table.Integer(12)),
+        #("dataBits02", planted_table.Integer(float_bits(value: chance))),
+        #("dataBits04", planted_table.Integer(250)),
+        #("dataBits05", planted_table.Integer(60)),
+        #("delayTime", planted_table.Integer(delay_ms)),
+      ],
+    )
+    as "the fixture holds Proc 202043"
+  use tables <- fixture_tables.on_rows(rows:, reaching: [])
+  let #(state, _) =
+    connection_support.entered_with(
+      settings: Settings(..connection_support.settings(), tables:),
+      class_id: 5,
+      saved_health: None,
+    )
+  let #(state, _) =
+    connection_support.feed(
+      state:,
+      event: connection_support.beast_appears(unit_id: 40),
+    )
+  body(state)
+}
+
+/// A press of Impale at `ms` and the firing, 300 ms later, of the one timer the press
+/// starts (the cast's go), whose step tells the Beast's strike.
+fn impale_strikes(
+  state state: game_connection.State,
+  client_cast_id client_cast_id: Int,
+  ms ms: Int,
+) -> #(game_connection.State, ConnectionStep(Request), ConnectionStep(Request)) {
+  let #(state, press) =
+    pressed(state:, bag_index: impale_bag_index, client_cast_id:, ms:)
+  let assert [go_timer] = cast_timers(taken: press)
+    as "the press starts one cast timer"
+  let #(state, fired) =
+    connection_support.fired_at(state:, timer: go_timer, ms: ms + 300)
+  #(state, press, fired)
+}
+
+/// The step that answers the strike the step `fired` tells as landed at `ms`.
+fn landing_of(
+  state state: game_connection.State,
+  fired fired: ConnectionStep(Request),
+  ms ms: Int,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let assert [#(40, key)] = connection_support.strikes_told(fired)
+    as "the cast's go strikes the Beast"
+  connection_support.at(
+    state:,
+    ms:,
+    event: connection_support.landed_with_damage(key:),
+  )
+}
+
+/// How many times a step writes the start of a cast of this Spell4 to the player.
+fn started_count(
+  taken taken: ConnectionStep(Request),
+  spell4_id spell4_id: Int,
+) -> Int {
+  list.count(
+    connection_support.started_spells(frames: connection_support.written(taken:)),
+    fn(spell) { spell == spell4_id },
+  )
+}
+
+/// The bytes the seed gives draws of these sizes in turn, as a connection that draws
+/// nothing else is given them (`random.bytes` of the seed the tests give 1,
+/// `game_connection_support.accepted`).
+fn drawn_by_seed(draws draws: List(Int)) -> List(BitArray) {
+  let #(_, drawn) =
+    list.fold(
+      draws,
+      #(random.new(seed: support.seed(1)), []),
+      fn(so_far, count) {
+        let #(source, drawn) = so_far
+        let #(source, bytes) = random.bytes(source, count)
+        #(source, [bytes, ..drawn])
+      },
+    )
+  list.reverse(drawn)
+}
+
+/// The rolls of a strike that took these 12 bytes.
+fn rolls_of_strike(bytes bytes: BitArray) -> hit.Rolls {
+  let assert Ok(rolls) = hit.rolls_of(bytes:)
+    as "the draw is the 12 bytes of a strike's rolls"
+  rolls
+}
+
+pub fn a_go_with_a_chance_proc_draws_exactly_the_draws_the_pending_events_need_test() -> Nil {
+  use <- owned_test.run(120_000)
+  // Each Impale go draws its strike's 12 bytes of rolls and then 8 bytes of rolls for the
+  // gate rows of its go: blocks 0 and 1 of the seed. The landing of the first strike is
+  // one pending event and the proc one chance word: a draw of 4 bytes, which takes
+  // block 2. The word's fraction is 1438334843 / 2^32 = 0.3349 (`random.fraction`,
+  // `random.words`): below a chance of 0.5 and not below 0.25. A draw takes whole
+  // 32-byte blocks (`random.bytes`), so the second strike's rolls are block 3 whatever
+  // the proc's outcome, and a landing that drew more or less than the word would shift
+  // them.
+  let assert [first_strike, _gate_rolls, _word, second_strike, _more_gate_rolls] =
+    drawn_by_seed(draws: [hit.roll_bytes, 8, 4, hit.roll_bytes, 8])
+  let expected_rolls = [
+    rolls_of_strike(bytes: first_strike),
+    rolls_of_strike(bytes: second_strike),
+  ]
+  let landing_at = fn(chance) {
+    use state <- with_hit_proc(chance:, delay_ms: 0)
+    let #(state, _, first) = impale_strikes(state:, client_cast_id: 1, ms: 1000)
+    let #(state, landed) = landing_of(state:, fired: first, ms: 1400)
+    // Impale recharges long before the second press.
+    let #(_, _, second) = impale_strikes(state:, client_cast_id: 2, ms: 100_000)
+    #(
+      connection_support.strike_rolls([first, second]),
+      started_count(taken: landed, spell4_id: 63_366),
+    )
+  }
+  assert landing_at(0.5) == #(expected_rolls, 1)
+    as "a chance of 0.5 is above the word's 0.3349: the landing casts 63366 once, and the second strike takes block 3"
+  assert landing_at(0.25) == #(expected_rolls, 0)
+    as "a chance of 0.25 is not: no cast, and the seed has advanced the same"
+}
+
+pub fn an_input_with_nothing_pending_draws_nothing_and_makes_no_second_call_test() -> Nil {
+  use <- owned_test.run(120_000)
+  // No press, no go and no timer of Impale's cast lands a hit: the first strike is
+  // never answered, so nothing is pending in the four inputs. Each go draws its strike's
+  // 12 bytes and the 8 bytes of its gate rolls, so the second strike takes block 2.
+  let assert [first_strike, _gate_rolls, second_strike, _more_gate_rolls] =
+    drawn_by_seed(draws: [hit.roll_bytes, 8, hit.roll_bytes, 8])
+  use state <- with_hit_proc(chance: 0.5, delay_ms: 0)
+  let #(state, first_press, first) =
+    impale_strikes(state:, client_cast_id: 1, ms: 1000)
+  let #(_, second_press, second) =
+    impale_strikes(state:, client_cast_id: 2, ms: 100_000)
+  assert connection_support.strike_rolls([first, second])
+    == [
+      rolls_of_strike(bytes: first_strike),
+      rolls_of_strike(bytes: second_strike),
+    ]
+    as "the strikes take blocks 0 and 2: none of the four inputs drew for a proc"
+  // The two presses are the same input and so are the two goes: with nothing pending
+  // no pass of the procs adds or repeats a frame, so each pair writes the same frames.
+  let frames = fn(taken) {
+    cast_support.ids(frames: connection_support.written(taken:))
+  }
+  assert frames(second_press) == frames(first_press)
+    as "the second press writes what the first did"
+  assert frames(second) == frames(first)
+    as "the second go writes what the first did"
+}
+
+pub fn a_proc_due_timer_starts_the_delayed_cast_test() -> Nil {
+  use <- owned_test.run(120_000)
+  // The Proc row's delayTime is 1000 ms (`Spell4Effects.delayTime`): the landing starts
+  // a timer instead of the cast, and the cast starts when it fires. A chance of 1.0
+  // takes no draw.
+  use state <- with_hit_proc(chance: 1.0, delay_ms: 1000)
+  let #(state, _, fired) = impale_strikes(state:, client_cast_id: 1, ms: 1000)
+  let #(state, landed) = landing_of(state:, fired:, ms: 1400)
+  assert started_count(taken: landed, spell4_id: 63_366) == 0
+    as "the landing does not cast 63366: the delay has not run out"
+  let assert [proc_due] = cast_timers(taken: landed)
+    as "the landing starts one timer: the proc's"
+  let #(_, due) = connection_support.fired_at(state:, timer: proc_due, ms: 2400)
+  assert started_count(taken: due, spell4_id: 63_366) == 1
+    as "the timer's firing casts 63366 once, as an ordinary cast"
 }

@@ -82,7 +82,7 @@ pub fn a_carried_group_condition_with_no_second_unit_test() -> Nil {
   assert support.verdict(condition: #(130, 3, 464, 0), subject: alone) == Fails
 }
 
-pub fn a_struck_subject_decides_type_130_but_not_129_test() -> Nil {
+pub fn a_struck_subject_decides_types_130_and_50_but_not_129_test() -> Nil {
   use <- owned_test.run(5000)
   let origin = support.pose(x: 0.0, z: 0.0, yaw: 0.0)
   let struck =
@@ -107,6 +107,10 @@ pub fn a_struck_subject_decides_type_130_but_not_129_test() -> Nil {
   assert support.verdict(condition: #(129, 1, 464, 0), subject: struck)
     == NotRead(prerequisite_type: 129)
     as "type 129 reads every caster's casts on the unit, which a struck subject does not hold"
-  assert support.verdict(condition: #(50, 1, 0, 0), subject: struck)
-    == NotRead(prerequisite_type: 50)
+  assert support.verdict(condition: #(50, 1, 0, 40_838), subject: struck)
+    == Passes
+    as "Prerequisite.prerequisiteTypeId.50: type 50 reads the second unit's casts alone, as type 130 does, and the caster's cast of 40838 holds a node on the struck unit"
+  assert support.verdict(condition: #(50, 1, 0, 40_839), subject: struck)
+    == Fails
+    as "a Spell4 the caster holds no node of on it does not pass"
 }
