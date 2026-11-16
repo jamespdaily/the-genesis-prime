@@ -1444,8 +1444,11 @@ pub type PlanError {
     prerequisite_type: Int,
   )
   /// An effect of a tree aimed past the caster is behind a target apply prerequisite with a
-  /// condition that reads what a struck creature holds and the creature does not
-  /// (`prerequisite.struck_unread_types`: what the caster's casts hold on it, issue 569).
+  /// condition that reads what a struck creature holds, and nobody can check it: either the
+  /// casts held on it, which the creature does not hold yet (`prerequisite.struck_unread_types`,
+  /// issue 569), or the creature's own state, on a row that does not reach struck units alone
+  /// or that the strike does not carry, so the caster's check is the only one and it holds none
+  /// of that state (`prerequisite.unread_on_a_struck_unit`, issue 817).
   TargetPrerequisiteReadsStruckUnit(
     spell4_id: Int,
     effect_id: Int,
@@ -1671,7 +1674,12 @@ pub fn describe(error error: PlanError) -> String {
       <> int.to_string(effect_id)
       <> " aimed past the caster behind a target apply prerequisite with a condition of type "
       <> int.to_string(prerequisite_type)
-      <> ", which reads what the casts held on the creature it strikes hold (#569)"
+      <> case prerequisite_type {
+        15 | 59 | 129 ->
+          ", which reads what the casts held on the creature it strikes hold (#569)"
+        _ ->
+          ", which reads the state of the creature it strikes, and the row is not one its strike carries to the creature (#817)"
+      }
     StruckMoveNotRead(spell4_id:, effect_id:, error:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -5104,8 +5112,10 @@ pub fn row_condition_of(
 
 /// Whether the cast rule can check a target apply prerequisite for the units a row
 /// reaches: a condition type the server has not decoded is refused, and so is one that
-/// reads what the casts held on the creature it strikes hold, for a row that lands past the caster
-/// (`prerequisite.unread_types`, `prerequisite.struck_unread_types`).
+/// reads what the casts held on the creature it strikes hold or the state it holds itself,
+/// for a row that lands past the caster and that the creature does not check: the caster's
+/// check knows the unit by its place alone (`prerequisite.unread_types`,
+/// `prerequisite.struck_unread_types`, `prerequisite.unread_on_a_struck_unit`).
 fn target_gate_read(
   target target: Prerequisite,
   effect effect: spell4_effects.Spell4Effects,
@@ -5120,7 +5130,12 @@ fn target_gate_read(
       ))
     [], OnlyTheCaster -> Ok(Nil)
     [], StruckUnits | [], PastTheCaster ->
-      case prerequisite.struck_unread_types(prerequisite: target) {
+      case
+        list.append(
+          prerequisite.struck_unread_types(prerequisite: target),
+          prerequisite.unread_on_a_struck_unit(prerequisite: target),
+        )
+      {
         [prerequisite_type, ..] ->
           Error(TargetPrerequisiteReadsStruckUnit(
             spell4_id: effect.spell_id,

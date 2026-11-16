@@ -1508,51 +1508,11 @@ pub fn press_unread_types(
 pub fn struck_unread_types(
   prerequisite prerequisite: Prerequisite,
 ) -> List(Int) {
-  list.flat_map(prerequisite.conditions, fn(condition) {
-    case condition {
-      Nested(row: Some(nested), ..) -> struck_unread_types(prerequisite: nested)
-      TargetOfLiveCast(..) -> [15]
-      StackCount(..) -> [59]
-      UnderGroup(..) -> [129]
-      Nested(row: None, ..)
-      | UnderCastBy(..)
-      | InCombat(..)
-      | VitalPercent(..)
-      | VitalCurrent(..)
-      | UnitLevel(..)
-      | UnitClass(..)
-      | Difficulty(..)
-      | CurrentFaction(..)
-      | BaseFaction(..)
-      | Roll(..)
-      | ResourceSlot(..)
-      | Stealthed(..)
-      | PlayerRace(..)
-      | InZone(..)
-      | IsPlayer(..)
-      | PlayerPath(..)
-      | Gender(..)
-      | InWorld(..)
-      | QuestState(..)
-      | ObjectiveDone(..)
-      | ObjectiveOpen(..)
-      | TargetCounted(..)
-      | ObjectiveProgress(..)
-      | NeverMet
-      | ServerGated
-      | IsCreature(..)
-      | SpellKnown(..)
-      | ItemHeld(..)
-      | WorldDifficulty(..)
-      | ObjectiveStatus(..)
-      | CarriesCasterGroup(..)
-      | InArc(..)
-      | ChallengeFlag(..)
-      | NoCase
-      | Unread(..) -> []
-    }
+  list.filter(unread_on_a_struck_unit(prerequisite:), fn(prerequisite_type) {
+    prerequisite_type == 15
+    || prerequisite_type == 59
+    || prerequisite_type == 129
   })
-  |> list.unique
 }
 
 /// The PrerequisiteTypes of the conditions the client decides and the server does
@@ -1600,6 +1560,62 @@ pub fn unread_types(prerequisite prerequisite: Prerequisite) -> List(Int) {
       | InArc(..)
       | ChallengeFlag(..)
       | NoCase -> []
+    }
+  })
+  |> list.unique
+}
+
+/// The PrerequisiteTypes, in the prerequisite and the rows it nests, that the caster's own
+/// check cannot read of a unit it struck, each once: the types its subject, known by its
+/// place alone (`of_struck`), gives `NotRead`, and the factions and difficulty it holds none
+/// of. A row whose gate the creature does not check (`checked_by_creature`) and that reads one
+/// of them cannot be applied, since the caster is the only one left to check it.
+pub fn unread_on_a_struck_unit(
+  prerequisite prerequisite: Prerequisite,
+) -> List(Int) {
+  list.flat_map(prerequisite.conditions, fn(condition) {
+    case condition {
+      Nested(row: Some(nested), ..) ->
+        unread_on_a_struck_unit(prerequisite: nested)
+      Difficulty(..) -> [179]
+      CurrentFaction(..) -> [4]
+      BaseFaction(..) -> [250]
+      TargetOfLiveCast(..)
+      | UnderCastBy(..)
+      | StackCount(..)
+      | InCombat(..)
+      | VitalPercent(..)
+      | VitalCurrent(..)
+      | UnderGroup(..)
+      | UnitLevel(..)
+      | UnitClass(..) -> option.values([reads_held_state(condition:)])
+      Nested(row: None, ..)
+      | Roll(..)
+      | ResourceSlot(..)
+      | Stealthed(..)
+      | PlayerRace(..)
+      | InZone(..)
+      | IsPlayer(..)
+      | PlayerPath(..)
+      | Gender(..)
+      | InWorld(..)
+      | QuestState(..)
+      | ObjectiveDone(..)
+      | ObjectiveOpen(..)
+      | TargetCounted(..)
+      | ObjectiveProgress(..)
+      | NeverMet
+      | ServerGated
+      | IsCreature(..)
+      | SpellKnown(..)
+      | ItemHeld(..)
+      | WorldDifficulty(..)
+      | ObjectiveStatus(..)
+      | CarriesCasterGroup(..)
+      | InArc(..)
+      | ChallengeFlag(..)
+      | NoCase
+      | Unread(..) -> []
     }
   })
   |> list.unique
