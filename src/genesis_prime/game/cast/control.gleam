@@ -1,0 +1,822 @@
+//// The lasting modifiers, restrictions and crowd control a cast starts, and the cooldowns it arms.
+
+import genesis_prime/client_connection
+import genesis_prime/game/cast/frame as cast_frame
+import genesis_prime/game/cast/gate as cast_gate
+import genesis_prime/game/cast/heal as cast_heal
+import genesis_prime/game/cast/state.{
+  type Aimed, type Applied, type Caster, type CasterChange, type Due,
+  type Effect, type HeldRestriction, type Live, type OnCreature,
+  type Restricting, type State, type Struck, Absorb, Applied, CasterChangeStarts,
+  ChargeLevel, CooldownModifierEnds, CooldownModifierStarts, Deflected, Finish,
+  ForcedMoveStart, ForcedMoveStarts, Go, Heal, HeldRestriction, Hit, Immune,
+  Look, ModifierEnd, ModifierStart, NodesEnd, OnCreature, ProcDue, Property,
+  RepeatHeld, Restricting, RestrictionEnd, Send, StartChild, StartHeld, State,
+  StateEnd, TargetChangeEnds, TargetChangeStarts, TargetModifierStart, Tell,
+  Tick, WindowEnd,
+} as cast_state
+import genesis_prime/game/crowd_control
+import genesis_prime/game/damage
+import genesis_prime/game/forced_move
+import genesis_prime/game/lasting
+import genesis_prime/game/prerequisite
+import genesis_prime/game/spell_plan.{type Spell}
+import genesis_prime/game/strike_tell
+import genesis_prime/game/unit_properties
+import genesis_prime/message/crowd_control_state
+import genesis_prime/world_map/map
+import gleam/bool
+import gleam/dict
+import gleam/int
+import gleam/list
+import gleam/option.{type Option, None, Some}
+import gleam/result
+
+/// The delay of a property modifier on a creature ran out: it starts on the creature
+/// (`TargetChangeStarts`) and the cast keeps it in `on_creatures` until an end of its
+/// node; a cast that has ended since starts nothing.
+pub fn target_modifier_started(
+  cast cast: State,
+  on on: OnCreature,
+  modifier modifier: unit_properties.Modifier,
+  struck_at_ms struck_at_ms: Int,
+) -> #(State, List(Effect)) {
+  let cast_id = on.source.cast_id
+  let held = case cast_state.holder_of(cast:, cast_id:) {
+    Ok(holder) -> dict.has_key(holder.nodes, on.unit_id)
+    Error(Nil) -> False
+  }
+  use <- bool.guard(when: !held, return: #(cast, []))
+  // A later go of the cast strikes the same creature again: its start replaces the
+  // earlier one, which the creature replaces by source too.
+  let started =
+    dict.get(cast.on_creatures, cast_id)
+    |> result.unwrap([])
+    |> list.filter(fn(kept) {
+      kept.unit_id != on.unit_id || kept.source != on.source
+    })
+  #(
+    State(
+      ..cast,
+      on_creatures: dict.insert(
+        cast.on_creatures,
+        cast_id,
+        list.append(started, [on]),
+      ),
+    ),
+    [
+      TargetChangeStarts(
+        unit_id: on.unit_id,
+        life: on.life,
+        struck_at_ms:,
+        source: on.source,
+        modifier:,
+      ),
+    ],
+  )
+}
+
+/// The property modifiers the cast `cast_id` holds on the creatures `ending` names end:
+/// each that started is told ended once and forgotten, and each that still waits for
+/// its delay has its timer cancelled and is told nothing. A modifier already ended is
+/// not told again.
+pub fn creature_modifiers_ended(
+  cast cast: State,
+  cast_id cast_id: Int,
+  unit_ids unit_ids: List(Int),
+) -> #(State, List(Effect)) {
+  creatures_ended(cast:, cast_id:, ending: list.contains(unit_ids, _))
+}
+
+/// Every property modifier the cast `cast_id` holds on a creature ends, as a persistence
+/// that stops holding destroys all its nodes.
+pub fn creature_modifiers_all_ended(
+  cast cast: State,
+  cast_id cast_id: Int,
+) -> #(State, List(Effect)) {
+  creatures_ended(cast:, cast_id:, ending: fn(_) { True })
+}
+
+fn creatures_ended(
+  cast cast: State,
+  cast_id cast_id: Int,
+  ending ending: fn(Int) -> Bool,
+) -> #(State, List(Effect)) {
+  let #(cast, cancels) =
+    cast_state.cancel_timers(cast:, matching: fn(due) {
+      case target_start_of(due:) {
+        Ok(waiting) ->
+          waiting.source.cast_id == cast_id && ending(waiting.unit_id)
+        Error(Nil) -> False
+      }
+    })
+  let #(ended, kept) =
+    dict.get(cast.on_creatures, cast_id)
+    |> result.unwrap([])
+    |> list.partition(fn(on) { ending(on.unit_id) })
+  let on_creatures = case kept {
+    [] -> dict.delete(cast.on_creatures, cast_id)
+    [_, ..] -> dict.insert(cast.on_creatures, cast_id, kept)
+  }
+  #(
+    State(..cast, on_creatures:),
+    list.append(
+      cancels,
+      list.map(ended, fn(on) {
+        TargetChangeEnds(unit_id: on.unit_id, life: on.life, source: on.source)
+      }),
+    ),
+  )
+}
+
+/// The Fluff, SpellForceRemove, property modifier, forced move, cooldown, Stealth,
+/// RemoveStealth and HealShields effects of the phase whose gates pass against the caster,
+/// a debug line for each that cannot be decided, and the rolls left. Their gates are checked after the Proxies' and the gains', in that
+/// order, the HealShields effects' last (`rolls_needed`).
+pub fn lasting_applied(
+  spell spell: Spell,
+  phase phase: Int,
+  spent spent: Option(Int),
+  subject subject: prerequisite.Subject,
+  rolls rolls: List(Int),
+) -> #(Applied, List(Effect), List(Int)) {
+  let #(lasting, logs, rolls) =
+    cast_gate.gated(
+      rows: spell_plan.lasting_in_phase(spell:, phase:, spent:),
+      gates: fn(row: spell_plan.Lasting) {
+        cast_gate.caster_gates(condition: row.condition)
+      },
+      what: fn(row: spell_plan.Lasting) {
+        "the lasting effect " <> int.to_string(row.effect_id.value)
+      },
+      outcome: "so it is not applied",
+      subject:,
+      rolls:,
+    )
+  let #(removes, more_logs, rolls) =
+    cast_gate.gated(
+      rows: spell_plan.removes_in_phase(spell:, phase:, spent:),
+      gates: fn(row: spell_plan.ForceRemove) {
+        cast_gate.caster_gates(condition: row.condition)
+      },
+      what: fn(row: spell_plan.ForceRemove) {
+        "the SpellForceRemove effect " <> int.to_string(row.effect_id.value)
+      },
+      outcome: "so it is not applied",
+      subject:,
+      rolls:,
+    )
+  let #(modifiers, modifier_logs, rolls) =
+    cast_gate.gated(
+      rows: list.filter(
+        spell_plan.modifiers_in_phase(spell:, phase:, spent:),
+        modifier_has_life,
+      ),
+      gates: fn(row: spell_plan.PropertyModifier) {
+        cast_gate.caster_gates(condition: row.condition)
+      },
+      what: fn(row: spell_plan.PropertyModifier) {
+        "the "
+        <> modifier_kind_named(row:)
+        <> " effect "
+        <> int.to_string(row.effect_id.value)
+      },
+      outcome: "so it is not applied",
+      subject:,
+      rolls:,
+    )
+  let #(forced_moves, forced_move_logs, rolls) =
+    cast_gate.gated(
+      rows: spell_plan.forced_moves_in_phase(spell:, phase:, spent:),
+      gates: fn(row: spell_plan.ForcedMove) {
+        cast_gate.only_on_caster_gates(condition: row.condition)
+      },
+      what: fn(row: spell_plan.ForcedMove) {
+        "the ForcedMove effect " <> int.to_string(row.effect_id.value)
+      },
+      outcome: "so it is not applied",
+      subject:,
+      rolls:,
+    )
+  let #(struck_moves, struck_move_logs, rolls) =
+    cast_gate.gated(
+      rows: spell_plan.struck_moves_in_phase(spell:, phase:, spent:),
+      gates: fn(row: spell_plan.StruckMove) {
+        cast_gate.caster_gates(condition: row.condition)
+      },
+      what: fn(row: spell_plan.StruckMove) {
+        "the ForcedMove effect " <> int.to_string(row.effect_id.value)
+      },
+      outcome: "so it is not applied",
+      subject:,
+      rolls:,
+    )
+  let #(cooldowns, cooldown_logs, rolls) =
+    cast_gate.gated(
+      rows: spell_plan.cooldown_modifiers_in_phase(spell:, phase:, spent:),
+      gates: fn(row: spell_plan.CooldownModifier) {
+        cast_gate.only_on_caster_gates(condition: row.condition)
+      },
+      what: fn(row: spell_plan.CooldownModifier) {
+        "the ModifySpellCooldown effect " <> int.to_string(row.effect_id.value)
+      },
+      outcome: "so it is not applied",
+      subject:,
+      rolls:,
+    )
+  let #(stealth, stealth_logs, rolls) =
+    cast_gate.gated(
+      rows: spell_plan.stealth_in_phase(spell:, phase:, spent:),
+      gates: fn(row: spell_plan.StealthRow) {
+        cast_gate.only_on_caster_gates(condition: row.condition)
+      },
+      what: fn(row: spell_plan.StealthRow) {
+        "the Stealth effect " <> int.to_string(row.effect_id.value)
+      },
+      outcome: "so it is not applied",
+      subject:,
+      rolls:,
+    )
+  let #(remove_stealth, remove_stealth_logs, rolls) =
+    cast_gate.gated(
+      rows: spell_plan.remove_stealth_in_phase(spell:, phase:, spent:),
+      gates: fn(row: spell_plan.RemoveStealthRow) {
+        cast_gate.only_on_caster_gates(condition: row.condition)
+      },
+      what: fn(row: spell_plan.RemoveStealthRow) {
+        "the RemoveStealth effect " <> int.to_string(row.effect_id.value)
+      },
+      outcome: "so it is not applied",
+      subject:,
+      rolls:,
+    )
+  let #(procs, proc_logs, rolls) =
+    cast_gate.gated(
+      rows: spell_plan.procs_in_phase(spell:, phase:, spent:),
+      gates: fn(row: spell_plan.ProcRow) {
+        cast_gate.only_on_caster_gates(condition: row.condition)
+      },
+      what: fn(row: spell_plan.ProcRow) {
+        "the Proc effect " <> int.to_string(row.effect_id.value)
+      },
+      outcome: "so it is not applied",
+      subject:,
+      rolls:,
+    )
+  let #(heals, heal_logs, rolls) =
+    cast_gate.gated(
+      rows: spell_plan.heals_in_phase(spell:, phase:, spent:),
+      gates: fn(row: spell_plan.Heal) {
+        cast_gate.caster_gates(condition: row.condition)
+      },
+      what: fn(row: spell_plan.Heal) {
+        "the Heal or HealShields effect " <> int.to_string(row.effect_id.value)
+      },
+      outcome: "so it is not applied",
+      subject:,
+      rolls:,
+    )
+  let #(restrictions, restriction_logs, rolls) =
+    cast_gate.gated(
+      rows: spell_plan.restrictions_in_phase(spell:, phase:, spent:),
+      gates: fn(row: spell_plan.CrowdControl) {
+        cast_gate.only_on_caster_gates(condition: row.condition)
+      },
+      what: fn(row: spell_plan.CrowdControl) {
+        "the ability restriction effect " <> int.to_string(row.effect_id.value)
+      },
+      outcome: "so it is not applied",
+      subject:,
+      rolls:,
+    )
+  #(
+    Applied(
+      lasting:,
+      removes:,
+      modifiers:,
+      forced_moves:,
+      struck_moves:,
+      cooldowns:,
+      stealth:,
+      remove_stealth:,
+      procs:,
+      heals:,
+      restrictions:,
+    ),
+    list.flatten([
+      logs,
+      more_logs,
+      modifier_logs,
+      forced_move_logs,
+      struck_move_logs,
+      cooldown_logs,
+      stealth_logs,
+      remove_stealth_logs,
+      proc_logs,
+      heal_logs,
+      restriction_logs,
+    ]),
+    rolls,
+  )
+}
+
+/// The go's states on the caster, each with its instance id: the one a cast already holds
+/// for the effect, or the next of the caster's counter, held with the go's audience.
+pub fn restrictions_numbered(
+  cast cast: State,
+  caster caster: Caster,
+  cast_id cast_id: Int,
+  live live: Live,
+  applied applied: Applied,
+) -> #(State, List(Restricting)) {
+  list.fold(applied.restrictions, #(cast, []), fn(so_far, row) {
+    let #(cast, numbered) = so_far
+    let source = unit_properties.Source(cast_id:, effect_id: row.effect_id)
+    let #(cast, restricting) = case dict.get(cast.restrictions, source) {
+      Ok(held) -> #(
+        cast,
+        Restricting(row:, instance_id: held.instance_id, fresh: False),
+      )
+      Error(Nil) -> {
+        let told = cast.restrictions_told + 1
+        let instance_id =
+          crowd_control.instance_id(caster_unit_id: caster.unit_id, count: told)
+        #(
+          State(
+            ..cast,
+            restrictions: dict.insert(
+              cast.restrictions,
+              source,
+              HeldRestriction(
+                state: row.row.state,
+                instance_id:,
+                audience: live.audience,
+              ),
+            ),
+            restrictions_told: told,
+          ),
+          Restricting(row:, instance_id:, fresh: True),
+        )
+      }
+    }
+    #(cast, list.append(numbered, [restricting]))
+  })
+}
+
+/// 0x87f to the caster and to the audience of the go, for each state the go gave
+/// (`opcode.0x87f`); a state a cast already held is not told again. A Tether on the
+/// caster is told its anchor first, the caster's own unit, by a 0x881 to the caster
+/// alone: the message sets the anchor of the unit the receiving client controls and
+/// names no unit, so the audience, whose clients control other units, gets none
+/// (`opcode.0x881`). That the anchor is the caster's own unit is a guess; no client
+/// value names it, and the issue "Spells work in depth on the real client: cast times, telegraphs, buffs,
+/// crowd control and ticking effects" will settle it.
+pub fn restrictions_shown(
+  restricting restricting: List(Restricting),
+  caster caster: Caster,
+  live live: Live,
+) -> List(Effect) {
+  restricting
+  |> list.filter(fn(one) { one.fresh })
+  |> list.flat_map(fn(one) {
+    let state = one.row.row.state
+    list.flatten([
+      case state == crowd_control_state.Tether {
+        True -> [
+          Send(frame: cast_frame.tether_anchor_frame(
+            anchor_unit_id: caster.unit_id,
+          )),
+        ]
+        False -> []
+      },
+      [
+        Send(frame: cast_frame.control_applied_frame(
+          unit_id: caster.unit_id,
+          state:,
+          instance_id: one.instance_id,
+        )),
+        ..list.map(map.sorted_connections(live.audience), fn(viewer) {
+          Tell(
+            to: viewer,
+            news: client_connection.CrowdControlApplied(
+              state:,
+              instance_id: one.instance_id,
+            ),
+          )
+        })
+      ],
+    ])
+  })
+}
+
+/// The end of each state a go holds on the caster, on a timer of its delay and duration
+/// unless it lasts until removed: the client's lifetime for a CCStateSet effect is
+/// `trunc(durationTime * m + 0.5)` after its delay (`0x1405d6880`, `0x1405d8770`) and the
+/// client never ends the state itself, so the server's timer does, as for a state on a
+/// creature. A row of duration 0 without flag 2 lives 0 ms and ends in the go's own
+/// step. A later go of the cast arms the state's end again from that go; the node's end
+/// or removal cancels it (`effects_ended`).
+pub fn restrictions_armed(
+  cast cast: State,
+  cast_id cast_id: Int,
+  restricting restricting: List(Restricting),
+) -> #(State, List(Effect)) {
+  list.fold(restricting, #(cast, []), fn(so_far, one) {
+    let #(cast, effects) = so_far
+    let source = unit_properties.Source(cast_id:, effect_id: one.row.effect_id)
+    let row = one.row.row
+    let #(cast, cancels) = cast_state.cancel_source_timers(cast:, source:)
+    case row.until_removed {
+      True -> #(cast, list.append(effects, cancels))
+      False -> {
+        let #(cast, _, start) =
+          cast_state.armed(
+            cast:,
+            due: RestrictionEnd(source:),
+            after_ms: row.delay_ms + row.duration_ms,
+          )
+        #(cast, list.flatten([effects, cancels, [start]]))
+      }
+    }
+  })
+}
+
+/// The state the effect `source` gave the caster ends with its row, ahead of its cast's
+/// node: 0x880 to the caster and the audience told of it. A state no longer held, because
+/// the node ended or was taken off first, or the caster died or left, ends nothing.
+pub fn restriction_ended(
+  cast cast: State,
+  source source: unit_properties.Source,
+) -> #(State, List(Effect)) {
+  case dict.get(cast.restrictions, source) {
+    Error(Nil) -> #(cast, [])
+    Ok(held) -> #(
+      State(..cast, restrictions: dict.delete(cast.restrictions, source)),
+      restrictions_ended(held: [#(source, held)], cast_id: source.cast_id),
+    )
+  }
+}
+
+/// 0x880 to the caster and to the audience that was told the state, for each state the
+/// cast `cast_id` held, in effect id order (`opcode.0x880`).
+pub fn restrictions_ended(
+  held held: List(#(unit_properties.Source, HeldRestriction)),
+  cast_id cast_id: Int,
+) -> List(Effect) {
+  held
+  |> list.sort(fn(first, second) {
+    int.compare({ first.0 }.effect_id.value, { second.0 }.effect_id.value)
+  })
+  |> list.flat_map(fn(entry) {
+    let restriction = entry.1
+    [
+      Send(frame: cast_frame.control_ended_frame(
+        unit_id: cast_state.caster_of(cast_id:),
+        state: restriction.state,
+        cast_id:,
+        instance_id: restriction.instance_id,
+      )),
+      ..list.map(map.sorted_connections(restriction.audience), fn(viewer) {
+        Tell(
+          to: viewer,
+          news: client_connection.CrowdControlEnded(
+            state: restriction.state,
+            cast_id:,
+            instance_id: restriction.instance_id,
+          ),
+        )
+      })
+    ]
+  })
+}
+
+/// What the row's effect type is called in a log line.
+pub fn modifier_kind_named(row row: spell_plan.PropertyModifier) -> String {
+  case row.armor, row.change {
+    Some(..), _ -> "ModifyInterruptArmor"
+    None, spell_plan.AbsorbChange(..) -> "Absorption"
+    None, spell_plan.LookChange(..) -> "DisguiseOutfit"
+    None, spell_plan.PropertyChange(..) | None, spell_plan.StruckChange(..) ->
+      "UnitPropertyModifier or UnitPropertyConversion"
+  }
+}
+
+/// Whether a modifier row has a time to be changed for: a durationTime, or flags bit 2.
+/// A row with neither changes nothing and gives its node no life.
+fn modifier_has_life(row: spell_plan.PropertyModifier) -> Bool {
+  lasting.has_life(row: row.row)
+}
+
+/// Whether a cooldown row is kept for the cooldowns that start after it takes effect:
+/// its lifetime (delay plus durationTime, the larger of the two for a spell with the
+/// record flag 0x10000000) ends after its start, or never ends (flags bit 2). Any other
+/// row acts once at its start (`0x14046b7f0`, `opcode.0x7f4.effect_time`). Every row
+/// aimed at the caster gives its node the lifetime, kept or not.
+pub fn cooldown_kept(
+  row row: spell_plan.CooldownModifier,
+  longer_of_delay_and_duration longer_of_delay_and_duration: Bool,
+) -> Bool {
+  row.row.until_removed
+  || lasting.lifetime_of(row: row.row, longer_of_delay_and_duration:)
+  > row.row.delay_ms
+}
+
+/// The crowd-control states the units of a go took, each with its unit, in the order
+/// of the units.
+pub fn controls_landed(
+  struck struck: List(Struck),
+) -> List(#(strike_tell.ControlLanded, Int)) {
+  list.flat_map(struck, fn(one) {
+    case one {
+      Hit(unit_id:, controls:, ..) | Immune(unit_id:, controls:, ..) ->
+        list.map(controls, fn(control) { #(control, unit_id) })
+      Deflected(..) -> []
+    }
+  })
+}
+
+/// The property modifiers a go applies, each armed from this go: the modifier of an
+/// earlier go of the cast is armed again, its timers cancelled and started anew; a row
+/// with no delay starts in this step, any other on a timer of its delay, and one that
+/// does not last until removed ends on a timer after its delay and duration.
+pub fn modifiers_armed(
+  cast cast: State,
+  cast_id cast_id: Int,
+  caster caster: Caster,
+  aimed aimed: Aimed,
+  struck struck: List(Struck),
+) -> #(State, List(Effect)) {
+  list.fold(aimed.modifiers, #(cast, []), fn(so_far, entry) {
+    let #(cast, effects) = so_far
+    let row = entry.0
+    let source = unit_properties.Source(cast_id:, effect_id: row.effect_id)
+    let #(cast, more) = case row.change {
+      spell_plan.StruckChange(modifier:, ..) ->
+        creature_modifier_armed(
+          cast:,
+          cast_id:,
+          row:,
+          modifier:,
+          unit_id: entry.1,
+          struck:,
+        )
+      spell_plan.PropertyChange(modifier:) ->
+        caster_modifier_armed(cast:, row:, source:, change: Property(modifier:))
+      spell_plan.LookChange(disguise:) ->
+        caster_modifier_armed(cast:, row:, source:, change: Look(disguise:))
+      spell_plan.AbsorbChange(absorption:) ->
+        // An absorb's pool is worked out at the go from the caster as it stood before
+        // the go's own effects, as a shield heal's amount is (`healed_by`).
+        caster_modifier_armed(
+          cast:,
+          row:,
+          source:,
+          change: Absorb(
+            amount: damage.amount_on_caster(
+              formula: absorption.formula,
+              caster: cast_heal.on_caster_of(caster:),
+            ),
+            mask: absorption.mask,
+          ),
+        )
+    }
+    #(cast, list.append(effects, more))
+  })
+}
+
+/// A property modifier on a creature the go struck, armed from this go: the modifier
+/// of an earlier go on the same creature is armed again; a row with no delay starts in
+/// this step and any other on a timer of its delay. It has no timer of its end: it ends
+/// with the cast's node on the creature (`creature_modifiers_ended`).
+fn creature_modifier_armed(
+  cast cast: State,
+  cast_id cast_id: Int,
+  row row: spell_plan.PropertyModifier,
+  modifier modifier: unit_properties.Modifier,
+  unit_id unit_id: Int,
+  struck struck: List(Struck),
+) -> #(State, List(Effect)) {
+  case cast_gate.creature_hit(struck:, unit_id:) {
+    Error(Nil) -> #(cast, [])
+    Ok(#(life, struck_at_ms)) -> {
+      let on =
+        OnCreature(
+          unit_id:,
+          life:,
+          source: unit_properties.Source(cast_id:, effect_id: row.effect_id),
+        )
+      let #(cast, cancels) = target_start_cancelled(cast:, on:)
+      case row.row.delay_ms > 0 {
+        True -> {
+          let #(cast, _, start) =
+            cast_state.armed(
+              cast:,
+              due: TargetModifierStart(on:, modifier:, struck_at_ms:),
+              after_ms: row.row.delay_ms,
+            )
+          #(cast, list.append(cancels, [start]))
+        }
+        False -> {
+          let #(cast, starting) =
+            target_modifier_started(cast:, on:, modifier:, struck_at_ms:)
+          #(cast, list.append(cancels, starting))
+        }
+      }
+    }
+  }
+}
+
+/// The creatures a go throws: each entry of `thrown` (a struck move of the phase whose
+/// caster gates passed with a creature its aim names that the round `Hit` and that passes
+/// its target gate, `aimed_at`), in the row then the unit order of `units_aimed_at`. A row with no delay tells the creature
+/// `ForcedMoveStarts` in this step; any other arms a `ForcedMoveStart` timer for the go
+/// plus its delay; each go's throw is its own, so a later go of the cast leaves an
+/// earlier go's waiting throw to start. A unit that is not a `HitCreature` of the
+/// round is not thrown (a deflected one included, as for a property modifier), and neither
+/// is the caster or another player (a move of another player is issue 570).
+pub fn struck_moves_armed(
+  cast cast: State,
+  cast_id cast_id: Int,
+  thrown thrown: List(#(spell_plan.StruckMove, Int)),
+  struck struck: List(Struck),
+) -> #(State, List(Effect)) {
+  list.fold(thrown, #(cast, []), fn(so_far, entry) {
+    let #(cast, effects) = so_far
+    let #(row, unit_id) = entry
+    let #(cast, more) =
+      struck_move_armed(cast:, cast_id:, row:, unit_id:, struck:)
+    #(cast, list.append(effects, more))
+  })
+}
+
+/// The throw of one row on one unit its aim names: nothing unless the round `Hit` the
+/// unit as a creature, then the start its delay makes.
+fn struck_move_armed(
+  cast cast: State,
+  cast_id cast_id: Int,
+  row row: spell_plan.StruckMove,
+  unit_id unit_id: Int,
+  struck struck: List(Struck),
+) -> #(State, List(Effect)) {
+  case cast_gate.creature_hit(struck:, unit_id:) {
+    Error(Nil) -> #(cast, [])
+    Ok(#(life, struck_at_ms)) -> {
+      let on =
+        OnCreature(
+          unit_id:,
+          life:,
+          source: unit_properties.Source(cast_id:, effect_id: row.effect_id),
+        )
+      case row.delay_ms > 0 {
+        True -> {
+          let #(cast, _, start) =
+            cast_state.armed(
+              cast:,
+              due: ForcedMoveStart(on:, move: row.move, struck_at_ms:),
+              after_ms: row.delay_ms,
+            )
+          #(cast, [start])
+        }
+        False -> throw_started(cast:, on:, move: row.move, struck_at_ms:)
+      }
+    }
+  }
+}
+
+/// The delay of a throw ran out, or it has none: the cast tells the creature `on` names,
+/// of the life the go struck, `ForcedMoveStarts`. A node of the cast that ended first has
+/// cancelled the timer, so nothing is asked of the node here.
+pub fn throw_started(
+  cast cast: State,
+  on on: OnCreature,
+  move move: forced_move.Move,
+  struck_at_ms struck_at_ms: Int,
+) -> #(State, List(Effect)) {
+  #(cast, [
+    ForcedMoveStarts(unit_id: on.unit_id, life: on.life, struck_at_ms:, move:),
+  ])
+}
+
+/// The start timer of the modifier `on` names cancelled, whichever go armed it.
+fn target_start_cancelled(
+  cast cast: State,
+  on on: OnCreature,
+) -> #(State, List(Effect)) {
+  cast_state.cancel_timers(cast:, matching: fn(due) {
+    case target_start_of(due:) {
+      Ok(waiting) ->
+        waiting.unit_id == on.unit_id && waiting.source == on.source
+      Error(Nil) -> False
+    }
+  })
+}
+
+/// The modifier or throw on a creature a timer waits to start, none for any other timer.
+fn target_start_of(due due: Due) -> Result(OnCreature, Nil) {
+  case due {
+    TargetModifierStart(on:, ..) | ForcedMoveStart(on:, ..) -> Ok(on)
+    Go(..)
+    | Finish(..)
+    | StartChild(..)
+    | NodesEnd(..)
+    | StateEnd(..)
+    | ModifierStart(..)
+    | ModifierEnd(..)
+    | RestrictionEnd(..)
+    | CooldownModifierStarts(..)
+    | CooldownModifierEnds(..)
+    | ProcDue(..)
+    | StartHeld
+    | RepeatHeld
+    | WindowEnd(..)
+    | ChargeLevel(..)
+    | Tick(..) -> Error(Nil)
+  }
+}
+
+/// A property modifier on the caster, armed from this go: the modifier of an earlier
+/// go of the cast is armed again, its timers cancelled and started anew; a row with no
+/// delay starts in this step, any other on a timer of its delay, and one that does not
+/// last until removed ends on a timer after its delay and duration.
+fn caster_modifier_armed(
+  cast cast: State,
+  row row: spell_plan.PropertyModifier,
+  source source: unit_properties.Source,
+  change change: CasterChange,
+) -> #(State, List(Effect)) {
+  {
+    let #(cast, cancels) = cast_state.cancel_source_timers(cast:, source:)
+    let #(cast, starting) = case row.row.delay_ms > 0 {
+      True -> {
+        let #(cast, _, start) =
+          cast_state.armed(
+            cast:,
+            due: ModifierStart(source:, change:),
+            after_ms: row.row.delay_ms,
+          )
+        #(cast, [start])
+      }
+      False -> #(cast, [CasterChangeStarts(source:, change:)])
+    }
+    let #(cast, ending) = case row.row.until_removed {
+      True -> #(cast, [])
+      False -> {
+        let #(cast, _, start) =
+          cast_state.armed(
+            cast:,
+            due: ModifierEnd(source:),
+            after_ms: row.row.delay_ms + row.row.duration_ms,
+          )
+        #(cast, [start])
+      }
+    }
+    #(cast, list.flatten([cancels, starting, ending]))
+  }
+}
+
+/// The heals a go applies: a heal with no delay lands in this step, after the go's
+/// 0x7f4, and any other on a timer of its delay (the client adds the delay before it
+/// applies a result, `0x1405d77a0`). Each go's heal is its own, so a later go of the cast
+/// heals again and no earlier heal is cancelled; a pending heal is dropped with the node
+/// of the cast on the caster (`effects_ended`), and lands when the node ends by time
+/// (`heals_landed_at_node_end`).
+pub fn heals_armed(
+  cast cast: State,
+  cast_id cast_id: Int,
+  aimed aimed: Aimed,
+) -> #(State, List(Effect)) {
+  list.fold(aimed.heals, #(cast, []), fn(so_far, entry) {
+    let #(cast, effects) = so_far
+    let healed = entry.0
+    let source = unit_properties.Source(cast_id:, effect_id: healed.effect_id)
+    let change = Heal(vital: healed.vital, amount: healed.amount)
+    case healed.delay_ms > 0 {
+      True -> {
+        let #(cast, _, start) =
+          cast_state.armed(
+            cast:,
+            due: ModifierStart(source:, change:),
+            after_ms: healed.delay_ms,
+          )
+        #(cast, list.append(effects, [start]))
+      }
+      False -> #(
+        cast,
+        list.append(effects, [CasterChangeStarts(source:, change:)]),
+      )
+    }
+  })
+}
+
+/// The modifier rows of a spell that change the caster: the rows aimed at struck units
+/// are the creature's (`creature_modifiers_ended`).
+pub fn caster_rows(spell spell: Spell) -> List(spell_plan.PropertyModifier) {
+  list.filter(spell.modifiers, fn(row) {
+    case row.change {
+      spell_plan.StruckChange(..) -> False
+      spell_plan.PropertyChange(..)
+      | spell_plan.LookChange(..)
+      | spell_plan.AbsorbChange(..) -> True
+    }
+  })
+}
