@@ -141,10 +141,12 @@ import genesis_prime/game/damage
 import genesis_prime/game/forced_move
 import genesis_prime/game/lasting
 import genesis_prime/game/prerequisite
+import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{type Spell}
 import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_properties
 import genesis_prime/message/crowd_control_state
+import genesis_prime/table/id.{type Spell4EffectsId}
 import genesis_prime/world_map/map
 import gleam/bool
 import gleam/dict
@@ -250,10 +252,12 @@ fn creatures_ended(
   )
 }
 
-/// The Fluff, SpellForceRemove, property modifier, forced move, cooldown, Stealth,
-/// RemoveStealth and HealShields effects of the phase whose gates pass against the caster,
-/// a debug line for each that cannot be decided, and the rolls left. Their gates are checked after the Proxies' and the gains', in that
-/// order, the HealShields effects' last (`cast_gate.rolls_needed`).
+/// The Fluff, SpellForceRemove, property modifier, forced move, struck move, cooldown,
+/// Stealth, RemoveStealth, Proc, heal and ability restriction effects of the phase whose
+/// gates pass against the caster, a debug line for each that cannot be decided, and the
+/// rolls left. The effects are walked in the plan's rank order, which is the order their
+/// gates are checked in, after the Proxies' and the gains', the restrictions' last
+/// (`cast_gate.rolls_needed`).
 pub fn lasting_applied(
   spell spell: Spell,
   phase phase: Int,
@@ -261,184 +265,78 @@ pub fn lasting_applied(
   subject subject: prerequisite.Subject,
   rolls rolls: List(Int),
 ) -> #(Applied, List(Effect), List(Int)) {
-  let #(lasting, logs, rolls) =
+  let checked =
+    spell_effect.in_phase(effects: spell.effects, phase:, spent:)
+    |> list.filter_map(caster_checked)
+  let #(passed, logs, rolls) =
     cast_gate.gated(
-      rows: spell_plan.lasting_in_phase(spell:, phase:, spent:),
-      gates: fn(row: spell_plan.Lasting) {
-        cast_gate.caster_gates(condition: row.condition)
-      },
-      what: fn(row: spell_plan.Lasting) {
-        "the lasting effect " <> int.to_string(row.effect_id.value)
-      },
+      rows: checked,
+      gates: fn(one: CasterChecked) { one.gates },
+      what: fn(one: CasterChecked) { one.what },
       outcome: "so it is not applied",
       subject:,
       rolls:,
     )
-  let #(removes, more_logs, rolls) =
-    cast_gate.gated(
-      rows: spell_plan.removes_in_phase(spell:, phase:, spent:),
-      gates: fn(row: spell_plan.ForceRemove) {
-        cast_gate.caster_gates(condition: row.condition)
-      },
-      what: fn(row: spell_plan.ForceRemove) {
-        "the SpellForceRemove effect " <> int.to_string(row.effect_id.value)
-      },
-      outcome: "so it is not applied",
-      subject:,
-      rolls:,
-    )
-  let #(modifiers, modifier_logs, rolls) =
-    cast_gate.gated(
-      rows: list.filter(
-        spell_plan.modifiers_in_phase(spell:, phase:, spent:),
-        modifier_has_life,
-      ),
-      gates: fn(row: spell_plan.PropertyModifier) {
-        cast_gate.caster_gates(condition: row.condition)
-      },
-      what: fn(row: spell_plan.PropertyModifier) {
-        "the "
-        <> modifier_kind_named(row:)
-        <> " effect "
-        <> int.to_string(row.effect_id.value)
-      },
-      outcome: "so it is not applied",
-      subject:,
-      rolls:,
-    )
-  let #(forced_moves, forced_move_logs, rolls) =
-    cast_gate.gated(
-      rows: spell_plan.forced_moves_in_phase(spell:, phase:, spent:),
-      gates: fn(row: spell_plan.ForcedMove) {
-        cast_gate.only_on_caster_gates(condition: row.condition)
-      },
-      what: fn(row: spell_plan.ForcedMove) {
-        "the ForcedMove effect " <> int.to_string(row.effect_id.value)
-      },
-      outcome: "so it is not applied",
-      subject:,
-      rolls:,
-    )
-  let #(struck_moves, struck_move_logs, rolls) =
-    cast_gate.gated(
-      rows: spell_plan.struck_moves_in_phase(spell:, phase:, spent:),
-      gates: fn(row: spell_plan.StruckMove) {
-        cast_gate.caster_gates(condition: row.condition)
-      },
-      what: fn(row: spell_plan.StruckMove) {
-        "the ForcedMove effect " <> int.to_string(row.effect_id.value)
-      },
-      outcome: "so it is not applied",
-      subject:,
-      rolls:,
-    )
-  let #(cooldowns, cooldown_logs, rolls) =
-    cast_gate.gated(
-      rows: spell_plan.cooldown_modifiers_in_phase(spell:, phase:, spent:),
-      gates: fn(row: spell_plan.CooldownModifier) {
-        cast_gate.only_on_caster_gates(condition: row.condition)
-      },
-      what: fn(row: spell_plan.CooldownModifier) {
-        "the ModifySpellCooldown effect " <> int.to_string(row.effect_id.value)
-      },
-      outcome: "so it is not applied",
-      subject:,
-      rolls:,
-    )
-  let #(stealth, stealth_logs, rolls) =
-    cast_gate.gated(
-      rows: spell_plan.stealth_in_phase(spell:, phase:, spent:),
-      gates: fn(row: spell_plan.StealthRow) {
-        cast_gate.only_on_caster_gates(condition: row.condition)
-      },
-      what: fn(row: spell_plan.StealthRow) {
-        "the Stealth effect " <> int.to_string(row.effect_id.value)
-      },
-      outcome: "so it is not applied",
-      subject:,
-      rolls:,
-    )
-  let #(remove_stealth, remove_stealth_logs, rolls) =
-    cast_gate.gated(
-      rows: spell_plan.remove_stealth_in_phase(spell:, phase:, spent:),
-      gates: fn(row: spell_plan.RemoveStealthRow) {
-        cast_gate.only_on_caster_gates(condition: row.condition)
-      },
-      what: fn(row: spell_plan.RemoveStealthRow) {
-        "the RemoveStealth effect " <> int.to_string(row.effect_id.value)
-      },
-      outcome: "so it is not applied",
-      subject:,
-      rolls:,
-    )
-  let #(procs, proc_logs, rolls) =
-    cast_gate.gated(
-      rows: spell_plan.procs_in_phase(spell:, phase:, spent:),
-      gates: fn(row: spell_plan.ProcRow) {
-        cast_gate.only_on_caster_gates(condition: row.condition)
-      },
-      what: fn(row: spell_plan.ProcRow) {
-        "the Proc effect " <> int.to_string(row.effect_id.value)
-      },
-      outcome: "so it is not applied",
-      subject:,
-      rolls:,
-    )
-  let #(heals, heal_logs, rolls) =
-    cast_gate.gated(
-      rows: spell_plan.heals_in_phase(spell:, phase:, spent:),
-      gates: fn(row: spell_plan.Heal) {
-        cast_gate.caster_gates(condition: row.condition)
-      },
-      what: fn(row: spell_plan.Heal) {
-        "the Heal or HealShields effect " <> int.to_string(row.effect_id.value)
-      },
-      outcome: "so it is not applied",
-      subject:,
-      rolls:,
-    )
-  let #(restrictions, restriction_logs, rolls) =
-    cast_gate.gated(
-      rows: spell_plan.restrictions_in_phase(spell:, phase:, spent:),
-      gates: fn(row: spell_plan.CrowdControl) {
-        cast_gate.only_on_caster_gates(condition: row.condition)
-      },
-      what: fn(row: spell_plan.CrowdControl) {
-        "the ability restriction effect " <> int.to_string(row.effect_id.value)
-      },
-      outcome: "so it is not applied",
-      subject:,
-      rolls:,
-    )
-  #(
-    Applied(
-      lasting:,
-      removes:,
-      modifiers:,
-      forced_moves:,
-      struck_moves:,
-      cooldowns:,
-      stealth:,
-      remove_stealth:,
-      procs:,
-      heals:,
-      restrictions:,
-    ),
-    list.flatten([
-      logs,
-      more_logs,
-      modifier_logs,
-      forced_move_logs,
-      struck_move_logs,
-      cooldown_logs,
-      stealth_logs,
-      remove_stealth_logs,
-      proc_logs,
-      heal_logs,
-      restriction_logs,
-    ]),
-    rolls,
+  #(Applied(passed: list.map(passed, fn(one) { one.planned })), logs, rolls)
+}
+
+/// An effect the go checks against the caster, with its gates and what a debug line calls it.
+type CasterChecked {
+  CasterChecked(
+    planned: spell_effect.PlannedEffect(spell_plan.Kind),
+    gates: List(prerequisite.Prerequisite),
+    what: String,
   )
+}
+
+/// The effect with the gates the go checks against the caster (`cast_gate.gates_checked_on_caster`)
+/// and its name. An effect with no gate here is left out: a Proxy's and a gain's gates are
+/// checked apart (`cast_gate.proxy_gates`, `cast_gate.gains_given`), a property modifier
+/// with no life changes nothing, and a crowd-control state that does not reach the caster
+/// is the strike's.
+fn caster_checked(
+  planned: spell_effect.PlannedEffect(spell_plan.Kind),
+) -> Result(CasterChecked, Nil) {
+  let has_life = case spell_plan.as_modifier(kind: planned.kind) {
+    Ok(row) -> modifier_has_life(row)
+    Error(Nil) -> True
+  }
+  use <- bool.guard(!has_life, Error(Nil))
+  use gates <- result.try(cast_gate.gates_checked_on_caster(kind: planned.kind))
+  use what <- result.map(effect_named(kind: planned.kind))
+  CasterChecked(planned:, gates:, what:)
+}
+
+/// What a debug line calls an effect of this kind that the go checks against the caster; a
+/// Proxy and a gain are named where their own gates are checked.
+fn effect_named(kind kind: spell_plan.Kind) -> Result(String, Nil) {
+  let named = fn(what: String, effect_id: Spell4EffectsId) {
+    Ok(what <> " effect " <> int.to_string(effect_id.value))
+  }
+  case kind {
+    spell_plan.ProxyEffect(..) | spell_plan.GainEffect(..) -> Error(Nil)
+    spell_plan.LastingEffect(lasting: row) ->
+      named("the lasting", row.effect_id)
+    spell_plan.RemoveEffect(remove: row) ->
+      named("the SpellForceRemove", row.effect_id)
+    spell_plan.ModifierEffect(modifier: row) ->
+      named("the " <> modifier_kind_named(row:), row.effect_id)
+    spell_plan.ForcedMoveEffect(forced_move: row) ->
+      named("the ForcedMove", row.effect_id)
+    spell_plan.StruckMoveEffect(struck_move: row) ->
+      named("the ForcedMove", row.effect_id)
+    spell_plan.CooldownEffect(modifier: row) ->
+      named("the ModifySpellCooldown", row.effect_id)
+    spell_plan.StealthEffect(stealth: row) ->
+      named("the Stealth", row.effect_id)
+    spell_plan.RemoveStealthEffect(remove: row) ->
+      named("the RemoveStealth", row.effect_id)
+    spell_plan.ProcEffect(proc: row) -> named("the Proc", row.effect_id)
+    spell_plan.HealEffect(heal: row) ->
+      named("the Heal or HealShields", row.effect_id)
+    spell_plan.ControlEffect(control: row) ->
+      named("the ability restriction", row.effect_id)
+  }
 }
 
 /// The go's states on the caster, each with its instance id: the one a cast already holds
@@ -450,38 +348,45 @@ pub fn restrictions_numbered(
   live live: Live,
   applied applied: Applied,
 ) -> #(State, List(Restricting)) {
-  list.fold(applied.restrictions, #(cast, []), fn(so_far, row) {
-    let #(cast, numbered) = so_far
-    let source = unit_properties.Source(cast_id:, effect_id: row.effect_id)
-    let #(cast, restricting) = case dict.get(cast.restrictions, source) {
-      Ok(held) -> #(
-        cast,
-        Restricting(row:, instance_id: held.instance_id, fresh: False),
-      )
-      Error(Nil) -> {
-        let told = cast.restrictions_told + 1
-        let instance_id =
-          crowd_control.instance_id(caster_unit_id: caster.unit_id, count: told)
-        #(
-          State(
-            ..cast,
-            restrictions: dict.insert(
-              cast.restrictions,
-              source,
-              HeldRestriction(
-                state: row.row.state,
-                instance_id:,
-                audience: live.audience,
-              ),
-            ),
-            restrictions_told: told,
-          ),
-          Restricting(row:, instance_id:, fresh: True),
+  list.fold(
+    cast_state.passed_of(applied:, as_kind: spell_plan.as_control),
+    #(cast, []),
+    fn(so_far, row) {
+      let #(cast, numbered) = so_far
+      let source = unit_properties.Source(cast_id:, effect_id: row.effect_id)
+      let #(cast, restricting) = case dict.get(cast.restrictions, source) {
+        Ok(held) -> #(
+          cast,
+          Restricting(row:, instance_id: held.instance_id, fresh: False),
         )
+        Error(Nil) -> {
+          let told = cast.restrictions_told + 1
+          let instance_id =
+            crowd_control.instance_id(
+              caster_unit_id: caster.unit_id,
+              count: told,
+            )
+          #(
+            State(
+              ..cast,
+              restrictions: dict.insert(
+                cast.restrictions,
+                source,
+                HeldRestriction(
+                  state: row.row.state,
+                  instance_id:,
+                  audience: live.audience,
+                ),
+              ),
+              restrictions_told: told,
+            ),
+            Restricting(row:, instance_id:, fresh: True),
+          )
+        }
       }
-    }
-    #(cast, list.append(numbered, [restricting]))
-  })
+      #(cast, list.append(numbered, [restricting]))
+    },
+  )
 }
 
 /// 0x87f to the caster and to the audience of the go, for each state the go gave

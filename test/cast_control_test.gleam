@@ -27,6 +27,7 @@ import cast_support as support
 import crowd_control_support
 import genesis_prime/client_connection
 import genesis_prime/game/cast
+import genesis_prime/game/cast/control as cast_control
 import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
@@ -63,7 +64,7 @@ import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import gleam/int
 import gleam/list
-import gleam/option.{Some}
+import gleam/option.{None, Some}
 import owned_test
 import prerequisite_support
 
@@ -1195,4 +1196,36 @@ fn applied_instance(effects effects: List(Effect)) -> Int {
     as "one 0x87f"
   let assert Ok(told) = unit_cc_state_applied.decode(frame.body)
   told.instance_id
+}
+
+pub fn a_controls_row_aimed_at_the_caster_and_past_it_appears_in_both_readers_test() -> Nil {
+  use <- owned_test.run(5000)
+  // `Spell4Effects.targetFlags` 3 names the caster and the primary target, so the one
+  // state is the caster's restriction and a creature's state alike
+  // (`spell_plan.reaches_caster`, `spell_plan.reaches_past_caster`).
+  let row =
+    spell_plan.CrowdControl(
+      effect_id: Spell4EffectsId(60_607),
+      phase_flags: -1,
+      aim: spell_plan.AimsAtCasterAndPrimaryTarget,
+      row: restriction_row(duration_ms: 3000, until_removed: False),
+      condition: spell_plan.Always,
+      tag: spend.always,
+    )
+  let spell =
+    support.with_effects(spell: support.child(spell4_id: 7010, base: 3), kinds: [
+      spell_plan.ControlEffect(row),
+    ])
+  let #(applied, _, _) =
+    cast_control.lasting_applied(
+      spell:,
+      phase: 0,
+      spent: None,
+      subject: prerequisite_support.holding(held: [], second_unit: None),
+      rolls: [],
+    )
+  assert cast_state.passed_of(applied:, as_kind: spell_plan.as_control) == [row]
+    as "the restrictions: a row that names the caster is among the caster's states"
+  assert spell_plan.controls_in_phase(spell:, phase: 0, spent: None) == [row]
+    as "the strike's controls: a row that names the primary target is among the creatures' states"
 }
