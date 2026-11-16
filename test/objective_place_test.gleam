@@ -49,6 +49,7 @@ import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_life.{Hostile}
 import gleam/dict
 import gleam/list
+import gleam/set
 import owned_test
 import place_support
 import planted_table.{Integer}
@@ -143,6 +144,7 @@ fn settled_among(
     ),
     now_ms: 0,
     numbers: spawn_support.numbers,
+    held_objectives: set.new(),
     unix_ms: 0,
   )
 }

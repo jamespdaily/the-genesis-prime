@@ -388,6 +388,7 @@ fn kill_objective(count count: Int) -> quest_log.Quest {
       reward_pane: 0,
       checklist: False,
       time_limit_ms: 0,
+      marked: False,
     ),
   ])
 }

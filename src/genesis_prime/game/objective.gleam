@@ -22,10 +22,11 @@
 //// `opcode.0x361` carries only the progress), and the last one's kill makes it 1 of its
 //// count 1 (the client's needed value is 1 for count 1, `0x140551840`). A type 5
 //// objective (`QuestObjective.type.5`, a scripted objective) takes none of these events:
-//// nothing completes a visible one (a gap, the issue "Quests, zones and prerequisites
-//// work on the real client"), so a timed one runs out (`quest_log.expire`). A hidden one
-//// (`QuestObjective.flags.8`) with data 0 that no creature links is done by the server
-//// once the quest's other required objectives are (`hidden_scripts`, a server choice).
+//// nothing the client sends completes one, so a timed one runs out (`quest_log.expire`).
+//// A hidden one (`QuestObjective.flags.8`) with data 0 that no creature links, and a
+//// visible, required, unmarked, unlinked one, are done by the server once the quest's
+//// other required objectives are (`stand_in_scripts`, a server choice), except the
+//// visible ones only an instance run or a PvP match completes, which stay open.
 //// An objective takes the event only while it is open (`0x1405510d0`, `0x140553790`): its
 //// quest is in the active list, Accepted or Achieved (`0x1405510d0` tests only for state
 //// 3), it is not done and it is reachable. Every objective that is open and counts the
@@ -740,6 +741,7 @@ pub fn settle(
   place place: Place,
   shown shown: shown.Picture,
   numbers numbers: GameNumbers,
+  held_objectives held_objectives: Set(Int),
   unix_ms unix_ms: Int,
   now_ms now_ms: Int,
 ) -> Advanced {
@@ -776,6 +778,7 @@ pub fn settle(
           place:,
           shown:,
           numbers:,
+          held_objectives:,
           unix_ms:,
           now_ms:,
         )
@@ -813,6 +816,7 @@ fn opened(
   place place: Place,
   shown shown: shown.Picture,
   numbers numbers: GameNumbers,
+  held_objectives held_objectives: Set(Int),
   unix_ms unix_ms: Int,
   now_ms now_ms: Int,
 ) -> Settling {
@@ -820,7 +824,7 @@ fn opened(
     visits(settling:, quest:, zones:, now_ms:)
     |> arrivals(quest:, tables:, place:, shown:, now_ms:)
     |> finishes(quest:, tables:, numbers:, unix_ms:, now_ms:)
-    |> hidden_scripts(quest:, tables:, now_ms:)
+    |> stand_in_scripts(quest:, tables:, held_objectives:, now_ms:)
   case list.length(next.progress) > list.length(settling.progress) {
     True ->
       opened(
@@ -831,6 +835,7 @@ fn opened(
         place:,
         shown:,
         numbers:,
+        held_objectives:,
         unix_ms:,
         now_ms:,
       )
@@ -838,21 +843,27 @@ fn opened(
   }
 }
 
-/// The quest's hidden scripted objectives with no target, each done once every other
-/// objective of the quest without flag 0x20 is done, except one the client keeps closed
-/// until a script is done (`other_required_objectives_done`): the objectives of type 5
-/// with flag 8 (hidden) and data 0 that no creature links (`objective_link.is_linked`).
-/// Such an objective is done by nothing the client or a player does, and the Achieved
-/// rule (`0x1405fbc40`) waits for it, so the quest would stay Accepted for ever; this
-/// completion is a server choice. Another such objective of the quest is not one to wait
-/// for, so a quest with several completes the ones that are open together, and a quest
-/// with no other required objective completes at once. A script the client keeps closed
-/// (`0x140553790`) behind an objective that is not done stays open for a later settle,
-/// and a done objective is not counted again.
-fn hidden_scripts(
+/// The quest's scripted objectives with no target, each done once every other objective
+/// of the quest without flag 0x20 is done, except one the client keeps closed until a
+/// script is done (`other_required_objectives_done`). Two kinds are done: the hidden
+/// ones, objectives of type 5 with flag 8 (hidden) and data 0 that no creature links
+/// (`objective_link.is_linked`), and the visible ones (`visible_script_broken`): type 5
+/// with flags 0x8 and 0x20 clear, no marker and no creature link, whatever the data. Such
+/// an objective is done by nothing the client or a player does, and the Achieved rule
+/// (`0x1405fbc40`) waits for it, so the quest would stay Accepted for ever; this
+/// completion is a server choice (Jim's rule: a script the server can complete is
+/// completed). The visible ones that only an instance run or a PvP match completes are
+/// the `held_objectives`: they stay open, and the quest with them. Another stand-in of
+/// the quest, held or not, is not one to wait for, so a quest with several completes the
+/// free ones that are open together, and a quest with no other required objective
+/// completes at once. A script the client keeps closed (`0x140553790`) behind an
+/// objective that is not done stays open for a later settle, and a done objective is not
+/// counted again.
+fn stand_in_scripts(
   settling settling: Settling,
   quest quest: quest_log.Quest,
   tables tables: table_store.Tables,
+  held_objectives held_objectives: Set(Int),
   now_ms now_ms: Int,
 ) -> Settling {
   let scripts =
@@ -861,14 +872,14 @@ fn hidden_scripts(
     })
     |> list.filter(fn(pair) {
       let #(index, objective) = pair
-      objective.type_ == scripted_type
-      && int.bitwise_and(objective.flags, hidden_flag) != 0
-      && objective.data == 0
-      && !objective_link.is_linked(tables:, quest_id: quest.id, index:)
+      hidden_script(tables:, quest_id: quest.id, index:, objective:)
+      || visible_script_broken(tables:, quest_id: quest.id, index:, objective:)
+      == []
     })
   let waiting =
     list.filter(scripts, fn(pair) {
-      quest_log.objective_open(log: settling.log, quest:, index: pair.0)
+      !set.contains(held_objectives, { pair.1 }.objective_id)
+      && quest_log.objective_open(log: settling.log, quest:, index: pair.0)
     })
   case
     waiting != []
@@ -890,6 +901,61 @@ fn hidden_scripts(
       })
     False -> settling
   }
+}
+
+/// Whether the objective at `index` of the quest is a hidden script with no target:
+/// type 5, flag 8 and data 0, that no creature links.
+fn hidden_script(
+  tables tables: table_store.Tables,
+  quest_id quest_id: Int,
+  index index: Int,
+  objective objective: quest_log.Objective,
+) -> Bool {
+  objective.type_ == scripted_type
+  && int.bitwise_and(objective.flags, hidden_flag) != 0
+  && objective.data == 0
+  && !objective_link.is_linked(tables:, quest_id:, index:)
+}
+
+/// The rules the objective at `index` of the quest breaks as a visible script with no
+/// target, none when it is one: type 5 (`QuestObjective.type.5`, done only by the
+/// server's 0x361), flag 0x8 clear (else it is a hidden script), flag 0x20 clear (else
+/// the quest does not wait for it), no `worldLocationsIdIndicator` marker (a marker sends
+/// the player to a place, which they reach), and no creature linking it
+/// (`objective_link.is_linked`). Its data is not read: the server completes it whatever
+/// the data, which no client rule gives it.
+pub fn visible_script_broken(
+  tables tables: table_store.Tables,
+  quest_id quest_id: Int,
+  index index: Int,
+  objective objective: quest_log.Objective,
+) -> List(String) {
+  list.flatten([
+    case objective.type_ == scripted_type {
+      True -> []
+      False -> [
+        "QuestObjective type is "
+        <> int.to_string(objective.type_)
+        <> ", not 5 (a scripted objective)",
+      ]
+    },
+    case int.bitwise_and(objective.flags, hidden_flag) != 0 {
+      True -> ["flag 0x8 hides it, so it is a hidden script"]
+      False -> []
+    },
+    case int.bitwise_and(objective.flags, quest_log.optional_flag) != 0 {
+      True -> ["flag 0x20 makes it optional, so its quest does not wait for it"]
+      False -> []
+    },
+    case objective.marked {
+      True -> ["a worldLocationsIdIndicator marker sends the player to a place"]
+      False -> []
+    },
+    case objective_link.is_linked(tables:, quest_id:, index:) {
+      True -> ["a creature links it, so that creature completes it"]
+      False -> []
+    },
+  ])
 }
 
 /// Whether every required objective of the quest is done except the `scripts` and the

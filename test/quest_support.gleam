@@ -279,3 +279,23 @@ pub fn with_time_limits(
 pub fn with_items(asker asker: Asker, items items: List(HeldItem)) -> Asker {
   Asker(..asker, checker: prerequisite.Checker(..asker.checker, items:))
 }
+
+/// Runs the body on the fixture's tables with these QuestObjective cells changed (the
+/// objective's id, the column and its new value), built on the body's heap.
+pub fn with_objectives(
+  edits edits: List(#(Int, String, Int)),
+  body body: fn(table_store.Tables) -> a,
+) -> a {
+  let rows =
+    list.fold(edits, fixture_tables.rows(), fn(rows, edit) {
+      case
+        fixture_tables.change(rows:, table: "QuestObjective", id: edit.0, with: [
+          #(edit.1, Integer(edit.2)),
+        ])
+      {
+        Ok(changed) -> changed
+        Error(refusal) -> panic as fixture_tables.describe(refusal)
+      }
+    })
+  fixture_tables.on_rows(rows:, reaching: [], body:)
+}

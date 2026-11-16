@@ -842,7 +842,10 @@ pub fn reset_due(
 /// words 0x18 and after): its QuestObjective id, type, flags, count and data (the id of
 /// the row its type names, a Creature2 id for types 3 and 12), the TargetGroup row of
 /// its reward pane (0 for none), and whether it counts its progress as bits
-/// (`0x1405517a0`), and its time limit in milliseconds (`maxTimeAllowedMS`, 0 for none).
+/// (`0x1405517a0`), its time limit in milliseconds (`maxTimeAllowedMS`, 0 for none), and
+/// whether it names a place to go to (`marked`: one of its four `worldLocationsIdIndicator`
+/// columns is not 0, as `place_objective.marker_ids` reads them; `place_objective` imports
+/// this module, so it cannot be called from here).
 pub type Objective {
   Objective(
     objective_id: Int,
@@ -853,6 +856,7 @@ pub type Objective {
     reward_pane: Int,
     checklist: Bool,
     time_limit_ms: Int,
+    marked: Bool,
   )
 }
 
@@ -918,6 +922,15 @@ fn objective_of(
     reward_pane: row.target_group_id_reward_pane,
     checklist: is_checklist(tables:, objective: row),
     time_limit_ms: row.max_time_allowed_ms,
+    marked: list.any(
+      [
+        row.world_locations_id_indicator00,
+        row.world_locations_id_indicator01,
+        row.world_locations_id_indicator02,
+        row.world_locations_id_indicator03,
+      ],
+      fn(marker_id) { marker_id != 0 },
+    ),
   )
 }
 
@@ -1333,18 +1346,35 @@ fn reachable(log log: QuestLog, quest quest: Quest, index index: Int) -> Bool {
 /// The objectives of the quest that stay unreachable (`0x140553790`) while the objectives
 /// at `holding` are not done, though every other objective is: the ones the client keeps
 /// closed behind them, directly by flag 2 or through a flag 1 chain. An objective
-/// at or before the first held one is never among them. The quest is read as the log holds
-/// it: the placeholder row stands in the type 31 slot.
+/// at or before the first held one is never among them. An objective kept closed behind
+/// another that is itself kept closed is among them too, since the player can do neither
+/// before the held ones: the search repeats with the closed ones held until it finds no
+/// more. The quest is read as the log holds it: the placeholder row stands in the type 31
+/// slot.
 pub fn locked_behind(
   log log: QuestLog,
   quest quest: Quest,
   holding holding: List(Int),
 ) -> List(Int) {
   let quest = as_logged(log:, quest:)
-  list.index_map(quest.objectives, fn(_, index) { index })
-  |> list.filter(fn(index) {
-    !reachable_when(quest:, index:, done: fn(at) { !list.contains(holding, at) })
-  })
+  locked_through(quest:, holding:)
+  |> list.filter(fn(index) { !list.contains(holding, index) })
+}
+
+/// The held objectives and every objective closed behind them, to a fixed point.
+fn locked_through(quest quest: Quest, holding holding: List(Int)) -> List(Int) {
+  let closed =
+    list.index_map(quest.objectives, fn(_, index) { index })
+    |> list.filter(fn(index) {
+      list.contains(holding, index)
+      || !reachable_when(quest:, index:, done: fn(at) {
+        !list.contains(holding, at)
+      })
+    })
+  case list.length(closed) == list.length(holding) {
+    True -> closed
+    False -> locked_through(quest:, holding: closed)
+  }
 }
 
 /// Whether the objective at `index` is reachable (`0x140553790`) when `done` says which
