@@ -49,6 +49,7 @@ import genesis_prime/step.{
 }
 import genesis_prime/store.{Character}
 import genesis_prime/table/id.{ClassId, Spell4BaseId, Spell4EffectsId, Spell4Id}
+import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4_effects
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_kind.{Kind}
@@ -63,6 +64,7 @@ import gleam/list
 import gleam/option.{None, Some}
 import owned_test
 import place_support
+import planted_table
 import spawn_support
 import spell_tables
 
@@ -1564,24 +1566,22 @@ fn answered_by_the_beast(
   }
 }
 
-pub fn each_of_electrocutes_six_pulses_strikes_the_beast_and_lowers_its_health_test() -> Nil {
-  use <- owned_test.run(60_000)
+/// What the Engineer's client hears from its Electrocute at a Beast in the camp, after a Pulse
+/// Blast that opens the fight, with `tables` as the server's rows: the Beast and the Engineer
+/// are run by their own rules and answer each other (`answered_by_the_beast`).
+fn electrocute_frames(tables tables: table_store.Tables) -> List(Frame) {
   let #(engineer, _) =
     game_connection_support.entered_with(
       settings: Settings(
         ..game_connection_support.settings(),
-        tables: fixture_tables.shared(),
+        tables:,
         server_proxies: spell_tables.server_proxies(),
       ),
       class_id: 2,
       saved_health: None,
     )
   let assert Ok(set) =
-    loadout.of(
-      tables: fixture_tables.shared(),
-      class_id: ClassId(2),
-      faction_id: 166,
-    )
+    loadout.of(tables:, class_id: ClassId(2), faction_id: 166)
     as "the fixture holds the Engineer's Novice set"
   let bag_index = fn(base) {
     let assert Ok(index) =
@@ -1593,10 +1593,7 @@ pub fn each_of_electrocutes_six_pulses_strikes_the_beast_and_lowers_its_health_t
   let pulse_blast = bag_index(26_468)
   let electrocute = bag_index(25_473)
   let assert Ok(strike) =
-    spell4_effects.get(
-      tables: fixture_tables.shared(),
-      id: Spell4EffectsId(92_587),
-    )
+    spell4_effects.get(tables:, id: Spell4EffectsId(92_587))
     as "the client's Spell4Effects holds the row 92587"
   assert strike.spell_id == 41_276
     as "Spell4Effects 92587 is Electrocute's damage row (spellId 41276)"
@@ -1631,11 +1628,15 @@ pub fn each_of_electrocutes_six_pulses_strikes_the_beast_and_lowers_its_health_t
       until_ms: 8000,
       answer: answered_by_the_beast,
     )
-  let frames =
-    list.flat_map(steps, game_connection_support.heard(
-      _,
-      game_connection_support.keyed(),
-    ))
+  list.flat_map(steps, game_connection_support.heard(
+    _,
+    game_connection_support.keyed(),
+  ))
+}
+
+pub fn each_of_electrocutes_six_pulses_strikes_the_beast_and_lowers_its_health_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let frames = electrocute_frames(tables: fixture_tables.shared())
   let goes = game_connection_support.decoded(frames, 0x07F4, spell_go.decode)
   assert list.map(goes, fn(go) { go.phase }) == [0, 1, 2, 3, 4, 5]
     as "Spell4.41276: channelInitialDelay 500, channelMaxTime 3000 and channelPulseTime 500 give six goes, the recording's phases 0 to 5"
@@ -1664,4 +1665,84 @@ pub fn each_of_electrocutes_six_pulses_strikes_the_beast_and_lowers_its_health_t
     == healths
     && list.unique(healths) == healths
     as "each pulse's damage lowers the Beast's health: six strictly falling values"
+}
+
+// ---- A gate the creature fails: the client is shown no hit ----
+
+/// Runs the body on the client's rows with Electrocute's damage row, Spell4Effects 92587,
+/// behind target apply prerequisite 3476 made one condition of type 28 (comparison 1, the
+/// unit is in combat; comparison 2, it is not; `Prerequisite.prerequisiteTypeId.28`), a gate
+/// each creature checks against its own fight (`prerequisite.checked_by_creature`). Kept
+/// edits: Prerequisite 3476 and Spell4Effects 92587.
+fn electrocute_behind_a_combat_gate(
+  comparison comparison: Int,
+  body body: fn(table_store.Tables) -> a,
+) -> a {
+  let assert Ok(rows) =
+    fixture_tables.change(
+      rows: fixture_tables.rows(),
+      table: "Prerequisite",
+      id: 3476,
+      with: [
+        #("prerequisiteTypeId0", planted_table.Integer(28)),
+        #("prerequisiteComparisonId0", planted_table.Integer(comparison)),
+        #("objectId0", planted_table.Integer(0)),
+        #("value0", planted_table.Integer(0)),
+      ],
+    )
+    as "the fixture holds Prerequisite 3476"
+  let assert Ok(rows) =
+    fixture_tables.change(rows:, table: "Spell4Effects", id: 92_587, with: [
+      #("prerequisiteIdTargetApply", planted_table.Integer(3476)),
+    ])
+    as "the fixture holds Spell4Effects 92587"
+  fixture_tables.on_rows(rows:, reaching: [], body:)
+}
+
+/// The effects each go of the client's frames lists on unit 7, the Beast, and the health and
+/// stat changes it hears for it.
+fn heard_of_the_beast(
+  frames frames: List(Frame),
+) -> #(List(Int), List(Int), Int) {
+  let effects =
+    game_connection_support.decoded(frames, 0x07F4, spell_go.decode)
+    |> list.flat_map(fn(go) { go.targets })
+    |> list.filter(fn(target) { target.unit_id == 7 })
+    |> list.flat_map(fn(target) {
+      list.map(target.effects, fn(effect) { effect.spell4_effects_id })
+    })
+  let healths =
+    game_connection_support.decoded(frames, 0x0937, unit_health.decode)
+    |> list.filter(fn(health) { health.unit_id == 7 })
+    |> list.map(fn(health) { health.health })
+  let stats =
+    game_connection_support.decoded(frames, 0x0938, unit_stat_changed.decode)
+    |> list.filter(fn(changed) { changed.unit_id == 7 })
+    |> list.length
+  #(effects, healths, stats)
+}
+
+pub fn gated_strike_on_a_creature_shows_no_hit_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The same Electrocute after the same Pulse Blast, behind the same gate: the Beast is in
+  // combat (the Pulse Blast opened the fight), so the gate "is in combat" passes and the
+  // gate "is not in combat" fails.
+  use passing <- electrocute_behind_a_combat_gate(comparison: 1)
+  let #(effects, hit_healths, _) =
+    heard_of_the_beast(frames: electrocute_frames(tables: passing))
+  assert list.unique(effects) == [92_587]
+    && list.length(list.unique(hit_healths)) == 6
+    as "behind a gate the Beast passes, Electrocute strikes it as it does with none: its damage row at every pulse and six different healths"
+  use failing <- electrocute_behind_a_combat_gate(comparison: 2)
+  let frames = electrocute_frames(tables: failing)
+  let #(effects, healths, stats) = heard_of_the_beast(frames:)
+  assert effects == []
+    as "Spell4Effects.prerequisiteIdTargetApply: the Beast fails the gate, so the go lists no effect on it"
+  assert healths == []
+    as "nothing reached the Beast, so it rolls no hit and the client is told no health of it"
+  assert stats == 0
+    as "the Beast takes no damage, so the client is told no stat change of it"
+  let goes = game_connection_support.decoded(frames, 0x07F4, spell_go.decode)
+  assert list.map(goes, fn(go) { go.phase }) == [0, 1, 2, 3, 4, 5]
+    as "the channel still goes at each of its six pulses (Spell4.41276): only the gated row is left out"
 }

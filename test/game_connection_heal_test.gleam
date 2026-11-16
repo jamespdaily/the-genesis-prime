@@ -58,6 +58,7 @@ fn a_strike_of(
           damage:,
         ),
         controls: [],
+        gates: [],
       ),
     ),
   )

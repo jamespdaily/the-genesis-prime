@@ -37,12 +37,27 @@
 ////   its damage, or alone: a phase with a stun and no damage still tells the unit
 ////   (Stagger's 38780). The creature answers `Landed` with the states it took, and
 ////   only those are listed in the caster's go (genesis_prime/world_map/creature_control).
+//// - **A strike carries the gates of its rows** (`Gate`): each row of the strike, damage,
+////   crowd control or go, whose target apply prerequisite reads the struck creature's own
+////   state, with the prerequisite as parsed. The creature checks them against its own state
+////   when the strike arrives (genesis_prime/game/prerequisite `of_creature`), before the hit
+////   rule, and answers the effect ids it passed (`gates_passed`) with `Landed`, `Immune` and
+////   `Deflected`, so a deflect still checks its gates: a blow or state of a row that did
+////   not pass is not dealt or taken, so it is in neither `descriptions` nor `controls`. A
+////   gated go row applies on a unit only when that unit's answer lists its id
+////   (genesis_prime/game/cast `went`): `Refused`, an answer after the round closed and no
+////   answer at all pass no gate. A row with no gate is unaffected. A phase whose struck
+////   units get a gated go row and nothing else still tells them a strike, with no blows and
+////   no states: a go row that needs no gate sends none. No call, process or timer is added:
+////   the check is the creature's own step of the strike it was told, and the round's one
+////   deadline covers it.
 //// - **A player's strike carries its place and move sequence number**, so a
 ////   creature it puts on a fight finds it, ordered with the moves its connection
 ////   tells (genesis_prime/world_map/creature_fight).
 
 import genesis_prime/game/crowd_control
 import genesis_prime/game/hit.{type Description, type Offence, type Rolls}
+import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/step.{type Address}
 import genesis_prime/table/id.{type Spell4EffectsId}
@@ -68,8 +83,9 @@ pub type Occasion {
 }
 
 /// What a striker tells the unit it strikes: the strike's key, the striker's
-/// address, which the answer goes to, who the striker is, its offence, and the
-/// crowd-control states its phase puts on the unit.
+/// address, which the answer goes to, who the striker is, its offence, the
+/// crowd-control states its phase puts on the unit, and the gates of its rows
+/// that the unit checks against its own state.
 pub type Tell {
   Strike(
     key: Key,
@@ -77,7 +93,17 @@ pub type Tell {
     striker: Striker,
     offence: Offence,
     controls: List(ControlTell),
+    gates: List(Gate),
   )
+}
+
+/// The target apply prerequisite of one row of a strike, which the struck creature
+/// checks against its own state (`Spell4Effects.prerequisiteIdTargetApply`): the row's
+/// Spell4Effects id, which a blow (`hit.Blow.spell4_effects_id`) or a state
+/// (`ControlTell.effect_id`) of the row carries too, and the prerequisite as the load
+/// parsed it, so the creature needs no table.
+pub type Gate {
+  Gate(effect_id: Int, prerequisite: Prerequisite)
 }
 
 /// A state the unit took: the effect as it was told, and the monotonic time in
@@ -132,19 +158,29 @@ pub type Outcome {
   /// states the unit took of the strike's `controls` (a unit that takes none
   /// answers `[]`), and the interrupt armor the strike took off it (`armor_removed`, 0
   /// when none), which the striker's connection shows as a ModifyInterruptArmor line.
+  /// `gates_passed` is the effect ids of the strike's `gates` the unit passed (`[]` when
+  /// it has none): the blows and states of a gated row that is not listed are in none of the
+  /// rest.
   Landed(
     descriptions: List(Description),
     controls: List(ControlLanded),
     armor_removed: Int,
+    gates_passed: List(Int),
   )
   /// A guarded creature (genesis_prime/world_map/creature_guard) took no damage from a
   /// strike that had blows: it keeps its health, the states it took of the strike's
   /// `controls` still land, and the striker's connection shows the immunity
   /// (`opcode.0x247.immunity`). Its states can still wear down the creature's interrupt armor, so
-  /// it carries `armor_removed` as `Landed` does.
-  Immune(controls: List(ControlLanded), armor_removed: Int)
-  /// The creature deflected the whole strike.
-  Deflected
+  /// it carries `armor_removed` and `gates_passed` as `Landed` does.
+  Immune(
+    controls: List(ControlLanded),
+    armor_removed: Int,
+    gates_passed: List(Int),
+  )
+  /// The creature deflected the whole strike. It still checked the strike's gates and
+  /// carries the ids it passed as `Landed` does; whether the deflect itself stops a go row
+  /// stays as the cast rule has it (genesis_prime/game/cast `went`).
+  Deflected(gates_passed: List(Int))
   /// The creature took no strike.
   Refused(why: Refusal)
 }

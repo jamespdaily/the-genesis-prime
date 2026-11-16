@@ -89,6 +89,7 @@ fn selection(
     },
     controls: [],
     ticking: [],
+    gates: [],
   )
 }
 
@@ -130,7 +131,7 @@ fn answer(
 }
 
 fn landed() -> strike_tell.Outcome {
-  Landed(descriptions: [], controls: [], armor_removed: 0)
+  Landed(descriptions: [], controls: [], armor_removed: 0, gates_passed: [])
 }
 
 fn tells(effects effects: List(Effect)) -> List(strike.Effect) {
@@ -152,7 +153,8 @@ fn tells(effects effects: List(Effect)) -> List(strike.Effect) {
 fn went(effects effects: List(Effect)) -> List(#(Int, Int, List(cast.Struck))) {
   list.filter_map(effects, fn(effect) {
     case effect {
-      strike.Went(asked:, struck:) -> Ok(#(asked.cast_id, asked.phase, struck))
+      strike.Went(asked:, struck:, ..) ->
+        Ok(#(asked.cast_id, asked.phase, struck))
       strike.TellStrike(..)
       | strike.StartTimer(..)
       | strike.CancelTimer(..)
@@ -298,6 +300,7 @@ pub fn a_strike_carries_the_casters_blows_by_the_clients_formula_with_its_gear_a
         blows: [paralytic_surge, telekinetic_strike],
         controls: [],
         ticking: [],
+        gates: [],
       ),
       attacker: Attacker(..strike_support.attacker(), stats: novice),
       formulas: rating_support.formulas(),
@@ -348,7 +351,12 @@ pub fn answers_out_of_order_are_listed_in_selection_order_when_the_round_closes_
   let #(state, first) =
     answer(state:, key: key(12), outcome: landed(), now_ms: 1100)
   let #(state, second) =
-    answer(state:, key: key(10), outcome: Deflected, now_ms: 1200)
+    answer(
+      state:,
+      key: key(10),
+      outcome: Deflected(gates_passed: []),
+      now_ms: 1200,
+    )
   assert went(effects: list.append(first, second)) == []
     as "the round waits for the unit that has not answered"
   let #(_, third) =
@@ -1384,7 +1392,12 @@ pub fn a_state_aimed_at_the_primary_target_is_told_to_it_alone_test() -> Nil {
     answer(
       state:,
       key: Key(cast_id: 5, occasion: strike_tell.AtGo(phase: 0), unit_id: 11),
-      outcome: Landed(descriptions: [], controls: [landed], armor_removed: 0),
+      outcome: Landed(
+        descriptions: [],
+        controls: [landed],
+        armor_removed: 0,
+        gates_passed: [],
+      ),
       now_ms: 1050,
     )
   assert went(effects: closed)
@@ -1468,6 +1481,7 @@ fn offence_of_caster_with(
         blows: [blow],
         controls: [],
         ticking: [],
+        gates: [],
       ),
       attacker: Attacker(..strike_support.attacker(), properties:),
       formulas: rating_support.formulas(),
@@ -1725,7 +1739,7 @@ pub fn each_tick_rolls_the_hit_rule_on_the_value_of_its_time_test() -> Nil {
     answer(
       state:,
       key: tick_key(go: 1, tick: 2),
-      outcome: Deflected,
+      outcome: Deflected(gates_passed: []),
       now_ms: 3100,
     )
   assert ticked(effects: deflected)

@@ -149,6 +149,7 @@ fn selection(
     blows:,
     ticking:,
     controls:,
+    gates: [],
   )
 }
 
@@ -287,7 +288,12 @@ fn answer(
 }
 
 fn landed() -> strike_tell.Outcome {
-  strike_tell.Landed(descriptions: [], controls: [], armor_removed: 0)
+  strike_tell.Landed(
+    descriptions: [],
+    controls: [],
+    armor_removed: 0,
+    gates_passed: [],
+  )
 }
 
 // ---- the gate ----
@@ -757,7 +763,12 @@ pub fn a_told_unit_the_client_stops_showing_still_fills_its_place_and_its_gate_i
     answer(
       state:,
       unit_id: 10,
-      outcome: Landed(descriptions: [], controls: [], armor_removed: 2),
+      outcome: Landed(
+        descriptions: [],
+        controls: [],
+        armor_removed: 2,
+        gates_passed: [],
+      ),
     )
   let assert [cast.Hit(unit_id: 10, armor_removed: 2, ..)] =
     went(effects: closed)
