@@ -1323,11 +1323,39 @@ pub fn open_objectives(
   |> list.filter(fn(pair) { objective_open(log:, quest:, index: pair.0) })
 }
 
-/// Whether the objective at `index` is reachable (`0x140553790`): never at or past
-/// the count; always for objective type 0; with flag 2, when every earlier objective
-/// without flag 0x20 is done; else with flag 1, when every earlier objective is done
-/// or itself reachable; with neither flag, always.
+/// Whether the objective at `index` is reachable in the log (`0x140553790`).
 fn reachable(log log: QuestLog, quest quest: Quest, index index: Int) -> Bool {
+  reachable_when(quest:, index:, done: fn(at) {
+    objective_done(log:, quest:, index: at)
+  })
+}
+
+/// The objectives of the quest that stay unreachable (`0x140553790`) while the objectives
+/// at `holding` are not done, though every other objective is: the ones the client keeps
+/// closed behind them, directly by flag 2 or through a flag 1 chain. An objective
+/// at or before the first held one is never among them. The quest is read as the log holds
+/// it: the placeholder row stands in the type 31 slot.
+pub fn locked_behind(
+  log log: QuestLog,
+  quest quest: Quest,
+  holding holding: List(Int),
+) -> List(Int) {
+  let quest = as_logged(log:, quest:)
+  list.index_map(quest.objectives, fn(_, index) { index })
+  |> list.filter(fn(index) {
+    !reachable_when(quest:, index:, done: fn(at) { !list.contains(holding, at) })
+  })
+}
+
+/// Whether the objective at `index` is reachable (`0x140553790`) when `done` says which
+/// objectives are done: never at or past the count; always for objective type 0; with
+/// flag 2, when every earlier objective without flag 0x20 is done; else with flag 1, when
+/// every earlier objective is done or itself reachable; with neither flag, always.
+fn reachable_when(
+  quest quest: Quest,
+  index index: Int,
+  done done: fn(Int) -> Bool,
+) -> Bool {
   case list.drop(quest.objectives, index) {
     [] -> False
     [Objective(type_: 0, ..), ..] -> True
@@ -1343,13 +1371,11 @@ fn reachable(log log: QuestLog, quest quest: Quest, index index: Int) -> Bool {
         True, _ ->
           list.all(earlier, fn(before) {
             let #(at, objective) = before
-            has_flag(flags: objective.flags, flag: optional_flag)
-            || objective_done(log:, quest:, index: at)
+            has_flag(flags: objective.flags, flag: optional_flag) || done(at)
           })
         False, True ->
           list.all(earlier, fn(before) {
-            objective_done(log:, quest:, index: before.0)
-            || reachable(log:, quest:, index: before.0)
+            done(before.0) || reachable_when(quest:, index: before.0, done:)
           })
         False, False -> True
       }
