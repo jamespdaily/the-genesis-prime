@@ -84,18 +84,20 @@ fn with_objectives(
   edits edits: List(#(Int, String, Int)),
   body body: fn(table_store.Tables) -> a,
 ) -> a {
-  let rows =
-    list.fold(edits, fixture_tables.rows(), fn(rows, edit) {
-      case
-        fixture_tables.change(rows:, table: "QuestObjective", id: edit.0, with: [
-          #(edit.1, Integer(edit.2)),
-        ])
-      {
-        Ok(changed) -> changed
-        Error(refusal) -> panic as fixture_tables.describe(refusal)
-      }
-    })
-  fixture_tables.on_rows(rows:, reaching: [], body:)
+  fixture_tables.on_rows(rows: objectives_changed(edits), reaching: [], body:)
+}
+
+fn objectives_changed(edits: List(#(Int, String, Int))) -> fixture_tables.Rows {
+  list.fold(edits, fixture_tables.rows(), fn(rows, edit) {
+    case
+      fixture_tables.change(rows:, table: "QuestObjective", id: edit.0, with: [
+        #(edit.1, Integer(edit.2)),
+      ])
+    {
+      Ok(changed) -> changed
+      Error(refusal) -> panic as fixture_tables.describe(refusal)
+    }
+  })
 }
 
 /// Nature's Uprising as the live character saved it: objectives 0 and 1 done.
@@ -299,17 +301,25 @@ pub fn the_completed_hidden_objective_and_the_achieved_state_survive_a_relog_tes
 
 /// Nature's Uprising with its objective 1 (9659) a second hidden scripted objective: type
 /// 5, flag 8, data 0, count 1. Objective 0 is then the only required objective that is not
-/// hidden.
+/// hidden. The Bramble Trap (Creature2 27768) names objective 1 in its questAnim, so its
+/// questAnimObjectiveIndex is -1 (none): no creature links the objective.
 fn with_two_hidden(body body: fn(table_store.Tables) -> a) -> a {
-  with_objectives(
-    edits: [
+  let edited =
+    objectives_changed([
       #(9659, "type", 5),
       #(9659, "flags", 8),
       #(9659, "data", 0),
       #(9659, "count", 1),
-    ],
-    body:,
-  )
+    ])
+  let rows = case
+    fixture_tables.change(rows: edited, table: "Creature2", id: 27_768, with: [
+      #("questAnimObjectiveIndex", Integer(-1)),
+    ])
+  {
+    Ok(changed) -> changed
+    Error(refusal) -> panic as fixture_tables.describe(refusal)
+  }
+  fixture_tables.on_rows(rows:, reaching: [], body:)
 }
 
 pub fn two_hidden_objectives_of_one_quest_complete_together_test() -> Nil {
