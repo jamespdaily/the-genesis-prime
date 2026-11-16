@@ -349,18 +349,12 @@ pub fn captives(
   let is_named = fn(creature_id: Creature2Id) {
     set.contains(named, creature_id.value)
   }
-  let keys =
-    list.append(
-      dict.to_list(world.by_id)
-        |> list.map(fn(entry) { #(entry.0, entry.1.place, entry.1.creature_id) }),
-      dict.to_list(world.objects)
-        |> list.map(fn(entry) { #(entry.0, entry.1.place, entry.1.creature_id) }),
-    )
-  list.fold(keys, dict.new(), fn(found, key) {
-    let #(id, place, creature_id) = key
+  let keys = list.append(dict.keys(world.by_id), dict.keys(world.objects))
+  list.fold(keys, dict.new(), fn(found, id) {
+    let assert Ok(#(trap_x, trap_z, creature_id)) =
+      standing_of(world:, spawn: id)
+      as "every key is a spawn or object of the world"
     use <- bool.guard(when: !is_named(creature_id), return: found)
-    let trap_x = start_place.x(place)
-    let trap_z = start_place.z(place)
     let neighbours =
       spawn_cell.near(
         cells: world.cells,

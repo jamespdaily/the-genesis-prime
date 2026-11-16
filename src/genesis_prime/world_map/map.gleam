@@ -541,6 +541,7 @@
 //// | a player moves out of sight of a static object mid-release | its `objects` already lacks the object: nothing at the move, nothing at the return |
 //// | a released static object also has a visibility prerequisite the player fails | the return decides with the player's `hidden`: it stays hidden |
 //// | a released object has a creature or a static object at its x and z | the creature takes 856's path (`Retire`, `Gone`, a restart after the wait); the static object is released with it, on its own timer |
+//// | a creature captive of a released object is not live at the release (dormant, waiting for a restart or failed) | it is not held out and may start during the release time; the player who used the object stands in sight of it, so its captive is normally live |
 
 import genesis_prime/game/appearance
 import genesis_prime/game/hit_radius
@@ -1506,24 +1507,36 @@ fn releasable(
   }
 }
 
-/// A player's use released the unit `unit_id` (`Released`): the unit's spawn and
-/// the spawns that stand at its x and z (`spawn.captives`, found when the map was
-/// built) go, each by its kind. A live creature's spawn becomes `Releasing` with
-/// the release time as its wait and its creature is told `Retire`, as the sweep
-/// tells an idle one; `creature_ended` then sends everyone `Gone`. A static object
-/// not yet released joins `released_objects`, every player's objects are decided
-/// again so each who saw it is sent `ObjectsUnseen`, and its timer starts for the
-/// release time. A spawn of neither kind, or already released, is left as it is, so
-/// a unit with nothing to release (a second release of it, or one the map no longer
-/// holds) changes nothing.
+/// A player's use released the unit `unit_id` (`Released`). The release goes
+/// ahead only when the unit's own spawn is a live creature or a static object not
+/// yet released; any other spawn (a retiring or releasing creature, a second
+/// release of an object, a unit the map no longer holds) changes nothing. Then the
+/// unit's spawn and the spawns that stand at its x and z (`spawn.captives`, found
+/// when the map was built) go, each by its kind. A live creature's spawn becomes
+/// `Releasing` with the release time as its wait and its creature is told
+/// `Retire`, as the sweep tells an idle one; `creature_ended` then sends everyone
+/// `Gone`. A static object not yet released joins `released_objects`, every
+/// player's objects are decided again so each who saw it is sent `ObjectsUnseen`,
+/// and its timer starts for the release time. A captive of neither kind, or
+/// already released, is left as it is.
 fn released(
   state state: State,
   unit_id unit_id: Int,
   now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
+  let held = fn(spawn) {
+    case dict.get(state.spawns, spawn) {
+      Ok(Live(..)) -> True
+      Ok(Retiring(..))
+      | Ok(Releasing(..))
+      | Ok(WaitingForRestart)
+      | Ok(Failed) -> False
+      Error(Nil) -> releasable_object(state:, spawn:)
+    }
+  }
   case spawn_of_unit(state:, unit_id:) {
-    Error(Nil) -> #(state, Effects([]))
     Ok(spawn) -> {
+      use <- bool.guard(when: !held(spawn), return: #(state, Effects([])))
       let group = [
         spawn,
         ..dict.get(state.captives, spawn)
@@ -1532,10 +1545,7 @@ fn released(
       let creatures =
         list.filter_map(group, fn(spawn) { releasable(state:, spawn:) })
       let objects =
-        list.filter(group, fn(spawn) {
-          dict.has_key(state.settings.spawns.objects, spawn)
-          && !set.contains(state.released_objects, spawn)
-        })
+        list.filter(group, fn(spawn) { releasable_object(state:, spawn:) })
       let wait_ms = state.settings.numbers.used_object_release_ms
       let state =
         State(
@@ -1553,7 +1563,10 @@ fn released(
             set.insert,
           ),
         )
-      let #(state, unseen) = objects_redecided(state:, now_ms:)
+      let #(state, unseen) = case objects {
+        [] -> #(state, [])
+        [_, ..] -> objects_redecided(state:, now_ms:)
+      }
       #(
         state,
         Effects(
@@ -1578,7 +1591,15 @@ fn released(
         ),
       )
     }
+    Error(Nil) -> #(state, Effects([]))
   }
+}
+
+/// Whether `spawn` is a static object of the map's world that a use has not
+/// released.
+fn releasable_object(state state: State, spawn spawn: SpawnId) -> Bool {
+  dict.has_key(state.settings.spawns.objects, spawn)
+  && !set.contains(state.released_objects, spawn)
 }
 
 /// A released static object's timer fired: the spawn leaves `released_objects`

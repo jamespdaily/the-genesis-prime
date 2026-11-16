@@ -363,6 +363,50 @@ pub fn a_use_that_lands_while_its_creature_is_retiring_changes_nothing_test() ->
     as "it restarts as a retiring creature does, under the same unit id, with no Gone and no timer"
 }
 
+pub fn a_use_of_a_retiring_creature_leaves_its_live_captive_in_place_test() -> Nil {
+  use <- owned_test.run(5000)
+  let prerequisite = PrerequisiteId(41_803)
+  let state =
+    started_with_objects(
+      spawns: [
+        Spawn(
+          ..spawn_of(
+            number: 1,
+            creature: bramble_trap,
+            place: standing(x: 0.0, y: 0.0),
+          ),
+          visibility: Some(prerequisite),
+        ),
+        spawn_of(
+          number: 2,
+          creature: trapped_mordesh,
+          place: standing(x: 0.0, y: 0.07),
+        ),
+      ],
+      objects: [
+        spawn_support.holoring(number: 101, place: standing(x: 0.0, y: 0.07)),
+      ],
+    )
+  let #(state, _) =
+    spawns.join_hiding(
+      state:,
+      at_ms: 6000,
+      connection: 1,
+      x: 0.0,
+      alive: True,
+      hidden: set.from_list([prerequisite]),
+    )
+  let #(state, taken) = spawns.join(state:, at_ms: 6100, connection: 2, x: 0.0)
+  let assert [#(_, trap)] = started_units(taken)
+  let #(state, _) = spawns.leave(state:, at_ms: 7000, connection: 2)
+  let #(state, taken) = spawns.sweep(state:, at_ms: 75_000)
+  assert spawns.creature_sends(taken) == [#(trap, "Retire")]
+    as "only the trap is idle: the first player sees the Mordesh, not the trap"
+  let #(_, taken) = spawns.released(state:, at_ms: 75_100, unit_id: trap)
+  assert support.effects_of(taken) == []
+    as "a use that lands while the trap retires changes nothing: no Retire for the live Mordesh, no unseen Holoring, no timer"
+}
+
 pub fn a_released_static_object_is_unseen_by_every_viewer_and_seen_again_under_its_id_after_the_release_time_test() -> Nil {
   use <- owned_test.run(5000)
   let state =
