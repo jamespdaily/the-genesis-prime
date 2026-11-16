@@ -25,6 +25,7 @@ import attacker_support
 import cast_support as support
 import genesis_prime/client_connection.{CastWent}
 import genesis_prime/game/cast
+import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/cast/state.{type Caster, type Effect} as cast_state
 import genesis_prime/game/damage.{Formula, Parameter}
 import genesis_prime/game/effect_kind
@@ -793,7 +794,9 @@ pub fn the_viewers_go_carries_the_same_heal_description_test() -> Nil {
       }
     })
   assert list.length(told) == 2 as "the caster's audience is two connections"
-  assert list.all(told, fn(tell) { cast.went_frame(go: tell.1) == written })
+  assert list.all(told, fn(tell) {
+    cast_frame.went_frame(go: tell.1) == written
+  })
     as "each viewer is written the very 0x7f4 the caster is, heal description included"
 }
 

@@ -587,15 +587,15 @@
 //// | a unit holding a node of a cast leaves the caster's sight | the node is dropped with no frame; a lingering cast left with no node ends with its 0x7fe |
 
 import genesis_prime/client_connection
-import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/activate
 import genesis_prime/game/area
+import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/cast/state.{
   type Aimed, type AimedPress, type Applied, type Aside, type Caster,
-  type CasterChange, type CostRefusal, type CreatureEffect, type Due,
-  type Effect, type Fact, type GainVerdict, type GateDecision, type Healed,
-  type HeldProc, type HeldRestriction, type Holder, type Interaction, type Issue,
-  type Listed, type Live, type Message, type OnCreature, type Paid, type Refusal,
+  type CasterChange, type CostRefusal, type Due, type Effect, type Fact,
+  type GainVerdict, type GateDecision, type Healed, type HeldProc,
+  type HeldRestriction, type Holder, type Interaction, type Issue, type Listed,
+  type Live, type Message, type OnCreature, type Paid, type Refusal,
   type Resolution, type Restricting, type Role, type State, type StrikeGate,
   type Struck, type TargetVerdict, type Threshold, type TickAsked, type TickKey,
   type Ticking, type TickingOn, type Unbuilt, type UsedUnit, type Verdict,
@@ -650,54 +650,20 @@ import genesis_prime/message/cast_objective_ability
 import genesis_prime/message/cast_result
 import genesis_prime/message/client_activate_unit
 import genesis_prime/message/client_side_interaction_result
-import genesis_prime/message/combat_log.{CombatLog}
-import genesis_prime/message/combat_log_cc_state.{CombatLogCcState}
-import genesis_prime/message/combat_log_entry
-import genesis_prime/message/combat_log_immunity.{CombatLogImmunity}
-import genesis_prime/message/combat_log_modify_interrupt_armor.{
-  CombatLogModifyInterruptArmor,
-}
 import genesis_prime/message/combat_result
-import genesis_prime/message/crowd_control_result
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/message/damage_type
 import genesis_prime/message/interaction_result
 import genesis_prime/message/item_place.{type ItemPlace}
 import genesis_prime/message/item_use as item_use_message
-import genesis_prime/message/miss_reason
-import genesis_prime/message/spell_cast_confirmed.{SpellCastConfirmed}
-import genesis_prime/message/spell_cast_refused.{SpellCastRefused}
 import genesis_prime/message/spell_damage_description.{
   type SpellDamageDescription, SpellDamageDescription,
 }
-import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
-import genesis_prime/message/spell_effect_damage.{SpellEffectDamage}
-import genesis_prime/message/spell_effect_info.{SpellEffectInfo}
-import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_effect_tick.{
   type SpellEffectTick, SpellEffectTick,
 }
-import genesis_prime/message/spell_failed.{SpellFailed}
-import genesis_prime/message/spell_finished.{SpellFinished}
-import genesis_prime/message/spell_go.{type SpellGo, SpellGo}
-import genesis_prime/message/spell_miss.{SpellMiss}
-import genesis_prime/message/spell_missed.{type SpellMissed, SpellMissed}
-import genesis_prime/message/spell_stack_removed.{
-  type SpellStackRemoved, SpellStackRemoved,
-}
-import genesis_prime/message/spell_started.{type SpellStarted, SpellStarted}
-import genesis_prime/message/spell_target_info.{
-  type SpellTargetInfo, SpellTargetInfo,
-}
-import genesis_prime/message/spell_targets_removed.{
-  type SpellTargetsRemoved, SpellTargetsRemoved,
-}
-import genesis_prime/message/spell_threshold_closed.{SpellThresholdClosed}
-import genesis_prime/message/spell_threshold_index.{SpellThresholdIndex}
-import genesis_prime/message/spell_threshold_opened.{SpellThresholdOpened}
-import genesis_prime/message/unit_cc_state_applied.{UnitCcStateApplied}
-import genesis_prime/message/unit_cc_state_ended.{UnitCcStateEnded}
-import genesis_prime/message/unit_tether_anchor.{UnitTetherAnchor}
+import genesis_prime/message/spell_stack_removed.{SpellStackRemoved}
+import genesis_prime/message/spell_targets_removed.{SpellTargetsRemoved}
 import genesis_prime/step.{
   type ConnectionId, type Now, type TimerId, LogDebug, LogInfo, LogWarning,
 }
@@ -847,7 +813,7 @@ fn item_used(
   let unit_id = press.target_unit_id
   let target = target_of(unit_id)
   let refusal = fn(spell4_id, result) {
-    Ok(#(cast, [refused(client_cast_id:, spell4_id:, result:)]))
+    Ok(#(cast, [cast_frame.refused(client_cast_id:, spell4_id:, result:)]))
   }
   case held_at(press.item) {
     None -> refusal(0, cast_result.ItemBad)
@@ -932,7 +898,7 @@ fn item_spell_cast(
   spell4_id spell4_id: Int,
 ) -> Result(#(State, List(Effect)), Refusal) {
   let refusal = fn(spell4_id, result) {
-    Ok(#(cast, [refused(client_cast_id:, spell4_id:, result:)]))
+    Ok(#(cast, [cast_frame.refused(client_cast_id:, spell4_id:, result:)]))
   }
   case activate.planned_of(activations:, spell4_id:) {
     Error(Nil) ->
@@ -1054,7 +1020,7 @@ fn item_cast_group(
       Error(
         Ok(
           #(cast, [
-            refused(
+            cast_frame.refused(
               client_cast_id:,
               spell4_id:,
               result: cast_result.TargetGroup,
@@ -1140,7 +1106,7 @@ fn shortcut_pressed(
   let client_cast_id = press.client_cast_id
   let spell4_id = press.spell4_id
   let refusal = fn(result) {
-    Ok(#(cast, [refused(client_cast_id:, spell4_id:, result:)]))
+    Ok(#(cast, [cast_frame.refused(client_cast_id:, spell4_id:, result:)]))
   }
   use <- bool.guard(
     when: !set.contains(held, spell4_id),
@@ -1286,7 +1252,7 @@ fn press_refused(
 ) -> Result(#(State, List(Effect)), Refusal) {
   Ok(
     #(press.cast, [
-      refused(
+      cast_frame.refused(
         client_cast_id: press.client_cast_id,
         spell4_id: press.spell.spell4_id.value,
         result:,
@@ -1769,7 +1735,7 @@ fn activation_pressed(
   )
   let client_cast_id = press.client_cast_id
   let refusal = fn(spell4_id, result) {
-    Ok(#(cast, [refused(client_cast_id:, spell4_id:, result:)]))
+    Ok(#(cast, [cast_frame.refused(client_cast_id:, spell4_id:, result:)]))
   }
   case target_of(press.target_unit_id) {
     activate.Unseen -> refusal(0, cast_result.CasterMustHaveTarget)
@@ -1790,7 +1756,7 @@ fn activation_pressed(
               cast_result.TargetIsNotUseable,
             )),
           ),
-          refused(
+          cast_frame.refused(
             client_cast_id:,
             spell4_id: 0,
             result: cast_result.TargetIsNotUseable,
@@ -1809,7 +1775,7 @@ fn activation_pressed(
               cast_result.TargetIsNotUseable,
             )),
           ),
-          refused(
+          cast_frame.refused(
             client_cast_id:,
             spell4_id: 0,
             result: cast_result.TargetIsNotUseable,
@@ -1971,7 +1937,11 @@ fn activation_in_range(
     Some(result) ->
       Ok(
         #(cast, [
-          refused(client_cast_id:, spell4_id: spell.spell4_id.value, result:),
+          cast_frame.refused(
+            client_cast_id:,
+            spell4_id: spell.spell4_id.value,
+            result:,
+          ),
         ]),
       )
     None ->
@@ -2019,7 +1989,7 @@ fn activation_reached(
 ) -> Result(#(State, List(Effect)), Refusal) {
   let spell4_id = spell.spell4_id.value
   let refusal = fn(result) {
-    Ok(#(cast, [refused(client_cast_id:, spell4_id:, result:)]))
+    Ok(#(cast, [cast_frame.refused(client_cast_id:, spell4_id:, result:)]))
   }
   case
     activate.range_of(
@@ -2183,7 +2153,7 @@ fn accepted_and_started(
 ) -> Result(#(State, List(Effect)), Refusal) {
   let spell4_id = spell.spell4_id.value
   let refusal = fn(result) {
-    Ok(#(cast, [refused(client_cast_id:, spell4_id:, result:)]))
+    Ok(#(cast, [cast_frame.refused(client_cast_id:, spell4_id:, result:)]))
   }
   use <- bool.guard(
     when: answer_is_out(cast:),
@@ -2309,7 +2279,7 @@ fn not_built_refusal(
   why why: String,
   issue issue: Issue,
 ) -> Result(#(State, List(Effect)), Refusal) {
-  let refusal = refused(client_cast_id:, spell4_id:, result:)
+  let refusal = cast_frame.refused(client_cast_id:, spell4_id:, result:)
   let what = case key {
     UnbuiltShortcut(..) | UnreadShortcutPick(..) | UnbuiltPlayerTarget(..) ->
       "the shortcut cast of Spell4 "
@@ -3002,7 +2972,10 @@ fn pressed(
     Error(Nil) ->
       Ok(
         #(cast, [
-          refused_unknown(client_cast_id: press.client_cast_id, spell4_id: 0),
+          cast_frame.refused_unknown(
+            client_cast_id: press.client_cast_id,
+            spell4_id: 0,
+          ),
         ]),
       )
     Ok(plain) -> {
@@ -3011,7 +2984,7 @@ fn pressed(
         Error(Nil) ->
           Ok(
             #(cast, [
-              refused_unknown(
+              cast_frame.refused_unknown(
                 client_cast_id: press.client_cast_id,
                 spell4_id: ability.spell4_id.value,
               ),
@@ -3097,7 +3070,7 @@ fn key_held(
       change.held == 1
     {
       Error(Nil), True -> #(cast, [
-        refused_unknown(client_cast_id: 0, spell4_id: 0),
+        cast_frame.refused_unknown(client_cast_id: 0, spell4_id: 0),
       ])
       Error(Nil), False -> #(cast, [
         Log(
@@ -3162,7 +3135,7 @@ fn key_up(
     ->
       case resolved(cast:, caster:, bag_spell: plain.spell4_id, ability:) {
         Error(Nil) -> #(cast, [
-          refused_unknown(
+          cast_frame.refused_unknown(
             client_cast_id: 0,
             spell4_id: charging.spell4_id.value,
           ),
@@ -3257,7 +3230,10 @@ fn no_stage_left(
   #(
     cast,
     list.append(cancels, [
-      refused_unknown(client_cast_id: 0, spell4_id: ability.spell4_id.value),
+      cast_frame.refused_unknown(
+        client_cast_id: 0,
+        spell4_id: ability.spell4_id.value,
+      ),
     ]),
   )
 }
@@ -3495,7 +3471,7 @@ fn press_resolved(
   let is_release = is_release(resolution:)
   let held = option.is_some(cast.held)
   let refusal = fn(result) {
-    refused(
+    cast_frame.refused(
       client_cast_id: option.unwrap(client_cast_id, 0),
       spell4_id: spell.spell4_id.value,
       result:,
@@ -4594,7 +4570,7 @@ fn fire(
           #(cast, list.append(ticks, ended))
         }
         StateEnd(spell4_id:, unit_id:, state:) -> #(cast, [
-          Send(frame: control_logged_frame(
+          Send(frame: cast_frame.control_logged_frame(
             caster_unit_id: caster.unit_id,
             unit_id:,
             spell4_id:,
@@ -5550,7 +5526,7 @@ fn tick_effects(
   audience audience: Set(ConnectionId),
 ) -> List(Effect) {
   [
-    Send(frame: ticked_frame(tick:)),
+    Send(frame: cast_frame.ticked_frame(tick:)),
     ..list.map(map.sorted_connections(audience), fn(viewer) {
       Tell(to: viewer, news: client_connection.CastTicked(tick:))
     })
@@ -6428,19 +6404,7 @@ fn failed_effect(
   result result: cast_result.CastResult,
   unit_id unit_id: Int,
 ) -> Effect {
-  Send(frame: failed_frame(cast_id:, result:, unit_id:))
-}
-
-/// 0x07F9 for a cast of `unit_id` that failed with `result`, the bit 0 (`opcode.0x7f9`).
-fn failed_frame(
-  cast_id cast_id: Int,
-  result result: cast_result.CastResult,
-  unit_id unit_id: Int,
-) -> Frame {
-  let assert Ok(body) =
-    spell_failed.encode(SpellFailed(cast_id:, result:, unit_id:, field_4: 0))
-    as "a cast id of 32 bits, a result of 9, a unit id of 32 and a bit fit the message"
-  Frame(message_id: spell_failed.message_id, body:)
+  Send(frame: cast_frame.failed_frame(cast_id:, result:, unit_id:))
 }
 
 /// The player's innate passive, the plans' spell of this Spell4Base, starts: a cast of
@@ -6783,7 +6747,7 @@ fn start(
       #(cast, list.append(effects, [start]))
     })
   let start_message =
-    started_message(
+    cast_frame.started_message(
       id:,
       spell:,
       root:,
@@ -6878,8 +6842,8 @@ fn start(
     )
   let to_caster = case client_cast_id {
     Some(client_cast_id) ->
-      confirmed_frame(client_cast_id:, start: start_message)
-    None -> started_frame(start: start_message)
+      cast_frame.confirmed_frame(client_cast_id:, start: start_message)
+    None -> cast_frame.started_frame(start: start_message)
   }
   let told =
     list.map(map.sorted_connections(audience), fn(viewer) {
@@ -6962,7 +6926,7 @@ fn threshold_step(
                 ),
               ),
               [
-                Send(frame: index_frame(
+                Send(frame: cast_frame.index_frame(
                   spell4_id: ability.spell4_id,
                   index: next,
                 )),
@@ -6994,7 +6958,11 @@ fn open_threshold(
       ),
     )
   let opened =
-    Send(frame: opened_frame(spell4_id: ability.spell4_id, bag_spell:, cast_id:))
+    Send(frame: cast_frame.opened_frame(
+      spell4_id: ability.spell4_id,
+      bag_spell:,
+      cast_id:,
+    ))
   case ability.method {
     spell_plan.RapidTap -> {
       let #(cast, _, start) =
@@ -7062,7 +7030,7 @@ fn charge_level_reached(
       let #(cast, waiting) =
         charge_timer(cast:, ability: threshold.ability, level: level + 1)
       #(cast, [
-        Send(frame: index_frame(
+        Send(frame: cast_frame.index_frame(
           spell4_id: threshold.ability.spell4_id,
           index: level,
         )),
@@ -7133,7 +7101,7 @@ fn close_threshold(
         spell_plan.RapidTap -> #(
           start_cooldown(cast:, spell: ability, now_ms:),
           list.append(cancels, [
-            Send(frame: closed_frame(
+            Send(frame: cast_frame.closed_frame(
               spell4_id: ability.spell4_id,
               start_cooldowns: 1,
             )),
@@ -7141,7 +7109,7 @@ fn close_threshold(
         )
         spell_plan.ChargeRelease -> {
           let closed =
-            Send(frame: closed_frame(
+            Send(frame: cast_frame.closed_frame(
               spell4_id: ability.spell4_id,
               start_cooldowns: 0,
             ))
@@ -7289,23 +7257,23 @@ fn go(
           rolls:,
         )
       let go_message =
-        go_message(
+        cast_frame.go_message(
           cast_id:,
           phase:,
           place: caster.place,
           struck:,
           listed: aimed.units,
         )
-      let missed = missed_message(cast_id:, struck:)
+      let missed = cast_frame.missed_message(cast_id:, struck:)
       let going =
         list.flatten([
-          [Send(frame: went_frame(go: go_message))],
+          [Send(frame: cast_frame.went_frame(go: go_message))],
           list.map(map.sorted_connections(live.audience), fn(viewer) {
             Tell(to: viewer, news: client_connection.CastWent(go: go_message))
           }),
           case missed {
             Some(missed) -> [
-              Send(frame: missed_frame(missed:)),
+              Send(frame: cast_frame.missed_frame(missed:)),
               ..list.map(map.sorted_connections(live.audience), fn(viewer) {
                 Tell(to: viewer, news: client_connection.CastMissed(missed:))
               })
@@ -7318,7 +7286,7 @@ fn go(
           case one {
             Immune(unit_id:, ..) ->
               Ok(
-                Send(frame: immunity_logged_frame(
+                Send(frame: cast_frame.immunity_logged_frame(
                   caster_unit_id: caster.unit_id,
                   unit_id:,
                   spell4_id: spell.spell4_id,
@@ -7335,7 +7303,7 @@ fn go(
               if armor_removed > 0
             ->
               Ok(
-                Send(frame: armor_logged_frame(
+                Send(frame: cast_frame.armor_logged_frame(
                   caster_unit_id: caster.unit_id,
                   unit_id:,
                   spell4_id: spell.spell4_id,
@@ -7348,7 +7316,7 @@ fn go(
       let shown = restrictions_shown(restricting:, caster:, live:)
       let #(cast, removed) = removed_by_go(cast:, aimed:, now_ms:)
       let #(cast, logged) =
-        states_logged(
+        cast_frame.states_logged(
           cast:,
           caster:,
           spell4_id: spell.spell4_id,
@@ -7800,12 +7768,14 @@ fn restrictions_shown(
     list.flatten([
       case state == crowd_control_state.Tether {
         True -> [
-          Send(frame: tether_anchor_frame(anchor_unit_id: caster.unit_id)),
+          Send(frame: cast_frame.tether_anchor_frame(
+            anchor_unit_id: caster.unit_id,
+          )),
         ]
         False -> []
       },
       [
-        Send(frame: control_applied_frame(
+        Send(frame: cast_frame.control_applied_frame(
           unit_id: caster.unit_id,
           state:,
           instance_id: one.instance_id,
@@ -7822,15 +7792,6 @@ fn restrictions_shown(
       ],
     ])
   })
-}
-
-/// 0x881: the tether anchor of the unit the receiving client controls is this unit
-/// (`opcode.0x881`).
-fn tether_anchor_frame(anchor_unit_id anchor_unit_id: Int) -> Frame {
-  let assert Ok(body) =
-    unit_tether_anchor.encode(UnitTetherAnchor(anchor_unit_id:))
-    as "a unit id of 32 bits fits the message"
-  Frame(message_id: unit_tether_anchor.message_id, body:)
 }
 
 /// The end of each state a go holds on the caster, on a timer of its delay and duration
@@ -7894,7 +7855,7 @@ fn restrictions_ended(
   |> list.flat_map(fn(entry) {
     let restriction = entry.1
     [
-      Send(frame: control_ended_frame(
+      Send(frame: cast_frame.control_ended_frame(
         unit_id: cast_state.caster_of(cast_id:),
         state: restriction.state,
         cast_id:,
@@ -7912,43 +7873,6 @@ fn restrictions_ended(
       })
     ]
   })
-}
-
-/// 0x87f: the unit holds the crowd-control state, the effect of the go that gave it
-/// `instance_id` (`opcode.0x87f`, `cc_state.instance_id`).
-pub fn control_applied_frame(
-  unit_id unit_id: Int,
-  state state: CrowdControlState,
-  instance_id instance_id: Int,
-) -> Frame {
-  let assert Ok(body) =
-    unit_cc_state_applied.encode(UnitCcStateApplied(
-      unit_id:,
-      state:,
-      instance_id:,
-    ))
-    as "unit ids and instance ids of 32 bits and a state of 5 fit the message"
-  Frame(message_id: unit_cc_state_applied.message_id, body:)
-}
-
-/// 0x880: the unit's crowd-control state of that cast and instance ends, its last bit
-/// 0 (`opcode.0x880`, `cc_state.end`).
-pub fn control_ended_frame(
-  unit_id unit_id: Int,
-  state state: CrowdControlState,
-  cast_id cast_id: Int,
-  instance_id instance_id: Int,
-) -> Frame {
-  let assert Ok(body) =
-    unit_cc_state_ended.encode(UnitCcStateEnded(
-      unit_id:,
-      state:,
-      cast_id:,
-      instance_id:,
-      keeps_flag_4_entries: 0,
-    ))
-    as "unit ids, a cast id and an instance id of 32 bits, a state of 5 and a bit fit the message"
-  Frame(message_id: unit_cc_state_ended.message_id, body:)
 }
 
 /// The units an effect aims at (`Spell4Effects.targetFlags`): each unit the aim's bits name
@@ -8802,126 +8726,6 @@ fn cooldown_kept(
   row.row.until_removed
   || lasting.lifetime_of(row: row.row, longer_of_delay_and_duration:)
   > row.row.delay_ms
-}
-
-/// The caster's combat log of the states a go landed: an entry for each (0x247 of
-/// type 1, removed 0), and a timer for each state's end entry (removed 1) at the time
-/// the creature holds it until (`opcode.0x247.cc_state`). A state's end entry is never
-/// written for a unit the caster's client stopped showing: `unit_removed` cancels it.
-fn states_logged(
-  cast cast: State,
-  caster caster: Caster,
-  spell4_id spell4_id: Spell4Id,
-  aimed aimed: Aimed,
-  now_ms now_ms: Int,
-) -> #(State, List(Effect)) {
-  list.fold(aimed.controls, #(cast, []), fn(so_far, entry) {
-    let #(cast, effects) = so_far
-    let #(landed, unit_id) = entry
-    let state = landed.tell.row.state
-    let #(cast, _, start) =
-      cast_state.armed(
-        cast:,
-        due: StateEnd(spell4_id:, unit_id:, state:),
-        after_ms: int.max(0, landed.ends_at_ms - now_ms),
-      )
-    #(
-      cast,
-      list.append(effects, [
-        Send(frame: control_logged_frame(
-          caster_unit_id: caster.unit_id,
-          unit_id:,
-          spell4_id:,
-          state:,
-          removed: False,
-        )),
-        start,
-      ]),
-    )
-  })
-}
-
-/// 0x247 of type 1: the state set on the unit by the caster's spell, or ended. The
-/// Interrupt Armor it hit is 0 and its result Ok: a creature takes a state only with no
-/// armor, and no diminishing returns apply (`opcode.0x247.cc_state`).
-fn control_logged_frame(
-  caster_unit_id caster_unit_id: Int,
-  unit_id unit_id: Int,
-  spell4_id spell4_id: Spell4Id,
-  state state: CrowdControlState,
-  removed removed: Bool,
-) -> Frame {
-  let assert Ok(body) =
-    combat_log.encode(
-      CombatLog(
-        entry: combat_log_entry.CcState(CombatLogCcState(
-          state:,
-          removed: case removed {
-            True -> 1
-            False -> 0
-          },
-          interrupt_armor_hit: 0,
-          result: crowd_control_result.Ok,
-          diminishing_returns_id: 0,
-          caster_unit_id:,
-          target_unit_id: unit_id,
-          spell4_id: spell4_id.value,
-          combat_result: combat_result.Hit,
-        )),
-      ),
-    )
-    as "unit ids and a Spell4 id that fit their fields"
-  Frame(message_id: combat_log.message_id, body:)
-}
-
-/// 0x247 of type 18: the unit took no damage from the caster's spell because it is
-/// immune to it. The client shows the 'Immune' line and floater from it alone; the
-/// combat result is a choice, Hit, which the client shows to no one
-/// (`opcode.0x247.immunity`).
-fn immunity_logged_frame(
-  caster_unit_id caster_unit_id: Int,
-  unit_id unit_id: Int,
-  spell4_id spell4_id: Spell4Id,
-) -> Frame {
-  let assert Ok(body) =
-    combat_log.encode(
-      CombatLog(
-        entry: combat_log_entry.Immunity(CombatLogImmunity(
-          caster_unit_id:,
-          target_unit_id: unit_id,
-          spell4_id: spell4_id.value,
-          combat_result: combat_result.Hit,
-        )),
-      ),
-    )
-    as "unit ids and a Spell4 id that fit their fields"
-  Frame(message_id: combat_log.message_id, body:)
-}
-
-/// 0x247 of type 14: the unit lost `amount` of its Interrupt Armor to the caster's
-/// spell; the combat result is a choice, Hit (`opcode.0x247.modify_interrupt_armor`).
-fn armor_logged_frame(
-  caster_unit_id caster_unit_id: Int,
-  unit_id unit_id: Int,
-  spell4_id spell4_id: Spell4Id,
-  amount amount: Int,
-) -> Frame {
-  let assert Ok(body) =
-    combat_log.encode(
-      CombatLog(
-        entry: combat_log_entry.ModifyInterruptArmor(
-          CombatLogModifyInterruptArmor(
-            amount:,
-            caster_unit_id:,
-            target_unit_id: unit_id,
-            spell4_id: spell4_id.value,
-            combat_result: combat_result.Hit,
-          ),
-        ),
-      ),
-    )
-    as "unit ids and a Spell4 id that fit their fields"
-  Frame(message_id: combat_log.message_id, body:)
 }
 
 /// The crowd-control states the units of a go took, each with its unit, in the order
@@ -9982,7 +9786,7 @@ fn targets_removed_effects(
 ) -> List(Effect) {
   let removed = SpellTargetsRemoved(cast_id:, unit_ids:)
   [
-    Send(frame: targets_removed_frame(removed:)),
+    Send(frame: cast_frame.targets_removed_frame(removed:)),
     ..list.map(map.sorted_connections(audience), fn(viewer) {
       Tell(
         to: viewer,
@@ -10000,7 +9804,7 @@ fn stack_removed_effects(
 ) -> List(Effect) {
   let removed = SpellStackRemoved(cast_id:, unit_id:)
   [
-    Send(frame: stack_removed_frame(removed:)),
+    Send(frame: cast_frame.stack_removed_frame(removed:)),
     ..list.map(map.sorted_connections(audience), fn(viewer) {
       Tell(to: viewer, news: client_connection.CastStackRemoved(removed:))
     })
@@ -10013,7 +9817,7 @@ fn finished_effects(
   audience audience: Set(ConnectionId),
 ) -> List(Effect) {
   [
-    Send(frame: finished_frame(cast_id:)),
+    Send(frame: cast_frame.finished_frame(cast_id:)),
     ..list.map(map.sorted_connections(audience), fn(viewer) {
       Tell(to: viewer, news: client_connection.CastFinished(cast_id:))
     })
@@ -10718,441 +10522,4 @@ fn finish_or_linger(
       #(cast, list.flatten([ticks, expired, armed, closed]))
     }
   }
-}
-
-/// 0x7ff for a cast that starts: the caster is its own primary target
-/// (`Spell4TargetMechanics.targetType`), the lists are empty (`spell.empty_lists`)
-/// and the 16-bit value and the two bits are the decode's safe values
-/// (`opcode.0x7ff.caster_item_level`, `opcode.0x7ff.own_cast`,
-/// `opcode.0x7ff.activate`).
-fn started_message(
-  id id: Int,
-  spell spell: Spell,
-  root root: Spell4Id,
-  parent parent: Option(Spell4Id),
-  primary_target primary_target: Int,
-  caster caster: Caster,
-  activating activating: Bool,
-) -> SpellStarted {
-  SpellStarted(
-    cast_id: id,
-    spell4_id: spell.spell4_id.value,
-    root_spell4_id: root.value,
-    parent_spell4_id: case parent {
-      Some(parent) -> parent.value
-      None -> 0
-    },
-    caster_unit_id: caster.unit_id,
-    field_6: 0,
-    primary_target_unit_id: primary_target,
-    position: cast_state.position_of(place: caster.place),
-    yaw: cast_state.yaw_of(place: caster.place),
-    initial_positions: [],
-    telegraph_positions: [],
-    field_12: 1,
-    field_13: case activating {
-      True -> 1
-      False -> 0
-    },
-  )
-}
-
-/// 0x7f4 for a go: a target info for each Hit unit in the order of the round, with
-/// target flags 0 (`opcode.0x7f4.target_info`), each with the damage that landed, no
-/// position and no missile (`opcode.0x7f4`, `spell.empty_lists`). A deflected unit has
-/// no info: the 0x7fb shows it.
-fn go_message(
-  cast_id cast_id: Int,
-  phase phase: Int,
-  place place: Place,
-  struck struck: List(Struck),
-  listed listed: List(#(Int, List(Listed))),
-) -> SpellGo {
-  let hits =
-    list.filter_map(struck, fn(one) {
-      case one {
-        Hit(unit_id:, descriptions:, ..) -> Ok(#(unit_id, descriptions))
-        Immune(unit_id:, ..) -> Ok(#(unit_id, []))
-        Deflected(..) -> Error(Nil)
-      }
-    })
-  let unstruck =
-    list.filter(listed, fn(entry) {
-      result.is_error(list.key_find(hits, entry.0))
-    })
-    |> list.map(fn(entry) { #(entry.0, []) })
-  SpellGo(
-    cast_id:,
-    ignore_cooldown: 0,
-    destination: cast_state.position_of(place:),
-    targets: list.append(hits, unstruck)
-      |> list.index_map(fn(hit, index) {
-        target_info(
-          index:,
-          unit_id: hit.0,
-          descriptions: hit.1,
-          listed: list.key_find(listed, hit.0) |> result.unwrap([]),
-        )
-      }),
-    initial_positions: [],
-    telegraph_positions: [],
-    missiles: [],
-    phase:,
-  )
-}
-
-/// The refusal of a press that names no ability, or no stage left of one: result 4
-/// (`0x14039a040`), the same answer to a 0x9a and to a 0x4db.
-fn refused_unknown(
-  client_cast_id client_cast_id: Int,
-  spell4_id spell4_id: Int,
-) -> Effect {
-  refused(client_cast_id:, spell4_id:, result: cast_result.SpellUnknown)
-}
-
-fn refused(
-  client_cast_id client_cast_id: Int,
-  spell4_id spell4_id: Int,
-  result result: cast_result.CastResult,
-) -> Effect {
-  let assert Ok(body) =
-    spell_cast_refused.encode(SpellCastRefused(
-      client_cast_id:,
-      spell4_id:,
-      result:,
-    ))
-    as "a cast id of 32 bits, a Spell4 id of 18 and a result of 9 fit the message"
-  Send(frame: Frame(message_id: spell_cast_refused.message_id, body:))
-}
-
-/// 0x07FD for the press's cast: the client's id, the server's, the caster as its
-/// primary target and the position and yaw the 0x7ff holds.
-fn confirmed_frame(
-  client_cast_id client_cast_id: Int,
-  start start: SpellStarted,
-) -> Frame {
-  let assert Ok(body) =
-    spell_cast_confirmed.encode(
-      SpellCastConfirmed(
-        client_cast_id:,
-        server_cast_id: start.cast_id,
-        primary_target_unit_id: start.primary_target_unit_id,
-        position: start.position,
-        yaw: start.yaw,
-        initial_positions: [],
-        telegraph_positions: [],
-      ),
-    )
-    as "a cast id of 32 bits and floats fit the message, and the rule sends no list"
-  Frame(message_id: spell_cast_confirmed.message_id, body:)
-}
-
-/// 0x0816 for a threshold that opens: the ability's spell as the opened spell, the bag
-/// ability that was pressed as the second spell the client matches a press against (the
-/// same spell unless Spell Surge swapped it), 0 for the third (the opened spell's own
-/// cooldowns), and the base cast's id as the value the client sends back
-/// (`opcode.0x816`).
-fn opened_frame(
-  spell4_id spell4_id: Spell4Id,
-  bag_spell bag_spell: Spell4Id,
-  cast_id cast_id: Int,
-) -> Frame {
-  let assert Ok(body) =
-    spell_threshold_opened.encode(SpellThresholdOpened(
-      spell4_id: spell4_id.value,
-      resolving_spell4_id: bag_spell.value,
-      cooldown_spell4_id: 0,
-      cancel_cast_id: cast_id,
-    ))
-    as "Spell4 ids of 18 bits and a cast id of 32 fit the message"
-  Frame(message_id: spell_threshold_opened.message_id, body:)
-}
-
-/// 0x0817 for the index the next press casts (`opcode.0x817`).
-fn index_frame(spell4_id spell4_id: Spell4Id, index index: Int) -> Frame {
-  let assert Ok(body) =
-    spell_threshold_index.encode(SpellThresholdIndex(
-      spell4_id: spell4_id.value,
-      index:,
-    ))
-    as "a Spell4 id of 18 bits and a stage index of 8 fit the message"
-  Frame(message_id: spell_threshold_index.message_id, body:)
-}
-
-/// 0x0814 for a threshold that closes, with the bit that starts the cooldowns
-/// (`opcode.0x814`).
-fn closed_frame(
-  spell4_id spell4_id: Spell4Id,
-  start_cooldowns start_cooldowns: Int,
-) -> Frame {
-  let assert Ok(body) =
-    spell_threshold_closed.encode(SpellThresholdClosed(
-      spell4_id: spell4_id.value,
-      start_cooldowns:,
-    ))
-    as "a Spell4 id of 18 bits and a bit fit the message"
-  Frame(message_id: spell_threshold_closed.message_id, body:)
-}
-
-/// 0x7ff for a creature's cast of its attack spell on its target, from where it
-/// stands: the target is the cast's primary target, the spell its own root, and the
-/// lists and the safe values are a player's cast's (`started_message`). It sends no
-/// telegraph positions for a spell that has a telegraph (Spell4Telegraph 57886 for
-/// 85469 and 57885 for 86978, each TelegraphDamage row 16212: a rectangle 3 wide
-/// and 30 long, targetTypeFlags 1): the client draws it on the caster from the
-/// caster's own place and facing (`0x140546e60`, record `0x14054b1b0.follows_caster`),
-/// which a 0x7ff yaw does not turn.
-pub fn creature_started(
-  cast_id cast_id: Int,
-  spell4_id spell4_id: Int,
-  caster_unit_id caster_unit_id: Int,
-  target_unit_id target_unit_id: Int,
-  place place: Place,
-) -> SpellStarted {
-  SpellStarted(
-    cast_id:,
-    spell4_id:,
-    root_spell4_id: spell4_id,
-    parent_spell4_id: 0,
-    caster_unit_id:,
-    field_6: 0,
-    primary_target_unit_id: target_unit_id,
-    position: cast_state.position_of(place:),
-    yaw: cast_state.yaw_of(place:),
-    initial_positions: [],
-    telegraph_positions: [],
-    field_12: 1,
-    field_13: 0,
-  )
-}
-
-/// 0x7f4 for the one go, phase 0, of a creature's cast, with the units its round
-/// struck, as a player's go is written (`go_message`).
-pub fn creature_went(
-  cast_id cast_id: Int,
-  place place: Place,
-  struck struck: List(Struck),
-) -> SpellGo {
-  go_message(cast_id:, phase: 0, place:, struck:, listed: [])
-}
-
-/// 0x7f4 for the one go, phase 0, of a creature's cast that applies effects to one unit, as the
-/// unit's one target info lists them: each effect with its instance id, delay 0 and lifetime in
-/// `field_4` (`opcode.0x7f4.effect_time`) and no result of its own (`SpellEffectBit`), in the
-/// order given.
-pub fn creature_applied(
-  cast_id cast_id: Int,
-  place place: Place,
-  target_unit_id target_unit_id: Int,
-  effects effects: List(CreatureEffect),
-) -> SpellGo {
-  SpellGo(
-    cast_id:,
-    ignore_cooldown: 0,
-    destination: cast_state.position_of(place:),
-    targets: [
-      SpellTargetInfo(
-        unit_id: target_unit_id,
-        index: 0,
-        flags: 0,
-        instance_count: 1,
-        combat_result: combat_result.Hit,
-        effects: list.map(effects, fn(effect) {
-          SpellEffectInfo(
-            spell4_effects_id: effect.effect_id,
-            instance_id: effect.instance_id,
-            delay_ms: 0,
-            field_4: effect.lifetime_ms,
-            result: spell_effect_result.Bit(SpellEffectBit(field_2: 0)),
-          )
-        }),
-      ),
-    ],
-    initial_positions: [],
-    telegraph_positions: [],
-    missiles: [],
-    phase: 0,
-  )
-}
-
-/// 0x7fb for the units a creature's go missed, or none (`missed_message`).
-pub fn creature_missed(
-  cast_id cast_id: Int,
-  struck struck: List(Struck),
-) -> Option(SpellMissed) {
-  missed_message(cast_id:, struck:)
-}
-
-/// 0x07FF for a cast that starts, which the caster's rule tells each viewer as
-/// news and each viewer's connection writes the same way.
-pub fn started_frame(start start: SpellStarted) -> Frame {
-  let assert Ok(body) = spell_started.encode(start)
-    as "a cast id of 32 bits, Spell4 ids of 18 and a unit id of 32 fit the message, and the rule sends no list"
-  Frame(message_id: spell_started.message_id, body:)
-}
-
-/// 0x07F4 for a cast that goes off, written by the caster's rule and by each
-/// viewer's connection the same way.
-pub fn went_frame(go go: SpellGo) -> Frame {
-  let assert Ok(body) = spell_go.encode(go)
-    as "a cast id of 32 bits and a phase of 8 fit the message, and the rule sends no list"
-  Frame(message_id: spell_go.message_id, body:)
-}
-
-/// 0x07F8 for one tick of a periodic row of a cast on a unit, written by the caster's
-/// rule and by each viewer's connection the same way (`opcode.0x7f8`).
-pub fn ticked_frame(tick tick: SpellEffectTick) -> Frame {
-  let assert Ok(body) = spell_effect_tick.encode(tick)
-    as "a cast id of 32 bits, a Spell4Effects id of 19 and a tick's few descriptions fit the message"
-  Frame(message_id: spell_effect_tick.message_id, body:)
-}
-
-/// 0x07F9 for a cast of `unit_id` that was interrupted: result 11 and the bit 0, written
-/// by each viewer's connection before the cast's 0x7fe (`opcode.0x7f9`).
-pub fn interrupted_frame(cast_id cast_id: Int, unit_id unit_id: Int) -> Frame {
-  failed_frame(cast_id:, result: cast_result.SpellInterrupted, unit_id:)
-}
-
-/// 0x07FE for a cast that ends, written by the caster's rule and by each
-/// viewer's connection the same way (`opcode.0x7fe`).
-pub fn finished_frame(cast_id cast_id: Int) -> Frame {
-  let assert Ok(body) = spell_finished.encode(SpellFinished(cast_id:))
-    as "a cast id of 32 bits fits the message"
-  Frame(message_id: spell_finished.message_id, body:)
-}
-
-/// 0x0811 for a cast taken off some units, written by the caster's rule and by each
-/// viewer's connection the same way (`opcode.0x811`).
-pub fn targets_removed_frame(removed removed: SpellTargetsRemoved) -> Frame {
-  let assert Ok(body) = spell_targets_removed.encode(removed)
-    as "a cast id of 32 bits and at most a few unit ids of 32 fit the message"
-  Frame(message_id: spell_targets_removed.message_id, body:)
-}
-
-/// 0x0813 for a cast that loses one stack on a unit, written by the caster's rule and
-/// by each viewer's connection the same way (`opcode.0x813`).
-pub fn stack_removed_frame(removed removed: SpellStackRemoved) -> Frame {
-  let assert Ok(body) = spell_stack_removed.encode(removed)
-    as "a cast id and a unit id of 32 bits fit the message"
-  Frame(message_id: spell_stack_removed.message_id, body:)
-}
-
-/// A sentence that says what the client sent that is refused, for the log.
-pub fn describe(refusal refusal: Refusal) -> String {
-  case refusal {
-    NotDecoded(undecoded:) -> client_connection.describe_undecoded(undecoded:)
-    NoClientCastId ->
-      "0x009A, 0x0097 or 0x009D names the client's cast id 0, which its counter never gives"
-    UnknownCancel(reason:, bit:) ->
-      "0x0801 holds the reason "
-      <> int.to_string(reason)
-      <> " and the bit "
-      <> int.to_string(bit)
-      <> ", which the client never sends together"
-    UnknownAnswer(result:) ->
-      "0x0805 holds the result "
-      <> int.to_string(result)
-      <> ", which the client never sends"
-    NoInteractionWaits(cast_id:) ->
-      "0x0805 answers the cast "
-      <> int.to_string(cast_id)
-      <> ", which waits for no interaction's answer"
-    WrongAnswerSpell(cast_id:, sent:, expected:) ->
-      "0x0805 for the cast "
-      <> int.to_string(cast_id)
-      <> " holds the spell word "
-      <> int.to_string(sent)
-      <> " in place of "
-      <> int.to_string(expected)
-    NoItemSpell ->
-      "0x0943 names an item that has no spell, which the client answers itself"
-    NotSentByClient ->
-      "0x0943 names a second item the client does not send for the item's spell"
-  }
-}
-
-/// One struck unit's info in a go: its place in the list, target flags 0
-/// (`opcode.0x7f4.target_info`), the combat result of the strike, and an effect
-/// info for each landed blow with its damage description and delay. The instance
-/// count and the effects' instance ids number from 1 (kept by the client, no reader
-/// traced), except a crowd-control state's, which is the id its tell gave
-/// (genesis_prime/game/crowd_control `instance_id`).
-fn target_info(
-  index index: Int,
-  unit_id unit_id: Int,
-  descriptions descriptions: List(hit.Description),
-  listed listed: List(Listed),
-) -> SpellTargetInfo {
-  SpellTargetInfo(
-    unit_id:,
-    index:,
-    flags: 0,
-    instance_count: 1,
-    combat_result: case
-      list.any(descriptions, fn(description) {
-        description.damage.combat_result == combat_result.Critical
-      })
-    {
-      True -> combat_result.Critical
-      False -> combat_result.Hit
-    },
-    effects: list.append(
-      list.index_map(descriptions, fn(description, effect_index) {
-        SpellEffectInfo(
-          spell4_effects_id: description.spell4_effects_id,
-          instance_id: effect_index + 1,
-          delay_ms: description.delay_ms,
-          field_4: 0,
-          result: spell_effect_result.Damage(SpellEffectDamage(
-            description: description.damage,
-          )),
-        )
-      }),
-      list.index_map(listed, fn(effect, effect_index) {
-        SpellEffectInfo(
-          spell4_effects_id: effect.effect_id.value,
-          instance_id: option.unwrap(
-            effect.instance_id,
-            list.length(descriptions) + effect_index + 1,
-          ),
-          delay_ms: effect.delay_ms,
-          field_4: 0,
-          result: case effect.damage {
-            Some(description) ->
-              spell_effect_result.Damage(SpellEffectDamage(description:))
-            None -> spell_effect_result.Bit(SpellEffectBit(field_2: 0))
-          },
-        )
-      }),
-    ),
-  )
-}
-
-/// 0x7fb for the deflected units of a go, or none when none was deflected: each
-/// entry has reason 0 (Dodge, which the client shows as Deflect) and time 0
-/// (`opcode.0x7fb`, `opcode.0x7fb.time`).
-fn missed_message(
-  cast_id cast_id: Int,
-  struck struck: List(Struck),
-) -> Option(SpellMissed) {
-  case
-    list.filter_map(struck, fn(one) {
-      case one {
-        Deflected(unit_id:) ->
-          Ok(SpellMiss(unit_id:, reason: miss_reason.Dodge, time_ms: 0))
-        Hit(..) | Immune(..) -> Error(Nil)
-      }
-    })
-  {
-    [] -> None
-    misses -> Some(SpellMissed(cast_id:, misses:))
-  }
-}
-
-/// 0x07FB for a cast whose targets were missed, written by the caster's rule and by
-/// each viewer's connection the same way.
-pub fn missed_frame(missed missed: SpellMissed) -> Frame {
-  let assert Ok(body) = spell_missed.encode(missed)
-    as "a cast id of 32 bits, a unit id of 32 and a reason of 4 fit the message"
-  Frame(message_id: spell_missed.message_id, body:)
 }

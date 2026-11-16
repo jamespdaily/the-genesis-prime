@@ -80,6 +80,7 @@ import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/activate
 import genesis_prime/game/area
 import genesis_prime/game/cast
+import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection/absorption as connection_absorption
 import genesis_prime/game/connection/frames as connection_frames
@@ -158,7 +159,11 @@ pub fn cast_message(
     Ok(#(updated, effects)) ->
       carry_cast(session: with_cast(session:, cast: updated), now:, effects:)
     Error(refusal) ->
-      connection_state.end_for(session:, now:, text: cast.describe(refusal))
+      connection_state.end_for(
+        session:,
+        now:,
+        text: cast_frame.describe(refusal),
+      )
   }
 }
 
@@ -187,7 +192,11 @@ pub fn activate_message(
     Ok(#(updated, effects)) ->
       carry_cast(session: with_cast(session:, cast: updated), now:, effects:)
     Error(refusal) ->
-      connection_state.end_for(session:, now:, text: cast.describe(refusal))
+      connection_state.end_for(
+        session:,
+        now:,
+        text: cast_frame.describe(refusal),
+      )
   }
 }
 
@@ -241,7 +250,11 @@ pub fn item_use_message(
     Ok(#(updated, effects)) ->
       carry_cast(session: with_cast(session:, cast: updated), now:, effects:)
     Error(refusal) ->
-      connection_state.end_for(session:, now:, text: cast.describe(refusal))
+      connection_state.end_for(
+        session:,
+        now:,
+        text: cast_frame.describe(refusal),
+      )
   }
 }
 
@@ -278,7 +291,11 @@ pub fn shortcut_message(
     Ok(#(updated, effects)) ->
       carry_cast(session: with_cast(session:, cast: updated), now:, effects:)
     Error(refusal) ->
-      connection_state.end_for(session:, now:, text: cast.describe(refusal))
+      connection_state.end_for(
+        session:,
+        now:,
+        text: cast_frame.describe(refusal),
+      )
   }
 }
 
@@ -368,7 +385,11 @@ pub fn activate_unit_message(
   {
     Ok(effects) -> carry_cast(session:, now:, effects:)
     Error(refusal) ->
-      connection_state.end_for(session:, now:, text: cast.describe(refusal))
+      connection_state.end_for(
+        session:,
+        now:,
+        text: cast_frame.describe(refusal),
+      )
   }
 }
 

@@ -265,7 +265,7 @@
 
 import genesis_prime/client_connection.{type News}
 import genesis_prime/game/area.{type Inside, type Row}
-import genesis_prime/game/cast
+import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/forced_move
 import genesis_prime/game/hit.{type Offence}
@@ -854,7 +854,7 @@ pub fn arrival_news(
       let assert Ok(top) = dict.get(threat, target)
         as "the target is on the threat list"
       [
-        client_connection.CastStarted(start: cast.creature_started(
+        client_connection.CastStarted(start: cast_frame.creature_started(
           cast_id:,
           spell4_id: fighter.attack.spell4_id.value,
           caster_unit_id: fighter.unit_id,
@@ -1376,7 +1376,7 @@ fn strikes(
     ),
     [
       ToViewers(
-        client_connection.CastStarted(start: cast.creature_started(
+        client_connection.CastStarted(start: cast_frame.creature_started(
           cast_id:,
           spell4_id: fighter.attack.spell4_id.value,
           caster_unit_id: fighter.unit_id,
@@ -1527,7 +1527,7 @@ fn round_closed(
     as "a round closes only while Fighting"
   let here = creature_path.place_at(path: state.path, now_ms:)
   let cast_id = round.cast_id
-  let missed = case cast.creature_missed(cast_id:, struck:) {
+  let missed = case cast_frame.creature_missed(cast_id:, struck:) {
     Some(missed) -> [ToViewers(client_connection.CastMissed(missed:))]
     None -> []
   }
@@ -1536,7 +1536,7 @@ fn round_closed(
     list.flatten([
       [
         ToViewers(
-          client_connection.CastWent(go: cast.creature_went(
+          client_connection.CastWent(go: cast_frame.creature_went(
             cast_id:,
             place: here,
             struck:,
@@ -1582,7 +1582,7 @@ fn charges(
     ),
     [
       ToViewers(
-        client_connection.CastStarted(start: cast.creature_started(
+        client_connection.CastStarted(start: cast_frame.creature_started(
           cast_id:,
           spell4_id: fighter.attack.spell4_id.value,
           caster_unit_id: fighter.unit_id,

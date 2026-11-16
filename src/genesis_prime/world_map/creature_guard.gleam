@@ -79,7 +79,7 @@
 //// | The corpse timer stands the creature | n/a | n/a | `Dormant` takes `Stands`: it stands guarded with a new cast, no opening (`a_respawned_turret_stands_guarded_test`) |
 
 import genesis_prime/client_connection.{type News}
-import genesis_prime/game/cast
+import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
@@ -395,7 +395,7 @@ fn guard_cast(
   cast_id cast_id: Int,
 ) -> List(News) {
   [
-    client_connection.CastStarted(start: cast.creature_started(
+    client_connection.CastStarted(start: cast_frame.creature_started(
       cast_id:,
       spell4_id: guard.spell4_id,
       caster_unit_id: unit_id,
@@ -403,7 +403,7 @@ fn guard_cast(
       place:,
     )),
     client_connection.CastWent(
-      go: cast.creature_applied(
+      go: cast_frame.creature_applied(
         cast_id:,
         place:,
         target_unit_id: unit_id,
@@ -430,14 +430,14 @@ fn opening_cast(
   elapsed_ms elapsed_ms: Int,
 ) -> List(News) {
   [
-    client_connection.CastStarted(start: cast.creature_started(
+    client_connection.CastStarted(start: cast_frame.creature_started(
       cast_id:,
       spell4_id: guard.opening.spell4_id,
       caster_unit_id: unit_id,
       target_unit_id: unit_id,
       place:,
     )),
-    client_connection.CastWent(go: cast.creature_applied(
+    client_connection.CastWent(go: cast_frame.creature_applied(
       cast_id:,
       place:,
       target_unit_id: unit_id,
