@@ -131,7 +131,9 @@ pub fn bearing(
 ) -> Float {
   let dx = target.x -. from.x
   let dz = target.z -. from.z
-  case dx == 0.0 && dz == 0.0 {
+  // The sum of squares is +0.0 for either sign of a zero difference, which `==`
+  // (`=:=` on floats) tells apart from -0.0.
+  case dx *. dx +. dz *. dz == 0.0 {
     True -> 0.0
     False -> wrapped(maths.atan2(float.negate(dx), float.negate(dz)) -. yaw)
   }
