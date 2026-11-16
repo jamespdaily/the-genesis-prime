@@ -842,8 +842,8 @@ pub fn cast_effects(
 
 /// The held procs fire for the events raised outside a cast rule's step: a change of the
 /// class resource (genesis_prime/game/connection/resource) or the start of a move
-/// (genesis_prime/game/connection/movement), already pending in the player's cast state. With
-/// nothing pending it draws nothing.
+/// (`moved`), already pending in the player's cast state. With nothing pending it draws
+/// nothing.
 pub fn raised(
   session session: Session,
   now now: Now,
