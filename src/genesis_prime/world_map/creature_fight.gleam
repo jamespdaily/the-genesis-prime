@@ -659,7 +659,7 @@ pub fn step(
 }
 
 /// A throw reaches the creature: dropped when it is dead, walking home or does not run
-/// (`Fighter.attack.run_speed` 0); else its path is built from where it is
+/// (`creature_path.runs` of `Fighter.attack.run_speed`); else its path is built from where it is
 /// (`forced_move.path`, clipped at the leash circle), kept as `Timed` with a `Flight`
 /// and its `FlightEnds` timer, an open charge is broken as `held` does, and the viewers
 /// are sent the path.
@@ -680,7 +680,7 @@ fn thrown(
     when: !alive
       || walking_home
       || cannot_move(fighter:)
-      || fighter.attack.run_speed <=. 0.0,
+      || !creature_path.runs(speed: fighter.attack.run_speed),
     return: #(state, []),
   )
   let here = creature_path.place_at(path: state.path, now_ms:)
@@ -1888,7 +1888,9 @@ fn leash(
 /// The path home from where the creature stands, sent as 0x638 (or placed, when the path
 /// it ran ends in standing), with the home timer of generation `home` for its arrival.
 /// The leash starts it, or `ControlEnded` does when a state held the creature at the
-/// leash.
+/// leash. A creature that does not run (`creature_path.runs`) and stands away from home
+/// has no walk and no timer: it goes on walking home when its speed is above 0 again
+/// (`SpeedChanged`).
 fn walk_home(
   state state: State,
   fighter fighter: Fighter,
@@ -1905,13 +1907,30 @@ fn walk_home(
     )
   #(
     State(..state, path:),
-    list.append(path_news(was: state.path, now: path, now_ms:), [
+    list.append(
+      path_news(was: state.path, now: path, now_ms:),
+      home_timer(path:, fighter:, home:, now_ms:),
+    ),
+  )
+}
+
+/// The timer of generation `home` for the walk's arrival, none for a creature that
+/// stands away from home.
+fn home_timer(
+  path path: Path,
+  fighter fighter: Fighter,
+  home home: Int,
+  now_ms now_ms: Int,
+) -> List(Effect) {
+  case path {
+    Standing(at:) if at != fighter.home -> []
+    Standing(..) | Running(..) | Timed(..) -> [
       StartTimer(
         timer: HomeArrival(home),
         after_ms: creature_path.arrives_ms(path:, now_ms:) - now_ms,
       ),
-    ]),
-  )
+    ]
+  }
 }
 
 /// The creature stands where it is: the path it runs stops, and its viewers are placed
@@ -2040,7 +2059,11 @@ fn resumed(
 /// The creature's run speed changed: a path still being run at another speed is
 /// run on from where the creature stands, to the same end, at the new speed, and sent
 /// as 0x638. A walk home gets a new home timer for the new arrival, and its old one is
-/// cancelled. A creature that stands, or whose path is run, has nothing to replan.
+/// cancelled. A speed that is not above 0 (`creature_path.runs`) stops the run where the
+/// creature stands, and a walk home then has no timer. A creature that stands starts
+/// again from where it stands when its speed is above 0: a fight chases and a walk home
+/// goes on, unless a state holds it (`ControlEnded` starts it then). A creature whose
+/// path is run has nothing to replan.
 fn speed_changed(
   state state: State,
   fighter fighter: Fighter,
@@ -2068,19 +2091,26 @@ fn speed_changed(
             list.flatten([
               [CancelTimer(timer: HomeArrival(old))],
               moved,
-              [
-                StartTimer(
-                  timer: HomeArrival(home),
-                  after_ms: creature_path.arrives_ms(path:, now_ms:) - now_ms,
-                ),
-              ],
+              home_timer(path:, fighter:, home:, now_ms:),
             ]),
           )
         }
         Fighting(..) | Resting -> #(state, moved)
       }
     }
-    Running(..) | Standing(..) | Timed(..) -> #(state, [])
+    Standing(at:) -> {
+      use <- bool.guard(
+        when: fighter.still
+          || !creature_path.runs(speed: fighter.attack.run_speed),
+        return: #(state, []),
+      )
+      case state.status {
+        Fighting(..) -> chase(state:, fighter:, now_ms:)
+        Returning(..) if at != fighter.home -> resumed(state:, fighter:, now_ms:)
+        Returning(..) | Resting -> #(state, [])
+      }
+    }
+    Running(..) | Timed(..) -> #(state, [])
   }
 }
 

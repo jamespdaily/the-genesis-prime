@@ -2805,6 +2805,219 @@ pub fn move_speed_change_while_walking_home_replans_the_walk_and_its_arrival_tes
     as "the new arrival ends the return at 2.5 s"
 }
 
+// A creature whose run speed is 0 or below stands where it is. The 0 is a root: a property
+// modifier on property 100 with multiplier 0 (Spell4Effects 1781); the negative speed is
+// what stacked negative flats leave (Spell4Effects 192472, 213219, 5181 and 230841 reach
+// -0.1 on property 100). What a negative speed does is the server's choice: no client fact
+// covers it, so it is read as 0.
+
+/// A modifier that leaves property 100 at -0.1: x becomes x - 1.1 from 1.0.
+fn flats_to_negative_move_speed() -> Modifier {
+  Change(
+    property: UnitProperty2Id(100),
+    mode: 1,
+    multiplier: 1.0,
+    flat: -1.1,
+    per_level: 0.0,
+  )
+}
+
+/// No 0x638 of any kind: the creature neither runs nor is placed.
+fn sends_no_path(taken: ServiceStep(creature.Outgoing)) -> Bool {
+  !list.any(said(taken), fn(line) { string.starts_with(line, "0x638") })
+}
+
+/// The creature's x at `at_ms` after the start.
+fn stands_at(state state: State, at_ms at_ms: Int) -> Float {
+  x_of(creature_fight.place_at(
+    state: creature.fight(state:),
+    now_ms: start_ms + at_ms,
+  ))
+}
+
+pub fn chase_with_zero_run_speed_stands_still_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    tell(
+      state: beast(viewers: [2, 5]),
+      at_ms: 0,
+      message: modifier_start(
+        cast_id: 1,
+        modifier: scaled_by(property: 100, factor: 0.0),
+        struck_at_ms: 0,
+      ),
+    )
+  let #(state, aggro) =
+    tell(state:, at_ms: 100, message: approached(number: 2, x: 30.0, seq: 1))
+  assert sends_no_path(aggro) as "no Running path starts"
+  // The tick 1.5 s later and one at 10 s, long past the 2.6 s the 26 units take at 10.
+  let #(state, tick) = fire(state:, at_ms: 1600, timer: timer_for(aggro, 1500))
+  assert sends_no_path(tick) as "the attack tick starts none either"
+  let #(state, late) = fire(state:, at_ms: 10_000, timer: timer_for(tick, 1500))
+  assert sends_no_path(late)
+  assert stands_at(state:, at_ms: 10_000) == 0.0
+    as "where the creature stood, after the time it would have arrived"
+}
+
+pub fn walk_home_with_zero_run_speed_stands_still_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    tell(
+      state: beast(viewers: [2, 5]),
+      at_ms: 0,
+      message: approached(number: 2, x: 30.0, seq: 1),
+    )
+  // 1 s into the chase the creature is at 10, and a root takes its run speed to 0.
+  let #(state, rooted) =
+    tell(
+      state:,
+      at_ms: 1000,
+      message: modifier_start(
+        cast_id: 1,
+        modifier: scaled_by(property: 100, factor: 0.0),
+        struck_at_ms: 1000,
+      ),
+    )
+  assert list.contains(said(rooted), "0x638(placed) to 5")
+    as "the run in progress stops where the creature stands"
+  // The fighter leaves sight: the creature leashes, with no walk to start.
+  let #(state, leashed) =
+    tell(state:, at_ms: 1100, message: creature.Unwatched(by: ConnectionId(2)))
+  assert list.contains(said(leashed), "0x89a(0) to 5")
+    && sends_no_path(leashed)
+    && timers(leashed) == []
+    as "the leash goes on, the rooted creature starts no walk and no arrival timer"
+  assert stands_at(state:, at_ms: 20_000) == 10.0
+    as "where it stood, after the time the walk would have taken"
+  let #(_, refused) =
+    tell(
+      state:,
+      at_ms: 20_000,
+      message: strike_of(number: 5, cast_id: 2, blows: [#(1, 5, 1.0)]),
+    )
+  assert said(refused) == ["Refused(Returning) to 5"]
+    as "it has not arrived: it still takes no strike"
+}
+
+pub fn negative_run_speed_stands_still_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    tell(
+      state: beast(viewers: [2, 5]),
+      at_ms: 0,
+      message: modifier_start(
+        cast_id: 1,
+        modifier: flats_to_negative_move_speed(),
+        struck_at_ms: 0,
+      ),
+    )
+  let #(state, aggro) =
+    tell(state:, at_ms: 100, message: approached(number: 2, x: 30.0, seq: 1))
+  assert sends_no_path(aggro) as "a chase at a speed of -1.0 starts no path"
+  assert stands_at(state:, at_ms: 10_000) == 0.0
+  // The same from 10 units out: the walk home, at a speed below 0, starts none.
+  let #(state, _) =
+    tell(
+      state: beast(viewers: [2, 5]),
+      at_ms: 0,
+      message: approached(number: 2, x: 30.0, seq: 1),
+    )
+  let #(state, slowed) =
+    tell(
+      state:,
+      at_ms: 1000,
+      message: modifier_start(
+        cast_id: 1,
+        modifier: flats_to_negative_move_speed(),
+        struck_at_ms: 1000,
+      ),
+    )
+  assert list.contains(said(slowed), "0x638(placed) to 5")
+  let #(state, leashed) =
+    tell(state:, at_ms: 1100, message: creature.Unwatched(by: ConnectionId(2)))
+  assert sends_no_path(leashed) && timers(leashed) == []
+  assert stands_at(state:, at_ms: 20_000) == 10.0
+}
+
+pub fn run_speed_restored_moves_again_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    tell(
+      state: beast(viewers: [2, 5]),
+      at_ms: 0,
+      message: approached(number: 2, x: 30.0, seq: 1),
+    )
+  let #(state, _) =
+    tell(
+      state:,
+      at_ms: 1000,
+      message: modifier_start(
+        cast_id: 1,
+        modifier: scaled_by(property: 100, factor: 0.0),
+        struck_at_ms: 1000,
+      ),
+    )
+  let #(_, back) =
+    tell(
+      state:,
+      at_ms: 3000,
+      message: creature.ModifierEnds(cast_support.source_of(
+        cast_id: 1,
+        effect_id: 1901,
+      )),
+    )
+  let assert Running(from:, to:, started_ms:, speed:) = path_sent(back)
+  assert x_of(from) == 10.0
+    && x_of(to) == 26.0
+    && started_ms == start_ms + 3000
+    && speed == 10.0
+    as "the chase starts from where the creature stood, toward 30 less 0.5 x reach 8"
+}
+
+pub fn run_speed_restored_walks_home_again_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    tell(
+      state: beast(viewers: [2, 5]),
+      at_ms: 0,
+      message: approached(number: 2, x: 30.0, seq: 1),
+    )
+  let #(state, _) =
+    tell(
+      state:,
+      at_ms: 1000,
+      message: modifier_start(
+        cast_id: 1,
+        modifier: scaled_by(property: 100, factor: 0.0),
+        struck_at_ms: 1000,
+      ),
+    )
+  let #(state, _) =
+    tell(state:, at_ms: 1100, message: creature.Unwatched(by: ConnectionId(2)))
+  let #(state, back) =
+    tell(
+      state:,
+      at_ms: 3000,
+      message: creature.ModifierEnds(cast_support.source_of(
+        cast_id: 1,
+        effect_id: 1901,
+      )),
+    )
+  let assert [CreatureMoved(path: Running(from:, to:, started_ms:, speed:))] =
+    list.filter(news_to(back, 5), fn(news) { name_of(news) == "0x638" })
+    as "the walk home starts"
+  assert x_of(from) == 10.0
+    && x_of(to) == 0.0
+    && started_ms == start_ms + 3000
+    && speed == 10.0
+    as "from where the creature stood, to home, at the base speed"
+  let assert [#(arrival, 1000)] = timers(back)
+    as "its arrival is the 1 s the 10 units take"
+  let #(state, arrived) = fire(state:, at_ms: 4000, timer: arrival)
+  assert said(arrived) == []
+  assert stands_at(state:, at_ms: 4000) == 0.0
+}
+
 pub fn creature_blow_uses_damage_dealt_multiplier_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, _) =
