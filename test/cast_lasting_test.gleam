@@ -18,6 +18,7 @@
 import cast_support as support
 import genesis_prime/client_connection.{CastFinished}
 import genesis_prime/game/cast
+import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/lasting.{LastingRow, Stack}
@@ -692,11 +693,11 @@ pub fn a_nodes_unit_leaving_sight_ends_a_lingering_cast_left_with_no_node_test()
   let id = support.pressed_id(effects:)
   let assert [#(timer, 8000)] = support.started_timers(effects:)
   let #(state, other) =
-    cast.unit_removed(cast: state, unit_id: 21, now_ms: 2000)
+    cast_proc.unit_removed(cast: state, unit_id: 21, now_ms: 2000)
   assert support.writes(effects: other) == []
     as "a unit that holds no node of the cast changes nothing"
   let #(state, removed) =
-    cast.unit_removed(cast: state, unit_id: 20, now_ms: 3000)
+    cast_proc.unit_removed(cast: state, unit_id: 20, now_ms: 3000)
   assert support.finished_ids(support.writes(effects: removed)) == [id]
     as "the client dropped the node with the unit's 0x355; the cast ends and frees its id"
   assert support.removed_targets(support.writes(effects: removed)) == []
@@ -743,7 +744,8 @@ pub fn a_node_removed_with_its_unit_leaves_the_casts_other_nodes_test() -> Nil {
       at: 1000,
     )
   let assert [#(timer, 8000)] = support.started_timers(effects:)
-  let #(_, removed) = cast.unit_removed(cast: state, unit_id: 20, now_ms: 3000)
+  let #(_, removed) =
+    cast_proc.unit_removed(cast: state, unit_id: 20, now_ms: 3000)
   assert support.finished_ids(support.writes(effects: removed)) == []
     as "the caster's node stays until removed"
   assert support.cancelled_timers(effects: removed) == [timer]

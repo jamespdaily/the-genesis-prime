@@ -13,6 +13,7 @@ import cast_support as support
 import genesis_prime/client_connection.{type News, CastTicked}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/cast
+import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/damage.{Formula, Parameter}
 import genesis_prime/game/effect_kind
@@ -1009,7 +1010,7 @@ pub fn a_removed_unit_writes_no_tick_test() -> Nil {
     stepped(
       run:,
       at: 3200,
-      taken: cast.unit_removed(cast: run.state, unit_id: 10, now_ms: 3200),
+      taken: cast_proc.unit_removed(cast: run.state, unit_id: 10, now_ms: 3200),
     )
   assert removed.pending == []
     as "the removal drops the unit's node and cancels its next tick"

@@ -83,6 +83,7 @@ import genesis_prime/game/cast
 import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/persist as cast_persist
+import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/connection/absorption as connection_absorption
@@ -1159,7 +1160,7 @@ fn procs_fired(
   let #(session, written) = done
   let pending = case connection_state.entered_of(session.status) {
     Some(entered) ->
-      case cast.has_pending(cast: entered.cast) {
+      case cast_proc.has_pending(cast: entered.cast) {
         True -> Some(entered)
         False -> None
       }
@@ -1167,7 +1168,7 @@ fn procs_fired(
   }
   case pending {
     Some(entered) -> {
-      let #(words, rolls) = cast.proc_draws_needed(cast: entered.cast)
+      let #(words, rolls) = cast_proc.proc_draws_needed(cast: entered.cast)
       let #(link, bytes) =
         client_connection.draw(
           session.link,
@@ -1183,7 +1184,7 @@ fn procs_fired(
           rolls * prerequisite.roll_bytes,
         )
         as "the draw is as long as the rolls it is to give"
-      let unit_ids = cast.pending_units(cast: entered.cast)
+      let unit_ids = cast_proc.pending_units(cast: entered.cast)
       let #(updated, fired) =
         cast.procs_fire(
           cast: entered.cast,

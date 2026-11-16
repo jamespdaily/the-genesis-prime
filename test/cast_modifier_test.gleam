@@ -15,6 +15,7 @@
 
 import cast_support as support
 import genesis_prime/game/cast
+import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Effect} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/lasting.{LastingRow}
@@ -687,7 +688,7 @@ pub fn creature_leaving_sight_ends_its_modifier_test() -> Nil {
   let id = support.pressed_id(effects:)
   let source = support.source_of(cast_id: id, effect_id: 7711)
   let #(state, removed) =
-    cast.unit_removed(cast: state, unit_id: creature, now_ms: 1100)
+    cast_proc.unit_removed(cast: state, unit_id: creature, now_ms: 1100)
   assert support.target_changes(effects: removed) == [ended_on_creature(source)]
     as "the cast drops its node on a creature that left the caster's sight, so the modifier it holds there ends with it"
   assert support.target_changes(effects: cast_tick.left(cast: state).1) == []

@@ -34,6 +34,7 @@
 import cast_support as support
 import client_tables
 import genesis_prime/game/cast
+import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/spell_plan.{
@@ -362,7 +363,7 @@ pub fn the_passive_still_lingers_after_a_death_so_taking_its_unit_off_ends_it_wi
     )
   assert support.frames_of(message_id: 0x07FE, effects: died) == []
   let #(_, removed) =
-    cast.unit_removed(
+    cast_proc.unit_removed(
       cast: left,
       unit_id: support.caster().unit_id,
       now_ms: 5100,
@@ -411,7 +412,7 @@ pub fn a_passive_taken_off_the_caster_is_forgotten_so_a_cast_that_gets_its_id_la
   let #(passive, started_effects) =
     started_in(plans:, caster:, base: 29_035, at: 1000)
   let #(state, _) =
-    cast.unit_removed(cast: passive, unit_id: caster.unit_id, now_ms: 1100)
+    cast_proc.unit_removed(cast: passive, unit_id: caster.unit_id, now_ms: 1100)
   // The ids of a unit's casts count up and wrap after 2048 starts, so the
   // 2048th start after the passive's gets its id again.
   let state =

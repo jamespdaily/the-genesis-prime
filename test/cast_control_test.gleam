@@ -28,6 +28,7 @@ import crowd_control_support
 import genesis_prime/client_connection
 import genesis_prime/game/cast
 import genesis_prime/game/cast/gate as cast_gate
+import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
 import genesis_prime/game/crowd_control
 import genesis_prime/game/lasting
@@ -239,7 +240,7 @@ pub fn a_unit_that_left_the_casters_sight_gets_no_end_entry_test() -> Nil {
       fn(started) { started.0 },
     )
   let #(state, removed) =
-    cast.unit_removed(cast: state, unit_id: 20, now_ms: 2000)
+    cast_proc.unit_removed(cast: state, unit_id: 20, now_ms: 2000)
   assert list.any(support.cancelled_timers(effects: removed), fn(timer) {
     list.contains(ends, timer)
   })

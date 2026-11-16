@@ -123,8 +123,8 @@
 
 import genesis_prime/client_connection.{type Request, Continue}
 import genesis_prime/connection/frame.{type Frame, Frame}
-import genesis_prime/game/cast
 import genesis_prime/game/cast/frame as cast_frame
+import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/class_resource
 import genesis_prime/game/connection/casting as connection_casting
 import genesis_prime/game/connection/frames as connection_frames
@@ -1093,7 +1093,7 @@ fn cast_loses_unit(
     None -> #(session, [])
     Some(entered) -> {
       let #(updated, effects) =
-        cast.unit_removed(
+        cast_proc.unit_removed(
           cast: entered.cast,
           unit_id:,
           now_ms: now.monotonic_ms,

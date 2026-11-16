@@ -34,6 +34,7 @@ import crowd_control_support
 import genesis_prime/client_connection
 import genesis_prime/game/cast
 import genesis_prime/game/cast/gate as cast_gate
+import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/class_resource
@@ -2741,11 +2742,11 @@ pub fn a_fired_spells_own_hits_fire_procs_only_at_its_own_go_test() -> Nil {
         phase: asked.phase,
         struck: [plain_hit(unit_id: 31)],
       )
-    assert cast.has_pending(cast: state)
+    assert cast_proc.has_pending(cast: state)
       as "the go's hit is waiting to be matched"
     let #(state, fired) =
       support.then_procs(step: #(state, went), caster:, at: 1000)
-    assert !cast.has_pending(cast: state)
+    assert !cast_proc.has_pending(cast: state)
       as "one pass matches it and the fire raises nothing inside it"
     #(state, fired)
   }
@@ -2784,7 +2785,7 @@ pub fn proc_draws_needed_is_0_with_nothing_pending_and_counts_each_matching_proc
   let plans = support.plans_of([holder, hitter(school: 2)])
   let caster = planted_caster()
   let #(state, _) = planted_joined(plans:, spell: holder, at: 500)
-  assert cast.proc_draws_needed(cast: state) == #(0, 0)
+  assert cast_proc.proc_draws_needed(cast: state) == #(0, 0)
     as "nothing is pending after the passive's own pass"
   let #(state, raw) =
     support.pressed_raw_in(
@@ -2812,10 +2813,10 @@ pub fn proc_draws_needed_is_0_with_nothing_pending_and_counts_each_matching_proc
         ]),
       ],
     )
-  assert cast.proc_draws_needed(cast: state) == #(3, 0)
+  assert cast_proc.proc_draws_needed(cast: state) == #(3, 0)
     as "creature 31: a hit, the 0.5 proc takes a word and the 1.0 proc none; creature 32: a hit and a critical, a word each"
   let #(state, _) = support.then_procs(step: #(state, went), caster:, at: 1000)
-  assert cast.proc_draws_needed(cast: state) == #(0, 0)
+  assert cast_proc.proc_draws_needed(cast: state) == #(0, 0)
     as "the pass clears what it matched"
 }
 
@@ -2884,7 +2885,7 @@ pub fn the_stalkers_178239_takes_no_effect_from_its_own_hits_test() -> Nil {
       poses: dict.new(),
     )
   assert starts_of(spell4_id: 72_838, effects:) == 0
-  assert !cast.has_pending(cast: state)
+  assert !cast_proc.has_pending(cast: state)
 }
 
 // ---- part A of the triggers (issue 792) ----

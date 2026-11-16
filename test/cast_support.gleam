@@ -16,6 +16,7 @@ import genesis_prime/client_connection.{type News}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/area.{type Pose}
 import genesis_prime/game/cast
+import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/class_resource
 import genesis_prime/game/damage
@@ -727,10 +728,10 @@ pub fn then_procs_known(
   drawn drawn: Option(#(List(Int), List(Int))),
 ) -> #(State, List(Effect)) {
   let #(state, effects) = step
-  case cast.has_pending(cast: state) {
+  case cast_proc.has_pending(cast: state) {
     False -> step
     True -> {
-      let #(words, rolls) = cast.proc_draws_needed(cast: state)
+      let #(words, rolls) = cast_proc.proc_draws_needed(cast: state)
       let #(draws, rolls) = case drawn {
         Some(given) -> given
         None -> #(list.repeat(0, words), list.repeat(0, rolls))
