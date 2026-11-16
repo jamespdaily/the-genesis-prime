@@ -15,7 +15,7 @@
 import attacker_support
 import client_tables
 import genesis_prime/game/damage
-import genesis_prime/game/hit.{type Blow, Blow, Offence, Rolls}
+import genesis_prime/game/hit.{type Blow, Blow, Offence, Rolls, Worked}
 import genesis_prime/game/spell_area
 import genesis_prime/table/id.{Spell4Id}
 import gleam/float
@@ -54,10 +54,12 @@ fn casts_to_kill(
           Blow(
             spell4_effects_id: effect.effect_id.value,
             damage_type: effect.damage_type,
-            damage: float.round(damage.value(
-              formula: effect.formula,
-              attacker: attacker_support.fresh(),
-            )),
+            damage: Worked(
+              float.round(damage.value(
+                formula: effect.formula,
+                attacker: attacker_support.fresh(),
+              )),
+            ),
             delay_ms: effect.delay_ms,
             threat_multiplier: effect.threat_multiplier,
           )
@@ -77,9 +79,13 @@ fn kill_loop(
     _ -> {
       let assert hit.Landed(health: left, ..) =
         hit.apply(
-          shield: 0,
+          target: damage.Vitals(
+            health: health,
+            max_health: health,
+            shield: 0,
+            max_shield: 0,
+          ),
           absorbs: [],
-          health:,
           offence: Offence(
             blows:,
             crit_chance: 0.0,

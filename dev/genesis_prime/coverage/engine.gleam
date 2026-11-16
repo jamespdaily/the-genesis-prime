@@ -330,7 +330,7 @@ fn spell_effects() -> EngineDeclaration {
       ),
       Missing(
         type_number: 8,
-        reason: "rows with a formula parameter a player's value does not read, aimed by a flag the area load refuses, or with a multiplier that is not a finite number, which the area load refuses; periodic rows that last until removed (flags bit 2, #803), which the area load leaves out",
+        reason: "rows with a formula parameter a player's value does not read (the weapon types 6 and 9, the passed-in value 18), aimed by a flag the area load refuses, or with a multiplier that is not a finite number, which the area load refuses; periodic rows that last until removed (flags bit 2, #803), which the area load leaves out; rows aimed at their caster alone, which load and strike nobody (#831)",
         fact_key: "0x140566ad0",
       ),
       Missing(

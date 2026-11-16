@@ -30,7 +30,7 @@ import genesis_prime/client_connection.{
 }
 import genesis_prime/game/crowd_control
 import genesis_prime/game/forced_move
-import genesis_prime/game/hit.{Blow, Offence, Rolls}
+import genesis_prime/game/hit.{Blow, Offence, Rolls, Worked}
 import genesis_prime/game/start_place
 import genesis_prime/game/strike_tell.{
   type Key, Answered, Attacks, CreatureStriker, Immune, Key, Landed,
@@ -258,7 +258,7 @@ fn strike_of(
           Blow(
             spell4_effects_id: blow.0,
             damage_type: 3,
-            damage: blow.1,
+            damage: Worked(blow.1),
             delay_ms: 0,
             threat_multiplier: blow.2,
           )
@@ -674,7 +674,7 @@ pub fn a_target_in_reach_is_struck_with_5649_every_1500_ms_and_the_answer_is_wri
   assert list.map(offence.blows, fn(blow) {
       #(blow.spell4_effects_id, blow.damage)
     })
-    == [#(184_741, 12)]
+    == [#(184_741, Worked(12))]
     as "effect 184741 for 12 (Spell4Effects.184741)"
   assert list.sort(list.map(timers(ticked), fn(timer) { timer.1 }), int.compare)
     == [1000, 1500]
@@ -3218,7 +3218,7 @@ pub fn creature_blow_uses_damage_dealt_multiplier_test() -> Nil {
   assert list.map(offence.blows, fn(blow) {
       #(blow.spell4_effects_id, blow.damage)
     })
-    == [#(184_741, 24)]
+    == [#(184_741, Worked(24))]
     as "effect 184741 is 12 and the Physical multiplier (141) is 2.0"
 }
 

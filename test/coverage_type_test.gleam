@@ -441,7 +441,7 @@ pub fn the_effect_types_3_10_11_14_17_18_29_52_64_73_76_80_81_83_84_112_118_and_
       ),
       Missing(
         type_number: 8,
-        reason: "rows with a formula parameter a player's value does not read, aimed by a flag the area load refuses, or with a multiplier that is not a finite number, which the area load refuses; periodic rows that last until removed (flags bit 2, #803), which the area load leaves out",
+        reason: "rows with a formula parameter a player's value does not read (the weapon types 6 and 9, the passed-in value 18), aimed by a flag the area load refuses, or with a multiplier that is not a finite number, which the area load refuses; periodic rows that last until removed (flags bit 2, #803), which the area load leaves out; rows aimed at their caster alone, which load and strike nobody (#831)",
         fact_key: "0x140566ad0",
       ),
       Missing(
@@ -915,11 +915,38 @@ pub fn the_measure_counts_a_periodic_damage_row_that_lasts_until_removed_as_not_
   assert line.rows == 4
   assert line.status
     == HandledWithGap(
-      reason: "rows with a formula parameter a player's value does not read, aimed by a flag the area load refuses, or with a multiplier that is not a finite number, which the area load refuses; periodic rows that last until removed (flags bit 2, #803), which the area load leaves out",
+      reason: "rows with a formula parameter a player's value does not read (the weapon types 6 and 9, the passed-in value 18), aimed by a flag the area load refuses, or with a multiplier that is not a finite number, which the area load refuses; periodic rows that last until removed (flags bit 2, #803), which the area load leaves out; rows aimed at their caster alone, which load and strike nobody (#831)",
       fact_key: "0x140566ad0",
       unread_rows: 1,
     )
     as "the periodic row of three ticks strikes once for each tick and is read; the one that lasts until removed has no schedule and is left out"
+}
+
+pub fn the_type_8_rows_naming_only_vital_kinds_are_counted_as_handled_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use <- unitest.tags(["dev_tool", "coverage"])
+  // Spell4Effects.targetFlags bit 1 is the caster, 2 the primary target and 4 the area;
+  // parameterType00 7 is the target's max health, 23 the caster's health and 18 a
+  // passed-in value (0x140566ad0). Planted: kind 7 aimed at the area, kind 23 aimed at the
+  // primary target, kind 18 aimed at the area, and kind 7 aimed at the caster alone, which
+  // loads but strikes nobody (#831). The helper adds a plain row aimed at the area.
+  let assert Measured(types:, ..) =
+    measured_shield_rows(type_: 8, rows: [
+      once(aim: 4, parameter: 7),
+      once(aim: 2, parameter: 23),
+      once(aim: 4, parameter: 18),
+      once(aim: 1, parameter: 7),
+    ])
+  let assert Ok(line) = list.find(types, fn(line) { line.type_number == 8 })
+  assert line.rows == 5
+  let assert HandledWithGap(reason:, unread_rows:, ..) = line.status
+    as "the type 8 line keeps a gap"
+  assert unread_rows == 2
+    as "the kind 18 row and the row aimed at the caster alone are not read; the vital kinds 7 and 23 are"
+  assert !string.contains(reason, "vital")
+    as "the gap no longer names the vital kinds as unread"
+  assert string.contains(reason, "#831")
+    as "the caster-alone rows name the issue that will close their gap"
 }
 
 pub fn the_type_83_rows_aimed_at_other_units_or_timed_are_counted_as_not_handled_test() -> Nil {

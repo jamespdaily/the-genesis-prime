@@ -27,7 +27,7 @@ import genesis_prime/game/cast.{type GoAsked, GoAsked}
 import genesis_prime/game/class_resource.{Resource}
 import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
-import genesis_prime/game/hit.{type Offence, Blow, Offence, Rolls}
+import genesis_prime/game/hit.{type Offence, Blow, Offence, Rolls, Worked}
 import genesis_prime/game/shown.{ShownCreature, ShownPlayer}
 import genesis_prime/game/spell_area.{DamageEffect}
 import genesis_prime/game/spell_plan.{AimsAtArea}
@@ -317,14 +317,14 @@ pub fn a_strike_carries_the_casters_blows_by_the_clients_formula_with_its_gear_a
         Blow(
           spell4_effects_id: 96_125,
           damage_type: 2,
-          damage: 14,
+          damage: Worked(14),
           delay_ms: 0,
           threat_multiplier: 1.0,
         ),
         Blow(
           spell4_effects_id: 62_159,
           damage_type: 3,
-          damage: 35,
+          damage: Worked(35),
           delay_ms: 0,
           threat_multiplier: 2.0,
         ),
@@ -334,6 +334,112 @@ pub fn a_strike_carries_the_casters_blows_by_the_clients_formula_with_its_gear_a
       strikethrough: 0.0,
     )
     as "a level-1 Novice's gear gives Assault Rating 203.0625 and Support Rating 55.6875, so Assault Power 50.77 and Support Power 13.92 (0x14064c960): Paralytic Surge is 0.0935 x 50.77 + 0.0935 x 13.92 = 6.05, rounded to 6, plus 8.14 for the level, 14.14, rounded to 14; Telekinetic Strike is 0.336 x 50.77 = 17.06, rounded to 17, plus 18.0, 35 (0x140565600, Spell4Effects 96125 and 62159); the gear gives no critical hit, severity or strikethrough rating, so the player's base chances stand: 0, a severity of 1.5 and 0 (UnitProperty2 102, 127 and 104)"
+}
+
+/// A damage effect on every phase that aims at the area, with this formula.
+fn effect_of(formula formula: damage.Formula) -> spell_area.DamageEffect {
+  DamageEffect(
+    ..strike_support.damage_effect(),
+    effect_id: Spell4EffectsId(7),
+    formula:,
+  )
+}
+
+/// The offences each strike of a go carries, by the unit it is told to.
+fn offences_told(effects effects: List(Effect)) -> List(#(Int, Offence)) {
+  list.filter_map(tells(effects:), fn(effect) {
+    case effect {
+      strike.TellStrike(tell: strike_tell.Strike(offence:, ..), unit_id:, ..) ->
+        Ok(#(unit_id, offence))
+      strike.StartTimer(..)
+      | strike.CancelTimer(..)
+      | strike.Went(..)
+      | strike.Ticked(..)
+      | strike.Released(..)
+      | strike.Log(..) -> Error(Nil)
+    }
+  })
+}
+
+pub fn every_unit_of_a_go_is_told_the_same_unfinished_blow_test() -> Nil {
+  use <- owned_test.run(5000)
+  // 0x140566ad0 case 7 reads the maximum health of the unit that is struck, which only
+  // that unit's owner holds, so the go tells the formula as far as the caster's side goes.
+  let row =
+    effect_of(
+      formula: damage.Formula(multiplier: 1.0, base: 0.0, parameters: [
+        damage.Parameter(kind: 7, value: 0.1),
+      ]),
+    )
+  let chosen =
+    Selection(
+      ..selection(
+        asked: asked(cast_id: 5, phase: 0),
+        units: [10, 11],
+        damaging: True,
+      ),
+      blows: [row],
+    )
+  let #(_, effects) =
+    begun(state: strike.new(), selection: chosen, now_ms: 1000)
+  let partial =
+    damage.Partial(stat_part: 0, base: 0.0, multiplier: 1.0, terms: [
+      damage.OfTarget(kind: 7, factor: 0.1),
+    ])
+  let blow =
+    Blow(
+      spell4_effects_id: 7,
+      damage_type: 1,
+      damage: hit.ByTarget(partial),
+      delay_ms: 166,
+      threat_multiplier: 1.0,
+    )
+  let offences = offences_told(effects:)
+  assert list.map(offences, fn(told) { #(told.0, { told.1 }.blows) })
+    == [#(10, [blow]), #(11, [blow])]
+    as "both units are told the one blow with the target's term left open, each finishes it with its own maximum health"
+}
+
+pub fn the_casters_vitals_at_the_go_are_in_the_blow_test() -> Nil {
+  use <- owned_test.run(5000)
+  // 0x140566ad0 reads the caster's health (case 23, 0x40 slot) and the caster's maximum
+  // health less its health (case 25) of the unit that casts, here at 800 of 1000.
+  let formula = fn(kind) {
+    damage.Formula(multiplier: 1.0, base: 0.0, parameters: [
+      damage.Parameter(kind:, value: 0.5),
+    ])
+  }
+  let chosen =
+    Selection(
+      ..selection(
+        asked: asked(cast_id: 5, phase: 0),
+        units: [10],
+        damaging: True,
+      ),
+      blows: [effect_of(formula: formula(23)), effect_of(formula: formula(25))],
+    )
+  let #(_, effects) =
+    strike.begin(
+      strike: strike.new(),
+      selection: chosen,
+      attacker: Attacker(
+        ..strike_support.attacker(),
+        vitals: damage.Vitals(
+          health: 800,
+          max_health: 1000,
+          shield: 0,
+          max_shield: 0,
+        ),
+      ),
+      formulas: rating_support.formulas(),
+      entropy: entropy(rolls: [#(0, 0, 0)]),
+      gate: strike_support.passes_all(),
+      now: at(ms: 1000),
+    )
+  let assert [#(10, offence)] = offences_told(effects:)
+  assert list.map(offence.blows, fn(blow) { blow.damage })
+    == [Worked(400), Worked(100)]
+    as "0.5 x the health of 800, then 0.5 x the 200 missing, the caster's own vitals at the go"
 }
 
 pub fn answers_out_of_order_are_listed_in_selection_order_when_the_round_closes_test() -> Nil {
@@ -1534,8 +1640,12 @@ pub fn a_planted_100_percent_crit_modifier_makes_every_blow_crit_test() -> Nil {
   let roll = Rolls(crit: 0.99, deflect: 0.5, glance: 0.5)
   let outcome = fn(properties) {
     hit.apply(
-      health: 100,
-      shield: 0,
+      target: damage.Vitals(
+        health: 100,
+        max_health: 100,
+        shield: 0,
+        max_shield: 0,
+      ),
       absorbs: [],
       offence: offence_of_caster_with(properties:),
       defence: hit.unprotected,
@@ -1662,7 +1772,7 @@ fn surge_tick_blow(damage damage: Int) -> hit.Blow {
   Blow(
     spell4_effects_id: 96_125,
     damage_type: 2,
-    damage:,
+    damage: Worked(damage),
     delay_ms: 0,
     threat_multiplier: 1.0,
   )

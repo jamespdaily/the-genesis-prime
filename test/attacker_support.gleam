@@ -1,7 +1,7 @@
 //// The level-1 Novice the formula tests read: the one place its numbers are written.
 
 import genesis_prime/game/damage.{
-  type Attacker, type OnCaster, Attacker, OnCaster, Vitals,
+  type Attacker, type OnCaster, type Vitals, Attacker, OnCaster, Vitals,
 }
 import properties_support
 
@@ -17,11 +17,12 @@ pub fn novice() -> Attacker {
   Attacker(..fresh(), assault_rating: 203.0625, support_rating: 55.6875)
 }
 
-/// The same Novice as the caster and target of its own effect, at full health and shield
-/// (736 and 450).
+/// A level-1 Novice's health and shield, full (736 and 450).
+pub fn novice_vitals() -> Vitals {
+  Vitals(health: 736, max_health: 736, shield: 450, max_shield: 450)
+}
+
+/// The same Novice as the caster and target of its own effect, at full health and shield.
 pub fn novice_on_itself() -> OnCaster {
-  OnCaster(
-    attacker: novice(),
-    vitals: Vitals(health: 736, max_health: 736, shield: 450, max_shield: 450),
-  )
+  OnCaster(attacker: novice(), vitals: novice_vitals())
 }

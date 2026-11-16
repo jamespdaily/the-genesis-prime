@@ -31,6 +31,7 @@
 ////   creature does not know.
 
 import genesis_prime/game/area.{type Inside, type Row}
+import genesis_prime/game/damage
 import genesis_prime/game/hit.{type Defence, type Offence}
 import genesis_prime/game/strike_tell.{
   type Answered, type Tell, Answered, CreatureStriker, Landed, PlayerStriker,
@@ -224,8 +225,12 @@ pub fn struck(
     Alive(health:) ->
       case
         hit.apply(
-          health:,
-          shield: 0,
+          target: damage.Vitals(
+            health:,
+            max_health: body.max_health,
+            shield: 0,
+            max_shield: 0,
+          ),
           absorbs: [],
           offence: strike.offence,
           defence: body.combat.defence,

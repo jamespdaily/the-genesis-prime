@@ -131,7 +131,7 @@
 ////   alone (2) in a spell cast on the caster, is a `Heal` row carrying the vital it
 ////   restores (health or shield): its formula (dataBits00 as a float,
 ////   dataBits01 and the four parameters, which must be kinds the caster's value reads,
-////   genesis_prime/game/damage `caster_unread`), its delay, aim and caster apply
+////   genesis_prime/game/damage `unread`), its delay, aim and caster apply
 ////   prerequisite, which the cast rule checks, and target apply prerequisite, which it
 ////   checks for the unit the row heals; a row with a tickTime is a `TickingHeal`, with the schedule of
 ////   its ticks (genesis_prime/game/ticking), each tick its own 0x7f8. A periodic row that
@@ -1523,7 +1523,7 @@ pub type PlanError {
   /// (`Spell4.spellCastStealthChange`).
   StealthChangeNotRead(spell4_id: Int, value: Int)
   /// A Heal or HealShields effect of a tree has a parameter type the formula for an effect on
-  /// its caster does not read (`damage.caster_unread`).
+  /// its caster does not read (`damage.unread`).
   HealParameterNotRead(spell4_id: Int, effect_id: Int, parameter_kind: Int)
   /// A Heal or HealShields effect of a tree has a dataBits00 that is not a finite 32-bit float.
   HealNumberNotFinite(spell4_id: Int, effect_id: Int)
@@ -1550,7 +1550,7 @@ pub type PlanError {
     effect_id: Int,
   )
   /// An Absorption effect of a tree has a parameter type the formula for an effect on its
-  /// caster does not read (`damage.caster_unread`).
+  /// caster does not read (`damage.unread`).
   AbsorptionParameterNotRead(
     spell4_id: Int,
     effect_id: Int,
@@ -2741,7 +2741,7 @@ fn gain_row_of(
 /// One Heal (type 10) or HealShields (type 118) row that reaches the caster as a heal of
 /// the vital its type names, or the error that fails the load: its dataBits00 must be a finite 32-bit float and its formula must read only the
 /// parameter types an effect on its caster reads (genesis_prime/game/damage
-/// `caster_unread`). It aims at the caster when its targetFlags include it and else at
+/// `unread`). It aims at the caster when its targetFlags include it and else at
 /// the primary target. A row with a tickTime is periodic, a `TickingHeal` with its
 /// schedule (genesis_prime/game/ticking `schedule_of`), or `HealUntilRemovedNotRead` for
 /// one that lasts until removed.
@@ -3182,14 +3182,14 @@ fn reached_aim_of(effect effect: spell4_effects.Spell4Effects) -> Aim {
 
 /// A formula the caster's own value reads: `formula` as the row gave it, or `not_finite`
 /// when a number is not finite, or `not_read` of the first parameter type an effect on its
-/// caster does not read (genesis_prime/game/damage `caster_unread`).
+/// caster does not read (genesis_prime/game/damage `unread`).
 fn caster_formula_read(
   formula formula: Result(damage.Formula, Nil),
   not_finite not_finite: PlanError,
   not_read not_read: fn(Int) -> PlanError,
 ) -> Result(damage.Formula, PlanError) {
   use formula <- result.try(result.replace_error(formula, not_finite))
-  case damage.caster_unread(formula:) {
+  case damage.unread(formula:) {
     Some(damage.Unread(parameter_kind:)) -> Error(not_read(parameter_kind))
     None -> Ok(formula)
   }
@@ -3198,7 +3198,7 @@ fn caster_formula_read(
 /// The pool an Absorption row gives (`Spell4Effects.effectType.29`), or the error that
 /// fails the load: dataBits00 and dataBits01 must be finite 32-bit floats, the formula
 /// must read only the parameter types an effect on its caster reads
-/// (genesis_prime/game/damage `caster_unread`), the row must not be periodic (a tickTime)
+/// (genesis_prime/game/damage `unread`), the row must not be periodic (a tickTime)
 /// and must have a life (a durationTime or flags bit 2). dataBits04 is the damage types it
 /// takes, as a mask, and its targetFlags aim it at the caster when they include it and
 /// else at the primary target.

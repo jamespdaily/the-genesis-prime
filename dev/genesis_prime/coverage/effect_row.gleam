@@ -8,7 +8,8 @@
 //// ```
 ////
 //// - A row is read exactly when a list of the plan holds it and a go applies it, or, for a
-////   damage row, when the area load builds it; the measure calls the functions the load
+////   damage row, when the area load builds it and it strikes a unit but its caster
+////   (`spell_area.strikes_past_caster`); the measure calls the functions the load
 ////   calls and restates none of their rules.
 //// - A spell the plan refuses for a column of its own (a cost, a requirement, a cycle) is
 ////   not refused here: each of its rows is counted by its own columns. A row a Proxy or Proc
@@ -80,11 +81,12 @@ pub fn is_read(
   case spell_plan.read_row(tables:, spell_groups:, place:, effect:) {
     Ok(spell_plan.Applied(..)) | Ok(spell_plan.ReadByActivation) -> True
     Ok(spell_plan.ReadByArea) ->
-      result.is_ok(spell_area.damage_row_of(
-        tables:,
-        spell4_id: effect.spell_id,
-        effect:,
-      ))
+      case
+        spell_area.damage_row_of(tables:, spell4_id: effect.spell_id, effect:)
+      {
+        Ok(row) -> spell_area.strikes_past_caster(row:)
+        Error(..) -> False
+      }
     Ok(spell_plan.Held(..)) | Ok(spell_plan.LeftOut(..)) | Error(..) -> False
   }
 }

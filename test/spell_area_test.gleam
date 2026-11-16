@@ -606,8 +606,8 @@ pub fn until_removed_periodic_rows_are_left_out_test() -> Nil {
 
 pub fn a_damage_row_the_area_load_refuses_is_not_read_test() -> Nil {
   use <- owned_test.run(60_000)
-  // No level-1 tree spell holds a damage row with an infinite multiplier, targetFlags 3 or a
-  // parameter of type 7. Each edited Kick holds one damage row the area load refuses, and the measure asks the
+  // No level-1 tree spell holds a damage row with an infinite multiplier, targetFlags 9 or a
+  // parameter of type 18. Each edited Kick holds one damage row the area load refuses, and the measure asks the
   // same function (`spell_area.damage_row_of`) whether it reads the row.
   list.each(
     [
@@ -626,9 +626,13 @@ pub fn a_damage_row_the_area_load_refuses_is_not_read_test() -> Nil {
         "Spell4Effects.targetFlags: 1 to 7 are the aims the plan reads; 9 holds bit 8",
       ),
       #(
-        area_tables.Kick(..area_tables.kick(), parameters: [#(7, 0.5)]),
-        FormulaNotRead(spell4_id: 58_591, effect_id: 140_383, parameter_kind: 7),
-        "0x140565600: a player's value reads the level (type 10), the attributes and powers (1 to 5 and 11 to 13), and 6 and 9 add nothing, so a non-zero type 7, the target's maximum health, is refused",
+        area_tables.Kick(..area_tables.kick(), parameters: [#(18, 0.5)]),
+        FormulaNotRead(
+          spell4_id: 58_591,
+          effect_id: 140_383,
+          parameter_kind: 18,
+        ),
+        "0x140566ad0: type 18 is a value passed in by the caller, which a player's damage row has none of, so a non-zero type 18 is refused",
       ),
     ],
     fn(planted) {
@@ -638,6 +642,44 @@ pub fn a_damage_row_the_area_load_refuses_is_not_read_test() -> Nil {
         as "a row the area load refuses is not read"
     },
   )
+}
+
+pub fn a_client_damage_row_naming_a_vital_kind_is_read_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // 0x140566ad0: type 7 is the target's max health. Kick's damage row with that one
+  // parameter builds, and the measure reads it while it aims past the caster. Aimed at the
+  // caster alone (targetFlags 1) the row loads but strikes nobody, so the measure does not
+  // count it as read (#831).
+  let vital = area_tables.Kick(..area_tables.kick(), parameters: [#(7, 0.5)])
+  let assert Ok(_) = area_tables.built(kick: vital)
+    as "the area load builds a row that names a vital kind"
+  assert area_tables.read_by_the_measure(kick: vital)
+    as "a row that names a vital kind and strikes past its caster is read"
+  let on_caster = area_tables.Kick(..vital, effect_target_flags: 1)
+  let assert Ok(_) = area_tables.built(kick: on_caster)
+    as "the same row aimed at the caster alone still loads"
+  assert !area_tables.read_by_the_measure(kick: on_caster)
+    as "a row aimed at the caster alone strikes nobody, so it is not counted as read"
+}
+
+pub fn a_vital_kind_row_that_lasts_until_removed_is_still_left_out_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // A periodic row with flags bit 2 and no durationTime has no schedule (#803), whatever
+  // its formula names.
+  assert spell_area.damage_row_of(
+      tables: fixture_tables.shared(),
+      spell4_id: 32_809,
+      effect: spell4_effects.Spell4Effects(
+        ..fixture_effect(id: 61_994),
+        tick_time: 1000,
+        duration_time: 0,
+        flags: 2,
+        parameter_type00: 7,
+        parameter_value00: 0.5,
+      ),
+    )
+    == Error(TickingUntilRemoved(spell4_id: 32_809, effect_id: 61_994))
+    as "a kind 7 row that lasts until removed is left out for its schedule, not its formula"
 }
 
 pub fn the_clients_tables_build_every_areas_kick_has_5_units_8_m_180_degrees_and_a_cone_test() -> Nil {

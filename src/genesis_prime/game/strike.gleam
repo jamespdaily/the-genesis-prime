@@ -146,7 +146,8 @@ const bytes_per_unit = hit.roll_bytes
 /// faces, the place it stands at with the move sequence number of that place and
 /// the stay its strikes are told for, which their answers come back in
 /// (genesis_prime/game/strike_tell `PlayerStriker`), its hit radius, its player faction, what its
-/// damage formulas read (`stats`) and its properties, whose BaseCritChance,
+/// damage formulas read (`stats`), its health and shield as they are when the go or
+/// the tick is asked (`vitals`) and its properties, whose BaseCritChance,
 /// CriticalHitSeverityMultiplier and BaseAvoidReduceChance values, a modifier's
 /// included, are the bases of its hit chances (`offence_of`).
 pub type Attacker {
@@ -160,6 +161,7 @@ pub type Attacker {
     hit_radius: Float,
     faction: PlayerFaction,
     stats: damage.Attacker,
+    vitals: damage.Vitals,
     properties: Properties,
   )
 }
@@ -808,22 +810,33 @@ fn controls_told(
   #(strike, list.filter(told, fn(entry) { entry.1 != [] }))
 }
 
-/// The player's offence with these blows, each worked out from the player as it is now.
+/// The player's offence with these blows, each worked out from the player as it is now,
+/// or as far as the player's side goes when its formula names a kind of the target's.
 fn offence_of(
   blows blows: List(spell_area.DamageEffect),
   attacker attacker: Attacker,
   formulas formulas: Formulas,
 ) -> hit.Offence {
   let level = attacker.stats.level
+  let caster =
+    damage.OnCaster(attacker: attacker.stats, vitals: attacker.vitals)
   hit.Offence(
     blows: list.map(blows, fn(effect) {
       hit.Blow(
         spell4_effects_id: effect.effect_id.value,
         damage_type: effect.damage_type,
-        damage: float.round(damage.value(
-          formula: effect.formula,
-          attacker: attacker.stats,
-        )),
+        damage: case damage.names_target_kind(formula: effect.formula) {
+          True -> hit.ByTarget(damage.partial(formula: effect.formula, caster:))
+          // No kind of the target's: the caster's own vitals at the go are all it reads
+          // (0x140566ad0 cases 8, 14, 16, 23, 25 and 26 of param_1).
+          False ->
+            hit.Worked(
+              float.round(damage.value_on_caster(
+                formula: effect.formula,
+                caster:,
+              )),
+            )
+        },
         delay_ms: effect.delay_ms,
         threat_multiplier: effect.threat_multiplier,
       )

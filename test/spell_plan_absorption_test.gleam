@@ -315,7 +315,7 @@ pub fn the_water_shield_row_68969_loads_as_an_absorb_test() -> Nil {
 
 pub fn an_absorption_row_with_a_formula_kind_not_read_fails_the_load_test() -> Nil {
   use <- owned_test.run(60_000)
-  // Kind 18 is the passed-in value: `damage.caster_unread` refuses it for an effect on its
+  // Kind 18 is the passed-in value: `damage.unread` refuses it for an effect on its
   // caster (0x140565600).
   let with_kind = fn(kind) {
     plan_error(

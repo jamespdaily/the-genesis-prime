@@ -218,6 +218,7 @@
 //// | the map's notice, a peer's news or a creature's threat, release or strike sent for P's earlier stay arrives after the Holocrypt's join, a camp and a new entry, or a join to a restarted run that gives the same unit id | dropped: it names the earlier stay | `messages_of_the_stay_before_the_holocrypt_are_dropped_after_its_join_test`, `messages_of_the_stay_before_a_camp_are_dropped_after_the_next_entry_test`, `messages_of_the_stay_before_are_dropped_in_a_restarted_run_that_gives_the_same_unit_id_test` |
 
 import genesis_prime/client_connection.{type News}
+import genesis_prime/game/damage
 import genesis_prime/game/effect_kind
 import genesis_prime/game/heal_split
 import genesis_prime/game/hit.{type Defence, type Rolls}
@@ -753,8 +754,7 @@ pub fn struck(
     Alive ->
       case
         hit.apply(
-          health: life.health,
-          shield: life.shield,
+          target: vitals(life:),
           absorbs: life.absorbs,
           offence: strike.offence,
           defence:,
@@ -1407,6 +1407,17 @@ pub fn max_health(life life: Life) -> Int {
 /// The player's full shield.
 pub fn max_shield(life life: Life) -> Int {
   life.max_shield
+}
+
+/// The player's health and shield with their maxima, as a damage formula's flat kinds
+/// read a unit.
+pub fn vitals(life life: Life) -> damage.Vitals {
+  damage.Vitals(
+    health: life.health,
+    max_health: life.max_health,
+    shield: life.shield,
+    max_shield: life.max_shield,
+  )
 }
 
 /// Whether the player is in combat: a creature holds it on its threat list.

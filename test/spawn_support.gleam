@@ -17,7 +17,7 @@ import genesis_prime/content/spawn as content_spawn
 import genesis_prime/content/tutorial_quest as content_tutorial_quest
 import genesis_prime/content/vendor as content_vendor
 import genesis_prime/content/zone_welcome as content_zone_welcome
-import genesis_prime/game/hit.{Blow, Defence, Offence}
+import genesis_prime/game/hit.{Blow, Defence, Offence, Worked}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/vendor
 import genesis_prime/table/creature2
@@ -433,7 +433,7 @@ pub fn beast_attack() -> Attack {
         Blow(
           spell4_effects_id: 184_741,
           damage_type: 1,
-          damage: 12,
+          damage: Worked(12),
           delay_ms: 0,
           threat_multiplier: 1.0,
         ),
@@ -568,7 +568,9 @@ pub fn dealing(
 ) -> hit.Offence {
   Offence(
     ..offence,
-    blows: list.map(offence.blows, fn(blow) { Blow(..blow, damage:) }),
+    blows: list.map(offence.blows, fn(blow) {
+      Blow(..blow, damage: Worked(damage))
+    }),
   )
 }
 

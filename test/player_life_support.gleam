@@ -3,7 +3,7 @@
 //// on it.
 
 import character_tables
-import genesis_prime/game/hit.{type Defence, type Offence, Rolls}
+import genesis_prime/game/hit.{type Defence, type Offence, Rolls, Worked}
 import genesis_prime/game/loadout
 import genesis_prime/game/player_life.{
   type Effect, type Life, CancelTimer, Regeneration, ShieldRegeneration,
@@ -137,7 +137,7 @@ pub fn offence_of(
       hit.Blow(
         spell4_effects_id: 62_159,
         damage_type:,
-        damage:,
+        damage: Worked(damage),
         delay_ms: 0,
         threat_multiplier: 1.0,
       ),

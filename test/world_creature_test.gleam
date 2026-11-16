@@ -21,6 +21,7 @@
 //// 60 s. Every wait is for an event, with a deadline a passing test never reaches.
 
 import ask_support
+import attacker_support
 import cast_support
 import character_tables
 import driven_time
@@ -33,8 +34,9 @@ import genesis_prime/client_connection.{
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/cast
 import genesis_prime/game/connection/frames
+import genesis_prime/game/damage
 import genesis_prime/game/forced_move
-import genesis_prime/game/hit.{Blow, Offence, Rolls}
+import genesis_prime/game/hit.{Blow, Offence, Rolls, Worked}
 import genesis_prime/game/hit_radius
 import genesis_prime/game/spell_plan
 import genesis_prime/game/spend
@@ -60,6 +62,7 @@ import genesis_prime/service/shell
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/store.{type Character, Character}
 import genesis_prime/table/id.{Creature2Id, Spell4BaseId, Spell4EffectsId}
+import genesis_prime/table/spell4_effects
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_faction
 import genesis_prime/world_map/creature_path
@@ -712,6 +715,24 @@ fn strike_message(
   cast_id cast_id: Int,
   occasion occasion: strike_tell.Occasion,
 ) -> creature.Message {
+  strike_message_of(
+    unit_id:,
+    damage_type:,
+    amount: Worked(damage),
+    cast_id:,
+    occasion:,
+  )
+}
+
+/// The strike of connection 1 on the Beast `unit_id` for `occasion`, with one blow of
+/// `amount` of `damage_type` and no luck.
+fn strike_message_of(
+  unit_id unit_id: Int,
+  damage_type damage_type: Int,
+  amount amount: hit.Amount,
+  cast_id cast_id: Int,
+  occasion occasion: strike_tell.Occasion,
+) -> creature.Message {
   creature.Strike(
     tell: Strike(
       key: Key(cast_id:, occasion:, unit_id:),
@@ -721,7 +742,7 @@ fn strike_message(
           Blow(
             spell4_effects_id: 1,
             damage_type:,
-            damage:,
+            damage: amount,
             delay_ms: 0,
             threat_multiplier: 1.0,
           ),
@@ -748,6 +769,80 @@ fn strike_message(
       gates: [],
     ),
   )
+}
+
+/// The blow of Spell4Effects 44477 (spell 26967, `table_rows -- Spell4Effects 44477`) as
+/// the player's spell load builds it: effectType 8, targetFlags 2 (the primary target),
+/// damageType 2, dataBits00 1065353216 (a multiplier of 1.0), dataBits01 0, and one
+/// formula parameter, type 7 (the struck unit's maximum health) at 0.2.
+fn max_health_row_blow() -> hit.Amount {
+  let base =
+    fixture_tables.shared()
+    |> spell4_effects.get(id: Spell4EffectsId(96_125))
+  let assert Ok(base) = base
+    as "the fixture holds a damage row to copy the columns of"
+  let row =
+    spell4_effects.Spell4Effects(
+      ..base,
+      id: 44_477,
+      effect_type: 8,
+      target_flags: 2,
+      damage_type: 2,
+      tick_time: 0,
+      duration_time: 0,
+      data_bits00: 1_065_353_216,
+      data_bits01: 0,
+      parameter_type00: 7,
+      parameter_value00: 0.20000000298023224,
+      parameter_type01: 0,
+      parameter_value01: 0.0,
+      parameter_type02: 0,
+      parameter_value02: 0.0,
+      parameter_type03: 0,
+      parameter_value03: 0.0,
+    )
+  let assert Ok(formula) = damage.formula_of(effect: row)
+    as "the multiplier bits are a finite float"
+  hit.ByTarget(damage.partial(
+    formula:,
+    caster: attacker_support.novice_on_itself(),
+  ))
+}
+
+pub fn a_players_max_health_spell_takes_its_share_of_a_real_creatures_health_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let world = one_beast(respawn_ms: 60_000)
+  let run = started(world)
+  let received = world_support.connection(world:, id: 1)
+  let _player = join(run:, connection: 1)
+  let first = next(received:, what: "the creature's 0x262", wanted: appearance)
+  let _found = creature_pid(world:, run:, unit_id: first.unit_id, life: 2)
+  let assert Ok(Nil) =
+    creature_registry.tell(
+      world.creatures,
+      map: ship,
+      incarnation: run.incarnation,
+      unit_id: first.unit_id,
+      life: 2,
+      message: strike_message_of(
+        unit_id: first.unit_id,
+        damage_type: 2,
+        amount: max_health_row_blow(),
+        cast_id: 1,
+        occasion: strike_tell.AtGo(phase: 0),
+      ),
+    )
+    as "the creature is found by its address and told"
+  // 0x140566ad0 case 7 reads the struck unit's maximum health, which the Battle Beast
+  // spawns with 52 (`Creature2.73464`, as the 0x262's health stat shows); 0x140565600
+  // gives 0 + (0 + 0.2 x 52) x 1.0 = 10.4 of damage, which the strike takes as 10.
+  assert list.contains(
+    first.tail.stats,
+    unit_fields.integer_stat(stat_id: 0, value: 52),
+  )
+    as "the Beast's maximum health is 52"
+  assert health_taken(received:, cast_id: 1) == 10
+    as "0.2 of the Beast's maximum health of 52 is 10.4, taken as 10"
 }
 
 pub fn a_creature_struck_dead_is_answered_shown_dead_and_stands_again_after_its_kinds_respawn_time_test() -> Nil {
