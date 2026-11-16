@@ -655,6 +655,7 @@ ID	itemSourceId	item2TypeId	itemMinLevel	itemMaxLevel	itemDisplayId	icon
 6024	110	301	1	999	0	IconSprites:Icon_ItemWeapon_Weapon_Attachment_01
 6025	111	301	1	999	0	IconSprites:Icon_ItemWeapon_Weapon_Attachment_02
 6026	112	301	1	999	0	IconSprites:Icon_ItemMisc_Support_System_01
+6027	113	301	1	999	0	IconSprites:Icon_ItemMisc_Support_System_02
 6028	114	301	1	999	0	IconSprites:Icon_ItemMisc_Support_System_05
 6029	115	53	1	999	0	IconSprites:Icon_ItemMisc_Shields_01
 6030	116	53	1	999	0	IconSprites:Icon_ItemMisc_Shields_02

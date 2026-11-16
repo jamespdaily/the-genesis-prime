@@ -37,6 +37,7 @@ ID	assetPath	flags	type	screenPath	screenModelPath	chunkBounds00	chunkBounds01	c
 1895	Map\\Housing1x1DungeonCreeperCave	0	1			1008	1008	1039	1039	0	0	0	0	0	0	0	0	0
 1901	Map\\Housing1x1DungeonMayday	0	1			1008	1008	1055	1055	0	0	0	0	0	0	0	0	0
 1982	Map\\GrimvaultCore	1	0			993	993	1055	1055	0	0	0	0	0	0	0	0	0
+2149	Map\\ShiphandSpaceMadness	449	1	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_OffWorld_000.m3	1008	1008	1040	1040	0	766945	0	0	0	15	2	0	21
 2161	Map\\Q6734Micro	0	10			1008	1008	1040	1040	0	0	0	0	0	0	0	0	0
 2166	Map\\ExcavationSabotage	0	3			944	944	1087	1087	0	769446	0	0	0	0	0	0	40
 2173	Map\\DruseraMicroInstance1	0	10	UI\\Screens\\UI_CRB_WorldID22_LoadScreen.tex	Art\\Prop\\Character_Creation\\Loading\\PRP_Loading_Isigrol_000.m3	998	1001	1049	1060	0	0	0	0	0	0	0	0	0

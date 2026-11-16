@@ -211,6 +211,20 @@ pub fn a_kind_row_for_a_creature_the_client_does_not_hold_stops_the_load_test() 
     == [#("creature_kind", refusal.RowId(200_001))]
 }
 
+pub fn a_held_row_naming_an_objective_the_client_does_not_hold_stops_the_load_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let database = database_support.new_database(on: database_support.shared())
+  content_support.change(
+    database:,
+    sql: "insert into held_objective (objective_id, kind, source, reason) values (4000000, 'instance_run', 'server_choice', 'an objective the client does not hold')",
+  )
+  let #(loaded, _key) = content_support.load(database:)
+  let assert Error(content.Refused(refusals:)) = loaded
+    as "a refused held row stops the start"
+  assert list.map(refusals, fn(refused) { #(refused.table, refused.row) })
+    == [#("held_objective", refusal.RowId(4_000_000))]
+}
+
 pub fn a_refused_kind_row_does_not_hide_a_refused_spawn_test() -> Nil {
   use <- owned_test.run(60_000)
   let database = database_support.new_database(on: database_support.shared())

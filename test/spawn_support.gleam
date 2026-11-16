@@ -11,6 +11,7 @@ import database_support
 import genesis_prime/content/class_resource as content_class_resource
 import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/game_number as content_game_number
+import genesis_prime/content/held_objective as content_held_objective
 import genesis_prime/content/projector_landing as content_projector_landing
 import genesis_prime/content/server_proxy as content_server_proxy
 import genesis_prime/content/spawn as content_spawn
@@ -542,6 +543,7 @@ fn put_worlds(
   content_server_proxy.put(key:, proxies: server_proxy_support.none())
   content_zone_welcome.put(key:, welcomes: zone_welcome_support.none())
   content_tutorial_quest.put(key:, chain: tutorial_support.none())
+  content_held_objective.put(key:, held: set.new())
   content_projector_landing.put(key:, landings: projector_support.none())
   content_vendor.put(key:, vendors: vendor.none())
   content_creature_kind.put(
