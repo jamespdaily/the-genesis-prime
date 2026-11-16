@@ -41,12 +41,7 @@
 
 import genesis_prime/content/refusal
 import genesis_prime/game/activate.{type Link, OpenLink}
-import genesis_prime/game/objective_kind.{
-  CastSpell, ChecklistActivate, ChecklistTalk, ChecklistUse, CollectItem,
-  CollectVirtualItem, CraftItem, FinishQuest, KillByCluster, KillByDifficulty,
-  KillCreature, KillGroup, Placeholder, ReachPlace, Scripted, ServerChecklist,
-  TalkTo, Unconditional, Unread, UseCreature, UseGroup, VisitZone,
-}
+import genesis_prime/game/objective_kind
 import genesis_prime/game/quest_log
 import genesis_prime/game/shown
 import genesis_prime/game/start_place.{type Place}
@@ -218,8 +213,11 @@ fn objective_broken(
     ]
     Ok(objective) ->
       list.flatten([
-        case objective_kind.of_row(objective) {
-          UseCreature(creature2_id:) ->
+        case
+          objective_kind.used_creature(objective_kind.of_row(objective)),
+          objective_kind.visited_zone(objective_kind.of_row(objective))
+        {
+          Ok(creature2_id), _ ->
             case creature2_id.value == row.creature_id {
               True -> []
               False -> [
@@ -230,7 +228,7 @@ fn objective_broken(
                 <> int.to_string(row.creature_id),
               ]
             }
-          VisitZone(world_zone_id: zone_id) ->
+          Error(Nil), Ok(zone_id) ->
             case
               list.contains(
                 top_zone.chain_or_zone(tables:, world_zone_id:),
@@ -247,26 +245,7 @@ fn objective_broken(
                 <> " is not in",
               ]
             }
-          Unconditional
-          | KillCreature(_)
-          | TalkTo(_)
-          | CollectItem(_)
-          | Scripted
-          | KillGroup(_)
-          | ServerChecklist
-          | CastSpell(_)
-          | ChecklistUse(_)
-          | KillByCluster(_)
-          | ChecklistTalk(_)
-          | ReachPlace
-          | UseGroup(_)
-          | FinishQuest(_)
-          | ChecklistActivate(_)
-          | Placeholder
-          | CollectVirtualItem(_)
-          | CraftItem(_)
-          | KillByDifficulty(_)
-          | Unread(_) -> [
+          Error(Nil), Error(Nil) -> [
             objective_text
             <> " is of type "
             <> int.to_string(objective.type_)

@@ -51,12 +51,7 @@
 ////   time the client was last told (0x140489aa0).
 
 import genesis_prime/connection/frame.{type Frame, Frame}
-import genesis_prime/game/objective_kind.{
-  CastSpell, ChecklistActivate, ChecklistTalk, ChecklistUse, CollectItem,
-  CollectVirtualItem, CraftItem, FinishQuest, KillByCluster, KillByDifficulty,
-  KillCreature, KillGroup, Placeholder, ReachPlace, Scripted, ServerChecklist,
-  TalkTo, Unconditional, Unread, UseCreature, UseGroup, VisitZone,
-}
+import genesis_prime/game/objective_kind
 import genesis_prime/message/float32
 import genesis_prime/message/quest_active.{type QuestActive, QuestActive}
 import genesis_prime/message/quest_completed.{
@@ -268,7 +263,7 @@ fn is_placeholder(
   tables tables: table_store.Tables,
 ) -> Bool {
   case quest_objective.get(tables:, id: QuestObjectiveId(objective)) {
-    Ok(row) -> objective_kind.of_row(row) == Placeholder
+    Ok(row) -> objective_kind.of_row(row) == objective_kind.Placeholder
     Error(Nil) -> False
   }
 }
@@ -1622,32 +1617,12 @@ pub fn reused_unit_objectives(
 ) -> Set(Int) {
   quest_objective.all(tables)
   |> list.filter(fn(row) {
-    case objective_kind.of_row(row) {
-      UseCreature(creature2_id:) ->
+    case objective_kind.used_creature(objective_kind.of_row(row)) {
+      Ok(creature2_id) ->
         row.count > 1
         && result.unwrap(dict.get(spawn_counts, creature2_id.value), 0)
         < row.count
-      Unconditional
-      | KillCreature(_)
-      | TalkTo(_)
-      | CollectItem(_)
-      | Scripted
-      | KillGroup(_)
-      | ServerChecklist
-      | CastSpell(_)
-      | ChecklistUse(_)
-      | KillByCluster(_)
-      | VisitZone(_)
-      | ChecklistTalk(_)
-      | ReachPlace
-      | UseGroup(_)
-      | FinishQuest(_)
-      | ChecklistActivate(_)
-      | Placeholder
-      | CollectVirtualItem(_)
-      | CraftItem(_)
-      | KillByDifficulty(_)
-      | Unread(_) -> False
+      Error(Nil) -> False
     }
   })
   |> list.map(fn(row) { row.id })

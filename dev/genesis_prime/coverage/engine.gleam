@@ -186,18 +186,26 @@ fn quest_objectives() -> EngineDeclaration {
     // (types 4 and 33) objectives take the held count and visit (type 17) objectives the
     // player's zone chain, both after every change of either. A use of a creature whose
     // row names the objective counts a scripted objective (type 5) or a collectible
-    // (type 32), which the partial list states the gaps of. Checklist objectives (types 14 and 18 by a TargetGroup, type 28 by
-    // a PathSoldierActivate row) count a talk to or an activate of a target as the target's
-    // bit of the objective's 32-bit mask, and the objective is done at its count of bits
+    // (type 32), which the partial list states the gaps of. Checklist objectives (types
+    // 14 and 18 by a TargetGroup, type 28 by a PathSoldierActivate row) count a talk to or
+    // an activate of a target as the target's bit of the objective's 32-bit mask, and the
+    // objective is done at its count of bits
     // (genesis_prime/game/objective; the index of each target is
     // genesis_prime/world_map/checklist_index). A finish (type 24) objective takes the
     // completion of the quest its data names, now or earlier in its repeat period. A cast
     // of the spell of a type 11 objective completes it (objective_test
-    // a_cast_of_the_objective_spell_completes_it_test). Types 10 and 13 are not counted. A use of a unit of the TargetGroup of a type 23 objective
-    // counts one for each unit, once (the once is the server's choice), and a departures
-    // choice objective counts only its own terminal (genesis_prime/game/objective).
+    // a_cast_of_the_objective_spell_completes_it_test), which the partial list states the
+    // gaps of. Types 10 and 13 are not counted. A use of a unit of the TargetGroup of a
+    // type 23 objective counts one for each unit, once (the once is the server's choice),
+    // and a departures choice objective counts only its own terminal
+    // (genesis_prime/game/objective).
     handled: Decoded(is_read: objective_kind.is_counted),
     partial: [
+      Missing(
+        type_number: 11,
+        reason: "a cast of the objective's spell completes it, but the client never ties the spell to the objective's data, so that link is a guess until a retail recording of quest 3915, 4832 or 7618 shows it; 6 rows cannot finish, since the client refuses the press of a spell with no Spell4 row (data 0 in 7378, 8042, 9882, 16525 and 16577; Spell4 46171 in 15816); Spell4 43461 cannot be planned, so its press is refused, behind a target gate whose prerequisite condition of type 12 the server does not read (#818); 11 rows (8389, 9399, 9401, 9768, 9770, 9771, 14966, 15332, 15363, 17880, 17933) have a cast condition the server cannot judge: a caster cast of prerequisite type 16 or 102 (#818), or a target cast of type 4, 71 or 102 that needs the struck creature's own facts (#851 for 4 and 71, #818 for 102)",
+        fact_key: "QuestObjective.type.11",
+      ),
       Missing(
         type_number: 22,
         reason: "an arrival at a marker completes a place objective of count 1; the 43 with no marker and the 2 with a count above 1 (14205, 14577) are not counted, which the issue \"Place objectives with no marker or a count above one complete (objective type 22)\" closes",

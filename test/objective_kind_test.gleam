@@ -17,10 +17,10 @@ import fixture_tables
 import genesis_prime/coverage/engine
 import genesis_prime/game/objective_kind.{
   type Kind, CastSpell, ChecklistActivate, ChecklistTalk, ChecklistUse,
-  CollectItem, CollectVirtualItem, CraftItem, FinishQuest, KillByCluster,
-  KillByDifficulty, KillCreature, KillGroup, Placeholder, ReachPlace, Scripted,
-  ServerChecklist, TalkTo, Unconditional, Unread, UseCreature, UseGroup,
-  VisitZone,
+  CollectItem, CollectVirtualItem, CraftItem, FinishQuest, GroupOf,
+  KillByCluster, KillByDifficulty, KillCreature, KillGroup, OneCreature,
+  Placeholder, ReachPlace, Scripted, ServerChecklist, TalkTo, Unconditional,
+  UnitOfSoldier, UnitsOfGroup, Unread, UseCreature, UseGroup, VisitZone,
 }
 import genesis_prime/table/id.{
   Creature2DifficultyId, Creature2Id, Item2Id, PathSoldierActivateId, Quest2Id,
@@ -200,30 +200,8 @@ pub fn objective_kind_has_a_variant_for_every_type_the_real_tables_use_that_the_
     as "QuestObjective.tbl holds 40 distinct types (counted over its 10031 rows)"
   let unread =
     list.filter(types, fn(type_number) {
-      case objective_kind.of_row(row_of_type(rows:, type_number:)) {
-        Unread(_) -> True
-        Unconditional
-        | KillCreature(_)
-        | TalkTo(_)
-        | CollectItem(_)
-        | Scripted
-        | KillGroup(_)
-        | ServerChecklist
-        | CastSpell(_)
-        | UseCreature(_)
-        | ChecklistUse(_)
-        | KillByCluster(_)
-        | VisitZone(_)
-        | ChecklistTalk(_)
-        | ReachPlace
-        | UseGroup(_)
-        | FinishQuest(_)
-        | ChecklistActivate(_)
-        | Placeholder
-        | CollectVirtualItem(_)
-        | CraftItem(_)
-        | KillByDifficulty(_) -> False
-      }
+      objective_kind.of_row(row_of_type(rows:, type_number:))
+      == Unread(type_number:)
     })
     |> list.sort(by: int.compare)
   assert unread == unread_types
@@ -237,6 +215,95 @@ fn row_of_type(
   let assert Ok(row) = list.find(rows, fn(row) { row.type_ == type_number })
     as "a row of the type"
   row
+}
+
+/// Asserts an accessor answers `Ok` with the listed value for the listed types, and
+/// `Error(Nil)` for every other type number.
+fn assert_answers(
+  accessor accessor: fn(Kind) -> Result(a, Nil),
+  yes yes: List(#(Int, a)),
+  evidence evidence: String,
+) -> Nil {
+  list.each(numbers_to_60(), fn(type_number) {
+    let expected = case list.key_find(yes, type_number) {
+      Ok(value) -> Ok(value)
+      Error(Nil) -> Error(Nil)
+    }
+    assert accessor(objective_kind.kind_of(type_number:, data:)) == expected
+      as { "type " <> int.to_string(type_number) <> ": " <> evidence }
+  })
+}
+
+pub fn objective_kind_used_creature_is_type_12_test() -> Nil {
+  use <- owned_test.run(10_000)
+  assert_answers(
+    accessor: objective_kind.used_creature,
+    yes: [#(12, Creature2Id(data))],
+    evidence: "QuestObjective.type.12 is a use of the Creature2 its data names",
+  )
+}
+
+pub fn objective_kind_visited_zone_is_type_17_test() -> Nil {
+  use <- owned_test.run(10_000)
+  assert_answers(
+    accessor: objective_kind.visited_zone,
+    yes: [#(17, WorldZoneId(data))],
+    evidence: "QuestObjective.type.17 is a visit of the WorldZone its data names",
+  )
+}
+
+pub fn objective_kind_cast_spell_is_type_11_test() -> Nil {
+  use <- owned_test.run(10_000)
+  assert_answers(
+    accessor: objective_kind.cast_spell,
+    yes: [#(11, Spell4Id(data))],
+    evidence: "QuestObjective.type.11 is a cast of the Spell4 its data names",
+  )
+}
+
+pub fn objective_kind_used_group_is_type_23_test() -> Nil {
+  use <- owned_test.run(10_000)
+  assert_answers(
+    accessor: objective_kind.used_group,
+    yes: [#(23, TargetGroupId(data))],
+    evidence: "QuestObjective.type.23 is a use of a unit of the TargetGroup its data names",
+  )
+}
+
+pub fn objective_kind_used_checklist_group_is_type_14_test() -> Nil {
+  use <- owned_test.run(10_000)
+  assert_answers(
+    accessor: objective_kind.used_checklist_group,
+    yes: [#(14, TargetGroupId(data))],
+    evidence: "QuestObjective.type.14 is a use of each unit of the TargetGroup its data names, counted as bits (0x1405517a0)",
+  )
+}
+
+pub fn objective_kind_placed_target_is_a_kill_of_type_2_8_or_16_test() -> Nil {
+  use <- owned_test.run(10_000)
+  assert_answers(
+    accessor: objective_kind.placed_target,
+    yes: [
+      #(2, OneCreature(Creature2Id(data))),
+      #(8, GroupOf(TargetGroupId(data))),
+      #(16, GroupOf(TargetGroupId(data))),
+    ],
+    evidence: "QuestObjective.type.2 names a Creature2 and QuestObjective.type.8 and QuestObjective.type.16 a TargetGroup to kill; no other type names a unit to place",
+  )
+}
+
+pub fn objective_kind_checklist_target_is_a_group_for_14_and_18_and_a_soldier_for_27_and_28_test() -> Nil {
+  use <- owned_test.run(10_000)
+  assert_answers(
+    accessor: objective_kind.checklist_target,
+    yes: [
+      #(14, UnitsOfGroup(TargetGroupId(data))),
+      #(18, UnitsOfGroup(TargetGroupId(data))),
+      #(27, UnitOfSoldier(PathSoldierActivateId(data))),
+      #(28, UnitOfSoldier(PathSoldierActivateId(data))),
+    ],
+    evidence: "0x1405517a0 counts 14 and 18 by the units of the TargetGroup in the data (QuestObjective.type.14, QuestObjective.type.18) and 27 and 28 by the unit of the PathSoldierActivate row in the data (QuestObjective.type.28); 10 and 13 take their progress from the server only",
+  )
 }
 
 pub fn coverage_quest_objective_handled_ids_agree_with_objective_kind_test() -> Nil {

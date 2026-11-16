@@ -76,12 +76,7 @@ import genesis_prime/game/damage
 import genesis_prime/game/faction_level
 import genesis_prime/game/hit
 import genesis_prime/game/hit_radius
-import genesis_prime/game/objective_kind.{
-  CastSpell, ChecklistActivate, ChecklistTalk, ChecklistUse, CollectItem,
-  CollectVirtualItem, CraftItem, FinishQuest, KillByCluster, KillByDifficulty,
-  KillCreature, KillGroup, Placeholder, ReachPlace, Scripted, ServerChecklist,
-  TalkTo, Unconditional, Unread, UseCreature, UseGroup, VisitZone,
-}
+import genesis_prime/game/objective_kind
 import genesis_prime/game/objective_link
 import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/rating.{type Formulas}
@@ -349,30 +344,8 @@ pub fn captives(
   let named =
     quest_objective.all(tables)
     |> list.filter_map(fn(row) {
-      case objective_kind.of_row(row) {
-        UseCreature(creature2_id:) -> Ok(creature2_id.value)
-        Unconditional
-        | KillCreature(_)
-        | TalkTo(_)
-        | CollectItem(_)
-        | Scripted
-        | KillGroup(_)
-        | ServerChecklist
-        | CastSpell(_)
-        | ChecklistUse(_)
-        | KillByCluster(_)
-        | VisitZone(_)
-        | ChecklistTalk(_)
-        | ReachPlace
-        | UseGroup(_)
-        | FinishQuest(_)
-        | ChecklistActivate(_)
-        | Placeholder
-        | CollectVirtualItem(_)
-        | CraftItem(_)
-        | KillByDifficulty(_)
-        | Unread(_) -> Error(Nil)
-      }
+      objective_kind.used_creature(objective_kind.of_row(row))
+      |> result.map(fn(creature2_id) { creature2_id.value })
     })
     |> set.from_list
   let is_named = fn(creature_id: Creature2Id) {

@@ -14,13 +14,7 @@
 //// distinct targets up to its count. A spawn that no checklist counts takes 0, the
 //// index the client reads of a unit no objective counts.
 
-import genesis_prime/game/objective_kind.{
-  type Kind, CastSpell, ChecklistActivate, ChecklistTalk, ChecklistUse,
-  CollectItem, CollectVirtualItem, CraftItem, FinishQuest, KillByCluster,
-  KillByDifficulty, KillCreature, KillGroup, Placeholder, ReachPlace, Scripted,
-  ServerChecklist, TalkTo, Unconditional, Unread, UseCreature, UseGroup,
-  VisitZone,
-}
+import genesis_prime/game/objective_kind.{type Kind, UnitOfSoldier, UnitsOfGroup}
 import genesis_prime/game/target_group.{type Unit}
 import genesis_prime/table/id.{Creature2Id, QuestObjectiveId}
 import genesis_prime/table/loader/store as table_store
@@ -111,12 +105,12 @@ fn target_test(
   tables tables: table_store.Tables,
   kind kind: Kind,
 ) -> Result(fn(Unit) -> Bool, Nil) {
-  case kind {
-    ChecklistUse(target_group_id:) | ChecklistTalk(target_group_id:) ->
+  case objective_kind.checklist_target(kind) {
+    Ok(UnitsOfGroup(target_group_id:)) ->
       Ok(fn(unit) {
         target_group.contains(tables:, group: target_group_id.value, unit:)
       })
-    ChecklistActivate(path_soldier_activate_id:) -> {
+    Ok(UnitOfSoldier(path_soldier_activate_id:)) -> {
       use <- bool.guard(
         when: !objective_kind.is_checklist(tables:, kind:),
         return: Error(Nil),
@@ -127,25 +121,7 @@ fn target_test(
       ))
       fn(unit: Unit) { unit.creature_id == Creature2Id(row.creature2_id) }
     }
-    Unconditional
-    | KillCreature(_)
-    | TalkTo(_)
-    | CollectItem(_)
-    | Scripted
-    | KillGroup(_)
-    | ServerChecklist
-    | CastSpell(_)
-    | UseCreature(_)
-    | KillByCluster(_)
-    | VisitZone(_)
-    | ReachPlace
-    | UseGroup(_)
-    | FinishQuest(_)
-    | Placeholder
-    | CollectVirtualItem(_)
-    | CraftItem(_)
-    | KillByDifficulty(_)
-    | Unread(_) -> Error(Nil)
+    Error(Nil) -> Error(Nil)
   }
 }
 

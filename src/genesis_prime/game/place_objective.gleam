@@ -17,12 +17,7 @@
 //// `objective_place_test` and `place_objective_test`.
 
 import genesis_prime/game/activate
-import genesis_prime/game/objective_kind.{
-  CastSpell, ChecklistActivate, ChecklistTalk, ChecklistUse, CollectItem,
-  CollectVirtualItem, CraftItem, FinishQuest, KillByCluster, KillByDifficulty,
-  KillCreature, KillGroup, Placeholder, ReachPlace, Scripted, ServerChecklist,
-  TalkTo, Unconditional, Unread, UseCreature, UseGroup, VisitZone,
-}
+import genesis_prime/game/objective_kind
 import genesis_prime/game/objective_link
 import genesis_prime/game/shown
 import genesis_prime/game/start_place.{type Place}
@@ -160,8 +155,8 @@ fn is_place_counted(
   objective objective: QuestObjective,
 ) -> Bool {
   use <- bool.guard(objective.quest_direction_id == 0, False)
-  case objective_kind.of_row(objective) {
-    ChecklistUse(target_group_id:) ->
+  case objective_kind.used_checklist_group(objective_kind.of_row(objective)) {
+    Ok(target_group_id) ->
       case target_group.creatures_of(tables:, group: target_group_id.value) {
         [] -> False
         creatures ->
@@ -172,33 +167,13 @@ fn is_place_counted(
             }
           })
       }
-    Unconditional
-    | KillCreature(_)
-    | TalkTo(_)
-    | CollectItem(_)
-    | Scripted
-    | KillGroup(_)
-    | ServerChecklist
-    | CastSpell(_)
-    | UseCreature(_)
-    | KillByCluster(_)
-    | VisitZone(_)
-    | ChecklistTalk(_)
-    | ReachPlace
-    | UseGroup(_)
-    | FinishQuest(_)
-    | ChecklistActivate(_)
-    | Placeholder
-    | CollectVirtualItem(_)
-    | CraftItem(_)
-    | KillByDifficulty(_)
-    | Unread(_) -> False
+    Error(Nil) -> False
   }
 }
 
 /// Whether the objective is one of a place (type 22).
 fn is_place(row row: QuestObjective) -> Bool {
-  objective_kind.of_row(row) == ReachPlace
+  objective_kind.of_row(row) == objective_kind.ReachPlace
 }
 
 /// Whether nothing of the creature's row makes the client offer a use of it: no
