@@ -40,6 +40,7 @@ import event_wait
 import fight_bot
 import fixture_tables
 import game_client
+import game_connection_support
 import genesis_prime
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/connection/registry
@@ -7889,19 +7890,6 @@ fn creature_standing_at(
   })
 }
 
-/// The unit ids the 0x355 among the messages remove, in the order sent.
-fn removed_in(frames frames: List(Frame)) -> List(Int) {
-  list.filter_map(frames, fn(frame) {
-    case frame.message_id {
-      0x0355 ->
-        unit_destroyed.decode(frame.body)
-        |> result.map(fn(destroyed) { destroyed.unit_id })
-        |> result.replace_error(Nil)
-      _ -> Error(Nil)
-    }
-  })
-}
-
 pub fn rescuing_an_exile_removes_the_trap_and_the_exile_for_another_player_too_then_both_return_test() -> Nil {
   use <- owned_test.run(60_000)
   // Quest 6296's objective 9659 (QuestObjective: type 12, data Creature2 27768, the
@@ -8017,8 +8005,12 @@ pub fn rescuing_an_exile_removes_the_trap_and_the_exile_for_another_player_too_t
     message_id: client_side_interaction_result.message_id,
     body: answer,
   )
+  let removed_units = fn(frames) {
+    game_connection_support.decoded(frames, 0x0355, unit_destroyed.decode)
+    |> list.map(fn(destroyed) { destroyed.unit_id })
+  }
   let gone = fn(frames) {
-    let removed = removed_in(frames:)
+    let removed = removed_units(frames)
     list.contains(removed, trap) && list.contains(removed, mordesh)
   }
   let #(went, first_have) =
@@ -8035,10 +8027,12 @@ pub fn rescuing_an_exile_removes_the_trap_and_the_exile_for_another_player_too_t
     as "opcode.0x361: the go of the use counts one of objective 9659's four, in quest 6296"
   let #(seen_gone, second_have) =
     game_client.read_until(game: second, have: second_have, found: gone)
-  assert list.sort(removed_in(frames: seen_gone), int.compare)
+  assert list.sort(removed_units(seen_gone), int.compare)
     == list.sort([trap, mordesh], int.compare)
     as "opcode.0x355: the player who did not use the trap is told the trap and the Mordesh are gone, each once"
-  // The restart timer is the release's 30000 ms, started when the units went.
+  // The restart timer is the release's 30000 ms, started when the units went: the
+  // clock moves only once the timer is registered.
+  driven_time.wait_until_quiet(time)
   driven_time.advance(time:, ms: 30_000)
   let #(back, _) =
     game_client.read_until(game: second, have: second_have, found: both_in)

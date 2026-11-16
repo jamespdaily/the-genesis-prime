@@ -22,7 +22,9 @@ import connection_rule_support as support
 import departures_support
 import game_client
 import game_connection_support as connection_support
-import genesis_prime/client_connection.{type Request, AskStore, TellMoved}
+import genesis_prime/client_connection.{
+  type Request, AskStore, TellMoved, TellReleased,
+}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/start_place.{type Place}
@@ -273,13 +275,14 @@ pub fn the_combat_projector_moves_the_player_to_warfare_woods_at_the_casts_end_t
     as "WorldLocation2 51615: the unit stands at Warfare Woods"
   assert told_the_map(steps:)
     == [
+      connection_support.map_tell(TellReleased(unit_id: 5000)),
       connection_support.map_tell(TellMoved(
         connection: ConnectionId(1),
         place: warfare_woods(),
         seq: 1,
       )),
     ]
-    as "the map is told the landing with the move's number"
+    as "the use of unit 5000 credits a type 12 objective, which releases the unit (QuestObjective type 12), so the map is told the release before the landing with the move's number"
 }
 
 pub fn the_move_is_written_after_the_casts_finish_test() -> Nil {

@@ -8,8 +8,8 @@
 ////   Trapped Mordesh, is no objective's creature. The world database stands the
 ////   Mordesh at the trap's x and z, 0.07 m above it: of the 1,112 spawns whose creature a
 ////   type 12 objective names, 38 have such a neighbour, all in
-////   quests 6296, 4983 and 6727 (issue 856).
-//// - The step's brief (issue 856), whose reading of the client's behaviour is that
+////   quests 6296, 4983 and 6727.
+//// - The server's reading of the client's behaviour, which is that
 ////   a rescued exile and its trap are gone for every player at once and are back
 ////   after a time: the server's choice of 30 s (the `used_object_release_ms` game
 ////   number), which the kind's 60 s respawn time is not.
@@ -276,9 +276,12 @@ pub fn a_released_creature_that_was_already_dead_ends_at_its_corpse_timer_and_th
     ])
   let #(state, taken) = spawns.join(state:, at_ms: 6000, connection: 1, x: 0.0)
   let assert [#(watch, trap)] = started_units(taken)
-  // The creature is dead when the release arrives: told to retire while dead, it
-  // stops only at its corpse timer (`creature_life.on_retire`), so its end comes
-  // later than a live creature's.
+  // The map cannot see a death: it tells the creature `Retire` and waits for its
+  // `WatchEnded`, whenever that comes. This test ends the creature 20 s after the
+  // release, as a corpse's timer would, and checks that the spawn then still waits
+  // the release time. That a dead creature stops only at its corpse timer is pinned
+  // in `creature_life_test`, in the case that a creature that stands stops at once
+  // when told to retire and a corpse waits for its respawn (`on_retire(Dead)`).
   let #(state, taken) = spawns.released(state:, at_ms: 7000, unit_id: trap)
   assert spawns.creature_sends(taken) == [#(trap, "Retire")]
   let #(state, taken) =

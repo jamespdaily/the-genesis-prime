@@ -350,6 +350,7 @@ pub fn captives(
     set.contains(named, creature_id.value)
   }
   dict.fold(world.by_id, dict.new(), fn(found, id, spawn) {
+    use <- bool.guard(when: !is_named(spawn.creature_id), return: found)
     let trap_x = start_place.x(spawn.place)
     let trap_z = start_place.z(spawn.place)
     let neighbours =
@@ -373,9 +374,9 @@ pub fn captives(
         let SpawnId(second_number) = second
         int.compare(first_number, second_number)
       })
-    case is_named(spawn.creature_id), neighbours {
-      True, [_, ..] -> dict.insert(found, id, neighbours)
-      _, _ -> found
+    case neighbours {
+      [_, ..] -> dict.insert(found, id, neighbours)
+      [] -> found
     }
   })
 }

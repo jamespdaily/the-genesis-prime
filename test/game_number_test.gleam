@@ -13,7 +13,7 @@
 //// - Migration 0016: interrupt_armor_refill_ms, 10000 ms, a server choice (no client value
 ////   says when armor returns, `opcode.0x938.interrupt_armor`), a whole number above 0.
 //// - Migration 0033: used_object_release_ms, 30000 ms, a server choice (no client or
-////   retail value says how long a used quest object stays gone, issue 856), a whole
+////   retail value says how long a used quest object stays gone), a whole
 ////   number of milliseconds above 0, since the spawn starts a timer of that many.
 //// - The shared pattern of the content tables (`genesis_prime/content`): every
 ////   refusal is collected and named by its table, its row and its rule.

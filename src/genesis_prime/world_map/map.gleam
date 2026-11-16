@@ -1409,7 +1409,7 @@ fn creature_ended(
     }
     Ok(Retiring(..)) -> started_for_those_who_see(state:, spawn:)
     Ok(Releasing(unit_id:, wait_ms:, ..)) ->
-      released_ended(state:, spawn:, unit_id:, wait_ms:)
+      waiting_for_restart(state:, spawn:, unit_id:, after_ms: wait_ms)
     Ok(WaitingForRestart) | Ok(Failed) | Error(Nil) ->
       panic as "a watch ended for a creature the map holds no live, retiring or released spawn for"
   }
@@ -1447,18 +1447,23 @@ fn restart_due(
   }
 }
 
-/// The unit and life of a spawn whose creature a release can end: live, and not
-/// one of a fight's run spawns.
+/// A spawn whose creature a release can end, with that creature's unit and life.
+type Releasable {
+  Releasable(spawn: SpawnId, unit_id: Int, life: Int)
+}
+
+/// The spawn's creature when a release can end it: live, and not one of a fight's
+/// run spawns.
 fn releasable(
   state state: State,
   spawn spawn: SpawnId,
-) -> Result(#(SpawnId, Int, Int), Nil) {
+) -> Result(Releasable, Nil) {
   use <- bool.guard(
     when: dict.has_key(state.run_spawns, spawn),
     return: Error(Nil),
   )
   case dict.get(state.spawns, spawn) {
-    Ok(Live(unit_id:, life:, ..)) -> Ok(#(spawn, unit_id, life))
+    Ok(Live(unit_id:, life:, ..)) -> Ok(Releasable(spawn:, unit_id:, life:))
     Ok(Retiring(..))
     | Ok(Releasing(..))
     | Ok(WaitingForRestart)
@@ -1493,8 +1498,8 @@ fn released(
               spawns: list.fold(released, state.spawns, fn(spawns, found) {
                 dict.insert(
                   spawns,
-                  found.0,
-                  Releasing(unit_id: found.1, life: found.2, wait_ms:),
+                  found.spawn,
+                  Releasing(unit_id: found.unit_id, life: found.life, wait_ms:),
                 )
               }),
             ),
@@ -1502,8 +1507,8 @@ fn released(
               list.map(released, fn(found) {
                 tell_creature(
                   state:,
-                  unit_id: found.1,
-                  life: found.2,
+                  unit_id: found.unit_id,
+                  life: found.life,
                   message: Retire,
                 )
               }),
@@ -1544,19 +1549,6 @@ fn spawn_of_unit(
   dict.to_list(state.unit_of_spawn)
   |> list.find(fn(entry) { entry.1 == unit_id })
   |> result.map(fn(entry) { entry.0 })
-}
-
-/// The `Releasing` creature of the spawn ended, whether it stopped at once or at
-/// its corpse timer: every player is sent `Gone` of its unit, the unit id is given
-/// up, and the spawn's restart timer starts for `wait_ms` in place of its kind's
-/// respawn time; `restart_due` then starts a creature there under a new unit id.
-fn released_ended(
-  state state: State,
-  spawn spawn: SpawnId,
-  unit_id unit_id: Int,
-  wait_ms wait_ms: Int,
-) -> #(State, ServiceStep(Outgoing)) {
-  waiting_for_restart(state:, spawn:, unit_id:, after_ms: wait_ms)
 }
 
 /// Every player is sent `Gone` of the unit `unit_id`, the unit id is given up, and
