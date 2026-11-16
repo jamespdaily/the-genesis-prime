@@ -336,7 +336,7 @@ pub fn interaction_of(spell spell: Spell) -> Interaction {
 /// channel (`0x14053d1f0.activate_channel`, `cast.channel_sequence`), so its gos and its
 /// finish are the channel's. A castMethod 5 spell casts the same way as a Normal one, its bar
 /// shown only when that time is not 0 (`opcode.0x7ff.csi_cast_bar`); its go also waits for
-/// the client's answer (`asked`). A spell whose method is not built is left as it is, so
+/// the client's answer (`cast.asked`). A spell whose method is not built is left as it is, so
 /// the verdict refuses it.
 ///
 /// Gap: a Channeled spell whose activate time is not its channelMaxTime (one whose own
@@ -543,7 +543,7 @@ pub fn ability_at(
 /// is the same hold, and the newest ability's key replaces the held one, whose
 /// cast under way ends by itself (the server's choice: the client sends each key
 /// its own key up, and gives no way to hold two). Its first cast is made by
-/// `continued`, once the caster is free.
+/// `cast.continued`, once the caster is free.
 pub fn key_down(
   cast cast: State,
   ability ability: Spell,

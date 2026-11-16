@@ -3,7 +3,7 @@
 //// - **Persistence** is the server's alone: the client never evaluates
 ////   prerequisiteIdCasterPersistence or prerequisiteIdTargetPersistence, which it keeps
 ////   to word the results 282 and 283 (`Spell4.prerequisiteIdCasterPersistence`,
-////   `0x1405648a0`). The connection calls `persisted` at the end of each input of a player
+////   `0x1405648a0`). The connection calls `cast.persisted` at the end of each input of a player
 ////   in the world, which is exact and needs no timer or interval (the tables give none).
 ////   Each live or lingering cast, lowest id first, whose spell's condition fails ends
 ////   (checked again after each end, since one can break another's): 0x7f9 {cast id, 282 or
@@ -36,7 +36,7 @@ import gleam/option.{type Option, None, Some}
 import gleam/set
 
 /// Whether some live or lingering cast holds a spell with a persistence column, so
-/// `persisted` has something to check: the connection asks before it builds the caster,
+/// `cast.persisted` has something to check: the connection asks before it builds the caster,
 /// since most inputs find nothing.
 pub fn persists(cast cast: State) -> Bool {
   list.any(cast_state.holders(cast:), fn(entry) {

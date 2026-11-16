@@ -121,7 +121,7 @@ pub fn control_ended_frame(
 /// The caster's combat log of the states a go landed: an entry for each (0x247 of
 /// type 1, removed 0), and a timer for each state's end entry (removed 1) at the time
 /// the creature holds it until (`opcode.0x247.cc_state`). A state's end entry is never
-/// written for a unit the caster's client stopped showing: `unit_removed` cancels it.
+/// written for a unit the caster's client stopped showing: `cast_proc.unit_removed` cancels it.
 pub fn states_logged(
   cast cast: State,
   caster caster: Caster,

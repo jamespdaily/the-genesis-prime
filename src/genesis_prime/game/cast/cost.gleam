@@ -387,7 +387,7 @@ pub fn cooldown_left_ms(
 /// The methods the rule casts; a spell of any other is refused 285.
 ///
 /// A press of a spell of castMethod 5 (`ClientSideInteraction`) is refused too, and only
-/// the activate cast runs one (`activation_spell`). Gap: the client opens its interaction
+/// the activate cast runs one (`cast_press.activation_spell`). Gap: the client opens its interaction
 /// on the 0x7fd of any pending cast of the player, an ability's or an item's as well
 /// (`opcode.0x7fd.csi`), so a pressed castMethod 5 spell is a cast the client would run;
 /// the server does not build it, a gap in the issue "Spells work in depth on the real

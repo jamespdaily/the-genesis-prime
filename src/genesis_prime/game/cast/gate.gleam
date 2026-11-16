@@ -22,7 +22,7 @@
 ////   Proxies that start a child, of the gains that may be given and of the lasting
 ////   effects of the phase, and, for a row behind a target apply prerequisite, one set for
 ////   each unit the row reaches (`rolls_needed`); the connection draws that many from its
-////   seed before it calls `went`, and none when there is no such condition, so no other
+////   seed before it calls `cast.went`, and none when there is no such condition, so no other
 ////   roll of the connection moves.
 
 import genesis_prime/game/cast/state.{
@@ -612,7 +612,7 @@ pub fn caster_gates(
 
 /// The gates a go checks against the caster's own unit for a row that reaches only the
 /// caster: its caster apply prerequisites, then its target apply prerequisite, whose first
-/// unit is that unit, the caster's whole unit (`subject_of`).
+/// unit is that unit, the caster's whole unit (`cast_tick.subject_of`).
 pub fn only_on_caster_gates(
   condition condition: spell_plan.Condition,
 ) -> List(prerequisite.Prerequisite) {

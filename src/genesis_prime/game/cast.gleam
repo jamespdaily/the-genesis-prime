@@ -56,9 +56,9 @@
 ////   its 0x7ff goes to the caster too. Its go and finish follow as a pressed
 ////   cast's, and it starts no global cooldown (kind 3). A Proxy behind a caster
 ////   apply prerequisite or one its dataBits06 names starts only when each passes
-////   against the caster at the go (`proxy_gates`). One behind a target apply
+////   against the caster at the go (`cast_gate.proxy_gates`). One behind a target apply
 ////   prerequisite as well starts a child on a unit only when that prerequisite passes
-////   too, for each unit separately (`children`, `target_gate`): the target first and
+////   too, for each unit separately (`children`, `cast_tick.target_gate`): the target first and
 ////   the caster second (`Spell4Effects.prerequisiteIdTargetApply`), the struck unit as
 ////   the caster's picture shows it when the round closes (`went`'s `poses`; a unit it no
 ////   longer shows decides nothing and leaves a debug line), or the caster on its own
@@ -96,22 +96,21 @@ import genesis_prime/game/cast/state.{
   type Message, type Refusal, type Resolution, type Restricting, type Role,
   type State, type Struck, type TargetVerdict, type TickAsked, type UsedUnit,
   Accept, Activated, Activating, Activation, Aimed, AimedPress, AnswerSucceeded,
-  Answered, AwaitingAnswer, Base, CancelTimer, Cancelled, CannotTell, CastClears,
+  Answered, AwaitingAnswer, Base, Cancelled, CannotTell, CastClears,
   CasterChangeEnds, CasterChangeStarts, ChargeLevel, Child, CooldownEnds,
   CooldownModifierEnds, CooldownModifierStarts, Deflected, Finish,
-  ForcedMoveStart, ForcedMoveStarts, Gain, GateFails, Go, GoAsked, Held,
-  HeldProc, Hit, HitCreature, HitPlayer, Hold, HoldForCast, Holding, Immune,
-  ItemsIssue, KeyHeld, Lingering, Listed, Live, Log, ModifierEnd, ModifierStart,
-  NoClientCastId, NoInteraction, NoInteractionWaits, NoItemSpell, NodesEnd,
-  NotBuilt, NotDecoded, NotSentByClient, Passive, Pay, PrerequisitesIssue,
-  Pressed, PressedAt, ProcDue, Refuse, RepeatHeld, Resolution, ResourceMoved,
-  RestrictionEnd, Send, Shortcut, ShortcutCast, SpellsIssue, Stage, StartChild,
-  StartHeld, StartTimer, StartedMoving, Starts, State, StateEnd, StealthChanged,
-  Strike, TargetChangeEnds, TargetChangeStarts, TargetModifierStart, Tell,
-  Threshold, Tick, TickKey, TickStrike, Ticking, UnbuiltItemCharges,
-  UnbuiltItemSpell, UnbuiltShortcut, UnbuiltSpell, UnknownAnswer, UnknownCancel,
-  UnreadItemPrerequisite, UnreadLinkPrerequisite, UnreadPrerequisite,
-  UnreadShortcutPick, UsedUnit, WindowEnd, WrongAnswerSpell,
+  ForcedMoveStart, GateFails, Go, GoAsked, Held, HeldProc, Hit, Hold,
+  HoldForCast, Holding, Immune, ItemsIssue, KeyHeld, Lingering, Listed, Live,
+  Log, ModifierEnd, ModifierStart, NoClientCastId, NoInteraction,
+  NoInteractionWaits, NoItemSpell, NodesEnd, NotBuilt, NotDecoded,
+  NotSentByClient, Passive, PrerequisitesIssue, Pressed, PressedAt, ProcDue,
+  Refuse, RepeatHeld, Resolution, ResourceMoved, RestrictionEnd, Send, Shortcut,
+  ShortcutCast, SpellsIssue, Stage, StartChild, StartHeld, StartedMoving, Starts,
+  State, StateEnd, StealthChanged, Strike, TargetModifierStart, Tell, Threshold,
+  Tick, TickKey, Ticking, UnbuiltItemCharges, UnbuiltItemSpell, UnbuiltShortcut,
+  UnbuiltSpell, UnknownAnswer, UnknownCancel, UnreadItemPrerequisite,
+  UnreadLinkPrerequisite, UnreadPrerequisite, UnreadShortcutPick, UsedUnit,
+  WindowEnd, WrongAnswerSpell,
 } as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/class_resource.{type Payment}
@@ -122,7 +121,6 @@ import genesis_prime/game/prerequisite
 import genesis_prime/game/proc
 import genesis_prime/game/shortcut_spell
 import genesis_prime/game/spell_plan.{type Plans, type Proxy, type Spell}
-import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_properties
 import genesis_prime/message/ability_hold
 import genesis_prime/message/cancel_cast.{type CancelCast}
@@ -183,7 +181,7 @@ pub fn take(
 /// hit radius of the caster's own body, which the range check takes beside the target's.
 /// The spell is the creature's pick (genesis_prime/game/activate `pick`); a cast that
 /// cannot start is refused with the result the client names, and one that can runs as any
-/// cast does, for the activate cast time (`activation_spell`), and its last go raises `Activated`.
+/// cast does, for the activate cast time (`cast_press.activation_spell`), and its last go raises `Activated`.
 pub fn activate(
   cast cast: State,
   body body: BitArray,
@@ -353,7 +351,7 @@ fn item_used(
 /// The cast of an item's spell, which the item's checks let through, at the unit the
 /// press names (`item_used`): refused as not built when the spell has no Activate effect,
 /// refused 91 for a unit not shown and 100 for another player. At a creature the target's
-/// life and states come first (`target_state_refusal`), then 89 for a unit the spell's cast
+/// life and states come first (`cast_press.target_state_refusal`), then 89 for a unit the spell's cast
 /// group refuses (`activate.passes_cast_group`), else the activate cast of the unit, which
 /// refuses by range (`0x1403b2240` tests in that order).
 fn item_spell_cast(
@@ -1139,7 +1137,7 @@ fn activation_pressed(
 }
 
 /// An activate cast of a planned spell at a creature or object, for the cast time given:
-/// refused by the target's life and states (`target_state_refusal`), then with the range's
+/// refused by the target's life and states (`cast_press.target_state_refusal`), then with the range's
 /// result when the caster stands out of the limits the creature and the spell hold, else
 /// started (`0x1403b2240` tests the life and the states before the range).
 fn activation_in_range(
@@ -1374,7 +1372,7 @@ fn accepted_and_started(
 /// is not what it was in `cast`, the state before the input: one per input, however many
 /// Stealth rows came and went. The input's events are recorded as pending, to be matched
 /// against the held procs once the connection has drawn what they need
-/// (`proc_draws_needed`, `procs_fire`), in this order: `own` are the input's own events,
+/// (`cast_proc.proc_draws_needed`, `procs_fire`), in this order: `own` are the input's own events,
 /// then a heal and a receipt for each `Heal` change the input's effects start on the
 /// caster, then the events the input raised as it ran (`UsesAbility` in `start`), then a
 /// `SpendsResource` for each payment among its effects, then the stealth change. `step` is
@@ -1406,7 +1404,7 @@ fn settled(
       own,
       cast_proc.heals_landed(before: cast, after:, effects:),
       list.drop(after.pending, before_count),
-      resources_spent(effects:),
+      cast_proc.resources_spent(effects:),
       stealth,
     ])
   #(
@@ -1416,95 +1414,6 @@ fn settled(
     ),
     list.append(effects, moved),
   )
-}
-
-/// A `SpendsResource` event for each payment the effects take from the caster's class
-/// resource. A guess: the event names no spell, so a group filter never matches it (a
-/// payment does not say which spell it is for, and no client code reads a Proc row,
-/// `Spell4Effects.effectType.14.dataBits00`).
-fn resources_spent(effects effects: List(Effect)) -> List(proc.Event) {
-  list.filter_map(effects, fn(effect) {
-    case effect {
-      Pay(..) ->
-        Ok(proc.Event(
-          trigger: spell_plan.SpendsResource,
-          other_unit: None,
-          spell: None,
-        ))
-      Send(..)
-      | Tell(..)
-      | StartTimer(..)
-      | CancelTimer(..)
-      | Log(..)
-      | Strike(..)
-      | TickStrike(..)
-      | Gain(..)
-      | CasterChangeStarts(..)
-      | CasterChangeEnds(..)
-      | TargetChangeStarts(..)
-      | TargetChangeEnds(..)
-      | ForcedMoveStarts(..)
-      | Activated(..)
-      | ShortcutCast(..)
-      | StealthChanged(..) -> Error(Nil)
-    }
-  })
-}
-
-/// The events a strike round's units give the holder, in the round's order: for each
-/// description of the damage that landed on a creature, a hit, a melee hit when the spell is
-/// of school 1, a critical when the description's combat result is a critical (and a finisher
-/// critical, which the row's group filter narrows to finishers) and a kill
-/// when it killed the creature, so a go with two damage rows on one creature raises two
-/// hits and a spell that only selects a unit (no description) raises none; then a taunt
-/// landed for each Taunt state the creature took, a guarded creature's included. A
-/// deflected unit raises a deflect and no hit, and an immune one no hit, and a player
-/// a creature's attack hit is not the holder's strike (a guess for each description
-/// counting, for a deflect, an immunity, a finisher critical and a taunt: no client code
-/// reads a Proc row, `Spell4Effects.effectType.14.client_evaluation`).
-fn hit_events(
-  spell spell: Spell,
-  struck struck: List(Struck),
-) -> List(proc.Event) {
-  let on = fn(unit_id, trigger) {
-    proc.Event(
-      trigger:,
-      other_unit: Some(unit_id),
-      spell: Some(cast_proc.event_spell(spell:)),
-    )
-  }
-  list.flat_map(struck, fn(one) {
-    case one {
-      Hit(unit_id:, unit: HitCreature(..), descriptions:, controls:, ..) ->
-        list.append(
-          list.flat_map(descriptions, fn(description) {
-            list.map(cast_proc.hit_triggers(spell:, description:), on(
-              unit_id,
-              _,
-            ))
-          }),
-          taunts_landed(unit_id:, controls:, on:),
-        )
-      Immune(unit_id:, unit: HitCreature(..), controls:, ..) ->
-        taunts_landed(unit_id:, controls:, on:)
-      Deflected(unit_id:) -> [on(unit_id, spell_plan.FoeDeflects)]
-      Hit(unit: HitPlayer, ..) | Immune(unit: HitPlayer, ..) -> []
-    }
-  })
-}
-
-/// A taunt landed event for each Taunt state a unit took.
-fn taunts_landed(
-  unit_id unit_id: Int,
-  controls controls: List(strike_tell.ControlLanded),
-  on on: fn(Int, spell_plan.Trigger) -> proc.Event,
-) -> List(proc.Event) {
-  list.filter_map(controls, fn(control) {
-    case control.tell.row.state == crowd_control_state.Taunt {
-      True -> Ok(on(unit_id, spell_plan.LandsTaunt))
-      False -> Error(Nil)
-    }
-  })
 }
 
 /// The state with the events the facts raise appended to the pending ones, in the facts'
@@ -1556,8 +1465,8 @@ pub fn raised(cast cast: State, facts facts: List(Fact)) -> State {
 /// in source order, the cast id and then the effect id, which is row order for one holder. The
 /// events are cleared. A proc whose node the input took off is not held, and one the input
 /// applied is. `draws` are the 32-bit words and `rolls` the gate rolls drawn for
-/// `proc_draws_needed`, taken in the order the procs are matched; `poses`, `indexes` and
-/// `units` are those of `pending_units` as `went` takes them, which an event gate against the
+/// `cast_proc.proc_draws_needed`, taken in the order the procs are matched; `poses`, `indexes` and
+/// `units` are those of `cast_proc.pending_units` as `went` takes them, which an event gate against the
 /// event's unit reads. A fire's own go is an input of its own, so it raises its own events then
 /// and no event raised here is matched in this pass.
 pub fn procs_fire(
@@ -1618,8 +1527,8 @@ pub fn procs_fire(
 }
 
 /// One held proc against one event of its trigger: what `proc.decide` gives, carried out. The
-/// holder's subject is the caster as `subject_of` has it, and the event's the struck unit as
-/// a Proxy's target gate reads it (`struck_subject`), or the caster again for an event with
+/// holder's subject is the caster as `cast_tick.subject_of` has it, and the event's the struck unit as
+/// a Proxy's target gate reads it (`cast_tick.struck_subject`), or the caster again for an event with
 /// no other unit.
 fn proc_matched(
   cast cast: State,
@@ -2598,7 +2507,7 @@ fn fire(
 /// Hit unit and none for a deflect, and none for a Proxy whose gate against the
 /// caster does not pass) and the finish after the last go. A cast that is no longer
 /// live, because the client ended it while the round was open, has no go and writes
-/// nothing: the hits stand, and they raise their events (`hit_events`) for the spell of the
+/// nothing: the hits stand, and they raise their events (`cast_proc.hit_events`) for the spell of the
 /// cast while it is held, else for `spell`, the go's spell as the areas name it by its
 /// Spell4 id (`GoAsked.spell4_id`); a go the areas do not name strikes nobody. `poses` are
 /// the Hit units' ground points and yaws as the caster's picture holds them when the round
@@ -2607,7 +2516,7 @@ fn fire(
 /// reads; a unit with none has no creature in the check. `units` are what each unit is, by
 /// unit id (`prerequisite.FirstUnit`), which a type 38 condition of that gate reads; a unit
 /// with none is unknown to the check. `rolls` are the
-/// rolls the go's type 37 conditions take (`rolls_needed`), in the order the conditions
+/// rolls the go's type 37 conditions take (`cast_gate.rolls_needed`), in the order the conditions
 /// are checked. `gates_passed` are the effect ids of the gates each struck unit passed, by unit
 /// id (genesis_prime/game/strike `Went`): a go row with a gate on the struck creature
 /// (`spell_plan.StruckGate`) starts and is listed on a unit only when that unit's entry lists the
@@ -2633,7 +2542,7 @@ pub fn went(
     cast_state.holder_of(cast:, cast_id:)
     |> result.map(fn(holder) { holder.spell })
     |> result.lazy_or(fn() { asked_spell })
-    |> result.map(fn(spell) { hit_events(spell:, struck:) })
+    |> result.map(fn(spell) { cast_proc.hit_events(spell:, struck:) })
     |> result.unwrap([])
   use <- settled(cast:, own:)
   released(
@@ -2821,7 +2730,8 @@ pub fn ticked(
       |> result.map(fn(_) { holder })
     })
   {
-    Some(one), Ok(holder) -> hit_events(spell: holder.spell, struck: [one])
+    Some(one), Ok(holder) ->
+      cast_proc.hit_events(spell: holder.spell, struck: [one])
     _, _ -> []
   }
   use <- settled(cast:, own:)
@@ -2877,15 +2787,15 @@ fn tick_closed(
 /// the caster and the audience that was told its start, in cast id order, and its nodes
 /// with it, where a 0x801 lets them linger (`end_live_cast`); then the held press, the hold and every open
 /// threshold end, and every other timer is cancelled, as when the player leaves
-/// (`left`). The client does not end its own casts when it dies (not read,
+/// (`cast_tick.left`). The client does not end its own casts when it dies (not read,
 /// `0x14045e740`), so the server's 0x7fe is the end its viewers see. Every stealth
 /// source drops, and a stealthed caster's `StealthChanged` comes after the casts'
 /// 0x7fe, followed by the casts of the procs the death fires: the `Died` procs first,
 /// then those for the stealth it ended. The innate passive's cast is the one cast it
 /// leaves: it stays live or lingering with its nodes, its modifiers, its pending timers,
 /// its stealth sources and its procs, and nothing is written for it
-/// (`passive_set_aside`); the delayed fires of its procs are the exception, dropped with
-/// their timers cancelled, since the holder they wait for is gone (`proc_fires_dropped`).
+/// (`cast_proc.passive_set_aside`); the delayed fires of its procs are the exception, dropped with
+/// their timers cancelled, since the holder they wait for is gone (`cast_proc.proc_fires_dropped`).
 pub fn died(
   cast cast: State,
   caster _caster: Caster,
@@ -3889,7 +3799,7 @@ fn go(
 /// `stealth_change` ends stealth at this go (`EndsStealthAtEachGo`, or
 /// `EndsStealthAfterLastGo` when `last_go`) ends the sources of the other casts. A cast
 /// never ends the sources of its own Stealth rows, whichever go applied them. A source
-/// ends as `cast.stealth` loses it and its cast's node leaves the caster, as `node_off`
+/// ends as `cast.stealth` loses it and its cast's node leaves the caster, as `cast_proc.node_off`
 /// takes a type 80 removal's (0x811, and the 0x7fe of a lingering cast of a method the
 /// client keeps). A go with no row, and no source to end, changes nothing.
 ///
@@ -3952,7 +3862,7 @@ fn stealth_changed_by_go(
 /// it only at the go its phaseFlags name: Spell4Effects 10256 has phaseFlags 1, the first
 /// go (`cast.channel_sequence`). A spell cast as a Normal one goes once, so it lists every
 /// row, whatever phase the row names (an activate cast drops the phases,
-/// `activation_spell`).
+/// `cast_press.activation_spell`).
 fn activation_listed_at(
   live live: Live,
   phase phase: Int,
@@ -4338,7 +4248,7 @@ fn removed_by_go(
 /// The cooldown effects a go applies, each armed from this go: the effect of an
 /// earlier go of the cast is armed again, its timers cancelled and started anew. A row
 /// with no delay takes effect in this step and any other on a timer of its delay. A row
-/// is kept for the cooldowns that start later when it is `cooldown_kept`; a kept row is
+/// is kept for the cooldowns that start later when it is `cast_control.cooldown_kept`; a kept row is
 /// dropped on a timer at the end of its lifetime, unless it never ends.
 fn cooldowns_armed(
   cast cast: State,
@@ -4508,7 +4418,7 @@ fn cooldowns_started_at_node_end(
 /// the round and none for a deflect, any other starts one on the caster. A Proxy behind a
 /// target gate starts a child on a unit only when the gate passes against that unit, once
 /// for each unit, in the order of the units, each check taking the rolls its gate needs
-/// (`target_gate`); the rolls left follow the effects.
+/// (`cast_tick.target_gate`); the rolls left follow the effects.
 fn children(
   cast cast: State,
   caster caster: Caster,
@@ -4557,7 +4467,7 @@ fn children(
 }
 
 /// One child of a Proxy: it starts at once for no delay, else after it from a timer
-/// of its own. The Proxy's gate has passed at the go (`proxy_gates`).
+/// of its own. The Proxy's gate has passed at the go (`cast_gate.proxy_gates`).
 fn child(
   cast cast: State,
   caster caster: Caster,

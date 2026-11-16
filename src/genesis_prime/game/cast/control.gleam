@@ -253,7 +253,7 @@ fn creatures_ended(
 /// The Fluff, SpellForceRemove, property modifier, forced move, cooldown, Stealth,
 /// RemoveStealth and HealShields effects of the phase whose gates pass against the caster,
 /// a debug line for each that cannot be decided, and the rolls left. Their gates are checked after the Proxies' and the gains', in that
-/// order, the HealShields effects' last (`rolls_needed`).
+/// order, the HealShields effects' last (`cast_gate.rolls_needed`).
 pub fn lasting_applied(
   spell spell: Spell,
   phase phase: Int,
@@ -536,7 +536,7 @@ pub fn restrictions_shown(
 /// client never ends the state itself, so the server's timer does, as for a state on a
 /// creature. A row of duration 0 without flag 2 lives 0 ms and ends in the go's own
 /// step. A later go of the cast arms the state's end again from that go; the node's end
-/// or removal cancels it (`effects_ended`).
+/// or removal cancels it (`cast_proc.effects_ended`).
 pub fn restrictions_armed(
   cast cast: State,
   cast_id cast_id: Int,
@@ -749,7 +749,7 @@ fn creature_modifier_armed(
 
 /// The creatures a go throws: each entry of `thrown` (a struck move of the phase whose
 /// caster gates passed with a creature its aim names that the round `Hit` and that passes
-/// its target gate, `aimed_at`), in the row then the unit order of `units_aimed_at`. A row with no delay tells the creature
+/// its target gate, `cast.aimed_at`), in the row then the unit order of `cast_gate.units_aimed_at`. A row with no delay tells the creature
 /// `ForcedMoveStarts` in this step; any other arms a `ForcedMoveStart` timer for the go
 /// plus its delay; each go's throw is its own, so a later go of the cast leaves an
 /// earlier go's waiting throw to start. A unit that is not a `HitCreature` of the
@@ -899,8 +899,8 @@ fn caster_modifier_armed(
 /// 0x7f4, and any other on a timer of its delay (the client adds the delay before it
 /// applies a result, `0x1405d77a0`). Each go's heal is its own, so a later go of the cast
 /// heals again and no earlier heal is cancelled; a pending heal is dropped with the node
-/// of the cast on the caster (`effects_ended`), and lands when the node ends by time
-/// (`heals_landed_at_node_end`).
+/// of the cast on the caster (`cast_proc.effects_ended`), and lands when the node ends by time
+/// (`cast_tick.heals_landed_at_node_end`).
 pub fn heals_armed(
   cast cast: State,
   cast_id cast_id: Int,

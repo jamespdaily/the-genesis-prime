@@ -168,12 +168,12 @@ pub type Effect {
   CancelTimer(timer: TimerId)
   Log(level: LogLevel, text: String)
   /// A go is asked: the connection selects its targets, strikes them
-  /// (genesis_prime/game/strike) and, when the round closes, answers with `went`.
+  /// (genesis_prime/game/strike) and, when the round closes, answers with `cast.went`.
   /// The go's 0x7f4 waits for that answer.
   Strike(asked: GoAsked)
   /// A tick of a periodic damage row is due on a unit: the connection strikes it
   /// (genesis_prime/game/strike `begin_tick`) and, when the round closes, answers with
-  /// `ticked`. The tick's 0x7f8 waits for that answer.
+  /// `cast.ticked`. The tick's 0x7f8 waits for that answer.
   TickStrike(asked: TickAsked)
   /// A cast's costs are taken from the caster's class resource, at its first go, or
   /// at the accept of a spell that goes at once (genesis_prime/game/class_resource
@@ -233,7 +233,7 @@ pub type Effect {
   /// cast or did not (`alive_at_press`). The cast is an item's when `by_item`, the
   /// creature's own activate cast otherwise.
   Activated(unit_id: Int, creature_id: Int, alive_at_press: Bool, by_item: Bool)
-  /// The first go of a cast of a quest button's spell (`shortcut`), by its Spell4 id, and
+  /// The first go of a cast of a quest button's spell (`cast.shortcut`), by its Spell4 id, and
   /// the unit the press aimed it at: none for a spell that takes the caster.
   ShortcutCast(spell4_id: Int, target: Option(PressedAt))
 }
@@ -296,7 +296,7 @@ pub type Struck {
     /// shows (genesis_prime/game/strike_tell `Landed`).
     armor_removed: Int,
     /// The periodic damage rows of the go whose aim reaches the unit: the go lists each
-    /// with a bit result, and each ticks on the unit (`ticked`).
+    /// with a bit result, and each ticks on the unit (`cast.ticked`).
     ticking: List(spell_area.TickingDamage),
   )
   /// The unit deflected the strike: an entry of the 0x7fb, no description and no
@@ -403,7 +403,7 @@ pub type Due {
   ModifierEnd(source: unit_properties.Source)
   /// The crowd-control state the caster holds on itself from the effect `source` names
   /// ends, after its delay and duration: the client never ends a state itself, so the
-  /// server sends the 0x880 (`restriction_ended`).
+  /// server sends the 0x880 (`cast_control.restriction_ended`).
   RestrictionEnd(source: unit_properties.Source)
   /// The cooldown effect `source` takes effect, after its delay: it changes the
   /// running cooldowns and, when `kept`, the ones that start while it lasts.
@@ -521,7 +521,7 @@ pub type Activating {
     /// target dies during it (`SetUnitDeathState` 0x14045e740), not when the target was
     /// dead at the press.
     alive_at_press: Bool,
-    /// Whether the cast is an item's (`use_item`) and not the creature's own activate cast.
+    /// Whether the cast is an item's (`cast.use_item`) and not the creature's own activate cast.
     by_item: Bool,
     /// The spell's Activate rows, which the go lists on the unit.
     effects: List(activate.ActivateEffect),
@@ -548,7 +548,7 @@ pub type Live {
     /// spell with no spend and for a child a Proxy started.
     spent: Option(Int),
     /// The costs the accept checked and the cast's first go pays: empty once paid,
-    /// for a cast whose accept paid them (`pays_at_accept`) and for a child.
+    /// for a cast whose accept paid them (`cast_cost.pays_at_accept`) and for a child.
     reserved: List(Payment),
     /// The spell the player pressed, the root of every child.
     root: Spell4Id,
@@ -583,7 +583,7 @@ pub type Live {
     /// (`opcode.0x7f4`: the client counts the gos before its 0x7fe, `cast.channel_sequence`).
     finish_due: Bool,
     /// The periodic rows the cast's gos armed, by unit and row: each lasts while its
-    /// unit's node does (`ticks_dropped`).
+    /// unit's node does (`cast_tick.ticks_dropped`).
     ticking: Dict(TickKey, Ticking),
   )
 }
@@ -685,13 +685,13 @@ pub type State {
     stealth: Dict(unit_properties.Source, spell_plan.Breaks),
     /// The Proc rows the caster's casts hold on it, by cast id and effect id, each with the
     /// monotonic times of its fires; a proc leaves where a stealth source does
-    /// (`procs_dropped`).
+    /// (`cast_proc.procs_dropped`).
     procs: Dict(unit_properties.Source, HeldProc),
     /// The events of the caster that no proc has been matched against yet, in the order
-    /// they happened: each input records its own (`settled`), and the connection draws what
-    /// they need (`proc_draws_needed`) and has them matched (`procs_fire`).
+    /// they happened: each input records its own (`cast.settled`), and the connection draws what
+    /// they need (`cast_proc.proc_draws_needed`) and has them matched (`cast.procs_fire`).
     pending: List(proc.Event),
-    /// The id of the cast of the player's innate passive, once `passive_started` has
+    /// The id of the cast of the player's innate passive, once `cast.passive_started` has
     /// started it: the one cast a death leaves.
     passive: Option(Int),
     /// The persistence columns already logged as not read or not checked on this
@@ -706,8 +706,8 @@ pub type State {
     /// The crowd-control states the caster's casts hold on the caster itself (a CCStateSet
     /// row aimed at the caster, `spell_plan.restrictions_in_phase`), by cast id and effect
     /// id: a press of a spell whose caster conditions mask a held state is refused
-    /// (`restricted`), and the state ends with its row (`RestrictionEnd`) or with its
-    /// cast's node (`effects_ended`), whichever comes first.
+    /// (`cast_cost.restricted`), and the state ends with its row (`RestrictionEnd`) or with its
+    /// cast's node (`cast_proc.effects_ended`), whichever comes first.
     restrictions: Dict(unit_properties.Source, HeldRestriction),
     /// How many such states the caster has told, which their instance ids are made from
     /// (genesis_prime/game/crowd_control `instance_id`).
@@ -771,7 +771,7 @@ pub fn stealthed(cast cast: State) -> Bool {
 }
 
 /// Whether the timer is one of this rule's, for the connection to hand it to
-/// `timer_fired`.
+/// `cast.timer_fired`.
 pub fn owns(timer timer: TimerId) -> Bool {
   let TimerId(number) = timer
   number >= first_timer
@@ -1056,7 +1056,7 @@ pub fn timers_in_order(cast cast: State) -> List(#(TimerId, Due)) {
 }
 
 /// The id the caster's next cast takes: the id of its next press that no live or
-/// lingering cast holds (the client keeps a lingering cast until its 0x7fe). `start` and the hold that records the cast it starts both ask this, so
+/// lingering cast holds (the client keeps a lingering cast until its 0x7fe). `cast.start` and the hold that records the cast it starts both ask this, so
 /// they name the same cast.
 pub fn next_cast_id(cast cast: State, caster caster: Caster) -> Int {
   mint(
@@ -1086,7 +1086,7 @@ pub type Applied {
 
 /// What a go lists on one unit beside the damage it struck: the effect, its delay
 /// and, for a crowd-control state, the instance id its tell gave (the other effects
-/// are numbered by their place in the list, `target_info`) and, for a heal, the
+/// are numbered by their place in the list, `cast_frame.target_info`) and, for a heal, the
 /// damage description that shows it.
 pub type Listed {
   Listed(
@@ -1150,7 +1150,7 @@ pub type Healed {
 /// What a target apply prerequisite gives for a unit a row reaches: the check of the
 /// prerequisite with that unit first and the caster second, in the caster's picture, with
 /// the rolls its type 37 conditions take off the front of the rolls given, and the rolls
-/// left (`checked`).
+/// left (`cast_gate.checked`).
 pub type TargetVerdict =
   fn(prerequisite.Prerequisite, Int, List(Int)) ->
     #(prerequisite.Verdict, List(Int))
@@ -1164,7 +1164,7 @@ pub type Side {
 
 /// The decision of one side of a row's condition at a strike: the condition, the side,
 /// what names the row in a debug line and the rolls its type 37 conditions take off the
-/// front; the decision and the rolls left follow (`strike_gate`).
+/// front; the decision and the rolls left follow (`cast_tick.strike_gate`).
 pub type StrikeGate =
   fn(spell_plan.Condition, Side, String, List(Int)) ->
     #(GateDecision, List(Int))

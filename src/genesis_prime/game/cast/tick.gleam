@@ -230,7 +230,7 @@ pub fn with_nodes(
 
 /// The nodes whose life is over at the time, and the others, each with its unit id. A
 /// node whose unit has a tick round open is kept past its end until the round closes
-/// (`ticked`), so its 0x811 or the cast's 0x7fe follows the tick's 0x7f8.
+/// (`cast.ticked`), so its 0x811 or the cast's 0x7fe follows the tick's 0x7f8.
 pub fn ended_and_kept(
   nodes nodes: Dict(Int, lasting.Node),
   ticking ticking: Dict(TickKey, Ticking),
@@ -312,7 +312,7 @@ fn tick_timers_cancelled(
 /// The ticks of the cast `cast_id` due at the time fire, each due tick of each row, a
 /// connection fallen behind included, earliest first and at one time in unit and row id
 /// order: a damage row asks its unit for the tick (`TickStrike`), whose 0x7f8 waits for
-/// `ticked`; a heal row writes its 0x7f8 to the caster, tells the audience
+/// `cast.ticked`; a heal row writes its 0x7f8 to the caster, tells the audience
 /// (genesis_prime/client_connection `CastTicked`) and heals the caster
 /// (`CasterChangeStarts`), reading the vitals the heal ticks before it in the step left,
 /// and heals nothing on a dead caster. Then each row that fired has its next tick armed,
@@ -520,7 +520,7 @@ fn next_tick_armed(
 
 /// A heal tick on the caster: its 0x7f8 with the heal's description, told to the
 /// audience, then the heal, the formula read for the caster as it is at the tick and
-/// split by the room its vitals have then (`split_of`); the caster comes back with the
+/// split by the room its vitals have then (`cast_heal.split_of`); the caster comes back with the
 /// heal's split added to its vitals, for a heal tick due with it. A dead caster is healed
 /// nothing and shown nothing.
 fn healed_by_tick(
@@ -631,7 +631,7 @@ pub fn tick_outcome(
 }
 
 /// The cast's node on the unit ends at the time, so the node end that follows
-/// (`nodes_ended`) drops it with its frames.
+/// (`cast.nodes_ended`) drops it with its frames.
 fn node_ended_now(
   cast cast: State,
   cast_id cast_id: Int,
@@ -661,7 +661,7 @@ fn node_ended_now(
 /// counted from the go's monotonic time `from_ms`; `go` is which go of the cast it is. A
 /// row already ticking on the unit for this cast is armed again from this go, as the
 /// client sets its node again, and its earlier schedule's tick timer is cancelled; a
-/// round of that schedule still open writes nothing when it closes (`ticked`).
+/// round of that schedule still open writes nothing when it closes (`cast.ticked`).
 pub fn ticks_armed(
   cast cast: State,
   cast_id cast_id: Int,
@@ -820,7 +820,7 @@ fn life_over(life life: lasting.Life, now_ms now_ms: Int) -> Bool {
 }
 
 /// The earliest time a node ends at, none when every node lasts until it is removed
-/// or is held by an open tick round on its unit, whose close ends it (`ticked`).
+/// or is held by an open tick round on its unit, whose close ends it (`cast.ticked`).
 fn earliest_end(
   nodes nodes: Dict(Int, lasting.Node),
   ticking ticking: Dict(TickKey, Ticking),
@@ -980,8 +980,8 @@ pub fn target_verdict_on(
 
 /// The gate a go's strike checks its damage, periodic damage and crowd-control rows by,
 /// in the caster's picture: the caster side against the caster's unit as both units
-/// (`gates_gate`), the target side for a unit by its first unit and the caster second
-/// (`unit_gate`), so a row behind no target gate starts for every unit. A row the server
+/// (`cast_gate.gates_gate`), the target side for a unit by its first unit and the caster second
+/// (`cast_gate.unit_gate`), so a row behind no target gate starts for every unit. A row the server
 /// cannot tell is not applied and a debug line says so.
 pub fn strike_gate(
   cast cast: State,
@@ -1091,7 +1091,7 @@ pub fn pending_heals_cancelled(
 /// as the caster's node ends by time: a node lives as long as its longest effect, so a
 /// heal's start falls in the millisecond of the node's end or before it, and the end
 /// applies it first, whichever timer the shell delivers first. A node taken off lands
-/// none (`effects_ended`).
+/// none (`cast_proc.effects_ended`).
 pub fn heals_landed_at_node_end(
   cast cast: State,
   cast_id cast_id: Int,

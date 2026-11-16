@@ -2,7 +2,7 @@
 ////
 //// - **A player's stealth** is the Stealth rows (effect type 83) its casts hold on it,
 ////   by cast id and effect id (`State.stealth`), kept with whether damage ends each
-////   (`spell_plan.Breaks`); the player is stealthed while it holds any (`stealthed`).
+////   (`spell_plan.Breaks`); the player is stealthed while it holds any (`cast_state.stealthed`).
 ////   A go lists each Stealth row of its phase whose gate passes against the caster in
 ////   the caster's target info and holds the caster's node until it is removed (a Stealth
 ////   row with no durationTime lasts until removed), and adds its source; a RemoveStealth
@@ -13,21 +13,21 @@
 ////   the 0x7fe of a lingering cast of a method the client keeps, `node_off`; a Normal
 ////   cast the client destroys with the 0x811), so the buff that stands for the stealth
 ////   never outlives it. A node that leaves the caster takes its cast's sources
-////   with it (`effects_ended`), `damage_taken` ends the sources damage breaks, and
+////   with it (`effects_ended`), `cast.damage_taken` ends the sources damage breaks, and
 ////   death and leaving drop all. Each input (a press, a timer, a go, the player's death,
 ////   a blow) compares the stealth before and after and ends with one `StealthChanged`
 ////   when it moved, so the connection's 0x8f5 follows the 0x811 and 0x7fe it causes and
 ////   precedes the procs it fires. A
 ////   caster's type 116 prerequisite reads the stealth as it stood before the go's own
-////   effects, as every gate does (`subject_of`).
+////   effects, as every gate does (`cast_tick.subject_of`).
 //// - **A player's procs** are the Proc rows (effect type 14, `spell_plan.ProcRow`) its casts hold on
 ////   it, by cast id and effect id (`State.procs`), each with the times it fired at. A go lists each
 ////   Proc row of its phase whose gate passes in the caster's target info and holds the caster's node
 ////   until the row's life ends, as a Stealth row does (`Spell4Effects.effectType.14.lifetime`), and
 ////   adds its source; a source leaves where a stealth source leaves (`effects_ended`), at the
-////   caster's death but for the innate passive's, and at leaving. Each input ends in `settled`,
+////   caster's death but for the innate passive's, and at leaving. Each input ends in `cast.settled`,
 ////   which records its events as pending (`State.pending`), in order: the input's own (`Died` for
-////   `died`, `LeftCombat` for `combat_left`, and the hits of the strike round a go or a tick
+////   `cast.died`, `LeftCombat` for `cast.combat_left`, and the hits of the strike round a go or a tick
 ////   settles, `hit_events`), a `LandsHeal` for each Heal change its effects start on the caster,
 ////   and its stealth change (`EnteredStealth` or `LeftStealth`). A hit is an event for each
 ////   damage description that landed on a creature: `LandsHit`, `LandsMeleeHit` when the spell is of
@@ -35,7 +35,7 @@
 ////   `Spell4Effects.effectType.14.client_evaluation`); a spell that only selects a unit raises none.
 ////   The rule decides nothing about a draw: the connection asks `proc_draws_needed` how many
 ////   chance words and gate rolls the pending events need, one draw for all, and hands them to
-////   `procs_fire`, which matches each event, in order and then source order, against the proc rows
+////   `cast.procs_fire`, which matches each event, in order and then source order, against the proc rows
 ////   held when the input's own work was done (the server's choice, `.dataBits00.217_218`, `.0_44`):
 ////   a proc whose node the same input took off does not fire, and one the input applied does.
 ////   `proc.decide` checks, in this order, the limit (at most `count` fires in any `window_ms`, a
@@ -56,7 +56,7 @@
 //// - **A unit that leaves the caster's sight** takes its nodes with it on the client
 ////   (`0x1404550d0`), so the rule drops them too and a lingering cast left with no node
 ////   ends with its 0x7fe (`unit_removed`).
-//// - **The innate passive** is a cast the client never makes: `passive_started` starts it
+//// - **The innate passive** is a cast the client never makes: `cast.passive_started` starts it
 ////   at each join with a 0x7ff and no 0x7fd, as `Passive`, which starts no global
 ////   cooldown, is never the current cast, opens no threshold and runs no check of the
 ////   caster. Its go runs as any cast's, and the cast lingers with no 0x7fe, even when
@@ -94,7 +94,7 @@
 //// | a lasting cast's persistence fails | 0x7f9 {cast id, 282 or 283, caster, 0}, 0x7fe, CastFinished to each viewer; timers and modifiers end; the current cast clears; a press held for it starts |
 //// | a persistence not read, or a target persistence on a creature | the cast goes on; a debug line once for the spell |
 //// | two casts whose persistence fails in one input, or one that fails because the other ended | both end in that input, the lower cast id first |
-//// | a persistence check while the player is leaving or dead | nothing: `left` and `died` have already dropped every cast |
+//// | a persistence check while the player is leaving or dead | nothing: `cast_tick.left` and `cast.died` have already dropped every cast |
 //// | a press while one is held | 0x7fc 13 |
 //// | a press of a spell whose caster conditions mask Ability Restriction while the caster holds it | 0x7fc 302, ahead of the cooldowns; a spell whose mask lacks bit 27 passes |
 //// | a go gives the caster Ability Restriction | 0x87f to the caster and its audience, once for the effect; a `RestrictionEnd` timer at the row's delay plus duration, none for flag 2; the cast lingers until its persistence ends (the server reads no ride, so the hoverboard's ends in the go's own input: gap, #336) |
@@ -126,7 +126,7 @@
 //// | a proc's trigger and the removal of its holder's node in one input | the removed proc does not fire: procs are matched after the input's work |
 //// | a proc's trigger happens for a caster its spell's condition refuses (a dead caster) | a debug line naming the row and the spell, no cast and no fire recorded |
 //// | a go of a cast that is not the innate passive applies a `Died` proc | the proc is not held, with a debug line: a death ends the cast before it could fire |
-//// | the caster dies in combat | `combat_left`, then `died`: 63366 twice, each under its own limit |
+//// | the caster dies in combat | `cast.combat_left`, then `cast.died`: 63366 twice, each under its own limit |
 //// | the caster camps or leaves stealthed | the procs drop with every cast, nothing is cast or written |
 //// | a press with 500 ms or less of the current cast left | held, nothing written; taken at the go or finish that clears the current cast |
 //// | a 0x801 for a cast that is not live, or one already finished | no change, a debug line |
@@ -136,7 +136,7 @@
 //// | a threshold's window ends with taps left | the threshold closes, nothing is written, the cooldown starts |
 //// | the player camps with casts, children or a threshold pending | every timer is cancelled and nothing is written: the viewers' clients drop the cast with the unit (the connection writes each viewer's 0x7fe before its 0x355) |
 //// | the caster's connection ends, a key held | its timers and the hold end with it; the map's `Gone` removes the unit from each viewer, which finishes its casts first |
-//// | the caster dies with casts live | each ends with its timers cancelled and 0x7fe to the caster and its audience; the hold and every other timer end, but the innate passive's cast, its nodes, modifiers and pending children (`died`) |
+//// | the caster dies with casts live | each ends with its timers cancelled and 0x7fe to the caster and its audience; the hold and every other timer end, but the innate passive's cast, its nodes, modifiers and pending children (`cast.died`) |
 //// | the innate passive's plan is missing | a warning and no cast: the plans hold every class's passive, or the load fails |
 //// | a timer fires after its cast ended | a go finds no live cast and does nothing; the cast's end cancels its go timers |
 //// | a timer fires in a status that holds no player in the world | dropped; the world is left already |
@@ -156,13 +156,14 @@
 import genesis_prime/game/cast/control as cast_control
 import genesis_prime/game/cast/state.{
   type Aimed, type Applied, type Aside, type Caster, type Due, type Effect,
-  type Holder, type Live, type State, Absorb, Activated, Aside, CancelTimer,
-  CasterChangeEnding, CasterChangeEnds, CasterChangeStarts, ChargeLevel,
-  CooldownEnding, CooldownModifierEnds, CooldownModifierStarts, Finish,
-  ForcedMoveStart, ForcedMoveStarts, Gain, Go, Heal, HeldProc, Log, Look,
-  ModifierEnd, ModifierStart, NodesEnd, Pay, ProcDue, Property, RepeatHeld,
-  RestrictionEnd, Send, ShortcutCast, StartChild, StartHeld, StartTimer, State,
-  StateEnd, StealthChanged, Strike, TargetChangeEnds, TargetChangeStarts,
+  type Holder, type Live, type State, type Struck, Absorb, Activated, Aside,
+  CancelTimer, CasterChangeEnding, CasterChangeEnds, CasterChangeStarts,
+  ChargeLevel, CooldownEnding, CooldownModifierEnds, CooldownModifierStarts,
+  Deflected, Finish, ForcedMoveStart, ForcedMoveStarts, Gain, Go, Heal, HeldProc,
+  Hit, HitCreature, HitPlayer, Immune, Log, Look, ModifierEnd, ModifierStart,
+  NodesEnd, Pay, ProcDue, Property, RepeatHeld, RestrictionEnd, Send,
+  ShortcutCast, StartChild, StartHeld, StartTimer, State, StateEnd,
+  StealthChanged, Strike, TargetChangeEnds, TargetChangeStarts,
   TargetModifierStart, Tell, Tick, TickStrike, WindowEnd,
 } as cast_state
 import genesis_prime/game/cast/tick as cast_tick
@@ -171,8 +172,10 @@ import genesis_prime/game/hit
 import genesis_prime/game/lasting
 import genesis_prime/game/proc
 import genesis_prime/game/spell_plan.{type Spell}
+import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_properties
 import genesis_prime/message/combat_result
+import genesis_prime/message/crowd_control_state
 import genesis_prime/step.{LogDebug}
 import genesis_prime/table/id.{type Spell4Id}
 import gleam/bool
@@ -240,6 +243,92 @@ pub fn heals_landed(
   })
 }
 
+/// A `SpendsResource` event for each payment the effects take from the caster's class
+/// resource. A guess: the event names no spell, so a group filter never matches it (a
+/// payment does not say which spell it is for, and no client code reads a Proc row,
+/// `Spell4Effects.effectType.14.dataBits00`).
+pub fn resources_spent(effects effects: List(Effect)) -> List(proc.Event) {
+  list.filter_map(effects, fn(effect) {
+    case effect {
+      Pay(..) ->
+        Ok(proc.Event(
+          trigger: spell_plan.SpendsResource,
+          other_unit: None,
+          spell: None,
+        ))
+      Send(..)
+      | Tell(..)
+      | StartTimer(..)
+      | CancelTimer(..)
+      | Log(..)
+      | Strike(..)
+      | TickStrike(..)
+      | Gain(..)
+      | CasterChangeStarts(..)
+      | CasterChangeEnds(..)
+      | TargetChangeStarts(..)
+      | TargetChangeEnds(..)
+      | ForcedMoveStarts(..)
+      | Activated(..)
+      | ShortcutCast(..)
+      | StealthChanged(..) -> Error(Nil)
+    }
+  })
+}
+
+/// The events a strike round's units give the holder, in the round's order: for each
+/// description of the damage that landed on a creature, a hit, a melee hit when the spell is
+/// of school 1, a critical when the description's combat result is a critical (and a finisher
+/// critical, which the row's group filter narrows to finishers) and a kill
+/// when it killed the creature, so a go with two damage rows on one creature raises two
+/// hits and a spell that only selects a unit (no description) raises none; then a taunt
+/// landed for each Taunt state the creature took, a guarded creature's included. A
+/// deflected unit raises a deflect and no hit, and an immune one no hit, and a player
+/// a creature's attack hit is not the holder's strike (a guess for each description
+/// counting, for a deflect, an immunity, a finisher critical and a taunt: no client code
+/// reads a Proc row, `Spell4Effects.effectType.14.client_evaluation`).
+pub fn hit_events(
+  spell spell: Spell,
+  struck struck: List(Struck),
+) -> List(proc.Event) {
+  let on = fn(unit_id, trigger) {
+    proc.Event(
+      trigger:,
+      other_unit: Some(unit_id),
+      spell: Some(event_spell(spell:)),
+    )
+  }
+  list.flat_map(struck, fn(one) {
+    case one {
+      Hit(unit_id:, unit: HitCreature(..), descriptions:, controls:, ..) ->
+        list.append(
+          list.flat_map(descriptions, fn(description) {
+            list.map(hit_triggers(spell:, description:), on(unit_id, _))
+          }),
+          taunts_landed(unit_id:, controls:, on:),
+        )
+      Immune(unit_id:, unit: HitCreature(..), controls:, ..) ->
+        taunts_landed(unit_id:, controls:, on:)
+      Deflected(unit_id:) -> [on(unit_id, spell_plan.FoeDeflects)]
+      Hit(unit: HitPlayer, ..) | Immune(unit: HitPlayer, ..) -> []
+    }
+  })
+}
+
+/// A taunt landed event for each Taunt state a unit took.
+fn taunts_landed(
+  unit_id unit_id: Int,
+  controls controls: List(strike_tell.ControlLanded),
+  on on: fn(Int, spell_plan.Trigger) -> proc.Event,
+) -> List(proc.Event) {
+  list.filter_map(controls, fn(control) {
+    case control.tell.row.state == crowd_control_state.Taunt {
+      True -> Ok(on(unit_id, spell_plan.LandsTaunt))
+      False -> Error(Nil)
+    }
+  })
+}
+
 /// The spell of an event as a proc's filter reads it.
 pub fn event_spell(spell spell: Spell) -> proc.EventSpell {
   proc.EventSpell(
@@ -250,7 +339,7 @@ pub fn event_spell(spell spell: Spell) -> proc.EventSpell {
 }
 
 /// The triggers one damage description of a strike on a creature raises.
-pub fn hit_triggers(
+fn hit_triggers(
   spell spell: Spell,
   description description: hit.Description,
 ) -> List(spell_plan.Trigger) {
@@ -278,7 +367,7 @@ pub fn has_pending(cast cast: State) -> Bool {
 }
 
 /// The words and the gate rolls the connection draws before the pending events are matched
-/// (`procs_fire`): for each pending event, each held proc of its trigger takes what
+/// (`cast.procs_fire`): for each pending event, each held proc of its trigger takes what
 /// `proc.draws_needed` gives, whether or not an earlier check stops it, so the count is
 /// exact. A state with nothing pending needs none.
 pub fn proc_draws_needed(cast cast: State) -> #(Int, Int) {
@@ -297,7 +386,7 @@ pub fn proc_draws_needed(cast cast: State) -> #(Int, Int) {
 
 /// The units the pending events concern besides the caster, which the event gates read:
 /// the connection takes their poses, checklist indexes and kinds from its picture of the
-/// caster's world for `procs_fire`.
+/// caster's world for `cast.procs_fire`.
 pub fn pending_units(cast cast: State) -> List(Int) {
   list.filter_map(cast.pending, fn(event) {
     option.to_result(event.other_unit, Nil)
@@ -402,7 +491,7 @@ pub fn nodes_left(
 /// written for them; a lingering cast left with no node sends its finish and is
 /// dropped, and one that keeps nodes has its `NodesEnd` timer started again. This
 /// bounds the casts that linger by the units in sight, so the caster's cast ids
-/// (`mint`) cannot run out. A property modifier a dropped cast node held on a creature
+/// (`cast_state.mint`) cannot run out. A property modifier a dropped cast node held on a creature
 /// ends with it (`TargetChangeEnds`), since nothing else would end it.
 pub fn unit_removed(
   cast cast: State,
@@ -594,7 +683,7 @@ fn belongs_to_passive(
 }
 
 /// Takes the node off the caster of each cast that holds a source damage breaks
-/// (`damage_taken`); nothing when the caster holds none.
+/// (`cast.damage_taken`); nothing when the caster holds none.
 pub fn broken_by_damage(
   cast cast: State,
   caster caster: Caster,

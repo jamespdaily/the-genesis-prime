@@ -90,8 +90,8 @@ pub fn ticking_heals(
 /// The heals a go applies at once (a periodic one ticks, `ticking_heals`), each on the
 /// caster, with the amount the caster's own
 /// vitals and stats give: the caster as it stood before the go's own effects, the rule of
-/// every gate of the go (`subject_of`), and the overheal the vital's room leaves. A row's
-/// units are those its aim names (`units_aimed_at`) and only the caster is healed: the
+/// every gate of the go (`cast_tick.subject_of`), and the overheal the vital's room leaves. A row's
+/// units are those its aim names (`cast_gate.units_aimed_at`) and only the caster is healed: the
 /// server gives no other unit a heal, so a heal aimed at another unit (the primary target
 /// of a cast on someone else, a unit the round hit) is left, with a debug line naming its
 /// row (other players come with #570). The plan refuses a heal that names the primary
@@ -164,7 +164,7 @@ pub fn split_of(
 }
 
 /// What a formula reads of the caster when it is also the target of its effect: the stats
-/// and the vitals it had before the go's own effects (`subject_of`).
+/// and the vitals it had before the go's own effects (`cast_tick.subject_of`).
 pub fn on_caster_of(caster caster: Caster) -> damage.OnCaster {
   damage.OnCaster(attacker: caster.stats, vitals: caster.vitals)
 }
