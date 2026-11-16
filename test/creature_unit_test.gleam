@@ -48,6 +48,7 @@ pub fn a_creature_is_created_as_the_clients_vector_of_a_battle_beast_is_test() -
       outfit_info_id: 0,
       vendor: False,
       unit_type: NonPlayer,
+      world_object_id: 0,
       visibility: option.None,
       combat: spawn_support.beast_combat(),
       bases: spawn_support.loaded_beast().bases,

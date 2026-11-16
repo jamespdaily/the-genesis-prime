@@ -155,8 +155,8 @@
 ////   sighting of the target the strike goes along the turret's body yaw, the facing of its
 ////   place. The server never turns the body: the 0x7ff's yaw turns nothing
 ////   (`creature.facing`).
-//// - **A creature that cannot move** (a unit type that never moves: a turret,
-////   `creature_unit_type.can_move`) sends no 0x638 to chase or walk home. An attack tick that
+//// - **A creature that cannot move** (a turret, or a creature placed as part of a map
+////   object: `creature_unit_type.can_move`) sends no 0x638 to chase or walk home. An attack tick that
 ////   finds its target beyond the leash range from home releases it as the leash does, but goes
 ////   straight to Resting where it stands: no walk and no home timer. A player that entered
 ////   its ring before is aggroed again only when it enters it again (`Approached`).
@@ -250,8 +250,8 @@
 //// | Death or leash during the charge: C is killed, or its last threat entry is released | `CancelTimer(CastEnds)` and 0x7fe for the charge, no 0x7f4, then the death or the release as without a charge; the later CastEnds does nothing | `death_during_a_charge_ends_it_test`, `leash_during_a_charge_ends_it_test` |
 //// | a viewer arrives while the charge is open | its news holds the charge's 0x7ff, with its cast id, so its client takes the later 0x7f4 | `a_viewer_arriving_mid_charge_gets_the_open_cast_test` |
 //// | a viewer arrives while the charge is open and the threat list's top entry changed since it began | its 0x7ff names the top entry, the target its 0x908 names | `a_viewer_arriving_mid_charge_is_told_the_current_target_in_the_open_cast_test` |
-//// | a creature that cannot move: its target is out of reach, or beyond the leash range from home | out of reach: no 0x638, it keeps its place; beyond the leash range: the release as the leash does, with no walk, to Resting | `a_turret_never_chases_or_walks_home_test`, `a_turret_leashes_in_place_when_its_target_is_beyond_its_leash_range_test` |
-//// | `Thrown` reaches a creature that is dead, Returning or does not run (run speed 0) | the fight drops it: no path, no timer, no news | `a_turret_is_not_thrown_test`, `a_throw_at_a_dead_or_returning_creature_is_dropped_test` |
+//// | a creature that cannot move: its target is out of reach, or beyond the leash range from home | out of reach: no 0x638, it keeps its place; beyond the leash range: the release as the leash does, with no walk, to Resting | `a_turret_never_chases_or_walks_home_test`, `a_turret_leashes_in_place_when_its_target_is_beyond_its_leash_range_test`, `a_creature_placed_as_part_of_a_map_object_does_not_chase_a_target_that_leaves_its_reach_test`, `a_creature_placed_as_part_of_a_map_object_leaves_combat_without_a_walk_home_test`, `a_creature_placed_as_part_of_a_map_object_leaves_combat_in_place_when_its_target_is_beyond_its_leash_range_test` |
+//// | `Thrown` reaches a creature that is dead, Returning, cannot move (a Turret, or a creature placed as part of a map object) or does not run (run speed 0) | the fight drops it: no path, no timer, no news | `a_turret_is_not_thrown_test`, `a_creature_placed_as_part_of_a_map_object_is_not_moved_by_a_forced_move_test`, `a_throw_at_a_dead_or_returning_creature_is_dropped_test` |
 //// | `Thrown` reaches a creature that runs, Fighting or Resting | the path is `Timed` from where it is, `FlightEnds` starts, the viewers are sent one 0x638; an open charge breaks as `held` does, unless the throw moves the creature nowhere | `a_thrown_creature_sends_its_viewers_the_flight_once_test`, `a_throw_breaks_an_open_charge_test`, `a_throw_that_moves_the_creature_nowhere_leaves_an_open_charge_test` |
 //// | `Thrown` reaches a creature already in flight | the new path starts from where the first had reached, the old `FlightEnds` is cancelled and a new one starts | `a_second_throw_mid_flight_starts_from_where_the_first_had_reached_test` |
 //// | an attack tick fires in flight | no round starts: the creature does not attack or chase until it lands | `a_thrown_creature_does_not_chase_or_attack_until_it_lands_test` |
@@ -278,7 +278,6 @@ import genesis_prime/world_map/creature_life.{type Attack, Charged, Instant}
 import genesis_prime/world_map/creature_path.{
   type Path, Circle, Running, Standing, Timed,
 }
-import genesis_prime/world_map/creature_unit_type.{type CreatureUnitType}
 import genesis_prime/world_map/game_number.{type GameNumbers}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/stay.{type Stay}
@@ -306,13 +305,14 @@ import gleam/set.{type Set}
 ///   Stun, Knockdown or Knockback, so `ticked` starts no strike of an instant attack.
 /// - `holds_a_state`: it holds any state, so `ticked` starts no charge (a gap that the issue
 ///   "Creatures cast spells, and the effect types only creature spells use work" closes) and a state that takes hold during a charge breaks it.
-/// An attack that is `Charged` is a charge, and a creature whose unit type cannot move never
-/// chases or walks home.
+/// - `can_move`: the creature may move (`creature_unit_type.can_move`); one that may not never
+///   chases or walks home.
+/// An attack that is `Charged` is a charge.
 pub type Fighter {
   Fighter(
     unit_id: Int,
     address: Address,
-    unit_type: CreatureUnitType,
+    can_move: Bool,
     home: Place,
     attack: Attack,
     interval_ms: Int,
@@ -1316,9 +1316,9 @@ fn attacks(
   }
 }
 
-/// Whether the creature never moves: its unit type cannot.
+/// Whether the creature never moves (`Fighter.can_move`).
 fn cannot_move(fighter fighter: Fighter) -> Bool {
-  !creature_unit_type.can_move(unit_type: fighter.unit_type)
+  !fighter.can_move
 }
 
 /// How near the leash circle a creature counts as at it: a path clipped at the

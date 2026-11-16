@@ -87,6 +87,7 @@ import genesis_prime/import_world_data
 import genesis_prime/readiness
 import genesis_prime/step/runtime
 import genesis_prime/table/world
+import genesis_prime/world_map/creature_unit_type
 import genesis_prime/world_map/objective_spawn
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/static_object.{type StaticObject}
@@ -205,6 +206,60 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
       <> int.to_string(took)
       <> " ms"
     }
+  // A NonPlayer row placed as part of a map object (`active_prop_id` not 0) never
+  // moves: `spawn.tsv` holds 630 such rows of 164 creatures, and each one that
+  // starts has no run speed.
+  let linked_rows =
+    list.filter(rows, fn(row) {
+      row.entity_type == 0 && row.world_object_id != 0
+    })
+  assert list.length(linked_rows) == 630
+    as "the world database's NonPlayer rows placed as part of a map object"
+  assert list.length(
+      list.unique(list.map(linked_rows, fn(row) { row.creature_id })),
+    )
+    == 164
+    as "and their creatures"
+  let started =
+    list.flat_map(world.all(tables), fn(row) {
+      dict.values(content_spawn.world(key:, world_id: row.id).by_id)
+    })
+  let linked_started =
+    list.filter(started, fn(one) {
+      one.unit_type == creature_unit_type.NonPlayer && one.world_object_id != 0
+    })
+  assert list.all(linked_started, fn(one) { one.combat.attack.run_speed == 0.0 })
+    as "none of them moves"
+  // Every linked row is either started or left out for one of the selection's reasons
+  // (friendly to both, a service link, health 0), so the 630 are all explained.
+  let linked_selection =
+    spawn.select(
+      rows: linked_rows,
+      tables:,
+      formulas: rating.formulas(tables:),
+      kinds: spawn_support.kinds(),
+      vendors: vendor.none(),
+      factions: spawn_support.the_boss_is_given_233(tables:),
+    )
+  assert linked_selection.refusals == []
+    as "no linked row is refused, so none is missing from the count"
+  let linked_started_count =
+    list.fold(linked_selection.coverage, 0, fn(total, world) {
+      total + world.started
+    })
+  let linked_left_out_count = fn(reason) {
+    list.flat_map(linked_selection.coverage, fn(world) { world.left_out })
+    |> list.filter(fn(entry) { entry.0 == reason })
+    |> list.fold(0, fn(total, entry) { total + entry.1 })
+  }
+  assert linked_started_count
+    + linked_left_out_count(spawn.FriendlyToBoth)
+    + linked_left_out_count(spawn.ServiceLink)
+    + linked_left_out_count(spawn.Dead)
+    == 630
+    as "the linked rows that start, plus those left out as friendly to both, with a service link and dead, are the 630 rows"
+  assert linked_started_count == list.length(linked_started)
+    as "the linked rows the load starts are the ones the selection starts"
   // The rows left out in all worlds are the selection's own count over the same
   // rows and tables: the load keeps the selection's spawns and logs these.
   let selection =
