@@ -32,7 +32,11 @@ import character_support
 import client_tables
 import crowd_control_support
 import genesis_prime/client_connection
-import genesis_prime/game/cast.{type Caster, type Effect, type State}
+import genesis_prime/game/cast
+import genesis_prime/game/cast/gate as cast_gate
+import genesis_prime/game/cast/proc as cast_proc
+import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
+import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/class_resource
 import genesis_prime/game/damage
 import genesis_prime/game/effect_kind
@@ -77,7 +81,7 @@ import unitest
 /// A Stalker: its three level-1 abilities (Shred, Impale, Stagger) and its innate, Nano
 /// Skin: Lethal, at bag index 3.
 fn stalker(in_combat in_combat: Bool) -> Caster {
-  cast.Caster(
+  cast_state.Caster(
     ..support.caster(),
     abilities: list.map([23_148, 23_161, 23_173, 30_075], Spell4BaseId),
     in_combat:,
@@ -85,7 +89,7 @@ fn stalker(in_combat in_combat: Bool) -> Caster {
 }
 
 fn dead(caster caster: Caster) -> Caster {
-  cast.Caster(..caster, dead: True)
+  cast_state.Caster(..caster, dead: True)
 }
 
 fn answered(
@@ -101,7 +105,7 @@ fn answered(
 fn joined(caster caster: Caster, at ms: Int) -> #(State, List(Effect)) {
   let #(state, effects) =
     passive_started(
-      cast: cast.new(),
+      cast: cast_state.new(),
       caster:,
       plans: support.real_plans(),
       base: Spell4BaseId(29_131),
@@ -246,7 +250,7 @@ fn trace(
   }
   list.flat_map(effects, fn(effect) {
     case effect {
-      cast.Send(frame:) ->
+      cast_state.Send(frame:) ->
         case frame.message_id {
           0x07FF -> {
             let assert Ok(start) = spell_started.decode(frame.body)
@@ -267,23 +271,23 @@ fn trace(
           }
           _ -> []
         }
-      cast.StealthChanged(stealthed: True) -> ["stealth on"]
-      cast.StealthChanged(stealthed: False) -> ["stealth off"]
-      cast.Tell(..)
-      | cast.StartTimer(..)
-      | cast.CancelTimer(..)
-      | cast.Strike(..)
-      | cast.TickStrike(..)
-      | cast.Log(..)
-      | cast.Pay(..)
-      | cast.Gain(..)
-      | cast.CasterChangeStarts(..)
-      | cast.CasterChangeEnds(..)
-      | cast.TargetChangeStarts(..)
-      | cast.TargetChangeEnds(..)
-      | cast.ForcedMoveStarts(..)
-      | cast.Activated(..)
-      | cast.ShortcutCast(..) -> []
+      cast_state.StealthChanged(stealthed: True) -> ["stealth on"]
+      cast_state.StealthChanged(stealthed: False) -> ["stealth off"]
+      cast_state.Tell(..)
+      | cast_state.StartTimer(..)
+      | cast_state.CancelTimer(..)
+      | cast_state.Strike(..)
+      | cast_state.TickStrike(..)
+      | cast_state.Log(..)
+      | cast_state.Pay(..)
+      | cast_state.Gain(..)
+      | cast_state.CasterChangeStarts(..)
+      | cast_state.CasterChangeEnds(..)
+      | cast_state.TargetChangeStarts(..)
+      | cast_state.TargetChangeEnds(..)
+      | cast_state.ForcedMoveStarts(..)
+      | cast_state.Activated(..)
+      | cast_state.ShortcutCast(..) -> []
     }
   })
 }
@@ -329,23 +333,23 @@ fn listed_on_the_caster(effects effects: List(Effect)) -> List(Int) {
 
 fn is_strike(effect effect: Effect) -> Bool {
   case effect {
-    cast.Strike(..) -> True
-    cast.Send(..)
-    | cast.Tell(..)
-    | cast.StartTimer(..)
-    | cast.CancelTimer(..)
-    | cast.Log(..)
-    | cast.Pay(..)
-    | cast.Gain(..)
-    | cast.CasterChangeStarts(..)
-    | cast.CasterChangeEnds(..)
-    | cast.TargetChangeStarts(..)
-    | cast.TargetChangeEnds(..)
-    | cast.ForcedMoveStarts(..)
-    | cast.Activated(..)
-    | cast.ShortcutCast(..)
-    | cast.TickStrike(..)
-    | cast.StealthChanged(..) -> False
+    cast_state.Strike(..) -> True
+    cast_state.Send(..)
+    | cast_state.Tell(..)
+    | cast_state.StartTimer(..)
+    | cast_state.CancelTimer(..)
+    | cast_state.Log(..)
+    | cast_state.Pay(..)
+    | cast_state.Gain(..)
+    | cast_state.CasterChangeStarts(..)
+    | cast_state.CasterChangeEnds(..)
+    | cast_state.TargetChangeStarts(..)
+    | cast_state.TargetChangeEnds(..)
+    | cast_state.ForcedMoveStarts(..)
+    | cast_state.Activated(..)
+    | cast_state.ShortcutCast(..)
+    | cast_state.TickStrike(..)
+    | cast_state.StealthChanged(..) -> False
   }
 }
 
@@ -425,7 +429,7 @@ fn planted_joined(
   let caster = planted_caster()
   let #(state, effects) =
     passive_started(
-      cast: cast.new(),
+      cast: cast_state.new(),
       caster:,
       plans:,
       base: spell.spell4_base_id,
@@ -490,7 +494,7 @@ pub fn the_stalkers_passive_lists_its_five_proc_rows_on_the_caster_and_lingers_w
   assert list.map(support.started_timers(effects:), fn(timer) { timer.1 })
     == [50]
     as "no timer ends the node: only 147125's Proxy to 60724 waits its 50 ms"
-  assert cast.stealthed(cast: state) == False
+  assert cast_state.stealthed(cast: state) == False
 }
 
 // ---- entering and leaving stealth ----
@@ -788,7 +792,7 @@ pub fn a_proc_fires_again_only_when_its_window_has_passed_a_fire_at_exactly_its_
     planted_press(plans:, state:, bag: bag_of_base_1, at: 2499)
   assert starts_of(spell4_id: 250_201, effects: early_effects) == 0
     as "Spell4Effects.effectType.14.limits: the 217 proc fired at 2000 with dataBits04 500, so 499 ms later it is held back"
-  assert cast.stealthed(cast: early) as "the stealth itself is entered"
+  assert cast_state.stealthed(cast: early) as "the stealth itself is entered"
   let #(_, on_time) =
     planted_press(plans:, state:, bag: bag_of_base_1, at: 2500)
   assert starts_of(spell4_id: 250_201, effects: on_time) == 1
@@ -873,14 +877,14 @@ pub fn a_fire_draws_no_roll_and_a_held_proc_changes_no_go_rolls_test() -> Nil {
   // fires 60724.
   let #(held, started) =
     passive_started(
-      cast: cast.new(),
+      cast: cast_state.new(),
       caster:,
       plans: support.real_plans(),
       base: Spell4BaseId(29_131),
       now: support.at(ms: 1000),
     )
-  let assert [cast.Strike(passive_go)] = list.filter(started, is_strike)
-  assert cast.rolls_needed(
+  let assert [cast_state.Strike(passive_go)] = list.filter(started, is_strike)
+  assert cast_gate.rolls_needed(
       cast: held,
       caster: support.caster().unit_id,
       cast_id: passive_go.cast_id,
@@ -899,7 +903,7 @@ pub fn a_fire_draws_no_roll_and_a_held_proc_changes_no_go_rolls_test() -> Nil {
       target: 0,
       at: 2000,
     )
-  let assert [cast.Strike(toggle_go)] = list.filter(pressed, is_strike)
+  let assert [cast_state.Strike(toggle_go)] = list.filter(pressed, is_strike)
   let #(state, going) =
     support.went(
       cast: state,
@@ -909,8 +913,8 @@ pub fn a_fire_draws_no_roll_and_a_held_proc_changes_no_go_rolls_test() -> Nil {
       phase: toggle_go.phase,
       struck: [],
     )
-  let assert [cast.Strike(stealth_go)] = list.filter(going, is_strike)
-  assert cast.rolls_needed(
+  let assert [cast_state.Strike(stealth_go)] = list.filter(going, is_strike)
+  assert cast_gate.rolls_needed(
       cast: state,
       caster: support.caster().unit_id,
       cast_id: stealth_go.cast_id,
@@ -1048,7 +1052,8 @@ pub fn death_casts_63366_after_the_casts_it_ends_and_cuts_the_stealth_cooldown_t
     )
   assert support.refusal_results(effects: press) == []
     as "the cooldown left is 150 ms, inside the 500 ms window the client queues"
-  let #(without, _) = toggled(state: cast.new(), caster: in_combat, at: 1000)
+  let #(without, _) =
+    toggled(state: cast_state.new(), caster: in_combat, at: 1000)
   let #(without, _) =
     died(
       cast: without,
@@ -1208,7 +1213,7 @@ pub fn procs_are_matched_after_the_inputs_work_a_removed_holder_fires_nothing_an
     as "the setup: the stealth ended in that input"
   assert starts_of(spell4_id: 250_202, effects:) == 0
     as "the proc was removed by the same input's go, so it is not held when the input is matched"
-  assert cast.stealthed(cast: state) == False
+  assert cast_state.stealthed(cast: state) == False
   // A go that applies a holder and enters stealth in one input.
   let applier =
     Spell(
@@ -1227,7 +1232,7 @@ pub fn procs_are_matched_after_the_inputs_work_a_removed_holder_fires_nothing_an
     )
   let plans = support.plans_of([applier])
   let #(_, entering) =
-    planted_press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    planted_press(plans:, state: cast_state.new(), bag: bag_of_base_3, at: 1000)
   assert from(
       lines: trace(effects: entering, earlier: [], pressed: 38_915),
       line: "stealth on",
@@ -1306,7 +1311,7 @@ pub fn a_camp_drops_the_procs_fires_nothing_and_the_next_passive_holds_them_with
   let caster = stalker(in_combat: False)
   let #(state, _) = joined(caster:, at: 1000)
   let #(state, _) = toggled(state:, caster:, at: 2000)
-  let #(state, left) = cast.left(cast: state)
+  let #(state, left) = cast_tick.left(cast: state)
   assert support.writes(effects: left) == []
     as "a camp writes nothing, and leaving stealth is no event"
   assert list.filter(left, is_strike) == []
@@ -1368,7 +1373,7 @@ pub fn a_proc_lasts_as_long_as_its_node_a_timed_one_ends_with_it_and_a_removal_d
   let plans = support.plans_of([holder, removing])
   let caster = planted_caster()
   let #(state, pressed) =
-    planted_press(plans:, state: cast.new(), bag: bag_of_base_1, at: 0)
+    planted_press(plans:, state: cast_state.new(), bag: bag_of_base_1, at: 0)
   let leaves = fn(state, at) {
     let #(state, effects) =
       combat_left(cast: state, caster:, now: support.at(ms: at))
@@ -1413,7 +1418,7 @@ pub fn a_camp_ends_a_procs_fire_history_with_the_proc_test() -> Nil {
   let #(state, first) =
     planted_press(plans:, state:, bag: bag_of_base_1, at: 2000)
   assert starts_of(spell4_id: 250_201, effects: first) == 1
-  let #(state, _) = cast.left(cast: state)
+  let #(state, _) = cast_tick.left(cast: state)
   let #(state, started) =
     passive_started(
       cast: state,
@@ -1446,8 +1451,8 @@ pub fn a_stealth_ended_by_a_failing_persistence_fires_the_procs_for_leaving_it_t
       ),
     )
   let plans = support.plans_of([bound, holder])
-  let in_combat = cast.Caster(..planted_caster(), in_combat: True)
-  let out = cast.Caster(..planted_caster(), in_combat: False)
+  let in_combat = cast_state.Caster(..planted_caster(), in_combat: True)
+  let out = cast_state.Caster(..planted_caster(), in_combat: False)
   let #(state, joined_effects) = planted_joined(plans:, spell: holder, at: 1000)
   let #(state, pressed) =
     support.pressed_in(
@@ -1458,7 +1463,7 @@ pub fn a_stealth_ended_by_a_failing_persistence_fires_the_procs_for_leaving_it_t
       target: 0,
       at: 2000,
     )
-  assert cast.stealthed(cast: state)
+  assert cast_state.stealthed(cast: state)
   let #(state, effects) =
     persisted(cast: state, caster: out, now: support.at(ms: 3000))
   let #(_, effects) = answered(caster: out, state:, effects:, at: 3000)
@@ -1481,7 +1486,7 @@ pub fn a_died_proc_of_a_cast_that_is_not_the_innate_passive_is_not_held_and_says
   let plans = support.plans_of([holder])
   let caster = planted_caster()
   let #(state, pressed) =
-    planted_press(plans:, state: cast.new(), bag: bag_of_base_1, at: 1000)
+    planted_press(plans:, state: cast_state.new(), bag: bag_of_base_1, at: 1000)
   assert list.any(support.logs(effects: pressed), fn(line) {
     line.0 == LogDebug && string.contains(line.1, "not the innate passive")
   })
@@ -1528,8 +1533,8 @@ fn firing(
 fn creature_hit(
   unit_id unit_id: Int,
   descriptions descriptions: List(hit.Description),
-) -> cast.Struck {
-  cast.Hit(
+) -> cast_state.Struck {
+  cast_state.Hit(
     unit_id:,
     unit: support.first_life,
     descriptions:,
@@ -1541,7 +1546,7 @@ fn creature_hit(
 
 /// A hit on the creature in its first life with one plain blow: the damage a go's row lands
 /// on it. A hit with no blow (a spell that only selects the unit) raises no event.
-fn plain_hit(unit_id unit_id: Int) -> cast.Struck {
+fn plain_hit(unit_id unit_id: Int) -> cast_state.Struck {
   creature_hit(unit_id:, descriptions: [
     blow(result: combat_result.Hit, killed: 0),
   ])
@@ -1599,9 +1604,9 @@ fn started_when(
 /// What a go of the Spell4 strikes, and nothing else does.
 fn only(
   spell4_id spell4_id: Int,
-  struck struck: List(cast.Struck),
-) -> fn(cast.GoAsked) -> List(cast.Struck) {
-  fn(asked: cast.GoAsked) {
+  struck struck: List(cast_state.Struck),
+) -> fn(cast_state.GoAsked) -> List(cast_state.Struck) {
+  fn(asked: cast_state.GoAsked) {
     case asked.spell4_id == Spell4Id(spell4_id) {
       True -> struck
       False -> []
@@ -1615,7 +1620,7 @@ fn striking(
   state state: State,
   bag bag: Int,
   by spell4_id: Int,
-  struck struck: List(cast.Struck),
+  struck struck: List(cast_state.Struck),
   at ms: Int,
 ) -> #(State, List(Effect)) {
   let caster = planted_caster()
@@ -1643,7 +1648,7 @@ fn striking(
 fn hit_with(
   plans plans: Plans,
   state state: State,
-  struck struck: List(cast.Struck),
+  struck struck: List(cast_state.Struck),
   at ms: Int,
 ) -> #(State, List(Effect)) {
   striking(
@@ -1727,8 +1732,8 @@ pub fn a_deflected_or_immune_unit_raises_no_hit_test() -> Nil {
       school: 2,
     )
   let struck = [
-    cast.Deflected(unit_id: 31),
-    cast.Immune(
+    cast_state.Deflected(unit_id: 31),
+    cast_state.Immune(
       unit_id: 32,
       unit: support.first_life,
       controls: [],
@@ -1935,10 +1940,13 @@ fn periodic() -> List(spell_area.TickingDamage) {
 
 /// The strike round of a tick: it lands for 8 health, and kills the creature when
 /// `killed` is 1.
-fn landed_tick(asked asked: cast.TickAsked, killed killed: Int) -> cast.Struck {
-  cast.Hit(
+fn landed_tick(
+  asked asked: cast_state.TickAsked,
+  killed killed: Int,
+) -> cast_state.Struck {
+  cast_state.Hit(
     unit_id: asked.unit_id,
-    unit: cast.HitCreature(life: asked.life, struck_at_ms: 0),
+    unit: cast_state.HitCreature(life: asked.life, struck_at_ms: 0),
     descriptions: [
       hit.Description(
         ..blow(result: combat_result.Hit, killed:),
@@ -1958,7 +1966,7 @@ fn tick_settled(
   state state: State,
   effects effects: List(Effect),
   at ms: Int,
-  struck struck: List(cast.Struck),
+  struck struck: List(cast_state.Struck),
   kills_at kills_at: Int,
 ) -> #(State, List(Effect)) {
   let #(state, effects) =
@@ -2011,7 +2019,7 @@ fn tick_loop(
   state state: State,
   pending pending: List(#(Int, TimerId)),
   steps steps: List(#(Int, List(Effect))),
-  struck struck: List(cast.Struck),
+  struck struck: List(cast_state.Struck),
   kills_at kills_at: Int,
   until until: Int,
 ) -> List(#(Int, List(Effect))) {
@@ -2063,9 +2071,9 @@ pub fn a_periodic_tick_raises_a_hit_and_a_kill_by_a_tick_raises_a_kill_test() ->
     )
   let caster = planted_caster()
   let struck = [
-    cast.Hit(
+    cast_state.Hit(
       unit_id: 31,
-      unit: cast.HitCreature(life: 3, struck_at_ms: 1000),
+      unit: cast_state.HitCreature(life: 3, struck_at_ms: 1000),
       descriptions: [blow(result: combat_result.Hit, killed: 0)],
       controls: [],
       armor_removed: 0,
@@ -2150,7 +2158,7 @@ fn ticking_heal(id id: Int) -> spell_plan.Heal {
 
 /// The caster of level 5 and 400 Support Rating with this much of its 736 health.
 fn healer(health health: Int) -> Caster {
-  cast.Caster(
+  cast_state.Caster(
     ..support.caster(),
     stats: damage.Attacker(
       ..attacker_support.fresh(),
@@ -2180,7 +2188,7 @@ fn healed_steps(
   let caster = healer(health:)
   let #(state, started) =
     passive_started(
-      cast: cast.new(),
+      cast: cast_state.new(),
       caster:,
       plans:,
       base: holder.spell4_base_id,
@@ -2358,7 +2366,7 @@ pub fn the_208200_gate_passes_only_while_the_holders_79220_holds_a_node_on_the_c
     )
   assert starts_at(spell4_id: 79_221, effects: marked) == []
     as "79220 is not in group 463, so its own hit fires nothing"
-  assert list.map(cast.holds_on(cast: state, unit_id: 31), fn(hold) {
+  assert list.map(cast_tick.holds_on(cast: state, unit_id: 31), fn(hold) {
       hold.spell4_id.value
     })
     == [79_220]
@@ -2460,7 +2468,7 @@ pub fn a_delayed_fire_is_dropped_with_its_timer_when_the_procs_node_ends_test() 
   let plans = support.plans_of([holder, hitter(school: 2)])
   let caster = planted_caster()
   let #(state, pressed) =
-    planted_press(plans:, state: cast.new(), bag: bag_of_base_1, at: 0)
+    planted_press(plans:, state: cast_state.new(), bag: bag_of_base_1, at: 0)
   let #(state, hit) =
     hit_with(plans:, state:, struck: [plain_hit(unit_id: 31)], at: 2500)
   let assert [#(fire_timer, _)] =
@@ -2501,7 +2509,7 @@ pub fn a_delayed_fire_is_dropped_when_the_holder_dies_test() -> Nil {
   let plans = support.plans_of([holder, hitter(school: 2)])
   let caster = planted_caster()
   let #(state, _) =
-    planted_press(plans:, state: cast.new(), bag: bag_of_base_1, at: 0)
+    planted_press(plans:, state: cast_state.new(), bag: bag_of_base_1, at: 0)
   let #(state, hit) =
     hit_with(plans:, state:, struck: [plain_hit(unit_id: 31)], at: 1000)
   let assert [#(fire_timer, _)] =
@@ -2584,7 +2592,7 @@ pub fn a_hit_answered_after_the_client_ended_the_cast_still_fires_the_procs_the_
   let #(state, pressed) =
     support.pressed_raw_in(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster:,
       bag_index: bag_of_base_2,
       target: 0,
@@ -2599,12 +2607,12 @@ pub fn a_hit_answered_after_the_client_ended_the_cast_still_fires_the_procs_the_
     as "the first go arms the second, due at 1500"
   let #(state, asking) =
     support.fired_raw_as(caster:, state:, timer: second_go, at: 1500)
-  let assert [cast.Strike(asked)] = list.filter(asking, is_strike)
+  let assert [cast_state.Strike(asked)] = list.filter(asking, is_strike)
     as "the second go asks for its targets"
   let assert Ok(#(state, _)) =
     cast.take(
       cast: state,
-      message: cast.Cancelled,
+      message: cast_state.Cancelled,
       body: support.cancel_body(
         cast_id:,
         reason: cast_result.SpellCancelled,
@@ -2660,12 +2668,12 @@ pub fn a_hit_answered_after_the_client_ended_a_cast_that_holds_no_node_still_fir
       at: 1000,
     )
   let cast_id = support.pressed_id(effects: pressed)
-  let assert [cast.Strike(asked)] = list.filter(pressed, is_strike)
+  let assert [cast_state.Strike(asked)] = list.filter(pressed, is_strike)
     as "the press asks for the targets of its one go"
   let assert Ok(#(state, _)) =
     cast.take(
       cast: state,
-      message: cast.Cancelled,
+      message: cast_state.Cancelled,
       body: support.cancel_body(
         cast_id:,
         reason: cast_result.SpellCancelled,
@@ -2722,9 +2730,9 @@ pub fn a_fired_spells_own_hits_fire_procs_only_at_its_own_go_test() -> Nil {
       target: 0,
       at: 1000,
     )
-  let assert [cast.Strike(asked)] = list.filter(raw, is_strike)
+  let assert [cast_state.Strike(asked)] = list.filter(raw, is_strike)
     as "the press asks for its go"
-  let go = fn(state, asked: cast.GoAsked) {
+  let go = fn(state, asked: cast_state.GoAsked) {
     let #(state, went) =
       support.went(
         cast: state,
@@ -2734,22 +2742,22 @@ pub fn a_fired_spells_own_hits_fire_procs_only_at_its_own_go_test() -> Nil {
         phase: asked.phase,
         struck: [plain_hit(unit_id: 31)],
       )
-    assert cast.has_pending(cast: state)
+    assert cast_proc.has_pending(cast: state)
       as "the go's hit is waiting to be matched"
     let #(state, fired) =
       support.then_procs(step: #(state, went), caster:, at: 1000)
-    assert !cast.has_pending(cast: state)
+    assert !cast_proc.has_pending(cast: state)
       as "one pass matches it and the fire raises nothing inside it"
     #(state, fired)
   }
   let #(state, first) = go(state, asked)
   assert starts_of(spell4_id: 250_201, effects: first) == 1
-  let assert [cast.Strike(own)] = list.filter(first, is_strike)
+  let assert [cast_state.Strike(own)] = list.filter(first, is_strike)
     as "the fire's go is asked, not answered inside the pass"
   let #(state, second) = go(state, own)
   assert starts_of(spell4_id: 250_201, effects: second) == 1
     as "the fire's own go hit the creature, and that fires the proc a second time"
-  let assert [cast.Strike(own)] = list.filter(second, is_strike)
+  let assert [cast_state.Strike(own)] = list.filter(second, is_strike)
   let #(_, third) = go(state, own)
   assert starts_of(spell4_id: 250_201, effects: third) == 0
     as "a third fire is over the limit of 2 in 1000 ms"
@@ -2777,7 +2785,7 @@ pub fn proc_draws_needed_is_0_with_nothing_pending_and_counts_each_matching_proc
   let plans = support.plans_of([holder, hitter(school: 2)])
   let caster = planted_caster()
   let #(state, _) = planted_joined(plans:, spell: holder, at: 500)
-  assert cast.proc_draws_needed(cast: state) == #(0, 0)
+  assert cast_proc.proc_draws_needed(cast: state) == #(0, 0)
     as "nothing is pending after the passive's own pass"
   let #(state, raw) =
     support.pressed_raw_in(
@@ -2788,7 +2796,7 @@ pub fn proc_draws_needed_is_0_with_nothing_pending_and_counts_each_matching_proc
       target: 0,
       at: 1000,
     )
-  let assert [cast.Strike(asked)] = list.filter(raw, is_strike)
+  let assert [cast_state.Strike(asked)] = list.filter(raw, is_strike)
   let #(state, went) =
     support.went(
       cast: state,
@@ -2805,10 +2813,10 @@ pub fn proc_draws_needed_is_0_with_nothing_pending_and_counts_each_matching_proc
         ]),
       ],
     )
-  assert cast.proc_draws_needed(cast: state) == #(3, 0)
+  assert cast_proc.proc_draws_needed(cast: state) == #(3, 0)
     as "creature 31: a hit, the 0.5 proc takes a word and the 1.0 proc none; creature 32: a hit and a critical, a word each"
   let #(state, _) = support.then_procs(step: #(state, went), caster:, at: 1000)
-  assert cast.proc_draws_needed(cast: state) == #(0, 0)
+  assert cast_proc.proc_draws_needed(cast: state) == #(0, 0)
     as "the pass clears what it matched"
 }
 
@@ -2877,7 +2885,7 @@ pub fn the_stalkers_178239_takes_no_effect_from_its_own_hits_test() -> Nil {
       poses: dict.new(),
     )
   assert starts_of(spell4_id: 72_838, effects:) == 0
-  assert !cast.has_pending(cast: state)
+  assert !cast_proc.has_pending(cast: state)
 }
 
 // ---- part A of the triggers (issue 792) ----
@@ -3134,8 +3142,8 @@ pub fn proc_foe_deflects_fires_test() -> Nil {
       school: 2,
     )
   let struck = [
-    cast.Deflected(unit_id: 31),
-    cast.Immune(
+    cast_state.Deflected(unit_id: 31),
+    cast_state.Immune(
       unit_id: 32,
       unit: support.first_life,
       controls: [],
@@ -3218,8 +3226,8 @@ pub fn proc_critical_finisher_fires_test() -> Nil {
 fn controlling(
   unit_id unit_id: Int,
   tell tell: strike_tell.ControlTell,
-) -> cast.Struck {
-  cast.Hit(
+) -> cast_state.Struck {
+  cast_state.Hit(
     unit_id:,
     unit: support.first_life,
     descriptions: [blow(result: combat_result.Hit, killed: 0)],
@@ -3298,7 +3306,7 @@ fn move_fires(from from: movement.State, to to: movement.State) -> Int {
       school: 2,
     )
   let facts = case movement.started_moving(from:, to:) {
-    True -> [cast.StartedMoving]
+    True -> [cast_state.StartedMoving]
     False -> []
   }
   let #(_, effects) =
@@ -3365,7 +3373,9 @@ fn resource_fires(
       school: 2,
     )
   let state =
-    cast.raised(cast: state, facts: [cast.ResourceMoved(slot:, from:, to:)])
+    cast.raised(cast: state, facts: [
+      cast_state.ResourceMoved(slot:, from:, to:),
+    ])
   let caster =
     support.caster_holding(resources: support.holding(class_id:, value: to))
   assert class_resource.slot(resources: caster.resources) == slot

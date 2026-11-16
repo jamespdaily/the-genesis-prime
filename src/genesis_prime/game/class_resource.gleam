@@ -388,7 +388,7 @@ pub type Effect {
 }
 
 /// The timer of the refill over time; the connection's own timers are below the
-/// cast rule's (genesis_prime/game/cast `owns`), and the save, claim and strike
+/// cast rule's (genesis_prime/game/cast/state `owns`), and the save, claim and strike
 /// timers take 1 to 3.
 pub const regen_timer = TimerId(4)
 

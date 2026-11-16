@@ -20,7 +20,7 @@ import genesis_prime/client_connection.{
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/frame.{type Frame, Frame}
-import genesis_prime/game/cast
+import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{type Settings, Settings}
 import genesis_prime/game/hit.{Blow, Offence, Worked}
@@ -2703,7 +2703,7 @@ pub fn cast_timers(
   list.filter_map(effects, fn(effect) {
     case effect {
       OwnEffect(StartTimer(timer:, after_ms:)) ->
-        case cast.owns(timer:) && !list.contains(cancelled, timer) {
+        case cast_state.owns(timer:) && !list.contains(cancelled, timer) {
           True -> Ok(#(ms + after_ms, timer))
           False -> Error(Nil)
         }

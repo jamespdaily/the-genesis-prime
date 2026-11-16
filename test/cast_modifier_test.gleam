@@ -14,7 +14,10 @@
 ////   again from that go.
 
 import cast_support as support
-import genesis_prime/game/cast.{type Effect}
+import genesis_prime/game/cast
+import genesis_prime/game/cast/proc as cast_proc
+import genesis_prime/game/cast/state.{type Effect} as cast_state
+import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/spell_plan.{type Plans, Always}
 import genesis_prime/game/spend
@@ -72,7 +75,7 @@ pub fn a_go_lists_a_modifier_aimed_at_the_caster_and_its_node_lives_for_the_row_
       support.spell_holding(spell4_id: 57_030, base: 3, modifiers: [crit_row()]),
     ])
   let #(state, effects) =
-    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_base_3, at: 1000)
   let assert [go] = support.frames_of(message_id: spell_go.message_id, effects:)
   let assert Ok(decoded) = spell_go.decode(go.body)
   let assert [info] = decoded.targets
@@ -100,7 +103,7 @@ pub fn a_modifier_with_no_delay_starts_at_the_go_and_ends_after_its_duration_tes
       support.spell_holding(spell4_id: 57_030, base: 3, modifiers: [crit_row()]),
     ])
   let #(state, effects) =
-    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_base_3, at: 1000)
   let id = support.pressed_id(effects:)
   let source = support.source_of(cast_id: id, effect_id: 135_954)
   assert support.property_starts(effects:) == [#(source, crit_modifier())]
@@ -121,7 +124,7 @@ pub fn a_modifier_with_a_delay_starts_after_it_and_ends_after_its_duration_test(
       ]),
     ])
   let #(state, effects) =
-    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_base_3, at: 1000)
   let id = support.pressed_id(effects:)
   let source = support.source_of(cast_id: id, effect_id: 67_777)
   assert support.property_starts(effects:) == []
@@ -146,7 +149,7 @@ pub fn a_modifier_of_a_phase_the_go_is_not_in_is_not_applied_test() -> Nil {
       ]),
     ])
   let #(_, effects) =
-    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_base_3, at: 1000)
   assert support.property_starts(effects:) == []
   assert all_timer_delays(effects:) == []
     as "no row applies in phase 0, so no node and no timer"
@@ -166,7 +169,7 @@ pub fn a_modifier_that_lasts_until_removed_starts_at_the_go_and_has_no_end_timer
       ]),
     ])
   let #(_, effects) =
-    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_base_3, at: 1000)
   assert list.length(support.property_starts(effects:)) == 1
   assert all_timer_delays(effects:) == []
     as "flags bit 2: the modifier and the node end only when the cast is taken off"
@@ -185,7 +188,7 @@ pub fn a_row_with_no_life_applies_nothing_test() -> Nil {
       support.spell_holding(spell4_id: 57_030, base: 3, modifiers: [lifeless]),
     ])
   let #(_, effects) =
-    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_base_3, at: 1000)
   assert support.property_starts(effects:) == []
     as "a zero duration is no time to be changed for"
   assert list.length(support.finished_ids(support.writes(effects:))) == 1
@@ -211,7 +214,7 @@ pub fn a_modifier_behind_a_target_prerequisite_is_not_applied_test() -> Nil {
       support.spell_holding(spell4_id: 57_030, base: 3, modifiers: [gated]),
     ])
   let #(_, effects) =
-    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_base_3, at: 1000)
   assert support.property_starts(effects:) == []
     as "a row behind a target prerequisite is not applied, as a Fluff effect's is not"
 }
@@ -234,7 +237,7 @@ pub fn a_later_go_of_the_cast_arms_its_modifier_again_from_that_go_test() -> Nil
   let #(state, effects) =
     support.press(
       plans: two_gos(),
-      state: cast.new(),
+      state: cast_state.new(),
       bag: bag_of_base_3,
       at: 1000,
     )
@@ -271,7 +274,7 @@ pub fn a_type_80_removal_of_the_cast_ends_its_modifiers_and_cancels_their_timers
       ]),
     ])
   let #(state, first) =
-    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_base_3, at: 1000)
   let id = support.pressed_id(effects: first)
   let #(_, removal) =
     support.press(plans:, state:, bag: bag_of_base_1, at: 2000)
@@ -308,7 +311,7 @@ pub fn a_node_that_ends_by_time_ends_its_modifiers_and_cancels_their_timers_test
       ),
     ])
   let #(state, effects) =
-    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_base_3, at: 1000)
   let id = support.pressed_id(effects:)
   let source = support.source_of(cast_id: id, effect_id: 67_777)
   let #(_, fired) = support.run_timers(state:, effects:, from_ms: 1000)
@@ -326,7 +329,7 @@ pub fn the_caster_dying_ends_every_modifier_still_pending_test() -> Nil {
       ]),
     ])
   let #(state, effects) =
-    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_base_3, at: 1000)
   let id = support.pressed_id(effects:)
   let #(_, ended) =
     cast.died(
@@ -346,8 +349,8 @@ pub fn a_caster_that_leaves_ends_no_modifier_test() -> Nil {
       support.spell_holding(spell4_id: 57_030, base: 3, modifiers: [crit_row()]),
     ])
   let #(state, _) =
-    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
-  let #(_, left) = cast.left(cast: state)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_base_3, at: 1000)
+  let #(_, left) = cast_tick.left(cast: state)
   assert support.caster_change_ends(effects: left) == []
     as "the connection's properties go with the player's Entered"
 }
@@ -402,11 +405,11 @@ fn immediate_row(effect_id effect_id: Int) -> spell_plan.PropertyModifier {
 }
 
 /// The creature 21 in its life 3, struck at the monotonic time 1000.
-fn creature_struck() -> List(cast.Struck) {
+fn creature_struck() -> List(cast_state.Struck) {
   [
-    cast.Hit(
+    cast_state.Hit(
       unit_id: creature,
-      unit: cast.HitCreature(life: 3, struck_at_ms: 1000),
+      unit: cast_state.HitCreature(life: 3, struck_at_ms: 1000),
       descriptions: [],
       controls: [],
       armor_removed: 0,
@@ -417,11 +420,11 @@ fn creature_struck() -> List(cast.Struck) {
 
 fn pressed_striking(
   plans plans: Plans,
-  state state: cast.State,
+  state state: cast_state.State,
   bag bag: Int,
-  struck struck: List(cast.Struck),
+  struck struck: List(cast_state.Struck),
   at ms: Int,
-) -> #(cast.State, List(Effect)) {
+) -> #(cast_state.State, List(Effect)) {
   let #(state, effects) =
     support.pressed_raw_in(
       plans:,
@@ -441,7 +444,7 @@ fn striking_plans(row: spell_plan.PropertyModifier) -> Plans {
 }
 
 fn started_on_creature(source: unit_properties.Source) -> Effect {
-  cast.TargetChangeStarts(
+  cast_state.TargetChangeStarts(
     unit_id: creature,
     life: 3,
     struck_at_ms: 1000,
@@ -451,7 +454,7 @@ fn started_on_creature(source: unit_properties.Source) -> Effect {
 }
 
 fn ended_on_creature(source: unit_properties.Source) -> Effect {
-  cast.TargetChangeEnds(unit_id: creature, life: 3, source:)
+  cast_state.TargetChangeEnds(unit_id: creature, life: 3, source:)
 }
 
 pub fn go_lists_modifier_in_creature_target_info_test() -> Nil {
@@ -459,7 +462,7 @@ pub fn go_lists_modifier_in_creature_target_info_test() -> Nil {
   let #(_, effects) =
     pressed_striking(
       plans: striking_plans(slowing_row()),
-      state: cast.new(),
+      state: cast_state.new(),
       bag: bag_of_base_3,
       struck: creature_struck(),
       at: 1000,
@@ -482,7 +485,7 @@ pub fn modifier_on_creature_starts_after_delay_test() -> Nil {
   let #(state, effects) =
     pressed_striking(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       bag: bag_of_base_3,
       struck: creature_struck(),
       at: 1000,
@@ -514,7 +517,7 @@ pub fn node_end_ends_creature_modifier_test() -> Nil {
   let #(state, effects) =
     pressed_striking(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       bag: bag_of_base_3,
       struck: creature_struck(),
       at: 1000,
@@ -538,7 +541,7 @@ pub fn node_end_ends_creature_modifier_test() -> Nil {
     })
   assert support.finished_ids(support.writes(effects: ending)) == [id]
     as "the lingering cast left with no node ends with its 0x7fe, as for any lasting node"
-  assert support.target_changes(effects: cast.left(cast: state).1) == []
+  assert support.target_changes(effects: cast_tick.left(cast: state).1) == []
     as "and nothing is told again when the caster leaves"
 }
 
@@ -564,7 +567,7 @@ pub fn removal_ends_creature_modifier_test() -> Nil {
   let #(state, first) =
     pressed_striking(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       bag: bag_of_base_3,
       struck: creature_struck(),
       at: 1000,
@@ -595,7 +598,7 @@ pub fn removal_ends_creature_modifier_test() -> Nil {
     )
   assert support.target_timeline(fired:) == []
     as "its node's end timer was cancelled with the node, so nothing ends it twice"
-  assert support.target_changes(effects: cast.left(cast: state).1) == []
+  assert support.target_changes(effects: cast_tick.left(cast: state).1) == []
 }
 
 pub fn removal_before_the_delay_ran_out_starts_nothing_on_the_creature_test() -> Nil {
@@ -618,7 +621,7 @@ pub fn removal_before_the_delay_ran_out_starts_nothing_on_the_creature_test() ->
   let #(state, first) =
     pressed_striking(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       bag: bag_of_base_3,
       struck: creature_struck(),
       at: 1000,
@@ -652,7 +655,7 @@ pub fn caster_death_ends_creature_modifier_test() -> Nil {
   let #(state, effects) =
     pressed_striking(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       bag: bag_of_base_3,
       struck: creature_struck(),
       at: 1000,
@@ -667,7 +670,7 @@ pub fn caster_death_ends_creature_modifier_test() -> Nil {
     )
   assert support.target_changes(effects: died) == [ended_on_creature(source)]
     as "the cast's modifier on the creature is told ended, once"
-  assert support.target_changes(effects: cast.left(cast: state).1) == []
+  assert support.target_changes(effects: cast_tick.left(cast: state).1) == []
     as "and the caster's leaving tells nothing more"
 }
 
@@ -677,7 +680,7 @@ pub fn creature_leaving_sight_ends_its_modifier_test() -> Nil {
   let #(state, effects) =
     pressed_striking(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       bag: bag_of_base_3,
       struck: creature_struck(),
       at: 1000,
@@ -685,10 +688,10 @@ pub fn creature_leaving_sight_ends_its_modifier_test() -> Nil {
   let id = support.pressed_id(effects:)
   let source = support.source_of(cast_id: id, effect_id: 7711)
   let #(state, removed) =
-    cast.unit_removed(cast: state, unit_id: creature, now_ms: 1100)
+    cast_proc.unit_removed(cast: state, unit_id: creature, now_ms: 1100)
   assert support.target_changes(effects: removed) == [ended_on_creature(source)]
     as "the cast drops its node on a creature that left the caster's sight, so the modifier it holds there ends with it"
-  assert support.target_changes(effects: cast.left(cast: state).1) == []
+  assert support.target_changes(effects: cast_tick.left(cast: state).1) == []
     as "and is not told again"
 }
 
@@ -715,7 +718,7 @@ pub fn pushed_off_node_ends_creature_modifier_test() -> Nil {
   let #(state, first) =
     pressed_striking(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       bag: bag_of_base_3,
       struck: creature_struck(),
       at: 1000,
@@ -748,9 +751,9 @@ pub fn modifier_on_another_player_is_left_out_test() -> Nil {
   // A row aimed at a player other than the caster changes nothing until a modifier on
   // another player is built (#570).
   let struck = [
-    cast.Hit(
+    cast_state.Hit(
       unit_id: other_player,
-      unit: cast.HitPlayer,
+      unit: cast_state.HitPlayer,
       descriptions: [],
       controls: [],
       armor_removed: 0,
@@ -760,7 +763,7 @@ pub fn modifier_on_another_player_is_left_out_test() -> Nil {
   let #(_, effects) =
     pressed_striking(
       plans: striking_plans(immediate_row(effect_id: 7711)),
-      state: cast.new(),
+      state: cast_state.new(),
       bag: bag_of_base_3,
       struck:,
       at: 1000,

@@ -36,7 +36,7 @@
 
 import cast_support as support
 import fixture_tables
-import genesis_prime/game/cast.{type State}
+import genesis_prime/game/cast/state.{type State} as cast_state
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan.{type Spell}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
@@ -552,7 +552,7 @@ fn cast_time_of(rows rows: Rows, base base: Int) -> Result(Int, Unread) {
 
 /// A press at a time on a state: the state after it and the effects the rule raised.
 type Press =
-  fn(State, Int) -> #(State, List(cast.Effect))
+  fn(State, Int) -> #(State, List(cast_state.Effect))
 
 /// The time from the go that starts the spell's cooldown to the end of that cooldown.
 /// A charged ability's cooldown starts at its release, pressed 100 ms after the first
@@ -578,7 +578,7 @@ fn cooldown_of(rows rows: Rows, root root: Spell) -> Result(Int, Unread) {
       let release_ms = oracle.start_ms + 100
       let state =
         [oracle.start_ms, release_ms]
-        |> list.fold(cast.new(), fn(state, at_ms) {
+        |> list.fold(cast_state.new(), fn(state, at_ms) {
           let #(state, raw) = press(state, at_ms)
           support.answered_each(
             caster:,

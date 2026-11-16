@@ -265,7 +265,8 @@
 
 import genesis_prime/client_connection.{type News}
 import genesis_prime/game/area.{type Inside, type Row}
-import genesis_prime/game/cast
+import genesis_prime/game/cast/frame as cast_frame
+import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/forced_move
 import genesis_prime/game/hit.{type Offence}
 import genesis_prime/game/start_place.{type Place}
@@ -296,7 +297,7 @@ import gleam/set.{type Set}
 /// attack ticks and the run's game numbers, which are fixed for its life; what its held
 /// crowd-control states stop it doing now, which the creature's rule gives each step
 /// (genesis_prime/world_map/creature_control); and the ids of the guard's live casts
-/// (`creature_guard.live_casts`), which its casts take no id of (`cast.mint`). An opened
+/// (`creature_guard.live_casts`), which its casts take no id of (`cast_state.mint`). An opened
 /// creature (genesis_prime/world_map/creature_guard `opened`) is stopped in all three.
 /// - `still`: it holds a state that stops its run (genesis_prime/game/crowd_control
 ///   `stopping_mask`), so `chase` starts no path, `leash` starts no walk and a state that
@@ -350,7 +351,7 @@ pub type Threat {
   Threat(unit_id: Int, stay: Stay, amount: Float)
 }
 
-/// The round the creature waits on: the number of its cast (`cast.cast_id`, the 0x7ff,
+/// The round the creature waits on: the number of its cast (`cast_state.cast_id`, the 0x7ff,
 /// 0x7f4 and 0x7fe of the round name it) and where it stands.
 pub type Round {
   Round(cast_id: Int, stage: Stage)
@@ -370,7 +371,7 @@ pub type Stage {
   Striking(
     deadline: Int,
     awaiting: Dict(Key, ConnectionId),
-    struck: List(cast.Struck),
+    struck: List(cast_state.Struck),
   )
 }
 
@@ -786,7 +787,7 @@ pub fn refusal(state state: State) -> Result(Nil, strike_tell.Refusal) {
 }
 
 /// The id of the cast the fight holds live: the open round's, which the guard's casts take no id
-/// of (`cast.mint`); none with no round open.
+/// of (`cast_state.mint`); none with no round open.
 pub fn live_casts(state state: State) -> List(Int) {
   case state.status {
     Fighting(round: Some(Round(cast_id:, ..)), ..) -> [cast_id]
@@ -853,7 +854,7 @@ pub fn arrival_news(
       let assert Ok(top) = dict.get(threat, target)
         as "the target is on the threat list"
       [
-        client_connection.CastStarted(start: cast.creature_started(
+        client_connection.CastStarted(start: cast_frame.creature_started(
           cast_id:,
           spell4_id: fighter.attack.spell4_id.value,
           caster_unit_id: fighter.unit_id,
@@ -1351,7 +1352,7 @@ fn strikes(
   here here: Place,
 ) -> #(State, List(Effect)) {
   let cast_id =
-    cast.mint(
+    cast_state.mint(
       unit_id: fighter.unit_id,
       number: state.next_cast,
       live: fighter.guard_casts,
@@ -1370,12 +1371,12 @@ fn strikes(
   #(
     State(
       ..state,
-      next_cast: cast.number_of(cast_id:) + 1,
+      next_cast: cast_state.number_of(cast_id:) + 1,
       status: Fighting(..fighting, round: Some(Round(cast_id:, stage:))),
     ),
     [
       ToViewers(
-        client_connection.CastStarted(start: cast.creature_started(
+        client_connection.CastStarted(start: cast_frame.creature_started(
           cast_id:,
           spell4_id: fighter.attack.spell4_id.value,
           caster_unit_id: fighter.unit_id,
@@ -1477,7 +1478,9 @@ fn with_round(state state: State, round round: Round) -> State {
 /// What the target's answer was: what struck for the round's go, whether the entry
 /// ends (a kill or a refusal), and whether the target is dead (a kill or a `Dead`
 /// refusal).
-fn answer_of(answered answered: Answered) -> #(List(cast.Struck), Bool, Bool) {
+fn answer_of(
+  answered answered: Answered,
+) -> #(List(cast_state.Struck), Bool, Bool) {
   let unit_id = answered.key.unit_id
   case answered.outcome {
     strike_tell.Landed(descriptions:, ..) -> {
@@ -1487,9 +1490,9 @@ fn answer_of(answered answered: Answered) -> #(List(cast.Struck), Bool, Bool) {
         })
       #(
         [
-          cast.Hit(
+          cast_state.Hit(
             unit_id:,
-            unit: cast.HitPlayer,
+            unit: cast_state.HitPlayer,
             descriptions:,
             controls: [],
             armor_removed: 0,
@@ -1502,7 +1505,11 @@ fn answer_of(answered answered: Answered) -> #(List(cast.Struck), Bool, Bool) {
     }
     strike_tell.Immune(..) ->
       panic as "a player is never guarded: only a creature answers Immune"
-    strike_tell.Deflected(..) -> #([cast.Deflected(unit_id:)], False, False)
+    strike_tell.Deflected(..) -> #(
+      [cast_state.Deflected(unit_id:)],
+      False,
+      False,
+    )
     strike_tell.Refused(why: strike_tell.Dead) -> #([], True, True)
     strike_tell.Refused(why: strike_tell.Returning) -> #([], True, False)
   }
@@ -1513,14 +1520,14 @@ fn answer_of(answered answered: Answered) -> #(List(cast.Struck), Bool, Bool) {
 fn round_closed(
   state state: State,
   round round: Round,
-  struck struck: List(cast.Struck),
+  struck struck: List(cast_state.Struck),
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
   let assert Fighting(..) as fighting = state.status
     as "a round closes only while Fighting"
   let here = creature_path.place_at(path: state.path, now_ms:)
   let cast_id = round.cast_id
-  let missed = case cast.creature_missed(cast_id:, struck:) {
+  let missed = case cast_frame.creature_missed(cast_id:, struck:) {
     Some(missed) -> [ToViewers(client_connection.CastMissed(missed:))]
     None -> []
   }
@@ -1529,7 +1536,7 @@ fn round_closed(
     list.flatten([
       [
         ToViewers(
-          client_connection.CastWent(go: cast.creature_went(
+          client_connection.CastWent(go: cast_frame.creature_went(
             cast_id:,
             place: here,
             struck:,
@@ -1557,7 +1564,7 @@ fn charges(
   inside inside: Inside,
 ) -> #(State, List(Effect)) {
   let cast_id =
-    cast.mint(
+    cast_state.mint(
       unit_id: fighter.unit_id,
       number: state.next_cast,
       live: fighter.guard_casts,
@@ -1570,12 +1577,12 @@ fn charges(
   #(
     State(
       ..state,
-      next_cast: cast.number_of(cast_id:) + 1,
+      next_cast: cast_state.number_of(cast_id:) + 1,
       status: Fighting(..fighting, round: Some(round), tick:),
     ),
     [
       ToViewers(
-        client_connection.CastStarted(start: cast.creature_started(
+        client_connection.CastStarted(start: cast_frame.creature_started(
           cast_id:,
           spell4_id: fighter.attack.spell4_id.value,
           caster_unit_id: fighter.unit_id,

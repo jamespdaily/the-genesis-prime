@@ -21,7 +21,8 @@
 //// cast time and one Proxy.
 
 import cast_support as support
-import genesis_prime/game/cast
+import genesis_prime/game/cast/gate as cast_gate
+import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/class_resource.{Gain}
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{type Proxy, type Spell, Proxy, Spell}
@@ -66,14 +67,14 @@ fn spell_with(
 /// nobody, the go taking these rolls.
 fn pressed(
   spell spell: Spell,
-  caster caster: cast.Caster,
+  caster caster: cast_state.Caster,
   rolls rolls: List(Int),
-) -> List(cast.Effect) {
+) -> List(cast_state.Effect) {
   let plans = support.with_spells(plans: support.plans(), spells: [spell])
   let #(state, raw) =
     support.pressed_raw_in(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster:,
       bag_index: 8,
       target: 0,
@@ -91,7 +92,7 @@ fn pressed(
   effects
 }
 
-fn children_started(effects: List(cast.Effect)) -> Int {
+fn children_started(effects: List(cast_state.Effect)) -> Int {
   list.count(support.writes(effects:), fn(frame) {
     case frame.message_id == spell_started.message_id {
       True -> {
@@ -104,7 +105,7 @@ fn children_started(effects: List(cast.Effect)) -> Int {
   })
 }
 
-fn debug_lines(effects: List(cast.Effect)) -> List(String) {
+fn debug_lines(effects: List(cast_state.Effect)) -> List(String) {
   list.filter_map(support.logs(effects:), fn(line) {
     case line.0 == LogDebug {
       True -> Ok(line.1)
@@ -113,8 +114,8 @@ fn debug_lines(effects: List(cast.Effect)) -> List(String) {
   })
 }
 
-fn in_combat() -> cast.Caster {
-  cast.Caster(..support.caster(), in_combat: True)
+fn in_combat() -> cast_state.Caster {
+  cast_state.Caster(..support.caster(), in_combat: True)
 }
 
 fn gated_on(gates: List(prerequisite.Prerequisite)) -> Proxy {
@@ -251,7 +252,7 @@ pub fn a_type_37_target_gate_of_a_proxy_on_the_caster_takes_one_roll_test() -> N
       gains: [],
     )
   let #(state, asked) = live_go_of(spell:)
-  assert cast.rolls_needed(
+  assert cast_gate.rolls_needed(
       cast: state,
       caster: support.caster().unit_id,
       cast_id: asked.cast_id,
@@ -272,12 +273,12 @@ pub fn a_type_37_target_gate_of_a_proxy_on_the_caster_takes_one_roll_test() -> N
     as "a roll of 51 fails"
 }
 
-fn live_go_of(spell spell: Spell) -> #(cast.State, cast.GoAsked) {
+fn live_go_of(spell spell: Spell) -> #(cast_state.State, cast_state.GoAsked) {
   let plans = support.with_spells(plans: support.plans(), spells: [spell])
   let #(state, raw) =
     support.pressed_raw_in(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster(),
       bag_index: 8,
       target: 0,
@@ -286,23 +287,23 @@ fn live_go_of(spell spell: Spell) -> #(cast.State, cast.GoAsked) {
   let assert [asked] =
     list.filter_map(raw, fn(effect) {
       case effect {
-        cast.Strike(asked:) -> Ok(asked)
-        cast.Send(..)
-        | cast.Tell(..)
-        | cast.StartTimer(..)
-        | cast.CancelTimer(..)
-        | cast.Log(..)
-        | cast.Pay(..)
-        | cast.Gain(..)
-        | cast.CasterChangeStarts(..)
-        | cast.CasterChangeEnds(..)
-        | cast.TargetChangeStarts(..)
-        | cast.TargetChangeEnds(..)
-        | cast.ForcedMoveStarts(..)
-        | cast.Activated(..)
-        | cast.ShortcutCast(..)
-        | cast.TickStrike(..)
-        | cast.StealthChanged(..) -> Error(Nil)
+        cast_state.Strike(asked:) -> Ok(asked)
+        cast_state.Send(..)
+        | cast_state.Tell(..)
+        | cast_state.StartTimer(..)
+        | cast_state.CancelTimer(..)
+        | cast_state.Log(..)
+        | cast_state.Pay(..)
+        | cast_state.Gain(..)
+        | cast_state.CasterChangeStarts(..)
+        | cast_state.CasterChangeEnds(..)
+        | cast_state.TargetChangeStarts(..)
+        | cast_state.TargetChangeEnds(..)
+        | cast_state.ForcedMoveStarts(..)
+        | cast_state.Activated(..)
+        | cast_state.ShortcutCast(..)
+        | cast_state.TickStrike(..)
+        | cast_state.StealthChanged(..) -> Error(Nil)
       }
     })
     as "the press of a spell with no cast time asks for its go at once"
@@ -313,7 +314,7 @@ pub fn a_go_takes_a_roll_for_each_type_37_condition_it_may_check_and_none_otherw
   use <- owned_test.run(5000)
   let needing = spell_with(proxies: [gated_on([chance_gate()])], gains: [])
   let #(state, asked) = live_go_of(spell: needing)
-  assert cast.rolls_needed(
+  assert cast_gate.rolls_needed(
       cast: state,
       caster: support.caster().unit_id,
       cast_id: asked.cast_id,
@@ -332,7 +333,7 @@ pub fn a_go_takes_a_roll_for_each_type_37_condition_it_may_check_and_none_otherw
       gains: [],
     )
   let #(state, asked) = live_go_of(spell: none)
-  assert cast.rolls_needed(
+  assert cast_gate.rolls_needed(
       cast: state,
       caster: support.caster().unit_id,
       cast_id: asked.cast_id,
@@ -345,7 +346,7 @@ pub fn a_go_takes_a_roll_for_each_type_37_condition_it_may_check_and_none_otherw
     live_go_of(
       spell: spell_with(proxies: [proxy(spell_plan.Always)], gains: []),
     )
-  assert cast.rolls_needed(
+  assert cast_gate.rolls_needed(
       cast: state,
       caster: support.caster().unit_id,
       cast_id: asked.cast_id,
@@ -355,7 +356,7 @@ pub fn a_go_takes_a_roll_for_each_type_37_condition_it_may_check_and_none_otherw
     == 0
     as "a Proxy with no gate takes none"
   let not_there =
-    cast.rolls_needed(
+    cast_gate.rolls_needed(
       cast: state,
       caster: support.caster().unit_id,
       cast_id: asked.cast_id + 1000,
@@ -430,7 +431,7 @@ pub fn a_gain_needs_both_its_gates_and_takes_a_roll_for_a_type_37_target_gate_te
       )),
     ])
   let #(state, asked) = live_go_of(spell:)
-  assert cast.rolls_needed(
+  assert cast_gate.rolls_needed(
       cast: state,
       caster: support.caster().unit_id,
       cast_id: asked.cast_id,
@@ -510,14 +511,14 @@ pub fn a_gain_behind_a_type_71_prerequisite_reads_the_casters_health_test() -> N
       ),
     ])
   let hurt =
-    cast.Caster(
+    cast_state.Caster(
       ..support.caster(),
       life_vitals: dict.from_list([
         #(1, prerequisite.Vital(current: 50.0, maximum: 100.0)),
       ]),
     )
   let full =
-    cast.Caster(
+    cast_state.Caster(
       ..support.caster(),
       life_vitals: dict.from_list([
         #(1, prerequisite.Vital(current: 100.0, maximum: 100.0)),

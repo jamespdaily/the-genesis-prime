@@ -24,7 +24,9 @@
 import attacker_support
 import cast_support as support
 import genesis_prime/client_connection.{CastWent}
-import genesis_prime/game/cast.{type Caster, type Effect}
+import genesis_prime/game/cast
+import genesis_prime/game/cast/frame as cast_frame
+import genesis_prime/game/cast/state.{type Caster, type Effect} as cast_state
 import genesis_prime/game/damage.{Formula, Parameter}
 import genesis_prime/game/effect_kind
 import genesis_prime/game/heal_split
@@ -131,7 +133,7 @@ fn health_heal(
 /// 33 + 87.55 = 120.55, which is 121 (the stat part is rounded alone, `0x140565600`; one
 /// rounding of 120.36 would give 120).
 fn healing_caster(health health: Int) -> Caster {
-  cast.Caster(
+  cast_state.Caster(
     ..struck_caster(),
     stats: damage.Attacker(
       ..attacker_support.fresh(),
@@ -156,7 +158,7 @@ fn healer(heals heals: List(spell_plan.Heal)) -> Spell {
 /// The caster with 250 of its 450 shield and 500 of its 736 health, which no go of the
 /// tests changes.
 fn struck_caster() -> Caster {
-  cast.Caster(
+  cast_state.Caster(
     ..support.caster(),
     vitals: damage.Vitals(
       health: 500,
@@ -178,27 +180,29 @@ fn healed(
 ) -> List(#(Source, effect_kind.Vital, Int)) {
   list.filter_map(effects, fn(effect) {
     case effect {
-      cast.CasterChangeStarts(source:, change: cast.Heal(vital:, amount:)) ->
-        Ok(#(source, vital, amount))
-      cast.CasterChangeStarts(change: cast.Property(..), ..)
-      | cast.CasterChangeStarts(change: cast.Look(..), ..)
-      | cast.CasterChangeStarts(change: cast.Absorb(..), ..)
-      | cast.Send(..)
-      | cast.Tell(..)
-      | cast.StartTimer(..)
-      | cast.CancelTimer(..)
-      | cast.Log(..)
-      | cast.Strike(..)
-      | cast.Pay(..)
-      | cast.Gain(..)
-      | cast.CasterChangeEnds(..)
-      | cast.TargetChangeStarts(..)
-      | cast.TargetChangeEnds(..)
-      | cast.ForcedMoveStarts(..)
-      | cast.Activated(..)
-      | cast.ShortcutCast(..)
-      | cast.TickStrike(..)
-      | cast.StealthChanged(..) -> Error(Nil)
+      cast_state.CasterChangeStarts(
+        source:,
+        change: cast_state.Heal(vital:, amount:),
+      ) -> Ok(#(source, vital, amount))
+      cast_state.CasterChangeStarts(change: cast_state.Property(..), ..)
+      | cast_state.CasterChangeStarts(change: cast_state.Look(..), ..)
+      | cast_state.CasterChangeStarts(change: cast_state.Absorb(..), ..)
+      | cast_state.Send(..)
+      | cast_state.Tell(..)
+      | cast_state.StartTimer(..)
+      | cast_state.CancelTimer(..)
+      | cast_state.Log(..)
+      | cast_state.Strike(..)
+      | cast_state.Pay(..)
+      | cast_state.Gain(..)
+      | cast_state.CasterChangeEnds(..)
+      | cast_state.TargetChangeStarts(..)
+      | cast_state.TargetChangeEnds(..)
+      | cast_state.ForcedMoveStarts(..)
+      | cast_state.Activated(..)
+      | cast_state.ShortcutCast(..)
+      | cast_state.TickStrike(..)
+      | cast_state.StealthChanged(..) -> Error(Nil)
     }
   })
 }
@@ -251,7 +255,7 @@ pub fn a_go_with_a_shield_heal_lists_it_on_the_caster_with_a_heal_description_te
   let #(_, effects) =
     support.press_as(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: struck_caster(),
       bag: bag_of_base_3,
       at: 1000,
@@ -283,7 +287,7 @@ pub fn a_shield_heal_with_no_delay_lands_in_the_steps_of_the_go_after_its_0x7f4_
   let #(_, effects) =
     support.press_as(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: struck_caster(),
       bag: bag_of_base_3,
       at: 1000,
@@ -301,23 +305,23 @@ pub fn a_shield_heal_with_no_delay_lands_in_the_steps_of_the_go_after_its_0x7f4_
   let go_written =
     position(fn(effect) {
       case effect {
-        cast.Send(frame:) -> frame.message_id == spell_go.message_id
-        cast.CasterChangeStarts(..)
-        | cast.Tell(..)
-        | cast.StartTimer(..)
-        | cast.CancelTimer(..)
-        | cast.Log(..)
-        | cast.Strike(..)
-        | cast.Pay(..)
-        | cast.Gain(..)
-        | cast.CasterChangeEnds(..)
-        | cast.TargetChangeStarts(..)
-        | cast.TargetChangeEnds(..)
-        | cast.ForcedMoveStarts(..)
-        | cast.Activated(..)
-        | cast.ShortcutCast(..)
-        | cast.TickStrike(..)
-        | cast.StealthChanged(..) -> False
+        cast_state.Send(frame:) -> frame.message_id == spell_go.message_id
+        cast_state.CasterChangeStarts(..)
+        | cast_state.Tell(..)
+        | cast_state.StartTimer(..)
+        | cast_state.CancelTimer(..)
+        | cast_state.Log(..)
+        | cast_state.Strike(..)
+        | cast_state.Pay(..)
+        | cast_state.Gain(..)
+        | cast_state.CasterChangeEnds(..)
+        | cast_state.TargetChangeStarts(..)
+        | cast_state.TargetChangeEnds(..)
+        | cast_state.ForcedMoveStarts(..)
+        | cast_state.Activated(..)
+        | cast_state.ShortcutCast(..)
+        | cast_state.TickStrike(..)
+        | cast_state.StealthChanged(..) -> False
       }
     })
   let healed = position(fn(effect) { heals(effects: [effect]) != [] })
@@ -331,7 +335,7 @@ pub fn a_shield_heal_with_a_delay_lands_on_a_timer_of_its_delay_test() -> Nil {
   let #(state, effects) =
     support.press_as(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: struck_caster(),
       bag: bag_of_base_3,
       at: 1000,
@@ -383,7 +387,7 @@ pub fn the_amount_reads_the_caster_as_it_stood_before_the_gos_own_effects_test()
   let #(_, effects) =
     support.press_as(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: struck_caster(),
       bag: bag_of_base_3,
       at: 1000,
@@ -394,26 +398,26 @@ pub fn the_amount_reads_the_caster_as_it_stood_before_the_gos_own_effects_test()
     as "0.3 x (450 - 250) = 60: the gates' rule, a go's effects read the caster before the go's own"
   assert list.any(effects, fn(effect) {
     case effect {
-      cast.CasterChangeStarts(change: cast.Property(..), ..) -> True
-      cast.CasterChangeStarts(change: cast.Heal(..), ..)
-      | cast.CasterChangeStarts(change: cast.Look(..), ..)
-      | cast.CasterChangeStarts(change: cast.Absorb(..), ..)
-      | cast.Send(..)
-      | cast.Tell(..)
-      | cast.StartTimer(..)
-      | cast.CancelTimer(..)
-      | cast.Log(..)
-      | cast.Strike(..)
-      | cast.Pay(..)
-      | cast.Gain(..)
-      | cast.CasterChangeEnds(..)
-      | cast.TargetChangeStarts(..)
-      | cast.TargetChangeEnds(..)
-      | cast.ForcedMoveStarts(..)
-      | cast.Activated(..)
-      | cast.ShortcutCast(..)
-      | cast.TickStrike(..)
-      | cast.StealthChanged(..) -> False
+      cast_state.CasterChangeStarts(change: cast_state.Property(..), ..) -> True
+      cast_state.CasterChangeStarts(change: cast_state.Heal(..), ..)
+      | cast_state.CasterChangeStarts(change: cast_state.Look(..), ..)
+      | cast_state.CasterChangeStarts(change: cast_state.Absorb(..), ..)
+      | cast_state.Send(..)
+      | cast_state.Tell(..)
+      | cast_state.StartTimer(..)
+      | cast_state.CancelTimer(..)
+      | cast_state.Log(..)
+      | cast_state.Strike(..)
+      | cast_state.Pay(..)
+      | cast_state.Gain(..)
+      | cast_state.CasterChangeEnds(..)
+      | cast_state.TargetChangeStarts(..)
+      | cast_state.TargetChangeEnds(..)
+      | cast_state.ForcedMoveStarts(..)
+      | cast_state.Activated(..)
+      | cast_state.ShortcutCast(..)
+      | cast_state.TickStrike(..)
+      | cast_state.StealthChanged(..) -> False
     }
   })
     as "and the raised maximum does start in the same go"
@@ -427,7 +431,7 @@ pub fn a_delayed_shield_heal_holds_the_casters_node_until_it_lands_test() -> Nil
   let #(state, effects) =
     support.press_as(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: struck_caster(),
       bag: bag_of_base_3,
       at: 1000,
@@ -455,7 +459,7 @@ pub fn a_heal_whose_nodes_end_fires_first_still_lands_test() -> Nil {
   let #(state, effects) =
     support.press_as(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: struck_caster(),
       bag: bag_of_base_3,
       at: 1000,
@@ -499,7 +503,7 @@ pub fn a_shield_heal_behind_a_caster_gate_that_fails_is_neither_listed_nor_appli
   let #(_, effects) =
     support.press_as(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: struck_caster(),
       bag: bag_of_base_3,
       at: 1000,
@@ -522,8 +526,8 @@ pub fn a_shield_heal_behind_a_caster_gate_that_fails_is_neither_listed_nor_appli
   let #(_, effects) =
     support.press_as(
       plans:,
-      state: cast.new(),
-      caster: cast.Caster(..struck_caster(), in_combat: True),
+      state: cast_state.new(),
+      caster: cast_state.Caster(..struck_caster(), in_combat: True),
       bag: bag_of_base_3,
       at: 1000,
     )
@@ -545,7 +549,7 @@ pub fn a_pending_shield_heal_is_dropped_when_the_caster_dies_or_its_node_is_take
   let #(state, first) =
     support.press_as(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: struck_caster(),
       bag: bag_of_base_3,
       at: 1000,
@@ -583,7 +587,7 @@ pub fn a_pending_shield_heal_is_dropped_when_the_caster_dies_or_its_node_is_take
   let #(state, first) =
     support.press_as(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: struck_caster(),
       bag: bag_of_base_3,
       at: 1000,
@@ -617,11 +621,11 @@ pub fn a_pending_shield_heal_is_dropped_when_the_caster_dies_or_its_node_is_take
         prerequisites.single(id: 903, condition: #(28, 1, 0, 0)),
       ),
     )
-  let fighting = cast.Caster(..struck_caster(), in_combat: True)
+  let fighting = cast_state.Caster(..struck_caster(), in_combat: True)
   let #(state, first) =
     support.press_as(
       plans: support.plans_of([persisting]),
-      state: cast.new(),
+      state: cast_state.new(),
       caster: fighting,
       bag: bag_of_base_3,
       at: 1000,
@@ -632,7 +636,7 @@ pub fn a_pending_shield_heal_is_dropped_when_the_caster_dies_or_its_node_is_take
   let #(state, ended) =
     cast.persisted(
       cast: state,
-      caster: cast.Caster(..fighting, in_combat: False),
+      caster: cast_state.Caster(..fighting, in_combat: False),
       now: support.at(ms: 1100),
     )
   assert heals(effects: ended) == []
@@ -662,7 +666,7 @@ pub fn two_shield_heal_rows_of_one_go_each_land_and_a_later_go_heals_again_test(
   let #(state, effects) =
     support.press_as(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: struck_caster(),
       bag: bag_of_base_3,
       at: 1000,
@@ -693,7 +697,7 @@ pub fn two_goes_with_overlapping_delayed_heals_both_land_each_at_its_own_delay_t
   let #(state, effects) =
     support.press_as(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: struck_caster(),
       bag: bag_of_base_3,
       at: 1000,
@@ -743,7 +747,7 @@ pub fn the_viewers_go_carries_the_same_heal_description_test() -> Nil {
   let #(_, effects) =
     support.press_as(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: struck_caster(),
       bag: bag_of_base_3,
       at: 1000,
@@ -790,7 +794,9 @@ pub fn the_viewers_go_carries_the_same_heal_description_test() -> Nil {
       }
     })
   assert list.length(told) == 2 as "the caster's audience is two connections"
-  assert list.all(told, fn(tell) { cast.went_frame(go: tell.1) == written })
+  assert list.all(told, fn(tell) {
+    cast_frame.went_frame(go: tell.1) == written
+  })
     as "each viewer is written the very 0x7f4 the caster is, heal description included"
 }
 
@@ -809,7 +815,7 @@ pub fn a_self_heal_go_describes_the_heal_and_starts_the_change_test() -> Nil {
   let #(state, effects) =
     support.press_as(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: healing_caster(health: 500),
       bag: bag_of_base_3,
       at: 1000,
@@ -861,7 +867,7 @@ pub fn a_heal_past_full_health_reports_the_overheal_test() -> Nil {
     let #(_, effects) =
       support.press_as(
         plans:,
-        state: cast.new(),
+        state: cast_state.new(),
         caster: healing_caster(health:),
         bag: bag_of_base_3,
         at: 1000,
@@ -907,7 +913,7 @@ pub fn a_heal_multiplier_changes_the_amount_and_overheal_the_go_tells_the_client
   let plans =
     support.plans_of([healer(heals: [flat_health_heal(amount: 40.0)])])
   let caster =
-    cast.Caster(
+    cast_state.Caster(
       ..struck_caster(),
       vitals: damage.Vitals(
         health: 706,
@@ -924,7 +930,7 @@ pub fn a_heal_multiplier_changes_the_amount_and_overheal_the_go_tells_the_client
   let #(_, effects) =
     support.press_as(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster:,
       bag: bag_of_base_3,
       at: 1000,
@@ -943,7 +949,7 @@ pub fn a_shield_conversion_leaves_the_health_less_room_and_the_go_tells_the_over
   let plans =
     support.plans_of([healer(heals: [flat_health_heal(amount: 100.0)])])
   let caster =
-    cast.Caster(
+    cast_state.Caster(
       ..struck_caster(),
       vitals: damage.Vitals(
         health: 726,
@@ -960,7 +966,7 @@ pub fn a_shield_conversion_leaves_the_health_less_room_and_the_go_tells_the_over
   let #(_, effects) =
     support.press_as(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster:,
       bag: bag_of_base_3,
       at: 1000,
@@ -993,8 +999,8 @@ pub fn a_shield_heal_at_full_shield_reports_the_overshield_test() -> Nil {
     let #(_, effects) =
       support.press_as(
         plans:,
-        state: cast.new(),
-        caster: cast.Caster(
+        state: cast_state.new(),
+        caster: cast_state.Caster(
           ..struck_caster(),
           vitals: damage.Vitals(
             health: 500,
@@ -1049,7 +1055,7 @@ pub fn a_heal_aimed_at_another_unit_lands_nothing_test() -> Nil {
     let #(state, raw) =
       support.pressed_raw_in(
         plans: support.plans_of([parent(target)]),
-        state: cast.new(),
+        state: cast_state.new(),
         caster:,
         bag_index: bag_of_base_3,
         target: 0,
@@ -1100,7 +1106,7 @@ pub fn a_delayed_heal_holds_the_finish_and_drops_on_death_test() -> Nil {
   let #(state, effects) =
     support.press_as(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: healing_caster(health: 500),
       bag: bag_of_base_3,
       at: 1000,

@@ -16,7 +16,7 @@
 
 import cast_support as support
 import genesis_prime/client_connection.{CastStarted}
-import genesis_prime/game/cast.{type Caster, type Effect, type State}
+import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/class_resource.{Payment}
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/id.{type Spell4BaseId, Spell4BaseId}
@@ -43,7 +43,7 @@ fn book() -> List(Spell4BaseId) {
 }
 
 fn spellslinger(power power: Float) -> Caster {
-  cast.Caster(
+  cast_state.Caster(
     ..support.caster_holding(resources: support.holding(
       class_id: 7,
       value: power,
@@ -58,7 +58,7 @@ fn surging() -> State {
   let #(state, effects) =
     support.press_as(
       plans: support.plans(),
-      state: cast.new(),
+      state: cast_state.new(),
       caster: spellslinger(power: 100.0),
       bag: spell_surge,
       at: 1000,
@@ -107,7 +107,7 @@ pub fn a_surged_press_resolves_to_the_alternate_spell_test() -> Nil {
     == [76_002]
     as "a node of 47439 is held and the book holds base 52215: Quick Draw's press casts 76002 (0x14039a040 through 0x1405e7e50)"
   assert started(effects: pressed(
-      state: cast.new(),
+      state: cast_state.new(),
       caster: spellslinger(power: 100.0),
       bag: quick_draw,
     ))
@@ -118,7 +118,7 @@ pub fn a_surged_press_resolves_to_the_alternate_spell_test() -> Nil {
 pub fn a_surged_press_whose_alternate_is_not_in_the_book_stays_plain_test() -> Nil {
   use <- owned_test.run(60_000)
   let without_alternates =
-    cast.Caster(..spellslinger(power: 100.0), book: list.take(book(), 4))
+    cast_state.Caster(..spellslinger(power: 100.0), book: list.take(book(), 4))
   assert started(effects: pressed(
       state: surging(),
       caster: without_alternates,

@@ -32,7 +32,10 @@
 ////   moves, and the hold's repeat timer does the same (`cast.hold_repeat`).
 
 import cast_support as support
-import genesis_prime/game/cast.{type Effect, type State}
+import genesis_prime/game/cast
+import genesis_prime/game/cast/gate as cast_gate
+import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
+import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/cooldown.{
   type Operation, AddMs, Base, Modifier, NoLonger, SetMs,
 }
@@ -217,7 +220,8 @@ fn is_accepted(effects effects: List(Effect)) -> Bool {
 
 pub fn charged_shot_released_at_once_ends_the_cooldown_its_go_started_test() -> Nil {
   use <- owned_test.run(20_000)
-  let #(state, _) = charged(plans: charged_plans(), state: cast.new(), at: 1000)
+  let #(state, _) =
+    charged(plans: charged_plans(), state: cast_state.new(), at: 1000)
   let #(state, release) = charged(plans: charged_plans(), state:, at: 1100)
   assert listed(effects: release) == [#(7, [#(80_977, 0)])]
     as "the index-0 stage 34720's go lists 80977 in the caster's target info (opcode.0x7f4.target_info)"
@@ -238,7 +242,7 @@ pub fn without_the_type_73_row_the_same_release_leaves_the_cooldown_running_test
     support.with_spells(plans: support.plans(), spells: [
       support.without_cooldown_modifiers(spell: charged_shot),
     ])
-  let #(state, _) = charged(plans:, state: cast.new(), at: 1000)
+  let #(state, _) = charged(plans:, state: cast_state.new(), at: 1000)
   let #(state, _) = charged(plans:, state:, at: 1100)
   let #(_, again) = charged(plans:, state:, at: 2000)
   assert support.refusal_results(effects: again) == [15]
@@ -248,7 +252,7 @@ pub fn without_the_type_73_row_the_same_release_leaves_the_cooldown_running_test
 pub fn charged_shot_released_at_index_1_leaves_four_seconds_of_its_cooldown_test() -> Nil {
   use <- owned_test.run(20_000)
   let plans = charged_plans()
-  let #(state, pressed) = charged(plans:, state: cast.new(), at: 1000)
+  let #(state, pressed) = charged(plans:, state: cast_state.new(), at: 1000)
   let assert [#(level_1, 1000)] = support.started_timers(effects: pressed)
   let #(state, _) = support.fired(state:, timer: level_1, at: 2000)
   let #(state, release) = charged(plans:, state:, at: 2500)
@@ -271,7 +275,7 @@ pub fn charged_shot_released_at_index_1_leaves_four_seconds_of_its_cooldown_test
 pub fn a_row_that_selects_the_spell_leaves_the_global_cooldown_as_it_was_test() -> Nil {
   use <- owned_test.run(20_000)
   let plans = charged_plans()
-  let #(state, _) = charged(plans:, state: cast.new(), at: 1000)
+  let #(state, _) = charged(plans:, state: cast_state.new(), at: 1000)
   let #(state, _) = charged(plans:, state:, at: 1100)
   let #(_, early) = charged(plans:, state:, at: 1200)
   assert support.refusal_results(effects: early) == [14]
@@ -285,7 +289,7 @@ pub fn a_row_that_selects_the_spell_leaves_the_global_cooldown_as_it_was_test() 
 pub fn no_0x804_is_written_at_a_go_with_a_type_73_row_test() -> Nil {
   use <- owned_test.run(20_000)
   let plans = charged_plans()
-  let #(state, pressed) = charged(plans:, state: cast.new(), at: 1000)
+  let #(state, pressed) = charged(plans:, state: cast_state.new(), at: 1000)
   let #(state, release) = charged(plans:, state:, at: 1100)
   let #(_, fired) = support.run_timers(state:, effects: pressed, from_ms: 1000)
   let frames =
@@ -328,7 +332,7 @@ pub fn impale_childs_go_lists_180712_and_changes_no_running_cooldown_test() -> N
   use <- owned_test.run(20_000)
   let plans = support.plans_of([impale_child(gate: Always)])
   // The slow spell's cooldown runs until 7000; base 32336 is no spell of the server's.
-  let state = slow_cast(plans:, state: cast.new(), at: 1000)
+  let state = slow_cast(plans:, state: cast_state.new(), at: 1000)
   let #(state, child) =
     support.press(plans:, state:, bag: bag_of_holder, at: 2500)
   assert listed(effects: child) == [#(7, [#(180_712, 0), #(231_992, 0)])]
@@ -347,7 +351,7 @@ pub fn a_row_behind_a_type_37_gate_takes_one_roll_and_is_listed_when_it_passes_t
   let #(state, raw) =
     support.pressed_raw_in(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster(),
       bag_index: bag_of_holder,
       target: 0,
@@ -356,26 +360,26 @@ pub fn a_row_behind_a_type_37_gate_takes_one_roll_and_is_listed_when_it_passes_t
   let assert [asked] =
     list.filter_map(raw, fn(effect) {
       case effect {
-        cast.Strike(asked:) -> Ok(asked)
-        cast.Send(..)
-        | cast.Tell(..)
-        | cast.StartTimer(..)
-        | cast.CancelTimer(..)
-        | cast.Log(..)
-        | cast.Pay(..)
-        | cast.Gain(..)
-        | cast.CasterChangeStarts(..)
-        | cast.CasterChangeEnds(..)
-        | cast.TargetChangeStarts(..)
-        | cast.TargetChangeEnds(..)
-        | cast.ForcedMoveStarts(..)
-        | cast.Activated(..)
-        | cast.ShortcutCast(..)
-        | cast.TickStrike(..)
-        | cast.StealthChanged(..) -> Error(Nil)
+        cast_state.Strike(asked:) -> Ok(asked)
+        cast_state.Send(..)
+        | cast_state.Tell(..)
+        | cast_state.StartTimer(..)
+        | cast_state.CancelTimer(..)
+        | cast_state.Log(..)
+        | cast_state.Pay(..)
+        | cast_state.Gain(..)
+        | cast_state.CasterChangeStarts(..)
+        | cast_state.CasterChangeEnds(..)
+        | cast_state.TargetChangeStarts(..)
+        | cast_state.TargetChangeEnds(..)
+        | cast_state.ForcedMoveStarts(..)
+        | cast_state.Activated(..)
+        | cast_state.ShortcutCast(..)
+        | cast_state.TickStrike(..)
+        | cast_state.StealthChanged(..) -> Error(Nil)
       }
     })
-  assert cast.rolls_needed(
+  assert cast_gate.rolls_needed(
       cast: state,
       caster: support.caster().unit_id,
       cast_id: asked.cast_id,
@@ -410,7 +414,7 @@ pub fn several_rows_of_one_go_apply_in_their_listed_order_test() -> Nil {
       row(effect_id: 1, operation: NoLonger(0.5), delay: 0, duration: 0),
       row(effect_id: 2, operation: AddMs(-1000.0), delay: 0, duration: 0),
     ])
-  let state = slow_cast(plans:, state: cast.new(), at: 1000)
+  let state = slow_cast(plans:, state: cast_state.new(), at: 1000)
   // The slow spell's go at 2000 starts its cooldown, which ends at 7000.
   let #(state, _) = support.press(plans:, state:, bag: bag_of_holder, at: 2500)
   // 4500 ms are left at 2500: x0.5 is 2250 and -1000 is 1250, so the end is 3750.
@@ -427,7 +431,7 @@ pub fn a_row_that_acts_once_is_not_kept_for_the_cooldowns_that_start_later_test(
       row(effect_id: 1, operation: NoLonger(0.5), delay: 0, duration: 0),
     ])
   let #(state, _) =
-    support.press(plans:, state: cast.new(), bag: bag_of_holder, at: 1000)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_holder, at: 1000)
   let state = slow_cast(plans:, state:, at: 2000)
   // The slow spell's go at 3000 starts 5000 ms, which end at 8000.
   assert meets(plans:, state:, at: 7600) == Held(wait_ms: 400)
@@ -443,7 +447,7 @@ pub fn a_row_that_acts_once_gives_the_node_its_delay_as_life_and_a_kept_row_give
   let #(state, once) =
     support.press(
       plans: acts_once,
-      state: cast.new(),
+      state: cast_state.new(),
       bag: bag_of_holder,
       at: 1000,
     )
@@ -465,7 +469,12 @@ pub fn a_row_that_acts_once_gives_the_node_its_delay_as_life_and_a_kept_row_give
       row(effect_id: 1, operation: NoLonger(0.5), delay: 0, duration: 8000),
     ])
   let #(_, lasting) =
-    support.press(plans: kept, state: cast.new(), bag: bag_of_holder, at: 1000)
+    support.press(
+      plans: kept,
+      state: cast_state.new(),
+      bag: bag_of_holder,
+      at: 1000,
+    )
   assert support.finished_ids(support.writes(effects: lasting)) == []
     as "a kept row gives the caster's node its life, so the 0x7fe waits (opcode.0x7f4.effect_time, cast.target_node_end)"
   assert list.sort(delays_of(effects: lasting), int.compare) == [8000, 8000]
@@ -480,7 +489,7 @@ pub fn a_lasting_row_changes_the_running_cooldowns_at_its_start_test() -> Nil {
     plans_holding(rows: [
       row(effect_id: 1, operation: NoLonger(0.5), delay: 0, duration: 8000),
     ])
-  let state = slow_cast(plans:, state: cast.new(), at: 1000)
+  let state = slow_cast(plans:, state: cast_state.new(), at: 1000)
   // The slow spell's cooldown ends at 7000; at 2500 4500 ms are left, and x0.5 is 2250.
   let #(state, _) = support.press(plans:, state:, bag: bag_of_holder, at: 2500)
   assert meets(plans:, state:, at: 4400) == Held(wait_ms: 350)
@@ -495,7 +504,7 @@ pub fn a_lasting_row_changes_each_cooldown_started_while_it_lasts_in_the_order_k
       row(effect_id: 2, operation: AddMs(-1000.0), delay: 0, duration: 8000),
     ])
   let #(state, _) =
-    support.press(plans:, state: cast.new(), bag: bag_of_holder, at: 1000)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_holder, at: 1000)
   // The kept rows are x0.5 and then -1000: 5000 becomes 2500 and 1500. The slow spell's
   // go at 3000 ends at 4500.
   let state = slow_cast(plans:, state:, at: 2000)
@@ -510,7 +519,7 @@ pub fn a_cooldown_started_after_a_lasting_rows_end_is_full_test() -> Nil {
       row(effect_id: 1, operation: NoLonger(0.5), delay: 0, duration: 8000),
     ])
   let #(state, pressed) =
-    support.press(plans:, state: cast.new(), bag: bag_of_holder, at: 1000)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_holder, at: 1000)
   // The row lasts from 1000 to 9000 (delay 0 plus duration 8000).
   let #(before, _) =
     support.run_timers_until(
@@ -544,7 +553,12 @@ pub fn a_spell_with_the_larger_of_delay_and_duration_ends_its_row_sooner_test() 
   ]
   let slow_after_9500 = fn(plans) {
     let #(state, pressed) =
-      support.press(plans:, state: cast.new(), bag: bag_of_holder, at: 1000)
+      support.press(
+        plans:,
+        state: cast_state.new(),
+        bag: bag_of_holder,
+        at: 1000,
+      )
     let #(state, _) =
       support.run_timers_until(
         state:,
@@ -586,7 +600,7 @@ pub fn a_row_with_flags_bit_2_lasts_until_its_node_is_taken_off_test() -> Nil {
       remover(),
     ])
   let #(state, pressed) =
-    support.press(plans:, state: cast.new(), bag: bag_of_holder, at: 1000)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_holder, at: 1000)
   assert delays_of(effects: pressed) == []
     as "flags bit 2 never ends by time: no end timer and no node end"
   // A cooldown that starts 50 s later is still halved: the go at 51000 ends at 53500.
@@ -611,7 +625,7 @@ pub fn taking_the_casts_node_off_the_caster_drops_the_row_and_cancels_its_timers
       remover(),
     ])
   let #(state, first) =
-    support.press(plans:, state: cast.new(), bag: bag_of_holder, at: 1000)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_holder, at: 1000)
   let #(state, removal) =
     support.press(plans:, state:, bag: bag_of_remover, at: 2000)
   assert numbers_of(timers: support.cancelled_timers(effects: removal))
@@ -630,7 +644,7 @@ pub fn the_caster_dying_drops_every_lasting_row_test() -> Nil {
       row(effect_id: 1, operation: NoLonger(0.5), delay: 0, duration: 8000),
     ])
   let #(state, _) =
-    support.press(plans:, state: cast.new(), bag: bag_of_holder, at: 1000)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_holder, at: 1000)
   let #(state, _) =
     cast.died(
       cast: state,
@@ -649,8 +663,8 @@ pub fn a_caster_that_leaves_drops_every_lasting_row_test() -> Nil {
       row(effect_id: 1, operation: NoLonger(0.5), delay: 0, duration: 8000),
     ])
   let #(state, _) =
-    support.press(plans:, state: cast.new(), bag: bag_of_holder, at: 1000)
-  let #(state, _) = cast.left(cast: state)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_holder, at: 1000)
+  let #(state, _) = cast_tick.left(cast: state)
   let after = slow_cast(plans:, state:, at: 3000)
   assert meets(plans:, state: after, at: 8600) == Held(wait_ms: 400)
 }
@@ -666,7 +680,7 @@ pub fn a_later_go_of_the_cast_keeps_its_row_again_from_that_go_test() -> Nil {
     )
   let plans = support.plans_of([holder, remover()])
   let #(state, pressed) =
-    support.press(plans:, state: cast.new(), bag: bag_of_holder, at: 1000)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_holder, at: 1000)
   let assert [#(second_go, 3000), ..] =
     list.filter(support.started_timers(effects: pressed), fn(started) {
       started.1 == 3000
@@ -692,7 +706,7 @@ pub fn a_delayed_row_changes_the_cooldowns_at_its_timer_not_at_the_go_test() -> 
     plans_holding(rows: [
       row(effect_id: 1, operation: NoLonger(0.5), delay: 2000, duration: 0),
     ])
-  let state = slow_cast(plans:, state: cast.new(), at: 500)
+  let state = slow_cast(plans:, state: cast_state.new(), at: 500)
   // The slow spell's go at 1500 starts a cooldown that ends at 6500.
   let #(at_the_go, pressed) =
     support.press(plans:, state:, bag: bag_of_holder, at: 1000)
@@ -760,7 +774,7 @@ pub fn a_row_applies_when_its_nodes_end_fires_first_in_the_same_millisecond_test
     plans_holding(rows: [
       row(effect_id: 1, operation: NoLonger(0.5), delay: 2000, duration: 0),
     ])
-  let state = slow_cast(plans:, state: cast.new(), at: 500)
+  let state = slow_cast(plans:, state: cast_state.new(), at: 500)
   // The slow spell's go at 1500 starts a cooldown that ends at 6500.
   let #(state, pressed) =
     support.press(plans:, state:, bag: bag_of_holder, at: 1000)
@@ -785,7 +799,7 @@ pub fn a_row_that_sets_a_cooldown_at_go_plus_ten_lands_before_the_cast_finishes_
     plans_holding(rows: [
       row(effect_id: 130_784, operation: SetMs(5000.0), delay: 10, duration: 0),
     ])
-  let state = slow_cast(plans:, state: cast.new(), at: 1000)
+  let state = slow_cast(plans:, state: cast_state.new(), at: 1000)
   // The slow spell's go at 2000 starts a cooldown that ends at 7000; at 6600 400 ms are
   // left, a press the client allows and the server holds.
   let #(state, pressed) =
@@ -825,7 +839,7 @@ pub fn a_held_press_starts_at_the_new_end_when_a_row_shortens_the_cooldown_test(
     plans_holding(rows: [
       row(effect_id: 1, operation: NoLonger(0.5), delay: 4200, duration: 0),
     ])
-  let state = slow_cast(plans:, state: cast.new(), at: 1000)
+  let state = slow_cast(plans:, state: cast_state.new(), at: 1000)
   // The slow spell's cooldown ends at 7000. The row of a press at 2500 acts at 6700.
   let #(state, pressed) =
     support.press(plans:, state:, bag: bag_of_holder, at: 2500)
@@ -860,7 +874,7 @@ pub fn a_row_that_ends_the_cooldown_arms_the_held_press_for_no_wait_test() -> Ni
     plans_holding(rows: [
       row(effect_id: 1, operation: NoLonger(0.0), delay: 4200, duration: 0),
     ])
-  let state = slow_cast(plans:, state: cast.new(), at: 1000)
+  let state = slow_cast(plans:, state: cast_state.new(), at: 1000)
   let #(state, pressed) =
     support.press(plans:, state:, bag: bag_of_holder, at: 2500)
   let #(state, _) = support.press(plans:, state:, bag: bag_of_slow, at: 6600)
@@ -884,7 +898,7 @@ pub fn a_held_abilitys_repeat_timer_waits_for_the_new_end_when_a_row_shortens_th
   let #(state, down) =
     support.key_in(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       bag_index: bag_of_slow,
       held: 1,
       at: 1000,

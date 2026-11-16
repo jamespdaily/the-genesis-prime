@@ -23,7 +23,7 @@ import class_resource_support
 import client_tables
 import crowd_control_support
 import genesis_prime/client_connection
-import genesis_prime/game/cast.{type GoAsked, GoAsked}
+import genesis_prime/game/cast/state.{type GoAsked, GoAsked} as cast_state
 import genesis_prime/game/class_resource.{Resource}
 import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
@@ -150,7 +150,9 @@ fn tells(effects effects: List(Effect)) -> List(strike.Effect) {
 
 /// The units each round that closed in these effects named, in order, by cast
 /// and phase.
-fn went(effects effects: List(Effect)) -> List(#(Int, Int, List(cast.Struck))) {
+fn went(
+  effects effects: List(Effect),
+) -> List(#(Int, Int, List(cast_state.Struck))) {
   list.filter_map(effects, fn(effect) {
     case effect {
       strike.Went(asked:, struck:, ..) ->
@@ -470,18 +472,18 @@ pub fn answers_out_of_order_are_listed_in_selection_order_when_the_round_closes_
   assert went(effects: third)
     == [
       #(5, 0, [
-        cast.Deflected(unit_id: 10),
-        cast.Hit(
+        cast_state.Deflected(unit_id: 10),
+        cast_state.Hit(
           unit_id: 11,
-          unit: cast.HitCreature(life: 3, struck_at_ms: 1000),
+          unit: cast_state.HitCreature(life: 3, struck_at_ms: 1000),
           descriptions: [],
           controls: [],
           armor_removed: 0,
           ticking: [],
         ),
-        cast.Hit(
+        cast_state.Hit(
           unit_id: 12,
-          unit: cast.HitCreature(life: 3, struck_at_ms: 1000),
+          unit: cast_state.HitCreature(life: 3, struck_at_ms: 1000),
           descriptions: [],
           controls: [],
           armor_removed: 0,
@@ -513,17 +515,17 @@ pub fn a_creature_that_died_in_flight_is_left_out_and_the_count_is_not_refilled_
   assert went(effects: closing)
     == [
       #(5, 0, [
-        cast.Hit(
+        cast_state.Hit(
           unit_id: 11,
-          unit: cast.HitCreature(life: 3, struck_at_ms: 1000),
+          unit: cast_state.HitCreature(life: 3, struck_at_ms: 1000),
           descriptions: [],
           controls: [],
           armor_removed: 0,
           ticking: [],
         ),
-        cast.Hit(
+        cast_state.Hit(
           unit_id: 12,
-          unit: cast.HitCreature(life: 3, struck_at_ms: 1000),
+          unit: cast_state.HitCreature(life: 3, struck_at_ms: 1000),
           descriptions: [],
           controls: [],
           armor_removed: 0,
@@ -557,9 +559,9 @@ pub fn a_silent_creature_is_left_out_at_the_deadline_on_a_driven_timer_test() ->
   assert went(effects: due)
     == [
       #(5, 0, [
-        cast.Hit(
+        cast_state.Hit(
           unit_id: 10,
-          unit: cast.HitCreature(life: 3, struck_at_ms: 1000),
+          unit: cast_state.HitCreature(life: 3, struck_at_ms: 1000),
           descriptions: [],
           controls: [],
           armor_removed: 0,
@@ -757,9 +759,9 @@ pub fn a_spell_that_only_selects_names_each_unit_at_once_without_a_tell_test() -
   assert went(effects:)
     == [
       #(5, 0, [
-        cast.Hit(
+        cast_state.Hit(
           unit_id: 10,
-          unit: cast.HitCreature(life: 3, struck_at_ms: 1000),
+          unit: cast_state.HitCreature(life: 3, struck_at_ms: 1000),
           descriptions: [],
           controls: [],
           armor_removed: 0,
@@ -1227,7 +1229,7 @@ fn mind_burst_go(points points: Int) -> GoAsked {
   let #(_, effects) =
     support.pressed_raw_in(
       plans: support.with_spells(plans: support.plans(), spells: [mind_burst]),
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster_holding(resources:),
       bag_index: 2,
       target: 0,
@@ -1236,23 +1238,23 @@ fn mind_burst_go(points points: Int) -> GoAsked {
   let assert [asked] =
     list.filter_map(effects, fn(effect) {
       case effect {
-        cast.Strike(asked:) -> Ok(asked)
-        cast.Send(..)
-        | cast.Tell(..)
-        | cast.StartTimer(..)
-        | cast.CancelTimer(..)
-        | cast.Log(..)
-        | cast.Pay(..)
-        | cast.Gain(..)
-        | cast.CasterChangeStarts(..)
-        | cast.CasterChangeEnds(..)
-        | cast.TargetChangeStarts(..)
-        | cast.TargetChangeEnds(..)
-        | cast.ForcedMoveStarts(..)
-        | cast.Activated(..)
-        | cast.ShortcutCast(..)
-        | cast.TickStrike(..)
-        | cast.StealthChanged(..) -> Error(Nil)
+        cast_state.Strike(asked:) -> Ok(asked)
+        cast_state.Send(..)
+        | cast_state.Tell(..)
+        | cast_state.StartTimer(..)
+        | cast_state.CancelTimer(..)
+        | cast_state.Log(..)
+        | cast_state.Pay(..)
+        | cast_state.Gain(..)
+        | cast_state.CasterChangeStarts(..)
+        | cast_state.CasterChangeEnds(..)
+        | cast_state.TargetChangeStarts(..)
+        | cast_state.TargetChangeEnds(..)
+        | cast_state.ForcedMoveStarts(..)
+        | cast_state.Activated(..)
+        | cast_state.ShortcutCast(..)
+        | cast_state.TickStrike(..)
+        | cast_state.StealthChanged(..) -> Error(Nil)
       }
     })
     as "Mind Burst has no cast time: its go is asked at the accept"
@@ -1509,17 +1511,17 @@ pub fn a_state_aimed_at_the_primary_target_is_told_to_it_alone_test() -> Nil {
   assert went(effects: closed)
     == [
       #(5, 0, [
-        cast.Hit(
+        cast_state.Hit(
           unit_id: 10,
-          unit: cast.HitCreature(life: 3, struck_at_ms: 1000),
+          unit: cast_state.HitCreature(life: 3, struck_at_ms: 1000),
           descriptions: [],
           controls: [],
           armor_removed: 0,
           ticking: [],
         ),
-        cast.Hit(
+        cast_state.Hit(
           unit_id: 11,
-          unit: cast.HitCreature(life: 3, struck_at_ms: 1000),
+          unit: cast_state.HitCreature(life: 3, struck_at_ms: 1000),
           descriptions: [],
           controls: [landed],
           armor_removed: 0,
@@ -1684,8 +1686,8 @@ fn surge_blow() -> spell_area.DamageEffect {
   )
 }
 
-fn tick_asked(go go: Int, tick tick: Int) -> cast.TickAsked {
-  cast.TickAsked(
+fn tick_asked(go go: Int, tick tick: Int) -> cast_state.TickAsked {
+  cast_state.TickAsked(
     cast_id: 5,
     spell4_id: Spell4Id(58_591),
     effect_id: Spell4EffectsId(96_125),
@@ -1707,7 +1709,7 @@ fn tick_key(go go: Int, tick tick: Int) -> strike_tell.Key {
 
 fn tick_begun(
   state state: State,
-  asked asked: cast.TickAsked,
+  asked asked: cast_state.TickAsked,
   stats stats: damage.Attacker,
   rolls rolls: #(Int, Int, Int),
   now_ms now_ms: Int,
@@ -1754,7 +1756,7 @@ fn tick_tells(
 /// The tick rounds that closed in these effects, in order.
 fn ticked(
   effects effects: List(Effect),
-) -> List(#(cast.TickAsked, Option(cast.Struck))) {
+) -> List(#(cast_state.TickAsked, Option(cast_state.Struck))) {
   list.filter_map(effects, fn(effect) {
     case effect {
       strike.Ticked(asked:, struck:) -> Ok(#(asked, struck))
@@ -1814,9 +1816,9 @@ pub fn each_tick_rolls_the_hit_rule_on_the_value_of_its_time_test() -> Nil {
       #(
         tick_asked(go: 1, tick: 1),
         Some(
-          cast.Hit(
+          cast_state.Hit(
             unit_id: 10,
-            unit: cast.HitCreature(life: 3, struck_at_ms: 2000),
+            unit: cast_state.HitCreature(life: 3, struck_at_ms: 2000),
             descriptions: [],
             controls: [],
             armor_removed: 0,
@@ -1853,7 +1855,7 @@ pub fn each_tick_rolls_the_hit_rule_on_the_value_of_its_time_test() -> Nil {
       now_ms: 3100,
     )
   assert ticked(effects: deflected)
-    == [#(tick_asked(go: 1, tick: 2), Some(cast.Deflected(unit_id: 10)))]
+    == [#(tick_asked(go: 1, tick: 2), Some(cast_state.Deflected(unit_id: 10)))]
     as "a deflected tick closes with no description"
 }
 

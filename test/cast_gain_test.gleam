@@ -14,6 +14,7 @@
 import cast_support as support
 import class_resource_support
 import genesis_prime/game/cast
+import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/class_resource.{Gain, Payment}
 import genesis_prime/game/spell_plan.{Spell}
 import genesis_prime/message/cast_result
@@ -30,14 +31,14 @@ import spell_tables
 /// each go striking `struck`.
 fn pressed_through(
   plans plans: spell_plan.Plans,
-  caster caster: cast.Caster,
+  caster caster: cast_state.Caster,
   bag_index bag_index: Int,
-  struck struck: List(cast.Struck),
-) -> List(cast.Effect) {
+  struck struck: List(cast_state.Struck),
+) -> List(cast_state.Effect) {
   let #(state, raw) =
     support.pressed_raw_in(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster:,
       bag_index:,
       target: 0,
@@ -51,7 +52,7 @@ fn pressed_through(
 }
 
 /// The children of the spell started among the effects (0x7ff).
-fn children_started(effects: List(cast.Effect), spell4_id: Int) -> Int {
+fn children_started(effects: List(cast_state.Effect), spell4_id: Int) -> Int {
   list.count(support.writes(effects:), fn(frame) {
     case frame.message_id == spell_started.message_id {
       True -> {
@@ -90,7 +91,10 @@ pub fn relentless_strikes_with_only_deflects_or_no_foe_gives_nothing_test() -> N
       plans: support.plans(),
       caster: support.caster(),
       bag_index: support.relentless_strikes,
-      struck: [cast.Deflected(unit_id: 10), cast.Deflected(unit_id: 11)],
+      struck: [
+        cast_state.Deflected(unit_id: 10),
+        cast_state.Deflected(unit_id: 11),
+      ],
     )
   assert support.gains(effects: deflected) == []
     as "a deflect is no Hit: no child and no gain"
@@ -128,7 +132,7 @@ pub fn energize_gives_4_actuators_and_logs_its_ticking_gain_test() -> Nil {
   let effects =
     pressed_through(
       plans:,
-      caster: cast.Caster(
+      caster: cast_state.Caster(
         ..support.caster(),
         abilities: list.map([38_201, 16_322, 26_543, 46_615], Spell4BaseId),
       ),
@@ -152,7 +156,7 @@ pub fn a_gain_whose_prerequisite_fails_is_not_given_test() -> Nil {
   let #(state, _) =
     support.pressed_raw_in(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster(),
       bag_index: 8,
       target: 0,
@@ -186,7 +190,7 @@ pub fn a_gain_whose_prerequisite_fails_is_not_given_test() -> Nil {
 /// holds it until the go clears the current cast; the go at 2250 strikes `struck`.
 /// What the go's step gives: its payments, gains and 0x7fc results.
 fn mind_burst_held_behind_the_go(
-  struck struck: List(cast.Struck),
+  struck struck: List(cast_state.Struck),
 ) -> #(List(class_resource.Payment), List(List(class_resource.Gain)), List(Int)) {
   let caster =
     support.caster_holding(
@@ -198,7 +202,7 @@ fn mind_burst_held_behind_the_go(
     let assert Ok(taken) =
       cast.take(
         cast: state,
-        message: cast.Pressed,
+        message: cast_state.Pressed,
         body:,
         caster:,
         plans: support.plans(),
@@ -209,7 +213,7 @@ fn mind_burst_held_behind_the_go(
   }
   let #(state, started) =
     take(
-      cast.new(),
+      cast_state.new(),
       support.press_body(client_cast_id: 8, bag_index: 0, target: 0, press: 1),
       1000,
     )
@@ -229,7 +233,7 @@ fn mind_burst_held_behind_the_go(
       caster:,
       now: support.at(ms: 2250),
     )
-  let assert [cast.Strike(asked:)] = fired as "the go is asked"
+  let assert [cast_state.Strike(asked:)] = fired as "the go is asked"
   let #(_, effects) =
     support.went(
       cast: state,

@@ -48,7 +48,7 @@ import genesis_prime/content
 import genesis_prime/content/projector_landing as content_projector_landing
 import genesis_prime/content/spawn as content_spawn
 import genesis_prime/content/tutorial_quest as content_tutorial_quest
-import genesis_prime/game/cast
+import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/movement
 import genesis_prime/game/start_place.{type Place}
@@ -2534,7 +2534,7 @@ fn own_go_targets(
   beast beast: Int,
 ) -> List(List(Int)) {
   game_client.go_targets_in(frames:)
-  |> list.filter(fn(go) { cast.caster_of(cast_id: go.0) != beast })
+  |> list.filter(fn(go) { cast_state.caster_of(cast_id: go.0) != beast })
   |> list.map(fn(go) { go.1 })
 }
 
@@ -4927,7 +4927,7 @@ pub fn three_ticks_reach_the_client_and_health_falls_three_times_test() -> Nil {
     as "opcode.0x7fe: the cast ends after its last tick's 0x7f8 (cast.miss_after_finish)"
   assert list.filter(
       driven_time.pending_of(time:, owner: connection),
-      cast.owns,
+      cast_state.owns,
     )
     == []
     as "no tick timer and no timer of a cast is left on the connection once the cast has ended"
@@ -5665,7 +5665,7 @@ fn struck_by(
   target target: Int,
 ) -> Bool {
   list.any(game_client.go_targets_in(frames:), fn(go) {
-    cast.caster_of(cast_id: go.0) == caster && list.contains(go.1, target)
+    cast_state.caster_of(cast_id: go.0) == caster && list.contains(go.1, target)
   })
 }
 
@@ -6196,7 +6196,7 @@ pub fn a_bot_killed_by_a_dagun_in_its_ring_is_struck_no_more_the_dagun_rests_at_
     case event {
       game_client.Targeted(unit_id:, ..)
       | game_client.Started(caster_unit_id: unit_id, ..) -> unit_id != dagun
-      game_client.Went(cast_id:, ..) -> cast.caster_of(cast_id:) != dagun
+      game_client.Went(cast_id:, ..) -> cast_state.caster_of(cast_id:) != dagun
       game_client.Moves(unit_id:, ..) -> unit_id != dagun
       game_client.Threatens(..)
       | game_client.InCombat(..)

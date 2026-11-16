@@ -21,7 +21,7 @@
 import attacker_support
 import client_tables
 import genesis_prime/game/area.{Point, Pose}
-import genesis_prime/game/cast.{GoAsked}
+import genesis_prime/game/cast/state.{GoAsked}
 import genesis_prime/game/shown.{Exile, ShownCreature}
 import genesis_prime/game/spell_area
 import genesis_prime/game/strike.{type Attacker, Attacker}

@@ -30,7 +30,8 @@
 
 import cast_support as support
 import client_tables
-import genesis_prime/game/cast.{type Caster, type Effect, type State}
+import genesis_prime/game/cast
+import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/class_resource
 import genesis_prime/game/lasting
 import genesis_prime/game/prerequisite.{type Prerequisite}
@@ -102,7 +103,11 @@ fn refused_frames(effects effects: List(Effect)) -> List(#(Int, Int, Int)) {
 
 /// An Esper whose bag holds Spectral Form (Spell4Base 38012) at index 0.
 fn esper(in_combat in_combat: Bool) -> Caster {
-  cast.Caster(..support.caster(), abilities: [Spell4BaseId(38_012)], in_combat:)
+  cast_state.Caster(
+    ..support.caster(),
+    abilities: [Spell4BaseId(38_012)],
+    in_combat:,
+  )
 }
 
 pub fn an_esper_out_of_combat_pressing_spectral_form_is_refused_151_and_nothing_else_is_written_test() -> Nil {
@@ -112,7 +117,7 @@ pub fn an_esper_out_of_combat_pressing_spectral_form_is_refused_151_and_nothing_
   let #(state, effects) =
     support.press_by(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: esper(in_combat: False),
       bag: 0,
       at: 1000,
@@ -147,7 +152,7 @@ pub fn an_esper_in_combat_pressing_spectral_form_casts_it_as_before_test() -> Ni
   let #(_, effects) =
     support.press_by(
       plans: spell_plan.plans(client_tables.shared()),
-      state: cast.new(),
+      state: cast_state.new(),
       caster: esper(in_combat: True),
       bag: 0,
       at: 1000,
@@ -171,7 +176,7 @@ fn second_press_result(
   let #(state, first_effects) =
     support.press_by(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: first,
       bag: gated_bag,
       at: 1000,
@@ -215,7 +220,7 @@ pub fn a_press_that_fails_its_cost_and_the_cast_condition_gets_50_plus_the_slot_
   let #(_, effects) =
     support.press_by(
       plans: support.plans_with(spell:),
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster_in_combat(in_combat: False),
       bag: gated_bag,
       at: 1000,
@@ -237,8 +242,8 @@ pub fn a_press_that_fails_the_weapon_and_the_cast_condition_gets_169_test() -> N
   let #(_, effects) =
     support.press_by(
       plans: support.plans_with(spell:),
-      state: cast.new(),
-      caster: cast.Caster(
+      state: cast_state.new(),
+      caster: cast_state.Caster(
         ..support.caster_in_combat(in_combat: False),
         weapon: None,
       ),
@@ -256,8 +261,8 @@ pub fn a_dead_caster_whose_press_also_fails_the_cast_condition_gets_57_test() ->
   let #(_, effects) =
     support.press_by(
       plans: support.plans_with(spell:),
-      state: cast.new(),
-      caster: cast.Caster(
+      state: cast_state.new(),
+      caster: cast_state.Caster(
         ..support.caster_in_combat(in_combat: False),
         dead: True,
       ),
@@ -278,7 +283,7 @@ pub fn a_press_that_fails_both_cast_conditions_gets_151_test() -> Nil {
   let #(_, effects) =
     support.press_by(
       plans: support.plans_with(spell:),
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster_in_combat(in_combat: False),
       bag: gated_bag,
       at: 1000,
@@ -293,7 +298,7 @@ pub fn a_press_that_fails_the_target_cast_alone_gets_281_test() -> Nil {
   let #(_, effects) =
     support.press_by(
       plans: support.plans_with(spell:),
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster_in_combat(in_combat: False),
       bag: gated_bag,
       at: 1000,
@@ -310,7 +315,7 @@ pub fn a_refused_press_changes_nothing_else_test() -> Nil {
   let #(state, effects) =
     support.press_by(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster_in_combat(in_combat: False),
       bag: gated_bag,
       at: 1000,
@@ -366,7 +371,7 @@ pub fn a_press_within_500_ms_of_its_cooldowns_end_is_held_with_nothing_written_a
   let #(state, _) =
     support.press_by(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: in_combat_caster,
       bag: gated_bag,
       at: 1000,
@@ -410,7 +415,7 @@ pub fn a_held_press_whose_condition_passes_at_its_start_casts_test() -> Nil {
   let #(state, _) =
     support.press_by(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: in_combat_caster,
       bag: gated_bag,
       at: 1000,
@@ -454,7 +459,7 @@ pub fn a_press_held_behind_the_current_cast_is_checked_again_when_that_cast_clea
   let #(state, started) =
     support.pressed_raw_in(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: in_combat_caster,
       bag_index: under_bag,
       target: 0,
@@ -495,7 +500,7 @@ pub fn a_held_key_whose_repeat_fails_the_condition_gets_0x7fc_with_client_id_0_a
     let assert Ok(#(state, effects)) =
       cast.take(
         cast: state,
-        message: cast.KeyHeld,
+        message: cast_state.KeyHeld,
         body: support.hold_body(bag_index: gated_bag, target: 0, held:),
         caster:,
         plans:,
@@ -511,7 +516,7 @@ pub fn a_held_key_whose_repeat_fails_the_condition_gets_0x7fc_with_client_id_0_a
       rolls: [],
     )
   }
-  let #(state, first) = key(cast.new(), in_combat_caster, 1, 1000)
+  let #(state, first) = key(cast_state.new(), in_combat_caster, 1, 1000)
   assert refusals(effects: first) == []
     && list.contains(
       support.ids(frames: support.writes(effects: first)),
@@ -558,12 +563,12 @@ fn classed(
   resources resources: option.Option(class_resource.Resources),
 ) -> Caster {
   let caster =
-    cast.Caster(..support.caster(), abilities: [
+    cast_state.Caster(..support.caster(), abilities: [
       Spell4BaseId(base),
       Spell4BaseId(3),
     ])
   case resources {
-    Some(held) -> cast.Caster(..caster, resources: held)
+    Some(held) -> cast_state.Caster(..caster, resources: held)
     None -> caster
   }
 }
@@ -577,8 +582,14 @@ fn innate_press(
 ) -> List(Int) {
   let #(state, _) = case under {
     True ->
-      support.press_by(plans:, state: cast.new(), caster:, bag: 1, at: 1000)
-    False -> #(cast.new(), [])
+      support.press_by(
+        plans:,
+        state: cast_state.new(),
+        caster:,
+        bag: 1,
+        at: 1000,
+      )
+    False -> #(cast_state.new(), [])
   }
   let #(_, effects) =
     support.press_by(plans:, state:, caster:, bag: 0, at: 1100)
@@ -668,12 +679,12 @@ fn rampage_press(caster caster: Caster, under under: Bool) -> List(Int) {
     True ->
       support.press_by(
         plans:,
-        state: cast.new(),
+        state: cast_state.new(),
         caster:,
         bag: under_bag,
         at: 1000,
       )
-    False -> #(cast.new(), [])
+    False -> #(cast_state.new(), [])
   }
   let #(_, effects) =
     support.press_by(plans:, state:, caster:, bag: support.rampage, at: 1100)
@@ -703,7 +714,7 @@ pub fn a_waiver_of_a_type_the_server_does_not_read_refuses_with_the_requirements
   let #(state, first) =
     support.press_by(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster:,
       bag: support.rampage,
       at: 1000,
@@ -729,7 +740,7 @@ fn unread_refusal(spell spell: Spell, expecting expecting: Int) -> Nil {
   let #(state, first) =
     support.press_by(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster:,
       bag: gated_bag,
       at: 1000,
@@ -812,7 +823,7 @@ pub fn casts_behind_type_47_or_an_inactive_objective_are_refused_test() -> Nil {
           )),
           target_cast: None,
         )),
-        state: cast.new(),
+        state: cast_state.new(),
         caster: support.caster_in_combat(in_combat: True),
         bag: gated_bag,
         at: 1000,
@@ -836,7 +847,7 @@ pub fn casts_behind_type_47_or_an_inactive_objective_are_refused_test() -> Nil {
         ),
         target_cast: None,
       )),
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster_in_combat(in_combat: True),
       bag: gated_bag,
       at: 1000,
@@ -912,7 +923,7 @@ pub fn a_live_cast_whose_primary_target_is_another_unit_does_not_stop_stealth_te
   let #(state, started) =
     support.pressed_raw_in(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: stalker,
       bag_index: 1,
       target: 0,
@@ -925,9 +936,9 @@ pub fn a_live_cast_whose_primary_target_is_another_unit_does_not_stop_stealth_te
       effects: started,
       at: 1000,
       struck: [
-        cast.Hit(
+        cast_state.Hit(
           unit_id: 99,
-          unit: cast.HitCreature(life: 1, struck_at_ms: 0),
+          unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
           descriptions: [],
           controls: [],
           armor_removed: 0,
@@ -947,7 +958,7 @@ pub fn a_live_cast_whose_primary_target_is_another_unit_does_not_stop_stealth_te
 /// A caster who is female, in World 870 and in zone 1411 under 1305 under 1304: what
 /// the player the cast's subject holds says.
 fn female_in_zone_1411() -> Caster {
-  cast.Caster(
+  cast_state.Caster(
     ..support.caster(),
     player: prerequisite.Player(
       race_id: 1,
@@ -994,7 +1005,7 @@ pub fn a_cast_reads_the_casters_world_zone_and_gender_test() -> Nil {
     let #(_, effects) =
       support.press_by(
         plans: support.plans_with(spell:),
-        state: cast.new(),
+        state: cast_state.new(),
         caster: female_in_zone_1411(),
         bag: gated_bag,
         at: 1000,

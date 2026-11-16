@@ -7,6 +7,7 @@ import genesis_prime/client_connection.{type Request, AskMap, AskStore, Continue
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/camp
 import genesis_prime/game/cast
+import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/character_select
 import genesis_prime/game/chat
 import genesis_prime/game/connection/casting as connection_casting
@@ -264,7 +265,7 @@ pub fn world_left(
       connection_casting.cast_effects(
         session:,
         now:,
-        effects: cast.left(cast: entered.cast).1,
+        effects: cast_tick.left(cast: entered.cast).1,
       ).1,
       connection_casting.carry_strike(
         session:,

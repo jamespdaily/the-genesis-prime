@@ -12,7 +12,7 @@
 
 import cast_support as support
 import client_tables
-import genesis_prime/game/cast.{type Effect}
+import genesis_prime/game/cast/state.{type Effect} as cast_state
 import genesis_prime/game/class_resource
 import genesis_prime/game/spell_plan.{type Plans, Spell}
 import genesis_prime/message/spell_effect_info.{type SpellEffectInfo}
@@ -92,7 +92,7 @@ pub fn discharge_shows_power_charge_1_then_2_then_the_third_pulse_turns_the_stac
   let #(state, pressed) =
     support.pressed_in(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster(),
       bag_index: support.discharge,
       target: 0,
@@ -131,7 +131,7 @@ pub fn the_pulse_after_the_stacks_went_starts_power_charge_again_test() -> Nil {
   let #(state, pressed) =
     support.pressed_in(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster(),
       bag_index: support.discharge,
       target: 0,

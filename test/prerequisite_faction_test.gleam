@@ -24,7 +24,7 @@ import character_support
 import character_tables
 import client_tables
 import genesis_prime/game/area.{Point, Pose}
-import genesis_prime/game/cast.{type Caster, type Effect, type State}
+import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/connection/casting
 import genesis_prime/game/prerequisite.{
   type Prerequisite, type Subject, type Verdict, Factions, Fails, NotRead,
@@ -308,7 +308,7 @@ pub fn the_caster_carries_the_faction_and_base_faction_of_its_0x262_test() -> Ni
 
 /// A caster of current faction 166 and base faction 167.
 fn caster_of_factions() -> Caster {
-  cast.Caster(
+  cast_state.Caster(
     ..support.caster(),
     factions: Factions(current: dominion, base: exiles),
   )
@@ -332,7 +332,7 @@ fn refusals_of_press(condition condition: #(Int, Int, Int, Int)) -> List(Int) {
   let #(_, effects): #(State, List(Effect)) =
     support.pressed_in(
       plans: plans_gated_on(condition:),
-      state: cast.new(),
+      state: cast_state.new(),
       caster: caster_of_factions(),
       bag_index: 8,
       target: 0,

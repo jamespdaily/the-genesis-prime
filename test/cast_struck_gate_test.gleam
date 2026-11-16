@@ -20,6 +20,8 @@
 import cast_support as support
 import fixture_tables
 import genesis_prime/game/cast
+import genesis_prime/game/cast/state as cast_state
+import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/spell_plan.{
   type Spell, AimsAtArea, AimsAtCaster, AimsAtPrimaryTarget,
@@ -104,7 +106,7 @@ fn spell_ungated() -> Spell {
 
 /// The effect ids each unit's entry of the go lists, by unit, in unit order; a struck unit
 /// is an entry of the go whatever the rows do, so a unit that lists no effect is left out.
-fn listed(effects effects: List(cast.Effect)) -> List(#(Int, List(Int))) {
+fn listed(effects effects: List(cast_state.Effect)) -> List(#(Int, List(Int))) {
   let assert [go] = support.frames_of(message_id: spell_go.message_id, effects:)
   let assert Ok(decoded) = spell_go.decode(go.body)
   list.map(decoded.targets, fn(info) {
@@ -122,11 +124,11 @@ fn listed(effects effects: List(cast.Effect)) -> List(#(Int, List(Int))) {
 fn pressed(
   spell spell: Spell,
   target target: Int,
-) -> #(cast.State, cast.GoAsked) {
+) -> #(cast_state.State, cast_state.GoAsked) {
   let #(state, raw) =
     support.pressed_raw_in(
       plans: support.plans_of([spell]),
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster(),
       bag_index: bag_of_base_3,
       target:,
@@ -139,7 +141,7 @@ fn pressed(
 
 fn selection_of(
   spell spell: Spell,
-  asked asked: cast.GoAsked,
+  asked asked: cast_state.GoAsked,
   units units: List(Int),
 ) -> strike.Selection {
   Selection(
@@ -163,8 +165,8 @@ fn begun(
     attacker: strike_support.attacker(),
     formulas: rating_support.formulas(),
     entropy: <<0:size({ strike.entropy_needed(selection:) * 8 })>>,
-    gate: cast.strike_gate(
-      cast: cast.new(),
+    gate: cast_tick.strike_gate(
+      cast: cast_state.new(),
       caster: support.caster(),
       poses: dict.new(),
       indexes: dict.new(),
@@ -176,7 +178,7 @@ fn begun(
 
 fn answer(
   state state: strike.State,
-  asked asked: cast.GoAsked,
+  asked asked: cast_state.GoAsked,
   unit_id unit_id: Int,
   outcome outcome: strike_tell.Outcome,
 ) -> #(strike.State, List(strike.Effect)) {
@@ -221,7 +223,7 @@ fn gates_told(effects effects: List(strike.Effect)) -> List(#(Int, List(Int))) {
 /// effect ids each passed.
 fn closed(
   effects effects: List(strike.Effect),
-) -> Result(#(List(cast.Struck), dict.Dict(Int, List(Int))), Nil) {
+) -> Result(#(List(cast_state.Struck), dict.Dict(Int, List(Int))), Nil) {
   list.find_map(effects, fn(effect) {
     case effect {
       strike.Went(struck:, gates_passed:, ..) -> Ok(#(struck, gates_passed))
@@ -237,10 +239,10 @@ fn closed(
 
 /// What the cast rule does for a round that closed so.
 fn went_effects(
-  state state: cast.State,
-  asked asked: cast.GoAsked,
-  round round: #(List(cast.Struck), dict.Dict(Int, List(Int))),
-) -> List(cast.Effect) {
+  state state: cast_state.State,
+  asked asked: cast_state.GoAsked,
+  round round: #(List(cast_state.Struck), dict.Dict(Int, List(Int))),
+) -> List(cast_state.Effect) {
   let #(_, effects) =
     cast.went(
       cast: state,
@@ -261,9 +263,9 @@ fn went_effects(
 
 /// The go the cast rule writes for a round that closed so.
 fn written(
-  state state: cast.State,
-  asked asked: cast.GoAsked,
-  round round: #(List(cast.Struck), dict.Dict(Int, List(Int))),
+  state state: cast_state.State,
+  asked asked: cast_state.GoAsked,
+  round round: #(List(cast_state.Struck), dict.Dict(Int, List(Int))),
 ) -> List(#(Int, List(Int))) {
   listed(effects: went_effects(state:, asked:, round:))
 }
@@ -468,7 +470,7 @@ pub fn struck_move_failing_its_gate_is_not_thrown_test() -> Nil {
     list.map(
       support.throws(effects: went_effects(state: cast, asked:, round:)),
       fn(effect) {
-        let assert cast.ForcedMoveStarts(unit_id:, ..) = effect
+        let assert cast_state.ForcedMoveStarts(unit_id:, ..) = effect
           as "throws lists only throws"
         unit_id
       },
@@ -491,7 +493,7 @@ fn primary_target_go(
   let #(pressed, raw) =
     support.pressed_raw_in(
       plans: support.plans_starting_on_each_struck(started: spell),
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster(),
       bag_index: bag_of_base_3,
       target: 0,
@@ -567,7 +569,7 @@ pub fn two_gos_of_one_cast_are_two_rounds_each_with_its_own_gates_test() -> Nil 
   use <- owned_test.run(5000)
   let spell = spell_gated_at(gated_aim: AimsAtArea)
   let #(_, asked) = pressed(spell:, target: 20)
-  let second = cast.GoAsked(..asked, phase: 1)
+  let second = cast_state.GoAsked(..asked, phase: 1)
   let #(state, _) = begun(selection: selection_of(spell:, asked:, units: [20]))
   let #(state, effects) =
     strike.begin(
@@ -576,8 +578,8 @@ pub fn two_gos_of_one_cast_are_two_rounds_each_with_its_own_gates_test() -> Nil 
       attacker: strike_support.attacker(),
       formulas: rating_support.formulas(),
       entropy: <<0:size(96)>>,
-      gate: cast.strike_gate(
-        cast: cast.new(),
+      gate: cast_tick.strike_gate(
+        cast: cast_state.new(),
         caster: support.caster(),
         poses: dict.new(),
         indexes: dict.new(),

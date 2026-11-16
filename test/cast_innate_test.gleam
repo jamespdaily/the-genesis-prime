@@ -28,7 +28,8 @@
 
 import cast_support as support
 import client_tables
-import genesis_prime/game/cast.{type Caster, type Effect, type State}
+import genesis_prime/game/cast
+import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/damage
 import genesis_prime/message/damage_type
 import genesis_prime/message/spell_effect_result
@@ -43,7 +44,7 @@ import unitest
 
 /// A caster of a class: its three level-1 abilities and its innate at bag index 3.
 fn caster_with(bag bag: List(Int), in_combat in_combat: Bool) -> Caster {
-  cast.Caster(
+  cast_state.Caster(
     ..support.caster(),
     abilities: list.map(bag, Spell4BaseId),
     in_combat:,
@@ -106,7 +107,7 @@ pub fn a_stalkers_press_of_bag_index_3_casts_nano_skin_and_the_go_and_finish_fol
   use <- unitest.guard(client_tables.present())
   let #(_, effects) =
     pressed(
-      state: cast.new(),
+      state: cast_state.new(),
       caster: stalker(in_combat: False),
       bag_index: 3,
       at: 1000,
@@ -124,7 +125,8 @@ pub fn the_innates_own_cooldown_runs_for_25_seconds_in_combat_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
   let caster = stalker(in_combat: True)
-  let #(state, _) = pressed(state: cast.new(), caster:, bag_index: 3, at: 1000)
+  let #(state, _) =
+    pressed(state: cast_state.new(), caster:, bag_index: 3, at: 1000)
   let #(_, again) = pressed(state:, caster:, bag_index: 3, at: 20_000)
   assert support.refusal_results(effects: again) == [15]
     as "Spell4.46073: spellCoolDown 25000, so a press 19 s later is refused with the cooldown result 15; Prerequisite 390 (not in combat) fails in combat, so 38784's cooldown effect does not clear it"
@@ -137,7 +139,8 @@ pub fn the_toggles_cooldown_effect_clears_it_out_of_combat_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
   let caster = stalker(in_combat: False)
-  let #(state, _) = pressed(state: cast.new(), caster:, bag_index: 3, at: 1000)
+  let #(state, _) =
+    pressed(state: cast_state.new(), caster:, bag_index: 3, at: 1000)
   let #(_, again) = pressed(state:, caster:, bag_index: 3, at: 2000)
   assert support.refusal_results(effects: again) == []
     as "Spell4Effects 159128 of 38784, behind Prerequisite 390 (type 28 comparison 2: not in combat), clears the toggle's cooldown group 182"
@@ -151,13 +154,13 @@ pub fn the_innates_press_starts_no_global_cooldown_where_an_ordinary_ability_doe
   // press shows whether one runs. 46073 names the same row 115 with kind 3.
   let caster = stalker(in_combat: True)
   let #(after_ability, _) =
-    pressed(state: cast.new(), caster:, bag_index: 0, at: 1000)
+    pressed(state: cast_state.new(), caster:, bag_index: 0, at: 1000)
   let #(_, second_ability) =
     pressed(state: after_ability, caster:, bag_index: 0, at: 1100)
   assert support.refusal_results(effects: second_ability) == [14]
     as "the control: Shred starts the 1000 ms global cooldown, so a second press 100 ms later is refused 14 (0x1403b14c0)"
   let #(after_innate, _) =
-    pressed(state: cast.new(), caster:, bag_index: 3, at: 1000)
+    pressed(state: cast_state.new(), caster:, bag_index: 3, at: 1000)
   let #(_, ability) =
     pressed(state: after_innate, caster:, bag_index: 0, at: 1100)
   assert support.refusal_results(effects: ability) == []
@@ -170,8 +173,8 @@ pub fn a_held_key_of_bag_index_3_holds_the_innate_as_any_key_test() -> Nil {
   let caster = stalker(in_combat: True)
   let assert Ok(#(state, effects)) =
     cast.take(
-      cast: cast.new(),
-      message: cast.KeyHeld,
+      cast: cast_state.new(),
+      message: cast_state.KeyHeld,
       body: support.hold_body(bag_index: 3, target: 0, held: 1),
       caster:,
       plans: support.real_plans(),
@@ -199,7 +202,7 @@ pub fn bag_index_4_holds_no_ability_and_is_refused_as_today_test() -> Nil {
   let #(_, effects) =
     support.pressed_raw_in(
       plans: support.real_plans(),
-      state: cast.new(),
+      state: cast_state.new(),
       caster: stalker(in_combat: False),
       bag_index: 4,
       target: 0,
@@ -226,7 +229,7 @@ fn innate_pressed(
 /// The same for a caster given.
 fn innate_pressed_by(caster caster: Caster) -> List(Effect) {
   let #(state, effects) =
-    pressed(state: cast.new(), caster:, bag_index: 3, at: 1000)
+    pressed(state: cast_state.new(), caster:, bag_index: 3, at: 1000)
   let #(_, steps) = support.run_timers(state:, effects:, from_ms: 1000)
   list.flatten([effects, ..list.map(steps, fn(step) { step.1 })])
 }
@@ -271,7 +274,7 @@ pub fn the_innates_go_lists_only_the_rows_the_server_reads_test() -> Nil {
   // A Medic with 250 of its 450 shield, struck.
   let medic =
     innate_pressed_by(
-      caster: cast.Caster(
+      caster: cast_state.Caster(
         ..caster_with(bag: [38_201, 16_322, 26_543, 46_615], in_combat: False),
         vitals: damage.Vitals(
           health: 500,

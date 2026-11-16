@@ -20,6 +20,7 @@
 
 import genesis_prime/client_connection.{type Request}
 import genesis_prime/game/cast
+import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/class_resource
 import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/state.{type Session} as connection_state
@@ -46,7 +47,7 @@ fn stepped(
       let #(resources, effects) = change(entered.resources)
       let slot = class_resource.slot(resources: entered.resources)
       let moved =
-        cast.ResourceMoved(
+        cast_state.ResourceMoved(
           slot:,
           from: class_resource.value(resources: entered.resources, slot:),
           to: class_resource.value(resources:, slot:),

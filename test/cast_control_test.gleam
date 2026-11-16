@@ -21,12 +21,15 @@
 ////   the Interrupt Armor it hit, the result and the cast data (caster, target, Spell4,
 ////   combat result). The coordinator's decision on the issue: the caster writes it with
 ////   the go (removed 0) and when the state ends (removed 1), and none when the unit left
-////   its sight first (`cast.unit_removed`).
+////   its sight first (`cast_proc.unit_removed`).
 
 import cast_support as support
 import crowd_control_support
 import genesis_prime/client_connection
-import genesis_prime/game/cast.{type Effect, type State}
+import genesis_prime/game/cast
+import genesis_prime/game/cast/gate as cast_gate
+import genesis_prime/game/cast/proc as cast_proc
+import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
 import genesis_prime/game/crowd_control
 import genesis_prime/game/lasting
 import genesis_prime/game/spell_plan.{type Spell, GlobalCooldown, Spell}
@@ -83,16 +86,16 @@ fn kicked(
   let #(state, effects) =
     support.pressed_raw_in(
       plans: kick_plans(),
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster(),
       bag_index: bag_of_base_3,
       target: 0,
       at: 1000,
     )
   support.answered_by(state:, effects:, at: go_ms, struck: [
-    cast.Hit(
+    cast_state.Hit(
       unit_id: 20,
-      unit: cast.HitCreature(life: 1, struck_at_ms: 0),
+      unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
       descriptions: [],
       controls: [
         crowd_control_support.kick_landed(ends_at_ms:),
@@ -155,7 +158,7 @@ pub fn a_creature_that_took_no_state_has_no_effect_listed_for_it_test() -> Nil {
   let #(state, effects) =
     support.pressed_raw_in(
       plans: kick_plans(),
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster(),
       bag_index: bag_of_base_3,
       target: 0,
@@ -163,9 +166,9 @@ pub fn a_creature_that_took_no_state_has_no_effect_listed_for_it_test() -> Nil {
     )
   let #(_, effects) =
     support.answered_by(state:, effects:, at: 1000, struck: [
-      cast.Hit(
+      cast_state.Hit(
         unit_id: 20,
-        unit: cast.HitCreature(life: 1, struck_at_ms: 0),
+        unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
         descriptions: [],
         controls: [],
         armor_removed: 0,
@@ -237,7 +240,7 @@ pub fn a_unit_that_left_the_casters_sight_gets_no_end_entry_test() -> Nil {
       fn(started) { started.0 },
     )
   let #(state, removed) =
-    cast.unit_removed(cast: state, unit_id: 20, now_ms: 2000)
+    cast_proc.unit_removed(cast: state, unit_id: 20, now_ms: 2000)
   assert list.any(support.cancelled_timers(effects: removed), fn(timer) {
     list.contains(ends, timer)
   })
@@ -279,7 +282,7 @@ pub fn a_later_go_does_not_move_the_nodes_end_past_the_states_own_end_test() -> 
   let #(state, pressed) =
     support.pressed_raw_in(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster(),
       bag_index: bag_of_base_3,
       target: 0,
@@ -287,9 +290,9 @@ pub fn a_later_go_does_not_move_the_nodes_end_past_the_states_own_end_test() -> 
     )
   let #(state, first) =
     support.answered_by(state:, effects: pressed, at: 1000, struck: [
-      cast.Hit(
+      cast_state.Hit(
         unit_id: 20,
-        unit: cast.HitCreature(life: 1, struck_at_ms: 0),
+        unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
         descriptions: [],
         controls: [
           crowd_control_support.kick_landed(ends_at_ms: 4000),
@@ -306,9 +309,9 @@ pub fn a_later_go_does_not_move_the_nodes_end_past_the_states_own_end_test() -> 
   let #(state, going) = support.fired_raw(state:, timer: go, at: 2000)
   let #(_, second) =
     support.answered_by(state:, effects: going, at: 2000, struck: [
-      cast.Hit(
+      cast_state.Hit(
         unit_id: 20,
-        unit: cast.HitCreature(life: 1, struck_at_ms: 0),
+        unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
         descriptions: [],
         controls: [],
         armor_removed: 0,
@@ -419,7 +422,7 @@ fn unmasked() -> Spell {
   Spell(..support.child(spell4_id: 42_297, base: 1), caster_cc_mask: 0)
 }
 
-fn fighting() -> cast.Caster {
+fn fighting() -> cast_state.Caster {
   support.caster_in_combat(in_combat: True)
 }
 
@@ -428,7 +431,7 @@ fn fighting() -> cast.Caster {
 fn restricted(plans plans: spell_plan.Plans) -> #(State, List(Effect)) {
   support.press_by(
     plans:,
-    state: cast.new(),
+    state: cast_state.new(),
     caster: fighting(),
     bag: 11,
     at: 1000,
@@ -458,14 +461,14 @@ pub fn a_restriction_behind_a_type_37_caster_gate_takes_one_roll_and_is_applied_
   let #(state, raw) =
     support.pressed_raw_in(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: fighting(),
       bag_index: 11,
       target: 0,
       at: 1000,
     )
   let assert [asked] = support.goes_asked(effects: raw)
-  assert cast.rolls_needed(
+  assert cast_gate.rolls_needed(
       cast: state,
       caster: support.caster().unit_id,
       cast_id: asked.cast_id,
@@ -501,7 +504,7 @@ pub fn a_press_while_restricted_is_refused_with_302_test() -> Nil {
   let #(state, first) =
     support.press_by(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: fighting(),
       bag: bag_of_kick,
       at: 1000,
@@ -527,7 +530,7 @@ pub fn a_press_while_restricted_is_refused_with_302_test() -> Nil {
   let #(state, _) =
     support.press_by(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: fighting(),
       bag: 11,
       at: 1000,
@@ -864,7 +867,7 @@ pub fn a_caster_holding_a_masked_state_is_refused_its_result_test() -> Nil {
   let #(held, _) =
     support.press_by(
       plans: support.plans_of([masking(mask: row_5_mask)]),
-      state: cast.new(),
+      state: cast_state.new(),
       caster: fighting(),
       bag: bag_of_base_1,
       at: 1000,
@@ -914,7 +917,7 @@ pub fn a_caster_holding_a_masked_state_is_refused_its_result_test() -> Nil {
   let #(started, _) =
     support.press_by(
       plans: gated_plans,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: fighting(),
       bag: bag_of_base_1,
       at: 1000,
@@ -1073,18 +1076,18 @@ fn struck_for_armor(
   let #(state, effects) =
     support.pressed_raw_in(
       plans: kick_plans(),
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster(),
       bag_index: bag_of_base_3,
       target: 0,
       at: 1000,
     )
-  let unit = cast.HitCreature(life: 1, struck_at_ms: 0)
+  let unit = cast_state.HitCreature(life: 1, struck_at_ms: 0)
   let #(_, effects) =
     support.answered_by(state:, effects:, at: 1000, struck: [
       case immune {
         True ->
-          cast.Immune(
+          cast_state.Immune(
             unit_id: 20,
             unit:,
             controls: [],
@@ -1092,7 +1095,7 @@ fn struck_for_armor(
             ticking: [],
           )
         False ->
-          cast.Hit(
+          cast_state.Hit(
             unit_id: 20,
             unit:,
             descriptions: [],

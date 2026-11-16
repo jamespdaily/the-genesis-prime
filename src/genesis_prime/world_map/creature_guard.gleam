@@ -53,7 +53,7 @@
 ////   `controlled` is true while `opened`: Spell4 85469 prerequisiteIdCasterCast 41722), so no second
 ////   interrupt reaches `Interrupted`; one that does (two inputs in one step) opens nothing more.
 //// - **Casts take ids with the fight's.** The guard's casts are ids of the unit's id space
-////   (`cast.cast_id`) taken with `cast.mint`, given the fight's live casts, and the fight's take
+////   (`cast_state.cast_id`) taken with `cast_state.mint`, given the fight's live casts, and the fight's take
 ////   the guard's (`live_casts`), so neither holds an id the other still has. The interrupted
 ////   charge's id still counts as live when the opening takes its own, so the opening's id differs
 ////   from the id of the 0x7f9 that was just sent.
@@ -79,7 +79,8 @@
 //// | The corpse timer stands the creature | n/a | n/a | `Dormant` takes `Stands`: it stands guarded with a new cast, no opening (`a_respawned_turret_stands_guarded_test`) |
 
 import genesis_prime/client_connection.{type News}
-import genesis_prime/game/cast
+import genesis_prime/game/cast/frame as cast_frame
+import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/message/spell_targets_removed.{SpellTargetsRemoved}
@@ -161,7 +162,7 @@ pub type Effect {
 /// first cast id of the unit's id space no live cast holds (the fight has none yet).
 pub fn new(guard guard: Option(Guard), unit_id unit_id: Int) -> State {
   let phase = case guard {
-    Some(..) -> Guarded(cast_id: cast.mint(unit_id:, number: 1, live: []))
+    Some(..) -> Guarded(cast_id: cast_state.mint(unit_id:, number: 1, live: []))
     None -> Bare
   }
   State(
@@ -191,7 +192,7 @@ pub fn opened(state state: State) -> Bool {
 }
 
 /// The ids of the casts the guard holds live, which the fight's casts take no id of
-/// (`cast.mint`).
+/// (`cast_state.mint`).
 pub fn live_casts(state state: State) -> List(Int) {
   case state.phase {
     Bare | Dormant -> []
@@ -294,12 +295,12 @@ fn raised(
   live live: List(Int),
   place place: Place,
 ) -> #(State, List(Effect)) {
-  let cast_id = cast.mint(unit_id:, number: state.next_cast, live:)
+  let cast_id = cast_state.mint(unit_id:, number: state.next_cast, live:)
   let state =
     State(
       ..state,
       phase: Guarded(cast_id:),
-      next_cast: cast.number_of(cast_id:) + 1,
+      next_cast: cast_state.number_of(cast_id:) + 1,
       next_instance: state.next_instance + 1,
       guard_instance: state.next_instance,
     )
@@ -321,7 +322,10 @@ fn opens(
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
   let cast_id =
-    cast.mint(unit_id:, number: state.next_cast, live: [guard_cast, ..live])
+    cast_state.mint(unit_id:, number: state.next_cast, live: [
+      guard_cast,
+      ..live
+    ])
   let #(next_instance, held) =
     list.map_fold(
       guard.opening.effects,
@@ -350,7 +354,7 @@ fn opens(
       ),
       next_generation: generation + 1,
       next_instance:,
-      next_cast: cast.number_of(cast_id:) + 1,
+      next_cast: cast_state.number_of(cast_id:) + 1,
     )
   #(
     state,
@@ -391,7 +395,7 @@ fn guard_cast(
   cast_id cast_id: Int,
 ) -> List(News) {
   [
-    client_connection.CastStarted(start: cast.creature_started(
+    client_connection.CastStarted(start: cast_frame.creature_started(
       cast_id:,
       spell4_id: guard.spell4_id,
       caster_unit_id: unit_id,
@@ -399,12 +403,12 @@ fn guard_cast(
       place:,
     )),
     client_connection.CastWent(
-      go: cast.creature_applied(
+      go: cast_frame.creature_applied(
         cast_id:,
         place:,
         target_unit_id: unit_id,
         effects: [
-          cast.CreatureEffect(
+          cast_state.CreatureEffect(
             effect_id: guard.effect_id,
             instance_id: state.guard_instance,
             lifetime_ms: 0,
@@ -426,19 +430,19 @@ fn opening_cast(
   elapsed_ms elapsed_ms: Int,
 ) -> List(News) {
   [
-    client_connection.CastStarted(start: cast.creature_started(
+    client_connection.CastStarted(start: cast_frame.creature_started(
       cast_id:,
       spell4_id: guard.opening.spell4_id,
       caster_unit_id: unit_id,
       target_unit_id: unit_id,
       place:,
     )),
-    client_connection.CastWent(go: cast.creature_applied(
+    client_connection.CastWent(go: cast_frame.creature_applied(
       cast_id:,
       place:,
       target_unit_id: unit_id,
       effects: list.map(held, fn(effect) {
-        cast.CreatureEffect(
+        cast_state.CreatureEffect(
           effect_id: effect.effect_id,
           instance_id: effect.instance_id,
           lifetime_ms: int.max(1, effect.lifetime_ms - elapsed_ms),

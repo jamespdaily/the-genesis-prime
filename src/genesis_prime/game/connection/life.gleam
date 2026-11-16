@@ -68,6 +68,7 @@
 import genesis_prime/client_connection.{type Request, Continue}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/cast
+import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection/casting as connection_casting
 import genesis_prime/game/connection/effects as connection_effects
 import genesis_prime/game/connection/life_effect
@@ -343,7 +344,7 @@ pub fn carried(
 fn cast_carried(
   session session: Session,
   now now: Now,
-  taken taken: #(cast.State, List(cast.Effect)),
+  taken taken: #(cast_state.State, List(cast_state.Effect)),
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
   let #(updated, effects) = taken
   connection_casting.cast_effects(

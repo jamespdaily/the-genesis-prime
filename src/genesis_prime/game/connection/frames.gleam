@@ -4,7 +4,7 @@
 //// path, creation and removal, and the leave of the world.
 
 import genesis_prime/connection/frame.{type Frame, Frame}
-import genesis_prime/game/cast
+import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/look
 import genesis_prime/game/player_life
 import genesis_prime/game/start_place.{type Place}
@@ -380,7 +380,7 @@ const stealthed_create_flag = 16
 /// origin `Joined` carried (`map.server_time`), with the current base and value of each
 /// property a live modifier changes (`unit_properties.overlay`), the item visuals a live
 /// disguise shows (`look.visuals`), and the create flag 16 while the player is stealthed,
-/// which a viewer that first sees the unit needs (`cast.stealthed`).
+/// which a viewer that first sees the unit needs (`cast_state.stealthed`).
 pub fn appearance_at(
   entered entered: world_entry.Entered,
   place place: Place,
@@ -391,7 +391,7 @@ pub fn appearance_at(
     ..entered.unit,
     tail: UnitCreateTail(
       ..entered.unit.tail,
-      create_flags: case cast.stealthed(cast: entered.cast) {
+      create_flags: case cast_state.stealthed(cast: entered.cast) {
         True ->
           int.bitwise_or(entered.unit.tail.create_flags, stealthed_create_flag)
         False -> entered.unit.tail.create_flags

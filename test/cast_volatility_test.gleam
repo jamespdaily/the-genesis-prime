@@ -18,7 +18,7 @@
 
 import cast_support as support
 import genesis_prime/client_connection
-import genesis_prime/game/cast.{type Caster, type Effect, type State}
+import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/class_resource.{Gain, Payment}
 import genesis_prime/message/cast_result
 import genesis_prime/message/spell_started
@@ -36,7 +36,7 @@ const striking_spell = 37_302
 
 /// An Engineer with nothing in its Volatility, in or out of combat.
 fn engineer(in_combat in_combat: Bool) -> Caster {
-  cast.Caster(
+  cast_state.Caster(
     ..support.caster(),
     resources: support.holding(class_id: 2, value: 0.0),
     in_combat:,
@@ -45,8 +45,10 @@ fn engineer(in_combat in_combat: Bool) -> Caster {
 
 /// The units a go strikes: the damage spell strikes `foes` in the goes that hold its damage,
 /// and a spell with no area strikes none (42148 has none, `strike.select`).
-fn striking(foes foes: List(Int)) -> fn(cast.GoAsked) -> List(cast.Struck) {
-  fn(asked: cast.GoAsked) {
+fn striking(
+  foes foes: List(Int),
+) -> fn(cast_state.GoAsked) -> List(cast_state.Struck) {
+  fn(asked: cast_state.GoAsked) {
     case asked.spell4_id == Spell4Id(striking_spell) && asked.phase > 0 {
       True -> support.hits(foes)
       False -> []
@@ -64,7 +66,7 @@ fn pressed_through(
   let #(state, raw) =
     support.pressed_raw_in(
       plans: spell_tables.plans_with_server_proxies(),
-      state: cast.new(),
+      state: cast_state.new(),
       caster:,
       bag_index:,
       target: 0,
@@ -192,7 +194,7 @@ pub fn a_pulse_blast_cancelled_before_1250_ms_casts_no_42148_and_gives_nothing_t
   let #(state, raw) =
     support.pressed_raw_in(
       plans: spell_tables.plans_with_server_proxies(),
-      state: cast.new(),
+      state: cast_state.new(),
       caster:,
       bag_index: support.pulse_blast,
       target: 0,
@@ -241,7 +243,7 @@ pub fn electrocute_is_refused_51_at_0_volatility_and_accepted_after_a_pulse_blas
   let #(_, refused) =
     support.pressed_raw_in(
       plans: spell_tables.plans_with_server_proxies(),
-      state: cast.new(),
+      state: cast_state.new(),
       caster: empty,
       bag_index: support.electrocute,
       target: 0,
@@ -250,7 +252,10 @@ pub fn electrocute_is_refused_51_at_0_volatility_and_accepted_after_a_pulse_blas
   assert support.refusal_results(effects: refused) == [51]
     as "Electrocute costs 8 of vital 6 (Spell4 41276: innateCostType0 6, innateCost0 8); an empty slot 1 refuses 50 + 1 (`Spell4CastResult.vital_cost`, 0x1403b3320)"
   let gained =
-    cast.Caster(..empty, resources: support.holding(class_id: 2, value: 15.0))
+    cast_state.Caster(
+      ..empty,
+      resources: support.holding(class_id: 2, value: 15.0),
+    )
   let accepted =
     every(
       pressed_through(caster: gained, bag_index: support.electrocute, foes: []).1,

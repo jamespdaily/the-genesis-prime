@@ -33,7 +33,10 @@
 
 import cast_support as support
 import client_tables
-import genesis_prime/game/cast.{type Caster, type Effect, type State}
+import genesis_prime/game/cast
+import genesis_prime/game/cast/proc as cast_proc
+import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
+import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/spell_plan.{
   type Plans, type Spell, GlobalCooldown, ShowsCastBar, Spell,
 }
@@ -58,7 +61,7 @@ fn started_in(
 ) -> #(State, List(Effect)) {
   let #(state, effects) =
     cast.passive_started(
-      cast: cast.new(),
+      cast: cast_state.new(),
       caster:,
       plans:,
       base: Spell4BaseId(base),
@@ -183,7 +186,7 @@ fn planted_plans() -> Plans {
 /// A caster whose bag holds the planted spell at index 0 and Telekinetic Strike
 /// at 1.
 fn caster_of_planted() -> Caster {
-  cast.Caster(..support.caster(), abilities: [
+  cast_state.Caster(..support.caster(), abilities: [
     Spell4BaseId(250_001),
     Spell4BaseId(19_102),
   ])
@@ -194,7 +197,7 @@ pub fn an_ordinary_press_of_the_planted_spell_is_the_current_cast_and_starts_the
   let #(state, _) =
     support.pressed_raw_in(
       plans: planted_plans(),
-      state: cast.new(),
+      state: cast_state.new(),
       caster: caster_of_planted(),
       bag_index: 0,
       target: 0,
@@ -217,7 +220,7 @@ pub fn a_passive_starts_no_global_cooldown_is_never_the_current_cast_and_opens_n
   use <- owned_test.run(10_000)
   let #(state, effects) =
     cast.passive_started(
-      cast: cast.new(),
+      cast: cast_state.new(),
       caster: caster_of_planted(),
       plans: planted_plans(),
       base: Spell4BaseId(250_001),
@@ -246,11 +249,11 @@ pub fn a_passive_starts_no_global_cooldown_is_never_the_current_cast_and_opens_n
 /// passive's do.
 fn warrior_pressed_as_an_ability() -> #(State, List(Effect)) {
   let caster =
-    cast.Caster(..support.caster(), abilities: [Spell4BaseId(29_035)])
+    cast_state.Caster(..support.caster(), abilities: [Spell4BaseId(29_035)])
   let #(state, effects) =
     support.pressed_raw_in(
       plans: support.real_plans(),
-      state: cast.new(),
+      state: cast_state.new(),
       caster:,
       bag_index: 0,
       target: 0,
@@ -308,7 +311,7 @@ pub fn a_camp_or_the_holocrypt_drops_the_passive_writing_nothing_and_the_next_jo
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
   let #(passive, _) = started(base: 29_035)
-  let #(dropped, effects) = cast.left(cast: passive)
+  let #(dropped, effects) = cast_tick.left(cast: passive)
   assert support.writes(effects:) == []
     as "a camp writes nothing for any cast (cast.left)"
   let #(_, again) =
@@ -326,7 +329,7 @@ pub fn a_camp_or_the_holocrypt_drops_the_passive_writing_nothing_and_the_next_jo
 pub fn a_player_saved_dead_starts_the_passive_at_entry_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
-  let caster = cast.Caster(..support.caster(), dead: True)
+  let caster = cast_state.Caster(..support.caster(), dead: True)
   let #(_, effects) =
     started_in(plans: support.real_plans(), caster:, base: 29_035, at: 1000)
   assert lines(effects:)
@@ -360,7 +363,7 @@ pub fn the_passive_still_lingers_after_a_death_so_taking_its_unit_off_ends_it_wi
     )
   assert support.frames_of(message_id: 0x07FE, effects: died) == []
   let #(_, removed) =
-    cast.unit_removed(
+    cast_proc.unit_removed(
       cast: left,
       unit_id: support.caster().unit_id,
       now_ms: 5100,
@@ -402,14 +405,14 @@ pub fn a_passive_taken_off_the_caster_is_forgotten_so_a_cast_that_gets_its_id_la
   let filler = support.child(spell4_id: 250_010, base: 250_010)
   let plans = support.with_spells(plans: support.real_plans(), spells: [filler])
   let caster =
-    cast.Caster(..support.caster(), abilities: [
+    cast_state.Caster(..support.caster(), abilities: [
       Spell4BaseId(250_010),
       Spell4BaseId(29_035),
     ])
   let #(passive, started_effects) =
     started_in(plans:, caster:, base: 29_035, at: 1000)
   let #(state, _) =
-    cast.unit_removed(cast: passive, unit_id: caster.unit_id, now_ms: 1100)
+    cast_proc.unit_removed(cast: passive, unit_id: caster.unit_id, now_ms: 1100)
   // The ids of a unit's casts count up and wrap after 2048 starts, so the
   // 2048th start after the passive's gets its id again.
   let state =
@@ -466,14 +469,14 @@ pub fn a_passives_go_does_not_clear_the_cast_another_press_made_current_test() -
   let plans =
     support.with_spells(plans: support.plans(), spells: [slow_passive(), second])
   let caster =
-    cast.Caster(..support.caster(), abilities: [
+    cast_state.Caster(..support.caster(), abilities: [
       Spell4BaseId(250_001),
       Spell4BaseId(250_002),
       Spell4BaseId(19_102),
     ])
   let #(state, started) =
     cast.passive_started(
-      cast: cast.new(),
+      cast: cast_state.new(),
       caster:,
       plans:,
       base: Spell4BaseId(250_001),

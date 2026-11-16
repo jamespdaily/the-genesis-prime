@@ -273,7 +273,7 @@
 //// - **A `StealthChanged` from a connection not in the map** changes nothing and is
 ////   logged as an error, as for a `Moved`; one of a value the map already holds sends
 ////   nothing. A player that left and joined again starts `NotStealthed`: its camp
-////   clears its stealth with no `StealthChanged` (genesis_prime/game/cast `left`), and
+////   clears its stealth with no `StealthChanged` (genesis_prime/game/cast/tick `left`), and
 ////   its `Leave` removes the player with its copy.
 //// - **When a stealth tell is late, out of order or lost to a death:**
 ////   - A `StealthChanged` is decided on the state the connection had when it sent it,

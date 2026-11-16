@@ -21,7 +21,9 @@
 
 import cast_support as support
 import fixture_tables
-import genesis_prime/game/cast.{type GoAsked}
+import genesis_prime/game/cast
+import genesis_prime/game/cast/gate as cast_gate
+import genesis_prime/game/cast/state.{type GoAsked} as cast_state
 import genesis_prime/game/class_resource.{type Resources, Payment}
 import genesis_prime/game/lasting
 import genesis_prime/game/prerequisite
@@ -61,7 +63,7 @@ fn esper_holding(points points: Int) -> Resources {
   support.holding(class_id: 3, value: int.to_float(points))
 }
 
-fn caster_holding(points points: Int) -> cast.Caster {
+fn caster_holding(points points: Int) -> cast_state.Caster {
   support.caster_holding(resources: esper_holding(points:))
 }
 
@@ -69,10 +71,10 @@ fn caster_holding(points points: Int) -> cast.Caster {
 fn press(
   spell spell: Spell,
   points points: Int,
-) -> #(cast.State, List(cast.Effect)) {
+) -> #(cast_state.State, List(cast_state.Effect)) {
   support.pressed_raw_in(
     plans: support.plans_with(spell:),
-    state: cast.new(),
+    state: cast_state.new(),
     caster: caster_holding(points:),
     bag_index: mind_burst,
     target: 0,
@@ -80,32 +82,32 @@ fn press(
   )
 }
 
-fn asked_goes(effects effects: List(cast.Effect)) -> List(GoAsked) {
+fn asked_goes(effects effects: List(cast_state.Effect)) -> List(GoAsked) {
   list.filter_map(effects, fn(effect) {
     case effect {
-      cast.Strike(asked:) -> Ok(asked)
-      cast.Send(..)
-      | cast.Tell(..)
-      | cast.StartTimer(..)
-      | cast.CancelTimer(..)
-      | cast.Log(..)
-      | cast.Pay(..)
-      | cast.Gain(..)
-      | cast.CasterChangeStarts(..)
-      | cast.CasterChangeEnds(..)
-      | cast.TargetChangeStarts(..)
-      | cast.TargetChangeEnds(..)
-      | cast.ForcedMoveStarts(..)
-      | cast.Activated(..)
-      | cast.ShortcutCast(..)
-      | cast.TickStrike(..)
-      | cast.StealthChanged(..) -> Error(Nil)
+      cast_state.Strike(asked:) -> Ok(asked)
+      cast_state.Send(..)
+      | cast_state.Tell(..)
+      | cast_state.StartTimer(..)
+      | cast_state.CancelTimer(..)
+      | cast_state.Log(..)
+      | cast_state.Pay(..)
+      | cast_state.Gain(..)
+      | cast_state.CasterChangeStarts(..)
+      | cast_state.CasterChangeEnds(..)
+      | cast_state.TargetChangeStarts(..)
+      | cast_state.TargetChangeEnds(..)
+      | cast_state.ForcedMoveStarts(..)
+      | cast_state.Activated(..)
+      | cast_state.ShortcutCast(..)
+      | cast_state.TickStrike(..)
+      | cast_state.StealthChanged(..) -> Error(Nil)
     }
   })
 }
 
 /// The Spell4 id of each cast the writes start, in order.
-fn started(effects effects: List(cast.Effect)) -> List(Int) {
+fn started(effects effects: List(cast_state.Effect)) -> List(Int) {
   list.filter_map(support.writes(effects:), fn(frame) {
     case frame.message_id == spell_started.message_id {
       True -> {
@@ -118,7 +120,7 @@ fn started(effects effects: List(cast.Effect)) -> List(Int) {
   })
 }
 
-fn debug_lines(effects effects: List(cast.Effect)) -> List(String) {
+fn debug_lines(effects effects: List(cast_state.Effect)) -> List(String) {
   list.filter_map(support.logs(effects:), fn(line) {
     case line.0 == LogDebug {
       True -> Ok(line.1)
@@ -196,12 +198,12 @@ fn pressed_and_gone(
   spell spell: Spell,
   points points: Int,
   rolls rolls: List(Int),
-) -> List(cast.Effect) {
-  let caster = cast.Caster(..caster_holding(points:), in_combat: True)
+) -> List(cast_state.Effect) {
+  let caster = cast_state.Caster(..caster_holding(points:), in_combat: True)
   let #(state, raw) =
     support.pressed_raw_in(
       plans: support.plans_with(spell:),
-      state: cast.new(),
+      state: cast_state.new(),
       caster:,
       bag_index: mind_burst,
       target: 0,
@@ -265,7 +267,7 @@ pub fn the_gate_of_a_proxy_that_n_does_not_choose_is_not_checked_test() -> Nil {
     )
   let rolls_taken = fn(points) {
     let #(state, _) = press(spell:, points:)
-    cast.rolls_needed(
+    cast_gate.rolls_needed(
       cast: state,
       caster: support.caster().unit_id,
       cast_id: first_cast,
@@ -332,11 +334,11 @@ pub fn a_5_point_mind_burst_with_the_reckful_amp_held_starts_the_crit_buff_test(
         amp,
       ],
     )
-  let caster = cast.Caster(..caster_holding(points: 5), in_combat: True)
+  let caster = cast_state.Caster(..caster_holding(points: 5), in_combat: True)
   let #(state, raw) =
     support.pressed_raw_in(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster:,
       bag_index: 11,
       target: 0,
@@ -417,8 +419,8 @@ pub fn a_second_press_in_the_same_step_is_refused_51_after_a_spend_of_all_test()
   // Telekinetic Strike's 1250 ms cast bar is the current cast from 1000.
   let #(state, started) =
     take(
-      cast.new(),
-      cast.Pressed,
+      cast_state.new(),
+      cast_state.Pressed,
       support.press_body(client_cast_id: 8, bag_index: 0, target: 0, press: 1),
       1000,
     )
@@ -427,7 +429,7 @@ pub fn a_second_press_in_the_same_step_is_refused_51_after_a_spend_of_all_test()
   let #(state, _) =
     take(
       state,
-      cast.Pressed,
+      cast_state.Pressed,
       support.press_body(
         client_cast_id: 9,
         bag_index: mind_burst,
@@ -439,7 +441,7 @@ pub fn a_second_press_in_the_same_step_is_refused_51_after_a_spend_of_all_test()
   let #(state, _) =
     take(
       state,
-      cast.KeyHeld,
+      cast_state.KeyHeld,
       support.hold_body(bag_index: mind_burst, target: 0, held: 1),
       1900,
     )
@@ -451,7 +453,7 @@ pub fn a_second_press_in_the_same_step_is_refused_51_after_a_spend_of_all_test()
       caster:,
       now: support.at(ms: 2250),
     )
-  let assert [cast.Strike(asked:)] = fired as "the go is asked"
+  let assert [cast_state.Strike(asked:)] = fired as "the go is asked"
   let #(_, effects) =
     support.went(
       cast: state,
@@ -476,7 +478,7 @@ pub fn a_held_press_chooses_by_the_points_held_when_it_starts_test() -> Nil {
     let assert Ok(taken) =
       cast.take(
         cast: state,
-        message: cast.Pressed,
+        message: cast_state.Pressed,
         body:,
         caster: pressing,
         plans:,
@@ -487,7 +489,7 @@ pub fn a_held_press_chooses_by_the_points_held_when_it_starts_test() -> Nil {
   }
   let #(state, started) =
     take(
-      cast.new(),
+      cast_state.new(),
       support.press_body(client_cast_id: 8, bag_index: 0, target: 0, press: 1),
       1000,
     )
@@ -512,7 +514,7 @@ pub fn a_held_press_chooses_by_the_points_held_when_it_starts_test() -> Nil {
       caster: at_the_go,
       now: support.at(ms: 2250),
     )
-  let assert [cast.Strike(asked: first)] = fired as "the go is asked"
+  let assert [cast_state.Strike(asked: first)] = fired as "the go is asked"
   let #(_, effects) =
     support.went(
       cast: state,
@@ -556,7 +558,7 @@ pub fn an_unread_emm_id_is_refused_with_its_costs_result_logged_once_and_pays_no
       at:,
     )
   }
-  let #(state, first) = take(cast.new(), 1000)
+  let #(state, first) = take(cast_state.new(), 1000)
   assert support.refusal_results(effects: first) == [51]
     as "Spell4.innateCostEMMId0: the meaning of 5 is not in the client, so the press is refused with the cost's result, type 6: 51"
   assert support.payments(effects: first) == []
@@ -581,7 +583,7 @@ pub fn crush_keeps_every_effect_at_any_points_held_test() -> Nil {
   list.each([0, 3, 5], fn(points) {
     let #(state, raw) =
       support.pressed_raw(
-        state: cast.new(),
+        state: cast_state.new(),
         caster: caster_holding(points:),
         bag_index: crush,
         target: 0,
@@ -599,9 +601,9 @@ pub fn crush_keeps_every_effect_at_any_points_held_test() -> Nil {
         cast_id: asked.cast_id,
         phase: 0,
         struck: [
-          cast.Hit(
+          cast_state.Hit(
             unit_id: 10,
-            unit: cast.HitCreature(life: 1, struck_at_ms: 0),
+            unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
             descriptions: [],
             controls: [],
             armor_removed: 0,

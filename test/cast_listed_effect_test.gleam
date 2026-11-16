@@ -19,7 +19,8 @@
 
 import cast_support as support
 import genesis_prime/client_connection.{CastFinished}
-import genesis_prime/game/cast.{type Caster, type Effect, type State}
+import genesis_prime/game/cast
+import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{type Plans, type Spell, ForceRemove, Spell}
@@ -122,7 +123,7 @@ pub fn a_go_lists_a_scale_row_on_the_caster_and_the_nodes_life_is_the_rows_test(
   let #(_, effects) =
     support.press(
       plans: support.plans_of([spell]),
-      state: cast.new(),
+      state: cast_state.new(),
       bag: bag_of_base_3,
       at: 1000,
     )
@@ -166,7 +167,7 @@ pub fn a_spell_whose_only_row_with_a_life_is_a_scale_row_lingers_until_the_rows_
   let #(state, effects) =
     support.press(
       plans: support.plans_of([spell]),
-      state: cast.new(),
+      state: cast_state.new(),
       bag: bag_of_base_3,
       at: 1000,
     )
@@ -203,7 +204,7 @@ pub fn a_scale_row_aimed_at_the_area_is_listed_on_each_struck_unit_test() -> Nil
   let #(state, effects) =
     support.pressed_raw_in(
       plans: support.plans_of([spell]),
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster(),
       bag_index: bag_of_base_3,
       target: 0,
@@ -211,17 +212,17 @@ pub fn a_scale_row_aimed_at_the_area_is_listed_on_each_struck_unit_test() -> Nil
     )
   let #(_, effects) =
     support.answered_by(state:, effects:, at: 1000, struck: [
-      cast.Hit(
+      cast_state.Hit(
         unit_id: 20,
-        unit: cast.HitCreature(life: 1, struck_at_ms: 0),
+        unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
         descriptions: [],
         controls: [],
         armor_removed: 0,
         ticking: [],
       ),
-      cast.Hit(
+      cast_state.Hit(
         unit_id: 21,
-        unit: cast.HitCreature(life: 1, struck_at_ms: 0),
+        unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
         descriptions: [],
         controls: [],
         armor_removed: 0,
@@ -263,7 +264,7 @@ pub fn a_ravel_signal_row_behind_a_target_prerequisite_is_listed_only_for_a_cast
     )
   let in_world = fn(world_id) {
     let caster = support.caster()
-    cast.Caster(
+    cast_state.Caster(
       ..caster,
       player: prerequisite.Player(..caster.player, world_id:),
     )
@@ -271,7 +272,7 @@ pub fn a_ravel_signal_row_behind_a_target_prerequisite_is_listed_only_for_a_cast
   let #(_, in_a_listed_world) =
     support.press_as(
       plans: support.plans_of([spell]),
-      state: cast.new(),
+      state: cast_state.new(),
       caster: in_world(1535),
       bag: bag_of_base_3,
       at: 1000,
@@ -281,7 +282,7 @@ pub fn a_ravel_signal_row_behind_a_target_prerequisite_is_listed_only_for_a_cast
   let #(_, in_another_world) =
     support.press_as(
       plans: support.plans_of([spell]),
-      state: cast.new(),
+      state: cast_state.new(),
       caster: in_world(3460),
       bag: bag_of_base_3,
       at: 1000,
@@ -318,14 +319,14 @@ fn passive() -> Spell {
 }
 
 fn caster_of_passive() -> Caster {
-  cast.Caster(..support.caster(), abilities: [Spell4BaseId(250_001)])
+  cast_state.Caster(..support.caster(), abilities: [Spell4BaseId(250_001)])
 }
 
 /// The passive started at the time, its go answered with no unit struck.
 fn passive_started(plans plans: Plans, at ms: Int) -> #(State, List(Effect)) {
   let #(state, effects) =
     cast.passive_started(
-      cast: cast.new(),
+      cast: cast_state.new(),
       caster: caster_of_passive(),
       plans:,
       base: Spell4BaseId(250_001),
@@ -370,7 +371,7 @@ pub fn the_casters_death_leaves_the_innate_passives_conversion_live_test() -> Ni
   let #(pressed, _) =
     support.pressed_in(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: caster_of_passive(),
       bag_index: 0,
       target: 0,
@@ -379,7 +380,7 @@ pub fn the_casters_death_leaves_the_innate_passives_conversion_live_test() -> Ni
   let #(_, ordinary_death) =
     cast.died(
       cast: pressed,
-      caster: cast.Caster(..caster_of_passive(), dead: True),
+      caster: cast_state.Caster(..caster_of_passive(), dead: True),
       now: support.at(ms: 5000),
     )
   assert list.length(support.caster_change_ends(effects: ordinary_death)) == 1
@@ -388,7 +389,7 @@ pub fn the_casters_death_leaves_the_innate_passives_conversion_live_test() -> Ni
   let #(_, died) =
     cast.died(
       cast: passive_state,
-      caster: cast.Caster(..caster_of_passive(), dead: True),
+      caster: cast_state.Caster(..caster_of_passive(), dead: True),
       now: support.at(ms: 5000),
     )
   assert support.caster_change_ends(effects: died) == []
@@ -427,7 +428,7 @@ pub fn a_go_lists_an_item_visual_swap_row_on_the_caster_with_its_delay_and_lifet
       support.client_lasting(spell4_id: 48_373, base: 3, effect_ids: [122_321]),
     ])
   let #(_, effects) =
-    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_base_3, at: 1000)
   let assert [info] = targets_of(effects:)
   assert info.unit_id == 7
     as "the caster is the unit the row aims at (targetFlags 1)"
@@ -453,7 +454,7 @@ pub fn a_go_lists_an_item_visual_swap_row_on_the_caster_with_its_delay_and_lifet
   let #(_, effects) =
     support.press(
       plans: hazmat_suit(),
-      state: cast.new(),
+      state: cast_state.new(),
       bag: bag_of_base_3,
       at: 1000,
     )
@@ -466,7 +467,7 @@ pub fn a_cast_whose_item_visual_swap_row_has_flags_2_lingers_and_writes_no_finis
   let #(_, effects) =
     support.press(
       plans: hazmat_suit(),
-      state: cast.new(),
+      state: cast_state.new(),
       bag: bag_of_base_3,
       at: 1000,
     )
@@ -486,7 +487,7 @@ pub fn the_casters_death_ends_a_flags_2_item_visual_swap_node_with_the_finish_te
   let #(state, effects) =
     support.press(
       plans: hazmat_suit(),
-      state: cast.new(),
+      state: cast_state.new(),
       bag: bag_of_base_3,
       at: 1000,
     )
@@ -515,16 +516,16 @@ fn pressed_striking(
   let #(state, effects) =
     support.pressed_raw_in(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster(),
       bag_index: bag_of_base_3,
       target: 0,
       at: ms,
     )
   support.answered_by(state:, effects:, at: ms, struck: [
-    cast.Hit(
+    cast_state.Hit(
       unit_id:,
-      unit: cast.HitCreature(life: 1, struck_at_ms: 0),
+      unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
       descriptions: [],
       controls: [],
       armor_removed: 0,
@@ -543,7 +544,7 @@ pub fn a_timed_item_visual_swap_row_ends_its_node_with_the_finish_at_its_end_tes
       support.client_lasting(spell4_id: 26_567, base: 3, effect_ids: [43_533]),
     ])
   let #(state, effects) =
-    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_base_3, at: 1000)
   let id = support.pressed_id(effects:)
   assert swaps_of(effects:) == [#(7, [#(43_533, 333, 0)])]
     as "the go lists the row on the primary target, the caster, with its delay 333 and lifetime 0"
@@ -629,7 +630,7 @@ pub fn a_force_remove_takes_off_a_flags_2_item_visual_swap_node_test() -> Nil {
       ),
     ])
   let #(state, first) =
-    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_base_3, at: 1000)
   let id = support.pressed_id(effects: first)
   let #(_, removal) =
     support.press(plans:, state:, bag: bag_of_base_1, at: 2000)
@@ -652,7 +653,7 @@ pub fn an_item_visual_swap_row_with_no_delay_duration_or_flags_2_ends_with_the_c
       support.client_lasting(spell4_id: 36_149, base: 3, effect_ids: [74_394]),
     ])
   let #(_, effects) =
-    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_base_3, at: 1000)
   let id = support.pressed_id(effects:)
   assert swaps_of(effects:) == [#(7, [#(74_394, 0, 0)])]
     as "the go lists the row"

@@ -109,7 +109,8 @@
 
 import genesis_prime/client_connection.{type News}
 import genesis_prime/game/area.{type Pose, Pose}
-import genesis_prime/game/cast.{type GoAsked, type Struck, type TickAsked}
+import genesis_prime/game/cast/gate as cast_gate
+import genesis_prime/game/cast/state.{type GoAsked, type Struck, type TickAsked} as cast_state
 import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
 import genesis_prime/game/hit
@@ -135,7 +136,7 @@ import gleam/option.{type Option, None, Some}
 import gleam/result
 
 /// The one strike timer of a connection: the connection's own timers are below the
-/// cast rule's, which start at 1000 (genesis_prime/game/cast `first_timer`).
+/// cast rule's, which start at 1000 (genesis_prime/game/cast/state `first_timer`).
 pub const strike_timer = TimerId(3)
 
 /// The seed bytes a strike takes for each selected unit: 4 for each of the three
@@ -348,7 +349,7 @@ fn area_selection(
 }
 
 /// The seed bytes the selection's strikes take: 12 for each unit, then 4 for each roll
-/// the gates of its rows may take (`cast.strike_rolls_needed`), counted for every selected
+/// the gates of its rows may take (`cast_gate.strike_rolls_needed`), counted for every selected
 /// unit a row may reach. A gate the creature checks (`Selection.gates`) takes no roll but
 /// still tells its unit a strike, so a phase of such gates alone takes the 12 bytes.
 pub fn entropy_needed(selection selection: Selection) -> Int {
@@ -365,7 +366,7 @@ pub fn entropy_needed(selection selection: Selection) -> Int {
       let rolls =
         int.sum(
           list.map(conditions, fn(condition) {
-            cast.strike_rolls_needed(condition:, units:)
+            cast_gate.strike_rolls_needed(condition:, units:)
           }),
         )
       units * bytes_per_unit + rolls * prerequisite.roll_bytes
@@ -387,7 +388,7 @@ pub fn begin(
   attacker attacker: Attacker,
   formulas formulas: Formulas,
   entropy entropy: BitArray,
-  gate gate: cast.StrikeGate,
+  gate gate: cast_state.StrikeGate,
   now now: Now,
 ) -> #(State, List(Effect)) {
   let reach = reach_of(selection:, attacker:, entropy:, gate:)
@@ -406,9 +407,9 @@ pub fn begin(
         [], [], [], [] -> #(
           [
             Answered(
-              struck: cast.Hit(
+              struck: cast_state.Hit(
                 unit_id:,
-                unit: cast.HitCreature(
+                unit: cast_state.HitCreature(
                   life: aimed.life,
                   struck_at_ms: now.monotonic_ms,
                 ),
@@ -477,14 +478,14 @@ type Reach {
 /// The units each row of the go reaches past its gates, checked row by row (the damage
 /// rows, the periodic rows, then the states) and for each row its caster side once, then
 /// each unit its aim names in selection order; each check takes the rolls of its type 37
-/// conditions in turn from the seed bytes after the units' own (`cast.strike_rolls_needed`).
+/// conditions in turn from the seed bytes after the units' own (`cast_gate.strike_rolls_needed`).
 /// A damage row names every selected unit, as its blow is told to each; a periodic row and
 /// a state name the units their aim names.
 fn reach_of(
   selection selection: Selection,
   attacker attacker: Attacker,
   entropy entropy: BitArray,
-  gate gate: cast.StrikeGate,
+  gate gate: cast_state.StrikeGate,
 ) -> Reach {
   let own = list.length(selection.units) * bytes_per_unit
   let rolls =
@@ -536,14 +537,14 @@ fn reach_of(
 
 /// Each row with the units of its candidates that pass its gates, the debug lines of the
 /// checks the server cannot tell, and the rolls left. A row whose caster side fails or
-/// cannot be told reaches none of them. Not `cast.gated`: a strike draws the rolls of the
+/// cannot be told reaches none of them. Not `cast_gate.gated`: a strike draws the rolls of the
 /// caster, then of each unit, row by row, where a cast draws every caster gate first.
 fn gated(
   rows rows: List(row),
   condition condition: fn(row) -> spell_plan.Condition,
   what what: fn(row) -> String,
   units units: fn(row) -> List(Int),
-  gate gate: cast.StrikeGate,
+  gate gate: cast_state.StrikeGate,
   rolls rolls: List(Int),
 ) -> #(List(#(row, List(Int))), List(Effect), List(Int)) {
   let #(reached, logs, rolls) =
@@ -551,9 +552,10 @@ fn gated(
       let #(reached, logs, rolls) = so_far
       let condition = condition(row)
       let what = what(row)
-      let #(caster_side, rolls) = gate(condition, cast.CasterSide, what, rolls)
+      let #(caster_side, rolls) =
+        gate(condition, cast_state.CasterSide, what, rolls)
       case caster_side {
-        cast.Starts -> {
+        cast_state.Starts -> {
           let #(passing, unit_logs, rolls) =
             passing_units(units: units(row), condition:, what:, gate:, rolls:)
           #(
@@ -562,8 +564,8 @@ fn gated(
             rolls,
           )
         }
-        cast.GateFails -> #([#(row, []), ..reached], logs, rolls)
-        cast.CannotTell(why:) -> #(
+        cast_state.GateFails -> #([#(row, []), ..reached], logs, rolls)
+        cast_state.CannotTell(why:) -> #(
           [#(row, []), ..reached],
           [debug(why), ..logs],
           rolls,
@@ -574,23 +576,23 @@ fn gated(
 }
 
 /// The units of a row that pass its target gate, in order, a debug line for each the server
-/// cannot tell, and the rolls left. Not `cast.reaching`, for the same roll order as `gated`.
+/// cannot tell, and the rolls left. Not `cast_gate.reaching`, for the same roll order as `gated`.
 fn passing_units(
   units units: List(Int),
   condition condition: spell_plan.Condition,
   what what: String,
-  gate gate: cast.StrikeGate,
+  gate gate: cast_state.StrikeGate,
   rolls rolls: List(Int),
 ) -> #(List(Int), List(Effect), List(Int)) {
   let #(passing, logs, rolls) =
     list.fold(units, #([], [], rolls), fn(so_far, unit_id) {
       let #(passing, logs, rolls) = so_far
       let #(verdict, rolls) =
-        gate(condition, cast.UnitSide(unit_id:), what, rolls)
+        gate(condition, cast_state.UnitSide(unit_id:), what, rolls)
       case verdict {
-        cast.Starts -> #([unit_id, ..passing], logs, rolls)
-        cast.GateFails -> #(passing, logs, rolls)
-        cast.CannotTell(why:) -> #(passing, [debug(why), ..logs], rolls)
+        cast_state.Starts -> #([unit_id, ..passing], logs, rolls)
+        cast_state.GateFails -> #(passing, logs, rolls)
+        cast_state.CannotTell(why:) -> #(passing, [debug(why), ..logs], rolls)
       }
     })
   #(list.reverse(passing), list.reverse(logs), rolls)
@@ -968,9 +970,9 @@ fn filled(
   case outcome {
     strike_tell.Landed(descriptions:, controls:, armor_removed:, gates_passed:) ->
       Answered(
-        struck: cast.Hit(
+        struck: cast_state.Hit(
           unit_id:,
-          unit: cast.HitCreature(life:, struck_at_ms:),
+          unit: cast_state.HitCreature(life:, struck_at_ms:),
           descriptions:,
           controls:,
           armor_removed:,
@@ -980,9 +982,9 @@ fn filled(
       )
     strike_tell.Immune(controls:, armor_removed:, gates_passed:) ->
       Answered(
-        struck: cast.Immune(
+        struck: cast_state.Immune(
           unit_id:,
-          unit: cast.HitCreature(life:, struck_at_ms:),
+          unit: cast_state.HitCreature(life:, struck_at_ms:),
           controls:,
           armor_removed:,
           ticking:,
@@ -990,7 +992,7 @@ fn filled(
         gates_passed:,
       )
     strike_tell.Deflected(gates_passed:) ->
-      Answered(struck: cast.Deflected(unit_id:), gates_passed:)
+      Answered(struck: cast_state.Deflected(unit_id:), gates_passed:)
     strike_tell.Refused(..) -> LeftOut(unit_id:)
   }
 }
@@ -1046,9 +1048,9 @@ fn in_round(round round: Round, unit_id unit_id: Int) -> Bool {
 
 fn unit_of(struck: Struck) -> Int {
   case struck {
-    cast.Hit(unit_id:, ..)
-    | cast.Immune(unit_id:, ..)
-    | cast.Deflected(unit_id:) -> unit_id
+    cast_state.Hit(unit_id:, ..)
+    | cast_state.Immune(unit_id:, ..)
+    | cast_state.Deflected(unit_id:) -> unit_id
   }
 }
 

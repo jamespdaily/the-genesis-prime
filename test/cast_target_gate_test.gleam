@@ -36,7 +36,9 @@
 
 import cast_support as support
 import genesis_prime/game/area.{type Pose}
-import genesis_prime/game/cast.{type Caster, type Effect, type Struck}
+import genesis_prime/game/cast
+import genesis_prime/game/cast/gate as cast_gate
+import genesis_prime/game/cast/state.{type Caster, type Effect, type Struck} as cast_state
 import genesis_prime/game/damage.{Formula, Parameter}
 import genesis_prime/game/effect_kind
 import genesis_prime/game/lasting.{LastingRow}
@@ -140,7 +142,7 @@ pub fn remove_lands_only_on_the_unit_carrying_the_casters_group_test() -> Nil {
     support.answered_by(state:, effects: raw, at:, struck:)
   }
   let #(state, first) =
-    press(cast.new(), bag_of_base_3, support.hits([20]), 1000)
+    press(cast_state.new(), bag_of_base_3, support.hits([20]), 1000)
   let #(state, second) = press(state, bag_of_base_2, support.hits([21]), 1100)
   let #(_, removal) = press(state, bag_of_base_1, support.hits([20, 21]), 1200)
   assert support.removed_targets(support.writes(effects: removal))
@@ -163,7 +165,7 @@ fn listed_for_units(
   let #(state, raw) =
     support.pressed_raw_in(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster(),
       bag_index: bag_of_base_3,
       target: 20,
@@ -234,7 +236,7 @@ pub fn a_gate_that_asks_for_another_creature_passes_the_casters_own_unit_test() 
   let #(state, raw) =
     support.pressed_raw_in(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster(),
       bag_index: bag_of_base_3,
       target: 20,
@@ -269,7 +271,7 @@ pub fn self_aimed_row_gate_reads_the_casters_whole_unit_test() -> Nil {
   let #(_, in_combat) =
     support.press_as(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster_in_combat(in_combat: True),
       bag: bag_of_base_3,
       at: 1000,
@@ -279,7 +281,7 @@ pub fn self_aimed_row_gate_reads_the_casters_whole_unit_test() -> Nil {
   let #(_, out_of_combat) =
     support.press_as(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster_in_combat(in_combat: False),
       bag: bag_of_base_3,
       at: 1000,
@@ -318,14 +320,14 @@ pub fn a_caster_row_behind_a_type_37_target_gate_takes_one_roll_and_lands_when_i
   let #(state, raw) =
     support.pressed_raw_in(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster(),
       bag_index: bag_of_base_3,
       target: 0,
       at: 1000,
     )
   let assert [asked] = support.goes_asked(effects: raw)
-  assert cast.rolls_needed(
+  assert cast_gate.rolls_needed(
       cast: state,
       caster: support.caster().unit_id,
       cast_id: asked.cast_id,
@@ -356,7 +358,7 @@ pub fn each_unit_a_row_past_the_caster_reaches_takes_a_roll_of_its_own_in_unit_o
   let #(state, raw) =
     support.pressed_raw_in(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster(),
       bag_index: bag_of_base_3,
       target: 0,
@@ -364,7 +366,7 @@ pub fn each_unit_a_row_past_the_caster_reaches_takes_a_roll_of_its_own_in_unit_o
     )
   let assert [asked] = support.goes_asked(effects: raw)
   let struck = support.hits([20, 21, 22])
-  assert cast.rolls_needed(
+  assert cast_gate.rolls_needed(
       cast: state,
       caster: support.caster().unit_id,
       cast_id: asked.cast_id,
@@ -373,7 +375,7 @@ pub fn each_unit_a_row_past_the_caster_reaches_takes_a_roll_of_its_own_in_unit_o
     )
     == 3
     as "Prerequisite 4585 is type 37 and the row reaches three units, each tested once: three rolls"
-  assert cast.rolls_needed(
+  assert cast_gate.rolls_needed(
       cast: state,
       caster: support.caster().unit_id,
       cast_id: asked.cast_id,
@@ -425,7 +427,7 @@ pub fn rolls_needed_counts_a_union_row_once_for_each_unit_it_reaches_test() -> N
   let #(pressed, raw) =
     support.pressed_raw_in(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster(),
       bag_index: bag_of_base_3,
       target: 0,
@@ -451,7 +453,7 @@ pub fn rolls_needed_counts_a_union_row_once_for_each_unit_it_reaches_test() -> N
     as "the parent's go starts the child, which asks for its own go"
   assert child_asked.primary_target == 20
     as "the child's primary target is the creature the parent struck"
-  assert cast.rolls_needed(
+  assert cast_gate.rolls_needed(
       cast: state,
       caster: support.caster().unit_id,
       cast_id: child_asked.cast_id,
@@ -491,7 +493,7 @@ pub fn rolls_needed_counts_a_union_row_once_for_each_unit_it_reaches_test() -> N
 /// The caster, unit 7, standing at x and z.
 fn caster_at(x x: Float, z z: Float) -> Caster {
   let caster = support.caster()
-  cast.Caster(
+  cast_state.Caster(
     ..caster,
     place: start_place.moved(
       place: caster.place,
@@ -523,7 +525,7 @@ pub fn struck_unit_with_no_pose_leaves_a_positional_gate_unread_test() -> Nil {
   let #(state, raw) =
     support.pressed_raw_in(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster:,
       bag_index: bag_of_base_3,
       target: 0,
@@ -633,7 +635,7 @@ pub fn heal_and_modifier_behind_target_gate_reach_only_passing_units_test() -> N
   let #(state, raw) =
     support.pressed_raw_in(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster(),
       bag_index: bag_of_base_3,
       target: 0,
@@ -641,9 +643,9 @@ pub fn heal_and_modifier_behind_target_gate_reach_only_passing_units_test() -> N
     )
   let struck =
     list.map([21, 22], fn(unit_id) {
-      cast.Hit(
+      cast_state.Hit(
         unit_id:,
-        unit: cast.HitCreature(life: 1, struck_at_ms: 0),
+        unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
         descriptions: [],
         controls: [],
         armor_removed: 0,

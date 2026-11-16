@@ -8,7 +8,8 @@ import cast_support
 import character_tables
 import genesis_prime/content/refusal.{type Refusal, RowId}
 import genesis_prime/game/activate.{type Link, ClosedLink, OpenLink}
-import genesis_prime/game/cast
+import genesis_prime/game/cast/press as cast_press
+import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/objective_link
 import genesis_prime/game/projector.{NotAProjector, NotOffered, Row}
 import genesis_prime/game/quest_log.{type QuestLog}
@@ -46,9 +47,9 @@ fn link_of(quests quests: QuestLog, creature_id creature_id: Int) -> Link {
   objective_link.of(
     tables:,
     activations: activate.activations(tables:),
-    subject: cast.subject_for_use(
-      cast: cast.new(),
-      caster: cast.Caster(..cast_support.caster(), quests:),
+    subject: cast_press.subject_for_use(
+      cast: cast_state.new(),
+      caster: cast_state.Caster(..cast_support.caster(), quests:),
       unit_id: 5000,
       checklist_index: 0,
     ),

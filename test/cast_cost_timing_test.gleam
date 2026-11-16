@@ -20,7 +20,10 @@
 ////   (the server's choice).
 
 import cast_support as support
-import genesis_prime/game/cast.{type Effect}
+import genesis_prime/game/cast
+import genesis_prime/game/cast/cost as cast_cost
+import genesis_prime/game/cast/state.{type Effect} as cast_state
+import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/class_resource.{type Resources, Payment}
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan.{type Spell, Spell}
@@ -45,11 +48,11 @@ fn holding(class_id class_id: Int, points points: Int) -> Resources {
   support.holding(class_id:, value: int.to_float(points))
 }
 
-fn medic_holding(points points: Int) -> cast.Caster {
+fn medic_holding(points points: Int) -> cast_state.Caster {
   support.caster_holding(resources: holding(class_id: 4, points:))
 }
 
-fn esper_holding(points points: Int) -> cast.Caster {
+fn esper_holding(points points: Int) -> cast_state.Caster {
   support.caster_holding(resources: holding(class_id: 3, points:))
 }
 
@@ -83,11 +86,11 @@ fn charging_discharge() -> Spell {
 
 /// The timer fires at `ms` and the go's round closes on nobody.
 fn went(
-  state state: cast.State,
-  caster caster: cast.Caster,
+  state state: cast_state.State,
+  caster caster: cast_state.Caster,
   timer timer: TimerId,
   at ms: Int,
-) -> #(cast.State, List(Effect)) {
+) -> #(cast_state.State, List(Effect)) {
   let #(state, raw) =
     cast.timer_fired(cast: state, timer:, caster:, now: support.at(ms:))
   support.answered_as(
@@ -108,7 +111,7 @@ pub fn gamma_rays_pays_its_actuators_at_its_go_and_not_at_the_press_test() -> Ni
   let #(state, pressed) =
     support.pressed_raw_in(
       plans: support.plans(),
-      state: cast.new(),
+      state: cast_state.new(),
       caster:,
       bag_index: gamma_rays,
       target: 0,
@@ -146,7 +149,7 @@ pub fn a_cast_pays_once_at_its_first_go_and_not_at_a_later_one_test() -> Nil {
   let #(state, pressed) =
     support.pressed_raw_in(
       plans: support.plans_with(spell: discharge),
-      state: cast.new(),
+      state: cast_state.new(),
       caster:,
       bag_index: support.discharge,
       target: 0,
@@ -172,7 +175,7 @@ pub fn a_gamma_rays_cancelled_by_a_jump_before_its_go_pays_nothing_and_frees_its
   let #(state, pressed) =
     support.pressed_raw_in(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster:,
       bag_index: gamma_rays,
       target: 0,
@@ -212,7 +215,7 @@ pub fn a_caster_that_dies_before_the_go_pays_nothing_for_a_channel_test() -> Nil
   let #(state, pressed) =
     support.pressed_raw_in(
       plans: support.plans_with(spell: discharge),
-      state: cast.new(),
+      state: cast_state.new(),
       caster:,
       bag_index: support.discharge,
       target: 0,
@@ -238,13 +241,13 @@ pub fn a_caster_that_leaves_before_the_go_pays_nothing_test() -> Nil {
   let #(state, pressed) =
     support.pressed_raw_in(
       plans: support.plans(),
-      state: cast.new(),
+      state: cast_state.new(),
       caster:,
       bag_index: gamma_rays,
       target: 0,
       at: 1000,
     )
-  let #(state, left) = cast.left(cast: state)
+  let #(state, left) = cast_tick.left(cast: state)
   assert support.payments(effects: list.append(pressed, left)) == []
   let #(timer, _) = go_timer(effects: pressed)
   let #(_, going) = went(state:, caster:, timer:, at: 2250)
@@ -258,7 +261,7 @@ pub fn a_cast_cancelled_while_the_round_of_its_go_is_open_still_pays_for_the_hit
   let #(state, pressed) =
     support.pressed_raw_in(
       plans: support.plans(),
-      state: cast.new(),
+      state: cast_state.new(),
       caster:,
       bag_index: gamma_rays,
       target: 0,
@@ -267,7 +270,7 @@ pub fn a_cast_cancelled_while_the_round_of_its_go_is_open_still_pays_for_the_hit
   let #(timer, _) = go_timer(effects: pressed)
   let #(state, raw) =
     cast.timer_fired(cast: state, timer:, caster:, now: support.at(ms: 2250))
-  let assert [cast.Pay(payments:), cast.Strike(asked:)] = raw
+  let assert [cast_state.Pay(payments:), cast_state.Strike(asked:)] = raw
     as "the go begins its strike: creatures apply the round's hits as soon as they are told, so the cost is paid with it"
   assert payments == [Payment(slot: 1, amount: 2)]
   let assert Ok(#(state, cancelled)) =
@@ -303,7 +306,7 @@ pub fn a_second_press_is_refused_at_its_accept_for_points_a_live_cast_has_reserv
   let #(state, first) =
     support.pressed_raw_in(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster:,
       bag_index: gamma_rays,
       target: 0,
@@ -331,7 +334,7 @@ pub fn two_presses_that_the_slot_meets_together_are_both_accepted_test() -> Nil 
   let #(state, _) =
     support.pressed_raw_in(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster:,
       bag_index: gamma_rays,
       target: 0,
@@ -357,7 +360,7 @@ pub fn an_instant_spell_pays_at_its_accept_before_it_writes_anything_test() -> N
   let #(_, effects) =
     support.pressed_raw_in(
       plans: support.plans(),
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster_holding(resources: holding(
         class_id: 5,
         points: 100,
@@ -366,7 +369,7 @@ pub fn an_instant_spell_pays_at_its_accept_before_it_writes_anything_test() -> N
       target: 0,
       at: 1000,
     )
-  let assert [cast.Pay(payments:), cast.Send(..), ..] = effects
+  let assert [cast_state.Pay(payments:), cast_state.Send(..), ..] = effects
     as "Impale's first phase is at 0 ms, so its accept and go are one step and the cost is the step's first effect"
   assert payments == [Payment(slot: 3, amount: 35)]
     as "Spell4.38779 costs 35 of type 8 (slot 3)"
@@ -414,7 +417,7 @@ pub fn a_mind_burst_fixes_n_at_its_accept_and_its_go_pays_the_points_n_was_fixed
   let #(state, pressed) =
     support.pressed_raw_in(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: pressing,
       bag_index: mind_burst,
       target: 0,
@@ -430,7 +433,7 @@ pub fn a_mind_burst_fixes_n_at_its_accept_and_its_go_pays_the_points_n_was_fixed
       caster: at_the_go,
       now: support.at(ms: 2250),
     )
-  let assert [cast.Pay(payments:), cast.Strike(asked:)] = raw
+  let assert [cast_state.Pay(payments:), cast_state.Strike(asked:)] = raw
     as "the go pays, then its strike is asked"
   assert payments == [Payment(slot: 1, amount: 3)]
     as "Spell4.innateCostEMMId0 4: the go pays the 3 points n was fixed on"
@@ -456,7 +459,7 @@ pub fn a_spend_of_every_point_takes_what_is_held_less_what_a_live_cast_has_reser
   let #(state, rays) =
     support.pressed_raw_in(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster:,
       bag_index: gamma_rays,
       target: 0,
@@ -478,7 +481,7 @@ pub fn a_spend_of_every_point_takes_what_is_held_less_what_a_live_cast_has_reser
   let #(timer, _) = go_timer(effects: burst)
   let #(_, raw) =
     cast.timer_fired(cast: state, timer:, caster:, now: support.at(ms: 2350))
-  let assert [cast.Pay(payments:), cast.Strike(asked:)] = raw
+  let assert [cast_state.Pay(payments:), cast_state.Strike(asked:)] = raw
     as "the go pays, then its strike is asked"
   assert asked.spent == Some(1)
     as "n is the 4 held less the 2 reserved, less the base cost of 1"
@@ -500,7 +503,7 @@ pub fn a_spend_of_every_point_leaves_nothing_for_a_second_press_test() -> Nil {
       at:,
     )
   }
-  let #(state, first) = take(cast.new(), 1000)
+  let #(state, first) = take(cast_state.new(), 1000)
   let #(timer, _) = go_timer(effects: first)
   let #(state, second) = take(state, 1100)
   assert support.refusal_results(effects: second) == [51]
@@ -522,7 +525,7 @@ pub fn the_esper_empty_runs_for_points_a_live_cast_has_reserved_and_the_go_pays_
   let #(state, pressed) =
     support.pressed_raw_in(
       plans: support.plans_with(spell: spender(amount: 3)),
-      state: cast.new(),
+      state: cast_state.new(),
       caster:,
       bag_index: mind_burst,
       target: 0,
@@ -567,7 +570,7 @@ pub fn the_warriors_drain_runs_down_points_a_live_cast_has_reserved_and_the_go_p
   let #(state, pressed) =
     support.pressed_raw_in(
       plans: support.plans_with(spell: spender(amount: 200)),
-      state: cast.new(),
+      state: cast_state.new(),
       caster:,
       bag_index: mind_burst,
       target: 0,
@@ -601,7 +604,7 @@ pub fn the_medic_refill_starts_at_the_payment_and_not_at_the_press_test() -> Nil
   let #(state, pressed) =
     support.pressed_raw_in(
       plans: support.plans(),
-      state: cast.new(),
+      state: cast_state.new(),
       caster:,
       bag_index: gamma_rays,
       target: 0,
@@ -645,7 +648,7 @@ pub fn a_go_pays_its_cost_before_it_gives_its_gains_test() -> Nil {
   let #(state, pressed) =
     support.pressed_raw_in(
       plans: support.plans_with(spell: giving),
-      state: cast.new(),
+      state: cast_state.new(),
       caster:,
       bag_index: gamma_rays,
       target: 0,
@@ -653,7 +656,7 @@ pub fn a_go_pays_its_cost_before_it_gives_its_gains_test() -> Nil {
     )
   let #(timer, _) = go_timer(effects: pressed)
   let #(_, going) = went(state:, caster:, timer:, at: 2250)
-  let resources = cast.after_payments(caster:, effects: going).resources
+  let resources = cast_cost.after_payments(caster:, effects: going).resources
   assert class_resource.value(resources:, slot: 1) == 3.0
     as "the design: 4 less the cost 2 is 2, and the go's +1 makes 3; a gain first would clamp at the maximum 4 and leave 2"
 }

@@ -2,7 +2,7 @@
 //// connection's player (genesis_prime/game/visibility): after a step that may have
 //// changed the quest log, a cast on the player or its faction, or the items the player
 //// holds (a type 13, 14 or 246 condition reads them), the hidden set is
-//// worked out again from the cast rule's subject (`cast.subject_of`), and a set
+//// worked out again from the cast rule's subject (`cast_tick.subject_of`), and a set
 //// that differs from the one the entered player holds (`Entered.hidden`) is kept
 //// there and told to the map once (`TellVisibilityChanged`, the map's
 //// `VisibilityChanged`). A step that leaves the set as it was tells nothing. A move
@@ -19,7 +19,7 @@
 //// ```
 
 import genesis_prime/client_connection.{Continue, Done}
-import genesis_prime/game/cast
+import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/connection/casting as connection_casting
 import genesis_prime/game/connection/state.{type Session} as connection_state
 import genesis_prime/game/visibility
@@ -66,7 +66,7 @@ fn checked(
   let hidden =
     visibility.hidden(
       prerequisites:,
-      subject: cast.subject_of(
+      subject: cast_tick.subject_of(
         cast: entered.cast,
         caster: connection_casting.caster_of(
           tables: session.settings.tables,

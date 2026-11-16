@@ -17,7 +17,10 @@
 
 import cast_support as support
 import genesis_prime/client_connection.{CastFinished}
-import genesis_prime/game/cast.{type Effect, type State}
+import genesis_prime/game/cast
+import genesis_prime/game/cast/proc as cast_proc
+import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
+import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/lasting.{LastingRow, Stack}
 import genesis_prime/game/spell_plan.{
   type Plans, type Spell, Always, ForceRemove, GatedOnCaster, GatedOnTarget,
@@ -100,7 +103,7 @@ fn press_striking(
   plans plans: Plans,
   state state: State,
   bag bag: Int,
-  struck struck: List(cast.Struck),
+  struck struck: List(cast_state.Struck),
   at ms: Int,
 ) -> #(State, List(Effect)) {
   let #(state, effects) =
@@ -132,7 +135,7 @@ pub fn a_go_lists_a_fluff_effect_on_the_caster_with_count_1_and_no_lifetime_test
       ]),
     ])
   let #(_, effects) =
-    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_base_3, at: 1000)
   let assert [go] = support.frames_of(message_id: spell_go.message_id, effects:)
   let assert Ok(decoded) = spell_go.decode(go.body)
   let assert [info] = decoded.targets
@@ -174,12 +177,12 @@ pub fn a_struck_unit_keeps_its_damage_info_and_an_aimed_unit_that_was_not_struck
   let #(_, effects) =
     press_striking(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       bag: bag_of_base_3,
       struck: [
-        cast.Hit(
+        cast_state.Hit(
           unit_id: 20,
-          unit: cast.HitCreature(life: 1, struck_at_ms: 0),
+          unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
           descriptions: [],
           controls: [],
           armor_removed: 0,
@@ -205,7 +208,7 @@ pub fn a_spell_with_no_lasting_effect_finishes_after_its_last_go_test() -> Nil {
   let #(_, effects) =
     support.press(
       plans: support.plans_of([buff(spell4_id: 101, base: 3, lasting: [])]),
-      state: cast.new(),
+      state: cast_state.new(),
       bag: bag_of_base_3,
       at: 1000,
     )
@@ -232,7 +235,7 @@ pub fn a_cast_with_a_node_that_has_life_left_sends_no_finish_after_its_last_go_t
   let #(_, effects) =
     support.press(
       plans: eight_seconds_on_the_caster(),
-      state: cast.new(),
+      state: cast_state.new(),
       bag: bag_of_base_3,
       at: 1000,
     )
@@ -253,7 +256,7 @@ pub fn the_finish_and_the_audiences_news_come_when_the_life_is_over_and_not_befo
   let #(state, effects) =
     support.press(
       plans: eight_seconds_on_the_caster(),
-      state: cast.new(),
+      state: cast_state.new(),
       bag: bag_of_base_3,
       at: 1000,
     )
@@ -294,12 +297,12 @@ pub fn nodes_ending_at_two_times_end_with_a_0x811_and_then_the_finish_test() -> 
   let #(state, effects) =
     press_striking(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       bag: bag_of_base_3,
       struck: [
-        cast.Hit(
+        cast_state.Hit(
           unit_id: 20,
-          unit: cast.HitCreature(life: 1, struck_at_ms: 0),
+          unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
           descriptions: [],
           controls: [],
           armor_removed: 0,
@@ -350,20 +353,20 @@ pub fn two_nodes_ending_at_the_same_time_are_one_0x811_naming_both_test() -> Nil
   let #(state, effects) =
     press_striking(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       bag: bag_of_base_3,
       struck: [
-        cast.Hit(
+        cast_state.Hit(
           unit_id: 20,
-          unit: cast.HitCreature(life: 1, struck_at_ms: 0),
+          unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
           descriptions: [],
           controls: [],
           armor_removed: 0,
           ticking: [],
         ),
-        cast.Hit(
+        cast_state.Hit(
           unit_id: 21,
-          unit: cast.HitCreature(life: 1, struck_at_ms: 0),
+          unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
           descriptions: [],
           controls: [],
           armor_removed: 0,
@@ -395,7 +398,7 @@ pub fn a_node_until_removed_arms_no_timer_test() -> Nil {
       ]),
     ])
   let #(_, effects) =
-    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_base_3, at: 1000)
   assert support.finished_ids(support.writes(effects:)) == []
   assert support.started_timers(effects:) == []
 }
@@ -423,7 +426,7 @@ pub fn a_removal_takes_the_casts_of_a_spell_off_and_a_later_timer_finds_nothing_
       ),
     ])
   let #(state, first) =
-    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_base_3, at: 1000)
   let id = support.pressed_id(effects: first)
   let assert [#(timer, 5000)] = support.started_timers(effects: first)
   let #(state, removal) =
@@ -459,7 +462,7 @@ pub fn a_removal_takes_the_older_of_two_casts_whole_and_leaves_the_newer_test() 
       ),
     ])
   let #(state, first) =
-    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_base_3, at: 1000)
   let #(state, second) =
     support.press(plans:, state:, bag: bag_of_base_3, at: 1100)
   let #(_, removal) =
@@ -501,7 +504,7 @@ pub fn a_removal_that_a_gate_stops_takes_nothing_off_until_the_gate_passes_test(
       ),
     ])
   let #(state, without) =
-    support.press(plans:, state: cast.new(), bag: bag_of_base_1, at: 1000)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_base_1, at: 1000)
   assert support.removed_targets(support.writes(effects: without)) == []
     as "the caster is under no 43500: the gate fails"
   let #(state, marker) =
@@ -540,7 +543,7 @@ pub fn a_removal_behind_a_target_prerequisite_is_not_applied_with_a_debug_line_t
       ),
     ])
   let #(state, _) =
-    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_base_3, at: 1000)
   let #(_, removal) =
     support.press(plans:, state:, bag: bag_of_base_1, at: 1100)
   assert support.removed_targets(support.writes(effects: removal)) == []
@@ -577,7 +580,7 @@ pub fn a_third_copy_of_a_cap_2_group_takes_the_casters_oldest_off_test() -> Nil 
   let plans =
     support.plans_of([stacked(spell4_id: 42_569, base: 3, group: 1450, cap: 2)])
   let #(state, first) =
-    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_base_3, at: 1000)
   let #(state, second) =
     support.press(plans:, state:, bag: bag_of_base_3, at: 1100)
   assert support.removed_targets(support.writes(effects: second)) == []
@@ -602,7 +605,7 @@ pub fn a_second_cast_of_a_cap_0_spell_takes_the_first_one_off_and_another_spell_
       stacked(spell4_id: 99, base: 2, group: 2, cap: 0),
     ])
   let #(state, first) =
-    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_base_3, at: 1000)
   let #(state, other) =
     support.press(plans:, state:, bag: bag_of_base_2, at: 1100)
   assert support.removed_targets(support.writes(effects: other)) == []
@@ -620,7 +623,7 @@ pub fn the_caster_dying_finishes_a_lingering_cast_with_its_0x7fe_test() -> Nil {
   let #(state, effects) =
     support.press(
       plans: eight_seconds_on_the_caster(),
-      state: cast.new(),
+      state: cast_state.new(),
       bag: bag_of_base_3,
       at: 1000,
     )
@@ -645,12 +648,12 @@ pub fn a_caster_that_leaves_writes_nothing_for_its_lingering_casts_test() -> Nil
   let #(state, effects) =
     support.press(
       plans: eight_seconds_on_the_caster(),
-      state: cast.new(),
+      state: cast_state.new(),
       bag: bag_of_base_3,
       at: 1000,
     )
   let assert [#(timer, 8000)] = support.started_timers(effects:)
-  let #(state, left) = cast.left(cast: state)
+  let #(state, left) = cast_tick.left(cast: state)
   assert support.writes(effects: left) == []
   assert support.cancelled_timers(effects: left) == [timer]
   let #(_, late) = support.fired(state:, timer:, at: 9000)
@@ -673,12 +676,12 @@ pub fn a_nodes_unit_leaving_sight_ends_a_lingering_cast_left_with_no_node_test()
   let #(state, effects) =
     press_striking(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       bag: bag_of_base_3,
       struck: [
-        cast.Hit(
+        cast_state.Hit(
           unit_id: 20,
-          unit: cast.HitCreature(life: 1, struck_at_ms: 0),
+          unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
           descriptions: [],
           controls: [],
           armor_removed: 0,
@@ -690,11 +693,11 @@ pub fn a_nodes_unit_leaving_sight_ends_a_lingering_cast_left_with_no_node_test()
   let id = support.pressed_id(effects:)
   let assert [#(timer, 8000)] = support.started_timers(effects:)
   let #(state, other) =
-    cast.unit_removed(cast: state, unit_id: 21, now_ms: 2000)
+    cast_proc.unit_removed(cast: state, unit_id: 21, now_ms: 2000)
   assert support.writes(effects: other) == []
     as "a unit that holds no node of the cast changes nothing"
   let #(state, removed) =
-    cast.unit_removed(cast: state, unit_id: 20, now_ms: 3000)
+    cast_proc.unit_removed(cast: state, unit_id: 20, now_ms: 3000)
   assert support.finished_ids(support.writes(effects: removed)) == [id]
     as "the client dropped the node with the unit's 0x355; the cast ends and frees its id"
   assert support.removed_targets(support.writes(effects: removed)) == []
@@ -726,12 +729,12 @@ pub fn a_node_removed_with_its_unit_leaves_the_casts_other_nodes_test() -> Nil {
   let #(state, effects) =
     press_striking(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       bag: bag_of_base_3,
       struck: [
-        cast.Hit(
+        cast_state.Hit(
           unit_id: 20,
-          unit: cast.HitCreature(life: 1, struck_at_ms: 0),
+          unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
           descriptions: [],
           controls: [],
           armor_removed: 0,
@@ -741,7 +744,8 @@ pub fn a_node_removed_with_its_unit_leaves_the_casts_other_nodes_test() -> Nil {
       at: 1000,
     )
   let assert [#(timer, 8000)] = support.started_timers(effects:)
-  let #(_, removed) = cast.unit_removed(cast: state, unit_id: 20, now_ms: 3000)
+  let #(_, removed) =
+    cast_proc.unit_removed(cast: state, unit_id: 20, now_ms: 3000)
   assert support.finished_ids(support.writes(effects: removed)) == []
     as "the caster's node stays until removed"
   assert support.cancelled_timers(effects: removed) == [timer]
@@ -791,7 +795,7 @@ pub fn a_channel_that_holds_its_own_fluff_ends_its_other_steps_when_it_lingers_t
       ),
     ])
   let #(state, effects) =
-    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_base_3, at: 1000)
   let #(_, timers) = support.run_timers(state:, effects:, from_ms: 1000)
   let assert Ok(#(last_due, last)) = list.last(timers)
   assert last_due == 2000 + 8000
@@ -852,7 +856,7 @@ pub fn a_node_whose_life_ends_while_its_cast_is_live_is_ended_and_the_cast_goes_
   use <- owned_test.run(5000)
   let plans = short_buff_on_a_long_channel()
   let #(state, effects) =
-    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_base_3, at: 1000)
   let id = support.pressed_id(effects:)
   let #(_, timers) = support.run_timers(state:, effects:, from_ms: 1000)
   assert list.map(timers, fn(fired) {
@@ -885,7 +889,7 @@ pub fn a_node_ended_by_time_is_no_longer_held_test() -> Nil {
       ),
     ])
   let #(state, effects) =
-    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_base_3, at: 1000)
   let #(state, _) =
     support.run_timers_until(state:, effects:, from_ms: 1000, until_ms: 2000)
   let #(_, removal) =
@@ -915,7 +919,7 @@ pub fn a_cancel_of_a_cast_holding_nodes_lets_them_linger_test() -> Nil {
       ),
     ])
   let #(state, effects) =
-    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_base_3, at: 1000)
   let id = support.pressed_id(effects:)
   let assert Ok(#(state, cancelled)) =
     support.cancelled_in(
@@ -973,7 +977,7 @@ pub fn an_earlier_until_removed_node_survives_a_later_go_with_no_life_test() -> 
       ),
     ])
   let #(state, effects) =
-    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_base_3, at: 1000)
   let #(state, steps) = support.run_timers(state:, effects:, from_ms: 1000)
   let assert [#(2000, last)] = steps
   assert support.finished_ids(support.writes(effects: last)) == []
@@ -1023,7 +1027,7 @@ pub fn a_timed_node_is_re_timed_from_a_later_go_of_its_cast_test() -> Nil {
       ),
     ])
   let #(state, effects) =
-    support.press(plans:, state: cast.new(), bag: bag_of_base_3, at: 1000)
+    support.press(plans:, state: cast_state.new(), bag: bag_of_base_3, at: 1000)
   let id = support.pressed_id(effects:)
   assert list.map(support.started_timers(effects:), fn(timer) { timer.1 })
     == [1000, 5000]

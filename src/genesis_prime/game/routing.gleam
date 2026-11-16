@@ -32,7 +32,7 @@
 ////   world.
 
 import genesis_prime/game/camp
-import genesis_prime/game/cast
+import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/character_select
 import genesis_prime/game/chat
 import genesis_prime/game/dropped
@@ -118,7 +118,7 @@ pub type Feature {
   Chat(message: chat.Message)
   /// The press or hold of an ability or the cancel of a cast
   /// (genesis_prime/game/cast).
-  Cast(message: cast.Message)
+  Cast(message: cast_state.Message)
   /// The right-click of a unit, the client's cast of its activate spell
   /// (genesis_prime/game/cast `activate`).
   Activation
@@ -292,7 +292,7 @@ const table = [
   Row(
     cast_ability.message_id,
     InsideWorldMessage,
-    Cast(cast.Pressed),
+    Cast(cast_state.Pressed),
     [AtWorld],
   ),
   Row(cast_activate.message_id, InsideWorldMessage, Activation, [AtWorld]),
@@ -312,19 +312,19 @@ const table = [
   Row(
     ability_hold.message_id,
     InsideWorldMessage,
-    Cast(cast.KeyHeld),
+    Cast(cast_state.KeyHeld),
     [AtWorld],
   ),
   Row(
     cancel_cast.message_id,
     InsideWorldMessage,
-    Cast(cast.Cancelled),
+    Cast(cast_state.Cancelled),
     [AtWorld],
   ),
   Row(
     client_side_interaction_result.message_id,
     InsideWorldMessage,
-    Cast(cast.Answered),
+    Cast(cast_state.Answered),
     [AtWorld],
   ),
   Row(

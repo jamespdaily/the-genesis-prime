@@ -1,6 +1,6 @@
 //// A go's strike checks the apply prerequisite of each damage, periodic damage and
 //// crowd-control row for each unit it would reach (`genesis_prime/game/strike` `begin`),
-//// with the gate the cast rule builds in the caster's picture (`cast.strike_gate`), run as
+//// with the gate the cast rule builds in the caster's picture (`cast_tick.strike_gate`), run as
 //// the pure rule it is: the effect lists are the whole observation. Expected values come
 //// from these places.
 //// - `Spell4Effects.prerequisiteIdTargetApply` and `prerequisiteIdCasterApply`: a row lands
@@ -34,7 +34,8 @@
 import cast_support as support
 import fixture_tables
 import genesis_prime/game/area.{type Pose}
-import genesis_prime/game/cast.{type Caster, GoAsked}
+import genesis_prime/game/cast/state.{type Caster, GoAsked} as cast_state
+import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/crowd_control
 import genesis_prime/game/hit.{Rolls}
 import genesis_prime/game/lasting.{LastingRow}
@@ -174,7 +175,7 @@ fn word_for(roll roll: Int) -> Int {
 
 fn begun(
   selection selection: Selection,
-  gate gate: cast.StrikeGate,
+  gate gate: cast_state.StrikeGate,
   entropy entropy: BitArray,
 ) -> #(State, List(Effect)) {
   strike.begin(
@@ -217,7 +218,7 @@ fn told_units(effects effects: List(Effect)) -> List(Int) {
 }
 
 /// The structs of the round that closed in these effects.
-fn went(effects effects: List(Effect)) -> List(cast.Struck) {
+fn went(effects effects: List(Effect)) -> List(cast_state.Struck) {
   list.flat_map(effects, fn(effect) {
     case effect {
       strike.Went(struck:, ..) -> struck
@@ -231,12 +232,12 @@ fn went(effects effects: List(Effect)) -> List(cast.Struck) {
   })
 }
 
-fn struck_ids(struck struck: List(cast.Struck)) -> List(Int) {
+fn struck_ids(struck struck: List(cast_state.Struck)) -> List(Int) {
   list.map(struck, fn(entry) {
     case entry {
-      cast.Hit(unit_id:, ..)
-      | cast.Deflected(unit_id:)
-      | cast.Immune(unit_id:, ..) -> unit_id
+      cast_state.Hit(unit_id:, ..)
+      | cast_state.Deflected(unit_id:)
+      | cast_state.Immune(unit_id:, ..) -> unit_id
     }
   })
 }
@@ -302,17 +303,17 @@ fn landed() -> strike_tell.Outcome {
 fn gate_of(
   caster caster: Caster,
   creatures creatures: List(#(Int, Int)),
-) -> cast.StrikeGate {
-  gate_in(cast: cast.new(), caster:, poses: dict.new(), creatures:)
+) -> cast_state.StrikeGate {
+  gate_in(cast: cast_state.new(), caster:, poses: dict.new(), creatures:)
 }
 
 fn gate_in(
-  cast cast: cast.State,
+  cast cast: cast_state.State,
   caster caster: Caster,
   poses poses: dict.Dict(Int, Pose),
   creatures creatures: List(#(Int, Int)),
-) -> cast.StrikeGate {
-  cast.strike_gate(
+) -> cast_state.StrikeGate {
+  cast_tick.strike_gate(
     cast:,
     caster:,
     poses:,
@@ -339,7 +340,7 @@ fn marker_row() -> spell_plan.Lasting {
 
 /// A cast state in which the caster's cast of the spell group 465 is on this unit: a
 /// planted spell of that group presses and its go lists the unit.
-fn carrying_group_465(unit_id unit_id: Int) -> cast.State {
+fn carrying_group_465(unit_id unit_id: Int) -> cast_state.State {
   let marker =
     spell_plan.Spell(
       ..support.child(spell4_id: 101, base: 3),
@@ -349,7 +350,7 @@ fn carrying_group_465(unit_id unit_id: Int) -> cast.State {
   let #(state, raw) =
     support.pressed_raw_in(
       plans: support.plans_of([marker]),
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster(),
       bag_index: 11,
       target: 0,
@@ -368,7 +369,7 @@ fn carrying_group_465(unit_id unit_id: Int) -> cast.State {
 /// The caster, unit 7, standing at x and z.
 fn caster_at(x x: Float, z z: Float) -> Caster {
   let caster = support.caster()
-  cast.Caster(
+  cast_state.Caster(
     ..caster,
     place: start_place.moved(
       place: caster.place,
@@ -492,8 +493,8 @@ pub fn ticking_damage_behind_target_gate_ticks_only_passing_units_test() -> Nil 
     as "the periodic row alone still tells its unit, and only the unit that passes gate 3476"
   let #(_, closed) = answer(state:, unit_id: 10, outcome: landed())
   let assert [
-    cast.Hit(unit_id: 10, ticking: first, ..),
-    cast.Hit(unit_id: 11, ticking: second, ..),
+    cast_state.Hit(unit_id: 10, ticking: first, ..),
+    cast_state.Hit(unit_id: 11, ticking: second, ..),
   ] = went(effects: closed)
     as "the go names both units"
   assert first == [row]
@@ -602,8 +603,8 @@ pub fn unit_whose_every_row_fails_is_named_by_the_go_without_a_tell_test() -> Ni
   assert went(effects:) == [] as "the round waits for unit 10"
   let #(_, closed) = answer(state:, unit_id: 10, outcome: landed())
   let assert [
-    cast.Hit(unit_id: 10, ..),
-    cast.Hit(
+    cast_state.Hit(unit_id: 10, ..),
+    cast_state.Hit(
       unit_id: 11,
       descriptions: [],
       controls: [],
@@ -688,7 +689,7 @@ pub fn a_gate_unread_at_run_time_drops_the_row_for_that_unit_with_a_debug_line_t
         controls: [],
       ),
       gate: gate_in(
-        cast: cast.new(),
+        cast: cast_state.new(),
         caster: caster_at(x: 0.0, z: 5.0),
         poses: poses_of_unit_10(),
         creatures: [],
@@ -747,7 +748,7 @@ pub fn a_told_unit_the_client_stops_showing_still_fills_its_place_and_its_gate_i
         controls: [],
       ),
       gate: gate_in(
-        cast: cast.new(),
+        cast: cast_state.new(),
         caster: caster_at(x: 0.0, z: 5.0),
         poses: poses_of_unit_10(),
         creatures: [],
@@ -770,7 +771,7 @@ pub fn a_told_unit_the_client_stops_showing_still_fills_its_place_and_its_gate_i
         gates_passed: [],
       ),
     )
-  let assert [cast.Hit(unit_id: 10, armor_removed: 2, ..)] =
+  let assert [cast_state.Hit(unit_id: 10, armor_removed: 2, ..)] =
     went(effects: closed)
     as "its answer fills its place and the go names it with what it took"
   Nil

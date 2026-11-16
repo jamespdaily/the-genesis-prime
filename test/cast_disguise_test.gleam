@@ -17,7 +17,9 @@
 ////   holding and the caster's death end it and cancel its timers; leaving ends none.
 
 import cast_support as support
-import genesis_prime/game/cast.{type Effect}
+import genesis_prime/game/cast
+import genesis_prime/game/cast/state.{type Effect} as cast_state
+import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/look.{type Disguise, Disguise}
 import genesis_prime/game/prerequisite
@@ -102,8 +104,8 @@ fn holder(modifiers modifiers: List(spell_plan.PropertyModifier)) -> Spell {
   spell_plan.Spell(..support.child(spell4_id: 47_860, base: 3), modifiers:)
 }
 
-fn dominion() -> cast.Caster {
-  cast.Caster(
+fn dominion() -> cast_state.Caster {
+  cast_state.Caster(
     ..support.caster(),
     factions: prerequisite.Factions(current: 166, base: 166),
   )
@@ -113,8 +115,9 @@ fn dominion() -> cast.Caster {
 fn starts(effects effects: List(Effect)) -> List(#(Source, Disguise)) {
   list.filter_map(support.caster_change_starts(effects:), fn(start) {
     case start.1 {
-      cast.Look(disguise:) -> Ok(#(start.0, disguise))
-      cast.Property(..) | cast.Heal(..) | cast.Absorb(..) -> Error(Nil)
+      cast_state.Look(disguise:) -> Ok(#(start.0, disguise))
+      cast_state.Property(..) | cast_state.Heal(..) | cast_state.Absorb(..) ->
+        Error(Nil)
     }
   })
 }
@@ -136,7 +139,7 @@ pub fn an_exile_gets_the_exile_suit_and_a_dominion_player_the_dominion_one_test(
   let #(_, exile) =
     support.press_as(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster(),
       bag: bag_of_base_3,
       at: 1000,
@@ -155,7 +158,7 @@ pub fn an_exile_gets_the_exile_suit_and_a_dominion_player_the_dominion_one_test(
   let #(_, other) =
     support.press_as(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: dominion(),
       bag: bag_of_base_3,
       at: 1000,
@@ -179,7 +182,7 @@ pub fn a_disguise_ends_after_10250_ms_on_its_own_timer_and_a_delayed_one_starts_
   let #(state, effects) =
     support.press_as(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster(),
       bag: bag_of_base_3,
       at: 1000,
@@ -206,7 +209,7 @@ pub fn a_disguise_ends_after_10250_ms_on_its_own_timer_and_a_delayed_one_starts_
   let #(state, effects) =
     support.press_as(
       plans: delayed,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster(),
       bag: bag_of_base_3,
       at: 1000,
@@ -242,7 +245,7 @@ pub fn a_removal_a_node_ending_a_persistence_and_a_death_each_end_the_disguise_a
   let #(state, first) =
     support.press_as(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster(),
       bag: bag_of_base_3,
       at: 1000,
@@ -288,11 +291,11 @@ pub fn a_removal_a_node_ending_a_persistence_and_a_death_each_end_the_disguise_a
         caster_persistence: Some(in_combat),
       ),
     ])
-  let fighting = cast.Caster(..support.caster(), in_combat: True)
+  let fighting = cast_state.Caster(..support.caster(), in_combat: True)
   let #(lingering, pressed) =
     support.press_as(
       plans: guarded,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: fighting,
       bag: bag_of_base_3,
       at: 1000,
@@ -301,7 +304,7 @@ pub fn a_removal_a_node_ending_a_persistence_and_a_death_each_end_the_disguise_a
   let #(_, ended) =
     cast.persisted(
       cast: lingering,
-      caster: cast.Caster(..support.caster(), in_combat: False),
+      caster: cast_state.Caster(..support.caster(), in_combat: False),
       now: support.at(ms: 2000),
     )
   assert support.caster_change_ends(effects: ended)
@@ -340,7 +343,7 @@ pub fn a_node_that_ends_by_time_ends_the_disguise_and_the_player_leaving_ends_no
   let #(state, effects) =
     support.press_as(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster(),
       bag: bag_of_base_3,
       at: 1000,
@@ -351,7 +354,7 @@ pub fn a_node_that_ends_by_time_ends_the_disguise_and_the_player_leaving_ends_no
   assert support.timeline(fired:)
     == [#(1500, "start", source), #(11_250, "end", source)]
     as "the disguise ends with its node at go + 10,250; its own end at go + 10,750 never fires"
-  let #(_, left) = cast.left(cast: state)
+  let #(_, left) = cast_tick.left(cast: state)
   assert support.caster_change_ends(effects: left) == []
     as "the connection's look goes with the player's Entered"
 }
@@ -373,7 +376,7 @@ pub fn a_disguise_behind_a_target_prerequisite_is_not_applied_test() -> Nil {
   let #(_, effects) =
     support.press_as(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster(),
       bag: bag_of_base_3,
       at: 1000,

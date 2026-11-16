@@ -30,7 +30,7 @@ import fixture_tables
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{type Request}
 import genesis_prime/connection/frame.{type Frame}
-import genesis_prime/game/cast
+import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
 import genesis_prime/game/loadout
@@ -282,7 +282,8 @@ fn charged_to_level_1(
   after_ms after_ms: Int,
 ) -> #(game_connection.State, ConnectionStep(Request)) {
   let #(state, opening) = press_once(state:, bag_index: charged_shot, ms:)
-  let assert [timer] = list.filter(support.timers_started(opening), cast.owns)
+  let assert [timer] =
+    list.filter(support.timers_started(opening), cast_state.owns)
     as "the press opens the charge: one timer of the cast rule, the level 1 timer"
   let #(state, _) =
     connection_support.fired_at(state:, timer:, ms: ms + after_ms)

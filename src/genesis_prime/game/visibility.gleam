@@ -16,16 +16,16 @@
 ////   128 (`Creature2.prerequisiteIdVisibility`), so the server decides.
 //// - **At entry** the connection holds no cast and no unit yet, so the subject is the
 ////   player as the character and its place give it, with the quest log, the health it
-////   enters at and no casts (`cast.entering_subject`); every started spawn's
+////   enters at and no casts (`cast_gate.entering_subject`); every started spawn's
 ////   visibility prerequisite of the world reads only the faction, the quest log and
 ////   the casts on the player. It holds no checker, so a condition on the player's
 ////   items, ability book or world difficulty is not read there, and the first
 ////   end-of-step check decides it.
 //// - **At a step** the subject is the one the cast rule holds for the player
-////   (`cast.subject_of`), with the checker: the items, the ability book and the
+////   (`cast_tick.subject_of`), with the checker: the items, the ability book and the
 ////   world difficulty.
 
-import genesis_prime/game/cast
+import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/prerequisite.{type Prerequisite, type Subject}
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/start_place.{type Place}
@@ -75,7 +75,7 @@ pub fn hidden_at_entry(
       level: character.level,
     )
   let subject =
-    cast.entering_subject(
+    cast_gate.entering_subject(
       player:,
       factions: prerequisite.Factions(
         current: character.faction_id,

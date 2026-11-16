@@ -123,7 +123,8 @@
 
 import genesis_prime/client_connection.{type Request, Continue}
 import genesis_prime/connection/frame.{type Frame, Frame}
-import genesis_prime/game/cast
+import genesis_prime/game/cast/frame as cast_frame
+import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/class_resource
 import genesis_prime/game/connection/casting as connection_casting
 import genesis_prime/game/connection/frames as connection_frames
@@ -461,7 +462,7 @@ pub fn viewer_takes(
             ),
           )
         }),
-        [connection_state.to_client(session, cast.started_frame(start:))],
+        [connection_state.to_client(session, cast_frame.started_frame(start:))],
       )
     }
     client_connection.CastWent(go:) ->
@@ -469,7 +470,7 @@ pub fn viewer_takes(
         session:,
         entered:,
         cast_id: go.cast_id,
-        frame: cast.went_frame(go:),
+        frame: cast_frame.went_frame(go:),
         forgetting: False,
       )
     client_connection.CastMissed(missed:) ->
@@ -477,7 +478,7 @@ pub fn viewer_takes(
         session:,
         entered:,
         cast_id: missed.cast_id,
-        frame: cast.missed_frame(missed:),
+        frame: cast_frame.missed_frame(missed:),
         forgetting: False,
       )
     client_connection.CastTicked(tick:) ->
@@ -485,7 +486,7 @@ pub fn viewer_takes(
         session:,
         entered:,
         cast_id: tick.cast_id,
-        frame: cast.ticked_frame(tick:),
+        frame: cast_frame.ticked_frame(tick:),
         forgetting: False,
       )
     client_connection.CastTargetsRemoved(removed:, destroyed:) ->
@@ -493,7 +494,7 @@ pub fn viewer_takes(
         session:,
         entered:,
         cast_id: removed.cast_id,
-        frame: cast.targets_removed_frame(removed:),
+        frame: cast_frame.targets_removed_frame(removed:),
         forgetting: destroyed,
       )
     client_connection.CastStackRemoved(removed:) ->
@@ -501,7 +502,7 @@ pub fn viewer_takes(
         session:,
         entered:,
         cast_id: removed.cast_id,
-        frame: cast.stack_removed_frame(removed:),
+        frame: cast_frame.stack_removed_frame(removed:),
         forgetting: False,
       )
     client_connection.CastInterrupted(cast_id:) ->
@@ -510,8 +511,8 @@ pub fn viewer_takes(
         entered:,
         cast_id:,
         frames: [
-          cast.interrupted_frame(cast_id:, unit_id:),
-          cast.finished_frame(cast_id:),
+          cast_frame.interrupted_frame(cast_id:, unit_id:),
+          cast_frame.finished_frame(cast_id:),
         ],
         forgetting: True,
       )
@@ -520,7 +521,7 @@ pub fn viewer_takes(
         session:,
         entered:,
         cast_id:,
-        frame: cast.finished_frame(cast_id:),
+        frame: cast_frame.finished_frame(cast_id:),
         forgetting: True,
       )
     client_connection.Health(health:, dead:) ->
@@ -680,7 +681,7 @@ pub fn viewer_takes(
       Continue(session, [
         connection_state.to_client(
           session,
-          cast.control_applied_frame(unit_id:, state:, instance_id:),
+          cast_frame.control_applied_frame(unit_id:, state:, instance_id:),
         ),
       ])
     }
@@ -693,7 +694,12 @@ pub fn viewer_takes(
       Continue(session, [
         connection_state.to_client(
           session,
-          cast.control_ended_frame(unit_id:, state:, cast_id:, instance_id:),
+          cast_frame.control_ended_frame(
+            unit_id:,
+            state:,
+            cast_id:,
+            instance_id:,
+          ),
         ),
       ])
     }
@@ -967,7 +973,7 @@ fn finishes_of_forgotten_casts(
   |> list.map(fn(written) { written.0 })
   |> list.sort(int.compare)
   |> list.map(fn(cast_id) {
-    connection_state.to_client(session, cast.finished_frame(cast_id:))
+    connection_state.to_client(session, cast_frame.finished_frame(cast_id:))
   })
 }
 
@@ -1076,7 +1082,7 @@ fn unit_forgotten(session session: Session, unit_id unit_id: Int) -> Session {
 }
 
 /// The player's casts told that a unit its client no longer shows is gone, so
-/// their nodes on it end (genesis_prime/game/cast `unit_removed`): the session with
+/// their nodes on it end (genesis_prime/game/cast/proc `unit_removed`): the session with
 /// the new cast state and what the cast rule asks written.
 fn cast_loses_unit(
   session session: Session,
@@ -1087,7 +1093,7 @@ fn cast_loses_unit(
     None -> #(session, [])
     Some(entered) -> {
       let #(updated, effects) =
-        cast.unit_removed(
+        cast_proc.unit_removed(
           cast: entered.cast,
           unit_id:,
           now_ms: now.monotonic_ms,

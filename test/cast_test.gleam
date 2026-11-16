@@ -18,6 +18,8 @@ import character_tables
 import genesis_prime/client_connection.{CastFinished, CastStarted, CastWent}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/cast
+import genesis_prime/game/cast/state as cast_state
+import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/connection/casting
 import genesis_prime/game/spell_plan
 import genesis_prime/message/cast_result.{
@@ -56,7 +58,7 @@ fn started_of(frame: Frame) -> SpellStarted {
 
 /// The refusal a press at the time gets, from a state that has done the steps given.
 fn refused_with(
-  state state: cast.State,
+  state state: cast_state.State,
   bag_index bag_index: Int,
   target target: Int,
   at ms: Int,
@@ -71,8 +73,8 @@ fn refused_with(
 pub fn a_0x9a_with_client_cast_id_0_ends_the_connection_and_a_press_bit_of_0_is_logged_and_ignored_test() -> Nil {
   use <- owned_test.run(5000)
   assert cast.take(
-      cast: cast.new(),
-      message: cast.Pressed,
+      cast: cast_state.new(),
+      message: cast_state.Pressed,
       body: support.press_body(
         client_cast_id: 0,
         bag_index: 3,
@@ -83,12 +85,12 @@ pub fn a_0x9a_with_client_cast_id_0_ends_the_connection_and_a_press_bit_of_0_is_
       plans: support.plans(),
       now: support.at(ms: 1000),
     )
-    == Error(cast.NoClientCastId)
+    == Error(cast_state.NoClientCastId)
     as "opcode.0x9a: the cast id is the client's counter, never 0"
   let assert Ok(#(_, effects)) =
     cast.take(
-      cast: cast.new(),
-      message: cast.Pressed,
+      cast: cast_state.new(),
+      message: cast_state.Pressed,
       body: support.press_body(
         client_cast_id: 9,
         bag_index: 3,
@@ -107,7 +109,12 @@ pub fn a_0x9a_with_client_cast_id_0_ends_the_connection_and_a_press_bit_of_0_is_
 
 pub fn a_bag_index_the_player_does_not_hold_is_refused_with_spell_id_0_and_result_4_test() -> Nil {
   use <- owned_test.run(5000)
-  assert refused_with(state: cast.new(), bag_index: 99, target: 0, at: 1000)
+  assert refused_with(
+      state: cast_state.new(),
+      bag_index: 99,
+      target: 0,
+      at: 1000,
+    )
     == SpellCastRefused(client_cast_id: 9, spell4_id: 0, result: SpellUnknown)
     as "0x14039a040 gives 4 (SpellUnknown) for a bag index past the bag: the server's choice, which the client allows"
 }
@@ -115,7 +122,7 @@ pub fn a_bag_index_the_player_does_not_hold_is_refused_with_spell_id_0_and_resul
 pub fn a_press_while_a_cast_is_live_is_refused_13_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, _) =
-    support.pressed(state: cast.new(), bag_index: 0, target: 0, at: 1000)
+    support.pressed(state: cast_state.new(), bag_index: 0, target: 0, at: 1000)
   assert refused_with(state:, bag_index: 3, target: 0, at: 1500)
     == SpellCastRefused(
       client_cast_id: 9,
@@ -128,17 +135,17 @@ pub fn a_press_while_a_cast_is_live_is_refused_13_test() -> Nil {
 pub fn a_press_with_more_than_500_ms_of_the_global_cooldown_left_is_refused_14_for_kinds_0_and_2_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, _) =
-    support.pressed(state: cast.new(), bag_index: 5, target: 0, at: 1000)
+    support.pressed(state: cast_state.new(), bag_index: 5, target: 0, at: 1000)
   assert refused_with(state:, bag_index: 10, target: 0, at: 1100).result
     == SpellGlobalCooldown
     as "Gate (kind 1, SpellCoolDown 155: 750 ms) started the global cooldown at the accept; 650 ms is left, and a kind 2 spell is refused while it runs (0x1403b14c0)"
   let #(state, _) =
-    support.pressed(state: cast.new(), bag_index: 5, target: 0, at: 1000)
+    support.pressed(state: cast_state.new(), bag_index: 5, target: 0, at: 1000)
   assert refused_with(state:, bag_index: 0, target: 0, at: 1100).result
     == SpellGlobalCooldown
     as "kind 0 (Telekinetic Strike) is refused while it runs too"
   let #(state, _) =
-    support.pressed(state: cast.new(), bag_index: 3, target: 0, at: 1000)
+    support.pressed(state: cast_state.new(), bag_index: 3, target: 0, at: 1000)
   let #(_, effects) =
     support.pressed(state:, bag_index: 10, target: 0, at: 1100)
   assert accepted(effects:)
@@ -148,7 +155,7 @@ pub fn a_press_with_more_than_500_ms_of_the_global_cooldown_left_is_refused_14_f
 pub fn a_press_with_more_than_500_ms_of_its_own_cooldown_left_is_refused_15_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, _) =
-    support.pressed(state: cast.new(), bag_index: 3, target: 0, at: 1000)
+    support.pressed(state: cast_state.new(), bag_index: 3, target: 0, at: 1000)
   assert refused_with(state:, bag_index: 3, target: 0, at: 10_000)
     == SpellCastRefused(
       client_cast_id: 9,
@@ -161,14 +168,14 @@ pub fn a_press_with_more_than_500_ms_of_its_own_cooldown_left_is_refused_15_test
 pub fn a_press_during_staggers_child_with_no_cast_bar_is_accepted_and_one_during_a_cast_bar_is_refused_13_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, effects) =
-    support.pressed(state: cast.new(), bag_index: 4, target: 0, at: 1000)
+    support.pressed(state: cast_state.new(), bag_index: 4, target: 0, at: 1000)
   let assert [_, ..] = support.started_timers(effects:)
     as "Stagger's child 38780 is a Multiphase spell with phases to come, so it is live for 700 ms"
   let #(_, effects) = support.pressed(state:, bag_index: 3, target: 0, at: 1100)
   assert accepted(effects:)
     as "0x14053dd00: only a spell with a cast bar is the unit's current cast, and Spell4Base 23162 has castBarType 0 and no cast time, so 13 is not given while it is live (0x1403afb10)"
   let #(state, _) =
-    support.pressed(state: cast.new(), bag_index: 0, target: 0, at: 1000)
+    support.pressed(state: cast_state.new(), bag_index: 0, target: 0, at: 1000)
   assert refused_with(state:, bag_index: 3, target: 0, at: 1100).result
     == SpellAlreadyCasting
     as "a press during Telekinetic Strike's cast bar is refused 13"
@@ -180,11 +187,11 @@ pub fn a_press_during_staggers_child_with_no_cast_bar_is_accepted_and_one_during
 pub fn a_0x801_clears_the_current_cast_whatever_cast_it_names_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, _) =
-    support.pressed(state: cast.new(), bag_index: 0, target: 0, at: 1000)
+    support.pressed(state: cast_state.new(), bag_index: 0, target: 0, at: 1000)
   let assert Ok(#(state, _)) =
     cast.take(
       cast: state,
-      message: cast.Cancelled,
+      message: cast_state.Cancelled,
       body: support.cancel_body(
         cast_id: 2_147_483_648,
         reason: SpellCancelled,
@@ -203,12 +210,12 @@ pub fn a_0x801_clears_the_current_cast_whatever_cast_it_names_test() -> Nil {
 pub fn a_live_cast_whose_spell_lets_a_press_through_does_not_block_it_and_the_go_of_a_normal_cast_frees_the_caster_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, _) =
-    support.pressed(state: cast.new(), bag_index: 8, target: 0, at: 1000)
+    support.pressed(state: cast_state.new(), bag_index: 8, target: 0, at: 1000)
   let #(_, effects) = support.pressed(state:, bag_index: 3, target: 0, at: 1100)
   assert accepted(effects:)
     as "0x1403afb10: a live cast with the spell flags 0x20, 8 or 4 gives no 13 (a planted spell with a cast bar and the flag)"
   let #(state, effects) =
-    support.pressed(state: cast.new(), bag_index: 0, target: 0, at: 1000)
+    support.pressed(state: cast_state.new(), bag_index: 0, target: 0, at: 1000)
   let #(state, _) = support.run_timers(state:, effects:, from_ms: 1000)
   let #(_, effects) = support.pressed(state:, bag_index: 3, target: 0, at: 2300)
   assert accepted(effects:)
@@ -221,10 +228,10 @@ fn refusal_result(frame: Frame) -> cast_result.CastResult {
 
 pub fn a_spell_that_needs_the_weapon_is_refused_169_when_slot_16_holds_none_test() -> Nil {
   use <- owned_test.run(5000)
-  let unarmed = cast.Caster(..support.caster(), weapon: None)
+  let unarmed = cast_state.Caster(..support.caster(), weapon: None)
   let #(_, effects) =
     support.pressed_by(
-      state: cast.new(),
+      state: cast_state.new(),
       caster: unarmed,
       bag_index: 9,
       target: 0,
@@ -234,7 +241,7 @@ pub fn a_spell_that_needs_the_weapon_is_refused_169_when_slot_16_holds_none_test
     as "0x1403afb10: weapon slot 1 (Zap) needs an item in slot 16"
   let #(_, effects) =
     support.pressed_by(
-      state: cast.new(),
+      state: cast_state.new(),
       caster: unarmed,
       bag_index: 3,
       target: 0,
@@ -271,7 +278,7 @@ pub fn a_spell_that_needs_the_weapon_is_refused_with_169_after_the_weapon_is_une
   // needs an item in slot 16 (`0x1403afb10`).
   let #(_, effects) =
     support.pressed_by(
-      state: cast.new(),
+      state: cast_state.new(),
       caster: caster_holding(worn),
       bag_index: 2,
       target: 0,
@@ -281,7 +288,7 @@ pub fn a_spell_that_needs_the_weapon_is_refused_with_169_after_the_weapon_is_une
     as "0x1403afb10: with the weapon held at location 0, index 16, Zap is not refused for the weapon slot"
   let #(_, effects) =
     support.pressed_by(
-      state: cast.new(),
+      state: cast_state.new(),
       caster: caster_holding(unequipped),
       bag_index: 2,
       target: 0,
@@ -295,9 +302,9 @@ pub fn a_spell_that_needs_the_weapon_is_refused_with_169_after_the_weapon_is_une
 
 pub fn a_press_that_lacks_the_weapon_and_meets_a_live_cast_is_refused_13_not_169_test() -> Nil {
   use <- owned_test.run(5000)
-  let unarmed = cast.Caster(..support.caster(), weapon: None)
+  let unarmed = cast_state.Caster(..support.caster(), weapon: None)
   let #(state, _) =
-    support.pressed(state: cast.new(), bag_index: 0, target: 0, at: 1000)
+    support.pressed(state: cast_state.new(), bag_index: 0, target: 0, at: 1000)
   let #(_, effects) =
     support.pressed_by(
       state:,
@@ -314,7 +321,7 @@ pub fn a_press_that_lacks_the_weapon_and_meets_a_live_cast_is_refused_13_not_169
 pub fn with_500_ms_or_less_of_a_cooldown_left_the_press_is_held_and_starts_when_it_ends_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, _) =
-    support.pressed(state: cast.new(), bag_index: 5, target: 0, at: 1000)
+    support.pressed(state: cast_state.new(), bag_index: 5, target: 0, at: 1000)
   let #(state, effects) =
     support.pressed(state:, bag_index: 10, target: 0, at: 1300)
   assert support.writes(effects:) == [] && support.tells(effects:) == []
@@ -332,7 +339,7 @@ pub fn with_500_ms_or_less_of_a_cooldown_left_the_press_is_held_and_starts_when_
 pub fn an_accepted_press_answers_0x7fd_to_the_caster_and_tells_0x7ff_with_root_own_id_and_parent_0_to_each_viewer_test() -> Nil {
   use <- owned_test.run(5000)
   let #(_, effects) =
-    support.pressed(state: cast.new(), bag_index: 8, target: 40, at: 1000)
+    support.pressed(state: cast_state.new(), bag_index: 8, target: 40, at: 1000)
   let assert [frame] = support.writes(effects:)
   assert frame.message_id == 0x07FD
   let assert Ok(confirmed) = spell_cast_confirmed.decode(frame.body)
@@ -345,7 +352,7 @@ pub fn an_accepted_press_answers_0x7fd_to_the_caster_and_tells_0x7ff_with_root_o
     && confirmed.telegraph_positions == []
     as "spell.empty_lists"
   assert confirmed.server_cast_id >= first_server_id
-    && cast.caster_of(cast_id: confirmed.server_cast_id) == 7
+    && cast_state.caster_of(cast_id: confirmed.server_cast_id) == 7
     as "the id is the caster's own mint: 2^31 and the unit's number above it"
   let assert [
     #(ConnectionId(2), CastStarted(start: first)),
@@ -366,7 +373,7 @@ pub fn an_accepted_press_answers_0x7fd_to_the_caster_and_tells_0x7ff_with_root_o
 
 /// What the client is sent and each viewer told of each cast, by the cast's id:
 /// the messages in order.
-fn per_cast(effects: List(cast.Effect)) -> List(#(Int, List(Int))) {
+fn per_cast(effects: List(cast_state.Effect)) -> List(#(Int, List(Int))) {
   let frames =
     list.map(support.writes(effects:), fn(frame) {
       #(cast_id_of(frame), frame.message_id)
@@ -403,7 +410,7 @@ fn cast_id_of(frame: Frame) -> Int {
 pub fn each_start_gets_one_go_then_one_finish_to_the_caster_and_the_audience_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, pressed) =
-    support.pressed(state: cast.new(), bag_index: 0, target: 0, at: 1000)
+    support.pressed(state: cast_state.new(), bag_index: 0, target: 0, at: 1000)
   let #(_, fired) = support.run_timers(state:, effects: pressed, from_ms: 1000)
   let effects = list.append(pressed, list.flat_map(fired, fn(step) { step.1 }))
   list.each(per_cast(effects), fn(sent) {
@@ -464,22 +471,22 @@ pub fn each_start_gets_one_go_then_one_finish_to_the_caster_and_the_audience_tes
 
 pub fn cast_ids_are_above_2_pow_31_hold_the_unit_and_never_repeat_among_one_units_numbers_test() -> Nil {
   use <- owned_test.run(10_000)
-  assert cast.cast_id(unit_id: 7, number: 0) == 2_147_497_984
+  assert cast_state.cast_id(unit_id: 7, number: 0) == 2_147_497_984
     as "2^31 + 7 x 2^11 + 0 (the design's mint)"
-  assert cast.cast_id(unit_id: 7, number: 2049) == 2_147_497_985
+  assert cast_state.cast_id(unit_id: 7, number: 2049) == 2_147_497_985
     as "the number counts mod 2^11"
-  assert cast.caster_of(cast_id: 2_147_483_648 + 7 * 2048 + 5) == 7
+  assert cast_state.caster_of(cast_id: 2_147_483_648 + 7 * 2048 + 5) == 7
     as "2^31 + 7 x 2^11 + n names unit 7 for every n below 2^11"
-  assert cast.caster_of(cast_id: 2_147_483_648 + 1_048_575 * 2048 + 2047)
+  assert cast_state.caster_of(cast_id: 2_147_483_648 + 1_048_575 * 2048 + 2047)
     == 1_048_575
     as "the highest unit and number: the id is still below 2^32"
-  assert cast.mint(unit_id: 7, number: 0, live: [
-      cast.cast_id(unit_id: 7, number: 0),
+  assert cast_state.mint(unit_id: 7, number: 0, live: [
+      cast_state.cast_id(unit_id: 7, number: 0),
     ])
     == 2_147_497_985
     as "a live id is skipped: the next number's"
-  assert cast.mint(unit_id: 7, number: 2048, live: [
-      cast.cast_id(unit_id: 7, number: 0),
+  assert cast_state.mint(unit_id: 7, number: 2048, live: [
+      cast_state.cast_id(unit_id: 7, number: 0),
     ])
     == 2_147_497_985
     as "number 2048 is 0 mod 2^11, which a live cast holds, so the mint skips to 1"
@@ -493,27 +500,27 @@ pub fn cast_ids_are_above_2_pow_31_hold_the_unit_and_never_repeat_among_one_unit
   ))
   let live =
     list.map(live_numbers, fn(live_number) {
-      cast.cast_id(unit_id:, number: live_number)
+      cast_state.cast_id(unit_id:, number: live_number)
     })
-  let minted = cast.mint(unit_id:, number:, live:)
+  let minted = cast_state.mint(unit_id:, number:, live:)
   assert !list.contains(live, minted)
     as "the id of a new cast is none a live cast of the caster holds (0x140561c30: the client's table of casts keys by id)"
-  assert cast.caster_of(cast_id: minted) == unit_id
-  let id = cast.cast_id(unit_id:, number:)
+  assert cast_state.caster_of(cast_id: minted) == unit_id
+  let id = cast_state.cast_id(unit_id:, number:)
   assert id >= first_server_id && id < 4_294_967_296
     as "never 0 and 32 bits (opcode.0x7ff: the cast id is 32 bits, 0 makes only a stray pending cast)"
-  assert cast.caster_of(cast_id: id) == unit_id
+  assert cast_state.caster_of(cast_id: id) == unit_id
     as "the id names its caster, so no two units' casts share one (0x140561c30: one table for every unit)"
-  assert cast.cast_id(unit_id:, number: number + 1) != id
+  assert cast_state.cast_id(unit_id:, number: number + 1) != id
     as "the next number is another id"
 }
 
 pub fn telekinetic_strike_goes_1250_ms_after_the_accept_then_finishes_and_its_child_starts_on_each_struck_unit_test() -> Nil {
   use <- owned_test.run(5000)
   let foe = [
-    cast.Hit(
+    cast_state.Hit(
       unit_id: 10,
-      unit: cast.HitCreature(life: 1, struck_at_ms: 0),
+      unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
       descriptions: [],
       controls: [],
       armor_removed: 0,
@@ -522,7 +529,7 @@ pub fn telekinetic_strike_goes_1250_ms_after_the_accept_then_finishes_and_its_ch
   ]
   let #(state, effects) =
     support.pressed_striking(
-      state: cast.new(),
+      state: cast_state.new(),
       bag_index: 0,
       struck: foe,
       at: 1000,
@@ -551,15 +558,15 @@ pub fn telekinetic_strike_goes_1250_ms_after_the_accept_then_finishes_and_its_ch
   assert child.caster_unit_id == 7 && child.primary_target_unit_id == 10
     as "Spell4Effects 62204 has targetFlags 4 in the client's table, so its Proxy starts 30900 on each struck unit (an earlier decode read 1: the tooltip says the caster gains the Psi Point, which the live sitting checks)"
   assert child.cast_id != go.cast_id
-    && cast.caster_of(cast_id: child.cast_id) == 7
+    && cast_state.caster_of(cast_id: child.cast_id) == 7
 }
 
 pub fn crush_starts_42297_100_ms_after_its_go_with_root_crush_and_parent_crush_test() -> Nil {
   use <- owned_test.run(5000)
   let foe = [
-    cast.Hit(
+    cast_state.Hit(
       unit_id: 10,
-      unit: cast.HitCreature(life: 1, struck_at_ms: 0),
+      unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
       descriptions: [],
       controls: [],
       armor_removed: 0,
@@ -568,7 +575,7 @@ pub fn crush_starts_42297_100_ms_after_its_go_with_root_crush_and_parent_crush_t
   ]
   let #(state, effects) =
     support.pressed_striking(
-      state: cast.new(),
+      state: cast_state.new(),
       bag_index: 1,
       struck: foe,
       at: 1000,
@@ -593,9 +600,9 @@ pub fn crush_starts_42297_100_ms_after_its_go_with_root_crush_and_parent_crush_t
 pub fn stagger_starts_38780_whose_four_phase_gos_each_start_38781_with_root_38791_and_parent_38780_test() -> Nil {
   use <- owned_test.run(5000)
   let foe = [
-    cast.Hit(
+    cast_state.Hit(
       unit_id: 10,
-      unit: cast.HitCreature(life: 1, struck_at_ms: 0),
+      unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
       descriptions: [],
       controls: [],
       armor_removed: 0,
@@ -604,7 +611,7 @@ pub fn stagger_starts_38780_whose_four_phase_gos_each_start_38781_with_root_3879
   ]
   let #(state, effects) =
     support.pressed_striking(
-      state: cast.new(),
+      state: cast_state.new(),
       bag_index: 4,
       struck: foe,
       at: 1000,
@@ -669,7 +676,7 @@ pub fn stagger_starts_38780_whose_four_phase_gos_each_start_38781_with_root_3879
 pub fn gate_casts_starts_its_cooldown_and_names_only_the_caster_in_its_go_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, effects) =
-    support.pressed(state: cast.new(), bag_index: 5, target: 0, at: 1000)
+    support.pressed(state: cast_state.new(), bag_index: 5, target: 0, at: 1000)
   let gos =
     list.filter_map(support.writes(effects:), fn(frame) {
       case frame.message_id == 0x07F4 {
@@ -719,7 +726,7 @@ pub fn gate_casts_starts_its_cooldown_and_names_only_the_caster_in_its_go_test()
 pub fn the_spells_own_cooldown_runs_from_its_first_go_not_from_the_accept_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, effects) =
-    support.pressed(state: cast.new(), bag_index: 11, target: 0, at: 1000)
+    support.pressed(state: cast_state.new(), bag_index: 11, target: 0, at: 1000)
   let #(state, fired) = support.run_timers(state:, effects:, from_ms: 1000)
   let assert [#(2000, _)] = fired
     as "the planted slow spell's go is 1000 ms after the accept"
@@ -736,7 +743,7 @@ pub fn a_non_normal_ability_is_refused_285_and_logged_once_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, first) =
     support.pressed(
-      state: cast.new(),
+      state: cast_state.new(),
       bag_index: support.unbuilt_bag_index,
       target: 0,
       at: 1000,
@@ -747,23 +754,23 @@ pub fn a_non_normal_ability_is_refused_285_and_logged_once_test() -> Nil {
   let logs = fn(effects) {
     list.filter(effects, fn(effect) {
       case effect {
-        cast.Log(..) -> True
-        cast.Send(..)
-        | cast.Tell(..)
-        | cast.StartTimer(..)
-        | cast.CancelTimer(..)
-        | cast.Strike(..)
-        | cast.Pay(..)
-        | cast.Gain(..)
-        | cast.CasterChangeStarts(..)
-        | cast.CasterChangeEnds(..)
-        | cast.TargetChangeStarts(..)
-        | cast.TargetChangeEnds(..)
-        | cast.ForcedMoveStarts(..)
-        | cast.Activated(..)
-        | cast.ShortcutCast(..)
-        | cast.TickStrike(..)
-        | cast.StealthChanged(..) -> False
+        cast_state.Log(..) -> True
+        cast_state.Send(..)
+        | cast_state.Tell(..)
+        | cast_state.StartTimer(..)
+        | cast_state.CancelTimer(..)
+        | cast_state.Strike(..)
+        | cast_state.Pay(..)
+        | cast_state.Gain(..)
+        | cast_state.CasterChangeStarts(..)
+        | cast_state.CasterChangeEnds(..)
+        | cast_state.TargetChangeStarts(..)
+        | cast_state.TargetChangeEnds(..)
+        | cast_state.ForcedMoveStarts(..)
+        | cast_state.Activated(..)
+        | cast_state.ShortcutCast(..)
+        | cast_state.TickStrike(..)
+        | cast_state.StealthChanged(..) -> False
       }
     })
   }
@@ -781,11 +788,11 @@ pub fn a_non_normal_ability_is_refused_285_and_logged_once_test() -> Nil {
 pub fn a_press_at_a_negative_monotonic_time_meets_no_cooldown_that_never_started_test() -> Nil {
   use <- owned_test.run(5000)
   let #(_, effects) =
-    support.pressed(state: cast.new(), bag_index: 0, target: 0, at: -5000)
+    support.pressed(state: cast_state.new(), bag_index: 0, target: 0, at: -5000)
   assert accepted(effects:)
     as "the monotonic clock can be negative (step.Now), so no cooldown is running for a spell never cast"
   let #(state, _) =
-    support.pressed(state: cast.new(), bag_index: 5, target: 0, at: -5000)
+    support.pressed(state: cast_state.new(), bag_index: 5, target: 0, at: -5000)
   assert refused_with(state:, bag_index: 10, target: 0, at: -4900).result
     == SpellGlobalCooldown
     as "and one that started is still counted from its start: 650 ms of Gate's 750 ms are left"
@@ -794,7 +801,7 @@ pub fn a_press_at_a_negative_monotonic_time_meets_no_cooldown_that_never_started
 pub fn a_0x801_ends_that_cast_with_its_timers_cancelled_and_0x7fe_to_all_and_no_go_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, pressed) =
-    support.pressed(state: cast.new(), bag_index: 0, target: 0, at: 1000)
+    support.pressed(state: cast_state.new(), bag_index: 0, target: 0, at: 1000)
   let assert [#(go_timer, _)] = support.started_timers(effects: pressed)
   let assert [frame, ..] = support.writes(effects: pressed)
   let assert Ok(confirmed) = spell_cast_confirmed.decode(frame.body)
@@ -802,7 +809,7 @@ pub fn a_0x801_ends_that_cast_with_its_timers_cancelled_and_0x7fe_to_all_and_no_
   let cancel = fn(state, reason, bit) {
     cast.take(
       cast: state,
-      message: cast.Cancelled,
+      message: cast_state.Cancelled,
       body: support.cancel_body(cast_id: id, reason:, bit:),
       caster: support.caster(),
       plans: support.plans(),
@@ -837,21 +844,21 @@ pub fn a_0x801_ends_that_cast_with_its_timers_cancelled_and_0x7fe_to_all_and_no_
   assert cancel(state, Other(11), 1) |> result.is_ok
     as "reason 11 (SpellInterrupted) with the bit 1 is sent by the input mode change"
   assert cancel(state, SpellAlreadyCasting, 1)
-    == Error(cast.UnknownCancel(reason: 13, bit: 1))
+    == Error(cast_state.UnknownCancel(reason: 13, bit: 1))
     as "any other reason ends the connection"
   assert cancel(state, SpellCancelled, 0)
-    == Error(cast.UnknownCancel(reason: 6, bit: 0))
+    == Error(cast_state.UnknownCancel(reason: 6, bit: 0))
     as "reason 6 is sent with the bit 1 only"
 }
 
 /// Whether the press was taken: its first write is the 0x7fd.
-fn accepted(effects effects: List(cast.Effect)) -> Bool {
+fn accepted(effects effects: List(cast_state.Effect)) -> Bool {
   list.first(support.written_ids(effects:)) == Ok(0x07FD)
 }
 
-fn is_one_debug_line(effects: List(cast.Effect)) -> Bool {
+fn is_one_debug_line(effects: List(cast_state.Effect)) -> Bool {
   case effects {
-    [cast.Log(level: LogDebug, ..)] -> True
+    [cast_state.Log(level: LogDebug, ..)] -> True
     _ -> False
   }
 }
@@ -873,9 +880,9 @@ fn phase_of(
 pub fn the_player_leaving_the_world_cancels_every_timer_and_writes_nothing_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, pressed) =
-    support.pressed(state: cast.new(), bag_index: 0, target: 0, at: 1000)
+    support.pressed(state: cast_state.new(), bag_index: 0, target: 0, at: 1000)
   let assert [#(go_timer, _)] = support.started_timers(effects: pressed)
-  let #(_, effects) = cast.left(cast: state)
+  let #(_, effects) = cast_tick.left(cast: state)
   assert support.cancelled_timers(effects:) == [go_timer]
   assert support.writes(effects:) == [] && support.tells(effects:) == []
     as "the viewers' connections write each cast's 0x7fe before the unit's 0x355 (genesis_prime/game/connection)"
@@ -894,15 +901,15 @@ pub fn the_player_leaving_the_world_cancels_every_timer_and_writes_nothing_test(
 // to every player told their start (the Design's sequence, "A player dies" 3).
 
 /// The tests' caster, dead.
-fn dead_caster() -> cast.Caster {
-  cast.Caster(..support.caster(), dead: True)
+fn dead_caster() -> cast_state.Caster {
+  cast_state.Caster(..support.caster(), dead: True)
 }
 
 pub fn a_dead_casters_casts_end_with_their_timers_cancelled_and_0x7fe_to_the_caster_and_its_audience_test() -> Nil {
   use <- owned_test.run(5000)
   // Telekinetic Strike goes 1250 ms after the accept, so its go waits on a timer.
   let #(state, pressed) =
-    support.pressed(state: cast.new(), bag_index: 0, target: 0, at: 1000)
+    support.pressed(state: cast_state.new(), bag_index: 0, target: 0, at: 1000)
   let assert [#(go_timer, _)] = support.started_timers(effects: pressed)
   let assert [frame, ..] = support.writes(effects: pressed)
   let assert Ok(confirmed) = spell_cast_confirmed.decode(frame.body)
@@ -932,8 +939,8 @@ pub fn a_dead_casters_press_of_a_spell_that_cannot_be_cast_dead_is_refused_57_an
   use <- owned_test.run(5000)
   let assert Ok(#(after, effects)) =
     cast.take(
-      cast: cast.new(),
-      message: cast.Pressed,
+      cast: cast_state.new(),
+      message: cast_state.Pressed,
       body: support.press_body(
         client_cast_id: 9,
         bag_index: 0,
@@ -950,7 +957,7 @@ pub fn a_dead_casters_press_of_a_spell_that_cannot_be_cast_dead_is_refused_57_an
     as "57 Caster_CannotBeDead: Telekinetic Strike's caster row has the dead bit"
   assert support.tells(effects:) == []
     && support.started_timers(effects:) == []
-    && after == cast.new()
+    && after == cast_state.new()
     as "the state is unchanged"
 }
 
@@ -969,7 +976,7 @@ pub fn a_dead_casters_press_of_a_spell_without_the_dead_bit_is_cast_as_for_the_l
   let dead =
     support.pressed_in(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: dead_caster(),
       bag_index: 0,
       target: 0,
@@ -978,7 +985,7 @@ pub fn a_dead_casters_press_of_a_spell_without_the_dead_bit_is_cast_as_for_the_l
   let living =
     support.pressed_in(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster(),
       bag_index: 0,
       target: 0,
@@ -1003,7 +1010,7 @@ pub fn a_living_casters_press_of_a_spell_that_must_be_cast_dead_is_refused_58_te
   let #(after, effects) =
     support.pressed_in(
       plans:,
-      state: cast.new(),
+      state: cast_state.new(),
       caster: support.caster(),
       bag_index: 0,
       target: 0,
@@ -1011,5 +1018,5 @@ pub fn a_living_casters_press_of_a_spell_that_must_be_cast_dead_is_refused_58_te
     )
   let assert [frame] = support.writes(effects:)
   assert refusal(frame).result == Other(58) as "58 Caster_MustBeDead"
-  assert after == cast.new()
+  assert after == cast_state.new()
 }
