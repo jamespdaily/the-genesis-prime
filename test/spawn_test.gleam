@@ -1751,3 +1751,31 @@ pub fn a_chosen_faction_replaces_a_base_faction_that_differs_from_it_test() -> N
   assert started_boss.faction_id == 233 && started_boss.base_faction_id == 233
     as "the chosen faction is both the faction and the base faction"
 }
+
+pub fn a_creature_row_placed_as_part_of_a_map_object_starts_with_the_link_and_no_run_speed_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // World database spawn 10663, a Thrasher Fern, is placed as part of the map object
+  // 1238827 (`active_prop_id`). The second row is the same creature with no link and
+  // shares its creature, level, display and faction, so the load must not hand it the
+  // first row's combat values.
+  let selection =
+    selected(rows: [
+      spawn.Row(
+        ..spawn_support.beast_row(number: 1),
+        world_object_id: 1_238_827,
+      ),
+      spawn_support.beast_row(number: 2),
+    ])
+  assert selection.refusals == [] as "both rows pass the client's checks"
+  let assert Ok(world) = dict.get(selection.worlds, 3460) as "world 3460"
+  let assert Ok(linked) = dict.get(world.by_id, SpawnId(1))
+    as "the linked row starts"
+  let assert Ok(free) = dict.get(world.by_id, SpawnId(2))
+    as "the unlinked row starts"
+  assert linked.world_object_id == 1_238_827 && free.world_object_id == 0
+    as "each spawn carries its row's link"
+  assert linked.combat.attack.run_speed == 0.0
+    as "a creature placed with a map object never moves, though its display's runLand is 10"
+  assert free.combat.attack.run_speed == 10.0
+    as "the same creature with no link runs at its display's runLand 10 (Creature2DisplayInfo 26565)"
+}

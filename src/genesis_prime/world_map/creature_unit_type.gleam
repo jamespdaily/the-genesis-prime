@@ -3,11 +3,13 @@
 //// creature. A NonPlayer creature (type 0) moves and fights; a Turret (type 13)
 //// fights from where it stands and never moves. The client reads both types'
 //// type data alike (`opcode.0x262.simple`), so the type sets only the number the
-//// 0x262 holds and whether the creature may move.
+//// 0x262 holds and, with the spawn's world object link, whether the creature may
+//// move (`can_move`).
 
 /// The unit types a creature stands as.
 pub type CreatureUnitType {
-  /// Type 0: a creature that moves and fights.
+  /// Type 0: a creature that fights, and moves unless it is placed as part of a map
+  /// object (`can_move`).
   NonPlayer
   /// Type 13: a creature that fights from its place and never moves.
   Turret
@@ -44,11 +46,18 @@ pub fn entity_type(unit_type unit_type: CreatureUnitType) -> Int {
   }
 }
 
-/// Whether a creature of this unit type moves: a Turret never does, whatever its
-/// display's run speed.
-pub fn can_move(unit_type unit_type: CreatureUnitType) -> Bool {
+/// Whether a creature moves: a Turret never does, whatever its display's run
+/// speed, and a NonPlayer placed as part of a map object (`world_object_id` not 0,
+/// the spawn row's `active_prop_id`) never does either, as a bush, a burrow or a
+/// nest does not (a server choice: the client has no rooted flag and its display
+/// of such a creature carries a run speed; the world database places each as a
+/// fixed object with no spline).
+pub fn can_move(
+  unit_type unit_type: CreatureUnitType,
+  world_object_id world_object_id: Int,
+) -> Bool {
   case unit_type {
-    NonPlayer -> True
+    NonPlayer -> world_object_id == 0
     Turret -> False
   }
 }

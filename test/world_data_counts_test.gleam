@@ -87,6 +87,7 @@ import genesis_prime/import_world_data
 import genesis_prime/readiness
 import genesis_prime/step/runtime
 import genesis_prime/table/world
+import genesis_prime/world_map/creature_unit_type
 import genesis_prime/world_map/objective_spawn
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/static_object.{type StaticObject}
@@ -205,6 +206,32 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
       <> int.to_string(took)
       <> " ms"
     }
+  // A NonPlayer row placed as part of a map object (`active_prop_id` not 0) never
+  // moves: `spawn.tsv` holds 630 such rows of 164 creatures, and each one that
+  // starts has no run speed.
+  let linked_rows =
+    list.filter(rows, fn(row) {
+      row.entity_type == 0 && row.world_object_id != 0
+    })
+  assert list.length(linked_rows) == 630
+    as "the world database's NonPlayer rows placed as part of a map object"
+  assert list.length(
+      list.unique(list.map(linked_rows, fn(row) { row.creature_id })),
+    )
+    == 164
+    as "and their creatures"
+  let started =
+    list.flat_map(world.all(tables), fn(row) {
+      dict.values(content_spawn.world(key:, world_id: row.id).by_id)
+    })
+  let linked_started =
+    list.filter(started, fn(one) {
+      one.unit_type == creature_unit_type.NonPlayer && one.world_object_id != 0
+    })
+  assert list.length(linked_started) == 412
+    as "the linked rows that start: the load's own count, the other 218 of the 630 being left out by the selection as it leaves out other rows (the reasons above); no separate script has counted it"
+  assert list.all(linked_started, fn(one) { one.combat.attack.run_speed == 0.0 })
+    as "none of them moves"
   // The rows left out in all worlds are the selection's own count over the same
   // rows and tables: the load keeps the selection's spawns and logs these.
   let selection =

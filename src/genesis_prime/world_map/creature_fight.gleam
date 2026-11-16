@@ -155,8 +155,8 @@
 ////   sighting of the target the strike goes along the turret's body yaw, the facing of its
 ////   place. The server never turns the body: the 0x7ff's yaw turns nothing
 ////   (`creature.facing`).
-//// - **A creature that cannot move** (a unit type that never moves: a turret,
-////   `creature_unit_type.can_move`) sends no 0x638 to chase or walk home. An attack tick that
+//// - **A creature that cannot move** (a turret, or a creature placed as part of a map
+////   object: `creature_unit_type.can_move`) sends no 0x638 to chase or walk home. An attack tick that
 ////   finds its target beyond the leash range from home releases it as the leash does, but goes
 ////   straight to Resting where it stands: no walk and no home timer. A player that entered
 ////   its ring before is aggroed again only when it enters it again (`Approached`).
@@ -278,7 +278,6 @@ import genesis_prime/world_map/creature_life.{type Attack, Charged, Instant}
 import genesis_prime/world_map/creature_path.{
   type Path, Circle, Running, Standing, Timed,
 }
-import genesis_prime/world_map/creature_unit_type.{type CreatureUnitType}
 import genesis_prime/world_map/game_number.{type GameNumbers}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/stay.{type Stay}
@@ -306,13 +305,14 @@ import gleam/set.{type Set}
 ///   Stun, Knockdown or Knockback, so `ticked` starts no strike of an instant attack.
 /// - `holds_a_state`: it holds any state, so `ticked` starts no charge (a gap that the issue
 ///   "Creatures cast spells, and the effect types only creature spells use work" closes) and a state that takes hold during a charge breaks it.
-/// An attack that is `Charged` is a charge, and a creature whose unit type cannot move never
-/// chases or walks home.
+/// - `can_move`: the creature may move (`creature_unit_type.can_move`); one that may not never
+///   chases or walks home.
+/// An attack that is `Charged` is a charge.
 pub type Fighter {
   Fighter(
     unit_id: Int,
     address: Address,
-    unit_type: CreatureUnitType,
+    can_move: Bool,
     home: Place,
     attack: Attack,
     interval_ms: Int,
@@ -1307,9 +1307,9 @@ fn attacks(
   }
 }
 
-/// Whether the creature never moves: its unit type cannot.
+/// Whether the creature never moves (`Fighter.can_move`).
 fn cannot_move(fighter fighter: Fighter) -> Bool {
-  !creature_unit_type.can_move(unit_type: fighter.unit_type)
+  !fighter.can_move
 }
 
 /// How near the leash circle a creature counts as at it: a path clipped at the
