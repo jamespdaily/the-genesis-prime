@@ -918,6 +918,28 @@ pub fn sell_junk_sells_every_sellable_category_94_stack_in_the_bags_test() -> Ni
   )
 }
 
+pub fn sell_junk_leaves_a_stack_whose_price_is_in_another_currency_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Synthetic: no junk row of the client sells for another currency
+  // (`item_price_test.every_junk_item2_row_sells_for_credits_test`), so Item2 176, junk
+  // that sells for 1 credit, is edited to sell for 7 of currency 2 or 4, then 0 of credits.
+  let sold_guids = fn(currency_type_id, amount) {
+    use tables <- fixture_tables.changed(table: "Item2", id: 176, with: [
+      #("currencyTypeId0SellToVendor", Integer(currency_type_id)),
+      #("currencyAmount0SellToVendor", Integer(amount)),
+    ])
+    let sale = asked(scene: Scene(..selling_junk(items: junk_bags()), tables:))
+    [sale.first, ..sale.rest] |> list.map(fn(sold) { sold.item_guid })
+  }
+  assert sold_guids(1, 1) == [1, 5, 7]
+    as "0x1403d6a10: a junk stack that sells for credits is sold, the three of `junk_bags`"
+  assert sold_guids(2, 7) == [1, 7]
+    as "lua.Item.CodeEnumItem2Category.Junk, Vendor.lua l.520 to 537: sell junk is paid in credits, so a stack priced in currency 2 stays"
+  assert sold_guids(4, 7) == [1, 7] as "the same for currency 4"
+  assert sold_guids(1, 0) == [1, 7]
+    as "0x1403d6a10: a sell price of 0 gives code 23, so a stack of 0 credits stays"
+}
+
 pub fn sell_junk_with_nothing_to_sell_sends_nothing_test() -> Nil {
   use <- owned_test.run(10_000)
   // Vendor.lua l.168 sends 0x167 on every vendor open with auto-sell on: nothing to sell is

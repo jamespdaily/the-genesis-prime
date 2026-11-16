@@ -86,6 +86,7 @@
 import genesis_prime/client_connection
 import genesis_prime/game/communicator
 import genesis_prime/game/currency.{type Currencies}
+import genesis_prime/game/currency_kind
 import genesis_prime/game/equip_requirement.{Wearer}
 import genesis_prime/game/experience
 import genesis_prime/game/interaction
@@ -94,6 +95,7 @@ import genesis_prime/game/item_property
 import genesis_prime/game/player_life
 import genesis_prime/game/quest
 import genesis_prime/game/quest_log.{type QuestLog}
+import genesis_prime/game/quest_reward_kind
 import genesis_prime/game/random_stat
 import genesis_prime/game/shown.{type Picture}
 import genesis_prime/game/start_place.{type Place}
@@ -198,27 +200,6 @@ const completes_by_call_flags = 5
 
 /// Quest2Reward flags bit 0: the row is a choice.
 const choice_flag = 1
-
-/// Quest2RewardType 1, an item.
-const item_type = 1
-
-/// Quest2RewardType 2, reputation.
-const reputation_type = 2
-
-/// Quest2RewardType 3, money: the credits when its object is currency 1.
-const money_type = 3
-
-/// Quest2RewardType 4, tradeskill experience.
-const tradeskill_experience_type = 4
-
-/// Quest2RewardType 5, a new tradeskill.
-const tradeskill_grant_type = 5
-
-/// Quest2RewardType 7, an account currency.
-const account_currency_type = 7
-
-/// Quest2RewardType 10, rotation essence.
-const rotation_essence_type = 10
 
 /// The client's code for a turn-in the inventory has no room for (Item_InventoryFull).
 const inventory_full = 27
@@ -567,7 +548,7 @@ fn rewarded(
   })
   use <- bool.guard(
     when: list.any(fixed, fn(reward) {
-      reward.quest2_reward_type_id == tradeskill_experience_type
+      quest_reward_kind.of_row(reward) == quest_reward_kind.TradeskillExperience
     }),
     return: Error(Declined(
       key: "tradeskill reward",
@@ -858,8 +839,8 @@ fn credits_paid(
 
 /// Whether the reward row is money of currency 1, the credits.
 fn is_credits(reward: Quest2Reward) -> Bool {
-  reward.quest2_reward_type_id == money_type
-  && reward.object_id == currency.credits_type
+  quest_reward_kind.of_row(reward)
+  == quest_reward_kind.Money(currency: currency_kind.Credits)
 }
 
 /// Where each item the rewards give goes: the amounts of one Item2 added together, placed
@@ -873,18 +854,18 @@ fn place_items(
 ) -> Result(List(store.Placed), Stop) {
   let wanted =
     list.fold(given, [], fn(wanted, reward) {
-      case reward.quest2_reward_type_id == item_type {
-        False -> wanted
-        True ->
-          case list.key_find(wanted, reward.object_id) {
+      case quest_reward_kind.given_item(quest_reward_kind.of_row(reward)) {
+        Error(Nil) -> wanted
+        Ok(item2_id) ->
+          case list.key_find(wanted, item2_id.value) {
             Ok(amount) ->
               list.key_set(
                 wanted,
-                reward.object_id,
+                item2_id.value,
                 amount + reward.object_amount,
               )
             Error(Nil) ->
-              list.append(wanted, [#(reward.object_id, reward.object_amount)])
+              list.append(wanted, [#(item2_id.value, reward.object_amount)])
           }
       }
     })
@@ -965,10 +946,9 @@ fn left_out(
   row row: Quest2,
   given given: List(Quest2Reward),
 ) -> List(#(String, String)) {
-  let has = fn(types: List(Int)) {
-    list.any(given, fn(reward) {
-      list.contains(types, reward.quest2_reward_type_id)
-    })
+  let kinds_given = list.map(given, quest_reward_kind.of_row)
+  let has = fn(left: Left) {
+    list.any(kinds_given, fn(kind) { left_of(kind) == left })
   }
   let line = fn(kind: String, issue: String) {
     "quest "
@@ -983,22 +963,19 @@ fn left_out(
     #(
       row.faction2_id_reward_reputation00 != 0
         || row.faction2_id_reward_reputation01 != 0
-        || has([reputation_type]),
+        || has(ReputationLeft),
       #("reputation reward", line("a reputation reward", "#674")),
     ),
     #(
-      list.any(given, fn(reward) {
-        reward.quest2_reward_type_id == money_type && !is_credits(reward)
-      })
-        || has([account_currency_type]),
+      has(CurrencyLeft),
       #("currency reward", line("a reward of a currency but credits", "#675")),
     ),
     #(
-      has([rotation_essence_type]),
+      has(RotationLeft),
       #("rotation essence reward", line("a rotation essence reward", "#676")),
     ),
     #(
-      has([tradeskill_experience_type, tradeskill_grant_type]),
+      has(TradeskillLeft),
       #("tradeskill reward kind", line("a tradeskill reward", "#677")),
     ),
     #(
@@ -1006,21 +983,7 @@ fn left_out(
       #("contract reward", line("a contract reward", "#678")),
     ),
   ]
-  let unknown =
-    list.filter(given, fn(reward) {
-      !list.contains(
-        [
-          item_type,
-          reputation_type,
-          money_type,
-          tradeskill_experience_type,
-          tradeskill_grant_type,
-          account_currency_type,
-          rotation_essence_type,
-        ],
-        reward.quest2_reward_type_id,
-      )
-    })
+  let unknown = list.filter_map(kinds_given, quest_reward_kind.unread_type)
   let known =
     list.filter_map(kinds, fn(kind) {
       case kind.0 {
@@ -1030,17 +993,44 @@ fn left_out(
     })
   case unknown {
     [] -> known
-    [reward, ..] ->
+    [type_number, ..] ->
       list.append(known, [
         #(
           "unknown reward type",
           "quest "
             <> int.to_string(quest_id)
             <> " has a reward of type "
-            <> int.to_string(reward.quest2_reward_type_id)
+            <> int.to_string(type_number)
             <> ", which the client's tables do not name for the server; the turn-in goes on without it",
         ),
       ])
+  }
+}
+
+/// The reward kinds the server leaves out, one for each line `left_out` gives.
+type Left {
+  ReputationLeft
+  CurrencyLeft
+  RotationLeft
+  TradeskillLeft
+  NotLeft
+}
+
+/// Which left-out line a reward kind belongs to: credits, items and the unread types have none
+/// (an unread type has its own line).
+fn left_of(kind: quest_reward_kind.Kind) -> Left {
+  case kind {
+    quest_reward_kind.Reputation -> ReputationLeft
+    quest_reward_kind.Money(currency:) ->
+      case currency_kind.is_credits(currency) {
+        True -> NotLeft
+        False -> CurrencyLeft
+      }
+    quest_reward_kind.AccountCurrency -> CurrencyLeft
+    quest_reward_kind.RotationEssence -> RotationLeft
+    quest_reward_kind.TradeskillExperience
+    | quest_reward_kind.TradeskillGrant -> TradeskillLeft
+    quest_reward_kind.Item(_) | quest_reward_kind.Unread(_) -> NotLeft
   }
 }
 
