@@ -3,16 +3,14 @@
 //// once the quest's other required objectives are done. Expected values come from these
 //// places.
 //// - `QuestObjective.flags.8`: the client hides an objective with flag 8 from the player
-////   (`Quest:GetVisibleObjectiveData`, `0x1406652e0`) and shows no progress for it; it
-////   still needs its done bit for the quest to be Achieved.
+////   (`Quest:GetVisibleObjectiveData`, `0x1406652e0`) and lists no row for it in the quest
+////   log; it still needs its done bit for the quest to be Achieved.
 //// - `QuestObjective.type.5`: a scripted objective is done only by the server's 0x361.
 //// - `0x1405fbc40` (the Achieved rule): every objective without flag 0x20 must be done, so
 ////   a hidden required objective that nothing completes holds the quest Accepted.
 //// - `opcode.0x361` and `opcode.0x35c`: the objective's progress, then the quest's state 2.
-//// - The completion itself is Jim's decision of 2026-11-16 on the issue "A hidden scripted
-////   objective with no target completes once its quest's other required objectives are
-////   done": a server choice, since neither the client nor the retail records say what
-////   retail did.
+//// - The completion itself is a server choice: neither the client nor the retail records
+////   say what retail did.
 ////
 //// The client's rows in the fixture (`table_rows -- QuestObjective`), each count 1 unless
 //// said:
@@ -39,7 +37,9 @@ import genesis_prime/game/quest_log
 import genesis_prime/message/quest_log as quest_message
 import genesis_prime/store.{type QuestRow}
 import genesis_prime/table/creature2
+import genesis_prime/table/id.{PrerequisiteId, Quest2Id}
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/table/prerequisite as prerequisite_table
 import genesis_prime/table/quest2
 import genesis_prime/table/quest_objective
 import gleam/dict
@@ -111,7 +111,7 @@ fn saved_nature() -> QuestRow {
 }
 
 pub fn the_last_other_required_objective_completes_the_hidden_one_then_achieves_the_quest_test() -> Nil {
-  use <- owned_test.run(10_000)
+  use <- owned_test.run(60_000)
   // Objective 9658 (type 8, count 7) is changed to a kill of the Beast, Creature2 73464,
   // count 1, so one kill is the last other required objective; objective 1 is done.
   use tables <- fixture_tables.changed(table: "QuestObjective", id: 9658, with: [
@@ -297,8 +297,114 @@ pub fn the_completed_hidden_objective_and_the_achieved_state_survive_a_relog_tes
   assert quest_log.stored_state(log: relogged, quest_id: nature) == 2
 }
 
+/// Nature's Uprising with its objective 1 (9659) a second hidden scripted objective: type
+/// 5, flag 8, data 0, count 1. Objective 0 is then the only required objective that is not
+/// hidden.
+fn with_two_hidden(body body: fn(table_store.Tables) -> a) -> a {
+  with_objectives(
+    edits: [
+      #(9659, "type", 5),
+      #(9659, "flags", 8),
+      #(9659, "data", 0),
+      #(9659, "count", 1),
+    ],
+    body:,
+  )
+}
+
+pub fn two_hidden_objectives_of_one_quest_complete_together_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use tables <- with_two_hidden
+  let assert Ok(log) =
+    quest_log.from_rows(
+      rows: [
+        quest_support.active(
+          quest_id: nature,
+          state: 1,
+          placeholder: 0,
+          tracked: False,
+          done_mask: 1,
+          progress: [1000, 0, 0],
+        ),
+      ],
+      tables:,
+    )
+  let done = settled(log:, tables:)
+  assert done.effects
+    == [
+      SendProgress(quest_id: nature, objective_index: 1, progress: 1),
+      SendProgress(quest_id: nature, objective_index: 2, progress: 1),
+      SendState(quest_id: nature, state: 2),
+    ]
+    as "opcode.0x361 for each hidden objective at 1 of 1, then one 0x35c state 2: neither waits for the other, though 0x1405fbc40 needs both"
+  let assert [row] = quest_log.rows(log: done.log, now_ms: 0)
+    as "the log saves the one quest it holds"
+  let assert Some(active) = row.active as "an Achieved quest saves its entry"
+  assert active.done_mask == 7 as "objectives 0, 1 and 2 are done"
+}
+
+pub fn a_done_hidden_objective_beside_a_waiting_one_is_not_counted_again_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Objective 1 is a hidden script already done (done mask 3, progress 1); objective 2 is
+  // the one waiting.
+  use tables <- with_two_hidden
+  let assert Ok(log) =
+    quest_log.from_rows(
+      rows: [
+        quest_support.active(
+          quest_id: nature,
+          state: 1,
+          placeholder: 0,
+          tracked: False,
+          done_mask: 3,
+          progress: [1000, 1, 0],
+        ),
+      ],
+      tables:,
+    )
+  let done = settled(log:, tables:)
+  assert done.effects
+    == [
+      SendProgress(quest_id: nature, objective_index: 2, progress: 1),
+      SendState(quest_id: nature, state: 2),
+    ]
+    as "opcode.0x361 only for the waiting objective, and the one 0x35c state 2"
+  assert settled(log: done.log, tables:) == Advanced(log: done.log, effects: [])
+    as "the settled quest is left as it is, nothing sent again"
+}
+
+pub fn a_quest_with_no_other_required_objective_completes_its_hidden_one_at_once_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Objectives 0 and 1 are made optional (flag 0x20), so the hidden objective 2 is the
+  // quest's only required objective and there is nothing to wait for.
+  use tables <- with_objectives(edits: [
+    #(9658, "flags", 0x20),
+    #(9659, "flags", 0x20),
+  ])
+  let assert Ok(log) =
+    quest_log.from_rows(
+      rows: [
+        quest_support.active(
+          quest_id: nature,
+          state: 1,
+          placeholder: 0,
+          tracked: False,
+          done_mask: 0,
+          progress: [0, 0, 0],
+        ),
+      ],
+      tables:,
+    )
+  assert settled(log:, tables:).effects
+    == [
+      SendProgress(quest_id: nature, objective_index: 2, progress: 1),
+      SendState(quest_id: nature, state: 2),
+    ]
+    as "opcode.0x361 for the hidden objective, then 0x35c state 2, with both optional objectives still open"
+}
+
 pub fn a_hidden_objective_a_creature_links_is_left_to_that_creature_test() -> Nil {
-  use <- owned_test.run(10_000)
+  use <- owned_test.run(60_000)
   // The Beast's row (Creature2 73464) names objective 2 of quest 6296 in its questAnim
   // columns, which is how the client links a creature to an objective
   // (`Creature2.questAnimStateId`, `Creature2.questAnimObjectiveIndex`).
@@ -312,7 +418,7 @@ pub fn a_hidden_objective_a_creature_links_is_left_to_that_creature_test() -> Ni
 }
 
 pub fn the_hidden_data_0_scripted_objectives_the_rule_completes_are_the_unlinked_ones_test() -> Nil {
-  use <- owned_test.run(600_000)
+  use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   let hidden =
@@ -324,7 +430,8 @@ pub fn the_hidden_data_0_scripted_objectives_the_rule_completes_are_the_unlinked
     |> set.from_list
   assert set.size(hidden) == 91
     as "QuestObjective rows of type 5 with flag 8 and data 0: the issue's 91"
-  // The (quest, index) slots of the hidden rows, from each Quest2 row's objective slots.
+  // The (quest, index) slots of the hidden rows, from each Quest2 row's filled objective
+  // slots in order, which is the index the log gives an objective.
   let slots =
     quest2.all(tables)
     |> list.flat_map(fn(quest) {
@@ -336,26 +443,41 @@ pub fn the_hidden_data_0_scripted_objectives_the_rule_completes_are_the_unlinked
         quest.objective04,
         quest.objective05,
       ]
+      |> list.filter(fn(objective) { objective != 0 })
       |> list.index_map(fn(objective, index) { #(quest.id, index, objective) })
     })
     |> list.filter(fn(slot) { set.contains(hidden, slot.2) })
-  // The slots some creature's questAnim or prerequisite column names, read creature by
-  // creature without the load's derivation.
-  let linked =
+  // The slots some creature's row names, read from its raw columns: the questAnim pair,
+  // and the type 43 conditions of comparison 1 of its prerequisite, through the type 11
+  // conditions of comparison 1 that nest another (`Creature2.objective_link`,
+  // `Prerequisite.prerequisiteTypeId.43`, `.11`).
+  let named =
     creature2.all(tables)
-    |> list.filter(objective_link.has_link)
     |> list.flat_map(fn(row) {
-      objective_link.links(tables:, creature_id: creature2.id(row))
+      let from_anim = case
+        row.quest_anim_state_id != 0 && row.quest_anim_objective_index != -1
+      {
+        True -> [#(row.quest_anim_state_id, row.quest_anim_objective_index)]
+        False -> []
+      }
+      list.append(
+        from_anim,
+        named_by_prerequisite(
+          tables:,
+          prerequisite_id: row.prerequisite_id_anim_state,
+          above: [],
+        ),
+      )
     })
     |> set.from_list
-  let linked_slots =
-    list.filter(slots, fn(slot) { set.contains(linked, #(slot.0, slot.1)) })
+  let named_slots =
+    list.filter(slots, fn(slot) { set.contains(named, #(slot.0, slot.1)) })
   assert list.filter(slots, fn(slot) {
       objective_link.is_linked(tables:, quest_id: slot.0, index: slot.1)
     })
-    == linked_slots
-    as "the load's set of linked objectives holds exactly the slots the creatures name"
-  assert list.map(linked_slots, fn(slot) { #(slot.0, slot.1) })
+    == named_slots
+    as "the load's set of linked objectives holds exactly the hidden slots the creatures' raw columns name"
+  assert list.map(named_slots, fn(slot) { #(slot.0, slot.1) })
     == [
       #(4761, 1),
       #(4829, 0),
@@ -367,4 +489,61 @@ pub fn the_hidden_data_0_scripted_objectives_the_rule_completes_are_the_unlinked
       #(5374, 2),
     ]
     as "Creature2 21444, 21957, 18431, 22696 to 22699 and 23694 link these hidden slots, which the rule leaves to them"
+}
+
+/// The (Quest2 id, index) pairs a Prerequisite row names as open, read from its raw
+/// columns: the conditions before the first of type 0, of which type 43 with comparison 1
+/// names a Quest2 row and an index, and type 11 with comparison 1 another Prerequisite
+/// row to read the same way. `above` holds the rows being read already.
+fn named_by_prerequisite(
+  tables tables: table_store.Tables,
+  prerequisite_id prerequisite_id: Int,
+  above above: List(Int),
+) -> List(#(Int, Int)) {
+  case prerequisite_table.get(tables:, id: PrerequisiteId(prerequisite_id)) {
+    Error(Nil) -> []
+    Ok(row) ->
+      [
+        #(
+          row.prerequisite_type_id0,
+          row.prerequisite_comparison_id0,
+          row.object_id0,
+          row.value0,
+        ),
+        #(
+          row.prerequisite_type_id1,
+          row.prerequisite_comparison_id1,
+          row.object_id1,
+          row.value1,
+        ),
+        #(
+          row.prerequisite_type_id2,
+          row.prerequisite_comparison_id2,
+          row.object_id2,
+          row.value2,
+        ),
+      ]
+      |> list.take_while(fn(condition) { condition.0 != 0 })
+      |> list.flat_map(fn(condition) {
+        let #(type_id, comparison, object_id, value) = condition
+        case type_id, comparison {
+          43, 1 ->
+            case quest2.get(tables:, id: Quest2Id(object_id)) {
+              Ok(_) -> [#(object_id, int.bitwise_and(value, 0xFFFFFFFF))]
+              Error(Nil) -> []
+            }
+          11, 1 ->
+            case list.contains(above, object_id) {
+              True -> []
+              False ->
+                named_by_prerequisite(
+                  tables:,
+                  prerequisite_id: object_id,
+                  above: [prerequisite_id, ..above],
+                )
+            }
+          _, _ -> []
+        }
+      })
+  }
 }

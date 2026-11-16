@@ -580,7 +580,7 @@ fn start_reachable(
         })
       let optional_mask =
         list.index_fold(quest.objectives, 0, fn(mask, objective, index) {
-          case has_flag(flags: objective.flags, flag: skipped_flag) {
+          case has_flag(flags: objective.flags, flag: optional_flag) {
             True -> int.bitwise_or(mask, int.bitwise_shift_left(1, index))
             False -> mask
           }
@@ -870,8 +870,9 @@ pub type QuestRowError {
   NoObjectiveRow(objective_id: Int)
 }
 
-/// The QuestObjective flag the client's state and reachability skip.
-const skipped_flag = 0x20
+/// The QuestObjective flag of an optional objective, which the client's quest state and
+/// reachability skip (`0x1405fbc40`, `0x140553790`).
+pub const optional_flag = 0x20
 
 /// The objective slots of a quest, which a kill mask has one value for each of
 /// (`0x1405510d0`, kQuestMaxObjective).
@@ -980,24 +981,41 @@ pub fn state(log log: QuestLog, quest quest: Quest) -> Int {
     Ok(Known(state:)) -> known_state_number(state:)
     Ok(Active(state: Achieved, ..)) -> 2
     Ok(Active(state: Accepted, done_mask:, ..)) ->
-      case every_objective_is_done(quest:, done_mask:) {
+      case
+        every_objective_is_done(quest:, done: fn(index) {
+          done_in(mask: done_mask, index:)
+        })
+      {
         True -> 2
         False -> 1
       }
   }
 }
 
-/// Whether every objective of the quest without flag 0x20 is done in the mask
-/// (`0x1405fbc40`); a quest with no objectives is.
+/// Whether every objective of the quest without flag 0x20 is done, as `done` says for
+/// its index (`0x1405fbc40`); a quest with no objectives is.
 fn every_objective_is_done(
   quest quest: Quest,
-  done_mask done_mask: Int,
+  done done: fn(Int) -> Bool,
 ) -> Bool {
   list.index_map(quest.objectives, fn(objective, index) {
-    has_flag(flags: objective.flags, flag: skipped_flag)
-    || done_in(mask: done_mask, index:)
+    has_flag(flags: objective.flags, flag: optional_flag) || done(index)
   })
   |> list.all(fn(done) { done })
+}
+
+/// Whether every objective of the quest without flag 0x20 is done in the log
+/// (`0x1405fbc40`), the objectives at the indexes `ignoring` counted as done: the rule of
+/// `state` for an objective the caller is about to complete.
+pub fn required_objectives_done(
+  log log: QuestLog,
+  quest quest: Quest,
+  ignoring ignoring: List(Int),
+) -> Bool {
+  let quest = as_logged(log:, quest:)
+  every_objective_is_done(quest:, done: fn(index) {
+    list.contains(ignoring, index) || objective_done(log:, quest:, index:)
+  })
 }
 
 /// The state the log stores for a quest, without the derivation `state` makes from the
@@ -1325,7 +1343,7 @@ fn reachable(log log: QuestLog, quest quest: Quest, index index: Int) -> Bool {
         True, _ ->
           list.all(earlier, fn(before) {
             let #(at, objective) = before
-            has_flag(flags: objective.flags, flag: skipped_flag)
+            has_flag(flags: objective.flags, flag: optional_flag)
             || objective_done(log:, quest:, index: at)
           })
         False, True ->
@@ -1829,7 +1847,10 @@ fn store_progress(
 ) -> #(QuestLog, Moved) {
   let assert Active(state:, progress: kept, ..) = entry
     as "only an entry in the active list takes a count"
-  let all_done = every_objective_is_done(quest:, done_mask:)
+  let all_done =
+    every_objective_is_done(quest:, done: fn(index) {
+      done_in(mask: done_mask, index:)
+    })
   let #(state, moved) = case state, all_done {
     Accepted, True -> #(Achieved, BecameAchieved)
     Achieved, False -> #(Accepted, BecameAccepted)
