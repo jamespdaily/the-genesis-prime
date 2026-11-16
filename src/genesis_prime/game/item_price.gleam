@@ -33,6 +33,7 @@
 //// | the curve has no value at the item's power level | the error names the formula and the level; the vendor load stops |
 
 import genesis_prime/game/currency
+import genesis_prime/game/currency_kind
 import genesis_prime/game/item_property
 import genesis_prime/message/float32
 import genesis_prime/table/game_formula
@@ -91,7 +92,12 @@ pub fn base(
     |> result.replace_error(MissingRow(table: "Item2", id: raw_id)),
   )
   use <- bool.guard(
-    item.currency_type_id0 != 0 || item.currency_type_id1 != 0,
+    currency_kind.names_a_currency(currency_kind.kind_of(
+      number: item.currency_type_id0,
+    ))
+      || currency_kind.names_a_currency(currency_kind.kind_of(
+      number: item.currency_type_id1,
+    )),
     Error(OtherCurrency(item2_id:)),
   )
   use <- bool.guard(
@@ -215,7 +221,12 @@ pub fn sell_price(
       currency_type_id: item.currency_type_id1_sell_to_vendor,
       amount: item.currency_amount1_sell_to_vendor,
     )
-  case first.currency_type_id != 0 || second.currency_type_id != 0 {
+  let named = fn(price: SellPrice) {
+    currency_kind.names_a_currency(currency_kind.kind_of(
+      number: price.currency_type_id,
+    ))
+  }
+  case named(first) || named(second) {
     False -> computed_sell(tables:, item:)
     True if first.amount > 0 && second.amount > 0 ->
       Error(TwoSellCurrencies(item2_id:))
@@ -247,7 +258,12 @@ fn computed_sell(
 /// `shown(amount, multiplier)`, a price in another currency is unchanged
 /// (`0x14041bcc0.formula`).
 pub fn paid(price price: SellPrice, multiplier multiplier: Float) -> SellPrice {
-  use <- bool.guard(price.currency_type_id != currency.credits_type, price)
+  use <- bool.guard(
+    !currency_kind.is_credits(currency_kind.kind_of(
+      number: price.currency_type_id,
+    )),
+    price,
+  )
   SellPrice(..price, amount: shown(base: price.amount, multiplier:))
 }
 

@@ -24,6 +24,7 @@
 ////   the excess is lost. A purchase only lowers a total.
 
 import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/game/currency_kind
 import genesis_prime/message/currency_changed.{CurrencyChanged}
 import genesis_prime/message/currency_gained.{CurrencyGained}
 import genesis_prime/store
@@ -44,8 +45,8 @@ pub type Currencies {
   Currencies(amounts: Dict(Int, Int))
 }
 
-/// The currency type of credits.
-pub const credits_type = 1
+/// The currency type of credits, named once in `currency_kind`.
+pub const credits_type = currency_kind.credits_type
 
 /// The currency type of Renown, whose cap is its own GameFormula row (`GetCurrencyCap.entitlement_14`).
 const renown_type = 2
