@@ -267,7 +267,7 @@ pub fn an_answer_after_the_deadline_gives_the_rule_no_input_and_is_never_taken_f
   ask_support.stop(server)
 }
 
-pub fn a_replied_ask_leaves_no_monitor_on_the_target_test() -> Nil {
+pub fn a_replied_ask_monitors_its_target_while_it_waits_and_leaves_no_monitor_after_test() -> Nil {
   use <- owned_test.run(30_000)
   let gate = process.new_name("gate")
   let server = start_with(gate:, shutdown_ms: 1000)
