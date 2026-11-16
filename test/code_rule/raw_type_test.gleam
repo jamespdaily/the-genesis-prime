@@ -1,8 +1,9 @@
 //// The raw-type rule. Expected values are the rule in the issue that set it: a
 //// game table's raw type number is decoded once into a tagged type where the
 //// table is read, and game and map code matches on that type. A `case` on a
-//// row's `type_` field with integer patterns, and a `==` or `!=` of that field
-//// with an integer or a constant, are reported at their line; a tagged type, a
+//// row's type field (`type_`, or a name ending `_type`, `_type_id` or
+//// `_type_enum`) with integer patterns, and a `==` or `!=` of that field with
+//// an integer or a constant, are reported at their line; a tagged type, a
 //// check against 0, two type fields compared with each other, and the modules
 //// that read the table (`table/`) and the wire (`message/`) are not. Every
 //// case is planted in a made-up file; the last tests read the source tree.
@@ -54,6 +55,8 @@ pub fn a_comparison_of_a_rows_type_field_with_an_integer_or_constant_is_a_breach
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
   let lines = [
+    "import genesis_prime/game/quest_log",
+    "",
     "pub fn is_group(row: Row) -> Bool {",
     "  row.type_ == 8",
     "}",
@@ -74,7 +77,7 @@ pub fn a_comparison_of_a_rows_type_field_with_an_integer_or_constant_is_a_breach
     "  row.type_ == 2 || row.type_ == 8",
     "}",
   ]
-  assert breach_lines(lines) == [2, 6, 10, 14, 18, 18]
+  assert breach_lines(lines) == [4, 8, 12, 16, 20, 20]
 }
 
 pub fn a_case_on_a_tagged_type_is_not_a_breach_test() -> Nil {
@@ -98,6 +101,84 @@ pub fn a_case_on_a_tagged_type_is_not_a_breach_test() -> Nil {
     "    2 -> \"creature\"",
     "    _ -> \"other\"",
     "  }",
+    "}",
+  ]
+  assert breach_lines(lines) == []
+}
+
+pub fn a_case_or_comparison_on_a_column_ending_in_type_id_or_type_enum_is_a_breach_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let lines = [
+    "pub fn is_money(reward: Reward) -> Bool {",
+    "  reward.quest2_reward_type_id == 2",
+    "}",
+    "",
+    "pub fn property(picked: Stat) -> Int {",
+    "  case picked.item_stat_type_enum {",
+    "    1 -> 1",
+    "    _ -> 0",
+    "  }",
+    "}",
+    "",
+    "pub fn heals(effect: Effect) -> Bool {",
+    "  effect.effect_type == 118",
+    "}",
+    "",
+    "pub fn none(price: Price) -> Bool {",
+    "  price.currency_type_id == 0",
+    "}",
+  ]
+  assert breach_lines(lines) == [2, 6, 13]
+}
+
+pub fn a_name_from_an_imported_module_is_a_constant_not_a_field_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let lines = [
+    "import genesis_prime/game/currency",
+    "import genesis_prime/game/objective",
+    "",
+    "pub fn paid(price: Price) -> Bool {",
+    "  price.currency_type_id != currency.credits_type",
+    "}",
+    "",
+    "pub fn not_a_type_field(reward: Reward) -> Bool {",
+    "  reward.object_id == currency.credits_type",
+    "}",
+    "",
+    "pub fn a_parameter_named_like_a_module(objective: Row) -> Bool {",
+    "  objective.type_ == 2",
+    "}",
+    "",
+    "pub fn a_closure_named_like_a_module(rows: List(Row)) -> List(Row) {",
+    "  list.filter(rows, fn(objective) { objective.type_ == 2 })",
+    "}",
+    "",
+    "pub fn a_parameter_shadowing_an_import(currency: Price) -> Bool {",
+    "  currency.currency_type_id == 2",
+    "}",
+    "",
+    "pub fn another_module_constant_is_not_a_field() -> Bool {",
+    "  objective.scripted_type == currency.credits_type",
+    "}",
+  ]
+  assert breach_lines(lines) == [5, 13, 17, 21]
+}
+
+pub fn the_client_option_and_a_spawned_object_have_type_fields_no_table_holds_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let lines = [
+    "pub fn option_sent(option: ClientOption) -> Bool {",
+    "  case option.option_type {",
+    "    1 -> True",
+    "    _ -> False",
+    "  }",
+    "}",
+    "",
+    "pub fn of_the_type(object: Object, unit_type: Int) -> Bool {",
+    "  object.unit_type == unit_type",
     "}",
   ]
   assert breach_lines(lines) == []
@@ -128,12 +209,12 @@ pub fn the_module_that_decodes_a_table_may_read_its_type_field_test() -> Nil {
   })
 }
 
-// The false-hit measure over `src/` outside `table/` and `message/` found 50
-// sites that compare or match the field named `type_`, every one a dispatch,
-// and one "this field is 0" check (the pattern `Objective(type_: 0, ..)` in
-// quest_log, which the rule does not read). A 0 in a type column means no type,
-// so a check against 0 decides nothing about what kind of row it is; and two
-// type fields compared with each other name no kind either.
+// The false-hit measure over `src/` outside `table/` and `message/` found every
+// match on a type column a dispatch, and the checks against 0 ("this field is
+// 0": item_price and spell_plan) and the one comparison of two type fields
+// (worn_visual) not. A 0 in a type column means no type, so a check against 0
+// decides nothing about what kind of row it is; and two type fields compared
+// with each other name no kind either.
 pub fn a_zero_or_none_check_is_not_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
@@ -161,14 +242,13 @@ pub fn a_zero_or_none_check_is_not_a_breach_test() -> Nil {
 }
 
 pub fn each_known_gap_names_an_open_issue_and_a_new_site_fails_test() -> Nil {
-  // Deadline: all seven tests of this file ran in 146 ms together, so 5 s is
-  // more than 30 times the body.
+  // Deadline: all ten tests of this file ran in 205 ms together, so 5 s is
+  // more than 20 times the body.
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
-  // Open on 2026-11-16: the quest objective step, and the parent of the
-  // target-group and other-table lines ("Target groups and other tables are
-  // later lines on #328").
-  let open_issues = [888, 328]
+  // Open on 2026-11-16: 888 (sites that read a quest objective row), 890 (sites
+  // that read a quest log objective's type) and 891 (the other tables' types).
+  let open_issues = [888, 890, 891]
   assert list.all(raw_type.known_gaps, fn(gap) {
     list.contains(open_issues, gap.issue)
   })

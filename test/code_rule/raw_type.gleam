@@ -1,7 +1,9 @@
 //// Game and map code does not branch on a game table's raw type number: a
-//// `case` on a row's `type_` field with integer patterns (or a guard on a
-//// bound name), or a `==` or `!=` of that field with an integer or a constant,
+//// `case` on a row's type field with integer patterns (or a guard on a bound
+//// name), or a `==` or `!=` of that field with an integer or a constant,
 //// outside the modules that read the table (`table/`) or the wire (`message/`).
+//// A type field is `type_` (the client column named `type`) or a field ending
+//// in `_type`, `_type_id` or `_type_enum`.
 ////
 //// ```text
 //// src files -> sites per function -> minus each function's listed gap -> breaches
@@ -12,9 +14,11 @@
 ////   the compiler names each place that handles it. A comparison with a
 ////   constructor, and a `case` with constructor patterns, is that tagged type.
 //// - A check against 0 (no type) and two type fields compared with each other
-////   decide no kind, so they are not reported. The field is the one named
-////   `type_`, the client column literally named `type`; other tables' columns
-////   that end in `_type` are not read by this rule.
+////   decide no kind, so they are not reported.
+//// - A name read from an imported module (`quest_log.use_a_creature_type`) is a
+////   constant, not a field, unless the function takes a parameter of that name
+////   or the name is `type_`. `option_type` (the client option message) and
+////   `unit_type` (a spawned object) are fields no table holds and are not read.
 //// - Each site that exists today is a known gap, counted per function and
 ////   naming the open issue whose work removes it. A function with more sites
 ////   than listed fails, and so does a gap whose function has fewer.
@@ -36,9 +40,9 @@ pub type Gap {
   Gap(path: String, function: String, sites: Int, issue: Int)
 }
 
-/// Every site in `src/` today. Quest objective sites wait on the quest
-/// objective type step; the target group sites on the later lines of the
-/// table redesign.
+/// Every site in `src/` today. Issue 888 removes the sites that read a quest
+/// objective table row, 890 those that read the type of a quest log's
+/// objective, and 891 those on the other tables' type columns.
 pub const known_gaps = [
   Gap(
     path: "src/genesis_prime/game/departures.gleam",
@@ -47,76 +51,94 @@ pub const known_gaps = [
     issue: 888,
   ),
   Gap(
+    path: "src/genesis_prime/game/equip_requirement.gleam",
+    function: "offered",
+    sites: 1,
+    issue: 891,
+  ),
+  Gap(
+    path: "src/genesis_prime/game/item_price.gleam",
+    function: "paid",
+    sites: 1,
+    issue: 891,
+  ),
+  Gap(
+    path: "src/genesis_prime/game/item_property.gleam",
+    function: "give_picked",
+    sites: 1,
+    issue: 891,
+  ),
+  Gap(
     path: "src/genesis_prime/game/objective.gleam",
     function: "advance_quest",
     sites: 1,
-    issue: 888,
+    issue: 890,
   ),
   Gap(
     path: "src/genesis_prime/game/objective.gleam",
     function: "arrivals",
     sites: 3,
-    issue: 888,
+    issue: 890,
   ),
   Gap(
     path: "src/genesis_prime/game/objective.gleam",
     function: "buttons",
     sites: 1,
-    issue: 888,
+    issue: 890,
   ),
   Gap(
     path: "src/genesis_prime/game/objective.gleam",
     function: "counts",
     sites: 10,
-    issue: 888,
+    issue: 890,
   ),
   Gap(
     path: "src/genesis_prime/game/objective.gleam",
     function: "credits_a_used_unit",
     sites: 1,
-    issue: 888,
+    issue: 890,
   ),
   Gap(
     path: "src/genesis_prime/game/objective.gleam",
     function: "finishes",
     sites: 1,
-    issue: 888,
+    issue: 890,
   ),
   Gap(
     path: "src/genesis_prime/game/objective.gleam",
     function: "group_member",
     sites: 1,
-    issue: 888,
+    issue: 890,
   ),
   Gap(
     path: "src/genesis_prime/game/objective.gleam",
     function: "held_item",
     sites: 2,
-    issue: 888,
+    issue: 890,
   ),
   Gap(
     path: "src/genesis_prime/game/objective.gleam",
     function: "hidden_script",
     sites: 1,
-    issue: 888,
+    issue: 890,
   ),
   Gap(
     path: "src/genesis_prime/game/objective.gleam",
     function: "required_sibling_arrived",
     sites: 1,
-    issue: 888,
+    issue: 890,
   ),
   Gap(
     path: "src/genesis_prime/game/objective.gleam",
     function: "visible_script_broken",
     sites: 1,
-    issue: 888,
+    issue: 890,
   ),
   Gap(
     path: "src/genesis_prime/game/objective.gleam",
     function: "visits",
     sites: 1,
-    issue: 888,
+    issue: 890,
   ),
   Gap(
     path: "src/genesis_prime/game/place_objective.gleam",
@@ -152,13 +174,13 @@ pub const known_gaps = [
     path: "src/genesis_prime/game/quest_log.gleam",
     function: "as_logged",
     sites: 1,
-    issue: 888,
+    issue: 890,
   ),
   Gap(
     path: "src/genesis_prime/game/quest_log.gleam",
     function: "counted_by_unit",
     sites: 3,
-    issue: 888,
+    issue: 890,
   ),
   Gap(
     path: "src/genesis_prime/game/quest_log.gleam",
@@ -170,7 +192,7 @@ pub const known_gaps = [
     path: "src/genesis_prime/game/quest_log.gleam",
     function: "is_percent_kind",
     sites: 1,
-    issue: 888,
+    issue: 890,
   ),
   Gap(
     path: "src/genesis_prime/game/quest_log.gleam",
@@ -185,28 +207,70 @@ pub const known_gaps = [
     issue: 888,
   ),
   Gap(
+    path: "src/genesis_prime/game/quest_turn_in.gleam",
+    function: "is_credits",
+    sites: 1,
+    issue: 891,
+  ),
+  Gap(
+    path: "src/genesis_prime/game/quest_turn_in.gleam",
+    function: "left_out",
+    sites: 1,
+    issue: 891,
+  ),
+  Gap(
+    path: "src/genesis_prime/game/quest_turn_in.gleam",
+    function: "place_items",
+    sites: 1,
+    issue: 891,
+  ),
+  Gap(
+    path: "src/genesis_prime/game/quest_turn_in.gleam",
+    function: "rewarded",
+    sites: 1,
+    issue: 891,
+  ),
+  Gap(
+    path: "src/genesis_prime/game/random_stat.gleam",
+    function: "accepted",
+    sites: 1,
+    issue: 891,
+  ),
+  Gap(
     path: "src/genesis_prime/game/shortcut_spell.gleam",
     function: "build",
     sites: 1,
     issue: 888,
   ),
   Gap(
+    path: "src/genesis_prime/game/spell_plan.gleam",
+    function: "heal_of",
+    sites: 1,
+    issue: 891,
+  ),
+  Gap(
     path: "src/genesis_prime/game/target_group.gleam",
     function: "creatures_of",
     sites: 1,
-    issue: 328,
+    issue: 891,
   ),
   Gap(
     path: "src/genesis_prime/game/target_group.gleam",
     function: "listed",
     sites: 1,
-    issue: 328,
+    issue: 891,
   ),
   Gap(
     path: "src/genesis_prime/game/target_group.gleam",
     function: "row_has",
     sites: 1,
-    issue: 328,
+    issue: 891,
+  ),
+  Gap(
+    path: "src/genesis_prime/game/vendor_sale.gleam",
+    function: "junk_stack",
+    sites: 1,
+    issue: 891,
   ),
   Gap(
     path: "src/genesis_prime/world_map/checklist_index.gleam",
@@ -215,16 +279,28 @@ pub const known_gaps = [
     issue: 888,
   ),
   Gap(
+    path: "src/genesis_prime/world_map/creature_guard_spells.gleam",
+    function: "guard_of",
+    sites: 1,
+    issue: 891,
+  ),
+  Gap(
     path: "src/genesis_prime/world_map/objective_spawn.gleam",
     function: "is_click_kind",
     sites: 2,
-    issue: 888,
+    issue: 890,
   ),
   Gap(
     path: "src/genesis_prime/world_map/objective_spawn.gleam",
     function: "is_placed_kind",
     sites: 3,
     issue: 888,
+  ),
+  Gap(
+    path: "src/genesis_prime/world_map/objective_spawn.gleam",
+    function: "paired_unit_type",
+    sites: 1,
+    issue: 891,
   ),
   Gap(
     path: "src/genesis_prime/world_map/objective_spawn.gleam",
@@ -323,9 +399,10 @@ fn is_game_or_map_code(file: SourceFile) -> Bool {
 fn sites(file: SourceFile) -> List(Site) {
   let module = syntax.parse(file)
   list.flat_map(module.functions, fn(definition) {
+    let modules = module_names(module, definition.definition)
     glance.Module(..module, functions: [definition])
     |> syntax.expressions
-    |> list.flat_map(site_offsets)
+    |> list.flat_map(site_offsets(_, modules))
     |> list.map(fn(offset) {
       Site(
         path: file.path,
@@ -336,13 +413,46 @@ fn sites(file: SourceFile) -> List(Site) {
   })
 }
 
+/// The names the file's imports go by in qualified names (an alias, or the last
+/// segment of the module path), except a name the function takes as a
+/// parameter: `objective.type_` is the row when `objective` is a parameter.
+fn module_names(
+  module: glance.Module,
+  function: glance.Function,
+) -> List(String) {
+  let parameters =
+    list.filter_map(function.parameters, fn(parameter) {
+      case parameter.name {
+        glance.Named(name) -> Ok(name)
+        glance.Discarded(_) -> Error(Nil)
+      }
+    })
+  list.filter_map(module.imports, fn(definition) {
+    let name = case definition.definition.alias {
+      Some(glance.Named(alias)) -> alias
+      Some(glance.Discarded(_)) | None ->
+        definition.definition.module
+        |> string.split("/")
+        |> list.last
+        |> result.unwrap(definition.definition.module)
+    }
+    case list.contains(parameters, name) {
+      True -> Error(Nil)
+      False -> Ok(name)
+    }
+  })
+}
+
 /// The start of the expression when it is a raw-type site.
-fn site_offsets(expression: glance.Expression) -> List(Int) {
+fn site_offsets(
+  expression: glance.Expression,
+  modules: List(String),
+) -> List(Int) {
   case expression {
     glance.Case(location:, subjects:, clauses:) ->
       case
         list.index_map(subjects, fn(subject, index) {
-          is_type_field(subject)
+          option.is_some(type_column(subject, modules))
           && list.any(clauses, clause_names_a_number(_, index))
         })
         |> list.any(fn(dispatches) { dispatches })
@@ -352,7 +462,7 @@ fn site_offsets(expression: glance.Expression) -> List(Int) {
       }
     glance.BinaryOperator(name: glance.Eq, location:, left:, right:)
     | glance.BinaryOperator(name: glance.NotEq, location:, left:, right:) ->
-      case compares_with_a_number(left, right) {
+      case compares_with_a_number(left:, right:, modules:) {
         True -> [location.start]
         False -> []
       }
@@ -379,14 +489,71 @@ fn site_offsets(expression: glance.Expression) -> List(Int) {
   }
 }
 
-fn is_type_field(expression: glance.Expression) -> Bool {
+/// The column name when the expression is a row field that holds a table's
+/// type: the client column named `type`, or one ending in `_type`, `_type_id`
+/// or `_type_enum`. A name from an imported module is a constant, not a field,
+/// except `type_`, which is never a constant's name; and `option_type` and
+/// `unit_type` are fields of the client option message and of a spawned object,
+/// which no table holds.
+fn type_column(
+  expression: glance.Expression,
+  modules: List(String),
+) -> Option(String) {
   case expression {
-    glance.FieldAccess(label: "type_", ..) -> True
+    glance.FieldAccess(container:, label:, ..) ->
+      case
+        is_type_column(label)
+        && !is_a_modules_constant(container:, label:, modules:)
+      {
+        True -> Some(label)
+        False -> None
+      }
+    glance.Int(..)
+    | glance.Float(..)
+    | glance.String(..)
+    | glance.Variable(..)
+    | glance.NegateInt(..)
+    | glance.NegateBool(..)
+    | glance.Block(..)
+    | glance.Panic(..)
+    | glance.Todo(..)
+    | glance.Tuple(..)
+    | glance.List(..)
+    | glance.Fn(..)
+    | glance.RecordUpdate(..)
+    | glance.Call(..)
+    | glance.TupleIndex(..)
+    | glance.FnCapture(..)
+    | glance.BitString(..)
+    | glance.Case(..)
+    | glance.BinaryOperator(..)
+    | glance.Echo(..) -> None
+  }
+}
+
+fn is_type_column(label: String) -> Bool {
+  case label {
+    "option_type" | "unit_type" -> False
+    "type_" -> True
+    _ ->
+      string.ends_with(label, "_type")
+      || string.ends_with(label, "_type_id")
+      || string.ends_with(label, "_type_enum")
+  }
+}
+
+fn is_a_modules_constant(
+  container container: glance.Expression,
+  label label: String,
+  modules modules: List(String),
+) -> Bool {
+  case container {
+    glance.Variable(name:, ..) ->
+      label != "type_" && list.contains(modules, name)
     glance.FieldAccess(..)
     | glance.Int(..)
     | glance.Float(..)
     | glance.String(..)
-    | glance.Variable(..)
     | glance.NegateInt(..)
     | glance.NegateBool(..)
     | glance.Block(..)
@@ -407,16 +574,17 @@ fn is_type_field(expression: glance.Expression) -> Bool {
 }
 
 /// A type field against an integer other than 0, or against a name that is not
-/// a constructor: the raw number is the one branched on. Two type fields, or a
-/// constructor, are not.
+/// a constructor: the raw number is the one branched on. A constructor is not,
+/// and two type fields compare two rows and decide no kind.
 fn compares_with_a_number(
-  left: glance.Expression,
-  right: glance.Expression,
+  left left: glance.Expression,
+  right right: glance.Expression,
+  modules modules: List(String),
 ) -> Bool {
-  case is_type_field(left), is_type_field(right) {
-    True, False -> is_a_number(right)
-    False, True -> is_a_number(left)
-    True, True | False, False -> False
+  case type_column(left, modules), type_column(right, modules) {
+    Some(_), None -> is_a_number(right)
+    None, Some(_) -> is_a_number(left)
+    Some(_), Some(_) | None, None -> False
   }
 }
 
