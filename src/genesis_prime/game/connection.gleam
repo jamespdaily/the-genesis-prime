@@ -174,6 +174,7 @@ import genesis_prime/game/connection/viewers as connection_viewers
 import genesis_prime/game/connection/visibility_check
 import genesis_prime/game/connection/world as connection_world
 import genesis_prime/game/departures
+import genesis_prime/game/movement
 import genesis_prime/game/player_life
 import genesis_prime/game/routing
 import genesis_prime/game/strike
@@ -652,6 +653,23 @@ fn unhandled(
   )
 }
 
+/// What the player's movement message gave, with the procs the movement raised fired
+/// (`connection_casting.moved`, from the movement before the message) when the
+/// connection goes on; a message that asks or ends the connection fires none.
+fn procs_after_movement(
+  now now: Now,
+  from from: movement.State,
+  handled handled: client_connection.Handled(Session),
+) -> client_connection.Handled(Session) {
+  case handled {
+    Continue(session, written) -> {
+      let #(session, fired) = connection_casting.moved(session:, now:, from:)
+      Continue(session, list.append(written, fired))
+    }
+    client_connection.Asking(..) | client_connection.Done(..) -> handled
+  }
+}
+
 /// The client's 0x038C: a 5-bit kind and one whole inner frame
 /// (opcode.0x38c), which is every message the client sends in the world. The
 /// routing table says which feature takes the inner message with the player in
@@ -692,13 +710,17 @@ fn world_carried(
                 )
               {
                 Ok(routing.Movement(message:)) ->
-                  connection_movement.movement_message(
-                    session:,
+                  procs_after_movement(
                     now:,
-                    holder:,
-                    entered:,
-                    inner: whole,
-                    message:,
+                    from: entered.movement,
+                    handled: connection_movement.movement_message(
+                      session:,
+                      now:,
+                      holder:,
+                      entered:,
+                      inner: whole,
+                      message:,
+                    ),
                   )
                 Ok(routing.Camp(message:)) ->
                   connection_world.camp_message(
@@ -1314,8 +1336,12 @@ fn other_timer_fired(
   {
     True, _, _, _, _ -> connection_casting.cast_due(session:, now:, timer:)
     False, True, _, _, _ -> connection_casting.strike_due(session:, now:)
-    False, False, True, _, _ ->
-      connection_resource.resource_due(session:, timer:)
+    False, False, True, _, _ -> {
+      let #(session, written) =
+        connection_resource.resource_due(session:, timer:)
+      let #(session, fired) = connection_casting.raised(session:, now:)
+      Continue(session, list.append(written, fired))
+    }
     False, False, False, True, _ ->
       connection_life.regeneration_due(session:, now:, timer:)
     False, False, False, False, True ->

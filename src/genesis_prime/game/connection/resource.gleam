@@ -13,10 +13,13 @@
 //// the stay left (camp, Holocrypt)                 ─▶ class_resource.left
 //// Changed(slot, value) ─▶ 0x935 to the player's own client only (the server's
 //// choice: a viewer's client shows no other unit's class resource)
+//// a step that moved the class's slot             ─▶ cast.raised (ResourceMoved), left
+////                                                    pending for the caller's proc pass
 //// StartTimer, CancelTimer ─▶ the connection's own timers, as the cast rule's are
 //// ```
 
-import genesis_prime/client_connection.{type Request, Continue}
+import genesis_prime/client_connection.{type Request}
+import genesis_prime/game/cast
 import genesis_prime/game/class_resource
 import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/state.{type Session} as connection_state
@@ -41,9 +44,20 @@ fn stepped(
     None -> #(session, [])
     Some(#(_, entered)) -> {
       let #(resources, effects) = change(entered.resources)
+      let slot = class_resource.slot(resources: entered.resources)
+      let moved =
+        cast.ResourceMoved(
+          slot:,
+          from: class_resource.value(resources: entered.resources, slot:),
+          to: class_resource.value(resources:, slot:),
+        )
       let session =
         connection_state.with_entered(session:, change: fn(entered) {
-          world_entry.Entered(..entered, resources:)
+          world_entry.Entered(
+            ..entered,
+            resources:,
+            cast: cast.raised(cast: entered.cast, facts: [moved]),
+          )
         })
       #(session, carried(session:, entered:, effects:))
     }
@@ -96,10 +110,8 @@ pub fn gained(
 pub fn resource_due(
   session session: Session,
   timer timer: TimerId,
-) -> client_connection.Handled(Session) {
-  let #(session, effects) =
-    stepped(session:, change: class_resource.timer_fired(resources: _, timer:))
-  Continue(session, effects)
+) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  stepped(session:, change: class_resource.timer_fired(resources: _, timer:))
 }
 
 /// What the effects of a step of the player's life did to the resource, in the

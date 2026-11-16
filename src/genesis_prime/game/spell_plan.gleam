@@ -148,7 +148,11 @@
 ////   `ProcRow`: 217 entering stealth, 218 leaving it, 44 leaving combat and 0 dying
 ////   (`Spell4Effects.effectType.14.dataBits00.217_218`, `.0_44`), and the strikes and heals
 ////   it lands, 12 a hit, 13 a melee hit, 145 a critical, 1 a kill, 20 a heal and 147 a
-////   critical heal (`Spell4Effects.effectType.14.dataBits00`, `.13_school`). It holds the
+////   critical heal (`Spell4Effects.effectType.14.dataBits00`, `.13_school`), and nine kinds
+////   read by the texts the client holds (`.fairly_sure`): 10 using an ability, 103 spending
+////   the class resource, 21 receiving a heal, 52 a foe's deflect, 49 a critical by a finisher
+////   or a builder, 11 starting to move, 87 the class resource changing (the holder's gate
+////   says to what), 105 the Stalker's suit power dropping and 182 landing a taunt. It holds the
 ////   spell it casts (dataBits01), planned as a Proxy's child is and on the same chain, so a
 ////   proc that leads back to a spell on the way fails as a cycle, its chance (dataBits02,
 ////   a float32: above 0 and at most 1.0), its limit, dataBits05 fires in dataBits04 ms or
@@ -158,7 +162,8 @@
 ////   The delay, durationTime and flags bit 2 give the holder's node its life
 ////   (`.lifetime`), and its caster apply prerequisite is a Fluff effect's. A Proc row of
 ////   another kind is in no list and the load goes on (`proc_read`, `ProcKindNotRead`), as
-////   does a row held by another unit, behind a persistence or target apply prerequisite,
+////   does a row of a kind the texts name that waits on an open issue (`ProcKindWaits`, which
+////   names the issue), and a row held by another unit, behind a persistence or target apply prerequisite,
 ////   with a group and no filter kind, with an aim of 32 or above, or with no life
 ////   (`ProcIsLeftOut`); a row of these kinds with a chance outside 0 to 1.0, a window or
 ////   count at or below 0 (a window of -1 excepted), a filter kind other than 0, 1 and 2 or a
@@ -852,6 +857,41 @@ pub type Trigger {
   /// 147: a heal of the holder's lands as a critical. No heal is rolled a critical yet,
   /// so a row of this kind is held and never fires; the gap is issue 830.
   LandsCriticalHeal
+  /// 10: the holder uses an ability: a press the rule accepts, or a stage of one. A
+  /// guess: no client code reads a Proc row, and the texts say 'Using an ability',
+  /// 'When casting a Support ability' and 'Activating'
+  /// (`Spell4Effects.effectType.14.dataBits00.fairly_sure`).
+  UsesAbility
+  /// 103: the holder spends a class resource: a payment the rule takes. A guess for the
+  /// reading (`.fairly_sure`: 'Volatility, Focus or an Actuator') and for a payment of any
+  /// slot counting; the row's gate names the vital.
+  SpendsResource
+  /// 21: the holder receives a heal. A guess (`.fairly_sure`, text 569376 'On Taking a
+  /// Heal'): only a heal the holder lands on itself counts, until another unit can heal
+  /// it (issue 570).
+  ReceivesHeal
+  /// 52: a foe deflects a strike of the holder's. A guess (`.fairly_sure`, texts 364190
+  /// and 498616).
+  FoeDeflects
+  /// 49: a strike of the holder's lands a critical hit, which the row's group filter
+  /// narrows to the Finishers or the Builders. A guess (`.fairly_sure`): it is the event
+  /// of kind 145, and the texts say 'Landing a Critical Hit with a Finisher'.
+  LandsFinisherCritical
+  /// 11: the holder starts to move: its movement goes from standing to moving. A guess
+  /// for what counts as moving (`.fairly_sure`, texts 'Whenever the target or an enemy
+  /// near the target moves').
+  StartsMoving
+  /// 87: the holder's class resource changes, in either direction; the row's gate says
+  /// whether the value is past the row's number. A guess (`.fairly_sure`: 'While above #
+  /// Kinetic Energy', 'between # and # Volatility').
+  ResourceCrosses
+  /// 105: the holder's suit power (the Stalker's slot 3, Vital 8) falls. A guess
+  /// (`.fairly_sure`, text 530326): only a fall counts, and the row's gate says whether
+  /// it is below the row's number.
+  SuitPowerDrops
+  /// 182: a strike of the holder's lands a Taunt state on a foe. A guess (`.fairly_sure`,
+  /// text 'Landing a Taunt'): what a taunt does to the foe is not part of the event.
+  LandsTaunt
 }
 
 /// How often a Proc fires (dataBits04 and dataBits05,
@@ -1340,6 +1380,9 @@ pub type LeftOutReason {
   AimedAtOtherUnits
   /// A Proc of a kind the holder's own events do not make (`proc_read`).
   ProcOfAnotherKind(kind: Int)
+  /// A Proc of a kind the server knows a reading for and cannot raise yet: it waits on
+  /// the open issue (`proc_read`).
+  ProcKindWaits(kind: Int, issue: Int)
   /// A Proc whose targetFlags are not the caster's alone: it lands on the spell's target
   /// or a struck unit, so a unit other than the caster holds it, which no rule of the
   /// server holds yet (issue 829).
@@ -3623,7 +3666,8 @@ fn procs_of(
 
 /// What a Proc row says without a table: its reading, or why the row is left out. A row
 /// of a kind the server does not read is `ProcKindNotRead`, which the load skips, as is
-/// any row `ProcIsLeftOut` names, in this order: targetFlags other than the caster's
+/// a row of a kind the texts name that waits on an open issue (`ProcKindWaits`, checked
+/// first) and any row `ProcIsLeftOut` names, in this order: targetFlags other than the caster's
 /// alone, a persistence prerequisite, a target apply prerequisite, a group (dataBits08)
 /// with no filter kind, a dataBits03 of 32 or above, and a row with no durationTime and
 /// no flags bit 2, which gives its holder's node no life. Any other value outside the
@@ -3633,6 +3677,35 @@ fn procs_of(
 /// (`Spell4Effects.effectType.14.dataBits03`, `.limits`, `.prerequisites`, `.dataBits07`,
 /// `.lifetime`).
 pub fn proc_read(
+  spell4_id spell4_id: Int,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(ProcRead, PlanError) {
+  case proc_waits_on(kind: effect.data_bits00) {
+    Ok(issue) ->
+      Ok(ProcIsLeftOut(why: ProcKindWaits(kind: effect.data_bits00, issue:)))
+    Error(Nil) -> proc_read_of_a_kind_to_read(spell4_id:, effect:)
+  }
+}
+
+/// The open issue that raises the event of a fairly-sure kind the server does not raise
+/// yet (`Spell4Effects.effectType.14.dataBits00.fairly_sure`): the row is left out naming
+/// it, so the issue has its rows to read.
+fn proc_waits_on(kind kind: Int) -> Result(Int, Nil) {
+  case kind {
+    57 | 40 | 117 | 154 -> Ok(869)
+    23 | 50 | 114 | 131 | 234 | 249 -> Ok(870)
+    124 | 102 | 112 -> Ok(871)
+    152 -> Ok(872)
+    155 | 197 | 159 | 41 | 153 | 236 -> Ok(801)
+    46 -> Ok(803)
+    2 -> Ok(56)
+    148 -> Ok(830)
+    251 | 253 -> Ok(336)
+    _ -> Error(Nil)
+  }
+}
+
+fn proc_read_of_a_kind_to_read(
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(ProcRead, PlanError) {
@@ -3647,6 +3720,15 @@ pub fn proc_read(
     1 -> Ok(Kills)
     20 -> Ok(LandsHeal)
     147 -> Ok(LandsCriticalHeal)
+    10 -> Ok(UsesAbility)
+    103 -> Ok(SpendsResource)
+    21 -> Ok(ReceivesHeal)
+    52 -> Ok(FoeDeflects)
+    49 -> Ok(LandsFinisherCritical)
+    11 -> Ok(StartsMoving)
+    87 -> Ok(ResourceCrosses)
+    105 -> Ok(SuitPowerDrops)
+    182 -> Ok(LandsTaunt)
     kind -> Error(ProcKindNotRead(spell4_id:, effect_id: effect.id, kind:))
   })
   let unit_bits = effect.data_bits03

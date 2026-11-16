@@ -840,6 +840,42 @@ pub fn cast_effects(
   |> procs_fired(now:)
 }
 
+/// The held procs fire for the events raised outside a cast rule's step: a change of the
+/// class resource (genesis_prime/game/connection/resource) or the start of a move
+/// (`moved`), already pending in the player's cast state. With nothing pending it draws
+/// nothing.
+pub fn raised(
+  session session: Session,
+  now now: Now,
+) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  procs_fired(done: #(session, []), now:)
+}
+
+/// The held procs fire for a start of moving: the player's movement is not moving in `from`,
+/// the movement before a message of the client's, and is moving in the session now
+/// (`movement.started_moving`). Nothing is raised, and nothing drawn, when it is not.
+pub fn moved(
+  session session: Session,
+  now now: Now,
+  from from: movement.State,
+) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  case connection_state.entered_of(session.status) {
+    Some(entered) ->
+      case movement.started_moving(from:, to: entered.movement) {
+        True ->
+          raised(
+            session: with_cast(
+              session:,
+              cast: cast.raised(cast: entered.cast, facts: [cast.StartedMoving]),
+            ),
+            now:,
+          )
+        False -> #(session, [])
+      }
+    None -> #(session, [])
+  }
+}
+
 /// The effects carried out in order, with no proc fired: a strike's own results are carried
 /// out inside the effect that asked for them, and the pending events wait for the input's
 /// effects to end (`cast_effects`).

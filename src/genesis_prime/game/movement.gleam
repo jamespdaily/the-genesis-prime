@@ -130,14 +130,15 @@ pub fn footing(unit_id unit_id: Int) -> Result(Footing, Nil) {
 
 /// Where the player stands and how it is held: the last place the client's
 /// commands put it, in the world's own frame, the frame the client's later
-/// commands are in, the epoch its login was told and the number of the last
-/// save it asked.
+/// commands are in, the epoch its login was told, the number of the last
+/// save it asked and whether its last state flags said it was moving.
 pub opaque type State {
   State(
     place: Place,
     footing: Footing,
     session_epoch: SessionEpoch,
     save_sequence: Int,
+    moving: Bool,
   )
 }
 
@@ -196,7 +197,13 @@ pub fn entered(
   place place: Place,
   session_epoch session_epoch: SessionEpoch,
 ) -> State {
-  State(place:, footing: OnTheWorld, session_epoch:, save_sequence: 0)
+  State(
+    place:,
+    footing: OnTheWorld,
+    session_epoch:,
+    save_sequence: 0,
+    moving: False,
+  )
 }
 
 /// The movement of a player placed at `place` by the server, in the world's own
@@ -204,6 +211,13 @@ pub fn entered(
 /// the next save is numbered after every earlier one (the Holocrypt).
 pub fn placed(state state: State, place place: Place) -> State {
   State(..state, place:, footing: OnTheWorld)
+}
+
+/// Whether the player went from not moving to moving between two states: the client's state
+/// flags say it is moving while bit 0x2 is set, a move asked for with the velocity not near
+/// zero (`movement_command.kind_24`).
+pub fn started_moving(from from: State, to to: State) -> Bool {
+  !from.moving && to.moving
 }
 
 /// The movement with its place in the zone the client reported; the footing
@@ -546,7 +560,8 @@ fn apply(state: State, command: Command) -> Result(State, Refusal) {
       }
     }
     StateFlags(flags:) if flags > 0x3ffff -> Error(UnknownStateFlags(flags:))
-    StateFlags(..) -> Ok(state)
+    StateFlags(flags:) ->
+      Ok(State(..state, moving: int.bitwise_and(flags, 0x2) != 0))
     Mode(mode: 0) | Mode(mode: 1) | Mode(mode: 3) -> Ok(state)
     Mode(mode:) -> Error(UnknownMode(mode:))
     Other(..) -> Ok(state)

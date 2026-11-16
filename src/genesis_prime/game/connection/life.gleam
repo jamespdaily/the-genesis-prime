@@ -334,7 +334,8 @@ pub fn carried(
     })
   let #(session, resource_written) =
     connection_resource.life_effects(session:, effects:)
-  #(session, list.append(written, resource_written), to_the_holocrypt)
+  let #(session, fired) = connection_casting.raised(session:, now:)
+  #(session, list.flatten([written, resource_written, fired]), to_the_holocrypt)
 }
 
 /// A step of the cast rule that the player's life asked for: the rule's new state kept

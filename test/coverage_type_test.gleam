@@ -456,7 +456,7 @@ pub fn the_effect_types_3_10_11_14_17_18_29_52_64_73_76_80_81_83_84_112_118_and_
       ),
       Missing(
         type_number: 14,
-        reason: "kinds other than entering and leaving stealth, leaving combat, dying, and the hits, criticals, kills and heals the holder lands, and rows held by another unit, behind a persistence or target apply prerequisite, with a group and no filter kind, with an aim of 32 or above, with no life or naming a Spell4 the tables lack, which the plan leaves out or refuses",
+        reason: "kinds other than entering and leaving stealth, leaving combat, dying, the hits, criticals, kills and heals the holder lands, and using an ability, spending or changing the class resource, receiving a heal, a deflect, a finisher critical, a taunt landed and starting to move (the other kinds the texts name wait on their own issues), and rows held by another unit, behind a persistence or target apply prerequisite, with a group and no filter kind, with an aim of 32 or above, with no life or naming a Spell4 the tables lack, which the plan leaves out or refuses",
         fact_key: "Spell4Effects.effectType.14",
       ),
       Missing(
@@ -2236,7 +2236,7 @@ fn measured_proc_rows(
 }
 
 const proc_gap =
-  "kinds other than entering and leaving stealth, leaving combat, dying, and the hits, criticals, kills and heals the holder lands, and rows held by another unit, behind a persistence or target apply prerequisite, with a group and no filter kind, with an aim of 32 or above, with no life or naming a Spell4 the tables lack, which the plan leaves out or refuses"
+  "kinds other than entering and leaving stealth, leaving combat, dying, the hits, criticals, kills and heals the holder lands, and using an ability, spending or changing the class resource, receiving a heal, a deflect, a finisher critical, a taunt landed and starting to move (the other kinds the texts name wait on their own issues), and rows held by another unit, behind a persistence or target apply prerequisite, with a group and no filter kind, with an aim of 32 or above, with no life or naming a Spell4 the tables lack, which the plan leaves out or refuses"
 
 pub fn a_proc_row_the_plan_skips_or_refuses_is_counted_as_not_read_test() -> Nil {
   use <- owned_test.run(10_000)
@@ -2265,7 +2265,7 @@ pub fn a_proc_row_the_plan_skips_or_refuses_is_counted_as_not_read_test() -> Nil
     as "Spell4Effects.effectType.14: the first, third, fourth and fifth rows are read (kinds 217, 12, 0 with chance 0.5 and 44 with a window of -1); the second aims at the caster and the target and the last only at another unit, which the plan leaves out"
 }
 
-pub fn the_clients_3498_proc_rows_count_1132_read_and_the_stalkers_5_of_its_7_reached_test() -> Nil {
+pub fn coverage_proc_rows_read_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.tags(["dev_tool", "coverage"])
   use <- unitest.guard(client_tables.present())
@@ -2280,9 +2280,9 @@ pub fn the_clients_3498_proc_rows_count_1132_read_and_the_stalkers_5_of_its_7_re
     == HandledWithGap(
       reason: proc_gap,
       fact_key: "Spell4Effects.effectType.14",
-      unread_rows: 2366,
+      unread_rows: 1993,
     )
-    as "1,132 rows are read (scratch count of `read_row` over the 3,498): of the other 2,366, 2,185 are of a kind not read, 145 are held by another unit (targetFlags 2, 4 or 5), 13 sit behind a persistence prerequisite, 17 hold a group with no filter kind, 1 holds an aim of 36, 3 have no durationTime and no flags bit 2, and 2 name a one-spell filter whose Spell4 the tables lack (Procs 75724 and 198006, held by Spell4 36396 and 76365, which no level-1 ability or innate reaches)"
+    as "1,505 rows are read, 373 more than the 1,132 before issue 792 (scratch count of `read_row` over the 3,498): of the other 1,993, 1,733 are of a kind not read (478 of them a kind that waits on an open issue), 209 are held by another unit (targetFlags 2, 4 or 5), 14 sit behind a persistence prerequisite, 26 hold a group with no filter kind, 1 holds an aim of 36, 7 have no durationTime and no flags bit 2, and 3 name a one-spell filter whose Spell4 the tables lack (Procs 75724, 100105 and 198006, held by Spell4 36396, 43658 and 76365, which no level-1 ability or innate reaches)"
   assert line.starting_abilities == 7
     as "the 7 Proc rows a level-1 character reaches (Spell4Effects.effectType.14.level_one)"
   let assert Ok(left) = starting_ability.left_out(tables:)
