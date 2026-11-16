@@ -146,7 +146,7 @@ pub fn target_group_membership_follows_the_clients_cases_test() -> Nil {
 
   assert [90_021, 90_022, 90_023, 90_024, 90_025, 90_026, 90_027]
     |> list.all(fn(group) { !member(group) })
-    as "types 5 to 9 are never members, a gap of the server (it holds no race, class or 0x262 set value; 58 type 9 groups are reached by a server rule, open issue #897 until the coordinator files the one that closes it); any type the client has no case for is never a member"
+    as "types 5 to 9 are never members, a gap of the server (it holds no race, class or 0x262 set value; server rules reach type 9 groups, open issue #901); any type the client has no case for is never a member"
   assert !member(99_998) as "a group with no row is not a member"
 
   assert target_group.contains(

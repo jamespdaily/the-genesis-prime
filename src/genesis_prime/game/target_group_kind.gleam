@@ -75,3 +75,42 @@ pub fn kind_of(type_number type_number: Int) -> Kind {
 pub fn of_row(row: TargetGroup) -> Kind {
   kind_of(type_number: row.type_)
 }
+
+/// Whether the group lists Creature2 ids in its data words: type 1.
+pub fn names_creatures(kind: Kind) -> Bool {
+  case kind {
+    ByCreature -> True
+    NotCreature
+    | ByFaction
+    | NotFaction
+    | ByRace
+    | NotRace
+    | ByClass
+    | NotClass
+    | BySet
+    | AllOf
+    | AnyOf
+    | ByUnitRace
+    | NotUnitRace
+    | Unread(_) -> False
+  }
+}
+
+/// Whether the group's data words name other groups: types 10 and 11.
+pub fn names_sub_groups(kind: Kind) -> Bool {
+  case kind {
+    AllOf | AnyOf -> True
+    ByCreature
+    | NotCreature
+    | ByFaction
+    | NotFaction
+    | ByRace
+    | NotRace
+    | ByClass
+    | NotClass
+    | BySet
+    | ByUnitRace
+    | NotUnitRace
+    | Unread(_) -> False
+  }
+}

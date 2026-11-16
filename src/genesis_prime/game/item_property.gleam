@@ -76,7 +76,7 @@
 ////   entry (a property crafting picks) gives nothing: the open issue #53
 ////   closes that, and no client row mixes it with a kind-2 entry.
 
-import genesis_prime/game/item_stat_kind.{type Kind}
+import genesis_prime/game/item_stat_kind
 import genesis_prime/game/random_stat_word
 import genesis_prime/message/float32
 import genesis_prime/table/game_formula
@@ -1034,7 +1034,7 @@ fn budget(
 fn entries(
   stat stat: item_stat.ItemStat,
   shares shares: List(Float),
-) -> List(#(Kind, Float)) {
+) -> List(#(item_stat_kind.Kind, Float)) {
   list.zip(item_stat_kind.of_stat(stat), shares)
 }
 
@@ -1060,7 +1060,7 @@ fn give_entry(
   builder builder: Builder,
   scale scale: Float,
   given given: Given,
-  entry entry: #(Kind, Float),
+  entry entry: #(item_stat_kind.Kind, Float),
   choice choice: Choice,
 ) -> Result(Given, ItemPropertyError) {
   let #(kind, share) = entry
@@ -1110,8 +1110,8 @@ fn give_picked(
   picked picked: item_random_stat.ItemRandomStat,
 ) -> Result(Given, ItemPropertyError) {
   let kind = item_stat_kind.of_random_row(picked)
-  case kind {
-    item_stat_kind.Property(unit_property2_id:) ->
+  case item_stat_kind.property_of(kind) {
+    Ok(unit_property2_id) ->
       give_property(
         tables:,
         builder:,
@@ -1120,10 +1120,7 @@ fn give_picked(
         property_id: unit_property2_id.value,
         share:,
       )
-    item_stat_kind.NoStat
-    | item_stat_kind.RandomGroup(_)
-    | item_stat_kind.CraftingSocket
-    | item_stat_kind.Unread(_) ->
+    Error(Nil) ->
       Error(Unread(
         item2_id: builder.item.id,
         gap: StatKind(kind: item_stat_kind.number_of(kind)),
@@ -1158,7 +1155,7 @@ pub fn random_group(
 pub fn stat_entries_of(
   tables tables: table_store.Tables,
   item2_id item2_id: Int,
-) -> Result(List(Kind), ItemPropertyError) {
+) -> Result(List(item_stat_kind.Kind), ItemPropertyError) {
   use item <- result.try(
     item2.get(tables:, id: Item2Id(item2_id))
     |> result.replace_error(NoRow(table: "Item2", id: item2_id)),

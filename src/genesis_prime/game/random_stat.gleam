@@ -157,8 +157,8 @@ fn choices(
     entries,
     Fold(chosen: [], left: fractions, taken: dict.new(), used: 0),
     fn(fold, entry) {
-      case entry {
-        item_stat_kind.RandomGroup(item_random_stat_group_id: group_id) -> {
+      case item_stat_kind.random_group_of(entry) {
+        Ok(group_id) -> {
           let #(fraction, left) = case fold.left {
             [first, ..rest] -> #(first, rest)
             [] -> #(0.0, [])
@@ -177,11 +177,7 @@ fn choices(
             used: fold.used + 1,
           )
         }
-        item_stat_kind.NoStat
-        | item_stat_kind.Property(_)
-        | item_stat_kind.CraftingSocket
-        | item_stat_kind.Unread(_) ->
-          Ok(Fold(..fold, chosen: [0, ..fold.chosen]))
+        Error(Nil) -> Ok(Fold(..fold, chosen: [0, ..fold.chosen]))
       }
     },
   )
@@ -247,8 +243,8 @@ fn accepted(
   item2_id item2_id: Int,
   row row: ItemRandomStat,
 ) -> Bool {
-  case item_stat_kind.of_random_row(row) {
-    item_stat_kind.Property(unit_property2_id:) -> {
+  case item_stat_kind.property_of(item_stat_kind.of_random_row(row)) {
+    Ok(unit_property2_id) -> {
       let assert Ok(takes) =
         item_property.takes_property(
           tables:,
@@ -258,9 +254,6 @@ fn accepted(
         as "the builder accepts or refuses the property"
       takes
     }
-    item_stat_kind.NoStat
-    | item_stat_kind.RandomGroup(_)
-    | item_stat_kind.CraftingSocket
-    | item_stat_kind.Unread(_) -> False
+    Error(Nil) -> False
   }
 }

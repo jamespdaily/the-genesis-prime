@@ -247,13 +247,7 @@ pub fn every_client_random_stat_row_rolls_to_a_word_the_client_accepts_or_none_w
       item_property.stat_entries_of(tables:, item2_id: item.id)
       |> result.map(fn(entries) {
         list.any(entries, fn(entry) {
-          case entry {
-            item_stat_kind.RandomGroup(_) -> True
-            item_stat_kind.NoStat
-            | item_stat_kind.Property(_)
-            | item_stat_kind.CraftingSocket
-            | item_stat_kind.Unread(_) -> False
-          }
+          result.is_ok(item_stat_kind.random_group_of(entry))
         })
       })
       |> result.unwrap(or: False)

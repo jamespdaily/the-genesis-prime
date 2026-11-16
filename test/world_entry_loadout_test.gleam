@@ -56,6 +56,7 @@ import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/result
 import gleam/string
 import owned_test
 import unitest
@@ -779,12 +780,8 @@ pub fn no_novice_loadout_item_has_a_random_stat_entry_test() -> Nil {
         item_property.stat_entries_of(tables:, item2_id: item.value)
         as "the Novice item has its Item2 and ItemStat rows"
       assert list.all(entries, fn(entry) {
-        case entry {
-          item_stat_kind.RandomGroup(_) | item_stat_kind.CraftingSocket -> False
-          item_stat_kind.NoStat
-          | item_stat_kind.Property(_)
-          | item_stat_kind.Unread(_) -> True
-        }
+        !item_stat_kind.is_crafting_socket(entry)
+        && result.is_error(item_stat_kind.random_group_of(entry))
       })
         as "the Novice item holds no random entry"
       assert random_stat.roll_bytes(tables:, item2_id: item.value) == 0

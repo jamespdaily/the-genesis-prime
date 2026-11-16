@@ -52,6 +52,45 @@ pub fn target_group_kind_gives_unread_the_number_of_any_other_type_test() -> Nil
   })
 }
 
+pub fn only_type_1_names_creatures_test() -> Nil {
+  use <- owned_test.run(10_000)
+  list.each(variants(), fn(entry) {
+    let #(type_number, kind) = entry
+    assert target_group_kind.names_creatures(kind) == { type_number == 1 }
+      as "0x1403b4a20: only type 1 tests the unit's Creature2 id against a data word list of creatures"
+  })
+}
+
+pub fn only_types_10_and_11_name_sub_groups_test() -> Nil {
+  use <- owned_test.run(10_000)
+  list.each(variants(), fn(entry) {
+    let #(type_number, kind) = entry
+    assert target_group_kind.names_sub_groups(kind)
+      == { type_number == 10 || type_number == 11 }
+      as "0x1403b4a20: only types 10 and 11 hold when sub-groups its words name pass"
+  })
+}
+
+/// Every kind with the client's type number it decodes from, an unread type included.
+fn variants() -> List(#(Int, target_group_kind.Kind)) {
+  [
+    #(1, ByCreature),
+    #(2, NotCreature),
+    #(3, ByFaction),
+    #(4, NotFaction),
+    #(5, ByRace),
+    #(6, NotRace),
+    #(7, ByClass),
+    #(8, NotClass),
+    #(9, BySet),
+    #(10, AllOf),
+    #(11, AnyOf),
+    #(12, ByUnitRace),
+    #(13, NotUnitRace),
+    #(14, Unread(14)),
+  ]
+}
+
 pub fn target_group_kind_reads_every_row_of_the_real_table_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())

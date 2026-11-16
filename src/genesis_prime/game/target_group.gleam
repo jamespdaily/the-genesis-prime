@@ -30,7 +30,7 @@ pub type Unit {
 /// any. A missing row, or a type the client has no case for, is not a member. Types 5 to
 /// 9 read the unit's race, class and the third tagged value of its 0x262, which the
 /// server does not hold, so they are never members here: a gap of the server, though
-/// server rules do reach 58 type 9 groups (open issue #897).
+/// server rules reach type 9 groups (open issue #901).
 pub fn contains(
   tables tables: table_store.Tables,
   group group: Int,
@@ -61,27 +61,12 @@ fn listed(
   case target_group.get(tables:, id: TargetGroupId(group)) {
     Error(Nil) -> []
     Ok(row) -> {
-      let words = words_of(row:)
-      case target_group_kind.of_row(row) {
-        target_group_kind.ByCreature ->
-          list.map(creatures_of(tables:, group:), fn(creature) {
-            creature.value
-          })
-        target_group_kind.AllOf | target_group_kind.AnyOf ->
-          list.flat_map(others(words:, row:), fn(sub) {
+      case target_group_kind.names_sub_groups(target_group_kind.of_row(row)) {
+        True ->
+          list.flat_map(others(words: words_of(row:), row:), fn(sub) {
             listed(tables:, group: sub, path: [group, ..path])
           })
-        target_group_kind.NotCreature
-        | target_group_kind.ByFaction
-        | target_group_kind.NotFaction
-        | target_group_kind.ByRace
-        | target_group_kind.NotRace
-        | target_group_kind.ByClass
-        | target_group_kind.NotClass
-        | target_group_kind.BySet
-        | target_group_kind.ByUnitRace
-        | target_group_kind.NotUnitRace
-        | target_group_kind.Unread(_) -> []
+        False -> list.map(creatures_in(row:), fn(creature) { creature.value })
       }
     }
   }
@@ -148,27 +133,20 @@ pub fn creatures_of(
   group group: Int,
 ) -> List(Creature2Id) {
   case target_group.get(tables:, id: TargetGroupId(group)) {
-    Ok(row) ->
-      case target_group_kind.of_row(row) {
-        target_group_kind.ByCreature ->
-          words_of(row:)
-          |> list.filter(fn(word) { word != 0 })
-          |> list.map(Creature2Id)
-        target_group_kind.NotCreature
-        | target_group_kind.ByFaction
-        | target_group_kind.NotFaction
-        | target_group_kind.ByRace
-        | target_group_kind.NotRace
-        | target_group_kind.ByClass
-        | target_group_kind.NotClass
-        | target_group_kind.BySet
-        | target_group_kind.AllOf
-        | target_group_kind.AnyOf
-        | target_group_kind.ByUnitRace
-        | target_group_kind.NotUnitRace
-        | target_group_kind.Unread(_) -> []
-      }
+    Ok(row) -> creatures_in(row:)
     Error(Nil) -> []
+  }
+}
+
+/// The Creature2 ids a row names: its non-zero words when it is of type 1, none for
+/// any other type.
+fn creatures_in(row row: TargetGroup) -> List(Creature2Id) {
+  case target_group_kind.names_creatures(target_group_kind.of_row(row)) {
+    True ->
+      words_of(row:)
+      |> list.filter(fn(word) { word != 0 })
+      |> list.map(Creature2Id)
+    False -> []
   }
 }
 
