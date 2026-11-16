@@ -1,0 +1,7 @@
+test/fixture/world_data_nature/spawn.tsv holds the header and rows 10449, 10451, 10453, 10454, 10603,
+10604, 10605 and 10606 of spawn.tsv of the wildstar-knowledge world-data
+(https://github.com/jamespdaily/wildstar-knowledge, path world-data/spawn.tsv), copied as
+they are, under that repository's licence, the GNU Affero General Public License, version 3
+(the same as this project's). The tests import it as the world database's own rows: four
+Bramble Traps (Creature2 27768, the creature that quest 6296's objective 9659 counts four
+uses of), each with the Trapped Mordesh (Creature2 28112) that stands at the trap's x and z.

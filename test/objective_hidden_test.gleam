@@ -297,16 +297,19 @@ pub fn the_completed_hidden_objective_and_the_achieved_state_survive_a_relog_tes
   assert quest_log.stored_state(log: relogged, quest_id: nature) == 2
 }
 
-/// Nature's Uprising with its objective 1 (9659) a second hidden scripted objective: type
-/// 5, flag 8, data 0, count 1. Objective 0 is then the only required objective that is not
-/// hidden.
+/// Nature's Uprising with its objective 0 (9658) a second hidden scripted objective: type
+/// 5, flag 8, data 0, count 1. Objective 0 is the one the edit can use: the fixture's
+/// Creature2 27768 links objective 1 (9659) by questAnimObjectiveIndex 1 and no fixture
+/// creature links objective 0, so it stays unlinked, which is what completes a hidden
+/// objective. Objective 1 (type 12, count 4) is then the only required objective that is
+/// not hidden.
 fn with_two_hidden(body body: fn(table_store.Tables) -> a) -> a {
   with_objectives(
     edits: [
-      #(9659, "type", 5),
-      #(9659, "flags", 8),
-      #(9659, "data", 0),
-      #(9659, "count", 1),
+      #(9658, "type", 5),
+      #(9658, "flags", 8),
+      #(9658, "data", 0),
+      #(9658, "count", 1),
     ],
     body:,
   )
@@ -323,8 +326,8 @@ pub fn two_hidden_objectives_of_one_quest_complete_together_test() -> Nil {
           state: 1,
           placeholder: 0,
           tracked: False,
-          done_mask: 1,
-          progress: [1000, 0, 0],
+          done_mask: 2,
+          progress: [0, 4, 0],
         ),
       ],
       tables:,
@@ -332,7 +335,7 @@ pub fn two_hidden_objectives_of_one_quest_complete_together_test() -> Nil {
   let done = settled(log:, tables:)
   assert done.effects
     == [
-      SendProgress(quest_id: nature, objective_index: 1, progress: 1),
+      SendProgress(quest_id: nature, objective_index: 0, progress: 1),
       SendProgress(quest_id: nature, objective_index: 2, progress: 1),
       SendState(quest_id: nature, state: 2),
     ]
@@ -345,8 +348,8 @@ pub fn two_hidden_objectives_of_one_quest_complete_together_test() -> Nil {
 
 pub fn a_done_hidden_objective_beside_a_waiting_one_is_not_counted_again_test() -> Nil {
   use <- owned_test.run(60_000)
-  // Objective 1 is a hidden script already done (done mask 3, progress 1); objective 2 is
-  // the one waiting.
+  // Objective 0 is a hidden script already done and objective 1 is done (done mask 3);
+  // objective 2 is the one waiting.
   use tables <- with_two_hidden
   let assert Ok(log) =
     quest_log.from_rows(
@@ -357,7 +360,7 @@ pub fn a_done_hidden_objective_beside_a_waiting_one_is_not_counted_again_test() 
           placeholder: 0,
           tracked: False,
           done_mask: 3,
-          progress: [1000, 1, 0],
+          progress: [1, 4, 0],
         ),
       ],
       tables:,

@@ -267,6 +267,36 @@ pub fn use_targets(
   }
 }
 
+/// Whether the event is a use that credits an open type 12 objective of the log that
+/// counts each unit once (`quest_log.counted_by_unit`, so none of the `reused`
+/// objectives): the use counts for it (`counts`) and its unit has not counted
+/// already (`counted_already`). Asked of the log before the event is counted, since
+/// the count can close the objective. A use that credits only a type 12 objective
+/// that counts the same unit again, a checklist or group objective, or nothing, is
+/// not one, and neither is an event that is not a use.
+pub fn credits_a_used_unit(
+  log log: QuestLog,
+  tables tables: table_store.Tables,
+  event event: Event,
+  reused reused: Set(Int),
+) -> Bool {
+  case event {
+    Used(..) ->
+      list.any(quest_log.active_ids(log:), fn(quest_id) {
+        let quest = quest_of(tables:, quest_id:)
+        quest_log.open_objectives(log:, quest:)
+        |> list.any(fn(open) {
+          let #(index, objective) = open
+          objective.type_ == quest_log.use_a_creature_type
+          && quest_log.counted_by_unit(objective, reused)
+          && counts(tables:, event:, quest_id: quest.id, index:, objective:)
+          && !counted_already(log:, quest:, index:, event:)
+        })
+      })
+    TalkedTo(..) | Killed(..) | Cast(..) -> False
+  }
+}
+
 fn counted_by(
   log log: QuestLog,
   tables tables: table_store.Tables,

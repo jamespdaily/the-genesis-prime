@@ -12,6 +12,9 @@
 ////   or that no one listed (migration 0014).
 //// - Migration 0016: interrupt_armor_refill_ms, 10000 ms, a server choice (no client value
 ////   says when armor returns, `opcode.0x938.interrupt_armor`), a whole number above 0.
+//// - Migration 0033: used_object_release_ms, 30000 ms, a server choice (no client or
+////   retail value says how long a used quest object stays gone), a whole
+////   number of milliseconds above 0, since the spawn starts a timer of that many.
 //// - The shared pattern of the content tables (`genesis_prime/content`): every
 ////   refusal is collected and named by its table, its row and its rule.
 //// - Sight is 1024 units (`genesis_prime/world_map/sight.range`, unit.range).
@@ -83,6 +86,7 @@ fn seeded() -> List(Row) {
     Row(name: "kill_experience_multiplier_same", value: 1.0, unit: "multiplier"),
     Row(name: "leash_range", value: 55.0, unit: "units"),
     Row(name: "starting_credits", value: 1000.0, unit: "units"),
+    Row(name: "used_object_release_ms", value: 30_000.0, unit: "ms"),
     Row(name: "weekly_quest_reset_ms", value: 122_400_000.0, unit: "ms"),
   ]
 }
@@ -121,6 +125,7 @@ pub fn the_seeded_rows_select_into_the_numbers_a_fight_reads_test() -> Nil {
       daily_quest_reset_ms: 36_000_000,
       weekly_quest_reset_ms: 122_400_000,
       starting_credits: 1000,
+      used_object_release_ms: 30_000,
     ))
 }
 
@@ -246,13 +251,31 @@ pub fn a_migrated_database_holds_the_seeded_numbers_test() -> Nil {
     content_game_number.rows(db: content_support.connect(database:))
     as "the query ran"
   assert rows == seeded()
-    as "migration 0010's four rows, migration 0015's two, migration 0016's refill time, migration 0021's two quest reset times and migration 0022's kill experience fraction and nine multipliers and migration 0024's starting credits, in name order"
+    as "migration 0010's four rows, migration 0015's two, migration 0016's refill time, migration 0021's two quest reset times and migration 0022's kill experience fraction and nine multipliers and migration 0024's starting credits and migration 0033's object release time, in name order"
   assert content_support.count(
       database:,
       sql: "select count(*) from game_number where source = 'server_choice' and reason is not null",
     )
-    == 20
+    == 21
     as "each is a server choice that states its reason"
+}
+
+pub fn the_release_time_is_a_server_choice_row_loaded_at_start_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let database = database_support.new_database(on: database_support.shared())
+  let assert Ok(rows) =
+    content_game_number.rows(db: content_support.connect(database:))
+    as "the query ran"
+  let assert Ok(numbers) = game_number.select(rows:, sight_range:)
+    as "the migrated rows select into the numbers the map starts with"
+  assert numbers.used_object_release_ms == 30_000
+    as "the row's 30 s is the release time the map is given"
+  assert content_support.count(
+      database:,
+      sql: "select count(*) from game_number where name = 'used_object_release_ms' and unit = 'ms' and source = 'server_choice' and reason is not null",
+    )
+    == 1
+    as "a server choice in milliseconds that states its reason"
 }
 
 pub fn the_database_refuses_each_bad_row_under_its_own_constraint_test() -> Nil {
@@ -373,6 +396,14 @@ pub fn the_database_refuses_each_bad_row_under_its_own_constraint_test() -> Nil 
         "game_number_name_has_its_unit",
       ),
       #(
+        "update game_number set value = 0 where name = 'used_object_release_ms'",
+        "game_number_used_object_release_ms_is_a_whole_positive_ms",
+      ),
+      #(
+        "update game_number set value = 30000.5 where name = 'used_object_release_ms'",
+        "game_number_used_object_release_ms_is_a_whole_positive_ms",
+      ),
+      #(
         "update game_number set value = 0 where name = 'kill_experience_fraction'",
         "game_number_kill_experience_fraction_is_above_0_up_to_1",
       ),
@@ -426,6 +457,7 @@ pub fn the_numbers_put_under_a_key_are_read_back_test() -> Nil {
       daily_quest_reset_ms: 36_000_000,
       weekly_quest_reset_ms: 122_400_000,
       starting_credits: 1000,
+      used_object_release_ms: 30_000,
     )
   content_game_number.put(key:, numbers:)
   assert content_game_number.numbers(key:) == numbers

@@ -919,3 +919,5 @@ Quest2	6296	quest of a kill, a use of a creature and a hidden scripted objective
 Creature2	45639	Lucy Lazarin, the receiver of quest 6296	objective_hidden_test
 Spell4	27656	a spell with a crowd control row (Spell4Effects 49004, type 4) aimed at the area behind a target gate of types 4 and 38	spell_plan_target_gate_test
 Spell4	29856	a spell with a ForcedMove row (Spell4Effects 53184) aimed at the area behind a target gate of type 4	cast_struck_gate_test
+Creature2	27768	Bramble Trap, the used object of quest 6296 (objective 9659, type 12)	game_wire_test
+Creature2	28112	Trapped Mordesh, the captive that stands at a Bramble Trap of quest 6296	game_wire_test

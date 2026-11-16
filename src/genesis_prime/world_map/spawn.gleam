@@ -78,6 +78,7 @@ import genesis_prime/game/hit
 import genesis_prime/game/hit_radius
 import genesis_prime/game/objective_link
 import genesis_prime/game/prerequisite.{type Prerequisite}
+import genesis_prime/game/quest_log
 import genesis_prime/game/rating.{type Formulas}
 import genesis_prime/game/spell_area
 import genesis_prime/game/start_place.{type Place}
@@ -107,6 +108,7 @@ import genesis_prime/table/id.{
 import genesis_prime/table/instance_portal
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/path_mission
+import genesis_prime/table/quest_objective
 import genesis_prime/table/spell4
 import genesis_prime/table/unit_property2
 import genesis_prime/table/world
@@ -326,6 +328,83 @@ pub fn world_spawns(
       }),
     )),
   )
+}
+
+/// The spawns that go with a used object, for each creature spawn of the world
+/// whose creature a type 12 objective of the tables names (`quest_log.use_a_creature_type`,
+/// the objective's data): the spawns of the same world at the same x and z, within
+/// 0.01 m, whose own creature no type 12 objective names, in spawn id order. y is
+/// not compared, since a captive stands up to 1.3 m off its trap. A spawn with no
+/// such neighbour has no entry. The world's spawns hold creatures and static
+/// objects both, so a captive may be either.
+pub fn captives(
+  world world: WorldSpawns,
+  tables tables: table_store.Tables,
+) -> Dict(SpawnId, List(SpawnId)) {
+  let named =
+    quest_objective.all(tables)
+    |> list.filter(fn(row) { row.type_ == quest_log.use_a_creature_type })
+    |> list.map(fn(row) { row.data })
+    |> set.from_list
+  let is_named = fn(creature_id: Creature2Id) {
+    set.contains(named, creature_id.value)
+  }
+  dict.fold(world.by_id, dict.new(), fn(found, id, spawn) {
+    use <- bool.guard(when: !is_named(spawn.creature_id), return: found)
+    let trap_x = start_place.x(spawn.place)
+    let trap_z = start_place.z(spawn.place)
+    let neighbours =
+      spawn_cell.near(
+        cells: world.cells,
+        x: trap_x,
+        z: trap_z,
+        range: captive_range,
+      )
+      |> list.filter(fn(other) {
+        case other == id, standing_of(world:, spawn: other) {
+          False, Ok(#(other_x, other_z, creature_id)) ->
+            float.absolute_value(other_x -. trap_x) <=. captive_range
+            && float.absolute_value(other_z -. trap_z) <=. captive_range
+            && !is_named(creature_id)
+          _, _ -> False
+        }
+      })
+      |> list.sort(fn(first, second) {
+        let SpawnId(first_number) = first
+        let SpawnId(second_number) = second
+        int.compare(first_number, second_number)
+      })
+    case neighbours {
+      [_, ..] -> dict.insert(found, id, neighbours)
+      [] -> found
+    }
+  })
+}
+
+/// How far apart two spawns' x and z may be, in metres, for one to stand at the
+/// other's x and z.
+const captive_range = 0.01
+
+/// The x, z and creature of the creature spawn or static object `spawn`.
+fn standing_of(
+  world world: WorldSpawns,
+  spawn spawn: SpawnId,
+) -> Result(#(Float, Float, Creature2Id), Nil) {
+  case dict.get(world.by_id, spawn), dict.get(world.objects, spawn) {
+    Ok(found), _ ->
+      Ok(#(
+        start_place.x(found.place),
+        start_place.z(found.place),
+        found.creature_id,
+      ))
+    Error(Nil), Ok(object) ->
+      Ok(#(
+        start_place.x(object.place),
+        start_place.z(object.place),
+        object.creature_id,
+      ))
+    Error(Nil), Error(Nil) -> Error(Nil)
+  }
 }
 
 /// A world with no spawn.

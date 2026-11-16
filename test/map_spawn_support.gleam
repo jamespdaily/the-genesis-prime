@@ -213,6 +213,16 @@ pub fn sweep(
   )
 }
 
+/// A connection's tell that a player's use released the unit `unit_id`, at time
+/// `at_ms`.
+pub fn released(
+  state state: State,
+  at_ms at_ms: Int,
+  unit_id unit_id: Int,
+) -> #(State, ServiceStep(map.Outgoing)) {
+  feed(state:, at_ms:, event: OwnEvent(Told(message: map.Released(unit_id:))))
+}
+
 /// The creatures a step starts, each with the watch it is to be under, in the
 /// order named.
 pub fn starts(

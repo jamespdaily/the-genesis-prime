@@ -303,6 +303,7 @@ fn apply(play play: Play, op op: Op, fire_sweeps fire_sweeps: Bool) -> Play {
           case map.spawn_state(state: play.state, spawn: SpawnId(number)) {
             Ok(Live(life:, ..)) -> Ok(life)
             Ok(Retiring(..))
+            | Ok(map.Releasing(..))
             | Ok(map.WaitingForRestart)
             | Ok(map.Failed)
             | Error(Nil) -> Error(Nil)
@@ -372,6 +373,7 @@ fn broken(play: Play) -> List(String) {
             },
           ])
         Ok(Retiring(..)), _
+        | Ok(map.Releasing(..)), _
         | Ok(map.WaitingForRestart), _
         | Ok(map.Failed), _
         -> []
@@ -383,7 +385,9 @@ fn broken(play: Play) -> List(String) {
   let lives =
     list.index_map(spawn_xs, fn(_, index) {
       case map.spawn_state(state: play.state, spawn: SpawnId(index + 1)) {
-        Ok(Live(unit_id:, ..)) | Ok(Retiring(unit_id:, ..)) -> [unit_id]
+        Ok(Live(unit_id:, ..))
+        | Ok(Retiring(unit_id:, ..))
+        | Ok(map.Releasing(unit_id:, ..)) -> [unit_id]
         Ok(map.WaitingForRestart) | Ok(map.Failed) | Error(Nil) -> []
       }
     })

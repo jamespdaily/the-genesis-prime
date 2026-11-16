@@ -273,13 +273,16 @@ pub fn the_combat_projector_moves_the_player_to_warfare_woods_at_the_casts_end_t
     as "WorldLocation2 51615: the unit stands at Warfare Woods"
   assert told_the_map(steps:)
     == [
+      connection_support.map_tell(client_connection.TellReleased(
+        unit_id: departures_support.terminal_unit,
+      )),
       connection_support.map_tell(TellMoved(
         connection: ConnectionId(1),
         place: warfare_woods(),
         seq: 1,
       )),
     ]
-    as "the map is told the landing with the move's number"
+    as "the use credits a type 12 objective, so the map is told to release the projector (a static object it leaves in place), then the landing with the move's number"
 }
 
 pub fn the_move_is_written_after_the_casts_finish_test() -> Nil {

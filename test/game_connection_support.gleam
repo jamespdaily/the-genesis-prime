@@ -1312,6 +1312,7 @@ pub fn mapped(
     | client_connection.TellStealthChanged(..)
     | client_connection.TellVisibilityChanged(..)
     | client_connection.TellLifeChanged(..)
+    | client_connection.TellReleased(..)
     | TellPeer(..)
     | client_connection.TellStrike(..)
     | client_connection.TellTargetMoved(..)

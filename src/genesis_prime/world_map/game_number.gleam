@@ -56,6 +56,10 @@
 ////   client holds no starting amount: a whole number of credits, 0 or more, held by
 ////   the table (`game_number_starting_credits_is_a_whole_number_of_credits`, migration
 ////   0024).
+//// - **The release time of a used object** is a whole number of milliseconds above 0, held
+////   by the table (`game_number_used_object_release_ms_is_a_whole_positive_ms`,
+////   migration 0033): the client holds no value, so it is a server choice that states
+////   its reason.
 //// - **The unit of each name** is the table's: `game_number_name_has_its_unit`, a
 ////   foreign key to `game_number_name`, refuses a row whose unit is not its name's
 ////   and a name nobody listed (migration 0014).
@@ -113,6 +117,10 @@ pub type GameNumbers {
     /// The credits a new character starts with, a whole number of credits
     /// (migration 0024).
     starting_credits: Int,
+    /// How long a used quest object and the creatures at its place stay out of
+    /// every player's sight after a use credited it, in whole milliseconds
+    /// (migration 0033).
+    used_object_release_ms: Int,
   )
 }
 
@@ -145,6 +153,7 @@ fn expected() -> List(String) {
       "daily_quest_reset_ms",
       "weekly_quest_reset_ms",
       "starting_credits",
+      "used_object_release_ms",
     ],
     kill_experience_multiplier_names,
   )
@@ -206,6 +215,7 @@ fn ranges_checked(
       daily_quest_reset_ms: float.round(value("daily_quest_reset_ms")),
       weekly_quest_reset_ms: float.round(value("weekly_quest_reset_ms")),
       starting_credits: float.round(value("starting_credits")),
+      used_object_release_ms: float.round(value("used_object_release_ms")),
     )
   let checks = [
     #(

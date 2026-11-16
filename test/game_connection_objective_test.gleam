@@ -723,6 +723,77 @@ pub fn a_station_its_objective_reuses_counts_again_test() -> Nil {
     as "opcode.0x361: the same unit used again counts again for an objective in the reuse set"
 }
 
+/// The tells of the steps to the map (`TellReleased` is the one these tests look for).
+fn told_the_map(
+  steps steps: List(step.ConnectionStep(Request)),
+) -> List(step.Effect(step.ConnectionEffect(Request))) {
+  list.flat_map(steps, connection_support.told_the_map)
+}
+
+/// The tell that asks the map to release a unit.
+fn tell_released(
+  unit unit: Int,
+) -> step.Effect(step.ConnectionEffect(Request)) {
+  connection_support.map_tell(request: client_connection.TellReleased(
+    unit_id: unit,
+  ))
+}
+
+pub fn a_use_that_credits_a_type_12_objective_releases_the_unit_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, started) =
+    connection_support.at(
+      state: seeing_the_use_target(),
+      ms: 0,
+      event: OwnEvent(step.Read(right_click())),
+    )
+  let #(_, go) =
+    connection_support.casts_run(
+      state:,
+      pending: connection_support.cast_timers(steps: [started], ms: 0),
+      until_ms: 2000,
+      steps: [],
+    )
+  assert progress_frames(steps: go)
+    == [progress_frame(quest: 9207, index: 0, progress: 1)]
+    as "opcode.0x361: the use counts objective 17932, so the release below follows a credited use"
+  assert told_the_map(steps: [started, ..go]) == [tell_released(unit:)]
+    as "QuestObjective.type.12: the use that credits the objective asks the map to release the used unit, once, at the go and not at the right-click"
+  assert told_the_map(steps: [started]) == []
+    as "the right-click starts the cast and counts nothing, so it releases nothing"
+}
+
+pub fn a_use_that_credits_nothing_does_not_release_the_unit_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _, first) =
+    used_once(state: seeing_the_walking_survivor(), at: 0)
+  assert told_the_map(steps: first) == [tell_released(unit:)]
+    as "the first use of the survivor credits objective 4470 and releases it"
+  let #(_, again, go) = used_once(state:, at: 5000)
+  assert ids_of(steps: go) == [0x07F4, 0x07FE]
+    as "opcode.0x7f4 and 0x7fe: the second use's cast reaches its go, so the silence below is the use crediting nothing"
+  assert told_the_map(steps: [again, ..go]) == []
+    as "a use of a unit the objective counted already credits nothing, so it releases nothing"
+}
+
+pub fn a_use_that_only_credits_an_objective_counting_the_same_unit_again_does_not_release_it_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let state =
+    seeing_the_walking_survivors(
+      settings: connection_state.Settings(
+        ..connection_support.settings(),
+        reused_unit_objectives: set.from_list([4470]),
+      ),
+      units: [unit],
+    )
+  let #(_, _, first) = used_once(state:, at: 0)
+  assert progress_frames(steps: first)
+    == [progress_frame(quest: 3480, index: 0, progress: 1)]
+    as "opcode.0x361: the use counts one of objective 4470 in the reuse set"
+  assert told_the_map(steps: first) == []
+    as "an objective that counts the same unit again is a station used over and over, so the unit stays and is not released"
+}
+
 pub fn an_interrupted_use_counts_nothing_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, started) =
