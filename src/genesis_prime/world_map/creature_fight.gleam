@@ -1483,7 +1483,7 @@ fn answer_of(answered answered: Answered) -> #(List(cast.Struck), Bool, Bool) {
     }
     strike_tell.Immune(..) ->
       panic as "a player is never guarded: only a creature answers Immune"
-    strike_tell.Deflected -> #([cast.Deflected(unit_id:)], False, False)
+    strike_tell.Deflected(..) -> #([cast.Deflected(unit_id:)], False, False)
     strike_tell.Refused(why: strike_tell.Dead) -> #([], True, True)
     strike_tell.Refused(why: strike_tell.Returning) -> #([], True, False)
   }

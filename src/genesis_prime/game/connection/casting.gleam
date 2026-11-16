@@ -1370,7 +1370,7 @@ fn strike_carried_out(
       strike.CancelTimer(timer:), Some(_) -> #(session, [
         OwnEffect(CancelTimer(timer:)),
       ])
-      strike.Went(asked:, struck:, gates_failed:), Some(entered) -> {
+      strike.Went(asked:, struck:, gates_passed:), Some(entered) -> {
         let needed =
           cast.rolls_needed(
             cast: entered.cast,
@@ -1400,7 +1400,7 @@ fn strike_carried_out(
               fn(area) { area.spell },
             ),
             struck:,
-            gates_failed:,
+            gates_passed:,
             poses: shown.poses_of(
               picture: entered.shown,
               unit_ids:,

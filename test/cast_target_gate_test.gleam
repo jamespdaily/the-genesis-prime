@@ -445,7 +445,7 @@ pub fn rolls_needed_counts_a_union_row_once_for_each_unit_it_reaches_test() -> N
       indexes: dict.new(),
       units: dict.new(),
       rolls: [],
-      gates_failed: dict.new(),
+      gates_passed: dict.new(),
     )
   let assert [child_asked] = support.goes_asked(effects: started)
     as "the parent's go starts the child, which asks for its own go"

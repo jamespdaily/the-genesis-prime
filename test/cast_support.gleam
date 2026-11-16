@@ -1306,7 +1306,7 @@ pub fn went_of_spell(
     indexes: dict.new(),
     units: dict.new(),
     rolls: [],
-    gates_failed: dict.new(),
+    gates_passed: dict.new(),
   )
 }
 
@@ -1417,7 +1417,7 @@ pub fn answered_known(
             indexes: dict.new(),
             units:,
             rolls:,
-            gates_failed: dict.new(),
+            gates_passed: dict.new(),
           )
           |> then_procs_known(caster:, at: ms, poses:, units:, drawn: None)
         let #(state, more) =

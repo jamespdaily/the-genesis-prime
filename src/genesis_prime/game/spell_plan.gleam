@@ -1006,7 +1006,8 @@ pub type StruckMove {
 /// row's Spell4Effects id, the phases of `phase_flags` it applies in, who it aims at, the
 /// prerequisite as the load parsed it, and the `tag` that chooses it by the points the cast
 /// spent (genesis_prime/game/spend). The strike tells each unit `aim` names the gate
-/// (genesis_prime/game/strike_tell `Gate`).
+/// (genesis_prime/game/strike_tell `Gate`), and a go row with a gate applies on a unit only
+/// when that unit's answer lists the row's id as passed (genesis_prime/game/cast `went`).
 pub type StruckGate {
   StruckGate(
     effect_id: Spell4EffectsId,

@@ -16,11 +16,11 @@
 ////                                                                                        (of_creature), then
 ////                                                                                        the hit rule
 ////     StartTimer(strike timer) to the earliest open deadline, when it is not set
-////   ◀──────────────────────── Answered(key, Landed(.., gates_failed) | Deflected | Refused) ◀──┘
-////   answered: the unit's place in the round is filled, with the effect ids its gates failed
+////   ◀── Answered(key, Landed(.., gates_passed) | Immune(.., gates_passed) | Deflected(gates_passed) | Refused) ◀──┘
+////   answered: the unit's place in the round is filled, with the effect ids its gates passed
 ////   the round closes: all answered, or the deadline passed, and every earlier round of k closed
 ////     the timer's effects (cancel, start) first, since the go may begin a round of its own
-////     Went(asked, struck, gates_failed) ─▶ the connection calls cast.went(k, phase, struck, gates_failed)
+////     Went(asked, struck, gates_passed) ─▶ the connection calls cast.went(k, phase, struck, gates_passed)
 ////     Released(unit, news) for the health news held for the round's units
 ////   forget(unit): the client's 0x355 for a unit drops the news held for it
 //// cast rule tick timer ─▶ Effect TickStrike(TickAsked k, row, unit, tick)
@@ -52,16 +52,23 @@
 ////   the phase aimed at struck units whose target apply prerequisite reads the struck
 ////   creature's own state is told to each unit its aim names as a `strike_tell.Gate`, with
 ////   the damage and states or alone, and the creature checks it against its own state
-////   (genesis_prime/world_map/creature). A unit's place holds the effect ids it failed,
-////   and `Went.gates_failed` lists them by unit, so `cast.went` starts no go row of a failed
-////   id on that unit. A round has no new process, call or timer: its one deadline covers the
-////   check. Failure rows:
+////   (genesis_prime/world_map/creature). A unit's place holds the effect ids it passed,
+////   and `Went.gates_passed` lists them by unit, so `cast.went` applies a gated row on a unit
+////   only when that unit's entry lists it: this holds for a row aimed at the primary target
+////   too, which `cast.went` reaches whatever the round's outcome. A unit that deflected
+////   still lists what it passed; a unit that refused, never answered by the deadline or
+////   answered after the round closed has no entry and passes no gate. A round has no new
+////   process, call or timer: its one deadline covers the check. Failure rows:
 ////   - a creature killed before the strike arrives, as one that died between the picture and
-////     the strike, answers `Refused(Dead)` and reads no gate;
+////     the strike, answers `Refused(Dead)` and reads no gate, so none of its gated rows apply;
+////   - a creature restarted or stalled before it answers is dropped from the go at the
+////     deadline, so none of its gated rows apply;
 ////   - two strikes of one cast at once are answered in turn, each checked against the
 ////     creature as the earlier left it;
-////   - an answer that comes after the deadline is dropped with its gates, and the unit is
-////     left out of the go as for any late answer;
+////   - an answer that comes after the deadline is dropped with its passed gates, and the unit
+////     is left out of the go as for any late answer;
+////   - a gated go row aimed at the primary target applies when the creature deflected and
+////     passed the gate, and does not when it refused or timed out;
 ////   - a gate that reads something the subject does not hold fails (`prerequisite.NotRead`).
 //// - **One round for each go and for each tick.** The key of a strike is (cast,
 ////   occasion, unit): the occasion is the go's phase or the tick's row and number
@@ -197,10 +204,11 @@ pub type Effect {
   StartTimer(timer: TimerId, after_ms: Int)
   CancelTimer(timer: TimerId)
   /// A round closed: the connection answers the cast rule with `cast.went`.
-  /// `gates_failed` is, by unit id, the effect ids of the gates a struck unit failed
-  /// (`strike_tell.Landed`), for the units that failed any: the go starts no go row of
-  /// one of them, and a unit that answered with none has no entry.
-  Went(asked: GoAsked, struck: List(Struck), gates_failed: Dict(Int, List(Int)))
+  /// `gates_passed` is, by unit id, the effect ids of the gates a struck unit passed
+  /// (`strike_tell.Landed`, `Immune` and `Deflected` carry them), for the units that passed
+  /// any: the go applies a gated row on a unit only when its entry lists the row, and a unit
+  /// that refused, never answered or passed none has no entry.
+  Went(asked: GoAsked, struck: List(Struck), gates_passed: Dict(Int, List(Int)))
   /// A tick's round closed: the connection answers the cast rule with `cast.ticked`.
   /// `None` when the unit refused or never answered.
   Ticked(asked: TickAsked, struck: Option(Struck))
@@ -236,8 +244,8 @@ pub type Place {
   /// periodic rows that reach it (`ticking`).
   Waiting(unit_id: Int, life: Int, ticking: List(spell_area.TickingDamage))
   /// The creature answered, or the unit needed no strike: the strike's outcome as a hit,
-  /// and the effect ids of the gates the creature failed (`[]` when none).
-  Answered(struck: Struck, gates_failed: List(Int))
+  /// and the effect ids of the gates the creature passed (`[]` when none).
+  Answered(struck: Struck, gates_passed: List(Int))
   /// The creature refused, or the deadline passed: the unit is left out of the go.
   LeftOut(unit_id: Int)
 }
@@ -406,7 +414,7 @@ pub fn begin(
                 armor_removed: 0,
                 ticking: [],
               ),
-              gates_failed: [],
+              gates_passed: [],
             ),
             ..places
           ],
@@ -906,7 +914,7 @@ fn filled(
   outcome outcome: strike_tell.Outcome,
 ) -> Place {
   case outcome {
-    strike_tell.Landed(descriptions:, controls:, armor_removed:, gates_failed:) ->
+    strike_tell.Landed(descriptions:, controls:, armor_removed:, gates_passed:) ->
       Answered(
         struck: cast.Hit(
           unit_id:,
@@ -916,9 +924,9 @@ fn filled(
           armor_removed:,
           ticking:,
         ),
-        gates_failed:,
+        gates_passed:,
       )
-    strike_tell.Immune(controls:, armor_removed:, gates_failed:) ->
+    strike_tell.Immune(controls:, armor_removed:, gates_passed:) ->
       Answered(
         struck: cast.Immune(
           unit_id:,
@@ -927,10 +935,10 @@ fn filled(
           armor_removed:,
           ticking:,
         ),
-        gates_failed:,
+        gates_passed:,
       )
-    strike_tell.Deflected ->
-      Answered(struck: cast.Deflected(unit_id:), gates_failed: [])
+    strike_tell.Deflected(gates_passed:) ->
+      Answered(struck: cast.Deflected(unit_id:), gates_passed:)
     strike_tell.Refused(..) -> LeftOut(unit_id:)
   }
 }
@@ -1029,18 +1037,18 @@ fn settle(state state: State, now now: Now) -> #(State, List(Effect)) {
             Waiting(..) | LeftOut(..) -> Error(Nil)
           }
         })
-      let gates_failed =
+      let gates_passed =
         list.filter_map(round.places, fn(place) {
           case place {
-            Answered(struck:, gates_failed: [_, ..] as failed) ->
-              Ok(#(unit_of(struck), failed))
-            Answered(gates_failed: [], ..) | Waiting(..) | LeftOut(..) ->
+            Answered(struck:, gates_passed: [_, ..] as passed) ->
+              Ok(#(unit_of(struck), passed))
+            Answered(gates_passed: [], ..) | Waiting(..) | LeftOut(..) ->
               Error(Nil)
           }
         })
         |> dict.from_list
       case round.asked {
-        ForGo(asked:) -> Went(asked:, struck:, gates_failed:)
+        ForGo(asked:) -> Went(asked:, struck:, gates_passed:)
         ForTick(asked:) ->
           Ticked(asked:, struck: list.first(struck) |> option.from_result)
       }

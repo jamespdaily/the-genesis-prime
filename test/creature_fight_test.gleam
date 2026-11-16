@@ -709,7 +709,7 @@ pub fn a_target_in_reach_is_struck_with_5649_every_1500_ms_and_the_answer_is_wri
           ],
           controls: [],
           armor_removed: 0,
-          gates_failed: [],
+          gates_passed: [],
         ),
       )),
     )
@@ -747,7 +747,7 @@ pub fn an_answer_after_the_deadline_is_left_out_of_the_go_test() -> Nil {
           descriptions: [],
           controls: [],
           armor_removed: 0,
-          gates_failed: [],
+          gates_passed: [],
         ),
       )),
     )
@@ -776,7 +776,7 @@ pub fn a_deadline_timer_already_fired_for_a_closed_round_does_nothing_test() -> 
           descriptions: [],
           controls: [],
           armor_removed: 0,
-          gates_failed: [],
+          gates_passed: [],
         ),
       )),
     )
@@ -1687,7 +1687,7 @@ fn killing_answer(key key: strike_tell.Key) -> creature.Message {
       ],
       controls: [],
       armor_removed: 0,
-      gates_failed: [],
+      gates_passed: [],
     ),
   ))
 }
@@ -3010,7 +3010,7 @@ fn landed(key key: Key) -> creature.Message {
       ],
       controls: [],
       armor_removed: 0,
-      gates_failed: [],
+      gates_passed: [],
     ),
   ))
 }
@@ -3551,7 +3551,7 @@ pub fn a_damaging_strike_on_a_guarded_turret_takes_no_health_test() -> Nil {
   // effect, so the striker's connection writes the 0x247 of type 18 (`opcode.0x247.immunity`).
   let #(state, _) = guarded_fought(viewers: [2])
   let #(state, struck) = tell(state:, at_ms: 100, message: damaging(damage: 10))
-  let assert [Immune(controls: [], armor_removed: 0, gates_failed: [])] =
+  let assert [Immune(controls: [], armor_removed: 0, gates_passed: [])] =
     answers_of(struck)
     as "the answer lists no effect"
   assert !list.any(said(struck), fn(line) { string.starts_with(line, "0x937") })
@@ -3559,7 +3559,7 @@ pub fn a_damaging_strike_on_a_guarded_turret_takes_no_health_test() -> Nil {
   let #(_, lethal) =
     tell(state:, at_ms: 200, message: damaging(damage: 1_000_000))
   assert answers_of(lethal)
-    == [Immune(controls: [], armor_removed: 0, gates_failed: [])]
+    == [Immune(controls: [], armor_removed: 0, gates_passed: [])]
     as "damage past its health takes nothing too"
   assert !list.contains(said(lethal), "KillCredit to 2")
     && !list.contains(said(lethal), "0x88c to 2")
@@ -3578,7 +3578,7 @@ pub fn a_state_on_a_guarded_turret_outside_a_charge_lands_and_opens_nothing_test
     as "no opening's end is set"
   let #(_, struck) = tell(state:, at_ms: 1100, message: damaging(damage: 10))
   assert answers_of(struck)
-    == [Immune(controls: [], armor_removed: 0, gates_failed: [])]
+    == [Immune(controls: [], armor_removed: 0, gates_passed: [])]
     as "the turret still takes no damage"
 }
 
@@ -3716,7 +3716,7 @@ pub fn the_opening_ends_after_15_seconds_and_the_guard_returns_test() -> Nil {
   let assert [#(224_666, _, 0)] = effects_listed(go:)
   let #(_, struck) = tell(state:, at_ms: 19_100, message: damaging(damage: 10))
   assert answers_of(struck)
-    == [Immune(controls: [], armor_removed: 0, gates_failed: [])]
+    == [Immune(controls: [], armor_removed: 0, gates_passed: [])]
     as "the turret takes no damage again"
 }
 
@@ -3834,7 +3834,7 @@ pub fn a_respawned_turret_stands_guarded_test() -> Nil {
   let assert [#(224_666, _, 0)] = effects_listed(go:)
   let #(_, struck) = tell(state:, at_ms: 65_100, message: damaging(damage: 10))
   assert answers_of(struck)
-    == [Immune(controls: [], armor_removed: 0, gates_failed: [])]
+    == [Immune(controls: [], armor_removed: 0, gates_passed: [])]
     as "it takes no damage"
 }
 

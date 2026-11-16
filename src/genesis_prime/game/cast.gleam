@@ -5749,9 +5749,13 @@ fn lifted_gains(proxy proxy: Proxy) -> List(spell_plan.Gain) {
 /// unit id (`prerequisite.FirstUnit`), which a type 38 condition of that gate reads; a unit
 /// with none is unknown to the check. `rolls` are the
 /// rolls the go's type 37 conditions take (`rolls_needed`), in the order the conditions
-/// are checked. `gates_failed` are the effect ids of the gates each struck unit failed, by unit
-/// id (genesis_prime/game/strike `Went`): the go starts no go row of a failed id on that unit
-/// and lists none.
+/// are checked. `gates_passed` are the effect ids of the gates each struck unit passed, by unit
+/// id (genesis_prime/game/strike `Went`): a go row with a gate on the struck creature
+/// (`spell_plan.StruckGate`) starts and is listed on a unit only when that unit's entry lists the
+/// row, whichever part of the row's aim names the unit, the primary target included, and
+/// whatever the round's outcome for it: a unit that deflected still has its entry, and a unit
+/// that refused or never answered has none, so a gated row applies on it never. A row with no
+/// gate is unaffected.
 pub fn went(
   cast cast: State,
   caster caster: Caster,
@@ -5760,13 +5764,13 @@ pub fn went(
   phase phase: Int,
   spell asked_spell: Result(Spell, Nil),
   struck struck: List(Struck),
-  gates_failed gates_failed: Dict(Int, List(Int)),
+  gates_passed gates_passed: Dict(Int, List(Int)),
   poses poses: Dict(Int, area.Pose),
   indexes indexes: Dict(Int, Int),
   units units: Dict(Int, prerequisite.FirstUnit),
   rolls rolls: List(Int),
 ) -> #(State, List(Effect)) {
-  use <- no_gate_failed(gates_failed:)
+  use <- no_gate_passed(gates_passed:)
   let own =
     holder_of(cast:, cast_id:)
     |> result.map(fn(holder) { holder.spell })
@@ -5793,16 +5797,16 @@ pub fn went(
   |> continued(caster:, now_ms: now.monotonic_ms)
 }
 
-/// Runs the rest of a go that no unit failed a gate of. A go with a failed gate starts no go
-/// row of it (`TargetChangeStarts` and its siblings) and lists none.
-fn no_gate_failed(
-  gates_failed gates_failed: Dict(Int, List(Int)),
+/// Runs the rest of a go that no unit passed a gate of. A go row with a gate (`TargetChangeStarts`
+/// and its siblings) starts on a unit and is listed only when the unit passed it.
+fn no_gate_passed(
+  gates_passed gates_passed: Dict(Int, List(Int)),
   next next: fn() -> #(State, List(Effect)),
 ) -> #(State, List(Effect)) {
-  case dict.is_empty(gates_failed) {
+  case dict.is_empty(gates_passed) {
     True -> next()
     False ->
-      panic as "shape: cast side (go) fills went: no go row of a failed effect id starts on that unit, and the go lists none"
+      panic as "shape: cast side (go) fills went: a gated go row starts and is listed on a unit only when that unit's entry lists its effect id, the primary target included"
   }
 }
 

@@ -131,7 +131,7 @@ fn answer(
 }
 
 fn landed() -> strike_tell.Outcome {
-  Landed(descriptions: [], controls: [], armor_removed: 0, gates_failed: [])
+  Landed(descriptions: [], controls: [], armor_removed: 0, gates_passed: [])
 }
 
 fn tells(effects effects: List(Effect)) -> List(strike.Effect) {
@@ -351,7 +351,12 @@ pub fn answers_out_of_order_are_listed_in_selection_order_when_the_round_closes_
   let #(state, first) =
     answer(state:, key: key(12), outcome: landed(), now_ms: 1100)
   let #(state, second) =
-    answer(state:, key: key(10), outcome: Deflected, now_ms: 1200)
+    answer(
+      state:,
+      key: key(10),
+      outcome: Deflected(gates_passed: []),
+      now_ms: 1200,
+    )
   assert went(effects: list.append(first, second)) == []
     as "the round waits for the unit that has not answered"
   let #(_, third) =
@@ -1391,7 +1396,7 @@ pub fn a_state_aimed_at_the_primary_target_is_told_to_it_alone_test() -> Nil {
         descriptions: [],
         controls: [landed],
         armor_removed: 0,
-        gates_failed: [],
+        gates_passed: [],
       ),
       now_ms: 1050,
     )
@@ -1734,7 +1739,7 @@ pub fn each_tick_rolls_the_hit_rule_on_the_value_of_its_time_test() -> Nil {
     answer(
       state:,
       key: tick_key(go: 1, tick: 2),
-      outcome: Deflected,
+      outcome: Deflected(gates_passed: []),
       now_ms: 3100,
     )
   assert ticked(effects: deflected)

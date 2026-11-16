@@ -292,7 +292,7 @@ fn landed() -> strike_tell.Outcome {
     descriptions: [],
     controls: [],
     armor_removed: 0,
-    gates_failed: [],
+    gates_passed: [],
   )
 }
 
@@ -767,7 +767,7 @@ pub fn a_told_unit_the_client_stops_showing_still_fills_its_place_and_its_gate_i
         descriptions: [],
         controls: [],
         armor_removed: 2,
-        gates_failed: [],
+        gates_passed: [],
       ),
     )
   let assert [cast.Hit(unit_id: 10, armor_removed: 2, ..)] =

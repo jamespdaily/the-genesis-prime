@@ -478,7 +478,7 @@ pub fn a_dead_creature_comes_back_exactly_at_its_respawn_test() -> Nil {
     descriptions: [description],
     controls: [],
     armor_removed: 0,
-    gates_failed: [],
+    gates_passed: [],
   ) = outcome
   assert description.damage.killed == 1
     as "the 60 damage takes the Beast's 52 health to 0"
@@ -782,7 +782,7 @@ pub fn a_creature_struck_dead_is_answered_shown_dead_and_stands_again_after_its_
     descriptions: [description],
     controls: [],
     armor_removed: 0,
-    gates_failed: [],
+    gates_passed: [],
   ) = outcome
   assert description.damage.killed == 1
     as "the 60 damage takes the Beast's 52 health to 0"
@@ -1143,7 +1143,7 @@ fn health_taken(
     descriptions: [description],
     controls: [],
     armor_removed: 0,
-    gates_failed: [],
+    gates_passed: [],
   ) = answered.outcome
   description.damage.health_damage_with_overkill
 }

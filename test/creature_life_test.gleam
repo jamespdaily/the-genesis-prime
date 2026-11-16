@@ -98,7 +98,7 @@ pub fn a_hit_that_leaves_health_sends_the_new_health_and_no_death_test() -> Nil 
       descriptions: [description],
       controls: [],
       armor_removed: 0,
-      gates_failed: [],
+      gates_passed: [],
     ),
   ) = reaction.answer
   assert description.damage.killed == 0
@@ -166,7 +166,7 @@ pub fn a_hit_that_kills_sends_health_with_the_dead_bit_then_the_death_and_starts
     descriptions: [description],
     controls: [],
     armor_removed: 0,
-    gates_failed: [],
+    gates_passed: [],
   ) = reaction.answer.outcome
   assert description.damage.killed == 1 && description.damage.overkill == 8
     as "killed exactly at 0; the overkill is the damage beyond the health before: 60 - 52"
@@ -243,7 +243,7 @@ pub fn a_deflected_strike_changes_no_health_and_sends_no_news_test() -> Nil {
         cast_id: 1,
       ),
     )
-  assert reaction.answer.outcome == Deflected
+  assert reaction.answer.outcome == Deflected(gates_passed: [])
     as "a deflect roll of 0.01 is below the deflect chance 0.016"
   assert creature_life.health(reaction.life) == 52 && reaction.news == []
 }

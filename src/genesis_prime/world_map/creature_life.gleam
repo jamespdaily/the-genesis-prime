@@ -235,7 +235,10 @@ pub fn struck(
         hit.Deflected ->
           Reaction(
             life:,
-            answer: Answered(key: strike.key, outcome: strike_tell.Deflected),
+            answer: Answered(
+              key: strike.key,
+              outcome: strike_tell.Deflected(gates_passed: []),
+            ),
             news: [],
             corpse_for_ms: None,
           )
@@ -248,7 +251,7 @@ pub fn struck(
                 descriptions:,
                 controls: [],
                 armor_removed: 0,
-                gates_failed: [],
+                gates_passed: [],
               ),
             ),
             news: [Health(health: left, dead: True), Died],
@@ -263,7 +266,7 @@ pub fn struck(
                 descriptions:,
                 controls: [],
                 armor_removed: 0,
-                gates_failed: [],
+                gates_passed: [],
               ),
             ),
             news: [Health(health: left, dead: False)],
