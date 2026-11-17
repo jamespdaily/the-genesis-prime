@@ -23,7 +23,7 @@ import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{type Settings, Settings}
-import genesis_prime/game/hit.{Blow, Offence, Worked}
+import genesis_prime/game/hit.{type Offence, Blow, Offence, Worked}
 import genesis_prime/game/loadout
 import genesis_prime/game/server_proxy
 import genesis_prime/game/start_place.{type Place}
@@ -2235,6 +2235,19 @@ pub fn a_move(x: Float) -> BitArray {
 
 /// A creature's strike, of the Beast's offence (12 Physical), on `unit_id`.
 pub fn a_beast_strike(unit_id: Int) -> Event(ConnectionEvent(Message, Answer)) {
+  a_strike_of(
+    striker: spawn_support.beast_striker(),
+    offence: spawn_support.beast_attack().offence,
+    unit_id:,
+  )
+}
+
+/// A creature's strike on `unit_id` by this striker, with this offence.
+pub fn a_strike_of(
+  striker striker: strike_tell.Striker,
+  offence offence: Offence,
+  unit_id unit_id: Int,
+) -> Event(ConnectionEvent(Message, Answer)) {
   foe(
     strike_tell.Attacks(
       tell: strike_tell.Strike(
@@ -2244,8 +2257,8 @@ pub fn a_beast_strike(unit_id: Int) -> Event(ConnectionEvent(Message, Answer)) {
           unit_id:,
         ),
         from: fighter(),
-        striker: spawn_support.beast_striker(),
-        offence: spawn_support.beast_attack().offence,
+        striker:,
+        offence:,
         controls: [],
         gates: [],
       ),

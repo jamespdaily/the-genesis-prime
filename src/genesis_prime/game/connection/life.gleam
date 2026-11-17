@@ -405,22 +405,20 @@ fn blow_without_facts(
   took took: player_life.Took,
   error error: spell_plan.PlanError,
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
-  let #(session, more) = case took {
-    player_life.Landed(lowered: True, ..) ->
-      cast_carried(
-        session:,
+  let #(session, more) =
+    cast_carried(
+      session:,
+      now:,
+      taken: cast.blow_taken_without_spell(
+        cast: entered.cast,
+        caster:,
         now:,
-        taken: cast_proc.broken_by_damage(
-          cast: entered.cast,
-          caster:,
-          now_ms: now.monotonic_ms,
-        ),
-      )
-    player_life.Landed(lowered: False, ..) | player_life.Deflected -> #(
-      session,
-      [],
+        lowered: case took {
+          player_life.Landed(lowered:, ..) -> lowered
+          player_life.Deflected -> False
+        },
+      ),
     )
-  }
   #(session, [
     connection_state.log(
       session:,

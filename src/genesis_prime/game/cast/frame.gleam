@@ -606,11 +606,7 @@ fn target_info(
     index:,
     flags: 0,
     instance_count: 1,
-    combat_result: case
-      list.any(descriptions, fn(description) {
-        description.damage.combat_result == combat_result.Critical
-      })
-    {
+    combat_result: case list.any(descriptions, hit.is_critical) {
       True -> combat_result.Critical
       False -> combat_result.Hit
     },

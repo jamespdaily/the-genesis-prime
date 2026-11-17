@@ -178,7 +178,6 @@ import genesis_prime/game/proc
 import genesis_prime/game/spell_plan.{type Spell}
 import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_properties
-import genesis_prime/message/combat_result
 import genesis_prime/message/crowd_control_state
 import genesis_prime/step.{LogDebug}
 import genesis_prime/table/id.{type Spell4Id}
@@ -352,6 +351,14 @@ pub type BlowTaken {
   BlowDeflected(striker: Int, spell: proc.EventSpell)
 }
 
+/// Whether the blow lowered the holder's absorbs, shield or health: a deflect lowers none.
+pub fn lowers(blow blow: BlowTaken) -> Bool {
+  case blow {
+    BlowLanded(lowered:, ..) -> lowered
+    BlowDeflected(..) -> False
+  }
+}
+
 /// The events a creature's blow on the holder raises, in order: `TakesDamage` when it
 /// lowered something, `SuffersCritical` for a critical and `ShieldDepleted` when it took the
 /// shield to 0, or `DeflectsAttack` for a deflect. Each names the creature as the other unit
@@ -398,7 +405,7 @@ fn hit_triggers(
   spell spell: Spell,
   description description: hit.Description,
 ) -> List(spell_plan.Trigger) {
-  let critical = description.damage.combat_result == combat_result.Critical
+  let critical = hit.is_critical(description)
   list.flatten([
     [spell_plan.LandsHit],
     case spell.school {

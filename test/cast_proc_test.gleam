@@ -3710,6 +3710,43 @@ pub fn a_kind_16_proc_fires_when_the_holder_takes_damage_test() -> Nil {
     as "1600 ms after its fire a blow fires it again"
 }
 
+pub fn a_kind_16_proc_does_not_fire_on_a_deflect_or_on_a_critical_that_lowered_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Kind 16 is 'takes damage' (`Spell4Effects.effectType.14.dataBits00`): the deflect of
+  // kind 51 and the critical of kind 146 are not it unless the blow also lowered the
+  // absorbs, the shield or the health.
+  let #(_, state, caster) =
+    holder_of_taken(procs: [
+      firing(
+        id: 1,
+        trigger: spell_plan.TakesDamage,
+        casts: 250_201,
+        aim: spell_plan.AtHolder,
+      ),
+    ])
+  let #(state, refused) = taking(state:, caster:, blow: deflected(), at: 1000)
+  assert starts_at(spell4_id: 250_201, effects: refused) == []
+    as "a deflected blow takes no damage"
+  let #(state, absorbed) =
+    taking(
+      state:,
+      caster:,
+      blow: landed(lowered: False, critical: True, shield_depleted: False),
+      at: 2000,
+    )
+  assert starts_at(spell4_id: 250_201, effects: absorbed) == []
+    as "a critical that lowered nothing takes no damage"
+  let #(_, lowered) =
+    taking(
+      state:,
+      caster:,
+      blow: landed(lowered: True, critical: True, shield_depleted: False),
+      at: 3000,
+    )
+  assert starts_at(spell4_id: 250_201, effects: lowered) == [7]
+    as "a critical that lowered something does"
+}
+
 pub fn a_kind_146_proc_fires_on_a_critical_blow_test() -> Nil {
   use <- owned_test.run(60_000)
   // Spell4Effects.effectType.14.dataBits00.fairly_sure: kind 146 is 'suffers a critical'.

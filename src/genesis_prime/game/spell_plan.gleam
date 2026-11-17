@@ -4275,6 +4275,11 @@ fn proc_limit_of(
 
 /// A Proc row's filter: kind 0 is every spell, 1 the Spell4 and 2 the group dataBits08
 /// names; any other kind is the column and value the plan does not read.
+///
+/// Gap (issue 870): a filter of kind 1 that names Spell4 0 is read like any other and then
+/// refused, because the Spell4 table has no row 0 (`NoRow("Spell4", 0)`). The client never
+/// reads a Proc row, so nothing says whether it means "every spell"; 17 Proc rows have it
+/// (kinds 12, 16 and 117), 4 of them of kind 16 (Procs 92542, 107509, 162927, 189684).
 fn proc_filter_of(
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(ProcFilter, #(String, Int)) {

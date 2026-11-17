@@ -229,7 +229,6 @@ import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{type Tell, Answered}
 import genesis_prime/game/unit_properties.{type Properties}
 import genesis_prime/message/choose_resurrection
-import genesis_prime/message/combat_result
 import genesis_prime/step.{type Address, type TimerId, TimerId}
 import genesis_prime/table/id.{type UnitProperty2Id, UnitProperty2Id}
 import genesis_prime/world_map/creature_life
@@ -810,9 +809,7 @@ pub fn struck(
                   striker: strike.striker,
                   took: Landed(
                     lowered: lowered || absorption_news != [],
-                    critical: list.any(descriptions, fn(description) {
-                      description.damage.combat_result == combat_result.Critical
-                    }),
+                    critical: list.any(descriptions, hit.is_critical),
                     shield_depleted:,
                   ),
                 ),

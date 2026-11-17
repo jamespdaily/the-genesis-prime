@@ -3055,14 +3055,40 @@ pub fn blow_taken(
   now now: Now,
   blow blow: cast_proc.BlowTaken,
 ) -> #(State, List(Effect)) {
-  use <- settled(cast:, own: cast_proc.blow_events(blow:))
-  case blow {
-    cast_proc.BlowLanded(lowered: True, ..) ->
-      cast_proc.broken_by_damage(cast:, caster:, now_ms: now.monotonic_ms)
-    cast_proc.BlowLanded(lowered: False, ..) | cast_proc.BlowDeflected(..) -> #(
-      cast,
-      [],
-    )
+  stealth_after_blow(
+    cast:,
+    caster:,
+    now:,
+    events: cast_proc.blow_events(blow:),
+    lowered: cast_proc.lowers(blow:),
+  )
+}
+
+/// A creature's blow on the caster whose attack spell the tables could not give the groups
+/// and school of: it raises no events for the procs, and breaks stealth as `blow_taken`
+/// does. `lowered` says the blow lowered the absorbs, the shield or the health.
+pub fn blow_taken_without_spell(
+  cast cast: State,
+  caster caster: Caster,
+  now now: Now,
+  lowered lowered: Bool,
+) -> #(State, List(Effect)) {
+  stealth_after_blow(cast:, caster:, now:, events: [], lowered:)
+}
+
+/// The stealth rule of a blow taken, shared by both: only a blow that lowered something
+/// breaks the sources damage breaks.
+fn stealth_after_blow(
+  cast cast: State,
+  caster caster: Caster,
+  now now: Now,
+  events events: List(proc.Event),
+  lowered lowered: Bool,
+) -> #(State, List(Effect)) {
+  use <- settled(cast:, own: events)
+  case lowered {
+    True -> cast_proc.broken_by_damage(cast:, caster:, now_ms: now.monotonic_ms)
+    False -> #(cast, [])
   }
 }
 

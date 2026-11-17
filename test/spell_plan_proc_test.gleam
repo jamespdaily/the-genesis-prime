@@ -636,9 +636,10 @@ pub fn a_one_spell_filter_naming_a_missing_spell4_fails_the_load_test() -> Nil {
 
 pub fn a_proc_casting_a_spell4_the_tables_lack_is_left_out_test() -> Nil {
   use <- owned_test.run(60_000)
-  // The client never reads a Proc row and its Spell4 table has no row 22930, which 47 of
-  // the Proc rows of kind 16 name (Spell4Effects 44636 of Spell4 27029, for one): the
-  // holder spell casts all the same.
+  // The client never reads a Proc row and its Spell4 table has no row 22930, which 54 of
+  // the 621 Proc rows of kind 16 (effectType 14, dataBits00 16) name in dataBits01 (counted
+  // over the extracted Spell4Effects and Spell4 tables; Spell4Effects 44636 of Spell4 27029,
+  // for one): the holder spell casts all the same.
   assert planned(effect: Spell4Effects(..row(id: 99_049), data_bits01: 22_930))
     == Ok(
       spell_plan.LeftOut(why: spell_plan.ProcCastsNoSpell(spell4_id: 22_930)),
