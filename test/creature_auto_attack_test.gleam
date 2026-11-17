@@ -92,7 +92,11 @@ fn rule_of(row row: Row) -> String {
 pub fn the_rows_of_a_creature_load_as_the_kinds_lead_and_alternates_in_order_test() -> Nil {
   use <- owned_test.run(60_000)
   // Listed out of order: the place in the turn, not the list's order, decides.
-  let kinds = kinds_of(rows: [yeti_auto(33_252, 1), yeti_auto(33_251, 0)])
+  let kinds =
+    kinds_of(rows: [
+      yeti_auto(spell4_id: 33_252, order_index: 1),
+      yeti_auto(spell4_id: 33_251, order_index: 0),
+    ])
   let yeti = creature_kind.kind_of(kinds:, creature2_id: 51_126)
   assert yeti.attack_spell4_id == Spell4Id(33_251)
     && yeti.alternate_spell4_ids == [Spell4Id(33_252)]
@@ -103,11 +107,32 @@ pub fn the_rows_of_a_creature_load_as_the_kinds_lead_and_alternates_in_order_tes
 
 pub fn a_creature_with_no_auto_attack_rows_keeps_the_default_attack_test() -> Nil {
   use <- owned_test.run(60_000)
-  let kinds = kinds_of(rows: [yeti_auto(33_251, 0), yeti_auto(33_252, 1)])
-  let beast = creature_kind.kind_of(kinds:, creature2_id: 73_464)
-  assert beast.attack_spell4_id == Spell4Id(5649)
-    && beast.alternate_spell4_ids == []
-    as "the client holds no attack list for a creature, so it strikes with the default kind's 5649"
+  // Rootbrute Grimspore (12212) has a special row and no auto-attack row, so it has a kind of
+  // its own beside Yeti Snowstalker's.
+  let assert Ok(kinds) =
+    creature_kind.select(
+      rows: [default_row],
+      special_rows: [
+        creature_special.Row(
+          creature_id: 12_212,
+          spell4_id: 55_317,
+          order_index: 0,
+          cooldown_ms: 10_000,
+        ),
+      ],
+      auto_attack_rows: [
+        yeti_auto(spell4_id: 33_251, order_index: 0),
+        yeti_auto(spell4_id: 33_252, order_index: 1),
+      ],
+      tables: fixture_tables.shared(),
+    )
+    as "the rows are taken"
+  list.each([12_212, 73_464], fn(creature_id) {
+    let kind = creature_kind.kind_of(kinds:, creature2_id: creature_id)
+    assert kind.attack_spell4_id == Spell4Id(5649)
+      && kind.alternate_spell4_ids == []
+      as "the client holds no attack list for a creature, so it strikes with the default kind's 5649"
+  })
 }
 
 pub fn a_creature_with_autos_and_a_special_loads_both_test() -> Nil {
@@ -141,7 +166,13 @@ pub fn a_creature_with_autos_and_a_special_loads_both_test() -> Nil {
 pub fn an_auto_attack_for_a_creature_the_client_lacks_is_refused_test() -> Nil {
   use <- owned_test.run(60_000)
   // The client's Creature2 holds no row 200001.
-  let rule = rule_of(row: Row(..yeti_auto(33_251, 0), creature_id: 200_001))
+  let rule =
+    rule_of(
+      row: Row(
+        ..yeti_auto(spell4_id: 33_251, order_index: 0),
+        creature_id: 200_001,
+      ),
+    )
   assert string.contains(rule, "Creature2") && string.contains(rule, "200001")
     as "the refusal names the table and the creature"
   assert string.contains(rule, "33251") as "and its spell"
@@ -149,21 +180,24 @@ pub fn an_auto_attack_for_a_creature_the_client_lacks_is_refused_test() -> Nil {
 
 pub fn an_auto_attack_for_the_default_kind_is_refused_test() -> Nil {
   use <- owned_test.run(60_000)
-  let rule = rule_of(row: Row(..yeti_auto(33_251, 0), creature_id: 0))
+  let rule =
+    rule_of(
+      row: Row(..yeti_auto(spell4_id: 33_251, order_index: 0), creature_id: 0),
+    )
   assert string.contains(rule, "default") && string.contains(rule, "33251")
     as "creature_kind row 0 is the default every creature takes, so every creature would strike with it"
 }
 
 pub fn an_auto_attack_the_client_lacks_is_refused_test() -> Nil {
   use <- owned_test.run(60_000)
-  let rule = rule_of(row: yeti_auto(5650, 0))
+  let rule = rule_of(row: yeti_auto(spell4_id: 5650, order_index: 0))
   assert string.contains(rule, "Spell4") && string.contains(rule, "5650")
     as "the client's Spell4 holds no row 5650"
 }
 
 pub fn a_spell_with_a_cast_time_is_refused_as_an_auto_attack_test() -> Nil {
   use <- owned_test.run(60_000)
-  let rule = rule_of(row: yeti_auto(55_317, 0))
+  let rule = rule_of(row: yeti_auto(spell4_id: 55_317, order_index: 0))
   assert string.contains(rule, "55317") && string.contains(rule, "3000 ms")
     as "Spell4 55317, Earthen Roar, has castTime 3000: it is a special, not an auto-attack"
 }
@@ -179,7 +213,7 @@ pub fn an_auto_attack_the_attack_rule_does_not_evaluate_is_refused_with_its_reas
       creature_kind.select(
         rows: [default_row],
         special_rows: [],
-        auto_attack_rows: [yeti_auto(33_251, 0)],
+        auto_attack_rows: [yeti_auto(spell4_id: 33_251, order_index: 0)],
         tables:,
       )
       as "a spell that spends is refused"
@@ -199,7 +233,7 @@ pub fn an_auto_attack_the_attack_rule_does_not_evaluate_is_refused_with_its_reas
       creature_kind.select(
         rows: [default_row],
         special_rows: [],
-        auto_attack_rows: [yeti_auto(33_251, 0)],
+        auto_attack_rows: [yeti_auto(spell4_id: 33_251, order_index: 0)],
         tables:,
       )
       as "a periodic damage row is refused"
@@ -254,7 +288,7 @@ pub fn a_creature_with_a_kind_row_and_auto_attack_rows_is_refused_test() -> Nil 
     creature_kind.select(
       rows: [default_row, kind_row],
       special_rows: [],
-      auto_attack_rows: [yeti_auto(33_251, 0)],
+      auto_attack_rows: [yeti_auto(spell4_id: 33_251, order_index: 0)],
       tables: fixture_tables.shared(),
     )
     as "the auto-attack row is refused, the kind row is not"
@@ -266,8 +300,8 @@ pub fn a_creature_with_a_kind_row_and_auto_attack_rows_is_refused_test() -> Nil 
 pub fn the_kinds_taken_keep_the_autos_the_load_takes_beside_a_refusal_test() -> Nil {
   use <- owned_test.run(60_000)
   let rows = [
-    yeti_auto(33_251, 0),
-    yeti_auto(33_252, 1),
+    yeti_auto(spell4_id: 33_251, order_index: 0),
+    yeti_auto(spell4_id: 33_252, order_index: 1),
     Row(creature_id: 11_945, spell4_id: 5650, order_index: 0),
   ]
   let assert Ok(kinds) =
@@ -291,9 +325,9 @@ pub fn every_refused_auto_attack_is_collected_test() -> Nil {
   use <- owned_test.run(60_000)
   let refusals =
     refused(rows: [
-      Row(..yeti_auto(33_251, 0), creature_id: 0),
-      Row(..yeti_auto(33_251, 0), creature_id: 200_001),
-      Row(..yeti_auto(5650, 0), creature_id: 11_910),
+      Row(..yeti_auto(spell4_id: 33_251, order_index: 0), creature_id: 0),
+      Row(..yeti_auto(spell4_id: 33_251, order_index: 0), creature_id: 200_001),
+      Row(..yeti_auto(spell4_id: 5650, order_index: 0), creature_id: 11_910),
     ])
   assert list.map(refusals, fn(refusal) { refusal.row })
     == [RowId(0), RowId(200_001), RowId(11_910)]

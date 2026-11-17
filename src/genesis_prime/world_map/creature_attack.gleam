@@ -455,7 +455,7 @@ fn delays_checked(
 }
 
 /// The damage effects of the spell that apply to a creature of `difficulty`.
-pub fn applying(
+fn applying(
   tables tables: table_store.Tables,
   spell4_id spell4_id: Int,
   difficulty difficulty: Int,
