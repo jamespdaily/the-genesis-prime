@@ -13,11 +13,16 @@
 //// - A creature told to retire while dead stops at its respawn, and one that
 ////   stands stops at once; at its respawn a creature that was told to retire ends
 ////   and any other stands again at full health (`death.creature_respawn`).
+//// - A creature removed by a DespawnUnit effect is gone as a dead one is, with the kind's
+////   respawn time for its corpse timer, and is shown no corpse: it refuses a strike as
+////   `Despawned`, stops at its respawn when told to retire, and stands again at full health
+////   at its respawn, as a corpse does (the effect's removal is the client's 0x355,
+////   `opcode.0x355`; the respawn time is the kind's, `death.creature_respawn`).
 
 import genesis_prime/game/damage
 import genesis_prime/game/hit.{Blow, Offence, Rolls, Worked}
 import genesis_prime/game/strike_tell.{
-  Answered, Dead, Deflected, Key, Landed, Refused, Strike,
+  Answered, Dead, Deflected, Despawned, Key, Landed, Refused, Strike,
 }
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/id.{Spell4EffectsId}
@@ -386,4 +391,81 @@ pub fn a_creature_that_lies_dead_is_created_dead_for_a_viewer_that_arrives_test(
     ).life
   assert creature_life.health(dead) == 0
     as "opcode.0x262.creature: stat 0 of 0 makes the client create the creature dead"
+}
+
+/// The life of a standing Beast after a DespawnUnit effect removed it.
+fn despawned_beast() -> Life {
+  let assert Some(#(life, _)) =
+    creature_life.despawned(
+      life: creature_life.new(body: beast()),
+      body: beast(),
+    )
+    as "a creature that stands is removed by the effect"
+  life
+}
+
+pub fn a_creature_that_stands_is_despawned_with_the_kinds_respawn_time_test() -> Nil {
+  use <- owned_test.run(5000)
+  let assert Some(#(life, corpse_for_ms)) =
+    creature_life.despawned(
+      life: creature_life.new(body: beast()),
+      body: beast(),
+    )
+  assert corpse_for_ms == 60_000
+    as "the kind's respawn time (migration 0009, row 0), the body's respawn_ms"
+  assert creature_life.is_dead(life) && !creature_life.is_shown(life)
+    as "gone as a corpse is, and shown no corpse"
+  assert creature_life.health(life) == 0
+}
+
+pub fn a_creature_that_lies_dead_or_is_already_gone_is_not_despawned_test() -> Nil {
+  use <- owned_test.run(5000)
+  let dead =
+    creature_life.struck(
+      life: creature_life.new(body: beast()),
+      body: beast(),
+      strike: strike_of(damage: 52, rolls: no_luck, cast_id: 1),
+    ).life
+  assert creature_life.despawned(life: dead, body: beast()) == None
+    as "a corpse is not removed by the effect"
+  assert creature_life.despawned(life: despawned_beast(), body: beast()) == None
+    as "a creature already gone is not removed again"
+}
+
+pub fn a_despawned_creature_refuses_a_strike_test() -> Nil {
+  use <- owned_test.run(5000)
+  let reaction =
+    creature_life.struck(
+      life: despawned_beast(),
+      body: beast(),
+      strike: strike_of(damage: 10, rolls: no_luck, cast_id: 1),
+    )
+  assert reaction.answer.outcome == Refused(why: Despawned)
+    as "a creature that was not killed is not refused as dead"
+  assert reaction.news == []
+    && reaction.corpse_for_ms == None
+    && creature_life.is_dead(reaction.life)
+    && !creature_life.is_shown(reaction.life)
+}
+
+pub fn a_despawned_creature_told_to_retire_stops_at_its_respawn_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert creature_life.on_retire(life: despawned_beast()) == StopAtRespawn
+    as "the map keeps the spawn retiring until the creature ends, so the spawn does not come back early"
+  assert creature_life.corpse_timer_fired(
+      life: despawned_beast(),
+      body: beast(),
+      retiring: True,
+    )
+    == creature_life.Ends
+  let assert StandsAgain(life:) =
+    creature_life.corpse_timer_fired(
+      life: despawned_beast(),
+      body: beast(),
+      retiring: False,
+    )
+  assert stands_at(life:) == 52
+    && !creature_life.is_dead(life)
+    && creature_life.is_shown(life)
+    as "death.creature_respawn: it comes back full and shown"
 }

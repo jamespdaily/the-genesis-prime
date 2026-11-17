@@ -11,6 +11,11 @@
 //// - The map's clock: `server_time_estimate_start` is the milliseconds since the
 ////   map started, from the origin the creature was given (`map.server_time`).
 //// - The creature's values are the Virtual Battle Beast's (`spawn_support`).
+//// - A DespawnUnit effect (Spell4Effects type 97) removes the creature after its delay: the
+////   client sees only the 0x355 (`opcode.0x355`) and holds no respawn time, so the creature
+////   comes back at the kind's respawn time (`death.creature_respawn`, 60 000 ms here) as a
+////   corpse does. The delay runs from the go. The rest of its rule is the doc comment of
+////   `creature.Despawn`.
 
 import cast_support
 import connection_rule_support as support
@@ -49,6 +54,7 @@ import genesis_prime/world_map/unit_fields
 import gleam/int
 import gleam/list
 import gleam/option.{None}
+import gleam/set
 import map_support
 import owned_test
 import place_support
@@ -2047,4 +2053,559 @@ pub fn dead_creature_refuses_a_gated_strike_test() -> Nil {
     )
   assert answer_of(taken) == Refused(why: strike_tell.Dead)
     as "a corpse reads no gate: it refuses, though the gate would hold"
+}
+
+// ---- a DespawnUnit effect (Spell4Effects type 97) ----
+//
+// The Beast is watched by connections 2 and 5 from 5000; a go at 6000 told it `Despawn`.
+// The respawn time is the kind's 60 000 ms, the corpse timer is `TimerId(1)` and the
+// despawn timer `TimerId(3)`.
+
+/// A despawn whose go was at `went_at_ms`, struck 100 ms before as its round opened.
+fn despawn_at(
+  delay_ms delay_ms: Int,
+  went_at_ms went_at_ms: Int,
+) -> creature.Message {
+  creature.Despawn(delay_ms:, struck_at_ms: went_at_ms - 100, went_at_ms:)
+}
+
+/// The timers the step cancels.
+fn timers_cancelled(
+  taken: ServiceStep(creature.Outgoing),
+) -> List(step.TimerId) {
+  list.filter_map(support.effects_of(taken), fn(effect) {
+    case effect {
+      OwnEffect(step.CancelServiceTimer(timer:)) -> Ok(timer)
+      OwnEffect(Send(..))
+      | OwnEffect(Reply(..))
+      | OwnEffect(StartCreature(..))
+      | OwnEffect(StartServiceTimer(..))
+      | step.Watch(..)
+      | step.Unwatch(..)
+      | step.Log(..)
+      | Stop -> Error(Nil)
+    }
+  })
+}
+
+/// The watched Beast after a despawn of delay 0 at 6000.
+fn despawned_by_two() -> State {
+  told(
+    state: watched_by_two(),
+    at_ms: 6000,
+    message: despawn_at(delay_ms: 0, went_at_ms: 6000),
+  ).0
+}
+
+/// The Beast with a despawn of delay 4000 pending since the go at 6000, due at 10 000, and
+/// the step that took it.
+fn despawning_at_10_000() -> #(State, ServiceStep(creature.Outgoing)) {
+  told(
+    state: watched_by_two(),
+    at_ms: 6000,
+    message: despawn_at(delay_ms: 4000, went_at_ms: 6000),
+  )
+}
+
+const despawn_timer = TimerId(3)
+
+const corpse_timer = TimerId(1)
+
+pub fn a_despawn_of_delay_0_removes_the_creature_for_each_viewer_and_starts_its_respawn_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(_, taken) =
+    told(
+      state: watched_by_two(),
+      at_ms: 6000,
+      message: despawn_at(delay_ms: 0, went_at_ms: 6000),
+    )
+  assert kinds_of(outgoing(taken)) == ["removal to 2", "removal to 5"]
+    as "opcode.0x355 to each viewer, in the order of their connections"
+  assert timers_started(taken) == [#(corpse_timer, 60_000)]
+    as "the kind's respawn time (death.creature_respawn), and no despawn timer for a delay of 0"
+  assert timers_cancelled(taken) == []
+    as "no despawn was pending, so none is cancelled"
+}
+
+pub fn a_despawn_sends_no_health_death_or_credit_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(wounded, _) =
+    told(
+      state: watched_by_two(),
+      at_ms: 5500,
+      message: strike_of(damage: 10, cast_id: 1),
+    )
+  let #(_, taken) =
+    told(
+      state: wounded,
+      at_ms: 6000,
+      message: despawn_at(delay_ms: 0, went_at_ms: 6000),
+    )
+  assert health_news(taken) == [] as "no 0x937"
+  assert credits(taken) == [] as "no kill credit to the caster's connection"
+  assert kinds_of(outgoing(taken))
+    |> list.filter(fn(kind) { kind != "other" })
+    == ["removal to 2", "removal to 5"]
+    as "of the viewers' news only the 0x355s: no 0x88c death and no corpse (the strike's fight ends with its combat state, which kinds_of calls other)"
+  assert !support.stops(taken)
+}
+
+pub fn a_delayed_despawn_starts_one_timer_for_the_go_plus_the_delay_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(_, taken) = despawning_at_10_000()
+  assert timers_started(taken) == [#(despawn_timer, 4000)]
+    as "the go at 6000 and a delay of 4000: due at 10000, 4000 ms from the tell at 6000"
+  assert list.length(support.effects_of(taken)) == 1
+    as "nothing is sent before the timer fires, and no corpse timer starts"
+  let #(_, late) =
+    told(
+      state: watched_by_two(),
+      at_ms: 6300,
+      message: despawn_at(delay_ms: 4000, went_at_ms: 6000),
+    )
+  assert timers_started(late) == [#(despawn_timer, 3700)]
+    as "the delay runs from the go, not from the tell's arrival"
+}
+
+pub fn the_despawn_timer_firing_removes_the_creature_for_each_viewer_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) = despawning_at_10_000()
+  let #(_, taken) = fired(state:, at_ms: 10_000, timer: despawn_timer)
+  assert kinds_of(outgoing(taken)) == ["removal to 2", "removal to 5"]
+    as "opcode.0x355 to each viewer when the go plus the delay comes"
+  assert timers_started(taken) == [#(corpse_timer, 60_000)]
+    as "the respawn time is counted from the removal"
+}
+
+pub fn a_despawn_already_due_removes_at_once_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(_, taken) =
+    told(
+      state: watched_by_two(),
+      at_ms: 8000,
+      message: despawn_at(delay_ms: 1000, went_at_ms: 6000),
+    )
+  assert kinds_of(outgoing(taken)) == ["removal to 2", "removal to 5"]
+    as "the go at 6000 and 1000 ms: due at 7000, past at the tell at 8000"
+  assert timers_started(taken) == [#(corpse_timer, 60_000)]
+    as "no despawn timer for a due time already past"
+}
+
+pub fn the_earlier_of_two_pending_despawns_stays_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) = despawning_at_10_000()
+  let #(_, later) =
+    told(
+      state:,
+      at_ms: 6100,
+      message: despawn_at(delay_ms: 5000, went_at_ms: 6000),
+    )
+  assert support.effects_of(later) == []
+    as "due at 11000, after the pending 10000: no timer effect, since the shell ends a process that starts a running timer id"
+  let #(_, same) =
+    told(
+      state:,
+      at_ms: 6100,
+      message: despawn_at(delay_ms: 4000, went_at_ms: 6000),
+    )
+  assert support.effects_of(same) == [] as "the same due time: no timer effect"
+  let #(_, due) = fired(state:, at_ms: 10_000, timer: despawn_timer)
+  assert kinds_of(outgoing(due)) == ["removal to 2", "removal to 5"]
+    as "the pending timer stands and removes at 10000"
+  let #(sooner, taken) =
+    told(
+      state:,
+      at_ms: 6100,
+      message: despawn_at(delay_ms: 1000, went_at_ms: 6000),
+    )
+  let assert [
+    OwnEffect(step.CancelServiceTimer(timer: cancelled)),
+    OwnEffect(StartServiceTimer(timer: started, after_ms: 900)),
+  ] = support.effects_of(taken)
+    as "due at 7000, ahead: the pending timer is cancelled, then started again for 900 ms"
+  assert cancelled == despawn_timer && started == despawn_timer
+  let #(_, removed) = fired(state: sooner, at_ms: 7000, timer: despawn_timer)
+  assert kinds_of(outgoing(removed)) == ["removal to 2", "removal to 5"]
+  let #(_, past) =
+    told(
+      state:,
+      at_ms: 8000,
+      message: despawn_at(delay_ms: 1000, went_at_ms: 6000),
+    )
+  assert timers_cancelled(past) == [despawn_timer]
+    && kinds_of(outgoing(past)) == ["removal to 2", "removal to 5"]
+    && timers_started(past) == [#(corpse_timer, 60_000)]
+    as "due at 7000, past at 8000: the pending timer is cancelled and the creature leaves now, with no timer started for the despawn"
+}
+
+pub fn a_creature_killed_with_a_despawn_pending_cancels_it_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) = despawning_at_10_000()
+  let #(dead, taken) =
+    told(state:, at_ms: 7000, message: strike_of(damage: 60, cast_id: 1))
+  assert kinds_of(outgoing(taken))
+    == [
+      "answer to 2",
+      "credit to 2",
+      "health to 2",
+      "health to 5",
+      "death to 2",
+      "death to 5",
+    ]
+    as "the death path is unchanged"
+  assert timers_cancelled(taken) == [despawn_timer]
+    as "the pending despawn is cancelled at the kill"
+  assert timers_started(taken) == [#(corpse_timer, 60_000)]
+  let #(_, stale) = fired(state: dead, at_ms: 10_000, timer: despawn_timer)
+  assert support.effects_of(stale) == []
+    as "a fire already queued when the creature died removes nothing"
+}
+
+pub fn a_despawn_at_a_dead_or_despawned_creature_is_dropped_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(dead, _) =
+    told(
+      state: watched_by_two(),
+      at_ms: 6000,
+      message: strike_of(damage: 60, cast_id: 1),
+    )
+  let #(_, to_dead) =
+    told(
+      state: dead,
+      at_ms: 6500,
+      message: despawn_at(delay_ms: 0, went_at_ms: 6500),
+    )
+  assert support.effects_of(to_dead) == [] as "a corpse is not removed"
+  let #(_, to_gone) =
+    told(
+      state: despawned_by_two(),
+      at_ms: 6500,
+      message: despawn_at(delay_ms: 0, went_at_ms: 6500),
+    )
+  assert support.effects_of(to_gone) == []
+    as "a creature already gone is not removed again, and its respawn is not restarted"
+}
+
+pub fn a_despawn_from_an_older_life_is_dropped_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    told(
+      state: watched_by_two(),
+      at_ms: 6000,
+      message: strike_of(damage: 60, cast_id: 1),
+    )
+  let #(state, _) = fired(state:, at_ms: 66_000, timer: corpse_timer)
+  let #(_, old) =
+    told(
+      state:,
+      at_ms: 66_500,
+      message: creature.Despawn(
+        delay_ms: 0,
+        struck_at_ms: 65_000,
+        went_at_ms: 66_400,
+      ),
+    )
+  assert support.effects_of(old) == []
+    as "struck at 65000, before the creature stood again at 66000: a round of the life before"
+  let #(_, now) =
+    told(
+      state:,
+      at_ms: 66_500,
+      message: creature.Despawn(
+        delay_ms: 0,
+        struck_at_ms: 66_000,
+        went_at_ms: 66_400,
+      ),
+    )
+  assert kinds_of(outgoing(now)) == ["removal to 2", "removal to 5"]
+    as "struck at the moment it stood again: the new life's"
+}
+
+/// Player 2, at x = 5, comes near the Beast, which stands at x = 0.
+fn approached_by_2() -> creature.Message {
+  creature.Approached(
+    by: ConnectionId(2),
+    unit_id: 20,
+    place: at(5.0),
+    seq: 1,
+    stay: map_support.stay(count: 2),
+    hit_radius: place_support.player_hit_radius,
+  )
+}
+
+/// The connections the step releases from the creature, unit 7, as the number of each.
+fn released_unit_7(taken: ServiceStep(creature.Outgoing)) -> List(Int) {
+  list.filter_map(outgoing(taken), fn(one) {
+    case one.1 {
+      creature.FightTold(told: strike_tell.Released(unit_id: 7), ..) ->
+        Ok(one.0)
+      creature.FightTold(..)
+      | creature.News(..)
+      | creature.Struck(..)
+      | creature.KillCredit(..) -> Error(Nil)
+    }
+  })
+}
+
+/// The viewers the step sends the end of combat (0x908's combat state off), as the number
+/// of each.
+fn combat_ended_for(taken: ServiceStep(creature.Outgoing)) -> List(Int) {
+  list.filter_map(sent(taken), fn(one) {
+    case one.1 {
+      PeerNews(news: client_connection.CombatState(in_combat: False), ..) ->
+        Ok(one.0)
+      PeerNews(..) -> Error(Nil)
+    }
+  })
+}
+
+pub fn a_despawn_ends_the_creatures_fight_and_releases_its_players_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) =
+    told(state: watched_by_two(), at_ms: 6000, message: approached_by_2())
+  let assert [#(attack_tick, 1500)] = timers_started(aggro)
+    as "the aggro starts the attack tick, 1500 ms on"
+  let #(state, taken) =
+    told(
+      state:,
+      at_ms: 6200,
+      message: despawn_at(delay_ms: 0, went_at_ms: 6200),
+    )
+  assert released_unit_7(taken) == [2]
+    as "player 2, whom the creature fought, is released, as at a death"
+  assert combat_ended_for(taken) == [2, 5] as "the viewers see the combat end"
+  let #(_, late) = fired(state:, at_ms: 7500, timer: attack_tick)
+  assert outgoing(late) == [] as "no attack after the removal"
+}
+
+/// The crowd-control states the step ends for viewers (0x880), as the viewers' numbers.
+fn ended_states(taken: ServiceStep(creature.Outgoing)) -> List(Int) {
+  list.filter_map(sent(taken), fn(one) {
+    case one.1 {
+      PeerNews(news: client_connection.CrowdControlEnded(..), ..) -> Ok(one.0)
+      PeerNews(..) -> Error(Nil)
+    }
+  })
+}
+
+/// A strike of connection 2 for 1 damage that carries Kick's Knockdown.
+fn knocking_strike(cast_id cast_id: Int) -> creature.Message {
+  let assert creature.Strike(tell:) = strike_of(damage: 1, cast_id:)
+  creature.Strike(
+    tell: Strike(..tell, controls: [
+      crowd_control_support.kick_knockdown(instance_id: 28_673),
+    ]),
+  )
+}
+
+pub fn a_despawn_drops_states_and_worn_armor_without_a_0x880_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(held, knocked) =
+    told(
+      state: watched_by_two(),
+      at_ms: 6000,
+      message: knocking_strike(cast_id: 1),
+    )
+  let state_timers =
+    list.filter_map(timers_started(knocked), fn(started) {
+      case creature.control_of(timer: started.0) {
+        Ok(_) -> Ok(started.0)
+        Error(Nil) -> Error(Nil)
+      }
+    })
+  assert state_timers != [] as "the knockdown holds a state, with its timer"
+  let #(_, taken) =
+    told(
+      state: held,
+      at_ms: 6500,
+      message: despawn_at(delay_ms: 0, went_at_ms: 6500),
+    )
+  assert list.all(state_timers, fn(timer) {
+    list.contains(timers_cancelled(taken), timer)
+  })
+    as "each state's timer is cancelled"
+  assert ended_states(taken) == []
+    as "cc_state.end: no 0x880, the client drops the states with the unit's removal"
+  // Worn armor: a Stagger stun wears 1 of 3 points, which the refill timer would give back.
+  let #(worn, wearing) =
+    told(
+      state: armored_by_two(points: 3),
+      at_ms: 6000,
+      message: stunning_strike(cast_id: 2),
+    )
+  assert armor_left(wearing) == [#(2, 2), #(5, 2)]
+  let #(gone, taken) =
+    told(
+      state: worn,
+      at_ms: 6500,
+      message: despawn_at(delay_ms: 0, went_at_ms: 6500),
+    )
+  assert list.contains(timers_cancelled(taken), TimerId(2))
+    as "the armor refill timer is cancelled"
+  assert armor_left(taken) == [] && ended_states(taken) == []
+    as "no 0x938 and no 0x880 are sent"
+  let #(back, _) = fired(state: gone, at_ms: 66_500, timer: corpse_timer)
+  let #(_, again) =
+    told(state: back, at_ms: 67_000, message: stunning_strike(cast_id: 3))
+  assert armor_left(again) == [#(2, 2), #(5, 2)]
+    as "the creature that stands again wears its full 3 points"
+}
+
+pub fn a_throw_and_a_modifier_at_a_despawned_creature_are_dropped_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(_, thrown) =
+    told(state: despawned_by_two(), at_ms: 6500, message: thrown_at(6500))
+  assert support.effects_of(thrown) == []
+    as "a creature that is gone is not thrown"
+  let #(_, modified) =
+    told(
+      state: despawned_by_two(),
+      at_ms: 6500,
+      message: starting(
+        source: thorns_source(),
+        modifier: thorns(),
+        struck_at_ms: 6500,
+      ),
+    )
+  assert support.effects_of(modified) == []
+    as "a modifier that reaches the creature while it is gone is dropped"
+  let #(_, struck) =
+    told(
+      state: despawned_by_two(),
+      at_ms: 6500,
+      message: gated(strike: strike_of(damage: 10, cast_id: 2), gates: [
+        gate(effect_id: 1, condition: #(1, 1, 0, 1)),
+      ]),
+    )
+  assert answer_of(struck) == Refused(why: strike_tell.Despawned)
+    as "a strike is refused as despawned, and reads no gate though the gate would hold"
+  assert kinds_of(outgoing(struck)) == ["refusal to 2"]
+}
+
+pub fn a_viewer_arriving_while_despawned_is_sent_nothing_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, taken) =
+    told(
+      state: despawned_by_two(),
+      at_ms: 7000,
+      message: Watched(by: ConnectionId(9), stay: map_support.stay(count: 9)),
+    )
+  assert support.effects_of(taken) == []
+    as "opcode.0x355: the unit is gone to the client, and no 0x262 shows a creature that is not there"
+  assert set.contains(creature.viewers(state), ConnectionId(9))
+    as "the viewer is recorded"
+}
+
+pub fn a_viewer_that_arrived_while_despawned_is_shown_the_creature_at_its_respawn_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    told(
+      state: despawned_by_two(),
+      at_ms: 7000,
+      message: Watched(by: ConnectionId(9), stay: map_support.stay(count: 9)),
+    )
+  let #(_, taken) = fired(state:, at_ms: 66_000, timer: corpse_timer)
+  assert kinds_of(outgoing(taken))
+    == ["creation to 2", "creation to 5", "creation to 9"]
+    as "death.creature_respawn: the 0x262 once to each viewer, the late one included"
+}
+
+pub fn the_corpse_timer_after_a_despawn_shows_the_creature_again_without_a_second_removal_test() -> Nil {
+  use <- owned_test.run(5000)
+  let state =
+    holding(
+      state: watched_by_two(),
+      source: sprint_source(),
+      modifier: sprint(),
+      at_ms: 5500,
+    )
+  let #(state, _) =
+    told(
+      state:,
+      at_ms: 6000,
+      message: despawn_at(delay_ms: 0, went_at_ms: 6000),
+    )
+  let #(state, taken) = fired(state:, at_ms: 66_000, timer: corpse_timer)
+  assert kinds_of(outgoing(taken)) == ["creation to 2", "creation to 5"]
+    as "the 0x355 went at the removal: no second one"
+  let assert [
+    #(
+      2,
+      creature.News(news: PeerNews(news: CreatureAppeared(unit:, ..), ..), ..),
+    ),
+    ..
+  ] = outgoing(taken)
+  assert creature_unit.health_of(unit:) == 52 && unit.unit_id == 7
+    as "full health, the same unit"
+  assert unit.tail.properties == []
+    as "its properties start again from the bases"
+  assert unwatches(taken) == [WatchId(2)]
+    as "the caster whose modifier it held is no longer watched"
+  let #(_, old) =
+    told(
+      state:,
+      at_ms: 66_500,
+      message: creature.Despawn(
+        delay_ms: 0,
+        struck_at_ms: 65_000,
+        went_at_ms: 66_400,
+      ),
+    )
+  assert support.effects_of(old) == []
+    as "stood_again_ms is set: a despawn struck on the life before is dropped"
+}
+
+pub fn a_despawned_creature_waits_the_kinds_respawn_time_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(_, taken) =
+    told(
+      state: watched_by_two(),
+      at_ms: 6000,
+      message: despawn_at(delay_ms: 0, went_at_ms: 6000),
+    )
+  assert timers_started(taken) == [#(corpse_timer, 60_000)]
+    as "the kind's respawn_ms, 60000, counted from the removal"
+  let #(_, delayed) =
+    fired(state: despawning_at_10_000().0, at_ms: 10_000, timer: despawn_timer)
+  assert timers_started(delayed) == [#(corpse_timer, 60_000)]
+    as "a delayed despawn counts the respawn from its removal, not from the go: the delay is not taken off it"
+}
+
+pub fn a_creature_retiring_with_a_despawn_pending_stops_now_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) = despawning_at_10_000()
+  let #(_, taken) = told(state:, at_ms: 7000, message: Retire)
+  assert support.stops(taken)
+    as "the creature stands: it stops now, and the pending despawn goes with it"
+}
+
+pub fn a_run_only_creature_that_is_despawned_stops_at_its_corpse_timer_test() -> Nil {
+  use <- owned_test.run(5000)
+  let beast = spawn_support.battle_beast(number: -1, x: 0.0)
+  let #(state, _) =
+    feed(
+      state: creature_from(
+        source: spawn_source.RunOnly(spawn_source.Summoned(
+          id: SpawnId(-1),
+          creature_id: beast.creature_id,
+          level: None,
+          place: beast.place,
+        )),
+        spawn: beast,
+        viewers: [ConnectionId(2), ConnectionId(5)],
+      ),
+      at_ms: 5000,
+      event: OwnEvent(Started),
+    )
+  let #(state, removed) =
+    told(
+      state:,
+      at_ms: 6000,
+      message: despawn_at(delay_ms: 0, went_at_ms: 6000),
+    )
+  assert kinds_of(outgoing(removed)) == ["removal to 2", "removal to 5"]
+  let #(_, taken) = fired(state:, at_ms: 66_000, timer: corpse_timer)
+  assert support.stops(taken) as "the creature stops, so its map ends the spawn"
+  assert outgoing(taken) == []
+    as "each viewer was sent its 0x355 at the removal: no second one, and no 0x262 that stands it again"
 }

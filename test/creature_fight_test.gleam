@@ -4198,6 +4198,38 @@ pub fn a_turret_killed_while_opened_gives_its_kill_credit_test() -> Nil {
     as "the opening's end is cancelled"
 }
 
+pub fn a_turret_despawned_while_opened_finishes_its_opening_without_a_0x880_test() -> Nil {
+  use <- owned_test.run(5000)
+  let held = guarded_charge(viewers: [2])
+  let #(state, stunned) = stunned_at(state: held.state, at_ms: 4000)
+  let #(gone, despawned) =
+    tell(
+      state:,
+      at_ms: 5000,
+      message: creature.Despawn(
+        delay_ms: 0,
+        struck_at_ms: 4900,
+        went_at_ms: 5000,
+      ),
+    )
+  let assert [_, _, CastStarted(start: opening), ..] = news_named(stunned, 2)
+    as "the opening's cast is the third news of the interrupt"
+  let assert [CastFinished(cast_id: finished)] = news_named(despawned, 2)
+    as "no 0x880, the removal clears the client's states; the opening's cast is finished, which the removal does not do"
+  assert finished == opening.cast_id
+  assert list.contains(timers_cancelled(despawned), timer_for(stunned, 15_000))
+    as "the opening's end is cancelled"
+  let #(_, late) =
+    fire(state: gone, at_ms: 19_000, timer: timer_for(stunned, 15_000))
+  assert said(late) == [] && timers(late) == []
+    as "the opening's end that fires all the same finds no opening"
+  let #(_, stood) =
+    fire(state: gone, at_ms: 65_000, timer: timer_for(despawned, 60_000))
+  let assert [CastStarted(start: guard), CastWent(..)] = news_named(stood, 2)
+    as "the corpse timer stands the turret guarded, as after a death"
+  assert guard.spell4_id == 85_474
+}
+
 pub fn an_opening_end_after_death_does_nothing_test() -> Nil {
   use <- owned_test.run(5000)
   let held = guarded_charge(viewers: [2])
