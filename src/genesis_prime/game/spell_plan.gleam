@@ -1042,6 +1042,26 @@ pub type StruckMove {
   )
 }
 
+/// A DespawnUnit effect (`Spell4Effects.effectType.97`) aimed past the caster: it removes each
+/// creature the go `Hit` at `delay_ms` after the go (`Spell4Effects.delayTime`); the client
+/// reads no row of this type and sees the removal only as 0x355 (`Spell4Effects.effectType.97`).
+/// `aim` names the units it strikes (the primary target, the area or both, as `StruckMove`
+/// does), `phase_flags` the phases it applies in, `condition` when it holds (its caster apply
+/// prerequisite against the caster, its target apply prerequisite against each struck unit),
+/// and `tag` when it holds for the points the cast spent (genesis_prime/game/spend). The cast
+/// tells each creature it removes (genesis_prime/game/cast/control `despawns_told`); a unit
+/// that is the caster or another player is not removed.
+pub type Despawn {
+  Despawn(
+    effect_id: Spell4EffectsId,
+    phase_flags: Int,
+    delay_ms: Int,
+    aim: Aim,
+    condition: Condition,
+    tag: spend.Tag,
+  )
+}
+
 /// The target apply prerequisite of one row aimed past the caster, which the struck
 /// creature checks against its own state (`Spell4Effects.prerequisiteIdTargetApply`): the
 /// row's Spell4Effects id, the phases of `phase_flags` it applies in, who it aims at, the
@@ -1322,6 +1342,8 @@ pub type Kind {
   ForcedMoveEffect(forced_move: ForcedMove)
   /// A ForcedMove row aimed at other units, which the go throws the creatures it hit with (`StruckMove`).
   StruckMoveEffect(struck_move: StruckMove)
+  /// A DespawnUnit row aimed past the caster, which the go tells the creatures it hit to leave the field at (`Despawn`).
+  DespawnEffect(despawn: Despawn)
   /// A ModifySpellCooldown row aimed at the caster (`CooldownModifier`).
   CooldownEffect(modifier: CooldownModifier)
   /// A Stealth row aimed at the caster, a stealth the cast holds on it (`StealthRow`).
@@ -1388,6 +1410,13 @@ pub fn effect_of(kind kind: Kind) -> PlannedEffect(Kind) {
         tag: struck_move.tag,
         kind:,
       )
+    DespawnEffect(despawn:) ->
+      PlannedEffect(
+        effect_id: despawn.effect_id,
+        phase_flags: despawn.phase_flags,
+        tag: despawn.tag,
+        kind:,
+      )
     CooldownEffect(modifier:) ->
       PlannedEffect(
         effect_id: modifier.effect_id,
@@ -1437,7 +1466,7 @@ pub fn effect_of(kind kind: Kind) -> PlannedEffect(Kind) {
 /// the cast's gates draw their rolls in (`cast/gate.rolls_needed`): the Proxies, the gains,
 /// the lasting rows, the removes, the property changes (those with armor after the plain
 /// ones), the caster's forced moves, the struck units' moves, the cooldown changes, the
-/// stealth rows, the stealth removals, the procs, the heals and the crowd-control rows;
+/// stealth rows, the stealth removals, the procs, the heals, the crowd-control rows and the despawns;
 /// the rows of one kind keep the order they came in (row order).
 pub fn ranked(
   effects effects: List(PlannedEffect(Kind)),
@@ -1462,6 +1491,7 @@ pub fn kind_rank(kind kind: Kind) -> Int {
     ProcEffect(..) -> 110
     HealEffect(..) -> 120
     ControlEffect(..) -> 130
+    DespawnEffect(..) -> 140
   }
 }
 
@@ -1481,7 +1511,8 @@ fn rank(kind kind: Kind) -> Int {
     | RemoveStealthEffect(..)
     | ProcEffect(..)
     | HealEffect(..)
-    | ControlEffect(..) -> False
+    | ControlEffect(..)
+    | DespawnEffect(..) -> False
   }
   case armored {
     True -> kind_rank(kind:) + 5
@@ -1504,7 +1535,8 @@ pub fn as_proxy(kind kind: Kind) -> Result(Proxy, Nil) {
     | RemoveStealthEffect(..)
     | ProcEffect(..)
     | HealEffect(..)
-    | ControlEffect(..) -> Error(Nil)
+    | ControlEffect(..)
+    | DespawnEffect(..) -> Error(Nil)
   }
 }
 
@@ -1523,7 +1555,8 @@ pub fn as_gain(kind kind: Kind) -> Result(Gain, Nil) {
     | RemoveStealthEffect(..)
     | ProcEffect(..)
     | HealEffect(..)
-    | ControlEffect(..) -> Error(Nil)
+    | ControlEffect(..)
+    | DespawnEffect(..) -> Error(Nil)
   }
 }
 
@@ -1542,7 +1575,8 @@ pub fn as_lasting(kind kind: Kind) -> Result(Lasting, Nil) {
     | RemoveStealthEffect(..)
     | ProcEffect(..)
     | HealEffect(..)
-    | ControlEffect(..) -> Error(Nil)
+    | ControlEffect(..)
+    | DespawnEffect(..) -> Error(Nil)
   }
 }
 
@@ -1561,7 +1595,8 @@ pub fn as_remove(kind kind: Kind) -> Result(ForceRemove, Nil) {
     | RemoveStealthEffect(..)
     | ProcEffect(..)
     | HealEffect(..)
-    | ControlEffect(..) -> Error(Nil)
+    | ControlEffect(..)
+    | DespawnEffect(..) -> Error(Nil)
   }
 }
 
@@ -1580,7 +1615,8 @@ pub fn as_modifier(kind kind: Kind) -> Result(PropertyModifier, Nil) {
     | RemoveStealthEffect(..)
     | ProcEffect(..)
     | HealEffect(..)
-    | ControlEffect(..) -> Error(Nil)
+    | ControlEffect(..)
+    | DespawnEffect(..) -> Error(Nil)
   }
 }
 
@@ -1599,7 +1635,8 @@ pub fn as_forced_move(kind kind: Kind) -> Result(ForcedMove, Nil) {
     | RemoveStealthEffect(..)
     | ProcEffect(..)
     | HealEffect(..)
-    | ControlEffect(..) -> Error(Nil)
+    | ControlEffect(..)
+    | DespawnEffect(..) -> Error(Nil)
   }
 }
 
@@ -1613,6 +1650,27 @@ pub fn as_struck_move(kind kind: Kind) -> Result(StruckMove, Nil) {
     | RemoveEffect(..)
     | ModifierEffect(..)
     | ForcedMoveEffect(..)
+    | CooldownEffect(..)
+    | StealthEffect(..)
+    | RemoveStealthEffect(..)
+    | ProcEffect(..)
+    | HealEffect(..)
+    | ControlEffect(..)
+    | DespawnEffect(..) -> Error(Nil)
+  }
+}
+
+/// The payload of an effect of kind `DespawnEffect`, and nothing for one of another kind.
+pub fn as_despawn(kind kind: Kind) -> Result(Despawn, Nil) {
+  case kind {
+    DespawnEffect(despawn:) -> Ok(despawn)
+    ProxyEffect(..)
+    | GainEffect(..)
+    | LastingEffect(..)
+    | RemoveEffect(..)
+    | ModifierEffect(..)
+    | ForcedMoveEffect(..)
+    | StruckMoveEffect(..)
     | CooldownEffect(..)
     | StealthEffect(..)
     | RemoveStealthEffect(..)
@@ -1637,7 +1695,8 @@ pub fn as_cooldown_modifier(kind kind: Kind) -> Result(CooldownModifier, Nil) {
     | RemoveStealthEffect(..)
     | ProcEffect(..)
     | HealEffect(..)
-    | ControlEffect(..) -> Error(Nil)
+    | ControlEffect(..)
+    | DespawnEffect(..) -> Error(Nil)
   }
 }
 
@@ -1656,7 +1715,8 @@ pub fn as_stealth(kind kind: Kind) -> Result(StealthRow, Nil) {
     | RemoveStealthEffect(..)
     | ProcEffect(..)
     | HealEffect(..)
-    | ControlEffect(..) -> Error(Nil)
+    | ControlEffect(..)
+    | DespawnEffect(..) -> Error(Nil)
   }
 }
 
@@ -1675,7 +1735,8 @@ pub fn as_remove_stealth(kind kind: Kind) -> Result(RemoveStealthRow, Nil) {
     | StealthEffect(..)
     | ProcEffect(..)
     | HealEffect(..)
-    | ControlEffect(..) -> Error(Nil)
+    | ControlEffect(..)
+    | DespawnEffect(..) -> Error(Nil)
   }
 }
 
@@ -1694,7 +1755,8 @@ pub fn as_proc(kind kind: Kind) -> Result(ProcRow, Nil) {
     | StealthEffect(..)
     | RemoveStealthEffect(..)
     | HealEffect(..)
-    | ControlEffect(..) -> Error(Nil)
+    | ControlEffect(..)
+    | DespawnEffect(..) -> Error(Nil)
   }
 }
 
@@ -1713,7 +1775,8 @@ pub fn as_heal(kind kind: Kind) -> Result(Heal, Nil) {
     | StealthEffect(..)
     | RemoveStealthEffect(..)
     | ProcEffect(..)
-    | ControlEffect(..) -> Error(Nil)
+    | ControlEffect(..)
+    | DespawnEffect(..) -> Error(Nil)
   }
 }
 
@@ -1732,7 +1795,8 @@ pub fn as_control(kind kind: Kind) -> Result(CrowdControl, Nil) {
     | StealthEffect(..)
     | RemoveStealthEffect(..)
     | ProcEffect(..)
-    | HealEffect(..) -> Error(Nil)
+    | HealEffect(..)
+    | DespawnEffect(..) -> Error(Nil)
   }
 }
 
@@ -1889,6 +1953,13 @@ pub type LeftOutReason {
   /// A periodic Heal or HealShields row that lasts until removed (`Spell4Effects.flags`
   /// bit 2), which no schedule ends (issue 803).
   HealUntilRemoved
+  /// A DespawnUnit row (`Spell4Effects.effectType.97`) whose `column` (dataBits00 or
+  /// dataBits01) is not 0: no code of the client reads either column of this type, so what a
+  /// value means is not known and the row removes nothing.
+  DespawnDataNotRead(column: String)
+  /// A DespawnUnit row aimed at the caster alone: only a creature caster could be removed by
+  /// it, and a creature's casts are not read, and a player is never removed.
+  DespawnAimedAtTheCasterOnly
 }
 
 /// A row as its spell holds it. A Proxy's child and a Proc's spell are planned from the
@@ -2505,6 +2576,8 @@ pub opaque type Sources {
     group_lists: Dict(Int, List(Int)),
     /// Every spell group id some Spell4GroupList row holds.
     known_groups: Set(Int),
+    /// The spells a Proxy row (dataBits00) or a Proc row (dataBits01) names as its child.
+    children: Set(Int),
   )
 }
 
@@ -2518,7 +2591,28 @@ pub fn sources_of(tables tables: table_store.Tables) -> Sources {
     thresholds: thresholds_by_parent(tables:),
     group_lists:,
     known_groups: known_groups(group_lists:),
+    children: children_named(effects: spell4_effects.all(tables)),
   )
+}
+
+/// Whether a Proxy or a Proc row of the tables names this spell as its child, so a spell
+/// cast on its own is also started by that row.
+pub fn is_child(sources sources: Sources, spell4_id spell4_id: Int) -> Bool {
+  set.contains(sources.children, spell4_id)
+}
+
+fn children_named(
+  effects effects: List(spell4_effects.Spell4Effects),
+) -> Set(Int) {
+  list.filter_map(effects, fn(effect) {
+    let kind = effect_kind.kind_of(effect_type: effect.effect_type)
+    case kind == effect_kind.Proxy, kind == effect_kind.Proc {
+      True, _ -> Ok(effect.data_bits00)
+      False, True -> Ok(effect.data_bits01)
+      False, False -> Error(Nil)
+    }
+  })
+  |> set.from_list
 }
 
 /// The effects of one spell in the grouped rows, in the order they take effect: none
@@ -3030,6 +3124,7 @@ fn spell_of(
           effect_kind.Heal(vital: effect_kind.Health),
           effect_kind.Heal(vital: effect_kind.Shield),
         ],
+        [effect_kind.Despawn],
       ],
       fn(kinds) { rows_read(readings:, kinds:) },
     ),
@@ -3645,6 +3740,7 @@ pub fn modifier_of(
     | effect_kind.RavelSignal
     | effect_kind.Activate
     | effect_kind.Immunity
+    | effect_kind.Despawn
     | effect_kind.Unread(..) ->
       change_of(tables:, spell4_id:, effect:)
       |> result.map(PropertyChange)
@@ -4629,6 +4725,7 @@ fn struck_aim_of_kind(kind kind: Kind) -> Result(Aim, Nil) {
     RemoveEffect(remove:) -> Ok(remove.aim)
     ControlEffect(control:) -> Ok(control.aim)
     StruckMoveEffect(struck_move:) -> Ok(struck_move.aim)
+    DespawnEffect(despawn:) -> Ok(despawn.aim)
     ModifierEffect(modifier:) ->
       case modifier.change {
         StruckChange(aim:, ..) -> Ok(aim)
@@ -4832,8 +4929,54 @@ fn kind_reading(
       }
     effect_kind.Damage -> Ok(ReadByArea)
     effect_kind.Activate -> Ok(ReadByActivation)
+    effect_kind.Despawn -> despawn_reading(tables:, place:, effect:)
     effect_kind.Immunity | effect_kind.Unread(..) ->
       Ok(LeftOut(why: TypeNotRead))
+  }
+}
+
+/// A DespawnUnit row (`Spell4Effects.effectType.97`) as a `Despawn` of the part of its aim
+/// past the caster (`past_the_caster`): left out with `DespawnAimedAtTheCasterOnly` when it
+/// aims at the caster alone and with `DespawnDataNotRead` when dataBits00 or dataBits01 is
+/// not 0, and `Held` when its phaseFlags is 0 (`held_without_a_phase`). A flags value no aim
+/// reads is left out as aimed at other units. Its apply prerequisites are read as a throw's
+/// are (`applied_condition_of`), the target one checked by each struck creature that holds
+/// all it reads (`struck_gates_of`).
+fn despawn_reading(
+  tables tables: table_store.Tables,
+  place place: RowPlace,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(RowReading, PlanError) {
+  case aim_of(target_flags: effect.target_flags) {
+    Error(Nil) -> Ok(LeftOut(why: AimedAtOtherUnits))
+    Ok(aim) ->
+      case past_the_caster(aim: aim_in_place(place:, aim:)) {
+        Error(Nil) -> Ok(LeftOut(why: DespawnAimedAtTheCasterOnly))
+        Ok(past) ->
+          case effect.data_bits00, effect.data_bits01 {
+            0, 0 -> {
+              use condition <- result.map(applied_condition_of(
+                tables:,
+                effect:,
+                reach: reach_in_place(place:, aim: past),
+              ))
+              Applied(
+                read_as(
+                  DespawnEffect(despawn: Despawn(
+                    effect_id: Spell4EffectsId(effect.id),
+                    phase_flags: effect.phase_flags,
+                    delay_ms: effect.delay_time,
+                    aim: past,
+                    condition:,
+                    tag: tag_of(effect:),
+                  )),
+                ),
+              )
+            }
+            0, _ -> Ok(LeftOut(why: DespawnDataNotRead(column: "dataBits01")))
+            _, _ -> Ok(LeftOut(why: DespawnDataNotRead(column: "dataBits00")))
+          }
+      }
   }
 }
 

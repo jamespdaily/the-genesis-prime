@@ -1320,6 +1320,7 @@ pub fn mapped(
     | client_connection.TellStrikeAnswered(..)
     | client_connection.TellTargetChange(..)
     | client_connection.TellThrown(..)
+    | client_connection.TellDespawn(..)
     | TellChat(..) ->
       panic as "the step ends in an ask of the map: a store, hand-off or Sessions ask, or a tell, is none"
   }

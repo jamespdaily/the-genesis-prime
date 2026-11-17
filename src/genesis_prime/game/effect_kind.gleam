@@ -72,6 +72,12 @@
 ////   server reads it and the coverage measure counts it unhandled; only a creature's guard
 ////   spell is checked for it (`immune_to`, genesis_prime/world_map/creature_guard_spells;
 ////   `Spell4Effects.effectType.79`, enum `0x140c34140`).
+//// - **Despawn** (97) removes the creatures it aims at past the caster after its delay; the
+////   client reads no row of this type and sees the removal only as 0x355
+////   (`Spell4Effects.effectType.97`). A row is read when its targetFlags name a unit past the
+////   caster (`is_row_read`); the plan leaves out a row aimed at the caster alone, and one
+////   whose dataBits00 or dataBits01 is not 0, by name (genesis_prime/game/spell_plan
+////   `despawn_reading`).
 //// - **Unread** is any other type: the client's data holds it and no rule of the
 ////   server reads it.
 ////
@@ -171,6 +177,9 @@ pub type Kind {
   /// (`Spell4Effects.effectType.79`). No rule reads it as an effect, so it is not read
   /// (`is_read`); `immune_to` names what a row is immune to.
   Immunity
+  /// A DespawnUnit effect (97): removes the creatures it aims at past the caster after its
+  /// delay (`Spell4Effects.effectType.97`).
+  Despawn
   /// A type no rule reads.
   Unread(effect_type: Int)
 }
@@ -208,6 +217,7 @@ pub fn kind_of(effect_type effect_type: Int) -> Kind {
     29 -> Absorption
     7 -> Activate
     79 -> Immunity
+    97 -> Despawn
     other -> Unread(effect_type: other)
   }
 }
@@ -239,7 +249,8 @@ pub fn is_read(effect_type effect_type: Int) -> Bool {
     | InterruptArmor
     | DisguiseOutfit
     | Absorption
-    | Activate -> True
+    | Activate
+    | Despawn -> True
     Immunity | Unread(..) -> False
   }
 }
@@ -274,6 +285,7 @@ pub fn is_row_read(
     Heal(..) | InterruptArmor | Absorption ->
       int.bitwise_and(target_flags, 1) == 1 || target_flags == 2
     ShieldOverload -> target_flags == 4
+    Despawn -> target_flags >= 2 && target_flags <= 7
     Proxy
     | Damage
     | VitalModifier

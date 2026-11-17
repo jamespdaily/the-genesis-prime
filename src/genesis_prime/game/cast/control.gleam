@@ -51,6 +51,11 @@
 ////   (genesis_prime/game/connection/casting): it draws the throw's two fractions from its
 ////   seed then, so a delayed throw draws at its own time, and tells the creature. A
 ////   connection that is gone has no timers, so nothing is thrown.
+//// - **A go's despawns of creatures** (type 97 rows whose targetFlags name a unit other than
+////   the caster, a `Despawn`; `Spell4Effects.effectType.97`): each is aimed at the creatures
+////   the go hit, in the life and at the time the go struck them. The rule tells each
+////   `CreatureDespawns` in the go's own step, with the row's delay and the go's time, and
+////   arms no timer: the creature owns the delay (`despawns_told`).
 //// - **A go's disguises** (genesis_prime/game/look): each type 112 effect of the phase
 ////   that has a life and whose gate against the caster passes is a modifier row whose change is a
 ////   `Look`, so it is listed, started, ended, cancelled with the node and ended at death
@@ -129,12 +134,12 @@ import genesis_prime/game/cast/state.{
   type Aimed, type Applied, type Caster, type CasterChange, type Due,
   type Effect, type HeldRestriction, type Live, type OnCreature, type Reached,
   type Restricting, type State, type Struck, Absorb, Applied, CasterChangeStarts,
-  ChargeLevel, CooldownModifierEnds, CooldownModifierStarts, Deflected, Finish,
-  ForcedMoveStart, ForcedMoveStarts, Go, HeldRestriction, Hit, Immune, Look,
-  ModifierEnd, ModifierStart, NodesEnd, OnCreature, ProcDue, Property,
-  RepeatHeld, Restricting, RestrictionEnd, Send, StartChild, StartHeld, State,
-  StateEnd, TargetChangeEnds, TargetChangeStarts, TargetModifierStart, Tell,
-  Tick, WindowEnd,
+  ChargeLevel, CooldownModifierEnds, CooldownModifierStarts, CreatureDespawns,
+  Deflected, Finish, ForcedMoveStart, ForcedMoveStarts, Go, HeldRestriction, Hit,
+  Immune, Look, ModifierEnd, ModifierStart, NodesEnd, OnCreature, ProcDue,
+  Property, RepeatHeld, Restricting, RestrictionEnd, Send, StartChild, StartHeld,
+  State, StateEnd, TargetChangeEnds, TargetChangeStarts, TargetModifierStart,
+  Tell, Tick, WindowEnd,
 } as cast_state
 import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
@@ -320,6 +325,8 @@ fn effect_named(kind kind: spell_plan.Kind) -> Result(String, Nil) {
       named("the ForcedMove", row.effect_id)
     spell_plan.StruckMoveEffect(struck_move: row) ->
       named("the ForcedMove", row.effect_id)
+    spell_plan.DespawnEffect(despawn: row) ->
+      named("the DespawnUnit", row.effect_id)
     spell_plan.CooldownEffect(modifier: row) ->
       named("the ModifySpellCooldown", row.effect_id)
     spell_plan.StealthEffect(stealth: row) ->
@@ -614,7 +621,8 @@ pub fn modifiers_armed(
       | spell_plan.RemoveStealthEffect(..)
       | spell_plan.ProcEffect(..)
       | spell_plan.HealEffect(..)
-      | spell_plan.ControlEffect(..) -> so_far
+      | spell_plan.ControlEffect(..)
+      | spell_plan.DespawnEffect(..) -> so_far
     }
   })
 }
@@ -700,7 +708,65 @@ pub fn struck_moves_armed(
       | spell_plan.RemoveStealthEffect(..)
       | spell_plan.ProcEffect(..)
       | spell_plan.HealEffect(..)
-      | spell_plan.ControlEffect(..) -> so_far
+      | spell_plan.ControlEffect(..)
+      | spell_plan.DespawnEffect(..) -> so_far
+    }
+  })
+}
+
+/// The creatures a go removes: each despawn among the effects the go `reached` (a DespawnUnit
+/// row of the phase whose caster gates passed, with a creature its aim names that the round
+/// `Hit` and that passes its target gate, `cast.aimed_at`), in the row then the unit order of
+/// `cast_gate.units_aimed_at`, each told `CreatureDespawns` in this step, whatever its delay:
+/// the creature owns the delay (genesis_prime/world_map/creature `Despawn`), so no timer of
+/// the cast is armed and the caster's leaving or dying changes nothing. The delay runs from
+/// `went_at_ms`, the go's own time, not from the opening of the strike round, which comes
+/// earlier by up to the round's deadline. The effects come after the go's frames, beside
+/// the throws'.
+///
+/// A unit that is not a `HitCreature` of the round is not removed (a deflected one included,
+/// as it is not thrown), and neither is the caster or another player. Both are server
+/// guesses: the client's tables say what a DespawnUnit row is aimed at but not what a
+/// deflected strike or a player does with it, so a deflected creature stays and no player
+/// is removed.
+///
+/// ```
+/// cast.went: Send(go 0x7f4), Tell(audience, CastWent)
+///   for each despawn row reached on a unit the round Hit as a creature (HitCreature):
+///     CreatureDespawns(unit, life, struck_at_ms = the round's, went_at_ms = go time, delay_ms)
+///   the connection tells the creature TellDespawn(delay_ms, struck_at_ms, went_at_ms)
+///     ─▶ creature.Despawn
+/// ```
+///
+/// | If | Then |
+/// |---|---|
+/// | the creature never answers by the round's deadline, or refuses | the unit is left out of the round, so it is not `Hit`: no tell |
+/// | the go is cancelled during the round | `went` finds no live cast and writes and tells nothing: no tell |
+/// | the caster apply prerequisite or the target gate fails | the row is not in `reached`: no tell |
+/// | the row aims at the caster alone, or a player stands in its area | units are creatures only: no tell, and no 0x355 for a player (a server guess) |
+/// | the row aims at a static object | the object is not a creature, so it is not selected: no tell |
+pub fn despawns_told(
+  cast _cast: State,
+  reached reached: List(Reached),
+  struck struck: List(Struck),
+  went_at_ms went_at_ms: Int,
+) -> List(Effect) {
+  list.flat_map(reached, fn(entry) {
+    case spell_plan.as_despawn(entry.effect.kind) {
+      Ok(row) ->
+        case cast_gate.creature_hit(struck:, unit_id: entry.unit_id) {
+          Error(Nil) -> []
+          Ok(#(life, struck_at_ms)) -> [
+            CreatureDespawns(
+              unit_id: entry.unit_id,
+              life:,
+              struck_at_ms:,
+              went_at_ms:,
+              delay_ms: row.delay_ms,
+            ),
+          ]
+        }
+      Error(Nil) -> []
     }
   })
 }

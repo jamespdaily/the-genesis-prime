@@ -1142,6 +1142,25 @@ fn carried_out(
         #(session, [tell])
       }
       cast_state.ForcedMoveStarts(..), None -> #(session, [])
+      cast_state.CreatureDespawns(
+        unit_id:,
+        life:,
+        struck_at_ms:,
+        went_at_ms:,
+        delay_ms:,
+      ),
+        Some(entered)
+      -> #(session, [
+        creature_despawned(
+          entered:,
+          unit_id:,
+          life:,
+          struck_at_ms:,
+          went_at_ms:,
+          delay_ms:,
+        ),
+      ])
+      cast_state.CreatureDespawns(..), None -> #(session, [])
     }
     #(session, list.append(done, more))
   })
@@ -1287,6 +1306,33 @@ fn creature_thrown(
       ),
     )),
   )
+}
+
+/// The removal of the creature `unit_id` of `life`, in the run of the player's map, through
+/// the creature registry with no watch, as a strike's tell goes: the connection tells the
+/// creature `TellDespawn` with `delay_ms`, `struck_at_ms` and `went_at_ms`, and draws
+/// nothing.
+fn creature_despawned(
+  entered entered: world_entry.Entered,
+  unit_id unit_id: Int,
+  life life: Int,
+  struck_at_ms struck_at_ms: Int,
+  went_at_ms went_at_ms: Int,
+  delay_ms delay_ms: Int,
+) -> Effect(ConnectionEffect(Request)) {
+  OwnEffect(step.Tell(
+    to: step.Creature(
+      map: entered.map,
+      incarnation: entered.incarnation,
+      unit_id:,
+      life:,
+    ),
+    request: client_connection.TellDespawn(
+      delay_ms:,
+      struck_at_ms:,
+      went_at_ms:,
+    ),
+  ))
 }
 
 /// A go asked: its targets are selected from the units the client shows, the

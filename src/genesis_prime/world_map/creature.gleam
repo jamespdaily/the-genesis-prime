@@ -50,6 +50,7 @@
 //// the corpse timer ─────▶ alive again at full health, properties from the bases, every source cleared,
 ////                         stood_again_ms = now
 ////                                                         Send(each viewer, Removed), then CreatureAppeared
+////                                                         (a creature that was despawned: CreatureAppeared only)
 ////                         told Retire while dead: Stop (no viewer: the spawn's next creature starts full)
 ////
 //// caster's connection c0, a property modifier of its spell, for the life the go struck
@@ -70,6 +71,13 @@
 ////                                    walking home or run speed 0: dropped
 ////                                    else Send(each viewer, News(0x638)), and the fight's `FlightEnds`
 ////                                    timer starts (`timer_id`), which stands the creature at the landing
+////
+//// caster's connection c0, a DespawnUnit effect of its spell, for the life the go struck
+//// Despawn(delay_ms, struck_at_ms, went_at_ms)
+////                         dead, gone, or struck_at_ms < stood_again_ms: dropped
+////                         else ─▶ at went_at_ms + delay_ms the creature leaves the field (`Despawn`'s doc):
+////                                    the fight and the guard end as at a kill, the controls are dropped,
+////                                    Send(each viewer, Removed); StartServiceTimer(corpse, respawn_ms)
 //// ```
 ////
 //// - **The unit** is `creature_unit.create(spawn, unit_id, time)`, stamped with
@@ -282,6 +290,12 @@ const corpse_timer = TimerId(1)
 /// start at 7), no control's (they start at 11) and no guard's (they start at 12).
 const refill_timer = TimerId(2)
 
+/// The timer of a pending despawn: 3, which no fight timer is. A fight timer is 7 times its
+/// generation plus a slot of 0 to 3 or 6, and generations start at 1 (`creature_fight`), so
+/// 3 is the id a generation 0 would give the cast end, which is never issued; no control's
+/// (they start at 11) and no guard's (they start at 12) is 3 either.
+const despawn_timer = TimerId(3)
+
 /// What a creature is started with: which creature of which run it is and the
 /// map's clock (`CreatureStart`), the spawn it stands at, found by the id the start
 /// names, the kind the server chose for its Creature2 row, and the run's game
@@ -350,6 +364,56 @@ pub type Message {
   /// the fight takes it (`creature_fight.Thrown`), which drops it for a creature that walks
   /// home or does not run.
   Thrown(throw: forced_move.Throw, struck_at_ms: Int)
+  /// A caster's connection: a DespawnUnit effect of its spell removes the creature
+  /// `delay_ms` after `went_at_ms`, the monotonic time of the go; `struck_at_ms`, the
+  /// monotonic time the go's round struck the creature, tells its life. The creature owns the
+  /// delay, so the caster's leaving or dying changes nothing.
+  ///
+  /// ```
+  /// Despawn(delay_ms, struck_at_ms, went_at_ms)
+  ///     dead, despawned, or struck_at_ms < stood_again_ms: dropped
+  ///     due = went_at_ms + delay_ms; despawn_due_ms holds the due time of the pending one
+  ///     due <= now:                         CancelServiceTimer(despawn_timer) if one is
+  ///                                         pending, then leave the field now
+  ///     none pending:                       StartServiceTimer(despawn_timer, due - now)
+  ///     due >= the pending due time:        no timer effect; the pending timer stands
+  ///     due < the pending due time, > now:  CancelServiceTimer(despawn_timer), then
+  ///                                         StartServiceTimer(despawn_timer, due - now)
+  ///     the despawn timer fires ─▶ leave the field
+  ///     leave the field:
+  ///         fight and guard take Despawned (stand still, finish a charge, Released to
+  ///         the fighters), the controls take `died` (no 0x880)
+  ///         life = Despawned; CancelServiceTimer(despawn_timer) only when it is running
+  ///         Send(each viewer, in connection order, Removed) ─▶ writes 0x355 if shown
+  ///         StartServiceTimer(corpse_timer, the kind's respawn_ms)
+  ///     the corpse timer fires ─▶ StandsAgain: properties from the bases, stood_again_ms =
+  ///         now, Send(each viewer, CreatureAppeared) with no second Removed
+  /// ```
+  ///
+  /// No health or death news, no kill credit and no corpse are sent: the removal is a
+  /// death's stand-still, release and respawn without them. The delay runs from the go, as a
+  /// cast's own delay does.
+  ///
+  /// | If | Then |
+  /// |---|---|
+  /// | the tell is in flight when the creature ends | the registry drops it |
+  /// | it reaches a creature that is dead or already despawned | dropped (a server guess: the client's tables hold no rule for a removal that meets a corpse, so it takes no second life of its own) |
+  /// | it was struck before the creature last stood again | dropped: the registry address is the same across lives |
+  /// | it reaches a creature that walks home or fights | the creature is removed and the fight releases its players: the removal is no strike |
+  /// | the delay is 0 | the creature leaves the field in the tell's own step, after the go's frames; another viewer's 0x7f4 and 0x355 have two senders, which no order holds |
+  /// | the delay is above 0 | one timer to the go plus the delay, and nothing is sent before |
+  /// | a second `Despawn` arrives while one is pending, with the same or a later due time | the earlier due time wins, a server guess (no client rule orders two removals); no timer effect: the shell ends the process when a timer id already running is started, so the pending timer stands |
+  /// | a second `Despawn` arrives while one is pending, with an earlier due time still ahead | the pending timer is cancelled, then the despawn timer is started for the earlier due time |
+  /// | a second `Despawn` arrives while one is pending, with a due time already past | the pending timer is cancelled and the creature leaves the field now |
+  /// | the creature dies while one is pending | the despawn timer is cancelled at the kill; a stale fire already queued is dropped by the shell |
+  /// | the creature retires unseen while one is pending | the process stops and the pending despawn is lost, a server guess (the spawn's next creature stands fresh) |
+  /// | it is told `Retire` while despawned | it stops at its respawn (`StopAtRespawn`), so the spawn does not come back early |
+  /// | a viewer arrives while despawned | it is recorded and sent nothing; it is sent the creature when the corpse timer fires |
+  /// | a viewer leaves while despawned | `Unwatched` sends `Removed`, which the viewer's connection drops: the unit is not shown |
+  /// | a strike reaches the despawned creature | `Refused(Despawned)`; a throw, a modifier or a gate is dropped, since `is_dead` holds |
+  /// | the corpse timer fires for a run-only creature | `Stop` only: the viewers were sent `Removed` at the removal |
+  /// | the creature crashes pending or despawned | the map sends `Gone` and starts the spawn again after the respawn time as a new unit |
+  Despawn(delay_ms: Int, struck_at_ms: Int, went_at_ms: Int)
 }
 
 /// What a creature sends a connection without waiting.
@@ -383,7 +447,8 @@ pub type Outgoing {
 /// players' spells on them, the watch on each caster's connection whose modifiers it
 /// holds, the caster's connection of each modifier's source in the order the
 /// modifiers started, the id its next watch on a caster's connection takes, and the
-/// monotonic time it last stood again (none in its first life).
+/// monotonic time it last stood again (none in its first life), and the monotonic time its
+/// pending despawn is due (none when none is pending).
 pub opaque type State {
   State(
     settings: Settings,
@@ -399,6 +464,7 @@ pub opaque type State {
     held_by: List(#(Source, ConnectionId)),
     next_watch: Int,
     stood_again_ms: Option(Int),
+    despawn_due_ms: Option(Int),
   )
 }
 
@@ -438,6 +504,7 @@ pub fn new(settings: Settings) -> State {
     held_by: [],
     next_watch: first_caster_watch,
     stood_again_ms: None,
+    despawn_due_ms: None,
   )
 }
 
@@ -512,20 +579,23 @@ pub fn step(
     )
     OwnEvent(Told(message: Watched(by:, stay:))) -> #(
       State(..state, viewers: dict.insert(state.viewers, by, stay)),
-      Effects([
-        appeared(state:, viewer: #(by, stay), now_ms:),
-        ..list.append(
-          guard_shown(state:, viewer: #(by, stay), now_ms:),
-          list.map(
-            creature_fight.arrival_news(
-              state: state.fight,
-              fighter: fighter_of(state:),
-              now_ms:,
+      Effects(case creature_life.is_shown(life: state.life) {
+        False -> []
+        True -> [
+          appeared(state:, viewer: #(by, stay), now_ms:),
+          ..list.append(
+            guard_shown(state:, viewer: #(by, stay), now_ms:),
+            list.map(
+              creature_fight.arrival_news(
+                state: state.fight,
+                fighter: fighter_of(state:),
+                now_ms:,
+              ),
+              fn(news) { news_to(creature:, viewer: #(by, stay), news:) },
             ),
-            fn(news) { news_to(creature:, viewer: #(by, stay), news:) },
-          ),
-        )
-      ]),
+          )
+        ]
+      }),
     )
     OwnEvent(Told(message: Unwatched(by:))) ->
       case dict.get(state.viewers, by) {
@@ -589,9 +659,13 @@ pub fn step(
       state,
       Effects(
         list.append(
-          list.map(sorted_viewers(state:), fn(viewer) {
-            news_to(creature:, viewer:, news: Removed)
-          }),
+          case creature_life.is_shown(life: state.life) {
+            True ->
+              list.map(sorted_viewers(state:), fn(viewer) {
+                news_to(creature:, viewer:, news: Removed)
+              })
+            False -> []
+          },
           [Stop],
         ),
       ),
@@ -606,6 +680,7 @@ pub fn step(
       {
         Ends -> #(state, Effects([Stop]))
         StandsAgain(life:) -> {
+          let was_shown = creature_life.is_shown(life: state.life)
           let #(state, unwatched) =
             stood_again(state: State(..state, life:), now_ms:)
           let #(state, fought) =
@@ -618,10 +693,7 @@ pub fn step(
               list.flatten([
                 unwatched,
                 list.flat_map(sorted_viewers(state:), fn(viewer) {
-                  [
-                    news_to(creature:, viewer:, news: Removed),
-                    appeared(state:, viewer:, now_ms:),
-                  ]
+                  shown_again(state:, viewer:, was_shown:, now_ms:)
                 }),
                 guarded,
                 fought,
@@ -630,6 +702,8 @@ pub fn step(
           )
         }
       }
+    OwnEvent(ServiceTimerFired(timer:)) if timer == despawn_timer ->
+      despawn_timer_fired(state:, now_ms:)
     OwnEvent(ServiceTimerFired(timer:)) if timer == refill_timer -> {
       let #(control, effects) =
         creature_control.refilled(
@@ -663,6 +737,8 @@ pub fn step(
       modifier_ended(state:, source:, now_ms:)
     OwnEvent(Told(message: Thrown(throw:, struck_at_ms:))) ->
       thrown(state:, throw:, struck_at_ms:, now_ms:)
+    OwnEvent(Told(message: Despawn(delay_ms:, struck_at_ms:, went_at_ms:))) ->
+      despawn_told(state:, delay_ms:, struck_at_ms:, went_at_ms:, now_ms:)
     WatchEnded(watch:) if watch == run_watch -> #(state, Effects([Stop]))
     WatchEnded(watch:) -> caster_gone(state:, watch:, now_ms:)
     OwnEvent(Asked(..)) | OwnEvent(CreatureNotStarted(..)) ->
@@ -687,6 +763,131 @@ fn thrown(
     True -> #(state, Effects([]))
     False -> fought_alone(state:, input: creature_fight.Thrown(throw:), now_ms:)
   }
+}
+
+/// A DespawnUnit effect reaches the creature (`Despawn`): dropped when the creature lies dead
+/// or gone or was struck before it last stood again, else removed now or at the go's time
+/// plus the delay, whichever due time is earlier. Server guesses: a despawn that meets a
+/// corpse is dropped, and of two pending despawns the earlier due time wins; the client's
+/// tables rule neither. The despawn timer is started only when none
+/// runs and cancelled before it is started again, since the shell ends the process when a
+/// timer id already running is started.
+fn despawn_told(
+  state state: State,
+  delay_ms delay_ms: Int,
+  struck_at_ms struck_at_ms: Int,
+  went_at_ms went_at_ms: Int,
+  now_ms now_ms: Int,
+) -> #(State, ServiceStep(Outgoing)) {
+  let struck_before_this_life = case state.stood_again_ms {
+    Some(stood_ms) -> struck_at_ms < stood_ms
+    None -> False
+  }
+  let due_ms = went_at_ms + delay_ms
+  case
+    creature_life.despawned(life: state.life, body: state.body),
+    struck_before_this_life,
+    state.despawn_due_ms,
+    due_ms <= now_ms
+  {
+    None, _, _, _ | _, True, _, _ -> #(state, Effects([]))
+    Some(#(life, corpse_for_ms)), False, pending, True ->
+      left_the_field(
+        state:,
+        life:,
+        corpse_for_ms:,
+        timer_running: option.is_some(pending),
+        now_ms:,
+      )
+    Some(_), False, None, False -> #(
+      State(..state, despawn_due_ms: Some(due_ms)),
+      Effects([
+        OwnEffect(step.StartServiceTimer(
+          timer: despawn_timer,
+          after_ms: due_ms - now_ms,
+        )),
+      ]),
+    )
+    Some(_), False, Some(pending_ms), False if due_ms >= pending_ms -> #(
+      state,
+      Effects([]),
+    )
+    Some(_), False, Some(_), False -> #(
+      State(..state, despawn_due_ms: Some(due_ms)),
+      Effects([
+        OwnEffect(step.CancelServiceTimer(timer: despawn_timer)),
+        OwnEffect(step.StartServiceTimer(
+          timer: despawn_timer,
+          after_ms: due_ms - now_ms,
+        )),
+      ]),
+    )
+  }
+}
+
+/// The despawn timer fired: the creature leaves the field, as `Despawn` says. A fire the
+/// creature holds no despawn for removes nothing.
+fn despawn_timer_fired(
+  state state: State,
+  now_ms now_ms: Int,
+) -> #(State, ServiceStep(Outgoing)) {
+  case
+    state.despawn_due_ms,
+    creature_life.despawned(life: state.life, body: state.body)
+  {
+    Some(_), Some(#(life, corpse_for_ms)) ->
+      left_the_field(
+        state:,
+        life:,
+        corpse_for_ms:,
+        timer_running: False,
+        now_ms:,
+      )
+    None, _ | _, None -> #(state, Effects([]))
+  }
+}
+
+/// The creature leaves the field with `life`, no health or death news, no credit and no
+/// corpse: its fight and guard end as at a kill (the fight releases its players, an open
+/// opening's cast is finished), its controls are dropped with no 0x880, and each viewer, in
+/// the order of the connections, is sent `Removed` after that. The corpse timer then runs for
+/// the kind's respawn time. A running despawn timer is cancelled.
+fn left_the_field(
+  state state: State,
+  life life: creature_life.Life,
+  corpse_for_ms corpse_for_ms: Int,
+  timer_running timer_running: Bool,
+  now_ms now_ms: Int,
+) -> #(State, ServiceStep(Outgoing)) {
+  let state = State(..state, life:, despawn_due_ms: None)
+  let #(state, fought) =
+    fought(state:, input: creature_fight.Despawned, now_ms:)
+  let #(state, guarded) =
+    guard_stepped(state:, input: creature_guard.Despawned, now_ms:)
+  let #(control, dropped) = creature_control.died(state: state.control)
+  let controlled = carried(state:, effects: dropped)
+  let state = State(..state, control:)
+  #(
+    state,
+    Effects(
+      list.flatten([
+        fought,
+        guarded,
+        controlled,
+        case timer_running {
+          True -> [OwnEffect(step.CancelServiceTimer(timer: despawn_timer))]
+          False -> []
+        },
+        to_viewers(state:, news: Removed),
+        [
+          OwnEffect(step.StartServiceTimer(
+            timer: corpse_timer,
+            after_ms: corpse_for_ms,
+          )),
+        ],
+      ]),
+    ),
+  )
 }
 
 /// A property modifier of the caster of connection `by` starts on the creature: it is
@@ -723,6 +924,24 @@ fn modifier_started(
       let #(state, revalued) = revalued(state:, properties:, now_ms:)
       #(state, Effects(list.flatten([watching, news, revalued])))
     }
+  }
+}
+
+/// What a viewer is sent when the corpse timer stands the creature again: the creature as
+/// new, after a `Removed` for a creature that was shown (a corpse), and alone for one that
+/// was despawned, whose `Removed` went at the removal.
+fn shown_again(
+  state state: State,
+  viewer viewer: #(ConnectionId, Stay),
+  was_shown was_shown: Bool,
+  now_ms now_ms: Int,
+) -> List(Effect(ServiceEffect(Outgoing))) {
+  case was_shown {
+    True -> [
+      news_to(creature: state.settings.creature, viewer:, news: Removed),
+      appeared(state:, viewer:, now_ms:),
+    ]
+    False -> [appeared(state:, viewer:, now_ms:)]
   }
 }
 
@@ -1023,8 +1242,25 @@ fn struck(
         ]
         None -> []
       }
+      let despawn_cancelled = case
+        reaction.corpse_for_ms,
+        state.despawn_due_ms
+      {
+        Some(..), Some(..) -> [
+          OwnEffect(step.CancelServiceTimer(timer: despawn_timer)),
+        ]
+        Some(..), None | None, _ -> []
+      }
       let credit = credit_for(state:, tell:, reaction:)
-      let state = State(..state, life: reaction.life)
+      let state =
+        State(
+          ..state,
+          life: reaction.life,
+          despawn_due_ms: case reaction.corpse_for_ms {
+            Some(..) -> None
+            None -> state.despawn_due_ms
+          },
+        )
       // A strike that landed, or that the guard took no damage from, threatens the
       // creature by the descriptions it left (none for a guarded one).
       let landed = case nothing_reached, reaction.answer.outcome {
@@ -1070,6 +1306,7 @@ fn struck(
             answer,
             credit,
             news,
+            despawn_cancelled,
             corpse,
             fought,
             guarded,

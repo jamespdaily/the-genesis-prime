@@ -6,6 +6,7 @@
 import cast_support
 import client_tables
 import fixture_tables
+import genesis_prime/coverage/effect_row
 import genesis_prime/game/activate.{CannotBePlanned, NoSpell4Row, Planned}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state as cast_state
@@ -23,6 +24,7 @@ import genesis_prime/table/creature2
 import genesis_prime/table/id.{Spell4ConditionsId, Spell4EffectsId, Spell4Id}
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_conditions
+import genesis_prime/table/spell4_effects
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -111,11 +113,11 @@ pub fn an_activate_spell_whose_target_row_is_a_heal_is_planned_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let activations = activate.activations(tables: client_tables.shared())
-  let assert Ok(Planned(effects:, dropped_signals:, ..)) =
+  let assert Ok(Planned(effects:, dropped:, ..)) =
     activate.planned_of(activations:, spell4_id: 34_519)
     as "Spell4 34519 (a Creature2 activate spell) is planned: its one row, Spell4Effects 68328, is a Heal (effectType 10) aimed at the primary target (targetFlags 2), and the activate cast strikes no one, so the heal lands nothing at the creature, as before the heal rows were read"
   assert effects == [] as "Spell4 34519 holds no Activate row"
-  assert dropped_signals == [] as "and no RavelSignal row"
+  assert dropped.signals == [] as "and no RavelSignal row"
   let effects = list.flat_map(activated(spell4_id: 34_519), fn(step) { step.1 })
   assert cast_support.caster_change_starts(effects:) == []
     as "an activate cast of Spell4 34519 changes nothing of the caster, its health included: its one row is a heal aimed at the creature"
@@ -132,6 +134,71 @@ pub fn an_activate_spell_whose_target_row_is_a_heal_is_planned_test() -> Nil {
     }
       as "Spells 39299, 39536, 54204, 66484 and 66599 each hold a Heal row aimed at the primary target (targetFlags 2: Spell4Effects 85838, 86708, 128152, 167059 and 167201) beside Activate rows (effectType 7) and rows of types no rule reads for that aim (82, 107 and 112), so the heal is the only row that refused them"
   })
+}
+
+pub fn an_activate_spell_with_a_despawn_row_still_plans_and_drops_the_row_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4Effects 2821 is the Activate row of Spell4 1817 (targetFlags 2, delay 0,
+  // `Spell4Effects.effectType.7`). A DespawnUnit row (type 97) aimed at the target is added
+  // beside it, the shape of the 218 client rows in spells that hold an Activate row
+  // ("Instant Activate + Despawn"); the fixture's one row in an activate spell, 163634 of
+  // Spell4 29217, sits beside a CCStateSet row that refuses the spell for another reason,
+  // so the row is added as a copy.
+  // The activate cast strikes no unit, so a plan that read the row would refuse the spell
+  // (result 285) and stop the activation that works today.
+  fixture_tables.added(
+    table: "Spell4Effects",
+    copy_of: 2821,
+    id: 99_097,
+    with: [#("effectType", Integer(97))],
+    body: fn(tables) {
+      let activations = activate.activations(tables:)
+      let assert Ok(Planned(effects:, dropped:, ..)) =
+        activate.planned_of(activations:, spell4_id: 1817)
+        as "Spell4 1817 is still planned"
+      assert list.map(effects, fn(effect) { effect.effect_id.value }) == [2821]
+        as "its Activate row stays, so it still activates"
+      assert list.map(dropped.despawns, fn(effect_id) { effect_id.value })
+        == [99_097]
+        as "the despawn row is the one the activate cast drops"
+      assert dropped.signals == []
+      let assert Ok(row) =
+        spell4_effects.get(tables:, id: Spell4EffectsId(99_097))
+      assert effect_row.unread_by_type(tables:, effects: [row])
+        == dict.from_list([#(97, 1)])
+        as "the measure counts the dropped row missing, not read"
+    },
+  )
+}
+
+pub fn a_despawn_row_in_a_spell_a_creature_names_with_no_activate_row_is_dropped_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4Effects 2821 is the one Activate row of Spell4 1817, which a Creature2 activate
+  // column names. Its type becomes DespawnUnit (97, aimed at the target by targetFlags 2),
+  // so the spell holds a despawn row and no Activate row, the shape of the spells a
+  // creature's activate column names with no Activate row of their own.
+  // The activate cast still plans the spell and drops the row, so the measure must not
+  // count it read.
+  fixture_tables.changed(
+    table: "Spell4Effects",
+    id: 2821,
+    with: [#("effectType", Integer(97))],
+    body: fn(tables) {
+      let activations = activate.activations(tables:)
+      let assert Ok(Planned(effects:, dropped:, ..)) =
+        activate.planned_of(activations:, spell4_id: 1817)
+        as "Spell4 1817 is still planned"
+      assert effects == [] as "the spell holds no Activate row"
+      assert list.map(dropped.despawns, fn(effect_id) { effect_id.value })
+        == [2821]
+        as "the despawn row is the one the activate cast drops"
+      let assert Ok(row) =
+        spell4_effects.get(tables:, id: Spell4EffectsId(2821))
+      assert effect_row.unread_by_type(tables:, effects: [row])
+        == dict.from_list([#(97, 1)])
+        as "the measure counts the dropped row missing, not read"
+    },
+  )
 }
 
 /// The press of an activate cast of `spell4_id` on a creature at the caster's own place,

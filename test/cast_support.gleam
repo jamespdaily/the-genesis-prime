@@ -480,6 +480,7 @@ pub fn payments(effects effects: List(Effect)) -> List(class_resource.Payment) {
       | cast_state.TargetChangeStarts(..)
       | cast_state.TargetChangeEnds(..)
       | cast_state.ForcedMoveStarts(..)
+      | cast_state.CreatureDespawns(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
       | cast_state.TickStrike(..)
@@ -506,6 +507,7 @@ pub fn shortcut_casts(effects effects: List(Effect)) -> List(Effect) {
       | cast_state.TargetChangeStarts(..)
       | cast_state.TargetChangeEnds(..)
       | cast_state.ForcedMoveStarts(..)
+      | cast_state.CreatureDespawns(..)
       | cast_state.Activated(..)
       | cast_state.TickStrike(..)
       | cast_state.StealthChanged(..) -> False
@@ -530,6 +532,7 @@ pub fn gains(effects effects: List(Effect)) -> List(List(class_resource.Gain)) {
       | cast_state.TargetChangeStarts(..)
       | cast_state.TargetChangeEnds(..)
       | cast_state.ForcedMoveStarts(..)
+      | cast_state.CreatureDespawns(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
       | cast_state.TickStrike(..)
@@ -557,6 +560,7 @@ pub fn caster_change_ends(
       | cast_state.TargetChangeStarts(..)
       | cast_state.TargetChangeEnds(..)
       | cast_state.ForcedMoveStarts(..)
+      | cast_state.CreatureDespawns(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
       | cast_state.TickStrike(..)
@@ -584,6 +588,7 @@ pub fn caster_change_starts(
       | cast_state.TargetChangeStarts(..)
       | cast_state.TargetChangeEnds(..)
       | cast_state.ForcedMoveStarts(..)
+      | cast_state.CreatureDespawns(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
       | cast_state.TickStrike(..)
@@ -620,6 +625,7 @@ pub fn target_changes(effects effects: List(Effect)) -> List(Effect) {
       cast_state.TargetChangeStarts(..) | cast_state.TargetChangeEnds(..) ->
         True
       cast_state.ForcedMoveStarts(..)
+      | cast_state.CreatureDespawns(..)
       | cast_state.Send(..)
       | cast_state.Tell(..)
       | cast_state.StartTimer(..)
@@ -653,7 +659,34 @@ pub fn throws(effects effects: List(Effect)) -> List(Effect) {
   list.filter(effects, fn(effect) {
     case effect {
       cast_state.ForcedMoveStarts(..) -> True
-      cast_state.TargetChangeStarts(..)
+      cast_state.CreatureDespawns(..)
+      | cast_state.TargetChangeStarts(..)
+      | cast_state.TargetChangeEnds(..)
+      | cast_state.Send(..)
+      | cast_state.Tell(..)
+      | cast_state.StartTimer(..)
+      | cast_state.CancelTimer(..)
+      | cast_state.Strike(..)
+      | cast_state.Pay(..)
+      | cast_state.Gain(..)
+      | cast_state.Log(..)
+      | cast_state.CasterChangeStarts(..)
+      | cast_state.CasterChangeEnds(..)
+      | cast_state.Activated(..)
+      | cast_state.ShortcutCast(..)
+      | cast_state.TickStrike(..)
+      | cast_state.StealthChanged(..) -> False
+    }
+  })
+}
+
+/// The removals the effects tell creatures, in order.
+pub fn despawns(effects effects: List(Effect)) -> List(Effect) {
+  list.filter(effects, fn(effect) {
+    case effect {
+      cast_state.CreatureDespawns(..) -> True
+      cast_state.ForcedMoveStarts(..)
+      | cast_state.TargetChangeStarts(..)
       | cast_state.TargetChangeEnds(..)
       | cast_state.Send(..)
       | cast_state.Tell(..)
@@ -1074,6 +1107,7 @@ pub fn writes(effects effects: List(Effect)) -> List(Frame) {
       | cast_state.TargetChangeStarts(..)
       | cast_state.TargetChangeEnds(..)
       | cast_state.ForcedMoveStarts(..)
+      | cast_state.CreatureDespawns(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
       | cast_state.TickStrike(..)
@@ -1156,6 +1190,7 @@ pub fn tells(effects effects: List(Effect)) -> List(#(ConnectionId, News)) {
       | cast_state.TargetChangeStarts(..)
       | cast_state.TargetChangeEnds(..)
       | cast_state.ForcedMoveStarts(..)
+      | cast_state.CreatureDespawns(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
       | cast_state.TickStrike(..)
@@ -1181,6 +1216,7 @@ pub fn logs(effects effects: List(Effect)) -> List(#(LogLevel, String)) {
       | cast_state.TargetChangeStarts(..)
       | cast_state.TargetChangeEnds(..)
       | cast_state.ForcedMoveStarts(..)
+      | cast_state.CreatureDespawns(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
       | cast_state.TickStrike(..)
@@ -1206,6 +1242,7 @@ pub fn goes_asked(effects effects: List(Effect)) -> List(cast_state.GoAsked) {
       | cast_state.TargetChangeStarts(..)
       | cast_state.TargetChangeEnds(..)
       | cast_state.ForcedMoveStarts(..)
+      | cast_state.CreatureDespawns(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
       | cast_state.TickStrike(..)
@@ -1231,6 +1268,7 @@ pub fn started_timers(effects effects: List(Effect)) -> List(#(TimerId, Int)) {
       | cast_state.TargetChangeStarts(..)
       | cast_state.TargetChangeEnds(..)
       | cast_state.ForcedMoveStarts(..)
+      | cast_state.CreatureDespawns(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
       | cast_state.TickStrike(..)
@@ -1256,6 +1294,7 @@ pub fn cancelled_timers(effects effects: List(Effect)) -> List(TimerId) {
       | cast_state.TargetChangeStarts(..)
       | cast_state.TargetChangeEnds(..)
       | cast_state.ForcedMoveStarts(..)
+      | cast_state.CreatureDespawns(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
       | cast_state.TickStrike(..)
@@ -1488,6 +1527,7 @@ pub fn answered_known(
       | cast_state.TargetChangeStarts(..)
       | cast_state.TargetChangeEnds(..)
       | cast_state.ForcedMoveStarts(..)
+      | cast_state.CreatureDespawns(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
       | cast_state.TickStrike(..)
@@ -1855,6 +1895,7 @@ pub fn tick_strikes(
       | cast_state.TargetChangeStarts(..)
       | cast_state.TargetChangeEnds(..)
       | cast_state.ForcedMoveStarts(..)
+      | cast_state.CreatureDespawns(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
       | cast_state.StealthChanged(..) -> Error(Nil)

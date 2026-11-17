@@ -427,7 +427,9 @@ fn describe_proc_left_out(why why: spell_plan.LeftOutReason) -> String {
     | spell_plan.ProxyNamesNoSpell
     | spell_plan.InNoPhase
     | spell_plan.StateUntilRemovedNotRead
-    | spell_plan.HealUntilRemoved -> "a reason no Proc row has"
+    | spell_plan.HealUntilRemoved
+    | spell_plan.DespawnDataNotRead(..)
+    | spell_plan.DespawnAimedAtTheCasterOnly -> "a reason no Proc row has"
   }
 }
 
@@ -649,6 +651,7 @@ fn counted_namings(
         | effect_kind.Absorption
         | effect_kind.Activate
         | effect_kind.Immunity
+        | effect_kind.Despawn
         | effect_kind.Unread(..) -> []
       }
       named(table: "Spell4Effects", id: effect.id, columns: [

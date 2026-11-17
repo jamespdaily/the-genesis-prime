@@ -221,6 +221,20 @@ pub type Effect {
     struck_at_ms: Int,
     move: forced_move.Move,
   )
+  /// The DespawnUnit row of the caster's spell removes the creature `unit_id` whose life the
+  /// go struck, `delay_ms` after `went_at_ms`, the monotonic time of the go; `struck_at_ms`,
+  /// the monotonic time the round struck it (`HitCreature`), tells which life of the creature
+  /// that was. The connection tells the creature
+  /// (genesis_prime/client_connection `TellDespawn`), which owns the delay, so the caster's
+  /// leaving or dying changes nothing. A creature of another life drops it, and so does one
+  /// that lies dead, is already gone, or has stood again since the round struck it.
+  CreatureDespawns(
+    unit_id: Int,
+    life: Int,
+    struck_at_ms: Int,
+    went_at_ms: Int,
+    delay_ms: Int,
+  )
   /// A property modifier the caster's spell started on the creature `unit_id` ends: the
   /// node's end, a removal of the cast, its push off or the caster's death. A creature
   /// that holds nothing for the source changes nothing.
@@ -993,6 +1007,8 @@ pub type Unbuilt {
   UnreadLinkPrerequisite(prerequisite_type: Int)
   /// The RavelSignal effects an activate cast drops, by the Spell4 id.
   DroppedSignals(spell4_id: Int)
+  /// The DespawnUnit effects an activate cast drops, by the Spell4 id.
+  DroppedDespawns(spell4_id: Int)
   /// The crowd-control effects the plan drops from a spell, by the Spell4 id.
   DroppedControls(spell4_id: Int)
   /// A quest button's spell, by Spell4 id.

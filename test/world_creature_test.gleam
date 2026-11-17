@@ -43,6 +43,7 @@ import genesis_prime/game/spend
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{Answered, Key, Landed, Strike}
 import genesis_prime/game/world_entry
+import genesis_prime/group_registry
 import genesis_prime/message/buyback_list.{BuybackList}
 import genesis_prime/message/float32
 import genesis_prime/message/movement_time.{MovementTime}
@@ -1156,6 +1157,7 @@ fn tell_change(
       client_connection.ChangeEnds(source:),
     )
     cast_state.ForcedMoveStarts(..)
+    | cast_state.CreatureDespawns(..)
     | cast_state.Send(..)
     | cast_state.Tell(..)
     | cast_state.StartTimer(..)
@@ -1758,4 +1760,615 @@ pub fn a_knockback_spell_on_a_creature_shows_its_flight_to_a_watching_client_tes
   assert float_of(bits: to.x) <. float_of(bits: from.x)
     as "away from the caster, who stands at x 100 while the creature stands at x 0"
   world_support.stop(world:)
+}
+
+pub fn tell_despawn_reaches_the_creature_as_despawn_test() -> Nil {
+  use <- owned_test.run(30_000)
+  // A stand-in for the creature: the test process joins the address of a creature that
+  // does not run (unit 900, life 9), so what the registry delivers to it is what the
+  // server's `tell_creature` made of each request. The creature's own reading of the
+  // message is the creature rule's.
+  let world = one_beast(respawn_ms: 60_000)
+  let address = step.Creature(map: ship, incarnation: 1, unit_id: 900, life: 9)
+  let scope = creature_registry.scope(world.creatures)
+  group_registry.join(scope:, group: address, pid: process.self())
+  let delivered = fn(request) {
+    let assert Ok(Nil) =
+      server.tell_creature(creatures: world.creatures, to: address, request:)
+      as "the stand-in is found by its address and told"
+    let assert service.TellCall(message:) =
+      group_registry.select_delivered(
+        scope:,
+        selector: process.new_selector(),
+        mapping: fn(call) { call },
+      )
+      |> process.selector_receive_forever
+    message
+  }
+  assert delivered(client_connection.TellDespawn(
+      delay_ms: 3000,
+      struck_at_ms: 900,
+      went_at_ms: 1000,
+    ))
+    == creature.Despawn(delay_ms: 3000, struck_at_ms: 900, went_at_ms: 1000)
+    as "a removal is the creature's Despawn, with its delay, the round's time and the go's time"
+  let throw =
+    forced_move.Throw(
+      move: forced_move.Move(
+        way: forced_move.Away,
+        mover: forced_move.Flight,
+        min_distance: 10.0,
+        max_distance: 10.0,
+        flight_ms: 375,
+        gravity: 0.0,
+        flags: 1,
+        height: 2.0,
+      ),
+      draws: forced_move.Draws(distance: 0.0, angle: 0.0),
+      reference: forced_move.Reference(place: sight_place(), radius: 0.5),
+    )
+  assert delivered(client_connection.TellThrown(throw:, struck_at_ms: 900))
+    == creature.Thrown(throw:, struck_at_ms: 900)
+    as "a throw is still the creature's Thrown"
+  world_support.stop(world:)
+}
+
+// ---- a despawn a player's cast puts on a creature (issue 793) ----
+
+/// The despawn row the plan reads from planted columns of one of the client's rows
+/// (`table_rows -- Spell4Effects 56028 99864 119478`), each aimed at the target
+/// (targetFlags 2) and planted under the client's id on the spell tree the plan tests
+/// build on, which holds none of them. No Proxy or Proc row of the client's tables starts
+/// 30600, so it is a quest spell's row planted for the test, not a route a player has
+/// (the aimed shortcut press is the route, `cast_shortcut_test.an_aimed_shortcut_press_despawns_its_target_creature_after_the_go_test`): 56028 (Spell4 30600, "Q5511 Falkrin Whirlwind
+/// (Quest Flavor)": delayTime 4000, phaseFlags 1, dataBits04 and dataBits05 1, orderIndex
+/// 1), 99864 (Spell4 43559, delayTime 0, every phase) and 119478 (Spell4 50224, delayTime
+/// 3000, every phase). 56024, the throw beside 56028, is left out: it is another effect
+/// of the spell, whose throw `a_knockback_spell_on_a_creature_shows_its_flight_to_a_watching_client_test`
+/// carries through the same processes.
+fn despawn_row(
+  id id: Int,
+  delay_ms delay_ms: Int,
+  phase_flags phase_flags: Int,
+  columns columns: List(#(String, planted_table.Cell)),
+) -> spell_plan.Despawn {
+  let assert Ok(planned) =
+    spell_tables.planned_strike(
+      rows: spell_tables.rows_with_effect(
+        effect: spell_tables.effect_row_with(
+          id:,
+          effect_type: 97,
+          target_flags: 2,
+          columns: [
+            #("delayTime", Integer(delay_ms)),
+            #("phaseFlags", Integer(phase_flags)),
+            ..columns
+          ],
+        ),
+      ),
+    )
+  let assert [row] =
+    spell_plan.payloads(spell: planned, as_kind: spell_plan.as_despawn)
+    as "the plan reads the planted row as one despawn"
+  assert row.delay_ms == delay_ms && row.effect_id == Spell4EffectsId(id)
+    as "with the row's own delay"
+  row
+}
+
+/// The effects of the go of a spell with this despawn row, pressed at `struck_at_ms` and
+/// answered at `went_at_ms` with the creature `unit_id` the round hit in `life`. The row
+/// aimed at the target (targetFlags 2) runs in a child that a Proxy planted by the test
+/// starts on each unit the go struck, so its primary target is that unit, as the throw's
+/// row does in `a_knockback_spell_on_a_creature_shows_its_flight_to_a_watching_client_test`;
+/// no client row starts 30600 so, and an aimed shortcut press gives its pressed unit as
+/// the primary target itself (`cast.aimed_in_range`).
+fn quest_go(
+  row row: spell_plan.Despawn,
+  unit_id unit_id: Int,
+  life life: Int,
+  struck_at_ms struck_at_ms: Int,
+  went_at_ms went_at_ms: Int,
+) -> List(cast_state.Effect) {
+  let #(state, pressed) =
+    cast_support.pressed_raw_in(
+      plans: cast_support.plans_starting_on_each_struck(
+        started: cast_support.with_effects(
+          spell: cast_support.child(spell4_id: 30_600, base: 21_614),
+          kinds: [spell_plan.DespawnEffect(row)],
+        ),
+      ),
+      state: cast_state.new(),
+      caster: cast_support.caster(),
+      bag_index: 11,
+      target: unit_id,
+      at: struck_at_ms,
+    )
+  let struck = [
+    cast_state.Hit(
+      unit_id:,
+      unit: cast_state.HitCreature(life:, struck_at_ms:),
+      descriptions: [],
+      controls: [],
+      armor_removed: 0,
+      ticking: [],
+    ),
+  ]
+  let #(_, answered) =
+    cast_support.answered_each(
+      caster: cast_support.caster(),
+      state:,
+      effects: pressed,
+      at: went_at_ms,
+      struck_of: fn(_) { struck },
+      rolls: [],
+      poses: dict.new(),
+    )
+  list.append(pressed, answered)
+}
+
+/// What the caster's connection did with one effect of a go.
+type Done {
+  Wrote(message_id: Int)
+  Told(unit_id: Int)
+}
+
+/// What the caster's connection does with the go's effects, in their order, as
+/// `genesis_prime/game/connection/casting` and the server carry them out: each frame
+/// is written, and each removal is told to the creature by its address as
+/// `TellDespawn`, through the server's own `tell_creature`. Returns what it did, in
+/// order.
+fn carried_out(
+  world world: World,
+  run run: MapProcess,
+  effects effects: List(cast_state.Effect),
+) -> List(Done) {
+  list.flat_map(effects, fn(effect) {
+    case effect {
+      cast_state.Send(frame:) -> [Wrote(message_id: frame.message_id)]
+      cast_state.CreatureDespawns(
+        unit_id:,
+        life:,
+        struck_at_ms:,
+        went_at_ms:,
+        delay_ms:,
+      ) -> {
+        let assert Ok(Nil) =
+          server.tell_creature(
+            creatures: world.creatures,
+            to: step.Creature(
+              map: ship,
+              incarnation: run.incarnation,
+              unit_id:,
+              life:,
+            ),
+            request: client_connection.TellDespawn(
+              delay_ms:,
+              struck_at_ms:,
+              went_at_ms:,
+            ),
+          )
+          as "the creature is found by its address and told"
+        [Told(unit_id:)]
+      }
+      cast_state.Tell(..)
+      | cast_state.StartTimer(..)
+      | cast_state.CancelTimer(..)
+      | cast_state.Strike(..)
+      | cast_state.Log(..)
+      | cast_state.Pay(..)
+      | cast_state.Gain(..)
+      | cast_state.CasterChangeStarts(..)
+      | cast_state.CasterChangeEnds(..)
+      | cast_state.TargetChangeStarts(..)
+      | cast_state.TargetChangeEnds(..)
+      | cast_state.ForcedMoveStarts(..)
+      | cast_state.Activated(..)
+      | cast_state.ShortcutCast(..)
+      | cast_state.TickStrike(..)
+      | cast_state.StealthChanged(..) -> []
+    }
+  })
+}
+
+/// The driven clock's reading.
+fn clock_ms(time time: driven_time.Time) -> Int {
+  let shell.ServiceTime(clock:, ..) = driven_time.service_time(time)
+  let step.Now(monotonic_ms:, ..) = clock()
+  monotonic_ms
+}
+
+/// What a connection was sent up to the answer to strike `cast_id`: the creatures'
+/// 0x262s, how many removals (0x355) came, and the outcome. The creature sends the news
+/// and the answer in its own order, so a removal it sent earlier is counted here.
+fn heard_up_to_answer(
+  received received: Subject(Message),
+  cast_id cast_id: Int,
+) -> #(List(UnitCreateCreature), Int, strike_tell.Outcome) {
+  open_wait.named("the answer to strike " <> int.to_string(cast_id), fn() {
+    tally(received:, cast_id:, appeared: [], removals: 0)
+  })
+}
+
+fn tally(
+  received received: Subject(Message),
+  cast_id cast_id: Int,
+  appeared appeared: List(UnitCreateCreature),
+  removals removals: Int,
+) -> #(List(UnitCreateCreature), Int, strike_tell.Outcome) {
+  let message = process.receive_forever(received)
+  case answer_to(message, cast_id), appearance(message), is_removal(message) {
+    Ok(outcome), _, _ -> #(list.reverse(appeared), removals, outcome)
+    Error(Nil), Ok(unit), _ ->
+      tally(received:, cast_id:, appeared: [unit, ..appeared], removals:)
+    Error(Nil), Error(Nil), True ->
+      tally(received:, cast_id:, appeared:, removals: removals + 1)
+    Error(Nil), Error(Nil), False ->
+      tally(received:, cast_id:, appeared:, removals:)
+  }
+}
+
+/// Whether the message is a creature's removal from the connection's sight (0x355).
+fn is_removal(message: Message) -> Bool {
+  case message {
+    ForStay(sent: SentByPeer(PeerNews(news: client_connection.Removed, ..)), ..) ->
+      True
+    ForStay(..)
+    | client_connection.SentBySessions(..)
+    | client_connection.SentByChat(..) -> False
+  }
+}
+
+/// The removals (0x355) a connection has already been sent and not taken. A creature
+/// sends in the order it acts and a send is immediate, so a removal it sent before a
+/// message the test has taken from the same creature is here already.
+fn removals_waiting(received received: Subject(Message)) -> Int {
+  case process.receive(received, 0) {
+    Ok(message) ->
+      case is_removal(message) {
+        True -> 1 + removals_waiting(received:)
+        False -> removals_waiting(received:)
+      }
+    Error(Nil) -> 0
+  }
+}
+
+/// The unit the map says is gone, when the message is that.
+fn gone_unit(message: Message) -> Result(Int, Nil) {
+  case message {
+    ForStay(sent: SentByMap(map.Gone(unit_id:)), ..) -> Ok(unit_id)
+    ForStay(..)
+    | client_connection.SentBySessions(..)
+    | client_connection.SentByChat(..) -> Error(Nil)
+  }
+}
+
+/// A timed world of one Battle Beast with the players' connections 1 and 2 standing in
+/// sight of it: the beast's 0x262 each was sent, the beast's process, and the connections'
+/// received messages.
+type Watched {
+  Watched(
+    world: World,
+    run: MapProcess,
+    time: driven_time.Time,
+    caster: Subject(Message),
+    viewer: Subject(Message),
+    beast: UnitCreateCreature,
+    pid: Pid,
+  )
+}
+
+fn watched_by_two(respawn_ms respawn_ms: Int) -> Watched {
+  let time = driven_time.new()
+  let world = one_beast_timed(time:, respawn_ms:, idle_stop_ms:)
+  let run = started(world)
+  let caster = world_support.connection(world:, id: 1)
+  let viewer = world_support.connection(world:, id: 2)
+  let _caster_unit = join(run:, connection: 1)
+  let _viewer_unit = join(run:, connection: 2)
+  let beast =
+    next(received: caster, what: "the beast's 0x262", wanted: appearance)
+  let _shown =
+    next(received: viewer, what: "the beast's 0x262", wanted: appearance)
+  let pid = creature_pid(world:, run:, unit_id: beast.unit_id, life: 2)
+  Watched(world:, run:, time:, caster:, viewer:, beast:, pid:)
+}
+
+/// The quest spell's go on the watched beast, whose round opened at the clock's time and
+/// whose go comes 250 ms later, so a delay that ran from the round's opening would
+/// remove the beast early. Returns what the connection did.
+fn quest_go_on(
+  watched watched: Watched,
+  row row: spell_plan.Despawn,
+) -> List(Done) {
+  let struck_at_ms = clock_ms(time: watched.time)
+  driven_time.advance(time: watched.time, ms: 250)
+  let went_at_ms = clock_ms(time: watched.time)
+  assert went_at_ms == struck_at_ms + 250
+  let done =
+    carried_out(
+      world: watched.world,
+      run: watched.run,
+      effects: quest_go(
+        row:,
+        unit_id: watched.beast.unit_id,
+        life: 2,
+        struck_at_ms:,
+        went_at_ms:,
+      ),
+    )
+  // The tell is taken before the clock moves, so the timer it starts is due at the go's
+  // time plus the delay.
+  driven_time.settled(watched.pid)
+  done
+}
+
+/// A strike of 1 damage on the watched beast, answered to the caster: the 0x262s and the
+/// number of removals the caster was sent before the answer, and the answer.
+fn probed(
+  watched watched: Watched,
+  cast_id cast_id: Int,
+) -> #(List(UnitCreateCreature), Int, strike_tell.Outcome) {
+  strike_with(
+    world: watched.world,
+    run: watched.run,
+    unit_id: watched.beast.unit_id,
+    life: 2,
+    damage_type: 3,
+    damage: 1,
+    cast_id:,
+  )
+  heard_up_to_answer(received: watched.caster, cast_id:)
+}
+
+pub fn a_quest_spell_despawns_the_creature_after_its_delay_for_the_caster_and_a_second_viewer_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4 30600's despawn row 56028 has delayTime 4000 (`Spell4Effects.effectType.97`); the
+  // viewers see the removal as the server's 0x355 (`opcode.0x355`).
+  let watched = watched_by_two(respawn_ms: 60_000)
+  let row =
+    despawn_row(id: 56_028, delay_ms: 4000, phase_flags: 1, columns: [
+      #("damageType", Integer(2)),
+      #("dataBits04", Integer(1)),
+      #("dataBits05", Integer(1)),
+      #("orderIndex", Integer(1)),
+    ])
+  let done = quest_go_on(watched:, row:)
+  assert list.contains(done, Wrote(message_id: spell_go.message_id))
+    && list.contains(done, Told(unit_id: watched.beast.unit_id))
+    as "the go is written to the caster and the beast is told, in the go's own step"
+  driven_time.advance(time: watched.time, ms: 3999)
+  let #(appeared, removals, outcome) = probed(watched:, cast_id: 1)
+  assert removals == 0 && appeared == []
+    as "nothing is sent to the caster before 4 s after the go"
+  let assert Landed(..) = outcome
+    as "the creature still stands and takes a strike"
+  assert removals_waiting(received: watched.viewer) == 0
+    as "nothing is sent to the second viewer before 4 s after the go"
+  driven_time.advance(time: watched.time, ms: 1)
+  left_sight(
+    received: watched.caster,
+    what: "the caster's removal of the beast",
+  )
+  left_sight(received: watched.viewer, what: "the second viewer's removal")
+  let #(_, removals, outcome) = probed(watched:, cast_id: 2)
+  assert removals == 0 as "the caster was sent one removal, not two"
+  assert outcome == strike_tell.Refused(why: strike_tell.Despawned)
+    as "the creature left the field: it refuses a strike as despawned, not dead"
+  world_support.stop(world: watched.world)
+}
+
+pub fn a_despawn_of_delay_0_reaches_the_caster_after_the_go_frame_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4Effects 99864 (Spell4 43559): delayTime 0, the spell's only effect.
+  let watched = watched_by_two(respawn_ms: 60_000)
+  let row = despawn_row(id: 99_864, delay_ms: 0, phase_flags: -1, columns: [])
+  let now_ms = clock_ms(time: watched.time)
+  let effects =
+    quest_go(
+      row:,
+      unit_id: watched.beast.unit_id,
+      life: 2,
+      struck_at_ms: now_ms,
+      went_at_ms: now_ms,
+    )
+  assert list.contains(
+    effects,
+    cast_state.CreatureDespawns(
+      unit_id: watched.beast.unit_id,
+      life: 2,
+      struck_at_ms: now_ms,
+      went_at_ms: now_ms,
+      delay_ms: 0,
+    ),
+  )
+    as "the go that hit the beast tells it to leave with the row's delay 0"
+  let done = carried_out(world: watched.world, run: watched.run, effects:)
+  let told = Told(unit_id: watched.beast.unit_id)
+  let #(before, _) = list.split_while(done, fn(one) { one != told })
+  assert list.last(before) == Ok(Wrote(message_id: spell_go.message_id))
+    as "the connection writes the go's 0x7f4 and then, next, tells the creature to leave"
+  assert list.count(done, fn(one) { one == told }) == 1 as "and tells it once"
+  // The clock has not moved, so the removal comes at once; the creature is told after the
+  // 0x7f4 is written, so the 0x355 can only follow it in the caster's own writes.
+  left_sight(
+    received: watched.caster,
+    what: "the caster's removal of the beast",
+  )
+  left_sight(received: watched.viewer, what: "the second viewer's removal")
+  world_support.stop(world: watched.world)
+}
+
+pub fn a_despawn_of_delay_3000_waits_3_seconds_for_every_viewer_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4Effects 119478 (Spell4 50224): delayTime 3000, damageType 1, orderIndex 1.
+  let watched = watched_by_two(respawn_ms: 60_000)
+  let row =
+    despawn_row(id: 119_478, delay_ms: 3000, phase_flags: -1, columns: [
+      #("damageType", Integer(1)),
+      #("orderIndex", Integer(1)),
+    ])
+  let _written = quest_go_on(watched:, row:)
+  driven_time.advance(time: watched.time, ms: 2999)
+  let #(_, removals, outcome) = probed(watched:, cast_id: 1)
+  assert removals == 0 as "no 0x355 reaches the caster at 2999 ms after the go"
+  let assert Landed(..) = outcome as "the creature still stands"
+  assert removals_waiting(received: watched.viewer) == 0
+    as "none reaches the second viewer at 2999 ms"
+  driven_time.advance(time: watched.time, ms: 1)
+  left_sight(received: watched.caster, what: "the caster's removal at 3000 ms")
+  left_sight(received: watched.viewer, what: "the viewer's removal at 3000 ms")
+  world_support.stop(world: watched.world)
+}
+
+pub fn a_despawn_outlives_the_casters_leaving_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The creature owns the delay (the Design artifact of issue 793, option A): the caster's
+  // connection is not needed after the tell.
+  let watched = watched_by_two(respawn_ms: 60_000)
+  let row =
+    despawn_row(id: 56_028, delay_ms: 4000, phase_flags: 1, columns: [
+      #("orderIndex", Integer(1)),
+    ])
+  let _written = quest_go_on(watched:, row:)
+  let #(_, _left) =
+    ask_support.ask_and_wait(send: fn(reply) {
+      service.call_subject(
+        watched.run.subject,
+        map.Leave(connection: ConnectionId(1)),
+        reply,
+      )
+    })
+  driven_time.advance(time: watched.time, ms: 3999)
+  assert removals_waiting(received: watched.viewer) == 0
+    as "the second viewer is sent nothing before the delay is over"
+  driven_time.advance(time: watched.time, ms: 1)
+  left_sight(received: watched.viewer, what: "the second viewer's removal")
+  world_support.stop(world: watched.world)
+}
+
+pub fn a_despawned_creature_comes_back_exactly_at_its_respawn_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // As `a_dead_creature_comes_back_exactly_at_its_respawn_test`, for a creature that left
+  // the field by a despawn of delay 0: the kind's respawn time counts from the removal, and
+  // the same unit stands again with a fresh 0x262 and no second removal
+  // (`death.creature_respawn`).
+  let respawn_ms = 1000
+  let watched = watched_by_two(respawn_ms:)
+  let row = despawn_row(id: 99_864, delay_ms: 0, phase_flags: -1, columns: [])
+  let _written = quest_go_on(watched:, row:)
+  left_sight(
+    received: watched.caster,
+    what: "the caster's removal of the beast",
+  )
+  driven_time.advance(time: watched.time, ms: respawn_ms - 1)
+  let #(appeared, removals, outcome) = probed(watched:, cast_id: 1)
+  assert appeared == []
+    && removals == 0
+    && outcome == strike_tell.Refused(why: strike_tell.Despawned)
+    as "1 ms before the respawn time the creature is still gone: it refuses a strike and shows no creature standing"
+  driven_time.advance(time: watched.time, ms: 1)
+  let #(appeared, removals, outcome) = probed(watched:, cast_id: 2)
+  let assert [again] = appeared
+    as "the creature stood again, once, before it answered the strike"
+  assert again.unit_id == watched.beast.unit_id
+    && list.contains(
+      again.tail.stats,
+      unit_fields.integer_stat(stat_id: 0, value: 52),
+    )
+    as "death.creature_respawn: the same unit id at full health, at the respawn time"
+  assert removals == 0 as "no second removal came with it"
+  let assert Landed(..) = outcome
+    as "at the respawn time the creature stands and a strike lands"
+  world_support.stop(world: watched.world)
+}
+
+pub fn a_creature_that_crashes_with_a_despawn_pending_is_gone_and_returns_new_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The map's crash row for a creature (`map.creature_ended`): the players are sent `Gone`
+  // and the spawn returns as a new unit after the respawn time, whatever the creature's
+  // life was doing. Here the despawn is pending when it crashes, and then the returned
+  // creature crashes after it left the field.
+  let respawn_ms = 1000
+  let watched = watched_by_two(respawn_ms:)
+  let pending =
+    despawn_row(id: 56_028, delay_ms: 4000, phase_flags: 1, columns: [
+      #("orderIndex", Integer(1)),
+    ])
+  let _written = quest_go_on(watched:, row: pending)
+  process.kill(watched.pid)
+  let gone =
+    next(
+      received: watched.caster,
+      what: "Gone for the creature with a despawn pending",
+      wanted: gone_unit,
+    )
+  assert gone == watched.beast.unit_id
+    as "the map speaks of the unit once its owner has ended"
+  // `Gone` is sent before the restart timer starts (`map.waiting_for_restart`): the clock
+  // moves once the map has finished that step.
+  driven_time.settled(watched.run.pid)
+  driven_time.advance(time: watched.time, ms: respawn_ms)
+  let returned =
+    next(
+      received: watched.caster,
+      what: "the returned creature's 0x262",
+      wanted: appearance,
+    )
+  assert returned.unit_id != watched.beast.unit_id
+    && returned.creature_id == watched.beast.creature_id
+    as "the spawn returns as a new unit, which is the spawn's creature"
+  // The despawn that was pending is lost with the creature it was told to: the new unit
+  // stands past the old due time.
+  driven_time.advance(time: watched.time, ms: 4000)
+  assert removals_waiting(received: watched.caster) == 0
+    as "the caster is never sent a removal for the returned creature"
+  // The returned creature leaves the field by a despawn of delay 0 and then crashes. Its
+  // life is the map's next watch, 4: watch 1 is the first player's, 2 the first beast's
+  // and 3 the second player's (the module doc, on the map's watches).
+  let second =
+    creature_pid(
+      world: watched.world,
+      run: watched.run,
+      unit_id: returned.unit_id,
+      life: 4,
+    )
+  let now_ms = clock_ms(time: watched.time)
+  let _written =
+    carried_out(
+      world: watched.world,
+      run: watched.run,
+      effects: quest_go(
+        row: despawn_row(id: 99_864, delay_ms: 0, phase_flags: -1, columns: []),
+        unit_id: returned.unit_id,
+        life: 4,
+        struck_at_ms: now_ms,
+        went_at_ms: now_ms,
+      ),
+    )
+  left_sight(
+    received: watched.caster,
+    what: "the removal of the returned creature",
+  )
+  driven_time.settled(second)
+  process.kill(second)
+  let gone =
+    next(
+      received: watched.caster,
+      what: "Gone for the creature that was despawned",
+      wanted: gone_unit,
+    )
+  assert gone == returned.unit_id
+    as "a despawned creature that crashes is gone to the players as one that stands is"
+  driven_time.settled(watched.run.pid)
+  driven_time.advance(time: watched.time, ms: respawn_ms)
+  let again =
+    next(
+      received: watched.caster,
+      what: "the 0x262 of the spawn's third creature",
+      wanted: appearance,
+    )
+  assert again.unit_id != returned.unit_id
+    && again.creature_id == watched.beast.creature_id
+    as "the spawn returns once more as a new unit"
+  world_support.stop(world: watched.world)
 }

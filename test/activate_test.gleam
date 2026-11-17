@@ -128,11 +128,11 @@ pub fn activate_spell_with_a_state_on_the_target_stays_refused_though_its_plan_d
 pub fn activate_spell_with_a_ravel_signal_aimed_at_the_target_is_planned_test() -> Nil {
   use <- owned_test.run(10_000)
   let activations = activate.activations(tables: fixture_tables.shared())
-  let assert Ok(Planned(effects:, dropped_signals:, ..)) =
+  let assert Ok(Planned(effects:, dropped:, ..)) =
     activate.planned_of(activations:, spell4_id: 39_244)
-    as "Spell4 39244 is planned: its other row, Spell4Effects 85564, is a RavelSignal (effectType 81) aimed at the primary target (targetFlags 2), which starts a script on the server (Spell4Effects.effectType.81) that the server does not have yet, so the plan holds the row as dropped (`dropped_signals`) and the cast logs it"
+    as "Spell4 39244 is planned: its other row, Spell4Effects 85564, is a RavelSignal (effectType 81) aimed at the primary target (targetFlags 2), which starts a script on the server (Spell4Effects.effectType.81) that the server does not have yet, so the plan holds the row as dropped (`Dropped.signals`) and the cast logs it"
   assert list.length(effects) == 1 as "Spell4 39244 has one Activate row"
-  assert dropped_signals == [Spell4EffectsId(85_564)]
+  assert dropped.signals == [Spell4EffectsId(85_564)]
     as "the RavelSignal row 85564 is the one the plan drops"
   assert case activate.planned_of(activations:, spell4_id: 85_452) {
     Ok(Planned(..)) -> True

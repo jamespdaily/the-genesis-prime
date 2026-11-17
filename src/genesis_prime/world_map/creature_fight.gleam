@@ -448,6 +448,10 @@ pub type Input {
   TimerFired(timer: Timer)
   /// creature_life: a strike killed the creature.
   Killed
+  /// creature_life: a DespawnUnit effect removed the creature from the field. The fight ends
+  /// as it does at a death (`Killed`): a path stops, a charge ends, each threatened player is
+  /// `Released`.
+  Despawned
   /// creature_life: the corpse timer stood the creature again at its spawn.
   StoodAgain
   /// creature_control: a state took hold of the creature while it lives. An open charge
@@ -636,7 +640,7 @@ pub fn step(
         }
         Returning(..) | Resting | Fighting(..) -> #(state, [])
       }
-    Killed -> killed(state:, fighter:, now_ms:)
+    Killed | Despawned -> killed(state:, fighter:, now_ms:)
     Controlled -> held(state:, fighter:, now_ms:)
     ControlEnded -> resumed(state:, fighter:, now_ms:)
     SpeedChanged -> speed_changed(state:, fighter:, now_ms:)
@@ -1507,6 +1511,7 @@ fn answer_of(
       False,
     )
     strike_tell.Refused(why: strike_tell.Dead) -> #([], True, True)
+    strike_tell.Refused(why: strike_tell.Despawned) -> #([], True, True)
     strike_tell.Refused(why: strike_tell.Returning) -> #([], True, False)
   }
 }

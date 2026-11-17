@@ -137,8 +137,7 @@ import genesis_prime/message/item_place.{type ItemPlace}
 import genesis_prime/message/item_use as item_use_message
 import genesis_prime/step.{type Now, type TimerId, LogDebug, LogInfo, LogWarning}
 import genesis_prime/table/id.{
-  type Item2Id, type Spell4BaseId, type Spell4EffectsId, type Spell4Id,
-  Spell4EffectsId,
+  type Item2Id, type Spell4BaseId, type Spell4Id, Spell4EffectsId,
 }
 import genesis_prime/world_map/map
 import gleam/bool
@@ -392,13 +391,7 @@ fn item_spell_cast(
         why: "cannot be planned: " <> why,
         issue: SpellsIssue,
       )
-    Ok(activate.Planned(
-      spell:,
-      effects:,
-      dropped_signals:,
-      limits:,
-      cast_group_id:,
-    )) ->
+    Ok(activate.Planned(spell:, effects:, dropped:, limits:, cast_group_id:)) ->
       // A creature's `withheld` and `ClosedLink` are what the client's interact menu does
       // not offer; an item's use never goes through that menu, and a closed link only
       // gates the objectives `by_item` leaves uncounted.
@@ -449,7 +442,7 @@ fn item_spell_cast(
                     spell:,
                     cast_time_ms: spell.cast_time_ms,
                     effects:,
-                    dropped_signals:,
+                    dropped:,
                     limits:,
                   )
               }
@@ -1108,7 +1101,7 @@ fn activation_pressed(
                 why: "cannot be planned: " <> why,
                 issue: SpellsIssue,
               )
-            Ok(activate.Planned(spell:, effects:, dropped_signals:, limits:, ..)) ->
+            Ok(activate.Planned(spell:, effects:, dropped:, limits:, ..)) ->
               activation_in_range(
                 cast:,
                 caster:,
@@ -1128,7 +1121,7 @@ fn activation_pressed(
                   spell4_id: spell.spell4_id.value,
                 ),
                 effects:,
-                dropped_signals:,
+                dropped:,
                 limits:,
               )
           }
@@ -1157,7 +1150,7 @@ fn activation_in_range(
   spell spell: Spell,
   cast_time_ms cast_time_ms: Int,
   effects effects: List(activate.ActivateEffect),
-  dropped_signals dropped_signals: List(Spell4EffectsId),
+  dropped dropped: activate.Dropped,
   limits limits: activate.Limits,
 ) -> Result(#(State, List(Effect)), Refusal) {
   case cast_press.target_state_refusal(spell:, alive:, held:) {
@@ -1187,7 +1180,7 @@ fn activation_in_range(
         spell:,
         cast_time_ms:,
         effects:,
-        dropped_signals:,
+        dropped:,
         limits:,
       )
   }
@@ -1211,7 +1204,7 @@ fn activation_reached(
   spell spell: Spell,
   cast_time_ms cast_time_ms: Int,
   effects effects: List(activate.ActivateEffect),
-  dropped_signals dropped_signals: List(Spell4EffectsId),
+  dropped dropped: activate.Dropped,
   limits limits: activate.Limits,
 ) -> Result(#(State, List(Effect)), Refusal) {
   let spell4_id = spell.spell4_id.value
@@ -1241,7 +1234,7 @@ fn activation_reached(
         spell: cast_press.activation_spell(spell:, cast_time_ms:),
         interaction: cast_press.interaction_of(spell:),
         effects:,
-        dropped_signals:,
+        dropped:,
       )
   }
 }
@@ -1261,7 +1254,7 @@ fn activation_started(
   spell spell: Spell,
   interaction interaction: Interaction,
   effects effects: List(activate.ActivateEffect),
-  dropped_signals dropped_signals: List(Spell4EffectsId),
+  dropped dropped: activate.Dropped,
 ) -> Result(#(State, List(Effect)), Refusal) {
   let spell4_id = spell.spell4_id.value
   accepted_and_started(
@@ -1283,12 +1276,12 @@ fn activation_started(
     ),
     target_subject: None,
     dropping: fn(cast) {
-      cast_press.signals_dropped(
+      cast_press.rows_dropped(
         cast:,
         spell4_id:,
         unit_id:,
         creature_id:,
-        dropped_signals:,
+        dropped:,
       )
     },
   )
@@ -3717,6 +3710,13 @@ fn go(
           reached: aimed.reached,
           struck:,
         )
+      let despawning =
+        cast_control.despawns_told(
+          cast:,
+          reached: aimed.reached,
+          struck:,
+          went_at_ms: now_ms,
+        )
       let #(cast, healing) = cast_heal.heals_armed(cast:, cast_id:, aimed:)
       let #(cast, restriction_timers) =
         cast_control.restrictions_armed(cast:, cast_id:, restricting:)
@@ -3812,6 +3812,7 @@ fn go(
           never_held,
           modifying,
           throwing,
+          despawning,
           healing,
           restriction_timers,
           cooldowns,
@@ -4018,6 +4019,24 @@ fn reached_by(
             gates_passed:,
             target_verdict:,
           )
+        spell_plan.DespawnEffect(despawn: row) ->
+          reach_units(
+            walk:,
+            planned:,
+            row:,
+            aim: row.aim,
+            stands: fn(entry) {
+              result.is_ok(cast_gate.creature_hit(struck:, unit_id: entry.1))
+            },
+            condition: row.condition,
+            what: "the DespawnUnit effect "
+              <> int.to_string(row.effect_id.value),
+            caster:,
+            live:,
+            struck:,
+            gates_passed:,
+            target_verdict:,
+          )
         spell_plan.HealEffect(heal: row) ->
           reach_units(
             walk:,
@@ -4136,7 +4155,8 @@ fn products_made(
         | spell_plan.StealthEffect(..)
         | spell_plan.RemoveStealthEffect(..)
         | spell_plan.ProcEffect(..)
-        | spell_plan.ControlEffect(..) -> #(entry, [])
+        | spell_plan.ControlEffect(..)
+        | spell_plan.DespawnEffect(..) -> #(entry, [])
       }
     })
   #(
@@ -4304,6 +4324,7 @@ fn reached_listed(reached reached: List(Reached)) -> List(#(Int, Listed)) {
       | spell_plan.ProxyEffect(..), _
       | spell_plan.GainEffect(..), _
       | spell_plan.RemoveStealthEffect(..), _
+      | spell_plan.DespawnEffect(..), _
       | spell_plan.ControlEffect(..), _
       -> Error(Nil)
     }
@@ -4350,7 +4371,8 @@ fn removed_by_go(
       | spell_plan.RemoveStealthEffect(..)
       | spell_plan.ProcEffect(..)
       | spell_plan.HealEffect(..)
-      | spell_plan.ControlEffect(..) -> so_far
+      | spell_plan.ControlEffect(..)
+      | spell_plan.DespawnEffect(..) -> so_far
     }
   })
 }
@@ -4546,7 +4568,8 @@ fn cooldowns_started_at_node_end(
       | spell_plan.RemoveStealthEffect(..)
       | spell_plan.ProcEffect(..)
       | spell_plan.HealEffect(..)
-      | spell_plan.ControlEffect(..) -> #(cast, effects)
+      | spell_plan.ControlEffect(..)
+      | spell_plan.DespawnEffect(..) -> #(cast, effects)
     }
   })
 }

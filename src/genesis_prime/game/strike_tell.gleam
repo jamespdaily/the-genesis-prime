@@ -161,6 +161,9 @@ pub type Refusal {
   /// The creature gave up its fight and walks home, taking no strike until it
   /// is there.
   Returning
+  /// The creature was removed from the field by a DespawnUnit effect and takes no strike
+  /// until it stands again; `Dead` would name a death that did not happen.
+  Despawned
 }
 
 /// What a creature answers a strike with.

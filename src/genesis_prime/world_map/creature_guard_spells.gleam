@@ -141,6 +141,7 @@ fn applied(kind kind: effect_kind.Kind) -> Bool {
     | effect_kind.Absorption
     | effect_kind.Activate
     | effect_kind.Immunity
+    | effect_kind.Despawn
     | effect_kind.Unread(..) -> False
   }
 }
@@ -181,6 +182,7 @@ fn listed(effect effect: Spell4Effects) -> Result(OpeningEffect, Nil) {
     | effect_kind.Absorption
     | effect_kind.Activate
     | effect_kind.Immunity
+    | effect_kind.Despawn
     | effect_kind.Unread(..) -> Error(Nil)
   }
 }
