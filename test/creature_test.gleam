@@ -1478,18 +1478,20 @@ fn at(x: Float) -> start_place.Place {
 /// A throw of that row, struck at `struck_at_ms`.
 fn thrown_at(struck_at_ms: Int) -> creature.Message {
   creature.Thrown(
-    move: forced_move.Move(
-      way: forced_move.Away,
-      mover: forced_move.Flight,
-      min_distance: 10.0,
-      max_distance: 10.0,
-      flight_ms: 375,
-      gravity: 0.0,
-      flags: 0,
-      height: 0.0,
+    throw: forced_move.Throw(
+      move: forced_move.Move(
+        way: forced_move.Away,
+        mover: forced_move.Flight,
+        min_distance: 10.0,
+        max_distance: 10.0,
+        flight_ms: 375,
+        gravity: 0.0,
+        flags: 0,
+        height: 0.0,
+      ),
+      draws: forced_move.Draws(distance: 0.0, angle: 0.0),
+      reference: forced_move.Reference(place: at(-5.0), radius: 0.0),
     ),
-    draws: forced_move.Draws(distance: 0.0, angle: 0.0),
-    reference: forced_move.Reference(place: at(-5.0), radius: 0.0),
     struck_at_ms:,
   )
 }

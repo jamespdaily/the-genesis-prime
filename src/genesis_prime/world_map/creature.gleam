@@ -205,6 +205,8 @@
 //// | a `Thrown` struck before the creature last stood again reaches it | dropped: it was struck on the life before (`a_throw_from_an_older_life_is_dropped_test`) |
 //// | a `Thrown` reaches a creature that is dead, or walks home | dropped (`a_throw_at_a_dead_or_returning_creature_is_dropped_test`) |
 //// | a `Thrown` reaches a creature that has ended | dropped: the registry finds no process |
+//// | a strike lands a Knockback, Pushback or Pull state | the creature is thrown in the same step by the state's own `Throw`, after the state's news (`a_landed_knockback_throws_the_creature_in_the_same_step_test`) |
+//// | a guarded creature meets a strike with such a state | it keeps the state and is not thrown (`an_immune_knockback_does_not_throw_test`) |
 //// | the caster's connection ends before its throw's tell | the tell is never sent; a throw already told runs to its landing, since it needs no caster |
 //// | the creature crashes in flight | its `FlightEnds` timer goes with the process; the map's `Gone` removes the unit from each viewer and the spawn starts again at home |
 //// | the creature respawns after a throw | the corpse timer stands it at home (`a_creature_respawned_after_a_throw_stands_at_home_test`) |
@@ -347,12 +349,7 @@ pub type Message {
   /// creature has stood again since the monotonic time `struck_at_ms`, or lies dead; else
   /// the fight takes it (`creature_fight.Thrown`), which drops it for a creature that walks
   /// home or does not run.
-  Thrown(
-    move: forced_move.Move,
-    draws: forced_move.Draws,
-    reference: forced_move.Reference,
-    struck_at_ms: Int,
-  )
+  Thrown(throw: forced_move.Throw, struck_at_ms: Int)
 }
 
 /// What a creature sends a connection without waiting.
@@ -664,8 +661,8 @@ pub fn step(
       modifier_started(state:, by:, source:, modifier:, struck_at_ms:, now_ms:)
     OwnEvent(Told(message: ModifierEnds(source:))) ->
       modifier_ended(state:, source:, now_ms:)
-    OwnEvent(Told(message: Thrown(move:, draws:, reference:, struck_at_ms:))) ->
-      thrown(state:, move:, draws:, reference:, struck_at_ms:, now_ms:)
+    OwnEvent(Told(message: Thrown(throw:, struck_at_ms:))) ->
+      thrown(state:, throw:, struck_at_ms:, now_ms:)
     WatchEnded(watch:) if watch == run_watch -> #(state, Effects([Stop]))
     WatchEnded(watch:) -> caster_gone(state:, watch:, now_ms:)
     OwnEvent(Asked(..)) | OwnEvent(CreatureNotStarted(..)) ->
@@ -678,9 +675,7 @@ pub fn step(
 /// struck its earlier life, which the registry address does not tell apart.
 fn thrown(
   state state: State,
-  move move: forced_move.Move,
-  draws draws: forced_move.Draws,
-  reference reference: forced_move.Reference,
+  throw throw: forced_move.Throw,
   struck_at_ms struck_at_ms: Int,
   now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
@@ -690,12 +685,7 @@ fn thrown(
   }
   case creature_life.is_dead(life: state.life) || struck_before_this_life {
     True -> #(state, Effects([]))
-    False ->
-      fought_alone(
-        state:,
-        input: creature_fight.Thrown(move:, draws:, reference:),
-        now_ms:,
-      )
+    False -> fought_alone(state:, input: creature_fight.Thrown(throw:), now_ms:)
   }
 }
 
@@ -1160,6 +1150,13 @@ fn controls_after(
             [_, ..] -> fought(state:, input: creature_fight.Controlled, now_ms:)
             [] -> #(state, [])
           }
+          let #(state, thrown_effects) =
+            thrown_by_states(
+              state:,
+              outcome: reaction.answer.outcome,
+              landed: landing.landed,
+              now_ms:,
+            )
           #(
             state,
             Answered(
@@ -1170,7 +1167,11 @@ fn controls_after(
                 armor_removed: landing.armor_removed,
               ),
             ),
-            list.append(carried(state:, effects: landing.effects), stopped),
+            list.flatten([
+              carried(state:, effects: landing.effects),
+              stopped,
+              thrown_effects,
+            ]),
           )
         }
         strike_tell.Deflected(..) | strike_tell.Refused(..) -> #(
@@ -1180,6 +1181,36 @@ fn controls_after(
         )
       }
   }
+}
+
+/// A strike that landed throws the creature once for each Knockback, Pushback or Pull
+/// state it took, as the state's helper spell moves it (`Throw`), after the state stopped
+/// its run, so the flight starts where the creature stood. A guarded creature
+/// (`Immune`) keeps its states and is not thrown. The creature is alive on the life this
+/// strike struck, so no throw is dropped as a stale one is (`thrown`). Each landed row
+/// throws once, a server guess for the spells that hold more than one state row, and a
+/// delayed row throws at the landing, not after its delay (issue 827).
+fn thrown_by_states(
+  state state: State,
+  outcome outcome: strike_tell.Outcome,
+  landed landed: List(strike_tell.ControlLanded),
+  now_ms now_ms: Int,
+) -> #(State, List(Effect(ServiceEffect(Outgoing)))) {
+  let throws = case outcome {
+    strike_tell.Landed(..) ->
+      list.filter_map(landed, fn(control) {
+        option.to_result(control.tell.throw, Nil)
+      })
+    strike_tell.Immune(..)
+    | strike_tell.Deflected(..)
+    | strike_tell.Refused(..) -> []
+  }
+  list.fold(throws, #(state, []), fn(so_far, throw) {
+    let #(state, effects) = so_far
+    let #(state, more) =
+      fought(state:, input: creature_fight.Thrown(throw:), now_ms:)
+    #(state, list.append(effects, more))
+  })
 }
 
 /// The outcome of a strike that landed or met the immunity, with the states the creature

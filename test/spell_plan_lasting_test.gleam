@@ -486,6 +486,7 @@ pub fn a_crowd_control_row_is_read_with_its_state_time_armor_and_aim_test() -> N
         ),
         condition: spell_plan.Always,
         tag: spend.EqualTo(0),
+        move: option.None,
       ),
     ]
     as "Spell4Effects.effectType.4: dataBits00 the state, dataBits03 the armor, delayTime and durationTime the time"
@@ -535,6 +536,7 @@ pub fn a_caster_ability_restriction_row_is_read_until_removed_test() -> Nil {
         ),
         condition: spell_plan.Always,
         tag: spend.EqualTo(0),
+        move: option.None,
       ),
     ]
     as "Unit.CodeEnumCCState 27 is AbilityRestriction, and Spell4Effects.flags bit 2 is a state that never times out (224967: dataBits00 27, flags 2, targetFlags 1)"
@@ -627,6 +629,7 @@ pub fn every_state_is_read_on_every_simple_aim_test() -> Nil {
             ),
             condition: spell_plan.Always,
             tag: spend.EqualTo(0),
+            move: option.None,
           ),
         ]
         as "dataBits00 the state, delayTime and durationTime the time, dataBits03 the armor, targetFlags 1, 2, 4 and 6 the caster, the primary target, the area and both"
@@ -797,7 +800,7 @@ pub fn every_ability_restriction_row_on_the_caster_is_read_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
-  let spell_groups = spell_plan.spell_groups(tables:)
+  let sources = spell_plan.sources_of(tables:)
   let rows =
     spell4_effects.all(tables)
     |> list.filter(fn(row) {
@@ -809,7 +812,7 @@ pub fn every_ability_restriction_row_on_the_caster_is_read_test() -> Nil {
     list.map(rows, fn(effect) {
       spell_plan.read_row(
         tables:,
-        spell_groups:,
+        sources:,
         place: spell_tables.pressed,
         effect:,
       )

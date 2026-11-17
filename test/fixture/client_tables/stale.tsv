@@ -198,6 +198,7 @@ Spell4Base	23832	Class	15
 Spell4Base	23857	Class	15
 Spell4Base	23869	Class	15
 Spell4Base	23888	Class	15
+Spell4Base	25055	Class	15
 Spell4Base	26792	Class	15
 Spell4Base	26793	Class	15
 Spell4Base	26794	Class	15
@@ -215,6 +216,7 @@ Spell4Base	47783	Class	17
 Spell4Base	47784	Class	17
 Spell4Base	47786	Class	17
 Spell4Effects	44636	Spell4	22930
+Spell4Effects	82387	CCStateAdditionalData	83
 Spell4Effects	88150	Spell4	22930
 Spell4Effects	131697	Spell4	23148
 Spell4Effects	198395	Spell4Base	76506

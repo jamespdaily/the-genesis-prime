@@ -210,7 +210,7 @@ pub fn coverage_counts_the_union_rows_as_read_test() -> Nil {
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.every_table()
   let effects = spell4_effects.all(client_tables.shared())
-  let spell_groups = spell_plan.spell_groups(tables:)
+  let sources = spell_plan.sources_of(tables:)
   let place_of = effect_row.places(tables:, effects:)
   let union_rows =
     list.filter(effects, fn(row) {
@@ -221,7 +221,7 @@ pub fn coverage_counts_the_union_rows_as_read_test() -> Nil {
     list.filter(union_rows, fn(row) {
       effect_row.is_read(
         tables:,
-        spell_groups:,
+        sources:,
         place: place_of(row.spell_id),
         effect: row,
       )
@@ -230,7 +230,7 @@ pub fn coverage_counts_the_union_rows_as_read_test() -> Nil {
     list.filter(union_rows, fn(row) {
       spell_plan.read_row(
         tables:,
-        spell_groups:,
+        sources:,
         place: place_of(row.spell_id),
         effect: row,
       )
@@ -260,7 +260,7 @@ pub fn coverage_counts_the_union_rows_as_read_test() -> Nil {
       row.effect_type == 26
       && spell_plan.read_row(
         tables:,
-        spell_groups:,
+        sources:,
         place: place_of(row.spell_id),
         effect: row,
       )

@@ -202,7 +202,7 @@ pub fn read_by_the_measure(kick kick: Kick) -> Bool {
         as "Kick holds its damage effect, row 140383"
       effect_row.is_read(
         tables:,
-        spell_groups: spell_plan.spell_groups(tables:),
+        sources: spell_plan.sources_of(tables:),
         place: spell_tables.pressed,
         effect: row,
       )

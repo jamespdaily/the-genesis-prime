@@ -379,6 +379,7 @@ fn restricting_by(row row: crowd_control.Row) -> Spell {
         row:,
         condition: spell_plan.Always,
         tag: spend.always,
+        move: None,
       )),
     ],
   )
@@ -855,6 +856,7 @@ fn holding(states states: List(CrowdControlState)) -> Spell {
           ),
           condition: spell_plan.Always,
           tag: spend.always,
+          move: None,
         )
       }),
       spell_plan.ControlEffect,
@@ -1211,6 +1213,7 @@ pub fn a_controls_row_aimed_at_the_caster_and_past_it_appears_in_both_readers_te
       row: restriction_row(duration_ms: 3000, until_removed: False),
       condition: spell_plan.Always,
       tag: spend.always,
+      move: None,
     )
   let spell =
     support.with_effects(spell: support.child(spell4_id: 7010, base: 3), kinds: [

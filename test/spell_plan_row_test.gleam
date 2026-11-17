@@ -64,7 +64,7 @@ pub fn a_planted_spell_lists_the_applied_and_held_rows_and_the_measure_counts_on
     reaching: [#("SpellLevel", 647)],
     rows:,
     body: fn(tables) {
-      let spell_groups = spell_plan.spell_groups(tables:)
+      let sources = spell_plan.sources_of(tables:)
       let effects =
         spell4_effects.all(tables)
         |> list.filter(fn(effect) {
@@ -73,7 +73,7 @@ pub fn a_planted_spell_lists_the_applied_and_held_rows_and_the_measure_counts_on
       let read = fn(effect: Spell4Effects) {
         spell_plan.read_row(
           tables:,
-          spell_groups:,
+          sources:,
           place: spell_tables.pressed,
           effect:,
         )
@@ -153,10 +153,15 @@ pub fn a_spend_all_spell_refuses_an_effect_tag_the_rule_does_not_read_test() -> 
   let read = Spell4Effects(..effect_of(61_994), emm_comparison: 1, emm_value: 0)
   let effects = [refused, read]
   let spends =
-    spell_plan.RowPlace(struck_by: None, spends_all: True, hits_foes: False)
+    spell_plan.RowPlace(
+      struck_by: None,
+      spends_all: True,
+      hits_foes: False,
+      throws_target: False,
+    )
   assert spell_plan.read_row(
       tables:,
-      spell_groups: spell_plan.spell_groups(tables:),
+      sources: spell_plan.sources_of(tables:),
       place: spends,
       effect: refused,
     )
@@ -168,7 +173,7 @@ pub fn a_spend_all_spell_refuses_an_effect_tag_the_rule_does_not_read_test() -> 
     as "emmComparison 2 chooses nothing the rule reads (Spell4Effects.emmComparison)"
   assert spell_plan.read_row(
       tables:,
-      spell_groups: spell_plan.spell_groups(tables:),
+      sources: spell_plan.sources_of(tables:),
       place: spends,
       effect: read,
     )
@@ -284,13 +289,13 @@ pub fn a_property_row_with_no_life_is_held_whatever_its_type_test() -> Nil {
         |> list.filter(fn(effect) {
           planted_between(id: effect.id, low: 90_100, high: 92_000)
         })
-      let spell_groups = spell_plan.spell_groups(tables:)
+      let sources = spell_plan.sources_of(tables:)
       let verdicts =
         list.map(planted_effects, fn(effect) {
           let reading =
             spell_plan.read_row(
               tables:,
-              spell_groups:,
+              sources:,
               place: spell_tables.pressed,
               effect:,
             )
@@ -358,11 +363,11 @@ pub fn a_row_no_phase_selects_is_held_and_a_damage_row_left_out_test() -> Nil {
         |> list.filter(fn(effect) {
           planted_between(id: effect.id, low: 92_000, high: 93_000)
         })
-      let spell_groups = spell_plan.spell_groups(tables:)
+      let sources = spell_plan.sources_of(tables:)
       let read = fn(id) {
         spell_plan.read_row(
           tables:,
-          spell_groups:,
+          sources:,
           place: spell_tables.pressed,
           effect: first_of(effects: planted_effects, id:),
         )

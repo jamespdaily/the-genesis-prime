@@ -138,6 +138,13 @@ pub type Reference {
   Reference(place: Place, radius: Float)
 }
 
+/// A throw ready for a creature to carry out: the `move` a row asks for, the `draws` the
+/// caster's connection took from its seed for it and the `reference` unit it is measured
+/// from.
+pub type Throw {
+  Throw(move: Move, draws: Draws, reference: Reference)
+}
+
 /// Why a row is no move.
 pub type RowError {
   /// dataBits00 is not a kind from 0 to 15.

@@ -498,6 +498,7 @@ pub fn landing_of(
           effect_id: row.effect_id.value,
           instance_id: index + 1,
           row: row.row,
+          throw: None,
         )
       }),
       gates: [],

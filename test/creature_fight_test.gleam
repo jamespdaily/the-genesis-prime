@@ -65,7 +65,7 @@ import gleam/dict
 import gleam/float
 import gleam/int
 import gleam/list
-import gleam/option.{None}
+import gleam/option.{None, Some}
 import gleam/set
 import gleam/string
 import map_support
@@ -4531,18 +4531,20 @@ fn knockback_from(
   unit_at unit_at: start_place.Place,
 ) -> creature.Message {
   creature.Thrown(
-    move: forced_move.Move(
-      way: forced_move.Away,
-      mover: forced_move.Flight,
-      min_distance: 10.0,
-      max_distance: 10.0,
-      flight_ms: 375,
-      gravity: 0.0,
-      flags: 0,
-      height: 0.0,
+    throw: forced_move.Throw(
+      move: forced_move.Move(
+        way: forced_move.Away,
+        mover: forced_move.Flight,
+        min_distance: 10.0,
+        max_distance: 10.0,
+        flight_ms: 375,
+        gravity: 0.0,
+        flags: 0,
+        height: 0.0,
+      ),
+      draws: forced_move.Draws(distance: 0.0, angle: 0.0),
+      reference: forced_move.Reference(place: unit_at, radius: 0.0),
     ),
-    draws: forced_move.Draws(distance: 0.0, angle: 0.0),
-    reference: forced_move.Reference(place: unit_at, radius: 0.0),
     struck_at_ms: start_ms + at_ms,
   )
 }
@@ -4571,6 +4573,118 @@ fn thrown_chasing(
   let #(state, thrown) =
     tell(state:, at_ms: 1000, message: knockback(at_ms: 1000))
   #(state, thrown, timer_for(thrown, 375))
+}
+
+/// The Knockback state of Spell4Effects 56250 (`table_rows -- Spell4Effects 56250`): delayTime 0,
+/// durationTime 0, state 16, dataBits03 1, which names helper 36010 whose throw is
+/// Spell4Effects 73826: kind 4 (away from the reference unit), 10.0 m, 375 ms, no gravity,
+/// flags 1, height 2.0. The reference unit is 5 behind the creature along x.
+fn knockback_state(instance_id instance_id: Int) -> strike_tell.ControlTell {
+  strike_tell.ControlTell(
+    effect_id: 56_250,
+    instance_id:,
+    row: crowd_control.Row(
+      state: crowd_control_state.Knockback,
+      delay_ms: 0,
+      duration_ms: 0,
+      armor_removed: 1,
+      until_removed: False,
+    ),
+    throw: Some(forced_move.Throw(
+      move: forced_move.Move(
+        way: forced_move.Away,
+        mover: forced_move.Flight,
+        min_distance: 10.0,
+        max_distance: 10.0,
+        flight_ms: 375,
+        gravity: 0.0,
+        flags: 1,
+        height: 2.0,
+      ),
+      draws: forced_move.Draws(distance: 0.0, angle: 0.0),
+      reference: forced_move.Reference(place: at(-5.0), radius: 0.0),
+    )),
+  )
+}
+
+pub fn a_landed_knockback_throws_the_creature_in_the_same_step_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) = chasing(viewers: [2, 5])
+  let #(_, struck) =
+    tell(
+      state:,
+      at_ms: 1000,
+      message: controlling(number: 2, cast_id: 1, controls: [
+        knockback_state(instance_id: 28_673),
+      ]),
+    )
+  assert list.length(landed_in(struck)) == 1
+    as "the answer names the state that landed"
+  let before_flight =
+    list.take_while(said(struck), fn(line) { line != "0x638 to 2" })
+  assert list.contains(before_flight, "0x87f to 2")
+    as "the state's news comes before the flight"
+  assert list.filter(said(struck), fn(line) { line == "0x638 to 2" })
+    == ["0x638 to 2"]
+    && list.filter(said(struck), fn(line) { line == "0x638 to 5" })
+    == ["0x638 to 5"]
+    as "each viewer is sent the flight once, in the same step"
+  let assert [CreatureMoved(path:)] =
+    list.filter(news_to(struck, 2), fn(news) { name_of(news) == "0x638" })
+    as "the viewer is sent one flight"
+  let assert [#(first_ms, first_x), #(last_ms, last_x)] = timed_xs(path:)
+  assert first_ms == start_ms + 1000
+    && near(first_x, 10.0)
+    && last_ms == start_ms + 1375
+    && near(last_x, 20.0)
+    as "from where the creature is, 1 s into its run at x = 10, to 10 further away from the unit behind it, 375 ms later"
+  assert list.any(timers(struck), fn(timer) { timer.1 == 375 })
+    as "the flight's end is a timer"
+}
+
+pub fn an_immune_knockback_does_not_throw_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The same strike with a blow and the Knockback state: an unguarded Beast is thrown, and the
+  // Beast guarded by Spell4 85474 (`Spell4Effects` type 79 immunity) takes the blow as `Immune`,
+  // keeps the state as it does today and is not thrown.
+  let strike_with_blow = fn() {
+    let assert creature.Strike(tell:) = damaging(damage: 10)
+    creature.Strike(
+      tell: Strike(..tell, controls: [knockback_state(instance_id: 28_673)]),
+    )
+  }
+  let #(open, _) = chasing(viewers: [2])
+  let #(_, thrown) = tell(state: open, at_ms: 1000, message: strike_with_blow())
+  assert list.contains(said(thrown), "0x638 to 2")
+    as "an unguarded Beast that takes the blow and the state is thrown"
+  let assert Ok(turret) =
+    dict.get(spawn_support.guarded_turret_kinds().by_creature, 73_494)
+    as "the guarded turret's kind carries the guard"
+  let #(guarded, _) =
+    started_with(
+      source: spawn_source.Stored(id: SpawnId(1)),
+      spawn: spawn_support.battle_beast(number: 1, x: 0.0),
+      kind: Kind(
+        respawn_ms: 60_000,
+        attack_spell4_id: Spell4Id(5649),
+        attack_interval_ms: 1500,
+        guard: turret.guard,
+      ),
+      viewers: [2],
+      armor: creature_life.NoArmor,
+    )
+  let #(guarded, _) =
+    tell(
+      state: guarded,
+      at_ms: 0,
+      message: approached(number: 2, x: 30.0, seq: 1),
+    )
+  let #(_, struck) =
+    tell(state: guarded, at_ms: 1000, message: strike_with_blow())
+  let assert [Immune(controls: [_], ..)] = answers_of(struck)
+    as "the guard takes the blow as immune and the state still lands"
+  assert !list.contains(said(struck), "0x638 to 2")
+    as "an immune creature is not thrown"
 }
 
 /// The path's points as (time, x) pairs.
@@ -5034,18 +5148,20 @@ pub fn a_creature_placed_as_part_of_a_map_object_is_not_moved_by_a_forced_move_t
         state:,
         at_ms: 100,
         message: creature.Thrown(
-          move: forced_move.Move(
-            way:,
-            mover:,
-            min_distance: 10.0,
-            max_distance: 10.0,
-            flight_ms: 375,
-            gravity: 0.0,
-            flags: 0,
-            height: 0.0,
+          throw: forced_move.Throw(
+            move: forced_move.Move(
+              way:,
+              mover:,
+              min_distance: 10.0,
+              max_distance: 10.0,
+              flight_ms: 375,
+              gravity: 0.0,
+              flags: 0,
+              height: 0.0,
+            ),
+            draws: forced_move.Draws(distance: 0.0, angle: 0.0),
+            reference: forced_move.Reference(place: unit_at, radius: 0.0),
           ),
-          draws: forced_move.Draws(distance: 0.0, angle: 0.0),
-          reference: forced_move.Reference(place: unit_at, radius: 0.0),
           struck_at_ms: start_ms + 100,
         ),
       )

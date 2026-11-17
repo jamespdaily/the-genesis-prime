@@ -131,7 +131,8 @@ fn effect_row_of(error: PlanError) -> Refusal {
     | spell_plan.ProcKindNotRead(effect_id:, ..)
     | spell_plan.ProcNotRead(effect_id:, ..)
     | spell_plan.DisguiseNotRead(effect_id:, ..)
-    | spell_plan.StruckMoveNotRead(effect_id:, ..) -> NamesARow(effect_id:)
+    | spell_plan.StruckMoveNotRead(effect_id:, ..)
+    | spell_plan.ControlHelperNotRead(effect_id:, ..) -> NamesARow(effect_id:)
   }
 }
 
@@ -427,10 +428,9 @@ pub fn every_planned_spell_holds_exactly_the_rows_read_row_keeps_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
-  let sources = spell_plan.sources_of(tables:)
   let effects = spell4_effects.all(tables)
   let place_of = effect_row.places(tables:, effects:)
-  let spell_groups = spell_plan.spell_groups(tables:)
+  let sources = spell_plan.sources_of(tables:)
   let spell4_ids = list.map(spell4.all(tables), fn(row) { row.id })
   let compared =
     compare(
@@ -444,7 +444,7 @@ pub fn every_planned_spell_holds_exactly_the_rows_read_row_keeps_test() -> Nil {
         let place = place_of(effect.spell_id)
         spell_plan.read_row(
           tables:,
-          spell_groups:,
+          sources:,
           place: case effect.spell_id == planned {
             True -> spell_plan.RowPlace(..place, struck_by: None)
             False -> place
@@ -516,7 +516,7 @@ pub fn the_agreement_test_reports_a_spell_the_plan_refuses_for_a_row_read_row_re
           read: fn(effect, _planned) {
             spell_plan.read_row(
               tables:,
-              spell_groups: spell_plan.spell_groups(tables:),
+              sources: spell_plan.sources_of(tables:),
               place: spell_tables.pressed,
               effect:,
             )
@@ -553,7 +553,7 @@ pub fn the_agreement_test_reports_a_spell_the_plan_refuses_for_a_row_read_row_re
           read: fn(effect, _planned) {
             spell_plan.read_row(
               tables:,
-              spell_groups: spell_plan.spell_groups(tables:),
+              sources: spell_plan.sources_of(tables:),
               place: spell_tables.pressed,
               effect:,
             )
@@ -600,7 +600,7 @@ fn refused_with(
         read: fn(effect, _planned) {
           spell_plan.read_row(
             tables:,
-            spell_groups: spell_plan.spell_groups(tables:),
+            sources: spell_plan.sources_of(tables:),
             place: spell_tables.pressed,
             effect:,
           )
