@@ -493,24 +493,51 @@ pub fn with_held_applied(
 }
 
 /// The picture with the creature holding the unit state its owner's news gave, under the
-/// creature's `number` for the hold; a unit that is not a shown creature is as it was.
+/// creature's `number` for the hold, after the holds it has; a unit that is not a shown
+/// creature is as it was.
 pub fn with_unit_state_held(
-  picture _picture: Picture,
-  unit_id _unit_id: Int,
-  state _state: Int,
-  number _number: Int,
+  picture picture: Picture,
+  unit_id unit_id: Int,
+  state state: Int,
+  number number: Int,
 ) -> Picture {
-  panic as "shape: a held unit state in the picture is built in the step's code commit"
+  case dict.get(picture, unit_id) {
+    Ok(ShownCreature(unit_states:, ..) as creature) ->
+      dict.insert(
+        picture,
+        unit_id,
+        ShownCreature(
+          ..creature,
+          unit_states: list.append(unit_states, [
+            HeldUnitState(state:, number:),
+          ]),
+        ),
+      )
+    Ok(ShownPlayer) | Ok(ShownObject(..)) | Error(Nil) -> picture
+  }
 }
 
 /// The picture with the creature no longer holding its unit state of that `number`, its
 /// other holds kept; a unit that is not a shown creature is as it was.
 pub fn with_unit_state_ended(
-  picture _picture: Picture,
-  unit_id _unit_id: Int,
-  number _number: Int,
+  picture picture: Picture,
+  unit_id unit_id: Int,
+  number number: Int,
 ) -> Picture {
-  panic as "shape: an ended unit state in the picture is built in the step's code commit"
+  case dict.get(picture, unit_id) {
+    Ok(ShownCreature(unit_states:, ..) as creature) ->
+      dict.insert(
+        picture,
+        unit_id,
+        ShownCreature(
+          ..creature,
+          unit_states: list.filter(unit_states, fn(held) {
+            held.number != number
+          }),
+        ),
+      )
+    Ok(ShownPlayer) | Ok(ShownObject(..)) | Error(Nil) -> picture
+  }
 }
 
 /// The picture with the creature no longer holding the state of that instance id (the

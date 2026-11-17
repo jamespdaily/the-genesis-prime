@@ -693,8 +693,11 @@ fn aimed_shortcut(
   }
 }
 
-/// A creature or object: life, then combat, then the states it holds, then cast group and
-/// range, then the spell's own conditions and the start.
+/// A creature or object: the unit states it is shown to hold, then life, then combat, then
+/// the crowd-control states it holds, then cast group and range, then the spell's own
+/// conditions and the start. The unit-state test comes first where the client's own
+/// invulnerability result does (`0x1403b2240` line 44, result 96, before every other target
+/// check); that 306 and 308 stand in the same place is a server guess.
 fn aimed_at_a_creature(
   press press: AimedPress,
   creature_id creature_id: Int,

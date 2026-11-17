@@ -637,3 +637,117 @@ pub fn the_picture_keeps_a_shown_creatures_held_states_test() -> Nil {
   assert results == [] && written == [0x07FD]
     as "news of unit 77, which the client does not show, changed nothing; the 0x355 of unit 40 forgot it with its Sleep, so the creature shown again holds no state and the cast starts"
 }
+
+/// The news a creature sends its viewers of a unit state it holds, for unit 40.
+fn unit_state_held(
+  state state: Int,
+  number number: Int,
+) -> #(Int, client_connection.News) {
+  #(40, client_connection.UnitStateHeld(state:, number:))
+}
+
+pub fn a_unit_state_news_updates_the_picture_and_writes_no_frame_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The client reads no row of the unit-state type (`Spell4Effects.effectType.15`: its
+  // effect switch has no case 15) and has no message that names a held state, so the news
+  // of a state writes nothing; only the picture's refusal of a press shows it.
+  use tables <- fixture_tables.changed(
+    table: "Spell4",
+    id: a_masking_spell,
+    with: [#("prerequisiteIdTargetCast", Integer(0))],
+  )
+  let state = a_masked_target(tables:)
+  let #(held, taken) =
+    connection_support.feed(
+      state:,
+      event: connection_support.news_sent_by_a_peer(
+        unit_id: 40,
+        news: client_connection.UnitStateHeld(state: 6, number: 1),
+      ),
+    )
+  assert connection_support.written_ids(taken) == []
+    as "the news of a held state writes no frame to the client that shows the unit"
+  assert pressed(state: held, ms: 1000).0 == [306]
+    as "and the picture of the shown unit holds it: the press is refused"
+  let #(ended, taken) =
+    connection_support.feed(
+      state: held,
+      event: connection_support.news_sent_by_a_peer(
+        unit_id: 40,
+        news: client_connection.UnitStateEnded(number: 1),
+      ),
+    )
+  assert connection_support.written_ids(taken) == []
+    as "the end of a hold writes no frame either"
+  let #(results, written) = pressed(state: ended, ms: 2000)
+  assert results == [] && written == [0x07FD]
+    as "and the picture no longer holds it: the cast starts"
+  let #(other, taken) =
+    connection_support.feed(
+      state:,
+      event: connection_support.news_sent_by_a_peer(
+        unit_id: 77,
+        news: client_connection.UnitStateHeld(state: 6, number: 1),
+      ),
+    )
+  assert connection_support.written_ids(taken) == []
+  let #(results, written) = pressed(state: other, ms: 1000)
+  assert results == [] && written == [0x07FD]
+    as "news of unit 77, which the client does not show, changed nothing of unit 40's picture"
+}
+
+pub fn usable_holds_the_pictures_unit_states_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The picture's holds are what a press is judged by: state 6 refuses a hostile press
+  // (306, `Spell.CodeEnumCastResult.306_308`), a state with no reading refuses nothing, and
+  // two holds of state 6 refuse until both ended.
+  use tables <- fixture_tables.changed(
+    table: "Spell4",
+    id: a_masking_spell,
+    with: [#("prerequisiteIdTargetCast", Integer(0))],
+  )
+  let state = a_masked_target(tables:)
+  let state = after_news(state:, news: [unit_state_held(state: 1, number: 1)])
+  let #(results, written) = pressed(state:, ms: 0)
+  assert results == [] && written == [0x07FD]
+    as "Block (state 1) is held and refuses nothing"
+  let state =
+    after_news(state:, news: [
+      unit_state_held(state: 6, number: 2),
+      unit_state_held(state: 6, number: 3),
+    ])
+  assert pressed(state:, ms: 1000) == #([306], [0x07FC])
+    as "state 6 held: the 0x7fc carries 306"
+  let state =
+    after_news(state:, news: [
+      #(40, client_connection.UnitStateEnded(number: 2)),
+    ])
+  assert pressed(state:, ms: 2000).0 == [306]
+    as "the end names one hold: the creature still holds the other state 6"
+  let state =
+    after_news(state:, news: [
+      #(40, client_connection.UnitStateEnded(number: 3)),
+    ])
+  let #(results, written) = pressed(state:, ms: 3000)
+  assert results == [] && written == [0x07FD]
+    as "the last hold ended: the cast starts"
+  let state =
+    after_news(state:, news: [
+      unit_state_held(state: 6, number: 5),
+      #(40, client_connection.Removed),
+    ])
+  let state =
+    connection_support.feed(
+      state:,
+      event: appears_at_ten(
+        unit_id: 40,
+        creature_id: 57_226,
+        display_info_id: 36_511,
+        outfit_info_id: 0,
+        hit_radius: 1.5,
+      ),
+    ).0
+  let #(results, written) = pressed(state:, ms: 6000)
+  assert results == [] && written == [0x07FD]
+    as "the 0x355 of unit 40 forgot its hold: the creature shown again holds none and the cast starts"
+}

@@ -100,11 +100,11 @@ pub type CastResult {
   CasterCannotBeAbilityRestriction
   /// The value 303, the fact file's `0x1403b2c40`.
   TargetCannotBeAbilityRestriction
-  /// The value 306, the fact file's `Spell.CodeEnumCastResult`.
+  /// The value 306, the fact file's `Spell.CodeEnumCastResult.306_308`.
   TargetHostileInvulnerability
-  /// The value 307, the fact file's `Spell.CodeEnumCastResult`.
+  /// The value 307, the fact file's `Spell.CodeEnumCastResult.306_308`.
   TargetInvulnerableToOther
-  /// The value 308, the fact file's `Spell.CodeEnumCastResult`.
+  /// The value 308, the fact file's `Spell.CodeEnumCastResult.306_308`.
   TargetBeneficialInvulnerability
   /// The value 317, the fact file's `Spell.CodeEnumCastResult`.
   Queued

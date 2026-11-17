@@ -3205,6 +3205,7 @@ fn spell_of(
           effect_kind.Heal(vital: effect_kind.Shield),
         ],
         [effect_kind.Despawn],
+        [effect_kind.UnitState],
       ],
       fn(kinds) { rows_read(readings:, kinds:) },
     ),
@@ -5066,15 +5067,84 @@ fn despawn_reading(
 /// A UnitStateSet row (`Spell4Effects.effectType.15`) as a `UnitState` of the part of its aim
 /// past the caster (`past_the_caster`), and `Held` when its phaseFlags is 0
 /// (`held_without_a_phase`). It is left out by name when it aims at the caster alone
-/// (`UnitStateAimedAtTheCasterOnly`), lasts until removed (`UnitStateUntilRemoved`), is behind
-/// a persistence prerequisite (`UnitStateBehindPersistence`) or has a dataBits01 to dataBits09
-/// that is not 0 (`UnitStateDataNotRead`); its apply prerequisites are read as a despawn's are.
+/// (`UnitStateAimedAtTheCasterOnly`), lasts until removed (`UnitStateUntilRemoved`, flags bit
+/// 2: no rule ends a creature's state with its cast), is behind a caster persistence, target
+/// persistence or target suspend prerequisite (`UnitStateBehindPersistence`: no creature rule
+/// keeps a state through a death or a leave, and the spell still plans) or has a dataBits01 to
+/// dataBits09 that is not 0 (`UnitStateDataNotRead`: no client code reads a row of the type).
+/// A flags value no aim reads is left out as aimed at other units. Its apply prerequisites are
+/// read as a despawn's are (`applied_condition_of`), the target one checked by each struck
+/// creature that holds all it reads (`struck_gates_of`).
 fn unit_state_reading(
-  tables _tables: table_store.Tables,
-  place _place: RowPlace,
-  effect _effect: spell4_effects.Spell4Effects,
+  tables tables: table_store.Tables,
+  place place: RowPlace,
+  effect effect: spell4_effects.Spell4Effects,
 ) -> Result(RowReading, PlanError) {
-  Ok(LeftOut(why: TypeNotRead))
+  case aim_of(target_flags: effect.target_flags) {
+    Error(Nil) -> Ok(LeftOut(why: AimedAtOtherUnits))
+    Ok(aim) ->
+      case past_the_caster(aim: aim_in_place(place:, aim:)) {
+        Error(Nil) -> Ok(LeftOut(why: UnitStateAimedAtTheCasterOnly))
+        Ok(past) ->
+          case unit_state_left_out(effect:) {
+            Some(why) -> Ok(LeftOut(why:))
+            None -> {
+              use condition <- result.map(applied_condition_of(
+                tables:,
+                effect:,
+                reach: reach_in_place(place:, aim: past),
+              ))
+              Applied(
+                read_as(
+                  UnitStateEffect(unit_state: UnitState(
+                    effect_id: Spell4EffectsId(effect.id),
+                    phase_flags: effect.phase_flags,
+                    aim: past,
+                    row: unit_state.Row(
+                      state: effect.data_bits00,
+                      delay_ms: effect.delay_time,
+                      duration_ms: effect.duration_time,
+                    ),
+                    condition:,
+                    tag: tag_of(effect:),
+                  )),
+                ),
+              )
+            }
+          }
+      }
+  }
+}
+
+/// Why a UnitStateSet row aimed past the caster is left out, in the order the reasons are
+/// tried: it lasts until removed, it is behind a persistence prerequisite, or one of its
+/// dataBits01 to dataBits09 is not 0 (the first such column is named).
+fn unit_state_left_out(
+  effect effect: spell4_effects.Spell4Effects,
+) -> Option(LeftOutReason) {
+  let columns = [
+    #("dataBits01", effect.data_bits01),
+    #("dataBits02", effect.data_bits02),
+    #("dataBits03", effect.data_bits03),
+    #("dataBits04", effect.data_bits04),
+    #("dataBits05", effect.data_bits05),
+    #("dataBits06", effect.data_bits06),
+    #("dataBits07", effect.data_bits07),
+    #("dataBits08", effect.data_bits08),
+    #("dataBits09", effect.data_bits09),
+  ]
+  case
+    spell_effect.has_flag(flags: effect.flags, bit: 2),
+    effect.prerequisite_id_caster_persistence != 0
+    || effect.prerequisite_id_target_persistence != 0
+    || effect.prerequisite_id_target_suspend != 0,
+    list.find(columns, fn(column) { column.1 != 0 })
+  {
+    True, _, _ -> Some(UnitStateUntilRemoved)
+    False, True, _ -> Some(UnitStateBehindPersistence)
+    False, False, Ok(#(column, _)) -> Some(UnitStateDataNotRead(column:))
+    False, False, Error(Nil) -> None
+  }
 }
 
 /// The row as `LeftOut` when its targetFlags do not reach a unit the type is read for

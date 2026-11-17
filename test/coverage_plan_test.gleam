@@ -15,11 +15,15 @@ import genesis_prime/coverage/engine.{type EngineDeclaration}
 import genesis_prime/coverage/measurement.{
   type Measurement, type TypeLine, HandledWithGap, Measured,
 }
+import genesis_prime/game/activate
 import genesis_prime/game/spell_plan
+import genesis_prime/table/id
+import genesis_prime/table/spell4
 import genesis_prime/table/spell4_effects
 import gleam/dict
 import gleam/int
 import gleam/list
+import gleam/set
 import gleam/string
 import owned_test
 import simplifile
@@ -176,8 +180,8 @@ pub fn the_measure_totals_match_the_plan_test() -> Nil {
   use <- unitest.tags(["dev_tool", "coverage"])
   use <- unitest.guard(client_tables.present())
   let text = checklist.render([measured()])
-  assert string.contains(text, "11561 rows of the handled types not read")
-    as "the sum of the types' scratch counts: 1 1,367, 3 135, 4 555, 8 2,385, 10 1,056, 11 299, 26 1,984, 29 257, 73 34, 80 375 and 118 83 (the tests above), 17 221, 81 316, 14 1,490 and 18 6 (`coverage_type_test`), 76 122, 83 49, 97 587 (the despawn test above), and the counts that stay as they were: 52 2, 64 35, 84 4, 112 199 and 145 0 (the existing `coverage_type_test` values)"
+  assert string.contains(text, "11792 rows of the handled types not read")
+    as "the sum of the types' scratch counts: 1 1,367, 3 135, 4 555, 8 2,385, 10 1,056, 11 299, 26 1,984, 29 257, 73 34, 80 375 and 118 83 (the tests above), 17 221, 81 316, 14 1,490 and 18 6 (`coverage_type_test`), 76 122, 83 49, 97 587 (the despawn test above), 15 231 (the unit state test above), and the counts that stay as they were: 52 2, 64 35, 84 4, 112 199 and 145 0 (the existing `coverage_type_test` values)"
   assert string.contains(text, "starting abilities: 208 of 217 rows handled")
     as "scratch count over the 217 starting rows (the 196 of before, the 19 rows of the trees Spell Surge's alternates reach and the 2 rows of Spell4 72838, which the Proc 178239 casts since issue 828, all of handled types and read): 6 are not read for lack of a handled type or row (the Proc row 123744 the plan skips, 90 four times and 24; the Stalker's 91018, behind a target apply prerequisite the plan reads, is read) and 3 more are not read (the Warrior's 210834, which ticks on the caster, is read): Proxies 121345 and 178429 (dataBits00 0) and the Medic's ticking gain 228918"
 }
@@ -404,4 +408,137 @@ pub fn type_97_rows_are_each_read_left_out_or_refused_by_name_test() -> Nil {
     })
     == 0
     as "no row is held, left to the area or left to the activation: no row of the type has a phaseFlags of 0 aimed past the caster"
+}
+
+pub fn type_15_rows_are_each_read_left_out_or_refused_by_name_test() -> Nil {
+  use <- owned_test.run(600_000)
+  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let effects = spell4_effects.all(tables)
+  let rows = list.filter(effects, fn(row) { row.effect_type == 15 })
+  assert list.length(rows) == 752
+    as "scratch count: effectType=15 holds 752 rows"
+  assert list.count(rows, fn(row) {
+      spell4.get(tables:, id: id.Spell4Id(row.spell_id)) == Error(Nil)
+    })
+    == 17
+    as "scratch count: 17 rows name a spell with no Spell4 row, which the measure counts by their own columns, as it counts any row"
+  let sources = spell_plan.sources_of(tables:)
+  let place_of = effect_row.places(tables:, effects:)
+  let readings =
+    list.map(rows, fn(row) {
+      #(
+        row,
+        spell_plan.read_row(
+          tables:,
+          sources:,
+          place: place_of(row.spell_id),
+          effect: row,
+        ),
+      )
+    })
+  let count = fn(wanted) { list.count(readings, fn(read) { wanted(read.1) }) }
+  assert count(fn(reading) {
+      reading
+      == Ok(spell_plan.LeftOut(why: spell_plan.UnitStateAimedAtTheCasterOnly))
+    })
+    == 177
+    as "scratch count: targetFlags 1 (the caster alone) on 177 of the 752 rows (172 of spells with a Spell4 row)"
+  assert count(fn(reading) {
+      reading == Ok(spell_plan.LeftOut(why: spell_plan.UnitStateUntilRemoved))
+    })
+    == 48
+    as "scratch count: 48 rows aimed past the caster hold flags bit 2 (44 of spells with a Spell4 row)"
+  assert count(fn(reading) {
+      reading
+      == Ok(spell_plan.LeftOut(why: spell_plan.UnitStateBehindPersistence))
+    })
+    == 3
+    as "scratch count: 3 rows aimed past the caster, timed, hold a target persistence prerequisite (13428): rows 114394, 229948 and 230846"
+  assert count(fn(reading) {
+      reading
+      == Ok(
+        spell_plan.LeftOut(why: spell_plan.UnitStateDataNotRead(
+          column: "dataBits01",
+        )),
+      )
+    })
+    == 2
+    as "scratch count: 2 rows aimed past the caster, timed, with a dataBits01 that is not 0 (row 191112's state 23 among them) and no other column"
+  let applied =
+    list.filter_map(readings, fn(read) {
+      case read.1 {
+        Ok(spell_plan.Applied(..)) -> Ok({ read.0 }.data_bits00)
+        Ok(spell_plan.Held(..))
+        | Ok(spell_plan.ReadByArea)
+        | Ok(spell_plan.ReadByActivation)
+        | Ok(spell_plan.LeftOut(..))
+        | Error(..) -> Error(Nil)
+      }
+    })
+  let rest =
+    list.filter(readings, fn(read) {
+      case read.1 {
+        Ok(spell_plan.Applied(..))
+        | Ok(spell_plan.LeftOut(why: spell_plan.UnitStateAimedAtTheCasterOnly))
+        | Ok(spell_plan.LeftOut(why: spell_plan.UnitStateUntilRemoved))
+        | Ok(spell_plan.LeftOut(why: spell_plan.UnitStateBehindPersistence))
+        | Ok(spell_plan.LeftOut(why: spell_plan.UnitStateDataNotRead(..))) ->
+          False
+        Ok(_) | Error(..) -> True
+      }
+    })
+  assert list.map(rest, fn(read) { #({ read.0 }.id, read.1) })
+    == [
+      #(
+        229_781,
+        Error(spell_plan.TargetPrerequisiteReadsStruckUnit(
+          spell4_id: 86_810,
+          effect_id: 229_781,
+          prerequisite_type: 1,
+        )),
+      ),
+    ]
+    as "every other row is read by a go or refused: row 229781 (state 6, targetFlags 2) is behind Prerequisite 4106, a type 1 condition that reads the casts a struck creature holds, which no creature holds yet (#569), so the plan refuses its spell"
+  assert list.length(applied) == 521
+    as "scratch count: 752 less 177, 48, 3, 2 and 1 is 521 rows a go applies"
+  let by_state =
+    list.group(applied, fn(state) { state })
+    |> dict.to_list
+    |> list.map(fn(group) { #(group.0, list.length(group.1)) })
+    |> list.sort(fn(a, b) { int.compare(a.0, b.0) })
+  assert by_state
+    == [
+      #(0, 1),
+      #(1, 498),
+      #(6, 6),
+      #(13, 3),
+      #(14, 3),
+      #(15, 3),
+      #(17, 1),
+      #(18, 1),
+      #(22, 3),
+      #(23, 2),
+    ]
+    as "scratch count over the applied rows' dataBits00: state 1 (Block) on 498, 6 on 6 (7 less the refused row 229781), 13 to 15 on 3 each, 17 and 18 on 1 each, 22 on 3, 23 on 2 and 0 on 1"
+}
+
+pub fn no_type_15_row_past_the_caster_sits_in_an_activated_spell_test() -> Nil {
+  use <- owned_test.run(600_000)
+  use <- unitest.tags(["dev_tool", "coverage"])
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let sources = spell_plan.sources_of(tables:)
+  let activated = activate.activated_spell_ids(tables:, sources:)
+  assert set.size(activated) > 0
+    as "the activated set holds the creature activate columns, the item use spells and the default spell"
+  let held =
+    list.filter(spell4_effects.all(tables), fn(row) {
+      row.effect_type == 15
+      && row.target_flags != 1
+      && set.contains(activated, row.spell_id)
+    })
+  assert list.map(held, fn(row) { row.id }) == []
+    as "scratch count: no UnitStateSet row aimed past the caster is in a spell a creature's activate column, an item's use or the default activate spell names, so the activate cast's drop of such a row changes no activation of the client's data"
 }

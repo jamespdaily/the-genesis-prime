@@ -714,6 +714,33 @@ pub fn despawns(effects effects: List(Effect)) -> List(Effect) {
   })
 }
 
+/// The unit states the effects tell creatures to hold, in order.
+pub fn unit_states_told(effects effects: List(Effect)) -> List(Effect) {
+  list.filter(effects, fn(effect) {
+    case effect {
+      cast_state.CreatureHoldsUnitStates(..) -> True
+      cast_state.ForcedMoveStarts(..)
+      | cast_state.CreatureDespawns(..)
+      | cast_state.TargetChangeStarts(..)
+      | cast_state.TargetChangeEnds(..)
+      | cast_state.Send(..)
+      | cast_state.Tell(..)
+      | cast_state.StartTimer(..)
+      | cast_state.CancelTimer(..)
+      | cast_state.Strike(..)
+      | cast_state.Pay(..)
+      | cast_state.Gain(..)
+      | cast_state.Log(..)
+      | cast_state.CasterChangeStarts(..)
+      | cast_state.CasterChangeEnds(..)
+      | cast_state.Activated(..)
+      | cast_state.ShortcutCast(..)
+      | cast_state.TickStrike(..)
+      | cast_state.StealthChanged(..) -> False
+    }
+  })
+}
+
 /// The time each step's effects were taken at, with each throw they tell, in order.
 pub fn throw_timeline(
   fired fired: List(#(Int, List(Effect))),

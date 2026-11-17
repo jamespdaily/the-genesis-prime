@@ -1364,14 +1364,22 @@ fn creature_despawned(
 /// map, through the creature registry with no watch, as a removal goes: the connection tells
 /// the creature `TellUnitStates` with the go's `rows` and the two times, and draws nothing.
 fn creature_holds_unit_states(
-  entered _entered: world_entry.Entered,
-  unit_id _unit_id: Int,
-  life _life: Int,
-  struck_at_ms _struck_at_ms: Int,
-  went_at_ms _went_at_ms: Int,
-  rows _rows: List(unit_state.Row),
+  entered entered: world_entry.Entered,
+  unit_id unit_id: Int,
+  life life: Int,
+  struck_at_ms struck_at_ms: Int,
+  went_at_ms went_at_ms: Int,
+  rows rows: List(unit_state.Row),
 ) -> Effect(ConnectionEffect(Request)) {
-  panic as "shape: telling a creature to hold unit states is built in the step's code commit"
+  OwnEffect(step.Tell(
+    to: step.Creature(
+      map: entered.map,
+      incarnation: entered.incarnation,
+      unit_id:,
+      life:,
+    ),
+    request: client_connection.TellUnitStates(rows:, struck_at_ms:, went_at_ms:),
+  ))
 }
 
 /// A go asked: its targets are selected from the units the client shows, the
