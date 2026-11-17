@@ -19,6 +19,7 @@
 
 import cast_support
 import connection_rule_support as support
+import creature_fight_test
 import crowd_control_support
 import genesis_prime/client_connection.{
   type PeerNews, CreatureAppeared, CreatureMoved, PeerNews, PropertiesChanged,
@@ -2398,7 +2399,7 @@ fn knocking_strike(cast_id cast_id: Int) -> creature.Message {
   )
 }
 
-pub fn a_despawn_drops_states_and_worn_armor_without_a_0x880_test() -> Nil {
+pub fn a_despawn_drops_states_armor_and_an_opening_without_a_0x880_test() -> Nil {
   use <- owned_test.run(5000)
   let #(held, knocked) =
     told(
@@ -2449,6 +2450,8 @@ pub fn a_despawn_drops_states_and_worn_armor_without_a_0x880_test() -> Nil {
     told(state: back, at_ms: 67_000, message: stunning_strike(cast_id: 3))
   assert armor_left(again) == [#(2, 2), #(5, 2)]
     as "the creature that stands again wears its full 3 points"
+  // A guarded turret's open opening: its support is the fight test's.
+  creature_fight_test.a_despawned_opening_ends_without_a_0x880()
 }
 
 pub fn a_throw_and_a_modifier_at_a_despawned_creature_are_dropped_test() -> Nil {

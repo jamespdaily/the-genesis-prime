@@ -4198,8 +4198,11 @@ pub fn a_turret_killed_while_opened_gives_its_kill_credit_test() -> Nil {
     as "the opening's end is cancelled"
 }
 
-pub fn a_turret_despawned_while_opened_finishes_its_opening_without_a_0x880_test() -> Nil {
-  use <- owned_test.run(5000)
+/// A turret that is stunned open and then told to despawn: its opening's cast is finished
+/// with no 0x880, its opening timer is cancelled, and it stands guarded again at its
+/// corpse timer. Called by `creature_test`'s despawn test, which names the three things a
+/// despawn drops.
+pub fn a_despawned_opening_ends_without_a_0x880() -> Nil {
   let held = guarded_charge(viewers: [2])
   let #(state, stunned) = stunned_at(state: held.state, at_ms: 4000)
   let #(gone, despawned) =
