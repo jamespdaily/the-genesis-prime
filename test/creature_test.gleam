@@ -117,6 +117,7 @@ fn creature_from(
       attack_spell4_id: Spell4Id(5649),
       attack_interval_ms: 1500,
       guard: option.None,
+      specials: [],
     ),
     numbers: spawn_support.numbers,
   ))
@@ -2969,6 +2970,7 @@ pub fn a_guarded_creature_with_a_held_state_answers_one_immune_test() -> Nil {
           attack_spell4_id: Spell4Id(5649),
           attack_interval_ms: 1500,
           guard: turret.guard,
+          specials: [],
         ),
         numbers: spawn_support.numbers,
       )),

@@ -117,6 +117,7 @@ fn beast_from(
       attack_spell4_id: Spell4Id(5649),
       attack_interval_ms: 1500,
       guard: option.None,
+      specials: [],
     ),
     viewers:,
     armor:,
@@ -3347,10 +3348,12 @@ fn charge_opened(
   #(state, opened, timer_for(opened, 8000))
 }
 
-/// The cast id the step's 0x7ff gave viewer `number`.
+/// The cast id the step's 0x7ff gave viewer `number`. A creature that can move turns to
+/// face its target first (0x638), so the 0x7ff is the first cast news, not the first news.
 fn cast_id_sent(taken: ServiceStep(creature.Outgoing), number: Int) -> Int {
-  let assert [CastStarted(start:), ..] = news_to(taken, number)
-    as "the step sends the 0x7ff first"
+  let assert Ok(CastStarted(start:)) =
+    list.find(news_to(taken, number), fn(news) { name_of(news) == "0x7ff" })
+    as "the step sends the 0x7ff"
   start.cast_id
 }
 
@@ -4740,6 +4743,7 @@ pub fn an_immune_knockback_does_not_throw_test() -> Nil {
         attack_spell4_id: Spell4Id(5649),
         attack_interval_ms: 1500,
         guard: turret.guard,
+        specials: [],
       ),
       viewers: [2],
       armor: creature_life.NoArmor,

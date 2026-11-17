@@ -4,7 +4,7 @@
 //// second content table and follows the spawn's pattern (genesis_prime/content).
 ////
 //// ```
-//// content.load ─▶ rows(db) ─▶ creature_kind.select(rows, tables) ─▶ put(key, kinds)
+//// content.load ─▶ rows(db) ─▶ creature_kind.select(rows, special_rows, tables) ─▶ put(key, kinds)
 //// a map's and a creature's start ─▶ kinds(key) ─▶ Kinds: no copy, no query
 //// ```
 ////

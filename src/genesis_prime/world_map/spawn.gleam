@@ -100,7 +100,7 @@ import genesis_prime/table/creature2_tier
 import genesis_prime/table/creature_level
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{
-  type Creature2Id, type PrerequisiteId, type UnitProperty2Id,
+  type Creature2Id, type PrerequisiteId, type Spell4Id, type UnitProperty2Id,
   Creature2ArcheTypeId, Creature2DifficultyId, Creature2DisplayInfoId,
   Creature2Id, Creature2ResistId, Creature2TierId, CreatureLevelId, Faction2Id,
   InstancePortalId, PathMissionId, UnitProperty2Id,
@@ -235,6 +235,7 @@ pub type CombatContext {
     formulas: Formulas,
     scaling: damage.CreatureScaling,
     attack: List(AttackEffect),
+    specials: List(List(AttackEffect)),
     run_land: Float,
     difficulty_id: Int,
   )
@@ -1146,7 +1147,7 @@ fn combat_of(
   use #(attack, scaling, attack_effects) <- result.try(attack_of(
     catalog:,
     formulas:,
-    kind:,
+    spell4_id: kind.attack_spell4_id,
     creature:,
     level:,
     display:,
@@ -1158,6 +1159,7 @@ fn combat_of(
       formulas:,
       scaling:,
       attack: attack_effects,
+      specials: [],
       run_land: run_land_of(display:, can_move:),
       difficulty_id: creature.creature2_difficulty_id,
     )
@@ -1175,6 +1177,7 @@ fn combat_of(
       hostile_to: hostile_to_players(levels: catalog.factions, faction_id:),
       defence: defence_of(formulas:, level:, value:),
       attack:,
+      specials: [],
       interrupt_armor: interrupt_armor_in(value:),
     )
   Ok(#(combat, context))
@@ -1275,8 +1278,8 @@ fn defence_of(
   )
 }
 
-/// The creature's own attack (genesis_prime/world_map/creature_life `Attack`): its
-/// kind's spell, the damage effect its difficulty chooses by the effect's caster
+/// The attack of the spell `spell4_id` (genesis_prime/world_map/creature_life `Attack`),
+/// for the creature's own attack and each of its specials: the spell, the damage effect its difficulty chooses by the effect's caster
 /// prerequisite (type 179, `0x14049eeb0`), its blow by the creature formula
 /// (`0x140565600`, GameFormula 712), its critical hit chance, severity and
 /// strikethrough from its properties, its run speed (Creature2DisplayInfo.runLand
@@ -1290,7 +1293,7 @@ fn defence_of(
 fn attack_of(
   catalog catalog: Catalog,
   formulas formulas: Formulas,
-  kind kind: Kind,
+  spell4_id spell4_id: Spell4Id,
   creature creature: Creature2,
   level level: Int,
   display display: creature2_display_info.Creature2DisplayInfo,
@@ -1299,11 +1302,11 @@ fn attack_of(
 ) -> Result(#(Attack, damage.CreatureScaling, List(AttackEffect)), SpawnError) {
   let creature_id = Creature2Id(creature.id)
   use spell <- result.try(
-    spell4.get(catalog.tables, kind.attack_spell4_id)
+    spell4.get(catalog.tables, spell4_id)
     |> result.replace_error(NoPropertyRow(
       creature_id:,
       table: "Spell4",
-      id: kind.attack_spell4_id.value,
+      id: spell4_id.value,
     )),
   )
   use caster_cc_mask <- result.try(
@@ -1328,7 +1331,7 @@ fn attack_of(
   use effects <- result.try(
     creature_attack.applying(
       tables: catalog.tables,
-      spell4_id: kind.attack_spell4_id.value,
+      spell4_id: spell4_id.value,
       difficulty: creature.creature2_difficulty_id,
     )
     |> result.map_error(fn(unevaluated) {
@@ -1383,19 +1386,19 @@ fn attack_of(
     False -> Ok(creature_life.Instant)
     True ->
       case
-        spell_area.area_of_spell(
-          tables: catalog.tables,
-          spell4_id: kind.attack_spell4_id,
-        )
+        spell_area.area_of_spell(tables: catalog.tables, spell4_id: spell4_id)
       {
         Error(error) -> Error(AttackAreaNotRead(creature_id:, error:))
         Ok(None) ->
-          Error(ChargeHasNoArea(
-            creature_id:,
-            spell4_id: kind.attack_spell4_id.value,
-          ))
+          Error(ChargeHasNoArea(creature_id:, spell4_id: spell4_id.value))
         Ok(Some(#(area, inside))) ->
-          Ok(creature_life.Charged(cast_ms: spell.cast_time, area:, inside:))
+          Ok(creature_life.Charged(
+            cast_ms: spell.cast_time,
+            area:,
+            inside:,
+            gos: [creature_life.Go(at_ms: spell.cast_time, strikes: True)],
+            hold_ms: 0,
+          ))
       }
   })
   let reach = case cast {
@@ -1405,7 +1408,7 @@ fn attack_of(
   }
   let attack =
     creature_life.Attack(
-      spell4_id: kind.attack_spell4_id,
+      spell4_id: spell4_id,
       offence: offence_of(
         formulas:,
         level:,

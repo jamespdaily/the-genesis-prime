@@ -349,7 +349,7 @@ fn read(
     Ok(..) -> []
     Error(refusals) -> refusals
   }
-  let kinds = creature_kind.select(rows: kind_rows, tables:)
+  let kinds = creature_kind.select(rows: kind_rows, special_rows: [], tables:)
   let kind_refusals = case kinds {
     Ok(..) -> []
     Error(refusals) -> refusals
@@ -359,7 +359,7 @@ fn read(
   // spawn has a kind, and that refusal alone stops the start.
   let kinds_for_spawns = case kinds {
     Ok(kinds) -> Ok(kinds)
-    Error(..) -> creature_kind.taken(rows: kind_rows, tables:)
+    Error(..) -> creature_kind.taken(rows: kind_rows, special_rows: [], tables:)
   }
   let factions = creature_faction.select(rows: faction_rows, tables:)
   let faction_refusals = result.unwrap_error(factions, or: [])

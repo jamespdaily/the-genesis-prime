@@ -41,7 +41,7 @@ import planted_table.{Integer}
 fn selected(
   rows rows: List(creature_kind.Row),
 ) -> Result(creature_kind.Kinds, List(refusal.Refusal)) {
-  creature_kind.select(rows:, tables: fixture_tables.shared())
+  creature_kind.select(rows:, special_rows: [], tables: fixture_tables.shared())
 }
 
 /// The default row, as migration 0010 leaves it.
@@ -99,7 +99,7 @@ pub fn an_attack_effect_whose_caster_prerequisite_the_server_does_not_evaluate_f
         #("objectId0", Integer(7)),
       ],
     )
-    creature_kind.select(rows: [default_row], tables:)
+    creature_kind.select(rows: [default_row], special_rows: [], tables:)
   }
     as "effect 184777's prerequisite 30527 is of type 180: the server would apply it to every creature or none (0x14049eeb0 evaluates type 179 only), so the start stops"
   assert string.contains(rule, "184777") && string.contains(rule, "180")
@@ -113,7 +113,7 @@ pub fn an_attack_spell_with_an_innate_cost_emm_id_fails_the_load_test() -> Nil {
     use tables <- fixture_tables.changed(table: "Spell4", id: 5649, with: [
       #("innateCostEMMId0", Integer(4)),
     ])
-    creature_kind.select(rows: [default_row], tables:)
+    creature_kind.select(rows: [default_row], special_rows: [], tables:)
   }
     as "Spell4.innateCostEMMId0: a spell with an EMM id chooses its effects by the points spent, which a creature's attack does not spend, so applying all its tagged damage effects would be a guess and the start stops"
   assert string.contains(rule, "Spell4 5649")
@@ -132,7 +132,7 @@ pub fn a_creature_attack_with_a_periodic_damage_row_is_refused_test() -> Nil {
       id: 184_741,
       with: [#("tickTime", Integer(1500))],
     )
-    creature_kind.select(rows: [default_row], tables:)
+    creature_kind.select(rows: [default_row], special_rows: [], tables:)
   }
     as "a creature's blow strikes once at delayTime, so a periodic damage row would strike once instead of every tick and the start stops"
   assert string.contains(rule, "184741") && string.contains(rule, "1500")
@@ -167,6 +167,7 @@ pub fn an_attack_with_a_cast_time_loads_with_it_test() -> Nil {
       attack_spell4_id: Spell4Id(85_469),
       attack_interval_ms: 3000,
       guard: option.None,
+      specials: [],
     )
     as "the creature takes its charge as its attack"
 }
@@ -193,6 +194,7 @@ pub fn an_attack_whose_cast_prerequisite_the_creature_cannot_answer_is_refused_t
           opening_spell4_id: option.None,
         ),
       ],
+      special_rows: [],
       tables:,
     )
   }
@@ -232,6 +234,7 @@ pub fn rows_load_into_the_kinds_a_creature_reads_test() -> Nil {
         attack_spell4_id: Spell4Id(5649),
         attack_interval_ms: 1500,
         guard: option.None,
+        specials: [],
       ),
       by_creature: dict.from_list([
         #(
@@ -241,6 +244,7 @@ pub fn rows_load_into_the_kinds_a_creature_reads_test() -> Nil {
             attack_spell4_id: Spell4Id(5649),
             attack_interval_ms: 1500,
             guard: option.None,
+            specials: [],
           ),
         ),
       ]),
@@ -251,6 +255,7 @@ pub fn rows_load_into_the_kinds_a_creature_reads_test() -> Nil {
       attack_spell4_id: Spell4Id(5649),
       attack_interval_ms: 1500,
       guard: option.None,
+      specials: [],
     )
     as "a creature with a row of its own takes it"
   assert creature_kind.kind_of(kinds:, creature2_id: 73_465)
@@ -259,6 +264,7 @@ pub fn rows_load_into_the_kinds_a_creature_reads_test() -> Nil {
       attack_spell4_id: Spell4Id(5649),
       attack_interval_ms: 1500,
       guard: option.None,
+      specials: [],
     )
     as "any other creature takes the default row 0"
 }
@@ -605,6 +611,7 @@ pub fn a_guard_with_an_effect_other_than_immunity_is_refused_test() -> Nil {
         default_row,
         Row(..turret_row, guard_spell4_id: option.Some(85_474)),
       ],
+      special_rows: [],
       tables:,
     )
   }
@@ -666,7 +673,11 @@ pub fn an_opening_with_an_effect_kind_the_creature_does_not_apply_is_refused_tes
       id: 224_652,
       with: [#("effectType", Integer(8))],
     )
-    creature_kind.select(rows: [default_row, turret_row], tables:)
+    creature_kind.select(
+      rows: [default_row, turret_row],
+      special_rows: [],
+      tables:,
+    )
   }
     as "an opening with a Damage effect would hurt the creature it opens: the load refuses it"
   assert string.contains(rule, "85472")
@@ -680,7 +691,11 @@ pub fn an_opening_with_an_effect_kind_the_creature_does_not_apply_is_refused_tes
       id: 224_716,
       with: [#("effectType", Integer(17))],
     )
-    creature_kind.select(rows: [default_row, turret_row], tables:)
+    creature_kind.select(
+      rows: [default_row, turret_row],
+      special_rows: [],
+      tables:,
+    )
   }
     as "an opening without its Proxy never ends"
   assert string.contains(rule, "85472") && string.contains(rule, "Proxy")
@@ -722,6 +737,7 @@ pub fn kinds_put_under_a_key_are_read_back_test() -> Nil {
         attack_spell4_id: Spell4Id(5649),
         attack_interval_ms: 1500,
         guard: option.None,
+        specials: [],
       ),
       by_creature: dict.from_list([
         #(
@@ -731,6 +747,7 @@ pub fn kinds_put_under_a_key_are_read_back_test() -> Nil {
             attack_spell4_id: Spell4Id(5649),
             attack_interval_ms: 1500,
             guard: option.None,
+            specials: [],
           ),
         ),
       ]),

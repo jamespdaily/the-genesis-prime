@@ -1960,7 +1960,24 @@ fn fighter_of(state state: State) -> Fighter {
     holds_a_state: holds_a_state(state:),
     guard_casts: creature_guard.live_casts(state: state.guard),
     hit_radius: state.body.combat.hit_radius,
+    specials: state.body.combat.specials,
+    specials_refused: specials_refused(state:),
   )
+}
+
+/// The Spell4 id of each special whose caster conditions the creature's held states match,
+/// or each when it is opened (genesis_prime/world_map/creature_guard): `attack_refused` for
+/// the specials.
+fn specials_refused(state state: State) -> List(Int) {
+  state.body.combat.specials
+  |> list.filter(fn(special) {
+    creature_control.refuses(
+      state: state.control,
+      mask: special.attack.caster_cc_mask,
+    )
+    || creature_guard.opened(state: state.guard)
+  })
+  |> list.map(fn(special) { special.attack.spell4_id.value })
 }
 
 /// Whether the creature holds a state that stops its run, or is opened

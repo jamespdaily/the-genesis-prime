@@ -252,6 +252,7 @@ pub fn beast_combat() -> creature_life.Combat {
       magic_taken: hit.as_dealt,
     ),
     attack: loaded_attack(),
+    specials: [],
     interrupt_armor: creature_life.NoArmor,
   )
 }
@@ -317,6 +318,7 @@ pub fn kinds() -> Kinds {
       attack_spell4_id: Spell4Id(5649),
       attack_interval_ms: 1500,
       guard: option.None,
+      specials: [],
     ),
     by_creature: dict.new(),
   )
@@ -335,6 +337,7 @@ pub fn turret_kinds() -> Kinds {
           attack_spell4_id: Spell4Id(85_469),
           attack_interval_ms: 3000,
           guard: option.None,
+          specials: [],
         ),
       ),
       #(
@@ -344,6 +347,7 @@ pub fn turret_kinds() -> Kinds {
           attack_spell4_id: Spell4Id(86_978),
           attack_interval_ms: 3000,
           guard: option.None,
+          specials: [],
         ),
       ),
     ]),

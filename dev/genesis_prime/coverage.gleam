@@ -298,7 +298,7 @@ fn spawn_coverage(tables tables: store.Tables) -> String {
             rating.build(tables:),
             content_creature_kind.rows(db)
             |> result.map(fn(kind_rows) {
-              creature_kind.select(rows: kind_rows, tables:)
+              creature_kind.select(rows: kind_rows, special_rows: [], tables:)
             }),
             content_creature_faction.rows(db)
             |> result.map(fn(faction_rows) {
