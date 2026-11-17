@@ -40,9 +40,9 @@ type Reading {
 /// the client does not state.
 fn reading_of(state state: Int) -> Reading {
   case state {
-    0 | 1 | 2 | 10 | 23 -> NoReading
-    _ ->
-      panic as "shape: the readings of the other unit states are built in the step's code commit"
+    3 | 4 | 5 | 6 | 7 | 8 | 9 | 13 | 14 | 15 | 16 | 17 | 18 | 22 -> Invulnerable
+    19 -> ImmuneToBeneficial
+    _ -> NoReading
   }
 }
 
