@@ -216,7 +216,7 @@ alert() {
     log "no alert sent: GENESIS_PLAY_ALERT_CHANNEL or GENESIS_PLAY_ALERT_TOKEN_FILE is not set in $home/env.sh"
     return 0
   fi
-  token=$(sed -n 's/^DISCORD_BOT_TOKEN=//p' "$GENESIS_PLAY_ALERT_TOKEN_FILE" 2>/dev/null)
+  token=$(sed -n 's/^DISCORD_BOT_TOKEN=//p' "$GENESIS_PLAY_ALERT_TOKEN_FILE" 2>/dev/null) || true
   if [ -z "$token" ]; then
     log "no alert sent: $GENESIS_PLAY_ALERT_TOKEN_FILE holds no DISCORD_BOT_TOKEN"
     return 0
