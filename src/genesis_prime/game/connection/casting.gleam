@@ -1142,10 +1142,23 @@ fn carried_out(
         #(session, [tell])
       }
       cast_state.ForcedMoveStarts(..), None -> #(session, [])
-      cast_state.CreatureDespawns(unit_id:, life:, struck_at_ms:, delay_ms:),
+      cast_state.CreatureDespawns(
+        unit_id:,
+        life:,
+        struck_at_ms:,
+        went_at_ms:,
+        delay_ms:,
+      ),
         Some(entered)
       -> #(session, [
-        creature_despawned(entered:, unit_id:, life:, struck_at_ms:, delay_ms:),
+        creature_despawned(
+          entered:,
+          unit_id:,
+          life:,
+          struck_at_ms:,
+          went_at_ms:,
+          delay_ms:,
+        ),
       ])
       cast_state.CreatureDespawns(..), None -> #(session, [])
     }
@@ -1297,12 +1310,14 @@ fn creature_thrown(
 
 /// The removal of the creature `unit_id` of `life`, in the run of the player's map, through
 /// the creature registry with no watch, as a strike's tell goes: the connection tells the
-/// creature `TellDespawn` with `delay_ms` and `struck_at_ms`, and draws nothing.
+/// creature `TellDespawn` with `delay_ms`, `struck_at_ms` and `went_at_ms`, and draws
+/// nothing.
 fn creature_despawned(
   entered _entered: world_entry.Entered,
   unit_id _unit_id: Int,
   life _life: Int,
   struck_at_ms _struck_at_ms: Int,
+  went_at_ms _went_at_ms: Int,
   delay_ms _delay_ms: Int,
 ) -> Effect(ConnectionEffect(Request)) {
   panic as "shape: telling a creature to despawn is built in the step's code commit"

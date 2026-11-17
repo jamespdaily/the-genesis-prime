@@ -357,15 +357,20 @@ pub type Message {
   /// home or does not run.
   Thrown(throw: forced_move.Throw, struck_at_ms: Int)
   /// A caster's connection: a DespawnUnit effect of its spell removes the creature
-  /// `delay_ms` after the monotonic time `struck_at_ms` of the go that struck its life. The
-  /// creature owns the delay, so the caster's leaving or dying changes nothing.
+  /// `delay_ms` after `went_at_ms`, the monotonic time of the go; `struck_at_ms`, the
+  /// monotonic time the go's round struck the creature, tells its life. The creature owns the
+  /// delay, so the caster's leaving or dying changes nothing.
   ///
   /// ```
-  /// Despawn(delay_ms, struck_at_ms)
+  /// Despawn(delay_ms, struck_at_ms, went_at_ms)
   ///     dead, despawned, or struck_at_ms < stood_again_ms: dropped
-  ///     due = struck_at_ms + delay_ms; a pending despawn keeps the earlier due
-  ///     due <= now:  leave the field now
-  ///     else:        StartServiceTimer(despawn_timer, due - now)
+  ///     due = went_at_ms + delay_ms; despawn_due_ms holds the due time of the pending one
+  ///     due <= now:                         CancelServiceTimer(despawn_timer) if one is
+  ///                                         pending, then leave the field now
+  ///     none pending:                       StartServiceTimer(despawn_timer, due - now)
+  ///     due >= the pending due time:        no timer effect; the pending timer stands
+  ///     due < the pending due time, > now:  CancelServiceTimer(despawn_timer), then
+  ///                                         StartServiceTimer(despawn_timer, due - now)
   ///     the despawn timer fires ─▶ leave the field
   ///     leave the field:
   ///         fight and guard take Despawned (stand still, finish a charge, Released to
@@ -389,7 +394,9 @@ pub type Message {
   /// | it reaches a creature that walks home or fights | the creature is removed and the fight releases its players: the removal is no strike |
   /// | the delay is 0 | the creature leaves the field in the tell's own step, after the go's frames; another viewer's 0x7f4 and 0x355 have two senders, which no order holds |
   /// | the delay is above 0 | one timer to the go plus the delay, and nothing is sent before |
-  /// | a second `Despawn` arrives while one is pending | the earlier due time stays; a due time already past removes at once |
+  /// | a second `Despawn` arrives while one is pending, with the same or a later due time | no timer effect: the shell ends the process when a timer id already running is started, so the pending timer stands |
+  /// | a second `Despawn` arrives while one is pending, with an earlier due time still ahead | the pending timer is cancelled, then the despawn timer is started for the earlier due time |
+  /// | a second `Despawn` arrives while one is pending, with a due time already past | the pending timer is cancelled and the creature leaves the field now |
   /// | the creature dies while one is pending | the despawn timer is cancelled at the kill; a stale fire already queued is dropped by the shell |
   /// | the creature retires unseen while one is pending | the process stops and the pending despawn is lost; the spawn's next creature stands fresh |
   /// | it is told `Retire` while despawned | it stops at its respawn (`StopAtRespawn`), so the spawn does not come back early |
@@ -398,7 +405,7 @@ pub type Message {
   /// | a strike reaches the despawned creature | `Refused(Despawned)`; a throw, a modifier or a gate is dropped, since `is_dead` holds |
   /// | the corpse timer fires for a run-only creature | `Removed` and `Stop`, as for a kill |
   /// | the creature crashes pending or despawned | the map sends `Gone` and starts the spawn again after the respawn time as a new unit |
-  Despawn(delay_ms: Int, struck_at_ms: Int)
+  Despawn(delay_ms: Int, struck_at_ms: Int, went_at_ms: Int)
 }
 
 /// What a creature sends a connection without waiting.
@@ -720,8 +727,8 @@ pub fn step(
       modifier_ended(state:, source:, now_ms:)
     OwnEvent(Told(message: Thrown(throw:, struck_at_ms:))) ->
       thrown(state:, throw:, struck_at_ms:, now_ms:)
-    OwnEvent(Told(message: Despawn(delay_ms:, struck_at_ms:))) ->
-      despawn_told(state:, delay_ms:, struck_at_ms:, now_ms:)
+    OwnEvent(Told(message: Despawn(delay_ms:, struck_at_ms:, went_at_ms:))) ->
+      despawn_told(state:, delay_ms:, struck_at_ms:, went_at_ms:, now_ms:)
     WatchEnded(watch:) if watch == run_watch -> #(state, Effects([Stop]))
     WatchEnded(watch:) -> caster_gone(state:, watch:, now_ms:)
     OwnEvent(Asked(..)) | OwnEvent(CreatureNotStarted(..)) ->
@@ -749,12 +756,15 @@ fn thrown(
 }
 
 /// A DespawnUnit effect reaches the creature (`Despawn`): dropped when the creature lies dead
-/// or gone or was struck before it last stood again, else removed now or at the go plus the
-/// delay, whichever due time is earlier.
+/// or gone or was struck before it last stood again, else removed now or at the go's time
+/// plus the delay, whichever due time is earlier. The despawn timer is started only when none
+/// runs and cancelled before it is started again, since the shell ends the process when a
+/// timer id already running is started.
 fn despawn_told(
   state state: State,
   delay_ms _delay_ms: Int,
   struck_at_ms _struck_at_ms: Int,
+  went_at_ms _went_at_ms: Int,
   now_ms _now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
   case creature_life.despawned(life: state.life, body: state.body) {

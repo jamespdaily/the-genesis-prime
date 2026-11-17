@@ -983,8 +983,8 @@ fn to_the_beast(taken: ConnectionStep(Request)) -> List(creature.Message) {
           ) -> Ok(creature.ModifierEnds(source:))
           client_connection.TellThrown(throw:, struck_at_ms:) ->
             Ok(creature.Thrown(throw:, struck_at_ms:))
-          client_connection.TellDespawn(delay_ms:, struck_at_ms:) ->
-            Ok(creature.Despawn(delay_ms:, struck_at_ms:))
+          client_connection.TellDespawn(delay_ms:, struck_at_ms:, went_at_ms:) ->
+            Ok(creature.Despawn(delay_ms:, struck_at_ms:, went_at_ms:))
           AskStore(..)
           | AskHandOff(..)
           | AskSessions(..)

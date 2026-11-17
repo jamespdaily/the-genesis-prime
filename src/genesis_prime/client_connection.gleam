@@ -166,9 +166,10 @@ pub type Request {
   TellThrown(throw: forced_move.Throw, struck_at_ms: Int)
   /// What a `Tell` effect sends a creature a DespawnUnit effect of this connection's
   /// player's cast removes (genesis_prime/world_map/creature `Despawn`), for the life the go
-  /// struck: `delay_ms` after the monotonic time `struck_at_ms` of the effect's go. Told
+  /// struck: `delay_ms` after `went_at_ms`, the monotonic time of the effect's go.
+  /// `struck_at_ms`, the monotonic time the round struck the creature, tells its life. Told
   /// through the creature registry with no watch, and never asked.
-  TellDespawn(delay_ms: Int, struck_at_ms: Int)
+  TellDespawn(delay_ms: Int, struck_at_ms: Int, went_at_ms: Int)
 }
 
 /// A property modifier of a cast on a creature, as `TellTargetChange` carries it.

@@ -714,8 +714,10 @@ pub fn struck_moves_armed(
 /// `Hit` and that passes its target gate, `cast.aimed_at`), in the row then the unit order of
 /// `cast_gate.units_aimed_at`, each told `CreatureDespawns` in this step, whatever its delay:
 /// the creature owns the delay (genesis_prime/world_map/creature `Despawn`), so no timer of
-/// the cast is armed and the caster's leaving or dying changes nothing. The effects come
-/// after the go's frames, beside the throws'.
+/// the cast is armed and the caster's leaving or dying changes nothing. The delay runs from
+/// `went_at_ms`, the go's own time, not from the opening of the strike round, which comes
+/// earlier by up to the round's deadline. The effects come after the go's frames, beside
+/// the throws'.
 ///
 /// A unit that is not a `HitCreature` of the round is not removed (a deflected one included,
 /// as it is not thrown), and neither is the caster or another player.
@@ -723,8 +725,9 @@ pub fn struck_moves_armed(
 /// ```
 /// cast.went: Send(go 0x7f4), Tell(audience, CastWent)
 ///   for each despawn row reached on a unit the round Hit as a creature (HitCreature):
-///     CreatureDespawns(unit, life, struck_at_ms = go time, delay_ms)
-///   the connection tells the creature TellDespawn(delay_ms, struck_at_ms) ─▶ creature.Despawn
+///     CreatureDespawns(unit, life, struck_at_ms = the round's, went_at_ms = go time, delay_ms)
+///   the connection tells the creature TellDespawn(delay_ms, struck_at_ms, went_at_ms)
+///     ─▶ creature.Despawn
 /// ```
 ///
 /// | If | Then |
@@ -738,6 +741,7 @@ pub fn despawns_told(
   cast _cast: State,
   reached reached: List(Reached),
   struck _struck: List(Struck),
+  went_at_ms _went_at_ms: Int,
 ) -> List(Effect) {
   list.flat_map(reached, fn(entry) {
     case entry.effect.kind {

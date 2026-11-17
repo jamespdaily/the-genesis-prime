@@ -3718,7 +3718,12 @@ fn go(
           struck:,
         )
       let despawning =
-        cast_control.despawns_told(cast:, reached: aimed.reached, struck:)
+        cast_control.despawns_told(
+          cast:,
+          reached: aimed.reached,
+          struck:,
+          went_at_ms: now_ms,
+        )
       let #(cast, healing) = cast_heal.heals_armed(cast:, cast_id:, aimed:)
       let #(cast, restriction_timers) =
         cast_control.restrictions_armed(cast:, cast_id:, restricting:)

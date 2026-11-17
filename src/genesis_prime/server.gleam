@@ -613,8 +613,8 @@ fn creature_told(request: Request) -> Result(creature.Message, Nil) {
       })
     TellThrown(throw:, struck_at_ms:) ->
       Ok(creature.Thrown(throw:, struck_at_ms:))
-    TellDespawn(delay_ms:, struck_at_ms:) ->
-      Ok(creature.Despawn(delay_ms:, struck_at_ms:))
+    TellDespawn(delay_ms:, struck_at_ms:, went_at_ms:) ->
+      Ok(creature.Despawn(delay_ms:, struck_at_ms:, went_at_ms:))
     TellPeer(..)
     | TellChat(..)
     | TellMoved(..)
