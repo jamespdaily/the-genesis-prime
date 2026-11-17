@@ -30,6 +30,7 @@ import gleam/bool
 import gleam/int
 import gleam/list
 import gleam/option
+import gleam/result
 import gleam/string
 import owned_test
 import real_start_node
@@ -100,22 +101,37 @@ fn with_node(
 }
 
 /// What a failed test says of a node that ended before it printed `wanted`: its exit
-/// status, the last three waits its bot named (the innermost is a frame read, the
-/// ones before it say what the read was for), and its last lines. The node has ended, so
-/// the exit status is read at once.
+/// status, the last quest step its bot started (a step named by its quest number, as
+/// `tutorial_bot` names them), the last three waits it named (the innermost is a frame
+/// read, the ones before it say what the read was for), and its last lines. The node
+/// has ended, so the exit status is read at once.
 fn unreached_report(node node: Node, wanted wanted: String) -> String {
   let status = serving_node.await_exit(node)
   let lines = string.split(serving_node.output(node), "\n")
   let waits =
     list.filter(lines, fn(line) { string.starts_with(line, "step: ") })
+  let quest_steps = list.filter(waits, is_a_quest_step)
   "the node ended with status "
   <> int.to_string(status)
   <> " before it printed \""
   <> wanted
-  <> "\"; the last waits the bot named:\n"
+  <> "\"; the last quest step the bot started:\n"
+  <> string.join(list.drop(quest_steps, list.length(quest_steps) - 1), "\n")
+  <> "\nthe last waits the bot named:\n"
   <> string.join(list.drop(waits, list.length(waits) - 3), "\n")
   <> "\nits last lines:\n"
   <> string.join(list.drop(lines, list.length(lines) - 25), "\n")
+}
+
+/// Whether a `step: ` line of the bot names a quest (`step: 10527: hoverboard ...`),
+/// not a frame read or the entry.
+fn is_a_quest_step(line: String) -> Bool {
+  case
+    string.split_once(string.drop_start(line, string.length("step: ")), ": ")
+  {
+    Ok(#(first, _)) -> result.is_ok(int.parse(first))
+    Error(Nil) -> False
+  }
 }
 
 /// Waits for the node to print `text`, and fails the test with the node's report when it
@@ -134,6 +150,14 @@ fn numbers_after(output output: String, prefix prefix: String) -> List(String) {
       False -> Error(Nil)
     }
   })
+}
+
+/// Whether a printed count is a number above 0.
+fn is_above_zero(count: String) -> Bool {
+  case int.parse(count) {
+    Ok(count) -> count > 0
+    Error(Nil) -> False
+  }
 }
 
 pub fn the_real_server_boots_and_a_bot_plays_the_opening_test() -> Nil {
@@ -159,11 +183,12 @@ pub fn the_real_server_boots_and_a_bot_plays_the_opening_test() -> Nil {
     }
   })
     as "opcode.0x35d: the first beast's kill counts for 10518's objective 0"
-  assert numbers_after(output: printed, prefix: "confirmed_casts ")
-    |> list.all(fn(count) { count != "0" })
+  let confirmed_casts =
+    numbers_after(output: printed, prefix: "confirmed_casts ")
+  assert confirmed_casts != [] && list.all(confirmed_casts, is_above_zero)
     as "opcode.0x7fd: a press is confirmed"
-  assert numbers_after(output: printed, prefix: "dead_units ")
-    |> list.all(fn(count) { count != "0" })
+  let dead_units = numbers_after(output: printed, prefix: "dead_units ")
+  assert dead_units != [] && list.all(dead_units, is_above_zero)
     as "opcode.0x88c: the kill marks a unit dead"
   serving_node.terminate(node)
   assert serving_node.await_exit(node) == 0
@@ -193,6 +218,11 @@ pub fn a_bot_that_cannot_go_on_names_its_last_step_test() -> Nil {
   let report = unreached_report(node:, wanted: "scenario passed")
   assert string.contains(report, "the node ended with status 1")
     as "the report names the exit status"
+  assert string.contains(
+    report,
+    "the last quest step the bot started:\nstep: 10527: hoverboard, finish line, projector\n",
+  )
+    as report
   assert string.contains(report, "step: 0x262 of a unit of Creature2 73419")
     as report
 }

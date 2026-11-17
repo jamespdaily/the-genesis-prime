@@ -288,6 +288,8 @@ pub fn the_helpers_content_terms_equal_the_loads_test() -> Nil {
   assert loaded == Ok(Nil)
   let loaded_terms = content_support.terms(key)
   let helped_terms = content_support.terms(spawn_support.key_without_spawns())
+  assert loaded_terms != []
+    as "the load's content terms are found in the store; a changed store layout would empty both lists"
   assert list.filter(loaded_terms, fn(term) {
       !list.contains(helped_terms, term)
     })
