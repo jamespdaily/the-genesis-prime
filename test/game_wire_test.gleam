@@ -1648,7 +1648,7 @@ pub fn a_checklist_target_shows_its_index_and_counts_once_when_activated_test() 
   let started =
     start_with_world_data_by(
       folder: "test/fixture/world_data_checklist",
-      adjusted: fn(settings) { driven_by(settings:, time:) },
+      adjusted: fn(settings) { login_support.driven_by(settings:, time:) },
     )
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let #(game, character) =
@@ -1795,7 +1795,7 @@ fn player_whose_mine_cast_went(
   let started =
     start_with_world_data_by(
       folder: "test/fixture/world_data_mine",
-      adjusted: fn(settings) { driven_by(settings:, time:) },
+      adjusted: fn(settings) { login_support.driven_by(settings:, time:) },
     )
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let #(game, character) =
@@ -2187,30 +2187,12 @@ fn two_players_enter_one_map() -> TwoEntered {
 /// As `two_players_enter_one_map`, the first player being of the class given, the
 /// server holding the fixture's rows (the starting abilities' own trees) and its game
 /// connections and its World taking their time and their timers from `time`, which a
-/// test whose casts run on timers moves by hand (`driven_by`).
+/// test whose casts run on timers moves by hand (`login_support.driven_by`).
 fn two_players_of_class_enter_one_map_with(
   first_class first_class: Int,
   time time: driven_time.Time,
 ) -> TwoEntered {
   two_players_enter_on(tables: character_tables.shared(), first_class:, time:)
-}
-
-/// The settings with the game connections and the World taking their time and
-/// their timers from `time` (`driven_time.scripts`, `driven_time.service_time`), so
-/// one clock moves every timer of the listener and of the maps and creatures, and a
-/// timer fires only when the test advances it.
-fn driven_by(
-  settings settings: server.Settings,
-  time time: driven_time.Time,
-) -> server.Settings {
-  server.Settings(
-    ..settings,
-    game: server.Served(..settings.game, scripts: driven_time.scripts(time)),
-    world: server.World(
-      ..settings.world,
-      service_time: driven_time.service_time(time),
-    ),
-  )
 }
 
 /// As `two_players_of_class_enter_one_map_with`, on these tables.
@@ -2221,7 +2203,7 @@ fn two_players_enter_on(
 ) -> TwoEntered {
   let started =
     login_support.start_with(change: fn(settings) {
-      let settings = driven_by(settings:, time:)
+      let settings = login_support.driven_by(settings:, time:)
       server.Settings(
         ..settings,
         game: server.Served(
@@ -3912,7 +3894,7 @@ fn start_with_world_data(folder folder: String) -> login_support.Started {
 }
 
 /// As `start_with_world_data`, the server's settings then passed through `adjusted`:
-/// a test whose casts run on timers passes `driven_by`.
+/// a test whose casts run on timers passes `login_support.driven_by`.
 fn start_with_world_data_by(
   folder folder: String,
   adjusted adjusted: fn(server.Settings) -> server.Settings,
@@ -4101,7 +4083,7 @@ fn world_on(
   tutorial tutorial: Bool,
 ) -> login_support.Started {
   start_with_world_data_by(folder:, adjusted: fn(settings) {
-    let settings = driven_by(settings:, time:)
+    let settings = login_support.driven_by(settings:, time:)
     let held = settings.game.settings
     let key = settings.world.spawns
     server.Settings(
@@ -4221,6 +4203,7 @@ pub fn a_placed_target_is_shown_killed_and_counted_test() -> Nil {
   let assert Ok(#(killed, have)) =
     fight_bot.presses_until_the_target_dies(
       advance: driven_time.advance(time:, ms: _),
+      recharge_ms: 0,
       game:,
       have:,
       target: target.unit_id,
@@ -4275,6 +4258,7 @@ pub fn the_last_kill_of_quest_10518_is_followed_by_0x35c_state_2_its_rewards_and
   let assert Ok(#(killed, have)) =
     fight_bot.presses_until_the_target_dies(
       advance: driven_time.advance(time:, ms: _),
+      recharge_ms: 0,
       game:,
       have:,
       target: target.unit_id,
@@ -4316,42 +4300,6 @@ pub fn the_last_kill_of_quest_10518_is_followed_by_0x35c_state_2_its_rewards_and
   login_support.stop(started)
 }
 
-/// Returns when the creature of World 3460, unit `unit_id`, has taken all it was
-/// sent, so a timer its last step started is on the clock (as
-/// `the_creature_has_taken_what_it_was_sent`, which looks in World 1387). The
-/// life is the number of the map's watch the creature was started under, which the
-/// map's other starts move, so it is searched for.
-fn the_marker_creature_has_taken_what_it_was_sent(
-  started started: login_support.Started,
-  unit_id unit_id: Int,
-) -> Nil {
-  let map = MapId(world_id: 3460, instance: 0)
-  let assert Ok(run) =
-    open_wait.named("Maps to answer the find", fn() {
-      world_map_registry.find_or_start(
-        started.settings.world.maps,
-        map,
-        deadline_ms: ask_support.deadline_far_beyond_the_tests_deadline(),
-      )
-    })
-    as "the map is running, started by the play"
-  let assert Ok(creature) =
-    list.find_map(
-      list.index_map(list.repeat(Nil, 200), fn(_, at) { at }),
-      fn(life) {
-        creature_registry.find(
-          started.settings.world.creatures,
-          map:,
-          incarnation: run.incarnation,
-          unit_id:,
-          life:,
-        )
-      },
-    )
-    as "the placed creature runs under its address, its life one of the map's watch numbers"
-  driven_time.settled(creature)
-}
-
 pub fn a_placed_target_respawns_at_its_slot_test() -> Nil {
   use <- owned_test.run(120_000)
   use tables <- on_rows_without_paralytic_surges_recharge()
@@ -4371,6 +4319,7 @@ pub fn a_placed_target_respawns_at_its_slot_test() -> Nil {
   let assert Ok(#(_, have)) =
     fight_bot.presses_until_the_target_dies(
       advance: driven_time.advance(time:, ms: _),
+      recharge_ms: 0,
       game:,
       have:,
       target: target.unit_id,
@@ -4387,8 +4336,8 @@ pub fn a_placed_target_respawns_at_its_slot_test() -> Nil {
   let assert [respawn_ms] = kind.rows
   // The creature sends its news before it starts the corpse's timer, so the clock
   // moves on after it has taken all it was sent.
-  the_marker_creature_has_taken_what_it_was_sent(
-    started:,
+  character_support.marker_creature_settled(
+    settings: started.settings,
     unit_id: target.unit_id,
   )
   driven_time.advance(time:, ms: respawn_ms)
@@ -4625,7 +4574,7 @@ fn beast_place(x x: Float, z z: Float) -> Place {
 /// A world with a Virtual Battle Beast at each of these places, none of which
 /// deflects, and which respawn after 1000 ms (the least a creature kind may hold, the
 /// strike deadline), on the tables given. The game connections and the World take
-/// their time and timers from `time` (`driven_by`): a Beast's swing, strike deadline,
+/// their time and timers from `time` (`login_support.driven_by`): a Beast's swing, strike deadline,
 /// respawn and leash fire only when the test advances it.
 fn world_with_beasts(
   places places: List(Place),
@@ -4633,7 +4582,7 @@ fn world_with_beasts(
   time time: driven_time.Time,
 ) -> login_support.Started {
   login_support.start_with(change: fn(settings) {
-    let settings = driven_by(settings:, time:)
+    let settings = login_support.driven_by(settings:, time:)
     server.Settings(
       ..settings,
       game: server.Served(
@@ -5488,10 +5437,10 @@ fn dagun_attack_interval_ms() -> Int {
 
 /// A world with one Dagun at x 1.5, z -20, its map's and creature's timers and the
 /// connections' on the clock `time`, so the Dagun's attack tick and home timer fire
-/// only when the test advances it (`driven_by`).
+/// only when the test advances it (`login_support.driven_by`).
 fn world_with_a_dagun(time time: driven_time.Time) -> login_support.Started {
   login_support.start_with(change: fn(settings) {
-    let settings = driven_by(settings:, time:)
+    let settings = login_support.driven_by(settings:, time:)
     server.Settings(
       ..settings,
       world: server.World(
@@ -5932,7 +5881,7 @@ fn world_with_a_lethal_dagun(
       damage: 100_000,
     )
   login_support.start_with(change: fn(settings) {
-    let settings = driven_by(settings:, time:)
+    let settings = login_support.driven_by(settings:, time:)
     server.Settings(
       ..settings,
       world: server.World(
@@ -6273,7 +6222,7 @@ pub fn a_timed_quest_is_botched_over_the_connection_test() -> Nil {
   let time = driven_time.new()
   let started =
     login_support.start_with(change: fn(settings) {
-      let settings = driven_by(settings:, time:)
+      let settings = login_support.driven_by(settings:, time:)
       server.Settings(
         ..settings,
         game: server.Served(
@@ -6401,7 +6350,7 @@ pub fn a_bot_moves_splits_equips_deletes_buys_sells_buys_back_and_levels_up_and_
     )
   let started =
     login_support.start_with(change: fn(settings) {
-      let settings = driven_by(settings:, time:)
+      let settings = login_support.driven_by(settings:, time:)
       server.Settings(
         ..settings,
         game: server.Served(
@@ -6868,7 +6817,7 @@ pub fn a_bot_accepts_uses_and_turns_in_a_northern_wilds_quest_takes_up_another_a
     as "the three creatures (11066, 11061 and 11070) start and the four objects (13630 and the three 13623) are sent"
   let started =
     login_support.start_with(change: fn(settings) {
-      let settings = driven_by(settings:, time:)
+      let settings = login_support.driven_by(settings:, time:)
       let game = settings.game
       server.Settings(
         ..settings,
@@ -7159,6 +7108,7 @@ pub fn an_exile_kills_the_boss_and_objective_21296_counts_test() -> Nil {
   let assert Ok(#(killed, have)) =
     fight_bot.presses_until_the_target_dies(
       advance: driven_time.advance(time:, ms: _),
+      recharge_ms: 0,
       game:,
       have:,
       target: boss.unit_id,
@@ -7353,7 +7303,10 @@ fn interrupts_and_destroys(
       )
     })
   // The attack tick, 3000 ms after the aggro, opens the charge.
-  the_marker_creature_has_taken_what_it_was_sent(started:, unit_id: turret)
+  character_support.marker_creature_settled(
+    settings: started.settings,
+    unit_id: turret,
+  )
   driven_time.advance(time:, ms: 3000)
   let #(opened, have) =
     game_client.read_until(game:, have:, found: fn(frames) {
@@ -7372,7 +7325,10 @@ fn interrupts_and_destroys(
   assert charger == turret
   // The press: Paralytic Surge's damage takes nothing from the guarded turret and its stun
   // (Spell4Effects 96126, 2700 ms) breaks the charge.
-  the_marker_creature_has_taken_what_it_was_sent(started:, unit_id: turret)
+  character_support.marker_creature_settled(
+    settings: started.settings,
+    unit_id: turret,
+  )
   game_client.press_ability(
     game:,
     client_cast_id: cast_id,
@@ -7440,12 +7396,16 @@ fn interrupts_and_destroys(
   // The turret never deflects (`on_rows_with_turrets_that_never_deflect`), so the five presses
   // all hit, whatever the connection's rolls are, and the kill below tells whether their
   // damage takes the turret's health.
-  the_marker_creature_has_taken_what_it_was_sent(started:, unit_id: turret)
+  character_support.marker_creature_settled(
+    settings: started.settings,
+    unit_id: turret,
+  )
   driven_time.advance(time:, ms: fight_bot.paralytic_surge_lingers_ms)
   let #(lingered, have) = game_client.read_until_pong(game:, have:, number: 2)
   let assert Ok(#(killed, have)) =
     fight_bot.presses_at_most(
       advance: driven_time.advance(time:, ms: _),
+      recharge_ms: 0,
       game:,
       have:,
       target: turret,
@@ -7571,7 +7531,10 @@ pub fn a_charge_hits_a_player_who_stays_in_its_rectangle_test() -> Nil {
     as "0x908: the turret fights the player who walked into its aggro range"
   // The turret's frames are sent before its step's timer is started, so the tick is
   // on the clock only once it has taken all it was sent.
-  the_marker_creature_has_taken_what_it_was_sent(started:, unit_id: turret)
+  character_support.marker_creature_settled(
+    settings: started.settings,
+    unit_id: turret,
+  )
   // The attack tick, 3000 ms after the aggro, opens the charge.
   driven_time.advance(time:, ms: 3000)
   let #(opened, have) =
@@ -7593,7 +7556,10 @@ pub fn a_charge_hits_a_player_who_stays_in_its_rectangle_test() -> Nil {
     as "the 8 s cast has not gone: no 0x7f4 yet"
   // Its cast time passes with the player in the rectangle, once the charge's own
   // timer is on the clock.
-  the_marker_creature_has_taken_what_it_was_sent(started:, unit_id: turret)
+  character_support.marker_creature_settled(
+    settings: started.settings,
+    unit_id: turret,
+  )
   driven_time.advance(time:, ms: 8000)
   let #(went, _) =
     game_client.read_until(game:, have:, found: fn(frames) {
@@ -7669,23 +7635,6 @@ pub fn a_charge_hits_a_player_who_stays_in_its_rectangle_test() -> Nil {
   login_support.stop(started)
 }
 
-/// A create request for CharacterCreation row 477, an Exile Medic (class 4, race 1, sex 1,
-/// faction 167), as the client's bytes.
-fn medic_create_request(name: String) -> BitArray {
-  let assert Ok(body) =
-    create_character.encode(
-      CreateCharacter(
-        ..character_support.create_request(name),
-        creation_id: 477,
-        path: 1,
-        customisation_labels: [2, 22],
-        customisation_values: [1, 1],
-      ),
-    )
-    as "the request encodes"
-  body
-}
-
 /// The quest rows the store holds for the character: each quest and its state, by quest.
 fn quest_rows(
   pool pool: pog.Connection,
@@ -7721,7 +7670,10 @@ pub fn a_bot_creates_an_exile_and_plays_the_tutorial_to_the_northern_wilds_landi
   let account = AccountId(login_support.insert_jim(started))
   let game =
     in_select(started:, port: login_support.ports(started).game_port, account:)
-  game_client.send_create(game:, body: medic_create_request("Zed Qu"))
+  game_client.send_create(
+    game:,
+    body: character_support.medic_create_request("Zed Qu"),
+  )
   let created = created_result(game)
   assert created.result == create_result.CreateOk
     as "opcode.0xdc: a valid request is created"
@@ -7745,8 +7697,12 @@ pub fn a_bot_creates_an_exile_and_plays_the_tutorial_to_the_northern_wilds_landi
       entry:,
       env: tutorial_bot.Env(
         advance: fn(ms) { driven_time.advance(time:, ms:) },
+        recharge_ms: 0,
         settled: fn(unit_id) {
-          the_marker_creature_has_taken_what_it_was_sent(started:, unit_id:)
+          character_support.marker_creature_settled(
+            settings: started.settings,
+            unit_id:,
+          )
         },
       ),
     )
@@ -7821,7 +7777,7 @@ pub fn a_spellslinger_over_a_socket_casts_surged_quick_draw_test() -> Nil {
   let time = driven_time.new()
   let started =
     login_support.start_with(change: fn(settings) {
-      driven_by(settings:, time:)
+      login_support.driven_by(settings:, time:)
     })
   let #(game, character) =
     new_player_at_level(
@@ -7905,7 +7861,7 @@ pub fn rescuing_an_exile_removes_the_trap_and_the_exile_for_another_player_too_t
   let started =
     start_with_world_data_by(
       folder: "test/fixture/world_data_nature",
-      adjusted: fn(settings) { driven_by(settings:, time:) },
+      adjusted: fn(settings) { login_support.driven_by(settings:, time:) },
     )
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let #(first, first_character) =

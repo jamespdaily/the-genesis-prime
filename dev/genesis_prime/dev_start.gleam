@@ -41,17 +41,23 @@ pub fn main() -> Nil {
   case arguments() {
     Ok(#(folder, planted)) -> {
       envoy.set("GENESIS_RECORD_DIR", folder)
-      genesis_prime.run(change: fn(settings) {
-        let auth =
-          server.Served(
-            ..settings.login.auth,
-            settings: planted_after_hello(settings.login.auth.settings, planted),
+      genesis_prime.run(
+        change: fn(settings) {
+          let auth =
+            server.Served(
+              ..settings.login.auth,
+              settings: planted_after_hello(
+                settings.login.auth.settings,
+                planted,
+              ),
+            )
+          server.Settings(
+            ..settings,
+            login: server.Login(..settings.login, auth:),
           )
-        server.Settings(
-          ..settings,
-          login: server.Login(..settings.login, auth:),
-        )
-      })
+        },
+        say: io.println,
+      )
     }
     Error(failure) -> {
       io.println_error(describe(failure))

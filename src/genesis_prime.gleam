@@ -66,15 +66,19 @@ import pog
 import simplifile
 
 pub fn main() -> Nil {
-  run(change: fn(settings) { settings })
+  run(change: fn(settings) { settings }, say: io.println)
 }
 
 /// Starts the server as `main` does, with `change` applied to its settings
 /// last (the dev start plants a frame this way). The settings record the
 /// connections on the wire when GENESIS_RECORD_DIR names a folder
 /// (genesis_prime/sitting), which stops the program with the reason when the
-/// sitting cannot begin.
-pub fn run(change change: fn(server.Settings) -> server.Settings) -> Nil {
+/// sitting cannot begin. The ready line is said through `say` (`main` prints
+/// it), so a caller that starts something once the server serves does it there.
+pub fn run(
+  change change: fn(server.Settings) -> server.Settings,
+  say say: fn(String) -> Nil,
+) -> Nil {
   application.register_program()
   let #(tables, count) = load_tables()
   let spawns = load_content(tables:)
@@ -85,7 +89,7 @@ pub fn run(change change: fn(server.Settings) -> server.Settings) -> Nil {
       database: pool(),
       read: envoy.get,
     )
-  start(settings: change(settings), tables: count)
+  start(settings: change(settings), tables: count, say:)
 }
 
 /// The settings, with each STS, auth and game connection recorded on the wire
@@ -197,7 +201,11 @@ pub fn load_migrations() -> List(migration.Migration) {
 /// root (genesis_prime/application), says whether the server can serve, and
 /// keeps the node alive until the tree ends, which the host's SIGTERM makes
 /// through OTP. It reads the migration files once, before the tree starts.
-fn start(settings settings: server.Settings, tables tables: Int) -> Nil {
+fn start(
+  settings settings: server.Settings,
+  tables tables: Int,
+  say say: fn(String) -> Nil,
+) -> Nil {
   runtime.show_info_lines()
   runtime.keep_mailboxes_out_of_crash_reports()
   let migrations = load_migrations()
@@ -210,7 +218,7 @@ fn start(settings settings: server.Settings, tables tables: Int) -> Nil {
         ready: ready_ask(),
         probe: fn(reply) { worker.probe(store: settings.store, reply:) },
         migrations:,
-        say: io.println,
+        say:,
       )
     None -> Nil
   }

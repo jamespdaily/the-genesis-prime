@@ -49,6 +49,10 @@ pub type Env {
   Env(
     /// Moves the clock the server's timers run on by that many milliseconds.
     advance: fn(Int) -> Nil,
+    /// How long Paralytic Surge recharges after a press: the `spellCoolDown` of Spell4
+    /// 42352 on the rows the server holds (25 000 ms on the client's own), or 0 where a
+    /// test plants it away. The bot lets the clock run that long between presses.
+    recharge_ms: Int,
     /// Returns when the creature of that unit has taken all it was sent, so a timer its
     /// last step started is on the clock.
     settled: fn(Int) -> Nil,
@@ -200,29 +204,7 @@ pub fn play(
   entry entry: List(Frame),
   env env: Env,
 ) -> Result(Played, Stuck) {
-  let own = game_client.unit_create_player_in(frames: entry)
-  let bot =
-    took(
-      bot: Bot(
-        game:,
-        env:,
-        have:,
-        chunks: [],
-        units: Units(
-          creatures: dict.new(),
-          others: dict.new(),
-          spent: set.new(),
-          dead: set.new(),
-        ),
-        at: game_client.placed_at(unit: own),
-        zone: entry_zone,
-        clock: 100,
-        cast_id: 1,
-        own: own.unit_id,
-      ),
-      frames: entry,
-      have:,
-    )
+  let bot = at_the_entry(game:, have:, entry:, env:)
   use bot <- step(bot, "enter the simulation", entered)
   use bot <- step(bot, "10513: visit the three places", the_first_visits)
   use bot <- step(
@@ -241,6 +223,59 @@ pub fn play(
   use bot <- step(bot, "10520: places, boss, last projector", the_last_island)
   use bot <- step(bot, "10528: Rhoda, the terminal's yes", the_departure)
   Ok(Played(frames: list.flatten(list.reverse(bot.chunks))))
+}
+
+/// Plays the first steps of `play` and stops after one kill of the first beast: the
+/// entry, 10513's three places, 10527's hoverboard, finish line and projector, and one
+/// slay of Creature2 73464 (the start of 10518). It gives every frame the server wrote,
+/// or the step it stopped at.
+pub fn play_opening(
+  game game: Game,
+  have have: BitArray,
+  entry entry: List(Frame),
+  env env: Env,
+) -> Result(Played, Stuck) {
+  let bot = at_the_entry(game:, have:, entry:, env:)
+  use bot <- step(bot, "enter the simulation", entered)
+  use bot <- step(bot, "10513: visit the three places", the_first_visits)
+  use bot <- step(
+    bot,
+    "10527: hoverboard, finish line, projector",
+    hoverboard_run,
+  )
+  use bot <- step(bot, "10518: the first beast", the_first_kill)
+  Ok(Played(frames: list.flatten(list.reverse(bot.chunks))))
+}
+
+/// The bot standing where the entry placed it, holding the entry's frames.
+fn at_the_entry(
+  game game: Game,
+  have have: BitArray,
+  entry entry: List(Frame),
+  env env: Env,
+) -> Bot {
+  let own = game_client.unit_create_player_in(frames: entry)
+  took(
+    bot: Bot(
+      game:,
+      env:,
+      have:,
+      chunks: [],
+      units: Units(
+        creatures: dict.new(),
+        others: dict.new(),
+        spent: set.new(),
+        dead: set.new(),
+      ),
+      at: game_client.placed_at(unit: own),
+      zone: entry_zone,
+      clock: 100,
+      cast_id: 1,
+      own: own.unit_id,
+    ),
+    frames: entry,
+    have:,
+  )
 }
 
 /// Runs the step and goes on with what it leaves, or stops the path at it.
@@ -317,6 +352,11 @@ fn the_training_fights(bot: Bot) -> Result(Bot, Blocked) {
   use bot <- result.try(slay(bot:, creatures: [73_492, 73_567], kills: 3))
   let bot = await_state(bot:, quest_id: 10_518, state: 3)
   Ok(await_state(bot:, quest_id: 10_529, state: 1))
+}
+
+/// One kill of a first beast (Creature2 73464), 10518's first objective.
+fn the_first_kill(bot: Bot) -> Result(Bot, Blocked) {
+  slay(bot:, creatures: [73_464], kills: 1)
 }
 
 fn the_talks(bot: Bot) -> Result(Bot, Blocked) {
@@ -936,6 +976,7 @@ fn slay_since(
   use #(seen, have) <- result.try(result.map_error(
     fight_bot.presses_until_the_target_dies(
       advance: bot.env.advance,
+      recharge_ms: bot.env.recharge_ms,
       game: bot.game,
       have: bot.have,
       target: unit_id,
@@ -1159,6 +1200,7 @@ fn open_and_press(
   use #(killed, have) <- result.try(result.map_error(
     fight_bot.presses_at_most(
       advance: bot.env.advance,
+      recharge_ms: bot.env.recharge_ms,
       game: bot.game,
       have: bot.have,
       target: turret,

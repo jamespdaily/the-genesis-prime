@@ -52,10 +52,12 @@ import gleam/option
 import gleam/set
 import gleam/string
 import log_capture
+import login_support
 import mailbox_support
 import owned_test
 import place_support
 import server_proxy_support
+import spawn_support
 import tutorial_support
 import unitest
 
@@ -262,6 +264,47 @@ pub fn the_load_puts_every_term_the_game_listener_reads_at_start_test() -> Nil {
   let _reused = content_spawn.reused_unit_objectives(key:)
   let _held = content_held_objective.held(key:)
   Nil
+}
+
+pub fn the_servers_settings_run_over_a_real_load_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let database = database_support.new_database(on: database_support.shared())
+  let #(loaded, key) = content_support.load(database:)
+  assert loaded == Ok(Nil)
+  // `genesis_prime.settings` reads every content term the game listener needs: a term
+  // the load did not put crashes here, naming it.
+  let settings = login_support.servers_settings_over(spawns: key)
+  assert set.contains(settings.game.settings.held_objectives, 12_547)
+    as "migration 0034's first held objective (12547) is in the settings the load's key gave"
+  assert settings.game.settings.tutorial_chain
+    == content_tutorial_quest.chain(key:)
+    as "the settings carry the tutorial chain the load put"
+}
+
+pub fn the_helpers_content_terms_equal_the_loads_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let database = database_support.new_database(on: database_support.shared())
+  let #(loaded, key) = content_support.load(database:)
+  assert loaded == Ok(Nil)
+  let loaded_terms = content_support.terms(key)
+  let helped_terms = content_support.terms(spawn_support.key_without_spawns())
+  assert list.filter(loaded_terms, fn(term) {
+      !list.contains(helped_terms, term)
+    })
+    |> list.map(term_name)
+    == []
+    as "a content term the load puts and the test helper does not: add it to spawn_support's puts"
+  assert list.filter(helped_terms, fn(term) {
+      !list.contains(loaded_terms, term)
+    })
+    |> list.map(term_name)
+    == []
+    as "a content term the test helper puts and the load does not"
+}
+
+/// A content term as `table/id`, for a failure that names it.
+fn term_name(term: #(String, Int)) -> String {
+  term.0 <> "/" <> int.to_string(term.1)
 }
 
 pub fn a_refused_kind_row_does_not_hide_a_refused_spawn_test() -> Nil {

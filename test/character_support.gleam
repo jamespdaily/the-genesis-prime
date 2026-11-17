@@ -5,6 +5,8 @@
 //// request, which a test varies with a record update, and the one result a
 //// create, a delete or a rename answers with, decoded.
 
+import ask_support
+import driven_time
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/appearance
 import genesis_prime/game/character_creation
@@ -16,18 +18,23 @@ import genesis_prime/message/create_character.{
 import genesis_prime/message/create_character_result.{type CreateCharacterResult}
 import genesis_prime/message/delete_character_result.{type DeleteCharacterResult}
 import genesis_prime/message/rename_character_result.{type RenameCharacterResult}
+import genesis_prime/server
 import genesis_prime/store.{
   type AccountId, type NewCharacter, type NewItem, AccountId, NewItem,
 }
 import genesis_prime/table/character_creation as creation_table
 import genesis_prime/table/id.{ClassId, Item2Id, RaceId}
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/world_map/creature_registry
+import genesis_prime/world_map/map_id.{MapId}
+import genesis_prime/world_map/registry as world_map_registry
 import gleam/dynamic/decode
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, Some}
 import gleam/result
 import novice_tables
+import open_wait
 import place_support
 import pog
 
@@ -286,6 +293,61 @@ pub fn create_request(name: String) -> CreateCharacter {
     customisation_values: [],
     bone_values: bones(46),
   )
+}
+
+/// A create request for CharacterCreation row 477, an Exile Medic (class 4, race 1, sex 1,
+/// faction 167), as the client's bytes.
+pub fn medic_create_request(name: String) -> BitArray {
+  let assert Ok(body) =
+    create_character.encode(
+      CreateCharacter(
+        ..create_request(name),
+        creation_id: 477,
+        path: 1,
+        customisation_labels: [2, 22],
+        customisation_values: [1, 1],
+      ),
+    )
+    as "the request encodes"
+  body
+}
+
+/// Returns when the creature of World 3460, unit `unit_id`, has taken all it was
+/// sent, so a timer its last step started is on the clock (as
+/// `the_creature_has_taken_what_it_was_sent`, which looks in World 1387). The
+/// life is the number of the map's watch the creature was started under, which the
+/// map's other starts move, so it is searched for. The settings are those of the
+/// running server, whether it runs in the test's VM or in a node of its own that
+/// the caller reaches.
+pub fn marker_creature_settled(
+  settings settings: server.Settings,
+  unit_id unit_id: Int,
+) -> Nil {
+  let map = MapId(world_id: 3460, instance: 0)
+  let assert Ok(run) =
+    open_wait.named("Maps to answer the find", fn() {
+      world_map_registry.find_or_start(
+        settings.world.maps,
+        map,
+        deadline_ms: ask_support.deadline_far_beyond_the_tests_deadline(),
+      )
+    })
+    as "the map is running, started by the play"
+  let assert Ok(creature) =
+    list.find_map(
+      list.index_map(list.repeat(Nil, 200), fn(_, at) { at }),
+      fn(life) {
+        creature_registry.find(
+          settings.world.creatures,
+          map:,
+          incarnation: run.incarnation,
+          unit_id:,
+          life:,
+        )
+      },
+    )
+    as "the placed creature runs under its address, its life one of the map's watch numbers"
+  driven_time.settled(creature)
 }
 
 /// The client's enabled CharacterCreation rows of the Novice and Veteran
