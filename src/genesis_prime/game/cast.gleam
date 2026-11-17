@@ -3042,18 +3042,28 @@ fn all_ended(cast cast: State, now now: Now) -> #(State, List(Effect)) {
   )
 }
 
-/// The caster took damage: its health or its shield was lowered by a landed blow
-/// (genesis_prime/game/player_life `DamageTaken`). Each cast that holds a stealth source
-/// damage breaks loses its node on the caster, as a type 80 removal takes it off, and the
-/// input ends with `StealthChanged` when the caster is no longer stealthed. A source kept
-/// on damage stays (`Spell4Effects.effectType.83`: dataBits02).
-pub fn damage_taken(
+/// A creature's blow reached the caster, landed or deflected (genesis_prime/game/player_life
+/// `BlowTaken`). Each cast that holds a stealth source damage breaks loses its node on the
+/// caster when the blow lowered its absorbs, shield or health, as a type 80 removal takes it
+/// off, and the input ends with `StealthChanged` when the caster is no longer stealthed; a
+/// deflect, or a landed blow that lowered nothing, breaks none. A source kept on damage
+/// stays (`Spell4Effects.effectType.83`: dataBits02). The blow's events are pending for the
+/// procs of blows taken (`cast_proc.blow_events`).
+pub fn blow_taken(
   cast cast: State,
   caster caster: Caster,
   now now: Now,
+  blow blow: cast_proc.BlowTaken,
 ) -> #(State, List(Effect)) {
-  use <- settled(cast:, own: [])
-  cast_proc.broken_by_damage(cast:, caster:, now_ms: now.monotonic_ms)
+  use <- settled(cast:, own: cast_proc.blow_events(blow:))
+  case blow {
+    cast_proc.BlowLanded(lowered: True, ..) ->
+      cast_proc.broken_by_damage(cast:, caster:, now_ms: now.monotonic_ms)
+    cast_proc.BlowLanded(lowered: False, ..) | cast_proc.BlowDeflected(..) -> #(
+      cast,
+      [],
+    )
+  }
 }
 
 /// A cast of the spell starts: its id, the start written to the caster (0x7fd for

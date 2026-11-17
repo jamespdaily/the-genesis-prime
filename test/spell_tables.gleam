@@ -675,8 +675,8 @@ pub fn proc_columns(kind kind: Int) -> List(#(String, Cell)) {
 
 /// The rows of the planted spell, one for each kind the plan lists, the periodic heal, and
 /// the two the plan leaves out: ids 90001 to 90012 are read, 90013 is behind a target apply
-/// prerequisite the cast rule reads, 90014 is a periodic heal, 90015 is a Proc of kind 16
-/// and 90016 a Proxy with dataBits00 0.
+/// prerequisite the cast rule reads, 90014 is a periodic heal, 90015 is a Proc of kind 27
+/// (a kind the plan does not read) and 90016 a Proxy with dataBits00 0.
 pub fn planted_effects() -> List(List(Cell)) {
   [
     effect_row_with(id: 90_001, effect_type: 1, target_flags: 1, columns: [
@@ -732,7 +732,7 @@ pub fn planted_effects() -> List(List(Cell)) {
       id: 90_015,
       effect_type: 14,
       target_flags: 1,
-      columns: proc_columns(kind: 16),
+      columns: proc_columns(kind: 27),
     ),
     effect_row_with(id: 90_016, effect_type: 26, target_flags: 1, columns: [
       #("dataBits00", Integer(0)),

@@ -2078,7 +2078,7 @@ pub fn strike_rolls(steps: List(ConnectionStep(Request))) -> List(hit.Rolls) {
         )) ->
           case tell.striker {
             strike_tell.PlayerStriker(rolls:, ..) -> Ok(rolls)
-            strike_tell.CreatureStriker -> Error(Nil)
+            strike_tell.CreatureStriker(..) -> Error(Nil)
           }
         OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
           Error(Nil)
@@ -2244,7 +2244,7 @@ pub fn a_beast_strike(unit_id: Int) -> Event(ConnectionEvent(Message, Answer)) {
           unit_id:,
         ),
         from: fighter(),
-        striker: strike_tell.CreatureStriker,
+        striker: spawn_support.beast_striker(),
         offence: spawn_support.beast_attack().offence,
         controls: [],
         gates: [],
@@ -2269,7 +2269,7 @@ pub fn a_creatures_blow(
           unit_id:,
         ),
         from: fighter(),
-        striker: strike_tell.CreatureStriker,
+        striker: spawn_support.beast_striker(),
         offence: Offence(
           blows: [
             Blow(
@@ -2329,7 +2329,7 @@ pub fn a_killing_strike() -> Event(ConnectionEvent(Message, Answer)) {
           unit_id: own_unit_id,
         ),
         from: fighter(),
-        striker: strike_tell.CreatureStriker,
+        striker: spawn_support.beast_striker(),
         offence: spawn_support.dealing(offence:, damage: 100_000),
         controls: [],
         gates: [],

@@ -51,7 +51,7 @@ fn blow(cast_id cast_id: Int, damage damage: Int) -> strike_tell.Tell {
       unit_id: player_life_support.own_unit,
     ),
     from: player_life_support.beast(),
-    striker: strike_tell.CreatureStriker,
+    striker: spawn_support.beast_striker(),
     offence: spawn_support.dealing(
       offence: spawn_support.beast_attack().offence,
       damage:,

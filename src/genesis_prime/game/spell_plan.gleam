@@ -154,7 +154,9 @@
 ////   read by the texts the client holds (`.fairly_sure`): 10 using an ability, 103 spending
 ////   the class resource, 21 receiving a heal, 52 a foe's deflect, 49 a critical by a finisher
 ////   or a builder, 11 starting to move, 87 the class resource changing (the holder's gate
-////   says to what), 105 the Stalker's suit power dropping and 182 landing a taunt. It holds the
+////   says to what), 105 the Stalker's suit power dropping and 182 landing a taunt, and the
+////   blows a creature lands on the holder: 16 taking damage, 146 a critical, 51 a deflect
+////   and 115 a depleted shield (`Trigger`, a guess: the client never reads a Proc row). It holds the
 ////   spell it casts (dataBits01), planned as a Proxy's child is and on the same chain, so a
 ////   proc that leads back to a spell on the way fails as a cycle, its chance (dataBits02,
 ////   a float32: above 0 and at most 1.0), its limit, dataBits05 fires in dataBits04 ms or
@@ -306,7 +308,7 @@ import genesis_prime/message/float32
 import genesis_prime/table/id.{
   type ItemSlotId, type PrerequisiteId, type Spell4BaseId, type Spell4EffectsId,
   type Spell4Id, type UnitProperty2Id, ItemDisplayId, PrerequisiteId,
-  Spell4BaseId, Spell4ConditionsId, Spell4EffectsId, Spell4Id,
+  Spell4BaseId, Spell4ConditionsId, Spell4EffectsId, Spell4GroupListId, Spell4Id,
   Spell4StackGroupId, SpellCoolDownId, UnitProperty2Id,
 }
 import genesis_prime/table/item2_type
@@ -869,6 +871,20 @@ pub type Trigger {
   /// 182: a strike of the holder's lands a Taunt state on a foe. A guess (`.fairly_sure`,
   /// text 'Landing a Taunt'): what a taunt does to the foe is not part of the event.
   LandsTaunt
+  /// 16: a creature's blow lowers the holder's absorbs, shield or health. A guess for the
+  /// reading and for a blow fully taken by an absorb counting (`.dataBits00`, the texts say
+  /// 'taking damage'; no client code reads a Proc row).
+  TakesDamage
+  /// 146: a creature's blow on the holder is a critical hit, even when the absorbs took all
+  /// of it. A guess for the reading and for the absorbed critical
+  /// (`.dataBits00`, `.client_evaluation`).
+  SuffersCritical
+  /// 51: the holder deflects a creature's blow. It is not kind 52, a foe deflecting the
+  /// holder's strike. A guess (`.dataBits00`).
+  DeflectsAttack
+  /// 115: a creature's blow takes the holder's shield from above 0 to 0. A guess
+  /// (`.dataBits00`, 53 rows).
+  ShieldDepleted
 }
 
 /// How often a Proc fires (dataBits04 and dataBits05,
@@ -2685,6 +2701,43 @@ fn phases_by_owner(
   })
 }
 
+/// What a Proc's filters read of a spell that is only a Spell4 id: its spell groups and its
+/// school.
+pub type SpellFacts {
+  SpellFacts(groups: List(Int), school: Int)
+}
+
+/// The groups and school of the spell `spell4_id` as a Proc's filters read them: the group
+/// ids of its Spell4GroupList row (`0x140561d80`), none for the list id 0, and its
+/// Spell4Base school. A Spell4, Spell4Base or group list row the tables lack is an error, so a
+/// caller never takes a spell whose groups are unknown for one that has none.
+pub fn facts_of_spell4(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Spell4Id,
+) -> Result(SpellFacts, PlanError) {
+  use row <- result.try(
+    spell4.get(tables:, id: spell4_id)
+    |> result.replace_error(NoRow(table: "Spell4", id: spell4_id.value)),
+  )
+  use base <- result.try(
+    spell4_base.get(tables:, id: Spell4BaseId(row.spell4_base_id_base_spell))
+    |> result.replace_error(NoRow(
+      table: "Spell4Base",
+      id: row.spell4_base_id_base_spell,
+    )),
+  )
+  use groups <- result.map(case row.spell4_group_list_id {
+    0 -> Ok([])
+    list_id ->
+      spell4_group_list.get(tables:, id: Spell4GroupListId(list_id))
+      |> result.map(fn(group_list) {
+        list.filter(group_ids_of(row: group_list), fn(group) { group != 0 })
+      })
+      |> result.replace_error(NoRow(table: "Spell4GroupList", id: list_id))
+  })
+  SpellFacts(groups:, school: base.school)
+}
+
 /// The spell group ids each Spell4GroupList row names, by the row's id: its
 /// spellGroupId00 to 31 values that are not 0.
 fn group_lists_by_id(
@@ -4133,6 +4186,10 @@ fn proc_read_of_a_kind_to_read(
     87 -> Ok(ResourceCrosses)
     105 -> Ok(SuitPowerDrops)
     182 -> Ok(LandsTaunt)
+    16 -> Ok(TakesDamage)
+    146 -> Ok(SuffersCritical)
+    51 -> Ok(DeflectsAttack)
+    115 -> Ok(ShieldDepleted)
     kind -> Error(ProcKindNotRead(spell4_id:, effect_id: effect.id, kind:))
   })
   let unit_bits = effect.data_bits03

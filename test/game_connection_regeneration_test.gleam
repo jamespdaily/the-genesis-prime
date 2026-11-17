@@ -99,7 +99,7 @@ fn blow(damage damage: Int) -> Event(ConnectionEvent(Message, Answer)) {
           unit_id: game_connection_support.own_unit_id,
         ),
         from: game_connection_support.fighter(),
-        striker: strike_tell.CreatureStriker,
+        striker: spawn_support.beast_striker(),
         offence: spawn_support.dealing(
           offence: spawn_support.beast_attack().offence,
           damage:,

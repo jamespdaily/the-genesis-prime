@@ -29,6 +29,7 @@ import gleam/list
 import gleam/option.{None}
 import gleam/result
 import gleam/string
+import spawn_support
 import spell_tables
 
 // ---------------------------------------------------------------- what is asked
@@ -491,7 +492,7 @@ pub fn landing_of(
         unit_id: struck_unit,
       ),
       from: step.Sessions,
-      striker: strike_tell.CreatureStriker,
+      striker: spawn_support.beast_striker(),
       offence: hit_offence(),
       controls: list.index_map(rows, fn(row, index) {
         strike_tell.ControlTell(

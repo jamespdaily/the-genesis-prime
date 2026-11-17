@@ -68,6 +68,7 @@
 import genesis_prime/client_connection.{type Request, Continue}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/cast
+import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection/casting as connection_casting
 import genesis_prime/game/connection/effects as connection_effects
@@ -78,7 +79,9 @@ import genesis_prime/game/connection/world as connection_world
 import genesis_prime/game/hit
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
+import genesis_prime/game/proc
 import genesis_prime/game/rating
+import genesis_prime/game/spell_plan
 import genesis_prime/game/start_place
 import genesis_prime/game/strike_tell
 import genesis_prime/game/world_entry
@@ -211,8 +214,8 @@ pub fn life_message(
 
 /// What player_life decided, carried out in order, then what its death, coming
 /// back and combat flag did to the class resource (`resource.life_effects`): the
-/// frames and news as `life_effects` makes them, `DamageTaken` as the cast rule's
-/// `damage_taken`, `CombatLeft` as its `combat_left` and `EndCasts` as its `died`, whose
+/// frames and news as `life_effects` makes them, `BlowTaken` as the cast rule's
+/// `blow_taken`, `CombatLeft` as its `combat_left` and `EndCasts` as its `died`, whose
 /// 0x7fe and the procs' casts go out in their place in the order, and `GoToHolocrypt` as the leave of the map
 /// that the Holocrypt's join follows (`leaving_for_the_holocrypt`), which comes
 /// last.
@@ -285,20 +288,9 @@ pub fn carried(
                 )
               #(session, list.append(written, more), to_the_holocrypt)
             }
-            player_life.DamageTaken -> {
+            player_life.BlowTaken(striker:, took:) -> {
               let #(session, more) =
-                cast_carried(
-                  session:,
-                  now:,
-                  taken: cast.damage_taken(
-                    cast: entered.cast,
-                    caster: connection_casting.caster_of(
-                      tables: session.settings.tables,
-                      entered:,
-                    ),
-                    now:,
-                  ),
-                )
+                blow_carried(session:, now:, entered:, striker:, took:)
               #(session, list.append(written, more), to_the_holocrypt)
             }
             player_life.GoToHolocrypt -> #(session, written, True)
@@ -337,6 +329,106 @@ pub fn carried(
     connection_resource.life_effects(session:, effects:)
   let #(session, fired) = connection_casting.raised(session:, now:)
   #(session, list.flatten([written, resource_written, fired]), to_the_holocrypt)
+}
+
+/// A blow of a creature on the player, as the cast rule's `blow_taken` carries it: the
+/// creature's unit and attack spell with what the blow did (`player_life.Took`). The spell's
+/// groups and school come from the tables; a spell they cannot be read for is logged and its
+/// procs skipped, while the blow still breaks stealth as it lowers something. A blow of a player
+/// is not one the proc kinds of blows taken read, and tells the cast nothing.
+fn blow_carried(
+  session session: Session,
+  now now: Now,
+  entered entered: world_entry.Entered,
+  striker striker: strike_tell.Striker,
+  took took: player_life.Took,
+) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  case striker {
+    strike_tell.PlayerStriker(..) -> #(session, [])
+    strike_tell.CreatureStriker(unit_id:, spell4_id:) -> {
+      let caster =
+        connection_casting.caster_of(tables: session.settings.tables, entered:)
+      case
+        spell_plan.facts_of_spell4(tables: session.settings.tables, spell4_id:)
+      {
+        Ok(facts) -> {
+          let spell =
+            proc.EventSpell(
+              spell4_id:,
+              groups: facts.groups,
+              school: facts.school,
+            )
+          cast_carried(
+            session:,
+            now:,
+            taken: cast.blow_taken(
+              cast: entered.cast,
+              caster:,
+              now:,
+              blow: blow_of(striker: unit_id, spell:, took:),
+            ),
+          )
+        }
+        Error(error) ->
+          blow_without_facts(session:, now:, entered:, caster:, took:, error:)
+      }
+    }
+  }
+}
+
+/// A creature's blow as the cast rule is told it.
+fn blow_of(
+  striker striker: Int,
+  spell spell: proc.EventSpell,
+  took took: player_life.Took,
+) -> cast_proc.BlowTaken {
+  case took {
+    player_life.Deflected -> cast_proc.BlowDeflected(striker:, spell:)
+    player_life.Landed(lowered:, critical:, shield_depleted:) ->
+      cast_proc.BlowLanded(
+        striker:,
+        spell:,
+        lowered:,
+        critical:,
+        shield_depleted:,
+      )
+  }
+}
+
+/// A blow whose spell the tables cannot give the groups and school of: its procs are
+/// skipped and logged, and a blow that lowered something still breaks stealth.
+fn blow_without_facts(
+  session session: Session,
+  now now: Now,
+  entered entered: world_entry.Entered,
+  caster caster: cast_state.Caster,
+  took took: player_life.Took,
+  error error: spell_plan.PlanError,
+) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  let #(session, more) = case took {
+    player_life.Landed(lowered: True, ..) ->
+      cast_carried(
+        session:,
+        now:,
+        taken: cast_proc.broken_by_damage(
+          cast: entered.cast,
+          caster:,
+          now_ms: now.monotonic_ms,
+        ),
+      )
+    player_life.Landed(lowered: False, ..) | player_life.Deflected -> #(
+      session,
+      [],
+    )
+  }
+  #(session, [
+    connection_state.log(
+      session:,
+      level: LogWarning,
+      text: "procs of a blow taken skipped: " <> spell_plan.describe(error:),
+    ),
+    ..more
+  ])
 }
 
 /// A step of the cast rule that the player's life asked for: the rule's new state kept

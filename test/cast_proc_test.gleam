@@ -43,6 +43,7 @@ import genesis_prime/game/effect_kind
 import genesis_prime/game/hit
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/movement
+import genesis_prime/game/proc as event_proc
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan.{
   type Plans, type ProcRow, type Spell, AliveOrDead, Always, AnySpell, AtHolder,
@@ -187,12 +188,38 @@ fn combat_left(
   cast.combat_left(cast:, caster:, now:) |> then_procs(caster:, now:)
 }
 
-fn damage_taken(
+fn blow_taken(
   cast cast: State,
   caster caster: Caster,
   now now: Now,
+  blow blow: cast_proc.BlowTaken,
 ) -> #(State, List(Effect)) {
-  cast.damage_taken(cast:, caster:, now:) |> then_procs(caster:, now:)
+  cast.blow_taken(cast:, caster:, now:, blow:) |> then_procs(caster:, now:)
+}
+
+/// The attack spell of the creature that strikes, as its blow's events carry it.
+fn attack(groups groups: List(Int)) -> event_proc.EventSpell {
+  event_proc.EventSpell(spell4_id: Spell4Id(5649), groups:, school: 1)
+}
+
+/// A blow of creature 31 that landed with these results, by an attack spell of no group.
+fn landed(
+  lowered lowered: Bool,
+  critical critical: Bool,
+  shield_depleted shield_depleted: Bool,
+) -> cast_proc.BlowTaken {
+  cast_proc.BlowLanded(
+    striker: 31,
+    spell: attack(groups: []),
+    lowered:,
+    critical:,
+    shield_depleted:,
+  )
+}
+
+/// A blow of creature 31 that lowered the holder's health and was nothing else.
+fn lowering() -> cast_proc.BlowTaken {
+  landed(lowered: True, critical: False, shield_depleted: False)
 }
 
 fn persisted(
@@ -696,7 +723,12 @@ pub fn leaving_stealth_by_damage_casts_the_procs_after_the_0x8f5_test() -> Nil {
   let #(state, joined_effects) = joined(caster:, at: 1000)
   let #(state, entered) = toggled(state:, caster:, at: 2000)
   let #(state, struck) =
-    damage_taken(cast: state, caster:, now: support.at(ms: 2500))
+    blow_taken(
+      cast: state,
+      caster:,
+      now: support.at(ms: 2500),
+      blow: lowering(),
+    )
   let #(_, effects) = answered(caster:, state:, effects: struck, at: 2500)
   assert trace(effects:, earlier: [joined_effects, entered], pressed: 0)
     == [
@@ -785,7 +817,12 @@ pub fn a_proc_fires_again_only_when_its_window_has_passed_a_fire_at_exactly_its_
   let caster = planted_caster()
   let damaged = fn(state, at) {
     let #(state, effects) =
-      damage_taken(cast: state, caster:, now: support.at(ms: at))
+      blow_taken(
+        cast: state,
+        caster:,
+        now: support.at(ms: at),
+        blow: lowering(),
+      )
     answered(caster:, state:, effects:, at:)
   }
   let #(state, _) = planted_joined(plans:, spell: holder, at: 1000)
@@ -838,7 +875,12 @@ pub fn two_procs_of_one_trigger_each_keep_their_own_window_test() -> Nil {
   let cycle = fn(state, at) {
     let #(state, _) = planted_press(plans:, state:, bag: bag_of_base_1, at:)
     let #(state, struck) =
-      damage_taken(cast: state, caster:, now: support.at(ms: at + 100))
+      blow_taken(
+        cast: state,
+        caster:,
+        now: support.at(ms: at + 100),
+        blow: lowering(),
+      )
     answered(caster:, state:, effects: struck, at: at + 100)
   }
   let #(state, first) = cycle(state, 2000)
@@ -967,7 +1009,12 @@ pub fn a_lethal_blow_on_a_stealthed_stalker_casts_neither_218_proc_and_writes_a_
   let #(state, _) = joined(caster:, at: 1000)
   let #(state, _) = toggled(state:, caster:, at: 2000)
   let #(state, struck) =
-    damage_taken(cast: state, caster: dead(caster:), now: support.at(ms: 2100))
+    blow_taken(
+      cast: state,
+      caster: dead(caster:),
+      now: support.at(ms: 2100),
+      blow: lowering(),
+    )
   let #(_, effects) =
     answered(caster: dead(caster:), state:, effects: struck, at: 2100)
   assert starts_of(spell4_id: 60_769, effects:) == 0
@@ -1011,13 +1058,23 @@ pub fn a_fire_a_dead_holder_was_refused_holds_back_no_later_fire_test() -> Nil {
   let #(state, _) = planted_joined(plans:, spell: holder, at: 1000)
   let #(state, _) = planted_press(plans:, state:, bag: bag_of_base_1, at: 2000)
   let #(state, struck) =
-    damage_taken(cast: state, caster: dead(caster:), now: support.at(ms: 2100))
+    blow_taken(
+      cast: state,
+      caster: dead(caster:),
+      now: support.at(ms: 2100),
+      blow: lowering(),
+    )
   let #(state, refused) =
     answered(caster: dead(caster:), state:, effects: struck, at: 2100)
   assert starts_of(spell4_id: 250_202, effects: refused) == 0
   let #(state, _) = planted_press(plans:, state:, bag: bag_of_base_1, at: 2200)
   let #(state, struck) =
-    damage_taken(cast: state, caster:, now: support.at(ms: 2300))
+    blow_taken(
+      cast: state,
+      caster:,
+      now: support.at(ms: 2300),
+      blow: lowering(),
+    )
   let #(_, later) = answered(caster:, state:, effects: struck, at: 2300)
   assert starts_of(spell4_id: 250_202, effects: later) == 1
     as "200 ms after the refused fire the living caster's 218 proc fires"
@@ -2903,8 +2960,8 @@ pub fn the_stalkers_178239_takes_no_effect_from_its_own_hits_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
   // Spell4Effects.effectType.14.dataBits00: 178239 (Spell4 38784) is kind 16, 'takes
-  // damage': the plan leaves it out until the blows-taken step (issue 828), so the
-  // Stalker's own hit casts nothing of 72838.
+  // damage': it fires on a blow the Stalker takes, not on a hit it lands, so the Stalker's
+  // own hit casts nothing of 72838.
   let caster = stalker(in_combat: False)
   let #(state, _) = joined(caster:, at: 1000)
   let #(state, pressed) =
@@ -3572,4 +3629,333 @@ pub fn proc_events_in_order_test() -> Nil {
   assert starts_in_order(effects: went)
     == ["start 250201", "start 250202", "start 250203", "start 250204"]
     as "the hit, the heal it lands, the heal received, then the stealth"
+}
+
+// ---- part B of the triggers: blows taken ----
+//
+// Every reading here is a guess: no client code reads a Proc row, so the kinds rest on the texts of
+// `Spell4Effects.effectType.14.dataBits00.fairly_sure`. A creature's blow on the holder is an event
+// whose other unit is the creature and whose spell is the creature's attack spell.
+
+/// The holder's plans, state and caster with these procs, the passive started at 500.
+fn holder_of_taken(procs procs: List(ProcRow)) -> #(Plans, State, Caster) {
+  let holder = holding(spell4_id: 250_101, procs:)
+  let plans = support.plans_of([holder])
+  let #(state, _) = planted_joined(plans:, spell: holder, at: 500)
+  #(plans, state, planted_caster())
+}
+
+/// The caster takes this blow at this time, and the procs it raises fire.
+fn taking(
+  state state: State,
+  caster caster: Caster,
+  blow blow: cast_proc.BlowTaken,
+  at ms: Int,
+) -> #(State, List(Effect)) {
+  blow_taken(cast: state, caster:, now: support.at(ms:), blow:)
+}
+
+/// A blow of the creature `striker` by an attack spell of these groups that lowered the
+/// holder's health.
+fn lowering_by(
+  striker striker: Int,
+  groups groups: List(Int),
+) -> cast_proc.BlowTaken {
+  cast_proc.BlowLanded(
+    striker:,
+    spell: attack(groups:),
+    lowered: True,
+    critical: False,
+    shield_depleted: False,
+  )
+}
+
+/// A blow of creature 31 that the holder deflected.
+fn deflected() -> cast_proc.BlowTaken {
+  cast_proc.BlowDeflected(striker: 31, spell: attack(groups: []))
+}
+
+pub fn a_kind_16_proc_fires_when_the_holder_takes_damage_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4Effects.effectType.14.dataBits00: kind 16 is 'takes damage'. 178239 of Spell4
+  // 38784 (Nano Skin: Lethal) casts 72838 at the holder (dataBits03 9), chance 1.0, once
+  // every 1000 ms (Spell4Effects.effectType.14.limits).
+  let #(_, state, caster) =
+    holder_of_taken(procs: [
+      proc(
+        id: 178_239,
+        trigger: spell_plan.TakesDamage,
+        casts: cast_of_proc(spell4_id: 72_838),
+        window_ms: 1000,
+        count: 1,
+      ),
+    ])
+  let #(state, first) = taking(state:, caster:, blow: lowering(), at: 1000)
+  assert starts_at(spell4_id: 72_838, effects: first) == [7]
+    as "a blow that lowered the holder's health casts 72838 at the holder"
+  let #(state, early) = taking(state:, caster:, blow: lowering(), at: 1500)
+  assert starts_at(spell4_id: 72_838, effects: early) == []
+    as "500 ms later the 1000 ms window still holds it"
+  let #(state, none) =
+    taking(
+      state:,
+      caster:,
+      blow: landed(lowered: False, critical: False, shield_depleted: False),
+      at: 2500,
+    )
+  assert starts_at(spell4_id: 72_838, effects: none) == []
+    as "a landed blow that lowered nothing is no damage taken"
+  let #(_, later) = taking(state:, caster:, blow: lowering(), at: 2600)
+  assert starts_at(spell4_id: 72_838, effects: later) == [7]
+    as "1600 ms after its fire a blow fires it again"
+}
+
+pub fn a_kind_146_proc_fires_on_a_critical_blow_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4Effects.effectType.14.dataBits00.fairly_sure: kind 146 is 'suffers a critical'.
+  // The blow counts even when the absorbs took all of it, which lowered nothing.
+  let #(_, state, caster) =
+    holder_of_taken(procs: [
+      firing(
+        id: 1,
+        trigger: spell_plan.SuffersCritical,
+        casts: 250_201,
+        aim: spell_plan.AtHolder,
+      ),
+    ])
+  let #(state, plain) = taking(state:, caster:, blow: lowering(), at: 1000)
+  assert starts_at(spell4_id: 250_201, effects: plain) == []
+    as "a blow that is no critical does not fire it"
+  let #(state, absorbed) =
+    taking(
+      state:,
+      caster:,
+      blow: landed(lowered: False, critical: True, shield_depleted: False),
+      at: 2000,
+    )
+  assert starts_at(spell4_id: 250_201, effects: absorbed) == [7]
+    as "a critical the absorbs took all of fires it"
+  let #(_, refused) = taking(state:, caster:, blow: deflected(), at: 3000)
+  assert starts_at(spell4_id: 250_201, effects: refused) == []
+    as "a deflected blow is no critical"
+}
+
+pub fn a_kind_51_proc_fires_on_a_deflect_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4Effects.effectType.14.dataBits00.fairly_sure: kind 51 is 'deflects an attack'.
+  let #(_, state, caster) =
+    holder_of_taken(procs: [
+      firing(
+        id: 1,
+        trigger: spell_plan.DeflectsAttack,
+        casts: 250_201,
+        aim: spell_plan.AtHolder,
+      ),
+    ])
+  let #(state, landing) = taking(state:, caster:, blow: lowering(), at: 1000)
+  assert starts_at(spell4_id: 250_201, effects: landing) == []
+    as "a landed blow is no deflect"
+  let #(_, refused) = taking(state:, caster:, blow: deflected(), at: 2000)
+  assert starts_at(spell4_id: 250_201, effects: refused) == [7]
+    as "a deflected blow fires it at the holder"
+}
+
+pub fn a_kind_115_proc_fires_when_the_shield_is_depleted_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4Effects.effectType.14.dataBits00.fairly_sure: kind 115 is 'shield depleted'.
+  let #(_, state, caster) =
+    holder_of_taken(procs: [
+      firing(
+        id: 1,
+        trigger: spell_plan.ShieldDepleted,
+        casts: 250_201,
+        aim: spell_plan.AtHolder,
+      ),
+    ])
+  let #(state, plain) = taking(state:, caster:, blow: lowering(), at: 1000)
+  assert starts_at(spell4_id: 250_201, effects: plain) == []
+    as "a blow that did not take the shield from above 0 to 0 does not fire it"
+  let #(_, depleted) =
+    taking(
+      state:,
+      caster:,
+      blow: landed(lowered: True, critical: False, shield_depleted: True),
+      at: 2000,
+    )
+  assert starts_at(spell4_id: 250_201, effects: depleted) == [7]
+    as "a blow that took the shield to 0 fires it"
+}
+
+pub fn a_bit_4_taken_proc_casts_at_the_striking_creature_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4Effects.effectType.14.dataBits03: bit 4 casts at the event's other unit, which for
+  // a blow taken is the creature that struck; a row without it casts at the holder.
+  let #(_, state, caster) =
+    holder_of_taken(procs: [
+      firing(
+        id: 1,
+        trigger: spell_plan.TakesDamage,
+        casts: 250_201,
+        aim: spell_plan.AtOtherUnit,
+      ),
+      firing(
+        id: 2,
+        trigger: spell_plan.TakesDamage,
+        casts: 250_202,
+        aim: spell_plan.AtHolder,
+      ),
+    ])
+  let #(_, effects) = taking(state:, caster:, blow: lowering(), at: 1000)
+  assert starts_at(spell4_id: 250_201, effects:) == [31]
+  assert starts_at(spell4_id: 250_202, effects:) == [7]
+}
+
+pub fn a_taken_proc_filtered_by_group_fires_only_for_an_attack_spell_in_the_group_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4Effects.effectType.14.dataBits07: the filter names a spell group
+  // (`0x140561d80`: groups from Spell4GroupList); the spell the filter reads is the
+  // creature's attack spell.
+  let #(_, state, caster) =
+    holder_of_taken(procs: [
+      ProcRow(
+        ..firing(
+          id: 1,
+          trigger: spell_plan.TakesDamage,
+          casts: 250_201,
+          aim: spell_plan.AtHolder,
+        ),
+        filter: spell_plan.InGroup(group_id: 333),
+      ),
+    ])
+  let #(state, outside) =
+    taking(
+      state:,
+      caster:,
+      blow: lowering_by(striker: 31, groups: [444]),
+      at: 1000,
+    )
+  assert starts_at(spell4_id: 250_201, effects: outside) == []
+    as "an attack spell in another group does not fire it"
+  let #(state, none) =
+    taking(
+      state:,
+      caster:,
+      blow: lowering_by(striker: 31, groups: []),
+      at: 2000,
+    )
+  assert starts_at(spell4_id: 250_201, effects: none) == []
+    as "an attack spell in no group does not"
+  let #(_, inside) =
+    taking(
+      state:,
+      caster:,
+      blow: lowering_by(striker: 31, groups: [444, 333]),
+      at: 3000,
+    )
+  assert starts_at(spell4_id: 250_201, effects: inside) == [7]
+    as "an attack spell in group 333 does"
+}
+
+pub fn an_event_gate_on_the_striker_reads_it_as_the_casters_picture_shows_it_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Prerequisite 37038 (`Prerequisite.prerequisiteTypeId.50`): the unit is under the
+  // holder's cast of Spell4 79220. As the event gate of a proc of blows taken it reads the
+  // creature that struck, by the casts the holder holds on it.
+  let gate =
+    prerequisite_support.single(id: 37_038, condition: #(50, 1, 464, 79_220))
+  let holder =
+    holding(spell4_id: 250_101, procs: [
+      ProcRow(
+        ..firing(
+          id: 1,
+          trigger: spell_plan.TakesDamage,
+          casts: 250_201,
+          aim: spell_plan.AtHolder,
+        ),
+        event_gate: Some(gate),
+      ),
+    ])
+  let marking =
+    support.with_effects(
+      spell: support.child(spell4_id: 79_220, base: 3),
+      kinds: [
+        spell_plan.LastingEffect(spell_plan.Lasting(
+          effect_id: Spell4EffectsId(250_901),
+          phase_flags: -1,
+          aim: spell_plan.AimsAtArea,
+          row: LastingRow(delay_ms: 0, duration_ms: 8000, until_removed: False),
+          condition: Always,
+          tag: spend.always,
+        )),
+      ],
+    )
+  let plans = support.plans_of([holder, marking])
+  let #(state, _) = planted_joined(plans:, spell: holder, at: 500)
+  let caster = planted_caster()
+  let #(state, bare) =
+    taking(
+      state:,
+      caster:,
+      blow: lowering_by(striker: 31, groups: []),
+      at: 1000,
+    )
+  assert starts_at(spell4_id: 250_201, effects: bare) == []
+    as "no 79220 holds a node on the creature: the gate fails"
+  let #(state, _) =
+    striking(
+      plans:,
+      state:,
+      bag: bag_of_base_3,
+      by: 79_220,
+      struck: [plain_hit(unit_id: 31)],
+      at: 2000,
+    )
+  let #(state, marked) =
+    taking(
+      state:,
+      caster:,
+      blow: lowering_by(striker: 31, groups: []),
+      at: 3000,
+    )
+  assert starts_at(spell4_id: 250_201, effects: marked) == [7]
+    as "while 79220's node is on the creature that struck, the gate passes"
+  let #(_, other) =
+    taking(
+      state:,
+      caster:,
+      blow: lowering_by(striker: 32, groups: []),
+      at: 4000,
+    )
+  assert starts_at(spell4_id: 250_201, effects: other) == []
+    as "a creature 79220 does not hold fails"
+}
+
+pub fn damage_breaks_stealth_only_on_a_lowered_blow_as_before_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // A source kept off by damage ends on a blow that lowered something, as before; a deflect
+  // and a landed blow that lowered nothing leave the stealth, so no proc of leaving it fires.
+  let left = cast_of_proc(spell4_id: 250_202)
+  let holder =
+    holding(spell4_id: 250_101, procs: [
+      proc(id: 1, trigger: LeftStealth, casts: left, window_ms: 500, count: 1),
+    ])
+  let plans = support.plans_of([broken_by_damage_spell(), holder])
+  let caster = planted_caster()
+  let #(state, _) = planted_joined(plans:, spell: holder, at: 1000)
+  let #(state, _) = planted_press(plans:, state:, bag: bag_of_base_1, at: 2000)
+  let #(state, refused) = taking(state:, caster:, blow: deflected(), at: 2100)
+  assert starts_of(spell4_id: 250_202, effects: refused) == 0
+    as "a deflect does not break the stealth"
+  let #(state, absorbed) =
+    taking(
+      state:,
+      caster:,
+      blow: landed(lowered: False, critical: True, shield_depleted: False),
+      at: 2200,
+    )
+  assert starts_of(spell4_id: 250_202, effects: absorbed) == 0
+    as "a landed blow that lowered nothing does not"
+  let #(_, lowered) = taking(state:, caster:, blow: lowering(), at: 2300)
+  assert starts_of(spell4_id: 250_202, effects: lowered) == 1
+    as "a blow that lowered something ends the stealth, and the proc of leaving it fires"
 }

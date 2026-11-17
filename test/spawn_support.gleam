@@ -20,6 +20,7 @@ import genesis_prime/content/vendor as content_vendor
 import genesis_prime/content/zone_welcome as content_zone_welcome
 import genesis_prime/game/hit.{Blow, Defence, Offence, Worked}
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/game/strike_tell
 import genesis_prime/game/vendor
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id, Spell4Id}
@@ -419,6 +420,12 @@ pub fn sim_turret(number number: Int, place place: Place) -> Spawn {
   let assert Ok(turret) = dict.get(world.by_id, SpawnId(number))
     as "the turret row starts as a creature"
   turret
+}
+
+/// The striker of a Virtual Battle Beast's strike: the beast's unit 7 with its attack's
+/// spell.
+pub fn beast_striker() -> strike_tell.Striker {
+  strike_tell.CreatureStriker(unit_id: 7, spell4_id: beast_attack().spell4_id)
 }
 
 /// The Virtual Battle Beast's attack: Spell4 5649, whose effect 184741 hits for 12

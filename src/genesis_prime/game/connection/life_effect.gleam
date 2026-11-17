@@ -63,7 +63,7 @@ pub fn life_effects(
         OwnEffect(StartTimer(timer:, after_ms:)),
       ]
       player_life.CancelTimer(timer:) -> [OwnEffect(CancelTimer(timer:))]
-      player_life.DamageTaken
+      player_life.BlowTaken(..)
       | player_life.CombatLeft
       | player_life.EndCasts
       | player_life.GoToHolocrypt

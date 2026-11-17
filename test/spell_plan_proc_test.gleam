@@ -10,8 +10,9 @@
 ////   0 with flags 2 (until removed), dataBits04 and dataBits05 of 500 and 1 for kinds 217
 ////   and 218 and 1000 and 1 for 44 and 0.
 //// - `Spell4Effects.effectType.14.dataBits00`: kinds 12, 13, 145, 1, 20 and 147 are the
-////   events of the holder's own casts and heals; kind 16 'takes damage' (Stalker 38784's
-////   178239, casts 72838) is the next step's.
+////   events of the holder's own casts and heals; kinds 16 'takes damage' (Stalker 38784's
+////   178239, casts 72838), 146, 51 and 115 are the events of a creature's blow on the
+////   holder.
 //// - `Spell4Effects.effectType.14.dataBits02`: the chance as 32-bit float bits.
 //// - `Spell4Effects.effectType.14.limits`: dataBits05 times in dataBits04 milliseconds; a
 ////   dataBits04 of -1 holds no window.
@@ -204,15 +205,20 @@ pub fn the_stalkers_passive_holds_its_five_procs_on_the_caster_in_row_order_with
     as "durationTime 0 with flags 2 (until removed), no caster apply prerequisite, every phase, chance 1.0 and no filter, gate or delay on each of the five rows"
 }
 
-pub fn a_proc_of_a_kind_not_read_is_in_no_list_and_the_load_succeeds_test() -> Nil {
+pub fn a_proc_of_kind_16_is_in_its_spells_proc_list_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
-  assert spell_plan.payloads(
+  let assert [takes_damage] =
+    spell_plan.payloads(
       spell: spell_named(spell4_id: 38_784),
       as_kind: spell_plan.as_proc,
     )
-    == []
-    as "38784 'Stealth - On' holds 178239, kind 16: it is skipped until the next step"
+    as "38784 'Stealth - On' holds the one Proc row 178239, kind 16"
+  assert takes_damage.effect_id.value == 178_239
+  assert takes_damage.trigger == spell_plan.TakesDamage
+    as "dataBits00 16, a creature's blow lowers the holder's health"
+  assert takes_damage.spell.spell4_id.value == 72_838
+    as "dataBits01 72838, the spell the proc casts"
 }
 
 pub fn a_procs_spell_is_planned_as_its_tree_and_the_tree_walks_it_test() -> Nil {
@@ -477,14 +483,14 @@ pub fn a_proc_of_a_kind_the_server_does_not_read_is_skipped_not_failed_test() ->
       effect: Spell4Effects(
         ..row(id: 178_239),
         spell_id: 38_784,
-        data_bits00: 16,
+        data_bits00: 27,
         data_bits01: 72_838,
       ),
     )
-    == Error(ProcKindNotRead(spell4_id: 38_784, effect_id: 178_239, kind: 16))
-    as "178239: kind 16, 'takes damage', which the next step reads"
-  assert planned(effect: Spell4Effects(..row(id: 178_239), data_bits00: 51))
-    == Ok(spell_plan.LeftOut(why: spell_plan.ProcOfAnotherKind(kind: 51)))
+    == Error(ProcKindNotRead(spell4_id: 38_784, effect_id: 178_239, kind: 27))
+    as "kind 27 is no kind the server reads"
+  assert planned(effect: Spell4Effects(..row(id: 178_239), data_bits00: 27))
+    == Ok(spell_plan.LeftOut(why: spell_plan.ProcOfAnotherKind(kind: 27)))
     as "the plan leaves the row out, naming the kind"
 }
 
@@ -692,20 +698,18 @@ pub fn the_starting_abilities_plan_with_178239_and_208200_and_leave_out_123744_t
     as "the client's Spell4Effects holds 178239"
   assert stealth_on.spell_id == 38_784 && stealth_on.data_bits00 == 16
     as "Spell4 38784 'Stealth - On' holds 178239, kind 16 (takes damage)"
-  assert spell_plan.read_row(
+  let assert Ok(spell_plan.Applied(spell_plan.ReadProc(reading:, ..))) =
+    spell_plan.read_row(
       tables:,
       spell_groups: spell_plan.spell_groups(tables:),
       place: spell_tables.pressed,
       effect: stealth_on,
     )
-    == Ok(spell_plan.LeftOut(why: spell_plan.ProcOfAnotherKind(kind: 16)))
-    as "the plan leaves 178239 out as a Proc of another kind, a gap issue 828 closes"
-  assert spell_plan.payloads(
-      spell: spell_named(spell4_id: 38_784),
-      as_kind: spell_plan.as_proc,
-    )
-    == []
-    as "so 38784 holds no Proc until issue 828"
+    as "the plan reads 178239 as a Proc"
+  assert reading.trigger == spell_plan.TakesDamage
+    as "kind 16 is a creature's blow taken"
+  assert reading.limit == InWindow(window_ms: 1000, count: 1)
+    as "dataBits04 1000 and dataBits05 1"
 }
 
 pub fn the_proc_rows_read_count_1643_of_the_ten_kinds_and_51_of_the_old_kinds_test() -> Nil {
@@ -745,13 +749,20 @@ pub fn the_proc_rows_read_count_1643_of_the_ten_kinds_and_51_of_the_old_kinds_te
   })
     as "no Proc row of a kind read holds a value outside every reading: the load never fails on one"
   let old = reads([217, 218, 44, 0], fn(kind) { kind })
-  let next_step = reads([16, 146, 51, 115], fn(_) { 12 })
+  let blows_taken = reads([16, 146, 51, 115], fn(kind) { kind })
   assert read_count(old) == 51
     as "the four old kinds hold 83 rows, 51 of them read (a direct read of Spell4Effects)"
-  assert read_count(own) + read_count(next_step) == 1643
-    as "the ten kinds hold 1975 rows, 1643 of them read once the next step's kinds are: 332 are left out"
+  assert read_count(own) + read_count(blows_taken) == 1643
+    as "the ten kinds hold 1975 rows, 1643 of them read: 332 are left out"
   assert read_count(own) == 1083
     as "of those, the six kinds of the holder's own casts and heals"
+  assert list.all(blows_taken, fn(result) {
+    case result {
+      Error(..) -> False
+      Ok(..) -> True
+    }
+  })
+    as "no row of the four kinds of a blow taken holds a value outside every reading"
 }
 
 pub fn the_effect_kind_reads_a_proc_row_aimed_at_the_caster_only_test() -> Nil {
@@ -908,7 +919,7 @@ pub fn proc_refused_kind_names_issue_test() -> Nil {
         <> int.to_string(kind.1)
       }
   })
-  assert planned(effect: Spell4Effects(..row(id: 99_023), data_bits00: 16))
-    == Ok(spell_plan.LeftOut(why: spell_plan.ProcOfAnotherKind(kind: 16)))
+  assert planned(effect: Spell4Effects(..row(id: 99_023), data_bits00: 27))
+    == Ok(spell_plan.LeftOut(why: spell_plan.ProcOfAnotherKind(kind: 27)))
     as "a kind outside the 37 still reads as another kind"
 }

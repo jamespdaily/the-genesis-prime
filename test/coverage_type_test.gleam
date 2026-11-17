@@ -254,7 +254,7 @@ pub fn the_starting_abilities_column_holds_the_issues_effect_counts_test() -> Ni
       #(29, 1),
       #(52, 1),
       #(73, 11),
-      #(80, 11),
+      #(80, 13),
       #(81, 1),
       #(83, 2),
       #(90, 4),
@@ -262,7 +262,7 @@ pub fn the_starting_abilities_column_holds_the_issues_effect_counts_test() -> Ni
       #(118, 2),
       #(145, 1),
     ]
-    as "the 114 rows of the 18 abilities' walk (26 Proxy 49, 8 damage 36, 17 8, 4 6, 73 5, 1 VitalModifier 4, 80 3, 11 1, 3 1, 90 1: Deja Vu 228968, whose gate 44174 names no AMP spell) and the 76 rows of the 20 spells the class innates reach under the same gates, counted from `table_rows -- Spell4Effects spellId=<id>` of 46867, 42908, 44926, 47866, 47860, 52371, 70599, 45000, 46297, 58586, 70369, 76766, 69450, 46073, 38784, 38783, 45057, 60724, 47273 and 47439: 1 7, 11 11, 14 7, 17 4, 18 1, 24 1, 26 23, 29 1, 52 1, 73 3, 80 6, 81 1, 83 2, 90 3, 112 2, 118 2, 145 1: 190 effect rows, and the 6 rows of the spells the Stalker's procs cast (`table_rows -- Spell4Effects spellId=60769 79932 63366`): 80 1 (147136), 11 4 (210998, 212528, 212529, 212530) and 73 1 (159134): 196 effect rows, and the 19 rows of the trees the two alternates reach: Spell Surge's alternates (Spell4.spell4IdMechanicAlternateSpell: 34718 names 34719 and 43468 names 76002) add the trees below them to the walk: 79679, 34766, 34767, 76003 and 76004 and 34719, 43500, 82409, 76002 (scratch count over `table_rows -- Spell4Effects spellId=<id>`: 17 1 each for 34719, 43500 and 82409, 8 1 each for 79679, 34766, 34767, 76003 and 76004, 73 1 each for 79679 and 34766, 26 9 and 80 1 for 76002); the walk reaches 8 more spells and 19 more rows, since one of the three type 17 rows is of a spell it reached already: 8 +5, 17 +2, 26 +9, 73 +2 and 80 +1. 215 effect rows"
+    as "the 114 rows of the 18 abilities' walk (26 Proxy 49, 8 damage 36, 17 8, 4 6, 73 5, 1 VitalModifier 4, 80 3, 11 1, 3 1, 90 1: Deja Vu 228968, whose gate 44174 names no AMP spell) and the 76 rows of the 20 spells the class innates reach under the same gates, counted from `table_rows -- Spell4Effects spellId=<id>` of 46867, 42908, 44926, 47866, 47860, 52371, 70599, 45000, 46297, 58586, 70369, 76766, 69450, 46073, 38784, 38783, 45057, 60724, 47273 and 47439: 1 7, 11 11, 14 7, 17 4, 18 1, 24 1, 26 23, 29 1, 52 1, 73 3, 80 6, 81 1, 83 2, 90 3, 112 2, 118 2, 145 1: 190 effect rows, and the 6 rows of the spells the Stalker's procs cast (`table_rows -- Spell4Effects spellId=60769 79932 63366`): 80 1 (147136), 11 4 (210998, 212528, 212529, 212530) and 73 1 (159134): 196 effect rows, and the 19 rows of the trees the two alternates reach: Spell Surge's alternates (Spell4.spell4IdMechanicAlternateSpell: 34718 names 34719 and 43468 names 76002) add the trees below them to the walk: 79679, 34766, 34767, 76003 and 76004 and 34719, 43500, 82409, 76002 (scratch count over `table_rows -- Spell4Effects spellId=<id>`: 17 1 each for 34719, 43500 and 82409, 8 1 each for 79679, 34766, 34767, 76003 and 76004, 73 1 each for 79679 and 34766, 26 9 and 80 1 for 76002); the walk reaches 8 more spells and 19 more rows, since one of the three type 17 rows is of a spell it reached already: 8 +5, 17 +2, 26 +9, 73 +2 and 80 +1. 215 effect rows, and the 2 rows of Spell4 72838, which the Proc 178239 (kind 16) of Spell4 38784 casts and the plan reads since issue 828 (`table_rows -- Spell4Effects spellId=72838`: 188358 and 188359, both type 80): 80 +2. 217 effect rows"
 }
 
 pub fn the_starting_abilities_column_holds_the_issues_prerequisite_counts_test() -> Nil {
@@ -296,8 +296,8 @@ pub fn the_starting_abilities_and_innates_reach_79_spells_with_the_gates_a_level
   let assert Ok(spells) =
     starting_ability.spells(tables: client_tables.every_table())
     as "the client's tables hold the rows the walk names"
-  assert list.length(spells) == 90
-    as "the three spells the Stalker passive's procs cast (60769, 79932 and 63366) are in its tree; the 18 level-1 abilities reach 65 spells with every gate open, less the six spells below the five Proxies behind AMP gates (79220, 79229, 57030, 41869 with 77116, and 60947); Deja Vu's 87353 behind a gate that names no AMP stays; the nine innate roots add 20 (Class.spell4IdInnateAbilityActive00.trees, less the ten behind closed gates); the two alternates (34718 names 34719 and 43468 names 76002, Spell4.spell4IdMechanicAlternateSpell) are plans of their own and add 8 (79679, 34766, 34767, 76002, 76003, 76004 and 34719, 43500 or 82409, one of which is reached already)"
+  assert list.length(spells) == 91
+    as "the three spells the Stalker passive's procs cast (60769, 79932 and 63366) are in its tree, and so is 72838, which the kind 16 Proc 178239 of Spell4 38784 casts since issue 828 (a 91st spell; the 90 below are the count before); the 18 level-1 abilities reach 65 spells with every gate open, less the six spells below the five Proxies behind AMP gates (79220, 79229, 57030, 41869 with 77116, and 60947); Deja Vu's 87353 behind a gate that names no AMP stays; the nine innate roots add 20 (Class.spell4IdInnateAbilityActive00.trees, less the ten behind closed gates); the two alternates (34718 names 34719 and 43468 names 76002, Spell4.spell4IdMechanicAlternateSpell) are plans of their own and add 8 (79679, 34766, 34767, 76002, 76003, 76004 and 34719, 43500 or 82409, one of which is reached already)"
 }
 
 // ---- the decoded and missing types ----
@@ -456,7 +456,7 @@ pub fn the_effect_types_3_10_11_14_17_18_29_52_64_73_76_80_81_83_84_112_118_and_
       ),
       Missing(
         type_number: 14,
-        reason: "kinds other than entering and leaving stealth, leaving combat, dying, the hits, criticals, kills and heals the holder lands, and using an ability, spending or changing the class resource, receiving a heal, a deflect, a finisher critical, a taunt landed and starting to move (the other kinds the texts name wait on their own issues), and rows held by another unit, behind a persistence or target apply prerequisite, with a group and no filter kind, with an aim of 32 or above, with no life or naming a Spell4 the tables lack, which the plan leaves out or refuses",
+        reason: "kinds other than entering and leaving stealth, leaving combat, dying, the hits, criticals, kills and heals the holder lands, and using an ability, spending or changing the class resource, receiving a heal, a deflect, a finisher critical, a taunt landed, starting to move, and the damage, critical, deflect and depleted shield a creature's blow deals the holder (the other kinds the texts name wait on their own issues), and rows held by another unit, behind a persistence or target apply prerequisite, with a group and no filter kind, with an aim of 32 or above, with no life or naming a Spell4 the tables lack, which the plan leaves out or refuses",
         fact_key: "Spell4Effects.effectType.14",
       ),
       Missing(
@@ -2100,7 +2100,7 @@ pub fn deja_vu_stays_because_its_gate_names_spells_no_amp_holds_test() -> Nil {
     as "no EldanAugmentation row names 87333 or 87334, so neither is an AMP spell with a level to wait for"
 }
 
-pub fn the_starting_abilities_totals_hold_205_of_215_effect_rows_and_79_of_79_conditions_handled_test() -> Nil {
+pub fn the_starting_abilities_totals_hold_208_of_217_effect_rows_and_79_of_79_conditions_handled_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.tags(["dev_tool", "coverage"])
   use <- unitest.guard(client_tables.present())
@@ -2117,9 +2117,9 @@ pub fn the_starting_abilities_totals_hold_205_of_215_effect_rows_and_79_of_79_co
     )
   assert string.contains(
     totals,
-    "| Spell effects (#49) | 133 | 131200 | 18 | 23 | 205 of 215 |",
+    "| Spell effects (#49) | 133 | 131200 | 18 | 23 | 208 of 217 |",
   )
-    as "the walk reaches 215 effect rows: the 196 of before and the 19 that the alternates of Spell Surge add, all 19 handled. 10 of the 196 are not handled: the two Proc rows the plan skips, 90 x4, 24 once, the two Proxies 121345 and 178429 whose dataBits00 is 0, and the Medic's gain 228918, which ticks every 2000 ms (scratch count over the 196 rows the coverage walk reaches). The other 186 of the 196 are handled, and so are the 19 added rows, which makes 205 of 215. Among the handled ones: the Stalker's 91018 of type 81, behind target apply prerequisite 11311, whose condition the plan reads; the five other Proc rows; the Medic's row 228914; 109482 of type 18; 229304 of type 145; the Esper's type 52 row 199192 and its type 29 row 178144, aimed at the caster with a durationTime; the two ExoSuit rows of type 112, 112543 and 178142, aimed at the caster with a durationTime and a display; and the Warrior's periodic row 210834 of type 118, aimed at the caster and ticking every 1000 ms for 8000 ms. The whole-game columns are the walk's of 2026-11-05, with types 10, 14, 18, 29, 52, 64, 81, 83, 84, 112, 118 and 145 handled beside the nine; no starting ability's row is of type 10. Type 76 (Spell4Effects.effectType.76) is read since: it is a type in use, so the types handled go from 22 to 23, and no starting ability holds a row of it, so the 205 of 215 stay"
+    as "the walk reaches 217 effect rows: the 196 of before, the 19 that the alternates of Spell Surge add and the 2 of Spell4 72838 (the spell the Proc 178239 casts, read since issue 828), all 21 handled. 9 of the 196 are not handled: the Proc row the plan skips (123744), 90 x4, 24 once, the two Proxies 121345 and 178429 whose dataBits00 is 0, and the Medic's gain 228918, which ticks every 2000 ms (scratch count over the 196 rows the coverage walk reaches). The other 187 of the 196 are handled, and so are the 21 added rows, which makes 208 of 217. Among the handled ones: the Stalker's 91018 of type 81, behind target apply prerequisite 11311, whose condition the plan reads; the five other Proc rows; the Medic's row 228914; 109482 of type 18; 229304 of type 145; the Esper's type 52 row 199192 and its type 29 row 178144, aimed at the caster with a durationTime; the two ExoSuit rows of type 112, 112543 and 178142, aimed at the caster with a durationTime and a display; and the Warrior's periodic row 210834 of type 118, aimed at the caster and ticking every 1000 ms for 8000 ms. The whole-game columns are the walk's of 2026-11-05, with types 10, 14, 18, 29, 52, 64, 81, 83, 84, 112, 118 and 145 handled beside the nine; no starting ability's row is of type 10. Type 76 (Spell4Effects.effectType.76) is read since: it is a type in use, so the types handled go from 22 to 23, and no starting ability holds a row of it"
   assert string.contains(
     totals,
     "| Prerequisites (#47) | 232 | 49184 | 47209 | 47 | 79 of 79 |",
@@ -2236,7 +2236,7 @@ fn measured_proc_rows(
 }
 
 const proc_gap =
-  "kinds other than entering and leaving stealth, leaving combat, dying, the hits, criticals, kills and heals the holder lands, and using an ability, spending or changing the class resource, receiving a heal, a deflect, a finisher critical, a taunt landed and starting to move (the other kinds the texts name wait on their own issues), and rows held by another unit, behind a persistence or target apply prerequisite, with a group and no filter kind, with an aim of 32 or above, with no life or naming a Spell4 the tables lack, which the plan leaves out or refuses"
+  "kinds other than entering and leaving stealth, leaving combat, dying, the hits, criticals, kills and heals the holder lands, and using an ability, spending or changing the class resource, receiving a heal, a deflect, a finisher critical, a taunt landed, starting to move, and the damage, critical, deflect and depleted shield a creature's blow deals the holder (the other kinds the texts name wait on their own issues), and rows held by another unit, behind a persistence or target apply prerequisite, with a group and no filter kind, with an aim of 32 or above, with no life or naming a Spell4 the tables lack, which the plan leaves out or refuses"
 
 pub fn a_proc_row_the_plan_skips_or_refuses_is_counted_as_not_read_test() -> Nil {
   use <- owned_test.run(10_000)
@@ -2280,9 +2280,9 @@ pub fn coverage_proc_rows_read_test() -> Nil {
     == HandledWithGap(
       reason: proc_gap,
       fact_key: "Spell4Effects.effectType.14",
-      unread_rows: 1993,
+      unread_rows: 1435,
     )
-    as "1,505 rows are read, 373 more than the 1,132 before issue 792 (scratch count of `read_row` over the 3,498): of the other 1,993, 1,733 are of a kind not read (478 of them a kind that waits on an open issue), 209 are held by another unit (targetFlags 2, 4 or 5), 14 sit behind a persistence prerequisite, 26 hold a group with no filter kind, 1 holds an aim of 36, 7 have no durationTime and no flags bit 2, and 3 name a one-spell filter whose Spell4 the tables lack (Procs 75724, 100105 and 198006, held by Spell4 36396, 43658 and 76365, which no level-1 ability or innate reaches)"
+    as "2,063 rows are read, 558 more than the 1,505 before issue 828 (scratch count of `read_row` over the 3,498; the 558 are the kinds 16, 146, 51 and 115, 745 rows of which 187 stay out and 2 are refused as the last item says): of the other 1,435, 988 are of a kind not read (478 of them a kind that waits on an open issue), 378 are held by another unit (targetFlags 2 to 6), 14 sit behind a persistence prerequisite, 5 behind a target apply prerequisite, 26 hold a group with no filter kind, 10 hold an aim of 33, 34 or 36, 9 have no durationTime and no flags bit 2, and 5 name a one-spell filter whose Spell4 the tables lack (Procs 75724, 100105 and 198006 before issue 828, and 162927 and 189684 of kind 16, held by Spell4 36396, 43658, 76365, 65244 and 73125, which no level-1 ability or innate reaches)"
   assert line.starting_abilities == 7
     as "the 7 Proc rows a level-1 character reaches (Spell4Effects.effectType.14.level_one)"
   let assert Ok(left) = starting_ability.left_out(tables:)
@@ -2302,19 +2302,11 @@ pub fn coverage_proc_rows_read_test() -> Nil {
         why: spell_plan.ProcBehindPersistence,
         casts: 52_370,
       ),
-      starting_ability.ProcKindNotRead(
-        spell4_id: 38_784,
-        effect_id: 178_239,
-        kind: 16,
-        casts: 72_838,
-      ),
     ]
-    as "Spell4Effects.effectType.14.level_one: of the 7 reached rows, 178239 (kind 16, casts 72838) is of a kind the plan does not read and 123744 (kind 12, casts 52370) sits behind caster persistence Prerequisite 28926 (`table_rows Spell4Effects 123744`), so 5 are read"
+    as "Spell4Effects.effectType.14.level_one: of the 7 reached rows, 123744 (kind 12, casts 52370) sits behind caster persistence Prerequisite 28926 (`table_rows Spell4Effects 123744`); 178239 (kind 16, casts 72838) is read since issue 828, so 6 are read"
   let report = coverage.left_out_report(tables:)
-  assert string.contains(report, "Proc effect 178239 of Spell4 38784")
-    && string.contains(report, "kind 16")
-    && string.contains(report, "Spell4 72838")
-    as "the report names the row, its holder, its kind and the spell it casts"
+  assert !string.contains(report, "Proc effect 178239")
+    as "178239 is read, so the report no longer names it"
   assert string.contains(report, "Proc effect 123744 of Spell4 52371")
     && string.contains(report, "persistence prerequisite")
     && string.contains(report, "Spell4 52370")

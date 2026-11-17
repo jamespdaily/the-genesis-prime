@@ -33,6 +33,7 @@ import genesis_prime/message/unit_properties_changed
 import genesis_prime/random
 import genesis_prime/step.{type ConnectionStep, OwnEvent}
 import genesis_prime/world_map/map
+import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{None}
@@ -486,6 +487,16 @@ fn with_hit_proc(
   delay_ms delay_ms: Int,
   body body: fn(game_connection.State) -> a,
 ) -> a {
+  with_proc_of_kind(kind: 12, chance:, delay_ms:, body:)
+}
+
+/// `with_hit_proc` for a Proc row of any kind (dataBits00).
+fn with_proc_of_kind(
+  kind kind: Int,
+  chance chance: Float,
+  delay_ms delay_ms: Int,
+  body body: fn(game_connection.State) -> a,
+) -> a {
   let assert Ok(rows) =
     fixture_tables.add(
       rows: fixture_tables.rows(),
@@ -493,7 +504,7 @@ fn with_hit_proc(
       copy_of: 202_043,
       id: hit_proc_id,
       with: [
-        #("dataBits00", planted_table.Integer(12)),
+        #("dataBits00", planted_table.Integer(kind)),
         #("dataBits02", planted_table.Integer(float_bits(value: chance))),
         #("dataBits04", planted_table.Integer(250)),
         #("dataBits05", planted_table.Integer(60)),
@@ -642,6 +653,37 @@ pub fn an_input_with_nothing_pending_draws_nothing_and_makes_no_second_call_test
     as "the second press writes what the first did"
   assert frames(second) == frames(first)
     as "the second go writes what the first did"
+}
+
+pub fn a_creature_blow_on_the_player_runs_the_proc_pass_with_draws_from_its_seed_test() -> Nil {
+  use <- owned_test.run(120_000)
+  // A creature's blow on the player draws its strike's 12 bytes of rolls from the player's
+  // seed (block 0) and then, for the one pending event of the blow taken, the chance word
+  // of the kind 16 proc (block 1); the second blow's rolls are block 2 and its word block 3.
+  // A word fires the proc when its fraction is below the chance (`random.fraction`), so a
+  // chance between the two words' fractions fires one blow's proc and not the other's, and a
+  // blow that drew more or less than the word would shift which.
+  let assert [_rolls, first_word, _more_rolls, second_word] =
+    drawn_by_seed(draws: [hit.roll_bytes, 4, hit.roll_bytes, 4])
+  let assert [first] = random.words(bytes: first_word)
+  let assert [second] = random.words(bytes: second_word)
+  let first = random.fraction(first)
+  let second = random.fraction(second)
+  assert float.absolute_value(first -. second) >. 0.01
+    as "the seed's two words are told apart by a chance between them"
+  let chance = { first +. second } /. 2.0
+  use state <- with_proc_of_kind(kind: 16, chance:, delay_ms: 0)
+  let #(state, first_blow) = struck_at(state:, ms: 1000)
+  let #(_, second_blow) = struck_at(state:, ms: 100_000)
+  assert [
+      started_count(taken: first_blow, spell4_id: 63_366),
+      started_count(taken: second_blow, spell4_id: 63_366),
+    ]
+    == case first <. second {
+      True -> [1, 0]
+      False -> [0, 1]
+    }
+    as "the blow whose word is the lower fires the kind 16 proc, which casts 63366, and the other does not"
 }
 
 pub fn a_proc_due_timer_starts_the_delayed_cast_test() -> Nil {
