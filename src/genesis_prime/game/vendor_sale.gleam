@@ -619,7 +619,7 @@ fn junk_stack(
   use <- bool.guard(!sellable, Ok(None))
   use price <- result.try(each_pays(item:, vendor: stock, tables:))
   use <- bool.guard(
-    price.currency_type_id != currency.credits_type || price.amount == 0,
+    !item_price.is_credit_price(price:) || price.amount == 0,
     Ok(None),
   )
   let count = int.max(1, item.stack_count)

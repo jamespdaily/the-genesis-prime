@@ -36,6 +36,7 @@ import client_tables
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/gear
 import genesis_prime/game/item_property
+import genesis_prime/game/item_stat_kind
 import genesis_prime/game/loadout
 import genesis_prime/game/random_stat
 import genesis_prime/game/world_entry
@@ -55,6 +56,7 @@ import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/result
 import gleam/string
 import owned_test
 import unitest
@@ -777,7 +779,10 @@ pub fn no_novice_loadout_item_has_a_random_stat_entry_test() -> Nil {
       let assert Ok(entries) =
         item_property.stat_entries_of(tables:, item2_id: item.value)
         as "the Novice item has its Item2 and ItemStat rows"
-      assert list.all(entries, fn(entry) { entry.0 != 2 && entry.0 != 4 })
+      assert list.all(entries, fn(entry) {
+        !item_stat_kind.is_crafting_socket(entry)
+        && result.is_error(item_stat_kind.random_group_of(entry))
+      })
         as "the Novice item holds no random entry"
       assert random_stat.roll_bytes(tables:, item2_id: item.value) == 0
         as "so no entropy is drawn for it"

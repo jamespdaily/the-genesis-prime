@@ -421,3 +421,44 @@ pub fn every_currency_an_item2_row_sells_for_is_one_the_client_keeps_test() -> N
   assert outside == []
     as "opcode.0x25e holds the amounts of types 1 to 15 and opcode.0x919 drops kinds 14 and over (types 15 and over), so a row sold for another type could not be shown or kept"
 }
+
+pub fn only_a_credit_slot_is_scaled_by_the_vendor_multiplier_whatever_the_other_currency_is_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let paid_in = fn(currency_type_id) {
+    let price = item_price.SellPrice(currency_type_id:, amount: 10)
+    item_price.paid(price:, multiplier: 1.55)
+  }
+  assert paid_in(1) == item_price.SellPrice(currency_type_id: 1, amount: 15)
+    as "0x14041bcc0.formula: trunc(f32(10) x f32(1.55)) = 15 for credits, currency 1 (lua.Money.CodeEnumCurrencyType)"
+  assert paid_in(0) == item_price.SellPrice(currency_type_id: 0, amount: 10)
+    as "0x14041bcc0.formula: no currency is not credits, so the amount stays"
+  assert paid_in(2) == item_price.SellPrice(currency_type_id: 2, amount: 10)
+    as "0x14041bcc0.formula: currency 2 is Renown, not credits, so the amount stays"
+  assert paid_in(4) == item_price.SellPrice(currency_type_id: 4, amount: 10)
+    as "0x14041bcc0.formula: currency 4 is not credits, so the amount stays"
+}
+
+pub fn an_item_with_a_buy_currency_in_either_slot_has_no_credit_price_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Synthetic: the client's Item2 14838 has currencyTypeId0 and currencyTypeId1 0, a credit price.
+  let item = Item2Id(14_838)
+  let priced_with = fn(cells) {
+    use tables <- fixture_tables.changed(
+      table: "Item2",
+      id: 14_838,
+      with: cells,
+    )
+    item_price.base(tables:, item2_id: item)
+  }
+  let assert Ok(_) = priced_with([])
+    as "0x14040bee0: both buy currency ids 0 give the computed credit price"
+  assert priced_with([#("currencyTypeId0", Integer(1))])
+    == Error(item_price.OtherCurrency(item2_id: item))
+    as "0x14040bee0: a currency in the first slot, even credits, is not the computed price"
+  assert priced_with([#("currencyTypeId1", Integer(1))])
+    == Error(item_price.OtherCurrency(item2_id: item))
+    as "0x14040bee0: a currency in the second slot has no credit price either"
+  assert priced_with([#("currencyTypeId1", Integer(7))])
+    == Error(item_price.OtherCurrency(item2_id: item))
+    as "0x14040bee0: nor does another currency in the second slot"
+}

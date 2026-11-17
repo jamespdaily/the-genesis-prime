@@ -24,6 +24,7 @@
 ////   the excess is lost. A purchase only lowers a total.
 
 import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/game/currency_kind
 import genesis_prime/message/currency_changed.{CurrencyChanged}
 import genesis_prime/message/currency_gained.{CurrencyGained}
 import genesis_prime/store
@@ -44,11 +45,8 @@ pub type Currencies {
   Currencies(amounts: Dict(Int, Int))
 }
 
-/// The currency type of credits.
-pub const credits_type = 1
-
-/// The currency type of Renown, whose cap is its own GameFormula row (`GetCurrencyCap.entitlement_14`).
-const renown_type = 2
+/// The currency type of credits, named once in `currency_kind`.
+pub const credits_type = currency_kind.credits_type
 
 /// The number of currency types 0x025E holds amounts for (`opcode.0x25e`).
 const currency_types = 15
@@ -113,12 +111,13 @@ pub fn cap(
   tables tables: table_store.Tables,
   currency_type_id currency_type_id: Int,
 ) -> Option(Int) {
-  case currency_type_id {
-    id if id == credits_type ->
+  case currency_kind.kind_of(number: currency_type_id) {
+    currency_kind.Credits ->
       Some(formula_cap(tables:, formula: credit_cap_formula))
-    id if id == renown_type ->
+    // Renown's cap is its own GameFormula row (`GetCurrencyCap.entitlement_14`).
+    currency_kind.Renown ->
       Some(formula_cap(tables:, formula: renown_cap_formula))
-    _ ->
+    currency_kind.NoCurrency | currency_kind.Other(_) ->
       case currency_type.get(tables:, id: CurrencyTypeId(currency_type_id)) {
         Ok(row) if row.cap_amount > 0 -> Some(row.cap_amount)
         Ok(_) | Error(Nil) -> option.None
