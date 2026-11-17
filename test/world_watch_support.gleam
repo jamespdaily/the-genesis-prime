@@ -6,7 +6,8 @@ import ask_support
 import driven_time
 import event_wait
 import genesis_prime/client_connection.{
-  type Message, CreatureAppeared, ForStay, PeerNews, SentByMap, SentByPeer,
+  type Message, type PeerNews, CreatureAppeared, ForStay, PeerNews, SentByMap,
+  SentByPeer,
 }
 import genesis_prime/game/hit.{Blow, Offence, Rolls, Worked}
 import genesis_prime/game/start_place.{type Place}
@@ -141,11 +142,20 @@ pub fn taken(
 
 /// A creature's 0x262 as the connection was sent it, with the unit id it names.
 pub fn appearance(message: Message) -> Result(UnitCreateCreature, Nil) {
+  case appeared_news(message) {
+    Ok(PeerNews(news: CreatureAppeared(unit:, ..), ..)) -> Ok(unit)
+    Ok(PeerNews(..)) | Error(Nil) -> Error(Nil)
+  }
+}
+
+/// The peer news of a creature's appearance, whole as the connection was sent it, so a test
+/// can hand the same news to a real connection.
+pub fn appeared_news(message: Message) -> Result(PeerNews, Nil) {
   case message {
     ForStay(
-      sent: SentByPeer(PeerNews(news: CreatureAppeared(unit:, ..), ..)),
+      sent: SentByPeer(PeerNews(news: CreatureAppeared(..), ..) as news),
       ..,
-    ) -> Ok(unit)
+    ) -> Ok(news)
     ForStay(..)
     | client_connection.SentBySessions(..)
     | client_connection.SentByChat(..) -> Error(Nil)
@@ -379,8 +389,8 @@ pub fn gone_unit(message: Message) -> Result(Int, Nil) {
 }
 
 /// A timed world of one Battle Beast with the players' connections 1 and 2 standing in
-/// sight of it: the beast's 0x262 each was sent, the beast's process, and the connections'
-/// received messages.
+/// sight of it: the beast's 0x262 each was sent (the news itself in `appeared`), the beast's
+/// process, and the connections' received messages.
 pub type Watched {
   Watched(
     world: World,
@@ -389,6 +399,7 @@ pub type Watched {
     caster: Subject(Message),
     viewer: Subject(Message),
     beast: UnitCreateCreature,
+    appeared: PeerNews,
     pid: Pid,
   )
 }
@@ -401,10 +412,12 @@ pub fn watched_by_two(respawn_ms respawn_ms: Int) -> Watched {
   let viewer = world_support.connection(world:, id: 2)
   let _caster_unit = join(run:, connection: 1)
   let _viewer_unit = join(run:, connection: 2)
-  let beast =
-    next(received: caster, what: "the beast's 0x262", wanted: appearance)
+  let appeared =
+    next(received: caster, what: "the beast's 0x262", wanted: appeared_news)
+  let assert PeerNews(news: CreatureAppeared(unit: beast, ..), ..) = appeared
+    as "the news is a creature's appearance"
   let _shown =
     next(received: viewer, what: "the beast's 0x262", wanted: appearance)
   let pid = creature_pid(world:, run:, unit_id: beast.unit_id, life: 2)
-  Watched(world:, run:, time:, caster:, viewer:, beast:, pid:)
+  Watched(world:, run:, time:, caster:, viewer:, beast:, appeared:, pid:)
 }

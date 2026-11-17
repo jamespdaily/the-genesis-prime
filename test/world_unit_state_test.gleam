@@ -9,38 +9,38 @@
 ////   spell names): a hostile press at a creature that shows it is refused with 306, a beneficial
 ////   one is not, a strike with blows is answered `Immune`, and the end is the go's time plus the
 ////   row's delay and duration, kept by the creature.
-//// - Spell4 35436 (Spell4Base 21132, Spell4TargetMechanics 3: targetType 1, flags 16, bit 0
-////   clear) is a hostile aimed spell and Spell4 30485 (Spell4Base 16887, Spell4TargetMechanics
-////   flags 9, bit 0 set) a beneficial one (`unit_state.cast_refusal`'s rule on
-////   `Spell4TargetMechanics.flags`, a guess). Each is planted here with the flags its own
-////   rows hold and no cast group, since 35436's cast group (3699) holds no Battle Beast.
+//// - Spell4 64944 (Spell4Base 42972: cast group TargetGroup 8755; Spell4TargetMechanics 3: flags
+////   16, bit 0 clear) is the hostile aimed press, a button of quest 9373's objective, and the
+////   same spell with the mechanics' flags 9 (bit 0 set) the beneficial one
+////   (`unit_state.cast_refusal`'s rule on `Spell4TargetMechanics.flags`, a guess). The
+////   tables each connection holds clear its target cast prerequisite (28001, a type the server
+////   does not read) and give the cast group the Battle Beast, as the objective-cast tests plant them.
 //// - `opcode.0x7fc` (a refused press), `opcode.0x7f4` (the go), `opcode.0x247.immunity` (combat
 ////   log type 18) and `opcode.0x937` (health) are what the players are sent.
-//// The tests play the connection: each connection's picture of the creature is the unit
-//// states of the news it was sent (`UnitStateHeld`, `UnitStateEnded`), which a press reads
-//// (`activate.Usable.unit_states`). Every wait is for an event, and the clock moves only when
-//// the test advances it.
+//// Each press is made by a real connection (`game_connection`): it is handed the creature's
+//// 0x262 and the unit-state news the creature sent, as the map and the creature sent them, and
+//// its own picture of the creature, through the viewers and `casting.usable`, judges the press.
+//// Every wait is for an event, and the clock moves only when the test advances it.
 
 import ask_support
 import cast_support
 import driven_time
 import event_wait
 import fixture_tables
+import game_connection_support as connection_support
 import genesis_prime/client_connection.{
-  type Message, ForStay, PeerNews, SentByPeer,
+  type Message, type PeerNews, ForStay, PeerNews, SentByPeer,
 }
-import genesis_prime/game/activate.{Body, Usable}
-import genesis_prime/game/cast
+
 import genesis_prime/game/cast/state as cast_state
-import genesis_prime/game/shortcut_spell
-import genesis_prime/game/shown
+import genesis_prime/game/connection as game_connection
 import genesis_prime/game/spell_plan
 import genesis_prime/game/start_place
 import genesis_prime/game/strike_tell.{Landed}
-import genesis_prime/game/target_mechanic
 import genesis_prime/game/unit_state
 import genesis_prime/group_registry
 import genesis_prime/message/cast_objective_ability.{CastObjectiveAbility}
+import genesis_prime/message/cast_result
 import genesis_prime/message/combat_log
 import genesis_prime/message/combat_log_entry
 import genesis_prime/message/combat_result
@@ -49,12 +49,11 @@ import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_go
 import genesis_prime/server
 import genesis_prime/service
-import genesis_prime/step.{ConnectionId}
-import genesis_prime/table/creature2
-import genesis_prime/table/id.{Creature2Id, Spell4EffectsId}
+import genesis_prime/step.{ConnectionId, OwnEvent}
+import genesis_prime/store.{Character}
+import genesis_prime/table/id.{Spell4EffectsId}
+import genesis_prime/table/loader/store as store_tables
 import genesis_prime/world_map/creature
-import genesis_prime/world_map/creature_life.{Attackable, Hostile}
-import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/map
 import genesis_prime/world_map/registry.{type MapProcess}
@@ -62,55 +61,34 @@ import gleam/dict
 import gleam/erlang/process.{type Subject}
 import gleam/int
 import gleam/list
-import gleam/option.{None}
-import gleam/set
+import gleam/option.{Some}
 import owned_test
 import place_support
 import planted_table.{Integer}
+import quest_support
 import spawn_support
 import spell_tables
 import world_support.{type World}
 import world_watch_support.{type Watched}
 
-/// The hostile and the beneficial aimed spell the presses name, with the
-/// Spell4TargetMechanics flags of the rows they are of.
-const hostile_spell = 35_436
+/// The aimed shortcut spell the presses name, a button of quest 9373, and the quest.
+const aimed_spell = 64_944
+
+const aimed_quest = 9373
+
+/// Spell4TargetMechanics row 3 of the spell, and the flags of the beneficial reading.
+const aimed_mechanics = 3
 
 const hostile_flags = 16
 
-const beneficial_spell = 30_485
-
 const beneficial_flags = 9
 
-/// The shortcuts of the one aimed spell `spell4_id` with these target mechanics flags, aimed
-/// at a unit within 40 m, in no cast group.
-fn aimed_shortcut(
-  spell4_id spell4_id: Int,
-  mechanics_flags mechanics_flags: Int,
-) -> shortcut_spell.Shortcuts {
-  shortcut_spell.Shortcuts(
-    spells: dict.from_list([
-      #(
-        spell4_id,
-        shortcut_spell.Aimed(
-          spell: cast_support.child(spell4_id:, base: 21_614),
-          aim: shortcut_spell.Aim(
-            target_mechanic: target_mechanic.Targeted,
-            cast_group_id: 0,
-            mechanics_flags:,
-            valid_targets: 0,
-            target_combat: shortcut_spell.CombatAllowed,
-            limits: activate.Limits(min: 0.0, max: 40.0, vertical: 10.0),
-          ),
-        ),
-      ),
-    ]),
-  )
-}
+/// The cast group of the spell, which the tables give the Battle Beast.
+const aimed_cast_group = 8755
 
-/// The creature's own radius in the connection's picture, and the gap to the caster's edge.
-const creature_radius = 1.0
+const battle_beast = 73_464
 
+/// The gap from the player's edge to the beast's, the spell's range being 3 to 30.
 const gap = 10.0
 
 /// The cast id the client gives its presses.
@@ -315,18 +293,6 @@ fn state_news(unit_id unit_id: Int) -> fn(Message) -> Result(StateNews, Nil) {
   }
 }
 
-/// The picture of a creature's unit states a connection holds after it was sent `news`: the
-/// states held, by number, in the order they began.
-fn picture_after(news news: List(StateNews)) -> List(Int) {
-  list.fold(news, [], fn(held, one) {
-    case one {
-      Held(state:, number:) -> list.append(held, [#(number, state)])
-      Ended(number:) -> list.filter(held, fn(each) { each.0 != number })
-    }
-  })
-  |> list.map(fn(each) { each.1 })
-}
-
 /// The next unit-state news of the unit that the connection was sent.
 fn next_state_news(
   received received: Subject(Message),
@@ -391,135 +357,135 @@ fn health_news_waiting(
 
 // ---- the press ----
 
-fn press_body(spell4_id spell4_id: Int, target target: Int) -> BitArray {
+/// Runs the body on the tables a connection of these presses holds: the aimed spell's target
+/// cast prerequisite cleared, its cast group holding the Battle Beast, and the target
+/// mechanics' flags `flags` (16, hostile, or `beneficial_flags`).
+fn press_tables(
+  flags flags: Int,
+  body body: fn(store_tables.Tables) -> a,
+) -> a {
+  let rows =
+    fixture_tables.rows()
+    |> edited(table: "Spell4", id: aimed_spell, with: [
+      #("prerequisiteIdTargetCast", Integer(0)),
+    ])
+    |> edited(table: "TargetGroup", id: aimed_cast_group, with: [
+      #("type", Integer(1)),
+      #("data0", Integer(battle_beast)),
+      #("data1", Integer(0)),
+      #("data2", Integer(0)),
+    ])
+    |> edited(table: "Spell4TargetMechanics", id: aimed_mechanics, with: [
+      #("flags", Integer(flags)),
+    ])
+  fixture_tables.on_rows(rows:, reaching: [], body:)
+}
+
+fn edited(
+  rows rows: fixture_tables.Rows,
+  table table: String,
+  id id: Int,
+  with changes: List(#(String, planted_table.Cell)),
+) -> fixture_tables.Rows {
+  let assert Ok(changed) =
+    fixture_tables.change(rows:, table:, id:, with: changes)
+    as "the row and its columns are the client table's"
+  changed
+}
+
+/// A real connection of a player standing `gap` from the creature that appeared as `appeared`,
+/// holding quest 9373's button, which was sent that appearance and then `news` of the
+/// creature's unit states, in order.
+fn connection_of(
+  tables tables: store_tables.Tables,
+  appeared appeared: PeerNews,
+  news news: List(StateNews),
+) -> game_connection.State {
+  let assert PeerNews(
+    unit_id:,
+    news: client_connection.CreatureAppeared(hit_radius:, place:, ..),
+  ) = appeared
+    as "the news is a creature's appearance"
+  let character =
+    Character(
+      ..connection_support.world_character(),
+      place: Some(start_place.moved(
+        place:,
+        x: start_place.x(place),
+        y: start_place.y(place),
+        z: start_place.z(place)
+          +. gap
+          +. place_support.player_hit_radius
+          +. hit_radius,
+      )),
+    )
+  let #(entered, _) =
+    connection_support.entered_as_with_quests_on(tables:, character:, quests: [
+      quest_support.accepted(quest_id: aimed_quest, progress: [0, 0]),
+    ])
+  list.fold(
+    [appeared, ..list.map(news, state_peer_news(unit_id:, news: _))],
+    entered,
+    fn(state, told) {
+      connection_support.feed(
+        state:,
+        event: connection_support.sent_by_a_peer(told),
+      ).0
+    },
+  )
+}
+
+/// The unit-state news as the creature sent it.
+fn state_peer_news(unit_id unit_id: Int, news news: StateNews) -> PeerNews {
+  PeerNews(unit_id:, news: case news {
+    Held(state:, number:) -> client_connection.UnitStateHeld(state:, number:)
+    Ended(number:) -> client_connection.UnitStateEnded(number:)
+  })
+}
+
+/// The press of the aimed spell at the creature that appeared as `appeared`, by a real
+/// connection that was sent that appearance and `news` of its unit states, at the driven
+/// clock's time: the results of the 0x7fc refusals and the ids of the frames written.
+fn pressed(
+  watched watched: Watched,
+  tables tables: store_tables.Tables,
+  appeared appeared: PeerNews,
+  news news: List(StateNews),
+) -> #(List(Int), List(Int)) {
+  let state = connection_of(tables:, appeared:, news:)
   let assert Ok(body) =
     cast_objective_ability.encode(CastObjectiveAbility(
       client_cast_id: clients_cast_id,
-      spell4_id:,
-      target_unit_id: target,
+      spell4_id: aimed_spell,
+      target_unit_id: appeared.unit_id,
       position_x: 0,
       position_y: 0,
       position_z: 0,
     ))
     as "the message fits"
-  body
-}
-
-/// Where the creature stands in the caster's picture: `gap` from the caster's edge.
-fn creature_place() -> start_place.Place {
-  let live = place_support.live_character_place()
-  place_support.at(
-    world_id: 3460,
-    world_zone_id: 6009,
-    x: start_place.x(live)
-      +. place_support.player_hit_radius
-      +. creature_radius
-      +. gap,
-    y: start_place.y(live),
-    z: start_place.z(live),
-  )
-}
-
-/// The effects of a press, at `now_ms`, of the shortcut `spell4_id` at the beast
-/// `watched.beast`, by a connection whose picture shows the beast holding `unit_states`
-/// (the states the news it was sent left).
-fn pressed(
-  watched watched: Watched,
-  spell4_id spell4_id: Int,
-  unit_states unit_states: List(Int),
-) -> List(cast_state.Effect) {
-  pressed_at(
-    watched:,
-    unit_id: watched.beast.unit_id,
-    creature_id: watched.beast.creature_id,
-    spell4_id:,
-    unit_states:,
-  )
-}
-
-/// The same press at the creature `unit_id` of Creature2 row `creature_id`.
-fn pressed_at(
-  watched watched: Watched,
-  unit_id unit_id: Int,
-  creature_id creature_id: Int,
-  spell4_id spell4_id: Int,
-  unit_states unit_states: List(Int),
-) -> List(cast_state.Effect) {
-  let assert Ok(row) =
-    creature2.get(tables: fixture_tables.shared(), id: Creature2Id(creature_id))
-    as "the Battle Beast is a root of the fixture"
-  let picture =
-    dict.from_list([
-      #(
-        unit_id,
-        shown.ShownCreature(
-          creature_id: Creature2Id(creature_id),
-          faction_id: 0,
-          checklist_index: 0,
-          path: creature_path.Standing(at: creature_place()),
-          life: 100,
-          alive: True,
-          hit_radius: creature_radius,
-          attackable: Attackable(exile: True, dominion: True),
-          hostile_to: Hostile(exile: False, dominion: False),
-          in_combat: False,
-          held: [],
-          unit_states: list.index_map(unit_states, fn(state, index) {
-            shown.HeldUnitState(state:, number: index + 1)
-          }),
-        ),
+  let #(_, taken) =
+    connection_support.at(
+      state:,
+      ms: world_watch_support.clock_ms(time: watched.time),
+      event: OwnEvent(
+        step.Read(connection_support.world_message(
+          message_id: cast_objective_ability.message_id,
+          body:,
+        )),
       ),
-    ])
-  let assert Ok(taken) =
-    cast.shortcut(
-      cast: cast_state.new(),
-      body: press_body(spell4_id:, target: unit_id),
-      caster: cast_support.caster(),
-      shortcuts: aimed_shortcut(
-        spell4_id:,
-        mechanics_flags: case spell4_id == hostile_spell {
-          True -> hostile_flags
-          False -> beneficial_flags
-        },
-      ),
-      held: set.from_list([spell4_id]),
-      activations: activate.activations(tables: fixture_tables.shared()),
-      target_of: fn(asked) {
-        case asked == unit_id {
-          False -> activate.Unseen
-          True ->
-            Usable(
-              creature_id:,
-              creature: activate.creature_of(row:),
-              checklist_index: 0,
-              link: activate.NoLink,
-              body: Body(place: creature_place(), radius: creature_radius),
-              alive: True,
-              in_combat: False,
-              held: [],
-              unit_states:,
-              withheld: None,
-            )
-        }
-      },
-      in_cast_group: fn(group, asked) {
-        shown.in_group(
-          tables: fixture_tables.shared(),
-          picture:,
-          group:,
-          unit_id: asked,
-        )
-      },
-      caster_radius: place_support.player_hit_radius,
-      now: cast_support.at(ms: world_watch_support.clock_ms(time: watched.time)),
     )
-    as "a 0x9d that fits the message is taken, started or refused"
-  taken.1
+  #(
+    list.map(connection_support.refusal_results(taken:), cast_result.to_value),
+    connection_support.written_ids(taken),
+  )
 }
 
-/// The result of the refusal of a press, or none when it went.
-fn refused_with(effects effects: List(cast_state.Effect)) -> List(Int) {
-  cast_support.refusal_results(effects:)
+/// What a press that goes writes: the 0x7fd that starts the cast.
+const goes = #([], [0x07FD])
+
+/// What a refused press writes: the 0x7fc with the result.
+fn refused(result result: Int) -> #(List(Int), List(Int)) {
+  #([result], [0x07FC])
 }
 
 /// The Spell4 id of the cast the effects start (the 0x7ff the caster's audience is told).
@@ -591,6 +557,7 @@ pub fn tell_unit_states_reaches_the_creature_as_unit_states_test() -> Nil {
 
 pub fn a_hostile_press_at_a_creature_holding_state_6_is_refused_306_until_the_row_ends_test() -> Nil {
   use <- owned_test.run(60_000)
+  use tables <- press_tables(flags: hostile_flags)
   let watched = world_watch_support.watched_by_two(respawn_ms: 60_000)
   let unit_id = watched.beast.unit_id
   let told = state_go_on(watched:)
@@ -610,32 +577,16 @@ pub fn a_hostile_press_at_a_creature_holding_state_6_is_refused_306_until_the_ro
   assert caster_news == Held(state: 6, number: 1)
     && viewer_news == Held(state: 6, number: 1)
     as "each connection is told the state under the creature's number"
-  let caster_picture = picture_after(news: [caster_news])
-  let viewer_picture = picture_after(news: [viewer_news])
-  assert refused_with(effects: pressed(
-      watched:,
-      spell4_id: hostile_spell,
-      unit_states: caster_picture,
-    ))
-    == [306]
+  let press = pressed(watched:, tables:, appeared: watched.appeared, news: _)
+  assert press([caster_news]) == refused(result: 306)
     as "the caster's hostile press is refused with 306 (Target_HostileInvulnerability)"
-  assert refused_with(effects: pressed(
-      watched:,
-      spell4_id: hostile_spell,
-      unit_states: viewer_picture,
-    ))
-    == [306]
+  assert press([viewer_news]) == refused(result: 306)
     as "the second connection's is too"
   driven_time.advance(time: watched.time, ms: 8499)
   assert state_news_waiting(received: watched.caster, unit_id:) == []
     && state_news_waiting(received: watched.viewer, unit_id:) == []
     as "nothing ended at 8499 ms after the go"
-  assert refused_with(effects: pressed(
-      watched:,
-      spell4_id: hostile_spell,
-      unit_states: caster_picture,
-    ))
-    == [306]
+  assert press([caster_news]) == refused(result: 306)
     as "still refused at 8499 ms after the go"
   driven_time.advance(time: watched.time, ms: 1)
   let caster_end =
@@ -652,18 +603,15 @@ pub fn a_hostile_press_at_a_creature_holding_state_6_is_refused_306_until_the_ro
     )
   assert caster_end == Ended(number: 1) && viewer_end == Ended(number: 1)
     as "the end is told at 8500 ms after the go, by the number it was held under"
-  assert refused_with(effects: pressed(
-      watched:,
-      spell4_id: hostile_spell,
-      unit_states: picture_after(news: [caster_news, caster_end]),
-    ))
-    == []
+  assert press([caster_news, caster_end]) == goes
     as "the same press goes at 8500 ms"
   world_support.stop(world: watched.world)
 }
 
 pub fn a_beneficial_press_at_a_creature_holding_state_6_goes_test() -> Nil {
   use <- owned_test.run(60_000)
+  use hostile <- press_tables(flags: hostile_flags)
+  use beneficial <- press_tables(flags: beneficial_flags)
   let watched = world_watch_support.watched_by_two(respawn_ms: 60_000)
   let unit_id = watched.beast.unit_id
   let _told = state_go_on(watched:)
@@ -673,21 +621,19 @@ pub fn a_beneficial_press_at_a_creature_holding_state_6_goes_test() -> Nil {
       unit_id:,
       what: "the caster's news of the state",
     )
-  let picture = picture_after(news: [held])
-  assert picture == [6]
-  assert refused_with(effects: pressed(
+  assert held == Held(state: 6, number: 1)
+  assert pressed(
       watched:,
-      spell4_id: beneficial_spell,
-      unit_states: picture,
-    ))
-    == []
+      tables: beneficial,
+      appeared: watched.appeared,
+      news: [held],
+    )
+    == goes
     as "a beneficial press goes while the creature holds state 6"
-  assert refused_with(effects: pressed(
-      watched:,
-      spell4_id: hostile_spell,
-      unit_states: picture,
-    ))
-    == [306]
+  assert pressed(watched:, tables: hostile, appeared: watched.appeared, news: [
+      held,
+    ])
+    == refused(result: 306)
     as "the hostile press is refused at the same moment"
   world_support.stop(world: watched.world)
 }
@@ -957,6 +903,7 @@ pub fn the_creature_is_struck_normally_once_the_state_ends_test() -> Nil {
 
 pub fn a_unit_state_outlives_the_casters_leaving_test() -> Nil {
   use <- owned_test.run(60_000)
+  use tables <- press_tables(flags: hostile_flags)
   // The creature owns the end (the Design artifact of issue 795, option A): the caster's
   // connection is not needed after the tell.
   let watched = world_watch_support.watched_by_two(respawn_ms: 60_000)
@@ -987,18 +934,18 @@ pub fn a_unit_state_outlives_the_casters_leaving_test() -> Nil {
       what: "the second viewer's news of the end",
     )
   assert ended == Ended(number: 1)
-  assert refused_with(effects: pressed(
-      watched:,
-      spell4_id: hostile_spell,
-      unit_states: picture_after(news: [held, ended]),
-    ))
-    == []
+  assert pressed(watched:, tables:, appeared: watched.appeared, news: [
+      held,
+      ended,
+    ])
+    == goes
     as "the second viewer's press then goes"
   world_support.stop(world: watched.world)
 }
 
 pub fn a_late_viewer_is_told_the_held_state_and_its_press_is_refused_test() -> Nil {
   use <- owned_test.run(60_000)
+  use tables <- press_tables(flags: hostile_flags)
   let watched = world_watch_support.watched_by_two(respawn_ms: 60_000)
   let unit_id = watched.beast.unit_id
   let _told = state_go_on(watched:)
@@ -1006,11 +953,11 @@ pub fn a_late_viewer_is_told_the_held_state_and_its_press_is_refused_test() -> N
   driven_time.advance(time: watched.time, ms: 3000)
   let late = world_support.connection(world: watched.world, id: 3)
   let _late_unit = world_watch_support.join(run: watched.run, connection: 3)
-  let _appeared =
+  let appeared =
     world_watch_support.next(
       received: late,
       what: "the beast's 0x262 to the late viewer",
-      wanted: world_watch_support.appearance,
+      wanted: world_watch_support.appeared_news,
     )
   let told =
     next_state_news(
@@ -1020,18 +967,15 @@ pub fn a_late_viewer_is_told_the_held_state_and_its_press_is_refused_test() -> N
     )
   assert told == Held(state: 6, number: 1)
     as "a viewer that arrives while the state is held is told it after the 0x262"
-  assert refused_with(effects: pressed(
-      watched:,
-      spell4_id: hostile_spell,
-      unit_states: picture_after(news: [told]),
-    ))
-    == [306]
+  assert pressed(watched:, tables:, appeared:, news: [told])
+    == refused(result: 306)
     as "and its hostile press is refused"
   world_support.stop(world: watched.world)
 }
 
 pub fn a_creature_that_crashes_holding_a_state_returns_without_it_test() -> Nil {
   use <- owned_test.run(60_000)
+  use tables <- press_tables(flags: hostile_flags)
   // The map's crash row for a creature (`map.creature_ended`): the players are sent `Gone`
   // and the spawn returns as a new unit after the respawn time, whatever the creature held.
   let respawn_ms = 1000
@@ -1055,7 +999,7 @@ pub fn a_creature_that_crashes_holding_a_state_returns_without_it_test() -> Nil 
     world_watch_support.next(
       received: watched.caster,
       what: "the returned creature's 0x262",
-      wanted: world_watch_support.appearance,
+      wanted: world_watch_support.appeared_news,
     )
   assert returned.unit_id != unit_id as "the spawn returns as a new unit"
   let again =
@@ -1069,16 +1013,7 @@ pub fn a_creature_that_crashes_holding_a_state_returns_without_it_test() -> Nil 
   assert state_news_waiting(received: watched.caster, unit_id: returned.unit_id)
     == []
     as "the new unit holds no state"
-  assert refused_with(
-      effects: pressed_at(
-        watched:,
-        unit_id: returned.unit_id,
-        creature_id: returned.creature_id,
-        spell4_id: hostile_spell,
-        unit_states: [],
-      ),
-    )
-    == []
+  assert pressed(watched:, tables:, appeared: returned, news: []) == goes
     as "a hostile press at it goes"
   world_watch_support.strike_with(
     world: watched.world,
