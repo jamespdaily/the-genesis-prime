@@ -1045,6 +1045,69 @@ pub fn a_damage_aimed_at_the_cast_target_strikes_the_primary_target_alone_test()
     as "Spell4Effects.targetFlags 2 strikes the cast's own target (38781 on each struck unit), with that creature's life"
 }
 
+pub fn a_despawn_row_selects_no_player_and_no_static_object_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // `shown.life_of` is an error for another player's unit and for a static object: only a
+  // creature has a life to aim at, so a despawn row aimed at the cast's target selects the
+  // target only when it is a creature (`Spell4Effects.effectType.97`: the server removes
+  // creatures, a player is never removed).
+  let areas =
+    dict.from_list([
+      #(
+        spell_tables.despawn_only_spell4_id,
+        spell_tables.despawn_only_area(target_flags: 2),
+      ),
+    ])
+  let object =
+    shown.ShownObject(
+      creature_id: Creature2Id(73_464),
+      faction_id: 0,
+      checklist_index: 0,
+      place: place_support.at(
+        world_id: 3460,
+        world_zone_id: 5967,
+        x: 0.0,
+        y: 0.0,
+        z: -3.0,
+      ),
+      hit_radius: 1.0,
+      hostile_to: Hostile(exile: False, dominion: False),
+    )
+  let picture =
+    dict.from_list([
+      #(
+        20,
+        creature_at(
+          x: 0.0,
+          z: -3.0,
+          alive: True,
+          attackable: Attackable(exile: True, dominion: True),
+        ),
+      ),
+      #(28, ShownPlayer),
+      #(29, object),
+    ])
+  let selected = fn(primary_target) {
+    strike.select(
+      asked: GoAsked(
+        cast_id: 5,
+        phase: 0,
+        spell4_id: Spell4Id(spell_tables.despawn_only_spell4_id),
+        primary_target:,
+        spent: None,
+      ),
+      attacker: strike_support.attacker(),
+      picture:,
+      areas:,
+      now_ms: 0,
+    ).units
+  }
+  assert selected(20) == [Aimed(unit_id: 20, life: 4)]
+    as "a creature the cast is aimed at is selected, with its life"
+  assert selected(28) == [] as "another player's unit is not selected"
+  assert selected(29) == [] as "a static object is not selected"
+}
+
 pub fn a_spell_the_areas_do_not_hold_strikes_nobody_test() -> Nil {
   use <- owned_test.run(60_000)
   let areas = spell_tables.fixture_areas()

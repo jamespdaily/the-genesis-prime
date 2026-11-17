@@ -607,6 +607,43 @@ pub fn planned_strike(
   }
 }
 
+/// The Spell4 id of the spell `despawn_only_area` holds, and the id of its one row.
+pub const despawn_only_spell4_id = 32_893
+
+/// The area of a spell whose only effect is a planted DespawnUnit row (id 99097) aimed by
+/// `target_flags`: the plan of Telekinetic Strike with the row planted and its other effects
+/// taken away, and no damage, no telegraph and no crowd control.
+pub fn despawn_only_area(
+  target_flags target_flags: Int,
+) -> spell_area.SpellArea {
+  let assert Ok(spell) =
+    planned_strike(
+      rows: rows_with_effect(
+        effect: planted_table.row(spell4_effects.schema, [
+          #("ID", Integer(99_097)),
+          #("spellId", Integer(despawn_only_spell4_id)),
+          #("effectType", Integer(97)),
+          #("targetFlags", Integer(target_flags)),
+          #("phaseFlags", Integer(-1)),
+          #("orderIndex", Integer(9)),
+        ]),
+      ),
+    )
+  spell_area.SpellArea(
+    spell4_id: Spell4Id(despawn_only_spell4_id),
+    row: None,
+    shapes: [],
+    damage: [],
+    ticking: [],
+    spell: spell_plan.Spell(
+      ..spell,
+      effects: list.filter(spell.effects, fn(planned) {
+        planned.effect_id == id.Spell4EffectsId(99_097)
+      }),
+    ),
+  )
+}
+
 /// The client's rows of the tables the plan reads, which a test may change or add
 /// to before `with_loaded` loads them. The fixture holds only the server's tables,
 /// so the coverage walk's two are not in it: EldanAugmentation is empty, and

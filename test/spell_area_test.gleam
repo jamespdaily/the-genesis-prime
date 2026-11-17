@@ -1224,3 +1224,39 @@ pub fn a_throw_only_spell_aimed_at_the_target_strikes_the_primary_target_test() 
   assert phase.damage == [] && phase.controls == []
     as "the spell holds no damage and no crowd control, so only the throw asks for the unit"
 }
+
+pub fn a_despawn_aimed_at_the_target_makes_the_phase_strike_it_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4Effects 99864 (Spell4 43559, `table_rows -- Spell4Effects 99864`) is a type 97 row
+  // of targetFlags 2 and the spell's only effect, so no damage row asks for the unit; the
+  // row is planted in a spell of the plan's tables.
+  let spell = spell_tables.despawn_only_area(target_flags: 2)
+  assert list.map(
+      spell_plan.in_phase(
+        spell: spell.spell,
+        phase: 0,
+        spent: None,
+        as_kind: spell_plan.as_despawn,
+      ),
+      fn(row) { row.effect_id.value },
+    )
+    == [99_097]
+    as "the planted row is the spell's one despawn"
+  let assert Ok(phase) = spell_area.phase(spell:, phase: 0, spent: None)
+  assert phase.strikes_primary_target
+    as "targetFlags 2 aims at the cast's target, so the phase strikes the primary target"
+  assert !phase.selects_area as "targetFlags 2 does not aim at the area"
+  assert phase.damage == [] && phase.controls == []
+    as "no damage and no crowd control: only the despawn asks for the unit"
+}
+
+pub fn a_despawn_aimed_at_the_area_makes_the_phase_select_the_area_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4Effects 91427 (Spell4 40913, `table_rows -- Spell4Effects 91427`) is a type 97 row
+  // of targetFlags 4, the area, with a delay of 4000.
+  let spell = spell_tables.despawn_only_area(target_flags: 4)
+  let assert Ok(phase) = spell_area.phase(spell:, phase: 0, spent: None)
+  assert phase.selects_area
+    as "targetFlags 4 aims at the area, so the phase selects it"
+  assert !phase.strikes_primary_target as "and not the primary target alone"
+}
