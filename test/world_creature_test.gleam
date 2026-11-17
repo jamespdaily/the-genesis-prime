@@ -1156,6 +1156,7 @@ fn tell_change(
       client_connection.ChangeEnds(source:),
     )
     cast_state.ForcedMoveStarts(..)
+    | cast_state.CreatureDespawns(..)
     | cast_state.Send(..)
     | cast_state.Tell(..)
     | cast_state.StartTimer(..)

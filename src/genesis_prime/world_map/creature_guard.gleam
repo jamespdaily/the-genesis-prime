@@ -146,6 +146,9 @@ pub type Input {
   /// creature_life: a strike killed the creature. The guard ends with no frame, the opening's cast
   /// is finished, and the guard is `Dormant`.
   Killed
+  /// creature_life: a DespawnUnit effect removed the creature from the field. The guard ends as
+  /// it does at a kill.
+  Despawned
 }
 
 /// What the guard asks the creature's rule to do, in order.
@@ -237,7 +240,7 @@ pub fn step(
           }
         TimerFired(timer: OpeningEnds(generation: fired)) ->
           opening_ended(state:, guard:, unit_id:, live:, place:, fired:)
-        Killed ->
+        Killed | Despawned ->
           case state.phase {
             Guarded(..) -> #(State(..state, phase: Dormant), [])
             Opened(generation:, cast_id:, ..) -> #(

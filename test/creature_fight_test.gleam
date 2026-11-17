@@ -316,6 +316,7 @@ fn said(taken: ServiceStep(creature.Outgoing)) -> List(String) {
         case why {
           strike_tell.Dead -> "Refused(Dead)" <> to
           strike_tell.Returning -> "Refused(Returning)" <> to
+          strike_tell.Despawned -> "Refused(Despawned)" <> to
         }
       creature.Struck(..) -> "Deflected" <> to
       creature.KillCredit(..) -> "KillCredit" <> to

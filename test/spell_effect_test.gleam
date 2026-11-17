@@ -18,10 +18,10 @@ import fixture_tables
 import genesis_prime/game/effect_kind
 import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{
-  Applied, ControlEffect, CooldownEffect, ForcedMoveEffect, GainEffect,
-  HealEffect, Held, LastingEffect, LeftOut, ModifierEffect, ProcEffect,
-  ProxyEffect, ReadByActivation, ReadByArea, ReadEffects, ReadProc, ReadProxy,
-  RemoveEffect, RemoveStealthEffect, StealthEffect, StruckMoveEffect,
+  Applied, ControlEffect, CooldownEffect, DespawnEffect, ForcedMoveEffect,
+  GainEffect, HealEffect, Held, LastingEffect, LeftOut, ModifierEffect,
+  ProcEffect, ProxyEffect, ReadByActivation, ReadByArea, ReadEffects, ReadProc,
+  ReadProxy, RemoveEffect, RemoveStealthEffect, StealthEffect, StruckMoveEffect,
 }
 import genesis_prime/table/spell4_effects
 import gleam/bool
@@ -136,6 +136,7 @@ fn kind_name(
     ProcEffect(..) -> "ProcEffect"
     HealEffect(..) -> "HealEffect"
     ControlEffect(..) -> "ControlEffect"
+    DespawnEffect(..) -> "DespawnEffect"
   }
 }
 
@@ -173,7 +174,7 @@ fn outcomes_of(kind kind: effect_kind.Kind) -> List(String) {
     effect_kind.Heal(..) -> ["HealEffect"]
     effect_kind.Proc -> ["ReadProc"]
     effect_kind.Activate -> ["ReadByActivation"]
-    effect_kind.Immunity | effect_kind.Unread(..) -> []
+    effect_kind.Immunity | effect_kind.Despawn | effect_kind.Unread(..) -> []
   }
 }
 

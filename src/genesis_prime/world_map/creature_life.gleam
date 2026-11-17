@@ -146,10 +146,13 @@ pub type Body {
   Body(max_health: Int, combat: Combat, respawn_ms: Int)
 }
 
-/// Whether the creature stands or lies dead, and its health.
+/// Whether the creature stands, lies dead or has been removed from the field by a DespawnUnit
+/// effect, and its health. A despawned creature is gone as a dead one is (`is_dead`) and leaves
+/// no corpse (`is_shown`): its viewers are sent no 0x262 until the corpse timer stands it again.
 pub opaque type Life {
   Alive(health: Int)
   Dead
+  Despawned
 }
 
 /// What a viewer is told about the creature's health, which the viewer's connection
@@ -183,7 +186,7 @@ pub fn new(body body: Body) -> Life {
 pub fn health(life life: Life) -> Int {
   case life {
     Alive(health:) -> health
-    Dead -> 0
+    Dead | Despawned -> 0
   }
 }
 
@@ -193,15 +196,33 @@ pub fn clamped(life life: Life, max_health max_health: Int) -> Life {
   case life {
     Alive(health:) -> Alive(health: int.min(health, max_health))
     Dead -> Dead
+    Despawned -> Despawned
   }
 }
 
-/// Whether the creature lies dead.
+/// Whether the creature lies dead or has been removed from the field: a strike, a throw, a
+/// modifier and the fight treat both as gone.
 pub fn is_dead(life life: Life) -> Bool {
   case life {
     Alive(..) -> False
-    Dead -> True
+    Dead | Despawned -> True
   }
+}
+
+/// Whether a viewer is sent the creature's unit: false for a despawned creature, which is
+/// shown again when its corpse timer stands it.
+pub fn is_shown(life life: Life) -> Bool {
+  case life {
+    Alive(..) | Dead -> True
+    Despawned -> False
+  }
+}
+
+/// A DespawnUnit effect reaches the creature: the life it leaves the field with and the time in
+/// milliseconds the corpse timer starts for (the kind's respawn time), or none for a creature
+/// that lies dead or is already gone, which the effect does not reach.
+pub fn despawned(life _life: Life, body _body: Body) -> Option(#(Life, Int)) {
+  panic as "shape: removing a creature from the field is built in the step's code commit"
 }
 
 /// A strike on the creature: the hit rule on its health and defence, or a refusal
@@ -218,6 +239,16 @@ pub fn struck(
         answer: Answered(
           key: strike.key,
           outcome: Refused(why: strike_tell.Dead),
+        ),
+        news: [],
+        corpse_for_ms: None,
+      )
+    Despawned ->
+      Reaction(
+        life:,
+        answer: Answered(
+          key: strike.key,
+          outcome: Refused(why: strike_tell.Despawned),
         ),
         news: [],
         corpse_for_ms: None,
@@ -302,7 +333,7 @@ pub type OnRetire {
 pub fn on_retire(life life: Life) -> OnRetire {
   case life {
     Alive(..) -> StopNow
-    Dead -> StopAtRespawn
+    Dead | Despawned -> StopAtRespawn
   }
 }
 
@@ -323,7 +354,8 @@ pub fn corpse_timer_fired(
   retiring retiring: Bool,
 ) -> AtCorpse {
   case life, retiring {
-    Dead, True -> Ends
-    Dead, False | Alive(..), _ -> StandsAgain(life: new(body:))
+    Dead, True | Despawned, True -> Ends
+    Dead, False | Despawned, False | Alive(..), _ ->
+      StandsAgain(life: new(body:))
   }
 }

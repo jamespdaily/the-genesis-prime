@@ -3717,6 +3717,8 @@ fn go(
           reached: aimed.reached,
           struck:,
         )
+      let despawning =
+        cast_control.despawns_told(cast:, reached: aimed.reached, struck:)
       let #(cast, healing) = cast_heal.heals_armed(cast:, cast_id:, aimed:)
       let #(cast, restriction_timers) =
         cast_control.restrictions_armed(cast:, cast_id:, restricting:)
@@ -3812,6 +3814,7 @@ fn go(
           never_held,
           modifying,
           throwing,
+          despawning,
           healing,
           restriction_timers,
           cooldowns,
@@ -4018,6 +4021,24 @@ fn reached_by(
             gates_passed:,
             target_verdict:,
           )
+        spell_plan.DespawnEffect(despawn: row) ->
+          reach_units(
+            walk:,
+            planned:,
+            row:,
+            aim: row.aim,
+            stands: fn(entry) {
+              result.is_ok(cast_gate.creature_hit(struck:, unit_id: entry.1))
+            },
+            condition: row.condition,
+            what: "the DespawnUnit effect "
+              <> int.to_string(row.effect_id.value),
+            caster:,
+            live:,
+            struck:,
+            gates_passed:,
+            target_verdict:,
+          )
         spell_plan.HealEffect(heal: row) ->
           reach_units(
             walk:,
@@ -4136,7 +4157,8 @@ fn products_made(
         | spell_plan.StealthEffect(..)
         | spell_plan.RemoveStealthEffect(..)
         | spell_plan.ProcEffect(..)
-        | spell_plan.ControlEffect(..) -> #(entry, [])
+        | spell_plan.ControlEffect(..)
+        | spell_plan.DespawnEffect(..) -> #(entry, [])
       }
     })
   #(
@@ -4304,6 +4326,7 @@ fn reached_listed(reached reached: List(Reached)) -> List(#(Int, Listed)) {
       | spell_plan.ProxyEffect(..), _
       | spell_plan.GainEffect(..), _
       | spell_plan.RemoveStealthEffect(..), _
+      | spell_plan.DespawnEffect(..), _
       | spell_plan.ControlEffect(..), _
       -> Error(Nil)
     }
@@ -4350,7 +4373,8 @@ fn removed_by_go(
       | spell_plan.RemoveStealthEffect(..)
       | spell_plan.ProcEffect(..)
       | spell_plan.HealEffect(..)
-      | spell_plan.ControlEffect(..) -> so_far
+      | spell_plan.ControlEffect(..)
+      | spell_plan.DespawnEffect(..) -> so_far
     }
   })
 }
@@ -4546,7 +4570,8 @@ fn cooldowns_started_at_node_end(
       | spell_plan.RemoveStealthEffect(..)
       | spell_plan.ProcEffect(..)
       | spell_plan.HealEffect(..)
-      | spell_plan.ControlEffect(..) -> #(cast, effects)
+      | spell_plan.ControlEffect(..)
+      | spell_plan.DespawnEffect(..) -> #(cast, effects)
     }
   })
 }

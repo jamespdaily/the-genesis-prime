@@ -320,6 +320,8 @@ fn effect_named(kind kind: spell_plan.Kind) -> Result(String, Nil) {
       named("the ForcedMove", row.effect_id)
     spell_plan.StruckMoveEffect(struck_move: row) ->
       named("the ForcedMove", row.effect_id)
+    spell_plan.DespawnEffect(despawn: row) ->
+      named("the DespawnUnit", row.effect_id)
     spell_plan.CooldownEffect(modifier: row) ->
       named("the ModifySpellCooldown", row.effect_id)
     spell_plan.StealthEffect(stealth: row) ->
@@ -614,7 +616,8 @@ pub fn modifiers_armed(
       | spell_plan.RemoveStealthEffect(..)
       | spell_plan.ProcEffect(..)
       | spell_plan.HealEffect(..)
-      | spell_plan.ControlEffect(..) -> so_far
+      | spell_plan.ControlEffect(..)
+      | spell_plan.DespawnEffect(..) -> so_far
     }
   })
 }
@@ -700,7 +703,59 @@ pub fn struck_moves_armed(
       | spell_plan.RemoveStealthEffect(..)
       | spell_plan.ProcEffect(..)
       | spell_plan.HealEffect(..)
-      | spell_plan.ControlEffect(..) -> so_far
+      | spell_plan.ControlEffect(..)
+      | spell_plan.DespawnEffect(..) -> so_far
+    }
+  })
+}
+
+/// The creatures a go removes: each despawn among the effects the go `reached` (a DespawnUnit
+/// row of the phase whose caster gates passed, with a creature its aim names that the round
+/// `Hit` and that passes its target gate, `cast.aimed_at`), in the row then the unit order of
+/// `cast_gate.units_aimed_at`, each told `CreatureDespawns` in this step, whatever its delay:
+/// the creature owns the delay (genesis_prime/world_map/creature `Despawn`), so no timer of
+/// the cast is armed and the caster's leaving or dying changes nothing. The effects come
+/// after the go's frames, beside the throws'.
+///
+/// A unit that is not a `HitCreature` of the round is not removed (a deflected one included,
+/// as it is not thrown), and neither is the caster or another player.
+///
+/// ```
+/// cast.went: Send(go 0x7f4), Tell(audience, CastWent)
+///   for each despawn row reached on a unit the round Hit as a creature (HitCreature):
+///     CreatureDespawns(unit, life, struck_at_ms = go time, delay_ms)
+///   the connection tells the creature TellDespawn(delay_ms, struck_at_ms) ─▶ creature.Despawn
+/// ```
+///
+/// | If | Then |
+/// |---|---|
+/// | the creature never answers by the round's deadline, or refuses | the unit is left out of the round, so it is not `Hit`: no tell |
+/// | the go is cancelled during the round | `went` finds no live cast and writes and tells nothing: no tell |
+/// | the caster apply prerequisite or the target gate fails | the row is not in `reached`: no tell |
+/// | the row aims at the caster alone, or a player stands in its area | units are creatures only: no tell, and no 0x355 for a player |
+/// | the row aims at a static object | the object is not a creature, so it is not selected: no tell |
+pub fn despawns_told(
+  cast _cast: State,
+  reached reached: List(Reached),
+  struck _struck: List(Struck),
+) -> List(Effect) {
+  list.flat_map(reached, fn(entry) {
+    case entry.effect.kind {
+      spell_plan.DespawnEffect(..) ->
+        panic as "shape: telling the creatures a go despawns is built in the step's code commit"
+      spell_plan.ProxyEffect(..)
+      | spell_plan.GainEffect(..)
+      | spell_plan.LastingEffect(..)
+      | spell_plan.RemoveEffect(..)
+      | spell_plan.ModifierEffect(..)
+      | spell_plan.ForcedMoveEffect(..)
+      | spell_plan.StruckMoveEffect(..)
+      | spell_plan.CooldownEffect(..)
+      | spell_plan.StealthEffect(..)
+      | spell_plan.RemoveStealthEffect(..)
+      | spell_plan.ProcEffect(..)
+      | spell_plan.HealEffect(..)
+      | spell_plan.ControlEffect(..) -> []
     }
   })
 }

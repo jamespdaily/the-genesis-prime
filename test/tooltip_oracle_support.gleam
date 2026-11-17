@@ -698,8 +698,9 @@ fn held_of(kind kind: spell_plan.Kind) -> Result(Held, Nil) {
     spell_plan.ForcedMoveEffect(..) -> Ok(HeldElsewhere(list: "forced move"))
     spell_plan.RemoveEffect(..) -> Ok(HeldElsewhere(list: "removal"))
     spell_plan.ProxyEffect(..) -> Ok(HeldElsewhere(list: "proxy"))
-    spell_plan.RemoveStealthEffect(..) | spell_plan.StruckMoveEffect(..) ->
-      Error(Nil)
+    spell_plan.RemoveStealthEffect(..)
+    | spell_plan.StruckMoveEffect(..)
+    | spell_plan.DespawnEffect(..) -> Error(Nil)
   }
 }
 

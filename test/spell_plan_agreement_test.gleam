@@ -405,6 +405,7 @@ fn children_of(
           | effect_kind.Absorption
           | effect_kind.Activate
           | effect_kind.Immunity
+          | effect_kind.Despawn
           | effect_kind.Unread(..) -> Error(Nil)
         }
       })
