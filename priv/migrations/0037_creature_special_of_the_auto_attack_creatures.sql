@@ -9,10 +9,10 @@
 
 insert into creature_special (creature_id, spell4_id, order_index, cooldown_ms, source, reason) values
   (24058, 55308, 0, 10000, 'retail_record',
-   'Jabbithole npc page /npcs/bloodstone-oxian-12 (captured 20150416103144), Abilities tab, Reaching Bite listed at tier 1 (Spell4 55308); the cooldown of 10000 ms is a guess: the client holds no cadence for a special'),
+   'Jabbithole npc page /npcs/bloodstone-oxian-12 (captured 20150416103144), linked to the creature by its name and world, the server''s choice: no table links a creature to a page, Abilities tab, Reaching Bite listed at tier 1 (Spell4 55308); the cooldown of 10000 ms is a guess: the client holds no cadence for a special'),
   (26026, 55283, 0, 10000, 'retail_record',
-   'Jabbithole npc page /npcs/malverine-stalker-22 (captured 20160718025408), Abilities tab, Whirl listed at tier 1 (Spell4 55283); the cooldown of 10000 ms is a guess: the client holds no cadence for a special'),
+   'Jabbithole npc page /npcs/malverine-stalker-22 (captured 20160718025408), linked to the creature by its name and world, the server''s choice: no table links a creature to a page, Abilities tab, Whirl listed at tier 1 (Spell4 55283); the cooldown of 10000 ms is a guess: the client holds no cadence for a special'),
   (24051, 55327, 0, 10000, 'retail_record',
-   'Jabbithole npc page /npcs/venombite-hatchling-12 (captured 20170915172422), Abilities tab, Venomous Mandible listed at tier 1 (Spell4 55327); the cooldown of 10000 ms is a guess: the client holds no cadence for a special'),
+   'Jabbithole npc page /npcs/venombite-hatchling-12 (captured 20170915172422), linked to the creature by its name and world, the server''s choice: no table links a creature to a page, Abilities tab, Venomous Mandible listed at tier 1 (Spell4 55327); the cooldown of 10000 ms is a guess: the client holds no cadence for a special'),
   (36173, 55317, 0, 10000, 'retail_record',
-   'Jabbithole npc page /npcs/elderoot-deathcap-27 (captured 20170917055401), Abilities tab, Earthen Roar listed at tier 1 (Spell4 55317); the cooldown of 10000 ms is a guess: the client holds no cadence for a special');
+   'Jabbithole npc page /npcs/elderoot-deathcap-27 (captured 20170917055401), linked to the creature by its name and world, the server''s choice: no table links a creature to a page, Abilities tab, Earthen Roar listed at tier 1 (Spell4 55317); the cooldown of 10000 ms is a guess: the client holds no cadence for a special');

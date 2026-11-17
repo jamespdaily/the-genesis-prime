@@ -35,6 +35,8 @@
 //// - **It is idempotent.** A second run of the same input changes nothing.
 //// - **It does not record itself in `content_import`:** that table holds files the setup
 ////   check re-hashes from `GENESIS_WORLD_DATA`, which Jabbithole's record is not part of.
+//// - **It refuses a run that reads no spawn row of a fighting unit type:** every
+////   `retail_record` row would otherwise be deleted as one the rule no longer produces.
 //// - **A refused file writes nothing:** a line of `npcs.jsonl` that is not JSON or lacks a
 ////   field, a malformed `en-US.bin`, a table that does not load.
 //// - **`--list`** prints, after the counts, each creature left out and each spell left
@@ -84,6 +86,10 @@ type Failure {
   LanguageRefused(refusal: language_file.Refusal)
   /// The client's tables did not load.
   TablesUnreadable(error: store.LoadError)
+  /// The spawn table gave no row of a unit type the server fights with, so the import
+  /// would delete every `retail_record` row; `groups_read` is how many creature, world
+  /// and area groups the query returned, of any unit type.
+  NoSpawns(groups_read: Int)
   /// The database refused a row, naming the constraint; nothing was written.
   RowRefused(constraint: String)
   /// The database failed in another way.
@@ -175,22 +181,29 @@ fn read_language() -> Result(language_file.LanguageFile, Failure) {
 fn read_spawned(
   db db: pog.Connection,
 ) -> Result(List(retail_creature_spell.Spawned), Failure) {
-  use returned <- result.map(
+  use returned <- result.try(
     sql.spawned_creatures(db)
     |> result.map_error(fn(error) { Database(dev_database.failure_of(error:)) }),
   )
-  returned.rows
-  |> list.filter(fn(row) {
-    result.is_ok(creature_unit_type.of_entity_type(entity_type: row.entity_type))
-  })
-  |> list.map(fn(row) {
-    retail_creature_spell.Spawned(
-      creature_id: row.creature_id,
-      world_id: row.world_id,
-      area_id: row.area_id,
-      spawns: row.spawns,
-    )
-  })
+  let spawned =
+    returned.rows
+    |> list.filter(fn(row) {
+      result.is_ok(creature_unit_type.of_entity_type(
+        entity_type: row.entity_type,
+      ))
+    })
+    |> list.map(fn(row) {
+      retail_creature_spell.Spawned(
+        creature_id: row.creature_id,
+        world_id: row.world_id,
+        area_id: row.area_id,
+        spawns: row.spawns,
+      )
+    })
+  case spawned {
+    [] -> Error(NoSpawns(groups_read: list.length(returned.rows)))
+    _ -> Ok(spawned)
+  }
 }
 
 /// The name texts of the spawned creatures that the client's Creature2 table holds,
@@ -403,6 +416,12 @@ fn describe(failure failure: Failure) -> String {
       <> ": "
       <> store.describe(error)
       <> "; run python3.13 -I setup_check/extract_tables.py"
+    NoSpawns(groups_read: 0) ->
+      "the spawn table holds no rows, so every retail_record row would be deleted: run genesis_prime/import_world_data first; nothing was written"
+    NoSpawns(groups_read:) ->
+      "none of the "
+      <> int.to_string(groups_read)
+      <> " creature, world and area groups in the spawn table is of a unit type the server fights with, so every retail_record row would be deleted: nothing was written"
     RowRefused(constraint:) ->
       "the database refused a row under the constraint "
       <> constraint

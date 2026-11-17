@@ -46,37 +46,37 @@ create table creature_auto_attack (
 
 insert into creature_auto_attack (creature_id, spell4_id, order_index, source, reason)
 select creature_id, spell4_id, order_index, 'retail_record',
-  'Jabbithole npc page /npcs/yeti-snowstalker-1 (captured 20150416221041), Abilities tab, Maul (Spell4 33251) and Slam (33252) listed at tier 0; Spell4 descriptions "Auto-Attack #1" and "#2"; the order #1 then #2 is a guess: the client holds no strike order'
+  'Jabbithole npc page /npcs/yeti-snowstalker-1 (captured 20150416221041), linked to the creature by its name and world, the server''s choice: no table links a creature to a page, Abilities tab, Maul (Spell4 33251) and Slam (33252) listed at tier 0; Spell4 descriptions "Auto-Attack #1" and "#2"; the order #1 then #2 is a guess: the client holds no strike order'
 from unnest(array[51126, 11945]) as creature (creature_id),
   (values (33251, 0), (33252, 1)) as attack (spell4_id, order_index);
 
 insert into creature_auto_attack (creature_id, spell4_id, order_index, source, reason)
 select 11910, spell4_id, order_index, 'retail_record',
-  'Jabbithole npc page /npcs/skeech-scratcher-1 (captured 20170902053341), Abilities tab, Punch (Spell4 5649) and Jab (5652) listed at tier 0; Spell4 descriptions "Auto Attack #1" and "#2"; the order #1 then #2 is a guess: the client holds no strike order'
+  'Jabbithole npc page /npcs/skeech-scratcher-1 (captured 20170902053341), linked to the creature by its name and world, the server''s choice: no table links a creature to a page, Abilities tab, Punch (Spell4 5649) and Jab (5652) listed at tier 0; Spell4 descriptions "Auto Attack #1" and "#2"; the order #1 then #2 is a guess: the client holds no strike order'
 from (values (5649, 0), (5652, 1)) as attack (spell4_id, order_index);
 
 insert into creature_auto_attack (creature_id, spell4_id, order_index, source, reason)
 select 24058, spell4_id, order_index, 'retail_record',
-  'Jabbithole npc page /npcs/bloodstone-oxian-12 (captured 20150416103144), Abilities tab, Ram (Spell4 32761) and Bash (32762) listed at tier 0; Spell4 descriptions "Auto-Attack #1" and "#2"; the order #1 then #2 is a guess: the client holds no strike order'
+  'Jabbithole npc page /npcs/bloodstone-oxian-12 (captured 20150416103144), linked to the creature by its name and world, the server''s choice: no table links a creature to a page, Abilities tab, Ram (Spell4 32761) and Bash (32762) listed at tier 0; Spell4 descriptions "Auto-Attack #1" and "#2"; the order #1 then #2 is a guess: the client holds no strike order'
 from (values (32761, 0), (32762, 1)) as attack (spell4_id, order_index);
 
 insert into creature_auto_attack (creature_id, spell4_id, order_index, source, reason)
 select 24054, spell4_id, order_index, 'retail_record',
-  'Jabbithole npc page /npcs/scrab-striker-12 (captured 20170915173026), Abilities tab, Pinch (Spell4 25870) and Snap (25871) listed at tier 0; Spell4 descriptions "Auto-Attack #1" and "#2"; the order #1 then #2 is a guess: the client holds no strike order'
+  'Jabbithole npc page /npcs/scrab-striker-12 (captured 20170915173026), linked to the creature by its name and world, the server''s choice: no table links a creature to a page, Abilities tab, Pinch (Spell4 25870) and Snap (25871) listed at tier 0; Spell4 descriptions "Auto-Attack #1" and "#2"; the order #1 then #2 is a guess: the client holds no strike order'
 from (values (25870, 0), (25871, 1)) as attack (spell4_id, order_index);
 
 insert into creature_auto_attack (creature_id, spell4_id, order_index, source, reason)
 select 26026, spell4_id, order_index, 'retail_record',
-  'Jabbithole npc page /npcs/malverine-stalker-22 (captured 20160718025408), Abilities tab, Swipe (Spell4 6616) and Claw (6617) listed at tier 0; Spell4 descriptions "Auto-Attack #1" and "#2"; the order #1 then #2 is a guess: the client holds no strike order'
+  'Jabbithole npc page /npcs/malverine-stalker-22 (captured 20160718025408), linked to the creature by its name and world, the server''s choice: no table links a creature to a page, Abilities tab, Swipe (Spell4 6616) and Claw (6617) listed at tier 0; Spell4 descriptions "Auto-Attack #1" and "#2"; the order #1 then #2 is a guess: the client holds no strike order'
 from (values (6616, 0), (6617, 1)) as attack (spell4_id, order_index);
 
 insert into creature_auto_attack (creature_id, spell4_id, order_index, source, reason)
 select creature_id, spell4_id, order_index, 'retail_record',
-  'Jabbithole npc page /npcs/rootbrute-grimspore-1 (captured 20170916002802), Abilities tab, Swipe (Spell4 33247) and Swing (33248) listed at tier 0; Spell4 descriptions "Auto-Attack #1" and "#2"; the order #1 then #2 is a guess: the client holds no strike order'
+  'Jabbithole npc page /npcs/rootbrute-grimspore-1 (captured 20170916002802), linked to the creature by its name and world, the server''s choice: no table links a creature to a page, Abilities tab, Swipe (Spell4 33247) and Swing (33248) listed at tier 0; Spell4 descriptions "Auto-Attack #1" and "#2"; the order #1 then #2 is a guess: the client holds no strike order'
 from unnest(array[12212, 13118, 13549]) as creature (creature_id),
   (values (33247, 0), (33248, 1)) as attack (spell4_id, order_index);
 
 insert into creature_auto_attack (creature_id, spell4_id, order_index, source, reason)
 select 36173, spell4_id, order_index, 'retail_record',
-  'Jabbithole npc page /npcs/elderoot-deathcap-27 (captured 20170917055401), Abilities tab, Swipe (Spell4 33247) and Swing (33248) listed at tier 0; Spell4 descriptions "Auto-Attack #1" and "#2"; the order #1 then #2 is a guess: the client holds no strike order'
+  'Jabbithole npc page /npcs/elderoot-deathcap-27 (captured 20170917055401), linked to the creature by its name and world, the server''s choice: no table links a creature to a page, Abilities tab, Swipe (Spell4 33247) and Swing (33248) listed at tier 0; Spell4 descriptions "Auto-Attack #1" and "#2"; the order #1 then #2 is a guess: the client holds no strike order'
 from (values (33247, 0), (33248, 1)) as attack (spell4_id, order_index);

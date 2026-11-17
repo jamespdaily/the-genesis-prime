@@ -11,6 +11,7 @@
 //// past the text, or ids not in order; `text` refuses a text that is not UTF-16 or has
 //// no terminating zero.
 
+import genesis_prime/message/bit_stream
 import gleam/bit_array
 import gleam/bool
 import gleam/int
@@ -18,7 +19,6 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/order
 import gleam/result
-import gleam/string
 
 /// Where the header ends: the entries' and the text's places count from here.
 const header_end = 0x60
@@ -177,8 +177,9 @@ fn decoded(
   let start = file.text_at + 2 * offset
   let end = file.text_at + 2 * file.text_length
   units(file:, text_id:, at: start, end:, found: [])
-  |> result.try(fn(units) { codepoints(text_id:, units:, points: []) })
-  |> result.map(string.from_utf_codepoints)
+  |> result.try(fn(units) {
+    bit_stream.from_utf16(units) |> result.replace_error(NotUtf16(text_id:))
+  })
 }
 
 /// The UTF-16 code units from `at` up to the terminating zero.
@@ -199,42 +200,4 @@ fn units(
     0 -> Ok(list.reverse(found))
     _ -> units(file:, text_id:, at: at + 2, end:, found: [unit, ..found])
   }
-}
-
-fn codepoints(
-  text_id text_id: Int,
-  units units: List(Int),
-  points points: List(UtfCodepoint),
-) -> Result(List(UtfCodepoint), Refusal) {
-  case units {
-    [] -> Ok(list.reverse(points))
-    [high, low, ..rest] if high >= 0xD800 && high < 0xDC00 ->
-      case low >= 0xDC00 && low < 0xE000 {
-        True ->
-          point(
-            text_id:,
-            number: 0x10000 + { high - 0xD800 } * 0x400 + { low - 0xDC00 },
-          )
-          |> result.try(fn(codepoint) {
-            codepoints(text_id:, units: rest, points: [codepoint, ..points])
-          })
-        False -> Error(NotUtf16(text_id:))
-      }
-    [unit, ..rest] ->
-      case unit >= 0xD800 && unit < 0xE000 {
-        True -> Error(NotUtf16(text_id:))
-        False ->
-          point(text_id:, number: unit)
-          |> result.try(fn(codepoint) {
-            codepoints(text_id:, units: rest, points: [codepoint, ..points])
-          })
-      }
-  }
-}
-
-fn point(
-  text_id text_id: Int,
-  number number: Int,
-) -> Result(UtfCodepoint, Refusal) {
-  string.utf_codepoint(number) |> result.replace_error(NotUtf16(text_id:))
 }

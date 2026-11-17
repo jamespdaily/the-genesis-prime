@@ -10,7 +10,8 @@
 ////     ─▶ each listed spell: an auto-attack, a special, or left out with its rule
 //// ```
 ////
-//// - **Name and world match a page to a creature.** A Jabbithole zone is a MapZone id
+//// - **Name and world match a page to a creature,** the server's choice (no client table
+////   links a creature to a page), marked so in each row's reason. A Jabbithole zone is a MapZone id
 ////   (298 of the 299 zones on pages with an Abilities tab are rows of the client's MapZone
 ////   table, and 296 of those carry the client's own text of the name); the client's
 ////   MapZoneWorldJoin maps a zone to its worlds. A name alone matches a creature of another
@@ -542,10 +543,16 @@ fn pages_text(pages: List(Page)) -> String {
       path_of(page.url) <> " (captured " <> page.captured <> ")"
     })
   case described {
-    [one] -> "Jabbithole npc page " <> one
-    several -> "Jabbithole npc pages " <> string.join(several, ", ")
+    [one] -> "Jabbithole npc page " <> one <> page_link
+    several ->
+      "Jabbithole npc pages " <> string.join(several, ", ") <> page_link
   }
 }
+
+/// What a reason says of how its pages were chosen: no client table holds a creature's page,
+/// so the match by name and world is the server's.
+const page_link =
+  ", linked to the creature by its name and world, the server's choice: no table links a creature to a page"
 
 fn tier_text(pages: List(Page), spell4_id: Int) -> String {
   case

@@ -71,7 +71,7 @@ if [ -n "$PLANT_AT_ONCE" ] && [ "$ticket" -le "$PLANT_AT_ONCE" ]; then
     sleep 0.1
     polls=$((polls + 1))
     if [ "$polls" -gt "${PLANT_RENDEZVOUS_POLLS:-300}" ]; then
-      echo "only $(arrived) of $PLANT_AT_ONCE runs had started together"
+      echo "only $(arrived) of $PLANT_AT_ONCE runs had started together; this run held ticket $ticket; the state folder holds: $(ls "$dir" | tr '\\n' ' ')"
       rm -f "$dir/alive.$$"
       exit 1
     fi

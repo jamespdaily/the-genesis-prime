@@ -150,30 +150,27 @@ pub fn select(
     ]
   }
   let refused =
-    list.filter_map(rows, fn(row) {
-      refusal_of(row:, tables:)
-      |> result.map(fn(rule) {
-        Refusal(table:, row: RowId(row.creature_id), rule:)
-      })
-    })
+    refusals_of(
+      table:,
+      refused: list.filter_map(rows, fn(row) {
+        refusal_of(row:, tables:)
+        |> result.map(fn(rule) { #(row.creature_id, rule) })
+      }),
+    )
   let special_refused =
-    list.map(special_refusals(special_rows:, tables:), fn(refused) {
-      Refusal(
-        table: creature_special.table,
-        row: RowId({ refused.0 }.creature_id),
-        rule: refused.1,
-      )
-    })
+    refusals_of(
+      table: creature_special.table,
+      refused: list.map(special_refusals(special_rows:, tables:), fn(refused) {
+        #({ refused.0 }.creature_id, refused.1)
+      }),
+    )
   let auto_attack_refused =
-    list.map(
-      auto_attack_refusals(rows:, auto_attack_rows:, tables:),
-      fn(refused) {
-        Refusal(
-          table: creature_auto_attack.table,
-          row: RowId({ refused.0 }.creature_id),
-          rule: refused.1,
-        )
-      },
+    refusals_of(
+      table: creature_auto_attack.table,
+      refused: list.map(
+        auto_attack_refusals(rows:, auto_attack_rows:, tables:),
+        fn(refused) { #({ refused.0 }.creature_id, refused.1) },
+      ),
     )
   case
     list.flatten([
@@ -191,6 +188,15 @@ pub fn select(
     }
     refusals -> Error(refusals)
   }
+}
+
+/// The load's refusals of a table's rows, each given by its creature's Creature2 id and
+/// the sentence of the rule it breaks.
+fn refusals_of(
+  table table: String,
+  refused refused: List(#(Int, String)),
+) -> List(Refusal) {
+  list.map(refused, fn(row) { Refusal(table:, row: RowId(row.0), rule: row.1) })
 }
 
 /// The kinds of the rows `select` takes, leaving out the ones it refuses, or
