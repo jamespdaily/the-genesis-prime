@@ -73,8 +73,11 @@ pub fn guard_of(
   use immunity <- result.try(
     effects_of(tables:, spell4_id: guard_spell4_id)
     |> list.find(fn(effect) {
-      effect.effect_type == immunity_type
-      && effect.data_bits00 == damage_effect_type
+      effect_kind.immune_to(
+        effect_type: effect.effect_type,
+        data_bits00: effect.data_bits00,
+      )
+      == Ok(effect_kind.Damage)
     })
     |> result.replace_error(NoImmunityToDamage(spell4_id: guard_spell4_id)),
   )
@@ -112,12 +115,6 @@ pub fn guard_of(
   ))
 }
 
-/// The effect type of SpellEffectImmunity and the effect type of Damage that its dataBits00 names
-/// (`Spell4Effects.effectType.79`).
-const immunity_type = 79
-
-const damage_effect_type = 8
-
 /// Whether the creature applies an effect of this kind in an opening.
 fn applied(kind kind: effect_kind.Kind) -> Bool {
   case kind {
@@ -143,6 +140,7 @@ fn applied(kind kind: effect_kind.Kind) -> Bool {
     | effect_kind.DisguiseOutfit
     | effect_kind.Absorption
     | effect_kind.Activate
+    | effect_kind.Immunity
     | effect_kind.Unread(..) -> False
   }
 }
@@ -182,6 +180,7 @@ fn listed(effect effect: Spell4Effects) -> Result(OpeningEffect, Nil) {
     | effect_kind.DisguiseOutfit
     | effect_kind.Absorption
     | effect_kind.Activate
+    | effect_kind.Immunity
     | effect_kind.Unread(..) -> Error(Nil)
   }
 }

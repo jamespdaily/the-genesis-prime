@@ -3452,6 +3452,7 @@ pub fn modifier_of(
     | effect_kind.ItemVisualSwap
     | effect_kind.RavelSignal
     | effect_kind.Activate
+    | effect_kind.Immunity
     | effect_kind.Unread(..) ->
       change_of(tables:, spell4_id:, effect:)
       |> result.map(PropertyChange)
@@ -4635,7 +4636,8 @@ fn kind_reading(
       }
     effect_kind.Damage -> Ok(ReadByArea)
     effect_kind.Activate -> Ok(ReadByActivation)
-    effect_kind.Unread(..) -> Ok(LeftOut(why: TypeNotRead))
+    effect_kind.Immunity | effect_kind.Unread(..) ->
+      Ok(LeftOut(why: TypeNotRead))
   }
 }
 

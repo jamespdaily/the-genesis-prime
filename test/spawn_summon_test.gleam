@@ -243,6 +243,21 @@ pub fn a_creature_the_client_would_not_load_is_refused_naming_the_rule_test() ->
     )
 }
 
+pub fn a_creature_of_a_creation_type_the_client_refuses_is_not_summoned_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // 0x140485790: the client refuses a creature whose CreationTypeEnum is 26 or higher.
+  assert summoned_beast_changed(changes: [#("CreationTypeEnum", Integer(26))])
+    == Error(
+      spawn.FailsTheChecks(spawn.NotLoadedByTheClient(
+        creature_id: Creature2Id(beast),
+        rule: spawn.CreationTypeNotBelow26,
+      )),
+    )
+  assert summoned_beast_changed(changes: [#("CreationTypeEnum", Integer(25))])
+    |> result.is_ok
+    as "25 is below 26: the client loads it"
+}
+
 pub fn a_creature_with_only_a_service_link_would_not_start_as_a_spawn_and_is_refused_test() -> Nil {
   use <- owned_test.run(120_000)
   // `0x14045a950.faction_zero`: a unit with no faction is Neutral and a stored row of

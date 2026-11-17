@@ -173,7 +173,7 @@ fn outcomes_of(kind kind: effect_kind.Kind) -> List(String) {
     effect_kind.Heal(..) -> ["HealEffect"]
     effect_kind.Proc -> ["ReadProc"]
     effect_kind.Activate -> ["ReadByActivation"]
-    effect_kind.Unread(..) -> []
+    effect_kind.Immunity | effect_kind.Unread(..) -> []
   }
 }
 

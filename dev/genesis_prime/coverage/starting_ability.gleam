@@ -644,6 +644,7 @@ fn counted_namings(
         | effect_kind.DisguiseOutfit
         | effect_kind.Absorption
         | effect_kind.Activate
+        | effect_kind.Immunity
         | effect_kind.Unread(..) -> []
       }
       named(table: "Spell4Effects", id: effect.id, columns: [

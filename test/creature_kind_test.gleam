@@ -613,6 +613,40 @@ pub fn a_guard_with_an_effect_other_than_immunity_is_refused_test() -> Nil {
     as "the refusal names the spell and Damage"
 }
 
+pub fn a_guard_spell_is_immune_only_for_type_79_with_data_8_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The client's Spell4Effects 224666 of Spell4 85474 is type 79 with dataBits00 8
+  // (`Spell4Effects.effectType.79`, enum `0x140c34140`: 8 is Damage).
+  let guard_of = fn(tables) {
+    guard_spells.guard_of(
+      guard_spell4_id: 85_474,
+      opening_spell4_id: 85_472,
+      tables:,
+    )
+  }
+  let assert Ok(guard) = guard_of(fixture_tables.shared())
+    as "type 79 with data 8 is the immunity to Damage"
+  assert guard.effect_id == 224_666
+  // Synthetic: the same row immune to another type (7), then of another type (8) with
+  // data 8, neither of which is an immunity to Damage.
+  {
+    use tables <- fixture_tables.changed(
+      table: "Spell4Effects",
+      id: 224_666,
+      with: [#("dataBits00", Integer(7))],
+    )
+    assert guard_of(tables) == Error(guard_spells.NoImmunityToDamage(85_474))
+      as "type 79 with data 7 is no immunity to Damage"
+  }
+  use tables <- fixture_tables.changed(
+    table: "Spell4Effects",
+    id: 224_666,
+    with: [#("effectType", Integer(8))],
+  )
+  assert guard_of(tables) == Error(guard_spells.NoImmunityToDamage(85_474))
+    as "a type 8 effect with data 8 is a Damage, not an immunity"
+}
+
 pub fn an_opening_with_an_effect_kind_the_creature_does_not_apply_is_refused_test() -> Nil {
   use <- owned_test.run(60_000)
   let turret_row =

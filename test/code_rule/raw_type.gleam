@@ -47,32 +47,7 @@ pub type Gap {
 }
 
 /// Every site in `src/`, and the open issue whose work removes it.
-pub const known_gaps = [
-  Gap(
-    path: "src/genesis_prime/game/shortcut_spell.gleam",
-    function: "planned",
-    sites: 1,
-    issue: 898,
-  ),
-  Gap(
-    path: "src/genesis_prime/world_map/creature_guard_spells.gleam",
-    function: "guard_of",
-    sites: 1,
-    issue: 898,
-  ),
-  Gap(
-    path: "src/genesis_prime/world_map/objective_spawn.gleam",
-    function: "paired_unit_type",
-    sites: 1,
-    issue: 898,
-  ),
-  Gap(
-    path: "src/genesis_prime/world_map/spawn.gleam",
-    function: "valid_creature",
-    sites: 1,
-    issue: 898,
-  ),
-]
+pub const known_gaps: List(Gap) = []
 
 /// One raw-type site: the function that holds it and its line.
 type Site {

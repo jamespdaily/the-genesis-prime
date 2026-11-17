@@ -67,12 +67,18 @@
 //// - **Activate** (7) is the effect a creature's activate spell has: the client's apply is
 ////   empty, so the server only names the activated unit in the go with the row's effect
 ////   id and raises `Activated` (`Spell4Effects.effectType.7`, genesis_prime/game/activate).
+//// - **Immunity** (79) makes its unit immune to one effect type, named by `dataBits00`
+////   (8 is Damage); the client has no class for it and reads nothing, so no rule of the
+////   server reads it and the coverage measure counts it unhandled; only a creature's guard
+////   spell is checked for it (`immune_to`, genesis_prime/world_map/creature_guard_spells;
+////   `Spell4Effects.effectType.79`, enum `0x140c34140`).
 //// - **Unread** is any other type: the client's data holds it and no rule of the
 ////   server reads it.
 ////
 //// Reading a row's columns stays with each rule; this decode looks at the type
 //// only, and `is_row_read` adds the aim for the types a rule reads for some aims.
 
+import gleam/bool
 import gleam/int
 
 /// What a rule reads an effect as.
@@ -161,6 +167,10 @@ pub type Kind {
   /// (`Spell4Effects.effectType.7`). Every row is read, whatever it aims at; the activate
   /// plan lists it (genesis_prime/game/activate), no go of an ability applies it.
   Activate
+  /// An Immunity effect (79): immune to the effect type `dataBits00` names
+  /// (`Spell4Effects.effectType.79`). No rule reads it as an effect, so it is not read
+  /// (`is_read`); `immune_to` names what a row is immune to.
+  Immunity
   /// A type no rule reads.
   Unread(effect_type: Int)
 }
@@ -197,6 +207,7 @@ pub fn kind_of(effect_type effect_type: Int) -> Kind {
     112 -> DisguiseOutfit
     29 -> Absorption
     7 -> Activate
+    79 -> Immunity
     other -> Unread(effect_type: other)
   }
 }
@@ -229,7 +240,7 @@ pub fn is_read(effect_type effect_type: Int) -> Bool {
     | DisguiseOutfit
     | Absorption
     | Activate -> True
-    Unread(..) -> False
+    Immunity | Unread(..) -> False
   }
 }
 
@@ -273,6 +284,17 @@ pub fn is_row_read(
     | ItemVisualSwap
     | RavelSignal
     | Activate -> True
-    Unread(..) -> False
+    Immunity | Unread(..) -> False
   }
+}
+
+/// The kind of effect an Immunity row (type 79) makes its unit immune to, from its
+/// `dataBits00` read as an effect type (`Spell4Effects.effectType.79`, enum
+/// `0x140c34140`), or `Error(Nil)` when the effect type is not 79.
+pub fn immune_to(
+  effect_type effect_type: Int,
+  data_bits00 data_bits00: Int,
+) -> Result(Kind, Nil) {
+  use <- bool.guard(when: kind_of(effect_type:) != Immunity, return: Error(Nil))
+  Ok(kind_of(effect_type: data_bits00))
 }

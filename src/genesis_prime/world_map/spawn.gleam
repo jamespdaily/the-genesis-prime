@@ -113,6 +113,7 @@ import genesis_prime/table/spell4
 import genesis_prime/table/unit_property2
 import genesis_prime/table/world
 import genesis_prime/world_map/checklist_index
+import genesis_prime/world_map/creation_type
 import genesis_prime/world_map/creature_attack
 import genesis_prime/world_map/creature_columns
 import genesis_prime/world_map/creature_faction.{type Factions}
@@ -2244,7 +2245,10 @@ fn valid_creature(
   }
   let rules = [
     #(row.model_scale >. 0.0, ModelScaleNotAbove0),
-    #(row.creation_type_enum < 26, CreationTypeNotBelow26),
+    #(
+      creation_type.is_accepted(creation_type.kind_of(row.creation_type_enum)),
+      CreationTypeNotBelow26,
+    ),
     #(
       result.is_ok(creature2_arche_type.get(
         tables,

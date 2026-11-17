@@ -6,6 +6,8 @@
 //// 0x262 holds and, with the spawn's world object link, whether the creature may
 //// move (`can_move`).
 
+import genesis_prime/world_map/creation_type
+
 /// The unit types a creature stands as.
 pub type CreatureUnitType {
   /// Type 0: a creature that fights, and moves unless it is placed as part of a map
@@ -31,10 +33,14 @@ pub fn of_entity_type(
 /// placed with no spawn row of its own: 13 is a Turret, as the world database
 /// spawns such a creature (`Creature2.CreationTypeEnum`, `world_data.entity_type`),
 /// and any other value a NonPlayer.
-pub fn of_creation_type(creation_type creation_type: Int) -> CreatureUnitType {
-  case creation_type {
-    13 -> Turret
-    _ -> NonPlayer
+pub fn of_creation_type(creation_type number: Int) -> CreatureUnitType {
+  case creation_type.kind_of(number) {
+    creation_type.Turret -> Turret
+    creation_type.NonPlayer
+    | creation_type.BindPoint
+    | creation_type.SimpleCollidable
+    | creation_type.Other(..)
+    | creation_type.Refused(..) -> NonPlayer
   }
 }
 

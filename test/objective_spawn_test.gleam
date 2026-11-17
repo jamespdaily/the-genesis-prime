@@ -1199,6 +1199,44 @@ pub fn a_placed_target_takes_the_unit_type_of_its_creation_type_test() -> Nil {
     as "CreationTypeEnum 0 is placed as unit type 0"
 }
 
+pub fn a_click_marker_stands_as_the_unit_type_of_its_creation_type_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // `0x140479560`: the unit type equals the creation type for 0 to 14; 18 pairs with 19
+  // and 20 with 32 (world database, a guess). A value the client refuses (26 and over,
+  // `0x140485790`) is paired as its own number and so reaches the same start test.
+  let placed_with = fn(creation_type) {
+    use changed <- fixture_tables.changed(table: "Creature2", id: mine, with: [
+      #("CreationTypeEnum", Integer(creation_type)),
+    ])
+    click_placed_in_world(tables: changed)
+  }
+  let not_started = fn(placed: Placed, unit_type) {
+    list.contains(
+      placed.click_skipped,
+      objective_spawn.Skipped(
+        objective_id: 21_287,
+        why: objective_spawn.NotStarted(creature_id: mine, unit_type:),
+      ),
+    )
+  }
+  let bind_point = placed_with(18)
+  assert click_of(placed: bind_point, creatures: [mine]) == []
+    && not_started(bind_point, 19)
+    as "18 stands as unit type 19, which the server does not start"
+  let collidable = placed_with(20)
+  let rows = click_of(placed: collidable, creatures: [mine])
+  assert rows != [] && list.all(rows, fn(row) { row.entity_type == 32 })
+    as "20 stands as unit type 32"
+  let plain = placed_with(0)
+  let rows = click_of(placed: plain, creatures: [mine])
+  assert rows != [] && list.all(rows, fn(row) { row.entity_type == 0 })
+    as "0 stands as unit type 0"
+  let refused = placed_with(26)
+  assert click_of(placed: refused, creatures: [mine]) == []
+    && not_started(refused, 26)
+    as "a refused creation type reaches the pairing and stands as its own number, which is not started"
+}
+
 pub fn the_start_test_the_placement_uses_is_the_one_select_applies_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = character_tables.content_tables()
