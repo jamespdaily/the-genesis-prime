@@ -2589,28 +2589,6 @@ pub fn a_reused_type_12_objective_counts_the_same_unit_again_test() -> Nil {
     as "the second use of unit 224 counts the second"
 }
 
-pub fn use_targets_leaves_out_a_used_type_12_unit_test() -> Nil {
-  use <- owned_test.run(60_000)
-  // Quest 3480's objective 4470 is type 12 on Creature2 11070; an offered unit is one the
-  // `0xb3` path may start a use of (`cast.activate_unit` refuses an unoffered one).
-  use tables <- quest_support.with_objectives(edits: [])
-  let survivor = plain_unit(creature: Creature2Id(11_070))
-  let ref = fn(unit_id) { quest_support.unit_ref(unit_id:) }
-  let log = fresh(quest_id: 3480)
-  assert objective.use_targets(log:, tables:)(survivor, 0, ref(7))
-    as "an unused survivor is offered"
-  let used =
-    used_by(
-      log:,
-      tables:,
-      event: a_use_of(creature: Creature2Id(11_070), unit: ref(7)),
-    )
-  let offered = objective.use_targets(log: used.log, tables:)
-  assert !offered(survivor, 0, ref(7))
-    as "the survivor used already is not offered again"
-  assert offered(survivor, 0, ref(8)) as "another survivor is still offered"
-}
-
 pub fn use_targets_leaves_out_a_used_unit_test() -> Nil {
   use <- owned_test.run(60_000)
   // Quest 9122's objective 16479 (index 2) is type 23 on TargetGroup 8374 (captives
@@ -3345,6 +3323,28 @@ pub fn an_items_use_of_a_type_32_unit_releases_nothing_test() -> Nil {
     )
     == Advanced(log:, effects: [])
     as "nothing is counted and nothing is released"
+}
+
+pub fn use_targets_leaves_out_a_used_type_12_unit_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Quest 3480's objective 4470 is type 12 on Creature2 11070; an offered unit is one the
+  // `0xb3` path may start a use of (`cast.activate_unit` refuses an unoffered one).
+  use tables <- quest_support.with_objectives(edits: [])
+  let survivor = plain_unit(creature: Creature2Id(11_070))
+  let ref = fn(unit_id) { quest_support.unit_ref(unit_id:) }
+  let log = fresh(quest_id: 3480)
+  assert objective.use_targets(log:, tables:)(survivor, 0, ref(7))
+    as "an unused survivor is offered"
+  let used =
+    used_by(
+      log:,
+      tables:,
+      event: a_use_of(creature: Creature2Id(11_070), unit: ref(7)),
+    )
+  let offered = objective.use_targets(log: used.log, tables:)
+  assert !offered(survivor, 0, ref(7))
+    as "the survivor used already is not offered again"
+  assert offered(survivor, 0, ref(8)) as "another survivor is still offered"
 }
 
 pub fn use_targets_leaves_out_a_used_type_32_unit_test() -> Nil {
