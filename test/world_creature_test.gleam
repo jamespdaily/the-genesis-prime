@@ -71,7 +71,6 @@ import genesis_prime/table/id.{Creature2Id, Spell4BaseId, Spell4EffectsId}
 import genesis_prime/table/spell4_effects
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_faction
-import genesis_prime/world_map/creature_life
 import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/map
@@ -2269,20 +2268,14 @@ pub fn a_creature_that_crashes_with_a_despawn_pending_is_gone_and_returns_new_te
 }
 
 // A creature's special through its process: a Rootbrute Grimspore's Earthen Roar (Spell4 55317)
-// planted by hand on the Battle Beast (`spawn_support.earthen_roar`; the client's rows for it
-// are in creature_fight_test). The player's connection is the world's subject for it, so a
-// message the connection would write is the message it is sent, and every wait is for the
-// driven clock.
+// on the client's own rows for Creature2 12212, 13118 and 13549, built as the load builds a
+// creature (`spawn_support.special_creature`). The player's connection is the world's subject for
+// it, so a message the connection would write is the message it is sent, and every wait is for
+// the driven clock.
 
-/// The Battle Beast at x 0 that casts Earthen Roar.
-fn roaring_beast() -> spawn.Spawn {
-  let beast = spawn_support.battle_beast(number: 1, x: 0.0)
-  spawn.Spawn(
-    ..beast,
-    combat: creature_life.Combat(..beast.combat, specials: [
-      spawn_support.earthen_roar(hold_ms: 1000),
-    ]),
-  )
+/// The Rootbrute Grimspore `creature_id` that casts Earthen Roar.
+fn roaring_rootbrute(creature_id creature_id: Int) -> spawn.Spawn {
+  spawn_support.special_creature(number: 1, creature_id:, spell4_id: 55_317)
 }
 
 /// A world of the one creature `creature`, on `time`.
@@ -2356,7 +2349,7 @@ fn struck_from(
 fn next_cast_started(
   received received: Subject(Message),
 ) -> spell_started.SpellStarted {
-  world_watch_support.next_or_fail(
+  world_watch_support.next(
     received:,
     what: "the creature's 0x7ff",
     wanted: fn(message) {
@@ -2378,7 +2371,7 @@ fn next_cast_started(
 
 /// The next go the connection was sent, the creature's 0x7f4.
 fn next_cast_went(received received: Subject(Message)) -> spell_go.SpellGo {
-  world_watch_support.next_or_fail(
+  world_watch_support.next(
     received:,
     what: "the creature's 0x7f4",
     wanted: fn(message) {
@@ -2400,7 +2393,7 @@ fn next_cast_finished(
   received received: Subject(Message),
   cast_id cast_id: Int,
 ) -> Nil {
-  world_watch_support.next_or_fail(
+  world_watch_support.next(
     received:,
     what: "the creature's 0x7fe",
     wanted: fn(message) {
@@ -2424,7 +2417,7 @@ fn next_cast_finished(
 
 /// The strike the creature told the connection's player to take: its key.
 fn next_strike_told(received received: Subject(Message)) -> strike_tell.Key {
-  world_watch_support.next_or_fail(
+  world_watch_support.next(
     received:,
     what: "the creature's strike",
     wanted: fn(message) {
@@ -2444,21 +2437,16 @@ fn next_strike_told(received received: Subject(Message)) -> strike_tell.Key {
   )
 }
 
-/// Everything the connection has been sent that a message `wanted` takes, without waiting
-/// for more: the clock is stopped and the creature has taken its mailbox
-/// (`driven_time.settled`), so what it sent is already here.
+/// Everything the world sent the connection `id` that a message `wanted` takes, once the
+/// marker through the connection has come back (`world_support.sent_before_the_marker`).
 fn sent_so_far(
+  world world: World,
+  id id: Int,
   received received: Subject(Message),
   wanted wanted: fn(Message) -> Result(a, Nil),
 ) -> List(a) {
-  case process.receive(received, 0) {
-    Error(Nil) -> []
-    Ok(message) ->
-      case wanted(message) {
-        Ok(found) -> [found, ..sent_so_far(received:, wanted:)]
-        Error(Nil) -> sent_so_far(received:, wanted:)
-      }
-  }
+  world_support.sent_before_the_marker(world:, id:, received:)
+  |> list.filter_map(wanted)
 }
 
 /// The cast news of the creature among what the connection has been sent so far.
@@ -2501,11 +2489,11 @@ fn hit_answer(
           spell4_effects_id:,
           delay_ms: 0,
           damage: spell_damage_description.SpellDamageDescription(
-            raw_damage: 25,
-            scaled_raw_damage: 25,
+            raw_damage: 21,
+            scaled_raw_damage: 21,
             absorbed: 0,
             shield_absorbed: 0,
-            health_damage_with_overkill: 25,
+            health_damage_with_overkill: 21,
             overkill: 0,
             glance: 0,
             killed: 0,
@@ -2538,7 +2526,15 @@ type Roaring {
 
 /// The fight of Earthen Roar, whose damage effect is Spell4Effects 131967.
 fn roaring_fight() -> Roaring {
-  fight_of(creature: roaring_beast(), damage_effects_id: 131_967)
+  rootbrute_fight(creature_id: 12_212)
+}
+
+/// The fight of Earthen Roar with the Rootbrute Grimspore `creature_id`.
+fn rootbrute_fight(creature_id creature_id: Int) -> Roaring {
+  fight_of(
+    creature: roaring_rootbrute(creature_id:),
+    damage_effects_id: 131_967,
+  )
 }
 
 /// A fight with `creature`, whose special's damage effect is the row `damage_effects_id`.
@@ -2599,51 +2595,66 @@ fn answer(roaring roaring: Roaring, key key: strike_tell.Key) -> Nil {
 }
 
 pub fn a_struck_rootbrute_grimspore_casts_earthen_roar_with_a_cast_bar_two_gos_a_hit_and_a_hold_test() -> Nil {
-  use <- owned_test.run(30_000)
-  // The creature's first attack tick is 1500 ms after the strike (its kind's interval); it
+  use <- owned_test.run(90_000)
+  // Each of Creature2 12212, 13118 and 13549 (the Rootbrute Grimspores of the Northern Wilds)
+  // on the client's own rows. The creature's first attack tick is 1500 ms after the strike (its kind's interval); it
   // chooses the special, whose gos are 2500 and 3000 ms after the cast starts (SpellPhase
   // 11191 and 11192), the second striking (Spell4Effects 131967, phase flag 2); the delay row
   // 131968 holds it 1000 ms.
-  let roaring = roaring_fight()
-  driven_time.advance(time: roaring.time, ms: 1500)
-  let start = next_cast_started(received: roaring.received)
-  assert start.spell4_id == 55_317
-    && start.caster_unit_id == roaring.unit_id
-    && start.primary_target_unit_id == 10
-    as "the cast bar: Earthen Roar, cast on the player that struck it"
-  driven_time.advance(time: roaring.time, ms: 2499)
-  driven_time.settled(roaring.pid)
-  assert sent_so_far(received: roaring.received, wanted: cast_news) == []
-    as "no go before 2500 ms"
-  driven_time.advance(time: roaring.time, ms: 1)
-  let first = next_cast_went(received: roaring.received)
-  assert first.phase == 0
-    && first.targets == []
-    && first.cast_id == start.cast_id
-    as "the first go, phase 0, names no one"
-  driven_time.advance(time: roaring.time, ms: 500)
-  let key = next_strike_told(received: roaring.received)
-  assert key.occasion == strike_tell.AtGo(phase: 1)
-    && key.cast_id == start.cast_id
-    && key.unit_id == 10
-    as "at 3000 ms the player standing in the cone is told to take the hit"
-  answer(roaring:, key:)
-  let second = next_cast_went(received: roaring.received)
-  assert second.phase == 1
-    && list.map(second.targets, fn(target) { target.unit_id }) == [10]
-    as "the second go, phase 1, lists the player"
-  next_cast_finished(received: roaring.received, cast_id: start.cast_id)
-  // The hold: nothing for 999 ms, then the creature's next attack, the instant one, since
-  // the special's cooldown (10 000 ms from the cast's start) runs on.
-  driven_time.advance(time: roaring.time, ms: 999)
-  driven_time.settled(roaring.pid)
-  assert sent_so_far(received: roaring.received, wanted: cast_news) == []
-    as "the creature holds 1000 ms after the strike"
-  driven_time.advance(time: roaring.time, ms: 1)
-  let next = next_cast_started(received: roaring.received)
-  assert next.spell4_id == 5649
-    as "then its auto-attack, the special being on cooldown"
-  world_support.stop(world: roaring.world)
+  list.each([12_212, 13_118, 13_549], fn(creature_id) {
+    let roaring = rootbrute_fight(creature_id:)
+    driven_time.advance(time: roaring.time, ms: 1500)
+    let start = next_cast_started(received: roaring.received)
+    assert start.spell4_id == 55_317
+      && start.caster_unit_id == roaring.unit_id
+      && start.primary_target_unit_id == 10
+      as "the cast bar: Earthen Roar, cast on the player that struck it"
+    driven_time.advance(time: roaring.time, ms: 2499)
+    driven_time.settled(roaring.pid)
+    assert sent_so_far(
+        world: roaring.world,
+        id: 1,
+        received: roaring.received,
+        wanted: cast_news,
+      )
+      == []
+      as "no go before 2500 ms"
+    driven_time.advance(time: roaring.time, ms: 1)
+    let first = next_cast_went(received: roaring.received)
+    assert first.phase == 0
+      && first.targets == []
+      && first.cast_id == start.cast_id
+      as "the first go, phase 0, names no one"
+    driven_time.advance(time: roaring.time, ms: 500)
+    let key = next_strike_told(received: roaring.received)
+    assert key.occasion == strike_tell.AtGo(phase: 1)
+      && key.cast_id == start.cast_id
+      && key.unit_id == 10
+      as "at 3000 ms the player standing in the cone is told to take the hit"
+    answer(roaring:, key:)
+    let second = next_cast_went(received: roaring.received)
+    assert second.phase == 1
+      && list.map(second.targets, fn(target) { target.unit_id }) == [10]
+      as "the second go, phase 1, lists the player"
+    next_cast_finished(received: roaring.received, cast_id: start.cast_id)
+    // The hold: nothing for 999 ms, then the creature's next attack, the instant one, since
+    // the special's cooldown (10 000 ms from the cast's start) runs on.
+    driven_time.advance(time: roaring.time, ms: 999)
+    driven_time.settled(roaring.pid)
+    assert sent_so_far(
+        world: roaring.world,
+        id: 1,
+        received: roaring.received,
+        wanted: cast_news,
+      )
+      == []
+      as "the creature holds 1000 ms after the strike"
+    driven_time.advance(time: roaring.time, ms: 1)
+    let next = next_cast_started(received: roaring.received)
+    assert next.spell4_id == 5649
+      as "then its auto-attack, the special being on cooldown"
+    world_support.stop(world: roaring.world)
+  })
 }
 
 pub fn a_player_outside_the_cone_sees_the_cast_and_takes_nothing_test() -> Nil {
@@ -2685,15 +2696,22 @@ pub fn a_player_outside_the_cone_sees_the_cast_and_takes_nothing_test() -> Nil {
     && list.map(second.targets, fn(target) { target.unit_id }) == [10]
     as "and the strike go, which names player 1 alone"
   driven_time.settled(roaring.pid)
-  assert sent_so_far(received: received_2, wanted: fn(message) {
-      case message {
-        ForStay(sent: client_connection.SentByFoe(strike_tell.Attacks(..)), ..) ->
-          Ok(Nil)
-        ForStay(..)
-        | client_connection.SentBySessions(..)
-        | client_connection.SentByChat(..) -> Error(Nil)
-      }
-    })
+  assert sent_so_far(
+      world: roaring.world,
+      id: 2,
+      received: received_2,
+      wanted: fn(message) {
+        case message {
+          ForStay(
+            sent: client_connection.SentByFoe(strike_tell.Attacks(..)),
+            ..,
+          ) -> Ok(Nil)
+          ForStay(..)
+          | client_connection.SentBySessions(..)
+          | client_connection.SentByChat(..) -> Error(Nil)
+        }
+      },
+    )
     == []
     as "player 2 was told no strike to take"
   world_support.stop(world: roaring.world)
@@ -2735,7 +2753,7 @@ pub fn a_stun_between_the_gos_ends_the_cast_and_the_creature_returns_to_its_auto
     )
   driven_time.settled(roaring.pid)
   let interrupted =
-    world_watch_support.next_or_fail(
+    world_watch_support.next(
       received: roaring.received,
       what: "the creature's 0x7f9",
       wanted: fn(message) {
@@ -2756,15 +2774,22 @@ pub fn a_stun_between_the_gos_ends_the_cast_and_the_creature_returns_to_its_auto
   assert interrupted == start.cast_id as "the broken cast is the one shown"
   driven_time.advance(time: roaring.time, ms: 400)
   driven_time.settled(roaring.pid)
-  assert sent_so_far(received: roaring.received, wanted: fn(message) {
-      case message {
-        ForStay(sent: client_connection.SentByFoe(strike_tell.Attacks(..)), ..) ->
-          Ok(Nil)
-        ForStay(..)
-        | client_connection.SentBySessions(..)
-        | client_connection.SentByChat(..) -> Error(Nil)
-      }
-    })
+  assert sent_so_far(
+      world: roaring.world,
+      id: 1,
+      received: roaring.received,
+      wanted: fn(message) {
+        case message {
+          ForStay(
+            sent: client_connection.SentByFoe(strike_tell.Attacks(..)),
+            ..,
+          ) -> Ok(Nil)
+          ForStay(..)
+          | client_connection.SentBySessions(..)
+          | client_connection.SentByChat(..) -> Error(Nil)
+        }
+      },
+    )
     == []
     as "past the strike go's time nobody was told to take a hit"
   driven_time.advance(time: roaring.time, ms: 3000)
@@ -2808,7 +2833,13 @@ pub fn the_creatures_of_the_other_three_zones_cast_their_specials_test() -> Nil 
         as "the cast bar names the creature's special"
       driven_time.advance(time: fight.time, ms: 2799)
       driven_time.settled(fight.pid)
-      assert sent_so_far(received: fight.received, wanted: cast_news) == []
+      assert sent_so_far(
+          world: fight.world,
+          id: 1,
+          received: fight.received,
+          wanted: cast_news,
+        )
+        == []
         as "no go before 2800 ms"
       driven_time.advance(time: fight.time, ms: 1)
       let first = next_cast_went(received: fight.received)

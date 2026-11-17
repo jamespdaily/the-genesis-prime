@@ -2,7 +2,8 @@
 //// (`genesis_prime/world_map/creature_special`, `creature_kind` `select` and `taken`), on the
 //// client's committed rows. Expected values come from these places.
 //// - The retail record: the Jabbithole pages of the creatures, Abilities tab, list Earthen
-////   Roar tier 2 (Spell4 55317) for Rootbrute Grimspore (Creature2 12212, 13118, 13549),
+////   Roar at tier 1 (Spell4 55317) and tier 2 (55318, which the server leaves out by its own
+////   choice) for Rootbrute Grimspore (Creature2 12212, 13118, 13549),
 ////   Crash (55296) for Mysthoof Trampler (27687) and Mysthoof Doe (28623), Venomous
 ////   Mandible (55327) for Venombite Spider (24057) and Slime Spray (55330) for Saltwater
 ////   Snoglug (25979). The 10 000 ms cooldown is a server choice, a guess.

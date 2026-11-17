@@ -41,16 +41,16 @@ create table creature_special (
 
 insert into creature_special (creature_id, spell4_id, order_index, cooldown_ms, source, reason)
 select creature_id, 55317, 0, 10000, 'retail_record',
-  'Jabbithole npc page /npcs/rootbrute-grimspore-1 (captured 20170916002802), Abilities tab, Earthen Roar tier 2 (Spell4 55317); the cooldown of 10000 ms is a guess: the client holds no cadence for a special'
+  'Jabbithole npc page /npcs/rootbrute-grimspore-1 (captured 20170916002802), Abilities tab, Earthen Roar listed at tier 1 (Spell4 55317) and at tier 2 (Spell4 55318); 55317 over 55318 is the server's choice, the client holds no creature spell list; the cooldown of 10000 ms is a guess: the client holds no cadence for a special'
 from unnest(array[12212, 13118, 13549]) as creature (creature_id);
 
 insert into creature_special (creature_id, spell4_id, order_index, cooldown_ms, source, reason)
 select creature_id, 55296, 0, 10000, 'retail_record',
-  'Jabbithole npc pages /npcs/mysthoof-trampler-27 (captured 20170917060736) and /npcs/mysthoof-doe-27 (captured 20170917061151), Abilities tab, Crash tier 2 (Spell4 55296); the cooldown of 10000 ms is a guess: the client holds no cadence for a special'
+  'Jabbithole npc pages /npcs/mysthoof-trampler-27 (captured 20170917060736) and /npcs/mysthoof-doe-27 (captured 20170917061151), Abilities tab, Crash listed at tier 1 (Spell4 55296); the cooldown of 10000 ms is a guess: the client holds no cadence for a special'
 from unnest(array[27687, 28623]) as creature (creature_id);
 
 insert into creature_special (creature_id, spell4_id, order_index, cooldown_ms, source, reason) values
   (24057, 55327, 0, 10000, 'retail_record',
-   'Jabbithole npc page /npcs/venombite-spider-12 (captured 20150416142809), Abilities tab, Venomous Mandible tier 2 (Spell4 55327); the cooldown of 10000 ms is a guess: the client holds no cadence for a special'),
+   'Jabbithole npc page /npcs/venombite-spider-12 (captured 20150416142809), Abilities tab, Venomous Mandible listed at tier 1 (Spell4 55327); the cooldown of 10000 ms is a guess: the client holds no cadence for a special'),
   (25979, 55330, 0, 10000, 'retail_record',
-   'Jabbithole npc page /npcs/saltwater-snoglug-22 (captured 20170914034737), Abilities tab, Slime Spray tier 2 (Spell4 55330); the cooldown of 10000 ms is a guess: the client holds no cadence for a special');
+   'Jabbithole npc page /npcs/saltwater-snoglug-22 (captured 20170914034737), Abilities tab, Slime Spray listed at tier 1 (Spell4 55330); the cooldown of 10000 ms is a guess: the client holds no cadence for a special');

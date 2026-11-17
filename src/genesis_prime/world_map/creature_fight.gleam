@@ -184,9 +184,10 @@
 ////   finds its target beyond the leash range from home releases it as the leash does, but goes
 ////   straight to Resting where it stands: no walk and no home timer. A player that entered
 ////   its ring before is aggroed again only when it enters it again (`Approached`).
-//// - **Reach of a charge** is the area row's max range, not the spell's `targetMaxRange`
-////   (genesis_prime/world_map/spawn `attack_of`): the charge starts when the target is inside
-////   the range the area covers.
+//// - **Reach of a charge** is the smaller of the area row's max range and the farthest point of
+////   its hit shapes, not the spell's `targetMaxRange` (genesis_prime/world_map/spawn
+////   `attack_of`): the charge starts when the target is inside the range the area covers. A ready
+////   special is gone for beyond its reach: the creature closes to it.
 //// - **The leash** is taken on an attack tick that finds the creature at the circle,
 ////   `leash_range` from its spawn, with its target out of reach, or when no threat is
 ////   left (274 section 3). Walking home it takes no strike and turns to no one; at home,
@@ -266,7 +267,8 @@
 //// | a go's timer fires of an earlier generation, or after the round closed | it does nothing | `a_stale_go_timer_does_nothing_test` |
 //// | a state takes hold between a special's gos | the cast breaks as a charge does, the cooldown stays spent | `a_state_between_gos_breaks_the_special_and_the_cooldown_stays_spent_test` |
 //// | death or the leash between a special's gos | the pending go's timer is cancelled and the cast finishes | `death_between_gos_ends_the_special_test`, `leash_between_gos_ends_the_special_test` |
-//// | the target or another fighter moves, or is named, in a hold or a cast | the creature starts no path | `a_creature_in_its_hold_neither_chases_nor_strikes_test`, `a_specials_cone_faces_its_target_test` |
+//// | the target or another fighter moves, is named or leaves, a state that held it ends, or a kill retargets, in a hold, a cast or the strikes of a charged round | the creature starts no path | `a_creature_in_its_hold_neither_chases_nor_strikes_test`, `a_specials_cone_faces_its_target_test`, `no_path_starts_while_a_charged_round_strikes_or_holds_test` |
+//// | a ready special whose reach the target is beyond | the creature closes to the special's reach, then casts it | `a_ready_special_closes_to_its_own_reach_test` |
 //// | a viewer arrives between a special's gos, or while its strikes are out | it is sent the open cast and the gos that went | `a_viewer_arriving_between_gos_gets_the_open_cast_and_the_gos_so_far_test` |
 //// | Charge start: the guard holds the number `next_cast` offers | the round takes the next free id and `next_cast` moves past that id, so two charges in a row take different ids and a late answer to the first closes nothing of the second | `two_charges_under_a_held_guard_take_different_cast_ids_test` |
 //// | CastEnds timer: it fires for the open charge | each fighter on the threat list inside the rectangle along the bearing to the target now gets a strike, and the strike deadline starts; none inside, the go (0x7f4) names no unit and 0x7fe follows | `at_its_end_the_charge_strikes_each_fighter_inside_its_rectangle_test`, `a_charge_faces_its_target_test`, `a_charge_with_nobody_inside_goes_with_no_target_test` |
@@ -342,9 +344,8 @@ import gleam/set.{type Set}
 /// - `can_move`: the creature may move (`creature_unit_type.can_move`); one that may not never
 ///   chases or walks home.
 /// - `specials`: the spells it casts besides `attack`, in the order its kind lists them
-///   (`creature_life.Combat.specials`); `specials_refused` is the Spell4 id of each whose
-///   `caster_cc_mask` the states it holds match (`creature_control.refuses`), which `chosen` passes
-///   over. `attack_refused` stays the attack's own.
+///   (`creature_life.Combat.specials`). A creature that holds any state casts none of them
+///   (`holds_a_state`), which covers every state a special's caster conditions name.
 /// An attack that is `Charged` is a charge.
 pub type Fighter {
   Fighter(
@@ -361,7 +362,6 @@ pub type Fighter {
     guard_casts: List(Int),
     hit_radius: Float,
     specials: List(Special),
-    specials_refused: List(Int),
   )
 }
 
@@ -453,7 +453,7 @@ pub opaque type State {
 /// (`chase`, whether a target moved, a new target was named, `ControlEnded` or `SpeedChanged`
 /// asked) and casts and strikes nothing, since the tick is its only driver. The creature
 /// already stands: its path was turned in place when the cast began (`turned_to_face`) and
-/// `chase` starts none while a charge is open. The tick that ends it clears it; so do the
+/// `chase` starts none while a charge is open or its strikes are out (`casting_or_holding`). The tick that ends it clears it; so do the
 /// leash, a death and a new fight, by leaving `Fighting`.
 pub type Hold {
   Hold(ends: Int, until_ms: Int)
@@ -550,7 +550,8 @@ pub type Timer {
   StrikeDeadline(generation: Int)
   /// The walk home is run.
   HomeArrival(generation: Int)
-  /// The charge's cast time is up (`Attack.cast_ms` after its 0x7ff): the charge strikes.
+  /// A go of the charge is due (`Charged.gos`, counted from the 0x7ff): a go that strikes
+  /// sends the strikes, any other sends its 0x7f4 and arms the next go.
   CastEnds(generation: Int)
   /// The thrown creature's path is run: it stands at the path's last point, and acts
   /// again unless a state holds it.
@@ -1346,8 +1347,9 @@ fn ticked(
     Error(Nil) -> next_tick(state:, fighter:, effects: [])
     Ok(sighting) -> {
       let distance = creature_path.distance(from: here, to: sighting.place)
-      let attack = chosen(state:, fighter:, distance:, now_ms:)
+      let attack = chosen(state:, fighter:, now_ms:)
       let in_reach = distance <=. attack.reach
+      let in_attack_reach = distance <=. fighter.attack.reach
       let cannot_run = !creature_path.runs(speed: fighter.attack.run_speed)
       let at_circle = case cannot_move(fighter:) || cannot_run {
         True ->
@@ -1364,9 +1366,10 @@ fn ticked(
         True, None, _ ->
           attacks(state:, fighter:, attack:, target:, sighting:, here:, now_ms:)
         True, Some(..), _ -> next_tick(state:, fighter:, effects: [])
-        False, _, True if held -> next_tick(state:, fighter:, effects: [])
-        False, _, True -> leash(state:, fighter:, now_ms:)
-        False, _, False -> {
+        False, _, True if held && !in_attack_reach ->
+          next_tick(state:, fighter:, effects: [])
+        False, _, True if !in_attack_reach -> leash(state:, fighter:, now_ms:)
+        False, _, _ -> {
           let #(state, chased) = chase(state:, fighter:, now_ms:)
           next_tick(state:, fighter:, effects: chased)
         }
@@ -1573,14 +1576,21 @@ fn answer_taken(
       #(with_round(state:, round: Round(..round, stage:)), [])
     }
   }
+  // The next tick and its hold are set before the target's entry ends, so the retarget that
+  // follows a kill finds the hold and starts no path (`chase`). A leash after it leaves
+  // `Fighting`, which drops the hold with the fight, and its tick is not started.
+  let #(state, ticking) = case last {
+    True -> ticking_again(state:, fighter:, round:, now_ms:)
+    False -> #(state, [])
+  }
   let #(state, ended) = case ends_target, target_dead {
     False, _ -> #(state, [])
     True, True -> fell(state:, fighter:, by: target, now_ms:)
     True, False -> released(state:, fighter:, by: target, now_ms:)
   }
-  let #(state, ticking) = case last {
-    True -> ticking_again(state:, fighter:, round:, now_ms:)
-    False -> #(state, [])
+  let ticking = case state.status {
+    Fighting(..) -> ticking
+    Resting | Returning(..) -> []
   }
   #(state, list.flatten([closed, ended, ticking]))
 }
@@ -2027,29 +2037,24 @@ fn special_named(
   })
 }
 
-/// The attack the tick casts at a target `distance` away (centre to centre) at `now_ms`: the
-/// first of `fighter.specials` that is not in `specials_refused`, whose `ready_at` has passed
-/// (absent is ready) and whose reach covers `distance`; else `fighter.attack`. It is
-/// `fighter.attack` whenever the creature `holds_a_state` (a charge starts only while none is
-/// held). `ticked` tests the target's reach against the attack chosen here, so a special that
-/// reaches farther than the attack still starts; the chase and the leash keep the attack's
-/// reach.
+/// The attack the creature goes for at `now_ms`: the first of `fighter.specials` whose `ready_at`
+/// has passed (absent is ready); else `fighter.attack`. It is `fighter.attack` whenever the
+/// creature `holds_a_state` (a charge starts only while none is held). The target's distance
+/// does not choose: a ready special whose reach the target is beyond is gone for, so `ticked`
+/// and `chase` close to the special's reach even where the attack already reaches; the leash
+/// keeps the attack's reach.
 fn chosen(
   state state: State,
   fighter fighter: Fighter,
-  distance distance: Float,
   now_ms now_ms: Int,
 ) -> Attack {
   use <- bool.guard(when: fighter.holds_a_state, return: fighter.attack)
   let ready =
     list.find(fighter.specials, fn(special) {
-      let id = special.attack.spell4_id.value
-      !list.contains(fighter.specials_refused, id)
-      && case dict.get(state.ready_at, id) {
+      case dict.get(state.ready_at, special.attack.spell4_id.value) {
         Ok(ready_at) -> now_ms >= ready_at
         Error(Nil) -> True
       }
-      && distance <=. special.attack.reach
     })
   case ready {
     Ok(special) -> special.attack
@@ -2134,7 +2139,7 @@ fn chase(
     when: fighter.still
       || cannot_move(fighter:)
       || option.is_some(state.flight)
-      || casting_or_holding(state:),
+      || casting_or_holding(state:, fighter:),
     return: #(state, []),
   )
   let target_place = case state.status {
@@ -2149,37 +2154,45 @@ fn chase(
   }
 }
 
-/// Whether a charge is open or the creature stands in the hold after a special: it starts
-/// no path (a charge is cast standing still).
-fn casting_or_holding(state state: State) -> Bool {
+/// Whether the creature casts a charged attack or stands in the hold after it: while a charge is
+/// open, while the strikes of a charged round are out (`Striking` of an attack with a cast time)
+/// and in the hold, it starts no path. An instant attack's round does not stop it.
+fn casting_or_holding(state state: State, fighter fighter: Fighter) -> Bool {
   case state.status {
     Fighting(round: Some(Round(stage: Charging(..), ..)), ..) -> True
+    Fighting(round: Some(Round(stage: Striking(..), spell4_id:, ..)), ..) ->
+      case attack_named(fighter:, spell4_id:).cast {
+        Charged(..) -> True
+        Instant -> False
+      }
     Fighting(tick:, hold: Some(Hold(ends:, ..)), ..) -> ends == tick
     Fighting(..) | Resting | Returning(..) -> False
   }
 }
 
 /// The chase toward the target's place, unless it is in reach of where the path
-/// ends.
+/// ends: the reach of the attack the creature goes for (`chosen`), so a ready special is
+/// closed in on to its own reach.
 fn chase_to(
   state state: State,
   fighter fighter: Fighter,
   target_place target_place: Place,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
+  let reach = chosen(state:, fighter:, now_ms:).reach
   use <- bool.guard(
     when: creature_path.distance(
       from: creature_path.end(path: state.path),
       to: target_place,
     )
-      <=. fighter.attack.reach,
+      <=. reach,
     return: #(state, []),
   )
   let path =
     creature_path.toward(
       from: creature_path.place_at(path: state.path, now_ms:),
       target: target_place,
-      stop_short: fighter.numbers.chase_stop_fraction *. fighter.attack.reach,
+      stop_short: fighter.numbers.chase_stop_fraction *. reach,
       circle: Circle(centre: fighter.home, radius: fighter.numbers.leash_range),
       speed: fighter.attack.run_speed,
       now_ms:,

@@ -679,7 +679,7 @@ pub fn earthen_roar(hold_ms hold_ms: Int) -> creature_life.Special {
           Blow(
             spell4_effects_id: 131_967,
             damage_type: 1,
-            damage: Worked(25),
+            damage: Worked(21),
             delay_ms: 0,
             threat_multiplier: 1.0,
           ),

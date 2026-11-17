@@ -5,7 +5,10 @@
 
 import ask_support
 import character_tables
-import genesis_prime/client_connection.{type Message}
+import genesis_prime/account_session
+import genesis_prime/client_connection.{
+  type Message, ForStay, SentByChat, SentBySessions,
+}
 import genesis_prime/connection/registry.{type Registry}
 import genesis_prime/server
 import genesis_prime/service
@@ -17,6 +20,7 @@ import genesis_prime/world_map/map
 import genesis_prime/world_map/registry as world_map_registry
 import genesis_prime/world_map/spawn.{type Spawn}
 import gleam/erlang/process.{type Pid, type Subject}
+import gleam/list
 import gleam/otp/static_supervisor as supervisor
 import gleam/result
 import open_wait
@@ -192,6 +196,44 @@ pub fn connection(world world: World, id id: Int) -> Subject(Message) {
   let Nil =
     open_wait.received(from: ready, what: "the connection to join the registry")
   received
+}
+
+/// Everything the world sent the connection `id` (the one `connection` made, whose messages
+/// `received` holds) before this call, in the order it came. A marker goes to the connection
+/// through the registry and the forwarding process hands it to the test after every message it
+/// held, so what comes back before the marker is all that was sent: a check that expects
+/// nothing inspects this batch, never a read that returns when no message is waiting yet.
+pub fn sent_before_the_marker(
+  world world: World,
+  id id: Int,
+  received received: Subject(Message),
+) -> List(Message) {
+  let assert Ok(Nil) =
+    registry.deliver(
+      registry: world.connections,
+      connection: ConnectionId(id),
+      message: SentBySessions(message: account_session.Claimed),
+    )
+    as "the connection is a member of the registry"
+  until_the_marker(received:, before: [])
+}
+
+fn until_the_marker(
+  received received: Subject(Message),
+  before before: List(Message),
+) -> List(Message) {
+  case
+    open_wait.received(
+      from: received,
+      what: "the marker sent through the connection to come back",
+    )
+  {
+    SentBySessions(message: account_session.Claimed) -> list.reverse(before)
+    SentBySessions(message: account_session.TakenOver) as other
+    | ForStay(..) as other
+    | SentByChat(..) as other ->
+      until_the_marker(received:, before: [other, ..before])
+  }
 }
 
 fn forward(

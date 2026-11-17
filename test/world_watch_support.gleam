@@ -130,37 +130,6 @@ pub fn next(
   open_wait.named("this to arrive: " <> what, fn() { taken(received:, wanted:) })
 }
 
-/// How long `next_or_fail` waits for a message that was already sent.
-const arrival_limit_ms = 10_000
-
-/// The next message the connection was sent that `wanted` takes, for a test that has just
-/// moved the driven clock (`driven_time.advance`) or let every process settle
-/// (`driven_time.wait_until_quiet`): the process that is the connection hands its
-/// messages to the test (`world_support.connection`) and is no participant of the
-/// clock, so the one hop left is a message already sent, not a timer to wait for. A
-/// message the rule never sends fails the test after `arrival_limit_ms` with the
-/// name `what`, where `next` waits without limit. The limit only ends a failing run: a
-/// message that comes is taken as it arrives.
-pub fn next_or_fail(
-  received received: Subject(Message),
-  what what: String,
-  wanted wanted: fn(Message) -> Result(a, Nil),
-) -> a {
-  case process.receive(received, arrival_limit_ms) {
-    Error(Nil) ->
-      panic as {
-        "the connection was never sent "
-        <> what
-        <> ", though the driven clock and every process had settled"
-      }
-    Ok(message) ->
-      case wanted(message) {
-        Ok(found) -> found
-        Error(Nil) -> next_or_fail(received:, what:, wanted:)
-      }
-  }
-}
-
 pub fn taken(
   received received: Subject(Message),
   wanted wanted: fn(Message) -> Result(a, Nil),

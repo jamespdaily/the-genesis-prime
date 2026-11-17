@@ -5488,32 +5488,19 @@ pub fn a_new_fight_starts_with_its_specials_ready_test() -> Nil {
     as "before 11 500 ms, the special is cast again: a new fight starts with its specials ready"
 }
 
-pub fn a_special_out_of_reach_is_passed_over_for_the_auto_attack_test() -> Nil {
+pub fn a_target_beyond_every_reach_is_chased_and_not_cast_at_test() -> Nil {
   use <- owned_test.run(5000)
-  // 7 units ahead: beyond the special's 5.5, within the instant attack's 8.
+  // 30 units ahead: beyond the special's 5.5 and the instant attack's 8, so the creature
+  // chases and casts nothing.
   let #(state, aggro) =
     tell(
       state: rootbrute(viewers: [2]),
       at_ms: 0,
-      message: approached_at(number: 2, x: 0.0, z: -7.0, seq: 1),
+      message: approached_at(number: 2, x: 0.0, z: -30.0, seq: 1),
     )
-  let #(state, ticked) =
-    fire(state:, at_ms: 1500, timer: timer_for(aggro, 1500))
-  let assert [CastStarted(start:)] = casts_of(ticked, 2)
-  assert start.spell4_id == 5649
-    as "the special does not reach: the instant attack does"
-  let assert [#(2, Attacks(tell: Strike(key:, ..)))] = fights_told(ticked)
-  let #(state, _) = tell(state:, at_ms: 1600, message: landed(key:))
-  // 30 units ahead: beyond both, so the creature chases as before.
-  let #(state, moved) =
-    tell(
-      state:,
-      at_ms: 1700,
-      message: moved_at(number: 2, x: 0.0, z: -30.0, seq: 2),
-    )
-  assert list.contains(said(moved), "0x638 to 2")
+  assert list.contains(said(aggro), "0x638 to 2")
     as "out of reach of both: a chase"
-  let #(_, chased) = fire(state:, at_ms: 3000, timer: timer_for(ticked, 1500))
+  let #(_, chased) = fire(state:, at_ms: 1500, timer: timer_for(aggro, 1500))
   assert casts_of(chased, 2) == [] as "and no cast"
 }
 
@@ -5762,6 +5749,106 @@ pub fn a_creature_in_its_hold_neither_chases_nor_strikes_test() -> Nil {
   let #(_, acted) = fire(state:, at_ms: 5600, timer: timer_for(closed, 1000))
   assert list.contains(said(acted), "0x638 to 2")
     as "when the hold's tick fires the creature chases the target"
+}
+
+/// The special's fight with players 2 and 3 on its threat list, 3 the target, the cast open at
+/// 1500 ms, and the target runs to 30 ahead during the cast (the creature starts no path: it
+/// casts). The strike go at 4500 ms then finds player 2 alone inside the cone: the round is
+/// `Striking`, awaiting player 2's answer, with the target far out of reach. The state and the
+/// key of the strike told to player 2.
+fn roar_striking_with_a_far_target() -> #(State, strike_tell.Key) {
+  let #(state, aggro) = roar_fought(viewers: [2, 3])
+  let #(state, _) =
+    tell(
+      state:,
+      at_ms: 100,
+      message: strike_of(number: 3, cast_id: 1, blows: [#(1, 3, 1.0)]),
+    )
+  let #(state, _) =
+    tell(
+      state:,
+      at_ms: 200,
+      message: moved_at(number: 3, x: 0.0, z: -3.0, seq: 2),
+    )
+  let #(state, _, go) = roar_opened(state:, aggro:)
+  let #(state, running) =
+    tell(
+      state:,
+      at_ms: 2000,
+      message: moved_at(number: 3, x: 0.0, z: -30.0, seq: 3),
+    )
+  assert said(running) == [] as "no path while the cast is open"
+  let #(state, _, strike) = first_go_passed(state:, go:)
+  let #(state, struck) = strike_go_reached(state:, strike:)
+  let assert [#(2, Attacks(tell: Strike(key:, ..)))] = fights_told(struck)
+    as "player 2 alone is in the cone"
+  #(state, key)
+}
+
+pub fn no_path_starts_while_a_charged_round_strikes_or_holds_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The creature stands through the cast, the strikes and the hold that follows a special (a
+  // guess for the last: `Spell4Effects.effectType.35`). Every way the fight asks for a chase,
+  // each with the target 30 away so that a chase would start, starts none: the target moves,
+  // a fighter that is not the target leaves, a state that held it ends, and the answer that
+  // kills a fighter retargets.
+  let #(striking, key) = roar_striking_with_a_far_target()
+  let no_path = fn(taken: ServiceStep(creature.Outgoing)) {
+    !list.any(said(taken), fn(line) { string.starts_with(line, "0x638") })
+  }
+  let #(_, moved) =
+    tell(
+      state: striking,
+      at_ms: 4600,
+      message: moved_at(number: 3, x: 0.0, z: -31.0, seq: 4),
+    )
+  assert no_path(moved) as "the target moves while the strikes are out"
+  let #(_, left) =
+    tell(
+      state: striking,
+      at_ms: 4600,
+      message: creature.Unwatched(by: ConnectionId(2)),
+    )
+  assert no_path(left) as "a fighter leaves while the strikes are out"
+  let #(stunned_state, stunned) = stunned_at(state: striking, at_ms: 4550)
+  let assert [#(control_ends, _), ..] = control_timers(stunned)
+    as "the stun starts its own timer"
+  let #(_, ended) = fire(state: stunned_state, at_ms: 4700, timer: control_ends)
+  assert no_path(ended)
+    as "the state that held it ends while the strikes are out"
+  let #(held_state, killed) =
+    tell(state: striking, at_ms: 4600, message: killing_answer(key:))
+  assert no_path(killed)
+    as "the answer that kills fighter 2 closes the round and retargets, with the hold set first"
+  let #(_, in_hold) =
+    tell(
+      state: held_state,
+      at_ms: 4700,
+      message: moved_at(number: 3, x: 0.0, z: -32.0, seq: 5),
+    )
+  assert no_path(in_hold) as "the target moves in the hold"
+}
+
+pub fn a_ready_special_closes_to_its_own_reach_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The target is 6.5 ahead: beyond the special's 5.5 (the cone's far edge) and within the
+  // instant attack's 8. The special is ready, so the creature goes for it: it runs in from
+  // the start of the fight, to within the special's reach, and the first tick casts the
+  // special, not the instant attack.
+  let #(state, aggro) =
+    tell(
+      state: rootbrute(viewers: [2]),
+      at_ms: 0,
+      message: approached_at(number: 2, x: 0.0, z: -6.5, seq: 1),
+    )
+  let assert Running(to:, ..) = path_sent(aggro)
+  assert creature_path.distance(from: to, to: at_xz(x: 0.0, z: -6.5)) <=. 5.5
+    as "the path ends within the special's reach of the target"
+  let #(_, cast) = fire(state:, at_ms: 1500, timer: timer_for(aggro, 1500))
+  let assert [CastStarted(start:)] = casts_of(cast, 2)
+  assert start.spell4_id == 55_317
+    as "with the target in its reach the special is cast, and fights_told is empty until its go"
+  assert fights_told(cast) == []
 }
 
 pub fn a_state_between_gos_breaks_the_special_and_the_cooldown_stays_spent_test() -> Nil {
