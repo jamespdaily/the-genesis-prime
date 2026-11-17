@@ -15,7 +15,7 @@
 //// - **`Fixed`** is kind 14: one yaw, pitch and roll until the next rotation command
 ////   (`movement_command.kind_14`).
 //// - **The yaw toward a target** is the angle `area.bearing` gives for the yaw that faces it
-////   (`movement_command.kind_14.facing`), and the facing it was when the target is on the
+////   (`movement_command.kind_14.facing`), and the facing it showed last when the target is on the
 ////   unit's own ground point (the client's too-close case). The client blends a kind 18 or 19
 ////   over half a second (`0x140715c00`); the server takes the turn as done at once, which
 ////   makes its arcs exact outside that half second.

@@ -72,6 +72,7 @@ fn creature(
     held: [],
     unit_states: [],
     face: option.None,
+    faced_yaw: option.None,
   )
 }
 
@@ -242,6 +243,7 @@ fn facing_creature(x x: Float, z z: Float) -> shown.Shown {
     held: [],
     unit_states: [],
     face: option.None,
+    faced_yaw: option.None,
   )
 }
 
@@ -527,6 +529,76 @@ pub fn a_creature_that_faces_another_player_is_posed_toward_that_player_where_th
     shown.pose_of(picture: moved, unit_id: 1, now_ms: 0, viewer: a_viewer())
   assert float.loosely_equals(pose.yaw, quarter_turn, tolerating: 0.000001)
     as "and follows A to the other side"
+}
+
+pub fn a_creature_whose_target_stands_on_it_keeps_the_yaw_it_showed_last_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The creature stands on the origin facing player A (unit 501), who stood 10 along +x
+  // (minus a quarter turn) and then steps onto the creature's own ground point: the client
+  // holds the rotation it had (`movement_command.kind_18`), not the 0x262's 0.7.
+  let picture =
+    shown.with_player_at(
+      picture: dict.insert(
+        faced_creature(face: creature_turn.Unit(unit_id: 501)),
+        501,
+        ShownPlayer(at: option.None),
+      ),
+      unit_id: 501,
+      at: Point(x: 10.0, z: 0.0),
+    )
+  let onto = fn(picture) {
+    shown.with_player_at(picture:, unit_id: 501, at: Point(x: 0.0, z: 0.0))
+  }
+  let resolved =
+    onto(shown.with_resolved(picture:, now_ms: 0, viewer: a_viewer()))
+  let assert Ok(pose) =
+    shown.pose_of(picture: resolved, unit_id: 1, now_ms: 0, viewer: a_viewer())
+  assert float.loosely_equals(
+    pose.yaw,
+    0.0 -. quarter_turn,
+    tolerating: 0.000001,
+  )
+    as "A stands on the creature: it keeps facing where A stood"
+  let moved =
+    onto(shown.with_resolved(picture: resolved, now_ms: 0, viewer: a_viewer()))
+  assert shown.pose_of(
+      picture: moved,
+      unit_id: 1,
+      now_ms: 0,
+      viewer: a_viewer(),
+    )
+    == shown.pose_of(
+      picture: resolved,
+      unit_id: 1,
+      now_ms: 0,
+      viewer: a_viewer(),
+    )
+    as "a second move on the creature leaves the yaw held"
+  // After a fixed rotation the yaw it keeps is that rotation's.
+  let turned =
+    shown.with_face(
+      picture:,
+      unit_id: 1,
+      face: creature_turn.Fixed(facing: start_place.Facing(
+        yaw: 2.5,
+        pitch: 0.0,
+        roll: 0.0,
+      )),
+    )
+  let fixed =
+    onto(shown.with_face(
+      picture: turned,
+      unit_id: 1,
+      face: creature_turn.Unit(unit_id: 501),
+    ))
+  assert shown.pose_of(
+      picture: fixed,
+      unit_id: 1,
+      now_ms: 0,
+      viewer: a_viewer(),
+    )
+    == Ok(Pose(at: Point(x: 0.0, z: 0.0), yaw: 2.5))
+    as "a creature turned to a fixed way, then to a unit standing on it, keeps the fixed way"
 }
 
 pub fn a_creature_that_faces_a_point_or_a_fixed_way_is_posed_so_and_a_turning_path_clears_the_face_test() -> Nil {

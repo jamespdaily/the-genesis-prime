@@ -173,6 +173,7 @@ fn picture_of(scene scene: Scene) -> shown.Picture {
         }),
         unit_states: [],
         face: option.None,
+        faced_yaw: option.None,
       ),
     )
   })

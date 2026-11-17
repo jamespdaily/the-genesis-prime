@@ -453,6 +453,7 @@ fn picture_of(shown shown: Shown) -> shown.Picture {
           shown.HeldUnitState(state:, number:)
         }),
         face: option.None,
+        faced_yaw: option.None,
       ),
     ),
   ])

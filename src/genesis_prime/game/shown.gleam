@@ -30,6 +30,8 @@
 ////   shows: the yaw of its 0x262 or of the path that turned it, or what its `CreatureFaces` news
 ////   set, so a position condition judges a creature by what its client shows
 ////   (`creature.facing`: kind 4 paths move a creature without turning it).
+//// - **A creature that faces a unit standing on its own ground point** keeps the yaw it showed
+////   at the last news or move before (`with_resolved`, `ShownCreature.faced_yaw`).
 //// - **Another player's unit** keeps the ground point its last position command gave
 ////   (`with_player_at`), for the creatures that face it.
 //// - **A creature's life** is the number of the map's watch it was started under,
@@ -124,6 +126,11 @@ pub type Shown {
     /// (`CreatureFaces`): none from its 0x262 and after a path that turns it
     /// (`creature_path.Timed` with `turned_to`), which replaces the rotation the face held.
     face: Option(Face),
+    /// The yaw the creature's client held at the last news before the present (`with_resolved`),
+    /// which it keeps when the unit or point it faces is on the creature's own ground point or
+    /// the unit is not found (`movement_command.kind_18`): none until such news and after a
+    /// path that turns the creature; a fixed rotation sets its own yaw.
+    faced_yaw: Option(Float),
   )
 }
 
@@ -347,9 +354,13 @@ pub fn pose_of(
   viewer viewer: Viewer,
 ) -> Result(Pose, Nil) {
   case dict.get(picture, unit_id) {
-    Ok(ShownCreature(path:, face:, ..)) -> {
+    Ok(ShownCreature(path:, face:, faced_yaw:, ..)) -> {
       let place = creature_path.place_at(path:, now_ms:)
       let body = area.pose_of(place:)
+      let held = case faced_yaw {
+        Some(yaw) -> area.Pose(..body, yaw:)
+        None -> body
+      }
       let aim = case face {
         None -> Error(Nil)
         Some(creature_turn.Fixed(facing:)) -> Ok(Fixed(facing.yaw))
@@ -366,18 +377,40 @@ pub fn pose_of(
         Ok(Fixed(yaw)) -> area.Pose(..body, yaw:)
         Ok(Toward(point)) ->
           case point == body.at {
-            True -> body
+            True -> held
             False ->
               area.Pose(
                 ..body,
                 yaw: area.bearing(from: body.at, target: point, yaw: 0.0),
               )
           }
-        Error(Nil) -> body
+        Error(Nil) -> held
       })
     }
     Ok(ShownPlayer(..)) | Ok(ShownObject(..)) | Error(Nil) -> Error(Nil)
   }
+}
+
+/// The picture with each creature that faces a unit or a point holding the yaw its client
+/// shows now (`pose_of`), as the yaw it keeps when the unit it faces then stands on its own
+/// ground point (`ShownCreature.faced_yaw`). The connection calls it before it takes the news or
+/// the move that changes where a creature or the unit it faces stands.
+pub fn with_resolved(
+  picture picture: Picture,
+  now_ms now_ms: Int,
+  viewer viewer: Viewer,
+) -> Picture {
+  dict.map_values(picture, fn(unit_id, unit) {
+    case unit {
+      ShownCreature(face: Some(creature_turn.Unit(..)), ..) as creature
+      | ShownCreature(face: Some(creature_turn.Point(..)), ..) as creature ->
+        case pose_of(picture:, unit_id:, now_ms:, viewer:) {
+          Ok(pose) -> ShownCreature(..creature, faced_yaw: Some(pose.yaw))
+          Error(Nil) -> unit
+        }
+      ShownCreature(..) | ShownPlayer(..) | ShownObject(..) -> unit
+    }
+  })
 }
 
 /// Where a creature's client has it face.
@@ -495,13 +528,15 @@ pub fn with_path(
 ) -> Picture {
   case dict.get(picture, unit_id) {
     Ok(ShownCreature(..) as creature) -> {
-      let face = case path {
-        creature_path.Timed(turned_to: Some(_), ..) -> None
+      let moved = ShownCreature(..creature, path:)
+      let moved = case path {
+        creature_path.Timed(turned_to: Some(_), ..) ->
+          ShownCreature(..moved, face: None, faced_yaw: None)
         creature_path.Timed(..)
         | creature_path.Standing(..)
-        | creature_path.Running(..) -> creature.face
+        | creature_path.Running(..) -> moved
       }
-      dict.insert(picture, unit_id, ShownCreature(..creature, path:, face:))
+      dict.insert(picture, unit_id, moved)
     }
     Ok(ShownPlayer(..)) | Ok(ShownObject(..)) | Error(Nil) -> picture
   }
@@ -515,8 +550,17 @@ pub fn with_face(
   face face: Face,
 ) -> Picture {
   case dict.get(picture, unit_id) {
-    Ok(ShownCreature(..) as creature) ->
-      dict.insert(picture, unit_id, ShownCreature(..creature, face: Some(face)))
+    Ok(ShownCreature(..) as creature) -> {
+      let faced_yaw = case face {
+        creature_turn.Fixed(facing:) -> Some(facing.yaw)
+        creature_turn.Unit(..) | creature_turn.Point(..) -> creature.faced_yaw
+      }
+      dict.insert(
+        picture,
+        unit_id,
+        ShownCreature(..creature, face: Some(face), faced_yaw:),
+      )
+    }
     Ok(ShownPlayer(..)) | Ok(ShownObject(..)) | Error(Nil) -> picture
   }
 }

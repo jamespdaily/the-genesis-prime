@@ -75,11 +75,12 @@ fn body_moving(
 ) -> client_connection.Handled(Session) {
   case movement.take(entered.movement, message, inner.body) {
     Ok(movement.Kept(state:)) ->
-      Continue(moving(session:, holder:, entered:, state:), [])
+      Continue(moving(session:, now:, holder:, entered:, state:), [])
     Ok(movement.Echoed(state:, echo_value:)) ->
       Continue(
         moving(
           session:,
+          now:,
           holder:,
           entered: world_entry.Entered(
             ..entered,
@@ -93,7 +94,7 @@ fn body_moving(
         [],
       )
     Ok(movement.Reported(state:, world_zone_id:, by:)) -> {
-      let session = moving(session:, holder:, entered:, state:)
+      let session = moving(session:, now:, holder:, entered:, state:)
       let top_zones = top_zone.top_zones(session.settings.tables)
       let #(session, ready) = case
         by,
@@ -155,7 +156,7 @@ fn body_moving(
       }
       let session =
         Session(
-          ..moving(session:, holder:, entered:, state:),
+          ..moving(session:, now:, holder:, entered:, state:),
           move_seq:,
           unrelayed_logged: list.fold(
             new_kinds,
@@ -254,9 +255,11 @@ fn dropped_moving(
   }
 }
 
-/// The session with the player's movement replaced.
+/// The session with the player's movement replaced, after the creatures that face the player
+/// have taken the yaw they show at the place it leaves (`world_entry.with_creatures_resolved`).
 fn moving(
   session session: Session,
+  now now: Now,
   holder holder: Holder,
   entered entered: world_entry.Entered,
   state state: movement.State,
@@ -265,7 +268,13 @@ fn moving(
     ..session,
     status: InWorld(
       holder:,
-      entered: world_entry.Entered(..entered, movement: state),
+      entered: world_entry.Entered(
+        ..world_entry.with_creatures_resolved(
+          entered:,
+          now_ms: now.monotonic_ms,
+        ),
+        movement: state,
+      ),
     ),
   )
 }

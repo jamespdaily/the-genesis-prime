@@ -444,6 +444,7 @@ pub fn viewer_takes(
             held: [],
             unit_states: [],
             face: None,
+            faced_yaw: None,
           ),
         )),
         [
@@ -456,6 +457,7 @@ pub fn viewer_takes(
     }
     client_connection.Moving(server_time_ms:, commands:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
+      let session = creatures_resolved(session:, now:)
       let positions =
         list.filter_map(commands, fn(command) {
           case command {
@@ -605,6 +607,7 @@ pub fn viewer_takes(
       life_news(session:, entered:, unit_id:, news: news.news)
     client_connection.CreatureMoved(path:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
+      let session = creatures_resolved(session:, now:)
       let session =
         shown_changed(session:, change: fn(picture) {
           shown.with_path(picture:, unit_id:, path:)
@@ -619,6 +622,7 @@ pub fn viewer_takes(
     }
     client_connection.CreaturePlaced(place:, at_ms:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
+      let session = creatures_resolved(session:, now:)
       let session =
         shown_changed(session:, change: fn(picture) {
           shown.with_path(
@@ -636,6 +640,7 @@ pub fn viewer_takes(
     }
     client_connection.CreatureFaces(face:, at_ms:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
+      let session = creatures_resolved(session:, now:)
       let session =
         shown_changed(session:, change: fn(picture) {
           shown.with_face(picture:, unit_id:, face:)
@@ -1155,6 +1160,14 @@ fn viewers_changed(
 ) -> Session {
   connection_state.with_entered(session:, change: fn(entered) {
     world_entry.Entered(..entered, viewers: change(entered.viewers))
+  })
+}
+
+/// The session with its pictured creatures holding the yaw their clients show now
+/// (`world_entry.with_creatures_resolved`).
+fn creatures_resolved(session session: Session, now now: Now) -> Session {
+  connection_state.with_entered(session:, change: fn(entered) {
+    world_entry.with_creatures_resolved(entered:, now_ms: now.monotonic_ms)
   })
 }
 

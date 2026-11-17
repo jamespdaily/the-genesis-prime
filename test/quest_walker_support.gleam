@@ -55,6 +55,7 @@ pub fn walker(
         held: [],
         unit_states: [],
         face: option.None,
+        faced_yaw: option.None,
       ),
     ),
   ])

@@ -6939,6 +6939,55 @@ fn facing_yaw(from from: #(Float, Float), to to: #(Float, Float)) -> Float {
   maths.atan2(0.0 -. { to.0 -. from.0 }, 0.0 -. { to.1 -. from.1 })
 }
 
+pub fn a_target_standing_on_the_creature_leaves_the_facing_it_showed_last_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The creature runs toward 26, the player circles to (28, 3) at 200 ms, and at 1 s, with the
+  // creature at (10, 0), the player steps onto its ground point: the client keeps the
+  // creature as it faces the player's last place, along the bearing from (10, 0) to (28, 3),
+  // and not the spawn's yaw or the yaw of the path (`movement_command.kind_18`).
+  let #(state, _) = chasing(viewers: [2])
+  let #(state, _) =
+    tell(
+      state:,
+      at_ms: 200,
+      message: moved_at(number: 2, x: 28.0, z: 3.0, seq: 2),
+    )
+  let #(state, onto) =
+    tell(
+      state:,
+      at_ms: 1000,
+      message: moved_at(number: 2, x: 10.0, z: 0.0, seq: 3),
+    )
+  assert faces_to(onto, 2) == []
+    as "a target on the creature's point sends no turn"
+  let turned = facing_yaw(from: #(10.0, 0.0), to: #(28.0, 3.0))
+  assert turned != { start_place.facing(home()) }.yaw
+    as "the turn the test starts from is a real one"
+  let yaw_at = fn(state, at_ms) {
+    {
+      start_place.facing(creature_fight.place_at(
+        state: creature.fight(state:),
+        now_ms: start_ms + at_ms,
+      ))
+    }.yaw
+  }
+  assert float.loosely_equals(
+    yaw_at(state, 1000),
+    turned,
+    tolerating: 0.000_001,
+  )
+    as "the creature shows the facing it had before the player stood on it"
+  let #(_, killed) =
+    tell(
+      state:,
+      at_ms: 1000,
+      message: killing(number: 2, cast_id: 1, controls: []),
+    )
+  let assert [face] = faces_to(killed, 2)
+  assert float.loosely_equals(yaw_of_face(face), turned, tolerating: 0.000_001)
+    as "and its death freezes that facing"
+}
+
 pub fn a_killed_or_despawned_creature_is_turned_where_it_faces_and_stops_following_test() -> Nil {
   use <- owned_test.run(5000)
   // The creature runs toward 26, the player circles to (28, 3), and a killing blow lands at 1 s:

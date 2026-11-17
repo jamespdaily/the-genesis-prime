@@ -481,8 +481,10 @@ pub type Sighting {
 /// absent means ready; emptied by `start_fight`, so every fight opens with its specials ready),
 /// and how many auto-attacks it has struck with this fight (`autos_struck`: the next auto-attack
 /// is `attack` and `alternates` at that count's remainder; zero from `start_fight`, so every
-/// fight opens with the lead), and `turn`, what its viewers' clients hold its rotation to
-/// (genesis_prime/world_map/creature_turn): the facing of its spawn until the fight turns it.
+/// fight opens with the lead), `turn`, what its viewers' clients hold its rotation to
+/// (genesis_prime/world_map/creature_turn): the facing of its spawn until the fight turns it,
+/// and `facing`, the facing its viewers' clients showed it at the end of the last input: the
+/// one it keeps when the unit it faces stands on its own ground point (`facing_of`).
 pub opaque type State {
   State(
     status: Status,
@@ -495,6 +497,7 @@ pub opaque type State {
     ready_at: Dict(Int, Int),
     autos_struck: Int,
     turn: Face,
+    facing: Facing,
   )
 }
 
@@ -644,6 +647,7 @@ pub fn new(home home: Place) -> State {
     ready_at: dict.new(),
     autos_struck: 0,
     turn: Fixed(facing: start_place.facing(home)),
+    facing: start_place.facing(home),
   )
 }
 
@@ -661,9 +665,30 @@ pub fn step(
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
   let #(state, effects) =
-    stepped(state:, fighter:, viewers:, alive:, input:, now_ms:)
+    stepped(
+      state: shown_facing(state:, now_ms:),
+      fighter:,
+      viewers:,
+      alive:,
+      input:,
+      now_ms:,
+    )
   let #(state, turned) = faced(state:, fighter:, now_ms:)
-  #(state, list.append(effects, turned))
+  #(shown_facing(state:, now_ms:), list.append(effects, turned))
+}
+
+/// The state holding the facing its viewers' clients show the creature at `now_ms`, which an
+/// input that puts the unit it faces on its own ground point leaves it with. It is taken before
+/// the input (the facing the clients show when the input arrives) and after (the facing the
+/// input's news gave).
+fn shown_facing(state state: State, now_ms now_ms: Int) -> State {
+  State(
+    ..state,
+    facing: facing_of(
+      state:,
+      here: creature_path.place_at(path: state.path, now_ms:),
+    ),
+  )
 }
 
 fn stepped(
@@ -970,10 +995,11 @@ fn turned_place(state state: State, place place: Place) -> Place {
 
 /// The facing of the creature standing at `here`, by what its viewers' clients hold its
 /// rotation to: a fixed facing, or the bearing to the unit it keeps facing by the newest
-/// sighting of that unit, or to the point (`creature_turn.toward`). A unit it has no sighting
-/// of leaves the facing `here` has, as the client leaves it for a unit it does not find.
+/// sighting of that unit, or to the point (`creature_turn.toward`). A target on its own ground
+/// point, or a unit it has no sighting of, leaves the facing it showed last (`State.facing`),
+/// as the client leaves its rotation.
 fn facing_of(state state: State, here here: Place) -> Facing {
-  let kept = start_place.facing(here)
+  let kept = state.facing
   case state.turn {
     Fixed(facing:) -> facing
     creature_turn.Point(place:) ->
@@ -2311,11 +2337,7 @@ fn turned_to_face(
 ) -> #(State, List(Effect)) {
   use <- bool.guard(when: cannot_move(fighter:), return: #(state, []))
   let facing =
-    creature_turn.toward(
-      from: here,
-      target: target.place,
-      kept: start_place.facing(here),
-    )
+    creature_turn.toward(from: here, target: target.place, kept: state.facing)
   let path = Timed(first: #(now_ms, here), rest: [], turned_to: Some(facing))
   #(State(..state, path:, turn: Fixed(facing:)), [
     ToViewers(client_connection.CreatureMoved(path:)),

@@ -1239,7 +1239,7 @@ fn procs_fired(
             picture: entered.shown,
             unit_ids:,
             now_ms: now.monotonic_ms,
-            viewer: viewer_of(entered:),
+            viewer: world_entry.viewer(entered:),
           ),
           indexes: shown.checklist_indexes_of(picture: entered.shown, unit_ids:),
           units: shown.first_units_of(
@@ -1413,7 +1413,7 @@ fn strike_begins(
         picture: entered.shown,
         unit_ids:,
         now_ms: now.monotonic_ms,
-        viewer: viewer_of(entered:),
+        viewer: world_entry.viewer(entered:),
       ),
       indexes: shown.checklist_indexes_of(picture: entered.shown, unit_ids:),
       units: shown.first_units_of(
@@ -1469,15 +1469,6 @@ fn tick_strike_begins(
 /// player faction it is of, what its damage reads of it (its level and its Assault and
 /// Support Rating), its health and shield as they are now (a formula's caster kinds
 /// read them) and its properties.
-/// The player's own unit and where it stands, which a creature that faces the player is
-/// turned toward (genesis_prime/game/shown `pose_of`).
-fn viewer_of(entered entered: world_entry.Entered) -> shown.Viewer {
-  shown.Viewer(
-    unit_id: entered.unit_id,
-    place: movement.place(entered.movement),
-  )
-}
-
 fn attacker_of(
   session session: Session,
   entered entered: world_entry.Entered,
@@ -1592,7 +1583,7 @@ fn strike_carried_out(
               picture: entered.shown,
               unit_ids:,
               now_ms: now.monotonic_ms,
-              viewer: viewer_of(entered:),
+              viewer: world_entry.viewer(entered:),
             ),
             indexes: shown.checklist_indexes_of(
               picture: entered.shown,

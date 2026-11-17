@@ -984,6 +984,7 @@ fn creature_at(
     held: [],
     unit_states: [],
     face: option.None,
+    faced_yaw: option.None,
   )
 }
 

@@ -1003,6 +1003,7 @@ fn foe_at(z z: Float) -> shown.Shown {
     held: [],
     unit_states: [],
     face: option.None,
+    faced_yaw: option.None,
   )
 }
 

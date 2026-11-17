@@ -107,6 +107,7 @@ fn picture_with(creature_id creature_id: Int, gap gap: Float) -> shown.Picture {
         held: [],
         unit_states: [],
         face: option.None,
+        faced_yaw: option.None,
       ),
     ),
   ])

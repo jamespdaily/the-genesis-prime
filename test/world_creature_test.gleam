@@ -3047,6 +3047,9 @@ pub fn a_creature_fighting_a_player_standing_apart_faces_the_player_through_chas
   moved_round(run:, connection: 1, x: path_end_x, z: 0.3, seq: 3)
   moved_round(run:, connection: 1, x: path_end_x -. 0.3, z: 0.0, seq: 4)
   moved_round(run:, connection: 1, x: path_end_x, z: 0.0 -. 0.3, seq: 5)
+  // The four moves are the map's to forward: the map takes them, then the creature has what
+  // the map forwarded, before the connection's output is read.
+  driven_time.settled(run.pid)
   driven_time.settled(pid)
   assert sent_so_far(world:, id: 1, received: first, wanted: seen_of) == []
     as "four moves round the creature send no turn and no path"
