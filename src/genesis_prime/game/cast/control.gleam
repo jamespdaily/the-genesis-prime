@@ -792,8 +792,10 @@ pub fn despawns_told(
 /// time. The effects come after the go's frames, beside the despawns'.
 ///
 /// A unit that is not a `HitCreature` of the round holds no state (a deflected one included),
-/// and neither does the caster or another player. Both are server guesses: the client reads
-/// no row of this type.
+/// and neither does the caster or another player. A creature the round answered `Immune`
+/// (a guard, or a held state that blocks hostile effects) still holds the go's states, the
+/// way `cast_gate.creature_hit` counts it: the strike's refusal does not stop the go's
+/// own state rows. All three are server guesses: the client reads no row of this type.
 ///
 /// ```
 /// cast.went: Send(go 0x7f4), Tell(audience, CastWent)
@@ -811,6 +813,7 @@ pub fn despawns_told(
 /// | the caster apply prerequisite or the target gate fails | the row is not in `reached`: no tell |
 /// | the row aims at the caster alone, or a player stands in its area | units are creatures only: no tell (the row is left out by the plan for the caster alone) |
 /// | the row lasts until removed, or is behind a persistence prerequisite | the plan leaves it out by name: no tell |
+/// | the round answered the creature `Immune` | the creature is told the rows all the same, a server guess |
 /// | two rows of one go reach one creature | one tell with both rows, in row order |
 pub fn unit_states_told(
   cast _cast: State,

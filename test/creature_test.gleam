@@ -3015,6 +3015,35 @@ pub fn a_throw_at_an_invulnerable_creature_is_dropped_test() -> Nil {
     as "a hold past its end blocks no throw, though its timer has not fired"
 }
 
+pub fn a_modifier_at_a_creature_holding_a_blocking_state_is_dropped_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, modified) =
+    told(
+      state: invulnerable_by_two(),
+      at_ms: 7000,
+      message: starting(
+        source: thorns_source(),
+        modifier: thorns(),
+        struck_at_ms: 7000,
+      ),
+    )
+  assert support.effects_of(modified) == []
+    as "a creature that takes no hostile effect takes no struck-change modifier, as it takes no throw"
+  let #(state, _) = fired(state:, at_ms: 14_500, timer: unit_state_timer)
+  let #(_, after) =
+    told(
+      state:,
+      at_ms: 14_600,
+      message: starting(
+        source: thorns_source(),
+        modifier: thorns(),
+        struck_at_ms: 14_600,
+      ),
+    )
+  assert support.effects_of(after) != []
+    as "once the state has ended the same modifier lands: the earlier one was dropped, not held"
+}
+
 pub fn a_despawn_still_removes_an_invulnerable_creature_test() -> Nil {
   use <- owned_test.run(5000)
   let #(_, taken) =

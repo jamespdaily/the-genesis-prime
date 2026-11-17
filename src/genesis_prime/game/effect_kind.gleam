@@ -84,7 +84,10 @@
 ////   when its targetFlags name a unit past the caster (`is_row_read`); the plan leaves out a
 ////   row aimed at the caster alone, one that lasts until removed, one behind a persistence
 ////   prerequisite and one whose dataBits01 to dataBits09 is not 0, by name
-////   (genesis_prime/game/spell_plan `unit_state_reading`).
+////   (genesis_prime/game/spell_plan `unit_state_reading`). The coverage measure counts a
+////   row read only when a creature's held state of it refuses something: a row of a state
+////   with no reading, with no duration or of a spell with no Spell4 row is held where it can
+////   be and counted not read (dev/genesis_prime/coverage/effect_row).
 //// - **Unread** is any other type: the client's data holds it and no rule of the
 ////   server reads it.
 ////

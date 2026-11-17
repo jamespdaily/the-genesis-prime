@@ -21,7 +21,8 @@ import gleam/option.{type Option, None, Some}
 
 /// One UnitStateSet row of a cast, as the creature holds it: the state `dataBits00` names, the
 /// row's `delayTime` and `durationTime` in milliseconds. The state is held from the go plus
-/// the delay for the duration.
+/// the delay for the duration, so it blocks and shows from its start only (a server guess:
+/// the client reads no row of the type). A row with no duration is never held.
 pub type Row {
   Row(state: Int, delay_ms: Int, duration_ms: Int)
 }

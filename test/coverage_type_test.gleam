@@ -464,7 +464,7 @@ pub fn the_effect_types_3_10_11_14_15_17_18_29_52_64_73_76_80_81_83_84_97_112_11
       ),
       Missing(
         type_number: 15,
-        reason: "rows aimed at the caster alone, which need a creature that casts, or a creature's strike on a player, to read (#801); rows that last until removed (flags bit 2, #803); rows behind a persistence prerequisite and rows with a dataBits01 to dataBits09 that is not 0, which no client code reads (#328); rows behind a target apply prerequisite that reads the casts a struck creature holds, which the plan refuses (#569); and the read rows of a state with no reading (0, 1, 2, 10 and 23), which are held and refuse nothing since the client does not say what they do (#328)",
+        reason: "rows aimed at the caster alone, which need a creature that casts, or a creature's strike on a player, to read (#801); rows that last until removed (flags bit 2, #803); rows behind a persistence prerequisite and rows with a dataBits01 to dataBits09 that is not 0, which no client code reads (#925); rows behind a target apply prerequisite that reads the casts a struck creature holds, which the plan refuses (#569); and the rows the plan applies that refuse nothing: those of a state with no reading (0, 1, 2, 10 and 23), which a creature holds and which refuse nothing since the client does not say what they do (#925), those with a durationTime of 0, which a creature never holds (#925), and those of a spell with no Spell4 row, which no cast reaches (#925)",
         fact_key: "Spell4Effects.effectType.15",
       ),
       Missing(
@@ -2697,6 +2697,6 @@ pub fn the_unit_state_type_is_counted_read_by_the_rows_the_plan_applies_test() -
   let assert HandledWithGap(unread_rows:, fact_key:, ..) = line.status
     as "the type is handled with a stated gap"
   assert fact_key == "Spell4Effects.effectType.15"
-  assert unread_rows == 231
-    as "scratch count over `table_rows -- Spell4Effects effectType=15`: 177 aimed at the caster alone, 48 aimed past it that last until removed, 3 behind a target persistence prerequisite, 2 with a dataBits01 that is not 0 and 1 behind a target apply prerequisite that reads the casts a struck creature holds (row 229781, #569): 231 of 752, so 521 are read, 498 of them of state 1, which is held and refuses nothing"
+  assert unread_rows == 732
+    as "scratch count over `table_rows -- Spell4Effects effectType=15`: 177 aimed at the caster alone, 48 aimed past it that last until removed, 3 behind a target persistence prerequisite, 2 with a dataBits01 that is not 0 and 1 behind a target apply prerequisite that reads the casts a struck creature holds (row 229781, #569): 231 of 752, and of the 521 the plan applies 501 are held and refuse nothing, so are not read: 493 of a state with no reading (0, 1, 2, 10, 23) in a spell with a Spell4 row, 7 of those in a spell with none, and row 55787, state 1 with a durationTime of 0, which no creature holds: 732 of 752, so 20 are read (state 6 on 6, 13 to 15 on 3 each, 17 and 18 on 1 each, 22 on 3)"
 }
