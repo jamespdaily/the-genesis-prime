@@ -829,6 +829,7 @@ fn controls_told(
   entropy entropy: BitArray,
   reached reached: List(#(spell_plan.CrowdControl, List(Int))),
 ) -> #(State, List(#(Int, List(strike_tell.ControlTell)))) {
+  let slots = throw_slots_of(selection:)
   let #(strike, told) =
     list.index_map(selection.units, fn(aimed, unit_index) {
       #(aimed, unit_index)
@@ -848,13 +849,7 @@ fn controls_told(
                 count:,
               ),
               row: row.row,
-              throw: throw_of(
-                selection:,
-                attacker:,
-                entropy:,
-                row:,
-                unit_index:,
-              ),
+              throw: throw_of(slots:, attacker:, entropy:, row:, unit_index:),
             ),
           )
         })
@@ -863,27 +858,48 @@ fn controls_told(
   #(strike, list.filter(told, fn(entry) { entry.1 != [] }))
 }
 
+/// Where the seed holds the draws of a selection's throws: the byte of the first slot,
+/// the rows that throw (in row order) and the number of selected units, each of which
+/// has a slot for each row.
+type ThrowSlots {
+  ThrowSlots(first_byte: Int, rows: List(spell_plan.CrowdControl), units: Int)
+}
+
+/// The slots of the selection's throws: after the units' 12 bytes and the gates' rolls
+/// (`entropy_needed`), one for each throwing row and each selected unit.
+fn throw_slots_of(selection selection: Selection) -> ThrowSlots {
+  let units = list.length(selection.units)
+  ThrowSlots(
+    first_byte: units
+      * bytes_per_unit
+      + rolls_needed(selection:)
+      * prerequisite.roll_bytes,
+    rows: throwing_rows(selection:),
+    units:,
+  )
+}
+
 /// The throw a state row gives the unit at `unit_index` of the selection: none for a row
 /// with no move, else its move, the draws of the row's 8 seed bytes for that unit
 /// (`throw_slot`, `forced_move.draws_of`) and the striker's place and hit radius. The
 /// connection draws `entropy_needed` bytes, so a seed without the slot is a fault of its
 /// caller and ends the strike's process.
 fn throw_of(
-  selection selection: Selection,
+  slots slots: ThrowSlots,
   attacker attacker: Attacker,
   entropy entropy: BitArray,
   row row: spell_plan.CrowdControl,
   unit_index unit_index: Int,
-) -> Option(strike_tell.Throw) {
+) -> Option(forced_move.Throw) {
   use move <- option.map(row.move)
   let assert Ok(bytes) =
     bit_array.slice(
       entropy,
-      throw_slot(selection:, row:, unit_index:),
+      throw_slot(slots:, row:, unit_index:),
       forced_move.draw_bytes,
     )
     as "the connection draws entropy_needed bytes"
-  strike_tell.Throw(
+  forced_move.Throw(
     move:,
     draws: forced_move.draws_of(bytes:),
     reference: forced_move.Reference(
@@ -893,24 +909,19 @@ fn throw_of(
   )
 }
 
-/// Where the 8 draw bytes of a throwing row and a unit start in the seed: after the
-/// units' 12 bytes and the gates' rolls, one slot for each throwing row (in row order)
-/// and each selected unit (in selection order).
+/// Where the 8 draw bytes of a throwing row and a unit start in the seed: the slot of
+/// the row's place among the throwing rows and the unit's place among the units.
 fn throw_slot(
-  selection selection: Selection,
+  slots slots: ThrowSlots,
   row row: spell_plan.CrowdControl,
   unit_index unit_index: Int,
 ) -> Int {
-  let units = list.length(selection.units)
   let row_index =
-    throwing_rows(selection:)
+    slots.rows
     |> list.take_while(fn(other) { other.effect_id != row.effect_id })
     |> list.length
-  units
-  * bytes_per_unit
-  + rolls_needed(selection:)
-  * prerequisite.roll_bytes
-  + { row_index * units + unit_index }
+  slots.first_byte
+  + { row_index * slots.units + unit_index }
   * forced_move.draw_bytes
 }
 

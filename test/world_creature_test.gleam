@@ -1705,13 +1705,15 @@ pub fn a_knockback_spell_on_a_creature_shows_its_flight_to_a_watching_client_tes
         life:,
       ),
       request: client_connection.TellThrown(
-        move:,
-        draws: forced_move.Draws(distance: 0.0, angle: 0.0),
-        reference: forced_move.Reference(
-          place: sight_place(),
-          radius: hit_radius.of_playing(
-            tables: character_tables.shared(),
-            race_id:,
+        throw: forced_move.Throw(
+          move:,
+          draws: forced_move.Draws(distance: 0.0, angle: 0.0),
+          reference: forced_move.Reference(
+            place: sight_place(),
+            radius: hit_radius.of_playing(
+              tables: character_tables.shared(),
+              race_id:,
+            ),
           ),
         ),
         struck_at_ms:,

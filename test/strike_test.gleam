@@ -1553,19 +1553,91 @@ pub fn a_knockback_control_is_told_with_its_drawn_move_and_the_strikers_place_te
     control.throw
   }
   assert throw_of(first)
-    == Some(strike_tell.Throw(
+    == Some(forced_move.Throw(
       move:,
       draws: forced_move.Draws(distance: 0.25, angle: 0.5),
       reference:,
     ))
     as "unit 10 takes the first 8 draw bytes, with the striker's place and radius"
   assert throw_of(second)
-    == Some(strike_tell.Throw(
+    == Some(forced_move.Throw(
       move:,
       draws: forced_move.Draws(distance: 0.75, angle: 0.125),
       reference:,
     ))
     as "unit 11 takes the next 8"
+}
+
+pub fn each_throwing_row_and_unit_takes_its_own_draw_bytes_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Spell4Effects 56250 (spell 30693, a Knockback with a helper, as above) is the first
+  // throwing row; the second is the same row under another id, which the plan tells apart
+  // by its effect id.
+  let spell = spell_tables.client_spell(spell4_id: 30_693)
+  let assert [first_row] =
+    spell_plan.controls_in_phase(spell:, phase: 0, spent: None)
+    as "the spell's one state lands in phase 0"
+  let second_row =
+    spell_plan.CrowdControl(..first_row, effect_id: Spell4EffectsId(56_251))
+  let chosen =
+    Selection(
+      ..selection(
+        asked: asked(cast_id: 5, phase: 0),
+        units: [10, 11],
+        damaging: False,
+      ),
+      controls: [first_row, second_row],
+    )
+  assert strike.entropy_needed(selection: chosen) == 24 + 4 * 8
+    as "12 seed bytes for each of the 2 units, then 8 draw bytes for each of the 2 rows and each of the 2 units"
+  // The draws are 32-bit words, each a fraction of 2^32: the slots are the row's and the
+  // unit's, in row order and then selection order. Every word differs, so a slot read for
+  // the wrong row or unit gives other draws.
+  let seed = <<
+    0:size(96),
+    0:size(96),
+    0x10000000:size(32),
+    0x20000000:size(32),
+    0x30000000:size(32),
+    0x40000000:size(32),
+    0x50000000:size(32),
+    0x60000000:size(32),
+    0x70000000:size(32),
+    0x80000000:size(32),
+  >>
+  let #(_, effects) =
+    strike.begin(
+      strike: strike.new(),
+      selection: chosen,
+      attacker: strike_support.attacker(),
+      formulas: rating_support.formulas(),
+      entropy: seed,
+      gate: strike_support.passes_all(),
+      now: at(ms: 1000),
+    )
+  let assert [
+    strike.TellStrike(unit_id: 10, tell: first, ..),
+    strike.TellStrike(unit_id: 11, tell: second, ..),
+  ] = tells(effects:)
+    as "each unit is told both states"
+  let draws_of = fn(told: strike_tell.Tell) {
+    list.map(told.controls, fn(control) {
+      let assert Some(throw) = control.throw as "each row throws"
+      #(control.effect_id, throw.draws)
+    })
+  }
+  assert draws_of(first)
+    == [
+      #(56_250, forced_move.Draws(distance: 0.0625, angle: 0.125)),
+      #(56_251, forced_move.Draws(distance: 0.3125, angle: 0.375)),
+    ]
+    as "unit 10 takes the 1st and 3rd slots: its row's, then the second row's"
+  assert draws_of(second)
+    == [
+      #(56_250, forced_move.Draws(distance: 0.1875, angle: 0.25)),
+      #(56_251, forced_move.Draws(distance: 0.4375, angle: 0.5)),
+    ]
+    as "unit 11 takes the 2nd and 4th slots"
 }
 
 pub fn a_state_aimed_at_the_primary_target_is_told_to_it_alone_test() -> Nil {

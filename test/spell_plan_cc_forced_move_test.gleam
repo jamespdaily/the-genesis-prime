@@ -9,11 +9,10 @@
 ////   dataBits01 and dataBits02 0x41200000 (10.0), dataBits03 375, dataBits04 0, dataBits05 1,
 ////   dataBits06 0x40000000 (2.0).
 //// - Spell 75272 holds its own type 3 row (195749, targetFlags 4, dataBits00 3) and a Pull
-////   state (196112, dataBits07 296): the spell moves its creature once, by its own row
-////   (Jim's decision on #823).
+////   state (196112, dataBits07 296): the spell moves its creature once, by its own row.
 //// - Spell4Effects 82387 (spell 38426) names CCStateAdditionalData 83, which the table does
-////   not hold; 56566 (spell 30815) is a Knockback with dataBits07 0; 75119 (spell 36272) is a
-////   PositionSwitch (state 19), which the client's tables give no move.
+////   not hold; 56566 (spell 30815) is a Knockback with dataBits07 0. A PositionSwitch (state
+////   19) or any other state is a state alone, whatever its dataBits07 names.
 //// The whole-table counts are what `table_rows` counts over the client's tables.
 
 import client_tables
@@ -119,6 +118,43 @@ pub fn a_missing_helper_fails_the_load_test() -> Nil {
     as "dataBits07 0 names no helper"
 }
 
+pub fn a_helper_aimed_at_the_caster_fails_the_load_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4Effects 73826, the helper move of Spell4Effects 56250 (spell 30693), has
+  // targetFlags 2. No client row aims a helper at the caster alone, so the case is edited in.
+  fixture_tables.changed(
+    table: "Spell4Effects",
+    id: 73_826,
+    with: [#("targetFlags", Integer(1))],
+    body: fn(tables) {
+      assert controls_of(tables:, spell4_id: 30_693)
+        == Error(spell_plan.ControlHelperNotRead(
+          spell4_id: 30_693,
+          effect_id: 56_250,
+          helper: 36_010,
+        ))
+        as "a helper move aimed at the caster alone moves the caster's own unit, not the creature the state holds, so the spell fails to load"
+    },
+  )
+  // Aimed at the area, or the primary target and the area, the helper moves the units a
+  // strike hits (`Spell4Effects.effectType.3.other_unit`).
+  list.each([4, 6], fn(target_flags) {
+    fixture_tables.changed(
+      table: "Spell4Effects",
+      id: 73_826,
+      with: [#("targetFlags", Integer(target_flags))],
+      body: fn(tables) {
+        let assert Ok(controls) = controls_of(tables:, spell4_id: 30_693)
+          as "a helper aimed at units a strike hits loads"
+        assert option.is_some(
+          control_by_effect(controls:, effect_id: 56_250).move,
+        )
+          as "the state carries the helper's move"
+      },
+    )
+  })
+}
+
 pub fn a_spell_holding_its_own_throw_drops_the_states_helper_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = fixture_tables.shared()
@@ -138,20 +174,111 @@ pub fn a_spell_holding_its_own_throw_drops_the_states_helper_test() -> Nil {
     as "the Pull state's helper (CCStateAdditionalData 296) is dropped, so the creature moves once"
 }
 
-pub fn a_position_switch_state_carries_no_move_test() -> Nil {
-  use <- owned_test.run(60_000)
-  let tables = fixture_tables.shared()
-  let assert Ok(controls) = controls_of(tables:, spell4_id: 36_272)
-    as "the PositionSwitch spell loads"
-  let control = control_by_effect(controls:, effect_id: 75_119)
-  assert control.row.state == PositionSwitch
-  assert control.move == None
-    as "a PositionSwitch is a state only: the client's tables give it no move"
-}
-
 /// Whether a state is one a helper's move throws a creature by.
 fn throws(state state: CrowdControlState) -> Bool {
   state == Knockback || state == Pushback || state == Pull
+}
+
+/// A state row the plan reads as a spell that throws by its own row (`own_throw`) or does
+/// not, as the plan of its spell reads it.
+fn read_state_row(
+  tables tables: table_store.Tables,
+  sources sources: spell_plan.Sources,
+  place_of place_of: fn(Int) -> spell_plan.RowPlace,
+  row row: Spell4Effects,
+  own_throw own_throw: Bool,
+) -> Result(spell_plan.RowReading, spell_plan.PlanError) {
+  spell_plan.read_row(
+    tables:,
+    sources:,
+    place: spell_plan.RowPlace(
+      ..place_of(row.spell_id),
+      throws_target: own_throw || place_of(row.spell_id).throws_target,
+    ),
+    effect: row,
+  )
+}
+
+pub fn a_state_that_is_not_a_throw_ignores_the_helper_it_names_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // No client PositionSwitch row names a throw helper, so the case is edited in: the
+  // Knockback state 56250 (dataBits07 21, helper 36010) takes each state in turn.
+  list.each([19, 8, 12], fn(state) {
+    fixture_tables.changed(
+      table: "Spell4Effects",
+      id: 56_250,
+      with: [#("dataBits00", Integer(state))],
+      body: fn(tables) {
+        let assert Ok(controls) = controls_of(tables:, spell4_id: 30_693)
+          as "the spell loads with the edited state"
+        let control = control_by_effect(controls:, effect_id: 56_250)
+        assert control.row.state == crowd_control_state.from_value(state)
+          as "the row holds the edited state"
+        assert control.move == None
+          as "a state other than Knockback, Pushback or Pull throws nothing, whatever helper its dataBits07 names"
+      },
+    )
+  })
+}
+
+pub fn a_position_switch_state_carries_no_move_test() -> Nil {
+  use <- owned_test.run(600_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let effects = spell4_effects.all(tables)
+  let place_of = effect_row.places(tables:, effects:)
+  let sources = spell_plan.sources_of(tables:)
+  let states =
+    list.filter(effects, fn(effect) {
+      effect_kind.kind_of(effect.effect_type) == effect_kind.CrowdControl
+    })
+  let state_of = fn(row: Spell4Effects) {
+    crowd_control_state.from_value(row.data_bits00)
+  }
+  let switches =
+    list.filter(states, fn(row) { state_of(row) == PositionSwitch })
+  let other_states_naming_a_throw =
+    list.filter(states, fn(row) {
+      case additional_of(tables:, row:) {
+        Ok(additional) ->
+          row.data_bits07 != 0
+          && !throws(state: state_of(row))
+          && throws(state: crowd_control_state.from_value(
+            additional.cc_states_id,
+          ))
+        Error(Nil) -> False
+      }
+    })
+  assert list.length(switches) == 20
+    as "the client holds 20 PositionSwitch rows"
+  assert list.map(other_states_naming_a_throw, fn(row) { row.id })
+    == [
+      81_004, 87_069, 87_882, 95_683, 102_854, 102_856, 104_404, 107_442,
+      133_825, 220_582, 220_638,
+    ]
+    as "eleven rows of a state other than a throw name a CCStateAdditionalData row of Knockback, Pushback or Pull"
+  list.each(list.append(switches, other_states_naming_a_throw), fn(row) {
+    let reading =
+      read_state_row(tables:, sources:, place_of:, row:, own_throw: False)
+    // Rows 102854, 102856 and 104404 are refused for another unread prerequisite before
+    // any helper is consulted; a refusal for the helper would be the fault.
+    assert !refused_for_its_helper(reading:)
+      as "the plan does not consult a helper for a state other than Knockback, Pushback or Pull"
+    let move =
+      result.map(reading, fn(read) { control_read(reading: read).move })
+    assert result.unwrap(move, None) == None
+      as "only a Knockback, Pushback or Pull state throws its creature: any other state is a state alone, whatever its dataBits07 names"
+  })
+}
+
+/// Whether the plan refused a state row for its helper spell's rows.
+fn refused_for_its_helper(
+  reading reading: Result(spell_plan.RowReading, spell_plan.PlanError),
+) -> Bool {
+  case reading {
+    Error(spell_plan.ControlHelperNotRead(..)) -> True
+    _ -> False
+  }
 }
 
 /// The client's rows of a Knockback, Pushback or Pull state whose dataBits07 is not 0.
@@ -194,16 +321,8 @@ pub fn every_knockback_pull_and_pushback_row_names_a_helper_with_a_throw_test() 
     as "362 Knockback, 47 Pushback and 60 Pull rows"
   let place_of = effect_row.places(tables:, effects:)
   let sources = spell_plan.sources_of(tables:)
-  let read = fn(row: Spell4Effects, throws_target: Bool) {
-    spell_plan.read_row(
-      tables:,
-      sources:,
-      place: spell_plan.RowPlace(
-        ..place_of(row.spell_id),
-        throws_target: throws_target || place_of(row.spell_id).throws_target,
-      ),
-      effect: row,
-    )
+  let read = fn(row: Spell4Effects, own_throw: Bool) {
+    read_state_row(tables:, sources:, place_of:, row:, own_throw:)
   }
   let readings = list.map(rows, fn(row) { #(row, read(row, False)) })
   let refused = list.filter(readings, fn(entry) { result.is_error(entry.1) })

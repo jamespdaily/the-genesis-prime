@@ -4531,18 +4531,20 @@ fn knockback_from(
   unit_at unit_at: start_place.Place,
 ) -> creature.Message {
   creature.Thrown(
-    move: forced_move.Move(
-      way: forced_move.Away,
-      mover: forced_move.Flight,
-      min_distance: 10.0,
-      max_distance: 10.0,
-      flight_ms: 375,
-      gravity: 0.0,
-      flags: 0,
-      height: 0.0,
+    throw: forced_move.Throw(
+      move: forced_move.Move(
+        way: forced_move.Away,
+        mover: forced_move.Flight,
+        min_distance: 10.0,
+        max_distance: 10.0,
+        flight_ms: 375,
+        gravity: 0.0,
+        flags: 0,
+        height: 0.0,
+      ),
+      draws: forced_move.Draws(distance: 0.0, angle: 0.0),
+      reference: forced_move.Reference(place: unit_at, radius: 0.0),
     ),
-    draws: forced_move.Draws(distance: 0.0, angle: 0.0),
-    reference: forced_move.Reference(place: unit_at, radius: 0.0),
     struck_at_ms: start_ms + at_ms,
   )
 }
@@ -4588,7 +4590,7 @@ fn knockback_state(instance_id instance_id: Int) -> strike_tell.ControlTell {
       armor_removed: 1,
       until_removed: False,
     ),
-    throw: Some(strike_tell.Throw(
+    throw: Some(forced_move.Throw(
       move: forced_move.Move(
         way: forced_move.Away,
         mover: forced_move.Flight,
@@ -5146,18 +5148,20 @@ pub fn a_creature_placed_as_part_of_a_map_object_is_not_moved_by_a_forced_move_t
         state:,
         at_ms: 100,
         message: creature.Thrown(
-          move: forced_move.Move(
-            way:,
-            mover:,
-            min_distance: 10.0,
-            max_distance: 10.0,
-            flight_ms: 375,
-            gravity: 0.0,
-            flags: 0,
-            height: 0.0,
+          throw: forced_move.Throw(
+            move: forced_move.Move(
+              way:,
+              mover:,
+              min_distance: 10.0,
+              max_distance: 10.0,
+              flight_ms: 375,
+              gravity: 0.0,
+              flags: 0,
+              height: 0.0,
+            ),
+            draws: forced_move.Draws(distance: 0.0, angle: 0.0),
+            reference: forced_move.Reference(place: unit_at, radius: 0.0),
           ),
-          draws: forced_move.Draws(distance: 0.0, angle: 0.0),
-          reference: forced_move.Reference(place: unit_at, radius: 0.0),
           struck_at_ms: start_ms + 100,
         ),
       )

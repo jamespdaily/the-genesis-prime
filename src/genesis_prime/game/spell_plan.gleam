@@ -1734,8 +1734,8 @@ pub type RowPlace {
 
 /// Whether a spell throws the units it strikes by a ForcedMove row of its own: one of
 /// its type 3 rows is read as aimed past the caster (`effect_kind.is_row_read`, targetFlags
-/// 2, 4 or 6). Such a spell moves its creature once, by that row, and the helper of
-/// its Knockback, Pushback or Pull state is dropped (Jim's decision on #823).
+/// 2, 4 or 6). Such a spell moves its creature once, by that row: a spell holding its own
+/// throw drops the state's helper.
 fn spell_throws_target(
   effects effects: List(spell4_effects.Spell4Effects),
 ) -> Bool {
@@ -3450,11 +3450,21 @@ fn control_of(
   ))
 }
 
+/// Whether a row aims at a unit other than the caster: the primary target or the area
+/// (`aim_of`). The server moves those units itself, where the client moves only the
+/// caster's own unit (`Spell4Effects.effectType.3.other_unit`).
+fn aims_past_the_caster(effect effect: spell4_effects.Spell4Effects) -> Bool {
+  aim_of(target_flags: effect.target_flags)
+  |> result.map(reaches_past_caster)
+  |> result.unwrap(False)
+}
+
 /// The move a Knockback, Pushback or Pull state throws its creature by: `None` for
 /// every other state, for a spell that throws its creature by its own ForcedMove row
 /// (`place.throws_target`) and for a row whose dataBits07 is 0 or names no
 /// CCStateAdditionalData row; otherwise the move of the one type 3 row of the helper spell
-/// that row names in dataInt00 (`forced_move.of_row`).
+/// that row names in dataInt00 (`forced_move.of_row`), which must aim past the caster
+/// (`aims_past_the_caster`) and hold no apply prerequisite, or the load fails.
 fn helper_move_of(
   tables tables: table_store.Tables,
   sources sources: Sources,
@@ -3479,35 +3489,44 @@ fn helper_move_of(
     )
   case effect.data_bits07, additional {
     0, _ | _, Error(Nil) -> Ok(None)
-    _, Ok(additional) -> {
-      let helper = additional.data_int00
-      let not_read =
-        ControlHelperNotRead(
-          spell4_id: effect.spell_id,
-          effect_id: effect.id,
-          helper:,
-        )
-      case
-        list.filter(effects_of(sources:, spell4_id: helper), fn(row) {
-          effect_kind.kind_of(row.effect_type) == effect_kind.ForcedMove
-        })
-      {
-        [row]
-          if row.prerequisite_id_caster_apply == 0
-          && row.prerequisite_id_target_apply == 0
-        ->
-          forced_move.of_row(row:)
-          |> result.map(Some)
-          |> result.map_error(fn(error) {
-            StruckMoveNotRead(
-              spell4_id: row.spell_id,
-              effect_id: row.id,
-              error:,
-            )
-          })
-        _ -> Error(not_read)
-      }
+    _, Ok(additional) ->
+      helper_row_move(sources:, effect:, helper: additional.data_int00)
+  }
+}
+
+/// The move of the one ForcedMove row of the spell `helper` that `effect`'s state names, or
+/// the error `helper_move_of` states when the spell has no such row, more than one, or one
+/// that waits on a prerequisite or aims only at the caster.
+fn helper_row_move(
+  sources sources: Sources,
+  effect effect: spell4_effects.Spell4Effects,
+  helper helper: Int,
+) -> Result(Option(forced_move.Move), PlanError) {
+  let not_read =
+    ControlHelperNotRead(
+      spell4_id: effect.spell_id,
+      effect_id: effect.id,
+      helper:,
+    )
+  case
+    list.filter(effects_of(sources:, spell4_id: helper), fn(row) {
+      effect_kind.kind_of(row.effect_type) == effect_kind.ForcedMove
+    })
+  {
+    [row] -> {
+      use <- bool.guard(
+        when: row.prerequisite_id_caster_apply != 0
+          || row.prerequisite_id_target_apply != 0
+          || !aims_past_the_caster(effect: row),
+        return: Error(not_read),
+      )
+      forced_move.of_row(row:)
+      |> result.map(Some)
+      |> result.map_error(fn(error) {
+        StruckMoveNotRead(spell4_id: row.spell_id, effect_id: row.id, error:)
+      })
     }
+    [] | [_, _, ..] -> Error(not_read)
   }
 }
 

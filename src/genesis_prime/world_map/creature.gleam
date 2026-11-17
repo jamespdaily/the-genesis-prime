@@ -349,12 +349,7 @@ pub type Message {
   /// creature has stood again since the monotonic time `struck_at_ms`, or lies dead; else
   /// the fight takes it (`creature_fight.Thrown`), which drops it for a creature that walks
   /// home or does not run.
-  Thrown(
-    move: forced_move.Move,
-    draws: forced_move.Draws,
-    reference: forced_move.Reference,
-    struck_at_ms: Int,
-  )
+  Thrown(throw: forced_move.Throw, struck_at_ms: Int)
 }
 
 /// What a creature sends a connection without waiting.
@@ -666,8 +661,8 @@ pub fn step(
       modifier_started(state:, by:, source:, modifier:, struck_at_ms:, now_ms:)
     OwnEvent(Told(message: ModifierEnds(source:))) ->
       modifier_ended(state:, source:, now_ms:)
-    OwnEvent(Told(message: Thrown(move:, draws:, reference:, struck_at_ms:))) ->
-      thrown(state:, move:, draws:, reference:, struck_at_ms:, now_ms:)
+    OwnEvent(Told(message: Thrown(throw:, struck_at_ms:))) ->
+      thrown(state:, throw:, struck_at_ms:, now_ms:)
     WatchEnded(watch:) if watch == run_watch -> #(state, Effects([Stop]))
     WatchEnded(watch:) -> caster_gone(state:, watch:, now_ms:)
     OwnEvent(Asked(..)) | OwnEvent(CreatureNotStarted(..)) ->
@@ -680,9 +675,7 @@ pub fn step(
 /// struck its earlier life, which the registry address does not tell apart.
 fn thrown(
   state state: State,
-  move move: forced_move.Move,
-  draws draws: forced_move.Draws,
-  reference reference: forced_move.Reference,
+  throw throw: forced_move.Throw,
   struck_at_ms struck_at_ms: Int,
   now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
@@ -692,12 +685,7 @@ fn thrown(
   }
   case creature_life.is_dead(life: state.life) || struck_before_this_life {
     True -> #(state, Effects([]))
-    False ->
-      fought_alone(
-        state:,
-        input: creature_fight.Thrown(move:, draws:, reference:),
-        now_ms:,
-      )
+    False -> fought_alone(state:, input: creature_fight.Thrown(throw:), now_ms:)
   }
 }
 
@@ -1200,8 +1188,8 @@ fn controls_after(
 /// its run, so the flight starts where the creature stood. A guarded creature
 /// (`Immune`) keeps its states and is not thrown. The creature is alive on the life this
 /// strike struck, so no throw is dropped as a stale one is (`thrown`). Each landed row
-/// throws once, a server guess for the spells that hold more than one state row (issue
-/// 823), and a delayed row throws at the landing, not after its delay (issue 827).
+/// throws once, a server guess for the spells that hold more than one state row, and a
+/// delayed row throws at the landing, not after its delay (issue 827).
 fn thrown_by_states(
   state state: State,
   outcome outcome: strike_tell.Outcome,
@@ -1220,15 +1208,7 @@ fn thrown_by_states(
   list.fold(throws, #(state, []), fn(so_far, throw) {
     let #(state, effects) = so_far
     let #(state, more) =
-      fought(
-        state:,
-        input: creature_fight.Thrown(
-          move: throw.move,
-          draws: throw.draws,
-          reference: throw.reference,
-        ),
-        now_ms:,
-      )
+      fought(state:, input: creature_fight.Thrown(throw:), now_ms:)
     #(state, list.append(effects, more))
   })
 }

@@ -123,25 +123,14 @@ pub type ControlLanded {
 /// holds the state from the tell until the delay and duration have passed and sends the
 /// state's 0x87f and 0x880 with this instance id (`cc_state.instance_id`). A Knockback,
 /// Pushback or Pull state carries the `throw` its helper spell names
-/// (`spell_plan.CrowdControl.move`), which the creature that takes the state is thrown by.
+/// (`spell_plan.CrowdControl.move`), which the creature that takes the state is thrown by;
+/// its reference is the striker's place and hit radius when the strike was told.
 pub type ControlTell {
   ControlTell(
     effect_id: Int,
     instance_id: Int,
     row: crowd_control.Row,
-    throw: Option(Throw),
-  )
-}
-
-/// The move a state throws its creature by, with what the creature's fight needs to carry
-/// it out (genesis_prime/game/creature_fight `Thrown`): the move, the draws the striker's
-/// connection took from its seed for it, and the striker's place and hit radius when the
-/// strike was told.
-pub type Throw {
-  Throw(
-    move: forced_move.Move,
-    draws: forced_move.Draws,
-    reference: forced_move.Reference,
+    throw: Option(forced_move.Throw),
   )
 }
 
