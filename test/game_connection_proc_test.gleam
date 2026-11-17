@@ -20,7 +20,9 @@ import client_tables
 import connection_rule_support as support
 import fixture_tables
 import game_connection_support as connection_support
-import genesis_prime/client_connection.{type Request, CastStarted, PeerNews}
+import genesis_prime/client_connection.{
+  type Answer, type Message, type Request, CastStarted, PeerNews,
+}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
 import genesis_prime/game/hit
@@ -31,13 +33,19 @@ import genesis_prime/message/spell_started
 import genesis_prime/message/unit_combat_state.{UnitCombatState}
 import genesis_prime/message/unit_properties_changed
 import genesis_prime/random
-import genesis_prime/step.{type ConnectionStep, OwnEvent}
+import genesis_prime/step.{
+  type ConnectionEvent, type ConnectionStep, type Event, LogWarning, OwnEvent,
+}
+import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/world_map/map
+import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{None}
+import gleam/string
 import owned_test
 import planted_table
+import spawn_support
 import unitest
 
 /// A press of the bag index at this monotonic time, as the client sends it.
@@ -350,6 +358,49 @@ pub fn a_stalkers_last_fighter_going_gone_leaves_combat_and_casts_63366_test() -
     as "Spell4Effects.effectType.14.dataBits00.0_44: leaving combat casts 63366, whether the last fighter released the player or its process went"
 }
 
+pub fn a_blow_whose_attack_spell_the_tables_lack_still_ends_the_stealth_and_logs_the_skipped_procs_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let state = stalker_in_world()
+  let #(state, _) =
+    connection_support.feed(
+      state:,
+      event: connection_support.foe(strike_tell.Threatened(unit_id: 7, life: 3)),
+    )
+  let #(state, entering) =
+    pressed(state:, bag_index: 3, client_cast_id: 1, ms: 1000)
+  assert connection_support.stealth_bits(frames: connection_support.written(
+      taken: entering,
+    ))
+    == [1]
+    as "the setup: Stealth is accepted in combat"
+  // The client's Spell4 table has no row 99999999, so the groups and school of the blow's
+  // attack spell cannot be read: its procs are skipped, and the blow, which lowers the
+  // shield, ends the stealth as any other blow does (`Spell4Effects.effectType.83`).
+  let #(_, struck) =
+    connection_support.at(
+      state:,
+      ms: 5000,
+      event: connection_support.a_strike_of(
+        striker: strike_tell.CreatureStriker(
+          unit_id: 7,
+          spell4_id: Spell4Id(99_999_999),
+        ),
+        offence: spawn_support.beast_attack().offence,
+        unit_id: connection_support.own_unit_id,
+      ),
+    )
+  assert connection_support.stealth_bits(frames: connection_support.written(
+      taken: struck,
+    ))
+    == [0]
+    as "the blow ends the stealth and the client is told"
+  let assert [warning] = support.logs_of(step: struck, level: LogWarning)
+    as "one warning says the procs of the blow were skipped"
+  assert string.contains(warning.text, "procs of a blow taken skipped")
+    as "the warning names what was skipped"
+}
+
 /// A creature's strike on the tests' player at this monotonic time: the Beast's own blow,
 /// which lowers its shield or health.
 fn struck_at(
@@ -486,21 +537,54 @@ fn with_hit_proc(
   delay_ms delay_ms: Int,
   body body: fn(game_connection.State) -> a,
 ) -> a {
+  with_proc_of_kind(kind: 12, chance:, delay_ms:, body:)
+}
+
+/// `with_hit_proc` for a Proc row of any kind (dataBits00).
+fn with_proc_of_kind(
+  kind kind: Int,
+  chance chance: Float,
+  delay_ms delay_ms: Int,
+  body body: fn(game_connection.State) -> a,
+) -> a {
+  with_rows(rows: proc_rows(kind:, chance:, delay_ms:, filter: []), body:)
+}
+
+/// The fixture's rows with Proc row `hit_proc_id` added to the Stalker's passive: a copy of
+/// Proc 202043 (casting 63366) of this kind, chance and delay, with `filter` as its
+/// dataBits07 and dataBits08 cells.
+fn proc_rows(
+  kind kind: Int,
+  chance chance: Float,
+  delay_ms delay_ms: Int,
+  filter filter: List(#(String, planted_table.Cell)),
+) -> fixture_tables.Rows {
   let assert Ok(rows) =
     fixture_tables.add(
       rows: fixture_tables.rows(),
       table: "Spell4Effects",
       copy_of: 202_043,
       id: hit_proc_id,
-      with: [
-        #("dataBits00", planted_table.Integer(12)),
-        #("dataBits02", planted_table.Integer(float_bits(value: chance))),
-        #("dataBits04", planted_table.Integer(250)),
-        #("dataBits05", planted_table.Integer(60)),
-        #("delayTime", planted_table.Integer(delay_ms)),
-      ],
+      with: list.append(
+        [
+          #("dataBits00", planted_table.Integer(kind)),
+          #("dataBits02", planted_table.Integer(float_bits(value: chance))),
+          #("dataBits04", planted_table.Integer(250)),
+          #("dataBits05", planted_table.Integer(60)),
+          #("delayTime", planted_table.Integer(delay_ms)),
+        ],
+        filter,
+      ),
     )
     as "the fixture holds Proc 202043"
+  rows
+}
+
+/// A Stalker entered on these rows with a Virtual Battle Beast in sight.
+fn with_rows(
+  rows rows: fixture_tables.Rows,
+  body body: fn(game_connection.State) -> a,
+) -> a {
   use tables <- fixture_tables.on_rows(rows:, reaching: [])
   let #(state, _) =
     connection_support.entered_with(
@@ -642,6 +726,161 @@ pub fn an_input_with_nothing_pending_draws_nothing_and_makes_no_second_call_test
     as "the second press writes what the first did"
   assert frames(second) == frames(first)
     as "the second go writes what the first did"
+}
+
+pub fn a_creature_blow_on_the_player_runs_the_proc_pass_with_draws_from_its_seed_test() -> Nil {
+  use <- owned_test.run(120_000)
+  // A creature's blow on the player draws its strike's 12 bytes of rolls from the player's
+  // seed (block 0) and then, for the one pending event of the blow taken, the chance word
+  // of the kind 16 proc (block 1); the second blow's rolls are block 2 and its word block 3.
+  // A word fires the proc when its fraction is below the chance (`random.fraction`), so a
+  // chance between the two words' fractions fires one blow's proc and not the other's, and a
+  // blow that drew more or less than the word would shift which.
+  let assert [_rolls, first_word, _more_rolls, second_word] =
+    drawn_by_seed(draws: [hit.roll_bytes, 4, hit.roll_bytes, 4])
+  let assert [first] = random.words(bytes: first_word)
+  let assert [second] = random.words(bytes: second_word)
+  let first = random.fraction(first)
+  let second = random.fraction(second)
+  assert float.absolute_value(first -. second) >. 0.01
+    as "the seed's two words are told apart by a chance between them"
+  let chance = { first +. second } /. 2.0
+  use state <- with_proc_of_kind(kind: 16, chance:, delay_ms: 0)
+  let #(state, first_blow) = struck_at(state:, ms: 1000)
+  let #(_, second_blow) = struck_at(state:, ms: 100_000)
+  assert [
+      started_count(taken: first_blow, spell4_id: 63_366),
+      started_count(taken: second_blow, spell4_id: 63_366),
+    ]
+    == case first <. second {
+      True -> [1, 0]
+      False -> [0, 1]
+    }
+    as "the blow whose word is the lower fires the kind 16 proc, which casts 63366, and the other does not"
+}
+
+/// Spell group 134, one of the groups of the Beast's attack Spell4 5649 (`Spell4.5649`:
+/// Spell4GroupList 657, whose groups are 6, 9, 134 and 333), as a Proc's filter names it
+/// (dataBits07 2, the group in dataBits08).
+const beasts_attack_group_filter = [
+  #("dataBits07", planted_table.Integer(2)),
+  #("dataBits08", planted_table.Integer(134)),
+]
+
+/// How many times the player is written the start of 63366, which the Proc rows of `rows`
+/// cast (Proc 202043), by this event at 1000 ms.
+fn proc_casts_after(
+  rows rows: fixture_tables.Rows,
+  event event: Event(ConnectionEvent(Message, Answer)),
+) -> Int {
+  use state <- with_rows(rows:)
+  let #(_, struck) =
+    game_connection.step(state, support.input_at_ms(ms: 1000, event:))
+  started_count(taken: struck, spell4_id: 63_366)
+}
+
+pub fn a_creatures_critical_blow_fires_a_kind_146_proc_filtered_to_its_attack_spells_group_test() -> Nil {
+  use <- owned_test.run(120_000)
+  // The Beast's strike with a crit chance of 1.0 draws a crit roll below it, so the blow
+  // is a critical that the 12 damage does not take the shield down for; the proc's group
+  // 134 is one of the groups of Spell4 5649, which the connection reads from the tables.
+  let rows =
+    proc_rows(
+      kind: 146,
+      chance: 1.0,
+      delay_ms: 0,
+      filter: beasts_attack_group_filter,
+    )
+  assert proc_casts_after(
+      rows:,
+      event: connection_support.a_strike_of(
+        striker: spawn_support.beast_striker(),
+        offence: hit.Offence(
+          ..spawn_support.beast_attack().offence,
+          crit_chance: 1.0,
+        ),
+        unit_id: connection_support.own_unit_id,
+      ),
+    )
+    == 1
+    as "a critical blow of a creature on the holder fires the kind 146 proc"
+  assert proc_casts_after(
+      rows:,
+      event: connection_support.a_beast_strike(connection_support.own_unit_id),
+    )
+    == 0
+    as "a blow that is no critical does not"
+}
+
+pub fn a_creatures_blow_the_player_deflects_fires_a_kind_51_proc_filtered_to_its_attack_spells_group_test() -> Nil {
+  use <- owned_test.run(120_000)
+  // GameFormula 1235 gives the deflect chance (`rating.formulas`): an intercept of 100 with
+  // the knee above it makes it 100% at level 1, so every roll (a fraction below 1.0)
+  // deflects the strike.
+  let assert Ok(rows) =
+    fixture_tables.change(
+      rows: proc_rows(
+        kind: 51,
+        chance: 1.0,
+        delay_ms: 0,
+        filter: beasts_attack_group_filter,
+      ),
+      table: "GameFormula",
+      id: 1235,
+      with: [
+        #("dataint0", planted_table.Integer(100)),
+        #("datafloat02", planted_table.Integer(float_bits(value: 200.0))),
+      ],
+    )
+    as "the fixture holds GameFormula 1235"
+  assert proc_casts_after(
+      rows:,
+      event: connection_support.a_beast_strike(connection_support.own_unit_id),
+    )
+    == 1
+    as "a creature's blow the holder deflects fires the kind 51 proc"
+  assert proc_casts_after(
+      rows: proc_rows(
+        kind: 51,
+        chance: 1.0,
+        delay_ms: 0,
+        filter: beasts_attack_group_filter,
+      ),
+      event: connection_support.a_beast_strike(connection_support.own_unit_id),
+    )
+    == 0
+    as "the same blow landed does not"
+}
+
+pub fn a_creatures_blow_that_depletes_the_shield_fires_a_kind_115_proc_filtered_to_its_attack_spells_group_test() -> Nil {
+  use <- owned_test.run(120_000)
+  // The player's shield holds 450 and takes at most 0.625 of the mitigated blow
+  // (`player_life_test`): 3000 Magic damage takes all of it and leaves the health alive,
+  // and it is no critical, so it is the shield going to 0 that fires the proc; the 12
+  // Physical of the Beast's own blow does not take the shield down.
+  let rows =
+    proc_rows(
+      kind: 115,
+      chance: 1.0,
+      delay_ms: 0,
+      filter: beasts_attack_group_filter,
+    )
+  assert proc_casts_after(
+      rows:,
+      event: connection_support.a_creatures_blow(
+        unit_id: connection_support.own_unit_id,
+        damage_type: 3,
+        damage: 3000,
+      ),
+    )
+    == 1
+    as "a blow that takes the shield from above 0 to 0 fires the kind 115 proc"
+  assert proc_casts_after(
+      rows:,
+      event: connection_support.a_beast_strike(connection_support.own_unit_id),
+    )
+    == 0
+    as "a blow that leaves the shield above 0 does not"
 }
 
 pub fn a_proc_due_timer_starts_the_delayed_cast_test() -> Nil {

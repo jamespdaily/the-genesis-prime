@@ -659,17 +659,14 @@ pub fn a_target_in_reach_is_struck_with_5649_every_1500_ms_and_the_answer_is_wri
       Attacks(tell: Strike(
         key:,
         from:,
-        striker:,
+        striker: _,
         offence:,
         controls: [],
         gates: [],
       )),
     ),
   ] = fights_told(ticked)
-  assert from == address()
-    && striker == CreatureStriker
-    && key.cast_id == start.cast_id
-    && key.unit_id == 20
+  assert from == address() && key.cast_id == start.cast_id && key.unit_id == 20
     as "the strike answers to the creature and names the cast and the struck unit; the struck player rolls"
   assert list.map(offence.blows, fn(blow) {
       #(blow.spell4_effects_id, blow.damage)
@@ -3431,7 +3428,7 @@ pub fn at_its_end_the_charge_strikes_each_fighter_inside_its_rectangle_test() ->
       Attacks(tell: Strike(
         key:,
         from:,
-        striker:,
+        striker: _,
         offence:,
         controls: [],
         gates: [],
@@ -3439,7 +3436,6 @@ pub fn at_its_end_the_charge_strikes_each_fighter_inside_its_rectangle_test() ->
     ),
   ] = fights_told(went)
   assert from == address()
-    && striker == CreatureStriker
     && key.cast_id == cast_id_sent(opened, 2)
     && key.unit_id == 20
     as "the strike answers to the turret and names the charge's cast and the struck unit"
@@ -3448,6 +3444,43 @@ pub fn at_its_end_the_charge_strikes_each_fighter_inside_its_rectangle_test() ->
     as "the charge's damage effect, Spell4Effects 224644"
   assert list.map(timers(went), fn(timer) { timer.1 }) == [1000]
     as "the strike's 1 s deadline starts, and no attack tick while the round is open"
+}
+
+pub fn a_creatures_strike_names_its_unit_and_its_attack_spell4_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The strike carries the unit and the Spell4 of the cast the viewers were sent (the 0x7ff
+  // names the caster and the spell), so a player's procs of blows taken match the spell the
+  // client showed.
+  let #(state, aggro) =
+    tell(
+      state: beast(viewers: [2]),
+      at_ms: 0,
+      message: approached(number: 2, x: 5.0, seq: 1),
+    )
+  let #(_, ticked) = fire(state:, at_ms: 1500, timer: timer_for(aggro, 1500))
+  let assert [CastStarted(start: instant)] = news_to(ticked, 2)
+  let assert [#(2, Attacks(tell: Strike(striker: instant_striker, ..)))] =
+    fights_told(ticked)
+  assert instant_striker
+    == CreatureStriker(
+      unit_id: instant.caster_unit_id,
+      spell4_id: Spell4Id(instant.spell4_id),
+    )
+    && instant.spell4_id == 5649
+    as "the instant attack's strike names the creature that cast it and its attack spell 5649"
+  let #(state, aggro) = fought(viewers: [2, 5])
+  let #(state, opened, ends) = charge_opened(state:, aggro:)
+  let assert [CastStarted(start: charge)] = news_to(opened, 2)
+  let #(_, went) = fire(state:, at_ms: 11_000, timer: ends)
+  let assert [#(2, Attacks(tell: Strike(striker: charge_striker, ..)))] =
+    fights_told(went)
+  assert charge_striker
+    == CreatureStriker(
+      unit_id: charge.caster_unit_id,
+      spell4_id: Spell4Id(charge.spell4_id),
+    )
+    && charge.spell4_id == 85_469
+    as "the charge's strike names the turret and its charge spell 85469"
 }
 
 pub fn a_charge_with_nobody_inside_goes_with_no_target_test() -> Nil {

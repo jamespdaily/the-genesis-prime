@@ -154,7 +154,9 @@
 ////   read by the texts the client holds (`.fairly_sure`): 10 using an ability, 103 spending
 ////   the class resource, 21 receiving a heal, 52 a foe's deflect, 49 a critical by a finisher
 ////   or a builder, 11 starting to move, 87 the class resource changing (the holder's gate
-////   says to what), 105 the Stalker's suit power dropping and 182 landing a taunt. It holds the
+////   says to what), 105 the Stalker's suit power dropping and 182 landing a taunt, and the
+////   blows a creature lands on the holder: 16 taking damage, 146 a critical, 51 a deflect
+////   and 115 a depleted shield (`Trigger`, a guess: the client never reads a Proc row). It holds the
 ////   spell it casts (dataBits01), planned as a Proxy's child is and on the same chain, so a
 ////   proc that leads back to a spell on the way fails as a cycle, its chance (dataBits02,
 ////   a float32: above 0 and at most 1.0), its limit, dataBits05 fires in dataBits04 ms or
@@ -167,7 +169,9 @@
 ////   does a row of a kind the texts name that waits on an open issue (`ProcKindWaits`, which
 ////   names the issue), and a row held by another unit, behind a persistence or target apply prerequisite,
 ////   with a group and no filter kind, with an aim of 32 or above, or with no life
-////   (`ProcIsLeftOut`); a row of these kinds with a chance outside 0 to 1.0, a window or
+////   (`ProcIsLeftOut`), and a row whose spell the Spell4 table has no row for, which the
+////   client's table keeps because the client never reads a Proc row (`ProcCastsNoSpell`);
+////   a row of these kinds with a chance outside 0 to 1.0, a window or
 ////   count at or below 0 (a window of -1 excepted), a filter kind other than 0, 1 and 2 or a
 ////   negative delay fails the load naming the column (`ProcNotRead`). The spells the procs
 ////   cast are in the tree (`tree`).
@@ -307,8 +311,9 @@ import genesis_prime/table/cc_state_additional_data
 import genesis_prime/table/id.{
   type ItemSlotId, type PrerequisiteId, type Spell4BaseId, type Spell4EffectsId,
   type Spell4Id, type UnitProperty2Id, CCStateAdditionalDataId, ItemDisplayId,
-  PrerequisiteId, Spell4BaseId, Spell4ConditionsId, Spell4EffectsId, Spell4Id,
-  Spell4StackGroupId, SpellCoolDownId, UnitProperty2Id,
+  PrerequisiteId, Spell4BaseId, Spell4ConditionsId, Spell4EffectsId,
+  Spell4GroupListId, Spell4Id, Spell4StackGroupId, SpellCoolDownId,
+  UnitProperty2Id,
 }
 import genesis_prime/table/item2_type
 import genesis_prime/table/item_display
@@ -870,6 +875,20 @@ pub type Trigger {
   /// 182: a strike of the holder's lands a Taunt state on a foe. A guess (`.fairly_sure`,
   /// text 'Landing a Taunt'): what a taunt does to the foe is not part of the event.
   LandsTaunt
+  /// 16: a creature's blow lowers the holder's absorbs, shield or health. A guess for the
+  /// reading and for a blow fully taken by an absorb counting (`.dataBits00`, the texts say
+  /// 'taking damage'; no client code reads a Proc row).
+  TakesDamage
+  /// 146: a creature's blow on the holder is a critical hit, even when the absorbs took all
+  /// of it. A guess for the reading and for the absorbed critical
+  /// (`.dataBits00`, `.client_evaluation`).
+  SuffersCritical
+  /// 51: the holder deflects a creature's blow. It is not kind 52, a foe deflecting the
+  /// holder's strike. A guess (`.dataBits00`).
+  DeflectsAttack
+  /// 115: a creature's blow takes the holder's shield from above 0 to 0. A guess
+  /// (`.dataBits00`, 53 rows).
+  ShieldDepleted
 }
 
 /// How often a Proc fires (dataBits04 and dataBits05,
@@ -1853,6 +1872,10 @@ pub type LeftOutReason {
   /// A Proc with no durationTime and no flags bit 2, which gives its holder's node no
   /// life (`Spell4Effects.effectType.14.lifetime`).
   ProcWithoutLife
+  /// A Proc whose dataBits01 names a spell the Spell4 table has no row for, so it can cast
+  /// nothing. The client never reads a Proc row, so its table keeps such a name and the
+  /// holder spell still casts: the row is left out, as a Proxy that names no spell is.
+  ProcCastsNoSpell(spell4_id: Int)
   /// A Proxy whose dataBits00 names no spell.
   ProxyNamesNoSpell
   /// A damage row whose phaseFlags is 0: no phase selects it (`spell_area` `phase`).
@@ -2733,6 +2756,43 @@ fn phases_by_owner(
       Phase(delay_ms: phase.phase_delay, flags: phase.phase_flags)
     })
   })
+}
+
+/// What a Proc's filters read of a spell that is only a Spell4 id: its spell groups and its
+/// school.
+pub type SpellFacts {
+  SpellFacts(groups: List(Int), school: Int)
+}
+
+/// The groups and school of the spell `spell4_id` as a Proc's filters read them: the group
+/// ids of its Spell4GroupList row (`0x140561d80`), none for the list id 0, and its
+/// Spell4Base school. A Spell4, Spell4Base or group list row the tables lack is an error, so a
+/// caller never takes a spell whose groups are unknown for one that has none.
+pub fn facts_of_spell4(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Spell4Id,
+) -> Result(SpellFacts, PlanError) {
+  use row <- result.try(
+    spell4.get(tables:, id: spell4_id)
+    |> result.replace_error(NoRow(table: "Spell4", id: spell4_id.value)),
+  )
+  use base <- result.try(
+    spell4_base.get(tables:, id: Spell4BaseId(row.spell4_base_id_base_spell))
+    |> result.replace_error(NoRow(
+      table: "Spell4Base",
+      id: row.spell4_base_id_base_spell,
+    )),
+  )
+  use groups <- result.map(case row.spell4_group_list_id {
+    0 -> Ok([])
+    list_id ->
+      spell4_group_list.get(tables:, id: Spell4GroupListId(list_id))
+      |> result.map(fn(group_list) {
+        list.filter(group_ids_of(row: group_list), fn(group) { group != 0 })
+      })
+      |> result.replace_error(NoRow(table: "Spell4GroupList", id: list_id))
+  })
+  SpellFacts(groups:, school: base.school)
 }
 
 /// The spell group ids each Spell4GroupList row names, by the row's id: its
@@ -4265,6 +4325,10 @@ fn proc_read_of_a_kind_to_read(
     87 -> Ok(ResourceCrosses)
     105 -> Ok(SuitPowerDrops)
     182 -> Ok(LandsTaunt)
+    16 -> Ok(TakesDamage)
+    146 -> Ok(SuffersCritical)
+    51 -> Ok(DeflectsAttack)
+    115 -> Ok(ShieldDepleted)
     kind -> Error(ProcKindNotRead(spell4_id:, effect_id: effect.id, kind:))
   })
   let unit_bits = effect.data_bits03
@@ -4344,6 +4408,11 @@ fn proc_limit_of(
 
 /// A Proc row's filter: kind 0 is every spell, 1 the Spell4 and 2 the group dataBits08
 /// names; any other kind is the column and value the plan does not read.
+///
+/// Gap (issue 870): a filter of kind 1 that names Spell4 0 is read like any other and then
+/// refused, because the Spell4 table has no row 0 (`NoRow("Spell4", 0)`). The client never
+/// reads a Proc row, so nothing says whether it means "every spell"; 17 Proc rows have it
+/// (kinds 12, 16 and 117), 4 of them of kind 16 (Procs 92542, 107509, 162927, 189684).
 fn proc_filter_of(
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(ProcFilter, #(String, Int)) {
@@ -5041,9 +5110,10 @@ fn try_heal(
 }
 
 /// A Proc row: left out when its kind is one the holder's own events do not make or its
-/// shape is one a rule does not hold (`proc_read`), else its reading with its caster
-/// condition and its two gates, the Prerequisite rows its dataBits06 and dataBits09 name; a
-/// gate or a one-spell filter naming a row the tables lack fails the load.
+/// shape is one a rule does not hold (`proc_read`) or its dataBits01 names a Spell4 the
+/// tables lack (`ProcCastsNoSpell`), else its reading with its caster condition and its
+/// two gates, the Prerequisite rows its dataBits06 and dataBits09 name; a gate or a
+/// one-spell filter naming a row the tables lack fails the load.
 fn proc_reading(
   tables tables: table_store.Tables,
   spell4_id spell4_id: Int,
@@ -5054,28 +5124,37 @@ fn proc_reading(
       Ok(LeftOut(why: ProcOfAnotherKind(kind:)))
     Error(error) -> Error(error)
     Ok(ProcIsLeftOut(why:)) -> Ok(LeftOut(why:))
-    Ok(ProcIsRead(reading:)) -> {
-      use condition <- result.try(condition_of(
-        tables:,
-        effect:,
-        reach: OnlyTheCaster,
-        data_bits06_names_a_gate: False,
-      ))
-      use event_gate <- result.try(proc_gate_of(tables:, id: reading.event_gate))
-      use holder_gate <- result.try(proc_gate_of(
-        tables:,
-        id: reading.holder_gate,
-      ))
-      use Nil <- result.map(case reading.filter {
-        OneSpell(spell4_id: named) ->
-          spell4.get(tables:, id: named)
-          |> result.replace(Nil)
-          |> result.replace_error(NoRow(table: "Spell4", id: named.value))
-        AnySpell | InGroup(..) -> Ok(Nil)
-      })
-      Applied(ReadProc(reading:, condition:, event_gate:, holder_gate:))
-    }
+    Ok(ProcIsRead(reading:)) ->
+      case spell4.get(tables:, id: Spell4Id(effect.data_bits01)) {
+        Error(Nil) ->
+          Ok(LeftOut(why: ProcCastsNoSpell(spell4_id: effect.data_bits01)))
+        Ok(_) -> proc_read_with_gates(tables:, effect:, reading:)
+      }
   }
+}
+
+/// The reading of a Proc row whose spell has its row, with its condition and its gates.
+fn proc_read_with_gates(
+  tables tables: table_store.Tables,
+  effect effect: spell4_effects.Spell4Effects,
+  reading reading: ProcReading,
+) -> Result(RowReading, PlanError) {
+  use condition <- result.try(condition_of(
+    tables:,
+    effect:,
+    reach: OnlyTheCaster,
+    data_bits06_names_a_gate: False,
+  ))
+  use event_gate <- result.try(proc_gate_of(tables:, id: reading.event_gate))
+  use holder_gate <- result.try(proc_gate_of(tables:, id: reading.holder_gate))
+  use Nil <- result.map(case reading.filter {
+    OneSpell(spell4_id: named) ->
+      spell4.get(tables:, id: named)
+      |> result.replace(Nil)
+      |> result.replace_error(NoRow(table: "Spell4", id: named.value))
+    AnySpell | InGroup(..) -> Ok(Nil)
+  })
+  Applied(ReadProc(reading:, condition:, event_gate:, holder_gate:))
 }
 
 /// The Prerequisite a Proc gate column names: none for 0, else its row, which the tables

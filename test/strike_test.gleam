@@ -217,7 +217,7 @@ pub fn a_go_that_strikes_several_creatures_tells_each_in_selection_order_with_it
           ),
         ) -> Ok(#(unit_id, life, key, from, rolls))
         strike.TellStrike(
-          tell: strike_tell.Strike(striker: strike_tell.CreatureStriker, ..),
+          tell: strike_tell.Strike(striker: strike_tell.CreatureStriker(..), ..),
           ..,
         ) -> panic as "a player's strike carries a player striker"
         strike.StartTimer(..)

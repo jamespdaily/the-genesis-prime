@@ -286,7 +286,7 @@ pub fn struck(
 fn rolls_of(strike: Tell) -> hit.Rolls {
   case strike.striker {
     PlayerStriker(rolls:, ..) -> rolls
-    CreatureStriker -> panic as "a creature struck a creature"
+    CreatureStriker(..) -> panic as "a creature struck a creature"
   }
 }
 

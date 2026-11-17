@@ -14,7 +14,7 @@
 ////                                             for the stay the strike was told for
 ////
 ////   SentByFoe(Threatened(unit, life))      ◀─ the creature put the player on its threat list
-////   SentByFoe(Attacks(Strike(key, Creature(..), CreatureStriker, offence)))
+////   SentByFoe(Attacks(Strike(key, Creature(..), CreatureStriker(unit, spell4_id), offence)))
 ////                                          ◀─ the creature's own strike
 ////   hit rule on the player's health and shield, rolls from the player's seed
 ////   Tell(Creature(..), TellStrikeAnswered(Answered(key, outcome))) ─▶ the creature's round
@@ -61,7 +61,7 @@ import genesis_prime/game/hit.{type Description, type Offence, type Rolls}
 import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/step.{type Address}
-import genesis_prime/table/id.{type Spell4EffectsId}
+import genesis_prime/table/id.{type Spell4EffectsId, type Spell4Id}
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/option.{type Option}
 
@@ -148,8 +148,9 @@ pub type Striker {
     rolls: Rolls,
   )
   /// A creature, which keeps no random state: the struck player's connection
-  /// draws the rolls.
-  CreatureStriker
+  /// draws the rolls. It names its unit and the Spell4 of the attack, the spell a
+  /// player's procs of blows taken match their group filter against.
+  CreatureStriker(unit_id: Int, spell4_id: Spell4Id)
 }
 
 /// Why a unit does not take a strike.

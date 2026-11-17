@@ -13,7 +13,7 @@
 ////   the 0x7fe of a lingering cast of a method the client keeps, `node_off`; a Normal
 ////   cast the client destroys with the 0x811), so the buff that stands for the stealth
 ////   never outlives it. A node that leaves the caster takes its cast's sources
-////   with it (`effects_ended`), `cast.damage_taken` ends the sources damage breaks, and
+////   with it (`effects_ended`), `cast.blow_taken` ends the sources damage breaks, and
 ////   death and leaving drop all. Each input (a press, a timer, a go, the player's death,
 ////   a blow) compares the stealth before and after and ends with one `StealthChanged`
 ////   when it moved, so the connection's 0x8f5 follows the 0x811 and 0x7fe it causes and
@@ -33,6 +33,10 @@
 ////   damage description that landed on a creature: `LandsHit`, `LandsMeleeHit` when the spell is of
 ////   school 1, `LandsCritical` for a critical and `Kills` for a kill (a guess:
 ////   `Spell4Effects.effectType.14.client_evaluation`); a spell that only selects a unit raises none.
+////   A creature's blow on the holder raises `TakesDamage` when it lowered the holder's absorbs,
+////   shield or health, `SuffersCritical` for a critical, `ShieldDepleted` when it took the shield
+////   to 0 and `DeflectsAttack` for a deflect, each with the creature as the other unit and its
+////   attack spell as the event's spell (`blow_events`).
 ////   The rule decides nothing about a draw: the connection asks `proc_draws_needed` how many
 ////   chance words and gate rolls the pending events need, one draw for all, and hands them to
 ////   `cast.procs_fire`, which matches each event, in order and then source order, against the proc rows
@@ -174,7 +178,6 @@ import genesis_prime/game/proc
 import genesis_prime/game/spell_plan.{type Spell}
 import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_properties
-import genesis_prime/message/combat_result
 import genesis_prime/message/crowd_control_state
 import genesis_prime/step.{LogDebug}
 import genesis_prime/table/id.{type Spell4Id}
@@ -329,6 +332,65 @@ fn taunts_landed(
   })
 }
 
+/// A creature's blow on the holder, as the connection tells the cast rule (it maps
+/// genesis_prime/game/player_life's `Took`, which this module does not import). `striker`
+/// is the creature's unit and `spell` its attack spell.
+pub type BlowTaken {
+  /// The blow landed. `lowered` says the absorbs, the shield or the health fell, `critical`
+  /// that a description of the blow is a critical, even when the absorbs took all of it, and
+  /// `shield_depleted` that the shield went from above 0 to 0 (guesses for the three:
+  /// no client code reads a Proc row, `Spell4Effects.effectType.14.client_evaluation`).
+  BlowLanded(
+    striker: Int,
+    spell: proc.EventSpell,
+    lowered: Bool,
+    critical: Bool,
+    shield_depleted: Bool,
+  )
+  /// The holder deflected the blow.
+  BlowDeflected(striker: Int, spell: proc.EventSpell)
+}
+
+/// Whether the blow lowered the holder's absorbs, shield or health: a deflect lowers none.
+pub fn lowers(blow blow: BlowTaken) -> Bool {
+  case blow {
+    BlowLanded(lowered:, ..) -> lowered
+    BlowDeflected(..) -> False
+  }
+}
+
+/// The events a creature's blow on the holder raises, in order: `TakesDamage` when it
+/// lowered something, `SuffersCritical` for a critical and `ShieldDepleted` when it took the
+/// shield to 0, or `DeflectsAttack` for a deflect. Each names the creature as the other unit
+/// and its attack spell as the spell.
+pub fn blow_events(blow blow: BlowTaken) -> List(proc.Event) {
+  let on = fn(trigger) {
+    proc.Event(
+      trigger:,
+      other_unit: Some(blow.striker),
+      spell: Some(blow.spell),
+    )
+  }
+  case blow {
+    BlowLanded(lowered:, critical:, shield_depleted:, ..) ->
+      list.flatten([
+        case lowered {
+          True -> [on(spell_plan.TakesDamage)]
+          False -> []
+        },
+        case critical {
+          True -> [on(spell_plan.SuffersCritical)]
+          False -> []
+        },
+        case shield_depleted {
+          True -> [on(spell_plan.ShieldDepleted)]
+          False -> []
+        },
+      ])
+    BlowDeflected(..) -> [on(spell_plan.DeflectsAttack)]
+  }
+}
+
 /// The spell of an event as a proc's filter reads it.
 pub fn event_spell(spell spell: Spell) -> proc.EventSpell {
   proc.EventSpell(
@@ -343,7 +405,7 @@ fn hit_triggers(
   spell spell: Spell,
   description description: hit.Description,
 ) -> List(spell_plan.Trigger) {
-  let critical = description.damage.combat_result == combat_result.Critical
+  let critical = hit.is_critical(description)
   list.flatten([
     [spell_plan.LandsHit],
     case spell.school {
@@ -686,7 +748,7 @@ fn belongs_to_passive(
 }
 
 /// Takes the node off the caster of each cast that holds a source damage breaks
-/// (`cast.damage_taken`); nothing when the caster holds none.
+/// (`cast.blow_taken`); nothing when the caster holds none.
 pub fn broken_by_damage(
   cast cast: State,
   caster caster: Caster,

@@ -464,3 +464,8 @@ fn described(
     hits: [],
   )
 }
+
+/// Whether the client is told this description as a critical hit.
+pub fn is_critical(description description: Description) -> Bool {
+  description.damage.combat_result == Critical
+}

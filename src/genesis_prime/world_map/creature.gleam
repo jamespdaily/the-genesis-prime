@@ -1102,8 +1102,8 @@ fn credit_for(
         ),
       )),
     ]
-    Some(..), CreatureStriker -> []
-    None, PlayerStriker(..) | None, CreatureStriker -> []
+    Some(..), CreatureStriker(..) -> []
+    None, PlayerStriker(..) | None, CreatureStriker(..) -> []
   }
 }
 
@@ -1317,7 +1317,7 @@ fn creature_facts(
       unit_id,
       Some(area.pose_of(place:)),
     )
-    CreatureStriker -> #(0, None)
+    CreatureStriker(..) -> #(0, None)
   }
   prerequisite.CreatureFacts(
     player: prerequisite.Player(
@@ -1413,7 +1413,7 @@ fn answer_to(
     PlayerStriker(stay:, ..) -> [
       OwnEffect(Send(to: tell.from, message: Struck(stay:, answered:))),
     ]
-    CreatureStriker -> []
+    CreatureStriker(..) -> []
   }
 }
 

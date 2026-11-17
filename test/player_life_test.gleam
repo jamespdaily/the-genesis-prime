@@ -39,7 +39,9 @@ import genesis_prime/game/unit_properties
 import genesis_prime/message/float32
 import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/step.{TimerId}
-import genesis_prime/table/id.{ClassId, Spell4EffectsId, UnitProperty2Id}
+import genesis_prime/table/id.{
+  ClassId, Spell4EffectsId, Spell4Id, UnitProperty2Id,
+}
 import gleam/float
 import gleam/list
 import gleam/option.{None, Some}
@@ -54,7 +56,7 @@ fn attack(cast_id: Int) -> strike_tell.Tell {
   Strike(
     key: Key(cast_id:, occasion: strike_tell.AtGo(phase: 0), unit_id: 20),
     from: player_life_support.beast(),
-    striker: CreatureStriker,
+    striker: spawn_support.beast_striker(),
     offence: spawn_support.beast_attack().offence,
     controls: [],
     gates: [],
@@ -130,7 +132,14 @@ pub fn a_creatures_hit_takes_the_shield_first_up_to_its_share_and_the_rest_from_
     ToViewers(client_connection.Shield(shield: 447)),
     ToClient(OwnHealth(health: 734)),
     ToViewers(client_connection.Health(health: 734, dead: False)),
-    player_life.DamageTaken,
+    player_life.BlowTaken(
+      striker: CreatureStriker(..),
+      took: player_life.Landed(
+        lowered: True,
+        critical: False,
+        shield_depleted: False,
+      ),
+    ),
     Answer(
       to:,
       answered: Answered(
@@ -174,7 +183,14 @@ pub fn health_is_floored_at_0_the_answer_is_landed_and_killed_and_a_later_strike
   let assert [
     ToClient(OwnHealth(health: 0)),
     ToViewers(client_connection.Health(health: 0, dead: True)),
-    player_life.DamageTaken,
+    player_life.BlowTaken(
+      striker: CreatureStriker(..),
+      took: player_life.Landed(
+        lowered: True,
+        critical: False,
+        shield_depleted: False,
+      ),
+    ),
     Answer(
       answered: Answered(
         outcome: Landed(
@@ -379,7 +395,7 @@ fn a_dead_warrior() -> #(player_life.Life, List(player_life.Effect)) {
         ToClient(..)
         | ToViewers(..)
         | StreamTo(..)
-        | player_life.DamageTaken
+        | player_life.BlowTaken(..)
         | player_life.CombatLeft
         | EndCasts
         | GoToHolocrypt
@@ -968,7 +984,7 @@ fn writes_armor(effect: player_life.Effect) -> Bool {
     ToViewers(..) -> False
     Answer(..)
     | StreamTo(..)
-    | player_life.DamageTaken
+    | player_life.BlowTaken(..)
     | player_life.CombatLeft
     | EndCasts
     | GoToHolocrypt
@@ -1043,4 +1059,251 @@ pub fn player_defence_reads_damage_taken_properties_test() -> Nil {
     as "161 x 1.25, 152 plus 4"
   assert defence.physical_mitigation == plain.physical_mitigation
     as "armor's mitigation is not a damage-taken property"
+}
+
+// What a creature's blow tells the cast rule. No client code reads a Proc row
+// (`Spell4Effects.effectType.14.client_evaluation`), so what counts as a blow taken is
+// a guess marked in `genesis_prime/game/player_life`'s `Took`; these tests pin that reading.
+
+/// The unit 31 and its attack spell 77: a striker no other fixture names, so the tests see
+/// the rule carry exactly the striker the strike names.
+fn striker_31() -> strike_tell.Striker {
+  CreatureStriker(unit_id: 31, spell4_id: Spell4Id(77))
+}
+
+/// Creature 31's blow of this offence on the player's `life`, rolled as `rolls` say.
+fn blow_by_31(
+  life life: player_life.Life,
+  defence defence: hit.Defence,
+  offence offence: hit.Offence,
+  rolls rolls: hit.Rolls,
+) -> #(player_life.Life, List(player_life.Effect)) {
+  player_life.struck(
+    life:,
+    defence:,
+    strike: Strike(..attack(1), striker: striker_31(), offence:),
+    rolls:,
+    place: test_place(),
+  )
+}
+
+/// The blows of the creature Beast: 12 Physical, no critical chance.
+fn plain_offence() -> hit.Offence {
+  spawn_support.beast_attack().offence
+}
+
+/// The same blows, always critical (a roll of 0.5 is below a chance of 1.0).
+fn critical_offence() -> hit.Offence {
+  hit.Offence(..plain_offence(), crit_chance: 1.0, crit_severity: 1.5)
+}
+
+/// What an effect is, for the tests that look only at the blows taken and the answer.
+type Mark {
+  MarkBlowTaken
+  MarkAnswer
+  MarkOther
+}
+
+fn mark_of(effect: player_life.Effect) -> Mark {
+  case effect {
+    player_life.BlowTaken(..) -> MarkBlowTaken
+    player_life.Answer(..) -> MarkAnswer
+    player_life.ToClient(..)
+    | player_life.ToViewers(..)
+    | player_life.StreamTo(..)
+    | player_life.CombatLeft
+    | player_life.EndCasts
+    | player_life.GoToHolocrypt
+    | player_life.TellMap(..)
+    | player_life.StartTimer(..)
+    | player_life.CancelTimer(..) -> MarkOther
+  }
+}
+
+/// The blows taken in an effect list, in order.
+fn blows_taken(effects: List(player_life.Effect)) -> List(player_life.Effect) {
+  list.filter(effects, fn(effect) { mark_of(effect) == MarkBlowTaken })
+}
+
+pub fn a_landed_blow_that_lowers_health_tells_blow_taken_lowered_with_the_striker_and_spell_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(life, effects) =
+    blow_by_31(
+      life: player_life.new(
+        health: 736,
+        shield: 0,
+        regeneration: player_life_support.regeneration,
+      ),
+      defence: defence_of(1),
+      offence: plain_offence(),
+      rolls: player_life_support.rolls,
+    )
+  assert player_life.health(life:) < 736
+    as "the blow landed and lowered the health"
+  assert blows_taken(effects)
+    == [
+      player_life.BlowTaken(
+        striker: CreatureStriker(unit_id: 31, spell4_id: Spell4Id(77)),
+        took: player_life.Landed(
+          lowered: True,
+          critical: False,
+          shield_depleted: False,
+        ),
+      ),
+    ]
+    as "one blow taken, lowered, no critical, the shield was 0 already, by the striker and its spell"
+}
+
+// A guess: that a critical in a description of the blow is a critical taken even when
+// the absorbs took all of it.
+pub fn a_landed_critical_blow_tells_critical_even_when_absorbs_take_it_all_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(life, _) =
+    player_life.absorb_started(
+      life: player_life.new(
+        health: 736,
+        shield: 450,
+        regeneration: player_life_support.regeneration,
+      ),
+      source: unit_properties.Source(cast_id: 1, effect_id: Spell4EffectsId(1)),
+      amount: 164,
+      mask: 7,
+    )
+  let #(life, effects) =
+    blow_by_31(
+      life:,
+      defence: defence_of(1),
+      offence: critical_offence(),
+      rolls: player_life_support.rolls,
+    )
+  assert player_life.health(life:) == 736 && player_life.shield(life:) == 450
+    as "the pool of 164 took the whole blow"
+  assert blows_taken(effects)
+    == [
+      player_life.BlowTaken(
+        striker: striker_31(),
+        took: player_life.Landed(
+          lowered: True,
+          critical: True,
+          shield_depleted: False,
+        ),
+      ),
+    ]
+    as "a critical, and lowered because the absorbs fell"
+}
+
+pub fn a_blow_that_takes_the_shield_from_above_0_to_0_tells_shield_depleted_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(life, effects) =
+    blow_by_31(
+      life: player_life.new(
+        health: 736,
+        shield: 2,
+        regeneration: player_life_support.regeneration,
+      ),
+      defence: defence_of(1),
+      offence: plain_offence(),
+      rolls: player_life_support.rolls,
+    )
+  assert player_life.shield(life:) == 0 && player_life.health(life:) == 735
+    as "Armor 250: 12 mitigated to 3, the shield takes 2 and is gone, the health 1"
+  assert blows_taken(effects)
+    == [
+      player_life.BlowTaken(
+        striker: striker_31(),
+        took: player_life.Landed(
+          lowered: True,
+          critical: False,
+          shield_depleted: True,
+        ),
+      ),
+    ]
+    as "the shield went from 2 to 0 in this blow"
+}
+
+pub fn a_blow_on_a_shield_already_at_0_tells_no_shield_depleted_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(_, effects) =
+    blow_by_31(
+      life: player_life.new(
+        health: 736,
+        shield: 0,
+        regeneration: player_life_support.regeneration,
+      ),
+      defence: defence_of(1),
+      offence: plain_offence(),
+      rolls: player_life_support.rolls,
+    )
+  let assert [
+    player_life.BlowTaken(
+      took: player_life.Landed(shield_depleted: depleted, ..),
+      ..,
+    ),
+  ] = blows_taken(effects)
+  assert depleted == False
+    as "a shield that was at 0 did not go to 0 in this blow"
+}
+
+pub fn a_deflected_blow_tells_blow_taken_deflected_and_no_news_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let life =
+    player_life.new(
+      health: 736,
+      shield: 450,
+      regeneration: player_life_support.regeneration,
+    )
+  let #(after, effects) =
+    blow_by_31(
+      life:,
+      defence: hit.Defence(..defence_of(1), deflect_chance: 1.0),
+      offence: critical_offence(),
+      rolls: hit.Rolls(crit: 0.5, deflect: 0.0, glance: 0.0),
+    )
+  assert after == life as "a deflected blow changes nothing"
+  let assert [
+    player_life.BlowTaken(striker:, took: player_life.Deflected),
+    Answer(..),
+  ] = effects
+    as "the blow taken, then the answer, and no news to the client or the viewers"
+  assert striker == striker_31()
+}
+
+pub fn a_lethal_blow_tells_blow_taken_before_the_answer_and_the_death_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(_, effects) =
+    blow_by_31(
+      life: player_life.new(
+        health: 1,
+        shield: 0,
+        regeneration: player_life_support.regeneration,
+      ),
+      defence: defence_of(1),
+      offence: plain_offence(),
+      rolls: player_life_support.rolls,
+    )
+  let before_answer =
+    list.take_while(effects, fn(effect) { mark_of(effect) != MarkAnswer })
+  let from_answer = list.drop(effects, list.length(before_answer))
+  assert list.length(blows_taken(before_answer)) == 1
+    as "the blow taken comes before the answer"
+  assert blows_taken(from_answer) == []
+    as "and is told once, not again with the death"
+  assert list.contains(from_answer, EndCasts)
+    as "the death's effects come after the answer"
+}
+
+pub fn a_dead_player_tells_no_blow_taken_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(life, _) = a_dead_warrior()
+  let #(_, effects) =
+    blow_by_31(
+      life:,
+      defence: defence_of(1),
+      offence: plain_offence(),
+      rolls: player_life_support.rolls,
+    )
+  assert blows_taken(effects) == []
+    as "a dead player answers Refused(Dead) and takes no blow"
+  assert list.length(effects) == 1
+    as "only the Refused(Dead) answer, which the strike's refusal test pins"
 }

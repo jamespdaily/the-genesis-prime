@@ -12,7 +12,7 @@
 ////                                the first fighter:                           ─▶ 0x89a(P, 1) to P and its viewers
 ////                                Stream(C): P's place now, its move seq ──────▶ TargetMoved to C
 ////                                each accepted 0x637 after: TargetMoved to every fighter
-//// Attacks(Strike(key, C, CreatureStriker, offence))
+//// Attacks(Strike(key, C, CreatureStriker(unit, spell4_id), offence))
 ////                             ─▶ dead: Answer(C, Refused(Dead))
 ////                                alive: rolls from P's seed (12 bytes)
 ////                                the hit rule on P's health, shield and absorbs (genesis_prime/game/hit)
@@ -60,8 +60,9 @@
 ////                ─▶ 0x938(P, 22, sum) to P and to its viewers, when the sum moved
 //// a creature's blow, the hit rule: absorbs by mask, oldest first, then the shield, then health
 ////                ─▶ 0x938(P, 22, sum), then 0x938(P, 20, shield), then 0x92f / 0x937, each only when it moved
-////                ─▶ DamageTaken when the absorbs, the shield or the health fell; the shield's
-////                   reboot restarts only when the shield or the health fell (text 531855)
+////                ─▶ BlowTaken(striker, Landed(lowered, critical, shield_depleted)) for every landed blow;
+////                   the shield's reboot restarts only when the shield or the health fell (text 531855)
+//// a creature's blow the player deflects ─▶ BlowTaken(striker, Deflected) and no news
 //// the cast rule's CasterChangeEnds(source) ─▶ absorb_ended: the pool of `source` goes
 ////                ─▶ 0x938(P, 22, sum) to P and to its viewers, when the sum moved
 //// death ─▶ every pool dropped, 0x938(P, 22, 0) after the killing blow's 0x92f when the sum was above 0
@@ -343,6 +344,18 @@ pub type Refusal {
   NonzeroValue(value: Int)
 }
 
+/// What a blow did to the player.
+pub type Took {
+  /// The blow landed. `lowered` says the absorbs, the shield or the health fell, which is
+  /// what breaks a stealth damage ends. `critical` says a description of the blow is a
+  /// critical, even when the absorbs took all of it (a guess: no client code reads a Proc
+  /// row, `Spell4Effects.effectType.14.client_evaluation`). `shield_depleted` says the
+  /// shield went from above 0 to 0 in this blow (a guess, the same record).
+  Landed(lowered: Bool, critical: Bool, shield_depleted: Bool)
+  /// The player deflected the blow: nothing changed.
+  Deflected
+}
+
 /// What a creature's strike, threat or release asks the player's connection to do,
 /// in order.
 pub type Effect {
@@ -357,11 +370,12 @@ pub type Effect {
   /// Tell the creature `unit_id` of life `life` the player's place now, with its
   /// move sequence number: the start of the stream.
   StreamTo(unit_id: Int, life: Int)
-  /// A landed blow lowered the player's health or shield, after the news of both and
-  /// before the answer and any death: the connection tells the cast rule, which ends the
-  /// stealth damage breaks (genesis_prime/game/cast `damage_taken`). A deflected blow, and
-  /// a landed one that lowered neither, send none.
-  DamageTaken
+  /// A creature's blow reached the player, landed or deflected, after the news of the
+  /// shield and the health and before the answer and any death: the connection tells the
+  /// cast rule (genesis_prime/game/cast `blow_taken`), which ends the stealth damage breaks
+  /// and raises the events of the player's procs of blows taken. A dead player is told
+  /// none: it answers `Refused(Dead)` only.
+  BlowTaken(striker: strike_tell.Striker, took: Took)
   /// The player's combat flag went off, right after its news (0x89a off): the last
   /// fighter released it, or it died with a fighter on its list. The connection tells the
   /// cast rule (genesis_prime/game/cast `combat_left`).
@@ -762,6 +776,7 @@ pub fn struck(
         )
       {
         hit.Deflected -> #(life, [
+          BlowTaken(striker: strike.striker, took: Deflected),
           Answer(
             to: strike.from,
             answered: Answered(
@@ -777,9 +792,11 @@ pub fn struck(
             False -> shield_told(shield:)
           }
           let lowered = shield != life.shield || left != life.health
+          let shield_depleted = life.shield > 0 && shield == 0
           let #(life, after) = case left {
             0 -> died(life: Life(..life, health: left, shield:), place:)
-            _ -> blow_taken(life: Life(..life, health: left, shield:), lowered:)
+            _ ->
+              blow_landed(life: Life(..life, health: left, shield:), lowered:)
           }
           #(
             life,
@@ -787,10 +804,16 @@ pub fn struck(
               absorption_news,
               shield_news,
               health_told(health: left, dead: left == 0),
-              case lowered || absorption_news != [] {
-                True -> [DamageTaken]
-                False -> []
-              },
+              [
+                BlowTaken(
+                  striker: strike.striker,
+                  took: Landed(
+                    lowered: lowered || absorption_news != [],
+                    critical: list.any(descriptions, hit.is_critical),
+                    shield_depleted:,
+                  ),
+                ),
+              ],
               [
                 Answer(
                   to: strike.from,
@@ -816,7 +839,10 @@ pub fn struck(
 /// A blow left the living player with the health and shield it has now: when it
 /// `lowered` either, the shield's reboot starts again, and the health tick runs or
 /// not as the player's state asks.
-fn blow_taken(life life: Life, lowered lowered: Bool) -> #(Life, List(Effect)) {
+fn blow_landed(
+  life life: Life,
+  lowered lowered: Bool,
+) -> #(Life, List(Effect)) {
   let #(life, shield_timers) = case lowered {
     True -> shield_rebooted(life:)
     False -> #(life, [])

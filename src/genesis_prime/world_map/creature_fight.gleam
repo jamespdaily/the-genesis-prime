@@ -25,7 +25,7 @@
 ////                                                            speed, clipped at the leash circle]──▶
 //// the attack tick, the target in reach of place_at(path, now):
 ////                                                         ─0x7ff───────────────────────────────▶
-//// ◀──────────── Attacks(Strike(key, C, CreatureStriker, offence)) ─ StartTimer(strike deadline, 1 s)
+//// ◀──────────── Attacks(Strike(key, C, CreatureStriker(unit, spell4_id), offence)) ─ StartTimer(strike deadline, 1 s)
 //// the hit rule on P's health and shield, rolls from P's seed
 //// 0x938(20), 0x92f to P; 0x938, 0x937 to P's viewers
 //// ─TellStrikeAnswered(Answered(key, Landed))──────────────▶ ─0x7f4(effect, P's descriptions) 0x7fe─▶
@@ -81,7 +81,7 @@
 ////                                                            next attack tick (interval) is started
 ////                                                         some inside: round = Striking, one awaiting entry
 ////                                                            per fighter
-//// ◀─── Attacks(Strike(key, C, CreatureStriker, offence)) to each fighter ─ StartTimer(strike deadline, 1 s)
+//// ◀─── Attacks(Strike(key, C, CreatureStriker(unit, spell4_id), offence)) to each fighter ─ StartTimer(strike deadline, 1 s)
 //// each fighter's answer, the strike round's way (above) ───▶ the last answer or the deadline closes the round
 ////                                                         (0x7f4 listing each fighter that landed, 0x7fe); the
 ////                                                         next attack tick (interval) is started
@@ -1384,7 +1384,10 @@ fn strikes(
           tell: strike_tell.Strike(
             key:,
             from: fighter.address,
-            striker: CreatureStriker,
+            striker: CreatureStriker(
+              unit_id: fighter.unit_id,
+              spell4_id: fighter.attack.spell4_id,
+            ),
             offence: fighter.attack.offence,
             controls: [],
             gates: [],
@@ -1655,7 +1658,10 @@ fn charge_ended(
                 tell: strike_tell.Strike(
                   key: found.2,
                   from: fighter.address,
-                  striker: CreatureStriker,
+                  striker: CreatureStriker(
+                    unit_id: fighter.unit_id,
+                    spell4_id: fighter.attack.spell4_id,
+                  ),
                   offence: fighter.attack.offence,
                   controls: [],
                   gates: [],

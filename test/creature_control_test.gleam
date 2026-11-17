@@ -14,9 +14,7 @@ import crowd_control_support
 import fixture_tables
 import genesis_prime/game/crowd_control
 import genesis_prime/game/hit.{Offence}
-import genesis_prime/game/strike_tell.{
-  type ControlTell, CreatureStriker, Key, Strike,
-}
+import genesis_prime/game/strike_tell.{type ControlTell, Key, Strike}
 import genesis_prime/message/crowd_control_state.{
   type CrowdControlState, Fear, Polymorph, Root, Snare, Stun, Tether,
 }
@@ -26,6 +24,7 @@ import genesis_prime/world_map/creature_life
 import gleam/int
 import gleam/list
 import owned_test
+import spawn_support
 
 /// The creature holding these states, each landed by its own strike at 0 ms on a
 /// creature with no armor.
@@ -57,7 +56,7 @@ fn strike_for(
   Strike(
     key: Key(cast_id:, occasion: strike_tell.AtGo(phase: 0), unit_id: 7),
     from: step.Connection(step.ConnectionId(2)),
-    striker: CreatureStriker,
+    striker: spawn_support.beast_striker(),
     offence: Offence(
       blows: [],
       crit_chance: 0.0,

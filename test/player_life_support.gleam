@@ -18,6 +18,7 @@ import genesis_prime/world_map/map_id.{MapId}
 import gleam/list
 import gleam/option.{Some}
 import properties_support
+import spawn_support
 
 /// The shield's regeneration timer: the connection's free id 9.
 pub const shield_timer = TimerId(9)
@@ -84,7 +85,7 @@ pub fn struck(
         unit_id: own_unit,
       ),
       from: beast(),
-      striker: strike_tell.CreatureStriker,
+      striker: spawn_support.beast_striker(),
       offence:,
       controls: [],
       gates: [],
@@ -116,7 +117,7 @@ pub fn timers(effects: List(Effect)) -> List(Effect) {
       | ToViewers(..)
       | player_life.Answer(..)
       | player_life.StreamTo(..)
-      | player_life.DamageTaken
+      | player_life.BlowTaken(..)
       | player_life.CombatLeft
       | player_life.EndCasts
       | player_life.GoToHolocrypt

@@ -1,5 +1,5 @@
 //// The cast rule's stealth (`genesis_prime/game/cast` `State.stealth`, `stealthed`,
-//// `damage_taken`, `StealthChanged`). The Stalker's toggle is the client's rows of
+//// `blow_taken`, `StealthChanged`). The Stalker's toggle is the client's rows of
 //// 46073, 38784 and 38783 (`spell_tables.fixture_plans`);
 //// every other spell is planted by hand (`cast_support.child` with a Stealth row), on a
 //// clock the test drives. Expected values come from these places:
@@ -26,10 +26,12 @@
 
 import cast_support as support
 import genesis_prime/game/cast
+import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/lasting
 import genesis_prime/game/prerequisite
+import genesis_prime/game/proc
 import genesis_prime/game/spell_plan.{
   type Plans, type Spell, Always, BrokenByDamage, EndsStealthAfterLastGo,
   EndsStealthAtEachGo, GatedOnCaster, KeepsStealth, KeptOnDamage, Proxy,
@@ -834,7 +836,18 @@ pub fn a_go_after_the_stealth_ended_finds_nothing_to_end_test() -> Nil {
 // ---- damage ----
 
 fn damaged(state state: State, at ms: Int) -> #(State, List(Effect)) {
-  cast.damage_taken(cast: state, caster: caster(), now: support.at(ms:))
+  cast.blow_taken(
+    cast: state,
+    caster: caster(),
+    now: support.at(ms:),
+    blow: cast_proc.BlowLanded(
+      striker: 7,
+      spell: proc.EventSpell(spell4_id: Spell4Id(5649), groups: [], school: 1),
+      lowered: True,
+      critical: False,
+      shield_depleted: False,
+    ),
+  )
 }
 
 pub fn damage_takes_the_cast_of_a_source_it_breaks_off_and_ends_the_stealth_test() -> Nil {

@@ -33,6 +33,7 @@ import gleam/list
 import gleam/option.{None}
 import owned_test
 import player_life_support
+import spawn_support
 
 /// The defence of a player whose shield takes 0.625 of a blow and that mitigates nothing.
 fn defence() -> Defence {
@@ -92,7 +93,7 @@ fn written(effects effects: List(Effect)) -> List(Effect) {
       | player_life.CancelTimer(..)
       | player_life.Answer(..)
       | player_life.StreamTo(..)
-      | player_life.DamageTaken
+      | player_life.BlowTaken(..)
       | player_life.CombatLeft
       | player_life.EndCasts
       | player_life.GoToHolocrypt
@@ -182,8 +183,18 @@ pub fn a_blow_taken_wholly_by_the_absorb_counts_as_damage_taken_but_does_not_res
   use <- owned_test.run(5000)
   let #(life, _) = started(life: player(), cast_id: 1, amount: 164, mask: 7)
   let #(life, effects) = struck(life:, damage: 100, damage_type: 3)
-  assert list.contains(effects, player_life.DamageTaken)
-    as "the stealth rule hears of a blow that took only the absorb"
+  assert list.contains(
+    effects,
+    player_life.BlowTaken(
+      striker: spawn_support.beast_striker(),
+      took: player_life.Landed(
+        lowered: True,
+        critical: False,
+        shield_depleted: False,
+      ),
+    ),
+  )
+    as "the stealth rule hears of a blow that took only the absorb, as one that lowered"
   assert list.any(effects, fn(effect) {
       case effect {
         StartTimer(timer:, ..) -> timer == player_life_support.shield_timer
@@ -192,7 +203,7 @@ pub fn a_blow_taken_wholly_by_the_absorb_counts_as_damage_taken_but_does_not_res
         | player_life.CancelTimer(..)
         | player_life.Answer(..)
         | player_life.StreamTo(..)
-        | player_life.DamageTaken
+        | player_life.BlowTaken(..)
         | player_life.CombatLeft
         | player_life.EndCasts
         | player_life.GoToHolocrypt
@@ -213,7 +224,7 @@ pub fn a_blow_taken_wholly_by_the_absorb_counts_as_damage_taken_but_does_not_res
       | player_life.CancelTimer(..)
       | player_life.Answer(..)
       | player_life.StreamTo(..)
-      | player_life.DamageTaken
+      | player_life.BlowTaken(..)
       | player_life.CombatLeft
       | player_life.EndCasts
       | player_life.GoToHolocrypt
@@ -368,7 +379,7 @@ pub fn a_deflected_strike_leaves_the_absorbs_and_writes_no_stat_22_test() -> Nil
           unit_id: player_life_support.own_unit,
         ),
         from: player_life_support.beast(),
-        striker: strike_tell.CreatureStriker,
+        striker: spawn_support.beast_striker(),
         offence: player_life_support.offence_of(
           damage: 300,
           damage_type: 3,
