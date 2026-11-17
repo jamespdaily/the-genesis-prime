@@ -64,29 +64,38 @@
 //// P wakes in C's ring: LifeChanged(P, True) ─Approached(P, ..)─▶ C Resting: aggro, as a walk-in
 //// ```
 ////
-//// A charge, the attack of a creature whose spell has a cast time (`creature_life.Charged`):
+//// A charge, the attack of a creature whose spell has a cast time (`creature_life.Charged`): the
+//// attack of the kind or one of its specials (`creature_life.Special`), whose gos (`Go`) are the
+//// spell's phases:
 ////
 //// ```
-//// the attack tick, the target in reach of C's place, no round open:
-////                                                         round = Charging(CastEnds generation);
+//// the attack tick, the target in reach of the attack `chosen` (the first ready special that
+//// reaches it, else the attack), no round open:
+////                                                         a creature that can move turns to face the target:
+////                                                         ─0x638 (a kind 14 turn in place)─────────────────▶
+////                                                         round = Charging(CastEnds generation, go 0);
 ////                                                            the attack tick's generation moves on and no
 ////                                                            next attack tick starts: the round's close starts it
 ////                                                         ─0x7ff(cast id, spell, target, C's place)────────▶ the client draws the
-////                                                         StartTimer(CastEnds, cast time)                    telegraph from the spell
-//// CastEnds of the round's generation, C alive and Fighting:
+////                                                         StartTimer(CastEnds, first go's due time)          telegraph from the spell
+//// CastEnds of the round's generation, a go that does not strike:
+////                                                         ─0x7f4 (the go's index, no unit)─────────────────▶
+////                                                         StartTimer(CastEnds, next go, of a new generation)
+//// CastEnds of the round's generation, the strike go, C alive and Fighting:
 ////                                                         the fighters on the threat list inside the
 ////                                                         attack's area (from C's place along its aim) by
 ////                                                         their newest sightings
 ////                                                         none inside: ─0x7f4 (no unit) 0x7fe───▶ round closed; the
-////                                                            next attack tick (interval) is started
+////                                                            next attack tick (the hold, else interval) is started
 ////                                                         some inside: round = Striking, one awaiting entry
 ////                                                            per fighter
-//// ◀─── Attacks(Strike(key, C, CreatureStriker(unit, spell4_id), offence)) to each fighter ─ StartTimer(strike deadline, 1 s)
+//// ◀─── Attacks(Strike(key AtGo(go), C, CreatureStriker(unit, spell4_id), offence)) to each fighter ─ StartTimer(strike deadline, 1 s)
 //// each fighter's answer, the strike round's way (above) ───▶ the last answer or the deadline closes the round
 ////                                                         (0x7f4 listing each fighter that landed, 0x7fe); the
-////                                                         next attack tick (interval) is started
+////                                                         next attack tick (the hold, else interval) is started
 //// a viewer that arrives while the charge is open:
-////                                                         ─0x7ff(the open charge's cast id, spell, target, place)─▶
+////                                                         ─0x7ff(the open charge's cast id, spell, target, place),
+////                                                            then the 0x7f4 of each go that went─▶
 //// a crowd-control state takes hold of C while the round is Charging (`Controlled`):
 ////                                                         CancelTimer(CastEnds); round closed, the next attack
 ////                                                            tick (interval) started
@@ -146,6 +155,21 @@
 ////   genesis_prime/game/area `select`). The 0x7ff carries no telegraph position: the client
 ////   draws the shape on the caster itself (`0x140546e60`) and turns it with the caster's
 ////   yaw on every update (`0x14054b1b0.follows_caster`).
+//// - **A special** is chosen at the attack tick: the first of `Fighter.specials` that is not refused by
+////   the states the creature holds, whose cooldown is over and whose reach covers the target, else the
+////   attack; none while the creature holds a state (`chosen`). The cooldown starts at the cast's start
+////   (`ready_at`, a server choice) and is cleared by a new fight (`start_fight`), so a fight opens with
+////   its specials ready. A special's gos are armed from the cast's start, each for `max(0, due - now)`
+////   (`due_in`), so a timer handled late does not push the gos after it.
+//// - **A creature that can move turns to face its target** before the 0x7ff and stands still through the
+////   cast and the hold (`turned_to_face`, `casting_or_holding`): the client never turns a creature by
+////   itself (`creature.facing`) and the cone follows the caster's yaw (`0x14054b1b0.follows_caster`), so
+////   the facing the creature has when the 0x7ff arrives is the facing the client draws the cone along, and
+////   the strike go's area points along it (`aim_of`).
+//// - **The hold** (`Hold`): the next attack tick starts `Charged.hold_ms` after the round closes (the
+////   NpcExecutionDelay rows, whose effect the client's code does not hold, `Spell4Effects.effectType.35`: a
+////   guess), else after the attack interval. The tick is the creature's only driver in the hold: it starts
+////   no path and casts or strikes nothing until the tick.
 //// - **The charge's aim.** An aiming turret turns its aim toward its 0x908 target, not the
 ////   0x7ff's, all through a cast whose spell has the follow flag, and its telegraph turns with
 ////   it (`0x14046cdc0.turret_cast_aim`). So at `CastEnds` the area points along the bearing
@@ -237,7 +261,13 @@
 //// | P dies, wakes inside C's ring, and C's killing answer reaches C after the wake's `Approached` | the answer drops P from `near` after the wake put it there: P stands in the ring and is not aggroed until it enters again; the answer is taken only before the strike deadline (`strike_tell.deadline_ms`, 1000 ms), so the gap is a Wake Here chosen within that second of the death |  |
 //// | the home timer fires | C stands at its spawn, Resting, at full health, and aggroes the near players it sees | `at_home_the_creature_aggroes_the_near_players_test` |
 //// | Charge start: the attack tick finds the target in reach, no round open, the attack is `Charged` | round Charging, 0x7ff of the spell, `StartTimer(CastEnds, cast time)`, no strike and no next attack tick; the tick's generation moves on | `a_charge_starts_with_its_cast_time_and_telegraph_test` |
-//// | Charge start: a second attack tick finds the charge open | nothing: the tick it came from is of an old generation | `a_second_attack_tick_during_a_charge_starts_nothing_test` |
+//// | Charge start: a second attack tick finds the charge open | nothing: the tick it came from is of an old generation | `a_second_attack_tick_during_a_charge_starts_nothing_test`, `a_second_attack_tick_during_a_special_starts_nothing_test` |
+//// | a special's go that does not strike is handled late | the next go's timer is armed for what is left of its due time, never below 0 | `a_late_go_timer_arms_the_next_go_for_what_is_left_of_its_due_time_test` |
+//// | a go's timer fires of an earlier generation, or after the round closed | it does nothing | `a_stale_go_timer_does_nothing_test` |
+//// | a state takes hold between a special's gos | the cast breaks as a charge does, the cooldown stays spent | `a_state_between_gos_breaks_the_special_and_the_cooldown_stays_spent_test` |
+//// | death or the leash between a special's gos | the pending go's timer is cancelled and the cast finishes | `death_between_gos_ends_the_special_test`, `leash_between_gos_ends_the_special_test` |
+//// | the target or another fighter moves, or is named, in a hold or a cast | the creature starts no path | `a_creature_in_its_hold_neither_chases_nor_strikes_test`, `a_specials_cone_faces_its_target_test` |
+//// | a viewer arrives between a special's gos, or while its strikes are out | it is sent the open cast and the gos that went | `a_viewer_arriving_between_gos_gets_the_open_cast_and_the_gos_so_far_test` |
 //// | Charge start: the guard holds the number `next_cast` offers | the round takes the next free id and `next_cast` moves past that id, so two charges in a row take different ids and a late answer to the first closes nothing of the second | `two_charges_under_a_held_guard_take_different_cast_ids_test` |
 //// | CastEnds timer: it fires for the open charge | each fighter on the threat list inside the rectangle along the bearing to the target now gets a strike, and the strike deadline starts; none inside, the go (0x7f4) names no unit and 0x7fe follows | `at_its_end_the_charge_strikes_each_fighter_inside_its_rectangle_test`, `a_charge_faces_its_target_test`, `a_charge_with_nobody_inside_goes_with_no_target_test` |
 //// | CastEnds timer: it fires for a charge that ended (a death or a leash) or of an old generation | it does nothing | `a_stale_cast_end_does_nothing_test` |
@@ -850,8 +880,9 @@ pub fn place_at(state state: State, now_ms now_ms: Int) -> Place {
 /// What a viewer that arrives at monotonic time `now_ms` is sent after the
 /// creature's 0x262, so its client shows what the others' do: in a fight, the
 /// combat flag (0x89a), the target (0x908) and each other entry (0x90a); a charge that is
-/// open, its 0x7ff again with its cast id, which the later go names; and on a path not yet
-/// run, the rest of it from where the creature is now (0x638).
+/// open, its 0x7ff again with its cast id, which the later go names, and the 0x7f4 of each go
+/// that went before the strike go (the viewer's cast bar runs from its arrival, not from the
+/// cast's start); and on a path not yet run, the rest of it from where the creature is now (0x638).
 pub fn arrival_news(
   state state: State,
   fighter fighter: Fighter,
@@ -1065,6 +1096,7 @@ fn start_fight(
       let state =
         State(
           ..state,
+          ready_at: dict.new(),
           status: Fighting(
             threat: dict.from_list(entries),
             target: first.0,

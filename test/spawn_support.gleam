@@ -18,6 +18,7 @@ import genesis_prime/content/spawn as content_spawn
 import genesis_prime/content/tutorial_quest as content_tutorial_quest
 import genesis_prime/content/vendor as content_vendor
 import genesis_prime/content/zone_welcome as content_zone_welcome
+import genesis_prime/game/area
 import genesis_prime/game/hit.{Blow, Defence, Offence, Worked}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
@@ -599,5 +600,55 @@ pub fn spawn_dealing(spawn spawn: Spawn, damage damage: Int) -> Spawn {
         offence: dealing(offence: attack.offence, damage:),
       ),
     ),
+  )
+}
+
+/// Earthen Roar as a creature's special, with the hold the delay row 131968 gives (`hold_ms`).
+pub fn earthen_roar(hold_ms hold_ms: Int) -> creature_life.Special {
+  creature_life.Special(
+    attack: creature_life.Attack(
+      spell4_id: Spell4Id(55_317),
+      offence: Offence(
+        blows: [
+          Blow(
+            spell4_effects_id: 131_967,
+            damage_type: 1,
+            damage: Worked(25),
+            delay_ms: 0,
+            threat_multiplier: 1.0,
+          ),
+        ],
+        crit_chance: 0.0,
+        crit_severity: 1.0,
+        strikethrough: 0.0,
+      ),
+      run_speed: 10.0,
+      reach: 5.5,
+      cast: creature_life.Charged(
+        cast_ms: 3000,
+        area: area.Row(
+          min_range: 0.0,
+          max_range: 10.0,
+          degrees: 360.0,
+          target_count: 10,
+        ),
+        inside: area.InsideShapes(placements: [
+          area.Placement(
+            shape: area.Cone(inner: 0.0, outer: 5.5, degrees: 40.0),
+            ahead: 0.0,
+            aside: 0.0,
+            turn_degrees: 0.0,
+          ),
+        ]),
+        gos: [
+          creature_life.Go(at_ms: 2500, strikes: False),
+          creature_life.Go(at_ms: 3000, strikes: True),
+        ],
+        hold_ms:,
+      ),
+      caster_cc_mask: 218_960_739,
+      run_stopped_by: 0,
+    ),
+    cooldown_ms: 10_000,
   )
 }
