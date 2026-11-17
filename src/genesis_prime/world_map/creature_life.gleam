@@ -221,8 +221,11 @@ pub fn is_shown(life life: Life) -> Bool {
 /// A DespawnUnit effect reaches the creature: the life it leaves the field with and the time in
 /// milliseconds the corpse timer starts for (the kind's respawn time), or none for a creature
 /// that lies dead or is already gone, which the effect does not reach.
-pub fn despawned(life _life: Life, body _body: Body) -> Option(#(Life, Int)) {
-  panic as "shape: removing a creature from the field is built in the step's code commit"
+pub fn despawned(life life: Life, body body: Body) -> Option(#(Life, Int)) {
+  case life {
+    Alive(..) -> Some(#(Despawned, body.respawn_ms))
+    Dead | Despawned -> None
+  }
 }
 
 /// A strike on the creature: the hit rule on its health and defence, or a refusal
