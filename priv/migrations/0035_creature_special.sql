@@ -41,7 +41,7 @@ create table creature_special (
 
 insert into creature_special (creature_id, spell4_id, order_index, cooldown_ms, source, reason)
 select creature_id, 55317, 0, 10000, 'retail_record',
-  'Jabbithole npc page /npcs/rootbrute-grimspore-1 (captured 20170916002802), Abilities tab, Earthen Roar listed at tier 1 (Spell4 55317) and at tier 2 (Spell4 55318); 55317 over 55318 is the server's choice, the client holds no creature spell list; the cooldown of 10000 ms is a guess: the client holds no cadence for a special'
+  'Jabbithole npc page /npcs/rootbrute-grimspore-1 (captured 20170916002802), Abilities tab, Earthen Roar listed at tier 1 (Spell4 55317) and at tier 2 (Spell4 55318); 55317 over 55318 is the server''s choice, the client holds no creature spell list; the cooldown of 10000 ms is a guess: the client holds no cadence for a special'
 from unnest(array[12212, 13118, 13549]) as creature (creature_id);
 
 insert into creature_special (creature_id, spell4_id, order_index, cooldown_ms, source, reason)
