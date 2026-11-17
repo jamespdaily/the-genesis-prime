@@ -32,10 +32,10 @@ import genesis_prime/table/creature2
 import genesis_prime/table/id.{type Creature2Id}
 import genesis_prime/table/loader/store as table_store
 import gleam/bool
-import gleam/dict
+import gleam/dict.{type Dict}
 import gleam/list
+import gleam/option
 import gleam/result
-import gleam/set.{type Set}
 
 /// The index a questAnim column holds to name the quest alone.
 const quest_alone = -1
@@ -59,21 +59,31 @@ pub fn links(
   }
 }
 
-/// The key of the linked objectives in the tables' store.
-const linked_key: table_store.DerivedKey(Set(#(Int, Int))) =
+/// The key of the linked objectives in the tables' store: for each (quest id, objective
+/// index) the creatures whose rows link it, each once, in Creature2 id order.
+const linked_key: table_store.DerivedKey(Dict(#(Int, Int), List(Creature2Id))) =
   table_store.DerivedKey("LinkedObjectives")
 
-/// The set of linked objectives as a value the tables' load builds once, under the tables'
-/// key, after the activations whose prerequisites it reads.
+/// The creatures that link each objective, as a value the tables' load builds once,
+/// under the tables' key, after the activations whose prerequisites it reads.
 pub fn derivation() -> table_store.Derivation {
   table_store.derivation(key: linked_key, build: fn(tables) {
     Ok(
       creature2.all(tables)
       |> list.filter(has_link)
-      |> list.flat_map(fn(row) {
-        links(tables:, creature_id: creature2.id(row))
+      |> list.fold(dict.new(), fn(linked, row) {
+        let creature_id = creature2.id(row)
+        list.fold(
+          list.unique(links(tables:, creature_id:)),
+          linked,
+          fn(linked, pair) {
+            dict.upsert(linked, pair, fn(creatures) {
+              [creature_id, ..option.unwrap(creatures, [])]
+            })
+          },
+        )
       })
-      |> set.from_list,
+      |> dict.map_values(fn(_, creatures) { list.reverse(creatures) }),
     )
   })
 }
@@ -84,7 +94,18 @@ pub fn is_linked(
   quest_id quest_id: Int,
   index index: Int,
 ) -> Bool {
-  set.contains(table_store.derived(tables:, key: linked_key), #(quest_id, index))
+  dict.has_key(table_store.derived(tables:, key: linked_key), #(quest_id, index))
+}
+
+/// The creatures whose rows link the quest's objective at `index` (`links`), each once, in
+/// Creature2 id order; none for an objective no creature links.
+pub fn creatures_linked(
+  tables tables: table_store.Tables,
+  quest_id quest_id: Int,
+  index index: Int,
+) -> List(Creature2Id) {
+  dict.get(table_store.derived(tables:, key: linked_key), #(quest_id, index))
+  |> result.unwrap([])
 }
 
 /// Whether the creature's row names a quest animation or an animation prerequisite

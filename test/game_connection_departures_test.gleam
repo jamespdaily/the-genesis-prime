@@ -178,6 +178,29 @@ pub fn the_yes_moves_the_player_to_the_northern_wilds_test() -> Nil {
     as "opcode.0xad: the client enters world 426 at the landing"
 }
 
+pub fn a_terminal_use_that_counts_tells_the_map_no_release_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Every player who passes uses the same terminal and the same cast moves them, so the
+  // terminal is not spent: the use that counts the travel and the choice tells the map
+  // nothing and starts the move (`departures.is_terminal`).
+  let state = departures_support.exile_seeing(creature_id: northern_wilds)
+  let #(state, pressed) = departures_support.press(state:)
+  let #(_, answered) =
+    departures_support.answer(
+      state:,
+      pressed:,
+      result: interaction_result.Succeeded,
+      spell4_base_id: northern_wilds_spell4_base,
+    )
+  assert list.length(quest_news(taken: answered).0) == 2
+    as "opcode.0x361: the use counts the travel and the Northern Wilds choice"
+  assert connection_support.told_the_map(answered) == []
+    as "the map is told no release of the terminal"
+  assert departures_support.started_timers(taken: answered)
+    == [#(departures.timer, 0)]
+    as "and the move to the landing starts"
+}
+
 pub fn the_yes_at_crimson_isle_lands_at_mondos_beachhead_test() -> Nil {
   use <- owned_test.run(60_000)
   let state = departures_support.dominion_seeing(creature_id: crimson_isle)

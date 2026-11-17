@@ -1,0 +1,7 @@
+test/fixture/world_data_crates/spawn.tsv holds the header and rows 18256 to 18261 of
+spawn.tsv of the wildstar-knowledge world-data
+(https://github.com/jamespdaily/wildstar-knowledge, path world-data/spawn.tsv), copied as
+they are, under that repository's licence, the GNU Affero General Public License, version 3
+(the same as this project's). The tests import it as the world database's own rows: six of
+the 23 Exile Supply Crates (Creature2 12919, entity type 8) of World 426 that quest 3741's
+objective 4813 counts.

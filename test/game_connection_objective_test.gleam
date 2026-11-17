@@ -74,7 +74,7 @@ import genesis_prime/table/id.{Creature2Id, Item2Id}
 import genesis_prime/table/loader/store as store_tables
 import genesis_prime/world_map/creature_life.{Hostile}
 import genesis_prime/world_map/creature_path
-import genesis_prime/world_map/map.{ObjectsSeen}
+import genesis_prime/world_map/map.{ObjectsSeen, ObjectsUnseen}
 import genesis_prime/world_map/static_object.{StaticObject}
 import gleam/list
 import gleam/set
@@ -647,7 +647,7 @@ pub fn using_the_same_survivor_again_counts_nothing_test() -> Nil {
     as "opcode.0x361: the first use of the survivor counts one of objective 4470's 3"
   let #(_, again, go) = used_once(state:, at: 5000)
   assert connection_support.written_ids(again) == [0x07FD]
-    as "QuestObjective.type.32.repeat_use: the client sends a second 0x97 and the cast still starts"
+    as "0x1405517a0: no type 12 is a checklist, so the client keeps no unit record and sends a second 0x97, and the cast still starts"
   assert ids_of(steps: go) == [0x07F4, 0x07FE]
     as "opcode.0x7f4 and 0x7fe: the cast of the second use reaches its go and its finish, and the use counts nothing, so no 0x361 follows (0x1405517a0.type12: the client keeps no unit record, so the once is the server's)"
 }
@@ -1502,7 +1502,7 @@ pub fn using_the_same_unit_twice_sends_progress_once_test() -> Nil {
     as "opcode.0x361: the first unit counts one of 15"
   let #(state, again_ids, again) = use_at(state, 5000, unit)
   assert again_ids == [0x07FD, 0x07F4, 0x07FE]
-    as "QuestObjective.type.32.repeat_use: the client sends a second 0x97, and the cast goes as before"
+    as "0x1405517a0: no type 23 is a checklist, so the client keeps no unit record and sends a second 0x97, and the cast goes as before"
   assert progress_frames(steps: again) == []
     as "the same unit again counts nothing: no 0x361"
   let #(_, _, other) = use_at(state, 10_000, other_unit)
@@ -1609,4 +1609,203 @@ pub fn a_use_of_a_shown_static_object_that_credits_a_type_12_objective_tells_the
   assert told_the_map(steps: [started, ..go])
     == [tell_released(unit: projector)]
     as "QuestObjective.type.12: the credited use of the static object asks the map to release its unit"
+}
+
+// ---- a used crate counts once and is released ----
+//
+// Expected values: `QuestObjective.type.32.sources` (a use of Creature2 12919, the Exile
+// Supply Crate, counts for quest 3741's objective 4813, type 32, count 6), and the client
+// keeps no record of a crate it used and offers it again until the objective is done
+// (`QuestObjective.type.32.repeat_use`), so the once and the release are the server's
+// choice (Jim, 2026-11-16: a used quest object vanishes for everyone). Creature2 12919's
+// activate spell 1817 has castTime 2000 and range 5.0, so a press goes at 2000 ms.
+
+/// The connection of a player whose log holds quest 3741 with nothing done, which sees
+/// these units as crates (Creature2 12919, Creature2DisplayInfo 26051's size) 2.7 east of
+/// the player, with these settings.
+fn seeing_crates(
+  settings settings: connection_state.Settings,
+  units units: List(Int),
+) -> game_connection.State {
+  let #(state, _) =
+    connection_support.entered_with_quests_in(settings:, quests: [
+      quest_support.accepted(quest_id: 3741, progress: [0]),
+    ])
+  connection_support.feed(
+    state:,
+    event: connection_support.sent_by_the_map(
+      ObjectsSeen(units: crates_shown(units:)),
+    ),
+  ).0
+}
+
+/// The static objects the map shows for these units: crates 2.7 east of the player.
+fn crates_shown(units units: List(Int)) -> List(static_object.Created) {
+  let place =
+    connection_support.standing_at(
+      x: 29.128599166870117 +. 2.7,
+      y: -853.87158203125,
+      z: -560.18798828125,
+    )
+  list.map(units, fn(unit_id) {
+    static_object.create(
+      object: StaticObject(
+        ..spawn_support.holoring(number: unit_id, place:),
+        creature_id: Creature2Id(12_919),
+        display_info_id: 26_051,
+      ),
+      unit_id:,
+      server_time_estimate_start: 0,
+    )
+  })
+}
+
+pub fn five_presses_on_one_crate_count_once_and_release_it_once_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let state =
+    seeing_crates(settings: connection_support.settings(), units: [unit])
+  let #(_, pressed) =
+    list.fold([0, 5000, 10_000, 15_000, 20_000], #(state, []), fn(so_far, at) {
+      let #(state, pressed) = so_far
+      let #(state, started, go) = used_once_on(state:, unit_id: unit, at:)
+      #(state, list.append(pressed, [#(started, go)]))
+    })
+  let steps =
+    list.flat_map(pressed, fn(press) {
+      let #(started, go) = press
+      [started, ..go]
+    })
+  assert progress_frames(steps:)
+    == [progress_frame(quest: 3741, index: 0, progress: 1)]
+    as "opcode.0x361: five presses of crate 40 send one progress, 1 of 6"
+  assert list.all(pressed, fn(press) {
+    let #(started, go) = press
+    connection_support.written_ids(started) == [0x07FD]
+    && list.contains(ids_of(steps: go), 0x07F4)
+  })
+    as "QuestObjective.type.32.repeat_use: the client sends a press each time and every cast starts and goes"
+  assert told_the_map(steps:) == [tell_released(unit:)]
+    as "the map is told to release the crate once"
+  let assert [#(first_started, first_go), ..] = pressed
+  assert told_the_map(steps: [first_started]) == []
+    as "the right-click starts the cast and counts nothing, so it releases nothing"
+  assert told_the_map(steps: first_go) == [tell_released(unit:)]
+    as "the release is told at the first go"
+}
+
+pub fn six_different_crates_finish_scattered_supplies_and_release_each_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let units = [40, 41, 42, 43, 44, 45]
+  let state = seeing_crates(settings: connection_support.settings(), units:)
+  let #(_, pressed) =
+    list.index_fold(units, #(state, []), fn(so_far, unit_id, number) {
+      let #(state, pressed) = so_far
+      let #(state, started, go) =
+        used_once_on(state:, unit_id:, at: number * 5000)
+      #(state, list.append(pressed, [#(unit_id, [started, ..go])]))
+    })
+  assert list.flat_map(pressed, fn(press) { progress_frames(steps: press.1) })
+    == [
+      progress_frame(quest: 3741, index: 0, progress: 1),
+      progress_frame(quest: 3741, index: 0, progress: 2),
+      progress_frame(quest: 3741, index: 0, progress: 3),
+      progress_frame(quest: 3741, index: 0, progress: 4),
+      progress_frame(quest: 3741, index: 0, progress: 5),
+      progress_frame(quest: 3741, index: 0, progress: 6),
+    ]
+    as "opcode.0x361: six different crates count 1 to 6 of 6"
+  let assert [#(_, _), #(_, _), #(_, _), #(_, _), #(_, _), #(_, last)] = pressed
+  assert as_pairs(
+      frames: list.flat_map(last, fn(taken) { frames(taken:) })
+      |> list.filter(fn(frame) { frame.message_id == 0x035C }),
+    )
+    == [state_frame(quest: 3741, state: 2)]
+    as "opcode.0x35c: the sixth brings the quest to Achieved"
+  list.each(pressed, fn(press) {
+    assert told_the_map(steps: press.1) == [tell_released(unit: press.0)]
+      as "each crate is released by its own use, the sixth too"
+  })
+}
+
+pub fn a_crate_pressed_again_counts_nothing_and_releases_nothing_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let state =
+    seeing_crates(settings: connection_support.settings(), units: [unit])
+  let #(state, _, first) = used_once_on(state:, unit_id: unit, at: 0)
+  assert told_the_map(steps: first) == [tell_released(unit:)]
+    as "the first press releases the crate"
+  // The map takes the crate out of sight and puts it back under its unit id after the
+  // release time (`world_map/map` `Released`), which the connection hears as news.
+  let state =
+    connection_support.feed(
+      state:,
+      event: connection_support.sent_by_the_map(ObjectsUnseen(unit_ids: [unit])),
+    ).0
+  let state =
+    connection_support.feed(
+      state:,
+      event: connection_support.sent_by_the_map(
+        ObjectsSeen(units: crates_shown(units: [unit])),
+      ),
+    ).0
+  let #(_, again, go) = used_once_on(state:, unit_id: unit, at: 40_000)
+  assert connection_support.written_ids(again) == [0x07FD]
+    as "QuestObjective.type.32.repeat_use: the client offers the returned crate and the cast starts"
+  assert ids_of(steps: go) == [0x07F4, 0x07FE]
+    as "opcode.0x7f4 and 0x7fe: the cast runs to its finish, so the silence below is the use counting nothing"
+  assert progress_frames(steps: go) == []
+    as "the crate counted already counts nothing again"
+  assert told_the_map(steps: [again, ..go]) == [] as "and releases nothing"
+}
+
+pub fn a_reused_type_32_objective_counts_each_press_and_releases_nothing_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The server's reuse set holds objective 4813 here, as it holds the objectives whose
+  // world has fewer units than the count: the crate is a station used over and over.
+  let state =
+    seeing_crates(
+      settings: connection_state.Settings(
+        ..connection_support.settings(),
+        reused_unit_objectives: set.from_list([4813]),
+      ),
+      units: [unit],
+    )
+  let #(state, _, first) = used_once_on(state:, unit_id: unit, at: 0)
+  let #(_, _, again) = used_once_on(state:, unit_id: unit, at: 5000)
+  assert list.append(
+      progress_frames(steps: first),
+      progress_frames(steps: again),
+    )
+    == [
+      progress_frame(quest: 3741, index: 0, progress: 1),
+      progress_frame(quest: 3741, index: 0, progress: 2),
+    ]
+    as "opcode.0x361: each press counts one"
+  assert told_the_map(steps: list.append(first, again)) == []
+    as "and the crate is never released"
+}
+
+pub fn a_use_that_sets_a_checklist_bit_tells_the_map_the_release_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Quest 5261's objective 7647 is type 28 on PathSoldierActivate 37, a mode 1 row, so it
+  // is a checklist (`0x1405517a0`) that counts Creature2 35249, a cage panel whose
+  // activate spell 39244 has castTime 2000 and range 4.0, by its object's checklist
+  // index (0 here).
+  let state =
+    seeing_units(row: quest_support.untouched(quest_id: 5261), units: [
+      #(unit, 35_249, 26_051),
+    ])
+  let #(_, started, go) = used_once_on(state:, unit_id: unit, at: 0)
+  assert progress_frames(steps: [started, ..go])
+    == [progress_frame(quest: 5261, index: 0, progress: 1)]
+    as "opcode.0x361: the use sets bit 0, and the mask 1 is the progress sent"
+  assert told_the_map(steps: [started]) == []
+    as "the right-click releases nothing"
+  assert told_the_map(steps: go) == [tell_released(unit:)]
+    as "the use that sets a checklist bit releases the unit, after its 0x361"
+  let assert Ok(go_step) =
+    list.find(go, fn(taken) { connection_support.told_the_map(taken) != [] })
+    as "one step of the go holds the tell"
+  assert list.last(support.effects_of(go_step)) == Ok(tell_released(unit:))
+    as "and the tell is the last of the step's effects: after the written frames"
 }

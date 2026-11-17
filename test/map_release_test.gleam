@@ -433,6 +433,39 @@ pub fn a_released_static_object_is_unseen_by_every_viewer_and_seen_again_under_i
   assert spawns.timers(taken) == [] as "and nothing more is waited for"
 }
 
+/// A collectible crate (the world database's entity type 8, Creature2 12919, quest 3741's
+/// Exile Supply Crate) as spawn `number` standing `x` along.
+fn crate_at(number number: Int, x x: Float) -> StaticObject {
+  StaticObject(
+    ..spawn_support.holoring(number:, place: standing(x:, y: 0.0)),
+    unit_type: static_object.Collectible,
+    creature_id: Creature2Id(12_919),
+  )
+}
+
+pub fn a_released_collectible_crate_is_unseen_by_every_viewer_and_seen_again_after_the_release_time_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The crate is a static object like the Holoring (`static_object` types 4, 8, 10 to 14
+  // and 32 are the ones the map shows from its objects), so a used crate goes for
+  // every player and returns under its unit id after the release time (migration 0033,
+  // 30 s, the server's choice).
+  let state =
+    started_with_objects(spawns: [], objects: [crate_at(number: 101, x: 0.0)])
+  let #(state, taken) = spawns.join(state:, at_ms: 6000, connection: 1, x: 0.0)
+  let assert [crate] = objects_shown(taken)
+  let #(state, _) = spawns.join(state:, at_ms: 6100, connection: 2, x: 10.0)
+  let #(state, taken) = spawns.released(state:, at_ms: 7000, unit_id: crate)
+  assert spawns.player_sends(taken)
+    == [#(1, unseen([crate])), #(2, unseen([crate]))]
+    as "both viewers lose the crate with a 0x355"
+  assert spawns.timers(taken) == [#(101, release_ms)]
+    as "it waits the release time under its own spawn's timer"
+  let #(_, taken) = timer_fired(state:, at_ms: 37_000, spawn: 101)
+  assert spawns.player_sends(taken)
+    == [#(1, seen([crate])), #(2, seen([crate]))]
+    as "at the timer both are shown the crate under the id it had"
+}
+
 pub fn a_player_who_joins_or_moves_into_sight_of_a_released_static_object_is_shown_it_only_at_the_return_test() -> Nil {
   use <- owned_test.run(5000)
   let state =

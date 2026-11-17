@@ -101,8 +101,8 @@
 import fixture_tables
 import genesis_prime/game/communicator
 import genesis_prime/game/objective.{
-  Add, Advanced, Button, Cast, CastTarget, CompleteByServer, Killed, Remove,
-  SendProgress, SendState, TalkedTo, Used,
+  Add, Advanced, Button, Cast, CastTarget, CompleteByServer, Killed, ReleaseUnit,
+  Remove, SendProgress, SendState, TalkedTo, Used,
 }
 import genesis_prime/game/quest_log
 import genesis_prime/game/start_place
@@ -285,8 +285,9 @@ pub fn a_use_advances_each_open_type_12_objective_naming_the_creature_test() -> 
       SendState(quest_id: 9207, state: 2),
       SendProgress(quest_id: 9428, objective_index: 1, progress: 1),
       SendState(quest_id: 9428, state: 2),
+      ReleaseUnit(unit_id: use_target),
     ]
-    as "quests in id order, one 0x361 for each type 12 objective naming the creature and 0x35c 2 for each quest it finishes; 6961's type 3 objective naming the same creature is not a use"
+    as "quests in id order, one 0x361 for each type 12 objective naming the creature and 0x35c 2 for each quest it finishes, and one release of the unit after them all; 6961's type 3 objective naming the same creature is not a use"
   assert quest_log.stored_state(log: used.log, quest_id: 6961) == 1
     as "6961 is untouched"
   assert quest_log.stored_state(log: used.log, quest_id: 9207) == 2
@@ -1212,19 +1213,11 @@ pub fn using_a_quest_anim_creature_advances_its_named_type_32_objective_test() -
       now_ms: 0,
     )
   assert used.effects
-    == [SendProgress(quest_id: 3741, objective_index: 0, progress: 1)]
+    == [
+      SendProgress(quest_id: 3741, objective_index: 0, progress: 1),
+      ReleaseUnit(unit_id: 12_919),
+    ]
     as "one cast of the collectible is one of the six"
-  let again =
-    objective.advance(
-      reused: set.new(),
-      log: used.log,
-      tables:,
-      event: a_use(collectible),
-      now_ms: 0,
-    )
-  assert again.effects
-    == [SendProgress(quest_id: 3741, objective_index: 0, progress: 2)]
-    as "and each later one is one more"
 
   let done =
     quest_support.log_of(rows: [
@@ -1304,7 +1297,10 @@ pub fn using_a_quest_anim_creature_advances_its_named_type_32_objective_test() -
       event: a_use(collectible),
       now_ms: 0,
     ).effects
-    == [SendProgress(quest_id: 5857, objective_index: 1, progress: 1)]
+    == [
+      SendProgress(quest_id: 5857, objective_index: 1, progress: 1),
+      ReleaseUnit(unit_id: 12_919),
+    ]
     as "the same objective counts once the one before it is done"
   assert objective.advance(
       reused: set.new(),
@@ -1315,6 +1311,43 @@ pub fn using_a_quest_anim_creature_advances_its_named_type_32_objective_test() -
     )
     == Advanced(log:, effects: [])
     as "and the creature now names quest 5857, so quest 3741's objective takes nothing from it"
+}
+
+pub fn a_second_use_of_the_same_type_32_unit_counts_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Creature2 12919 (a supply crate) names quest 3741, objective index 0: objective 4813,
+  // type 32 with count 6 and 23 spawns. The client keeps no record of the units used
+  // (`QuestObjective.type.32.repeat_use`: it offers the creature again until the objective
+  // is done), so the once for each unit is the server's choice.
+  use tables <- quest_support.with_objectives(edits: [])
+  let collectible = Creature2Id(12_919)
+  let ref = fn(unit_id) { quest_support.unit_ref(unit_id:) }
+  let first =
+    used_by(
+      log: fresh(quest_id: 3741),
+      tables:,
+      event: a_use_of(creature: collectible, unit: ref(40)),
+    )
+  assert first.effects
+    == [
+      SendProgress(quest_id: 3741, objective_index: 0, progress: 1),
+      ReleaseUnit(unit_id: 40),
+    ]
+    as "the first press of crate 40 counts one and releases the crate"
+  let again =
+    used_by(
+      log: first.log,
+      tables:,
+      event: a_use_of(creature: collectible, unit: ref(40)),
+    )
+  assert again.effects == [] as "the same crate again counts nothing"
+  assert quest_log.objective_progress(
+      log: again.log,
+      quest: quest_of(id: 3741, tables:),
+      index: 0,
+    )
+    == 1
+    as "and the progress stays 1"
 }
 
 /// Quest 10518 (the Exile tutorial) with its objective 0 done and the other five open.
@@ -1344,7 +1377,10 @@ pub fn a_use_of_a_mine_counts_its_exile_type_5_objective_test() -> Nil {
       event: a_use(Creature2Id(73_463)),
       now_ms: 0,
     ).effects
-    == [SendProgress(quest_id: 10_518, objective_index: 1, progress: 1)]
+    == [
+      SendProgress(quest_id: 10_518, objective_index: 1, progress: 1),
+      ReleaseUnit(unit_id: 73_463),
+    ]
     as "the use counts the one the objective needs"
 }
 
@@ -1370,7 +1406,10 @@ pub fn a_use_of_the_same_mine_counts_the_dominion_objective_test() -> Nil {
       event: a_use(Creature2Id(73_463)),
       now_ms: 0,
     ).effects
-    == [SendProgress(quest_id: 10_524, objective_index: 1, progress: 1)]
+    == [
+      SendProgress(quest_id: 10_524, objective_index: 1, progress: 1),
+      ReleaseUnit(unit_id: 73_463),
+    ]
     as "the same creature counts the Dominion quest's objective"
 }
 
@@ -1390,7 +1429,10 @@ pub fn a_quest_anim_link_counts_a_type_5_objective_test() -> Nil {
       event: a_use(Creature2Id(4989)),
       now_ms: 0,
     ).effects
-    == [SendProgress(quest_id: 2020, objective_index: 1, progress: 1)]
+    == [
+      SendProgress(quest_id: 2020, objective_index: 1, progress: 1),
+      ReleaseUnit(unit_id: 4989),
+    ]
     as "the link counts whatever the objective's type is"
   assert objective.advance(
       reused: set.new(),
@@ -1427,7 +1469,10 @@ pub fn a_prerequisite_link_counts_a_type_32_objective_test() -> Nil {
       now_ms: 0,
     )
   assert used.effects
-    == [SendProgress(quest_id: 3655, objective_index: 0, progress: 1)]
+    == [
+      SendProgress(quest_id: 3655, objective_index: 0, progress: 1),
+      ReleaseUnit(unit_id: 12_321),
+    ]
     as "one use is one of the eight"
   assert objective.advance(
       reused: set.new(),
@@ -1436,8 +1481,8 @@ pub fn a_prerequisite_link_counts_a_type_32_objective_test() -> Nil {
       event: a_use(Creature2Id(12_321)),
       now_ms: 0,
     ).effects
-    == [SendProgress(quest_id: 3655, objective_index: 0, progress: 2)]
-    as "and each later use is one more"
+    == []
+    as "and the same unit again counts nothing, whatever the link that reached the objective"
 }
 
 pub fn a_use_counts_nothing_once_its_linked_objective_is_done_test() -> Nil {
@@ -1524,7 +1569,10 @@ pub fn a_nested_prerequisite_link_counts_its_objective_test() -> Nil {
       event: a_use(Creature2Id(19_277)),
       now_ms: 0,
     ).effects
-    == [SendProgress(quest_id: 4975, objective_index: 0, progress: 1)]
+    == [
+      SendProgress(quest_id: 4975, objective_index: 0, progress: 1),
+      ReleaseUnit(unit_id: 19_277),
+    ]
     as "the objective the nested row names counts the use"
 }
 
@@ -2034,7 +2082,10 @@ pub fn a_use_of_a_group_unit_counts_a_type_23_objective_test() -> Nil {
       event: a_use(Creature2Id(72_197)),
       now_ms: 0,
     ).effects
-    == [SendProgress(quest_id: 10_415, objective_index: 0, progress: 1)]
+    == [
+      SendProgress(quest_id: 10_415, objective_index: 0, progress: 1),
+      ReleaseUnit(unit_id: 72_197),
+    ]
     as "a use of a unit in the group counts one toward the objective's count of 8"
 }
 
@@ -2069,7 +2120,10 @@ pub fn each_use_counts_one_toward_a_larger_count_test() -> Nil {
   let second = count(first.log, 72_198)
   let third = count(second.log, 72_231)
   assert third.effects
-    == [SendProgress(quest_id: 10_415, objective_index: 0, progress: 3)]
+    == [
+      SendProgress(quest_id: 10_415, objective_index: 0, progress: 3),
+      ReleaseUnit(unit_id: 72_231),
+    ]
     as "three uses of three different units of the group are 3 of 8, and the quest is not told it is Achieved"
   assert quest_log.stored_state(log: third.log, quest_id: 10_415) == 1
     as "the quest stays Accepted: 3 of 8 is not done"
@@ -2217,7 +2271,10 @@ pub fn a_second_use_of_the_same_unit_counts_nothing_test() -> Nil {
     )
   let first = used_by(log: fresh(quest_id: 6723), tables:, event: use_of_unit_7)
   assert first.effects
-    == [SendProgress(quest_id: 6723, objective_index: 0, progress: 1)]
+    == [
+      SendProgress(quest_id: 6723, objective_index: 0, progress: 1),
+      ReleaseUnit(unit_id: 7),
+    ]
     as "the first use of the unit counts one"
   let second = used_by(log: first.log, tables:, event: use_of_unit_7)
   assert second.effects == [] as "the same unit again counts nothing"
@@ -2274,7 +2331,10 @@ pub fn the_same_unit_id_in_another_map_run_counts_test() -> Nil {
   let first = use_in(fresh(quest_id: 6723), first_run)
   let second = use_in(first.log, second_run)
   assert second.effects
-    == [SendProgress(quest_id: 6723, objective_index: 0, progress: 2)]
+    == [
+      SendProgress(quest_id: 6723, objective_index: 0, progress: 2),
+      ReleaseUnit(unit_id: 7),
+    ]
     as "unit 7 of the next run counts as another unit"
 }
 
@@ -2314,7 +2374,10 @@ pub fn a_fake_drop_in_the_reward_pane_counts_nothing_test() -> Nil {
         unit: quest_support.unit_ref(unit_id: 8),
       ),
     ).effects
-    == [SendProgress(quest_id: 9682, objective_index: 4, progress: 1)]
+    == [
+      SendProgress(quest_id: 9682, objective_index: 4, progress: 1),
+      ReleaseUnit(unit_id: 8),
+    ]
     as "a use of a real drop of the data group counts one"
 }
 
@@ -2394,14 +2457,27 @@ pub fn the_use_that_reaches_the_count_achieves_the_quest_test() -> Nil {
     })
   assert effects
     == [
-      [SendProgress(quest_id: 4522, objective_index: 0, progress: 1)],
-      [SendProgress(quest_id: 4522, objective_index: 0, progress: 2)],
-      [SendProgress(quest_id: 4522, objective_index: 0, progress: 3)],
-      [SendProgress(quest_id: 4522, objective_index: 0, progress: 4)],
+      [
+        SendProgress(quest_id: 4522, objective_index: 0, progress: 1),
+        ReleaseUnit(unit_id: 1),
+      ],
+      [
+        SendProgress(quest_id: 4522, objective_index: 0, progress: 2),
+        ReleaseUnit(unit_id: 2),
+      ],
+      [
+        SendProgress(quest_id: 4522, objective_index: 0, progress: 3),
+        ReleaseUnit(unit_id: 3),
+      ],
+      [
+        SendProgress(quest_id: 4522, objective_index: 0, progress: 4),
+        ReleaseUnit(unit_id: 4),
+      ],
       [
         SendProgress(quest_id: 4522, objective_index: 0, progress: 5),
         SendState(quest_id: 4522, state: 2),
         CompleteByServer(quest_id: 4522),
+        ReleaseUnit(unit_id: 5),
       ],
     ]
     as "five units count 1 to 5, and the fifth achieves the quest"
@@ -2438,8 +2514,9 @@ pub fn one_use_counts_once_for_each_objective_of_its_set_test() -> Nil {
     == [
       SendProgress(quest_id: 5531, objective_index: 0, progress: 1),
       SendProgress(quest_id: 5718, objective_index: 0, progress: 1),
+      ReleaseUnit(unit_id: 7),
     ]
-    as "one use counts for both quests' objectives"
+    as "one use counts for both quests' objectives and releases the unit once, after both"
   assert used_by(log: first.log, tables:, event: use_of_unit_7).effects == []
     as "the same use again counts for neither"
 }
@@ -2460,7 +2537,10 @@ pub fn a_second_use_of_the_same_unit_counts_nothing_for_type_12_test() -> Nil {
       event: a_use_of(creature: survivor, unit: ref(224)),
     )
   assert first.effects
-    == [SendProgress(quest_id: 3480, objective_index: 0, progress: 1)]
+    == [
+      SendProgress(quest_id: 3480, objective_index: 0, progress: 1),
+      ReleaseUnit(unit_id: 224),
+    ]
     as "the first use of unit 224 counts one"
   let again =
     used_by(
@@ -2478,7 +2558,10 @@ pub fn a_second_use_of_the_same_unit_counts_nothing_for_type_12_test() -> Nil {
       event: a_use_of(creature: survivor, unit: ref(225)),
     )
   assert other.effects
-    == [SendProgress(quest_id: 3480, objective_index: 0, progress: 2)]
+    == [
+      SendProgress(quest_id: 3480, objective_index: 0, progress: 2),
+      ReleaseUnit(unit_id: 225),
+    ]
     as "another unit counts the second"
 }
 
@@ -2504,28 +2587,6 @@ pub fn a_reused_type_12_objective_counts_the_same_unit_again_test() -> Nil {
   assert again.effects
     == [SendProgress(quest_id: 3480, objective_index: 0, progress: 2)]
     as "the second use of unit 224 counts the second"
-}
-
-pub fn use_targets_leaves_out_a_used_type_12_unit_test() -> Nil {
-  use <- owned_test.run(60_000)
-  // Quest 3480's objective 4470 is type 12 on Creature2 11070; an offered unit is one the
-  // `0xb3` path may start a use of (`cast.activate_unit` refuses an unoffered one).
-  use tables <- quest_support.with_objectives(edits: [])
-  let survivor = plain_unit(creature: Creature2Id(11_070))
-  let ref = fn(unit_id) { quest_support.unit_ref(unit_id:) }
-  let log = fresh(quest_id: 3480)
-  assert objective.use_targets(log:, tables:)(survivor, 0, ref(7))
-    as "an unused survivor is offered"
-  let used =
-    used_by(
-      log:,
-      tables:,
-      event: a_use_of(creature: Creature2Id(11_070), unit: ref(7)),
-    )
-  let offered = objective.use_targets(log: used.log, tables:)
-  assert !offered(survivor, 0, ref(7))
-    as "the survivor used already is not offered again"
-  assert offered(survivor, 0, ref(8)) as "another survivor is still offered"
 }
 
 pub fn use_targets_leaves_out_a_used_unit_test() -> Nil {
@@ -2587,7 +2648,10 @@ pub fn a_type_23_use_counts_nothing_for_another_type_on_the_same_group_test() ->
         ),
       )
     assert used.effects
-      == [SendProgress(quest_id: 9122, objective_index: 2, progress: 1)]
+      == [
+        SendProgress(quest_id: 9122, objective_index: 2, progress: 1),
+        ReleaseUnit(unit_id: 7),
+      ]
       as "only the type 23 objective counts the use"
     assert list.map([0, 1, 3, 4], fn(index) {
         quest_log.objective_progress(log: used.log, quest:, index:)
@@ -2838,7 +2902,10 @@ pub fn an_items_use_does_not_advance_a_type_32_objective_test() -> Nil {
       event: a_use(collectible),
       now_ms: 0,
     ).effects
-    == [SendProgress(quest_id: 3741, objective_index: 0, progress: 1)]
+    == [
+      SendProgress(quest_id: 3741, objective_index: 0, progress: 1),
+      ReleaseUnit(unit_id: 12_919),
+    ]
     as "the creature's own activate cast counts it"
 }
 
@@ -2991,4 +3058,615 @@ pub fn server_completions_lists_the_achieved_qualifying_quests_of_a_log_in_id_or
     ])
   assert objective.server_completions(log:, tables:) == [1854, 1857]
     as "the Achieved quests no creature receives, by quest id: not 10520 (received), 1862 (Accepted), 5859 (Completed) or 1806 (known only by its state)"
+}
+
+// ---- each unit counts once and is released ----
+//
+// Expected values: the client keeps no record of a unit used for any objective that is
+// not a checklist (`0x1405517a0`), and it offers a linked creature again until its
+// objective is done (`QuestObjective.type.32.repeat_use`, which names types 5 and 32), so
+// the once, the exception for an objective whose world holds fewer units than its count
+// (`reused`) and the release of a used unit are the server's choice (Jim, 2026-11-16: a
+// used quest object vanishes for everyone; 2026-11-15: an objective with too few units
+// counts a unit again). The effect is `ReleaseUnit`, once for the use, after every other
+// effect of the event.
+
+/// The unit ids the effects release, in order.
+fn releases(effects effects: List(objective.Effect)) -> List(Int) {
+  list.filter_map(effects, fn(effect) {
+    case effect {
+      ReleaseUnit(unit_id:) -> Ok(unit_id)
+      SendProgress(..) | SendState(..) | CompleteByServer(..) -> Error(Nil)
+    }
+  })
+}
+
+/// The log and messages after this event, counting these objectives' units again.
+fn used_reusing(
+  log log: quest_log.QuestLog,
+  tables tables: table_store.Tables,
+  event event: objective.Event,
+  reused reused: List(Int),
+) -> objective.Advanced {
+  objective.advance(
+    reused: set.from_list(reused),
+    log:,
+    tables:,
+    event:,
+    now_ms: 0,
+  )
+}
+
+pub fn six_different_type_32_units_finish_the_objective_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Quest 3741's objective 4813 is type 32 on the crate Creature2 12919 with count 6.
+  use tables <- quest_support.with_objectives(edits: [])
+  let #(log, sent) =
+    list.fold([1, 2, 3, 4, 5, 6], #(fresh(quest_id: 3741), []), fn(so_far, id) {
+      let advanced =
+        used_by(
+          log: so_far.0,
+          tables:,
+          event: a_use_of(
+            creature: Creature2Id(12_919),
+            unit: quest_support.unit_ref(unit_id: id),
+          ),
+        )
+      #(advanced.log, list.append(so_far.1, [advanced.effects]))
+    })
+  assert list.take(sent, 5)
+    == [
+      [
+        SendProgress(quest_id: 3741, objective_index: 0, progress: 1),
+        ReleaseUnit(unit_id: 1),
+      ],
+      [
+        SendProgress(quest_id: 3741, objective_index: 0, progress: 2),
+        ReleaseUnit(unit_id: 2),
+      ],
+      [
+        SendProgress(quest_id: 3741, objective_index: 0, progress: 3),
+        ReleaseUnit(unit_id: 3),
+      ],
+      [
+        SendProgress(quest_id: 3741, objective_index: 0, progress: 4),
+        ReleaseUnit(unit_id: 4),
+      ],
+      [
+        SendProgress(quest_id: 3741, objective_index: 0, progress: 5),
+        ReleaseUnit(unit_id: 5),
+      ],
+    ]
+    as "five different crates count 1 to 5"
+  assert list.drop(sent, 5)
+    == [
+      [
+        SendProgress(quest_id: 3741, objective_index: 0, progress: 6),
+        SendState(quest_id: 3741, state: 2),
+        ReleaseUnit(unit_id: 6),
+      ],
+    ]
+    as "the sixth brings the objective to 6 of 6 and the quest to Achieved (0x361 6, then 0x35c 2), and the crate is released after both; a creature receives the quest, so the server does not complete it"
+  assert quest_log.stored_state(log:, quest_id: 3741) == 2
+    as "the quest is Achieved"
+}
+
+pub fn a_second_use_of_the_same_type_5_unit_counts_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Creature2 19277 links quest 4975's objective index 0 (objective 15980, type 5, count
+  // 3) through a nested prerequisite (`QuestObjective.type.5`); the client offers the
+  // creature again until the objective is done (`QuestObjective.type.32.repeat_use`).
+  use tables <- quest_support.with_objectives(edits: [])
+  let quest = quest_of(id: 4975, tables:)
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: 4975, progress: [0, 0, 0, 0]),
+    ])
+  let use_of = fn(unit_id) {
+    a_use_of(
+      creature: Creature2Id(19_277),
+      unit: quest_support.unit_ref(unit_id:),
+    )
+  }
+  let first = used_by(log:, tables:, event: use_of(7))
+  assert first.effects
+    == [
+      SendProgress(quest_id: 4975, objective_index: 0, progress: 1),
+      ReleaseUnit(unit_id: 7),
+    ]
+    as "the first use of unit 7 counts one"
+  let again = used_by(log: first.log, tables:, event: use_of(7))
+  assert again.effects == [] as "the same unit again counts nothing"
+  assert quest_log.objective_progress(log: again.log, quest:, index: 0) == 1
+    as "and the progress stays 1"
+  assert used_by(log: again.log, tables:, event: use_of(8)).effects
+    == [
+      SendProgress(quest_id: 4975, objective_index: 0, progress: 2),
+      ReleaseUnit(unit_id: 8),
+    ]
+    as "another unit counts the second"
+}
+
+pub fn a_prerequisite_linked_type_32_unit_counts_once_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Creature2 12321 has prerequisiteIdAnimState 12379 (type 43 on quest 3655 index 0,
+  // whose objective 4722 is type 32 with count 8) and no questAnim column: the rule has no
+  // test of how the link reached the objective (`Creature2.objective_link`).
+  use tables <- quest_support.with_objectives(edits: [])
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: 3655, progress: [0, 0]),
+    ])
+  let use_of = fn(unit_id) {
+    a_use_of(
+      creature: Creature2Id(12_321),
+      unit: quest_support.unit_ref(unit_id:),
+    )
+  }
+  let first = used_by(log:, tables:, event: use_of(7))
+  let again = used_by(log: first.log, tables:, event: use_of(7))
+  assert again.effects == []
+    as "the same unit reached through the prerequisite column counts nothing again"
+  assert used_by(log: again.log, tables:, event: use_of(8)).effects
+    == [
+      SendProgress(quest_id: 3655, objective_index: 0, progress: 2),
+      ReleaseUnit(unit_id: 8),
+    ]
+    as "another unit counts"
+}
+
+pub fn a_reused_type_32_objective_counts_the_same_unit_again_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Objective 4813 (quest 3741, crate 12919) in the reuse set, as an objective is whose
+  // world holds fewer crates than its count (a server choice; `objective_units.reused`).
+  use tables <- quest_support.with_objectives(edits: [])
+  let use_of_unit_7 =
+    a_use_of(
+      creature: Creature2Id(12_919),
+      unit: quest_support.unit_ref(unit_id: 7),
+    )
+  let first =
+    used_reusing(
+      log: fresh(quest_id: 3741),
+      tables:,
+      event: use_of_unit_7,
+      reused: [4813],
+    )
+  let again =
+    used_reusing(log: first.log, tables:, event: use_of_unit_7, reused: [4813])
+  assert again.effects
+    == [SendProgress(quest_id: 3741, objective_index: 0, progress: 2)]
+    as "the second use of unit 7 counts the second, and releases nothing"
+}
+
+pub fn a_reused_type_5_objective_counts_the_same_unit_again_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Objective 15980 (quest 4975, Creature2 19277) in the reuse set.
+  use tables <- quest_support.with_objectives(edits: [])
+  let use_of_unit_7 =
+    a_use_of(
+      creature: Creature2Id(19_277),
+      unit: quest_support.unit_ref(unit_id: 7),
+    )
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: 4975, progress: [0, 0, 0, 0]),
+    ])
+  let first =
+    used_reusing(log:, tables:, event: use_of_unit_7, reused: [15_980])
+  let again =
+    used_reusing(log: first.log, tables:, event: use_of_unit_7, reused: [15_980])
+  assert again.effects
+    == [SendProgress(quest_id: 4975, objective_index: 0, progress: 2)]
+    as "the second use of unit 7 counts the second, and releases nothing"
+}
+
+pub fn a_reused_type_23_objective_counts_the_same_unit_again_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Objective 10383 (quest 6723, TargetGroup 3568, count 15) in the reuse set.
+  use tables <- quest_support.with_objectives(edits: [])
+  let use_of_unit_7 =
+    a_use_of(
+      creature: Creature2Id(30_826),
+      unit: quest_support.unit_ref(unit_id: 7),
+    )
+  let first =
+    used_reusing(
+      log: fresh(quest_id: 6723),
+      tables:,
+      event: use_of_unit_7,
+      reused: [10_383],
+    )
+  let again =
+    used_reusing(log: first.log, tables:, event: use_of_unit_7, reused: [10_383])
+  assert again.effects
+    == [SendProgress(quest_id: 6723, objective_index: 0, progress: 2)]
+    as "the second use of unit 7 counts the second, and releases nothing"
+}
+
+pub fn a_reused_type_11_objective_counts_a_second_cast_at_the_same_unit_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Objective 4098 (quest 3145, Spell4 7103, count 10) in the reuse set.
+  use tables <- quest_support.with_objectives(edits: [])
+  let cast = cast_at_unit(spell: 7103, creature: 9369, unit_id: 900)
+  let first =
+    used_reusing(log: fresh(quest_id: 3145), tables:, event: cast, reused: [
+      4098,
+    ])
+  let again = used_reusing(log: first.log, tables:, event: cast, reused: [4098])
+  assert again.effects
+    == [SendProgress(quest_id: 3145, objective_index: 0, progress: 2)]
+    as "the second cast at the same unit counts the second"
+}
+
+pub fn an_items_use_of_a_type_32_unit_releases_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // An item's spell at the crate is not the creature's own activate cast, which the
+  // objective counts (`QuestObjective.type.32.sources`), so it counts for no type 5 or 32
+  // objective and releases nothing.
+  use tables <- quest_support.with_objectives(edits: [])
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: 3741, progress: [0]),
+    ])
+  assert objective.advance(
+      reused: set.new(),
+      log:,
+      tables:,
+      event: Used(
+        target: plain_unit(creature: Creature2Id(12_919)),
+        checklist_index: 0,
+        unit: quest_support.unit_ref(unit_id: 40),
+        by_item: True,
+      ),
+      now_ms: 0,
+    )
+    == Advanced(log:, effects: [])
+    as "nothing is counted and nothing is released"
+}
+
+pub fn use_targets_leaves_out_a_used_type_12_unit_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Quest 3480's objective 4470 is type 12 on Creature2 11070; an offered unit is one the
+  // `0xb3` path may start a use of (`cast.activate_unit` refuses an unoffered one).
+  use tables <- quest_support.with_objectives(edits: [])
+  let survivor = plain_unit(creature: Creature2Id(11_070))
+  let ref = fn(unit_id) { quest_support.unit_ref(unit_id:) }
+  let log = fresh(quest_id: 3480)
+  assert objective.use_targets(log:, tables:)(survivor, 0, ref(7))
+    as "an unused survivor is offered"
+  let used =
+    used_by(
+      log:,
+      tables:,
+      event: a_use_of(creature: Creature2Id(11_070), unit: ref(7)),
+    )
+  let offered = objective.use_targets(log: used.log, tables:)
+  assert !offered(survivor, 0, ref(7))
+    as "the survivor used already is not offered again"
+  assert offered(survivor, 0, ref(8)) as "another survivor is still offered"
+}
+
+pub fn use_targets_leaves_out_a_used_type_32_unit_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The 0xb3 offer follows the log (`opcode.0xb3`): a crate whose objective counted it is
+  // not offered again, another crate is.
+  use tables <- quest_support.with_objectives(edits: [])
+  let crate = plain_unit(creature: Creature2Id(12_919))
+  let ref = fn(unit_id) { quest_support.unit_ref(unit_id:) }
+  let log = fresh(quest_id: 3741)
+  assert objective.use_targets(log:, tables:)(crate, 0, ref(7))
+    as "an unused crate is offered"
+  let used =
+    used_by(
+      log:,
+      tables:,
+      event: a_use_of(creature: Creature2Id(12_919), unit: ref(7)),
+    )
+  let offered = objective.use_targets(log: used.log, tables:)
+  assert !offered(crate, 0, ref(7))
+    as "the crate used already is not offered again"
+  assert offered(crate, 0, ref(8)) as "another crate is still offered"
+}
+
+pub fn use_targets_leaves_out_a_used_type_5_unit_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Creature2 19277 links quest 4975's objective 15980 (type 5, count 3).
+  use tables <- quest_support.with_objectives(edits: [])
+  let unit = plain_unit(creature: Creature2Id(19_277))
+  let ref = fn(unit_id) { quest_support.unit_ref(unit_id:) }
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: 4975, progress: [0, 0, 0, 0]),
+    ])
+  assert objective.use_targets(log:, tables:)(unit, 0, ref(7))
+    as "an unused unit is offered"
+  let used =
+    used_by(
+      log:,
+      tables:,
+      event: a_use_of(creature: Creature2Id(19_277), unit: ref(7)),
+    )
+  let offered = objective.use_targets(log: used.log, tables:)
+  assert !offered(unit, 0, ref(7))
+    as "the unit used already is not offered again"
+  assert offered(unit, 0, ref(8)) as "another unit is still offered"
+}
+
+pub fn a_use_that_counts_a_new_type_32_unit_releases_it_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use tables <- quest_support.with_objectives(edits: [])
+  let used =
+    used_by(
+      log: fresh(quest_id: 3741),
+      tables:,
+      event: a_use_of(
+        creature: Creature2Id(12_919),
+        unit: quest_support.unit_ref(unit_id: 40),
+      ),
+    )
+  assert used.effects
+    == [
+      SendProgress(quest_id: 3741, objective_index: 0, progress: 1),
+      ReleaseUnit(unit_id: 40),
+    ]
+    as "crate 40 counts one and goes, after the 0x361"
+}
+
+pub fn a_use_that_counts_a_new_type_5_unit_releases_it_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use tables <- quest_support.with_objectives(edits: [])
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: 4975, progress: [0, 0, 0, 0]),
+    ])
+  assert used_by(
+      log:,
+      tables:,
+      event: a_use_of(
+        creature: Creature2Id(19_277),
+        unit: quest_support.unit_ref(unit_id: 40),
+      ),
+    ).effects
+    == [
+      SendProgress(quest_id: 4975, objective_index: 0, progress: 1),
+      ReleaseUnit(unit_id: 40),
+    ]
+    as "a unit of the type 5 objective counts one and goes"
+}
+
+pub fn a_use_that_counts_a_new_type_12_unit_releases_it_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use tables <- quest_support.with_objectives(edits: [])
+  assert used_by(
+      log: fresh(quest_id: 3480),
+      tables:,
+      event: a_use_of(
+        creature: Creature2Id(11_070),
+        unit: quest_support.unit_ref(unit_id: 40),
+      ),
+    ).effects
+    == [
+      SendProgress(quest_id: 3480, objective_index: 0, progress: 1),
+      ReleaseUnit(unit_id: 40),
+    ]
+    as "a survivor of the type 12 objective counts one and goes"
+}
+
+pub fn a_use_that_counts_a_new_type_23_unit_releases_it_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use tables <- quest_support.with_objectives(edits: [])
+  assert used_by(
+      log: fresh(quest_id: 6723),
+      tables:,
+      event: a_use_of(
+        creature: Creature2Id(30_826),
+        unit: quest_support.unit_ref(unit_id: 40),
+      ),
+    ).effects
+    == [
+      SendProgress(quest_id: 6723, objective_index: 0, progress: 1),
+      ReleaseUnit(unit_id: 40),
+    ]
+    as "a unit of the type 23 group counts one and goes"
+}
+
+pub fn a_repeat_use_of_a_type_32_unit_releases_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // A unit that counted already counts for nothing, so it is released by nothing: the
+  // release follows the count, not the press.
+  use tables <- quest_support.with_objectives(edits: [])
+  let crate =
+    a_use_of(
+      creature: Creature2Id(12_919),
+      unit: quest_support.unit_ref(unit_id: 40),
+    )
+  let first = used_by(log: fresh(quest_id: 3741), tables:, event: crate)
+  assert releases(effects: first.effects) == [40]
+    as "the first press of the crate releases it"
+  let again = used_by(log: first.log, tables:, event: crate)
+  assert again == Advanced(log: first.log, effects: [])
+    as "the second press counts nothing and releases nothing"
+}
+
+pub fn a_use_that_only_a_reused_type_32_objective_counts_releases_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use tables <- quest_support.with_objectives(edits: [])
+  let used =
+    used_reusing(
+      log: fresh(quest_id: 3741),
+      tables:,
+      event: a_use_of(
+        creature: Creature2Id(12_919),
+        unit: quest_support.unit_ref(unit_id: 40),
+      ),
+      reused: [4813],
+    )
+  assert used.effects
+    == [SendProgress(quest_id: 3741, objective_index: 0, progress: 1)]
+    as "the use counts for an objective that counts the same unit again, and the unit stays"
+}
+
+pub fn a_cast_at_a_unit_releases_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Nothing is spent by a cast at a unit (Jim, 2026-11-16: a use of a quest object
+  // vanishes it; a cast of a spell is not one).
+  use tables <- quest_support.with_objectives(edits: [])
+  assert used_by(
+      log: fresh(quest_id: 3145),
+      tables:,
+      event: cast_at_unit(spell: 7103, creature: 9369, unit_id: 900),
+    ).effects
+    == [SendProgress(quest_id: 3145, objective_index: 0, progress: 1)]
+    as "the cast counts one and releases nothing"
+}
+
+pub fn a_kill_and_a_talk_release_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Quest 1857's objective 1961 is a kill of Creature2 5006, and quest 6961's objective
+  // 12889 a talk to Creature2 57050, each of count 1.
+  use tables <- quest_support.with_objectives(edits: [])
+  let kill =
+    used_by(
+      log: quest_support.log_of(rows: [
+        quest_support.accepted(quest_id: 1857, progress: [0]),
+      ]),
+      tables:,
+      event: killed(creature: kill_target, faction: unlisted_faction),
+    )
+  assert list.contains(
+    kill.effects,
+    SendProgress(quest_id: 1857, objective_index: 0, progress: 1),
+  )
+    as "the kill counts"
+  assert releases(effects: kill.effects) == [] as "and releases nothing"
+  let talked =
+    used_by(
+      log: quest_support.log_of(rows: [
+        quest_support.accepted(quest_id: 6961, progress: [0]),
+      ]),
+      tables:,
+      event: a_talk(Creature2Id(57_050)),
+    )
+  assert list.contains(
+    talked.effects,
+    SendProgress(quest_id: 6961, objective_index: 0, progress: 1),
+  )
+    as "the talk counts"
+  assert releases(effects: talked.effects) == [] as "and releases nothing"
+}
+
+pub fn a_use_that_counts_two_objectives_releases_the_unit_once_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Quests 9207 (objective 17932) and 9428 (17989, behind objective 17988) are each a
+  // type 12 objective on Creature2 58487.
+  use tables <- quest_support.with_objectives(edits: [])
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: 9207, progress: [0]),
+      quest_support.active(
+        quest_id: 9428,
+        state: 1,
+        placeholder: 0,
+        tracked: False,
+        done_mask: 0b1,
+        progress: [1, 0],
+      ),
+    ])
+  let used =
+    used_by(
+      log:,
+      tables:,
+      event: a_use_of(
+        creature: Creature2Id(use_target),
+        unit: quest_support.unit_ref(unit_id: 7),
+      ),
+    )
+  assert list.filter(used.effects, fn(effect) {
+      case effect {
+        SendProgress(..) -> True
+        SendState(..) | CompleteByServer(..) | ReleaseUnit(..) -> False
+      }
+    })
+    == [
+      SendProgress(quest_id: 9207, objective_index: 0, progress: 1),
+      SendProgress(quest_id: 9428, objective_index: 1, progress: 1),
+    ]
+    as "both objectives count the use"
+  assert releases(effects: used.effects) == [7]
+    as "the unit is released once, not once for each objective"
+  assert list.last(used.effects) == Ok(ReleaseUnit(unit_id: 7))
+    as "and after the progress and state of both quests"
+}
+
+pub fn a_use_counted_new_for_one_objective_and_again_for_another_releases_the_unit_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Objective 4470 (quest 3480, count 3), pointed at Creature2 24308, and objective 8271
+  // (quest 5531, TargetGroup 6355 of 24308 and 24310, count 12) count the same unit; 8271
+  // is in the reuse set, so it counts unit 7 again, while 4470 counts it once.
+  use tables <- pointed_at(data: [#(4470, 24_308)])
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.untouched(quest_id: 3480),
+      quest_support.untouched(quest_id: 5531),
+    ])
+  let use_of_unit_7 =
+    a_use_of(
+      creature: Creature2Id(24_308),
+      unit: quest_support.unit_ref(unit_id: 7),
+    )
+  let first = used_reusing(log:, tables:, event: use_of_unit_7, reused: [8271])
+  assert first.effects
+    == [
+      SendProgress(quest_id: 3480, objective_index: 0, progress: 1),
+      SendProgress(quest_id: 5531, objective_index: 0, progress: 1),
+      ReleaseUnit(unit_id: 7),
+    ]
+    as "one objective counts the unit new and the other counts it as it always does: the unit is released"
+  let again =
+    used_reusing(log: first.log, tables:, event: use_of_unit_7, reused: [8271])
+  assert again.effects
+    == [SendProgress(quest_id: 5531, objective_index: 0, progress: 2)]
+    as "the same unit again counts only for the objective that counts it again, and nothing is released"
+}
+
+pub fn the_use_that_finishes_an_objective_releases_its_unit_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Objective 17932 (quest 9207, Creature2 58487) has count 1, so its first use closes it.
+  use tables <- quest_support.with_objectives(edits: [])
+  let used =
+    used_by(
+      log: fresh(quest_id: 9207),
+      tables:,
+      event: a_use_of(
+        creature: Creature2Id(use_target),
+        unit: quest_support.unit_ref(unit_id: 7),
+      ),
+    )
+  assert quest_log.stored_state(log: used.log, quest_id: 9207) == 2
+    as "the use finishes the quest's one objective"
+  assert list.last(used.effects) == Ok(ReleaseUnit(unit_id: 7))
+    as "the unit is released after the progress and the state that finish it"
+}
+
+pub fn a_departures_terminal_counts_and_releases_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Every player who passes uses the same terminal and the same cast moves them to the
+  // landing, so the terminal is not spent (`departures.is_terminal`).
+  use tables <- quest_support.with_objectives(edits: [])
+  let used =
+    used_by(
+      log: bon_voyage_after_the_talk(quest_id: 10_528),
+      tables:,
+      event: a_use(Creature2Id(73_606)),
+    )
+  assert list.any(used.effects, fn(effect) {
+    case effect {
+      SendProgress(..) -> True
+      SendState(..) | CompleteByServer(..) | ReleaseUnit(..) -> False
+    }
+  })
+    as "the terminal's use counts for the travel and its own choice"
+  assert releases(effects: used.effects) == []
+    as "and the terminal is not released"
 }

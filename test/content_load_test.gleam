@@ -266,6 +266,27 @@ pub fn the_load_puts_every_term_the_game_listener_reads_at_start_test() -> Nil {
   Nil
 }
 
+pub fn the_load_puts_the_reused_objectives_of_every_type_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The migrations seed spawns of no quest creature, so every objective of a count above
+  // 1 whose creatures the objective lists has a supply of none and is reused
+  // (`objective_units.reused`); the load puts the set under the key the connection's
+  // settings read. The fixture's rows (`table_rows -- QuestObjective <id>`): 4470 is type
+  // 12 (Creature2 11070, count 3), 4813 type 32 (crate 12919, count 6), 15980 type 5
+  // (Creature2 19277, count 3), 10383 type 23 (TargetGroup 3568, count 15) and 11555
+  // type 11 (reward pane 3699, count 4); 17932 is type 12 with count 1.
+  let database = database_support.new_database(on: database_support.shared())
+  let #(loaded, key) = content_support.load(database:)
+  assert loaded == Ok(Nil)
+  let reused = content_spawn.reused_unit_objectives(key:)
+  assert list.all([4470, 4813, 15_980, 10_383, 11_555], fn(objective_id) {
+    set.contains(reused, objective_id)
+  })
+    as "an objective of each of types 12, 32, 5, 23 and 11 whose world holds none of its units is reused"
+  assert !set.contains(reused, 17_932)
+    as "an objective of count 1 is never reused"
+}
+
 pub fn the_servers_settings_run_over_a_real_load_test() -> Nil {
   use <- owned_test.run(60_000)
   let database = database_support.new_database(on: database_support.shared())

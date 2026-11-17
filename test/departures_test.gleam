@@ -321,6 +321,19 @@ pub fn each_choice_objective_names_its_terminal_test() -> Nil {
     as "an objective of another type is no choice"
 }
 
+pub fn is_terminal_names_each_of_the_four_terminals_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The four terminals of the module's table (Creature2 73606, 73605, 74773, 74772): a
+  // use of one is counted and never released, since every player passes them.
+  assert list.all(
+    [northern_wilds, everstar_grove, levian_bay, crimson_isle],
+    fn(terminal) { departures.is_terminal(creature_id: Creature2Id(terminal)) },
+  )
+    as "each of the four terminals is one"
+  assert !departures.is_terminal(creature_id: Creature2Id(73_463))
+    as "the training mine, a creature of the same world, is not"
+}
+
 pub fn the_load_fails_without_a_landing_row_test() -> Nil {
   use <- owned_test.run(60_000)
   assert list.flat_map(departures.requirements(), fn(requirement) {

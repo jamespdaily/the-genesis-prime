@@ -115,9 +115,9 @@ import genesis_prime/content/vendor as content_vendor
 import genesis_prime/content/zone_welcome as content_zone_welcome
 import genesis_prime/game/class_resource
 import genesis_prime/game/held_objective
+import genesis_prime/game/objective_units
 import genesis_prime/game/place_objective
 import genesis_prime/game/projector
-import genesis_prime/game/quest_log
 import genesis_prime/game/rating
 import genesis_prime/game/server_proxy
 import genesis_prime/game/spell_plan
@@ -450,7 +450,7 @@ fn read(
       content_spawn.put(key:, selection:)
       content_spawn.put_reused_unit_objectives(
         key:,
-        objectives: quest_log.reused_unit_objectives(
+        objectives: objective_units.reused(
           tables:,
           spawn_counts: content_spawn.counts(rows),
         ),

@@ -1723,7 +1723,16 @@ pub fn a_checklist_target_shows_its_index_and_counts_once_when_activated_test() 
   // 6780) (Prerequisite.prerequisiteTypeId.11, .94). A prerequisite that fails sets the
   // unit's anim state 1 (0x14046c4d0), and the client offers a unit in it nothing
   // (0x140479560.anim_state_exit), so the press is refused as not useable (100) with no
-  // cast; the server has written all it held for this connection when its pong comes.
+  // cast; the server has written all it held for this connection when its pong comes. The
+  // used object goes out of sight at its go and comes back under its unit id after the
+  // release time (migration 0033, 30 s), when the press meets the closed link.
+  driven_time.advance(time:, ms: 31_000)
+  let #(_, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      list.any(static_objects_created_in(frames:), fn(object) {
+        object.unit_id == second.unit_id
+      })
+    })
   let assert Ok(again) =
     cast_activate.encode(CastActivate(
       client_cast_id: 2,
@@ -1759,6 +1768,170 @@ pub fn a_checklist_target_shows_its_index_and_counts_once_when_activated_test() 
   login_support.stop(started)
 }
 
+/// A character of this number one unit west of crate 18256's place in World 426, holding
+/// quest 3741 ("Scattered Supplies", objective 4813) with nothing done when it is asked to:
+/// its game, the bytes its client has read beyond its entry, and the frames of its entry,
+/// read until the crate of the world data is shown.
+fn near_the_crates(
+  started started: login_support.Started,
+  number number: Int,
+  character_name character_name: String,
+  holds_the_quest holds_the_quest: Bool,
+) -> #(game_client.Game, BitArray, List(Frame)) {
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let #(game, character) =
+    new_player_at_level(
+      started:,
+      number:,
+      character_name:,
+      class_id: 4,
+      level: 1,
+    )
+  case holds_the_quest {
+    True -> {
+      let assert Ok(_) =
+        pog.query(
+          "insert into character_quest (character_id, quest_id, state, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left, kill_mask) values ($1, 3741, 1, 0, true, 0, '{0}', 0, '{0}', '{0,0,0,0,0,0}')",
+        )
+        |> pog.parameter(pog.int(character))
+        |> pog.execute(pool)
+        as "the character holds quest 3741 with nothing done"
+      Nil
+    }
+    False -> Nil
+  }
+  character_support.move_to(
+    pool:,
+    character_id: character,
+    world_id: 426,
+    world_zone_id: 648,
+    position: #(4453.227, -741.5363, -5457.145),
+  )
+  send_play(game:, character_id: character)
+  let #(entry, have) =
+    game_client.read_until(game:, have: <<>>, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x01BC })
+      && static_objects_created_in(frames:) != []
+    })
+  #(game, have, entry)
+}
+
+pub fn a_crate_of_scattered_supplies_counts_once_and_vanishes_for_everyone_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Creature2 12919 (Exile Supply Crate, quest 3741) casts activate spell 1817 after its
+  // activateSpellCastTime of 2000 ms, from at most 5.0 away, and links to quest 3741's
+  // objective index 0 (objective 4813, type 32, count 6) through its questAnim columns.
+  // The fixture imports six of its crates (rows 18256 to 18261), as many as the
+  // objective's count, so the load does not take the objective as short of units and
+  // the connection releases a crate it counts (`objective_units.reused`).
+  // The client keeps no record of a crate it has used and offers it again until the
+  // objective is done (`QuestObjective.type.32.repeat_use`); the server counts a crate
+  // once and takes it out of sight of everyone, so the client is sent 0x361 once and
+  // 0x355 to each viewer (opcode.0x361, opcode.0x355; a used quest object vanishing for
+  // everyone is Jim's decision of 2026-11-16).
+  let time = driven_time.new()
+  let started =
+    start_with_world_data_by(
+      folder: "test/fixture/world_data_crates",
+      adjusted: fn(settings) { login_support.driven_by(settings:, time:) },
+    )
+  let #(game, have, entry) =
+    near_the_crates(
+      started:,
+      number: 1,
+      character_name: "Zed Qu",
+      holds_the_quest: True,
+    )
+  let #(viewer, viewer_have, _) =
+    near_the_crates(
+      started:,
+      number: 2,
+      character_name: "Ann Qu",
+      holds_the_quest: False,
+    )
+  let assert Ok(crate) =
+    nearest_object_of(
+      objects: static_objects_created_in(frames: entry),
+      creature_id: 12_919,
+      to: #(4454.227, -5457.145),
+    )
+    as "crate 18256 is shown to the player who holds the quest"
+  let assert Ok(press) =
+    cast_activate.encode(CastActivate(
+      client_cast_id: 1,
+      target_unit_id: crate.unit_id,
+    ))
+    as "the right-click fits the message"
+  game_client.send_world(
+    game:,
+    message_id: cast_activate.message_id,
+    body: press,
+  )
+  // The server has taken the press, and armed the go's timer, when its pong comes.
+  let #(pressed, have) = game_client.read_until_pong(game:, have:, number: 1)
+  assert list.any(pressed, fn(frame) { frame.message_id == 0x07FD })
+    as "opcode.0x7fd: the press is confirmed"
+  driven_time.advance(time:, ms: 2000)
+  // The map takes the crate out of sight after the connection has told it the use: a
+  // message from another process, so the 0x355 is waited for with the 0x361.
+  let #(went, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x0361 })
+      && destroyed_units(frames:) != []
+    })
+  assert list.filter(went, fn(frame) { frame.message_id == 0x0361 })
+    == [
+      Frame(
+        message_id: 0x0361,
+        body: message_support.packed([#(15, 3741), #(32, 0), #(32, 1)]),
+      ),
+    ]
+    as "opcode.0x361: the go counts one of the six"
+  assert destroyed_units(frames: went) == [crate.unit_id]
+    as "opcode.0x355: the crate goes out of the sight of the player who used it"
+  let #(seen_by_viewer, _viewer_have) =
+    game_client.read_until(game: viewer, have: viewer_have, found: fn(frames) {
+      destroyed_units(frames:) != []
+    })
+  assert destroyed_units(frames: seen_by_viewer) == [crate.unit_id]
+    as "opcode.0x355: and out of the sight of a second player, who holds no quest"
+  // The same unit pressed again is a unit the player's client no longer holds: the
+  // press is refused and counts nothing.
+  let assert Ok(again) =
+    cast_activate.encode(CastActivate(
+      client_cast_id: 2,
+      target_unit_id: crate.unit_id,
+    ))
+    as "the right-click fits the message"
+  game_client.send_world(
+    game:,
+    message_id: cast_activate.message_id,
+    body: again,
+  )
+  let #(pressed_again, _) = game_client.read_until_pong(game:, have:, number: 2)
+  assert list.filter(pressed_again, fn(frame) {
+      frame.message_id == 0x0361 || frame.message_id == 0x07FD
+    })
+    == []
+    as "opcode.0x361 and opcode.0x7fd: a second press of the same crate counts nothing and starts no cast"
+  game_client.close(game:)
+  game_client.close(game: viewer)
+  login_support.stop(started)
+}
+
+/// The unit ids the 0x355 among the frames remove, in the order sent.
+fn destroyed_units(frames frames: List(Frame)) -> List(Int) {
+  list.filter_map(frames, fn(frame) {
+    case frame.message_id == unit_destroyed.message_id {
+      True ->
+        unit_destroyed.decode(frame.body)
+        |> result.map(fn(destroyed) { destroyed.unit_id })
+        |> result.replace_error(Nil)
+      False -> Error(Nil)
+    }
+  })
+}
+
 // ---- two players see each other ----
 
 /// What a character who has pressed a mine's activate leaves: the game, the mine's
@@ -1772,6 +1945,7 @@ type MineCast {
     have: BitArray,
     entry: List(Frame),
     pressed: List(Frame),
+    time: driven_time.Time,
   )
 }
 
@@ -1882,6 +2056,7 @@ fn player_whose_mine_cast_went(
     have:,
     entry:,
     pressed: list.flatten([confirmed, cast, rest]),
+    time:,
   )
 }
 
@@ -1898,6 +2073,7 @@ fn exile_whose_mine_cast_went() -> #(
   Int,
   BitArray,
   List(Frame),
+  driven_time.Time,
 ) {
   let cast =
     player_whose_mine_cast_went(
@@ -1913,7 +2089,14 @@ fn exile_whose_mine_cast_went() -> #(
       ],
       mine: 73_463,
     )
-  #(cast.started, cast.game, cast.mine.unit_id, cast.have, cast.pressed)
+  #(
+    cast.started,
+    cast.game,
+    cast.mine.unit_id,
+    cast.have,
+    cast.pressed,
+    cast.time,
+  )
 }
 
 pub fn a_mine_cast_counts_the_exile_objective_test() -> Nil {
@@ -1923,8 +2106,9 @@ pub fn a_mine_cast_counts_the_exile_objective_test() -> Nil {
   // value 1 or on quest 10524 value 1). Objective 21287 is index 1 of quest 10518
   // (type 5, count 1, flags 3). The client sends nothing at the go, and the server
   // tells it the progress (opcode.0x361: the quest, the objective, the value 1). The
-  // mine is not consumed: no 0x355 removes it.
-  let #(started, game, _, have, went) = exile_whose_mine_cast_went()
+  // used mine goes out of sight, as any used quest object does (Jim, 2026-11-16): a
+  // 0x355 for its unit follows (opcode.0x355).
+  let #(started, game, mine, have, went, _) = exile_whose_mine_cast_went()
   assert list.filter(went, fn(frame) { frame.message_id == 0x0361 })
     == [
       Frame(
@@ -1933,14 +2117,32 @@ pub fn a_mine_cast_counts_the_exile_objective_test() -> Nil {
       ),
     ]
     as "opcode.0x361: the go of the mine's cast counts objective 21287 of quest 10518"
-  let #(rest, _) = game_client.read_until_pong(game:, have:, number: 3)
-  assert list.filter(list.append(went, rest), fn(frame) {
-      frame.message_id == unit_destroyed.message_id
-    })
-    == []
-    as "opcode.0x355: the mine stays shown"
+  let #(destroyed, _) = destroyed_after(game:, have:, seen: went)
+  assert destroyed == [mine]
+    as "opcode.0x355: the mine that was used goes out of the player's sight, and no other unit does"
   game_client.close(game:)
   login_support.stop(started)
+}
+
+/// The unit ids the 0x355 among the frames remove, or, when none is among them, those of
+/// the first 0x355 the map sends the game next: the map takes a used object out of sight
+/// after the connection has told it the use, so the news may come before or after the
+/// frames the caller has read.
+fn destroyed_after(
+  game game: game_client.Game,
+  have have: BitArray,
+  seen seen: List(Frame),
+) -> #(List(Int), BitArray) {
+  case destroyed_units(frames: seen) {
+    [] -> {
+      let #(more, have) =
+        game_client.read_until(game:, have:, found: fn(frames) {
+          destroyed_units(frames:) != []
+        })
+      #(destroyed_units(frames: more), have)
+    }
+    units -> #(units, have)
+  }
 }
 
 pub fn a_second_cast_on_the_mine_after_its_objective_is_done_is_refused_test() -> Nil {
@@ -1950,8 +2152,17 @@ pub fn a_second_cast_on_the_mine_after_its_objective_is_done_is_refused_test() -
   // (Prerequisite.prerequisiteTypeId.43), so the prerequisite fails and sets the unit's
   // anim state 1 (0x14046c4d0): the client offers it nothing
   // (0x140479560.anim_state_exit), and the activate is refused with TargetIsNotUseable
-  // (100) at the press, with no cast started.
-  let #(started, game, mine, have, _) = exile_whose_mine_cast_went()
+  // (100) at the press, with no cast started. The used mine goes out of sight at its go
+  // and comes back after the release time (migration 0033, 30 s), when the player's
+  // press of it meets the closed link.
+  let #(started, game, mine, have, _, time) = exile_whose_mine_cast_went()
+  driven_time.advance(time:, ms: 31_000)
+  let #(_, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      list.any(static_objects_created_in(frames:), fn(object) {
+        object.unit_id == mine
+      })
+    })
   let assert Ok(again) =
     cast_activate.encode(CastActivate(client_cast_id: 2, target_unit_id: mine))
     as "the right-click fits the message"
@@ -2002,7 +2213,7 @@ pub fn a_dominion_player_sees_and_counts_the_mines_at_their_markers_test() -> Ni
   ]
   // The character is one unit east of marker 52899, whose mine is the nearest of its
   // Creature2.
-  let MineCast(started:, game:, mine:, have:, entry:, pressed:) =
+  let MineCast(started:, game:, mine:, have:, entry:, pressed:, ..) =
     player_whose_mine_cast_went(
       character_name: "Dax Qu",
       faction: 166,
@@ -2035,12 +2246,9 @@ pub fn a_dominion_player_sees_and_counts_the_mines_at_their_markers_test() -> Ni
       ),
     ]
     as "opcode.0x361: the go of the mine's cast counts objective 21313 of quest 10524"
-  let #(later, _) = game_client.read_until_pong(game:, have:, number: 3)
-  assert list.filter(list.append(pressed, later), fn(frame) {
-      frame.message_id == unit_destroyed.message_id
-    })
-    == []
-    as "opcode.0x355: the mine stays shown"
+  let #(destroyed, _) = destroyed_after(game:, have:, seen: pressed)
+  assert destroyed == [mine.unit_id]
+    as "opcode.0x355: the mine that was used goes out of the player's sight, and no other mine does"
   game_client.close(game:)
   login_support.stop(started)
 }
@@ -3888,7 +4096,8 @@ fn start_with_creatures() -> login_support.Started {
 /// The server's tree with the world standing the spawns of the planted world-database
 /// file in the folder and the migrations' seeded ones, loaded through the content load
 /// into a key of the test's own, and the game connections holding the visibility
-/// prerequisites the load found (as the server's own start passes them).
+/// prerequisites and the reused unit objectives the load found (as the server's own
+/// start passes them).
 fn start_with_world_data(folder folder: String) -> login_support.Started {
   start_with_world_data_by(folder:, adjusted: fn(settings) { settings })
 }
@@ -3930,6 +4139,7 @@ fn start_with_world_data_by(
         settings: connection_state.Settings(
           ..settings.game.settings,
           visibility: content_spawn.visibility(key:),
+          reused_unit_objectives: content_spawn.reused_unit_objectives(key:),
         ),
       ),
       world: server.World(..settings.world, spawns: key),
