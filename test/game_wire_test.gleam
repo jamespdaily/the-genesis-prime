@@ -1821,6 +1821,9 @@ pub fn a_crate_of_scattered_supplies_counts_once_and_vanishes_for_everyone_test(
   // Creature2 12919 (Exile Supply Crate, quest 3741) casts activate spell 1817 after its
   // activateSpellCastTime of 2000 ms, from at most 5.0 away, and links to quest 3741's
   // objective index 0 (objective 4813, type 32, count 6) through its questAnim columns.
+  // The fixture imports six of its crates (rows 18256 to 18261), as many as the
+  // objective's count, so the load does not take the objective as short of units and
+  // the connection releases a crate it counts (`objective_units.reused`).
   // The client keeps no record of a crate it has used and offers it again until the
   // objective is done (`QuestObjective.type.32.repeat_use`); the server counts a crate
   // once and takes it out of sight of everyone, so the client is sent 0x361 once and
@@ -4093,7 +4096,8 @@ fn start_with_creatures() -> login_support.Started {
 /// The server's tree with the world standing the spawns of the planted world-database
 /// file in the folder and the migrations' seeded ones, loaded through the content load
 /// into a key of the test's own, and the game connections holding the visibility
-/// prerequisites the load found (as the server's own start passes them).
+/// prerequisites and the reused unit objectives the load found (as the server's own
+/// start passes them).
 fn start_with_world_data(folder folder: String) -> login_support.Started {
   start_with_world_data_by(folder:, adjusted: fn(settings) { settings })
 }
@@ -4135,6 +4139,7 @@ fn start_with_world_data_by(
         settings: connection_state.Settings(
           ..settings.game.settings,
           visibility: content_spawn.visibility(key:),
+          reused_unit_objectives: content_spawn.reused_unit_objectives(key:),
         ),
       ),
       world: server.World(..settings.world, spawns: key),

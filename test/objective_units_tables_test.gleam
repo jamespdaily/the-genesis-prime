@@ -11,6 +11,12 @@
 ////   (`target_group.listed_creatures`), and the expected linked creatures from each
 ////   creature's own columns (`objective_link.links`), not from the list under test.
 //// - A departures choice objective counts only its own terminal (`departures`).
+//// - A group names creatures only when it is of type 1 and holds a non-zero word (it is
+////   tested by its own row, `group_expectation`); every other group, and a cast with no
+////   reward pane, is a unit the server cannot list.
+////
+//// Every objective's classification (listed, unlisted, no unit event) is asserted against
+//// these sources before its creatures are.
 ////
 //// A list is sound when every creature it holds is one a use (a cast, for type 11) counts,
 //// complete when it holds every creature the same sources name, and unique.
@@ -24,9 +30,12 @@ import genesis_prime/game/objective_units.{Listed}
 import genesis_prime/game/quest_log
 import genesis_prime/game/target_group
 import genesis_prime/table/creature2
-import genesis_prime/table/id.{Creature2Id, Faction2Id, UnitRaceId}
+import genesis_prime/table/id.{
+  Creature2Id, Faction2Id, TargetGroupId, UnitRaceId,
+}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest2
+import genesis_prime/table/target_group as target_group_row
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
@@ -89,29 +98,49 @@ fn event_for(
   }
 }
 
-/// The creatures the objective's own sources name, for an objective `units_of` lists.
+/// What the objective's own sources say `units_of` answers: the creatures they name, no
+/// creature to list (a group or a pane that names none, a cast with no pane), or no unit
+/// event at all.
+type Expectation {
+  ExpectListed(creatures: List(Int))
+  ExpectUnlisted
+  ExpectNoUnitEvent
+}
+
+/// The answer the objective's own sources give, worked out from the rows and the
+/// objective's kind alone, never from `units_of`.
 fn expected(
   tables tables: table_store.Tables,
   linked linked: Dict(#(Int, Int), List(Int)),
   quest_id quest_id: Int,
   index index: Int,
   objective objective: quest_log.Objective,
-) -> List(Int) {
+) -> Expectation {
   case objective.kind {
-    objective_kind.UseCreature(creature2_id:) -> [creature2_id.value]
+    objective_kind.UseCreature(creature2_id:) ->
+      ExpectListed([creature2_id.value])
     objective_kind.Scripted | objective_kind.CollectVirtualItem(_) ->
-      result_or_empty(dict.get(linked, #(quest_id, index)))
-    objective_kind.UseGroup(target_group_id:) -> {
-      let group =
-        target_group.listed_creatures(tables:, group: target_group_id.value)
-      case departures.choice_terminal(objective_id: objective.objective_id) {
-        None -> group
-        Some(terminal) ->
-          list.filter(group, fn(creature) { creature == terminal.value })
+      ExpectListed(result_or_empty(dict.get(linked, #(quest_id, index))))
+    objective_kind.UseGroup(target_group_id:) ->
+      case group_expectation(tables:, group: target_group_id.value) {
+        ExpectListed(group) ->
+          case
+            departures.choice_terminal(objective_id: objective.objective_id)
+          {
+            None -> ExpectListed(group)
+            Some(terminal) ->
+              ExpectListed(
+                list.filter(group, fn(creature) { creature == terminal.value }),
+              )
+          }
+        ExpectUnlisted -> ExpectUnlisted
+        ExpectNoUnitEvent -> ExpectNoUnitEvent
       }
-    }
     objective_kind.CastSpell(_) ->
-      target_group.listed_creatures(tables:, group: objective.reward_pane)
+      case objective.reward_pane {
+        0 -> ExpectUnlisted
+        pane -> group_expectation(tables:, group: pane)
+      }
     objective_kind.ChecklistUse(_)
     | objective_kind.ChecklistActivate(_)
     | objective_kind.ChecklistTalk(_)
@@ -128,7 +157,47 @@ fn expected(
     | objective_kind.FinishQuest(_)
     | objective_kind.Placeholder
     | objective_kind.Unconditional
-    | objective_kind.Unread(_) -> []
+    | objective_kind.Unread(_) -> ExpectNoUnitEvent
+  }
+}
+
+/// What a TargetGroup row says of the creatures it lists, read from the row's own type and
+/// words: a group of type 1 names the creatures of its non-zero words, and any other group
+/// (a group of a faction or a race, the opposite of a list, nested groups, a missing row,
+/// or a type 1 group with no word) names none.
+fn group_expectation(
+  tables tables: table_store.Tables,
+  group group: Int,
+) -> Expectation {
+  case target_group_row.get(tables:, id: TargetGroupId(group)) {
+    Ok(row) if row.type_ == 1 ->
+      case
+        list.filter(
+          [
+            row.data0,
+            row.data1,
+            row.data2,
+            row.data3,
+            row.data4,
+            row.data5,
+            row.data6,
+          ],
+          fn(word) { word != 0 },
+        )
+      {
+        [] -> ExpectUnlisted
+        words -> ExpectListed(list.unique(words))
+      }
+    Ok(_) | Error(Nil) -> ExpectUnlisted
+  }
+}
+
+/// The name of an expectation for a failing assertion.
+fn expectation_name(expectation: Expectation) -> String {
+  case expectation {
+    ExpectListed(_) -> "listed creatures"
+    ExpectUnlisted -> "a unit the server cannot list"
+    ExpectNoUnitEvent -> "no unit event"
   }
 }
 
@@ -168,9 +237,13 @@ pub fn every_creature_an_objective_lists_is_counted_by_its_use_test() -> Nil {
     })
     |> list.filter_map(fn(found) {
       let #(quest_id, index, objective) = found
-      case objective_units.units_of(tables:, quest_id:, index:, objective:) {
-        Listed(creatures) -> {
-          let name = where(quest_id:, objective:)
+      let name = where(quest_id:, objective:)
+      let wanted = expected(tables:, linked:, quest_id:, index:, objective:)
+      case
+        objective_units.units_of(tables:, quest_id:, index:, objective:),
+        wanted
+      {
+        Listed(creatures), ExpectListed(wanted_creatures) -> {
           assert creatures == list.unique(creatures)
             as { name <> " lists each creature once" }
           list.each(creatures, fn(creature) {
@@ -191,19 +264,27 @@ pub fn every_creature_an_objective_lists_is_counted_by_its_use_test() -> Nil {
           assert set.from_list(
               list.map(creatures, fn(creature) { creature.value }),
             )
-            == set.from_list(expected(
-              tables:,
-              linked:,
-              quest_id:,
-              index:,
-              objective:,
-            ))
+            == set.from_list(wanted_creatures)
             as {
               name <> " lists every creature its own sources name, and no other"
             }
           Ok(objective.kind)
         }
-        objective_units.Unlisted | objective_units.NoUnitEvent -> Error(Nil)
+        objective_units.Unlisted, ExpectUnlisted
+        | objective_units.NoUnitEvent, ExpectNoUnitEvent
+        -> Error(Nil)
+        Listed(_), ExpectUnlisted
+        | Listed(_), ExpectNoUnitEvent
+        | objective_units.Unlisted, ExpectListed(_)
+        | objective_units.Unlisted, ExpectNoUnitEvent
+        | objective_units.NoUnitEvent, ExpectListed(_)
+        | objective_units.NoUnitEvent, ExpectUnlisted
+        ->
+          panic as {
+            name
+            <> " is classified otherwise than its own sources say: they say "
+            <> expectation_name(wanted)
+          }
       }
     })
   let kinds_checked =
