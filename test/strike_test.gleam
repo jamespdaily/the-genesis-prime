@@ -982,6 +982,7 @@ fn creature_at(
     hostile_to: Hostile(exile: False, dominion: False),
     in_combat: False,
     held: [],
+    unit_states: [],
   )
 }
 
@@ -1316,6 +1317,7 @@ fn mind_burst_go(points points: Int) -> GoAsked {
         | cast_state.TargetChangeEnds(..)
         | cast_state.ForcedMoveStarts(..)
         | cast_state.CreatureDespawns(..)
+        | cast_state.CreatureHoldsUnitStates(..)
         | cast_state.Activated(..)
         | cast_state.ShortcutCast(..)
         | cast_state.TickStrike(..)

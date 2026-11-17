@@ -253,6 +253,7 @@ fn activated(
           alive: True,
           in_combat: False,
           held: [],
+          unit_states: [],
           withheld: option.None,
         )
       },
@@ -568,6 +569,7 @@ fn pressed_with(
           alive: True,
           in_combat: False,
           held: [],
+          unit_states: [],
           withheld: option.None,
         )
       },

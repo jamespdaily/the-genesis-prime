@@ -304,6 +304,7 @@ import genesis_prime/game/spell_effect.{type PlannedEffect, PlannedEffect}
 import genesis_prime/game/spend
 import genesis_prime/game/ticking
 import genesis_prime/game/unit_properties
+import genesis_prime/game/unit_state
 import genesis_prime/game/worn_visual
 import genesis_prime/message/crowd_control_state
 import genesis_prime/message/float32
@@ -1062,6 +1063,27 @@ pub type Despawn {
   )
 }
 
+/// A UnitStateSet effect (`Spell4Effects.effectType.15`) aimed past the caster with a time:
+/// the unit state `row.state` (dataBits00) held on each creature the go `Hit` from the go plus
+/// the row's delay for its duration (genesis_prime/game/unit_state `Row`); the client reads no
+/// row of this type, so the state shows only through the cast results the server gives.
+/// `aim` names the units it strikes (the primary target, the area or both, as `StruckMove`
+/// does), `phase_flags` the phases it applies in, `condition` when it holds (its caster apply
+/// prerequisite against the caster, its target apply prerequisite against each struck unit),
+/// and `tag` when it holds for the points the cast spent (genesis_prime/game/spend). The cast
+/// tells each creature it holds the state on (genesis_prime/game/cast/control
+/// `unit_states_told`); a unit that is the caster or another player holds none.
+pub type UnitState {
+  UnitState(
+    effect_id: Spell4EffectsId,
+    phase_flags: Int,
+    aim: Aim,
+    row: unit_state.Row,
+    condition: Condition,
+    tag: spend.Tag,
+  )
+}
+
 /// The target apply prerequisite of one row aimed past the caster, which the struck
 /// creature checks against its own state (`Spell4Effects.prerequisiteIdTargetApply`): the
 /// row's Spell4Effects id, the phases of `phase_flags` it applies in, who it aims at, the
@@ -1344,6 +1366,8 @@ pub type Kind {
   StruckMoveEffect(struck_move: StruckMove)
   /// A DespawnUnit row aimed past the caster, which the go tells the creatures it hit to leave the field at (`Despawn`).
   DespawnEffect(despawn: Despawn)
+  /// A UnitStateSet row aimed past the caster, which the go tells the creatures it hit to hold the state of (`UnitState`).
+  UnitStateEffect(unit_state: UnitState)
   /// A ModifySpellCooldown row aimed at the caster (`CooldownModifier`).
   CooldownEffect(modifier: CooldownModifier)
   /// A Stealth row aimed at the caster, a stealth the cast holds on it (`StealthRow`).
@@ -1415,6 +1439,13 @@ pub fn effect_of(kind kind: Kind) -> PlannedEffect(Kind) {
         effect_id: despawn.effect_id,
         phase_flags: despawn.phase_flags,
         tag: despawn.tag,
+        kind:,
+      )
+    UnitStateEffect(unit_state:) ->
+      PlannedEffect(
+        effect_id: unit_state.effect_id,
+        phase_flags: unit_state.phase_flags,
+        tag: unit_state.tag,
         kind:,
       )
     CooldownEffect(modifier:) ->
@@ -1492,6 +1523,7 @@ pub fn kind_rank(kind kind: Kind) -> Int {
     HealEffect(..) -> 120
     ControlEffect(..) -> 130
     DespawnEffect(..) -> 140
+    UnitStateEffect(..) -> 150
   }
 }
 
@@ -1512,7 +1544,8 @@ fn rank(kind kind: Kind) -> Int {
     | ProcEffect(..)
     | HealEffect(..)
     | ControlEffect(..)
-    | DespawnEffect(..) -> False
+    | DespawnEffect(..)
+    | UnitStateEffect(..) -> False
   }
   case armored {
     True -> kind_rank(kind:) + 5
@@ -1536,7 +1569,8 @@ pub fn as_proxy(kind kind: Kind) -> Result(Proxy, Nil) {
     | ProcEffect(..)
     | HealEffect(..)
     | ControlEffect(..)
-    | DespawnEffect(..) -> Error(Nil)
+    | DespawnEffect(..)
+    | UnitStateEffect(..) -> Error(Nil)
   }
 }
 
@@ -1556,7 +1590,8 @@ pub fn as_gain(kind kind: Kind) -> Result(Gain, Nil) {
     | ProcEffect(..)
     | HealEffect(..)
     | ControlEffect(..)
-    | DespawnEffect(..) -> Error(Nil)
+    | DespawnEffect(..)
+    | UnitStateEffect(..) -> Error(Nil)
   }
 }
 
@@ -1576,7 +1611,8 @@ pub fn as_lasting(kind kind: Kind) -> Result(Lasting, Nil) {
     | ProcEffect(..)
     | HealEffect(..)
     | ControlEffect(..)
-    | DespawnEffect(..) -> Error(Nil)
+    | DespawnEffect(..)
+    | UnitStateEffect(..) -> Error(Nil)
   }
 }
 
@@ -1596,7 +1632,8 @@ pub fn as_remove(kind kind: Kind) -> Result(ForceRemove, Nil) {
     | ProcEffect(..)
     | HealEffect(..)
     | ControlEffect(..)
-    | DespawnEffect(..) -> Error(Nil)
+    | DespawnEffect(..)
+    | UnitStateEffect(..) -> Error(Nil)
   }
 }
 
@@ -1616,7 +1653,8 @@ pub fn as_modifier(kind kind: Kind) -> Result(PropertyModifier, Nil) {
     | ProcEffect(..)
     | HealEffect(..)
     | ControlEffect(..)
-    | DespawnEffect(..) -> Error(Nil)
+    | DespawnEffect(..)
+    | UnitStateEffect(..) -> Error(Nil)
   }
 }
 
@@ -1636,7 +1674,8 @@ pub fn as_forced_move(kind kind: Kind) -> Result(ForcedMove, Nil) {
     | ProcEffect(..)
     | HealEffect(..)
     | ControlEffect(..)
-    | DespawnEffect(..) -> Error(Nil)
+    | DespawnEffect(..)
+    | UnitStateEffect(..) -> Error(Nil)
   }
 }
 
@@ -1656,7 +1695,8 @@ pub fn as_struck_move(kind kind: Kind) -> Result(StruckMove, Nil) {
     | ProcEffect(..)
     | HealEffect(..)
     | ControlEffect(..)
-    | DespawnEffect(..) -> Error(Nil)
+    | DespawnEffect(..)
+    | UnitStateEffect(..) -> Error(Nil)
   }
 }
 
@@ -1671,6 +1711,28 @@ pub fn as_despawn(kind kind: Kind) -> Result(Despawn, Nil) {
     | ModifierEffect(..)
     | ForcedMoveEffect(..)
     | StruckMoveEffect(..)
+    | CooldownEffect(..)
+    | StealthEffect(..)
+    | RemoveStealthEffect(..)
+    | ProcEffect(..)
+    | HealEffect(..)
+    | ControlEffect(..)
+    | UnitStateEffect(..) -> Error(Nil)
+  }
+}
+
+/// The payload of an effect of kind `UnitStateEffect`, and nothing for one of another kind.
+pub fn as_unit_state(kind kind: Kind) -> Result(UnitState, Nil) {
+  case kind {
+    UnitStateEffect(unit_state:) -> Ok(unit_state)
+    ProxyEffect(..)
+    | GainEffect(..)
+    | LastingEffect(..)
+    | RemoveEffect(..)
+    | ModifierEffect(..)
+    | ForcedMoveEffect(..)
+    | StruckMoveEffect(..)
+    | DespawnEffect(..)
     | CooldownEffect(..)
     | StealthEffect(..)
     | RemoveStealthEffect(..)
@@ -1696,7 +1758,8 @@ pub fn as_cooldown_modifier(kind kind: Kind) -> Result(CooldownModifier, Nil) {
     | ProcEffect(..)
     | HealEffect(..)
     | ControlEffect(..)
-    | DespawnEffect(..) -> Error(Nil)
+    | DespawnEffect(..)
+    | UnitStateEffect(..) -> Error(Nil)
   }
 }
 
@@ -1716,7 +1779,8 @@ pub fn as_stealth(kind kind: Kind) -> Result(StealthRow, Nil) {
     | ProcEffect(..)
     | HealEffect(..)
     | ControlEffect(..)
-    | DespawnEffect(..) -> Error(Nil)
+    | DespawnEffect(..)
+    | UnitStateEffect(..) -> Error(Nil)
   }
 }
 
@@ -1736,7 +1800,8 @@ pub fn as_remove_stealth(kind kind: Kind) -> Result(RemoveStealthRow, Nil) {
     | ProcEffect(..)
     | HealEffect(..)
     | ControlEffect(..)
-    | DespawnEffect(..) -> Error(Nil)
+    | DespawnEffect(..)
+    | UnitStateEffect(..) -> Error(Nil)
   }
 }
 
@@ -1756,7 +1821,8 @@ pub fn as_proc(kind kind: Kind) -> Result(ProcRow, Nil) {
     | RemoveStealthEffect(..)
     | HealEffect(..)
     | ControlEffect(..)
-    | DespawnEffect(..) -> Error(Nil)
+    | DespawnEffect(..)
+    | UnitStateEffect(..) -> Error(Nil)
   }
 }
 
@@ -1776,7 +1842,8 @@ pub fn as_heal(kind kind: Kind) -> Result(Heal, Nil) {
     | RemoveStealthEffect(..)
     | ProcEffect(..)
     | ControlEffect(..)
-    | DespawnEffect(..) -> Error(Nil)
+    | DespawnEffect(..)
+    | UnitStateEffect(..) -> Error(Nil)
   }
 }
 
@@ -1796,7 +1863,8 @@ pub fn as_control(kind kind: Kind) -> Result(CrowdControl, Nil) {
     | RemoveStealthEffect(..)
     | ProcEffect(..)
     | HealEffect(..)
-    | DespawnEffect(..) -> Error(Nil)
+    | DespawnEffect(..)
+    | UnitStateEffect(..) -> Error(Nil)
   }
 }
 
@@ -1960,6 +2028,18 @@ pub type LeftOutReason {
   /// A DespawnUnit row aimed at the caster alone: only a creature caster could be removed by
   /// it, and a creature's casts are not read, and a player is never removed.
   DespawnAimedAtTheCasterOnly
+  /// A UnitStateSet row (`Spell4Effects.effectType.15`) aimed at the caster alone: a player's
+  /// own state needs a creature's strike to read it, and a creature's casts are not read.
+  UnitStateAimedAtTheCasterOnly
+  /// A UnitStateSet row past the caster that lasts until removed (`Spell4Effects.flags` bit 2),
+  /// which no schedule ends.
+  UnitStateUntilRemoved
+  /// A UnitStateSet row past the caster behind a persistence prerequisite
+  /// (`Spell4Effects.prerequisiteIdTargetPersistence`), which no creature checks for a state.
+  UnitStateBehindPersistence
+  /// A UnitStateSet row whose `column` (dataBits01 to dataBits09) is not 0: no code of the
+  /// client reads the type, so what a value means is not known and the row holds nothing.
+  UnitStateDataNotRead(column: String)
 }
 
 /// A row as its spell holds it. A Proxy's child and a Proc's spell are planned from the
@@ -3741,6 +3821,7 @@ pub fn modifier_of(
     | effect_kind.Activate
     | effect_kind.Immunity
     | effect_kind.Despawn
+    | effect_kind.UnitState
     | effect_kind.Unread(..) ->
       change_of(tables:, spell4_id:, effect:)
       |> result.map(PropertyChange)
@@ -4726,6 +4807,7 @@ fn struck_aim_of_kind(kind kind: Kind) -> Result(Aim, Nil) {
     ControlEffect(control:) -> Ok(control.aim)
     StruckMoveEffect(struck_move:) -> Ok(struck_move.aim)
     DespawnEffect(despawn:) -> Ok(despawn.aim)
+    UnitStateEffect(unit_state:) -> Ok(unit_state.aim)
     ModifierEffect(modifier:) ->
       case modifier.change {
         StruckChange(aim:, ..) -> Ok(aim)
@@ -4930,6 +5012,7 @@ fn kind_reading(
     effect_kind.Damage -> Ok(ReadByArea)
     effect_kind.Activate -> Ok(ReadByActivation)
     effect_kind.Despawn -> despawn_reading(tables:, place:, effect:)
+    effect_kind.UnitState -> unit_state_reading(tables:, place:, effect:)
     effect_kind.Immunity | effect_kind.Unread(..) ->
       Ok(LeftOut(why: TypeNotRead))
   }
@@ -4978,6 +5061,20 @@ fn despawn_reading(
           }
       }
   }
+}
+
+/// A UnitStateSet row (`Spell4Effects.effectType.15`) as a `UnitState` of the part of its aim
+/// past the caster (`past_the_caster`), and `Held` when its phaseFlags is 0
+/// (`held_without_a_phase`). It is left out by name when it aims at the caster alone
+/// (`UnitStateAimedAtTheCasterOnly`), lasts until removed (`UnitStateUntilRemoved`), is behind
+/// a persistence prerequisite (`UnitStateBehindPersistence`) or has a dataBits01 to dataBits09
+/// that is not 0 (`UnitStateDataNotRead`); its apply prerequisites are read as a despawn's are.
+fn unit_state_reading(
+  tables _tables: table_store.Tables,
+  place _place: RowPlace,
+  effect _effect: spell4_effects.Spell4Effects,
+) -> Result(RowReading, PlanError) {
+  Ok(LeftOut(why: TypeNotRead))
 }
 
 /// The row as `LeftOut` when its targetFlags do not reach a unit the type is read for

@@ -32,6 +32,7 @@ import genesis_prime/game/strike_tell.{
   type Answered, type Fight, type Tell as StrikeTell,
 }
 import genesis_prime/game/unit_properties.{type Modifier, type Source}
+import genesis_prime/game/unit_state
 import genesis_prime/hand_off
 import genesis_prime/message/bit_stream
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
@@ -170,6 +171,13 @@ pub type Request {
   /// `struck_at_ms`, the monotonic time the round struck the creature, tells its life. Told
   /// through the creature registry with no watch, and never asked.
   TellDespawn(delay_ms: Int, struck_at_ms: Int, went_at_ms: Int)
+  /// What a `Tell` effect sends a creature the UnitStateSet rows of this connection's player's
+  /// cast hold on it (genesis_prime/world_map/creature `UnitStates`), for the life the go
+  /// struck: each row's state from `went_at_ms`, the monotonic time of the effect's go, plus
+  /// its delay for its duration. `struck_at_ms`, the monotonic time the round struck the
+  /// creature, tells its life. Told through the creature registry with no watch, and never
+  /// asked.
+  TellUnitStates(rows: List(unit_state.Row), struck_at_ms: Int, went_at_ms: Int)
 }
 
 /// A property modifier of a cast on a creature, as `TellTargetChange` carries it.
@@ -301,6 +309,13 @@ pub type News {
   /// instance id, with its last bit 0 (opcode.0x880), written when the viewer's client
   /// shows the unit.
   CrowdControlEnded(state: CrowdControlState, cast_id: Int, instance_id: Int)
+  /// The unit holds the unit state `state`, as the `number` its creature gave this hold
+  /// (genesis_prime/game/unit_state): no frame, since the client reads no row of the type;
+  /// the viewer's connection keeps it in its picture of the unit, so a press that the state
+  /// refuses is refused at the viewer's side too (genesis_prime/game/shown `unit_states`).
+  UnitStateHeld(state: Int, number: Int)
+  /// The unit's hold `number` of a unit state ends: no frame; the viewer's picture drops it.
+  UnitStateEnded(number: Int)
   /// Some of the unit's properties changed, each with its base and its value as the
   /// client holds them: 0x93a (opcode.0x93a), written when the viewer's client shows
   /// the unit. A player's connection sends it for a property a lasting modifier of

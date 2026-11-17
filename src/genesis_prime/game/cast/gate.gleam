@@ -145,6 +145,12 @@ fn effect_rolls_needed(
         condition: row.condition,
         units_reached: reached(row.aim),
       )
+    spell_plan.UnitStateEffect(unit_state: row) ->
+      caster_rolls
+      + target_rolls_needed(
+        condition: row.condition,
+        units_reached: reached(row.aim),
+      )
     spell_plan.HealEffect(heal: row) ->
       caster_rolls
       + target_rolls_needed(
@@ -626,6 +632,8 @@ pub fn gates_checked_on_caster(
     spell_plan.StruckMoveEffect(struck_move: row) ->
       Ok(caster_gates(condition: row.condition))
     spell_plan.DespawnEffect(despawn: row) ->
+      Ok(caster_gates(condition: row.condition))
+    spell_plan.UnitStateEffect(unit_state: row) ->
       Ok(caster_gates(condition: row.condition))
     spell_plan.HealEffect(heal: row) ->
       Ok(caster_gates(condition: row.condition))

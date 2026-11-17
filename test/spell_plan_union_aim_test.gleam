@@ -87,6 +87,7 @@ fn aims_of(reading reading: RowReading) -> List(Aim) {
       | spell_plan.RemoveStealthEffect(..)
       | spell_plan.ProcEffect(..)
       | spell_plan.DespawnEffect(..)
+      | spell_plan.UnitStateEffect(..)
       | spell_plan.ProxyEffect(..) -> Error(Nil)
     }
   })

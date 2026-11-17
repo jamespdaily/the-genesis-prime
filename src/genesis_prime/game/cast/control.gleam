@@ -56,6 +56,12 @@
 ////   the go hit, in the life and at the time the go struck them. The rule tells each
 ////   `CreatureDespawns` in the go's own step, with the row's delay and the go's time, and
 ////   arms no timer: the creature owns the delay (`despawns_told`).
+//// - **A go's unit states on creatures** (type 15 rows whose targetFlags name a unit other
+////   than the caster, a `UnitState`; `Spell4Effects.effectType.15`): each is aimed at the
+////   creatures the go hit, in the life and at the time the go struck them. The rule tells
+////   each creature one `CreatureHoldsUnitStates` in the go's own step, with the creature's
+////   rows in row order and the go's time, and arms no timer: the creature owns the end of
+////   each state (`unit_states_told`).
 //// - **A go's disguises** (genesis_prime/game/look): each type 112 effect of the phase
 ////   that has a life and whose gate against the caster passes is a modifier row whose change is a
 ////   `Look`, so it is listed, started, ended, cancelled with the node and ended at death
@@ -327,6 +333,8 @@ fn effect_named(kind kind: spell_plan.Kind) -> Result(String, Nil) {
       named("the ForcedMove", row.effect_id)
     spell_plan.DespawnEffect(despawn: row) ->
       named("the DespawnUnit", row.effect_id)
+    spell_plan.UnitStateEffect(unit_state: row) ->
+      named("the UnitStateSet", row.effect_id)
     spell_plan.CooldownEffect(modifier: row) ->
       named("the ModifySpellCooldown", row.effect_id)
     spell_plan.StealthEffect(stealth: row) ->
@@ -622,7 +630,8 @@ pub fn modifiers_armed(
       | spell_plan.ProcEffect(..)
       | spell_plan.HealEffect(..)
       | spell_plan.ControlEffect(..)
-      | spell_plan.DespawnEffect(..) -> so_far
+      | spell_plan.DespawnEffect(..)
+      | spell_plan.UnitStateEffect(..) -> so_far
     }
   })
 }
@@ -709,7 +718,8 @@ pub fn struck_moves_armed(
       | spell_plan.ProcEffect(..)
       | spell_plan.HealEffect(..)
       | spell_plan.ControlEffect(..)
-      | spell_plan.DespawnEffect(..) -> so_far
+      | spell_plan.DespawnEffect(..)
+      | spell_plan.UnitStateEffect(..) -> so_far
     }
   })
 }
@@ -766,6 +776,52 @@ pub fn despawns_told(
             ),
           ]
         }
+      Error(Nil) -> []
+    }
+  })
+}
+
+/// The creatures a go holds unit states on: each unit state among the effects the go
+/// `reached` (a UnitStateSet row of the phase whose caster gates passed, with a creature its
+/// aim names that the round `Hit` and that passes its target gate, `cast.aimed_at`), in the
+/// row then the unit order of `cast_gate.units_aimed_at`, grouped by creature: each is told
+/// one `CreatureHoldsUnitStates` in this step with its rows in row order, whatever their
+/// delays, as `despawns_told` tells a despawn: the creature owns the end of each state
+/// (genesis_prime/world_map/creature_unit_state), so no timer of the cast is armed and the
+/// caster's leaving or dying changes nothing. The delay runs from `went_at_ms`, the go's own
+/// time. The effects come after the go's frames, beside the despawns'.
+///
+/// A unit that is not a `HitCreature` of the round holds no state (a deflected one included),
+/// and neither does the caster or another player. Both are server guesses: the client reads
+/// no row of this type.
+///
+/// ```
+/// cast.went: Send(go 0x7f4), Tell(audience, CastWent)
+///   for each creature the round Hit (HitCreature) that a unit state row reached:
+///     CreatureHoldsUnitStates(unit, life, struck_at_ms = the round's, went_at_ms = go time,
+///                             rows = Row(state, delay_ms, duration_ms) in row order)
+///   the connection tells the creature TellUnitStates(rows, struck_at_ms, went_at_ms)
+///     ─▶ creature.UnitStates
+/// ```
+///
+/// | If | Then |
+/// |---|---|
+/// | the creature never answers by the round's deadline, or refuses | the unit is left out of the round, so it is not `Hit`: no tell |
+/// | the go is cancelled during the round | `went` finds no live cast and writes and tells nothing: no tell |
+/// | the caster apply prerequisite or the target gate fails | the row is not in `reached`: no tell |
+/// | the row aims at the caster alone, or a player stands in its area | units are creatures only: no tell (the row is left out by the plan for the caster alone) |
+/// | the row lasts until removed, or is behind a persistence prerequisite | the plan leaves it out by name: no tell |
+/// | two rows of one go reach one creature | one tell with both rows, in row order |
+pub fn unit_states_told(
+  cast _cast: State,
+  reached reached: List(Reached),
+  struck _struck: List(Struck),
+  went_at_ms _went_at_ms: Int,
+) -> List(Effect) {
+  list.flat_map(reached, fn(entry) {
+    case spell_plan.as_unit_state(entry.effect.kind) {
+      Ok(_) ->
+        panic as "shape: telling the creatures a go holds unit states on is built in the step's code commit"
       Error(Nil) -> []
     }
   })

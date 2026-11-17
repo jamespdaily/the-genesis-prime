@@ -104,6 +104,7 @@ fn picture_with(creature_id creature_id: Int, gap gap: Float) -> shown.Picture {
         hostile_to: Hostile(exile: False, dominion: False),
         in_combat: False,
         held: [],
+        unit_states: [],
       ),
     ),
   ])

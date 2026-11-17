@@ -101,6 +101,7 @@ import genesis_prime/game/shortcut_spell
 import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{type Plans, type Spell}
 import genesis_prime/game/unit_properties
+import genesis_prime/game/unit_state
 import genesis_prime/message/cast_result
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/step.{type TimerId, LogDebug, LogWarning}
@@ -271,6 +272,28 @@ pub fn target_held(
         result: cast_result.from_value(crowd_control.target_result(state:)),
       )
     Error(Nil) -> otherwise()
+  }
+}
+
+/// The target's unit-state check, before its life and combat as the client's invulnerability
+/// result comes first among the target checks (`0x1403b2240`): a hostile press at a creature
+/// that the picture shows holding an `Invulnerable` state is refused with 306, and a
+/// beneficial press at one holding an `ImmuneToBeneficial` state with 308
+/// (genesis_prime/game/unit_state `cast_refusal`). A press is beneficial by the target
+/// mechanics flag bit 0 of its aim (`Spell4TargetMechanics.flags`), a server guess; any other
+/// press goes on to `otherwise`. A picture that lags is safe: the creature decides the strike.
+pub fn unit_state_refusal(
+  press press: AimedPress,
+  otherwise otherwise: fn() -> Result(#(State, List(Effect)), Refusal),
+) -> Result(#(State, List(Effect)), Refusal) {
+  case
+    unit_state.cast_refusal(
+      held: press.unit_states,
+      beneficial: int.bitwise_and(press.aim.mechanics_flags, 1) == 1,
+    )
+  {
+    Some(result) -> press_refused(press:, result:)
+    None -> otherwise()
   }
 }
 

@@ -92,6 +92,7 @@ fn striker_at(x x: Float, z z: Float) -> shown.Shown {
     hostile_to: Hostile(exile: False, dominion: False),
     in_combat: False,
     held: [],
+    unit_states: [],
   )
 }
 

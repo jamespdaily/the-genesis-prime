@@ -1321,6 +1321,7 @@ pub fn mapped(
     | client_connection.TellTargetChange(..)
     | client_connection.TellThrown(..)
     | client_connection.TellDespawn(..)
+    | client_connection.TellUnitStates(..)
     | TellChat(..) ->
       panic as "the step ends in an ask of the map: a store, hand-off or Sessions ask, or a tell, is none"
   }
@@ -1838,6 +1839,8 @@ pub fn cast_starts(news: List(News)) -> List(spell_started.SpellStarted) {
       | client_connection.Level(..)
       | client_connection.CrowdControlApplied(..)
       | client_connection.CrowdControlEnded(..)
+      | client_connection.UnitStateHeld(..)
+      | client_connection.UnitStateEnded(..)
       | client_connection.PropertiesChanged(..)
       | client_connection.Stealth(..)
       | client_connection.LookChanged(..) -> Error(Nil)
@@ -1876,6 +1879,8 @@ pub fn is_cast_removal(news: News) -> Bool {
     | client_connection.Level(..)
     | client_connection.CrowdControlApplied(..)
     | client_connection.CrowdControlEnded(..)
+    | client_connection.UnitStateHeld(..)
+    | client_connection.UnitStateEnded(..)
     | client_connection.PropertiesChanged(..)
     | client_connection.Stealth(..)
     | client_connection.LookChanged(..) -> False

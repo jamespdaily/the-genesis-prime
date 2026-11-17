@@ -669,6 +669,9 @@ pub type Target {
     /// The crowd-control states the creature holds as the player's client was told, which
     /// the cast's target conditions refuse (Spell4CCConditions `ccStateMask`).
     held: List(CrowdControlState),
+    /// The unit states the creature holds as the player's picture shows them, by number
+    /// (genesis_prime/game/unit_state), which a hostile or beneficial press is refused for.
+    unit_states: List(Int),
     withheld: Option(Withheld),
   )
 }

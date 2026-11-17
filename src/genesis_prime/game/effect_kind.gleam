@@ -78,6 +78,11 @@
 ////   caster (`is_row_read`); the plan leaves out a row aimed at the caster alone, and one
 ////   whose dataBits00 or dataBits01 is not 0, by name (genesis_prime/game/spell_plan
 ////   `despawn_reading`).
+//// - **UnitState** (15) holds a unit state on the unit it aims at for its time; the client
+////   reads no row of this type (its effect switch has no case 15) and shows a held state
+////   only through the cast results it gives (`Spell4Effects.effectType.15`). No rule applies
+////   a row of it, so `is_read` and `is_row_read` answer False for it and the plan leaves it
+////   out as unread (genesis_prime/game/unit_state).
 //// - **Unread** is any other type: the client's data holds it and no rule of the
 ////   server reads it.
 ////
@@ -180,6 +185,9 @@ pub type Kind {
   /// A DespawnUnit effect (97): removes the creatures it aims at past the caster after its
   /// delay (`Spell4Effects.effectType.97`).
   Despawn
+  /// A UnitStateSet effect (15): holds the unit state `dataBits00` names on the unit it aims
+  /// at for its duration (`Spell4Effects.effectType.15`).
+  UnitState
   /// A type no rule reads.
   Unread(effect_type: Int)
 }
@@ -218,6 +226,7 @@ pub fn kind_of(effect_type effect_type: Int) -> Kind {
     7 -> Activate
     79 -> Immunity
     97 -> Despawn
+    15 -> UnitState
     other -> Unread(effect_type: other)
   }
 }
@@ -251,7 +260,7 @@ pub fn is_read(effect_type effect_type: Int) -> Bool {
     | Absorption
     | Activate
     | Despawn -> True
-    Immunity | Unread(..) -> False
+    Immunity | UnitState | Unread(..) -> False
   }
 }
 
@@ -296,7 +305,7 @@ pub fn is_row_read(
     | ItemVisualSwap
     | RavelSignal
     | Activate -> True
-    Immunity | Unread(..) -> False
+    Immunity | UnitState | Unread(..) -> False
   }
 }
 

@@ -97,6 +97,7 @@ pub fn picture_with_walker(gap gap: Float) -> shown.Picture {
         hostile_to: Hostile(exile: False, dominion: False),
         in_combat: False,
         held: [],
+        unit_states: [],
       ),
     ),
     #(9, shown.ShownPlayer),

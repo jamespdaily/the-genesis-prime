@@ -1092,6 +1092,8 @@ fn to_the_beast(taken: ConnectionStep(Request)) -> List(creature.Message) {
             Ok(creature.Thrown(throw:, struck_at_ms:))
           client_connection.TellDespawn(delay_ms:, struck_at_ms:, went_at_ms:) ->
             Ok(creature.Despawn(delay_ms:, struck_at_ms:, went_at_ms:))
+          client_connection.TellUnitStates(rows:, struck_at_ms:, went_at_ms:) ->
+            Ok(creature.UnitStates(rows:, struck_at_ms:, went_at_ms:))
           AskStore(..)
           | AskHandOff(..)
           | AskSessions(..)

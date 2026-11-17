@@ -100,6 +100,12 @@ pub type CastResult {
   CasterCannotBeAbilityRestriction
   /// The value 303, the fact file's `0x1403b2c40`.
   TargetCannotBeAbilityRestriction
+  /// The value 306, the fact file's `Spell.CodeEnumCastResult`.
+  TargetHostileInvulnerability
+  /// The value 307, the fact file's `Spell.CodeEnumCastResult`.
+  TargetInvulnerableToOther
+  /// The value 308, the fact file's `Spell.CodeEnumCastResult`.
+  TargetBeneficialInvulnerability
   /// The value 317, the fact file's `Spell.CodeEnumCastResult`.
   Queued
   /// A value the schema does not name.
@@ -156,6 +162,9 @@ pub fn to_value(value: CastResult) -> Int {
     IllegalSpellCast -> 285
     CasterCannotBeAbilityRestriction -> 302
     TargetCannotBeAbilityRestriction -> 303
+    TargetHostileInvulnerability -> 306
+    TargetInvulnerableToOther -> 307
+    TargetBeneficialInvulnerability -> 308
     Queued -> 317
     Other(number) -> number
   }
@@ -211,6 +220,9 @@ pub fn from_value(number: Int) -> CastResult {
     285 -> IllegalSpellCast
     302 -> CasterCannotBeAbilityRestriction
     303 -> TargetCannotBeAbilityRestriction
+    306 -> TargetHostileInvulnerability
+    307 -> TargetInvulnerableToOther
+    308 -> TargetBeneficialInvulnerability
     317 -> Queued
     other -> Other(other)
   }
