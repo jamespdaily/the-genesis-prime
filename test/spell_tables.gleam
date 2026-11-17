@@ -607,7 +607,8 @@ pub fn planned_strike(
   }
 }
 
-/// The Spell4 id of the spell `despawn_only_area` holds, and the id of its one row.
+/// The Spell4 id of the spell `despawn_only_area` and `unit_state_only_area` hold, and the id
+/// of their one row.
 pub const despawn_only_spell4_id = 32_893
 
 /// The area of a spell whose only effect is a planted DespawnUnit row (id 99097) aimed by
@@ -616,16 +617,36 @@ pub const despawn_only_spell4_id = 32_893
 pub fn despawn_only_area(
   target_flags target_flags: Int,
 ) -> spell_area.SpellArea {
+  only_effect_area(effect_type: 97, target_flags:, columns: [])
+}
+
+/// The area of a spell whose only effect is a planted UnitStateSet row (id 99097) aimed by
+/// `target_flags`, of state 6 for 5000 ms: as `despawn_only_area` is built.
+pub fn unit_state_only_area(
+  target_flags target_flags: Int,
+) -> spell_area.SpellArea {
+  only_effect_area(effect_type: 15, target_flags:, columns: [
+    #("dataBits00", Integer(6)),
+    #("durationTime", Integer(5000)),
+  ])
+}
+
+fn only_effect_area(
+  effect_type effect_type: Int,
+  target_flags target_flags: Int,
+  columns columns: List(#(String, Cell)),
+) -> spell_area.SpellArea {
   let assert Ok(spell) =
     planned_strike(
       rows: rows_with_effect(
         effect: planted_table.row(spell4_effects.schema, [
           #("ID", Integer(99_097)),
           #("spellId", Integer(despawn_only_spell4_id)),
-          #("effectType", Integer(97)),
+          #("effectType", Integer(effect_type)),
           #("targetFlags", Integer(target_flags)),
           #("phaseFlags", Integer(-1)),
           #("orderIndex", Integer(9)),
+          ..columns
         ]),
       ),
     )

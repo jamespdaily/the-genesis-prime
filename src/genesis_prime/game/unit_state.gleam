@@ -9,7 +9,7 @@
 ////
 //// - A state is held on a creature and is a number 0 to 23 (`Spell4Effects.dataBits00`); the
 ////   client reads no row of this type, so a held state shows only through the cast results
-////   the server gives (`Spell.CodeEnumCastResult` 306 to 308).
+////   the server gives (`Spell.CodeEnumCastResult.306_308`).
 //// - What each state means is not in the client: the readings of `reading_of` are guesses
 ////   from the spell names that hold them.
 //// - A spell is hostile or beneficial by one bit of its target mechanics, which the client
@@ -27,7 +27,7 @@ pub type Row {
 }
 
 /// What a held state refuses of a cast.
-type Reading {
+pub type Reading {
   /// The unit takes no hostile cast: result 306.
   Invulnerable
   /// The unit takes no beneficial cast: result 308.
@@ -36,9 +36,12 @@ type Reading {
   NoReading
 }
 
-/// The reading of a state number: a guess from the names of the spells that hold it, which
-/// the client does not state.
-fn reading_of(state state: Int) -> Reading {
+/// The reading of a state number, a guess from the names of the spells that hold it, which the
+/// client does not state (`Spell4Effects.effectType.15`): 6, 7 to 9, 13 to 18, 22 and 3 to 5
+/// are invulnerable (spells named "Invulnerability", "Makes the recipient immune to ALL
+/// spells" and "Hostile Invulnerability"), 19 is immune to beneficial casts ("Immune
+/// (Beneficial)"), and 1 (Block), 0, 2, 10, 23 and every other number hold no reading.
+pub fn reading_of(state state: Int) -> Reading {
   case state {
     3 | 4 | 5 | 6 | 7 | 8 | 9 | 13 | 14 | 15 | 16 | 17 | 18 | 22 -> Invulnerable
     19 -> ImmuneToBeneficial

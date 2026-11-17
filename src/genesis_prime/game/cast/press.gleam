@@ -85,13 +85,13 @@ import genesis_prime/game/cast/state.{
   type Unbuilt, type Verdict, Activation, AnswerSucceeded, AwaitingAnswer, Base,
   CancelTimer, CannotTell, ChargeLevel, Child, CooldownModifierEnds,
   CooldownModifierStarts, DroppedControls, DroppedDespawns, DroppedSignals,
-  Finish, ForcedMoveStart, GateFails, Go, Hold, HoldForCast, Holding, ItemsIssue,
-  Log, ModifierEnd, ModifierStart, NoInteraction, NodesEnd, NotBuilt, Passive,
-  PrerequisitesIssue, ProcDue, Refuse, RepeatHeld, Resolution, RestrictionEnd,
-  Shortcut, SpellsIssue, Stage, StartChild, StartHeld, Starts, State, StateEnd,
-  TargetModifierStart, Tick, UnbuiltItemCharges, UnbuiltItemSpell,
-  UnbuiltPlayerTarget, UnbuiltShortcut, UnbuiltSpell, Unheld, Unpaid,
-  UnreadItemPrerequisite, UnreadLinkPrerequisite, UnreadPrerequisite,
+  DroppedUnitStates, Finish, ForcedMoveStart, GateFails, Go, Hold, HoldForCast,
+  Holding, ItemsIssue, Log, ModifierEnd, ModifierStart, NoInteraction, NodesEnd,
+  NotBuilt, Passive, PrerequisitesIssue, ProcDue, Refuse, RepeatHeld, Resolution,
+  RestrictionEnd, Shortcut, SpellsIssue, Stage, StartChild, StartHeld, Starts,
+  State, StateEnd, TargetModifierStart, Tick, UnbuiltItemCharges,
+  UnbuiltItemSpell, UnbuiltPlayerTarget, UnbuiltShortcut, UnbuiltSpell, Unheld,
+  Unpaid, UnreadItemPrerequisite, UnreadLinkPrerequisite, UnreadPrerequisite,
   UnreadShortcutPick, UnreadSpend, UntilRemovedIssue, WindowEnd,
 } as cast_state
 import genesis_prime/game/cast/tick as cast_tick
@@ -411,9 +411,10 @@ pub fn activation_spell(
 }
 
 /// The log of the rows an activate cast drops, the first time for the spell, one line for
-/// the RavelSignal rows and one for the DespawnUnit rows: the server has no script to start
-/// for the first, and the activate cast strikes no unit, so there is no creature for the
-/// second to remove (`activate.activate_rows_of`).
+/// the RavelSignal rows, one for the DespawnUnit rows and one for the UnitStateSet rows: the
+/// server has no script to start for the first, and the activate cast strikes no unit, so
+/// there is no creature for the second to remove or the third to hold a state on
+/// (`activate.activate_rows_of`).
 pub fn rows_dropped(
   cast cast: State,
   spell4_id spell4_id: Int,
@@ -443,7 +444,18 @@ pub fn rows_dropped(
       effect_ids: dropped.despawns,
       why: "the activate cast strikes no unit for them to remove",
     )
-  #(cast, list.append(signals, despawns))
+  let #(cast, unit_states) =
+    dropped_once(
+      cast:,
+      key: DroppedUnitStates(spell4_id:),
+      spell4_id:,
+      unit_id:,
+      creature_id:,
+      kind: "UnitStateSet",
+      effect_ids: dropped.unit_states,
+      why: "the activate cast strikes no unit for them to hold a state on",
+    )
+  #(cast, list.flatten([signals, despawns, unit_states]))
 }
 
 /// The log of the `effect_ids` an activate cast drops, once for the `key`.
@@ -536,6 +548,7 @@ pub fn not_built_refusal(
     | UnreadLinkPrerequisite(..)
     | DroppedSignals(..)
     | DroppedDespawns(..)
+    | DroppedUnitStates(..)
     | DroppedControls(..) -> "the activate cast of Spell4 "
   }
   case set.contains(cast.logged, key) {

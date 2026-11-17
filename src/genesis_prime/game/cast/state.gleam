@@ -1028,6 +1028,8 @@ pub type Unbuilt {
   DroppedSignals(spell4_id: Int)
   /// The DespawnUnit effects an activate cast drops, by the Spell4 id.
   DroppedDespawns(spell4_id: Int)
+  /// The UnitStateSet effects an activate cast drops, by the Spell4 id.
+  DroppedUnitStates(spell4_id: Int)
   /// The crowd-control effects the plan drops from a spell, by the Spell4 id.
   DroppedControls(spell4_id: Int)
   /// A quest button's spell, by Spell4 id.

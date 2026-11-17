@@ -141,11 +141,11 @@ import genesis_prime/game/cast/state.{
   type Effect, type HeldRestriction, type Live, type OnCreature, type Reached,
   type Restricting, type State, type Struck, Absorb, Applied, CasterChangeStarts,
   ChargeLevel, CooldownModifierEnds, CooldownModifierStarts, CreatureDespawns,
-  Deflected, Finish, ForcedMoveStart, ForcedMoveStarts, Go, HeldRestriction, Hit,
-  Immune, Look, ModifierEnd, ModifierStart, NodesEnd, OnCreature, ProcDue,
-  Property, RepeatHeld, Restricting, RestrictionEnd, Send, StartChild, StartHeld,
-  State, StateEnd, TargetChangeEnds, TargetChangeStarts, TargetModifierStart,
-  Tell, Tick, WindowEnd,
+  CreatureHoldsUnitStates, Deflected, Finish, ForcedMoveStart, ForcedMoveStarts,
+  Go, HeldRestriction, Hit, Immune, Look, ModifierEnd, ModifierStart, NodesEnd,
+  OnCreature, ProcDue, Property, RepeatHeld, Restricting, RestrictionEnd, Send,
+  StartChild, StartHeld, State, StateEnd, TargetChangeEnds, TargetChangeStarts,
+  TargetModifierStart, Tell, Tick, WindowEnd,
 } as cast_state
 import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
@@ -815,14 +815,31 @@ pub fn despawns_told(
 pub fn unit_states_told(
   cast _cast: State,
   reached reached: List(Reached),
-  struck _struck: List(Struck),
-  went_at_ms _went_at_ms: Int,
+  struck struck: List(Struck),
+  went_at_ms went_at_ms: Int,
 ) -> List(Effect) {
-  list.flat_map(reached, fn(entry) {
-    case spell_plan.as_unit_state(entry.effect.kind) {
-      Ok(_) ->
-        panic as "shape: telling the creatures a go holds unit states on is built in the step's code commit"
-      Error(Nil) -> []
+  let held =
+    list.filter_map(reached, fn(entry) {
+      use row <- result.try(spell_plan.as_unit_state(entry.effect.kind))
+      use #(life, struck_at_ms) <- result.map(cast_gate.creature_hit(
+        struck:,
+        unit_id: entry.unit_id,
+      ))
+      #(entry.unit_id, life, struck_at_ms, row.row)
+    })
+  list.unique(list.map(held, fn(row) { row.0 }))
+  |> list.filter_map(fn(unit_id) {
+    let mine = list.filter(held, fn(row) { row.0 == unit_id })
+    case mine {
+      [#(_, life, struck_at_ms, _), ..] ->
+        Ok(CreatureHoldsUnitStates(
+          unit_id:,
+          life:,
+          struck_at_ms:,
+          went_at_ms:,
+          rows: list.map(mine, fn(row) { row.3 }),
+        ))
+      [] -> Error(Nil)
     }
   })
 }
