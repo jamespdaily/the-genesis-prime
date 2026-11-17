@@ -1,19 +1,23 @@
 """Prints the draft of a milestone parent's "Where it stands" comment from GitHub's state.
 
-    python3 -I dev/where_it_stands.py PARENT
+    python3 -I dev/where_it_stands.py PARENT [--body]
 
 PARENT is the milestone parent's issue number. The script reads GitHub through `gh` and prints
 Markdown; it posts nothing, so the coordinator adds the notes and posts it. Sections: the pull
 requests merged since the parent's newest "Where it stands" comment (the last 24 hours when it
 has none, and the line says so), the open pull requests with their checks, the pushed `jimd/*`
 branches with no pull request (work that is not a board issue: those with a commit since the
-earlier of that window's start and 24 hours ago), then the milestone's open issues on the board (project 2) that are in progress, waiting on Jim, or next in order
-(to do, with those that have no open blocker first, in the parent's sub-issue order). It exits
-non-zero when a `gh` call fails.
+earlier of that window's start and 24 hours ago), then the milestone's open issues on the board (project 2) that are in progress, waiting on Jim. The next-in-order list (the milestone's to-do issues, those with no open blocker
+first, in the parent's sub-issue order) is not in the comment: with `--body` the script rewrites
+the parent's body between `<!-- next-in-order -->` and `<!-- /next-in-order -->` with it (the
+marked section is appended when the body has none) and prints nothing else. It exits non-zero
+when a `gh` call fails.
 """
 import concurrent.futures
 import json
+import re
 import sys
+import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -104,7 +108,29 @@ def next_in_order(items, blockers, order):
     ] or ["- none"]
 
 
+NEXT_START = "<!-- next-in-order -->"
+NEXT_END = "<!-- /next-in-order -->"
+
+
+def with_next_section(body, next_lines):
+    """The parent's body with the marked next-in-order section replaced, or appended when absent."""
+    section = "\n".join([NEXT_START, "**Next in order**", *next_lines, NEXT_END])
+    pattern = re.compile(re.escape(NEXT_START) + r".*?" + re.escape(NEXT_END), re.DOTALL)
+    if pattern.search(body):
+        return pattern.sub(lambda _: section, body, count=1)
+    return f"{body.rstrip()}\n\n{section}\n"
+
+
+def write_body(parent, next_lines):
+    body = gh_json("issue", "view", str(parent), "--json", "body")["body"]
+    with tempfile.NamedTemporaryFile("w", suffix=".md") as file:
+        file.write(with_next_section(body, next_lines))
+        file.flush()
+        session_state.run(["gh", "issue", "edit", str(parent), "--body-file", file.name])
+
+
 def draft(parent):
+    """The comment draft and the next-in-order lines."""
     parent_data = gh_json("issue", "view", str(parent), "--json", "milestone,subIssues")
     if parent_data["milestone"] is None:
         sys.exit(f"issue {parent} has no milestone")
@@ -143,19 +169,26 @@ def draft(parent):
         ("Pushed, no pull request", pushed),
         ("In progress", issue_lines(open_items, "In progress")),
         ("Waiting on Jim", issue_lines(open_items, "Waiting on Jim")),
-        ("Next in order", next_in_order(open_items, found, order)),
     )
     for heading, body in sections:
         lines.append(f"- {heading}:")
         lines += [f"  {line}" for line in body]
     lines.append("- Notes:")
-    return "\n".join(lines)
+    return "\n".join(lines), next_in_order(open_items, found, order)
 
 
 def main():
-    if len(sys.argv) != 2 or not sys.argv[1].isdigit():
+    arguments = sys.argv[1:]
+    body = "--body" in arguments
+    if body:
+        arguments.remove("--body")
+    if len(arguments) != 1 or not arguments[0].isdigit():
         sys.exit(__doc__)
-    print(draft(int(sys.argv[1])))
+    comment, next_lines = draft(int(arguments[0]))
+    if body:
+        write_body(int(arguments[0]), next_lines)
+    else:
+        print(comment)
 
 
 if __name__ == "__main__":
