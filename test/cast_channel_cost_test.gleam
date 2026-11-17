@@ -460,29 +460,12 @@ pub fn a_channel_whose_go_cannot_be_paid_ends_as_a_cancel_ends_it_test() -> Nil 
         row.name
         <> ": 0x14053e1b0 starts a Channeled cast's cooldown when it ends"
       }
-    let #(dry, cancelled, fired) = dry_end_and_cancel(row)
-    let same =
-      row.name <> ": the end is a cancel's, as a 0x801 at the same instant: "
-    assert support.writes(effects: dry.1)
-      == support.writes(effects: cancelled.1)
-      as { same <> "the same frames" }
-    assert support.tells(effects: dry.1) == support.tells(effects: cancelled.1)
-      as { same <> "the same tells" }
-    assert numbered(support.cancelled_timers(effects: dry.1))
-      == numbered(
-        list.filter(support.cancelled_timers(effects: cancelled.1), fn(timer) {
-          timer != fired
-        }),
-      )
-      as {
-        same
-        <> "the same timers cancelled, but the go's own timer, which has fired"
-      }
-    assert dry.0.casts == cancelled.0.casts
-      && dry.0.current == cancelled.0.current
-      as { same <> "no live cast and no current cast" }
-    assert dry.0.cooldowns == cancelled.0.cooldowns
-      as { same <> "the same cooldowns" }
+    // One row stands for them all: the end is a cancel's whichever row reaches it; the rows
+    // differ in what they pay.
+    case row.name == "2.1" {
+      True -> ends_as_a_cancel_does(row)
+      False -> Nil
+    }
     list.each(
       list.filter(run.steps, fn(step) { row.leaves_open(step.after_ms) }),
       fn(open) {
@@ -503,6 +486,33 @@ pub fn a_channel_whose_go_cannot_be_paid_ends_as_a_cancel_ends_it_test() -> Nil 
       },
     )
   })
+}
+
+/// The end by the go that cannot be paid is a cancel's: the same frames, tells, timers
+/// cancelled and state as the client's 0x801 at the same instant.
+fn ends_as_a_cancel_does(row: Ending) -> Nil {
+  let #(dry, cancelled, fired) = dry_end_and_cancel(row)
+  let same =
+    row.name <> ": the end is a cancel's, as a 0x801 at the same instant: "
+  assert support.writes(effects: dry.1) == support.writes(effects: cancelled.1)
+    as { same <> "the same frames" }
+  assert support.tells(effects: dry.1) == support.tells(effects: cancelled.1)
+    as { same <> "the same tells" }
+  assert numbered(support.cancelled_timers(effects: dry.1))
+    == numbered(
+      list.filter(support.cancelled_timers(effects: cancelled.1), fn(timer) {
+        timer != fired
+      }),
+    )
+    as {
+      same
+      <> "the same timers cancelled, but the go's own timer, which has fired"
+    }
+  assert dry.0.casts == cancelled.0.casts
+    && dry.0.current == cancelled.0.current
+    as { same <> "no live cast and no current cast" }
+  assert dry.0.cooldowns == cancelled.0.cooldowns
+    as { same <> "the same cooldowns" }
 }
 
 /// The timers' numbers, sorted.

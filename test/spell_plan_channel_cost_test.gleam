@@ -99,10 +99,134 @@ pub fn every_costed_channeled_row_plans_its_costs_test() -> Nil {
     list.map(rows, fn(row) {
       spell_plan.spell_alone(tables:, sources:, spell4_id: row.id, chain: [])
       |> result.map(fn(spell) { #(row, spell) })
+      |> result.map_error(fn(error) { #(row.id, error) })
     })
     |> result.partition
-  assert list.length(planned) + list.length(unplanned) == 139
-    as "7.3: every row either plans or is one of the unplanned"
+  assert list.sort(unplanned, fn(first, second) {
+      int.compare(first.0, second.0)
+    })
+    == [
+      #(
+        31_404,
+        spell_plan.UnreadRequirement(spell4_id: 31_404, requirement_type: 3),
+      ),
+      #(
+        35_689,
+        spell_plan.GainVitalNotRead(
+          spell4_id: 35_689,
+          effect_id: 72_297,
+          vital: 9,
+        ),
+      ),
+      #(39_054, spell_plan.NoRow(table: "Spell4", id: 0)),
+      #(
+        41_953,
+        spell_plan.HealOnStruckUnit(
+          spell4_id: 41_953,
+          proxy_effect_id: 94_581,
+          effect_id: 94_586,
+        ),
+      ),
+      #(
+        48_669,
+        spell_plan.UnreadRequirement(spell4_id: 48_669, requirement_type: 3),
+      ),
+      #(
+        52_155,
+        spell_plan.HealOnStruckUnit(
+          spell4_id: 52_155,
+          proxy_effect_id: 123_163,
+          effect_id: 123_217,
+        ),
+      ),
+      #(
+        52_156,
+        spell_plan.HealOnStruckUnit(
+          spell4_id: 52_156,
+          proxy_effect_id: 123_169,
+          effect_id: 123_219,
+        ),
+      ),
+      #(
+        52_157,
+        spell_plan.HealOnStruckUnit(
+          spell4_id: 52_157,
+          proxy_effect_id: 123_175,
+          effect_id: 123_221,
+        ),
+      ),
+      #(
+        52_158,
+        spell_plan.HealOnStruckUnit(
+          spell4_id: 52_158,
+          proxy_effect_id: 123_181,
+          effect_id: 123_224,
+        ),
+      ),
+      #(
+        52_159,
+        spell_plan.HealOnStruckUnit(
+          spell4_id: 52_159,
+          proxy_effect_id: 123_187,
+          effect_id: 123_226,
+        ),
+      ),
+      #(
+        52_160,
+        spell_plan.HealOnStruckUnit(
+          spell4_id: 52_160,
+          proxy_effect_id: 123_193,
+          effect_id: 123_229,
+        ),
+      ),
+      #(
+        52_161,
+        spell_plan.HealOnStruckUnit(
+          spell4_id: 52_161,
+          proxy_effect_id: 123_199,
+          effect_id: 123_231,
+        ),
+      ),
+      #(
+        52_162,
+        spell_plan.HealOnStruckUnit(
+          spell4_id: 52_162,
+          proxy_effect_id: 123_205,
+          effect_id: 123_233,
+        ),
+      ),
+      #(
+        52_163,
+        spell_plan.HealOnStruckUnit(
+          spell4_id: 52_163,
+          proxy_effect_id: 123_211,
+          effect_id: 123_235,
+        ),
+      ),
+      #(
+        55_653,
+        spell_plan.ProxyCycle(chain: [55_653, 80_426, 70_410, 80_424, 70_410]),
+      ),
+      #(
+        63_316,
+        spell_plan.HealOnStruckUnit(
+          spell4_id: 63_316,
+          proxy_effect_id: 158_904,
+          effect_id: 94_586,
+        ),
+      ),
+      #(
+        70_922,
+        spell_plan.ApplyPrerequisiteNotRead(
+          spell4_id: 70_922,
+          effect_id: 193_697,
+          prerequisite_type: 60,
+        ),
+      ),
+    ]
+    as "7.3: the 17 rows that do not plan, each by its error: a vital requirement of type 3, a vital modifier of vital 9, the Spell4 row 0 a tree names, heals on a struck unit, a Proxy cycle and a prerequisite type not read; any other row that stops planning is a coverage loss"
+  assert list.length(planned) == 122
+    as "7.3: the other 122 rows plan, and each holds its costs as the next check reads them"
   list.each(planned, fn(entry) {
     assert list.map({ entry.1 }.costs, kind_of)
       == list.map(costs(entry.0), expected_kind)
