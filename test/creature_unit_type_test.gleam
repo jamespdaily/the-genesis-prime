@@ -4,7 +4,18 @@
 //// the world database's `active_prop_id` not 0.
 
 import genesis_prime/world_map/creature_unit_type.{NonPlayer, Turret}
+import gleam/list
 import owned_test
+
+pub fn only_creation_type_13_is_a_turret_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert creature_unit_type.of_creation_type(creation_type: 13) == Turret
+    as "a Creature2 row of CreationTypeEnum 13 is a Turret, as the world database spawns it"
+  list.each([0, 1, 4, 12, 14, 18, 20, 25, 26, 100], fn(creation_type) {
+    assert creature_unit_type.of_creation_type(creation_type:) == NonPlayer
+      as "any other creation type, a refused one included, is a NonPlayer (server choice)"
+  })
+}
 
 pub fn a_nonplayer_with_no_map_object_moves_test() -> Nil {
   use <- owned_test.run(5000)

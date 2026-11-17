@@ -3,11 +3,11 @@
 ////
 //// ```
 //// each type 11 objective's data ─▶ Spell4 row ─▶ Spell4Base ─▶ Spell4TargetMechanics.targetType
-////   self-aimed (0, 2, 6, 7) ─▶ Planned(spell)    the press casts it on the caster
-////   any other targetType     ─▶ Aimed(spell, ..) the press names a unit, which its cast group,
-////                                                valid targets and conditions judge
-////   no Spell4 row            ─▶ NoSpell4Row      the client refuses the press (22)
-////   a tree that cannot plan  ─▶ CannotBePlanned
+////   a Caster kind (0, 2, 6, 7) ─▶ Planned(spell)    the press casts it on the caster
+////   any other kind             ─▶ Aimed(spell, ..) the press names a unit, which its cast group,
+////                                                 valid targets and conditions judge
+////   no Spell4 row              ─▶ NoSpell4Row      the client refuses the press (22)
+////   a tree that cannot plan    ─▶ CannotBePlanned
 //// ```
 ////
 //// - **The target** of a shortcut cast is the caster for targetType 0, 2, 6 and 7, and the
@@ -19,6 +19,7 @@ import genesis_prime/game/activate
 import genesis_prime/game/objective_kind
 import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{type Spell}
+import genesis_prime/game/target_mechanic
 import genesis_prime/table/id.{
   Spell4ConditionsId, Spell4Id, Spell4TargetMechanicsId, Spell4ValidTargetsId,
 }
@@ -83,10 +84,6 @@ pub fn planned_of(
   dict.get(shortcuts.spells, spell4_id)
 }
 
-/// The targetTypes that take the caster, whatever the player has targeted
-/// (`0x14055bdc0`).
-const self_aimed = [0, 2, 6, 7]
-
 fn build(tables tables: table_store.Tables) -> Shortcuts {
   let sources = spell_plan.sources_of(tables:)
   let spell_ids =
@@ -122,7 +119,7 @@ fn planned(
           {
             Error(error) -> CannotBePlanned(why: spell_plan.describe(error:))
             Ok(spell) ->
-              case list.contains(self_aimed, aim.target_type) {
+              case target_mechanic.takes_caster(aim.target_mechanic) {
                 True -> Planned(spell:)
                 False -> Aimed(spell:, aim:)
               }
@@ -134,8 +131,9 @@ fn planned(
 /// What a spell's rows say of whom it is cast at.
 pub type Aim {
   Aim(
-    /// Spell4TargetMechanics.targetType: 1, 3, 5 or 8.
-    target_type: Int,
+    /// The kind of the spell's Spell4TargetMechanics row; an aimed spell is not a
+    /// `Caster` kind.
+    target_mechanic: target_mechanic.Kind,
     /// Spell4Base.targetGroupIdCastGroup, 0 for none.
     cast_group_id: Int,
     /// Spell4TargetMechanics.flags: bit 1 lets the caster be its own target.
@@ -193,7 +191,8 @@ fn mechanics_of(
 }
 
 /// The targetType of the spell's Spell4TargetMechanics row, or `Error(Nil)` when its
-/// Spell4Base or Spell4TargetMechanics row is not in the tables.
+/// Spell4Base or Spell4TargetMechanics row is not in the tables. It is the number, not the
+/// decoded kind, because its caller tells an item on item (6) from the other Caster kinds.
 pub fn target_type_of(
   tables tables: table_store.Tables,
   row row: spell4.Spell4,
@@ -225,7 +224,7 @@ fn aim_of(
       |> result.try(fn(conditions) { combat_of(conditions:) })
   })
   Aim(
-    target_type: mechanics.target_type,
+    target_mechanic: target_mechanic.of_row(mechanics),
     cast_group_id: base.target_group_id_cast_group,
     mechanics_flags: mechanics.flags,
     valid_targets:,

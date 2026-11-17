@@ -74,6 +74,7 @@ import genesis_prime/table/id.{Creature2Id, QuestObjectiveId, WorldLocation2Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest_objective.{type QuestObjective}
 import genesis_prime/table/world_location2.{type WorldLocation2}
+import genesis_prime/world_map/creation_type
 import genesis_prime/world_map/creature_faction.{type Factions}
 import genesis_prime/world_map/creature_kind.{type Kinds}
 import genesis_prime/world_map/creature_unit_type.{NonPlayer, Turret}
@@ -433,11 +434,7 @@ fn once_each(wants wants: List(Want)) -> List(Want) {
 /// 18 (BindPoint) is unit type 19 and 20 (SimpleCollidable) is unit type 32, which
 /// the world database stores as it does (`static_unit_type`).
 fn paired_unit_type(creature creature: Creature2) -> Int {
-  case creature.creation_type_enum {
-    18 -> 19
-    20 -> 32
-    other -> other
-  }
+  creation_type.unit_type(creation_type.kind_of(creature.creation_type_enum))
 }
 
 /// What the objective asks for and what is wrong with it. An objective with no

@@ -31,6 +31,7 @@ import genesis_prime/game/shortcut_spell
 import genesis_prime/game/shown
 import genesis_prime/game/spell_plan
 import genesis_prime/game/start_place
+import genesis_prime/game/target_mechanic
 import genesis_prime/message/cast_objective_ability.{CastObjectiveAbility}
 import genesis_prime/message/cast_result
 import genesis_prime/message/client_side_interaction_result.{
@@ -1110,6 +1111,20 @@ pub fn a_press_of_a_target_type_5_spell_starts_on_its_target_test() -> Nil {
       ),
     ]
     as "the go at 3000 raises ShortcutCast with the unit"
+}
+
+pub fn a_caster_target_kind_plans_with_no_aim_and_a_targeted_kind_keeps_its_aim_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // `0x14055bdc0`: targetType 0 takes the caster, 3 and 5 a target.
+  let assert Ok(shortcut_spell.Planned(..)) =
+    shortcut_spell.planned_of(shortcuts: shortcuts(), spell4_id: the_self_spell)
+    as "Spell4 25306 is of targetType 0, a caster kind: it plans with no aim"
+  list.each([30_832, 25_207], fn(spell4_id) {
+    let assert Ok(shortcut_spell.Aimed(aim:, ..)) =
+      shortcut_spell.planned_of(shortcuts: shortcuts(), spell4_id:)
+      as "Spells 30832 (targetType 3) and 25207 (5) take a target: they keep their aim"
+    assert aim.target_mechanic == target_mechanic.Targeted
+  })
 }
 
 pub fn a_channelled_objective_spell_goes_twice_and_raises_one_cast_test() -> Nil {
