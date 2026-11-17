@@ -725,7 +725,10 @@ pub fn struck_moves_armed(
 /// the throws'.
 ///
 /// A unit that is not a `HitCreature` of the round is not removed (a deflected one included,
-/// as it is not thrown), and neither is the caster or another player.
+/// as it is not thrown), and neither is the caster or another player. Both are server
+/// guesses: the client's tables say what a DespawnUnit row is aimed at but not what a
+/// deflected strike or a player does with it, so a deflected creature stays and no player
+/// is removed.
 ///
 /// ```
 /// cast.went: Send(go 0x7f4), Tell(audience, CastWent)
@@ -740,7 +743,7 @@ pub fn struck_moves_armed(
 /// | the creature never answers by the round's deadline, or refuses | the unit is left out of the round, so it is not `Hit`: no tell |
 /// | the go is cancelled during the round | `went` finds no live cast and writes and tells nothing: no tell |
 /// | the caster apply prerequisite or the target gate fails | the row is not in `reached`: no tell |
-/// | the row aims at the caster alone, or a player stands in its area | units are creatures only: no tell, and no 0x355 for a player |
+/// | the row aims at the caster alone, or a player stands in its area | units are creatures only: no tell, and no 0x355 for a player (a server guess) |
 /// | the row aims at a static object | the object is not a creature, so it is not selected: no tell |
 pub fn despawns_told(
   cast _cast: State,
@@ -749,8 +752,8 @@ pub fn despawns_told(
   went_at_ms went_at_ms: Int,
 ) -> List(Effect) {
   list.flat_map(reached, fn(entry) {
-    case entry.effect.kind {
-      spell_plan.DespawnEffect(despawn: row) ->
+    case spell_plan.as_despawn(entry.effect.kind) {
+      Ok(row) ->
         case cast_gate.creature_hit(struck:, unit_id: entry.unit_id) {
           Error(Nil) -> []
           Ok(#(life, struck_at_ms)) -> [
@@ -763,19 +766,7 @@ pub fn despawns_told(
             ),
           ]
         }
-      spell_plan.ProxyEffect(..)
-      | spell_plan.GainEffect(..)
-      | spell_plan.LastingEffect(..)
-      | spell_plan.RemoveEffect(..)
-      | spell_plan.ModifierEffect(..)
-      | spell_plan.ForcedMoveEffect(..)
-      | spell_plan.StruckMoveEffect(..)
-      | spell_plan.CooldownEffect(..)
-      | spell_plan.StealthEffect(..)
-      | spell_plan.RemoveStealthEffect(..)
-      | spell_plan.ProcEffect(..)
-      | spell_plan.HealEffect(..)
-      | spell_plan.ControlEffect(..) -> []
+      Error(Nil) -> []
     }
   })
 }

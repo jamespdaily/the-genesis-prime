@@ -2576,6 +2576,8 @@ pub opaque type Sources {
     group_lists: Dict(Int, List(Int)),
     /// Every spell group id some Spell4GroupList row holds.
     known_groups: Set(Int),
+    /// The spells a Proxy row (dataBits00) or a Proc row (dataBits01) names as its child.
+    children: Set(Int),
   )
 }
 
@@ -2589,7 +2591,28 @@ pub fn sources_of(tables tables: table_store.Tables) -> Sources {
     thresholds: thresholds_by_parent(tables:),
     group_lists:,
     known_groups: known_groups(group_lists:),
+    children: children_named(effects: spell4_effects.all(tables)),
   )
+}
+
+/// Whether a Proxy or a Proc row of the tables names this spell as its child, so a spell
+/// cast on its own is also started by that row.
+pub fn is_child(sources sources: Sources, spell4_id spell4_id: Int) -> Bool {
+  set.contains(sources.children, spell4_id)
+}
+
+fn children_named(
+  effects effects: List(spell4_effects.Spell4Effects),
+) -> Set(Int) {
+  list.filter_map(effects, fn(effect) {
+    let kind = effect_kind.kind_of(effect_type: effect.effect_type)
+    case kind == effect_kind.Proxy, kind == effect_kind.Proc {
+      True, _ -> Ok(effect.data_bits00)
+      False, True -> Ok(effect.data_bits01)
+      False, False -> Error(Nil)
+    }
+  })
+  |> set.from_list
 }
 
 /// The effects of one spell in the grouped rows, in the order they take effect: none

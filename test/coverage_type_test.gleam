@@ -29,6 +29,7 @@ import client_tables
 import coverage_support
 import genesis_prime/coverage
 import genesis_prime/coverage/checklist
+import genesis_prime/coverage/effect_row
 import genesis_prime/coverage/engine.{
   type EngineDeclaration, EngineDeclaration, Listed, Missing,
 }
@@ -522,7 +523,7 @@ pub fn the_effect_types_3_10_11_14_17_18_29_52_64_73_76_80_81_83_84_97_112_118_a
       ),
       Missing(
         type_number: 97,
-        reason: "rows aimed at the caster alone, which only a creature caster could remove (#328); rows with a dataBits00 or dataBits01 that is not 0, which no client code reads (#328); rows in a spell that holds an Activate row, which the activate cast drops since it strikes no unit (#328), and the same rows of a spell a creature's activate column names with no Activate row of its own, which the measure counts read; rows behind a target apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses",
+        reason: "rows aimed at the caster alone, which only a creature caster could remove (#921); rows with a dataBits00 or dataBits01 that is not 0, which no client code reads (#921); rows in a spell the activate cast names (a creature's activate column, the default spell or an item's use) that no Proxy or Proc names as its child, which the activate cast drops since it strikes no unit (#921); rows behind a target apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses",
         fact_key: "Spell4Effects.effectType.97",
       ),
       Missing(
@@ -2658,5 +2659,16 @@ pub fn the_despawn_type_is_counted_read_by_the_rows_the_plan_applies_test() -> N
     as "the type is handled with a stated gap"
   assert fact_key == "Spell4Effects.effectType.97"
   assert unread_rows == 587
-    as "scratch count over `table_rows -- Spell4Effects effectType=97`: 329 aimed at the caster alone, 36 aimed past it with a dataBits00 or dataBits01 that is not 0, 213 aimed past it in a spell that holds an Activate row (the activate cast drops them) and 9 behind a target apply prerequisite of a type the server does not decode (12, 30 and 44, #818): 587 of 855, so 268 are read"
+    as "scratch count over `table_rows -- Spell4Effects effectType=97`: 329 aimed at the caster alone, 36 aimed past it with a dataBits00 or dataBits01 that is not 0, 213 aimed past it in a spell the activate cast names (a creature's activate column, the default spell or an item's use) that no Proxy or Proc names as its child (the 4 rows of Spell4 44132 to 44135 are read by that route), where the activate cast drops them, and 9 behind a target apply prerequisite of a type the server does not decode (12, 30 and 44, #818): 587 of 855, so 268 are read"
+  let tables = client_tables.every_table()
+  let proxy_children =
+    list.filter(spell4_effects.all(client_tables.shared()), fn(row) {
+      row.effect_type == 97
+      && list.contains([44_132, 44_133, 44_134, 44_135], row.spell_id)
+    })
+  assert list.length(proxy_children) == 4
+    as "table_rows -- Spell4Effects spellId=44132 shows one despawn row (101441, targetFlags 2); Creature2 20119 names the spell in an activate column and Spell4Effects 101432 (a Proxy, type 26) of Spell4 44115 starts it; spells 44133 to 44135 hold one each"
+  assert effect_row.unread_by_type(tables:, effects: proxy_children)
+    == dict.new()
+    as "a dropped row of a Proxy child is applied by the Proxy's route, so it is read"
 }

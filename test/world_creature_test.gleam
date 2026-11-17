@@ -1818,7 +1818,9 @@ pub fn tell_despawn_reaches_the_creature_as_despawn_test() -> Nil {
 /// The despawn row the plan reads from planted columns of one of the client's rows
 /// (`table_rows -- Spell4Effects 56028 99864 119478`), each aimed at the target
 /// (targetFlags 2) and planted under the client's id on the spell tree the plan tests
-/// build on, which holds none of them: 56028 (Spell4 30600, "Q5511 Falkrin Whirlwind
+/// build on, which holds none of them. No Proxy or Proc row of the client's tables starts
+/// 30600, so it is a quest spell's row planted for the test, not a route a player has
+/// (the aimed shortcut press is the route, `cast_shortcut_test.an_aimed_shortcut_press_despawns_its_target_creature_after_the_go_test`): 56028 (Spell4 30600, "Q5511 Falkrin Whirlwind
 /// (Quest Flavor)": delayTime 4000, phaseFlags 1, dataBits04 and dataBits05 1, orderIndex
 /// 1), 99864 (Spell4 43559, delayTime 0, every phase) and 119478 (Spell4 50224, delayTime
 /// 3000, every phase). 56024, the throw beside 56028, is left out: it is another effect
@@ -1854,11 +1856,12 @@ fn despawn_row(
 }
 
 /// The effects of the go of a spell with this despawn row, pressed at `struck_at_ms` and
-/// answered at `went_at_ms` with the creature `unit_id` the round hit in `life`. A press
-/// gives a cast no primary target but the caster (`Spell4TargetMechanics.targetType`), so
-/// the row aimed at the target (targetFlags 2) runs in a child that a Proxy starts on
-/// each unit the go struck, whose primary target is that unit, as the throw's row does
-/// in `a_knockback_spell_on_a_creature_shows_its_flight_to_a_watching_client_test`.
+/// answered at `went_at_ms` with the creature `unit_id` the round hit in `life`. The row
+/// aimed at the target (targetFlags 2) runs in a child that a Proxy planted by the test
+/// starts on each unit the go struck, so its primary target is that unit, as the throw's
+/// row does in `a_knockback_spell_on_a_creature_shows_its_flight_to_a_watching_client_test`;
+/// no client row starts 30600 so, and an aimed shortcut press gives its pressed unit as
+/// the primary target itself (`cast.aimed_in_range`).
 fn quest_go(
   row row: spell_plan.Despawn,
   unit_id unit_id: Int,
@@ -2301,6 +2304,9 @@ pub fn a_creature_that_crashes_with_a_despawn_pending_is_gone_and_returns_new_te
     )
   assert gone == watched.beast.unit_id
     as "the map speaks of the unit once its owner has ended"
+  // `Gone` is sent before the restart timer starts (`map.waiting_for_restart`): the clock
+  // moves once the map has finished that step.
+  driven_time.settled(watched.run.pid)
   driven_time.advance(time: watched.time, ms: respawn_ms)
   let returned =
     next(
@@ -2353,6 +2359,7 @@ pub fn a_creature_that_crashes_with_a_despawn_pending_is_gone_and_returns_new_te
     )
   assert gone == returned.unit_id
     as "a despawned creature that crashes is gone to the players as one that stands is"
+  driven_time.settled(watched.run.pid)
   driven_time.advance(time: watched.time, ms: respawn_ms)
   let again =
     next(

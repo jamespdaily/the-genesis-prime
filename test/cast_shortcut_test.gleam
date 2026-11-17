@@ -41,6 +41,7 @@ import genesis_prime/message/crowd_control_state.{type CrowdControlState, Stun}
 import genesis_prime/message/interaction_result
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_cast_refused
+import genesis_prime/message/spell_go
 import genesis_prime/step.{LogWarning}
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id, Spell4EffectsId}
@@ -1061,6 +1062,64 @@ pub fn a_press_of_a_spell_whose_state_lasts_until_removed_starts_and_logs_the_dr
   assert spell_plan.payloads(spell:, as_kind: spell_plan.as_control) == []
     && spell.dropped_controls == [Spell4EffectsId(212_028)]
     as "Spell4Effects 212028 lands nothing: it is the one row dropped"
+}
+
+pub fn an_aimed_shortcut_press_despawns_its_target_creature_after_the_go_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Spell4 35436 (targetType 1) holds Spell4Effects 71140: a DespawnUnit row aimed at the
+  // primary target (targetFlags 2), delayTime 4000, phaseFlags 1. A press of an aimed
+  // shortcut gives the pressed unit as the primary target (`cast.aimed_in_range`), so the
+  // creature the go struck is the one the row removes, with the row's delay; the go's
+  // frames are written before the creature is told.
+  let scene =
+    Scene(..nothing_shown(), units: [unit(id: 913, of: 31_474, at: 10.0)])
+  let #(state, pressed) =
+    press_at(
+      scene:,
+      state: cast_state.new(),
+      spell4_id: 35_436,
+      target: 913,
+      at: 1000,
+    )
+  let hit =
+    cast_state.Hit(
+      unit_id: 913,
+      unit: cast_state.HitCreature(life: 2, struck_at_ms: 1000),
+      descriptions: [],
+      controls: [],
+      armor_removed: 0,
+      ticking: [],
+    )
+  let #(state, started) =
+    support.answered_by(state:, effects: pressed, at: 1000, struck: [hit])
+  let #(_, steps) =
+    support.run_timers_striking(
+      state:,
+      effects: started,
+      from_ms: 1000,
+      struck: [hit],
+    )
+  let effects = list.flatten([pressed, started, flattened(steps:)])
+  let assert [despawn] = support.despawns(effects:)
+    as "the go tells the one creature it struck to leave, once"
+  let assert cast_state.CreatureDespawns(unit_id:, life:, delay_ms:, ..) =
+    despawn
+    as "the tell is a creature's removal"
+  assert unit_id == 913 && life == 2 && delay_ms == 4000
+    as "the pressed creature, in the life the round hit, with the row's delay of 4000"
+  let position_of = fn(wanted) {
+    let assert Ok(found) =
+      list.key_find(
+        list.index_map(effects, fn(effect, i) { #(effect, i) }),
+        wanted,
+      )
+    found
+  }
+  let assert [go, ..] =
+    support.frames_of(message_id: spell_go.message_id, effects:)
+    as "the go's frame is written"
+  assert position_of(cast_state.Send(frame: go)) < position_of(despawn)
+    as "the go's frame is written before the creature is told"
 }
 
 pub fn a_press_of_a_target_type_3_spell_tests_its_faction_cast_group_test() -> Nil {

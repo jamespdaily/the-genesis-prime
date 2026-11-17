@@ -10,9 +10,11 @@
 //// - A row is read exactly when a list of the plan holds it and a go applies it, or, for a
 ////   damage row, when the area load builds it and it strikes a unit but its caster
 ////   (`spell_area.strikes_past_caster`); the measure calls the functions the load
-////   calls and restates none of their rules. A DespawnUnit row in a spell that holds an
-////   Activate row is the exception: the plan applies it, the activate cast drops it
-////   (`activate.drops_despawn`), so it is not read.
+////   calls and restates none of their rules. A DespawnUnit row in a spell the activate
+////   cast names (a creature's activate column, the default spell or an item's use) is the
+////   exception `unread_by_type` makes: the plan applies it, the activate cast drops it
+////   (`activate.drops_despawn`), so it is not read, unless a Proxy or Proc names the spell
+////   as its child, which applies the row by that route.
 //// - A spell the plan refuses for a column of its own (a cost, a requirement, a cycle) is
 ////   not refused here: each of its rows is counted by its own columns. A row a Proxy or Proc
 ////   names is counted on the child's rows.
@@ -21,7 +23,6 @@
 ////   a spell's own rows hit foes.
 
 import genesis_prime/game/activate
-import genesis_prime/game/effect_kind
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan
 import genesis_prime/table/id.{Spell4Id}
@@ -35,15 +36,26 @@ import gleam/result
 import gleam/set
 
 /// How many of these rows the plan does not read, by effect type. A type with no such row
-/// has no entry.
+/// has no entry. A DespawnUnit row the plan applies in a spell the activate cast names
+/// (`activate.activated_spell_ids`) is not read either: the activate cast drops it
+/// (`activate.drops_despawn`), unless a Proxy or Proc names the spell as its child, which
+/// applies the row by that route.
 pub fn unread_by_type(
   tables tables: store.Tables,
   effects effects: List(Spell4Effects),
 ) -> Dict(Int, Int) {
   let sources = spell_plan.sources_of(tables:)
   let place_of = places(tables:, effects:)
+  let activated = activate.activated_spell_ids(tables:, sources:)
   list.fold(effects, dict.new(), fn(counts, effect) {
-    case is_read(tables:, sources:, place: place_of(effect.spell_id), effect:) {
+    let dropped =
+      activate.drops_despawn(effect:)
+      && set.contains(activated, effect.spell_id)
+      && !spell_plan.is_child(sources:, spell4_id: effect.spell_id)
+    case
+      is_read(tables:, sources:, place: place_of(effect.spell_id), effect:)
+      && !dropped
+    {
       True -> counts
       False ->
         dict.upsert(counts, effect.effect_type, fn(found) {
@@ -83,17 +95,7 @@ pub fn is_read(
   effect effect: Spell4Effects,
 ) -> Bool {
   case spell_plan.read_row(tables:, sources:, place:, effect:) {
-    Ok(spell_plan.Applied(..)) ->
-      !{
-        activate.drops_despawn(effect:)
-        && list.any(
-          spell_plan.effects_of(sources:, spell4_id: effect.spell_id),
-          fn(row) {
-            effect_kind.kind_of(effect_type: row.effect_type)
-            == effect_kind.Activate
-          },
-        )
-      }
+    Ok(spell_plan.Applied(..)) -> True
     Ok(spell_plan.ReadByActivation) -> True
     Ok(spell_plan.ReadByArea) ->
       case

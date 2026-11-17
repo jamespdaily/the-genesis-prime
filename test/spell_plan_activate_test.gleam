@@ -34,7 +34,6 @@ import gleam/string
 import owned_test
 import place_support
 import planted_table.{Integer}
-import spell_tables
 import unitest
 
 pub fn every_activate_spell_has_a_plan_or_a_reason_test() -> Nil {
@@ -163,15 +162,40 @@ pub fn an_activate_spell_with_a_despawn_row_still_plans_and_drops_the_row_test()
         == [99_097]
         as "the despawn row is the one the activate cast drops"
       assert dropped.signals == []
-      let sources = spell_plan.sources_of(tables:)
       let assert Ok(row) =
         spell4_effects.get(tables:, id: Spell4EffectsId(99_097))
-      assert !effect_row.is_read(
-        tables:,
-        sources:,
-        place: spell_tables.pressed,
-        effect: row,
-      )
+      assert effect_row.unread_by_type(tables:, effects: [row])
+        == dict.from_list([#(97, 1)])
+        as "the measure counts the dropped row missing, not read"
+    },
+  )
+}
+
+pub fn a_despawn_row_in_a_spell_a_creature_names_with_no_activate_row_is_dropped_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4Effects 2821 is the one Activate row of Spell4 1817, which a Creature2 activate
+  // column names. Its type becomes DespawnUnit (97, aimed at the target by targetFlags 2),
+  // so the spell holds a despawn row and no Activate row, the shape of the spells a
+  // creature's activate column names with no Activate row of their own.
+  // The activate cast still plans the spell and drops the row, so the measure must not
+  // count it read.
+  fixture_tables.changed(
+    table: "Spell4Effects",
+    id: 2821,
+    with: [#("effectType", Integer(97))],
+    body: fn(tables) {
+      let activations = activate.activations(tables:)
+      let assert Ok(Planned(effects:, dropped:, ..)) =
+        activate.planned_of(activations:, spell4_id: 1817)
+        as "Spell4 1817 is still planned"
+      assert effects == [] as "the spell holds no Activate row"
+      assert list.map(dropped.despawns, fn(effect_id) { effect_id.value })
+        == [2821]
+        as "the despawn row is the one the activate cast drops"
+      let assert Ok(row) =
+        spell4_effects.get(tables:, id: Spell4EffectsId(2821))
+      assert effect_row.unread_by_type(tables:, effects: [row])
+        == dict.from_list([#(97, 1)])
         as "the measure counts the dropped row missing, not read"
     },
   )

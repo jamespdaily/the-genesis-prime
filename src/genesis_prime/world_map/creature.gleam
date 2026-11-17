@@ -397,16 +397,16 @@ pub type Message {
   /// | If | Then |
   /// |---|---|
   /// | the tell is in flight when the creature ends | the registry drops it |
-  /// | it reaches a creature that is dead or already despawned | dropped |
+  /// | it reaches a creature that is dead or already despawned | dropped (a server guess: the client's tables hold no rule for a removal that meets a corpse, so it takes no second life of its own) |
   /// | it was struck before the creature last stood again | dropped: the registry address is the same across lives |
   /// | it reaches a creature that walks home or fights | the creature is removed and the fight releases its players: the removal is no strike |
   /// | the delay is 0 | the creature leaves the field in the tell's own step, after the go's frames; another viewer's 0x7f4 and 0x355 have two senders, which no order holds |
   /// | the delay is above 0 | one timer to the go plus the delay, and nothing is sent before |
-  /// | a second `Despawn` arrives while one is pending, with the same or a later due time | no timer effect: the shell ends the process when a timer id already running is started, so the pending timer stands |
+  /// | a second `Despawn` arrives while one is pending, with the same or a later due time | the earlier due time wins, a server guess (no client rule orders two removals); no timer effect: the shell ends the process when a timer id already running is started, so the pending timer stands |
   /// | a second `Despawn` arrives while one is pending, with an earlier due time still ahead | the pending timer is cancelled, then the despawn timer is started for the earlier due time |
   /// | a second `Despawn` arrives while one is pending, with a due time already past | the pending timer is cancelled and the creature leaves the field now |
   /// | the creature dies while one is pending | the despawn timer is cancelled at the kill; a stale fire already queued is dropped by the shell |
-  /// | the creature retires unseen while one is pending | the process stops and the pending despawn is lost; the spawn's next creature stands fresh |
+  /// | the creature retires unseen while one is pending | the process stops and the pending despawn is lost, a server guess (the spawn's next creature stands fresh) |
   /// | it is told `Retire` while despawned | it stops at its respawn (`StopAtRespawn`), so the spawn does not come back early |
   /// | a viewer arrives while despawned | it is recorded and sent nothing; it is sent the creature when the corpse timer fires |
   /// | a viewer leaves while despawned | `Unwatched` sends `Removed`, which the viewer's connection drops: the unit is not shown |
@@ -767,7 +767,9 @@ fn thrown(
 
 /// A DespawnUnit effect reaches the creature (`Despawn`): dropped when the creature lies dead
 /// or gone or was struck before it last stood again, else removed now or at the go's time
-/// plus the delay, whichever due time is earlier. The despawn timer is started only when none
+/// plus the delay, whichever due time is earlier. Server guesses: a despawn that meets a
+/// corpse is dropped, and of two pending despawns the earlier due time wins; the client's
+/// tables rule neither. The despawn timer is started only when none
 /// runs and cancelled before it is started again, since the shell ends the process when a
 /// timer id already running is started.
 fn despawn_told(

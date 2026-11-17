@@ -67,6 +67,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
+import gleam/set.{type Set}
 
 /// The GameFormula row whose dataint0 is the spell a creature casts when none of its
 /// columns passes (`0x14046c580`).
@@ -329,16 +330,7 @@ fn build(tables tables: table_store.Tables) -> Result(Activations, BuildError) {
     ),
   )
   let sources = spell_plan.sources_of(tables:)
-  let spell_ids =
-    [
-      default_spell,
-      ..list.append(
-        list.map(columns, fn(column) { column.spell4_id }),
-        item_spell_ids(tables:, sources:),
-      )
-    ]
-    |> list.filter(fn(spell4_id) { spell4_id != 0 })
-    |> list.unique
+  let spell_ids = set.to_list(activated_spell_ids(tables:, sources:))
   Ok(Activations(
     prerequisites: list.filter_map(prerequisites, fn(entry) {
       option.to_result(entry.1, Nil)
@@ -352,6 +344,31 @@ fn build(tables tables: table_store.Tables) -> Result(Activations, BuildError) {
       |> dict.from_list,
     default_spell:,
   ))
+}
+
+/// The spells an activate cast can name: the default spell (when the tables hold its
+/// GameFormula row), the spells in a creature's activate columns and the spells an item
+/// casts when used that hold an Activate row. These are the spells `planned_rows` reads
+/// and whose despawn rows the activate cast drops (`drops_despawn`).
+pub fn activated_spell_ids(
+  tables tables: table_store.Tables,
+  sources sources: spell_plan.Sources,
+) -> Set(Int) {
+  let default_spell =
+    game_formula.get(tables:, id: GameFormulaId(default_spell_formula))
+    |> result.map(fn(row) { row.dataint0 })
+    |> result.unwrap(0)
+  [
+    default_spell,
+    ..list.append(
+      list.flat_map(creature2.all(tables), fn(row) {
+        list.map(creature_of(row:).columns, fn(column) { column.spell4_id })
+      }),
+      item_spell_ids(tables:, sources:),
+    )
+  ]
+  |> list.filter(fn(spell4_id) { spell4_id != 0 })
+  |> set.from_list
 }
 
 /// The spells an item casts when used (ItemSpecial.spell4IdOnActivate) that have an
