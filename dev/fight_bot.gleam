@@ -19,6 +19,14 @@ pub const paralytic_surge_cast_ms = 0
 /// (`Spell4Effects.durationTime`, 2700 ms).
 pub const paralytic_surge_lingers_ms = 2700
 
+/// How long the bot lets the clock run after a press that did not kill, before it presses
+/// again: the hit's lingering, or the spell's own recharge when that is longer. The
+/// caller gives the recharge: the Spell4's `spellCoolDown` its rows hold (25 000 ms on
+/// the client's own row 42352, 0 on a row whose recharge a test plants away).
+fn between_presses_ms(recharge_ms recharge_ms: Int) -> Int {
+  int.max(paralytic_surge_lingers_ms, recharge_ms)
+}
+
 /// A press the server refused (0x7fc), with the result of each refusal: a caster that
 /// is dead or stunned, a target out of range or a cooldown still running gets no go, so
 /// no frame the fight waits for would ever come.
@@ -52,6 +60,7 @@ pub fn refusals_in(
 /// connection's own random seed.
 pub fn presses_until_the_target_dies(
   advance advance: fn(Int) -> Nil,
+  recharge_ms recharge_ms: Int,
   game game: game_client.Game,
   have have: BitArray,
   target target: Int,
@@ -60,6 +69,7 @@ pub fn presses_until_the_target_dies(
 ) -> Result(#(List(Frame), BitArray), Refused) {
   presses_at_most(
     advance:,
+    recharge_ms:,
     game:,
     have:,
     target:,
@@ -125,6 +135,7 @@ fn unstruck_message(
 /// target's death among them or not, or the press the server refused.
 pub fn presses_at_most(
   advance advance: fn(Int) -> Nil,
+  recharge_ms recharge_ms: Int,
   game game: game_client.Game,
   have have: BitArray,
   target target: Int,
@@ -187,10 +198,11 @@ pub fn presses_at_most(
     }
     False, False if presses <= 1 -> Ok(#(seen, have))
     False, False -> {
-      advance(paralytic_surge_lingers_ms)
+      advance(between_presses_ms(recharge_ms:))
       let #(later, have) = game_client.read_until_pong(game:, have:, number: 3)
       presses_at_most(
         advance:,
+        recharge_ms:,
         game:,
         have:,
         target:,

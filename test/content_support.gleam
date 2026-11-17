@@ -102,6 +102,10 @@ pub fn load_asking(
   )
 }
 
+/// The content terms the key holds, each as its table's name and its id, in order.
+@external(erlang, "content_support_ffi", "terms")
+pub fn terms(key: table_store.Key) -> List(#(String, Int))
+
 /// Runs `sql` on the database as the test's administrator.
 pub fn change(database database: String, sql sql: String) -> Nil {
   let assert Ok(_) =

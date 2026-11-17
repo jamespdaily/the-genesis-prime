@@ -9,6 +9,7 @@ import character_tables
 import class_resource_support
 import connection_rule_support as support
 import database_support
+import driven_time
 import envoy
 import event_wait
 import game_connection_support
@@ -29,6 +30,7 @@ import genesis_prime/message/bit_stream.{Endpoint}
 import genesis_prime/server
 import genesis_prime/service/shell as service_shell
 import genesis_prime/step.{type ConnectionStep}
+import genesis_prime/table/loader/store.{type Key}
 import genesis_prime/wire_recording/recorder.{type WireRecorder}
 import genesis_prime/world_map/creature_registry
 import gleam/dict
@@ -179,15 +181,37 @@ pub fn settings(pool pool: pog.Config) -> server.Settings {
   )
 }
 
-/// The settings the server's own start makes. They read two variables that a
-/// started server sets for real; this gives them values.
+/// The settings with the game connections and the World taking their time and
+/// their timers from `time` (`driven_time.scripts`, `driven_time.service_time`), so
+/// one clock moves every timer of the listener and of the maps and creatures, and a
+/// timer fires only when the test advances it.
+pub fn driven_by(
+  settings settings: server.Settings,
+  time time: driven_time.Time,
+) -> server.Settings {
+  server.Settings(
+    ..settings,
+    game: server.Served(..settings.game, scripts: driven_time.scripts(time)),
+    world: server.World(
+      ..settings.world,
+      service_time: driven_time.service_time(time),
+    ),
+  )
+}
+
+/// The settings the server's own start makes, over the content terms the test
+/// helpers put by hand (`spawn_support.key_without_spawns`). They read two
+/// variables that a started server sets for real; this gives them values.
 pub fn servers_settings() -> server.Settings {
+  servers_settings_over(spawns: spawn_support.key_without_spawns())
+}
+
+/// The settings the server's own start makes, over the content terms under `spawns`
+/// (a key a content load wrote, or one a helper filled).
+pub fn servers_settings_over(spawns spawns: Key) -> server.Settings {
   envoy.set("GENESIS_GAME_ADDRESS", "127.0.0.1")
   envoy.set("GENESIS_REALM_NAME", "Test")
-  genesis_prime.settings(
-    tables: character_tables.shared(),
-    spawns: spawn_support.key_without_spawns(),
-  )
+  genesis_prime.settings(tables: character_tables.shared(), spawns:)
 }
 
 /// The rate bucket the server's own settings give the auth rule.

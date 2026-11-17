@@ -106,8 +106,12 @@ pub fn await_exit(node: Node) -> Int {
 @external(erlang, "serving_node_ffi", "await_exit")
 fn exit_status(node: Node) -> Int
 
+/// Starts a node that runs `module`'s `main` as `gleam run` starts a program,
+/// with `environment` added to the test VM's own. The node ends when the
+/// calling process does. `start` is the node of this module; `real_start_node`
+/// is the server's own `run`.
 @external(erlang, "serving_node_ffi", "start")
-fn start_node(module: String, environment: List(#(String, String))) -> Node
+pub fn start_node(module: String, environment: List(#(String, String))) -> Node
 
 fn mode_name(mode: Mode) -> String {
   case mode {
