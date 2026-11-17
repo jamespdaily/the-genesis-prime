@@ -53,7 +53,7 @@ The brief is a "Brief" artifact on the step's issue, and the builder's prompt is
 - **Changed since the Design:** each later decision, with who made it and why.
 - **Ask back if:** what comes back to the coordinator, or to Jim, instead of being chosen.
 - **Change / Leave alone:** the modules it may change, and what is left out with who owns it.
-- **Reuse:** the existing functions, test support and packages a gatherer found for each planned function, by name and file. Reuse what a module shares by importing it or moving it to a shared module; copying a module's glue and tests is what to avoid.
+- **Reuse:** a gatherer's map, made before the brief: each existing function, type and test support the build touches or reuses, with its file and line on the base commit, its signature and its call sites. Builders start from the map and search only for what it does not name. (The boot check's builders, briefed with a map, took 75 and 31 turns, against 216 for the procs fix round, 2026-11-17.) Reuse what a module shares by importing it or moving it to a shared module; copying a module's glue and tests is what to avoid.
 - **Failure table,** for a step with a shape commit, or with locks, timers or remote steps: each step of the flow, and what happens if it is killed there, run twice at once, or times out. Each row becomes a test, and the shape review reads the table with the shape.
 - **Tests:** the test list, each decision tested at the lowest layer that makes it, and whole-server tests only for what the client sees.
 - **Done when:** `dev/test_list_check.py N origin/main HEAD` exits 0 and the last commit is pushed; the coordinator watches CI.
