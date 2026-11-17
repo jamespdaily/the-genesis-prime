@@ -1001,6 +1001,7 @@ fn foe_at(z z: Float) -> shown.Shown {
     hostile_to: creature_life.Hostile(exile: False, dominion: False),
     in_combat: False,
     held: [],
+    unit_states: [],
   )
 }
 

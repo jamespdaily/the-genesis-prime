@@ -313,6 +313,7 @@ fn live_go_of(spell spell: Spell) -> #(cast_state.State, cast_state.GoAsked) {
         | cast_state.TargetChangeEnds(..)
         | cast_state.ForcedMoveStarts(..)
         | cast_state.CreatureDespawns(..)
+        | cast_state.CreatureHoldsUnitStates(..)
         | cast_state.Activated(..)
         | cast_state.ShortcutCast(..)
         | cast_state.TickStrike(..)
@@ -731,7 +732,8 @@ fn passed_with(
         | spell_plan.RemoveStealthEffect(..)
         | spell_plan.ProcEffect(..)
         | spell_plan.ControlEffect(..)
-        | spell_plan.DespawnEffect(..) -> -1
+        | spell_plan.DespawnEffect(..)
+        | spell_plan.UnitStateEffect(..) -> -1
       }
     }),
     left,

@@ -99,6 +99,7 @@ fn asked_goes(effects effects: List(cast_state.Effect)) -> List(GoAsked) {
       | cast_state.TargetChangeEnds(..)
       | cast_state.ForcedMoveStarts(..)
       | cast_state.CreatureDespawns(..)
+      | cast_state.CreatureHoldsUnitStates(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
       | cast_state.TickStrike(..)

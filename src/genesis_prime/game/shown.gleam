@@ -109,12 +109,22 @@ pub type Shown {
     /// The crowd-control states the creature holds as its viewer's client was told
     /// (0x87f without a later 0x880), which the target gate of a press reads.
     held: List(HeldState),
+    /// The unit states the creature holds as its owner's news told (`UnitStateHeld` without
+    /// a later `UnitStateEnded`): no frame carries them, so only the press's refusal reads
+    /// them (genesis_prime/game/cast/press `unit_state_refusal`).
+    unit_states: List(HeldUnitState),
   )
 }
 
 /// A crowd-control state a shown creature holds, with the instance id its 0x87f gave.
 pub type HeldState {
   HeldState(state: CrowdControlState, instance_id: Int)
+}
+
+/// A unit state a shown creature holds (genesis_prime/game/unit_state), with the `number`
+/// its creature gave the hold, which the news that ends it names.
+pub type HeldUnitState {
+  HeldUnitState(state: Int, number: Int)
 }
 
 /// The units the client shows, by unit id.
@@ -432,7 +442,7 @@ pub fn with_path(
 }
 
 /// The picture with the creature marked alive or dead by its owner's news, a dead
-/// creature holding no state; a unit that is not a shown creature is as it was.
+/// creature holding no crowd-control or unit state; a unit that is not a shown creature is as it was.
 pub fn with_alive(
   picture picture: Picture,
   unit_id unit_id: Int,
@@ -443,10 +453,18 @@ pub fn with_alive(
       dict.insert(
         picture,
         unit_id,
-        ShownCreature(..creature, alive:, held: case alive {
-          True -> creature.held
-          False -> []
-        }),
+        ShownCreature(
+          ..creature,
+          alive:,
+          held: case alive {
+            True -> creature.held
+            False -> []
+          },
+          unit_states: case alive {
+            True -> creature.unit_states
+            False -> []
+          },
+        ),
       )
     Ok(ShownPlayer) | Ok(ShownObject(..)) | Error(Nil) -> picture
   }
@@ -468,6 +486,54 @@ pub fn with_held_applied(
         ShownCreature(
           ..creature,
           held: list.append(held, [HeldState(state:, instance_id:)]),
+        ),
+      )
+    Ok(ShownPlayer) | Ok(ShownObject(..)) | Error(Nil) -> picture
+  }
+}
+
+/// The picture with the creature holding the unit state its owner's news gave, under the
+/// creature's `number` for the hold, after the holds it has; a unit that is not a shown
+/// creature is as it was.
+pub fn with_unit_state_held(
+  picture picture: Picture,
+  unit_id unit_id: Int,
+  state state: Int,
+  number number: Int,
+) -> Picture {
+  case dict.get(picture, unit_id) {
+    Ok(ShownCreature(unit_states:, ..) as creature) ->
+      dict.insert(
+        picture,
+        unit_id,
+        ShownCreature(
+          ..creature,
+          unit_states: list.append(unit_states, [
+            HeldUnitState(state:, number:),
+          ]),
+        ),
+      )
+    Ok(ShownPlayer) | Ok(ShownObject(..)) | Error(Nil) -> picture
+  }
+}
+
+/// The picture with the creature no longer holding its unit state of that `number`, its
+/// other holds kept; a unit that is not a shown creature is as it was.
+pub fn with_unit_state_ended(
+  picture picture: Picture,
+  unit_id unit_id: Int,
+  number number: Int,
+) -> Picture {
+  case dict.get(picture, unit_id) {
+    Ok(ShownCreature(unit_states:, ..) as creature) ->
+      dict.insert(
+        picture,
+        unit_id,
+        ShownCreature(
+          ..creature,
+          unit_states: list.filter(unit_states, fn(held) {
+            held.number != number
+          }),
         ),
       )
     Ok(ShownPlayer) | Ok(ShownObject(..)) | Error(Nil) -> picture

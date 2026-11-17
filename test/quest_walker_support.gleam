@@ -53,6 +53,7 @@ pub fn walker(
         hostile_to: creature_life.Hostile(exile: hostile, dominion: hostile),
         in_combat: False,
         held: [],
+        unit_states: [],
       ),
     ),
   ])

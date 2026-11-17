@@ -54,6 +54,7 @@ fn creature(
     hostile_to: Hostile(exile: False, dominion: False),
     in_combat: False,
     held: [],
+    unit_states: [],
   )
 }
 
@@ -222,6 +223,7 @@ fn facing_creature(x x: Float, z z: Float) -> shown.Shown {
     hostile_to: Hostile(exile: False, dominion: False),
     in_combat: False,
     held: [],
+    unit_states: [],
   )
 }
 
@@ -364,4 +366,56 @@ pub fn a_died_news_clears_a_creatures_held_states_and_only_its_own_test() -> Nil
     )
     == picture()
     as "another player's unit holds no state in the picture"
+}
+
+pub fn a_unit_state_is_held_ended_by_its_number_and_cleared_at_death_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Two casters hold state 6 on one creature under two numbers (its creature gave 1 and 2);
+  // a hold ends by its own number (`Spell4Effects.effectType.15`: no frame names a state, so
+  // the creature's news is the only record).
+  let held_by_two =
+    picture()
+    |> shown.with_unit_state_held(unit_id: 1, state: 6, number: 1)
+    |> shown.with_unit_state_held(unit_id: 1, state: 19, number: 2)
+    |> shown.with_unit_state_held(unit_id: 1, state: 6, number: 3)
+  let assert Ok(ShownCreature(unit_states:, ..)) = dict.get(held_by_two, 1)
+  assert unit_states
+    == [
+      shown.HeldUnitState(state: 6, number: 1),
+      shown.HeldUnitState(state: 19, number: 2),
+      shown.HeldUnitState(state: 6, number: 3),
+    ]
+    as "each hold is kept under its number, in the order told, the same state twice included"
+  let ended =
+    shown.with_unit_state_ended(picture: held_by_two, unit_id: 1, number: 1)
+  let assert Ok(ShownCreature(unit_states: after, ..)) = dict.get(ended, 1)
+  assert after
+    == [
+      shown.HeldUnitState(state: 19, number: 2),
+      shown.HeldUnitState(state: 6, number: 3),
+    ]
+    as "an end drops its own number only: the second state 6 is still held"
+  assert shown.with_unit_state_ended(picture: ended, unit_id: 1, number: 99)
+    == ended
+    as "a number the creature holds no more changes nothing"
+  let dead = shown.with_alive(picture: held_by_two, unit_id: 1, alive: False)
+  let assert Ok(ShownCreature(unit_states: at_death, ..)) = dict.get(dead, 1)
+  assert at_death == []
+    as "a Died news ends the creature's unit states with its life, and the creature sends no end for them"
+  assert shown.with_unit_state_held(
+      picture: picture(),
+      unit_id: 3,
+      state: 6,
+      number: 1,
+    )
+    == picture()
+    as "another player's unit holds no state in the picture"
+  assert shown.with_unit_state_held(
+      picture: picture(),
+      unit_id: 99,
+      state: 6,
+      number: 1,
+    )
+    == picture()
+    as "nor does a unit the client does not show"
 }

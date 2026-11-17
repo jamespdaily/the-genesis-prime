@@ -107,7 +107,7 @@ import genesis_prime/client_connection.{
   SentByKill, SentByMap, SentByPeer, SentBySessions, SentByTarget, TellChat,
   TellDespawn, TellLifeChanged, TellMoved, TellPeer, TellReady, TellReleased,
   TellStealthChanged, TellStrike, TellStrikeAnswered, TellTargetChange,
-  TellTargetMoved, TellThrown, TellVisibilityChanged,
+  TellTargetMoved, TellThrown, TellUnitStates, TellVisibilityChanged,
 }
 import genesis_prime/connection/closer
 import genesis_prime/connection/listener.{Listener}
@@ -370,7 +370,8 @@ fn directory(settings: Settings) -> Directory {
       | TellStrikeAnswered(..)
       | TellTargetChange(..)
       | TellThrown(..)
-      | TellDespawn(..) -> Error(Nil)
+      | TellDespawn(..)
+      | TellUnitStates(..) -> Error(Nil)
     }
   }
 }
@@ -481,6 +482,7 @@ fn tell_the_connection(pid pid: process.Pid, request request: Request) -> Nil {
     | TellTargetChange(..)
     | TellThrown(..)
     | TellDespawn(..)
+    | TellUnitStates(..)
     | AskStore(..)
     | AskHandOff(..)
     | AskSessions(..)
@@ -544,6 +546,7 @@ pub fn tell_the_run(
     | TellTargetChange(..)
     | TellThrown(..)
     | TellDespawn(..)
+    | TellUnitStates(..)
     | AskStore(..)
     | AskHandOff(..)
     | AskSessions(..)
@@ -562,7 +565,8 @@ pub fn tell_the_run(
 /// (`TellTargetMoved`) as `TargetMoved`, the answer to its strike
 /// (`TellStrikeAnswered`) as `StrikeAnswered`, and a modifier's start or end
 /// (`TellTargetChange`) as `ModifierStarts` or `ModifierEnds`, a throw (`TellThrown`) as
-/// `Thrown` and a removal (`TellDespawn`) as `Despawn`. Any other request,
+/// `Thrown`, a removal (`TellDespawn`) as `Despawn` and held unit states (`TellUnitStates`)
+/// as `UnitStates`. Any other request,
 /// or an address that is no creature, is an error and nothing is sent.
 pub fn tell_creature(
   creatures creatures: CreatureRegistry,
@@ -592,7 +596,7 @@ pub fn tell_creature(
   }
 }
 
-/// The message a creature takes a connection's request as, for the six requests a
+/// The message a creature takes a connection's request as, for the seven requests a
 /// creature is told.
 fn creature_told(request: Request) -> Result(creature.Message, Nil) {
   case request {
@@ -615,6 +619,8 @@ fn creature_told(request: Request) -> Result(creature.Message, Nil) {
       Ok(creature.Thrown(throw:, struck_at_ms:))
     TellDespawn(delay_ms:, struck_at_ms:, went_at_ms:) ->
       Ok(creature.Despawn(delay_ms:, struck_at_ms:, went_at_ms:))
+    TellUnitStates(rows:, struck_at_ms:, went_at_ms:) ->
+      Ok(creature.UnitStates(rows:, struck_at_ms:, went_at_ms:))
     TellPeer(..)
     | TellChat(..)
     | TellMoved(..)
@@ -662,6 +668,7 @@ fn connection_deliver(
       | TellTargetChange(..) as request, step.Creature(..)
       | TellThrown(..) as request, step.Creature(..)
       | TellDespawn(..) as request, step.Creature(..)
+      | TellUnitStates(..) as request, step.Creature(..)
       -> tell_creature(creatures: settings.world.creatures, to:, request:)
       TellStrike(..), _
       | TellTargetMoved(..), _
@@ -669,6 +676,7 @@ fn connection_deliver(
       | TellTargetChange(..), _
       | TellThrown(..), _
       | TellDespawn(..), _
+      | TellUnitStates(..), _
       | TellMoved(..), _
       | TellReady(..), _
       | TellStealthChanged(..), _

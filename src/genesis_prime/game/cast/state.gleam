@@ -33,6 +33,7 @@ import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
 import genesis_prime/game/ticking
 import genesis_prime/game/unit_properties
+import genesis_prime/game/unit_state
 import genesis_prime/message/cast_result
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/message/float32
@@ -234,6 +235,21 @@ pub type Effect {
     struck_at_ms: Int,
     went_at_ms: Int,
     delay_ms: Int,
+  )
+  /// The UnitStateSet rows of the caster's spell hold their states on the creature `unit_id`
+  /// whose life the go struck, each from `went_at_ms`, the monotonic time of the go, plus its
+  /// delay for its duration; `struck_at_ms`, the monotonic time the round struck it
+  /// (`HitCreature`), tells which life of the creature that was. `rows` are the go's rows for
+  /// the creature in row order. The connection tells the creature
+  /// (genesis_prime/client_connection `TellUnitStates`), which owns the end of each state, so
+  /// the caster's leaving or dying changes nothing. A creature of another life drops it, and
+  /// so does one that lies dead, is already gone, or has stood again since the round struck it.
+  CreatureHoldsUnitStates(
+    unit_id: Int,
+    life: Int,
+    struck_at_ms: Int,
+    went_at_ms: Int,
+    rows: List(unit_state.Row),
   )
   /// A property modifier the caster's spell started on the creature `unit_id` ends: the
   /// node's end, a removal of the cast, its push off or the caster's death. A creature
@@ -968,6 +984,9 @@ pub type AimedPress {
     activations: activate.Activations,
     in_cast_group: fn(Int, Int) -> Bool,
     held: List(CrowdControlState),
+    /// The unit states the target creature is shown to hold, by number
+    /// (genesis_prime/game/unit_state).
+    unit_states: List(Int),
   )
 }
 
@@ -1009,6 +1028,8 @@ pub type Unbuilt {
   DroppedSignals(spell4_id: Int)
   /// The DespawnUnit effects an activate cast drops, by the Spell4 id.
   DroppedDespawns(spell4_id: Int)
+  /// The UnitStateSet effects an activate cast drops, by the Spell4 id.
+  DroppedUnitStates(spell4_id: Int)
   /// The crowd-control effects the plan drops from a spell, by the Spell4 id.
   DroppedControls(spell4_id: Int)
   /// A quest button's spell, by Spell4 id.

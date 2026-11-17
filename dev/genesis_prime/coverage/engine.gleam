@@ -359,6 +359,11 @@ fn spell_effects() -> EngineDeclaration {
         fact_key: "Spell4Effects.effectType.14",
       ),
       Missing(
+        type_number: 15,
+        reason: "rows aimed at the caster alone, which need a creature that casts, or a creature's strike on a player, to read (#801); rows that last until removed (flags bit 2, #803); rows behind a persistence prerequisite and rows with a dataBits01 to dataBits09 that is not 0, which no client code reads (#925); rows behind a target apply prerequisite that reads the casts a struck creature holds, which the plan refuses (#569); and the rows the plan applies that refuse nothing: those of a state with no reading (0, 1, 2, 10 and 23), which a creature holds and which refuse nothing since the client does not say what they do (#925), those with a durationTime of 0, which a creature never holds (#925), and those of a spell with no Spell4 row, which no cast reaches (#925)",
+        fact_key: "Spell4Effects.effectType.15",
+      ),
+      Missing(
         type_number: 17,
         reason: lasting_gap,
         fact_key: "Spell4Effects.effectType.17",

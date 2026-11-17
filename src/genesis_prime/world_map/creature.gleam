@@ -237,6 +237,7 @@ import genesis_prime/game/strike_tell.{
 import genesis_prime/game/unit_properties.{
   type Modifier, type Properties, type Source,
 }
+import genesis_prime/game/unit_state
 import genesis_prime/step.{
   type ConnectionId, type CreatureStart, type Effect, type ServiceEffect,
   type ServiceInput, type ServiceRule, type ServiceStep, type WatchId, Asked,
@@ -257,6 +258,7 @@ import genesis_prime/world_map/creature_life.{
   StopNow,
 }
 import genesis_prime/world_map/creature_unit
+import genesis_prime/world_map/creature_unit_state
 import genesis_prime/world_map/creature_unit_type
 import genesis_prime/world_map/game_number.{type GameNumbers}
 import genesis_prime/world_map/map
@@ -295,6 +297,13 @@ const refill_timer = TimerId(2)
 /// 3 is the id a generation 0 would give the cast end, which is never issued; no control's
 /// (they start at 11) and no guard's (they start at 12) is 3 either.
 const despawn_timer = TimerId(3)
+
+/// The one timer of the held unit states, armed for the earliest end: 4, which is free. A
+/// control's id is 4 above 7 times its number from 1, so from 11, and a guard's is 5 above 7
+/// times its generation from 1, so from 12; a fight timer is 7 times a generation plus 0 to 3
+/// or 6, never 4; the corpse, refill and despawn timers are 1, 2 and 3. A state cannot have
+/// an id of its own, since the fight, the controls and the guard take all seven residues of 7.
+const unit_state_timer = TimerId(4)
 
 /// What a creature is started with: which creature of which run it is and the
 /// map's clock (`CreatureStart`), the spawn it stands at, found by the id the start
@@ -414,6 +423,55 @@ pub type Message {
   /// | the corpse timer fires for a run-only creature | `Stop` only: the viewers were sent `Removed` at the removal |
   /// | the creature crashes pending or despawned | the map sends `Gone` and starts the spawn again after the respawn time as a new unit |
   Despawn(delay_ms: Int, struck_at_ms: Int, went_at_ms: Int)
+  /// A caster's connection: the UnitStateSet rows of its go hold their states on the creature,
+  /// each from `went_at_ms`, the monotonic time of the go, plus its delay for its duration (the
+  /// delay delays the hold, a server guess: the client reads no row of the type);
+  /// `struck_at_ms`, the monotonic time the round struck the creature, tells its life. The
+  /// creature owns the end of each state, so the caster's leaving or dying changes nothing.
+  ///
+  /// ```
+  /// UnitStates(rows, struck_at_ms, went_at_ms)
+  ///     dead, despawned, or struck_at_ms < stood_again_ms: dropped
+  ///     each row: starts_at = went_at_ms + delay, ends_at = starts_at + duration
+  ///         no duration, or ends_at <= now: not held, nothing sent
+  ///         else a Held with the creature's next number
+  ///     Send(each viewer, in connection order, UnitStateHeld(state, number)) per held row
+  ///         with starts_at <= now, in row order ─▶ the viewer's picture
+  ///     the earliest start or end changed: CancelServiceTimer(unit_state_timer) if one runs,
+  ///         then StartServiceTimer(unit_state_timer, earliest - now)
+  ///     the timer fires ─▶ each Held with starts_at <= now not yet told is told as above
+  ///         each Held with ends_at <= now is dropped
+  ///         Send(each viewer, UnitStateEnded(number)) per dropped hold that was told
+  ///         holds left: StartServiceTimer(unit_state_timer, next - now)
+  ///     a strike with blows or states meets a creature that holds a blocking state (from its
+  ///     start to its end)
+  ///         ─▶ Immune, no state lands, no armor is lost, and the creature is threatened as a
+  ///         guarded one is, a server guess (`unit_state.blocks_hostile`)
+  ///     the creature dies, is removed or stands again ─▶ every hold dropped, the timer
+  ///         cancelled, no `UnitStateEnded` (the viewers' pictures clear on its own news)
+  /// ```
+  ///
+  /// | If | Then |
+  /// |---|---|
+  /// | the tell is in flight when the creature ends | the registry drops it |
+  /// | it reaches a creature that is dead or despawned | dropped |
+  /// | it was struck before the creature last stood again | dropped: the registry address is the same across lives |
+  /// | a row's end is already past at the tell, or its duration is 0 | the row is not held and nothing is sent for it |
+  /// | a row's start is after the tell | nothing is told, blocked or shown until its start; the timer is armed for it (`a_delayed_row_blocks_only_from_its_start_test`) |
+  /// | two casters hold one state on the creature, or one caster's two rows hold one | two holds with two numbers, each ending by its own end; the creature blocks while any is held |
+  /// | the timer fires with a hold not yet due | `ended` drops only the due ones and arms the timer again for the next |
+  /// | a stale timer fire arrives after the holds were cleared | the shell drops it; `ended` finds nothing |
+  /// | a viewer arrives while states are held | after its 0x262, one `UnitStateHeld` per hold, in the order they began |
+  /// | a viewer leaves | its connection drops the unit and its picture entry with it |
+  /// | the creature retires unseen while states are held | the process stops and the holds are lost, a server guess (the spawn's next creature stands fresh) |
+  /// | the creature crashes while it holds states | the map sends `Gone` and starts the spawn again as a new unit that holds none |
+  /// | a strike with neither blows nor states (a go row of gates only) meets a blocking creature | as any creature: the unit-state check does not apply |
+  /// | a periodic tick meets a blocking creature | `Immune` at each tick, as for a guarded creature |
+  /// | a throw reaches a blocking creature | dropped, a server guess |
+  /// | a struck-change modifier reaches a blocking creature | dropped, a server guess, as a throw is (`a_modifier_at_a_creature_holding_a_blocking_state_is_dropped_test`) |
+  /// | a despawn reaches a blocking creature | it still removes the creature: a removal is not hostile |
+  /// | the caster leaves or dies after the tell | no effect: the creature owns the end |
+  UnitStates(rows: List(unit_state.Row), struck_at_ms: Int, went_at_ms: Int)
 }
 
 /// What a creature sends a connection without waiting.
@@ -465,6 +523,7 @@ pub opaque type State {
     next_watch: Int,
     stood_again_ms: Option(Int),
     despawn_due_ms: Option(Int),
+    unit_state: creature_unit_state.State,
   )
 }
 
@@ -505,6 +564,7 @@ pub fn new(settings: Settings) -> State {
     next_watch: first_caster_watch,
     stood_again_ms: None,
     despawn_due_ms: None,
+    unit_state: creature_unit_state.new(),
   )
 }
 
@@ -572,7 +632,10 @@ pub fn step(
         ..list.flat_map(creature.viewers, fn(viewer) {
           [
             appeared(state:, viewer:, now_ms:),
-            ..guard_shown(state:, viewer:, now_ms:)
+            ..list.append(
+              guard_shown(state:, viewer:, now_ms:),
+              unit_states_shown(state:, viewer:, now_ms:),
+            )
           ]
         })
       ]),
@@ -583,8 +646,9 @@ pub fn step(
         False -> []
         True -> [
           appeared(state:, viewer: #(by, stay), now_ms:),
-          ..list.append(
+          ..list.flatten([
             guard_shown(state:, viewer: #(by, stay), now_ms:),
+            unit_states_shown(state:, viewer: #(by, stay), now_ms:),
             list.map(
               creature_fight.arrival_news(
                 state: state.fight,
@@ -593,7 +657,7 @@ pub fn step(
               ),
               fn(news) { news_to(creature:, viewer: #(by, stay), news:) },
             ),
-          )
+          ])
         ]
       }),
     )
@@ -704,6 +768,8 @@ pub fn step(
       }
     OwnEvent(ServiceTimerFired(timer:)) if timer == despawn_timer ->
       despawn_timer_fired(state:, now_ms:)
+    OwnEvent(ServiceTimerFired(timer:)) if timer == unit_state_timer ->
+      unit_state_timer_fired(state:, now_ms:)
     OwnEvent(ServiceTimerFired(timer:)) if timer == refill_timer -> {
       let #(control, effects) =
         creature_control.refilled(
@@ -739,6 +805,8 @@ pub fn step(
       thrown(state:, throw:, struck_at_ms:, now_ms:)
     OwnEvent(Told(message: Despawn(delay_ms:, struck_at_ms:, went_at_ms:))) ->
       despawn_told(state:, delay_ms:, struck_at_ms:, went_at_ms:, now_ms:)
+    OwnEvent(Told(message: UnitStates(rows:, struck_at_ms:, went_at_ms:))) ->
+      unit_states_told(state:, rows:, struck_at_ms:, went_at_ms:, now_ms:)
     WatchEnded(watch:) if watch == run_watch -> #(state, Effects([Stop]))
     WatchEnded(watch:) -> caster_gone(state:, watch:, now_ms:)
     OwnEvent(Asked(..)) | OwnEvent(CreatureNotStarted(..)) ->
@@ -747,8 +815,10 @@ pub fn step(
 }
 
 /// A ForcedMove effect throws the creature: the fight takes it as `Thrown`, unless the
-/// creature lies dead or has stood again since `struck_at_ms`, the time of the go that
-/// struck its earlier life, which the registry address does not tell apart.
+/// creature lies dead, has stood again since `struck_at_ms`, the time of the go that
+/// struck its earlier life, which the registry address does not tell apart, or holds a
+/// state that blocks hostile effects, a server guess: a throw is not applied to a creature
+/// that takes no strike.
 fn thrown(
   state state: State,
   throw throw: forced_move.Throw,
@@ -759,7 +829,11 @@ fn thrown(
     Some(stood_ms) -> struck_at_ms < stood_ms
     None -> False
   }
-  case creature_life.is_dead(life: state.life) || struck_before_this_life {
+  case
+    creature_life.is_dead(life: state.life)
+    || struck_before_this_life
+    || creature_unit_state.blocks_hostile(state: state.unit_state, now_ms:)
+  {
     True -> #(state, Effects([]))
     False -> fought_alone(state:, input: creature_fight.Thrown(throw:), now_ms:)
   }
@@ -825,6 +899,91 @@ fn despawn_told(
   }
 }
 
+/// A go's UnitStateSet rows reach the creature (`UnitStates`): dropped when the creature lies
+/// dead or gone or was struck before it last stood again, else each row not yet past is held,
+/// told to the viewers from its start, and the timer is armed for the earliest start or end.
+fn unit_states_told(
+  state state: State,
+  rows rows: List(unit_state.Row),
+  struck_at_ms struck_at_ms: Int,
+  went_at_ms went_at_ms: Int,
+  now_ms now_ms: Int,
+) -> #(State, ServiceStep(Outgoing)) {
+  let struck_before_this_life = case state.stood_again_ms {
+    Some(stood_ms) -> struck_at_ms < stood_ms
+    None -> False
+  }
+  case creature_life.is_dead(life: state.life) || struck_before_this_life {
+    True -> #(state, Effects([]))
+    False -> {
+      let #(unit_state, effects) =
+        creature_unit_state.set(
+          state: state.unit_state,
+          rows:,
+          went_at_ms:,
+          now_ms:,
+        )
+      let state = State(..state, unit_state:)
+      #(state, Effects(unit_state_carried(state:, effects:)))
+    }
+  }
+}
+
+/// The unit-state timer fired: the holds whose start has come are told and the ones whose end
+/// has come end, as `UnitStates` says.
+fn unit_state_timer_fired(
+  state state: State,
+  now_ms now_ms: Int,
+) -> #(State, ServiceStep(Outgoing)) {
+  let #(unit_state, effects) =
+    creature_unit_state.due(state: state.unit_state, now_ms:)
+  let state = State(..state, unit_state:)
+  #(state, Effects(unit_state_carried(state:, effects:)))
+}
+
+/// The creature's holds are dropped when its life ends, by a death or a removal
+/// (`creature_unit_state.cleared`); the effects cancel a running timer and tell no viewer.
+fn unit_states_cleared(
+  state state: State,
+) -> #(State, List(Effect(ServiceEffect(Outgoing)))) {
+  let #(unit_state, effects) =
+    creature_unit_state.cleared(state: state.unit_state)
+  let state = State(..state, unit_state:)
+  #(state, unit_state_carried(state:, effects:))
+}
+
+/// The effects the held unit states ask for, carried out: news to every viewer and the one
+/// timer.
+fn unit_state_carried(
+  state state: State,
+  effects effects: List(creature_unit_state.Effect),
+) -> List(Effect(ServiceEffect(Outgoing))) {
+  list.flat_map(effects, fn(effect) {
+    case effect {
+      creature_unit_state.ToViewers(news:) -> to_viewers(state:, news:)
+      creature_unit_state.StartTimer(after_ms:) -> [
+        OwnEffect(step.StartServiceTimer(timer: unit_state_timer, after_ms:)),
+      ]
+      creature_unit_state.CancelTimer -> [
+        OwnEffect(step.CancelServiceTimer(timer: unit_state_timer)),
+      ]
+    }
+  })
+}
+
+/// What a viewer is sent after the creature's 0x262: each unit state the creature still
+/// holds, for that viewer alone.
+fn unit_states_shown(
+  state state: State,
+  viewer viewer: #(ConnectionId, Stay),
+  now_ms now_ms: Int,
+) -> List(Effect(ServiceEffect(Outgoing))) {
+  list.map(
+    creature_unit_state.shown(state: state.unit_state, now_ms:),
+    fn(news) { news_to(creature: state.settings.creature, viewer:, news:) },
+  )
+}
+
 /// The despawn timer fired: the creature leaves the field, as `Despawn` says. A fire the
 /// creature holds no despawn for removes nothing.
 fn despawn_timer_fired(
@@ -849,9 +1008,10 @@ fn despawn_timer_fired(
 
 /// The creature leaves the field with `life`, no health or death news, no credit and no
 /// corpse: its fight and guard end as at a kill (the fight releases its players, an open
-/// opening's cast is finished), its controls are dropped with no 0x880, and each viewer, in
-/// the order of the connections, is sent `Removed` after that. The corpse timer then runs for
-/// the kind's respawn time. A running despawn timer is cancelled.
+/// opening's cast is finished), its controls and its held unit states are dropped with no
+/// 0x880 and no `UnitStateEnded`, and each viewer, in the order of the connections, is sent
+/// `Removed` after that. The corpse timer then runs for the kind's respawn time. A running
+/// despawn timer is cancelled.
 fn left_the_field(
   state state: State,
   life life: creature_life.Life,
@@ -859,7 +1019,8 @@ fn left_the_field(
   timer_running timer_running: Bool,
   now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
-  let state = State(..state, life:, despawn_due_ms: None)
+  let #(state, unit_states) =
+    unit_states_cleared(state: State(..state, life:, despawn_due_ms: None))
   let #(state, fought) =
     fought(state:, input: creature_fight.Despawned, now_ms:)
   let #(state, guarded) =
@@ -874,6 +1035,7 @@ fn left_the_field(
         fought,
         guarded,
         controlled,
+        unit_states,
         case timer_running {
           True -> [OwnEffect(step.CancelServiceTimer(timer: despawn_timer))]
           False -> []
@@ -895,7 +1057,8 @@ fn left_the_field(
 /// `PropertiesChanged`, the rules that read a changed property take its new value,
 /// and the caster's connection is watched from its first modifier on. The same source
 /// twice is held once. A start struck before the creature last stood again, or one that
-/// reaches it dead, changes nothing.
+/// reaches it dead, changes nothing; nor does one that reaches a creature holding a state that
+/// blocks hostile effects, a server guess as for a throw (`thrown`).
 fn modifier_started(
   state state: State,
   by by: ConnectionId,
@@ -912,6 +1075,7 @@ fn modifier_started(
     creature_life.is_dead(life: state.life)
     || struck_before_this_life
     || result.is_ok(list.key_find(state.held_by, source))
+    || creature_unit_state.blocks_hostile(state: state.unit_state, now_ms:)
   {
     True -> #(state, Effects([]))
     False -> {
@@ -1149,7 +1313,9 @@ fn changed_news(
 /// every row failed its gate left nothing that reaches the creature: it answers a landing
 /// of nothing, rolls no hit, sends no health and starts no fight. That is the server's
 /// choice: neither the client nor a retail record says whether a cast whose effects all
-/// fail their target gate pulls the creature.
+/// fail their target gate pulls the creature. A creature that holds a state that blocks
+/// hostile effects takes none of a strike's blows or states: it answers `Immune`, lands no
+/// state, wears no armor, and is threatened as a guarded one is.
 fn struck(
   state state: State,
   tell tell: StrikeTell,
@@ -1179,11 +1345,19 @@ fn struck(
         && tell.offence.blows == []
         && tell.controls == []
         && !creature_life.is_dead(life: state.life)
+      // A creature that holds a state that blocks hostile effects takes none of the strike's
+      // blows or states: the gates that passed are still carried. A strike of neither
+      // (a go row of gates only) is as for any creature.
+      let blocked =
+        creature_unit_state.blocks_hostile(state: state.unit_state, now_ms:)
+        && !creature_life.is_dead(life: state.life)
+        && { tell.offence.blows != [] || tell.controls != [] }
       let reaction = case
         nothing_reached,
+        blocked,
         creature_guard.guarded(state: state.guard)
       {
-        True, _ ->
+        True, _, _ ->
           creature_life.Reaction(
             life: state.life,
             answer: Answered(
@@ -1198,7 +1372,21 @@ fn struck(
             news: [],
             corpse_for_ms: None,
           )
-        False, True ->
+        False, True, _ ->
+          creature_life.Reaction(
+            life: state.life,
+            answer: Answered(
+              key: tell.key,
+              outcome: strike_tell.Immune(
+                controls: [],
+                armor_removed: 0,
+                gates_passed: [],
+              ),
+            ),
+            news: [],
+            corpse_for_ms: None,
+          )
+        False, False, True ->
           creature_life.Reaction(
             life: state.life,
             answer: Answered(key: tell.key, outcome: case tell.offence.blows {
@@ -1219,11 +1407,14 @@ fn struck(
             news: [],
             corpse_for_ms: None,
           )
-        False, False ->
+        False, False, False ->
           creature_life.struck(life: state.life, body: state.body, strike: tell)
       }
-      let #(state, answered, controlled) =
-        controls_after(state:, tell:, reaction:, now_ms:)
+      // A blocked strike lands no state and wears no armor, so no control is touched.
+      let #(state, answered, controlled) = case blocked {
+        True -> #(state, reaction.answer, [])
+        False -> controls_after(state:, tell:, reaction:, now_ms:)
+      }
       let answered =
         Answered(
           key: answered.key,
@@ -1262,7 +1453,9 @@ fn struck(
           },
         )
       // A strike that landed, or that the guard took no damage from, threatens the
-      // creature by the descriptions it left (none for a guarded one).
+      // creature by the descriptions it left (none for a guarded one). A strike a held
+      // state blocked threatens it the same way: a server guess, since the client reads no
+      // row of the type and no retail record says whether a blocked strike angers a creature.
       let landed = case nothing_reached, reaction.answer.outcome {
         True, _ -> None
         False, strike_tell.Landed(descriptions:, ..) -> Some(descriptions)
@@ -1299,6 +1492,10 @@ fn struck(
         Some(..) -> guard_stepped(state:, input: creature_guard.Killed, now_ms:)
         None -> #(state, [])
       }
+      let #(state, unit_states) = case reaction.corpse_for_ms {
+        Some(..) -> unit_states_cleared(state:)
+        None -> #(state, [])
+      }
       #(
         state,
         Effects(
@@ -1311,6 +1508,7 @@ fn struck(
             fought,
             guarded,
             controlled,
+            unit_states,
           ]),
         ),
       )

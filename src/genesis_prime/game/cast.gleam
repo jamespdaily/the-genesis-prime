@@ -661,6 +661,7 @@ fn aimed_shortcut(
       activations:,
       in_cast_group:,
       held: [],
+      unit_states: [],
     )
   case unit_id == caster.unit_id, target_of(unit_id) {
     True, _ -> cast_press.aimed_at_the_caster(press:)
@@ -676,11 +677,12 @@ fn aimed_shortcut(
         alive:,
         in_combat:,
         held:,
+        unit_states:,
         ..,
       )
     ->
       aimed_at_a_creature(
-        press: AimedPress(..press, held:),
+        press: AimedPress(..press, held:, unit_states:),
         creature_id:,
         creature:,
         checklist_index:,
@@ -691,8 +693,11 @@ fn aimed_shortcut(
   }
 }
 
-/// A creature or object: life, then combat, then the states it holds, then cast group and
-/// range, then the spell's own conditions and the start.
+/// A creature or object: the unit states it is shown to hold, then life, then combat, then
+/// the crowd-control states it holds, then cast group and range, then the spell's own
+/// conditions and the start. The unit-state test comes first where the client's own
+/// invulnerability result does (`0x1403b2240` line 44, result 96, before every other target
+/// check); that 306 and 308 stand in the same place is a server guess.
 fn aimed_at_a_creature(
   press press: AimedPress,
   creature_id creature_id: Int,
@@ -702,6 +707,7 @@ fn aimed_at_a_creature(
   alive alive: Bool,
   in_combat in_combat: Bool,
 ) -> Result(#(State, List(Effect)), Refusal) {
+  use <- cast_press.unit_state_refusal(press:)
   case cast_press.life_and_combat_refusal(press:, alive:, in_combat:) {
     Some(result) -> cast_press.press_refused(press:, result:)
     None -> {
@@ -1047,6 +1053,7 @@ fn activation_pressed(
       alive:,
       in_combat: _,
       held:,
+      unit_states: _,
       withheld: None,
     )
     | activate.Usable(
@@ -1058,6 +1065,7 @@ fn activation_pressed(
         alive:,
         in_combat: _,
         held:,
+        unit_states: _,
         withheld: None,
       ) -> {
       let subject =
@@ -3717,6 +3725,13 @@ fn go(
           struck:,
           went_at_ms: now_ms,
         )
+      let unit_states =
+        cast_control.unit_states_told(
+          cast:,
+          reached: aimed.reached,
+          struck:,
+          went_at_ms: now_ms,
+        )
       let #(cast, healing) = cast_heal.heals_armed(cast:, cast_id:, aimed:)
       let #(cast, restriction_timers) =
         cast_control.restrictions_armed(cast:, cast_id:, restricting:)
@@ -3813,6 +3828,7 @@ fn go(
           modifying,
           throwing,
           despawning,
+          unit_states,
           healing,
           restriction_timers,
           cooldowns,
@@ -4037,6 +4053,24 @@ fn reached_by(
             gates_passed:,
             target_verdict:,
           )
+        spell_plan.UnitStateEffect(unit_state: row) ->
+          reach_units(
+            walk:,
+            planned:,
+            row:,
+            aim: row.aim,
+            stands: fn(entry) {
+              result.is_ok(cast_gate.creature_hit(struck:, unit_id: entry.1))
+            },
+            condition: row.condition,
+            what: "the UnitStateSet effect "
+              <> int.to_string(row.effect_id.value),
+            caster:,
+            live:,
+            struck:,
+            gates_passed:,
+            target_verdict:,
+          )
         spell_plan.HealEffect(heal: row) ->
           reach_units(
             walk:,
@@ -4156,7 +4190,8 @@ fn products_made(
         | spell_plan.RemoveStealthEffect(..)
         | spell_plan.ProcEffect(..)
         | spell_plan.ControlEffect(..)
-        | spell_plan.DespawnEffect(..) -> #(entry, [])
+        | spell_plan.DespawnEffect(..)
+        | spell_plan.UnitStateEffect(..) -> #(entry, [])
       }
     })
   #(
@@ -4325,6 +4360,7 @@ fn reached_listed(reached reached: List(Reached)) -> List(#(Int, Listed)) {
       | spell_plan.GainEffect(..), _
       | spell_plan.RemoveStealthEffect(..), _
       | spell_plan.DespawnEffect(..), _
+      | spell_plan.UnitStateEffect(..), _
       | spell_plan.ControlEffect(..), _
       -> Error(Nil)
     }
@@ -4372,7 +4408,8 @@ fn removed_by_go(
       | spell_plan.ProcEffect(..)
       | spell_plan.HealEffect(..)
       | spell_plan.ControlEffect(..)
-      | spell_plan.DespawnEffect(..) -> so_far
+      | spell_plan.DespawnEffect(..)
+      | spell_plan.UnitStateEffect(..) -> so_far
     }
   })
 }
@@ -4569,7 +4606,8 @@ fn cooldowns_started_at_node_end(
       | spell_plan.ProcEffect(..)
       | spell_plan.HealEffect(..)
       | spell_plan.ControlEffect(..)
-      | spell_plan.DespawnEffect(..) -> #(cast, effects)
+      | spell_plan.DespawnEffect(..)
+      | spell_plan.UnitStateEffect(..) -> #(cast, effects)
     }
   })
 }

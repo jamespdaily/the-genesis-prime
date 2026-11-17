@@ -78,6 +78,16 @@
 ////   caster (`is_row_read`); the plan leaves out a row aimed at the caster alone, and one
 ////   whose dataBits00 or dataBits01 is not 0, by name (genesis_prime/game/spell_plan
 ////   `despawn_reading`).
+//// - **UnitState** (15) holds a unit state on the unit it aims at for its time; the client
+////   reads no row of this type (its effect switch has no case 15) and shows a held state
+////   only through the cast results it gives (`Spell4Effects.effectType.15`). A row is read
+////   when its targetFlags name a unit past the caster (`is_row_read`); the plan leaves out a
+////   row aimed at the caster alone, one that lasts until removed, one behind a persistence
+////   prerequisite and one whose dataBits01 to dataBits09 is not 0, by name
+////   (genesis_prime/game/spell_plan `unit_state_reading`). The coverage measure counts a
+////   row read only when a creature's held state of it refuses something: a row of a state
+////   with no reading, with no duration or of a spell with no Spell4 row is held where it can
+////   be and counted not read (dev/genesis_prime/coverage/effect_row).
 //// - **Unread** is any other type: the client's data holds it and no rule of the
 ////   server reads it.
 ////
@@ -180,6 +190,9 @@ pub type Kind {
   /// A DespawnUnit effect (97): removes the creatures it aims at past the caster after its
   /// delay (`Spell4Effects.effectType.97`).
   Despawn
+  /// A UnitStateSet effect (15): holds the unit state `dataBits00` names on the unit it aims
+  /// at for its duration (`Spell4Effects.effectType.15`).
+  UnitState
   /// A type no rule reads.
   Unread(effect_type: Int)
 }
@@ -218,6 +231,7 @@ pub fn kind_of(effect_type effect_type: Int) -> Kind {
     7 -> Activate
     79 -> Immunity
     97 -> Despawn
+    15 -> UnitState
     other -> Unread(effect_type: other)
   }
 }
@@ -250,7 +264,8 @@ pub fn is_read(effect_type effect_type: Int) -> Bool {
     | DisguiseOutfit
     | Absorption
     | Activate
-    | Despawn -> True
+    | Despawn
+    | UnitState -> True
     Immunity | Unread(..) -> False
   }
 }
@@ -285,7 +300,7 @@ pub fn is_row_read(
     Heal(..) | InterruptArmor | Absorption ->
       int.bitwise_and(target_flags, 1) == 1 || target_flags == 2
     ShieldOverload -> target_flags == 4
-    Despawn -> target_flags >= 2 && target_flags <= 7
+    Despawn | UnitState -> target_flags >= 2 && target_flags <= 7
     Proxy
     | Damage
     | VitalModifier

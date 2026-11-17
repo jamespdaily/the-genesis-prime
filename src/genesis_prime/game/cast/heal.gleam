@@ -99,6 +99,7 @@ pub fn ticking_heals(
       | spell_plan.ForcedMoveEffect(..), _
       | spell_plan.StruckMoveEffect(..), _
       | spell_plan.DespawnEffect(..), _
+      | spell_plan.UnitStateEffect(..), _
       | spell_plan.CooldownEffect(..), _
       | spell_plan.StealthEffect(..), _
       | spell_plan.RemoveStealthEffect(..), _

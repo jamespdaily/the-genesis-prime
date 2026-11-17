@@ -169,6 +169,7 @@ fn usable_in_state(
     alive:,
     in_combat: False,
     held: [],
+    unit_states: [],
     withheld:,
   )
 }

@@ -118,6 +118,7 @@ import genesis_prime/game/spell_surge
 import genesis_prime/game/strike
 import genesis_prime/game/strike_tell.{type Answered}
 import genesis_prime/game/target_group
+import genesis_prime/game/unit_state
 import genesis_prime/game/world_entry
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/message/unit_health.{UnitHealth}
@@ -572,6 +573,7 @@ fn activate_target(
         hostile_to:,
         in_combat:,
         held:,
+        unit_states:,
         ..,
       )) ->
         usable(
@@ -587,6 +589,7 @@ fn activate_target(
           alive:,
           in_combat:,
           held: list.map(held, fn(held) { held.state }),
+          unit_states: list.map(unit_states, fn(held) { held.state }),
           withheld: case in_combat {
             True -> Some(activate.InCombat)
             False ->
@@ -613,6 +616,7 @@ fn activate_target(
           alive: True,
           in_combat: False,
           held: [],
+          unit_states: [],
           withheld: None,
         )
     }
@@ -631,6 +635,7 @@ fn usable(
   alive alive: Bool,
   in_combat in_combat: Bool,
   held held: List(CrowdControlState),
+  unit_states unit_states: List(Int),
   withheld withheld: Option(activate.Withheld),
 ) -> activate.Target {
   case
@@ -651,6 +656,7 @@ fn usable(
         alive:,
         in_combat:,
         held:,
+        unit_states:,
         withheld:,
       )
     Error(Nil) -> activate.Unseen
@@ -1161,6 +1167,25 @@ fn carried_out(
         ),
       ])
       cast_state.CreatureDespawns(..), None -> #(session, [])
+      cast_state.CreatureHoldsUnitStates(
+        unit_id:,
+        life:,
+        struck_at_ms:,
+        went_at_ms:,
+        rows:,
+      ),
+        Some(entered)
+      -> #(session, [
+        creature_holds_unit_states(
+          entered:,
+          unit_id:,
+          life:,
+          struck_at_ms:,
+          went_at_ms:,
+          rows:,
+        ),
+      ])
+      cast_state.CreatureHoldsUnitStates(..), None -> #(session, [])
     }
     #(session, list.append(done, more))
   })
@@ -1332,6 +1357,28 @@ fn creature_despawned(
       struck_at_ms:,
       went_at_ms:,
     ),
+  ))
+}
+
+/// The unit states the go holds on the creature `unit_id` of `life`, in the run of the player's
+/// map, through the creature registry with no watch, as a removal goes: the connection tells
+/// the creature `TellUnitStates` with the go's `rows` and the two times, and draws nothing.
+fn creature_holds_unit_states(
+  entered entered: world_entry.Entered,
+  unit_id unit_id: Int,
+  life life: Int,
+  struck_at_ms struck_at_ms: Int,
+  went_at_ms went_at_ms: Int,
+  rows rows: List(unit_state.Row),
+) -> Effect(ConnectionEffect(Request)) {
+  OwnEffect(step.Tell(
+    to: step.Creature(
+      map: entered.map,
+      incarnation: entered.incarnation,
+      unit_id:,
+      life:,
+    ),
+    request: client_connection.TellUnitStates(rows:, struck_at_ms:, went_at_ms:),
   ))
 }
 
@@ -1633,6 +1680,8 @@ pub fn creature_news_frames(
     | client_connection.Shield(..)
     | client_connection.CrowdControlApplied(..)
     | client_connection.CrowdControlEnded(..)
+    | client_connection.UnitStateHeld(..)
+    | client_connection.UnitStateEnded(..)
     | client_connection.InterruptArmor(..)
     | client_connection.Absorption(..)
     | client_connection.Level(..)

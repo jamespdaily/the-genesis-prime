@@ -22,6 +22,7 @@ import genesis_prime/game/spell_plan.{
   GainEffect, HealEffect, Held, LastingEffect, LeftOut, ModifierEffect,
   ProcEffect, ProxyEffect, ReadByActivation, ReadByArea, ReadEffects, ReadProc,
   ReadProxy, RemoveEffect, RemoveStealthEffect, StealthEffect, StruckMoveEffect,
+  UnitStateEffect,
 }
 import genesis_prime/table/spell4_effects
 import gleam/bool
@@ -137,6 +138,7 @@ fn kind_name(
     HealEffect(..) -> "HealEffect"
     ControlEffect(..) -> "ControlEffect"
     DespawnEffect(..) -> "DespawnEffect"
+    UnitStateEffect(..) -> "UnitStateEffect"
   }
 }
 
@@ -175,7 +177,7 @@ fn outcomes_of(kind kind: effect_kind.Kind) -> List(String) {
     effect_kind.Proc -> ["ReadProc"]
     effect_kind.Activate -> ["ReadByActivation"]
     effect_kind.Despawn -> ["DespawnEffect"]
-    effect_kind.Immunity | effect_kind.Unread(..) -> []
+    effect_kind.Immunity | effect_kind.UnitState | effect_kind.Unread(..) -> []
   }
 }
 

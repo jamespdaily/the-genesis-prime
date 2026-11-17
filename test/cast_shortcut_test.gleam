@@ -171,6 +171,7 @@ fn picture_of(scene scene: Scene) -> shown.Picture {
         held: list.map(unit.held, fn(state) {
           shown.HeldState(state:, instance_id: 1)
         }),
+        unit_states: [],
       ),
     )
   })
@@ -202,6 +203,7 @@ fn target_of(scene scene: Scene) -> fn(Int) -> Target {
               alive: unit.alive,
               in_combat: unit.in_combat,
               held: unit.held,
+              unit_states: [],
               withheld: None,
             )
           }

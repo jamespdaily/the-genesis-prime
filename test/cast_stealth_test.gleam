@@ -149,6 +149,7 @@ fn trace(effects effects: List(Effect)) -> List(String) {
       | cast_state.TargetChangeEnds(..)
       | cast_state.ForcedMoveStarts(..)
       | cast_state.CreatureDespawns(..)
+      | cast_state.CreatureHoldsUnitStates(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..) -> Error(Nil)
     }
@@ -175,6 +176,7 @@ fn changes(effects effects: List(Effect)) -> List(Bool) {
       | cast_state.TargetChangeEnds(..)
       | cast_state.ForcedMoveStarts(..)
       | cast_state.CreatureDespawns(..)
+      | cast_state.CreatureHoldsUnitStates(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..) -> Error(Nil)
     }
@@ -316,6 +318,7 @@ fn goes_apart(
       | cast_state.TargetChangeEnds(..)
       | cast_state.ForcedMoveStarts(..)
       | cast_state.CreatureDespawns(..)
+      | cast_state.CreatureHoldsUnitStates(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
       | cast_state.TickStrike(..)

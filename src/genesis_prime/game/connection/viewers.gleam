@@ -348,6 +348,8 @@ pub fn viewer_takes(
     | client_connection.Shield(..)
     | client_connection.CrowdControlApplied(..)
     | client_connection.CrowdControlEnded(..)
+    | client_connection.UnitStateHeld(..)
+    | client_connection.UnitStateEnded(..)
     | client_connection.InterruptArmor(..)
     | client_connection.Absorption(..)
     | client_connection.Level(..)
@@ -404,6 +406,7 @@ pub fn viewer_takes(
             hostile_to:,
             in_combat: False,
             held: [],
+            unit_states: [],
           ),
         )),
         [
@@ -703,6 +706,24 @@ pub fn viewer_takes(
         ),
       ])
     }
+    client_connection.UnitStateHeld(state:, number:) -> {
+      use <- bool.guard(when: !shown, return: Continue(session, []))
+      Continue(
+        shown_changed(session:, change: fn(picture) {
+          shown.with_unit_state_held(picture:, unit_id:, state:, number:)
+        }),
+        [],
+      )
+    }
+    client_connection.UnitStateEnded(number:) -> {
+      use <- bool.guard(when: !shown, return: Continue(session, []))
+      Continue(
+        shown_changed(session:, change: fn(picture) {
+          shown.with_unit_state_ended(picture:, unit_id:, number:)
+        }),
+        [],
+      )
+    }
   }
 }
 
@@ -810,6 +831,8 @@ fn creature_news(
     | client_connection.Shield(..)
     | client_connection.CrowdControlApplied(..)
     | client_connection.CrowdControlEnded(..)
+    | client_connection.UnitStateHeld(..)
+    | client_connection.UnitStateEnded(..)
     | client_connection.InterruptArmor(..)
     | client_connection.Absorption(..)
     | client_connection.Level(..)
@@ -902,6 +925,8 @@ fn life_news(
     | client_connection.Shield(..)
     | client_connection.CrowdControlApplied(..)
     | client_connection.CrowdControlEnded(..)
+    | client_connection.UnitStateHeld(..)
+    | client_connection.UnitStateEnded(..)
     | client_connection.InterruptArmor(..)
     | client_connection.Absorption(..)
     | client_connection.Level(..)

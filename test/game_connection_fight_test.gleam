@@ -20,6 +20,7 @@ import genesis_prime/game/connection/state.{Settings}
 import genesis_prime/game/loadout
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
+import genesis_prime/game/unit_state
 import genesis_prime/message/cast_result
 import genesis_prime/message/float32
 import genesis_prime/message/movement_float_vector.{MovementFloatVector}
@@ -1092,6 +1093,8 @@ fn to_the_beast(taken: ConnectionStep(Request)) -> List(creature.Message) {
             Ok(creature.Thrown(throw:, struck_at_ms:))
           client_connection.TellDespawn(delay_ms:, struck_at_ms:, went_at_ms:) ->
             Ok(creature.Despawn(delay_ms:, struck_at_ms:, went_at_ms:))
+          client_connection.TellUnitStates(rows:, struck_at_ms:, went_at_ms:) ->
+            Ok(creature.UnitStates(rows:, struck_at_ms:, went_at_ms:))
           AskStore(..)
           | AskHandOff(..)
           | AskSessions(..)
@@ -1855,4 +1858,100 @@ pub fn gated_strike_on_a_creature_shows_no_hit_test() -> Nil {
   let goes = game_connection_support.decoded(frames, 0x07F4, spell_go.decode)
   assert list.map(goes, fn(go) { go.phase }) == [0, 1, 2, 3, 4, 5]
     as "the channel still goes at each of its six pulses (Spell4.41276): only the gated row is left out"
+}
+
+/// The unit states a step tells creatures, as the creature's unit, its life and the request.
+fn unit_states_told(
+  taken: ConnectionStep(Request),
+) -> List(#(Int, Int, client_connection.Request)) {
+  list.filter_map(support.effects_of(taken), fn(effect) {
+    case effect {
+      OwnEffect(step.Tell(
+        to: step.Creature(unit_id:, life:, ..),
+        request: client_connection.TellUnitStates(..) as request,
+      )) -> Ok(#(unit_id, life, request))
+      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+        Error(Nil)
+    }
+  })
+}
+
+/// Paralytic Surge pressed at 1000 ms on the Beast the client shows, its round answered
+/// landed at 1100 ms: the steps the answers take, on the tables with Spell4Effects 99097
+/// added as a copy of Surge's CCStateSet row 96126 (targetFlags 4, phaseFlags -1) made a
+/// UnitStateSet row of state 6, delay 500 ms and duration 2000 ms (Spell4Effects 204411's
+/// shape) with these columns.
+fn surge_with_a_unit_state_row(
+  columns columns: List(#(String, planted_table.Cell)),
+) -> List(ConnectionStep(Request)) {
+  fixture_tables.added(
+    table: "Spell4Effects",
+    copy_of: 96_126,
+    id: 99_097,
+    with: [
+      #("effectType", planted_table.Integer(15)),
+      #("dataBits00", planted_table.Integer(6)),
+      #("dataBits03", planted_table.Integer(0)),
+      #("delayTime", planted_table.Integer(500)),
+      #("durationTime", planted_table.Integer(2000)),
+      ..columns
+    ],
+    body: fn(tables) {
+      let #(state, _) =
+        game_connection_support.feed(
+          game_connection_support.medic_in(tables),
+          game_connection_support.beast_appears(unit_id: 40),
+        )
+      let #(state, pressed) =
+        game_connection_support.press_paralytic_surge_at(
+          state:,
+          client_cast_id: 1,
+          ms: 1000,
+        )
+      let #(_, answered) =
+        list.fold(
+          game_connection_support.strikes_told(pressed),
+          #(state, []),
+          fn(so_far, strike) {
+            let #(state, steps) = so_far
+            let #(state, taken) =
+              game_connection_support.at(
+                state:,
+                ms: 1100,
+                event: game_connection_support.landed(key: strike.1),
+              )
+            #(state, list.append(steps, [taken]))
+          },
+        )
+      [pressed, ..answered]
+    },
+  )
+}
+
+pub fn a_creature_holds_unit_states_effect_becomes_a_tell_to_that_creature_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Spell4Effects 99097 is a type 15 row aimed at the area (targetFlags 4) of state 6 with a
+  // delay of 500 ms and a duration of 2000 ms; Paralytic Surge's area holds the Beast, unit
+  // 40, which the client shows in life 4 (`beast_appears`: its 0x262 news). The round opens
+  // at the press, 1000 ms, and the go comes at the answer, 1100 ms.
+  let steps = surge_with_a_unit_state_row(columns: [])
+  assert list.flat_map(steps, unit_states_told)
+    == [
+      #(
+        40,
+        4,
+        client_connection.TellUnitStates(
+          rows: [unit_state.Row(state: 6, delay_ms: 500, duration_ms: 2000)],
+          struck_at_ms: 1000,
+          went_at_ms: 1100,
+        ),
+      ),
+    ]
+    as "the connection tells the creature of that life, with the row's state, delay and duration, the round's time and the go's time, and tells no other"
+  assert list.all(steps, fn(taken) {
+    list.all(game_connection_support.written_ids(taken), fn(id) {
+      id != 0x0355 && id != 0x087F
+    })
+  })
+    as "the tell draws nothing for the caster: the client reads no row of the type"
 }

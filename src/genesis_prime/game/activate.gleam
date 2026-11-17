@@ -30,7 +30,7 @@
 ////   own activate spell passes, and the rest are refused 89.
 //// - A spell with an effect the strike would apply, aimed at the target or an area, is
 ////   refused with result 285 and logged once, since the activate cast strikes no unit
-////   (gap, #336); a heal, RavelSignal or DespawnUnit row aimed there is dropped instead
+////   (gap, #336); a heal, RavelSignal, DespawnUnit or UnitStateSet row aimed there is dropped instead
 ////   (`activate_rows_of`).
 //// - **The target's life** is judged before the range: the spell's target row says a dead
 ////   creature is refused 106 or a living one 107 (`CheckCastUnitTargetRange`,
@@ -521,11 +521,15 @@ type ActivateRows {
 }
 
 /// The rows of an activate spell that the activate cast drops, aimed at the target or an
-/// area, in row order: RavelSignal rows, which start a script the server does not have, and
-/// DespawnUnit rows, which remove a creature the activate cast has no strike to name
-/// (`activate_rows_of`).
+/// area, in row order: RavelSignal rows, which start a script the server does not have,
+/// DespawnUnit rows, which remove a creature the activate cast has no strike to name, and
+/// UnitStateSet rows, which hold a state on a creature the same way (`activate_rows_of`).
 pub type Dropped {
-  Dropped(signals: List(Spell4EffectsId), despawns: List(Spell4EffectsId))
+  Dropped(
+    signals: List(Spell4EffectsId),
+    despawns: List(Spell4EffectsId),
+    unit_states: List(Spell4EffectsId),
+  )
 }
 
 /// Whether a row's effect reaches a unit past the caster: its aim names the primary target or
@@ -563,6 +567,10 @@ fn reaches_past_caster(effect effect: Spell4Effects) -> Bool {
 /// activate spell 85452 holds two such rows. They are returned, and the cast logs them
 /// once when it drops them (`cast.activation_started`).
 ///
+/// A UnitStateSet row aimed at the target or an area is dropped the same way, since the
+/// activate cast strikes no creature to hold the state: no client row of the type sits in an
+/// activated spell, so no activation of the client's data is affected.
+///
 /// A DespawnUnit row aimed at the target or an area is dropped the same way: it removes the
 /// creatures a strike hits and the activate cast strikes none, and the unit a player
 /// activates may be a static object, which the map retires. 218 rows of the tables are
@@ -585,6 +593,7 @@ fn activate_rows_of(
       == effect_kind.RavelSignal
     })
   let #(despawns, others) = list.partition(others, drops_despawn)
+  let #(unit_states, others) = list.partition(others, drops_unit_state)
   case
     list.find(others, fn(effect) {
       reaches_past_caster(effect:)
@@ -608,6 +617,9 @@ fn activate_rows_of(
         dropped: Dropped(
           signals: list.map(signals, fn(effect) { Spell4EffectsId(effect.id) }),
           despawns: list.map(despawns, fn(effect) { Spell4EffectsId(effect.id) }),
+          unit_states: list.map(unit_states, fn(effect) {
+            Spell4EffectsId(effect.id)
+          }),
         ),
       ))
   }
@@ -618,6 +630,14 @@ fn activate_rows_of(
 /// row to remove, in whatever spell a creature's activate column names.
 pub fn drops_despawn(effect effect: Spell4Effects) -> Bool {
   effect_kind.kind_of(effect_type: effect.effect_type) == effect_kind.Despawn
+  && reaches_past_caster(effect:)
+}
+
+/// Whether the activate cast drops this effect of its spell: a UnitStateSet row that reaches a
+/// unit past the caster. The activate cast strikes no creature, so there is none to hold the
+/// state.
+fn drops_unit_state(effect effect: Spell4Effects) -> Bool {
+  effect_kind.kind_of(effect_type: effect.effect_type) == effect_kind.UnitState
   && reaches_past_caster(effect:)
 }
 
@@ -669,6 +689,9 @@ pub type Target {
     /// The crowd-control states the creature holds as the player's client was told, which
     /// the cast's target conditions refuse (Spell4CCConditions `ccStateMask`).
     held: List(CrowdControlState),
+    /// The unit states the creature holds as the player's picture shows them, by number
+    /// (genesis_prime/game/unit_state), which a hostile or beneficial press is refused for.
+    unit_states: List(Int),
     withheld: Option(Withheld),
   )
 }

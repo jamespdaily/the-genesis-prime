@@ -359,6 +359,8 @@ fn ticks_told(effects effects: List(Effect)) -> List(#(ConnectionId, News)) {
       | client_connection.Shield(..)
       | client_connection.CrowdControlApplied(..)
       | client_connection.CrowdControlEnded(..)
+      | client_connection.UnitStateHeld(..)
+      | client_connection.UnitStateEnded(..)
       | client_connection.InterruptArmor(..)
       | client_connection.Absorption(..)
       | client_connection.Level(..)

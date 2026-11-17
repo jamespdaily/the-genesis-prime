@@ -16,6 +16,10 @@
 ////   comes back at the kind's respawn time (`death.creature_respawn`, 60 000 ms here) as a
 ////   corpse does. The delay runs from the go. The rest of its rule is the doc comment of
 ////   `creature.Despawn`.
+//// - A UnitStateSet effect (Spell4Effects type 15) holds a unit state on the creature from the
+////   go for its delay plus duration. The client reads no such row, so what a state does is the
+////   server's reading (`genesis_prime/game/unit_state`); the rest of the rule is the doc
+////   comment of `creature.UnitStates`.
 
 import cast_support
 import connection_rule_support as support
@@ -30,6 +34,7 @@ import genesis_prime/game/hit.{Blow, Offence, Rolls, Worked}
 import genesis_prime/game/start_place
 import genesis_prime/game/strike_tell.{Answered, Key, Landed, Refused, Strike}
 import genesis_prime/game/unit_properties.{type Modifier, type Source, Change}
+import genesis_prime/game/unit_state
 import genesis_prime/message/float32
 import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
 import genesis_prime/step.{
@@ -52,6 +57,7 @@ import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/spawn_source
 import genesis_prime/world_map/stay.{type Stay}
 import genesis_prime/world_map/unit_fields
+import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{None}
@@ -2611,4 +2617,560 @@ pub fn a_run_only_creature_that_is_despawned_stops_at_its_corpse_timer_test() ->
   assert support.stops(taken) as "the creature stops, so its map ends the spawn"
   assert outgoing(taken) == []
     as "each viewer was sent its 0x355 at the removal: no second one, and no 0x262 that stands it again"
+}
+
+// ---- held unit states (issue 795) ----
+//
+// A go's UnitStateSet rows (Spell4Effects type 15) reach the Beast as `UnitStates`; state 6
+// (row 64365's, Spell4 32683 "Stun/Immune - 8 seconds": 8500 ms) is read as one that blocks
+// hostile effects (`unit_state.blocks_hostile`, a reading guessed from spell names). The Beast
+// is watched by connections 2 and 5 from 5000, and a go at 6000 told it the state, which ends
+// at 14 500. The unit-state timer is `TimerId(4)`. The Beast's health is 52.
+
+const unit_state_timer = TimerId(4)
+
+/// The rows of a go at `went_at_ms`, struck 100 ms before as its round opened.
+fn unit_states_at(
+  rows rows: List(unit_state.Row),
+  went_at_ms went_at_ms: Int,
+) -> creature.Message {
+  creature.UnitStates(rows:, struck_at_ms: went_at_ms - 100, went_at_ms:)
+}
+
+/// Row 64365: state 6 for 8500 ms, no delay.
+fn state_6_for_8500() -> unit_state.Row {
+  unit_state.Row(state: 6, delay_ms: 0, duration_ms: 8500)
+}
+
+/// The watched Beast after a go at 6000 holds state 6 on it until 14 500.
+fn invulnerable_by_two() -> State {
+  holding_state_6(state: watched_by_two())
+}
+
+/// This creature after a go at 6000 holds state 6 on it until 14 500.
+fn holding_state_6(state state: State) -> State {
+  told(
+    state:,
+    at_ms: 6000,
+    message: unit_states_at(rows: [state_6_for_8500()], went_at_ms: 6000),
+  ).0
+}
+
+/// The unit-state news the step sends, as the viewer's number and the news, in order.
+fn unit_state_news(
+  taken: ServiceStep(creature.Outgoing),
+) -> List(#(Int, client_connection.News)) {
+  list.filter_map(sent(taken), fn(one) {
+    case one.1 {
+      PeerNews(news: client_connection.UnitStateHeld(state:, number:), ..) ->
+        Ok(#(one.0, client_connection.UnitStateHeld(state:, number:)))
+      PeerNews(news: client_connection.UnitStateEnded(number:), ..) ->
+        Ok(#(one.0, client_connection.UnitStateEnded(number:)))
+      PeerNews(..) -> Error(Nil)
+    }
+  })
+}
+
+fn held(state state: Int, number number: Int) -> client_connection.News {
+  client_connection.UnitStateHeld(state:, number:)
+}
+
+fn unit_state_ended(number number: Int) -> client_connection.News {
+  client_connection.UnitStateEnded(number:)
+}
+
+/// The viewers the step sends a state that took hold on the creature.
+fn states_applied_to(taken: ServiceStep(creature.Outgoing)) -> List(Int) {
+  list.filter_map(sent(taken), fn(one) {
+    case one.1 {
+      PeerNews(news: client_connection.CrowdControlApplied(..), ..) -> Ok(one.0)
+      PeerNews(..) -> Error(Nil)
+    }
+  })
+}
+
+/// Whether the answer is the creature's immunity.
+fn is_immune(outcome: strike_tell.Outcome) -> Bool {
+  case outcome {
+    strike_tell.Immune(..) -> True
+    Landed(..) | strike_tell.Deflected(..) | Refused(..) -> False
+  }
+}
+
+/// A strike of connection 2 with Stagger's Stun and no blow.
+fn stunning_strike_without_blows(cast_id cast_id: Int) -> creature.Message {
+  let assert creature.Strike(tell:) = strike_of(damage: 1, cast_id:)
+  creature.Strike(
+    tell: Strike(..tell, offence: Offence(..tell.offence, blows: []), controls: [
+      crowd_control_support.stagger_stun(instance_id: 28_673),
+    ]),
+  )
+}
+
+pub fn a_held_unit_state_is_told_to_each_viewer_in_connection_order_and_ended_by_timer_4_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, taken) =
+    told(
+      state: watched_by_two(),
+      at_ms: 6000,
+      message: unit_states_at(rows: [state_6_for_8500()], went_at_ms: 6000),
+    )
+  assert unit_state_news(taken)
+    == [#(2, held(state: 6, number: 1)), #(5, held(state: 6, number: 1))]
+    as "each viewer, in the order of the connections, is told the state under its number"
+  assert timers_started(taken) == [#(unit_state_timer, 8500)]
+    as "one timer, for the end at 14 500"
+  let #(_, ended) = fired(state:, at_ms: 14_500, timer: unit_state_timer)
+  assert unit_state_news(ended)
+    == [#(2, unit_state_ended(number: 1)), #(5, unit_state_ended(number: 1))]
+    as "its fire ends the state for each viewer"
+  assert timers_started(ended) == [] as "no state is left, so no timer"
+}
+
+pub fn unit_states_at_a_dead_despawned_or_older_life_creature_are_dropped_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(dead, _) =
+    told(
+      state: watched_by_two(),
+      at_ms: 6000,
+      message: strike_of(damage: 60, cast_id: 1),
+    )
+  let message = unit_states_at(rows: [state_6_for_8500()], went_at_ms: 6500)
+  let #(_, to_dead) = told(state: dead, at_ms: 6500, message:)
+  assert support.effects_of(to_dead) == [] as "a corpse holds no state"
+  let #(_, to_gone) = told(state: despawned_by_two(), at_ms: 6500, message:)
+  assert support.effects_of(to_gone) == []
+    as "a creature that left the field holds no state"
+  let #(back, _) = fired(state: dead, at_ms: 66_000, timer: corpse_timer)
+  let #(_, old) =
+    told(
+      state: back,
+      at_ms: 66_500,
+      message: creature.UnitStates(
+        rows: [state_6_for_8500()],
+        struck_at_ms: 65_000,
+        went_at_ms: 66_400,
+      ),
+    )
+  assert support.effects_of(old) == []
+    as "struck at 65000, before the creature stood again at 66000: a round of the life before"
+  let #(_, new) =
+    told(
+      state: back,
+      at_ms: 66_500,
+      message: creature.UnitStates(
+        rows: [state_6_for_8500()],
+        struck_at_ms: 66_000,
+        went_at_ms: 66_400,
+      ),
+    )
+  assert unit_state_news(new)
+    == [#(2, held(state: 6, number: 1)), #(5, held(state: 6, number: 1))]
+    as "struck at the moment it stood again: the new life's"
+}
+
+pub fn the_unit_state_timer_has_its_own_id_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, taken) =
+    told(
+      state: watched_by_two(),
+      at_ms: 6000,
+      message: unit_states_at(rows: [state_6_for_8500()], went_at_ms: 6000),
+    )
+  let assert [#(started, 8500)] = timers_started(taken)
+    as "the hold starts one timer, 8500 ms on"
+  let TimerId(number) = started
+  assert number == 4
+  assert number != 1 && number != 2 && number != 3
+    as "not the corpse's, the refill's or the despawn's"
+  assert number < 7
+    as "a fight timer is 7 times a generation from 1, plus 0 to 3 or 6: from 7"
+  assert creature.control_of(timer: started) == Error(Nil)
+    as "a control's id is 4 above 7 times a number from 1, so from 11"
+  let #(_, despawn_fired) = fired(state:, at_ms: 7000, timer: despawn_timer)
+  assert unit_state_news(despawn_fired) == []
+    as "another timer's fire ends no state"
+}
+
+pub fn a_strike_with_blows_at_an_invulnerable_creature_is_answered_immune_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(_, taken) =
+    told(
+      state: invulnerable_by_two(),
+      at_ms: 7000,
+      message: gated(strike: strike_of(damage: 10, cast_id: 1), gates: [
+        gate(effect_id: 1, condition: #(1, 1, 0, 1)),
+      ]),
+    )
+  assert answer_of(taken)
+    == strike_tell.Immune(controls: [], armor_removed: 0, gates_passed: [1])
+    as "the blow is answered immune, naming the gate that passed"
+  assert health_news(taken) == [] as "no health is lost and no 0x937 is sent"
+  let #(_, killing) =
+    told(
+      state: invulnerable_by_two(),
+      at_ms: 7000,
+      message: strike_of(damage: 60, cast_id: 2),
+    )
+  assert answer_of(killing)
+    == strike_tell.Immune(controls: [], armor_removed: 0, gates_passed: [])
+    as "damage past the creature's health takes nothing too"
+  let kinds = kinds_of(outgoing(killing))
+  assert !list.contains(kinds, "credit to 2")
+    && !list.contains(kinds, "death to 2")
+    && !list.contains(kinds, "death to 5")
+    as "and kills nothing: no credit and no death"
+}
+
+pub fn a_strike_with_only_states_at_an_invulnerable_creature_lands_none_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(_, taken) =
+    told(
+      state: holding_state_6(state: armored_by_two(points: 3)),
+      at_ms: 7000,
+      message: stunning_strike_without_blows(cast_id: 1),
+    )
+  assert answer_of(taken)
+    == strike_tell.Immune(controls: [], armor_removed: 0, gates_passed: [])
+    as "the state is not taken"
+  assert states_applied_to(taken) == [] as "no 0x87f is sent"
+  assert armor_left(taken) == [] as "no armor is worn, so no 0x938"
+}
+
+pub fn a_strike_with_no_hostile_content_ignores_the_unit_state_test() -> Nil {
+  use <- owned_test.run(5000)
+  // A go row of gates only: neither blows nor states reach the creature.
+  let assert creature.Strike(tell:) = strike_of(damage: 1, cast_id: 1)
+  let gate_only =
+    creature.Strike(
+      tell: Strike(..tell, offence: Offence(..tell.offence, blows: []), gates: [
+        gate(effect_id: 1, condition: #(1, 1, 0, 1)),
+      ]),
+    )
+  let #(_, held) =
+    told(state: invulnerable_by_two(), at_ms: 7000, message: gate_only)
+  let #(_, free) =
+    told(state: watched_by_two(), at_ms: 7000, message: gate_only)
+  assert answer_of(held) == answer_of(free)
+    as "answered as for a creature that holds no state"
+  assert !is_immune(answer_of(held))
+}
+
+pub fn a_strike_after_the_state_ends_lands_normally_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    told(
+      state: invulnerable_by_two(),
+      at_ms: 7000,
+      message: strike_of(damage: 10, cast_id: 1),
+    )
+  let #(state, ended) = fired(state:, at_ms: 14_500, timer: unit_state_timer)
+  assert list.length(unit_state_news(ended)) == 2
+  let #(_, hit) =
+    told(state:, at_ms: 15_000, message: strike_of(damage: 10, cast_id: 2))
+  let assert Landed(descriptions: [_], ..) = answer_of(hit)
+    as "the blow lands as on any creature"
+  assert list.all(health_news(hit), fn(news) { news.1 == 42 })
+    as "the Beast loses 10 of its 52 health"
+  let #(_, stunned) =
+    told(
+      state: holding_state_6(state: armored_by_two(points: 3)),
+      at_ms: 14_600,
+      message: stunning_strike(cast_id: 3),
+    )
+  let assert Landed(armor_removed: 1, ..) = answer_of(stunned)
+    as "the stun wears one point of the armor after the end, as on any creature"
+  assert armor_left(stunned) == [#(2, 2), #(5, 2)]
+}
+
+pub fn a_strike_after_the_end_but_before_the_timer_fires_lands_normally_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The hold ended at 14 500; its timer's message has not reached the creature yet.
+  let #(_, hit) =
+    told(
+      state: invulnerable_by_two(),
+      at_ms: 14_500,
+      message: strike_of(damage: 10, cast_id: 1),
+    )
+  let assert Landed(descriptions: [_], ..) = answer_of(hit)
+    as "a hold past its end blocks nothing"
+  Nil
+}
+
+pub fn a_tick_at_an_invulnerable_creature_is_answered_immune_test() -> Nil {
+  use <- owned_test.run(5000)
+  let assert creature.Strike(tell:) = strike_of(damage: 3, cast_id: 1)
+  let tick = fn(number) {
+    creature.Strike(
+      tell: Strike(
+        ..tell,
+        key: Key(
+          cast_id: 1,
+          occasion: strike_tell.AtTick(
+            effect_id: id.Spell4EffectsId(9),
+            go: 1,
+            tick: number,
+          ),
+          unit_id: 7,
+        ),
+      ),
+    )
+  }
+  let #(state, first) =
+    told(state: invulnerable_by_two(), at_ms: 7000, message: tick(1))
+  let #(_, second) = told(state:, at_ms: 8000, message: tick(2))
+  assert is_immune(answer_of(first)) && is_immune(answer_of(second))
+    as "each tick is answered immune"
+  assert health_news(first) == [] && health_news(second) == []
+    as "and costs no health"
+}
+
+pub fn an_immune_strike_threatens_the_creature_as_a_guarded_one_does_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The guard's `Immune` threatens the creature with the threat of no description (a guess):
+  // the strike pulls the creature into a fight as a landed strike does.
+  let #(_, blocked) =
+    told(
+      state: invulnerable_by_two(),
+      at_ms: 7000,
+      message: strike_of(damage: 10, cast_id: 1),
+    )
+  let #(_, landed) =
+    told(
+      state: watched_by_two(),
+      at_ms: 7000,
+      message: strike_of(damage: 10, cast_id: 1),
+    )
+  assert timers_started(blocked) == timers_started(landed)
+    as "the creature starts the attack tick it starts for any strike that threatens it"
+  assert timers_started(blocked) != []
+}
+
+pub fn a_guarded_creature_with_a_held_state_answers_one_immune_test() -> Nil {
+  use <- owned_test.run(5000)
+  let assert Ok(turret) =
+    dict.get(spawn_support.guarded_turret_kinds().by_creature, 73_494)
+    as "the guarded turret's kind carries the guard"
+  let #(guarded, _) =
+    feed(
+      state: creature.new(Settings(
+        creature: CreatureStart(
+          map: ship,
+          incarnation: 1,
+          unit_id: 7,
+          life: 3,
+          spawn: spawn_source.Stored(id: SpawnId(1)),
+          clock_origin_ms:,
+          viewers: [#(ConnectionId(2), map_support.stay(count: 2))],
+        ),
+        spawn: spawn_support.battle_beast(number: 1, x: 0.0),
+        kind: Kind(
+          respawn_ms: 60_000,
+          attack_spell4_id: Spell4Id(5649),
+          attack_interval_ms: 1500,
+          guard: turret.guard,
+        ),
+        numbers: spawn_support.numbers,
+      )),
+      at_ms: 5000,
+      event: OwnEvent(Started),
+    )
+  let with_stun = fn(state) {
+    let assert creature.Strike(tell:) = strike_of(damage: 10, cast_id: 1)
+    told(
+      state:,
+      at_ms: 7000,
+      message: creature.Strike(
+        tell: Strike(..tell, controls: [
+          crowd_control_support.stagger_stun(instance_id: 28_673),
+        ]),
+      ),
+    )
+  }
+  let #(_, guard_only) = with_stun(guarded)
+  let assert strike_tell.Immune(controls: [_], ..) = answer_of(guard_only)
+    as "the guard alone takes the blow as immune and lets the state land"
+  let #(_, both) = with_stun(holding_state_6(state: guarded))
+  assert answer_of(both)
+    == strike_tell.Immune(controls: [], armor_removed: 0, gates_passed: [])
+    as "with the state held the creature answers one immune and the state does not land"
+}
+
+pub fn a_throw_at_an_invulnerable_creature_is_dropped_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, thrown) =
+    told(state: invulnerable_by_two(), at_ms: 7000, message: thrown_at(7000))
+  assert support.effects_of(thrown) == []
+    as "a creature that takes no hostile effect is not thrown"
+  let #(state, _) = fired(state:, at_ms: 14_500, timer: unit_state_timer)
+  let #(_, after) = told(state:, at_ms: 14_600, message: thrown_at(14_600))
+  assert flown_to(after) == [2, 5] as "after the end the throw moves it"
+  let #(_, before_timer) =
+    told(
+      state: invulnerable_by_two(),
+      at_ms: 14_500,
+      message: thrown_at(14_500),
+    )
+  assert flown_to(before_timer) == [2, 5]
+    as "a hold past its end blocks no throw, though its timer has not fired"
+}
+
+pub fn a_modifier_at_a_creature_holding_a_blocking_state_is_dropped_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, modified) =
+    told(
+      state: invulnerable_by_two(),
+      at_ms: 7000,
+      message: starting(
+        source: thorns_source(),
+        modifier: thorns(),
+        struck_at_ms: 7000,
+      ),
+    )
+  assert support.effects_of(modified) == []
+    as "a creature that takes no hostile effect takes no struck-change modifier, as it takes no throw"
+  let #(state, _) = fired(state:, at_ms: 14_500, timer: unit_state_timer)
+  let #(_, after) =
+    told(
+      state:,
+      at_ms: 14_600,
+      message: starting(
+        source: thorns_source(),
+        modifier: thorns(),
+        struck_at_ms: 14_600,
+      ),
+    )
+  assert support.effects_of(after) != []
+    as "once the state has ended the same modifier lands: the earlier one was dropped, not held"
+}
+
+pub fn a_despawn_still_removes_an_invulnerable_creature_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(_, taken) =
+    told(
+      state: invulnerable_by_two(),
+      at_ms: 7000,
+      message: despawn_at(delay_ms: 0, went_at_ms: 7000),
+    )
+  assert kinds_of(outgoing(taken)) == ["removal to 2", "removal to 5"]
+    as "a removal is not a hostile effect"
+}
+
+pub fn a_viewer_arriving_while_states_are_held_is_told_them_after_the_0x262_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    told(
+      state: watched_by_two(),
+      at_ms: 6000,
+      message: unit_states_at(
+        rows: [
+          state_6_for_8500(),
+          unit_state.Row(state: 13, delay_ms: 0, duration_ms: 2000),
+        ],
+        went_at_ms: 6000,
+      ),
+    )
+  let nine = ConnectionId(9)
+  let #(state, arrived) =
+    told(
+      state:,
+      at_ms: 7000,
+      message: Watched(by: nine, stay: map_support.stay(count: 9)),
+    )
+  assert kinds_of(outgoing(arrived)) == ["creation to 9", "other", "other"]
+    as "the 0x262, then one news per held state"
+  assert unit_state_news(arrived)
+    == [#(9, held(state: 6, number: 1)), #(9, held(state: 13, number: 2))]
+  let #(state, again) =
+    told(
+      state:,
+      at_ms: 7500,
+      message: Watched(by: nine, stay: map_support.stay(count: 9)),
+    )
+  assert kinds_of(outgoing(again)) == ["creation to 9", "other", "other"]
+    as "a repeated Watched is told the creature and its states again"
+  let #(state, ended) = fired(state:, at_ms: 8000, timer: unit_state_timer)
+  assert unit_state_news(ended)
+    == [
+      #(2, unit_state_ended(number: 2)),
+      #(5, unit_state_ended(number: 2)),
+      #(9, unit_state_ended(number: 2)),
+    ]
+    as "the state that ended is ended for the new viewer too"
+  let #(state, late) =
+    told(
+      state:,
+      at_ms: 8100,
+      message: Watched(by: ConnectionId(11), stay: map_support.stay(count: 11)),
+    )
+  assert unit_state_news(late) == [#(11, held(state: 6, number: 1))]
+    as "only the state still held is told"
+  let #(_, left) = told(state:, at_ms: 8200, message: Unwatched(by: nine))
+  assert kinds_of(outgoing(left)) == ["removal to 9"]
+    as "a viewer that leaves gets its Removed"
+}
+
+pub fn a_viewer_a_creature_starts_with_is_told_the_states_it_holds_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The Started input tells each viewer the creature as it stands, held states included.
+  let #(state, _) =
+    told(
+      state: creature_for(viewers: [ConnectionId(2)]),
+      at_ms: 6000,
+      message: unit_states_at(rows: [state_6_for_8500()], went_at_ms: 6000),
+    )
+  let #(_, started) = feed(state:, at_ms: 7000, event: OwnEvent(Started))
+  assert unit_state_news(started) == [#(2, held(state: 6, number: 1))]
+}
+
+pub fn a_despawn_clears_the_held_unit_states_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(gone, removed) =
+    told(
+      state: invulnerable_by_two(),
+      at_ms: 7000,
+      message: despawn_at(delay_ms: 0, went_at_ms: 7000),
+    )
+  assert timers_cancelled(removed) == [unit_state_timer]
+    as "the running timer is cancelled with the removal"
+  assert unit_state_news(removed) == []
+    as "no UnitStateEnded: the Removed clears the viewers' pictures"
+  let #(_, stale) = fired(state: gone, at_ms: 14_500, timer: unit_state_timer)
+  assert support.effects_of(stale) == []
+    as "a fire already queued at the removal ends nothing"
+  let #(back, _) = fired(state: gone, at_ms: 67_000, timer: corpse_timer)
+  let #(back, arrived) =
+    told(
+      state: back,
+      at_ms: 67_100,
+      message: Watched(by: ConnectionId(9), stay: map_support.stay(count: 9)),
+    )
+  assert unit_state_news(arrived) == []
+    as "the creature that stands again holds none"
+  let #(_, struck) =
+    told(state: back, at_ms: 67_200, message: strike_of(damage: 10, cast_id: 3))
+  let assert Landed(descriptions: [_], ..) = answer_of(struck)
+    as "and is struck as any creature"
+  Nil
+}
+
+pub fn a_kill_clears_the_held_unit_states_and_cancels_the_timer_test() -> Nil {
+  use <- owned_test.run(5000)
+  // State 1 has no reading, so a creature that holds it can be killed.
+  let #(state, _) =
+    told(
+      state: watched_by_two(),
+      at_ms: 6000,
+      message: unit_states_at(
+        rows: [unit_state.Row(state: 1, delay_ms: 0, duration_ms: 8500)],
+        went_at_ms: 6000,
+      ),
+    )
+  let #(dead, killed) =
+    told(state:, at_ms: 7000, message: strike_of(damage: 60, cast_id: 1))
+  assert timers_cancelled(killed) == [unit_state_timer]
+    as "a kill cancels the running timer"
+  let #(_, stale) = fired(state: dead, at_ms: 14_500, timer: unit_state_timer)
+  assert support.effects_of(stale) == []
+    as "a fire already queued at the kill ends nothing"
 }
