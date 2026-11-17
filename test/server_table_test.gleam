@@ -47,13 +47,14 @@ import owned_test
 import planted_table
 import simplifile
 
-pub fn the_servers_tables_are_the_seventy_four_its_rules_read_test() -> Nil {
+pub fn the_servers_tables_are_the_seventy_five_its_rules_read_test() -> Nil {
   use <- owned_test.run(5000)
   assert list.map(server_table.entries(), fn(entry) {
       table_store.schema(entry).table
     })
     |> list.sort(string.compare)
     == [
+      "CCStateAdditionalData",
       "CCStates",
       "CharacterCreation",
       "CharacterCustomization",
