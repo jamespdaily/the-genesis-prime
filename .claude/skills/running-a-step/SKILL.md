@@ -18,7 +18,7 @@ Copy this onto the step's issue. Each phase posts its progress line on the issue
 - [ ] Brief and build: one fresh implementer, or two after a shape that splits the build (below), from the brief. Line: the hook's push line.
 - [ ] Reviews (below). Line: "reviews in".
 - [ ] Fix round (below). Line: the hook's push line.
-- [ ] Green: CI passes with no rerun, and the coordinator's `./check` passes on the commit it merges (CI has no client, so only the local run checks the client's parts). Line: the hook's CI line, attempt 1, with the run link in the builder's hand-back.
+- [ ] Green: CI passes with no rerun, and the coordinator's `./check` passes on the commit it merges (CI has no client, so only the local run checks the client's parts). The builder hands back at its push; the coordinator waits on CI with a background `gh pr checks --watch`. Line: the hook's CI line, attempt 1.
 - [ ] Merge on green. The pull request body is the outcome, the issue, and one line per behaviour. Line: the hook's merge line, which also posts the step's measures.
 - [ ] Closing summary (below): the coordinator's notes only. Line: the summary itself.
 ```
@@ -56,7 +56,7 @@ The brief is a "Brief" artifact on the step's issue, and the builder's prompt is
 - **Reuse:** the existing functions, test support and packages a gatherer found for each planned function, by name and file. Reuse what a module shares by importing it or moving it to a shared module; copying a module's glue and tests is what to avoid.
 - **Failure table,** for a step with a shape commit, or with locks, timers or remote steps: each step of the flow, and what happens if it is killed there, run twice at once, or times out. Each row becomes a test, and the shape review reads the table with the shape.
 - **Tests:** the test list, each decision tested at the lowest layer that makes it, and whole-server tests only for what the client sees.
-- **Done when:** `dev/test_list_check.py N origin/main HEAD` exits 0 and CI passes on the commit handed back.
+- **Done when:** `dev/test_list_check.py N origin/main HEAD` exits 0 and the last commit is pushed; the coordinator watches CI.
 - **Live check:** the scenario a live sitting runs.
 - **Scratch:** its own scratch subfolder, `<step>-<role>`.
 
