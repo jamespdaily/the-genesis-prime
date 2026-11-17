@@ -12,7 +12,10 @@
 # The machine's values come from $home/env.sh (default ~/.genesis-prime), never
 # from this repository: GENESIS_PLAY_ADDRESS (this Mac's address on the PC's
 # network, worked out at each read), GENESIS_PLAY_ACCOUNT and
-# GENESIS_PLAY_PGPASSWORD (the play Postgres's password, which install.sh makes).
+# GENESIS_PLAY_PGPASSWORD (the play Postgres's password, which install.sh makes). Two more
+# are optional: GENESIS_PLAY_ALERT_CHANNEL (the Discord channel a failed deploy is posted
+# to) and GENESIS_PLAY_ALERT_TOKEN_FILE (the file holding the bot's DISCORD_BOT_TOKEN=
+# line, the Discord plugin's; the token itself is never in env.sh).
 # provides:
 #   home, state, log_file          where the service keeps its files
 #   log MESSAGE                    appends a time-stamped line to log_file, and prints it when
@@ -32,7 +35,10 @@
 #   run_server IMAGE REVISION ADDRESS   replaces the server container with a new one
 #   wait_up                        waits for the server container's ready line; on a container
 #                                  that exited or restarted, or no line in time, logs its state,
-#                                  exit code and last lines and fails
+#                                  exit code and last lines and fails; sets up_failure to the
+#                                  state, exit code and restarts, without the last lines
+#   alert MESSAGE                  posts one line to the Discord channel; a missing setting or a
+#                                  refused post is logged and never fails the caller
 
 home=${GENESIS_HOME:-$HOME/.genesis-prime}
 state=$home/play-service
@@ -176,18 +182,52 @@ server_failure() {
   return 1
 }
 
+# wait_up: waits for the ready line. When it fails, up_failure holds why in a few words
+# (the state, exit code and restarts, or the asks that passed), safe to post: it holds
+# no line of the container's log.
 wait_up() {
   local waited=0 failure
+  up_failure=
   until server_ready; do
     if failure=$(server_failure); then
+      up_failure=${failure%%; its last lines:*}
       log "$server_container did not come up: $failure"
       return 1
     fi
     waited=$((waited + 1))
     if [ "$waited" -ge "${GENESIS_PLAY_UP_ATTEMPTS:-300}" ]; then
+      up_failure="no ready line in ${GENESIS_PLAY_UP_ATTEMPTS:-300} asks"
       log "$server_container said no ready line in ${GENESIS_PLAY_UP_ATTEMPTS:-300} asks"
       return 1
     fi
     sleep "${GENESIS_PLAY_POLL_SECONDS:-1}"
   done
+}
+
+# alert MESSAGE: posts one line to the Discord channel GENESIS_PLAY_ALERT_CHANNEL with the
+# bot token in the file GENESIS_PLAY_ALERT_TOKEN_FILE (a DISCORD_BOT_TOKEN= line; env.sh
+# holds the two names, never the token). The token goes to curl on its standard input
+# as a config line, so it is in no argument list, no environment and no log; the log
+# gets the HTTP status alone. A missing setting or a failed post is logged and never
+# fails the caller.
+alert() {
+  local token status
+  if [ -z "${GENESIS_PLAY_ALERT_CHANNEL:-}" ] || [ -z "${GENESIS_PLAY_ALERT_TOKEN_FILE:-}" ]; then
+    log "no alert sent: GENESIS_PLAY_ALERT_CHANNEL or GENESIS_PLAY_ALERT_TOKEN_FILE is not set in $home/env.sh"
+    return 0
+  fi
+  token=$(sed -n 's/^DISCORD_BOT_TOKEN=//p' "$GENESIS_PLAY_ALERT_TOKEN_FILE" 2>/dev/null)
+  if [ -z "$token" ]; then
+    log "no alert sent: $GENESIS_PLAY_ALERT_TOKEN_FILE holds no DISCORD_BOT_TOKEN"
+    return 0
+  fi
+  status=$(printf 'header = "Authorization: Bot %s"\nheader = "Content-Type: application/json"\n' "$token" |
+    curl -sS --max-time 15 --config - -o /dev/null -w '%{http_code}' \
+      --data "$(printf '{"content":"%s"}' "$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g')")" \
+      "https://discord.com/api/v10/channels/$GENESIS_PLAY_ALERT_CHANNEL/messages" 2>/dev/null) || status=failed
+  case "$status" in
+    200) log "alert sent to the channel" ;;
+    *) log "alert not sent: Discord answered $status" ;;
+  esac
+  return 0
 }

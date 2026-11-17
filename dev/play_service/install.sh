@@ -20,6 +20,11 @@
 # then: stop any server of another kind first. Needs podman, gh (logged in), git,
 # psql and pg_dump.
 #
+# Two optional names in env.sh turn on the failed-deploy alert, and install.sh makes
+# neither: GENESIS_PLAY_ALERT_CHANNEL (the Discord channel id) and
+# GENESIS_PLAY_ALERT_TOKEN_FILE (the Discord plugin's .env, whose DISCORD_BOT_TOKEN= line
+# is read only when an alert is posted). Without them an alert is logged as not sent.
+#
 # Usage: install.sh
 set -euo pipefail
 

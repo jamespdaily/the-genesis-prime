@@ -46,7 +46,9 @@
 # config.sh from install.sh: the remote, the repository and, to follow a branch
 # other than main before it merges, a `branch=` line. Exits 0 when it did nothing
 # or deployed, 1 when a step failed (the log says which; a server that did not
-# come up is replaced by the last good one).
+# come up is replaced by the last good one). A deploy whose server does not come up
+# posts one line to the Discord channel (alert in lib.sh): the commit, how it failed and
+# whether the last good revision is back up. The restart of an unchanged commit posts none.
 #
 # GENESIS_PLAY_UP_ATTEMPTS (default 300) and GENESIS_PLAY_POLL_SECONDS (default 1)
 # set how long a new container has to say its ready line.
@@ -215,9 +217,11 @@ prune_images() {
 
 # deploy COMMIT: replaces the server container with the commit's image and waits
 # for it to come up. A container that does not is replaced by the last good
-# revision's, and the commit is not tried again. Gives 0 when the commit came up.
+# revision's, and the commit is not tried again; one alert line says how it failed
+# and whether the last good revision is back up (a commit that came up posts none).
+# Gives 0 when the commit came up.
 deploy() {
-  local commit=$1 previous
+  local commit=$1 previous reason outcome
   previous=$(cat "$state/good" 2>/dev/null || true)
   log "replacing $server_container: $commit at $address (was ${deployed_commit:-none})"
   run_server "genesis-play:$commit" "$commit" "$address"
@@ -227,6 +231,7 @@ deploy() {
     prune_images "$commit" "$commit"
     return 0
   fi
+  reason=$up_failure
   skip_commit "$commit"
   if [ -n "$previous" ] && [ "$previous" != "$commit" ] && podman image exists "genesis-play:$previous"; then
     log "$commit did not come up; putting back $previous, and $commit is not tried again"
@@ -234,12 +239,16 @@ deploy() {
     if wait_up; then
       log "$previous is back up"
       prune_images "$previous" "$previous"
+      outcome="${previous:0:8} is back up"
     else
       log "$previous did not come up either"
+      outcome="${previous:0:8} did not come up either"
     fi
   else
     log "$commit did not come up, and no earlier revision came up to put back; $commit is not tried again"
+    outcome="no earlier revision to put back"
   fi
+  alert "genesis play: ${commit:0:8} did not come up ($reason); $outcome"
   return 1
 }
 
