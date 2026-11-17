@@ -19,16 +19,16 @@
 ////   WorldZone id, and a MapZone names a WorldZone (`MapZone.worldZoneId`) that is the area
 ////   or one of its parents (`WorldZone.parentZoneId`).
 //// - **A listed spell is an auto-attack** when the client's Spell4 description starts
-////   `[AUTO-ATTACK]`, its cast time is 0 and the creature attack rule loads it. No client
-////   table links a creature to a spell, so the role is read from that description.
+////   `[AUTO-ATTACK]`, its cast time is 0 and the load's own check of an auto-attack
+////   (`creature_auto_attack.refusal_of`) passes. No client table links a creature to a
+////   spell, so the role is read from that description.
 //// - **Any other listed spell is a special** when the load's own check of a special
-////   (`creature_special.refusal_of`) and the attack rule's load check pass.
+////   (`creature_special.refusal_of`) passes.
 //// - **One tier of a family is kept:** the lowest `tierIndex` listed of a Spell4Base.
 //// - **Orders and the cooldown are guesses**, marked in each row's reason: the auto-attacks by
 ////   their number in the description then the Spell4 id, the specials as the page lists them,
 ////   a special's cooldown a fixed 10,000 ms.
 
-import genesis_prime/game/damage
 import genesis_prime/game/spell_plan
 import genesis_prime/jabbithole_page.{type Ability, type Page}
 import genesis_prime/table/creature2
@@ -38,13 +38,13 @@ import genesis_prime/table/map_zone
 import genesis_prime/table/map_zone_world_join
 import genesis_prime/table/spell4
 import genesis_prime/table/world_zone
-import genesis_prime/world_map/creature_attack
+import genesis_prime/world_map/creature_auto_attack
 import genesis_prime/world_map/creature_special
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
-import gleam/option.{type Option, None, Some}
+import gleam/option.{type Option, Some}
 import gleam/order
 import gleam/result
 import gleam/set.{type Set}
@@ -81,17 +81,8 @@ pub type Refusal {
   NoSpellRow
   /// Another tier of the spell's Spell4Base is listed, and the lowest tier is the one kept.
   OtherTierKept
-  /// The creature has a `creature_kind` row of its own, which names its attack, so an
-  /// auto-attack row would name it twice.
-  KindRowNamesTheAttack
-  /// The attack rule does not evaluate the spell.
-  Unevaluated(unevaluated: creature_attack.Unevaluated)
-  /// The load's check of a special refuses the spell: its sentence.
-  SpecialRefused(sentence: String)
-  /// A damage effect's multiplier is not a finite number.
-  MultiplierNotFinite(spell4_effects_id: Int)
-  /// A damage effect's formula reads a parameter the creature rule does not build.
-  FormulaNotRead(spell4_effects_id: Int, parameter_kind: Int)
+  /// The content load's own check of the row refuses the spell: its sentence.
+  Refused(sentence: String)
 }
 
 /// A listed spell that is not written, with the rule that left it out.
@@ -197,9 +188,9 @@ pub fn plan(
   |> list.map(fn(entry) { of_creature(context:, spawned: entry.1) })
 }
 
-/// What a creature's pages are: its name, its difficulty and the pages it takes spells from.
+/// What a creature's pages are: its name and the pages it takes spells from.
 type Found {
-  Found(name: String, difficulty: Int, pages: List(Page))
+  Found(name: String, pages: List(Page))
 }
 
 fn of_creature(
@@ -211,8 +202,8 @@ fn of_creature(
   let spawns = list.fold(spawned, 0, fn(total, row) { total + row.spawns })
   case found_for(context:, creature_id:, spawned:) {
     Error(why) -> Unmatched(creature_id:, spawns:, why:)
-    Ok(Found(name:, difficulty:, pages:)) ->
-      matched(context:, creature_id:, difficulty:, name:, spawns:, pages:)
+    Ok(Found(name:, pages:)) ->
+      matched(context:, creature_id:, name:, spawns:, pages:)
   }
 }
 
@@ -235,7 +226,7 @@ fn found_for(
     |> result.replace_error(NoPageByName),
   )
   use pages <- result.map(pages_of(context:, spawned:, named:))
-  Found(name:, difficulty: creature.creature2_difficulty_id, pages:)
+  Found(name:, pages:)
 }
 
 /// The pages the creature takes its spells from: those of its name with a spawn of its in
@@ -335,7 +326,6 @@ type Listed {
 fn matched(
   context context: Context,
   creature_id creature_id: Int,
-  difficulty difficulty: Int,
   name name: String,
   spawns spawns: Int,
   pages pages: List(Page),
@@ -359,7 +349,7 @@ fn matched(
   let #(family_left_out, special_candidates) = lowest_tiers(special_candidates)
   let #(autos, autos_left_out) =
     list.map(auto_candidates, fn(listed) {
-      auto_loads(context:, creature_id:, listed:, difficulty:)
+      auto_loads(context:, creature_id:, listed:)
       |> result.map(fn(_) { listed })
       |> result.map_error(fn(why) {
         SpellLeftOut(listed.ability.spell4_id, why)
@@ -368,7 +358,7 @@ fn matched(
     |> result.partition
   let #(specials, specials_left_out) =
     list.map(special_candidates, fn(listed) {
-      special_loads(context:, creature_id:, listed:, difficulty:)
+      special_loads(context:, creature_id:, listed:)
       |> result.map(fn(_) { listed })
       |> result.map_error(fn(why) {
         SpellLeftOut(listed.ability.spell4_id, why)
@@ -471,31 +461,29 @@ fn auto_loads(
   context context: Context,
   creature_id creature_id: Int,
   listed listed: Listed,
-  difficulty difficulty: Int,
 ) -> Result(Nil, Refusal) {
-  use <- bool.guard(
-    when: set.contains(context.kind_creature_ids, creature_id),
-    return: Error(KindRowNamesTheAttack),
-  )
-  use Nil <- result.try(
-    creature_attack.evaluated(
-      tables: context.tables,
+  let row =
+    creature_auto_attack.Row(
+      creature_id:,
       spell4_id: listed.ability.spell4_id,
+      order_index: 0,
     )
-    |> result.map_error(Unevaluated),
-  )
-  loadable(
-    tables: context.tables,
-    spell4_id: listed.ability.spell4_id,
-    difficulty:,
-  )
+  case
+    creature_auto_attack.refusal_of(
+      row:,
+      tables: context.tables,
+      kind_creature_ids: context.kind_creature_ids,
+    )
+  {
+    Ok(sentence) -> Error(Refused(sentence:))
+    Error(Nil) -> Ok(Nil)
+  }
 }
 
 fn special_loads(
   context context: Context,
   creature_id creature_id: Int,
   listed listed: Listed,
-  difficulty difficulty: Int,
 ) -> Result(Nil, Refusal) {
   let row =
     creature_special.Row(
@@ -511,39 +499,9 @@ fn special_loads(
       sources: context.sources,
     )
   {
-    Ok(sentence) -> Error(SpecialRefused(sentence:))
-    Error(Nil) ->
-      loadable(
-        tables: context.tables,
-        spell4_id: listed.ability.spell4_id,
-        difficulty:,
-      )
+    Ok(sentence) -> Error(Refused(sentence:))
+    Error(Nil) -> Ok(Nil)
   }
-}
-
-/// Whether the attack rule builds the spell for a creature of the difficulty: its damage
-/// rows apply and every damage formula is finite and reads only the parameters the creature
-/// rule builds (the spawn load's own check of an attack).
-fn loadable(
-  tables tables: table_store.Tables,
-  spell4_id spell4_id: Int,
-  difficulty difficulty: Int,
-) -> Result(Nil, Refusal) {
-  use effects <- result.try(
-    creature_attack.applying(tables:, spell4_id:, difficulty:)
-    |> result.map_error(Unevaluated),
-  )
-  list.try_each(effects, fn(effect) {
-    use formula <- result.try(
-      damage.formula_of(effect:)
-      |> result.replace_error(MultiplierNotFinite(effect.id)),
-    )
-    case damage.creature_unread(formula:) {
-      Some(damage.Unread(parameter_kind:)) ->
-        Error(FormulaNotRead(effect.id, parameter_kind))
-      None -> Ok(Nil)
-    }
-  })
 }
 
 /// The number the description gives an auto-attack (`Auto-Attack #2`), or a number past any
@@ -635,20 +593,7 @@ pub fn describe(refusal refusal: Refusal) -> String {
     NoSpellRow -> "the client's Spell4 table has no such spell"
     OtherTierKept ->
       "another tier of its Spell4Base is listed, and the lowest tier is the one kept"
-    KindRowNamesTheAttack ->
-      "the creature has a creature_kind row of its own, which names its attack"
-    Unevaluated(unevaluated:) -> creature_attack.describe(unevaluated:)
-    SpecialRefused(sentence:) -> sentence
-    MultiplierNotFinite(spell4_effects_id:) ->
-      "Spell4Effects "
-      <> int.to_string(spell4_effects_id)
-      <> " has a damage multiplier that is not a finite number"
-    FormulaNotRead(spell4_effects_id:, parameter_kind:) ->
-      "Spell4Effects "
-      <> int.to_string(spell4_effects_id)
-      <> " has a damage formula that reads parameter type "
-      <> int.to_string(parameter_kind)
-      <> ", which the creature rule does not build"
+    Refused(sentence:) -> sentence
   }
 }
 
@@ -657,9 +602,12 @@ pub fn describe(refusal refusal: Refusal) -> String {
 /// is left off.
 pub fn rule_of(refusal refusal: Refusal) -> String {
   let sentence = describe(refusal:)
-  let rule = case string.starts_with(sentence, "the special Spell4 ") {
+  let named_by_the_load =
+    string.starts_with(sentence, "the special Spell4 ")
+    || string.starts_with(sentence, "the auto-attack Spell4 ")
+  let rule = case named_by_the_load {
     True ->
-      case string.split_once(sentence, " is refused: ") {
+      case string.split_once(sentence, ": ") {
         Ok(#(_, rest)) -> rest
         Error(Nil) -> sentence
       }
