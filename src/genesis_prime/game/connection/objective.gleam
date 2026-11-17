@@ -51,11 +51,10 @@ pub fn killed(
 /// (`departures.landing`, asked before the count, which can finish the quest), the landing
 /// is kept in `Entered.departing` and the 0 ms timer that starts the move is asked for
 /// (`connection/departures.due`). A use `by_item` counts for no objective that waits for the
-/// creature's own activate cast (`objective.Used`). A use that credits a type 12
-/// objective counting each unit once (`objective.credits_a_used_unit`, asked before
-/// the count for the same reason) is also told to the player's map after the written
-/// frames (`TellReleased`), which takes the unit out of sight for the release time. A
-/// player not in the world counts nothing.
+/// creature's own activate cast (`objective.Used`). A use that counts a unit new to an
+/// objective ends with the effect `objective.ReleaseUnit`, which `told` sends to the
+/// player's map after the written frames (`TellReleased`), taking the unit out of sight
+/// for the release time. A player not in the world counts nothing.
 pub fn used(
   session session: Session,
   now now: Now,
@@ -74,28 +73,7 @@ pub fn used(
       )
   }
   let event = objective.Used(target:, checklist_index:, unit:, by_item:)
-  let release = case connection_state.entered_of(session.status) {
-    Some(entered) ->
-      case
-        objective.credits_a_used_unit(
-          log: entered.quests,
-          tables: session.settings.tables,
-          event:,
-          reused: session.settings.reused_unit_objectives,
-        )
-      {
-        True -> [
-          connection_state.tells_the_map(
-            entered:,
-            request: client_connection.TellReleased(unit_id: unit.unit_id),
-          ),
-        ]
-        False -> []
-      }
-    None -> []
-  }
   let #(session, written) = counted(session:, now:, event:)
-  let written = list.append(written, release)
   case landing {
     Ok(place) -> #(
       connection_state.with_entered(session:, change: fn(entered) {
@@ -222,7 +200,9 @@ fn told(
                   True -> queued
                   False -> list.append(queued, [quest_id])
                 }
-              objective.SendProgress(..) | objective.SendState(..) -> queued
+              objective.SendProgress(..)
+              | objective.SendState(..)
+              | objective.ReleaseUnit(..) -> queued
             }
           },
         ),
@@ -247,6 +227,23 @@ fn told(
         ),
         connection_state.quest_deadline_timer_move,
       ),
+      // The used units go out of sight for everyone, after everything written.
+      case connection_state.entered_of(session.status) {
+        Some(entered) ->
+          list.filter_map(advanced.effects, fn(effect) {
+            case effect {
+              objective.ReleaseUnit(unit_id:) ->
+                Ok(connection_state.tells_the_map(
+                  entered:,
+                  request: client_connection.TellReleased(unit_id:),
+                ))
+              objective.SendProgress(..)
+              | objective.SendState(..)
+              | objective.CompleteByServer(..) -> Error(Nil)
+            }
+          })
+        None -> []
+      },
     ]),
   )
 }

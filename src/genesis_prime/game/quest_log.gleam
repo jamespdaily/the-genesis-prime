@@ -108,10 +108,10 @@ type Entry {
   /// quest, since the quest needs no such objective to be achieved. `kill_masks` holds,
   /// for each of the six objective slots, a bit for each creature of the objective's
   /// named group that the player's blow has killed (`kill_marked`); the client is never
-  /// sent it. `used` holds, for each objective that counts each unit once (type 23, a use of
-  /// a unit of a group, type 11, a cast at a unit, and type 12, a use of a creature, unless
-  /// its objective is one the unit may count again for) by its index, the units that have
-  /// counted (`used`); it is not saved and starts empty.
+  /// sent it. `used` holds, for each objective that counts a use of a unit or a cast at one
+  /// and is not a checklist, by its index, the units that have counted (`used`), except for
+  /// an objective the unit may count again for (`objective_units.reused`); it is not saved
+  /// and starts empty.
   Active(
     state: ActiveState,
     placeholder_objective_id: Int,
@@ -1570,72 +1570,29 @@ pub type UnitRef {
   UnitRef(map: MapId, incarnation: Int, unit_id: Int)
 }
 
-/// Whether the objective counts each unit once (`used`): a use of a unit of a group
-/// (type 23), a cast at a unit (type 11), or a use of a creature (type 12) that is not in
-/// `reused`, the objectives of a creature the world holds too few units of to reach the
-/// count (`reused_unit_objectives`).
-pub fn counted_by_unit(
-  objective objective: Objective,
-  reused reused: Set(Int),
-) -> Bool {
-  result.is_ok(objective_kind.used_group(objective.kind))
-  || result.is_ok(objective_kind.cast_spell(objective.kind))
-  || {
-    result.is_ok(objective_kind.used_creature(objective.kind))
-    && !set.contains(reused, objective.objective_id)
-  }
-}
-
-/// The type 12 objectives whose creature has fewer units in the world than the objective's
-/// count, so that the same unit used again counts again: the QuestObjective ids of the
-/// rows of type 12 with a count above 1 whose creature has fewer spawns in `spawn_counts`
-/// (the number of spawn rows of each Creature2 id) than the count. The client keeps no
-/// unit record for a type 12 objective (`0x1405517a0`), so counting each unit once is the
-/// server's choice, and an objective that one-spawn stations or panels would never finish
-/// that way (QuestObjective 8093, 16373, 16557 and 6692) is left out of it. A spawn
-/// import that adds units takes an objective out of the set.
-pub fn reused_unit_objectives(
-  tables tables: table_store.Tables,
-  spawn_counts spawn_counts: Dict(Int, Int),
-) -> Set(Int) {
-  quest_objective.all(tables)
-  |> list.filter(fn(row) {
-    case objective_kind.used_creature(objective_kind.of_row(row)) {
-      Ok(creature2_id) ->
-        row.count > 1
-        && result.unwrap(dict.get(spawn_counts, creature2_id.value), 0)
-        < row.count
-      Error(Nil) -> False
-    }
-  })
-  |> list.map(fn(row) { row.id })
-  |> set.from_list
-}
-
 /// The log after a use of, or a cast at, `unit` is counted for the quest's objective at
-/// `index` that counts by unit (`counted_by_unit`, with the `reused` objectives):
-/// one more of its count, which `progressed` takes, and the unit remembered as used, so
-/// that a second use of the same unit counts nothing: `changed` is false and the log is as
-/// it was. The client keeps no per-unit record of a type 23, type 11 or type 12 objective
-/// (`0x1405517a0`, the fact of that name, makes none a checklist), so one count for each
-/// unit is the server's choice. The set is kept only on the quest's entry in the log: it is not saved
-/// (`rows`), so a relog lets a unit count again, and an abandoned quest that is retaken
-/// starts it empty. It is dropped when the objective is done. `Error(Nil)` when the
-/// objective does not count by unit or takes no progress (`progressed`).
+/// `index`: one more of its count, which `progressed` takes, and the unit remembered as
+/// used, so that a second use of the same unit counts nothing: `changed` is false and the
+/// log is as it was. The caller does not ask this of an objective in `reused`
+/// (`objective_units.reused`) or of a checklist, which counts by bit (`marked`). The client
+/// keeps no per-unit record of a non-checklist objective (`0x1405517a0`, the fact of that
+/// name, makes none a checklist), so one count for each unit is the server's choice. The
+/// set is kept only on the quest's entry in the log: it is not saved (`rows`), so a relog
+/// lets a unit count again, and an abandoned quest that is retaken starts it empty. It is
+/// dropped when the objective is done. `Error(Nil)` when the objective takes no progress
+/// (`progressed`) or is not open.
 pub fn used(
   log log: QuestLog,
   quest quest: Quest,
   index index: Int,
   unit unit: UnitRef,
-  reused reused: Set(Int),
   now_ms now_ms: Int,
 ) -> Result(Counted, Nil) {
   let quest = as_logged(log:, quest:)
   case dict.get(log.entries, quest.id), list.drop(quest.objectives, index) {
-    Ok(Active(progress:, ..)), [objective, ..] if index >= 0 -> {
+    Ok(Active(progress:, ..)), [_, ..] if index >= 0 -> {
       use <- bool.guard(
-        when: !counted_by_unit(objective:, reused:)
-          || !objective_open(log:, quest:, index:),
+        when: !objective_open(log:, quest:, index:),
         return: Error(Nil),
       )
       let stored = list.drop(progress, index) |> list.first |> result.unwrap(0)
@@ -1700,9 +1657,9 @@ fn remember_used(
   }
 }
 
-/// Whether `unit` is used already for the quest's objective at `index` that counts by unit
-/// (`used`): false for any other objective and for a quest not in the active list. An
-/// objective that does not count by unit keeps no set, so it has none.
+/// Whether `unit` is used already for the quest's objective at `index` (`used`): false for
+/// a quest not in the active list. An objective in `reused` and a checklist keep no set, so
+/// they have none.
 pub fn is_used(
   log log: QuestLog,
   quest quest: Quest,

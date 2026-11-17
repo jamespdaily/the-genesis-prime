@@ -17,7 +17,7 @@
 
 import character_tables
 import fixture_tables
-import genesis_prime/game/objective.{Advanced, SendProgress, Used}
+import genesis_prime/game/objective.{Advanced, ReleaseUnit, SendProgress, Used}
 import genesis_prime/game/quest_log
 import genesis_prime/game/target_group
 import genesis_prime/store.{ActiveQuest, QuestRow}
@@ -110,8 +110,9 @@ pub fn activating_a_checklist_target_sets_its_bit_test() -> Nil {
   assert counted.effects
     == [
       SendProgress(quest_id: checklist_quest, objective_index: 0, progress: 4),
+      ReleaseUnit(unit_id: 2),
     ]
-    as "the unit of index 2 sets bit 2, and 0x361 carries the whole mask (opcode.0x361)"
+    as "the unit of index 2 sets bit 2, and 0x361 carries the whole mask (opcode.0x361); the unit is then released"
   assert stored(log: counted.log, quest_id: checklist_quest) == [4, 0, 0, 0, 0]
     as "the stored progress of objective 0 is the mask"
   assert shown(log: counted.log, tables:, quest_id: checklist_quest) == 1
@@ -194,7 +195,10 @@ pub fn activating_a_path_soldier_target_sets_its_bit_test() -> Nil {
       now_ms: 0,
     )
   assert counted.effects
-    == [SendProgress(quest_id: path_quest, objective_index: 0, progress: 2)]
+    == [
+      SendProgress(quest_id: path_quest, objective_index: 0, progress: 2),
+      ReleaseUnit(unit_id: 1),
+    ]
     as "the unit PathSoldierActivate 37 names sets its bit in a mode 1 objective"
   assert shown(log: counted.log, tables:, quest_id: path_quest) == 1
     as "one bit of a count of 4"
@@ -221,7 +225,10 @@ pub fn activating_a_type_27_path_soldier_target_sets_its_bit_test() -> Nil {
       now_ms: 0,
     )
   assert counted.effects
-    == [SendProgress(quest_id: path_quest, objective_index: 0, progress: 2)]
+    == [
+      SendProgress(quest_id: path_quest, objective_index: 0, progress: 2),
+      ReleaseUnit(unit_id: 1),
+    ]
     as "the unit PathSoldierActivate 37 names sets its bit in a mode 1 objective of type 27 as of type 28 (0x1405517a0)"
   assert shown(log: counted.log, tables:, quest_id: path_quest) == 1
     as "one bit of a count of 4"
@@ -307,4 +314,72 @@ pub fn a_checklist_target_of_a_done_objective_is_not_used_test() -> Nil {
     quest_support.unit_ref(unit_id: 3),
   )
     as "the objective's count of 3 is reached, so it is not open and counts nothing"
+}
+
+pub fn a_use_that_sets_a_new_type_14_bit_releases_the_unit_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The unit goes for everyone when its use sets a bit the objective did not hold, as any
+  // used quest object does (Jim, 2026-11-16); a unit whose bit is set counts for nothing
+  // (`0x140611680`) and so releases nothing.
+  let tables = character_tables.shared()
+  let first =
+    objective.advance(
+      reused: set.new(),
+      log: fresh_log(),
+      tables:,
+      event: used(tables:, creature: checklist_creature, index: 2),
+      now_ms: 0,
+    )
+  assert list.last(first.effects) == Ok(ReleaseUnit(unit_id: 2))
+    as "the use that sets bit 2 ends with the release of that unit"
+  let again =
+    objective.advance(
+      reused: set.new(),
+      log: first.log,
+      tables:,
+      event: used(tables:, creature: checklist_creature, index: 2),
+      now_ms: 0,
+    )
+  assert again == Advanced(log: first.log, effects: [])
+    as "the unit whose bit is set counts nothing and releases nothing"
+  let other =
+    objective.advance(
+      reused: set.new(),
+      log: first.log,
+      tables:,
+      event: used(tables:, creature: checklist_creature, index: 1),
+      now_ms: 0,
+    )
+  assert list.last(other.effects) == Ok(ReleaseUnit(unit_id: 1))
+    as "another unit of the objective, bit 1, is released by its own use"
+}
+
+pub fn a_use_that_sets_a_new_type_28_bit_releases_the_unit_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Objective 7647 (quest 5261) is type 28 on PathSoldierActivate 37, a mode 1 row, so
+  // it is a checklist (`0x1405517a0`).
+  let tables = character_tables.shared()
+  let log =
+    quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: path_quest, progress: [0]),
+    ])
+  let first =
+    objective.advance(
+      reused: set.new(),
+      log:,
+      tables:,
+      event: used(tables:, creature: path_creature, index: 1),
+      now_ms: 0,
+    )
+  assert list.last(first.effects) == Ok(ReleaseUnit(unit_id: 1))
+    as "the use that sets bit 1 ends with the release of the unit"
+  assert objective.advance(
+      reused: set.new(),
+      log: first.log,
+      tables:,
+      event: used(tables:, creature: path_creature, index: 1),
+      now_ms: 0,
+    )
+    == Advanced(log: first.log, effects: [])
+    as "the unit whose bit is set counts nothing and releases nothing"
 }

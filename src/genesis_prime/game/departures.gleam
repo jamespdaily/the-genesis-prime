@@ -290,6 +290,13 @@ pub fn choice_terminal(objective_id objective_id: Int) -> Option(Creature2Id) {
   |> option.from_result
 }
 
+/// Whether the creature is one of the four terminals. A terminal serves every player who
+/// passes and is not spent by a use, so a counted use of it is never released
+/// (`objective.advance`).
+pub fn is_terminal(creature_id creature_id: Creature2Id) -> Bool {
+  result.is_ok(terminal_of(creature_id:))
+}
+
 /// The place a character enters the world at, given the place it was saved at and its
 /// saved quest log: the landing of the terminal whose choice objective the log holds done
 /// while the saved place is still in the training simulation (a save between the count

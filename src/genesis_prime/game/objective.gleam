@@ -33,11 +33,21 @@
 //// event counts once for it, so a later objective that the event unlocks waits for the
 //// next one.
 ////
-//// A type 12 objective counts each unit once, as a type 23 objective does
-//// (`quest_log.used`), except an objective whose creature has fewer units in the world
-//// than its count (`quest_log.reused_unit_objectives`), which counts the same unit again;
-//// the client keeps no per-unit record for it (`0x1405517a0`), so both are the server's
-//// choice.
+//// An objective that counts a use of a unit (types 5, 12, 23 and 32, and a cast at a
+//// unit, type 11) counts each unit once (`quest_log.used`), except an objective in
+//// `reused`, whose world holds fewer units than its count
+//// (`objective_units.reused`) and which counts the same unit again; a checklist objective
+//// counts each unit by its bit. The client keeps no per-unit record for any of them
+//// (`0x1405517a0`, `QuestObjective.type.32.repeat_use`), so the once is the server's
+//// choice. A use that counts a unit new to an objective also releases the unit
+//// (`ReleaseUnit`): a used quest object vanishes for everyone for the release time, once
+//// for the use however many objectives and quests counted it. A talk, a kill and a cast
+//// at a unit release nothing, and nor does a use of a departures terminal, which every
+//// player uses (`departures.is_terminal`). The used sets are not saved: a relog lets a
+//// unit count again, and an abandoned quest that is retaken starts them empty. Each
+//// player's log is its own, so two players who use a unit before it vanishes for them both
+//// each count it, and once it returns the player whose set holds it counts nothing while
+//// another counts it.
 ////
 //// A type 11 objective (`QuestObjective.type.11`) is a cast of the spell in its data. The
 //// client counts nothing for it: it shows the spell as a button (a 0x176 shortcut of kind
@@ -47,7 +57,7 @@
 //// A cast at a unit counts only for a unit of the objective's reward pane, any unit when
 //// it names none (`0x140550c50`, issue 724's decision 2c), and each unit once, as a type
 //// 23 objective does (`quest_log.used`; the client keeps no per-unit record, so the once is
-//// the server's choice); a cast of a spell aimed at the caster names no unit and counts
+//// the server's choice, and an objective in `reused` counts the same unit again); a cast of a spell aimed at the caster names no unit and counts
 //// at each go. Gaps, each closed by the quests, zones and prerequisites issue (#334): the
 //// go is the moment a cast counts by a guess, until a retail recording of quest 3915, 4832
 //// or 7618 shows it; the place an objective names is not tested; a spell aimed at the
@@ -186,6 +196,10 @@ pub type Effect {
   /// The quest just became Achieved and no creature receives it: the server completes it
   /// (genesis_prime/game/quest_turn_in `completed_by_server`). It sends nothing itself.
   CompleteByServer(quest_id: Int)
+  /// A use counted a unit new to an objective: the unit goes out of sight of everyone for
+  /// the release time, and the effect follows every progress, state and completion effect
+  /// of the same event (`advance`). It sends nothing itself.
+  ReleaseUnit(unit_id: Int)
 }
 
 /// The log after the event and the effects in order: a quest at a time in quest id
@@ -211,9 +225,9 @@ pub fn talk_targets(
 
 /// Whether a use of the unit, of the checklist index, counts for an open objective of the
 /// log: the objectives a `Used` event counts for (`counts`) while the unit's bit is not
-/// yet set, as a talk's is (`talk_targets`), and while an objective that counts each unit once
-/// (`quest_log.counted_by_unit`) has not counted this unit (`quest_log.is_used`). A unit no open objective counts a use of is offered no
-/// use by the server.
+/// yet set, as a talk's is (`talk_targets`), and while this unit is not one the objective
+/// counted already (`quest_log.is_used`; an objective in `reused` keeps no such set). A
+/// unit no open objective counts a use of is offered no use by the server.
 pub fn use_targets(
   log log: QuestLog,
   tables tables: table_store.Tables,
@@ -221,36 +235,6 @@ pub fn use_targets(
   let offered = counted_by(log:, tables:)
   fn(unit, checklist_index, ref) {
     offered(Used(target: unit, checklist_index:, unit: ref, by_item: False))
-  }
-}
-
-/// Whether the event is a use that credits an open type 12 objective of the log that
-/// counts each unit once (`quest_log.counted_by_unit`, so none of the `reused`
-/// objectives): the use counts for it (`counts`) and its unit has not counted
-/// already (`counted_already`). Asked of the log before the event is counted, since
-/// the count can close the objective. A use that credits only a type 12 objective
-/// that counts the same unit again, a checklist or group objective, or nothing, is
-/// not one, and neither is an event that is not a use.
-pub fn credits_a_used_unit(
-  log log: QuestLog,
-  tables tables: table_store.Tables,
-  event event: Event,
-  reused reused: Set(Int),
-) -> Bool {
-  case event {
-    Used(..) ->
-      list.any(quest_log.active_ids(log:), fn(quest_id) {
-        let quest = quest_of(tables:, quest_id:)
-        quest_log.open_objectives(log:, quest:)
-        |> list.any(fn(open) {
-          let #(index, objective) = open
-          result.is_ok(objective_kind.used_creature(objective.kind))
-          && quest_log.counted_by_unit(objective, reused)
-          && counts(tables:, event:, quest_id: quest.id, index:, objective:)
-          && !counted_already(log:, quest:, index:, event:)
-        })
-      })
-    TalkedTo(..) | Killed(..) | Cast(..) -> False
   }
 }
 
@@ -275,8 +259,8 @@ fn counted_by(
 
 /// Whether the objective at `index` has counted the unit of the event already: the unit's
 /// bit is set in a checklist objective's mask (`0x140611680`: the client marks the unit
-/// only then), or an objective that counts each unit once (`quest_log.counted_by_unit`) has counted this
-/// unit of the map run.
+/// only then), or the objective has counted this unit of the map run
+/// (`quest_log.is_used`; an objective in `reused` keeps no such record).
 fn counted_already(
   log log: QuestLog,
   quest quest: quest_log.Quest,
@@ -308,8 +292,11 @@ fn quest_of(
   quest
 }
 
-/// The log and the messages after the player talked to or used a creature. `reused` is the
-/// type 12 objectives whose unit may count again (`quest_log.reused_unit_objectives`).
+/// The log and the messages after the player talked to, used or killed a creature, or
+/// cast a spell. `reused` is the objectives whose unit may count again
+/// (`objective_units.reused`). A use that counts a unit new to any objective of any quest
+/// ends the effects with one `ReleaseUnit`, after every quest's effects, unless the unit is
+/// a departures terminal.
 pub fn advance(
   log log: QuestLog,
   tables tables: table_store.Tables,
@@ -317,42 +304,62 @@ pub fn advance(
   reused reused: Set(Int),
   now_ms now_ms: Int,
 ) -> Advanced {
-  list.fold(
-    quest_log.active_ids(log:),
-    Advanced(log:, effects: []),
-    fn(so_far, quest_id) {
-      advance_quest(
-        so_far:,
-        tables:,
-        quest: quest_of(tables:, quest_id:),
-        now_ms:,
-        reused:,
-        counts: fn(index, objective) {
-          counts(tables:, event:, quest_id:, index:, objective:)
-        },
-        group_member: fn(objective) {
-          case event {
-            Killed(target:) -> group_member(tables:, objective:, target:)
-            TalkedTo(..) | Used(..) | Cast(..) -> Error(Nil)
-          }
-        },
-        checklist_index: case event {
-          TalkedTo(checklist_index:, ..) | Used(checklist_index:, ..) ->
-            checklist_index
-          Killed(..) | Cast(..) -> -1
-        },
-        used_unit: case event {
-          Used(unit:, ..) | Cast(target: Some(CastTarget(ref: unit, ..)), ..) ->
-            Ok(unit)
-          TalkedTo(..) | Killed(..) | Cast(target: None, ..) -> Error(Nil)
-        },
-      )
-    },
-  )
+  let #(advanced, credited_a_new_unit) =
+    list.fold(
+      quest_log.active_ids(log:),
+      #(Advanced(log:, effects: []), False),
+      fn(so_far, quest_id) {
+        let #(advanced, credited_before) = so_far
+        let #(advanced, credited) =
+          advance_quest(
+            so_far: advanced,
+            tables:,
+            quest: quest_of(tables:, quest_id:),
+            now_ms:,
+            reused:,
+            counts: fn(index, objective) {
+              counts(tables:, event:, quest_id:, index:, objective:)
+            },
+            group_member: fn(objective) {
+              case event {
+                Killed(target:) -> group_member(tables:, objective:, target:)
+                TalkedTo(..) | Used(..) | Cast(..) -> Error(Nil)
+              }
+            },
+            checklist_index: case event {
+              TalkedTo(checklist_index:, ..) | Used(checklist_index:, ..) ->
+                checklist_index
+              Killed(..) | Cast(..) -> -1
+            },
+            used_unit: case event {
+              Used(unit:, ..)
+              | Cast(target: Some(CastTarget(ref: unit, ..)), ..) -> Ok(unit)
+              TalkedTo(..) | Killed(..) | Cast(target: None, ..) -> Error(Nil)
+            },
+          )
+        #(advanced, credited_before || credited)
+      },
+    )
+  case event, credited_a_new_unit {
+    Used(target:, unit:, ..), True ->
+      case departures.is_terminal(creature_id: target.creature_id) {
+        True -> advanced
+        False ->
+          Advanced(
+            ..advanced,
+            effects: list.append(advanced.effects, [
+              ReleaseUnit(unit_id: unit.unit_id),
+            ]),
+          )
+      }
+    Used(..), False | TalkedTo(..), _ | Killed(..), _ | Cast(..), _ -> advanced
+  }
 }
 
 /// Whether the event counts for the objective at `index` of the quest (`0x140550c50`).
-fn counts(
+/// Public so that the units `objective_units.units_of` lists can be checked against it
+/// for every objective of the client's tables.
+pub fn counts(
   tables tables: table_store.Tables,
   event event: Event,
   quest_id quest_id: Int,
@@ -492,8 +499,28 @@ fn is_the_terminals_choice(
   }
 }
 
+/// What the objectives of one quest have counted so far for one event: the log, the
+/// progress effects in reverse order, whether the quest became Achieved, and whether any
+/// objective counted a unit new to it.
+type Pass {
+  Pass(
+    log: QuestLog,
+    progress: List(Effect),
+    became_achieved: Bool,
+    credited_a_new_unit: Bool,
+  )
+}
+
 /// One quest's objectives that are open and that the event counts for, each counted
-/// once. An Achieved quest still has its objectives with flag 0x20 open.
+/// once, and whether any of them counted a unit new to it. An Achieved quest still has its
+/// objectives with flag 0x20 open.
+///
+/// ```
+/// an objective the event counts for ─ a named kill group's member ─▶ kill_marked
+///                                   ├ a checklist                ─▶ marked (the unit's bit)
+///                                   ├ a unit, not in reused      ─▶ used (the unit's record)
+///                                   └ no unit, or in reused      ─▶ one more, no record
+/// ```
 fn advance_quest(
   so_far so_far: Advanced,
   tables tables: table_store.Tables,
@@ -504,145 +531,150 @@ fn advance_quest(
   group_member group_member: fn(quest_log.Objective) -> Result(#(Int, Int), Nil),
   checklist_index checklist_index: Int,
   used_unit used_unit: Result(quest_log.UnitRef, Nil),
-) -> Advanced {
+) -> #(Advanced, Bool) {
   let named =
     quest_log.open_objectives(log: so_far.log, quest:)
     |> list.filter(fn(open) { counts(open.0, open.1) })
-  let #(log, progress, became_achieved) =
-    list.fold(named, #(so_far.log, [], False), fn(counted, open) {
-      let #(log, progress, became_achieved) = counted
-      let counted_with_no_unit =
-        result.is_ok(objective_kind.cast_spell({ open.1 }.kind))
-      case group_member(open.1), { open.1 }.checklist {
-        Ok(#(member, members)), _ ->
-          case
-            quest_log.kill_marked(
-              log:,
-              quest:,
-              index: open.0,
-              member:,
-              members:,
-            )
-          {
-            // A kill that leaves a member of the group alive, or kills one already
-            // dead, tells nothing: the client's progress stays 0. The kill that
-            // fills the group counts as a kill does.
-            Ok(#(marked, True)) ->
-              progressed_by_one(
-                counted: #(marked, progress, became_achieved),
+  let counted =
+    list.fold(
+      named,
+      Pass(
+        log: so_far.log,
+        progress: [],
+        became_achieved: False,
+        credited_a_new_unit: False,
+      ),
+      fn(pass, open) {
+        let #(index, objective) = open
+        case group_member(objective), objective.checklist {
+          Ok(#(member, members)), _ ->
+            case
+              quest_log.kill_marked(
+                log: pass.log,
                 quest:,
-                index: open.0,
-                now_ms:,
+                index:,
+                member:,
+                members:,
               )
-            Ok(#(marked, False)) -> #(marked, progress, became_achieved)
-            // An open objective takes the kill, so this does not happen.
-            Error(Nil) -> counted
-          }
-        Error(Nil), True ->
-          case
-            quest_log.marked(
-              log:,
-              quest:,
-              index: open.0,
-              bit: checklist_index,
-              now_ms:,
-            )
-          {
-            // A unit whose bit is set counts for nothing and tells nothing.
-            Ok(marked) if marked.changed -> #(
-              marked.log,
-              [
-                SendProgress(
-                  quest_id: quest.id,
-                  objective_index: open.0,
-                  progress: marked.progress,
-                ),
-                ..progress
-              ],
-              became_achieved || marked.moved == quest_log.BecameAchieved,
-            )
-            Ok(_) | Error(Nil) -> counted
-          }
-        Error(Nil), False ->
-          case
-            quest_log.counted_by_unit(objective: open.1, reused:),
-            used_unit
-          {
-            True, Ok(unit) ->
-              case
-                quest_log.used(
-                  log:,
+            {
+              // A kill that leaves a member of the group alive, or kills one already
+              // dead, tells nothing: the client's progress stays 0. The kill that
+              // fills the group counts as a kill does.
+              Ok(#(marked, True)) ->
+                progressed_by_one(
+                  pass: Pass(..pass, log: marked),
                   quest:,
-                  index: open.0,
-                  unit:,
-                  reused:,
+                  index:,
                   now_ms:,
                 )
-              {
-                // A unit this objective counted already counts for nothing and tells
-                // nothing.
-                Ok(used) if used.changed -> #(
-                  used.log,
-                  [
-                    SendProgress(
-                      quest_id: quest.id,
-                      objective_index: open.0,
-                      progress: used.progress,
-                    ),
-                    ..progress
-                  ],
-                  became_achieved || used.moved == quest_log.BecameAchieved,
-                )
-                Ok(_) | Error(Nil) -> counted
-              }
-            // A cast aimed at the caster names no unit and counts one at each go.
-            True, Error(Nil) if counted_with_no_unit ->
-              progressed_by_one(counted:, quest:, index: open.0, now_ms:)
-            // A use always carries its unit, so an objective that counts by unit with none counts
-            // nothing.
-            True, Error(Nil) -> counted
-            False, _ ->
-              progressed_by_one(counted:, quest:, index: open.0, now_ms:)
-          }
-      }
-    })
-  let state = case became_achieved {
+              Ok(#(marked, False)) -> Pass(..pass, log: marked)
+              // An open objective takes the kill, so this does not happen.
+              Error(Nil) -> pass
+            }
+          Error(Nil), True ->
+            case
+              quest_log.marked(
+                log: pass.log,
+                quest:,
+                index:,
+                bit: checklist_index,
+                now_ms:,
+              )
+            {
+              // A unit whose bit is set counts for nothing and tells nothing.
+              Ok(marked) if marked.changed ->
+                counted_a_new_unit(pass:, quest:, index:, counted: marked)
+              Ok(_) | Error(Nil) -> pass
+            }
+          Error(Nil), False ->
+            case used_unit, set.contains(reused, objective.objective_id) {
+              Ok(unit), False ->
+                case
+                  quest_log.used(log: pass.log, quest:, index:, unit:, now_ms:)
+                {
+                  // A unit this objective counted already counts for nothing and tells
+                  // nothing.
+                  Ok(used) if used.changed ->
+                    counted_a_new_unit(pass:, quest:, index:, counted: used)
+                  Ok(_) | Error(Nil) -> pass
+                }
+              // A kill, a talk, a cast aimed at the caster, and an objective whose unit
+              // counts again, count one at each event with no record of the unit.
+              Ok(_), True | Error(Nil), _ ->
+                progressed_by_one(pass:, quest:, index:, now_ms:)
+            }
+        }
+      },
+    )
+  let state = case counted.became_achieved {
     True -> [
       SendState(quest_id: quest.id, state: achieved_state),
       ..completion_of(tables:, quest_id: quest.id)
     ]
     False -> []
   }
-  Advanced(
-    log:,
-    effects: list.flatten([so_far.effects, list.reverse(progress), state]),
+  #(
+    Advanced(
+      log: counted.log,
+      effects: list.flatten([
+        so_far.effects,
+        list.reverse(counted.progress),
+        state,
+      ]),
+    ),
+    counted.credited_a_new_unit,
   )
 }
 
-/// The log, progress messages and quest-achieved flag after one more kill counted for the
-/// quest's objective at `index`, added to what the quest's earlier objectives made.
+/// The pass after the objective at `index` counted a unit new to it (its `marked` or
+/// `used` changed the log): the progress it sends and whether it made the quest Achieved.
+fn counted_a_new_unit(
+  pass pass: Pass,
+  quest quest: quest_log.Quest,
+  index index: Int,
+  counted counted: quest_log.Counted,
+) -> Pass {
+  Pass(
+    log: counted.log,
+    progress: [
+      SendProgress(
+        quest_id: quest.id,
+        objective_index: index,
+        progress: counted.progress,
+      ),
+      ..pass.progress
+    ],
+    became_achieved: pass.became_achieved
+      || counted.moved == quest_log.BecameAchieved,
+    credited_a_new_unit: True,
+  )
+}
+
+/// The pass after one more counted for the quest's objective at `index`, added to what the
+/// quest's earlier objectives made; a count with no unit record credits no unit.
 fn progressed_by_one(
-  counted counted: #(QuestLog, List(Effect), Bool),
+  pass pass: Pass,
   quest quest: quest_log.Quest,
   index index: Int,
   now_ms now_ms: Int,
-) -> #(QuestLog, List(Effect), Bool) {
-  let #(log, progress, became_achieved) = counted
-  case quest_log.progressed(log:, quest:, index:, amount: 1, now_ms:) {
-    Ok(progressed) -> #(
-      progressed.log,
-      [
-        SendProgress(
-          quest_id: quest.id,
-          objective_index: index,
-          progress: progressed.progress,
-        ),
-        ..progress
-      ],
-      became_achieved || progressed.became_achieved,
-    )
+) -> Pass {
+  case quest_log.progressed(log: pass.log, quest:, index:, amount: 1, now_ms:) {
+    Ok(progressed) ->
+      Pass(
+        ..pass,
+        log: progressed.log,
+        progress: [
+          SendProgress(
+            quest_id: quest.id,
+            objective_index: index,
+            progress: progressed.progress,
+          ),
+          ..pass.progress
+        ],
+        became_achieved: pass.became_achieved || progressed.became_achieved,
+      )
     // An open objective takes progress, so this does not happen.
-    Error(Nil) -> counted
+    Error(Nil) -> pass
   }
 }
 
@@ -1242,7 +1274,7 @@ pub fn server_completions(
 }
 
 /// The messages the effects tell the client, in the effects' order: each progress as
-/// 0x361 and each state as 0x35c. A completion by the server sends nothing.
+/// 0x361 and each state as 0x35c. A completion by the server and a release send nothing.
 pub fn frames(effects effects: List(Effect)) -> List(Frame) {
   list.filter_map(effects, fn(effect) {
     case effect {
@@ -1254,7 +1286,7 @@ pub fn frames(effects effects: List(Effect)) -> List(Frame) {
         ))
       SendState(quest_id:, state:) ->
         Ok(quest_log.quest_state_frame(quest_id:, state:, objective_id: 0))
-      CompleteByServer(..) -> Error(Nil)
+      CompleteByServer(..) | ReleaseUnit(..) -> Error(Nil)
     }
   })
 }

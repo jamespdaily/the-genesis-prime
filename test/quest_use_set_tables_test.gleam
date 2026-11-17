@@ -15,7 +15,7 @@
 
 import client_tables
 import genesis_prime/game/objective.{
-  CompleteByServer, SendProgress, SendState, Used,
+  CompleteByServer, ReleaseUnit, SendProgress, SendState, Used,
 }
 import genesis_prime/game/quest_log
 import genesis_prime/game/target_group
@@ -195,7 +195,7 @@ fn counts_once(
   assert list.filter(second.effects, fn(effect) {
       case effect {
         SendProgress(objective_index:, ..) -> objective_index == index
-        SendState(..) | CompleteByServer(..) -> False
+        SendState(..) | CompleteByServer(..) | ReleaseUnit(..) -> False
       }
     })
     == []

@@ -123,13 +123,13 @@
 //// ```
 ////
 //// A use releases a unit, a tell with no answer: the connection's count of the use
-//// credited a type 12 objective that counts each unit once, and the map ends the
+//// counted a unit new to an objective that counts each unit once, and the map ends the
 //// creature of the unit and the creatures at its x and z through the stop path of
 //// an idle one, then keeps the spawns waiting for the release time:
 ////
 //// ```
 //// connection c1                 map                                         creature
-////   a use credited a type 12 objective (genesis_prime/game/objective `credits_a_used_unit`)
+////   a use counted a unit new to an objective (genesis_prime/game/objective `ReleaseUnit`)
 ////   Released(u)               ─▶ Told ─▶ u is a live creature's unit, spawn s:
 ////                                         s and each spawn in `spawn.captives` of s, live:
 ////                                           s becomes Releasing(u, life, release time)
@@ -151,6 +151,10 @@
 ////                                 spent with the one restart
 //// a map that restarts          ─▶ rebuilt from storage: every spawn starts at once, the release is lost
 //// ```
+////
+//// The release time runs from the moment the unit leaves sight: at the release for a static
+//// object, at the end of the creature's process for a live creature, and, for a creature
+//// already dead, after its corpse timer. A creature already retiring ignores a release.
 ////
 //// The rings: which ready players stand within a hostile creature's aggro range, so
 //// the creature can fight them (genesis_prime/world_map/creature_fight). Decided on
@@ -684,8 +688,8 @@ pub type Message {
   /// sent nothing. Taken only from a connection that is in the map, and a set equal
   /// to the one held changes nothing.
   VisibilityChanged(connection: ConnectionId, hidden: Set(PrerequisiteId))
-  /// A player's use of the unit `unit_id` credited a type 12 objective that counts
-  /// each unit once (genesis_prime/game/objective `credits_a_used_unit`): the
+  /// A player's use of the unit `unit_id` counted a unit new to an objective that counts
+  /// each unit once (genesis_prime/game/objective `ReleaseUnit`): the
   /// spawn of that unit, and each spawn standing at its x and z (`spawn.captives`),
   /// vanish for every player in the map and stand again after the release time
   /// (`GameNumbers.used_object_release_ms`): a creature under a new unit id, a
