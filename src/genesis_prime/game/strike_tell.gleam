@@ -56,12 +56,14 @@
 ////   tells (genesis_prime/world_map/creature_fight).
 
 import genesis_prime/game/crowd_control
+import genesis_prime/game/forced_move
 import genesis_prime/game/hit.{type Description, type Offence, type Rolls}
 import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/step.{type Address}
 import genesis_prime/table/id.{type Spell4EffectsId}
 import genesis_prime/world_map/stay.{type Stay}
+import gleam/option.{type Option}
 
 /// How long a round waits for its answers, in milliseconds. A creature's respawn time
 /// is never below it (genesis_prime/world_map/creature_kind), so a unit does not stand
@@ -119,9 +121,28 @@ pub type ControlLanded {
 /// `Row`: the state, the delay before and the duration of the effect in milliseconds,
 /// and the Interrupt Armor it removes). The cast id is the strike's key's. The creature
 /// holds the state from the tell until the delay and duration have passed and sends the
-/// state's 0x87f and 0x880 with this instance id (`cc_state.instance_id`).
+/// state's 0x87f and 0x880 with this instance id (`cc_state.instance_id`). A Knockback,
+/// Pushback or Pull state carries the `throw` its helper spell names
+/// (`spell_plan.CrowdControl.move`), which the creature that takes the state is thrown by.
 pub type ControlTell {
-  ControlTell(effect_id: Int, instance_id: Int, row: crowd_control.Row)
+  ControlTell(
+    effect_id: Int,
+    instance_id: Int,
+    row: crowd_control.Row,
+    throw: Option(Throw),
+  )
+}
+
+/// The move a state throws its creature by, with what the creature's fight needs to carry
+/// it out (genesis_prime/game/creature_fight `Thrown`): the move, the draws the striker's
+/// connection took from its seed for it, and the striker's place and hit radius when the
+/// strike was told.
+pub type Throw {
+  Throw(
+    move: forced_move.Move,
+    draws: forced_move.Draws,
+    reference: forced_move.Reference,
+  )
 }
 
 /// Who strikes, with what the struck unit's owner needs of it.

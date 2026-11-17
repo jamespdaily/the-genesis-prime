@@ -1050,3 +1050,8 @@ Quest2	10634	quest holding the held objective 21523 (migration 0034)	content_loa
 Quest2	10635	quest holding the held objective 21524 (migration 0034)	content_load_test
 Quest2	10642	quest holding the held objective 21535 (migration 0034)	content_load_test
 Quest2	10643	quest holding the held objective 21536 (migration 0034)	content_load_test
+Spell4	30693	Knockback state naming helper 36010	spell_plan_cc_forced_move_test, strike_test
+Spell4	75272	spell holding its own throw and a Pull state	spell_plan_cc_forced_move_test
+Spell4	38426	Knockback state naming CCStateAdditionalData 83, which has no row	spell_plan_cc_forced_move_test
+Spell4	30815	Knockback state naming no CCStateAdditionalData row	spell_plan_cc_forced_move_test
+Spell4	36272	PositionSwitch state	spell_plan_cc_forced_move_test

@@ -28,7 +28,7 @@ import gleam/dict.{type Dict}
 import gleam/list
 import gleam/option
 import gleam/result
-import gleam/set.{type Set}
+import gleam/set
 
 /// How many of these rows the plan does not read, by effect type. A type with no such row
 /// has no entry.
@@ -36,12 +36,10 @@ pub fn unread_by_type(
   tables tables: store.Tables,
   effects effects: List(Spell4Effects),
 ) -> Dict(Int, Int) {
-  let spell_groups = spell_plan.spell_groups(tables:)
+  let sources = spell_plan.sources_of(tables:)
   let place_of = places(tables:, effects:)
   list.fold(effects, dict.new(), fn(counts, effect) {
-    case
-      is_read(tables:, spell_groups:, place: place_of(effect.spell_id), effect:)
-    {
+    case is_read(tables:, sources:, place: place_of(effect.spell_id), effect:) {
       True -> counts
       False ->
         dict.upsert(counts, effect.effect_type, fn(found) {
@@ -53,7 +51,7 @@ pub fn unread_by_type(
 
 /// Where each spell of these rows is planned, by the spell's Spell4 id: whether a Proxy
 /// among the rows starts it on each struck unit, whether its costs spend every point held, and
-/// whether its own rows hit foes.
+/// whether its own rows hit foes and whether they throw the units they strike.
 pub fn places(
   tables tables: store.Tables,
   effects effects: List(Spell4Effects),
@@ -61,11 +59,13 @@ pub fn places(
   let struck = spell_plan.struck_unit_children(effects:)
   let spends = spends_all_by_spell(tables:, effects:)
   let hitting = spell_plan.spells_that_hit_foes(effects:)
+  let throwing = spell_plan.spells_that_throw_target(effects:)
   fn(spell4_id) {
     spell_plan.RowPlace(
       struck_by: option.from_result(dict.get(struck, spell4_id)),
       spends_all: result.unwrap(dict.get(spends, spell4_id), False),
       hits_foes: set.contains(hitting, spell4_id),
+      throws_target: set.contains(throwing, spell4_id),
     )
   }
 }
@@ -74,11 +74,11 @@ pub fn places(
 /// or the area load builds it.
 pub fn is_read(
   tables tables: store.Tables,
-  spell_groups spell_groups: Set(Int),
+  sources sources: spell_plan.Sources,
   place place: spell_plan.RowPlace,
   effect effect: Spell4Effects,
 ) -> Bool {
-  case spell_plan.read_row(tables:, spell_groups:, place:, effect:) {
+  case spell_plan.read_row(tables:, sources:, place:, effect:) {
     Ok(spell_plan.Applied(..)) | Ok(spell_plan.ReadByActivation) -> True
     Ok(spell_plan.ReadByArea) ->
       case

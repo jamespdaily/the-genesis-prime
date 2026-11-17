@@ -78,7 +78,7 @@ pub fn remove_behind_target_gate_reads_with_its_gate_test() -> Nil {
   let assert Ok(reading) =
     spell_plan.read_row(
       tables:,
-      spell_groups: spell_plan.spell_groups(tables:),
+      sources: spell_plan.sources_of(tables:),
       place: spell_tables.pressed,
       effect: row,
     )
@@ -150,7 +150,7 @@ pub fn remove_past_the_caster_behind_a_roll_gate_reads_with_its_gate_test() -> N
   let assert Ok(reading) =
     spell_plan.read_row(
       tables:,
-      spell_groups: spell_plan.spell_groups(tables:),
+      sources: spell_plan.sources_of(tables:),
       place: spell_tables.pressed,
       effect: row,
     )
@@ -386,7 +386,7 @@ pub fn remove_aimed_at_the_caster_and_past_it_behind_a_creature_state_gate_stays
     as "the client's rows hold Ruin's remove"
   assert spell_plan.read_row(
       tables:,
-      spell_groups: spell_plan.spell_groups(tables:),
+      sources: spell_plan.sources_of(tables:),
       place: spell_tables.pressed,
       effect: spell4_effects.Spell4Effects(..row, target_flags: 3),
     )
@@ -413,7 +413,7 @@ pub fn remove_on_the_primary_target_of_a_press_behind_a_creature_state_gate_stay
     spell4_effects.Spell4Effects(..row, target_flags: 2)
   assert spell_plan.read_row(
       tables:,
-      spell_groups: spell_plan.spell_groups(tables:),
+      sources: spell_plan.sources_of(tables:),
       place: spell_tables.pressed,
       effect: on_the_primary_target,
     )
@@ -426,7 +426,7 @@ pub fn remove_on_the_primary_target_of_a_press_behind_a_creature_state_gate_stay
   let assert Ok(reading) =
     spell_plan.read_row(
       tables:,
-      spell_groups: spell_plan.spell_groups(tables:),
+      sources: spell_plan.sources_of(tables:),
       place: spell_tables.started_on_each_struck(
         spell4_id: 1,
         proxy_effect_id: 2,

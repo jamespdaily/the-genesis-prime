@@ -27,6 +27,7 @@ import genesis_prime/game/cast/state.{type GoAsked, GoAsked} as cast_state
 import genesis_prime/game/class_resource.{Resource}
 import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
+import genesis_prime/game/forced_move
 import genesis_prime/game/hit.{type Offence, Blow, Offence, Rolls, Worked}
 import genesis_prime/game/shown.{ShownCreature, ShownPlayer}
 import genesis_prime/game/spell_area.{DamageEffect}
@@ -1348,6 +1349,7 @@ fn stun_row(aim aim: spell_plan.Aim) -> spell_plan.CrowdControl {
     ),
     condition: spell_plan.Always,
     tag: spend.always,
+    move: None,
   )
 }
 
@@ -1473,6 +1475,97 @@ pub fn union_control_row_is_both_a_restriction_and_a_told_state_test() -> Nil {
     as "the state is told to each struck creature and to nobody else: the caster is not told"
   assert list.map(first.controls, fn(told) { told.effect_id }) == [60_607]
   assert list.map(second.controls, fn(told) { told.effect_id }) == [60_607]
+}
+
+pub fn a_knockback_control_is_told_with_its_drawn_move_and_the_strikers_place_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Spell4Effects 56250 (`table_rows -- Spell4Effects 56250`): spell 30693, effectType 4,
+  // targetFlags 4 (the area), state 16 (Knockback), delayTime 0, durationTime 0, dataBits03 1,
+  // dataBits07 21, phaseFlags 1. Its helper's throw is Spell4Effects 73826: away from the
+  // reference unit, 10.0 m, 375 ms, no gravity, flags 1, height 2.0.
+  let spell = spell_tables.client_spell(spell4_id: 30_693)
+  let assert [control] =
+    spell_plan.controls_in_phase(spell:, phase: 0, spent: None)
+    as "the spell's one state lands in phase 0"
+  let chosen =
+    Selection(
+      ..selection(
+        asked: asked(cast_id: 5, phase: 0),
+        units: [10, 11],
+        damaging: False,
+      ),
+      controls: [control],
+    )
+  assert strike.entropy_needed(selection: chosen) == 24 + 2 * 8
+    as "12 seed bytes for each of the 2 units, then 8 draw bytes for the one throwing row and each unit"
+  // The striker stands somewhere that is neither the origin nor a number the draws share.
+  let place =
+    place_support.at(
+      world_id: 3460,
+      world_zone_id: 5967,
+      x: 12.5,
+      y: 1.0,
+      z: -7.0,
+    )
+  let striker = Attacker(..strike_support.attacker(), place:, hit_radius: 0.75)
+  // Each draw is a 32-bit word, a fraction of 2^32: unit 10's draws are 0x40000000 and
+  // 0x80000000 (a quarter and a half), unit 11's 0xC0000000 and 0x20000000 (three quarters
+  // and an eighth).
+  let seed = <<
+    0:size(96),
+    0:size(96),
+    0x40000000:size(32),
+    0x80000000:size(32),
+    0xC0000000:size(32),
+    0x20000000:size(32),
+  >>
+  let #(_, effects) =
+    strike.begin(
+      strike: strike.new(),
+      selection: chosen,
+      attacker: striker,
+      formulas: rating_support.formulas(),
+      entropy: seed,
+      gate: strike_support.passes_all(),
+      now: at(ms: 1000),
+    )
+  let assert [
+    strike.TellStrike(unit_id: 10, tell: first, ..),
+    strike.TellStrike(unit_id: 11, tell: second, ..),
+  ] = tells(effects:)
+    as "each unit is told the state"
+  let move =
+    forced_move.Move(
+      way: forced_move.Away,
+      mover: forced_move.Flight,
+      min_distance: 10.0,
+      max_distance: 10.0,
+      flight_ms: 375,
+      gravity: 0.0,
+      flags: 1,
+      height: 2.0,
+    )
+  let reference = forced_move.Reference(place:, radius: 0.75)
+  let throw_of = fn(told: strike_tell.Tell) {
+    let assert [control] = told.controls
+    assert control.effect_id == 56_250
+    assert control.row.state == crowd_control_state.Knockback
+    control.throw
+  }
+  assert throw_of(first)
+    == Some(strike_tell.Throw(
+      move:,
+      draws: forced_move.Draws(distance: 0.25, angle: 0.5),
+      reference:,
+    ))
+    as "unit 10 takes the first 8 draw bytes, with the striker's place and radius"
+  assert throw_of(second)
+    == Some(strike_tell.Throw(
+      move:,
+      draws: forced_move.Draws(distance: 0.75, angle: 0.125),
+      reference:,
+    ))
+    as "unit 11 takes the next 8"
 }
 
 pub fn a_state_aimed_at_the_primary_target_is_told_to_it_alone_test() -> Nil {
