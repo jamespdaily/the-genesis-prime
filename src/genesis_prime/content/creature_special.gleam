@@ -1,4 +1,4 @@
-//// The creature_special table as the server reads it at start: one query for every row,
+//// The creature_special table as the server reads it at start: one query for every row no import has retired,
 //// the rows handed to the pure check beside the creature_kind rows
 //// (genesis_prime/world_map/creature_kind `select`), which puts each creature's specials
 //// into its kind.
@@ -21,7 +21,7 @@ import pog
 /// The table's name in the log.
 pub const table = creature_special.table
 
-/// Every row of the creature_special table, in creature id and list order, or why the
+/// Every row of the creature_special table that no import has retired, in creature id and list order, or why the
 /// query failed.
 pub fn rows(db db: pog.Connection) -> Result(List(Row), pog.QueryError) {
   sql.load_creature_specials(db)

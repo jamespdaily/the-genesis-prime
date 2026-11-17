@@ -2860,3 +2860,41 @@ pub fn the_creatures_of_the_other_three_zones_cast_their_specials_test() -> Nil 
     },
   )
 }
+
+pub fn a_struck_yeti_snowstalker_strikes_with_maul_then_slam_test() -> Nil {
+  use <- owned_test.run(90_000)
+  // Creature2 51126, a Yeti Snowstalker of the Northern Wilds, on the client's own rows, built as
+  // the load builds a creature with the auto-attacks of its kind: its Jabbithole page
+  // (`yeti-snowstalker-1`) lists Maul (Spell4 33251) and Slam (33252), numbered "#1" and "#2" by
+  // the client's Spell4 descriptions. The creature's first attack tick is 1500 ms after the
+  // strike (its kind's interval) and each next one 1500 ms after it; the 0x7ff of each names
+  // the spell it casts (`opcode.0x7ff`), and never the default attack 5649.
+  let yeti =
+    spawn_support.autos_creature(number: 1, creature_id: 51_126, spell4_ids: [
+      33_251,
+      33_252,
+    ])
+  let roaring = fight_of(creature: yeti, damage_effects_id: 184_751)
+  driven_time.advance(time: roaring.time, ms: 1500)
+  let maul = next_cast_started(received: roaring.received)
+  assert maul.spell4_id == 33_251
+    && maul.caster_unit_id == roaring.unit_id
+    && maul.primary_target_unit_id == 10
+    as "the first strike is Maul, cast on the player that struck the creature"
+  answer(roaring:, key: next_strike_told(received: roaring.received))
+  driven_time.advance(time: roaring.time, ms: 1500)
+  let slam = next_cast_started(received: roaring.received)
+  assert slam.spell4_id == 33_252 as "the second is Slam"
+  answer(
+    roaring: Roaring(..roaring, damage_effects_id: 184_752),
+    key: next_strike_told(received: roaring.received),
+  )
+  driven_time.advance(time: roaring.time, ms: 1500)
+  let again = next_cast_started(received: roaring.received)
+  assert again.spell4_id == 33_251 as "the third is Maul again"
+  assert maul.spell4_id != 5649
+    && slam.spell4_id != 5649
+    && again.spell4_id != 5649
+    as "none is the default attack"
+  world_support.stop(world: roaring.world)
+}

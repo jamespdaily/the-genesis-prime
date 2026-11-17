@@ -149,7 +149,8 @@ pub fn interrupt_armor_of(maximum maximum: Float) -> InterruptArmor {
 /// What a creature brings to a fight, worked out when the content loads
 /// (genesis_prime/world_map/spawn): the hit radius of its display
 /// (Creature2DisplayInfo.hitRadius), whom it may be attacked by, whom it fights on
-/// sight, its defence, its own attack, its specials and its Interrupt Armor.
+/// sight, its defence, its own attack, the auto-attacks it strikes with after it in turn,
+/// its specials and its Interrupt Armor.
 pub type Combat {
   Combat(
     hit_radius: Float,
@@ -157,6 +158,7 @@ pub type Combat {
     hostile_to: Hostile,
     defence: Defence,
     attack: Attack,
+    alternates: List(Attack),
     specials: List(Special),
     interrupt_armor: InterruptArmor,
   )

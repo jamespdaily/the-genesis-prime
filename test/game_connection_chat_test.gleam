@@ -1321,6 +1321,7 @@ pub fn with_the_setting_on_a_summon_line_starts_the_creature_at_the_players_plac
         kind: Kind(
           respawn_ms: 60_000,
           attack_spell4_id: Spell4Id(5649),
+          alternate_spell4_ids: [],
           attack_interval_ms: 1500,
           guard: option.None,
           specials: [],

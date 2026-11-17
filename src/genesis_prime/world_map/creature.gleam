@@ -1953,6 +1953,7 @@ fn fighter_of(state state: State) -> Fighter {
     ),
     home: state.settings.spawn.place,
     attack: state.body.combat.attack,
+    alternates: state.body.combat.alternates,
     interval_ms: state.settings.kind.attack_interval_ms,
     numbers: state.settings.numbers,
     still: still(state:),

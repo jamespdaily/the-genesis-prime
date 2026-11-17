@@ -52,6 +52,53 @@ order by class_id, name;
   |> pog.execute(db)
 }
 
+/// A row you get from running the `load_creature_auto_attacks` query
+/// defined in `./src/genesis_prime/content/sql/load_creature_auto_attacks.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type LoadCreatureAutoAttacksRow {
+  LoadCreatureAutoAttacksRow(creature_id: Int, spell4_id: Int, order_index: Int)
+}
+
+/// Every row of the creature_auto_attack table no import has retired, in creature id and turn order: the one
+/// query the load makes of the table at start (genesis_prime/content/creature_auto_attack).
+/// The checks run on these rows, not in SQL.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn load_creature_auto_attacks(
+  db: pog.Connection,
+) -> Result(pog.Returned(LoadCreatureAutoAttacksRow), pog.QueryError) {
+  let decoder = {
+    use creature_id <- decode.field(0, decode.int)
+    use spell4_id <- decode.field(1, decode.int)
+    use order_index <- decode.field(2, decode.int)
+    decode.success(LoadCreatureAutoAttacksRow(
+      creature_id:,
+      spell4_id:,
+      order_index:,
+    ))
+  }
+
+  "-- Every row of the creature_auto_attack table no import has retired, in creature id and turn order: the one
+-- query the load makes of the table at start (genesis_prime/content/creature_auto_attack).
+-- The checks run on these rows, not in SQL.
+select
+  creature_id,
+  spell4_id,
+  order_index
+from creature_auto_attack
+where retired_by_import is null
+order by creature_id, order_index;
+"
+  |> pog.query
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
 /// A row you get from running the `load_creature_factions` query
 /// defined in `./src/genesis_prime/content/sql/load_creature_factions.sql`.
 ///
@@ -169,7 +216,7 @@ pub type LoadCreatureSpecialsRow {
   )
 }
 
-/// Every row of the creature_special table in creature id and list order: the one query
+/// Every row of the creature_special table no import has retired, in creature id and list order: the one query
 /// the load makes of the table at start (genesis_prime/content/creature_special). The
 /// checks run on these rows, not in SQL.
 ///
@@ -192,7 +239,7 @@ pub fn load_creature_specials(
     ))
   }
 
-  "-- Every row of the creature_special table in creature id and list order: the one query
+  "-- Every row of the creature_special table no import has retired, in creature id and list order: the one query
 -- the load makes of the table at start (genesis_prime/content/creature_special). The
 -- checks run on these rows, not in SQL.
 select
@@ -201,6 +248,7 @@ select
   order_index,
   cooldown_ms
 from creature_special
+where retired_by_import is null
 order by creature_id, order_index;
 "
   |> pog.query

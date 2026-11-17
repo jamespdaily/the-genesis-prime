@@ -48,6 +48,7 @@ pub fn standing(
       default: Kind(
         respawn_ms:,
         attack_spell4_id: Spell4Id(5649),
+        alternate_spell4_ids: [],
         attack_interval_ms: 1500,
         guard: option.None,
         specials: [],

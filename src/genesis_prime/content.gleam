@@ -9,7 +9,8 @@
 //// pattern; `creature_faction` (genesis_prime/content/creature_faction) is read
 //// beside the kinds, and the spawns, the placed objective creatures and the summons
 //// are checked with it. `creature_special` (genesis_prime/content/creature_special) is
-//// read beside the kinds too, and each creature's specials go into its kind.
+//// read beside the kinds too, and each creature's specials go into its kind, as its
+//// `creature_auto_attack` rows (genesis_prime/content/creature_auto_attack) do its attacks.
 //// The kinds are selected before the spawns, since a spawn's attack is its kind's
 //// spell.
 ////
@@ -101,6 +102,7 @@
 //// | a query fails | the start stops with the database's reason |
 
 import genesis_prime/content/class_resource as content_class_resource
+import genesis_prime/content/creature_auto_attack as content_creature_auto_attack
 import genesis_prime/content/creature_faction as content_creature_faction
 import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/creature_special as content_creature_special
@@ -223,6 +225,15 @@ fn read(
     |> result.map_error(fn(error) {
       QueryFailed(
         table: content_creature_special.table,
+        reason: worker.describe_query_error(error),
+      )
+    }),
+  )
+  use auto_attack_rows <- result.try(
+    content_creature_auto_attack.rows(db)
+    |> result.map_error(fn(error) {
+      QueryFailed(
+        table: content_creature_auto_attack.table,
         reason: worker.describe_query_error(error),
       )
     }),
@@ -360,7 +371,13 @@ fn read(
     Ok(..) -> []
     Error(refusals) -> refusals
   }
-  let kinds = creature_kind.select(rows: kind_rows, special_rows:, tables:)
+  let kinds =
+    creature_kind.select(
+      rows: kind_rows,
+      special_rows:,
+      auto_attack_rows:,
+      tables:,
+    )
   let kind_refusals = case kinds {
     Ok(..) -> []
     Error(refusals) -> refusals
@@ -370,7 +387,13 @@ fn read(
   // spawn has a kind, and that refusal alone stops the start.
   let kinds_for_spawns = case kinds {
     Ok(kinds) -> Ok(kinds)
-    Error(..) -> creature_kind.taken(rows: kind_rows, special_rows:, tables:)
+    Error(..) ->
+      creature_kind.taken(
+        rows: kind_rows,
+        special_rows:,
+        auto_attack_rows:,
+        tables:,
+      )
   }
   let factions = creature_faction.select(rows: faction_rows, tables:)
   let faction_refusals = result.unwrap_error(factions, or: [])

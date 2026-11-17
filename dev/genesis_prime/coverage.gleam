@@ -40,6 +40,7 @@
 //// tables and are not part of `./check`: whoever changes the measure runs them
 //// with `gleam test -- --tag coverage`.
 
+import genesis_prime/content/creature_auto_attack as content_creature_auto_attack
 import genesis_prime/content/creature_faction as content_creature_faction
 import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/creature_special as content_creature_special
@@ -288,8 +289,14 @@ fn kinds_selected(
   tables tables: store.Tables,
 ) -> Result(Result(creature_kind.Kinds, List(refusal.Refusal)), pog.QueryError) {
   use kind_rows <- result.try(content_creature_kind.rows(db))
-  use special_rows <- result.map(content_creature_special.rows(db))
-  creature_kind.select(rows: kind_rows, special_rows:, tables:)
+  use special_rows <- result.try(content_creature_special.rows(db))
+  use auto_attack_rows <- result.map(content_creature_auto_attack.rows(db))
+  creature_kind.select(
+    rows: kind_rows,
+    special_rows:,
+    auto_attack_rows:,
+    tables:,
+  )
 }
 
 /// The coverage of the play database's spawns, a line for each world, or why it

@@ -302,6 +302,7 @@ pub fn a_spawn_whose_creature_crashes_waits_the_respawn_time_of_its_creatures_ki
         default: Kind(
           respawn_ms: map_support.respawn_ms,
           attack_spell4_id: Spell4Id(5649),
+          alternate_spell4_ids: [],
           attack_interval_ms: 1500,
           guard: option.None,
           specials: [],
@@ -312,6 +313,7 @@ pub fn a_spawn_whose_creature_crashes_waits_the_respawn_time_of_its_creatures_ki
             Kind(
               respawn_ms: 5000,
               attack_spell4_id: Spell4Id(5649),
+              alternate_spell4_ids: [],
               attack_interval_ms: 1500,
               guard: option.None,
               specials: [],

@@ -57,7 +57,9 @@ while [ $# -gt 0 ]; do
   esac
 done
 ticket=1
-until mkdir "$dir/ticket.$ticket" 2>/dev/null; do ticket=$((ticket + 1)); done
+# A ticket is claimed by creating its file with noclobber (O_EXCL), which the shell does itself:
+# the `mkdir` of Ubuntu 26.04's uutils coreutils lets two racing stubs both claim one ticket.
+until (set -C; : >"$dir/ticket.$ticket") 2>/dev/null; do ticket=$((ticket + 1)); done
 touch "$dir/alive.$$"
 alive() { ls "$dir" | grep -c '^alive\\.'; }
 printf 'start %s seed %s file %s alive %s skip %s%s%s%s\\n' "$ticket" "$seed" "$file" "$(alive)" \\
