@@ -109,6 +109,7 @@ fn settled_with(
     shown: dict.new(),
     now_ms: 0,
     numbers: spawn_support.numbers,
+    arrival_objectives: set.new(),
     held_objectives: set.from_list(held),
     unix_ms: settled_at_ms,
   )
@@ -224,24 +225,28 @@ pub fn an_open_optional_objective_does_not_hold_the_hidden_one_back_test() -> Ni
     as "the quest is Achieved"
 }
 
-pub fn a_hidden_scripted_objective_with_data_is_not_completed_by_the_rule_test() -> Nil {
+pub fn a_hidden_script_with_data_completes_like_one_without_test() -> Nil {
   use <- owned_test.run(60_000)
-  // Quest 6296 as saved, its hidden objective 16132 given data 4965 (a value the rule
-  // does not read as a bare script): the rule leaves it open. A quest's objectives are
-  // read when its log loads, so the log is built from the edited tables.
+  // Quest 6296 as saved, its hidden objective 16132 given data 4965: a type 5 objective's
+  // data has no single meaning and the client reads none of it (`QuestObjective.type.5`),
+  // so a hidden one with data is a script like one without. A quest's objectives are read
+  // when its log loads, so the log is built from the edited tables. The real rows are the
+  // hidden type 5 objectives with data no creature links: 5607/8295, 7025/12833 and
+  // 7025/12834.
   use edited <- quest_support.with_objectives(edits: [#(16_132, "data", 4965)])
   let assert Ok(held) =
     quest_log.from_rows(rows: [saved_nature()], tables: edited)
-  assert settled(log: held, tables: edited) == Advanced(log: held, effects: [])
-    as "a hidden type 5 objective with data is not the rule's"
-  // The same row with the data it has in the table is the rule's, which shows the data
-  // is what held it back.
-  use plain <- quest_support.with_objectives(edits: [])
-  let assert Ok(fresh) =
-    quest_log.from_rows(rows: [saved_nature()], tables: plain)
-  assert list.take(settled(log: fresh, tables: plain).effects, 1)
-    == [SendProgress(quest_id: nature, objective_index: 2, progress: 1)]
-    as "opcode.0x361: with data 0 the hidden objective completes"
+  assert settled(log: held, tables: edited).effects
+    == [
+      SendProgress(quest_id: nature, objective_index: 2, progress: 1),
+      SendState(quest_id: nature, state: 2),
+    ]
+    as "opcode.0x361: the hidden objective completes with its data, then state 2"
+  // It still waits for the quest's other required objectives, as one without data does.
+  let waiting = nature_log(tables: edited, done_mask: 1, progress: [1000, 3, 0])
+  assert settled(log: waiting, tables: edited)
+    == Advanced(log: waiting, effects: [])
+    as "an open required objective keeps it at 0"
 }
 
 pub fn a_login_completes_the_hidden_objective_of_a_saved_quest_and_sends_it_achieved_test() -> Nil {
@@ -574,7 +579,7 @@ pub fn every_hidden_script_quest_can_finish_test() -> Nil {
 }
 
 /// The indexes of the quest's hidden scripted objectives that no creature links: type 5,
-/// flag 8, data 0.
+/// flag 8, whatever the data.
 fn unlinked_hidden_scripts(
   tables tables: table_store.Tables,
   quest quest: quest_log.Quest,
@@ -584,7 +589,6 @@ fn unlinked_hidden_scripts(
     let #(index, objective) = pair
     objective.kind == objective_kind.Scripted
     && int.bitwise_and(objective.flags, 8) != 0
-    && objective.data == 0
     && !objective_link.is_linked(tables:, quest_id: quest.id, index:)
   })
   |> list.map(fn(pair) { pair.0 })
@@ -919,6 +923,179 @@ fn nature_log(
   log
 }
 
+// ---- the client's visible scripts and the held rows ----
+
+/// Every visible stand-in with the quest of the client's quests, those with no marker row:
+/// the Quest2 row, the objective's index in its quest, and the quest as the log reads it.
+fn visible_rows(
+  tables tables: table_store.Tables,
+) -> List(#(quest2.Quest2, Int, quest_log.Quest)) {
+  quest2.all(tables)
+  |> list.flat_map(fn(row) {
+    let assert Ok(quest) = quest_log.quest_of(tables:, id: row.id)
+      as "the Quest2 row's objectives are rows of the table"
+    list.index_map(quest.objectives, fn(objective, index) {
+      #(index, objective)
+    })
+    |> list.filter_map(fn(pair) {
+      let #(index, objective) = pair
+      case
+        objective.visible_script_broken(
+          tables:,
+          quest_id: quest.id,
+          index:,
+          objective:,
+        )
+      {
+        [] if !objective.marked -> Ok(#(row, index, quest))
+        _ -> Error(Nil)
+      }
+    })
+  })
+}
+
+/// The QuestObjective ids the migrated database holds as held.
+fn held_ids() -> List(Int) {
+  let database = database_support.new_database(on: database_support.shared())
+  let assert Ok(rows) =
+    content_held_objective.rows(db: content_support.connect(database:))
+    as "the query ran"
+  list.map(rows, fn(row) { row.objective_id })
+}
+
+fn objective_at(quest quest: quest_log.Quest, index index: Int) -> Int {
+  let assert Ok(objective) = list.drop(quest.objectives, index) |> list.first
+    as "the index is one of the quest's objectives"
+  objective.objective_id
+}
+
+pub fn every_contentfinder_instance_row_is_held_test() -> Nil {
+  use <- owned_test.run(300_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let held = set.from_list(held_ids())
+  let rows = visible_rows(tables:)
+  // Quest2.questContentFinderTypeEnum 1 to 4 name an instance, an adventure, a dungeon or
+  // a match the quest is done in; 5 names "Equip the item" quests of no event.
+  let content_finder = fn(wanted: fn(Int) -> Bool) {
+    list.filter(rows, fn(row) {
+      wanted({ row.0 }.quest_content_finder_type_enum)
+    })
+    |> list.map(fn(row) { objective_at(quest: row.2, index: row.1) })
+  }
+  let instance = content_finder(fn(kind) { kind >= 1 && kind <= 4 })
+  let equip = content_finder(fn(kind) { kind == 5 })
+  assert list.length(rows) == 519
+    as "the visible scripts with no marker row, no link and no optional flag: the 516 with no marker column and the 3 whose marker names no WorldLocation2 row (Quest2 2937, 2965 and 3063)"
+  assert list.length(instance) == 52
+    as "rows of Quest2 with an instance enum 1 to 4"
+  assert list.length(equip) == 10
+    as "rows of Quest2 with enum 5, the equip objectives"
+  assert list.filter(instance, fn(id) { !set.contains(held, id) }) == []
+    as "every row of a quest with a content finder enum 1 to 4 needs an instance run or a match"
+  assert list.filter(equip, set.contains(held, _)) == []
+    as "an equip objective needs no instance, so none is held"
+}
+
+pub fn every_stand_in_row_completes_and_every_held_row_stays_open_test() -> Nil {
+  use <- owned_test.run(300_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let held = held_ids()
+  // For each quest with a visible stand-in, a player having done every other required
+  // objective that is open, until none more is: the free stand-ins must all be sent and
+  // the held ones none, over as many settles as the player's work between them needs.
+  let by_quest =
+    list.group(visible_rows(tables:), fn(row) { { row.0 }.id })
+    |> dict.to_list
+  let results =
+    list.flat_map(by_quest, fn(entry) {
+      let rows = entry.1
+      let assert [#(_, _, quest), ..] = rows as "a group holds a row"
+      let visible = list.map(rows, fn(row) { row.1 })
+      let scripts =
+        list.append(unlinked_hidden_scripts(tables:, quest:), visible)
+      let sent =
+        sent_over_settles(
+          tables:,
+          quest:,
+          scripts:,
+          held:,
+          done_mask: 0,
+          sent: [],
+        )
+      list.map(visible, fn(index) {
+        let id = objective_at(quest:, index:)
+        #(quest.id, id, list.contains(held, id), list.contains(sent, index))
+      })
+    })
+  let completed = list.filter(results, fn(row) { !row.2 })
+  let kept = list.filter(results, fn(row) { row.2 })
+  assert list.length(completed) == 389 as "visible rows that are not held: 389"
+  assert list.length(kept) == 130 as "held rows: 130"
+  let wrong_open = list.filter(completed, fn(row) { !row.3 })
+  assert wrong_open == []
+    as {
+      "stand-in rows (quest, objective) the settles never completed: "
+      <> string.inspect(wrong_open)
+    }
+  let wrong_done = list.filter(kept, fn(row) { row.3 })
+  assert wrong_done == []
+    as {
+      "held rows (quest, objective) the settles completed: "
+      <> string.inspect(wrong_done)
+    }
+}
+
+pub fn a_linked_marked_optional_or_other_type_objective_is_untouched_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Each case makes one objective of quest 6296 the quest's only candidate that one
+  // thing keeps out: the rule leaves it, and the quest stays Accepted.
+  let untouched = fn(edits: List(#(Int, String, Int)), why: String) {
+    use tables <- quest_support.with_objectives(edits:)
+    let log = nature_log(tables:, done_mask: 0, progress: [0, 0, 0])
+    assert settled(log:, tables:) == Advanced(log:, effects: []) as why
+  }
+  let others = [
+    #(9658, "flags", 0x20),
+    #(16_132, "type", 2),
+    #(16_132, "data", 73_464),
+    #(16_132, "flags", 0x20),
+  ]
+  // Creature2 27768 links objective 1 of quest 6296 by its questAnim columns
+  // (`objective_link.is_linked`), so a creature is to complete it.
+  untouched(
+    list.append(visible_script(id: 9659, flags: 0), others),
+    "a script a creature links is that creature's to complete",
+  )
+  untouched(
+    list.append(visible_script(id: 9658, flags: 0x20), [
+      #(9659, "flags", 0x20),
+      #(16_132, "type", 2),
+      #(16_132, "data", 73_464),
+      #(16_132, "flags", 0x20),
+    ]),
+    "an optional visible script is not one the quest needs",
+  )
+  untouched(
+    list.append(
+      [
+        #(9658, "type", 3),
+        #(9658, "flags", 0),
+        #(9658, "data", 0),
+        #(9658, "count", 1),
+        #(9658, "worldLocationsIdIndicator00", 0),
+        #(9658, "worldLocationsIdIndicator01", 0),
+      ],
+      others,
+    ),
+    "an objective of another type is not a script",
+  )
+  // A marked visible script is not untouched: the place and the stand-in rules take it
+  // (`objective_script_place_test`).
+  Nil
+}
+
 pub fn a_visible_script_completes_once_the_other_objectives_are_done_test() -> Nil {
   use <- owned_test.run(60_000)
   // Quest 1859 of the client's rows: objective 0 (1962) is type 5, flags 0, data 0,
@@ -1206,76 +1383,6 @@ pub fn an_objective_locked_behind_a_held_script_stays_closed_test() -> Nil {
     as "0x140553790: flag 2 keeps objective 1 closed while the held script is not done"
 }
 
-pub fn a_linked_marked_optional_or_other_type_objective_is_untouched_test() -> Nil {
-  use <- owned_test.run(60_000)
-  // Each case makes one objective of quest 6296 the quest's only candidate that one
-  // thing keeps out: the rule leaves it, and the quest stays Accepted.
-  let untouched = fn(edits: List(#(Int, String, Int)), why: String) {
-    use tables <- quest_support.with_objectives(edits:)
-    let log = nature_log(tables:, done_mask: 0, progress: [0, 0, 0])
-    assert settled(log:, tables:) == Advanced(log:, effects: []) as why
-  }
-  let others = [
-    #(9658, "flags", 0x20),
-    #(16_132, "type", 2),
-    #(16_132, "data", 73_464),
-    #(16_132, "flags", 0x20),
-  ]
-  // Creature2 27768 links objective 1 of quest 6296 by its questAnim columns
-  // (`objective_link.is_linked`), so a creature is to complete it.
-  untouched(
-    list.append(visible_script(id: 9659, flags: 0), others),
-    "a script a creature links is that creature's to complete",
-  )
-  // Objective 9658 keeps the markers (21383, 21384) it has in the client's rows.
-  untouched(
-    [
-      #(9658, "type", 5),
-      #(9658, "flags", 0),
-      #(9658, "data", 0),
-      #(9658, "count", 1),
-      #(9659, "flags", 0x20),
-      #(16_132, "type", 2),
-      #(16_132, "data", 73_464),
-      #(16_132, "flags", 0x20),
-    ],
-    "a visible script with a marker sends the player to a place, which they reach",
-  )
-  untouched(
-    list.append(visible_script(id: 9658, flags: 0x20), [
-      #(9659, "flags", 0x20),
-      #(16_132, "type", 2),
-      #(16_132, "data", 73_464),
-      #(16_132, "flags", 0x20),
-    ]),
-    "an optional visible script is not one the quest needs",
-  )
-  untouched(
-    list.append(
-      [
-        #(9658, "type", 3),
-        #(9658, "flags", 0),
-        #(9658, "data", 0),
-        #(9658, "count", 1),
-        #(9658, "worldLocationsIdIndicator00", 0),
-        #(9658, "worldLocationsIdIndicator01", 0),
-      ],
-      others,
-    ),
-    "an objective of another type is not a script",
-  )
-  // Objective 16132 is a hidden script (flags 8, data 0): with data it is the hidden
-  // half's own refusal, which the visible half does not widen.
-  use hidden_with_data <- quest_support.with_objectives(edits: [
-    #(16_132, "data", 4965),
-  ])
-  let ready =
-    nature_log(tables: hidden_with_data, done_mask: 3, progress: [1000, 4, 0])
-  assert settled(log: ready, tables: hidden_with_data)
-    == Advanced(log: ready, effects: [])
-    as "a hidden script with data is not one the server completes"
-}
-
 pub fn an_optional_hidden_script_still_completes_only_while_open_test() -> Nil {
   use <- owned_test.run(60_000)
   // Objective 2 (16132) is a hidden script that is also optional (flags 0x28). It is
@@ -1333,128 +1440,4 @@ pub fn a_script_with_a_count_above_one_is_set_to_its_count_test() -> Nil {
       SendState(quest_id: nature, state: 2),
     ]
     as "opcode.0x361 sets the script to its count in one message"
-}
-
-// ---- the client's visible scripts and the held rows ----
-
-/// Every visible stand-in of the client's quests: the Quest2 row, the objective's index
-/// in its quest, and the quest as the log reads it.
-fn visible_rows(
-  tables tables: table_store.Tables,
-) -> List(#(quest2.Quest2, Int, quest_log.Quest)) {
-  quest2.all(tables)
-  |> list.flat_map(fn(row) {
-    let assert Ok(quest) = quest_log.quest_of(tables:, id: row.id)
-      as "the Quest2 row's objectives are rows of the table"
-    list.index_map(quest.objectives, fn(objective, index) {
-      #(index, objective)
-    })
-    |> list.filter_map(fn(pair) {
-      let #(index, objective) = pair
-      case
-        objective.visible_script_broken(
-          tables:,
-          quest_id: quest.id,
-          index:,
-          objective:,
-        )
-      {
-        [] -> Ok(#(row, index, quest))
-        _ -> Error(Nil)
-      }
-    })
-  })
-}
-
-/// The QuestObjective ids the migrated database holds as held.
-fn held_ids() -> List(Int) {
-  let database = database_support.new_database(on: database_support.shared())
-  let assert Ok(rows) =
-    content_held_objective.rows(db: content_support.connect(database:))
-    as "the query ran"
-  list.map(rows, fn(row) { row.objective_id })
-}
-
-fn objective_at(quest quest: quest_log.Quest, index index: Int) -> Int {
-  let assert Ok(objective) = list.drop(quest.objectives, index) |> list.first
-    as "the index is one of the quest's objectives"
-  objective.objective_id
-}
-
-pub fn every_contentfinder_instance_row_is_held_test() -> Nil {
-  use <- owned_test.run(300_000)
-  use <- unitest.guard(client_tables.present())
-  let tables = client_tables.shared()
-  let held = set.from_list(held_ids())
-  let rows = visible_rows(tables:)
-  // Quest2.questContentFinderTypeEnum 1 to 4 name an instance, an adventure, a dungeon or
-  // a match the quest is done in; 5 names "Equip the item" quests of no event.
-  let content_finder = fn(wanted: fn(Int) -> Bool) {
-    list.filter(rows, fn(row) {
-      wanted({ row.0 }.quest_content_finder_type_enum)
-    })
-    |> list.map(fn(row) { objective_at(quest: row.2, index: row.1) })
-  }
-  let instance = content_finder(fn(kind) { kind >= 1 && kind <= 4 })
-  let equip = content_finder(fn(kind) { kind == 5 })
-  assert list.length(rows) == 516
-    as "the visible scripts with no marker, no link and no optional flag: the issue's 516"
-  assert list.length(instance) == 52
-    as "rows of Quest2 with an instance enum 1 to 4"
-  assert list.length(equip) == 10
-    as "rows of Quest2 with enum 5, the equip objectives"
-  assert list.filter(instance, fn(id) { !set.contains(held, id) }) == []
-    as "every row of a quest with a content finder enum 1 to 4 needs an instance run or a match"
-  assert list.filter(equip, set.contains(held, _)) == []
-    as "an equip objective needs no instance, so none is held"
-}
-
-pub fn every_stand_in_row_completes_and_every_held_row_stays_open_test() -> Nil {
-  use <- owned_test.run(300_000)
-  use <- unitest.guard(client_tables.present())
-  let tables = client_tables.shared()
-  let held = held_ids()
-  // For each quest with a visible stand-in, a player having done every other required
-  // objective that is open, until none more is: the free stand-ins must all be sent and
-  // the held ones none, over as many settles as the player's work between them needs.
-  let by_quest =
-    list.group(visible_rows(tables:), fn(row) { { row.0 }.id })
-    |> dict.to_list
-  let results =
-    list.flat_map(by_quest, fn(entry) {
-      let rows = entry.1
-      let assert [#(_, _, quest), ..] = rows as "a group holds a row"
-      let visible = list.map(rows, fn(row) { row.1 })
-      let scripts =
-        list.append(unlinked_hidden_scripts(tables:, quest:), visible)
-      let sent =
-        sent_over_settles(
-          tables:,
-          quest:,
-          scripts:,
-          held:,
-          done_mask: 0,
-          sent: [],
-        )
-      list.map(visible, fn(index) {
-        let id = objective_at(quest:, index:)
-        #(quest.id, id, list.contains(held, id), list.contains(sent, index))
-      })
-    })
-  let completed = list.filter(results, fn(row) { !row.2 })
-  let kept = list.filter(results, fn(row) { row.2 })
-  assert list.length(completed) == 386 as "visible rows that are not held: 386"
-  assert list.length(kept) == 130 as "held rows: 130"
-  let wrong_open = list.filter(completed, fn(row) { !row.3 })
-  assert wrong_open == []
-    as {
-      "stand-in rows (quest, objective) the settles never completed: "
-      <> string.inspect(wrong_open)
-    }
-  let wrong_done = list.filter(kept, fn(row) { row.3 })
-  assert wrong_done == []
-    as {
-      "held rows (quest, objective) the settles completed: "
-      <> string.inspect(wrong_done)
-    }
 }

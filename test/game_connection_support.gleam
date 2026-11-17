@@ -130,6 +130,7 @@ pub fn settings() -> game_connection.Settings {
     tutorial_chain: tutorial_support.none(),
     projector_landings: projector_support.landings(),
     reused_unit_objectives: set.new(),
+    arrival_objectives: set.new(),
     held_objectives: set.new(),
   )
 }

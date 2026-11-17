@@ -28,12 +28,12 @@
 ////   600,000 ms). A kill of a type 8 objective is a share of 1000, so 35 kills finish it.
 //// - 4517: 6201 (type 5, count 1, flags 0, no limit), 6302 (type 5, count 1, flags 35 so
 ////   optional and waiting on 6201, 33,000 ms) and 7627 (type 5, flags 8).
-//// - A gap: no event completes a type 5 objective (`QuestObjective.type.5`, a scripted
-////   objective whose completion is the server's script; `0x140551d40` has no case for 5),
-////   so a timed one runs out and botches its quest, as the ten quests 4041, 4216, 4517,
-////   6794, 6901, 7027, 7657, 9282, 9647 and 9839 with a timed type 5 objective do, until
-////   the issue "Quests, zones and prerequisites work on the real client" gives such an
-////   objective its trigger.
+//// - A type 5 objective (`QuestObjective.type.5`, a scripted objective whose completion is
+////   the server's script; `0x140551d40` has no case for 5) that no creature links is
+////   completed by the server's stand-in and place rules (`objective.script_of`), so its
+////   timer stops at its completion; one the server leaves open (a cast names it, or it is
+////   held) runs out and botches its quest, as the quests with a timed type 5 objective do
+////   (`objective_script_place_test` runs quest 9282's).
 //// - The times are the tests' choice: a connection's monotonic milliseconds.
 
 import character_tables

@@ -21,12 +21,25 @@
 //// kill mask in the log (`group_member`, `quest_log.kill_marked`; the mask is never sent:
 //// `opcode.0x361` carries only the progress), and the last one's kill makes it 1 of its
 //// count 1 (the client's needed value is 1 for count 1, `0x140551840`). A type 5
-//// objective (`QuestObjective.type.5`, a scripted objective) takes none of these events:
-//// nothing the client sends completes one, so a timed one runs out (`quest_log.expire`).
-//// A hidden one (`QuestObjective.flags.8`) with data 0 that no creature links, and a
-//// visible, required, unmarked, unlinked one, are done by the server once the quest's
-//// other required objectives are (`stand_in_scripts`, a server choice), except the
-//// visible ones only an instance run or a PvP match completes, which stay open.
+//// objective (`QuestObjective.type.5`, a scripted objective) that no creature links takes
+//// none of these events: nothing the client sends completes one, so the server completes
+//// it by what `script_of` says, and a timed one the server does not complete runs out
+//// (`quest_log.expire`):
+//// - a hidden one (`QuestObjective.flags.8`) and a visible, required one with no marker
+////   are done once the quest's other required objectives are (`stand_in_scripts`, a
+////   server choice);
+//// - a visible, required one with a marker is done when the quest is accepted, or when it
+////   is open if flags 1 and 2 keep it closed until then, whatever else the quest holds
+////   (`stand_in_scripts`, a server choice that stands in for the real trigger each
+////   objective asks for, the issue "Each kind of scripted quest step that the
+////   Tower fix completes on accept gets its real rule");
+//// - one of the `arrival_objectives` is done when the player stands at one of its markers
+////   (`arrivals`), because its text asks only to go there;
+//// - one a spell effect or an item names (`objective_action`) stays open until a cast
+////   counts for it, the issue "A spell's QuestAdvanceObjective effect advances its
+////   quest objective, so the Loftite Railgun counts its hits";
+//// - one of the `held_objectives` stays open whichever of these it is, because only an
+////   instance run or a PvP match completes it.
 //// An objective takes the event only while it is open (`0x1405510d0`, `0x140553790`): its
 //// quest is in the active list, Accepted or Achieved (`0x1405510d0` tests only for state
 //// 3), it is not done and it is reachable. Every objective that is open and counts the
@@ -74,6 +87,7 @@
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/communicator
 import genesis_prime/game/departures
+import genesis_prime/game/objective_action
 import genesis_prime/game/objective_kind
 import genesis_prime/game/objective_link
 import genesis_prime/game/place_objective
@@ -734,6 +748,7 @@ pub fn settle(
   place place: Place,
   shown shown: shown.Picture,
   numbers numbers: GameNumbers,
+  arrival_objectives arrival_objectives: Set(Int),
   held_objectives held_objectives: Set(Int),
   unix_ms unix_ms: Int,
   now_ms now_ms: Int,
@@ -771,6 +786,7 @@ pub fn settle(
           place:,
           shown:,
           numbers:,
+          arrival_objectives:,
           held_objectives:,
           unix_ms:,
           now_ms:,
@@ -809,15 +825,30 @@ fn opened(
   place place: Place,
   shown shown: shown.Picture,
   numbers numbers: GameNumbers,
+  arrival_objectives arrival_objectives: Set(Int),
   held_objectives held_objectives: Set(Int),
   unix_ms unix_ms: Int,
   now_ms now_ms: Int,
 ) -> Settling {
   let next =
     visits(settling:, quest:, zones:, now_ms:)
-    |> arrivals(quest:, tables:, place:, shown:, now_ms:)
+    |> arrivals(
+      quest:,
+      tables:,
+      place:,
+      shown:,
+      arrival_objectives:,
+      held_objectives:,
+      now_ms:,
+    )
     |> finishes(quest:, tables:, numbers:, unix_ms:, now_ms:)
-    |> stand_in_scripts(quest:, tables:, held_objectives:, now_ms:)
+    |> stand_in_scripts(
+      quest:,
+      tables:,
+      arrival_objectives:,
+      held_objectives:,
+      now_ms:,
+    )
   case list.length(next.progress) > list.length(settling.progress) {
     True ->
       opened(
@@ -828,6 +859,7 @@ fn opened(
         place:,
         shown:,
         numbers:,
+        arrival_objectives:,
         held_objectives:,
         unix_ms:,
         now_ms:,
@@ -836,86 +868,167 @@ fn opened(
   }
 }
 
-/// The quest's scripted objectives with no target, each done once every other objective
-/// of the quest without flag 0x20 is done, except one the client keeps closed until a
-/// script is done (`other_required_objectives_done`). Two kinds are done: the hidden
-/// ones, objectives of type 5 with flag 8 (hidden) and data 0 that no creature links
-/// (`objective_link.is_linked`), and the visible ones (`visible_script_broken`): type 5
-/// with flags 0x8 and 0x20 clear, no marker and no creature link, whatever the data. Such
-/// an objective is done by nothing the client or a player does, and the Achieved rule
-/// (`0x1405fbc40`) waits for it, so the quest would stay Accepted for ever; this
-/// completion is a server choice: a script the server can complete is completed. The visible ones that only an instance run or a PvP match completes are
-/// the `held_objectives`: they stay open, and the quest with them. Another stand-in of
-/// the quest, held or not, is not one to wait for, so a quest with several completes the
-/// free ones that are open together, and a quest with no other required objective
-/// completes at once. A script the client keeps closed (`0x140553790`) behind an
-/// objective that is not done stays open for a later settle, and a done objective is not
-/// counted again.
+/// How the rules treat an objective of a quest, decided in one place so no objective falls
+/// between two rules.
+pub type Script {
+  /// Not a type 5 objective: the stand-in and place rules leave it alone.
+  NotScripted
+  /// A creature's row links it, so a use of that creature counts it (`counts`).
+  UsedByCreature
+  /// Visible and optional (flag 0x20): the quest does not wait for it, and nothing here
+  /// completes it.
+  Optional
+  /// Visible, required and marked, and a spell effect or an item names it
+  /// (`objective_action.named`): it stays open until that cast counts for it.
+  NamedAction
+  /// Visible, required, marked and listed in the arrival table: done when the player
+  /// stands at one of its markers.
+  PlaceScript
+  /// Visible, required and marked, and none of the above: done when it is open, whatever
+  /// else the quest holds.
+  StandInOnAccept
+  /// Hidden, or visible, required and unmarked: done once every other required
+  /// objective of the quest is.
+  StandInWithQuest
+}
+
+/// The `Script` of the objective at `index` of the quest. A type 5 objective
+/// (`QuestObjective.type.5`, done only by the server's 0x361) that a creature links is the
+/// use rule's. Of the others, a hidden one (flag 8, `QuestObjective.flags.8`, which shows no
+/// marker) waits for the quest, with its data whatever it is and optional or not; a visible
+/// optional one (flag 0x20) is left alone because the quest's Achieved rule skips it
+/// (`0x1405fbc40`). A visible required one without a marker waits for the quest (a
+/// `worldLocationsIdIndicator` that names no WorldLocation2 row is no marker: no position is
+/// at it, `0x140485fa0`); one with a marker sends the player to a place (`0x140553890`) and is
+/// the named action's, a place script (`arrival_objectives`) or a stand-in on accept, in
+/// that order. The held objectives are not looked at here: each rule leaves a held one open.
+pub fn script_of(
+  tables tables: table_store.Tables,
+  quest_id quest_id: Int,
+  index index: Int,
+  objective objective: quest_log.Objective,
+  arrival_objectives arrival_objectives: Set(Int),
+) -> Script {
+  use <- bool.guard(objective.kind != objective_kind.Scripted, NotScripted)
+  use <- bool.guard(
+    objective_link.is_linked(tables:, quest_id:, index:),
+    UsedByCreature,
+  )
+  use <- bool.guard(
+    int.bitwise_and(objective.flags, hidden_flag) != 0,
+    StandInWithQuest,
+  )
+  use <- bool.guard(
+    int.bitwise_and(objective.flags, quest_log.optional_flag) != 0,
+    Optional,
+  )
+  use <- bool.guard(!objective.marked, StandInWithQuest)
+  use <- bool.guard(
+    objective_action.named(tables:, quest_id:, index:),
+    NamedAction,
+  )
+  case set.contains(arrival_objectives, objective.objective_id) {
+    True -> PlaceScript
+    False -> StandInOnAccept
+  }
+}
+
+/// The quest's stand-in scripts (`script_of`), a held one left open:
+/// - those that stand in on accept are done as soon as they are open
+///   (`quest_log.objective_open`, so flags 1 and 2 keep one closed behind the objectives
+///   before it), whatever the quest's other objectives are;
+/// - those that stand in with the quest are done once every other required objective of
+///   the quest is done except the stand-ins and the objectives the client keeps closed
+///   until a script is done (`other_required_objectives_done`).
+/// Such an objective is done by nothing the client or a player does, and the Achieved rule
+/// (`0x1405fbc40`) waits for it, so the quest would stay Accepted for ever; this completion
+/// is a server choice: a script the server can complete is completed, as a guess until a
+/// real trigger replaces it. The quest is Achieved only when every required objective is
+/// done, so a stand-in beside an open objective leaves the quest Accepted. A held
+/// objective is not waited for, nor is another stand-in, so a quest with several completes
+/// the free ones that are open together, and a quest with no other required objective
+/// completes at once. A script the client keeps closed (`0x140553790`) behind an objective
+/// that is not done stays open for a later settle, and a done objective is not counted
+/// again.
 fn stand_in_scripts(
   settling settling: Settling,
   quest quest: quest_log.Quest,
   tables tables: table_store.Tables,
+  arrival_objectives arrival_objectives: Set(Int),
   held_objectives held_objectives: Set(Int),
   now_ms now_ms: Int,
 ) -> Settling {
   let scripts =
     list.index_map(quest.objectives, fn(objective, index) {
-      #(index, objective)
+      #(
+        index,
+        objective,
+        script_of(
+          tables:,
+          quest_id: quest.id,
+          index:,
+          objective:,
+          arrival_objectives:,
+        ),
+      )
     })
-    |> list.filter(fn(pair) {
-      let #(index, objective) = pair
-      hidden_script(tables:, quest_id: quest.id, index:, objective:)
-      || visible_script_broken(tables:, quest_id: quest.id, index:, objective:)
-      == []
+  let open_and_free = fn(settling: Settling, wanted: Script) {
+    list.filter(scripts, fn(triple) {
+      triple.2 == wanted
+      && !set.contains(held_objectives, { triple.1 }.objective_id)
+      && quest_log.objective_open(log: settling.log, quest:, index: triple.0)
     })
-  let waiting =
-    list.filter(scripts, fn(pair) {
-      !set.contains(held_objectives, { pair.1 }.objective_id)
-      && quest_log.objective_open(log: settling.log, quest:, index: pair.0)
-    })
-  case
-    waiting != []
-    && other_required_objectives_done(
-      log: settling.log,
-      quest:,
-      scripts: list.map(scripts, fn(pair) { pair.0 }),
-    )
-  {
-    True ->
-      list.fold(waiting, settling, fn(settling, pair) {
+  }
+  let on_accept =
+    list.fold(
+      open_and_free(settling, StandInOnAccept),
+      settling,
+      fn(settling, triple) {
         set_count(
           settling:,
           quest:,
-          index: pair.0,
-          value: { pair.1 }.count,
+          index: triple.0,
+          value: { triple.1 }.count,
+          now_ms:,
+        )
+      },
+    )
+  let waiting = open_and_free(on_accept, StandInWithQuest)
+  case
+    waiting != []
+    && other_required_objectives_done(
+      log: on_accept.log,
+      quest:,
+      scripts: list.filter_map(scripts, fn(triple) {
+        case triple.2 {
+          StandInOnAccept | StandInWithQuest -> Ok(triple.0)
+          NotScripted | UsedByCreature | Optional | NamedAction | PlaceScript ->
+            Error(Nil)
+        }
+      }),
+    )
+  {
+    True ->
+      list.fold(waiting, on_accept, fn(settling, triple) {
+        set_count(
+          settling:,
+          quest:,
+          index: triple.0,
+          value: { triple.1 }.count,
           now_ms:,
         )
       })
-    False -> settling
+    False -> on_accept
   }
 }
 
-/// Whether the objective at `index` of the quest is a hidden script with no target:
-/// type 5, flag 8 and data 0, that no creature links.
-fn hidden_script(
-  tables tables: table_store.Tables,
-  quest_id quest_id: Int,
-  index index: Int,
-  objective objective: quest_log.Objective,
-) -> Bool {
-  objective.kind == objective_kind.Scripted
-  && int.bitwise_and(objective.flags, hidden_flag) != 0
-  && objective.data == 0
-  && !objective_link.is_linked(tables:, quest_id:, index:)
-}
-
-/// The rules the objective at `index` of the quest breaks as a visible script with no
-/// target, none when it is one: type 5 (`QuestObjective.type.5`, done only by the
-/// server's 0x361), flag 0x8 clear (else it is a hidden script), flag 0x20 clear (else
-/// the quest does not wait for it), no `worldLocationsIdIndicator` marker (a marker sends
-/// the player to a place, which they reach), and no creature linking it
-/// (`objective_link.is_linked`). Its data is not read: the server completes it whatever
-/// the data, which no client rule gives it.
+/// The rules the objective at `index` of the quest breaks as a visible script a creature
+/// does not link, none when it is one: type 5 (`QuestObjective.type.5`, done only by the
+/// server's 0x361), flag 0x8 clear (else it is a hidden script), flag 0x20 clear (else the
+/// quest does not wait for it), and no creature linking it (`objective_link.is_linked`). A
+/// marker does not break it: a marked one is a place script, a stand-in on accept or the
+/// named action's (`script_of`). Its data is not read: the server completes it whatever the
+/// data, which no client rule gives it.
 pub fn visible_script_broken(
   tables tables: table_store.Tables,
   quest_id quest_id: Int,
@@ -937,10 +1050,6 @@ pub fn visible_script_broken(
     },
     case int.bitwise_and(objective.flags, quest_log.optional_flag) != 0 {
       True -> ["flag 0x20 makes it optional, so its quest does not wait for it"]
-      False -> []
-    },
-    case objective.marked {
-      True -> ["a worldLocationsIdIndicator marker sends the player to a place"]
       False -> []
     },
     case objective_link.is_linked(tables:, quest_id:, index:) {
@@ -1011,22 +1120,37 @@ fn finishes(
 
 /// The open place objectives of the quest that the place completes or counts, again
 /// while a pass opened an objective that the place reaches too: the type 22 objectives at
-/// a marker, the optional ones with their required sibling, and the place-counted
-/// checklists' units. A done objective is not counted again, which ends the loop.
+/// a marker, the place scripts (`script_of`, a held one left open) at a marker, the
+/// optional type 22 ones with their required sibling, and the place-counted checklists'
+/// units. A done objective is not counted again, which ends the loop.
 fn arrivals(
   settling settling: Settling,
   quest quest: quest_log.Quest,
   tables tables: table_store.Tables,
   place place: Place,
   shown shown: shown.Picture,
+  arrival_objectives arrival_objectives: Set(Int),
+  held_objectives held_objectives: Set(Int),
   now_ms now_ms: Int,
 ) -> Settling {
   let at_markers =
     quest_log.open_objectives(log: settling.log, quest:)
     |> list.filter(fn(open) {
-      let #(_, objective) = open
-      is_place(objective:)
-      && objective.count == 1
+      let #(index, objective) = open
+      {
+        { is_place(objective:) && objective.count == 1 }
+        || {
+          script_of(
+            tables:,
+            quest_id: quest.id,
+            index:,
+            objective:,
+            arrival_objectives:,
+          )
+          == PlaceScript
+          && !set.contains(held_objectives, objective.objective_id)
+        }
+      }
       && place_objective.at_marker(
         tables:,
         objective_id: objective.objective_id,
@@ -1085,7 +1209,16 @@ fn arrivals(
     })
   case list.length(counted.progress) > list.length(settling.progress) {
     True ->
-      arrivals(settling: counted, quest:, tables:, place:, shown:, now_ms:)
+      arrivals(
+        settling: counted,
+        quest:,
+        tables:,
+        place:,
+        shown:,
+        arrival_objectives:,
+        held_objectives:,
+        now_ms:,
+      )
     False -> counted
   }
 }

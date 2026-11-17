@@ -49,6 +49,7 @@ import cast_support
 import connection_rule_support as support
 import experience_support
 import fixture_tables
+import game_client
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{type Answer, type Message, type Request}
 import genesis_prime/connection/frame.{type Frame}
@@ -1808,4 +1809,177 @@ pub fn a_use_that_sets_a_checklist_bit_tells_the_map_the_release_test() -> Nil {
     as "one step of the go holds the tell"
   assert list.last(support.effects_of(go_step)) == Ok(tell_released(unit:))
     as "and the tell is the last of the step's effects: after the written frames"
+}
+
+// ---- a place script of a visible, marked type 5 objective ----
+//
+// "The Tower" (quest 3667) has one objective, 4770 (type 5, count 1), that the arrival table
+// lists; its marker WorldLocation2 7778 is moved here into the World 3460 and zone 6009 the
+// tests' player stands in (the real marker is in World 426), centred where the test says.
+// The completion is the server's choice (`QuestObjective.type.5`: nothing the client sends
+// completes it), told by 0x361 and 0x35c (`opcode.0x361`, `opcode.0x35c`).
+
+/// The fixture's rows with the Tower's marker moved to World 3460, zone 6009, centred at
+/// x, y, z with its radius 5, and these edits of other rows.
+fn with_the_tower_marker_at(
+  x x: Float,
+  y y: Float,
+  z z: Float,
+  also also: List(#(String, Int, List(#(String, planted_table.Cell)))),
+  body body: fn(store_tables.Tables) -> a,
+) -> a {
+  let rows =
+    list.fold(
+      [
+        #("WorldLocation2", 7778, [
+          #("worldId", Integer(3460)),
+          #("worldZoneId", Integer(6009)),
+          #("position0", planted_table.Float(x)),
+          #("position1", planted_table.Float(y)),
+          #("position2", planted_table.Float(z)),
+        ]),
+        ..also
+      ],
+      fixture_tables.rows(),
+      fn(rows, edit) {
+        case
+          fixture_tables.change(rows:, table: edit.0, id: edit.1, with: edit.2)
+        {
+          Ok(changed) -> changed
+          Error(refusal) -> panic as fixture_tables.describe(refusal)
+        }
+      },
+    )
+  fixture_tables.on_rows(rows:, reaching: [], body:)
+}
+
+/// The tests' settings over these tables, with the Tower's objective an arrival objective.
+fn arriving_at_the_tower(
+  tables tables: store_tables.Tables,
+) -> connection_state.Settings {
+  connection_state.Settings(
+    ..connection_support.settings(),
+    tables:,
+    arrival_objectives: set.from_list([4770]),
+  )
+}
+
+pub fn moving_into_the_marker_of_a_place_script_sends_its_progress_and_achieved_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use tables <- with_the_tower_marker_at(
+    x: 60.0,
+    y: -853.8716,
+    z: -560.188,
+    also: [],
+  )
+  let #(state, entry) =
+    connection_support.entered_with_quests_in(
+      settings: arriving_at_the_tower(tables:),
+      quests: [quest_support.accepted(quest_id: 3667, progress: [0])],
+    )
+  assert quest_frames(taken: entry) == []
+    as "the player enters 31 from the marker, so the entry settle completes nothing"
+  // 2.0 east of the marker's centre, inside its radius 5.
+  let #(state, moved) =
+    connection_support.read(
+      state:,
+      bytes: connection_support.moves_message([
+        game_client.position_command(x: 62.0, y: -853.8716, z: -560.188),
+      ]),
+    )
+  assert quest_frames(taken: moved)
+    == [
+      progress_frame(quest: 3667, index: 0, progress: 1),
+      state_frame(quest: 3667, state: 2),
+    ]
+    as "opcode.0x361 sets the objective to its count 1, then 0x35c state 2: the Master Control Panel receives the quest"
+  let #(_, again) =
+    connection_support.read(
+      state:,
+      bytes: connection_support.moves_message([
+        game_client.position_command(x: 63.0, y: -853.8716, z: -560.188),
+      ]),
+    )
+  assert quest_frames(taken: again) == []
+    as "a second update inside the marker sends nothing: the objective is done"
+}
+
+pub fn accepting_a_quest_at_its_place_script_marker_completes_it_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The player enters at WorldLocation2 51596's place; the marker is centred there. The
+  // quest comes by the communicator (flags 4) as the other accepts here do, with its
+  // prerequisite quests (3479 or 3480, Prerequisite 3560) taken out and its faction
+  // set to either (the test's player is not the quest's Exile).
+  use tables <- with_the_tower_marker_at(
+    x: 29.128599166870117,
+    y: -853.87158203125,
+    z: -560.18798828125,
+    also: [
+      #("Quest2", 3667, [
+        #("flags", Integer(4)),
+        #("preq_flags", Integer(0)),
+        #("questPlayerFactionEnum", Integer(2)),
+        #("preq_quest0", Integer(0)),
+        #("preq_quest01", Integer(0)),
+        #("prerequisiteId", Integer(0)),
+      ]),
+    ],
+  )
+  let #(state, _) =
+    connection_support.entered_with_quests_in(
+      settings: arriving_at_the_tower(tables:),
+      quests: [quest_support.known(3667, 5)],
+    )
+  let assert Ok(body) =
+    quest_accept.encode(QuestAccept(
+      item: ItemPlace(location: 300, bag_index: 4_294_967_295),
+      quest_id: 3667,
+    ))
+    as "the dialog's accept fits the message"
+  let #(_, taken) =
+    connection_support.read(
+      state,
+      connection_support.world_message(
+        message_id: quest_accept.message_id,
+        body:,
+      ),
+    )
+  assert quest_frames(taken:)
+    == [
+      state_frame(quest: 3667, state: 1),
+      progress_frame(quest: 3667, index: 0, progress: 1),
+      state_frame(quest: 3667, state: 2),
+    ]
+    as "0x35c 1 for the accept, then 0x361 and 0x35c 2: the player already stands in the marker, so the objective completes at accept"
+}
+
+pub fn entering_the_world_at_the_marker_of_a_place_script_holds_it_done_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The saved quest is Accepted with nothing done and the player enters standing in the
+  // marker (WorldLocation2 51596's place): the entry settle completes the objective, so
+  // the log the client is sent holds the quest Achieved with the objective at 1
+  // (`opcode.0x35f`).
+  use tables <- with_the_tower_marker_at(
+    x: 29.128599166870117,
+    y: -853.87158203125,
+    z: -560.18798828125,
+    also: [],
+  )
+  let #(_, entry) =
+    connection_support.entered_with_quests_in(
+      settings: arriving_at_the_tower(tables:),
+      quests: [quest_support.accepted(quest_id: 3667, progress: [0])],
+    )
+  let log_frame =
+    world_entry_support.only_frame(
+      frames: connection_support.written(taken: entry),
+      message_id: quest_message.message_id,
+    )
+  let assert Ok(message) = quest_message.decode(log_frame.body)
+    as "the quest log frame decodes"
+  assert list.map(message.active, fn(active) {
+      #(active.quest_id, active.state, active.progress)
+    })
+    == [#(3667, 2, [1])]
+    as "the entry log holds quest 3667 Achieved with objective 4770 at its count 1"
 }
