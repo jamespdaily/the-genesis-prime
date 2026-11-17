@@ -57,7 +57,9 @@ while [ $# -gt 0 ]; do
   esac
 done
 ticket=1
-until mkdir "$dir/ticket.$ticket" 2>/dev/null; do ticket=$((ticket + 1)); done
+# A ticket is claimed by creating its file with noclobber (O_EXCL), which the shell does itself:
+# the `mkdir` of Ubuntu 26.04's uutils coreutils lets two racing stubs both claim one ticket.
+until (set -C; : >"$dir/ticket.$ticket") 2>/dev/null; do ticket=$((ticket + 1)); done
 touch "$dir/alive.$$"
 alive() { ls "$dir" | grep -c '^alive\\.'; }
 printf 'start %s seed %s file %s alive %s skip %s%s%s%s\\n' "$ticket" "$seed" "$file" "$(alive)" \\
@@ -71,7 +73,7 @@ if [ -n "$PLANT_AT_ONCE" ] && [ "$ticket" -le "$PLANT_AT_ONCE" ]; then
     sleep 0.1
     polls=$((polls + 1))
     if [ "$polls" -gt "${PLANT_RENDEZVOUS_POLLS:-300}" ]; then
-      echo "only $(arrived) of $PLANT_AT_ONCE runs had started together; this run held ticket $ticket; the state folder holds: $(ls "$dir" | tr '\\n' ' ')"
+      echo "only $(arrived) of $PLANT_AT_ONCE runs had started together"
       rm -f "$dir/alive.$$"
       exit 1
     fi

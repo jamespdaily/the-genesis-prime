@@ -46,6 +46,7 @@ import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/prerequisite
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_effects.{type Spell4Effects}
+import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
@@ -134,21 +135,40 @@ pub type Unevaluated {
   DelayBehindPrerequisite(spell4_effects_id: Int, prerequisite_id: Int)
 }
 
-/// The damage effects (type 8) of the spell, in the order they take effect
-/// (`Spell4Effects.orderIndex`, then the row id).
-fn damage_effects(
+const damage_effects_key: table_store.DerivedKey(Dict(Int, List(Spell4Effects))) =
+  table_store.DerivedKey("CreatureDamageEffects")
+
+/// The damage effects (type 8) of each spell, in the order they take effect
+/// (`Spell4Effects.orderIndex`, then the row id), as a value the tables' load builds once
+/// (genesis_prime/table/loader/store `derived`): the content load asks for them once for
+/// every spell of every creature, and the table holds one row per effect of every spell.
+pub fn derivation() -> table_store.Derivation {
+  table_store.derivation(key: damage_effects_key, build: fn(tables) {
+    Ok(
+      spell4_effects.all(tables)
+      |> list.filter(fn(effect) {
+        effect_kind.kind_of(effect.effect_type) == effect_kind.Damage
+      })
+      |> list.group(fn(effect) { effect.spell_id })
+      |> dict.map_values(fn(_, effects) {
+        list.sort(effects, fn(first, second) {
+          int.compare(first.order_index, second.order_index)
+          |> order.break_tie(int.compare(first.id, second.id))
+        })
+      }),
+    )
+  })
+}
+
+/// The damage effects (type 8) of the spell, in the order they take effect, from the value
+/// the tables' load built.
+pub fn damage_effects(
   tables tables: table_store.Tables,
   spell4_id spell4_id: Int,
 ) -> List(Spell4Effects) {
-  spell4_effects.all(tables)
-  |> list.filter(fn(effect) {
-    effect.spell_id == spell4_id
-    && effect_kind.kind_of(effect.effect_type) == effect_kind.Damage
-  })
-  |> list.sort(fn(first, second) {
-    int.compare(first.order_index, second.order_index)
-    |> order.break_tie(int.compare(first.id, second.id))
-  })
+  table_store.derived(tables:, key: damage_effects_key)
+  |> dict.get(spell4_id)
+  |> result.unwrap([])
 }
 
 /// The prerequisite type of a unit that is the target of a live cast

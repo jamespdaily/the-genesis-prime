@@ -378,3 +378,39 @@ pub fn the_rows_of_the_acceptance_creatures_load_on_the_clients_tables_test() ->
     == "0"
     as "every hand-entered row is a retail record with its guess marked"
 }
+
+pub fn a_retired_row_is_not_loaded_and_its_place_can_be_written_again_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let database = database_support.new_database(on: database_support.shared())
+  // A run of the retail-record import retires the Yeti's two auto-attacks and Elderoot
+  // Deathcap's special, then writes the Yeti's first auto-attack again at the same place:
+  // the retired row and the new one hold the same creature, spell and place.
+  content_support.change(
+    database:,
+    sql: "insert into retail_record_import (input_sha256, auto_attacks_added, auto_attacks_retired, auto_attacks_kept, specials_added, specials_retired, specials_kept) values (repeat('a', 64), 1, 2, 0, 0, 1, 0)",
+  )
+  content_support.change(
+    database:,
+    sql: "update creature_auto_attack set retired_by_import = (select max(id) from retail_record_import) where creature_id = 51126",
+  )
+  content_support.change(
+    database:,
+    sql: "update creature_special set retired_by_import = (select max(id) from retail_record_import) where creature_id = 36173",
+  )
+  content_support.change(
+    database:,
+    sql: "insert into creature_auto_attack (creature_id, spell4_id, order_index, source, reason, import_id) values (51126, 33251, 0, 'retail_record', 'written again by the run', (select max(id) from retail_record_import))",
+  )
+  let #(loaded, key) = content_support.load(database:)
+  assert loaded == Ok(Nil) as "a database with retired rows loads"
+  let kinds = content_creature_kind.kinds(key:)
+  let yeti = creature_kind.kind_of(kinds:, creature2_id: 51_126)
+  assert yeti.attack_spell4_id == Spell4Id(33_251)
+    && yeti.alternate_spell4_ids == []
+    as "the retired Slam is not an alternate: only the row written again is loaded"
+  assert creature_kind.kind_of(kinds:, creature2_id: 36_173).specials == []
+    as "a retired special is not loaded"
+  assert creature_kind.kind_of(kinds:, creature2_id: 11_945).alternate_spell4_ids
+    == [Spell4Id(33_252)]
+    as "a creature no run retired keeps its auto-attacks"
+}

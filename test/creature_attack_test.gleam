@@ -9,12 +9,21 @@
 //// - The client reads a damage multiplier, dataBits00, as a 32-bit float; a NaN or an
 ////   infinity has no value (`float32.of_column`).
 
+import client_tables
 import fixture_tables
+import genesis_prime/table/spell4_effects
 import genesis_prime/world_map/creature_attack.{
   FormulaNotRead, MultiplierNotFinite,
 }
+import gleam/dict
+import gleam/int
+import gleam/list
+import gleam/order
+import gleam/result
+import gleam/set
 import owned_test
 import planted_table.{Integer}
+import unitest
 
 pub fn loadable_names_an_unread_formula_for_the_creatures_difficulty_test() -> Nil {
   use <- owned_test.run(60_000)
@@ -48,4 +57,31 @@ pub fn loadable_names_a_multiplier_that_is_not_finite_test() -> Nil {
   assert creature_attack.loadable(tables:, spell4_id: 33_251, difficulty: 7)
     == Ok(Nil)
     as "the other difficulty takes row 184829, which is unchanged"
+}
+
+pub fn the_derived_damage_effects_of_every_spell_are_its_type_8_rows_in_order_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let rows = spell4_effects.all(tables)
+  let spells = set.from_list(list.map(rows, fn(row) { row.spell_id }))
+  assert set.size(spells) > 1000
+    as "the client's Spell4Effects table has rows of thousands of spells"
+  // The client's effect type 8 is Damage (`Spell4Effects.effectType`); the effects of a
+  // spell take effect by orderIndex, then by row id.
+  let damage_rows =
+    rows
+    |> list.filter(fn(row) { row.effect_type == 8 })
+    |> list.group(fn(row) { row.spell_id })
+    |> dict.map_values(fn(_, effects) {
+      list.sort(effects, fn(first, second) {
+        int.compare(first.order_index, second.order_index)
+        |> order.break_tie(int.compare(first.id, second.id))
+      })
+    })
+  list.each(set.to_list(spells), fn(spell4_id) {
+    assert creature_attack.damage_effects(tables:, spell4_id:)
+      == result.unwrap(dict.get(damage_rows, spell4_id), [])
+      as "the derived damage effects of every spell are what filtering the whole table gives"
+  })
 }

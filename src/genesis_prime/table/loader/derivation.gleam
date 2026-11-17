@@ -16,6 +16,7 @@ import genesis_prime/game/spell_surge
 import genesis_prime/game/top_zone
 import genesis_prime/game/unit_properties
 import genesis_prime/table/loader/store
+import genesis_prime/world_map/creature_attack
 
 /// Each derived value. A feature whose rule reads a value of the tables that
 /// is costly to build adds it here.
@@ -49,6 +50,9 @@ import genesis_prime/table/loader/store
 /// - The unit property defaults: each UnitProperty2 row's defaultValue, the base of
 ///   a player's property no 0x262 lists, whose missing rows the rules read fail the
 ///   load (genesis_prime/game/unit_properties).
+/// - The creature damage effects: each spell's damage effects in the order they take effect,
+///   which the content load asks for once for every spell of every creature
+///   (genesis_prime/world_map/creature_attack).
 pub fn all() -> List(store.Derivation) {
   [
     appearance.derivation(),
@@ -65,5 +69,6 @@ pub fn all() -> List(store.Derivation) {
     rating.derivation(),
     top_zone.derivation(),
     unit_properties.derivation(),
+    creature_attack.derivation(),
   ]
 }

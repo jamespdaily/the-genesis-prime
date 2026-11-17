@@ -3,7 +3,7 @@
 //// spawned creature the record's page matches, the auto-attacks and specials its
 //// Abilities tab lists that the server's own load accepts.
 ////
-//// `gleam run -m genesis_prime/import_retail_record [-- --list]`
+//// `gleam run -m genesis_prime/import_retail_record [-- --list] [--dry-run] [--accept-smaller-read]`
 ////
 //// It reads
 //// - `npcs.jsonl` in `$GENESIS_JABBITHOLE_DIR` (Jabbithole's local record, never
@@ -19,24 +19,31 @@
 //// npcs.jsonl ─▶ pages (genesis_prime/jabbithole_page)
 //// spawns, names, tables ─▶ rule (genesis_prime/retail_creature_spell): an outcome per creature
 //// outcomes ─▶ writer, one transaction:
-////                count against the table's retail_record rows
-////                delete the retail_record rows the import no longer produces or has changed
-////                insert the rows the table lacks
+////                count against the table's active retail_record rows
+////                print what it would add and retire
+////                refuse a read under `smallest_read_percent` of them
+////                record the run in retail_record_import
+////                retire the active retail_record rows the import no longer produces or has changed
+////                insert the rows the table lacks, each carrying the run's id
 ////          ─▶ report: counts, creatures and spells left out by rule
 //// ```
 ////
-//// - **It owns every `retail_record` row of the two tables.** A row the rule no longer
-////   produces is removed and counted; rows of any other source (`server_choice`,
-////   `world_database`) are left alone, and a row of another source that holds the same
-////   creature and spell, or the same place in the creature's list, makes the table refuse
-////   the write, so nothing is written.
+//// - **It owns every `retail_record` row of the two tables, and deletes none.** A row the
+////   rule no longer produces is retired: its `retired_by_import` is the run's id, and the
+////   content load reads only rows no run has retired. A changed row is retired and written
+////   again. Rows of any other source (`server_choice`, `world_database`) are never touched,
+////   and a row of another source that holds the same creature and spell, or the same place
+////   in the creature's list, makes the table refuse the write, so nothing is written.
+//// - **It refuses a read that is empty or much smaller:** no spawn row of a fighting unit
+////   type, or fewer rows to write than `smallest_read_percent` of the table's active
+////   `retail_record` rows. `--accept-smaller-read` lets a smaller one through.
+//// - **`--dry-run`** prints what it would add and retire and writes nothing.
 //// - **It writes only what the server's load accepts:** the rule runs the load's own
 ////   checks of an auto-attack and of a special for the creature's difficulty.
-//// - **It is idempotent.** A second run of the same input changes nothing.
+//// - **It is idempotent.** A second run of the same input retires and writes nothing; it still
+////   records itself in `retail_record_import`.
 //// - **It does not record itself in `content_import`:** that table holds files the setup
 ////   check re-hashes from `GENESIS_WORLD_DATA`, which Jabbithole's record is not part of.
-//// - **It refuses a run that reads no spawn row of a fighting unit type:** every
-////   `retail_record` row would otherwise be deleted as one the rule no longer produces.
 //// - **A refused file writes nothing:** a line of `npcs.jsonl` that is not JSON or lacks a
 ////   field, a malformed `en-US.bin`, a table that does not load.
 //// - **`--list`** prints, after the counts, each creature left out and each spell left
@@ -46,6 +53,7 @@ import argv
 import envoy
 import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/dev_database
+import genesis_prime/digest
 import genesis_prime/import_retail_record/sql
 import genesis_prime/jabbithole_page
 import genesis_prime/language_file
@@ -58,8 +66,10 @@ import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/table/loader/store
 import genesis_prime/table_folder
 import genesis_prime/world_map/creature_unit_type
+import gleam/bit_array
 import gleam/dict.{type Dict}
 import gleam/int
+import gleam/io
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/order
@@ -71,7 +81,7 @@ import simplifile
 
 /// How a table's retail-record rows stood against the import's rows.
 type Counts {
-  Counts(inserted: Int, changed: Int, removed: Int, unchanged: Int)
+  Counts(inserted: Int, changed: Int, retired: Int, unchanged: Int)
 }
 
 /// Why an import did not finish.
@@ -87,9 +97,12 @@ type Failure {
   /// The client's tables did not load.
   TablesUnreadable(error: store.LoadError)
   /// The spawn table gave no row of a unit type the server fights with, so the import
-  /// would delete every `retail_record` row; `groups_read` is how many creature, world
+  /// would retire every `retail_record` row; `groups_read` is how many creature, world
   /// and area groups the query returned, of any unit type.
   NoSpawns(groups_read: Int)
+  /// The import would write fewer rows of a table than `smallest_read_percent` of its
+  /// active `retail_record` rows.
+  ReadTooSmall(table: String, writing: Int, active: Int)
   /// The database refused a row, naming the constraint; nothing was written.
   RowRefused(constraint: String)
   /// The database failed in another way.
@@ -104,20 +117,41 @@ type Done {
     autos: Counts,
     specials: Counts,
     list_all: Bool,
+    dry_run: Bool,
   )
 }
+
+/// What the run does with the rows it counted.
+type Mode {
+  /// Writes, but refuses a read under `smallest_read_percent` of the active rows unless
+  /// `accept_smaller` is true.
+  Write(accept_smaller: Bool)
+  /// Prints what it would add and retire and writes nothing.
+  DryRun
+}
+
+/// A read that gives fewer rows of a table than this share of its active `retail_record`
+/// rows, in percent, is refused: a changed input or an unread record, not a changed page.
+const smallest_read_percent = 50
 
 pub fn main() -> Nil {
   dev_database.finish(result: run(), describe:)
 }
 
 fn run() -> Result(String, Failure) {
-  let list_all = list.contains(argv.load().arguments, "--list")
+  let arguments = argv.load().arguments
+  let list_all = list.contains(arguments, "--list")
+  let dry_run = list.contains(arguments, "--dry-run")
+  let mode = case dry_run {
+    True -> DryRun
+    False ->
+      Write(accept_smaller: list.contains(arguments, "--accept-smaller-read"))
+  }
   use folder <- result.try(
     envoy.get("GENESIS_JABBITHOLE_DIR") |> result.replace_error(NoRecord),
   )
   use db <- result.try(dev_database.connect() |> result.map_error(Database))
-  use pages <- result.try(read_pages(folder:))
+  use #(pages, input_sha256) <- result.try(read_pages(folder:))
   use language <- result.try(read_language())
   use tables <- result.try(
     table.read(from: table_folder.path())
@@ -143,19 +177,27 @@ fn run() -> Result(String, Failure) {
     )
   let autos = list.flat_map(outcomes, autos_of)
   let specials = list.flat_map(outcomes, specials_of)
-  use #(auto_counts, special_counts) <- result.map(write(db:, autos:, specials:))
+  use #(auto_counts, special_counts) <- result.map(write(
+    db:,
+    autos:,
+    specials:,
+    input_sha256:,
+    mode:,
+  ))
   report(Done(
     outcomes:,
     names: names_of(texts:, tables:, outcomes:),
     autos: auto_counts,
     specials: special_counts,
     list_all:,
+    dry_run:,
   ))
 }
 
+/// The pages of the record's file, with the SHA-256 of the file's bytes.
 fn read_pages(
   folder folder: String,
-) -> Result(List(jabbithole_page.Page), Failure) {
+) -> Result(#(List(jabbithole_page.Page), String), Failure) {
   let file = folder <> "/npcs.jsonl"
   use text <- result.try(
     simplifile.read(file)
@@ -163,7 +205,11 @@ fn read_pages(
       Unreadable(file:, reason: simplifile.describe_error(error))
     }),
   )
-  jabbithole_page.read(text:) |> result.map_error(RecordRefused)
+  jabbithole_page.read(text:)
+  |> result.map(fn(pages) {
+    #(pages, digest.sha256(bit_array.from_string(text)))
+  })
+  |> result.map_error(RecordRefused)
 }
 
 fn read_language() -> Result(language_file.LanguageFile, Failure) {
@@ -264,12 +310,24 @@ fn specials_of(outcome: Outcome) -> List(Special) {
   }
 }
 
-/// Writes the rows in one transaction, giving how the two tables' retail-record rows
-/// stood before.
+/// Why the transaction's work stopped before its commit.
+type Stop {
+  /// A failure; nothing was written.
+  Stopped(failure: Failure)
+  /// A dry run, rolled back, with what the run counted.
+  Planned(autos: Counts, specials: Counts)
+}
+
+/// Counts the rows in one transaction, refuses a read that is empty or much smaller, prints
+/// what it would add and retire, and, unless it is a dry run, records the run, retires the
+/// rows the import no longer produces and writes the rest. Gives how the two tables'
+/// active retail-record rows stood before.
 fn write(
   db db: pog.Connection,
   autos autos: List(Auto),
   specials specials: List(Special),
+  input_sha256 input_sha256: String,
+  mode mode: Mode,
 ) -> Result(#(Counts, Counts), Failure) {
   dev_database.transaction(
     db:,
@@ -287,7 +345,7 @@ fn write(
           auto_columns(fn(row) { row.order_index }),
           auto_columns(fn(row) { row.reason }),
         )
-        |> result.map_error(failure_of),
+        |> result.map_error(stopped),
       )
       use counted_specials <- result.try(
         sql.count_specials(
@@ -298,91 +356,179 @@ fn write(
           special_columns(fn(row) { row.cooldown_ms }),
           special_columns(fn(row) { row.reason }),
         )
-        |> result.map_error(failure_of),
+        |> result.map_error(stopped),
       )
-      use _deleted <- result.try(
-        sql.delete_stale_auto_attacks(
-          tx,
-          auto_columns(fn(row) { row.creature_id }),
-          auto_columns(fn(row) { row.spell4_id }),
-          auto_columns(fn(row) { row.order_index }),
-          auto_columns(fn(row) { row.reason }),
-        )
-        |> result.map_error(failure_of),
-      )
-      use _deleted <- result.try(
-        sql.delete_stale_specials(
-          tx,
-          special_columns(fn(row) { row.creature_id }),
-          special_columns(fn(row) { row.spell4_id }),
-          special_columns(fn(row) { row.order_index }),
-          special_columns(fn(row) { row.cooldown_ms }),
-          special_columns(fn(row) { row.reason }),
-        )
-        |> result.map_error(failure_of),
-      )
-      use _inserted <- result.try(
-        sql.insert_new_auto_attacks(
-          tx,
-          auto_columns(fn(row) { row.creature_id }),
-          auto_columns(fn(row) { row.spell4_id }),
-          auto_columns(fn(row) { row.order_index }),
-          auto_columns(fn(row) { row.reason }),
-        )
-        |> result.map_error(failure_of),
-      )
-      use _inserted <- result.try(
-        sql.insert_new_specials(
-          tx,
-          special_columns(fn(row) { row.creature_id }),
-          special_columns(fn(row) { row.spell4_id }),
-          special_columns(fn(row) { row.order_index }),
-          special_columns(fn(row) { row.cooldown_ms }),
-          special_columns(fn(row) { row.reason }),
-        )
-        |> result.map_error(failure_of),
-      )
-      Ok(#(
+      let auto_counts =
         first_row(counted_autos.rows, fn(row) {
           Counts(
             inserted: row.inserted,
             changed: row.changed,
-            removed: row.removed,
+            retired: row.retired,
             unchanged: row.unchanged,
           )
-        }),
+        })
+      let special_counts =
         first_row(counted_specials.rows, fn(row) {
           Counts(
             inserted: row.inserted,
             changed: row.changed,
-            removed: row.removed,
+            retired: row.retired,
             unchanged: row.unchanged,
           )
-        }),
-      ))
+        })
+      io.println(
+        "creature_auto_attack: would add "
+        <> int.to_string(added(auto_counts))
+        <> ", retire "
+        <> int.to_string(retired(auto_counts))
+        <> ", keep "
+        <> int.to_string(auto_counts.unchanged)
+        <> "\ncreature_special: would add "
+        <> int.to_string(added(special_counts))
+        <> ", retire "
+        <> int.to_string(retired(special_counts))
+        <> ", keep "
+        <> int.to_string(special_counts.unchanged),
+      )
+      use _checked <- result.try(case mode {
+        Write(accept_smaller: False) ->
+          read_is_large_enough(
+            table: "creature_auto_attack",
+            counts: auto_counts,
+          )
+          |> result.try(fn(_) {
+            read_is_large_enough(
+              table: "creature_special",
+              counts: special_counts,
+            )
+          })
+          |> result.map_error(Stopped)
+        Write(accept_smaller: True) | DryRun -> Ok(Nil)
+      })
+      case mode {
+        DryRun -> Error(Planned(autos: auto_counts, specials: special_counts))
+        Write(..) -> {
+          use started <- result.try(
+            sql.start_import(
+              tx,
+              input_sha256,
+              added(auto_counts),
+              retired(auto_counts),
+              auto_counts.unchanged,
+              added(special_counts),
+              retired(special_counts),
+              special_counts.unchanged,
+            )
+            |> result.map_error(stopped),
+          )
+          let assert [sql.StartImportRow(id: import_id)] = started.rows
+            as "an insert that returns its id gives one row"
+          use _retired <- result.try(
+            sql.retire_stale_auto_attacks(
+              tx,
+              import_id,
+              auto_columns(fn(row) { row.creature_id }),
+              auto_columns(fn(row) { row.spell4_id }),
+              auto_columns(fn(row) { row.order_index }),
+              auto_columns(fn(row) { row.reason }),
+            )
+            |> result.map_error(stopped),
+          )
+          use _retired <- result.try(
+            sql.retire_stale_specials(
+              tx,
+              import_id,
+              special_columns(fn(row) { row.creature_id }),
+              special_columns(fn(row) { row.spell4_id }),
+              special_columns(fn(row) { row.order_index }),
+              special_columns(fn(row) { row.cooldown_ms }),
+              special_columns(fn(row) { row.reason }),
+            )
+            |> result.map_error(stopped),
+          )
+          use _inserted <- result.try(
+            sql.insert_new_auto_attacks(
+              tx,
+              import_id,
+              auto_columns(fn(row) { row.creature_id }),
+              auto_columns(fn(row) { row.spell4_id }),
+              auto_columns(fn(row) { row.order_index }),
+              auto_columns(fn(row) { row.reason }),
+            )
+            |> result.map_error(stopped),
+          )
+          use _inserted <- result.try(
+            sql.insert_new_specials(
+              tx,
+              import_id,
+              special_columns(fn(row) { row.creature_id }),
+              special_columns(fn(row) { row.spell4_id }),
+              special_columns(fn(row) { row.order_index }),
+              special_columns(fn(row) { row.cooldown_ms }),
+              special_columns(fn(row) { row.reason }),
+            )
+            |> result.map_error(stopped),
+          )
+          Ok(#(auto_counts, special_counts))
+        }
+      }
     },
   )
-  |> result.map_error(fn(error) {
-    case error {
-      dev_database.Undone(failure) -> failure
-      dev_database.NoConnection -> Database(dev_database.DatabaseDown)
-      dev_database.Failed(error) -> failure_of(error)
-      dev_database.NotAPool ->
-        Database(dev_database.NotChanged(
-          "the import needs a pool of connections, not one connection",
-        ))
+  |> fn(done) {
+    case done {
+      Ok(counts) -> Ok(counts)
+      Error(dev_database.Undone(Planned(autos:, specials:))) ->
+        Ok(#(autos, specials))
+      Error(dev_database.Undone(Stopped(failure))) -> Error(failure)
+      Error(dev_database.NoConnection) ->
+        Error(Database(dev_database.DatabaseDown))
+      Error(dev_database.Failed(error)) -> Error(failure_of(error))
+      Error(dev_database.NotAPool) ->
+        Error(
+          Database(dev_database.NotChanged(
+            "the import needs a pool of connections, not one connection",
+          )),
+        )
     }
-  })
+  }
 }
 
-/// The statements the transaction runs, for its deadline: six, each allowed pog's own
+fn stopped(error: pog.QueryError) -> Stop {
+  Stopped(failure_of(error))
+}
+
+/// The rows a run adds: the new ones and the changed ones, written again.
+fn added(counts: Counts) -> Int {
+  counts.inserted + counts.changed
+}
+
+/// The rows a run retires: the ones it no longer produces and the changed ones.
+fn retired(counts: Counts) -> Int {
+  counts.retired + counts.changed
+}
+
+/// Refuses a table the import would write under `smallest_read_percent` of its active
+/// rows; a table with no active row passes.
+fn read_is_large_enough(
+  table table: String,
+  counts counts: Counts,
+) -> Result(Nil, Failure) {
+  let active = counts.changed + counts.retired + counts.unchanged
+  let writing = counts.inserted + counts.changed + counts.unchanged
+  case active > 0 && writing * 100 < active * smallest_read_percent {
+    True -> Error(ReadTooSmall(table:, writing:, active:))
+    False -> Ok(Nil)
+  }
+}
+
+/// The statements the transaction runs, for its deadline: seven, each allowed pog's own
 /// query timeout, and the transaction's own begin and commit.
-const statements = 8
+const statements = 9
 
 fn first_row(rows: List(row), counts: fn(row) -> Counts) -> Counts {
   case rows {
     [row, ..] -> counts(row)
-    [] -> Counts(inserted: 0, changed: 0, removed: 0, unchanged: 0)
+    [] -> Counts(inserted: 0, changed: 0, retired: 0, unchanged: 0)
   }
 }
 
@@ -417,11 +563,21 @@ fn describe(failure failure: Failure) -> String {
       <> store.describe(error)
       <> "; run python3.13 -I setup_check/extract_tables.py"
     NoSpawns(groups_read: 0) ->
-      "the spawn table holds no rows, so every retail_record row would be deleted: run genesis_prime/import_world_data first; nothing was written"
+      "the spawn table holds no rows, so every retail_record row would be retired: run genesis_prime/import_world_data first; nothing was written"
     NoSpawns(groups_read:) ->
       "none of the "
       <> int.to_string(groups_read)
-      <> " creature, world and area groups in the spawn table is of a unit type the server fights with, so every retail_record row would be deleted: nothing was written"
+      <> " creature, world and area groups in the spawn table is of a unit type the server fights with, so every retail_record row would be retired: nothing was written"
+    ReadTooSmall(table:, writing:, active:) ->
+      "the import would write "
+      <> int.to_string(writing)
+      <> " rows of "
+      <> table
+      <> ", under "
+      <> int.to_string(smallest_read_percent)
+      <> "% of its "
+      <> int.to_string(active)
+      <> " active retail_record rows: nothing was written; pass --accept-smaller-read if the smaller read is right"
     RowRefused(constraint:) ->
       "the database refused a row under the constraint "
       <> constraint
@@ -506,6 +662,10 @@ fn report(done: Done) -> String {
         <> ")"
       }),
       [
+        case done.dry_run {
+          True -> "dry run, nothing was written; the rows stood so:"
+          False -> "the rows stood so before the run:"
+        },
         "creature_auto_attack: " <> describe_counts(done.autos),
         "creature_special: " <> describe_counts(done.specials),
       ],
@@ -526,8 +686,8 @@ fn describe_counts(counts: Counts) -> String {
   <> int.to_string(counts.inserted)
   <> ", changed "
   <> int.to_string(counts.changed)
-  <> ", removed "
-  <> int.to_string(counts.removed)
+  <> ", retired "
+  <> int.to_string(counts.retired)
   <> ", unchanged "
   <> int.to_string(counts.unchanged)
 }
