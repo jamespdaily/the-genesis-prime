@@ -26,8 +26,8 @@
 import genesis_prime/game/cast/state.{
   type Aimed, type Caster, type Effect, type Healed, type Product, type Reached,
   type State, type Struck, type TickingOn, CasterChangeStarts, CooldownKept,
-  DamageTick, Deflected, Heal, HealTick, Healed, Healing, Hit, HitCreature,
-  HitPlayer, Immune, Log, ModifierStart, Plain, TickingOn,
+  Deflected, Heal, Healed, Healing, Hit, HitCreature, HitPlayer, Immune, Log,
+  ModifierStart, Plain, TickingOn,
 } as cast_state
 import genesis_prime/game/damage
 import genesis_prime/game/effect_kind
@@ -58,7 +58,7 @@ pub fn ticking_struck(struck struck: List(Struck)) -> List(TickingOn) {
             life:,
             effect_id: row.damage.effect_id,
             schedule: row.schedule,
-            kind: DamageTick(blow: row.damage),
+            kind: cast_state.damage_tick(blow: row.damage),
           )
         })
       Hit(unit: HitPlayer, ..) | Immune(unit: HitPlayer, ..) | Deflected(..) -> []
@@ -88,7 +88,7 @@ pub fn ticking_heals(
           life: 0,
           effect_id:,
           schedule:,
-          kind: HealTick(vital:, formula:),
+          kind: cast_state.heal_tick(vital:, formula:),
         ))
       spell_plan.HealEffect(..), _
       | spell_plan.ProxyEffect(..), _

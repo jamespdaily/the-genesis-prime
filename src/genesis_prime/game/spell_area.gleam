@@ -697,7 +697,12 @@ fn phase_of(
     spell_plan.controls_in_phase(spell: spell.spell, phase:, spent:)
   let changes =
     list.filter_map(
-      spell_plan.modifiers_in_phase(spell: spell.spell, phase:, spent:),
+      spell_plan.in_phase(
+        spell: spell.spell,
+        phase:,
+        spent:,
+        as_kind: spell_plan.as_modifier,
+      ),
       fn(modifier) {
         case modifier.change {
           spell_plan.StruckChange(aim:, ..) -> Ok(aim)
@@ -709,7 +714,12 @@ fn phase_of(
     )
   let throws =
     list.map(
-      spell_plan.struck_moves_in_phase(spell: spell.spell, phase:, spent:),
+      spell_plan.in_phase(
+        spell: spell.spell,
+        phase:,
+        spent:,
+        as_kind: spell_plan.as_struck_move,
+      ),
       fn(move) { move.aim },
     )
   let gates =
@@ -733,7 +743,12 @@ fn phase_of(
     gates:,
     selects_area: strikes(fn(aim) { spell_plan.reaches_area(aim:) })
       || list.any(
-      spell_plan.proxies_in_phase(spell: spell.spell, phase:, spent:),
+      spell_plan.in_phase(
+        spell: spell.spell,
+        phase:,
+        spent:,
+        as_kind: spell_plan.as_proxy,
+      ),
       fn(proxy) { proxy.target == spell_plan.OnEachStruck },
     ),
     strikes_primary_target: strikes(fn(aim) {

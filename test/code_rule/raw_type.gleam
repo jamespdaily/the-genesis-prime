@@ -55,18 +55,6 @@ pub const known_gaps = [
     issue: 898,
   ),
   Gap(
-    path: "src/genesis_prime/game/spell_plan.gleam",
-    function: "cast_bar_of",
-    sites: 1,
-    issue: 886,
-  ),
-  Gap(
-    path: "src/genesis_prime/game/spell_plan.gleam",
-    function: "heal_of",
-    sites: 1,
-    issue: 886,
-  ),
-  Gap(
     path: "src/genesis_prime/world_map/creature_guard_spells.gleam",
     function: "guard_of",
     sites: 1,

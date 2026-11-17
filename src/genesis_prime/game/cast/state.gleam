@@ -435,8 +435,26 @@ pub type Due {
 }
 
 /// A periodic row of a cast on one unit: the unit, and the Spell4Effects row.
-pub type TickKey {
+pub opaque type TickKey {
   TickKey(unit_id: Int, effect_id: Spell4EffectsId)
+}
+
+/// The key of the periodic row `effect_id` on the unit `unit_id`.
+pub fn tick_key(
+  unit_id unit_id: Int,
+  effect_id effect_id: Spell4EffectsId,
+) -> TickKey {
+  TickKey(unit_id:, effect_id:)
+}
+
+/// The unit the keyed row ticks on.
+pub fn key_unit(key key: TickKey) -> Int {
+  key.unit_id
+}
+
+/// The Spell4Effects row the key names.
+pub fn key_effect(key key: TickKey) -> Spell4EffectsId {
+  key.effect_id
 }
 
 /// The ticks of a periodic row on one unit: what each tick does, the row's schedule,
@@ -445,7 +463,7 @@ pub type TickKey {
 /// many damage tick rounds of the row on the unit are open, an earlier schedule's
 /// included, and the life of the unit the go struck. A node whose unit has an open
 /// round is held past its end, so the cast's 0x811 or 0x7fe follows the tick's 0x7f8.
-pub type Ticking {
+pub opaque type Ticking {
   Ticking(
     kind: TickKind,
     schedule: ticking.Schedule,
@@ -457,11 +475,100 @@ pub type Ticking {
   )
 }
 
+/// The ticks of a row a go starts: no tick has fired, and `open` rounds of an earlier
+/// schedule of the row on the unit are still open.
+pub fn ticking_started(
+  kind kind: TickKind,
+  schedule schedule: ticking.Schedule,
+  go go: Int,
+  from_ms from_ms: Int,
+  open open: Int,
+  life life: Int,
+) -> Ticking {
+  Ticking(kind:, schedule:, go:, from_ms:, tick: 0, open:, life:)
+}
+
+/// What each tick of the row does.
+pub fn ticking_kind(row row: Ticking) -> TickKind {
+  row.kind
+}
+
+/// The row's schedule.
+pub fn ticking_schedule(row row: Ticking) -> ticking.Schedule {
+  row.schedule
+}
+
+/// Which go of the cast started the row, counted from 1.
+pub fn ticking_go(row row: Ticking) -> Int {
+  row.go
+}
+
+/// The monotonic time of the go the schedule counts from.
+pub fn ticking_from_ms(row row: Ticking) -> Int {
+  row.from_ms
+}
+
+/// The last tick that fired, 0 before the first.
+pub fn ticking_tick(row row: Ticking) -> Int {
+  row.tick
+}
+
+/// How many damage tick rounds of the row on the unit are open.
+pub fn ticking_open(row row: Ticking) -> Int {
+  row.open
+}
+
+/// The life of the unit the go struck.
+pub fn ticking_life(row row: Ticking) -> Int {
+  row.life
+}
+
+/// The row with tick `tick` fired.
+pub fn with_tick(row row: Ticking, tick tick: Int) -> Ticking {
+  Ticking(..row, tick:)
+}
+
+/// The row with tick `tick` fired and a damage tick round opened for it.
+pub fn round_opened(row row: Ticking, tick tick: Int) -> Ticking {
+  Ticking(..row, tick:, open: row.open + 1)
+}
+
+/// The row with a damage tick round closed; the count stays at 0 when none is open.
+pub fn round_closed(row row: Ticking) -> Ticking {
+  Ticking(..row, open: int.max(0, row.open - 1))
+}
+
 /// What a tick does: a damage row strikes its unit with its blow; a heal row heals the
 /// caster's vital by its formula, read for the caster at the tick.
-pub type TickKind {
+pub opaque type TickKind {
   DamageTick(blow: spell_area.DamageEffect)
   HealTick(vital: effect_kind.Vital, formula: damage.Formula)
+}
+
+/// A tick that strikes its unit with `blow`.
+pub fn damage_tick(blow blow: spell_area.DamageEffect) -> TickKind {
+  DamageTick(blow:)
+}
+
+/// A tick that heals the caster's `vital` by `formula`.
+pub fn heal_tick(
+  vital vital: effect_kind.Vital,
+  formula formula: damage.Formula,
+) -> TickKind {
+  HealTick(vital:, formula:)
+}
+
+/// What a tick of `kind` does: `damage` gets the blow and `heal` the vital and formula.
+/// The one match over the kinds, so a new kind adds an argument here and names each fold.
+pub fn on_tick_kind(
+  kind kind: TickKind,
+  damage damage: fn(spell_area.DamageEffect) -> result,
+  heal heal: fn(effect_kind.Vital, damage.Formula) -> result,
+) -> result {
+  case kind {
+    DamageTick(blow:) -> damage(blow)
+    HealTick(vital:, formula:) -> heal(vital, formula)
+  }
 }
 
 /// A periodic row a go starts ticking on one unit: the unit and the life the go struck

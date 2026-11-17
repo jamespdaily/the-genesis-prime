@@ -22,12 +22,11 @@ import genesis_prime/game/cast/state.{
   type TargetVerdict, type TickAsked, type TickKey, type Ticking, type TickingOn,
   type Verdict, Absorb, Accept, CancelTimer, Caster, CasterChangeStarts,
   CasterSide, ChargeLevel, CooldownModifierEnds, CooldownModifierStarts,
-  DamageTick, Deflected, Finish, ForcedMoveStart, Go, Heal, HealTick, Healed,
-  Hit, Immune, Lingering, Live, Look, ModifierEnd, ModifierStart, NodesEnd,
-  NotBuilt, PrerequisitesIssue, ProcDue, Property, Refuse, RepeatHeld,
-  RestrictionEnd, Send, StartChild, StartHeld, Starts, State, StateEnd,
-  TargetChangeEnds, TargetModifierStart, Tell, Tick, TickAsked, TickKey,
-  TickStrike, Ticking, UnitSide, WindowEnd,
+  Deflected, Finish, ForcedMoveStart, Go, Heal, Healed, Hit, Immune, Lingering,
+  Live, Look, ModifierEnd, ModifierStart, NodesEnd, NotBuilt, PrerequisitesIssue,
+  ProcDue, Property, Refuse, RepeatHeld, RestrictionEnd, Send, StartChild,
+  StartHeld, Starts, State, StateEnd, TargetChangeEnds, TargetModifierStart,
+  Tell, Tick, TickAsked, TickStrike, UnitSide, WindowEnd,
 } as cast_state
 import genesis_prime/game/class_resource
 import genesis_prime/game/cooldown
@@ -249,7 +248,10 @@ fn tick_round_open(
   unit_id unit_id: Int,
 ) -> Bool {
   dict.fold(ticking, False, fn(open, key, row) {
-    open || { key.unit_id == unit_id && row.open > 0 }
+    open
+    || {
+      cast_state.key_unit(key:) == unit_id && cast_state.ticking_open(row:) > 0
+    }
   })
 }
 
@@ -287,7 +289,8 @@ fn tick_timers_cancelled(
   cast_state.cancel_timers(cast:, matching: fn(due) {
     case due {
       Tick(cast_id: waiting, effect_id:, unit_id:, ..) ->
-        waiting == cast_id && matching(TickKey(unit_id:, effect_id:))
+        waiting == cast_id
+        && matching(cast_state.tick_key(unit_id:, effect_id:))
       Go(..)
       | Finish(..)
       | StartChild(..)
@@ -388,13 +391,16 @@ fn earliest_due(
   |> list.filter_map(fn(entry) {
     let #(key, row) = entry
     use next <- result.try(option.to_result(
-      ticking.next_tick(schedule: row.schedule, tick: row.tick),
+      ticking.next_tick(
+        schedule: cast_state.ticking_schedule(row:),
+        tick: cast_state.ticking_tick(row:),
+      ),
       Nil,
     ))
     let at_ms =
       ticking.tick_at_ms(
-        schedule: row.schedule,
-        from_ms: row.from_ms,
+        schedule: cast_state.ticking_schedule(row:),
+        from_ms: cast_state.ticking_from_ms(row:),
         tick: next,
       )
     case at_ms <= now_ms {
@@ -412,8 +418,11 @@ fn earliest_due(
 
 /// Rows in unit id order, then row id order.
 fn by_tick_key(first: TickKey, second: TickKey) -> order.Order {
-  int.compare(first.unit_id, second.unit_id)
-  |> order.break_tie(int.compare(first.effect_id.value, second.effect_id.value))
+  int.compare(cast_state.key_unit(key: first), cast_state.key_unit(key: second))
+  |> order.break_tie(int.compare(
+    cast_state.key_effect(key: first).value,
+    cast_state.key_effect(key: second).value,
+  ))
 }
 
 /// Tick `tick` of the row `key` of the cast fires (`ticks_due`), with the caster as the
@@ -429,36 +438,36 @@ fn tick_landed(
   case dict.get(holder.ticking, key) {
     Error(Nil) -> #(cast, caster, [])
     Ok(row) -> {
-      let #(row, caster, landed) = case row.kind {
-        DamageTick(blow:) -> #(
-          Ticking(..row, tick:, open: row.open + 1),
-          caster,
-          [
-            TickStrike(asked: TickAsked(
-              cast_id:,
-              spell4_id: holder.spell.spell4_id,
-              effect_id: key.effect_id,
-              unit_id: key.unit_id,
-              life: row.life,
-              go: row.go,
-              tick:,
-              blow:,
-            )),
-          ],
+      let #(row, caster, landed) =
+        cast_state.on_tick_kind(
+          kind: cast_state.ticking_kind(row:),
+          damage: fn(blow) {
+            #(cast_state.round_opened(row:, tick:), caster, [
+              TickStrike(asked: TickAsked(
+                cast_id:,
+                spell4_id: holder.spell.spell4_id,
+                effect_id: cast_state.key_effect(key:),
+                unit_id: cast_state.key_unit(key:),
+                life: cast_state.ticking_life(row:),
+                go: cast_state.ticking_go(row:),
+                tick:,
+                blow:,
+              )),
+            ])
+          },
+          heal: fn(vital, formula) {
+            let #(caster, healed) =
+              healed_by_tick(
+                caster:,
+                cast_id:,
+                effect_id: cast_state.key_effect(key:),
+                audience: holder.audience,
+                vital:,
+                formula:,
+              )
+            #(cast_state.with_tick(row:, tick:), caster, healed)
+          },
         )
-        HealTick(vital:, formula:) -> {
-          let #(caster, healed) =
-            healed_by_tick(
-              caster:,
-              cast_id:,
-              effect_id: key.effect_id,
-              audience: holder.audience,
-              vital:,
-              formula:,
-            )
-          #(Ticking(..row, tick:), caster, healed)
-        }
-      }
       #(
         with_ticking(
           cast:,
@@ -485,7 +494,10 @@ fn next_tick_armed(
     Ok(holder) ->
       case dict.get(holder.ticking, key) {
         Ok(row) ->
-          ticking.next_tick(schedule: row.schedule, tick: row.tick)
+          ticking.next_tick(
+            schedule: cast_state.ticking_schedule(row:),
+            tick: cast_state.ticking_tick(row:),
+          )
           |> option.map(fn(after) { #(row, after) })
         Error(Nil) -> None
       }
@@ -499,15 +511,15 @@ fn next_tick_armed(
           cast:,
           due: Tick(
             cast_id:,
-            effect_id: key.effect_id,
-            unit_id: key.unit_id,
+            effect_id: cast_state.key_effect(key:),
+            unit_id: cast_state.key_unit(key:),
             tick: after,
           ),
           after_ms: int.max(
             0,
             ticking.tick_at_ms(
-              schedule: row.schedule,
-              from_ms: row.from_ms,
+              schedule: cast_state.ticking_schedule(row:),
+              from_ms: cast_state.ticking_from_ms(row:),
               tick: after,
             )
               - now_ms,
@@ -595,7 +607,7 @@ pub fn tick_outcome(
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
   let cast_id = asked.cast_id
-  case struck, row.go == asked.go {
+  case struck, cast_state.ticking_go(row:) == asked.go {
     Some(Hit(descriptions:, ..)), _ -> {
       let written =
         tick_effects(
@@ -671,7 +683,7 @@ pub fn ticks_armed(
 ) -> #(State, List(Effect)) {
   list.fold(rows, #(cast, []), fn(so_far, on) {
     let #(cast, effects) = so_far
-    let key = TickKey(unit_id: on.unit_id, effect_id: on.effect_id)
+    let key = cast_state.tick_key(unit_id: on.unit_id, effect_id: on.effect_id)
     let #(cast, cancels) =
       tick_timers_cancelled(cast:, cast_id:, matching: fn(other) {
         other == key
@@ -680,7 +692,7 @@ pub fn ticks_armed(
       Error(Nil) -> #(cast, list.append(effects, cancels))
       Ok(holder) -> {
         let open = case dict.get(holder.ticking, key) {
-          Ok(earlier) -> earlier.open
+          Ok(earlier) -> cast_state.ticking_open(row: earlier)
           Error(Nil) -> 0
         }
         let schedule =
@@ -689,12 +701,11 @@ pub fn ticks_armed(
             longer_of_delay_and_duration: holder.spell.longer_of_delay_and_duration,
           )
         let row =
-          Ticking(
+          cast_state.ticking_started(
             kind: on.kind,
             schedule:,
             go:,
             from_ms:,
-            tick: 0,
             open:,
             life: on.life,
           )
@@ -726,8 +737,8 @@ fn first_tick_armed(
           cast:,
           due: Tick(
             cast_id:,
-            effect_id: key.effect_id,
-            unit_id: key.unit_id,
+            effect_id: cast_state.key_effect(key:),
+            unit_id: cast_state.key_unit(key:),
             tick: first,
           ),
           after_ms: ticking.tick_at_ms(schedule:, from_ms: 0, tick: first),
@@ -748,7 +759,7 @@ pub fn ticks_dropped(
 ) -> #(State, List(Effect)) {
   let #(cast, cancels) =
     tick_timers_cancelled(cast:, cast_id:, matching: fn(key) {
-      key.unit_id == unit_id
+      cast_state.key_unit(key:) == unit_id
     })
   case cast_state.holder_of(cast:, cast_id:) {
     Error(Nil) -> #(cast, cancels)
@@ -757,7 +768,7 @@ pub fn ticks_dropped(
         cast:,
         cast_id:,
         ticking: dict.filter(holder.ticking, fn(key, _) {
-          key.unit_id != unit_id
+          cast_state.key_unit(key:) != unit_id
         }),
       ),
       cancels,

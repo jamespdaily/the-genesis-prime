@@ -172,9 +172,20 @@ pub fn a_scale_row_aimed_at_the_caster_is_a_lasting_row_with_its_columns_test() 
     == LastingRow(delay_ms: 250, duration_ms: 0, until_removed: True)
   assert row.phase_flags == 2
   let assert GatedOnCaster(gates: [_]) = row.condition
-  assert list.length(spell_plan.lasting_in_phase(spell:, phase: 1, spent: None))
+  assert list.length(spell_plan.in_phase(
+      spell:,
+      phase: 1,
+      spent: None,
+      as_kind: spell_plan.as_lasting,
+    ))
     == 1
-  assert spell_plan.lasting_in_phase(spell:, phase: 0, spent: None) == []
+  assert spell_plan.in_phase(
+      spell:,
+      phase: 0,
+      spent: None,
+      as_kind: spell_plan.as_lasting,
+    )
+    == []
 }
 
 pub fn a_scale_or_ravel_signal_row_is_held_for_each_aim_the_plan_reads_test() -> Nil {

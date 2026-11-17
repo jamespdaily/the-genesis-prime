@@ -175,7 +175,12 @@ fn planned_of(
 /// The Proxy of the ability that starts, at its go `phase`, a spell on the caster at once
 /// with no gate: the first of them is the spell that strikes.
 fn host_of(ability ability: Spell, phase phase: Int) -> Result(Proxy, Nil) {
-  spell_plan.proxies_in_phase(spell: ability, phase:, spent: None)
+  spell_plan.in_phase(
+    spell: ability,
+    phase:,
+    spent: None,
+    as_kind: spell_plan.as_proxy,
+  )
   |> list.find(fn(proxy) {
     proxy.delay_ms == 0
     && case proxy.target, proxy.condition {

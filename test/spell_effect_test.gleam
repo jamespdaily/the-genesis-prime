@@ -238,7 +238,12 @@ pub fn a_ticking_heal_and_a_ticking_gain_keep_their_tick_and_duration_test() -> 
       ]),
     ])
   let assert [spell_plan.TickingHeal(schedule:, ..)] =
-    spell_plan.heals_in_phase(spell:, phase: 0, spent: None)
+    spell_plan.in_phase(
+      spell:,
+      phase: 0,
+      spent: None,
+      as_kind: spell_plan.as_heal,
+    )
     |> list.filter(fn(heal) { heal.effect_id.value == 90_014 })
     as "the heals view holds the ticking heal"
   assert schedule.tick_ms == 1000
@@ -246,7 +251,12 @@ pub fn a_ticking_heal_and_a_ticking_gain_keep_their_tick_and_duration_test() -> 
     && schedule.count == 8
     as "the heal's tick 1000 and life 8000 give 8 ticks"
   let assert [spell_plan.TickingGain(tick_ms:, duration_ms:, ..)] =
-    spell_plan.gains_in_phase(spell:, phase: 0, spent: None)
+    spell_plan.in_phase(
+      spell:,
+      phase: 0,
+      spent: None,
+      as_kind: spell_plan.as_gain,
+    )
     |> list.filter(fn(gain) { gain.effect_id.value == 90_040 })
     as "the gains view holds the ticking gain"
   assert tick_ms == 500 && duration_ms == 4000
