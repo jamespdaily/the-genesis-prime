@@ -1094,3 +1094,142 @@ Spell4	6652	Spider auto-attack #2, whose damage formula reads a parameter the cr
 Spell4	55308	Reaching Bite, a cone special of 3000 ms	creature_auto_attack_test
 Spell4	55283	Whirl, a special of 3000 ms	creature_auto_attack_test
 Spell4	34361	Asura auto-attack #1 whose damage effect for difficulty 7 and above reads parameter type 2	creature_attack_test
+Quest2	3667	The Tower: one visible marked unlinked type 5 objective, marker on its receiver	objective_script_place_test
+Quest2	4509	Urgent Rescue: one marked unlinked type 5 objective of count 6, three markers	objective_script_place_test
+Quest2	3163	a type 22 objective then a marked type 5 objective of flags 3	objective_script_place_test
+Quest2	3769	Up, Up, and Away: a marked type 5 objective a spell effect advances	objective_script_place_test
+Quest2	3785	the other faction's twin of quest 3769	objective_script_place_test
+Quest2	4748	Roan, Roan on the Range: a marked type 5 objective an item names	objective_script_place_test
+Quest2	10115	zTrack Celestial River Rush: hoverboard checkpoints of flags 19	objective_script_place_test
+Quest2	10116	zTrack Savannah Speedway: checkpoints with two markers	objective_script_place_test
+Quest2	9165	The Amenities of Lightreach: five find-a-place objectives, one with four markers	objective_script_place_test
+Quest2	7025	a marked type 5 objective of count 10 beside hidden ones with data	objective_script_place_test
+Quest2	9282	Logical Security: a timed marked type 5 objective of flags 3	objective_script_place_test
+Quest2	5607	a hidden required type 5 objective with data 30705	objective_script_place_test
+Quest2	6433	Asteroid 3C48: a marked type 5 objective of an instance quest	objective_script_place_test
+Quest2	2937	a type 5 objective whose markers name no WorldLocation2 row	objective_script_place_test
+Quest2	10132	an instance quest of two place scripts	objective_script_place_test
+Quest2	10130	an instance quest with a spell-advanced and a place objective	objective_script_place_test
+Quest2	9705	an instance quest with a go-to place script	objective_script_place_test
+Item2	6938	Loftite Railgun, names quest 3769	objective_script_place_test
+Item2	12448	an item naming quest 4748 objective 0	objective_script_place_test
+Spell4Effects	89873	type 42 QuestAdvanceObjective of quest 3769	objective_script_place_test
+Spell4Effects	89874	type 42 QuestAdvanceObjective of quest 3785	objective_script_place_test
+Creature2	11194	Master Control Panel, the receiver of quest 3667	objective_script_place_test
+Quest2	3770	quest of the objective 4871 an arrival or held row names	content_load_test
+Quest2	4526	quest of the objective 6164 an arrival or held row names	content_load_test
+Quest2	4727	quest of the objective 6579 an arrival or held row names	content_load_test
+Quest2	5260	quest of the objective 7646 an arrival or held row names	content_load_test
+Quest2	6794	quest of the objective 11491 an arrival or held row names	content_load_test
+Quest2	6803	quest of the objective 12524 an arrival or held row names	content_load_test
+Quest2	9068	quest of the objective 16347 an arrival or held row names	content_load_test
+Quest2	4520	quest of the objective 18158 an arrival or held row names	content_load_test
+Quest2	9706	quest of the objective 18630 an arrival or held row names	content_load_test
+Quest2	9745	quest of the objective 18664 an arrival or held row names	content_load_test
+Quest2	7057	quest of the objective 19192 an arrival or held row names	content_load_test
+Quest2	10125	quest of the objective 19343 an arrival or held row names	content_load_test
+Quest2	10126	quest of the objective 19344 an arrival or held row names	content_load_test
+Quest2	10127	quest of the objective 19346 an arrival or held row names	content_load_test
+Quest2	10131	quest of the objective 19354 an arrival or held row names	content_load_test
+Quest2	10117	quest of the objective 19360 an arrival or held row names	content_load_test
+Quest2	10611	quest of the objective 21495 an arrival or held row names	content_load_test
+Quest2	10613	quest of the objective 21501 an arrival or held row names	content_load_test
+WorldLocation2	7778	marker of objective 4770 of quest 3667	objective_script_place_test, content_load_test
+WorldLocation2	12349	marker of objective 6150 of quest 4509	objective_script_place_test, content_load_test
+WorldLocation2	12350	marker of objective 6150 of quest 4509	objective_script_place_test, content_load_test
+WorldLocation2	12351	marker of objective 6150 of quest 4509	objective_script_place_test, content_load_test
+WorldLocation2	7015	marker of objective 4120 of quest 3163	objective_script_place_test, content_load_test
+WorldLocation2	48831	marker of objective 4849 of quest 3769	objective_script_place_test, content_load_test
+WorldLocation2	9403	marker of objective 4900 of quest 3785	objective_script_place_test, content_load_test
+WorldLocation2	9400	marker of objective 4900 of quest 3785	objective_script_place_test, content_load_test
+WorldLocation2	9404	marker of objective 4900 of quest 3785	objective_script_place_test, content_load_test
+WorldLocation2	9407	marker of objective 4900 of quest 3785	objective_script_place_test, content_load_test
+WorldLocation2	12907	marker of objective 6589 of quest 4748	objective_script_place_test, content_load_test
+WorldLocation2	50703	marker of objective 19335 of quest 10115	objective_script_place_test, content_load_test
+WorldLocation2	50705	marker of objective 19336 of quest 10115	objective_script_place_test, content_load_test
+WorldLocation2	50709	marker of objective 19337 of quest 10115	objective_script_place_test, content_load_test
+WorldLocation2	50710	marker of objective 19338 of quest 10115	objective_script_place_test, content_load_test
+WorldLocation2	50713	marker of objective 19340 of quest 10115	objective_script_place_test, content_load_test
+WorldLocation2	50704	marker of objective 19339 of quest 10115	objective_script_place_test, content_load_test
+WorldLocation2	50764	marker of objective 19370 of quest 10116	objective_script_place_test, content_load_test
+WorldLocation2	50760	marker of objective 19366 of quest 10116	objective_script_place_test, content_load_test
+WorldLocation2	50761	marker of objective 19367 of quest 10116	objective_script_place_test, content_load_test
+WorldLocation2	50787	marker of objective 19367 of quest 10116	objective_script_place_test, content_load_test
+WorldLocation2	50762	marker of objective 19368 of quest 10116	objective_script_place_test, content_load_test
+WorldLocation2	50763	marker of objective 19369 of quest 10116	objective_script_place_test, content_load_test
+WorldLocation2	50848	marker of objective 19369 of quest 10116	objective_script_place_test, content_load_test
+WorldLocation2	50765	marker of objective 19371 of quest 10116	objective_script_place_test, content_load_test
+WorldLocation2	43060	marker of objective 16585 of quest 9165	objective_script_place_test, content_load_test
+WorldLocation2	43061	marker of objective 16586 of quest 9165	objective_script_place_test, content_load_test
+WorldLocation2	43065	marker of objective 16587 of quest 9165	objective_script_place_test, content_load_test
+WorldLocation2	49539	marker of objective 18931 of quest 9165	objective_script_place_test, content_load_test
+WorldLocation2	49550	marker of objective 18944 of quest 9165	objective_script_place_test, content_load_test
+WorldLocation2	49551	marker of objective 18944 of quest 9165	objective_script_place_test, content_load_test
+WorldLocation2	49552	marker of objective 18944 of quest 9165	objective_script_place_test, content_load_test
+WorldLocation2	49553	marker of objective 18944 of quest 9165	objective_script_place_test, content_load_test
+WorldLocation2	25909	marker of objective 12832 of quest 7025	objective_script_place_test, content_load_test
+WorldLocation2	25910	marker of objective 12888 of quest 7025	objective_script_place_test, content_load_test
+WorldLocation2	25522	marker of objective 12891 of quest 7025	objective_script_place_test, content_load_test
+WorldLocation2	25523	marker of objective 12891 of quest 7025	objective_script_place_test, content_load_test
+WorldLocation2	46699	marker of objective 17752 of quest 9282	objective_script_place_test, content_load_test
+WorldLocation2	6982	marker of objective 8295 of quest 5607	objective_script_place_test, content_load_test
+WorldLocation2	36132	marker of objective 10204 of quest 6433	objective_script_place_test, content_load_test
+WorldLocation2	21773	marker of objective 9884 of quest 6433	objective_script_place_test, content_load_test
+WorldLocation2	39638	marker of objective 19357 of quest 10132	objective_script_place_test, content_load_test
+WorldLocation2	39025	marker of objective 19351 of quest 10130	objective_script_place_test, content_load_test
+WorldLocation2	39093	marker of objective 19351 of quest 10130	objective_script_place_test, content_load_test
+WorldLocation2	39175	marker of objective 19352 of quest 10130	objective_script_place_test, content_load_test
+WorldLocation2	47630	marker of objective 18624 of quest 9705	objective_script_place_test, content_load_test
+WorldLocation2	9377	marker of objective 7792 of quest 3770	objective_script_place_test, content_load_test
+WorldLocation2	9419	marker of objective 4866 of quest 3770	objective_script_place_test, content_load_test
+WorldLocation2	9714	marker of objective 4869 of quest 3770	objective_script_place_test, content_load_test
+WorldLocation2	9424	marker of objective 4871 of quest 3770	objective_script_place_test, content_load_test
+WorldLocation2	9706	marker of objective 6164 of quest 4526	objective_script_place_test, content_load_test
+WorldLocation2	40764	marker of objective 6165 of quest 4526	objective_script_place_test, content_load_test
+WorldLocation2	12897	marker of objective 6579 of quest 4727	objective_script_place_test, content_load_test
+WorldLocation2	15871	marker of objective 7646 of quest 5260	objective_script_place_test, content_load_test
+WorldLocation2	24552	marker of objective 11500 of quest 6794	objective_script_place_test, content_load_test
+WorldLocation2	38002	marker of objective 12524 of quest 6803	objective_script_place_test, content_load_test
+WorldLocation2	38003	marker of objective 12524 of quest 6803	objective_script_place_test, content_load_test
+WorldLocation2	38000	marker of objective 15831 of quest 6803	objective_script_place_test, content_load_test
+WorldLocation2	41563	marker of objective 16347 of quest 9068	objective_script_place_test, content_load_test
+WorldLocation2	41565	marker of objective 16348 of quest 9068	objective_script_place_test, content_load_test
+WorldLocation2	45330	marker of objective 18099 of quest 9068	objective_script_place_test, content_load_test
+WorldLocation2	45621	marker of objective 18158 of quest 4520	objective_script_place_test, content_load_test
+WorldLocation2	13521	marker of objective 13872 of quest 4520	objective_script_place_test, content_load_test
+WorldLocation2	13522	marker of objective 13872 of quest 4520	objective_script_place_test, content_load_test
+WorldLocation2	13523	marker of objective 13872 of quest 4520	objective_script_place_test, content_load_test
+WorldLocation2	13524	marker of objective 13872 of quest 4520	objective_script_place_test, content_load_test
+WorldLocation2	15038	marker of objective 7381 of quest 4520	objective_script_place_test, content_load_test
+WorldLocation2	47632	marker of objective 18628 of quest 9706	objective_script_place_test, content_load_test
+WorldLocation2	48177	marker of objective 18664 of quest 9745	objective_script_place_test, content_load_test
+WorldLocation2	42729	marker of objective 19189 of quest 7057	objective_script_place_test, content_load_test
+WorldLocation2	40658	marker of objective 16131 of quest 7057	objective_script_place_test, content_load_test
+WorldLocation2	46190	marker of objective 19198 of quest 7057	objective_script_place_test, content_load_test
+WorldLocation2	26122	marker of objective 19192 of quest 7057	objective_script_place_test, content_load_test
+WorldLocation2	26123	marker of objective 19192 of quest 7057	objective_script_place_test, content_load_test
+WorldLocation2	22151	marker of objective 19343 of quest 10125	objective_script_place_test, content_load_test
+WorldLocation2	41092	marker of objective 19343 of quest 10125	objective_script_place_test, content_load_test
+WorldLocation2	49362	marker of objective 19344 of quest 10126	objective_script_place_test, content_load_test
+WorldLocation2	16586	marker of objective 19346 of quest 10127	objective_script_place_test, content_load_test
+WorldLocation2	39092	marker of objective 19354 of quest 10131	objective_script_place_test, content_load_test
+WorldLocation2	50750	marker of objective 19359 of quest 10117	objective_script_place_test, content_load_test
+WorldLocation2	50751	marker of objective 19360 of quest 10117	objective_script_place_test, content_load_test
+WorldLocation2	50752	marker of objective 19361 of quest 10117	objective_script_place_test, content_load_test
+WorldLocation2	50753	marker of objective 19362 of quest 10117	objective_script_place_test, content_load_test
+WorldLocation2	50754	marker of objective 19363 of quest 10117	objective_script_place_test, content_load_test
+WorldLocation2	50755	marker of objective 19364 of quest 10117	objective_script_place_test, content_load_test
+WorldLocation2	53255	marker of objective 21494 of quest 10611	objective_script_place_test, content_load_test
+WorldLocation2	53254	marker of objective 21495 of quest 10611	objective_script_place_test, content_load_test
+WorldLocation2	53253	marker of objective 21497 of quest 10611	objective_script_place_test, content_load_test
+WorldLocation2	53252	marker of objective 21498 of quest 10611	objective_script_place_test, content_load_test
+WorldLocation2	53251	marker of objective 21499 of quest 10611	objective_script_place_test, content_load_test
+WorldLocation2	53250	marker of objective 21496 of quest 10611	objective_script_place_test, content_load_test
+WorldLocation2	53257	marker of objective 21500 of quest 10613	objective_script_place_test, content_load_test
+WorldLocation2	53258	marker of objective 21501 of quest 10613	objective_script_place_test, content_load_test
+WorldLocation2	53259	marker of objective 21502 of quest 10613	objective_script_place_test, content_load_test
+WorldLocation2	53260	marker of objective 21503 of quest 10613	objective_script_place_test, content_load_test
+WorldLocation2	53261	marker of objective 21504 of quest 10613	objective_script_place_test, content_load_test
+WorldLocation2	53262	marker of objective 21505 of quest 10613	objective_script_place_test, content_load_test
+WorldLocation2	21383	marker of objective 9658 of quest 6296	objective_script_place_test
+WorldLocation2	21384	marker of objective 9658 of quest 6296	objective_script_place_test

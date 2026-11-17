@@ -20,6 +20,7 @@ import content_support
 import database_support
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/content
+import genesis_prime/content/arrival_objective as content_arrival_objective
 import genesis_prime/content/class_resource as content_class_resource
 import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/game_number as content_game_number
@@ -237,13 +238,46 @@ pub fn the_content_load_puts_the_held_objectives_test() -> Nil {
   let #(loaded, key) = content_support.load(database:)
   assert loaded == Ok(Nil)
   let held = content_held_objective.held(key:)
-  assert set.size(held) == 130 as "migration 0034 seeds 130 held_objective rows"
-  assert list.all([12_547, 17_882, 21_536], fn(objective) {
+  assert set.size(held) == 145
+    as "migrations 0034 and 0039 seed 145 held_objective rows"
+  assert list.all([12_547, 17_882, 21_536, 19_357], fn(objective) {
     set.contains(held, objective)
   })
-    as "migration 0034's first row (12547, an instance run), a pvp_match row (17882) and its last row (21536)"
+    as "migration 0034's first row (12547, an instance run), a pvp_match row (17882) and its last row (21536), and migration 0039's 19357"
   assert !set.contains(held, 12_548)
     as "an objective migration 0034 does not list is not held"
+}
+
+pub fn an_arrival_row_naming_an_objective_that_is_no_place_stops_the_load_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let database = database_support.new_database(on: database_support.shared())
+  // QuestObjective 4849 is a visible marked script that a type 42 spell effect names: a
+  // cast advances it, so it is no place (`objective_action.named`).
+  content_support.change(
+    database:,
+    sql: "insert into arrival_objective (objective_id, source, reason) values (4849, 'server_choice', 'an objective a spell effect names')",
+  )
+  let #(loaded, _key) = content_support.load(database:)
+  let assert Error(content.Refused(refusals:)) = loaded
+    as "a refused arrival row stops the start"
+  assert list.map(refusals, fn(refused) { #(refused.table, refused.row) })
+    == [#("arrival_objective", refusal.RowId(4849))]
+}
+
+pub fn the_content_load_puts_the_arrival_objectives_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let database = database_support.new_database(on: database_support.shared())
+  let #(loaded, key) = content_support.load(database:)
+  assert loaded == Ok(Nil)
+  let arrivals = content_arrival_objective.arrivals(key:)
+  assert set.size(arrivals) == 42
+    as "migration 0038 seeds 42 arrival_objective rows"
+  assert list.all([4770, 19_336, 19_357], fn(objective) {
+    set.contains(arrivals, objective)
+  })
+    as "the Tower's objective (4770), the first checkpoint of quest 10115 (19336) and the last row (19357)"
+  assert !set.contains(arrivals, 4849)
+    as "an objective migration 0038 does not list is no arrival"
 }
 
 pub fn the_load_puts_every_term_the_game_listener_reads_at_start_test() -> Nil {
@@ -263,6 +297,7 @@ pub fn the_load_puts_every_term_the_game_listener_reads_at_start_test() -> Nil {
   let _landings = content_projector_landing.landings(key:)
   let _reused = content_spawn.reused_unit_objectives(key:)
   let _held = content_held_objective.held(key:)
+  let _arrivals = content_arrival_objective.arrivals(key:)
   Nil
 }
 
@@ -297,6 +332,8 @@ pub fn the_servers_settings_run_over_a_real_load_test() -> Nil {
   let settings = login_support.servers_settings_over(spawns: key)
   assert set.contains(settings.game.settings.held_objectives, 12_547)
     as "migration 0034's first held objective (12547) is in the settings the load's key gave"
+  assert set.contains(settings.game.settings.arrival_objectives, 4770)
+    as "migration 0038's Tower objective (4770) is in the settings the load's key gave"
   assert settings.game.settings.tutorial_chain
     == content_tutorial_quest.chain(key:)
     as "the settings carry the tutorial chain the load put"
