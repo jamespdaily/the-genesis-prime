@@ -701,7 +701,8 @@ fn held_of(kind kind: spell_plan.Kind) -> Result(Held, Nil) {
     spell_plan.RemoveStealthEffect(..)
     | spell_plan.StruckMoveEffect(..)
     | spell_plan.DespawnEffect(..)
-    | spell_plan.UnitStateEffect(..) -> Error(Nil)
+    | spell_plan.UnitStateEffect(..)
+    | spell_plan.DelayEffect(..) -> Error(Nil)
   }
 }
 

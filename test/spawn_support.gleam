@@ -32,6 +32,7 @@ import genesis_prime/world_map/creature_kind.{type Kinds, Kind, Kinds}
 import genesis_prime/world_map/creature_life.{
   type Attack, Attack, Attackable, Combat, Hostile, Instant,
 }
+import genesis_prime/world_map/creature_special
 import genesis_prime/world_map/creature_unit_type.{NonPlayer}
 import genesis_prime/world_map/game_number.{type GameNumbers, GameNumbers}
 import genesis_prime/world_map/spawn.{type Row, type Spawn, Row, Spawn}
@@ -322,6 +323,27 @@ pub fn kinds() -> Kinds {
       specials: [],
     ),
     by_creature: dict.new(),
+  )
+}
+
+/// The kinds with the Virtual Battle Beast (Creature2 73464) given a kind of its own: the
+/// default's fields and these specials, each cast again 10 000 ms after its start
+/// (migration 0035's guess), in this order.
+pub fn kinds_with_beast_specials(spell4_ids spell4_ids: List(Int)) -> Kinds {
+  let kinds = kinds()
+  Kinds(
+    ..kinds,
+    by_creature: dict.from_list([
+      #(
+        73_464,
+        Kind(
+          ..kinds.default,
+          specials: list.map(spell4_ids, fn(spell4_id) {
+            creature_special.Ref(spell4_id:, cooldown_ms: 10_000)
+          }),
+        ),
+      ),
+    ]),
   )
 }
 

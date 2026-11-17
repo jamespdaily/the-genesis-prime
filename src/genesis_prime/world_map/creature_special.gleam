@@ -6,7 +6,7 @@
 //// cooldown a guess, both marked in the row's `reason`.
 ////
 //// ```
-//// creature_special rows ─▶ refusal_of(row, tables) ─▶ Refusal(table: "creature_special", row: RowId(creature_id), rule)
+//// creature_special rows ─▶ refusal_of(row, tables, sources) ─▶ Refusal(table: "creature_special", row: RowId(creature_id), rule)
 //// creature_kind.select(rows, special_rows, tables) ─▶ refs_of(rows, creature_id) ─▶ Kind.specials
 //// ```
 ////
@@ -23,12 +23,19 @@
 ////   one before the last go, a phase flag naming no go, an empty or non-increasing go
 ////   schedule, a delay row the plan leaves out (aimed at another unit, or with no duration)
 ////   or one that names a go other than the strike go, a target condition
-////   (`spell4CCConditionsIdTarget`) other than 0, and any caster prerequisite the attack
-////   rule refuses. A bad row is refused, never left out silently.
+////   (`spell4CCConditionsIdTarget`) other than 0, a delay row behind a prerequisite, and any
+////   caster prerequisite the attack rule refuses. A bad row is refused, never left out
+////   silently.
 //// - **`order_index` is not null and unique for a creature**: it orders the list `chosen`
 ////   walks (genesis_prime/world_map/creature_fight).
 
+import genesis_prime/game/spell_plan
+import genesis_prime/game/strike_tell
+import genesis_prime/table/creature2
+import genesis_prime/table/id.{Creature2Id, Spell4Id}
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/table/spell4
+import genesis_prime/world_map/creature_attack
 import gleam/int
 import gleam/list
 
@@ -49,12 +56,90 @@ pub type Ref {
 }
 
 /// The first rule the row breaks, as the refusal's sentence, or `Error(Nil)` for a row the
-/// load takes (as `creature_kind`'s own refusals are read).
+/// load takes (as `creature_kind`'s own refusals are read). `sources` are the plan's rows,
+/// grouped once for all the rows (`spell_plan.sources_of`). The sentence names the special's
+/// Spell4, since the key `RowId` holds only the creature.
 pub fn refusal_of(
-  row _row: Row,
-  tables _tables: table_store.Tables,
+  row row: Row,
+  tables tables: table_store.Tables,
+  sources sources: spell_plan.Sources,
 ) -> Result(String, Nil) {
-  panic as "shape: refusal_of is built with the creature_special load"
+  let spell = int.to_string(row.spell4_id)
+  let creature = int.to_string(row.creature_id)
+  let checks = [
+    fn() {
+      case row.creature_id == 0 {
+        True ->
+          Ok(
+            "the default kind, row 0, would cast the special of Spell4 "
+            <> spell
+            <> " for every creature",
+          )
+        False -> Error(Nil)
+      }
+    },
+    fn() {
+      case creature2.get(tables:, id: Creature2Id(row.creature_id)) {
+        Error(Nil) ->
+          Ok(
+            "the client's Creature2 table has no creature "
+            <> creature
+            <> ", the caster of Spell4 "
+            <> spell,
+          )
+        Ok(..) -> Error(Nil)
+      }
+    },
+    fn() {
+      case spell4.get(tables:, id: Spell4Id(row.spell4_id)) {
+        Error(Nil) ->
+          Ok(
+            "the special Spell4 "
+            <> spell
+            <> " of Creature2 "
+            <> creature
+            <> " has no row in the client's Spell4 table",
+          )
+        Ok(..) -> Error(Nil)
+      }
+    },
+    fn() {
+      case row.cooldown_ms < strike_tell.deadline_ms {
+        True ->
+          Ok(
+            "the cooldown of "
+            <> int.to_string(row.cooldown_ms)
+            <> " ms of the special Spell4 "
+            <> spell
+            <> " is below the strike deadline of "
+            <> int.to_string(strike_tell.deadline_ms)
+            <> " ms, so two of the creature's strike rounds would be open at once",
+          )
+        False -> Error(Nil)
+      }
+    },
+    fn() {
+      case
+        creature_attack.special_checked(
+          tables:,
+          sources:,
+          spell4_id: row.spell4_id,
+        )
+      {
+        Error(unevaluated) ->
+          Ok(
+            "the special Spell4 "
+            <> spell
+            <> " of Creature2 "
+            <> creature
+            <> " is refused: "
+            <> creature_attack.describe(unevaluated:),
+          )
+        Ok(Nil) -> Error(Nil)
+      }
+    },
+  ]
+  list.find_map(checks, fn(check) { check() })
 }
 
 /// The refs of the rows of one creature, in `order_index` order.

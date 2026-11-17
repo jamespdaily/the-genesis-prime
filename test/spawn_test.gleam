@@ -34,12 +34,15 @@ import genesis_prime/game/faction_level
 import genesis_prime/game/hit.{Blow, Worked}
 import genesis_prime/game/prerequisite
 import genesis_prime/game/start_place
+import genesis_prime/game/unit_properties
 import genesis_prime/game/vendor
 import genesis_prime/table/creature2
-import genesis_prime/table/id.{Creature2Id, Spell4Id}
+import genesis_prime/table/id.{
+  Creature2Id, Spell4EffectsId, Spell4Id, UnitProperty2Id,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/world_map/creature_faction.{type Factions}
-import genesis_prime/world_map/creature_life.{Attackable, Charged, Hostile}
+import genesis_prime/world_map/creature_life.{Attackable, Charged, Go, Hostile}
 import genesis_prime/world_map/creature_unit_type.{Turret}
 import genesis_prime/world_map/spawn.{
   type Row, type Selection, Dead, FriendlyToBoth,
@@ -1829,4 +1832,181 @@ pub fn captives_key_on_static_objects_too_and_leave_out_a_neighbour_a_type_12_ob
     as "a creature key keeps its captive"
   assert dict.get(found, SpawnId(3)) == Error(Nil)
     as "a spawn whose creature no objective names is no key"
+}
+
+// ------------------------------------------ a creature's specials
+//
+// The spells a creature casts besides its attack, as the content load works them out
+// (`genesis_prime/world_map/spawn`, `creature_life.Special`), on the Virtual Battle Beast
+// (Creature2 73464) given a kind with specials. Expected values come from these places.
+// - Earthen Roar, Spell4 55317: castTime 3000; SpellPhase 11191 (phaseDelay 2500) and 11192
+//   (500), so the gos fall at 2500 and 3000 ms; the one damage row 131967 has phaseFlags 2,
+//   go 1, the last; the NpcExecutionDelay row 131968 (targetFlags 1, durationTime 1000,
+//   phaseFlags 0xffff0002) names go 1. Its hit shape is TelegraphDamage 7880, a cone
+//   (shape 4) from 0.0 to 5.5 over 40 degrees on the caster, under the area row
+//   Spell4AoeTargetConstraints 116, maxRange 10.0.
+// - Crash, Spell4 55296: SpellPhase delays 2800 and 200, so gos at 2800 and 3000 ms
+//   (`table_rows -- SpellPhase spell4IdOwner=55296`).
+// - Haymaker, Spell4 66285: castTime 3033, SpellPhase delays 0, 2500 and 200, so gos at 0,
+//   2500 and 2700 ms; the damage row 166493 (phaseFlags 4) and the delay row 166492
+//   (durationTime 1500, phaseFlags 0xffff0004) name go 2, the last.
+// - The Beast is level 1 with Strength 10.4668 (the creature trace above): the damage row
+//   131967 has Physical damage and weights Strength and Assault Power 1.0 each
+//   (parameterType 1 and 12, parameterValue 1.0), so its stat part is 1.0 x 10.4668 x 2 =
+//   20.93, rounded to 21, under c = 170 (GameFormula 712: level x 70 + 100), as the
+//   attack's 12 is worked out from 0.55 x 10.4668 x 2 = 11.51.
+// - Spell4 85469, the Sim-Turret's charge: castTime 8000, a rectangle 30 long
+//   (TelegraphDamage 16212) under the area row 335, maxRange 30.0.
+
+/// The Beast of spawn 1 with these specials in its kind.
+fn special_beast(spell4_ids spell4_ids: List(Int)) -> spawn.Spawn {
+  let selection =
+    spawn.select(
+      rows: [spawn_support.beast_row(number: 1)],
+      tables: character_tables.content_tables(),
+      formulas: rating_support.formulas(),
+      kinds: spawn_support.kinds_with_beast_specials(spell4_ids:),
+      vendors: vendor.none(),
+      factions: creature_faction.none(),
+    )
+  assert selection.refusals == [] as "the Beast's row is taken"
+  let assert Ok(world) = dict.get(selection.worlds, 3460) as "world 3460"
+  let assert Ok(beast) = dict.get(world.by_id, SpawnId(1)) as "spawn 1 starts"
+  beast
+}
+
+/// The one special the Beast carries: its charge and its cooldown.
+fn the_special_of(beast beast: spawn.Spawn) -> creature_life.Special {
+  let assert [special] = beast.combat.specials
+    as "the kind lists one special and the spawn carries it"
+  special
+}
+
+pub fn a_special_carries_the_gos_of_its_phases_and_strikes_at_the_last_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let roar = the_special_of(beast: special_beast(spell4_ids: [55_317]))
+  assert roar.attack.spell4_id == Spell4Id(55_317)
+  assert roar.cooldown_ms == 10_000 as "the kind's cooldown, a guess"
+  let assert Charged(cast_ms:, gos:, hold_ms:, ..) = roar.attack.cast
+    as "a spell with a cast time is a charge"
+  assert cast_ms == 3000 as "Spell4 55317 has castTime 3000"
+  assert gos
+    == [Go(at_ms: 2500, strikes: False), Go(at_ms: 3000, strikes: True)]
+    as "SpellPhase 11191 and 11192: delays 2500 and 500, the running sum; the damage row's phaseFlags 2 is go 1, the last"
+  assert hold_ms == 1000
+    as "Spell4Effects 131968: NpcExecutionDelay, delayTime 0, durationTime 1000, naming go 1"
+  let assert Charged(gos: crash_gos, ..) =
+    the_special_of(beast: special_beast(spell4_ids: [55_296])).attack.cast
+  assert crash_gos
+    == [Go(at_ms: 2800, strikes: False), Go(at_ms: 3000, strikes: True)]
+    as "SpellPhase of Spell4 55296: delays 2800 and 200"
+}
+
+pub fn a_special_follows_its_gos_when_they_end_before_the_cast_time_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let haymaker = the_special_of(beast: special_beast(spell4_ids: [66_285]))
+  let assert Charged(cast_ms:, gos:, hold_ms:, ..) = haymaker.attack.cast
+  assert cast_ms == 3033 as "Spell4 66285 has castTime 3033"
+  assert gos
+    == [
+      Go(at_ms: 0, strikes: False),
+      Go(at_ms: 2500, strikes: False),
+      Go(at_ms: 2700, strikes: True),
+    ]
+    as "the delays 0, 2500 and 200 sum to 2700, below the cast time; the damage row 166493 (phaseFlags 4) is go 2"
+  assert hold_ms == 1500
+    as "Spell4Effects 166492: durationTime 1500, phaseFlags 0xffff0004 names go 2"
+}
+
+/// The properties of the spawn's creature with the multiplier of its Physical damage
+/// (UnitProperty2 141, DamageDealtMultiplier of damage type 1) doubled.
+fn doubling_physical_damage(
+  beast beast: spawn.Spawn,
+) -> unit_properties.Properties {
+  let properties =
+    unit_properties.of_creature(bases: beast.bases, level: beast.level)
+  let #(doubled, _) =
+    unit_properties.apply(
+      properties:,
+      source: unit_properties.Source(cast_id: 1, effect_id: Spell4EffectsId(1)),
+      modifier: unit_properties.Change(
+        property: UnitProperty2Id(141),
+        mode: 1,
+        multiplier: 2.0,
+        flat: 0.0,
+        per_level: 0.0,
+      ),
+    )
+  doubled
+}
+
+pub fn a_property_change_works_the_special_blow_out_again_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let beast = special_beast(spell4_ids: [55_317])
+  let blow = fn(damage) {
+    Blow(
+      spell4_effects_id: 131_967,
+      damage_type: 1,
+      damage: Worked(damage),
+      delay_ms: 0,
+      threat_multiplier: 1.0,
+    )
+  }
+  assert the_special_of(beast:).attack.offence.blows == [blow(21)]
+    as "1.0 x 10.4668 x 2 = 20.93, rounded to 21"
+  assert beast.combat.attack.offence.blows
+    == [
+      Blow(
+        spell4_effects_id: 184_741,
+        damage_type: 1,
+        damage: Worked(12),
+        delay_ms: 0,
+        threat_multiplier: 1.0,
+      ),
+    ]
+    as "the attack's 12 beside it"
+  let values =
+    spawn.values_of(spawn: beast, properties: doubling_physical_damage(beast:))
+  assert the_special_of(beast: spawn.Spawn(..beast, combat: values.combat)).attack.offence.blows
+    == [blow(42)]
+    as "the special's blow is worked out again from the doubled multiplier: 21 x 2"
+  assert values.combat.attack.offence.blows
+    == [
+      Blow(
+        spell4_effects_id: 184_741,
+        damage_type: 1,
+        damage: Worked(24),
+        delay_ms: 0,
+        threat_multiplier: 1.0,
+      ),
+    ]
+    as "and the attack's blow too: 12 x 2"
+  let assert Charged(gos:, ..) =
+    the_special_of(beast: spawn.Spawn(..beast, combat: values.combat)).attack.cast
+  assert list.length(gos) == 2 as "what no property sets stays the spawn's own"
+}
+
+pub fn a_specials_reach_is_the_extent_of_its_hit_shapes_and_the_turrets_stays_30_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let beast = special_beast(spell4_ids: [55_317, 85_469])
+  let assert [roar, charge] = beast.combat.specials
+  assert roar.attack.reach == 5.5
+    as "TelegraphDamage 7880: a cone to 5.5, under the area row's maxRange 10.0"
+  assert charge.attack.reach == 30.0
+    as "the Sim-Turret's rectangle is 30 long, under the area row's maxRange 30.0"
+  assert beast.combat.attack.reach == 8.0
+    as "the attack's reach is the spell's targetMaxRange 5.0 plus the hit radius 3.0, as before"
+  let turret =
+    spawn_support.sim_turret(
+      number: 1,
+      place: place_support.at(
+        world_id: 3460,
+        world_zone_id: spawn_support.warfare_woods,
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+      ),
+    )
+  assert turret.combat.attack.reach == 30.0
+    as "the turret's own charge keeps the area row's 30.0"
 }

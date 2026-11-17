@@ -154,6 +154,60 @@ order by creature_id;
   |> pog.execute(db)
 }
 
+/// A row you get from running the `load_creature_specials` query
+/// defined in `./src/genesis_prime/content/sql/load_creature_specials.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type LoadCreatureSpecialsRow {
+  LoadCreatureSpecialsRow(
+    creature_id: Int,
+    spell4_id: Int,
+    order_index: Int,
+    cooldown_ms: Int,
+  )
+}
+
+/// Every row of the creature_special table in creature id and list order: the one query
+/// the load makes of the table at start (genesis_prime/content/creature_special). The
+/// checks run on these rows, not in SQL.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn load_creature_specials(
+  db: pog.Connection,
+) -> Result(pog.Returned(LoadCreatureSpecialsRow), pog.QueryError) {
+  let decoder = {
+    use creature_id <- decode.field(0, decode.int)
+    use spell4_id <- decode.field(1, decode.int)
+    use order_index <- decode.field(2, decode.int)
+    use cooldown_ms <- decode.field(3, decode.int)
+    decode.success(LoadCreatureSpecialsRow(
+      creature_id:,
+      spell4_id:,
+      order_index:,
+      cooldown_ms:,
+    ))
+  }
+
+  "-- Every row of the creature_special table in creature id and list order: the one query
+-- the load makes of the table at start (genesis_prime/content/creature_special). The
+-- checks run on these rows, not in SQL.
+select
+  creature_id,
+  spell4_id,
+  order_index,
+  cooldown_ms
+from creature_special
+order by creature_id, order_index;
+"
+  |> pog.query
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
 /// A row you get from running the `load_game_numbers` query
 /// defined in `./src/genesis_prime/content/sql/load_game_numbers.sql`.
 ///

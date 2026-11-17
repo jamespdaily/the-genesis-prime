@@ -1195,6 +1195,7 @@ fn node_row_of(entry entry: Reached) -> Result(lasting.LastingRow, Nil) {
     | spell_plan.ControlEffect(..), _
     | spell_plan.DespawnEffect(..), _
     | spell_plan.UnitStateEffect(..), _
+    | spell_plan.DelayEffect(..), _
     -> Error(Nil)
   }
 }

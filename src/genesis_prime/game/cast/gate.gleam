@@ -162,6 +162,7 @@ fn effect_rolls_needed(
     | spell_plan.StealthEffect(..)
     | spell_plan.RemoveStealthEffect(..)
     | spell_plan.ProcEffect(..)
+    | spell_plan.DelayEffect(..)
     | spell_plan.ControlEffect(..) -> caster_rolls
   }
 }
@@ -622,7 +623,9 @@ pub fn gates_checked_on_caster(
 ) -> Result(List(prerequisite.Prerequisite), Nil) {
   use <- bool.guard(when: !applied_by_go(kind:), return: Error(Nil))
   case kind {
-    spell_plan.ProxyEffect(..) | spell_plan.GainEffect(..) -> Error(Nil)
+    spell_plan.ProxyEffect(..)
+    | spell_plan.GainEffect(..)
+    | spell_plan.DelayEffect(..) -> Error(Nil)
     spell_plan.LastingEffect(lasting: row) ->
       Ok(caster_gates(condition: row.condition))
     spell_plan.RemoveEffect(remove: row) ->

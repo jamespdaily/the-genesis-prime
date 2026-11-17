@@ -733,7 +733,8 @@ fn passed_with(
         | spell_plan.ProcEffect(..)
         | spell_plan.ControlEffect(..)
         | spell_plan.DespawnEffect(..)
-        | spell_plan.UnitStateEffect(..) -> -1
+        | spell_plan.UnitStateEffect(..)
+        | spell_plan.DelayEffect(..) -> -1
       }
     }),
     left,
