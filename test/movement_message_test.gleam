@@ -24,11 +24,13 @@ import genesis_prime/message/fell_below_floor.{FellBelowFloor}
 import genesis_prime/message/half_float.{Finite, Infinite}
 import genesis_prime/message/move_speed_setting.{MoveSpeedSetting}
 import genesis_prime/message/movement_command.{
-  type MovementCommand, Kind10, Kind12, Kind13, Kind15, Kind16, Kind17, Kind18,
-  Kind19, Kind20, Kind21, Kind22, Kind23, Kind25, Kind26, Kind28, Kind29, Kind3,
-  Kind4, Kind5, Kind6, Kind7, Kind9, Mode, MoveAsked, Platform, Position,
+  type MovementCommand, FacePoint, FaceUnit, Kind10, Kind12, Kind13, Kind15,
+  Kind16, Kind17, Kind20, Kind21, Kind22, Kind23, Kind25, Kind26, Kind28, Kind29,
+  Kind3, Kind4, Kind5, Kind6, Kind7, Kind9, Mode, MoveAsked, Platform, Position,
   Rotation, StateFlags, Time, Velocity,
 }
+import genesis_prime/message/movement_face_point.{MovementFacePoint}
+import genesis_prime/message/movement_face_unit.{MovementFaceUnit}
 import genesis_prime/message/movement_float_vector.{MovementFloatVector}
 import genesis_prime/message/movement_half_vector.{MovementHalfVector}
 import genesis_prime/message/movement_kind_10.{MovementKind10}
@@ -37,8 +39,6 @@ import genesis_prime/message/movement_kind_13.{MovementKind13}
 import genesis_prime/message/movement_kind_15.{MovementKind15}
 import genesis_prime/message/movement_kind_16.{MovementKind16}
 import genesis_prime/message/movement_kind_17.{MovementKind17}
-import genesis_prime/message/movement_kind_18.{MovementKind18}
-import genesis_prime/message/movement_kind_19.{MovementKind19}
 import genesis_prime/message/movement_kind_20.{MovementKind20}
 import genesis_prime/message/movement_kind_21.{MovementKind21}
 import genesis_prime/message/movement_kind_22.{MovementKind22}
@@ -64,6 +64,8 @@ import genesis_prime/message/movement_state_flags.{MovementStateFlags}
 import genesis_prime/message/movement_time.{MovementTime}
 import genesis_prime/message/movement_velocity.{MovementVelocity}
 import genesis_prime/message/player_movement.{PlayerMovement}
+import genesis_prime/message/relayed_movement
+import genesis_prime/message/unit_movement.{UnitMovement}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/world_zone_changed.{WorldZoneChanged}
 import gleam/int
@@ -400,16 +402,16 @@ fn kinds() -> List(Kind) {
     Kind(
       18,
       [u32(0xFFFFFFFF), bit(1)],
-      Kind18(MovementKind18(field_2: 0xFFFFFFFF, field_3: 1)),
+      FaceUnit(MovementFaceUnit(unit_id: 0xFFFFFFFF, blends: 1)),
     ),
     Kind(
       19,
       [u32(0x3F800001), u32(0x3F800002), u32(0x3F800003), bit(1)],
-      Kind19(MovementKind19(
-        field_2: 0x3F800001,
-        field_3: 0x3F800002,
-        field_4: 0x3F800003,
-        field_5: 1,
+      FacePoint(MovementFacePoint(
+        x: 0x3F800001,
+        y: 0x3F800002,
+        z: 0x3F800003,
+        blends: 1,
       )),
     ),
     Kind(
@@ -548,6 +550,54 @@ fn set_count(body: BitArray, count: Int) -> BitArray {
 }
 
 // ---- test 4: kinds 8 and 11 are half floats ----
+
+pub fn kind_18_and_kind_19_round_trip_with_their_named_fields_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Kind 18 is the unit id in 32 bits then the blend bit, kind 19 three 32-bit floats then
+  // the blend bit: the layouts of the client's reader (0x14007c340, 0x1400ad350) in the
+  // table 0x140c1f070, whose fields 0x140715730 and 0x1407157f0 name.
+  let one = 0x3F800000
+  let body =
+    message_support.packed([
+      u32(0x0102),
+      u32(0x0A0B),
+      bit(0),
+      bit(0),
+      #(5, 2),
+      #(5, 18),
+      u32(0x01020304),
+      bit(1),
+      #(5, 19),
+      u32(one),
+      u32(0x40000000),
+      u32(0xC0400000),
+      bit(0),
+    ])
+  message_support.assert_codec(
+    name: "0x638 holding kind 18 and kind 19",
+    body:,
+    value: UnitMovement(
+      unit_id: 0x0102,
+      server_time: 0x0A0B,
+      reset_movement: 0,
+      kept: 0,
+      commands: [
+        relayed_movement.FaceUnit(MovementFaceUnit(
+          unit_id: 0x01020304,
+          blends: 1,
+        )),
+        relayed_movement.FacePoint(MovementFacePoint(
+          x: one,
+          y: 0x40000000,
+          z: 0xC0400000,
+          blends: 0,
+        )),
+      ],
+    ),
+    encode: unit_movement.encode,
+    decode: unit_movement.decode,
+  )
+}
 
 pub fn kinds_8_and_11_hold_half_floats_test() -> Nil {
   use <- owned_test.run(5000)

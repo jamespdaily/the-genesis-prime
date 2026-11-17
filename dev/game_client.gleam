@@ -1187,6 +1187,8 @@ fn last_position(
     | relayed_movement.Velocity(_)
     | relayed_movement.MoveAsked(_)
     | relayed_movement.Rotation(_)
+    | relayed_movement.FaceUnit(_)
+    | relayed_movement.FacePoint(_)
     | relayed_movement.StateFlags(_)
     | relayed_movement.Mode(_) -> at
   }
@@ -1939,6 +1941,8 @@ fn relayed_kind(command: relayed_movement.RelayedMovement) -> Int {
     relayed_movement.Velocity(..) -> 8
     relayed_movement.MoveAsked(..) -> 11
     relayed_movement.Rotation(..) -> 14
+    relayed_movement.FaceUnit(..) -> 18
+    relayed_movement.FacePoint(..) -> 19
     relayed_movement.StateFlags(..) -> 24
     relayed_movement.Mode(..) -> 27
   }

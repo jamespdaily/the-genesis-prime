@@ -471,7 +471,7 @@ pub fn vendor_opened(
     )),
   )
   case shown {
-    ShownPlayer | ShownObject(..) ->
+    ShownPlayer(..) | ShownObject(..) ->
       Error(VendorRefusal(
         unit_id:,
         code: vendor_not_a_vendor,

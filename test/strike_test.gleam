@@ -983,6 +983,7 @@ fn creature_at(
     in_combat: False,
     held: [],
     unit_states: [],
+    face: option.None,
   )
 }
 
@@ -1004,7 +1005,7 @@ fn picture() -> shown.Picture {
         attackable: Attackable(exile: False, dominion: True),
       ),
     ),
-    #(28, ShownPlayer),
+    #(28, ShownPlayer(at: option.None)),
     #(20, creature_at(x: 40.0, z: 40.0, alive: True, attackable: both)),
   ])
 }
@@ -1085,7 +1086,7 @@ pub fn a_despawn_row_selects_no_player_and_no_static_object_test() -> Nil {
           attackable: Attackable(exile: True, dominion: True),
         ),
       ),
-      #(28, ShownPlayer),
+      #(28, ShownPlayer(at: option.None)),
       #(29, object),
     ])
   let selected = fn(primary_target) {

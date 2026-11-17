@@ -10,6 +10,8 @@ import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/connection/frames
 import genesis_prime/game/start_place.{type Place, Facing}
 import genesis_prime/game/world_entry
+import genesis_prime/message/movement_face_point.{MovementFacePoint}
+import genesis_prime/message/movement_face_unit.{MovementFaceUnit}
 import genesis_prime/message/movement_float_vector.{MovementFloatVector}
 import genesis_prime/message/movement_rotation.{MovementRotation}
 import genesis_prime/message/movement_time.{MovementTime}
@@ -18,6 +20,7 @@ import genesis_prime/message/relayed_movement
 import genesis_prime/message/unit_movement.{type UnitMovement, UnitMovement}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/world_map/creature_path
+import genesis_prime/world_map/creature_turn
 import gleam/option.{None, Some}
 import owned_test
 import place_support
@@ -131,4 +134,65 @@ pub fn a_standing_creature_has_no_path_frame_test() -> Nil {
     )
     == None
     as "a creature that stands has no path to write"
+}
+
+/// The one 0x638 of a face for unit 40 at monotonic 1000 ms, decoded.
+fn faced(face face: creature_turn.Face) -> UnitMovement {
+  let Frame(message_id:, body:) =
+    frames.face_frame(entered: entered(), unit_id: 40, face:, at_ms: 1000)
+  assert message_id == 0x0638 as "a face is written as one 0x638"
+  let assert Ok(movement) = unit_movement.decode(body)
+    as "the frame is a 0x638 the client's reader takes"
+  movement
+}
+
+pub fn a_face_unit_frame_is_kind_0_then_kind_18_naming_the_unit_with_the_blend_bit_set_test() -> Nil {
+  use <- owned_test.run(5000)
+  // 0x638 with reset 0: kind 0 holds the map's time (1000 less the start 600 is 400) and kind 18
+  // the unit id and the blend bit, which is 1 so the client turns the creature over half a
+  // second (`opcode.0x638`, `movement_command.kind_0`, `movement_command.kind_18`).
+  let movement = faced(face: creature_turn.Unit(unit_id: 20))
+  assert movement.reset_movement == 0 && movement.server_time == 400
+  assert movement.commands
+    == [
+      relayed_movement.Time(MovementTime(time: 400)),
+      relayed_movement.FaceUnit(MovementFaceUnit(unit_id: 20, blends: 1)),
+    ]
+    as "kind 0, then kind 18 naming the unit, blend 1; no position command"
+}
+
+pub fn a_face_point_frame_is_kind_0_then_kind_19_at_the_place_test() -> Nil {
+  use <- owned_test.run(5000)
+  let movement =
+    faced(face: creature_turn.Point(place: at(x: 1.0, y: 2.0, z: -3.0)))
+  assert movement.commands
+    == [
+      relayed_movement.Time(MovementTime(time: 400)),
+      relayed_movement.FacePoint(MovementFacePoint(
+        x: 0x3F800000,
+        y: 0x40000000,
+        z: 0xC0400000,
+        blends: 1,
+      )),
+    ]
+    as "kind 0, then kind 19 with the place's x, y and z as float bits, blend 1"
+}
+
+pub fn a_fixed_face_frame_is_kind_0_then_kind_14_that_takes_the_facing_at_once_test() -> Nil {
+  use <- owned_test.run(5000)
+  let movement =
+    faced(
+      face: creature_turn.Fixed(facing: Facing(yaw: 1.5, pitch: 0.0, roll: 0.0)),
+    )
+  assert movement.commands
+    == [
+      relayed_movement.Time(MovementTime(time: 400)),
+      relayed_movement.Rotation(MovementRotation(
+        yaw: 0x3FC00000,
+        pitch: 0,
+        roll: 0,
+        blends: 0,
+      )),
+    ]
+    as "kind 0, then kind 14 with the blend bit clear (`0x140715350`), and no position command"
 }

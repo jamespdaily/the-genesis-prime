@@ -183,6 +183,7 @@ fn look_visuals(news news: News) -> Result(List(ItemVisual), Nil) {
     | client_connection.Died
     | client_connection.CreatureMoved(..)
     | client_connection.CreaturePlaced(..)
+    | client_connection.CreatureFaces(..)
     | client_connection.Targeting(..)
     | client_connection.Threat(..)
     | client_connection.CombatState(..)

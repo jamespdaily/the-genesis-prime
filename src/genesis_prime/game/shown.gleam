@@ -4,7 +4,7 @@
 ////
 //// ```
 //// the creature's 0x262 news ─▶ shown(unit, ShownCreature(creature id, Standing(place), life, alive, hit radius, attackable, hostile to))
-//// its CreatureMoved news   ─▶ path changed
+//// its CreatureMoved news   ─▶ path changed          its CreatureFaces news ─▶ face changed
 //// its Health and Died news ─▶ alive changed        its 0x355 ─▶ the unit is no longer shown
 //// its CombatState news     ─▶ in combat changed
 //// candidates(picture, faction, caster, now) ─▶ the alive foes at place_at(path, now), as geometry's
@@ -26,13 +26,16 @@
 //// - **A running creature** is where its last path puts it at the time of the go
 ////   (genesis_prime/world_map/creature_path `place_at`), by the same function the
 ////   creature reads its own place with.
-//// - **A creature's pose** (`pose_of`) is that place's ground point with the yaw of its
-////   0x262, which no path turns, so a position condition judges a creature by what its
-////   client shows (`creature.facing`: kind 4 paths move a creature without turning it).
+//// - **A creature's pose** (`pose_of`) is that place's ground point with the yaw its client
+////   shows: the yaw of its 0x262 or of the path that turned it, or what its `CreatureFaces` news
+////   set, so a position condition judges a creature by what its client shows
+////   (`creature.facing`: kind 4 paths move a creature without turning it).
+//// - **Another player's unit** keeps the ground point its last position command gave
+////   (`with_player_at`), for the creatures that face it.
 //// - **A creature's life** is the number of the map's watch it was started under,
 ////   which is part of its address (genesis_prime/step `Creature`).
 
-import genesis_prime/game/area.{type Candidate, type Pose, Candidate}
+import genesis_prime/game/area.{type Candidate, type Point, type Pose, Candidate}
 import genesis_prime/game/prerequisite.{
   type FirstUnit, NonPlayer, OtherPlayer, TheChecker,
 }
@@ -44,10 +47,12 @@ import genesis_prime/table/id.{type Creature2Id, Faction2Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_life.{type Attackable, type Hostile}
 import genesis_prime/world_map/creature_path.{type Path}
+import genesis_prime/world_map/creature_turn.{type Face}
 import genesis_prime/world_map/spawn
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
+import gleam/option.{type Option, None, Some}
 import gleam/result
 
 /// The player faction of a caster, which picks the faction a creature may be
@@ -59,8 +64,10 @@ pub type PlayerFaction {
 
 /// A unit the client shows.
 pub type Shown {
-  /// Another player's unit, which no area strikes.
-  ShownPlayer
+  /// Another player's unit, which no area strikes, and the ground point its last position
+  /// command put it at (none before one), which the yaw of a creature that faces it reads
+  /// (`pose_of`).
+  ShownPlayer(at: Option(Point))
   /// A static object the map told of (genesis_prime/world_map/static_object),
   /// which has no fight state, so no area strikes it. It holds what the
   /// client's range check of a right-click reads of it (`opcode.0x97.range`).
@@ -113,6 +120,10 @@ pub type Shown {
     /// a later `UnitStateEnded`): no frame carries them, so only the press's refusal reads
     /// them (genesis_prime/game/cast/press `unit_state_refusal`).
     unit_states: List(HeldUnitState),
+    /// What the rotation of the creature's client is held to by the creature's own news
+    /// (`CreatureFaces`): none from its 0x262 and after a path that turns it
+    /// (`creature_path.Timed` with `turned_to`), which replaces the rotation the face held.
+    face: Option(Face),
   )
 }
 
@@ -140,7 +151,7 @@ pub fn target_of(
   shown shown: Shown,
 ) -> Result(#(Unit, Int), Nil) {
   case shown {
-    ShownPlayer -> Error(Nil)
+    ShownPlayer(..) -> Error(Nil)
     ShownObject(creature_id:, faction_id:, checklist_index:, ..)
     | ShownCreature(creature_id:, faction_id:, checklist_index:, ..) ->
       creature2.get(tables, creature_id)
@@ -206,7 +217,7 @@ pub fn talkable(
   now_ms now_ms: Int,
 ) -> Result(Talkable, Nil) {
   case shown {
-    ShownPlayer -> Error(Nil)
+    ShownPlayer(..) -> Error(Nil)
     ShownObject(
       creature_id:,
       faction_id:,
@@ -270,7 +281,7 @@ pub fn candidates(
   |> list.filter_map(fn(entry) {
     let #(unit_id, shown) = entry
     case shown {
-      ShownPlayer | ShownObject(..) -> Error(Nil)
+      ShownPlayer(..) | ShownObject(..) -> Error(Nil)
       ShownCreature(path:, alive:, hit_radius:, attackable:, ..) ->
         case
           alive
@@ -309,23 +320,70 @@ pub fn place_of(
 ) -> Result(Place, Nil) {
   case dict.get(picture, unit_id) {
     Ok(ShownCreature(path:, ..)) -> Ok(creature_path.place_at(path:, now_ms:))
-    Ok(ShownPlayer) | Ok(ShownObject(..)) | Error(Nil) -> Error(Nil)
+    Ok(ShownPlayer(..)) | Ok(ShownObject(..)) | Error(Nil) -> Error(Nil)
   }
 }
 
+/// The viewer's own unit and where it stands, which a creature that faces the viewer is
+/// turned toward.
+pub type Viewer {
+  Viewer(unit_id: Int, place: Place)
+}
+
 /// The ground point and yaw of a shown creature at monotonic time `now_ms`, or `Error(Nil)`
-/// for a unit that is not shown or not a creature: where its path puts it, with the yaw of
-/// that place. The client holds the yaw of the creature's 0x262 and no position path turns
-/// it (`creature.facing`); the place's yaw equals it because every place a creature's path
-/// holds keeps the spawn's facing (`creature_path` `along`, and the home the creature
-/// walks to is its spawn). This is the one place a shown creature's facing is read.
+/// for a unit that is not shown or not a creature: where its path puts it, facing as its
+/// client shows it. The client holds the yaw of the creature's 0x262 until a rotation command
+/// replaces it (`creature.facing`): a path of kind 4 leaves it, a path that turns it
+/// (`Timed` with `turned_to`) sets it, and the creature's own `CreatureFaces` news sets it
+/// to a fixed yaw or keeps it toward a unit or a point (`creature_turn`). A creature that
+/// faces a unit has the bearing to that unit's ground point: the viewer's own unit at its
+/// place, another player's at the point its last position command gave; a unit the picture
+/// has no point for leaves the yaw as it was, as the client leaves it for a unit it does not
+/// find (`movement_command.kind_18`). This is the one place a shown creature's facing is read.
 pub fn pose_of(
   picture picture: Picture,
   unit_id unit_id: Int,
   now_ms now_ms: Int,
+  viewer viewer: Viewer,
 ) -> Result(Pose, Nil) {
-  place_of(picture:, unit_id:, now_ms:)
-  |> result.map(fn(place) { area.pose_of(place:) })
+  case dict.get(picture, unit_id) {
+    Ok(ShownCreature(path:, face:, ..)) -> {
+      let place = creature_path.place_at(path:, now_ms:)
+      let body = area.pose_of(place:)
+      let aim = case face {
+        None -> Error(Nil)
+        Some(creature_turn.Fixed(facing:)) -> Ok(Fixed(facing.yaw))
+        Some(creature_turn.Point(place: point)) ->
+          Ok(Toward(area.point_of(place: point)))
+        Some(creature_turn.Unit(unit_id: faced)) ->
+          case faced == viewer.unit_id, dict.get(picture, faced) {
+            True, _ -> Ok(Toward(area.point_of(place: viewer.place)))
+            False, Ok(ShownPlayer(at: Some(point))) -> Ok(Toward(point))
+            False, _ -> Error(Nil)
+          }
+      }
+      Ok(case aim {
+        Ok(Fixed(yaw)) -> area.Pose(..body, yaw:)
+        Ok(Toward(point)) ->
+          case point == body.at {
+            True -> body
+            False ->
+              area.Pose(
+                ..body,
+                yaw: area.bearing(from: body.at, target: point, yaw: 0.0),
+              )
+          }
+        Error(Nil) -> body
+      })
+    }
+    Ok(ShownPlayer(..)) | Ok(ShownObject(..)) | Error(Nil) -> Error(Nil)
+  }
+}
+
+/// Where a creature's client has it face.
+type Aim {
+  Fixed(yaw: Float)
+  Toward(point: Point)
 }
 
 /// The poses of the shown creatures among the units, by unit id; a unit that is not a shown
@@ -334,9 +392,10 @@ pub fn poses_of(
   picture picture: Picture,
   unit_ids unit_ids: List(Int),
   now_ms now_ms: Int,
+  viewer viewer: Viewer,
 ) -> Dict(Int, Pose) {
   list.filter_map(unit_ids, fn(unit_id) {
-    pose_of(picture:, unit_id:, now_ms:)
+    pose_of(picture:, unit_id:, now_ms:, viewer:)
     |> result.map(fn(pose) { #(unit_id, pose) })
   })
   |> dict.from_list
@@ -364,7 +423,7 @@ pub fn standing(
     let place = case shown {
       ShownCreature(path:, ..) -> Ok(creature_path.place_at(path:, now_ms:))
       ShownObject(place:, ..) -> Ok(place)
-      ShownPlayer -> Error(Nil)
+      ShownPlayer(..) -> Error(Nil)
     }
     use place <- result.map(place)
     Standing(
@@ -387,7 +446,7 @@ pub fn checklist_indexes_of(
     case dict.get(picture, unit_id) {
       Ok(ShownCreature(checklist_index:, ..))
       | Ok(ShownObject(checklist_index:, ..)) -> Ok(#(unit_id, checklist_index))
-      Ok(ShownPlayer) | Error(Nil) -> Error(Nil)
+      Ok(ShownPlayer(..)) | Error(Nil) -> Error(Nil)
     }
   })
   |> dict.from_list
@@ -408,7 +467,7 @@ pub fn first_units_of(
       False, Ok(ShownCreature(creature_id:, ..))
       | False, Ok(ShownObject(creature_id:, ..))
       -> Ok(#(unit_id, NonPlayer(creature2_id: creature_id.value)))
-      False, Ok(ShownPlayer) -> Ok(#(unit_id, OtherPlayer))
+      False, Ok(ShownPlayer(..)) -> Ok(#(unit_id, OtherPlayer))
       False, Error(Nil) -> Error(Nil)
     }
   })
@@ -423,7 +482,7 @@ pub fn life_of(
 ) -> Result(Int, Nil) {
   case dict.get(picture, unit_id) {
     Ok(ShownCreature(life:, ..)) -> Ok(life)
-    Ok(ShownPlayer) | Ok(ShownObject(..)) | Error(Nil) -> Error(Nil)
+    Ok(ShownPlayer(..)) | Ok(ShownObject(..)) | Error(Nil) -> Error(Nil)
   }
 }
 
@@ -435,9 +494,44 @@ pub fn with_path(
   path path: Path,
 ) -> Picture {
   case dict.get(picture, unit_id) {
+    Ok(ShownCreature(..) as creature) -> {
+      let face = case path {
+        creature_path.Timed(turned_to: Some(_), ..) -> None
+        creature_path.Timed(..)
+        | creature_path.Standing(..)
+        | creature_path.Running(..) -> creature.face
+      }
+      dict.insert(picture, unit_id, ShownCreature(..creature, path:, face:))
+    }
+    Ok(ShownPlayer(..)) | Ok(ShownObject(..)) | Error(Nil) -> picture
+  }
+}
+
+/// The picture with the creature's rotation held to `face` by its owner's news; a unit that
+/// is not a shown creature is as it was.
+pub fn with_face(
+  picture picture: Picture,
+  unit_id unit_id: Int,
+  face face: Face,
+) -> Picture {
+  case dict.get(picture, unit_id) {
     Ok(ShownCreature(..) as creature) ->
-      dict.insert(picture, unit_id, ShownCreature(..creature, path:))
-    Ok(ShownPlayer) | Ok(ShownObject(..)) | Error(Nil) -> picture
+      dict.insert(picture, unit_id, ShownCreature(..creature, face: Some(face)))
+    Ok(ShownPlayer(..)) | Ok(ShownObject(..)) | Error(Nil) -> picture
+  }
+}
+
+/// The picture with the player's unit at `at` by a position command of its movement; a unit
+/// that is not a shown player is as it was.
+pub fn with_player_at(
+  picture picture: Picture,
+  unit_id unit_id: Int,
+  at at: Point,
+) -> Picture {
+  case dict.get(picture, unit_id) {
+    Ok(ShownPlayer(..)) ->
+      dict.insert(picture, unit_id, ShownPlayer(at: Some(at)))
+    Ok(ShownCreature(..)) | Ok(ShownObject(..)) | Error(Nil) -> picture
   }
 }
 
@@ -466,7 +560,7 @@ pub fn with_alive(
           },
         ),
       )
-    Ok(ShownPlayer) | Ok(ShownObject(..)) | Error(Nil) -> picture
+    Ok(ShownPlayer(..)) | Ok(ShownObject(..)) | Error(Nil) -> picture
   }
 }
 
@@ -488,7 +582,7 @@ pub fn with_held_applied(
           held: list.append(held, [HeldState(state:, instance_id:)]),
         ),
       )
-    Ok(ShownPlayer) | Ok(ShownObject(..)) | Error(Nil) -> picture
+    Ok(ShownPlayer(..)) | Ok(ShownObject(..)) | Error(Nil) -> picture
   }
 }
 
@@ -513,7 +607,7 @@ pub fn with_unit_state_held(
           ]),
         ),
       )
-    Ok(ShownPlayer) | Ok(ShownObject(..)) | Error(Nil) -> picture
+    Ok(ShownPlayer(..)) | Ok(ShownObject(..)) | Error(Nil) -> picture
   }
 }
 
@@ -536,7 +630,7 @@ pub fn with_unit_state_ended(
           }),
         ),
       )
-    Ok(ShownPlayer) | Ok(ShownObject(..)) | Error(Nil) -> picture
+    Ok(ShownPlayer(..)) | Ok(ShownObject(..)) | Error(Nil) -> picture
   }
 }
 
@@ -558,7 +652,7 @@ pub fn with_held_ended(
           held: list.filter(held, fn(one) { one.instance_id != instance_id }),
         ),
       )
-    Ok(ShownPlayer) | Ok(ShownObject(..)) | Error(Nil) -> picture
+    Ok(ShownPlayer(..)) | Ok(ShownObject(..)) | Error(Nil) -> picture
   }
 }
 
@@ -572,6 +666,6 @@ pub fn with_in_combat(
   case dict.get(picture, unit_id) {
     Ok(ShownCreature(..) as creature) ->
       dict.insert(picture, unit_id, ShownCreature(..creature, in_combat:))
-    Ok(ShownPlayer) | Ok(ShownObject(..)) | Error(Nil) -> picture
+    Ok(ShownPlayer(..)) | Ok(ShownObject(..)) | Error(Nil) -> picture
   }
 }

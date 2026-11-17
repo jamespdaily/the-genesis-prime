@@ -172,10 +172,13 @@ fn picture_of(scene scene: Scene) -> shown.Picture {
           shown.HeldState(state:, instance_id: 1)
         }),
         unit_states: [],
+        face: option.None,
       ),
     )
   })
-  |> list.append(list.map(scene.players, fn(id) { #(id, shown.ShownPlayer) }))
+  |> list.append(
+    list.map(scene.players, fn(id) { #(id, shown.ShownPlayer(at: option.None)) }),
+  )
   |> dict.from_list
 }
 

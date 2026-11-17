@@ -26,7 +26,8 @@ import connection_rule_support as support
 import crowd_control_support
 import genesis_prime/client_connection.{
   type News, CastFinished, CastStarted, CastWent, CombatState, CreatureAppeared,
-  CreatureMoved, CreaturePlaced, Health, PeerNews, Targeting, Threat,
+  CreatureFaces, CreatureMoved, CreaturePlaced, Health, PeerNews, Targeting,
+  Threat,
 }
 import genesis_prime/game/crowd_control
 import genesis_prime/game/forced_move
@@ -54,6 +55,7 @@ import genesis_prime/world_map/creature_fight
 import genesis_prime/world_map/creature_kind.{type Kind, type Kinds, Kind}
 import genesis_prime/world_map/creature_life
 import genesis_prime/world_map/creature_path.{Running, Timed}
+import genesis_prime/world_map/creature_turn
 import genesis_prime/world_map/creature_unit_type
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/spawn.{type Spawn, Spawn}
@@ -68,6 +70,7 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/set
 import gleam/string
+import gleam_community/maths
 import map_support
 import owned_test
 import place_support
@@ -344,6 +347,12 @@ fn name_of(news: News) -> String {
     CombatState(in_combat: False) -> "0x89a(0)"
     CreatureMoved(..) -> "0x638"
     CreaturePlaced(..) -> "0x638(placed)"
+    client_connection.CreatureFaces(face: creature_turn.Unit(unit_id:), ..) ->
+      "turn(kind 18, unit " <> int.to_string(unit_id) <> ")"
+    client_connection.CreatureFaces(face: creature_turn.Point(..), ..) ->
+      "turn(kind 19, home)"
+    client_connection.CreatureFaces(face: creature_turn.Fixed(..), ..) ->
+      "turn(kind 14)"
     CastStarted(..) -> "0x7ff"
     CastWent(..) -> "0x7f4"
     client_connection.CastMissed(..) -> "0x7fb"
@@ -503,9 +512,10 @@ pub fn a_viewer_entering_the_ring_is_targeted_the_creature_enters_combat_and_the
   assert said(aggro)
     == [
       "0x908(20, 1) to 2", "0x908(20, 1) to 5", "0x89a(1) to 2", "0x89a(1) to 5",
-      "Threatened(7, 3) to 2",
+      "Threatened(7, 3) to 2", "turn(kind 18, unit 20) to 2",
+      "turn(kind 18, unit 20) to 5",
     ]
-    as "0x908 (C, P, aggro threat 1) and 0x89a (C, 1) to every viewer, then Threatened to P, and no 0x7ff before the first tick"
+    as "0x908 (C, P, aggro threat 1) and 0x89a (C, 1) to every viewer, then Threatened to P, then the turn to P's unit, and no 0x7ff before the first tick"
   assert fights_told_for(aggro)
     == [#(2, map_support.stay(count: 2), Threatened(unit_id: unit, life:))]
     as "the threat goes for the player's stay as the creature holds it, so the connection drops one of an earlier stay"
@@ -534,8 +544,11 @@ pub fn a_summoned_creature_aggroes_the_first_player_that_approaches_it_and_strik
   let #(state, aggro) =
     tell(state:, at_ms: 0, message: approached(number: 2, x: 5.0, seq: 1))
   assert said(aggro)
-    == ["0x908(20, 1) to 2", "0x89a(1) to 2", "Threatened(7, 3) to 2"]
-    as "the player is targeted and threatened as for a stored spawn's creature"
+    == [
+      "0x908(20, 1) to 2", "0x89a(1) to 2", "Threatened(7, 3) to 2",
+      "turn(kind 18, unit 20) to 2",
+    ]
+    as "the player is targeted, threatened and faced as for a stored spawn's creature"
   let #(_, ticked) = fire(state:, at_ms: 1500, timer: timer_for(aggro, 1500))
   assert said(ticked) == ["0x7ff to 2", "Attacks to 2"]
   let assert [CastStarted(start:)] = news_to(ticked, 2)
@@ -585,8 +598,10 @@ pub fn damage_adds_damage_times_each_effects_threat_multiplier_and_the_top_entry
       "0x908(50, 25) to 2",
       "0x908(50, 25) to 5",
       "Threatened(7, 3) to 5",
+      "turn(kind 18, unit 50) to 2",
+      "turn(kind 18, unit 50) to 5",
     ]
-    as "10 x 2.0 + 5 x 1.0 = 25 above the aggro threat 1: player 5 is the new target"
+    as "10 x 2.0 + 5 x 1.0 = 25 above the aggro threat 1: player 5 is the new target, and the creature turns to it"
   let #(state, second) =
     tell(
       state:,
@@ -814,10 +829,11 @@ pub fn at_the_leash_circle_with_the_target_out_of_reach_the_creature_leashes_and
       "0x90a(20, 0) to 2",
       "0x89a(0) to 2",
       "0x937(52) to 2",
+      "turn(kind 19, home) to 2",
       "0x638 to 2",
       "Released(7) to 2",
     ]
-    as "0x90a 0 for each entry, 0x89a (C, 0), a full 0x937, the path home, and Released"
+    as "0x90a 0 for each entry, 0x89a (C, 0), a full 0x937, the turn to home, the path home, and Released"
   assert fights_told_for(leashed)
     == [#(2, map_support.stay(count: 2), Released(unit_id: unit))]
     as "the release goes for the player's stay"
@@ -1243,9 +1259,11 @@ pub fn a_creature_told_player_died_for_its_target_erases_its_entry_names_the_nex
       "0x90a(50, 0) to 5",
       "0x908(20, 1) to 2",
       "0x908(20, 1) to 5",
+      "turn(kind 18, unit 20) to 2",
+      "turn(kind 18, unit 20) to 5",
       "Released(7) to 5",
     ]
-    as "opcode.0x90a: a threat of 0 erases the body's entry; opcode.0x908 names player 2; the body is told Released"
+    as "opcode.0x90a: a threat of 0 erases the body's entry; opcode.0x908 names player 2, whom the creature turns to; the body is told Released"
   let #(_, ticked) = fire(state:, at_ms: 1500, timer: timer_for(aggro, 1500))
   let assert [#(struck, Attacks(tell: Strike(key:, ..)))] = fights_told(ticked)
     as "the tick strikes one player"
@@ -1268,9 +1286,10 @@ pub fn a_creature_told_player_died_for_its_only_entry_leashes_and_at_home_aggroe
       "0x90a(20, 0) to 2",
       "0x89a(0) to 2",
       "0x937(52) to 2",
+      "turn(kind 14) to 2",
       "Released(7) to 2",
     ]
-    as "the leash of a creature standing at its spawn: the entry erased, out of combat, full health (52), no path, the body told Released"
+    as "the leash of a creature standing at its spawn: the entry erased, out of combat, full health (52), no path, the turn to the spawn's facing (it is home), the body told Released"
   let #(_, at_home) = fire(state:, at_ms: 100, timer: timer_for(died, 0))
   assert said(at_home) == []
     as "at home nothing is aggroed: the body is not near"
@@ -1321,9 +1340,10 @@ pub fn unwatched_drops_the_player_from_the_threat_list_and_the_next_entry_is_the
       "0x355 to 5",
       "0x90a(50, 0) to 2",
       "0x908(20, 1) to 2",
+      "turn(kind 18, unit 20) to 2",
       "Released(7) to 5",
     ]
-    as "player 5 (threat 3, the target) leaves the list, its entry erased (0x90a 0); player 2 is the target again"
+    as "player 5 (threat 3, the target) leaves the list, its entry erased (0x90a 0); player 2 is the target again, and the creature turns to it"
 }
 
 pub fn death_takes_the_creature_out_of_combat_and_releases_everyone_on_its_list_test() -> Nil {
@@ -1349,10 +1369,10 @@ pub fn death_takes_the_creature_out_of_combat_and_releases_everyone_on_its_list_
   assert said(killed)
     == [
       "Landed to 2", "KillCredit to 2", "0x937(0) to 2", "0x937(0) to 5",
-      "0x88c to 2", "0x88c to 5", "0x89a(0) to 2", "0x89a(0) to 5",
-      "Released(7) to 2", "Released(7) to 5",
+      "0x88c to 2", "0x88c to 5", "turn(kind 14) to 2", "turn(kind 14) to 5",
+      "0x89a(0) to 2", "0x89a(0) to 5", "Released(7) to 2", "Released(7) to 5",
     ]
-    as "death.combat_flag: 0x89a (C, 0) and Released to everyone on the threat list; the credit goes to the killing blow's connection only, after its answer"
+    as "death.combat_flag: 0x89a (C, 0) and Released to everyone on the threat list, after the turn that freezes the corpse's facing; the credit goes to the killing blow's connection only, after its answer"
 }
 
 pub fn a_viewer_arriving_between_a_running_creatures_death_and_its_respawn_sees_it_where_it_fell_test() -> Nil {
@@ -1558,9 +1578,10 @@ pub fn a_viewer_arriving_mid_chase_gets_the_fight_and_the_rest_of_the_path_test(
       ),
     )
   assert list.map(news_to(watched, 9), name_of)
-    == ["0x262", "0x89a(1)", "0x908(20, 1)", "0x638"]
-    as "the viewer's client shows what the others' do: the creature in combat, its target, and its run"
+    == ["0x262", "0x89a(1)", "0x908(20, 1)", "turn(kind 18, unit 20)", "0x638"]
+    as "the viewer's client shows what the others' do: the creature in combat, its target, the turn to it, and its run"
   let assert [
+    _,
     _,
     _,
     _,
@@ -1598,9 +1619,10 @@ pub fn a_viewer_arriving_mid_return_gets_the_path_home_and_no_fight_test() -> Ni
         stay: map_support.stay(count: 9),
       ),
     )
-  assert list.map(news_to(watched, 9), name_of) == ["0x262", "0x638"]
-    as "out of combat: no 0x89a or 0x908, only the rest of the walk home"
-  let assert [_, CreatureMoved(path: Running(from:, to:, ..))] =
+  assert list.map(news_to(watched, 9), name_of)
+    == ["0x262", "turn(kind 19, home)", "0x638"]
+    as "out of combat: no 0x89a or 0x908, only the turn to home and the rest of the walk home"
+  let assert [_, _, CreatureMoved(path: Running(from:, to:, ..))] =
     news_to(watched, 9)
   assert x_of(from) == 5.0 && x_of(to) == 0.0
     as "it fell back from 10 at 10 a second for half a second: 5 left to the spawn"
@@ -1636,9 +1658,10 @@ pub fn dropping_a_secondary_entry_erases_it_and_dropping_the_top_one_erases_it_a
   assert said(top)
     == [
       "0x355 to 5", "0x90a(50, 0) to 2", "0x90a(50, 0) to 6",
-      "0x908(20, 1) to 2", "0x908(20, 1) to 6", "Released(7) to 5",
+      "0x908(20, 1) to 2", "0x908(20, 1) to 6", "turn(kind 18, unit 20) to 2",
+      "turn(kind 18, unit 20) to 6", "Released(7) to 5",
     ]
-    as "the top entry is erased too, and the next is named the target"
+    as "the top entry is erased too, and the next is named the target and turned to"
 }
 
 /// The creature's strike on player 2, standing in reach, at the first tick: the
@@ -2819,7 +2842,8 @@ pub fn move_speed_change_while_walking_home_replans_the_walk_and_its_arrival_tes
   assert said(stale) == [] && said(still_walking) == ["Refused(Returning) to 5"]
     as "the old arrival, fired late, does nothing: the creature is still walking"
   let #(state, arrived) = fire(state:, at_ms: 2500, timer: arrival)
-  assert said(arrived) == []
+  assert said(arrived) == ["turn(kind 14) to 5"]
+    as "home: the creature takes the facing of its spawn"
   let #(_, struck) =
     tell(
       state:,
@@ -3039,7 +3063,8 @@ pub fn run_speed_restored_walks_home_again_test() -> Nil {
   let assert [#(arrival, 1000)] = timers(back)
     as "its arrival is the 1 s the 10 units take"
   let #(state, arrived) = fire(state:, at_ms: 4000, timer: arrival)
-  assert said(arrived) == []
+  assert said(arrived) == ["turn(kind 14) to 5"]
+    as "home: the creature takes the facing of its spawn"
   assert stands_at(state:, at_ms: 4000) == 0.0
 }
 
@@ -4941,8 +4966,8 @@ pub fn a_flight_ending_while_a_state_holds_does_not_resume_test() -> Nil {
       ]),
     )
   let #(state, landed) = fire(state:, at_ms: 1375, timer: lands)
-  assert said(landed) == [] && timers(landed) == []
-    as "the stunned creature lands and starts no chase"
+  assert said(landed) == ["turn(kind 14) to 2"] && timers(landed) == []
+    as "the stunned creature lands and starts no chase: it only stands as it faces, which the flight put off"
   let #(_, ended) = fire(state:, at_ms: 3700, timer: timer_for(stunned, 2500))
   let assert Running(from:, ..) = path_sent(ended)
     as "when the state ends it chases again"
@@ -4987,9 +5012,11 @@ pub fn a_leash_in_flight_walks_home_from_the_landing_test() -> Nil {
     && timers(leashed) == []
     as "the landing stays timed and no walk or home timer starts in flight"
   let #(_, landed) = fire(state:, at_ms: 1375, timer: lands)
-  let assert [CreatureMoved(path: Running(from:, to:, started_ms:, ..))] =
-    news_to(landed, 5)
-    as "at the landing the creature walks home, and the one watcher left is sent it"
+  let assert [
+    CreatureFaces(face: creature_turn.Point(..), ..),
+    CreatureMoved(path: Running(from:, to:, started_ms:, ..)),
+  ] = news_to(landed, 5)
+    as "at the landing the creature turns to home and walks home, and the one watcher left is sent them"
   assert near(x_of(from), 20.0)
     && x_of(to) == 0.0
     && started_ms == start_ms + 1375
@@ -5074,9 +5101,9 @@ pub fn an_arriving_viewer_mid_flight_is_sent_the_rest_of_the_path_test() -> Nil 
       ),
     )
   assert list.map(news_to(watched, 9), name_of)
-    == ["0x262", "0x89a(1)", "0x908(20, 1)", "0x638"]
-    as "the creature in combat, its target, and its flight"
-  let assert [CreatureAppeared(place:, ..), _, _, CreatureMoved(path:)] =
+    == ["0x262", "0x89a(1)", "0x908(20, 1)", "turn(kind 18, unit 20)", "0x638"]
+    as "the creature in combat, its target, the turn to it, and its flight"
+  let assert [CreatureAppeared(place:, ..), _, _, _, CreatureMoved(path:)] =
     news_to(watched, 9)
   assert near(x_of(place), 10.0 +. 10.0 *. 100.0 /. 375.0)
     as "it appears where it is in the flight"
@@ -5650,9 +5677,10 @@ pub fn the_closing_go_carries_the_strike_phase_and_the_finish_follows_test() -> 
   let #(state, struck) = strike_go_reached(state:, strike:)
   let assert [#(2, Attacks(tell: Strike(key:, ..)))] = fights_told(struck)
   let #(_, closed) = tell(state:, at_ms: 4600, message: landed(key:))
-  assert said(closed) == ["0x7f4 to 2", "0x7fe to 2"]
-    as "the go lists the struck player, then the cast finishes"
-  let assert [CastWent(went), CastFinished(cast_id:)] = news_to(closed, 2)
+  assert said(closed)
+    == ["0x7f4 to 2", "0x7fe to 2", "turn(kind 18, unit 20) to 2"]
+    as "the go lists the struck player, then the cast finishes, then the creature turns to its target again"
+  let assert [CastWent(went), CastFinished(cast_id:), _] = news_to(closed, 2)
   assert went.phase == 1
     && list.map(went.targets, fn(target) { target.unit_id }) == [20]
     && went.cast_id == cast_id_sent(opened, 2)
@@ -5670,8 +5698,9 @@ pub fn the_closing_go_carries_the_strike_phase_and_the_finish_follows_test() -> 
     )
   assert said(walked) == []
   let #(_, empty) = strike_go_reached(state:, strike:)
-  assert said(empty) == ["0x7f4 to 2", "0x7fe to 2"]
-    as "no strike, the go and the finish"
+  assert said(empty)
+    == ["0x7f4 to 2", "0x7fe to 2", "turn(kind 18, unit 20) to 2"]
+    as "no strike, the go and the finish, then the creature turns to its target again"
   let assert [CastWent(went), ..] = news_to(empty, 2)
   assert went.phase == 1 && went.targets == []
 }
@@ -6432,4 +6461,777 @@ pub fn a_round_naming_an_alternates_spell_finds_its_attack_test() -> Nil {
     fights_told(third)
   assert list.map(lead_offence.blows, fn(blow) { blow.damage }) == [Worked(24)]
     as "the next strike, the lead's, is worked out from the doubled multiplier: 12 x 2"
+}
+
+// ---- a fighting creature keeps facing its target (movement kind 18, 19 and 14) ----
+// Evidence: `movement_command.kind_18` (a unit faced every update until a later rotation
+// command), `movement_command.kind_19` (a point), `movement_command.kind_14.facing` (the yaw
+// that faces a target at (dx, dz) is atan2(-dx, -dz)) and `creature.facing` (the client turns a
+// creature only by those commands; a path of kind 4 leaves its rotation). The choices the
+// client does not settle are the server's (guesses): a Stun, Knockdown, Knockback or an opened
+// guard stands the creature as it faces; a Root leaves it turning; the creature turns again at
+// the close of a charged round and through the hold after it.
+
+/// The faces the step sends viewer `number`, in order.
+fn faces_to(
+  taken: ServiceStep(creature.Outgoing),
+  number: Int,
+) -> List(creature_turn.Face) {
+  news_to(taken, number)
+  |> list.filter(fn(news) { string.starts_with(name_of(news), "turn(") })
+  |> list.map(fn(news) {
+    let assert CreatureFaces(face:, ..) = news as "a turn news is CreatureFaces"
+    face
+  })
+}
+
+/// The yaw that faces a target at (dx, dz) from a creature, by the client's own direction
+/// (`movement_command.kind_14.facing`): atan2(-dx, -dz). A target along +x is minus a quarter
+/// turn, along -x a quarter turn, along -z (ahead of a creature that faces 0) 0.
+const quarter_turn = 1.5707963267948966
+
+fn yaw_of_face(face: creature_turn.Face) -> Float {
+  let assert creature_turn.Fixed(facing:) = face as "a fixed facing"
+  facing.yaw
+}
+
+fn home() -> start_place.Place {
+  spawn_support.battle_beast(number: 1, x: 0.0).place
+}
+
+/// The lines of the step that are the turn of the creature or a path, in order: what a client
+/// is told about where the creature faces and runs.
+fn turns_and_paths(taken: ServiceStep(creature.Outgoing)) -> List(String) {
+  list.filter(said(taken), fn(line) {
+    string.starts_with(line, "turn(") || string.starts_with(line, "0x638")
+  })
+}
+
+fn no_path(taken: ServiceStep(creature.Outgoing)) -> Bool {
+  !list.any(said(taken), fn(line) { string.starts_with(line, "0x638") })
+}
+
+pub fn a_creature_that_takes_its_target_faces_it_before_it_runs_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Aggro by a walk-in 30 off: the turn goes after 0x908, 0x89a and the threat told to the
+  // player, and before the path, since a kind 4 path does not turn the creature.
+  let #(_, aggro) =
+    tell(
+      state: beast(viewers: [2]),
+      at_ms: 0,
+      message: approached(number: 2, x: 30.0, seq: 1),
+    )
+  assert said(aggro)
+    == [
+      "0x908(20, 1) to 2", "0x89a(1) to 2", "Threatened(7, 3) to 2",
+      "turn(kind 18, unit 20) to 2", "0x638 to 2",
+    ]
+    as "0x908, 0x89a, the turn to the player's unit, then the path"
+  let assert [CreatureFaces(face:, at_ms:)] =
+    list.filter(news_to(aggro, 2), fn(news) {
+      string.starts_with(name_of(news), "turn(")
+    })
+  assert face == creature_turn.Unit(unit_id: 20) && at_ms == start_ms
+    as "kind 18 names the player's unit, at the step's monotonic time"
+  // The same for a strike on a resting creature.
+  let #(_, struck) =
+    tell(
+      state: beast(viewers: [2]),
+      at_ms: 0,
+      message: strike_of(number: 2, cast_id: 1, blows: [#(1, 5, 1.0)]),
+    )
+  assert list.filter(said(struck), fn(line) {
+      string.starts_with(line, "0x908")
+      || string.starts_with(line, "0x89a")
+      || string.starts_with(line, "turn(")
+    })
+    == ["0x908(20, 5) to 2", "0x89a(1) to 2", "turn(kind 18, unit 20) to 2"]
+    as "a strike that starts the fight turns the creature after the 0x908 and 0x89a"
+}
+
+pub fn a_target_circling_a_creature_in_reach_sends_the_viewers_nothing_new_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The creature runs toward 26 (30 less half its reach 8), then the player circles it: each
+  // place is within reach 8 of the path's end, so no path, and the client keeps the creature
+  // facing the unit (`movement_command.kind_18`): nothing is sent.
+  let #(state, _) = chasing(viewers: [2])
+  let places = [#(28.0, 3.0), #(24.0, 3.0), #(24.0, -3.0), #(28.0, -3.0)]
+  let #(state, circled, _) =
+    list.fold(places, #(state, [], 2), fn(so_far, place) {
+      let #(state, sent, seq) = so_far
+      let #(state, taken) =
+        tell(
+          state:,
+          at_ms: 100 * seq,
+          message: moved_at(number: 2, x: place.0, z: place.1, seq:),
+        )
+      #(state, [taken, ..sent], seq + 1)
+    })
+  assert list.length(circled) == 4
+    && list.all(circled, fn(taken) { said(taken) == [] && timers(taken) == [] })
+    as "four moves round the creature send no turn, no path and start no timer"
+  let #(_, away) =
+    tell(state:, at_ms: 700, message: moved(number: 2, x: 45.0, seq: 9))
+  assert said(away) == ["0x638 to 2"]
+    as "a move beyond reach of the path's end plans a new path, which sends no turn"
+}
+
+pub fn a_target_that_takes_the_threat_turns_the_creature_to_it_once_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    tell(
+      state: beast(viewers: [2, 5]),
+      at_ms: 0,
+      message: approached(number: 2, x: 5.0, seq: 1),
+    )
+  let #(state, topped) =
+    tell(
+      state:,
+      at_ms: 100,
+      message: strike_of(number: 5, cast_id: 1, blows: [#(1, 10, 2.0)]),
+    )
+  assert faces_to(topped, 2) == [creature_turn.Unit(unit_id: 50)]
+    && faces_to(topped, 5) == [creature_turn.Unit(unit_id: 50)]
+    as "player 5's strike tops the list: one turn to player 5, to each viewer"
+  let #(state, again) =
+    tell(
+      state:,
+      at_ms: 200,
+      message: strike_of(number: 5, cast_id: 2, blows: [#(1, 5, 1.0)]),
+    )
+  let #(_, lower) =
+    tell(
+      state:,
+      at_ms: 300,
+      message: strike_of(number: 2, cast_id: 3, blows: [#(1, 1, 1.0)]),
+    )
+  assert faces_to(again, 2) == [] && faces_to(lower, 2) == []
+    as "a strike by the target, or one that does not top it, sends no turn"
+}
+
+pub fn a_target_that_dies_or_is_unwatched_turns_the_creature_to_the_next_entry_and_a_last_one_makes_it_face_home_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    tell(
+      state: beast(viewers: [2, 5]),
+      at_ms: 0,
+      message: approached(number: 2, x: 5.0, seq: 1),
+    )
+  let #(state, _) =
+    tell(
+      state:,
+      at_ms: 100,
+      message: strike_of(number: 5, cast_id: 1, blows: [#(1, 10, 2.0)]),
+    )
+  let #(_, died) =
+    tell(state:, at_ms: 200, message: creature.PlayerDied(by: ConnectionId(5)))
+  assert faces_to(died, 2) == [creature_turn.Unit(unit_id: 20)]
+    as "the top entry's player died with another left: the turn is to the next entry"
+  let #(_, unwatched) =
+    tell(state:, at_ms: 200, message: creature.Unwatched(by: ConnectionId(5)))
+  assert faces_to(unwatched, 2) == [creature_turn.Unit(unit_id: 20)]
+    as "and the same when it leaves sight"
+  // The last entry leaves while the creature runs: it turns to home before the walk home.
+  let #(state, _) = chasing(viewers: [2, 5])
+  let #(_, leashed) =
+    tell(state:, at_ms: 1000, message: creature.Unwatched(by: ConnectionId(2)))
+  assert turns_and_paths(leashed) == ["turn(kind 19, home) to 5", "0x638 to 5"]
+    as "the leash turns the creature to home, then it runs there"
+  assert faces_to(leashed, 5) == [creature_turn.Point(place: home())]
+    as "kind 19 names the spawn's place"
+}
+
+pub fn a_charge_turns_the_creature_with_a_kind_14_and_holds_that_turn_until_the_round_closes_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Player 2 stands ahead; the cone is fixed from the wind-up to the round's close, whoever
+  // takes the threat, and the creature turns to its target again only then.
+  let #(state, aggro) = roar_fought(viewers: [2, 5])
+  assert faces_to(aggro, 2) == [creature_turn.Unit(unit_id: 20)]
+    as "the fight starts facing the target"
+  let #(state, opened, go) = roar_opened(state:, aggro:)
+  assert said(opened)
+    == ["0x638 to 2", "0x638 to 5", "0x7ff to 2", "0x7ff to 5"]
+    as "the kind 14 turn in place goes before the 0x7ff and replaces the kind 18"
+  assert faces_to(opened, 2) == []
+    as "no kind 18 or 19 is sent beside it: the charge's turn is the one rotation"
+  let #(state, retargeted) =
+    tell(
+      state:,
+      at_ms: 2000,
+      message: strike_of(number: 5, cast_id: 9, blows: [#(1, 30, 1.0)]),
+    )
+  let #(state, moved_by_target) =
+    tell(
+      state:,
+      at_ms: 2100,
+      message: moved_at(number: 2, x: 1.0, z: -4.0, seq: 5),
+    )
+  assert faces_to(retargeted, 2) == []
+    && faces_to(moved_by_target, 2) == []
+    && said(moved_by_target) == []
+    as "a new top entry and a moving target during the wind-up send no turn"
+  let #(state, first, strike) = first_go_passed(state:, go:)
+  let #(state, struck) = strike_go_reached(state:, strike:)
+  let assert [#(2, Attacks(tell: Strike(key:, ..)))] = fights_told(struck)
+  assert faces_to(first, 2) == [] && faces_to(struck, 2) == []
+    as "the go and the strike go send no turn: the round is not closed"
+  let #(_, closed) = tell(state:, at_ms: 4600, message: landed(key:))
+  assert said(closed)
+    == [
+      "0x7f4 to 2", "0x7f4 to 5", "0x7fe to 2", "0x7fe to 5",
+      "turn(kind 18, unit 50) to 2", "turn(kind 18, unit 50) to 5",
+    ]
+    as "the close of the round, not the strike, turns the creature to its target, now player 5, after the go and the finish"
+}
+
+pub fn a_creature_in_the_hold_after_a_special_stands_still_and_faces_its_target_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The hold (1000 ms after the close at 4600 ms, a guess of the client's NpcExecutionDelay)
+  // starts no path, but the creature turns to the target it has, even a new one.
+  let #(state, aggro) = roar_fought(viewers: [2, 5])
+  let #(state, _, go) = roar_opened(state:, aggro:)
+  let #(state, _, strike) = first_go_passed(state:, go:)
+  let #(state, struck) = strike_go_reached(state:, strike:)
+  let assert [#(2, Attacks(tell: Strike(key:, ..)))] = fights_told(struck)
+  let #(state, closed) = tell(state:, at_ms: 4600, message: landed(key:))
+  let hold = timer_for(closed, 1000)
+  let #(state, far) =
+    tell(
+      state:,
+      at_ms: 4700,
+      message: moved_at(number: 2, x: 0.0, z: -40.0, seq: 5),
+    )
+  assert said(far) == [] as "the target runs off: no path in the hold"
+  let #(state, topped) =
+    tell(
+      state:,
+      at_ms: 4800,
+      message: strike_of(number: 5, cast_id: 9, blows: [#(1, 30, 1.0)]),
+    )
+  assert faces_to(topped, 2) == [creature_turn.Unit(unit_id: 50)]
+    && no_path(topped)
+    as "a new target in the hold is faced, and no path starts"
+  let #(_, ticked) = fire(state:, at_ms: 5600, timer: hold)
+  assert list.contains(said(ticked), "0x7ff to 2")
+    as "the next attack tick ends the hold"
+}
+
+pub fn a_stunned_creature_stands_turned_as_it_was_and_turns_again_when_the_state_ends_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The creature runs toward player 2, 30 off along +x, and is at 10 after a second: a Stun
+  // stops it there, facing the player (minus a quarter turn, the way of +x), and it turns
+  // again when the state ends, before it runs.
+  let #(state, _) = chasing(viewers: [2])
+  let #(state, stunned) =
+    tell(
+      state:,
+      at_ms: 1000,
+      message: controlling(number: 2, cast_id: 1, controls: [
+        crowd_control_support.stagger_stun(instance_id: 28_673),
+      ]),
+    )
+  assert turns_and_paths(stunned)
+    == ["0x638(placed) to 2", "turn(kind 14) to 2"]
+    as "the run stops where it stands, then one kind 14 holds the facing"
+  let assert [face] = faces_to(stunned, 2)
+  assert float.loosely_equals(
+    yaw_of_face(face),
+    0.0 -. quarter_turn,
+    tolerating: 0.000_001,
+  )
+    as "along the bearing to the player at +x: atan2(-20, 0)"
+  let #(state, moved) =
+    tell(
+      state:,
+      at_ms: 1200,
+      message: moved_at(number: 2, x: 30.0, z: 8.0, seq: 5),
+    )
+  assert said(moved) == [] as "the player moves: the stunned creature turns not"
+  let #(_, ended) = fire(state:, at_ms: 3600, timer: timer_for(stunned, 2500))
+  assert turns_and_paths(ended) == ["turn(kind 18, unit 20) to 2", "0x638 to 2"]
+    as "when the state ends the creature turns to the player again, then runs"
+}
+
+pub fn a_rooted_creature_still_turns_to_its_target_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    tell(
+      state: beast(viewers: [2, 5]),
+      at_ms: 0,
+      message: approached(number: 2, x: 30.0, seq: 1),
+    )
+  let #(state, rooted) =
+    tell(
+      state:,
+      at_ms: 1000,
+      message: controlling(number: 2, cast_id: 1, controls: [
+        crowd_control_support.holding(
+          state: crowd_control_state.Root,
+          duration_ms: 5000,
+          instance_id: 28_674,
+        ),
+      ]),
+    )
+  assert turns_and_paths(rooted) == ["0x638(placed) to 2", "0x638(placed) to 5"]
+    as "a Root stops the run and sends no turn"
+  let #(_, topped) =
+    tell(
+      state:,
+      at_ms: 1100,
+      message: strike_of(number: 5, cast_id: 2, blows: [#(1, 30, 1.0)]),
+    )
+  assert faces_to(topped, 2) == [creature_turn.Unit(unit_id: 50)]
+    && no_path(topped)
+    as "the rooted creature still turns to a new target, and starts no path"
+}
+
+pub fn a_stun_ending_while_a_root_holds_turns_the_creature_again_and_starts_no_path_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The outer rule: the creature stays still while the Root holds, so the Stun's end is no
+  // `ControlEnded`, yet the creature may turn again.
+  let #(state, _) = chasing(viewers: [2])
+  let #(state, _) =
+    tell(
+      state:,
+      at_ms: 1000,
+      message: controlling(number: 2, cast_id: 1, controls: [
+        crowd_control_support.holding(
+          state: crowd_control_state.Root,
+          duration_ms: 9000,
+          instance_id: 28_674,
+        ),
+      ]),
+    )
+  let #(state, stunned) =
+    tell(
+      state:,
+      at_ms: 1100,
+      message: controlling(number: 2, cast_id: 2, controls: [
+        crowd_control_support.stagger_stun(instance_id: 28_673),
+      ]),
+    )
+  assert list.length(faces_to(stunned, 2)) == 1
+    as "the Stun stands the creature as it faces"
+  let #(_, ended) = fire(state:, at_ms: 3700, timer: timer_for(stunned, 2500))
+  assert faces_to(ended, 2) == [creature_turn.Unit(unit_id: 20)]
+    as "the Stun ends while the Root holds: the creature turns to the player again"
+  assert no_path(ended) as "and starts no path, the Root holding"
+}
+
+/// The charger (a turret that moves) guarded as migration 0030 guards the turrets.
+fn guarded_charger(viewers viewers: List(Int)) -> State {
+  let spawn = spawn_support.sim_turret(number: 1, place: at(0.0))
+  let assert Ok(kind) =
+    dict.get(spawn_support.guarded_turret_kinds().by_creature, 73_494)
+    as "migration 0030 gives the Exile turret its guarded kind"
+  started_from(
+    source: spawn_source.Stored(id: SpawnId(1)),
+    spawn: Spawn(
+      ..spawn,
+      unit_type: creature_unit_type.NonPlayer,
+      combat: creature_life.Combat(
+        ..spawn.combat,
+        attack: creature_life.Attack(..spawn.combat.attack, run_speed: 10.0),
+      ),
+    ),
+    kind:,
+    viewers:,
+    armor: creature_life.NoArmor,
+  )
+}
+
+pub fn a_root_that_breaks_a_charge_leaves_the_creature_standing_as_the_opened_guard_holds_it_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The Root takes hold during the charge: the charge breaks, and the effect of the break
+  // opens the guard, which the fight rule is told of by the creature's rule (`Reconsidered`),
+  // so the creature ends standing as it faced, never left tracking its target.
+  let #(state, aggro) =
+    tell(
+      state: guarded_charger(viewers: [2]),
+      at_ms: 0,
+      message: approached_at(number: 2, x: 0.0, z: -10.0, seq: 1),
+    )
+  let #(state, opened, _) = charge_opened(state:, aggro:)
+  assert faces_to(opened, 2) == [] as "the charge's kind 14 is the only turn"
+  let #(state, broken) =
+    tell(
+      state:,
+      at_ms: 4000,
+      message: controlling(number: 2, cast_id: 1, controls: [
+        crowd_control_support.holding(
+          state: crowd_control_state.Root,
+          duration_ms: 9000,
+          instance_id: 28_674,
+        ),
+      ]),
+    )
+  let assert Ok(creature_turn.Fixed(..)) = list.last(faces_to(broken, 2))
+    as "whatever the break sent, the last turn is a fixed facing: the opened creature stands"
+  let #(_, moved) =
+    tell(
+      state:,
+      at_ms: 4100,
+      message: moved_at(number: 2, x: 5.0, z: -10.0, seq: 5),
+    )
+  assert said(moved) == []
+    as "and it does not follow its target while the guard is open"
+}
+
+pub fn a_creature_that_cannot_move_is_never_sent_a_turn_test() -> Nil {
+  use <- owned_test.run(5000)
+  // A turret aims itself (`0x14046cdc0.turret_cast_aim`) and `creature.facing` leaves objects
+  // to their own: aggro, retarget, charge and death send it no turn.
+  let #(state, aggro) = fought(viewers: [2, 5])
+  assert faces_to(aggro, 2) == [] as "aggro"
+  let #(state, topped) =
+    tell(
+      state:,
+      at_ms: 100,
+      message: strike_of(number: 5, cast_id: 1, blows: [#(1, 30, 1.0)]),
+    )
+  assert faces_to(topped, 2) == [] as "retarget"
+  let #(state, opened, _) = charge_opened(state:, aggro:)
+  assert faces_to(opened, 2) == [] && !list.contains(said(opened), "0x638 to 2")
+    as "charge: no kind 18 and no kind 14"
+  let #(_, killed) =
+    tell(
+      state:,
+      at_ms: 4000,
+      message: killing(number: 5, cast_id: 2, controls: []),
+    )
+  assert faces_to(killed, 2) == [] && faces_to(killed, 5) == [] as "death"
+}
+
+pub fn a_leashed_creature_faces_home_while_it_runs_and_its_spawn_yaw_when_it_arrives_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) = chasing(viewers: [2, 5])
+  let #(state, leashed) =
+    tell(state:, at_ms: 1000, message: creature.Unwatched(by: ConnectionId(2)))
+  assert turns_and_paths(leashed) == ["turn(kind 19, home) to 5", "0x638 to 5"]
+    as "the turn to home goes before the walk home"
+  let #(_, arrived) = fire(state:, at_ms: 2000, timer: timer_for(leashed, 1000))
+  assert faces_to(arrived, 5)
+    == [creature_turn.Fixed(facing: start_place.facing(home()))]
+    as "on arrival one kind 14 gives the facing of the spawn's 0x262"
+  // A leash while a Stun holds the creature starts no walk and no turn: both wait for the end
+  // of the state.
+  let #(state, _) = chasing(viewers: [2, 5])
+  let #(state, stunned) =
+    tell(
+      state:,
+      at_ms: 1000,
+      message: controlling(number: 2, cast_id: 1, controls: [
+        crowd_control_support.stagger_stun(instance_id: 28_673),
+      ]),
+    )
+  let #(state, held) =
+    tell(state:, at_ms: 1100, message: creature.Unwatched(by: ConnectionId(2)))
+  assert turns_and_paths(held) == [] && timers(held) == []
+    as "leashed in a stun: it stands as it faces and starts no walk"
+  let #(_, ended) = fire(state:, at_ms: 3600, timer: timer_for(stunned, 2500))
+  assert turns_and_paths(ended) == ["turn(kind 19, home) to 5", "0x638 to 5"]
+    as "when the state ends the creature turns to home and walks"
+}
+
+/// The yaw of a creature at (x, z) that faces a target at (x, z), by the client's direction
+/// (`movement_command.kind_14.facing`): atan2(-dx, -dz).
+fn facing_yaw(from from: #(Float, Float), to to: #(Float, Float)) -> Float {
+  maths.atan2(0.0 -. { to.0 -. from.0 }, 0.0 -. { to.1 -. from.1 })
+}
+
+pub fn a_killed_or_despawned_creature_is_turned_where_it_faces_and_stops_following_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The creature runs toward 26, the player circles to (28, 3), and a killing blow lands at 1 s:
+  // the creature is at (10, 0), so the corpse is turned along the bearing to (28, 3), the newest
+  // sighting, after the kind 2 that stops its run. A kind 18 left to the client would turn
+  // the corpse after the player.
+  let #(state, _) = chasing(viewers: [2])
+  let #(state, _) =
+    tell(
+      state:,
+      at_ms: 200,
+      message: moved_at(number: 2, x: 28.0, z: 3.0, seq: 2),
+    )
+  let #(state, killed) =
+    tell(
+      state:,
+      at_ms: 1000,
+      message: killing(number: 2, cast_id: 1, controls: []),
+    )
+  assert turns_and_paths(killed) == ["0x638(placed) to 2", "turn(kind 14) to 2"]
+    as "the run stops, then one kind 14 freezes the facing"
+  let assert [face] = faces_to(killed, 2)
+  assert float.loosely_equals(
+    yaw_of_face(face),
+    facing_yaw(from: #(10.0, 0.0), to: #(28.0, 3.0)),
+    tolerating: 0.000_001,
+  )
+    as "along the bearing from where it fell to the player's newest place"
+  let #(state, later) =
+    tell(
+      state:,
+      at_ms: 1100,
+      message: moved_at(number: 2, x: 5.0, z: 5.0, seq: 3),
+    )
+  let #(state, again) =
+    tell(
+      state:,
+      at_ms: 1200,
+      message: killing(number: 2, cast_id: 2, controls: []),
+    )
+  assert said(later) == [] && faces_to(again, 2) == []
+    as "a dead creature follows no one, and a second blow or a repeated death turns it no more"
+  let #(_, stood) =
+    fire(state:, at_ms: 61_000, timer: timer_for(killed, 60_000))
+  assert faces_to(stood, 2) == [creature_turn.Unit(unit_id: 20)]
+    as "it stands again with the facing of its spawn's 0x262 and aggroes the player near it: its fight turns it afresh"
+  // A despawn is a death for the fight.
+  let #(state, _) = chasing(viewers: [2])
+  let #(_, gone) =
+    tell(
+      state:,
+      at_ms: 1000,
+      message: creature.Despawn(
+        delay_ms: 0,
+        struck_at_ms: 900,
+        went_at_ms: 1000,
+      ),
+    )
+  assert list.length(faces_to(gone, 2)) == 1
+    as "a despawn freezes the facing as a death does"
+}
+
+pub fn a_creature_that_dies_walking_home_or_in_a_charge_or_in_flight_freezes_the_facing_it_had_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Walking home from (10, 0) the creature faces home: at 1.2 s it is at (8, 0) and a despawn
+  // freezes it facing +x's opposite, a quarter turn.
+  let #(state, _) = chasing(viewers: [2, 5])
+  let #(state, _) =
+    tell(state:, at_ms: 1000, message: creature.Unwatched(by: ConnectionId(2)))
+  let #(_, home_gone) =
+    tell(
+      state:,
+      at_ms: 1200,
+      message: creature.Despawn(
+        delay_ms: 0,
+        struck_at_ms: 1100,
+        went_at_ms: 1200,
+      ),
+    )
+  let assert [face] = faces_to(home_gone, 5)
+  assert float.loosely_equals(
+    yaw_of_face(face),
+    facing_yaw(from: #(8.0, 0.0), to: #(0.0, 0.0)),
+    tolerating: 0.000_001,
+  )
+    as "walking home: frozen facing home, not stale"
+  // In a charge the facing is the charge's already: nothing more is sent.
+  let #(state, aggro) = roar_fought(viewers: [2])
+  let #(state, _, _) = roar_opened(state:, aggro:)
+  let #(_, charge_gone) =
+    tell(
+      state:,
+      at_ms: 3000,
+      message: creature.Despawn(
+        delay_ms: 0,
+        struck_at_ms: 2900,
+        went_at_ms: 3000,
+      ),
+    )
+  assert faces_to(charge_gone, 2) == []
+    as "a death in a charge adds no turn to the charge's kind 14"
+  // In a flight the position movement is left alone: a rotation only, no kind 2.
+  let #(state, thrown, _) = thrown_chasing(viewers: [2])
+  assert faces_to(thrown, 2) == [] as "a throw that turns nothing sends no turn"
+  let #(_, flight_gone) =
+    tell(
+      state:,
+      at_ms: 1200,
+      message: creature.Despawn(
+        delay_ms: 0,
+        struck_at_ms: 1100,
+        went_at_ms: 1200,
+      ),
+    )
+  assert list.length(faces_to(flight_gone, 2)) == 1
+    && !list.contains(said(flight_gone), "0x638(placed) to 2")
+    as "dying in flight sends the turn alone: no kind 2 stops the flight the server still holds"
+}
+
+/// A knockback that turns the creature to face the unit that threw it (the row's flag 4,
+/// `forced_move` `turn_of`).
+fn turning_knockback(at_ms at_ms: Int) -> creature.Message {
+  let assert creature.Thrown(throw:, struck_at_ms:) = knockback(at_ms:)
+    as "a knockback is a throw"
+  creature.Thrown(
+    throw: forced_move.Throw(
+      ..throw,
+      move: forced_move.Move(..throw.move, flags: 4),
+    ),
+    struck_at_ms:,
+  )
+}
+
+pub fn a_thrown_creature_is_turned_back_to_its_target_when_it_lands_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) = chasing(viewers: [2])
+  let #(state, thrown) =
+    tell(state:, at_ms: 1000, message: turning_knockback(at_ms: 1000))
+  assert faces_to(thrown, 2) == []
+    && list.length(list.filter(said(thrown), fn(line) { line == "0x638 to 2" }))
+    == 1
+    as "a throw whose path carries its own kind 14 sends only that path"
+  let #(state, midway) =
+    tell(
+      state:,
+      at_ms: 1200,
+      message: moved_at(number: 2, x: 40.0, z: 6.0, seq: 5),
+    )
+  assert said(midway) == [] as "no turn during the flight"
+  let #(_, landed) = fire(state:, at_ms: 1375, timer: timer_for(thrown, 375))
+  assert turns_and_paths(landed)
+    == ["turn(kind 18, unit 20) to 2", "0x638 to 2"]
+    as "at the landing the creature turns to its target again, then runs"
+}
+
+pub fn a_viewer_arriving_mid_fight_is_sent_the_current_turn_after_the_0x262_test() -> Nil {
+  use <- owned_test.run(5000)
+  let watch = fn(state, at_ms) {
+    tell(
+      state:,
+      at_ms:,
+      message: creature.Watched(
+        by: ConnectionId(9),
+        stay: map_support.stay(count: 9),
+      ),
+    )
+  }
+  // In reach: the combat flag, the target, then the turn.
+  let #(state, _) =
+    tell(
+      state: beast(viewers: [2]),
+      at_ms: 0,
+      message: approached(number: 2, x: 5.0, seq: 1),
+    )
+  let #(_, in_reach) = watch(state, 100)
+  assert list.map(news_to(in_reach, 9), name_of)
+    == ["0x262", "0x89a(1)", "0x908(20, 1)", "turn(kind 18, unit 20)"]
+    as "in reach: the turn after 0x908"
+  // In a wind-up the 0x262 carries the cone's yaw, so no turn is sent: the player stands 4
+  // along -x, a quarter turn from the spawn's yaw 0.
+  let #(state, aggro) =
+    tell(
+      state: rootbrute(viewers: [2]),
+      at_ms: 0,
+      message: approached_at(number: 2, x: -4.0, z: 0.0, seq: 1),
+    )
+  let #(state, _, _) = roar_opened(state:, aggro:)
+  let #(_, winding) = watch(state, 2000)
+  let assert [CreatureAppeared(place:, ..), ..] = news_to(winding, 9)
+  assert float.loosely_equals(
+    { start_place.facing(place) }.yaw,
+    quarter_turn,
+    tolerating: 0.000_001,
+  )
+    as "mid-wind-up the 0x262 is turned as the cone is"
+  assert list.map(news_to(winding, 9), name_of)
+    == ["0x262", "0x89a(1)", "0x908(20, 1)", "0x7ff", "0x638"]
+    || list.map(news_to(winding, 9), name_of)
+    == ["0x262", "0x89a(1)", "0x908(20, 1)", "0x7ff"]
+    as "and no turn news follows: the charge's rotation is fixed"
+  // At rest: the 0x262 alone, in the spawn's facing.
+  let #(_, rest) = watch(beast(viewers: [2]), 0)
+  assert list.map(news_to(rest, 9), name_of) == ["0x262"]
+    as "at rest nothing follows the 0x262"
+}
+
+pub fn a_creatures_pose_follows_its_facing_test() -> Nil {
+  use <- owned_test.run(5000)
+  let yaw_at = fn(state, at_ms) {
+    {
+      start_place.facing(creature_fight.place_at(
+        state: creature.fight(state:),
+        now_ms: start_ms + at_ms,
+      ))
+    }.yaw
+  }
+  let #(state, _) = chasing(viewers: [2, 5])
+  assert float.loosely_equals(
+    yaw_at(state, 1000),
+    0.0 -. quarter_turn,
+    tolerating: 0.000_001,
+  )
+    as "chasing a player at +x: the bearing to the player's newest sighting"
+  let #(leashed, _) =
+    tell(state:, at_ms: 1000, message: creature.Unwatched(by: ConnectionId(2)))
+  assert float.loosely_equals(
+    yaw_at(leashed, 1000),
+    quarter_turn,
+    tolerating: 0.000_001,
+  )
+    as "walking home from (10, 0): the bearing to home, along -x"
+  assert float.loosely_equals(
+    yaw_at(beast(viewers: [2]), 0),
+    { start_place.facing(home()) }.yaw,
+    tolerating: 0.000_001,
+  )
+    as "at rest: the spawn's yaw"
+  let #(opened, _) = roar_fought(viewers: [2])
+  assert float.loosely_equals(yaw_at(opened, 0), 0.0, tolerating: 0.000_001)
+    as "facing a target straight ahead along -z: yaw 0"
+}
+
+pub fn a_creature_that_walks_home_and_finds_a_player_near_turns_to_the_spawn_before_it_turns_to_the_player_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Player 5 stands 3 off the spawn and is near while the creature fights player 2 and runs;
+  // the leash walks it home, and its arrival aggroes player 5 at once: the spawn's facing,
+  // then the new fight's turn, in that order.
+  let #(state, _) = chasing(viewers: [2, 5])
+  let #(state, _) =
+    tell(state:, at_ms: 100, message: approached(number: 5, x: 3.0, seq: 1))
+  let #(state, leashed) =
+    tell(state:, at_ms: 1000, message: creature.Unwatched(by: ConnectionId(2)))
+  let #(_, arrived) = fire(state:, at_ms: 2000, timer: timer_for(leashed, 1000))
+  assert list.filter(said(arrived), fn(line) {
+      string.starts_with(line, "turn(") || string.starts_with(line, "0x908")
+    })
+    == [
+      "turn(kind 14) to 5", "0x908(50, 1) to 5", "turn(kind 18, unit 50) to 5",
+    ]
+    as "the spawn's facing, the new target, then the turn to it"
+}
+
+pub fn a_walk_home_after_a_leash_in_a_state_starts_one_fresh_arrival_timer_test() -> Nil {
+  use <- owned_test.run(5000)
+  // A Stun holds the creature while the leash comes: no walk, no timer. When the state ends
+  // the walk starts with one arrival timer no running timer has the id of, and it fires once.
+  let #(state, aggro) = chasing(viewers: [2, 5])
+  let #(state, stunned) =
+    tell(
+      state:,
+      at_ms: 1000,
+      message: controlling(number: 2, cast_id: 1, controls: [
+        crowd_control_support.stagger_stun(instance_id: 28_673),
+      ]),
+    )
+  let #(state, leashed) =
+    tell(state:, at_ms: 1100, message: creature.Unwatched(by: ConnectionId(2)))
+  assert timers(leashed) == [] as "no walk, so no arrival timer"
+  let #(state, ended) =
+    fire(state:, at_ms: 3600, timer: timer_for(stunned, 2500))
+  let running =
+    list.flatten([
+      list.map(timers(aggro), fn(started) { started.0 }),
+      list.map(timers(stunned), fn(started) { started.0 }),
+    ])
+  let started = list.map(timers(ended), fn(started) { started.0 })
+  assert list.length(started) == 1
+    && !list.any(started, fn(id) { list.contains(running, id) })
+    as "the walk's arrival timer is new: no running timer has its id"
+  let assert [#(arrival, 1000)] = timers(ended)
+    as "the 10 units home take a second"
+  let #(_, arrived) = fire(state:, at_ms: 4600, timer: arrival)
+  assert faces_to(arrived, 5)
+    == [creature_turn.Fixed(facing: start_place.facing(home()))]
+    as "it arrives once, taking the spawn's facing"
 }

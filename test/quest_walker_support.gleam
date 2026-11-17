@@ -54,6 +54,7 @@ pub fn walker(
         in_combat: False,
         held: [],
         unit_states: [],
+        face: option.None,
       ),
     ),
   ])

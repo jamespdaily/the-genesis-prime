@@ -167,11 +167,32 @@
 ////   (`ready_at`, a server choice) and is cleared by a new fight (`start_fight`), so a fight opens with
 ////   its specials ready. A special's gos are armed from the cast's start, each for `max(0, due - now)`
 ////   (`due_in`), so a timer handled late does not push the gos after it.
-//// - **A creature that can move turns to face its target** before the 0x7ff and stands still through the
-////   cast and the hold (`turned_to_face`, `casting_or_holding`): the client never turns a creature by
-////   itself (`creature.facing`) and the cone follows the caster's yaw (`0x14054b1b0.follows_caster`), so
-////   the facing the creature has when the 0x7ff arrives is the facing the client draws the cone along, and
-////   the strike go's area points along it (`aim_of`).
+//// - **A creature that can move keeps facing its target** (`State.turn`, `wanted`, `faced`): the client
+////   never turns a creature by itself (`creature.facing`), so the creature sends kind 18 naming its
+////   target's unit (`movement_command.kind_18`), which the client keeps through the chase, the circling of
+////   the target and the strikes with no further message, and which only a later rotation command replaces.
+////   The turn goes before the path it goes with (a kind 4 path never turns it) and is sent again only when
+////   the face changes: a new target, the leash (kind 19 toward home, `movement_command.kind_19`), the
+////   arrival home (kind 14 with the spawn's yaw), a charge, a state, a flight, a death.
+////   - A charge turns the creature once before the 0x7ff (`turned_to_face`, kind 14) and holds that turn
+////     through the cast and the strikes: the cone follows the caster's yaw (`0x14054b1b0.follows_caster`), so
+////     the facing the creature has when the 0x7ff arrives is the facing the client draws the cone along, and
+////     the strike go's area points along it (`aim_of`). The close of the round turns it to its target again,
+////     and so does the hold after a special, in which it starts no path.
+////   - A Stun, Knockdown, Knockback or an opened guard (`Fighter.turn_held`) stands the creature as it
+////     faces, by a kind 14 at that facing (a server's choice, a guess: no client fact covers it); a Root
+////     and the other states that only stop its run leave it turning. The creature's rule tells the fight
+////     when this changes without the creature's run changing (`Reconsidered`).
+////   - A death or a despawn freezes the facing it had by a kind 14 that moves nothing, so the corpse
+////     follows no one; the flight a throw gives is left to its own news.
+////   - A throw whose row turns the creature sets that turn (the path's kind 14); the first step after the
+////     flight turns it to its target again.
+////   - A creature that cannot move is sent no rotation (a turret aims itself, `0x14046cdc0.turret_cast_aim`;
+////     an object's creature belongs to its object).
+////   - The server's own yaw for the creature (`place_at`, which the gates and the strike read) is the
+////     facing its viewers' clients show: the fixed facing, or the bearing to the unit it keeps or to home,
+////     taken as done at once, where the client blends a kind 18 or 19 over half a second (`0x140715c00`);
+////     a target on the creature's own ground point leaves the facing it had (the client's too-close case).
 //// - **The hold** (`Hold`): the next attack tick starts `Charged.hold_ms` after the round closes (the
 ////   NpcExecutionDelay rows, whose effect the client's code does not hold, `Spell4Effects.effectType.35`: a
 ////   guess), else after the attack interval. The tick is the creature's only driver in the hold: it starts
@@ -304,6 +325,10 @@
 //// | the last state ends in flight | the creature acts again at `FlightEnds`, not before | `a_state_ending_mid_flight_does_not_resume_until_the_landing_test` |
 //// | the leash fires in flight | the creature is `Returning` and sends no walk: the flight finishes and `FlightEnds` starts the walk home from the landing | `a_leash_in_flight_walks_home_from_the_landing_test` |
 //// | the creature dies in flight | `CancelTimer(FlightEnds)`, the path is kept and no kind 2 is sent: the corpse lies at the landing | `a_creature_killed_mid_flight_lies_at_the_landing_test` |
+//// | a creature is killed or despawned while it keeps facing its target, walks home, charges or flies | a kind 14 at the facing it had, which no later turn changes; in flight it moves nothing | `a_killed_or_despawned_creature_is_turned_where_it_faces_and_stops_following_test`, `a_creature_that_dies_walking_home_or_in_a_charge_or_in_flight_freezes_the_facing_it_had_test` |
+//// | a Stun ends while a Root holds the creature, or the guard opens as a Root breaks a charge | `Reconsidered`: it turns to its target again or stands as it faces, and starts no path | `a_stun_ending_while_a_root_holds_turns_the_creature_again_and_starts_no_path_test`, `a_root_that_breaks_a_charge_leaves_the_creature_standing_as_the_opened_guard_holds_it_test` |
+//// | the walk home stops where it stands, or starts again after a state | the arrival timer of the stopped walk is cancelled, and the walk that follows has a new arrival timer | `a_walk_home_after_a_leash_in_a_state_starts_one_fresh_arrival_timer_test` |
+//// | the walk home ends with a player near | the spawn's facing, then the new fight's turn | `a_creature_that_walks_home_and_finds_a_player_near_turns_to_the_spawn_before_it_turns_to_the_player_test` |
 //// | a viewer arrives in flight | it is sent the rest of the path from where the creature is now | `an_arriving_viewer_mid_flight_is_sent_the_rest_of_the_path_test` |
 
 import genesis_prime/client_connection.{type News}
@@ -312,7 +337,7 @@ import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/forced_move
 import genesis_prime/game/hit.{type Offence}
-import genesis_prime/game/start_place.{type Place}
+import genesis_prime/game/start_place.{type Facing, type Place}
 import genesis_prime/game/strike_tell.{
   type Answered, type Fight as Told, type Key, Attacks, CreatureStriker,
   Released, Threatened,
@@ -325,6 +350,7 @@ import genesis_prime/world_map/creature_life.{
 import genesis_prime/world_map/creature_path.{
   type Path, Circle, Running, Standing, Timed,
 }
+import genesis_prime/world_map/creature_turn.{type Face, Fixed}
 import genesis_prime/world_map/game_number.{type GameNumbers}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/stay.{type Stay}
@@ -359,6 +385,10 @@ import gleam/set.{type Set}
 /// - `specials`: the spells it casts besides its auto-attacks, in the order its kind lists them
 ///   (`creature_life.Combat.specials`). A creature that holds any state casts none of them
 ///   (`holds_a_state`), which covers every state a special's caster conditions name.
+/// - `turn_held`: it holds a Stun, Knockdown or Knockback, or is opened: it stands facing as
+///   it did and does not turn to its target until that ends (a server's choice, a guess: the
+///   client holds no rule for turning under a state; a Root and the other run-stopping states
+///   leave it turning, since they only stop its run).
 /// An attack that is `Charged` is a charge.
 pub type Fighter {
   Fighter(
@@ -376,6 +406,7 @@ pub type Fighter {
     guard_casts: List(Int),
     hit_radius: Float,
     specials: List(Special),
+    turn_held: Bool,
   )
 }
 
@@ -450,7 +481,8 @@ pub type Sighting {
 /// absent means ready; emptied by `start_fight`, so every fight opens with its specials ready),
 /// and how many auto-attacks it has struck with this fight (`autos_struck`: the next auto-attack
 /// is `attack` and `alternates` at that count's remainder; zero from `start_fight`, so every
-/// fight opens with the lead).
+/// fight opens with the lead), and `turn`, what its viewers' clients hold its rotation to
+/// (genesis_prime/world_map/creature_turn): the facing of its spawn until the fight turns it.
 pub opaque type State {
   State(
     status: Status,
@@ -462,6 +494,7 @@ pub opaque type State {
     flight: Option(Flight),
     ready_at: Dict(Int, Int),
     autos_struck: Int,
+    turn: Face,
   )
 }
 
@@ -555,6 +588,10 @@ pub type Input {
   /// builds from where it is, the viewers are sent it, and `FlightEnds` ends the flight.
   /// A throw breaks an open charge as a held state does.
   Thrown(throw: forced_move.Throw)
+  /// creature: whether the creature may turn (`Fighter.turn_held`) changed with no other change
+  /// to the fight, as a state ended while another still holds the creature, or the guard opened
+  /// or closed. It turns, or stands, as the fight now wants and does nothing else.
+  Reconsidered
 }
 
 /// The fight's timers, each of the generation it was started with: a timer of a
@@ -606,6 +643,7 @@ pub fn new(home home: Place) -> State {
     flight: None,
     ready_at: dict.new(),
     autos_struck: 0,
+    turn: Fixed(facing: start_place.facing(home)),
   )
 }
 
@@ -615,6 +653,20 @@ pub fn new(home home: Place) -> State {
 /// A player's strike or move of another stay than its viewer's is of an earlier
 /// stay, delayed past the player's leave and new join: it starts and moves nothing.
 pub fn step(
+  state state: State,
+  fighter fighter: Fighter,
+  viewers viewers: Dict(ConnectionId, Stay),
+  alive alive: Bool,
+  input input: Input,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  let #(state, effects) =
+    stepped(state:, fighter:, viewers:, alive:, input:, now_ms:)
+  let #(state, turned) = faced(state:, fighter:, now_ms:)
+  #(state, list.append(effects, turned))
+}
+
+fn stepped(
   state state: State,
   fighter fighter: Fighter,
   viewers viewers: Dict(ConnectionId, Stay),
@@ -712,17 +764,21 @@ pub fn step(
         Returning(home:) if home == generation -> {
           let state =
             State(..state, status: Resting, path: Standing(at: fighter.home))
-          aggro(
-            state:,
-            fighter:,
-            viewers:,
-            players: near_viewers(state:, viewers:),
-            now_ms:,
-          )
+          let #(state, turned) = faced(state:, fighter:, now_ms:)
+          let #(state, fought) =
+            aggro(
+              state:,
+              fighter:,
+              viewers:,
+              players: near_viewers(state:, viewers:),
+              now_ms:,
+            )
+          #(state, list.append(turned, fought))
         }
         Returning(..) | Resting | Fighting(..) -> #(state, [])
       }
     Killed | Despawned -> killed(state:, fighter:, now_ms:)
+    Reconsidered -> #(state, [])
     Controlled -> held(state:, fighter:, now_ms:)
     ControlEnded -> resumed(state:, fighter:, now_ms:)
     SpeedChanged -> speed_changed(state:, fighter:, now_ms:)
@@ -731,7 +787,12 @@ pub fn step(
       flight_ended(state:, fighter:, generation:, now_ms:)
     StoodAgain -> {
       let state =
-        State(..state, status: Resting, path: Standing(at: fighter.home))
+        State(
+          ..state,
+          status: Resting,
+          path: Standing(at: fighter.home),
+          turn: Fixed(facing: start_place.facing(fighter.home)),
+        )
       aggro(
         state:,
         fighter:,
@@ -789,7 +850,11 @@ fn thrown(
     False -> #(state, [])
   }
   let #(state, left) = flight_cleared(state:)
-  let state = State(..state, path:)
+  let turn = case path {
+    Timed(turned_to: Some(facing), ..) -> Fixed(facing:)
+    Timed(..) | Standing(..) | Running(..) -> state.turn
+  }
+  let state = State(..state, path:, turn:)
   let #(state, moved) = case path {
     Timed(..) -> {
       let until_ms = creature_path.arrives_ms(path:, now_ms:)
@@ -891,10 +956,125 @@ pub fn threatened(state state: State) -> Set(ConnectionId) {
   }
 }
 
-/// Where the creature stands at monotonic time `now_ms`, for the 0x262 of a viewer
-/// that arrives while it runs.
+/// Where the creature stands at monotonic time `now_ms`, facing as its viewers' clients
+/// show it (`facing_of`), for the 0x262 of a viewer that arrives while it runs and for the
+/// yaw its gates and strikes read.
 pub fn place_at(state state: State, now_ms now_ms: Int) -> Place {
-  creature_path.place_at(path: state.path, now_ms:)
+  turned_place(state:, place: creature_path.place_at(path: state.path, now_ms:))
+}
+
+/// The place with the facing the creature's turn gives it there.
+fn turned_place(state state: State, place place: Place) -> Place {
+  start_place.turned(place:, facing: facing_of(state:, here: place))
+}
+
+/// The facing of the creature standing at `here`, by what its viewers' clients hold its
+/// rotation to: a fixed facing, or the bearing to the unit it keeps facing by the newest
+/// sighting of that unit, or to the point (`creature_turn.toward`). A unit it has no sighting
+/// of leaves the facing `here` has, as the client leaves it for a unit it does not find.
+fn facing_of(state state: State, here here: Place) -> Facing {
+  let kept = start_place.facing(here)
+  case state.turn {
+    Fixed(facing:) -> facing
+    creature_turn.Point(place:) ->
+      creature_turn.toward(from: here, target: place, kept:)
+    creature_turn.Unit(unit_id:) ->
+      case
+        list.find(map.sorted_by_connection(state.sightings), fn(entry) {
+          { entry.1 }.unit_id == unit_id
+        })
+      {
+        Ok(#(_, sighting)) ->
+          creature_turn.toward(from: here, target: sighting.place, kept:)
+        Error(Nil) -> kept
+      }
+  }
+}
+
+/// What the creature's rotation should be held to now (`faced` sends the change). A creature
+/// that cannot move, or is thrown, keeps what it has. Resting, it faces its spawn's way (the
+/// one change a fight leaves for it: from facing home). Fighting, it faces the unit of its
+/// target, unless it is held (`Fighter.turn_held`: it stands as it faces) or a charge fixes it
+/// (the open charge, and the strikes of a charged round, along the facing the charge turned it
+/// to); Returning, it faces home, or stands as it faces when held. The hold after a special
+/// turns it again, since it is no round. A creature that is home already takes its spawn's facing
+/// as it leashes: a point under it would leave it as it was.
+fn wanted(
+  state state: State,
+  fighter fighter: Fighter,
+  now_ms now_ms: Int,
+) -> Face {
+  use <- bool.guard(
+    when: cannot_move(fighter:) || option.is_some(state.flight),
+    return: state.turn,
+  )
+  let frozen = fn() {
+    Fixed(facing: facing_of(
+      state:,
+      here: creature_path.place_at(path: state.path, now_ms:),
+    ))
+  }
+  case state.status {
+    Resting ->
+      case state.turn {
+        Fixed(..) -> state.turn
+        creature_turn.Unit(..) | creature_turn.Point(..) ->
+          Fixed(facing: start_place.facing(fighter.home))
+      }
+    Returning(..) -> {
+      let here = creature_path.place_at(path: state.path, now_ms:)
+      case
+        fighter.turn_held,
+        area.point_of(place: here) == area.point_of(place: fighter.home)
+      {
+        True, _ -> frozen()
+        False, True -> Fixed(facing: start_place.facing(fighter.home))
+        False, False -> creature_turn.Point(place: fighter.home)
+      }
+    }
+    Fighting(threat:, target:, ..) ->
+      case fighter.turn_held, round_fixes_the_turn(state:, fighter:) {
+        True, _ -> frozen()
+        False, True -> state.turn
+        False, False -> {
+          let assert Ok(entry) = dict.get(threat, target)
+            as "the target is on the threat list"
+          creature_turn.Unit(unit_id: entry.unit_id)
+        }
+      }
+  }
+}
+
+/// Whether a charge holds the creature's facing: while it is open, and while the strikes of a
+/// charged round are out (the cone is fixed from the wind-up's start to the round's close).
+fn round_fixes_the_turn(state state: State, fighter fighter: Fighter) -> Bool {
+  case state.status {
+    Fighting(round: Some(Round(stage: Charging(..), ..)), ..) -> True
+    Fighting(round: Some(Round(stage: Striking(..), spell4_id:, ..)), ..) ->
+      case attack_named(fighter:, spell4_id:).cast {
+        Charged(..) -> True
+        Instant -> False
+      }
+    Fighting(..) | Resting | Returning(..) -> False
+  }
+}
+
+/// The creature turns as `wanted` says: nothing when it is held to that already, else the
+/// turn is kept and the viewers are sent it. Every step ends with it, and each place that
+/// sends a path or a cast first (a fight's start, a new target, the leash, a resumed creature,
+/// the arrival home) calls it before them, so the turn goes out before the path it goes with.
+fn faced(
+  state state: State,
+  fighter fighter: Fighter,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  let face = wanted(state:, fighter:, now_ms:)
+  case face == state.turn {
+    True -> #(state, [])
+    False -> #(State(..state, turn: face), [
+      ToViewers(client_connection.CreatureFaces(face:, at_ms: now_ms)),
+    ])
+  }
 }
 
 /// What a viewer that arrives at monotonic time `now_ms` is sent after the
@@ -924,6 +1104,12 @@ pub fn arrival_news(
     }
     Resting | Returning(..) -> []
   }
+  let turn = case state.turn {
+    Fixed(..) -> []
+    creature_turn.Unit(..) as face | creature_turn.Point(..) as face -> [
+      client_connection.CreatureFaces(face:, at_ms: now_ms),
+    ]
+  }
   let charge = case state.status {
     Fighting(
       threat:,
@@ -935,7 +1121,7 @@ pub fn arrival_news(
         Charged(gos:, ..) -> {
           let assert Ok(top) = dict.get(threat, target)
             as "the target is on the threat list"
-          let place = creature_path.place_at(path: state.path, now_ms:)
+          let place = place_at(state:, now_ms:)
           let gone = case stage {
             Charging(go:, ..) -> go
             Striking(phase:, ..) -> phase
@@ -991,7 +1177,7 @@ pub fn arrival_news(
         False -> []
       }
   }
-  list.flatten([fight, charge, path])
+  list.flatten([fight, turn, charge, path])
 }
 
 /// The threat a landed strike adds: each blow's damage taken (to health) times its
@@ -1138,6 +1324,7 @@ fn start_fight(
             told: threatened_told(fighter:),
           )
         })
+      let #(state, turned) = faced(state:, fighter:, now_ms:)
       let #(state, chased) = chase(state:, fighter:, now_ms:)
       #(
         state,
@@ -1145,6 +1332,7 @@ fn start_fight(
           named,
           [ToViewers(client_connection.CombatState(in_combat: True))],
           told,
+          turned,
           chased,
           [StartTimer(timer: AttackTick(tick), after_ms: fighter.interval_ms)],
         ]),
@@ -1334,8 +1522,9 @@ fn retargeted(
     True -> []
     False -> [targeting(top_entry)]
   }
+  let #(state, turned) = faced(state:, fighter:, now_ms:)
   let #(state, chased) = chase(state:, fighter:, now_ms:)
-  #(state, named, chased)
+  #(state, list.append(named, turned), chased)
 }
 
 /// The attack tick: with the target in reach and no round open the creature
@@ -1958,7 +2147,7 @@ fn aim_of(
   target target: ConnectionId,
   here here: Place,
 ) -> area.Pose {
-  let body = area.pose_of(place: here)
+  let body = area.pose_of(place: turned_place(state:, place: here))
   case cannot_move(fighter:), dict.get(state.sightings, target) {
     True, Ok(sighting) ->
       area.Pose(
@@ -2121,16 +2310,14 @@ fn turned_to_face(
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
   use <- bool.guard(when: cannot_move(fighter:), return: #(state, []))
-  let body = area.pose_of(place: here)
-  let yaw =
-    area.bearing(
-      from: body.at,
-      target: area.point_of(place: target.place),
-      yaw: 0.0,
+  let facing =
+    creature_turn.toward(
+      from: here,
+      target: target.place,
+      kept: start_place.facing(here),
     )
-  let facing = start_place.Facing(..start_place.facing(here), yaw:)
   let path = Timed(first: #(now_ms, here), rest: [], turned_to: Some(facing))
-  #(State(..state, path:), [
+  #(State(..state, path:, turn: Fixed(facing:)), [
     ToViewers(client_connection.CreatureMoved(path:)),
   ])
 }
@@ -2295,6 +2482,7 @@ fn leash(
       }
     }
   }
+  let #(state, turned) = faced(state:, fighter:, now_ms:)
   #(
     state,
     list.flatten([
@@ -2309,6 +2497,7 @@ fn leash(
         ToViewers(client_connection.CombatState(in_combat: False)),
         RestoreHealth,
       ],
+      turned,
       walked,
       list.map(entries, fn(entry) {
         ToPlayer(
@@ -2401,8 +2590,14 @@ fn held(
     True -> stand_still(state:, now_ms:)
     False -> #(state, [])
   }
+  // A walk home that stops where it stands has no arrival: its timer is cancelled, and the
+  // walk the end of the state starts is of a new generation (`resumed`).
+  let stopped = case state.status, fighter.still {
+    Returning(home:), True -> [CancelTimer(timer: HomeArrival(home))]
+    Returning(..), False | Resting, _ | Fighting(..), _ -> []
+  }
   let #(state, broken) = charge_broken(state:, fighter:)
-  #(state, list.append(placed, broken))
+  #(state, list.flatten([placed, stopped, broken]))
 }
 
 /// An open charge is broken, by a state or a throw: `CancelTimer(CastEnds)`, 0x7f9 of
@@ -2444,9 +2639,24 @@ fn killed(
   fighter fighter: Fighter,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
+  let frozen = case cannot_move(fighter:), state.turn {
+    True, _ | False, Fixed(..) -> state.turn
+    False, creature_turn.Unit(..) | False, creature_turn.Point(..) ->
+      Fixed(facing: facing_of(
+        state:,
+        here: creature_path.place_at(path: state.path, now_ms:),
+      ))
+  }
   let #(state, placed) = stand_still(state:, now_ms:)
   let #(state, landed) = flight_cleared(state:)
-  let placed = list.append(landed, placed)
+  let turned = case frozen == state.turn {
+    True -> []
+    False -> [
+      ToViewers(client_connection.CreatureFaces(face: frozen, at_ms: now_ms)),
+    ]
+  }
+  let state = State(..state, turn: frozen)
+  let placed = list.flatten([landed, placed, turned])
   case state.status {
     Fighting(threat:, round:, ..) -> {
       let finished = case round {
@@ -2487,8 +2697,21 @@ fn resumed(
 ) -> #(State, List(Effect)) {
   use <- bool.guard(when: option.is_some(state.flight), return: #(state, []))
   case state.status {
-    Fighting(..) -> chase(state:, fighter:, now_ms:)
-    Returning(home:) -> walk_home(state:, fighter:, home:, now_ms:)
+    Fighting(..) -> {
+      let #(state, turned) = faced(state:, fighter:, now_ms:)
+      let #(state, chased) = chase(state:, fighter:, now_ms:)
+      #(state, list.append(turned, chased))
+    }
+    Returning(home: old) -> {
+      let #(state, home) = generation(state)
+      let state = State(..state, status: Returning(home:))
+      let #(state, turned) = faced(state:, fighter:, now_ms:)
+      let #(state, walked) = walk_home(state:, fighter:, home:, now_ms:)
+      #(state, [
+        CancelTimer(timer: HomeArrival(old)),
+        ..list.append(turned, walked)
+      ])
+    }
     Resting -> #(state, [])
   }
 }

@@ -93,6 +93,7 @@ fn striker_at(x x: Float, z z: Float) -> shown.Shown {
     in_combat: False,
     held: [],
     unit_states: [],
+    face: option.None,
   )
 }
 

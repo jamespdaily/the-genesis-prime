@@ -452,6 +452,7 @@ fn picture_of(shown shown: Shown) -> shown.Picture {
         unit_states: list.index_map(shown.unit_states, fn(state, number) {
           shown.HeldUnitState(state:, number:)
         }),
+        face: option.None,
       ),
     ),
   ])
