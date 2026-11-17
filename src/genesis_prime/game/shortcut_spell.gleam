@@ -191,7 +191,8 @@ fn mechanics_of(
 }
 
 /// The targetType of the spell's Spell4TargetMechanics row, or `Error(Nil)` when its
-/// Spell4Base or Spell4TargetMechanics row is not in the tables.
+/// Spell4Base or Spell4TargetMechanics row is not in the tables. It is the number, not the
+/// decoded kind, because its caller tells an item on item (6) from the other Caster kinds.
 pub fn target_type_of(
   tables tables: table_store.Tables,
   row row: spell4.Spell4,

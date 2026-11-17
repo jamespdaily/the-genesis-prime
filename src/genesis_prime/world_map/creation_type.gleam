@@ -56,7 +56,7 @@ pub fn is_accepted(kind: Kind) -> Bool {
 
 /// The unit type a creature of the kind stands as: its own number, except that a bind
 /// point is 19 and a simple collidable 32 (a guess, from the world database). A refused
-/// kind gives its own number, as the server has always paired it.
+/// kind gives its own number.
 pub fn unit_type(kind: Kind) -> Int {
   case kind {
     NonPlayer -> 0

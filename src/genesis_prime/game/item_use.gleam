@@ -15,7 +15,7 @@
 ////     an objective:             done                               ─▶ 29
 ////                               not open                           ─▶ 28
 ////                               a checklist and the target unit    ─▶ 28 when its checklist
-////                                 (spell targetType 1, 3, 5, 8)       index is -1 or is counted
+////                                 (a Targeted target mechanic)        index is -1 or is counted
 //// ```
 ////
 //// - **The spell** is ItemSpecial.spell4IdOnActivate of Item2.itemSpecialId00; an item with
@@ -23,9 +23,9 @@
 ////   client's. `ItemSpecial.prerequisiteIdGeneric00` gates only the equip check.
 //// - **The second place** is always {300, 0xffffffff} unless the spell is an item on item
 ////   (targetType 6).
-//// - **The unit** the checklist test reads is the player for targetType 0, 2, 6 and 7, which
-////   the client does not test, and the player's target for 1, 3, 5 and 8
-////   (`0x140551730`).
+//// - **The unit** the checklist test reads is the player for a Caster target mechanic
+////   (targetType 0, 2, 6 and 7), which the client does not test, and the player's target
+////   for a Targeted one (1, 3, 5 and 8; `0x140551730`).
 ////
 //// - **The order** is the client's (UseItem's prerequisite, then StartItemUseCast's charges,
 ////   level and quest checks) except that the second place comes first: a body the client
@@ -39,6 +39,7 @@
 import genesis_prime/game/prerequisite
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/shortcut_spell
+import genesis_prime/game/target_mechanic
 import genesis_prime/message/cast_result.{
   type CastResult, ItemObjectiveComplete, ItemQuestRequirementsNotMet,
   ItemTooHighLevel, SpellPreRequisites,
@@ -74,12 +75,9 @@ pub type Refusal {
 /// (`local_138 = 0xffffffff0000012c` in StartItemUseCast).
 const no_second_item = ItemPlace(location: 300, bag_index: 0xffffffff)
 
-/// The spell's targetType of an item on item.
+/// The spell's targetType of an item on item. It stays a number because target type 6 is
+/// one of the Caster kind's four numbers, so the kind cannot tell an item on item.
 const item_on_item = 6
-
-/// The targetTypes whose unit the client tests for a checklist objective: the player's
-/// target.
-const targeted = [1, 3, 5, 8]
 
 /// The spell the item casts when the client's checks let the player use it. The unit
 /// tested for a checklist objective is the checklist index of the player's target, or
@@ -132,7 +130,9 @@ pub fn check(
     tables:,
     row:,
     quests:,
-    unit: case list.contains(targeted, target_type) {
+    unit: case
+      target_mechanic.takes_target(target_mechanic.kind_of(target_type:))
+    {
       True -> target_checklist_index
       False -> None
     },

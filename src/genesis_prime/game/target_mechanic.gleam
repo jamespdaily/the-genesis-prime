@@ -49,3 +49,12 @@ pub fn takes_caster(kind: Kind) -> Bool {
     Targeted | Ground | Unread(..) -> False
   }
 }
+
+/// Whether a spell of the kind is cast at a unit the cast names (the player's target for
+/// an item use).
+pub fn takes_target(kind: Kind) -> Bool {
+  case kind {
+    Targeted -> True
+    Caster | Ground | Unread(..) -> False
+  }
+}
