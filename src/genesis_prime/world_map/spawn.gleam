@@ -66,11 +66,13 @@
 ////   (`0x1404585c0`, `Creature2.73464.crit_deflect_glance`,
 ////   `Creature2.73464.mitigation`) through the rating formulas
 ////   (genesis_prime/game/rating). It also holds whom the creature fights on sight (a
-////   faction level of 0 to 2 toward each player faction) and its own attack, from its
-////   kind's spell (genesis_prime/world_map/creature_kind,
-////   genesis_prime/world_map/creature_life `Attack`).
+////   faction level of 0 to 2 toward each player faction), its own attack, from its
+////   kind's spell, and its specials, each a spell of its kind's list with its gos and hold
+////   from the plan (genesis_prime/world_map/creature_kind,
+////   genesis_prime/world_map/creature_life `Attack`, `Special`).
 
 import genesis_prime/content/refusal.{type Refusal}
+import genesis_prime/game/area
 import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
 import genesis_prime/game/faction_level
@@ -81,6 +83,7 @@ import genesis_prime/game/objective_link
 import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/rating.{type Formulas}
 import genesis_prime/game/spell_area
+import genesis_prime/game/spell_plan.{type PlanError, type Spell}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/target_group
 import genesis_prime/game/unit_properties.{type Properties}
@@ -264,30 +267,52 @@ pub fn values_of(
   let value = fn(number) {
     unit_properties.value(properties:, property: UnitProperty2Id(number))
   }
-  let CombatContext(formulas:, scaling:, attack: effects, run_land:, ..) =
-    spawn.context
+  let CombatContext(
+    formulas:,
+    scaling:,
+    attack: effects,
+    specials: special_effects,
+    run_land:,
+    ..,
+  ) = spawn.context
   let combat = spawn.combat
-  let blows =
-    list.map(effects, fn(effect) {
-      hit.Blow(
-        ..effect.blow,
-        damage: blow_damage(
-          formula: effect.formula,
-          damage_type: effect.blow.damage_type,
-          level: spawn.level,
-          scaling:,
-          value:,
-        ),
-      )
-    })
+  let worked = fn(attack: Attack, effects: List(AttackEffect)) {
+    creature_life.Attack(
+      ..attack,
+      offence: offence_of(
+        formulas:,
+        level: spawn.level,
+        blows: list.map(effects, fn(effect) {
+          hit.Blow(
+            ..effect.blow,
+            damage: blow_damage(
+              formula: effect.formula,
+              damage_type: effect.blow.damage_type,
+              level: spawn.level,
+              scaling:,
+              value:,
+            ),
+          )
+        }),
+        value:,
+      ),
+      run_speed: run_speed_of(run_land:, value:),
+    )
+  }
   CreatureValues(
     combat: Combat(
       ..combat,
       defence: defence_of(formulas:, level: spawn.level, value:),
-      attack: creature_life.Attack(
-        ..combat.attack,
-        offence: offence_of(formulas:, level: spawn.level, blows:, value:),
-        run_speed: run_speed_of(run_land:, value:),
+      attack: worked(combat.attack, effects),
+      specials: list.map2(
+        combat.specials,
+        special_effects,
+        fn(special, effects) {
+          creature_life.Special(
+            ..special,
+            attack: worked(special.attack, effects),
+          )
+        },
       ),
       interrupt_armor: interrupt_armor_in(value:),
     ),
@@ -513,6 +538,10 @@ pub type SpawnError {
     spell4_effects_id: Int,
     bits: Int,
   )
+  /// A special of the creature's kind could not be planned for its gos and hold
+  /// (genesis_prime/game/spell_plan `spell_alone`); the special's own check refuses such a
+  /// row at the load, so this is the plan failing for a spell it read before.
+  SpecialNotPlanned(creature_id: Creature2Id, spell4_id: Int, error: PlanError)
 }
 
 /// The client's rule a creature's row fails (`0x140485790`).
@@ -539,7 +568,8 @@ type Checked {
 /// ids of each display group, the first display and the first outfit of each
 /// group, the ids of the outfits that have a Creature2OutfitInfo row, the
 /// factions' levels (genesis_prime/game/faction_level), each
-/// UnitProperty2 row's default and flags and the states that stop a creature's run.
+/// UnitProperty2 row's default and flags, the states that stop a creature's run and the
+/// plan of each spell the kinds list as a special.
 /// Creature2OutfitInfo is a table only the content load reads, so the checks of a
 /// summon read the ids and not the table.
 type Catalog {
@@ -553,6 +583,7 @@ type Catalog {
     worlds: Set(Int),
     property_rows: Dict(Int, #(Float, Int)),
     run_stopped_by: Int,
+    special_plans: Dict(Int, Result(Spell, PlanError)),
   )
 }
 
@@ -582,7 +613,7 @@ pub fn select(
   factions factions: Factions,
   vendors vendors: Vendors,
 ) -> Selection {
-  let catalog = catalog(tables:)
+  let catalog = catalog(tables:, kinds:)
   let refused = fn(row: Row, error) {
     let SpawnId(number) = row.id
     Refused(refusal.Refusal(
@@ -789,7 +820,7 @@ pub fn summon_checks(
   vendors vendors: Vendors,
 ) -> SummonChecks {
   SummonChecks(
-    catalog: catalog(tables:),
+    catalog: catalog(tables:, kinds:),
     formulas:,
     kinds:,
     factions:,
@@ -1035,7 +1066,7 @@ pub fn looks(tables tables: table_store.Tables) -> Looks {
 }
 
 /// The tables' lookups by something other than an id, built once.
-fn catalog(tables tables: table_store.Tables) -> Catalog {
+fn catalog(tables tables: table_store.Tables, kinds kinds: Kinds) -> Catalog {
   Catalog(
     tables:,
     overrides: list.fold(
@@ -1075,7 +1106,35 @@ fn catalog(tables tables: table_store.Tables) -> Catalog {
       },
     ),
     run_stopped_by: crowd_control.stopping_mask(tables:),
+    special_plans: special_plans(tables:, kinds:),
   )
+}
+
+/// The plan of each spell a kind lists as a special (`spell_plan.spell_alone`), by Spell4
+/// id: the gos and the hold of a special come from it. The plan's rows are grouped once,
+/// and only when a kind lists a special.
+fn special_plans(
+  tables tables: table_store.Tables,
+  kinds kinds: Kinds,
+) -> Dict(Int, Result(Spell, PlanError)) {
+  let spell4_ids =
+    list.flat_map([kinds.default, ..dict.values(kinds.by_creature)], fn(kind) {
+      list.map(kind.specials, fn(special) { special.spell4_id })
+    })
+    |> list.unique
+  case spell4_ids {
+    [] -> dict.new()
+    _ -> {
+      let sources = spell_plan.sources_of(tables:)
+      list.map(spell4_ids, fn(spell4_id) {
+        #(
+          spell4_id,
+          spell_plan.spell_alone(tables:, sources:, spell4_id:, chain: []),
+        )
+      })
+      |> dict.from_list
+    }
+  }
 }
 
 /// The entries of a group by group, with the first one met kept: the tables'
@@ -1154,12 +1213,32 @@ fn combat_of(
     value:,
     can_move:,
   ))
+  use specials <- result.try(
+    list.try_map(kind.specials, fn(ref) {
+      attack_of(
+        catalog:,
+        formulas:,
+        spell4_id: id.Spell4Id(ref.spell4_id),
+        creature:,
+        level:,
+        display:,
+        value:,
+        can_move:,
+      )
+      |> result.map(fn(built) {
+        #(
+          creature_life.Special(attack: built.0, cooldown_ms: ref.cooldown_ms),
+          built.2,
+        )
+      })
+    }),
+  )
   let context =
     CombatContext(
       formulas:,
       scaling:,
       attack: attack_effects,
-      specials: [],
+      specials: list.map(specials, fn(special) { special.1 }),
       run_land: run_land_of(display:, can_move:),
       difficulty_id: creature.creature2_difficulty_id,
     )
@@ -1177,7 +1256,7 @@ fn combat_of(
       hostile_to: hostile_to_players(levels: catalog.factions, faction_id:),
       defence: defence_of(formulas:, level:, value:),
       attack:,
-      specials: [],
+      specials: list.map(specials, fn(special) { special.0 }),
       interrupt_armor: interrupt_armor_in(value:),
     )
   Ok(#(combat, context))
@@ -1285,9 +1364,11 @@ fn defence_of(
 /// strikethrough from its properties, its run speed (Creature2DisplayInfo.runLand
 /// times property 100, `0x1405b45e0`) and its reach (the spell's `targetMaxRange`
 /// plus `hit_radius`). A spell with a cast time (`Spell4.castTime` above 0) is a charge:
-/// it carries that time and its area (`spell_area.area_of_spell`), its reach is the area
-/// row's `maxRange` (85469 and 86978 have a `targetMaxRange` of 0 and a 30 m rectangle),
-/// and an area it lacks or cannot read fails the load. With it, the creature scaling and
+/// it carries that time and its area (`spell_area.area_of_spell`), its gos and its hold
+/// (`timeline_of`), its reach is the smaller of the area row's `maxRange` and the farthest
+/// point of its hit shapes (`area.farthest_of`: 85469 and 86978 have a `targetMaxRange` of
+/// 0 and a 30 m rectangle, 55317 a cone to 5.5 under a `maxRange` of 10), and an area it
+/// lacks or cannot read fails the load. With it, the creature scaling and
 /// each damage effect with its formula, which work the blows out again from changed
 /// properties.
 fn attack_of(
@@ -1391,18 +1472,29 @@ fn attack_of(
         Error(error) -> Error(AttackAreaNotRead(creature_id:, error:))
         Ok(None) ->
           Error(ChargeHasNoArea(creature_id:, spell4_id: spell4_id.value))
-        Ok(Some(#(area, inside))) ->
-          Ok(creature_life.Charged(
+        Ok(Some(#(area, inside))) -> {
+          use #(gos, hold_ms) <- result.map(timeline_of(
+            catalog:,
+            creature_id:,
+            spell4_id:,
+            cast_ms: spell.cast_time,
+          ))
+          creature_life.Charged(
             cast_ms: spell.cast_time,
             area:,
             inside:,
-            gos: [creature_life.Go(at_ms: spell.cast_time, strikes: True)],
-            hold_ms: 0,
-          ))
+            gos:,
+            hold_ms:,
+          )
+        }
       }
   })
   let reach = case cast {
-    creature_life.Charged(area:, ..) -> area.max_range
+    creature_life.Charged(area: row, inside:, ..) ->
+      case area.farthest_of(inside:) {
+        Some(farthest) -> float.min(row.max_range, farthest)
+        None -> row.max_range
+      }
     creature_life.Instant ->
       spell.target_max_range +. hit_radius.of_creature(display:)
   }
@@ -1425,6 +1517,44 @@ fn attack_of(
       run_stopped_by: catalog.run_stopped_by,
     )
   Ok(#(attack, creature_scaling, attack_effects))
+}
+
+/// The gos of a charge and the hold after it. A spell a kind lists as a special has the
+/// gos of its plan (`spell_plan.go_times_ms`), the last striking, and a hold of the summed
+/// `delay_ms` and `duration_ms` of its NpcExecutionDelay rows at the strike go; any other
+/// charge has one go at its cast time that strikes, and no hold. A special the plan could
+/// not read, or one with no go time, fails the load.
+fn timeline_of(
+  catalog catalog: Catalog,
+  creature_id creature_id: Creature2Id,
+  spell4_id spell4_id: Spell4Id,
+  cast_ms cast_ms: Int,
+) -> Result(#(List(creature_life.Go), Int), SpawnError) {
+  case dict.get(catalog.special_plans, spell4_id.value) {
+    Error(Nil) -> Ok(#([creature_life.Go(at_ms: cast_ms, strikes: True)], 0))
+    Ok(Error(error)) ->
+      Error(SpecialNotPlanned(creature_id:, spell4_id: spell4_id.value, error:))
+    Ok(Ok(spell)) -> {
+      let times_ms = spell_plan.go_times_ms(spell:)
+      let last = list.length(times_ms) - 1
+      let hold_ms =
+        spell_plan.in_phase(
+          spell:,
+          phase: last,
+          spent: None,
+          as_kind: spell_plan.as_delay,
+        )
+        |> list.fold(0, fn(held, delay) {
+          held + delay.delay_ms + delay.duration_ms
+        })
+      Ok(#(
+        list.index_map(times_ms, fn(at_ms, index) {
+          creature_life.Go(at_ms:, strikes: index == last)
+        }),
+        hold_ms,
+      ))
+    }
+  }
 }
 
 /// One effect's damage, worked out here, from the creature's properties: the creature formula
@@ -2456,6 +2586,13 @@ fn describe(error error: SpawnError) -> String {
       <> " has a multiplier, dataBits00 "
       <> int.to_string(bits)
       <> ", that is not a finite 32-bit float"
+    SpecialNotPlanned(creature_id: Creature2Id(creature_id), spell4_id:, error:) ->
+      "Creature2 "
+      <> int.to_string(creature_id)
+      <> "'s special Spell4 "
+      <> int.to_string(spell4_id)
+      <> " cannot be planned: "
+      <> spell_plan.describe(error:)
   }
 }
 

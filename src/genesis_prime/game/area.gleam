@@ -46,6 +46,7 @@ import genesis_prime/game/start_place.{type Place}
 import gleam/float
 import gleam/int
 import gleam/list
+import gleam/option.{type Option, None}
 import gleam/order
 import gleam_community/maths
 
@@ -297,6 +298,40 @@ fn gap_to_cone(
       )
     }
   }
+}
+
+/// How far from the centre the hit shapes reach at most: the farthest point of any of
+/// them, from the placement's offset and the shape's own extent (a circle's radius, a
+/// cone's outer radius, a box's or rectangle's far corner), or `None` when the area is the
+/// row alone (`InsideRow`), which holds no shape. A rule that needs a distance from the
+/// centre to a unit it can still strike caps it by the area row's `max_range` and adds the
+/// struck unit's hit radius itself (`in_shape`).
+pub fn farthest_of(inside inside: Inside) -> Option(Float) {
+  case inside {
+    InsideRow -> None
+    InsideShapes(placements:) ->
+      list.map(placements, fn(placement) {
+        length_of(placement.ahead, placement.aside)
+        +. extent_of(shape: placement.shape)
+      })
+      |> list.reduce(float.max)
+      |> option.from_result
+  }
+}
+
+/// The farthest point of a shape from its own placement.
+fn extent_of(shape shape: Shape) -> Float {
+  case shape {
+    Circle(radius:) -> radius
+    Box(width:, length:) -> length_of(width /. 2.0, length /. 2.0)
+    Cone(outer:, ..) -> outer
+    Rectangle(width:, length:) -> length_of(width /. 2.0, length)
+  }
+}
+
+/// The length of the vector (a, b).
+fn length_of(a: Float, b: Float) -> Float {
+  distance(from: Point(x: 0.0, z: 0.0), to: Point(x: a, z: b))
 }
 
 /// The unit ids the area strikes, nearest first: the candidates inside, ordered

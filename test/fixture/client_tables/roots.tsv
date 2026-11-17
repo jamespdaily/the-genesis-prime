@@ -1055,3 +1055,19 @@ Spell4	75272	spell holding its own throw and a Pull state	spell_plan_cc_forced_m
 Spell4	38426	Knockback state naming CCStateAdditionalData 83, which has no row	spell_plan_cc_forced_move_test
 Spell4	30815	Knockback state naming no CCStateAdditionalData row	spell_plan_cc_forced_move_test
 Spell4	36272	PositionSwitch state	spell_plan_cc_forced_move_test
+Creature2	12212	Rootbrute Grimspore, a creature of Northern Wilds	creature_special_test
+Creature2	13118	Rootbrute Grimspore, a creature of Northern Wilds	creature_special_test
+Creature2	13549	Rootbrute Grimspore, a creature of Northern Wilds	creature_special_test
+Creature2	27687	Mysthoof Trampler of Everstar Grove	creature_special_test
+Creature2	28623	Mysthoof Doe of Everstar Grove	creature_special_test
+Creature2	24057	Venombite Spider of Crimson Isle	creature_special_test
+Creature2	25979	Saltwater Snoglug of Levian Bay	creature_special_test
+Spell4	55317	Earthen Roar tier 2, a cone special with two gos and a delay row	creature_special_test, spawn_test
+Spell4	55296	Crash tier 2, a special with two gos and a delay row	creature_special_test
+Spell4	55327	Venomous Mandible tier 2, a special with two gos and a delay row	creature_special_test
+Spell4	55330	Slime Spray tier 2, a special with two gos and a delay row	creature_special_test
+Spell4	66285	Haymaker, a Multiphase cast whose gos end before its castTime	spawn_test
+Spell4	33251	Yeti auto-attack, a cast time of 0	creature_special_test
+Spell4	42764	Lightning Strike, a cast with effect types 8, 17, 71 and 4	creature_special_test
+Spell4	55635	Ice Breath, a cast with two damage phases	creature_special_test
+Spell4	54675	Wallop, a cast that strikes at go 2 of 4	creature_special_test

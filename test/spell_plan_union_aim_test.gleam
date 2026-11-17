@@ -88,6 +88,7 @@ fn aims_of(reading reading: RowReading) -> List(Aim) {
       | spell_plan.ProcEffect(..)
       | spell_plan.DespawnEffect(..)
       | spell_plan.UnitStateEffect(..)
+      | spell_plan.DelayEffect(..)
       | spell_plan.ProxyEffect(..) -> Error(Nil)
     }
   })

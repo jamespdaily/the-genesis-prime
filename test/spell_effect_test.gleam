@@ -18,11 +18,11 @@ import fixture_tables
 import genesis_prime/game/effect_kind
 import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{
-  Applied, ControlEffect, CooldownEffect, DespawnEffect, ForcedMoveEffect,
-  GainEffect, HealEffect, Held, LastingEffect, LeftOut, ModifierEffect,
-  ProcEffect, ProxyEffect, ReadByActivation, ReadByArea, ReadEffects, ReadProc,
-  ReadProxy, RemoveEffect, RemoveStealthEffect, StealthEffect, StruckMoveEffect,
-  UnitStateEffect,
+  Applied, ControlEffect, CooldownEffect, DelayEffect, DespawnEffect,
+  ForcedMoveEffect, GainEffect, HealEffect, Held, LastingEffect, LeftOut,
+  ModifierEffect, ProcEffect, ProxyEffect, ReadByActivation, ReadByArea,
+  ReadEffects, ReadProc, ReadProxy, RemoveEffect, RemoveStealthEffect,
+  StealthEffect, StruckMoveEffect, UnitStateEffect,
 }
 import genesis_prime/table/spell4_effects
 import gleam/bool
@@ -139,6 +139,7 @@ fn kind_name(
     ControlEffect(..) -> "ControlEffect"
     DespawnEffect(..) -> "DespawnEffect"
     UnitStateEffect(..) -> "UnitStateEffect"
+    DelayEffect(..) -> "DelayEffect"
   }
 }
 
@@ -177,6 +178,7 @@ fn outcomes_of(kind kind: effect_kind.Kind) -> List(String) {
     effect_kind.Proc -> ["ReadProc"]
     effect_kind.Activate -> ["ReadByActivation"]
     effect_kind.Despawn -> ["DespawnEffect"]
+    effect_kind.NpcExecutionDelay -> ["DelayEffect"]
     effect_kind.Immunity | effect_kind.UnitState | effect_kind.Unread(..) -> []
   }
 }
@@ -188,8 +190,8 @@ pub fn every_read_effect_kind_plans_one_variant_or_names_why_not_test() -> Nil {
     list.map(effects, fn(effect) { effect_kind.kind_of(effect.effect_type) })
     |> list.unique
     |> list.filter(fn(kind) { outcomes_of(kind:) != [] })
-  assert list.length(kinds) == 23
-    as "the client's table holds a row of each of the 23 kinds the plan reads"
+  assert list.length(kinds) == 24
+    as "the client's table holds a row of each of the 24 kinds the plan reads"
   list.each(kinds, fn(kind) {
     let outcome =
       list.find_map(effects, fn(effect) {

@@ -88,6 +88,12 @@
 ////   row read only when a creature's held state of it refuses something: a row of a state
 ////   with no reading, with no duration or of a spell with no Spell4 row is held where it can
 ////   be and counted not read (dev/genesis_prime/coverage/effect_row).
+//// - **NpcExecutionDelay** (35) holds the creature that casts it still for its duration after
+////   the go its phases name; the client has no case for it (its effect switch skips 35), so
+////   the meaning is the server's reading and the hold's start a guess. A row is read when its
+////   targetFlags are the caster alone (1); the plan leaves out a row aimed at another unit,
+////   and one with no duration, by name (genesis_prime/game/spell_plan `delay_reading`). A
+////   player's cast reads none (`Spell4Effects.effectType.35`).
 //// - **Unread** is any other type: the client's data holds it and no rule of the
 ////   server reads it.
 ////
@@ -193,6 +199,9 @@ pub type Kind {
   /// A UnitStateSet effect (15): holds the unit state `dataBits00` names on the unit it aims
   /// at for its duration (`Spell4Effects.effectType.15`).
   UnitState
+  /// An NpcExecutionDelay effect (35): holds the creature that casts it still for its
+  /// duration after the go its phases name (`Spell4Effects.effectType.35`).
+  NpcExecutionDelay
   /// A type no rule reads.
   Unread(effect_type: Int)
 }
@@ -232,6 +241,7 @@ pub fn kind_of(effect_type effect_type: Int) -> Kind {
     79 -> Immunity
     97 -> Despawn
     15 -> UnitState
+    35 -> NpcExecutionDelay
     other -> Unread(effect_type: other)
   }
 }
@@ -265,7 +275,8 @@ pub fn is_read(effect_type effect_type: Int) -> Bool {
     | Absorption
     | Activate
     | Despawn
-    | UnitState -> True
+    | UnitState
+    | NpcExecutionDelay -> True
     Immunity | Unread(..) -> False
   }
 }
@@ -301,6 +312,7 @@ pub fn is_row_read(
       int.bitwise_and(target_flags, 1) == 1 || target_flags == 2
     ShieldOverload -> target_flags == 4
     Despawn | UnitState -> target_flags >= 2 && target_flags <= 7
+    NpcExecutionDelay -> target_flags == 1
     Proxy
     | Damage
     | VitalModifier

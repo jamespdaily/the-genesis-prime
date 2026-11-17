@@ -42,6 +42,7 @@
 
 import genesis_prime/content/creature_faction as content_creature_faction
 import genesis_prime/content/creature_kind as content_creature_kind
+import genesis_prime/content/creature_special as content_creature_special
 import genesis_prime/content/refusal
 import genesis_prime/content/server_proxy as content_server_proxy
 import genesis_prime/content/spawn as content_spawn
@@ -280,6 +281,17 @@ fn named_find(
   )
 }
 
+/// The creature kinds the load selects from the play database's creature_kind and
+/// creature_special rows, or why a query failed.
+fn kinds_selected(
+  db db: pog.Connection,
+  tables tables: store.Tables,
+) -> Result(Result(creature_kind.Kinds, List(refusal.Refusal)), pog.QueryError) {
+  use kind_rows <- result.try(content_creature_kind.rows(db))
+  use special_rows <- result.map(content_creature_special.rows(db))
+  creature_kind.select(rows: kind_rows, special_rows:, tables:)
+}
+
 /// The coverage of the play database's spawns, a line for each world, or why it
 /// cannot be measured, from the client's tables, which hold every table the
 /// selection reads.
@@ -296,10 +308,7 @@ fn spawn_coverage(tables tables: store.Tables) -> String {
         Ok(rows) ->
           case
             rating.build(tables:),
-            content_creature_kind.rows(db)
-            |> result.map(fn(kind_rows) {
-              creature_kind.select(rows: kind_rows, special_rows: [], tables:)
-            }),
+            kinds_selected(db:, tables:),
             content_creature_faction.rows(db)
             |> result.map(fn(faction_rows) {
               creature_faction.select(rows: faction_rows, tables:)
@@ -307,7 +316,7 @@ fn spawn_coverage(tables tables: store.Tables) -> String {
           {
             Error(error), _, _ -> rating.describe(error:)
             Ok(_), Error(error), _ ->
-              "The spawn coverage needs the creature_kind table: "
+              "The spawn coverage needs the creature_kind and creature_special tables: "
               <> worker.describe_query_error(error)
             Ok(_), Ok(Error(refusals)), _ ->
               "The spawn coverage needs creature kinds the load takes: "

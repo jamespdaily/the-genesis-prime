@@ -104,6 +104,7 @@ pub fn ticking_heals(
       | spell_plan.StealthEffect(..), _
       | spell_plan.RemoveStealthEffect(..), _
       | spell_plan.ProcEffect(..), _
+      | spell_plan.DelayEffect(..), _
       | spell_plan.ControlEffect(..), _
       -> Error(Nil)
     }

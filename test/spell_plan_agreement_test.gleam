@@ -407,6 +407,7 @@ fn children_of(
           | effect_kind.Immunity
           | effect_kind.Despawn
           | effect_kind.UnitState
+          | effect_kind.NpcExecutionDelay
           | effect_kind.Unread(..) -> Error(Nil)
         }
       })
