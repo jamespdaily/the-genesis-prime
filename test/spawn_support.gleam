@@ -326,16 +326,60 @@ pub fn kinds() -> Kinds {
   )
 }
 
-/// The kinds with the Virtual Battle Beast (Creature2 73464) given a kind of its own: the
-/// default's fields and these specials, each cast again 10 000 ms after its start
-/// (migration 0035's guess), in this order.
+/// The kinds with the Virtual Battle Beast (Creature2 73464) given these specials
+/// (`kinds_with_specials`).
 pub fn kinds_with_beast_specials(spell4_ids spell4_ids: List(Int)) -> Kinds {
+  kinds_with_specials(creature_id: 73_464, spell4_ids:)
+}
+
+/// A creature of the client's own rows standing at the Beast's place, summoned as the load
+/// builds a creature, with the kind of `kinds_with_specials`: the default's fields and the
+/// one special `spell4_id`, cast again 10 000 ms after its start (migration 0035's guess).
+pub fn special_creature(
+  number number: Int,
+  creature_id creature_id: Int,
+  spell4_id spell4_id: Int,
+) -> Spawn {
+  let checks =
+    spawn.summon_checks(
+      tables: character_tables.content_tables(),
+      formulas: rating_support.formulas(),
+      kinds: kinds_with_specials(creature_id:, spell4_ids: [spell4_id]),
+      factions: creature_faction.none(),
+      vendors: vendor.none(),
+    )
+  let assert Ok(creature) =
+    spawn.summoned(
+      checks:,
+      summoned: Summoned(
+        id: SpawnId(number),
+        creature_id: Creature2Id(creature_id),
+        level: option.None,
+        place: place_support.at(
+          world_id: 3460,
+          world_zone_id: warfare_woods,
+          x: 0.0,
+          y: 0.0,
+          z: 0.0,
+        ),
+      ),
+    )
+    as "the creature passes the summon checks over the client's committed rows"
+  creature
+}
+
+/// The kinds with the creature `creature_id` given a kind of its own: the default's fields
+/// and these specials, each cast again 10 000 ms after its start, in this order.
+pub fn kinds_with_specials(
+  creature_id creature_id: Int,
+  spell4_ids spell4_ids: List(Int),
+) -> Kinds {
   let kinds = kinds()
   Kinds(
     ..kinds,
     by_creature: dict.from_list([
       #(
-        73_464,
+        creature_id,
         Kind(
           ..kinds.default,
           specials: list.map(spell4_ids, fn(spell4_id) {

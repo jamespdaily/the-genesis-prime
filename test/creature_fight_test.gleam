@@ -5929,3 +5929,158 @@ pub fn the_sim_turrets_charge_has_one_go_that_strikes_test() -> Nil {
   assert list.map(timers(closed), fn(timer) { timer.1 }) == [3000]
     as "the next attack tick after the interval: no hold"
 }
+
+/// The special's fight with players 2 and 3 on its threat list, 3 the target (a strike of 3
+/// damage against the aggro threat of 1 that player 2 came with), both standing in the cone
+/// ahead of the creature, the cast open at 1500 ms and its first go gone at 4000 ms: the state
+/// and the timer of the strike go.
+fn roar_fought_by_two() -> #(State, step.TimerId) {
+  let #(state, aggro) = roar_fought(viewers: [2, 3])
+  let #(state, _) =
+    tell(
+      state:,
+      at_ms: 100,
+      message: strike_of(number: 3, cast_id: 1, blows: [#(1, 3, 1.0)]),
+    )
+  let #(state, _) =
+    tell(
+      state:,
+      at_ms: 200,
+      message: moved_at(number: 3, x: 0.0, z: -3.0, seq: 2),
+    )
+  let #(state, _, go) = roar_opened(state:, aggro:)
+  let #(state, _, strike) = first_go_passed(state:, go:)
+  #(state, strike)
+}
+
+pub fn a_fighter_who_is_not_the_target_leaving_between_gos_leaves_the_cast_to_the_rest_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Player 2 leaves sight at 4200 ms, between the gos. The threat list still holds 3, the
+  // target, so the fight goes on: the cast and its pending go are left alone, and the strike
+  // go strikes the one fighter that is left.
+  let #(state, strike) = roar_fought_by_two()
+  let #(state, left) =
+    tell(state:, at_ms: 4200, message: creature.Unwatched(by: ConnectionId(2)))
+  assert !list.contains(said(left), "0x7f9 to 3")
+    && !list.contains(said(left), "0x7fe to 3")
+    as "the cast goes on for the viewer that is left"
+  assert timers_cancelled(left) == []
+    as "the pending go's timer stands: the fight did not end"
+  let #(_, struck) = strike_go_reached(state:, strike:)
+  let assert [#(3, Attacks(tell: Strike(key:, ..)))] = fights_told(struck)
+  assert key.occasion == strike_tell.AtGo(phase: 1)
+    as "the strike go tells player 3 alone to take the hit"
+}
+
+pub fn the_target_leaving_between_gos_leaves_the_cast_and_the_strike_goes_to_the_next_fighter_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Player 3, the target, leaves sight at 4200 ms; 2 is the next on the threat list. The
+  // fight goes on with 2 as its target and the cast is not broken.
+  let #(state, strike) = roar_fought_by_two()
+  let #(state, left) =
+    tell(state:, at_ms: 4200, message: creature.Unwatched(by: ConnectionId(3)))
+  assert list.contains(said(left), "0x908(20, 1) to 2")
+    as "the creature's target becomes player 2"
+  assert !list.contains(said(left), "0x7f9 to 2")
+    && !list.contains(said(left), "0x7fe to 2")
+    as "the cast goes on for the viewer that is left"
+  assert timers_cancelled(left) == []
+    as "the pending go's timer stands: the fight did not end"
+  let #(_, struck) = strike_go_reached(state:, strike:)
+  let assert [#(2, Attacks(tell: Strike(key:, ..)))] = fights_told(struck)
+  assert key.unit_id == 20 as "the strike go tells player 2 to take the hit"
+}
+
+pub fn a_control_before_the_first_gos_timer_breaks_the_cast_and_the_late_timer_does_nothing_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The stun lands at 2000 ms, 500 ms after the cast opened; the first go was due at 4000.
+  let #(state, aggro) = roar_fought(viewers: [2])
+  let #(state, opened, go) = roar_opened(state:, aggro:)
+  let #(state, stunned) = stunned_at(state:, at_ms: 2000)
+  let assert [client_connection.CastInterrupted(cast_id:)] =
+    list.filter(news_to(stunned, 2), fn(news) { name_of(news) == "0x7f9" })
+  assert cast_id == cast_id_sent(opened, 2)
+    as "the broken cast is the one that opened"
+  assert list.contains(timers_cancelled(stunned), go)
+    as "the first go's timer is cancelled"
+  let #(_, late) = fire(state:, at_ms: 4000, timer: go)
+  assert said(late) == [] && timers(late) == []
+    as "the timer that fires all the same finds no cast: no go is sent"
+}
+
+pub fn a_death_after_the_strike_go_leaves_the_strikes_that_went_out_standing_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The strike go at 4500 ms tells player 2 to take the hit; the creature is killed at
+  // 4550 ms, before the answer. The strike told is not taken back, the go never goes, and
+  // the answer that comes after is dropped: nothing is sent twice.
+  let #(state, aggro) = roar_fought(viewers: [2])
+  let #(state, _, go) = roar_opened(state:, aggro:)
+  let #(state, _, strike) = first_go_passed(state:, go:)
+  let #(state, struck) = strike_go_reached(state:, strike:)
+  let assert [#(2, Attacks(tell: Strike(key:, ..)))] = fights_told(struck)
+  let #(state, killed) =
+    tell(
+      state:,
+      at_ms: 4550,
+      message: strike_of(number: 2, cast_id: 1, blows: [#(1, 1_000_000, 1.0)]),
+    )
+  assert fights_told(killed) == [#(2, Released(unit_id: 7))]
+    as "the death releases the player; no strike is told again and none is taken back"
+  assert list.contains(said(killed), "0x7fe to 2")
+    && !list.contains(said(killed), "0x7f4 to 2")
+    as "the cast finishes with the death and the strike go never goes"
+  let #(_, answered) = tell(state:, at_ms: 4600, message: landed(key:))
+  assert said(answered) == [] && timers(answered) == []
+    as "the answer of the strike already out is dropped"
+}
+
+pub fn a_despawn_between_gos_finishes_the_cast_removes_the_creature_and_starts_its_respawn_test() -> Nil {
+  use <- owned_test.run(5000)
+  // A despawn of delay 0 arrives at 4200 ms (the go that sent it struck at 4100): the fight
+  // ends and the cast finishes (0x7fe) before the viewers are told the creature is gone
+  // (0x355); the kind's respawn time, 60 000 ms, starts; the go's timer that fires after
+  // finds nothing.
+  let #(state, aggro) = roar_fought(viewers: [2])
+  let #(state, _, go) = roar_opened(state:, aggro:)
+  let #(state, _, strike) = first_go_passed(state:, go:)
+  let #(state, gone) =
+    tell(
+      state:,
+      at_ms: 4200,
+      message: creature.Despawn(
+        delay_ms: 0,
+        struck_at_ms: 4100,
+        went_at_ms: 4200,
+      ),
+    )
+  let to_2 =
+    list.filter(said(gone), fn(line) { string.ends_with(line, " to 2") })
+  assert list.drop_while(to_2, fn(line) { line != "0x7fe to 2" })
+    == ["0x7fe to 2", "0x89a(0) to 2", "Released(7) to 2", "0x355 to 2"]
+    as "the fight ends (the cast finishes, the player is released), then the creature is removed from view"
+  assert list.contains(timers_cancelled(gone), strike)
+    as "the pending go's timer is cancelled"
+  assert list.map(timers(gone), fn(timer) { timer.1 }) == [60_000]
+    as "the corpse timer for the kind's respawn time"
+  let #(_, late) = strike_go_reached(state:, strike:)
+  assert said(late) == [] && timers(late) == []
+    as "the go's late timer does nothing"
+}
+
+pub fn a_retire_between_gos_stops_the_creature_and_sends_nothing_test() -> Nil {
+  use <- owned_test.run(5000)
+  // A live creature told to retire stops at once and sends no news, whether a viewer is still
+  // held or the map has taken the viewer's sight away first (the leash then finished the
+  // cast): the map's removal is the client's cleanup, as `Retire`'s doc says.
+  let #(state, aggro) = roar_fought(viewers: [2])
+  let #(state, _, go) = roar_opened(state:, aggro:)
+  let #(state, _, _) = first_go_passed(state:, go:)
+  let #(_, retired) = tell(state:, at_ms: 4200, message: creature.Retire)
+  assert support.effects_of(retired) == [step.Stop]
+    as "stops at once, in the middle of its cast, with no 0x7fe"
+  let #(state, _) =
+    tell(state:, at_ms: 4200, message: creature.Unwatched(by: ConnectionId(2)))
+  let #(_, retired) = tell(state:, at_ms: 4300, message: creature.Retire)
+  assert support.effects_of(retired) == [step.Stop]
+    as "the same once the map has removed the viewer"
+}
