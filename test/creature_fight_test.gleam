@@ -117,6 +117,7 @@ fn beast_from(
       attack_spell4_id: Spell4Id(5649),
       attack_interval_ms: 1500,
       guard: option.None,
+      specials: [],
     ),
     viewers:,
     armor:,
@@ -3347,10 +3348,12 @@ fn charge_opened(
   #(state, opened, timer_for(opened, 8000))
 }
 
-/// The cast id the step's 0x7ff gave viewer `number`.
+/// The cast id the step's 0x7ff gave viewer `number`. A creature that can move turns to
+/// face its target first (0x638), so the 0x7ff is the first cast news, not the first news.
 fn cast_id_sent(taken: ServiceStep(creature.Outgoing), number: Int) -> Int {
-  let assert [CastStarted(start:), ..] = news_to(taken, number)
-    as "the step sends the 0x7ff first"
+  let assert Ok(CastStarted(start:)) =
+    list.find(news_to(taken, number), fn(news) { name_of(news) == "0x7ff" })
+    as "the step sends the 0x7ff"
   start.cast_id
 }
 
@@ -4740,6 +4743,7 @@ pub fn an_immune_knockback_does_not_throw_test() -> Nil {
         attack_spell4_id: Spell4Id(5649),
         attack_interval_ms: 1500,
         guard: turret.guard,
+        specials: [],
       ),
       viewers: [2],
       armor: creature_life.NoArmor,
@@ -5265,4 +5269,905 @@ pub fn the_same_creature_placed_with_no_map_object_chases_test() -> Nil {
   let assert Running(to:, speed:, ..) = path_sent(aggro)
   assert x_of(to) == 26.0 && speed == 10.0
     as "30 - 0.5 x 8, at run speed 10: the link, not the creature, keeps it still"
+}
+
+// A creature's special: Rootbrute Grimspore's Earthen Roar (Spell4 55317). The client's
+// rows, read for this block (each value below is from them):
+// - Spell4 55317: castTime 3000, targetMaxRange 5.0, Spell4AoeTargetConstraints 116 (angle
+//   360, targetCount 10, minRange 0, maxRange 10.0), Spell4CCConditions 1 (ccStateMask
+//   218 960 739).
+// - SpellPhase 11191 (phaseDelay 2500) and 11192 (phaseDelay 500): gos at 2500 and 3000 ms,
+//   the first with phase 0 and the second, the strike, phase 1.
+// - Spell4Effects 131967 (type 8, damage, targetFlags 4, phaseFlags 2: go 1) and 131968
+//   (type 35, targetFlags 1, durationTime 1000, phaseFlags 0xffff0002: go 1).
+// - TelegraphDamage 7880: shape 4, a cone from 0 to 5.5 m, 40 degrees across, on the
+//   caster (targetTypeFlags 1), so the special's reach is the smaller of 10.0 and 5.5.
+// - The 10 000 ms cooldown is a server choice, a guess (nothing in the client or the retail
+//   record gives a cadence).
+// The creature is the Virtual Battle Beast of this file (it moves, 8.0 reach for its
+// instant attack 5649 every 1500 ms) with the special planted by hand.
+
+/// A beast that casts the special, at the origin facing -z, for these viewers, `Started` taken.
+fn rootbrute_with(
+  special special: creature_life.Special,
+  viewers viewers: List(Int),
+) -> State {
+  let spawn = spawn_support.battle_beast(number: 1, x: 0.0)
+  started_from(
+    source: spawn_source.Stored(id: SpawnId(1)),
+    spawn: Spawn(
+      ..spawn,
+      combat: creature_life.Combat(..spawn.combat, specials: [special]),
+    ),
+    kind: Kind(
+      respawn_ms: 60_000,
+      attack_spell4_id: Spell4Id(5649),
+      attack_interval_ms: 1500,
+      guard: option.None,
+      specials: [],
+    ),
+    viewers:,
+    armor: creature_life.NoArmor,
+  )
+}
+
+fn rootbrute(viewers viewers: List(Int)) -> State {
+  rootbrute_with(special: spawn_support.earthen_roar(hold_ms: 1000), viewers:)
+}
+
+/// The creature fought by player 2, who comes near 4 units ahead of it at 0 ms: the state
+/// and the step of the aggro, which starts the first attack tick at 1500 ms.
+fn roar_fought(
+  viewers viewers: List(Int),
+) -> #(State, ServiceStep(creature.Outgoing)) {
+  roar_fought_by(state: rootbrute(viewers:))
+}
+
+fn roar_fought_by(
+  state state: State,
+) -> #(State, ServiceStep(creature.Outgoing)) {
+  tell(
+    state:,
+    at_ms: 0,
+    message: approached_at(number: 2, x: 0.0, z: -4.0, seq: 1),
+  )
+}
+
+/// The attack tick of 1500 ms opens the special: the state, the step of its start and the
+/// timer of its first go, 2500 ms later.
+fn roar_opened(
+  state state: State,
+  aggro aggro: ServiceStep(creature.Outgoing),
+) -> #(State, ServiceStep(creature.Outgoing), step.TimerId) {
+  let #(state, opened) =
+    fire(state:, at_ms: 1500, timer: timer_for(aggro, 1500))
+  #(state, opened, timer_for(opened, 2500))
+}
+
+/// The first go at 4000 ms (1500 + 2500): the state, the step and the timer of the strike
+/// go, 500 ms later.
+fn first_go_passed(
+  state state: State,
+  go go: step.TimerId,
+) -> #(State, ServiceStep(creature.Outgoing), step.TimerId) {
+  let #(state, passed) = fire(state:, at_ms: 4000, timer: go)
+  #(state, passed, timer_for(passed, 500))
+}
+
+/// The strike go at 4500 ms.
+fn strike_go_reached(
+  state state: State,
+  strike strike: step.TimerId,
+) -> #(State, ServiceStep(creature.Outgoing)) {
+  fire(state:, at_ms: 4500, timer: strike)
+}
+
+fn casts_of(
+  taken: ServiceStep(creature.Outgoing),
+  number: Int,
+) -> List(client_connection.News) {
+  list.filter(news_to(taken, number), fn(news) { name_of(news) == "0x7ff" })
+}
+
+pub fn a_ready_special_in_reach_is_chosen_and_opens_its_cast_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The target is 4 units ahead, within the special's 5.5 and the instant attack's 8: the
+  // special is chosen, being first listed and ready. The beast moves, so it first turns to
+  // face its target (0x638); a creature that cannot move aims itself.
+  let #(state, aggro) = roar_fought(viewers: [2])
+  let #(_, opened) = fire(state:, at_ms: 1500, timer: timer_for(aggro, 1500))
+  assert said(opened) == ["0x638 to 2", "0x7ff to 2"]
+    as "the facing, then the cast of the special: no strike yet"
+  let assert [CastStarted(start:)] = casts_of(opened, 2)
+  assert start.spell4_id == 55_317
+    && start.caster_unit_id == 7
+    && start.primary_target_unit_id == 20
+    as "Earthen Roar, cast by the creature on its target"
+  assert fights_told(opened) == []
+  assert list.map(timers(opened), fn(timer) { timer.1 }) == [2500]
+    as "one timer, the first go 2500 ms later (SpellPhase 11191), and no attack tick"
+}
+
+pub fn the_specials_cast_start_carries_no_telegraph_positions_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The client draws the cone on the caster from the spell's TelegraphDamage row
+  // (`0x140546e60`), so the 0x7ff names no positions.
+  let #(state, aggro) = roar_fought(viewers: [2])
+  let #(_, opened, _) = roar_opened(state:, aggro:)
+  let assert [CastStarted(start:)] = casts_of(opened, 2)
+  assert start.telegraph_positions == [] && start.initial_positions == []
+}
+
+pub fn a_creature_that_can_move_turns_to_face_its_target_before_the_special_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The client never turns a creature by itself (`creature.facing`) and the cone follows the
+  // caster's yaw (`0x14054b1b0.follows_caster`): the target 3 ahead and 3 aside is at atan2(3, 3)
+  // = pi / 4 off the creature's facing, which is the yaw of a kind 14 turn.
+  let #(state, aggro) =
+    tell(
+      state: rootbrute(viewers: [2]),
+      at_ms: 0,
+      message: approached_at(number: 2, x: -3.0, z: -3.0, seq: 1),
+    )
+  let #(_, opened, _) = roar_opened(state:, aggro:)
+  assert list.map(news_to(opened, 2), name_of) == ["0x638", "0x7ff"]
+    as "the turn goes before the cast"
+  let assert [
+    CreatureMoved(path: Timed(first:, rest: [], turned_to: Some(facing))),
+    ..
+  ] = news_to(opened, 2)
+    as "a one-point timed path that turns the creature"
+  assert near(facing.yaw, 0.785_398_163_397_448_3)
+    && start_place.x(first.1) == 0.0
+    as "turned along the bearing to the target, in place"
+}
+
+pub fn a_special_on_cooldown_leaves_the_auto_attack_and_is_ready_again_after_it_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The cooldown (10 000 ms, a guess) counts from the cast's start at 1500 ms, so the special
+  // is ready again at 11 500 ms.
+  let #(state, aggro) = roar_fought(viewers: [2])
+  let #(state, _, go) = roar_opened(state:, aggro:)
+  let #(state, _, strike) = first_go_passed(state:, go:)
+  let #(state, struck) = strike_go_reached(state:, strike:)
+  let assert [#(2, Attacks(tell: Strike(key:, ..)))] = fights_told(struck)
+  let #(state, closed) = tell(state:, at_ms: 4600, message: landed(key:))
+  let hold = timer_for(closed, 1000)
+  let #(state, after) = fire(state:, at_ms: 5600, timer: hold)
+  let assert [CastStarted(start: auto_start)] = casts_of(after, 2)
+  assert auto_start.spell4_id == 5649
+    as "on cooldown: the instant attack of the kind is cast"
+  let assert [#(2, Attacks(tell: Strike(key: auto_key, ..)))] =
+    fights_told(after)
+    as "and it strikes at once"
+  let #(state, _) = tell(state:, at_ms: 5700, message: landed(key: auto_key))
+  let #(state, still_on) =
+    fire(state:, at_ms: 11_499, timer: timer_for(after, 1500))
+  let assert [CastStarted(start: auto_again)] = casts_of(still_on, 2)
+  assert auto_again.spell4_id == 5649
+    as "1 ms before the cooldown ends it is still the instant attack"
+  let assert [#(2, Attacks(tell: Strike(key: again_key, ..)))] =
+    fights_told(still_on)
+  let #(state, _) = tell(state:, at_ms: 11_499, message: landed(key: again_key))
+  let #(_, ready) =
+    fire(state:, at_ms: 11_500, timer: timer_for(still_on, 1500))
+  let assert [CastStarted(start: again)] = casts_of(ready, 2)
+  assert again.spell4_id == 55_317
+    as "at the cooldown's end the special is chosen"
+}
+
+pub fn a_new_fight_starts_with_its_specials_ready_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The special's cooldown (to 11 500 ms) is spent at 1500 ms; the leash ends the fight
+  // at 5000 ms, the creature is home and a player sees it and comes near again at 7000 ms: the new
+  // fight's first tick casts the special.
+  let #(state, aggro) = roar_fought(viewers: [2])
+  let #(state, _, _) = roar_opened(state:, aggro:)
+  let #(state, leashed) =
+    tell(state:, at_ms: 5000, message: creature.Unwatched(by: ConnectionId(2)))
+  let home = timer_for(leashed, 0)
+  let #(state, _) = fire(state:, at_ms: 5000, timer: home)
+  let #(state, _) =
+    tell(
+      state:,
+      at_ms: 6500,
+      message: creature.Watched(
+        by: ConnectionId(2),
+        stay: map_support.stay(count: 2),
+      ),
+    )
+  let #(state, again) =
+    tell(
+      state:,
+      at_ms: 7000,
+      message: approached_at(number: 2, x: 0.0, z: -4.0, seq: 5),
+    )
+  let #(_, ticked) = fire(state:, at_ms: 8500, timer: timer_for(again, 1500))
+  let assert [CastStarted(start:)] = casts_of(ticked, 2)
+  assert start.spell4_id == 55_317
+    as "before 11 500 ms, the special is cast again: a new fight starts with its specials ready"
+}
+
+pub fn a_target_beyond_every_reach_is_chased_and_not_cast_at_test() -> Nil {
+  use <- owned_test.run(5000)
+  // 30 units ahead: beyond the special's 5.5 and the instant attack's 8, so the creature
+  // chases and casts nothing.
+  let #(state, aggro) =
+    tell(
+      state: rootbrute(viewers: [2]),
+      at_ms: 0,
+      message: approached_at(number: 2, x: 0.0, z: -30.0, seq: 1),
+    )
+  assert list.contains(said(aggro), "0x638 to 2")
+    as "out of reach of both: a chase"
+  let #(_, chased) = fire(state:, at_ms: 1500, timer: timer_for(aggro, 1500))
+  assert casts_of(chased, 2) == [] as "and no cast"
+}
+
+pub fn a_creature_holding_a_state_casts_no_special_test() -> Nil {
+  use <- owned_test.run(5000)
+  // A state held (a stun, landed at 1000 ms, ending 2500 ms later) starts no charge
+  // (`creature_fight` doc), so the tick at 1500 ms casts nothing: not the special, and not the
+  // instant attack, which a Stun refuses.
+  let #(state, aggro) = roar_fought(viewers: [2])
+  let #(state, stunned) = stunned_at(state:, at_ms: 1000)
+  assert list.contains(said(stunned), "0x87f to 2")
+  let #(_, ticked) = fire(state:, at_ms: 1500, timer: timer_for(aggro, 1500))
+  assert said(ticked) == [] && casts_of(ticked, 2) == []
+    as "no cast while the state holds"
+}
+
+pub fn the_gos_wait_the_phase_delays_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) = roar_fought(viewers: [2])
+  let #(state, opened, go) = roar_opened(state:, aggro:)
+  assert list.map(timers(opened), fn(timer) { timer.1 }) == [2500]
+    as "the first go 2500 ms after the cast (SpellPhase 11191)"
+  let #(_, passed) = fire(state:, at_ms: 4000, timer: go)
+  assert list.map(timers(passed), fn(timer) { timer.1 }) == [500]
+    as "the second 500 ms after the first (SpellPhase 11192)"
+}
+
+pub fn a_late_go_timer_arms_the_next_go_for_what_is_left_of_its_due_time_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The cast started at 1500 ms, so the second go is due at 4500 ms whenever the first is
+  // handled: 300 ms late leaves 200 ms; later than the due time leaves 0.
+  let #(state, aggro) = roar_fought(viewers: [2])
+  let #(state, _, go) = roar_opened(state:, aggro:)
+  let #(_, late) = fire(state:, at_ms: 4300, timer: go)
+  assert list.map(timers(late), fn(timer) { timer.1 }) == [200]
+  let #(_, later) = fire(state:, at_ms: 5000, timer: go)
+  assert list.map(timers(later), fn(timer) { timer.1 }) == [0]
+}
+
+pub fn a_go_before_the_strike_is_sent_with_its_phase_and_no_target_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) = roar_fought(viewers: [2])
+  let #(state, opened, go) = roar_opened(state:, aggro:)
+  let #(_, passed, strike) = first_go_passed(state:, go:)
+  assert said(passed) == ["0x7f4 to 2"] && fights_told(passed) == []
+    as "the go, and no strike"
+  let assert [CastWent(went)] = news_to(passed, 2)
+  assert went.phase == 0
+    && went.targets == []
+    && went.cast_id == cast_id_sent(opened, 2)
+    as "phase 0, no unit, the cast's id"
+  assert strike != go as "the next go's timer is of a new generation"
+}
+
+pub fn the_strike_go_strikes_only_the_fighters_inside_the_cone_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The creature faces its target, player 2, 4 ahead. The cone reaches 5.5 and is 40
+  // degrees across, grown by a player's hit radius 1.2. Player 5 stands 2 ahead and 0.5 aside:
+  // inside. Player 6 stands 5 aside and level with the creature: within 5.5 of it, but 90
+  // degrees off the facing: outside.
+  let #(state, aggro) = roar_fought(viewers: [2, 5, 6])
+  let state = with_player_at(state:, number: 5, x: 0.5, z: -2.0)
+  let state = with_player_at(state:, number: 6, x: 5.0, z: 0.0)
+  let #(state, opened, go) = roar_opened(state:, aggro:)
+  let #(state, _, strike) = first_go_passed(state:, go:)
+  let #(_, struck) = strike_go_reached(state:, strike:)
+  assert list.sort(
+      list.map(fights_told(struck), fn(told) { told.0 }),
+      int.compare,
+    )
+    == [2, 5]
+    as "players 2 and 5 are struck; 6 is not"
+  let assert [#(_, Attacks(tell: Strike(key:, striker:, offence:, ..))), ..] =
+    fights_told(struck)
+  assert key.occasion == strike_tell.AtGo(phase: 1)
+    && key.cast_id == cast_id_sent(opened, 2)
+    as "the strike go is phase 1, under the cast's id"
+  assert striker == CreatureStriker(unit_id: 7, spell4_id: Spell4Id(55_317))
+    as "named by the creature and the special"
+  assert list.map(offence.blows, fn(blow) { blow.spell4_effects_id })
+    == [131_967]
+    as "the damage effect, Spell4Effects 131967"
+  assert list.map(timers(struck), fn(timer) { timer.1 }) == [1000]
+    as "the strike deadline, and no attack tick while the round is open"
+}
+
+pub fn a_specials_cone_faces_its_target_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The target stands 3 ahead and 3 aside, so the creature turns 45 degrees to it when the cast
+  // begins and stays so (the client does not turn it, and the server's cone follows the facing
+  // the client has). Player 5 stands straight ahead at 5: 45 degrees off the new facing, outside
+  // the cone even grown by 1.2. The target then walks round to the other side: it is outside
+  // the cone, which has not turned.
+  let #(state, aggro) =
+    tell(
+      state: rootbrute(viewers: [2, 5]),
+      at_ms: 0,
+      message: approached_at(number: 2, x: -3.0, z: -3.0, seq: 1),
+    )
+  let state = with_player_at(state:, number: 5, x: 0.0, z: -5.0)
+  let #(state, _, go) = roar_opened(state:, aggro:)
+  let #(state, _, strike) = first_go_passed(state:, go:)
+  let #(_, struck) = strike_go_reached(state:, strike:)
+  assert list.map(fights_told(struck), fn(told) { told.0 }) == [2]
+    as "the target on the facing is struck, player 5 straight ahead is not"
+  let #(state, aggro) = roar_fought(viewers: [2, 5])
+  let #(state, _, go) = roar_opened(state:, aggro:)
+  let #(state, _, strike) = first_go_passed(state:, go:)
+  let #(state, walked) =
+    tell(
+      state:,
+      at_ms: 4200,
+      message: moved_at(number: 2, x: 4.0, z: -1.0, seq: 3),
+    )
+  assert said(walked) == [] as "the creature does not move while it casts"
+  let #(_, struck) = strike_go_reached(state:, strike:)
+  assert fights_told(struck) == []
+    as "the target walked off the cone, which has not turned"
+}
+
+/// Player `number` joins the threat list by a light strike and stands at `x`, `z`.
+fn with_player_at(
+  state state: State,
+  number number: Int,
+  x x: Float,
+  z z: Float,
+) -> State {
+  let #(state, _) =
+    tell(
+      state:,
+      at_ms: 100,
+      message: strike_of(number:, cast_id: number, blows: [#(1, 1, 0.5)]),
+    )
+  let #(state, _) =
+    tell(state:, at_ms: 200, message: moved_at(number:, x:, z:, seq: 2))
+  state
+}
+
+pub fn the_closing_go_carries_the_strike_phase_and_the_finish_follows_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) = roar_fought(viewers: [2])
+  let #(state, opened, go) = roar_opened(state:, aggro:)
+  let #(state, _, strike) = first_go_passed(state:, go:)
+  let #(state, struck) = strike_go_reached(state:, strike:)
+  let assert [#(2, Attacks(tell: Strike(key:, ..)))] = fights_told(struck)
+  let #(_, closed) = tell(state:, at_ms: 4600, message: landed(key:))
+  assert said(closed) == ["0x7f4 to 2", "0x7fe to 2"]
+    as "the go lists the struck player, then the cast finishes"
+  let assert [CastWent(went), CastFinished(cast_id:)] = news_to(closed, 2)
+  assert went.phase == 1
+    && list.map(went.targets, fn(target) { target.unit_id }) == [20]
+    && went.cast_id == cast_id_sent(opened, 2)
+    && cast_id == went.cast_id
+    as "phase 1 names player 2 under the cast's id"
+  // Nobody inside at the strike go: the go names no unit.
+  let #(state, aggro) = roar_fought(viewers: [2])
+  let #(state, _, go) = roar_opened(state:, aggro:)
+  let #(state, _, strike) = first_go_passed(state:, go:)
+  let #(state, walked) =
+    tell(
+      state:,
+      at_ms: 4200,
+      message: moved_at(number: 2, x: 20.0, z: 0.0, seq: 3),
+    )
+  assert said(walked) == []
+  let #(_, empty) = strike_go_reached(state:, strike:)
+  assert said(empty) == ["0x7f4 to 2", "0x7fe to 2"]
+    as "no strike, the go and the finish"
+  let assert [CastWent(went), ..] = news_to(empty, 2)
+  assert went.phase == 1 && went.targets == []
+}
+
+pub fn an_answer_after_the_deadline_is_left_out_of_a_specials_go_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The strike round's rule is the same for a special: the deadline closes the round, and a
+  // late answer finds no round.
+  let #(state, aggro) = roar_fought(viewers: [2])
+  let #(state, _, go) = roar_opened(state:, aggro:)
+  let #(state, _, strike) = first_go_passed(state:, go:)
+  let #(state, struck) = strike_go_reached(state:, strike:)
+  let assert [#(2, Attacks(tell: Strike(key:, ..)))] = fights_told(struck)
+  let #(state, deadline) =
+    fire(state:, at_ms: 5500, timer: timer_for(struck, 1000))
+  let assert [CastWent(went), ..] = news_to(deadline, 2)
+  assert went.phase == 1 && went.targets == []
+    as "the deadline closes the go with nobody in it"
+  let #(_, late) = tell(state:, at_ms: 5600, message: landed(key:))
+  assert said(late) == [] && timers(late) == []
+    as "the answer after it changes nothing"
+}
+
+pub fn the_next_attack_tick_waits_the_delay_rows_hold_after_a_special_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Spell4Effects 131968 (type 35, aimed at the caster, durationTime 1000, on go 1). What
+  // the client does with type 35 is not in its code (`Spell4Effects.effectType.35`): the
+  // hold is a guess, counted from the round's close.
+  let #(state, aggro) = roar_fought(viewers: [2])
+  let #(state, _, go) = roar_opened(state:, aggro:)
+  let #(state, _, strike) = first_go_passed(state:, go:)
+  let #(state, struck) = strike_go_reached(state:, strike:)
+  let assert [#(2, Attacks(tell: Strike(key:, ..)))] = fights_told(struck)
+  let #(_, closed) = tell(state:, at_ms: 4600, message: landed(key:))
+  assert list.map(timers(closed), fn(timer) { timer.1 }) == [1000]
+    as "the next attack tick starts 1000 ms after the round closes"
+}
+
+pub fn a_special_with_no_delay_row_waits_the_attack_interval_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) =
+    roar_fought_by(
+      state: rootbrute_with(
+        special: spawn_support.earthen_roar(hold_ms: 0),
+        viewers: [2],
+      ),
+    )
+  let #(state, _, go) = roar_opened(state:, aggro:)
+  let #(state, _, strike) = first_go_passed(state:, go:)
+  let #(state, struck) = strike_go_reached(state:, strike:)
+  let assert [#(2, Attacks(tell: Strike(key:, ..)))] = fights_told(struck)
+  let #(_, closed) = tell(state:, at_ms: 4600, message: landed(key:))
+  assert list.map(timers(closed), fn(timer) { timer.1 }) == [1500]
+    as "the kind's attack interval"
+}
+
+pub fn a_creature_in_its_hold_neither_chases_nor_strikes_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The hold runs from 4600 ms to 5600 ms. The target runs 30 off at 5000 ms: the creature,
+  // which would chase, stands; a tick of an old generation does nothing; the hold's own tick
+  // then acts.
+  let #(state, aggro) = roar_fought(viewers: [2])
+  let #(state, _, go) = roar_opened(state:, aggro:)
+  let #(state, _, strike) = first_go_passed(state:, go:)
+  let #(state, struck) = strike_go_reached(state:, strike:)
+  let assert [#(2, Attacks(tell: Strike(key:, ..)))] = fights_told(struck)
+  let #(state, closed) = tell(state:, at_ms: 4600, message: landed(key:))
+  let #(state, moved) =
+    tell(
+      state:,
+      at_ms: 5000,
+      message: moved_at(number: 2, x: 0.0, z: -30.0, seq: 3),
+    )
+  assert said(moved) == [] as "no chase while it holds"
+  let #(state, old) = fire(state:, at_ms: 5100, timer: timer_for(aggro, 1500))
+  assert said(old) == [] && timers(old) == []
+    as "the first tick of the fight is of an old generation"
+  let #(_, acted) = fire(state:, at_ms: 5600, timer: timer_for(closed, 1000))
+  assert list.contains(said(acted), "0x638 to 2")
+    as "when the hold's tick fires the creature chases the target"
+}
+
+/// The special's fight with players 2 and 3 on its threat list, 3 the target, the cast open at
+/// 1500 ms, and the target runs to 30 ahead during the cast (the creature starts no path: it
+/// casts). The strike go at 4500 ms then finds player 2 alone inside the cone: the round is
+/// `Striking`, awaiting player 2's answer, with the target far out of reach. The state and the
+/// key of the strike told to player 2.
+fn roar_striking_with_a_far_target() -> #(State, strike_tell.Key) {
+  let #(state, aggro) = roar_fought(viewers: [2, 3])
+  let #(state, _) =
+    tell(
+      state:,
+      at_ms: 100,
+      message: strike_of(number: 3, cast_id: 1, blows: [#(1, 3, 1.0)]),
+    )
+  let #(state, _) =
+    tell(
+      state:,
+      at_ms: 200,
+      message: moved_at(number: 3, x: 0.0, z: -3.0, seq: 2),
+    )
+  let #(state, _, go) = roar_opened(state:, aggro:)
+  let #(state, running) =
+    tell(
+      state:,
+      at_ms: 2000,
+      message: moved_at(number: 3, x: 0.0, z: -30.0, seq: 3),
+    )
+  assert said(running) == [] as "no path while the cast is open"
+  let #(state, _, strike) = first_go_passed(state:, go:)
+  let #(state, struck) = strike_go_reached(state:, strike:)
+  let assert [#(2, Attacks(tell: Strike(key:, ..)))] = fights_told(struck)
+    as "player 2 alone is in the cone"
+  #(state, key)
+}
+
+pub fn no_path_starts_while_a_charged_round_strikes_or_holds_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The creature stands through the cast, the strikes and the hold that follows a special (a
+  // guess for the last: `Spell4Effects.effectType.35`). Every way the fight asks for a chase,
+  // each with the target 30 away so that a chase would start, starts none: the target moves,
+  // a fighter that is not the target leaves, a state that held it ends, and the answer that
+  // kills a fighter retargets.
+  let #(striking, key) = roar_striking_with_a_far_target()
+  let no_path = fn(taken: ServiceStep(creature.Outgoing)) {
+    !list.any(said(taken), fn(line) { string.starts_with(line, "0x638") })
+  }
+  let #(_, moved) =
+    tell(
+      state: striking,
+      at_ms: 4600,
+      message: moved_at(number: 3, x: 0.0, z: -31.0, seq: 4),
+    )
+  assert no_path(moved) as "the target moves while the strikes are out"
+  let #(_, left) =
+    tell(
+      state: striking,
+      at_ms: 4600,
+      message: creature.Unwatched(by: ConnectionId(2)),
+    )
+  assert no_path(left) as "a fighter leaves while the strikes are out"
+  let #(stunned_state, stunned) = stunned_at(state: striking, at_ms: 4550)
+  let assert [#(control_ends, _), ..] = control_timers(stunned)
+    as "the stun starts its own timer"
+  let #(_, ended) = fire(state: stunned_state, at_ms: 4700, timer: control_ends)
+  assert no_path(ended)
+    as "the state that held it ends while the strikes are out"
+  let #(held_state, killed) =
+    tell(state: striking, at_ms: 4600, message: killing_answer(key:))
+  assert no_path(killed)
+    as "the answer that kills fighter 2 closes the round and retargets, with the hold set first"
+  let #(_, in_hold) =
+    tell(
+      state: held_state,
+      at_ms: 4700,
+      message: moved_at(number: 3, x: 0.0, z: -32.0, seq: 5),
+    )
+  assert no_path(in_hold) as "the target moves in the hold"
+}
+
+pub fn a_ready_special_closes_to_its_own_reach_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The target is 6.5 ahead: beyond the special's 5.5 (the cone's far edge) and within the
+  // instant attack's 8. The special is ready, so the creature goes for it: it runs in from
+  // the start of the fight, to within the special's reach, and the first tick casts the
+  // special, not the instant attack.
+  let #(state, aggro) =
+    tell(
+      state: rootbrute(viewers: [2]),
+      at_ms: 0,
+      message: approached_at(number: 2, x: 0.0, z: -6.5, seq: 1),
+    )
+  let assert Running(to:, ..) = path_sent(aggro)
+  assert creature_path.distance(from: to, to: at_xz(x: 0.0, z: -6.5)) <=. 5.5
+    as "the path ends within the special's reach of the target"
+  let #(_, cast) = fire(state:, at_ms: 1500, timer: timer_for(aggro, 1500))
+  let assert [CastStarted(start:)] = casts_of(cast, 2)
+  assert start.spell4_id == 55_317
+    as "with the target in its reach the special is cast, and fights_told is empty until its go"
+  assert fights_told(cast) == []
+}
+
+pub fn a_state_between_gos_breaks_the_special_and_the_cooldown_stays_spent_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) = roar_fought(viewers: [2])
+  let #(state, opened, go) = roar_opened(state:, aggro:)
+  let #(state, _, strike) = first_go_passed(state:, go:)
+  let #(state, stunned) = stunned_at(state:, at_ms: 4200)
+  assert list.drop_while(said(stunned), fn(line) { line != "0x87f to 2" })
+    == ["0x87f to 2", "0x7f9 to 2"]
+    as "the state, then the broken cast: 0x7f9 (the viewer's connection writes the 0x7fe after it)"
+  let assert [client_connection.CastInterrupted(cast_id:)] =
+    list.filter(news_to(stunned, 2), fn(news) { name_of(news) == "0x7f9" })
+  assert cast_id == cast_id_sent(opened, 2)
+  assert list.contains(timers_cancelled(stunned), strike)
+    as "the pending go's timer is cancelled"
+  assert list.contains(list.map(timers(stunned), fn(timer) { timer.1 }), 1500)
+    as "the next attack tick comes after the interval, not the hold"
+  let #(_, late) = strike_go_reached(state:, strike:)
+  assert said(late) == [] && timers(late) == []
+    as "the go's timer that fires all the same finds no cast: nothing strikes"
+  let #(state, held) =
+    fire(state:, at_ms: 5700, timer: timer_for(stunned, 1500))
+  assert said(held) == [] as "the state still holds: no cast"
+  let ends = timer_for(stunned, 2500)
+  let #(state, _) = fire(state:, at_ms: 6700, timer: ends)
+  let #(_, after) = fire(state:, at_ms: 7200, timer: timer_for(held, 1500))
+  let assert [CastStarted(start:)] = casts_of(after, 2)
+  assert start.spell4_id == 5649
+    as "the cooldown the broken cast spent (to 11 500 ms) is still running: the instant attack"
+}
+
+pub fn an_interrupt_after_the_strike_go_breaks_nothing_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) = roar_fought(viewers: [2])
+  let #(state, _, go) = roar_opened(state:, aggro:)
+  let #(state, _, strike) = first_go_passed(state:, go:)
+  let #(state, struck) = strike_go_reached(state:, strike:)
+  let assert [#(2, Attacks(tell: Strike(key:, ..)))] = fights_told(struck)
+  let #(state, stunned) = stunned_at(state:, at_ms: 4550)
+  assert !list.contains(said(stunned), "0x7f9 to 2")
+    as "the strikes are out: nothing breaks"
+  let #(_, closed) = tell(state:, at_ms: 4600, message: landed(key:))
+  assert list.contains(said(closed), "0x7f4 to 2") as "the go still goes"
+}
+
+pub fn death_between_gos_ends_the_special_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) = roar_fought(viewers: [2])
+  let #(state, _, go) = roar_opened(state:, aggro:)
+  let #(state, _, strike) = first_go_passed(state:, go:)
+  let #(state, killed) =
+    tell(
+      state:,
+      at_ms: 4200,
+      message: strike_of(number: 2, cast_id: 1, blows: [#(1, 1_000_000, 1.0)]),
+    )
+  assert list.contains(said(killed), "0x7fe to 2")
+    as "the cast finishes with the death"
+  assert !list.contains(said(killed), "0x7f4 to 2")
+    as "and the strike go never went"
+  assert list.contains(timers_cancelled(killed), strike)
+    as "the pending go's timer is cancelled"
+  let #(_, late) = strike_go_reached(state:, strike:)
+  assert said(late) == [] && timers(late) == []
+}
+
+pub fn leash_between_gos_ends_the_special_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) = roar_fought(viewers: [2])
+  let #(state, _, go) = roar_opened(state:, aggro:)
+  let #(state, _, strike) = first_go_passed(state:, go:)
+  let #(state, leashed) =
+    tell(state:, at_ms: 4200, message: creature.Unwatched(by: ConnectionId(2)))
+  assert list.contains(timers_cancelled(leashed), strike)
+    as "the pending go's timer is cancelled"
+  let #(_, late) = strike_go_reached(state:, strike:)
+  assert said(late) == [] && timers(late) == []
+    as "and its late firing does nothing"
+}
+
+pub fn a_stale_go_timer_does_nothing_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) = roar_fought(viewers: [2])
+  let #(state, _, go) = roar_opened(state:, aggro:)
+  let #(state, _, strike) = first_go_passed(state:, go:)
+  let #(state, again) = fire(state:, at_ms: 4100, timer: go)
+  assert said(again) == [] && timers(again) == []
+    as "the first go's timer fires again after it went: it is of an old generation"
+  let #(state, struck) = strike_go_reached(state:, strike:)
+  let assert [#(2, Attacks(tell: Strike(key:, ..)))] = fights_told(struck)
+  let #(state, _) = tell(state:, at_ms: 4600, message: landed(key:))
+  let #(_, after) = fire(state:, at_ms: 4700, timer: strike)
+  assert said(after) == [] && timers(after) == []
+    as "the strike go's timer fires after the round closed: nothing"
+}
+
+pub fn a_second_attack_tick_during_a_special_starts_nothing_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) = roar_fought(viewers: [2])
+  let #(state, _, _) = roar_opened(state:, aggro:)
+  let #(_, again) = fire(state:, at_ms: 2000, timer: timer_for(aggro, 1500))
+  assert said(again) == [] && timers(again) == []
+    as "the tick that opened the cast fires again: no second 0x7ff and no new tick"
+}
+
+pub fn a_viewer_arriving_between_gos_gets_the_open_cast_and_the_gos_so_far_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) = roar_fought(viewers: [2])
+  let #(state, opened, go) = roar_opened(state:, aggro:)
+  let #(state, _, strike) = first_go_passed(state:, go:)
+  let watched_at = fn(state, at_ms, number) {
+    tell(
+      state:,
+      at_ms:,
+      message: creature.Watched(
+        by: ConnectionId(number),
+        stay: map_support.stay(count: number),
+      ),
+    )
+  }
+  let #(state, watched) = watched_at(state, 4200, 9)
+  assert list.map(news_to(watched, 9), name_of)
+    == ["0x262", "0x89a(1)", "0x908(20, 1)", "0x7ff", "0x7f4"]
+    as "the fight, the open cast, then the go that went"
+  let assert [_, _, _, CastStarted(start:), CastWent(went)] =
+    news_to(watched, 9)
+  assert start.cast_id == cast_id_sent(opened, 2)
+    && start.spell4_id == 55_317
+    && went.cast_id == start.cast_id
+    && went.phase == 0
+    && went.targets == []
+    as "the same cast and its first go, so the later go names it"
+  let #(state, struck) = strike_go_reached(state:, strike:)
+  let assert [#(2, Attacks(tell: Strike(key:, ..)))] = fights_told(struck)
+  let #(state, watched) = watched_at(state, 4550, 8)
+  assert list.map(news_to(watched, 8), name_of)
+    == ["0x262", "0x89a(1)", "0x908(20, 1)", "0x7ff", "0x7f4"]
+    as "while the strikes are out the same: the cast and the first go"
+  let #(_, closed) = tell(state:, at_ms: 4600, message: landed(key:))
+  assert list.contains(said(closed), "0x7f4 to 9")
+    && list.contains(said(closed), "0x7fe to 8")
+    as "both viewers are told the strike go and the finish"
+}
+
+pub fn the_sim_turrets_charge_has_one_go_that_strikes_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Spell4 85469: castTime 8000 and no phases (Spell4 85469, 86978): one go, at the cast time,
+  // that strikes, and no hold.
+  let spawn = spawn_support.sim_turret(number: 1, place: at(0.0))
+  let assert creature_life.Charged(cast_ms:, gos:, hold_ms:, ..) =
+    spawn.combat.attack.cast
+  assert cast_ms == 8000
+    && gos == [creature_life.Go(at_ms: 8000, strikes: True)]
+    && hold_ms == 0
+    as "one go, at 8000 ms, that strikes, and no hold"
+  let #(state, aggro) = fought(viewers: [2])
+  let #(state, _, ends) = charge_opened(state:, aggro:)
+  let #(state, went) = fire(state:, at_ms: 11_000, timer: ends)
+  let assert [#(2, Attacks(tell: Strike(key:, ..)))] = fights_told(went)
+  assert key.occasion == strike_tell.AtGo(phase: 0)
+  let #(_, closed) = tell(state:, at_ms: 11_100, message: landed(key:))
+  let assert [CastWent(go), ..] = news_to(closed, 2)
+  assert go.phase == 0 as "the go is phase 0"
+  assert list.map(timers(closed), fn(timer) { timer.1 }) == [3000]
+    as "the next attack tick after the interval: no hold"
+}
+
+/// The special's fight with players 2 and 3 on its threat list, 3 the target (a strike of 3
+/// damage against the aggro threat of 1 that player 2 came with), both standing in the cone
+/// ahead of the creature, the cast open at 1500 ms and its first go gone at 4000 ms: the state
+/// and the timer of the strike go.
+fn roar_fought_by_two() -> #(State, step.TimerId) {
+  let #(state, aggro) = roar_fought(viewers: [2, 3])
+  let #(state, _) =
+    tell(
+      state:,
+      at_ms: 100,
+      message: strike_of(number: 3, cast_id: 1, blows: [#(1, 3, 1.0)]),
+    )
+  let #(state, _) =
+    tell(
+      state:,
+      at_ms: 200,
+      message: moved_at(number: 3, x: 0.0, z: -3.0, seq: 2),
+    )
+  let #(state, _, go) = roar_opened(state:, aggro:)
+  let #(state, _, strike) = first_go_passed(state:, go:)
+  #(state, strike)
+}
+
+pub fn a_fighter_who_is_not_the_target_leaving_between_gos_leaves_the_cast_to_the_rest_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Player 2 leaves sight at 4200 ms, between the gos. The threat list still holds 3, the
+  // target, so the fight goes on: the cast and its pending go are left alone, and the strike
+  // go strikes the one fighter that is left.
+  let #(state, strike) = roar_fought_by_two()
+  let #(state, left) =
+    tell(state:, at_ms: 4200, message: creature.Unwatched(by: ConnectionId(2)))
+  assert !list.contains(said(left), "0x7f9 to 3")
+    && !list.contains(said(left), "0x7fe to 3")
+    as "the cast goes on for the viewer that is left"
+  assert timers_cancelled(left) == []
+    as "the pending go's timer stands: the fight did not end"
+  let #(_, struck) = strike_go_reached(state:, strike:)
+  let assert [#(3, Attacks(tell: Strike(key:, ..)))] = fights_told(struck)
+  assert key.occasion == strike_tell.AtGo(phase: 1)
+    as "the strike go tells player 3 alone to take the hit"
+}
+
+pub fn the_target_leaving_between_gos_leaves_the_cast_and_the_strike_goes_to_the_next_fighter_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Player 3, the target, leaves sight at 4200 ms; 2 is the next on the threat list. The
+  // fight goes on with 2 as its target and the cast is not broken.
+  let #(state, strike) = roar_fought_by_two()
+  let #(state, left) =
+    tell(state:, at_ms: 4200, message: creature.Unwatched(by: ConnectionId(3)))
+  assert list.contains(said(left), "0x908(20, 1) to 2")
+    as "the creature's target becomes player 2"
+  assert !list.contains(said(left), "0x7f9 to 2")
+    && !list.contains(said(left), "0x7fe to 2")
+    as "the cast goes on for the viewer that is left"
+  assert timers_cancelled(left) == []
+    as "the pending go's timer stands: the fight did not end"
+  let #(_, struck) = strike_go_reached(state:, strike:)
+  let assert [#(2, Attacks(tell: Strike(key:, ..)))] = fights_told(struck)
+  assert key.unit_id == 20 as "the strike go tells player 2 to take the hit"
+}
+
+pub fn a_control_before_the_first_gos_timer_breaks_the_cast_and_the_late_timer_does_nothing_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The stun lands at 2000 ms, 500 ms after the cast opened; the first go was due at 4000.
+  let #(state, aggro) = roar_fought(viewers: [2])
+  let #(state, opened, go) = roar_opened(state:, aggro:)
+  let #(state, stunned) = stunned_at(state:, at_ms: 2000)
+  let assert [client_connection.CastInterrupted(cast_id:)] =
+    list.filter(news_to(stunned, 2), fn(news) { name_of(news) == "0x7f9" })
+  assert cast_id == cast_id_sent(opened, 2)
+    as "the broken cast is the one that opened"
+  assert list.contains(timers_cancelled(stunned), go)
+    as "the first go's timer is cancelled"
+  let #(_, late) = fire(state:, at_ms: 4000, timer: go)
+  assert said(late) == [] && timers(late) == []
+    as "the timer that fires all the same finds no cast: no go is sent"
+}
+
+pub fn a_death_after_the_strike_go_leaves_the_strikes_that_went_out_standing_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The strike go at 4500 ms tells player 2 to take the hit; the creature is killed at
+  // 4550 ms, before the answer. The strike told is not taken back, the go never goes, and
+  // the answer that comes after is dropped: nothing is sent twice.
+  let #(state, aggro) = roar_fought(viewers: [2])
+  let #(state, _, go) = roar_opened(state:, aggro:)
+  let #(state, _, strike) = first_go_passed(state:, go:)
+  let #(state, struck) = strike_go_reached(state:, strike:)
+  let assert [#(2, Attacks(tell: Strike(key:, ..)))] = fights_told(struck)
+  let #(state, killed) =
+    tell(
+      state:,
+      at_ms: 4550,
+      message: strike_of(number: 2, cast_id: 1, blows: [#(1, 1_000_000, 1.0)]),
+    )
+  assert fights_told(killed) == [#(2, Released(unit_id: 7))]
+    as "the death releases the player; no strike is told again and none is taken back"
+  assert list.contains(said(killed), "0x7fe to 2")
+    && !list.contains(said(killed), "0x7f4 to 2")
+    as "the cast finishes with the death and the strike go never goes"
+  let #(_, answered) = tell(state:, at_ms: 4600, message: landed(key:))
+  assert said(answered) == [] && timers(answered) == []
+    as "the answer of the strike already out is dropped"
+}
+
+pub fn a_despawn_between_gos_finishes_the_cast_removes_the_creature_and_starts_its_respawn_test() -> Nil {
+  use <- owned_test.run(5000)
+  // A despawn of delay 0 arrives at 4200 ms (the go that sent it struck at 4100): the fight
+  // ends and the cast finishes (0x7fe) before the viewers are told the creature is gone
+  // (0x355); the kind's respawn time, 60 000 ms, starts; the go's timer that fires after
+  // finds nothing.
+  let #(state, aggro) = roar_fought(viewers: [2])
+  let #(state, _, go) = roar_opened(state:, aggro:)
+  let #(state, _, strike) = first_go_passed(state:, go:)
+  let #(state, gone) =
+    tell(
+      state:,
+      at_ms: 4200,
+      message: creature.Despawn(
+        delay_ms: 0,
+        struck_at_ms: 4100,
+        went_at_ms: 4200,
+      ),
+    )
+  let to_2 =
+    list.filter(said(gone), fn(line) { string.ends_with(line, " to 2") })
+  assert list.drop_while(to_2, fn(line) { line != "0x7fe to 2" })
+    == ["0x7fe to 2", "0x89a(0) to 2", "Released(7) to 2", "0x355 to 2"]
+    as "the fight ends (the cast finishes, the player is released), then the creature is removed from view"
+  assert list.contains(timers_cancelled(gone), strike)
+    as "the pending go's timer is cancelled"
+  assert list.map(timers(gone), fn(timer) { timer.1 }) == [60_000]
+    as "the corpse timer for the kind's respawn time"
+  let #(_, late) = strike_go_reached(state:, strike:)
+  assert said(late) == [] && timers(late) == []
+    as "the go's late timer does nothing"
+}
+
+pub fn a_retire_between_gos_stops_the_creature_and_sends_nothing_test() -> Nil {
+  use <- owned_test.run(5000)
+  // A live creature told to retire stops at once and sends no news, whether a viewer is still
+  // held or the map has taken the viewer's sight away first (the leash then finished the
+  // cast): the map's removal is the client's cleanup, as `Retire`'s doc says.
+  let #(state, aggro) = roar_fought(viewers: [2])
+  let #(state, _, go) = roar_opened(state:, aggro:)
+  let #(state, _, _) = first_go_passed(state:, go:)
+  let #(_, retired) = tell(state:, at_ms: 4200, message: creature.Retire)
+  assert support.effects_of(retired) == [step.Stop]
+    as "stops at once, in the middle of its cast, with no 0x7fe"
+  let #(state, _) =
+    tell(state:, at_ms: 4200, message: creature.Unwatched(by: ConnectionId(2)))
+  let #(_, retired) = tell(state:, at_ms: 4300, message: creature.Retire)
+  assert support.effects_of(retired) == [step.Stop]
+    as "the same once the map has removed the viewer"
 }

@@ -1960,6 +1960,7 @@ fn fighter_of(state state: State) -> Fighter {
     holds_a_state: holds_a_state(state:),
     guard_casts: creature_guard.live_casts(state: state.guard),
     hit_radius: state.body.combat.hit_radius,
+    specials: state.body.combat.specials,
   )
 }
 

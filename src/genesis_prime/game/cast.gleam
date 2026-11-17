@@ -3961,6 +3961,7 @@ fn reached_by(
         spell_plan.ProxyEffect(..)
         | spell_plan.GainEffect(..)
         | spell_plan.RemoveStealthEffect(..)
+        | spell_plan.DelayEffect(..)
         | spell_plan.ControlEffect(..) -> walk
         spell_plan.LastingEffect(lasting: row) ->
           reach_units(
@@ -4191,7 +4192,8 @@ fn products_made(
         | spell_plan.ProcEffect(..)
         | spell_plan.ControlEffect(..)
         | spell_plan.DespawnEffect(..)
-        | spell_plan.UnitStateEffect(..) -> #(entry, [])
+        | spell_plan.UnitStateEffect(..)
+        | spell_plan.DelayEffect(..) -> #(entry, [])
       }
     })
   #(
@@ -4361,6 +4363,7 @@ fn reached_listed(reached reached: List(Reached)) -> List(#(Int, Listed)) {
       | spell_plan.RemoveStealthEffect(..), _
       | spell_plan.DespawnEffect(..), _
       | spell_plan.UnitStateEffect(..), _
+      | spell_plan.DelayEffect(..), _
       | spell_plan.ControlEffect(..), _
       -> Error(Nil)
     }
@@ -4409,7 +4412,8 @@ fn removed_by_go(
       | spell_plan.HealEffect(..)
       | spell_plan.ControlEffect(..)
       | spell_plan.DespawnEffect(..)
-      | spell_plan.UnitStateEffect(..) -> so_far
+      | spell_plan.UnitStateEffect(..)
+      | spell_plan.DelayEffect(..) -> so_far
     }
   })
 }
@@ -4607,7 +4611,8 @@ fn cooldowns_started_at_node_end(
       | spell_plan.HealEffect(..)
       | spell_plan.ControlEffect(..)
       | spell_plan.DespawnEffect(..)
-      | spell_plan.UnitStateEffect(..) -> #(cast, effects)
+      | spell_plan.UnitStateEffect(..)
+      | spell_plan.DelayEffect(..) -> #(cast, effects)
     }
   })
 }

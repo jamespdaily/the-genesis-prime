@@ -384,6 +384,11 @@ fn spell_effects() -> EngineDeclaration {
         fact_key: "Spell4Effects.effectType.29",
       ),
       Missing(
+        type_number: 35,
+        reason: "rows aimed at another unit (19 at the target, 5 at the area), which no creature rule holds still; rows with no durationTime, which hold their caster for nothing; rows with a phaseFlags of 0, which no phase selects; rows behind a prerequisite, which the plan does not read for a delay and the creature special load refuses; what a row does is the server's reading, since the client has no case for the type",
+        fact_key: "Spell4Effects.effectType.35",
+      ),
+      Missing(
         type_number: 52,
         reason: "rows aimed at the units a go strikes, or at the primary target of a spell started on each struck unit, whose armor the server does not hold",
         fact_key: "Spell4Effects.effectType.52",

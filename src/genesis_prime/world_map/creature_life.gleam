@@ -92,12 +92,33 @@ pub type Attack {
 pub type Cast {
   /// A cast time of 0: the attack strikes its target at once.
   Instant
-  /// A cast time above 0: a charge, which strikes each fighter inside `area` when the
-  /// time is out, and whose reach is the area row's `maxRange`, not the spell's
-  /// `targetMaxRange`. `inside` is how a unit counts as inside the area
+  /// A cast time above 0: a charge, which strikes each fighter inside `area` at its
+  /// strike go. `inside` is how a unit counts as inside the area
   /// (genesis_prime/game/spell_area `area_of_spell`); a spell with a cast time and no
-  /// area it can read fails the load.
-  Charged(cast_ms: Int, area: Row, inside: Inside)
+  /// area it can read fails the load. `gos` is the cast's timeline (`Go`): never empty,
+  /// each `at_ms` above the one before, exactly one go strikes and it is the last.
+  /// `hold_ms` is how long the creature then stands still before it attacks again: the
+  /// summed `delay_ms + duration_ms` of the NpcExecutionDelay rows (Spell4Effects type 35)
+  /// whose phase flags name the strike go, 0 for none; the load refuses a delay row that
+  /// names another go. An attack that is not a special has one go, at `cast_ms`, that
+  /// strikes, and no hold.
+  Charged(cast_ms: Int, area: Row, inside: Inside, gos: List(Go), hold_ms: Int)
+}
+
+/// One go of a cast (0x7f4), by the Spell4's phases (genesis_prime/game/spell_plan
+/// `go_times_ms`): when it goes, counted from the cast's start, and whether it strikes
+/// the fighters inside the cast's area. The go's index in `gos` is the phase its 0x7f4
+/// carries.
+pub type Go {
+  Go(at_ms: Int, strikes: Bool)
+}
+
+/// A spell a creature casts besides its attack, chosen by its kind's list
+/// (genesis_prime/world_map/creature_kind `specials`): the spell as an `Attack` (always
+/// `Charged`), and the time from the cast's start until it may be cast again, a server
+/// choice.
+pub type Special {
+  Special(attack: Attack, cooldown_ms: Int)
 }
 
 /// A creature's Interrupt Armor maximum, unit property 44
@@ -128,7 +149,7 @@ pub fn interrupt_armor_of(maximum maximum: Float) -> InterruptArmor {
 /// What a creature brings to a fight, worked out when the content loads
 /// (genesis_prime/world_map/spawn): the hit radius of its display
 /// (Creature2DisplayInfo.hitRadius), whom it may be attacked by, whom it fights on
-/// sight, its defence, its own attack and its Interrupt Armor.
+/// sight, its defence, its own attack, its specials and its Interrupt Armor.
 pub type Combat {
   Combat(
     hit_radius: Float,
@@ -136,6 +157,7 @@ pub type Combat {
     hostile_to: Hostile,
     defence: Defence,
     attack: Attack,
+    specials: List(Special),
     interrupt_armor: InterruptArmor,
   )
 }

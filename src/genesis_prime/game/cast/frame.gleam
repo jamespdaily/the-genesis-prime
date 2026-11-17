@@ -444,14 +444,15 @@ pub fn creature_started(
   )
 }
 
-/// 0x7f4 for the one go, phase 0, of a creature's cast, with the units its round
-/// struck, as a player's go is written (`go_message`).
+/// 0x7f4 for the go of a creature's cast with the phase `phase`, with the units its round
+/// struck (none for a go that strikes no one), as a player's go is written (`go_message`).
 pub fn creature_went(
   cast_id cast_id: Int,
+  phase phase: Int,
   place place: Place,
   struck struck: List(Struck),
 ) -> SpellGo {
-  go_message(cast_id:, phase: 0, place:, struck:, listed: [])
+  go_message(cast_id:, phase:, place:, struck:, listed: [])
 }
 
 /// 0x7f4 for the one go, phase 0, of a creature's cast that applies effects to one unit, as the

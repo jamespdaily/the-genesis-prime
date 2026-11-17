@@ -1084,6 +1084,23 @@ pub type UnitState {
   )
 }
 
+/// An NpcExecutionDelay effect (`Spell4Effects.effectType.35`) aimed at the caster with a
+/// duration: a creature that casts the spell stands still for `delay_ms` plus `duration_ms`
+/// after the go its `phase_flags` name, and acts again after it. The client reads no row of
+/// this type (its effect switch has no case 35), so what the row means is the server's
+/// reading and the hold's start a guess (genesis_prime/world_map/creature_life `Charged`).
+/// A player's cast reads none: no spell a player's route holds has a row of the type.
+/// `tag` is when it holds for the points the cast spent (genesis_prime/game/spend).
+pub type Delay {
+  Delay(
+    effect_id: Spell4EffectsId,
+    phase_flags: Int,
+    delay_ms: Int,
+    duration_ms: Int,
+    tag: spend.Tag,
+  )
+}
+
 /// The target apply prerequisite of one row aimed past the caster, which the struck
 /// creature checks against its own state (`Spell4Effects.prerequisiteIdTargetApply`): the
 /// row's Spell4Effects id, the phases of `phase_flags` it applies in, who it aims at, the
@@ -1380,6 +1397,8 @@ pub type Kind {
   HealEffect(heal: Heal)
   /// A CCStateSet row that holds a state on a unit: a stun or a knockdown on a creature, or Ability Restriction on the caster (`controls_in_phase`, `restrictions_in_phase`).
   ControlEffect(control: CrowdControl)
+  /// An NpcExecutionDelay row aimed at the caster with a duration, which holds a creature caster still after a go (`Delay`); a player's cast applies none.
+  DelayEffect(delay: Delay)
 }
 
 /// The effect a payload is: its row, phases and tag, read from the payload itself.
@@ -1490,6 +1509,13 @@ pub fn effect_of(kind kind: Kind) -> PlannedEffect(Kind) {
         tag: control.tag,
         kind:,
       )
+    DelayEffect(delay:) ->
+      PlannedEffect(
+        effect_id: delay.effect_id,
+        phase_flags: delay.phase_flags,
+        tag: delay.tag,
+        kind:,
+      )
   }
 }
 
@@ -1524,6 +1550,7 @@ pub fn kind_rank(kind kind: Kind) -> Int {
     ControlEffect(..) -> 130
     DespawnEffect(..) -> 140
     UnitStateEffect(..) -> 150
+    DelayEffect(..) -> 160
   }
 }
 
@@ -1545,7 +1572,8 @@ fn rank(kind kind: Kind) -> Int {
     | HealEffect(..)
     | ControlEffect(..)
     | DespawnEffect(..)
-    | UnitStateEffect(..) -> False
+    | UnitStateEffect(..)
+    | DelayEffect(..) -> False
   }
   case armored {
     True -> kind_rank(kind:) + 5
@@ -1570,7 +1598,8 @@ pub fn as_proxy(kind kind: Kind) -> Result(Proxy, Nil) {
     | HealEffect(..)
     | ControlEffect(..)
     | DespawnEffect(..)
-    | UnitStateEffect(..) -> Error(Nil)
+    | UnitStateEffect(..)
+    | DelayEffect(..) -> Error(Nil)
   }
 }
 
@@ -1591,7 +1620,8 @@ pub fn as_gain(kind kind: Kind) -> Result(Gain, Nil) {
     | HealEffect(..)
     | ControlEffect(..)
     | DespawnEffect(..)
-    | UnitStateEffect(..) -> Error(Nil)
+    | UnitStateEffect(..)
+    | DelayEffect(..) -> Error(Nil)
   }
 }
 
@@ -1612,7 +1642,8 @@ pub fn as_lasting(kind kind: Kind) -> Result(Lasting, Nil) {
     | HealEffect(..)
     | ControlEffect(..)
     | DespawnEffect(..)
-    | UnitStateEffect(..) -> Error(Nil)
+    | UnitStateEffect(..)
+    | DelayEffect(..) -> Error(Nil)
   }
 }
 
@@ -1633,7 +1664,8 @@ pub fn as_remove(kind kind: Kind) -> Result(ForceRemove, Nil) {
     | HealEffect(..)
     | ControlEffect(..)
     | DespawnEffect(..)
-    | UnitStateEffect(..) -> Error(Nil)
+    | UnitStateEffect(..)
+    | DelayEffect(..) -> Error(Nil)
   }
 }
 
@@ -1654,7 +1686,8 @@ pub fn as_modifier(kind kind: Kind) -> Result(PropertyModifier, Nil) {
     | HealEffect(..)
     | ControlEffect(..)
     | DespawnEffect(..)
-    | UnitStateEffect(..) -> Error(Nil)
+    | UnitStateEffect(..)
+    | DelayEffect(..) -> Error(Nil)
   }
 }
 
@@ -1675,7 +1708,8 @@ pub fn as_forced_move(kind kind: Kind) -> Result(ForcedMove, Nil) {
     | HealEffect(..)
     | ControlEffect(..)
     | DespawnEffect(..)
-    | UnitStateEffect(..) -> Error(Nil)
+    | UnitStateEffect(..)
+    | DelayEffect(..) -> Error(Nil)
   }
 }
 
@@ -1696,7 +1730,8 @@ pub fn as_struck_move(kind kind: Kind) -> Result(StruckMove, Nil) {
     | HealEffect(..)
     | ControlEffect(..)
     | DespawnEffect(..)
-    | UnitStateEffect(..) -> Error(Nil)
+    | UnitStateEffect(..)
+    | DelayEffect(..) -> Error(Nil)
   }
 }
 
@@ -1717,7 +1752,8 @@ pub fn as_despawn(kind kind: Kind) -> Result(Despawn, Nil) {
     | ProcEffect(..)
     | HealEffect(..)
     | ControlEffect(..)
-    | UnitStateEffect(..) -> Error(Nil)
+    | UnitStateEffect(..)
+    | DelayEffect(..) -> Error(Nil)
   }
 }
 
@@ -1738,7 +1774,8 @@ pub fn as_unit_state(kind kind: Kind) -> Result(UnitState, Nil) {
     | RemoveStealthEffect(..)
     | ProcEffect(..)
     | HealEffect(..)
-    | ControlEffect(..) -> Error(Nil)
+    | ControlEffect(..)
+    | DelayEffect(..) -> Error(Nil)
   }
 }
 
@@ -1759,7 +1796,8 @@ pub fn as_cooldown_modifier(kind kind: Kind) -> Result(CooldownModifier, Nil) {
     | HealEffect(..)
     | ControlEffect(..)
     | DespawnEffect(..)
-    | UnitStateEffect(..) -> Error(Nil)
+    | UnitStateEffect(..)
+    | DelayEffect(..) -> Error(Nil)
   }
 }
 
@@ -1780,7 +1818,8 @@ pub fn as_stealth(kind kind: Kind) -> Result(StealthRow, Nil) {
     | HealEffect(..)
     | ControlEffect(..)
     | DespawnEffect(..)
-    | UnitStateEffect(..) -> Error(Nil)
+    | UnitStateEffect(..)
+    | DelayEffect(..) -> Error(Nil)
   }
 }
 
@@ -1801,7 +1840,8 @@ pub fn as_remove_stealth(kind kind: Kind) -> Result(RemoveStealthRow, Nil) {
     | HealEffect(..)
     | ControlEffect(..)
     | DespawnEffect(..)
-    | UnitStateEffect(..) -> Error(Nil)
+    | UnitStateEffect(..)
+    | DelayEffect(..) -> Error(Nil)
   }
 }
 
@@ -1822,7 +1862,8 @@ pub fn as_proc(kind kind: Kind) -> Result(ProcRow, Nil) {
     | HealEffect(..)
     | ControlEffect(..)
     | DespawnEffect(..)
-    | UnitStateEffect(..) -> Error(Nil)
+    | UnitStateEffect(..)
+    | DelayEffect(..) -> Error(Nil)
   }
 }
 
@@ -1843,7 +1884,8 @@ pub fn as_heal(kind kind: Kind) -> Result(Heal, Nil) {
     | ProcEffect(..)
     | ControlEffect(..)
     | DespawnEffect(..)
-    | UnitStateEffect(..) -> Error(Nil)
+    | UnitStateEffect(..)
+    | DelayEffect(..) -> Error(Nil)
   }
 }
 
@@ -1863,6 +1905,29 @@ pub fn as_control(kind kind: Kind) -> Result(CrowdControl, Nil) {
     | RemoveStealthEffect(..)
     | ProcEffect(..)
     | HealEffect(..)
+    | DespawnEffect(..)
+    | UnitStateEffect(..)
+    | DelayEffect(..) -> Error(Nil)
+  }
+}
+
+/// The payload of an effect of kind `DelayEffect`, and nothing for one of another kind.
+pub fn as_delay(kind kind: Kind) -> Result(Delay, Nil) {
+  case kind {
+    DelayEffect(delay:) -> Ok(delay)
+    ProxyEffect(..)
+    | GainEffect(..)
+    | LastingEffect(..)
+    | RemoveEffect(..)
+    | ModifierEffect(..)
+    | ForcedMoveEffect(..)
+    | StruckMoveEffect(..)
+    | CooldownEffect(..)
+    | StealthEffect(..)
+    | RemoveStealthEffect(..)
+    | ProcEffect(..)
+    | HealEffect(..)
+    | ControlEffect(..)
     | DespawnEffect(..)
     | UnitStateEffect(..) -> Error(Nil)
   }
@@ -2040,6 +2105,12 @@ pub type LeftOutReason {
   /// A UnitStateSet row whose `column` (dataBits01 to dataBits09) is not 0: no code of the
   /// client reads the type, so what a value means is not known and the row holds nothing.
   UnitStateDataNotRead(column: String)
+  /// An NpcExecutionDelay row (`Spell4Effects.effectType.35`) aimed at a unit other than the
+  /// caster alone: no creature rule holds another unit still.
+  DelayOnAnotherUnit
+  /// An NpcExecutionDelay row with no durationTime, which holds its caster still for
+  /// nothing.
+  DelayHasNoDuration
 }
 
 /// A row as its spell holds it. A Proxy's child and a Proc's spell are planned from the
@@ -3823,6 +3894,7 @@ pub fn modifier_of(
     | effect_kind.Immunity
     | effect_kind.Despawn
     | effect_kind.UnitState
+    | effect_kind.NpcExecutionDelay
     | effect_kind.Unread(..) ->
       change_of(tables:, spell4_id:, effect:)
       |> result.map(PropertyChange)
@@ -4821,6 +4893,7 @@ fn struck_aim_of_kind(kind kind: Kind) -> Result(Aim, Nil) {
     | RemoveStealthEffect(..)
     | HealEffect(..)
     | ProcEffect(..)
+    | DelayEffect(..)
     | ProxyEffect(..) -> Error(Nil)
   }
 }
@@ -5014,8 +5087,37 @@ fn kind_reading(
     effect_kind.Activate -> Ok(ReadByActivation)
     effect_kind.Despawn -> despawn_reading(tables:, place:, effect:)
     effect_kind.UnitState -> unit_state_reading(tables:, place:, effect:)
+    effect_kind.NpcExecutionDelay -> Ok(delay_reading(reaches:, effect:))
     effect_kind.Immunity | effect_kind.Unread(..) ->
       Ok(LeftOut(why: TypeNotRead))
+  }
+}
+
+/// An NpcExecutionDelay row (`Spell4Effects.effectType.35`) as a `Delay` when it is aimed at
+/// the caster alone (`reaches`, `effect_kind.is_row_read`) and has a durationTime: left out
+/// with `DelayOnAnotherUnit` when it is aimed at any other unit and with `DelayHasNoDuration`
+/// when it holds its caster still for nothing. Its prerequisites are not read here; the
+/// creature special load refuses a row behind one (genesis_prime/world_map/creature_attack
+/// `special_checked`), and the coverage measure counts the row read.
+fn delay_reading(
+  reaches reaches: Bool,
+  effect effect: spell4_effects.Spell4Effects,
+) -> RowReading {
+  case reaches, effect.duration_time > 0 {
+    False, _ -> LeftOut(why: DelayOnAnotherUnit)
+    True, False -> LeftOut(why: DelayHasNoDuration)
+    True, True ->
+      Applied(
+        read_as(
+          DelayEffect(delay: Delay(
+            effect_id: Spell4EffectsId(effect.id),
+            phase_flags: effect.phase_flags,
+            delay_ms: effect.delay_time,
+            duration_ms: effect.duration_time,
+            tag: tag_of(effect:),
+          )),
+        ),
+      )
   }
 }
 

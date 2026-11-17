@@ -5,7 +5,7 @@
 //// Creature2 row when the table has one, and the default row 0 otherwise.
 ////
 //// ```
-//// creature_kind rows (genesis_prime/content/creature_kind) ─▶ select(rows, tables)
+//// creature_kind rows (genesis_prime/content/creature_kind) ─▶ select(rows, special_rows, tables)
 ////   a row of a Creature2 id the client does not hold      ─▶ Refusal
 ////   a respawn time below the strike deadline              ─▶ Refusal
 ////   an attack spell the client's Spell4 does not hold     ─▶ Refusal
@@ -18,6 +18,8 @@
 ////   a guard or an opening whose effects the creature does not apply
 ////     (genesis_prime/world_map/creature_guard_spells `guard_of`)  ─▶ Refusal naming the sentence
 ////   no row 0                                              ─▶ Refusal
+////   a creature_special row the client's tables refuse     ─▶ Refusal naming the special's Spell4
+////     (genesis_prime/world_map/creature_special `refusal_of`)
 ////   otherwise ─▶ Kinds ─▶ kind_of(kinds, creature2 id)    a map's and a creature's reading
 //// ```
 ////
@@ -49,10 +51,15 @@
 ////   (`Kind.guard`), so a creature's start reads no table for them (genesis_prime/world_map/creature_guard).
 //// - **The attack interval** is a server choice, never below the strike deadline,
 ////   so a creature has at most one strike round open (genesis_prime/world_map/creature_fight).
+//// - **The specials** (genesis_prime/world_map/creature_special) are the spells a kind casts
+////   besides its attack, in the order the creature tries them. A creature with specials and no
+////   row of its own takes the default row's fields and its own specials, so `by_creature`
+////   holds the creatures of both tables. `taken` keeps the specials the load takes.
 //// - **Every refusal is collected**, one bad row beside its neighbours, as the
 ////   other content tables' are (genesis_prime/content).
 
 import genesis_prime/content/refusal.{type Refusal, Refusal, RowId}
+import genesis_prime/game/spell_plan
 import genesis_prime/game/strike_tell
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{type Spell4Id, Creature2Id, Spell4Id}
@@ -60,6 +67,7 @@ import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4
 import genesis_prime/world_map/creature_attack
 import genesis_prime/world_map/creature_guard_spells.{type Guard}
+import genesis_prime/world_map/creature_special
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
@@ -85,13 +93,15 @@ pub type Row {
 }
 
 /// What the server chose for a kind of creature: the guard is none for a creature
-/// that takes damage always.
+/// that takes damage always; `specials` are the spells it casts besides its attack, in
+/// the order it tries them (genesis_prime/world_map/creature_special).
 pub type Kind {
   Kind(
     respawn_ms: Int,
     attack_spell4_id: Spell4Id,
     attack_interval_ms: Int,
     guard: Option(Guard),
+    specials: List(creature_special.Ref),
   )
 }
 
@@ -106,9 +116,11 @@ pub type Kinds {
 /// deadline (1000 ms), an attack spell the client's Spell4 does not hold, whose
 /// damage effects carry a caster prerequisite of a type other than 179, or whose
 /// `prerequisiteIdCasterCast` holds a condition of a type other than 15, and a table
-/// with no default row.
+/// with no default row. `special_rows` are the creature_special rows: each
+/// `creature_special.refusal_of` refuses is collected with the rest.
 pub fn select(
   rows rows: List(Row),
+  special_rows special_rows: List(creature_special.Row),
   tables tables: table_store.Tables,
 ) -> Result(Kinds, List(Refusal)) {
   let default = list.find(rows, fn(row) { row.creature_id == 0 })
@@ -129,9 +141,17 @@ pub fn select(
         Refusal(table:, row: RowId(row.creature_id), rule:)
       })
     })
-  case list.append(missing_default, refused) {
+  let special_refused =
+    list.map(special_refusals(special_rows:, tables:), fn(refused) {
+      Refusal(
+        table: creature_special.table,
+        row: RowId({ refused.0 }.creature_id),
+        rule: refused.1,
+      )
+    })
+  case list.flatten([missing_default, refused, special_refused]) {
     [] -> {
-      let assert Ok(kinds) = kinds_of(rows:, tables:)
+      let assert Ok(kinds) = kinds_of(rows:, special_rows:, tables:)
         as "no refusal means the default row is there"
       Ok(kinds)
     }
@@ -142,29 +162,74 @@ pub fn select(
 /// The kinds of the rows `select` takes, leaving out the ones it refuses, or
 /// `Error(Nil)` when the default row is missing or refused. The content load checks
 /// the spawns with these when it refuses a kind row, so the one start names a bad
-/// spawn too (genesis_prime/content).
+/// spawn too (genesis_prime/content). It keeps the specials of the rows `select` takes.
 pub fn taken(
   rows rows: List(Row),
+  special_rows special_rows: List(creature_special.Row),
   tables tables: table_store.Tables,
 ) -> Result(Kinds, Nil) {
+  let refused_specials = special_refusals(special_rows:, tables:)
   kinds_of(
     rows: list.filter(rows, fn(row) {
       result.is_error(refusal_of(row:, tables:))
+    }),
+    special_rows: list.filter(special_rows, fn(row) {
+      !list.any(refused_specials, fn(refused) { refused.0 == row })
     }),
     tables:,
   )
 }
 
-/// The kinds of the rows, or `Error(Nil)` with no default row among them.
+/// Each special row the check refuses, with its sentence. The plan's rows are grouped once,
+/// and only when a row is there to check.
+fn special_refusals(
+  special_rows special_rows: List(creature_special.Row),
+  tables tables: table_store.Tables,
+) -> List(#(creature_special.Row, String)) {
+  case special_rows {
+    [] -> []
+    _ -> {
+      let sources = spell_plan.sources_of(tables:)
+      list.filter_map(special_rows, fn(row) {
+        creature_special.refusal_of(row:, tables:, sources:)
+        |> result.map(fn(rule) { #(row, rule) })
+      })
+    }
+  }
+}
+
+/// The kinds of the rows, or `Error(Nil)` with no default row among them. A creature with
+/// specials and no row of its own takes the default's fields and its own specials.
 fn kinds_of(
   rows rows: List(Row),
+  special_rows special_rows: List(creature_special.Row),
   tables tables: table_store.Tables,
 ) -> Result(Kinds, Nil) {
-  use default <- result.map(list.find(rows, fn(row) { row.creature_id == 0 }))
+  use default_row <- result.map(
+    list.find(rows, fn(row) { row.creature_id == 0 }),
+  )
+  let default = kind_of_row(row: default_row, special_rows:, tables:)
+  let creature_ids =
+    list.append(
+      list.map(rows, fn(row) { row.creature_id }),
+      list.map(special_rows, fn(row) { row.creature_id }),
+    )
+    |> list.unique
+    |> list.filter(fn(creature_id) { creature_id != 0 })
   Kinds(
-    default: kind_of_row(row: default, tables:),
-    by_creature: list.filter(rows, fn(row) { row.creature_id != 0 })
-      |> list.map(fn(row) { #(row.creature_id, kind_of_row(row:, tables:)) })
+    default:,
+    by_creature: list.map(creature_ids, fn(creature_id) {
+      case list.find(rows, fn(row) { row.creature_id == creature_id }) {
+        Ok(row) -> #(creature_id, kind_of_row(row:, special_rows:, tables:))
+        Error(Nil) -> #(
+          creature_id,
+          Kind(
+            ..default,
+            specials: creature_special.refs_of(rows: special_rows, creature_id:),
+          ),
+        )
+      }
+    })
       |> dict.from_list,
   )
 }
@@ -254,7 +319,11 @@ fn refusal_of(
   list.find_map(checks, fn(check) { check() })
 }
 
-fn kind_of_row(row row: Row, tables tables: table_store.Tables) -> Kind {
+fn kind_of_row(
+  row row: Row,
+  special_rows special_rows: List(creature_special.Row),
+  tables tables: table_store.Tables,
+) -> Kind {
   Kind(
     respawn_ms: row.respawn_ms,
     attack_spell4_id: Spell4Id(row.attack_spell4_id),
@@ -272,6 +341,10 @@ fn kind_of_row(row row: Row, tables tables: table_store.Tables) -> Kind {
       }
       Some(..), None | None, Some(..) | None, None -> None
     },
+    specials: creature_special.refs_of(
+      rows: special_rows,
+      creature_id: row.creature_id,
+    ),
   )
 }
 

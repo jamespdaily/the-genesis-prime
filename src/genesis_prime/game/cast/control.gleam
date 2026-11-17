@@ -320,7 +320,9 @@ fn effect_named(kind kind: spell_plan.Kind) -> Result(String, Nil) {
     Ok(what <> " effect " <> int.to_string(effect_id.value))
   }
   case kind {
-    spell_plan.ProxyEffect(..) | spell_plan.GainEffect(..) -> Error(Nil)
+    spell_plan.ProxyEffect(..)
+    | spell_plan.GainEffect(..)
+    | spell_plan.DelayEffect(..) -> Error(Nil)
     spell_plan.LastingEffect(lasting: row) ->
       named("the lasting", row.effect_id)
     spell_plan.RemoveEffect(remove: row) ->
@@ -631,7 +633,8 @@ pub fn modifiers_armed(
       | spell_plan.HealEffect(..)
       | spell_plan.ControlEffect(..)
       | spell_plan.DespawnEffect(..)
-      | spell_plan.UnitStateEffect(..) -> so_far
+      | spell_plan.UnitStateEffect(..)
+      | spell_plan.DelayEffect(..) -> so_far
     }
   })
 }
@@ -719,7 +722,8 @@ pub fn struck_moves_armed(
       | spell_plan.HealEffect(..)
       | spell_plan.ControlEffect(..)
       | spell_plan.DespawnEffect(..)
-      | spell_plan.UnitStateEffect(..) -> so_far
+      | spell_plan.UnitStateEffect(..)
+      | spell_plan.DelayEffect(..) -> so_far
     }
   })
 }

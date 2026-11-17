@@ -25,3 +25,16 @@ pub fn effect_type_79_stays_unread_for_the_coverage_measure_test() -> Nil {
   assert !effect_kind.is_row_read(effect_type: 79, target_flags: 1)
   assert !effect_kind.is_row_read(effect_type: 79, target_flags: 2)
 }
+
+pub fn type_35_is_npc_execution_delay_test() -> Nil {
+  use <- owned_test.run(10_000)
+  assert effect_kind.kind_of(effect_type: 35) == effect_kind.NpcExecutionDelay
+    as "Spell4Effects.effectType.35: the effect switch 0x140718120 has no case 35, so the server reads the row as a hold of its caster"
+  assert effect_kind.is_read(effect_type: 35)
+    as "a rule of the server reads it, so the coverage measure counts it handled"
+  assert effect_kind.is_row_read(effect_type: 35, target_flags: 1)
+    as "3264 of its 3288 rows aim at the caster alone (table_rows -- Spell4Effects effectType=35)"
+  assert !effect_kind.is_row_read(effect_type: 35, target_flags: 2)
+    && !effect_kind.is_row_read(effect_type: 35, target_flags: 4)
+    as "19 rows aim at the target and 5 at the area: no creature rule holds another unit"
+}

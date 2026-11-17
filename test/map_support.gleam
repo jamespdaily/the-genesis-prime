@@ -50,6 +50,7 @@ pub fn standing(
         attack_spell4_id: Spell4Id(5649),
         attack_interval_ms: 1500,
         guard: option.None,
+        specials: [],
       ),
       by_creature: dict.new(),
     ),

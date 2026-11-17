@@ -18,6 +18,7 @@ import genesis_prime/content/spawn as content_spawn
 import genesis_prime/content/tutorial_quest as content_tutorial_quest
 import genesis_prime/content/vendor as content_vendor
 import genesis_prime/content/zone_welcome as content_zone_welcome
+import genesis_prime/game/area
 import genesis_prime/game/hit.{Blow, Defence, Offence, Worked}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
@@ -31,6 +32,7 @@ import genesis_prime/world_map/creature_kind.{type Kinds, Kind, Kinds}
 import genesis_prime/world_map/creature_life.{
   type Attack, Attack, Attackable, Combat, Hostile, Instant,
 }
+import genesis_prime/world_map/creature_special
 import genesis_prime/world_map/creature_unit_type.{NonPlayer}
 import genesis_prime/world_map/game_number.{type GameNumbers, GameNumbers}
 import genesis_prime/world_map/spawn.{type Row, type Spawn, Row, Spawn}
@@ -252,6 +254,7 @@ pub fn beast_combat() -> creature_life.Combat {
       magic_taken: hit.as_dealt,
     ),
     attack: loaded_attack(),
+    specials: [],
     interrupt_armor: creature_life.NoArmor,
   )
 }
@@ -317,8 +320,74 @@ pub fn kinds() -> Kinds {
       attack_spell4_id: Spell4Id(5649),
       attack_interval_ms: 1500,
       guard: option.None,
+      specials: [],
     ),
     by_creature: dict.new(),
+  )
+}
+
+/// The kinds with the Virtual Battle Beast (Creature2 73464) given these specials
+/// (`kinds_with_specials`).
+pub fn kinds_with_beast_specials(spell4_ids spell4_ids: List(Int)) -> Kinds {
+  kinds_with_specials(creature_id: 73_464, spell4_ids:)
+}
+
+/// A creature of the client's own rows standing at the Beast's place, summoned as the load
+/// builds a creature, with the kind of `kinds_with_specials`: the default's fields and the
+/// one special `spell4_id`, cast again 10 000 ms after its start (migration 0035's guess).
+pub fn special_creature(
+  number number: Int,
+  creature_id creature_id: Int,
+  spell4_id spell4_id: Int,
+) -> Spawn {
+  let checks =
+    spawn.summon_checks(
+      tables: character_tables.content_tables(),
+      formulas: rating_support.formulas(),
+      kinds: kinds_with_specials(creature_id:, spell4_ids: [spell4_id]),
+      factions: creature_faction.none(),
+      vendors: vendor.none(),
+    )
+  let assert Ok(creature) =
+    spawn.summoned(
+      checks:,
+      summoned: Summoned(
+        id: SpawnId(number),
+        creature_id: Creature2Id(creature_id),
+        level: option.None,
+        place: place_support.at(
+          world_id: 3460,
+          world_zone_id: warfare_woods,
+          x: 0.0,
+          y: 0.0,
+          z: 0.0,
+        ),
+      ),
+    )
+    as "the creature passes the summon checks over the client's committed rows"
+  creature
+}
+
+/// The kinds with the creature `creature_id` given a kind of its own: the default's fields
+/// and these specials, each cast again 10 000 ms after its start, in this order.
+pub fn kinds_with_specials(
+  creature_id creature_id: Int,
+  spell4_ids spell4_ids: List(Int),
+) -> Kinds {
+  let kinds = kinds()
+  Kinds(
+    ..kinds,
+    by_creature: dict.from_list([
+      #(
+        creature_id,
+        Kind(
+          ..kinds.default,
+          specials: list.map(spell4_ids, fn(spell4_id) {
+            creature_special.Ref(spell4_id:, cooldown_ms: 10_000)
+          }),
+        ),
+      ),
+    ]),
   )
 }
 
@@ -335,6 +404,7 @@ pub fn turret_kinds() -> Kinds {
           attack_spell4_id: Spell4Id(85_469),
           attack_interval_ms: 3000,
           guard: option.None,
+          specials: [],
         ),
       ),
       #(
@@ -344,6 +414,7 @@ pub fn turret_kinds() -> Kinds {
           attack_spell4_id: Spell4Id(86_978),
           attack_interval_ms: 3000,
           guard: option.None,
+          specials: [],
         ),
       ),
     ]),
@@ -595,5 +666,55 @@ pub fn spawn_dealing(spawn spawn: Spawn, damage damage: Int) -> Spawn {
         offence: dealing(offence: attack.offence, damage:),
       ),
     ),
+  )
+}
+
+/// Earthen Roar as a creature's special, with the hold the delay row 131968 gives (`hold_ms`).
+pub fn earthen_roar(hold_ms hold_ms: Int) -> creature_life.Special {
+  creature_life.Special(
+    attack: creature_life.Attack(
+      spell4_id: Spell4Id(55_317),
+      offence: Offence(
+        blows: [
+          Blow(
+            spell4_effects_id: 131_967,
+            damage_type: 1,
+            damage: Worked(21),
+            delay_ms: 0,
+            threat_multiplier: 1.0,
+          ),
+        ],
+        crit_chance: 0.0,
+        crit_severity: 1.0,
+        strikethrough: 0.0,
+      ),
+      run_speed: 10.0,
+      reach: 5.5,
+      cast: creature_life.Charged(
+        cast_ms: 3000,
+        area: area.Row(
+          min_range: 0.0,
+          max_range: 10.0,
+          degrees: 360.0,
+          target_count: 10,
+        ),
+        inside: area.InsideShapes(placements: [
+          area.Placement(
+            shape: area.Cone(inner: 0.0, outer: 5.5, degrees: 40.0),
+            ahead: 0.0,
+            aside: 0.0,
+            turn_degrees: 0.0,
+          ),
+        ]),
+        gos: [
+          creature_life.Go(at_ms: 2500, strikes: False),
+          creature_life.Go(at_ms: 3000, strikes: True),
+        ],
+        hold_ms:,
+      ),
+      caster_cc_mask: 218_960_739,
+      run_stopped_by: 0,
+    ),
+    cooldown_ms: 10_000,
   )
 }

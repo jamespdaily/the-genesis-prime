@@ -22,6 +22,7 @@ import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/connection/casting
 import genesis_prime/game/spell_plan
+import genesis_prime/game/spend
 import genesis_prime/message/cast_result.{
   CasterCannotBeDead, IllegalSpellCast, Other, SpellAlreadyCasting,
   SpellCancelled, SpellCooldown, SpellGlobalCooldown, SpellUnknown, WeaponSlot,
@@ -32,6 +33,7 @@ import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started.{type SpellStarted}
 import genesis_prime/step.{ConnectionId, LogDebug}
 import genesis_prime/store.{HeldItem}
+import genesis_prime/table/id.{Spell4EffectsId}
 import gleam/bool
 import gleam/int
 import gleam/list
@@ -1023,4 +1025,44 @@ pub fn a_living_casters_press_of_a_spell_that_must_be_cast_dead_is_refused_58_te
   let assert [frame] = support.writes(effects:)
   assert refusal(frame).result == Other(58) as "58 Caster_MustBeDead"
   assert after == cast_state.new()
+}
+
+/// The effects the press of a spell aimed at no unit, and its go at 1000 ms, give, in order.
+fn effects_of_a_press_and_its_go(
+  spell spell: spell_plan.Spell,
+) -> List(cast_state.Effect) {
+  let #(state, effects) =
+    support.pressed_raw_in(
+      plans: support.plans_with(spell:),
+      state: cast_state.new(),
+      caster: support.caster(),
+      bag_index: 11,
+      target: 0,
+      at: 1000,
+    )
+  let #(_, answered) =
+    support.answered_by(state:, effects:, at: 1000, struck: [])
+  list.append(effects, answered)
+}
+
+pub fn a_delay_row_in_a_players_spell_is_ignored_test() -> Nil {
+  use <- owned_test.run(5000)
+  // A type 35 row is in no spell a player's route holds (`spell_plan.Delay`); a planted one
+  // changes nothing the cast does: no frame lists it, no effect holds the caster.
+  let plain = support.child(spell4_id: 32_683, base: 3)
+  let held =
+    support.with_effects(spell: plain, kinds: [
+      spell_plan.DelayEffect(delay: spell_plan.Delay(
+        effect_id: Spell4EffectsId(99_035),
+        phase_flags: 1,
+        delay_ms: 0,
+        duration_ms: 1000,
+        tag: spend.always,
+      )),
+    ])
+  assert list.length(held.effects) == 1
+    as "the planted spell holds the delay row"
+  assert effects_of_a_press_and_its_go(spell: held)
+    == effects_of_a_press_and_its_go(spell: plain)
+    as "the press and the go are those of the spell without the row"
 }
