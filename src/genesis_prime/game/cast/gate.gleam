@@ -203,7 +203,7 @@ fn gains_of(
   spent spent: Option(Int),
 ) -> List(spell_plan.Gain) {
   list.append(
-    spell_plan.gains_in_phase(spell:, phase:, spent:),
+    spell_plan.in_phase(spell:, phase:, spent:, as_kind: spell_plan.as_gain),
     list.flat_map(proxies, lifted_gains),
   )
 }
@@ -228,9 +228,10 @@ pub fn proxies_with_targets(
   spent spent: Option(Int),
 ) -> List(Proxy) {
   let hit = hit_units(struck:) != []
-  list.filter(spell_plan.proxies_in_phase(spell:, phase:, spent:), fn(proxy) {
-    starts_a_child(proxy:, hit:)
-  })
+  list.filter(
+    spell_plan.in_phase(spell:, phase:, spent:, as_kind: spell_plan.as_proxy),
+    fn(proxy) { starts_a_child(proxy:, hit:) },
+  )
 }
 
 /// Whether a Proxy has a unit to start a child on: one aimed at the caster always has, one

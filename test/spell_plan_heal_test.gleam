@@ -127,6 +127,7 @@ pub fn a_heal_shields_row_aimed_at_the_caster_is_a_shield_heal_with_its_formula_
   assert spell_plan.heal_of(
       spell4_id: 69_450,
       effect: energize_row(),
+      vital: effect_kind.Shield,
       condition: Always,
     )
     == Ok(Heal(
@@ -153,6 +154,7 @@ pub fn a_heal_shields_row_aimed_at_the_primary_target_is_read_in_a_spell_cast_on
     spell_plan.heal_of(
       spell4_id: 69_450,
       effect: heal_aimed_at(flags: 2),
+      vital: effect_kind.Shield,
       condition: Always,
     )
   assert heal.aim == AimsAtPrimaryTarget
@@ -255,7 +257,12 @@ pub fn the_esper_shield_heal_proc_row_94299_loads_as_a_shield_heal_test() -> Nil
     )
     as "the fixture holds the row"
   let assert Ok(Heal(vital: effect_kind.Shield, ..)) =
-    spell_plan.heal_of(spell4_id: 41_868, effect: row, condition: Always)
+    spell_plan.heal_of(
+      spell4_id: 41_868,
+      effect: row,
+      vital: effect_kind.Shield,
+      condition: Always,
+    )
     as "Esper - Tech - Rank 3 - Shield Heal Proc: Technology (kind 3) x 1.5 is read for an effect on its caster"
   Nil
 }
@@ -265,7 +272,12 @@ pub fn a_heal_shields_row_with_a_parameter_the_caster_formula_does_not_read_fail
   list.each([6, 9, 18], fn(kind) {
     let row =
       Spell4Effects(..energize_row(), id: 99_118, parameter_type00: kind)
-    assert spell_plan.heal_of(spell4_id: 69_450, effect: row, condition: Always)
+    assert spell_plan.heal_of(
+        spell4_id: 69_450,
+        effect: row,
+        vital: effect_kind.Shield,
+        condition: Always,
+      )
       == Error(spell_plan.HealParameterNotRead(
         spell4_id: 69_450,
         effect_id: 99_118,
@@ -286,7 +298,12 @@ pub fn a_heal_shields_row_with_a_parameter_the_caster_formula_does_not_read_fail
       let row =
         Spell4Effects(..energize_row(), id: 99_119, parameter_type00: kind)
       let assert Ok(Heal(..)) =
-        spell_plan.heal_of(spell4_id: 69_450, effect: row, condition: Always)
+        spell_plan.heal_of(
+          spell4_id: 69_450,
+          effect: row,
+          vital: effect_kind.Shield,
+          condition: Always,
+        )
         as { "0x140566ad0 or 0x140566d40 reads type " <> int.to_string(kind) }
     },
   )
@@ -295,6 +312,7 @@ pub fn a_heal_shields_row_with_a_parameter_the_caster_formula_does_not_read_fail
   assert spell_plan.heal_of(
       spell4_id: 69_450,
       effect: not_a_number,
+      vital: effect_kind.Shield,
       condition: Always,
     )
     == Error(spell_plan.HealNumberNotFinite(
@@ -572,6 +590,7 @@ pub fn a_heal_row_with_an_unread_parameter_or_number_is_refused_test() -> Nil {
   assert spell_plan.heal_of(
       spell4_id: 34_985,
       effect: passed_in,
+      vital: effect_kind.Health,
       condition: Always,
     )
     == Error(spell_plan.HealParameterNotRead(
@@ -585,6 +604,7 @@ pub fn a_heal_row_with_an_unread_parameter_or_number_is_refused_test() -> Nil {
   assert spell_plan.heal_of(
       spell4_id: 32_820,
       effect: not_a_number,
+      vital: effect_kind.Health,
       condition: Always,
     )
     == Error(spell_plan.HealNumberNotFinite(

@@ -21,7 +21,7 @@
 ////   with a delayTime, a row whose phaseFlags is 0), in none (`LeftOut`), a damage row the area
 ////   load reads (`ReadByArea`), or an error that fails the load. The effects of a spell are
 ////   made from these readings into one list ranked by kind (`Spell.effects`, each a
-////   `PlannedEffect(Kind)`), which the `*_in_phase` functions read one kind at a time, and
+////   `PlannedEffect(Kind)`), which `in_phase` reads one kind at a time, and
 ////   the coverage measure counts a row read exactly when it
 ////   is `Applied` (genesis_prime/coverage/effect_row), so the two cannot disagree. A spell
 ////   a Proxy starts on each struck unit refuses a heal, an Interrupt Armor row and an
@@ -284,6 +284,7 @@
 ////   aimed at the caster or by other flags, of Ability Restriction aimed anywhere but at
 ////   the caster, or behind an apply prerequisite.
 
+import genesis_prime/game/cast_bar_kind
 import genesis_prime/game/cooldown
 import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
@@ -694,10 +695,10 @@ pub type Spell {
     /// The pulse times of a Channeled spell.
     channel: Option(Channel),
     /// The spell's effect rows, each an envelope (`genesis_prime/game/spell_effect`) round
-    /// its kind, sorted by the rank of the kind and, within a kind, in row order (`rank`). The
-    /// views (`gains_in_phase`, `heals_in_phase` and the like) read the rows of one kind that
-    /// apply in a phase. The gains in it are the spell's own, given at its gos; none of a child
-    /// started at each struck unit, whose gains its Proxy holds.
+    /// its kind, sorted by the rank of the kind and, within a kind, in row order (`rank`).
+    /// `in_phase` reads the rows of one kind that apply in a phase. The gains in it are the
+    /// spell's own, given at its gos; none of a child started at each struck unit, whose
+    /// gains its Proxy holds.
     effects: List(PlannedEffect(Kind)),
     /// The spell groups the spell belongs to (Spell4GroupList's spellGroupId values
     /// of `Spell4.spell4GroupListId`), which a type 80 row selects by.
@@ -3182,7 +3183,7 @@ fn gain_row_of(
 }
 
 /// One Heal (type 10) or HealShields (type 118) row that reaches the caster as a heal of
-/// the vital its type names, or the error that fails the load: its dataBits00 must be a finite 32-bit float and its formula must read only the
+/// `vital`, the one its type names (`effect_kind.kind_of`), or the error that fails the load: its dataBits00 must be a finite 32-bit float and its formula must read only the
 /// parameter types an effect on its caster reads (genesis_prime/game/damage
 /// `unread`). It aims at the caster when its targetFlags include it and else at
 /// the primary target. A row with a tickTime is periodic, a `TickingHeal` with its
@@ -3191,6 +3192,7 @@ fn gain_row_of(
 pub fn heal_of(
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
+  vital vital: effect_kind.Vital,
   condition condition: Condition,
 ) -> Result(Heal, PlanError) {
   use formula <- result.try(
@@ -3203,11 +3205,6 @@ pub fn heal_of(
     ),
   )
   let effect_id = Spell4EffectsId(effect.id)
-  // The row is a Heal (10) or a HealShields (118) row: only the shield's type heals it.
-  let vital = case effect.effect_type == 118 {
-    True -> effect_kind.Shield
-    False -> effect_kind.Health
-  }
   let aim = reached_aim_of(effect:)
   let phase_flags = effect.phase_flags
   let tag = tag_of(effect:)
@@ -4621,9 +4618,9 @@ fn kind_reading(
       |> result.map(fn(remove) {
         Applied(read_as(RemoveStealthEffect(remove:)))
       })
-    effect_kind.Heal(..) -> {
+    effect_kind.Heal(vital:) -> {
       use <- when_reached(reaches:)
-      heal_reading(tables:, place:, spell4_id:, effect:)
+      heal_reading(tables:, place:, spell4_id:, effect:, vital:)
     }
     effect_kind.Proc -> proc_reading(tables:, spell4_id:, effect:)
     effect_kind.Proxy ->
@@ -4871,13 +4868,14 @@ fn heal_reading(
   place place: RowPlace,
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
+  vital vital: effect_kind.Vital,
 ) -> Result(RowReading, PlanError) {
   use condition <- result.try(applied_condition_of(
     tables:,
     effect:,
     reach: reach_of_flags(target_flags: effect.target_flags),
   ))
-  use heal <- try_heal(heal_of(spell4_id:, effect:, condition:))
+  use heal <- try_heal(heal_of(spell4_id:, effect:, vital:, condition:))
   let heal = heal_in_place(place:, heal:)
   use Nil <- result.map(
     not_on_a_struck_unit(place:, aim: heal.aim, refused: fn(by) {
@@ -5174,9 +5172,10 @@ fn gain_slot_of(
   }
 }
 
-/// The payloads of the spell's effects of one kind that apply in phase `phase`, in the order
-/// of its list (`spell_effect.in_phase`): `as_kind` is the kind's projection.
-fn view(
+/// The payloads of the spell's effects of one kind that apply in phase `phase`, those whose
+/// tag holds for the points the cast spent, in the order of its list
+/// (`spell_effect.in_phase`): `as_kind` is the kind's projection, such as `as_heal`.
+pub fn in_phase(
   spell spell: Spell,
   phase phase: Int,
   spent spent: Option(Int),
@@ -5211,16 +5210,6 @@ pub fn with_proxies(spell spell: Spell, proxies proxies: List(Proxy)) -> Spell {
   )
 }
 
-/// The gains of the spell given at its go of phase `phase`, those whose tag holds
-/// for the points the cast spent (genesis_prime/game/spend `applies`).
-pub fn gains_in_phase(
-  spell spell: Spell,
-  phase phase: Int,
-  spent spent: Option(Int),
-) -> List(Gain) {
-  view(spell:, phase:, spent:, as_kind: as_gain)
-}
-
 /// Whether the client shows a cast bar for the spell, by its method
 /// (`cast.current_cast`, `SpellShowsCastBar`).
 fn cast_bar_of(
@@ -5228,7 +5217,10 @@ fn cast_bar_of(
   row row: spell4.Spell4,
   base base: spell4_base.Spell4Base,
 ) -> CastBar {
-  let has_bar = base.cast_bar_type != 0
+  let has_bar = case cast_bar_kind.kind_of(number: base.cast_bar_type) {
+    cast_bar_kind.NoBar -> False
+    cast_bar_kind.Bar(..) -> True
+  }
   let has_time = row.cast_time != 0
   case method {
     Normal | OtherMethod(10) -> bar_if(shows: has_bar && has_time)
@@ -6181,46 +6173,6 @@ pub fn units_aimed_at(
   list.unique(list.flatten([caster_unit, target_unit, area_units]))
 }
 
-/// The Fluff effects of the spell that apply in phase `phase`, those whose tag holds
-/// for the points the cast spent.
-pub fn lasting_in_phase(
-  spell spell: Spell,
-  phase phase: Int,
-  spent spent: Option(Int),
-) -> List(Lasting) {
-  view(spell:, phase:, spent:, as_kind: as_lasting)
-}
-
-/// The Heal and HealShields effects of the spell that apply in phase `phase`, those whose tag
-/// holds for the points the cast spent.
-pub fn heals_in_phase(
-  spell spell: Spell,
-  phase phase: Int,
-  spent spent: Option(Int),
-) -> List(Heal) {
-  view(spell:, phase:, spent:, as_kind: as_heal)
-}
-
-/// The UnitPropertyModifier effects of the spell that apply in phase `phase`, those
-/// whose tag holds for the points the cast spent.
-pub fn modifiers_in_phase(
-  spell spell: Spell,
-  phase phase: Int,
-  spent spent: Option(Int),
-) -> List(PropertyModifier) {
-  view(spell:, phase:, spent:, as_kind: as_modifier)
-}
-
-/// The ForcedMove effects of the spell that apply in phase `phase`, those whose tag
-/// holds for the points the cast spent.
-pub fn forced_moves_in_phase(
-  spell spell: Spell,
-  phase phase: Int,
-  spent spent: Option(Int),
-) -> List(ForcedMove) {
-  view(spell:, phase:, spent:, as_kind: as_forced_move)
-}
-
 /// The target apply prerequisites of the spell's rows aimed past the caster that apply in
 /// phase `phase`, those whose tag holds for the points the cast spent: the gates the
 /// strike tells the units its rows reach.
@@ -6239,26 +6191,6 @@ pub fn struck_gates_in_phase(
   })
 }
 
-/// The ForcedMove effects aimed at other units of the spell that apply in phase `phase`,
-/// those whose tag holds for the points the cast spent.
-pub fn struck_moves_in_phase(
-  spell spell: Spell,
-  phase phase: Int,
-  spent spent: Option(Int),
-) -> List(StruckMove) {
-  view(spell:, phase:, spent:, as_kind: as_struck_move)
-}
-
-/// The ModifySpellCooldown effects of the spell that apply in phase `phase`, those
-/// whose tag holds for the points the cast spent.
-pub fn cooldown_modifiers_in_phase(
-  spell spell: Spell,
-  phase phase: Int,
-  spent spent: Option(Int),
-) -> List(CooldownModifier) {
-  view(spell:, phase:, spent:, as_kind: as_cooldown_modifier)
-}
-
 /// The CCStateSet effects of the spell aimed at creatures that apply in phase `phase`,
 /// those whose tag holds for the points the cast spent: a row whose aim names the primary
 /// target or the area, a row that names the caster as well among them. The states on the
@@ -6268,7 +6200,7 @@ pub fn controls_in_phase(
   phase phase: Int,
   spent spent: Option(Int),
 ) -> List(CrowdControl) {
-  view(spell:, phase:, spent:, as_kind: as_control)
+  in_phase(spell:, phase:, spent:, as_kind: as_control)
   |> list.filter(fn(control) { reaches_past_caster(aim: control.aim) })
 }
 
@@ -6280,18 +6212,8 @@ pub fn restrictions_in_phase(
   phase phase: Int,
   spent spent: Option(Int),
 ) -> List(CrowdControl) {
-  view(spell:, phase:, spent:, as_kind: as_control)
+  in_phase(spell:, phase:, spent:, as_kind: as_control)
   |> list.filter(fn(control) { reaches_caster(aim: control.aim) })
-}
-
-/// The Proxies of the spell that fire in phase `phase`, those whose tag holds for
-/// the points the cast spent (genesis_prime/game/spend `applies`).
-pub fn proxies_in_phase(
-  spell spell: Spell,
-  phase phase: Int,
-  spent spent: Option(Int),
-) -> List(Proxy) {
-  view(spell:, phase:, spent:, as_kind: as_proxy)
 }
 
 /// The spellGroupId00 to 31 columns of a Spell4GroupList row, in order.

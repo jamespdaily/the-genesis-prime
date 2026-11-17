@@ -107,10 +107,10 @@ import genesis_prime/game/cast/state.{
   ProcDue, Reached, Refuse, RepeatHeld, Resolution, ResourceMoved,
   RestrictionEnd, Send, Shortcut, ShortcutCast, SpellsIssue, Stage, StartChild,
   StartHeld, StartedMoving, Starts, State, StateEnd, StealthChanged, Strike,
-  TargetModifierStart, Tell, Threshold, Tick, TickKey, Ticking,
-  UnbuiltItemCharges, UnbuiltItemSpell, UnbuiltShortcut, UnbuiltSpell,
-  UnknownAnswer, UnknownCancel, UnreadItemPrerequisite, UnreadLinkPrerequisite,
-  UnreadPrerequisite, UnreadShortcutPick, UsedUnit, WindowEnd, WrongAnswerSpell,
+  TargetModifierStart, Tell, Threshold, Tick, UnbuiltItemCharges,
+  UnbuiltItemSpell, UnbuiltShortcut, UnbuiltSpell, UnknownAnswer, UnknownCancel,
+  UnreadItemPrerequisite, UnreadLinkPrerequisite, UnreadPrerequisite,
+  UnreadShortcutPick, UsedUnit, WindowEnd, WrongAnswerSpell,
 } as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/class_resource.{type Payment}
@@ -2726,7 +2726,7 @@ pub fn ticked(
     |> result.try(fn(holder) {
       dict.get(
         holder.ticking,
-        TickKey(unit_id: asked.unit_id, effect_id: asked.effect_id),
+        cast_state.tick_key(unit_id: asked.unit_id, effect_id: asked.effect_id),
       )
       |> result.map(fn(_) { holder })
     })
@@ -2751,7 +2751,8 @@ fn tick_closed(
   struck struck: Option(Struck),
 ) -> #(State, List(Effect)) {
   let cast_id = asked.cast_id
-  let key = TickKey(unit_id: asked.unit_id, effect_id: asked.effect_id)
+  let key =
+    cast_state.tick_key(unit_id: asked.unit_id, effect_id: asked.effect_id)
   case cast_state.holder_of(cast:, cast_id:) {
     Error(Nil) -> #(cast, [])
     Ok(holder) ->
@@ -2765,7 +2766,7 @@ fn tick_closed(
               ticking: dict.insert(
                 holder.ticking,
                 key,
-                Ticking(..row, open: int.max(0, row.open - 1)),
+                cast_state.round_closed(row:),
               ),
             )
           let #(cast, landed) =

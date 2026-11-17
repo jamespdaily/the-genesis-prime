@@ -23,6 +23,7 @@ import genesis_prime/game/area.{
 }
 import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
+import genesis_prime/game/effect_kind
 import genesis_prime/game/spell_area.{
   AimNotRead, FormulaNotRead, MultiplierNotFinite, Once, Periodic,
   SelectionNotClosest, ShapeNotBuilt, TelegraphNotOnCaster, TickingNoTick,
@@ -575,6 +576,7 @@ pub fn until_removed_periodic_rows_are_left_out_test() -> Nil {
         duration_time: 0,
         flags: 2,
       ),
+      vital: effect_kind.Shield,
       condition: spell_plan.Always,
     )
     == Error(spell_plan.HealUntilRemovedNotRead(
@@ -1051,7 +1053,12 @@ pub fn a_modifier_only_child_aimed_at_the_target_strikes_the_primary_target_test
   let fissure = planned_alone(spell4_id: 41_886)
   let assert Ok(phase) = spell_area.phase(spell: fissure, phase: 0, spent: None)
   assert list.map(
-      spell_plan.modifiers_in_phase(spell: fissure.spell, phase: 0, spent: None),
+      spell_plan.in_phase(
+        spell: fissure.spell,
+        phase: 0,
+        spent: None,
+        as_kind: spell_plan.as_modifier,
+      ),
       fn(modifier) { modifier.effect_id },
     )
     == [Spell4EffectsId(94_370)]
@@ -1072,7 +1079,12 @@ pub fn a_modifier_only_spell_aimed_at_the_area_selects_the_areas_units_test() ->
   let aura = planned_alone(spell4_id: 54_475)
   let assert Ok(phase) = spell_area.phase(spell: aura, phase: 0, spent: None)
   assert list.map(
-      spell_plan.modifiers_in_phase(spell: aura.spell, phase: 0, spent: None),
+      spell_plan.in_phase(
+        spell: aura.spell,
+        phase: 0,
+        spent: None,
+        as_kind: spell_plan.as_modifier,
+      ),
       fn(modifier) { modifier.effect_id.value },
     )
     == [129_039, 183_223, 183_224]
@@ -1092,7 +1104,12 @@ pub fn an_absorb_and_an_armor_row_aimed_at_the_target_strike_nobody_test() -> Ni
   let armor = planned_alone(spell4_id: 76_618)
   let assert Ok(phase) = spell_area.phase(spell: armor, phase: 0, spent: None)
   assert list.map(
-      spell_plan.modifiers_in_phase(spell: armor.spell, phase: 0, spent: None),
+      spell_plan.in_phase(
+        spell: armor.spell,
+        phase: 0,
+        spent: None,
+        as_kind: spell_plan.as_modifier,
+      ),
       fn(modifier) {
         #(modifier.effect_id.value, spell_plan.modifier_aim(modifier:))
       },
@@ -1197,10 +1214,11 @@ pub fn a_throw_only_spell_aimed_at_the_target_strikes_the_primary_target_test() 
   let assert Ok(phase) =
     spell_area.phase(spell: knockback, phase: 0, spent: None)
   assert list.map(
-      spell_plan.struck_moves_in_phase(
+      spell_plan.in_phase(
         spell: knockback.spell,
         phase: 0,
         spent: None,
+        as_kind: spell_plan.as_struck_move,
       ),
       fn(row) { row.effect_id.value },
     )

@@ -310,12 +310,18 @@ pub fn the_rows_of_a_phase_are_those_whose_phase_flags_name_it_test() -> Nil {
         ]),
       ),
     )
-  assert spell_plan.cooldown_modifiers_in_phase(spell:, phase: 0, spent: None)
+  assert spell_plan.in_phase(
+      spell:,
+      phase: 0,
+      spent: None,
+      as_kind: spell_plan.as_cooldown_modifier,
+    )
     == []
-  assert list.length(spell_plan.cooldown_modifiers_in_phase(
+  assert list.length(spell_plan.in_phase(
       spell:,
       phase: 1,
       spent: None,
+      as_kind: spell_plan.as_cooldown_modifier,
     ))
     == 1
 }

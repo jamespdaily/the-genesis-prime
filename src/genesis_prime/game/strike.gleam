@@ -353,16 +353,18 @@ fn area_selection(
 /// unit a row may reach. A gate the creature checks (`Selection.gates`) takes no roll but
 /// still tells its unit a strike, so a phase of such gates alone takes the 12 bytes.
 pub fn entropy_needed(selection selection: Selection) -> Int {
-  case selection.blows, selection.ticking, selection.controls, selection.gates {
+  let Selection(asked: _, units:, area: _, blows:, ticking:, controls:, gates:) =
+    selection
+  case blows, ticking, controls, gates {
     [], [], [], [] -> 0
     _, _, _, _ -> {
-      let units = list.length(selection.units)
       let conditions =
         list.flatten([
-          list.map(selection.blows, fn(row) { row.condition }),
-          list.map(selection.ticking, fn(row) { row.damage.condition }),
-          list.map(selection.controls, fn(row) { row.condition }),
+          list.map(blows, fn(row) { row.condition }),
+          list.map(ticking, fn(row) { row.damage.condition }),
+          list.map(controls, fn(row) { row.condition }),
         ])
+      let units = list.length(units)
       let rolls =
         int.sum(
           list.map(conditions, fn(condition) {
