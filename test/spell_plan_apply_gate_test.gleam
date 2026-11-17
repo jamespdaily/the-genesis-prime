@@ -48,14 +48,19 @@ fn effect_row_in(
 
 /// The place of a spell no Proxy starts on each struck unit, whose costs spend nothing.
 fn no_proxy_place() -> spell_plan.RowPlace {
-  spell_plan.RowPlace(struck_by: None, spends_all: False, hits_foes: False)
+  spell_plan.RowPlace(
+    struck_by: None,
+    spends_all: False,
+    hits_foes: False,
+    throws_target: False,
+  )
 }
 
 /// Whether the coverage measure counts the client's row `id` as read in `tables`.
 fn is_read_by_the_measure(tables tables: store.Tables, id id: Int) -> Bool {
   effect_row.is_read(
     tables:,
-    spell_groups: spell_plan.spell_groups(tables:),
+    sources: spell_plan.sources_of(tables:),
     place: no_proxy_place(),
     effect: effect_row_in(tables:, id:),
   )
@@ -146,7 +151,7 @@ pub fn damage_row_with_undecoded_gate_is_refused_at_load_naming_its_issue_test()
     as "a row behind a caster gate the server cannot read is refused too"
   assert !effect_row.is_read(
     tables:,
-    spell_groups: spell_plan.spell_groups(tables:),
+    sources: spell_plan.sources_of(tables:),
     place: no_proxy_place(),
     effect: by_caster,
   )

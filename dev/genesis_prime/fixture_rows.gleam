@@ -831,6 +831,49 @@ const untyped_references = [
     "ItemDisplay",
     "spell_plan.disguise_of (DisguiseOutfit effect type 112)",
   ),
+  UntypedReference(
+    "Spell4Effects",
+    [#("effectType", 4)],
+    ["dataBits07"],
+    "dataBits07",
+    "CCStateAdditionalData",
+    "spell_plan.helper_move_of (a CCStateSet effect's dataBits07 is the CCStateAdditionalData row of its Knockback, Pushback or Pull state)",
+  ),
+  // The server reads the row a state names by its id and never checks the row's
+  // ccStatesId, so the rows of states 16, 17 and 18 and the one named row of state 0
+  // (CCStateAdditionalData 182, which Spell4Effects 149005 names) are followed.
+  UntypedReference(
+    "CCStateAdditionalData",
+    [#("ccStatesId", 16)],
+    [],
+    "dataInt00",
+    "Spell4",
+    "spell_plan.helper_move_of (a Knockback row's dataInt00 is its helper Spell4)",
+  ),
+  UntypedReference(
+    "CCStateAdditionalData",
+    [#("ccStatesId", 17)],
+    [],
+    "dataInt00",
+    "Spell4",
+    "spell_plan.helper_move_of (a Pushback row's dataInt00 is its helper Spell4)",
+  ),
+  UntypedReference(
+    "CCStateAdditionalData",
+    [#("ccStatesId", 18)],
+    [],
+    "dataInt00",
+    "Spell4",
+    "spell_plan.helper_move_of (a Pull row's dataInt00 is its helper Spell4)",
+  ),
+  UntypedReference(
+    "CCStateAdditionalData",
+    [#("ccStatesId", 0)],
+    [],
+    "dataInt00",
+    "Spell4",
+    "spell_plan.helper_move_of (CCStateAdditionalData 182, ccStatesId 0, is named by a state and holds its helper Spell4)",
+  ),
 ]
 
 /// A column the server reads as an id of a table whose name the column's own

@@ -307,11 +307,13 @@ import genesis_prime/game/unit_properties
 import genesis_prime/game/worn_visual
 import genesis_prime/message/crowd_control_state
 import genesis_prime/message/float32
+import genesis_prime/table/cc_state_additional_data
 import genesis_prime/table/id.{
   type ItemSlotId, type PrerequisiteId, type Spell4BaseId, type Spell4EffectsId,
-  type Spell4Id, type UnitProperty2Id, ItemDisplayId, PrerequisiteId,
-  Spell4BaseId, Spell4ConditionsId, Spell4EffectsId, Spell4GroupListId, Spell4Id,
-  Spell4StackGroupId, SpellCoolDownId, UnitProperty2Id,
+  type Spell4Id, type UnitProperty2Id, CCStateAdditionalDataId, ItemDisplayId,
+  PrerequisiteId, Spell4BaseId, Spell4ConditionsId, Spell4EffectsId,
+  Spell4GroupListId, Spell4Id, Spell4StackGroupId, SpellCoolDownId,
+  UnitProperty2Id,
 }
 import genesis_prime/table/item2_type
 import genesis_prime/table/item_display
@@ -1123,8 +1125,11 @@ pub type InterruptArmor {
 /// at (the primary target, the area or both), its `row` (state, delay, duration and
 /// the armor it removes), the phases of `phase_flags` it fires in, and the `tag` that
 /// chooses it by the points the cast spent (genesis_prime/game/spend). Its dataBits
-/// beyond the state and the armor need no handling (`Spell4Effects.effectType.4`),
-/// and it has no apply prerequisite.
+/// beyond the state, the armor and the helper spell of dataBits07 need no handling
+/// (`Spell4Effects.effectType.4`), and it has no apply prerequisite. `move` is the
+/// move a Knockback, Pushback or Pull state throws its creature by: the helper
+/// spell's own ForcedMove row (`helper_move_of`), or `None` for any other state and for
+/// a spell that holds its own throw of the units it strikes.
 pub type CrowdControl {
   CrowdControl(
     effect_id: Spell4EffectsId,
@@ -1133,6 +1138,7 @@ pub type CrowdControl {
     row: crowd_control.Row,
     condition: Condition,
     tag: spend.Tag,
+    move: Option(forced_move.Move),
   )
 }
 
@@ -1732,9 +1738,48 @@ pub fn as_control(kind kind: Kind) -> Result(CrowdControl, Nil) {
 
 /// Where a spell is planned, which three of an effect row's refusals depend on: a spell a
 /// Proxy starts on each struck unit (`struck_by`), a spell that spends every point held
-/// (`spends_all`) and a spell that hits foes (`hits_foes`, `spell_hits_foes`).
+/// (`spends_all`) and a spell that hits foes (`hits_foes`, `spell_hits_foes`). A fourth
+/// field is not a refusal: a spell that throws the units it strikes by its own ForcedMove
+/// row (`throws_target`, `spell_throws_target`) reads its crowd control states without a
+/// move.
 pub type RowPlace {
-  RowPlace(struck_by: Option(StruckBy), spends_all: Bool, hits_foes: Bool)
+  RowPlace(
+    struck_by: Option(StruckBy),
+    spends_all: Bool,
+    hits_foes: Bool,
+    throws_target: Bool,
+  )
+}
+
+/// Whether a spell throws the units it strikes by a ForcedMove row of its own: one of
+/// its type 3 rows is read as aimed past the caster (`effect_kind.is_row_read`, targetFlags
+/// 2, 4 or 6). Such a spell moves its creature once, by that row: a spell holding its own
+/// throw drops the state's helper.
+fn spell_throws_target(
+  effects effects: List(spell4_effects.Spell4Effects),
+) -> Bool {
+  list.any(effects, fn(effect) {
+    effect_kind.kind_of(effect_type: effect.effect_type)
+    == effect_kind.ForcedMove
+    && effect.target_flags >= 2
+    && effect_kind.is_row_read(
+      effect_type: effect.effect_type,
+      target_flags: effect.target_flags,
+    )
+  })
+}
+
+/// The Spell4 ids of the spells that throw the units they strike (`spell_throws_target`),
+/// among the Spell4Effects rows given.
+pub fn spells_that_throw_target(
+  effects effects: List(spell4_effects.Spell4Effects),
+) -> Set(Int) {
+  list.fold(effects, set.new(), fn(found, effect) {
+    case spell_throws_target(effects: [effect]) {
+      True -> set.insert(found, effect.spell_id)
+      False -> found
+    }
+  })
 }
 
 /// Whether a spell hits foes, from its own Spell4Effects rows: one of its damage (8) or
@@ -1923,6 +1968,10 @@ pub type PlanError {
   /// A ForcedMove effect aimed at the units a strike hits holds columns that are no move
   /// (`forced_move.of_row`).
   StruckMoveNotRead(spell4_id: Int, effect_id: Int, error: forced_move.RowError)
+  /// A Knockback, Pushback or Pull state names a helper spell (`helper_move_of`) that has
+  /// no single ForcedMove row aimed at the units a strike hits, with no apply prerequisite:
+  /// its move is then not known.
+  ControlHelperNotRead(spell4_id: Int, effect_id: Int, helper: Int)
   /// An effect of a spell that spends every point held holds an emmComparison other
   /// than 0 or 1, which chooses nothing (`Spell4Effects.emmComparison`).
   SpendComparisonNotRead(spell4_id: Int, effect_id: Int, comparison: Int)
@@ -2146,6 +2195,14 @@ pub fn describe(error error: PlanError) -> String {
         _ ->
           ", which reads the state of the creature it strikes, and the row is not one its strike carries to the creature (#851)"
       }
+    ControlHelperNotRead(spell4_id:, effect_id:, helper:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a Knockback, Pushback or Pull state "
+      <> int.to_string(effect_id)
+      <> " whose helper spell "
+      <> int.to_string(helper)
+      <> " holds no single ForcedMove row aimed at the units a strike hits without an apply prerequisite, so its move is not known"
     StruckMoveNotRead(spell4_id:, effect_id:, error:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -2471,12 +2528,6 @@ pub fn effects_of(
   spell4_id spell4_id: Int,
 ) -> List(spell4_effects.Spell4Effects) {
   dict.get(sources.effects, spell4_id) |> result.unwrap([])
-}
-
-/// Every spell group id some Spell4GroupList row holds, which a SpellForceRemove selector
-/// may name (`read_row`).
-pub fn spell_groups(tables tables: table_store.Tables) -> Set(Int) {
-  known_groups(group_lists: group_lists_by_id(tables:))
 }
 
 fn known_groups(group_lists group_lists: Dict(Int, List(Int))) -> Set(Int) {
@@ -2940,16 +2991,14 @@ fn spell_of(
       struck_by:,
       spends_all: spends_all_of(costs:),
       hits_foes: spell_hits_foes(effects:),
+      throws_target: spell_throws_target(effects:),
     )
   use Nil <- result.try(
     list.try_each(effects, spend_tag_read(place:, effect: _)),
   )
   let readings =
     list.map(effects, fn(effect) {
-      #(
-        effect,
-        read_row(tables:, spell_groups: sources.known_groups, place:, effect:),
-      )
+      #(effect, read_row(tables:, sources:, place:, effect:))
     })
   // The rows of each list are read in the order the lists were once built, so a spell with
   // two refused rows names the same one first.
@@ -3347,18 +3396,13 @@ pub fn lasting_row_of(
 /// row; the count of stacks is read only where dataBits03 and dataBits04 agree.
 fn remove_of(
   tables tables: table_store.Tables,
-  spell_groups spell_groups: Set(Int),
+  sources sources: Sources,
   place place: RowPlace,
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(ForceRemove, PlanError) {
   use aim <- result.try(lasting_aim_of(place:, spell4_id:, effect:))
-  use selector <- result.try(selector_of(
-    tables:,
-    spell_groups:,
-    spell4_id:,
-    effect:,
-  ))
+  use selector <- result.try(selector_of(tables:, sources:, spell4_id:, effect:))
   use Nil <- result.try(force_remove_counts_read(spell4_id:, effect:))
   use condition <- result.map(applied_condition_of(
     tables:,
@@ -3407,6 +3451,7 @@ fn force_remove_counts_read(
 /// that); on the caster both are the cast's own (`cast.restrictions`).
 fn control_of(
   tables tables: table_store.Tables,
+  sources sources: Sources,
   place place: RowPlace,
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
@@ -3436,10 +3481,17 @@ fn control_of(
     False -> Ok(Nil)
     True -> Error(ControlPersistenceNotRead(spell4_id:, effect_id: effect.id))
   })
-  use condition <- result.map(applied_condition_of(
+  use condition <- result.try(applied_condition_of(
     tables:,
     effect:,
     reach: reach_in_place(place:, aim:),
+  ))
+  use move <- result.map(helper_move_of(
+    tables:,
+    sources:,
+    place:,
+    state:,
+    effect:,
   ))
   Some(CrowdControl(
     effect_id: Spell4EffectsId(effect.id),
@@ -3454,7 +3506,88 @@ fn control_of(
     ),
     condition:,
     tag: tag_of(effect:),
+    move:,
   ))
+}
+
+/// Whether a row aims at a unit other than the caster: the primary target or the area
+/// (`aim_of`). The server moves those units itself, where the client moves only the
+/// caster's own unit (`Spell4Effects.effectType.3.other_unit`).
+fn aims_past_the_caster(effect effect: spell4_effects.Spell4Effects) -> Bool {
+  aim_of(target_flags: effect.target_flags)
+  |> result.map(reaches_past_caster)
+  |> result.unwrap(False)
+}
+
+/// The move a Knockback, Pushback or Pull state throws its creature by: `None` for
+/// every other state, for a spell that throws its creature by its own ForcedMove row
+/// (`place.throws_target`) and for a row whose dataBits07 is 0 or names no
+/// CCStateAdditionalData row; otherwise the move of the one type 3 row of the helper spell
+/// that row names in dataInt00 (`forced_move.of_row`), which must aim past the caster
+/// (`aims_past_the_caster`) and hold no apply prerequisite, or the load fails.
+fn helper_move_of(
+  tables tables: table_store.Tables,
+  sources sources: Sources,
+  place place: RowPlace,
+  state state: crowd_control_state.CrowdControlState,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(Option(forced_move.Move), PlanError) {
+  let throws =
+    list.contains(
+      [
+        crowd_control_state.Knockback,
+        crowd_control_state.Pushback,
+        crowd_control_state.Pull,
+      ],
+      state,
+    )
+  use <- bool.guard(when: !throws || place.throws_target, return: Ok(None))
+  let additional =
+    cc_state_additional_data.get(
+      tables:,
+      id: CCStateAdditionalDataId(effect.data_bits07),
+    )
+  case effect.data_bits07, additional {
+    0, _ | _, Error(Nil) -> Ok(None)
+    _, Ok(additional) ->
+      helper_row_move(sources:, effect:, helper: additional.data_int00)
+  }
+}
+
+/// The move of the one ForcedMove row of the spell `helper` that `effect`'s state names, or
+/// the error `helper_move_of` states when the spell has no such row, more than one, or one
+/// that waits on a prerequisite or aims only at the caster.
+fn helper_row_move(
+  sources sources: Sources,
+  effect effect: spell4_effects.Spell4Effects,
+  helper helper: Int,
+) -> Result(Option(forced_move.Move), PlanError) {
+  let not_read =
+    ControlHelperNotRead(
+      spell4_id: effect.spell_id,
+      effect_id: effect.id,
+      helper:,
+    )
+  case
+    list.filter(effects_of(sources:, spell4_id: helper), fn(row) {
+      effect_kind.kind_of(row.effect_type) == effect_kind.ForcedMove
+    })
+  {
+    [row] -> {
+      use <- bool.guard(
+        when: row.prerequisite_id_caster_apply != 0
+          || row.prerequisite_id_target_apply != 0
+          || !aims_past_the_caster(effect: row),
+        return: Error(not_read),
+      )
+      forced_move.of_row(row:)
+      |> result.map(Some)
+      |> result.map_error(fn(error) {
+        StruckMoveNotRead(spell4_id: row.spell_id, effect_id: row.id, error:)
+      })
+    }
+    [] | [_, _, ..] -> Error(not_read)
+  }
 }
 
 /// One UnitPropertyModifier, UnitPropertyConversion, DisguiseOutfit or Absorption row as a
@@ -4578,17 +4711,12 @@ fn spend_tag_read(
 /// refused child is counted on the child's own rows.
 pub fn read_row(
   tables tables: table_store.Tables,
-  spell_groups spell_groups: Set(Int),
+  sources sources: Sources,
   place place: RowPlace,
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(RowReading, PlanError) {
   use Nil <- result.try(spend_tag_read(place:, effect:))
-  use reading <- result.map(kind_reading(
-    tables:,
-    spell_groups:,
-    place:,
-    effect:,
-  ))
+  use reading <- result.map(kind_reading(tables:, sources:, place:, effect:))
   held_without_a_phase(reading:, effect:)
 }
 
@@ -4610,7 +4738,7 @@ fn held_without_a_phase(
 /// What the rule of the row's type makes of it, before the phases are looked at.
 fn kind_reading(
   tables tables: table_store.Tables,
-  spell_groups spell_groups: Set(Int),
+  sources sources: Sources,
   place place: RowPlace,
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(RowReading, PlanError) {
@@ -4639,10 +4767,10 @@ fn kind_reading(
       lasting_reading(tables:, place:, spell4_id:, effect:)
     }
     effect_kind.ForceRemove ->
-      remove_of(tables:, spell_groups:, place:, spell4_id:, effect:)
+      remove_of(tables:, sources:, place:, spell4_id:, effect:)
       |> result.map(fn(remove) { Applied(read_as(RemoveEffect(remove:))) })
     effect_kind.CrowdControl ->
-      control_of(tables:, place:, spell4_id:, effect:)
+      control_of(tables:, sources:, place:, spell4_id:, effect:)
       |> result.map(fn(control) {
         case control {
           Some(control) -> Applied(read_as(ControlEffect(control:)))
@@ -5177,14 +5305,14 @@ fn friendly_area_read(
 /// some Spell4GroupList row holds), a Spell4 or a Spell4Base the tables have.
 fn selector_of(
   tables tables: table_store.Tables,
-  spell_groups spell_groups: Set(Int),
+  sources sources: Sources,
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(lasting.Selector, PlanError) {
   let named = effect.data_bits01
   case effect.data_bits00 {
     1 ->
-      case set.contains(spell_groups, named) {
+      case set.contains(sources.known_groups, named) {
         True -> Ok(lasting.Group(spell_group_id: named))
         False -> Error(NoRow(table: "Spell4GroupList", id: named))
       }

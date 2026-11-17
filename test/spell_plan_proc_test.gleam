@@ -157,7 +157,7 @@ fn planned(
   let tables = fixture_tables.shared()
   spell_plan.read_row(
     tables:,
-    spell_groups: spell_plan.spell_groups(tables:),
+    sources: spell_plan.sources_of(tables:),
     place: spell_tables.pressed,
     effect:,
   )
@@ -717,7 +717,7 @@ pub fn the_starting_abilities_plan_with_178239_and_208200_and_leave_out_123744_t
   let assert Ok(spell_plan.Applied(spell_plan.ReadProc(reading:, ..))) =
     spell_plan.read_row(
       tables:,
-      spell_groups: spell_plan.spell_groups(tables:),
+      sources: spell_plan.sources_of(tables:),
       place: spell_tables.pressed,
       effect: stealth_on,
     )

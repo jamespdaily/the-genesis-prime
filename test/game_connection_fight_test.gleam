@@ -981,8 +981,8 @@ fn to_the_beast(taken: ConnectionStep(Request)) -> List(creature.Message) {
             change: client_connection.ChangeEnds(source:),
             ..,
           ) -> Ok(creature.ModifierEnds(source:))
-          client_connection.TellThrown(move:, draws:, reference:, struck_at_ms:) ->
-            Ok(creature.Thrown(move:, draws:, reference:, struck_at_ms:))
+          client_connection.TellThrown(throw:, struck_at_ms:) ->
+            Ok(creature.Thrown(throw:, struck_at_ms:))
           AskStore(..)
           | AskHandOff(..)
           | AskSessions(..)

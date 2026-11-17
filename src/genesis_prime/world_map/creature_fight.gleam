@@ -466,16 +466,12 @@ pub type Input {
   /// with its home timer; `ControlEnded` starts them when a state holds the creature).
   SpeedChanged
   /// creature: a ForcedMove effect of a player's cast reaches the creature
-  /// (genesis_prime/game/forced_move): the move the row asks for, the two fractions the
-  /// caster's connection drew, and the unit it is measured from. A creature that is
-  /// walking home, or does not run, takes no throw. Else it takes the path the move
+  /// (genesis_prime/game/forced_move `Throw`): the move the row asks for, the two
+  /// fractions the caster's connection drew, and the unit it is measured from. A creature
+  /// that is walking home, or does not run, takes no throw. Else it takes the path the move
   /// builds from where it is, the viewers are sent it, and `FlightEnds` ends the flight.
   /// A throw breaks an open charge as a held state does.
-  Thrown(
-    move: forced_move.Move,
-    draws: forced_move.Draws,
-    reference: forced_move.Reference,
-  )
+  Thrown(throw: forced_move.Throw)
 }
 
 /// The fight's timers, each of the generation it was started with: a timer of a
@@ -644,8 +640,7 @@ pub fn step(
     Controlled -> held(state:, fighter:, now_ms:)
     ControlEnded -> resumed(state:, fighter:, now_ms:)
     SpeedChanged -> speed_changed(state:, fighter:, now_ms:)
-    Thrown(move:, draws:, reference:) ->
-      thrown(state:, fighter:, alive:, move:, draws:, reference:, now_ms:)
+    Thrown(throw:) -> thrown(state:, fighter:, alive:, throw:, now_ms:)
     TimerFired(timer: FlightEnds(generation:)) ->
       flight_ended(state:, fighter:, generation:, now_ms:)
     StoodAgain -> {
@@ -671,9 +666,7 @@ fn thrown(
   state state: State,
   fighter fighter: Fighter,
   alive alive: Bool,
-  move move: forced_move.Move,
-  draws draws: forced_move.Draws,
-  reference reference: forced_move.Reference,
+  throw throw: forced_move.Throw,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
   let walking_home = case state.status {
@@ -691,12 +684,12 @@ fn thrown(
   let was_run = creature_path.arrives_ms(path: state.path, now_ms:) > now_ms
   let path =
     forced_move.path(
-      move:,
-      draws:,
+      move: throw.move,
+      draws: throw.draws,
       from: here,
       velocity: creature_path.velocity(path: state.path, now_ms:),
       radius: fighter.hit_radius,
-      reference:,
+      reference: throw.reference,
       circle: Circle(centre: fighter.home, radius: fighter.numbers.leash_range),
       now_ms:,
     )

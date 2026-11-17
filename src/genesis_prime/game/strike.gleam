@@ -113,6 +113,7 @@ import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/state.{type GoAsked, type Struck, type TickAsked} as cast_state
 import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
+import genesis_prime/game/forced_move
 import genesis_prime/game/hit
 import genesis_prime/game/prerequisite
 import genesis_prime/game/rating.{type Formulas}
@@ -350,30 +351,50 @@ fn area_selection(
 
 /// The seed bytes the selection's strikes take: 12 for each unit, then 4 for each roll
 /// the gates of its rows may take (`cast_gate.strike_rolls_needed`), counted for every selected
-/// unit a row may reach. A gate the creature checks (`Selection.gates`) takes no roll but
-/// still tells its unit a strike, so a phase of such gates alone takes the 12 bytes.
+/// unit a row may reach, then 8 for each draw of a throw (`forced_move.draw_bytes`): one
+/// for each state row that throws its creature (`CrowdControl.move`) and each selected
+/// unit, whether or not the row reaches the unit (the number of units the aim names is
+/// known only after the gates, so the bytes are a bound that does not depend on them). A
+/// gate the creature checks (`Selection.gates`) takes no roll but still tells its unit a
+/// strike, so a phase of such gates alone takes the 12 bytes.
 pub fn entropy_needed(selection selection: Selection) -> Int {
   let Selection(asked: _, units:, area: _, blows:, ticking:, controls:, gates:) =
     selection
   case blows, ticking, controls, gates {
     [], [], [], [] -> 0
-    _, _, _, _ -> {
-      let conditions =
-        list.flatten([
-          list.map(blows, fn(row) { row.condition }),
-          list.map(ticking, fn(row) { row.damage.condition }),
-          list.map(controls, fn(row) { row.condition }),
-        ])
-      let units = list.length(units)
-      let rolls =
-        int.sum(
-          list.map(conditions, fn(condition) {
-            cast_gate.strike_rolls_needed(condition:, units:)
-          }),
-        )
-      units * bytes_per_unit + rolls * prerequisite.roll_bytes
-    }
+    _, _, _, _ ->
+      list.length(units)
+      * bytes_per_unit
+      + rolls_needed(selection:)
+      * prerequisite.roll_bytes
+      + list.length(throwing_rows(selection:))
+      * list.length(units)
+      * forced_move.draw_bytes
   }
+}
+
+/// The rolls the gates of the selection's rows may take, counted for every selected unit
+/// a row may reach (`cast_gate.strike_rolls_needed`).
+fn rolls_needed(selection selection: Selection) -> Int {
+  let conditions =
+    list.flatten([
+      list.map(selection.blows, fn(row) { row.condition }),
+      list.map(selection.ticking, fn(row) { row.damage.condition }),
+      list.map(selection.controls, fn(row) { row.condition }),
+    ])
+  let units = list.length(selection.units)
+  int.sum(
+    list.map(conditions, fn(condition) {
+      cast_gate.strike_rolls_needed(condition:, units:)
+    }),
+  )
+}
+
+/// The state rows of the selection that throw their creature, in row order.
+fn throwing_rows(
+  selection selection: Selection,
+) -> List(spell_plan.CrowdControl) {
+  list.filter(selection.controls, fn(row) { option.is_some(row.move) })
 }
 
 /// The seed bytes a tick's strike takes: one unit's rolls.
@@ -395,7 +416,13 @@ pub fn begin(
 ) -> #(State, List(Effect)) {
   let reach = reach_of(selection:, attacker:, entropy:, gate:)
   let #(strike, told) =
-    controls_told(strike:, selection:, attacker:, reached: reach.controls)
+    controls_told(
+      strike:,
+      selection:,
+      attacker:,
+      entropy:,
+      reached: reach.controls,
+    )
   let gates = gates_told(selection:, attacker:)
   let #(places, tells) =
     list.index_fold(selection.units, #([], []), fn(so_far, aimed, index) {
@@ -491,7 +518,14 @@ fn reach_of(
 ) -> Reach {
   let own = list.length(selection.units) * bytes_per_unit
   let rolls =
-    bit_array.slice(entropy, own, bit_array.byte_size(entropy) - own)
+    bit_array.slice(
+      entropy,
+      own,
+      int.min(
+        bit_array.byte_size(entropy) - own,
+        rolls_needed(selection:) * prerequisite.roll_bytes,
+      ),
+    )
     |> result.map(fn(bytes) { prerequisite.rolls_of(bytes:) })
     |> result.unwrap([])
   let everyone = list.map(selection.units, fn(aimed) { aimed.unit_id })
@@ -784,15 +818,24 @@ pub fn begin_tick(
 /// the area selected, or both: a primary target outside the area is told only by a row
 /// aimed at it), each with the next instance id of the caster's own count
 /// (genesis_prime/game/crowd_control `instance_id`, `controls_told`), the delay,
-/// duration and armor of its row, and the state. A phase with no state tells none.
+/// duration and armor of its row, the state, and for a row that throws its creature
+/// (`CrowdControl.move`) the throw: the move, the draws of the 8 seed bytes the row and
+/// the unit own (`throw_slot`) and the striker's place and hit radius as they are now. A
+/// phase with no state tells none.
 fn controls_told(
   strike strike: State,
   selection selection: Selection,
   attacker attacker: Attacker,
+  entropy entropy: BitArray,
   reached reached: List(#(spell_plan.CrowdControl, List(Int))),
 ) -> #(State, List(#(Int, List(strike_tell.ControlTell)))) {
+  let slots = throw_slots_of(selection:)
   let #(strike, told) =
-    list.map_fold(over: selection.units, from: strike, with: fn(strike, aimed) {
+    list.index_map(selection.units, fn(aimed, unit_index) {
+      #(aimed, unit_index)
+    })
+    |> list.map_fold(from: strike, with: fn(strike, entry) {
+      let #(aimed, unit_index) = entry
       let rows = rows_reaching_unit(rows: reached, unit_id: aimed.unit_id)
       let #(strike, controls) =
         list.map_fold(over: rows, from: strike, with: fn(strike, row) {
@@ -806,12 +849,80 @@ fn controls_told(
                 count:,
               ),
               row: row.row,
+              throw: throw_of(slots:, attacker:, entropy:, row:, unit_index:),
             ),
           )
         })
       #(strike, #(aimed.unit_id, controls))
     })
   #(strike, list.filter(told, fn(entry) { entry.1 != [] }))
+}
+
+/// Where the seed holds the draws of a selection's throws: the byte of the first slot,
+/// the rows that throw (in row order) and the number of selected units, each of which
+/// has a slot for each row.
+type ThrowSlots {
+  ThrowSlots(first_byte: Int, rows: List(spell_plan.CrowdControl), units: Int)
+}
+
+/// The slots of the selection's throws: after the units' 12 bytes and the gates' rolls
+/// (`entropy_needed`), one for each throwing row and each selected unit.
+fn throw_slots_of(selection selection: Selection) -> ThrowSlots {
+  let units = list.length(selection.units)
+  ThrowSlots(
+    first_byte: units
+      * bytes_per_unit
+      + rolls_needed(selection:)
+      * prerequisite.roll_bytes,
+    rows: throwing_rows(selection:),
+    units:,
+  )
+}
+
+/// The throw a state row gives the unit at `unit_index` of the selection: none for a row
+/// with no move, else its move, the draws of the row's 8 seed bytes for that unit
+/// (`throw_slot`, `forced_move.draws_of`) and the striker's place and hit radius. The
+/// connection draws `entropy_needed` bytes, so a seed without the slot is a fault of its
+/// caller and ends the strike's process.
+fn throw_of(
+  slots slots: ThrowSlots,
+  attacker attacker: Attacker,
+  entropy entropy: BitArray,
+  row row: spell_plan.CrowdControl,
+  unit_index unit_index: Int,
+) -> Option(forced_move.Throw) {
+  use move <- option.map(row.move)
+  let assert Ok(bytes) =
+    bit_array.slice(
+      entropy,
+      throw_slot(slots:, row:, unit_index:),
+      forced_move.draw_bytes,
+    )
+    as "the connection draws entropy_needed bytes"
+  forced_move.Throw(
+    move:,
+    draws: forced_move.draws_of(bytes:),
+    reference: forced_move.Reference(
+      place: attacker.place,
+      radius: attacker.hit_radius,
+    ),
+  )
+}
+
+/// Where the 8 draw bytes of a throwing row and a unit start in the seed: the slot of
+/// the row's place among the throwing rows and the unit's place among the units.
+fn throw_slot(
+  slots slots: ThrowSlots,
+  row row: spell_plan.CrowdControl,
+  unit_index unit_index: Int,
+) -> Int {
+  let row_index =
+    slots.rows
+    |> list.take_while(fn(other) { other.effect_id != row.effect_id })
+    |> list.length
+  slots.first_byte
+  + { row_index * slots.units + unit_index }
+  * forced_move.draw_bytes
 }
 
 /// The player's offence with these blows, each worked out from the player as it is now,

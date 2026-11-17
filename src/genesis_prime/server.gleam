@@ -608,8 +608,8 @@ fn creature_told(request: Request) -> Result(creature.Message, Nil) {
           )
         ChangeEnds(source:) -> creature.ModifierEnds(source:)
       })
-    TellThrown(move:, draws:, reference:, struck_at_ms:) ->
-      Ok(creature.Thrown(move:, draws:, reference:, struck_at_ms:))
+    TellThrown(throw:, struck_at_ms:) ->
+      Ok(creature.Thrown(throw:, struck_at_ms:))
     TellPeer(..)
     | TellChat(..)
     | TellMoved(..)

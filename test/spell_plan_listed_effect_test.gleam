@@ -559,16 +559,11 @@ pub fn the_six_delayed_item_visual_swap_rows_of_48373_are_each_a_lasting_row_end
 pub fn the_measure_counts_an_item_visual_swap_row_with_a_delay_not_read_and_one_without_read_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = fixture_tables.shared()
-  let spell_groups = spell_plan.spell_groups(tables:)
+  let sources = spell_plan.sources_of(tables:)
   let read_of = fn(id) {
     let assert Ok(effect) = spell4_effects.get(tables:, id: Spell4EffectsId(id))
       as "the fixture holds the client's row"
-    effect_row.is_read(
-      tables:,
-      spell_groups:,
-      place: spell_tables.pressed,
-      effect:,
-    )
+    effect_row.is_read(tables:, sources:, place: spell_tables.pressed, effect:)
   }
   assert read_of(106_570)
     as "`table_rows -- Spell4Effects 106570`: delayTime 0, so the client applies the swap from the go (InitSpellEffect 0x1405d6880 applies an effect only when its delay is 0, `0x1405d6880.delayed_apply`)"
@@ -581,7 +576,7 @@ pub fn the_measure_counts_an_item_visual_swap_row_with_a_delay_not_read_and_one_
     as "the fixture holds the client's row"
   assert spell_plan.read_row(
       tables:,
-      spell_groups:,
+      sources:,
       place: spell_tables.pressed,
       effect: delayed,
     )

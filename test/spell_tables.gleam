@@ -8,6 +8,7 @@ import genesis_prime/coverage/effect_row
 import genesis_prime/game/server_proxy
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan
+import genesis_prime/table/cc_state_additional_data
 import genesis_prime/table/class
 import genesis_prime/table/eldan_augmentation
 import genesis_prime/table/id.{Spell4Id}
@@ -63,6 +64,7 @@ pub type Rows {
     eldan_augmentations: List(List(Cell)),
     level_up_unlocks: List(List(Cell)),
     positional_requirements: List(List(Cell)),
+    cc_state_additional_datas: List(List(Cell)),
   )
 }
 
@@ -414,6 +416,7 @@ fn entries() -> List(table_store.Entry) {
     unit_property2.entry(),
     eldan_augmentation.entry(),
     level_up_unlock.entry(),
+    cc_state_additional_data.entry(),
   ]
 }
 
@@ -439,6 +442,7 @@ fn tables_of(rows rows: Rows) -> List(#(tbl_file.Schema, List(List(Cell)))) {
     #(unit_property2.schema, rows.unit_properties),
     #(eldan_augmentation.schema, rows.eldan_augmentations),
     #(level_up_unlock.schema, rows.level_up_unlocks),
+    #(cc_state_additional_data.schema, rows.cc_state_additional_datas),
   ]
 }
 
@@ -475,12 +479,22 @@ pub fn listed_effect_ids(spell spell: spell_plan.Spell) -> List(Int) {
 /// The place of a spell no Proxy starts on each struck unit, that spends nothing and whose
 /// rows hit no foes.
 pub const pressed =
-  spell_plan.RowPlace(struck_by: None, spends_all: False, hits_foes: False)
+  spell_plan.RowPlace(
+    struck_by: None,
+    spends_all: False,
+    hits_foes: False,
+    throws_target: False,
+  )
 
 /// The place of a spell no Proxy starts on each struck unit, that spends nothing and that
 /// hits foes (`spell_plan.spell_hits_foes`).
 pub const pressed_hitting_foes =
-  spell_plan.RowPlace(struck_by: None, spends_all: False, hits_foes: True)
+  spell_plan.RowPlace(
+    struck_by: None,
+    spends_all: False,
+    hits_foes: True,
+    throws_target: False,
+  )
 
 /// The place of a spell the Proxy effect `proxy_effect_id` of Spell4 `spell4_id` starts on
 /// each unit its area strikes.
@@ -492,6 +506,7 @@ pub fn started_on_each_struck(
     struck_by: Some(spell_plan.StruckBy(spell4_id:, proxy_effect_id:)),
     spends_all: False,
     hits_foes: False,
+    throws_target: False,
   )
 }
 
@@ -502,9 +517,9 @@ pub fn read_rows(
   place place: spell_plan.RowPlace,
 ) -> List(Result(spell_plan.RowReading, spell_plan.PlanError)) {
   let tables = fixture_tables.shared()
-  let spell_groups = spell_plan.spell_groups(tables:)
+  let sources = spell_plan.sources_of(tables:)
   list.map(effects, fn(effect) {
-    spell_plan.read_row(tables:, spell_groups:, place:, effect:)
+    spell_plan.read_row(tables:, sources:, place:, effect:)
   })
 }
 
@@ -552,9 +567,9 @@ pub fn with_measure(
     a,
 ) -> a {
   let tables = fixture_tables.shared()
-  let spell_groups = spell_plan.spell_groups(tables:)
+  let sources = spell_plan.sources_of(tables:)
   body(fn(effect, place) {
-    effect_row.is_read(tables:, spell_groups:, place:, effect:)
+    effect_row.is_read(tables:, sources:, place:, effect:)
   })
 }
 
@@ -626,6 +641,7 @@ pub fn fixture_rows() -> Rows {
     eldan_augmentations: of(eldan_augmentation.schema),
     level_up_unlocks: [level_up_unlock_row(id: 26, level: 10)],
     positional_requirements: of(positional_requirement.schema),
+    cc_state_additional_datas: of(cc_state_additional_data.schema),
   )
 }
 

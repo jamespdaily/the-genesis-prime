@@ -7,6 +7,7 @@ import genesis_prime/game/strike_tell.{ControlLanded, ControlTell}
 import genesis_prime/message/crowd_control_state.{
   type CrowdControlState, Knockdown, Stun,
 }
+import gleam/option.{None}
 
 /// Kick's Knockdown, Spell4Effects 140382: delayTime 166, durationTime 3000, state 8.
 pub fn kick_knockdown(instance_id instance_id: Int) -> strike_tell.ControlTell {
@@ -20,6 +21,7 @@ pub fn kick_knockdown(instance_id instance_id: Int) -> strike_tell.ControlTell {
       armor_removed: 1,
       until_removed: False,
     ),
+    throw: None,
   )
 }
 
@@ -35,6 +37,7 @@ pub fn stagger_stun(instance_id instance_id: Int) -> strike_tell.ControlTell {
       armor_removed: 1,
       until_removed: False,
     ),
+    throw: None,
   )
 }
 
@@ -50,6 +53,7 @@ pub fn gate_stun(instance_id instance_id: Int) -> strike_tell.ControlTell {
       armor_removed: 1,
       until_removed: False,
     ),
+    throw: None,
   )
 }
 
@@ -77,5 +81,6 @@ pub fn holding(
       armor_removed: 1,
       until_removed: False,
     ),
+    throw: None,
   )
 }

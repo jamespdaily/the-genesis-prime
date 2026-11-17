@@ -1278,9 +1278,11 @@ fn creature_thrown(
         life:,
       ),
       request: client_connection.TellThrown(
-        move:,
-        draws: forced_move.draws_of(bytes:),
-        reference:,
+        throw: forced_move.Throw(
+          move:,
+          draws: forced_move.draws_of(bytes:),
+          reference:,
+        ),
         struck_at_ms:,
       ),
     )),

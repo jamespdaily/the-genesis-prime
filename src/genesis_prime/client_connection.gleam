@@ -163,12 +163,7 @@ pub type Request {
   /// fractions this connection drew from its seed and the unit it is measured from
   /// (genesis_prime/game/forced_move), for the life the go struck: the monotonic time of
   /// the effect's go. Told through the creature registry with no watch, and never asked.
-  TellThrown(
-    move: forced_move.Move,
-    draws: forced_move.Draws,
-    reference: forced_move.Reference,
-    struck_at_ms: Int,
-  )
+  TellThrown(throw: forced_move.Throw, struck_at_ms: Int)
 }
 
 /// A property modifier of a cast on a creature, as `TellTargetChange` carries it.
