@@ -480,6 +480,10 @@ fn read(
         Ok(chain) -> content_tutorial_quest.put(key:, chain:)
         Error(..) -> Nil
       }
+      case held {
+        Ok(held) -> content_held_objective.put(key:, held:)
+        Error(..) -> Nil
+      }
       case projectors {
         Ok(landings) -> content_projector_landing.put(key:, landings:)
         Error(..) -> Nil
