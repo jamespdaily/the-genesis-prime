@@ -3,12 +3,15 @@ import character_tables
 import client_tables
 import code_rule/repository
 import envoy
+import filepath
 import fixture_tables
 import gleam/bool
 import gleam/list
+import gleam/result
 import gleam/string
 import literal_area
 import module_preload
+import simplifile
 import spawn_support
 import spell_tables
 import unitest
@@ -83,6 +86,8 @@ pub fn main() -> Nil {
   unitest.run(
     unitest.Options(
       ..unitest.default_options(),
+      test_directory: chosen_test_directory(argv.load().arguments)
+        |> result.unwrap(unitest.default_options().test_directory),
       ignored_tags: list.append(
         skipped_when_set("GENESIS_TEST_SKIP_SERIAL", tag: "serial"),
         list.flatten([
@@ -107,6 +112,50 @@ fn runs_chosen_tests(arguments: List(String)) -> Bool {
     string.starts_with(argument, "--test")
     || string.starts_with(argument, "--tag")
   })
+}
+
+/// The folder unitest reads its tests from when the run names a test file
+/// (`test/x_test.gleam` or `test/x_test.gleam:LINE`, with no `--test` or `--tag`).
+/// unitest parses every file under its test folder before it applies the file
+/// name, which takes about 10 s for the whole suite, so the folder is a new one
+/// under `build/chosen_tests` holding only a symlink to the named file, at the
+/// same path below `test` (the folder ends in `test`, so the module name and the
+/// file name unitest matches stay the same). unitest takes one file name; the
+/// first one is used. Any other arguments give `Error(Nil)`, and the run reads
+/// the whole `test` folder.
+fn chosen_test_directory(arguments: List(String)) -> Result(String, Nil) {
+  use <- bool.guard(when: runs_chosen_tests(arguments), return: Error(Nil))
+  let files =
+    list.map(arguments, fn(argument) {
+      string.split_once(argument, ":")
+      |> result.map(fn(parts) { parts.0 })
+      |> result.unwrap(argument)
+    })
+  use path <- result.try(
+    list.find(files, fn(file) {
+      string.starts_with(file, "test/") && string.ends_with(file, ".gleam")
+    }),
+  )
+  use <- bool.guard(
+    when: simplifile.is_file(path) != Ok(True),
+    return: Error(Nil),
+  )
+  use current <- result.try(
+    simplifile.current_directory() |> result.replace_error(Nil),
+  )
+  let directory =
+    "build/chosen_tests/"
+    <> string.replace(string.drop_end(path, 6), each: "/", with: "__")
+    <> "/test"
+  let link = directory <> string.drop_start(path, string.length("test"))
+  use _ <- result.try(
+    simplifile.create_directory_all(filepath.directory_name(link))
+    |> result.replace_error(Nil),
+  )
+  case simplifile.create_symlink(to: current <> "/" <> path, from: link) {
+    Ok(Nil) | Error(simplifile.Eexist) -> Ok(directory)
+    Error(_) -> Error(Nil)
+  }
 }
 
 fn skipped_when_set(variable: String, tag tag: String) -> List(String) {
