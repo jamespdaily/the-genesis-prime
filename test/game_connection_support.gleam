@@ -1832,6 +1832,7 @@ pub fn cast_starts(news: List(News)) -> List(spell_started.SpellStarted) {
       | client_connection.CameBackLogged
       | client_connection.CreatureMoved(..)
       | client_connection.CreaturePlaced(..)
+      | client_connection.CreatureFaces(..)
       | client_connection.Targeting(..)
       | client_connection.Threat(..)
       | client_connection.CombatState(..)
@@ -1872,6 +1873,7 @@ pub fn is_cast_removal(news: News) -> Bool {
     | client_connection.CameBackLogged
     | client_connection.CreatureMoved(..)
     | client_connection.CreaturePlaced(..)
+    | client_connection.CreatureFaces(..)
     | client_connection.Targeting(..)
     | client_connection.Threat(..)
     | client_connection.CombatState(..)

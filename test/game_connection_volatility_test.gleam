@@ -503,6 +503,7 @@ fn is_cast_or_combat_news(news: client_connection.News) -> Bool {
     | client_connection.CameBackLogged
     | client_connection.CreatureMoved(..)
     | client_connection.CreaturePlaced(..)
+    | client_connection.CreatureFaces(..)
     | client_connection.Targeting(..)
     | client_connection.Threat(..)
     | client_connection.Shield(..)
@@ -561,6 +562,7 @@ pub fn a_viewer_of_the_engineer_is_told_42148s_cast_and_never_the_volatility_tes
       | client_connection.CameBackLogged
       | client_connection.CreatureMoved(..)
       | client_connection.CreaturePlaced(..)
+      | client_connection.CreatureFaces(..)
       | client_connection.Targeting(..)
       | client_connection.Threat(..)
       | client_connection.CombatState(..)

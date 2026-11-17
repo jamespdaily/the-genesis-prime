@@ -44,6 +44,7 @@ import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_life.{Attackable, Hostile}
 import genesis_prime/world_map/creature_path
 import gleam/dict
+import gleam/option
 import gleam/set
 import gleam/string
 import owned_test
@@ -105,6 +106,8 @@ fn picture_with(creature_id creature_id: Int, gap gap: Float) -> shown.Picture {
         in_combat: False,
         held: [],
         unit_states: [],
+        face: option.None,
+        faced_yaw: option.None,
       ),
     ),
   ])

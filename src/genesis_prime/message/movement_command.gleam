@@ -9,14 +9,14 @@
 import genesis_prime/message/bit_stream.{
   type DecodeError, type Reader, type Writer,
 }
+import genesis_prime/message/movement_face_point.{type MovementFacePoint}
+import genesis_prime/message/movement_face_unit.{type MovementFaceUnit}
 import genesis_prime/message/movement_kind_10.{type MovementKind10}
 import genesis_prime/message/movement_kind_12.{type MovementKind12}
 import genesis_prime/message/movement_kind_13.{type MovementKind13}
 import genesis_prime/message/movement_kind_15.{type MovementKind15}
 import genesis_prime/message/movement_kind_16.{type MovementKind16}
 import genesis_prime/message/movement_kind_17.{type MovementKind17}
-import genesis_prime/message/movement_kind_18.{type MovementKind18}
-import genesis_prime/message/movement_kind_19.{type MovementKind19}
 import genesis_prime/message/movement_kind_20.{type MovementKind20}
 import genesis_prime/message/movement_kind_21.{type MovementKind21}
 import genesis_prime/message/movement_kind_22.{type MovementKind22}
@@ -88,10 +88,12 @@ pub type MovementCommand {
   Kind16(MovementKind16)
   /// Kind 17, read by `movement_kind_17`.
   Kind17(MovementKind17)
-  /// Kind 18, read by `movement_kind_18`.
-  Kind18(MovementKind18)
-  /// Kind 19, read by `movement_kind_19`.
-  Kind19(MovementKind19)
+  /// Kind 18, read by `movement_face_unit`. The fact file's
+  /// `movement_command.kind_18` names the kind.
+  FaceUnit(MovementFaceUnit)
+  /// Kind 19, read by `movement_face_point`. The fact file's
+  /// `movement_command.kind_19` names the kind.
+  FacePoint(MovementFacePoint)
   /// Kind 20, read by `movement_kind_20`.
   Kind20(MovementKind20)
   /// Kind 21, read by `movement_kind_21`.
@@ -137,8 +139,8 @@ pub fn write(writer writer: Writer, record record: MovementCommand) -> Writer {
     Kind15(variant) -> movement_kind_15.write(writer, variant)
     Kind16(variant) -> movement_kind_16.write(writer, variant)
     Kind17(variant) -> movement_kind_17.write(writer, variant)
-    Kind18(variant) -> movement_kind_18.write(writer, variant)
-    Kind19(variant) -> movement_kind_19.write(writer, variant)
+    FaceUnit(variant) -> movement_face_unit.write(writer, variant)
+    FacePoint(variant) -> movement_face_point.write(writer, variant)
     Kind20(variant) -> movement_kind_20.write(writer, variant)
     Kind21(variant) -> movement_kind_21.write(writer, variant)
     Kind22(variant) -> movement_kind_22.write(writer, variant)
@@ -209,12 +211,12 @@ pub fn read(reader: Reader) -> Result(#(MovementCommand, Reader), DecodeError) {
       |> result.map(pair.map_first(_, Kind17))
     18 ->
       reader
-      |> movement_kind_18.read
-      |> result.map(pair.map_first(_, Kind18))
+      |> movement_face_unit.read
+      |> result.map(pair.map_first(_, FaceUnit))
     19 ->
       reader
-      |> movement_kind_19.read
-      |> result.map(pair.map_first(_, Kind19))
+      |> movement_face_point.read
+      |> result.map(pair.map_first(_, FacePoint))
     20 ->
       reader
       |> movement_kind_20.read

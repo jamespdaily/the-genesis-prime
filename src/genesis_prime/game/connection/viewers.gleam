@@ -123,6 +123,7 @@
 
 import genesis_prime/client_connection.{type Request, Continue}
 import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/game/area
 import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/class_resource
@@ -138,10 +139,16 @@ import genesis_prime/game/shown.{ShownCreature, ShownObject, ShownPlayer}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike
 import genesis_prime/game/world_entry
+import genesis_prime/message/float32
+import genesis_prime/message/relayed_movement
+import genesis_prime/message/start_movement
 import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
 }
 import genesis_prime/message/unit_create_tail.{UnitCreateTail}
+import genesis_prime/message/unit_position_command.{
+  type UnitPositionCommand, UnitPositionCommand,
+}
 import genesis_prime/message/unit_stat.{type UnitStat}
 import genesis_prime/message/unit_target.{UnitTarget}
 import genesis_prime/message/unit_threat.{UnitThreat}
@@ -162,7 +169,7 @@ import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/set
 
@@ -305,6 +312,22 @@ pub fn map_sent(
   }
 }
 
+/// The ground point of the last of the position commands, as the player's client holds it:
+/// x and z of the command, none when there is no command or a float is not finite.
+fn player_point(
+  commands commands: List(UnitPositionCommand),
+) -> Option(area.Point) {
+  case list.last(commands) {
+    Ok(UnitPositionCommand(x:, z:, ..)) ->
+      option.from_result({
+        use x <- result.try(result.try(float32.bits(number: x), float32.value))
+        use z <- result.try(result.try(float32.bits(number: z), float32.value))
+        Ok(area.Point(x:, z:))
+      })
+    Error(Nil) -> None
+  }
+}
+
 /// What a viewer writes of news of a unit, from the units this connection has
 /// shown and the ones the map reported gone: a 0x262 for a unit not shown and not
 /// gone, which is then shown (the client keeps one unit per id until its 0x355,
@@ -342,6 +365,7 @@ pub fn viewer_takes(
     | client_connection.CameBackLogged
     | client_connection.CreatureMoved(..)
     | client_connection.CreaturePlaced(..)
+    | client_connection.CreatureFaces(..)
     | client_connection.Targeting(..)
     | client_connection.Threat(..)
     | client_connection.CombatState(..)
@@ -368,7 +392,19 @@ pub fn viewer_takes(
         return: Continue(session, []),
       )
       Continue(
-        shown_changed(session:, change: dict.insert(_, unit_id, ShownPlayer)),
+        shown_changed(session:, change: dict.insert(
+          _,
+          unit_id,
+          ShownPlayer(at: player_point(
+            commands: unit.tail.movement_commands
+            |> list.filter_map(fn(command) {
+              case command {
+                start_movement.Position(position) -> Ok(position)
+                start_movement.Rotation(..) -> Error(Nil)
+              }
+            }),
+          )),
+        )),
         [
           connection_state.to_client(
             session,
@@ -407,6 +443,8 @@ pub fn viewer_takes(
             in_combat: False,
             held: [],
             unit_states: [],
+            face: None,
+            faced_yaw: None,
           ),
         )),
         [
@@ -419,6 +457,33 @@ pub fn viewer_takes(
     }
     client_connection.Moving(server_time_ms:, commands:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
+      let session = creatures_resolved(session:, now:)
+      let positions =
+        list.filter_map(commands, fn(command) {
+          case command {
+            relayed_movement.Position(position) -> Ok(position)
+            relayed_movement.Time(..)
+            | relayed_movement.Platform(..)
+            | relayed_movement.TimedPath(..)
+            | relayed_movement.Path(..)
+            | relayed_movement.Velocity(..)
+            | relayed_movement.MoveAsked(..)
+            | relayed_movement.Rotation(..)
+            | relayed_movement.FaceUnit(..)
+            | relayed_movement.FacePoint(..)
+            | relayed_movement.StateFlags(..)
+            | relayed_movement.Mode(..) -> Error(Nil)
+          }
+        })
+      let session = case player_point(commands: positions) {
+        Some(at) ->
+          shown_changed(session:, change: shown.with_player_at(
+            picture: _,
+            unit_id:,
+            at:,
+          ))
+        None -> session
+      }
       Continue(session, [
         connection_state.to_client(
           session,
@@ -542,6 +607,7 @@ pub fn viewer_takes(
       life_news(session:, entered:, unit_id:, news: news.news)
     client_connection.CreatureMoved(path:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
+      let session = creatures_resolved(session:, now:)
       let session =
         shown_changed(session:, change: fn(picture) {
           shown.with_path(picture:, unit_id:, path:)
@@ -556,6 +622,7 @@ pub fn viewer_takes(
     }
     client_connection.CreaturePlaced(place:, at_ms:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
+      let session = creatures_resolved(session:, now:)
       let session =
         shown_changed(session:, change: fn(picture) {
           shown.with_path(
@@ -568,6 +635,20 @@ pub fn viewer_takes(
         connection_state.to_client(
           session,
           connection_frames.placed_frame(entered:, unit_id:, place:, at_ms:),
+        ),
+      ])
+    }
+    client_connection.CreatureFaces(face:, at_ms:) -> {
+      use <- bool.guard(when: !shown, return: Continue(session, []))
+      let session = creatures_resolved(session:, now:)
+      let session =
+        shown_changed(session:, change: fn(picture) {
+          shown.with_face(picture:, unit_id:, face:)
+        })
+      Continue(session, [
+        connection_state.to_client(
+          session,
+          connection_frames.face_frame(entered:, unit_id:, face:, at_ms:),
         ),
       ])
     }
@@ -825,6 +906,7 @@ fn creature_news(
     | client_connection.CastInterrupted(..)
     | client_connection.CreatureMoved(..)
     | client_connection.CreaturePlaced(..)
+    | client_connection.CreatureFaces(..)
     | client_connection.Targeting(..)
     | client_connection.Threat(..)
     | client_connection.CombatState(..)
@@ -919,6 +1001,7 @@ fn life_news(
     | client_connection.Died
     | client_connection.CreatureMoved(..)
     | client_connection.CreaturePlaced(..)
+    | client_connection.CreatureFaces(..)
     | client_connection.Targeting(..)
     | client_connection.Threat(..)
     | client_connection.CombatState(..)
@@ -1077,6 +1160,14 @@ fn viewers_changed(
 ) -> Session {
   connection_state.with_entered(session:, change: fn(entered) {
     world_entry.Entered(..entered, viewers: change(entered.viewers))
+  })
+}
+
+/// The session with its pictured creatures holding the yaw their clients show now
+/// (`world_entry.with_creatures_resolved`).
+fn creatures_resolved(session session: Session, now now: Now) -> Session {
+  connection_state.with_entered(session:, change: fn(entered) {
+    world_entry.with_creatures_resolved(entered:, now_ms: now.monotonic_ms)
   })
 }
 

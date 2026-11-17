@@ -180,6 +180,8 @@ pub fn replayed(commands: List(RelayedMovement)) -> List(MovementCommand) {
       relayed_movement.Velocity(data) -> movement_command.Velocity(data)
       relayed_movement.MoveAsked(data) -> movement_command.MoveAsked(data)
       relayed_movement.Rotation(data) -> movement_command.Rotation(data)
+      relayed_movement.FaceUnit(data) -> movement_command.FaceUnit(data)
+      relayed_movement.FacePoint(data) -> movement_command.FacePoint(data)
       relayed_movement.StateFlags(data) -> movement_command.StateFlags(data)
       relayed_movement.Mode(data) -> movement_command.Mode(data)
     }

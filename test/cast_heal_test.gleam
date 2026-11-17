@@ -789,6 +789,7 @@ pub fn the_viewers_go_carries_the_same_heal_description_test() -> Nil {
         | client_connection.CameBackLogged
         | client_connection.CreatureMoved(..)
         | client_connection.CreaturePlaced(..)
+        | client_connection.CreatureFaces(..)
         | client_connection.Targeting(..)
         | client_connection.Threat(..)
         | client_connection.CombatState(..)

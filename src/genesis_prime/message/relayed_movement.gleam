@@ -5,17 +5,19 @@
 //// unit's movement: the kinds of the per-frame batch the client's writer
 //// builds after the time command (1 platform, 2 position, 8 velocity, 11 move
 //// asked, 14 rotation, 24 state flags, 27 mode), which the server relays to
-//// the players who see a unit, every field named, and the three a server that
+//// the players who see a unit, every field named, and the five a server that
 //// moves a unit writes itself, 0 (the time its later commands apply at), 3 (a
-//// timed path) and 4 (a path). Gap: the other kinds, which game moves queue
-//// and the client's writer may send, are not relayed, since opcode.0x637 does
-//// not say which queuers exist or what they mean. Its variants are listed in
-//// `schema.toml` with the client's evidence, and the fact file's
-//// `opcode.0x637` names the union.
+//// timed path), 4 (a path), 18 (face a unit) and 19 (face a point). Gap: the
+//// other kinds, which game moves queue and the client's writer may send, are
+//// not relayed, since opcode.0x637 does not say which queuers exist or what
+//// they mean. Its variants are listed in `schema.toml` with the client's
+//// evidence, and the fact file's `opcode.0x637` names the union.
 
 import genesis_prime/message/bit_stream.{
   type DecodeError, type Reader, type Writer,
 }
+import genesis_prime/message/movement_face_point.{type MovementFacePoint}
+import genesis_prime/message/movement_face_unit.{type MovementFaceUnit}
 import genesis_prime/message/movement_mode.{type MovementMode}
 import genesis_prime/message/movement_move_asked.{type MovementMoveAsked}
 import genesis_prime/message/movement_path.{type MovementPath}
@@ -57,6 +59,12 @@ pub type RelayedMovement {
   /// Kind 14, read by `movement_rotation`. The fact file's `0x140715350` names
   /// the kind.
   Rotation(MovementRotation)
+  /// Kind 18, read by `movement_face_unit`. The fact file's
+  /// `movement_command.kind_18` names the kind.
+  FaceUnit(MovementFaceUnit)
+  /// Kind 19, read by `movement_face_point`. The fact file's
+  /// `movement_command.kind_19` names the kind.
+  FacePoint(MovementFacePoint)
   /// Kind 24, read by `movement_state_flags`. The fact file's
   /// `movement_command.kind_24` names the kind.
   StateFlags(MovementStateFlags)
@@ -76,6 +84,8 @@ pub fn write(writer writer: Writer, record record: RelayedMovement) -> Writer {
     Velocity(variant) -> movement_velocity.write(writer, variant)
     MoveAsked(variant) -> movement_move_asked.write(writer, variant)
     Rotation(variant) -> movement_rotation.write(writer, variant)
+    FaceUnit(variant) -> movement_face_unit.write(writer, variant)
+    FacePoint(variant) -> movement_face_point.write(writer, variant)
     StateFlags(variant) -> movement_state_flags.write(writer, variant)
     Mode(variant) -> movement_mode.write(writer, variant)
   }
@@ -111,6 +121,14 @@ pub fn read(reader: Reader) -> Result(#(RelayedMovement, Reader), DecodeError) {
       reader
       |> movement_rotation.read
       |> result.map(pair.map_first(_, Rotation))
+    18 ->
+      reader
+      |> movement_face_unit.read
+      |> result.map(pair.map_first(_, FaceUnit))
+    19 ->
+      reader
+      |> movement_face_point.read
+      |> result.map(pair.map_first(_, FacePoint))
     24 ->
       reader
       |> movement_state_flags.read
