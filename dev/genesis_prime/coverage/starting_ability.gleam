@@ -412,6 +412,10 @@ fn describe_proc_left_out(why why: spell_plan.LeftOutReason) -> String {
     spell_plan.ProcAimNotRead(data_bits03:) ->
       "its aim bits are " <> int.to_string(data_bits03)
     spell_plan.ProcWithoutLife -> "it has no duration and no flags bit 2"
+    spell_plan.ProcCastsNoSpell(spell4_id:) ->
+      "the spell it casts, Spell4 "
+      <> int.to_string(spell4_id)
+      <> ", has no row"
     spell_plan.ProcKindWaits(kind:, issue:) ->
       "its kind "
       <> int.to_string(kind)

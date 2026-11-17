@@ -2224,14 +2224,21 @@ fn measured_proc_rows(
       #("flags", planted_table.Integer(2)),
       #("targetFlags", planted_table.Integer(planted.0)),
       #("dataBits00", planted_table.Integer(planted.1)),
+      #("dataBits01", planted_table.Integer(1)),
       #("dataBits02", planted_table.Integer(planted.2)),
       #("dataBits03", planted_table.Integer(1)),
       #("dataBits04", planted_table.Integer(planted.3)),
       #("dataBits05", planted_table.Integer(1)),
     ])
   }
-  measure_planted(
-    rows: list.index_map(rows, fn(planted, index) { row(index + 1, planted) }),
+  // Spell4 1, the spell each row casts: a Proc row naming a spell with no row is left out.
+  measure_planted_over(
+    files: planted_files(
+      rows: list.index_map(rows, fn(planted, index) { row(index + 1, planted) }),
+    )
+    |> planted_table.replacing(spell4.schema, [
+      planted_table.row(spell4.schema, [#("ID", planted_table.Integer(1))]),
+    ]),
   )
 }
 
@@ -2280,9 +2287,9 @@ pub fn coverage_proc_rows_read_test() -> Nil {
     == HandledWithGap(
       reason: proc_gap,
       fact_key: "Spell4Effects.effectType.14",
-      unread_rows: 1435,
+      unread_rows: 1490,
     )
-    as "2,063 rows are read, 558 more than the 1,505 before issue 828 (scratch count of `read_row` over the 3,498; the 558 are the kinds 16, 146, 51 and 115, 745 rows of which 187 stay out and 2 are refused as the last item says): of the other 1,435, 988 are of a kind not read (478 of them a kind that waits on an open issue), 378 are held by another unit (targetFlags 2 to 6), 14 sit behind a persistence prerequisite, 5 behind a target apply prerequisite, 26 hold a group with no filter kind, 10 hold an aim of 33, 34 or 36, 9 have no durationTime and no flags bit 2, and 5 name a one-spell filter whose Spell4 the tables lack (Procs 75724, 100105 and 198006 before issue 828, and 162927 and 189684 of kind 16, held by Spell4 36396, 43658, 76365, 65244 and 73125, which no level-1 ability or innate reaches)"
+    as "2,008 rows are read: the 1,505 before issue 828, less 5 of the kinds 10, 12, 13, 0 and 44 that cast a Spell4 the tables lack, and 508 more (scratch count of `read_row` over the 3,498; the 508 are the kinds 16, 146, 51 and 115, 745 rows of which 50 cast a Spell4 the tables lack, 185 stay out and 2 are refused as the last item says): of the other 1,490, 988 are of a kind not read (478 of them a kind that waits on an open issue), 378 are held by another unit (targetFlags 2 to 6), 14 sit behind a persistence prerequisite, 5 behind a target apply prerequisite, 26 hold a group with no filter kind, 10 hold an aim of 33, 34 or 36, 9 have no durationTime and no flags bit 2, 55 cast a Spell4 the tables lack (47 of the 50 of the four kinds name Spell4 22930), and 5 name a one-spell filter whose Spell4 the tables lack (Procs 75724, 100105 and 198006 before issue 828, and 162927 and 189684 of kind 16, held by Spell4 36396, 43658, 76365, 65244 and 73125, which no level-1 ability or innate reaches)"
   assert line.starting_abilities == 7
     as "the 7 Proc rows a level-1 character reaches (Spell4Effects.effectType.14.level_one)"
   let assert Ok(left) = starting_ability.left_out(tables:)

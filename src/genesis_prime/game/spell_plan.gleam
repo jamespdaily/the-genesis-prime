@@ -169,7 +169,9 @@
 ////   does a row of a kind the texts name that waits on an open issue (`ProcKindWaits`, which
 ////   names the issue), and a row held by another unit, behind a persistence or target apply prerequisite,
 ////   with a group and no filter kind, with an aim of 32 or above, or with no life
-////   (`ProcIsLeftOut`); a row of these kinds with a chance outside 0 to 1.0, a window or
+////   (`ProcIsLeftOut`), and a row whose spell the Spell4 table has no row for, which the
+////   client's table keeps because the client never reads a Proc row (`ProcCastsNoSpell`);
+////   a row of these kinds with a chance outside 0 to 1.0, a window or
 ////   count at or below 0 (a window of -1 excepted), a filter kind other than 0, 1 and 2 or a
 ////   negative delay fails the load naming the column (`ProcNotRead`). The spells the procs
 ////   cast are in the tree (`tree`).
@@ -1825,6 +1827,10 @@ pub type LeftOutReason {
   /// A Proc with no durationTime and no flags bit 2, which gives its holder's node no
   /// life (`Spell4Effects.effectType.14.lifetime`).
   ProcWithoutLife
+  /// A Proc whose dataBits01 names a spell the Spell4 table has no row for, so it can cast
+  /// nothing. The client never reads a Proc row, so its table keeps such a name and the
+  /// holder spell still casts: the row is left out, as a Proxy that names no spell is.
+  ProcCastsNoSpell(spell4_id: Int)
   /// A Proxy whose dataBits00 names no spell.
   ProxyNamesNoSpell
   /// A damage row whose phaseFlags is 0: no phase selects it (`spell_area` `phase`).
@@ -4971,9 +4977,10 @@ fn try_heal(
 }
 
 /// A Proc row: left out when its kind is one the holder's own events do not make or its
-/// shape is one a rule does not hold (`proc_read`), else its reading with its caster
-/// condition and its two gates, the Prerequisite rows its dataBits06 and dataBits09 name; a
-/// gate or a one-spell filter naming a row the tables lack fails the load.
+/// shape is one a rule does not hold (`proc_read`) or its dataBits01 names a Spell4 the
+/// tables lack (`ProcCastsNoSpell`), else its reading with its caster condition and its
+/// two gates, the Prerequisite rows its dataBits06 and dataBits09 name; a gate or a
+/// one-spell filter naming a row the tables lack fails the load.
 fn proc_reading(
   tables tables: table_store.Tables,
   spell4_id spell4_id: Int,
@@ -4984,28 +4991,37 @@ fn proc_reading(
       Ok(LeftOut(why: ProcOfAnotherKind(kind:)))
     Error(error) -> Error(error)
     Ok(ProcIsLeftOut(why:)) -> Ok(LeftOut(why:))
-    Ok(ProcIsRead(reading:)) -> {
-      use condition <- result.try(condition_of(
-        tables:,
-        effect:,
-        reach: OnlyTheCaster,
-        data_bits06_names_a_gate: False,
-      ))
-      use event_gate <- result.try(proc_gate_of(tables:, id: reading.event_gate))
-      use holder_gate <- result.try(proc_gate_of(
-        tables:,
-        id: reading.holder_gate,
-      ))
-      use Nil <- result.map(case reading.filter {
-        OneSpell(spell4_id: named) ->
-          spell4.get(tables:, id: named)
-          |> result.replace(Nil)
-          |> result.replace_error(NoRow(table: "Spell4", id: named.value))
-        AnySpell | InGroup(..) -> Ok(Nil)
-      })
-      Applied(ReadProc(reading:, condition:, event_gate:, holder_gate:))
-    }
+    Ok(ProcIsRead(reading:)) ->
+      case spell4.get(tables:, id: Spell4Id(effect.data_bits01)) {
+        Error(Nil) ->
+          Ok(LeftOut(why: ProcCastsNoSpell(spell4_id: effect.data_bits01)))
+        Ok(_) -> proc_read_with_gates(tables:, effect:, reading:)
+      }
   }
+}
+
+/// The reading of a Proc row whose spell has its row, with its condition and its gates.
+fn proc_read_with_gates(
+  tables tables: table_store.Tables,
+  effect effect: spell4_effects.Spell4Effects,
+  reading reading: ProcReading,
+) -> Result(RowReading, PlanError) {
+  use condition <- result.try(condition_of(
+    tables:,
+    effect:,
+    reach: OnlyTheCaster,
+    data_bits06_names_a_gate: False,
+  ))
+  use event_gate <- result.try(proc_gate_of(tables:, id: reading.event_gate))
+  use holder_gate <- result.try(proc_gate_of(tables:, id: reading.holder_gate))
+  use Nil <- result.map(case reading.filter {
+    OneSpell(spell4_id: named) ->
+      spell4.get(tables:, id: named)
+      |> result.replace(Nil)
+      |> result.replace_error(NoRow(table: "Spell4", id: named.value))
+    AnySpell | InGroup(..) -> Ok(Nil)
+  })
+  Applied(ReadProc(reading:, condition:, event_gate:, holder_gate:))
 }
 
 /// The Prerequisite a Proc gate column names: none for 0, else its row, which the tables
