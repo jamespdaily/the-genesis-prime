@@ -12,6 +12,9 @@
 //// the spell's cast prerequisite (Spell4.prerequisiteIdCasterCast)
 ////   none, or one condition of type 15            ─▶ answered
 ////   any other                                    ─▶ the load refuses the spell
+//// each applying damage effect's formula (`formulas`, `loadable`)
+////   a finite multiplier, parameters the creature formula reads ─▶ applies
+////   otherwise                                    ─▶ the load refuses the spell
 //// ```
 ////
 //// - **Type 179** compares the unit's difficulty with the condition's object id,
@@ -25,9 +28,14 @@
 ////   chooses its effects by the points spent (genesis_prime/game/spend), which a
 ////   creature's attack has none of, so the load refuses it
 ////   (`Spell4.innateCostEMMId0`).
+//// - **The formula** is read for a creature's difficulty (`loadable`): an
+////   auto-attack or special row whose formula names a parameter the creature formula does
+////   not read (`damage.creature_unread`) is refused at the kind load, which the spawn load
+////   would otherwise refuse later, and the spawn load takes the same rule (`formulas`).
 //// - **The client applies no effect itself**: the server names the effect in
 ////   0x7f4, so the server follows the table's prerequisite (`Spell4Effects.184741`).
 
+import genesis_prime/game/damage
 import genesis_prime/game/effect_kind
 import genesis_prime/game/prerequisite as game_prerequisite
 import genesis_prime/game/spell_area
@@ -83,6 +91,12 @@ pub type Unevaluated {
     prerequisite_id: Int,
     type_id: Int,
   )
+  /// A damage effect's formula names a parameter the creature formula does not read
+  /// (genesis_prime/game/damage `creature_unread`): the type of the first it does not.
+  FormulaNotRead(spell4_effects_id: Int, parameter_kind: Int)
+  /// A damage effect's multiplier, dataBits00 read as a 32-bit float, is not finite
+  /// (genesis_prime/game/damage `formula_of`).
+  MultiplierNotFinite(spell4_effects_id: Int, bits: Int)
   /// The special's Spell4 has no row in the client's table.
   NoSpellRow(spell4_id: Int)
   /// The special's cast time is 0: a special is a cast with a cast bar.
@@ -473,6 +487,45 @@ pub fn applying(
   |> result.map(list.reverse)
 }
 
+/// The damage effects of the spell that apply to a creature of `difficulty`, each with the
+/// formula its damage comes from: `applying`, then each effect's formula
+/// (`damage.formula_of`) with a multiplier that is finite and parameters the creature
+/// formula reads (`damage.creature_unread`). The one rule the kind load, the spawn load and
+/// the import of the retail record all take a creature's spell by.
+pub fn formulas(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Int,
+  difficulty difficulty: Int,
+) -> Result(List(#(Spell4Effects, damage.Formula)), Unevaluated) {
+  use effects <- result.try(applying(tables:, spell4_id:, difficulty:))
+  list.try_map(effects, fn(effect) {
+    use formula <- result.try(
+      damage.formula_of(effect:)
+      |> result.replace_error(MultiplierNotFinite(
+        spell4_effects_id: effect.id,
+        bits: effect.data_bits00,
+      )),
+    )
+    case damage.creature_unread(formula:) {
+      Some(damage.Unread(parameter_kind:)) ->
+        Error(FormulaNotRead(spell4_effects_id: effect.id, parameter_kind:))
+      None -> Ok(#(effect, formula))
+    }
+  })
+}
+
+/// Whether a creature of `difficulty` can strike with the spell: the damage effects it
+/// applies are ones the server evaluates (`applying`) and their formulas read for a
+/// creature (`formulas`). `Error` names the first that is not, as the spawn load would
+/// refuse it, so the kind load can refuse a row before any spawn starts.
+pub fn loadable(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Int,
+  difficulty difficulty: Int,
+) -> Result(Nil, Unevaluated) {
+  formulas(tables:, spell4_id:, difficulty:) |> result.replace(Nil)
+}
+
 /// A damage effect with no tickTime, which strikes once; a tickTime is a periodic
 /// effect, which one blow per effect would strike once instead of every tick.
 fn strikes_once(effect effect: Spell4Effects) -> Result(Nil, Unevaluated) {
@@ -609,6 +662,18 @@ pub fn describe(unevaluated unevaluated: Unevaluated) -> String {
       <> " of type "
       <> int.to_string(type_id)
       <> ", which a creature's attack does not answer (only one condition of type 15, the target of a live cast, or none; type 0 is a row the client's table lacks or empty)"
+    FormulaNotRead(spell4_effects_id:, parameter_kind:) ->
+      "Spell4Effects "
+      <> int.to_string(spell4_effects_id)
+      <> " reads parameter type "
+      <> int.to_string(parameter_kind)
+      <> ", which the creature formula does not read"
+    MultiplierNotFinite(spell4_effects_id:, bits:) ->
+      "Spell4Effects "
+      <> int.to_string(spell4_effects_id)
+      <> " has a multiplier, dataBits00 "
+      <> int.to_string(bits)
+      <> ", that is not a finite 32-bit float"
     NoSpellRow(spell4_id:) ->
       "Spell4 "
       <> int.to_string(spell4_id)

@@ -106,6 +106,7 @@ effectful_modules = [
   { module = "genesis_prime/content/spawn", reason = "runs the spawn table's one query on the load's pool and puts the world's spawns in a persistent term" },
   { module = "genesis_prime/content/creature_kind", reason = "runs the creature_kind table's one query on the load's pool and puts the kinds in a persistent term" },
   { module = "genesis_prime/content/creature_special", reason = "runs the creature_special table's one query on the load's pool" },
+  { module = "genesis_prime/content/creature_auto_attack", reason = "runs the creature_auto_attack table's one query on the load's pool" },
   { module = "genesis_prime/content/creature_faction", reason = "runs the creature_faction table's one query on the load's pool and puts the factions in a persistent term" },
   { module = "genesis_prime/content/game_number", reason = "runs the game_number table's one query on the load's pool and puts the numbers in a persistent term" },
   { module = "genesis_prime/content/class_resource", reason = "runs the class_resource table's one query on the load's pool and puts the classes' resources in a persistent term" },

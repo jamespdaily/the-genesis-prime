@@ -115,6 +115,7 @@ fn creature_from(
     kind: Kind(
       respawn_ms: 60_000,
       attack_spell4_id: Spell4Id(5649),
+      alternate_spell4_ids: [],
       attack_interval_ms: 1500,
       guard: option.None,
       specials: [],
@@ -2968,6 +2969,7 @@ pub fn a_guarded_creature_with_a_held_state_answers_one_immune_test() -> Nil {
         kind: Kind(
           respawn_ms: 60_000,
           attack_spell4_id: Spell4Id(5649),
+          alternate_spell4_ids: [],
           attack_interval_ms: 1500,
           guard: turret.guard,
           specials: [],

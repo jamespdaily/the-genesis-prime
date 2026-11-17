@@ -155,9 +155,15 @@
 ////   genesis_prime/game/area `select`). The 0x7ff carries no telegraph position: the client
 ////   draws the shape on the caster itself (`0x140546e60`) and turns it with the caster's
 ////   yaw on every update (`0x14054b1b0.follows_caster`).
+//// - **The auto-attacks alternate**: a creature whose kind lists several (`Fighter.attack`, then
+////   `Fighter.alternates`) strikes the first, then each next, then the first again, one for each
+////   attack tick that strikes (`State.autos_struck`); a special cast between them, and a tick that
+////   finds the attack refused, leave the turn where it was, and a new fight opens with the first.
+////   Each waits the kind's attack interval. The turn's attack is the one a tick closes in on and
+////   strikes with; the leash keeps the first's reach (`chosen`, `ticked`).
 //// - **A special** is chosen at the attack tick: the first of `Fighter.specials` that is not refused by
 ////   the states the creature holds, whose cooldown is over and whose reach covers the target, else the
-////   attack; none while the creature holds a state (`chosen`). The cooldown starts at the cast's start
+////   next auto-attack; none while the creature holds a state (`chosen`). The cooldown starts at the cast's start
 ////   (`ready_at`, a server choice) and is cleared by a new fight (`start_fight`), so a fight opens with
 ////   its specials ready. A special's gos are armed from the cast's start, each for `max(0, due - now)`
 ////   (`due_in`), so a timer handled late does not push the gos after it.
@@ -269,6 +275,11 @@
 //// | death or the leash between a special's gos | the pending go's timer is cancelled and the cast finishes | `death_between_gos_ends_the_special_test`, `leash_between_gos_ends_the_special_test` |
 //// | the target or another fighter moves, is named or leaves, a state that held it ends, or a kill retargets, in a hold, a cast or the strikes of a charged round | the creature starts no path | `a_creature_in_its_hold_neither_chases_nor_strikes_test`, `a_specials_cone_faces_its_target_test`, `no_path_starts_while_a_charged_round_strikes_or_holds_test` |
 //// | a ready special whose reach the target is beyond | the creature closes to the special's reach, then casts it | `a_ready_special_closes_to_its_own_reach_test` |
+//// | the tick strikes: the creature has several auto-attacks | it strikes the first, then each next in turn, then the first again, each waiting the attack interval | `a_creature_strikes_its_auto_attacks_in_turn_test`, `each_auto_attack_waits_the_attack_interval_test` |
+//// | the tick finds the attack refused by a state, or a special is cast between the auto-attacks | nothing is struck and the turn stays | `a_refused_auto_attack_does_not_advance_the_turn_test`, `a_special_between_autos_leaves_the_turn_unchanged_test` |
+//// | a new fight begins | the turn is the first auto-attack | `a_new_fight_opens_with_the_lead_auto_attack_test` |
+//// | the next auto-attack reaches farther than the first | the creature closes in to the next's reach | `the_next_alternates_reach_is_closed_in_on_test` |
+//// | a round names an alternate's spell after the creature's values change | the attack is found among the alternates | `a_round_naming_an_alternates_spell_finds_its_attack_test` |
 //// | a viewer arrives between a special's gos, or while its strikes are out | it is sent the open cast and the gos that went | `a_viewer_arriving_between_gos_gets_the_open_cast_and_the_gos_so_far_test` |
 //// | Charge start: the guard holds the number `next_cast` offers | the round takes the next free id and `next_cast` moves past that id, so two charges in a row take different ids and a late answer to the first closes nothing of the second | `two_charges_under_a_held_guard_take_different_cast_ids_test` |
 //// | CastEnds timer: it fires for the open charge | each fighter on the threat list inside the rectangle along the bearing to the target now gets a strike, and the strike deadline starts; none inside, the go (0x7f4) names no unit and 0x7fe follows | `at_its_end_the_charge_strikes_each_fighter_inside_its_rectangle_test`, `a_charge_faces_its_target_test`, `a_charge_with_nobody_inside_goes_with_no_target_test` |
@@ -328,7 +339,7 @@ import gleam/result
 import gleam/set.{type Set}
 
 /// What the creature fights with: its unit and address, the place of its spawn,
-/// which is home and the leash circle's centre, its attack, the time between its
+/// which is home and the leash circle's centre, its attack and alternates, the time between its
 /// attack ticks and the run's game numbers, which are fixed for its life; what its held
 /// crowd-control states stop it doing now, which the creature's rule gives each step
 /// (genesis_prime/world_map/creature_control); and the ids of the guard's live casts
@@ -343,7 +354,9 @@ import gleam/set.{type Set}
 ///   "Creatures cast spells, and the effect types only creature spells use work" closes) and a state that takes hold during a charge breaks it.
 /// - `can_move`: the creature may move (`creature_unit_type.can_move`); one that may not never
 ///   chases or walks home.
-/// - `specials`: the spells it casts besides `attack`, in the order its kind lists them
+/// - `alternates`: the auto-attacks it strikes with after `attack` in turn, in the order its kind
+///   lists them (`creature_life.Combat.alternates`); empty for a creature with one auto-attack.
+/// - `specials`: the spells it casts besides its auto-attacks, in the order its kind lists them
 ///   (`creature_life.Combat.specials`). A creature that holds any state casts none of them
 ///   (`holds_a_state`), which covers every state a special's caster conditions name.
 /// An attack that is `Charged` is a charge.
@@ -354,6 +367,7 @@ pub type Fighter {
     can_move: Bool,
     home: Place,
     attack: Attack,
+    alternates: List(Attack),
     interval_ms: Int,
     numbers: GameNumbers,
     still: Bool,
@@ -433,7 +447,10 @@ pub type Sighting {
 /// ring (from `Approached` and `Withdrew`), the newest place of each player it
 /// heard of, the number of its next cast, the next timer generation, a throw it is in,
 /// and when each special may be cast again (`ready_at`: a Spell4 id to the monotonic time;
-/// absent means ready; emptied by `start_fight`, so every fight opens with its specials ready).
+/// absent means ready; emptied by `start_fight`, so every fight opens with its specials ready),
+/// and how many auto-attacks it has struck with this fight (`autos_struck`: the next auto-attack
+/// is `attack` and `alternates` at that count's remainder; zero from `start_fight`, so every
+/// fight opens with the lead).
 pub opaque type State {
   State(
     status: Status,
@@ -444,6 +461,7 @@ pub opaque type State {
     next_generation: Int,
     flight: Option(Flight),
     ready_at: Dict(Int, Int),
+    autos_struck: Int,
   )
 }
 
@@ -587,6 +605,7 @@ pub fn new(home home: Place) -> State {
     next_generation: 1,
     flight: None,
     ready_at: dict.new(),
+    autos_struck: 0,
   )
 }
 
@@ -1098,6 +1117,7 @@ fn start_fight(
         State(
           ..state,
           ready_at: dict.new(),
+          autos_struck: 0,
           status: Fighting(
             threat: dict.from_list(entries),
             target: first.0,
@@ -1398,8 +1418,12 @@ fn attacks(
     Charged(..) -> charges(state:, fighter:, attack:, sighting:, here:, now_ms:)
     Instant -> {
       let #(state, struck) =
-        strikes(state:, fighter:, target:, sighting:, here:)
-      next_tick(state:, fighter:, effects: struck)
+        strikes(state:, fighter:, attack:, target:, sighting:, here:)
+      next_tick(
+        state: State(..state, autos_struck: state.autos_struck + 1),
+        fighter:,
+        effects: struck,
+      )
     }
   }
 }
@@ -1453,6 +1477,7 @@ fn tick_after(
 fn strikes(
   state state: State,
   fighter fighter: Fighter,
+  attack attack: Attack,
   target target: ConnectionId,
   sighting sighting: Sighting,
   here here: Place,
@@ -1472,7 +1497,7 @@ fn strikes(
   let #(state, deadline) = generation(state)
   let assert Fighting(..) as fighting = state.status
     as "a creature strikes only while Fighting"
-  let spell4_id = fighter.attack.spell4_id
+  let spell4_id = attack.spell4_id
   let stage =
     Striking(
       deadline:,
@@ -1493,7 +1518,7 @@ fn strikes(
       ToViewers(
         client_connection.CastStarted(start: cast_frame.creature_started(
           cast_id:,
-          spell4_id: fighter.attack.spell4_id.value,
+          spell4_id: spell4_id.value,
           caster_unit_id: fighter.unit_id,
           target_unit_id: sighting.unit_id,
           place: here,
@@ -1506,11 +1531,8 @@ fn strikes(
           tell: strike_tell.Strike(
             key:,
             from: fighter.address,
-            striker: CreatureStriker(
-              unit_id: fighter.unit_id,
-              spell4_id: fighter.attack.spell4_id,
-            ),
-            offence: fighter.attack.offence,
+            striker: CreatureStriker(unit_id: fighter.unit_id, spell4_id:),
+            offence: attack.offence,
             controls: [],
             gates: [],
           ),
@@ -2009,20 +2031,24 @@ fn ticking_again(
   }
 }
 
-/// The attack of the spell `spell4_id`: the fighter's own attack, or the special that casts
-/// it. A round names its spell by this id, so each go works its strike out from the fighter
-/// as it is then.
+/// The attack of the spell `spell4_id`: one of the fighter's auto-attacks, or the special that
+/// casts it. A round names its spell by this id, so each go works its strike out from the
+/// fighter as it is then.
 fn attack_named(
   fighter fighter: Fighter,
   spell4_id spell4_id: Spell4Id,
 ) -> Attack {
-  case fighter.attack.spell4_id == spell4_id {
-    True -> fighter.attack
-    False ->
+  case
+    list.find([fighter.attack, ..fighter.alternates], fn(candidate) {
+      candidate.spell4_id == spell4_id
+    })
+  {
+    Ok(found) -> found
+    Error(Nil) ->
       case special_named(fighter:, spell4_id:) {
         Ok(special) -> special.attack
         Error(Nil) ->
-          panic as "a round names the fighter's attack or one of its specials"
+          panic as "a round names one of the fighter's auto-attacks or specials"
       }
   }
 }
@@ -2038,17 +2064,20 @@ fn special_named(
 }
 
 /// The attack the creature goes for at `now_ms`: the first of `fighter.specials` whose `ready_at`
-/// has passed (absent is ready); else `fighter.attack`. It is `fighter.attack` whenever the
-/// creature `holds_a_state` (a charge starts only while none is held). The target's distance
-/// does not choose: a ready special whose reach the target is beyond is gone for, so `ticked`
-/// and `chase` close to the special's reach even where the attack already reaches; the leash
-/// keeps the attack's reach.
+/// has passed (absent is ready); else the next auto-attack (`next_auto`). It is the next
+/// auto-attack whenever the creature `holds_a_state` (a charge starts only while none is held).
+/// The target's distance does not choose: a ready special whose reach the target is beyond is
+/// gone for, so `ticked` and `chase` close to the special's reach even where the attack already
+/// reaches, and to an alternate's reach when it is the next; the leash keeps the lead's reach.
 fn chosen(
   state state: State,
   fighter fighter: Fighter,
   now_ms now_ms: Int,
 ) -> Attack {
-  use <- bool.guard(when: fighter.holds_a_state, return: fighter.attack)
+  use <- bool.guard(
+    when: fighter.holds_a_state,
+    return: next_auto(state:, fighter:),
+  )
   let ready =
     list.find(fighter.specials, fn(special) {
       case dict.get(state.ready_at, special.attack.spell4_id.value) {
@@ -2058,8 +2087,21 @@ fn chosen(
     })
   case ready {
     Ok(special) -> special.attack
-    Error(Nil) -> fighter.attack
+    Error(Nil) -> next_auto(state:, fighter:)
   }
+}
+
+/// The auto-attack whose turn it is: `fighter.attack` and `fighter.alternates` in order, at
+/// the remainder of the auto-attacks struck this fight over their number. A special cast or
+/// an attack a state refused does not move it.
+fn next_auto(state state: State, fighter fighter: Fighter) -> Attack {
+  let autos = [fighter.attack, ..fighter.alternates]
+  let assert Ok(attack) =
+    autos
+    |> list.drop(state.autos_struck % list.length(autos))
+    |> list.first
+    as "the remainder is below the number of auto-attacks"
+  attack
 }
 
 /// The creature that can move turns to face its target before the 0x7ff of a charge, and

@@ -57,6 +57,7 @@ fn refused(rows rows: List(Row)) -> List(refusal.Refusal) {
     creature_kind.select(
       rows: [default_row],
       special_rows: rows,
+      auto_attack_rows: [],
       tables: fixture_tables.shared(),
     )
     as "the rows are refused"
@@ -99,11 +100,11 @@ pub fn the_rows_for_the_five_creatures_load_as_their_kinds_specials_test() -> Ni
   )
   assert specials(73_464) == []
     as "a creature the table does not name casts no special"
-  let rootbrute = creature_kind.kind_of(kinds:, creature2_id: 12_212)
-  assert rootbrute.attack_spell4_id == Spell4Id(5649)
-    && rootbrute.attack_interval_ms == 1500
-    && rootbrute.respawn_ms == 60_000
-    as "a creature with specials and no kind row takes the default kind's own fields"
+  let trampler = creature_kind.kind_of(kinds:, creature2_id: 27_687)
+  assert trampler.attack_spell4_id == Spell4Id(5649)
+    && trampler.attack_interval_ms == 1500
+    && trampler.respawn_ms == 60_000
+    as "a creature with specials, no auto-attack rows and no kind row takes the default kind's own fields"
 }
 
 pub fn a_special_for_a_creature_the_client_lacks_is_refused_test() -> Nil {
@@ -142,6 +143,7 @@ pub fn a_cooldown_below_the_strike_deadline_is_refused_test() -> Nil {
     creature_kind.select(
       rows: [default_row],
       special_rows: [Row(..special(spell4_id: 55_317), cooldown_ms: deadline)],
+      auto_attack_rows: [],
       tables: fixture_tables.shared(),
     )
     as "a cooldown of the deadline itself is taken"
@@ -195,6 +197,7 @@ pub fn a_delay_row_behind_a_prerequisite_is_refused_test() -> Nil {
       creature_kind.select(
         rows: [default_row],
         special_rows: [special(spell4_id: 55_317)],
+        auto_attack_rows: [],
         tables:,
       )
       as "the delay row's prerequisite is refused"
@@ -218,6 +221,7 @@ fn roar_refused_when(
     creature_kind.select(
       rows: [default_row],
       special_rows: [special(spell4_id: 55_317)],
+      auto_attack_rows: [],
       tables:,
     )
     as "the changed row is refused by the special's own check"
@@ -282,6 +286,7 @@ pub fn the_kinds_taken_keep_the_specials_the_load_takes_beside_a_refusal_test() 
     creature_kind.taken(
       rows: [default_row],
       special_rows: rows,
+      auto_attack_rows: [],
       tables: fixture_tables.shared(),
     )
     as "the default row is taken"

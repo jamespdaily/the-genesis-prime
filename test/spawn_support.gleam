@@ -254,6 +254,7 @@ pub fn beast_combat() -> creature_life.Combat {
       magic_taken: hit.as_dealt,
     ),
     attack: loaded_attack(),
+    alternates: [],
     specials: [],
     interrupt_armor: creature_life.NoArmor,
   )
@@ -318,6 +319,7 @@ pub fn kinds() -> Kinds {
     default: Kind(
       respawn_ms: 60_000,
       attack_spell4_id: Spell4Id(5649),
+      alternate_spell4_ids: [],
       attack_interval_ms: 1500,
       guard: option.None,
       specials: [],
@@ -332,6 +334,12 @@ pub fn kinds_with_beast_specials(spell4_ids spell4_ids: List(Int)) -> Kinds {
   kinds_with_specials(creature_id: 73_464, spell4_ids:)
 }
 
+/// The kinds with the Virtual Battle Beast (Creature2 73464) given these auto-attacks in turn
+/// (`kinds_with_autos`).
+pub fn kinds_with_beast_autos(spell4_ids spell4_ids: List(Int)) -> Kinds {
+  kinds_with_autos(creature_id: 73_464, spell4_ids:)
+}
+
 /// A creature of the client's own rows standing at the Beast's place, summoned as the load
 /// builds a creature, with the kind of `kinds_with_specials`: the default's fields and the
 /// one special `spell4_id`, cast again 10 000 ms after its start (migration 0035's guess).
@@ -340,11 +348,39 @@ pub fn special_creature(
   creature_id creature_id: Int,
   spell4_id spell4_id: Int,
 ) -> Spawn {
+  summoned_with(
+    number:,
+    creature_id:,
+    kinds: kinds_with_specials(creature_id:, spell4_ids: [spell4_id]),
+  )
+}
+
+/// A creature of the client's own rows standing at the Beast's place, summoned as the load
+/// builds a creature, with the kind of `kinds_with_autos`: the default's fields and these
+/// auto-attacks in turn.
+pub fn autos_creature(
+  number number: Int,
+  creature_id creature_id: Int,
+  spell4_ids spell4_ids: List(Int),
+) -> Spawn {
+  summoned_with(
+    number:,
+    creature_id:,
+    kinds: kinds_with_autos(creature_id:, spell4_ids:),
+  )
+}
+
+/// The creature `creature_id` standing at the Beast's place, summoned over `kinds`.
+fn summoned_with(
+  number number: Int,
+  creature_id creature_id: Int,
+  kinds kinds: Kinds,
+) -> Spawn {
   let checks =
     spawn.summon_checks(
       tables: character_tables.content_tables(),
       formulas: rating_support.formulas(),
-      kinds: kinds_with_specials(creature_id:, spell4_ids: [spell4_id]),
+      kinds:,
       factions: creature_faction.none(),
       vendors: vendor.none(),
     )
@@ -366,6 +402,30 @@ pub fn special_creature(
     )
     as "the creature passes the summon checks over the client's committed rows"
   creature
+}
+
+/// The kinds with the creature `creature_id` given a kind of its own: the default's fields
+/// and these auto-attacks in turn, the first its attack and the rest its alternates.
+pub fn kinds_with_autos(
+  creature_id creature_id: Int,
+  spell4_ids spell4_ids: List(Int),
+) -> Kinds {
+  let kinds = kinds()
+  let assert [lead, ..alternates] = list.map(spell4_ids, Spell4Id)
+    as "a creature with auto-attacks has at least one"
+  Kinds(
+    ..kinds,
+    by_creature: dict.from_list([
+      #(
+        creature_id,
+        Kind(
+          ..kinds.default,
+          attack_spell4_id: lead,
+          alternate_spell4_ids: alternates,
+        ),
+      ),
+    ]),
+  )
 }
 
 /// The kinds with the creature `creature_id` given a kind of its own: the default's fields
@@ -402,6 +462,7 @@ pub fn turret_kinds() -> Kinds {
         Kind(
           respawn_ms: 60_000,
           attack_spell4_id: Spell4Id(85_469),
+          alternate_spell4_ids: [],
           attack_interval_ms: 3000,
           guard: option.None,
           specials: [],
@@ -412,6 +473,7 @@ pub fn turret_kinds() -> Kinds {
         Kind(
           respawn_ms: 60_000,
           attack_spell4_id: Spell4Id(86_978),
+          alternate_spell4_ids: [],
           attack_interval_ms: 3000,
           guard: option.None,
           specials: [],

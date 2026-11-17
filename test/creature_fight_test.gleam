@@ -115,6 +115,7 @@ fn beast_from(
     kind: Kind(
       respawn_ms: 60_000,
       attack_spell4_id: Spell4Id(5649),
+      alternate_spell4_ids: [],
       attack_interval_ms: 1500,
       guard: option.None,
       specials: [],
@@ -4741,6 +4742,7 @@ pub fn an_immune_knockback_does_not_throw_test() -> Nil {
       kind: Kind(
         respawn_ms: 60_000,
         attack_spell4_id: Spell4Id(5649),
+        alternate_spell4_ids: [],
         attack_interval_ms: 1500,
         guard: turret.guard,
         specials: [],
@@ -5302,6 +5304,7 @@ fn rootbrute_with(
     kind: Kind(
       respawn_ms: 60_000,
       attack_spell4_id: Spell4Id(5649),
+      alternate_spell4_ids: [],
       attack_interval_ms: 1500,
       guard: option.None,
       specials: [],
@@ -6170,4 +6173,263 @@ pub fn a_retire_between_gos_stops_the_creature_and_sends_nothing_test() -> Nil {
   let #(_, retired) = tell(state:, at_ms: 4300, message: creature.Retire)
   assert support.effects_of(retired) == [step.Stop]
     as "the same once the map has removed the viewer"
+}
+
+// A creature's auto-attacks in turn: the Virtual Battle Beast (Creature2 73464) built as the
+// load builds a creature (`spawn_support.autos_creature`), given these auto-attacks by its
+// kind. The retail record lists a creature's pair of auto-attacks (Skeech Scratcher's Punch 5649
+// and Jab 5652) and the client's Spell4 descriptions number them "#1" and "#2"
+// (`table_rows -- Spell4 5649 5652`); the order is a guess. From the client's rows: 5649 and
+// 5652 have the same damage rows (184741, 184742 for difficulty up to 6), both for 12 at the
+// Beast's level; targetMaxRange 5.0 (a reach of 5.0 + 3.0, the Beast's hit radius) and Scrab's
+// 25870 has 10.0 (reach 13.0). The attack interval is 1500 ms (migration 0010, a server choice).
+
+/// The Beast with these auto-attacks in turn, started for these viewers, `Started` taken.
+fn striking_in_turn(
+  spell4_ids spell4_ids: List(Int),
+  viewers viewers: List(Int),
+) -> State {
+  started_from(
+    source: spawn_source.Stored(id: SpawnId(1)),
+    spawn: spawn_support.autos_creature(
+      number: 1,
+      creature_id: 73_464,
+      spell4_ids:,
+    ),
+    kind: creature_kind.kind_of(
+      kinds: spawn_support.kinds_with_beast_autos(spell4_ids:),
+      creature2_id: 73_464,
+    ),
+    viewers:,
+    armor: creature_life.NoArmor,
+  )
+}
+
+/// Player 2 comes near 4 units ahead of the creature at 0 ms: the state and the step of the
+/// aggro, which starts the first attack tick at 1500 ms.
+fn turn_fought(state state: State) -> #(State, ServiceStep(creature.Outgoing)) {
+  tell(
+    state:,
+    at_ms: 0,
+    message: approached_at(number: 2, x: 0.0, z: -4.0, seq: 1),
+  )
+}
+
+/// The attack tick `tick` at `at_ms`, which strikes player 2: the state after player 2's
+/// answer 100 ms later, the step of the tick and the Spell4 its cast start and its strike name.
+fn tick_strikes(
+  state state: State,
+  at_ms at_ms: Int,
+  tick tick: step.TimerId,
+) -> #(State, ServiceStep(creature.Outgoing), Int) {
+  let #(state, taken) = fire(state:, at_ms:, timer: tick)
+  let assert [CastStarted(start:)] = casts_of(taken, 2)
+    as "the tick casts one attack at its viewer"
+  let assert [#(2, Attacks(tell: Strike(key:, striker:, ..)))] =
+    fights_told(taken)
+    as "and strikes player 2"
+  assert striker
+    == CreatureStriker(unit_id: unit, spell4_id: Spell4Id(start.spell4_id))
+    as "the strike names the spell the 0x7ff does"
+  let #(state, _) = tell(state:, at_ms: at_ms + 100, message: landed(key:))
+  #(state, taken, start.spell4_id)
+}
+
+pub fn a_creature_strikes_its_auto_attacks_in_turn_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) =
+    turn_fought(state: striking_in_turn(spell4_ids: [5649, 5652], viewers: [2]))
+  let #(state, first, lead) =
+    tick_strikes(state:, at_ms: 1500, tick: timer_for(aggro, 1500))
+  let #(state, second, alternate) =
+    tick_strikes(state:, at_ms: 3000, tick: timer_for(first, 1500))
+  let #(_, _, again) =
+    tick_strikes(state:, at_ms: 4500, tick: timer_for(second, 1500))
+  assert [lead, alternate, again] == [5649, 5652, 5649]
+    as "the lead first, then the alternate, then the lead again: the page's Punch and Jab, #1 and #2"
+  let assert [#(2, Attacks(tell: Strike(offence:, ..)))] = fights_told(second)
+  assert list.map(offence.blows, fn(blow) { blow.spell4_effects_id })
+    == [184_742]
+    as "the alternate's strike carries its own damage row, 184742, not the lead's 184741"
+}
+
+pub fn each_auto_attack_waits_the_attack_interval_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) =
+    turn_fought(state: striking_in_turn(spell4_ids: [5649, 5652], viewers: [2]))
+  let #(state, first, _) =
+    tick_strikes(state:, at_ms: 1500, tick: timer_for(aggro, 1500))
+  let #(_, second, _) =
+    tick_strikes(state:, at_ms: 3000, tick: timer_for(first, 1500))
+  let delays = fn(taken) {
+    list.sort(list.map(timers(taken), fn(timer) { timer.1 }), int.compare)
+  }
+  assert delays(first) == [1000, 1500]
+    as "the lead's strike starts the strike deadline and the next tick after the interval"
+  assert delays(second) == [1000, 1500]
+    as "the alternate's strike waits the same interval"
+}
+
+pub fn a_refused_auto_attack_does_not_advance_the_turn_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) =
+    turn_fought(state: striking_in_turn(spell4_ids: [5649, 5652], viewers: [2]))
+  let #(state, first, lead) =
+    tick_strikes(state:, at_ms: 1500, tick: timer_for(aggro, 1500))
+  assert lead == 5649 as "the lead strikes first"
+  // A stun landed at 2000 ms ends 2500 ms later, at 4500 ms; a Stun refuses an instant attack.
+  let #(state, stunned) =
+    tell(
+      state:,
+      at_ms: 2000,
+      message: controlling(number: 2, cast_id: 1, controls: [
+        crowd_control_support.stagger_stun(instance_id: 28_673),
+      ]),
+    )
+  let state_ends = timer_for(stunned, 2500)
+  let #(state, refused) =
+    fire(state:, at_ms: 3000, timer: timer_for(first, 1500))
+  assert casts_of(refused, 2) == [] && fights_told(refused) == []
+    as "the tick finds the player in reach and strikes nothing: the creature is stunned"
+  let #(state, _) = fire(state:, at_ms: 4500, timer: state_ends)
+  let #(_, _, next) =
+    tick_strikes(state:, at_ms: 4500, tick: timer_for(refused, 1500))
+  assert next == 5652
+    as "the refused tick left the turn where it was: the alternate, due after the lead, strikes"
+}
+
+pub fn a_special_between_autos_leaves_the_turn_unchanged_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The special, ready at the start of the fight, is cast at the first tick (1500 ms); its
+  // strike go is at 4500 ms and the hold ends at 5600 ms. The auto-attack after it is the lead,
+  // the one that was due, and the alternate follows.
+  let beast =
+    spawn_support.autos_creature(number: 1, creature_id: 73_464, spell4_ids: [
+      5649,
+      5652,
+    ])
+  let state =
+    started_from(
+      source: spawn_source.Stored(id: SpawnId(1)),
+      spawn: Spawn(
+        ..beast,
+        combat: creature_life.Combat(..beast.combat, specials: [
+          spawn_support.earthen_roar(hold_ms: 1000),
+        ]),
+      ),
+      kind: creature_kind.kind_of(
+        kinds: spawn_support.kinds_with_beast_autos(spell4_ids: [5649, 5652]),
+        creature2_id: 73_464,
+      ),
+      viewers: [2],
+      armor: creature_life.NoArmor,
+    )
+  let #(state, aggro) = roar_fought_by(state:)
+  let #(state, _, go) = roar_opened(state:, aggro:)
+  let #(state, _, strike) = first_go_passed(state:, go:)
+  let #(state, struck) = strike_go_reached(state:, strike:)
+  let assert [#(2, Attacks(tell: Strike(key:, ..)))] = fights_told(struck)
+  let #(state, closed) = tell(state:, at_ms: 4600, message: landed(key:))
+  let #(state, after, first_auto) =
+    tick_strikes(state:, at_ms: 5600, tick: timer_for(closed, 1000))
+  assert first_auto == 5649
+    as "after the special the creature strikes the lead: the special took no turn"
+  let #(_, _, second_auto) =
+    tick_strikes(state:, at_ms: 7100, tick: timer_for(after, 1500))
+  assert second_auto == 5652 as "and then the alternate"
+}
+
+pub fn a_new_fight_opens_with_the_lead_auto_attack_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The lead strikes at 1500 ms, so the alternate is due; the leash ends the fight at 5000 ms,
+  // the creature is home, and a player comes near again at 7000 ms: the new fight's first
+  // tick strikes the lead.
+  let #(state, aggro) =
+    turn_fought(state: striking_in_turn(spell4_ids: [5649, 5652], viewers: [2]))
+  let #(state, _, _) =
+    tick_strikes(state:, at_ms: 1500, tick: timer_for(aggro, 1500))
+  let #(state, leashed) =
+    tell(state:, at_ms: 5000, message: creature.Unwatched(by: ConnectionId(2)))
+  let #(state, _) = fire(state:, at_ms: 5000, timer: timer_for(leashed, 0))
+  let #(state, _) =
+    tell(
+      state:,
+      at_ms: 6500,
+      message: creature.Watched(
+        by: ConnectionId(2),
+        stay: map_support.stay(count: 2),
+      ),
+    )
+  let #(state, again) =
+    tell(
+      state:,
+      at_ms: 7000,
+      message: approached_at(number: 2, x: 0.0, z: -4.0, seq: 5),
+    )
+  let #(_, _, first) =
+    tick_strikes(state:, at_ms: 8500, tick: timer_for(again, 1500))
+  assert first == 5649
+    as "a fight opens with the lead, not the alternate the earlier fight left due"
+}
+
+pub fn the_next_alternates_reach_is_closed_in_on_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Scrab's Pinch 25870 (targetMaxRange 10.0, reach 13.0) leads and Punch 5649 (reach 8.0)
+  // follows. The target stands 10 ahead: the lead strikes from there; the alternate does not
+  // reach it, so the next tick runs in to the alternate's reach, and the one after strikes.
+  let #(state, aggro) =
+    tell(
+      state: striking_in_turn(spell4_ids: [25_870, 5649], viewers: [2]),
+      at_ms: 0,
+      message: approached_at(number: 2, x: 0.0, z: -10.0, seq: 1),
+    )
+  assert !list.contains(said(aggro), "0x638 to 2")
+    as "within the lead's reach 13.0 no path starts"
+  let #(state, first, lead) =
+    tick_strikes(state:, at_ms: 1500, tick: timer_for(aggro, 1500))
+  assert lead == 25_870 as "the lead strikes from 10 away"
+  let #(state, closing) =
+    fire(state:, at_ms: 3000, timer: timer_for(first, 1500))
+  assert casts_of(closing, 2) == [] && fights_told(closing) == []
+    as "the alternate's 8.0 does not reach the target: no strike"
+  assert list.contains(said(closing), "0x638 to 2")
+    as "the creature runs in to the alternate's reach"
+  let #(_, _, alternate) =
+    tick_strikes(state:, at_ms: 4500, tick: timer_for(closing, 1500))
+  assert alternate == 5649 as "then the alternate strikes"
+}
+
+pub fn a_round_naming_an_alternates_spell_finds_its_attack_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The alternate's strike is out at 3000 ms; at 3100 ms a modifier doubles the creature's
+  // Physical damage (property 141) and its values are worked out again; player 2's answer at
+  // 3200 ms names the alternate's spell, which the creature finds among its alternates.
+  let #(state, aggro) =
+    turn_fought(state: striking_in_turn(spell4_ids: [5649, 5652], viewers: [2]))
+  let #(state, first, _) =
+    tick_strikes(state:, at_ms: 1500, tick: timer_for(aggro, 1500))
+  let #(state, second) =
+    fire(state:, at_ms: 3000, timer: timer_for(first, 1500))
+  let assert [#(2, Attacks(tell: Strike(key:, offence:, ..)))] =
+    fights_told(second)
+  assert list.map(offence.blows, fn(blow) { blow.damage }) == [Worked(12)]
+    as "the alternate's blow before the change: 12"
+  let #(state, _) =
+    tell(
+      state:,
+      at_ms: 3100,
+      message: modifier_start(
+        cast_id: 1,
+        modifier: scaled_by(property: 141, factor: 2.0),
+        struck_at_ms: 3100,
+      ),
+    )
+  let #(state, answered) = tell(state:, at_ms: 3200, message: landed(key:))
+  assert !list.contains(said(answered), "Refused(Dead)")
+    as "the answer is taken: the round's spell is found among the alternates"
+  let #(_, third) = fire(state:, at_ms: 4500, timer: timer_for(second, 1500))
+  let assert [#(2, Attacks(tell: Strike(offence: lead_offence, ..)))] =
+    fights_told(third)
+  assert list.map(lead_offence.blows, fn(blow) { blow.damage }) == [Worked(24)]
+    as "the next strike, the lead's, is worked out from the doubled multiplier: 12 x 2"
 }
