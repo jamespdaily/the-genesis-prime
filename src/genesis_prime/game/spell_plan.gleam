@@ -3183,13 +3183,14 @@ fn gain_row_of(
 }
 
 /// One Heal (type 10) or HealShields (type 118) row that reaches the caster as a heal of
-/// `vital`, the one its type names (`effect_kind.kind_of`), or the error that fails the load: its dataBits00 must be a finite 32-bit float and its formula must read only the
-/// parameter types an effect on its caster reads (genesis_prime/game/damage
-/// `unread`). It aims at the caster when its targetFlags include it and else at
-/// the primary target. A row with a tickTime is periodic, a `TickingHeal` with its
-/// schedule (genesis_prime/game/ticking `schedule_of`), or `HealUntilRemovedNotRead` for
-/// one that lasts until removed.
-pub fn heal_of(
+/// `vital`, the one its type names (`effect_kind.kind_of`), or the error that fails the
+/// load: its dataBits00 must be a finite 32-bit float and its formula must read only the
+/// parameter types an effect on its caster reads (genesis_prime/game/damage `unread`). It
+/// aims at the caster when its targetFlags include it and else at the primary target. A
+/// row with a tickTime is periodic, a `TickingHeal` with its schedule
+/// (genesis_prime/game/ticking `schedule_of`), or `HealUntilRemovedNotRead` for one that
+/// lasts until removed.
+fn heal_of(
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
   vital vital: effect_kind.Vital,

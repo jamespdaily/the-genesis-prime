@@ -23,7 +23,6 @@ import genesis_prime/game/area.{
 }
 import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
-import genesis_prime/game/effect_kind
 import genesis_prime/game/spell_area.{
   AimNotRead, FormulaNotRead, MultiplierNotFinite, Once, Periodic,
   SelectionNotClosest, ShapeNotBuilt, TelegraphNotOnCaster, TickingNoTick,
@@ -568,21 +567,16 @@ pub fn until_removed_periodic_rows_are_left_out_test() -> Nil {
     as "its tree holds Energize, spell 69450"
   assert spell_plan.payloads(spell: energize, as_kind: spell_plan.as_heal) == []
     as "Energize's one heal row lasts until removed, so the plan leaves it out"
-  assert spell_plan.heal_of(
-      spell4_id: 69_450,
+  assert spell_tables.read_row(
       effect: spell4_effects.Spell4Effects(
         ..fixture_effect(id: 228_914),
         tick_time: 1000,
         duration_time: 0,
         flags: 2,
       ),
-      vital: effect_kind.Shield,
-      condition: spell_plan.Always,
+      place: spell_tables.pressed,
     )
-    == Error(spell_plan.HealUntilRemovedNotRead(
-      spell4_id: 69_450,
-      effect_id: 228_914,
-    ))
+    == Ok(spell_plan.LeftOut(why: spell_plan.HealUntilRemoved))
     as "the plan's heal reader names why it leaves the row out (HealUntilRemoved)"
   // A life shorter than one tick has no tick, and the load fails.
   let assert Ok(short) =
