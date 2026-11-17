@@ -26,6 +26,9 @@
 ////   (`spell4CCConditionsIdTarget`) other than 0, a delay row behind a prerequisite, and any
 ////   caster prerequisite the attack rule refuses. A bad row is refused, never left out
 ////   silently.
+//// - **The formula is read**: a special whose damage formula the creature rule does not
+////   read for the creature's difficulty is refused (`creature_attack.loadable`), which the
+////   spawn load would refuse later.
 //// - **`order_index` is not null and unique for a creature**: it orders the list `chosen`
 ////   walks (genesis_prime/world_map/creature_fight).
 
@@ -133,6 +136,31 @@ pub fn refusal_of(
             <> " of Creature2 "
             <> creature
             <> " is refused: "
+            <> creature_attack.describe(unevaluated:),
+          )
+        Ok(Nil) -> Error(Nil)
+      }
+    },
+    fn() {
+      let assert Ok(found) =
+        creature2.get(tables:, id: Creature2Id(row.creature_id))
+        as "the creature's own check came first"
+      case
+        creature_attack.loadable(
+          tables:,
+          spell4_id: row.spell4_id,
+          difficulty: found.creature2_difficulty_id,
+        )
+      {
+        Error(unevaluated) ->
+          Ok(
+            "the special Spell4 "
+            <> spell
+            <> " of Creature2 "
+            <> creature
+            <> " is refused for its difficulty "
+            <> int.to_string(found.creature2_difficulty_id)
+            <> ": "
             <> creature_attack.describe(unevaluated:),
           )
         Ok(Nil) -> Error(Nil)

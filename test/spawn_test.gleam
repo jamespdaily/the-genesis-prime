@@ -1267,7 +1267,7 @@ pub fn an_attack_effect_whose_multiplier_is_not_a_finite_float_refuses_the_spawn
       Refusal(
         table: "spawn",
         row: refusal.RowId(1),
-        rule: "Creature2 73464's attack effect 184741 has a multiplier, dataBits00 2139095040, that is not a finite 32-bit float",
+        rule: "Creature2 73464's attack: Spell4Effects 184741 has a multiplier, dataBits00 2139095040, that is not a finite 32-bit float",
       ),
     ]
     as "the load names the effect, where a multiplier read as 0 would strike for the stat part alone"
@@ -1938,6 +1938,83 @@ fn doubling_physical_damage(
       ),
     )
   doubled
+}
+
+/// The selection of the Beast of spawn 1 with these auto-attacks in turn in its kind.
+fn autos_selection(spell4_ids spell4_ids: List(Int)) -> spawn.Selection {
+  spawn.select(
+    rows: [spawn_support.beast_row(number: 1)],
+    tables: character_tables.content_tables(),
+    formulas: rating_support.formulas(),
+    kinds: spawn_support.kinds_with_beast_autos(spell4_ids:),
+    vendors: vendor.none(),
+    factions: creature_faction.none(),
+  )
+}
+
+/// The Beast of spawn 1 with these auto-attacks in turn in its kind.
+fn autos_beast(spell4_ids spell4_ids: List(Int)) -> spawn.Spawn {
+  let selection = autos_selection(spell4_ids:)
+  assert selection.refusals == [] as "the Beast's row is taken"
+  let assert Ok(world) = dict.get(selection.worlds, 3460) as "world 3460"
+  let assert Ok(beast) = dict.get(world.by_id, SpawnId(1)) as "spawn 1 starts"
+  beast
+}
+
+pub fn an_alternate_with_an_unread_damage_formula_refuses_the_spawn_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4 6651's damage rows 185104 and 185116 read parameter type 2, which the creature
+  // formula does not (`damage.creature_unread`); the Beast, difficulty 1, takes 185104.
+  let assert [Refusal(rule:, ..)] =
+    autos_selection(spell4_ids: [5649, 6651]).refusals
+    as "the spawn whose alternate has an unread formula is refused"
+  assert string.contains(rule, "185104")
+    && string.contains(rule, "parameter type 2")
+    as "the refusal names the effect and the parameter"
+  let assert [Refusal(rule: lead_rule, ..)] =
+    autos_selection(spell4_ids: [6651, 5649]).refusals
+    as "and so is one whose lead has it"
+  assert lead_rule == rule
+    as "the lead and an alternate are refused by one rule"
+}
+
+pub fn a_property_change_works_the_alternates_blows_out_again_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4 5652's damage row for difficulty 1 is 184742, the same formula as 5649's 184741:
+  // 12 at the Beast's level, 24 with the Physical damage multiplier doubled.
+  let beast = autos_beast(spell4_ids: [5649, 5652])
+  let blow = fn(damage) {
+    Blow(
+      spell4_effects_id: 184_742,
+      damage_type: 1,
+      damage: Worked(damage),
+      delay_ms: 0,
+      threat_multiplier: 1.0,
+    )
+  }
+  let assert [alternate] = beast.combat.alternates
+    as "the kind lists one alternate and the spawn carries it"
+  assert alternate.spell4_id == Spell4Id(5652)
+    && alternate.offence.blows == [blow(12)]
+    as "the alternate's blow, beside the lead's 12"
+  let values =
+    spawn.values_of(spawn: beast, properties: doubling_physical_damage(beast:))
+  let assert [doubled] = values.combat.alternates
+  assert doubled.offence.blows == [blow(24)]
+    as "the alternate's blow is worked out again from the doubled multiplier: 12 x 2"
+  assert values.combat.attack.offence.blows
+    == [
+      Blow(
+        spell4_effects_id: 184_741,
+        damage_type: 1,
+        damage: Worked(24),
+        delay_ms: 0,
+        threat_multiplier: 1.0,
+      ),
+    ]
+    as "and the lead's too"
+  assert doubled.reach == alternate.reach
+    as "what no property sets stays the spawn's own"
 }
 
 pub fn a_property_change_works_the_special_blow_out_again_test() -> Nil {

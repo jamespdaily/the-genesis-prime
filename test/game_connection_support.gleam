@@ -593,6 +593,7 @@ pub fn map_of_world_with_four_players(
         default: Kind(
           respawn_ms: 60_000,
           attack_spell4_id: Spell4Id(5649),
+          alternate_spell4_ids: [],
           attack_interval_ms: 1500,
           guard: option.None,
           specials: [],

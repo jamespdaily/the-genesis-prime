@@ -67,9 +67,12 @@
 ////   `Creature2.73464.mitigation`) through the rating formulas
 ////   (genesis_prime/game/rating). It also holds whom the creature fights on sight (a
 ////   faction level of 0 to 2 toward each player faction), its own attack, from its
-////   kind's spell, and its specials, each a spell of its kind's list with its gos and hold
+////   kind's spell, the alternates it strikes with after it in turn, from the kind's other
+////   auto-attacks, and its specials, each a spell of its kind's list with its gos and hold
 ////   from the plan (genesis_prime/world_map/creature_kind,
-////   genesis_prime/world_map/creature_life `Attack`, `Special`).
+////   genesis_prime/world_map/creature_life `Attack`, `Special`). Each spell is checked for the
+////   creature's difficulty by the one rule the kind load takes too
+////   (genesis_prime/world_map/creature_attack `formulas`).
 
 import genesis_prime/content/refusal.{type Refusal}
 import genesis_prime/game/area
@@ -238,6 +241,7 @@ pub type CombatContext {
     formulas: Formulas,
     scaling: damage.CreatureScaling,
     attack: List(AttackEffect),
+    alternates: List(List(AttackEffect)),
     specials: List(List(AttackEffect)),
     run_land: Float,
     difficulty_id: Int,
@@ -271,6 +275,7 @@ pub fn values_of(
     formulas:,
     scaling:,
     attack: effects,
+    alternates: alternate_effects,
     specials: special_effects,
     run_land:,
     ..,
@@ -304,6 +309,7 @@ pub fn values_of(
       ..combat,
       defence: defence_of(formulas:, level: spawn.level, value:),
       attack: worked(combat.attack, effects),
+      alternates: list.map2(combat.alternates, alternate_effects, worked),
       specials: list.map2(
         combat.specials,
         special_effects,
@@ -524,20 +530,6 @@ pub type SpawnError {
   /// The creature's attack spell has a cast time and no area row, so a charge would have
   /// nothing to strike.
   ChargeHasNoArea(creature_id: Creature2Id, spell4_id: Int)
-  /// A damage effect of the creature's attack names a parameter the creature formula
-  /// does not read (genesis_prime/game/damage `creature_unread`).
-  AttackFormulaNotRead(
-    creature_id: Creature2Id,
-    spell4_effects_id: Int,
-    parameter_kind: Int,
-  )
-  /// A damage effect of the creature's attack has a multiplier, dataBits00 read as a
-  /// 32-bit float, that is not finite (genesis_prime/game/damage `formula_of`).
-  AttackMultiplierNotFinite(
-    creature_id: Creature2Id,
-    spell4_effects_id: Int,
-    bits: Int,
-  )
   /// A special of the creature's kind could not be planned for its gos and hold
   /// (genesis_prime/game/spell_plan `spell_alone`); the special's own check refuses such a
   /// row at the load, so this is the plan failing for a spell it read before.
@@ -1213,6 +1205,21 @@ fn combat_of(
     value:,
     can_move:,
   ))
+  use alternates <- result.try(
+    list.try_map(kind.alternate_spell4_ids, fn(spell4_id) {
+      attack_of(
+        catalog:,
+        formulas:,
+        spell4_id:,
+        creature:,
+        level:,
+        display:,
+        value:,
+        can_move:,
+      )
+      |> result.map(fn(built) { #(built.0, built.2) })
+    }),
+  )
   use specials <- result.try(
     list.try_map(kind.specials, fn(ref) {
       attack_of(
@@ -1238,6 +1245,7 @@ fn combat_of(
       formulas:,
       scaling:,
       attack: attack_effects,
+      alternates: list.map(alternates, fn(alternate) { alternate.1 }),
       specials: list.map(specials, fn(special) { special.1 }),
       run_land: run_land_of(display:, can_move:),
       difficulty_id: creature.creature2_difficulty_id,
@@ -1256,6 +1264,7 @@ fn combat_of(
       hostile_to: hostile_to_players(levels: catalog.factions, faction_id:),
       defence: defence_of(formulas:, level:, value:),
       attack:,
+      alternates: list.map(alternates, fn(alternate) { alternate.0 }),
       specials: list.map(specials, fn(special) { special.0 }),
       interrupt_armor: interrupt_armor_in(value:),
     )
@@ -1358,7 +1367,7 @@ fn defence_of(
 }
 
 /// The attack of the spell `spell4_id` (genesis_prime/world_map/creature_life `Attack`),
-/// for the creature's own attack and each of its specials: the spell, the damage effect its difficulty chooses by the effect's caster
+/// for the creature's own attack, each of its alternates and each of its specials: the spell, the damage effect its difficulty chooses by the effect's caster
 /// prerequisite (type 179, `0x14049eeb0`), its blow by the creature formula
 /// (`0x140565600`, GameFormula 712), its critical hit chance, severity and
 /// strikethrough from its properties, its run speed (Creature2DisplayInfo.runLand
@@ -1410,7 +1419,7 @@ fn attack_of(
     )),
   )
   use effects <- result.try(
-    creature_attack.applying(
+    creature_attack.formulas(
       tables: catalog.tables,
       spell4_id: spell4_id.value,
       difficulty: creature.creature2_difficulty_id,
@@ -1426,43 +1435,26 @@ fn attack_of(
       overflow: scaling.datafloat02,
       divisor: scaling.datafloat03,
     )
-  use attack_effects <- result.try(
-    list.try_map(effects, fn(effect) {
-      use formula <- result.try(
-        damage.formula_of(effect:)
-        |> result.replace_error(AttackMultiplierNotFinite(
-          creature_id:,
+  let attack_effects =
+    list.map(effects, fn(applied) {
+      let #(effect, formula) = applied
+      AttackEffect(
+        blow: hit.Blow(
           spell4_effects_id: effect.id,
-          bits: effect.data_bits00,
-        )),
-      )
-      case damage.creature_unread(formula:) {
-        Some(damage.Unread(parameter_kind:)) ->
-          Error(AttackFormulaNotRead(
-            creature_id:,
-            spell4_effects_id: effect.id,
-            parameter_kind:,
-          ))
-        None ->
-          Ok(AttackEffect(
-            blow: hit.Blow(
-              spell4_effects_id: effect.id,
-              damage_type: effect.damage_type,
-              damage: blow_damage(
-                formula:,
-                damage_type: effect.damage_type,
-                level:,
-                scaling: creature_scaling,
-                value:,
-              ),
-              delay_ms: effect.delay_time,
-              threat_multiplier: effect.threat_multiplier,
-            ),
+          damage_type: effect.damage_type,
+          damage: blow_damage(
             formula:,
-          ))
-      }
-    }),
-  )
+            damage_type: effect.damage_type,
+            level:,
+            scaling: creature_scaling,
+            value:,
+          ),
+          delay_ms: effect.delay_time,
+          threat_multiplier: effect.threat_multiplier,
+        ),
+        formula:,
+      )
+    })
   use cast <- result.try(case spell.cast_time > 0 {
     False -> Ok(creature_life.Instant)
     True ->
@@ -2562,30 +2554,6 @@ fn describe(error error: SpawnError) -> String {
       <> "'s attack Spell4 "
       <> int.to_string(spell4_id)
       <> " has a cast time and no Spell4AoeTargetConstraints row, so a charge strikes nothing"
-    AttackFormulaNotRead(
-      creature_id: Creature2Id(creature_id),
-      spell4_effects_id:,
-      parameter_kind:,
-    ) ->
-      "Creature2 "
-      <> int.to_string(creature_id)
-      <> "'s attack effect "
-      <> int.to_string(spell4_effects_id)
-      <> " reads parameter type "
-      <> int.to_string(parameter_kind)
-      <> ", which the creature formula does not read"
-    AttackMultiplierNotFinite(
-      creature_id: Creature2Id(creature_id),
-      spell4_effects_id:,
-      bits:,
-    ) ->
-      "Creature2 "
-      <> int.to_string(creature_id)
-      <> "'s attack effect "
-      <> int.to_string(spell4_effects_id)
-      <> " has a multiplier, dataBits00 "
-      <> int.to_string(bits)
-      <> ", that is not a finite 32-bit float"
     SpecialNotPlanned(creature_id: Creature2Id(creature_id), spell4_id:, error:) ->
       "Creature2 "
       <> int.to_string(creature_id)

@@ -1071,3 +1071,26 @@ Spell4	33251	Yeti auto-attack, a cast time of 0	creature_special_test
 Spell4	42764	Lightning Strike, a cast with effect types 8, 17, 71 and 4	creature_special_test
 Spell4	55635	Ice Breath, a cast with two damage phases	creature_special_test
 Spell4	54675	Wallop, a cast that strikes at go 2 of 4	creature_special_test
+Creature2	51126	Yeti Snowstalker of Northern Wilds	creature_auto_attack_test
+Creature2	11945	Yeti Snowstalker of Northern Wilds	creature_auto_attack_test
+Creature2	11910	Skeech Scratcher of Northern Wilds	creature_auto_attack_test
+Creature2	24058	Bloodstone Oxian of Crimson Isle	creature_auto_attack_test
+Creature2	24054	Scrab Striker of Crimson Isle	creature_auto_attack_test
+Creature2	26026	Malverine Stalker of Levian Bay	creature_auto_attack_test
+Creature2	36173	Elderoot Deathcap of Everstar Grove	creature_auto_attack_test
+Creature2	24051	Venombite Hatchling of Crimson Isle, whose auto-attacks 6651 and 6652 have an unread damage formula	creature_auto_attack_test
+Spell4	5652	Humanoid Shared Unarmed auto-attack #2	creature_auto_attack_test
+Spell4	33252	Yeti auto-attack #2	creature_auto_attack_test
+Spell4	32761	Oxian auto-attack #1	creature_auto_attack_test
+Spell4	32762	Oxian auto-attack #2	creature_auto_attack_test
+Spell4	25870	Scrab auto-attack #1	creature_auto_attack_test
+Spell4	25871	Scrab auto-attack #2	creature_auto_attack_test
+Spell4	6616	Malverine auto-attack #1	creature_auto_attack_test
+Spell4	6617	Malverine auto-attack #2	creature_auto_attack_test
+Spell4	33247	Rootbrute auto-attack #1	creature_auto_attack_test
+Spell4	33248	Rootbrute auto-attack #2	creature_auto_attack_test
+Spell4	6651	Spider auto-attack #1, whose damage formula reads a parameter the creature formula does not	creature_auto_attack_test
+Spell4	6652	Spider auto-attack #2, whose damage formula reads a parameter the creature formula does not	creature_auto_attack_test
+Spell4	55308	Reaching Bite, a cone special of 3000 ms	creature_auto_attack_test
+Spell4	55283	Whirl, a special of 3000 ms	creature_auto_attack_test
+Spell4	34361	Asura auto-attack #1 whose damage effect for difficulty 7 and above reads parameter type 2	creature_attack_test

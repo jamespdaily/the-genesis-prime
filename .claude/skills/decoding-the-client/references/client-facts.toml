@@ -6535,6 +6535,12 @@ proof = "`gleam run -m genesis_prime/table_rows -- Spell4 5649` and 5652; the Sp
 grade = "fairly sure"
 gap = "Which auto-attack a training creature used is not in the client; a family name in a description is a hint, not a link. A retail recording of a Virtual Battle Beast's 0x7ff would name its spell."
 
+["Spell4.auto_attack_role"]
+statement = "A Spell4 description that begins '[AUTO-ATTACK]' marks a spell a creature strikes with at once (cast time 0), and a creature family's pair is numbered 1 and 2 in its descriptions ('Auto-Attack' and the number): 33251 and 33252 (Yeti), 5649 and 5652 (Humanoid Shared Unarmed), 32761 and 32762 (Oxian), 25870 and 25871 (Scrab), 6616 and 6617 (Malverine), 33247 and 33248 (Rootbrute), 6651 and 6652 (Spider). No client table links a creature to any of them."
+proof = "`gleam run -m genesis_prime/table_rows -- Spell4 33251 33252 5649 5652 32761 32762 25870 25871 6616 6617 33247 33248 6651 6652` (description '[AUTO-ATTACK](ct) <family> - Auto-Attack' with number 1 or 2 and 'Tier 1', castTime 0 on each); the Spell4 descriptions scanned for '[AUTO-ATTACK]'. The creature side: `-- Creature2 --columns` names no spell column keyed to an attack (the record creature.ai_data)."
+grade = "fairly sure"
+gap = "No client table links a creature to a spell, so which creature strikes with which pair comes from a retail record; the numbers say there are two and which is first, not that the creature strikes them in turn. A retail recording of a creature's 0x7ff would name its spells in order."
+
 ["Spell4.41368"]
 statement = "'Generic - Choose Color of Awareness Eye - Tier 1', the lead's awareness spell: no range, no cast time column set, base spell 25565, in global cooldown group 100 and spell group list 637. No client table links a creature to it."
 proof = "`gleam run -m genesis_prime/table_rows -- Spell4 41368` (description, spell4BaseIdBaseSpell 25565, spellCoolDownIdGlobal 100, spell4GroupListId 637, propertyFlags 1048576, uiFlags 6)."
