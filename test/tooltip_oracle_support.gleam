@@ -320,8 +320,8 @@ pub fn pressed_at(
   strikes strikes: Strikes,
   poses poses: dict.Dict(Int, area.Pose),
 ) -> Result(#(cast_state.State, support.Fired), List(Int)) {
-  let #(state, raw) =
-    support.pressed_raw_in(
+  let #(state, raw, spends) =
+    support.pressed_counting(
       plans:,
       state:,
       caster:,
@@ -343,7 +343,12 @@ pub fn pressed_at(
         )
       Ok(#(
         state,
-        support.Fired(at_ms:, asked: support.goes_asked(effects: raw), effects:),
+        support.Fired(
+          at_ms:,
+          asked: support.goes_asked(effects: raw),
+          spends:,
+          effects:,
+        ),
       ))
     }
     results -> Error(results)

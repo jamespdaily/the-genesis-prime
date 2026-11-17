@@ -2567,10 +2567,12 @@ pub fn went(
   |> continued(caster:, now_ms: now.monotonic_ms)
 }
 
-/// A go of a live cast is asked: its first go pays the cast's reserved costs, then
-/// the connection selects its targets and strikes them, and answers with `went` when
-/// the round closes. A cast that is not live has no go, and an activate cast of
-/// castMethod 5 has none until the client has answered 1 (`answered` asks again).
+/// A go of a live cast is asked: its first go pays the cast's reserved costs, a later
+/// go of a pressed channel pays the spell's costs again (`cast_cost.pulse_costs`) and
+/// ends the channel as a cancel does when the caster cannot, then the connection
+/// selects the go's targets and strikes them, and answers with `went` when the round
+/// closes. A cast that is not live has no go, and an activate cast of castMethod 5 has
+/// none until the client has answered 1 (`answered` asks again).
 fn asked(
   cast cast: State,
   caster caster: Caster,
@@ -2587,41 +2589,98 @@ fn asked(
       // and the go's gates and gains read the paid caster (the server's choice: the
       // order at one go is not recorded).
       let reserved = live.reserved
-      let live = Live(..live, reserved: [])
-      let cast = State(..cast, casts: dict.insert(cast.casts, cast_id, live))
-      case live.activation {
-        // An activate cast selects no targets: its go names the activated unit alone.
-        Some(_) -> {
-          let #(cast, going) =
-            go(
-              cast:,
-              caster:,
-              now_ms:,
-              cast_id:,
-              phase:,
-              struck: [],
-              gates_passed: dict.new(),
-              poses: dict.new(),
-              indexes: dict.new(),
-              units: dict.new(),
-              rolls: [],
+      let first = live.goes_asked == 0
+      let asked_live =
+        Live(..live, reserved: [], goes_asked: live.goes_asked + 1)
+      let cast =
+        State(..cast, casts: dict.insert(cast.casts, cast_id, asked_live))
+      let pulse = cast_cost.pulse_costs(spell: live.spell, parent: live.parent)
+      case first, pulse {
+        False, [_, ..] ->
+          case
+            cast_cost.costs_paid(
+              costs: pulse,
+              resources: cast_cost.unreserved(
+                cast:,
+                resources: caster.resources,
+              ),
             )
-          #(cast, list.append(cast_cost.paying(payments: reserved), going))
-        }
-        None -> #(
-          cast,
-          list.append(cast_cost.paying(payments: reserved), [
-            Strike(asked: GoAsked(
-              cast_id:,
-              phase:,
-              spell4_id: live.spell.spell4_id,
-              primary_target: live.primary_target,
-              spent: live.spent,
-            )),
-          ]),
-        )
+          {
+            Ok(paid) ->
+              went_asked(
+                cast:,
+                caster:,
+                now_ms:,
+                cast_id:,
+                phase:,
+                live: asked_live,
+                payments: paid.payments,
+              )
+            // The channel's pulse cannot be paid: it ends as a cancel ends it, with
+            // a 0x7fe alone. No 0x7f9 is written, since the client destroys every
+            // target node on one while the server keeps nodes with life left (the
+            // server's choice: the client has no rule for a channel that runs dry).
+            Error(cast_state.Unpaid(..))
+            | Error(cast_state.Unheld(..))
+            | Error(cast_state.UnreadSpend(..)) ->
+              end_live_cast(cast:, caster:, cast_id:, live: asked_live, now_ms:)
+          }
+        _, _ ->
+          went_asked(
+            cast:,
+            caster:,
+            now_ms:,
+            cast_id:,
+            phase:,
+            live: asked_live,
+            payments: reserved,
+          )
       }
     }
+  }
+}
+
+/// A go whose costs are settled: the payments, then the go's strike.
+fn went_asked(
+  cast cast: State,
+  caster caster: Caster,
+  now_ms now_ms: Int,
+  cast_id cast_id: Int,
+  phase phase: Int,
+  live live: Live,
+  payments payments: List(Payment),
+) -> #(State, List(Effect)) {
+  case live.activation {
+    // An activate cast selects no targets: its go names the activated unit alone.
+    Some(_) -> {
+      let #(cast, going) =
+        go(
+          cast:,
+          caster:,
+          now_ms:,
+          cast_id:,
+          phase:,
+          struck: [],
+          gates_passed: dict.new(),
+          poses: dict.new(),
+          indexes: dict.new(),
+          units: dict.new(),
+          rolls: [],
+        )
+      #(cast, list.append(cast_cost.paying(payments:), going))
+    }
+    None -> #(
+      cast,
+      list.append(cast_cost.paying(payments:), [
+        Strike(asked: GoAsked(
+          cast_id:,
+          phase:,
+          spell4_id: live.spell.spell4_id,
+          primary_target: live.primary_target,
+          spent: live.spent,
+        )),
+      ]),
+    )
   }
 }
 
@@ -3178,6 +3237,7 @@ fn start(
         Child | Base(..) | Stage(..) | Passive | Activation(..) -> None
       },
       finish_due: False,
+      goes_asked: 0,
     )
   let global_ends = case role, spell.global_cooldown.starts_for_ms {
     Passive, _ -> cast.global_cooldown_ends_ms
