@@ -22,11 +22,14 @@ import genesis_prime/connection/frame.{Frame}
 import genesis_prime/content
 import genesis_prime/content/class_resource as content_class_resource
 import genesis_prime/content/creature_kind as content_creature_kind
+import genesis_prime/content/game_number as content_game_number
+import genesis_prime/content/held_objective as content_held_objective
 import genesis_prime/content/projector_landing as content_projector_landing
 import genesis_prime/content/refusal.{Refusal}
 import genesis_prime/content/server_proxy as content_server_proxy
 import genesis_prime/content/spawn as content_spawn
 import genesis_prime/content/tutorial_quest as content_tutorial_quest
+import genesis_prime/content/vendor as content_vendor
 import genesis_prime/content/zone_welcome as content_zone_welcome
 import genesis_prime/game/activate
 import genesis_prime/game/class_resource
@@ -46,6 +49,7 @@ import gleam/erlang/process
 import gleam/int
 import gleam/list
 import gleam/option
+import gleam/set
 import gleam/string
 import log_capture
 import mailbox_support
@@ -223,6 +227,41 @@ pub fn a_held_row_naming_an_objective_the_client_does_not_hold_stops_the_load_te
     as "a refused held row stops the start"
   assert list.map(refusals, fn(refused) { #(refused.table, refused.row) })
     == [#("held_objective", refusal.RowId(4_000_000))]
+}
+
+pub fn the_content_load_puts_the_held_objectives_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let database = database_support.new_database(on: database_support.shared())
+  let #(loaded, key) = content_support.load(database:)
+  assert loaded == Ok(Nil)
+  let held = content_held_objective.held(key:)
+  assert set.size(held) == 130 as "migration 0034 seeds 130 held_objective rows"
+  assert list.all([12_547, 17_882, 21_536], fn(objective) {
+    set.contains(held, objective)
+  })
+    as "migration 0034's first row (12547, an instance run), a pvp_match row (17882) and its last row (21536)"
+  assert !set.contains(held, 12_548)
+    as "an objective migration 0034 does not list is not held"
+}
+
+pub fn the_load_puts_every_term_the_game_listener_reads_at_start_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let database = database_support.new_database(on: database_support.shared())
+  let #(loaded, key) = content_support.load(database:)
+  assert loaded == Ok(Nil)
+  // The readers of the content terms `genesis_prime.game` puts in each connection's
+  // settings: a term the load did not put crashes its reader.
+  let _classes = content_class_resource.classes(key:)
+  let _proxies = content_server_proxy.proxies(key:)
+  let _welcomes = content_zone_welcome.zone_welcomes(key:)
+  let _vendors = content_vendor.vendors(key:)
+  let _numbers = content_game_number.numbers(key:)
+  let _visibility = content_spawn.visibility(key:)
+  let _chain = content_tutorial_quest.chain(key:)
+  let _landings = content_projector_landing.landings(key:)
+  let _reused = content_spawn.reused_unit_objectives(key:)
+  let _held = content_held_objective.held(key:)
+  Nil
 }
 
 pub fn a_refused_kind_row_does_not_hide_a_refused_spawn_test() -> Nil {
