@@ -24,15 +24,17 @@
 ////   it (the server's choice; the crit of a heal is #336).
 
 import genesis_prime/game/cast/state.{
-  type Caster, type Effect, type Healed, type Struck, type TickingOn, DamageTick,
-  Deflected, HealTick, Healed, Hit, HitCreature, HitPlayer, Immune, Log,
-  TickingOn,
-}
+  type Aimed, type Caster, type Effect, type Healed, type Product, type Reached,
+  type State, type Struck, type TickingOn, CasterChangeStarts, CooldownKept,
+  DamageTick, Deflected, Heal, HealTick, Healed, Healing, Hit, HitCreature,
+  HitPlayer, Immune, Log, ModifierStart, Plain, TickingOn,
+} as cast_state
 import genesis_prime/game/damage
 import genesis_prime/game/effect_kind
 import genesis_prime/game/heal_split
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan
+import genesis_prime/game/unit_properties
 import genesis_prime/message/combat_result
 import genesis_prime/message/damage_type
 import genesis_prime/message/spell_damage_description.{
@@ -64,16 +66,22 @@ pub fn ticking_struck(struck struck: List(Struck)) -> List(TickingOn) {
   })
 }
 
-/// The periodic heal rows of the go aimed at the caster, each ticking on it; one aimed
-/// at another unit is left with the debug line of `healed_by`.
+/// The periodic heal rows among the effects a go reached, each on the caster ticking on
+/// it; one aimed at another unit is left with the debug line of `healed_on`.
 pub fn ticking_heals(
-  entries entries: List(#(spell_plan.Heal, Int)),
+  reached reached: List(Reached),
   caster caster: Caster,
 ) -> List(TickingOn) {
-  entries
-  |> list.filter_map(fn(entry) {
-    case entry.0, entry.1 == caster.unit_id {
-      spell_plan.TickingHeal(effect_id:, vital:, formula:, schedule:, ..), True
+  list.filter_map(reached, fn(entry) {
+    case entry.effect.kind, entry.unit_id == caster.unit_id {
+      spell_plan.HealEffect(heal: spell_plan.TickingHeal(
+        effect_id:,
+        vital:,
+        formula:,
+        schedule:,
+        ..,
+      )),
+        True
       ->
         Ok(TickingOn(
           unit_id: caster.unit_id,
@@ -82,63 +90,68 @@ pub fn ticking_heals(
           schedule:,
           kind: HealTick(vital:, formula:),
         ))
-      spell_plan.TickingHeal(..), False | spell_plan.Heal(..), _ -> Error(Nil)
+      spell_plan.HealEffect(..), _
+      | spell_plan.ProxyEffect(..), _
+      | spell_plan.GainEffect(..), _
+      | spell_plan.LastingEffect(..), _
+      | spell_plan.RemoveEffect(..), _
+      | spell_plan.ModifierEffect(..), _
+      | spell_plan.ForcedMoveEffect(..), _
+      | spell_plan.StruckMoveEffect(..), _
+      | spell_plan.CooldownEffect(..), _
+      | spell_plan.StealthEffect(..), _
+      | spell_plan.RemoveStealthEffect(..), _
+      | spell_plan.ProcEffect(..), _
+      | spell_plan.ControlEffect(..), _
+      -> Error(Nil)
     }
   })
 }
 
-/// The heals a go applies at once (a periodic one ticks, `ticking_heals`), each on the
-/// caster, with the amount the caster's own
+/// What a heal row reaching `unit_id` comes to: for a heal applied at once (a periodic
+/// one ticks, `ticking_heals`) on the caster, the `Healing` with the amount the caster's own
 /// vitals and stats give: the caster as it stood before the go's own effects, the rule of
-/// every gate of the go (`cast_tick.subject_of`), and the overheal the vital's room leaves. A row's
-/// units are those its aim names (`cast_gate.units_aimed_at`) and only the caster is healed: the
-/// server gives no other unit a heal, so a heal aimed at another unit (the primary target
-/// of a cast on someone else, a unit the round hit) is left, with a debug line naming its
-/// row (other players come with #570). The plan refuses a heal that names the primary
-/// target in a child started on each struck unit (`spell_plan.not_on_a_struck_unit`).
-pub fn healed_by(
-  entries entries: List(#(spell_plan.Heal, Int)),
+/// every gate of the go (`cast_tick.subject_of`), and the overheal the vital's room leaves.
+/// A row's units are those its aim names (`cast_gate.units_aimed_at`) and only the caster
+/// is healed: the server gives no other unit a heal, so a heal aimed at another unit (the
+/// primary target of a cast on someone else, a unit the round hit) is left `Plain`, with a
+/// debug line naming its row (other players come with #570). The plan refuses a heal that
+/// names the primary target in a child started on each struck unit
+/// (`spell_plan.not_on_a_struck_unit`).
+pub fn healed_on(
+  row row: spell_plan.Heal,
+  unit_id unit_id: Int,
   caster caster: Caster,
-) -> #(List(#(Healed, Int)), List(Effect)) {
-  let on_caster = on_caster_of(caster:)
-  let healed =
-    list.filter_map(entries, fn(entry) {
-      case entry.0, entry.1 == caster.unit_id {
-        spell_plan.Heal(effect_id:, vital:, formula:, delay_ms:, ..), True -> {
-          let amount = damage.amount_on_caster(formula:, caster: on_caster)
-          Ok(#(
-            Healed(
-              effect_id:,
-              vital:,
-              delay_ms:,
-              amount:,
-              split: split_of(vital:, amount:, caster:),
-            ),
-            caster.unit_id,
-          ))
-        }
-        spell_plan.Heal(..), False | spell_plan.TickingHeal(..), _ -> Error(Nil)
-      }
-    })
-  let left =
-    list.filter_map(entries, fn(entry) {
-      case entry.0, entry.1 == caster.unit_id {
-        spell_plan.Heal(effect_id:, ..), False
-        | spell_plan.TickingHeal(effect_id:, ..), False
-        ->
-          Ok(Log(
-            level: LogDebug,
-            text: "the Heal or HealShields effect "
-              <> int.to_string(effect_id.value)
-              <> " is aimed at the unit "
-              <> int.to_string(entry.1)
-              <> ", not the caster, and heals on other units are not built (#570), so it lands nothing",
-          ))
-        spell_plan.Heal(..), True | spell_plan.TickingHeal(..), True ->
-          Error(Nil)
-      }
-    })
-  #(healed, left)
+) -> #(Product, List(Effect)) {
+  case row, unit_id == caster.unit_id {
+    spell_plan.Heal(effect_id:, vital:, formula:, delay_ms:, ..), True -> {
+      let amount =
+        damage.amount_on_caster(formula:, caster: on_caster_of(caster:))
+      #(
+        Healing(healed: Healed(
+          effect_id:,
+          vital:,
+          delay_ms:,
+          amount:,
+          split: split_of(vital:, amount:, caster:),
+        )),
+        [],
+      )
+    }
+    spell_plan.TickingHeal(..), True -> #(Plain, [])
+    spell_plan.Heal(effect_id:, ..), False
+    | spell_plan.TickingHeal(effect_id:, ..), False
+    -> #(Plain, [
+      Log(
+        level: LogDebug,
+        text: "the Heal or HealShields effect "
+          <> int.to_string(effect_id.value)
+          <> " is aimed at the unit "
+          <> int.to_string(unit_id)
+          <> ", not the caster, and heals on other units are not built (#570), so it lands nothing",
+      ),
+    ])
+  }
 }
 
 /// What a heal of the formula's `amount` comes to for the caster's `vital`: the amount
@@ -193,4 +206,51 @@ pub fn heal_description(healed healed: Healed) -> SpellDamageDescription {
     },
     hits: [],
   )
+}
+
+/// The heals a go applies: a heal with no delay lands in this step, after the go's
+/// 0x7f4, and any other on a timer of its delay (the client adds the delay before it
+/// applies a result, `0x1405d77a0`). Each go's heal is its own, so a later go of the cast
+/// heals again and no earlier heal is cancelled; a pending heal is dropped with the node
+/// of the cast on the caster (`cast_proc.effects_ended`), and lands when the node ends by time
+/// (`cast_tick.heals_landed_at_node_end`).
+pub fn heals_armed(
+  cast cast: State,
+  cast_id cast_id: Int,
+  aimed aimed: Aimed,
+) -> #(State, List(Effect)) {
+  list.fold(aimed.reached, #(cast, []), fn(so_far, entry) {
+    let #(cast, effects) = so_far
+    case entry.product {
+      Healing(healed:) -> {
+        let #(cast, armed) = heal_armed(cast:, cast_id:, healed:)
+        #(cast, list.append(effects, armed))
+      }
+      // A heal that lands nothing (a periodic one ticks; another unit's is not built),
+      // and any effect that is no heal.
+      Plain | CooldownKept(..) -> so_far
+    }
+  })
+}
+
+/// One heal applied by a go: in this step with no delay, else on a timer of its delay.
+fn heal_armed(
+  cast cast: State,
+  cast_id cast_id: Int,
+  healed healed: Healed,
+) -> #(State, List(Effect)) {
+  let source = unit_properties.Source(cast_id:, effect_id: healed.effect_id)
+  let change = Heal(vital: healed.vital, amount: healed.amount)
+  case healed.delay_ms > 0 {
+    True -> {
+      let #(cast, _, start) =
+        cast_state.armed(
+          cast:,
+          due: ModifierStart(source:, change:),
+          after_ms: healed.delay_ms,
+        )
+      #(cast, [start])
+    }
+    False -> #(cast, [CasterChangeStarts(source:, change:)])
+  }
 }

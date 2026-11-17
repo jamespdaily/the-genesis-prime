@@ -1105,16 +1105,9 @@ pub type Listed {
 pub type Aimed {
   Aimed(
     units: List(#(Int, List(Listed))),
-    lasting: List(#(spell_plan.Lasting, Int)),
-    removes: List(#(spell_plan.ForceRemove, Int)),
-    modifiers: List(#(spell_plan.PropertyModifier, Int)),
-    /// The creatures a struck move throws: each row with each creature it reaches past
-    /// its target gate.
-    thrown: List(#(spell_plan.StruckMove, Int)),
-    cooldowns: List(#(spell_plan.CooldownModifier, Int, Bool)),
-    stealth: List(#(spell_plan.StealthRow, Int)),
-    procs: List(#(spell_plan.ProcRow, Int)),
-    heals: List(#(Healed, Int)),
+    /// The effects the go reaches in the plan's rank order, each once for each unit it
+    /// reaches (`Reached`): every stage of the go that arms an effect walks this one list.
+    reached: List(Reached),
     reach_logs: List(Effect),
     controls: List(#(strike_tell.ControlLanded, Int)),
     restrictions: List(#(Restricting, Int)),
@@ -1122,6 +1115,27 @@ pub type Aimed {
     /// The rolls the units' target gates left.
     rolls_left: List(Int),
   )
+}
+
+/// One effect of a go that reaches a unit: the planned effect, the unit it stands on (the
+/// caster's for a row that stands on the caster alone) and what the reach stage made of it.
+pub type Reached {
+  Reached(
+    effect: spell_effect.PlannedEffect(spell_plan.Kind),
+    unit_id: Int,
+    product: Product,
+  )
+}
+
+/// What the reach stage made of an effect beside its unit.
+pub type Product {
+  /// Nothing: the effect stands on its unit as it is.
+  Plain
+  /// A heal that lands on the caster, worked out at the go.
+  Healing(healed: Healed)
+  /// Whether a cooldown row is kept for the cooldowns that start after it takes effect
+  /// (`cast_control.cooldown_kept`).
+  CooldownKept(kept: Bool)
 }
 
 /// A CCStateSet row of a go aimed at the caster with the instance id its effect holds;

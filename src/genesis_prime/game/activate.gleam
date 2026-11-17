@@ -528,7 +528,7 @@ fn reaches_past_caster(effect effect: Spell4Effects) -> Bool {
 ///
 /// A Heal row aimed at the target or an area does not refuse the spell either, and the
 /// activate cast drops it: the server restores only the caster's own vitals, so a heal
-/// aimed at a creature lands nothing in any cast (`cast_heal.healed_by`), and the activate
+/// aimed at a creature lands nothing in any cast (`cast_heal.healed_on`), and the activate
 /// cast strikes no one. Six activate spells of the tables hold one (Spell4 34519, 39299,
 /// 39536, 54204, 66484 and 66599); refusing them would make a creature's use, which a
 /// quest objective counts, unreachable.

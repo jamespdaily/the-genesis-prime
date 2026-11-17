@@ -127,11 +127,11 @@ import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/heal as cast_heal
 import genesis_prime/game/cast/state.{
   type Aimed, type Applied, type Caster, type CasterChange, type Due,
-  type Effect, type HeldRestriction, type Live, type OnCreature,
+  type Effect, type HeldRestriction, type Live, type OnCreature, type Reached,
   type Restricting, type State, type Struck, Absorb, Applied, CasterChangeStarts,
   ChargeLevel, CooldownModifierEnds, CooldownModifierStarts, Deflected, Finish,
-  ForcedMoveStart, ForcedMoveStarts, Go, Heal, HeldRestriction, Hit, Immune,
-  Look, ModifierEnd, ModifierStart, NodesEnd, OnCreature, ProcDue, Property,
+  ForcedMoveStart, ForcedMoveStarts, Go, HeldRestriction, Hit, Immune, Look,
+  ModifierEnd, ModifierStart, NodesEnd, OnCreature, ProcDue, Property,
   RepeatHeld, Restricting, RestrictionEnd, Send, StartChild, StartHeld, State,
   StateEnd, TargetChangeEnds, TargetChangeStarts, TargetModifierStart, Tell,
   Tick, WindowEnd,
@@ -297,11 +297,6 @@ type CasterChecked {
 fn caster_checked(
   planned: spell_effect.PlannedEffect(spell_plan.Kind),
 ) -> Result(CasterChecked, Nil) {
-  let has_life = case spell_plan.as_modifier(kind: planned.kind) {
-    Ok(row) -> modifier_has_life(row)
-    Error(Nil) -> True
-  }
-  use <- bool.guard(!has_life, Error(Nil))
   use gates <- result.try(cast_gate.gates_checked_on_caster(kind: planned.kind))
   use what <- result.map(effect_named(kind: planned.kind))
   CasterChecked(planned:, gates:, what:)
@@ -527,12 +522,6 @@ pub fn modifier_kind_named(row row: spell_plan.PropertyModifier) -> String {
   }
 }
 
-/// Whether a modifier row has a time to be changed for: a durationTime, or flags bit 2.
-/// A row with neither changes nothing and gives its node no life.
-fn modifier_has_life(row: spell_plan.PropertyModifier) -> Bool {
-  lasting.has_life(row: row.row)
-}
-
 /// Whether a cooldown row is kept for the cooldowns that start after it takes effect:
 /// its lifetime (delay plus durationTime, the larger of the two for a spell with the
 /// record flag 0x10000000) ends after its start, or never ends (flags bit 2). Any other
@@ -572,41 +561,61 @@ pub fn modifiers_armed(
   aimed aimed: Aimed,
   struck struck: List(Struck),
 ) -> #(State, List(Effect)) {
-  list.fold(aimed.modifiers, #(cast, []), fn(so_far, entry) {
+  list.fold(aimed.reached, #(cast, []), fn(so_far, entry) {
     let #(cast, effects) = so_far
-    let row = entry.0
-    let source = unit_properties.Source(cast_id:, effect_id: row.effect_id)
-    let #(cast, more) = case row.change {
-      spell_plan.StruckChange(modifier:, ..) ->
-        creature_modifier_armed(
-          cast:,
-          cast_id:,
-          row:,
-          modifier:,
-          unit_id: entry.1,
-          struck:,
-        )
-      spell_plan.PropertyChange(modifier:) ->
-        caster_modifier_armed(cast:, row:, source:, change: Property(modifier:))
-      spell_plan.LookChange(disguise:) ->
-        caster_modifier_armed(cast:, row:, source:, change: Look(disguise:))
-      spell_plan.AbsorbChange(absorption:) ->
-        // An absorb's pool is worked out at the go from the caster as it stood before
-        // the go's own effects, as a shield heal's amount is (`healed_by`).
-        caster_modifier_armed(
-          cast:,
-          row:,
-          source:,
-          change: Absorb(
-            amount: damage.amount_on_caster(
-              formula: absorption.formula,
-              caster: cast_heal.on_caster_of(caster:),
-            ),
-            mask: absorption.mask,
-          ),
-        )
+    case entry.effect.kind {
+      spell_plan.ModifierEffect(modifier: row) -> {
+        let source = unit_properties.Source(cast_id:, effect_id: row.effect_id)
+        let #(cast, more) = case row.change {
+          spell_plan.StruckChange(modifier:, ..) ->
+            creature_modifier_armed(
+              cast:,
+              cast_id:,
+              row:,
+              modifier:,
+              unit_id: entry.unit_id,
+              struck:,
+            )
+          spell_plan.PropertyChange(modifier:) ->
+            caster_modifier_armed(
+              cast:,
+              row:,
+              source:,
+              change: Property(modifier:),
+            )
+          spell_plan.LookChange(disguise:) ->
+            caster_modifier_armed(cast:, row:, source:, change: Look(disguise:))
+          spell_plan.AbsorbChange(absorption:) ->
+            // An absorb's pool is worked out at the go from the caster as it stood before
+            // the go's own effects, as a shield heal's amount is (`cast_heal.healed_on`).
+            caster_modifier_armed(
+              cast:,
+              row:,
+              source:,
+              change: Absorb(
+                amount: damage.amount_on_caster(
+                  formula: absorption.formula,
+                  caster: cast_heal.on_caster_of(caster:),
+                ),
+                mask: absorption.mask,
+              ),
+            )
+        }
+        #(cast, list.append(effects, more))
+      }
+      spell_plan.ProxyEffect(..)
+      | spell_plan.GainEffect(..)
+      | spell_plan.LastingEffect(..)
+      | spell_plan.RemoveEffect(..)
+      | spell_plan.ForcedMoveEffect(..)
+      | spell_plan.StruckMoveEffect(..)
+      | spell_plan.CooldownEffect(..)
+      | spell_plan.StealthEffect(..)
+      | spell_plan.RemoveStealthEffect(..)
+      | spell_plan.ProcEffect(..)
+      | spell_plan.HealEffect(..)
+      | spell_plan.ControlEffect(..) -> so_far
     }
-    #(cast, list.append(effects, more))
   })
 }
 
@@ -652,9 +661,9 @@ fn creature_modifier_armed(
   }
 }
 
-/// The creatures a go throws: each entry of `thrown` (a struck move of the phase whose
-/// caster gates passed with a creature its aim names that the round `Hit` and that passes
-/// its target gate, `cast.aimed_at`), in the row then the unit order of `cast_gate.units_aimed_at`. A row with no delay tells the creature
+/// The creatures a go throws: each struck move among the effects the go `reached` (a struck
+/// move of the phase whose caster gates passed with a creature its aim names that the round
+/// `Hit` and that passes its target gate, `cast.aimed_at`), in the row then the unit order of `cast_gate.units_aimed_at`. A row with no delay tells the creature
 /// `ForcedMoveStarts` in this step; any other arms a `ForcedMoveStart` timer for the go
 /// plus its delay; each go's throw is its own, so a later go of the cast leaves an
 /// earlier go's waiting throw to start. A unit that is not a `HitCreature` of the
@@ -663,15 +672,36 @@ fn creature_modifier_armed(
 pub fn struck_moves_armed(
   cast cast: State,
   cast_id cast_id: Int,
-  thrown thrown: List(#(spell_plan.StruckMove, Int)),
+  reached reached: List(Reached),
   struck struck: List(Struck),
 ) -> #(State, List(Effect)) {
-  list.fold(thrown, #(cast, []), fn(so_far, entry) {
+  list.fold(reached, #(cast, []), fn(so_far, entry) {
     let #(cast, effects) = so_far
-    let #(row, unit_id) = entry
-    let #(cast, more) =
-      struck_move_armed(cast:, cast_id:, row:, unit_id:, struck:)
-    #(cast, list.append(effects, more))
+    case entry.effect.kind {
+      spell_plan.StruckMoveEffect(struck_move: row) -> {
+        let #(cast, more) =
+          struck_move_armed(
+            cast:,
+            cast_id:,
+            row:,
+            unit_id: entry.unit_id,
+            struck:,
+          )
+        #(cast, list.append(effects, more))
+      }
+      spell_plan.ProxyEffect(..)
+      | spell_plan.GainEffect(..)
+      | spell_plan.LastingEffect(..)
+      | spell_plan.RemoveEffect(..)
+      | spell_plan.ModifierEffect(..)
+      | spell_plan.ForcedMoveEffect(..)
+      | spell_plan.CooldownEffect(..)
+      | spell_plan.StealthEffect(..)
+      | spell_plan.RemoveStealthEffect(..)
+      | spell_plan.ProcEffect(..)
+      | spell_plan.HealEffect(..)
+      | spell_plan.ControlEffect(..) -> so_far
+    }
   })
 }
 
@@ -798,40 +828,6 @@ fn caster_modifier_armed(
     }
     #(cast, list.flatten([cancels, starting, ending]))
   }
-}
-
-/// The heals a go applies: a heal with no delay lands in this step, after the go's
-/// 0x7f4, and any other on a timer of its delay (the client adds the delay before it
-/// applies a result, `0x1405d77a0`). Each go's heal is its own, so a later go of the cast
-/// heals again and no earlier heal is cancelled; a pending heal is dropped with the node
-/// of the cast on the caster (`cast_proc.effects_ended`), and lands when the node ends by time
-/// (`cast_tick.heals_landed_at_node_end`).
-pub fn heals_armed(
-  cast cast: State,
-  cast_id cast_id: Int,
-  aimed aimed: Aimed,
-) -> #(State, List(Effect)) {
-  list.fold(aimed.heals, #(cast, []), fn(so_far, entry) {
-    let #(cast, effects) = so_far
-    let healed = entry.0
-    let source = unit_properties.Source(cast_id:, effect_id: healed.effect_id)
-    let change = Heal(vital: healed.vital, amount: healed.amount)
-    case healed.delay_ms > 0 {
-      True -> {
-        let #(cast, _, start) =
-          cast_state.armed(
-            cast:,
-            due: ModifierStart(source:, change:),
-            after_ms: healed.delay_ms,
-          )
-        #(cast, list.append(effects, [start]))
-      }
-      False -> #(
-        cast,
-        list.append(effects, [CasterChangeStarts(source:, change:)]),
-      )
-    }
-  })
 }
 
 /// The modifier rows of a spell that change the caster: the rows aimed at struck units
