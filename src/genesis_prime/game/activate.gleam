@@ -30,7 +30,8 @@
 ////   own activate spell passes, and the rest are refused 89.
 //// - A spell with an effect the strike would apply, aimed at the target or an area, is
 ////   refused with result 285 and logged once, since the activate cast strikes no unit
-////   (gap, #336); a heal row aimed there is dropped instead (`activate_rows_of`).
+////   (gap, #336); a heal, RavelSignal or DespawnUnit row aimed there is dropped instead
+////   (`activate_rows_of`).
 //// - **The target's life** is judged before the range: the spell's target row says a dead
 ////   creature is refused 106 or a living one 107 (`CheckCastUnitTargetRange`,
 ////   `0x1403b2240`). A unit hostile to the player or in combat is offered no use at all
@@ -208,15 +209,15 @@ pub type Limits {
 
 /// What the plans hold of an activate spell.
 pub type Planned {
-  /// The spell's plan, its Activate effects in row order, the RavelSignal rows aimed at
-  /// the target that the activate cast drops, its Spell4 limits and its cast group
+  /// The spell's plan, its Activate effects in row order, the RavelSignal and DespawnUnit
+  /// rows aimed at the target that the activate cast drops (`Dropped`), its Spell4 limits and its cast group
   /// (Spell4Base.targetGroupIdCastGroup, 0 for none; `passes_cast_group` tests it). A
   /// spell of a method the cast rule does not
   /// build is held too: the press is refused as an ability's is (`cast_press.verdict`).
   Planned(
     spell: Spell,
     effects: List(ActivateEffect),
-    dropped_signals: List(Spell4EffectsId),
+    dropped: Dropped,
     limits: Limits,
     cast_group_id: Int,
   )
@@ -471,11 +472,11 @@ fn planned_rows(
         <> int.to_string(spell4_id)
         <> " aims at the target or an area, and the activate cast strikes no one",
       )
-    Ok(ActivateRows(effects:, dropped_signals:)) ->
+    Ok(ActivateRows(effects:, dropped:)) ->
       Planned(
         spell:,
         effects:,
-        dropped_signals:,
+        dropped:,
         limits: Limits(
           min: row.target_min_range,
           max: row.target_max_range,
@@ -499,10 +500,15 @@ type AimedAtTarget {
 
 /// What an activate spell's rows leave for the activate cast.
 type ActivateRows {
-  ActivateRows(
-    effects: List(ActivateEffect),
-    dropped_signals: List(Spell4EffectsId),
-  )
+  ActivateRows(effects: List(ActivateEffect), dropped: Dropped)
+}
+
+/// The rows of an activate spell that the activate cast drops, aimed at the target or an
+/// area, in row order: RavelSignal rows, which start a script the server does not have, and
+/// DespawnUnit rows, which remove a creature the activate cast has no strike to name
+/// (`activate_rows_of`).
+pub type Dropped {
+  Dropped(signals: List(Spell4EffectsId), despawns: List(Spell4EffectsId))
 }
 
 /// Whether a row's effect reaches a unit past the caster: its aim names the primary target or
@@ -539,6 +545,12 @@ fn reaches_past_caster(effect effect: Spell4Effects) -> Bool {
 /// the client holds no script for it, so what it shows is not lost. The tutorial mine's
 /// activate spell 85452 holds two such rows. They are returned, and the cast logs them
 /// once when it drops them (`cast.activation_started`).
+///
+/// A DespawnUnit row aimed at the target or an area is dropped the same way: it removes the
+/// creatures a strike hits and the activate cast strikes none, and the unit a player
+/// activates may be a static object, which the map retires. 218 rows of the tables are
+/// in spells that hold an Activate row, more in other spells a creature's activate column
+/// names, and refusing them would make a quest object that activates today unusable. The rows are logged once per spell when the cast starts (`cast.activation_started`).
 fn activate_rows_of(
   sources sources: spell_plan.Sources,
   spell4_id spell4_id: Int,
@@ -555,6 +567,7 @@ fn activate_rows_of(
       && effect_kind.kind_of(effect_type: effect.effect_type)
       == effect_kind.RavelSignal
     })
+  let #(despawns, others) = list.partition(others, drops_despawn)
   case
     list.find(others, fn(effect) {
       reaches_past_caster(effect:)
@@ -575,11 +588,20 @@ fn activate_rows_of(
             phase_flags: effect.phase_flags,
           )
         }),
-        dropped_signals: list.map(signals, fn(effect) {
-          Spell4EffectsId(effect.id)
-        }),
+        dropped: Dropped(
+          signals: list.map(signals, fn(effect) { Spell4EffectsId(effect.id) }),
+          despawns: list.map(despawns, fn(effect) { Spell4EffectsId(effect.id) }),
+        ),
       ))
   }
+}
+
+/// Whether the activate cast drops this effect of its spell: a DespawnUnit row that reaches a
+/// unit past the caster. The activate cast strikes no unit, so there is no creature for the
+/// row to remove, in whatever spell a creature's activate column names.
+pub fn drops_despawn(effect effect: Spell4Effects) -> Bool {
+  effect_kind.kind_of(effect_type: effect.effect_type) == effect_kind.Despawn
+  && reaches_past_caster(effect:)
 }
 
 /// Whether the effect type is a heal of health or of shield.

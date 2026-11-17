@@ -1313,14 +1313,26 @@ fn creature_thrown(
 /// creature `TellDespawn` with `delay_ms`, `struck_at_ms` and `went_at_ms`, and draws
 /// nothing.
 fn creature_despawned(
-  entered _entered: world_entry.Entered,
-  unit_id _unit_id: Int,
-  life _life: Int,
-  struck_at_ms _struck_at_ms: Int,
-  went_at_ms _went_at_ms: Int,
-  delay_ms _delay_ms: Int,
+  entered entered: world_entry.Entered,
+  unit_id unit_id: Int,
+  life life: Int,
+  struck_at_ms struck_at_ms: Int,
+  went_at_ms went_at_ms: Int,
+  delay_ms delay_ms: Int,
 ) -> Effect(ConnectionEffect(Request)) {
-  panic as "shape: telling a creature to despawn is built in the step's code commit"
+  OwnEffect(step.Tell(
+    to: step.Creature(
+      map: entered.map,
+      incarnation: entered.incarnation,
+      unit_id:,
+      life:,
+    ),
+    request: client_connection.TellDespawn(
+      delay_ms:,
+      struck_at_ms:,
+      went_at_ms:,
+    ),
+  ))
 }
 
 /// A go asked: its targets are selected from the units the client shows, the

@@ -3101,6 +3101,7 @@ fn spell_of(
           effect_kind.Heal(vital: effect_kind.Health),
           effect_kind.Heal(vital: effect_kind.Shield),
         ],
+        [effect_kind.Despawn],
       ],
       fn(kinds) { rows_read(readings:, kinds:) },
     ),
@@ -4905,10 +4906,7 @@ fn kind_reading(
       }
     effect_kind.Damage -> Ok(ReadByArea)
     effect_kind.Activate -> Ok(ReadByActivation)
-    effect_kind.Despawn -> {
-      use <- bool.guard(when: !reaches, return: Ok(LeftOut(why: TypeNotRead)))
-      despawn_reading(tables:, place:, effect:)
-    }
+    effect_kind.Despawn -> despawn_reading(tables:, place:, effect:)
     effect_kind.Immunity | effect_kind.Unread(..) ->
       Ok(LeftOut(why: TypeNotRead))
   }
@@ -4917,13 +4915,46 @@ fn kind_reading(
 /// A DespawnUnit row (`Spell4Effects.effectType.97`) as a `Despawn` of the part of its aim
 /// past the caster (`past_the_caster`): left out with `DespawnAimedAtTheCasterOnly` when it
 /// aims at the caster alone and with `DespawnDataNotRead` when dataBits00 or dataBits01 is
-/// not 0, and `Held` when its phaseFlags is 0 (`held_without_a_phase`).
+/// not 0, and `Held` when its phaseFlags is 0 (`held_without_a_phase`). A flags value no aim
+/// reads is left out as aimed at other units. Its apply prerequisites are read as a throw's
+/// are (`applied_condition_of`), the target one checked by each struck creature that holds
+/// all it reads (`struck_gates_of`).
 fn despawn_reading(
-  tables _tables: table_store.Tables,
-  place _place: RowPlace,
-  effect _effect: spell4_effects.Spell4Effects,
+  tables tables: table_store.Tables,
+  place place: RowPlace,
+  effect effect: spell4_effects.Spell4Effects,
 ) -> Result(RowReading, PlanError) {
-  panic as "shape: reading a despawn row is built in the step's code commit"
+  case aim_of(target_flags: effect.target_flags) {
+    Error(Nil) -> Ok(LeftOut(why: AimedAtOtherUnits))
+    Ok(aim) ->
+      case past_the_caster(aim: aim_in_place(place:, aim:)) {
+        Error(Nil) -> Ok(LeftOut(why: DespawnAimedAtTheCasterOnly))
+        Ok(past) ->
+          case effect.data_bits00, effect.data_bits01 {
+            0, 0 -> {
+              use condition <- result.map(applied_condition_of(
+                tables:,
+                effect:,
+                reach: reach_in_place(place:, aim: past),
+              ))
+              Applied(
+                read_as(
+                  DespawnEffect(despawn: Despawn(
+                    effect_id: Spell4EffectsId(effect.id),
+                    phase_flags: effect.phase_flags,
+                    delay_ms: effect.delay_time,
+                    aim: past,
+                    condition:,
+                    tag: tag_of(effect:),
+                  )),
+                ),
+              )
+            }
+            0, _ -> Ok(LeftOut(why: DespawnDataNotRead(column: "dataBits01")))
+            _, _ -> Ok(LeftOut(why: DespawnDataNotRead(column: "dataBits00")))
+          }
+      }
+  }
 }
 
 /// The row as `LeftOut` when its targetFlags do not reach a unit the type is read for

@@ -74,9 +74,10 @@
 ////   `Spell4Effects.effectType.79`, enum `0x140c34140`).
 //// - **Despawn** (97) removes the creatures it aims at past the caster after its delay; the
 ////   client reads no row of this type and sees the removal only as 0x355
-////   (`Spell4Effects.effectType.97`). No rule applies a row of it, so `is_read` and
-////   `is_row_read` answer False for it and the plan leaves it out as unread
-////   (genesis_prime/game/spell_plan `despawn_reading`).
+////   (`Spell4Effects.effectType.97`). A row is read when its targetFlags name a unit past the
+////   caster (`is_row_read`); the plan leaves out a row aimed at the caster alone, and one
+////   whose dataBits00 or dataBits01 is not 0, by name (genesis_prime/game/spell_plan
+////   `despawn_reading`).
 //// - **Unread** is any other type: the client's data holds it and no rule of the
 ////   server reads it.
 ////
@@ -248,8 +249,9 @@ pub fn is_read(effect_type effect_type: Int) -> Bool {
     | InterruptArmor
     | DisguiseOutfit
     | Absorption
-    | Activate -> True
-    Immunity | Despawn | Unread(..) -> False
+    | Activate
+    | Despawn -> True
+    Immunity | Unread(..) -> False
   }
 }
 
@@ -283,6 +285,7 @@ pub fn is_row_read(
     Heal(..) | InterruptArmor | Absorption ->
       int.bitwise_and(target_flags, 1) == 1 || target_flags == 2
     ShieldOverload -> target_flags == 4
+    Despawn -> target_flags >= 2 && target_flags <= 7
     Proxy
     | Damage
     | VitalModifier
@@ -293,7 +296,7 @@ pub fn is_row_read(
     | ItemVisualSwap
     | RavelSignal
     | Activate -> True
-    Immunity | Despawn | Unread(..) -> False
+    Immunity | Unread(..) -> False
   }
 }
 

@@ -1412,6 +1412,68 @@ pub fn an_activate_cast_logs_the_ravel_signals_it_drops_once_test() -> Nil {
     as "the same spell's signals are not logged again"
 }
 
+pub fn an_activation_with_a_dropped_despawn_logs_it_once_and_activates_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Spell4Effects 2821 is the Activate row of Spell4 1817, the mollusk's spell. A DespawnUnit
+  // row (type 97) aimed at the target is added beside it, as 218 client rows are in spells
+  // that hold an Activate row; the activate cast strikes no unit, so it drops the row and
+  // the activation works as it does without it.
+  fixture_tables.added(
+    table: "Spell4Effects",
+    copy_of: 2821,
+    id: 99_097,
+    with: [#("effectType", planted_table.Integer(97))],
+    body: fn(tables) {
+      let activations = activate.activations(tables:)
+      let click = fn(state, ms) {
+        let assert Ok(taken) =
+          right_click(
+            state:,
+            activations:,
+            unit_id: its_unit,
+            target: mollusk_in_state(east: 1.0, alive: True, withheld: None),
+            at: ms,
+          )
+          as "the right-click is taken"
+        taken
+      }
+      let #(state, first) = click(cast_state.new(), 1000)
+      assert support.refusal_results(effects: first) == []
+        as "a dropped despawn refuses nothing: no result 285"
+      let assert [#(LogWarning, line)] = support.logs(effects: first)
+        as "the dropped row is logged once, as one line"
+      assert string.contains(line, "1817")
+        && string.contains(line, "DespawnUnit")
+        && string.contains(line, "99097")
+        && string.contains(line, "5000")
+        as "the line names the spell, the kind, the effect and the unit"
+      let #(state, steps) =
+        support.run_timers(state:, effects: first, from_ms: 1000)
+      let effects = flattened(steps:)
+      assert list.contains(
+        support.ids(frames: support.writes(effects:)),
+        0x07F4,
+      )
+        as "the cast goes after its castTime, as without the row"
+      assert list.contains(
+        effects,
+        cast_state.Activated(
+          unit_id: its_unit,
+          creature_id: the_mollusk,
+          alive_at_press: True,
+          by_item: False,
+        ),
+      )
+        as "and raises the activation the objectives count"
+      assert support.despawns(effects:) == []
+        as "the activate cast tells no creature to despawn: it strikes no unit"
+      let #(_, second) = click(state, 60_000)
+      assert support.logs(effects: second) == []
+        as "the same spell's dropped row is not logged again"
+    },
+  )
+}
+
 pub fn activate_cancelled_raises_nothing_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, pressed) =

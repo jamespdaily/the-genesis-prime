@@ -419,6 +419,11 @@ fn spell_effects() -> EngineDeclaration {
         fact_key: "Spell4Effects.effectType.84",
       ),
       Missing(
+        type_number: 97,
+        reason: "rows aimed at the caster alone, which only a creature caster could remove (#328); rows with a dataBits00 or dataBits01 that is not 0, which no client code reads (#328); rows in a spell that holds an Activate row, which the activate cast drops since it strikes no unit (#328), and the same rows of a spell a creature's activate column names with no Activate row of its own, which the measure counts read; rows behind a target apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses",
+        fact_key: "Spell4Effects.effectType.97",
+      ),
+      Missing(
         type_number: 112,
         reason: "rows with an outfit (0x905), no display, aimed at another unit, behind a target prerequisite or with no life, which the plan refuses or no go applies",
         fact_key: "Spell4Effects.effectType.112",

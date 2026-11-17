@@ -51,6 +51,11 @@
 ////   (genesis_prime/game/connection/casting): it draws the throw's two fractions from its
 ////   seed then, so a delayed throw draws at its own time, and tells the creature. A
 ////   connection that is gone has no timers, so nothing is thrown.
+//// - **A go's despawns of creatures** (type 97 rows whose targetFlags name a unit other than
+////   the caster, a `Despawn`; `Spell4Effects.effectType.97`): each is aimed at the creatures
+////   the go hit, in the life and at the time the go struck them. The rule tells each
+////   `CreatureDespawns` in the go's own step, with the row's delay and the go's time, and
+////   arms no timer: the creature owns the delay (`despawns_told`).
 //// - **A go's disguises** (genesis_prime/game/look): each type 112 effect of the phase
 ////   that has a life and whose gate against the caster passes is a modifier row whose change is a
 ////   `Look`, so it is listed, started, ended, cancelled with the node and ended at death
@@ -129,12 +134,12 @@ import genesis_prime/game/cast/state.{
   type Aimed, type Applied, type Caster, type CasterChange, type Due,
   type Effect, type HeldRestriction, type Live, type OnCreature, type Reached,
   type Restricting, type State, type Struck, Absorb, Applied, CasterChangeStarts,
-  ChargeLevel, CooldownModifierEnds, CooldownModifierStarts, Deflected, Finish,
-  ForcedMoveStart, ForcedMoveStarts, Go, HeldRestriction, Hit, Immune, Look,
-  ModifierEnd, ModifierStart, NodesEnd, OnCreature, ProcDue, Property,
-  RepeatHeld, Restricting, RestrictionEnd, Send, StartChild, StartHeld, State,
-  StateEnd, TargetChangeEnds, TargetChangeStarts, TargetModifierStart, Tell,
-  Tick, WindowEnd,
+  ChargeLevel, CooldownModifierEnds, CooldownModifierStarts, CreatureDespawns,
+  Deflected, Finish, ForcedMoveStart, ForcedMoveStarts, Go, HeldRestriction, Hit,
+  Immune, Look, ModifierEnd, ModifierStart, NodesEnd, OnCreature, ProcDue,
+  Property, RepeatHeld, Restricting, RestrictionEnd, Send, StartChild, StartHeld,
+  State, StateEnd, TargetChangeEnds, TargetChangeStarts, TargetModifierStart,
+  Tell, Tick, WindowEnd,
 } as cast_state
 import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
@@ -740,13 +745,24 @@ pub fn struck_moves_armed(
 pub fn despawns_told(
   cast _cast: State,
   reached reached: List(Reached),
-  struck _struck: List(Struck),
-  went_at_ms _went_at_ms: Int,
+  struck struck: List(Struck),
+  went_at_ms went_at_ms: Int,
 ) -> List(Effect) {
   list.flat_map(reached, fn(entry) {
     case entry.effect.kind {
-      spell_plan.DespawnEffect(..) ->
-        panic as "shape: telling the creatures a go despawns is built in the step's code commit"
+      spell_plan.DespawnEffect(despawn: row) ->
+        case cast_gate.creature_hit(struck:, unit_id: entry.unit_id) {
+          Error(Nil) -> []
+          Ok(#(life, struck_at_ms)) -> [
+            CreatureDespawns(
+              unit_id: entry.unit_id,
+              life:,
+              struck_at_ms:,
+              went_at_ms:,
+              delay_ms: row.delay_ms,
+            ),
+          ]
+        }
       spell_plan.ProxyEffect(..)
       | spell_plan.GainEffect(..)
       | spell_plan.LastingEffect(..)

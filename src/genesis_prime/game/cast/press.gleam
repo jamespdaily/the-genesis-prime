@@ -75,6 +75,7 @@
 ////   thresholdTime and sends nothing, so the server holds the charge until a
 ////   release or a cancel.
 
+import genesis_prime/game/activate
 import genesis_prime/game/cast/cost as cast_cost
 import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/cast/gate as cast_gate
@@ -83,9 +84,9 @@ import genesis_prime/game/cast/state.{
   type Refusal, type Resolution, type Role, type State, type Threshold,
   type Unbuilt, type Verdict, Activation, AnswerSucceeded, AwaitingAnswer, Base,
   CancelTimer, CannotTell, ChargeLevel, Child, CooldownModifierEnds,
-  CooldownModifierStarts, DroppedControls, DroppedSignals, Finish,
-  ForcedMoveStart, GateFails, Go, Hold, HoldForCast, Holding, ItemsIssue, Log,
-  ModifierEnd, ModifierStart, NoInteraction, NodesEnd, NotBuilt, Passive,
+  CooldownModifierStarts, DroppedControls, DroppedDespawns, DroppedSignals,
+  Finish, ForcedMoveStart, GateFails, Go, Hold, HoldForCast, Holding, ItemsIssue,
+  Log, ModifierEnd, ModifierStart, NoInteraction, NodesEnd, NotBuilt, Passive,
   PrerequisitesIssue, ProcDue, Refuse, RepeatHeld, Resolution, RestrictionEnd,
   Shortcut, SpellsIssue, Stage, StartChild, StartHeld, Starts, State, StateEnd,
   TargetModifierStart, Tick, UnbuiltItemCharges, UnbuiltItemSpell,
@@ -386,38 +387,77 @@ pub fn activation_spell(
   }
 }
 
-/// The log of the RavelSignal rows an activate cast drops, the first time for the spell:
-/// the server has no script to start for them (`activate.activate_rows_of`).
-pub fn signals_dropped(
+/// The log of the rows an activate cast drops, the first time for the spell, one line for
+/// the RavelSignal rows and one for the DespawnUnit rows: the server has no script to start
+/// for the first, and the activate cast strikes no unit, so there is no creature for the
+/// second to remove (`activate.activate_rows_of`).
+pub fn rows_dropped(
   cast cast: State,
   spell4_id spell4_id: Int,
   unit_id unit_id: Int,
   creature_id creature_id: Int,
-  dropped_signals dropped_signals: List(Spell4EffectsId),
+  dropped dropped: activate.Dropped,
 ) -> #(State, List(Effect)) {
-  let key = DroppedSignals(spell4_id:)
-  case dropped_signals == [] || set.contains(cast.logged, key) {
-    True -> #(cast, [])
-    False -> #(State(..cast, logged: set.insert(cast.logged, key)), [
-      Log(
-        level: LogWarning,
-        text: "the activate cast of Spell4 "
-          <> int.to_string(spell4_id)
-          <> " at unit "
-          <> int.to_string(unit_id)
-          <> " (Creature2 "
-          <> int.to_string(creature_id)
-          <> ") drops the RavelSignal effects "
-          <> string.join(
-          list.map(dropped_signals, fn(effect_id) {
-            int.to_string(effect_id.value)
-          }),
-          ", ",
-        )
-          <> ": the server has no script to start for them",
-      ),
-    ])
-  }
+  let #(cast, signals) =
+    dropped_once(
+      cast:,
+      key: DroppedSignals(spell4_id:),
+      spell4_id:,
+      unit_id:,
+      creature_id:,
+      kind: "RavelSignal",
+      effect_ids: dropped.signals,
+      why: "the server has no script to start for them",
+    )
+  let #(cast, despawns) =
+    dropped_once(
+      cast:,
+      key: DroppedDespawns(spell4_id:),
+      spell4_id:,
+      unit_id:,
+      creature_id:,
+      kind: "DespawnUnit",
+      effect_ids: dropped.despawns,
+      why: "the activate cast strikes no unit for them to remove",
+    )
+  #(cast, list.append(signals, despawns))
+}
+
+/// The log of the `effect_ids` an activate cast drops, once for the `key`.
+fn dropped_once(
+  cast cast: State,
+  key key: Unbuilt,
+  spell4_id spell4_id: Int,
+  unit_id unit_id: Int,
+  creature_id creature_id: Int,
+  kind kind: String,
+  effect_ids effect_ids: List(Spell4EffectsId),
+  why why: String,
+) -> #(State, List(Effect)) {
+  use <- bool.guard(
+    when: effect_ids == [] || set.contains(cast.logged, key),
+    return: #(cast, []),
+  )
+  #(State(..cast, logged: set.insert(cast.logged, key)), [
+    Log(
+      level: LogWarning,
+      text: "the activate cast of Spell4 "
+        <> int.to_string(spell4_id)
+        <> " at unit "
+        <> int.to_string(unit_id)
+        <> " (Creature2 "
+        <> int.to_string(creature_id)
+        <> ") drops the "
+        <> kind
+        <> " effects "
+        <> string.join(
+        list.map(effect_ids, fn(effect_id) { int.to_string(effect_id.value) }),
+        ", ",
+      )
+        <> ": "
+        <> why,
+    ),
+  ])
 }
 
 /// The log of the crowd-control rows the plan drops from a spell (`Spell.dropped_controls`),
@@ -472,6 +512,7 @@ pub fn not_built_refusal(
     | UnreadPrerequisite(..)
     | UnreadLinkPrerequisite(..)
     | DroppedSignals(..)
+    | DroppedDespawns(..)
     | DroppedControls(..) -> "the activate cast of Spell4 "
   }
   case set.contains(cast.logged, key) {

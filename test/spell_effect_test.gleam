@@ -174,7 +174,8 @@ fn outcomes_of(kind kind: effect_kind.Kind) -> List(String) {
     effect_kind.Heal(..) -> ["HealEffect"]
     effect_kind.Proc -> ["ReadProc"]
     effect_kind.Activate -> ["ReadByActivation"]
-    effect_kind.Immunity | effect_kind.Despawn | effect_kind.Unread(..) -> []
+    effect_kind.Despawn -> ["DespawnEffect"]
+    effect_kind.Immunity | effect_kind.Unread(..) -> []
   }
 }
 
@@ -185,8 +186,8 @@ pub fn every_read_effect_kind_plans_one_variant_or_names_why_not_test() -> Nil {
     list.map(effects, fn(effect) { effect_kind.kind_of(effect.effect_type) })
     |> list.unique
     |> list.filter(fn(kind) { outcomes_of(kind:) != [] })
-  assert list.length(kinds) == 22
-    as "the client's table holds a row of each of the 22 kinds the plan reads"
+  assert list.length(kinds) == 23
+    as "the client's table holds a row of each of the 23 kinds the plan reads"
   list.each(kinds, fn(kind) {
     let outcome =
       list.find_map(effects, fn(effect) {

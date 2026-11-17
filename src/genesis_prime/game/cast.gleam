@@ -137,8 +137,7 @@ import genesis_prime/message/item_place.{type ItemPlace}
 import genesis_prime/message/item_use as item_use_message
 import genesis_prime/step.{type Now, type TimerId, LogDebug, LogInfo, LogWarning}
 import genesis_prime/table/id.{
-  type Item2Id, type Spell4BaseId, type Spell4EffectsId, type Spell4Id,
-  Spell4EffectsId,
+  type Item2Id, type Spell4BaseId, type Spell4Id, Spell4EffectsId,
 }
 import genesis_prime/world_map/map
 import gleam/bool
@@ -392,13 +391,7 @@ fn item_spell_cast(
         why: "cannot be planned: " <> why,
         issue: SpellsIssue,
       )
-    Ok(activate.Planned(
-      spell:,
-      effects:,
-      dropped_signals:,
-      limits:,
-      cast_group_id:,
-    )) ->
+    Ok(activate.Planned(spell:, effects:, dropped:, limits:, cast_group_id:)) ->
       // A creature's `withheld` and `ClosedLink` are what the client's interact menu does
       // not offer; an item's use never goes through that menu, and a closed link only
       // gates the objectives `by_item` leaves uncounted.
@@ -449,7 +442,7 @@ fn item_spell_cast(
                     spell:,
                     cast_time_ms: spell.cast_time_ms,
                     effects:,
-                    dropped_signals:,
+                    dropped:,
                     limits:,
                   )
               }
@@ -1108,7 +1101,7 @@ fn activation_pressed(
                 why: "cannot be planned: " <> why,
                 issue: SpellsIssue,
               )
-            Ok(activate.Planned(spell:, effects:, dropped_signals:, limits:, ..)) ->
+            Ok(activate.Planned(spell:, effects:, dropped:, limits:, ..)) ->
               activation_in_range(
                 cast:,
                 caster:,
@@ -1128,7 +1121,7 @@ fn activation_pressed(
                   spell4_id: spell.spell4_id.value,
                 ),
                 effects:,
-                dropped_signals:,
+                dropped:,
                 limits:,
               )
           }
@@ -1157,7 +1150,7 @@ fn activation_in_range(
   spell spell: Spell,
   cast_time_ms cast_time_ms: Int,
   effects effects: List(activate.ActivateEffect),
-  dropped_signals dropped_signals: List(Spell4EffectsId),
+  dropped dropped: activate.Dropped,
   limits limits: activate.Limits,
 ) -> Result(#(State, List(Effect)), Refusal) {
   case cast_press.target_state_refusal(spell:, alive:, held:) {
@@ -1187,7 +1180,7 @@ fn activation_in_range(
         spell:,
         cast_time_ms:,
         effects:,
-        dropped_signals:,
+        dropped:,
         limits:,
       )
   }
@@ -1211,7 +1204,7 @@ fn activation_reached(
   spell spell: Spell,
   cast_time_ms cast_time_ms: Int,
   effects effects: List(activate.ActivateEffect),
-  dropped_signals dropped_signals: List(Spell4EffectsId),
+  dropped dropped: activate.Dropped,
   limits limits: activate.Limits,
 ) -> Result(#(State, List(Effect)), Refusal) {
   let spell4_id = spell.spell4_id.value
@@ -1241,7 +1234,7 @@ fn activation_reached(
         spell: cast_press.activation_spell(spell:, cast_time_ms:),
         interaction: cast_press.interaction_of(spell:),
         effects:,
-        dropped_signals:,
+        dropped:,
       )
   }
 }
@@ -1261,7 +1254,7 @@ fn activation_started(
   spell spell: Spell,
   interaction interaction: Interaction,
   effects effects: List(activate.ActivateEffect),
-  dropped_signals dropped_signals: List(Spell4EffectsId),
+  dropped dropped: activate.Dropped,
 ) -> Result(#(State, List(Effect)), Refusal) {
   let spell4_id = spell.spell4_id.value
   accepted_and_started(
@@ -1283,12 +1276,12 @@ fn activation_started(
     ),
     target_subject: None,
     dropping: fn(cast) {
-      cast_press.signals_dropped(
+      cast_press.rows_dropped(
         cast:,
         spell4_id:,
         unit_id:,
         creature_id:,
-        dropped_signals:,
+        dropped:,
       )
     },
   )

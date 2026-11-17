@@ -309,6 +309,113 @@ fn press_and_close(
   #(state, list.map(told, fn(strike) { strike.0 }))
 }
 
+/// The removals a step tells creatures, as the creature's unit, its life and the request.
+fn despawns_told(
+  taken: ConnectionStep(Request),
+) -> List(#(Int, Int, client_connection.Request)) {
+  list.filter_map(support.effects_of(taken), fn(effect) {
+    case effect {
+      OwnEffect(step.Tell(
+        to: step.Creature(unit_id:, life:, ..),
+        request: client_connection.TellDespawn(..) as request,
+      )) -> Ok(#(unit_id, life, request))
+      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+        Error(Nil)
+    }
+  })
+}
+
+/// Paralytic Surge pressed at 1000 ms on the Beast the client shows, its round answered
+/// landed at 1100 ms: the steps the answers take, on the tables with Spell4Effects 99097
+/// added as a copy of Surge's CCStateSet row 96126 (targetFlags 4, delay 0, phaseFlags -1,
+/// no data) with these columns.
+fn surge_with_a_despawn_row(
+  columns columns: List(#(String, planted_table.Cell)),
+) -> List(ConnectionStep(Request)) {
+  fixture_tables.added(
+    table: "Spell4Effects",
+    copy_of: 96_126,
+    id: 99_097,
+    with: [#("effectType", planted_table.Integer(97)), ..columns],
+    body: fn(tables) {
+      let #(state, _) =
+        game_connection_support.feed(
+          game_connection_support.medic_in(tables),
+          game_connection_support.beast_appears(unit_id: 40),
+        )
+      let #(state, pressed) =
+        game_connection_support.press_paralytic_surge_at(
+          state:,
+          client_cast_id: 1,
+          ms: 1000,
+        )
+      let #(_, answered) =
+        list.fold(
+          game_connection_support.strikes_told(pressed),
+          #(state, []),
+          fn(so_far, strike) {
+            let #(state, steps) = so_far
+            let #(state, taken) =
+              game_connection_support.at(
+                state:,
+                ms: 1100,
+                event: game_connection_support.landed(key: strike.1),
+              )
+            #(state, list.append(steps, [taken]))
+          },
+        )
+      [pressed, ..answered]
+    },
+  )
+}
+
+pub fn a_creature_despawns_effect_becomes_a_tell_to_that_creature_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Spell4Effects 99097 is a type 97 row aimed at the area (targetFlags 4) with a delay of
+  // 3000 ms; Paralytic Surge's area holds the Beast, unit 40, which the client shows in
+  // life 4 (`beast_appears`: its 0x262 news). The round opens at the press, 1000 ms, and
+  // the go comes at the answer, 1100 ms.
+  let steps =
+    surge_with_a_despawn_row(columns: [
+      #("delayTime", planted_table.Integer(3000)),
+    ])
+  assert list.flat_map(steps, despawns_told)
+    == [
+      #(
+        40,
+        4,
+        client_connection.TellDespawn(
+          delay_ms: 3000,
+          struck_at_ms: 1000,
+          went_at_ms: 1100,
+        ),
+      ),
+    ]
+    as "the connection tells the creature of that life, with the row's delay, the round's time and the go's time, and tells no other"
+}
+
+pub fn a_despawn_aimed_at_the_caster_never_removes_the_players_unit_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The row aims at the caster alone (targetFlags 1): a creature caster could be removed by
+  // it and a player never is, so the plan leaves it out and the cast goes on as before
+  // (`Spell4Effects.effectType.97`, `opcode.0x355`: removing the player's own unit would
+  // lose the world).
+  let steps =
+    surge_with_a_despawn_row(columns: [
+      #("targetFlags", planted_table.Integer(1)),
+    ])
+  assert list.flat_map(steps, despawns_told) == []
+    as "no creature is told to leave"
+  assert list.all(steps, fn(taken) {
+    !list.contains(game_connection_support.written_ids(taken), 0x0355)
+  })
+    as "and the client is sent no 0x355 for the caster's unit, or any"
+  assert list.any(steps, fn(taken) {
+    list.contains(game_connection_support.written_ids(taken), 0x07F4)
+  })
+    as "the cast still goes"
+}
+
 pub fn the_clients_picture_of_a_creature_follows_its_news_and_only_a_creature_it_shows_alive_is_struck_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, _) =

@@ -43,6 +43,7 @@ import genesis_prime/game/spend
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{Answered, Key, Landed, Strike}
 import genesis_prime/game/world_entry
+import genesis_prime/group_registry
 import genesis_prime/message/buyback_list.{BuybackList}
 import genesis_prime/message/float32
 import genesis_prime/message/movement_time.{MovementTime}
@@ -1758,5 +1759,56 @@ pub fn a_knockback_spell_on_a_creature_shows_its_flight_to_a_watching_client_tes
     as "it ends 10.0 m (dataBits01 and dataBits02) from where it started"
   assert float_of(bits: to.x) <. float_of(bits: from.x)
     as "away from the caster, who stands at x 100 while the creature stands at x 0"
+  world_support.stop(world:)
+}
+
+pub fn tell_despawn_reaches_the_creature_as_despawn_test() -> Nil {
+  use <- owned_test.run(30_000)
+  // A stand-in for the creature: the test process joins the address of a creature that
+  // does not run (unit 900, life 9), so what the registry delivers to it is what the
+  // server's `tell_creature` made of each request. The creature's own reading of the
+  // message is the creature rule's.
+  let world = one_beast(respawn_ms: 60_000)
+  let address = step.Creature(map: ship, incarnation: 1, unit_id: 900, life: 9)
+  let scope = creature_registry.scope(world.creatures)
+  group_registry.join(scope:, group: address, pid: process.self())
+  let delivered = fn(request) {
+    let assert Ok(Nil) =
+      server.tell_creature(creatures: world.creatures, to: address, request:)
+      as "the stand-in is found by its address and told"
+    let assert service.TellCall(message:) =
+      group_registry.select_delivered(
+        scope:,
+        selector: process.new_selector(),
+        mapping: fn(call) { call },
+      )
+      |> process.selector_receive_forever
+    message
+  }
+  assert delivered(client_connection.TellDespawn(
+      delay_ms: 3000,
+      struck_at_ms: 900,
+      went_at_ms: 1000,
+    ))
+    == creature.Despawn(delay_ms: 3000, struck_at_ms: 900, went_at_ms: 1000)
+    as "a removal is the creature's Despawn, with its delay, the round's time and the go's time"
+  let throw =
+    forced_move.Throw(
+      move: forced_move.Move(
+        way: forced_move.Away,
+        mover: forced_move.Flight,
+        min_distance: 10.0,
+        max_distance: 10.0,
+        flight_ms: 375,
+        gravity: 0.0,
+        flags: 1,
+        height: 2.0,
+      ),
+      draws: forced_move.Draws(distance: 0.0, angle: 0.0),
+      reference: forced_move.Reference(place: sight_place(), radius: 0.5),
+    )
+  assert delivered(client_connection.TellThrown(throw:, struck_at_ms: 900))
+    == creature.Thrown(throw:, struck_at_ms: 900)
+    as "a throw is still the creature's Thrown"
   world_support.stop(world:)
 }
