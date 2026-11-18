@@ -696,12 +696,13 @@ pub fn answered(
         list.index_map(stacks, fn(stack, position) {
           let assert Ok(word) =
             list.find(words, fn(word) { word.item_guid == stack.item_guid })
-            as "the store answers a sale with the word of each stack it sold"
+            as "the store answers a sale with the word and charges of each stack it sold"
           BuybackEntry(
             buyback_id: buyback.next_id + position,
             item2_id: stack.item2_id,
             quantity: stack.sold_count,
             random_stats: word.random_stats,
+            charges: word.charges,
             currency_type_id: sale.currency_type_id,
             amount: stack.paid,
           )

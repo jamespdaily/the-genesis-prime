@@ -352,6 +352,10 @@ const pvp_flag = 0x8000
 /// of GameFormula 1214 (FillItemInfo 0x1404445d0).
 const proxy_flag = 0x4000
 
+/// The GameFormula row whose dataint0 is the Item2 a proxy item takes its fields from
+/// (`0x1404445d0.proxy`).
+const proxy_formula = 1214
+
 /// The Item2Family of runes: the client never looks their slot up (0x14040c610)
 /// and reads their budget on another curve (0x14041f1b0).
 const rune_family = 33
@@ -799,6 +803,49 @@ pub fn stack_limit(
     0 -> None
     _ -> Some(rows.item.max_stack_count)
   }
+}
+
+/// The charges an item is made with: the client's effective maxCharges of its row. A proxy
+/// item (Item2.flags 0x4000) takes it from the Item2 row GameFormula 1214's dataint0 names
+/// (FillItemInfo 0x1404445d0, `0x1404445d0.proxy`), any other item from its own row. A row
+/// whose maxCharges is below 0 (one row holds -1, which the client reads as 0xffffffff) is
+/// made with 0, because a stored count is 0 or more. Only a missing row is an error.
+pub fn max_charges(
+  tables tables: table_store.Tables,
+  item2_id item2_id: Int,
+) -> Result(Int, ItemPropertyError) {
+  use item <- result.try(item_row(tables:, item2_id:))
+  use source <- result.map(
+    proxy_source(tables:, item:)
+    |> result.map_error(fn(missing) {
+      NoRow(table: missing.table, id: missing.id)
+    }),
+  )
+  int.max(0, source.max_charges)
+}
+
+/// The table row a proxy item's source lookup did not find.
+pub type SourceRowMissing {
+  SourceRowMissing(table: String, id: Int)
+}
+
+/// The Item2 row the client reads the item's fields from: the item itself, or for a proxy
+/// item (Item2.flags 0x4000) the row GameFormula 1214's dataint0 names (FillItemInfo
+/// 0x1404445d0, `0x1404445d0.proxy`). Only a missing GameFormula or Item2 row is an error.
+pub fn proxy_source(
+  tables tables: table_store.Tables,
+  item item: item2.Item2,
+) -> Result(item2.Item2, SourceRowMissing) {
+  use <- bool.guard(when: !is_proxy(item), return: Ok(item))
+  use formula <- result.try(
+    game_formula.get(tables:, id: GameFormulaId(proxy_formula))
+    |> result.replace_error(SourceRowMissing(
+      table: "GameFormula",
+      id: proxy_formula,
+    )),
+  )
+  item2.get(tables:, id: Item2Id(formula.dataint0))
+  |> result.replace_error(SourceRowMissing(table: "Item2", id: formula.dataint0))
 }
 
 /// The number of inventory slots the item opens when it is worn in a bag slot:

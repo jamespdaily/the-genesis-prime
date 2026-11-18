@@ -270,13 +270,13 @@ pub fn bones(count: Int) -> List(Int) {
 /// `CharacterCreation.itemId0` to `itemId06`, `opcode.0x111.equipped_set`).
 pub fn row_466_items() -> List(NewItem) {
   [
-    NewItem(Item2Id(81_359), 0, 0, 1),
-    NewItem(Item2Id(81_344), 0, 1, 1),
-    NewItem(Item2Id(81_381), 0, 3, 1),
-    NewItem(Item2Id(81_345), 0, 4, 1),
-    NewItem(Item2Id(81_380), 0, 5, 1),
-    NewItem(Item2Id(8534), 0, 15, 1),
-    NewItem(Item2Id(81_346), 0, 16, 1),
+    NewItem(Item2Id(81_359), 0, 0, 1, 0),
+    NewItem(Item2Id(81_344), 0, 1, 1, 0),
+    NewItem(Item2Id(81_381), 0, 3, 1, 0),
+    NewItem(Item2Id(81_345), 0, 4, 1, 0),
+    NewItem(Item2Id(81_380), 0, 5, 1, 0),
+    NewItem(Item2Id(8534), 0, 15, 1, 0),
+    NewItem(Item2Id(81_346), 0, 16, 1, 0),
   ]
 }
 

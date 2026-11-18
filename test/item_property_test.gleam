@@ -30,6 +30,7 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
 import gleam/string
+import item_charge_support
 import owned_test
 import planted_table.{Integer}
 import unitest
@@ -1227,4 +1228,51 @@ pub fn only_an_entry_of_kind_1_needs_its_property_row_test() -> Nil {
   assert !loaded(1) as "a kind 1 entry names a property row that is missing"
   assert loaded(0) && loaded(2) && loaded(4)
     as "an entry of kind 0, 2 or 4 names no property row"
+}
+
+/// What an item is made with: the row's maxCharges, or for a proxy item (Item2.flags 0x4000)
+/// the maxCharges of the row GameFormula 1214 names, Item2 74201, which holds 0
+/// (`0x1404445d0.proxy`). Item2 12402 holds none, 2509 holds 99, 14838 stacks and holds 1,
+/// and 12078 is a proxy whose own row holds 1. A negative maxCharges (one row holds -1) is
+/// made with 0, since a held count is 0 or more.
+pub fn max_charges_of_each_kind_of_row_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let charges = fn(tables, item2_id) {
+    item_property.max_charges(tables:, item2_id:)
+  }
+  let shared = fixture_tables.shared()
+  let rows = [
+    #("a row with no charges", 12_402, Ok(0)),
+    #("a single row of 99", 2509, Ok(99)),
+    #("a stackable row of 1", 14_838, Ok(1)),
+    #("a proxy row whose own maxCharges is 1", 12_078, Ok(0)),
+    #(
+      "a row the tables lack",
+      999_999_999,
+      Error(item_property.NoRow(table: "Item2", id: 999_999_999)),
+    ),
+  ]
+  list.each(rows, fn(row) {
+    let #(why, item2_id, expected) = row
+    assert charges(shared, item2_id) == expected as why
+  })
+  let changed = [
+    #(
+      "a row changed to flags 0x4000 with its own maxCharges 5",
+      5,
+      Some(0x4000),
+    ),
+    #("a proxy row with its own maxCharges -1", -1, Some(0x4000)),
+    #("a row that is no proxy with maxCharges -1", -1, None),
+  ]
+  list.each(changed, fn(row) {
+    let #(why, max_charges, flags) = row
+    use tables <- item_charge_support.tables_with(
+      item2_id: 2509,
+      max_charges:,
+      flags:,
+      max_stack_count: None,
+    )
+    assert charges(tables, 2509) == Ok(0) as why
+  })
 }

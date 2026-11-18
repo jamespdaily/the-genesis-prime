@@ -112,6 +112,7 @@ pub fn in_bag(
     bag_index: index,
     stack_count: count,
     random_stats: 0,
+    charges: 0,
   )
 }
 

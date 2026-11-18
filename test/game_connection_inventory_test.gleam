@@ -204,6 +204,7 @@ fn stack() -> HeldItem {
     bag_index: 1,
     stack_count: 10,
     random_stats: 0,
+    charges: 0,
   )
 }
 
@@ -323,6 +324,7 @@ fn holding_a_level_3_chest() -> game_connection.State {
           bag_index: 0,
           stack_count: 1,
           random_stats: 0,
+          charges: 0,
         ),
       ]),
     )
@@ -404,6 +406,7 @@ pub fn an_equip_is_checked_against_the_entered_character_test() -> Nil {
         bag_index: 0,
         stack_count: 1,
         random_stats: 0,
+        charges: 0,
       ),
     ])
   assert worn_chest.unread == []
@@ -780,6 +783,7 @@ pub fn equipping_a_level_scaled_item_gives_it_at_the_players_level_test() -> Nil
           bag_index: 0,
           stack_count: 1,
           random_stats: 0,
+          charges: 0,
         ),
       ]),
     )

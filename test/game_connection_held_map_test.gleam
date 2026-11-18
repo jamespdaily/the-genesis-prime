@@ -148,6 +148,7 @@ fn selling() -> #(game_connection.State, step.ConnectionStep(Request)) {
             bag_index: 0,
             stack_count: 5,
             random_stats: 0,
+            charges: 0,
           ),
         ],
       ),
@@ -163,7 +164,7 @@ fn sale_saved() -> step.Outcome(Answer) {
     FromStore(
       store.ForItems(
         store.Sold(amount: 102, words: [
-          store.SoldWord(item_guid: 500, random_stats: 0),
+          store.SoldWord(item_guid: 500, random_stats: 0, charges: 0),
         ]),
       ),
     ),
@@ -225,6 +226,7 @@ fn buy_saved() -> step.Outcome(Answer) {
             bag_index: 0,
             stack_count: 1,
             random_stats: 0,
+            charges: 0,
           ),
         ]),
       ),
@@ -282,7 +284,7 @@ pub fn a_creature_strike_during_a_turn_in_is_taken_after_the_answer_test() -> Ni
   let made =
     list.index_map(placed, fn(one, index) {
       let assert [
-        NewStack(location:, bag_index:, stack_count:, random_stats: 0),
+        NewStack(location:, bag_index:, stack_count:, random_stats: 0, charges:),
       ] = one.make
         as "one stack of each"
       HeldItem(
@@ -292,6 +294,7 @@ pub fn a_creature_strike_during_a_turn_in_is_taken_after_the_answer_test() -> Ni
         bag_index:,
         stack_count:,
         random_stats: 0,
+        charges:,
       )
     })
   let #(_, answered) =
@@ -545,6 +548,7 @@ fn selling_with_a_timed_quest(
               bag_index: 0,
               stack_count: 5,
               random_stats: 0,
+              charges: 0,
             ),
           ],
           quests: [quest_support.timed(1872, progress: [], quest_ms_left: 0)],
@@ -569,6 +573,7 @@ fn moving_an_item() -> #(game_connection.State, step.ConnectionStep(Request)) {
           bag_index: 0,
           stack_count: 5,
           random_stats: 0,
+          charges: 0,
         ),
       ],
       quests: [],

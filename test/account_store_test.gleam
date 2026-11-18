@@ -956,6 +956,7 @@ pub fn a_stored_character_with_world_0_loads_as_no_place_test() -> Nil {
         [],
         [],
         [],
+        [],
       ),
     )
     as "the load reads the same row the same way, and raises the epoch of a character made at 0 to 1"
@@ -1049,6 +1050,7 @@ pub fn a_load_gives_the_accounts_character_with_its_saved_place_and_not_another_
         character_support.epoch(1),
         None,
         None,
+        [],
         [],
         [],
         [],
@@ -2239,6 +2241,7 @@ fn without_guid(item: store.HeldItem) -> store.NewItem {
     location: item.location,
     bag_index: item.bag_index,
     stack_count: item.stack_count,
+    charges: 0,
   )
 }
 
@@ -2668,24 +2671,28 @@ pub fn a_bag_off_and_its_displaced_items_save_all_or_none_test() -> Nil {
           location: 0,
           bag_index: 17,
           stack_count: 1,
+          charges: 0,
         ),
         NewItem(
           item2_id: Item2Id(stackable_item2),
           location: 1,
           bag_index: 20,
           stack_count: 1,
+          charges: 0,
         ),
         NewItem(
           item2_id: Item2Id(stackable_item2),
           location: 1,
           bag_index: 21,
           stack_count: 1,
+          charges: 0,
         ),
         NewItem(
           item2_id: Item2Id(stackable_item2),
           location: 1,
           bag_index: 23,
           stack_count: 1,
+          charges: 0,
         ),
       ]),
     )
@@ -2779,6 +2786,7 @@ fn holding_stacks(
             location: 1,
             bag_index: stack.0,
             stack_count: stack.1,
+            charges: 0,
           )
         }),
       ),
@@ -2908,6 +2916,7 @@ pub fn a_split_item_is_found_with_its_new_guid_after_load_test() -> Nil {
       bag_index: 2,
       stack_count: 3,
       random_stats: 0,
+      charges: 0,
     )
     as "opcode.0x111.guid: the new row has the guid the store answered, the same Item2, the destination and the count"
   assert first != stack.item_guid
@@ -3828,12 +3837,14 @@ pub fn a_buy_takes_the_credits_and_adds_the_items_in_one_statement_test() -> Nil
           bag_index: 5,
           stack_count: 7,
           random_stats: 0,
+          charges: 0,
         ),
         store.NewStack(
           location: 1,
           bag_index: 6,
           stack_count: 1,
           random_stats: 0,
+          charges: 0,
         ),
       ],
     )
@@ -3921,6 +3932,7 @@ pub fn a_buy_under_a_stale_epoch_changes_nothing_test() -> Nil {
           bag_index: 5,
           stack_count: 7,
           random_stats: 0,
+          charges: 0,
         ),
       ],
     )
@@ -3945,7 +3957,13 @@ pub fn a_buy_with_too_few_credits_saved_changes_nothing_test() -> Nil {
     store.StackGrowth(item_guid: first.item_guid, held_count: 10, new_count: 15),
   ]
   let make = [
-    store.NewStack(location: 1, bag_index: 5, stack_count: 7, random_stats: 0),
+    store.NewStack(
+      location: 1,
+      bag_index: 5,
+      stack_count: 7,
+      random_stats: 0,
+      charges: 0,
+    ),
   ]
   let refused = [
     #(
@@ -4076,6 +4094,7 @@ pub fn a_buy_into_a_taken_place_changes_nothing_and_names_the_constraint_test() 
           bag_index: 2,
           stack_count: 7,
           random_stats: 0,
+          charges: 0,
         ),
       ],
     )
@@ -4119,7 +4138,7 @@ fn sold_with_no_word(
   ForItems(store.Sold(
     amount:,
     words: list.map(guids, fn(guid) {
-      store.SoldWord(item_guid: guid, random_stats: 0)
+      store.SoldWord(item_guid: guid, random_stats: 0, charges: 0)
     }),
   ))
 }
@@ -4531,6 +4550,7 @@ pub fn a_buy_back_in_another_currency_takes_that_currency_in_one_statement_test(
           bag_index: 1,
           stack_count: 10,
           random_stats: 0,
+          charges: 0,
         ),
       ],
     )
@@ -4657,7 +4677,13 @@ fn turn_in(
 fn two_made(bag_index bag_index: Int) -> List(store.Placed) {
   [
     store.Placed(item2_id: Item2Id(stackable_item2), grow: [], make: [
-      store.NewStack(location: 1, bag_index:, stack_count: 7, random_stats: 0),
+      store.NewStack(
+        location: 1,
+        bag_index:,
+        stack_count: 7,
+        random_stats: 0,
+        charges: 0,
+      ),
     ]),
     store.Placed(item2_id: Item2Id(1154), grow: [], make: [
       store.NewStack(
@@ -4665,6 +4691,7 @@ fn two_made(bag_index bag_index: Int) -> List(store.Placed) {
         bag_index: bag_index + 1,
         stack_count: 1,
         random_stats: 0,
+        charges: 0,
       ),
     ]),
   ]
@@ -4704,6 +4731,7 @@ pub fn turn_in_saves_quest_progress_and_rewards_together_test() -> Nil {
               bag_index: 5,
               stack_count: 7,
               random_stats: 0,
+              charges: 0,
             ),
           ],
         ),
@@ -4713,6 +4741,7 @@ pub fn turn_in_saves_quest_progress_and_rewards_together_test() -> Nil {
             bag_index: 6,
             stack_count: 1,
             random_stats: 0,
+            charges: 0,
           ),
         ]),
       ],
@@ -4928,7 +4957,13 @@ fn rolled_stack(
   bag_index bag_index: Int,
   random_stats random_stats: Int,
 ) -> store.NewStack {
-  store.NewStack(location: 1, bag_index:, stack_count: 1, random_stats:)
+  store.NewStack(
+    location: 1,
+    bag_index:,
+    stack_count: 1,
+    random_stats:,
+    charges: 0,
+  )
 }
 
 /// A purchase of `rolled_item2` that costs nothing and makes these stacks.
@@ -5063,7 +5098,11 @@ pub fn a_sale_returns_the_sold_items_word_test() -> Nil {
     )
     == ForItems(
       store.Sold(amount: 1050, words: [
-        store.SoldWord(item_guid: made.item_guid, random_stats: word),
+        store.SoldWord(
+          item_guid: made.item_guid,
+          random_stats: word,
+          charges: 0,
+        ),
       ]),
     )
     as "the sale answers the word the sold stack was saved with, for the buyback entry"
@@ -5097,5 +5136,300 @@ pub fn a_turn_ins_reward_is_made_and_saved_with_its_word_test() -> Nil {
   let items = held_by(store:, account:, character_id:)
   assert item_in_bag(items:, index: 5).random_stats == word
     as "the next load finds the reward with its word"
+  stop(store)
+}
+
+// ---- item charges ----
+
+/// Inserts one item row of the stackable Item2 at an inventory slot straight into the
+/// table with the charges given (`None` leaves the column null, as a row saved before it
+/// existed), answering the guid or the name of the check that refused it.
+fn put_charged(
+  store store: Store,
+  character_id character_id: store.CharacterId,
+  bag_index bag_index: Int,
+  charges charges: Option(Int),
+) -> Result(Int, ItemRefused) {
+  let CharacterId(number) = character_id
+  pog.query(
+    "insert into character_item (character_id, item2_id, location, bag_index, stack_count, charges) values ($1, $2, 1, $3, 1, $4) returning item_guid",
+  )
+  |> pog.parameter(pog.int(number))
+  |> pog.parameter(pog.int(stackable_item2))
+  |> pog.parameter(pog.int(bag_index))
+  |> pog.parameter(pog.nullable(pog.int, charges))
+  |> pog.returning(decode.at([0], decode.int))
+  |> pog.execute(store.pool)
+  |> result.map(fn(returned) {
+    let assert [guid] = returned.rows as "one row was inserted"
+    guid
+  })
+  |> result.map_error(fn(error) {
+    let assert pog.ConstraintViolated(constraint:, ..) = error
+      as "the table refused with a constraint"
+    ItemRefused(constraint:)
+  })
+}
+
+/// The charges the table holds for the item, read without a login (a load raises the epoch).
+fn charges_of(store store: Store, guid guid: Int) -> Option(Int) {
+  let assert Ok(pog.Returned(rows: [charges], ..)) =
+    pog.query("select charges from character_item where item_guid = $1")
+    |> pog.parameter(pog.int(guid))
+    |> pog.returning(decode.at([0], decode.optional(decode.int)))
+    |> pog.execute(store.pool)
+    as "the item's row was read"
+  charges
+}
+
+/// A login's epoch, the items it finds with their charges recorded and the items it finds
+/// with none.
+fn login_unset(
+  store store: Store,
+  account account: AccountId,
+  character_id character_id: store.CharacterId,
+) -> #(Int, List(store.HeldItem), List(store.UnsetItem)) {
+  let assert ForWorld(CharacterLoaded(session_epoch:, items:, unset:, ..)) =
+    ask(store, World(LoadCharacter(account, character_id)))
+    as "the account's character loads"
+  #(store.session_epoch_number(session_epoch), items, unset)
+}
+
+fn fill(
+  store store: Store,
+  account account: AccountId,
+  character_id character_id: store.CharacterId,
+  epoch epoch: Int,
+  fills fills: List(#(Int, Int)),
+) -> store.Answer {
+  ask(
+    store,
+    World(store.FillCharges(
+      account_id: account,
+      character_id:,
+      session_epoch: character_support.epoch(epoch),
+      fills: list.map(fills, fn(fill) {
+        store.ItemFill(item_guid: fill.0, charges: fill.1)
+      }),
+    )),
+  )
+}
+
+/// A fill sets the charges of the items that hold none, all or none, as the character's
+/// login holds it: a null row is set, a replay changes nothing, a stale epoch, a row that
+/// already holds charges and another character's row each refuse the whole fill and leave
+/// every row as it was, and a fill never asked leaves the next load finding the rows unset.
+pub fn fill_charges_sets_only_null_rows_as_held_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let #(account, character_id, _) = holding_stacks(store:, stacks: [])
+  let other = insert_account(store, "login-2")
+  let assert CharacterCreated(character_id: others) =
+    create_holding(store:, account: other, name: "Ef Gh", slots: 1, items: [])
+    as "a second character of another account"
+  let assert Ok(first) =
+    put_charged(store:, character_id:, bag_index: 8, charges: None)
+  let assert Ok(second) =
+    put_charged(store:, character_id:, bag_index: 9, charges: None)
+  let assert Ok(theirs) =
+    put_charged(store:, character_id: others, bag_index: 8, charges: None)
+  let #(_, _, unset) = login_unset(store:, account:, character_id:)
+  assert list.map(unset, fn(item) { item.item_guid }) == [first, second]
+    as "a row with no charges recorded loads as unset"
+  let #(epoch, items, unset) = login_unset(store:, account:, character_id:)
+  assert list.map(unset, fn(item) { item.item_guid }) == [first, second]
+    as "the fill never asked: the next load finds the rows unset again"
+  let assert [set, ..] = items
+    as "the character holds the Novice set, which holds charges"
+  let refused = ForWorld(store.ChargesFilled(store.ItemsNotSaved))
+  let refusals = [
+    #("a stale epoch", epoch - 1, [#(first, 99), #(second, 0)]),
+    #("a row that already holds charges", epoch, [
+      #(first, 99),
+      #(set.item_guid, 5),
+    ]),
+    #("another character's row", epoch, [#(first, 99), #(theirs, 5)]),
+  ]
+  list.each(refusals, fn(refusal) {
+    let #(why, epoch, fills) = refusal
+    assert fill(store:, account:, character_id:, epoch:, fills:) == refused
+      as why
+    assert charges_of(store:, guid: first) == None
+      as { why <> ": the null row stays null" }
+    assert charges_of(store:, guid: set.item_guid) == Some(set.charges)
+    assert charges_of(store:, guid: theirs) == None
+  })
+  assert fill(store:, account:, character_id:, epoch:, fills: [
+      #(first, 99),
+      #(second, 0),
+    ])
+    == ForWorld(store.ChargesFilled(store.ItemsSaved))
+    as "the null rows are set"
+  assert #(charges_of(store:, guid: first), charges_of(store:, guid: second))
+    == #(Some(99), Some(0))
+  assert charges_of(store:, guid: theirs) == None
+    as "another character's row is unchanged"
+  assert fill(store:, account:, character_id:, epoch:, fills: [
+      #(first, 99),
+      #(second, 0),
+    ])
+    == refused
+    as "a replay changes no row"
+  let #(_, _, unset) = login_unset(store:, account:, character_id:)
+  assert unset == [] as "the next login finds none unset"
+  stop(store)
+}
+
+/// Every statement that makes an item row writes the charges it is given and the load
+/// returns them: a create's starting item, a purchase, a turn-in's reward, a split (which
+/// copies its source's) and a sale's answer; none of the rows is null, and a row inserted
+/// with no charges column loads as unset.
+pub fn charges_survive_every_statement_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let account = insert_account(store, "login-1")
+  let assert CharacterCreated(character_id:) =
+    create_holding(
+      store:,
+      account:,
+      name: "Ab Cd",
+      slots: 1,
+      items: list.append(character_support.row_466_items(), [
+        NewItem(
+          item2_id: Item2Id(stackable_item2),
+          location: 1,
+          bag_index: 0,
+          stack_count: 10,
+          charges: 4,
+        ),
+      ]),
+    )
+    as "a character holding the Novice set and a stack that holds 4 charges"
+  let #(epoch, items, unset) = login_unset(store:, account:, character_id:)
+  assert unset == [] as "a create writes every starting item's charges"
+  let stack = item_in_bag(items:, index: 0)
+  assert stack.charges == 4 as "a create stores the charges it was given"
+  let assert ForItems(store.Bought(made: [bought], ..)) =
+    buy_item(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      item2_id: stackable_item2,
+      currency_type_id: 1,
+      held: 1000,
+      cost: 0,
+      grow: [],
+      make: [
+        store.NewStack(
+          location: 1,
+          bag_index: 5,
+          stack_count: 1,
+          random_stats: 0,
+          charges: 5,
+        ),
+      ],
+    )
+    as "a purchase is saved"
+  assert bought.charges == 5 as "a purchase answers the charges it stored"
+  let assert ForItems(store.TurnedIn(made: [rewarded], ..)) =
+    turn_in(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      sequence: 1,
+      quests: [completed_quest(1001)],
+      credits_held: 1000,
+      credits_after: 1000,
+      placed: [
+        store.Placed(item2_id: Item2Id(stackable_item2), grow: [], make: [
+          store.NewStack(
+            location: 1,
+            bag_index: 6,
+            stack_count: 1,
+            random_stats: 0,
+            charges: 7,
+          ),
+        ]),
+      ],
+    )
+    as "a turn-in whose reward holds 7 charges is saved"
+  assert rewarded.charges == 7 as "a turn-in answers the charges it stored"
+  let assert ForItems(store.ItemMade(item_guid: split_guid)) =
+    split(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      source: stack,
+      count: 3,
+      to: 7,
+    )
+    as "a split is saved"
+  assert sell(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      held: 1000,
+      after: 1010,
+      sold: [
+        store.SoldStack(
+          item_guid: bought.item_guid,
+          location: 1,
+          held_count: 1,
+          sold_count: 1,
+        ),
+      ],
+    )
+    == ForItems(
+      store.Sold(amount: 1010, words: [
+        store.SoldWord(item_guid: bought.item_guid, random_stats: 0, charges: 5),
+      ]),
+    )
+    as "a sale answers the charges the sold stack held, for the buyback entry"
+  let #(_, loaded, unset) = login_unset(store:, account:, character_id:)
+  assert unset == [] as "no row a statement made is null"
+  let charges_at = fn(index) { item_in_bag(items: loaded, index:).charges }
+  assert #(charges_at(0), charges_at(6), charges_at(7)) == #(4, 7, 4)
+    as "the load returns the created stack's charges, the reward's, and the split's copy of its source's"
+  assert item_in_bag(items: loaded, index: 7).item_guid == split_guid
+  let assert Ok(_) =
+    put_item(
+      store:,
+      character_id:,
+      item2_id: stackable_item2,
+      location: 1,
+      bag_index: 9,
+      stack_count: 1,
+    )
+  let #(_, _, unset) = login_unset(store:, account:, character_id:)
+  assert list.map(unset, fn(item) { item.bag_index }) == [9]
+    as "a row inserted with no charges column loads as unset"
+  stop(store)
+}
+
+/// The column holds 0 or more, or nothing: 0 and a large count are stored, null is stored,
+/// and -1 is refused by its check.
+pub fn a_negative_charge_count_is_refused_by_its_check_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let account = insert_account(store, "login-1")
+  let assert CharacterCreated(character_id:) =
+    create_holding(store:, account:, name: "Ab Cd", slots: 1, items: [])
+    as "a character that holds nothing yet"
+  let put = fn(bag_index, charges) {
+    result.replace(
+      put_charged(store:, character_id:, bag_index:, charges:),
+      Nil,
+    )
+  }
+  assert put(0, Some(0)) == Ok(Nil) as "0 charges are stored"
+  assert put(1, Some(99_999)) == Ok(Nil) as "a large count is stored"
+  assert put(2, None) == Ok(Nil) as "no charges recorded is stored"
+  assert put(3, Some(-1))
+    == Error(ItemRefused("character_item_charges_not_negative"))
+    as "a negative count is refused by its check"
   stop(store)
 }

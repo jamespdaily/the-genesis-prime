@@ -902,16 +902,46 @@ pub fn reward_items_fill_stacks_then_lowest_free_slots_test() -> Nil {
   assert turn_in.placed
     == [
       Placed(Item2Id(179), grow: [], make: [
-        NewStack(location: 1, bag_index: 2, stack_count: 1, random_stats: 0),
-        NewStack(location: 1, bag_index: 3, stack_count: 1, random_stats: 0),
-        NewStack(location: 1, bag_index: 4, stack_count: 1, random_stats: 0),
+        NewStack(
+          location: 1,
+          bag_index: 2,
+          stack_count: 1,
+          random_stats: 0,
+          charges: 0,
+        ),
+        NewStack(
+          location: 1,
+          bag_index: 3,
+          stack_count: 1,
+          random_stats: 0,
+          charges: 0,
+        ),
+        NewStack(
+          location: 1,
+          bag_index: 4,
+          stack_count: 1,
+          random_stats: 0,
+          charges: 0,
+        ),
       ]),
       Placed(
         Item2Id(6998),
         grow: [StackGrowth(item_guid: 601, held_count: 90, new_count: 100)],
         make: [
-          NewStack(location: 1, bag_index: 5, stack_count: 100, random_stats: 0),
-          NewStack(location: 1, bag_index: 6, stack_count: 40, random_stats: 0),
+          NewStack(
+            location: 1,
+            bag_index: 5,
+            stack_count: 100,
+            random_stats: 0,
+            charges: 0,
+          ),
+          NewStack(
+            location: 1,
+            bag_index: 6,
+            stack_count: 40,
+            random_stats: 0,
+            charges: 0,
+          ),
         ],
       ),
     ]
@@ -933,11 +963,41 @@ pub fn reward_items_fill_stacks_then_lowest_free_slots_test() -> Nil {
   assert sum.placed
     == [
       Placed(Item2Id(179), grow: [], make: [
-        NewStack(location: 1, bag_index: 0, stack_count: 1, random_stats: 0),
-        NewStack(location: 1, bag_index: 1, stack_count: 1, random_stats: 0),
-        NewStack(location: 1, bag_index: 2, stack_count: 1, random_stats: 0),
-        NewStack(location: 1, bag_index: 3, stack_count: 1, random_stats: 0),
-        NewStack(location: 1, bag_index: 4, stack_count: 1, random_stats: 0),
+        NewStack(
+          location: 1,
+          bag_index: 0,
+          stack_count: 1,
+          random_stats: 0,
+          charges: 0,
+        ),
+        NewStack(
+          location: 1,
+          bag_index: 1,
+          stack_count: 1,
+          random_stats: 0,
+          charges: 0,
+        ),
+        NewStack(
+          location: 1,
+          bag_index: 2,
+          stack_count: 1,
+          random_stats: 0,
+          charges: 0,
+        ),
+        NewStack(
+          location: 1,
+          bag_index: 3,
+          stack_count: 1,
+          random_stats: 0,
+          charges: 0,
+        ),
+        NewStack(
+          location: 1,
+          bag_index: 4,
+          stack_count: 1,
+          random_stats: 0,
+          charges: 0,
+        ),
       ]),
     ]
     as "three fixed and two chosen of one Item2 are five stacks"
@@ -1040,7 +1100,13 @@ pub fn a_quest_reward_with_random_stats_is_made_rolled_test() -> Nil {
   assert rolled.placed
     == [
       Placed(Item2Id(48_169), grow: [], make: [
-        NewStack(location: 1, bag_index: 0, stack_count: 1, random_stats: word),
+        NewStack(
+          location: 1,
+          bag_index: 0,
+          stack_count: 1,
+          random_stats: word,
+          charges: 0,
+        ),
       ]),
     ]
     as "the reward is placed once, its stack carrying the rolled word"
@@ -1052,6 +1118,7 @@ pub fn a_quest_reward_with_random_stats_is_made_rolled_test() -> Nil {
       bag_index: 0,
       stack_count: 1,
       random_stats: word,
+      charges: 0,
     )
   let assert quest_turn_in.Saved(items:, rewards:, ..) =
     quest_turn_in.answered(
@@ -1329,7 +1396,13 @@ pub fn a_server_completion_of_a_quest_with_a_reward_choice_gives_only_its_fixed_
   assert turn_in.placed
     == [
       Placed(Item2Id(179), grow: [], make: [
-        NewStack(location: 1, bag_index: 0, stack_count: 1, random_stats: 0),
+        NewStack(
+          location: 1,
+          bag_index: 0,
+          stack_count: 1,
+          random_stats: 0,
+          charges: 0,
+        ),
       ]),
     ]
     as "only Quest2Reward 2370's item and count; neither choice's item (13005, 6998) is placed"
@@ -1346,6 +1419,7 @@ pub fn a_server_completion_of_a_quest_with_a_reward_choice_gives_only_its_fixed_
           bag_index: 0,
           stack_count: 1,
           random_stats: 0,
+          charges: 0,
         ),
       ]),
     )
@@ -1378,7 +1452,7 @@ pub fn a_server_completion_answered_saved_ends_with_0x35c_state_3_test() -> Nil 
   let made =
     list.index_map(turn_in.placed, fn(one, index) {
       let assert [
-        NewStack(location:, bag_index:, stack_count:, random_stats: 0),
+        NewStack(location:, bag_index:, stack_count:, random_stats: 0, charges:),
       ] = one.make
         as "one stack of each, the Item2s' counts being 1"
       HeldItem(
@@ -1388,6 +1462,7 @@ pub fn a_server_completion_answered_saved_ends_with_0x35c_state_3_test() -> Nil 
         bag_index:,
         stack_count:,
         random_stats: 0,
+        charges:,
       )
     })
   let assert quest_turn_in.Saved(rewards:, then:, ..) =
@@ -1411,4 +1486,42 @@ pub fn a_server_completion_answered_saved_ends_with_0x35c_state_3_test() -> Nil 
   assert quest_state.decode(last.body)
     == Ok(QuestState(quest_id: 5859, state: 3, objective_id: 0))
     as "opcode.0x35c: the quest in state 3 with objective 0"
+}
+
+/// What a reward item is made with (`opcode.0x111.charges`): its row's maxCharges, 0 for a
+/// proxy row, and a reward onto a held stack changes only that stack's count. Quest 2909's
+/// choice row 2369 is changed to give each item (2509 holds 99 charges and one to a stack,
+/// 14838 stacks to 50 with 1 charge, 12078 is a proxy whose own row holds 1).
+pub fn a_reward_item_is_made_with_its_rows_charges_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let cases = [
+    #("a single charged row", 2509, 1, [], [99], 0),
+    #(
+      "a stackable charged row onto an existing stack",
+      14_838,
+      2,
+      [support.in_bag(guid: 601, item2_id: 14_838, index: 0, count: 10)],
+      [],
+      1,
+    ),
+    #("a proxy row", 12_078, 1, [], [0], 0),
+  ]
+  list.each(cases, fn(row) {
+    let #(why, item2, amount, items, made, grown) = row
+    use tables <- support.with_changes(changes: [
+      support.receiving(2909),
+      #("Quest2Reward", 2369, [
+        #("objectId", Integer(item2)),
+        #("objectAmount", Integer(amount)),
+      ]),
+    ])
+    let scene =
+      support.Scene(..support.scene(quest_id: 2909), reward_id: 2369, items:)
+    let #(turn_in, _) = support.asked(scene:, tables:)
+    let assert Ok(Placed(grow:, make:, ..)) =
+      list.find(turn_in.placed, fn(placed) { placed.item2_id == Item2Id(item2) })
+      as "the reward item is placed"
+    assert list.map(make, fn(stack) { stack.charges }) == made as why
+    assert list.length(grow) == grown as why
+  })
 }

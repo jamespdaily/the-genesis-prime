@@ -24,7 +24,9 @@
 //// 0x244{0x025C{0x025B}}        ─▶ checked                         ─▶ store: CreateCharacter(..)
 ////     CharacterCreated(id)     ◀─ 0x3DC{0x00DC create result}, session key
 //// 0x244{0x07DD}                ─▶ world entry                     ─▶ store: LoadCharacter(account, id)
-////     CharacterLoaded(row, epoch, health)                         ─▶ map MapId(world, 0): Join(connection, row, place)
+////     CharacterLoaded(row, epoch, health, items, unset)           ─▶ map MapId(world, 0): Join(connection, row, place)
+////       with unset items                                          ─▶ first store: FillCharges(..)
+////       ChargesFilled(ItemsSaved)                                 ─▶ then the map's Join
 ////       Joined(unit record)    ◀─ 0xAD, 0x262, 0x19B, 0x25E, 0x6BC, 0x636, 0xF1, 0x61; watches the map (watch 2)
 ////     NotTheAccounts, or no place ◀─ 0x3DC{0x0162 refused}       ─▶ store: ListCharacters(account)
 ////       Characters(rows)       ◀─ 0x0036, 0x0117, as above

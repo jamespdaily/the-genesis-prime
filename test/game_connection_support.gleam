@@ -542,6 +542,7 @@ pub fn joining_holding_items(
             saved_health,
             saved_experience,
             items,
+            [],
             quests,
             [],
           ),
@@ -879,6 +880,7 @@ pub fn entered_stocking_with_quests(
               None,
               None,
               list.append(world_entry_support.novice_items(character:), items),
+              [],
               quests,
               [HeldCurrency(currency_type_id: 1, amount: credits)],
             ),
@@ -2963,7 +2965,13 @@ pub fn turn_in_saved(taken taken: ConnectionStep(Request)) -> Outcome(Answer) {
         credits: credits_after,
         made: list.index_map(placed, fn(one, index) {
           let assert [
-            store.NewStack(location:, bag_index:, stack_count:, random_stats: 0),
+            store.NewStack(
+              location:,
+              bag_index:,
+              stack_count:,
+              random_stats: 0,
+              charges:,
+            ),
           ] = one.make
             as "one stack of each, the Item2s' counts being 1"
           store.HeldItem(
@@ -2973,6 +2981,7 @@ pub fn turn_in_saved(taken taken: ConnectionStep(Request)) -> Outcome(Answer) {
             bag_index:,
             stack_count:,
             random_stats: 0,
+            charges:,
           )
         }),
       )),
