@@ -147,6 +147,10 @@ pub fn a_player_struck_to_0_dies_with_0x88c_0x89a_off_and_0x247_type_22_then_see
     && ghost.gender == 0
     && ghost.title_id == 0
     as "the character's id, the realm's id 5, its name, race, class, gender, and title 0: the tests' character has none (opcode.0x262.ghost, its last value; 0 is no CharacterTitle row)"
+  let player =
+    game_connection_support.player_in(game_connection_support.entered().1)
+  assert ghost.bone_values == player.bone_values && ghost.bone_values != []
+    as "the ghost wears the bone values of the player's own 0x262, which the character has (0x140096970, 0x140096970.ghost_fields)"
   assert ghost.tail.stats == [] as "the client reads no stat of a ghost"
   let assert [start_movement.Position(at), start_movement.Rotation(_)] =
     ghost.tail.movement_commands

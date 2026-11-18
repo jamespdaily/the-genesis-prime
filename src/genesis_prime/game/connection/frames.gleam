@@ -119,10 +119,12 @@ pub fn combat_log_frame(unit_id unit_id: Int, died died: Bool) -> Frame {
 }
 
 /// The ghost's 0x262 of type 23 at `place`: the character's id, realm, name,
-/// race, class, gender and title as the player's own 0x262 has them, the values
-/// the client does not read 0 or empty, and the player's tail with the ghost's
-/// position and rotation and no stat, since the client reads none of a ghost
-/// (`0x140096970`, `opcode.0x262.ghost`).
+/// race, class, gender, title and bone values as the player's own 0x262 has
+/// them (the client draws the ghost's face from the bones when the race and
+/// gender have them), the group id, guild name, guild type and guild ids 0 or
+/// empty, and the player's tail with the ghost's position and rotation and no
+/// stat, since the client reads none of a ghost (`0x140096970`,
+/// `0x140096970.ghost_fields`, `opcode.0x262.ghost`).
 fn ghost_created_frame(
   entered entered: world_entry.Entered,
   place place: Place,
@@ -142,7 +144,7 @@ fn ghost_created_frame(
       field_10: "",
       field_11: 0,
       field_12: [],
-      field_13: [],
+      bone_values: player.bone_values,
       title_id: player.title_id,
       tail: UnitCreateTail(..player.tail, stats: []),
     ))

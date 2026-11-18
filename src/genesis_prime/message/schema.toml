@@ -2200,7 +2200,7 @@ id = 0x0262
 name = "unit_create_ghost"
 direction = "server_to_client"
 evidence = "0x140096970"
-summary = "creates a unit of type 23, a ghost: a player's data without its owned units, its PvP flags and its premium tier (the character id, the realm, the name, the race, which the client refuses above 17, the class, the gender, a 64-bit value, a text, a 4-bit value, a list of 64-bit values, a list of 32-bit values and the title), then the values of a player's create; the meanings of the 64-bit value, the text, the 4-bit value and the two lists are not read"
+summary = "creates a unit of type 23, a ghost: a player's data without its owned units, its PvP flags and its premium tier (the character id, the realm, the name, the race, which the client refuses above 17, the class, the gender, a 64-bit value, a text, a 4-bit value, a list of 64-bit values, the bone values and the title), then the values of a player's create; the values the schema leaves unnamed (the 64-bit value, the text, the 4-bit value and the list of 64-bit values) are the player's own, set the same way, and not read for the ghost's looks"
 fields = [
   { name = "unit_id", kind = "unsigned", bits = 32, evidence = "0x140096fa0", named_by = "opcode.0x262" },
   { name = "unit_type", kind = "constant", bits = 6, value = 23, evidence = "0x140096fa0", named_by = "opcode.0x262" },
@@ -2214,7 +2214,7 @@ fields = [
   { name = "field_10", kind = "wide_text", evidence = "0x140096970", safe_by = "opcode.0x262.ghost" },
   { name = "field_11", kind = "unsigned", bits = 4, evidence = "0x140096970", safe_by = "opcode.0x262.ghost" },
   { name = "field_12", kind = "array", count_bits = 5, element = "unsigned", element_bits = 64, evidence = "0x140096970", safe_by = "opcode.0x262.ghost" },
-  { name = "field_13", kind = "array", count_bits = 6, element = "unsigned", element_bits = 32, evidence = "0x140096970", safe_by = "opcode.0x262.ghost" },
+  { name = "bone_values", kind = "array", count_bits = 6, element = "unsigned", element_bits = 32, evidence = "0x140096970", named_by = "0x140096970" },
   { name = "title_id", kind = "unsigned", bits = 14, evidence = "0x140096970", named_by = "0x140096970" },
   { name = "tail", kind = "record", record = "unit_create_tail", evidence = "0x140096fa0", named_by = "opcode.0x262" },
 ]
