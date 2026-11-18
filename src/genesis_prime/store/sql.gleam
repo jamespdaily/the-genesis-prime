@@ -394,8 +394,8 @@ pub type DeleteCharacterItemRow {
 /// `$2`, in one statement. It deletes only while the character is still held by
 /// the login that asks, that is while its `session_epoch` ($3) is still the one
 /// that login was told (load_character.sql), and only when the item is as the
-/// request holds it, at the place `$5` and `$6` with the count `$7`; otherwise it
-/// changes nothing and returns no row. The account's id is in the statement, as
+/// request holds it, at the place `$5` and `$6` with the count `$7` and the charges `$8`;
+/// otherwise it changes nothing and returns no row. The account's id is in the statement, as
 /// for a load. The row it returns is the item it deleted.
 ///
 /// The statement runs after lock_character_for_save.sql in one transaction, so it
@@ -414,6 +414,7 @@ pub fn delete_character_item(
   item_location: Int,
   item_bag_index: Int,
   item_stack_count: Int,
+  item_charges: Int,
 ) -> Result(pog.Returned(DeleteCharacterItemRow), pog.QueryError) {
   let decoder = {
     use item_guid <- decode.field(0, decode.int)
@@ -424,8 +425,8 @@ pub fn delete_character_item(
 -- `$2`, in one statement. It deletes only while the character is still held by
 -- the login that asks, that is while its `session_epoch` ($3) is still the one
 -- that login was told (load_character.sql), and only when the item is as the
--- request holds it, at the place `$5` and `$6` with the count `$7`; otherwise it
--- changes nothing and returns no row. The account's id is in the statement, as
+-- request holds it, at the place `$5` and `$6` with the count `$7` and the charges `$8`;
+-- otherwise it changes nothing and returns no row. The account's id is in the statement, as
 -- for a load. The row it returns is the item it deleted.
 --
 -- The statement runs after lock_character_for_save.sql in one transaction, so it
@@ -441,6 +442,7 @@ where character.character_id = item.character_id
   and item.location = $5
   and item.bag_index = $6
   and item.stack_count = $7
+  and item.charges = $8
 returning item.item_guid;
 "
   |> pog.query
@@ -451,6 +453,7 @@ returning item.item_guid;
   |> pog.parameter(pog.int(item_location))
   |> pog.parameter(pog.int(item_bag_index))
   |> pog.parameter(pog.int(item_stack_count))
+  |> pog.parameter(pog.int(item_charges))
   |> pog.returning(decoder)
   |> pog.execute(db)
 }

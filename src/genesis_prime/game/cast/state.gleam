@@ -814,9 +814,11 @@ pub type Used {
   Started(press: ItemPress, cast: State, effects: List(Effect))
 }
 
-/// How many item presses a caster's state remembers: a choice, since the client's ids
-/// rise with every cast (`0x140c1e71c`) and only a repeated id has to be caught.
-const item_presses_remembered = 32
+/// The item the caster holds at the place a 0x943 names: its Item2 and the charges it has
+/// left, which the use check reads (`item_use.check`).
+pub type ItemAtPlace {
+  ItemAtPlace(item2_id: Item2Id, charges: Int)
+}
 
 /// What the rule keeps for one player: its cooldowns, its live casts, its open
 /// thresholds and what waits on a timer, and the counters its cast ids and timer
@@ -879,10 +881,12 @@ pub type State {
     /// How many such states the caster has told, which their instance ids are made from
     /// (genesis_prime/game/crowd_control `instance_id`).
     restrictions_told: Int,
-    /// The client cast ids of the item presses the caster's state took, the latest
-    /// first, at most `item_presses_remembered`: a press with an id in it starts nothing
-    /// and spends nothing.
-    item_presses: List(Int),
+    /// The highest client cast id of the item presses the caster's state took, once one
+    /// has been. The client's id of a cast is its counter's next value, which rises with
+    /// every cast and never resets (`0x140c1e71c`), and a connection cannot press the 2^32
+    /// times that would wrap it, so a press whose id is not above this one is a repeat
+    /// and starts and spends nothing.
+    item_press_watermark: Option(Int),
   )
 }
 
@@ -932,31 +936,28 @@ pub fn new() -> State {
     on_creatures: dict.new(),
     restrictions: dict.new(),
     restrictions_told: 0,
-    item_presses: [],
+    item_press_watermark: None,
   )
 }
 
-/// Whether the caster's state took an item press with this client cast id.
-pub fn item_press_known(
+/// Whether an item press with this client cast id is a repeat: its id is not above the
+/// highest the caster's state took.
+pub fn item_press_refused(
   cast cast: State,
   client_cast_id client_cast_id: Int,
 ) -> Bool {
-  list.contains(cast.item_presses, client_cast_id)
+  case cast.item_press_watermark {
+    Some(watermark) -> client_cast_id <= watermark
+    None -> False
+  }
 }
 
-/// The state with the item press's client cast id remembered, the oldest forgotten past
-/// `item_presses_remembered`.
+/// The state with the item press's client cast id taken: the watermark rises to it.
 pub fn item_press_recorded(
   cast cast: State,
   client_cast_id client_cast_id: Int,
 ) -> State {
-  State(
-    ..cast,
-    item_presses: list.take(
-      [client_cast_id, ..cast.item_presses],
-      item_presses_remembered,
-    ),
-  )
+  State(..cast, item_press_watermark: Some(client_cast_id))
 }
 
 /// Whether the caster is stealthed: some Stealth row of its casts holds. The client
@@ -1100,8 +1101,6 @@ pub type Unbuilt {
   UnbuiltPlayerTarget(spell4_id: Int)
   /// The spell of an item that is used, by Spell4 id.
   UnbuiltItemSpell(spell4_id: Int)
-  /// An item with charges, by Item2 id.
-  UnbuiltItemCharges(item_id: Int)
   /// A prerequisite type the server does not read, in the prerequisite of an item.
   UnreadItemPrerequisite(prerequisite_type: Int)
 }

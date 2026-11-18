@@ -1164,6 +1164,7 @@ fn answered_by_status(
         entered:,
         spending:,
         outcome:,
+        release: connection_casting.cast_effects,
       )
     Buying(holder:, entered:, purchase:) ->
       connection_vendor_purchase.buy_answered(

@@ -1130,9 +1130,9 @@ fn failed(guid guid: Int, code code: Int) -> Frame {
   Frame(message_id: item_action_failed.message_id, body:)
 }
 
-/// 0x111 for an item the character holds, with no charges and full durability,
-/// added for `reason`, carrying the item's random-stat word as stored
-/// (`opcode.0x111.shared_item_random_stats`). Every other value the client's code does not
+/// 0x111 for an item the character holds, with full durability, added for `reason`,
+/// carrying the item's random-stat word as stored (`opcode.0x111.shared_item_random_stats`)
+/// and the charges it has left (`opcode.0x111.charges`; 0 for an ability, which has none). Every other value the client's code does not
 /// name is 0 (`opcode.0x111.shared_item_unnamed`), the lists empty.
 pub fn item_added_frame(
   item_guid item_guid: Int,
@@ -1141,6 +1141,7 @@ pub fn item_added_frame(
   bag_index bag_index: Int,
   stack_count stack_count: Int,
   random_stats random_stats: Int,
+  charges charges: Int,
   reason reason: Int,
 ) -> Frame {
   let assert Ok(body) =
@@ -1153,7 +1154,7 @@ pub fn item_added_frame(
           location:,
           bag_index:,
           stack_count:,
-          charges: 0,
+          charges:,
           random_stats:,
           field_9: 0,
           field_10: 0,
@@ -1279,6 +1280,7 @@ pub fn answered(
               bag_index: to.bag_index,
               stack_count: count,
               random_stats: source.random_stats,
+              charges: source.charges,
               reason: stack_split,
             )),
           ],

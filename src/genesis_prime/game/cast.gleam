@@ -92,25 +92,26 @@ import genesis_prime/game/cast/press as cast_press
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{
   type Aimed, type AimedPress, type Applied, type Caster, type Effect, type Fact,
-  type HeldProc, type Holder, type Interaction, type Listed, type Live,
-  type Message, type Reached, type Refusal, type Resolution, type Restricting,
-  type Role, type State, type Struck, type TargetVerdict, type TickAsked,
-  type Used, type UsedUnit, Accept, Activated, Activating, Activation, Aimed,
-  AimedPress, AnswerSucceeded, Answered, AwaitingAnswer, Base, Cancelled,
-  CannotTell, CastClears, CasterChangeEnds, CasterChangeStarts, ChargeLevel,
-  Child, CooldownEnds, CooldownKept, CooldownModifierEnds,
-  CooldownModifierStarts, Deflected, Finish, ForcedMoveStart, Frames, GateFails,
-  Go, GoAsked, Healing, Held, HeldProc, Hit, Hold, HoldForCast, Holding, Immune,
-  ItemsIssue, KeyHeld, Lingering, Listed, Live, Log, ModifierEnd, ModifierStart,
+  type HeldProc, type Holder, type Interaction, type ItemAtPlace, type ItemPress,
+  type Listed, type Live, type Message, type Reached, type Refusal,
+  type Resolution, type Restricting, type Role, type State, type Struck,
+  type TargetVerdict, type TickAsked, type Used, type UsedUnit, Accept,
+  Activated, Activating, Activation, Aimed, AimedPress, AnswerSucceeded,
+  Answered, AwaitingAnswer, Base, Cancelled, CannotTell, CastClears,
+  CasterChangeEnds, CasterChangeStarts, ChargeLevel, Child, CooldownEnds,
+  CooldownKept, CooldownModifierEnds, CooldownModifierStarts, Deflected, Finish,
+  ForcedMoveStart, Frames, GateFails, Go, GoAsked, Healing, Held, HeldProc, Hit,
+  Hold, HoldForCast, Holding, Immune, ItemAtPlace, ItemPress, ItemsIssue,
+  KeyHeld, Lingering, Listed, Live, Log, ModifierEnd, ModifierStart,
   NoClientCastId, NoInteraction, NoInteractionWaits, NoItemSpell, NodesEnd,
   NotBuilt, NotDecoded, NotSentByClient, Passive, Plain, PrerequisitesIssue,
   Pressed, PressedAt, ProcDue, Reached, Refuse, RepeatHeld, Resolution,
   ResourceMoved, RestrictionEnd, Send, Shortcut, ShortcutCast, SpellsIssue,
-  Stage, StartChild, StartHeld, StartedMoving, Starts, State, StateEnd,
+  Stage, StartChild, StartHeld, Started, StartedMoving, Starts, State, StateEnd,
   StealthChanged, Strike, TargetModifierStart, Tell, Threshold, Tick,
-  UnbuiltItemCharges, UnbuiltItemSpell, UnbuiltShortcut, UnbuiltSpell,
-  UnknownAnswer, UnknownCancel, UnreadItemPrerequisite, UnreadLinkPrerequisite,
-  UnreadPrerequisite, UnreadShortcutPick, UsedUnit, WindowEnd, WrongAnswerSpell,
+  UnbuiltItemSpell, UnbuiltShortcut, UnbuiltSpell, UnknownAnswer, UnknownCancel,
+  UnreadItemPrerequisite, UnreadLinkPrerequisite, UnreadPrerequisite,
+  UnreadShortcutPick, UsedUnit, WindowEnd, WrongAnswerSpell,
 } as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/class_resource.{type Payment}
@@ -215,18 +216,19 @@ pub fn activate(
 /// connection; one it sends and refuses is refused with its result; one the server has no
 /// plan for (the item's spell has no Activate effect) is refused as not built; the others
 /// run as an activate cast does, and the go raises `Activated` for the unit. The answer is
-/// `Frames` for a refusal and for a press whose client cast id the state already took
-/// (`item_press_known`), which start nothing and spend nothing, and `Started` for a cast
-/// the press began: its state and effects are returned and not applied, because the
-/// connection applies them only after the store has saved the item's spend. Every outcome
-/// is `Frames` until the build splits `Started` out of `item_spell_cast`.
+/// `Frames` for a refusal and for a press whose client cast id is not above the highest the
+/// state took (`item_press_refused`), which start nothing and spend nothing, and `Started` for
+/// a cast the press began: its state (which records the id) and effects are returned and not
+/// applied, because the connection applies them only after the store has saved the item's
+/// spend.
 pub fn use_item(
   cast cast: State,
   body body: BitArray,
   caster caster: Caster,
-  held_at held_at: fn(ItemPlace) -> Option(Item2Id),
+  held_at held_at: fn(ItemPlace) -> Option(ItemAtPlace),
   check check: fn(
     Item2Id,
+    Int,
     ItemPlace,
     Option(Int),
     fn(Int) -> prerequisite.Verdict,
@@ -250,18 +252,39 @@ pub fn use_item(
     caster_radius:,
     now_ms:,
   )
-  |> result.map(fn(taken) { continued(taken:, caster:, now_ms:) })
-  |> result.map(fn(taken) { settled(cast:, own: [], step: fn() { taken }) })
-  |> result.map(fn(taken) { Frames(cast: taken.0, effects: taken.1) })
+  |> result.map(fn(decided) {
+    let #(after, effects) =
+      continued(taken: decided.taken, caster:, now_ms:)
+      |> fn(taken) { settled(cast:, own: [], step: fn() { taken }) }
+    case decided.press {
+      Some(press) ->
+        Started(
+          press:,
+          cast: cast_state.item_press_recorded(
+            cast: after,
+            client_cast_id: press.client_cast_id,
+          ),
+          effects:,
+        )
+      None -> Frames(cast: after, effects:)
+    }
+  })
+}
+
+/// What `item_used` decided: the state and effects of the press, and the press when it
+/// started a cast.
+type ItemDecided {
+  ItemDecided(taken: #(State, List(Effect)), press: Option(ItemPress))
 }
 
 fn item_used(
   cast cast: State,
   body body: BitArray,
   caster caster: Caster,
-  held_at held_at: fn(ItemPlace) -> Option(Item2Id),
+  held_at held_at: fn(ItemPlace) -> Option(ItemAtPlace),
   check check: fn(
     Item2Id,
+    Int,
     ItemPlace,
     Option(Int),
     fn(Int) -> prerequisite.Verdict,
@@ -271,7 +294,7 @@ fn item_used(
   in_cast_group in_cast_group: fn(Int, Int) -> Bool,
   caster_radius caster_radius: Float,
   now_ms now_ms: Int,
-) -> Result(#(State, List(Effect)), Refusal) {
+) -> Result(ItemDecided, Refusal) {
   use press <- result.try(
     item_use_message.decode(body)
     |> client_connection.decoded(message_id: item_use_message.message_id)
@@ -282,17 +305,24 @@ fn item_used(
     return: Error(NoClientCastId),
   )
   let client_cast_id = press.client_cast_id
+  use <- bool.guard(
+    when: cast_state.item_press_refused(cast:, client_cast_id:),
+    return: Ok(ItemDecided(taken: #(cast, []), press: None)),
+  )
   let unit_id = press.target_unit_id
   let target = target_of(unit_id)
   let refusal = fn(spell4_id, result) {
-    Ok(#(cast, [cast_frame.refused(client_cast_id:, spell4_id:, result:)]))
+    framed(
+      Ok(#(cast, [cast_frame.refused(client_cast_id:, spell4_id:, result:)])),
+    )
   }
   case held_at(press.item) {
     None -> refusal(0, cast_result.ItemBad)
-    Some(item) ->
+    Some(ItemAtPlace(item2_id: item, charges:)) ->
       case
         check(
           item,
+          charges,
           press.second_item,
           // Another player's unit has no checklist index: the client's quest check reads
           // -1 for it (`0x140398cc0`).
@@ -311,22 +341,8 @@ fn item_used(
         Error(item_use.NotSentByClient) -> Error(NotSentByClient)
         Error(item_use.Declined(spell4_id:, result:)) ->
           refusal(spell4_id.value, result)
-        Error(item_use.Charged(spell4_id:, max_charges:)) ->
-          cast_press.not_built_refusal(
-            cast:,
-            client_cast_id:,
-            spell4_id: spell4_id.value,
-            key: UnbuiltItemCharges(item_id: item.value),
-            result: cast_result.IllegalSpellCast,
-            why: "(Item2 "
-              <> int.to_string(item.value)
-              <> ") has maxCharges "
-              <> int.to_string(max_charges)
-              <> ", which the server does not hold: the client refuses an item with no charges left with 25",
-            issue: ItemsIssue,
-          )
         Error(item_use.UnreadPrerequisite(spell4_id:, prerequisite_type:)) ->
-          cast_press.not_built_refusal(
+          framed(cast_press.not_built_refusal(
             cast:,
             client_cast_id:,
             spell4_id: spell4_id.value,
@@ -336,7 +352,7 @@ fn item_used(
               <> int.to_string(prerequisite_type)
               <> ", which the server does not read",
             issue: PrerequisitesIssue,
-          )
+          ))
         Ok(spell4_id) ->
           item_spell_cast(
             cast:,
@@ -350,8 +366,37 @@ fn item_used(
             in_cast_group:,
             spell4_id: spell4_id.value,
           )
+          |> result.map(started_press(
+            before: cast,
+            press: ItemPress(
+              client_cast_id:,
+              spell4_id: spell4_id.value,
+              place: press.item,
+            ),
+            taken: _,
+          ))
       }
   }
+}
+
+/// What the press decided: it started a cast when the caster's state counts one more cast
+/// than before (`start`); every other answer is a frame.
+fn started_press(
+  before before: State,
+  press press: ItemPress,
+  taken taken: #(State, List(Effect)),
+) -> ItemDecided {
+  use <- bool.guard(
+    when: { taken.0 }.presses <= before.presses,
+    return: ItemDecided(taken:, press: None),
+  )
+  ItemDecided(taken:, press: Some(press))
+}
+
+fn framed(
+  taken: Result(#(State, List(Effect)), Refusal),
+) -> Result(ItemDecided, Refusal) {
+  result.map(taken, fn(taken) { ItemDecided(taken:, press: None) })
 }
 
 /// The cast of an item's spell, which the item's checks let through, at the unit the

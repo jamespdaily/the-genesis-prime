@@ -23,18 +23,19 @@
 import character_tables
 import fixture_tables
 import genesis_prime/game/item_use.{
-  Charged, Declined, NotSentByClient, UnreadPrerequisite,
+  Declined, NotSentByClient, UnreadPrerequisite,
 }
 import genesis_prime/game/prerequisite
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/message/cast_result.{
-  ItemObjectiveComplete, ItemQuestRequirementsNotMet, ItemTooHighLevel,
-  SpellPreRequisites,
+  ItemCharges, ItemObjectiveComplete, ItemQuestRequirementsNotMet,
+  ItemTooHighLevel, SpellPreRequisites,
 }
 import genesis_prime/message/item_place.{type ItemPlace, ItemPlace}
-import genesis_prime/table/id.{Item2Id, Spell4Id}
+import genesis_prime/table/id.{type Spell4Id, Item2Id, Spell4Id}
 import genesis_prime/table/loader/store as table_store
-import gleam/option.{None, Some}
+import gleam/list
+import gleam/option.{type Option, None, Some}
 import owned_test
 import planted_table.{Integer}
 import quest_support
@@ -93,6 +94,7 @@ fn used(
   item_use.check(
     tables:,
     item: Item2Id(item),
+    charges: 0,
     player_level: level,
     quests:,
     second_item: no_second_item(),
@@ -357,6 +359,7 @@ pub fn a_second_item_place_is_sent_only_for_an_item_on_item_spell_test() -> Nil 
     item_use.check(
       tables:,
       item: Item2Id(grenade),
+      charges: 0,
       player_level: 20,
       quests: grenade_quest_accepted(),
       second_item:,
@@ -370,23 +373,115 @@ pub fn a_second_item_place_is_sent_only_for_an_item_on_item_spell_test() -> Nil 
     as "spell 26663 is targetType 1, so the client never sends a second item"
 }
 
-pub fn an_item_with_charges_is_refused_before_its_level_is_tested_test() -> Nil {
-  use <- owned_test.run(10_000)
-  use tables <- fixture_tables.changed(table: "Item2", id: charged_item, with: [
-    #("requiredLevel", Integer(50)),
-  ])
-  assert used(
-      tables:,
-      item: charged_item,
-      level: 1,
-      quests: quest_support.log_of(rows: []),
-      target: None,
-    )
-    == Error(Charged(spell4_id: Spell4Id(1274), max_charges: 99))
-    as "Item2 2509's maxCharges is 99: StartItemUseCast (0x140398cc0) tests the charges (25) before the level (26), and the server holds no charges (#333)"
+/// One case of the charge check: the row's changed columns, what the player holds, and
+/// what the check answers.
+type ChargeRow {
+  ChargeRow(
+    flags: Option(Int),
+    max_charges: Int,
+    charges: Int,
+    level: Int,
+    prerequisite: prerequisite.Verdict,
+    expected: Result(Spell4Id, item_use.Refusal),
+    why: String,
+  )
 }
 
-pub fn an_item_with_no_charges_is_not_refused_for_them_test() -> Nil {
+pub fn a_charged_item_is_refused_25_only_at_0_charges_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let refused = fn(result) {
+    Error(Declined(spell4_id: Spell4Id(1274), result:))
+  }
+  list.each(
+    [
+      ChargeRow(
+        None,
+        99,
+        0,
+        50,
+        prerequisite.Passes,
+        refused(ItemCharges),
+        "maxCharges 99 holding 0: StartItemUseCast (0x140398cc0 lines 37-44) answers 25",
+      ),
+      ChargeRow(
+        None,
+        99,
+        99,
+        50,
+        prerequisite.Passes,
+        Ok(Spell4Id(1274)),
+        "maxCharges 99 holding 99 is used",
+      ),
+      ChargeRow(
+        None,
+        0,
+        0,
+        50,
+        prerequisite.Passes,
+        Ok(Spell4Id(1274)),
+        "maxCharges 0 holding 0: the client tests only an item whose maxCharges is set",
+      ),
+      ChargeRow(
+        Some(0x4000),
+        5,
+        0,
+        50,
+        prerequisite.Passes,
+        Ok(Spell4Id(1274)),
+        "a proxy row's own maxCharges 5 is not read: its source row, Item2 74201, holds 0 (`0x1404445d0.proxy`)",
+      ),
+      ChargeRow(
+        None,
+        99,
+        0,
+        1,
+        prerequisite.Passes,
+        refused(ItemCharges),
+        "charges (25) are tested before the level (26): the row's level is 50 and the player's 1",
+      ),
+      ChargeRow(
+        None,
+        99,
+        0,
+        50,
+        prerequisite.Fails,
+        refused(SpellPreRequisites),
+        "UseItem judges the prerequisite (17) before StartItemUseCast's charges",
+      ),
+    ],
+    fn(row) {
+      use tables <- fixture_tables.changed(
+        table: "Item2",
+        id: charged_item,
+        with: list.flatten([
+          [
+            #("maxCharges", Integer(row.max_charges)),
+            #("requiredLevel", Integer(50)),
+            #("prerequisiteId", Integer(624)),
+          ],
+          case row.flags {
+            Some(flags) -> [#("flags", Integer(flags))]
+            None -> []
+          },
+        ]),
+      )
+      assert item_use.check(
+          tables:,
+          item: Item2Id(charged_item),
+          charges: row.charges,
+          player_level: row.level,
+          quests: quest_support.log_of(rows: []),
+          second_item: no_second_item(),
+          target_checklist_index: None,
+          prerequisite: fn(_) { row.prerequisite },
+        )
+        == row.expected
+        as row.why
+    },
+  )
+}
+
+pub fn an_item_with_no_charges_row_is_not_refused_for_them_test() -> Nil {
   use <- owned_test.run(10_000)
   assert used(
       tables: character_tables.shared(),
@@ -409,6 +504,7 @@ pub fn an_item_prerequisite_is_judged_before_the_level_test() -> Nil {
     item_use.check(
       tables:,
       item: Item2Id(grenade),
+      charges: 0,
       player_level: 9,
       quests: grenade_quest_accepted(),
       second_item: no_second_item(),
@@ -440,6 +536,7 @@ pub fn an_item_with_no_prerequisite_is_not_judged_test() -> Nil {
   assert item_use.check(
       tables: character_tables.shared(),
       item: Item2Id(generic_item),
+      charges: 0,
       player_level: 20,
       quests: quest_support.log_of(rows: []),
       second_item: no_second_item(),
@@ -458,6 +555,7 @@ pub fn a_second_item_place_the_client_never_sends_is_refused_whatever_the_level_
   assert item_use.check(
       tables:,
       item: Item2Id(grenade),
+      charges: 0,
       player_level: 9,
       quests: grenade_quest_accepted(),
       second_item: ItemPlace(location: 1, bag_index: 2),

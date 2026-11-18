@@ -18,7 +18,8 @@
 ////   and 0xca write the charges, only 0x17f the count (`opcode.0x111.charges`,
 ////   `opcode.0xca`), so the server spends and tells.
 //// - **A stack loses one from its count** and keeps its charges (every charged stackable
-////   row has maxCharges 1); **a single item loses one charge**; at the last of either the
+////   row has maxCharges 1; an item that stacks one high is a single item); **a single item
+////   loses one charge**; at the last of either the
 ////   item is removed with 0x148 reason 1, because the client reads a count of 0 as 1.
 //// - **A row with maxCharges 0 is not spent** (`item_property.max_charges`, which takes a
 ////   proxy row's from its source row, `Item2.maxCharges.proxy`).
@@ -28,10 +29,12 @@
 
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/cast/state as cast_state
+import genesis_prime/game/inventory
 import genesis_prime/store.{
-  type AccountId, type CharacterId, type HeldItem, type SessionEpoch,
+  type AccountId, type CharacterId, type HeldItem, type SessionEpoch, HeldItem,
 }
-import gleam/option.{type Option}
+import gleam/list
+import gleam/option.{type Option, None, Some}
 
 /// What a use does to the item it spends.
 pub type Spend {
@@ -59,37 +62,112 @@ pub type Spending {
 }
 
 /// What one use of `item` spends. `stack_limit` is the row's Item2.maxStackCount when the
-/// item is a stack (`item_property.stack_limit`), `max_charges` the client's effective
-/// maxCharges of the row (`item_property.max_charges`). The item holds at least one
-/// charge when `max_charges` is above 0: the use check refuses it first (result 25).
+/// item stacks (`item_property.stack_limit`), `max_charges` the client's effective maxCharges
+/// of the row (`item_property.max_charges`). An item that stacks more than one high loses one
+/// from its count; any other loses one charge. The item holds at least one charge when
+/// `max_charges` is above 0: the use check refuses it first (result 25).
 pub fn spend(
-  item _item: HeldItem,
-  stack_limit _stack_limit: Option(Int),
-  max_charges _max_charges: Int,
+  item item: HeldItem,
+  stack_limit stack_limit: Option(Int),
+  max_charges max_charges: Int,
 ) -> Spend {
-  panic as "shape: the spend rule is built in the next commit"
+  case max_charges > 0, stack_limit {
+    False, _ -> NothingToSpend
+    True, Some(limit) if limit > 1 ->
+      case item.stack_count {
+        count if count > 1 -> StackLowered(stack_count: count - 1)
+        _ -> Gone
+      }
+    True, Some(_) | True, None ->
+      case item.charges {
+        charges if charges > 1 -> ChargeLowered(charges: charges - 1)
+        _ -> Gone
+      }
+  }
 }
 
 /// The store's request for the spend, fenced by the login's epoch and holding the item as
 /// it is: `SpendItem` for a lowered stack or charge count, `DeleteItem` for `Gone`, none
 /// for `NothingToSpend`.
 pub fn request(
-  spend _spend: Spend,
-  item _item: HeldItem,
-  account_id _account_id: AccountId,
-  character_id _character_id: CharacterId,
-  session_epoch _session_epoch: SessionEpoch,
+  spend spend: Spend,
+  item item: HeldItem,
+  account_id account_id: AccountId,
+  character_id character_id: CharacterId,
+  session_epoch session_epoch: SessionEpoch,
 ) -> Option(store.Request) {
-  panic as "shape: the spend request is built in the next commit"
+  case spend {
+    NothingToSpend -> None
+    StackLowered(stack_count:) ->
+      Some(
+        store.Items(store.SpendItem(
+          account_id:,
+          character_id:,
+          session_epoch:,
+          item:,
+          stack_count:,
+          charges: item.charges,
+        )),
+      )
+    ChargeLowered(charges:) ->
+      Some(
+        store.Items(store.SpendItem(
+          account_id:,
+          character_id:,
+          session_epoch:,
+          item:,
+          stack_count: item.stack_count,
+          charges:,
+        )),
+      )
+    Gone ->
+      Some(
+        store.Items(store.DeleteItem(
+          account_id:,
+          character_id:,
+          session_epoch:,
+          item:,
+        )),
+      )
+  }
 }
 
 /// The held items after a saved spend, and the frame that tells the client: 0x17f with
 /// reason 1 for a lowered stack, 0xca for a lowered charge count, 0x148 with reason 1 for
 /// `Gone`, none for `NothingToSpend`.
 pub fn spent(
-  items _items: List(HeldItem),
-  item _item: HeldItem,
-  spend _spend: Spend,
+  items items: List(HeldItem),
+  item item: HeldItem,
+  spend spend: Spend,
 ) -> #(List(HeldItem), Option(Frame)) {
-  panic as "shape: the saved spend is built in the next commit"
+  let replaced = fn(changed) {
+    list.map(items, fn(held) {
+      case held.item_guid == item.item_guid {
+        True -> changed
+        False -> held
+      }
+    })
+  }
+  case spend {
+    NothingToSpend -> #(items, None)
+    StackLowered(stack_count:) -> #(
+      replaced(HeldItem(..item, stack_count:)),
+      Some(inventory.count_changed_frame(
+        guid: item.item_guid,
+        count: stack_count,
+        reason: inventory.consume_charge,
+      )),
+    )
+    ChargeLowered(charges:) -> #(
+      replaced(HeldItem(..item, charges:)),
+      Some(inventory.charges_changed_frame(guid: item.item_guid, charges:)),
+    )
+    Gone -> #(
+      list.filter(items, fn(held) { held.item_guid != item.item_guid }),
+      Some(inventory.item_removed_frame(
+        guid: item.item_guid,
+        reason: inventory.consume_charge,
+      )),
+    )
+  }
 }

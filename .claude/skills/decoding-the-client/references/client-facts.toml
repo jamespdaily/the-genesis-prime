@@ -16016,6 +16016,13 @@ proof = "Registry 0x14006c290 (saved C line 475): id 0xca, size 0x10, reader FUN
 grade = "fairly sure"
 gap = "Read from the saved C, not run. The jump-table entry for 0xca was taken from the sweep's table, not re-read from the bytes. Whether an open UI redraws on its own timer was not read."
 
+["0x1403c0f90"]
+statement = "The handler of message 0xca: finds the held item by the message's guid and stores the message's 32-bit value as the item's charges; an unknown guid is reported as a client error. It raises no event."
+proof = "Saved C 0x1403c0f90.c (13906f95d07bb7f9): FindHeldItemByGuid, then `*(item + 0x7c) = message word 2`; HandleWorldMessage 0x1403ec6a0 case 0x1403ef099 calls it and nothing else (record opcode.0xca)."
+grade = "fairly sure"
+gap = "Read from the saved C, not run."
+name = "SetItemCharges"
+
 ["opcode.0x111.durability"]
 statement = "The 32-bit float after the 64-bit value before it in message 0x111's shared item record is the item's durability as a fraction of its most: the client's current durability is the most durability times this fraction, rounded, and at least 1 when the most is set and the result would be 0. 1.0 is full durability."
 proof = "Reader 0x14008c0d0 line 58: ReadFloat into record +0x40. Constructor 0x140569d30 line 21: item +0x84 = record +0x40. Current durability 0x1403b5360 (hash 8eb22adb6de47956): max = 0x1403b5400 (row word +4 plus a global offset, 0 unless the item's kind word +0x140 is 1 or 2); returns (float)max * fraction + DAT_140b79e48, 1 when that truncates to 0, 0 when max is 0. Addons Character.lua 1046-1048 and HUDAlerts.lua 363-364 divide GetDurability by GetMaxDurability."

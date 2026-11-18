@@ -327,7 +327,8 @@ pub type ItemMove {
 /// item rows in one statement, only while the character's `session_epoch` is
 /// still `session_epoch`, the one the login that asks was told when it loaded the
 /// character, and only when each row it names is as the request holds it (its
-/// guid, place and count). The account's id is in the statement, as for a load.
+/// guid, place, count and, for a spend or a delete, charges). The account's id is in the
+/// statement, as for a load.
 pub type ItemsRequest {
   /// Moves the character's items, all or none, only when each item is at the
   /// place its move leaves. The statement is one UPDATE under the character_item
@@ -360,7 +361,9 @@ pub type ItemsRequest {
     target: HeldItem,
     count: Int,
   )
-  /// Destroys the whole stack `item`: one statement that deletes its row.
+  /// Destroys the whole stack `item`: one statement that deletes its row while it holds
+  /// `item`'s count and charges. The last charge or the last of a stack a use spends is
+  /// this request too.
   DeleteItem(
     account_id: AccountId,
     character_id: CharacterId,

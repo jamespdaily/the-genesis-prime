@@ -822,6 +822,7 @@ fn delete_item(
       item.location,
       item.bag_index,
       item.stack_count,
+      item.charges,
     )
   })
   |> items_answer(saved: fn(rows) {

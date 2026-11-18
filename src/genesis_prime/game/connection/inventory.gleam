@@ -255,7 +255,7 @@ pub fn regeared(
 
 /// The connection ends with reason 8 and saves the player's place as in the
 /// world, which the player is in.
-fn lost(
+pub fn lost(
   session session: Session,
   now now: Now,
   holder holder: Holder,

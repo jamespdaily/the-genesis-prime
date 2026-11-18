@@ -233,13 +233,22 @@ pub fn item_use_message(
         list.find(entered.items, fn(held) {
           held.location == place.location && held.bag_index == place.bag_index
         })
-        |> result.map(fn(held) { held.item2_id })
+        |> result.map(fn(held) {
+          cast_state.ItemAtPlace(item2_id: held.item2_id, charges: held.charges)
+        })
         |> option.from_result
       },
-      check: fn(item, second_item, target_checklist_index, prerequisite) {
+      check: fn(
+        item,
+        charges,
+        second_item,
+        target_checklist_index,
+        prerequisite,
+      ) {
         item_use.check(
           tables:,
           item:,
+          charges:,
           player_level: caster.player.level,
           quests: caster.quests,
           second_item:,
@@ -267,6 +276,7 @@ pub fn item_use_message(
         press:,
         cast: started,
         effects:,
+        release: cast_effects,
       )
     Error(refusal) ->
       connection_state.end_for(
