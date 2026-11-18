@@ -14,6 +14,7 @@ import genesis_prime/game/character_select
 import genesis_prime/game/class_resource
 import genesis_prime/game/inventory
 import genesis_prime/game/item_charge
+import genesis_prime/game/leaving_save
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
 import genesis_prime/game/prerequisite.{type Prerequisite}
@@ -73,6 +74,10 @@ pub type Settings {
     tables: table_store.Tables,
     /// How long an ask to the hand-off, Sessions or the store may take.
     ask_deadline_ms: Int,
+    /// How long a connection that is ending keeps trying to save the player's
+    /// place when the store gives no answer, and the waits between the tries
+    /// (genesis_prime/game/leaving_save).
+    leaving_save: leaving_save.Retries,
     /// How fast the client may send its frames
     /// (`genesis_prime/client_connection.Bucket`).
     rate: Bucket,

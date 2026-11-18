@@ -94,6 +94,7 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/set
+import leaving_support
 import map_support
 import message_support
 import place_support
@@ -120,6 +121,7 @@ pub fn settings() -> game_connection.Settings {
     realm_name: "Test Realm",
     tables: character_tables.shared(),
     ask_deadline_ms: 4000,
+    leaving_save: leaving_support.retries(),
     rate: support.roomy(),
     class_resources: class_resource_support.classes(),
     server_proxies: server_proxy_support.none(),

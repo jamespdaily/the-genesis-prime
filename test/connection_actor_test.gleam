@@ -136,6 +136,7 @@ fn settings(
     rule: quiet_rule(),
     send_deadline_ms: 300,
     shutdown_ms: 1000,
+    stop_reserve_ms: 300,
     wire_recorder:,
     scripts: script.operating_system,
     directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },

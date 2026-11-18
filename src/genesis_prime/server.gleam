@@ -178,6 +178,10 @@ pub type Settings {
     /// How long a connection has to stop once the server stops, on every
     /// listener.
     connection_shutdown_ms: Int,
+    /// The part of `connection_shutdown_ms` a connection keeps for what comes
+    /// after its last ask: the shell's stop deadline is its shutdown time less
+    /// this (genesis_prime/connection/shell `stop_deadline`).
+    stop_reserve_ms: Int,
     /// The login's two listeners.
     login: Login,
     /// The game server's listener.
@@ -1132,6 +1136,7 @@ fn serve(
         rule: rule(served.settings),
         send_deadline_ms: settings.send_deadline_ms,
         shutdown_ms: settings.connection_shutdown_ms,
+        stop_reserve_ms: settings.stop_reserve_ms,
         wire_recorder: served.wire_recorder,
         scripts: served.scripts,
         directory:,

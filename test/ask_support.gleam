@@ -137,6 +137,7 @@ pub fn start_telling(
       rule:,
       send_deadline_ms: 300,
       shutdown_ms:,
+      stop_reserve_ms: 300,
       wire_recorder:,
       scripts:,
       directory:,

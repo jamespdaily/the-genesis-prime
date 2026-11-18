@@ -37,6 +37,7 @@ import gleam/dict
 import gleam/erlang/process.{type Pid}
 import gleam/option.{None, Some}
 import gleam/set
+import leaving_support
 import login_client.{type Ports, Ports}
 import login_vectors as vector
 import pog
@@ -139,6 +140,7 @@ pub fn game() -> server.Served(game_connection.Settings) {
       realm_name: realm().name,
       tables: character_tables.shared(),
       ask_deadline_ms: 5000,
+      leaving_save: leaving_support.retries(),
       rate: support.roomy(),
       class_resources: class_resource_support.classes(),
       server_proxies: server_proxy_support.none(),
@@ -177,6 +179,7 @@ pub fn settings(pool pool: pog.Config) -> server.Settings {
     world: world(),
     send_deadline_ms: 300,
     connection_shutdown_ms: 1000,
+    stop_reserve_ms: 300,
     login: login(),
     game: game(),
   )

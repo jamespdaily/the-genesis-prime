@@ -39,6 +39,7 @@ import genesis_prime/content/zone_welcome as content_zone_welcome
 import genesis_prime/digest
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
+import genesis_prime/game/leaving_save
 import genesis_prime/game_settings
 import genesis_prime/login/auth_connection
 import genesis_prime/login/sts_connection
@@ -371,7 +372,13 @@ pub fn settings(
     registry: registry.new(),
     world: world(spawns),
     send_deadline_ms: 2000,
-    connection_shutdown_ms: 5000,
+    // A connection has 25 s to stop; its stop deadline is 20 s after the shell
+    // takes the exit (the time a leaving save may try), and the 5 s reserve is
+    // an exit taken up to 3 s late (a write of 2 s and 1 s more) and the one
+    // write of the closing notice (2 s). The tree's bounds along a stop then
+    // add to 25 + 5 + 5 + 5 + 5 s, under the host's 60 s.
+    connection_shutdown_ms: 25_000,
+    stop_reserve_ms: 5000,
     login: login(),
     game: game(tables:, spawns:),
   )
@@ -641,6 +648,11 @@ fn game(
       realm_name: realm_name(),
       tables:,
       ask_deadline_ms:,
+      leaving_save: leaving_save.Retries(
+        within_ms: 20_000,
+        waits_ms: [1000, 2000, 4000, 8000],
+        then_ms: 10_000,
+      ),
       rate: game_rate(),
       class_resources: content_class_resource.classes(key: spawns),
       server_proxies: content_server_proxy.proxies(key: spawns),

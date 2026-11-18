@@ -84,7 +84,7 @@
 ////   reaches the process then.
 //// - **The server stopping.** The shell traps its parent's exit, so the
 ////   tree's stop arrives as `Stopping`, with a deadline of the listener's
-////   shutdown time less the send deadline, counted from when the shell takes
+////   shutdown time less its stop reserve, counted from when the shell takes
 ////   the exit and not from when it arrived: an exit that waits behind a step
 ////   is counted from when it is taken, while Ranch counts from when it sent
 ////   the stop. A rule that has not stopped by whichever deadline comes first
@@ -116,7 +116,7 @@
 ////                                ended (exit shutdown) first
 ////   the parent's exit       ─▶ Answered(ask, StoppedWaiting) at once, then
 ////                                Stopping(when the wait takes the exit
-////                                         + shutdown_ms - send_deadline_ms)
+////                                         + shutdown_ms - stop_reserve_ms)
 //// after NoAnswerInTime or StoppedWaiting, the tag and the monitor are kept
 ////   until the target's answer or DOWN; between steps:
 ////   {ask answer, tag, _} of a kept tag ─▶ tag dropped, no input
@@ -269,6 +269,10 @@ pub type Settings(settings, state, message, answer, request) {
     send_deadline_ms: Int,
     /// How long a connection has to stop once the server stops.
     shutdown_ms: Int,
+    /// The part of `shutdown_ms` kept for what follows the rule's last ask: a
+    /// stopping rule's deadline is the time the shell takes the exit plus
+    /// `shutdown_ms` less this (`stop_deadline`).
+    stop_reserve_ms: Int,
     /// Where the bytes of each connection's socket reads and writes are
     /// recorded, a line after each (genesis_prime/wire_recording); `None`
     /// unless GENESIS_RECORD_DIR turns recording on (genesis_prime/sitting).
@@ -1748,16 +1752,16 @@ fn drop_kept(
 }
 
 /// The deadline a stopping rule is given: the shutdown time from when the
-/// shell takes the exit, less the send deadline, which covers a write the shell
-/// was in when the exit arrived (a write waits at most the send deadline before
-/// its socket closes). An exit that waited behind a longer step is counted from
-/// when it is taken, so Ranch, which counts from when it sent the stop, may
-/// kill the process first.
+/// shell takes the exit, less the settings' reserve, which covers an exit taken
+/// late (behind a write, which waits at most the send deadline before its
+/// socket closes) and the one write the rule makes after its last ask. An exit
+/// that waited behind a longer step is counted from when it is taken, so Ranch,
+/// which counts from when it sent the stop, may kill the process first.
 fn stop_deadline(
   now: step.Now,
   settings: Settings(settings, state, message, answer, request),
 ) -> Int {
-  now.monotonic_ms + settings.shutdown_ms - settings.send_deadline_ms
+  now.monotonic_ms + settings.shutdown_ms - settings.stop_reserve_ms
 }
 
 /// What `erlang:process_flag` sets: where a process keeps its waiting
