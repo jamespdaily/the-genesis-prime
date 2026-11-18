@@ -8623,9 +8623,7 @@ pub fn rescuing_an_exile_removes_the_trap_and_the_exile_for_another_player_too_t
   assert list.sort(removed_units(seen_gone), int.compare)
     == list.sort([trap, mordesh], int.compare)
     as "opcode.0x355: the player who did not use the trap is told the trap and the Mordesh are gone, each once"
-  // The restart timer is the release's 30000 ms, started when the units went: the
-  // clock moves only once the timer is registered.
-  driven_time.wait_until_quiet(time)
+  // The restart timer is the release's 30000 ms, started when the units went.
   driven_time.advance(time:, ms: 30_000)
   let #(back, _) =
     game_client.read_until(game: second, have: second_have, found: both_in)
