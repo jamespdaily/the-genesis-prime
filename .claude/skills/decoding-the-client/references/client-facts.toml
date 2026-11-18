@@ -12343,6 +12343,7 @@ statement = "Whether an entry of the client's owned-title set is held: 1 when it
 proof = "As Prerequisite.prerequisiteTypeId.288."
 grade = "fairly sure"
 gap = "As Prerequisite.prerequisiteTypeId.288."
+name = "IsOwnedTitleHeld"
 
 ["0x1403d4080"]
 statement = "Looks a title id up in the client's owned-title set (the tree of the game object) and returns its entry, or none. Read by prerequisite type 288."
