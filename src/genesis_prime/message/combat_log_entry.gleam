@@ -35,8 +35,61 @@ import gleam/result
 /// `opcode.0x247.multi_hit_shields`), 12 heal (the fact file's
 /// `opcode.0x247.heal`), 13 multi_heal (the fact file's
 /// `opcode.0x247.multi_heal`), 17 deflect (the fact file's
-/// `opcode.0x247.deflect`), 34 unhandled_34 (the fact file's
-/// `opcode.0x247.unhandled_34`).
+/// `opcode.0x247.deflect`).
+///
+/// These kinds are open, so no variant holds them and a read refuses them: 0
+/// (absorption: what builds it: a spell that grants an absorption pool, which
+/// no other message logs) (layout so far in the fact file's
+/// `opcode.0x247.absorption`); 5 (reflect: what builds it: a reflect effect,
+/// none is built; which of its two bits is vulnerable and which is killed is
+/// not read) (layout so far in the fact file's `opcode.0x247.reflect`); 8
+/// (falling_damage: what builds it: falling damage, which the server does not
+/// handle) (layout so far in the fact file's `opcode.0x247.falling_damage`); 9
+/// (life_steal: what builds it: a life-steal effect, none is built; the order
+/// of its two amounts is read from the copy order only) (layout so far in the
+/// fact file's `opcode.0x247.life_steal`); 10 (delay_death: what builds it: a
+/// delay-death effect, none is built) (layout so far in the fact file's
+/// `opcode.0x247.delay_death`); 11 (dispel: what builds it: a dispel effect,
+/// none is built) (layout so far in the fact file's `opcode.0x247.dispel`); 15
+/// (transference: what builds it: a transference effect, none is built; its
+/// 3-bit value and four amounts are named only by analogy with type 3) (layout
+/// so far in the fact file's `opcode.0x247.transference`); 16 (vital_modifier:
+/// what builds it: the resource gains of spells are built and only this type
+/// logs them; did retail set bShowCombatLog for them (a recording of a resource
+/// gain settles it)) (layout so far in the fact file's
+/// `opcode.0x247.vital_modifier`); 19 (interrupted: what builds it: casts are
+/// interrupted and only this type logs it; which of its cast-data units is the
+/// interrupter is not read) (layout so far in the fact file's
+/// `opcode.0x247.interrupted`); 20 (kill_streak: what builds it: kill streaks,
+/// which only PvP raises) (layout so far in the fact file's
+/// `opcode.0x247.kill_streak`); 21 (kill_pvp: what builds it: PvP kill assists)
+/// (layout so far in the fact file's `opcode.0x247.kill_pvp`); 25 (mount: what
+/// builds it: mounting and dismounting, which are not built) (layout so far in
+/// the fact file's `opcode.0x247.mount`); 26 (pet: what builds it: summoning,
+/// dismissing and losing a pet, which are not built) (layout so far in the fact
+/// file's `opcode.0x247.pet`); 27 (experience: what builds it: elder points
+/// only, as the experience line is already printed from the experience message;
+/// the order of its four amounts is taken from the Lua handler) (layout so far
+/// in the fact file's `opcode.0x247.experience`); 28 (modifying: what builds
+/// it: item modification (runes), which is not built) (layout so far in the
+/// fact file's `opcode.0x247.modifying`); 29 (durability_loss: what builds it:
+/// durability loss, which is not built) (layout so far in the fact file's
+/// `opcode.0x247.durability_loss`); 30 (item_destroy: what builds it: deleting
+/// an item, the only way the client prints the destroy line; that retail sent
+/// it after the item delete message is inferred, not recorded) (layout so far
+/// in the fact file's `opcode.0x247.item_destroy`); 31 (las: what builds it:
+/// Limited Action Set edits, which the server does not take) (layout so far in
+/// the fact file's `opcode.0x247.las`); 32 (build_switch: what builds it:
+/// action set switching, which is not built) (layout so far in the fact file's
+/// `opcode.0x247.build_switch`); 33 (datacube: what builds it: datacubes
+/// (lore), which are not built; which addon handles its event is not searched)
+/// (layout so far in the fact file's `opcode.0x247.datacube`); 34
+/// (unhandled_34: does the real dispatch handle it: the saved decompile shows
+/// no case 34 in HandleCombatLog, but it may omit one, so a run of the client
+/// with a type 34 settles it) (layout so far in the fact file's
+/// `opcode.0x247.unhandled_34`); 35 (healing_absorption: what builds it: a
+/// heal-absorb effect, none is built) (layout so far in the fact file's
+/// `opcode.0x247.healing_absorption`).
 pub type CombatLogEntry {
   /// Kind 1, read by `combat_log_cc_state`. The fact file's
   /// `opcode.0x247.cc_state` names the kind.

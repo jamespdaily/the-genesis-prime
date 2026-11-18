@@ -18,6 +18,11 @@ import gleam/result
 /// One item of the union: its first 2 bits are its kind, which picks the
 /// variant, and the variant's record reads them again as its first field. A
 /// kind no variant has is refused.
+///
+/// These kinds are open, so no variant holds them and a read refuses them: 2
+/// (what builds it: form 2 (two 32-bit integers); the client reads it but what
+/// it does with them is not read, and the resource stats store 0 for any form
+/// but 1) (layout so far in the fact file's `0x140096230`).
 pub type UnitStatValue {
   /// Kind 0, read by `unit_stat_integer`. The fact file's `0x140096230` names
   /// the kind.

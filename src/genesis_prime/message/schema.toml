@@ -917,6 +917,9 @@ evidence = "0x140096230"
 summary = "the value of one stat of a new unit: the form in 2 bits picks how it is written, 0 a 32-bit integer and 1 a 32-bit float; the server writes no form 2 (two integers), and form 3 refuses the message"
 tag_bits = 2
 refused_from = 3
+open_tags = [
+  { tag = 2, question = "what builds it: form 2 (two 32-bit integers); the client reads it but what it does with them is not read, and the resource stats store 0 for any form but 1", named_by = "0x140096230" },
+]
 variants = [
   { tag = 0, name = "integer", record = "unit_stat_integer", named_by = "0x140096230" },
   { tag = 1, name = "float", record = "unit_stat_float", named_by = "0x140080c60" },
@@ -2699,6 +2702,39 @@ name = "unit_stat_change"
 evidence = "opcode.0x938"
 summary = "the stat of a 0x938 in 5 bits picks the layout of its value"
 tag_bits = 5
+refused_from = 32
+never_tags = [
+  { tag = 1, name = "float_stat_0x218", named_by = "opcode.0x938.all_stats" },
+  { tag = 2, name = "resource_slot_0", named_by = "opcode.0x938.all_stats" },
+  { tag = 3, name = "resource_slot_1", named_by = "opcode.0x938.all_stats" },
+  { tag = 4, name = "resource_slot_2", named_by = "opcode.0x938.all_stats" },
+  { tag = 5, name = "resource_slot_3", named_by = "opcode.0x938.all_stats" },
+  { tag = 6, name = "resource_slot_4", named_by = "opcode.0x938.all_stats" },
+  { tag = 7, name = "resource_slot_5", named_by = "opcode.0x938.all_stats" },
+  { tag = 8, name = "resource_slot_6", named_by = "opcode.0x938.all_stats" },
+  { tag = 9, name = "resource_slot_7", named_by = "opcode.0x938.all_stats" },
+  { tag = 12, name = "unread_12", named_by = "opcode.0x938.all_stats" },
+  { tag = 13, name = "unread_13", named_by = "opcode.0x938.all_stats" },
+  { tag = 14, name = "unread_14", named_by = "opcode.0x938.all_stats" },
+  { tag = 16, name = "unread_16", named_by = "opcode.0x938.all_stats" },
+  { tag = 18, name = "unread_18", named_by = "opcode.0x938.all_stats" },
+  { tag = 19, name = "float_stat_slot_0x68", named_by = "opcode.0x938.all_stats" },
+  { tag = 23, name = "float_stat_0x23c", named_by = "opcode.0x938.all_stats" },
+  { tag = 24, name = "float_stat_0x240", named_by = "opcode.0x938.all_stats" },
+  { tag = 25, name = "float_stat_0x244", named_by = "opcode.0x938.all_stats" },
+  { tag = 27, name = "unread_27", named_by = "opcode.0x938.all_stats" },
+  { tag = 28, name = "unread_28", named_by = "opcode.0x938.all_stats" },
+  { tag = 29, name = "unread_29", named_by = "opcode.0x938.all_stats" },
+  { tag = 30, name = "unread_30", named_by = "opcode.0x938.all_stats" },
+  { tag = 31, name = "unread_31", named_by = "opcode.0x938.all_stats" },
+]
+open_tags = [
+  { tag = 0, question = "health: what builds it: the client sets no health from it, but for the player's own unit raises UI_HealthChanged with the value and the unit's real health; when that notification is needed is not settled", named_by = "opcode.0x938.all_stats" },
+  { tag = 11, question = "effective_level: what builds it: mentoring, which is not built; the name MentorLevel is a lead from the earlier server, not the client's", named_by = "opcode.0x938.all_stats" },
+  { tag = 15, question = "sheathed: what builds it: creatures drawing weapons at a fight start, a guess; a recording of a fight start settles it; the name is a lead from the earlier server, not the client's", named_by = "opcode.0x938.all_stats" },
+  { tag = 17, question = "cluster: what builds it: unit clusters, which are not built", named_by = "opcode.0x938.all_stats" },
+  { tag = 26, question = "integer stored at unit 0x50: what builds it: nothing is known, the client does not read its meaning", named_by = "opcode.0x938.all_stats" },
+]
 variants = [
   { tag = 10, name = "level", record = "unit_stat_level", named_by = "opcode.0x938" },
   { tag = 20, name = "shield", record = "unit_stat_shield", named_by = "opcode.0x938.resource_stats" },
@@ -2902,7 +2938,30 @@ never_tags = [
   { tag = 12, name = "heal", named_by = "opcode.0x247.heal" },
   { tag = 13, name = "multi_heal", named_by = "opcode.0x247.multi_heal" },
   { tag = 17, name = "deflect", named_by = "opcode.0x247.deflect" },
-  { tag = 34, name = "unhandled_34", named_by = "opcode.0x247.unhandled_34" },
+]
+open_tags = [
+  { tag = 0, question = "absorption: what builds it: a spell that grants an absorption pool, which no other message logs", named_by = "opcode.0x247.absorption" },
+  { tag = 5, question = "reflect: what builds it: a reflect effect, none is built; which of its two bits is vulnerable and which is killed is not read", named_by = "opcode.0x247.reflect" },
+  { tag = 8, question = "falling_damage: what builds it: falling damage, which the server does not handle", named_by = "opcode.0x247.falling_damage" },
+  { tag = 9, question = "life_steal: what builds it: a life-steal effect, none is built; the order of its two amounts is read from the copy order only", named_by = "opcode.0x247.life_steal" },
+  { tag = 10, question = "delay_death: what builds it: a delay-death effect, none is built", named_by = "opcode.0x247.delay_death" },
+  { tag = 11, question = "dispel: what builds it: a dispel effect, none is built", named_by = "opcode.0x247.dispel" },
+  { tag = 15, question = "transference: what builds it: a transference effect, none is built; its 3-bit value and four amounts are named only by analogy with type 3", named_by = "opcode.0x247.transference" },
+  { tag = 16, question = "vital_modifier: what builds it: the resource gains of spells are built and only this type logs them; did retail set bShowCombatLog for them (a recording of a resource gain settles it)", named_by = "opcode.0x247.vital_modifier" },
+  { tag = 19, question = "interrupted: what builds it: casts are interrupted and only this type logs it; which of its cast-data units is the interrupter is not read", named_by = "opcode.0x247.interrupted" },
+  { tag = 20, question = "kill_streak: what builds it: kill streaks, which only PvP raises", named_by = "opcode.0x247.kill_streak" },
+  { tag = 21, question = "kill_pvp: what builds it: PvP kill assists", named_by = "opcode.0x247.kill_pvp" },
+  { tag = 25, question = "mount: what builds it: mounting and dismounting, which are not built", named_by = "opcode.0x247.mount" },
+  { tag = 26, question = "pet: what builds it: summoning, dismissing and losing a pet, which are not built", named_by = "opcode.0x247.pet" },
+  { tag = 27, question = "experience: what builds it: elder points only, as the experience line is already printed from the experience message; the order of its four amounts is taken from the Lua handler", named_by = "opcode.0x247.experience" },
+  { tag = 28, question = "modifying: what builds it: item modification (runes), which is not built", named_by = "opcode.0x247.modifying" },
+  { tag = 29, question = "durability_loss: what builds it: durability loss, which is not built", named_by = "opcode.0x247.durability_loss" },
+  { tag = 30, question = "item_destroy: what builds it: deleting an item, the only way the client prints the destroy line; that retail sent it after the item delete message is inferred, not recorded", named_by = "opcode.0x247.item_destroy" },
+  { tag = 31, question = "las: what builds it: Limited Action Set edits, which the server does not take", named_by = "opcode.0x247.las" },
+  { tag = 32, question = "build_switch: what builds it: action set switching, which is not built", named_by = "opcode.0x247.build_switch" },
+  { tag = 33, question = "datacube: what builds it: datacubes (lore), which are not built; which addon handles its event is not searched", named_by = "opcode.0x247.datacube" },
+  { tag = 34, question = "unhandled_34: does the real dispatch handle it: the saved decompile shows no case 34 in HandleCombatLog, but it may omit one, so a run of the client with a type 34 settles it", named_by = "opcode.0x247.unhandled_34" },
+  { tag = 35, question = "healing_absorption: what builds it: a heal-absorb effect, none is built", named_by = "opcode.0x247.healing_absorption" },
 ]
 variants = [
   { tag = 1, name = "cc_state", record = "combat_log_cc_state", named_by = "opcode.0x247.cc_state" },
