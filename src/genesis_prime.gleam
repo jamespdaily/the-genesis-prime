@@ -372,13 +372,16 @@ pub fn settings(
     registry: registry.new(),
     world: world(spawns),
     send_deadline_ms: 2000,
-    // A connection has 25 s to stop; its stop deadline is 20 s after the shell
-    // takes the exit (the time a leaving save may try), and the 5 s reserve is
-    // an exit taken up to 3 s late (a write of 2 s and 1 s more) and the one
-    // write of the closing notice (2 s). The tree's bounds along a stop then
-    // add to 25 + 5 + 5 + 5 + 5 s, under the host's 60 s.
+    // A connection has 25 s to stop (Ranch's kill, counted from when it sends
+    // the stop). Its stop deadline is when the shell takes the exit plus 25 s
+    // less the 7 s reserve, so 18 s. The shell takes the exit ahead of queued
+    // messages, so it is late by at most the step in progress: one write, 2 s.
+    // After the deadline the rule writes the closing notice (2 s), and the
+    // close lingers for queued bytes (2 s). 2 + 18 + 2 + 2 = 24 s, 1 s inside
+    // the kill. The bounds along a stop then add to 25 + 5 + 5 + 5 + 5 = 45 s,
+    // under the host's 60 s.
     connection_shutdown_ms: 25_000,
-    stop_reserve_ms: 5000,
+    stop_reserve_ms: 7000,
     login: login(),
     game: game(tables:, spawns:),
   )

@@ -15,10 +15,14 @@
 //// - A retry is made only when its wait ends before the deadline; the deadline
 ////   decides, and `failed` only indexes the ladder, since each try may take an
 ////   ask's whole deadline.
-//// - A stop's deadline replaces a logout's, whichever is earlier: the stop's is
-////   the listener's shutdown bound, which the connection must end inside.
+//// - The first stop's deadline replaces a logout's, also when it is earlier: the
+////   stop's is the listener's shutdown bound, which the connection must end
+////   inside.
 //// - The ladder and the time a logout may try are the server's choice
 ////   (genesis_prime's settings); the client has no such wait.
+
+import gleam/int
+import gleam/list
 
 /// The ladder of waits between a leaving player's tries, and how long a logout
 /// may try. `waits_ms` holds the waits after the first, second and later
@@ -52,56 +56,73 @@ pub type Reconciled {
 }
 
 /// A logout's deadline: `retries.within_ms` after `now_ms`.
-pub fn logout_deadline(_retries: Retries, now_ms _now_ms: Int) -> Deadline {
-  panic as "shape only: built with its tests"
+pub fn logout_deadline(
+  retries retries: Retries,
+  now_ms now_ms: Int,
+) -> Deadline {
+  ForLogout(at_ms: now_ms + retries.within_ms)
 }
 
 /// The deadline once a stop's `stop_ms` is known: the first stop's replaces a
 /// logout's, also when it is earlier, and a stop's stays.
-pub fn stopped(_deadline: Deadline, stop_ms _stop_ms: Int) -> Deadline {
-  panic as "shape only: built with its tests"
+pub fn stopped(deadline deadline: Deadline, stop_ms stop_ms: Int) -> Deadline {
+  case deadline {
+    ForLogout(..) -> ForStop(at_ms: stop_ms)
+    ForStop(..) -> deadline
+  }
 }
 
 /// What the first stop does to a retry timer that fires at `retry_at_ms`, under
 /// the deadline the stop has set.
 pub fn reconciled(
-  retry_at_ms _retry_at_ms: Int,
-  now_ms _now_ms: Int,
-  deadline _deadline: Deadline,
+  retry_at_ms retry_at_ms: Int,
+  now_ms now_ms: Int,
+  deadline deadline: Deadline,
 ) -> Reconciled {
-  panic as "shape only: built with its tests"
+  case at_ms(deadline:) {
+    at if at <= now_ms -> Expired
+    at if retry_at_ms >= at -> RetryNow
+    _ -> Keep
+  }
 }
 
 /// The deadline's time.
-pub fn at_ms(_deadline: Deadline) -> Int {
-  panic as "shape only: built with its tests"
+pub fn at_ms(deadline deadline: Deadline) -> Int {
+  deadline.at_ms
 }
 
 /// How long an ask made at `now_ms` may take: the ask deadline, or what the
 /// deadline leaves when that is shorter. Zero or less means no time is left
 /// and no ask is made.
 pub fn ask_within_ms(
-  _deadline: Deadline,
-  now_ms _now_ms: Int,
-  ask_deadline_ms _ask_deadline_ms: Int,
+  deadline deadline: Deadline,
+  now_ms now_ms: Int,
+  ask_deadline_ms ask_deadline_ms: Int,
 ) -> Int {
-  panic as "shape only: built with its tests"
+  int.min(ask_deadline_ms, at_ms(deadline:) - now_ms)
 }
 
 /// The wait after `failed` earlier failures: the ladder's entry, then
 /// `then_ms` past its end.
-pub fn wait_ms(_retries: Retries, failed _failed: Int) -> Int {
-  panic as "shape only: built with its tests"
+pub fn wait_ms(retries retries: Retries, failed failed: Int) -> Int {
+  case list.drop(retries.waits_ms, failed) {
+    [wait_ms, ..] -> wait_ms
+    [] -> retries.then_ms
+  }
 }
 
 /// What a failed try leads to: a retry after `wait_ms(failed)` when that wait
 /// ends before the deadline, otherwise giving up. `failed` counts the failures
 /// before this one.
 pub fn after_failure(
-  _retries: Retries,
-  failed _failed: Int,
-  deadline _deadline: Deadline,
-  now_ms _now_ms: Int,
+  retries retries: Retries,
+  failed failed: Int,
+  deadline deadline: Deadline,
+  now_ms now_ms: Int,
 ) -> Next {
-  panic as "shape only: built with its tests"
+  let wait_ms = wait_ms(retries:, failed:)
+  case now_ms + wait_ms < at_ms(deadline:) {
+    True -> RetryAfter(wait_ms:)
+    False -> GiveUp
+  }
 }

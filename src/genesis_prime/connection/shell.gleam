@@ -79,16 +79,22 @@
 ////   failed write after the `Stop` is logged as a warning, closes the socket
 ////   and ends the process with no `WriteFailed` input. Bytes still queued
 ////   get the send deadline, in whole seconds, to go out before the close drops
-////   them. A rule must return
-////   `Stop` after `PeerClosed` or `ReadFailed`, since no other socket input
-////   reaches the process then.
+////   them. After the shell has taken `PeerClosed`, `ReadFailed` or
+////   `WriteFailed` it arms no more reads, since arming a closed socket fails
+////   every time, and drops every later message of the socket, a close, an
+////   error or bytes, whichever order they come in: a rule that goes on after
+////   one of them is given the end once and takes no other socket input.
 //// - **The server stopping.** The shell traps its parent's exit, so the
 ////   tree's stop arrives as `Stopping`, with a deadline of the listener's
 ////   shutdown time less its stop reserve, counted from when the shell takes
-////   the exit and not from when it arrived: an exit that waits behind a step
-////   is counted from when it is taken, while Ranch counts from when it sent
-////   the stop. A rule that has not stopped by whichever deadline comes first
-////   is killed, and its recording has no closing line.
+////   the exit and not from when it arrived, while Ranch counts from when it
+////   sent the stop. The shell takes the exit after the step in progress,
+////   ahead of the mail queued before it, so it is late by one step's work (a
+////   write waits at most the send deadline). The reserve covers that, the
+////   rule's closing write and the socket's close, which lingers for queued
+////   bytes for as long as a write may wait. A rule that has not stopped by
+////   whichever deadline comes first is killed, and its recording has no
+////   closing line.
 //// - **A crash.** When the rule's step crashes, the actor ends with that
 ////   reason; Ranch starts connection processes as temporary children, so
 ////   nothing restarts it and the listener goes on accepting. The socket closes
@@ -407,7 +413,19 @@ type Running(state, request) {
     /// before it stops, so the step that stops is not always the one that took
     /// the close, and the side is kept from that input.
     closed_by: Side,
+    /// Whether the shell has taken an end of the socket as an input.
+    socket_end: SocketEnd,
   )
+}
+
+/// Whether the shell has taken the socket's end as an input (`PeerClosed`,
+/// `ReadFailed`, `WriteFailed`). Arming a socket after its end fails every time,
+/// so the shell then arms no more reads, and the socket's later messages (a
+/// close or an error queued behind the end, whichever order they come in) are
+/// dropped: the rule is given the end once.
+type SocketEnd {
+  SocketOpen
+  SocketEnded
 }
 
 /// How the connection takes what its socket delivers.
@@ -597,6 +615,8 @@ fn handle(
     Open(running:) ->
       case mail {
         Begin -> panic as "a connection takes Begin once"
+        FromSocket(_) if running.socket_end == SocketEnded ->
+          keep_open(connection:, running:)
         FromSocket(Read(bytes:)) -> read_arrived(connection:, running:, bytes:)
         FromSocket(ClosedByPeer) ->
           take_next(connection:, running:, event: OwnEvent(step.PeerClosed))
@@ -606,15 +626,7 @@ fn handle(
             running:,
             event: OwnEvent(step.ReadFailed(failure:)),
           )
-        ParentExited -> {
-          let now = running.script.clock(wire_recording.Stopping)
-          take(
-            connection:,
-            running:,
-            now:,
-            event: Stopping(deadline_ms: stop_deadline(now, connection.settings)),
-          )
-        }
+        ParentExited -> take_stop(connection:, running:)
         OtherExited -> keep_open(connection:, running:)
         Delivered(message:) ->
           take_next(
@@ -726,6 +738,7 @@ fn accepted(
       timers: timer_book.new(),
       stopping: None,
       closed_by: wire_recording.Server,
+      socket_end: SocketOpen,
     ),
     now:,
     event: OwnEvent(Accepted(
@@ -817,6 +830,18 @@ fn take(
     | step.WatchEnded(..)
     | Stopping(..) -> running.closed_by
   }
+  let socket_end = case event {
+    OwnEvent(step.PeerClosed)
+    | OwnEvent(ReadFailed(..))
+    | OwnEvent(WriteFailed(..)) -> SocketEnded
+    OwnEvent(Accepted(..))
+    | OwnEvent(step.Read(..))
+    | OwnEvent(Answered(..))
+    | OwnEvent(step.TimerFired(..))
+    | OwnEvent(step.Woken(..))
+    | step.WatchEnded(..)
+    | Stopping(..) -> running.socket_end
+  }
   let running =
     Running(
       ..running,
@@ -824,6 +849,7 @@ fn take(
       at: now,
       taken_ms: running.script.node_monotonic_ms(now),
       closed_by: closing,
+      socket_end:,
     )
   case step {
     Effects(effects:) ->
@@ -1410,10 +1436,14 @@ fn wait_for_input(
         event: Stopping(deadline_ms:),
       )
     Error(Nil), None ->
-      case read_once(running.socket) {
-        Ok(Nil) -> keep_open(connection:, running:)
-        Error(failure) ->
-          take_next(connection:, running:, event: arm_failed(failure))
+      case running.socket_end {
+        SocketEnded -> keep_open(connection:, running:)
+        SocketOpen ->
+          case read_once(running.socket) {
+            Ok(Nil) -> keep_open(connection:, running:)
+            Error(failure) ->
+              take_next(connection:, running:, event: arm_failed(failure))
+          }
       }
   }
 }
@@ -1520,7 +1550,7 @@ fn wait_for_answer(
     ParentStopping ->
       Running(
         ..keep(running:, tag:, monitor:),
-        stopping: Some(stop_deadline(known, connection.settings)),
+        stopping: Some(stop_deadline(now: known, settings: connection.settings)),
       )
   }
   take(
@@ -1647,7 +1677,9 @@ fn wire_recording_failed(socket: ClientSocket, error: WriteError) -> a {
   panic as "a connection's wire recording could not be written"
 }
 
-/// Continues with the connection open.
+/// Continues with the connection open, after the stop if the parent's exit is
+/// waiting: the exit is taken ahead of any mail queued before it, so a stop is
+/// late by the step in progress and not by the messages a busy world queued.
 fn keep_open(
   connection connection: Connection(settings, state, message, answer, request),
   running running: Running(state, request),
@@ -1655,7 +1687,44 @@ fn keep_open(
   Connection(settings, state, message, answer, request),
   Mail(message, answer),
 ) {
-  actor.continue(Connection(..connection, status: Open(running:)))
+  case parent_exit_waiting(connection.parent) {
+    True -> take_stop(connection:, running:)
+    False -> actor.continue(Connection(..connection, status: Open(running:)))
+  }
+}
+
+/// Takes the parent's exit as `Stopping`, with the deadline counted from now.
+fn take_stop(
+  connection connection: Connection(settings, state, message, answer, request),
+  running running: Running(state, request),
+) -> actor.Next(
+  Connection(settings, state, message, answer, request),
+  Mail(message, answer),
+) {
+  let now = running.script.clock(wire_recording.Stopping)
+  take(
+    connection:,
+    running:,
+    now:,
+    event: Stopping(deadline_ms: stop_deadline(
+      now:,
+      settings: connection.settings,
+    )),
+  )
+}
+
+/// Whether the parent's exit waits in the mailbox, whatever waits before it. The
+/// exit of any other process found on the way is dropped, as the handler drops
+/// it.
+fn parent_exit_waiting(parent: Pid) -> Bool {
+  let exits =
+    process.new_selector()
+    |> process.select_trapped_exits(fn(exit) { exit.pid == parent })
+  case process.selector_receive(exits, within: 0) {
+    Ok(True) -> True
+    Ok(False) -> parent_exit_waiting(parent)
+    Error(Nil) -> False
+  }
 }
 
 /// Takes a timer's firing as `TimerFired` when its reference is the current
@@ -1752,14 +1821,13 @@ fn drop_kept(
 }
 
 /// The deadline a stopping rule is given: the shutdown time from when the
-/// shell takes the exit, less the settings' reserve, which covers an exit taken
-/// late (behind a write, which waits at most the send deadline before its
-/// socket closes) and the one write the rule makes after its last ask. An exit
-/// that waited behind a longer step is counted from when it is taken, so Ranch,
-/// which counts from when it sent the stop, may kill the process first.
-fn stop_deadline(
-  now: step.Now,
-  settings: Settings(settings, state, message, answer, request),
+/// shell takes the exit, less the settings' reserve. The reserve covers an exit
+/// taken late (after the step in progress, whose write waits at most the send
+/// deadline), the one write the rule makes after its last ask, the socket's
+/// close, which lingers for queued bytes for the send deadline, and a margin.
+pub fn stop_deadline(
+  now now: step.Now,
+  settings settings: Settings(settings, state, message, answer, request),
 ) -> Int {
   now.monotonic_ms + settings.shutdown_ms - settings.stop_reserve_ms
 }

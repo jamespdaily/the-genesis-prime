@@ -12,8 +12,11 @@
 //// Every wait is for an event, with a deadline a passing test never reaches.
 
 import ask_support
+import driven_time
 import event_wait
+import genesis_prime/connection/registry
 import genesis_prime/connection/script.{Elapsed, Issued, Script}
+import genesis_prime/connection/shell
 import genesis_prime/message/server_hello.{ServerHello}
 import genesis_prime/step.{
   type ConnectionEvent, type ConnectionInput, type ConnectionRule,
@@ -26,7 +29,8 @@ import gleam/dynamic/decode
 import gleam/erlang/atom
 import gleam/erlang/process.{type Pid, type Subject}
 import gleam/list
-import gleam/option.{None}
+import gleam/option.{None, Some}
+import gleam/otp/static_supervisor as supervisor
 import gleam/string
 import hello_rule
 import mailbox_support
@@ -195,6 +199,261 @@ pub fn a_connection_that_crashes_leaves_another_open_connection_running_unchange
   event_wait.until(
     "Ranch lists only the connection that stayed, the same process it was before: the BEAM isolates a crash to its process",
     fn() { ask_support.connections(server) == [staying_process] },
+  )
+}
+
+// ---- a rule that goes on after the socket's end ----
+
+/// What a rule that goes on after the socket's end hears, in order.
+type Heard =
+  step.Event(ConnectionEvent(Int, Nil))
+
+/// A rule that writes `on_accepted`, starts a timer of 100 ms when the socket
+/// ends (a peer's close, a read failure, a failed write) and stops when that
+/// timer fires or the server stops. Each input is sent to `heard` as the rule
+/// takes it.
+fn going_on_rule(
+  heard heard: Subject(Heard),
+  on_accepted on_accepted: List(step.Effect(step.ConnectionEffect(Nil))),
+) -> ConnectionRule(Nil, Nil, Nil, Int, Nil) {
+  Rule(
+    name: "going_on_rule",
+    settings: Nil,
+    new: fn(_settings) { Nil },
+    step: fn(state, input: ConnectionInput(Int, Nil)) {
+      process.send(heard, input.event)
+      let effects = case input.event {
+        OwnEvent(Accepted(..)) -> on_accepted
+        OwnEvent(PeerClosed)
+        | OwnEvent(ReadFailed(..))
+        | OwnEvent(WriteFailed(..)) -> [
+          OwnEffect(StartTimer(TimerId(1), 100)),
+        ]
+        OwnEvent(TimerFired(..)) | Stopping(..) -> [Stop]
+        OwnEvent(Read(..))
+        | OwnEvent(step.Answered(..))
+        | OwnEvent(step.Woken(..))
+        | step.WatchEnded(..) -> []
+      }
+      #(state, Effects(effects))
+    },
+  )
+}
+
+/// A listener of `going_on_rule`s whose clock and timers are `time`'s, joined to
+/// `scope`, with a shutdown time no test reaches.
+fn going_on(
+  heard heard: Subject(Heard),
+  on_accepted on_accepted: List(step.Effect(step.ConnectionEffect(Nil))),
+  time time: driven_time.Time,
+  scope scope: registry.Registry(Int),
+) -> ask_support.Server {
+  ask_support.start_scripted(
+    rule: going_on_rule(heard:, on_accepted:),
+    directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
+    shutdown_ms: ask_support.patient,
+    wire_recorder: None,
+    scripts: driven_time.scripts(time),
+    registry: Some(scope),
+    locate: fn(_address) { Error(Nil) },
+    with: fn(builder) { supervisor.add(builder, registry.supervised(scope)) },
+  )
+}
+
+/// The rule's next input.
+fn next_heard(heard: Subject(Heard)) -> Heard {
+  open_wait.received(from: heard, what: "the rule's next input")
+}
+
+/// Advances the driven clock past the rule's timer, waits for the shell to end
+/// after the timer's firing and the stop it gave, and gives what the rule heard
+/// from then on.
+fn timer_then_the_end(
+  server server: ask_support.Server,
+  time time: driven_time.Time,
+  heard heard: Subject(Heard),
+) -> List(Heard) {
+  let assert [connection] = ask_support.connections(server)
+    as "one connection process"
+  let watched = process.monitor(connection)
+  driven_time.advance(time:, ms: 100)
+  let _reason =
+    ask_support.ended(
+      watched:,
+      what: "the shell to end after the rule's timer fired and it stopped",
+    )
+  mailbox_support.drain(heard)
+}
+
+/// A rule's writes that fail: 64 MiB to a client that never reads, then 1 KiB,
+/// which cannot finish within the send deadline.
+fn writes_that_fail() -> List(step.Effect(step.ConnectionEffect(Nil))) {
+  [
+    OwnEffect(Write(<<0:size(536_870_912)>>)),
+    OwnEffect(Write(<<0:size(8192)>>)),
+  ]
+}
+
+pub fn a_rule_that_goes_on_after_a_peer_close_is_given_the_close_once_test() -> Nil {
+  use <- owned_test.run(20_000)
+  let time = driven_time.new()
+  let heard = process.new_subject()
+  let server = going_on(heard:, on_accepted: [], time:, scope: registry.new())
+  let client = ask_support.connect(server)
+  let assert OwnEvent(Accepted(..)) = next_heard(heard) as "Accepted first"
+  assert mug.shutdown(client) == Ok(Nil) as "the client closed"
+  assert next_heard(heard) == OwnEvent(PeerClosed) as "the close, once"
+  assert timer_then_the_end(server:, time:, heard:)
+    == [OwnEvent(TimerFired(TimerId(1)))]
+    as "then the timer; the shell does not arm a socket it knows is closed"
+  ask_support.stop(server)
+}
+
+pub fn a_rule_that_goes_on_after_a_failed_write_is_given_the_failure_once_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let time = driven_time.new()
+  let heard = process.new_subject()
+  let server =
+    going_on(
+      heard:,
+      on_accepted: writes_that_fail(),
+      time:,
+      scope: registry.new(),
+    )
+  let _client = ask_support.connect(server)
+  let assert OwnEvent(Accepted(..)) = next_heard(heard) as "Accepted first"
+  assert next_heard(heard) == OwnEvent(WriteFailed(step.SendTimedOut))
+    as "the failed write, once"
+  assert timer_then_the_end(server:, time:, heard:)
+    == [OwnEvent(TimerFired(TimerId(1)))]
+    as "then the timer; the shell does not arm the socket its failed write closed"
+  ask_support.stop(server)
+}
+
+pub fn a_close_or_an_error_that_arrives_after_a_failed_write_is_ignored_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let time = driven_time.new()
+  let heard = process.new_subject()
+  let server =
+    going_on(
+      heard:,
+      on_accepted: writes_that_fail(),
+      time:,
+      scope: registry.new(),
+    )
+  let _client = ask_support.connect(server)
+  let assert OwnEvent(Accepted(..)) = next_heard(heard) as "Accepted first"
+  assert next_heard(heard) == OwnEvent(WriteFailed(step.SendTimedOut))
+  let assert [connection] = ask_support.connections(server)
+  // What a socket whose peer is gone sends after the write failed, a close
+  // then an error and an error then a close.
+  let socket = atom.create("a_socket")
+  let closed = #(atom.create("tcp_closed"), socket)
+  let failed = #(atom.create("tcp_error"), socket, atom.create("closed"))
+  mailbox_support.send_raw(connection, closed)
+  mailbox_support.send_raw(connection, failed)
+  mailbox_support.send_raw(connection, failed)
+  mailbox_support.send_raw(connection, closed)
+  assert timer_then_the_end(server:, time:, heard:)
+    == [OwnEvent(TimerFired(TimerId(1)))]
+    as "a socket message after the end the shell took is no input, in either order"
+  ask_support.stop(server)
+}
+
+pub fn a_read_or_an_error_that_arrives_after_a_peer_close_is_ignored_test() -> Nil {
+  use <- owned_test.run(20_000)
+  let time = driven_time.new()
+  let heard = process.new_subject()
+  let server = going_on(heard:, on_accepted: [], time:, scope: registry.new())
+  let client = ask_support.connect(server)
+  let assert OwnEvent(Accepted(..)) = next_heard(heard) as "Accepted first"
+  assert mug.shutdown(client) == Ok(Nil) as "the client closed"
+  assert next_heard(heard) == OwnEvent(PeerClosed)
+  let assert [connection] = ask_support.connections(server)
+  let socket = atom.create("a_socket")
+  mailbox_support.send_raw(connection, #(
+    atom.create("tcp_error"),
+    socket,
+    atom.create("closed"),
+  ))
+  mailbox_support.send_raw(connection, #(atom.create("tcp"), socket, <<1, 2>>))
+  mailbox_support.send_raw(connection, #(atom.create("tcp_closed"), socket))
+  assert timer_then_the_end(server:, time:, heard:)
+    == [OwnEvent(TimerFired(TimerId(1)))]
+    as "a read, an error or a second close after the close the shell took is no input"
+  ask_support.stop(server)
+}
+
+pub fn a_stop_taken_late_behind_a_queue_of_map_messages_is_taken_before_them_test() -> Nil {
+  use <- owned_test.run(30_000)
+  // The shell is held while three messages and then the parent's exit reach
+  // its mailbox. It takes the first message (one step) and then the exit,
+  // before the other two, so the stop is late by one step, not by the queue.
+  let scope = registry.new()
+  let heard = process.new_subject()
+  let server =
+    going_on(heard:, on_accepted: [], time: driven_time.new(), scope:)
+  let client = ask_support.connect(server)
+  let assert OwnEvent(Accepted(connection: ConnectionId(id), ..)) =
+    next_heard(heard)
+    as "Accepted first"
+  let assert [connection] = ask_support.connections(server)
+  let watched = process.monitor(connection)
+  let stopped =
+    ask_support.while_suspended(connection, fn() {
+      list.each([1, 2, 3], fn(number) {
+        assert registry.deliver(scope, ConnectionId(id), number) == Ok(Nil)
+          as "the message reached the connection"
+      })
+      let stopped = ask_support.begin_stop_tree(server.supervisor)
+      event_wait.until(
+        "the parent's exit reached the connection's mailbox",
+        fn() { mailbox_support.tagged(connection, atom.create("EXIT")) == 1 },
+      )
+      stopped
+    })
+  let _reason =
+    ask_support.ended(watched:, what: "the connection to end at the stop")
+  let _tree = ask_support.ended(watched: stopped, what: "the tree to end")
+  let _client = client
+  let assert [OwnEvent(step.Woken(1)), Stopping(..)] =
+    mailbox_support.drain(heard)
+    as "one message, then the stop, before the two queued after the first"
+  Nil
+}
+
+// ---- the stop deadline ----
+
+pub fn the_shells_stop_deadline_is_the_time_it_takes_the_exit_plus_the_shutdown_time_less_the_reserve_test() -> Nil {
+  use <- owned_test.run(5000)
+  let settings = fn(reserve_ms) {
+    shell.Settings(
+      ..shell_settings(),
+      shutdown_ms: 25_000,
+      stop_reserve_ms: reserve_ms,
+    )
+  }
+  let now = Now(monotonic_ms: 1000, filetime: 0)
+  assert shell.stop_deadline(now:, settings: settings(5000)) == 21_000
+    as "1000 + 25000 - 5000"
+  assert shell.stop_deadline(now:, settings: settings(7000)) == 19_000
+    as "the production reserve: taken + 18 s"
+  assert shell.stop_deadline(now:, settings: settings(300)) == 25_700
+    as "a reserve equal to the test settings' send deadline gives the shutdown time less the send deadline"
+}
+
+fn shell_settings() -> shell.Settings(Nil, Nil, Int, Nil, Nil) {
+  shell.Settings(
+    rule: going_on_rule(heard: process.new_subject(), on_accepted: []),
+    send_deadline_ms: 300,
+    shutdown_ms: 1000,
+    stop_reserve_ms: 300,
+    wire_recorder: None,
+    scripts: script.operating_system,
+    directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
+    registry: None,
+    locate: fn(_address) { Error(Nil) },
+    deliver: fn(_address, _request) { Error(Nil) },
   )
 }
 

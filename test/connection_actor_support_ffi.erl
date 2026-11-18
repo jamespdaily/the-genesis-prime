@@ -32,7 +32,7 @@ running(Pid) ->
 %% their target: the Running record's kept dictionary.
 kept_asks(Pid) ->
     {running, _Socket, _Script, _State, _Wire, _At, _TakenMs, _Reading, Kept,
-     _Watches, _Timers, _Stopping, _ClosedBy}
+     _Watches, _Timers, _Stopping, _ClosedBy, _SocketEnd}
         = running(Pid),
     maps:size(Kept).
 
@@ -40,7 +40,7 @@ kept_asks(Pid) ->
 %% read of it holds: the Running record's socket.
 socket_buffer(Pid) ->
     {running, Socket, _Script, _State, _Wire, _At, _TakenMs, _Reading, _Kept,
-     _Watches, _Timers, _Stopping, _ClosedBy}
+     _Watches, _Timers, _Stopping, _ClosedBy, _SocketEnd}
         = running(Pid),
     {ok, [{buffer, Buffer}]} = inet:getopts(Socket, [buffer]),
     Buffer.
@@ -49,7 +49,7 @@ socket_buffer(Pid) ->
 %% that arrive reach the process as a message: {active, once}.
 socket_armed(Pid) ->
     {running, Socket, _Script, _State, _Wire, _At, _TakenMs, _Reading, _Kept,
-     _Watches, _Timers, _Stopping, _ClosedBy}
+     _Watches, _Timers, _Stopping, _ClosedBy, _SocketEnd}
         = running(Pid),
     {ok, [{active, Active}]} = inet:getopts(Socket, [active]),
     Active =:= once.

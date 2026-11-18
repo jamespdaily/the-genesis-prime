@@ -15,6 +15,8 @@ import genesis_prime
 import genesis_prime/client_connection.{
   AskStore, BurstBelowOne, BurstBelowWait, Continue, Done, PerSecondBelowOne,
 }
+import genesis_prime/game/leaving_save.{Retries}
+import genesis_prime/server
 import genesis_prime/step.{
   type ConnectionEffect, type Effect, Ask, AskId, Effects, EffectsThenAsk, Log,
   LogInfo, LogLine, Stop,
@@ -92,6 +94,55 @@ pub fn each_rules_bucket_in_the_servers_settings_holds_what_a_client_sends_at_th
   assert client_connection.burst(game.rate)
     >= sent_through(game.rate, 2 * game.ask_deadline_ms + 5 * 100)
     as "game asks twice in a row, and a Sessions that is not running is claimed from five times, 100 ms apart"
+}
+
+pub fn the_production_leaving_save_settings_are_the_approved_ladder_and_the_stop_budget_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let settings = production_settings()
+  assert settings.game.settings.leaving_save
+    == Retries(
+      within_ms: 20_000,
+      waits_ms: [1000, 2000, 4000, 8000],
+      then_ms: 10_000,
+    )
+    as "the server's choice: 1, 2, 4, 8 s then 10 s, 20 s for a logout"
+  assert settings.connection_shutdown_ms == 25_000
+    as "Ranch's bound on a connection"
+  assert settings.stop_reserve_ms == 7000
+    as "a late take, the notice's write, the socket's close and a margin"
+}
+
+pub fn the_stops_reserve_covers_a_late_take_a_write_and_the_close_and_the_trees_stop_fits_the_hosts_sixty_seconds_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let settings = production_settings()
+  // A stop taken one step late (one write, bounded by the send deadline), the
+  // closing notice (one write) and the socket's close, which lingers for as
+  // long as a write may wait, then 1 s of margin.
+  assert settings.stop_reserve_ms >= 3 * settings.send_deadline_ms + 1000
+    as "the reserve is a late take, a write and the close, each the send deadline, and a second"
+  assert settings.connection_shutdown_ms - settings.stop_reserve_ms == 18_000
+    as "the stop's deadline is taken + 18 s, inside Ranch's 25 s"
+  // The bounds a stop waits on in turn, the game connections', the maps', the
+  // creatures', Sessions' and the hand-off's: the host stops the service
+  // after 60 s (dev/play_service/lib.sh `--stop-timeout 60`). The login
+  // connections end at once on a stop, so their bound is left out.
+  let bounds_ms =
+    settings.connection_shutdown_ms
+    + settings.world.map_shutdown_ms
+    + settings.world.creature_shutdown_ms
+    + settings.sessions_shutdown_ms
+    + settings.hand_off_shutdown_ms
+  assert bounds_ms == 45_000 as "25 + 5 + 5 + 5 + 5 s"
+  assert bounds_ms < 60_000 as "the host's stop-timeout"
+}
+
+fn production_settings() -> server.Settings {
+  envoy.set("GENESIS_GAME_ADDRESS", "127.0.0.1")
+  envoy.set("GENESIS_REALM_NAME", "Test")
+  genesis_prime.settings(
+    tables: character_tables.shared(),
+    spawns: spawn_support.key_without_spawns(),
+  )
 }
 
 /// A flow over a session that is its unread bytes, each byte one item. A 1
