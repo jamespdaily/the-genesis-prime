@@ -249,7 +249,7 @@ pub fn the_one_quest_behind_a_title_check_is_10510_and_each_store_text_objective
   // 96, 40, 40 and 96 (`table_rows -- QuestObjective 21267 21371 21372 21374 21375`).
   let purchase = "a purchase the server has no store for"
   let opening =
-    "opening the store is not a purchase: it completes with its quest"
+    "opening the store is not a purchase: a creature's row links it, so a use of that creature counts it"
   let cases = [
     #(21_267, 10_510, objective.StandInWithQuest, True, purchase),
     #(

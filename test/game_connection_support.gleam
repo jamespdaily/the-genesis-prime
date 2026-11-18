@@ -712,15 +712,7 @@ pub fn entered_with_items(
 pub fn entered_with_quests(
   quests quests: List(store.QuestRow),
 ) -> #(game_connection.State, ConnectionStep(Request)) {
-  let #(state, taken) =
-    joining_holding(
-      in_character_select: in_select(),
-      character: world_character(),
-      saved_health: None,
-      saved_experience: None,
-      quests:,
-    )
-  answer(state:, taken:, outcome: step.Answer(FromMap(map_answer(taken))))
+  entered_under(settings: settings(), character: world_character(), quests:)
 }
 
 /// The connection made with these settings after the store gave `character` these quest
