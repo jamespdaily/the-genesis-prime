@@ -256,7 +256,10 @@ fn told(
           after: quest_log.next_deadline(log: advanced.log),
           now_ms: now.monotonic_ms,
         ),
-        connection_state.quest_deadline_timer_move,
+        connection_state.deadline_timer_move(
+          connection_state.quest_deadline_timer,
+          _,
+        ),
       ),
       // The used units go out of sight for everyone, after everything written.
       case connection_state.entered_of(session.status) {

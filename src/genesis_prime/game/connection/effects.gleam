@@ -23,8 +23,8 @@ import genesis_prime/game/player_life
 import genesis_prime/game/strike
 import genesis_prime/game/world_entry
 import genesis_prime/step.{
-  type ConnectionEffect, type Effect, type Now, CancelTimer, LogWarning,
-  OwnEffect, StartTimer, Watch,
+  type ConnectionEffect, type Effect, type Now, type TimerId, CancelTimer,
+  LogWarning, OwnEffect, StartTimer, Watch,
 }
 import genesis_prime/store
 import genesis_prime/table/id.{type Spell4BaseId}
@@ -48,12 +48,10 @@ pub type Decided {
   /// Start the timer that fires at the next quest reset (`quest_reset_timer`), in
   /// this many milliseconds.
   StartsQuestResetTimer(after_ms: Int)
-  /// Start or cancel the timer that fires when the earliest running quest's time runs
-  /// out (`quest_deadline_timer`).
-  MovesQuestDeadlineTimer(move: deadline_timer.DeadlineTimer)
-  /// Start or cancel the timer that fires when the earliest held timed item runs out
-  /// (`item_expiry_timer`).
-  MovesItemExpiryTimer(move: deadline_timer.DeadlineTimer)
+  /// Start or cancel a deadline timer: `quest_deadline_timer` fires when the earliest
+  /// running quest's time runs out, `item_expiry_timer` when the earliest held timed item
+  /// runs out.
+  MovesDeadlineTimer(timer: TimerId, move: deadline_timer.DeadlineTimer)
   /// Save the player's place and the quest log, which ends the step; the player goes
   /// on playing once the store answers.
   SavesPlace
@@ -196,14 +194,9 @@ pub fn carry_out(
         )),
         ..written
       ])
-    [MovesQuestDeadlineTimer(move:), ..rest] ->
+    [MovesDeadlineTimer(timer:, move:), ..rest] ->
       carry_out(session:, now:, effects: rest, written: [
-        connection_state.quest_deadline_timer_move(move:),
-        ..written
-      ])
-    [MovesItemExpiryTimer(move:), ..rest] ->
-      carry_out(session:, now:, effects: rest, written: [
-        connection_state.item_expiry_timer_move(move:),
+        connection_state.deadline_timer_move(timer:, move:),
         ..written
       ])
     [SavesPlace, ..] ->
@@ -258,8 +251,8 @@ pub fn carry_out(
 
 /// What the player leaves behind as it leaves its stay in the world, by its camp
 /// or the Holocrypt: its chat groups, its casts and its strikes are left, its
-/// class resource's and its life's regeneration timers and the save, quest reset and
-/// quest deadline timers cancelled; the session keeps the chat's next whisper number,
+/// class resource's and its life's regeneration timers and the stay's timers
+/// (`connection_state.stay_timers`) cancelled; the session keeps the chat's next whisper number,
 /// which counts for the connection's life.
 pub fn world_left(
   session session: Session,
@@ -284,12 +277,7 @@ pub fn world_left(
       list.map(player_life.left(life: entered.life), fn(timer) {
         OwnEffect(CancelTimer(timer:))
       }),
-      [
-        OwnEffect(CancelTimer(timer: connection_state.save_timer)),
-        OwnEffect(CancelTimer(timer: connection_state.quest_reset_timer)),
-        OwnEffect(CancelTimer(timer: connection_state.quest_deadline_timer)),
-        OwnEffect(CancelTimer(timer: connection_state.item_expiry_timer)),
-      ],
+      connection_state.stay_timers_cancelled(),
     ]),
   )
 }

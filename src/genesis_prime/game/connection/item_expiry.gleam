@@ -37,7 +37,10 @@ pub fn rearmed(
         after: entered.items,
         now_unix_ms: step.unix_milliseconds(now:),
       ),
-      connection_state.item_expiry_timer_move,
+      connection_state.deadline_timer_move(
+        connection_state.item_expiry_timer,
+        _,
+      ),
     )
   })
 }
@@ -59,7 +62,10 @@ pub fn restarted(
           after: entered.items,
           now_unix_ms: step.unix_milliseconds(now:),
         ),
-        connection_state.item_expiry_timer_move,
+        connection_state.deadline_timer_move(
+          connection_state.item_expiry_timer,
+          _,
+        ),
       )
     ]
   })

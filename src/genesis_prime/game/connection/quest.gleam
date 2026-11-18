@@ -83,7 +83,10 @@ pub fn quest_message(
               after: quest_log.next_deadline(log: taken.log),
               now_ms: now.monotonic_ms,
             ),
-            connection_effects.MovesQuestDeadlineTimer,
+            connection_effects.MovesDeadlineTimer(
+              connection_state.quest_deadline_timer,
+              _,
+            ),
           ),
           written: list.reverse(
             list.map(taken.effects, fn(effect) {

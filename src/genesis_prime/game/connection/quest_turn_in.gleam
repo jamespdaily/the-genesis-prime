@@ -375,7 +375,10 @@ fn saved(
             after: quest_log.next_deadline(log: after),
             now_ms: now.monotonic_ms,
           ),
-          connection_state.quest_deadline_timer_move,
+          connection_state.deadline_timer_move(
+            connection_state.quest_deadline_timer,
+            _,
+          ),
         )
       let #(session, settled) = connection_objective.settled(session:, now:)
       Continue(

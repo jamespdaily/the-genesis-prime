@@ -340,7 +340,10 @@ pub fn quest_deadline_due(
               after: quest_log.next_deadline(log:),
               now_ms: now.monotonic_ms,
             ),
-            connection_effects.MovesQuestDeadlineTimer,
+            connection_effects.MovesDeadlineTimer(
+              connection_state.quest_deadline_timer,
+              _,
+            ),
           ),
           case botched {
             [] -> []
@@ -379,7 +382,7 @@ fn item_expiry_started(
       after: entered.items,
       now_unix_ms: step.unix_milliseconds(now:),
     ),
-    connection_effects.MovesItemExpiryTimer,
+    connection_effects.MovesDeadlineTimer(connection_state.item_expiry_timer, _),
   )
 }
 
@@ -461,7 +464,10 @@ pub fn claimed_again(
           after: quest_log.next_deadline(log: entered.quests),
           now_ms: now.monotonic_ms,
         ),
-        connection_effects.MovesQuestDeadlineTimer,
+        connection_effects.MovesDeadlineTimer(
+          connection_state.quest_deadline_timer,
+          _,
+        ),
       ),
       item_expiry_started(entered:, now:),
     ]),
@@ -920,7 +926,10 @@ fn in_the_world(
           after: quest_log.next_deadline(log: entered.quests),
           now_ms: now.monotonic_ms,
         ),
-        connection_effects.MovesQuestDeadlineTimer,
+        connection_effects.MovesDeadlineTimer(
+          connection_state.quest_deadline_timer,
+          _,
+        ),
       ),
       item_expiry_started(entered:, now:),
     ]),

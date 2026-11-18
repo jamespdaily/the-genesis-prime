@@ -366,29 +366,30 @@ pub const quest_deadline_timer = TimerId(11)
 /// player is in the world (genesis_prime/game/item_expiry `next_deadline`).
 pub const item_expiry_timer = TimerId(13)
 
-/// The effect that carries out a move of the item expiry timer
-/// (genesis_prime/game/item_expiry `timer_moved`).
-pub fn item_expiry_timer_move(
-  move move: deadline_timer.DeadlineTimer,
-) -> Effect(ConnectionEffect(Request)) {
-  case move {
-    deadline_timer.StartDeadlineTimer(after_ms:) ->
-      OwnEffect(StartTimer(timer: item_expiry_timer, after_ms:))
-    deadline_timer.CancelDeadlineTimer ->
-      OwnEffect(CancelTimer(timer: item_expiry_timer))
-  }
+/// The timers the player's stay in the world runs, which the claim made again and the leaving
+/// of the world cancel and the claim starts again.
+pub const stay_timers = [
+  save_timer,
+  quest_reset_timer,
+  quest_deadline_timer,
+  item_expiry_timer,
+]
+
+/// The effects that cancel each of the stay's timers.
+pub fn stay_timers_cancelled() -> List(Effect(ConnectionEffect(Request))) {
+  list.map(stay_timers, fn(timer) { OwnEffect(CancelTimer(timer:)) })
 }
 
-/// The effect that carries out a move of the quest deadline timer
+/// The effect that carries out a move of the deadline timer `timer`
 /// (genesis_prime/game/deadline_timer `moved`).
-pub fn quest_deadline_timer_move(
+pub fn deadline_timer_move(
+  timer timer: TimerId,
   move move: deadline_timer.DeadlineTimer,
 ) -> Effect(ConnectionEffect(Request)) {
   case move {
     deadline_timer.StartDeadlineTimer(after_ms:) ->
-      OwnEffect(StartTimer(timer: quest_deadline_timer, after_ms:))
-    deadline_timer.CancelDeadlineTimer ->
-      OwnEffect(CancelTimer(timer: quest_deadline_timer))
+      OwnEffect(StartTimer(timer:, after_ms:))
+    deadline_timer.CancelDeadlineTimer -> OwnEffect(CancelTimer(timer:))
   }
 }
 
@@ -575,15 +576,12 @@ pub fn holds_map_messages(status: Status) -> Bool {
 
 /// Whether a firing of the connection's own `timer` is held in `status`, as a message
 /// for a stay is (`holds_map_messages`). The claim made again cancelled the save, quest
-/// reset, quest deadline and item expiry timers and starts them again once answered, so a
-/// firing of one of them there is not held: it is a bug.
+/// reset, quest deadline and item expiry timers (`stay_timers`) and starts them again once
+/// answered, so a firing of one of them there is not held: it is a bug.
 pub fn holds_timer(status status: Status, timer timer: TimerId) -> Bool {
   case status {
     ClaimingSession(resume: ResumeWorld(..), ..) ->
-      timer != save_timer
-      && timer != quest_reset_timer
-      && timer != quest_deadline_timer
-      && timer != item_expiry_timer
+      !list.contains(stay_timers, timer)
     ClaimingSession(resume: ResumeSelect, ..)
     | Summoning(..)
     | MovingItem(..)

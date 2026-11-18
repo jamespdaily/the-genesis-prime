@@ -58,8 +58,8 @@ import genesis_prime/message/disconnect_reason.{
   AccountDisconnected, LostUserServer,
 }
 import genesis_prime/step.{
-  type Now, type Outcome, type TimerId, type WatchId, CancelTimer, LogInfo,
-  LogWarning, OwnEffect, Sessions, StartTimer, TimerId, Unwatch, Watch, WatchId,
+  type Now, type Outcome, type TimerId, type WatchId, LogInfo, LogWarning,
+  OwnEffect, Sessions, StartTimer, TimerId, Unwatch, Watch, WatchId,
 }
 import gleam/list
 
@@ -326,8 +326,8 @@ pub fn own_watch_ended(
 
 /// The connection waits on the claim timer before it claims its account
 /// again, with the place of the client kept. A player in the world is not
-/// saved by the timer meanwhile, and no quest timer fires: the save, quest reset,
-/// quest deadline and item expiry timers are cancelled, and a firing already waiting is dropped
+/// saved by the timer meanwhile, and no quest timer fires: the stay's timers
+/// (`connection_state.stay_timers`) are cancelled, and a firing already waiting is dropped
 /// by the shell. The claim starts them again (`connection/world.claimed_again`).
 fn waiting_to_claim(
   session session: Session,
@@ -336,12 +336,7 @@ fn waiting_to_claim(
 ) -> client_connection.Handled(Session) {
   let cancelled = case resume {
     ResumeSelect -> []
-    ResumeWorld(..) -> [
-      OwnEffect(CancelTimer(timer: connection_state.save_timer)),
-      OwnEffect(CancelTimer(timer: connection_state.quest_reset_timer)),
-      OwnEffect(CancelTimer(timer: connection_state.quest_deadline_timer)),
-      OwnEffect(CancelTimer(timer: connection_state.item_expiry_timer)),
-    ]
+    ResumeWorld(..) -> connection_state.stay_timers_cancelled()
   }
   Done(
     Session(..session, status: WaitingToClaim(holder:, resume:, retries: 0)),
