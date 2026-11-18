@@ -908,6 +908,7 @@ pub fn reward_items_fill_stacks_then_lowest_free_slots_test() -> Nil {
           stack_count: 1,
           random_stats: 0,
           charges: 0,
+          item_flags: 0,
         ),
         NewStack(
           location: 1,
@@ -915,6 +916,7 @@ pub fn reward_items_fill_stacks_then_lowest_free_slots_test() -> Nil {
           stack_count: 1,
           random_stats: 0,
           charges: 0,
+          item_flags: 0,
         ),
         NewStack(
           location: 1,
@@ -922,6 +924,7 @@ pub fn reward_items_fill_stacks_then_lowest_free_slots_test() -> Nil {
           stack_count: 1,
           random_stats: 0,
           charges: 0,
+          item_flags: 0,
         ),
       ]),
       Placed(
@@ -934,6 +937,7 @@ pub fn reward_items_fill_stacks_then_lowest_free_slots_test() -> Nil {
             stack_count: 100,
             random_stats: 0,
             charges: 0,
+            item_flags: 0,
           ),
           NewStack(
             location: 1,
@@ -941,6 +945,7 @@ pub fn reward_items_fill_stacks_then_lowest_free_slots_test() -> Nil {
             stack_count: 40,
             random_stats: 0,
             charges: 0,
+            item_flags: 0,
           ),
         ],
       ),
@@ -969,6 +974,7 @@ pub fn reward_items_fill_stacks_then_lowest_free_slots_test() -> Nil {
           stack_count: 1,
           random_stats: 0,
           charges: 0,
+          item_flags: 0,
         ),
         NewStack(
           location: 1,
@@ -976,6 +982,7 @@ pub fn reward_items_fill_stacks_then_lowest_free_slots_test() -> Nil {
           stack_count: 1,
           random_stats: 0,
           charges: 0,
+          item_flags: 0,
         ),
         NewStack(
           location: 1,
@@ -983,6 +990,7 @@ pub fn reward_items_fill_stacks_then_lowest_free_slots_test() -> Nil {
           stack_count: 1,
           random_stats: 0,
           charges: 0,
+          item_flags: 0,
         ),
         NewStack(
           location: 1,
@@ -990,6 +998,7 @@ pub fn reward_items_fill_stacks_then_lowest_free_slots_test() -> Nil {
           stack_count: 1,
           random_stats: 0,
           charges: 0,
+          item_flags: 0,
         ),
         NewStack(
           location: 1,
@@ -997,6 +1006,7 @@ pub fn reward_items_fill_stacks_then_lowest_free_slots_test() -> Nil {
           stack_count: 1,
           random_stats: 0,
           charges: 0,
+          item_flags: 0,
         ),
       ]),
     ]
@@ -1106,6 +1116,7 @@ pub fn a_quest_reward_with_random_stats_is_made_rolled_test() -> Nil {
           stack_count: 1,
           random_stats: word,
           charges: 0,
+          item_flags: 0,
         ),
       ]),
     ]
@@ -1119,6 +1130,7 @@ pub fn a_quest_reward_with_random_stats_is_made_rolled_test() -> Nil {
       stack_count: 1,
       random_stats: word,
       charges: 3,
+      item_flags: 0,
     )
   let assert quest_turn_in.Saved(items:, rewards:, ..) =
     quest_turn_in.answered(
@@ -1404,6 +1416,7 @@ pub fn a_server_completion_of_a_quest_with_a_reward_choice_gives_only_its_fixed_
           stack_count: 1,
           random_stats: 0,
           charges: 0,
+          item_flags: 0,
         ),
       ]),
     ]
@@ -1422,6 +1435,7 @@ pub fn a_server_completion_of_a_quest_with_a_reward_choice_gives_only_its_fixed_
           stack_count: 1,
           random_stats: 0,
           charges: 0,
+          item_flags: 0,
         ),
       ]),
     )
@@ -1454,7 +1468,14 @@ pub fn a_server_completion_answered_saved_ends_with_0x35c_state_3_test() -> Nil 
   let made =
     list.index_map(turn_in.placed, fn(one, index) {
       let assert [
-        NewStack(location:, bag_index:, stack_count:, random_stats: 0, charges:),
+        NewStack(
+          location:,
+          bag_index:,
+          stack_count:,
+          random_stats: 0,
+          charges:,
+          item_flags: 0,
+        ),
       ] = one.make
         as "one stack of each, the Item2s' counts being 1"
       HeldItem(
@@ -1465,6 +1486,7 @@ pub fn a_server_completion_answered_saved_ends_with_0x35c_state_3_test() -> Nil 
         stack_count:,
         random_stats: 0,
         charges:,
+        item_flags: 0,
       )
     })
   let assert quest_turn_in.Saved(rewards:, then:, ..) =
@@ -1526,4 +1548,27 @@ pub fn a_reward_item_is_made_with_its_rows_charges_test() -> Nil {
     assert list.map(make, fn(stack) { stack.charges }) == made as why
     assert list.length(grow) == grown as why
   })
+}
+
+/// A reward item is made unbound (`character_item.item_flags` is made 0): a bind-on-equip row
+/// given binds only when it is worn (`0x1403c17d0.equip_confirm`). Quest 2909's choice row
+/// 2369 is changed to give Item2 2509, whose bindFlags are changed to bind on equip.
+pub fn a_reward_item_is_made_unbound_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use tables <- support.with_changes(changes: [
+    support.receiving(2909),
+    #("Quest2Reward", 2369, [
+      #("objectId", Integer(2509)),
+      #("objectAmount", Integer(1)),
+    ]),
+    #("Item2", 2509, [#("bindFlags", Integer(16))]),
+  ])
+  let scene =
+    support.Scene(..support.scene(quest_id: 2909), reward_id: 2369, items: [])
+  let #(turn_in, _) = support.asked(scene:, tables:)
+  let assert Ok(Placed(make:, ..)) =
+    list.find(turn_in.placed, fn(placed) { placed.item2_id == Item2Id(2509) })
+    as "the reward item is placed"
+  assert list.map(make, fn(stack) { stack.item_flags }) == [0]
+    as "the bind-on-equip reward is made with no flags"
 }

@@ -111,6 +111,12 @@
 ////   The client's sender (`opcode.0x149`, `0x1403c1360`) also sends nothing for
 ////   a worn bag and for an item in a trade; a delete of a worn bag (equipped 17
 ////   to 20) is answered 1 Params with guid 0, and there is no trade.
+//// - **Binding.** Each item a move puts in a worn slot (the moved one and, in a swap, the
+////   displaced one) that binds on equip and is not soulbound gets the soulbound bit in the
+////   same statement as the move (`item_flags.set_by_move`, `0x1403c17d0.equip_confirm`);
+////   the client binds nothing itself. The store's `ItemsSaved` is answered with the move's
+////   own 0x569 or 0x568, then a 0x567 with the whole byte for each bound item
+////   (`opcode.0x567`), and the held items carry the byte.
 //// - **A bag taken off** shrinks the inventory: the items held past the new end
 ////   go, in index order, to the lowest free slots below it, each told with a
 ////   0x569 before the answer to the move (a server choice: the client moves
@@ -121,6 +127,7 @@
 import genesis_prime/client_connection.{type Undecoded}
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/equip_requirement.{type Wearer}
+import genesis_prime/game/item_flags
 import genesis_prime/game/item_property
 import genesis_prime/game/player_life.{type Life}
 import genesis_prime/message/float32
@@ -130,6 +137,7 @@ import genesis_prime/message/item_added.{ItemAdded}
 import genesis_prime/message/item_charges_changed.{ItemChargesChanged}
 import genesis_prime/message/item_count_changed.{ItemCountChanged}
 import genesis_prime/message/item_delete
+import genesis_prime/message/item_flags_changed.{ItemFlagsChanged}
 import genesis_prime/message/item_move
 import genesis_prime/message/item_moved.{ItemMoved}
 import genesis_prime/message/item_place.{type ItemPlace, ItemPlace}
@@ -907,30 +915,42 @@ fn moving(
 ) -> Result(Moving, Stop) {
   let from = move.from
   let to = move.to
+  use first_bits <- result.try(flags_set(tables:, item:, to: stored(to)))
   let first =
     store.ItemMove(
       item_guid: item.item_guid,
       from: stored(from),
       to: stored(to),
+      flags_set: first_bits,
     )
-  let #(moves, answer) = case destination {
-    Error(Nil) -> #([first], frame_of_move(guid: item.item_guid, place: to))
-    Ok(other) -> #(
-      [
-        first,
-        store.ItemMove(
-          item_guid: other.item_guid,
-          from: stored(to),
-          to: stored(from),
-        ),
-      ],
-      frame_of_swap(first: #(item.item_guid, to), second: #(
-        other.item_guid,
-        from,
-      )),
-    )
-  }
-  let moved = after(items:, item:, from:, to:, destination:)
+  use #(moves, answer) <- result.try(case destination {
+    Error(Nil) -> Ok(#([first], frame_of_move(guid: item.item_guid, place: to)))
+    Ok(other) -> {
+      use second_bits <- result.map(flags_set(
+        tables:,
+        item: other,
+        to: stored(from),
+      ))
+      #(
+        [
+          first,
+          store.ItemMove(
+            item_guid: other.item_guid,
+            from: stored(to),
+            to: stored(from),
+            flags_set: second_bits,
+          ),
+        ],
+        frame_of_swap(first: #(item.item_guid, to), second: #(
+          other.item_guid,
+          from,
+        )),
+      )
+    }
+  })
+  let moved =
+    after(items:, item:, from:, to:, destination:)
+    |> flagged(moves:)
   use current <- result.try(size(items:, tables:) |> result.map_error(Broken))
   use remaining <- result.try(
     size(items: moved, tables:) |> result.map_error(Broken),
@@ -950,6 +970,7 @@ fn moving(
             item_guid: held.item_guid,
             from: store.ItemPlace(location: in_bags, bag_index: held.bag_index),
             to: store.ItemPlace(location: in_bags, bag_index: index),
+            flags_set: 0,
           )
         }),
       ),
@@ -961,7 +982,7 @@ fn moving(
             place: ItemPlace(location: in_bags, bag_index: index),
           )
         }),
-        [answer],
+        [answer, ..flag_frames(moves:, items: moved)],
       ),
     ),
     items: list.fold(displaced, moved, fn(held_items, displacement) {
@@ -973,6 +994,54 @@ fn moving(
       )
     }),
   ))
+}
+
+/// The flag bits a move of the item to the place adds to its flags byte
+/// (`item_flags.set_by_move`); an item whose row the tables lack is the server's own
+/// state broken.
+fn flags_set(
+  tables tables: table_store.Tables,
+  item item: HeldItem,
+  to to: store.ItemPlace,
+) -> Result(Int, Stop) {
+  item_flags.set_by_move(tables:, item:, to:)
+  |> result.replace_error(Broken(NoItemRow(item2_id: item.item2_id)))
+}
+
+/// The items with the flag bits of each move set in the flags byte of its item.
+fn flagged(
+  items items: List(HeldItem),
+  moves moves: List(store.ItemMove),
+) -> List(HeldItem) {
+  list.fold(moves, items, fn(held, move) {
+    changed(items: held, guid: move.item_guid, with: fn(item) {
+      store.HeldItem(
+        ..item,
+        item_flags: int.bitwise_or(item.item_flags, move.flags_set),
+      )
+    })
+  })
+}
+
+/// The 0x567 of each item whose move set a bit, after the move's own answer, with the
+/// whole byte the item holds once the move is made (`items`).
+fn flag_frames(
+  moves moves: List(store.ItemMove),
+  items items: List(HeldItem),
+) -> List(Frame) {
+  list.filter_map(moves, fn(move) {
+    case move.flags_set {
+      0 -> Error(Nil)
+      _ ->
+        list.find(items, fn(item) { item.item_guid == move.item_guid })
+        |> result.map(fn(item) {
+          item_flags_changed_frame(
+            guid: item.item_guid,
+            item_flags: item.item_flags,
+          )
+        })
+    }
+  })
 }
 
 /// The items a smaller inventory leaves past its end, in index order, each with
@@ -1131,10 +1200,27 @@ fn failed(guid guid: Int, code code: Int) -> Frame {
   Frame(message_id: item_action_failed.message_id, body:)
 }
 
+/// 0x111 for a stored item, added for `reason`: its every stored word goes to the frame
+/// (see `item_added_frame`).
+pub fn held_item_frame(item item: store.HeldItem, reason reason: Int) -> Frame {
+  item_added_frame(
+    item_guid: item.item_guid,
+    item_id: item.item2_id.value,
+    location: item.location,
+    bag_index: item.bag_index,
+    stack_count: item.stack_count,
+    random_stats: item.random_stats,
+    charges: item.charges,
+    item_flags: item.item_flags,
+    reason:,
+  )
+}
+
 /// 0x111 for an item the character holds, with full durability, added for `reason`,
-/// carrying the item's random-stat word as stored (`opcode.0x111.shared_item_random_stats`)
-/// and the charges it has left (`opcode.0x111.charges`; 0 for an ability, which has none). Every other value the client's code does not
-/// name is 0 (`opcode.0x111.shared_item_unnamed`), the lists empty.
+/// carrying the item's random-stat word as stored (`opcode.0x111.shared_item_random_stats`),
+/// the charges it has left (`opcode.0x111.charges`; 0 for an ability, which has none) and
+/// its flags byte (`opcode.0x111.shared_item_unnamed`; 0 for an ability). Every other value
+/// the client's code does not name is 0 (`opcode.0x111.shared_item_unnamed`), the lists empty.
 pub fn item_added_frame(
   item_guid item_guid: Int,
   item_id item_id: Int,
@@ -1143,6 +1229,7 @@ pub fn item_added_frame(
   stack_count stack_count: Int,
   random_stats random_stats: Int,
   charges charges: Int,
+  item_flags item_flags: Int,
   reason reason: Int,
 ) -> Frame {
   let assert Ok(body) =
@@ -1161,7 +1248,7 @@ pub fn item_added_frame(
           field_10: 0,
           durability: float32.to_bits(1.0),
           dye_channels: 0,
-          field_13: 0,
+          item_flags:,
           refund_window_ms: 0,
           field_15: 0,
           soulbound_trade_window_ms: 0,
@@ -1256,8 +1343,8 @@ pub fn answered(
       }
     ItemMade(item_guid:) ->
       case moving.change {
-        Split(source:, count:, to:) -> #(
-          list.append(moving.items, [
+        Split(source:, count:, to:) -> {
+          let made =
             store.HeldItem(
               item_guid:,
               item2_id: source.item2_id,
@@ -1266,26 +1353,17 @@ pub fn answered(
               stack_count: count,
               random_stats: source.random_stats,
               charges: source.charges,
-            ),
-          ]),
-          [
+              item_flags: source.item_flags,
+            )
+          #(list.append(moving.items, [made]), [
             Send(count_changed_frame(
               guid: source.item_guid,
               count: source.stack_count - count,
               reason: stack_split,
             )),
-            Send(item_added_frame(
-              item_guid:,
-              item_id: source.item2_id.value,
-              location: to.location,
-              bag_index: to.bag_index,
-              stack_count: count,
-              random_stats: source.random_stats,
-              charges: source.charges,
-              reason: stack_split,
-            )),
-          ],
-        )
+            Send(held_item_frame(item: made, reason: stack_split)),
+          ])
+        }
         Moved(..) | Merged(..) | Deleted(..) ->
           panic as "the store answers only a split with ItemMade"
       }
@@ -1334,6 +1412,18 @@ pub fn count_changed_frame(
     item_count_changed.encode(ItemCountChanged(item_guid: guid, count:, reason:))
     as "a guid, a count and a reason of 6 bits fit 0x17F"
   Frame(message_id: item_count_changed.message_id, body:)
+}
+
+/// The 0x567 that gives a held item's flags byte its new value, whole (`opcode.0x567`); the
+/// client raises no event for it, so no open tooltip is redrawn.
+fn item_flags_changed_frame(
+  guid guid: Int,
+  item_flags item_flags: Int,
+) -> Frame {
+  let assert Ok(body) =
+    item_flags_changed.encode(ItemFlagsChanged(item_guid: guid, item_flags:))
+    as "a guid of 64 bits and a flags byte of 8 bits fit 0x567"
+  Frame(message_id: item_flags_changed.message_id, body:)
 }
 
 /// The 0xCA that gives a held item's charges their new count (`opcode.0xca`); the client
@@ -1461,6 +1551,7 @@ fn open(
           stack_count: added,
           random_stats: 0,
           charges:,
+          item_flags: 0,
         ),
         ..made
       ])

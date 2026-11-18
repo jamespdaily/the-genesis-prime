@@ -1300,3 +1300,5 @@ Spell4	77452	Level Up tier 46	level_up_test, spell_plan_full_screen_test
 Spell4	77453	Level Up tier 47	level_up_test, spell_plan_full_screen_test
 Spell4	77454	Level Up tier 48	level_up_test, spell_plan_full_screen_test
 Spell4	77455	Level Up tier 49	level_up_test, spell_plan_full_screen_test
+Quest2	10510	Learning to Shop: a quest behind a title check, with a store purchase objective	prerequisite_title_test, quest_accept_test, quest_accept_tables_test, game_connection_quest_test
+QuestObjective	21267	objective 0 of quest 10510 (a purchase in the In-Game Store)	content_load_test, objective_hidden_test, game_connection_quest_test

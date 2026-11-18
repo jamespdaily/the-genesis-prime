@@ -26,11 +26,9 @@
 import character_tables
 import client_tables
 import content_support
-import database_support
 import experience_support
 import fixture_tables
 import game_connection_support as connection_support
-import genesis_prime/content/held_objective as content_held_objective
 import genesis_prime/game/communicator
 import genesis_prime/game/objective.{
   type Advanced, Advanced, CompleteByServer, SendProgress, SendState,
@@ -685,6 +683,7 @@ fn held_for(
       stack_count: objective.count,
       random_stats: 0,
       charges: 0,
+      item_flags: 0,
     )
   })
 }
@@ -955,15 +954,6 @@ fn visible_rows(
   })
 }
 
-/// The QuestObjective ids the migrated database holds as held.
-fn held_ids() -> List(Int) {
-  let database = database_support.new_database(on: database_support.shared())
-  let assert Ok(rows) =
-    content_held_objective.rows(db: content_support.connect(database:))
-    as "the query ran"
-  list.map(rows, fn(row) { row.objective_id })
-}
-
 fn objective_at(quest quest: quest_log.Quest, index index: Int) -> Int {
   let assert Ok(objective) = list.drop(quest.objectives, index) |> list.first
     as "the index is one of the quest's objectives"
@@ -974,7 +964,7 @@ pub fn every_contentfinder_instance_row_is_held_test() -> Nil {
   use <- owned_test.run(300_000)
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
-  let held = set.from_list(held_ids())
+  let held = content_support.held_objective_ids()
   let rows = visible_rows(tables:)
   // Quest2.questContentFinderTypeEnum 1 to 4 name an instance, an adventure, a dungeon or
   // a match the quest is done in; 5 names "Equip the item" quests of no event.
@@ -1002,7 +992,7 @@ pub fn every_stand_in_row_completes_and_every_held_row_stays_open_test() -> Nil 
   use <- owned_test.run(300_000)
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
-  let held = held_ids()
+  let held = set.to_list(content_support.held_objective_ids())
   // For each quest with a visible stand-in, a player having done every other required
   // objective that is open, until none more is: the free stand-ins must all be sent and
   // the held ones none, over as many settles as the player's work between them needs.
@@ -1032,8 +1022,9 @@ pub fn every_stand_in_row_completes_and_every_held_row_stays_open_test() -> Nil 
     })
   let completed = list.filter(results, fn(row) { !row.2 })
   let kept = list.filter(results, fn(row) { row.2 })
-  assert list.length(completed) == 389 as "visible rows that are not held: 389"
-  assert list.length(kept) == 130 as "held rows: 130"
+  assert list.length(completed) == 388 as "visible rows that are not held: 388"
+  assert list.length(kept) == 131
+    as "held rows: 131 (the 15 marked rows of migration 0039 are not among these 519)"
   let wrong_open = list.filter(completed, fn(row) { !row.3 })
   assert wrong_open == []
     as {
@@ -1196,6 +1187,7 @@ pub fn the_mining_expedition_equip_objective_completes_after_the_collects_test()
       stack_count: 5,
       random_stats: 0,
       charges: 0,
+      item_flags: 0,
     )
   let done = settled_with(log:, tables:, items: [five], held: [])
   assert done.effects
@@ -1224,6 +1216,70 @@ pub fn a_held_script_stays_open_after_every_settle_test() -> Nil {
     as "a later settle leaves it open too"
   assert quest_log.stored_state(log: second.log, quest_id: nature) == 1
     as "the quest is still Accepted"
+}
+
+pub fn a_store_purchase_objective_completes_as_a_stand_in_unless_it_is_held_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Quest2 10510 has one objective, QuestObjective 21267: type 5, flags 0x40 (visible,
+  // required), count 1, no marker and no creature link, whose text asks for a purchase in
+  // the In-Game Store. The client completes no scripted objective (`QuestObjective.type.5`)
+  // and a quest with a required objective open is not Achieved (`0x1405fbc40`).
+  let tables = character_tables.shared()
+  let assert Ok(quest) = quest_log.quest_of(tables:, id: 10_510)
+    as "the fixture holds quest 10510"
+  let assert [store_purchase] = quest.objectives
+    as "quest 10510 has the one objective"
+  assert store_purchase.objective_id == 21_267
+  assert objective.script_of(
+      tables:,
+      quest_id: 10_510,
+      index: 0,
+      objective: store_purchase,
+      arrival_objectives: set.new(),
+    )
+    == objective.StandInWithQuest
+    as "a visible required unmarked unlinked scripted objective is the stand-in's"
+  let log =
+    quest_support.log_of(rows: [quest_support.untouched(quest_id: 10_510)])
+  let completed = [
+    SendProgress(quest_id: 10_510, objective_index: 0, progress: 1),
+    SendState(quest_id: 10_510, state: 2),
+    CompleteByServer(quest_id: 10_510),
+  ]
+  // Each case: the held ids, and the effects of two settles in a row.
+  let cases = [
+    #(
+      [],
+      completed,
+      [],
+      "with no hold the stand-in completes it with the quest",
+    ),
+    #(
+      [21_267],
+      [],
+      [],
+      "a held objective stays open at the first settle and the next",
+    ),
+    #(
+      [9658],
+      completed,
+      [],
+      "a hold is of one objective: another's does not keep 21267 open",
+    ),
+  ]
+  list.each(cases, fn(case_) {
+    let #(held, first_effects, second_effects, reason) = case_
+    let first = settled_held(log:, tables:, held:)
+    assert first.effects == first_effects as reason
+    let second = settled_held(log: first.log, tables:, held:)
+    assert second.effects == second_effects as reason
+    assert quest_log.stored_state(log: second.log, quest_id: 10_510)
+      == case first_effects {
+        [] -> 1
+        _ -> 2
+      }
+      as reason
+  })
 }
 
 pub fn a_hidden_and_a_visible_script_in_one_quest_both_complete_test() -> Nil {

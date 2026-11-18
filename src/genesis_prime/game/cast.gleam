@@ -3349,7 +3349,7 @@ fn all_ended(cast cast: State, now now: Now) -> #(State, List(Effect)) {
   // A lingering cast ends with its 0x7fe when its caster dies: the server's choice,
   // since the client has no path that ends a buff on a unit's death
   // (`cast.target_node_end`).
-  let lingering_ended =
+  let lingering_finished =
     dict.to_list(cast.lingering)
     |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
     |> list.flat_map(fn(entry) {
@@ -3365,7 +3365,7 @@ fn all_ended(cast cast: State, now now: Now) -> #(State, List(Effect)) {
     list.flatten([
       fires_dropped,
       ended,
-      lingering_ended,
+      lingering_finished,
       modifiers_ended,
       cancelled,
     ]),

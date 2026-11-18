@@ -1080,6 +1080,7 @@ fn stack_of_14838(slot slot: Int, count count: Int) -> store.HeldItem {
     stack_count: count,
     random_stats: 0,
     charges: 0,
+    item_flags: 0,
   )
 }
 
@@ -1224,6 +1225,7 @@ pub fn buying_a_collected_item_sends_its_progress_test() -> Nil {
                 stack_count: 1,
                 random_stats: 0,
                 charges: 0,
+                item_flags: 0,
               ),
             ]),
           ),
@@ -1401,6 +1403,7 @@ fn seeing_a_slaver_shack_holding_the_grenade() -> game_connection.State {
           stack_count: 1,
           random_stats: 0,
           charges: 0,
+          item_flags: 0,
         ),
       ],
       quests: [quest_support.accepted(quest_id: 4743, progress: [0, 0, 0, 0])],

@@ -781,6 +781,7 @@ fn selling_state() -> game_connection.State {
             stack_count: 5,
             random_stats: 0,
             charges: 0,
+            item_flags: 0,
           ),
         ],
       ),
@@ -859,7 +860,12 @@ pub fn a_sell_sent_while_the_store_works_is_held_and_taken_after_test() -> Nil {
         FromStore(
           store.ForItems(
             store.Sold(amount: 102, words: [
-              store.SoldWord(item_guid: 500, random_stats: 0, charges: 0),
+              store.SoldWord(
+                item_guid: 500,
+                random_stats: 0,
+                charges: 0,
+                item_flags: 0,
+              ),
             ]),
           ),
         ),
@@ -934,7 +940,12 @@ fn sold(
       FromStore(
         store.ForItems(
           store.Sold(amount: credits, words: [
-            store.SoldWord(item_guid: 500, random_stats: 0, charges: 0),
+            store.SoldWord(
+              item_guid: 500,
+              random_stats: 0,
+              charges: 0,
+              item_flags: 0,
+            ),
           ]),
         ),
       ),
@@ -1031,6 +1042,7 @@ pub fn the_buyback_list_survives_a_world_change_and_is_empty_after_entering_the_
           stack_count: 5,
           random_stats: 0,
           charges: 0,
+          item_flags: 0,
         ),
       ],
     )
@@ -1145,7 +1157,12 @@ pub fn selling_a_worn_item_sends_0x148_then_0x933_and_0x93a_and_tells_each_viewe
         FromStore(
           store.ForItems(
             store.Sold(amount: 150, words: [
-              store.SoldWord(item_guid: 1, random_stats: 0, charges: 0),
+              store.SoldWord(
+                item_guid: 1,
+                random_stats: 0,
+                charges: 0,
+                item_flags: 0,
+              ),
             ]),
           ),
         ),
@@ -1253,6 +1270,7 @@ pub fn two_buys_of_a_random_stat_item_on_one_connection_make_different_words_tes
                   stack_count: stack.stack_count,
                   random_stats: stack.random_stats,
                   charges: 0,
+                  item_flags: 0,
                 ),
               ]),
             ),

@@ -222,6 +222,7 @@ pub fn novice_items(character character: Character) -> List(HeldItem) {
           stack_count: 1,
           random_stats: 0,
           charges: 0,
+          item_flags: 0,
         )
       })
     Error(Nil) -> []

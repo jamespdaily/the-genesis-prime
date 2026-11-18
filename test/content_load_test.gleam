@@ -247,12 +247,12 @@ pub fn the_content_load_puts_the_held_objectives_test() -> Nil {
   let #(loaded, key) = content_support.load(database:)
   assert loaded == Ok(Nil)
   let held = content_held_objective.held(key:)
-  assert set.size(held) == 145
-    as "migrations 0034 and 0039 seed 145 held_objective rows"
-  assert list.all([12_547, 17_882, 21_536, 19_357], fn(objective) {
+  assert set.size(held) == 146
+    as "migrations 0034, 0039 and 0041 seed 146 held_objective rows"
+  assert list.all([12_547, 17_882, 21_536, 19_357, 21_267], fn(objective) {
     set.contains(held, objective)
   })
-    as "migration 0034's first row (12547, an instance run), a pvp_match row (17882) and its last row (21536), and migration 0039's 19357"
+    as "migration 0034's first row (12547, an instance run), a pvp_match row (17882) and its last row (21536), migration 0039's 19357 and migration 0041's 21267 (a store purchase, which the load accepts: type 5, visible, required, unlinked)"
   assert !set.contains(held, 12_548)
     as "an objective migration 0034 does not list is not held"
 }
