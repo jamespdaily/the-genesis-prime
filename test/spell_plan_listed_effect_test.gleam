@@ -69,30 +69,11 @@ const one_point_three = 1_067_869_798
 /// 0.25 as row 229304 holds it.
 const a_quarter = 1_048_576_000
 
-fn planned(row row: List(Cell)) -> spell_plan.Spell {
-  let assert Ok(spell) =
-    spell_tables.planned_strike(rows: spell_tables.rows_with_effect(effect: row))
-    as "the plan builds"
-  spell
-}
-
 fn plan_error(row row: List(Cell)) -> spell_plan.PlanError {
   let assert Error(error) =
     spell_tables.planned_strike(rows: spell_tables.rows_with_effect(effect: row))
     as "the build fails"
   error
-}
-
-/// The lasting row of the planted effect id, which the plan holds or not. A planted
-/// row takes an id no client row holds, since it would replace the client's row.
-fn lasting_row(
-  spell spell: spell_plan.Spell,
-  id id: Int,
-) -> Result(spell_plan.Lasting, Nil) {
-  list.find(
-    spell_plan.payloads(spell:, as_kind: spell_plan.as_lasting),
-    fn(row) { row.effect_id == Spell4EffectsId(id) },
-  )
 }
 
 // ---- the decode ----
@@ -129,7 +110,7 @@ pub fn a_scale_row_aimed_at_the_caster_is_a_lasting_row_with_its_columns_test() 
   use <- owned_test.run(60_000)
   // 109482 as the client holds it: caster, 8000 ms, no flags.
   let spell =
-    planned(
+    spell_tables.planned_with_row(
       row: spell_tables.effect_row_with(
         id: 99_071,
         effect_type: 18,
@@ -142,7 +123,7 @@ pub fn a_scale_row_aimed_at_the_caster_is_a_lasting_row_with_its_columns_test() 
         ],
       ),
     )
-  assert lasting_row(spell:, id: 99_071)
+  assert spell_tables.lasting_row_of(spell:, effect_id: 99_071)
     == Ok(spell_plan.Lasting(
       effect_id: Spell4EffectsId(99_071),
       phase_flags: -1,
@@ -154,7 +135,7 @@ pub fn a_scale_row_aimed_at_the_caster_is_a_lasting_row_with_its_columns_test() 
     as "the delay and durationTime are the row's; the row's emmComparison 0 and emmValue 0 are the tag"
   // The same row with a delay, flags bit 2, one phase and a caster prerequisite.
   let spell =
-    planned(
+    spell_tables.planned_with_row(
       row: spell_tables.effect_row_with(
         id: 99_101,
         effect_type: 18,
@@ -167,7 +148,7 @@ pub fn a_scale_row_aimed_at_the_caster_is_a_lasting_row_with_its_columns_test() 
         ],
       ),
     )
-  let assert Ok(row) = lasting_row(spell:, id: 99_101)
+  let assert Ok(row) = spell_tables.lasting_row_of(spell:, effect_id: 99_101)
   assert row.row
     == LastingRow(delay_ms: 250, duration_ms: 0, until_removed: True)
   assert row.phase_flags == 2
@@ -199,7 +180,7 @@ pub fn a_scale_or_ravel_signal_row_is_held_for_each_aim_the_plan_reads_test() ->
   list.each([18, 81], fn(effect_type) {
     list.each(aims, fn(aim) {
       let spell =
-        planned(
+        spell_tables.planned_with_row(
           row: spell_tables.effect_row_with(
             id: 99_102,
             effect_type:,
@@ -207,7 +188,8 @@ pub fn a_scale_or_ravel_signal_row_is_held_for_each_aim_the_plan_reads_test() ->
             columns: [#("durationTime", Integer(1000))],
           ),
         )
-      let assert Ok(row) = lasting_row(spell:, id: 99_102)
+      let assert Ok(row) =
+        spell_tables.lasting_row_of(spell:, effect_id: 99_102)
       assert row.aim == aim.1
         as "Spell4Effects.targetFlags: 1 the caster, 2 the primary target, 4 the area, 6 both"
     })
@@ -218,7 +200,7 @@ pub fn a_ravel_signal_row_behind_a_target_prerequisite_is_gated_on_the_target_te
   use <- owned_test.run(60_000)
   // 91018: caster and target 11311 (Spell4Effects.effectType.81).
   let spell =
-    planned(
+    spell_tables.planned_with_row(
       row: spell_tables.effect_row_with(
         id: 99_073,
         effect_type: 81,
@@ -230,7 +212,7 @@ pub fn a_ravel_signal_row_behind_a_target_prerequisite_is_gated_on_the_target_te
         ],
       ),
     )
-  let assert Ok(row) = lasting_row(spell:, id: 99_073)
+  let assert Ok(row) = spell_tables.lasting_row_of(spell:, effect_id: 99_073)
   let assert GatedOnTarget(prerequisite: gate) = row.condition
   assert prerequisite.id(prerequisite: gate) == PrerequisiteId(11_311)
     as "an effect behind a target apply prerequisite is checked for each unit it reaches"
@@ -270,7 +252,7 @@ pub fn a_property_conversion_row_is_a_modifier_that_converts_47_into_60_at_a_qua
   use <- owned_test.run(60_000)
   // 229304: 47 to 60 at 0x3e800000, flags 2, orderIndex 4.
   let spell =
-    planned(
+    spell_tables.planned_with_row(
       row: spell_tables.effect_row_with(
         id: 99_074,
         effect_type: 145,
@@ -380,7 +362,7 @@ pub fn onslaughts_42908_lists_109482_on_the_caster_for_8_seconds_test() -> Nil {
   // Spell4Base 30828 is the Warrior's innate active (Class 1); 46867 reaches 42908
   // through its ungated Proxy 127637.
   let spell = in_tree(base: 30_828, spell4_id: 42_908)
-  assert lasting_row(spell:, id: 109_482)
+  assert spell_tables.lasting_row_of(spell:, effect_id: 109_482)
     == Ok(spell_plan.Lasting(
       effect_id: Spell4EffectsId(109_482),
       phase_flags: -1,
@@ -397,7 +379,7 @@ pub fn the_stalkers_stealth_child_holds_91018_gated_on_caster_and_target_prerequ
   use <- unitest.guard(client_tables.present())
   // Spell4Base 30075 is the Stalker's innate active (Class 5); 46073 starts 38784.
   let spell = in_tree(base: 30_075, spell4_id: 38_784)
-  let assert Ok(row) = lasting_row(spell:, id: 91_018)
+  let assert Ok(row) = spell_tables.lasting_row_of(spell:, effect_id: 91_018)
   let assert GatedOnCasterAndTarget(caster: [caster], target:) = row.condition
   assert prerequisite.id(prerequisite: caster) == PrerequisiteId(11_311)
     as "`table_rows -- Spell4Effects spellId=38784`: prerequisiteIdCasterApply 11311"
@@ -471,7 +453,7 @@ pub fn the_plans_hold_every_type_18_81_and_145_row_of_the_trees_test() -> Nil {
 
 /// The lasting row of this id in the spell's plan.
 fn held_row(spell spell: spell_plan.Spell, id id: Int) -> spell_plan.Lasting {
-  let assert Ok(row) = lasting_row(spell:, id:)
+  let assert Ok(row) = spell_tables.lasting_row_of(spell:, effect_id: id)
     as "the plan lists the row among the spell's lasting rows"
   row
 }
@@ -495,7 +477,7 @@ pub fn an_item_visual_swap_row_is_read_for_the_caster_and_for_the_primary_target
 pub fn an_item_visual_swap_row_aimed_at_the_caster_with_flags_2_is_a_lasting_row_held_until_removed_test() -> Nil {
   use <- owned_test.run(60_000)
   let spell = spell_tables.client_spell(spell4_id: 45_726)
-  assert lasting_row(spell:, id: 106_570)
+  assert spell_tables.lasting_row_of(spell:, effect_id: 106_570)
     == Ok(spell_plan.Lasting(
       effect_id: Spell4EffectsId(106_570),
       phase_flags: 1,
@@ -622,7 +604,7 @@ pub fn an_item_visual_swap_row_behind_a_target_class_prerequisite_is_gated_on_th
   // Prerequisite 3 is one condition of type 3, comparison 1, value 1
   // (`table_rows -- Prerequisite 3`).
   let spell =
-    planned(
+    spell_tables.planned_with_row(
       row: spell_tables.effect_row_with(
         id: 99_109,
         effect_type: 76,

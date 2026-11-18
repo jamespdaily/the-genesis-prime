@@ -264,9 +264,16 @@ pub type Effect {
   /// The last go of an activate cast: the player activated the creature or static object
   /// `unit_id`, of the Creature2 row `creature_id`, which lived when the press started the
   /// cast or did not (`alive_at_press`). The cast is an item's when `by_item`, the
-  /// creature's own activate cast otherwise. An item's cast of a spell with no Activate row
+  /// creature's own activate cast otherwise; `cast_id` is that cast, none for the use of a unit
+  /// with no activate spell, which casts nothing. An item's cast of a spell with no Activate row
   /// raises none: the Activate effect is what makes a use.
-  Activated(unit_id: Int, creature_id: Int, alive_at_press: Bool, by_item: Bool)
+  Activated(
+    unit_id: Int,
+    creature_id: Int,
+    alive_at_press: Bool,
+    by_item: Bool,
+    cast_id: Option(Int),
+  )
   /// The first go of a cast of a quest button's spell (`cast.shortcut`), by its Spell4 id, and
   /// the unit the press aimed it at: none for a spell that takes the caster.
   ShortcutCast(spell4_id: Int, target: Option(PressedAt))
@@ -654,9 +661,10 @@ pub type Resolution {
 
 /// What a cast is to its ability's threshold.
 pub type Role {
-  /// A child a Proxy started: no threshold is touched. It counts its QuestAdvanceObjective
-  /// rows with the use or cast of the cast that started it, `counted_with` (none for a child a
-  /// proc fire started).
+  /// A child a Proxy started, or a cast the server starts of its own for no press (the level-up
+  /// fanfare): no threshold is touched. It counts its QuestAdvanceObjective rows with the use
+  /// or cast of the cast that started it, `counted_with` (none for a child a proc fire or the
+  /// server started).
   Child(counted_with: AdvanceWith)
   /// The ability's own spell, which opens a threshold when its method has one.
   Base(ability: Spell, bag_spell: Spell4Id)

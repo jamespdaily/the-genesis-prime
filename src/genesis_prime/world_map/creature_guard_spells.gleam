@@ -137,6 +137,7 @@ fn applied(kind kind: effect_kind.Kind) -> Bool {
     | effect_kind.Scale
     | effect_kind.ItemVisualSwap
     | effect_kind.PropertyConversion
+    | effect_kind.FullScreenEffect
     | effect_kind.DisguiseOutfit
     | effect_kind.Absorption
     | effect_kind.Activate
@@ -181,6 +182,7 @@ fn listed(effect effect: Spell4Effects) -> Result(OpeningEffect, Nil) {
     | effect_kind.Scale
     | effect_kind.ItemVisualSwap
     | effect_kind.PropertyConversion
+    | effect_kind.FullScreenEffect
     | effect_kind.DisguiseOutfit
     | effect_kind.Absorption
     | effect_kind.Activate

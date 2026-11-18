@@ -64,7 +64,8 @@
 ////   delayTime is not waited for (the server's choice: 10 ms in each kit row, under
 ////   a client frame).
 //// - **The lasting effects.** A Fluff effect (`Spell4Effects.effectType.17`), a Scale
-////   effect (18), an ItemVisualSwap effect (76) and a RavelSignal effect (81) of a tree are each a `Lasting` row: the unit
+////   effect (18), an ItemVisualSwap effect (76), a RavelSignal effect (81) and a FullScreenEffect
+////   effect (95, `Spell4Effects.effectType.95`) of a tree are each a `Lasting` row: the unit
 ////   its targetFlags aim at, its delay, durationTime and flags bit 2, which give its spell a life there (genesis_prime/game/lasting). A
 ////   SpellForceRemove effect (`Spell4Effects.effectType.80`) is a `ForceRemove` row:
 ////   dataBits00 picks a spell group (1), a Spell4 (2) or a Spell4Base (3) by
@@ -1239,7 +1240,8 @@ pub type CrowdControl {
 }
 
 /// A Fluff effect (`Spell4Effects.effectType.17`), Scale effect (18), ItemVisualSwap effect
-/// (76), RavelSignal effect (81) or area ShieldOverload effect (64) of a spell: it names the unit it aims at in the go's target info and gives the
+/// (76), RavelSignal effect (81), area ShieldOverload effect (64) or caster-aimed FullScreenEffect
+/// effect (95) of a spell: it names the unit it aims at in the go's target info and gives the
 /// spell a life there, from its `row`, in the phases of `phase_flags`, when its
 /// `condition` holds (its caster apply prerequisite against the caster, its target
 /// apply prerequisite against each unit the row reaches), and when its `tag` holds for the points
@@ -1247,7 +1249,8 @@ pub type CrowdControl {
 /// resizes the unit of a Scale effect itself (`Spell4Effects.effectType.18`), swaps and
 /// restores the visual of an ItemVisualSwap effect itself (`Spell4Effects.effectType.76`),
 /// and a RavelSignal effect is only a life (`Spell4Effects.effectType.81`); the client marks a
-/// ShieldOverload unit itself (`Spell4Effects.effectType.64`).
+/// ShieldOverload unit itself (`Spell4Effects.effectType.64`), and draws a FullScreenEffect itself
+/// (`Spell4Effects.effectType.95`).
 pub type Lasting {
   Lasting(
     effect_id: Spell4EffectsId,
@@ -1408,7 +1411,7 @@ pub type Kind {
   ProxyEffect(proxy: Proxy)
   /// A resource gain the caster is given at a go (`Gain`).
   GainEffect(gain: Gain)
-  /// A Fluff, Scale, ItemVisualSwap, RavelSignal or area ShieldOverload row, which gives the spell a life on a unit (`Lasting`).
+  /// A Fluff, Scale, ItemVisualSwap, RavelSignal, area ShieldOverload or caster-aimed FullScreenEffect row, which gives the spell a life on a unit (`Lasting`).
   LastingEffect(lasting: Lasting)
   /// A SpellForceRemove row, which takes casts off a unit (`ForceRemove`).
   RemoveEffect(remove: ForceRemove)
@@ -3508,6 +3511,7 @@ fn spell_of(
           effect_kind.ItemVisualSwap,
           effect_kind.RavelSignal,
           effect_kind.ShieldOverload,
+          effect_kind.FullScreenEffect,
         ],
         [effect_kind.ForceRemove],
         [effect_kind.CrowdControl],
@@ -4141,6 +4145,7 @@ pub fn modifier_of(
     | effect_kind.Scale
     | effect_kind.ItemVisualSwap
     | effect_kind.RavelSignal
+    | effect_kind.FullScreenEffect
     | effect_kind.Activate
     | effect_kind.Immunity
     | effect_kind.Despawn
@@ -5268,7 +5273,7 @@ fn kind_reading(
     effect_kind.ItemVisualSwap ->
       lasting_reading(tables:, place:, spell4_id:, effect:)
       |> result.map(held_while_delayed(reading: _, effect:))
-    effect_kind.ShieldOverload -> {
+    effect_kind.ShieldOverload | effect_kind.FullScreenEffect -> {
       use <- when_reached(reaches:)
       lasting_reading(tables:, place:, spell4_id:, effect:)
     }
@@ -5635,7 +5640,8 @@ fn held_while_delayed(
   }
 }
 
-/// A Fluff, Scale, ItemVisualSwap, RavelSignal or area ShieldOverload row as a lasting row.
+/// A Fluff, Scale, ItemVisualSwap, RavelSignal, area ShieldOverload or caster-aimed
+/// FullScreenEffect row as a lasting row.
 fn lasting_reading(
   tables tables: table_store.Tables,
   place place: RowPlace,

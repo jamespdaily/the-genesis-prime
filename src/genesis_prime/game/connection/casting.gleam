@@ -1037,6 +1037,25 @@ pub fn moved(
   }
 }
 
+/// What the move `moved` of an activation writes first: its 0x83c stops the cast the activation
+/// made (`opcode.0x83c`), so that cast's end (`cast.activation_stopped`) is carried out before the
+/// move's frames. Nothing when the activation moved no one or made no cast.
+fn stopped_by_move(
+  session session: Session,
+  now now: Now,
+  cast_id cast_id: Option(Int),
+  moved moved: List(Effect(ConnectionEffect(Request))),
+) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  case moved, cast_id, connection_state.entered_of(session.status) {
+    [_, ..], Some(cast_id), Some(entered) -> {
+      let #(stopped, effects) =
+        cast.activation_stopped(cast: entered.cast, cast_id:)
+      carried_out(session: with_cast(session:, cast: stopped), now:, effects:)
+    }
+    [], _, _ | _, None, _ | _, _, None -> #(session, [])
+  }
+}
+
 /// The effects carried out in order, with no proc fired: a strike's own results are carried
 /// out inside the effect that asked for them, and the pending events wait for the input's
 /// effects to end (`cast_effects`).
@@ -1074,7 +1093,7 @@ fn carried_out(
       cast_state.TickStrike(asked:), Some(entered) ->
         tick_strike_begins(session:, now:, entered:, asked:)
       cast_state.TickStrike(..), None -> #(session, [])
-      cast_state.Activated(unit_id:, alive_at_press:, by_item:, ..),
+      cast_state.Activated(unit_id:, alive_at_press:, by_item:, cast_id:, ..),
         Some(entered)
       ->
         // The go is raised even when the unit has left the picture or died, and a use
@@ -1110,7 +1129,9 @@ fn carried_out(
                 creature_id: target.creature_id,
                 link:,
               )
-            #(session, list.append(counted, moved))
+            let #(session, stopped) =
+              stopped_by_move(session:, now:, cast_id:, moved:)
+            #(session, list.flatten([counted, stopped, moved]))
           }
           Error(Nil) -> #(session, [])
         }

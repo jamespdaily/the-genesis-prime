@@ -8,7 +8,7 @@
 ////                                                 ─▶ Hello, CharacterSelect(message), WorldEntry or WorldMessage
 //// the frame inside 0x038C                    ─▶ route(stage, InsideWorldMessage, id)
 ////                                                 ─▶ Movement(message), Camp(message), Chat(message), Cast(message),
-////                                                    Activation, Shortcut, UnitActivation, ItemUse, Life(message), Innate(message), Interaction(message), Quest(message),
+////                                                    Activation, Shortcut, UnitActivation, ItemUse, Life(message), Innate(message), LevelUp, Interaction(message), Quest(message),
 ////                                                    QuestTurnIn, Inventory(message), VendorPurchase, VendorBuyback, VendorSale, VendorSellJunk or Dropped(message)
 //// a message with no row, or one not taken at the stage ─▶ Error(Nil): the rule logs it as unhandled
 //// ```
@@ -89,6 +89,7 @@ import genesis_prime/message/quest_mention
 import genesis_prime/message/quest_retry
 import genesis_prime/message/quest_track
 import genesis_prime/message/rename_character
+import genesis_prime/message/replay_level_up
 import genesis_prime/message/scanbot_request
 import genesis_prime/message/send_chat_line
 import genesis_prime/message/send_whisper
@@ -135,6 +136,8 @@ pub type Feature {
   Life(message: player_life.Message)
   /// The player's choice of an innate (genesis_prime/game/innate_choice).
   Innate(message: innate_choice.Message)
+  /// The client's request for the fanfare of a level, 0x07A5 (genesis_prime/game/level_up).
+  LevelUp
   /// The player's request to talk to a unit, and the client's note that a dialog
   /// it opened has responses (genesis_prime/game/interaction).
   Interaction(message: interaction.Message)
@@ -339,6 +342,7 @@ const table = [
     Innate(innate_choice.IndexChosen),
     [AtWorld],
   ),
+  Row(replay_level_up.message_id, InsideWorldMessage, LevelUp, [AtWorld]),
   Row(
     interaction_request.message_id,
     InsideWorldMessage,

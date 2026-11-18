@@ -670,6 +670,7 @@ fn role_of(message: ClientMessage) -> Role {
     | client_message.CancelCast(..)
     | client_message.ClientSideInteractionResult(..)
     | client_message.InnateIndexChosen(..)
+    | client_message.ReplayLevelUp(..)
     | client_message.ChooseResurrection(..)
     | client_message.WatchdogReport(..)
     | client_message.FrameTimeReport(..)

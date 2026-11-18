@@ -611,6 +611,26 @@ pub fn planned_strike(
   }
 }
 
+/// Telekinetic Strike's plan with this planted effect row, which stops the test when the build
+/// fails.
+pub fn planned_with_row(row row: List(Cell)) -> spell_plan.Spell {
+  let assert Ok(spell) = planned_strike(rows: rows_with_effect(effect: row))
+    as "the plan builds"
+  spell
+}
+
+/// The lasting row of the planted effect id, which the plan holds or not. A planted row takes an
+/// id no client row holds, since it would replace the client's row.
+pub fn lasting_row_of(
+  spell spell: spell_plan.Spell,
+  effect_id effect_id: Int,
+) -> Result(spell_plan.Lasting, Nil) {
+  list.find(
+    spell_plan.payloads(spell:, as_kind: spell_plan.as_lasting),
+    fn(row) { row.effect_id == id.Spell4EffectsId(effect_id) },
+  )
+}
+
 /// The Spell4 id of the spell `despawn_only_area` and `unit_state_only_area` hold, and the id
 /// of their one row.
 pub const despawn_only_spell4_id = 32_893

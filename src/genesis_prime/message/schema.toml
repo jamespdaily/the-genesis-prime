@@ -2219,6 +2219,16 @@ fields = [
 ]
 
 [[message]]
+id = 0x07A5
+name = "replay_level_up"
+direction = "client_to_server"
+evidence = "opcode.0x7a5"
+summary = "the client asks for the fanfare of a level: its level-up fanfare sends its unit's level 2000 ms after the level rises, and the Level Up Unlocks window's Replay button sends the level the player picked, never above the unit's own; the client draws and plays nothing for it itself, the answer is a cast of the Level Up spell"
+fields = [
+  { name = "level", kind = "unsigned", bits = 32, evidence = "opcode.0x7a5", named_by = "opcode.0x7a5" },
+]
+
+[[message]]
 id = 0x0262
 name = "unit_create_creature"
 direction = "server_to_client"

@@ -470,14 +470,13 @@ pub fn the_grenade_go_raises_activated_for_the_shack_test() -> Nil {
     })
     == [#(its_unit, [43_805])]
     as "the go names the shack with the effect info of Spell4Effects 43805, the spell's Activate row"
-  let activated =
-    cast_state.Activated(
+  assert support.activated_count(
+      effects:,
       unit_id: its_unit,
       creature_id: a_slaver_shack,
-      alive_at_press: True,
       by_item: True,
     )
-  assert list.count(effects, fn(effect) { effect == activated }) == 1
+    == 1
     as "the go raises Activated for the shack once, marked as an item's cast"
 }
 
@@ -935,15 +934,13 @@ pub fn the_generic_quest_spell_item_at_a_farmhand_starts_within_5_m_test() -> Ni
     as "the viewers are told the start"
   let assert CastStarted(start: started) = client_connection_news
   assert started.spell4_id == 1545 as "the cast is Spell4 1545"
-  assert list.contains(
-    effects,
-    cast_state.Activated(
+  assert support.activated_count(
+      effects:,
       unit_id: its_unit,
       creature_id: a_farmhand,
-      alive_at_press: True,
       by_item: True,
-    ),
-  )
+    )
+    == 1
     as "the go raises Activated for the farmhand"
   assert refusal_of(taken: use_item_at(
       state: cast_state.new(),
@@ -1327,19 +1324,6 @@ type RailgunCase {
   RailgunCase(why: String, target: Target, refused: Option(Int))
 }
 
-/// The `Activated` effects among the effects.
-fn activations_of(effects effects: List(Effect)) -> List(Effect) {
-  list.filter(effects, fn(effect) {
-    effect
-    == cast_state.Activated(
-      unit_id: its_unit,
-      creature_id: a_chua,
-      alive_at_press: True,
-      by_item: True,
-    )
-  })
-}
-
 /// What the railgun's cast at a Chua holds: no refusal, a go that lists none of the spell's
 /// rows, no use of the Chua and the timer of row 89873.
 fn railgun_started(effects effects: List(Effect), why why: String) -> Nil {
@@ -1353,7 +1337,13 @@ fn railgun_started(effects effects: List(Effect), why why: String) -> Nil {
     })
     == []
     as "the go lists no effect of the type 42 rows, the despawn or the unread row"
-  assert activations_of(effects:) == []
+  assert support.activated_count(
+      effects:,
+      unit_id: its_unit,
+      creature_id: a_chua,
+      by_item: True,
+    )
+    == 0
     as "the spell holds no Activate row, so the cast is no use of the Chua"
   assert list.map(support.started_timers(effects:), fn(started) { started.1 })
     == [6000]
