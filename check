@@ -58,12 +58,25 @@
 #                  once (default 2; each group also runs its tests at once),
 #                  then the tests tagged serial, one at a time; the test tagged
 #                  world_data is left to the world-data part, the test tagged
+#                  real_start to the real-start part, the test tagged
 #                  client_rows to the client-suite part, and the tests tagged
 #                  dev_tool (the developer tools' own, run by hand with
 #                  `gleam test -- --tag dev_tool`) are skipped. A test that returns
 #                  after more than half its deadline prints a `check WARNING: test`
 #                  line (test/owned_test.gleam), which the summary repeats from this
-#                  part's log and the world-data part's; it never fails the part
+#                  part's log and the world-data part's and the real-start part's;
+#                  it never fails the part. Both runs print unitest's table of each
+#                  test's duration (--reporter table), and the summary prints the ten
+#                  test modules with the most test time: the sum of the durations of
+#                  a module's tests, from both runs. A module's tests run side by
+#                  side, so that is the module's test time, not the span it took.
+#                  A failed part's log is printed without the table's passed and
+#                  skipped rows
+#                                                       (after gleam-build)
+#   real-start     the test tagged real_start, the real server's boot with a bot
+#                  playing the opening of the tutorial (most of a minute alone), in a
+#                  VM of its own beside gleam-test; skipped where its node cannot run:
+#                  GENESIS_NO_CLIENT=1 (the test needs the client's tables)
 #                                                       (after gleam-build)
 #   world-data     the tests tagged world_data, the whole world database's
 #                  spawn counts, in a VM of its own beside gleam-test (about a
@@ -116,7 +129,7 @@
 # gleam compiles reads an empty .app file and dies at start (the first gleam-test run
 # of CI run 42349388041). So after gleam-build the parts start the built code
 # themselves (run_built: the same erl command gleam starts, without the compile) and
-# run beside each other: glinter, generated-tables, gleam-test, world-data and
+# run beside each other: glinter, generated-tables, gleam-test, real-start, world-data and
 # squirrel, and literal-area follows the two test runs. Every other part runs beside
 # the chain.
 #
@@ -196,7 +209,7 @@ fast_parts="format gleam-build glinter code-rules"
 work=$(mktemp -d)
 database="genesis_check_$$_${started}"
 case "$mode" in
-  full) parts="format gleam-build glinter generated-tables gleam-test world-data literal-area migrations squirrel client-suite fact-checker" ;;
+  full) parts="format gleam-build glinter generated-tables gleam-test real-start world-data literal-area migrations squirrel client-suite fact-checker" ;;
   fast) parts="$fast_parts" ;;
 esac
 
@@ -544,9 +557,14 @@ wait_for_status() {
 # ports), so they run one at a time, in a second run; the first run skips them
 # (GENESIS_TEST_SKIP_SERIAL, read by test/genesis_prime_test.gleam). The test tagged
 # world_data, which takes about a minute alone, is the world-data part's: the first
-# run skips it too (GENESIS_TEST_SKIP_WORLD_DATA), and the test tagged client_rows,
+# run skips it too (GENESIS_TEST_SKIP_WORLD_DATA); so is the test tagged real_start,
+# which boots the real server in a node of its own and takes most of a minute, the
+# real-start part's (GENESIS_TEST_SKIP_REAL_START); and the test tagged client_rows,
 # which reads the client's whole tables, is the client-suite part's
 # (GENESIS_TEST_SKIP_CLIENT_ROWS).
+#
+# Both runs print unitest's table of each test's duration (--reporter table, without
+# colour), which test_module_times adds up per module for the summary.
 #
 # The first run also keeps the literal allocator's highest carriers size in
 # $work/literal-peak (GENESIS_LITERAL_PEAK_FILE, read by test/genesis_prime_test.gleam),
@@ -555,14 +573,39 @@ wait_for_status() {
 gleam_test() {
   local status=0
   if [ -n "$test_workers" ]; then
-    GENESIS_LITERAL_PEAK_FILE="$work/literal-peak" GENESIS_TEST_SKIP_SERIAL=1 GENESIS_TEST_SKIP_WORLD_DATA=1 GENESIS_TEST_SKIP_CLIENT_ROWS=1 GENESIS_TEST_SKIP_DEV_TOOL=1 \
-      run_built genesis_prime_test --workers "$test_workers" || status=1
+    GENESIS_LITERAL_PEAK_FILE="$work/literal-peak" GENESIS_TEST_SKIP_SERIAL=1 GENESIS_TEST_SKIP_WORLD_DATA=1 GENESIS_TEST_SKIP_REAL_START=1 GENESIS_TEST_SKIP_CLIENT_ROWS=1 GENESIS_TEST_SKIP_DEV_TOOL=1 \
+      run_built genesis_prime_test --workers "$test_workers" --reporter table --no-color || status=1
   else
-    GENESIS_LITERAL_PEAK_FILE="$work/literal-peak" GENESIS_TEST_SKIP_SERIAL=1 GENESIS_TEST_SKIP_WORLD_DATA=1 GENESIS_TEST_SKIP_CLIENT_ROWS=1 GENESIS_TEST_SKIP_DEV_TOOL=1 \
-      run_built genesis_prime_test || status=1
+    GENESIS_LITERAL_PEAK_FILE="$work/literal-peak" GENESIS_TEST_SKIP_SERIAL=1 GENESIS_TEST_SKIP_WORLD_DATA=1 GENESIS_TEST_SKIP_REAL_START=1 GENESIS_TEST_SKIP_CLIENT_ROWS=1 GENESIS_TEST_SKIP_DEV_TOOL=1 \
+      run_built genesis_prime_test --reporter table --no-color || status=1
   fi
-  run_built genesis_prime_test --tag serial || status=1
+  run_built genesis_prime_test --tag serial --reporter table --no-color || status=1
   return $status
+}
+
+# real_start_test: the boot test alone, in a VM of its own beside the first test run.
+# The VM holds the few terms of one test (the server runs in a node of its own), so it
+# has no literal peak file.
+real_start_test() {
+  run_built genesis_prime_test --tag real_start
+}
+
+# test_module_times LOG: prints the ten test modules with the most test time in the
+# unitest tables of LOG, slowest first, as `    SECONDS s  module`: the sum of the
+# durations of a module's passed and failed tests, from every table in the log (a
+# skipped test has none). A row reads `| PASS | module | test | 67ms |`.
+test_module_times() {
+  awk -F'|' '
+    $2 ~ /^ *(PASS|FAIL) *$/ && $5 ~ /[0-9]ms *$/ {
+      module = $3
+      gsub(/^ +| +$/, "", module)
+      milliseconds = $5
+      gsub(/[^0-9]/, "", milliseconds)
+      total[module] += milliseconds
+    }
+    END { for (module in total) printf "%d %s\n", total[module], module }' "$1" |
+    sort -k1,1nr -k2,2 | head -10 |
+    awk '{ printf "    %6.1f s  %s\n", $1 / 1000, $2 }'
 }
 
 # world_data_test: the world-data test alone, in a VM of its own beside the first
@@ -643,6 +686,12 @@ squirrel_after_migrations() {
   fi
 }
 
+# real_start_wanted: succeeds where the boot test can run: its node needs the client's
+# tables, as the test's own guard says.
+real_start_wanted() {
+  [ "${GENESIS_NO_CLIENT:-}" != 1 ]
+}
+
 # world_data_wanted: succeeds where the world-data test can run: it needs the client's
 # tables and Jim's world database (GENESIS_WORLD_DATA), as its own guards say.
 world_data_wanted() {
@@ -651,8 +700,8 @@ world_data_wanted() {
 
 # gleam_chain: the gleam parts. gleam-build compiles; after it no part compiles again
 # (see the note above), so the parts that read the build start it with run_built and
-# run beside each other (glinter, generated-tables, the tests, the world-data test,
-# squirrel), and literal-area follows the two test runs.
+# run beside each other (glinter, generated-tables, the tests, the boot test, the
+# world-data test, squirrel), and literal-area follows the two test runs.
 gleam_chain() {
   local pids=() world_data_pid=""
   if step gleam-build gleam build --warnings-as-errors; then
@@ -669,6 +718,12 @@ gleam_chain() {
     else
       skip world-data "the world-data test needs the client's tables and GENESIS_WORLD_DATA (GENESIS_NO_CLIENT=1 or GENESIS_WORLD_DATA unset here)"
     fi
+    if real_start_wanted; then
+      ( step real-start real_start_test ) &
+      pids+=("$!")
+    else
+      skip real-start "the boot test needs the client's tables (GENESIS_NO_CLIENT=1 here)"
+    fi
     step gleam-test gleam_test
     [ -n "$world_data_pid" ] && wait "$world_data_pid"
     step literal-area literal_area_check
@@ -677,6 +732,7 @@ gleam_chain() {
     skip glinter "a part it needs failed: gleam-build"
     skip generated-tables "a part it needs failed: gleam-build"
     skip gleam-test "a part it needs failed: gleam-build"
+    skip real-start "a part it needs failed: gleam-build"
     skip world-data "a part it needs failed: gleam-build"
     skip literal-area "a part it needs failed: gleam-build"
     skip squirrel "a part it needs failed: gleam-build"
@@ -765,10 +821,20 @@ if [ -f "$work/literal-area.log" ]; then
   grep -h '^literal area' "$work/literal-area.log" | sed 's/^/  /'
 fi
 
+if [ -f "$work/gleam-test.log" ]; then
+  module_times=$(test_module_times "$work/gleam-test.log")
+  if [ -n "$module_times" ]; then
+    echo "  slowest test modules (the sum of each module's test times, gleam-test part):"
+    echo "$module_times"
+  fi
+fi
+
 for part in $failed; do
   echo
   echo "---- $part ----"
-  if [ -f "$work/$part.log" ]; then
+  if [ "$part" = gleam-test ] && [ -f "$work/$part.log" ]; then
+    grep -v '^| \(PASS\|SKIP\) ' "$work/$part.log"
+  elif [ -f "$work/$part.log" ]; then
     cat "$work/$part.log"
   else
     echo "(the part wrote no status and no log)"
@@ -782,7 +848,7 @@ if [ -f "$work/literal-area.log" ]; then
 fi
 # A test's warning follows the dots the reporter printed on its line, so it is
 # cut out of the line rather than matched at its start.
-for part in gleam-test world-data; do
+for part in gleam-test real-start world-data; do
   if [ -f "$work/$part.log" ]; then
     grep -ho 'check WARNING: test .*' "$work/$part.log"
   fi

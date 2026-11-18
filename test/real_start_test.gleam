@@ -19,6 +19,8 @@
 ////   fails with names the last wait the bot was in.
 //// A node needs the client's tables, so the tests that play it skip where
 //// `GENESIS_NO_CLIENT=1` (a fork's CI).
+//// The boot test, which takes most of a minute, is tagged `real_start`: `./check`
+//// runs it in a part of its own beside the other tests.
 
 import client_tables
 import content_support
@@ -162,6 +164,7 @@ fn is_above_zero(count: String) -> Bool {
 
 pub fn the_real_server_boots_and_a_bot_plays_the_opening_test() -> Nil {
   use <- owned_test.run(120_000)
+  use <- unitest.tag("real_start")
   use <- unitest.guard(client_tables.present())
   use node <- with_node(tables: client_tables.folder(), spawns: True)
   expect_output(node:, text: ready_line())
