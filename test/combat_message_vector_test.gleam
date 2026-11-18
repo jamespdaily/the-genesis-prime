@@ -282,7 +282,7 @@ pub fn an_action_set_is_an_index_a_value_a_result_and_its_shortcuts_test() -> Ni
     body: message_support.hex(
       "30 10 88 00 00 00 00 00 9b 16 00 00 11 78 01 00 00 c8 d3 02 00 00",
     ),
-    value: ActionSet(action_set_index: 0, field_2: 2, result: 1, shortcuts: [
+    value: ActionSet(action_set_index: 0, unlocked: 2, result: 1, shortcuts: [
       ActionShortcut(
         shortcut_type: 4,
         location: 4,
@@ -302,7 +302,7 @@ pub fn an_action_set_is_an_index_a_value_a_result_and_its_shortcuts_test() -> Ni
   message_support.assert_codec(
     name: "opcode.0x19d: the last set the client takes, 3, with no shortcuts",
     body: message_support.hex("2b 00 00"),
-    value: ActionSet(action_set_index: 3, field_2: 1, result: 1, shortcuts: []),
+    value: ActionSet(action_set_index: 3, unlocked: 1, result: 1, shortcuts: []),
     encode: action_set.encode,
     decode: action_set.decode,
   )

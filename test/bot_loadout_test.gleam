@@ -105,7 +105,7 @@ fn bar(objects objects: List(Int)) -> Frame {
   let assert Ok(body) =
     action_set.encode(ActionSet(
       action_set_index: 0,
-      field_2: 0,
+      unlocked: 0,
       result: 1,
       shortcuts: list.index_map(objects, fn(object_id, slot) {
         ActionShortcut(

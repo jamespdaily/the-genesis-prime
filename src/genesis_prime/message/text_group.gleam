@@ -14,7 +14,13 @@ import gleam/result
 /// record: its own doc names the fact that shows its value is safe, and one
 /// with no such doc has no use the client's code shows.
 pub type TextGroup {
-  TextGroup(field_1: Int, texts: List(String))
+  TextGroup(
+    /// Open: What does a text group's leading 32-bit value mean?
+    /// ReadRealmListTextGroup reads it and no handler use of it was traced
+    /// (opcode.0x761.unread_fields).
+    field_1: Int,
+    texts: List(String),
+  )
 }
 
 /// Writes the record's fields to the stream.

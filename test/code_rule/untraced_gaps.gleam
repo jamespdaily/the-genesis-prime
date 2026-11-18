@@ -19,7 +19,6 @@ pub type Gap {
 /// Every untraced field and kind in a message the server sends, by owner or
 /// union, and the open issue whose work removes it.
 pub const known_gaps: List(Gap) = [
-  UntracedFields(owner: "action_set", fields: ["field_2"], issue: 979),
   UntracedFields(
     owner: "buyback_entry",
     fields: [
@@ -37,12 +36,6 @@ pub const known_gaps: List(Gap) = [
       "field_21",
       "field_26",
     ],
-    issue: 979,
-  ),
-  UntracedFields(owner: "character_list", fields: ["field_11"], issue: 979),
-  UntracedFields(
-    owner: "character_list_entry",
-    fields: ["field_12", "field_16", "field_17"],
     issue: 979,
   ),
   UntracedFields(
@@ -70,27 +63,11 @@ pub const known_gaps: List(Gap) = [
   UntracedFields(owner: "chat_format_kind_3", fields: ["field_4"], issue: 979),
   UntracedFields(owner: "chat_line", fields: ["field_14"], issue: 979),
   UntracedFields(
-    owner: "create_character_result",
-    fields: ["field_2"],
-    issue: 979,
-  ),
-  UntracedFields(
     owner: "currency_changed",
     fields: ["field_3", "field_4"],
     issue: 979,
   ),
-  UntracedFields(
-    owner: "delete_character_result",
-    fields: ["value"],
-    issue: 979,
-  ),
-  UntracedFields(
-    owner: "enter_world",
-    fields: ["field_5", "field_6"],
-    issue: 979,
-  ),
   UntracedFields(owner: "item_action_failed", fields: ["item_guid"], issue: 979),
-  UntracedFields(owner: "login_refused", fields: ["field_3"], issue: 979),
   UntracedFields(
     owner: "player_character_state",
     fields: ["field_23"],
@@ -101,44 +78,10 @@ pub const known_gaps: List(Gap) = [
     fields: ["field_2", "field_3", "field_4"],
     issue: 979,
   ),
-  UntracedFields(
-    owner: "realm_entry",
-    fields: [
-      "field_8",
-      "field_9",
-      "field_10",
-      "field_13",
-      "field_14",
-      "field_15",
-      "field_16",
-      "field_17",
-    ],
-    issue: 979,
-  ),
-  UntracedFields(
-    owner: "realm_handoff",
-    fields: ["field_1", "field_4", "field_6", "field_7", "field_8"],
-    issue: 979,
-  ),
-  UntracedFields(owner: "realm_list", fields: ["field_1"], issue: 979),
   UntracedFields(owner: "reputation_list", fields: ["field_1"], issue: 979),
   UntracedFields(
     owner: "reward_property_modifier",
     fields: ["kind", "data"],
-    issue: 979,
-  ),
-  UntracedFields(
-    owner: "server_hello",
-    fields: [
-      "field_3",
-      "field_4",
-      "field_5",
-      "field_6",
-      "field_7",
-      "field_9",
-      "field_10",
-      "field_11",
-    ],
     issue: 979,
   ),
   UntracedFields(
@@ -165,7 +108,6 @@ pub const known_gaps: List(Gap) = [
     ],
     issue: 979,
   ),
-  UntracedFields(owner: "text_group", fields: ["field_1"], issue: 979),
   UntracedFields(
     owner: "unit_create_ghost",
     fields: ["field_9", "field_10", "field_11", "field_12"],
@@ -183,7 +125,6 @@ pub const known_gaps: List(Gap) = [
   ),
   UntracedFields(owner: "unit_destroyed", fields: ["field_2"], issue: 979),
   UntracedFields(owner: "unit_dialog_open", fields: ["field_2"], issue: 979),
-  UntracedFields(owner: "unit_is_player", fields: ["field_2"], issue: 979),
   UntracedFields(
     owner: "vendor_item",
     fields: ["field_10", "field_11"],

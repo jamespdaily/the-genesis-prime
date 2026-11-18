@@ -29,9 +29,7 @@ pub type CharacterList {
     in_world_logoff_ms: Int,
     reservations: Int,
     max_characters: Int,
-    /// Safe by `0x14002167a`: the client's code gives this field no use the
-    /// server needs, and that fact shows its value is safe.
-    field_11: Int,
+    unread_11: Int,
     faction_restriction: Int,
     free_level_50_available: Int,
   )
@@ -78,7 +76,7 @@ pub fn encode(message: CharacterList) -> Result(BitArray, EncodeError) {
   )
   |> bit_stream.write_unsigned("reservations", message.reservations, 32)
   |> bit_stream.write_unsigned("max_characters", message.max_characters, 32)
-  |> bit_stream.write_unsigned("field_11", message.field_11, 32)
+  |> bit_stream.write_unsigned("unread_11", message.unread_11, 32)
   |> bit_stream.write_unsigned(
     "faction_restriction",
     message.faction_restriction,
@@ -125,7 +123,7 @@ pub fn decode(body: BitArray) -> Result(CharacterList, DecodeError) {
     reader,
     32,
   ))
-  use #(field_11, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
+  use #(unread_11, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   use #(faction_restriction, reader) <- result.try(bit_stream.read_unsigned(
     reader,
     14,
@@ -146,7 +144,7 @@ pub fn decode(body: BitArray) -> Result(CharacterList, DecodeError) {
     in_world_logoff_ms:,
     reservations:,
     max_characters:,
-    field_11:,
+    unread_11:,
     faction_restriction:,
     free_level_50_available:,
   ))

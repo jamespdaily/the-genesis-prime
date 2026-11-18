@@ -422,7 +422,7 @@ fn refuse(
   before before: List(Effect(ConnectionEffect(Request))),
 ) -> client_connection.Handled(Session) {
   let assert Ok(body) =
-    login_refused.encode(LoginRefused(reason:, value: 0, field_3: 0))
+    login_refused.encode(LoginRefused(reason:, value: 0, suspension_duration: 0))
     as "a reason is within 32 bits"
   Done(
     session,

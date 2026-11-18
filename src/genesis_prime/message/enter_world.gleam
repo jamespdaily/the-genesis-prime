@@ -21,12 +21,8 @@ pub type EnterWorld {
     position_x: Int,
     position_y: Int,
     position_z: Int,
-    /// Safe by `opcode.0xad.last_floats`: the client's code gives this field no
-    /// use the server needs, and that fact shows its value is safe.
-    field_5: Int,
-    /// Safe by `opcode.0xad.last_floats`: the client's code gives this field no
-    /// use the server needs, and that fact shows its value is safe.
-    field_6: Int,
+    unread_5: Int,
+    unread_6: Int,
   )
 }
 
@@ -38,8 +34,8 @@ pub fn encode(message: EnterWorld) -> Result(BitArray, EncodeError) {
   |> bit_stream.write_float32_bits("position_x", message.position_x)
   |> bit_stream.write_float32_bits("position_y", message.position_y)
   |> bit_stream.write_float32_bits("position_z", message.position_z)
-  |> bit_stream.write_float32_bits("field_5", message.field_5)
-  |> bit_stream.write_float32_bits("field_6", message.field_6)
+  |> bit_stream.write_float32_bits("unread_5", message.unread_5)
+  |> bit_stream.write_float32_bits("unread_6", message.unread_6)
   |> bit_stream.finish
 }
 
@@ -50,15 +46,15 @@ pub fn decode(body: BitArray) -> Result(EnterWorld, DecodeError) {
   use #(position_x, reader) <- result.try(bit_stream.read_float32_bits(reader))
   use #(position_y, reader) <- result.try(bit_stream.read_float32_bits(reader))
   use #(position_z, reader) <- result.try(bit_stream.read_float32_bits(reader))
-  use #(field_5, reader) <- result.try(bit_stream.read_float32_bits(reader))
-  use #(field_6, reader) <- result.try(bit_stream.read_float32_bits(reader))
+  use #(unread_5, reader) <- result.try(bit_stream.read_float32_bits(reader))
+  use #(unread_6, reader) <- result.try(bit_stream.read_float32_bits(reader))
   use Nil <- result.try(bit_stream.finish_reading(reader))
   Ok(EnterWorld(
     world_id:,
     position_x:,
     position_y:,
     position_z:,
-    field_5:,
-    field_6:,
+    unread_5:,
+    unread_6:,
   ))
 }

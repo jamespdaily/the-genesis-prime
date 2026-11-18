@@ -16,12 +16,7 @@ pub const message_id = 0x019B
 /// `field_N` is the Nth of the body: its own doc names the fact that shows its
 /// value is safe, and one with no such doc has no use the client's code shows.
 pub type UnitIsPlayer {
-  UnitIsPlayer(
-    unit_id: Int,
-    /// Safe by `opcode.0x19b.second_value`: the client's code gives this field
-    /// no use the server needs, and that fact shows its value is safe.
-    field_2: Int,
-  )
+  UnitIsPlayer(unit_id: Int, unread_2: Int)
 }
 
 /// The message as the bytes of its body, or the first field that cannot be
@@ -29,7 +24,7 @@ pub type UnitIsPlayer {
 pub fn encode(message: UnitIsPlayer) -> Result(BitArray, EncodeError) {
   bit_stream.new_writer()
   |> bit_stream.write_unsigned("unit_id", message.unit_id, 32)
-  |> bit_stream.write_unsigned("field_2", message.field_2, 32)
+  |> bit_stream.write_unsigned("unread_2", message.unread_2, 32)
   |> bit_stream.finish
 }
 
@@ -37,7 +32,7 @@ pub fn encode(message: UnitIsPlayer) -> Result(BitArray, EncodeError) {
 pub fn decode(body: BitArray) -> Result(UnitIsPlayer, DecodeError) {
   let reader = bit_stream.new_reader(body)
   use #(unit_id, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
-  use #(field_2, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
+  use #(unread_2, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   use Nil <- result.try(bit_stream.finish_reading(reader))
-  Ok(UnitIsPlayer(unit_id:, field_2:))
+  Ok(UnitIsPlayer(unit_id:, unread_2:))
 }

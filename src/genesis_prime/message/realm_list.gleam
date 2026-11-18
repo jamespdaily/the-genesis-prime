@@ -19,6 +19,9 @@ pub const message_id = 0x0761
 /// value is safe, and one with no such doc has no use the client's code shows.
 pub type RealmList {
   RealmList(
+    /// Open: What does the leading 64-bit value mean? The client's reader reads
+    /// it and the handler's use of it was not traced
+    /// (opcode.0x761.unread_fields).
     field_1: Int,
     realms: List(RealmEntry),
     text_groups: List(TextGroup),
