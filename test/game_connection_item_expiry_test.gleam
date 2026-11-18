@@ -923,7 +923,7 @@ fn bought_back(buyback_id buyback_id: Int) -> BitArray {
   )
 }
 
-pub fn a_sold_timed_item_is_bought_back_with_the_moment_it_had_test() -> Nil {
+pub fn a_sold_timed_item_is_bought_back_with_the_time_it_had_test() -> Nil {
   use <- owned_test.run(60_000)
   use tables <- item_expiry_support.tables_with(lifetimes: [#(20_791, 5)])
   // The cases: the buy back 15,000 ms in, 10,000 ms before the moment, and 40,000 ms in, after it.

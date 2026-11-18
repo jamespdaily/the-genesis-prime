@@ -6121,3 +6121,496 @@ pub fn split_sale_and_purchase_rows_hold_their_flags_test() -> Nil {
     as "a sale answers the byte of the stack sold in part and of the stack sold whole, for the buyback entries"
   account_store_support.stop(store)
 }
+
+// ---- the moment a timed item runs out ----
+
+/// The moment (Unix milliseconds) the table holds for the item, read without a login (a load
+/// raises the epoch); none for an item that does not run out.
+fn expires_at_of(store store: Store, guid guid: Int) -> Option(Int) {
+  let assert Ok(pog.Returned(rows: [expires_at_unix_ms], ..)) =
+    pog.query(
+      "select expires_at_unix_ms from character_item where item_guid = $1",
+    )
+    |> pog.parameter(pog.int(guid))
+    |> pog.returning(decode.at([0], decode.optional(decode.int)))
+    |> pog.execute(store.pool)
+    as "the item's row was read"
+  expires_at_unix_ms
+}
+
+/// How many item rows the character holds, read without a login.
+fn rows_of(
+  store store: Store,
+  character_id character_id: store.CharacterId,
+) -> Int {
+  let CharacterId(number) = character_id
+  let assert Ok(pog.Returned(rows: [count], ..)) =
+    pog.query(
+      "select count(*)::int from character_item where character_id = $1",
+    )
+    |> pog.parameter(pog.int(number))
+    |> pog.returning(decode.at([0], decode.int))
+    |> pog.execute(store.pool)
+    as "the rows were counted"
+  count
+}
+
+/// Inserts one item row of the stackable Item2 at an inventory slot straight into the table
+/// with the moment it runs out (`None` for NULL), answering the guid or the name of the check
+/// that refused it.
+fn put_timed(
+  store store: Store,
+  character_id character_id: store.CharacterId,
+  bag_index bag_index: Int,
+  stack_count stack_count: Int,
+  expires_at_unix_ms expires_at_unix_ms: Option(Int),
+) -> Result(Int, ItemRefused) {
+  let CharacterId(number) = character_id
+  pog.query(
+    "insert into character_item (character_id, item2_id, location, bag_index, stack_count, charges, expires_at_unix_ms) values ($1, $2, 1, $3, $4, 0, $5) returning item_guid",
+  )
+  |> pog.parameter(pog.int(number))
+  |> pog.parameter(pog.int(stackable_item2))
+  |> pog.parameter(pog.int(bag_index))
+  |> pog.parameter(pog.int(stack_count))
+  |> pog.parameter(pog.nullable(pog.int, expires_at_unix_ms))
+  |> pog.returning(decode.at([0], decode.int))
+  |> pog.execute(store.pool)
+  |> result.map(fn(returned) {
+    let assert [guid] = returned.rows as "one row was inserted"
+    guid
+  })
+  |> result.map_error(fn(error) {
+    let assert pog.ConstraintViolated(constraint:, ..) = error
+      as "the table refused with a constraint"
+    ItemRefused(constraint:)
+  })
+}
+
+/// A new stack at an inventory slot that runs out at the moment.
+fn timed_stack(
+  bag_index bag_index: Int,
+  expires_at_unix_ms expires_at_unix_ms: Option(Int),
+) -> store.NewStack {
+  store.NewStack(
+    location: 1,
+    bag_index:,
+    stack_count: 1,
+    random_stats: 0,
+    charges: 0,
+    item_flags: 0,
+    expires_at_unix_ms:,
+  )
+}
+
+/// A character holding the Novice set on a store of its own, and its account.
+fn holding_the_novice_set(
+  store store: Store,
+) -> #(AccountId, store.CharacterId) {
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
+  let assert CharacterCreated(character_id:) =
+    account_store_support.create_holding(
+      store:,
+      account:,
+      name: "Ab Cd",
+      slots: 1,
+      items: character_support.row_466_items(),
+    )
+    as "a character holding the Novice set"
+  #(account, character_id)
+}
+
+/// The moment a timed item runs out is written by the statement that makes or changes the
+/// row, under the login's epoch and the row held, and no other: a purchase, a turn-in and a
+/// buy back store and answer the moment each new stack is given, a split copies its source's,
+/// a merge leaves the target the earlier moment of the two, a sale answers the moment of each
+/// stack it sold, and a statement of a stale epoch writes none.
+pub fn an_item_time_is_saved_only_for_the_row_and_epoch_held_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = account_store_support.start_store(pool_size: 2)
+  let #(account, character_id) = holding_the_novice_set(store:)
+  let assert Ok(later) =
+    put_timed(
+      store:,
+      character_id:,
+      bag_index: 0,
+      stack_count: 10,
+      expires_at_unix_ms: Some(5_000_000_000_000),
+    )
+    as "a stack that runs out at 5,000,000,000,000"
+  let assert Ok(earlier) =
+    put_timed(
+      store:,
+      character_id:,
+      bag_index: 1,
+      stack_count: 4,
+      expires_at_unix_ms: Some(2_000_000_000_000),
+    )
+    as "a stack that runs out earlier"
+  let assert Ok(lasting) =
+    put_timed(
+      store:,
+      character_id:,
+      bag_index: 2,
+      stack_count: 3,
+      expires_at_unix_ms: None,
+    )
+    as "a stack that never runs out"
+  let #(epoch, items, unset) = login_unset(store:, account:, character_id:)
+  assert unset == [] as "the rows hold their charges"
+  assert list.map([0, 1, 2], fn(index) {
+      item_in_bag(items:, index:).expires_at_unix_ms
+    })
+    == [Some(5_000_000_000_000), Some(2_000_000_000_000), None]
+    as "the load returns the moment each row holds"
+  // A stale epoch writes nothing: a later login raised the epoch, so no row is made and no
+  // moment is written.
+  let rows = rows_of(store:, character_id:)
+  let #(current, _, _) = login_unset(store:, account:, character_id:)
+  assert buy_item(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      item2_id: stackable_item2,
+      currency_type_id: 1,
+      held: 1000,
+      cost: 0,
+      grow: [],
+      make: [
+        timed_stack(bag_index: 5, expires_at_unix_ms: Some(7_777_000_000_000)),
+      ],
+    )
+    == ForItems(ItemsNotSaved)
+    as "a purchase under the epoch of an earlier login is refused"
+  assert rows_of(store:, character_id:) == rows
+    as "a refused purchase made no row, so it wrote no moment"
+  let epoch = current
+  // A purchase and a buy back store and answer the moment each new stack is given.
+  let assert ForItems(store.Bought(made: [bought, bought_back], ..)) =
+    buy_item(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      item2_id: stackable_item2,
+      currency_type_id: 1,
+      held: 1000,
+      cost: 0,
+      grow: [],
+      make: [
+        timed_stack(bag_index: 5, expires_at_unix_ms: Some(9_000_000_000_000)),
+        timed_stack(bag_index: 6, expires_at_unix_ms: Some(1_000_000_000_000)),
+      ],
+    )
+    as "a purchase is saved"
+  assert #(bought.expires_at_unix_ms, bought_back.expires_at_unix_ms)
+    == #(Some(9_000_000_000_000), Some(1_000_000_000_000))
+    as "the answer names the moment each new stack was made with"
+  assert #(
+      expires_at_of(store:, guid: bought.item_guid),
+      expires_at_of(store:, guid: bought_back.item_guid),
+    )
+    == #(Some(9_000_000_000_000), Some(1_000_000_000_000))
+    as "the rows hold them"
+  // A turn-in's reward stack stores the moment it is given.
+  let assert ForItems(store.TurnedIn(made: [rewarded], ..)) =
+    turn_in(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      sequence: 1,
+      quests: [completed_quest(1001)],
+      credits_held: 1000,
+      credits_after: 1000,
+      placed: [
+        store.Placed(item2_id: Item2Id(stackable_item2), grow: [], make: [
+          timed_stack(bag_index: 7, expires_at_unix_ms: Some(3_000_000_000_000)),
+        ]),
+      ],
+    )
+    as "a turn-in is saved"
+  assert rewarded.expires_at_unix_ms == Some(3_000_000_000_000)
+    && expires_at_of(store:, guid: rewarded.item_guid)
+    == Some(3_000_000_000_000)
+    as "a reward stack is made with its moment"
+  // A split copies the source's moment, whatever it is.
+  let #(epoch, items, _) = login_unset(store:, account:, character_id:)
+  let assert ForItems(store.ItemMade(item_guid: split_timed)) =
+    split(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      source: item_in_bag(items:, index: 0),
+      count: 3,
+      to: 8,
+    )
+    as "a split of the timed stack is saved"
+  let assert ForItems(store.ItemMade(item_guid: split_lasting)) =
+    split(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      source: item_in_bag(items:, index: 2),
+      count: 1,
+      to: 9,
+    )
+    as "a split of the stack that never runs out is saved"
+  assert #(
+      expires_at_of(store:, guid: split_timed),
+      expires_at_of(store:, guid: split_lasting),
+      expires_at_of(store:, guid: later),
+    )
+    == #(Some(5_000_000_000_000), None, Some(5_000_000_000_000))
+    as "the new stack holds its source's moment, or none, and the source keeps its own"
+  // A merge leaves the target the earlier moment of the two, and the source's row goes
+  // when none is left. The cases: the source is the earlier, the target is, one has none.
+  let merged = fn(source: Int, target: Int, count: Int) {
+    let #(epoch, items, _) = login_unset(store:, account:, character_id:)
+    let find = fn(guid) {
+      let assert Ok(item) =
+        list.find(items, fn(item) { item.item_guid == guid })
+        as "the item is held"
+      item
+    }
+    merge(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      source: find(source),
+      target: find(target),
+      count:,
+    )
+  }
+  assert merged(earlier, later, 4) == ForItems(ItemsSaved)
+    as "the earlier stack is merged onto the later"
+  assert expires_at_of(store:, guid: later) == Some(2_000_000_000_000)
+    as "the target holds the earlier moment of the two"
+  assert merged(split_timed, later, 3) == ForItems(ItemsSaved)
+    as "the stack split off, which runs out at the later moment, is merged back"
+  assert expires_at_of(store:, guid: later) == Some(2_000_000_000_000)
+    as "the target keeps its earlier moment when the source's is later"
+  assert merged(lasting, later, 2) == ForItems(ItemsSaved)
+    as "a stack that never runs out is merged on"
+  assert expires_at_of(store:, guid: later) == Some(2_000_000_000_000)
+    as "a source with no moment leaves the target its own"
+  // A sale answers the moment of each stack it sold, none for a stack that never runs out.
+  let #(epoch, _, _) = login_unset(store:, account:, character_id:)
+  assert sell(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      held: 1000,
+      after: 1010,
+      sold: [
+        store.SoldStack(
+          item_guid: bought.item_guid,
+          location: 1,
+          held_count: 1,
+          sold_count: 1,
+        ),
+        store.SoldStack(
+          item_guid: split_lasting,
+          location: 1,
+          held_count: 1,
+          sold_count: 1,
+        ),
+      ],
+    )
+    == ForItems(
+      store.Sold(amount: 1010, words: [
+        store.SoldWord(
+          item_guid: bought.item_guid,
+          random_stats: 0,
+          charges: 0,
+          item_flags: 0,
+          expires_at_unix_ms: Some(9_000_000_000_000),
+        ),
+        store.SoldWord(
+          item_guid: split_lasting,
+          random_stats: 0,
+          charges: 0,
+          item_flags: 0,
+          expires_at_unix_ms: None,
+        ),
+      ]),
+    )
+    as "the sale answers the moment each stack sold held, for the buyback entry"
+  account_store_support.stop(store)
+}
+
+/// A statement that makes a row for an item that does not run out stores no moment: the
+/// character's starting items (the Novice set never runs out), a purchase and a reward given
+/// none, and a split of a stack that holds none, and a load returns none for each.
+pub fn an_item_made_by_each_statement_has_no_time_saved_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = account_store_support.start_store(pool_size: 2)
+  let #(account, character_id) = holding_the_novice_set(store:)
+  let assert Ok(_) =
+    put_timed(
+      store:,
+      character_id:,
+      bag_index: 0,
+      stack_count: 10,
+      expires_at_unix_ms: None,
+    )
+    as "a stack that never runs out"
+  let #(epoch, items, _) = login_unset(store:, account:, character_id:)
+  assert list.all(items, fn(item) { item.expires_at_unix_ms == None })
+    as "the starting items and the stack hold no moment, and the load returns none"
+  let assert ForItems(store.Bought(made: [bought], ..)) =
+    buy_item(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      item2_id: stackable_item2,
+      currency_type_id: 1,
+      held: 1000,
+      cost: 0,
+      grow: [],
+      make: [timed_stack(bag_index: 5, expires_at_unix_ms: None)],
+    )
+    as "a purchase is saved"
+  let assert ForItems(store.TurnedIn(made: [rewarded], ..)) =
+    turn_in(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      sequence: 1,
+      quests: [completed_quest(1001)],
+      credits_held: 1000,
+      credits_after: 1000,
+      placed: [
+        store.Placed(item2_id: Item2Id(stackable_item2), grow: [], make: [
+          timed_stack(bag_index: 6, expires_at_unix_ms: None),
+        ]),
+      ],
+    )
+    as "a turn-in is saved"
+  let assert ForItems(store.ItemMade(item_guid: split_guid)) =
+    split(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      source: item_in_bag(items:, index: 0),
+      count: 3,
+      to: 8,
+    )
+    as "a split is saved"
+  assert [bought.expires_at_unix_ms, rewarded.expires_at_unix_ms]
+    == [None, None]
+    as "the answers name no moment"
+  assert list.map([bought.item_guid, rewarded.item_guid, split_guid], fn(guid) {
+      expires_at_of(store:, guid:)
+    })
+    == [None, None, None]
+    as "the rows hold none"
+  account_store_support.stop(store)
+}
+
+/// The moment is 0 or more or none: the table's check refuses a negative one by its name.
+pub fn an_item_time_below_0_is_refused_by_its_check_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = account_store_support.start_store(pool_size: 2)
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
+  let assert CharacterCreated(character_id:) =
+    account_store_support.create_holding(
+      store:,
+      account:,
+      name: "Ab Cd",
+      slots: 1,
+      items: [],
+    )
+    as "a character that holds nothing yet"
+  let put = fn(bag_index, expires_at_unix_ms) {
+    result.replace(
+      put_timed(
+        store:,
+        character_id:,
+        bag_index:,
+        stack_count: 1,
+        expires_at_unix_ms:,
+      ),
+      Nil,
+    )
+  }
+  assert put(0, None) == Ok(Nil) as "no moment is stored"
+  assert put(1, Some(0)) == Ok(Nil) as "0 is stored"
+  assert put(2, Some(1_728_000_000_000)) == Ok(Nil)
+    as "a moment of the size a real clock gives is stored"
+  assert put(3, Some(-1))
+    == Error(ItemRefused("character_item_expires_at_not_negative"))
+    as "a negative moment is refused by the check of that name"
+  account_store_support.stop(store)
+}
+
+/// An item that ran out while its owner was logged out is gone at the next load: the load
+/// deletes the character's items whose moment is the time it is given or earlier before it
+/// reads them, so the answer never holds one, the table no longer does, and an item with a later
+/// moment or none stays.
+pub fn an_item_that_expires_while_its_owner_is_logged_out_is_gone_at_the_next_load_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = account_store_support.start_store(pool_size: 2)
+  let #(account, character_id) = holding_the_novice_set(store:)
+  let put = fn(bag_index, moment) {
+    let assert Ok(guid) =
+      put_timed(
+        store:,
+        character_id:,
+        bag_index:,
+        stack_count: 1,
+        expires_at_unix_ms: moment,
+      )
+      as "the row is stored"
+    guid
+  }
+  let ran_out = put(0, Some(1000))
+  let runs_out_now = put(1, Some(2000))
+  let runs_out_later = put(2, Some(3000))
+  let lasting = put(3, None)
+  let load = fn(now_unix_ms) {
+    let assert ForWorld(CharacterLoaded(items:, ..)) =
+      account_store_support.ask(
+        store:,
+        request: World(LoadCharacter(account, character_id, now_unix_ms)),
+      )
+      as "the account's character loads"
+    list.map(items, fn(item) { item.item_guid })
+  }
+  let held = fn(guids) {
+    list.filter(guids, fn(guid) {
+      list.contains([ran_out, runs_out_now, runs_out_later, lasting], guid)
+    })
+  }
+  assert held(load(1999)) == [runs_out_now, runs_out_later, lasting]
+    as "a load before the second moment deletes the first item only"
+  assert held(load(2000)) == [runs_out_later, lasting]
+    as "a load at the second moment deletes it too: a moment that has come is gone"
+  assert rows_with_guid(store:, guid: ran_out) == 0
+    && rows_with_guid(store:, guid: runs_out_now) == 0
+    as "the table holds neither row any more"
+  assert held(load(0)) == [runs_out_later, lasting]
+    as "an earlier time brings nothing back, and an item with a later moment or none stays"
+  account_store_support.stop(store)
+}
+
+/// How many rows the table holds with this guid, read without a login.
+fn rows_with_guid(store store: Store, guid guid: Int) -> Int {
+  let assert Ok(pog.Returned(rows: [count], ..)) =
+    pog.query("select count(*)::int from character_item where item_guid = $1")
+    |> pog.parameter(pog.int(guid))
+    |> pog.returning(decode.at([0], decode.int))
+    |> pog.execute(store.pool)
+    as "the rows were counted"
+  count
+}

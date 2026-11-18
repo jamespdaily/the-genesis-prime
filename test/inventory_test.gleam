@@ -2203,3 +2203,110 @@ pub fn a_split_stack_keeps_the_flags_of_its_source_test() -> Nil {
       as { why <> ": the new stack's 0x111" }
   })
 }
+
+pub fn item_added_frames_carry_the_time_left_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The held item's frame carries the milliseconds to its moment, at least 1 for an item that
+  // runs out and 0 for one that does not (`opcode.0x111.time_left`), whatever its place; an
+  // ability, which is never stored, carries 0.
+  let now = 1_700_000_000_000
+  // #(the item's moment, the time its 0x111 carries)
+  let cases = [
+    #(None, 0),
+    #(Some(now + 1), 1),
+    #(Some(now), 1),
+    #(Some(now - 5000), 1),
+    #(Some(now + 1_728_000_000), 1_728_000_000),
+  ]
+  list.each(cases, fn(row) {
+    let #(expires_at_unix_ms, expected) = row
+    let item =
+      HeldItem(
+        ..in_bag(guid: 20, item2_id: stackable(), index: 1, count: 10),
+        expires_at_unix_ms:,
+      )
+    let frame = inventory.held_item_frame(item:, now_unix_ms: now, reason: 0)
+    let assert Ok(added) = item_added.decode(frame.body) as "the 0x111 decodes"
+    assert added.held_item.item.time_left_ms == expected
+      as "opcode.0x111.time_left: the milliseconds to the moment, 0 for none, never 0 for a moment"
+    assert added.held_item.item.item_guid == 20
+      && added.held_item.item.stack_count == 10
+      as "the item's other words are as before"
+  })
+  let ability =
+    ability_book_frame.held_ability(
+      character_number: 42,
+      bag_index: 0,
+      base: Spell4BaseId(1),
+    )
+  let assert Ok(added) = item_added.decode(ability.body)
+    as "the ability's 0x111 decodes"
+  assert added.held_item.item.time_left_ms == 0 as "an ability never runs out"
+}
+
+pub fn a_delete_names_its_reason_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let stack = in_bag(guid: 20, item2_id: stackable(), index: 1, count: 10)
+  let items = list.append(held(), [stack])
+  let player_deletes = asked(delete_taken(items:, at: #(1, 1)))
+  let expiry_deletes = inventory.expiring(items:, item: stack)
+  assert expiry_deletes.change
+    == inventory.Deleted(item: stack, by: inventory.RemovedByExpiry)
+    as "the removal of an item that ran out deletes the whole stack"
+  // #(who deletes, the store's answer, the ids of the frames, the reason of a 0x148, why)
+  let cases = [
+    #(
+      player_deletes,
+      ItemsSaved,
+      [0x0148],
+      Some(21),
+      "the player's own delete is answered with the reason 21, PlayerRequested",
+    ),
+    #(
+      expiry_deletes,
+      ItemsSaved,
+      [0x0148],
+      Some(26),
+      "an item that ran out is removed with the reason 26, Expired (opcode.0x148.expired)",
+    ),
+    #(
+      player_deletes,
+      ItemsNotSaved,
+      [0x056A],
+      None,
+      "a delete the store did not save is the player's refused action: 0x56A",
+    ),
+    #(
+      expiry_deletes,
+      ItemsNotSaved,
+      [],
+      None,
+      "a removal the store did not save is no action of the player's: no 0x56A",
+    ),
+    #(
+      expiry_deletes,
+      SaveRefused(constraint: "character_item_one_per_slot"),
+      [],
+      None,
+      "a removal the store refused tells the client nothing either",
+    ),
+  ]
+  list.each(cases, fn(row) {
+    let #(moving, answer, ids, reason, why) = row
+    let #(left, effects) =
+      inventory.answered(items:, moving:, answer:, now_unix_ms: 0)
+    let frames = item_flags_support.sent(effects)
+    assert list.map(frames, fn(frame) { frame.message_id }) == ids as why
+    assert case reason {
+      Some(reason) -> {
+        let assert [frame] = frames
+        item_removed.decode(frame.body)
+        == Ok(ItemRemoved(item_guid: 20, reason:))
+      }
+      None -> True
+    }
+      as why
+    assert { left == items } == { answer != ItemsSaved }
+      as "the items are as they were unless the delete is saved"
+  })
+}
