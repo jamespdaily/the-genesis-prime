@@ -426,12 +426,32 @@ pub fn unit_moved_frame(
   server_time_ms server_time_ms: Int,
   commands commands: List(RelayedMovement),
 ) -> Frame {
+  moved_frame(unit_id:, server_time_ms:, kept: 0, commands:)
+}
+
+/// 0x638 for a creature the server moves: the reset bit 0 and the kept bit 1, which
+/// the client stores as the unit's ground-follow flag and which turns its ground lift on
+/// (`unit.ground_lift.server_commands`).
+fn creature_moved_frame(
+  unit_id unit_id: Int,
+  server_time_ms server_time_ms: Int,
+  commands commands: List(RelayedMovement),
+) -> Frame {
+  moved_frame(unit_id:, server_time_ms:, kept: 1, commands:)
+}
+
+fn moved_frame(
+  unit_id unit_id: Int,
+  server_time_ms server_time_ms: Int,
+  kept kept: Int,
+  commands commands: List(RelayedMovement),
+) -> Frame {
   let assert Ok(body) =
     unit_movement.encode(UnitMovement(
       unit_id:,
       server_time: server_time_ms,
       reset_movement: 0,
-      kept: 0,
+      kept:,
       commands:,
     ))
     as "a mover sends at most 31 commands and a time of 32 bits"
@@ -444,8 +464,10 @@ pub fn unit_moved_frame(
 /// creature's timed path is kind 0 and kind 3, each point with its own map time
 /// (`movement_command.kind_3`), or kind 2 for a path of one point, and a kind 14 when
 /// the throw turns it. A run ends with kind 11 (the horizontal part of its velocity) and kind
-/// 24 holding bit 0x2, which make the client play the unit's walk or run animation by its
-/// speed (`unit.pace`, `movement_command.kind_11`, `movement_command.kind_24`); a flight ends
+/// 24 holding bits 0x102, which make the client play the unit's walk or run animation by its
+/// speed (`unit.pace`, `movement_command.kind_11`, `movement_command.kind_24`); every
+/// creature frame keeps the second bit 1, which turns the client's ground lift on
+/// (`creature_moved_frame`); a flight ends
 /// with the stop (`stopped`), so a creature thrown mid-run stops running. None for a creature
 /// that stands, a speed no half float holds, or a path of more points than a kind 4 holds.
 pub fn path_frame(
@@ -480,7 +502,7 @@ pub fn path_frame(
           )),
         ]
       }
-      Some(unit_moved_frame(
+      Some(creature_moved_frame(
         unit_id:,
         server_time_ms: server_time(first.0),
         commands: list.flatten([
@@ -507,7 +529,7 @@ pub fn path_frame(
               monotonic_ms: started_ms,
             )
           Some(
-            unit_moved_frame(unit_id:, server_time_ms: time, commands: [
+            creature_moved_frame(unit_id:, server_time_ms: time, commands: [
               relayed_movement.Time(MovementTime(time:)),
               relayed_movement.Path(MovementPath(
                 points: list.map(points, vector_of),
@@ -541,7 +563,7 @@ pub fn placed_frame(
 ) -> Frame {
   let time =
     map.server_time(origin_ms: entered.clock_origin_ms, monotonic_ms: at_ms)
-  unit_moved_frame(unit_id:, server_time_ms: time, commands: [
+  creature_moved_frame(unit_id:, server_time_ms: time, commands: [
     relayed_movement.Time(MovementTime(time:)),
     relayed_movement.Position(player_unit.standing(place:).0),
     ..stopped()
@@ -550,9 +572,11 @@ pub fn placed_frame(
 
 /// The client reads a unit's walk animation from kind 24's bit 0x2 and the horizontal length
 /// of kind 11's vector (`unit.pace`), and neither expires, so each frame that moves or stops a
-/// unit sets both. The moving bit is the one bit the animation needs, a server choice: the
-/// player's own frames also carry 0x100, on the ground, which pulls the drawn height down by
-/// up to 2 and is left out (`unit.ground_lift`).
+/// unit sets both. Bit 0x100, on the ground, is what lets the client's ground lift pull a unit
+/// above the ground down by up to 2 (`unit.ground_lift.server_commands`), so a creature's
+/// state always holds it.
+const on_the_ground_flag = 0x100
+
 const moving_flag = 2
 
 /// Kind 11 and kind 24 of a run: the horizontal part of its velocity in units a second, the unit
@@ -563,15 +587,17 @@ fn moving(x x: Float, z z: Float) -> Result(List(RelayedMovement), Nil) {
   use z <- result.try(half_float.to_bits(value: z))
   Ok([
     relayed_movement.MoveAsked(MovementMoveAsked(x:, y: 0, z:, blends: 1)),
-    relayed_movement.StateFlags(MovementStateFlags(flags: moving_flag)),
+    relayed_movement.StateFlags(
+      MovementStateFlags(flags: int.bitwise_or(on_the_ground_flag, moving_flag)),
+    ),
   ])
 }
 
-/// Kind 11 zero and kind 24 clear: the unit stands, which is also the state its 0x262 gives it.
+/// Kind 11 zero and kind 24 holding only the ground bit: the unit stands.
 fn stopped() -> List(RelayedMovement) {
   [
     relayed_movement.MoveAsked(MovementMoveAsked(x: 0, y: 0, z: 0, blends: 1)),
-    relayed_movement.StateFlags(MovementStateFlags(flags: 0)),
+    relayed_movement.StateFlags(MovementStateFlags(flags: on_the_ground_flag)),
   ]
 }
 
@@ -607,7 +633,7 @@ pub fn face_frame(
         blends: 0,
       ))
   }
-  unit_moved_frame(unit_id:, server_time_ms: time, commands: [
+  creature_moved_frame(unit_id:, server_time_ms: time, commands: [
     relayed_movement.Time(MovementTime(time:)),
     turn,
   ])

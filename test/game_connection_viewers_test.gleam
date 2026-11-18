@@ -1467,7 +1467,7 @@ pub fn a_viewer_writes_the_creatures_kind_3_flight_test() -> Nil {
         unit_id: 40,
         server_time: 400,
         reset_movement: 0,
-        kept: 0,
+        kept: 1,
         commands: [
           relayed_movement.Time(MovementTime(time: 400)),
           relayed_movement.TimedPath(
@@ -1482,11 +1482,11 @@ pub fn a_viewer_writes_the_creatures_kind_3_flight_test() -> Nil {
             z: 0,
             blends: 1,
           )),
-          relayed_movement.StateFlags(MovementStateFlags(flags: 0)),
+          relayed_movement.StateFlags(MovementStateFlags(flags: 0x100)),
         ],
       ),
     )
-    as "kind 0 at 1000 - 600, kind 3 with the times 400 and 775 and the two points, then the stop that ends any walk"
+    as "kind 0 at 1000 - 600, kind 3 with the times 400 and 775 and the two points, then the stop that ends any walk, with the kept bit 1 and the ground bit 0x100 (`unit.ground_lift.server_commands`)"
 }
 
 pub fn an_object_unseen_and_seen_again_under_the_same_id_writes_a_0x355_then_a_0x262_test() -> Nil {

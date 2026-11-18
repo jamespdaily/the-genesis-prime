@@ -832,8 +832,8 @@ pub fn a_viewer_writes_a_running_creatures_0x638_as_kind_0_then_kind_4_at_its_sp
     as "kind 0, the time the path starts at, kind 4, the path, then kind 11 and kind 24 that animate it"
   assert move
     == movement_move_asked.MovementMoveAsked(x: 0x4900, y: 0, z: 0, blends: 1)
-    && state.flags == 2
-    as "the velocity 10.0 along +x as half floats, and the moving bit"
+    && state.flags == 0x102
+    as "the velocity 10.0 along +x as half floats, and the moving bit with the ground bit (`unit.ground_lift.server_commands`)"
   assert path.speed == 0x4900 && path.path_type == 0 && path.mode == 0
     as "straight lines, mode 0, at 10.0 as a half float (sign 0, exponent 18, fraction 256)"
   assert path.points
@@ -928,7 +928,7 @@ pub fn a_creature_that_runs_28_points_is_drawn_along_all_of_them_and_a_late_view
   assert points == bits(staircase()) as "kind 4 holds all 28 points, in order"
   assert shape == #(0x4780, 0, 0)
     as "at 7.5 as a half float, straight lines, mode 0"
-  assert moving == #(0x4780, 0, 2)
+  assert moving == #(0x4780, 0, 0x102)
     as "kind 11 of the first leg's speed along x, and the moving bit"
   assert size < 500
     as "28 points make a frame of under half a kilobyte: 28 x 12 bytes of points and a short fixed part"
@@ -947,7 +947,7 @@ pub fn a_creature_that_runs_28_points_is_drawn_along_all_of_them_and_a_late_view
   assert points == bits([#(12.0, 0.0, 10.5), ..list.drop(staircase(), 12)])
     as "it starts at the creature's place and holds the points ahead of it, 17 in all"
   assert shape == #(0x4780, 0, 0)
-  assert moving == #(0, 0x4780, 2)
+  assert moving == #(0, 0x4780, 0x102)
     as "kind 11 is the second leg's direction, along z, and the moving bit"
 }
 
@@ -994,10 +994,10 @@ pub fn a_viewer_writes_a_creature_placed_while_it_ran_as_kind_0_then_kind_2_with
         blends: 1,
       )),
       relayed_movement.StateFlags(movement_state_flags.MovementStateFlags(
-        flags: 0,
+        flags: 0x100,
       )),
     ]
-    as "kind 0, the time of the placing, kind 2 at the place with its bit clear, which places the unit at once (0x140714120), then kind 11 zero and kind 24 clear, which stop the animation"
+    as "kind 0, the time of the placing, kind 2 at the place with its bit clear, which places the unit at once (0x140714120), then kind 11 zero and kind 24 holding only the ground bit 0x100, which stop the animation"
 }
 
 pub fn a_press_during_a_chase_finds_the_creature_where_its_path_puts_it_test() -> Nil {
@@ -1462,8 +1462,8 @@ pub fn a_beasts_aggro_strike_and_leash_reach_the_medics_client_with_the_worked_v
   assert velocity
     == movement_move_asked.MovementMoveAsked(x: 0, y: 0, z: 0xC900, blends: 1)
     as "kind 11 is the walk's speed, 10.0, along -z (from z -508 to the spawn at -563), as half floats (sign 1, 0xC900); the old frame had no kind 11"
-  assert state.flags == 2
-    as "kind 24 is the moving bit 0x2 alone, the bit the pace step reads (0x1405b5070); without it the client shows the Beast standing as it slides home"
+  assert state.flags == 0x102
+    as "kind 24 is the moving bit 0x2, the bit the pace step reads (0x1405b5070), with the ground bit 0x100; without the moving bit the client shows the Beast standing as it slides home"
 }
 
 /// The Medic's 0x638 commands for the Beast (unit 7), one list per frame, in order.
@@ -1535,8 +1535,8 @@ pub fn a_beast_that_chases_the_player_runs_in_the_clients_view_and_stops_where_i
   assert velocity
     == movement_move_asked.MovementMoveAsked(x: 0, y: 0, z: 0x4900, blends: 1)
     as "kind 11 is the path's speed along +z, 10.0 as a half float, as the player sends it (0x140715020)"
-  assert int.bitwise_and(state.flags, 2) == 2
-    as "kind 24 holds bit 0x2, the one the pace step reads (0x1405b5070)"
+  assert state.flags == 0x102
+    as "kind 24 holds bit 0x2, the one the pace step reads (0x1405b5070), and the ground bit 0x100"
   assert chase_arrival_after_ms(chase) == 1100
     as "the Beast stops 4 m short of the Medic: 11 m at 10 m/s"
   let #(beast, arrived) =
@@ -1555,7 +1555,7 @@ pub fn a_beast_that_chases_the_player_runs_in_the_clients_view_and_stops_where_i
   assert MovementFloatVector(x: position.x, y: position.y, z: position.z) == end
     && stopped
     == movement_move_asked.MovementMoveAsked(x: 0, y: 0, z: 0, blends: 1)
-    && int.bitwise_and(standing.flags, 2) == 0
+    && standing.flags == 0x100
     as "the creature is placed where the path ended and its animation stops"
   // The Medic stands still: the Beast's tick strikes from where it stands and sends no movement.
   let #(beast, ticked) =
@@ -1600,10 +1600,10 @@ pub fn a_beast_that_chases_the_player_runs_in_the_clients_view_and_stops_where_i
         blends: 1,
       )),
       relayed_movement.StateFlags(movement_state_flags.MovementStateFlags(
-        flags: 2,
+        flags: 0x102,
       )),
     ]
-    as "the walk home runs along -z at 10.0 (0xC900) with the moving bit"
+    as "the walk home runs along -z at 10.0 (0xC900) with the moving bit and the ground bit"
   let #(home_timer, home_after_ms) = home_timer_of(leashed)
   let #(_, home) =
     fire_beast(state: beast, at_ms: 7000 + home_after_ms, timer: home_timer)
@@ -1626,8 +1626,8 @@ pub fn a_beast_that_chases_the_player_runs_in_the_clients_view_and_stops_where_i
     )
     && stopped
     == movement_move_asked.MovementMoveAsked(x: 0, y: 0, z: 0, blends: 1)
-    && standing.flags == 0
-    as "at the spawn, kind 11 zero and kind 24 clear"
+    && standing.flags == 0x100
+    as "at the spawn, kind 11 zero and kind 24 holding only the ground bit"
 }
 
 pub fn a_medic_and_a_beast_striking_each_other_at_one_instant_both_get_their_answers_before_either_deadline_test() -> Nil {

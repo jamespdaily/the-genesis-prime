@@ -36,6 +36,7 @@ import genesis_prime/message/innate_index_set
 import genesis_prime/message/item_added
 import genesis_prime/message/movement_command.{type MovementCommand}
 import genesis_prime/message/movement_rotation.{MovementRotation}
+import genesis_prime/message/movement_state_flags.{MovementStateFlags}
 import genesis_prime/message/play_character.{PlayCharacter}
 import genesis_prime/message/player_health
 import genesis_prime/message/player_movement.{PlayerMovement}
@@ -1782,8 +1783,14 @@ pub type FightEvent {
   /// 0x638: the unit's command kinds in order, and the place the commands leave the
   /// unit at when they hold one: a kind 4 path's last point (movement_command.kind_4),
   /// or a kind 2 position with its blend bit clear, which places the unit at once
-  /// (`0x140714120`).
-  Moves(unit_id: Int, kinds: List(Int), ends_at: Option(#(Float, Float, Float)))
+  /// (`0x140714120`); the bit the 0x638 keeps and the flags of each kind 24 command.
+  Moves(
+    unit_id: Int,
+    kinds: List(Int),
+    ends_at: Option(#(Float, Float, Float)),
+    kept: Int,
+    state_flags: List(Int),
+  )
   /// 0x7f4: each target's unit with the damage of each of its effects
   /// (opcode.0x7f4).
   Went(cast_id: Int, targets: List(#(Int, List(Blow))))
@@ -1869,6 +1876,8 @@ pub fn fight_in(frames frames: List(Frame)) -> List(FightEvent) {
           unit_id: moved.unit_id,
           kinds: list.map(moved.commands, relayed_kind),
           ends_at:,
+          kept: moved.kept,
+          state_flags: list.filter_map(moved.commands, state_flags_of),
         ))
       }
       0x07F4 -> {
@@ -1892,6 +1901,16 @@ pub fn fight_in(frames frames: List(Frame)) -> List(FightEvent) {
       _ -> Error(Nil)
     }
   })
+}
+
+/// The flags of a kind 24 command, or `Error(Nil)` for another command.
+fn state_flags_of(
+  command: relayed_movement.RelayedMovement,
+) -> Result(Int, Nil) {
+  case command {
+    relayed_movement.StateFlags(MovementStateFlags(flags:)) -> Ok(flags)
+    _ -> Error(Nil)
+  }
 }
 
 /// The last point of a kind 4 path command, or the place of a kind 2 position
@@ -1989,8 +2008,22 @@ pub fn moves_of(
 ) -> List(#(List(Int), Option(#(Float, Float, Float)))) {
   list.filter_map(events, fn(event) {
     case event {
-      Moves(unit_id:, kinds:, ends_at:) if unit_id == unit ->
+      Moves(unit_id:, kinds:, ends_at:, ..) if unit_id == unit ->
         Ok(#(kinds, ends_at))
+      _ -> Error(Nil)
+    }
+  })
+}
+
+/// The kept bit and the kind 24 flags of each 0x638 of `unit` among the events.
+pub fn ground_lift_of(
+  events events: List(FightEvent),
+  unit unit: Int,
+) -> List(#(Int, List(Int))) {
+  list.filter_map(events, fn(event) {
+    case event {
+      Moves(unit_id:, kept:, state_flags:, ..) if unit_id == unit ->
+        Ok(#(kept, state_flags))
       _ -> Error(Nil)
     }
   })
