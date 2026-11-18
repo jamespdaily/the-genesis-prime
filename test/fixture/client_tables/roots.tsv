@@ -1250,3 +1250,5 @@ SpellLevel	1270	Spellslinger ability after level 1	ability_book_test, experience
 SpellLevel	1144	Spellslinger ability after level 1	ability_book_test, experience_book_test, world_entry_loadout_test
 SpellLevel	1148	Spellslinger ability after level 1	ability_book_test, experience_book_test, world_entry_loadout_test
 SpellLevel	1155	Spellslinger ability after level 1	ability_book_test, experience_book_test, world_entry_loadout_test
+Quest2	10510	Learning to Shop: a quest behind a title check, with a store purchase objective	prerequisite_title_test, quest_accept_test, quest_accept_tables_test, game_connection_quest_test
+QuestObjective	21267	objective 0 of quest 10510 (a purchase in the In-Game Store)	content_load_test, objective_hidden_test, game_connection_quest_test
