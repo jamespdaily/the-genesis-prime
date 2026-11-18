@@ -36,8 +36,8 @@
 //// - one of the `arrival_objectives` is done when the player stands at one of its markers
 ////   (`arrivals`), because its text asks only to go there;
 //// - one a spell effect or an item names (`objective_action`) stays open until a cast
-////   counts for it, the issue "A spell's QuestAdvanceObjective effect advances its
-////   quest objective, so the Loftite Railgun counts its hits";
+////   counts for it: a QuestAdvanceObjective row of the cast's spell advances it
+////   (genesis_prime/game/quest_advance);
 //// - one of the `held_objectives` stays open whichever of these it is, because only an
 ////   instance run or a PvP match completes it.
 //// An objective takes the event only while it is open (`0x1405510d0`, `0x140553790`): its
@@ -621,10 +621,7 @@ fn advance_quest(
       },
     )
   let state = case counted.became_achieved {
-    True -> [
-      SendState(quest_id: quest.id, state: achieved_state),
-      ..completion_of(tables:, quest_id: quest.id)
-    ]
+    True -> achieved(tables:, quest_id: quest.id)
     False -> []
   }
   #(
@@ -1372,6 +1369,18 @@ fn visits(
       })
       |> visits(quest:, zones:, now_ms:)
   }
+}
+
+/// What follows the progress that made the quest Achieved: its state 2 (0x35c) and, for a quest
+/// no creature receives, the server's completion (`completion_of`).
+pub fn achieved(
+  tables tables: table_store.Tables,
+  quest_id quest_id: Int,
+) -> List(Effect) {
+  [
+    SendState(quest_id:, state: achieved_state),
+    ..completion_of(tables:, quest_id:)
+  ]
 }
 
 /// The server's completion of the quest, when no creature receives it and the client's

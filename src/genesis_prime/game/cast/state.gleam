@@ -24,6 +24,7 @@ import genesis_prime/game/lasting
 import genesis_prime/game/look
 import genesis_prime/game/prerequisite
 import genesis_prime/game/proc
+import genesis_prime/game/quest_advance
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/shortcut_spell
 import genesis_prime/game/spell_area
@@ -263,11 +264,26 @@ pub type Effect {
   /// The last go of an activate cast: the player activated the creature or static object
   /// `unit_id`, of the Creature2 row `creature_id`, which lived when the press started the
   /// cast or did not (`alive_at_press`). The cast is an item's when `by_item`, the
-  /// creature's own activate cast otherwise.
+  /// creature's own activate cast otherwise. An item's cast of a spell with no Activate row
+  /// raises none: the Activate effect is what makes a use.
   Activated(unit_id: Int, creature_id: Int, alive_at_press: Bool, by_item: Bool)
   /// The first go of a cast of a quest button's spell (`cast.shortcut`), by its Spell4 id, and
   /// the unit the press aimed it at: none for a spell that takes the caster.
   ShortcutCast(spell4_id: Int, target: Option(PressedAt))
+  /// The QuestAdvanceObjective rows of the caster's spell applied: the connection advances the
+  /// player's quest objectives (genesis_prime/game/quest_advance), skipping each one the cast's
+  /// own use or cast (`with`) counts, which is raised before this effect in the same go.
+  QuestAdvanced(advances: List(quest_advance.Advance), with: AdvanceWith)
+}
+
+/// The use or cast a QuestAdvanceObjective row was applied with, which counts the objectives
+/// it names itself (genesis_prime/game/quest_advance): the activate cast of the unit, as
+/// `Activated` raises it, or the quest button's cast, as `ShortcutCast` raises it, or none for
+/// a cast that raises neither.
+pub type AdvanceWith {
+  WithUse(unit_id: Int, creature_id: Int, alive_at_press: Bool, by_item: Bool)
+  WithCast(spell4_id: Int, target: Option(PressedAt))
+  WithNothing
 }
 
 /// The unit a press of a quest button's spell aimed it at (`opcode.0x9d`).
@@ -450,6 +466,10 @@ pub type Due {
   /// ago (`proc.Fires`): its spell is cast at the unit `at`. The fire was counted at the
   /// event. The end of the holder's node cancels it.
   ProcDue(source: unit_properties.Source, row: spell_plan.ProcRow, at: Int)
+  /// The QuestAdvanceObjective rows of the go `advances` name apply, after their delay, with the
+  /// use or cast of their cast: it becomes `QuestAdvanced`. Neither the cast's end nor the
+  /// caster's death cancels it.
+  QuestAdvanceDue(advances: List(quest_advance.Advance), with: AdvanceWith)
   /// The held press starts.
   StartHeld
   /// The ability the player holds down casts again: its cooldowns have ended.
@@ -1419,11 +1439,69 @@ pub fn source_of(due due: Due) -> Option(unit_properties.Source) {
     | NodesEnd(..)
     | StateEnd(..)
     | ProcDue(..)
+    | QuestAdvanceDue(..)
     | StartHeld
     | RepeatHeld
     | WindowEnd(..)
     | ChargeLevel(..)
     | Tick(..) -> None
+  }
+}
+
+/// The effects without the cancels of the timers in `kept`.
+pub fn without_cancels(
+  effects effects: List(Effect),
+  of kept: Dict(TimerId, Due),
+) -> List(Effect) {
+  list.filter(effects, fn(effect) {
+    case effect {
+      CancelTimer(timer:) -> !dict.has_key(kept, timer)
+      Send(..)
+      | Tell(..)
+      | StartTimer(..)
+      | Log(..)
+      | Strike(..)
+      | TickStrike(..)
+      | Pay(..)
+      | Gain(..)
+      | CasterChangeStarts(..)
+      | CasterChangeEnds(..)
+      | TargetChangeStarts(..)
+      | ForcedMoveStarts(..)
+      | CreatureDespawns(..)
+      | CreatureHoldsUnitStates(..)
+      | TargetChangeEnds(..)
+      | StealthChanged(..)
+      | Activated(..)
+      | ShortcutCast(..)
+      | QuestAdvanced(..) -> True
+    }
+  })
+}
+
+/// Whether a timer holds QuestAdvanceObjective rows back for their delay, which the caster's
+/// death leaves running (`cast.died`).
+pub fn is_quest_advance(due due: Due) -> Bool {
+  case due {
+    QuestAdvanceDue(..) -> True
+    Go(..)
+    | Finish(..)
+    | StartChild(..)
+    | NodesEnd(..)
+    | StateEnd(..)
+    | ModifierStart(..)
+    | TargetModifierStart(..)
+    | ForcedMoveStart(..)
+    | ModifierEnd(..)
+    | RestrictionEnd(..)
+    | CooldownModifierStarts(..)
+    | CooldownModifierEnds(..)
+    | ProcDue(..)
+    | StartHeld
+    | RepeatHeld
+    | WindowEnd(..)
+    | ChargeLevel(..)
+    | Tick(..) -> False
   }
 }
 

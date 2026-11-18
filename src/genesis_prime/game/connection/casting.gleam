@@ -132,7 +132,9 @@ import genesis_prime/step.{
   OwnEffect, StartTimer,
 }
 import genesis_prime/table/creature2
-import genesis_prime/table/id.{type Creature2Id, RaceId, Spell4Id}
+import genesis_prime/table/id.{
+  type Creature2Id, Creature2Id, Faction2Id, RaceId, Spell4Id,
+}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_path
 import gleam/bit_array
@@ -881,6 +883,73 @@ fn counted_target(
   }
 }
 
+/// The event of the use or cast a QuestAdvanceObjective row was applied with
+/// (`cast_state.AdvanceWith`), as `Activated` and `ShortcutCast` count it, or none when it
+/// counted nothing. A use of a unit that has left the picture since the press counts as it
+/// did at its go: a use that counts a unit new to an objective releases it, so the unit of a
+/// delayed row is no longer shown, and its Creature2 row names the creature (the objectives
+/// a use counts name the creature, not its faction).
+fn advance_event(
+  tables tables: table_store.Tables,
+  entered entered: world_entry.Entered,
+  with with: cast_state.AdvanceWith,
+) -> Option(objective.Event) {
+  case with {
+    cast_state.WithNothing -> None
+    cast_state.WithUse(unit_id:, creature_id:, alive_at_press:, by_item:) ->
+      case dict.has_key(entered.shown, unit_id) {
+        True ->
+          counted_target(
+            tables:,
+            picture: entered.shown,
+            unit_id:,
+            alive_at_press:,
+          )
+          |> result.map(fn(counted) {
+            objective.Used(
+              target: counted.0,
+              checklist_index: counted.1,
+              unit: unit_ref(entered:, unit_id:),
+              by_item:,
+            )
+          })
+          |> option.from_result
+        False ->
+          creature2.get(tables:, id: Creature2Id(creature_id))
+          |> result.map(fn(row) {
+            objective.Used(
+              target: target_group.Unit(
+                creature_id: Creature2Id(creature_id),
+                faction_id: Faction2Id(0),
+                unit_race_id: creature2.unit_race_id(row),
+              ),
+              checklist_index: 0,
+              unit: unit_ref(entered:, unit_id:),
+              by_item:,
+            )
+          })
+          |> option.from_result
+      }
+    cast_state.WithCast(spell4_id:, target: None) ->
+      Some(objective.Cast(spell4_id: Spell4Id(spell4_id), target: None))
+    cast_state.WithCast(
+      spell4_id:,
+      target: Some(cast_state.PressedAt(unit_id:, alive_at_press:)),
+    ) ->
+      counted_target(tables:, picture: entered.shown, unit_id:, alive_at_press:)
+      |> result.map(fn(counted) {
+        objective.Cast(
+          spell4_id: Spell4Id(spell4_id),
+          target: Some(objective.CastTarget(
+            unit: counted.0,
+            ref: unit_ref(entered:, unit_id:),
+          )),
+        )
+      })
+      |> option.from_result
+  }
+}
+
 /// The connection's effects for what the cast rule decided, with the session as
 /// they leave it: a write, a tell of news to a viewer in the run of the player's
 /// map, a timer or a log line, a stealth change written to the player, told to its
@@ -1056,6 +1125,14 @@ fn carried_out(
           Error(Nil) -> #(session, [])
         }
       cast_state.ShortcutCast(..), None -> #(session, [])
+      cast_state.QuestAdvanced(advances:, with:), Some(entered) ->
+        connection_objective.advanced(
+          session:,
+          now:,
+          advances:,
+          with: advance_event(tables: session.settings.tables, entered:, with:),
+        )
+      cast_state.QuestAdvanced(..), None -> #(session, [])
       cast_state.Pay(payments:), _ ->
         connection_resource.paid(session:, payments:)
       cast_state.Gain(gains:), _ -> connection_resource.gained(session:, gains:)

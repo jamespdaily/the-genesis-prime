@@ -12,6 +12,7 @@ import genesis_prime/game/departures
 import genesis_prime/game/experience
 import genesis_prime/game/movement
 import genesis_prime/game/objective
+import genesis_prime/game/quest_advance
 import genesis_prime/game/quest_log
 import genesis_prime/game/target_group
 import genesis_prime/game/world_entry
@@ -20,7 +21,7 @@ import genesis_prime/step.{
 }
 import genesis_prime/table/creature2
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
 import gleam/set
 
 /// The session and what is written after the player's blow killed the creature of
@@ -98,18 +99,49 @@ pub fn counted(
   now now: Now,
   event event: objective.Event,
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  advanced_by(session:, now:, advancing: fn(entered) {
+    objective.advance(
+      log: entered.quests,
+      tables: session.settings.tables,
+      event:,
+      reused: session.settings.reused_unit_objectives,
+      now_ms: now.monotonic_ms,
+    )
+  })
+}
+
+/// The session and what is written after a cast's QuestAdvanceObjective rows advanced the
+/// player's objectives (genesis_prime/game/quest_advance), `with` the event of the cast's own
+/// use or cast when it made one, and then after what that opened is counted as well
+/// (`settled`). A connection with no player in the world counts nothing.
+pub fn advanced(
+  session session: Session,
+  now now: Now,
+  advances advances: List(quest_advance.Advance),
+  with with: Option(objective.Event),
+) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  advanced_by(session:, now:, advancing: fn(entered) {
+    quest_advance.advance(
+      log: entered.quests,
+      tables: session.settings.tables,
+      advances:,
+      with:,
+      now_ms: now.monotonic_ms,
+    )
+  })
+}
+
+/// The session and what is written after `advancing` moved the log of the player in the
+/// world, and after what that opened is counted as well (`settled`).
+fn advanced_by(
+  session session: Session,
+  now now: Now,
+  advancing advancing: fn(world_entry.Entered) -> objective.Advanced,
+) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
   case connection_state.entered_of(session.status) {
     None -> #(session, [])
     Some(entered) -> {
-      let tables = session.settings.tables
-      let advanced =
-        objective.advance(
-          log: entered.quests,
-          tables:,
-          event:,
-          reused: session.settings.reused_unit_objectives,
-          now_ms: now.monotonic_ms,
-        )
+      let advanced = advancing(entered)
       let settled = settle(session:, entered:, log: advanced.log, now:)
       told(
         session:,

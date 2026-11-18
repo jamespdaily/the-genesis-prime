@@ -87,11 +87,11 @@ import genesis_prime/game/cast/state.{
   CooldownModifierStarts, DroppedControls, DroppedDespawns, DroppedSignals,
   DroppedUnitStates, Finish, ForcedMoveStart, GateFails, Go, Hold, HoldForCast,
   Holding, ItemsIssue, Log, ModifierEnd, ModifierStart, NoInteraction, NodesEnd,
-  NotBuilt, Passive, PrerequisitesIssue, ProcDue, Refuse, RepeatHeld, Resolution,
-  RestrictionEnd, Shortcut, SpellsIssue, Stage, StartChild, StartHeld, Starts,
-  State, StateEnd, TargetModifierStart, Tick, UnbuiltItemSpell,
-  UnbuiltPlayerTarget, UnbuiltShortcut, UnbuiltSpell, Unheld, Unpaid,
-  UnreadItemPrerequisite, UnreadLinkPrerequisite, UnreadPrerequisite,
+  NotBuilt, Passive, PrerequisitesIssue, ProcDue, QuestAdvanceDue, Refuse,
+  RepeatHeld, Resolution, RestrictionEnd, Shortcut, SpellsIssue, Stage,
+  StartChild, StartHeld, Starts, State, StateEnd, TargetModifierStart, Tick,
+  UnbuiltItemSpell, UnbuiltPlayerTarget, UnbuiltShortcut, UnbuiltSpell, Unheld,
+  Unpaid, UnreadItemPrerequisite, UnreadLinkPrerequisite, UnreadPrerequisite,
   UnreadShortcutPick, UnreadSpend, UntilRemovedIssue, WindowEnd,
 } as cast_state
 import genesis_prime/game/cast/tick as cast_tick
@@ -1064,6 +1064,7 @@ pub fn stop_pending(
       | CooldownModifierStarts(..)
       | CooldownModifierEnds(..)
       | ProcDue(..)
+      | QuestAdvanceDue(..)
       | StartHeld
       | RepeatHeld
       | WindowEnd(..)

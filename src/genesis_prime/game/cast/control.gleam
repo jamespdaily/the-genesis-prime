@@ -143,9 +143,9 @@ import genesis_prime/game/cast/state.{
   ChargeLevel, CooldownModifierEnds, CooldownModifierStarts, CreatureDespawns,
   CreatureHoldsUnitStates, Deflected, Finish, ForcedMoveStart, ForcedMoveStarts,
   Go, HeldRestriction, Hit, Immune, Look, ModifierEnd, ModifierStart, NodesEnd,
-  OnCreature, ProcDue, Property, RepeatHeld, Restricting, RestrictionEnd, Send,
-  StartChild, StartHeld, State, StateEnd, TargetChangeEnds, TargetChangeStarts,
-  TargetModifierStart, Tell, Tick, WindowEnd,
+  OnCreature, ProcDue, Property, QuestAdvanceDue, RepeatHeld, Restricting,
+  RestrictionEnd, Send, StartChild, StartHeld, State, StateEnd, TargetChangeEnds,
+  TargetChangeStarts, TargetModifierStart, Tell, Tick, WindowEnd,
 } as cast_state
 import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
@@ -346,6 +346,8 @@ fn effect_named(kind kind: spell_plan.Kind) -> Result(String, Nil) {
     spell_plan.ProcEffect(proc: row) -> named("the Proc", row.effect_id)
     spell_plan.HealEffect(heal: row) ->
       named("the Heal or HealShields", row.effect_id)
+    spell_plan.QuestAdvanceEffect(quest_advance: row) ->
+      named("the QuestAdvanceObjective", row.effect_id)
     spell_plan.ControlEffect(control: row) ->
       named("the ability restriction", row.effect_id)
   }
@@ -634,7 +636,8 @@ pub fn modifiers_armed(
       | spell_plan.ControlEffect(..)
       | spell_plan.DespawnEffect(..)
       | spell_plan.UnitStateEffect(..)
-      | spell_plan.DelayEffect(..) -> so_far
+      | spell_plan.DelayEffect(..)
+      | spell_plan.QuestAdvanceEffect(..) -> so_far
     }
   })
 }
@@ -723,7 +726,8 @@ pub fn struck_moves_armed(
       | spell_plan.ControlEffect(..)
       | spell_plan.DespawnEffect(..)
       | spell_plan.UnitStateEffect(..)
-      | spell_plan.DelayEffect(..) -> so_far
+      | spell_plan.DelayEffect(..)
+      | spell_plan.QuestAdvanceEffect(..) -> so_far
     }
   })
 }
@@ -928,6 +932,7 @@ fn target_start_of(due due: Due) -> Result(OnCreature, Nil) {
     | CooldownModifierStarts(..)
     | CooldownModifierEnds(..)
     | ProcDue(..)
+    | QuestAdvanceDue(..)
     | StartHeld
     | RepeatHeld
     | WindowEnd(..)

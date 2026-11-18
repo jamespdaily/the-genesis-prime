@@ -144,6 +144,7 @@ fn applied(kind kind: effect_kind.Kind) -> Bool {
     | effect_kind.Despawn
     | effect_kind.UnitState
     | effect_kind.NpcExecutionDelay
+    | effect_kind.QuestAdvance
     | effect_kind.Unread(..) -> False
   }
 }
@@ -187,6 +188,7 @@ fn listed(effect effect: Spell4Effects) -> Result(OpeningEffect, Nil) {
     | effect_kind.Despawn
     | effect_kind.UnitState
     | effect_kind.NpcExecutionDelay
+    | effect_kind.QuestAdvance
     | effect_kind.Unread(..) -> Error(Nil)
   }
 }

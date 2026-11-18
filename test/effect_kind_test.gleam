@@ -6,7 +6,26 @@
 ////   does not read it either and the coverage measure counts it unhandled.
 
 import genesis_prime/game/effect_kind.{Damage, Immunity}
+import gleam/list
 import owned_test
+
+pub fn kind_of_names_type_42_and_its_row_read_follows_its_aim_test() -> Nil {
+  use <- owned_test.run(10_000)
+  assert effect_kind.kind_of(effect_type: 42) == effect_kind.QuestAdvance
+    as "Spell4Effects.effectType.42: QuestAdvanceObjective, enum 0x140c34140"
+  assert effect_kind.is_read(effect_type: 42)
+    as "a rule of the server reads it, so the coverage measure counts it handled"
+  // The aim is a guess (`Spell4Effects.targetFlags`): the caster's bit or the primary target
+  // alone, the units a quest log belongs to.
+  assert list.map([0, 1, 2, 3, 4, 5, 6, 7, 8], fn(target_flags) {
+      effect_kind.is_row_read(effect_type: 42, target_flags:)
+    })
+    == [False, True, True, True, False, True, False, True, False]
+    as "1, 3, 5 and 7 hold the caster's bit and 2 names the primary target alone; 4, 6, 0 and 8 reach no one a quest log is kept for"
+  assert effect_kind.kind_of(effect_type: 79) == Immunity
+    && effect_kind.kind_of(effect_type: 43) == effect_kind.Unread(43)
+    as "the kinds around it do not move: Immunity stays and an unread type stays unread"
+}
 
 pub fn effect_type_79_decodes_to_immunity_test() -> Nil {
   use <- owned_test.run(10_000)

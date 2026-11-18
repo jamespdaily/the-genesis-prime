@@ -1093,6 +1093,7 @@ fn tell_change(
     | cast_state.CasterChangeEnds(..)
     | cast_state.Activated(..)
     | cast_state.ShortcutCast(..)
+    | cast_state.QuestAdvanced(..)
     | cast_state.TickStrike(..)
     | cast_state.StealthChanged(..) ->
       panic as "not a change of a creature's property"
@@ -1949,6 +1950,7 @@ fn carried_out(
       | cast_state.CreatureHoldsUnitStates(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
+      | cast_state.QuestAdvanced(..)
       | cast_state.TickStrike(..)
       | cast_state.StealthChanged(..) -> []
     }

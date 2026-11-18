@@ -91,27 +91,30 @@ import genesis_prime/game/cast/persist as cast_persist
 import genesis_prime/game/cast/press as cast_press
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{
-  type ActivationStart, type Aimed, type AimedPress, type Applied, type Caster,
-  type Effect, type Fact, type HeldProc, type Holder, type Interaction,
-  type ItemAtPlace, type ItemPress, type Listed, type Live, type Message,
-  type Paid, type Reached, type Refusal, type Resolution, type Restricting,
-  type Role, type State, type Struck, type TargetVerdict, type TickAsked,
-  type Used, type UsedUnit, Accept, Activated, Activating, Activation,
-  ActivationStart, Aimed, AimedPress, AnswerSucceeded, Answered, AwaitingAnswer,
-  Base, Cancelled, CannotTell, CastClears, CasterChangeEnds, CasterChangeStarts,
-  ChargeLevel, Child, CooldownEnds, CooldownKept, CooldownModifierEnds,
-  CooldownModifierStarts, Deflected, Finish, ForcedMoveStart, Frames, GateFails,
-  Go, GoAsked, Healing, Held, HeldProc, Hit, Hold, HoldForCast, Holding, Immune,
-  ItemAtPlace, ItemPress, ItemsIssue, KeyHeld, Lingering, Listed, Live, Log,
-  ModifierEnd, ModifierStart, NoClientCastId, NoInteraction, NoInteractionWaits,
-  NoItemSpell, NodesEnd, NotBuilt, NotDecoded, NotSentByClient, Passive, Plain,
-  PrerequisitesIssue, Pressed, PressedAt, ProcDue, Reached, Refuse, RepeatHeld,
-  Resolution, ResourceMoved, RestrictionEnd, Send, Shortcut, ShortcutCast,
-  SpellsIssue, Stage, StartChild, StartHeld, Started, StartedMoving, Starts,
-  State, StateEnd, StealthChanged, Strike, TargetModifierStart, Tell, Threshold,
-  Tick, UnbuiltItemSpell, UnbuiltShortcut, UnbuiltSpell, UnknownAnswer,
-  UnknownCancel, UnreadItemPrerequisite, UnreadLinkPrerequisite,
-  UnreadPrerequisite, UnreadShortcutPick, UsedUnit, WindowEnd, WrongAnswerSpell,
+  type Activating, type ActivationStart, type AdvanceWith, type Aimed,
+  type AimedPress, type Applied, type Caster, type Effect, type Fact,
+  type HeldProc, type Holder, type Interaction, type ItemAtPlace, type ItemPress,
+  type Listed, type Live, type Message, type Paid, type Reached, type Refusal,
+  type Resolution, type Restricting, type Role, type State, type Struck,
+  type TargetVerdict, type TickAsked, type Used, type UsedUnit, Accept,
+  Activated, Activating, Activation, ActivationStart, Aimed, AimedPress,
+  AnswerSucceeded, Answered, AwaitingAnswer, Base, Cancelled, CannotTell,
+  CastClears, CasterChangeEnds, CasterChangeStarts, ChargeLevel, Child,
+  CooldownEnds, CooldownKept, CooldownModifierEnds, CooldownModifierStarts,
+  Deflected, Finish, ForcedMoveStart, Frames, GateFails, Go, GoAsked, Healing,
+  Held, HeldProc, Hit, Hold, HoldForCast, Holding, Immune, ItemAtPlace,
+  ItemPress, ItemsIssue, KeyHeld, Lingering, Listed, Live, Log, ModifierEnd,
+  ModifierStart, NoClientCastId, NoInteraction, NoInteractionWaits, NoItemSpell,
+  NodesEnd, NotBuilt, NotDecoded, NotSentByClient, Passive, Plain,
+  PrerequisitesIssue, Pressed, PressedAt, ProcDue, QuestAdvanceDue,
+  QuestAdvanced, Reached, Refuse, RepeatHeld, Resolution, ResourceMoved,
+  RestrictionEnd, Send, Shortcut, ShortcutCast, SpellsIssue, Stage, StartChild,
+  StartHeld, Started, StartedMoving, Starts, State, StateEnd, StealthChanged,
+  Strike, TargetModifierStart, Tell, Threshold, Tick, UnbuiltItemSpell,
+  UnbuiltShortcut, UnbuiltSpell, UnknownAnswer, UnknownCancel,
+  UnreadItemPrerequisite, UnreadLinkPrerequisite, UnreadPrerequisite,
+  UnreadShortcutPick, UsedUnit, WindowEnd, WithCast, WithNothing, WithUse,
+  WrongAnswerSpell,
 } as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/class_resource.{type Payment}
@@ -120,6 +123,7 @@ import genesis_prime/game/item_use
 import genesis_prime/game/lasting
 import genesis_prime/game/prerequisite
 import genesis_prime/game/proc
+import genesis_prime/game/quest_advance
 import genesis_prime/game/shortcut_spell
 import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{type Plans, type Proxy, type Spell}
@@ -214,7 +218,7 @@ pub fn activate(
 /// connection, and `in_cast_group` whether the unit is in a TargetGroup (the spell's cast
 /// group, which the client does not test). A use the client would not have sent ends the
 /// connection; one it sends and refuses is refused with its result; one the server has no
-/// plan for (the item's spell has no Activate effect) is refused as not built; the others
+/// plan for (the item's spell has no Activate and no QuestAdvanceObjective effect) is refused as not built; the others
 /// run as an activate cast does, and the go raises `Activated` for the unit. The answer is
 /// `Frames` for a refusal and for a press whose client cast id is not above the highest the
 /// state took (`item_press_refused`), which start nothing and spend nothing, and `Started` for
@@ -456,7 +460,8 @@ fn activation_answered(
 }
 
 /// The cast of an item's spell, which the item's checks let through, at the unit the
-/// press names (`item_used`): refused as not built when the spell has no Activate effect,
+/// press names (`item_used`): refused as not built when the spell has no Activate and no
+/// QuestAdvanceObjective effect,
 /// refused 91 for a unit not shown and 100 for another player. At a creature the target's
 /// life and states come first (`cast_press.target_state_refusal`), then 89 for a unit the spell's cast
 /// group refuses (`activate.passes_cast_group`), else the activate cast of the unit, which
@@ -490,7 +495,7 @@ fn item_spell_cast(
         spell4_id:,
         key: UnbuiltItemSpell(spell4_id:),
         result: cast_result.IllegalSpellCast,
-        why: "has no Activate effect, which is all the server counts an item's use through",
+        why: "has no Activate and no QuestAdvanceObjective effect, which is all the server plays of an item's spell",
         issue: ItemsIssue,
       ))
     Ok(activate.NoSpell4Row) -> refusal(spell4_id, cast_result.SpellUnknown)
@@ -2697,6 +2702,9 @@ fn fire(
         )
         ProcDue(source:, row:, at:) ->
           proc_due(cast:, caster:, now_ms:, source:, row:, at:)
+        QuestAdvanceDue(advances:, with:) -> #(cast, [
+          QuestAdvanced(advances:, with:),
+        ])
         RepeatHeld -> #(cast_press.repeat_fired(cast:, timer:), [])
         StartHeld ->
           case cast.held {
@@ -3305,7 +3313,12 @@ fn all_ended(cast cast: State, now now: Now) -> #(State, List(Effect)) {
       )
     })
   let modifiers_ended = cast_proc.modifiers_pending(cast:)
+  // The go applied a QuestAdvanceObjective row already; its delay only holds the count back, so
+  // the caster's death leaves its timer (a server choice).
+  let advance_timers =
+    dict.filter(cast.timers, fn(_, due) { cast_state.is_quest_advance(due:) })
   let #(cast, cancelled) = cast_tick.left(cast:)
+  let cast = State(..cast, timers: dict.merge(cast.timers, advance_timers))
   #(
     cast_proc.passive_restored(cast:, aside:),
     list.flatten([
@@ -3313,7 +3326,7 @@ fn all_ended(cast cast: State, now now: Now) -> #(State, List(Effect)) {
       ended,
       lingering_ended,
       modifiers_ended,
-      cancelled,
+      cast_state.without_cancels(effects: cancelled, of: advance_timers),
     ]),
   )
 }
@@ -3730,6 +3743,7 @@ fn close_threshold(
             | CooldownModifierStarts(..)
             | CooldownModifierEnds(..)
             | ProcDue(..)
+            | QuestAdvanceDue(..)
             | StartHeld
             | RepeatHeld
             | Tick(..) -> False
@@ -4074,12 +4088,19 @@ fn go(
       // the first go lists the row (phaseFlags 1). A cast stopped before its last go
       // activates nothing: the server's choice, since the client's own handling of the
       // Activate effect (`Spell4Effects.effectType.7`) is not read here for a stopped
-      // channel.
+      // channel. An item's cast of a spell with no Activate row is no use of its target:
+      // the Activate effect is what makes a use (`Spell4Effects.effectType.7`).
       let activated = case live.activation {
-        Some(Activating(unit_id:, creature_id:, alive_at_press:, by_item:, ..))
-          if live.gone == go_count
-        -> [Activated(unit_id:, creature_id:, alive_at_press:, by_item:)]
-        Some(_) | None -> []
+        Some(
+          Activating(unit_id:, creature_id:, alive_at_press:, by_item:, ..) as activating,
+        ) ->
+          case live.gone == go_count && makes_a_use(activating:) {
+            True -> [
+              Activated(unit_id:, creature_id:, alive_at_press:, by_item:),
+            ]
+            False -> []
+          }
+        None -> []
       }
       // The first go of a quest button's cast counts the objective: a later go of the
       // same cast counts nothing more.
@@ -4089,6 +4110,13 @@ fn go(
         ]
         False -> []
       }
+      let #(cast, quest_advances) =
+        quest_advances_armed(
+          cast:,
+          caster:,
+          aimed:,
+          with: advance_with(live:, spell:),
+        )
       #(
         cast,
         list.flatten([
@@ -4117,6 +4145,7 @@ fn go(
           finished,
           activated,
           counted,
+          quest_advances,
           armed,
         ]),
       )
@@ -4239,6 +4268,22 @@ fn reached_by(
         | spell_plan.RemoveStealthEffect(..)
         | spell_plan.DelayEffect(..)
         | spell_plan.ControlEffect(..) -> walk
+        spell_plan.QuestAdvanceEffect(quest_advance: row) ->
+          reach_units(
+            walk:,
+            planned:,
+            row:,
+            aim: row.aim,
+            stands: fn(_) { True },
+            condition: row.condition,
+            what: "the QuestAdvanceObjective effect "
+              <> int.to_string(row.effect_id.value),
+            caster:,
+            live:,
+            struck:,
+            gates_passed:,
+            target_verdict:,
+          )
         spell_plan.LastingEffect(lasting: row) ->
           reach_units(
             walk:,
@@ -4469,7 +4514,8 @@ fn products_made(
         | spell_plan.ControlEffect(..)
         | spell_plan.DespawnEffect(..)
         | spell_plan.UnitStateEffect(..)
-        | spell_plan.DelayEffect(..) -> #(entry, [])
+        | spell_plan.DelayEffect(..)
+        | spell_plan.QuestAdvanceEffect(..) -> #(entry, [])
       }
     })
   #(
@@ -4640,6 +4686,7 @@ fn reached_listed(reached reached: List(Reached)) -> List(#(Int, Listed)) {
       | spell_plan.DespawnEffect(..), _
       | spell_plan.UnitStateEffect(..), _
       | spell_plan.DelayEffect(..), _
+      | spell_plan.QuestAdvanceEffect(..), _
       | spell_plan.ControlEffect(..), _
       -> Error(Nil)
     }
@@ -4689,7 +4736,84 @@ fn removed_by_go(
       | spell_plan.ControlEffect(..)
       | spell_plan.DespawnEffect(..)
       | spell_plan.UnitStateEffect(..)
-      | spell_plan.DelayEffect(..) -> so_far
+      | spell_plan.DelayEffect(..)
+      | spell_plan.QuestAdvanceEffect(..) -> so_far
+    }
+  })
+}
+
+/// Whether an activate cast is a use of its unit: the creature's own activate cast always is,
+/// and an item's cast only when its spell holds an Activate row, the effect that makes a use
+/// (`Spell4Effects.effectType.7`).
+fn makes_a_use(activating activating: Activating) -> Bool {
+  !activating.by_item || activating.effects != []
+}
+
+/// The use or cast a go's QuestAdvanceObjective rows count with (`quest_advance`): the activate
+/// cast's use of its unit, as `Activated` raises it, which an item's cast of a spell with no
+/// Activate row does not raise (an item's use counts a unit only through that effect), or
+/// the quest button's cast, as `ShortcutCast` raises it; none for any other cast.
+fn advance_with(live live: Live, spell spell: Spell) -> AdvanceWith {
+  case live.activation, live.shortcut {
+    Some(
+      Activating(unit_id:, creature_id:, alive_at_press:, by_item:, ..) as activating,
+    ),
+      _
+    ->
+      case makes_a_use(activating:) {
+        True -> WithUse(unit_id:, creature_id:, alive_at_press:, by_item:)
+        False -> WithNothing
+      }
+    None, True -> WithCast(spell4_id: spell.spell4_id.value, target: live.aimed)
+    None, False -> WithNothing
+  }
+}
+
+/// The QuestAdvanceObjective rows a go applies to the caster, handed to the connection: a row
+/// of no delay in this step, in one `QuestAdvanced` for all of them, and the rows of one
+/// delay on a timer of that delay (`QuestAdvanceDue`), in the order the rows were reached. A
+/// row that reaches a unit other than the caster advances nothing (only the player's own
+/// quests advance). Nothing cancels a timer once the go has applied the rows: the cast's end,
+/// the caster's death and a removal leave it, and it is lost with the connection.
+fn quest_advances_armed(
+  cast cast: State,
+  caster caster: Caster,
+  aimed aimed: Aimed,
+  with with: AdvanceWith,
+) -> #(State, List(Effect)) {
+  let rows =
+    list.filter_map(aimed.reached, fn(entry) {
+      case entry.unit_id == caster.unit_id {
+        True -> spell_plan.as_quest_advance(entry.effect.kind)
+        False -> Error(Nil)
+      }
+    })
+  let delays =
+    list.map(rows, fn(row) { row.delay_ms })
+    |> list.unique
+    |> list.sort(int.compare)
+  list.fold(delays, #(cast, []), fn(so_far, delay_ms) {
+    let #(cast, effects) = so_far
+    let advances =
+      list.filter(rows, fn(row) { row.delay_ms == delay_ms })
+      |> list.map(fn(row) {
+        quest_advance.Advance(
+          quest_id: row.quest_id,
+          objective_index: row.objective_index,
+          amount: row.amount,
+        )
+      })
+    case delay_ms > 0 {
+      False -> #(cast, list.append(effects, [QuestAdvanced(advances:, with:)]))
+      True -> {
+        let #(cast, _, start) =
+          cast_state.armed(
+            cast:,
+            due: QuestAdvanceDue(advances:, with:),
+            after_ms: delay_ms,
+          )
+        #(cast, list.append(effects, [start]))
+      }
     }
   })
 }
@@ -4888,7 +5012,8 @@ fn cooldowns_started_at_node_end(
       | spell_plan.ControlEffect(..)
       | spell_plan.DespawnEffect(..)
       | spell_plan.UnitStateEffect(..)
-      | spell_plan.DelayEffect(..) -> #(cast, effects)
+      | spell_plan.DelayEffect(..)
+      | spell_plan.QuestAdvanceEffect(..) -> #(cast, effects)
     }
   })
 }
