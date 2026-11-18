@@ -12,6 +12,8 @@
 //// - The Item2 rows (`fixture_tables`, the client's own): 14838 stacks to 50 and a lot
 ////   is 1 item (buyFromVendorStackCount 1); 20791 stacks to 99 and a lot is 5 items
 ////   (Vendor.lua l.437 to 452: price times the stack size times the spinner).
+//// - Item2 14838 and 20791 hold maxCharges 1, so what a buy of them makes holds 1 charge
+////   (`opcode.0x111.charges`).
 //// - The stock is Dorian Walker's, from `vendor_support`: position 1 is Item2 12078, 2 is
 ////   14838 and 3 is 20791, and unit 40 is his unit in the player's picture.
 //// - `opcode.0x7ea`: the vendor-open checks the buy repeats are the 0x7EA's, with the
@@ -57,11 +59,13 @@ import genesis_prime/store.{
   NewStack, SaveRefused, StackGrowth,
 }
 import genesis_prime/table/id.{Item2Id}
+import genesis_prime/table/loader/store as table_store
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/set
 import gleam/string
+import item_charge_support
 import owned_test
 import player_life_support
 import vendor_support
@@ -116,6 +120,7 @@ fn in_bag(
     bag_index: index,
     stack_count: count,
     random_stats: 0,
+    charges: 0,
   )
 }
 
@@ -132,6 +137,7 @@ type Scene {
     vendors: vendor.Vendors,
     logged: set.Set(String),
     buyback: Buyback,
+    tables: table_store.Tables,
   )
 }
 
@@ -146,6 +152,7 @@ fn scene(unique_id unique_id: Int, quantity quantity: Int) -> Scene {
     vendors: vendor_support.stocking(creature_ids: [74_812]),
     logged: set.new(),
     buyback: held_back(),
+    tables: character_tables.shared(),
   )
 }
 
@@ -162,7 +169,7 @@ fn taken(scene scene: Scene) -> Result(Taken, vendor_trade.Refusal) {
       place: connection_support.entry_place(),
     ),
     picture: vendor_support.picture_with_walker(gap: scene.gap),
-    tables: character_tables.shared(),
+    tables: scene.tables,
     vendors: scene.vendors,
     now_ms: 0,
     logged: scene.logged,
@@ -214,6 +221,7 @@ fn held_back() -> Buyback {
       currency_type_id: 1,
       amount: 40,
       random_stats: 0,
+      charges: 0,
     ),
     BuybackEntry(
       buyback_id: 3,
@@ -222,6 +230,7 @@ fn held_back() -> Buyback {
       currency_type_id: 1,
       amount: 91,
       random_stats: 0,
+      charges: 0,
     ),
   ])
 }
@@ -252,7 +261,7 @@ fn taken_back(scene scene: Scene) -> Result(Taken, vendor_trade.Refusal) {
       place: connection_support.entry_place(),
     ),
     picture: vendor_support.picture_with_walker(gap: scene.gap),
-    tables: character_tables.shared(),
+    tables: scene.tables,
     vendors: scene.vendors,
     now_ms: 0,
     logged: scene.logged,
@@ -303,7 +312,13 @@ pub fn a_buy_at_the_shown_price_asks_the_store_to_take_the_price_and_add_the_ite
       held: 100,
       grow: [],
       make: [
-        NewStack(location: 1, bag_index: 0, stack_count: 1, random_stats: 0),
+        NewStack(
+          location: 1,
+          bag_index: 0,
+          stack_count: 1,
+          random_stats: 0,
+          charges: 1,
+        ),
       ],
     )
     as "opcode.0xbe: one item for the 67 the window shows, against the 100 held, in the first empty slot"
@@ -322,7 +337,13 @@ pub fn a_buy_at_the_shown_price_asks_the_store_to_take_the_price_and_add_the_ite
       cost: 67,
       grow: [],
       make: [
-        NewStack(location: 1, bag_index: 0, stack_count: 1, random_stats: 0),
+        NewStack(
+          location: 1,
+          bag_index: 0,
+          stack_count: 1,
+          random_stats: 0,
+          charges: 1,
+        ),
       ],
       item2_id: Item2Id(14_838),
     ))
@@ -338,7 +359,15 @@ pub fn a_buy_of_several_lots_gives_stack_count_times_quantity_items_test() -> Ni
     as "Vendor.lua l.437 to 452: 3 lots of 5 items"
   assert purchase.cost == 195 as "13 credits an item, 15 items"
   assert purchase.make
-    == [NewStack(location: 1, bag_index: 0, stack_count: 15, random_stats: 0)]
+    == [
+      NewStack(
+        location: 1,
+        bag_index: 0,
+        stack_count: 15,
+        random_stats: 0,
+        charges: 1,
+      ),
+    ]
     as "20791 stacks to 99, so the 15 items are one stack"
 }
 
@@ -356,16 +385,42 @@ pub fn a_buy_fills_a_held_stack_with_room_before_an_empty_slot_test() -> Nil {
     == [StackGrowth(item_guid: 12, held_count: 48, new_count: 50)]
     as "the stack with room is filled up to its limit"
   assert purchase.make
-    == [NewStack(location: 1, bag_index: 0, stack_count: 3, random_stats: 0)]
+    == [
+      NewStack(
+        location: 1,
+        bag_index: 0,
+        stack_count: 3,
+        random_stats: 0,
+        charges: 1,
+      ),
+    ]
     as "the rest goes to the lowest empty slot"
   // A buy larger than a stack limit makes stacks of the limit, lowest slot first, the
   // last holding the rest: 120 items into an empty inventory is 50, 50 and 20.
   let large = asked(scene: scene(unique_id: position_14838, quantity: 120))
   assert large.make
     == [
-      NewStack(location: 1, bag_index: 0, stack_count: 50, random_stats: 0),
-      NewStack(location: 1, bag_index: 1, stack_count: 50, random_stats: 0),
-      NewStack(location: 1, bag_index: 2, stack_count: 20, random_stats: 0),
+      NewStack(
+        location: 1,
+        bag_index: 0,
+        stack_count: 50,
+        random_stats: 0,
+        charges: 1,
+      ),
+      NewStack(
+        location: 1,
+        bag_index: 1,
+        stack_count: 50,
+        random_stats: 0,
+        charges: 1,
+      ),
+      NewStack(
+        location: 1,
+        bag_index: 2,
+        stack_count: 20,
+        random_stats: 0,
+        charges: 1,
+      ),
     ]
     as "a stack holds at most the Item2's maxStackCount"
 }
@@ -629,7 +684,13 @@ pub fn a_buy_back_takes_the_entry_price_and_returns_its_items_test() -> Nil {
       held: 100,
       grow: [StackGrowth(item_guid: 12, held_count: 48, new_count: 50)],
       make: [
-        NewStack(location: 1, bag_index: 0, stack_count: 1, random_stats: 0),
+        NewStack(
+          location: 1,
+          bag_index: 0,
+          stack_count: 1,
+          random_stats: 0,
+          charges: 0,
+        ),
       ],
     )
     as "the entry's 3 items for the entry's 40 credits, not the 3 x 67 of the stock, into the held stack's room then the first empty slot"
@@ -648,7 +709,13 @@ pub fn a_buy_back_takes_the_entry_price_and_returns_its_items_test() -> Nil {
       cost: 40,
       grow: [StackGrowth(item_guid: 12, held_count: 48, new_count: 50)],
       make: [
-        NewStack(location: 1, bag_index: 0, stack_count: 1, random_stats: 0),
+        NewStack(
+          location: 1,
+          bag_index: 0,
+          stack_count: 1,
+          random_stats: 0,
+          charges: 0,
+        ),
       ],
       item2_id: Item2Id(14_838),
     ))
@@ -678,6 +745,7 @@ pub fn a_buy_back_takes_the_entry_price_and_returns_its_items_test() -> Nil {
         currency_type_id: 1,
         amount: 91,
         random_stats: 0,
+        charges: 0,
       ),
     ])
     as "entry 2 leaves the list and nothing else changes, not even the next id"
@@ -742,6 +810,164 @@ pub fn a_buy_back_works_at_a_vendor_other_than_the_one_sold_to_test() -> Nil {
   assert purchase.kind == vendor_purchase.BoughtBack(buyback_id: 2)
 }
 
+/// One case of the bought item's charges: the row bought and the maxCharges the test gives
+/// it, how many are bought, the row's stack size changed to `max_stack` (`None` leaves it),
+/// the stacks the buyer holds, the charges of the stacks made and the number of stacks grown.
+type ChargeCase {
+  ChargeCase(
+    why: String,
+    item2_id: Int,
+    quantity: Int,
+    max_charges: Int,
+    max_stack: Option(Int),
+    held: List(HeldItem),
+    made: List(Int),
+    grown: Int,
+  )
+}
+
+/// The position of an item in Dorian Walker's stock.
+fn stock_position(item2_id: Int) -> Int {
+  case item2_id {
+    12_078 -> position_12078
+    14_838 -> position_14838
+    _ -> position_20791
+  }
+}
+
+/// What a bought item is made with (`opcode.0x111.charges`: the client refuses to use a
+/// charged item that holds none): the row's maxCharges, 0 for a row with none and for a
+/// proxy row. The stock is Dorian Walker's: position 1 is the proxy 12078 (own maxCharges
+/// 1, so a plain buy must make it with 0), 2 is 14838 (stacks to 50, maxCharges 1) and 3 is
+/// 20791 (stacks to 99, 5 to a lot, maxCharges 1). A row is changed where the client's own
+/// rows hold no such case; each case lists the charges of the stacks made and the stacks
+/// grown.
+pub fn a_bought_item_is_made_with_its_rows_charges_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let cases = [
+    ChargeCase(
+      why: "a single row of 99 charges",
+      item2_id: 14_838,
+      quantity: 1,
+      max_charges: 99,
+      max_stack: Some(1),
+      held: [],
+      made: [99],
+      grown: 0,
+    ),
+    ChargeCase(
+      why: "7 of a stackable row of 1 charge, 3 to a stack, into no stack",
+      item2_id: 14_838,
+      quantity: 7,
+      max_charges: 1,
+      max_stack: Some(3),
+      held: [],
+      made: [1, 1, 1],
+      grown: 0,
+    ),
+    ChargeCase(
+      why: "a lot of a stackable row of 1 charge",
+      item2_id: 20_791,
+      quantity: 1,
+      max_charges: 1,
+      max_stack: None,
+      held: [],
+      made: [1],
+      grown: 0,
+    ),
+    ChargeCase(
+      why: "a lot into an existing stack that was given its row's charges: only its count changes",
+      item2_id: 20_791,
+      quantity: 1,
+      max_charges: 1,
+      max_stack: None,
+      held: [in_bag(guid: 30, item2_id: 20_791, index: 0, count: 5)],
+      made: [],
+      grown: 1,
+    ),
+    ChargeCase(
+      why: "a proxy row with its own maxCharges of 5",
+      item2_id: 12_078,
+      quantity: 1,
+      max_charges: 5,
+      max_stack: None,
+      held: [],
+      made: [0],
+      grown: 0,
+    ),
+    ChargeCase(
+      why: "a row with no charges",
+      item2_id: 14_838,
+      quantity: 1,
+      max_charges: 0,
+      max_stack: None,
+      held: [],
+      made: [0],
+      grown: 0,
+    ),
+  ]
+  list.each(cases, fn(case_) {
+    use tables <- item_charge_support.tables_with(
+      item2_id: case_.item2_id,
+      max_charges: case_.max_charges,
+      flags: None,
+      max_stack_count: case_.max_stack,
+    )
+    let purchase =
+      asked(
+        scene: Scene(
+          ..scene(
+            unique_id: stock_position(case_.item2_id),
+            quantity: case_.quantity,
+          ),
+          items: list.map(case_.held, fn(item) {
+            HeldItem(..item, charges: case_.max_charges)
+          }),
+          tables:,
+        ),
+      )
+    assert list.map(purchase.make, fn(stack) { stack.charges }) == case_.made
+      as case_.why
+    assert list.length(purchase.grow) == case_.grown as case_.why
+  })
+}
+
+/// A buy back returns the stack with the charges it was sold with (the entry in memory holds
+/// them), not its row's: 14838 as a single row of 99 charges sold holding 40 comes back
+/// holding 40, and 20791 (a stackable row of 1 charge) sold holding 1 comes back with 1.
+pub fn a_bought_back_item_returns_with_the_charges_it_was_sold_with_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use tables <- item_charge_support.tables_with(
+    item2_id: 14_838,
+    max_charges: 99,
+    flags: None,
+    max_stack_count: Some(1),
+  )
+  let entry = fn(id, item2_id, quantity, charges) {
+    BuybackEntry(
+      buyback_id: id,
+      item2_id: Item2Id(item2_id),
+      quantity:,
+      currency_type_id: 1,
+      amount: 10,
+      random_stats: 0,
+      charges:,
+    )
+  }
+  let buyback =
+    Buyback(next_id: 3, entries: [
+      entry(1, 14_838, 1, 40),
+      entry(2, 20_791, 5, 1),
+    ])
+  let back = fn(buyback_id) {
+    asked_back(scene: Scene(..buying_back(buyback_id:), buyback:, tables:))
+  }
+  assert list.map(back(1).make, fn(stack) { stack.charges }) == [40]
+    as "the single item holds the 40 it was sold with, not its row's 99"
+  assert list.map(back(2).make, fn(stack) { stack.charges }) == [1]
+    as "the stackable stack holds the 1 it was sold with"
+}
+
 pub fn a_buy_back_of_an_id_not_in_the_list_is_refused_with_unknown_item_test() -> Nil {
   use <- owned_test.run(10_000)
   // The list holds ids 2 and 3; id 1 was bought back, 4 was never given, 0 is none.
@@ -802,6 +1028,7 @@ fn sold_elsewhere() -> Buyback {
       currency_type_id: 7,
       amount: 60,
       random_stats: 0,
+      charges: 0,
     ),
     BuybackEntry(
       buyback_id: 6,
@@ -810,6 +1037,7 @@ fn sold_elsewhere() -> Buyback {
       currency_type_id: 1,
       amount: 78,
       random_stats: 0,
+      charges: 0,
     ),
   ])
 }
@@ -846,7 +1074,13 @@ pub fn a_buy_back_of_an_entry_sold_for_glory_takes_glory_and_sends_its_total_tes
       held: 80,
       grow: [],
       make: [
-        NewStack(location: 1, bag_index: 0, stack_count: 1, random_stats: 0),
+        NewStack(
+          location: 1,
+          bag_index: 0,
+          stack_count: 1,
+          random_stats: 0,
+          charges: 0,
+        ),
       ],
     )
     as "the entry's 60 Glory against the 80 Glory held, not the credits"
@@ -865,7 +1099,13 @@ pub fn a_buy_back_of_an_entry_sold_for_glory_takes_glory_and_sends_its_total_tes
       cost: 60,
       grow: [],
       make: [
-        NewStack(location: 1, bag_index: 0, stack_count: 1, random_stats: 0),
+        NewStack(
+          location: 1,
+          bag_index: 0,
+          stack_count: 1,
+          random_stats: 0,
+          charges: 0,
+        ),
       ],
       item2_id: Item2Id(16_053),
     ))
@@ -943,7 +1183,15 @@ pub fn a_bought_back_worn_item_returns_to_the_bags_test() -> Nil {
   assert purchase.cost == 78
   assert purchase.grow == []
   assert purchase.make
-    == [NewStack(location: 1, bag_index: 1, stack_count: 1, random_stats: 0)]
+    == [
+      NewStack(
+        location: 1,
+        bag_index: 1,
+        stack_count: 1,
+        random_stats: 0,
+        charges: 0,
+      ),
+    ]
     as "a new stack in the bags: the entry holds no worn place"
   let made = in_bag(guid: 500, item2_id: 13_176, index: 1, count: 1)
   let #(held, held_credits, _, effects) =
@@ -1014,12 +1262,21 @@ pub fn buying_back_an_item_keeps_its_word_and_draws_nothing_test() -> Nil {
           currency_type_id: 1,
           amount: 40,
           random_stats: word,
+          charges: 0,
         ),
       ]),
     )
   let purchase = asked_back(scene:)
   assert purchase.make
-    == [NewStack(location: 1, bag_index: 0, stack_count: 1, random_stats: word)]
+    == [
+      NewStack(
+        location: 1,
+        bag_index: 0,
+        stack_count: 1,
+        random_stats: word,
+        charges: 0,
+      ),
+    ]
     as "the stack is placed with the word the item was sold with"
   assert vendor_purchase.entropy_needed(
       purchase:,
@@ -1042,6 +1299,7 @@ pub fn buying_back_an_item_keeps_its_word_and_draws_nothing_test() -> Nil {
       bag_index: 0,
       stack_count: 1,
       random_stats: word,
+      charges: 0,
     )
   let #(_, _, _, effects) =
     vendor_purchase.answered(
@@ -1082,6 +1340,7 @@ pub fn buying_a_random_stat_item_rolls_it_and_sends_the_word_test() -> Nil {
         bag_index: 0,
         stack_count: 1,
         random_stats: 0x0100000000050401,
+        charges: 0,
       ),
     ]
     as "the stack is made with the rolled word"
@@ -1093,6 +1352,7 @@ pub fn buying_a_random_stat_item_rolls_it_and_sends_the_word_test() -> Nil {
       bag_index: 0,
       stack_count: 1,
       random_stats: 0x0100000000050401,
+      charges: 0,
     )
   let #(_, _, _, effects) =
     vendor_purchase.answered(
@@ -1134,6 +1394,7 @@ pub fn buying_an_item_without_random_stats_draws_nothing_test() -> Nil {
       bag_index: 0,
       stack_count: 1,
       random_stats: 0,
+      charges: 0,
     )
   let #(_, _, _, effects) =
     vendor_purchase.answered(

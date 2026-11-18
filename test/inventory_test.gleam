@@ -93,6 +93,7 @@ fn held() -> List(HeldItem) {
       bag_index: 0,
       stack_count: 1,
       random_stats: 0,
+      charges: 0,
     ),
   ])
 }
@@ -506,6 +507,7 @@ fn with_spare(item2_id: Int) -> List(HeldItem) {
       bag_index: 1,
       stack_count: 1,
       random_stats: 0,
+      charges: 0,
     ),
   ])
 }
@@ -654,6 +656,7 @@ fn in_bag(
     bag_index: index,
     stack_count: count,
     random_stats: 0,
+    charges: 0,
   )
 }
 
@@ -1131,6 +1134,7 @@ fn worn_with_slot_zero(item2_id: Int) -> List(HeldItem) {
       bag_index: 0,
       stack_count: 1,
       random_stats: 0,
+      charges: 0,
     ),
   ])
 }
@@ -1310,6 +1314,7 @@ fn with_two_bags() -> List(HeldItem) {
       bag_index: 17,
       stack_count: 1,
       random_stats: 0,
+      charges: 0,
     ),
     HeldItem(
       item_guid: 21,
@@ -1318,6 +1323,7 @@ fn with_two_bags() -> List(HeldItem) {
       bag_index: 0,
       stack_count: 1,
       random_stats: 0,
+      charges: 0,
     ),
   ])
 }
@@ -1419,6 +1425,7 @@ fn worn_bag(
     bag_index: slot,
     stack_count: 1,
     random_stats: 0,
+    charges: 0,
   )
 }
 
@@ -1741,4 +1748,38 @@ pub fn a_worn_bag_cannot_be_deleted_test() -> Nil {
     ))
     == [#(22, 37)]
     as "a split onto an index at the size is refused"
+}
+
+/// A split makes the new stack with the charges its source holds (`opcode.0x111.charges`: the
+/// client refuses to use a charged item that holds none): a stack of Item2 14838 (maxCharges
+/// 1) holding 1 splits into a stack holding 1, and a stack of 1039 (no charges) into one
+/// holding 0.
+pub fn a_split_stack_keeps_the_charges_of_its_source_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let cases = [
+    #("a stack of a row with 1 charge, holding 1", 14_838, 1),
+    #("a stack of a row with no charges", 1039, 0),
+  ]
+  list.each(cases, fn(row) {
+    let #(why, item2, charges) = row
+    let stack =
+      HeldItem(
+        ..in_bag(guid: 20, item2_id: item2, index: 1, count: 10),
+        charges:,
+      )
+    let items = list.append(held(), [stack])
+    let moving =
+      asked(split_taken(
+        items:,
+        life: player_life_support.alive(),
+        guid: 20,
+        to: #(1, 2),
+        count: 2,
+      ))
+    let #(made, _) =
+      inventory.answered(items:, moving:, answer: ItemMade(item_guid: 77))
+    let assert Ok(split) = list.find(made, fn(item) { item.item_guid == 77 })
+      as "the new stack is held"
+    assert split.charges == charges as why
+  })
 }

@@ -2,8 +2,8 @@
 -- `$1` of the account `$2` holds (the currency type `$4`) are set to `$6`, each stack of
 -- the lists `$7` to `$10` at the same position (an item's guid, its Item2, the count it is
 -- held with, the count it holds after) is raised, and a stack is inserted for each position of
--- the lists `$11` to `$15` (an Item2, a location, a bag index, a count and the item's
--- random-stat word). It changes only
+-- the lists `$11` to `$16` (an Item2, a location, a bag index, a count, the item's
+-- random-stat word and its charges). It changes only
 -- while the character is still held by the login that asks, that is while its
 -- `session_epoch` ($3) is still the one that login was told (load_character.sql), only while
 -- the character holds exactly `$5` credits (the total the login holds, a missing row being 0)
@@ -12,7 +12,7 @@
 -- account's id is in the statement, as for a load.
 --
 -- The rows it returns are one for each stack made, each with the credits held after, the
--- stack's Item2 and its word, in the order of the lists; one row with no stack when none is made. A place
+-- stack's Item2, its word and its charges, in the order of the lists; one row with no stack when none is made. A place
 -- that holds an item breaks the table's `character_item_one_per_slot` at the statement's end
 -- and the statement changes nothing, the credits and the raised stacks included. Whether a
 -- stack may hold its new count is the Item2's maxStackCount, which the rule checks.
@@ -66,13 +66,13 @@ raised as (
   returning held.item_guid
 ),
 made as (
-  insert into character_item (character_id, item2_id, location, bag_index, stack_count, random_stats)
-  select $1, new_stack.item2_id, new_stack.location::smallint, new_stack.bag_index, new_stack.stack_count, new_stack.random_stats
-  from unnest($11::int[], $12::int[], $13::int[], $14::int[], $15::bigint[])
-    with ordinality as new_stack (item2_id, location, bag_index, stack_count, random_stats, position)
+  insert into character_item (character_id, item2_id, location, bag_index, stack_count, random_stats, charges)
+  select $1, new_stack.item2_id, new_stack.location::smallint, new_stack.bag_index, new_stack.stack_count, new_stack.random_stats, new_stack.charges
+  from unnest($11::int[], $12::int[], $13::int[], $14::int[], $15::bigint[], $16::int[])
+    with ordinality as new_stack (item2_id, location, bag_index, stack_count, random_stats, charges, position)
   where exists (select 1 from allowed)
   order by new_stack.position
-  returning item_guid, item2_id, location::int as location, bag_index, stack_count, random_stats
+  returning item_guid, item2_id, location::int as location, bag_index, stack_count, random_stats, charges
 )
 select
   paid.amount as amount,
@@ -81,7 +81,8 @@ select
   made.location,
   made.bag_index,
   made.stack_count,
-  made.random_stats
+  made.random_stats,
+  made.charges
 from paid
 left join made on true
 order by made.item_guid;

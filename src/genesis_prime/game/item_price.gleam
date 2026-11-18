@@ -54,10 +54,6 @@ import gleam/result
 /// The GameFormula row of the price curve (ItemPriceLevelCurve 0x14041d200).
 const price_curve_formula = 1078
 
-/// The GameFormula row whose dataint0 is the Item2 a proxy item takes its quality
-/// from (`0x1404445d0.proxy`).
-const proxy_formula = 1214
-
 /// The GameFormula row whose datafloat0 is the fraction of the buy price an item sells for
 /// (`0x14040bfb0`), read by `sell_price`.
 pub const sell_fraction_formula = 1026
@@ -171,20 +167,12 @@ fn quality(
   tables tables: table_store.Tables,
   item item: item2.Item2,
 ) -> Result(Float, PriceError) {
-  use source <- result.try(case item_property.is_proxy(item) {
-    False -> Ok(item)
-    True -> {
-      use formula <- result.try(
-        game_formula.get(tables:, id: GameFormulaId(proxy_formula))
-        |> result.replace_error(MissingRow(
-          table: "GameFormula",
-          id: proxy_formula,
-        )),
-      )
-      item2.get(tables:, id: Item2Id(formula.dataint0))
-      |> result.replace_error(MissingRow(table: "Item2", id: formula.dataint0))
-    }
-  })
+  use source <- result.try(
+    item_property.proxy_source(tables:, item:)
+    |> result.map_error(fn(missing) {
+      MissingRow(table: missing.table, id: missing.id)
+    }),
+  )
   Ok(case source.item_quality_id {
     0 -> 1.0
     quality -> int.to_float(quality)

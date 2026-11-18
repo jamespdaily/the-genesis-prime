@@ -34,17 +34,20 @@ import genesis_prime/message/create_character.{
   type CreateCharacter, CreateCharacter,
 }
 import genesis_prime/message/create_result
-import genesis_prime/store.{LookEntry, NewCharacter, NewItem}
+import genesis_prime/store.{type NewCharacter, LookEntry, NewCharacter, NewItem}
 import genesis_prime/table/character_creation as creation_table
 import genesis_prime/table/id.{
   CharacterCreationId, CharacterCustomizationLabelId, ClassId, Item2Id, RaceId,
 }
+import genesis_prime/table/item2
 import genesis_prime/table/loader/store as table_store
 import gleam/int
 import gleam/list
+import gleam/option.{None}
 import gleam/pair
 import gleam/result
 import gleam/string
+import item_charge_support
 import novice_tables
 import owned_test
 import planted_table.{Integer}
@@ -564,30 +567,39 @@ pub fn every_arkship_row_of_the_clients_table_is_disabled_so_the_enabled_check_r
   })
 }
 
+/// The character a Novice set's CharacterCreation row makes on these tables.
+fn created_with(
+  tables tables: table_store.Tables,
+  set set: novice_tables.Set,
+) -> NewCharacter {
+  let assert Ok(row) =
+    creation_table.get(tables:, id: CharacterCreationId(set.creation_id))
+    as "the client's CharacterCreation holds the row of each Novice set"
+  let assert Ok(character) =
+    check_row(
+      tables:,
+      row:,
+      request: CreateCharacter(
+        ..request(set.creation_id, "Ab Cd"),
+        bone_values: list.repeat(
+          0,
+          appearance.bone_count(
+            tables:,
+            race_id: creation_table.race_id(row),
+            sex: row.sex,
+          ),
+        ),
+      ),
+    )
+    as "the PreTutorial rows of the Novice sets are enabled, free and open to every account"
+  character
+}
+
 pub fn the_new_character_carries_the_novice_set_of_its_class_and_faction_at_location_0_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = character_tables.shared()
   list.each(novice_tables.sets(), fn(set) {
-    let assert Ok(row) =
-      creation_table.get(tables:, id: CharacterCreationId(set.creation_id))
-      as "the client's CharacterCreation holds the row of each Novice set"
-    let assert Ok(character) =
-      check_row(
-        tables:,
-        row:,
-        request: CreateCharacter(
-          ..request(set.creation_id, "Ab Cd"),
-          bone_values: list.repeat(
-            0,
-            appearance.bone_count(
-              tables:,
-              race_id: creation_table.race_id(row),
-              sex: row.sex,
-            ),
-          ),
-        ),
-      )
-      as "the PreTutorial rows of the Novice sets are enabled, free and open to every account"
+    let character = created_with(tables:, set:)
     assert character.starting_items
       == list.map(novice_tables.equipped_of(set:), fn(pair) {
         NewItem(
@@ -595,6 +607,7 @@ pub fn the_new_character_carries_the_novice_set_of_its_class_and_faction_at_loca
           location: 0,
           bag_index: pair.1,
           stack_count: 1,
+          charges: 0,
         )
       })
       as {
@@ -611,9 +624,52 @@ pub fn the_new_character_carries_the_novice_set_of_its_class_and_faction_at_loca
         location: 0,
         bag_index: 16,
         stack_count: 1,
+        charges: 0,
       ))
       as "the weapon of the row (itemId04) is the item in slot 16"
   })
+}
+
+/// Each starting item is made with its row's maxCharges (`opcode.0x111.charges`: the client
+/// refuses to use a charged item that holds none): every item of every Novice set holds the
+/// Item2 row's own value, which is 0 for them all, and a set whose weapon row is changed to
+/// hold 3 makes its weapon with 3.
+pub fn the_novice_items_are_made_with_their_rows_charges_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.shared()
+  list.each(novice_tables.sets(), fn(set) {
+    let made = created_with(tables:, set:).starting_items
+    list.each(made, fn(item) {
+      let assert Ok(row) = item2.get(tables:, id: item.item2_id)
+        as "the Novice set's items are rows of the Item2 table"
+      assert item.charges == row.max_charges
+        as {
+          "CharacterCreation row "
+          <> int.to_string(set.creation_id)
+          <> ": Item2 "
+          <> int.to_string(item.item2_id.value)
+          <> " is made with its row's maxCharges"
+        }
+      assert item.charges == 0 as "the Novice sets' rows hold no charges"
+    })
+  })
+  let assert [set, ..] = novice_tables.sets()
+  use tables <- item_charge_support.tables_with(
+    item2_id: set.weapon,
+    max_charges: 3,
+    flags: None,
+    max_stack_count: None,
+  )
+  let weapon = list.last(created_with(tables:, set:).starting_items)
+  assert weapon
+    == Ok(NewItem(
+      item2_id: Item2Id(set.weapon),
+      location: 0,
+      bag_index: 16,
+      stack_count: 1,
+      charges: 3,
+    ))
+    as "a weapon row that holds 3 charges is made with 3"
 }
 
 /// The credits a character created in these tests starts with, passed to the rule as

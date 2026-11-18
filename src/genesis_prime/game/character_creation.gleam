@@ -19,6 +19,7 @@
 //// each refusal.
 
 import genesis_prime/game/appearance
+import genesis_prime/game/item_property
 import genesis_prime/game/level
 import genesis_prime/game/loadout
 import genesis_prime/game/start_place
@@ -28,7 +29,7 @@ import genesis_prime/store.{
   type LookEntry, type NewCharacter, type NewItem, NewCharacter, NewItem,
 }
 import genesis_prime/table/character_creation.{type CharacterCreation}
-import genesis_prime/table/id.{type ClassId, CharacterCreationId}
+import genesis_prime/table/id.{type ClassId, type Item2Id, CharacterCreationId}
 import genesis_prime/table/loader/store as table_store
 import gleam/bool
 import gleam/int
@@ -204,21 +205,33 @@ fn novice_items(
     as "the content load refuses a table with no Novice set for a class and faction a row can create"
   let armor =
     list.map(loadout.armor, fn(piece) {
-      NewItem(
-        item2_id: piece.item,
-        location: equipped_location,
-        bag_index: piece.bag_index,
-        stack_count: 1,
-      )
+      novice_item(tables:, item2_id: piece.item, bag_index: piece.bag_index)
     })
   list.append(armor, [
-    NewItem(
+    novice_item(
+      tables:,
       item2_id: loadout.weapon,
-      location: equipped_location,
       bag_index: loadout.weapon_slot,
-      stack_count: 1,
     ),
   ])
+}
+
+/// One of the Novice set's items, equipped at `bag_index`, made with its row's charges.
+fn novice_item(
+  tables tables: table_store.Tables,
+  item2_id item2_id: Item2Id,
+  bag_index bag_index: Int,
+) -> NewItem {
+  let assert Ok(charges) =
+    item_property.max_charges(tables:, item2_id: item2_id.value)
+    as "the loadout's items are rows of the tables"
+  NewItem(
+    item2_id:,
+    location: equipped_location,
+    bag_index:,
+    stack_count: 1,
+    charges:,
+  )
 }
 
 /// The location of the items a character wears and wields (`opcode.0x111.equipped_set`).

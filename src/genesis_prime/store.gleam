@@ -128,9 +128,27 @@ pub type Character {
 /// hold the ranges); ability items (location 4) are not stored. `stack_count` is
 /// 1 or more. `random_stats` is the item's random-stat word as the client reads it
 /// (`opcode.0x111.shared_item_random_stats`): chosen when the item was made, sent as it is
-/// with the item, and 0 for an item with no roll.
+/// with the item, and 0 for an item with no roll. `charges` are the charges the item has
+/// left as the client reads them (`opcode.0x111.charges`): its row's maxCharges when it is
+/// made, 0 for a row with none, and the source's for a split.
 pub type HeldItem {
   HeldItem(
+    item_guid: Int,
+    item2_id: Item2Id,
+    location: Int,
+    bag_index: Int,
+    stack_count: Int,
+    random_stats: Int,
+    charges: Int,
+  )
+}
+
+/// A held item the database holds with no charges recorded: a row saved before the
+/// character_item table had the column. It has no `charges` field, so it cannot be mistaken
+/// for an item that holds none; world entry gives it its row's charges and stores them
+/// (`FillCharges`).
+pub type UnsetItem {
+  UnsetItem(
     item_guid: Int,
     item2_id: Item2Id,
     location: Int,
@@ -188,7 +206,13 @@ pub type HeldCurrency {
 /// `HeldItem`, which the store writes in the same transaction as the character
 /// that holds it.
 pub type NewItem {
-  NewItem(item2_id: Item2Id, location: Int, bag_index: Int, stack_count: Int)
+  NewItem(
+    item2_id: Item2Id,
+    location: Int,
+    bag_index: Int,
+    stack_count: Int,
+    charges: Int,
+  )
 }
 
 /// A character to make, from a create request and the CharacterCreation row it
@@ -235,6 +259,23 @@ pub type WorldRequest {
   /// statement and returned. The account's id is in the statement, so no other
   /// account's character is taken.
   LoadCharacter(account_id: AccountId, character_id: CharacterId)
+  /// Stores the charges of the character's items that hold none (`CharacterLoaded.unset`):
+  /// each `fills` entry is an item's guid and the charges to give it, and the statement
+  /// (fill_character_item_charges.sql) changes rows, all or none, only while the character's
+  /// `session_epoch` is still `session_epoch`, the one the load told, and only while every
+  /// row named is the character's and still unset, so a replay changes nothing. Answered
+  /// `ChargesFilled`.
+  FillCharges(
+    account_id: AccountId,
+    character_id: CharacterId,
+    session_epoch: SessionEpoch,
+    fills: List(ItemFill),
+  )
+}
+
+/// The charges to store for one unset item.
+pub type ItemFill {
+  ItemFill(item_guid: Int, charges: Int)
 }
 
 /// What the player's movement asks the store.
@@ -398,15 +439,21 @@ pub type StackGrowth {
 }
 
 /// A stack a purchase or a reward makes, at a place that holds no item: the place, the
-/// count and the random-stat word of the new row, whose Item2 is the request's.
+/// count, the random-stat word and the charges of the new row, whose Item2 is the request's.
 pub type NewStack {
-  NewStack(location: Int, bag_index: Int, stack_count: Int, random_stats: Int)
+  NewStack(
+    location: Int,
+    bag_index: Int,
+    stack_count: Int,
+    random_stats: Int,
+    charges: Int,
+  )
 }
 
-/// The random-stat word of a stack a sale sold, as the database held it
-/// (`opcode.0xba.random_stats`: the buyback entry carries it).
+/// The random-stat word (`opcode.0xba.random_stats`: the buyback entry carries it) and the
+/// charges of a stack a sale sold, as the database held them.
 pub type SoldWord {
-  SoldWord(item_guid: Int, random_stats: Int)
+  SoldWord(item_guid: Int, random_stats: Int, charges: Int)
 }
 
 /// What the STS login asks the store.
@@ -464,7 +511,8 @@ pub type Answer {
   ForItems(answer: ItemsAnswer)
 }
 
-/// What the store answers world entry.
+/// What the store answers world entry. `items` hold the rows whose charges are recorded and
+/// `unset` the rows that are not (`UnsetItem`), each list by location then bag index.
 pub type WorldAnswer {
   /// The account's character, taken by this login, whose `session_epoch` is
   /// `session_epoch` after the raise, the health its last save kept
@@ -483,11 +531,18 @@ pub type WorldAnswer {
     saved_health: Option(Int),
     saved_experience: Option(Int),
     items: List(HeldItem),
+    unset: List(UnsetItem),
     quests: List(QuestRow),
     currencies: List(HeldCurrency),
   )
   /// The account has no character with the id.
   NotTheAccounts
+  /// The answer to `FillCharges`: `ItemsSaved` when every fill changed its row,
+  /// `ItemsNotSaved` when a row was not unset any more or a later login raised the
+  /// character's `session_epoch` past the request's (the statement cannot tell them
+  /// apart), and `SaveRefused` when a check refused a value, which no fill the rule asks
+  /// breaks.
+  ChargesFilled(answer: ItemsAnswer)
 }
 
 /// What the store answers the player's movement.

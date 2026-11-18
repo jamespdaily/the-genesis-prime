@@ -1258,6 +1258,7 @@ pub fn answered(
               bag_index: to.bag_index,
               stack_count: count,
               random_stats: source.random_stats,
+              charges: source.charges,
             ),
           ]),
           [
@@ -1365,13 +1366,15 @@ pub fn grown(
 
 /// Where `wanted` items of an Item2 go (a server choice): the stacks of it in the usable
 /// inventory below the limit, lowest bag index first, then the empty usable slots, lowest
-/// first, each up to the limit. Nothing when they do not all fit.
+/// first, each up to the limit, each new stack holding `charges`. Nothing when they do not
+/// all fit.
 pub fn placed(
   items items: List(HeldItem),
   item2_id item2_id: Item2Id,
   size size: Int,
   limit limit: Int,
   wanted wanted: Int,
+  charges charges: Int,
 ) -> Result(#(List(store.StackGrowth), List(store.NewStack)), Nil) {
   let usable =
     list.filter(items, fn(item) {
@@ -1389,7 +1392,7 @@ pub fn placed(
     |> list.reverse
     |> list.filter(fn(index) { !set.contains(taken_places, index) })
   let #(wanted, grow) = fill(growable:, limit:, wanted:)
-  let #(wanted, make) = open(empty:, limit:, wanted:)
+  let #(wanted, make) = open(empty:, limit:, wanted:, charges:)
   case wanted {
     0 -> Ok(#(grow, make))
     _ -> Error(Nil)
@@ -1426,18 +1429,21 @@ fn open(
   empty empty: List(Int),
   limit limit: Int,
   wanted wanted: Int,
+  charges charges: Int,
 ) -> #(Int, List(store.NewStack)) {
   case empty, wanted {
     [], _ | _, 0 -> #(wanted, [])
     [index, ..rest], _ -> {
       let added = int.min(wanted, limit)
-      let #(left, made) = open(empty: rest, limit:, wanted: wanted - added)
+      let #(left, made) =
+        open(empty: rest, limit:, wanted: wanted - added, charges:)
       #(left, [
         store.NewStack(
           location: in_bags,
           bag_index: index,
           stack_count: added,
           random_stats: 0,
+          charges:,
         ),
         ..made
       ])

@@ -49,14 +49,17 @@ import genesis_prime/step.{
   StoppedWaiting, TimerFired, TimerId, Unwatch, Watch, WatchEnded, WatchId,
 }
 import genesis_prime/store.{
-  AccountId, Character, CharacterId, CharacterLoaded, ForSelect, ForWorld,
-  Listed, LoadCharacter, NotTheAccounts, Unavailable, World,
+  AccountId, Character, CharacterId, CharacterLoaded, ChargesFilled, FillCharges,
+  ForSelect, ForWorld, ItemFill, ItemsNotSaved, ItemsSaved, ListCharacters,
+  Listed, LoadCharacter, NotTheAccounts, Select, Unavailable, UnsetItem, World,
 }
+import genesis_prime/table/id.{Item2Id}
 import genesis_prime/world_map/map.{Join}
 import genesis_prime/world_map/unit_fields
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/set
+import map_support
 import owned_test
 import world_entry_support
 
@@ -88,6 +91,7 @@ pub fn message_0x07dd_asks_the_store_for_the_character_then_the_map_and_the_answ
               world_entry_support.novice_items(
                 character: game_connection_support.world_character(),
               ),
+              [],
               [],
               [],
             ),
@@ -146,6 +150,101 @@ pub fn message_0x07dd_asks_the_store_for_the_character_then_the_map_and_the_answ
     as "the connection watches the run of the map that holds its player, after the burst, joins its groups, the save timer starts and the quest reset timer starts for Friday 2025-04-25 10:00 UTC, 48,800,000 ms after the entry"
   assert support.asked(taken) == None
   assert !support.stops(taken)
+}
+
+/// A character whose load holds an item with no charges recorded: the connection asks the
+/// store to store the item's row charges (Item2 2509 holds maxCharges 99) before it asks the
+/// map, and the store's answer takes the play on to the map's join as a load with none
+/// does; a fill the store did not change sends the player back to character select with a
+/// warning, and the map is never asked.
+pub fn a_load_with_an_unset_item_asks_the_store_to_fill_it_before_the_map_is_asked_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let fill =
+    AskStore(
+      World(
+        FillCharges(
+          account_id: AccountId(7),
+          character_id: CharacterId(42),
+          session_epoch: character_support.epoch(1),
+          fills: [ItemFill(item_guid: 21, charges: 99)],
+        ),
+      ),
+    )
+  let loaded_with_unset = fn() {
+    let #(state, taken) = game_connection_support.playing(42)
+    game_connection_support.answer(
+      state:,
+      taken:,
+      outcome: step.Answer(
+        FromStore(
+          ForWorld(
+            CharacterLoaded(
+              character: game_connection_support.world_character(),
+              session_epoch: character_support.epoch(1),
+              saved_health: None,
+              saved_experience: None,
+              items: world_entry_support.novice_items(
+                character: game_connection_support.world_character(),
+              ),
+              unset: [
+                UnsetItem(
+                  item_guid: 21,
+                  item2_id: Item2Id(2509),
+                  location: 1,
+                  bag_index: 0,
+                  stack_count: 1,
+                  random_stats: 0,
+                ),
+              ],
+              currencies: [],
+              quests: [],
+            ),
+          ),
+        ),
+      ),
+    )
+  }
+  let #(state, taken) = loaded_with_unset()
+  assert game_connection_support.ask_request(taken) == fill
+    as "the fill is asked first, with the item's row charges"
+  assert support.writes(taken) == []
+    as "nothing is written before the fills are stored"
+  let #(_, taken) =
+    game_connection_support.answer(
+      state:,
+      taken:,
+      outcome: step.Answer(
+        FromStore(ForWorld(ChargesFilled(answer: ItemsSaved))),
+      ),
+    )
+  assert game_connection_support.ask_request(taken)
+    == AskMap(
+      game_connection_support.camp_map(),
+      Join(
+        ConnectionId(1),
+        game_connection_support.world_character(),
+        game_connection_support.entry_place(),
+        map_support.stay(count: 2),
+        True,
+        set.new(),
+      ),
+    )
+    as "the stored fills take the play to the map's join, whose stay is the second the connection counted: the load and the fill answer each took one, and a stay only has to be above every earlier one"
+  let #(state, taken) = loaded_with_unset()
+  let #(_, taken) =
+    game_connection_support.answer(
+      state:,
+      taken:,
+      outcome: step.Answer(
+        FromStore(ForWorld(ChargesFilled(answer: ItemsNotSaved))),
+      ),
+    )
+  assert game_connection_support.ask_request(taken)
+    == AskStore(Select(ListCharacters(AccountId(7))))
+    as "a fill the store did not change sends the player back to character select, which lists its characters, and the map is not asked"
+  let assert [warning] = support.logs_of(step: taken, level: LogWarning)
+    as "the refusal is a warning"
+  assert warning.about.account_id == Some(7)
 }
 
 pub fn message_0xad_carries_the_saved_world_and_position_and_0_in_its_last_two_floats_test() -> Nil {
@@ -399,6 +498,7 @@ pub fn an_answer_that_is_none_world_entry_asked_for_is_a_bug_with_reason_8_and_a
                 world_entry_support.novice_items(
                   character: game_connection_support.world_character(),
                 ),
+                [],
                 [],
                 [],
               ),

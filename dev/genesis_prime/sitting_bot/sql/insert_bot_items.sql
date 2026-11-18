@@ -4,10 +4,11 @@
 -- the row its race, sex, class and faction come from: the five armor pieces at
 -- bag indexes 0, 1, 3, 4 and 5, the shield at 15 and the weapon at 16, all at
 -- location 0 (equipped) as a stack of 1 (Item2.novice_set,
--- CharacterCreation.itemId0 to itemId06). A character that already holds an
+-- CharacterCreation.itemId0 to itemId06), each with its row's maxCharges, which
+-- is 0 for all seven. A character that already holds an
 -- item is left as it is, so a run beside another gives the set once.
-insert into character_item (character_id, item2_id, location, bag_index, stack_count)
-select character.character_id, set.item2_id, 0, set.bag_index, 1
+insert into character_item (character_id, item2_id, location, bag_index, stack_count, charges)
+select character.character_id, set.item2_id, 0, set.bag_index, 1, 0
 from character
 join account using (account_id)
 cross join (
