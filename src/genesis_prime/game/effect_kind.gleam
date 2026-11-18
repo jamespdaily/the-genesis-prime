@@ -53,6 +53,10 @@
 //// - **RavelSignal** (81) signals a script the client does not hold; the client gives
 ////   it no class, so the server lists the row with its life and does no more
 ////   (`Spell4Effects.effectType.81`).
+//// - **FullScreenEffect** (95) draws a full-screen visual over the player's view for its
+////   life, for the player's own unit only; the client does all of it, so the server lists
+////   the row aimed at the caster in the go with its life
+////   (`Spell4Effects.effectType.95`).
 //// - **PropertyConversion** (145) adds a share of one property of its holder to
 ////   another while it lasts; the client works out no property, so the server computes
 ////   the amount and sends the value; the server reads the rows aimed at the caster
@@ -171,6 +175,11 @@ pub type Kind {
   /// A RavelSignal effect (81): signals a script the client does not hold
   /// (`Spell4Effects.effectType.81`).
   RavelSignal
+  /// A FullScreenEffect effect (95): draws a full-screen visual over the view of the
+  /// player's own unit for its life (`Spell4Effects.effectType.95`). A row is read when
+  /// its targetFlags include the caster (bit 1), the only unit the client draws it for
+  /// (`is_row_read`).
+  FullScreenEffect
   /// A UnitPropertyConversion effect (145): adds a share of one property of its holder to
   /// another (`Spell4Effects.effectType.145`). A row is read when its targetFlags include
   /// the caster (`is_row_read`).
@@ -234,6 +243,7 @@ pub fn kind_of(effect_type effect_type: Int) -> Kind {
     18 -> Scale
     76 -> ItemVisualSwap
     81 -> RavelSignal
+    95 -> FullScreenEffect
     145 -> PropertyConversion
     112 -> DisguiseOutfit
     29 -> Absorption
@@ -267,6 +277,7 @@ pub fn is_read(effect_type effect_type: Int) -> Bool {
     | Scale
     | ItemVisualSwap
     | RavelSignal
+    | FullScreenEffect
     | PropertyConversion
     | Heal(..)
     | ShieldOverload
@@ -283,7 +294,7 @@ pub fn is_read(effect_type effect_type: Int) -> Bool {
 
 /// Whether a row of the effect type with these `targetFlags` is read: every row of a
 /// type `is_read` for, except that a PropertyConversion, CooldownModifier,
-/// Stealth, RemoveStealth, Proc or DisguiseOutfit row is read only when its flags
+/// Stealth, RemoveStealth, Proc, DisguiseOutfit or FullScreenEffect row is read only when its flags
 /// include the caster (bit 1, `Spell4Effects.targetFlags`), a PropertyModifier or
 /// ForcedMove row when they include the caster or are 2, 4 or 6 (the units a strike
 /// hits), a Heal,
@@ -307,7 +318,8 @@ pub fn is_row_read(
     | Stealth
     | RemoveStealth
     | Proc
-    | DisguiseOutfit -> int.bitwise_and(target_flags, 1) == 1
+    | DisguiseOutfit
+    | FullScreenEffect -> int.bitwise_and(target_flags, 1) == 1
     Heal(..) | InterruptArmor | Absorption ->
       int.bitwise_and(target_flags, 1) == 1 || target_flags == 2
     ShieldOverload -> target_flags == 4

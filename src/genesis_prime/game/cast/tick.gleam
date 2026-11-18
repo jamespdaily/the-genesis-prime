@@ -799,9 +799,10 @@ pub fn ticks_all_dropped(
   #(with_ticking(cast:, cast_id:, ticking: dict.new()), cancels)
 }
 
-/// What the end of some of a cast's nodes writes: the 0x7fe of a lingering cast left with
-/// none, else 0x811 for the units whose node ended, with the cast destroyed on the client
-/// when it has no node left and its method is not one the client keeps.
+/// What the end of some of a cast's nodes writes: for a lingering cast left with none, the
+/// 0x811 of the units whose node ended and then its 0x7fe, the order a recorded server writes;
+/// else 0x811 for the units whose node ended, with the cast destroyed on the client when it
+/// has no node left and its method is not one the client keeps.
 pub fn nodes_ended_frames(
   cast_id cast_id: Int,
   holder holder: Holder,
@@ -809,7 +810,16 @@ pub fn nodes_ended_frames(
   kept kept: List(#(Int, lasting.Node)),
 ) -> List(Effect) {
   case holder.lingering && kept == [] {
-    True -> finished_effects(cast_id:, audience: holder.audience)
+    True ->
+      list.append(
+        targets_removed_effects(
+          cast_id:,
+          unit_ids: cast_state.sorted_units(ended),
+          audience: holder.audience,
+          destroyed: False,
+        ),
+        finished_effects(cast_id:, audience: holder.audience),
+      )
     False ->
       targets_removed_effects(
         cast_id:,

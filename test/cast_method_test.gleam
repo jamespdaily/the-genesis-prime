@@ -274,9 +274,10 @@ pub fn quick_draw_goes_in_5_phases_and_starts_the_proxies_whose_caster_gate_pass
       #(1766, "7f4 k5 p0"),
       #(2000, "7f4 k1 p4"),
       #(2000, "7fe k1"),
+      #(2756, "811 k5"),
       #(2756, "7fe k5"),
     ]
-    as "SpellPhase 5882 to 5886: delays 0, 366, 200, 200 and 234, so gos at 0, 366, 566, 766 and 1000 ms with the phase index as the byte (opcode.0x7f4.phase). Spell4Effects 196513 to 196522 have type 26 effects aimed at the caster behind caster apply 17301 (type 15, comparison 2 on 43500: the caster is not under cast 43500) or 17302 (comparison 1: it is); no cast of 43500 is live at a go, so 17301's start and 17302's do not: phase 1 (phaseFlags 2) starts 43498 by 196513, phase 2 (4) 43499 by 196514 and phase 3 (8) 43498 by 196515 and 43500 by 196516; phases 0 and 4 hold only 196522 (17302) and effect 196521 (type 80), which start nothing; 43500 is a Fluff (Spell4Effects 99472, type 17) with durationTime 990, so its cast k5 finishes 990 ms after its start, at 2756, while the others have no duration and finish at their go"
+    as "SpellPhase 5882 to 5886: delays 0, 366, 200, 200 and 234, so gos at 0, 366, 566, 766 and 1000 ms with the phase index as the byte (opcode.0x7f4.phase). Spell4Effects 196513 to 196522 have type 26 effects aimed at the caster behind caster apply 17301 (type 15, comparison 2 on 43500: the caster is not under cast 43500) or 17302 (comparison 1: it is); no cast of 43500 is live at a go, so 17301's start and 17302's do not: phase 1 (phaseFlags 2) starts 43498 by 196513, phase 2 (4) 43499 by 196514 and phase 3 (8) 43498 by 196515 and 43500 by 196516; phases 0 and 4 hold only 196522 (17302) and effect 196521 (type 80), which start nothing; 43500 is a Fluff (Spell4Effects 99472, type 17) with durationTime 990, so its cast k5 ends 990 ms after its start, at 2756, with the 0x811 of its node and then its 0x7fe, while the others have no duration and finish at their go"
   assert list.flat_map(steps, fn(step) { started_by_viewer(effects: step.1) })
     == [
       #(43_468, 43_468, 0),

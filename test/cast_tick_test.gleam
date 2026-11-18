@@ -39,6 +39,7 @@ import genesis_prime/message/spell_effect_tick.{
 import genesis_prime/message/spell_failed
 import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_go
+import genesis_prime/message/spell_targets_removed
 import genesis_prime/step.{type ConnectionId, type TimerId, TimerId}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId}
 import gleam/int
@@ -523,8 +524,12 @@ pub fn the_finish_follows_the_last_tick_test() -> Nil {
     )
   let assert Ok(#(_, effects)) = list.last(closed.steps)
   assert ids(effects:)
-    == [spell_effect_tick.message_id, spell_finished.message_id]
-    as "tick 3's close writes its 0x7f8, then the cast's 0x7fe, the last frame of the cast"
+    == [
+      spell_effect_tick.message_id,
+      spell_targets_removed.message_id,
+      spell_finished.message_id,
+    ]
+    as "tick 3's close writes its 0x7f8, then the node's 0x811 and the cast's 0x7fe, the last frame of the cast"
   no_tick_after_finish(run: closed)
 }
 
@@ -882,8 +887,12 @@ pub fn ticks_due_together_go_in_key_order_test() -> Nil {
   let healing = heal_run(rows: [health_heal(schedule: every_two_seconds())])
   let assert Ok(#(7000, last)) = list.last(healing.steps)
   assert ids(effects: last)
-    == [spell_effect_tick.message_id, spell_finished.message_id]
-    as "a tick due with the node's end fires first in the same step, and the 0x7fe follows it"
+    == [
+      spell_effect_tick.message_id,
+      spell_targets_removed.message_id,
+      spell_finished.message_id,
+    ]
+    as "a tick due with the node's end fires first in the same step, and the 0x811 and the 0x7fe follow it"
   no_tick_after_finish(run: healing)
   // A connection fallen behind: only the node's end fires, at 7000, with all three
   // ticks overdue.
@@ -922,6 +931,7 @@ pub fn ticks_due_together_go_in_key_order_test() -> Nil {
       spell_effect_tick.message_id,
       spell_effect_tick.message_id,
       spell_effect_tick.message_id,
+      spell_targets_removed.message_id,
       spell_finished.message_id,
     ]
     as "every tick due at the node's end fires before it, each of the row's three overdue ticks, then the 0x7fe"
@@ -962,8 +972,9 @@ pub fn a_tick_left_out_at_the_deadline_test() -> Nil {
       ),
     )
   let assert Ok(#(_, effects)) = list.last(closed.steps)
-  assert ids(effects:) == [spell_finished.message_id]
-    as "the round left out at its deadline writes no 0x7f8, and the node it held ends with the cast's 0x7fe"
+  assert ids(effects:)
+    == [spell_targets_removed.message_id, spell_finished.message_id]
+    as "the round left out at its deadline writes no 0x7f8, and the node it held ends with its 0x811 and the cast's 0x7fe"
   let first =
     pressed(
       plans: support.plans_of([surge()]),
@@ -989,8 +1000,9 @@ pub fn a_tick_left_out_at_the_deadline_test() -> Nil {
       ),
     )
   let assert Ok(#(_, effects)) = list.last(left_out.steps)
-  assert ids(effects:) == [spell_finished.message_id]
-    as "tick 1 of 3 left out at its deadline stops the unit's ticks and releases its node at once: the cast's 0x7fe goes then, not at the node's end at 7000"
+  assert ids(effects:)
+    == [spell_targets_removed.message_id, spell_finished.message_id]
+    as "tick 1 of 3 left out at its deadline stops the unit's ticks and releases its node at once: the node's 0x811 and the cast's 0x7fe go then, not at the node's end at 7000"
   assert left_out.pending == []
     as "with the next tick's timer and the node's end cancelled"
 }

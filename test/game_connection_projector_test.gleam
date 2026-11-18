@@ -247,13 +247,15 @@ pub fn the_combat_projector_moves_the_player_to_warfare_woods_at_the_casts_end_t
     pressed(state: exile_before_the_combat_projector())
   assert list.contains(connection_support.written_ids(started), 0x07FD)
     as "opcode.0x7fd: the press confirms the cast"
-  let #(_, _, steps) = run_to(state:, pending:, until_ms: 1000)
+  let #(state, pending, steps) = run_to(state:, pending:, until_ms: 1000)
   let frames = frames_of(steps:)
   let ids = ids_of(frames:)
   assert list.drop(ids, list.length(ids) - 4)
     == [0x083C, 0x0639, 0x0638, 0x0636]
     as "the placement is the last of the go's frames, in the client's order"
-  assert list.contains(ids, 0x07FE) as "opcode.0x7fe: the cast's finish"
+  let #(_, _, later) = run_to(state:, pending:, until_ms: 2000)
+  assert frames_of(steps: later) == []
+    as "Spell4Effects 227425 (type 95, aimed at the caster, 1000 ms) keeps the cast lingering after the go, and the move stops it (opcode.0x83c), so its end writes nothing later"
   assert connection_support.decoded(
       frames,
       0x0361,
@@ -285,23 +287,18 @@ pub fn the_combat_projector_moves_the_player_to_warfare_woods_at_the_casts_end_t
     as "the use credits a type 12 objective, so the map is told to release the projector (a static object it leaves in place), then the landing with the move's number"
 }
 
-pub fn the_move_is_written_after_the_casts_finish_test() -> Nil {
+pub fn the_move_is_written_at_the_go_and_stops_the_lingering_cast_with_no_finish_test() -> Nil {
   use <- owned_test.run(60_000)
   let #(state, _, pending) = pressed(state: exile_before_the_combat_projector())
   let #(state, pending, early) = run_to(state:, pending:, until_ms: 999)
   assert !list.contains(ids_of(frames: frames_of(steps: early)), 0x083C)
-    as "no placement before the cast's end"
-  let #(_, _, steps) = run_to(state:, pending:, until_ms: 1000)
+    as "no placement before the cast's go"
+  let #(state, pending, steps) = run_to(state:, pending:, until_ms: 1000)
   let ids = ids_of(frames: frames_of(steps:))
-  let position = fn(id) {
-    let assert Ok(index) =
-      list.index_map(ids, fn(found, index) { #(found, index) })
-      |> list.key_find(id)
-      as "the frame is written"
-    index
-  }
-  assert position(0x07FE) < position(0x083C)
-    as "opcode.0x83c stops the current cast, so the finish is written before it"
+  assert list.contains(ids, 0x083C) && !list.contains(ids, 0x07FE)
+    as "the move is written at the go with no finish before it: the cast stays live for Spell4Effects 227425 (type 95, aimed at the caster, 1000 ms), and opcode.0x83c stops it"
+  let #(_, _, later) = run_to(state:, pending:, until_ms: 5000)
+  assert frames_of(steps: later) == [] as "the stopped cast writes no end later"
 }
 
 pub fn the_dominion_cryo_projector_lands_in_the_dominion_pod_test() -> Nil {
@@ -370,10 +367,10 @@ pub fn a_projector_gone_from_the_picture_by_the_go_moves_no_one_test() -> Nil {
         ObjectsUnseen(unit_ids: [departures_support.terminal_unit]),
       ),
     )
-  let #(_, _, steps) = run_to(state:, pending:, until_ms: 1000)
+  let #(_, _, steps) = run_to(state:, pending:, until_ms: 2000)
   let ids = ids_of(frames: frames_of(steps:))
   assert list.contains(ids, 0x07FE)
-    as "opcode.0x7fe: the cast ran to its end, so the absences below are the move's and not a cast that never went"
+    as "opcode.0x7fe: the cast ran to its end (its 1000 ms hologram, Spell4Effects 227425, after the go), so the absences below are the move's and not a cast that never went"
   assert !list.contains(ids, 0x0361) && !list.contains(ids, 0x083C)
     as "a use of a unit the player no longer sees counts for no objective and moves no one"
   assert told_the_map(steps:) == []

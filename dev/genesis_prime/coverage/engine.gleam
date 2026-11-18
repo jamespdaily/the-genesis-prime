@@ -429,6 +429,11 @@ fn spell_effects() -> EngineDeclaration {
         fact_key: "Spell4Effects.effectType.84",
       ),
       Missing(
+        type_number: 95,
+        reason: "rows aimed only at another unit or at the area (targetFlags 2 and 4), which the client draws no full-screen effect for: it draws one for the player's own unit alone",
+        fact_key: "Spell4Effects.effectType.95",
+      ),
+      Missing(
         type_number: 97,
         reason: "rows aimed at the caster alone, which only a creature caster could remove (#921); rows with a dataBits00 or dataBits01 that is not 0, which no client code reads (#921); rows in a spell the activate cast names (a creature's activate column, the default spell or an item's use) that no Proxy or Proc names as its child, which the activate cast drops since it strikes no unit (#921); rows behind a target apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses",
         fact_key: "Spell4Effects.effectType.97",

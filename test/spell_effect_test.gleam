@@ -155,6 +155,7 @@ fn outcomes_of(kind kind: effect_kind.Kind) -> List(String) {
     | effect_kind.Scale
     | effect_kind.RavelSignal
     | effect_kind.ShieldOverload
+    | effect_kind.FullScreenEffect
     | effect_kind.ItemVisualSwap -> ["LastingEffect"]
     effect_kind.ForceRemove -> ["RemoveEffect"]
     effect_kind.CrowdControl -> ["ControlEffect"]
@@ -190,8 +191,8 @@ pub fn every_read_effect_kind_plans_one_variant_or_names_why_not_test() -> Nil {
     list.map(effects, fn(effect) { effect_kind.kind_of(effect.effect_type) })
     |> list.unique
     |> list.filter(fn(kind) { outcomes_of(kind:) != [] })
-  assert list.length(kinds) == 24
-    as "the client's table holds a row of each of the 24 kinds the plan reads"
+  assert list.length(kinds) == 25
+    as "the client's table holds a row of each of the 25 kinds the plan reads"
   list.each(kinds, fn(kind) {
     let outcome =
       list.find_map(effects, fn(effect) {

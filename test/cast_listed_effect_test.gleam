@@ -611,7 +611,9 @@ pub fn a_timed_item_visual_swap_node_ends_with_targets_removed_while_another_nod
   let #(_, at_buff_end) = support.fired(state:, timer:, at: 21_000)
   assert support.finished_ids(support.writes(effects: at_buff_end)) == [id]
     as "the finish comes with the last node's end (go at 1000 + 20000)"
-  assert support.removed_targets(support.writes(effects: at_buff_end)) == []
+  assert support.removed_targets(support.writes(effects: at_buff_end))
+    == [#(id, [20])]
+    as "the last node's end names its unit, then the finish"
 }
 
 /// A spell whose go takes the casts of the Spell4 `selector` names off the caster.

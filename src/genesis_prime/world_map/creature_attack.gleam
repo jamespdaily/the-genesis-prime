@@ -377,6 +377,7 @@ fn only_damage_and_delay(
       | effect_kind.ItemVisualSwap
       | effect_kind.RavelSignal
       | effect_kind.PropertyConversion
+      | effect_kind.FullScreenEffect
       | effect_kind.DisguiseOutfit
       | effect_kind.Absorption
       | effect_kind.Activate
