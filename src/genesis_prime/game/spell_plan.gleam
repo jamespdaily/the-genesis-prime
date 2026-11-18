@@ -5424,10 +5424,11 @@ fn quest_advance_reading(
 /// The aim of a QuestAdvanceObjective row from its `targetFlags`: the caster when bit 1 is set,
 /// else the primary target (the plan reads no area for the type, `effect_kind.is_row_read`).
 pub fn quest_advance_aim_of(target_flags target_flags: Int) -> Aim {
-  case spell_effect.has_flag(flags: target_flags, bit: 1) {
-    True -> AimsAtCaster
-    False -> AimsAtPrimaryTarget
-  }
+  use <- bool.guard(
+    when: spell_effect.has_flag(flags: target_flags, bit: 1),
+    return: AimsAtCaster,
+  )
+  AimsAtPrimaryTarget
 }
 
 /// Whether a QuestAdvanceObjective row aimed by `aim` lands on the caster: its aim names the

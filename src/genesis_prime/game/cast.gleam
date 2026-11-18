@@ -4744,16 +4744,13 @@ fn makes_a_use(activating activating: Activating) -> Bool {
 /// use of its unit, as `Activated` raises it, which an item's cast of a spell with no Activate
 /// row does not raise (an item's use counts a unit only through that effect).
 fn activation_counted_with(activating activating: Activating) -> AdvanceWith {
-  case makes_a_use(activating:) {
-    True ->
-      WithUse(
-        unit_id: activating.unit_id,
-        creature_id: activating.creature_id,
-        alive_at_press: activating.alive_at_press,
-        by_item: activating.by_item,
-      )
-    False -> WithNothing
-  }
+  use <- bool.guard(when: !makes_a_use(activating:), return: WithNothing)
+  WithUse(
+    unit_id: activating.unit_id,
+    creature_id: activating.creature_id,
+    alive_at_press: activating.alive_at_press,
+    by_item: activating.by_item,
+  )
 }
 
 /// The QuestAdvanceObjective rows a go applies to the caster, handed to the connection: a row
