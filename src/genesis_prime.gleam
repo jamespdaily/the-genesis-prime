@@ -39,6 +39,7 @@ import genesis_prime/content/zone_welcome as content_zone_welcome
 import genesis_prime/digest
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
+import genesis_prime/game/leaving_save
 import genesis_prime/game_settings
 import genesis_prime/login/auth_connection
 import genesis_prime/login/sts_connection
@@ -373,7 +374,32 @@ pub fn settings(
     send_deadline_ms: 2000,
     connection_shutdown_ms: 5000,
     login: login(),
+    leaving_saver: leaving_saver(),
     game: game(tables:, spawns:),
+  )
+}
+
+/// The leaving saver's names and times: a kept final save is asked again after
+/// 1, 2, 4 and 8 s and then every 10 s until 20 s have passed from the hand-over,
+/// each ask given 5 s, as an ask of a connection is (`ask_deadline_ms`), and the
+/// saver has the window plus one second to stop. The ladder and the window are
+/// the server's choice: a player's play since the last landed save is what a
+/// failed save costs, and the client has no such wait. The asks go to the store
+/// as they are (`ask_through` is the identity).
+pub fn leaving_saver() -> server.LeavingSaver {
+  let retries =
+    leaving_save.Retries(
+      within_ms: 20_000,
+      waits_ms: [1000, 2000, 4000, 8000],
+      then_ms: 10_000,
+    )
+  server.LeavingSaver(
+    name: process.new_name("leaving_saver"),
+    retries:,
+    ask_deadline_ms: ask_deadline_ms,
+    shutdown_ms: retries.within_ms + 1000,
+    time: service_shell.real_time(),
+    ask_through: fn(ask) { ask },
   )
 }
 

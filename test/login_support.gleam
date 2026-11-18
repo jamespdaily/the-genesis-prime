@@ -178,6 +178,10 @@ pub fn settings(pool pool: pog.Config) -> server.Settings {
     send_deadline_ms: 300,
     connection_shutdown_ms: 1000,
     login: login(),
+    leaving_saver: server.LeavingSaver(
+      ..genesis_prime.leaving_saver(),
+      shutdown_ms: ask_support.beyond_the_test_ms,
+    ),
     game: game(),
   )
 }

@@ -19,6 +19,8 @@
 ////  ├─ login supervisor (one-for-one, 3 restarts in 10 s)  permanent
 ////  │    ├─ STS listener (6600): a connection shell per client
 ////  │    └─ auth listener (23115): a connection shell per client
+////  ├─ leaving saver: factory supervisor, named          permanent, shutdown window + 1 s
+////  │    └─ one actor per pending final save: shell + saver rule  temporary
 ////  ├─ game supervisor (rest_for_one, 3 restarts in 10 s)  permanent
 ////  │    ├─ registry: OTP's pg scope, named               permanent
 ////  │    └─ game listener (24000): a connection shell per client, each
@@ -27,7 +29,9 @@
 //// ```
 ////
 //// The tree stops the closer first, which closes every listener to new
-//// sockets (genesis_prime/connection/closer), then the game subtree, the login
+//// sockets (genesis_prime/connection/closer), then the game subtree, the
+//// leaving saver (genesis_prime/leaving_saver), which keeps a save a connection
+//// handed over until the store takes it or its window ends, the login
 //// subtree and the world subtree, before Sessions, the hand-off, the store and
 //// the pool they ask, so no connection is left asking a process that has
 //// stopped. The tree runs under the application's root
@@ -119,7 +123,10 @@ import genesis_prime/content/game_number as content_game_number
 import genesis_prime/content/spawn as content_spawn
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/experience
+import genesis_prime/game/leaving_save
 import genesis_prime/hand_off
+import genesis_prime/leaving_saver
+import genesis_prime/leaving_saver/shell as leaving_saver_shell
 import genesis_prime/login/auth_connection
 import genesis_prime/login/sts_connection
 import genesis_prime/service.{type Call, type Locate, type Reach, type Sent}
@@ -180,8 +187,32 @@ pub type Settings {
     connection_shutdown_ms: Int,
     /// The login's two listeners.
     login: Login,
+    /// The leaving saver, which starts after the login subtree and before the
+    /// game subtree.
+    leaving_saver: LeavingSaver,
     /// The game server's listener.
     game: Served(game_connection.Settings),
+  )
+}
+
+/// The leaving saver's names and settings (genesis_prime/leaving_saver). Its
+/// actors ask the store by its name from the tree's `store`; `ask_through` wraps
+/// that ask: the identity on a server, and a gate a whole-server test closes to
+/// make the store unreachable without a timer.
+pub type LeavingSaver {
+  LeavingSaver(
+    /// The saver's factory supervisor.
+    name: Name(factory_supervisor.Message(leaving_save.Handover, Nil)),
+    /// The ladder of waits and the window every kept save is tried in.
+    retries: leaving_save.Retries,
+    /// How long one ask of the store may take.
+    ask_deadline_ms: Int,
+    /// How long the saver has to stop: the window plus one second.
+    shutdown_ms: Int,
+    /// Where the actors read the time and start their timers:
+    /// `service_shell.real_time()` on a server, the driven clock's in a test.
+    time: service_shell.ServiceTime,
+    ask_through: fn(leaving_saver_shell.Ask) -> leaving_saver_shell.Ask,
   )
 }
 
@@ -306,6 +337,7 @@ pub fn start(
   ))
   |> supervisor.add(world(settings))
   |> supervisor.add(login(settings, directory))
+  |> supervisor.add(leaving_saver.supervised(leaving_saver_settings(settings)))
   |> supervisor.add(game(settings, directory))
   |> supervisor.add(
     closer.supervised([
@@ -315,6 +347,23 @@ pub fn start(
     ]),
   )
   |> supervisor.start
+}
+
+/// The saver's settings, with its store ask made from the store's name and the
+/// settings' `ask_through`.
+fn leaving_saver_settings(settings: Settings) -> leaving_saver_shell.Settings {
+  let store = settings.store
+  let saver = settings.leaving_saver
+  leaving_saver_shell.Settings(
+    name: saver.name,
+    ask: saver.ask_through(fn(request, reply) {
+      worker.ask(store, request, reply)
+    }),
+    retries: saver.retries,
+    ask_deadline_ms: saver.ask_deadline_ms,
+    shutdown_ms: saver.shutdown_ms,
+    time: saver.time,
+  )
 }
 
 /// How a rule's ask reaches the process it names: to the store by its name,

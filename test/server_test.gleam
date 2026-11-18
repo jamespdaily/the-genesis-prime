@@ -63,8 +63,8 @@ pub fn the_tree_starts_the_pool_the_store_the_hand_off_sessions_the_world_the_tw
   let children = supervisor_children.in_start_order(started.tree)
   assert list.take(children, 4) == [pool, store, hand_off, sessions]
     as "the pool starts first, then the store, the hand-off and Sessions"
-  assert list.length(children) == 8
-    as "the world subtree, the login subtree, the game subtree and the closer follow Sessions"
+  assert list.length(children) == 9
+    as "the world subtree, the login subtree, the leaving saver, the game subtree and the closer follow Sessions"
   assert supervisor_flags.read(started.tree)
     == Flags(static_supervisor.OneForOne, 3, 10)
     as "one-for-one, 3 restarts in 10 seconds"
@@ -77,10 +77,11 @@ pub fn the_tree_starts_the_pool_the_store_the_hand_off_sessions_the_world_the_tw
       ChildSettings(restart: Permanent, shutdown_ms: None),
       ChildSettings(restart: Permanent, shutdown_ms: None),
       ChildSettings(restart: Permanent, shutdown_ms: None),
+      ChildSettings(restart: Permanent, shutdown_ms: None),
       ChildSettings(restart: Permanent, shutdown_ms: Some(5000)),
     ]
-    as "each child is permanent; the pool, the store and the three subtrees are supervisors, the hand-off, Sessions and the closer stop within their own times"
-  let assert [_, _, _, _, world, _, game, _closer] = children
+    as "each child is permanent; the pool, the store and the three subtrees are supervisors, the leaving saver is a factory supervisor like the store, whose shutdown time is for its actors, the hand-off, Sessions and the closer within their own times"
+  let assert [_, _, _, _, world, _, _leaving_saver, game, _closer] = children
   let world_children = supervisor_children.in_start_order(world)
   let assert Ok(maps) = process.named(settings.world.maps)
     as "Maps is registered"
