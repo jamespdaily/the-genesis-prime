@@ -43,7 +43,6 @@ import database_support
 import envoy
 import fixture_tables
 import genesis_prime/content/refusal
-import genesis_prime/content/spawn as content_spawn
 import genesis_prime/game/activate
 import genesis_prime/game/place_objective
 import genesis_prime/game/target_group
@@ -602,9 +601,7 @@ pub fn every_kill_objective_with_a_marker_places_or_has_a_spawn_test() -> Nil {
       folder:,
     )
     as "the world database imports"
-  let assert Ok(stored) =
-    content_spawn.rows(db: content_support.connect(database:))
-    as "the stored spawn rows read back"
+  let stored = content_support.stored_spawns(database:)
   let tables = client_tables.with_content_tables()
   let factions = spawn_support.the_boss_is_given_233(tables:)
   let placed = placed_by_the_load(tables:, stored:, factions:)
@@ -1728,9 +1725,7 @@ pub fn every_click_objective_with_a_marker_starts_or_has_a_spawn_test() -> Nil {
       folder:,
     )
     as "the world database imports"
-  let assert Ok(stored) =
-    content_spawn.rows(db: content_support.connect(database:))
-    as "the stored spawn rows read back"
+  let stored = content_support.stored_spawns(database:)
   let tables = client_tables.with_content_tables()
   let factions = spawn_support.the_boss_is_given_233(tables:)
   let placed = placed_by_the_load(tables:, stored:, factions:)

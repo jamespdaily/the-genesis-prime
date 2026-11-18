@@ -23,6 +23,10 @@ import unitest
 /// test tagged `world_data` (the whole world database, about a minute) is skipped
 /// the same way with `GENESIS_TEST_SKIP_WORLD_DATA=1`, and `./check` runs it in a
 /// run of its own beside the other tests (`gleam test -- --tag world_data`).
+/// The test tagged `real_start` (the real server's boot with a bot playing the
+/// opening, most of a minute) is skipped the same way with
+/// `GENESIS_TEST_SKIP_REAL_START=1`, and `./check` runs it in a run of its own
+/// beside the other tests (`gleam test -- --tag real_start`).
 /// The test tagged `client_rows` (the committed client rows against the client's
 /// own tables) is skipped the same way with `GENESIS_TEST_SKIP_CLIENT_ROWS=1`, and
 /// `./check` runs it in its client-suite part (`gleam test -- --tag client_rows`).
@@ -92,6 +96,7 @@ pub fn main() -> Nil {
         skipped_when_set("GENESIS_TEST_SKIP_SERIAL", tag: "serial"),
         list.flatten([
           skipped_when_set("GENESIS_TEST_SKIP_WORLD_DATA", tag: "world_data"),
+          skipped_when_set("GENESIS_TEST_SKIP_REAL_START", tag: "real_start"),
           skipped_when_set("GENESIS_TEST_SKIP_CLIENT_ROWS", tag: "client_rows"),
           skipped_when_set("GENESIS_TEST_SKIP_DEV_TOOL", tag: "dev_tool"),
         ]),

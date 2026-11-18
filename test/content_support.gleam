@@ -1,13 +1,17 @@
 //// What the tests of the content tables share: a connection to a database of the
 //// test's own, and the fixture of the world database.
 
+import ask_support
 import character_tables
 import database_support
 import event_wait
 import genesis_prime
 import genesis_prime/content
+import genesis_prime/content/spawn as content_spawn
+import genesis_prime/dev_database
 import genesis_prime/readiness
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/world_map/spawn.{type Row}
 import gleam/erlang/process
 import gleam/int
 import gleam/result
@@ -39,6 +43,27 @@ pub fn connect_with(config config: pog.Config) -> pog.Connection {
     result.is_ok(pog.query("select 1") |> pog.execute(started.data))
   })
   started.data
+}
+
+/// Every row of the spawn table of the database, read by the load's own query
+/// (`content_spawn.rows`) on a checkout that lasts as long as the test does.
+/// A query on its own is dropped after pgo's 5,000 ms for a checkout, the whole
+/// read included. The read of the whole world database (77,794 rows) takes 63
+/// to 96 ms in Postgres and 0.5 to 0.7 s on a Mac, also with four reads at once,
+/// most of it the pool's and pog's decoding on the BEAM's schedulers. CI's
+/// world-data part, which imports the same file and reads it in four tests at
+/// once, took 154 to 268 s where a Mac takes 12 s, 13 to 22 times as long, which
+/// puts the read past 5,000 ms (`query_timeout`). The test's own deadline
+/// (`owned_test.run`) is the limit that applies, as for `database_support.execute`.
+pub fn stored_spawns(database database: String) -> List(Row) {
+  let assert Ok(rows) =
+    dev_database.transaction(
+      db: connect(database:),
+      deadline_ms: ask_support.beyond_the_test_ms,
+      work: content_spawn.rows,
+    )
+    as "the stored spawn rows read back"
+  rows
 }
 
 /// The result of one query of the test's own on the database, as text rows of
