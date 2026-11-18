@@ -112,7 +112,7 @@ pub fn the_production_leaving_save_settings_are_the_approved_ladder_and_the_stop
     as "a late take, the notice's write, the socket's close and a margin"
 }
 
-pub fn the_stops_reserve_covers_a_late_take_a_write_and_the_close_and_the_trees_stop_fits_the_hosts_sixty_seconds_test() -> Nil {
+pub fn the_stops_deadline_covers_the_logouts_window_the_reserve_covers_a_late_exit_and_a_write_and_the_trees_stop_fits_the_hosts_sixty_seconds_test() -> Nil {
   use <- owned_test.run(10_000)
   let settings = production_settings()
   // A stop taken one step late (one write, bounded by the send deadline), the
@@ -120,6 +120,10 @@ pub fn the_stops_reserve_covers_a_late_take_a_write_and_the_close_and_the_trees_
   // long as a write may wait, then 1 s of margin.
   assert settings.stop_reserve_ms >= 3 * settings.send_deadline_ms + 1000
     as "the reserve is a late take, a write and the close, each the send deadline, and a second"
+  // The stop's window is 2 s shorter than a logout's 20 s (the coordinator's
+  // shape decision: the reserve counts the close), so a stop with the database
+  // away tries for 18 s, and a logout that is begun before a stop keeps its
+  // own deadline only until the stop replaces it.
   assert settings.connection_shutdown_ms - settings.stop_reserve_ms == 18_000
     as "the stop's deadline is taken + 18 s, inside Ranch's 25 s"
   // The bounds a stop waits on in turn, the game connections', the maps', the
