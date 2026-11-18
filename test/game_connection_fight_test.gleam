@@ -839,7 +839,7 @@ pub fn a_viewer_writes_a_running_creatures_0x638_as_kind_0_then_kind_4_at_its_sp
       MovementFloatVector(x: float32.to_bits(26.0), y: 0, z: 0),
     ]
     as "the two points of the path, as 32-bit floats: 0, 0, 0 and 26, 0, 0"
-  let assert [relayed_movement.Time(movement_time.MovementTime(time:)), ..] =
+  let assert [relayed_movement.Time(movement_time.MovementTime(time:)), _, _, _] =
     commands
   assert time == support.now_ms
     as "kind 0's time is the map's time the path starts at: its monotonic start, 1000, less the origin the tests' map took, 0 (map.server_time)"
@@ -1342,9 +1342,20 @@ pub fn a_beasts_aggro_strike_and_leash_reach_the_medics_client_with_the_worked_v
   assert MovementFloatVector(x: point.x, y: point.y, z: point.z) == spawn_bits
     && point.blends == 1
     as "kind 19 names the Beast's spawn, turning it over half a second"
-  let assert [_, relayed_movement.Path(path), ..] = home.commands
+  let assert [
+    relayed_movement.Time(_),
+    relayed_movement.Path(path),
+    relayed_movement.MoveAsked(velocity),
+    relayed_movement.StateFlags(state),
+  ] = home.commands
+    as "kind 0, the path home, then kind 11 and kind 24 that animate the walk; nothing else follows"
   let assert [_, end] = path.points
   assert end == spawn_bits as "the path home ends at the Beast's spawn"
+  assert velocity
+    == movement_move_asked.MovementMoveAsked(x: 0, y: 0, z: 0xC900, blends: 1)
+    as "kind 11 is the walk's speed, 10.0, along -z (from z -508 to the spawn at -563), as half floats (sign 1, 0xC900); the old frame had no kind 11"
+  assert state.flags == 2
+    as "kind 24 is the moving bit 0x2 alone, the bit the pace step reads (0x1405b5070); without it the client shows the Beast standing as it slides home"
 }
 
 /// The Medic's 0x638 commands for the Beast (unit 7), one list per frame, in order.
