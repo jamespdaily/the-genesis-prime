@@ -314,7 +314,9 @@ pub fn medic_create_request(name: String) -> BitArray {
 
 /// Returns when the creature of World 3460, unit `unit_id`, has taken all it was
 /// sent, so a timer its last step started is on the clock (as
-/// `the_creature_has_taken_what_it_was_sent`, which looks in World 1387). The
+/// `the_creature_has_taken_what_it_was_sent`, which looks in World 1387). It is for
+/// a step that is not an advance, which waits for the participants itself, and for a
+/// server in a node of its own, whose creatures the test's clock does not see. The
 /// life is the number of the map's watch the creature was started under, which the
 /// map's other starts move, so it is searched for. The settings are those of the
 /// running server, whether it runs in the test's VM or in a node of its own that

@@ -2,15 +2,16 @@
 //// participant is idle) and its timers, proven on participants of the test's own.
 //// Expected values come from the contract in the doc comment of `driven_time`: a
 //// message a participant sent while it took an input is taken, and the clock it
-//// reads for it is counted, before `advance` returns; a timer cancelled before its
-//// time never fires.
+//// reads for it is counted, before `advance` returns; a timer that an input already
+//// taken starts is started before the clock moves; a timer cancelled before its time
+//// never fires.
 //// Every wait is for an event; the one poll (`event_wait.until`) ends on a state a
 //// process reaches, never on a time.
 
 import ask_support
 import driven_time
 import event_wait
-import genesis_prime/connection/script.{type Elapsed}
+import genesis_prime/connection/script.{type Elapsed, Elapsed}
 import genesis_prime/service/shell.{type ServiceTime}
 import genesis_prime/step.{TimerId}
 import gleam/dynamic.{type Dynamic}
@@ -21,10 +22,11 @@ import mailbox_support
 import open_wait
 import owned_test
 
-/// The two participants of the barrier test.
+/// The participants of the barrier tests.
 type Who {
   Sender
   Holder
+  Starter
 }
 
 /// What a participant tells the test.
@@ -34,6 +36,8 @@ type Announced {
   /// The holder has taken the sender's message and waits for the test before it
   /// reads the clock for it.
   HolderHoldsMessage
+  /// The starter has taken its input and waits for the test before it starts its timer.
+  StarterHoldsInput
 }
 
 /// The test's order to the sender: take an input, then send `to` a message.
@@ -178,6 +182,36 @@ fn start_holder(
   )
 }
 
+/// The starter's input: start a timer for `after_ms`.
+type Start {
+  Start(after_ms: Int)
+}
+
+/// A participant whose input, `Start`, tells the test, waits for the test to let it
+/// go, and only then starts a timer on the clock, as a connection starts the timers
+/// of an input after it has written that input's frames.
+fn start_starter(
+  time time: ServiceTime,
+  announced announced: Subject(Announced),
+  visits visits: Subject(Who),
+  timer_to timer_to: Subject(Elapsed),
+  timer_reference timer_reference: reference.Reference,
+) -> Participant(Start) {
+  start_participant(
+    who: Starter,
+    time:,
+    visits:,
+    joined: fn() { Nil },
+    take: fn(start: Start, release) {
+      process.send(announced, StarterHoldsInput)
+      process.receive_forever(release)
+      let _cancel =
+        time.schedule(timer_to, TimerId(1), timer_reference, start.after_ms)
+      Nil
+    },
+  )
+}
+
 fn announcement(announced: Subject(Announced), what what: String) -> Announced {
   open_wait.received(from: announced, what: what)
 }
@@ -233,6 +267,44 @@ pub fn a_message_sent_late_in_a_pass_is_taken_before_advance_returns_test() -> N
   let _reason =
     ask_support.ended(watched: advanced, what: "the advance to return")
   Nil
+}
+
+pub fn a_timer_an_input_already_taken_starts_is_started_before_the_clock_moves_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let time = driven_time.new()
+  let service_time = driven_time.service_time(time)
+  let announced = process.new_subject()
+  let visits = process.new_subject()
+  let fired = process.new_subject()
+  let timer_reference = reference.new()
+  let starter =
+    start_starter(
+      time: service_time,
+      announced:,
+      visits:,
+      timer_to: fired,
+      timer_reference:,
+    )
+  process.send(starter.handle, Start(after_ms: 1000))
+  assert announcement(announced, what: "the starter to hold its input")
+    == StarterHoldsInput
+  // The starter is in its input, which starts a 1000 ms timer once the test lets it go.
+  // `advance` may move the clock by 500 ms only after the starter has started it, so
+  // the timer falls due 1000 ms after the clock stood where it does now.
+  let advancing = process.spawn(fn() { driven_time.advance(time:, ms: 500) })
+  let advanced = process.monitor(advancing)
+  event_wait.until("the advance to return or to wait for the starter", fn() {
+    !process.is_alive(advancing) || system_messages_waiting(starter.pid) == 1
+  })
+  assert process.is_alive(advancing)
+    as "advance returned while a participant held an input that starts a timer"
+  process.send(starter.release, Nil)
+  let _reason =
+    ask_support.ended(watched: advanced, what: "the advance to return")
+  driven_time.advance(time:, ms: 500)
+  assert process.receive(fired, 0)
+    == Ok(Elapsed(timer: TimerId(1), reference: timer_reference))
+    as "the timer fell due 1000 ms after the starter's input, 500 ms after the first advance"
 }
 
 pub fn a_timer_cancelled_before_its_time_never_fires_on_the_driven_clock_test() -> Nil {

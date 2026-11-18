@@ -156,6 +156,14 @@ if [ "$*" = "test -- --tag client_rows" ] && [ -n "$PLANT_CLIENT_ROWS_FAILS" ]; 
   echo "planted stale client rows"
   exit 1
 fi
+# PLANT_LISTED_TESTS lists tests as test/test_progress.gleam does, in the file the run is
+# given (GENESIS_TEST_PROGRESS_FILE): one that began 7 seconds ago and ended, one that
+# began 5 seconds ago and has not ended; with "ended" only the first.
+if [ "$1" = test ] && [ -n "$PLANT_LISTED_TESTS" ] && [ -n "$GENESIS_TEST_PROGRESS_FILE" ]; then
+  now=$(date +%%s)
+  printf 'start 1.1 %%s planted_test:one_that_ended_test\nend 1.1\n' $((now - 7)) >>"$GENESIS_TEST_PROGRESS_FILE"
+  [ "$PLANT_LISTED_TESTS" = ended ] || printf 'start 1.2 %%s planted_test:one_that_hung_test\n' $((now - 5)) >>"$GENESIS_TEST_PROGRESS_FILE"
+fi
 if [ "$1" = test ] && [ -n "$PLANT_GLEAM_TEST_SECONDS" ]; then
   sleep "$PLANT_GLEAM_TEST_SECONDS"
 fi
@@ -640,6 +648,54 @@ class HungPartTest(unittest.TestCase):
             GENESIS_CHECK_FAST_BUDGET_SECONDS=str(self.BUDGET),
         )
         self.assert_stopped_as_hung(run, "code-rules")
+
+    def hung_test_run(self, listed: str | None) -> Run:
+        """The first test run hangs after listing tests (`listed`: "ended" lists one that
+        ended and one that did not, "ended" alone one that ended, none lists nothing)."""
+        settings = dict(GENESIS_CHECK_BUDGET_SECONDS=str(self.BUDGET))
+        if listed:
+            settings["PLANT_LISTED_TESTS"] = listed
+        return shared_run(
+            "hung-test-run-%s" % listed, hang=lambda seconds: dict(PLANT_GLEAM_TEST_SECONDS=seconds),
+            timeout=40, **settings,
+        )
+
+    def assert_test_run_hung(self, run: Run) -> None:
+        """The check failed, and the gleam-test part's line says it hung. (The summary
+        line also names the literal-area part, which never started: it follows the tests.)"""
+        self.assertNotEqual(run.done.returncode, 0, run.output)
+        self.assertRegex(failed_line(self, run.output), r"gleam-test hung, still running at three times its budget of %ds" % self.BUDGET)
+        part_line = next(line for line in run.output.splitlines() if line.strip().startswith("gleam-test "))
+        self.assertRegex(part_line, r"FAILED\s+hung")
+        self.assertEqual(run.left_running, [], "the planted sleep is still running")
+
+    def still_running_lines(self, run: Run) -> list[str]:
+        return [line.strip() for line in run.output.splitlines() if "still running:" in line]
+
+    def test_a_test_run_that_hangs_names_the_tests_that_began_and_did_not_end(self):
+        run = self.hung_test_run("hung")
+        self.assert_test_run_hung(run)
+        lines = self.still_running_lines(run)
+        self.assertEqual(len(lines), 1, "only the unfinished test is named:\n" + run.output)
+        # The planted test began 5 seconds before the run's own list was read, and the
+        # check reads it when the hang stops it, 6 seconds into the run or later.
+        self.assertRegex(lines[0], r"^still running: planted_test:one_that_hung_test \((\d+) s\)$")
+        self.assertGreaterEqual(int(re.search(r"\((\d+) s\)", lines[0]).group(1)), 5)
+        part_line_index = run.output.splitlines().index(next(l for l in run.output.splitlines() if l.strip().startswith("gleam-test ")))
+        self.assertIn("still running:", run.output.splitlines()[part_line_index + 1], "the names follow the part's line")
+
+    def test_a_test_run_that_hangs_with_every_listed_test_ended_says_it_hung_outside_a_test(self):
+        run = self.hung_test_run("ended")
+        self.assert_test_run_hung(run)
+        self.assertEqual(self.still_running_lines(run), ["still running: no test was running: the run hung outside a test"])
+
+    def test_a_test_run_that_hangs_before_listing_a_test_says_none_had_started(self):
+        run = self.hung_test_run(None)
+        self.assert_test_run_hung(run)
+        self.assertEqual(self.still_running_lines(run), ["still running: no test had started"])
+
+    def test_a_part_that_is_not_a_test_run_is_named_without_tests(self):
+        self.assertEqual(self.still_running_lines(self.part_and_drop()), [])
 
     def test_a_setup_check_that_hangs_is_stopped_at_three_times_the_budget(self):
         run = shared_run(

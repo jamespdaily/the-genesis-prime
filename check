@@ -65,7 +65,13 @@
 #                  after more than half its deadline prints a `check WARNING: test`
 #                  line (test/owned_test.gleam), which the summary repeats from this
 #                  part's log and the world-data part's and the real-start part's;
-#                  it never fails the part. Both runs print unitest's table of each
+#                  it never fails the part. Each test is also listed in
+#                  $work/gleam-test.running while it runs (GENESIS_TEST_PROGRESS_FILE,
+#                  test/test_progress.gleam), the real-start, world-data, client-suite
+#                  and code-rules parts' tests in files of their own, and when a hang
+#                  stops the check, the summary names under each hung part the tests
+#                  that had started and not ended, with the seconds each had run.
+#                  Both runs print unitest's table of each
 #                  test's duration (--reporter table), and the summary prints the ten
 #                  test modules with the most test time: the sum of the durations of
 #                  a module's tests, from both runs. A module's tests run side by
@@ -573,13 +579,13 @@ wait_for_status() {
 gleam_test() {
   local status=0
   if [ -n "$test_workers" ]; then
-    GENESIS_LITERAL_PEAK_FILE="$work/literal-peak" GENESIS_TEST_SKIP_SERIAL=1 GENESIS_TEST_SKIP_WORLD_DATA=1 GENESIS_TEST_SKIP_REAL_START=1 GENESIS_TEST_SKIP_CLIENT_ROWS=1 GENESIS_TEST_SKIP_DEV_TOOL=1 \
+    GENESIS_TEST_PROGRESS_FILE="$work/gleam-test.running" GENESIS_LITERAL_PEAK_FILE="$work/literal-peak" GENESIS_TEST_SKIP_SERIAL=1 GENESIS_TEST_SKIP_WORLD_DATA=1 GENESIS_TEST_SKIP_REAL_START=1 GENESIS_TEST_SKIP_CLIENT_ROWS=1 GENESIS_TEST_SKIP_DEV_TOOL=1 \
       run_built genesis_prime_test --workers "$test_workers" --reporter table --no-color || status=1
   else
-    GENESIS_LITERAL_PEAK_FILE="$work/literal-peak" GENESIS_TEST_SKIP_SERIAL=1 GENESIS_TEST_SKIP_WORLD_DATA=1 GENESIS_TEST_SKIP_REAL_START=1 GENESIS_TEST_SKIP_CLIENT_ROWS=1 GENESIS_TEST_SKIP_DEV_TOOL=1 \
+    GENESIS_TEST_PROGRESS_FILE="$work/gleam-test.running" GENESIS_LITERAL_PEAK_FILE="$work/literal-peak" GENESIS_TEST_SKIP_SERIAL=1 GENESIS_TEST_SKIP_WORLD_DATA=1 GENESIS_TEST_SKIP_REAL_START=1 GENESIS_TEST_SKIP_CLIENT_ROWS=1 GENESIS_TEST_SKIP_DEV_TOOL=1 \
       run_built genesis_prime_test --reporter table --no-color || status=1
   fi
-  run_built genesis_prime_test --tag serial --reporter table --no-color || status=1
+  GENESIS_TEST_PROGRESS_FILE="$work/gleam-test.running" run_built genesis_prime_test --tag serial --reporter table --no-color || status=1
   return $status
 }
 
@@ -587,7 +593,31 @@ gleam_test() {
 # The VM holds the few terms of one test (the server runs in a node of its own), so it
 # has no literal peak file.
 real_start_test() {
-  run_built genesis_prime_test --tag real_start
+  GENESIS_TEST_PROGRESS_FILE="$work/real-start.running" run_built genesis_prime_test --tag real_start
+}
+
+# running_tests PART: prints the tests the part's run had started and not ended, from
+# the file `owned_test.run` lists them in (test/test_progress.gleam: a line
+# `start ID SECONDS module:function` when a test begins, `end ID` when it ends), the
+# longest-running first, as `module:function (N s)`, N the seconds since it began. It
+# prints one line saying so when no test was running, and one when the part never
+# listed a test (its run did not start one, or it is not a run of tests).
+running_tests() {
+  local file="$work/$1.running"
+  if [ ! -f "$file" ]; then
+    echo "no test had started"
+    return 0
+  fi
+  local running
+  running=$(awk -v now="$(date +%s)" '
+    $1 == "start" { began[$2] = $3; name[$2] = $4; order[++count] = $2 }
+    $1 == "end" { delete began[$2] }
+    END { for (i = 1; i <= count; i++) if (order[i] in began) printf "%s (%d s)\n", name[order[i]], now - began[order[i]] }' "$file")
+  if [ -n "$running" ]; then
+    echo "$running"
+  else
+    echo "no test was running: the run hung outside a test"
+  fi
 }
 
 # test_module_times LOG: prints the ten test modules with the most test time in the
@@ -612,7 +642,7 @@ test_module_times() {
 # test run, with its own literal peak file: its VM has a literal region of its own,
 # the test alone holds 60.4% of it, and the first run's peak does not include it.
 world_data_test() {
-  GENESIS_LITERAL_PEAK_FILE="$work/literal-peak-world-data" run_built genesis_prime_test --tag world_data
+  GENESIS_TEST_PROGRESS_FILE="$work/world-data.running" GENESIS_LITERAL_PEAK_FILE="$work/literal-peak-world-data" run_built genesis_prime_test --tag world_data
 }
 
 # literal_peak_report FILE RUN LABEL: prints the peak the run RUN recorded in FILE as
@@ -664,7 +694,7 @@ client_suite() {
   if [ "${GENESIS_NO_CLIENT:-}" != 1 ]; then
     python3.13 -I "$client_scripts/client_files.py" tokens --check || status=1
     if wait_for_status gleam-build; then
-      run_built genesis_prime_test --tag client_rows || status=1
+      GENESIS_TEST_PROGRESS_FILE="$work/client-suite.running" run_built genesis_prime_test --tag client_rows || status=1
     else
       echo "the committed client rows were not checked: gleam-build failed"
       status=1
@@ -744,7 +774,7 @@ gleam_chain() {
 fast_chain() {
   if step gleam-build gleam build --warnings-as-errors; then
     ( step glinter run_built glinter ) &
-    step code-rules run_built genesis_prime_test --tag code_rule
+    GENESIS_TEST_PROGRESS_FILE="$work/code-rules.running" step code-rules run_built genesis_prime_test --tag code_rule
     wait
   else
     skip glinter "a part it needs failed: gleam-build"
@@ -795,6 +825,11 @@ for part in $parts; do
     failed="$failed $part"
     if [ "$hung" = yes ] && [ -f "$work/$part.started" ]; then
       printf '  %-18s FAILED  hung: still running at three times its budget\n' "$part"
+      case "$part" in
+        gleam-test | real-start | world-data | client-suite | code-rules)
+          running_tests "$part" | sed 's/^/                       still running: /'
+          ;;
+      esac
       hung_names="${hung_names:+$hung_names, }$part"
       continue
     elif [ "$hung" = yes ]; then

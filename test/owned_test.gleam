@@ -1,16 +1,18 @@
 //// Runs a test body in a process the test owns, so what a test started stops
 //// with it. A test's time limits only warn. Every test body runs inside `run`.
 
+import envoy
 import gleam/bool
 import gleam/dynamic.{type Dynamic}
 import gleam/erlang/process
 import gleam/int
 import gleam/io
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
 import gleam/string
 import open_wait
 import owned_key
+import test_progress
 import unitest
 
 pub type Outcome(a) {
@@ -66,7 +68,28 @@ const build_limit_ms = 120_000
 /// (`owned_key`) fails, and the terms are erased so the tests after it do not
 /// pay for them. A body that crashes fails for that, and its terms are erased
 /// too.
+///
+/// While `GENESIS_TEST_PROGRESS_FILE` names a file, the test is listed in it from
+/// before its body starts until its process is gone (`test_progress`), which
+/// `./check` reads when it stops a hung run, to name the tests still running.
 pub fn run(timeout_ms: Int, body: fn() -> a) -> a {
+  run_listed_in(
+    progress_file: envoy.get("GENESIS_TEST_PROGRESS_FILE") |> option.from_result,
+    timeout_ms:,
+    body:,
+  )
+}
+
+/// `run` with the file that lists the running tests given, or none.
+pub fn run_listed_in(
+  progress_file progress_file: Option(String),
+  timeout_ms timeout_ms: Int,
+  body body: fn() -> a,
+) -> a {
+  let listed = case progress_file {
+    Some(file) -> Some(#(file, test_progress.started(file, body_name(body))))
+    None -> None
+  }
   let reply = process.new_subject()
   let worker =
     process.spawn_unlinked(fn() {
@@ -112,6 +135,10 @@ pub fn run(timeout_ms: Int, body: fn() -> a) -> a {
   wait_until_dead(worker)
   let left_behind = owned_key.left_behind(worker)
   owned_key.erase_left(worker)
+  case listed {
+    Some(#(file, id)) -> test_progress.ended(file, id)
+    None -> Nil
+  }
   case outcome {
     Returned(value) ->
       case left_behind {

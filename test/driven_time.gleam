@@ -34,8 +34,10 @@
 ////   least once (a connection input that asks reads it again when the answer comes
 ////   back), so a pass in which the counter does not move is a pass in which no
 ////   participant took an input and none ended.
-//// - **The barrier** (`wait_until_quiet`) makes `advance` return only when every frame
-////   a timer caused is in the client's socket. A chain through a process that is not a
+//// - **The barrier** (`wait_until_quiet`) runs before `advance` moves the clock and after
+////   each timer it fires, so `advance` starts from every timer the inputs already
+////   received start and returns only when every frame a timer caused is in the client's
+////   socket. A chain through a process that is not a
 ////   participant (a registry, the store) is invisible to the counter; the creatures
 ////   send straight to the connections, so no frame path of a map or a creature goes
 ////   through one.
@@ -342,13 +344,19 @@ pub fn now(time time: Time) -> Now {
 }
 
 /// Moves the clock on by `ms`, firing each timer due within it, one at a time in
-/// the order of their due times. Each fires at its own due time; then the barrier
-/// (`wait_until_quiet`) runs, and only after it is the next due timer chosen, so a
-/// timer started anywhere in the chain the fired one caused is in the queue when the
-/// choice is made. The test first reads all its connection has written
+/// the order of their due times. The barrier (`wait_until_quiet`) runs first, so each
+/// timer that an input a participant has already received starts is in the queue,
+/// started on the clock as it was, before the clock moves: a connection writes the
+/// frames of an input before it starts that input's timers, so a test that has read
+/// the frames and advances at once would otherwise move the clock first and the timer
+/// would fall due that much later. Each timer fires at its own due time; then the
+/// barrier runs again, and only after it is the next due timer chosen, so a timer
+/// started anywhere in the chain the fired one caused is in the queue when the choice
+/// is made. The test first reads all its connection has written
 /// (`game_client.read_until_pong`), so the test's own input has been taken and no
 /// timer it cancels is still in the queue.
 pub fn advance(time time: Time, ms ms: Int) -> Nil {
+  wait_until_quiet(time)
   let Now(monotonic_ms: from_ms, ..) = asked(time:, make: Peek)
   fire_until(time:, limit_ms: from_ms + ms)
 }
@@ -389,10 +397,11 @@ fn fire_until(time time: Time, limit_ms limit_ms: Int) -> Nil {
 /// A participant that ends during a pass is dropped by the next look, which counts
 /// it as a change, so the last signals of an ended participant get one more pass.
 ///
-/// `advance` runs it only after a timer fires. A test runs it itself after an input
-/// of its own whose chain goes through another participant with no timer on the
-/// way (a press whose go strikes a creature at once), once the connection has taken
-/// that input (`game_client.read_until_pong`).
+/// `advance` runs it before the clock moves and after each timer it fires. A test
+/// runs it itself, with no advance, after an input of its own whose chain goes
+/// through another participant with no timer on the way (a press whose go strikes
+/// a creature at once), once the connection has taken that input
+/// (`game_client.read_until_pong`).
 pub fn wait_until_quiet(time: Time) -> Nil {
   let opening = asked(time:, make: Observe)
   pass(time:, opening:, after_a_quiet_pass: False)
