@@ -4620,15 +4620,7 @@ pub fn a_medic_that_levels_from_3_to_4_holds_fissure_castable_and_a_relog_at_4_h
   // The relog at level 4 holds the same five abilities, the new one in slot 4.
   let #(second_entry, _) =
     game_client.camp_and_play(game:, have:, character_id: character)
-  assert list.filter_map(
-      item_bot.answer_in(frames: second_entry).added,
-      fn(held) {
-        case held.item.location {
-          4 -> Ok(#(held.item.bag_index, held.item.item_id))
-          _ -> Error(Nil)
-        }
-      },
-    )
+  assert location_4_items(frames: second_entry)
     == [
       #(0, 38_201),
       #(1, 16_322),
@@ -4682,6 +4674,8 @@ pub fn a_spellslinger_that_levels_from_3_to_4_casts_its_new_ability_and_a_relog_
   )
   let assert Ok(#(killed, have)) =
     fight_bot.presses_until_the_target_dies(
+      // `lingers_ms` holds the 1000 ms global cooldown, not an effect duration: the
+      // press that leaves the creature alive waits that long before the next press.
       ability: fight_bot.Ability(
         bag_index: 0,
         cast_ms: spellslinger_cast_ms,
@@ -4735,7 +4729,10 @@ pub fn a_spellslinger_that_levels_from_3_to_4_casts_its_new_ability_and_a_relog_
   let #(pressed, have) = game_client.read_until_pong(game:, have:, number: 8)
   assert refusals(frames: pressed) == []
     as "opcode.0x7fc: the press of the new ability is not refused"
-  assert cast_confirmed(frames: pressed, client_cast_id: 50)
+  assert result.is_ok(game_client.confirmed_cast_of(
+    frames: pressed,
+    client_cast_id: 50,
+  ))
     as "opcode.0x7fd: the press of the new ability is confirmed"
   // The relog at level 4 holds the new ability in slot 4 and casts it.
   let #(second_entry, have) =
@@ -4765,7 +4762,10 @@ pub fn a_spellslinger_that_levels_from_3_to_4_casts_its_new_ability_and_a_relog_
   let #(pressed, _) = game_client.read_until_pong(game:, have:, number: 9)
   assert refusals(frames: pressed) == []
     as "opcode.0x7fc: the press after the relog is not refused"
-  assert cast_confirmed(frames: pressed, client_cast_id: 60)
+  assert result.is_ok(game_client.confirmed_cast_of(
+    frames: pressed,
+    client_cast_id: 60,
+  ))
     as "opcode.0x7fd: the press after the relog is confirmed"
   game_client.close(game:)
   login_support.stop(started)
@@ -4774,27 +4774,6 @@ pub fn a_spellslinger_that_levels_from_3_to_4_casts_its_new_ability_and_a_relog_
 /// The cast time of the Spellslinger's slot 0 ability (Spell4 43468) and of the level 4
 /// one (Spell4 34756): 1000 ms each, with a global cooldown of 1000 ms.
 const spellslinger_cast_ms = 1000
-
-/// Whether the frames hold the 0x7fd that confirms the press with this client cast id.
-fn cast_confirmed(
-  frames frames: List(Frame),
-  client_cast_id client_cast_id: Int,
-) -> Bool {
-  list.any(game_client.casts_in(frames:), fn(event) {
-    case event {
-      game_client.CastConfirmed(client_cast_id: confirmed, ..) ->
-        confirmed == client_cast_id
-      game_client.CastRefused(..)
-      | game_client.CastStarted(..)
-      | game_client.CastWent(..)
-      | game_client.CastFinished(..)
-      | game_client.ThresholdOpened(..)
-      | game_client.ThresholdIndex(..)
-      | game_client.ThresholdClosed(..)
-      | game_client.ThresholdEnded(..) -> False
-    }
-  })
-}
 
 /// The location-4 items of the entry frames as (bag index, base).
 fn location_4_items(frames frames: List(Frame)) -> List(#(Int, Int)) {
@@ -5425,7 +5404,8 @@ pub fn three_ticks_reach_the_client_and_health_falls_three_times_test() -> Nil {
   driven_time.wait_until_quiet(time)
   let #(went, have) = game_client.read_until_pong(game:, have:, number: 2)
   let at_go = list.append(taken, went)
-  let assert Ok(cast_id) = confirmed_cast_of(frames: at_go, client_cast_id: 1)
+  let assert Ok(cast_id) =
+    game_client.confirmed_cast_of(frames: at_go, client_cast_id: 1)
     as "opcode.0x7fd: the press is answered with its server cast id"
   assert list.contains(
       game_client.casts_in(frames: at_go),
@@ -5484,29 +5464,6 @@ pub fn three_ticks_reach_the_client_and_health_falls_three_times_test() -> Nil {
   login_support.stop(started)
 }
 
-/// The server cast id the 0x7fd among the frames gives the press `client_cast_id`.
-fn confirmed_cast_of(
-  frames frames: List(Frame),
-  client_cast_id client_cast_id: Int,
-) -> Result(Int, Nil) {
-  list.find_map(game_client.casts_in(frames:), fn(event) {
-    case event {
-      game_client.CastConfirmed(client_cast_id: pressed, server_cast_id:)
-        if pressed == client_cast_id
-      -> Ok(server_cast_id)
-      game_client.CastConfirmed(..)
-      | game_client.CastRefused(..)
-      | game_client.CastStarted(..)
-      | game_client.CastWent(..)
-      | game_client.CastFinished(..)
-      | game_client.ThresholdOpened(..)
-      | game_client.ThresholdIndex(..)
-      | game_client.ThresholdClosed(..)
-      | game_client.ThresholdEnded(..) -> Error(Nil)
-    }
-  })
-}
-
 /// The health of each 0x937 among the frames for the unit, in order.
 fn beast_health_in(frames frames: List(Frame), beast beast: Int) -> List(Int) {
   list.filter_map(game_client.health_in(frames:), fn(health) {
@@ -5534,27 +5491,6 @@ fn index_where(
   |> list.find(fn(entry) { found(entry.0) })
   |> result.map(fn(entry) { entry.1 })
   |> result.unwrap(-1)
-}
-
-/// Whether the frames hold the 0x7fd that accepts the press with this client cast id.
-fn confirms(
-  frames frames: List(Frame),
-  client_cast_id client_cast_id: Int,
-) -> Bool {
-  list.any(game_client.casts_in(frames:), fn(event) {
-    case event {
-      game_client.CastConfirmed(client_cast_id: confirmed, ..) ->
-        confirmed == client_cast_id
-      game_client.CastRefused(..)
-      | game_client.CastStarted(..)
-      | game_client.CastWent(..)
-      | game_client.CastFinished(..)
-      | game_client.ThresholdOpened(..)
-      | game_client.ThresholdIndex(..)
-      | game_client.ThresholdClosed(..)
-      | game_client.ThresholdEnded(..) -> False
-    }
-  })
 }
 
 /// Whether the frames hold the finish of a cast (0x7fe).
@@ -8410,7 +8346,10 @@ pub fn a_spellslinger_over_a_socket_casts_surged_quick_draw_test() -> Nil {
   // abilities, and Quick Draw its first, index 0 (SpellLevel rows of class 7).
   game_client.press_ability(game:, client_cast_id: 1, bag_index: 3, target: 0)
   let #(surge, have) = game_client.read_until_pong(game:, have:, number: 1)
-  assert confirms(frames: surge, client_cast_id: 1)
+  assert result.is_ok(game_client.confirmed_cast_of(
+    frames: surge,
+    client_cast_id: 1,
+  ))
     as "opcode.0x7fd: the press of Spell Surge is accepted"
   driven_time.advance(time:, ms: 3000)
   game_client.press_ability(game:, client_cast_id: 2, bag_index: 0, target: 0)
@@ -8418,7 +8357,7 @@ pub fn a_spellslinger_over_a_socket_casts_surged_quick_draw_test() -> Nil {
   driven_time.advance(time:, ms: 1500)
   let #(later, _) = game_client.read_until_pong(game:, have:, number: 3)
   let frames = list.append(pressed, later)
-  assert confirms(frames:, client_cast_id: 2)
+  assert result.is_ok(game_client.confirmed_cast_of(frames:, client_cast_id: 2))
     as "opcode.0x7fd: the Quick Draw press is accepted"
   let roots =
     list.map(
