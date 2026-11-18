@@ -8,6 +8,7 @@
 import creature_path_support as support
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/connection/frames
+import genesis_prime/game/player_life
 import genesis_prime/game/start_place.{type Place, Facing}
 import genesis_prime/game/world_entry
 import genesis_prime/message/float32
@@ -24,8 +25,11 @@ import genesis_prime/message/movement_state_flags.{MovementStateFlags}
 import genesis_prime/message/movement_time.{MovementTime}
 import genesis_prime/message/movement_timed_path.{MovementTimedPath}
 import genesis_prime/message/relayed_movement
+import genesis_prime/message/unit_create_ghost
+import genesis_prime/message/unit_create_player.{UnitCreatePlayer}
 import genesis_prime/message/unit_movement.{type UnitMovement, UnitMovement}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
+import genesis_prime/step.{Now}
 import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_turn
 import gleam/bit_array
@@ -504,4 +508,29 @@ pub fn a_two_point_path_frame_is_the_bytes_it_was_test() -> Nil {
       ),
     )
   assert body == before
+}
+
+/// The ghost's 0x262 of type 23 carries the bone values the player's own 0x262
+/// carries: the client applies a ghost's list to its face when the race and
+/// gender have bones (InitUnitFromCreate 0x140456960 case 23, ReadUnitCreateGhostData
+/// 0x140096970; record `0x140096970.ghost_fields`).
+pub fn a_ghost_wears_the_characters_own_bone_values_test() -> Nil {
+  use <- owned_test.run(5000)
+  let entered = entered()
+  let entered =
+    world_entry.Entered(
+      ..entered,
+      unit: UnitCreatePlayer(..entered.unit, bone_values: [3, 7, 11]),
+    )
+  let Frame(message_id:, body:) =
+    frames.own_unit_frame(
+      entered:,
+      now: Now(monotonic_ms: 700, filetime: 0),
+      written: player_life.GhostCreated(place: at(x: 1.0, y: 2.0, z: 3.0)),
+    )
+  assert message_id == 0x0262 as "the ghost is created by a 0x262"
+  let assert Ok(ghost) = unit_create_ghost.decode(body)
+    as "the frame is a 0x262 of type 23 the client's reader takes"
+  assert ghost.bone_values == [3, 7, 11]
+    as "the six-bit count and the three 32-bit values the player's 0x262 carries"
 }

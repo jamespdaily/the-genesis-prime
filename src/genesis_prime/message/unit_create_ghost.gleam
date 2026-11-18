@@ -5,11 +5,12 @@
 //// type 23, a ghost: a player's data without its owned units, its PvP flags
 //// and its premium tier (the character id, the realm, the name, the race,
 //// which the client refuses above 17, the class, the gender, a 64-bit value, a
-//// text, a 4-bit value, a list of 64-bit values, a list of 32-bit values and
-//// the title), then the values of a player's create; the meanings of the
-//// 64-bit value, the text, the 4-bit value and the two lists are not read. Its
-//// fields are listed in `schema.toml` with the client's evidence, and the fact
-//// file's `0x140096970` names the message.
+//// text, a 4-bit value, a list of 64-bit values, the bone values and the
+//// title), then the values of a player's create; the values the schema leaves
+//// unnamed (the 64-bit value, the text, the 4-bit value and the list of 64-bit
+//// values) are the player's own, set the same way, and not read for the
+//// ghost's looks. Its fields are listed in `schema.toml` with the client's
+//// evidence, and the fact file's `0x140096970` names the message.
 
 import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}
 import genesis_prime/message/unit_create_tail.{type UnitCreateTail}
@@ -42,9 +43,7 @@ pub type UnitCreateGhost {
     /// Safe by `opcode.0x262.ghost`: the client's code gives this field no use
     /// the server needs, and that fact shows its value is safe.
     field_12: List(Int),
-    /// Safe by `opcode.0x262.ghost`: the client's code gives this field no use
-    /// the server needs, and that fact shows its value is safe.
-    field_13: List(Int),
+    bone_values: List(Int),
     title_id: Int,
     tail: UnitCreateTail,
   )
@@ -66,7 +65,7 @@ pub fn encode(message: UnitCreateGhost) -> Result(BitArray, EncodeError) {
   |> bit_stream.write_wide_text("field_10", message.field_10)
   |> bit_stream.write_unsigned("field_11", message.field_11, 4)
   |> bit_stream.write_unsigned_array("field_12", message.field_12, 5, 64)
-  |> bit_stream.write_unsigned_array("field_13", message.field_13, 6, 32)
+  |> bit_stream.write_unsigned_array("bone_values", message.bone_values, 6, 32)
   |> bit_stream.write_unsigned("title_id", message.title_id, 14)
   |> unit_create_tail.write(message.tail)
   |> bit_stream.finish
@@ -96,7 +95,7 @@ pub fn decode(body: BitArray) -> Result(UnitCreateGhost, DecodeError) {
     5,
     64,
   ))
-  use #(field_13, reader) <- result.try(bit_stream.read_unsigned_array(
+  use #(bone_values, reader) <- result.try(bit_stream.read_unsigned_array(
     reader,
     6,
     32,
@@ -116,7 +115,7 @@ pub fn decode(body: BitArray) -> Result(UnitCreateGhost, DecodeError) {
     field_10:,
     field_11:,
     field_12:,
-    field_13:,
+    bone_values:,
     title_id:,
     tail:,
   ))

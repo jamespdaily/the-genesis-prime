@@ -552,7 +552,7 @@ pub fn a_ghost_is_created_as_type_23_with_a_players_data_less_three_values_test(
       field_10: "Gd",
       field_11: 5,
       field_12: [0x2122232425262728],
-      field_13: [0x31323334],
+      bone_values: [0x31323334],
       title_id: 0x155,
       tail: UnitCreateTail(
         create_flags: 0,
