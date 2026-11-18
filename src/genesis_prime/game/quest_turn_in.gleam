@@ -947,6 +947,7 @@ fn after(
         stack_count: stack.stack_count,
         random_stats: stack.random_stats,
         charges: stack.charges,
+        item_flags: stack.item_flags,
       )
     }),
   )
@@ -1142,6 +1143,7 @@ pub fn answered(
                 stack_count: stack.stack_count,
                 random_stats: stack.random_stats,
                 charges: stack.charges,
+                item_flags: stack.item_flags,
                 reason: quest_reason,
               )
             }),

@@ -444,8 +444,9 @@ pub type Buyback {
 /// One sale on the buyback list: the id the client names it by, the Item2 sold,
 /// how many were sold, the random-stat word the item held (which the entry carries to the
 /// client and a buy back gives the item again), the charges the sold stack held (which a buy
-/// back gives the item again; the client's entry has no field for them) and what the vendor
-/// paid for them all:
+/// back gives the item again; the client's entry has no field for them), the flags byte the
+/// sold stack held (which a buy back gives the item again) and what the vendor paid for them
+/// all:
 /// `amount` of the currency `currency_type_id` (a CurrencyType row's id), before the
 /// currency's cap.
 pub type BuybackEntry {
@@ -455,6 +456,7 @@ pub type BuybackEntry {
     quantity: Int,
     random_stats: Int,
     charges: Int,
+    item_flags: Int,
     currency_type_id: Int,
     amount: Int,
   )
@@ -830,6 +832,7 @@ fn charges_asked(
           stack_count: item.stack_count,
           random_stats: item.random_stats,
           charges:,
+          item_flags: item.item_flags,
         )
       })
     })
@@ -1558,6 +1561,7 @@ fn items_sent(items items: List(store.HeldItem)) -> List(Effect) {
       stack_count: item.stack_count,
       random_stats: item.random_stats,
       charges: item.charges,
+      item_flags: item.item_flags,
     )
   })
 }
@@ -1616,6 +1620,7 @@ fn held_item(
   stack_count stack_count: Int,
   random_stats random_stats: Int,
   charges charges: Int,
+  item_flags item_flags: Int,
 ) -> Effect {
   Send(inventory.item_added_frame(
     item_guid:,
@@ -1625,6 +1630,7 @@ fn held_item(
     stack_count:,
     random_stats:,
     charges:,
+    item_flags:,
     reason: ability_book_frame.held_from_the_start,
   ))
 }

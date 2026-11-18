@@ -41,11 +41,9 @@ pub type SharedItem {
     /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
     /// field no use the server needs, and that fact shows its value is safe.
     dye_channels: Int,
-    /// Open: When does the server set the item's flags (bit 0 soulbound, bit 3
-    /// no refund, bit 6 account-bound, bit 7 not tradeable)? The client binds
-    /// nothing itself and shows a bind-on-equip item unbound until the server
-    /// sets bit 0 (opcode.0x111.shared_item_unnamed, 0x14008c0d0).
-    field_13: Int,
+    /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
+    /// field no use the server needs, and that fact shows its value is safe.
+    item_flags: Int,
     /// Open: How long is the refund window a bought item gets, and which
     /// message asks for the refund? opcode.0x111.shared_item_unnamed names the
     /// field; its gap leaves the retail length and the request unread, so the
@@ -113,7 +111,7 @@ pub fn write(writer writer: Writer, record record: SharedItem) -> Writer {
   |> bit_stream.write_unsigned("field_10", record.field_10, 64)
   |> bit_stream.write_float32_bits("durability", record.durability)
   |> bit_stream.write_unsigned("dye_channels", record.dye_channels, 32)
-  |> bit_stream.write_unsigned("field_13", record.field_13, 8)
+  |> bit_stream.write_unsigned("item_flags", record.item_flags, 8)
   |> bit_stream.write_unsigned("refund_window_ms", record.refund_window_ms, 32)
   |> bit_stream.write_unsigned("field_15", record.field_15, 32)
   |> bit_stream.write_unsigned(
@@ -185,7 +183,7 @@ pub fn read(reader: Reader) -> Result(#(SharedItem, Reader), DecodeError) {
   use #(field_10, reader) <- result.try(bit_stream.read_unsigned(reader, 64))
   use #(durability, reader) <- result.try(bit_stream.read_float32_bits(reader))
   use #(dye_channels, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
-  use #(field_13, reader) <- result.try(bit_stream.read_unsigned(reader, 8))
+  use #(item_flags, reader) <- result.try(bit_stream.read_unsigned(reader, 8))
   use #(refund_window_ms, reader) <- result.try(bit_stream.read_unsigned(
     reader,
     32,
@@ -251,7 +249,7 @@ pub fn read(reader: Reader) -> Result(#(SharedItem, Reader), DecodeError) {
       field_10:,
       durability:,
       dye_channels:,
-      field_13:,
+      item_flags:,
       refund_window_ms:,
       field_15:,
       soulbound_trade_window_ms:,

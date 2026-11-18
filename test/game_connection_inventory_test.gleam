@@ -55,11 +55,12 @@ import genesis_prime/step.{
 }
 import genesis_prime/store.{
   type HeldItem, AccountId, CharacterId, ForItems, HeldItem, ItemMade, ItemMove,
-  ItemPlace, Items, ItemsSaved, MoveItems, SplitItem,
+  ItemPlace, Items, ItemsNotSaved, ItemsSaved, MoveItems, SaveRefused, SplitItem,
 }
 import genesis_prime/table/id.{Item2Id}
 import gleam/list
 import gleam/option.{None, Some}
+import item_flags_support
 import owned_test
 import world_entry_support
 
@@ -101,6 +102,7 @@ fn move_asked() -> client_connection.Request {
             item_guid: 1,
             from: ItemPlace(location: 0, bag_index: 0),
             to: ItemPlace(location: 1, bag_index: 0),
+            flags_set: 0,
           ),
         ],
       ),
@@ -205,6 +207,7 @@ fn stack() -> HeldItem {
     stack_count: 10,
     random_stats: 0,
     charges: 0,
+    item_flags: 0,
   )
 }
 
@@ -284,6 +287,7 @@ pub fn a_split_answer_comes_before_the_frames_after_it_test() -> Nil {
               item_guid: 77,
               from: ItemPlace(location: 1, bag_index: 2),
               to: ItemPlace(location: 1, bag_index: 3),
+              flags_set: 0,
             ),
           ],
         ),
@@ -325,6 +329,7 @@ fn holding_a_level_3_chest() -> game_connection.State {
           stack_count: 1,
           random_stats: 0,
           charges: 0,
+          item_flags: 0,
         ),
       ]),
     )
@@ -385,12 +390,13 @@ pub fn an_equip_is_checked_against_the_entered_character_test() -> Nil {
               item_guid: 9,
               from: ItemPlace(location: 1, bag_index: 0),
               to: ItemPlace(location: 0, bag_index: 0),
+              flags_set: 1,
             ),
           ],
         ),
       ),
     )
-    as "at level 3 the same move is the store's ask"
+    as "at level 3 the same move is the store's ask; Item2 50770 binds on equip (bindFlags 16), so the ask sets bit 0"
   let #(_, answered) =
     game_connection_support.answer(
       state:,
@@ -407,13 +413,14 @@ pub fn an_equip_is_checked_against_the_entered_character_test() -> Nil {
         stack_count: 1,
         random_stats: 0,
         charges: 0,
+        item_flags: 0,
       ),
     ])
   assert worn_chest.unread == []
     as "Item2 50770 has ItemStat 414, whose only entry is kind 2, a random stat (ItemBudget 3 gives it a share of 1.0): the reader reads the chest, and its random stat gives nothing until issue 665"
   assert game_connection_support.written_ids(answered)
-    == [0x0569, 0x0933, 0x093A]
-    as "the move's frame, the look with the chest shown, and the properties the chest gives"
+    == [0x0569, 0x0567, 0x0933, 0x093A]
+    as "the move's frame, the binding (Item2 50770 binds on equip), the look with the chest shown, and the properties the chest gives"
   assert properties_written(taken: answered)
     == [
       [
@@ -784,6 +791,7 @@ pub fn equipping_a_level_scaled_item_gives_it_at_the_players_level_test() -> Nil
           stack_count: 1,
           random_stats: 0,
           charges: 0,
+          item_flags: 0,
         ),
       ]),
     )
@@ -795,8 +803,8 @@ pub fn equipping_a_level_scaled_item_gives_it_at_the_players_level_test() -> Nil
       outcome: step.Answer(FromStore(ForItems(ItemsSaved))),
     )
   assert game_connection_support.written_ids(answered)
-    == [0x0569, 0x0933, 0x093A]
-    as "the move's frame, the look with the chest shown, and the properties the chest gives"
+    == [0x0569, 0x0567, 0x0933, 0x093A]
+    as "the move's frame, the binding (Item2 27106 binds on equip, bindFlags 16), the look with the chest shown, and the properties the chest gives"
   assert properties_written(taken: answered)
     == [
       [
@@ -807,4 +815,90 @@ pub fn equipping_a_level_scaled_item_gives_it_at_the_players_level_test() -> Nil
       ],
     ]
     as "the chest's properties at level 5, over the worn Novice set without a chest"
+}
+
+/// A 0x182 of the spare chest piece in inventory slot 0 onto the worn chest slot, as the client
+/// sends it, inside 0x038C.
+fn spare_chest_equipped() -> BitArray {
+  let assert Ok(body) =
+    item_move.encode(item_move.ItemMove(
+      from: item_place.ItemPlace(location: 1, bag_index: 0),
+      to: item_place.ItemPlace(location: 0, bag_index: 0),
+    ))
+  game_connection_support.world_message(message_id: 0x0182, body:)
+}
+
+/// An equip the store does not save binds nothing: the answer `ItemsNotSaved` or
+/// `SaveRefused` is the 0x56A with the client's code 5 (DbFailure) and no 0x567, and the items
+/// stay as held, so the same equip asks the same bits again (`inventory.answered`).
+pub fn a_move_the_store_refuses_binds_nothing_and_sends_no_0x567_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use tables <- item_flags_support.with_bind_flags(
+    item2_id: item_flags_support.chest(),
+    bind_flags: item_flags_support.bind_on_equip,
+    flags: None,
+  )
+  let spare =
+    item_flags_support.held_with(
+      guid: 9,
+      item2: item_flags_support.chest(),
+      location: 1,
+      bag_index: 0,
+      item_flags: 0,
+    )
+  let #(state, _) =
+    game_connection_support.entered_with_quests_and_items_on(
+      tables:,
+      quests: [],
+      items: [spare],
+    )
+  let #(_, first) = game_connection_support.read(state, spare_chest_equipped())
+  let asked = game_connection_support.ask_request(first)
+  assert asked
+    == AskStore(
+      Items(
+        MoveItems(
+          account_id: AccountId(7),
+          character_id: CharacterId(42),
+          session_epoch: character_support.epoch(1),
+          moves: [
+            ItemMove(
+              item_guid: 9,
+              from: ItemPlace(location: 1, bag_index: 0),
+              to: ItemPlace(location: 0, bag_index: 0),
+              flags_set: 1,
+            ),
+            ItemMove(
+              item_guid: 1,
+              from: ItemPlace(location: 0, bag_index: 0),
+              to: ItemPlace(location: 1, bag_index: 0),
+              flags_set: 0,
+            ),
+          ],
+        ),
+      ),
+    )
+    as "the incoming item binds (bit 0) and the displaced one sets nothing"
+  list.each([ItemsNotSaved, SaveRefused(constraint: "a_check")], fn(answer) {
+    let #(state, taken) =
+      game_connection_support.read(state, spare_chest_equipped())
+    assert game_connection_support.ask_request(taken) == asked
+      as "the equip asks for the bit on the swap's incoming item"
+    let #(state, answered) =
+      game_connection_support.answer(
+        state:,
+        taken:,
+        outcome: step.Answer(FromStore(ForItems(answer))),
+      )
+    assert game_connection_support.written_ids(answered) == [0x056A]
+      as "opcode.0x56a only: no 0x569, 0x568 or 0x567"
+    let assert [failure] = game_connection_support.written(answered)
+    assert item_action_failed.decode(failure.body)
+      == Ok(ItemActionFailed(unread_1: 9, code: 5))
+      as "the client's code 5, DbFailure, for the item moved"
+    let #(_, again) =
+      game_connection_support.read(state, spare_chest_equipped())
+    assert game_connection_support.ask_request(again) == asked
+      as "the item is as it was held: the same equip asks the same bits"
+  })
 }

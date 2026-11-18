@@ -2520,6 +2520,7 @@ pub fn a_moved_and_a_swapped_item_are_where_the_next_login_finds_them_test() -> 
         item_guid: hands.item_guid,
         from: ItemPlace(location: 0, bag_index: 5),
         to: ItemPlace(location: 1, bag_index: 2),
+        flags_set: 0,
       ),
     ])
     == ForItems(ItemsSaved)
@@ -2529,11 +2530,13 @@ pub fn a_moved_and_a_swapped_item_are_where_the_next_login_finds_them_test() -> 
         item_guid: chest.item_guid,
         from: ItemPlace(location: 0, bag_index: 0),
         to: ItemPlace(location: 1, bag_index: 2),
+        flags_set: 0,
       ),
       ItemMove(
         item_guid: hands.item_guid,
         from: ItemPlace(location: 1, bag_index: 2),
         to: ItemPlace(location: 0, bag_index: 0),
+        flags_set: 0,
       ),
     ])
     == ForItems(ItemsSaved)
@@ -2577,6 +2580,7 @@ pub fn a_move_moves_every_item_or_none_test() -> Nil {
       item_guid: chest.item_guid,
       from: ItemPlace(location: 0, bag_index: 0),
       to: ItemPlace(location: 1, bag_index: 2),
+      flags_set: 0,
     )
   let stale = epoch_of_load(store:, account:, character_id: number)
   let current = epoch_of_load(store:, account:, character_id: number)
@@ -2592,6 +2596,7 @@ pub fn a_move_moves_every_item_or_none_test() -> Nil {
         item_guid: hands.item_guid,
         from: ItemPlace(location: 1, bag_index: 9),
         to: ItemPlace(location: 0, bag_index: 0),
+        flags_set: 0,
       ),
     ])
     == ForItems(ItemsNotSaved)
@@ -2606,6 +2611,7 @@ pub fn a_move_moves_every_item_or_none_test() -> Nil {
         item_guid: chest.item_guid,
         from: ItemPlace(location: 0, bag_index: 0),
         to: ItemPlace(location: 0, bag_index: 31),
+        flags_set: 0,
       ),
     ])
     == ForItems(SaveRefused(
@@ -2618,6 +2624,7 @@ pub fn a_move_moves_every_item_or_none_test() -> Nil {
         item_guid: hands.item_guid,
         from: ItemPlace(location: 0, bag_index: 5),
         to: ItemPlace(location: 1, bag_index: 2),
+        flags_set: 0,
       ),
     ])
     == ForItems(SaveRefused(constraint: "character_item_one_per_slot"))
@@ -2694,21 +2701,25 @@ pub fn a_bag_off_and_its_displaced_items_save_all_or_none_test() -> Nil {
         item_guid: worn_bag.item_guid,
         from: ItemPlace(location: 0, bag_index: 17),
         to: ItemPlace(location: 1, bag_index: 3),
+        flags_set: 0,
       ),
       ItemMove(
         item_guid: far_20.item_guid,
         from: ItemPlace(location: 1, bag_index: 20),
         to: ItemPlace(location: 1, bag_index: 5),
+        flags_set: 0,
       ),
       ItemMove(
         item_guid: far_21.item_guid,
         from: ItemPlace(location: 1, bag_index: 21),
         to: ItemPlace(location: 1, bag_index: 7),
+        flags_set: 0,
       ),
       ItemMove(
         item_guid: far_23.item_guid,
         from: ItemPlace(location: 1, bag_index: last_from),
         to: ItemPlace(location: 1, bag_index: 9),
+        flags_set: 0,
       ),
     ]
   }
@@ -2885,6 +2896,7 @@ pub fn a_split_item_is_found_with_its_new_guid_after_load_test() -> Nil {
       stack_count: 3,
       random_stats: 0,
       charges: 0,
+      item_flags: 0,
     )
     as "opcode.0x111.guid: the new row has the guid the store answered, the same Item2, the destination and the count"
   assert first != stack.item_guid
@@ -3816,6 +3828,7 @@ pub fn a_buy_takes_the_credits_and_adds_the_items_in_one_statement_test() -> Nil
           stack_count: 7,
           random_stats: 0,
           charges: 0,
+          item_flags: 0,
         ),
         store.NewStack(
           location: 1,
@@ -3823,6 +3836,7 @@ pub fn a_buy_takes_the_credits_and_adds_the_items_in_one_statement_test() -> Nil
           stack_count: 1,
           random_stats: 0,
           charges: 0,
+          item_flags: 0,
         ),
       ],
     )
@@ -3912,6 +3926,7 @@ pub fn a_buy_under_a_stale_epoch_changes_nothing_test() -> Nil {
           stack_count: 7,
           random_stats: 0,
           charges: 0,
+          item_flags: 0,
         ),
       ],
     )
@@ -3943,6 +3958,7 @@ pub fn a_buy_with_too_few_credits_saved_changes_nothing_test() -> Nil {
       stack_count: 7,
       random_stats: 0,
       charges: 0,
+      item_flags: 0,
     ),
   ]
   let refused = [
@@ -4076,6 +4092,7 @@ pub fn a_buy_into_a_taken_place_changes_nothing_and_names_the_constraint_test() 
           stack_count: 7,
           random_stats: 0,
           charges: 0,
+          item_flags: 0,
         ),
       ],
     )
@@ -4119,7 +4136,12 @@ fn sold_with_no_word(
   ForItems(store.Sold(
     amount:,
     words: list.map(guids, fn(guid) {
-      store.SoldWord(item_guid: guid, random_stats: 0, charges: 0)
+      store.SoldWord(
+        item_guid: guid,
+        random_stats: 0,
+        charges: 0,
+        item_flags: 0,
+      )
     }),
   ))
 }
@@ -4540,6 +4562,7 @@ pub fn a_buy_back_in_another_currency_takes_that_currency_in_one_statement_test(
           stack_count: 10,
           random_stats: 0,
           charges: 0,
+          item_flags: 0,
         ),
       ],
     )
@@ -4674,6 +4697,7 @@ fn two_made(bag_index bag_index: Int) -> List(store.Placed) {
         stack_count: 7,
         random_stats: 0,
         charges: 0,
+        item_flags: 0,
       ),
     ]),
     store.Placed(item2_id: Item2Id(1154), grow: [], make: [
@@ -4683,6 +4707,7 @@ fn two_made(bag_index bag_index: Int) -> List(store.Placed) {
         stack_count: 1,
         random_stats: 0,
         charges: 0,
+        item_flags: 0,
       ),
     ]),
   ]
@@ -4723,6 +4748,7 @@ pub fn turn_in_saves_quest_progress_and_rewards_together_test() -> Nil {
               stack_count: 7,
               random_stats: 0,
               charges: 0,
+              item_flags: 0,
             ),
           ],
         ),
@@ -4733,6 +4759,7 @@ pub fn turn_in_saves_quest_progress_and_rewards_together_test() -> Nil {
             stack_count: 1,
             random_stats: 0,
             charges: 0,
+            item_flags: 0,
           ),
         ]),
       ],
@@ -4955,6 +4982,7 @@ fn rolled_stack(
     stack_count: 1,
     random_stats:,
     charges: 0,
+    item_flags: 0,
   )
 }
 
@@ -5095,6 +5123,7 @@ pub fn a_sale_returns_the_sold_items_word_test() -> Nil {
           item_guid: made.item_guid,
           random_stats: word,
           charges: 0,
+          item_flags: 0,
         ),
       ]),
     )
@@ -5331,6 +5360,7 @@ pub fn charges_survive_every_statement_test() -> Nil {
           stack_count: 1,
           random_stats: 0,
           charges: 5,
+          item_flags: 0,
         ),
       ],
     )
@@ -5354,6 +5384,7 @@ pub fn charges_survive_every_statement_test() -> Nil {
             stack_count: 1,
             random_stats: 0,
             charges: 7,
+            item_flags: 0,
           ),
         ]),
       ],
@@ -5389,7 +5420,12 @@ pub fn charges_survive_every_statement_test() -> Nil {
     )
     == ForItems(
       store.Sold(amount: 1010, words: [
-        store.SoldWord(item_guid: bought.item_guid, random_stats: 0, charges: 5),
+        store.SoldWord(
+          item_guid: bought.item_guid,
+          random_stats: 0,
+          charges: 5,
+          item_flags: 0,
+        ),
       ]),
     )
     as "a sale answers the charges the sold stack held, for the buyback entry"
@@ -5629,5 +5665,396 @@ pub fn a_spend_changes_the_row_only_as_held_test() -> Nil {
     )
     == ForItems(ItemsSaved)
     as "a delete with the values held removes it"
+  account_store_support.stop(store)
+}
+
+// ---- item flags ----
+
+/// The flags byte the table holds for the item, read without a login (a load raises the
+/// epoch).
+fn item_flags_of(store store: Store, guid guid: Int) -> Int {
+  let assert Ok(pog.Returned(rows: [item_flags], ..)) =
+    pog.query("select item_flags::int from character_item where item_guid = $1")
+    |> pog.parameter(pog.int(guid))
+    |> pog.returning(decode.at([0], decode.int))
+    |> pog.execute(store.pool)
+    as "the item's row was read"
+  item_flags
+}
+
+/// Inserts one item row of the stackable Item2 at an inventory slot straight into the table
+/// with the flags byte given (and no charges), answering the guid or the name of the check
+/// that refused it.
+fn put_flagged(
+  store store: Store,
+  character_id character_id: store.CharacterId,
+  bag_index bag_index: Int,
+  stack_count stack_count: Int,
+  item_flags item_flags: Int,
+) -> Result(Int, ItemRefused) {
+  let CharacterId(number) = character_id
+  pog.query(
+    "insert into character_item (character_id, item2_id, location, bag_index, stack_count, charges, item_flags) values ($1, $2, 1, $3, $4, 0, $5) returning item_guid",
+  )
+  |> pog.parameter(pog.int(number))
+  |> pog.parameter(pog.int(stackable_item2))
+  |> pog.parameter(pog.int(bag_index))
+  |> pog.parameter(pog.int(stack_count))
+  |> pog.parameter(pog.int(item_flags))
+  |> pog.returning(decode.at([0], decode.int))
+  |> pog.execute(store.pool)
+  |> result.map(fn(returned) {
+    let assert [guid] = returned.rows as "one row was inserted"
+    guid
+  })
+  |> result.map_error(fn(error) {
+    let assert pog.ConstraintViolated(constraint:, ..) = error
+      as "the table refused with a constraint"
+    ItemRefused(constraint:)
+  })
+}
+
+/// A move sets the bits it carries in the item's flags byte, in the statement that moves
+/// the item, and never clears one: a move with bit 0 sets it, a move with none keeps it, a
+/// move with bit 3 on an item holding bit 0 leaves both, and the two items of a swap take the
+/// bits of their own moves. The next login finds the byte on the item.
+pub fn a_move_sets_the_flag_bits_it_carries_and_never_clears_one_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = account_store_support.start_store(pool_size: 2)
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
+  let assert CharacterCreated(character_id:) =
+    account_store_support.create_holding(
+      store:,
+      account:,
+      name: "Ab Cd",
+      slots: 1,
+      items: character_support.row_466_items(),
+    )
+    as "a character holding the Novice set"
+  let CharacterId(number) = character_id
+  let assert [chest, legs, _, _, hands, ..] =
+    account_store_support.held_by(store:, account:, character_id:)
+    as "the Novice set is seven items"
+  let epoch = epoch_of_load(store:, account:, character_id: number)
+  let chest_move = fn(from: #(Int, Int), to: #(Int, Int), flags_set: Int) {
+    ItemMove(
+      item_guid: chest.item_guid,
+      from: ItemPlace(location: from.0, bag_index: from.1),
+      to: ItemPlace(location: to.0, bag_index: to.1),
+      flags_set:,
+    )
+  }
+  let chest_flags = fn() { item_flags_of(store:, guid: chest.item_guid) }
+  assert chest_flags() == 0 as "an item is made unbound"
+  assert moved(store:, account:, character_id:, epoch:, moves: [
+      chest_move(#(0, 0), #(1, 2), 1),
+    ])
+    == ForItems(ItemsSaved)
+  assert chest_flags() == 1 as "a move that sets bit 0 sets it"
+  assert moved(store:, account:, character_id:, epoch:, moves: [
+      chest_move(#(1, 2), #(0, 0), 0),
+    ])
+    == ForItems(ItemsSaved)
+  assert chest_flags() == 1 as "a move that sets none keeps the bit"
+  assert moved(store:, account:, character_id:, epoch:, moves: [
+      chest_move(#(0, 0), #(1, 2), 8),
+    ])
+    == ForItems(ItemsSaved)
+  assert chest_flags() == 9 as "a move that sets bit 3 adds it to bit 0"
+  assert moved(store:, account:, character_id:, epoch:, moves: [
+      ItemMove(
+        item_guid: legs.item_guid,
+        from: ItemPlace(location: 0, bag_index: 1),
+        to: ItemPlace(location: 0, bag_index: 5),
+        flags_set: 1,
+      ),
+      ItemMove(
+        item_guid: hands.item_guid,
+        from: ItemPlace(location: 0, bag_index: 5),
+        to: ItemPlace(location: 0, bag_index: 1),
+        flags_set: 0,
+      ),
+    ])
+    == ForItems(ItemsSaved)
+  assert #(
+      item_flags_of(store:, guid: legs.item_guid),
+      item_flags_of(store:, guid: hands.item_guid),
+    )
+    == #(1, 0)
+    as "a swap's two items take the bits of their own moves"
+  let #(_, items) = account_store_support.login(store:, account:, character_id:)
+  let loaded =
+    list.filter_map(items, fn(item) {
+      case
+        list.contains(
+          [chest.item_guid, legs.item_guid, hands.item_guid],
+          item.item_guid,
+        )
+      {
+        True -> Ok(#(item.item_guid, item.item_flags))
+        False -> Error(Nil)
+      }
+    })
+  assert list.sort(loaded, fn(a, b) { int.compare(a.0, b.0) })
+    == list.sort(
+      [#(chest.item_guid, 9), #(legs.item_guid, 1), #(hands.item_guid, 0)],
+      fn(a, b) { int.compare(a.0, b.0) },
+    )
+    as "the next login's load returns the byte of each item"
+  account_store_support.stop(store)
+}
+
+/// A move that does not happen binds nothing: a stale epoch, a swap with one item not at the
+/// place the request holds and another account's request each change no row, so neither
+/// item moves and neither holds a bit.
+pub fn a_move_that_does_not_match_binds_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = account_store_support.start_store(pool_size: 2)
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
+  let other =
+    account_store_support.insert_account(store:, login_name: "login-2")
+  let assert CharacterCreated(character_id:) =
+    account_store_support.create_holding(
+      store:,
+      account:,
+      name: "Ab Cd",
+      slots: 1,
+      items: character_support.row_466_items(),
+    )
+    as "a character holding the Novice set"
+  let CharacterId(number) = character_id
+  let stale = epoch_of_load(store:, account:, character_id: number)
+  let current = epoch_of_load(store:, account:, character_id: number)
+  let before = account_store_support.held_by(store:, account:, character_id:)
+  let assert [chest, _, _, _, hands, ..] = before
+    as "the Novice set is seven items"
+  let chest_binding =
+    ItemMove(
+      item_guid: chest.item_guid,
+      from: ItemPlace(location: 0, bag_index: 0),
+      to: ItemPlace(location: 1, bag_index: 2),
+      flags_set: 1,
+    )
+  assert moved(store:, account:, character_id:, epoch: stale, moves: [
+      chest_binding,
+    ])
+    == ForItems(ItemsNotSaved)
+    as "a later login holds the character, so the earlier login's bind is dropped"
+  assert moved(store:, account:, character_id:, epoch: current, moves: [
+      chest_binding,
+      ItemMove(
+        item_guid: hands.item_guid,
+        from: ItemPlace(location: 1, bag_index: 9),
+        to: ItemPlace(location: 0, bag_index: 0),
+        flags_set: 1,
+      ),
+    ])
+    == ForItems(ItemsNotSaved)
+    as "a swap with one item not at its old place moves and binds neither item"
+  assert moved(store:, account: other, character_id:, epoch: current, moves: [
+      chest_binding,
+    ])
+    == ForItems(ItemsNotSaved)
+    as "another account binds nothing of this character's"
+  assert #(
+      item_flags_of(store:, guid: chest.item_guid),
+      item_flags_of(store:, guid: hands.item_guid),
+    )
+    == #(0, 0)
+    as "no item holds a bit"
+  assert account_store_support.held_by(store:, account:, character_id:)
+    == before
+    as "every move that did not happen left every item where it was"
+  account_store_support.stop(store)
+}
+
+/// The column holds the bits the server sets, 0 and 3, and nothing else: 0, 1, 8 and 9 are
+/// stored, and every other bit the client reads (2, 4, 16, 64, 128), a bit past a byte and a
+/// negative value are refused by the check `character_item_item_flags_are_set_bits`.
+pub fn the_flags_column_refuses_bits_the_server_does_not_set_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = account_store_support.start_store(pool_size: 2)
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
+  let assert CharacterCreated(character_id:) =
+    account_store_support.create_holding(
+      store:,
+      account:,
+      name: "Ab Cd",
+      slots: 1,
+      items: [],
+    )
+    as "a character that holds nothing yet"
+  let put = fn(bag_index, item_flags) {
+    result.replace(
+      put_flagged(
+        store:,
+        character_id:,
+        bag_index:,
+        stack_count: 1,
+        item_flags:,
+      ),
+      Nil,
+    )
+  }
+  list.each([0, 1, 8, 9], fn(item_flags) {
+    assert put(item_flags, item_flags) == Ok(Nil)
+      as { "the byte " <> int.to_string(item_flags) <> " is stored" }
+  })
+  list.each([2, 4, 16, 64, 128, 256, -1], fn(item_flags) {
+    assert put(10, item_flags)
+      == Error(ItemRefused("character_item_item_flags_are_set_bits"))
+      as { "the byte " <> int.to_string(item_flags) <> " is refused" }
+  })
+  account_store_support.stop(store)
+}
+
+/// A split keeps the flags byte of its source, a sale answers the byte of each stack it
+/// sold (for the buyback entry), and a purchase and a turn-in store the byte they are given:
+/// 1 for a bought-back stack and 0 for a purchase or a reward.
+pub fn split_sale_and_purchase_rows_hold_their_flags_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = account_store_support.start_store(pool_size: 2)
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
+  let assert CharacterCreated(character_id:) =
+    account_store_support.create_holding(
+      store:,
+      account:,
+      name: "Ab Cd",
+      slots: 1,
+      items: character_support.row_466_items(),
+    )
+    as "a character holding the Novice set"
+  let assert Ok(_) =
+    put_flagged(
+      store:,
+      character_id:,
+      bag_index: 0,
+      stack_count: 10,
+      item_flags: 1,
+    )
+    as "a stack holding the soulbound bit"
+  let assert Ok(unbound) =
+    put_flagged(
+      store:,
+      character_id:,
+      bag_index: 1,
+      stack_count: 5,
+      item_flags: 0,
+    )
+    as "a stack holding none"
+  let #(epoch, items, unset) = login_unset(store:, account:, character_id:)
+  assert unset == [] as "both rows hold their charges"
+  let stack = item_in_bag(items:, index: 0)
+  assert stack.item_flags == 1 as "the load returns the byte"
+  let new_stack = fn(bag_index, item_flags) {
+    store.NewStack(
+      location: 1,
+      bag_index:,
+      stack_count: 1,
+      random_stats: 0,
+      charges: 0,
+      item_flags:,
+    )
+  }
+  let assert ForItems(store.Bought(made: [bought_back, bought], ..)) =
+    buy_item(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      item2_id: stackable_item2,
+      currency_type_id: 1,
+      held: 1000,
+      cost: 0,
+      grow: [],
+      make: [new_stack(5, 1), new_stack(6, 0)],
+    )
+    as "a purchase is saved"
+  assert #(bought_back.item_flags, bought.item_flags) == #(1, 0)
+    as "a purchase stores and answers the byte each new stack is given"
+  let assert ForItems(store.TurnedIn(made: [rewarded_back, rewarded], ..)) =
+    turn_in(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      sequence: 1,
+      quests: [completed_quest(1001)],
+      credits_held: 1000,
+      credits_after: 1000,
+      placed: [
+        store.Placed(item2_id: Item2Id(stackable_item2), grow: [], make: [
+          new_stack(7, 1),
+          new_stack(8, 0),
+        ]),
+      ],
+    )
+    as "a turn-in is saved"
+  assert #(rewarded_back.item_flags, rewarded.item_flags) == #(1, 0)
+    as "a turn-in stores and answers the byte each new stack is given"
+  assert #(
+      item_flags_of(store:, guid: bought_back.item_guid),
+      item_flags_of(store:, guid: bought.item_guid),
+      item_flags_of(store:, guid: rewarded_back.item_guid),
+      item_flags_of(store:, guid: rewarded.item_guid),
+    )
+    == #(1, 0, 1, 0)
+    as "the rows hold the bytes"
+  let assert ForItems(store.ItemMade(item_guid: split_guid)) =
+    split(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      source: stack,
+      count: 3,
+      to: 9,
+    )
+    as "a split is saved"
+  assert item_flags_of(store:, guid: split_guid) == 1
+    as "the new stack holds the byte of its source"
+  assert sell(
+      store:,
+      account:,
+      character_id:,
+      epoch:,
+      held: 1000,
+      after: 1010,
+      sold: [
+        store.SoldStack(
+          item_guid: unbound,
+          location: 1,
+          held_count: 5,
+          sold_count: 2,
+        ),
+        store.SoldStack(
+          item_guid: split_guid,
+          location: 1,
+          held_count: 3,
+          sold_count: 3,
+        ),
+      ],
+    )
+    == ForItems(
+      store.Sold(amount: 1010, words: [
+        store.SoldWord(
+          item_guid: unbound,
+          random_stats: 0,
+          charges: 0,
+          item_flags: 0,
+        ),
+        store.SoldWord(
+          item_guid: split_guid,
+          random_stats: 0,
+          charges: 0,
+          item_flags: 1,
+        ),
+      ]),
+    )
+    as "a sale answers the byte of the stack sold in part and of the stack sold whole, for the buyback entries"
   account_store_support.stop(store)
 }

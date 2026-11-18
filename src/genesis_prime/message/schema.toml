@@ -2004,7 +2004,7 @@ fields = [
   { name = "field_10", kind = "unsigned", bits = 64, evidence = "opcode.0x111.ability_bag", open = "What reads the 64-bit rune value's 4-bit part and three 10-bit parts in the current item format, and what does retail send for a new item? No reader of the unpacked parts was found; 0x14040c610 reads it only to convert the old format (opcode.0x111.shared_item_fields)." },
   { name = "durability", kind = "float32", evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.ability_bag" },
   { name = "dye_channels", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.shared_item_unnamed", safe_by = "opcode.0x111.shared_item_unnamed" },
-  { name = "field_13", kind = "unsigned", bits = 8, evidence = "opcode.0x111.ability_bag", open = "When does the server set the item's flags (bit 0 soulbound, bit 3 no refund, bit 6 account-bound, bit 7 not tradeable)? The client binds nothing itself and shows a bind-on-equip item unbound until the server sets bit 0 (opcode.0x111.shared_item_unnamed, 0x14008c0d0)." },
+  { name = "item_flags", kind = "unsigned", bits = 8, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.shared_item_unnamed", safe_by = "opcode.0x111.shared_item_unnamed" },
   { name = "refund_window_ms", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", open = "How long is the refund window a bought item gets, and which message asks for the refund? opcode.0x111.shared_item_unnamed names the field; its gap leaves the retail length and the request unread, so the server sends 0 and refunds are off." },
   { name = "field_15", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", open = "What gives an item its remaining duration, which the tooltip counts down? With 0 the client shows the row's full lifetime and removes nothing (opcode.0x111.shared_item_unnamed, 0x14008c0d0)." },
   { name = "soulbound_trade_window_ms", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.shared_item_unnamed", safe_by = "opcode.0x111.shared_item_unnamed" },
@@ -2095,6 +2095,17 @@ summary = "a held item's charges changed: the item's guid and its new charges; t
 fields = [
   { name = "item_guid", kind = "unsigned", bits = 64, evidence = "opcode.0xca", named_by = "opcode.0xca" },
   { name = "charges", kind = "unsigned", bits = 32, evidence = "opcode.0xca", named_by = "opcode.0xca" },
+]
+
+[[message]]
+id = 0x0567
+name = "item_flags_changed"
+direction = "server_to_client"
+evidence = "opcode.0x567"
+summary = "a held item's flags byte changed: the item's guid and the whole new byte (bit 0 soulbound, bit 3 no refund); the client stores the byte as the item's flags, which its tooltip and its equip confirm read, and raises no event, so no open window redraws"
+fields = [
+  { name = "item_guid", kind = "unsigned", bits = 64, evidence = "opcode.0x567.reader", named_by = "opcode.0x567" },
+  { name = "item_flags", kind = "unsigned", bits = 8, evidence = "opcode.0x567.reader", named_by = "opcode.0x567" },
 ]
 
 [[message]]

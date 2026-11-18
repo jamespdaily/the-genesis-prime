@@ -2971,6 +2971,7 @@ pub fn turn_in_saved(taken taken: ConnectionStep(Request)) -> Outcome(Answer) {
               stack_count:,
               random_stats: 0,
               charges:,
+              item_flags: 0,
             ),
           ] = one.make
             as "one stack of each, the Item2s' counts being 1"
@@ -2982,6 +2983,7 @@ pub fn turn_in_saved(taken taken: ConnectionStep(Request)) -> Outcome(Answer) {
             stack_count:,
             random_stats: 0,
             charges:,
+            item_flags: 0,
           )
         }),
       )),

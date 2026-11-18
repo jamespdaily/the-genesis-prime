@@ -321,6 +321,10 @@ const undeletable_flag = 0x10000
 /// `Item2.bindFlags`).
 const unique_equipped_flag = 2
 
+/// Item2.bindFlags bit 4: the item binds to the player who equips it
+/// (`0x14066f750`, `Item2.bindFlags.bind_on_equip_rows`).
+const bind_on_equip_flag = 16
+
 /// Item2.flags bit 0: the item needs level 1 whatever its required level says
 /// (0x1403b4710).
 const no_level_flag = 1
@@ -822,6 +826,24 @@ pub fn max_charges(
     }),
   )
   int.max(0, source.max_charges)
+}
+
+/// Whether the item binds to the player who equips it: bindFlags bit 4 of the row the
+/// client reads, the item's own or for a proxy item (Item2.flags 0x4000) the row
+/// GameFormula 1214 names, whose bindFlags bind on pickup (`0x1404445d0.proxy`,
+/// `Item2.bindFlags.bind_on_equip_rows`). Only a missing row is an error.
+pub fn binds_on_equip(
+  tables tables: table_store.Tables,
+  item2_id item2_id: Int,
+) -> Result(Bool, ItemPropertyError) {
+  use item <- result.try(item_row(tables:, item2_id:))
+  use source <- result.map(
+    proxy_source(tables:, item:)
+    |> result.map_error(fn(missing) {
+      NoRow(table: missing.table, id: missing.id)
+    }),
+  )
+  int.bitwise_and(source.bind_flags, bind_on_equip_flag) != 0
 }
 
 /// The table row a proxy item's source lookup did not find.

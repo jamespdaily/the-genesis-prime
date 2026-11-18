@@ -15787,7 +15787,37 @@ gap = "The reader's widths are not read; a client vector would settle them. Whet
 statement = "Message 0x567 (1383), game server to client: sets a held item's flags byte (bit 0 soulbound, bit 3 no refund, bit 4 skip the salvage check, bit 6 account-bound, bit 7 not tradeable). Body record: the item's guid (64 bits) and the flags (one byte). It does nothing before the player exists or for an unknown guid. No UI event is raised."
 proof = "HandleWorldMessage's jump table entry for 1383 is 0x1403eeeac. 0x1403eeeac cmp qword ptr [rsi+0x78], 0x0 (no player: done); 0x1403eeec1 call 0x1403acbb0 (FindHeldItemByGuid); 0x1403eeecf movzx ecx, byte ptr [rdi+0x8]; 0x1403eeed5 mov dword ptr [rax+0x80], ecx. The item word at 0x80 is the flags byte per opcode.0x111.shared_item_unnamed (record byte 0x48 -> 0x80, bits as its statement gives)."
 grade = "fairly sure"
-gap = "The reader's widths are not read; a client vector would settle them."
+gap = "The reader is read from the decompile, not run (opcode.0x567.reader); a client vector would confirm it."
+
+["opcode.0x567.reader"]
+statement = "Message 0x567's reader takes a 64-bit value (the item's guid) and then an 8-bit value (the flags byte); the record is 16 bytes. So the body is 72 bits, low byte first. The handler stores the byte into the held item's flags word whole (a replace, not an OR), so the message must carry every bit the item should hold."
+proof = "Registry 0x14006c290 line 1069: id 0x567, record 16, reader FUN_1400a48d0. Saved C 0x1400a48d0.c (8eb22adb6de47956): ReadUint64(stream, record) then, when it did not fail, ReadBits8(stream, record + 8, 8). Handler: opcode.0x567 (0x1403eeeac mov dword ptr [rax+0x80], ecx)."
+grade = "fairly sure"
+gap = "Read from the decompile, not run; a client vector through the generated codec would confirm the bit order."
+
+["0x1403c17d0.equip_confirm"]
+statement = "The client's move sender, before it sends 0x182. For a move whose destination location is 0, 8 or 9, it asks the moved item's row for bindFlags bit 4 (bind on equip) and IsSoulbound (0x14056a3f0); when the row binds on equip and the item is not soulbound it raises the UI event ItemConfirmSoulboundOnEquip (the Character window's text 626285 'Equipping this item will bind it to you!', title 626284 'Soulbind Item?') and sends nothing; the confirm button sends the move again with its confirm argument set, which goes straight to 0x182. It makes the same two checks for the item at the destination when the source location is 0, 8 or 9 (a swap). When it raises no soulbound confirm, an item whose refund time left is above 0 and whose flags bit 3 is clear (0x1403d8bc0) raises ItemConfirmClearRestockOnEquip (Lua text name Character_SoulbindConfirmText_NoRefund) before the move is sent. The client never sets the soulbound bit itself, so while the server sends 0 the dialog comes at every equip of a bind-on-equip item."
+proof = "Saved C 0x1403c17d0.c (e9b6b6af37d00314) line 70 (local_res20, the confirm argument, non-zero goes to the send), lines 71-82 (the (uVar1 & 0xfffffff6) == 0 && uVar1 != 1 test on the destination, bindFlags & 0x10 at lVar6+0x40 -> +0x150, FUN_14056a3f0, the raise 'ItemConfirmSoulboundOnEquip'), lines 128-138 (the same for the item at the destination, when the source is equip-like), line 152 ('ItemConfirmClearRestockOnEquip'), line 121 (SendWorldMessage 0x182). Character.lua lines 1478-1492: OnItemConfirmSoulboundOnEquip -> ShowEquipConfirmation, ConfirmBtn:SetActionData(GameLib.CodeEnumConfirmButtonType.EquipItem, nItemEquip, nItemDestination). 0x14056a3f0.c: IsSoulbound. 0x1403d8bc0.c: refund time left (flags bit 3 clear, +0xec - now > 0)."
+grade = "fairly sure"
+gap = "Read from the decompile, not run; that the confirm button calls 0x1403c17d0 with its argument set is read from SetActionData's name and the EquipItem button type, not from the button's handler. The texts 626284/626285 are matched by wording, not by the string name."
+
+["0x14056a3f0"]
+statement = "IsSoulbound of a held item (the Lua Item:IsSoulbound 0x140418cb0 and the move sender use it): 1 for a row that is not bindable at all, which is any row with bindFlags bit 3 (bind on pickup), Item2.flags bit 6 or 7, expirationTimeMinutes above 0, or joined type, category and family flags without 0x80; for any other row, the item's own flags bit 0."
+proof = "Saved C 0x14056a3f0.c (8eb22adb6de47956): (row+0x150 & 8) == 0 && (row+0x14c & 0xc0) == 0 && row+0x1a8 == 0 && (row+0x154 & 0x80) != 0 ? item+0x80 & 1 : 1. 0x140418cb0.c the same test behind the Lua method. Row words: FillItemInfo 0x1404445d0 (opcode and Item2.bindFlags records)."
+grade = "fairly sure"
+gap = "What the joined flag 0x80 means is not read; it is set for every equippable row and for 116 non-equippable bind-on-equip rows."
+
+["Item2.bindFlags.bind_on_equip_rows"]
+statement = "Item2.bindFlags bit 3 (8) is bind on pickup and bit 4 (16) is bind on equip; no row holds both. Of 72,106 Item2 rows, 32,120 hold bit 3 and 29,440 hold bit 4 (29,371 hold exactly 16). A proxy row (Item2.flags 0x4000) takes its bindFlags from Item2 74201 (bindFlags 8), so its own bit 4 is ignored by the client: 6,194 of the 29,440 are proxies. The other 23,246 bind on equip for the client; 23,128 of them are equippable (joined type, category and family flags hold 0x400) and hold the joined flag 0x80 (the soulbound bit is visible); 116 hold 0x80 but are not equippable (companion pets 35, runes 32, miscellaneous 22, housing 12, AMP 6, consumables 4, schematics 4, charged items 1); 2 lack 0x80 (the client shows them soulbound whatever the item holds). None of the 23,246 has Item2.flags bit 6 or 7, or an expiry. 45 of them stack (42 above 1) and none of those is equippable, so an equipped bind-on-equip item is never a stack. 50 hold charges. All 44 distinct items of the Novice sets (CharacterCreation rows with characterCreationStartEnum 4) are bind on pickup."
+proof = "`gleam run -m genesis_prime/table_rows -- Item2` counted by scratch script (bindFlags bits 3 and 4, flags, expirationTimeMinutes, maxStackCount, maxCharges); Item2Type, Item2Category and Item2Family flags joined as FillItemInfo does; Item2 74201 and the proxy rule from `0x1404445d0.proxy`; `-- CharacterCreation characterCreationStartEnum=4` item columns."
+grade = "fairly sure"
+gap = "The counts come from a scratch script over the tables, not a committed test; the joined flag 0x80's meaning is unread."
+
+["opcode.0x111.shared_item_unnamed.flags_writers"]
+statement = "Only two messages write a held item's flags word: 0x111 (the constructor 0x140569d30, byte 0x48 of the record) and 0x567 (opcode.0x567). 0x7e writes the soulbound-trade list and time, 0x1a8 the dye, 0x1a7 the durability, 0xca the charges and 0x17f the count; 0x569 and 0x568 change only the place. A resent 0x111 of a held item removes it first with reason 49 (an ItemRemoved and an ItemAdded)."
+proof = "Messages 0xca, 0x17f, 0x148, 0x1a7, 0x1a8, 0x7e: their facts; 0x567: opcode.0x567; 0x111: opcode.0x111.shared_item_unnamed's proof (the occupied-key path 0x1403b7d40(guid, 0x31))."
+grade = "fairly sure"
+gap = "A grep for other writers of +0x80 in the saved C is by text; a writer that reaches an item another way would be missed."
 
 ["opcode.0x56d"]
 statement = "Message 0x56d (1389), game server to client: sets a held item's runes and rebuilds its properties. Body record: the item's guid (64 bits), a count of 32-bit rune values (up to 8), the list, and one 32-bit value. The client makes the item's property object if it has none, stores the count, the list and the value, and rebuilds the item's properties (BuildHeldItemProperties); on success it raises ItemModified, on failure it sets the count to 0. An unknown guid does nothing."

@@ -31,6 +31,7 @@ import gleam/option.{None, Some}
 import gleam/result
 import gleam/string
 import item_charge_support
+import item_flags_support
 import owned_test
 import planted_table.{Integer}
 import unitest
@@ -1275,4 +1276,48 @@ pub fn max_charges_of_each_kind_of_row_test() -> Nil {
     )
     assert charges(tables, 2509) == Ok(0) as why
   })
+}
+
+/// Item2.bindFlags bit 4 is bind on equip (`0x14066f750`: bOnEquip); the client takes a
+/// proxy row's bindFlags from Item2 74201, which holds 8 (`0x1404445d0.proxy`), so a proxy's
+/// own bit 4 is ignored (`Item2.bindFlags.bind_on_equip_rows`). Item2 2509 is a row no
+/// loadout reads, so it may be made a proxy.
+pub fn binds_on_equip_of_each_kind_of_row_test() -> Nil {
+  use <- owned_test.run(20_000)
+  let row = 2509
+  let rows = [
+    #("bind on equip", 16, None, Ok(True)),
+    #("unique and bind on equip", 17, None, Ok(True)),
+    #("unique-equipped and bind on equip", 18, None, Ok(True)),
+    #("bind on pickup", 8, None, Ok(False)),
+    #("no bind flags", 0, None, Ok(False)),
+    #(
+      "a proxy row holding its own bit 4: the source row's bind on pickup",
+      16,
+      Some(item_flags_support.proxy_flags),
+      Ok(False),
+    ),
+    #(
+      "a proxy row with its own bit 4 clear",
+      0,
+      Some(item_flags_support.proxy_flags),
+      Ok(False),
+    ),
+  ]
+  list.each(rows, fn(case_) {
+    let #(why, bind_flags, flags, expected) = case_
+    use tables <- item_flags_support.with_bind_flags(
+      item2_id: row,
+      bind_flags:,
+      flags:,
+    )
+    assert item_property.binds_on_equip(tables:, item2_id: row) == expected
+      as why
+  })
+  assert item_property.binds_on_equip(
+      tables: fixture_tables.shared(),
+      item2_id: 999_999_999,
+    )
+    == Error(item_property.NoRow(table: "Item2", id: 999_999_999))
+    as "a missing row is an error, not an answer of no"
 }

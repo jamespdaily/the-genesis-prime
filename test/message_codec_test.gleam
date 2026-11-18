@@ -9,6 +9,7 @@
 import genesis_prime/message/ability_points.{AbilityPoints}
 import genesis_prime/message/cast_result
 import genesis_prime/message/item_charges_changed.{ItemChargesChanged}
+import genesis_prime/message/item_flags_changed.{ItemFlagsChanged}
 import genesis_prime/message_generator.{
   type GeneratedFile, Edited, GeneratedFile, Missing, Stale,
 }
@@ -145,6 +146,7 @@ pub fn the_schema_generates_one_module_for_each_message_and_record_and_the_clien
       "src/genesis_prime/message/item_charges_changed.gleam",
       "src/genesis_prime/message/item_count_changed.gleam",
       "src/genesis_prime/message/item_delete.gleam",
+      "src/genesis_prime/message/item_flags_changed.gleam",
       "src/genesis_prime/message/item_move.gleam",
       "src/genesis_prime/message/item_moved.gleam",
       "src/genesis_prime/message/item_place.gleam",
@@ -450,6 +452,32 @@ pub fn item_charges_changed_reads_in_the_client_order_test() -> Nil {
       0x0123_4567_89AB_CDEF:64-little,
       99:31-little,
     >>),
+  )
+    as "a body one bit short is refused"
+}
+
+/// `opcode.0x567.reader`: the client's reader (0x1400a48d0) takes the item's guid as a
+/// 64-bit value and then 8 bits for the flags, so the body is those 72 bits, low byte first,
+/// and nothing else. No recording holds the message.
+pub fn item_flags_changed_reads_in_the_client_order_test() -> Nil {
+  use <- owned_test.run(5000)
+  list.each([0x09, 0xFF], fn(flags) {
+    let body = <<0x0123_4567_89AB_CDEF:64-little, flags:8>>
+    assert item_flags_changed.decode(body)
+      == Ok(ItemFlagsChanged(
+        item_guid: 0x0123_4567_89AB_CDEF,
+        item_flags: flags,
+      ))
+      as "the guid is the first 64 bits and the flags the next 8"
+    assert item_flags_changed.encode(ItemFlagsChanged(
+        item_guid: 0x0123_4567_89AB_CDEF,
+        item_flags: flags,
+      ))
+      == Ok(body)
+      as "the message writes the same bits"
+  })
+  assert result.is_error(
+    item_flags_changed.decode(<<0x0123_4567_89AB_CDEF:64-little, 9:7>>),
   )
     as "a body one bit short is refused"
 }
