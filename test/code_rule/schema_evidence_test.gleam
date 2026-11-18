@@ -580,6 +580,9 @@ const open_one = "open_tags = [\n  { tag = 1, question = \"what is it\" },\n]"
 const unmarked_variant =
   "  { tag = 2, name = \"flag\", record = \"planted_flag\" },"
 
+const positional_variant =
+  "  { tag = 2, name = \"field_3\", record = \"planted_flag\", named_by = \"opcode.0x2\" },"
+
 /// A planted message holding one array of the union with `keys` and `variants`.
 fn union_message(
   direction direction: String,
@@ -633,6 +636,7 @@ pub fn a_union_tag_of_a_sent_message_is_a_variant_never_sent_open_or_a_breach_te
     sent(["refused_from = 4", never_damage, open_one], [flag_variant])
   let no_bound = sent([never_damage, open_one], [flag_variant])
   let unmarked = sent(marks, [unmarked_variant])
+  let positional = sent(marks, [positional_variant])
   let in_a_record =
     planted_with(
       direction: "server_to_client",
@@ -673,6 +677,9 @@ pub fn a_union_tag_of_a_sent_message_is_a_variant_never_sent_open_or_a_breach_te
       #(union_line(unmarked), kind_rule(2)),
     ]),
     #("a variant with open", sent(marks, [open_variant]), [], []),
+    #("a variant named by its position with named_by only", positional, [], [
+      #(union_line(positional), kind_rule(2)),
+    ]),
     #(
       "a union only a client to server message holds",
       union_message(direction: "client_to_server", keys: [], variants: [

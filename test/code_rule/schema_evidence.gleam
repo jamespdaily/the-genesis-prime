@@ -182,9 +182,18 @@ fn sent_unions(schema: Schema, owners: List(Owner)) -> List(Union) {
 /// A field is traced when it names a fact and a name that is not its position,
 /// or is open with its question.
 fn is_traced(field: Field) -> Bool {
-  case field.open, field.named_by {
+  is_named_or_open(name: field.name, named_by: field.named_by, open: field.open)
+}
+
+/// The test of `is_traced`, for a field and a union variant alike.
+fn is_named_or_open(
+  name name: String,
+  named_by named_by: Option(String),
+  open open: Option(String),
+) -> Bool {
+  case open, named_by {
     Some(_), _ -> True
-    None, Some(_) -> !is_position_name(field.name)
+    None, Some(_) -> !is_position_name(name)
     None, None -> False
   }
 }
@@ -200,7 +209,8 @@ fn is_position_name(name: String) -> Bool {
 }
 
 /// The kinds below a union's `refused_from` that no variant, never tag or open
-/// tag holds, and the variants that have neither `named_by` nor `open`.
+/// tag holds, and the variants that have neither a `named_by` with a name that is not
+/// their position nor `open`.
 fn untraced_tags(union: Union) -> List(Int) {
   int.range(from: 0, to: union.refused_from, with: [], run: fn(tags, tag) {
     [tag, ..tags]
@@ -209,7 +219,11 @@ fn untraced_tags(union: Union) -> List(Int) {
   |> list.filter(fn(tag) {
     case list.find(union.variants, fn(variant) { variant.tag == tag }) {
       Ok(variant) ->
-        option.is_none(variant.named_by) && option.is_none(variant.open)
+        !is_named_or_open(
+          name: variant.name,
+          named_by: variant.named_by,
+          open: variant.open,
+        )
       Error(Nil) ->
         !list.any(union.never_tags, fn(never) { never.tag == tag })
         && !list.any(union.open_tags, fn(open) { open.tag == tag })
