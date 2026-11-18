@@ -6772,7 +6772,9 @@ pub fn a_bot_killed_by_a_dagun_in_its_ring_is_struck_no_more_the_dagun_rests_at_
       | game_client.Started(caster_unit_id: unit_id, ..) -> unit_id != dagun
       game_client.Went(cast_id:, ..) -> cast_state.caster_of(cast_id:) != dagun
       game_client.Moves(unit_id:, kinds:, ..) ->
-        unit_id != dagun || kinds == [0, 14]
+        // After the leash the Dagun only turns to its spawn facing, with the blended kind 19
+        // turn a creature arriving home makes; it never runs.
+        unit_id != dagun || kinds == [0, 19]
       game_client.Threatens(..)
       | game_client.InCombat(..)
       | game_client.LevelIs(..)
