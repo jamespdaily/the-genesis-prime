@@ -1835,29 +1835,7 @@ fn with_the_tower_marker_at(
   also also: List(#(String, Int, List(#(String, planted_table.Cell)))),
   body body: fn(store_tables.Tables) -> a,
 ) -> a {
-  let rows =
-    list.fold(
-      [
-        #("WorldLocation2", 7778, [
-          #("worldId", Integer(3460)),
-          #("worldZoneId", Integer(6009)),
-          #("position0", planted_table.Float(x)),
-          #("position1", planted_table.Float(y)),
-          #("position2", planted_table.Float(z)),
-        ]),
-        ..also
-      ],
-      fixture_tables.rows(),
-      fn(rows, edit) {
-        case
-          fixture_tables.change(rows:, table: edit.0, id: edit.1, with: edit.2)
-        {
-          Ok(changed) -> changed
-          Error(refusal) -> panic as fixture_tables.describe(refusal)
-        }
-      },
-    )
-  fixture_tables.on_rows(rows:, reaching: [], body:)
+  with_marker_at(marker: 7778, x:, y:, z:, also:, body:)
 }
 
 /// The tests' settings over these tables, with the Tower's objective an arrival objective.
@@ -1989,4 +1967,95 @@ pub fn entering_the_world_at_the_marker_of_a_place_script_holds_it_done_test() -
     })
     == [#(3667, 2, [1])]
     as "the entry log holds quest 3667 Achieved with objective 4770 at its count 1"
+}
+
+// ---- a place that left the stand-in ----
+//
+// Quest 5362 "Missing in Action": objective 8074 (index 0, type 5, count 1, "Travel to ... last
+// known position", marker WorldLocation2 17073, radius 1 m) then 8075 (index 1, type 12, flags
+// 3). The completion is the server's choice (`QuestObjective.type.5`), told by 0x361 and 0x35c.
+
+/// The fixture's rows with this WorldLocation2 marker moved to World 3460, zone 6009, centred
+/// at x, y, z, and these edits of other rows.
+fn with_marker_at(
+  marker marker: Int,
+  x x: Float,
+  y y: Float,
+  z z: Float,
+  also also: List(#(String, Int, List(#(String, planted_table.Cell)))),
+  body body: fn(store_tables.Tables) -> a,
+) -> a {
+  let rows =
+    list.fold(
+      [
+        #("WorldLocation2", marker, [
+          #("worldId", Integer(3460)),
+          #("worldZoneId", Integer(6009)),
+          #("position0", planted_table.Float(x)),
+          #("position1", planted_table.Float(y)),
+          #("position2", planted_table.Float(z)),
+        ]),
+        ..also
+      ],
+      fixture_tables.rows(),
+      fn(rows, edit) {
+        case
+          fixture_tables.change(rows:, table: edit.0, id: edit.1, with: edit.2)
+        {
+          Ok(changed) -> changed
+          Error(refusal) -> panic as fixture_tables.describe(refusal)
+        }
+      },
+    )
+  fixture_tables.on_rows(rows:, reaching: [], body:)
+}
+
+pub fn travelling_to_the_last_known_position_sends_progress_and_achieved_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use tables <- with_marker_at(
+    marker: 17_073,
+    x: 60.0,
+    y: -853.8716,
+    z: -560.188,
+    also: [],
+  )
+  let settings =
+    connection_state.Settings(
+      ..connection_support.settings(),
+      tables:,
+      arrival_objectives: set.from_list([8074]),
+    )
+  let moves_in =
+    connection_support.moves_message([
+      game_client.position_command(x: 60.5, y: -853.8716, z: -560.188),
+    ])
+  let #(state, entry) =
+    connection_support.entered_with_quests_in(settings:, quests: [
+      quest_support.accepted(quest_id: 5362, progress: [0, 0]),
+    ])
+  assert quest_frames(taken: entry) == []
+    as "the player enters 31 m from the marker, so the entry settle completes nothing"
+  let #(_, moved) = connection_support.read(state:, bytes: moves_in)
+  assert quest_frames(taken: moved)
+    == [progress_frame(quest: 5362, index: 0, progress: 1)]
+    as "opcode.0x361 sets objective 8074 to its count 1 within the marker's 1 m; the quest stays Accepted, for the type 12 objective after it is open now"
+  // The quest saved with the objective after it already done: the place finishes the quest.
+  let #(state, _) =
+    connection_support.entered_with_quests_in(settings:, quests: [
+      quest_support.active(
+        quest_id: 5362,
+        state: 1,
+        placeholder: 0,
+        tracked: False,
+        done_mask: 2,
+        progress: [0, 1],
+      ),
+    ])
+  let #(_, achieved) = connection_support.read(state:, bytes: moves_in)
+  assert quest_frames(taken: achieved)
+    == [
+      progress_frame(quest: 5362, index: 0, progress: 1),
+      state_frame(quest: 5362, state: 2),
+    ]
+    as "opcode.0x361 then 0x35c state 2: the last open objective is done"
 }

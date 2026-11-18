@@ -186,17 +186,18 @@ pub fn the_arrival_table_refuses_bad_rows_test() -> Nil {
   )
 }
 
-pub fn the_arrival_migration_seeds_42_server_choice_rows_test() -> Nil {
+pub fn the_arrival_migrations_seed_50_server_choice_rows_test() -> Nil {
   use <- owned_test.run(60_000)
   let database = database_support.new_database(on: database_support.shared())
   let assert Ok(rows) =
     content_arrival_objective.rows(db: content_support.connect(database:))
     as "the query ran"
-  assert list.length(rows) == 42 as "the migration seeds 42 rows"
+  assert list.length(rows) == 50
+    as "migration 0038 seeds 42 rows and migration 0043 adds 8"
   assert content_support.count(
       database:,
       sql: "select count(*) from arrival_objective where source = 'server_choice' and reason is not null and source_row is null",
     )
-    == 42
+    == 50
     as "each row is the server's choice and states its reason"
 }
