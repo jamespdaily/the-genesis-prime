@@ -30,8 +30,10 @@ file names), 184,864 bytes each, the client's own bytes of layer 0 of each chunk
     (0x140c41340), and its bit is set.
 The area file is read as 0x1402df540 (magic 'aera', version 0, tagged records), its 'CHNK' record as
 0x1402df8a0 (a word of size and slots to skip, then the chunk) and each chunk as 0x1402e4ec0 (a word of layer
-flags, then layer 0 first). A file the client's reader would refuse is refused here, naming it; the run fails
-and the folder is as it was.
+flags, the bytes of each flagged layer in bit order with layer 0 first, then tagged records to the end: one
+'PROP' at most, and at most one each of 'WAtG', 'wbsP' and 'curD', whose counted entries must fill the record
+exactly). A file holding a chunk the client's reader would refuse, at any layer or record, is refused here,
+naming it; the run fails and the folder is as it was.
 
 The report gives the file count, the bytes written and the time. state.json (build, and per file the area
 file's path and index SHA-1 and the SHA-1 of the file written) lets a second run with nothing changed print
@@ -63,6 +65,14 @@ AREA_MAGIC = 0x61726561  # 'aera' on disk, 0x1402df540
 CHUNK_TAG = 0x43484E4B  # 'KNHC' on disk, the client's 'CHNK'
 SLOTS = 256
 LAYER_SIZE = 722  # 19 * 19 * 2, 0x140c41340
+# Byte size of each of a chunk's 32 layers, in flag-bit order: the layer table's (max z - min z) * row bytes,
+# row by row (0x140c41340, 56-byte rows; 0x1402e4ec0 steps through them).
+LAYER_SIZES = (
+    722, 16, 8450, 8450, 8450, 4, 64, 16, 4225, 2178, 4, 578, 1, 4624, 2312, 8450,
+    4096, 2312, 2312, 2312, 2312, 1, 16, 16900, 8, 8450, 21316, 4096, 16, 8450, 8450, 2312,
+)  # fmt: skip
+# The chunk's trailing tagged records, as the words the client compares (0x1402e4ec0); other tags are skipped.
+WATER_TAG, WATER_SKY_TAG, CURVE_TAG, PROP_TAG = 0x57417447, 0x77627350, 0x63757244, 0x50524F50
 MASK_SIZE = SLOTS // 8
 FILE_SIZE = MASK_SIZE + SLOTS * LAYER_SIZE
 DEFAULT_LAYER = struct.pack("<H", 0x1FFF) * (19 * 19)
@@ -122,17 +132,72 @@ def _read_chunks(payload: bytes, mask: bytearray, layers: list[bytes], refuse) -
             refuse("the chunk of slot %d runs past the end" % slot)
         chunk = payload[at : at + size]
         at += size
-        if size < 4:
-            refuse("the chunk of slot %d is shorter than its layer flags word" % slot)
-        (flags,) = struct.unpack_from("<I", chunk, 0)
-        if flags & 1:
-            if size < 4 + LAYER_SIZE:
-                refuse("the chunk of slot %d is shorter than its height layer" % slot)
-            layers[slot] = chunk[4 : 4 + LAYER_SIZE]
-        else:
-            layers[slot] = DEFAULT_LAYER
+        layers[slot] = _chunk_height_layer(chunk, slot, refuse)
         mask[slot // 8] |= 1 << (slot % 8)
         slot += 1
+
+
+def _chunk_height_layer(chunk: bytes, slot: int, refuse) -> bytes:
+    """Layer 0 of one chunk's bytes (the shared default when its flags lack layer 0), after walking the whole
+    chunk as LoadTerrainChunk 0x1402e4ec0 does: every flagged layer's bytes, then the tagged records to the end."""
+    if len(chunk) < 4:
+        refuse("the chunk of slot %d is shorter than its layer flags word" % slot)
+    (flags,) = struct.unpack_from("<I", chunk, 0)
+    at = 4
+    for bit in range(32):
+        if flags >> bit & 1:
+            if len(chunk) - at < LAYER_SIZES[bit]:
+                refuse("the chunk of slot %d is shorter than its layer %d" % (slot, bit))
+            at += LAYER_SIZES[bit]
+    height = chunk[4 : 4 + LAYER_SIZE] if flags & 1 else DEFAULT_LAYER
+    seen: set[int] = set()
+    while at < len(chunk):
+        if len(chunk) - at < 8:
+            refuse("a record's tag and size in the chunk of slot %d run past the end" % slot)
+        tag, size = struct.unpack_from("<II", chunk, at)
+        at += 8
+        if size > len(chunk) - at:
+            refuse("a record of %d bytes in the chunk of slot %d runs past the end" % (size, slot))
+        body = chunk[at : at + size]
+        at += size
+        if tag in (PROP_TAG, WATER_TAG, WATER_SKY_TAG, CURVE_TAG):
+            if tag in seen:
+                refuse("the chunk of slot %d holds a second record of tag 0x%08X" % (slot, tag))
+            seen.add(tag)
+            if tag != PROP_TAG:
+                _walk_counted_entries(tag, body, slot, refuse)
+    return height
+
+
+def _walk_counted_entries(tag: int, body: bytes, slot: int, refuse) -> None:
+    """Checks a 'WAtG', 'wbsP' or 'curD' record body as the client's reader does: a count word, then that many
+    entries, the bytes ending exactly at the body's end. A 'WAtG' entry is 0x50 fixed bytes, a run of the word
+    at 0x40 times 4 bytes, and a run of the word at 0x44 times 0x48 bytes (0x1402e5720); a 'wbsP' entry the
+    same with 0x18 bytes in the first run (0x1402e5860); a 'curD' entry a count word and that many 12-byte
+    items (0x1402e59b0)."""
+    if len(body) < 4:
+        refuse("the chunk of slot %d holds a record of tag 0x%08X shorter than its count word" % (slot, tag))
+    (count,) = struct.unpack_from("<I", body, 0)
+    at = 4
+    for _ in range(count):
+        left = len(body) - at
+        if tag == CURVE_TAG:
+            if left < 4:
+                refuse("an entry of the chunk of slot %d's curve record runs past the end" % slot)
+            (items,) = struct.unpack_from("<I", body, at)
+            if left - 4 < items * 12:
+                refuse("an entry of the chunk of slot %d's curve record runs past the end" % slot)
+            at += 4 + items * 12
+            continue
+        if left < 0x50:
+            refuse("an entry of the chunk of slot %d's record of tag 0x%08X runs past the end" % (slot, tag))
+        first, second = struct.unpack_from("<II", body, at + 0x40)
+        first_bytes = first * (4 if tag == WATER_TAG else 0x18)
+        if left - 0x50 < first_bytes or left - 0x50 - first_bytes < second * 0x48:
+            refuse("an entry of the chunk of slot %d's record of tag 0x%08X runs past the end" % (slot, tag))
+        at += 0x50 + first_bytes + second * 0x48
+    if at != len(body):
+        refuse("the chunk of slot %d's record of tag 0x%08X holds bytes after its last entry" % (slot, tag))
 
 
 def world_assets(table: bytes) -> dict[int, str]:

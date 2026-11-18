@@ -5554,8 +5554,29 @@ name = "ReadAreaChunks"
 statement = "Loads one 32-unit terrain chunk from its bytes: a 32-bit word of layer flags, then, for each bit set from bit 0 to bit 31, that layer's bytes, whose size the layer table fixes (0x140c41340); then tagged records ('PROP', 'WAtG', 'curD', 'wbsP' as words) to the end. A layer whose table row says not to load it (layer 12) is skipped by its size. Height layer 0, when its bit is set, is therefore the first thing after the flags word: 722 bytes at byte 4. Bytes too few for a set layer, or a bad record, fail the chunk with an error report naming the record and the file."
 proof = "Saved C 0x1402e4ec0.c (made under 8eb22adb6de47956): `uVar3 = *puVar4`, the loop `uVar3 >> (uVar10 & 0x1f) & 1` over 32 bits, size `(piVar12[2] - *piVar12) * piVar12[4]` from DAT_140c4135c with stride 0xe words (the layer table's max z less min z, times the row bytes), `piVar12[-4] != 0` before FUN_1402ddc50 makes the layer into the chunk's 0x98 + bit * 8; the tags 0x50524f50, 0x57417447, 0x63757244, 0x77627350; ReportError with 'RecordId' and 'FileName'. Data: all 1536 chunks of the nine Eastern files of world 426 end exactly after their layers and tagged records with the table's sizes (ground_check.py)."
 grade = "fairly sure"
-gap = "Read from the saved C; what the layers other than 0 hold and what the four record tags hold are not read."
+gap = "Read from the saved C; what the layers other than 0 hold and what the four record tags hold are not read. A chunk that fails is refused whole; what the area file then holds for the slot is not read."
 name = "LoadTerrainChunk"
+
+["0x1402e5720"]
+statement = "Reads a terrain chunk's 'WAtG' record: a count word, then that many entries, each 0x50 fixed bytes, a run of (the word at entry byte 0x40) 4-byte items and a run of (the word at 0x44) 0x48-byte items. The chunk fails when the record is shorter than its count word, when an entry runs past the record's end, or when bytes are left after the last entry; a second 'WAtG' record in one chunk fails it too."
+proof = "Saved C 0x1402e5720.c (made under 8eb22adb6de47956): `*(param_1 + 0x1d8) == 0 && 3 < param_2`, the count at param_1 + 0x1d0, per entry `param_2 < 0x50`, `param_2 - 0x50 < uVar6 * 4` (uVar6 the word at puVar9[0x10]), `param_2 < uVar7 * 0x48` (uVar7 the word at puVar9[0x11]), the next entry at puVar9 + 0x14 + uVar6 + uVar7 * 0x12 words, every refusal returning 0x80004005, and the end test `param_2 != 0` giving 0x80004005. The entry builder 0x1402de370 only stores pointers and cannot fail except for memory."
+grade = "fairly sure"
+gap = "Read from the saved C, not run; what an entry's bytes mean (water) is not read."
+name = "ReadChunkWaterRecord"
+
+["0x1402e5860"]
+statement = "Reads a terrain chunk's 'wbsP' record: laid out as the 'WAtG' record (0x1402e5720) but with 0x18-byte items in the first run. The chunk fails on the same short, overrunning, left-over-bytes and second-record cases."
+proof = "Saved C 0x1402e5860.c (made under 8eb22adb6de47956): the same shape as 0x1402e5720 with `param_2 - 0x50 < uVar6 * 0x18`, the count at param_1 + 0x1f0 and the 'seen' test at param_1 + 0x1f8; the entry builder 0x1402de8d0 only stores pointers."
+grade = "fairly sure"
+gap = "Read from the saved C, not run; what an entry's bytes mean is not read."
+name = "ReadChunkSkyRecord"
+
+["0x1402e59b0"]
+statement = "Reads a terrain chunk's 'curD' record: a count word, then that many entries, each a count word and that many 12-byte items. The chunk fails when the record is shorter than its count word, an entry runs past the record's end, bytes are left after the last entry, or the chunk already held a 'curD' record."
+proof = "Saved C 0x1402e59b0.c (made under 8eb22adb6de47956): `*(param_1 + 0x1e8) == 0 && 3 < param_2`, the count at param_1 + 0x1e0, per entry `param_2 < 4` and `param_2 - 4 < uVar6 * 0xc` (uVar6 the entry's count word), the next entry at puVar8 + 1 + uVar6 * 3 words, every refusal returning 0x80004005, the end test `param_2 != 0` giving 0x80004005. The entry builder 0x1402de460 only stores pointers."
+grade = "fairly sure"
+gap = "Read from the saved C, not run; what an entry's bytes mean is not read."
+name = "ReadChunkCurveRecord"
 
 ["0x140c41340"]
 statement = "The terrain chunk's layer table: one 56-byte row per layer bit, 32 rows, giving how to load the layer, its grid's extent and its value and row sizes. Layer 0, the height layer: a 19 by 19 grid of 16-bit values (38 bytes a row, 722 bytes), covering vertices -1 to 17 on each axis, so the chunk's 17 by 17 corners (0 to 16, 2 units apart) with one extra vertex all round. A layer's vertex (0, 0) is the grid's second value of its second row (byte 40), and every reader indexes from there: value (x, z) is at byte (z + 1) * 38 + (x + 1) * 2. The rows run along z, the values in a row along x. A chunk with no layer 0 reads a shared default whose every value is 0x1fff (height about -1024.09, not a hole)."
