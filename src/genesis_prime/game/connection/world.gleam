@@ -69,6 +69,7 @@ import genesis_prime/game/connection/effects.{
   ToClient,
 } as connection_effects
 import genesis_prime/game/connection/frames as connection_frames
+import genesis_prime/game/connection/item_expiry as connection_item_expiry
 import genesis_prime/game/connection/select as connection_select
 import genesis_prime/game/connection/state.{
   type AfterLeave, type AfterSave, type EntryFrom, type Session,
@@ -77,7 +78,10 @@ import genesis_prime/game/connection/state.{
   LeavingMap, MovingItem, Playing, SavingPlace, Selling, Session, SpendingCharge,
   Summoning, TakingSessionKey, ToCharacterSelect, TurningIn, WaitingToClaim,
 } as connection_state
+import genesis_prime/game/deadline_timer
 import genesis_prime/game/innate_choice
+import genesis_prime/game/inventory
+import genesis_prime/game/item_expiry
 import genesis_prime/game/movement
 import genesis_prime/game/quest_log
 import genesis_prime/game/start_place.{type Place}
@@ -331,12 +335,15 @@ pub fn quest_deadline_due(
             ))
           }),
           list.map(
-            quest_log.deadline_moved(
+            deadline_timer.moved(
               before: option.None,
               after: quest_log.next_deadline(log:),
               now_ms: now.monotonic_ms,
             ),
-            connection_effects.MovesQuestDeadlineTimer,
+            connection_effects.MovesDeadlineTimer(
+              connection_state.quest_deadline_timer,
+              _,
+            ),
           ),
           case botched {
             [] -> []
@@ -346,6 +353,76 @@ pub fn quest_deadline_due(
         written: [],
       )
     }
+    WaitingToClaim(..)
+    | ClaimingSession(..)
+    | InCharacterSelect(..)
+    | EnteringWorld(..)
+    | Summoning(..)
+    | MovingItem(..)
+    | SpendingCharge(..)
+    | Buying(..)
+    | Selling(..)
+    | TurningIn(..)
+    | SavingPlace(..)
+    | LeavingMap(..)
+    | AwaitingHelloReply
+    | TakingSessionKey -> outside_the_world(session:, now:)
+  }
+}
+
+/// The effects that start the item expiry timer for the earliest moment a held item runs out,
+/// when no timer runs: at entry and when the claim is made again.
+fn item_expiry_started(
+  entered entered: world_entry.Entered,
+  now now: Now,
+) -> List(Decided) {
+  list.map(
+    item_expiry.timer_moved(
+      before: [],
+      after: entered.items,
+      now_unix_ms: step.unix_milliseconds(now:),
+    ),
+    connection_effects.MovesDeadlineTimer(connection_state.item_expiry_timer, _),
+  )
+}
+
+/// The item expiry timer fired: the first held item whose moment has come is deleted as the
+/// player's own delete is, with the reason Expired (genesis_prime/game/item_expiry), and the
+/// answer moves the timer on to the next moment. A firing before the earliest moment, or after
+/// the item left, only starts the timer again. A firing during a wait that returns the player to
+/// the world is held until the wait ends.
+pub fn item_expiry_due(
+  session session: Session,
+  now now: Now,
+) -> client_connection.Handled(Session) {
+  case session.status {
+    InWorld(holder:, entered:) ->
+      case
+        item_expiry.due(
+          items: entered.items,
+          now_unix_ms: step.unix_milliseconds(now:),
+        )
+      {
+        [] ->
+          connection_item_expiry.restarted(handled: Continue(session, []), now:)
+        [item, ..] -> {
+          let moving = inventory.expiring(items: entered.items, item:)
+          connection_state.ask(
+            session: Session(
+              ..session,
+              status: MovingItem(holder:, entered:, moving:),
+            ),
+            now:,
+            request: client_connection.AskStore(inventory.request(
+              moving:,
+              account_id: holder.account_id,
+              character_id: entered.character_id,
+              session_epoch: movement.session_epoch(state: entered.movement),
+            )),
+            before: [],
+          )
+        }
+      }
     WaitingToClaim(..)
     | ClaimingSession(..)
     | InCharacterSelect(..)
@@ -382,13 +459,17 @@ pub fn claimed_again(
       [StartsSaveTimer],
       reset,
       list.map(
-        quest_log.deadline_moved(
+        deadline_timer.moved(
           before: option.None,
           after: quest_log.next_deadline(log: entered.quests),
           now_ms: now.monotonic_ms,
         ),
-        connection_effects.MovesQuestDeadlineTimer,
+        connection_effects.MovesDeadlineTimer(
+          connection_state.quest_deadline_timer,
+          _,
+        ),
       ),
+      item_expiry_started(entered:, now:),
     ]),
     written: [],
   )
@@ -840,13 +921,17 @@ fn in_the_world(
       [Chats(effects: burst), StartsSaveTimer],
       reset,
       list.map(
-        quest_log.deadline_moved(
+        deadline_timer.moved(
           before: option.None,
           after: quest_log.next_deadline(log: entered.quests),
           now_ms: now.monotonic_ms,
         ),
-        connection_effects.MovesQuestDeadlineTimer,
+        connection_effects.MovesDeadlineTimer(
+          connection_state.quest_deadline_timer,
+          _,
+        ),
       ),
+      item_expiry_started(entered:, now:),
     ]),
     written: [],
   )

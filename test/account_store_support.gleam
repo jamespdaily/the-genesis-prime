@@ -173,7 +173,7 @@ pub fn held_by(
   character_id character_id: store.CharacterId,
 ) -> List(store.HeldItem) {
   let assert ForWorld(CharacterLoaded(items:, ..)) =
-    ask(store:, request: World(LoadCharacter(account, character_id)))
+    ask(store:, request: World(LoadCharacter(account, character_id, 0)))
     as "the account's character loads"
   items
 }
@@ -186,7 +186,7 @@ pub fn login(
   character_id character_id: store.CharacterId,
 ) -> #(Int, List(store.HeldItem)) {
   let assert ForWorld(CharacterLoaded(session_epoch:, items:, ..)) =
-    ask(store:, request: World(LoadCharacter(account, character_id)))
+    ask(store:, request: World(LoadCharacter(account, character_id, 0)))
     as "the account's character loads"
   #(store.session_epoch_number(session_epoch), items)
 }

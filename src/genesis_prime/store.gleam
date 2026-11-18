@@ -10,7 +10,7 @@ import genesis_prime/table/id.{
 }
 import gleam/bool
 import gleam/list
-import gleam/option.{type Option}
+import gleam/option.{type Option, None}
 
 /// An account, keyed by the account table's id.
 pub type AccountId {
@@ -119,6 +119,36 @@ pub type Character {
   )
 }
 
+/// The four words an item carries beside its place, as the character_item table keeps them.
+/// `random_stats` is the item's random-stat word as the client reads it
+/// (`opcode.0x111.shared_item_random_stats`): chosen when the item was made, sent as it is
+/// with the item, and 0 for an item with no roll. `charges` are the charges the item has
+/// left as the client reads them (`opcode.0x111.charges`): its row's maxCharges when it is
+/// made, 0 for a row with none, and the source's for a split. `item_flags` is the item's
+/// flags byte as the client reads it (`opcode.0x111.shared_item_unnamed`): bit 0 is
+/// soulbound and bit 3 no refund; it is 0 when the item is made, and the source's for a
+/// split. `expires_at_unix_ms` is the moment a timed item runs out, in Unix milliseconds
+/// (`Item2.expirationTimeMinutes` after the item was made, genesis_prime/game/item_expiry):
+/// `None` for an item that does not, the source's for a split and the earlier of the two for
+/// a merge. A stack made, held, sold and bought back carries the same record at each step.
+pub type ItemWords {
+  ItemWords(
+    random_stats: Int,
+    charges: Int,
+    item_flags: Int,
+    expires_at_unix_ms: Option(Int),
+  )
+}
+
+/// The words of an item made with no roll, no charges, no flags and no time limit.
+pub const plain_words =
+  ItemWords(
+    random_stats: 0,
+    charges: 0,
+    item_flags: 0,
+    expires_at_unix_ms: None,
+  )
+
 /// An item a character holds in its equipped slots, inventory or bank, as the
 /// character_item table keeps it. `item_guid` is the item's identity for every
 /// later message about it: the database made it with the row, never makes it
@@ -126,14 +156,7 @@ pub type Character {
 /// (opcode.0x111.guid). `location` is 0 (equipped), 1 (inventory) or 2 (bank)
 /// and `bag_index` the slot in it (the client's own numbers; the table's checks
 /// hold the ranges); ability items (location 4) are not stored. `stack_count` is
-/// 1 or more. `random_stats` is the item's random-stat word as the client reads it
-/// (`opcode.0x111.shared_item_random_stats`): chosen when the item was made, sent as it is
-/// with the item, and 0 for an item with no roll. `charges` are the charges the item has
-/// left as the client reads them (`opcode.0x111.charges`): its row's maxCharges when it is
-/// made, 0 for a row with none, and the source's for a split. `item_flags` is the item's
-/// flags byte as the client reads it (`opcode.0x111.shared_item_unnamed`): bit 0 is
-/// soulbound and bit 3 no refund; it is 0 when the item is made, and the source's for a
-/// split.
+/// 1 or more. `words` are the item's four stored words.
 pub type HeldItem {
   HeldItem(
     item_guid: Int,
@@ -141,9 +164,7 @@ pub type HeldItem {
     location: Int,
     bag_index: Int,
     stack_count: Int,
-    random_stats: Int,
-    charges: Int,
-    item_flags: Int,
+    words: ItemWords,
   )
 }
 
@@ -160,6 +181,25 @@ pub type UnsetItem {
     stack_count: Int,
     random_stats: Int,
     item_flags: Int,
+    expires_at_unix_ms: Option(Int),
+  )
+}
+
+/// The held item an unset one becomes once it has `charges`: the same item with the words
+/// the row holds and these charges.
+pub fn filled(unset unset: UnsetItem, charges charges: Int) -> HeldItem {
+  HeldItem(
+    item_guid: unset.item_guid,
+    item2_id: unset.item2_id,
+    location: unset.location,
+    bag_index: unset.bag_index,
+    stack_count: unset.stack_count,
+    words: ItemWords(
+      random_stats: unset.random_stats,
+      charges:,
+      item_flags: unset.item_flags,
+      expires_at_unix_ms: unset.expires_at_unix_ms,
+    ),
   )
 }
 
@@ -262,8 +302,14 @@ pub type WorldRequest {
   /// The account's character with this id, with its saved place, taken by this
   /// login: the character's `session_epoch` is raised by one in the same
   /// statement and returned. The account's id is in the statement, so no other
-  /// account's character is taken.
-  LoadCharacter(account_id: AccountId, character_id: CharacterId)
+  /// account's character is taken. The same transaction deletes the character's
+  /// items whose `expires_at_unix_ms` is `now_unix_ms` or earlier before it reads
+  /// them, so an item that ran out while its owner was away is not in the answer.
+  LoadCharacter(
+    account_id: AccountId,
+    character_id: CharacterId,
+    now_unix_ms: Int,
+  )
   /// Stores the charges of the character's items that hold none (`CharacterLoaded.unset`):
   /// each `fills` entry is an item's guid and the charges to give it, and the statement
   /// (fill_character_item_charges.sql) changes rows, all or none, only while the character's
@@ -461,23 +507,15 @@ pub type StackGrowth {
 }
 
 /// A stack a purchase or a reward makes, at a place that holds no item: the place, the
-/// count, the random-stat word, the charges and the flags byte of the new row, whose Item2
-/// is the request's.
+/// count and the words of the new row, whose Item2 is the request's.
 pub type NewStack {
-  NewStack(
-    location: Int,
-    bag_index: Int,
-    stack_count: Int,
-    random_stats: Int,
-    charges: Int,
-    item_flags: Int,
-  )
+  NewStack(location: Int, bag_index: Int, stack_count: Int, words: ItemWords)
 }
 
-/// The random-stat word (`opcode.0xba.random_stats`: the buyback entry carries it), the
-/// charges and the flags byte of a stack a sale sold, as the database held them.
+/// The words of a stack a sale sold, as the database held them: the random-stat word is what
+/// the buyback entry carries to the client (`opcode.0xba.random_stats`).
 pub type SoldWord {
-  SoldWord(item_guid: Int, random_stats: Int, charges: Int, item_flags: Int)
+  SoldWord(item_guid: Int, words: ItemWords)
 }
 
 /// What the STS login asks the store.

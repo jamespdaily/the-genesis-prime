@@ -681,9 +681,12 @@ fn held_for(
       location: 1,
       bag_index: 0,
       stack_count: objective.count,
-      random_stats: 0,
-      charges: 0,
-      item_flags: 0,
+      words: store.ItemWords(
+        random_stats: 0,
+        charges: 0,
+        item_flags: 0,
+        expires_at_unix_ms: option.None,
+      ),
     )
   })
 }
@@ -1185,9 +1188,12 @@ pub fn the_mining_expedition_equip_objective_completes_after_the_collects_test()
       location: 1,
       bag_index: 0,
       stack_count: 5,
-      random_stats: 0,
-      charges: 0,
-      item_flags: 0,
+      words: store.ItemWords(
+        random_stats: 0,
+        charges: 0,
+        item_flags: 0,
+        expires_at_unix_ms: option.None,
+      ),
     )
   let done = settled_with(log:, tables:, items: [five], held: [])
   assert done.effects

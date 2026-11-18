@@ -8,7 +8,8 @@
 -- Otherwise it changes nothing and returns no row. The account's id is in the
 -- statement, as for a load. The row it returns is the new stack's, whose guid
 -- the database makes (opcode.0x111.guid). The new stack keeps the source's random-stat word,
--- charges and flags byte, so a split never loses a roll, a charge or a binding.
+-- charges, flags byte and moment it runs out, so a split never loses a roll, a charge, a
+-- binding or a countdown.
 --
 -- A place that holds an item breaks the table's `character_item_one_per_slot` at
 -- the statement's end and the statement changes nothing, the source included. The
@@ -29,9 +30,9 @@ with lowered as (
     and source.stack_count = $7
     and $8 >= 1
     and $8 < $7
-  returning source.item2_id, source.random_stats, source.charges, source.item_flags
+  returning source.item2_id, source.random_stats, source.charges, source.item_flags, source.expires_at_unix_ms
 )
-insert into character_item (character_id, item2_id, location, bag_index, stack_count, random_stats, charges, item_flags)
-select $1, lowered.item2_id, $9, $10, $8, lowered.random_stats, lowered.charges, lowered.item_flags
+insert into character_item (character_id, item2_id, location, bag_index, stack_count, random_stats, charges, item_flags, expires_at_unix_ms)
+select $1, lowered.item2_id, $9, $10, $8, lowered.random_stats, lowered.charges, lowered.item_flags, lowered.expires_at_unix_ms
 from lowered
 returning item_guid;

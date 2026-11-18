@@ -39,7 +39,8 @@ pub fn the_entry_sends_each_held_items_flags_test() -> Nil {
   let novice =
     list.map(world_entry_support.novice_items(character:), fn(item) {
       case item.item_guid {
-        1 -> HeldItem(..item, item_flags: 1)
+        1 ->
+          HeldItem(..item, words: store.ItemWords(..item.words, item_flags: 1))
         _ -> item
       }
     })

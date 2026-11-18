@@ -2,7 +2,8 @@
 -- the order of their guids, with every column the fixture of a recorded session
 -- keeps (genesis_prime/wire_recording/fixture): the guid, the character that
 -- holds it, the item's id, its place, its stack count, its random-stat word and its
--- charges (null for a row saved before the column existed) and its flags byte.
+-- charges (null for a row saved before the column existed), its flags byte and the Unix
+-- milliseconds it runs out (null for an item that does not).
 select
   item_guid,
   character_id,
@@ -12,7 +13,8 @@ select
   stack_count,
   random_stats,
   charges,
-  item_flags::int as item_flags
+  item_flags::int as item_flags,
+  expires_at_unix_ms
 from character_item
 where character_id in (
   select character_id

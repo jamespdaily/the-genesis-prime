@@ -1220,39 +1220,6 @@ fn entry_deadline(entry entry: Entry) -> Option(Int) {
   }
 }
 
-/// What the quest deadline timer is told when the earliest deadline moves.
-pub type DeadlineTimer {
-  /// Start the timer, which is not running, to fire in this many milliseconds.
-  StartDeadlineTimer(after_ms: Int)
-  /// Cancel the running timer.
-  CancelDeadlineTimer
-}
-
-/// What the quest deadline timer needs when the earliest deadline of the log
-/// (`next_deadline`, on the monotonic clock) goes from `before`, the deadline the
-/// running timer is set for, or none when no timer runs, to `after`: nothing when it did
-/// not move, the timer started when none ran, the running one cancelled and then started
-/// for the new deadline, or only cancelled when none is left. A timer that has just fired
-/// or been cancelled is not running.
-pub fn deadline_moved(
-  before before: Option(Int),
-  after after: Option(Int),
-  now_ms now_ms: Int,
-) -> List(DeadlineTimer) {
-  case before, after {
-    None, None -> []
-    None, Some(deadline_ms) -> [
-      StartDeadlineTimer(after_ms: int.max(0, deadline_ms - now_ms)),
-    ]
-    Some(_), None -> [CancelDeadlineTimer]
-    Some(was), Some(deadline_ms) if was == deadline_ms -> []
-    Some(_), Some(deadline_ms) -> [
-      CancelDeadlineTimer,
-      StartDeadlineTimer(after_ms: int.max(0, deadline_ms - now_ms)),
-    ]
-  }
-}
-
 /// The log after the quest is held in the client's second list in this state, in place
 /// of whatever the log held of it: the client's state setter moves a quest between its
 /// lists (`0x1405fbdc0`), so an active entry is dropped and the state is kept.

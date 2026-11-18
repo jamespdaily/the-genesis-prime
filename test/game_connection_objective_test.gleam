@@ -78,6 +78,7 @@ import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/map.{ObjectsSeen, ObjectsUnseen}
 import genesis_prime/world_map/static_object.{StaticObject}
 import gleam/list
+import gleam/option
 import gleam/set
 import message_support
 import owned_test
@@ -1078,9 +1079,12 @@ fn stack_of_14838(slot slot: Int, count count: Int) -> store.HeldItem {
     location: 1,
     bag_index: slot,
     stack_count: count,
-    random_stats: 0,
-    charges: 0,
-    item_flags: 0,
+    words: store.ItemWords(
+      random_stats: 0,
+      charges: 0,
+      item_flags: 0,
+      expires_at_unix_ms: option.None,
+    ),
   )
 }
 
@@ -1223,9 +1227,12 @@ pub fn buying_a_collected_item_sends_its_progress_test() -> Nil {
                 location: 1,
                 bag_index: 0,
                 stack_count: 1,
-                random_stats: 0,
-                charges: 0,
-                item_flags: 0,
+                words: store.ItemWords(
+                  random_stats: 0,
+                  charges: 0,
+                  item_flags: 0,
+                  expires_at_unix_ms: option.None,
+                ),
               ),
             ]),
           ),
@@ -1401,9 +1408,12 @@ fn seeing_a_slaver_shack_holding_the_grenade() -> game_connection.State {
           location: 1,
           bag_index: 0,
           stack_count: 1,
-          random_stats: 0,
-          charges: 0,
-          item_flags: 0,
+          words: store.ItemWords(
+            random_stats: 0,
+            charges: 0,
+            item_flags: 0,
+            expires_at_unix_ms: option.None,
+          ),
         ),
       ],
       quests: [quest_support.accepted(quest_id: 4743, progress: [0, 0, 0, 0])],

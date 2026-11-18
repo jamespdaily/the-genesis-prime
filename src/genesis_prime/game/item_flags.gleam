@@ -44,7 +44,7 @@ pub fn set_by_move(
     tables:,
     item2_id: item.item2_id.value,
   ))
-  case binds && !is_soulbound(item_flags: item.item_flags) {
+  case binds && !is_soulbound(item_flags: item.words.item_flags) {
     True -> soulbound
     False -> 0
   }

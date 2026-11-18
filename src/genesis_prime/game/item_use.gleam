@@ -31,7 +31,7 @@
 ////   level and quest checks) except that the second place comes first: a body the client
 ////   never sends ends the connection whatever else would refuse it.
 ////
-//// - **The charges** are those the server holds for the item (`HeldItem.charges`); the
+//// - **The charges** are those the server holds for the item (`HeldItem.words.charges`); the
 ////   client's maxCharges is the row's own, or a proxy row's source row's
 ////   (`item_property.max_charges`, `Item2.maxCharges.proxy`).
 ////

@@ -241,7 +241,7 @@ pub fn an_ability_is_a_shared_item_at_location_4_and_a_reason_test() -> Nil {
         dye_channels: 0x61,
         item_flags: 0x71,
         refund_window_ms: 0x81,
-        field_15: 0x82,
+        time_left_ms: 0x82,
         soulbound_trade_window_ms: 0x83,
         refund_cost_0_kind: 5,
         refund_cost_0_value_a: 0x91,

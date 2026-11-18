@@ -189,7 +189,7 @@ fn item() -> SharedItem {
     dye_channels: 0,
     item_flags: 0,
     refund_window_ms: 0,
-    field_15: 0,
+    time_left_ms: 0,
     soulbound_trade_window_ms: 0,
     refund_cost_0_kind: 0,
     refund_cost_0_value_a: 0,

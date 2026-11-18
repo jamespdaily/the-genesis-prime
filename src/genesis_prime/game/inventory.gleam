@@ -127,6 +127,7 @@
 import genesis_prime/client_connection.{type Undecoded}
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/equip_requirement.{type Wearer}
+import genesis_prime/game/item_expiry
 import genesis_prime/game/item_flags
 import genesis_prime/game/item_property
 import genesis_prime/game/player_life.{type Life}
@@ -200,8 +201,17 @@ pub type Change {
   Merged(source: HeldItem, target: HeldItem, count: Int)
   /// `count` of the stack `source` made into a new stack at the empty place `to`.
   Split(source: HeldItem, count: Int, to: store.ItemPlace)
-  /// The whole stack `item` destroyed.
-  Deleted(item: HeldItem)
+  /// The whole stack `item` destroyed, `by` the player's own delete or by running out.
+  Deleted(item: HeldItem, by: Removal)
+}
+
+/// Who removes a stack and so the reason its 0x148 carries: the player's own delete, 21
+/// PlayerRequested, or the item running out, 26 Expired (`Item.CodeEnumItemUpdateReason`,
+/// `opcode.0x148.expired`). Only the player's delete is answered with a 0x56A when the store
+/// refuses it: an item that ran out is not the player's action.
+pub type Removal {
+  RemovedByPlayer
+  RemovedByExpiry
 }
 
 /// What the rule makes of a move the client sent.
@@ -496,7 +506,7 @@ fn take_delete(
               Ok(
                 Asks(Moving(
                   guid: item.item_guid,
-                  change: Deleted(item:),
+                  change: Deleted(item:, by: RemovedByPlayer),
                   items: without(items:, guid: item.item_guid),
                 )),
               )
@@ -649,7 +659,19 @@ fn merged(
   count count: Int,
 ) -> Moving {
   let raised =
-    restacked(items:, guid: target.item_guid, count: target.stack_count + count)
+    changed(items:, guid: target.item_guid, with: fn(item) {
+      store.HeldItem(
+        ..item,
+        stack_count: target.stack_count + count,
+        words: store.ItemWords(
+          ..item.words,
+          expires_at_unix_ms: item_expiry.earlier(
+            first: target.words.expires_at_unix_ms,
+            second: source.words.expires_at_unix_ms,
+          ),
+        ),
+      )
+    })
   let left = source.stack_count - count
   Moving(
     guid: source.item_guid,
@@ -1017,7 +1039,10 @@ fn flagged(
     changed(items: held, guid: move.item_guid, with: fn(item) {
       store.HeldItem(
         ..item,
-        item_flags: int.bitwise_or(item.item_flags, move.flags_set),
+        words: store.ItemWords(
+          ..item.words,
+          item_flags: int.bitwise_or(item.words.item_flags, move.flags_set),
+        ),
       )
     })
   })
@@ -1037,7 +1062,7 @@ fn flag_frames(
         |> result.map(fn(item) {
           item_flags_changed_frame(
             guid: item.item_guid,
-            item_flags: item.item_flags,
+            item_flags: item.words.item_flags,
           )
         })
     }
@@ -1201,17 +1226,25 @@ fn failed(guid guid: Int, code code: Int) -> Frame {
 }
 
 /// 0x111 for a stored item, added for `reason`: its every stored word goes to the frame
-/// (see `item_added_frame`).
-pub fn held_item_frame(item item: store.HeldItem, reason reason: Int) -> Frame {
+/// (see `item_added_frame`), and its time left is its moment less `now_unix_ms`.
+pub fn held_item_frame(
+  item item: store.HeldItem,
+  now_unix_ms now_unix_ms: Int,
+  reason reason: Int,
+) -> Frame {
   item_added_frame(
     item_guid: item.item_guid,
     item_id: item.item2_id.value,
     location: item.location,
     bag_index: item.bag_index,
     stack_count: item.stack_count,
-    random_stats: item.random_stats,
-    charges: item.charges,
-    item_flags: item.item_flags,
+    random_stats: item.words.random_stats,
+    charges: item.words.charges,
+    item_flags: item.words.item_flags,
+    time_left_ms: item_expiry.time_left_ms(
+      expires_at_unix_ms: item.words.expires_at_unix_ms,
+      now_unix_ms:,
+    ),
     reason:,
   )
 }
@@ -1219,7 +1252,9 @@ pub fn held_item_frame(item item: store.HeldItem, reason reason: Int) -> Frame {
 /// 0x111 for an item the character holds, with full durability, added for `reason`,
 /// carrying the item's random-stat word as stored (`opcode.0x111.shared_item_random_stats`),
 /// the charges it has left (`opcode.0x111.charges`; 0 for an ability, which has none) and
-/// its flags byte (`opcode.0x111.shared_item_unnamed`; 0 for an ability). Every other value
+/// its flags byte (`opcode.0x111.shared_item_unnamed`; 0 for an ability) and the milliseconds
+/// it has left to run out (`opcode.0x111.time_left`; 0 for an item that does not, and for an
+/// ability). Every other value
 /// the client's code does not name is 0 (`opcode.0x111.shared_item_unnamed`), the lists empty.
 pub fn item_added_frame(
   item_guid item_guid: Int,
@@ -1230,6 +1265,7 @@ pub fn item_added_frame(
   random_stats random_stats: Int,
   charges charges: Int,
   item_flags item_flags: Int,
+  time_left_ms time_left_ms: Int,
   reason reason: Int,
 ) -> Frame {
   let assert Ok(body) =
@@ -1250,7 +1286,7 @@ pub fn item_added_frame(
           dye_channels: 0,
           item_flags:,
           refund_window_ms: 0,
-          field_15: 0,
+          time_left_ms:,
           soulbound_trade_window_ms: 0,
           refund_cost_0_kind: 0,
           refund_cost_0_value_a: 0,
@@ -1298,7 +1334,7 @@ pub fn request(
         count:,
         to:,
       )
-    Deleted(item:) ->
+    Deleted(item:, ..) ->
       store.DeleteItem(account_id:, character_id:, session_epoch:, item:)
   })
 }
@@ -1311,6 +1347,7 @@ pub fn answered(
   items items: List(HeldItem),
   moving moving: Moving,
   answer answer: ItemsAnswer,
+  now_unix_ms now_unix_ms: Int,
 ) -> #(List(HeldItem), List(Effect)) {
   case answer {
     ItemsSaved ->
@@ -1333,10 +1370,10 @@ pub fn answered(
               )
           }),
         ])
-        Deleted(item:) -> #(moving.items, [
+        Deleted(item:, by:) -> #(moving.items, [
           Send(item_removed_frame(
             guid: item.item_guid,
-            reason: player_requested,
+            reason: removal_reason(by:),
           )),
         ])
         Split(..) -> panic as "the store answers a split with ItemMade"
@@ -1351,9 +1388,7 @@ pub fn answered(
               location: to.location,
               bag_index: to.bag_index,
               stack_count: count,
-              random_stats: source.random_stats,
-              charges: source.charges,
-              item_flags: source.item_flags,
+              words: source.words,
             )
           #(list.append(moving.items, [made]), [
             Send(count_changed_frame(
@@ -1361,7 +1396,7 @@ pub fn answered(
               count: source.stack_count - count,
               reason: stack_split,
             )),
-            Send(held_item_frame(item: made, reason: stack_split)),
+            Send(held_item_frame(item: made, now_unix_ms:, reason: stack_split)),
           ])
         }
         Moved(..) | Merged(..) | Deleted(..) ->
@@ -1371,24 +1406,62 @@ pub fn answered(
     Sold(..) -> panic as "the store answers a sale only to a vendor sale"
     TurnedIn(..) ->
       panic as "the store answers a turn-in only to a quest turned in"
-    ItemsNotSaved -> #(items, [
-      Log(
-        level: LogWarning,
-        text: not_done(moving.change)
-          <> ": a later login holds the character, or the items are not where the client has them",
+    ItemsNotSaved -> #(
+      items,
+      refused(
+        moving:,
+        log: Log(
+          level: LogWarning,
+          text: not_done(moving.change)
+            <> ": a later login holds the character, or the items are not where the client has them",
+        ),
       ),
-      Send(failed(guid: moving.guid, code: db_failure)),
-    ])
-    SaveRefused(constraint:) -> #(items, [
-      Log(
-        level: LogError,
-        text: not_done(moving.change)
-          <> ": the store refused the places by the constraint "
-          <> constraint,
+    )
+    SaveRefused(constraint:) -> #(
+      items,
+      refused(
+        moving:,
+        log: Log(
+          level: LogError,
+          text: not_done(moving.change)
+            <> ": the store refused the places by the constraint "
+            <> constraint,
+        ),
       ),
-      Send(failed(guid: moving.guid, code: db_failure)),
-    ])
+    )
   }
+}
+
+/// The effects of a change the store did not save: the log line, and the 0x56A the player is
+/// answered with for its own action; the removal of an item that ran out is no action of the
+/// player's, so it has none.
+fn refused(moving moving: Moving, log log: Effect) -> List(Effect) {
+  case moving.change {
+    Deleted(by: RemovedByExpiry, ..) -> [log]
+    Moved(..) | Merged(..) | Split(..) | Deleted(by: RemovedByPlayer, ..) -> [
+      log,
+      Send(failed(guid: moving.guid, code: db_failure)),
+    ]
+  }
+}
+
+/// The reason 0x148 carries for a removal.
+fn removal_reason(by by: Removal) -> Int {
+  case by {
+    RemovedByPlayer -> player_requested
+    RemovedByExpiry -> item_expiry.expired_reason
+  }
+}
+
+/// The ask for the removal of a timed item that ran out: its whole stack deleted, as the
+/// player's own delete does it, but without the delete's own checks, which refuse the
+/// player's action (`item_property.deletable`), not an expiry.
+pub fn expiring(items items: List(HeldItem), item item: HeldItem) -> Moving {
+  Moving(
+    guid: item.item_guid,
+    change: Deleted(item:, by: RemovedByExpiry),
+    items: without(items:, guid: item.item_guid),
+  )
 }
 
 /// What a change that was not saved did not do, for the log.
@@ -1473,15 +1546,15 @@ pub fn grown(
 
 /// Where `wanted` items of an Item2 go (a server choice): the stacks of it in the usable
 /// inventory below the limit, lowest bag index first, then the empty usable slots, lowest
-/// first, each up to the limit, each new stack holding `charges`. Nothing when they do not
-/// all fit.
+/// first, each up to the limit, each new stack holding `words` (a stack that grows keeps its
+/// own). Nothing when they do not all fit.
 pub fn placed(
   items items: List(HeldItem),
   item2_id item2_id: Item2Id,
   size size: Int,
   limit limit: Int,
   wanted wanted: Int,
-  charges charges: Int,
+  words words: store.ItemWords,
 ) -> Result(#(List(store.StackGrowth), List(store.NewStack)), Nil) {
   let usable =
     list.filter(items, fn(item) {
@@ -1499,7 +1572,7 @@ pub fn placed(
     |> list.reverse
     |> list.filter(fn(index) { !set.contains(taken_places, index) })
   let #(wanted, grow) = fill(growable:, limit:, wanted:)
-  let #(wanted, make) = open(empty:, limit:, wanted:, charges:)
+  let #(wanted, make) = open(empty:, limit:, wanted:, words:)
   case wanted {
     0 -> Ok(#(grow, make))
     _ -> Error(Nil)
@@ -1536,22 +1609,20 @@ fn open(
   empty empty: List(Int),
   limit limit: Int,
   wanted wanted: Int,
-  charges charges: Int,
+  words words: store.ItemWords,
 ) -> #(Int, List(store.NewStack)) {
   case empty, wanted {
     [], _ | _, 0 -> #(wanted, [])
     [index, ..rest], _ -> {
       let added = int.min(wanted, limit)
       let #(left, made) =
-        open(empty: rest, limit:, wanted: wanted - added, charges:)
+        open(empty: rest, limit:, wanted: wanted - added, words:)
       #(left, [
         store.NewStack(
           location: in_bags,
           bag_index: index,
           stack_count: added,
-          random_stats: 0,
-          charges:,
-          item_flags: 0,
+          words:,
         ),
         ..made
       ])

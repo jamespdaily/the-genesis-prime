@@ -4,6 +4,7 @@
 
 import character_tables
 import game_connection_support as connection_support
+import genesis_prime/game/connection as game_connection
 import genesis_prime/game/shown
 import genesis_prime/game/start_place
 import genesis_prime/game/vendor.{type Vendors, ItemRow, VendorRow}
@@ -105,4 +106,36 @@ pub fn picture_with_walker(gap gap: Float) -> shown.Picture {
     ),
     #(9, shown.ShownPlayer(at: option.None)),
   ])
+}
+
+/// The connection with Dorian Walker (Creature2 74812), friendly and in reach of the player, as
+/// unit 40 in its picture, and his vendor window open.
+pub fn at_the_vendor(
+  state state: game_connection.State,
+) -> game_connection.State {
+  let place = ahead_of_the_player(hit_radius: 1.0, gap: 1.0)
+  let walker = spawn_support.dorian_walker(number: 1, place:)
+  let #(state, _) =
+    connection_support.feed(
+      state:,
+      event: connection_support.creature_appears(
+        unit_id: walker_unit,
+        creature_id: 74_812,
+        display_info_id: walker.display_info_id,
+        outfit_info_id: walker.outfit_info_id,
+        hit_radius: walker.combat.hit_radius,
+        place: ahead_of_the_player(
+          hit_radius: walker.combat.hit_radius,
+          gap: 1.0,
+        ),
+        hostile_to: Hostile(exile: False, dominion: False),
+      ),
+    )
+  let #(state, _) =
+    connection_support.interaction_requested(
+      state:,
+      unit_id: walker_unit,
+      kind: 0x31,
+    )
+  state
 }

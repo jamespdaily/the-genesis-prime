@@ -387,7 +387,13 @@ pub fn a_second_request_waits_for_the_create_answer_and_is_then_taken_test() -> 
     game_connection_support.heard(taken, game_connection_support.keyed())
     as "the result first"
   assert game_connection_support.ask_request(taken)
-    == AskStore(World(LoadCharacter(AccountId(7), CharacterId(11))))
+    == AskStore(
+      World(LoadCharacter(
+        AccountId(7),
+        CharacterId(11),
+        support.unix_ms_of_filetime(game_connection_support.filetime),
+      )),
+    )
     as "then the play that waited: the character the create made is read for the world"
 }
 

@@ -98,12 +98,14 @@ pub fn rows_saved_before_the_charges_column_get_their_rows_charges_once_test() -
     let assert Ok(item) =
       list.find(entry.items, fn(item) { item.item_guid == guid })
       as "the item is held"
-    assert #(item.item2_id, item.charges) == #(Item2Id(item2), charges) as why
+    assert #(item.item2_id, item.words.charges) == #(Item2Id(item2), charges)
+      as why
   })
   let assert Ok(untouched) =
     list.find(entry.items, fn(item) { item.item_guid == 25 })
     as "the item that held charges is held"
-  assert untouched.charges == 7 as "an item that holds charges is left as it is"
+  assert untouched.words.charges == 7
+    as "an item that holds charges is left as it is"
   let places =
     list.map(entry.items, fn(item) { #(item.location, item.bag_index) })
   assert places
@@ -131,7 +133,7 @@ pub fn rows_saved_before_the_charges_column_get_their_rows_charges_once_test() -
   let sent = world_entry_support.items_added(frames: entry.frames)
   assert sent != [] as "the entry sends its items"
   let held_charges =
-    list.map(entry.items, fn(item) { #(item.item_guid, item.charges) })
+    list.map(entry.items, fn(item) { #(item.item_guid, item.words.charges) })
   let sent_charges =
     sent
     |> list.map(fn(added) {
@@ -178,7 +180,8 @@ pub fn a_migrated_stack_grows_and_splits_with_its_rows_charges_test() -> Nil {
   let assert Ok(stack) =
     list.find(entry.items, fn(item) { item.item_guid == 20 })
     as "the migrated stack is held"
-  assert stack.charges == 1 as "the stack is filled with its row's maxCharges"
+  assert stack.words.charges == 1
+    as "the stack is filled with its row's maxCharges"
   // A purchase of 2: growing the filled stack changes its count only; the charges it holds
   // are the ones asserted above.
   let assert Ok(#(grow, make)) =
@@ -188,7 +191,7 @@ pub fn a_migrated_stack_grows_and_splits_with_its_rows_charges_test() -> Nil {
       size: 16,
       limit: 50,
       wanted: 2,
-      charges: 1,
+      words: store.ItemWords(..store.plain_words, charges: 1),
     )
   assert #(
       list.map(grow, fn(growth) {
@@ -237,13 +240,14 @@ pub fn a_migrated_stack_grows_and_splits_with_its_rows_charges_test() -> Nil {
       items: entry.items,
       moving:,
       answer: ItemMade(item_guid: 77),
+      now_unix_ms: 0,
     )
   let assert Ok(split) = list.find(made, fn(item) { item.item_guid == 77 })
     as "the new stack is held"
-  assert split.charges == 1
+  assert split.words.charges == 1
     as "a split of 2 makes a stack holding the source's 1"
   assert list.all(made, fn(item) {
-    item.item2_id != Item2Id(14_838) || item.charges == 1
+    item.item2_id != Item2Id(14_838) || item.words.charges == 1
   })
     as "no stack of the row holds 0"
 }

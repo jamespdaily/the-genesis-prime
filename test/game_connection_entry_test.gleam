@@ -69,7 +69,13 @@ pub fn message_0x07dd_asks_the_store_for_the_character_then_the_map_and_the_answ
   use <- owned_test.run(10_000)
   let #(state, taken) = game_connection_support.playing(42)
   assert game_connection_support.ask_request(taken)
-    == AskStore(World(LoadCharacter(AccountId(7), CharacterId(42))))
+    == AskStore(
+      World(LoadCharacter(
+        AccountId(7),
+        CharacterId(42),
+        support.unix_ms_of_filetime(game_connection_support.filetime),
+      )),
+    )
     as "opcode.0x7dd: the character's id, and the holder's account, which scopes the read"
   let assert Some(ask) = support.asked(taken)
   assert ask.deadline_ms == support.now_ms + 4000
@@ -195,6 +201,7 @@ pub fn a_load_with_an_unset_item_asks_the_store_to_fill_it_before_the_map_is_ask
                   stack_count: 1,
                   random_stats: 0,
                   item_flags: 0,
+                  expires_at_unix_ms: None,
                 ),
               ],
               currencies: [],
@@ -723,9 +730,10 @@ pub fn the_end_of_sessions_in_the_world_claims_again_and_the_claim_puts_the_play
       OwnEffect(CancelTimer(TimerId(2))),
       OwnEffect(CancelTimer(TimerId(10))),
       OwnEffect(CancelTimer(TimerId(11))),
+      OwnEffect(CancelTimer(TimerId(13))),
       OwnEffect(StartTimer(TimerId(1), 100)),
     ]
-    as "Sessions is likely still restarting, so the claim waits a moment, as in character select; the save, quest reset and quest deadline timers are cancelled meanwhile"
+    as "Sessions is likely still restarting, so the claim waits a moment, as in character select; the save, quest reset, quest deadline and item expiry timers are cancelled meanwhile"
   assert support.writes(taken) == [] as "the client sees nothing"
   let #(state, taken) =
     game_connection_support.feed(state, OwnEvent(TimerFired(TimerId(1))))

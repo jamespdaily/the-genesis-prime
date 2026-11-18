@@ -23,6 +23,7 @@ import genesis_prime/table/id.{Item2Id}
 import genesis_prime/table/loader/store as table_store
 import gleam/int
 import gleam/list
+import gleam/option
 import gleam/string
 import owned_test
 import planted_table.{Integer}
@@ -154,9 +155,12 @@ pub fn item_rewards_of_one_item_add_together_and_place_in_order_of_first_appeara
           location: 1,
           bag_index: 0,
           stack_count: 5,
-          random_stats: 0,
-          charges: 0,
-          item_flags: 0,
+          words: store.ItemWords(
+            random_stats: 0,
+            charges: 0,
+            item_flags: 0,
+            expires_at_unix_ms: option.None,
+          ),
         ),
       ]),
       Placed(Item2Id(179), grow: [], make: [
@@ -164,9 +168,12 @@ pub fn item_rewards_of_one_item_add_together_and_place_in_order_of_first_appeara
           location: 1,
           bag_index: 1,
           stack_count: 1,
-          random_stats: 0,
-          charges: 0,
-          item_flags: 0,
+          words: store.ItemWords(
+            random_stats: 0,
+            charges: 0,
+            item_flags: 0,
+            expires_at_unix_ms: option.None,
+          ),
         ),
       ]),
     ]
