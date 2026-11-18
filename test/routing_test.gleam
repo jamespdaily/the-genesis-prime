@@ -216,6 +216,18 @@ pub fn the_press_of_an_objective_button_is_a_row_taken_inside_0x038c_with_the_pl
     as "it is not taken outside 0x038C"
 }
 
+pub fn the_level_up_request_is_a_row_taken_inside_0x038c_with_the_player_in_the_world_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert routing.route(AtWorld, InsideWorldMessage, 0x07A5)
+    == Ok(routing.LevelUp)
+    as "0x07A5 is the level-up row in the world (opcode.0x7a5: the client sends it from inside 0x038C like every message of the world)"
+  assert routing.route(AtCharacterSelect, InsideWorldMessage, 0x07A5)
+    == Error(Nil)
+    as "it is not taken in character select: the connection logs it as unhandled"
+  assert routing.route(AtWorld, OnItsOwn, 0x07A5) == Error(Nil)
+    as "it is not taken outside 0x038C"
+}
+
 pub fn the_innate_choice_is_a_row_taken_inside_0x038c_with_the_player_in_the_world_test() -> Nil {
   use <- owned_test.run(5000)
   assert routing.route(AtWorld, InsideWorldMessage, 0x016F)

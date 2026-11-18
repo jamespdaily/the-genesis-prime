@@ -73,6 +73,7 @@ import genesis_prime/message/quest_track.{QuestTrack}
 import genesis_prime/message/quest_turn_in.{QuestTurnIn}
 import genesis_prime/message/realm_select_start.{RealmSelectStart}
 import genesis_prime/message/rename_character.{RenameCharacter}
+import genesis_prime/message/replay_level_up.{ReplayLevelUp}
 import genesis_prime/message/scanbot_request.{ScanbotRequest}
 import genesis_prime/message/send_chat_line.{SendChatLine}
 import genesis_prime/message/send_whisper.{SendWhisper}
@@ -253,6 +254,7 @@ fn client_samples() -> List(#(Int, client_message.ClientMessage)) {
       )),
     ),
     #(0x07DF, client_message.ChooseRealm(message: ChooseRealm(realm_id: 1))),
+    #(0x07A5, client_message.ReplayLevelUp(message: ReplayLevelUp(level: 4))),
     #(
       0x0635,
       client_message.ClientControlEchoed(message: ClientControlEchoed(

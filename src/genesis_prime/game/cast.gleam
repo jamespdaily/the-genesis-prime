@@ -3278,6 +3278,33 @@ pub fn passive_started(
   }
 }
 
+/// A tier of the Level Up spell, which the client's 0x07A5 asks for (genesis_prime/game/level_up),
+/// starts: a cast of the player's own with its caster as root, no parent and its primary target,
+/// written as 0x7ff with no 0x7fd, and its go at once (its cast time is 0). It starts no global
+/// cooldown (the spell's global cooldown kind is 3) and touches no threshold; the go lists the
+/// caster's full-screen row with the life 0, which the client turns into the row's own, and the
+/// cast lingers until its node's time is over (`spell.level_up.cast`).
+pub fn level_up_started(
+  cast cast: State,
+  caster caster: Caster,
+  spell spell: Spell,
+  now now: Now,
+) -> #(State, List(Effect)) {
+  start(
+    cast:,
+    caster:,
+    now_ms: now.monotonic_ms,
+    spell:,
+    root: spell.spell4_id,
+    parent: None,
+    primary_target: caster.unit_id,
+    client_cast_id: None,
+    role: Child,
+    spent: None,
+    reserved: [],
+  )
+}
+
 /// The caster's casts, press, hold, thresholds and timers ended by its death.
 fn all_ended(cast cast: State, now now: Now) -> #(State, List(Effect)) {
   let #(cast, aside) = cast_proc.passive_set_aside(cast:)

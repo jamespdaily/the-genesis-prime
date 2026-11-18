@@ -633,7 +633,8 @@ pub type Resolution {
 
 /// What a cast is to its ability's threshold.
 pub type Role {
-  /// A child a Proxy started: no threshold is touched.
+  /// A child a Proxy started, or a cast the server starts of its own for no press (the level-up
+  /// fanfare): no threshold is touched.
   Child
   /// The ability's own spell, which opens a threshold when its method has one.
   Base(ability: Spell, bag_spell: Spell4Id)
