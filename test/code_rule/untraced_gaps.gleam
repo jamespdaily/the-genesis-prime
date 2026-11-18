@@ -39,30 +39,6 @@ pub const known_gaps: List(Gap) = [
     issue: 979,
   ),
   UntracedFields(
-    owner: "chat_channel_joined",
-    fields: ["field_4", "field_5", "field_6"],
-    issue: 979,
-  ),
-  UntracedFields(
-    owner: "chat_format_item_record",
-    fields: [
-      "field_4",
-      "field_5",
-      "field_6",
-      "field_7",
-      "field_8",
-      "field_9",
-      "field_10",
-    ],
-    issue: 979,
-  ),
-  UntracedFields(owner: "chat_format_kind_0", fields: ["field_4"], issue: 979),
-  UntracedFields(owner: "chat_format_kind_1", fields: ["field_4"], issue: 979),
-  UntracedFields(owner: "chat_format_kind_11", fields: ["field_4"], issue: 979),
-  UntracedFields(owner: "chat_format_kind_2", fields: ["field_4"], issue: 979),
-  UntracedFields(owner: "chat_format_kind_3", fields: ["field_4"], issue: 979),
-  UntracedFields(owner: "chat_line", fields: ["field_14"], issue: 979),
-  UntracedFields(
     owner: "currency_changed",
     fields: ["field_3", "field_4"],
     issue: 979,
@@ -109,23 +85,6 @@ pub const known_gaps: List(Gap) = [
     issue: 979,
   ),
   UntracedFields(
-    owner: "unit_create_ghost",
-    fields: ["field_9", "field_10", "field_11", "field_12"],
-    issue: 979,
-  ),
-  UntracedFields(
-    owner: "unit_create_tail",
-    fields: ["field_14", "field_20"],
-    issue: 979,
-  ),
-  UntracedFields(
-    owner: "unit_death_state",
-    fields: ["field_3", "field_4"],
-    issue: 979,
-  ),
-  UntracedFields(owner: "unit_destroyed", fields: ["field_2"], issue: 979),
-  UntracedFields(owner: "unit_dialog_open", fields: ["field_2"], issue: 979),
-  UntracedFields(
     owner: "vendor_item",
     fields: ["field_10", "field_11"],
     issue: 979,
@@ -135,7 +94,6 @@ pub const known_gaps: List(Gap) = [
     fields: ["field_1", "field_2"],
     issue: 979,
   ),
-  UnclassifiedTags(union: "chat_format", tags: [0, 1, 2, 3, 11], issue: 979),
   UnclassifiedTags(
     union: "relayed_movement",
     tags: [5, 6, 7, 9, 12, 15, 16, 17, 20, 22, 23, 25, 28, 29],

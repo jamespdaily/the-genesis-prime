@@ -778,10 +778,10 @@ id = 0x0355
 name = "unit_destroyed"
 direction = "server_to_client"
 evidence = "opcode.0x355"
-summary = "removes a unit from the world"
+summary = "removes a unit from the world: the unit id and a bit the client reads only for a unit of type 1 (a chest), whose removal then takes its delay from its world object instead of the standard fade"
 fields = [
   { name = "unit_id", kind = "unsigned", bits = 32, evidence = "0x14007c340", named_by = "opcode.0x355" },
-  { name = "field_2", kind = "unsigned", bits = 1, evidence = "0x14007c340", safe_by = "0x1403d98f0" },
+  { name = "chest_world_object_delay", kind = "unsigned", bits = 1, evidence = "0x14007c340", named_by = "opcode.0x355.bit", safe_by = "0x1403d98f0" },
 ]
 
 [[message]]
@@ -883,20 +883,20 @@ fields = [
   { name = "movement_commands", kind = "array", count_bits = 5, element = "start_movement", evidence = "0x140096fa0", named_by = "0x1404586e0" },
   { name = "properties", kind = "array", count_bits = 8, element = "unit_property", evidence = "0x140096fa0", named_by = "0x1404584b0" },
   { name = "item_visuals", kind = "array", count_bits = 7, element = "item_visual", evidence = "0x140096fa0", named_by = "0x1400ab890" },
-  { name = "no_other_entries", kind = "constant", bits = 9, value = 0, evidence = "0x140096fa0", named_by = "opcode.0x262" },
-  { name = "cast_id", kind = "unsigned", bits = 32, evidence = "0x140096fa0", named_by = "0x1404697a0" },
+  { name = "no_other_entries", kind = "constant", bits = 9, value = 0, evidence = "0x140096fa0", open = "Which casts does a unit coming into sight carry? The 9-bit count is the list of the unit's buffs and cast that the client applies on creation (opcode.0x262.casts); the server sends 0, so a buffed unit shows none of its buffs." },
+  { name = "cast_id", kind = "unsigned", bits = 32, evidence = "0x140096fa0", open = "Which cast is the unit casting when it comes into sight? The client sets the unit's cast bar from this id once the creation's casts list holds the cast (SetUnitCast 0x1404697a0); the server sends 0, so a viewer arriving mid-cast sees no bar." },
   { name = "faction_id", kind = "unsigned", bits = 14, evidence = "0x140096fa0", named_by = "opcode.0x262" },
   { name = "base_faction_id", kind = "unsigned", bits = 14, evidence = "0x140096fa0", named_by = "opcode.0x262" },
   { name = "tagged_by_unit_id", kind = "unsigned", bits = 32, evidence = "0x140096fa0", named_by = "0x14045bcd0" },
   { name = "tagged_by_group_id", kind = "unsigned", bits = 64, evidence = "0x140096fa0", named_by = "0x14045bcd0" },
   { name = "first_tag", kind = "constant", bits = 2, value = 0, evidence = "0x140096fa0", named_by = "opcode.0x262" },
-  { name = "field_14", kind = "unsigned", bits = 1, evidence = "0x140096fa0", safe_by = "opcode.0x262.unit_fields" },
+  { name = "unread_14", kind = "unsigned", bits = 1, evidence = "0x140096fa0", named_by = "opcode.0x262.unit_fields", safe_by = "opcode.0x262.unit_fields" },
   { name = "second_tag", kind = "constant", bits = 2, value = 1, evidence = "0x140096fa0", named_by = "opcode.0x262" },
   { name = "world_object_id", kind = "unsigned", bits = 64, evidence = "0x140096fa0", named_by = "opcode.0x262.simple" },
   { name = "world_socket_id", kind = "unsigned", bits = 14, evidence = "0x140096fa0", named_by = "opcode.0x262.unit_fields" },
   { name = "third_tag", kind = "constant", bits = 2, value = 1, evidence = "0x140096fa0", named_by = "opcode.0x262" },
   { name = "cluster_id", kind = "unsigned", bits = 32, evidence = "0x140096fa0", named_by = "0x14045ad90" },
-  { name = "field_20", kind = "unsigned", bits = 18, evidence = "0x140096fa0", safe_by = "opcode.0x262.unit_fields" },
+  { name = "field_20", kind = "unsigned", bits = 18, evidence = "0x140096fa0", open = "Which creature carries which creature-set id? The client tests this value in TargetGroup type 9 (unit_create_tail.field_20) and 40 quest objectives reach such groups; neither the client nor the world database says which creature belongs to which set.", safe_by = "opcode.0x262.unit_fields" },
   { name = "minimap_marker_id", kind = "unsigned", bits = 14, evidence = "0x140096fa0", named_by = "opcode.0x262.unit_fields" },
   { name = "display_info_id", kind = "unsigned", bits = 17, evidence = "0x140096fa0", named_by = "0x14047c210" },
   { name = "outfit_info_id", kind = "unsigned", bits = 15, evidence = "0x140096fa0", named_by = "0x14047c320" },
@@ -1611,7 +1611,7 @@ fields = [
   { name = "text", kind = "wide_units", evidence = "opcode.0x1c8", named_by = "opcode.0x1c8" },
   { name = "formats", kind = "array", count_bits = 5, element = "chat_format", evidence = "opcode.0x1c8", named_by = "opcode.0x1c8" },
   { name = "cross_faction", kind = "unsigned", bits = 1, evidence = "opcode.0x1c8", named_by = "opcode.0x1c8" },
-  { name = "field_14", kind = "unsigned", bits = 16, evidence = "opcode.0x1c8", safe_by = "opcode.0x1c8" },
+  { name = "field_14", kind = "unsigned", bits = 16, evidence = "opcode.0x1c8", open = "Is the 16-bit value after the cross-faction bit read anywhere? RaiseChatMessage never reads it; the segment builder 0x140408850 and the channel 0x13 handler were not checked for it (opcode.0x1c8.unread_word).", safe_by = "opcode.0x1c8" },
   { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x1c8", named_by = "opcode.0x1c8" },
   { name = "premium_tier", kind = "unsigned", bits = 8, evidence = "opcode.0x1c8", named_by = "opcode.0x1c8" },
 ]
@@ -1646,14 +1646,14 @@ id = 0x01BC
 name = "chat_channel_joined"
 direction = "server_to_client"
 evidence = "opcode.0x1bc"
-summary = "joins a chat channel the client does not make itself (a channel type whose ChatChannel row has flag 0x80, such as Zone): the channel's type and id, a name the client uses only for type 18 and three values the client does not read on this path"
+summary = "joins a chat channel the client does not make itself (a channel type whose ChatChannel row has flag 0x80, such as Zone): the channel's type and id, a name and a slot the client uses only for type 18, and two values the client never reads"
 fields = [
   { name = "channel_type", kind = "unsigned", bits = 14, evidence = "opcode.0x1bc", named_by = "opcode.0x1bc" },
   { name = "channel_id", kind = "unsigned", bits = 64, evidence = "opcode.0x1bc", named_by = "opcode.0x1bc" },
   { name = "name", kind = "wide_text", evidence = "opcode.0x1bc", named_by = "opcode.0x1bc" },
-  { name = "field_4", kind = "unsigned", bits = 32, evidence = "opcode.0x1bc", safe_by = "opcode.0x1bc" },
-  { name = "field_5", kind = "unsigned", bits = 32, evidence = "opcode.0x1bc", safe_by = "opcode.0x1bc" },
-  { name = "field_6", kind = "unsigned", bits = 32, evidence = "opcode.0x1bc", safe_by = "opcode.0x1bc" },
+  { name = "unread_4", kind = "unsigned", bits = 32, evidence = "opcode.0x1bc", named_by = "opcode.0x1bc.unread_values", safe_by = "opcode.0x1bc" },
+  { name = "custom_channel_slot", kind = "unsigned", bits = 32, evidence = "opcode.0x1bc", named_by = "opcode.0x1bc", safe_by = "opcode.0x1bc" },
+  { name = "unread_6", kind = "unsigned", bits = 32, evidence = "opcode.0x1bc", named_by = "opcode.0x1bc.unread_values", safe_by = "opcode.0x1bc" },
 ]
 
 [[message]]
@@ -1673,10 +1673,10 @@ summary = "one format of a chat line: the type in 4 bits picks the layout of its
 tag_bits = 4
 refused_from = 12
 variants = [
-  { tag = 0, name = "kind_0", record = "chat_format_kind_0" },
-  { tag = 1, name = "kind_1", record = "chat_format_kind_1" },
-  { tag = 2, name = "kind_2", record = "chat_format_kind_2" },
-  { tag = 3, name = "kind_3", record = "chat_format_kind_3" },
+  { tag = 0, name = "kind_0", record = "chat_format_kind_0", open = "What does a chat format of type 0 mark? The client reads its range and one bit and the code that reads it was not found (0x140085ca0)." },
+  { tag = 1, name = "kind_1", record = "chat_format_kind_1", open = "What does a chat format of type 1 mark? The client reads its range and 32 bits and the code that reads it was not found (0x140085ca0)." },
+  { tag = 2, name = "kind_2", record = "chat_format_kind_2", open = "What does a chat format of type 2 mark? The client reads its range and one bit and the code that reads it was not found (0x140085ca0)." },
+  { tag = 3, name = "kind_3", record = "chat_format_kind_3", open = "What does a chat format of type 3 mark? The client reads its range and one bit and the code that reads it was not found (0x140085ca0)." },
   { tag = 4, name = "item_id", record = "chat_format_item_id", named_by = "0x140085ca0" },
   { tag = 5, name = "quest_id", record = "chat_format_quest_id", named_by = "0x140085ca0" },
   { tag = 6, name = "article_id", record = "chat_format_article_id", named_by = "0x140085ca0" },
@@ -1684,7 +1684,7 @@ variants = [
   { tag = 8, name = "item_record", record = "chat_format_item_record", named_by = "0x140085ca0" },
   { tag = 9, name = "item_guid", record = "chat_format_item_guid", named_by = "0x140085ca0" },
   { tag = 10, name = "navigation_point", record = "chat_format_navigation_point", named_by = "0x140085ca0" },
-  { tag = 11, name = "kind_11", record = "chat_format_kind_11" },
+  { tag = 11, name = "kind_11", record = "chat_format_kind_11", open = "What does a chat format of type 11 mark? The client reads its range and 32 bits and the code that reads it was not found (0x140085ca0)." },
 ]
 
 [[record]]
@@ -1695,7 +1695,7 @@ fields = [
   { name = "kind", kind = "constant", bits = 4, value = 0, evidence = "0x140085ca0", named_by = "0x140085ca0" },
   { name = "start", kind = "unsigned", bits = 16, evidence = "0x140085ca0", named_by = "0x140085ca0" },
   { name = "end", kind = "unsigned", bits = 16, evidence = "0x140085ca0", named_by = "0x140085ca0" },
-  { name = "field_4", kind = "unsigned", bits = 1, evidence = "0x140085ca0", safe_by = "0x140085ca0" },
+  { name = "field_4", kind = "unsigned", bits = 1, evidence = "0x140085ca0", open = "What does the bit of a chat format of type 0 mark? The client reads it and nothing in its code shows the use (0x140085ca0).", safe_by = "0x140085ca0" },
 ]
 
 [[record]]
@@ -1706,7 +1706,7 @@ fields = [
   { name = "kind", kind = "constant", bits = 4, value = 1, evidence = "0x140085ca0", named_by = "0x140085ca0" },
   { name = "start", kind = "unsigned", bits = 16, evidence = "0x140085ca0", named_by = "0x140085ca0" },
   { name = "end", kind = "unsigned", bits = 16, evidence = "0x140085ca0", named_by = "0x140085ca0" },
-  { name = "field_4", kind = "unsigned", bits = 32, evidence = "0x140085ca0", safe_by = "0x140085ca0" },
+  { name = "field_4", kind = "unsigned", bits = 32, evidence = "0x140085ca0", open = "What does the 32-bit value of a chat format of type 1 mark? The client reads it and nothing in its code shows the use (0x140085ca0).", safe_by = "0x140085ca0" },
 ]
 
 [[record]]
@@ -1717,7 +1717,7 @@ fields = [
   { name = "kind", kind = "constant", bits = 4, value = 2, evidence = "0x140085ca0", named_by = "0x140085ca0" },
   { name = "start", kind = "unsigned", bits = 16, evidence = "0x140085ca0", named_by = "0x140085ca0" },
   { name = "end", kind = "unsigned", bits = 16, evidence = "0x140085ca0", named_by = "0x140085ca0" },
-  { name = "field_4", kind = "unsigned", bits = 1, evidence = "0x140085ca0", safe_by = "0x140085ca0" },
+  { name = "field_4", kind = "unsigned", bits = 1, evidence = "0x140085ca0", open = "What does the bit of a chat format of type 2 mark? The client reads it and nothing in its code shows the use (0x140085ca0).", safe_by = "0x140085ca0" },
 ]
 
 [[record]]
@@ -1728,7 +1728,7 @@ fields = [
   { name = "kind", kind = "constant", bits = 4, value = 3, evidence = "0x140085ca0", named_by = "0x140085ca0" },
   { name = "start", kind = "unsigned", bits = 16, evidence = "0x140085ca0", named_by = "0x140085ca0" },
   { name = "end", kind = "unsigned", bits = 16, evidence = "0x140085ca0", named_by = "0x140085ca0" },
-  { name = "field_4", kind = "unsigned", bits = 1, evidence = "0x140085ca0", safe_by = "0x140085ca0" },
+  { name = "field_4", kind = "unsigned", bits = 1, evidence = "0x140085ca0", open = "What does the bit of a chat format of type 3 mark? The client reads it and nothing in its code shows the use (0x140085ca0).", safe_by = "0x140085ca0" },
 ]
 
 [[record]]
@@ -1807,7 +1807,7 @@ fields = [
   { name = "kind", kind = "constant", bits = 4, value = 11, evidence = "0x140085ca0", named_by = "0x140085ca0" },
   { name = "start", kind = "unsigned", bits = 16, evidence = "0x140085ca0", named_by = "0x140085ca0" },
   { name = "end", kind = "unsigned", bits = 16, evidence = "0x140085ca0", named_by = "0x140085ca0" },
-  { name = "field_4", kind = "unsigned", bits = 32, evidence = "0x140085ca0", safe_by = "0x140085ca0" },
+  { name = "field_4", kind = "unsigned", bits = 32, evidence = "0x140085ca0", open = "What does the 32-bit value of a chat format of type 11 mark? The client reads it and nothing in its code shows the use (0x140085ca0).", safe_by = "0x140085ca0" },
 ]
 
 [[record]]
@@ -1821,13 +1821,13 @@ fields = [
   { name = "item_guid", kind = "unsigned", bits = 64, evidence = "0x140085790", named_by = "0x140085790" },
   { name = "item_id", kind = "unsigned", bits = 18, evidence = "0x140085790", named_by = "0x140085790" },
   { name = "character_id", kind = "unsigned", bits = 64, evidence = "0x140085790", named_by = "0x140085790" },
-  { name = "field_4", kind = "unsigned", bits = 64, evidence = "0x140085790", safe_by = "0x140085790" },
-  { name = "field_5", kind = "unsigned", bits = 32, evidence = "0x140085790", safe_by = "0x140085790" },
-  { name = "field_6", kind = "unsigned", bits = 64, evidence = "0x140085790", safe_by = "0x140085790" },
-  { name = "field_7", kind = "unsigned", bits = 32, evidence = "0x140085790", safe_by = "0x140085790" },
-  { name = "field_8", kind = "unsigned", bits = 32, evidence = "0x140085790", safe_by = "0x140085790" },
-  { name = "field_9", kind = "unsigned", bits = 8, evidence = "0x140085790", safe_by = "0x140085790" },
-  { name = "field_10", kind = "unsigned", bits = 18, evidence = "0x140085790", safe_by = "0x140085790" },
+  { name = "field_4", kind = "unsigned", bits = 64, evidence = "0x140085790", open = "What does the item record's 64-bit value at position 4 mean? ReadChatItemRecord reads it and its use was not traced; BuildChatItemLink may read it as the random-stat word (chat_format_item_record.random_stats).", safe_by = "0x140085790" },
+  { name = "field_5", kind = "unsigned", bits = 32, evidence = "0x140085790", open = "What does the item record's 32-bit value at position 5 mean? ReadChatItemRecord reads it and its use was not traced; BuildChatItemLink may read it as the rune slots (chat_format_item_record.random_stats).", safe_by = "0x140085790" },
+  { name = "field_6", kind = "unsigned", bits = 64, evidence = "0x140085790", open = "What does the item record's 64-bit value at position 6 mean? ReadChatItemRecord reads it and its use was not traced; BuildChatItemLink may read it as the 4 + 3x10-bit value (chat_format_item_record.random_stats).", safe_by = "0x140085790" },
+  { name = "field_7", kind = "unsigned", bits = 32, evidence = "0x140085790", open = "What does the item record's 32-bit value at position 7 mean? ReadChatItemRecord reads it and no use of it was found.", safe_by = "0x140085790" },
+  { name = "field_8", kind = "unsigned", bits = 32, evidence = "0x140085790", open = "What does the item record's 32-bit value at position 8 mean? ReadChatItemRecord reads it and its use was not traced; BuildChatItemLink may read it as the item level (chat_format_item_record.random_stats).", safe_by = "0x140085790" },
+  { name = "field_9", kind = "unsigned", bits = 8, evidence = "0x140085790", open = "What does the item record's 8-bit value at position 9 mean? ReadChatItemRecord reads it and no use of it was found.", safe_by = "0x140085790" },
+  { name = "field_10", kind = "unsigned", bits = 18, evidence = "0x140085790", open = "What does the item record's 18-bit value at position 10 mean? ReadChatItemRecord reads it and its use was not traced; BuildChatItemLink may read it as the category-143 id (chat_format_item_record.random_stats).", safe_by = "0x140085790" },
   { name = "list_a", kind = "array", count_bits = 3, element = "unsigned", element_bits = 32, evidence = "0x140085790", named_by = "0x140085790" },
   { name = "list_b", kind = "array", count_bits = 4, element = "unsigned", element_bits = 32, evidence = "0x140085790", named_by = "0x140085790" },
 ]
@@ -2212,7 +2212,7 @@ id = 0x0262
 name = "unit_create_ghost"
 direction = "server_to_client"
 evidence = "0x140096970"
-summary = "creates a unit of type 23, a ghost: a player's data without its owned units, its PvP flags and its premium tier (the character id, the realm, the name, the race, which the client refuses above 17, the class, the gender, a 64-bit value, a text, a 4-bit value, a list of 64-bit values, the bone values and the title), then the values of a player's create; the values the schema leaves unnamed (the 64-bit value, the text, the 4-bit value and the list of 64-bit values) are the player's own, set the same way, and not read for the ghost's looks"
+summary = "creates a unit of type 23, a ghost: a player's data without its owned units, its PvP flags and its premium tier (the character id, the realm, the name, the race, which the client refuses above 17, the class, the gender, the group id, the guild name, the guild type, the guild ids, the bone values and the title), then the values of a player's create"
 fields = [
   { name = "unit_id", kind = "unsigned", bits = 32, evidence = "0x140096fa0", named_by = "opcode.0x262" },
   { name = "unit_type", kind = "constant", bits = 6, value = 23, evidence = "0x140096fa0", named_by = "opcode.0x262" },
@@ -2222,10 +2222,10 @@ fields = [
   { name = "race_id", kind = "unsigned_below", bits = 5, limit = 18, evidence = "0x140096970", named_by = "0x140096970" },
   { name = "class_id", kind = "unsigned", bits = 5, evidence = "0x140096970", named_by = "0x140096970" },
   { name = "gender", kind = "unsigned", bits = 2, evidence = "0x140096970", named_by = "0x140096970" },
-  { name = "field_9", kind = "unsigned", bits = 64, evidence = "0x140096970", safe_by = "opcode.0x262.ghost" },
-  { name = "field_10", kind = "wide_text", evidence = "0x140096970", safe_by = "opcode.0x262.ghost" },
-  { name = "field_11", kind = "unsigned", bits = 4, evidence = "0x140096970", safe_by = "opcode.0x262.ghost" },
-  { name = "field_12", kind = "array", count_bits = 5, element = "unsigned", element_bits = 64, evidence = "0x140096970", safe_by = "opcode.0x262.ghost" },
+  { name = "group_id", kind = "unsigned", bits = 64, evidence = "0x140096970", named_by = "0x140096970.ghost_fields", safe_by = "opcode.0x262.ghost" },
+  { name = "guild_name", kind = "wide_text", evidence = "0x140096970", named_by = "0x140096970.ghost_fields", safe_by = "opcode.0x262.ghost" },
+  { name = "guild_type", kind = "unsigned", bits = 4, evidence = "0x140096970", named_by = "0x140096970.ghost_fields", safe_by = "opcode.0x262.ghost" },
+  { name = "guild_ids", kind = "array", count_bits = 5, element = "unsigned", element_bits = 64, evidence = "0x140096970", named_by = "0x140096970.ghost_fields", safe_by = "opcode.0x262.ghost" },
   { name = "bone_values", kind = "array", count_bits = 6, element = "unsigned", element_bits = 32, evidence = "0x140096970", named_by = "0x140096970" },
   { name = "title_id", kind = "unsigned", bits = 14, evidence = "0x140096970", named_by = "0x140096970" },
   { name = "tail", kind = "record", record = "unit_create_tail", evidence = "0x140096fa0", named_by = "opcode.0x262" },
@@ -2778,8 +2778,8 @@ summary = "a unit died or came back: the unit id and the dead bit, a 5-bit value
 fields = [
   { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x88c", named_by = "opcode.0x88c" },
   { name = "dead", kind = "unsigned", bits = 1, evidence = "opcode.0x88c", named_by = "opcode.0x88c" },
-  { name = "field_3", kind = "unsigned", bits = 5, evidence = "opcode.0x88c", safe_by = "opcode.0x88c" },
-  { name = "field_4", kind = "unsigned", bits = 32, evidence = "opcode.0x88c", safe_by = "opcode.0x88c" },
+  { name = "unread_3", kind = "unsigned", bits = 5, evidence = "opcode.0x88c", named_by = "opcode.0x88c", safe_by = "opcode.0x88c" },
+  { name = "health", kind = "unsigned", bits = 32, evidence = "opcode.0x88c", named_by = "opcode.0x88c.health", safe_by = "opcode.0x88c" },
 ]
 
 [[message]]
@@ -3186,7 +3186,7 @@ evidence = "opcode.0x357"
 summary = "opens a unit's dialog, the answer to the client's request to talk to the unit"
 fields = [
   { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x357", named_by = "opcode.0x357" },
-  { name = "field_2", kind = "unsigned", bits = 1, evidence = "opcode.0x357", safe_by = "0x140554510" },
+  { name = "unread_2", kind = "unsigned", bits = 1, evidence = "opcode.0x357", named_by = "opcode.0x357", safe_by = "0x140554510" },
 ]
 
 [[message]]

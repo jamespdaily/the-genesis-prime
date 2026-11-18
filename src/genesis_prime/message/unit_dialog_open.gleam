@@ -20,7 +20,7 @@ pub type UnitDialogOpen {
     unit_id: Int,
     /// Safe by `0x140554510`: the client's code gives this field no use the
     /// server needs, and that fact shows its value is safe.
-    field_2: Int,
+    unread_2: Int,
   )
 }
 
@@ -29,7 +29,7 @@ pub type UnitDialogOpen {
 pub fn encode(message: UnitDialogOpen) -> Result(BitArray, EncodeError) {
   bit_stream.new_writer()
   |> bit_stream.write_unsigned("unit_id", message.unit_id, 32)
-  |> bit_stream.write_unsigned("field_2", message.field_2, 1)
+  |> bit_stream.write_unsigned("unread_2", message.unread_2, 1)
   |> bit_stream.finish
 }
 
@@ -37,7 +37,7 @@ pub fn encode(message: UnitDialogOpen) -> Result(BitArray, EncodeError) {
 pub fn decode(body: BitArray) -> Result(UnitDialogOpen, DecodeError) {
   let reader = bit_stream.new_reader(body)
   use #(unit_id, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
-  use #(field_2, reader) <- result.try(bit_stream.read_unsigned(reader, 1))
+  use #(unread_2, reader) <- result.try(bit_stream.read_unsigned(reader, 1))
   use Nil <- result.try(bit_stream.finish_reading(reader))
-  Ok(UnitDialogOpen(unit_id:, field_2:))
+  Ok(UnitDialogOpen(unit_id:, unread_2:))
 }

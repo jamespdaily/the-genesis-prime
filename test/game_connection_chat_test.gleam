@@ -881,7 +881,7 @@ pub fn a_creatures_news_is_written_as_a_type_0_0x262_once_and_removed_by_a_0x355
     game_connection_support.heard(taken, game_connection_support.keyed())
     as "opcode.0x355: the creature is removed when its process says so"
   assert unit_destroyed.decode(body)
-    == Ok(UnitDestroyed(unit_id: 40, field_2: 0))
+    == Ok(UnitDestroyed(unit_id: 40, chest_world_object_delay: 0))
 }
 
 // ---- the development summon ----

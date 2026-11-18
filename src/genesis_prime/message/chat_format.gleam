@@ -31,13 +31,21 @@ import gleam/result
 /// variant, and the variant's record reads them again as its first field. A
 /// kind no variant has is refused.
 pub type ChatFormat {
-  /// Kind 0, read by `chat_format_kind_0`.
+  /// Kind 0, read by `chat_format_kind_0`. Open: What does a chat format of
+  /// type 0 mark? The client reads its range and one bit and the code that
+  /// reads it was not found (0x140085ca0).
   Kind0(ChatFormatKind0)
-  /// Kind 1, read by `chat_format_kind_1`.
+  /// Kind 1, read by `chat_format_kind_1`. Open: What does a chat format of
+  /// type 1 mark? The client reads its range and 32 bits and the code that
+  /// reads it was not found (0x140085ca0).
   Kind1(ChatFormatKind1)
-  /// Kind 2, read by `chat_format_kind_2`.
+  /// Kind 2, read by `chat_format_kind_2`. Open: What does a chat format of
+  /// type 2 mark? The client reads its range and one bit and the code that
+  /// reads it was not found (0x140085ca0).
   Kind2(ChatFormatKind2)
-  /// Kind 3, read by `chat_format_kind_3`.
+  /// Kind 3, read by `chat_format_kind_3`. Open: What does a chat format of
+  /// type 3 mark? The client reads its range and one bit and the code that
+  /// reads it was not found (0x140085ca0).
   Kind3(ChatFormatKind3)
   /// Kind 4, read by `chat_format_item_id`. The fact file's `0x140085ca0` names
   /// the kind.
@@ -60,7 +68,9 @@ pub type ChatFormat {
   /// Kind 10, read by `chat_format_navigation_point`. The fact file's
   /// `0x140085ca0` names the kind.
   NavigationPoint(ChatFormatNavigationPoint)
-  /// Kind 11, read by `chat_format_kind_11`.
+  /// Kind 11, read by `chat_format_kind_11`. Open: What does a chat format of
+  /// type 11 mark? The client reads its range and 32 bits and the code that
+  /// reads it was not found (0x140085ca0).
   Kind11(ChatFormatKind11)
 }
 

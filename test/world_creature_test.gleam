@@ -1366,7 +1366,7 @@ pub fn right_click_on_giver_opens_dialog_test() -> Nil {
     game_connection_support.written(taken:)
     as "the right-click on the giver is answered with 0x357 alone"
   assert unit_dialog_open.decode(body)
-    == Ok(UnitDialogOpen(unit_id: shown.unit_id, field_2: 0))
+    == Ok(UnitDialogOpen(unit_id: shown.unit_id, unread_2: 0))
     as "opcode.0x357: it names the unit the client clicked"
 }
 

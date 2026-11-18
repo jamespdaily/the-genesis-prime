@@ -121,7 +121,10 @@ pub fn a_terrain_loaded_value_wider_than_15_bits_is_refused_test() -> Nil {
 
 pub fn a_destroyed_unit_flag_wider_than_one_bit_is_refused_test() -> Nil {
   use <- owned_test.run(5000)
-  assert unit_destroyed.encode(UnitDestroyed(unit_id: 1, field_2: 2))
-    == Error(bit_stream.ValueDoesNotFit("field_2", 1, 2))
+  assert unit_destroyed.encode(UnitDestroyed(
+      unit_id: 1,
+      chest_world_object_delay: 2,
+    ))
+    == Error(bit_stream.ValueDoesNotFit("chest_world_object_delay", 1, 2))
     as "ReadUint32AndBitBody 0x14007C340: one bit"
 }

@@ -1382,9 +1382,9 @@ pub fn the_entry_burst_names_the_channel_joins_it_and_joins_the_groups_in_order_
       channel_type: 9,
       channel_id: zone_channel_id,
       name: "",
-      field_4: 0,
-      field_5: 0,
-      field_6: 0,
+      unread_4: 0,
+      custom_channel_slot: 0,
+      unread_6: 0,
     ))
     as "opcode.0x1bc: type 9, the fixed id 1, an empty name and three zeros; the order lets the flag 0x400 row take the name 0x1da last gave"
   assert zone == zone_channel(4961)
