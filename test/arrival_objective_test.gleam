@@ -18,9 +18,9 @@ import character_tables
 import content_support
 import database_support
 import fixture_tables
-import genesis_prime/content/arrival_objective as content_arrival_objective
+import genesis_prime/content/objective_set
 import genesis_prime/content/refusal.{type Refusal, RowId}
-import genesis_prime/game/arrival_objective.{Row}
+import genesis_prime/game/arrival_objective
 import gleam/list
 import gleam/set
 import gleam/string
@@ -33,7 +33,7 @@ const tower = 4770
 pub fn a_row_naming_a_visible_marked_unlinked_script_is_a_place_test() -> Nil {
   use <- owned_test.run(60_000)
   assert arrival_objective.select(
-      rows: [Row(objective_id: tower)],
+      ids: [tower],
       tables: character_tables.shared(),
     )
     == Ok(set.from_list([tower]))
@@ -99,14 +99,13 @@ pub fn the_load_refuses_a_row_that_is_not_a_visible_marked_unlinked_script_test(
     id: 99_001,
     with: [],
   )
-  let assert Error([refusal]) =
-    arrival_objective.select(rows: [Row(objective_id: 99_001)], tables:)
+  let assert Error([refusal]) = arrival_objective.select(ids: [99_001], tables:)
     as "one refusal: the copy lists in no quest"
   assert refusal.row == RowId(99_001)
   assert string.contains(refusal.rule, "no Quest2 row lists the objective")
   let assert Error([missing]) =
     arrival_objective.select(
-      rows: [Row(objective_id: 4_000_000)],
+      ids: [4_000_000],
       tables: character_tables.shared(),
     )
     as "one refusal: the table lacks the row"
@@ -117,7 +116,7 @@ pub fn the_load_names_every_refused_row_test() -> Nil {
   use <- owned_test.run(60_000)
   let assert Error(refusals) =
     arrival_objective.select(
-      rows: list.map([4_000_000, tower, 4849], fn(id) { Row(objective_id: id) }),
+      ids: [4_000_000, tower, 4849],
       tables: character_tables.shared(),
     )
     as "two rows are refused"
@@ -135,7 +134,7 @@ fn assert_refused(
 ) -> Nil {
   use tables <- quest_support.with_objectives(edits:)
   let assert Error([refusal]) =
-    arrival_objective.select(rows: [Row(objective_id:)], tables:)
+    arrival_objective.select(ids: [objective_id], tables:)
     as "one refusal for the objective"
   assert refusal.row == RowId(objective_id)
   assert string.contains(refusal.rule, saying)
@@ -190,9 +189,10 @@ pub fn the_arrival_migrations_seed_50_server_choice_rows_test() -> Nil {
   use <- owned_test.run(60_000)
   let database = database_support.new_database(on: database_support.shared())
   let assert Ok(rows) =
-    content_arrival_objective.rows(db: content_support.connect(database:))
+    objective_set.rows(db: content_support.connect(database:))
     as "the query ran"
-  assert list.length(rows) == 50
+  assert list.length(objective_set.ids(rows:, table: arrival_objective.table))
+    == 50
     as "migration 0038 seeds 42 rows and migration 0043 adds 8"
   assert content_support.count(
       database:,

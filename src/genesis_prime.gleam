@@ -25,10 +25,9 @@ import genesis_prime/client_connection.{type Bucket}
 import genesis_prime/connection/registry
 import genesis_prime/connection/script
 import genesis_prime/content
-import genesis_prime/content/arrival_objective as content_arrival_objective
 import genesis_prime/content/class_resource as content_class_resource
 import genesis_prime/content/game_number as content_game_number
-import genesis_prime/content/held_objective as content_held_objective
+import genesis_prime/content/objective_set
 import genesis_prime/content/projector_landing as content_projector_landing
 import genesis_prime/content/server_proxy as content_server_proxy
 import genesis_prime/content/spawn as content_spawn
@@ -37,8 +36,12 @@ import genesis_prime/content/tutorial_quest as content_tutorial_quest
 import genesis_prime/content/vendor as content_vendor
 import genesis_prime/content/zone_welcome as content_zone_welcome
 import genesis_prime/digest
+import genesis_prime/game/arrival_objective
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
+import genesis_prime/game/held_objective
+import genesis_prime/game/kill_objective
+import genesis_prime/game/objective
 import genesis_prime/game_settings
 import genesis_prime/login/auth_connection
 import genesis_prime/login/sts_connection
@@ -651,8 +654,18 @@ fn game(
       tutorial_chain: content_tutorial_quest.chain(key: spawns),
       projector_landings: content_projector_landing.landings(key: spawns),
       reused_unit_objectives: content_spawn.reused_unit_objectives(key: spawns),
-      arrival_objectives: content_arrival_objective.arrivals(key: spawns),
-      held_objectives: content_held_objective.held(key: spawns),
+      arrival_objectives: objective_set.read(
+        key: spawns,
+        table: arrival_objective.table,
+      ),
+      held_objectives: objective_set.read(
+        key: spawns,
+        table: held_objective.table,
+      ),
+      script_rows: objective.ScriptRows(kills: objective_set.read(
+        key: spawns,
+        table: kill_objective.table,
+      )),
     ),
     wire_recorder: None,
     scripts: script.operating_system,

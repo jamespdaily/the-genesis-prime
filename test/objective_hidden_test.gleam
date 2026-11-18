@@ -110,6 +110,7 @@ fn settled_with(
     arrival_objectives: set.new(),
     held_objectives: set.from_list(held),
     unix_ms: settled_at_ms,
+    scripts: objective.no_rows(),
   )
 }
 
@@ -1242,6 +1243,7 @@ pub fn a_store_purchase_objective_completes_as_a_stand_in_unless_it_is_held_test
       index: 0,
       objective: store_purchase,
       arrival_objectives: set.new(),
+      scripts: objective.no_rows(),
     )
     == objective.StandInWithQuest
     as "a visible required unmarked unlinked scripted objective is the stand-in's"

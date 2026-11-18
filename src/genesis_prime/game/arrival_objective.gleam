@@ -7,7 +7,7 @@
 //// its reason.
 ////
 //// ```
-//// content.load: rows ─▶ select(rows, tables) ─▶ Set(objective id) | refusals (the load stops)
+//// content.load: ids ─▶ select(ids, tables) ─▶ Set(objective id) | refusals (the load stops)
 //// each connection's settings ─▶ the set ─▶ objective.settle ─▶ a position at a marker completes it
 //// ```
 ////
@@ -33,19 +33,14 @@ import gleam/set.{type Set}
 /// The table's name in the log and in a refusal.
 pub const table = "arrival_objective"
 
-/// One row of the arrival_objective table as the load reads it: a QuestObjective id.
-pub type Row {
-  Row(objective_id: Int)
-}
-
-/// The QuestObjective ids the rows hold, or every row the load refuses.
+/// The QuestObjective ids the table's rows hold, or every row the load refuses.
 pub fn select(
-  rows rows: List(Row),
+  ids ids: List(Int),
   tables tables: table_store.Tables,
 ) -> Result(Set(Int), List(Refusal)) {
   objective_row.select(
     table:,
-    ids: list.map(rows, fn(row) { row.objective_id }),
+    ids:,
     tables:,
     broken: fn(tables, quest, index, listed_objective) {
       list.flatten([

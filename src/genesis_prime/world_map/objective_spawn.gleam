@@ -1,6 +1,7 @@
 //// The creatures a kill objective needs and the stored spawn table does not
 //// hold: for each kill objective with a marker (QuestObjective types 2, 8 and
-//// 16, whose worldLocationsIdIndicator00 to 03 name WorldLocation2 circles) in a
+//// 16, and the type 5 rows of the kill table, whose reward pane is the group;
+//// worldLocationsIdIndicator00 to 03 name WorldLocation2 circles) in a
 //// world the server holds spawns for (a world one stored row is in), a creature
 //// with no stored spawn in the marker's world stands in the circle, as many as
 //// the objective counts, so the player sees it, kills it and the objective
@@ -166,20 +167,36 @@ type Job {
 /// (`factions`), and as the unit type its Creature2 row gives it; a turret creature
 /// with no kind of its own is left out (`TurretHasNoKind`), since no server fight
 /// would run it.
-/// Pure: the tables, the chosen factions, the kinds and the stored rows are all it reads.
+/// `kills` is the kill table's objectives (genesis_prime/game/kill_objective), whose reward
+/// pane names the creatures to place as a type 8 or 16 objective's data does.
+/// Pure: the tables, the chosen factions, the kinds, the kill table and the stored rows are
+/// all it reads.
 pub fn place(
   tables tables: table_store.Tables,
   stored stored: List(Row),
   factions factions: Factions,
   kinds kinds: Kinds,
+  kills kills: Set(Int),
 ) -> Placed {
   let objectives =
     quest_objective.all(tables)
     |> list.filter_map(fn(objective) {
-      result.map(
-        objective_kind.placed_target(objective_kind.of_row(objective)),
-        fn(named) { #(objective, named) },
-      )
+      case set.contains(kills, objective.id) {
+        True ->
+          Ok(#(
+            objective,
+            objective_kind.GroupOf(
+              target_group_id: quest_objective.target_group_id_reward_pane(
+                objective,
+              ),
+            ),
+          ))
+        False ->
+          result.map(
+            objective_kind.placed_target(objective_kind.of_row(objective)),
+            fn(named) { #(objective, named) },
+          )
+      }
     })
   let worlds = set.from_list(list.map(stored, fn(row) { row.world_id }))
   let planned =
@@ -456,7 +473,15 @@ fn plan(
           target_group.listed_creatures(tables:, group: target_group_id.value)
       }
       let no_group = case creature_ids {
-        [] -> [Skipped(objective.id, NamesNoCreature(group_id: objective.data))]
+        [] -> [
+          Skipped(
+            objective.id,
+            NamesNoCreature(group_id: case named {
+              objective_kind.GroupOf(target_group_id:) -> target_group_id.value
+              objective_kind.OneCreature(..) -> objective.data
+            }),
+          ),
+        ]
         _ -> []
       }
       let #(found, rowless) =

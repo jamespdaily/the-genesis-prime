@@ -86,6 +86,12 @@
 ////   (genesis_prime/game/arrival_objective): a row naming an objective the table lacks or
 ////   no quest lists, one that is not a visible scripted objective, one with no marker row,
 ////   or one a spell effect or an item names is refused.
+//// - **The kill objectives** are checked against the same rows
+////   (genesis_prime/game/kill_objective): a row naming an objective the table lacks or no
+////   quest lists, one that is not a visible scripted objective, one with no marker row, one
+////   whose reward pane lists no creature the server fights, or one a spell effect or an item
+////   names is refused. The creatures of its pane stand at its marker
+////   (genesis_prime/world_map/objective_spawn).
 //// - **The projector landings** are checked against the client's Creature2, WorldLocation2,
 ////   QuestObjective, Quest2 and WorldZone rows (genesis_prime/game/projector): a creature
 ////   that does not cast the projector spell, a landing outside World 3460, an objective that
@@ -110,14 +116,13 @@
 //// | several rows are refused | every refusal is logged, then the start stops |
 //// | a query fails | the start stops with the database's reason |
 
-import genesis_prime/content/arrival_objective as content_arrival_objective
 import genesis_prime/content/class_resource as content_class_resource
 import genesis_prime/content/creature_auto_attack as content_creature_auto_attack
 import genesis_prime/content/creature_faction as content_creature_faction
 import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/creature_special as content_creature_special
 import genesis_prime/content/game_number as content_game_number
-import genesis_prime/content/held_objective as content_held_objective
+import genesis_prime/content/objective_set
 import genesis_prime/content/projector_landing as content_projector_landing
 import genesis_prime/content/refusal.{type Refusal}
 import genesis_prime/content/server_proxy as content_server_proxy
@@ -129,6 +134,7 @@ import genesis_prime/content/zone_welcome as content_zone_welcome
 import genesis_prime/game/arrival_objective
 import genesis_prime/game/class_resource
 import genesis_prime/game/held_objective
+import genesis_prime/game/kill_objective
 import genesis_prime/game/objective_units
 import genesis_prime/game/place_objective
 import genesis_prime/game/projector
@@ -158,6 +164,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{None}
 import gleam/result
+import gleam/set
 import gleam/string
 import pog
 
@@ -308,20 +315,11 @@ fn read(
       )
     }),
   )
-  use held_rows <- result.try(
-    content_held_objective.rows(db)
+  use objective_rows <- result.try(
+    objective_set.rows(db)
     |> result.map_error(fn(error) {
       QueryFailed(
-        table: content_held_objective.table,
-        reason: worker.describe_query_error(error),
-      )
-    }),
-  )
-  use arrival_rows <- result.try(
-    content_arrival_objective.rows(db)
-    |> result.map_error(fn(error) {
-      QueryFailed(
-        table: content_arrival_objective.table,
+        table: objective_set.query_name,
         reason: worker.describe_query_error(error),
       )
     }),
@@ -375,10 +373,27 @@ fn read(
   }
   let tutorials = tutorial.select(rows: tutorial_rows, tables:)
   let tutorial_refusals = result.unwrap_error(tutorials, or: [])
-  let held = held_objective.select(rows: held_rows, tables:)
+  let held =
+    held_objective.select(
+      ids: objective_set.ids(rows: objective_rows, table: held_objective.table),
+      tables:,
+    )
   let held_refusals = result.unwrap_error(held, or: [])
-  let arrivals = arrival_objective.select(rows: arrival_rows, tables:)
+  let arrivals =
+    arrival_objective.select(
+      ids: objective_set.ids(
+        rows: objective_rows,
+        table: arrival_objective.table,
+      ),
+      tables:,
+    )
   let arrival_refusals = result.unwrap_error(arrivals, or: [])
+  let kills =
+    kill_objective.select(
+      ids: objective_set.ids(rows: objective_rows, table: kill_objective.table),
+      tables:,
+    )
+  let kill_refusals = result.unwrap_error(kills, or: [])
   let projectors = projector.select(rows: projector_rows, tables:)
   let projector_refusals = result.unwrap_error(projectors, or: [])
   let vendors =
@@ -440,6 +455,7 @@ fn read(
         stored: rows,
         factions: factions_for_spawns,
         kinds:,
+        kills: result.unwrap(kills, or: set.new()),
       )
     Error(..) ->
       objective_spawn.Placed(
@@ -483,6 +499,7 @@ fn read(
       tutorial_refusals,
       held_refusals,
       arrival_refusals,
+      kill_refusals,
       projector_refusals,
       vendor_refusals,
     ])
@@ -549,11 +566,18 @@ fn read(
         Error(..) -> Nil
       }
       case held {
-        Ok(held) -> content_held_objective.put(key:, held:)
+        Ok(objectives) ->
+          objective_set.put(key:, table: held_objective.table, objectives:)
         Error(..) -> Nil
       }
       case arrivals {
-        Ok(arrivals) -> content_arrival_objective.put(key:, arrivals:)
+        Ok(objectives) ->
+          objective_set.put(key:, table: arrival_objective.table, objectives:)
+        Error(..) -> Nil
+      }
+      case kills {
+        Ok(objectives) ->
+          objective_set.put(key:, table: kill_objective.table, objectives:)
         Error(..) -> Nil
       }
       case projectors {

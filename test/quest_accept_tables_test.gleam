@@ -283,6 +283,7 @@ pub fn the_one_quest_behind_a_title_check_is_10510_and_each_store_text_objective
         index:,
         objective: found,
         arrival_objectives: set.new(),
+        scripts: objective.no_rows(),
       )
       == script
       as reason

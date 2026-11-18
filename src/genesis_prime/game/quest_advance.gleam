@@ -141,6 +141,8 @@ fn takes_the_advance(
             quest_id: quest.id,
             index:,
             objective:,
+            // The cast's own event is a use or a cast, which no script table changes.
+            scripts: objective.no_rows(),
           )
         None -> True
       }

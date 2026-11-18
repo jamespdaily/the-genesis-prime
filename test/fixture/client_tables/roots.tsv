@@ -1346,3 +1346,56 @@ Spell4	35424	Summoning Witchgiant, the type 11 objective spell of Quest2 6805	qu
 Creature2	20794	Chua, in TargetGroup 2125 the Loftite Railgun may be cast at	game_connection_quest_advance_test
 Quest2	10510	Learning to Shop: a quest behind a title check, with a store purchase objective	prerequisite_title_test, quest_accept_test, quest_accept_tables_test, game_connection_quest_test
 QuestObjective	21267	objective 0 of quest 10510 (a purchase in the In-Game Store)	content_load_test, objective_hidden_test, game_connection_quest_test
+Quest2	3170	Blood for Blood: objective 15996 is a kill of one creature at one marker (count 1, flags 3)	kill_objective_test
+Quest2	3295	Survival of the Fittest: objective 4282 is a kill of either of two creatures (count 1, three markers)	kill_objective_test
+Quest2	5074	Bug Sweep: three kill objectives of count 3 whose panes differ	kill_objective_test
+Quest2	5444	Explosive Mammodin: objective 8010, a kill of count 7 whose pane is a union of eight creatures	kill_objective_test
+Quest2	5535	Road Kill: objective 8281, a kill of count 25 of five creatures	kill_objective_test
+Quest2	5722	Road Kill, the other faction: objective 8537 shares the pane of 8281	kill_objective_test
+Quest2	5895	Primal Powers and Triton's Dread: objective 8866 kills creature 26037	kill_objective_test
+Quest2	5896	the twin of quest 5895: objective 8867 shares the pane of 8866	kill_objective_test
+Quest2	6047	The Root of Treachery: objective 9252 kills one creature	kill_objective_test
+Quest2	6237	The Sisters of Toria: objective 14676 kills creature 28256	kill_objective_test
+Quest2	6242	Wild Women of the Jungle: objective 14681 shares the pane of 14676	kill_objective_test
+Quest2	5101	a kill whose pane creature 20041 is a static object (creation type 10): objective 7515	kill_objective_test
+Creature2	9635	the creature of objective 15996's pane (creation type 0)	kill_objective_test
+Creature2	26037	the creature of objective 8866's pane, the scientist of quest 5895	kill_objective_test
+Creature2	20041	the pane creature of objective 7515, a static object of creation type 10	kill_objective_test
+WorldLocation2	7133	marker of kill objective 4282	kill_objective_test
+WorldLocation2	7566	marker of kill objective 4282	kill_objective_test
+WorldLocation2	7567	marker of kill objective 4282	kill_objective_test
+WorldLocation2	15297	marker of kill objective 7272	kill_objective_test
+WorldLocation2	15298	marker of kill objective 7491	kill_objective_test
+WorldLocation2	15299	marker of kill objective 7492	kill_objective_test
+WorldLocation2	15700	marker of kill objective 7515	kill_objective_test
+WorldLocation2	33270	marker of kill objective 8010	kill_objective_test
+WorldLocation2	18235	marker of kill objective 8281	kill_objective_test
+WorldLocation2	27499	marker of kill objective 8537	kill_objective_test
+WorldLocation2	19529	marker of kill objective 8866	kill_objective_test
+WorldLocation2	32650	marker of kill objective 14676	kill_objective_test
+WorldLocation2	6910	marker of kill objective 15996	kill_objective_test
+Creature2	9611	the receiver of quest 3170, so the server does not complete it	kill_objective_test
+Creature2	9881	the receiver of quest 3295, so the server does not complete it	kill_objective_test
+Creature2	10748	the receiver of quest 5444, so the server does not complete it	kill_objective_test
+Creature2	19924	the receiver of quest 5074, so the server does not complete it	kill_objective_test
+Creature2	24032	the receiver of quest 5535, so the server does not complete it	kill_objective_test
+Creature2	24065	the receiver of quest 5722, so the server does not complete it	kill_objective_test
+Creature2	26206	the receiver of quest 5895, so the server does not complete it	kill_objective_test
+Creature2	26207	the receiver of quest 5896, so the server does not complete it	kill_objective_test
+Creature2	26908	the receiver of quest 6047, so the server does not complete it	kill_objective_test
+Creature2	27455	the receiver of quest 6242, so the server does not complete it	kill_objective_test
+Creature2	27548	the receiver of quest 6237, so the server does not complete it	kill_objective_test
+Creature2	24039	a creature of pane 2539, the pane of objectives 8281 and 8537	objective_spawn_test
+Creature2	24040	a creature of pane 2539, the pane of objectives 8281 and 8537	objective_spawn_test
+Creature2	24041	a creature of pane 2539, the pane of objectives 8281 and 8537	objective_spawn_test
+Creature2	24042	a creature of pane 2539, the pane of objectives 8281 and 8537	objective_spawn_test
+Creature2	54033	a creature of pane 2539, the pane of objectives 8281 and 8537	objective_spawn_test
+Creature2	10125	a creature of the pane of kill objective 4282 (quest 3295), so the load of the kill table finds a creature the server fights	content_load_test
+Creature2	10150	a creature of the pane of kill objective 4282 (quest 3295), Friendly to both factions, so the kill table leaves the objective on the stand-in	kill_objective_test
+Creature2	19965	a creature of the pane of kill objective 7272 (quest 5074), so the load of the kill table finds a creature the server fights	content_load_test
+Creature2	21524	a creature of the pane of kill objective 7491 (quest 5074), so the load of the kill table finds a creature the server fights	content_load_test
+Creature2	21525	a creature of the pane of kill objective 7492 (quest 5074), so the load of the kill table finds a creature the server fights	content_load_test
+Creature2	9633	a creature of the pane of kill objective 8010 (quest 5444), so the load of the kill table finds a creature the server fights	content_load_test
+Creature2	33767	a creature of the pane of kill objective 9252 (quest 6047), so the load of the kill table finds a creature the server fights	content_load_test
+Creature2	28256	a creature of the pane of kill objective 14676 and 14681 (quests 6237 and 6242), so the load of the kill table finds a creature the server fights	content_load_test
+Creature2	26042	the creature of quest 5895 objective 8936, a type 2 kill the connection test credits	game_connection_kill_script_test

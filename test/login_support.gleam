@@ -21,6 +21,7 @@ import genesis_prime/connection/registry
 import genesis_prime/connection/script
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
+import genesis_prime/game/objective
 import genesis_prime/game/vendor
 import genesis_prime/game_settings
 import genesis_prime/login/auth_connection
@@ -151,6 +152,7 @@ pub fn game() -> server.Served(game_connection.Settings) {
       reused_unit_objectives: set.new(),
       arrival_objectives: set.new(),
       held_objectives: set.new(),
+      script_rows: objective.no_rows(),
     ),
     wire_recorder: None,
     scripts: script.operating_system,

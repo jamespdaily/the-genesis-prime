@@ -8,11 +8,10 @@
 import character_tables
 import class_resource_support
 import database_support
-import genesis_prime/content/arrival_objective as content_arrival_objective
 import genesis_prime/content/class_resource as content_class_resource
 import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/game_number as content_game_number
-import genesis_prime/content/held_objective as content_held_objective
+import genesis_prime/content/objective_set
 import genesis_prime/content/projector_landing as content_projector_landing
 import genesis_prime/content/server_proxy as content_server_proxy
 import genesis_prime/content/spawn as content_spawn
@@ -21,7 +20,10 @@ import genesis_prime/content/tutorial_quest as content_tutorial_quest
 import genesis_prime/content/vendor as content_vendor
 import genesis_prime/content/zone_welcome as content_zone_welcome
 import genesis_prime/game/area
+import genesis_prime/game/arrival_objective
+import genesis_prime/game/held_objective
 import genesis_prime/game/hit.{Blow, Defence, Offence, Worked}
+import genesis_prime/game/kill_objective
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
 import genesis_prime/game/vendor
@@ -686,8 +688,10 @@ fn put_worlds(
   content_server_proxy.put(key:, proxies: server_proxy_support.none())
   content_zone_welcome.put(key:, welcomes: zone_welcome_support.none())
   content_tutorial_quest.put(key:, chain: tutorial_support.none())
-  content_held_objective.put(key:, held: set.new())
-  content_arrival_objective.put(key:, arrivals: set.new())
+  list.each(
+    [held_objective.table, arrival_objective.table, kill_objective.table],
+    fn(table) { objective_set.put(key:, table:, objectives: set.new()) },
+  )
   content_projector_landing.put(key:, landings: projector_support.none())
   content_vendor.put(key:, vendors: vendor.none())
   content_creature_kind.put(

@@ -80,12 +80,19 @@ import envoy
 import genesis_prime
 import genesis_prime/content
 import genesis_prime/content/spawn as content_spawn
+import genesis_prime/game/faction_level
+import genesis_prime/game/place_objective
 import genesis_prime/game/prerequisite
+import genesis_prime/game/quest_log
 import genesis_prime/game/rating
+import genesis_prime/game/target_group
 import genesis_prime/game/vendor
 import genesis_prime/import_world_data
 import genesis_prime/readiness
 import genesis_prime/step/runtime
+import genesis_prime/table/id.{Quest2Id, QuestObjectiveId}
+import genesis_prime/table/quest2
+import genesis_prime/table/quest_objective
 import genesis_prime/table/world
 import genesis_prime/world_map/creature_unit_type
 import genesis_prime/world_map/objective_spawn
@@ -96,6 +103,7 @@ import gleam/erlang/process
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/set
 import owned_key
 import owned_test
 import spawn_support
@@ -158,6 +166,7 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
       stored: rows,
       factions: spawn_support.the_boss_is_given_233(tables:),
       kinds: spawn_support.turret_kinds(),
+      kills: content_support.kill_objective_ids(),
     ).rows
   assert list.length(placed) == 1762
     as "the rows placed in all, none of them in a world with no stored spawn"
@@ -175,6 +184,7 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
       stored: rows,
       factions: spawn_support.the_boss_is_given_233(tables:),
       kinds: spawn_support.turret_kinds(),
+      kills: content_support.kill_objective_ids(),
     ).click_rows
   assert list.length(clicked) == 344 as "the click targets' rows placed in all"
   assert list.count(clicked, fn(row) { row.entity_type == 0 }) == 109
@@ -206,6 +216,57 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
       <> int.to_string(took)
       <> " ms"
     }
+  // A kill row leaves the stand-in only when its rule can fire: for each player faction its
+  // quest allows (Quest2 `questPlayerFactionEnum`: 0 Exile, 1 Dominion, 2 either), a creature
+  // of its reward pane starts in the world of each of its markers, stored or placed
+  // (`objective_spawn.place`), and is not Friendly to that faction, so that player can
+  // fight it (`0x1403ad540`; Friendly is level 8 to 10, `0x140787830`).
+  let levels = faction_level.build(tables:)
+  let listed = quest_log.listed_objectives(tables:)
+  let started_by_world = fn(world_id) {
+    list.map(dict.values(content_spawn.world(key:, world_id:).by_id), fn(one) {
+      #(one.creature_id.value, one.faction_id)
+    })
+  }
+  let player_factions = fn(quest_id) {
+    let assert Ok(quest) = quest2.get(tables:, id: Quest2Id(quest_id))
+      as "the listing quest is in the client's table"
+    case quest.quest_player_faction_enum {
+      0 -> [spawn.exile_faction]
+      1 -> [spawn.dominion_faction]
+      _ -> [spawn.exile_faction, spawn.dominion_faction]
+    }
+  }
+  let fought_by = fn(player: Int, started: List(#(Int, Int)), pane: List(Int)) {
+    list.any(started, fn(one) {
+      list.contains(pane, one.0)
+      && faction_level.level(levels:, from: player, to: one.1) <= 7
+    })
+  }
+  let unfightable = fn(objective_ids) {
+    list.filter(objective_ids, fn(objective_id) {
+      let assert Ok(row) =
+        quest_objective.get(tables:, id: QuestObjectiveId(objective_id))
+        as "the objective is in the client's table"
+      let pane =
+        target_group.listed_creatures(
+          tables:,
+          group: row.target_group_id_reward_pane,
+        )
+      let assert Ok(places) = dict.get(listed, objective_id)
+        as "a quest lists the objective"
+      let factions =
+        list.flat_map(places, fn(place) { player_factions({ place.0 }.id) })
+      list.any(place_objective.markers(tables:, objective: row), fn(marker) {
+        let started = started_by_world(marker.world_id)
+        list.any(factions, fn(player) { !fought_by(player, started, pane) })
+      })
+    })
+  }
+  assert unfightable(set.to_list(content_support.kill_objective_ids())) == []
+    as "every kill row has, for each faction its quest allows, a creature of its pane that starts in each world its markers are in and that faction can fight"
+  assert unfightable([4282, 7272, 7491, 7492]) == [4282, 7272, 7491, 7492]
+    as "the four kill rows left on the stand-in have no such creature (the CI test of the table shows their creatures are Friendly to both factions)"
   // A NonPlayer row placed as part of a map object (`active_prop_id` not 0) never
   // moves: `spawn.tsv` holds 630 such rows of 164 creatures, and each one that
   // starts has no run speed.

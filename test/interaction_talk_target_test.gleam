@@ -398,6 +398,7 @@ pub fn a_click_on_a_simple_type_18_target_counts_the_talk_test() -> Nil {
         checklist_index: 5,
       ),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
   assert counted.effects
     == [
