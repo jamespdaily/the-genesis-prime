@@ -60,7 +60,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import BinaryIO, Callable, Mapping
+from typing import BinaryIO, Callable, Iterator, Mapping
 
 TABLE_DIRECTORY = "DB"
 INDEX_NAME = "ClientData.index"
@@ -285,16 +285,14 @@ def aside_of(destination: Path) -> Path:
     return destination.with_name(destination.name + ".old")
 
 
-def stage_files(archive_path: Path, files: Mapping[str, IndexedFile], staging: Path) -> dict[str, str]:
-    """Writes each file of files, keyed by its path under staging, from the
+def archive_contents(archive_path: Path, files: Mapping[str, IndexedFile]) -> Iterator[tuple[str, bytes]]:
+    """Yields (key, content) for each file of files, in order, read from the
     archive at archive_path, each checked against the index's SHA-1 before it
-    is written, creating the folders a key names. Returns the SHA-1 (hex) of
-    each file's content as written, by key. Raises Corrupt naming the file
-    whose block does not match. Touches nothing but staging."""
-    written: dict[str, str] = {}
+    is yielded. Raises Corrupt naming the file whose block does not match.
+    Holds one file's content at a time."""
     with open(archive_path, "rb") as archive:
         blocks, entries = _archive_entries(archive, archive_path.name)
-        for relative, file in files.items():
+        for key, file in files.items():
             if file.sha1 not in entries:
                 raise Corrupt(file.path, "the archive holds no block with the index's SHA-1")
             number, size = entries[file.sha1]
@@ -305,11 +303,21 @@ def stage_files(archive_path: Path, files: Mapping[str, IndexedFile], staging: P
             stored = archive.read(size)
             if hashlib.sha1(stored).digest() != file.sha1:
                 raise Corrupt(file.path, "the block's SHA-1 is not the index's")
-            content = _content(file, stored)
-            target = staging / relative
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(content)
-            written[relative] = hashlib.sha1(content).hexdigest()
+            yield key, _content(file, stored)
+
+
+def stage_files(archive_path: Path, files: Mapping[str, IndexedFile], staging: Path) -> dict[str, str]:
+    """Writes each file of files, keyed by its path under staging, from the
+    archive at archive_path, each checked against the index's SHA-1 before it
+    is written, creating the folders a key names. Returns the SHA-1 (hex) of
+    each file's content as written, by key. Raises Corrupt naming the file
+    whose block does not match. Touches nothing but staging."""
+    written: dict[str, str] = {}
+    for relative, content in archive_contents(archive_path, files):
+        target = staging / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(content)
+        written[relative] = hashlib.sha1(content).hexdigest()
     return written
 
 
