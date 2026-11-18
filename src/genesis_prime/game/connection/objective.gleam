@@ -160,6 +160,7 @@ fn settle(
     place: movement.place(state: entered.movement),
     shown: entered.shown,
     numbers: session.settings.numbers,
+    arrival_objectives: session.settings.arrival_objectives,
     held_objectives: session.settings.held_objectives,
     unix_ms: step.unix_milliseconds(now:),
     now_ms: now.monotonic_ms,

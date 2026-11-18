@@ -122,6 +122,7 @@ fn settled_among(
     ),
     now_ms: 0,
     numbers: spawn_support.numbers,
+    arrival_objectives: set.new(),
     held_objectives: set.new(),
     unix_ms: 0,
   )

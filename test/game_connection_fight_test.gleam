@@ -23,6 +23,7 @@ import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_state
 import genesis_prime/message/cast_result
 import genesis_prime/message/float32
+import genesis_prime/message/movement_face_unit.{MovementFaceUnit}
 import genesis_prime/message/movement_float_vector.{MovementFloatVector}
 import genesis_prime/message/movement_time
 import genesis_prime/message/player_health.{PlayerHealth}
@@ -55,6 +56,7 @@ import genesis_prime/table/spell4_effects
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_kind.{Kind}
 import genesis_prime/world_map/creature_path
+import genesis_prime/world_map/creature_turn
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map.{Left}
 import genesis_prime/world_map/spawn
@@ -1305,17 +1307,22 @@ pub fn a_beasts_aggro_strike_and_leash_reach_the_medics_client_with_the_worked_v
   assert game_connection_support.decoded(leash, 0x0937, unit_health.decode)
     == [UnitHealth(unit_id: 7, health: 52, dead: 0)]
     as "a full 0x937: the leash restores the Beast's 52"
-  let assert [home] =
+  let assert [turn, home] =
     game_connection_support.decoded(leash, 0x0638, unit_movement.decode)
-  let assert [_, relayed_movement.Path(path)] = home.commands
-  let assert [_, end] = path.points
-  assert end
-    == MovementFloatVector(
+    as "the turn to home, then the path home"
+  let assert [_, relayed_movement.FacePoint(point)] = turn.commands
+  let spawn_bits =
+    MovementFloatVector(
       x: float32.to_bits(29.128599166870117),
       y: float32.to_bits(-853.87158203125),
       z: float32.to_bits(-563.18798828125),
     )
-    as "the path home ends at the Beast's spawn"
+  assert MovementFloatVector(x: point.x, y: point.y, z: point.z) == spawn_bits
+    && point.blends == 1
+    as "kind 19 names the Beast's spawn, turning it over half a second"
+  let assert [_, relayed_movement.Path(path)] = home.commands
+  let assert [_, end] = path.points
+  assert end == spawn_bits as "the path home ends at the Beast's spawn"
 }
 
 pub fn a_medic_and_a_beast_striking_each_other_at_one_instant_both_get_their_answers_before_either_deadline_test() -> Nil {
@@ -1966,4 +1973,69 @@ pub fn a_creature_holds_unit_states_effect_becomes_a_tell_to_that_creature_test(
     })
   })
     as "the tell draws nothing for the caster: the client reads no row of the type"
+}
+
+pub fn a_viewer_writes_a_creatures_facing_as_0x638_only_when_the_unit_is_shown_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let faces = fn(face) {
+    client_connection.CreatureFaces(face:, at_ms: support.now_ms)
+  }
+  // Before the creature's 0x262 the client shows no unit 40, and a 0x638 for an unknown unit
+  // is ignored by the client (`opcode.0x638`): nothing is written.
+  let state = game_connection_support.medic_in_world()
+  let #(state, unknown) =
+    game_connection_support.feed(
+      state,
+      beast_news(unit_id: 40, news: faces(creature_turn.Unit(unit_id: 9))),
+    )
+  assert game_connection_support.written_ids(unknown) == []
+    as "a unit not yet shown is not written to"
+  let #(state, _) =
+    game_connection_support.feed(
+      state,
+      game_connection_support.beast_appears(unit_id: 40),
+    )
+  let #(state, shown) =
+    game_connection_support.feed(
+      state,
+      beast_news(unit_id: 40, news: faces(creature_turn.Unit(unit_id: 9))),
+    )
+  let assert [Frame(message_id: 0x0638, body:)] =
+    game_connection_support.heard(shown, game_connection_support.keyed())
+    as "a shown creature's facing is one 0x638"
+  let assert Ok(UnitMovement(unit_id: 40, commands:, ..)) =
+    unit_movement.decode(body)
+  assert commands
+    == [
+      relayed_movement.Time(movement_time.MovementTime(time: support.now_ms)),
+      relayed_movement.FaceUnit(MovementFaceUnit(unit_id: 9, blends: 1)),
+    ]
+    as "kind 0 at the news's time, then kind 18 naming unit 9 with the blend bit set"
+  let #(state, home) =
+    game_connection_support.feed(
+      state,
+      beast_news(
+        unit_id: 40,
+        news: faces(
+          creature_turn.Point(place: place_support.at(
+            world_id: 3460,
+            world_zone_id: 6009,
+            x: 1.0,
+            y: 0.0,
+            z: 0.0,
+          )),
+        ),
+      ),
+    )
+  assert game_connection_support.written_ids(home) == [0x0638]
+    as "a point is written as well"
+  let #(state, _) =
+    game_connection_support.feed(state, beast_news(unit_id: 40, news: Removed))
+  let #(_, removed) =
+    game_connection_support.feed(
+      state,
+      beast_news(unit_id: 40, news: faces(creature_turn.Unit(unit_id: 9))),
+    )
+  assert game_connection_support.written_ids(removed) == []
+    as "a creature the 0x355 removed is written to no more"
 }

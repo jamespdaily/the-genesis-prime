@@ -24,6 +24,8 @@ import genesis_prime/message/generic_error.{GenericError}
 import genesis_prime/message/half_float
 import genesis_prime/message/item_visual.{type ItemVisual}
 import genesis_prime/message/leave_world.{LeaveWorld}
+import genesis_prime/message/movement_face_point.{MovementFacePoint}
+import genesis_prime/message/movement_face_unit.{MovementFaceUnit}
 import genesis_prime/message/movement_float_vector.{MovementFloatVector}
 import genesis_prime/message/movement_path.{MovementPath}
 import genesis_prime/message/movement_rotation.{MovementRotation}
@@ -65,6 +67,7 @@ import genesis_prime/message/vendor_price_slot.{VendorPriceSlot}
 import genesis_prime/step.{type Now}
 import genesis_prime/table/id.{Item2Id}
 import genesis_prime/world_map/creature_path
+import genesis_prime/world_map/creature_turn.{type Face}
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/creature_unit_type.{type CreatureUnitType}
 import genesis_prime/world_map/map
@@ -524,6 +527,44 @@ pub fn placed_frame(
   unit_moved_frame(unit_id:, server_time_ms: time, commands: [
     relayed_movement.Time(MovementTime(time:)),
     relayed_movement.Position(player_unit.standing(place:).0),
+  ])
+}
+
+/// 0x638 that turns a creature, in the map's time of `at_ms`: kind 0, then the rotation the
+/// face is. A unit is faced by kind 18 and a point by kind 19, each with the blend bit set,
+/// so the client turns the creature over half a second and keeps it facing the unit or the
+/// point (`movement_command.kind_18`, `movement_command.kind_19`, `0x140715c00`); a fixed
+/// facing is kind 14 with the bit clear, which takes it at once (`0x140715350`). No kind 2
+/// or 3 is in it: the creature's position is left as it is.
+pub fn face_frame(
+  entered entered: world_entry.Entered,
+  unit_id unit_id: Int,
+  face face: Face,
+  at_ms at_ms: Int,
+) -> Frame {
+  let time =
+    map.server_time(origin_ms: entered.clock_origin_ms, monotonic_ms: at_ms)
+  let turn = case face {
+    creature_turn.Unit(unit_id: faced) ->
+      relayed_movement.FaceUnit(MovementFaceUnit(unit_id: faced, blends: 1))
+    creature_turn.Point(place:) ->
+      relayed_movement.FacePoint(MovementFacePoint(
+        x: float32.to_bits(start_place.x(place)),
+        y: float32.to_bits(start_place.y(place)),
+        z: float32.to_bits(start_place.z(place)),
+        blends: 1,
+      ))
+    creature_turn.Fixed(facing:) ->
+      relayed_movement.Rotation(MovementRotation(
+        yaw: float32.to_bits(facing.yaw),
+        pitch: float32.to_bits(facing.pitch),
+        roll: float32.to_bits(facing.roll),
+        blends: 0,
+      ))
+  }
+  unit_moved_frame(unit_id:, server_time_ms: time, commands: [
+    relayed_movement.Time(MovementTime(time:)),
+    turn,
   ])
 }
 

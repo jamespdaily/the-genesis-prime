@@ -118,6 +118,10 @@ pub type Settings {
     /// the content load (genesis_prime/content/held_objective): the settle leaves them
     /// open (genesis_prime/game/objective `stand_in_scripts`).
     held_objectives: Set(Int),
+    /// The scripted objectives whose text asks only to reach a place, from the content load
+    /// (genesis_prime/content/arrival_objective): the settle completes one when the player
+    /// stands at a marker (genesis_prime/game/objective `script_of`).
+    arrival_objectives: Set(Int),
   )
 }
 

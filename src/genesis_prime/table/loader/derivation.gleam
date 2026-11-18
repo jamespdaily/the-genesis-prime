@@ -6,6 +6,7 @@ import genesis_prime/game/appearance
 import genesis_prime/game/communicator
 import genesis_prime/game/faction_level
 import genesis_prime/game/loadout
+import genesis_prime/game/objective_action
 import genesis_prime/game/objective_link
 import genesis_prime/game/quest_turn_in
 import genesis_prime/game/rating
@@ -36,6 +37,8 @@ import genesis_prime/world_map/creature_attack
 ///   unreadable Prerequisite row fails the load (genesis_prime/game/activate).
 /// - The linked objectives: the quest objectives some creature's row links, built after
 ///   the activations whose prerequisites its links read (genesis_prime/game/objective_link).
+/// - The named objectives: the quest objectives a spell effect advances and an item needs
+///   open (genesis_prime/game/objective_action).
 /// - The shortcut spells: the plan of each spell a cast-a-spell objective names, built
 ///   after the ability trees' sources (genesis_prime/game/shortcut_spell).
 /// - The faction levels: each faction's parent and the level of each pair of factions
@@ -62,6 +65,7 @@ pub fn all() -> List(store.Derivation) {
     spell_area.derivation(),
     activate.derivation(),
     objective_link.derivation(),
+    objective_action.derivation(),
     shortcut_spell.derivation(),
     faction_level.derivation(),
     communicator.derivation(),

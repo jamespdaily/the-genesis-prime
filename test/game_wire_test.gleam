@@ -5755,6 +5755,16 @@ fn read_fight(
   #(game_client.fight_in(frames:), have)
 }
 
+/// Whether the Dagun has been sent a path among the events: a 0x638 with a kind 4 command.
+fn dagun_runs(
+  events events: List(game_client.FightEvent),
+  dagun dagun: Int,
+) -> Bool {
+  list.any(game_client.moves_of(events:, unit: dagun), fn(move) {
+    list.contains(move.0, 4)
+  })
+}
+
 /// Whether a 0x638 of `unit` among the events leaves it at z: a path's end, or the
 /// place a leash in the instant of the chase puts it at.
 fn leaves_unit_at(
@@ -5781,7 +5791,7 @@ pub fn a_bot_entering_a_daguns_ring_is_targeted_and_chased_on_the_whole_server_t
   walk_to(game:, z: dagun_z +. 9.0, clock: 100)
   let #(fight, _) =
     read_fight(game:, have:, found: fn(events) {
-      game_client.moves_of(events:, unit: dagun) != []
+      dagun_runs(events:, dagun:)
       && list.contains(
         events,
         game_client.InCombat(unit_id: own, in_combat: True),
@@ -5798,9 +5808,11 @@ pub fn a_bot_entering_a_daguns_ring_is_targeted_and_chased_on_the_whole_server_t
     )
     && list.contains(fight, game_client.InCombat(unit_id: own, in_combat: True))
     as "both 0x89a: the Dagun's and the bot's own"
-  let assert [#(kinds, ends_at), ..] =
+  let assert [#(turn_kinds, _), #(kinds, ends_at), ..] =
     game_client.moves_of(events: fight, unit: dagun)
-    as "the Dagun runs"
+    as "the Dagun turns, then runs"
+  assert turn_kinds == [0, 18]
+    as "the turn goes before the path: kind 0, then kind 18 naming the bot (a kind 4 path leaves the rotation)"
   assert kinds == [0, 4] as "the chase: kind 0, then the kind 4 path"
   assert ends_at == Some(#(1.5, 2.5, dagun_z +. 9.0 -. 3.5))
     as "to the bot less half the Dagun's reach of 7 (chase_stop_fraction 0.5)"
@@ -5967,7 +5979,7 @@ pub fn a_stealthed_bot_walking_into_a_daguns_ring_gets_no_aggro_and_pressing_ste
   )
   let #(fight, _) =
     read_fight(game:, have:, found: fn(events) {
-      game_client.moves_of(events:, unit: dagun) != []
+      dagun_runs(events:, dagun:)
       && list.contains(
         events,
         game_client.InCombat(unit_id: own, in_combat: True),
@@ -5978,9 +5990,11 @@ pub fn a_stealthed_bot_walking_into_a_daguns_ring_gets_no_aggro_and_pressing_ste
     game_client.Targeted(unit_id: dagun, target_unit_id: own, threat: 1),
   )
     as "leaving stealth inside the ring aggroes as a walk-in does: 0x908 with the aggro threat 1"
-  let assert [#(kinds, ends_at), ..] =
+  let assert [#(turn_kinds, _), #(kinds, ends_at), ..] =
     game_client.moves_of(events: fight, unit: dagun)
-    as "the Dagun runs"
+    as "the Dagun turns, then runs"
+  assert turn_kinds == [0, 18]
+    as "the turn goes before the path: kind 0, then kind 18 naming the bot (a kind 4 path leaves the rotation)"
   assert kinds == [0, 4] as "the chase: kind 0, then the kind 4 path"
   assert ends_at == Some(#(1.5, 2.5, dagun_z +. 9.0 -. 3.5))
     as "to the bot less half the Dagun's reach of 7 (chase_stop_fraction 0.5)"
@@ -6356,7 +6370,8 @@ pub fn a_bot_killed_by_a_dagun_in_its_ring_is_struck_no_more_the_dagun_rests_at_
       game_client.Targeted(unit_id:, ..)
       | game_client.Started(caster_unit_id: unit_id, ..) -> unit_id != dagun
       game_client.Went(cast_id:, ..) -> cast_state.caster_of(cast_id:) != dagun
-      game_client.Moves(unit_id:, ..) -> unit_id != dagun
+      game_client.Moves(unit_id:, kinds:, ..) ->
+        unit_id != dagun || kinds == [0, 14]
       game_client.Threatens(..)
       | game_client.InCombat(..)
       | game_client.LevelIs(..)
@@ -6367,7 +6382,7 @@ pub fn a_bot_killed_by_a_dagun_in_its_ring_is_struck_no_more_the_dagun_rests_at_
       | game_client.HealthIs(..) -> True
     }
   })
-    as "after the Dagun's leash and its home timer the Dagun names no target, starts no cast, strikes and runs nowhere: the body is in no ring"
+    as "after the Dagun's leash and its home timer the Dagun names no target, starts no cast, strikes and runs nowhere (the one 0x638 it is sent is kind 0 then kind 14, the leash's turn to its spawn's facing as it stands at home already): the body is in no ring"
   choose(game:, own:, choice: 1)
   let #(woke, _) =
     read_fight(game:, have:, found: fn(events) {

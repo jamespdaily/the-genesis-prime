@@ -21,11 +21,27 @@ import genesis_prime/world_map/creature_life.{
   type Attackable, Attackable, Hostile,
 }
 import genesis_prime/world_map/creature_path
+import genesis_prime/world_map/creature_turn
 import gleam/dict
+import gleam/float
 import gleam/list
 import gleam/option
 import owned_test
 import place_support
+
+/// The viewer of the pose tests: unit 500, standing at the origin.
+fn a_viewer() -> shown.Viewer {
+  shown.Viewer(
+    unit_id: 500,
+    place: place_support.at(
+      world_id: 3460,
+      world_zone_id: 5967,
+      x: 0.0,
+      y: 0.0,
+      z: 0.0,
+    ),
+  )
+}
 
 const both = Attackable(exile: True, dominion: True)
 
@@ -55,6 +71,8 @@ fn creature(
     in_combat: False,
     held: [],
     unit_states: [],
+    face: option.None,
+    faced_yaw: option.None,
   )
 }
 
@@ -80,7 +98,7 @@ fn picture() -> shown.Picture {
   dict.from_list([
     #(1, creature(x: 1.0, attackable: both, alive: True)),
     #(2, creature(x: 2.0, attackable: both, alive: False)),
-    #(3, ShownPlayer),
+    #(3, ShownPlayer(at: option.None)),
     #(4, creature(x: 4.0, attackable: not_exiles, alive: True)),
     #(5, creature(x: 5.0, attackable: both, alive: True)),
     #(7, creature(x: 7.0, attackable: both, alive: True)),
@@ -224,13 +242,15 @@ fn facing_creature(x x: Float, z z: Float) -> shown.Shown {
     in_combat: False,
     held: [],
     unit_states: [],
+    face: option.None,
+    faced_yaw: option.None,
   )
 }
 
 pub fn a_standing_creatures_pose_is_its_place_and_the_yaw_of_its_0x262_test() -> Nil {
   use <- owned_test.run(5000)
   let picture = dict.from_list([#(1, facing_creature(x: 10.0, z: -20.0))])
-  assert shown.pose_of(picture:, unit_id: 1, now_ms: 0)
+  assert shown.pose_of(picture:, unit_id: 1, now_ms: 0, viewer: a_viewer())
     == Ok(Pose(at: Point(x: 10.0, z: -20.0), yaw: 0.7))
 }
 
@@ -256,13 +276,13 @@ pub fn a_running_creatures_pose_is_where_its_path_puts_it_with_the_yaw_its_path_
         ),
       ),
     ])
-  assert shown.pose_of(picture:, unit_id: 1, now_ms: 1000)
+  assert shown.pose_of(picture:, unit_id: 1, now_ms: 1000, viewer: a_viewer())
     == Ok(Pose(at: Point(x: 0.0, z: 0.0), yaw: 0.7))
     as "at its start"
-  assert shown.pose_of(picture:, unit_id: 1, now_ms: 2000)
+  assert shown.pose_of(picture:, unit_id: 1, now_ms: 2000, viewer: a_viewer())
     == Ok(Pose(at: Point(x: 0.0, z: -10.0), yaw: 0.7))
     as "10 units along after a second, still facing 0.7"
-  assert shown.pose_of(picture:, unit_id: 1, now_ms: 9000)
+  assert shown.pose_of(picture:, unit_id: 1, now_ms: 9000, viewer: a_viewer())
     == Ok(Pose(at: Point(x: 0.0, z: -20.0), yaw: 0.7))
     as "at its end"
 }
@@ -294,10 +314,10 @@ pub fn a_thrown_creature_that_turns_has_the_yaw_of_its_turn_test() -> Nil {
         ),
       ),
     ])
-  assert shown.pose_of(picture:, unit_id: 1, now_ms: 1200)
+  assert shown.pose_of(picture:, unit_id: 1, now_ms: 1200, viewer: a_viewer())
     == Ok(Pose(at: Point(x: 0.0, z: -10.0), yaw: 2.0))
     as "during the flight"
-  assert shown.pose_of(picture:, unit_id: 1, now_ms: 9000)
+  assert shown.pose_of(picture:, unit_id: 1, now_ms: 9000, viewer: a_viewer())
     == Ok(Pose(at: Point(x: 0.0, z: -20.0), yaw: 2.0))
     as "after it"
 }
@@ -314,7 +334,7 @@ pub fn in_group_tests_the_shown_unit_against_the_group_test() -> Nil {
     dict.from_list([
       #(900, ShownCreature(..from, creature_id: Creature2Id(41_604))),
       #(902, ShownCreature(..from, creature_id: Creature2Id(32_668))),
-      #(904, ShownPlayer),
+      #(904, ShownPlayer(at: option.None)),
     ])
   assert shown.in_group(tables:, picture:, group: 5506, unit_id: 900)
     as "unit 900 is of Creature2 41604, which the group lists"
@@ -331,13 +351,21 @@ pub fn a_unit_that_is_not_a_shown_creature_has_no_pose_test() -> Nil {
   let picture =
     dict.from_list([
       #(1, facing_creature(x: 10.0, z: -20.0)),
-      #(2, ShownPlayer),
+      #(2, ShownPlayer(at: option.None)),
       #(3, an_object()),
     ])
-  assert shown.pose_of(picture:, unit_id: 2, now_ms: 0) == Error(Nil)
-  assert shown.pose_of(picture:, unit_id: 3, now_ms: 0) == Error(Nil)
-  assert shown.pose_of(picture:, unit_id: 99, now_ms: 0) == Error(Nil)
-  assert shown.poses_of(picture:, unit_ids: [1, 2, 3, 99], now_ms: 0)
+  assert shown.pose_of(picture:, unit_id: 2, now_ms: 0, viewer: a_viewer())
+    == Error(Nil)
+  assert shown.pose_of(picture:, unit_id: 3, now_ms: 0, viewer: a_viewer())
+    == Error(Nil)
+  assert shown.pose_of(picture:, unit_id: 99, now_ms: 0, viewer: a_viewer())
+    == Error(Nil)
+  assert shown.poses_of(
+      picture:,
+      unit_ids: [1, 2, 3, 99],
+      now_ms: 0,
+      viewer: a_viewer(),
+    )
     == dict.from_list([#(1, Pose(at: Point(x: 10.0, z: -20.0), yaw: 0.7))])
     as "the poses of the units asked for that are shown creatures, and no other"
 }
@@ -418,4 +446,218 @@ pub fn a_unit_state_is_held_ended_by_its_number_and_cleared_at_death_test() -> N
     )
     == picture()
     as "nor does a unit the client does not show"
+}
+
+// ---- a creature that faces a unit, a point or a way ----
+
+/// A quarter turn: the yaw that faces a target along -x from a unit on the origin, by the
+/// client's own direction (`movement_command.kind_14.facing`, `area.bearing` with yaw 0:
+/// atan2(-dx, -dz)); a target straight ahead along -z is yaw 0.
+const quarter_turn = 1.5707963267948966
+
+fn faced_creature(face face: creature_turn.Face) -> shown.Picture {
+  let assert ShownCreature(..) as from = facing_creature(x: 0.0, z: 0.0)
+  dict.from_list([#(1, ShownCreature(..from, face: option.Some(face)))])
+}
+
+pub fn a_shown_creature_that_faces_the_viewer_is_posed_along_the_bearing_to_the_viewer_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The creature stands on the origin; the viewer's unit 500 stands 10 along -x, a quarter
+  // turn from straight ahead.
+  let viewer =
+    shown.Viewer(
+      unit_id: 500,
+      place: place_support.at(
+        world_id: 3460,
+        world_zone_id: 5967,
+        x: -10.0,
+        y: 0.0,
+        z: 0.0,
+      ),
+    )
+  let picture = faced_creature(face: creature_turn.Unit(unit_id: 500))
+  let assert Ok(pose) = shown.pose_of(picture:, unit_id: 1, now_ms: 0, viewer:)
+  assert float.loosely_equals(pose.yaw, quarter_turn, tolerating: 0.000001)
+    as "it faces the viewer, not the 0.7 of its 0x262"
+  assert pose.at == Point(x: 0.0, z: 0.0)
+    as "the creature stays where it stands"
+  assert shown.pose_of(
+      picture: faced_creature(face: creature_turn.Unit(unit_id: 501)),
+      unit_id: 1,
+      now_ms: 0,
+      viewer:,
+    )
+    == Ok(Pose(at: Point(x: 0.0, z: 0.0), yaw: 0.7))
+    as "a unit the picture has no place for leaves the yaw as it was, as the client leaves it"
+}
+
+pub fn a_creature_that_faces_another_player_is_posed_toward_that_player_where_the_last_position_command_put_it_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Player B's picture: the creature faces player A (unit 501), whom B's client shows at
+  // 10 along +x (minus a quarter turn) once a position command put it there.
+  let before =
+    dict.insert(
+      faced_creature(face: creature_turn.Unit(unit_id: 501)),
+      501,
+      ShownPlayer(at: option.None),
+    )
+  assert shown.pose_of(
+      picture: before,
+      unit_id: 1,
+      now_ms: 0,
+      viewer: a_viewer(),
+    )
+    == Ok(Pose(at: Point(x: 0.0, z: 0.0), yaw: 0.7))
+    as "before A's first position command the picture has no place for A"
+  let picture =
+    shown.with_player_at(
+      picture: before,
+      unit_id: 501,
+      at: Point(x: 10.0, z: 0.0),
+    )
+  let assert Ok(pose) =
+    shown.pose_of(picture:, unit_id: 1, now_ms: 0, viewer: a_viewer())
+  assert float.loosely_equals(
+    pose.yaw,
+    0.0 -. quarter_turn,
+    tolerating: 0.000001,
+  )
+    as "the creature faces A, as B's client shows it"
+  let moved =
+    shown.with_player_at(picture:, unit_id: 501, at: Point(x: -10.0, z: 0.0))
+  let assert Ok(pose) =
+    shown.pose_of(picture: moved, unit_id: 1, now_ms: 0, viewer: a_viewer())
+  assert float.loosely_equals(pose.yaw, quarter_turn, tolerating: 0.000001)
+    as "and follows A to the other side"
+}
+
+pub fn a_creature_whose_target_stands_on_it_keeps_the_yaw_it_showed_last_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The creature stands on the origin facing player A (unit 501), who stood 10 along +x
+  // (minus a quarter turn) and then steps onto the creature's own ground point: the client
+  // holds the rotation it had (`movement_command.kind_18`), not the 0x262's 0.7.
+  let picture =
+    shown.with_player_at(
+      picture: dict.insert(
+        faced_creature(face: creature_turn.Unit(unit_id: 501)),
+        501,
+        ShownPlayer(at: option.None),
+      ),
+      unit_id: 501,
+      at: Point(x: 10.0, z: 0.0),
+    )
+  let onto = fn(picture) {
+    shown.with_player_at(picture:, unit_id: 501, at: Point(x: 0.0, z: 0.0))
+  }
+  let resolved =
+    onto(shown.with_resolved(picture:, now_ms: 0, viewer: a_viewer()))
+  let assert Ok(pose) =
+    shown.pose_of(picture: resolved, unit_id: 1, now_ms: 0, viewer: a_viewer())
+  assert float.loosely_equals(
+    pose.yaw,
+    0.0 -. quarter_turn,
+    tolerating: 0.000001,
+  )
+    as "A stands on the creature: it keeps facing where A stood"
+  let moved =
+    onto(shown.with_resolved(picture: resolved, now_ms: 0, viewer: a_viewer()))
+  assert shown.pose_of(
+      picture: moved,
+      unit_id: 1,
+      now_ms: 0,
+      viewer: a_viewer(),
+    )
+    == shown.pose_of(
+      picture: resolved,
+      unit_id: 1,
+      now_ms: 0,
+      viewer: a_viewer(),
+    )
+    as "a second move on the creature leaves the yaw held"
+  // After a fixed rotation the yaw it keeps is that rotation's.
+  let turned =
+    shown.with_face(
+      picture:,
+      unit_id: 1,
+      face: creature_turn.Fixed(facing: start_place.Facing(
+        yaw: 2.5,
+        pitch: 0.0,
+        roll: 0.0,
+      )),
+    )
+  let fixed =
+    onto(shown.with_face(
+      picture: turned,
+      unit_id: 1,
+      face: creature_turn.Unit(unit_id: 501),
+    ))
+  assert shown.pose_of(
+      picture: fixed,
+      unit_id: 1,
+      now_ms: 0,
+      viewer: a_viewer(),
+    )
+    == Ok(Pose(at: Point(x: 0.0, z: 0.0), yaw: 2.5))
+    as "a creature turned to a fixed way, then to a unit standing on it, keeps the fixed way"
+}
+
+pub fn a_creature_that_faces_a_point_or_a_fixed_way_is_posed_so_and_a_turning_path_clears_the_face_test() -> Nil {
+  use <- owned_test.run(5000)
+  let home =
+    place_support.at(
+      world_id: 3460,
+      world_zone_id: 5967,
+      x: 0.0,
+      y: 0.0,
+      z: -10.0,
+    )
+  let assert Ok(ahead) =
+    shown.pose_of(
+      picture: faced_creature(face: creature_turn.Point(place: home)),
+      unit_id: 1,
+      now_ms: 0,
+      viewer: a_viewer(),
+    )
+  assert float.loosely_equals(ahead.yaw, 0.0, tolerating: 0.000001)
+    as "a point 10 along -z is straight ahead: yaw 0, not the 0x262's 0.7"
+  assert shown.pose_of(
+      picture: faced_creature(
+        face: creature_turn.Fixed(facing: start_place.Facing(
+          yaw: 2.5,
+          pitch: 0.0,
+          roll: 0.0,
+        )),
+      ),
+      unit_id: 1,
+      now_ms: 0,
+      viewer: a_viewer(),
+    )
+    == Ok(Pose(at: Point(x: 0.0, z: 0.0), yaw: 2.5))
+    as "a fixed facing is its yaw"
+  let faced = faced_creature(face: creature_turn.Unit(unit_id: 500))
+  let placed =
+    shown.with_path(
+      picture: faced,
+      unit_id: 1,
+      path: creature_path.Standing(at: home),
+    )
+  let assert Ok(ShownCreature(face: kept, ..)) = dict.get(placed, 1)
+  assert kept == option.Some(creature_turn.Unit(unit_id: 500))
+    as "a path that does not turn leaves the face"
+  let turned =
+    shown.with_path(
+      picture: faced,
+      unit_id: 1,
+      path: creature_path.Timed(
+        first: #(0, home),
+        rest: [],
+        turned_to: option.Some(start_place.Facing(
+          yaw: 1.0,
+          pitch: 0.0,
+          roll: 0.0,
+        )),
+      ),
+    )
+  let assert Ok(ShownCreature(face: cleared, ..)) = dict.get(turned, 1)
+  assert cleared == option.None as "a path that turns it replaces the face"
 }

@@ -124,8 +124,10 @@ pub fn repeated(tables tables: table_store.Tables) -> List(QuestObjective) {
   })
 }
 
-/// Whether the position is at a marker of the type 22 objective of this
-/// QuestObjective id.
+/// Whether the position is at a marker of the objective of this QuestObjective id, whatever
+/// its type: the objective's markers are the WorldLocation2 rows `marker_ids` names, and any
+/// one reached counts. The caller names the objectives a position decides (the type 22
+/// ones and the place scripts of `objective.script_of`).
 pub fn at_marker(
   tables tables: table_store.Tables,
   objective_id objective_id: Int,
@@ -133,8 +135,7 @@ pub fn at_marker(
 ) -> Bool {
   case quest_objective.get(tables:, id: QuestObjectiveId(objective_id)) {
     Ok(row) ->
-      is_place(row:)
-      && list.any(markers(tables:, objective: row), fn(location) {
+      list.any(markers(tables:, objective: row), fn(location) {
         reached(location:, place:)
       })
     Error(Nil) -> False

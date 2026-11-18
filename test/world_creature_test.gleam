@@ -73,6 +73,7 @@ import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_faction
 import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_registry
+import genesis_prime/world_map/creature_turn
 import genesis_prime/world_map/map
 import genesis_prime/world_map/registry.{type MapProcess}
 import genesis_prime/world_map/spawn
@@ -2897,4 +2898,195 @@ pub fn a_struck_yeti_snowstalker_strikes_with_maul_then_slam_test() -> Nil {
     && again.spell4_id != 5649
     as "none is the default attack"
   world_support.stop(world: roaring.world)
+}
+
+/// What a connection was sent of a creature's aggro and turns, as the test reads it.
+type Seen {
+  Targeted(unit_id: Int)
+  Turned(face: creature_turn.Face)
+  Ran(path: creature_path.Path)
+}
+
+/// The news of a fight the test reads, none for any other message.
+fn seen_of(message: Message) -> Result(Seen, Nil) {
+  case message {
+    ForStay(
+      sent: SentByPeer(PeerNews(
+        news: client_connection.Targeting(target_unit_id:, ..),
+        ..,
+      )),
+      ..,
+    ) -> Ok(Targeted(target_unit_id))
+    ForStay(
+      sent: SentByPeer(PeerNews(
+        news: client_connection.CreatureFaces(face:, ..),
+        ..,
+      )),
+      ..,
+    ) -> Ok(Turned(face))
+    ForStay(
+      sent: SentByPeer(PeerNews(
+        news: client_connection.CreatureMoved(path:),
+        ..,
+      )),
+      ..,
+    ) -> Ok(Ran(path))
+    ForStay(..)
+    | client_connection.SentBySessions(..)
+    | client_connection.SentByChat(..) -> Error(Nil)
+  }
+}
+
+/// What the connection is sent up to the next path of the creature, in order.
+fn seen_until_the_path(received received: Subject(Message)) -> List(Seen) {
+  open_wait.named("the creature's path", fn() {
+    seen_until_a_path(received:, so_far: [])
+  })
+}
+
+fn seen_until_a_path(
+  received received: Subject(Message),
+  so_far so_far: List(Seen),
+) -> List(Seen) {
+  case world_watch_support.taken(received:, wanted: seen_of) {
+    Ran(..) as path -> list.reverse([path, ..so_far])
+    Targeted(..) as seen | Turned(..) as seen ->
+      seen_until_a_path(received:, so_far: [seen, ..so_far])
+  }
+}
+
+/// The player of `connection` moves to (`x`, `z`), the nth move.
+fn moved_round(
+  run run: MapProcess,
+  connection connection: Int,
+  x x: Float,
+  z z: Float,
+  seq seq: Int,
+) -> Nil {
+  let _sent =
+    service.tell_subject(
+      run.subject,
+      map.Moved(
+        connection: ConnectionId(connection),
+        place: place_support.at(
+          world_id: 3460,
+          world_zone_id: spawn_support.warfare_woods,
+          x:,
+          y: 0.0,
+          z:,
+        ),
+        seq:,
+      ),
+    )
+  Nil
+}
+
+pub fn a_creature_fighting_a_player_standing_apart_faces_the_player_through_chase_circling_and_leash_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let time = driven_time.new()
+  let world =
+    world_watch_support.one_beast_timed(
+      time:,
+      respawn_ms: 60_000,
+      idle_stop_ms: 60_000,
+    )
+  let run = world_watch_support.started(world)
+  let first = world_support.connection(world:, id: 1)
+  let _first_unit = world_watch_support.join(run:, connection: 1)
+  let appeared =
+    world_watch_support.next(
+      received: first,
+      what: "the creature's 0x262",
+      wanted: world_watch_support.appearance,
+    )
+  let pid =
+    world_watch_support.creature_pid(
+      world:,
+      run:,
+      unit_id: appeared.unit_id,
+      life: 2,
+    )
+  // Player 1 (unit 10) strikes from 12 units off, not on the creature's point.
+  struck_from(
+    world:,
+    run:,
+    connection: 1,
+    unit_id: appeared.unit_id,
+    x: 12.0,
+    damage: 1,
+    cast_id: 1,
+  )
+  driven_time.settled(pid)
+  let assert [Targeted(10), Turned(creature_turn.Unit(10)), Ran(path)] =
+    seen_until_the_path(received: first)
+    as "the target, the turn to the player's unit, then the path: the order the client turns in"
+  let assert creature_path.Running(to:, ..) = path
+    as "the creature runs toward the player"
+  // The turn on the wire: kind 0 then kind 18 naming the player, blend bit set.
+  let #(_, entered) =
+    world_entry_support.entry(
+      tables: character_tables.shared(),
+      character: world_entry_support.character(class: 4, faction: 167, level: 1),
+    )
+  let frame =
+    frames.face_frame(
+      entered:,
+      unit_id: appeared.unit_id,
+      face: creature_turn.Unit(10),
+      at_ms: 1000,
+    )
+  let assert Ok(movement) = unit_movement.decode(frame.body)
+  let assert [_, relayed_movement.FaceUnit(face)] = movement.commands
+    as "kind 0, then kind 18"
+  assert face.unit_id == 10 && face.blends == 1
+    as "naming player 1's unit, turning over half a second"
+  // The player circles the creature inside reach of the path's end: the client keeps it
+  // facing the player, so nothing at all is sent.
+  let path_end_x = start_place.x(to)
+  moved_round(run:, connection: 1, x: path_end_x +. 0.3, z: 0.0, seq: 2)
+  moved_round(run:, connection: 1, x: path_end_x, z: 0.3, seq: 3)
+  moved_round(run:, connection: 1, x: path_end_x -. 0.3, z: 0.0, seq: 4)
+  moved_round(run:, connection: 1, x: path_end_x, z: 0.0 -. 0.3, seq: 5)
+  // The four moves are the map's to forward: the map takes them, then the creature has what
+  // the map forwarded, before the connection's output is read.
+  driven_time.settled(run.pid)
+  driven_time.settled(pid)
+  assert sent_so_far(world:, id: 1, received: first, wanted: seen_of) == []
+    as "four moves round the creature send no turn and no path"
+  // Half a second on, the creature has run 5 of its 8 units. A second player entering
+  // mid-fight is sent the current turn after the 0x262.
+  driven_time.advance(time:, ms: 500)
+  driven_time.settled(pid)
+  let second = world_support.connection(world:, id: 2)
+  let _second_unit = world_watch_support.join(run:, connection: 2)
+  let _appeared =
+    world_watch_support.next(
+      received: second,
+      what: "the creature's 0x262 for player 2",
+      wanted: world_watch_support.appearance,
+    )
+  let assert [Targeted(10), Turned(creature_turn.Unit(10)), Ran(..)] =
+    seen_until_the_path(received: second)
+    as "the arriving viewer's client is told the target and turned to it before the path"
+  // The player leaves: the leash turns the creature to its spawn's place, walks it home, and on
+  // arrival gives it the spawn's facing.
+  move_to(run:, connection: 1, x: far)
+  let assert [Turned(creature_turn.Point(place:)), Ran(home_path)] =
+    seen_until_the_path(received: second)
+    as "kind 19 toward home goes before the walk home"
+  let spawn = spawn_support.battle_beast(number: 1, x: 0.0)
+  assert place == spawn.place
+    && creature_path.end(path: home_path) == spawn.place
+    as "the point and the walk are the spawn's place"
+  driven_time.advance(time:, ms: 60_000)
+  let assert Turned(arrived) =
+    world_watch_support.next(
+      received: second,
+      what: "the creature's turn at home",
+      wanted: seen_of,
+    )
+    as "on arrival one rotation"
+  assert arrived == creature_turn.Fixed(facing: start_place.facing(spawn.place))
+    as "a kind 14 with the facing of the spawn's 0x262"
+  world_support.stop(world:)
 }

@@ -421,7 +421,7 @@ fn used_unit(
     }
     let link_of = fn(row, index) { link_of(unit_id, row, index) }
     case one {
-      shown.ShownPlayer -> Error(Nil)
+      shown.ShownPlayer(..) -> Error(Nil)
       shown.ShownObject(place:, hit_radius:, ..) ->
         used_unit_at(
           tables:,
@@ -563,7 +563,7 @@ fn activate_target(
   fn(unit_id) {
     case dict.get(picture, unit_id) {
       Error(Nil) -> activate.Unseen
-      Ok(shown.ShownPlayer) -> activate.AnotherPlayer
+      Ok(shown.ShownPlayer(..)) -> activate.AnotherPlayer
       Ok(shown.ShownCreature(
         creature_id:,
         checklist_index:,
@@ -855,7 +855,7 @@ fn counted_target(
   use one <- result.try(dict.get(picture, unit_id))
   case one {
     shown.ShownCreature(alive: False, ..) if alive_at_press -> Error(Nil)
-    shown.ShownCreature(..) | shown.ShownPlayer | shown.ShownObject(..) ->
+    shown.ShownCreature(..) | shown.ShownPlayer(..) | shown.ShownObject(..) ->
       shown.target_of(tables:, shown: one)
   }
 }
@@ -1239,6 +1239,7 @@ fn procs_fired(
             picture: entered.shown,
             unit_ids:,
             now_ms: now.monotonic_ms,
+            viewer: world_entry.viewer(entered:),
           ),
           indexes: shown.checklist_indexes_of(picture: entered.shown, unit_ids:),
           units: shown.first_units_of(
@@ -1412,6 +1413,7 @@ fn strike_begins(
         picture: entered.shown,
         unit_ids:,
         now_ms: now.monotonic_ms,
+        viewer: world_entry.viewer(entered:),
       ),
       indexes: shown.checklist_indexes_of(picture: entered.shown, unit_ids:),
       units: shown.first_units_of(
@@ -1581,6 +1583,7 @@ fn strike_carried_out(
               picture: entered.shown,
               unit_ids:,
               now_ms: now.monotonic_ms,
+              viewer: world_entry.viewer(entered:),
             ),
             indexes: shown.checklist_indexes_of(
               picture: entered.shown,
@@ -1674,6 +1677,7 @@ pub fn creature_news_frames(
     | client_connection.CastInterrupted(..)
     | client_connection.CreatureMoved(..)
     | client_connection.CreaturePlaced(..)
+    | client_connection.CreatureFaces(..)
     | client_connection.Targeting(..)
     | client_connection.Threat(..)
     | client_connection.CombatState(..)

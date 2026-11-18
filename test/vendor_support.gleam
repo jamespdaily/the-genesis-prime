@@ -12,6 +12,7 @@ import genesis_prime/world_map/creature_life.{Hostile}
 import genesis_prime/world_map/creature_path
 import gleam/dict
 import gleam/list
+import gleam/option
 import spawn_support
 
 /// The Item2 ids a test stocks: the first three of Supplier Ingavak's list, rows of the
@@ -98,8 +99,10 @@ pub fn picture_with_walker(gap gap: Float) -> shown.Picture {
         in_combat: False,
         held: [],
         unit_states: [],
+        face: option.None,
+        faced_yaw: option.None,
       ),
     ),
-    #(9, shown.ShownPlayer),
+    #(9, shown.ShownPlayer(at: option.None)),
   ])
 }

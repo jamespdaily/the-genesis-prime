@@ -47,7 +47,14 @@ pub type Gap {
 }
 
 /// Every site in `src/`, and the open issue whose work removes it.
-pub const known_gaps: List(Gap) = []
+pub const known_gaps: List(Gap) = [
+  Gap(
+    path: "src/genesis_prime/game/objective_action.gleam",
+    function: "derivation",
+    sites: 1,
+    issue: 940,
+  ),
+]
 
 /// One raw-type site: the function that holds it and its line.
 type Site {

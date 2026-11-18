@@ -458,6 +458,32 @@ pub type Readiness {
   ClientReady
 }
 
+/// The player's own unit and where it stands, which a creature that faces the player is
+/// turned toward (genesis_prime/game/shown `pose_of`).
+pub fn viewer(entered entered: Entered) -> shown.Viewer {
+  shown.Viewer(
+    unit_id: entered.unit_id,
+    place: movement.place(entered.movement),
+  )
+}
+
+/// The player's pictured creatures holding the yaw their clients show at monotonic time
+/// `now_ms` (genesis_prime/game/shown `with_resolved`): called before a move or news changes
+/// where a creature or the unit it faces stands.
+pub fn with_creatures_resolved(
+  entered entered: Entered,
+  now_ms now_ms: Int,
+) -> Entered {
+  Entered(
+    ..entered,
+    shown: shown.with_resolved(
+      picture: entered.shown,
+      now_ms:,
+      viewer: viewer(entered:),
+    ),
+  )
+}
+
 /// The readiness a move replaces: a placed player's own `before`, any other as it is, so
 /// a move before the echo of another keeps the readiness before both.
 pub fn before_the_move(readiness readiness: Readiness) -> Readiness {
@@ -735,6 +761,7 @@ pub fn joined(
   numbers numbers: GameNumbers,
   defaults defaults: List(#(UnitProperty2Id, Float)),
   chain chain: tutorial.Chain,
+  arrival_objectives arrival_objectives: Set(Int),
   held_objectives held_objectives: Set(Int),
   tables tables: table_store.Tables,
   now now: Now,
@@ -812,6 +839,7 @@ pub fn joined(
               items:,
               place:,
               numbers:,
+              arrival_objectives:,
               held_objectives:,
               tables:,
               now:,
@@ -1000,6 +1028,7 @@ fn quest_log_sent(
   items items: List(store.HeldItem),
   place place: Place,
   numbers numbers: GameNumbers,
+  arrival_objectives arrival_objectives: Set(Int),
   held_objectives held_objectives: Set(Int),
   tables tables: table_store.Tables,
   now now: Now,
@@ -1015,6 +1044,7 @@ fn quest_log_sent(
           place:,
           shown: dict.new(),
           numbers:,
+          arrival_objectives:,
           held_objectives:,
           unix_ms: step.unix_milliseconds(now:),
           now_ms: now.monotonic_ms,

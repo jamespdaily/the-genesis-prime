@@ -59,6 +59,7 @@ import genesis_prime/store
 import genesis_prime/table/id.{type PrerequisiteId}
 import genesis_prime/world_map/creature_life.{type Attackable, type Hostile}
 import genesis_prime/world_map/creature_path.{type Path}
+import genesis_prime/world_map/creature_turn.{type Face}
 import genesis_prime/world_map/creature_unit_type.{type CreatureUnitType}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId}
@@ -283,6 +284,12 @@ pub type News {
   /// at once (`0x1407138f0`, `0x140714120`); the viewer
   /// keeps it standing there for its picture.
   CreaturePlaced(place: Place, at_ms: Int)
+  /// A creature's rotation changes to `face` from monotonic time `at_ms`: 0x638 of kind 0, the
+  /// map's time, and kind 18 (a unit), kind 19 (a point) or kind 14 (a fixed facing), written
+  /// when the viewer's client shows the unit; the viewer keeps the face for its picture
+  /// (genesis_prime/world_map/creature_turn, genesis_prime/game/shown). It moves nothing: a
+  /// path and a place leave the rotation as it was.
+  CreatureFaces(face: Face, at_ms: Int)
   /// The unit targets `target_unit_id` with `threat`: 0x908 (opcode.0x908).
   Targeting(target_unit_id: Int, threat: Int)
   /// The unit holds `threat` toward `other_unit_id`, 0 for none: 0x90a

@@ -1826,12 +1826,13 @@ fn control_ended(
   now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
   let was_still = still(state:)
+  let was_held = turn_held(state:)
   let #(control, effects) =
     creature_control.ended(state: state.control, number:)
   let state = State(..state, control:)
   let #(state, resumed) = case was_still && !still(state:) {
     True -> fought(state:, input: creature_fight.ControlEnded, now_ms:)
-    False -> #(state, [])
+    False -> turn_reconsidered(state:, was_held:, now_ms:)
   }
   #(state, Effects(list.append(carried(state:, effects:), resumed)))
 }
@@ -1898,41 +1899,47 @@ fn fought(
       now_ms:,
     )
   let state = State(..state, fight:)
-  list.fold(effects, #(state, []), fn(so_far, effect) {
-    let #(state, done) = so_far
-    let #(state, more) = case effect {
-      creature_fight.ToViewers(news:) -> #(state, to_viewers(state:, news:))
-      creature_fight.ToPlayer(to:, stay:, told:) -> #(state, [
-        OwnEffect(Send(to: Connection(to), message: FightTold(stay:, told:))),
-      ])
-      creature_fight.RestoreHealth -> {
-        let life = creature_life.new(body: state.body)
-        #(
-          State(..state, life:),
-          to_viewers(
-            state:,
-            news: client_connection.Health(
-              health: creature_life.health(life:),
-              dead: False,
+  let was_held = turn_held(state:)
+  let #(state, carried_out) =
+    list.fold(effects, #(state, []), fn(so_far, effect) {
+      let #(state, done) = so_far
+      let #(state, more) = case effect {
+        creature_fight.ToViewers(news:) -> #(state, to_viewers(state:, news:))
+        creature_fight.ToPlayer(to:, stay:, told:) -> #(state, [
+          OwnEffect(Send(to: Connection(to), message: FightTold(stay:, told:))),
+        ])
+        creature_fight.RestoreHealth -> {
+          let life = creature_life.new(body: state.body)
+          #(
+            State(..state, life:),
+            to_viewers(
+              state:,
+              news: client_connection.Health(
+                health: creature_life.health(life:),
+                dead: False,
+              ),
             ),
-          ),
-        )
+          )
+        }
+        creature_fight.ChargeInterrupted(cast_id:) ->
+          guard_stepped(
+            state:,
+            input: creature_guard.Interrupted(charge_cast: cast_id),
+            now_ms:,
+          )
+        creature_fight.StartTimer(timer:, after_ms:) -> #(state, [
+          OwnEffect(step.StartServiceTimer(timer: timer_id(timer:), after_ms:)),
+        ])
+        creature_fight.CancelTimer(timer:) -> #(state, [
+          OwnEffect(step.CancelServiceTimer(timer: timer_id(timer:))),
+        ])
       }
-      creature_fight.ChargeInterrupted(cast_id:) ->
-        guard_stepped(
-          state:,
-          input: creature_guard.Interrupted(charge_cast: cast_id),
-          now_ms:,
-        )
-      creature_fight.StartTimer(timer:, after_ms:) -> #(state, [
-        OwnEffect(step.StartServiceTimer(timer: timer_id(timer:), after_ms:)),
-      ])
-      creature_fight.CancelTimer(timer:) -> #(state, [
-        OwnEffect(step.CancelServiceTimer(timer: timer_id(timer:))),
-      ])
-    }
-    #(state, list.append(done, more))
-  })
+      #(state, list.append(done, more))
+    })
+  // An effect can open the guard (`ChargeInterrupted`) after the step chose its turn by the
+  // creature as it was.
+  let #(state, reconsidered) = turn_reconsidered(state:, was_held:, now_ms:)
+  #(state, list.append(carried_out, reconsidered))
 }
 
 /// What the creature fights with: its unit and address, its spawn as home, its
@@ -1962,7 +1969,28 @@ fn fighter_of(state state: State) -> Fighter {
     guard_casts: creature_guard.live_casts(state: state.guard),
     hit_radius: state.body.combat.hit_radius,
     specials: state.body.combat.specials,
+    turn_held: turn_held(state:),
   )
+}
+
+/// Whether the creature holds a Stun, Knockdown or Knockback, or is opened: it stands as it
+/// faces and does not turn to its target (`creature_fight.Fighter.turn_held`, a server's choice).
+fn turn_held(state state: State) -> Bool {
+  creature_control.hard_held(state: state.control)
+  || creature_guard.opened(state: state.guard)
+}
+
+/// The fight turns, or stands, as it now wants when whether the creature may turn changed with
+/// no other change to the fight: a state that ended while another still holds the creature, or
+/// the guard that opened or closed. A change that also lets the creature run again is the
+/// fight's `ControlEnded`, which turns it too.
+fn turn_reconsidered(
+  state state: State,
+  was_held was_held: Bool,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect(ServiceEffect(Outgoing)))) {
+  use <- bool.guard(when: turn_held(state:) == was_held, return: #(state, []))
+  fought(state:, input: creature_fight.Reconsidered, now_ms:)
 }
 
 /// Whether the creature holds a state that stops its run, or is opened
@@ -2036,11 +2064,12 @@ fn guard_timer_fired(
   now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
   let was_still = still(state:)
+  let was_held = turn_held(state:)
   let #(state, effects) =
     guard_stepped(state:, input: creature_guard.TimerFired(timer:), now_ms:)
   let #(state, resumed) = case was_still && !still(state:) {
     True -> fought(state:, input: creature_fight.ControlEnded, now_ms:)
-    False -> #(state, [])
+    False -> turn_reconsidered(state:, was_held:, now_ms:)
   }
   #(state, Effects(list.append(effects, resumed)))
 }

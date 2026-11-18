@@ -235,6 +235,7 @@ pub fn joined_state(
       numbers: spawn_support.numbers,
       defaults: unit_properties.defaults(tables:),
       chain: tutorial_support.none(),
+      arrival_objectives: set.new(),
       held_objectives: set.new(),
       tables:,
       now:,

@@ -64,10 +64,11 @@ import genesis_prime/message/quest_periodic_reset.{QuestPeriodicReset}
 import genesis_prime/message/quest_state.{QuestState}
 import genesis_prime/step.{type Now}
 import genesis_prime/store.{type QuestRow, ActiveQuest, QuestRow}
-import genesis_prime/table/id.{Quest2Id, QuestObjectiveId}
+import genesis_prime/table/id.{Quest2Id, QuestObjectiveId, WorldLocation2Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest2.{type Quest2}
 import genesis_prime/table/quest_objective
+import genesis_prime/table/world_location2
 import genesis_prime/world_map/game_number.{type GameNumbers}
 import genesis_prime/world_map/map_id.{type MapId}
 import gleam/bool
@@ -842,8 +843,8 @@ pub fn reset_due(
 /// its reward pane (0 for none), and whether it counts its progress as bits
 /// (`0x1405517a0`), its time limit in milliseconds (`maxTimeAllowedMS`, 0 for none), and
 /// whether it names a place to go to (`marked`: one of its four `worldLocationsIdIndicator`
-/// columns is not 0, as `place_objective.marker_ids` reads them; `place_objective` imports
-/// this module, so it cannot be called from here).
+/// columns names a WorldLocation2 row the table holds, as `place_objective.markers` reads
+/// them; `place_objective` imports this module, so it cannot be called from here).
 pub type Objective {
   Objective(
     objective_id: Int,
@@ -906,6 +907,23 @@ pub fn quest_of(
   Quest(id:, objectives:)
 }
 
+/// The places each QuestObjective is listed at, by its id: for each quest that lists it,
+/// the quest as the log reads it, the objective's index there and the objective. A quest
+/// whose row cannot be read is left out.
+pub fn listed_objectives(
+  tables tables: table_store.Tables,
+) -> Dict(Int, List(#(Quest, Int, Objective))) {
+  quest2.all(tables)
+  |> list.filter_map(fn(row) { quest_of(tables:, id: row.id) })
+  |> list.fold(dict.new(), fn(listed, quest) {
+    list.index_fold(quest.objectives, listed, fn(listed, objective, index) {
+      dict.upsert(listed, objective.objective_id, fn(places) {
+        [#(quest, index, objective), ..option.unwrap(places, [])]
+      })
+    })
+  })
+}
+
 /// One QuestObjective row as the client keeps it.
 fn objective_of(
   tables tables: table_store.Tables,
@@ -930,7 +948,13 @@ fn objective_of(
         row.world_locations_id_indicator02,
         row.world_locations_id_indicator03,
       ],
-      fn(marker_id) { marker_id != 0 },
+      fn(marker_id) {
+        marker_id != 0
+        && result.is_ok(world_location2.get(
+          tables:,
+          id: WorldLocation2Id(marker_id),
+        ))
+      },
     ),
   )
 }

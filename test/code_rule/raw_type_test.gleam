@@ -329,7 +329,7 @@ pub fn each_known_gap_names_an_open_issue_and_a_new_site_fails_test() -> Nil {
   // 20 times the body.
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
-  let open_issues: List(Int) = []
+  let open_issues: List(Int) = [940]
   assert list.all(raw_type.known_gaps, fn(gap) {
     list.contains(open_issues, gap.issue)
   })
