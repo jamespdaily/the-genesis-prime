@@ -30,6 +30,7 @@ import experience_support
 import fixture_tables
 import game_connection_support as connection_support
 import genesis_prime/game/communicator
+import genesis_prime/game/held_objective
 import genesis_prime/game/objective.{
   type Advanced, Advanced, CompleteByServer, SendProgress, SendState,
 }
@@ -968,7 +969,7 @@ pub fn every_contentfinder_instance_row_is_held_test() -> Nil {
   use <- owned_test.run(300_000)
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
-  let held = content_support.held_objective_ids()
+  let held = content_support.objective_ids(table: held_objective.table)
   let rows = visible_rows(tables:)
   // Quest2.questContentFinderTypeEnum 1 to 4 name an instance, an adventure, a dungeon or
   // a match the quest is done in; 5 names "Equip the item" quests of no event.
@@ -996,7 +997,8 @@ pub fn every_stand_in_row_completes_and_every_held_row_stays_open_test() -> Nil 
   use <- owned_test.run(300_000)
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
-  let held = set.to_list(content_support.held_objective_ids())
+  let held =
+    set.to_list(content_support.objective_ids(table: held_objective.table))
   // For each quest with a visible stand-in, a player having done every other required
   // objective that is open, until none more is: the free stand-ins must all be sent and
   // the held ones none, over as many settles as the player's work between them needs.

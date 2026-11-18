@@ -27,6 +27,7 @@ import content_support
 import fixture_tables
 import genesis_prime/content/refusal.{RowId}
 import genesis_prime/game/activate
+import genesis_prime/game/arrival_objective
 import genesis_prime/game/click_objective
 import genesis_prime/game/effect_kind
 import genesis_prime/game/faction_level
@@ -284,7 +285,9 @@ pub fn the_click_row_left_on_the_stand_in_has_a_pane_friendly_to_both_factions_t
     )
     == objective.StandInOnAccept
     as "the objective is not a click row, so the stand-in completes it"
-  assert content_support.click_objective_ids() |> set.contains(13_760) == False
+  assert content_support.objective_ids(table: click_objective.table)
+    |> set.contains(13_760)
+    == False
     as "the migration lists no row for it"
 }
 
@@ -292,11 +295,11 @@ pub fn every_row_of_the_click_table_is_a_click_script_with_a_built_activate_spel
   use <- owned_test.run(300_000)
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
-  let rows = content_support.click_objective_ids()
+  let rows = content_support.objective_ids(table: click_objective.table)
   assert set.to_list(rows) |> list.sort(int.compare) == click_ids
     as "the migration lists the clicks whose creatures start in their marker's world"
   let scripts = objective.ScriptRows(..objective.no_rows(), clicks: rows)
-  let arrivals = content_support.arrival_objective_ids()
+  let arrivals = content_support.objective_ids(table: arrival_objective.table)
   let activations = activate.activations(tables:)
   let listed = quest_log.listed_objectives(tables:)
   // Each objective with the creature of its pane, that creature's first activate spell and

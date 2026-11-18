@@ -42,6 +42,10 @@ import character_tables
 import client_tables
 import content_support
 import fixture_tables
+import genesis_prime/game/arrival_objective
+import genesis_prime/game/click_objective
+import genesis_prime/game/held_objective
+import genesis_prime/game/kill_objective
 import genesis_prime/game/objective.{
   type Advanced, type Effect, Advanced, CompleteByServer, ReleaseUnit,
   SendProgress, SendState,
@@ -859,7 +863,7 @@ pub fn an_abandoned_and_retaken_quest_starts_its_place_script_again_test() -> Ni
 
 /// The QuestObjective ids the migrated database holds in the arrival table.
 fn arrival_ids() -> Set(Int) {
-  content_support.arrival_objective_ids()
+  content_support.objective_ids(table: arrival_objective.table)
 }
 
 /// Every type 5 objective of the client's quests: the quest as the log reads it, the index,
@@ -948,8 +952,8 @@ pub fn the_spell_advanced_set_names_every_type_42_and_item_objective_test() -> N
 /// The script tables the migrated database holds: the kill and click tables' rows.
 fn script_rows() -> objective.ScriptRows {
   objective.ScriptRows(
-    kills: content_support.kill_objective_ids(),
-    clicks: content_support.click_objective_ids(),
+    kills: content_support.objective_ids(table: kill_objective.table),
+    clicks: content_support.objective_ids(table: click_objective.table),
   )
 }
 
@@ -1054,7 +1058,7 @@ pub fn every_place_script_completes_at_its_marker_and_no_spell_advanced_one_comp
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   let arrivals = arrival_ids()
-  let held = content_support.held_objective_ids()
+  let held = content_support.objective_ids(table: held_objective.table)
   let rows = script_rows()
   let none = set.new()
   let scripted =
@@ -1155,7 +1159,7 @@ pub fn every_marked_stand_in_completes_on_accept_and_every_held_one_stays_open_t
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   let arrivals = arrival_ids()
-  let held = content_support.held_objective_ids()
+  let held = content_support.objective_ids(table: held_objective.table)
   let rows = script_rows()
   let wrong =
     list.filter_map(type_5_places(tables:), fn(place) {
@@ -1218,7 +1222,7 @@ pub fn every_type_5_objective_in_a_quest_has_one_completing_rule_test() -> Nil {
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   let arrivals = arrival_ids()
-  let held = content_support.held_objective_ids()
+  let held = content_support.objective_ids(table: held_objective.table)
   let rows = script_rows()
   let places = type_5_places(tables:)
   assert list.length(places) == 1498
@@ -1600,7 +1604,7 @@ pub fn the_four_equip_and_buy_quests_still_complete_on_accept_test() -> Nil {
   use <- owned_test.run(120_000)
   let tables = character_tables.shared()
   let arrivals = arrival_ids()
-  let held = content_support.held_objective_ids()
+  let held = content_support.objective_ids(table: held_objective.table)
   let rows = script_rows()
   // (quest, objective, why its real rule cannot fire): the two items need a prerequisite of
   // type 19 (a tradeskill tier) that the server does not read, so wearing them is refused
@@ -1661,4 +1665,66 @@ pub fn the_equip_and_buy_objectives_are_stand_ins_on_accept_over_every_client_qu
   assert list.map([16_311, 16_379, 18_069, 18_070, 16_407], script_of)
     == list.repeat(objective.StandInOnAccept, 5)
     as "the four equip and buy objectives and the shield's stay stand-ins on accept"
+}
+
+// ---- the cast steps stay stand-ins on accept ----
+//
+// The seven support-training quests (10037, 10069, 10070, 10071, 10043, 10072 and 10074: the
+// second objective of each, a type 5 of count 3) and quest 6346's objective 9724 (count 1) are
+// named by spell columns: `Spell4.prerequisiteIdRunner00` and `01`, and
+// `prerequisiteIdCasterCast` of Spell4 32897. The training room (world 3406) has no stored
+// spawn, so no creature stands there to be cast at, and the Detonator's counting rule is
+// open; each objective is a stand-in on accept.
+
+pub fn the_eight_cast_quests_still_complete_on_accept_over_every_client_quest_test() -> Nil {
+  use <- owned_test.run(300_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let arrivals = arrival_ids()
+  let held = content_support.objective_ids(table: held_objective.table)
+  let rows = script_rows()
+  let cases = [
+    #(10_037, 19_138),
+    #(10_069, 19_168),
+    #(10_070, 19_170),
+    #(10_071, 19_172),
+    #(10_043, 19_143),
+    #(10_072, 19_174),
+    #(10_074, 19_178),
+    #(6346, 9724),
+  ]
+  let wrong =
+    list.filter_map(cases, fn(row) {
+      let #(quest_id, objective_id) = row
+      let #(quest, index, listed) = place_of(tables:, objective_id:)
+      let script =
+        objective.script_of(
+          tables:,
+          quest_id:,
+          index:,
+          objective: listed,
+          arrival_objectives: arrivals,
+          scripts: rows,
+        )
+      // The objectives before it done, so that it is open.
+      let log =
+        logged(
+          tables:,
+          quest_id:,
+          done: list.index_map(quest.objectives, fn(_, before) { before })
+            |> list.take(index),
+        )
+      let settled =
+        settle_sets(log:, tables:, at: away(), arrivals:, held:, scripts: rows)
+      case
+        quest.id == quest_id
+        && script == objective.StandInOnAccept
+        && quest_log.objective_done(log: settled.log, quest:, index:)
+      {
+        True -> Error(Nil)
+        False -> Ok(#(quest_id, objective_id))
+      }
+    })
+  assert wrong == []
+    as "the seven training-room quests and quest 6346 are stand-ins on accept and complete their cast objective as soon as it is open"
 }

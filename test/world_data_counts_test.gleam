@@ -86,7 +86,9 @@ import genesis_prime
 import genesis_prime/content
 import genesis_prime/content/spawn as content_spawn
 import genesis_prime/game/activate
+import genesis_prime/game/click_objective
 import genesis_prime/game/faction_level
+import genesis_prime/game/kill_objective
 import genesis_prime/game/place_objective
 import genesis_prime/game/prerequisite
 import genesis_prime/game/quest as quest_rules
@@ -174,8 +176,8 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
       stored: rows,
       factions: spawn_support.the_boss_is_given_233(tables:),
       kinds: spawn_support.turret_kinds(),
-      kills: content_support.kill_objective_ids(),
-      clicks: content_support.click_objective_ids(),
+      kills: content_support.objective_ids(table: kill_objective.table),
+      clicks: content_support.objective_ids(table: click_objective.table),
     ).rows
   assert list.length(placed) == 1762
     as "the rows placed in all, none of them in a world with no stored spawn"
@@ -193,8 +195,8 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
       stored: rows,
       factions: spawn_support.the_boss_is_given_233(tables:),
       kinds: spawn_support.turret_kinds(),
-      kills: content_support.kill_objective_ids(),
-      clicks: content_support.click_objective_ids(),
+      kills: content_support.objective_ids(table: kill_objective.table),
+      clicks: content_support.objective_ids(table: click_objective.table),
     ).click_rows
   assert list.length(clicked) == 349 as "the click targets' rows placed in all"
   assert list.count(clicked, fn(row) { row.entity_type == 0 }) == 114
@@ -282,14 +284,17 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
       })
     })
   }
-  assert unreached(set.to_list(content_support.kill_objective_ids()), fought_by)
+  assert unreached(
+      set.to_list(content_support.objective_ids(table: kill_objective.table)),
+      fought_by,
+    )
     == []
     as "every kill row has, for each faction its quest allows, a creature of its pane that starts in each world its markers are in and that faction can fight"
   assert unreached([4282, 7272, 7491, 7492], fought_by)
     == [4282, 7272, 7491, 7492]
     as "the four kill rows left on the stand-in have no such creature (the CI test of the table shows their creatures are Friendly to both factions)"
   assert unreached(
-      set.to_list(content_support.click_objective_ids()),
+      set.to_list(content_support.objective_ids(table: click_objective.table)),
       clicked_by,
     )
     == []

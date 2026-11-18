@@ -13,8 +13,8 @@
 ////   tree starts; nothing queries the tables during play.
 //// - **A table of this kind** adds a line to the query, an entry to `checks`, a migration, and
 ////   a field to the connection's settings that its rule reads (genesis_prime/game/connection/state
-////   and genesis_prime), and a line to the test support that puts empty sets
-////   (`spawn_support.put_worlds`); `content.gleam` and this module's other functions do not change.
+////   and genesis_prime); `content.gleam`, this module's other functions and the test support
+////   (`tables` names each table to the sets it puts empty) do not change.
 
 import genesis_prime/content/refusal.{type Refusal}
 import genesis_prime/content/sql
@@ -74,6 +74,11 @@ pub fn read(key key: Key, table table: String) -> Set(Int) {
 /// A table's name and the pure check of its rows: the table's `select`.
 type Check =
   #(String, fn(List(Int), store.Tables) -> Result(Set(Int), List(Refusal)))
+
+/// The name of every table of this kind.
+pub fn tables() -> List(String) {
+  list.map(checks(), fn(entry) { entry.0 })
+}
 
 /// Every table of this kind and its check.
 fn checks() -> List(Check) {

@@ -60,7 +60,7 @@ pub fn select(
     ids:,
     tables:,
     broken: fn(tables, quest, index, listed_objective) {
-      let levels = faction_level.build(tables:)
+      let levels = faction_level.of(tables:)
       list.flatten([
         objective.visible_script_broken(
           tables:,
