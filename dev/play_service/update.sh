@@ -122,9 +122,11 @@ if ! take_lock; then
   exit 0
 fi
 context=
+scripts_folder=
 cleanup() {
   rm -rf "$lock"
   [ -z "$context" ] || rm -rf "$context"
+  [ -z "$scripts_folder" ] || rm -rf "$scripts_folder"
 }
 trap cleanup EXIT
 
@@ -151,6 +153,16 @@ ci_passed() {
   fi
 }
 
+# fetch_repository: brings the bare copy of the remote in $state up to date, making it
+# when there is none.
+fetch_repository() {
+  if [ -d "$state/repository.git" ]; then
+    git -C "$state/repository.git" fetch --quiet origin "+refs/heads/$branch:refs/heads/$branch"
+  else
+    git clone --quiet --bare "$remote" "$state/repository.git"
+  fi
+}
+
 # build_image COMMIT: builds the image of the commit from a clean archive of it
 # and refuses it when it holds a file of the client's. Gives 2 for a commit with
 # no release/Containerfile.
@@ -159,11 +171,7 @@ build_image() {
   # The caller tests this function's status, which turns set -e off inside it:
   # each step that can fail ends it with return.
   context=$(mktemp -d "$state/context.XXXXXX") || return 1
-  if [ -d "$state/repository.git" ]; then
-    git -C "$state/repository.git" fetch --quiet origin "+refs/heads/$branch:refs/heads/$branch" || return 1
-  else
-    git clone --quiet --bare "$remote" "$state/repository.git" || return 1
-  fi
+  fetch_repository || return 1
   git -C "$state/repository.git" archive "$commit" | tar -x -C "$context" || return 1
   if [ ! -f "$context/release/Containerfile" ]; then
     skip_commit "$commit"
@@ -185,13 +193,23 @@ migrate() {
     --entrypoint /migrate/dev/apply_migrations.sh "$1" "$play_database"
 }
 
-# install_scripts: replaces the installed copies of the scripts with the ones of
-# the archive just built, so the next run is the new commit's updater.
+# install_scripts COMMIT: replaces the installed copies of the scripts with the ones of
+# the commit, so the next run is the new commit's updater. They are taken from the
+# commit itself, not from the build's archive: a retry finds the image already built
+# and extracts nothing. Fails, installing nothing, when the commit holds no script.
 install_scripts() {
-  local script
+  local commit=$1 script found=0
   [ "$here" = "$state/bin" ] || return 0
-  for script in "$context"/dev/play_service/*.sh; do
-    [ -e "$script" ] || continue
+  if ! git -C "$state/repository.git" cat-file -e "$commit^{commit}" 2>/dev/null; then
+    fetch_repository || return 1
+  fi
+  scripts_folder=$(mktemp -d "$state/scripts.XXXXXX") || return 1
+  git -C "$state/repository.git" archive "$commit" dev/play_service | tar -x -C "$scripts_folder" || return 1
+  for script in "$scripts_folder"/dev/play_service/*.sh; do
+    [ -e "$script" ] && found=1
+  done
+  [ "$found" = 1 ] || return 1
+  for script in "$scripts_folder"/dev/play_service/*.sh; do
     cp "$script" "$here/$(basename "$script").next"
     mv -f "$here/$(basename "$script").next" "$here/$(basename "$script")"
   done
@@ -304,7 +322,7 @@ if [ -n "$main_commit" ] && [ "$main_commit" != "$deployed_commit" ]; then
       fi
       # The new commit's launcher (its mounts and variables) starts the new container, so the
       # installed scripts are replaced and read again before the deploy, not after it.
-      install_scripts
+      install_scripts "$main_commit" || { log "the scripts of $main_commit could not be installed; the running server is left as it was"; exit 1; }
       # shellcheck source=lib.sh
       . "$here/lib.sh"
       load_environment
