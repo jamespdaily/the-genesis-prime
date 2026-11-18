@@ -37,7 +37,7 @@
 ////   when its supervisor is restarting it) is logged as a warning with the
 ////   reason Ranch gave, and the rest are closed; that listener is stopped in
 ////   its turn like any other.
-//// - **The closer's deadline** is 5 s, after which the supervisor kills it:
+//// - **The closer's deadline** is 2 s (`shutdown_ms`: closing three sockets), after which the supervisor kills it:
 ////   the drain then starts with some listeners still open, and each listener's
 ////   own stop closes its socket before its connections drain.
 //// - **A restart** rebuilds nothing, and a restart while the tree runs closes
@@ -54,8 +54,10 @@ import gleam/otp/actor
 import gleam/otp/supervision.{type ChildSpecification}
 import gleam/result
 
-/// How long the closer has to close every listener before it is killed.
-const shutdown_ms = 5000
+/// How long the closer has to close every listener before it is killed: it
+/// closes three sockets, so 2 s is the server's choice, kept short so the
+/// stop's bounds fit the host's 60 s (`genesis_prime.settings`).
+pub const shutdown_ms = 2000
 
 /// What reaches the closer: an exit signal it traps.
 type Mail {

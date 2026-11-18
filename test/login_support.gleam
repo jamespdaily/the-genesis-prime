@@ -180,6 +180,7 @@ pub fn settings(pool pool: pog.Config) -> server.Settings {
     send_deadline_ms: 300,
     connection_shutdown_ms: 1000,
     stop_reserve_ms: 300,
+    login_connection_shutdown_ms: 1000,
     login: login(),
     game: game(),
   )

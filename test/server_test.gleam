@@ -77,7 +77,7 @@ pub fn the_tree_starts_the_pool_the_store_the_hand_off_sessions_the_world_the_tw
       ChildSettings(restart: Permanent, shutdown_ms: None),
       ChildSettings(restart: Permanent, shutdown_ms: None),
       ChildSettings(restart: Permanent, shutdown_ms: None),
-      ChildSettings(restart: Permanent, shutdown_ms: Some(5000)),
+      ChildSettings(restart: Permanent, shutdown_ms: Some(2000)),
     ]
     as "each child is permanent; the pool, the store and the three subtrees are supervisors, the hand-off, Sessions and the closer stop within their own times"
   let assert [_, _, _, _, world, _, game, _closer] = children

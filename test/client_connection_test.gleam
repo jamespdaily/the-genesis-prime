@@ -15,6 +15,7 @@ import genesis_prime
 import genesis_prime/client_connection.{
   AskStore, BurstBelowOne, BurstBelowWait, Continue, Done, PerSecondBelowOne,
 }
+import genesis_prime/connection/closer
 import genesis_prime/game/leaving_save.{Retries}
 import genesis_prime/server
 import genesis_prime/step.{
@@ -22,6 +23,7 @@ import genesis_prime/step.{
   LogInfo, LogLine, Stop,
 }
 import genesis_prime/store
+import gleam/int
 import gleam/option.{None, Some}
 import owned_test
 import spawn_support
@@ -112,7 +114,7 @@ pub fn the_production_leaving_save_settings_are_the_approved_ladder_and_the_stop
     as "a late take, the notice's write, the socket's close and a margin"
 }
 
-pub fn the_stops_deadline_covers_the_logouts_window_the_reserve_covers_a_late_exit_and_a_write_and_the_trees_stop_fits_the_hosts_sixty_seconds_test() -> Nil {
+pub fn a_stops_window_is_the_shutdown_less_the_reserve_so_18_seconds_against_a_logouts_20_test() -> Nil {
   use <- owned_test.run(10_000)
   let settings = production_settings()
   // A stop taken one step late (one write, bounded by the send deadline), the
@@ -124,20 +126,48 @@ pub fn the_stops_deadline_covers_the_logouts_window_the_reserve_covers_a_late_ex
   // shape decision: the reserve counts the close), so a stop with the database
   // away tries for 18 s, and a logout that is begun before a stop keeps its
   // own deadline only until the stop replaces it.
-  assert settings.connection_shutdown_ms - settings.stop_reserve_ms == 18_000
+  let window_ms = settings.connection_shutdown_ms - settings.stop_reserve_ms
+  assert window_ms == 18_000
     as "the stop's deadline is taken + 18 s, inside Ranch's 25 s"
-  // The bounds a stop waits on in turn, the game connections', the maps', the
-  // creatures', Sessions' and the hand-off's: the host stops the service
-  // after 60 s (dev/play_service/lib.sh `--stop-timeout 60`). The login
-  // connections end at once on a stop, so their bound is left out.
-  let bounds_ms =
-    settings.connection_shutdown_ms
-    + settings.world.map_shutdown_ms
-    + settings.world.creature_shutdown_ms
-    + settings.sessions_shutdown_ms
-    + settings.hand_off_shutdown_ms
-  assert bounds_ms == 45_000 as "25 + 5 + 5 + 5 + 5 s"
-  assert bounds_ms < 60_000 as "the host's stop-timeout"
+  assert window_ms < settings.game.settings.leaving_save.within_ms
+    as "shorter than a logout's 20 s"
+}
+
+pub fn the_login_listeners_have_five_seconds_and_the_stops_bounds_in_order_fit_the_hosts_sixty_seconds_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let settings = production_settings()
+  assert settings.login_connection_shutdown_ms == 5000
+    as "a login connection holds no save: a late take and the close (2 + 2 s) fit 5 s"
+  // The tree stops its children in reverse start order, and a supervisor's
+  // children one after another, so the worst case is every bound waited out in
+  // turn (server.start, server.add_world): the closer, the game subtree (the
+  // listener's connections, then the connection registry), the login subtree
+  // (the auth listener's connections, then the STS listener's), the world
+  // subtree (the map supervisor's maps, the creature supervisor's creatures,
+  // Maps, the creatures' registry), Sessions, the hand-off, the store's
+  // workers. The registries, Maps and the store's workers have 1 s each
+  // (their modules' `shutdown_ms`, the store worker's `timeout`). The pool is
+  // the last and has no bound here. The host stops the service after 60 s
+  // (dev/play_service/lib.sh `--stop-timeout 60`).
+  let one_second_each_ms = 1000
+  let stop_ms =
+    [
+      closer.shutdown_ms,
+      settings.connection_shutdown_ms,
+      one_second_each_ms,
+      settings.login_connection_shutdown_ms,
+      settings.login_connection_shutdown_ms,
+      settings.world.map_shutdown_ms,
+      settings.world.creature_shutdown_ms,
+      one_second_each_ms,
+      one_second_each_ms,
+      settings.sessions_shutdown_ms,
+      settings.hand_off_shutdown_ms,
+      one_second_each_ms,
+    ]
+    |> int.sum
+  assert stop_ms == 55_000 as "2 + 25 + 1 + 5 + 5 + 2 + 2 + 1 + 1 + 5 + 5 + 1 s"
+  assert stop_ms < 60_000 as "the host's stop-timeout"
 }
 
 fn production_settings() -> server.Settings {

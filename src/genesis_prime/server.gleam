@@ -97,7 +97,8 @@
 ////   seconds, the same as the server's, so a listener that cannot stay up ends
 ////   the subtree after three tries, and the subtree ends the node after three.
 ////   A subtree's shutdown time is infinity, since its children are listeners
-////   that each give their connections `connection_shutdown_ms`.
+////   that each give their connections `connection_shutdown_ms` (the login's
+////   `login_connection_shutdown_ms`).
 
 import genesis_prime/account_session
 import genesis_prime/client_connection.{
@@ -175,13 +176,16 @@ pub type Settings {
     world: World,
     /// How long a write may wait for a client's socket, on every listener.
     send_deadline_ms: Int,
-    /// How long a connection has to stop once the server stops, on every
-    /// listener.
+    /// How long a game connection has to stop once the server stops: it may
+    /// hold a player's save to retry.
     connection_shutdown_ms: Int,
     /// The part of `connection_shutdown_ms` a connection keeps for what comes
     /// after its last ask: the shell's stop deadline is its shutdown time less
     /// this (genesis_prime/connection/shell `stop_deadline`).
     stop_reserve_ms: Int,
+    /// How long a login connection has to stop. It holds no save, so its rule
+    /// ends at once on a stop: its whole bound is its reserve.
+    login_connection_shutdown_ms: Int,
     /// The login's two listeners.
     login: Login,
     /// The game server's listener.
@@ -1065,6 +1069,8 @@ fn login(
   |> serve(
     settings:,
     served: settings.login.sts,
+    shutdown_ms: settings.login_connection_shutdown_ms,
+    stop_reserve_ms: settings.login_connection_shutdown_ms,
     rule: sts_connection.rule,
     directory:,
     registry: None,
@@ -1072,6 +1078,8 @@ fn login(
   |> serve(
     settings:,
     served: settings.login.auth,
+    shutdown_ms: settings.login_connection_shutdown_ms,
+    stop_reserve_ms: settings.login_connection_shutdown_ms,
     rule: auth_connection.rule,
     directory:,
     registry: None,
@@ -1092,6 +1100,8 @@ fn game(
   |> serve(
     settings:,
     served: settings.game,
+    shutdown_ms: settings.connection_shutdown_ms,
+    stop_reserve_ms: settings.stop_reserve_ms,
     rule: game_connection.rule,
     directory:,
     registry: Some(settings.registry),
@@ -1114,13 +1124,15 @@ fn subtree(
 }
 
 /// Adds one listener, whose connections run the rule `rule` makes from the
-/// listener's own settings, with the send and shutdown deadlines every
-/// listener shares. Its connections join `registry` when there is one, so a
+/// listener's own settings, with the send deadline every listener shares and
+/// the shutdown time and reserve the caller gives. Its connections join `registry` when there is one, so a
 /// rule can be sent to and watched by its connection's id.
 fn serve(
   tree: supervisor.Builder,
   settings settings: Settings,
   served served: Served(rule_settings),
+  shutdown_ms shutdown_ms: Int,
+  stop_reserve_ms stop_reserve_ms: Int,
   rule rule: fn(rule_settings) ->
     ConnectionRule(rule_settings, state, Request, message, Answer),
   directory directory: Directory,
@@ -1135,8 +1147,8 @@ fn serve(
       connection: connection_shell.Settings(
         rule: rule(served.settings),
         send_deadline_ms: settings.send_deadline_ms,
-        shutdown_ms: settings.connection_shutdown_ms,
-        stop_reserve_ms: settings.stop_reserve_ms,
+        shutdown_ms:,
+        stop_reserve_ms:,
         wire_recorder: served.wire_recorder,
         scripts: served.scripts,
         directory:,
