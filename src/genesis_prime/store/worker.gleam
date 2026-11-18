@@ -947,8 +947,8 @@ fn world(
 
 /// Stores the charges of the items that hold none: fill_character_item_charges.sql under the
 /// character's row lock, answered `ChargesFilled(ItemsSaved)` when it set as many rows as the
-/// request has fills and `ChargesFilled(ItemsNotSaved)` when it set none (a stale epoch, or
-/// rows that no longer hold none: a replay).
+/// request has fills and `ChargesFilled(ItemsNotSaved)` when it set none (a stale epoch, a row
+/// that is not the character's or no longer unset: a replay).
 fn fill_charges(
   pool pool: pog.Connection,
   account_id account_id: store.AccountId,

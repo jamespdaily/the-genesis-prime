@@ -150,10 +150,22 @@ pub fn item_rewards_of_one_item_add_together_and_place_in_order_of_first_appeara
   assert turn_in.placed
     == [
       Placed(Item2Id(6998), grow: [], make: [
-        NewStack(location: 1, bag_index: 0, stack_count: 5, random_stats: 0),
+        NewStack(
+          location: 1,
+          bag_index: 0,
+          stack_count: 5,
+          random_stats: 0,
+          charges: 0,
+        ),
       ]),
       Placed(Item2Id(179), grow: [], make: [
-        NewStack(location: 1, bag_index: 1, stack_count: 1, random_stats: 0),
+        NewStack(
+          location: 1,
+          bag_index: 1,
+          stack_count: 1,
+          random_stats: 0,
+          charges: 0,
+        ),
       ]),
     ]
     as "the two rows of 6998 are one stack of 5, placed first; 179 follows; the reputation and money rows name 6998 and 179 as objects and place nothing"

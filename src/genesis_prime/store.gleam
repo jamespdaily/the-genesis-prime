@@ -261,9 +261,10 @@ pub type WorldRequest {
   LoadCharacter(account_id: AccountId, character_id: CharacterId)
   /// Stores the charges of the character's items that hold none (`CharacterLoaded.unset`):
   /// each `fills` entry is an item's guid and the charges to give it, and the statement
-  /// (fill_character_item_charges.sql) changes a row only while the character's
-  /// `session_epoch` is still `session_epoch`, the one the load told, and only while that
-  /// row is still unset, so a replay changes nothing. Answered `ChargesFilled`.
+  /// (fill_character_item_charges.sql) changes rows, all or none, only while the character's
+  /// `session_epoch` is still `session_epoch`, the one the load told, and only while every
+  /// row named is the character's and still unset, so a replay changes nothing. Answered
+  /// `ChargesFilled`.
   FillCharges(
     account_id: AccountId,
     character_id: CharacterId,

@@ -186,6 +186,7 @@ pub fn a_level_up_resends_the_properties_of_level_scaled_gear_test() -> Nil {
         bag_index: 0,
         stack_count: 1,
         random_stats: 0,
+        charges: 0,
       ),
       ..worn
     ])

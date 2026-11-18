@@ -14,8 +14,8 @@ import genesis_prime/message/item_added
 import genesis_prime/message/play_character.{PlayCharacter}
 import genesis_prime/step.{type Now, ConnectionId, Now}
 import genesis_prime/store.{
-  type Character, type HeldItem, type QuestRow, AccountId, Character,
-  CharacterId, HeldItem, NameStands,
+  type Character, type HeldItem, type QuestRow, type UnsetItem, AccountId,
+  Character, CharacterId, HeldItem, NameStands,
 }
 import genesis_prime/table/id.{ClassId, Item2Id, RaceId}
 import genesis_prime/table/loader/store as table_store
@@ -98,6 +98,48 @@ pub fn loaded_seeing(
   quests quests: List(QuestRow),
   visibility visibility: Dict(Int, List(Prerequisite)),
 ) -> #(world_entry.State, world_entry.Loaded) {
+  loaded_answer(
+    tables:,
+    character:,
+    items:,
+    unset: [],
+    saved_health:,
+    saved_experience:,
+    quests:,
+    visibility:,
+  )
+}
+
+/// What the store's answer to a play of the character leads to when the store holds
+/// the items `held` with their charges and the items `unset` with none recorded.
+pub fn loaded_with_unset(
+  tables tables: table_store.Tables,
+  character character: Character,
+  held items: List(HeldItem),
+  unset unset: List(UnsetItem),
+) -> #(world_entry.State, world_entry.Loaded) {
+  loaded_answer(
+    tables:,
+    character:,
+    items:,
+    unset:,
+    saved_health: None,
+    saved_experience: None,
+    quests: [],
+    visibility: dict.new(),
+  )
+}
+
+fn loaded_answer(
+  tables tables: table_store.Tables,
+  character character: Character,
+  items items: List(HeldItem),
+  unset unset: List(UnsetItem),
+  saved_health saved_health: Option(Int),
+  saved_experience saved_experience: Option(Int),
+  quests quests: List(QuestRow),
+  visibility visibility: Dict(Int, List(Prerequisite)),
+) -> #(world_entry.State, world_entry.Loaded) {
   let assert Ok(body) = play_character.encode(PlayCharacter(character_id: 42))
     as "a character id fits the message"
   let assert Ok(#(state, _asks)) =
@@ -114,6 +156,7 @@ pub fn loaded_seeing(
         items:,
         quests:,
         currencies: [],
+        unset:,
       ),
       connection: ConnectionId(1),
       stay: map_support.stay(count: 1),
@@ -122,6 +165,24 @@ pub fn loaded_seeing(
     )
     as "the store's answer is the one world entry asked for"
   #(state, loaded)
+}
+
+/// The join a fill asked for leads to once the store answers the fill `ItemsSaved`.
+pub fn filled(
+  state state: world_entry.State,
+  tables tables: table_store.Tables,
+) -> world_entry.State {
+  let assert Ok(world_entry.Join(state:, ..)) =
+    world_entry.loaded(
+      state:,
+      answer: store.ChargesFilled(answer: store.ItemsSaved),
+      connection: ConnectionId(1),
+      stay: map_support.stay(count: 1),
+      tables:,
+      visibility: dict.new(),
+    )
+    as "the saved fill leads to the join"
+  state
 }
 
 /// The items a character of a created class and faction holds after its create:
@@ -144,6 +205,7 @@ pub fn novice_items(character character: Character) -> List(HeldItem) {
           bag_index: pair.1,
           stack_count: 1,
           random_stats: 0,
+          charges: 0,
         )
       })
     Error(Nil) -> []

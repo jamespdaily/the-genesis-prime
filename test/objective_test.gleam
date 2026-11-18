@@ -870,6 +870,7 @@ fn held(
     bag_index:,
     stack_count:,
     random_stats: 0,
+    charges: 0,
   )
 }
 
