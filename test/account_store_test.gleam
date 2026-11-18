@@ -957,7 +957,7 @@ pub fn a_stored_character_with_world_0_loads_as_no_place_test() -> Nil {
     as "world 0 is no World row, which 0xAD needs (opcode.0xad), so the list reads no place"
   assert account_store_support.ask(
       store:,
-      request: World(LoadCharacter(account, CharacterId(character_id))),
+      request: World(LoadCharacter(account, CharacterId(character_id), 0)),
     )
     == ForWorld(
       CharacterLoaded(
@@ -1041,7 +1041,7 @@ pub fn a_load_gives_the_accounts_character_with_its_saved_place_and_not_another_
     )
   assert account_store_support.ask(
       store:,
-      request: World(LoadCharacter(account, CharacterId(mine))),
+      request: World(LoadCharacter(account, CharacterId(mine), 0)),
     )
     == ForWorld(
       CharacterLoaded(
@@ -1077,13 +1077,17 @@ pub fn a_load_gives_the_accounts_character_with_its_saved_place_and_not_another_
     as "the row as character_support inserted it: the saved world, zone and position come with it, the epoch the load raised from 0 to 1, and no saved health: a character never saved enters at full health"
   assert account_store_support.ask(
       store:,
-      request: World(LoadCharacter(account, CharacterId(theirs))),
+      request: World(LoadCharacter(account, CharacterId(theirs), 0)),
     )
     == ForWorld(NotTheAccounts)
     as "a modified client could name any id: the read is scoped by the account's id (genesis_prime/store)"
   assert account_store_support.ask(
       store:,
-      request: World(LoadCharacter(account, CharacterId(account_id_nobody_has))),
+      request: World(LoadCharacter(
+        account,
+        CharacterId(account_id_nobody_has),
+        0,
+      )),
     )
     == ForWorld(NotTheAccounts)
     as "no row has the id"
@@ -1281,7 +1285,7 @@ fn epoch_of_load(
   let assert ForWorld(CharacterLoaded(session_epoch:, ..)) =
     account_store_support.ask(
       store:,
-      request: World(LoadCharacter(account, CharacterId(character_id))),
+      request: World(LoadCharacter(account, CharacterId(character_id), 0)),
     )
     as "the account has the character"
   store.session_epoch_number(session_epoch)
@@ -1374,7 +1378,7 @@ fn experience_and_level_loaded(
   let assert ForWorld(CharacterLoaded(character:, saved_experience:, ..)) =
     account_store_support.ask(
       store:,
-      request: World(LoadCharacter(account, CharacterId(character_id))),
+      request: World(LoadCharacter(account, CharacterId(character_id), 0)),
     )
     as "the account has the character"
   #(saved_experience, character.level)
@@ -1391,7 +1395,7 @@ fn health_row_and_load(
   let assert ForWorld(CharacterLoaded(saved_health:, ..)) =
     account_store_support.ask(
       store:,
-      request: World(LoadCharacter(account, CharacterId(character_id))),
+      request: World(LoadCharacter(account, CharacterId(character_id), 0)),
     )
     as "the account has the character"
   #(row.health, saved_health)
@@ -1504,7 +1508,7 @@ pub fn a_save_stores_the_place_and_the_facing_and_the_next_load_reads_them_test(
   let assert ForWorld(CharacterLoaded(character:, ..)) =
     account_store_support.ask(
       store:,
-      request: World(LoadCharacter(account, CharacterId(id))),
+      request: World(LoadCharacter(account, CharacterId(id), 0)),
     )
   assert character.place == Some(here)
     as "the next login finds the character where the last one left it, facing the way it faced"
@@ -2897,6 +2901,7 @@ pub fn a_split_item_is_found_with_its_new_guid_after_load_test() -> Nil {
       random_stats: 0,
       charges: 0,
       item_flags: 0,
+      expires_at_unix_ms: None,
     )
     as "opcode.0x111.guid: the new row has the guid the store answered, the same Item2, the destination and the count"
   assert first != stack.item_guid
@@ -3180,7 +3185,7 @@ fn quests_of_load(
   let assert ForWorld(CharacterLoaded(quests:, ..)) =
     account_store_support.ask(
       store:,
-      request: World(LoadCharacter(account, CharacterId(character_id))),
+      request: World(LoadCharacter(account, CharacterId(character_id), 0)),
     )
     as "the account has the character"
   quests
@@ -3707,7 +3712,7 @@ fn bought_state(
   let assert ForWorld(CharacterLoaded(currencies:, items:, ..)) =
     account_store_support.ask(
       store:,
-      request: World(LoadCharacter(account, character_id)),
+      request: World(LoadCharacter(account, character_id, 0)),
     )
     as "the account's character loads"
   let assert [store.HeldCurrency(currency_type_id: 1, amount:)] = currencies
@@ -3829,6 +3834,7 @@ pub fn a_buy_takes_the_credits_and_adds_the_items_in_one_statement_test() -> Nil
           random_stats: 0,
           charges: 0,
           item_flags: 0,
+          expires_at_unix_ms: None,
         ),
         store.NewStack(
           location: 1,
@@ -3837,6 +3843,7 @@ pub fn a_buy_takes_the_credits_and_adds_the_items_in_one_statement_test() -> Nil
           random_stats: 0,
           charges: 0,
           item_flags: 0,
+          expires_at_unix_ms: None,
         ),
       ],
     )
@@ -3927,6 +3934,7 @@ pub fn a_buy_under_a_stale_epoch_changes_nothing_test() -> Nil {
           random_stats: 0,
           charges: 0,
           item_flags: 0,
+          expires_at_unix_ms: None,
         ),
       ],
     )
@@ -3959,6 +3967,7 @@ pub fn a_buy_with_too_few_credits_saved_changes_nothing_test() -> Nil {
       random_stats: 0,
       charges: 0,
       item_flags: 0,
+      expires_at_unix_ms: None,
     ),
   ]
   let refused = [
@@ -4093,6 +4102,7 @@ pub fn a_buy_into_a_taken_place_changes_nothing_and_names_the_constraint_test() 
           random_stats: 0,
           charges: 0,
           item_flags: 0,
+          expires_at_unix_ms: None,
         ),
       ],
     )
@@ -4141,6 +4151,7 @@ fn sold_with_no_word(
         random_stats: 0,
         charges: 0,
         item_flags: 0,
+        expires_at_unix_ms: None,
       )
     }),
   ))
@@ -4420,7 +4431,7 @@ fn held_everything(
   let assert ForWorld(CharacterLoaded(currencies:, items:, ..)) =
     account_store_support.ask(
       store:,
-      request: World(LoadCharacter(account, character_id)),
+      request: World(LoadCharacter(account, character_id, 0)),
     )
     as "the account's character loads"
   #(
@@ -4563,6 +4574,7 @@ pub fn a_buy_back_in_another_currency_takes_that_currency_in_one_statement_test(
           random_stats: 0,
           charges: 0,
           item_flags: 0,
+          expires_at_unix_ms: None,
         ),
       ],
     )
@@ -4698,6 +4710,7 @@ fn two_made(bag_index bag_index: Int) -> List(store.Placed) {
         random_stats: 0,
         charges: 0,
         item_flags: 0,
+        expires_at_unix_ms: None,
       ),
     ]),
     store.Placed(item2_id: Item2Id(1154), grow: [], make: [
@@ -4708,6 +4721,7 @@ fn two_made(bag_index bag_index: Int) -> List(store.Placed) {
         random_stats: 0,
         charges: 0,
         item_flags: 0,
+        expires_at_unix_ms: None,
       ),
     ]),
   ]
@@ -4749,6 +4763,7 @@ pub fn turn_in_saves_quest_progress_and_rewards_together_test() -> Nil {
               random_stats: 0,
               charges: 0,
               item_flags: 0,
+              expires_at_unix_ms: None,
             ),
           ],
         ),
@@ -4760,6 +4775,7 @@ pub fn turn_in_saves_quest_progress_and_rewards_together_test() -> Nil {
             random_stats: 0,
             charges: 0,
             item_flags: 0,
+            expires_at_unix_ms: None,
           ),
         ]),
       ],
@@ -4983,6 +4999,7 @@ fn rolled_stack(
     random_stats:,
     charges: 0,
     item_flags: 0,
+    expires_at_unix_ms: None,
   )
 }
 
@@ -5124,6 +5141,7 @@ pub fn a_sale_returns_the_sold_items_word_test() -> Nil {
           random_stats: word,
           charges: 0,
           item_flags: 0,
+          expires_at_unix_ms: None,
         ),
       ]),
     )
@@ -5214,7 +5232,7 @@ fn login_unset(
   let assert ForWorld(CharacterLoaded(session_epoch:, items:, unset:, ..)) =
     account_store_support.ask(
       store:,
-      request: World(LoadCharacter(account, character_id)),
+      request: World(LoadCharacter(account, character_id, 0)),
     )
     as "the account's character loads"
   #(store.session_epoch_number(session_epoch), items, unset)
@@ -5361,6 +5379,7 @@ pub fn charges_survive_every_statement_test() -> Nil {
           random_stats: 0,
           charges: 5,
           item_flags: 0,
+          expires_at_unix_ms: None,
         ),
       ],
     )
@@ -5385,6 +5404,7 @@ pub fn charges_survive_every_statement_test() -> Nil {
             random_stats: 0,
             charges: 7,
             item_flags: 0,
+            expires_at_unix_ms: None,
           ),
         ]),
       ],
@@ -5425,6 +5445,7 @@ pub fn charges_survive_every_statement_test() -> Nil {
           random_stats: 0,
           charges: 5,
           item_flags: 0,
+          expires_at_unix_ms: None,
         ),
       ]),
     )
@@ -5997,6 +6018,7 @@ pub fn split_sale_and_purchase_rows_hold_their_flags_test() -> Nil {
       random_stats: 0,
       charges: 0,
       item_flags:,
+      expires_at_unix_ms: None,
     )
   }
   let assert ForItems(store.Bought(made: [bought_back, bought], ..)) =
@@ -6085,12 +6107,14 @@ pub fn split_sale_and_purchase_rows_hold_their_flags_test() -> Nil {
           random_stats: 0,
           charges: 0,
           item_flags: 0,
+          expires_at_unix_ms: None,
         ),
         store.SoldWord(
           item_guid: split_guid,
           random_stats: 0,
           charges: 0,
           item_flags: 1,
+          expires_at_unix_ms: None,
         ),
       ]),
     )

@@ -60,6 +60,7 @@ import genesis_prime/table/quest2
 import gleam/dict
 import gleam/int
 import gleam/list
+import gleam/option
 import gleam/set
 import gleam/string
 import owned_test
@@ -102,6 +103,7 @@ fn item(location location: Int) -> HeldItem {
     random_stats: 0,
     charges: 0,
     item_flags: 0,
+    expires_at_unix_ms: option.None,
   )
 }
 

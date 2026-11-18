@@ -23,7 +23,7 @@
 ////     Characters(rows)         ◀─ 0x3DC{0x0036 level}, 0x3DC{0x0117 character_list}, session key
 //// 0x244{0x025C{0x025B}}        ─▶ checked                         ─▶ store: CreateCharacter(..)
 ////     CharacterCreated(id)     ◀─ 0x3DC{0x00DC create result}, session key
-//// 0x244{0x07DD}                ─▶ world entry                     ─▶ store: LoadCharacter(account, id)
+//// 0x244{0x07DD}                ─▶ world entry                     ─▶ store: LoadCharacter(account, id, now)
 ////     CharacterLoaded(row, epoch, health, items, unset)           ─▶ map MapId(world, 0): Join(connection, row, place)
 ////       with unset items                                          ─▶ first store: FillCharges(..)
 ////       ChargesFilled(ItemsSaved)                                 ─▶ then the map's Join
@@ -1316,7 +1316,7 @@ fn timer_fired(
 }
 
 /// A timer of the connection fired and is taken now: the save timer's, the quest
-/// reset's or the quest deadline's, a cast's, a strike's, the class resource's, the
+/// reset's or the quest deadline's, the item expiry's, a cast's, a strike's, the class resource's, the
 /// player's regeneration's, a departures terminal's move's, or the claim's.
 fn timer_due(
   session session: Session,
@@ -1330,6 +1330,8 @@ fn timer_due(
       connection_world.quest_reset_due(session:, now:)
     _ if timer == connection_state.quest_deadline_timer ->
       connection_world.quest_deadline_due(session:, now:)
+    _ if timer == connection_state.item_expiry_timer ->
+      connection_world.item_expiry_due(session:, now:)
     _ -> other_timer_fired(session:, now:, timer:)
   }
 }

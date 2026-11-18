@@ -545,6 +545,9 @@ fn turn_in_quest(
           list.map(made, fn(one) { { one.1 }.random_stats }),
           list.map(made, fn(one) { { one.1 }.charges }),
           list.map(made, fn(one) { { one.1 }.item_flags }),
+          list.map(made, fn(one) {
+            never_as_minus_one({ one.1 }.expires_at_unix_ms)
+          }),
         )
         |> result.map_error(Failed),
       )
@@ -596,6 +599,7 @@ fn turn_in_quest(
               random_stats:,
               charges:,
               item_flags:,
+              expires_at_unix_ms: row.expires_at_unix_ms,
             ))
           _, _, _, _, _, _, _, _ -> Error(Nil)
         }
@@ -651,6 +655,10 @@ fn sell_to_vendor(
           random_stats: row.random_stats,
           charges: row.charges,
           item_flags: row.item_flags,
+          expires_at_unix_ms: case row.expires_at_unix_ms {
+            -1 -> None
+            moment -> Some(moment)
+          },
         )
       }),
     )
@@ -769,6 +777,7 @@ fn buy_from_vendor(
       list.map(make, fn(stack) { stack.random_stats }),
       list.map(make, fn(stack) { stack.charges }),
       list.map(make, fn(stack) { stack.item_flags }),
+      list.map(make, fn(stack) { never_as_minus_one(stack.expires_at_unix_ms) }),
     )
   })
   |> items_answer(saved: fn(rows) {
@@ -802,6 +811,7 @@ fn buy_from_vendor(
               random_stats:,
               charges:,
               item_flags:,
+              expires_at_unix_ms: row.expires_at_unix_ms,
             ))
           _, _, _, _, _, _, _ -> Error(Nil)
         }
@@ -1002,8 +1012,8 @@ fn world(
   request: WorldRequest,
 ) -> Result(WorldAnswer, Nil) {
   case request {
-    LoadCharacter(account_id:, character_id:) ->
-      load_character(pool:, account_id:, character_id:)
+    LoadCharacter(account_id:, character_id:, now_unix_ms:) ->
+      load_character(pool:, account_id:, character_id:, now_unix_ms:)
     FillCharges(account_id:, character_id:, session_epoch:, fills:) ->
       fill_charges(pool:, account_id:, character_id:, session_epoch:, fills:)
   }
@@ -1143,11 +1153,14 @@ fn list_characters(
 /// character's items then runs on the same connection before the commit, so a
 /// delete of the character waits for the lock and an answer never holds a
 /// character without the items it had. `NotTheAccounts` when the account has no
-/// such character, and `Error(Nil)` when the database is away.
+/// such character, and `Error(Nil)` when the database is away. Between the raise and the read
+/// of the items it deletes the items that ran out at `now_unix_ms` or earlier
+/// (delete_expired_character_items.sql).
 fn load_character(
   pool pool: pog.Connection,
   account_id account_id: AccountId,
   character_id character_id: CharacterId,
+  now_unix_ms now_unix_ms: Int,
 ) -> Result(WorldAnswer, Nil) {
   let AccountId(account_id) = account_id
   let CharacterId(character_id) = character_id
@@ -1159,7 +1172,14 @@ fn load_character(
         account_id,
       ))
       use item_rows <- result.try(case loaded.rows {
-        [_] -> sql.load_character_items(connection, character_id)
+        [_] -> {
+          use _ <- result.try(sql.delete_expired_character_items(
+            connection,
+            character_id,
+            now_unix_ms,
+          ))
+          sql.load_character_items(connection, character_id)
+        }
         _ -> Ok(pog.Returned(count: 0, rows: []))
       })
       use quest_rows <- result.try(case loaded.rows {
@@ -1370,6 +1390,7 @@ fn held_items(
             random_stats: row.random_stats,
             charges:,
             item_flags: row.item_flags,
+            expires_at_unix_ms: row.expires_at_unix_ms,
           ),
           ..set
         ],
@@ -1384,6 +1405,7 @@ fn held_items(
           stack_count: row.stack_count,
           random_stats: row.random_stats,
           item_flags: row.item_flags,
+          expires_at_unix_ms: row.expires_at_unix_ms,
         ),
         ..unset
       ])
@@ -1407,6 +1429,13 @@ fn store_items(
     list.map(items, fn(item) { item.charges }),
   )
   |> result.replace(Nil)
+}
+
+/// The Unix milliseconds an item runs out as the statements that make rows take them: -1 for
+/// an item that does not (they cannot type a list with a missing value), which they store as
+/// NULL.
+fn never_as_minus_one(expires_at_unix_ms: Option(Int)) -> Int {
+  option.unwrap(expires_at_unix_ms, -1)
 }
 
 /// One row as the character it holds.

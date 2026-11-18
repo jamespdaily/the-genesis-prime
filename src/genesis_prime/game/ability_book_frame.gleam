@@ -51,6 +51,7 @@ pub fn held_ability(
     random_stats: 0,
     charges: 0,
     item_flags: 0,
+    time_left_ms: 0,
     reason: held_from_the_start,
   )
 }

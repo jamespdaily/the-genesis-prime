@@ -17,9 +17,9 @@ import genesis_prime/game/connection/resource as connection_resource
 import genesis_prime/game/connection/state.{
   type Session, Camped, Playing, Session,
 } as connection_state
+import genesis_prime/game/deadline_timer
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
-import genesis_prime/game/quest_log
 import genesis_prime/game/strike
 import genesis_prime/game/world_entry
 import genesis_prime/step.{
@@ -50,7 +50,10 @@ pub type Decided {
   StartsQuestResetTimer(after_ms: Int)
   /// Start or cancel the timer that fires when the earliest running quest's time runs
   /// out (`quest_deadline_timer`).
-  MovesQuestDeadlineTimer(move: quest_log.DeadlineTimer)
+  MovesQuestDeadlineTimer(move: deadline_timer.DeadlineTimer)
+  /// Start or cancel the timer that fires when the earliest held timed item runs out
+  /// (`item_expiry_timer`).
+  MovesItemExpiryTimer(move: deadline_timer.DeadlineTimer)
   /// Save the player's place and the quest log, which ends the step; the player goes
   /// on playing once the store answers.
   SavesPlace
@@ -198,6 +201,11 @@ pub fn carry_out(
         connection_state.quest_deadline_timer_move(move:),
         ..written
       ])
+    [MovesItemExpiryTimer(move:), ..rest] ->
+      carry_out(session:, now:, effects: rest, written: [
+        connection_state.item_expiry_timer_move(move:),
+        ..written
+      ])
     [SavesPlace, ..] ->
       case connection_state.holds_a_player(session.status) {
         Some(#(holder, entered)) ->
@@ -280,6 +288,7 @@ pub fn world_left(
         OwnEffect(CancelTimer(timer: connection_state.save_timer)),
         OwnEffect(CancelTimer(timer: connection_state.quest_reset_timer)),
         OwnEffect(CancelTimer(timer: connection_state.quest_deadline_timer)),
+        OwnEffect(CancelTimer(timer: connection_state.item_expiry_timer)),
       ],
     ]),
   )

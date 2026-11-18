@@ -78,6 +78,7 @@ import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/currency.{type Currencies}
 import genesis_prime/game/interaction
 import genesis_prime/game/inventory
+import genesis_prime/game/item_expiry
 import genesis_prime/game/item_property
 import genesis_prime/game/player_life.{type Life}
 import genesis_prime/game/random_stat
@@ -100,7 +101,7 @@ import genesis_prime/table/loader/store as table_store
 import gleam/bool
 import gleam/int
 import gleam/list
-import gleam/option.{type Option}
+import gleam/option.{type Option, None}
 import gleam/result
 import gleam/set.{type Set}
 
@@ -202,6 +203,7 @@ pub fn take(
   tables tables: table_store.Tables,
   vendors vendors: Vendors,
   now_ms now_ms: Int,
+  now_unix_ms now_unix_ms: Int,
   logged logged: Set(String),
 ) -> Result(Taken, Refusal) {
   use buy <- result.try(
@@ -225,7 +227,16 @@ pub fn take(
   {
     Error(vendor_trade.Declined(effects:, logged:)) ->
       Ok(Refused(effects:, logged:))
-    Ok(window) -> buy_from(buy:, window:, items:, currencies:, tables:, logged:)
+    Ok(window) ->
+      buy_from(
+        buy:,
+        window:,
+        items:,
+        currencies:,
+        tables:,
+        now_unix_ms:,
+        logged:,
+      )
   }
 }
 
@@ -245,6 +256,7 @@ pub fn take_back(
   tables tables: table_store.Tables,
   vendors vendors: Vendors,
   now_ms now_ms: Int,
+  now_unix_ms now_unix_ms: Int,
   logged logged: Set(String),
 ) -> Result(Taken, Refusal) {
   use back <- result.try(
@@ -299,9 +311,11 @@ pub fn take_back(
             random_stats: entry.random_stats,
             charges: entry.charges,
             item_flags: entry.item_flags,
+            kept_expiry: entry.expires_at_unix_ms,
             items:,
             currencies:,
             tables:,
+            now_unix_ms:,
             logged:,
           )
       }
@@ -316,6 +330,7 @@ fn buy_from(
   items items: List(HeldItem),
   currencies currencies: Currencies,
   tables tables: table_store.Tables,
+  now_unix_ms now_unix_ms: Int,
   logged logged: Set(String),
 ) -> Result(Taken, Refusal) {
   let stocked =
@@ -353,9 +368,11 @@ fn buy_from(
     random_stats: 0,
     charges:,
     item_flags: 0,
+    kept_expiry: None,
     items:,
     currencies:,
     tables:,
+    now_unix_ms:,
     logged:,
   )
 }
@@ -372,9 +389,11 @@ fn asked(
   random_stats random_stats: Int,
   charges charges: Int,
   item_flags item_flags: Int,
+  kept_expiry kept_expiry: Option(Int),
   items items: List(HeldItem),
   currencies currencies: Currencies,
   tables tables: table_store.Tables,
+  now_unix_ms now_unix_ms: Int,
   logged logged: Set(String),
 ) -> Result(Taken, Refusal) {
   let held = currency.held(currencies:, currency_type_id:)
@@ -390,6 +409,10 @@ fn asked(
   use size <- result.try(
     inventory.size(items:, tables:) |> result.map_error(inventory_row),
   )
+  use expires_at_unix_ms <- result.try(
+    item_expiry.made_at(tables:, item2_id:, kept: kept_expiry, now_unix_ms:)
+    |> result.replace_error(NoItemRow(item2_id:)),
+  )
   case
     inventory.placed(
       items:,
@@ -398,6 +421,7 @@ fn asked(
       limit:,
       wanted: items_bought,
       charges:,
+      expires_at_unix_ms:,
     )
   {
     Error(Nil) -> Ok(refused(code: inventory_full, logged:))
@@ -505,6 +529,7 @@ pub fn answered(
   currencies currencies: Currencies,
   buyback buyback: Buyback,
   answer answer: ItemsAnswer,
+  now_unix_ms now_unix_ms: Int,
 ) -> #(List(HeldItem), Currencies, Buyback, List(Effect)) {
   case answer {
     store.Bought(amount:, made:) -> {
@@ -547,7 +572,7 @@ pub fn answered(
             ))
           }),
           list.map(made, fn(item) {
-            Send(inventory.held_item_frame(item:, reason:))
+            Send(inventory.held_item_frame(item:, now_unix_ms:, reason:))
           }),
           removal,
         ]),

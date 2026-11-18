@@ -139,6 +139,7 @@ pub fn the_checker_comes_from_the_entered_player_test() -> Nil {
       random_stats: 0,
       charges: 0,
       item_flags: 0,
+      expires_at_unix_ms: None,
     )
   let entered =
     world_entry.Entered(

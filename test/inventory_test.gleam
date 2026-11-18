@@ -97,6 +97,7 @@ fn held() -> List(HeldItem) {
       random_stats: 0,
       charges: 0,
       item_flags: 0,
+      expires_at_unix_ms: None,
     ),
   ])
 }
@@ -240,7 +241,7 @@ pub fn a_move_to_an_empty_slot_is_saved_then_answered_with_its_new_place_test() 
     as "the store is asked for the moves, fenced by the login's epoch"
   assert items == held() as "nothing is moved before the store has answered"
   let #(moved, effects) =
-    inventory.answered(items:, moving:, answer: ItemsSaved)
+    inventory.answered(items:, moving:, answer: ItemsSaved, now_unix_ms: 0)
   assert at(items: moved, guid: 8) == #(1, 5)
     as "opcode.0x111.guid: the item is at its new place with the guid it had"
   assert list.length(moved) == list.length(items)
@@ -255,7 +256,12 @@ pub fn a_move_to_an_empty_slot_is_saved_then_answered_with_its_new_place_test() 
     as "opcode.0x569: the guid and the place, location 1 in bits 8 to 15 and slot 5 in bits 0 to 7"
   let unequipped = accepted(items:, from: #(0, 0), to: #(1, 3))
   let #(moved, effects) =
-    inventory.answered(items:, moving: unequipped, answer: ItemsSaved)
+    inventory.answered(
+      items:,
+      moving: unequipped,
+      answer: ItemsSaved,
+      now_unix_ms: 0,
+    )
   assert at(items: moved, guid: 1) == #(1, 3)
     as "an unequip is the same message: the chest piece is in inventory slot 3"
   assert list.map(item_flags_support.sent(effects), fn(frame) {
@@ -289,7 +295,7 @@ pub fn a_move_onto_an_item_swaps_the_two_test() -> Nil {
     ]
     as "two moves, each item to the other's place, which the store applies together"
   let #(moved, effects) =
-    inventory.answered(items:, moving:, answer: ItemsSaved)
+    inventory.answered(items:, moving:, answer: ItemsSaved, now_unix_ms: 0)
   assert at(items: moved, guid: 1) == #(1, 0)
   assert at(items: moved, guid: 8) == #(0, 0)
     as "each item keeps its guid and takes the other's place"
@@ -510,6 +516,7 @@ fn with_spare(item2_id: Int) -> List(HeldItem) {
       random_stats: 0,
       charges: 0,
       item_flags: 0,
+      expires_at_unix_ms: None,
     ),
   ])
 }
@@ -613,7 +620,7 @@ pub fn a_move_the_store_did_not_make_is_refused_db_failure_test() -> Nil {
   let items = held()
   let moving = accepted(items:, from: #(1, 0), to: #(1, 5))
   let #(unmoved, effects) =
-    inventory.answered(items:, moving:, answer: ItemsNotSaved)
+    inventory.answered(items:, moving:, answer: ItemsNotSaved, now_unix_ms: 0)
   assert unmoved == items as "nothing was moved, so the items are as they were"
   assert failed_with(effects) == [#(8, 5)]
     as "GenericError 5 DbFailure, naming the item"
@@ -627,6 +634,7 @@ pub fn a_move_the_store_did_not_make_is_refused_db_failure_test() -> Nil {
       items:,
       moving:,
       answer: SaveRefused(constraint: "character_item_one_per_slot"),
+      now_unix_ms: 0,
     )
   assert unmoved == items as "a refused place leaves the items as they were"
   assert failed_with(effects) == [#(8, 5)]
@@ -670,6 +678,7 @@ fn in_bag(
     random_stats: 0,
     charges: 0,
     item_flags: 0,
+    expires_at_unix_ms: None,
   )
 }
 
@@ -793,7 +802,12 @@ pub fn a_split_onto_an_empty_slot_is_saved_then_answered_with_the_new_stack_test
     ))
     as "the store is asked for the split, fenced by the login's epoch and the stack as held"
   let #(made, effects) =
-    inventory.answered(items:, moving:, answer: ItemMade(item_guid: 77))
+    inventory.answered(
+      items:,
+      moving:,
+      answer: ItemMade(item_guid: 77),
+      now_unix_ms: 0,
+    )
   assert count_of(items: made, guid: 20) == 7
     as "the source keeps what is left of it"
   assert list.find(made, fn(item) { item.item_guid == 77 })
@@ -909,7 +923,7 @@ pub fn a_move_onto_a_stack_of_the_same_item_merges_it_whole_test() -> Nil {
     ))
     as "the store is asked for the merge, fenced by the login's epoch and both stacks as held"
   let #(merged, effects) =
-    inventory.answered(items:, moving:, answer: ItemsSaved)
+    inventory.answered(items:, moving:, answer: ItemsSaved, now_unix_ms: 0)
   assert count_of(items: merged, guid: 21) == 7 as "the target holds the sum"
   assert list.find(merged, fn(item) { item.item_guid == 20 }) == Error(Nil)
     as "the source is gone"
@@ -938,7 +952,7 @@ pub fn a_merge_past_the_stack_limit_fills_the_target_and_keeps_the_rest_test() -
   assert moving.change == inventory.Merged(source:, target:, count: 2)
     as "only the 2 that fit move"
   let #(merged, effects) =
-    inventory.answered(items:, moving:, answer: ItemsSaved)
+    inventory.answered(items:, moving:, answer: ItemsSaved, now_unix_ms: 0)
   assert count_of(items: merged, guid: 21) == 20
     as "the target is full, at the Item2's maxStackCount"
   assert count_of(items: merged, guid: 20) == 3
@@ -995,7 +1009,7 @@ pub fn a_move_onto_a_full_stack_or_an_item_that_does_not_stack_swaps_test() -> N
       ]
       as { what <> ": the two items trade places" }
     let #(swapped, effects) =
-      inventory.answered(items:, moving:, answer: ItemsSaved)
+      inventory.answered(items:, moving:, answer: ItemsSaved, now_unix_ms: 0)
     assert at(items: swapped, guid: 20) == #(1, 2)
     assert at(items: swapped, guid: 21) == #(1, 1)
     assert count_of(items: swapped, guid: 20) == first.stack_count
@@ -1014,7 +1028,8 @@ pub fn a_delete_is_saved_then_answered_with_the_destroy_reason_test() -> Nil {
   let items = list.append(held(), [stack])
   let moving = asked(delete_taken(items:, at: #(1, 1)))
   assert moving.guid == 20
-  assert moving.change == inventory.Deleted(item: stack)
+  assert moving.change
+    == inventory.Deleted(item: stack, by: inventory.RemovedByPlayer)
     as "the whole stack at the place"
   assert inventory.request(
       moving:,
@@ -1029,7 +1044,8 @@ pub fn a_delete_is_saved_then_answered_with_the_destroy_reason_test() -> Nil {
       item: stack,
     ))
     as "the store is asked for the delete, fenced by the login's epoch and the item as held"
-  let #(left, effects) = inventory.answered(items:, moving:, answer: ItemsSaved)
+  let #(left, effects) =
+    inventory.answered(items:, moving:, answer: ItemsSaved, now_unix_ms: 0)
   assert left == held() as "the stack is gone and no other item changed"
   let assert [frame] = item_flags_support.sent(effects)
   assert frame.message_id == 0x0148
@@ -1111,7 +1127,7 @@ pub fn a_split_merge_or_delete_the_store_did_not_save_is_refused_db_failure_test
   list.each(changes, fn(change) {
     let #(what, word, moving) = change
     let #(unchanged, effects) =
-      inventory.answered(items:, moving:, answer: ItemsNotSaved)
+      inventory.answered(items:, moving:, answer: ItemsNotSaved, now_unix_ms: 0)
     assert unchanged == items
       as { what <> ": nothing was saved, so the items are as they were" }
     assert failed_with(effects) == [#(20, 5)]
@@ -1131,6 +1147,7 @@ pub fn a_split_merge_or_delete_the_store_did_not_save_is_refused_db_failure_test
         items:,
         moving:,
         answer: SaveRefused(constraint: "character_item_one_per_slot"),
+        now_unix_ms: 0,
       )
     assert unchanged == items
       as { what <> ": a refused change leaves the items as they were" }
@@ -1162,6 +1179,7 @@ fn worn_with_slot_zero(item2_id: Int) -> List(HeldItem) {
       random_stats: 0,
       charges: 0,
       item_flags: 0,
+      expires_at_unix_ms: None,
     ),
   ])
 }
@@ -1343,6 +1361,7 @@ fn with_two_bags() -> List(HeldItem) {
       random_stats: 0,
       charges: 0,
       item_flags: 0,
+      expires_at_unix_ms: None,
     ),
     HeldItem(
       item_guid: 21,
@@ -1353,6 +1372,7 @@ fn with_two_bags() -> List(HeldItem) {
       random_stats: 0,
       charges: 0,
       item_flags: 0,
+      expires_at_unix_ms: None,
     ),
   ])
 }
@@ -1473,6 +1493,7 @@ fn worn_bag(
     random_stats: 0,
     charges: 0,
     item_flags: 0,
+    expires_at_unix_ms: None,
   )
 }
 
@@ -1579,7 +1600,8 @@ pub fn a_bag_worn_in_a_bag_slot_opens_its_slots_test() -> Nil {
       moves: item_flags_support.moves_of(moving),
     ))
     as "the store is asked for the bag's move"
-  let #(worn, effects) = inventory.answered(items:, moving:, answer: ItemsSaved)
+  let #(worn, effects) =
+    inventory.answered(items:, moving:, answer: ItemsSaved, now_unix_ms: 0)
   assert at(items: worn, guid: 20) == #(0, 17)
   assert item_flags_support.frame_ids(effects) == [0x0569, 0x0567]
     as "opcode.0x569 then the 0x567 of its bind on equip (bindFlags 16)"
@@ -1593,7 +1615,7 @@ pub fn a_bag_worn_in_a_bag_slot_opens_its_slots_test() -> Nil {
   // A second bag adds its slots to the first's.
   let moving = asked(bagged(items: worn, from: #(1, 2), to: #(0, 18)))
   let #(both, effects) =
-    inventory.answered(items: worn, moving:, answer: ItemsSaved)
+    inventory.answered(items: worn, moving:, answer: ItemsSaved, now_unix_ms: 0)
   assert item_flags_support.frame_ids(effects) == [0x0569, 0x0567]
     as "opcode.0x569 then the 0x567 of its bind on equip (bindFlags 16)"
   assert moved_places(list.take(effects, 1)) == [#(21, 18)]
@@ -1754,7 +1776,7 @@ pub fn items_past_a_shrunk_inventory_move_to_free_slots_test() -> Nil {
     ]
     as "the bag, then each item past the new end, in index order, to the lowest free slot but the bag's own"
   let #(moved, effects) =
-    inventory.answered(items:, moving:, answer: ItemsSaved)
+    inventory.answered(items:, moving:, answer: ItemsSaved, now_unix_ms: 0)
   assert moved_places(effects)
     == [#(220, 261), #(221, 263), #(223, 265), #(20, 259)]
     as "opcode.0x569: each displaced item's new place, then the bag's, 1 * 256 + the index"
@@ -1765,7 +1787,7 @@ pub fn items_past_a_shrunk_inventory_move_to_free_slots_test() -> Nil {
   assert size_of(moved) == 16
   assert list.length(moved) == list.length(items) as "no item is lost"
   let #(unchanged, effects) =
-    inventory.answered(items:, moving:, answer: ItemsNotSaved)
+    inventory.answered(items:, moving:, answer: ItemsNotSaved, now_unix_ms: 0)
   assert unchanged == items as "a save the store did not make leaves every item"
   assert failed_with(effects) == [#(20, 5)]
 }
@@ -1810,7 +1832,12 @@ pub fn a_worn_bag_cannot_be_deleted_test() -> Nil {
     ))
   assert moving.guid == 22
   let #(_, effects) =
-    inventory.answered(items: stacked, moving:, answer: ItemMade(item_guid: 77))
+    inventory.answered(
+      items: stacked,
+      moving:,
+      answer: ItemMade(item_guid: 77),
+      now_unix_ms: 0,
+    )
   let assert [_, added] = item_flags_support.sent(effects)
     as "opcode.0x17f of the source then opcode.0x111 of the new stack"
   let assert Ok(item_added.ItemAdded(held_item:)) =
@@ -1860,7 +1887,12 @@ pub fn a_split_stack_keeps_the_charges_of_its_source_test() -> Nil {
         count: 2,
       ))
     let #(made, _) =
-      inventory.answered(items:, moving:, answer: ItemMade(item_guid: 77))
+      inventory.answered(
+        items:,
+        moving:,
+        answer: ItemMade(item_guid: 77),
+        now_unix_ms: 0,
+      )
     let assert Ok(split) = list.find(made, fn(item) { item.item_guid == 77 })
       as "the new stack is held"
     assert split.charges == charges as why
@@ -1886,7 +1918,12 @@ pub fn item_added_frames_carry_the_held_charges_test() -> Nil {
       count: 3,
     ))
   let #(_, effects) =
-    inventory.answered(items:, moving:, answer: ItemMade(item_guid: 77))
+    inventory.answered(
+      items:,
+      moving:,
+      answer: ItemMade(item_guid: 77),
+      now_unix_ms: 0,
+    )
   let assert [_, added] = item_flags_support.sent(effects)
   let assert Ok(item_added.ItemAdded(held_item:)) =
     item_added.decode(added.body)
@@ -1905,6 +1942,7 @@ pub fn item_added_frames_carry_the_held_charges_test() -> Nil {
         charges:,
         reason: 0,
         item_flags: 0,
+        time_left_ms: 0,
       )
     let assert Ok(item_added.ItemAdded(held_item:)) =
       item_added.decode(frame.body)
@@ -2050,7 +2088,7 @@ pub fn an_equip_asks_the_move_with_the_flags_it_sets_test() -> Nil {
       == flags_set
       as { why <> ": the bits the ask sets in each moved item" }
     let #(moved, effects) =
-      inventory.answered(items:, moving:, answer: ItemsSaved)
+      inventory.answered(items:, moving:, answer: ItemsSaved, now_unix_ms: 0)
     assert item_flags_support.frame_ids(effects) == ids
       as { why <> ": the move's own frame, then each 0x567" }
     assert flags_changed_in(effects) == flags_written
@@ -2102,6 +2140,7 @@ pub fn item_added_frames_carry_the_held_flags_test() -> Nil {
         charges: 0,
         item_flags:,
         reason: 0,
+        time_left_ms: 0,
       )
     let assert Ok(item_added.ItemAdded(held_item:)) =
       item_added.decode(frame.body)
@@ -2148,7 +2187,12 @@ pub fn a_split_stack_keeps_the_flags_of_its_source_test() -> Nil {
         count: 2,
       ))
     let #(made, effects) =
-      inventory.answered(items:, moving:, answer: ItemMade(item_guid: 77))
+      inventory.answered(
+        items:,
+        moving:,
+        answer: ItemMade(item_guid: 77),
+        now_unix_ms: 0,
+      )
     let assert Ok(split) = list.find(made, fn(item) { item.item_guid == 77 })
       as "the new stack is held"
     assert split.item_flags == item_flags as why

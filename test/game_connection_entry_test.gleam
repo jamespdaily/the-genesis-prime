@@ -69,7 +69,13 @@ pub fn message_0x07dd_asks_the_store_for_the_character_then_the_map_and_the_answ
   use <- owned_test.run(10_000)
   let #(state, taken) = game_connection_support.playing(42)
   assert game_connection_support.ask_request(taken)
-    == AskStore(World(LoadCharacter(AccountId(7), CharacterId(42))))
+    == AskStore(
+      World(LoadCharacter(
+        AccountId(7),
+        CharacterId(42),
+        support.unix_ms_of_filetime(game_connection_support.filetime),
+      )),
+    )
     as "opcode.0x7dd: the character's id, and the holder's account, which scopes the read"
   let assert Some(ask) = support.asked(taken)
   assert ask.deadline_ms == support.now_ms + 4000
@@ -195,6 +201,7 @@ pub fn a_load_with_an_unset_item_asks_the_store_to_fill_it_before_the_map_is_ask
                   stack_count: 1,
                   random_stats: 0,
                   item_flags: 0,
+                  expires_at_unix_ms: None,
                 ),
               ],
               currencies: [],

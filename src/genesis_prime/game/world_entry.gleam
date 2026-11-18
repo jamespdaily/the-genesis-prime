@@ -6,7 +6,7 @@
 //// and its watch on the map.
 ////
 //// ```
-//// 0x07DD play, character id  ─▶ play_requested ─▶ Ask store LoadCharacter(account, id)
+//// 0x07DD play, character id  ─▶ play_requested ─▶ Ask store LoadCharacter(account, id, now): deletes the items that ran out while away
 //// Loaded(character, unset items)
 ////                            ─▶ loaded         ─▶ Ask store FillCharges(account, id, epoch, each unset item's row charges)
 //// ChargesFilled(ItemsSaved)  ─▶ loaded         ─▶ (as the next line; ItemsNotSaved refuses the play, SaveRefused is a Fault)
@@ -445,8 +445,9 @@ pub type Buyback {
 /// how many were sold, the random-stat word the item held (which the entry carries to the
 /// client and a buy back gives the item again), the charges the sold stack held (which a buy
 /// back gives the item again; the client's entry has no field for them), the flags byte the
-/// sold stack held (which a buy back gives the item again) and what the vendor paid for them
-/// all:
+/// sold stack held (which a buy back gives the item again), the moment the sold stack ran out
+/// (`HeldItem.expires_at_unix_ms`, kept by a buy back: the countdown does not stop while the
+/// item is on the list) and what the vendor paid for them all:
 /// `amount` of the currency `currency_type_id` (a CurrencyType row's id), before the
 /// currency's cap.
 pub type BuybackEntry {
@@ -457,6 +458,7 @@ pub type BuybackEntry {
     random_stats: Int,
     charges: Int,
     item_flags: Int,
+    expires_at_unix_ms: Option(Int),
     currency_type_id: Int,
     amount: Int,
   )
@@ -606,11 +608,14 @@ const open_world_instance = 0
 pub fn take(
   account_id account_id: AccountId,
   body body: BitArray,
+  now_unix_ms now_unix_ms: Int,
 ) -> Result(#(State, List(Effect)), Refusal) {
   play_character.decode(body)
   |> client_connection.decoded(message_id: play_character.message_id)
   |> result.map_error(NotDecoded)
-  |> result.map(fn(request) { play_requested(account_id:, request:) })
+  |> result.map(fn(request) {
+    play_requested(account_id:, request:, now_unix_ms:)
+  })
 }
 
 /// A sentence that says what the client sent that is refused, for the log.
@@ -624,11 +629,13 @@ pub fn describe(refusal refusal: Refusal) -> String {
 fn play_requested(
   account_id account_id: AccountId,
   request request: PlayCharacter,
+  now_unix_ms now_unix_ms: Int,
 ) -> #(State, List(Effect)) {
   #(Loading(account_id:, character_id: CharacterId(request.character_id)), [
     AskStore(request: store.LoadCharacter(
       account_id:,
       character_id: CharacterId(request.character_id),
+      now_unix_ms:,
     )),
   ])
 }
@@ -833,6 +840,7 @@ fn charges_asked(
           random_stats: item.random_stats,
           charges:,
           item_flags: item.item_flags,
+          expires_at_unix_ms: item.expires_at_unix_ms,
         )
       })
     })
@@ -1097,7 +1105,7 @@ pub fn joined(
               ],
               character_state_sent(entry:),
               quest_effects,
-              items_sent(items:),
+              items_sent(items:, now_unix_ms: step.unix_milliseconds(now:)),
               loadout_sent(
                 character_number: character_id_number,
                 loadout:,
@@ -1548,13 +1556,18 @@ const first_innate_slot = 0
 /// unlocked.
 const set_unlocked = 1
 
-/// The 0x111 of each saved item, in location then bag index order.
-fn items_sent(items items: List(store.HeldItem)) -> List(Effect) {
+/// The 0x111 of each saved item, in location then bag index order, each with the time it has
+/// left to run out (`item_expiry.time_left_ms`).
+fn items_sent(
+  items items: List(store.HeldItem),
+  now_unix_ms now_unix_ms: Int,
+) -> List(Effect) {
   items
   |> in_sending_order
   |> list.map(fn(item) {
     Send(inventory.held_item_frame(
       item:,
+      now_unix_ms:,
       reason: ability_book_frame.held_from_the_start,
     ))
   })

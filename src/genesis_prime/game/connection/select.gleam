@@ -91,7 +91,13 @@ pub fn play_requested(
 ) -> client_connection.Handled(Session) {
   case connection_state.standing(session.status) {
     Selecting(holder:) ->
-      case world_entry.take(account_id: holder.account_id, body: inner.body) {
+      case
+        world_entry.take(
+          account_id: holder.account_id,
+          body: inner.body,
+          now_unix_ms: step.unix_milliseconds(now:),
+        )
+      {
         Ok(#(entry, effects)) ->
           entering_world(
             session:,

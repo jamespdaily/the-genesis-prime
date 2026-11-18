@@ -49,7 +49,6 @@ import genesis_prime/step.{
 }
 import genesis_prime/store.{HeldItem, ItemsSaved, NewStack}
 import genesis_prime/table/id.{Creature2Id, Faction2Id, Item2Id}
-import genesis_prime/world_map/creature_life.{Hostile}
 import genesis_prime/world_map/map.{Join, Left}
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/stay.{type Stay}
@@ -60,13 +59,9 @@ import planted_table.{Integer}
 import quest_support
 import quest_turn_in_support
 import quest_walker_support
-import spawn_support
 import vendor_support
 
 const beast = 73_464
-
-/// The unit of Dorian Walker in the tests' picture.
-const walker_unit = 40
 
 /// The credit of the Beast (Creature2 73464, level 1, no faction) as unit `unit_id`,
 /// told to the connection for `stay`.
@@ -105,31 +100,7 @@ fn turn_in_of(quest_id quest_id: Int) -> BitArray {
 /// Dorian Walker (Creature2 74812), friendly and in reach of the player, with his
 /// window open.
 fn at_the_vendor(state state: game_connection.State) -> game_connection.State {
-  let place = vendor_support.ahead_of_the_player(hit_radius: 1.0, gap: 1.0)
-  let walker = spawn_support.dorian_walker(number: 1, place:)
-  let #(state, _) =
-    connection_support.feed(
-      state:,
-      event: connection_support.creature_appears(
-        unit_id: walker_unit,
-        creature_id: 74_812,
-        display_info_id: walker.display_info_id,
-        outfit_info_id: walker.outfit_info_id,
-        hit_radius: walker.combat.hit_radius,
-        place: vendor_support.ahead_of_the_player(
-          hit_radius: walker.combat.hit_radius,
-          gap: 1.0,
-        ),
-        hostile_to: Hostile(exile: False, dominion: False),
-      ),
-    )
-  let #(state, _) =
-    connection_support.interaction_requested(
-      state:,
-      unit_id: walker_unit,
-      kind: 0x31,
-    )
-  state
+  vendor_support.at_the_vendor(state:)
 }
 
 /// The player holds 5 of Item2 20791 (guid 500) and 100 credits at Dorian Walker, and
@@ -150,6 +121,7 @@ fn selling() -> #(game_connection.State, step.ConnectionStep(Request)) {
             random_stats: 0,
             charges: 0,
             item_flags: 0,
+            expires_at_unix_ms: None,
           ),
         ],
       ),
@@ -170,6 +142,7 @@ fn sale_saved() -> step.Outcome(Answer) {
             random_stats: 0,
             charges: 0,
             item_flags: 0,
+            expires_at_unix_ms: None,
           ),
         ]),
       ),
@@ -234,6 +207,7 @@ fn buy_saved() -> step.Outcome(Answer) {
             random_stats: 0,
             charges: 0,
             item_flags: 0,
+            expires_at_unix_ms: None,
           ),
         ]),
       ),
@@ -298,6 +272,7 @@ pub fn a_creature_strike_during_a_turn_in_is_taken_after_the_answer_test() -> Ni
           random_stats: 0,
           charges:,
           item_flags: 0,
+          expires_at_unix_ms: None,
         ),
       ] = one.make
         as "one stack of each"
@@ -310,6 +285,7 @@ pub fn a_creature_strike_during_a_turn_in_is_taken_after_the_answer_test() -> Ni
         random_stats: 0,
         charges:,
         item_flags: 0,
+        expires_at_unix_ms: None,
       )
     })
   let #(_, answered) =
@@ -565,6 +541,7 @@ fn selling_with_a_timed_quest(
               random_stats: 0,
               charges: 0,
               item_flags: 0,
+              expires_at_unix_ms: None,
             ),
           ],
           quests: [quest_support.timed(1872, progress: [], quest_ms_left: 0)],
@@ -591,6 +568,7 @@ fn moving_an_item() -> #(game_connection.State, step.ConnectionStep(Request)) {
           random_stats: 0,
           charges: 0,
           item_flags: 0,
+          expires_at_unix_ms: None,
         ),
       ],
       quests: [],

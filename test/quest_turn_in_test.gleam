@@ -909,6 +909,7 @@ pub fn reward_items_fill_stacks_then_lowest_free_slots_test() -> Nil {
           random_stats: 0,
           charges: 0,
           item_flags: 0,
+          expires_at_unix_ms: None,
         ),
         NewStack(
           location: 1,
@@ -917,6 +918,7 @@ pub fn reward_items_fill_stacks_then_lowest_free_slots_test() -> Nil {
           random_stats: 0,
           charges: 0,
           item_flags: 0,
+          expires_at_unix_ms: None,
         ),
         NewStack(
           location: 1,
@@ -925,6 +927,7 @@ pub fn reward_items_fill_stacks_then_lowest_free_slots_test() -> Nil {
           random_stats: 0,
           charges: 0,
           item_flags: 0,
+          expires_at_unix_ms: None,
         ),
       ]),
       Placed(
@@ -938,6 +941,7 @@ pub fn reward_items_fill_stacks_then_lowest_free_slots_test() -> Nil {
             random_stats: 0,
             charges: 0,
             item_flags: 0,
+            expires_at_unix_ms: None,
           ),
           NewStack(
             location: 1,
@@ -946,6 +950,7 @@ pub fn reward_items_fill_stacks_then_lowest_free_slots_test() -> Nil {
             random_stats: 0,
             charges: 0,
             item_flags: 0,
+            expires_at_unix_ms: None,
           ),
         ],
       ),
@@ -975,6 +980,7 @@ pub fn reward_items_fill_stacks_then_lowest_free_slots_test() -> Nil {
           random_stats: 0,
           charges: 0,
           item_flags: 0,
+          expires_at_unix_ms: None,
         ),
         NewStack(
           location: 1,
@@ -983,6 +989,7 @@ pub fn reward_items_fill_stacks_then_lowest_free_slots_test() -> Nil {
           random_stats: 0,
           charges: 0,
           item_flags: 0,
+          expires_at_unix_ms: None,
         ),
         NewStack(
           location: 1,
@@ -991,6 +998,7 @@ pub fn reward_items_fill_stacks_then_lowest_free_slots_test() -> Nil {
           random_stats: 0,
           charges: 0,
           item_flags: 0,
+          expires_at_unix_ms: None,
         ),
         NewStack(
           location: 1,
@@ -999,6 +1007,7 @@ pub fn reward_items_fill_stacks_then_lowest_free_slots_test() -> Nil {
           random_stats: 0,
           charges: 0,
           item_flags: 0,
+          expires_at_unix_ms: None,
         ),
         NewStack(
           location: 1,
@@ -1007,6 +1016,7 @@ pub fn reward_items_fill_stacks_then_lowest_free_slots_test() -> Nil {
           random_stats: 0,
           charges: 0,
           item_flags: 0,
+          expires_at_unix_ms: None,
         ),
       ]),
     ]
@@ -1117,6 +1127,7 @@ pub fn a_quest_reward_with_random_stats_is_made_rolled_test() -> Nil {
           random_stats: word,
           charges: 0,
           item_flags: 0,
+          expires_at_unix_ms: None,
         ),
       ]),
     ]
@@ -1131,6 +1142,7 @@ pub fn a_quest_reward_with_random_stats_is_made_rolled_test() -> Nil {
       random_stats: word,
       charges: 3,
       item_flags: 0,
+      expires_at_unix_ms: None,
     )
   let assert quest_turn_in.Saved(items:, rewards:, ..) =
     quest_turn_in.answered(
@@ -1138,6 +1150,7 @@ pub fn a_quest_reward_with_random_stats_is_made_rolled_test() -> Nil {
       items: [],
       currencies: support.credits(total: 0),
       answer: store.TurnedIn(credits: 0, made: [made]),
+      now_unix_ms: 0,
     )
     as "the store's answer is saved"
   assert items == [made] as "the item is held with its word"
@@ -1184,6 +1197,7 @@ pub fn a_credit_reward_sends_the_gain_after_the_total_test() -> Nil {
       items: [],
       currencies: support.credits(total: 1000),
       answer: store.TurnedIn(credits: 1145, made: []),
+      now_unix_ms: 0,
     )
     as "the store's answer is saved"
   assert sent_ids(effects: then)
@@ -1220,6 +1234,7 @@ pub fn a_turn_in_with_no_credits_sends_no_gain_test() -> Nil {
       items: [],
       currencies: support.credits(total: 0),
       answer: store.TurnedIn(credits: 0, made: []),
+      now_unix_ms: 0,
     )
     as "the store's answer is saved"
   assert sent_ids(effects: then) == [quest_state.message_id]
@@ -1417,6 +1432,7 @@ pub fn a_server_completion_of_a_quest_with_a_reward_choice_gives_only_its_fixed_
           random_stats: 0,
           charges: 0,
           item_flags: 0,
+          expires_at_unix_ms: None,
         ),
       ]),
     ]
@@ -1436,8 +1452,10 @@ pub fn a_server_completion_of_a_quest_with_a_reward_choice_gives_only_its_fixed_
           random_stats: 0,
           charges: 0,
           item_flags: 0,
+          expires_at_unix_ms: None,
         ),
       ]),
+      now_unix_ms: 0,
     )
     as "the store's answer is saved"
   let assert Ok(Send(last)) = list.last(then)
@@ -1475,6 +1493,7 @@ pub fn a_server_completion_answered_saved_ends_with_0x35c_state_3_test() -> Nil 
           random_stats: 0,
           charges:,
           item_flags: 0,
+          expires_at_unix_ms: None,
         ),
       ] = one.make
         as "one stack of each, the Item2s' counts being 1"
@@ -1487,6 +1506,7 @@ pub fn a_server_completion_answered_saved_ends_with_0x35c_state_3_test() -> Nil 
         random_stats: 0,
         charges:,
         item_flags: 0,
+        expires_at_unix_ms: None,
       )
     })
   let assert quest_turn_in.Saved(rewards:, then:, ..) =
@@ -1495,6 +1515,7 @@ pub fn a_server_completion_answered_saved_ends_with_0x35c_state_3_test() -> Nil 
       items: [],
       currencies: support.credits(total: 0),
       answer: store.TurnedIn(credits: 145, made:),
+      now_unix_ms: 0,
     )
     as "the store's answer is saved"
   assert sent_ids(effects: rewards) == [0x0111, 0x0111]

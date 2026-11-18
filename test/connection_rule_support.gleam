@@ -32,6 +32,12 @@ pub const peer = Peer(address: "192.168.1.5", port: 50_000)
 /// The monotonic time every input of a rule test carries, in milliseconds.
 pub const now_ms = 1000
 
+/// The Unix milliseconds of a system time given as a FILETIME: it counts 100-nanosecond
+/// intervals from 1601-01-01, which is 11,644,473,600 seconds before the Unix epoch.
+pub fn unix_ms_of_filetime(filetime filetime: Int) -> Int {
+  filetime / 10_000 - 11_644_473_600_000
+}
+
 /// The most bytes a connection holds that it has not taken as frames: the
 /// client's frame limit, 131,070 (MessageSizeLimit 0x140335ec0), which one
 /// whole frame may fill, and one read of 16,384, the server's choice for the

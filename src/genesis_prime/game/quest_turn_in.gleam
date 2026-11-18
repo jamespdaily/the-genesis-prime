@@ -91,6 +91,7 @@ import genesis_prime/game/equip_requirement.{Wearer}
 import genesis_prime/game/experience
 import genesis_prime/game/interaction
 import genesis_prime/game/inventory
+import genesis_prime/game/item_expiry
 import genesis_prime/game/item_property
 import genesis_prime/game/player_life
 import genesis_prime/game/quest
@@ -268,6 +269,7 @@ pub fn take(
   tables tables: table_store.Tables,
   now_ms now_ms: Int,
   unix_seconds unix_seconds: Int,
+  unix_ms unix_ms: Int,
   logged logged: Set(String),
 ) -> Result(Taken, quest.Refusal) {
   use message <- result.map(
@@ -288,6 +290,7 @@ pub fn take(
       tables:,
       now_ms:,
       unix_seconds:,
+      unix_ms:,
     ),
     logged:,
   )
@@ -331,6 +334,7 @@ pub fn completed_by_server(
   item_proficiencies item_proficiencies: Int,
   tables tables: table_store.Tables,
   unix_seconds unix_seconds: Int,
+  unix_ms unix_ms: Int,
   logged logged: Set(String),
 ) -> Taken {
   let turning = "the server completes quest " <> int.to_string(quest_id)
@@ -374,6 +378,7 @@ pub fn completed_by_server(
         currencies:,
         item_proficiencies:,
         tables:,
+        unix_ms:,
       )
     },
     logged:,
@@ -420,6 +425,7 @@ fn checked(
   tables tables: table_store.Tables,
   now_ms now_ms: Int,
   unix_seconds unix_seconds: Int,
+  unix_ms unix_ms: Int,
 ) -> Result(#(TurnIn, List(#(String, String))), Stop) {
   let quest_id = message.quest_id
   let turning = "0x035D turns in quest " <> int.to_string(quest_id)
@@ -468,6 +474,7 @@ fn checked(
     currencies:,
     item_proficiencies:,
     tables:,
+    unix_ms:,
   )
 }
 
@@ -526,6 +533,7 @@ fn rewarded(
   currencies currencies: Currencies,
   item_proficiencies item_proficiencies: Int,
   tables tables: table_store.Tables,
+  unix_ms unix_ms: Int,
 ) -> Result(#(TurnIn, List(#(String, String))), Stop) {
   let quest_id = row.id
   let rows = rewards_of(tables:, quest_id:)
@@ -558,7 +566,13 @@ fn rewarded(
   )
   let given =
     list.append(fixed, option.unwrap(option.map(chosen, fn(row) { [row] }), []))
-  use placed <- result.try(place_items(turning:, given:, asker:, tables:))
+  use placed <- result.try(place_items(
+    turning:,
+    given:,
+    asker:,
+    tables:,
+    unix_ms:,
+  ))
   let credits_held =
     currency.held(currencies:, currency_type_id: currency.credits_type)
   let credits_after =
@@ -851,6 +865,7 @@ fn place_items(
   given given: List(Quest2Reward),
   asker asker: quest.Asker,
   tables tables: table_store.Tables,
+  unix_ms unix_ms: Int,
 ) -> Result(List(store.Placed), Stop) {
   let wanted =
     list.fold(given, [], fn(wanted, reward) {
@@ -906,6 +921,22 @@ fn place_items(
         )
       }),
     )
+    use expires_at_unix_ms <- result.try(
+      item_expiry.made_at(
+        tables:,
+        item2_id: Item2Id(item2_id),
+        kept: None,
+        now_unix_ms: unix_ms,
+      )
+      |> result.map_error(fn(error) {
+        Declined(
+          key: "item " <> int.to_string(item2_id),
+          text: turning
+            <> ", whose reward item is not read: "
+            <> item_property.describe(error:),
+        )
+      }),
+    )
     case
       inventory.placed(
         items: working,
@@ -914,6 +945,7 @@ fn place_items(
         limit:,
         wanted: amount,
         charges:,
+        expires_at_unix_ms:,
       )
     {
       Error(Nil) -> Error(NoRoom)
@@ -948,6 +980,7 @@ fn after(
         random_stats: stack.random_stats,
         charges: stack.charges,
         item_flags: stack.item_flags,
+        expires_at_unix_ms: stack.expires_at_unix_ms,
       )
     }),
   )
@@ -1118,6 +1151,7 @@ pub fn answered(
   items items: List(HeldItem),
   currencies currencies: Currencies,
   answer answer: ItemsAnswer,
+  now_unix_ms now_unix_ms: Int,
 ) -> Answered {
   case answer {
     store.TurnedIn(credits:, made:) -> {
@@ -1135,7 +1169,11 @@ pub fn answered(
         rewards: list.map(
           list.append(
             list.map(made, fn(stack) {
-              inventory.held_item_frame(item: stack, reason: quest_reason)
+              inventory.held_item_frame(
+                item: stack,
+                now_unix_ms:,
+                reason: quest_reason,
+              )
             }),
             list.map(grow, fn(growth) {
               inventory.count_changed_frame(

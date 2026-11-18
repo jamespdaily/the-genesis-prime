@@ -26,6 +26,7 @@ import genesis_prime/store.{
 import genesis_prime/table/id.{Item2Id}
 import gleam/int
 import gleam/list
+import gleam/option
 import gleam/order
 import item_charge_support
 import owned_test
@@ -189,6 +190,7 @@ pub fn a_migrated_stack_grows_and_splits_with_its_rows_charges_test() -> Nil {
       limit: 50,
       wanted: 2,
       charges: 1,
+      expires_at_unix_ms: option.None,
     )
   assert #(
       list.map(grow, fn(growth) {
@@ -237,6 +239,7 @@ pub fn a_migrated_stack_grows_and_splits_with_its_rows_charges_test() -> Nil {
       items: entry.items,
       moving:,
       answer: ItemMade(item_guid: 77),
+      now_unix_ms: 0,
     )
   let assert Ok(split) = list.find(made, fn(item) { item.item_guid == 77 })
     as "the new stack is held"

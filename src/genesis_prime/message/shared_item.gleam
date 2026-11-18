@@ -47,10 +47,7 @@ pub type SharedItem {
     /// field; its gap leaves the retail length and the request unread, so the
     /// server sends 0 and refunds are off.
     refund_window_ms: Int,
-    /// Open: What gives an item its remaining duration, which the tooltip
-    /// counts down? With 0 the client shows the row's full lifetime and removes
-    /// nothing (opcode.0x111.shared_item_unnamed, 0x14008c0d0).
-    field_15: Int,
+    time_left_ms: Int,
     /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
     /// field no use the server needs, and that fact shows its value is safe.
     soulbound_trade_window_ms: Int,
@@ -111,7 +108,7 @@ pub fn write(writer writer: Writer, record record: SharedItem) -> Writer {
   |> bit_stream.write_unsigned("dye_channels", record.dye_channels, 32)
   |> bit_stream.write_unsigned("item_flags", record.item_flags, 8)
   |> bit_stream.write_unsigned("refund_window_ms", record.refund_window_ms, 32)
-  |> bit_stream.write_unsigned("field_15", record.field_15, 32)
+  |> bit_stream.write_unsigned("time_left_ms", record.time_left_ms, 32)
   |> bit_stream.write_unsigned(
     "soulbound_trade_window_ms",
     record.soulbound_trade_window_ms,
@@ -186,7 +183,7 @@ pub fn read(reader: Reader) -> Result(#(SharedItem, Reader), DecodeError) {
     reader,
     32,
   ))
-  use #(field_15, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
+  use #(time_left_ms, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   use #(soulbound_trade_window_ms, reader) <- result.try(
     bit_stream.read_unsigned(reader, 32),
   )
@@ -249,7 +246,7 @@ pub fn read(reader: Reader) -> Result(#(SharedItem, Reader), DecodeError) {
       dye_channels:,
       item_flags:,
       refund_window_ms:,
-      field_15:,
+      time_left_ms:,
       soulbound_trade_window_ms:,
       refund_cost_0_kind:,
       refund_cost_0_value_a:,

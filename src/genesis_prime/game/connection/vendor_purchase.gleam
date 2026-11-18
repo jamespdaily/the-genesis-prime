@@ -21,6 +21,7 @@
 
 import genesis_prime/client_connection.{type Answer, Continue}
 import genesis_prime/connection/frame.{type Frame}
+import genesis_prime/game/connection/item_expiry as connection_item_expiry
 import genesis_prime/game/connection/state.{type Session, Buying, Session} as connection_state
 import genesis_prime/game/connection/vendor_trade
 import genesis_prime/game/interaction
@@ -59,6 +60,7 @@ pub fn purchase_message(
       tables: session.settings.tables,
       vendors: session.settings.vendors,
       now_ms: now.monotonic_ms,
+      now_unix_ms: step.unix_milliseconds(now:),
       logged: session.interaction_logged,
     ),
   )
@@ -91,6 +93,7 @@ pub fn buy_back_message(
       tables: session.settings.tables,
       vendors: session.settings.vendors,
       now_ms: now.monotonic_ms,
+      now_unix_ms: step.unix_milliseconds(now:),
       logged: session.interaction_logged,
     ),
   )
@@ -172,24 +175,32 @@ pub fn buy_answered(
   purchase purchase: vendor_purchase.Purchase,
   outcome outcome: Outcome(Answer),
 ) -> client_connection.Handled(Session) {
-  vendor_trade.answered(
-    session:,
-    now:,
-    holder:,
-    entered:,
-    what: vendor_purchase.not_bought(purchase:),
-    kind: "buy",
-    outcome:,
-    left: fn(answer) {
-      let #(items, currencies, buyback, effects) =
-        vendor_purchase.answered(
-          purchase:,
-          items: entered.items,
-          currencies: entered.currencies,
-          buyback: entered.buyback,
-          answer:,
+  connection_item_expiry.rearmed(
+    handled: vendor_trade.answered(
+      session:,
+      now:,
+      holder:,
+      entered:,
+      what: vendor_purchase.not_bought(purchase:),
+      kind: "buy",
+      outcome:,
+      left: fn(answer) {
+        let #(items, currencies, buyback, effects) =
+          vendor_purchase.answered(
+            purchase:,
+            items: entered.items,
+            currencies: entered.currencies,
+            buyback: entered.buyback,
+            answer:,
+            now_unix_ms: step.unix_milliseconds(now:),
+          )
+        #(
+          world_entry.Entered(..entered, items:, currencies:, buyback:),
+          effects,
         )
-      #(world_entry.Entered(..entered, items:, currencies:, buyback:), effects)
-    },
+      },
+    ),
+    before: entered.items,
+    now:,
   )
 }

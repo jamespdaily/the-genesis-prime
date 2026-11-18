@@ -3,11 +3,12 @@
 //// returns, tells the client each objective's progress (0x0361) and a quest's state
 //// (0x035C) in the rule's order, and moves the quest deadline timer when the log's
 //// earliest deadline moved, since a quest that is achieved no longer runs out
-//// (genesis_prime/game/quest_log `next_deadline`, `deadline_moved`).
+//// (genesis_prime/game/quest_log `next_deadline`; genesis_prime/game/deadline_timer `moved`).
 
 import genesis_prime/client_connection.{type Request}
 import genesis_prime/game/connection/prerequisite_player
 import genesis_prime/game/connection/state.{type Session} as connection_state
+import genesis_prime/game/deadline_timer
 import genesis_prime/game/departures
 import genesis_prime/game/experience
 import genesis_prime/game/movement
@@ -221,7 +222,7 @@ fn told(
         connection_state.to_client(session, world_entry.button_frame(change:))
       }),
       list.map(
-        quest_log.deadline_moved(
+        deadline_timer.moved(
           before: quest_log.next_deadline(log: before),
           after: quest_log.next_deadline(log: advanced.log),
           now_ms: now.monotonic_ms,

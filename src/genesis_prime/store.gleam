@@ -133,7 +133,10 @@ pub type Character {
 /// made, 0 for a row with none, and the source's for a split. `item_flags` is the item's
 /// flags byte as the client reads it (`opcode.0x111.shared_item_unnamed`): bit 0 is
 /// soulbound and bit 3 no refund; it is 0 when the item is made, and the source's for a
-/// split.
+/// split. `expires_at_unix_ms` is the moment a timed item runs out, in Unix milliseconds
+/// (`Item2.expirationTimeMinutes` after the item was made, genesis_prime/game/item_expiry):
+/// `None` for an item that does not, the source's for a split and the earlier of the two for
+/// a merge.
 pub type HeldItem {
   HeldItem(
     item_guid: Int,
@@ -144,6 +147,7 @@ pub type HeldItem {
     random_stats: Int,
     charges: Int,
     item_flags: Int,
+    expires_at_unix_ms: Option(Int),
   )
 }
 
@@ -160,6 +164,7 @@ pub type UnsetItem {
     stack_count: Int,
     random_stats: Int,
     item_flags: Int,
+    expires_at_unix_ms: Option(Int),
   )
 }
 
@@ -262,8 +267,14 @@ pub type WorldRequest {
   /// The account's character with this id, with its saved place, taken by this
   /// login: the character's `session_epoch` is raised by one in the same
   /// statement and returned. The account's id is in the statement, so no other
-  /// account's character is taken.
-  LoadCharacter(account_id: AccountId, character_id: CharacterId)
+  /// account's character is taken. The same transaction deletes the character's
+  /// items whose `expires_at_unix_ms` is `now_unix_ms` or earlier before it reads
+  /// them, so an item that ran out while its owner was away is not in the answer.
+  LoadCharacter(
+    account_id: AccountId,
+    character_id: CharacterId,
+    now_unix_ms: Int,
+  )
   /// Stores the charges of the character's items that hold none (`CharacterLoaded.unset`):
   /// each `fills` entry is an item's guid and the charges to give it, and the statement
   /// (fill_character_item_charges.sql) changes rows, all or none, only while the character's
@@ -461,8 +472,8 @@ pub type StackGrowth {
 }
 
 /// A stack a purchase or a reward makes, at a place that holds no item: the place, the
-/// count, the random-stat word, the charges and the flags byte of the new row, whose Item2
-/// is the request's.
+/// count, the random-stat word, the charges, the flags byte and the moment it runs out of
+/// the new row, whose Item2 is the request's.
 pub type NewStack {
   NewStack(
     location: Int,
@@ -471,13 +482,21 @@ pub type NewStack {
     random_stats: Int,
     charges: Int,
     item_flags: Int,
+    expires_at_unix_ms: Option(Int),
   )
 }
 
 /// The random-stat word (`opcode.0xba.random_stats`: the buyback entry carries it), the
-/// charges and the flags byte of a stack a sale sold, as the database held them.
+/// charges, the flags byte and the moment it runs out of a stack a sale sold, as the
+/// database held them.
 pub type SoldWord {
-  SoldWord(item_guid: Int, random_stats: Int, charges: Int, item_flags: Int)
+  SoldWord(
+    item_guid: Int,
+    random_stats: Int,
+    charges: Int,
+    item_flags: Int,
+    expires_at_unix_ms: Option(Int),
+  )
 }
 
 /// What the STS login asks the store.

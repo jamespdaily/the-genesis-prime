@@ -684,6 +684,7 @@ fn held_for(
       random_stats: 0,
       charges: 0,
       item_flags: 0,
+      expires_at_unix_ms: option.None,
     )
   })
 }
@@ -1188,6 +1189,7 @@ pub fn the_mining_expedition_equip_objective_completes_after_the_collects_test()
       random_stats: 0,
       charges: 0,
       item_flags: 0,
+      expires_at_unix_ms: option.None,
     )
   let done = settled_with(log:, tables:, items: [five], held: [])
   assert done.effects

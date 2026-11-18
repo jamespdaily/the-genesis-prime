@@ -77,6 +77,7 @@ pub fn held_with(
     random_stats: 0,
     charges: 0,
     item_flags:,
+    expires_at_unix_ms: None,
   )
 }
 

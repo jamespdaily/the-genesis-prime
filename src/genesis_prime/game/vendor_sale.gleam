@@ -700,6 +700,7 @@ pub fn answered(
             random_stats: word.random_stats,
             charges: word.charges,
             item_flags: word.item_flags,
+            expires_at_unix_ms: word.expires_at_unix_ms,
             currency_type_id: sale.currency_type_id,
             amount: stack.paid,
           )

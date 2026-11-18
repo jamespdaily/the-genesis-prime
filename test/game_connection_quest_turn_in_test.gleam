@@ -160,6 +160,7 @@ pub fn turned_in_rewards_are_written_before_the_experience_and_the_state_test() 
           random_stats: 0,
           charges:,
           item_flags: 0,
+          expires_at_unix_ms: None,
         ),
       ] = one.make
         as "one stack of each, the Item2s' counts being 1"
@@ -172,6 +173,7 @@ pub fn turned_in_rewards_are_written_before_the_experience_and_the_state_test() 
         random_stats: 0,
         charges:,
         item_flags: 0,
+        expires_at_unix_ms: None,
       )
     })
   let #(_, answered) =
@@ -212,6 +214,7 @@ pub fn reward_items_advance_the_held_item_objectives_of_other_quests_test() -> N
           random_stats: 0,
           charges:,
           item_flags: 0,
+          expires_at_unix_ms: None,
         ),
       ] = one.make
         as "one stack of each, the Item2s' counts being 1"
@@ -224,6 +227,7 @@ pub fn reward_items_advance_the_held_item_objectives_of_other_quests_test() -> N
         random_stats: 0,
         charges:,
         item_flags: 0,
+        expires_at_unix_ms: None,
       )
     })
   let #(_, answered) =

@@ -137,6 +137,7 @@ fn held(
     random_stats: 0,
     charges: 0,
     item_flags: 0,
+    expires_at_unix_ms: None,
   )
 }
 
@@ -398,6 +399,7 @@ pub fn a_buyback_entry_sends_multipliers_of_one_test() -> Nil {
       random_stats: 0,
       charges: 0,
       item_flags: 0,
+      expires_at_unix_ms: None,
     ))
   // `opcode.0xba.random_stats`: the client builds the properties with 5 multipliers read
   // as 32-bit floats, and 0x3f800000 is the float 1.0 (IEEE 754 single precision).
@@ -453,6 +455,7 @@ pub fn selling_a_whole_stack_removes_it_pays_the_shown_price_and_adds_a_buyback_
           random_stats: 0,
           charges: 0,
           item_flags: 0,
+          expires_at_unix_ms: None,
         ),
       ]),
     )
@@ -469,6 +472,7 @@ pub fn selling_a_whole_stack_removes_it_pays_the_shown_price_and_adds_a_buyback_
         random_stats: 0,
         charges: 0,
         item_flags: 0,
+        expires_at_unix_ms: None,
       ),
     ])
     as "the sale is the buyback list's entry 3, the next id 4"
@@ -519,6 +523,7 @@ pub fn selling_part_of_a_stack_lowers_its_count_and_pays_for_the_part_sold_test(
           random_stats: 0,
           charges: 0,
           item_flags: 0,
+          expires_at_unix_ms: None,
         ),
       ]),
     )
@@ -536,6 +541,7 @@ pub fn selling_part_of_a_stack_lowers_its_count_and_pays_for_the_part_sold_test(
         random_stats: 0,
         charges: 0,
         item_flags: 0,
+        expires_at_unix_ms: None,
       ),
     ]
     as "lua.Vendor.buyback_price: the entry holds the 2 items sold and the 2 credits"
@@ -833,6 +839,7 @@ pub fn a_sale_at_the_credit_cap_still_sells_and_its_entry_keeps_the_full_price_t
           random_stats: 0,
           charges: 0,
           item_flags: 0,
+          expires_at_unix_ms: None,
         ),
       ]),
     )
@@ -856,6 +863,7 @@ pub fn a_sale_at_the_credit_cap_still_sells_and_its_entry_keeps_the_full_price_t
         random_stats: 0,
         charges: 0,
         item_flags: 0,
+        expires_at_unix_ms: None,
       ),
     ]
     as "lua.Vendor.buyback_price: the entry holds the price the sale paid for the stack, before the cap"
@@ -910,9 +918,27 @@ pub fn sell_junk_sells_every_sellable_category_94_stack_in_the_bags_test() -> Ni
       currencies: scene.credits,
       buyback: Buyback(next_id: 1, entries: []),
       answer: store.Sold(amount: 106, words: [
-        store.SoldWord(item_guid: 1, random_stats: 0, charges: 0, item_flags: 0),
-        store.SoldWord(item_guid: 5, random_stats: 0, charges: 0, item_flags: 0),
-        store.SoldWord(item_guid: 7, random_stats: 0, charges: 0, item_flags: 0),
+        store.SoldWord(
+          item_guid: 1,
+          random_stats: 0,
+          charges: 0,
+          item_flags: 0,
+          expires_at_unix_ms: None,
+        ),
+        store.SoldWord(
+          item_guid: 5,
+          random_stats: 0,
+          charges: 0,
+          item_flags: 0,
+          expires_at_unix_ms: None,
+        ),
+        store.SoldWord(
+          item_guid: 7,
+          random_stats: 0,
+          charges: 0,
+          item_flags: 0,
+          expires_at_unix_ms: None,
+        ),
       ]),
     )
   assert list.map(left, fn(item) { item.item_guid }) == [2, 3, 4, 6]
@@ -1120,6 +1146,7 @@ pub fn selling_a_worn_item_removes_it_with_0x148_reason_vendor_and_adds_a_buybac
           random_stats: 0,
           charges: 0,
           item_flags: 0,
+          expires_at_unix_ms: None,
         ),
       ]),
     )
@@ -1147,6 +1174,7 @@ pub fn selling_a_worn_item_removes_it_with_0x148_reason_vendor_and_adds_a_buybac
         random_stats: 0,
         charges: 0,
         item_flags: 0,
+        expires_at_unix_ms: None,
       ),
     ]
     as "opcode.0xba.price: the sale is the buyback list's entry 1"
@@ -1202,6 +1230,7 @@ pub fn selling_an_item_priced_in_glory_pays_its_row_amount_in_glory_and_its_entr
           random_stats: 0,
           charges: 0,
           item_flags: 0,
+          expires_at_unix_ms: None,
         ),
       ]),
     )
@@ -1237,6 +1266,7 @@ pub fn selling_an_item_priced_in_glory_pays_its_row_amount_in_glory_and_its_entr
         random_stats: 0,
         charges: 0,
         item_flags: 0,
+        expires_at_unix_ms: None,
       ),
     ]
     as "opcode.0xba.price: the entry names Glory (type 7) and the 60 paid"
@@ -1278,6 +1308,7 @@ pub fn a_sale_past_a_currency_cap_stops_that_currency_at_its_cap_and_its_entry_k
           random_stats: 0,
           charges: 0,
           item_flags: 0,
+          expires_at_unix_ms: None,
         ),
       ]),
     )
@@ -1318,6 +1349,7 @@ pub fn a_buyback_entry_carries_the_sold_items_word_test() -> Nil {
       random_stats: word,
       charges: 0,
       item_flags: 0,
+      expires_at_unix_ms: None,
     ),
   ]
   let scene = sell(items:, index: 2, quantity: 1)
@@ -1334,6 +1366,7 @@ pub fn a_buyback_entry_carries_the_sold_items_word_test() -> Nil {
           random_stats: word,
           charges: 0,
           item_flags: 0,
+          expires_at_unix_ms: None,
         ),
       ]),
     )
@@ -1386,6 +1419,7 @@ pub fn a_sale_sends_the_gain_after_the_total_test() -> Nil {
           random_stats: 0,
           charges: 0,
           item_flags: 0,
+          expires_at_unix_ms: None,
         ),
       ]),
     )
@@ -1422,6 +1456,7 @@ pub fn a_sold_stack_keeps_its_charges_on_the_buyback_entry_test() -> Nil {
         random_stats: 0,
         charges:,
         item_flags: 0,
+        expires_at_unix_ms: None,
       ),
     ]
     let scene = sell(items:, index: 2, quantity:)
@@ -1438,6 +1473,7 @@ pub fn a_sold_stack_keeps_its_charges_on_the_buyback_entry_test() -> Nil {
             random_stats: 0,
             charges:,
             item_flags: 0,
+            expires_at_unix_ms: None,
           ),
         ]),
       )
@@ -1469,6 +1505,7 @@ pub fn a_sold_item_keeps_its_flags_on_the_buyback_entry_test() -> Nil {
         random_stats: 0,
         charges: 0,
         item_flags:,
+        expires_at_unix_ms: None,
       ),
     ]
     let scene = sell(items:, index: 2, quantity:)
@@ -1485,6 +1522,7 @@ pub fn a_sold_item_keeps_its_flags_on_the_buyback_entry_test() -> Nil {
             random_stats: 0,
             charges: 0,
             item_flags:,
+            expires_at_unix_ms: None,
           ),
         ]),
       )

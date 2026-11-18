@@ -464,6 +464,7 @@ fn warrior_in(rows rows: fixture_tables.Rows) -> #(Loadout, Int) {
             random_stats: 0,
             charges: 0,
             item_flags: 0,
+            expires_at_unix_ms: None,
           )
         },
       ),

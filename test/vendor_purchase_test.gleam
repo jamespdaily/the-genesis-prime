@@ -123,6 +123,7 @@ fn in_bag(
     random_stats: 0,
     charges: 0,
     item_flags: 0,
+    expires_at_unix_ms: None,
   )
 }
 
@@ -175,6 +176,7 @@ fn taken(scene scene: Scene) -> Result(Taken, vendor_trade.Refusal) {
     vendors: scene.vendors,
     now_ms: 0,
     logged: scene.logged,
+    now_unix_ms: 0,
   )
 }
 
@@ -225,6 +227,7 @@ fn held_back() -> Buyback {
       random_stats: 0,
       charges: 0,
       item_flags: 0,
+      expires_at_unix_ms: None,
     ),
     BuybackEntry(
       buyback_id: 3,
@@ -235,6 +238,7 @@ fn held_back() -> Buyback {
       random_stats: 0,
       charges: 0,
       item_flags: 0,
+      expires_at_unix_ms: None,
     ),
   ])
 }
@@ -269,6 +273,7 @@ fn taken_back(scene scene: Scene) -> Result(Taken, vendor_trade.Refusal) {
     vendors: scene.vendors,
     now_ms: 0,
     logged: scene.logged,
+    now_unix_ms: 0,
   )
 }
 
@@ -323,6 +328,7 @@ pub fn a_buy_at_the_shown_price_asks_the_store_to_take_the_price_and_add_the_ite
           random_stats: 0,
           charges: 1,
           item_flags: 0,
+          expires_at_unix_ms: None,
         ),
       ],
     )
@@ -349,6 +355,7 @@ pub fn a_buy_at_the_shown_price_asks_the_store_to_take_the_price_and_add_the_ite
           random_stats: 0,
           charges: 1,
           item_flags: 0,
+          expires_at_unix_ms: None,
         ),
       ],
       item2_id: Item2Id(14_838),
@@ -373,6 +380,7 @@ pub fn a_buy_of_several_lots_gives_stack_count_times_quantity_items_test() -> Ni
         random_stats: 0,
         charges: 1,
         item_flags: 0,
+        expires_at_unix_ms: None,
       ),
     ]
     as "20791 stacks to 99, so the 15 items are one stack"
@@ -400,6 +408,7 @@ pub fn a_buy_fills_a_held_stack_with_room_before_an_empty_slot_test() -> Nil {
         random_stats: 0,
         charges: 1,
         item_flags: 0,
+        expires_at_unix_ms: None,
       ),
     ]
     as "the rest goes to the lowest empty slot"
@@ -415,6 +424,7 @@ pub fn a_buy_fills_a_held_stack_with_room_before_an_empty_slot_test() -> Nil {
         random_stats: 0,
         charges: 1,
         item_flags: 0,
+        expires_at_unix_ms: None,
       ),
       NewStack(
         location: 1,
@@ -423,6 +433,7 @@ pub fn a_buy_fills_a_held_stack_with_room_before_an_empty_slot_test() -> Nil {
         random_stats: 0,
         charges: 1,
         item_flags: 0,
+        expires_at_unix_ms: None,
       ),
       NewStack(
         location: 1,
@@ -431,6 +442,7 @@ pub fn a_buy_fills_a_held_stack_with_room_before_an_empty_slot_test() -> Nil {
         random_stats: 0,
         charges: 1,
         item_flags: 0,
+        expires_at_unix_ms: None,
       ),
     ]
     as "a stack holds at most the Item2's maxStackCount"
@@ -583,6 +595,7 @@ pub fn a_saved_buy_sends_the_new_total_then_the_items_with_reason_vendor_test() 
       currencies: credits(total: 1000),
       buyback: listed,
       answer: Bought(amount: 665, made: [made]),
+      now_unix_ms: 0,
     )
   assert buyback == listed
     as "a buy of the stock leaves the buyback list as it was"
@@ -643,6 +656,7 @@ pub fn a_buy_the_store_did_not_save_sends_db_failure_and_keeps_credits_and_items
           currencies: credits(total: 1000),
           buyback: listed,
           answer:,
+          now_unix_ms: 0,
         )
       assert buyback == listed as "the buyback list is as it was"
       assert held == items as "no item changed"
@@ -708,6 +722,7 @@ pub fn a_buy_back_takes_the_entry_price_and_returns_its_items_test() -> Nil {
           random_stats: 0,
           charges: 0,
           item_flags: 0,
+          expires_at_unix_ms: None,
         ),
       ],
     )
@@ -734,6 +749,7 @@ pub fn a_buy_back_takes_the_entry_price_and_returns_its_items_test() -> Nil {
           random_stats: 0,
           charges: 0,
           item_flags: 0,
+          expires_at_unix_ms: None,
         ),
       ],
       item2_id: Item2Id(14_838),
@@ -749,6 +765,7 @@ pub fn a_buy_back_takes_the_entry_price_and_returns_its_items_test() -> Nil {
       currencies: credits(total: 100),
       buyback: scene.buyback,
       answer: Bought(amount: 60, made: [made]),
+      now_unix_ms: 0,
     )
   assert currency.credits(currencies: held_credits) == 60
     as "the credits the store left: 100 less the entry's 40"
@@ -766,6 +783,7 @@ pub fn a_buy_back_takes_the_entry_price_and_returns_its_items_test() -> Nil {
         random_stats: 0,
         charges: 0,
         item_flags: 0,
+        expires_at_unix_ms: None,
       ),
     ])
     as "entry 2 leaves the list and nothing else changes, not even the next id"
@@ -799,6 +817,7 @@ pub fn a_buy_back_takes_the_entry_price_and_returns_its_items_test() -> Nil {
       currencies: credits(total: 100),
       buyback: scene.buyback,
       answer: ItemsNotSaved,
+      now_unix_ms: 0,
     )
   assert buyback == scene.buyback as "the entry stays on the list"
   assert held == items as "no item changed"
@@ -973,6 +992,7 @@ pub fn a_bought_back_item_returns_with_the_charges_it_was_sold_with_test() -> Ni
       random_stats: 0,
       charges:,
       item_flags: 0,
+      expires_at_unix_ms: None,
     )
   }
   let buyback =
@@ -1038,6 +1058,7 @@ pub fn a_bought_back_item_returns_with_the_flags_it_was_sold_with_test() -> Nil 
       random_stats: 0,
       charges: 0,
       item_flags:,
+      expires_at_unix_ms: None,
     )
   }
   let buyback = Buyback(next_id: 3, entries: [entry(1, 1), entry(2, 0)])
@@ -1112,6 +1133,7 @@ fn sold_elsewhere() -> Buyback {
       random_stats: 0,
       charges: 0,
       item_flags: 0,
+      expires_at_unix_ms: None,
     ),
     BuybackEntry(
       buyback_id: 6,
@@ -1122,6 +1144,7 @@ fn sold_elsewhere() -> Buyback {
       random_stats: 0,
       charges: 0,
       item_flags: 0,
+      expires_at_unix_ms: None,
     ),
   ])
 }
@@ -1165,6 +1188,7 @@ pub fn a_buy_back_of_an_entry_sold_for_glory_takes_glory_and_sends_its_total_tes
           random_stats: 0,
           charges: 0,
           item_flags: 0,
+          expires_at_unix_ms: None,
         ),
       ],
     )
@@ -1191,6 +1215,7 @@ pub fn a_buy_back_of_an_entry_sold_for_glory_takes_glory_and_sends_its_total_tes
           random_stats: 0,
           charges: 0,
           item_flags: 0,
+          expires_at_unix_ms: None,
         ),
       ],
       item2_id: Item2Id(16_053),
@@ -1204,6 +1229,7 @@ pub fn a_buy_back_of_an_entry_sold_for_glory_takes_glory_and_sends_its_total_tes
       currencies: credits_and_glory(),
       buyback: sold_elsewhere(),
       answer: Bought(amount: 20, made: [made]),
+      now_unix_ms: 0,
     )
   assert currency.held(currencies: held_currencies, currency_type_id: 7) == 20
     as "the Glory the store left: 80 less the entry's 60"
@@ -1277,6 +1303,7 @@ pub fn a_bought_back_worn_item_returns_to_the_bags_test() -> Nil {
         random_stats: 0,
         charges: 0,
         item_flags: 0,
+        expires_at_unix_ms: None,
       ),
     ]
     as "a new stack in the bags: the entry holds no worn place"
@@ -1288,6 +1315,7 @@ pub fn a_bought_back_worn_item_returns_to_the_bags_test() -> Nil {
       currencies: credits(total: 100),
       buyback: scene.buyback,
       answer: Bought(amount: 22, made: [made]),
+      now_unix_ms: 0,
     )
   assert list.contains(held, made) as "the item is held again, in the bags"
   assert currency.credits(currencies: held_credits) == 22
@@ -1351,6 +1379,7 @@ pub fn buying_back_an_item_keeps_its_word_and_draws_nothing_test() -> Nil {
           random_stats: word,
           charges: 0,
           item_flags: 0,
+          expires_at_unix_ms: None,
         ),
       ]),
     )
@@ -1364,6 +1393,7 @@ pub fn buying_back_an_item_keeps_its_word_and_draws_nothing_test() -> Nil {
         random_stats: word,
         charges: 0,
         item_flags: 0,
+        expires_at_unix_ms: None,
       ),
     ]
     as "the stack is placed with the word the item was sold with"
@@ -1390,6 +1420,7 @@ pub fn buying_back_an_item_keeps_its_word_and_draws_nothing_test() -> Nil {
       random_stats: word,
       charges: 0,
       item_flags: 0,
+      expires_at_unix_ms: None,
     )
   let #(_, _, _, effects) =
     vendor_purchase.answered(
@@ -1398,6 +1429,7 @@ pub fn buying_back_an_item_keeps_its_word_and_draws_nothing_test() -> Nil {
       currencies: credits(total: 100),
       buyback: scene.buyback,
       answer: Bought(amount: 60, made: [made]),
+      now_unix_ms: 0,
     )
   assert added_item(effects:).held_item.item.random_stats == word
     as "opcode.0x111: the item is sent with its word"
@@ -1432,6 +1464,7 @@ pub fn buying_a_random_stat_item_rolls_it_and_sends_the_word_test() -> Nil {
         random_stats: 0x0100000000050401,
         charges: 0,
         item_flags: 0,
+        expires_at_unix_ms: None,
       ),
     ]
     as "the stack is made with the rolled word"
@@ -1445,6 +1478,7 @@ pub fn buying_a_random_stat_item_rolls_it_and_sends_the_word_test() -> Nil {
       random_stats: 0x0100000000050401,
       charges: 0,
       item_flags: 0,
+      expires_at_unix_ms: None,
     )
   let #(_, _, _, effects) =
     vendor_purchase.answered(
@@ -1453,6 +1487,7 @@ pub fn buying_a_random_stat_item_rolls_it_and_sends_the_word_test() -> Nil {
       currencies: credits(total: 100_000),
       buyback: held_back(),
       answer: Bought(amount: 0, made: [made]),
+      now_unix_ms: 0,
     )
   let sent = added_item(effects:).held_item.item
   assert sent.random_stats == 0x0100000000050401
@@ -1488,6 +1523,7 @@ pub fn buying_an_item_without_random_stats_draws_nothing_test() -> Nil {
       random_stats: 0,
       charges: 0,
       item_flags: 0,
+      expires_at_unix_ms: None,
     )
   let #(_, _, _, effects) =
     vendor_purchase.answered(
@@ -1496,6 +1532,7 @@ pub fn buying_an_item_without_random_stats_draws_nothing_test() -> Nil {
       currencies: credits(total: 100_000),
       buyback: held_back(),
       answer: Bought(amount: 0, made: [made]),
+      now_unix_ms: 0,
     )
   assert added_item(effects:).held_item.item.random_stats == 0
     as "the 0x111 word is 0"
@@ -1515,6 +1552,7 @@ pub fn a_buy_sends_no_gain_test() -> Nil {
       currencies: credits(total: 1000),
       buyback: held_back(),
       answer: Bought(amount: 665, made: [made]),
+      now_unix_ms: 0,
     )
   assert list.map(frames(effects: bought), fn(frame) { frame.message_id })
     |> list.contains(currency_changed.message_id)
@@ -1535,6 +1573,7 @@ pub fn a_buy_sends_no_gain_test() -> Nil {
       answer: Bought(amount: 60, made: [
         in_bag(guid: 501, item2_id: 14_838, index: 0, count: 1),
       ]),
+      now_unix_ms: 0,
     )
   assert list.map(frames(effects: bought_back), fn(frame) { frame.message_id })
     |> list.contains(currency_changed.message_id)

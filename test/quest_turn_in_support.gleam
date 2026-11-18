@@ -24,6 +24,7 @@ import genesis_prime/table/id.{Item2Id, RaceId}
 import genesis_prime/table/loader/store as table_store
 import gleam/int
 import gleam/list
+import gleam/option
 import gleam/set.{type Set}
 import planted_table.{type Cell, Integer}
 import player_life_support
@@ -114,6 +115,7 @@ pub fn in_bag(
     random_stats: 0,
     charges: 0,
     item_flags: 0,
+    expires_at_unix_ms: option.None,
   )
 }
 
@@ -169,6 +171,7 @@ pub fn taken_from(
     unix_seconds:,
     logged: scene.logged,
     life: scene.life,
+    unix_ms: 0,
   )
 }
 
@@ -286,6 +289,7 @@ pub fn server_taken(
     tables:,
     unix_seconds:,
     logged: scene.logged,
+    unix_ms: 0,
   )
 }
 
