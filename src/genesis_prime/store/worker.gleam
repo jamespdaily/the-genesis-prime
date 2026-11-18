@@ -104,7 +104,7 @@ import genesis_prime/store.{
   NewNameTaken, NoFreeSlot, NoSuchAccount, NoSuchCharacter, NotTheAccounts,
   NothingSaved, PlaceRefused, PlaceSaved, QuestLogRefused, QuestRow,
   RenameCharacter, Renamed, SavePlace, SaveRefused, Select, SellToVendor,
-  SplitItem, TurnInQuest, TurnedIn, Unavailable, UnsetItem, World,
+  SpendItem, SplitItem, TurnInQuest, TurnedIn, Unavailable, UnsetItem, World,
 }
 import genesis_prime/store/sql
 import genesis_prime/table/id.{type Item2Id, ClassId, Item2Id, RaceId}
@@ -378,6 +378,23 @@ fn items(
       )
     DeleteItem(account_id:, character_id:, session_epoch:, item:) ->
       delete_item(pool:, account_id:, character_id:, session_epoch:, item:)
+    SpendItem(
+      account_id:,
+      character_id:,
+      session_epoch:,
+      item:,
+      stack_count:,
+      charges:,
+    ) ->
+      spend_item(
+        pool:,
+        account_id:,
+        character_id:,
+        session_epoch:,
+        item:,
+        stack_count:,
+        charges:,
+      )
     BuyFromVendor(
       account_id:,
       character_id:,
@@ -811,6 +828,42 @@ fn delete_item(
     case rows {
       [_] -> ItemsSaved
       _ -> panic as "the statement deletes one stack or none"
+    }
+  })
+}
+
+/// A spend: spend_character_item.sql, answered with `ItemsSaved` when it lowered the
+/// row.
+fn spend_item(
+  pool pool: pog.Connection,
+  account_id account_id: store.AccountId,
+  character_id character_id: store.CharacterId,
+  session_epoch session_epoch: store.SessionEpoch,
+  item item: store.HeldItem,
+  stack_count stack_count: Int,
+  charges charges: Int,
+) -> Result(ItemsAnswer, Nil) {
+  let AccountId(account_id) = account_id
+  let CharacterId(character_id) = character_id
+  locked(pool:, account_id:, character_id:, statement: fn(connection) {
+    sql.spend_character_item(
+      connection,
+      character_id,
+      account_id,
+      store.session_epoch_number(session_epoch),
+      item.item_guid,
+      item.location,
+      item.bag_index,
+      item.stack_count,
+      stack_count,
+      charges,
+      item.charges,
+    )
+  })
+  |> items_answer(saved: fn(rows) {
+    case rows {
+      [_] -> ItemsSaved
+      _ -> panic as "the statement lowers one row or none"
     }
   })
 }

@@ -136,6 +136,7 @@ pub fn the_schema_generates_one_module_for_each_message_and_record_and_the_clien
       "src/genesis_prime/message/interaction_result.gleam",
       "src/genesis_prime/message/item_action_failed.gleam",
       "src/genesis_prime/message/item_added.gleam",
+      "src/genesis_prime/message/item_charges_changed.gleam",
       "src/genesis_prime/message/item_count_changed.gleam",
       "src/genesis_prime/message/item_delete.gleam",
       "src/genesis_prime/message/item_move.gleam",

@@ -13,6 +13,7 @@ import genesis_prime/game/activate
 import genesis_prime/game/character_select
 import genesis_prime/game/class_resource
 import genesis_prime/game/inventory
+import genesis_prime/game/item_charge
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
 import genesis_prime/game/prerequisite.{type Prerequisite}
@@ -253,6 +254,17 @@ pub type Status {
     entered: world_entry.Entered,
     moving: inventory.Moving,
   )
+  /// The player is in the world and the store is asked to save the spend of the charge the
+  /// player's 0x943 uses (`spending`, genesis_prime/game/item_charge), whose answer is
+  /// awaited with the client's frames and the started cast's state and effects held. The
+  /// player's place is not saved yet, so a connection that ends in this status saves it as
+  /// one in `InWorld` does; the held items and the cast in `entered` are the ones before the
+  /// use, which the answer replaces or keeps.
+  SpendingCharge(
+    holder: Holder,
+    entered: world_entry.Entered,
+    spending: item_charge.Spending,
+  )
   /// The player is in the world and the store is asked to take the price of the buy the
   /// player's 0xBE made and to add its items (`purchase`, genesis_prime/game/vendor_purchase),
   /// whose answer is awaited with the client's frames held. The player's place is not saved
@@ -407,6 +419,7 @@ pub fn standing(status: Status) -> Standing {
     | EnteringWorld(..)
     | Summoning(..)
     | MovingItem(..)
+    | SpendingCharge(..)
     | Buying(..)
     | Selling(..)
     | TurningIn(..)
@@ -502,6 +515,7 @@ pub fn held_in_the_world(
     | EnteringWorld(..)
     | Summoning(..)
     | MovingItem(..)
+    | SpendingCharge(..)
     | Buying(..)
     | Selling(..)
     | TurningIn(..)
@@ -522,6 +536,7 @@ pub fn holds_map_messages(status: Status) -> Bool {
   case status {
     Summoning(..)
     | MovingItem(..)
+    | SpendingCharge(..)
     | Buying(..)
     | Selling(..)
     | TurningIn(..)
@@ -553,6 +568,7 @@ pub fn holds_timer(status status: Status, timer timer: TimerId) -> Bool {
     ClaimingSession(resume: ResumeSelect, ..)
     | Summoning(..)
     | MovingItem(..)
+    | SpendingCharge(..)
     | Buying(..)
     | Selling(..)
     | TurningIn(..)
@@ -577,6 +593,7 @@ pub fn saves_the_place(status: Status) -> Bool {
     | SavingPlace(then: Camped, ..)
     | Summoning(..)
     | MovingItem(..)
+    | SpendingCharge(..)
     | Buying(..)
     | Selling(..)
     | InWorld(..)
@@ -675,6 +692,7 @@ pub fn with_entered(
     | EnteringWorld(..)
     | Summoning(..)
     | MovingItem(..)
+    | SpendingCharge(..)
     | Buying(..)
     | Selling(..)
     | TurningIn(..)
@@ -811,6 +829,7 @@ pub fn holds_a_player(
     InWorld(holder:, entered:)
     | Summoning(holder:, entered:)
     | MovingItem(holder:, entered:, ..)
+    | SpendingCharge(holder:, entered:, ..)
     | Buying(holder:, entered:, ..)
     | Selling(holder:, entered:, ..)
     | ClaimingSession(holder:, resume: ResumeWorld(entered:), ..)
@@ -906,6 +925,7 @@ pub fn entered_of(status: Status) -> Option(world_entry.Entered) {
     InWorld(entered:, ..)
     | Summoning(entered:, ..)
     | MovingItem(entered:, ..)
+    | SpendingCharge(entered:, ..)
     | Buying(entered:, ..)
     | Selling(entered:, ..)
     | TurningIn(entered:, ..)
@@ -940,6 +960,10 @@ fn account_id_of(status: Status) -> Option(Int) {
         ..,
       )
     | MovingItem(
+        holder: hand_off.Holder(account_id: store.AccountId(id), ..),
+        ..,
+      )
+    | SpendingCharge(
         holder: hand_off.Holder(account_id: store.AccountId(id), ..),
         ..,
       )

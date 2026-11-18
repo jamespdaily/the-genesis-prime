@@ -367,6 +367,18 @@ pub type ItemsRequest {
     session_epoch: SessionEpoch,
     item: HeldItem,
   )
+  /// Lowers the stack `item` to `stack_count` and its charges to `charges`, the spend of
+  /// one use (genesis_prime/game/item_charge): one statement that changes the row only
+  /// while it is held as `item` holds it, answered by `ItemsSaved`. A use that takes the
+  /// last charge or the last of a stack is `DeleteItem`.
+  SpendItem(
+    account_id: AccountId,
+    character_id: CharacterId,
+    session_epoch: SessionEpoch,
+    item: HeldItem,
+    stack_count: Int,
+    charges: Int,
+  )
   /// A purchase from a vendor, all or none, only while the character holds exactly
   /// `held` of the currency `currency_type_id` (the total the connection holds; a missing
   /// row reads as 0) and at least `cost`: one statement that takes `cost` off that

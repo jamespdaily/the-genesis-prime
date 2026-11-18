@@ -95,22 +95,22 @@ import genesis_prime/game/cast/state.{
   type HeldProc, type Holder, type Interaction, type Listed, type Live,
   type Message, type Reached, type Refusal, type Resolution, type Restricting,
   type Role, type State, type Struck, type TargetVerdict, type TickAsked,
-  type UsedUnit, Accept, Activated, Activating, Activation, Aimed, AimedPress,
-  AnswerSucceeded, Answered, AwaitingAnswer, Base, Cancelled, CannotTell,
-  CastClears, CasterChangeEnds, CasterChangeStarts, ChargeLevel, Child,
-  CooldownEnds, CooldownKept, CooldownModifierEnds, CooldownModifierStarts,
-  Deflected, Finish, ForcedMoveStart, GateFails, Go, GoAsked, Healing, Held,
-  HeldProc, Hit, Hold, HoldForCast, Holding, Immune, ItemsIssue, KeyHeld,
-  Lingering, Listed, Live, Log, ModifierEnd, ModifierStart, NoClientCastId,
-  NoInteraction, NoInteractionWaits, NoItemSpell, NodesEnd, NotBuilt, NotDecoded,
-  NotSentByClient, Passive, Plain, PrerequisitesIssue, Pressed, PressedAt,
-  ProcDue, Reached, Refuse, RepeatHeld, Resolution, ResourceMoved,
-  RestrictionEnd, Send, Shortcut, ShortcutCast, SpellsIssue, Stage, StartChild,
-  StartHeld, StartedMoving, Starts, State, StateEnd, StealthChanged, Strike,
-  TargetModifierStart, Tell, Threshold, Tick, UnbuiltItemCharges,
-  UnbuiltItemSpell, UnbuiltShortcut, UnbuiltSpell, UnknownAnswer, UnknownCancel,
-  UnreadItemPrerequisite, UnreadLinkPrerequisite, UnreadPrerequisite,
-  UnreadShortcutPick, UsedUnit, WindowEnd, WrongAnswerSpell,
+  type Used, type UsedUnit, Accept, Activated, Activating, Activation, Aimed,
+  AimedPress, AnswerSucceeded, Answered, AwaitingAnswer, Base, Cancelled,
+  CannotTell, CastClears, CasterChangeEnds, CasterChangeStarts, ChargeLevel,
+  Child, CooldownEnds, CooldownKept, CooldownModifierEnds,
+  CooldownModifierStarts, Deflected, Finish, ForcedMoveStart, Frames, GateFails,
+  Go, GoAsked, Healing, Held, HeldProc, Hit, Hold, HoldForCast, Holding, Immune,
+  ItemsIssue, KeyHeld, Lingering, Listed, Live, Log, ModifierEnd, ModifierStart,
+  NoClientCastId, NoInteraction, NoInteractionWaits, NoItemSpell, NodesEnd,
+  NotBuilt, NotDecoded, NotSentByClient, Passive, Plain, PrerequisitesIssue,
+  Pressed, PressedAt, ProcDue, Reached, Refuse, RepeatHeld, Resolution,
+  ResourceMoved, RestrictionEnd, Send, Shortcut, ShortcutCast, SpellsIssue,
+  Stage, StartChild, StartHeld, StartedMoving, Starts, State, StateEnd,
+  StealthChanged, Strike, TargetModifierStart, Tell, Threshold, Tick,
+  UnbuiltItemCharges, UnbuiltItemSpell, UnbuiltShortcut, UnbuiltSpell,
+  UnknownAnswer, UnknownCancel, UnreadItemPrerequisite, UnreadLinkPrerequisite,
+  UnreadPrerequisite, UnreadShortcutPick, UsedUnit, WindowEnd, WrongAnswerSpell,
 } as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/class_resource.{type Payment}
@@ -214,7 +214,12 @@ pub fn activate(
 /// group, which the client does not test). A use the client would not have sent ends the
 /// connection; one it sends and refuses is refused with its result; one the server has no
 /// plan for (the item's spell has no Activate effect) is refused as not built; the others
-/// run as an activate cast does, and the go raises `Activated` for the unit.
+/// run as an activate cast does, and the go raises `Activated` for the unit. The answer is
+/// `Frames` for a refusal and for a press whose client cast id the state already took
+/// (`item_press_known`), which start nothing and spend nothing, and `Started` for a cast
+/// the press began: its state and effects are returned and not applied, because the
+/// connection applies them only after the store has saved the item's spend. Every outcome
+/// is `Frames` until the build splits `Started` out of `item_spell_cast`.
 pub fn use_item(
   cast cast: State,
   body body: BitArray,
@@ -231,7 +236,7 @@ pub fn use_item(
   in_cast_group in_cast_group: fn(Int, Int) -> Bool,
   caster_radius caster_radius: Float,
   now now: Now,
-) -> Result(#(State, List(Effect)), Refusal) {
+) -> Result(Used, Refusal) {
   let now_ms = now.monotonic_ms
   item_used(
     cast:,
@@ -247,6 +252,7 @@ pub fn use_item(
   )
   |> result.map(fn(taken) { continued(taken:, caster:, now_ms:) })
   |> result.map(fn(taken) { settled(cast:, own: [], step: fn() { taken }) })
+  |> result.map(fn(taken) { Frames(cast: taken.0, effects: taken.1) })
 }
 
 fn item_used(

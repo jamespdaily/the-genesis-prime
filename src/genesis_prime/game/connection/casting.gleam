@@ -90,6 +90,7 @@ import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/connection/absorption as connection_absorption
 import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/healing as connection_healing
+import genesis_prime/game/connection/item_spend as connection_item_spend
 import genesis_prime/game/connection/look as connection_look
 import genesis_prime/game/connection/objective as connection_objective
 import genesis_prime/game/connection/prerequisite_player
@@ -120,6 +121,7 @@ import genesis_prime/game/strike_tell.{type Answered}
 import genesis_prime/game/target_group
 import genesis_prime/game/unit_state
 import genesis_prime/game/world_entry
+import genesis_prime/hand_off.{type Holder}
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/message/unit_health.{UnitHealth}
 import genesis_prime/random
@@ -215,6 +217,7 @@ pub fn activate_message(
 pub fn item_use_message(
   session session: Session,
   now now: Now,
+  holder holder: Holder,
   entered entered: world_entry.Entered,
   inner inner: Frame,
 ) -> client_connection.Handled(Session) {
@@ -253,8 +256,18 @@ pub fn item_use_message(
       now:,
     )
   {
-    Ok(#(updated, effects)) ->
+    Ok(cast_state.Frames(cast: updated, effects:)) ->
       carry_cast(session: with_cast(session:, cast: updated), now:, effects:)
+    Ok(cast_state.Started(press:, cast: started, effects:)) ->
+      connection_item_spend.started(
+        session:,
+        now:,
+        holder:,
+        entered:,
+        press:,
+        cast: started,
+        effects:,
+      )
     Error(refusal) ->
       connection_state.end_for(
         session:,

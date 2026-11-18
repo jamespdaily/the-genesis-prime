@@ -43,6 +43,7 @@ import gleam/bit_array
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/result
 import gleam/string
 import owned_test
 import place_support
@@ -222,6 +223,12 @@ fn use_with(
     caster_radius:,
     now: support.at(ms:),
   )
+  |> result.map(fn(used) {
+    case used {
+      cast_state.Frames(cast:, effects:)
+      | cast_state.Started(cast:, effects:, ..) -> #(cast, effects)
+    }
+  })
 }
 
 /// The use of item `item`, held at its place, at the unit `its_unit`.

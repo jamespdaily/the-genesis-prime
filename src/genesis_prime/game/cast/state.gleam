@@ -37,6 +37,7 @@ import genesis_prime/game/unit_state
 import genesis_prime/message/cast_result
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/message/float32
+import genesis_prime/message/item_place.{type ItemPlace}
 import genesis_prime/message/spell_damage_description.{
   type SpellDamageDescription,
 }
@@ -794,6 +795,29 @@ pub type HeldProc {
   HeldProc(row: spell_plan.ProcRow, fires_ms: List(Int))
 }
 
+/// The press of an item that started a cast: the client's id of the cast (the 0x943's
+/// first field, `opcode.0x943`), the Spell4 the item casts and the place of the item the
+/// press named. The connection finds the held item at `place` to spend its charge.
+pub type ItemPress {
+  ItemPress(client_cast_id: Int, spell4_id: Int, place: ItemPlace)
+}
+
+/// What the rule makes of the caster's 0x943 (`cast.use_item`).
+pub type Used {
+  /// The press ends here: a refusal's frame, or a press whose id the caster already used.
+  /// `cast` and `effects` are applied at once.
+  Frames(cast: State, effects: List(Effect))
+  /// The press started a cast. `cast` (which records the press id, `item_press_recorded`)
+  /// and `effects` are held back: they are applied only after the store has saved the
+  /// spend of the item's charge (genesis_prime/game/item_charge), and dropped when it did
+  /// not, so a refused save leaves the cast as it was.
+  Started(press: ItemPress, cast: State, effects: List(Effect))
+}
+
+/// How many item presses a caster's state remembers: a choice, since the client's ids
+/// rise with every cast (`0x140c1e71c`) and only a repeated id has to be caught.
+const item_presses_remembered = 32
+
 /// What the rule keeps for one player: its cooldowns, its live casts, its open
 /// thresholds and what waits on a timer, and the counters its cast ids and timer
 /// ids are made from.
@@ -855,6 +879,10 @@ pub type State {
     /// How many such states the caster has told, which their instance ids are made from
     /// (genesis_prime/game/crowd_control `instance_id`).
     restrictions_told: Int,
+    /// The client cast ids of the item presses the caster's state took, the latest
+    /// first, at most `item_presses_remembered`: a press with an id in it starts nothing
+    /// and spends nothing.
+    item_presses: List(Int),
   )
 }
 
@@ -904,6 +932,30 @@ pub fn new() -> State {
     on_creatures: dict.new(),
     restrictions: dict.new(),
     restrictions_told: 0,
+    item_presses: [],
+  )
+}
+
+/// Whether the caster's state took an item press with this client cast id.
+pub fn item_press_known(
+  cast cast: State,
+  client_cast_id client_cast_id: Int,
+) -> Bool {
+  list.contains(cast.item_presses, client_cast_id)
+}
+
+/// The state with the item press's client cast id remembered, the oldest forgotten past
+/// `item_presses_remembered`.
+pub fn item_press_recorded(
+  cast cast: State,
+  client_cast_id client_cast_id: Int,
+) -> State {
+  State(
+    ..cast,
+    item_presses: list.take(
+      [client_cast_id, ..cast.item_presses],
+      item_presses_remembered,
+    ),
   )
 }
 

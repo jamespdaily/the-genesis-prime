@@ -38,7 +38,8 @@ import genesis_prime/game/chat_tell
 import genesis_prime/game/connection/state.{
   type Session, AwaitingHelloReply, Buying, ClaimingSession, EnteringWorld,
   InCharacterSelect, InWorld, LeavingMap, MovingItem, SavingPlace, Selling,
-  Session, Summoning, TakingSessionKey, TurningIn, WaitingToClaim,
+  Session, SpendingCharge, Summoning, TakingSessionKey, TurningIn,
+  WaitingToClaim,
 } as connection_state
 import genesis_prime/game/world_entry
 import genesis_prime/hand_off.{type Holder}
@@ -123,6 +124,7 @@ fn summoning(
       )
     Summoning(..)
     | MovingItem(..)
+    | SpendingCharge(..)
     | Buying(..)
     | Selling(..)
     | TurningIn(..)
