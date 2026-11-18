@@ -44,7 +44,6 @@ import content_support
 import database_support
 import fixture_tables
 import genesis_prime/content/arrival_objective as content_arrival_objective
-import genesis_prime/content/held_objective as content_held_objective
 import genesis_prime/content/item_objective as content_item_objective
 import genesis_prime/game/item_objective.{type Wanted}
 import genesis_prime/game/item_objective_table
@@ -900,15 +899,6 @@ fn arrival_ids() -> Set(Int) {
   set.from_list(list.map(rows, fn(row) { row.objective_id }))
 }
 
-/// The QuestObjective ids the migrated database holds as held.
-fn held_ids() -> Set(Int) {
-  let database = database_support.new_database(on: database_support.shared())
-  let assert Ok(rows) =
-    content_held_objective.rows(db: content_support.connect(database:))
-    as "the query ran"
-  set.from_list(list.map(rows, fn(row) { row.objective_id }))
-}
-
 /// What each objective of the migrated database's item table asks, as the load selects it
 /// over the tables, the arrival and held tables' ids being `taken`.
 fn item_wanted(
@@ -1105,7 +1095,7 @@ pub fn every_place_script_completes_at_its_marker_and_no_spell_advanced_one_comp
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   let arrivals = arrival_ids()
-  let held = held_ids()
+  let held = content_support.held_objective_ids()
   let items = item_wanted(tables:, taken: set.union(arrivals, held))
   let none = set.new()
   let scripted =
@@ -1175,7 +1165,7 @@ pub fn every_marked_stand_in_completes_on_accept_and_every_held_one_stays_open_t
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   let arrivals = arrival_ids()
-  let held = held_ids()
+  let held = content_support.held_objective_ids()
   let items = item_wanted(tables:, taken: set.union(arrivals, held))
   let wrong =
     list.filter_map(type_5_places(tables:), fn(place) {
@@ -1236,7 +1226,7 @@ pub fn every_type_5_objective_in_a_quest_has_one_completing_rule_test() -> Nil {
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   let arrivals = arrival_ids()
-  let held = held_ids()
+  let held = content_support.held_objective_ids()
   let items = item_wanted(tables:, taken: set.union(arrivals, held))
   let places = type_5_places(tables:)
   assert list.length(places) == 1498
@@ -1263,11 +1253,11 @@ pub fn every_type_5_objective_in_a_quest_has_one_completing_rule_test() -> Nil {
     ]
     as "each type 5 objective in a quest has exactly one class: 259 linked required and 8 linked optional, 59 visible optional, 70 a spell or an item names, 57 places, 4 items, 435 stand-ins on accept (454 less the 15 places and 4 items moved), and 606 that wait for the quest (87 hidden, 519 visible with no marker)"
   assert set.size(arrivals) == 57
-    as "the arrival table's rows: the 42 of migration 0038 and the 15 of 0041"
-  assert dict.size(items) == 4 as "the item table's rows (migration 0042)"
-  assert set.size(held) == 145
-    as "the held table's rows: the 130 of the unmarked scripts and the 15 of the instance quests"
-  // The hold is an override: of the 145, the 15 marked rows of the instance quests are of
+    as "the arrival table's rows: the 42 of migration 0038 and the 15 of 0043"
+  assert dict.size(items) == 4 as "the item table's rows (migration 0044)"
+  assert set.size(held) == 146
+    as "the held table's rows: the 130 of the unmarked scripts, the 15 of the instance quests and the store purchase 21267"
+  // The hold is an override: of the 146, the 15 marked rows of the instance quests are of
   // two classes named by a spell, four places (the other two of the six the text reads as
   // places are stand-ins), and nine stand-ins on accept.
   let held_places =
@@ -1293,8 +1283,8 @@ pub fn every_type_5_objective_in_a_quest_has_one_completing_rule_test() -> Nil {
     as "four held places: 18629, 18630, 19346 and 19357"
   assert held_class(objective.StandInOnAccept) == 9
     as "nine held stand-ins on accept"
-  assert held_class(objective.StandInWithQuest) == 130
-    as "the 130 of migration 0034"
+  assert held_class(objective.StandInWithQuest) == 131
+    as "the 130 of migration 0034 and 21267 of migration 0041"
 }
 
 // ---- the places and equips that left the stand-in ----
@@ -1983,7 +1973,7 @@ fn item_ids() -> Set(Int) {
 pub fn the_curated_sets_share_no_objective_test() -> Nil {
   use <- owned_test.run(60_000)
   let arrivals = arrival_ids()
-  let held = held_ids()
+  let held = content_support.held_objective_ids()
   let items = item_ids()
   assert set.size(arrivals) == 57
     && set.size(held) == 145
@@ -2003,7 +1993,11 @@ pub fn every_item_row_names_its_tables_rows_and_leaves_the_stand_in_test() -> Ni
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   let arrivals = arrival_ids()
-  let items = item_wanted(tables:, taken: set.union(arrivals, held_ids()))
+  let items =
+    item_wanted(
+      tables:,
+      taken: set.union(arrivals, content_support.held_objective_ids()),
+    )
   // The ids of the objective texts: 487701 "Equip the $(item=12631)", 492421 "Equip the
   // $(item=17978)", 563643 "Buy a $(item=54409) from $(creature=47172) in Thayd" and 563647
   // "... $(creature=47413) in Illium" (`client_files.py text`).

@@ -7,6 +7,7 @@ import database_support
 import event_wait
 import genesis_prime
 import genesis_prime/content
+import genesis_prime/content/held_objective as content_held_objective
 import genesis_prime/content/spawn as content_spawn
 import genesis_prime/content/terrain as content_terrain
 import genesis_prime/dev_database
@@ -15,7 +16,9 @@ import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/spawn.{type Row}
 import gleam/erlang/process
 import gleam/int
+import gleam/list
 import gleam/result
+import gleam/set.{type Set}
 import gleam/string
 import owned_key
 import pog
@@ -162,4 +165,13 @@ pub fn change(database database: String, sql sql: String) -> Nil {
     )
     as "the change to the database ran"
   Nil
+}
+
+/// The QuestObjective ids the migrated database holds as held, read from a database of
+/// the test's own.
+pub fn held_objective_ids() -> Set(Int) {
+  let database = database_support.new_database(on: database_support.shared())
+  let assert Ok(rows) = content_held_objective.rows(db: connect(database:))
+    as "the query ran"
+  set.from_list(list.map(rows, fn(row) { row.objective_id }))
 }

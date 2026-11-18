@@ -174,6 +174,14 @@
 ////   always passes and comparison 1 never; the objectId and the value are not read
 ////   (`Prerequisite.prerequisiteTypeId.125`, `.69`, `.74`, `0x14049fac0`,
 ////   `0x14049f990`, `0x14049fa80`). Gap: the records of challenges are issue 52's.
+//// - **Type 288** passes, by comparison 1, when the client's own set of owned titles holds
+////   the title the objectId names, and by comparison 2 when it does not, for a first unit
+////   that is a player; any other comparison fails, and so does a creature, and the value is
+////   not read (`Prerequisite.prerequisiteTypeId.288`, `0x1404a1830`). The set is the
+////   client's single one, filled only by messages 0x018A and 0x018B (`opcode.0x18a`,
+////   `opcode.0x18b`); the server sends neither and owns no title, so it is empty and the
+////   condition reads it so. Gap: owned titles are "Paths and titles work on the real
+////   client" (issue 55), which gives this condition its real set.
 //// - **Type 94** (the target is counted by a checklist objective) reads the check's
 ////   creature, the first unit unless it is a player and then the second, and the objective
 ////   `value` of the quest `objectId` (`Prerequisite.prerequisiteTypeId.94`,
@@ -408,6 +416,10 @@ type Condition {
   /// active, unlocked: a guess for 74, issue 52); the server holds no challenge record, so every flag is clear
   /// (`Prerequisite.prerequisiteTypeId.125`, `.69`, `.74`).
   ChallengeFlag(comparison: Comparison)
+  /// Type 288: whether the client's own set of owned titles holds a title
+  /// (`Prerequisite.prerequisiteTypeId.288`, `0x1404a1830`). The set is empty, as the server
+  /// sends the client no title.
+  TitleOwned(comparison: Comparison)
   /// Type 243: never met (`Prerequisite.prerequisiteTypeId.243`, `0x140001ba0`).
   NeverMet
   /// Type 47: never met by a cast, an effect or a gossip entry, as type 243, but
@@ -1231,6 +1243,7 @@ fn condition_of(
     10 -> Gender(comparison: comparison_of(comparison), value:)
     109 -> InWorld(comparison: comparison_of(comparison), world_id: object_id)
     125 | 69 | 74 -> ChallengeFlag(comparison: comparison_of(comparison))
+    288 -> TitleOwned(comparison: comparison_of(comparison))
     243 -> NeverMet
     47 -> ServerGated
     38 -> IsCreature(comparison: comparison_of(comparison), value:)
@@ -1320,6 +1333,7 @@ pub fn is_read(type_id type_id: Int) -> Bool {
     | TargetCounted(..)
     | ObjectiveProgress(..)
     | ChallengeFlag(..)
+    | TitleOwned(..)
     | NeverMet
     | ServerGated
     | IsCreature(..)
@@ -1372,6 +1386,7 @@ pub fn rolls_needed(prerequisite prerequisite: Prerequisite) -> Int {
       | TargetCounted(..)
       | ObjectiveProgress(..)
       | ChallengeFlag(..)
+      | TitleOwned(..)
       | NeverMet
       | ServerGated
       | IsCreature(..)
@@ -1439,6 +1454,7 @@ pub fn objective_links(
       | CarriesCasterGroup(..)
       | InArc(..)
       | ChallengeFlag(..)
+      | TitleOwned(..)
       | NoCase
       | Unread(..) -> []
     }
@@ -1487,6 +1503,7 @@ pub fn press_unread_types(
       | TargetCounted(..)
       | ObjectiveProgress(..)
       | ChallengeFlag(..)
+      | TitleOwned(..)
       | NeverMet
       | ServerGated
       | IsCreature(..)
@@ -1561,6 +1578,7 @@ pub fn unread_types(prerequisite prerequisite: Prerequisite) -> List(Int) {
       | CarriesCasterGroup(..)
       | InArc(..)
       | ChallengeFlag(..)
+      | TitleOwned(..)
       | NoCase -> []
     }
   })
@@ -1644,6 +1662,7 @@ fn reading_of(condition condition: Condition) -> Reading {
     | CarriesCasterGroup(..)
     | InArc(..)
     | ChallengeFlag(..)
+    | TitleOwned(..)
     | NoCase
     | Unread(..) -> ReadElsewhere
   }
@@ -1793,6 +1812,7 @@ fn reads_held_state(condition condition: Condition) -> Option(Int) {
     | TargetCounted(..)
     | ObjectiveProgress(..)
     | ChallengeFlag(..)
+    | TitleOwned(..)
     | NeverMet
     | ServerGated
     | IsCreature(..)
@@ -2062,6 +2082,11 @@ fn condition_decided(
     // `0x140c65948`). Gap: the challenge records wait for "Public events and
     // challenges work on the real client" (issue 52).
     ChallengeFlag(comparison:) -> #(rolls, asked(comparison:, holds: False))
+    TitleOwned(comparison:) -> #(rolls, case subject.first_unit {
+      UnknownUnit -> NotRead(prerequisite_type: 288)
+      TheChecker | OtherPlayer -> asked(comparison:, holds: False)
+      NonPlayer(..) -> Fails
+    })
     NeverMet -> #(rolls, Fails)
     // Type 47 is never met by a cast, an effect or a gossip entry; the visibility
     // check does not decide it, so the creature stays shown. Gap: the condition's real

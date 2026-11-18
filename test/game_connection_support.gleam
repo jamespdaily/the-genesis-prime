@@ -713,10 +713,20 @@ pub fn entered_with_items(
 pub fn entered_with_quests(
   quests quests: List(store.QuestRow),
 ) -> #(game_connection.State, ConnectionStep(Request)) {
+  entered_under(settings: settings(), character: world_character(), quests:)
+}
+
+/// The connection made with these settings after the store gave `character` these quest
+/// rows and the map took it: the burst is written.
+pub fn entered_under(
+  settings settings: game_connection.Settings,
+  character character: store.Character,
+  quests quests: List(store.QuestRow),
+) -> #(game_connection.State, ConnectionStep(Request)) {
   let #(state, taken) =
     joining_holding(
-      in_character_select: in_select(),
-      character: world_character(),
+      in_character_select: in_select_from(accepted(settings).0),
+      character:,
       saved_health: None,
       saved_experience: None,
       quests:,

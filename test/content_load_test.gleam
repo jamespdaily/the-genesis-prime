@@ -249,12 +249,12 @@ pub fn the_content_load_puts_the_held_objectives_test() -> Nil {
   let #(loaded, key) = content_support.load(database:)
   assert loaded == Ok(Nil)
   let held = content_held_objective.held(key:)
-  assert set.size(held) == 145
-    as "migrations 0034 and 0039 seed 145 held_objective rows"
-  assert list.all([12_547, 17_882, 21_536, 19_357], fn(objective) {
+  assert set.size(held) == 146
+    as "migrations 0034, 0039 and 0041 seed 146 held_objective rows"
+  assert list.all([12_547, 17_882, 21_536, 19_357, 21_267], fn(objective) {
     set.contains(held, objective)
   })
-    as "migration 0034's first row (12547, an instance run), a pvp_match row (17882) and its last row (21536), and migration 0039's 19357"
+    as "migration 0034's first row (12547, an instance run), a pvp_match row (17882) and its last row (21536), migration 0039's 19357 and migration 0041's 21267 (a store purchase, which the load accepts: type 5, visible, required, unlinked)"
   assert !set.contains(held, 12_548)
     as "an objective migration 0034 does not list is not held"
 }
@@ -282,11 +282,11 @@ pub fn the_content_load_puts_the_arrival_objectives_test() -> Nil {
   assert loaded == Ok(Nil)
   let arrivals = content_arrival_objective.arrivals(key:)
   assert set.size(arrivals) == 57
-    as "migrations 0038 and 0041 seed 42 and 15 arrival_objective rows"
+    as "migrations 0038 and 0043 seed 42 and 15 arrival_objective rows"
   assert list.all([4770, 19_336, 19_357, 7217, 18_099], fn(objective) {
     set.contains(arrivals, objective)
   })
-    as "the Tower's objective (4770), the first checkpoint of quest 10115 (19336), the last row of 0038 (19357), and the first and last rows of 0041 (7217, 18099)"
+    as "the Tower's objective (4770), the first checkpoint of quest 10115 (19336), the last row of 0038 (19357), and the first and last rows of 0043 (7217, 18099)"
   assert !set.contains(arrivals, 4849)
     as "an objective migration 0038 does not list is no arrival"
 }
@@ -313,7 +313,7 @@ pub fn the_content_load_puts_the_item_objectives_test() -> Nil {
   let #(loaded, key) = content_support.load(database:)
   assert loaded == Ok(Nil)
   let items = content_item_objective.wanted(key:)
-  assert dict.size(items) == 4 as "migration 0042 seeds 4 item_objective rows"
+  assert dict.size(items) == 4 as "migration 0044 seeds 4 item_objective rows"
   assert dict.get(items, 16_311) == Ok(item_objective.Wear(Item2Id(12_631)))
     as "Quest2 9058's objective 16311 asks to wear Item2 12631 (its text)"
   assert dict.get(items, 18_070)
@@ -380,7 +380,7 @@ pub fn the_servers_settings_run_over_a_real_load_test() -> Nil {
   assert set.contains(settings.game.settings.arrival_objectives, 4770)
     as "migration 0038's Tower objective (4770) is in the settings the load's key gave"
   assert dict.has_key(settings.game.settings.item_objectives, 16_311)
-    as "migration 0042's first equip objective (16311) is in the settings the load's key gave"
+    as "migration 0044's first equip objective (16311) is in the settings the load's key gave"
   assert settings.game.settings.tutorial_chain
     == content_tutorial_quest.chain(key:)
     as "the settings carry the tutorial chain the load put"
