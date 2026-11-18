@@ -11,6 +11,10 @@
 ////                               unit properties' level and the attacker's level (read from
 ////                               the unit's stat 10 when a cast or a blow is made)
 ////                            ─▶ 0x938 {self, 10, level} to the player's client
+////                            ─▶ 0x169 of the new level's ability points when the total changed
+////                               (genesis_prime/game/ability_points), after the 0x938 because the
+////                               client re-reads the points when it raises PlayerLevelChange, 2000 ms
+////                               after it applies that stat (`lua.Abilities.UpdateInterfaceMenuAlerts`)
 ////                            ─▶ the abilities the new level grants (genesis_prime/game/ability_book):
 ////                               0x111 in the next bag slots, then 0x1a0 of them and their alternates,
 ////                               after the 0x938 because the client's availability check reads the
@@ -33,6 +37,7 @@
 
 import genesis_prime/client_connection
 import genesis_prime/game/ability_book_frame
+import genesis_prime/game/ability_points
 import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/properties as connection_properties
 import genesis_prime/game/connection/state.{type Session} as connection_state
@@ -146,30 +151,37 @@ fn carried_out(
     ]
     LevelRose(level:) -> {
       let store.CharacterId(character_number) = entered.character.character_id
-      [
-        connection_state.to_client(
-          session,
-          connection_frames.level_frame(unit_id: entered.unit_id, level:),
+      let tables = session.settings.tables
+      list.flatten([
+        [
+          connection_state.to_client(
+            session,
+            connection_frames.level_frame(unit_id: entered.unit_id, level:),
+          ),
+        ],
+        list.map(
+          ability_points.after_rise(
+            tables:,
+            from_level: entered.character.level,
+            to_level: level,
+          ),
+          connection_state.to_client(session, _),
         ),
-        ..list.append(
-          list.map(
-            ability_book_frame.granted(
-              character_number:,
-              loadout: entered.loadout,
-              plans: spell_plan.plans_with_later(
-                tables: session.settings.tables,
-              ),
-              from_level: entered.character.level,
-              to_level: level,
-            ),
-            connection_state.to_client(session, _),
+        list.map(
+          ability_book_frame.granted(
+            character_number:,
+            loadout: entered.loadout,
+            plans: spell_plan.plans_with_later(tables:),
+            from_level: entered.character.level,
+            to_level: level,
           ),
-          connection_state.news_to_viewers(
-            entered:,
-            news: client_connection.Level(level:),
-          ),
-        )
-      ]
+          connection_state.to_client(session, _),
+        ),
+        connection_state.news_to_viewers(
+          entered:,
+          news: client_connection.Level(level:),
+        ),
+      ])
     }
   }
 }

@@ -13,7 +13,7 @@
 //// Loaded(character)          ─▶ loaded         ─▶ Ask map MapId(world, 0): Join(connection, character, place, stay, alive, hidden)
 ////                                                 (or Refused, for a level with no XpPerLevel row too: the rule hands back to select)
 //// Joined(unit record, loadout, run)
-////                            ─▶ joined         ─▶ Send 0xAD, 0x262, 0x19B, 0x92C, 0x25E (a play only), 0x111 x 10 (x 11 with an
+////                            ─▶ joined         ─▶ Send 0xAD, 0x262, 0x19B, 0x92C, 0x169, 0x25E (a play only), 0x111 x 10 (x 11 with an
 ////                                                 innate), 0x1A0, 0x19D, 0x19F (with an innate), 0x6BC, 0x636, 0xF1, 0x61,
 ////                                                 WatchMap(map, run), StartPassive (with an innate passive)
 ////                                                 (a player saved dead: the ghost's 0x262 and
@@ -142,6 +142,7 @@ import genesis_prime/client_connection
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/ability_book
 import genesis_prime/game/ability_book_frame
+import genesis_prime/game/ability_points
 import genesis_prime/game/camp
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/character_state
@@ -1086,6 +1087,10 @@ pub fn joined(
                 // once per play and join. The open issue "Worn bags open more
                 // inventory slots" (#587) settles it on the live client.
                 reward_properties_sent(tables:),
+                // Before 0x25E, whose handler raises CharacterCreated, when the
+                // interface menu's Abilities button reads the points
+                // (`lua.Abilities.UpdateInterfaceMenuAlerts`).
+                Send(ability_points.frame(tables:, level: character.level)),
               ],
               character_state_sent(entry:),
               quest_effects,

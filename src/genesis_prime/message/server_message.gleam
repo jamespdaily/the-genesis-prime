@@ -10,6 +10,7 @@
 //// reads the body is the message. A number no such message has is reported as
 //// unknown.
 
+import genesis_prime/message/ability_points.{type AbilityPoints}
 import genesis_prime/message/ability_tiers.{type AbilityTiers}
 import genesis_prime/message/account_entitlements.{type AccountEntitlements}
 import genesis_prime/message/action_set.{type ActionSet}
@@ -171,6 +172,7 @@ pub type ServerMessage {
   ItemsSwapped(message: ItemsSwapped)
   ItemActionFailed(message: ItemActionFailed)
   AbilityTiers(message: AbilityTiers)
+  AbilityPoints(message: AbilityPoints)
   ActionSet(message: ActionSet)
   InnateIndexSet(message: InnateIndexSet)
   UnitCreateCreature(message: UnitCreateCreature)
@@ -387,6 +389,7 @@ pub fn decode(
     0x056A ->
       decoded(body, message_id, item_action_failed.decode, ItemActionFailed)
     0x01A0 -> decoded(body, message_id, ability_tiers.decode, AbilityTiers)
+    0x0169 -> decoded(body, message_id, ability_points.decode, AbilityPoints)
     0x019D -> decoded(body, message_id, action_set.decode, ActionSet)
     0x019F -> decoded(body, message_id, innate_index_set.decode, InnateIndexSet)
     0x07FC ->
@@ -552,6 +555,7 @@ pub fn name(message: ServerMessage) -> String {
     ItemsSwapped(..) -> "items_swapped"
     ItemActionFailed(..) -> "item_action_failed"
     AbilityTiers(..) -> "ability_tiers"
+    AbilityPoints(..) -> "ability_points"
     ActionSet(..) -> "action_set"
     InnateIndexSet(..) -> "innate_index_set"
     UnitCreateCreature(..) -> "unit_create_creature"

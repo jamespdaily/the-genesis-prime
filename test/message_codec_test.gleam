@@ -6,6 +6,7 @@
 //// and that the committed files are the generated ones. Every case is planted from the generated files, so
 //// no expected text is written here.
 
+import genesis_prime/message/ability_points.{AbilityPoints}
 import genesis_prime/message/cast_result
 import genesis_prime/message/item_charges_changed.{ItemChargesChanged}
 import genesis_prime/message_generator.{
@@ -14,6 +15,7 @@ import genesis_prime/message_generator.{
 import gleam/list
 import gleam/result
 import gleam/string
+import message_support
 import owned_test
 
 fn generated() -> List(GeneratedFile) {
@@ -44,6 +46,7 @@ pub fn the_schema_generates_one_module_for_each_message_and_record_and_the_clien
   assert paths
     == [
       "src/genesis_prime/message/ability_hold.gleam",
+      "src/genesis_prime/message/ability_points.gleam",
       "src/genesis_prime/message/ability_tier.gleam",
       "src/genesis_prime/message/ability_tiers.gleam",
       "src/genesis_prime/message/account_entitlements.gleam",
@@ -461,4 +464,41 @@ pub fn cast_result_25_is_item_charges_test() -> Nil {
   assert cast_result.from_value(22) == cast_result.ItemBad
     && cast_result.from_value(26) == cast_result.ItemTooHighLevel
     as "the named neighbours are unchanged"
+}
+
+/// `opcode.0x169`: the client's reader (0x14007a040) takes two 32-bit values, the points to
+/// spend and then the total, low byte first, and nothing else. No recording holds the
+/// message, so the bodies are written by hand from the reader's layout, with fields that
+/// differ so a swap fails.
+pub fn the_ability_points_are_the_points_to_spend_then_the_total_in_32_bits_each_test() -> Nil {
+  use <- owned_test.run(5000)
+  list.each(
+    [
+      #(
+        "both zero",
+        <<0:32-little, 0:32-little>>,
+        AbilityPoints(ability_points: 0, total_ability_points: 0),
+      ),
+      #(
+        "3 to spend of 41",
+        <<3, 0, 0, 0, 41, 0, 0, 0>>,
+        AbilityPoints(ability_points: 3, total_ability_points: 41),
+      ),
+      #(
+        "the total fills its 32 bits",
+        <<1, 0, 0, 0, 4, 3, 2, 1>>,
+        AbilityPoints(ability_points: 1, total_ability_points: 0x01020304),
+      ),
+    ],
+    fn(case_) {
+      let #(name, body, value) = case_
+      message_support.assert_codec(
+        name:,
+        body:,
+        value:,
+        encode: ability_points.encode,
+        decode: ability_points.decode,
+      )
+    },
+  )
 }
