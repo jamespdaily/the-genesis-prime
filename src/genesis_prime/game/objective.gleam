@@ -516,7 +516,7 @@ fn is_the_terminals_choice(
 /// What the objectives of one quest have counted so far for one event: the log, the
 /// progress effects in reverse order, whether the quest became Achieved, and whether any
 /// objective counted a unit new to it.
-type Pass {
+pub type Pass {
   Pass(
     log: QuestLog,
     progress: List(Effect),
@@ -575,10 +575,11 @@ fn advance_quest(
               // dead, tells nothing: the client's progress stays 0. The kill that
               // fills the group counts as a kill does.
               Ok(#(marked, True)) ->
-                progressed_by_one(
+                progressed_by(
                   pass: Pass(..pass, log: marked),
                   quest:,
                   index:,
+                  amount: 1,
                   now_ms:,
                 )
               Ok(#(marked, False)) -> Pass(..pass, log: marked)
@@ -615,7 +616,7 @@ fn advance_quest(
               // A kill, a talk, a cast aimed at the caster, and an objective whose unit
               // counts again, count one at each event with no record of the unit.
               Ok(_), True | Error(Nil), _ ->
-                progressed_by_one(pass:, quest:, index:, now_ms:)
+                progressed_by(pass:, quest:, index:, amount: 1, now_ms:)
             }
         }
       },
@@ -661,15 +662,16 @@ fn counted_a_new_unit(
   )
 }
 
-/// The pass after one more counted for the quest's objective at `index`, added to what the
+/// The pass after `amount` more counted for the quest's objective at `index`, added to what the
 /// quest's earlier objectives made; a count with no unit record credits no unit.
-fn progressed_by_one(
+pub fn progressed_by(
   pass pass: Pass,
   quest quest: quest_log.Quest,
   index index: Int,
+  amount amount: Int,
   now_ms now_ms: Int,
 ) -> Pass {
-  case quest_log.progressed(log: pass.log, quest:, index:, amount: 1, now_ms:) {
+  case quest_log.progressed(log: pass.log, quest:, index:, amount:, now_ms:) {
     Ok(progressed) ->
       Pass(
         ..pass,

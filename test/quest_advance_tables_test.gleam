@@ -13,6 +13,8 @@ import genesis_prime/game/spell_plan
 import genesis_prime/game/target_group
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Faction2Id}
+import genesis_prime/table/item2
+import genesis_prime/table/item_special
 import genesis_prime/table/loader/store.{type Tables}
 import genesis_prime/table/quest2
 import genesis_prime/table/spell4_effects.{type Spell4Effects}
@@ -203,7 +205,7 @@ pub fn no_activate_spell_is_refused_for_a_type_42_row_and_the_use_rule_counts_th
       #("no creature", 36),
       #("some creatures", 17),
     ]
-    as "measured with `objective.counts`: the use of every creature that holds the spell counts the row's objective for 59 rows, of some creatures for 17 and of none for 36, so a count above 1 would finish early if both counted"
+    as "a regression pin of what `objective.counts` answers on the client's rows, not a count made apart from it: the use of every creature that holds the spell counts the row's objective for 59 rows, of some creatures for 17 and of none for 36, so a count above 1 would finish early if both counted"
   Nil
 }
 
@@ -224,10 +226,19 @@ pub fn the_objectives_a_row_names_are_reachable_or_pinned_as_a_gap_test() -> Nil
   let sources = spell_plan.sources_of(tables:)
   let rows = type_42_rows(tables:)
   let routed = activate.activated_spell_ids(tables:, sources:)
+  let activations = activate.activations(tables:)
+  // A spell a creature or an item routes is castable only when the activate plan holds it:
+  // 43650 and 45904 to 45909 are routed and refused 285 for a Fluff row aimed at the target.
   let reached =
     list.filter(rows, fn(row) {
       set.contains(routed, row.spell_id)
       && outcome_of(tables:, effect: row) == "applied"
+      && case activate.planned_of(activations:, spell4_id: row.spell_id) {
+        Ok(activate.Planned(..)) -> True
+        Ok(activate.CannotBePlanned(..))
+        | Ok(activate.NoSpell4Row)
+        | Error(Nil) -> False
+      }
     })
     |> list.map(fn(row) { #(row.data_bits00, row.data_bits01) })
     |> set.from_list
@@ -261,20 +272,67 @@ pub fn the_objectives_a_row_names_are_reachable_or_pinned_as_a_gap_test() -> Nil
       set.contains(reached, #(found.0, found.1))
     })
   assert list.length(named) == 53
-    as "53 visible, required, marked type 5 objectives no creature links are named by a type 42 row (#932's class A)"
+    as "53 visible, required, marked type 5 objectives no creature links are named by a type 42 row"
   assert list.length(with_a_route) == 12
-    as "12 of them have a row of an activate spell of a creature or an item that the plan applies: 11 by a creature's spell and 1 by the railgun, so a cast can finish them"
+    as "12 of them have a row of an activate spell of a creature or an item that the plan applies and the activate cast plans, so a cast that starts can finish them"
   assert list.map(without, fn(found) { { found.2 }.objective_id })
     |> list.sort(int.compare)
     == unreachable_objectives
-    as "the other 41 stay open as they do: no table gives a player the spell that advances them (dated line on the quests issue, #334)"
+    as "the other 41 stay open as they do: no table gives a player the spell that advances them"
 }
 
 /// The QuestObjective ids of the 41 objectives a type 42 row names that no spell a player holds
-/// advances: the quests issue (#334) keeps the gap.
+/// advances. They stay open, a pinned gap.
 const unreachable_objectives = [
   7009, 7169, 8039, 8753, 8988, 8989, 8990, 9749, 10_291, 10_304, 12_664, 12_742,
   12_863, 12_893, 12_894, 12_895, 13_480, 13_544, 13_938, 14_144, 14_232, 14_485,
   14_488, 14_583, 14_953, 15_591, 15_616, 16_620, 17_798, 17_872, 18_325, 18_326,
   18_567, 18_570, 19_033, 19_351, 19_354, 21_095, 21_096, 21_097, 21_115,
 ]
+
+/// The item spells that start only for a type 42 row, which hold no Activate row: an item's cast
+/// of any of them plans (`activate.planned_of`) and starts, where it was refused as unbuilt.
+/// Spell4 26477 (Item2 12336, "Disruptor Beam [DEPRECATED?]") names Quest2 1, which has no
+/// objective, and starts a cast that does nothing; the client's own item check
+/// (`0x140398cc0`) runs before the spell and refuses what it refuses.
+pub fn the_item_spells_that_start_only_for_a_type_42_row_are_these_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let sources = spell_plan.sources_of(tables:)
+  let activations = activate.activations(tables:)
+  let with_a_row =
+    set.from_list(list.map(type_42_rows(tables:), fn(row) { row.spell_id }))
+  let starting =
+    item_special.all(tables)
+    |> list.map(fn(row) { row.spell4_id_on_activate })
+    |> list.filter(fn(spell4_id) {
+      spell4_id != 0
+      && set.contains(with_a_row, spell4_id)
+      && !list.any(spell_plan.effects_of(sources:, spell4_id:), fn(effect) {
+        effect.effect_type == 7
+      })
+      && case activate.planned_of(activations:, spell4_id:) {
+        Ok(activate.Planned(..)) -> True
+        Ok(activate.CannotBePlanned(..))
+        | Ok(activate.NoSpell4Row)
+        | Error(Nil) -> False
+      }
+    })
+    |> list.unique
+    |> list.sort(int.compare)
+  assert starting == [24_501, 26_477, 27_724]
+    as "ItemSpecial.spell4IdOnActivate: the railgun's spell, the deprecated Disruptor Beam and Spell4 27724 start for a type 42 row alone"
+  let items =
+    item2.all(tables)
+    |> list.filter(fn(row) {
+      list.any(item_special.all(tables), fn(special) {
+        special.id == row.item_special_id00
+        && list.contains(starting, special.spell4_id_on_activate)
+      })
+    })
+    |> list.map(fn(row) { row.id })
+    |> list.sort(int.compare)
+  assert items == [6938, 12_336, 12_635, 12_639, 12_689]
+    as "Item2 6938, 12635 and 12639 use 24501, 12336 uses 26477 and 12689 uses 27724 (which Item2 12689 requires Quest2 4982 for)"
+}

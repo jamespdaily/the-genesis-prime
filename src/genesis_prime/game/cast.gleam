@@ -1545,7 +1545,7 @@ fn press_checked(
         spell4_id:,
         key: case role {
           Shortcut(..) -> UnbuiltShortcut(spell4_id:)
-          Child | Base(..) | Stage(..) | Passive | Activation(..) ->
+          Child(..) | Base(..) | Stage(..) | Passive | Activation(..) ->
             UnbuiltSpell(spell4_id:)
         },
         result:,
@@ -1892,7 +1892,7 @@ fn proc_started(
     parent: Some(holder.spell.spell4_id),
     primary_target: at,
     client_cast_id: None,
-    role: Child,
+    role: Child(counted_with: WithNothing),
     spent: None,
     reserved: [],
   )
@@ -2650,7 +2650,7 @@ fn fire(
         Tick(cast_id:, ..) ->
           cast_tick.ticks_due(cast:, caster:, now_ms:, cast_id:)
         Finish(cast_id:) -> finish_fired(cast:, cast_id:, now_ms:)
-        StartChild(root:, parent:, proxy:, primary_target:) ->
+        StartChild(root:, parent:, proxy:, primary_target:, counted_with:) ->
           start(
             cast:,
             caster:,
@@ -2660,7 +2660,7 @@ fn fire(
             parent: Some(parent),
             primary_target:,
             client_cast_id: None,
-            role: Child,
+            role: Child(counted_with:),
             spent: None,
             reserved: [],
           )
@@ -3428,7 +3428,7 @@ fn start(
       caster:,
       activating: case role {
         Activation(..) -> True
-        Child | Base(..) | Stage(..) | Passive | Shortcut(..) -> False
+        Child(..) | Base(..) | Stage(..) | Passive | Shortcut(..) -> False
       },
     )
   let live =
@@ -3444,39 +3444,47 @@ fn start(
       started_ms: now_ms,
       stage_of: case role {
         Stage(ability:, ..) -> Some(ability)
-        Child | Base(..) | Passive | Activation(..) | Shortcut(..) -> None
+        Child(..) | Base(..) | Passive | Activation(..) | Shortcut(..) -> None
       },
       closes_threshold: cast_press.closes_threshold(role:),
       nodes: dict.new(),
       ticking: dict.new(),
       activation: case role {
         Activation(activating:, ..) -> Some(activating)
-        Child | Base(..) | Stage(..) | Passive | Shortcut(..) -> None
+        Child(..) | Base(..) | Stage(..) | Passive | Shortcut(..) -> None
       },
       interaction: case role {
         Activation(interaction:, ..) | Shortcut(interaction:, ..) -> interaction
-        Child | Base(..) | Stage(..) | Passive -> NoInteraction
+        Child(..) | Base(..) | Stage(..) | Passive -> NoInteraction
       },
       shortcut: case role {
         Shortcut(..) -> True
-        Child | Base(..) | Stage(..) | Passive | Activation(..) -> False
+        Child(..) | Base(..) | Stage(..) | Passive | Activation(..) -> False
       },
       aimed: case role {
         Shortcut(aimed:, ..) -> aimed
-        Child | Base(..) | Stage(..) | Passive | Activation(..) -> None
+        Child(..) | Base(..) | Stage(..) | Passive | Activation(..) -> None
       },
+      counted_with: case role {
+        Activation(activating:, ..) -> activation_counted_with(activating:)
+        Shortcut(aimed:, ..) ->
+          WithCast(spell4_id: spell.spell4_id.value, target: aimed)
+        Child(counted_with:) -> counted_with
+        Base(..) | Stage(..) | Passive -> WithNothing
+      },
+      advance_rows_applied: set.new(),
       finish_due: False,
       goes_asked: 0,
     )
   let global_ends = case role, spell.global_cooldown.starts_for_ms {
     Passive, _ -> cast.global_cooldown_ends_ms
-    Child, Some(wait_ms)
+    Child(..), Some(wait_ms)
     | Base(..), Some(wait_ms)
     | Stage(..), Some(wait_ms)
     | Activation(..), Some(wait_ms)
     | Shortcut(..), Some(wait_ms)
     -> Some(now_ms + wait_ms)
-    Child, None
+    Child(..), None
     | Base(..), None
     | Stage(..), None
     | Activation(..), None
@@ -3498,11 +3506,11 @@ fn start(
               spell: Some(cast_proc.event_spell(spell:)),
             ),
           ])
-        Child | Passive | Activation(..) | Shortcut(..) -> cast.pending
+        Child(..) | Passive | Activation(..) | Shortcut(..) -> cast.pending
       },
       passive: case role {
         Passive -> Some(id)
-        Child | Base(..) | Stage(..) | Activation(..) | Shortcut(..) ->
+        Child(..) | Base(..) | Stage(..) | Activation(..) | Shortcut(..) ->
           cast.passive
       },
       current: case
@@ -3553,7 +3561,7 @@ fn threshold_step(
   cast_id cast_id: Int,
 ) -> #(State, List(Effect)) {
   case role {
-    Child | Passive | Activation(..) | Shortcut(..) -> #(cast, [])
+    Child(..) | Passive | Activation(..) | Shortcut(..) -> #(cast, [])
     Base(ability:, bag_spell:) ->
       case spell_plan.opens_threshold(spell: ability) {
         True -> open_threshold(cast:, ability:, bag_spell:, cast_id:)
@@ -4111,12 +4119,7 @@ fn go(
         False -> []
       }
       let #(cast, quest_advances) =
-        quest_advances_armed(
-          cast:,
-          caster:,
-          aimed:,
-          with: advance_with(live:, spell:),
-        )
+        quest_advances_armed(cast:, cast_id:, caster:, aimed:, live:)
       #(
         cast,
         list.flatten([
@@ -4707,39 +4710,27 @@ fn removed_by_go(
   aimed aimed: Aimed,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
-  list.fold(aimed.reached, #(cast, []), fn(so_far, entry) {
-    let #(cast, effects) = so_far
-    case entry.effect.kind {
-      spell_plan.RemoveEffect(remove: row) -> {
-        let unit_id = entry.unit_id
-        let removals =
-          lasting.removals(
-            holds: cast_tick.holds_on(cast:, unit_id:),
-            selector: row.selector,
-            count: row.count,
-            unit_id:,
-          )
-        let #(cast, more) = cast_proc.apply_removals(cast:, removals:, now_ms:)
-        #(cast, list.append(effects, more))
-      }
-      spell_plan.ProxyEffect(..)
-      | spell_plan.GainEffect(..)
-      | spell_plan.LastingEffect(..)
-      | spell_plan.ModifierEffect(..)
-      | spell_plan.ForcedMoveEffect(..)
-      | spell_plan.StruckMoveEffect(..)
-      | spell_plan.CooldownEffect(..)
-      | spell_plan.StealthEffect(..)
-      | spell_plan.RemoveStealthEffect(..)
-      | spell_plan.ProcEffect(..)
-      | spell_plan.HealEffect(..)
-      | spell_plan.ControlEffect(..)
-      | spell_plan.DespawnEffect(..)
-      | spell_plan.UnitStateEffect(..)
-      | spell_plan.DelayEffect(..)
-      | spell_plan.QuestAdvanceEffect(..) -> so_far
-    }
-  })
+  list.fold(
+    cast_state.rows_reached(
+      reached: aimed.reached,
+      as_kind: spell_plan.as_remove,
+    ),
+    #(cast, []),
+    fn(so_far, found) {
+      let #(cast, effects) = so_far
+      let #(entry, row) = found
+      let unit_id = entry.unit_id
+      let removals =
+        lasting.removals(
+          holds: cast_tick.holds_on(cast:, unit_id:),
+          selector: row.selector,
+          count: row.count,
+          unit_id:,
+        )
+      let #(cast, more) = cast_proc.apply_removals(cast:, removals:, now_ms:)
+      #(cast, list.append(effects, more))
+    },
+  )
 }
 
 /// Whether an activate cast is a use of its unit: the creature's own activate cast always is,
@@ -4749,45 +4740,69 @@ fn makes_a_use(activating activating: Activating) -> Bool {
   !activating.by_item || activating.effects != []
 }
 
-/// The use or cast a go's QuestAdvanceObjective rows count with (`quest_advance`): the activate
-/// cast's use of its unit, as `Activated` raises it, which an item's cast of a spell with no
-/// Activate row does not raise (an item's use counts a unit only through that effect), or
-/// the quest button's cast, as `ShortcutCast` raises it; none for any other cast.
-fn advance_with(live live: Live, spell spell: Spell) -> AdvanceWith {
-  case live.activation, live.shortcut {
-    Some(
-      Activating(unit_id:, creature_id:, alive_at_press:, by_item:, ..) as activating,
-    ),
-      _
-    ->
-      case makes_a_use(activating:) {
-        True -> WithUse(unit_id:, creature_id:, alive_at_press:, by_item:)
-        False -> WithNothing
-      }
-    None, True -> WithCast(spell4_id: spell.spell4_id.value, target: live.aimed)
-    None, False -> WithNothing
+/// The use an activate cast counts its QuestAdvanceObjective rows with (`quest_advance`): the
+/// use of its unit, as `Activated` raises it, which an item's cast of a spell with no Activate
+/// row does not raise (an item's use counts a unit only through that effect).
+fn activation_counted_with(activating activating: Activating) -> AdvanceWith {
+  case makes_a_use(activating:) {
+    True ->
+      WithUse(
+        unit_id: activating.unit_id,
+        creature_id: activating.creature_id,
+        alive_at_press: activating.alive_at_press,
+        by_item: activating.by_item,
+      )
+    False -> WithNothing
   }
 }
 
 /// The QuestAdvanceObjective rows a go applies to the caster, handed to the connection: a row
-/// of no delay in this step, in one `QuestAdvanced` for all of them, and the rows of one
-/// delay on a timer of that delay (`QuestAdvanceDue`), in the order the rows were reached. A
-/// row that reaches a unit other than the caster advances nothing (only the player's own
-/// quests advance). Nothing cancels a timer once the go has applied the rows: the cast's end,
-/// the caster's death and a removal leave it, and it is lost with the connection.
+/// of no delay in one `QuestAdvanced` for all of them, and the rows of one delay on a timer of
+/// that delay (`QuestAdvanceDue`), in the order the rows were reached. A row lands on the
+/// caster by its aim (`spell_plan.quest_advance_lands_on_the_caster`); any other advances nothing, since
+/// only the player's own quests advance. A row applies once per cast, at the first go that
+/// reaches it, so a row listed by every phase of a multi-go cast counts once
+/// (`Live.advance_rows_applied`). Nothing cancels a timer once the go has applied the rows: the
+/// cast's end, the caster's death and a removal leave it, and it is lost with the connection.
 fn quest_advances_armed(
   cast cast: State,
+  cast_id cast_id: Int,
   caster caster: Caster,
   aimed aimed: Aimed,
-  with with: AdvanceWith,
+  live live: Live,
 ) -> #(State, List(Effect)) {
+  let with = live.counted_with
   let rows =
-    list.filter_map(aimed.reached, fn(entry) {
-      case entry.unit_id == caster.unit_id {
-        True -> spell_plan.as_quest_advance(entry.effect.kind)
-        False -> Error(Nil)
-      }
+    cast_state.rows_reached(
+      reached: aimed.reached,
+      as_kind: spell_plan.as_quest_advance,
+    )
+    |> list.map(fn(found) { found.1 })
+    |> list.filter(fn(row) {
+      !set.contains(live.advance_rows_applied, row.effect_id)
+      && spell_plan.quest_advance_lands_on_the_caster(
+        aim: row.aim,
+        primary_target_is_caster: live.primary_target == caster.unit_id,
+      )
     })
+  let cast = case dict.get(cast.casts, cast_id) {
+    Ok(held) ->
+      State(
+        ..cast,
+        casts: dict.insert(
+          cast.casts,
+          cast_id,
+          Live(
+            ..held,
+            advance_rows_applied: set.union(
+              held.advance_rows_applied,
+              set.from_list(list.map(rows, fn(row) { row.effect_id })),
+            ),
+          ),
+        ),
+      )
+    Error(Nil) -> cast
+  }
   let delays =
     list.map(rows, fn(row) { row.delay_ms })
     |> list.unique
@@ -4830,26 +4845,29 @@ fn cooldowns_armed(
   longer_of_delay_and_duration longer_of_delay_and_duration: Bool,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
-  list.fold(aimed.reached, #(cast, []), fn(so_far, entry) {
-    let #(cast, effects) = so_far
-    case spell_plan.as_cooldown_modifier(entry.effect.kind) {
-      Ok(row) -> {
-        let assert CooldownKept(kept:) = entry.product
-          as "the reach stage tells each cooldown row whether it is kept"
-        let #(cast, armed) =
-          cooldown_row_armed(
-            cast:,
-            cast_id:,
-            row:,
-            kept:,
-            longer_of_delay_and_duration:,
-            now_ms:,
-          )
-        #(cast, list.append(effects, armed))
-      }
-      Error(Nil) -> so_far
-    }
-  })
+  list.fold(
+    cast_state.rows_reached(
+      reached: aimed.reached,
+      as_kind: spell_plan.as_cooldown_modifier,
+    ),
+    #(cast, []),
+    fn(so_far, found) {
+      let #(cast, effects) = so_far
+      let #(entry, row) = found
+      let assert CooldownKept(kept:) = entry.product
+        as "the reach stage tells each cooldown row whether it is kept"
+      let #(cast, armed) =
+        cooldown_row_armed(
+          cast:,
+          cast_id:,
+          row:,
+          kept:,
+          longer_of_delay_and_duration:,
+          now_ms:,
+        )
+      #(cast, list.append(effects, armed))
+    },
+  )
 }
 
 /// One cooldown row armed from this go: its earlier timers cancelled, its start applied
@@ -5121,7 +5139,7 @@ fn child(
         parent: Some(live.spell.spell4_id),
         primary_target:,
         client_cast_id: None,
-        role: Child,
+        role: Child(counted_with: live.counted_with),
         spent: None,
         reserved: [],
       )
@@ -5134,6 +5152,7 @@ fn child(
             parent: live.spell.spell4_id,
             primary_target:,
             proxy:,
+            counted_with: live.counted_with,
           ),
           after_ms: proxy.delay_ms,
         )

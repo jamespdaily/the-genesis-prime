@@ -41,6 +41,7 @@ import genesis_prime/step.{type ConnectionEvent, type Event, OwnEvent}
 import genesis_prime/store.{Character}
 import genesis_prime/table/loader/store as store_tables
 import genesis_prime/world_map/creature_life.{Hostile}
+import genesis_prime/world_map/map.{ObjectsUnseen}
 import gleam/list
 import message_support
 import owned_test
@@ -750,4 +751,101 @@ pub fn usable_holds_the_pictures_unit_states_test() -> Nil {
   let #(results, written) = pressed(state:, ms: 6000)
   assert results == [] && written == [0x07FD]
     as "the 0x355 of unit 40 forgot its hold: the creature shown again holds none and the cast starts"
+}
+
+/// A delayed QuestAdvanceObjective row of the objective's own spell does not count a cast the
+/// go counted already, whether the unit the cast was aimed at is still shown when the row's
+/// delay ends or has left the picture (`quest_advance.advance`: one count per cast).
+///
+/// Quest 8184's objective 15092 is type 11 of Spell4 42735 (count 10), whose reward pane holds
+/// Creature2 41604. Spell4 42735 is given a copy of the Spell4Effects row 89873 (quest 8184,
+/// index 0, amount 1) with a delayTime of 1500, which no client row holds for a quest button.
+pub fn a_delayed_row_does_not_count_the_cast_the_go_counted_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use tables <- fixture_tables.added(
+    table: "Spell4Effects",
+    copy_of: 89_873,
+    id: 999_004,
+    with: [
+      #("spellId", Integer(42_735)),
+      #("delayTime", Integer(1500)),
+      #("dataBits00", Integer(8184)),
+    ],
+  )
+  list.each(
+    [
+      #("the unit is still shown when the row's delay ends", False),
+      #("the unit left the picture before the row's delay ended", True),
+    ],
+    fn(row) {
+      let #(why, leaves) = row
+      let #(state, _) =
+        connection_support.entered_with_quests_on(tables:, quests: [
+          quest_support.accepted(quest_id: 8184, progress: [0]),
+        ])
+      let state =
+        connection_support.feed(
+          state:,
+          event: appears_at_ten(
+            unit_id: 40,
+            creature_id: 41_604,
+            display_info_id: 25_705,
+            outfit_info_id: 9152,
+            hit_radius: 1.0,
+          ),
+        ).0
+      let #(state, pressed) =
+        connection_support.at(
+          state:,
+          ms: 0,
+          event: OwnEvent(
+            step.Read(press_at(
+              spell4_id: 42_735,
+              unit_id: 40,
+              client_cast_id: 7,
+            )),
+          ),
+        )
+      let #(state, pending, at_the_go) =
+        connection_support.casts_left(
+          state:,
+          pending: connection_support.cast_timers(steps: [pressed], ms: 0),
+          until_ms: 500,
+          steps: [pressed],
+        )
+      assert list.contains(
+        list.flat_map(at_the_go, fn(taken) {
+          list.map(connection_support.written(taken:), fn(frame) {
+            #(frame.message_id, frame.body)
+          })
+        }),
+        progress_of(quest: 8184, progress: 1),
+      )
+        as "opcode.0x361 {8184, 0, 1}: the go counts the objective's spell, as the first test says"
+      let state = case leaves {
+        True ->
+          connection_support.at(
+            state:,
+            ms: 600,
+            event: connection_support.sent_by_the_map(
+              ObjectsUnseen(unit_ids: [40]),
+            ),
+          ).0
+        False -> state
+      }
+      let #(_, later) =
+        connection_support.casts_run(
+          state:,
+          pending:,
+          until_ms: 3000,
+          steps: [],
+        )
+      assert list.filter(
+          list.flat_map(later, fn(taken) { connection_support.written(taken:) }),
+          fn(frame) { frame.message_id == 0x0361 },
+        )
+        == []
+        as why
+    },
+  )
 }

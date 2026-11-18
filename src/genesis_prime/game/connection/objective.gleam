@@ -47,7 +47,7 @@ pub fn killed(
 }
 
 /// The session and what is written after the player's yes finished a cast that used the
-/// unit `target` (`checklist_index` its checklist bit): the use is counted (`counted`),
+/// unit `target`: the use, `event` of `objective.Used`, is counted (`counted`),
 /// and when the unit is a departures terminal whose landing the player's log still opens
 /// (`departures.landing`, asked before the count, which can finish the quest), the landing
 /// is kept in `Entered.departing` and the 0 ms timer that starts the move is asked for
@@ -60,9 +60,7 @@ pub fn used(
   session session: Session,
   now now: Now,
   target target: target_group.Unit,
-  checklist_index checklist_index: Int,
-  unit unit: quest_log.UnitRef,
-  by_item by_item: Bool,
+  event event: objective.Event,
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
   let landing = case connection_state.entered_of(session.status) {
     None -> Error(departures.NotATerminal)
@@ -73,7 +71,6 @@ pub fn used(
         creature_id: target.creature_id,
       )
   }
-  let event = objective.Used(target:, checklist_index:, unit:, by_item:)
   let #(session, written) = counted(session:, now:, event:)
   case landing {
     Ok(place) -> #(

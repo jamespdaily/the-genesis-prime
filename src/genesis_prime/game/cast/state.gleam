@@ -427,6 +427,7 @@ pub type Due {
     parent: Spell4Id,
     primary_target: Int,
     proxy: Proxy,
+    counted_with: AdvanceWith,
   )
   /// The earliest node of the lingering cast `cast_id` ends: its units' 0x811, or
   /// the finish when no node is left.
@@ -653,8 +654,10 @@ pub type Resolution {
 
 /// What a cast is to its ability's threshold.
 pub type Role {
-  /// A child a Proxy started: no threshold is touched.
-  Child
+  /// A child a Proxy started: no threshold is touched. It counts its QuestAdvanceObjective
+  /// rows with the use or cast of the cast that started it, `counted_with` (none for a child a
+  /// proc fire started).
+  Child(counted_with: AdvanceWith)
   /// The ability's own spell, which opens a threshold when its method has one.
   Base(ability: Spell, bag_spell: Spell4Id)
   /// The stage at `index` of the ability's open threshold.
@@ -742,6 +745,12 @@ pub type Live {
     shortcut: Bool,
     /// The unit a quest button's cast was aimed at, when it takes one.
     aimed: Option(PressedAt),
+    /// The use or cast the cast's QuestAdvanceObjective rows count with: its own for an activate
+    /// or quest button cast, the cast's that started it for a child.
+    counted_with: AdvanceWith,
+    /// The QuestAdvanceObjective rows an earlier go of the cast applied: a row applies once per
+    /// cast, at the first go that reaches it.
+    advance_rows_applied: Set(Spell4EffectsId),
     /// Whether a channel's finish timer fired while a go's strike round was still open:
     /// the cast ends when its last go is written, which a round's deadline bounds
     /// (`opcode.0x7f4`: the client counts the gos before its 0x7fe, `cast.channel_sequence`).
@@ -1363,6 +1372,19 @@ pub type Reached {
     unit_id: Int,
     product: Product,
   )
+}
+
+/// The rows of one kind among the effects a go reached, each with the entry that reached it,
+/// in the order they were reached (`as_kind` is the kind's projection, such as
+/// `spell_plan.as_modifier`). Every effect of a go that arms or tells something per row
+/// starts from this list.
+pub fn rows_reached(
+  reached reached: List(Reached),
+  as_kind as_kind: fn(spell_plan.Kind) -> Result(payload, Nil),
+) -> List(#(Reached, payload)) {
+  list.filter_map(reached, fn(entry) {
+    result.map(as_kind(entry.effect.kind), fn(row) { #(entry, row) })
+  })
 }
 
 /// What the reach stage made of an effect beside its unit.

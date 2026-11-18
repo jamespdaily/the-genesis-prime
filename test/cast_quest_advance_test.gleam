@@ -407,6 +407,60 @@ fn standing_with(quests quests: List(Int)) -> cast_state.Caster {
   )
 }
 
+/// What a right-click of the creature at 1000 ms starts, with everything every timer then
+/// does.
+fn right_clicked(
+  tables tables: table_store.Tables,
+  creature_id creature_id: Int,
+  caster caster: cast_state.Caster,
+) -> List(Effect) {
+  let #(state, started) =
+    right_click(
+      state: cast_state.new(),
+      tables:,
+      creature_id:,
+      caster:,
+      at: 1000,
+    )
+  let #(_, fired) = run_as(caster:, state:, effects: started, from_ms: 1000)
+  list.append(started, list.flat_map(fired, fn(step) { step.1 }))
+}
+
+/// The press of the quest button of this spell by a caster holding no quest, with everything
+/// every timer then does.
+fn button_pressed(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Int,
+) -> List(Effect) {
+  let assert Ok(body) =
+    cast_objective_ability.encode(CastObjectiveAbility(
+      client_cast_id: clients_cast_id,
+      spell4_id:,
+      target_unit_id: 0,
+      position_x: 0,
+      position_y: 0,
+      position_z: 0,
+    ))
+    as "the message fits"
+  let assert Ok(#(state, effects)) =
+    cast.shortcut(
+      cast: cast_state.new(),
+      body:,
+      caster: holding(quests: []),
+      shortcuts: shortcut_spell.shortcuts(tables:),
+      held: set.from_list([spell4_id]),
+      activations: activate.activations(tables:),
+      target_of: fn(_) { activate.Unseen },
+      in_cast_group: fn(_, _) { False },
+      caster_radius: 0.5,
+      now: support.at(ms: 1000),
+    )
+    as "the press of the button is taken"
+  let #(_, fired) =
+    run_as(caster: holding(quests: []), state:, effects:, from_ms: 1000)
+  list.append(effects, list.flat_map(fired, fn(step) { step.1 }))
+}
+
 type WithCase {
   WithCase(
     why: String,
@@ -428,16 +482,7 @@ pub fn an_advance_carries_the_use_or_cast_it_was_made_with_test() -> Nil {
       id: 999_003,
       with: [#("spellId", Integer(1817))],
     )
-    let #(state, started) =
-      right_click(
-        state: cast_state.new(),
-        tables:,
-        creature_id: 26_462,
-        caster:,
-        at: 1000,
-      )
-    let #(_, fired) = run_as(caster:, state:, effects: started, from_ms: 1000)
-    list.append(started, list.flat_map(fired, fn(step) { step.1 }))
+    right_clicked(tables:, creature_id: 26_462, caster:)
   }
   let activate_with =
     WithUse(
@@ -480,33 +525,7 @@ pub fn an_advance_carries_the_use_or_cast_it_was_made_with_test() -> Nil {
       id: 999_002,
       with: [#("spellId", Integer(25_306)), #("delayTime", Integer(0))],
     )
-    let assert Ok(body) =
-      cast_objective_ability.encode(CastObjectiveAbility(
-        client_cast_id: clients_cast_id,
-        spell4_id: 25_306,
-        target_unit_id: 0,
-        position_x: 0,
-        position_y: 0,
-        position_z: 0,
-      ))
-      as "the message fits"
-    let assert Ok(#(state, effects)) =
-      cast.shortcut(
-        cast: cast_state.new(),
-        body:,
-        caster: holding(quests: []),
-        shortcuts: shortcut_spell.shortcuts(tables:),
-        held: set.from_list([25_306]),
-        activations: activate.activations(tables:),
-        target_of: fn(_) { activate.Unseen },
-        in_cast_group: fn(_, _) { False },
-        caster_radius: 0.5,
-        now: support.at(ms: 1000),
-      )
-      as "the press of the button is taken"
-    let #(_, fired) =
-      run_as(caster: holding(quests: []), state:, effects:, from_ms: 1000)
-    list.append(effects, list.flat_map(fired, fn(step) { step.1 }))
+    button_pressed(tables:, spell4_id: 25_306)
   }
   list.each(
     [
@@ -624,4 +643,146 @@ pub fn a_row_aimed_at_the_primary_target_is_dropped_by_an_activate_cast_not_refu
   assert advanced(effects: pressed_effects)
     == [#([advance(quest: 7442)], WithNothing)]
     as "a self-aimed press lands the row on the caster"
+}
+
+type OncePerCast {
+  OncePerCast(
+    why: String,
+    rows: List(spell_plan.QuestAdvance),
+    advances: List(quest_advance.Advance),
+  )
+}
+
+/// Every advance of the effects, in order, whichever go or timer raised it.
+fn all_advances(
+  effects effects: List(Effect),
+  fired fired: List(#(Int, List(Effect))),
+) -> List(quest_advance.Advance) {
+  list.append(
+    advanced(effects:),
+    list.flat_map(fired, fn(step) { advanced(effects: step.1) }),
+  )
+  |> list.flat_map(fn(raised) { raised.0 })
+}
+
+pub fn a_row_in_several_gos_counts_once_per_cast_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // A spell of two phases, at 0 and 1000 ms: a row with phaseFlags -1 is listed by both gos
+  // (`spell_effect.applies_in_phase`), and a row of phaseFlags 2 only by the second.
+  let in_phases = fn(effect_id, delay, flags) {
+    spell_plan.QuestAdvance(
+      ..row(effect_id:, delay:, quest: 3769),
+      phase_flags: flags,
+    )
+  }
+  let first = Advance(quest_id: 3769, objective_index: 0, amount: 1)
+  list.each(
+    [
+      OncePerCast(
+        "a row of no delay in every phase advances at the first go only",
+        [in_phases(1, 0, -1)],
+        [first],
+      ),
+      OncePerCast(
+        "a row of 500 ms in every phase arms one timer, at the first go",
+        [in_phases(1, 500, -1)],
+        [first],
+      ),
+      OncePerCast(
+        "a row of 1500 ms in every phase arms one timer, though the second go comes first",
+        [in_phases(1, 1500, -1)],
+        [first],
+      ),
+      OncePerCast(
+        "a row of the second phase alone advances at the second go, once",
+        [in_phases(1, 0, 2)],
+        [first],
+      ),
+      OncePerCast(
+        "two rows of every phase advance each once",
+        [in_phases(1, 0, -1), in_phases(2, 0, -1)],
+        [first, first],
+      ),
+    ],
+    fn(case_) {
+      let spell =
+        spell_plan.Spell(..holding_rows(rows: case_.rows), phase_delays_ms: [
+          0,
+          1000,
+        ])
+      let caster = holding(quests: [3769])
+      let #(state, effects) =
+        pressed(spell:, caster:, state: cast_state.new(), at: 1000)
+      let #(_, fired) = run_as(caster:, state:, effects:, from_ms: 1000)
+      assert all_advances(effects:, fired:) == case_.advances as case_.why
+    },
+  )
+}
+
+/// The Spell4Effects 12813, a Proxy row, copied into the spell `parent` to start the spell
+/// `child` on the caster (`targetFlags` 1) with no target prerequisite.
+fn with_a_proxy_to(
+  parent parent: Int,
+  child child: Int,
+  id id: Int,
+  body body: fn(table_store.Tables) -> a,
+) -> a {
+  fixture_tables.added(
+    table: "Spell4Effects",
+    copy_of: 12_813,
+    id:,
+    with: [
+      #("spellId", Integer(parent)),
+      #("targetFlags", Integer(1)),
+      #("prerequisiteIdTargetApply", Integer(0)),
+      #("dataBits00", Integer(child)),
+    ],
+    body:,
+  )
+}
+
+pub fn a_childs_rows_count_with_the_use_or_cast_of_the_cast_that_started_it_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The railgun's spell 24501 is the child: its row 89873 (quest 3769, delay 6000) is the one
+  // that fires, the gated twin 89874 failing its prerequisite for a caster with no quest 3785.
+  // A Proxy started from the root's go leaves the use or cast the root was made with to the
+  // child, so an objective the use or cast counts is skipped once (`quest_advance.advance`).
+  let activated =
+    with_a_proxy_to(parent: 1817, child: 24_501, id: 999_005, body: fn(tables) {
+      right_clicked(
+        tables:,
+        creature_id: 26_462,
+        caster: standing_with(quests: [3769]),
+      )
+    })
+  let pressed_button =
+    with_a_proxy_to(
+      parent: 25_306,
+      child: 24_501,
+      id: 999_006,
+      body: fn(tables) { button_pressed(tables:, spell4_id: 25_306) },
+    )
+  list.each(
+    [
+      #(
+        "a creature's activate cast: the child carries the use of the unit",
+        activated,
+        WithUse(
+          unit_id: items.its_unit,
+          creature_id: 26_462,
+          alive_at_press: True,
+          by_item: False,
+        ),
+      ),
+      #(
+        "a quest button's cast: the child carries the button's cast",
+        pressed_button,
+        WithCast(spell4_id: 25_306, target: None),
+      ),
+    ],
+    fn(row) {
+      let #(why, effects, with) = row
+      assert advanced(effects:) == [#([advance(quest: 3769)], with)] as why
+    },
+  )
 }

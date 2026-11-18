@@ -883,12 +883,63 @@ fn counted_target(
   }
 }
 
+/// The unit a go's use counts for, with the objective event of that use: a creature or object
+/// the player still sees (`counted_target`), as `Activated` counts it.
+fn use_event(
+  tables tables: table_store.Tables,
+  entered entered: world_entry.Entered,
+  unit_id unit_id: Int,
+  alive_at_press alive_at_press: Bool,
+  by_item by_item: Bool,
+) -> Result(#(target_group.Unit, Int, objective.Event), Nil) {
+  counted_target(tables:, picture: entered.shown, unit_id:, alive_at_press:)
+  |> result.map(fn(counted) {
+    #(
+      counted.0,
+      counted.1,
+      objective.Used(
+        target: counted.0,
+        checklist_index: counted.1,
+        unit: unit_ref(entered:, unit_id:),
+        by_item:,
+      ),
+    )
+  })
+}
+
+/// The objective event of a quest button's cast of the spell at the unit the press named, if it
+/// took one: none when that unit is no longer counted (`counted_target`), as `ShortcutCast`
+/// counts it.
+fn cast_event(
+  tables tables: table_store.Tables,
+  entered entered: world_entry.Entered,
+  spell4_id spell4_id: Int,
+  target target: Option(cast_state.PressedAt),
+) -> Result(objective.Event, Nil) {
+  case target {
+    None -> Ok(objective.Cast(spell4_id: Spell4Id(spell4_id), target: None))
+    Some(cast_state.PressedAt(unit_id:, alive_at_press:)) ->
+      counted_target(tables:, picture: entered.shown, unit_id:, alive_at_press:)
+      |> result.map(fn(counted) {
+        objective.Cast(
+          spell4_id: Spell4Id(spell4_id),
+          target: Some(objective.CastTarget(
+            unit: counted.0,
+            ref: unit_ref(entered:, unit_id:),
+          )),
+        )
+      })
+  }
+}
+
 /// The event of the use or cast a QuestAdvanceObjective row was applied with
 /// (`cast_state.AdvanceWith`), as `Activated` and `ShortcutCast` count it, or none when it
-/// counted nothing. A use of a unit that has left the picture since the press counts as it
-/// did at its go: a use that counts a unit new to an objective releases it, so the unit of a
-/// delayed row is no longer shown, and its Creature2 row names the creature (the objectives
-/// a use counts name the creature, not its faction).
+/// counted nothing. A unit that has left the picture since the press counts as it did at its
+/// go, since a delayed row comes after it: a use that counts a unit new to an objective
+/// releases it, so the unit of a delayed row is no longer shown. A use is then rebuilt from the
+/// Creature2 row, which names the creature (the objectives a use counts name the creature, not
+/// its faction), and a cast at the unit as a cast of the spell with no unit, which an objective
+/// of the spell counts all the same. A unit still shown is judged as at the go.
 fn advance_event(
   tables tables: table_store.Tables,
   entered entered: world_entry.Entered,
@@ -899,20 +950,8 @@ fn advance_event(
     cast_state.WithUse(unit_id:, creature_id:, alive_at_press:, by_item:) ->
       case dict.has_key(entered.shown, unit_id) {
         True ->
-          counted_target(
-            tables:,
-            picture: entered.shown,
-            unit_id:,
-            alive_at_press:,
-          )
-          |> result.map(fn(counted) {
-            objective.Used(
-              target: counted.0,
-              checklist_index: counted.1,
-              unit: unit_ref(entered:, unit_id:),
-              by_item:,
-            )
-          })
+          use_event(tables:, entered:, unit_id:, alive_at_press:, by_item:)
+          |> result.map(fn(used) { used.2 })
           |> option.from_result
         False ->
           creature2.get(tables:, id: Creature2Id(creature_id))
@@ -930,22 +969,16 @@ fn advance_event(
           })
           |> option.from_result
       }
+    cast_state.WithCast(spell4_id:, target: Some(pressed)) ->
+      case dict.has_key(entered.shown, pressed.unit_id) {
+        True ->
+          cast_event(tables:, entered:, spell4_id:, target: Some(pressed))
+          |> option.from_result
+        False ->
+          Some(objective.Cast(spell4_id: Spell4Id(spell4_id), target: None))
+      }
     cast_state.WithCast(spell4_id:, target: None) ->
-      Some(objective.Cast(spell4_id: Spell4Id(spell4_id), target: None))
-    cast_state.WithCast(
-      spell4_id:,
-      target: Some(cast_state.PressedAt(unit_id:, alive_at_press:)),
-    ) ->
-      counted_target(tables:, picture: entered.shown, unit_id:, alive_at_press:)
-      |> result.map(fn(counted) {
-        objective.Cast(
-          spell4_id: Spell4Id(spell4_id),
-          target: Some(objective.CastTarget(
-            unit: counted.0,
-            ref: unit_ref(entered:, unit_id:),
-          )),
-        )
-      })
+      cast_event(tables:, entered:, spell4_id:, target: None)
       |> option.from_result
   }
 }
@@ -1049,14 +1082,15 @@ fn carried_out(
         // for no objective (`SetUnitDeathState` 0x14045e740 cancels the player's current
         // cast that targets a unit when the unit's death state is set).
         case
-          counted_target(
+          use_event(
             tables: session.settings.tables,
-            picture: entered.shown,
+            entered:,
             unit_id:,
             alive_at_press:,
+            by_item:,
           )
         {
-          Ok(#(target, checklist_index)) -> {
+          Ok(#(target, checklist_index, event)) -> {
             // The projector's link is read before the count, which can close the
             // objective it opens; the move follows the count's writes.
             let link =
@@ -1068,14 +1102,7 @@ fn carried_out(
                 checklist_index:,
               )
             let #(session, counted) =
-              connection_objective.used(
-                session:,
-                now:,
-                target:,
-                checklist_index:,
-                unit: unit_ref(entered:, unit_id:),
-                by_item:,
-              )
+              connection_objective.used(session:, now:, target:, event:)
             let #(session, moved) =
               connection_projector.moved(
                 session:,
@@ -1088,40 +1115,18 @@ fn carried_out(
           Error(Nil) -> #(session, [])
         }
       cast_state.Activated(..), None -> #(session, [])
-      cast_state.ShortcutCast(spell4_id:, target: None), Some(_) ->
-        connection_objective.counted(
-          session:,
-          now:,
-          event: objective.Cast(spell4_id: Spell4Id(spell4_id), target: None),
-        )
-      cast_state.ShortcutCast(
-        spell4_id:,
-        target: Some(cast_state.PressedAt(unit_id:, alive_at_press:)),
-      ),
-        Some(entered)
-      ->
+      cast_state.ShortcutCast(spell4_id:, target:), Some(entered) ->
         // A cast at a unit the player no longer sees, or that died since the press,
         // counts for no objective, as a use does.
         case
-          counted_target(
+          cast_event(
             tables: session.settings.tables,
-            picture: entered.shown,
-            unit_id:,
-            alive_at_press:,
+            entered:,
+            spell4_id:,
+            target:,
           )
         {
-          Ok(#(unit, _)) ->
-            connection_objective.counted(
-              session:,
-              now:,
-              event: objective.Cast(
-                spell4_id: Spell4Id(spell4_id),
-                target: Some(objective.CastTarget(
-                  unit:,
-                  ref: unit_ref(entered:, unit_id:),
-                )),
-              ),
-            )
+          Ok(event) -> connection_objective.counted(session:, now:, event:)
           Error(Nil) -> #(session, [])
         }
       cast_state.ShortcutCast(..), None -> #(session, [])

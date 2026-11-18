@@ -85,44 +85,40 @@ fn quest_advanced(
   with with: Option(objective.Event),
   now_ms now_ms: Int,
 ) -> Advanced {
-  let #(log, progress, became_achieved) =
-    list.fold(advances, #(so_far.log, [], False), fn(pass, one) {
-      let #(log, progress, became_achieved) = pass
-      case takes_the_advance(tables:, quest:, one:, with:) {
-        False -> pass
-        True ->
-          case
-            quest_log.progressed(
-              log:,
+  let counted =
+    list.fold(
+      advances,
+      objective.Pass(
+        log: so_far.log,
+        progress: [],
+        became_achieved: False,
+        credited_a_new_unit: False,
+      ),
+      fn(pass, one) {
+        case takes_the_advance(tables:, quest:, one:, with:) {
+          False -> pass
+          True ->
+            objective.progressed_by(
+              pass:,
               quest:,
               index: one.objective_index,
               amount: one.amount,
               now_ms:,
             )
-          {
-            Ok(progressed) -> #(
-              progressed.log,
-              [
-                objective.SendProgress(
-                  quest_id: quest.id,
-                  objective_index: one.objective_index,
-                  progress: progressed.progress,
-                ),
-                ..progress
-              ],
-              became_achieved || progressed.became_achieved,
-            )
-            Error(Nil) -> pass
-          }
-      }
-    })
-  let state = case became_achieved {
+        }
+      },
+    )
+  let state = case counted.became_achieved {
     True -> objective.achieved(tables:, quest_id: quest.id)
     False -> []
   }
   Advanced(
-    log:,
-    effects: list.flatten([so_far.effects, list.reverse(progress), state]),
+    log: counted.log,
+    effects: list.flatten([
+      so_far.effects,
+      list.reverse(counted.progress),
+      state,
+    ]),
   )
 }
 

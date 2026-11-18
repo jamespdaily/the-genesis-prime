@@ -5393,10 +5393,7 @@ fn quest_advance_reading(
     Some(column), _ -> Ok(LeftOut(why: QuestAdvanceColumnNotRead(column:)))
     None, True -> Ok(LeftOut(why: QuestAdvanceAddsNothing))
     None, False -> {
-      let aim = case spell_effect.has_flag(flags: effect.target_flags, bit: 1) {
-        True -> AimsAtCaster
-        False -> AimsAtPrimaryTarget
-      }
+      let aim = quest_advance_aim_of(target_flags: effect.target_flags)
       // Both aims land on the caster's own unit, which a target apply prerequisite reads as
       // its first unit; a row aimed at a creature advances nothing, so no creature's state is
       // read for it.
@@ -5422,6 +5419,29 @@ fn quest_advance_reading(
       )
     }
   }
+}
+
+/// The aim of a QuestAdvanceObjective row from its `targetFlags`: the caster when bit 1 is set,
+/// else the primary target (the plan reads no area for the type, `effect_kind.is_row_read`).
+pub fn quest_advance_aim_of(target_flags target_flags: Int) -> Aim {
+  case spell_effect.has_flag(flags: target_flags, bit: 1) {
+    True -> AimsAtCaster
+    False -> AimsAtPrimaryTarget
+  }
+}
+
+/// Whether a QuestAdvanceObjective row aimed by `aim` lands on the caster: its aim names the
+/// caster, or names the primary target and the primary target is the caster (a press of a spell
+/// on the caster). Any other row reaches a unit with no player quest log and advances nothing (a
+/// guess: `Spell4Effects.targetFlags` has no reader in the client). The cast's go and the
+/// coverage measure of an activate cast, whose primary target is the activated unit, both read
+/// this.
+pub fn quest_advance_lands_on_the_caster(
+  aim aim: Aim,
+  primary_target_is_caster primary_target_is_caster: Bool,
+) -> Bool {
+  reaches_caster(aim:)
+  || { reaches_primary_target(aim:) && primary_target_is_caster }
 }
 
 /// The first column of a QuestAdvanceObjective row that the client does not read for the type

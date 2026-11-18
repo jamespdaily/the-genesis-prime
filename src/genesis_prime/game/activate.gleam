@@ -45,7 +45,6 @@
 
 import genesis_prime/game/effect_kind
 import genesis_prime/game/prerequisite.{type Prerequisite}
-import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{type Spell}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
@@ -558,9 +557,9 @@ fn reaches_past_caster(effect effect: Spell4Effects) -> Bool {
 /// row of a type no rule reads is dropped by every cast, so it does not refuse the spell.
 ///
 /// A QuestAdvanceObjective row aimed at the target does not refuse the spell either: the
-/// plan keeps it, and the go applies it to the caster alone (genesis_prime/game/cast
-/// `quest_advances_armed`), so a row aimed at the primary target alone, which is the unit the
-/// activate cast names and not the caster, advances nothing (a guess:
+/// plan keeps it, and the go applies it by `spell_plan.quest_advance_lands_on_the_caster`
+/// (genesis_prime/game/cast `quest_advances_armed`), so a row aimed at the primary target alone,
+/// which is the unit the activate cast names and not the caster, advances nothing (a guess:
 /// `Spell4Effects.targetFlags` has no reader). Such a spell (40061, rows 88719 and 88720)
 /// activates as before.
 ///
@@ -654,18 +653,22 @@ fn drops_unit_state(effect effect: Spell4Effects) -> Bool {
 }
 
 /// Whether the effect type is a QuestAdvanceObjective: its row advances the caster's own
-/// objective, and the activate cast reaches the caster alone, so the row aimed past the
-/// caster stays in the plan and finds no player quest log on the unit it reaches.
+/// objective, so a row aimed past the caster stays in the plan and the go does not apply it
+/// (`drops_quest_advance`).
 fn is_quest_advance(effect_type effect_type: Int) -> Bool {
   effect_kind.kind_of(effect_type:) == effect_kind.QuestAdvance
 }
 
 /// Whether the activate cast advances nothing for this effect: a QuestAdvanceObjective row
-/// aimed at the primary target alone, which an activate cast makes the unit it activates and
-/// not the caster (`Spell4Effects.targetFlags`, a guess).
+/// that does not land on the caster when the primary target is the unit it activates
+/// (`spell_plan.quest_advance_lands_on_the_caster`, the rule the cast's go applies), which is a row aimed
+/// at the primary target alone.
 pub fn drops_quest_advance(effect effect: Spell4Effects) -> Bool {
   is_quest_advance(effect_type: effect.effect_type)
-  && !spell_effect.has_flag(flags: effect.target_flags, bit: 1)
+  && !spell_plan.quest_advance_lands_on_the_caster(
+    aim: spell_plan.quest_advance_aim_of(target_flags: effect.target_flags),
+    primary_target_is_caster: False,
+  )
 }
 
 /// Whether the effect type is a heal of health or of shield.
