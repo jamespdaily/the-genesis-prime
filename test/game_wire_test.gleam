@@ -823,7 +823,7 @@ pub fn a_delete_of_the_accounts_character_is_0x00e6_result_0_and_the_next_list_o
   let game = in_select(started:, port:, account:)
   send_delete(game, zed)
   assert character_support.delete_result_in(game_client.read(game:, count: 1))
-    == DeleteCharacterResult(result: delete_result.DeleteOk, value: 0)
+    == DeleteCharacterResult(result: delete_result.DeleteOk, data: 0)
     as "opcode.0xe6: result 0, and the value nothing reads (opcode.0xe6.value)"
   assert names_of(pool) == ["Abe Qu"] as "the row is deleted"
   assert list.map(listed_entries(game), fn(entry) { entry.name }) == ["Abe Qu"]
@@ -855,7 +855,7 @@ pub fn a_delete_of_a_character_another_account_has_is_0x00e6_result_1_and_delete
   let game = in_select(started:, port:, account:)
   send_delete(game, theirs)
   assert character_support.delete_result_in(game_client.read(game:, count: 1))
-    == DeleteCharacterResult(result: delete_result.DeleteFailed, value: 0)
+    == DeleteCharacterResult(result: delete_result.DeleteFailed, data: 0)
     as "lua.CharacterSelection.OnCharacterDeleteResult: 1; a modified client could send any id"
   assert names_of(pool) == ["Cal Qu"] as "nothing is deleted"
   game_client.close(game:)

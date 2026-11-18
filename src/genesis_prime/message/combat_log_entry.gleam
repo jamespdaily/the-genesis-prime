@@ -2,12 +2,9 @@
 //// never edited by hand.
 ////
 //// A union inside a message body: one entry of the combat log: the type in 6
-//// bits picks the layout of its data. Gap: the schema holds types 1, 2, 14,
-//// 18, 22, 23 and 24, and the client's reader takes 0 to 35; the other types
-//// are open under the issue "Spells work in depth on the real client: cast
-//// times, telegraphs, buffs, crowd control and ticking effects". Its variants
-//// are listed in `schema.toml` with the client's evidence, and the fact file's
-//// `opcode.0x247` names the union.
+//// bits picks the layout of its data. Its variants are listed in `schema.toml`
+//// with the client's evidence, and the fact file's `opcode.0x247` names the
+//// union.
 
 import genesis_prime/message/bit_stream.{
   type DecodeError, type Reader, type Writer,
@@ -29,6 +26,17 @@ import gleam/result
 /// One item of the union: its first 6 bits are its kind, which picks the
 /// variant, and the variant's record reads them again as its first field. A
 /// kind no variant has is refused.
+///
+/// The client reads these kinds and the server never sends them, so no variant
+/// holds them and a read refuses them: 3 damage (the fact file's
+/// `opcode.0x247.damage`), 4 damage_shields (the fact file's
+/// `opcode.0x247.damage_shields`), 6 multi_hit (the fact file's
+/// `opcode.0x247.multi_hit`), 7 multi_hit_shields (the fact file's
+/// `opcode.0x247.multi_hit_shields`), 12 heal (the fact file's
+/// `opcode.0x247.heal`), 13 multi_heal (the fact file's
+/// `opcode.0x247.multi_heal`), 17 deflect (the fact file's
+/// `opcode.0x247.deflect`), 34 unhandled_34 (the fact file's
+/// `opcode.0x247.unhandled_34`).
 pub type CombatLogEntry {
   /// Kind 1, read by `combat_log_cc_state`. The fact file's
   /// `opcode.0x247.cc_state` names the kind.

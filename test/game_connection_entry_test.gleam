@@ -260,8 +260,8 @@ pub fn message_0xad_carries_the_saved_world_and_position_and_0_in_its_last_two_f
       position_x: 0x41E9075F,
       position_y: 0xC45577C8,
       position_z: 0xC40C0C08,
-      field_5: 0,
-      field_6: 0,
+      unread_5: 0,
+      unread_6: 0,
     ))
     as "opcode.0xad: World 3460 and the position of WorldLocation2 row 51596 as 32-bit floats (29.1286, -853.8716 and -560.1880 are 0x41E9075F, 0xC45577C8 and 0xC40C0C08); the fourth and fifth floats are never read, 0.0 (opcode.0xad.last_floats)"
 }
@@ -390,7 +390,7 @@ pub fn message_0x19b_names_the_unit_0x6bc_gives_the_path_0x636_gives_control_of_
     )
     |> game_client.frames_without_passive_cast
   assert unit_is_player.decode(is_player)
-    == Ok(UnitIsPlayer(unit_id: 5, field_2: 0))
+    == Ok(UnitIsPlayer(unit_id: 5, unread_2: 0))
     as "opcode.0x19b: the first value is the unit id the map gave, which must be the unit 0x262 created; the second is never read (opcode.0x19b.second_value)"
   assert player_path.decode(path_body)
     == Ok(PlayerPath(

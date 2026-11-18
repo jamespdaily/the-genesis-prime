@@ -240,7 +240,7 @@ pub fn one_0x19d_sets_action_set_0_with_the_three_abilities_in_bar_slots_0_to_2_
       as "0x19d decodes"
     assert set.action_set_index == 0 && set.result == 1
       as "opcode.0x19d: set 0, which is active until a message changes it, and result 1, ok"
-    assert set.field_2 == 1
+    assert set.unlocked == 1
       as "opcode.0x19d.set_value: bit 0 marks the set unlocked, and the active set is unlocked"
     assert set.shortcuts
       == list.index_map(class.abilities, fn(base, slot) {

@@ -116,7 +116,7 @@ pub fn message_0x025c_with_a_valid_0x025b_asks_the_store_to_make_the_character_a
   assert create_result_of(taken)
     == CreateCharacterResult(
       character_id: 11,
-      field_2: 0,
+      unread_2: 0,
       result: create_result.CreateOk,
     )
     as "opcode.0xdc: the new character's id and CreateOk"
@@ -450,7 +450,7 @@ pub fn message_0x0352_asks_the_store_to_delete_the_character_and_its_answer_is_0
       taken,
       game_connection_support.keyed(),
     ))
-    == DeleteCharacterResult(result: delete_result.DeleteOk, value: 0)
+    == DeleteCharacterResult(result: delete_result.DeleteOk, data: 0)
     as "opcode.0xe6: result 0 and the value nothing reads (opcode.0xe6.value)"
   assert !support.stops(taken) as "the connection goes on"
   assert support.asked(taken) == None
@@ -470,7 +470,7 @@ pub fn a_delete_of_a_character_the_account_does_not_have_is_0x00e6_result_1_and_
       taken,
       game_connection_support.keyed(),
     ))
-    == DeleteCharacterResult(result: delete_result.DeleteFailed, value: 0)
+    == DeleteCharacterResult(result: delete_result.DeleteFailed, data: 0)
     as "lua.CharacterSelection.OnCharacterDeleteResult: 1 shows 'Something went wrong...'"
   let assert [line] = support.logs_of(step: taken, level: LogWarning)
     as "a request the real client would not send is logged once"

@@ -8,16 +8,21 @@ import genesis_prime/message_generator
 import genesis_prime/message_schema.{
   ArrayOfFloat32, ArrayOfRecord, ArrayOfRecordCountedBy, ArrayOfUnsigned, Both,
   ConflictingValues, Constant, DuplicateTag, DuplicateValue, DuplicateValueName,
-  DuplicateVariantName, HalfFloatAtLeast, NamedValues, OneRecord, Union,
-  UnknownCountField, UnknownRecord, UnknownVariantRecord, UnsignedArrayCountedBy,
-  UnsignedBelow, ValueNamedOther, ValuesOnOtherKind, Variant,
-  VariantKindDisagrees, WrongTypeOfKey,
+  DuplicateVariantName, HalfFloatAtLeast, MissingKey, NamedValues, NeverTag,
+  OneRecord, OpenAndNamed, OpenTag, TagBeyondRefused, Union, UnknownCountField,
+  UnknownRecord, UnknownVariantRecord, UnsignedArrayCountedBy, UnsignedBelow,
+  ValueNamedOther, ValuesOnOtherKind, Variant, VariantKindDisagrees,
+  WrongTypeOfKey,
 }
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/result
 import gleam/string
 import owned_test
+import simplifile
+
+const schema_path = "src/genesis_prime/message/schema.toml"
 
 fn schema_with(fields: String) -> String {
   "[[message]]\nid = 0x0001\nname = \"planted\"\ndirection = \"client_to_server\"\nevidence = \"opcode.0x1\"\nsummary = \"a planted message\"\nfields = [\n"
@@ -321,6 +326,57 @@ pub fn a_field_with_a_safe_by_says_its_value_is_safe_by_that_fact_and_one_withou
     as "the doc of the field with a safe_by names the fact, and the field with none has no doc"
 }
 
+pub fn an_open_field_has_a_doc_with_its_question_and_a_safe_by_keeps_its_own_test() -> Nil {
+  use <- owned_test.run(5000)
+  let files =
+    generated(schema_with(
+      "  { name = \"field_1\", kind = \"unsigned\", bits = 8, evidence = \"x\", open = \"what is it\" },
+  { name = \"field_2\", kind = \"unsigned\", bits = 8, evidence = \"x\", open = \"what is this\", safe_by = \"opcode.0x3\" },
+  { name = \"field_3\", kind = \"unsigned\", bits = 8, evidence = \"x\" },",
+    ))
+  assert string.contains(
+    generated_file(files, "planted"),
+    "    /// Open: what is it\n    field_1: Int,\n    /// Open: what is this\n    /// Safe by `opcode.0x3`: the client's code gives this field no use the\n    /// server needs, and that fact shows its value is safe.\n    field_2: Int,\n    field_3: Int,",
+  )
+    as "the open field has its question as a doc, the open field with a safe_by has both docs, and the plain field has none"
+  let plain =
+    generated(schema_with(
+      "  { name = \"number\", kind = \"unsigned\", bits = 8, evidence = \"x\" },",
+    ))
+  assert string.contains(
+    generated_file(plain, "planted"),
+    "pub type Planted {\n  Planted(number: Int)\n}",
+  )
+    as "a message with no open and no safe_by field keeps the one-line constructor"
+}
+
+pub fn a_union_with_never_and_open_tags_documents_them_and_still_refuses_their_kinds_test() -> Nil {
+  use <- owned_test.run(5000)
+  let keys =
+    "never_tags = [ { tag = 0, name = \"damage\", named_by = \"opcode.0x3\" }, { tag = 3, name = \"heal\", named_by = \"opcode.0x4\" } ]
+open_tags = [ { tag = 1, question = \"what is it\" } ]"
+  let union =
+    generated_file(
+      generated(union_with(keys:, variants: flag_and_pair)),
+      "planted_union",
+    )
+  list.each(
+    [
+      "/// The client reads these kinds and the server never sends them, so no variant\n/// holds them and a read refuses them: 0 damage (the fact file's `opcode.0x3`),\n/// 3 heal (the fact file's `opcode.0x4`).",
+      "/// These kinds are open, so no variant holds them and a read refuses them: 1\n/// (what is it).",
+      "    _ -> Error(bit_stream.UnexpectedValue(field: \"planted_union\", value: kind))",
+    ],
+    fn(text) {
+      assert string.contains(union, text)
+        as { "the union module holds `" <> text <> "`" }
+    },
+  )
+  list.each(["    0 ->", "    1 ->", "    3 ->"], fn(arm) {
+    assert !string.contains(union, arm)
+      as { "the read has no arm `" <> arm <> "` for a never or open kind" }
+  })
+}
+
 // ---- unions, and lists of records counted by an earlier list ----
 
 /// A schema with two records that start with their own 3-bit kind, a union of
@@ -360,9 +416,19 @@ pub fn a_union_lists_its_variants_by_kind_and_a_list_of_it_is_a_list_of_records_
             name: "flag",
             record: "planted_flag",
             named_by: Some("x"),
+            open: None,
           ),
-          Variant(tag: 5, name: "pair", record: "planted_pair", named_by: None),
+          Variant(
+            tag: 5,
+            name: "pair",
+            record: "planted_pair",
+            named_by: None,
+            open: None,
+          ),
         ],
+        refused_from: 8,
+        never_tags: [],
+        open_tags: [],
       ),
     ]
     as "the union holds its variants in the order the schema lists them"
@@ -476,6 +542,237 @@ pub fn a_union_is_a_module_that_peeks_its_kind_and_refuses_one_no_variant_has_te
         as { "the message holds the array of the union: `" <> text <> "`" }
     },
   )
+}
+
+// ---- the open marker, never tags and the bound the client refuses from ----
+
+/// The planted union schema of `union_schema` with `keys` lines under the
+/// union's `tag_bits`.
+fn union_with(keys keys: String, variants variants: String) -> String {
+  string.replace(
+    union_schema(variants:, fields: shapes_field),
+    "tag_bits = 3\nvariants",
+    "tag_bits = 3\n" <> keys <> "\nvariants",
+  )
+}
+
+/// Why the schema is refused.
+fn refused(text: String) -> message_schema.SchemaError {
+  let assert Error(error) = message_schema.parse(text)
+    as "the planted schema is refused"
+  error
+}
+
+/// The one field of the planted message of `schema_with`, as the reader holds
+/// it.
+fn only_field(
+  line: String,
+) -> Result(message_schema.Field, message_schema.SchemaError) {
+  use schema <- result.try(message_schema.parse(schema_with(line)))
+  let assert [message] = schema.messages as "one message"
+  let assert [field] = message.fields as "one field"
+  Ok(field)
+}
+
+pub fn a_field_is_traced_or_open_and_never_both_test() -> Nil {
+  use <- owned_test.run(5000)
+  let unsigned = fn(keys) {
+    "  { name = \"field_1\", kind = \"unsigned\", bits = 8, evidence = \"x\""
+    <> keys
+    <> " },"
+  }
+  let held = fn(keys) {
+    let assert Ok(field) = only_field(unsigned(keys))
+    #(field.open, field.named_by, field.safe_by)
+  }
+  assert held(", open = \"what is it\"") == #(Some("what is it"), None, None)
+    as "an open field has its question and no name key"
+  assert held(", open = \"what is it\", safe_by = \"opcode.0x3\"")
+    == #(Some("what is it"), None, Some("opcode.0x3"))
+    as "an open field may keep its safe_by"
+  list.each(
+    [
+      #(
+        "open with named_by",
+        ", open = \"what is it\", named_by = \"opcode.0x3\"",
+        OpenAndNamed(field: "field_1"),
+      ),
+      #("a blank open", ", open = \"\"", MissingKey("field_1", "open")),
+      #("a white space open", ", open = \"  \"", MissingKey("field_1", "open")),
+      #(
+        "an open that is a number",
+        ", open = 3",
+        WrongTypeOfKey("field_1", "open"),
+      ),
+    ],
+    fn(row) {
+      assert only_field(unsigned(row.1)) == Error(row.2)
+        as {
+          row.0
+          <> ": one field is traced or open, and a blank or wrong open is never read as absent"
+        }
+    },
+  )
+}
+
+pub fn a_union_lists_its_never_and_open_tags_and_the_bound_the_client_refuses_from_test() -> Nil {
+  use <- owned_test.run(5000)
+  let keys =
+    "refused_from = 6
+never_tags = [ { tag = 0, name = \"damage\", named_by = \"opcode.0x3\" } ]
+open_tags = [ { tag = 1, question = \"what is it\", named_by = \"opcode.0x4\" }, { tag = 3, question = \"and this\" } ]"
+  let assert Ok(schema) =
+    message_schema.parse(union_with(keys:, variants: flag_and_pair))
+    as "the planted schema parses"
+  let assert [union] = schema.unions as "one union"
+  assert union.refused_from == 6
+  assert union.never_tags
+    == [NeverTag(tag: 0, name: "damage", named_by: "opcode.0x3")]
+  assert union.open_tags
+    == [
+      OpenTag(tag: 1, question: "what is it", named_by: Some("opcode.0x4")),
+      OpenTag(tag: 3, question: "and this", named_by: None),
+    ]
+  let assert Ok(plain) =
+    message_schema.parse(union_with(keys: "", variants: flag_and_pair))
+    as "a union with no marks parses"
+  let assert [plain_union] = plain.unions as "one union"
+  assert #(
+      plain_union.refused_from,
+      plain_union.never_tags,
+      plain_union.open_tags,
+    )
+    == #(8, [], [])
+    as "no marks means no never tags, no open tags and the width's own limit of 2^3"
+}
+
+pub fn a_union_tag_listed_twice_or_beyond_the_bound_or_without_its_key_is_refused_test() -> Nil {
+  use <- owned_test.run(5000)
+  let never = fn(tag) {
+    "{ tag = "
+    <> int.to_string(tag)
+    <> ", name = \"damage\", named_by = \"opcode.0x3\" }"
+  }
+  let open = fn(tag) {
+    "{ tag = " <> int.to_string(tag) <> ", question = \"what is it\" }"
+  }
+  let rows = [
+    #(
+      "a tag both a variant and a never tag",
+      "never_tags = [ " <> never(2) <> " ]",
+      DuplicateTag(union: "planted_union", tag: 2),
+    ),
+    #(
+      "a tag both a never tag and an open tag",
+      "never_tags = [ " <> never(0) <> " ]\nopen_tags = [ " <> open(0) <> " ]",
+      DuplicateTag(union: "planted_union", tag: 0),
+    ),
+    #(
+      "a tag twice among the never tags",
+      "never_tags = [ " <> never(0) <> ", " <> never(0) <> " ]",
+      DuplicateTag(union: "planted_union", tag: 0),
+    ),
+    #(
+      "a never tag at the bound",
+      "refused_from = 6\nnever_tags = [ " <> never(6) <> " ]",
+      TagBeyondRefused(union: "planted_union", tag: 6),
+    ),
+    #(
+      "an open tag above the bound",
+      "refused_from = 6\nopen_tags = [ " <> open(7) <> " ]",
+      TagBeyondRefused(union: "planted_union", tag: 7),
+    ),
+    #(
+      "a variant at the bound",
+      "refused_from = 5",
+      TagBeyondRefused(union: "planted_union", tag: 5),
+    ),
+    #(
+      "a bound of 0",
+      "refused_from = 0",
+      WrongTypeOfKey("planted_union", "refused_from"),
+    ),
+    #(
+      "a bound above 2^3",
+      "refused_from = 9",
+      WrongTypeOfKey("planted_union", "refused_from"),
+    ),
+    #(
+      "a never tag with no named_by",
+      "never_tags = [ { tag = 0, name = \"damage\" } ]",
+      MissingKey("damage", "named_by"),
+    ),
+    #(
+      "an open tag with no question",
+      "open_tags = [ { tag = 1 } ]",
+      MissingKey("open tag 1", "question"),
+    ),
+    #(
+      "an open tag with a blank question",
+      "open_tags = [ { tag = 1, question = \" \" } ]",
+      MissingKey("open tag 1", "question"),
+    ),
+    #(
+      "an open tag whose named_by is a number",
+      "open_tags = [ { tag = 1, question = \"what is it\", named_by = 3 } ]",
+      WrongTypeOfKey("open tag 1", "named_by"),
+    ),
+  ]
+  list.each(rows, fn(row) {
+    assert refused(union_with(keys: row.1, variants: flag_and_pair)) == row.2
+      as row.0
+  })
+}
+
+pub fn the_real_schema_marks_the_combat_log_types_the_client_logs_itself_as_never_sent_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let assert Ok(text) = simplifile.read(schema_path)
+    as "the schema file is read from the project folder"
+  let assert Ok(schema) = message_schema.parse(text) as "the real schema parses"
+  let assert Ok(union) =
+    list.find(schema.unions, fn(union) { union.name == "combat_log_entry" })
+    as "the schema holds the combat log union"
+  // The client builds the log lines of these types itself from a spell
+  // result (LogEffectResult 0x140563dc0), so a server copy would double the
+  // line; it reads type 34 and does nothing (opcode.0x247.unhandled_34).
+  assert list.map(union.never_tags, fn(never) { #(never.tag, never.name) })
+    == [
+      #(3, "damage"),
+      #(4, "damage_shields"),
+      #(6, "multi_hit"),
+      #(7, "multi_hit_shields"),
+      #(12, "heal"),
+      #(13, "multi_heal"),
+      #(17, "deflect"),
+      #(34, "unhandled_34"),
+    ]
+  list.each(union.never_tags, fn(never) {
+    assert never.named_by == "opcode.0x247." <> never.name
+    assert !list.any(union.variants, fn(variant) { variant.tag == never.tag })
+      as { never.name <> " is no variant" }
+  })
+}
+
+pub fn the_real_unions_state_where_the_client_refuses_their_tags_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let assert Ok(text) = simplifile.read(schema_path)
+    as "the schema file is read from the project folder"
+  let assert Ok(schema) = message_schema.parse(text) as "the real schema parses"
+  // Each union's own `evidence` fact gives its bound: opcode.0x247 (type above
+  // 35 fails the read), 0x140c1f070 and opcode.0x637 (kinds 0 to 29),
+  // 0x140085ca0 (chat type above 11 fails), 0x140094890 (tags 2 and 3 fail),
+  // 0x140096230 (form 3 refuses), opcode.0x938 (all 32 stats are read).
+  assert list.map(schema.unions, fn(union) { #(union.name, union.refused_from) })
+    == [
+      #("unit_stat_value", 3),
+      #("movement_command", 30),
+      #("relayed_movement", 30),
+      #("start_movement", 30),
+      #("chat_format", 12),
+      #("spell_effect_result", 2),
+      #("unit_stat_change", 32),
+      #("combat_log_entry", 36),
+    ]
 }
 
 const counted_records =
