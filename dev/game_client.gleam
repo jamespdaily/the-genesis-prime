@@ -1186,11 +1186,15 @@ fn last_position(
     | relayed_movement.TimedPath(_)
     | relayed_movement.Path(_)
     | relayed_movement.Velocity(_)
+    | relayed_movement.VelocityDefault(_)
     | relayed_movement.MoveAsked(_)
+    | relayed_movement.MoveDefault(_)
     | relayed_movement.Rotation(_)
+    | relayed_movement.RotationDefault(_)
     | relayed_movement.FaceUnit(_)
     | relayed_movement.FacePoint(_)
     | relayed_movement.StateFlags(_)
+    | relayed_movement.StateDefault(_)
     | relayed_movement.Mode(_) -> at
   }
 }
@@ -1958,11 +1962,15 @@ fn relayed_kind(command: relayed_movement.RelayedMovement) -> Int {
     relayed_movement.TimedPath(..) -> 3
     relayed_movement.Path(..) -> 4
     relayed_movement.Velocity(..) -> 8
+    relayed_movement.VelocityDefault(..) -> 10
     relayed_movement.MoveAsked(..) -> 11
+    relayed_movement.MoveDefault(..) -> 13
     relayed_movement.Rotation(..) -> 14
     relayed_movement.FaceUnit(..) -> 18
     relayed_movement.FacePoint(..) -> 19
+    relayed_movement.RotationDefault(..) -> 21
     relayed_movement.StateFlags(..) -> 24
+    relayed_movement.StateDefault(..) -> 26
     relayed_movement.Mode(..) -> 27
   }
 }

@@ -27,6 +27,10 @@ import genesis_prime/message/leave_world.{LeaveWorld}
 import genesis_prime/message/movement_face_point.{MovementFacePoint}
 import genesis_prime/message/movement_face_unit.{MovementFaceUnit}
 import genesis_prime/message/movement_float_vector.{MovementFloatVector}
+import genesis_prime/message/movement_kind_10.{MovementKind10}
+import genesis_prime/message/movement_kind_13.{MovementKind13}
+import genesis_prime/message/movement_kind_21.{MovementKind21}
+import genesis_prime/message/movement_kind_26.{MovementKind26}
 import genesis_prime/message/movement_move_asked.{MovementMoveAsked}
 import genesis_prime/message/movement_path.{MovementPath}
 import genesis_prime/message/movement_rotation.{MovementRotation}
@@ -82,7 +86,6 @@ import gleam/bool
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
-import gleam/result
 
 /// A yes or no as the 1-bit value a message holds it in: 1 for yes.
 pub fn bit(yes: Bool) -> Int {
@@ -465,9 +468,10 @@ fn moved_frame(
 /// speed as a half float, type 0 (straight lines) and mode 0 (`movement_command.kind_4`). A thrown
 /// creature's timed path is kind 0 and kind 3, each point with its own map time
 /// (`movement_command.kind_3`), or kind 2 for a path of one point, and a kind 14 when
-/// the throw turns it. A run ends with kind 11 (the horizontal part of its velocity) and kind
-/// 24 holding bits 0x102, which make the client play the unit's walk or run animation by its
-/// speed (`unit.pace`, `movement_command.kind_11`, `movement_command.kind_24`); every
+/// the throw turns it. A run ends with kinds 10, 13, 21 and 26, each with its blend bit 1, kind 21
+/// being kind 18 for the unit a chase faces (`path_defaults`), so the client takes the velocity, the requested move, the facing and the
+/// state from the path itself and plays the walk or run animation by the pace that move gives
+/// (`movement_command.defaults_with_kind_4_path`, `unit.pace`); every
 /// creature frame keeps the second bit 1, which turns the client's ground lift on
 /// (`creature_moved_frame`); a flight ends
 /// with the stop with state 0, so a creature thrown mid-run stops running and its arc is not
@@ -477,6 +481,7 @@ pub fn path_frame(
   entered entered: world_entry.Entered,
   unit_id unit_id: Int,
   path path: creature_path.Path,
+  face face: Option(Face),
 ) -> Option(Frame) {
   case path {
     creature_path.Standing(..) -> None
@@ -522,10 +527,9 @@ pub fn path_frame(
         when: list.length(points) > creature_path.most_points,
         return: None,
       )
-      let #(x, _, z) = creature_path.velocity(path:, now_ms: started_ms)
-      case half_float.to_bits(value: speed), moving(x:, z:) {
-        Error(Nil), _ | _, Error(Nil) -> None
-        Ok(speed), Ok(moving) -> {
+      case half_float.to_bits(value: speed) {
+        Error(Nil) -> None
+        Ok(speed) -> {
           let time =
             map.server_time(
               origin_ms: entered.clock_origin_ms,
@@ -540,7 +544,7 @@ pub fn path_frame(
                 path_type: 0,
                 mode: 0,
               )),
-              ..moving
+              ..path_defaults(face:)
             ]),
           )
         }
@@ -573,27 +577,35 @@ pub fn placed_frame(
   ])
 }
 
-/// The client reads a unit's walk animation from kind 24's bit 0x2 and the horizontal length
-/// of kind 11's vector (`unit.pace`), and neither expires, so each frame that moves or stops a
-/// unit sets both. Bit 0x100, on the ground, is what lets the client's ground lift pull a unit
-/// above the ground down by up to 2 (`unit.ground_lift.server_commands`), so a creature's
-/// state always holds it.
+/// Bit 0x100, on the ground, is what lets the client's ground lift pull a unit above the
+/// ground down by up to 2 (`unit.ground_lift.server_commands`), so a creature's state
+/// always holds it when the creature stands. A stop sets the unit's requested move and state
+/// explicitly, since the client reads its walk animation from the state's bit 0x2 and the
+/// requested move's length (`unit.pace`), and neither expires.
 const on_the_ground_flag = 0x100
 
-const moving_flag = 2
-
-/// Kind 11 and kind 24 of a run: the horizontal part of its velocity in units a second, the unit
-/// the player sends it in, with the blend bit 1 as every move the player sends has it, and the
-/// moving bit. Its height is 0, as the player's is. Error for a part no half float holds.
-fn moving(x x: Float, z z: Float) -> Result(List(RelayedMovement), Nil) {
-  use x <- result.try(half_float.to_bits(value: x))
-  use z <- result.try(half_float.to_bits(value: z))
-  Ok([
-    relayed_movement.MoveAsked(MovementMoveAsked(x:, y: 0, z:, blends: 1)),
-    relayed_movement.StateFlags(
-      MovementStateFlags(flags: int.bitwise_or(on_the_ground_flag, moving_flag)),
-    ),
-  ])
+/// Kinds 10, 13, 21 and 26, each with its blend bit 1: the velocity, the requested move, the
+/// rotation and the state of a unit that runs a kind 4 path are the client's own defaults for
+/// it. The move default is the current leg's velocity and zero after the path's end, the
+/// state default derives the moving bit from it and holds 0x100 in mode 0, and the rotation
+/// default faces each leg and keeps the last at the end
+/// (`movement_command.defaults_with_kind_4_path`, `movement_command.kind_13`,
+/// `movement_command.kind_21`). A creature that faces a unit (a chase) takes kind 18 for that
+/// unit in place of kind 21, so it goes on facing the unit along the path and after the end
+/// (`movement_command.kind_18`); a walk home, which faces a point, and any other run keep kind 21.
+fn path_defaults(face face: Option(Face)) -> List(RelayedMovement) {
+  let rotation = case face {
+    Some(creature_turn.Unit(unit_id:)) ->
+      relayed_movement.FaceUnit(MovementFaceUnit(unit_id:, blends: 1))
+    Some(creature_turn.Point(..)) | Some(creature_turn.Fixed(..)) | None ->
+      relayed_movement.RotationDefault(MovementKind21(blends: 1))
+  }
+  [
+    relayed_movement.VelocityDefault(MovementKind10(blends: 1)),
+    relayed_movement.MoveDefault(MovementKind13(blends: 1)),
+    rotation,
+    relayed_movement.StateDefault(MovementKind26(blends: 1)),
+  ]
 }
 
 /// Kind 11 zero and kind 24 holding `state_flags`: the unit stands, with the ground bit when

@@ -177,12 +177,16 @@ pub fn replayed(commands: List(RelayedMovement)) -> List(MovementCommand) {
           field_5: 0,
           field_6: 0,
         ))
+      relayed_movement.VelocityDefault(data) -> movement_command.Kind10(data)
       relayed_movement.Velocity(data) -> movement_command.Velocity(data)
       relayed_movement.MoveAsked(data) -> movement_command.MoveAsked(data)
+      relayed_movement.MoveDefault(data) -> movement_command.Kind13(data)
       relayed_movement.Rotation(data) -> movement_command.Rotation(data)
       relayed_movement.FaceUnit(data) -> movement_command.FaceUnit(data)
       relayed_movement.FacePoint(data) -> movement_command.FacePoint(data)
+      relayed_movement.RotationDefault(data) -> movement_command.Kind21(data)
       relayed_movement.StateFlags(data) -> movement_command.StateFlags(data)
+      relayed_movement.StateDefault(data) -> movement_command.Kind26(data)
       relayed_movement.Mode(data) -> movement_command.Mode(data)
     }
   })

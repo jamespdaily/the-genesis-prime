@@ -1222,10 +1222,10 @@ fields = [
 [[record]]
 name = "movement_kind_10"
 evidence = "0x140c1f070"
-summary = "a movement command of kind 10, whose meaning the client's code does not show: one bit"
+summary = "a movement command of kind 10, the unit's velocity follows its position movement (the default velocity): the bit is the blend bit"
 fields = [
   { name = "kind", kind = "constant", bits = 5, value = 10, evidence = "0x140c1f070", named_by = "0x140c1f070" },
-  { name = "field_2", kind = "unsigned", bits = 1, evidence = "0x140c1f070" },
+  { name = "blends", kind = "unsigned", bits = 1, evidence = "movement_command.defaults_with_kind_4_path", named_by = "movement_command.defaults_with_kind_4_path" },
 ]
 
 [[record]]
@@ -1256,10 +1256,10 @@ fields = [
 [[record]]
 name = "movement_kind_13"
 evidence = "0x140c1f070"
-summary = "a movement command of kind 13, whose meaning the client's code does not show: one bit"
+summary = "a movement command of kind 13, the unit's requested move follows its position movement (the default move): the bit is the blend bit"
 fields = [
   { name = "kind", kind = "constant", bits = 5, value = 13, evidence = "0x140c1f070", named_by = "0x140c1f070" },
-  { name = "field_2", kind = "unsigned", bits = 1, evidence = "0x140c1f070" },
+  { name = "blends", kind = "unsigned", bits = 1, evidence = "movement_command.kind_13", named_by = "movement_command.kind_13" },
 ]
 
 [[record]]
@@ -1359,10 +1359,10 @@ fields = [
 [[record]]
 name = "movement_kind_21"
 evidence = "0x140c1f070"
-summary = "a movement command of kind 21, whose meaning the client's code does not show: one bit"
+summary = "a movement command of kind 21, the unit's rotation follows its position movement (the default rotation): the bit is the blend bit"
 fields = [
   { name = "kind", kind = "constant", bits = 5, value = 21, evidence = "0x140c1f070", named_by = "0x140c1f070" },
-  { name = "field_2", kind = "unsigned", bits = 1, evidence = "0x140c1f070" },
+  { name = "blends", kind = "unsigned", bits = 1, evidence = "movement_command.kind_21", named_by = "movement_command.kind_21" },
 ]
 
 [[record]]
@@ -1411,10 +1411,10 @@ fields = [
 [[record]]
 name = "movement_kind_26"
 evidence = "0x140c1f070"
-summary = "a movement command of kind 26, whose meaning the client's code does not show: one bit"
+summary = "a movement command of kind 26, the unit's movement state flags are derived from its requested move and velocity (the default state): the bit is the blend bit"
 fields = [
   { name = "kind", kind = "constant", bits = 5, value = 26, evidence = "0x140c1f070", named_by = "0x140c1f070" },
-  { name = "field_2", kind = "unsigned", bits = 1, evidence = "0x140c1f070" },
+  { name = "blends", kind = "unsigned", bits = 1, evidence = "movement_command.defaults_with_kind_4_path", named_by = "movement_command.defaults_with_kind_4_path" },
 ]
 
 [[record]]
@@ -1507,7 +1507,7 @@ variants = [
 [[union]]
 name = "relayed_movement"
 evidence = "opcode.0x637"
-summary = "one movement command of a message about a unit's movement: the kinds of the per-frame batch the client's writer builds after the time command (1 platform, 2 position, 8 velocity, 11 move asked, 14 rotation, 24 state flags, 27 mode), which the server relays to the players who see a unit, every field named, and the five a server that moves a unit writes itself, 0 (the time its later commands apply at), 3 (a timed path), 4 (a path), 18 (face a unit) and 19 (face a point). Gap: the other kinds, which game moves queue and the client's writer may send, are not relayed, since opcode.0x637 does not say which queuers exist or what they mean"
+summary = "one movement command of a message about a unit's movement: the kinds of the per-frame batch the client's writer builds after the time command (1 platform, 2 position, 8 velocity, 11 move asked, 14 rotation, 24 state flags, 27 mode), which the server relays to the players who see a unit, every field named, and the nine a server that moves a unit writes itself, 0 (the time its later commands apply at), 3 (a timed path), 4 (a path), 10, 13, 21 and 26 (the velocity, move, rotation and state that follow a path by default), 18 (face a unit) and 19 (face a point). Gap: the other kinds, which game moves queue and the client's writer may send, are not relayed, since opcode.0x637 does not say which queuers exist or what they mean"
 tag_bits = 5
 variants = [
   { tag = 0, name = "time", record = "movement_time", named_by = "movement_command.kind_0" },
@@ -1516,11 +1516,15 @@ variants = [
   { tag = 3, name = "timed_path", record = "movement_timed_path", named_by = "movement_command.kind_3" },
   { tag = 4, name = "path", record = "movement_path", named_by = "movement_command.kind_4" },
   { tag = 8, name = "velocity", record = "movement_velocity", named_by = "movement_command.kind_8" },
+  { tag = 10, name = "velocity_default", record = "movement_kind_10", named_by = "movement_command.defaults_with_kind_4_path" },
   { tag = 11, name = "move_asked", record = "movement_move_asked", named_by = "movement_command.kind_11" },
+  { tag = 13, name = "move_default", record = "movement_kind_13", named_by = "movement_command.kind_13" },
   { tag = 14, name = "rotation", record = "movement_rotation", named_by = "0x140715350" },
   { tag = 18, name = "face_unit", record = "movement_face_unit", named_by = "movement_command.kind_18" },
   { tag = 19, name = "face_point", record = "movement_face_point", named_by = "movement_command.kind_19" },
+  { tag = 21, name = "rotation_default", record = "movement_kind_21", named_by = "movement_command.kind_21" },
   { tag = 24, name = "state_flags", record = "movement_state_flags", named_by = "movement_command.kind_24" },
+  { tag = 26, name = "state_default", record = "movement_kind_26", named_by = "movement_command.defaults_with_kind_4_path" },
   { tag = 27, name = "mode", record = "movement_mode", named_by = "movement_command.kind_27" },
 ]
 
