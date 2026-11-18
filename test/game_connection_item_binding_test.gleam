@@ -15,8 +15,7 @@
 ////   (`world_entry_support.novice_items`), whose chest piece row has its bindFlags changed to
 ////   bind on equip, a spare chest piece and a glove of bind-on-pickup rows.
 
-import account_store_support.{type Store}
-import character_support
+import account_store_support.{type Stored}
 import connection_rule_support as support
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{
@@ -27,12 +26,11 @@ import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
 import genesis_prime/message/item_added
 import genesis_prime/message/item_flags_changed
-import genesis_prime/message/item_move
 import genesis_prime/message/item_place
 import genesis_prime/step.{type ConnectionStep, OwnEvent}
 import genesis_prime/store.{
-  type HeldItem, type ItemsRequest, type NewItem, CharacterCreated, ForItems,
-  Items, MoveItems, NewItem,
+  type HeldItem, type ItemsRequest, type NewItem, ForItems, Items, MoveItems,
+  NewItem,
 }
 import genesis_prime/table/id.{Item2Id}
 import genesis_prime/table/loader/store as table_store
@@ -42,22 +40,10 @@ import item_flags_support
 import owned_test
 import world_entry_support
 
-/// A character the real store holds, with its account.
-type Stored {
-  Stored(
-    store: Store,
-    account: store.AccountId,
-    character_id: store.CharacterId,
-  )
-}
-
 /// A stored character holding the Engineer's Novice set and these items.
 fn stored_holding(items items: List(NewItem)) -> Stored {
-  let store = account_store_support.start_store(pool_size: 2)
-  let account =
-    account_store_support.insert_account(store:, login_name: "login-1")
-  let worn =
-    list.map(
+  account_store_support.stored_holding(
+    worn: list.map(
       world_entry_support.novice_items(
         character: connection_support.world_character(),
       ),
@@ -70,17 +56,9 @@ fn stored_holding(items items: List(NewItem)) -> Stored {
           charges: 0,
         )
       },
-    )
-  let assert CharacterCreated(character_id:) =
-    account_store_support.create_holding(
-      store:,
-      account:,
-      name: "Ab Cd",
-      slots: 1,
-      items: list.append(worn, items),
-    )
-    as "a character holding the Novice set and the bag items"
-  Stored(store:, account:, character_id:)
+    ),
+    items:,
+  )
 }
 
 /// A chest piece of the Engineer's chest row in an inventory slot.
@@ -91,16 +69,6 @@ fn spare_chest(bag_index bag_index: Int) -> NewItem {
     bag_index:,
     stack_count: 1,
     charges: 0,
-  )
-}
-
-/// The items the store holds now, as a login finds them. A login raises the character's
-/// epoch, so a request is made under the epoch of the login just before it.
-fn loaded(stored stored: Stored) -> #(Int, List(HeldItem)) {
-  account_store_support.login(
-    store: stored.store,
-    account: stored.account,
-    character_id: stored.character_id,
   )
 }
 
@@ -185,28 +153,9 @@ fn flags_told(taken taken: ConnectionStep(Request)) -> List(#(Int, Int)) {
 
 /// The 0x182 of the player, as the client sends it.
 fn move_message(from from: #(Int, Int), to to: #(Int, Int)) -> BitArray {
-  let assert Ok(body) =
-    item_move.encode(item_move.ItemMove(
-      from: item_place.ItemPlace(location: from.0, bag_index: from.1),
-      to: item_place.ItemPlace(location: to.0, bag_index: to.1),
-    ))
-    as "two places of 9 and 32 bits fit the message"
-  connection_support.world_message(message_id: 0x0182, body:)
-}
-
-/// The connection's move request made the stored character's own: its account and id, and the
-/// epoch of a login just before it.
-fn own_request(
-  stored stored: Stored,
-  request request: ItemsRequest,
-) -> ItemsRequest {
-  let #(epoch, _) = loaded(stored:)
-  let assert MoveItems(..) = request as "a move asks MoveItems"
-  MoveItems(
-    ..request,
-    account_id: stored.account,
-    character_id: stored.character_id,
-    session_epoch: character_support.epoch(epoch),
+  connection_support.item_moved_message(
+    from: item_place.ItemPlace(location: from.0, bag_index: from.1),
+    to: item_place.ItemPlace(location: to.0, bag_index: to.1),
   )
 }
 
@@ -233,7 +182,10 @@ fn moved_on_the_store(
     step.Answer(
       FromStore(account_store_support.ask(
         store: stored.store,
-        request: Items(own_request(stored:, request: asked)),
+        request: Items(account_store_support.own_request(
+          stored:,
+          request: asked,
+        )),
       )),
     )
   let #(state, answered) = connection_support.answer(state:, taken:, outcome:)
@@ -260,7 +212,7 @@ pub fn equipping_a_bind_on_equip_item_binds_it_and_the_binding_survives_unequipp
   )
   let stored =
     stored_holding(items: [spare_chest(bag_index: 0), spare_chest(bag_index: 2)])
-  let #(_, rows) = loaded(stored:)
+  let #(_, rows) = account_store_support.loaded(stored:)
   let chest = item_at(items: rows, place: #(1, 0))
   let second_chest = item_at(items: rows, place: #(1, 2))
   let glove = item_at(items: rows, place: #(0, 5))
@@ -269,7 +221,9 @@ pub fn equipping_a_bind_on_equip_item_binds_it_and_the_binding_survives_unequipp
     as "the entry's 0x111 of an unbound bind-on-equip chest piece holds 0"
   let flags_held = fn(guid) {
     let assert Ok(item) =
-      list.find(loaded(stored:).1, fn(item) { item.item_guid == guid })
+      list.find(account_store_support.loaded(stored:).1, fn(item) {
+        item.item_guid == guid
+      })
       as "the store holds the item"
     item.item_flags
   }
@@ -303,7 +257,7 @@ pub fn equipping_a_bind_on_equip_item_binds_it_and_the_binding_survives_unequipp
   assert flags_told(taken: again.answered) == []
     as "an equip of a bound item writes no 0x567"
   // The relog: the next entry sends the byte.
-  let #(_, rows) = loaded(stored:)
+  let #(_, rows) = account_store_support.loaded(stored:)
   let #(_, entry) = entered_with(tables:, items: rows)
   assert entry_flags(entry:, guid: chest.item_guid) == #(#(0, 0), 1)
     as "the relog's 0x111 of the chest piece carries 1"
@@ -321,7 +275,7 @@ pub fn equipping_a_bind_on_equip_item_binds_it_and_the_binding_survives_unequipp
   assert flags_told(taken: glove_on.answered) == []
     && flags_set_by(request: glove_on.asked) == [0]
     as "a bind-on-pickup item is not bound by an equip"
-  let #(_, rows) = loaded(stored:)
+  let #(_, rows) = account_store_support.loaded(stored:)
   let #(_, entry) = entered_with(tables:, items: rows)
   assert entry_flags(entry:, guid: glove.item_guid).1 == 0
     as "after a relog the glove's 0x111 still holds 0"
@@ -351,7 +305,7 @@ pub fn a_crash_after_the_bind_commits_resyncs_the_client_on_reload_test() -> Nil
     flags: None,
   )
   let stored = stored_holding(items: [spare_chest(bag_index: 0)])
-  let #(_, rows) = loaded(stored:)
+  let #(_, rows) = account_store_support.loaded(stored:)
   let chest = item_at(items: rows, place: #(1, 0))
   // The chest slot is taken by the Novice chest piece: the equip is a swap.
   let #(state, _) = entered_with(tables:, items: rows)
@@ -362,7 +316,7 @@ pub fn a_crash_after_the_bind_commits_resyncs_the_client_on_reload_test() -> Nil
   let assert ForItems(store.ItemsSaved) =
     account_store_support.ask(
       store: stored.store,
-      request: Items(own_request(stored:, request: asked)),
+      request: Items(account_store_support.own_request(stored:, request: asked)),
     )
     as "the real store applies the move"
   // The answer is never delivered: the connection ends.
@@ -372,7 +326,7 @@ pub fn a_crash_after_the_bind_commits_resyncs_the_client_on_reload_test() -> Nil
     })
     == []
     as "nothing is written for the move the connection never heard of"
-  let #(_, reloaded) = loaded(stored:)
+  let #(_, reloaded) = account_store_support.loaded(stored:)
   let #(_, entry) = entered_with(tables:, items: reloaded)
   assert entry_flags(entry:, guid: chest.item_guid) == #(#(0, 0), 1)
     as "the reload sends the chest piece worn and bound"
@@ -389,7 +343,7 @@ pub fn a_crash_before_the_bind_commits_leaves_the_item_unbound_test() -> Nil {
     flags: None,
   )
   let stored = stored_holding(items: [spare_chest(bag_index: 0)])
-  let #(_, rows) = loaded(stored:)
+  let #(_, rows) = account_store_support.loaded(stored:)
   let chest = item_at(items: rows, place: #(1, 0))
   let #(state, _) = entered_with(tables:, items: rows)
   let #(state, taken) =
@@ -401,7 +355,7 @@ pub fn a_crash_before_the_bind_commits_leaves_the_item_unbound_test() -> Nil {
     })
     == []
     as "nothing is written for the equip"
-  let #(_, reloaded) = loaded(stored:)
+  let #(_, reloaded) = account_store_support.loaded(stored:)
   let #(_, entry) = entered_with(tables:, items: reloaded)
   assert entry_flags(entry:, guid: chest.item_guid) == #(#(1, 0), 0)
     as "the reload sends the chest piece in the bag, unbound"

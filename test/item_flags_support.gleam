@@ -9,7 +9,6 @@ import fixture_tables
 import game_connection_support
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/inventory.{type Effect, type Moving, type Taken, Send}
-import genesis_prime/message/item_move
 import genesis_prime/message/item_place
 import genesis_prime/store.{type HeldItem, HeldItem}
 import genesis_prime/table/id.{Item2Id}
@@ -88,12 +87,6 @@ pub fn take(
   from from: #(Int, Int),
   to to: #(Int, Int),
 ) -> Result(Taken, inventory.Refusal) {
-  let assert Ok(body) =
-    item_move.encode(item_move.ItemMove(
-      from: item_place.ItemPlace(location: from.0, bag_index: from.1),
-      to: item_place.ItemPlace(location: to.0, bag_index: to.1),
-    ))
-    as "two places of 9 and 32 bits fit the message"
   inventory.take(
     items:,
     life: player_life_support.alive(),
@@ -101,7 +94,10 @@ pub fn take(
     wearer: equip_requirement_support.engineer(),
     bag_slots: 0,
     message: inventory.MoveAsked,
-    body:,
+    body: game_connection_support.item_move_body(
+      from: item_place.ItemPlace(location: from.0, bag_index: from.1),
+      to: item_place.ItemPlace(location: to.0, bag_index: to.1),
+    ),
   )
 }
 

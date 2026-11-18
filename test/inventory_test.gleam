@@ -40,7 +40,6 @@ import equip_requirement_support
 import fixture_tables
 import game_connection_support
 import genesis_prime/client_connection.{type Undecoded}
-import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/ability_book_frame
 import genesis_prime/game/equip_requirement.{type Wearer, Wearer}
 import genesis_prime/game/inventory.{
@@ -53,7 +52,6 @@ import genesis_prime/message/item_added
 import genesis_prime/message/item_count_changed.{ItemCountChanged}
 import genesis_prime/message/item_delete.{ItemDelete}
 import genesis_prime/message/item_flags_changed.{ItemFlagsChanged}
-import genesis_prime/message/item_move
 import genesis_prime/message/item_moved.{ItemMoved}
 import genesis_prime/message/item_place
 import genesis_prime/message/item_removed.{ItemRemoved}
@@ -123,13 +121,10 @@ fn fighting() -> Life {
 
 /// The body of a 0x182 from one place to another.
 fn move_body(from from: #(Int, Int), to to: #(Int, Int)) -> BitArray {
-  let assert Ok(body) =
-    item_move.encode(item_move.ItemMove(
-      from: item_place.ItemPlace(location: from.0, bag_index: from.1),
-      to: item_place.ItemPlace(location: to.0, bag_index: to.1),
-    ))
-    as "two places of 9 and 32 bits fit the message"
-  body
+  game_connection_support.item_move_body(
+    from: item_place.ItemPlace(location: from.0, bag_index: from.1),
+    to: item_place.ItemPlace(location: to.0, bag_index: to.1),
+  )
 }
 
 /// The move of the Engineer of the tests (`equip_requirement_support.engineer`).
@@ -190,13 +185,6 @@ fn accepted(
   moving
 }
 
-/// The moves of an accepted move or swap.
-fn moves_of(moving: Moving) -> List(store.ItemMove) {
-  let assert inventory.Moved(moves:, ..) = moving.change
-    as "a 0x182 onto an empty slot or a different item is saved as moves"
-  moves
-}
-
 /// The 0x56A the effects write, decoded: its guid and code.
 fn failed_with(effects: List(Effect)) -> List(#(Int, Int)) {
   list.filter_map(effects, fn(effect) {
@@ -209,15 +197,6 @@ fn failed_with(effects: List(Effect)) -> List(#(Int, Int)) {
           as "0x56A decodes"
         Ok(#(item_guid, code))
       }
-      Log(..) -> Error(Nil)
-    }
-  })
-}
-
-fn sent(effects: List(Effect)) -> List(Frame) {
-  list.filter_map(effects, fn(effect) {
-    case effect {
-      Send(frame:) -> Ok(frame)
       Log(..) -> Error(Nil)
     }
   })
@@ -236,7 +215,7 @@ pub fn a_move_to_an_empty_slot_is_saved_then_answered_with_its_new_place_test() 
   let items = held()
   let moving = accepted(items:, from: #(1, 0), to: #(1, 5))
   assert moving.guid == 8
-  assert moves_of(moving)
+  assert item_flags_support.moves_of(moving)
     == [
       ItemMove(
         item_guid: 8,
@@ -256,7 +235,7 @@ pub fn a_move_to_an_empty_slot_is_saved_then_answered_with_its_new_place_test() 
       account_id: AccountId(7),
       character_id: CharacterId(42),
       session_epoch: character_support.epoch(1),
-      moves: moves_of(moving),
+      moves: item_flags_support.moves_of(moving),
     ))
     as "the store is asked for the moves, fenced by the login's epoch"
   assert items == held() as "nothing is moved before the store has answered"
@@ -268,7 +247,7 @@ pub fn a_move_to_an_empty_slot_is_saved_then_answered_with_its_new_place_test() 
   assert list.filter(moved, fn(item) { item.item_guid != 8 })
     == list.filter(items, fn(item) { item.item_guid != 8 })
     as "no other item changed"
-  assert list.map(sent(effects), fn(frame) {
+  assert list.map(item_flags_support.sent(effects), fn(frame) {
       let assert Ok(message) = item_moved.decode(frame.body)
       #(frame.message_id, message)
     })
@@ -279,7 +258,7 @@ pub fn a_move_to_an_empty_slot_is_saved_then_answered_with_its_new_place_test() 
     inventory.answered(items:, moving: unequipped, answer: ItemsSaved)
   assert at(items: moved, guid: 1) == #(1, 3)
     as "an unequip is the same message: the chest piece is in inventory slot 3"
-  assert list.map(sent(effects), fn(frame) {
+  assert list.map(item_flags_support.sent(effects), fn(frame) {
       let assert Ok(message) = item_moved.decode(frame.body)
       message
     })
@@ -293,7 +272,7 @@ pub fn a_move_onto_an_item_swaps_the_two_test() -> Nil {
   // chest piece (guid 8): the spare is equipped and the worn one unequipped.
   let items = held()
   let moving = accepted(items:, from: #(0, 0), to: #(1, 0))
-  assert moves_of(moving)
+  assert item_flags_support.moves_of(moving)
     == [
       ItemMove(
         item_guid: 1,
@@ -314,7 +293,7 @@ pub fn a_move_onto_an_item_swaps_the_two_test() -> Nil {
   assert at(items: moved, guid: 1) == #(1, 0)
   assert at(items: moved, guid: 8) == #(0, 0)
     as "each item keeps its guid and takes the other's place"
-  assert list.map(sent(effects), fn(frame) {
+  assert list.map(item_flags_support.sent(effects), fn(frame) {
       let assert Ok(message) = items_swapped.decode(frame.body)
       #(frame.message_id, message)
     })
@@ -564,7 +543,7 @@ pub fn gear_with_stats_is_equipped_into_its_slot_test() -> Nil {
       to: #(0, 0),
     )
     as "the move passes every check, so the store is asked"
-  assert moves_of(moving)
+  assert item_flags_support.moves_of(moving)
     == [
       ItemMove(
         item_guid: 9,
@@ -759,7 +738,7 @@ fn asked(result: Result(Taken, inventory.Refusal)) -> Moving {
 
 /// The guid, count and reason of each 0x17F the effects write, in order.
 fn counts_in(effects: List(Effect)) -> List(#(Int, Int, Int)) {
-  list.map(sent(effects), fn(frame) {
+  list.map(item_flags_support.sent(effects), fn(frame) {
     assert frame.message_id == item_count_changed.message_id
       as "opcode.0x17f: only count changes are written"
     let assert Ok(ItemCountChanged(item_guid:, count:, reason:)) =
@@ -822,7 +801,7 @@ pub fn a_split_onto_an_empty_slot_is_saved_then_answered_with_the_new_stack_test
     as "opcode.0x111.guid: the new stack is held with the guid the store made, the same Item2, the empty slot and the count"
   assert without(items: made, guids: [20, 77]) == without(items:, guids: [20])
     as "no other item changed"
-  let frames = sent(effects)
+  let frames = item_flags_support.sent(effects)
   assert list.map(frames, fn(frame) { frame.message_id }) == [0x017F, 0x0111]
     as "opcode.0x17f of the source then opcode.0x111 of the new stack"
   let assert [counted, added] = frames
@@ -936,7 +915,7 @@ pub fn a_move_onto_a_stack_of_the_same_item_merges_it_whole_test() -> Nil {
     as "the source is gone"
   assert without(items: merged, guids: [21]) == without(items:, guids: [20, 21])
     as "no other item changed"
-  let frames = sent(effects)
+  let frames = item_flags_support.sent(effects)
   assert list.map(frames, fn(frame) { frame.message_id }) == [0x017F, 0x0148]
     as "opcode.0x17f of the target then opcode.0x148 of the source"
   let assert [counted, removed] = frames
@@ -999,7 +978,7 @@ pub fn a_move_onto_a_full_stack_or_an_item_that_does_not_stack_swaps_test() -> N
     let #(what, first, second) = row
     let items = list.append(held(), [first, second])
     let moving = accepted(items:, from: #(1, 1), to: #(1, 2))
-    assert moves_of(moving)
+    assert item_flags_support.moves_of(moving)
       == [
         ItemMove(
           item_guid: 20,
@@ -1021,7 +1000,10 @@ pub fn a_move_onto_a_full_stack_or_an_item_that_does_not_stack_swaps_test() -> N
     assert at(items: swapped, guid: 21) == #(1, 1)
     assert count_of(items: swapped, guid: 20) == first.stack_count
       as { what <> ": no count changed" }
-    assert list.map(sent(effects), fn(frame) { frame.message_id }) == [0x0568]
+    assert list.map(item_flags_support.sent(effects), fn(frame) {
+        frame.message_id
+      })
+      == [0x0568]
       as { what <> ": opcode.0x568, the swap's answer" }
   })
 }
@@ -1049,7 +1031,7 @@ pub fn a_delete_is_saved_then_answered_with_the_destroy_reason_test() -> Nil {
     as "the store is asked for the delete, fenced by the login's epoch and the item as held"
   let #(left, effects) = inventory.answered(items:, moving:, answer: ItemsSaved)
   assert left == held() as "the stack is gone and no other item changed"
-  let assert [frame] = sent(effects)
+  let assert [frame] = item_flags_support.sent(effects)
   assert frame.message_id == 0x0148
   assert item_removed.decode(frame.body)
     == Ok(ItemRemoved(item_guid: 20, reason: 21))
@@ -1427,7 +1409,7 @@ pub fn gear_the_character_can_wear_is_equipped_test() -> Nil {
         to: #(0, 0),
       )
       as { what <> ": the move passes every check, so the store is asked" }
-    assert moves_of(moving)
+    assert item_flags_support.moves_of(moving)
       == [
         ItemMove(
           item_guid: 9,
@@ -1520,21 +1502,13 @@ fn refusal(result: Result(Taken, inventory.Refusal)) -> List(#(Int, Int)) {
   failed_with(effects)
 }
 
-/// The guid and place of each 0x569 the effects write. The only other frame a move writes
-/// is the 0x567 of an item it binds, which `an_equip_asks_the_move_with_the_flags_it_sets_test`
-/// reads.
+/// The guid and place of each 0x569 the effects write; any other frame fails.
 fn moved_places(effects: List(Effect)) -> List(#(Int, Int)) {
-  list.filter_map(sent(effects), fn(frame) {
-    case frame.message_id == item_flags_changed.message_id {
-      True -> Error(Nil)
-      False -> {
-        assert frame.message_id == item_moved.message_id
-          as "opcode.0x569: an item moved to an empty place"
-        let assert Ok(ItemMoved(item_guid:, place:)) =
-          item_moved.decode(frame.body)
-        Ok(#(item_guid, place))
-      }
-    }
+  list.map(item_flags_support.sent(effects), fn(frame) {
+    assert frame.message_id == item_moved.message_id
+      as "opcode.0x569: an item moved to an empty place"
+    let assert Ok(ItemMoved(item_guid:, place:)) = item_moved.decode(frame.body)
+    #(item_guid, place)
   })
 }
 
@@ -1571,7 +1545,7 @@ pub fn a_bag_worn_in_a_bag_slot_opens_its_slots_test() -> Nil {
   assert size_of(items) == 16 as "no bag is worn"
   list.each([17, 18, 19, 20], fn(slot) {
     let moving = asked(bagged(items:, from: #(1, 2), to: #(0, slot)))
-    assert moves_of(moving)
+    assert item_flags_support.moves_of(moving)
       == [
         ItemMove(
           item_guid: 21,
@@ -1583,7 +1557,7 @@ pub fn a_bag_worn_in_a_bag_slot_opens_its_slots_test() -> Nil {
       as "a bag goes into each of the four bag slots, and 4753 binds on equip (bindFlags 16)"
   })
   let moving = asked(bagged(items:, from: #(1, 1), to: #(0, 17)))
-  assert moves_of(moving)
+  assert item_flags_support.moves_of(moving)
     == [
       ItemMove(
         item_guid: 20,
@@ -1602,12 +1576,14 @@ pub fn a_bag_worn_in_a_bag_slot_opens_its_slots_test() -> Nil {
       account_id: AccountId(7),
       character_id: CharacterId(42),
       session_epoch: character_support.epoch(1),
-      moves: moves_of(moving),
+      moves: item_flags_support.moves_of(moving),
     ))
     as "the store is asked for the bag's move"
   let #(worn, effects) = inventory.answered(items:, moving:, answer: ItemsSaved)
   assert at(items: worn, guid: 20) == #(0, 17)
-  assert moved_places(effects) == [#(20, 17)]
+  assert item_flags_support.frame_ids(effects) == [0x0569, 0x0567]
+    as "opcode.0x569 then the 0x567 of its bind on equip (bindFlags 16)"
+  assert moved_places(list.take(effects, 1)) == [#(20, 17)]
     as "opcode.0x569: the bag at location 0, index 17"
   assert size_of(worn) == 24 as "16 and the 8 slots of Item2 5423"
   // The room the bag opened takes a move: slots 16 to 23 exist, 24 does not.
@@ -1618,7 +1594,9 @@ pub fn a_bag_worn_in_a_bag_slot_opens_its_slots_test() -> Nil {
   let moving = asked(bagged(items: worn, from: #(1, 2), to: #(0, 18)))
   let #(both, effects) =
     inventory.answered(items: worn, moving:, answer: ItemsSaved)
-  assert moved_places(effects) == [#(21, 18)]
+  assert item_flags_support.frame_ids(effects) == [0x0569, 0x0567]
+    as "opcode.0x569 then the 0x567 of its bind on equip (bindFlags 16)"
+  assert moved_places(list.take(effects, 1)) == [#(21, 18)]
     as "opcode.0x569: the second bag at location 0, index 18"
   assert size_of(both) == 28 as "16, 8 and the 4 slots of Item2 4753"
   assert is_ask(bagged(items: both, from: #(1, 0), to: #(1, 27)))
@@ -1747,7 +1725,7 @@ pub fn items_past_a_shrunk_inventory_move_to_free_slots_test() -> Nil {
       fillers(indexes: [0, 1, 2, 4, 6, 8, 20, 21, 23]),
     ])
   let moving = asked(bagged(items:, from: #(0, 17), to: #(1, 3)))
-  assert moves_of(moving)
+  assert item_flags_support.moves_of(moving)
     == [
       ItemMove(
         item_guid: 20,
@@ -1833,7 +1811,7 @@ pub fn a_worn_bag_cannot_be_deleted_test() -> Nil {
   assert moving.guid == 22
   let #(_, effects) =
     inventory.answered(items: stacked, moving:, answer: ItemMade(item_guid: 77))
-  let assert [_, added] = sent(effects)
+  let assert [_, added] = item_flags_support.sent(effects)
     as "opcode.0x17f of the source then opcode.0x111 of the new stack"
   let assert Ok(item_added.ItemAdded(held_item:)) =
     item_added.decode(added.body)
@@ -1909,7 +1887,7 @@ pub fn item_added_frames_carry_the_held_charges_test() -> Nil {
     ))
   let #(_, effects) =
     inventory.answered(items:, moving:, answer: ItemMade(item_guid: 77))
-  let assert [_, added] = sent(effects)
+  let assert [_, added] = item_flags_support.sent(effects)
   let assert Ok(item_added.ItemAdded(held_item:)) =
     item_added.decode(added.body)
   assert held_item.item.charges == 1
@@ -1952,7 +1930,7 @@ fn chest_scene(worn worn: Option(Int), spare spare: Int) -> List(HeldItem) {
 
 /// The flags byte of each 0x567 the effects write, with the guid it names.
 fn flags_changed_in(effects: List(Effect)) -> List(#(Int, Int)) {
-  list.filter_map(sent(effects), fn(frame) {
+  list.filter_map(item_flags_support.sent(effects), fn(frame) {
     case frame.message_id == item_flags_changed.message_id {
       False -> Error(Nil)
       True -> {
@@ -2174,7 +2152,7 @@ pub fn a_split_stack_keeps_the_flags_of_its_source_test() -> Nil {
     let assert Ok(split) = list.find(made, fn(item) { item.item_guid == 77 })
       as "the new stack is held"
     assert split.item_flags == item_flags as why
-    let assert [_, added] = sent(effects)
+    let assert [_, added] = item_flags_support.sent(effects)
     let assert Ok(item_added.ItemAdded(held_item:)) =
       item_added.decode(added.body)
     assert held_item.item.item_flags == item_flags

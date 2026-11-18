@@ -36,7 +36,6 @@ import genesis_prime/message/bit_stream
 import genesis_prime/message/disconnect_reason.{LostUserServer}
 import genesis_prime/message/item_action_failed.{ItemActionFailed}
 import genesis_prime/message/item_delete
-import genesis_prime/message/item_move
 import genesis_prime/message/item_moved.{ItemMoved}
 import genesis_prime/message/item_place
 import genesis_prime/message/item_split.{ItemSplit}
@@ -67,12 +66,10 @@ import world_entry_support
 /// A 0x182 of the chest piece from the worn slot 0 to inventory slot 0, as the
 /// client sends it, inside 0x038C.
 fn chest_unequipped() -> BitArray {
-  let assert Ok(body) =
-    item_move.encode(item_move.ItemMove(
-      from: item_place.ItemPlace(location: 0, bag_index: 0),
-      to: item_place.ItemPlace(location: 1, bag_index: 0),
-    ))
-  game_connection_support.world_message(message_id: 0x0182, body:)
+  game_connection_support.item_moved_message(
+    from: item_place.ItemPlace(location: 0, bag_index: 0),
+    to: item_place.ItemPlace(location: 1, bag_index: 0),
+  )
 }
 
 /// A 0x1c3 of the Say channel, as the client sends it.
@@ -238,12 +235,10 @@ fn three_split_off() -> BitArray {
 
 /// A 0x182 of whatever is in inventory slot 2 to the empty inventory slot 3.
 fn slot_2_to_slot_3() -> BitArray {
-  let assert Ok(body) =
-    item_move.encode(item_move.ItemMove(
-      from: item_place.ItemPlace(location: 1, bag_index: 2),
-      to: item_place.ItemPlace(location: 1, bag_index: 3),
-    ))
-  game_connection_support.world_message(message_id: 0x0182, body:)
+  game_connection_support.item_moved_message(
+    from: item_place.ItemPlace(location: 1, bag_index: 2),
+    to: item_place.ItemPlace(location: 1, bag_index: 3),
+  )
 }
 
 pub fn a_split_answer_comes_before_the_frames_after_it_test() -> Nil {
@@ -342,12 +337,10 @@ fn holding_a_level_3_chest() -> game_connection.State {
 
 /// A 0x182 of inventory slot 0 to the worn chest slot, inside 0x038C.
 fn chest_equipped() -> BitArray {
-  let assert Ok(body) =
-    item_move.encode(item_move.ItemMove(
-      from: item_place.ItemPlace(location: 1, bag_index: 0),
-      to: item_place.ItemPlace(location: 0, bag_index: 0),
-    ))
-  game_connection_support.world_message(message_id: 0x0182, body:)
+  game_connection_support.item_moved_message(
+    from: item_place.ItemPlace(location: 1, bag_index: 0),
+    to: item_place.ItemPlace(location: 0, bag_index: 0),
+  )
 }
 
 pub fn an_equip_is_checked_against_the_entered_character_test() -> Nil {
@@ -581,22 +574,18 @@ pub fn health_above_the_new_maximum_is_capped_and_told_test() -> Nil {
 
 /// A 0x182 of the shield from worn slot 15 to inventory slot 0, inside 0x038C.
 fn shield_unequipped() -> BitArray {
-  let assert Ok(body) =
-    item_move.encode(item_move.ItemMove(
-      from: item_place.ItemPlace(location: 0, bag_index: 15),
-      to: item_place.ItemPlace(location: 1, bag_index: 0),
-    ))
-  game_connection_support.world_message(message_id: 0x0182, body:)
+  game_connection_support.item_moved_message(
+    from: item_place.ItemPlace(location: 0, bag_index: 15),
+    to: item_place.ItemPlace(location: 1, bag_index: 0),
+  )
 }
 
 /// A 0x182 of inventory slot 0 to the worn shield slot 15, inside 0x038C.
 fn shield_equipped() -> BitArray {
-  let assert Ok(body) =
-    item_move.encode(item_move.ItemMove(
-      from: item_place.ItemPlace(location: 1, bag_index: 0),
-      to: item_place.ItemPlace(location: 0, bag_index: 15),
-    ))
-  game_connection_support.world_message(message_id: 0x0182, body:)
+  game_connection_support.item_moved_message(
+    from: item_place.ItemPlace(location: 1, bag_index: 0),
+    to: item_place.ItemPlace(location: 0, bag_index: 15),
+  )
 }
 
 pub fn a_shield_put_back_below_its_maximum_starts_the_reboot_timer_test() -> Nil {
@@ -820,12 +809,10 @@ pub fn equipping_a_level_scaled_item_gives_it_at_the_players_level_test() -> Nil
 /// A 0x182 of the spare chest piece in inventory slot 0 onto the worn chest slot, as the client
 /// sends it, inside 0x038C.
 fn spare_chest_equipped() -> BitArray {
-  let assert Ok(body) =
-    item_move.encode(item_move.ItemMove(
-      from: item_place.ItemPlace(location: 1, bag_index: 0),
-      to: item_place.ItemPlace(location: 0, bag_index: 0),
-    ))
-  game_connection_support.world_message(message_id: 0x0182, body:)
+  game_connection_support.item_moved_message(
+    from: item_place.ItemPlace(location: 1, bag_index: 0),
+    to: item_place.ItemPlace(location: 0, bag_index: 0),
+  )
 }
 
 /// An equip the store does not save binds nothing: the answer `ItemsNotSaved` or

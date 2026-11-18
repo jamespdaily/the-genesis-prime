@@ -7,12 +7,15 @@ import database_support
 import genesis_prime/login/guid
 import genesis_prime/service.{ToWorker}
 import genesis_prime/store.{
-  type AccountId, AccountId, CharacterLoaded, CreateCharacter, Created,
-  ForSelect, ForWorld, LoadCharacter, LookEntry, NewCharacter, Select, World,
+  type AccountId, AccountId, BuyFromVendor, CharacterCreated, CharacterLoaded,
+  CreateCharacter, Created, DeleteItem, ForSelect, ForWorld, LoadCharacter,
+  LookEntry, MergeItems, MoveItems, NewCharacter, Select, SellToVendor,
+  SpendItem, SplitItem, TurnInQuest, World,
 }
 import genesis_prime/store/worker
 import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
 import gleam/erlang/process
+import gleam/list
 import gleam/otp/factory_supervisor
 import gleam/otp/static_supervisor as supervisor
 import login_support
@@ -186,4 +189,71 @@ pub fn login(
     ask(store:, request: World(LoadCharacter(account, character_id)))
     as "the account's character loads"
   #(store.session_epoch_number(session_epoch), items)
+}
+
+/// A character the real store holds, with its account.
+pub type Stored {
+  Stored(store: Store, account: AccountId, character_id: store.CharacterId)
+}
+
+/// A stored character holding the `worn` items and these `items` in its bags, on a store of
+/// its own.
+pub fn stored_holding(
+  worn worn: List(store.NewItem),
+  items items: List(store.NewItem),
+) -> Stored {
+  let store = start_store(pool_size: 2)
+  let account = insert_account(store:, login_name: "login-1")
+  let assert CharacterCreated(character_id:) =
+    create_holding(
+      store:,
+      account:,
+      name: "Ab Cd",
+      slots: 1,
+      items: list.append(worn, items),
+    )
+    as "a character holding the worn items and the bag items"
+  Stored(store:, account:, character_id:)
+}
+
+/// The items the stored character holds now, as a login finds them, with the epoch the login
+/// was told. A login raises the character's epoch, so a request is made under the epoch of
+/// the login just before it.
+pub fn loaded(stored stored: Stored) -> #(Int, List(store.HeldItem)) {
+  login(
+    store: stored.store,
+    account: stored.account,
+    character_id: stored.character_id,
+  )
+}
+
+/// The connection's items request made the stored character's own: its account and id, and
+/// the epoch of a login just before it.
+pub fn own_request(
+  stored stored: Stored,
+  request request: store.ItemsRequest,
+) -> store.ItemsRequest {
+  let #(epoch, _) = loaded(stored:)
+  let assert Ok(session_epoch) = store.session_epoch(epoch)
+    as "a login's epoch is 1 or more"
+  let account_id = stored.account
+  let character_id = stored.character_id
+  case request {
+    MoveItems(..) ->
+      MoveItems(..request, account_id:, character_id:, session_epoch:)
+    SplitItem(..) ->
+      SplitItem(..request, account_id:, character_id:, session_epoch:)
+    MergeItems(..) ->
+      MergeItems(..request, account_id:, character_id:, session_epoch:)
+    DeleteItem(..) ->
+      DeleteItem(..request, account_id:, character_id:, session_epoch:)
+    SpendItem(..) ->
+      SpendItem(..request, account_id:, character_id:, session_epoch:)
+    BuyFromVendor(..) ->
+      BuyFromVendor(..request, account_id:, character_id:, session_epoch:)
+    SellToVendor(..) ->
+      SellToVendor(..request, account_id:, character_id:, session_epoch:)
+    TurnInQuest(..) ->
+      TurnInQuest(..request, account_id:, character_id:, session_epoch:)
+  }
 }

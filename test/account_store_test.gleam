@@ -5870,6 +5870,45 @@ pub fn a_move_that_does_not_match_binds_nothing_test() -> Nil {
   account_store_support.stop(store)
 }
 
+/// A move that carries a bit the column refuses (bit 1) is answered with the failed
+/// constraint, `SaveRefused("character_item_item_flags_are_set_bits")`, and moves nothing: the
+/// item stays at the place and holds no bit.
+pub fn a_move_with_a_refused_flag_bit_is_save_refused_and_moves_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = account_store_support.start_store(pool_size: 2)
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
+  let assert CharacterCreated(character_id:) =
+    account_store_support.create_holding(
+      store:,
+      account:,
+      name: "Ab Cd",
+      slots: 1,
+      items: character_support.row_466_items(),
+    )
+    as "a character holding the Novice set"
+  let CharacterId(number) = character_id
+  let epoch = epoch_of_load(store:, account:, character_id: number)
+  let before = account_store_support.held_by(store:, account:, character_id:)
+  let assert [chest, ..] = before as "the Novice set is seven items"
+  assert moved(store:, account:, character_id:, epoch:, moves: [
+      ItemMove(
+        item_guid: chest.item_guid,
+        from: ItemPlace(location: 0, bag_index: 0),
+        to: ItemPlace(location: 1, bag_index: 2),
+        flags_set: 2,
+      ),
+    ])
+    == ForItems(SaveRefused(
+      constraint: "character_item_item_flags_are_set_bits",
+    ))
+    as "the check's name is the answer"
+  assert account_store_support.held_by(store:, account:, character_id:)
+    == before
+    as "the refused move left the item where it was, unbound"
+  account_store_support.stop(store)
+}
+
 /// The column holds the bits the server sets, 0 and 3, and nothing else: 0, 1, 8 and 9 are
 /// stored, and every other bit the client reads (2, 4, 16, 64, 128), a bit past a byte and a
 /// negative value are refused by the check `character_item_item_flags_are_set_bits`.
