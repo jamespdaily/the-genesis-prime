@@ -86,6 +86,7 @@ import gleam/bool
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam_community/maths
 
 /// A yes or no as the 1-bit value a message holds it in: 1 for yes.
 pub fn bit(yes: Bool) -> Int {
@@ -617,15 +618,20 @@ fn stopped(state_flags state_flags: Int) -> List(RelayedMovement) {
   ]
 }
 
-/// 0x638 that turns a creature, in the map's time of `at_ms`: kind 0, then the rotation the
-/// face is. A unit is faced by kind 18 and a point by kind 19, each with the blend bit set,
-/// so the client turns the creature over half a second and keeps it facing the unit or the
-/// point (`movement_command.kind_18`, `movement_command.kind_19`, `0x140715c00`); a fixed
-/// facing is kind 14 with the bit clear, which takes it at once (`0x140715350`). No kind 2
-/// or 3 is in it: the creature's position is left as it is.
+/// 0x638 that turns a creature standing at `standing_at`, in the map's time of `at_ms`: kind
+/// 0, then the rotation the face is. A unit is faced by kind 18 and a point by kind 19, each
+/// with the blend bit set, so the client turns the creature over half a second and keeps it
+/// facing the unit or the point (`movement_command.kind_18`, `movement_command.kind_19`,
+/// `0x140715c00`). A fixed facing is written as kind 19 toward the point 1 m from
+/// `standing_at` along the facing, so the client blends it too (a kind 14 with the bit clear
+/// takes it at once, `0x140715350`, which a creature home from a walk would show as a snap;
+/// kind 14's own blend timing is not read, `0x140785050`). The choice to blend it is Jim's.
+/// Kind 19 leaves the roll 0, and the creature does not move, so the point stays 1 m off.
+/// No kind 2 or 3 is in the frame: the creature's position is left as it is.
 pub fn face_frame(
   entered entered: world_entry.Entered,
   unit_id unit_id: Int,
+  standing_at standing_at: Place,
   face face: Face,
   at_ms at_ms: Int,
 ) -> Frame {
@@ -635,24 +641,36 @@ pub fn face_frame(
     creature_turn.Unit(unit_id: faced) ->
       relayed_movement.FaceUnit(MovementFaceUnit(unit_id: faced, blends: 1))
     creature_turn.Point(place:) ->
-      relayed_movement.FacePoint(MovementFacePoint(
-        x: float32.to_bits(start_place.x(place)),
-        y: float32.to_bits(start_place.y(place)),
-        z: float32.to_bits(start_place.z(place)),
-        blends: 1,
-      ))
-    creature_turn.Fixed(facing:) ->
-      relayed_movement.Rotation(MovementRotation(
-        yaw: float32.to_bits(facing.yaw),
-        pitch: float32.to_bits(facing.pitch),
-        roll: float32.to_bits(facing.roll),
-        blends: 0,
-      ))
+      face_point(
+        x: start_place.x(place),
+        y: start_place.y(place),
+        z: start_place.z(place),
+      )
+    creature_turn.Fixed(facing:) -> {
+      // 1 m from the unit along the facing: the client's yaw and pitch of a direction are the
+      // atan2 of its negated x and z and the arcsine of its y (`movement_command.kind_14`,
+      // `0x140715350`), so the direction is (-sin yaw cos pitch, sin pitch, -cos yaw cos pitch).
+      let level = maths.cos(facing.pitch)
+      face_point(
+        x: start_place.x(standing_at) -. maths.sin(facing.yaw) *. level,
+        y: start_place.y(standing_at) +. maths.sin(facing.pitch),
+        z: start_place.z(standing_at) -. maths.cos(facing.yaw) *. level,
+      )
+    }
   }
   creature_moved_frame(unit_id:, server_time_ms: time, commands: [
     relayed_movement.Time(MovementTime(time:)),
     turn,
   ])
+}
+
+fn face_point(x x: Float, y y: Float, z z: Float) -> RelayedMovement {
+  relayed_movement.FacePoint(MovementFacePoint(
+    x: float32.to_bits(x),
+    y: float32.to_bits(y),
+    z: float32.to_bits(z),
+    blends: 1,
+  ))
 }
 
 fn vector_of(place: Place) -> movement_float_vector.MovementFloatVector {

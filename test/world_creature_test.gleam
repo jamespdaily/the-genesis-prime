@@ -3034,6 +3034,7 @@ pub fn a_creature_fighting_a_player_standing_apart_faces_the_player_through_chas
     frames.face_frame(
       entered:,
       unit_id: appeared.unit_id,
+      standing_at: to,
       face: creature_turn.Unit(10),
       at_ms: 1000,
     )

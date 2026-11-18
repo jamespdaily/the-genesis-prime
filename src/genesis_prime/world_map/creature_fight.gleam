@@ -173,17 +173,17 @@
 ////   the target and the strikes with no further message, and which only a later rotation command replaces.
 ////   The turn goes before the path it goes with (a kind 4 path never turns it) and is sent again only when
 ////   the face changes: a new target, the leash (kind 19 toward home, `movement_command.kind_19`), the
-////   arrival home (kind 14 with the spawn's yaw), a charge, a state, a flight, a death.
+////   arrival home (the spawn's facing, which a viewer's frame writes as a blended kind 19 along it), a charge, a state, a flight, a death.
 ////   - A charge turns the creature once before the 0x7ff (`turned_to_face`, kind 14) and holds that turn
 ////     through the cast and the strikes: the cone follows the caster's yaw (`0x14054b1b0.follows_caster`), so
 ////     the facing the creature has when the 0x7ff arrives is the facing the client draws the cone along, and
 ////     the strike go's area points along it (`aim_of`). The close of the round turns it to its target again,
 ////     and so does the hold after a special, in which it starts no path.
 ////   - A Stun, Knockdown, Knockback or an opened guard (`Fighter.turn_held`) stands the creature as it
-////     faces, by a kind 14 at that facing (a server's choice, a guess: no client fact covers it); a Root
+////     faces, by a fixed turn at that facing (a server's choice, a guess: no client fact covers it); a Root
 ////     and the other states that only stop its run leave it turning. The creature's rule tells the fight
 ////     when this changes without the creature's run changing (`Reconsidered`).
-////   - A death or a despawn freezes the facing it had by a kind 14 that moves nothing, so the corpse
+////   - A death or a despawn freezes the facing it had by a fixed turn that moves nothing, so the corpse
 ////     follows no one; the flight a throw gives is left to its own news.
 ////   - A throw whose row turns the creature sets that turn (the path's kind 14); the first step after the
 ////     flight turns it to its target again.
@@ -325,7 +325,7 @@
 //// | the last state ends in flight | the creature acts again at `FlightEnds`, not before | `a_state_ending_mid_flight_does_not_resume_until_the_landing_test` |
 //// | the leash fires in flight | the creature is `Returning` and sends no walk: the flight finishes and `FlightEnds` starts the walk home from the landing | `a_leash_in_flight_walks_home_from_the_landing_test` |
 //// | the creature dies in flight | `CancelTimer(FlightEnds)`, the path is kept and no kind 2 is sent: the corpse lies at the landing | `a_creature_killed_mid_flight_lies_at_the_landing_test` |
-//// | a creature is killed or despawned while it keeps facing its target, walks home, charges or flies | a kind 14 at the facing it had, which no later turn changes; in flight it moves nothing | `a_killed_or_despawned_creature_is_turned_where_it_faces_and_stops_following_test`, `a_creature_that_dies_walking_home_or_in_a_charge_or_in_flight_freezes_the_facing_it_had_test` |
+//// | a creature is killed or despawned while it keeps facing its target, walks home, charges or flies | a fixed turn at the facing it had, which no later turn changes; in flight it moves nothing | `a_killed_or_despawned_creature_is_turned_where_it_faces_and_stops_following_test`, `a_creature_that_dies_walking_home_or_in_a_charge_or_in_flight_freezes_the_facing_it_had_test` |
 //// | a Stun ends while a Root holds the creature, or the guard opens as a Root breaks a charge | `Reconsidered`: it turns to its target again or stands as it faces, and starts no path | `a_stun_ending_while_a_root_holds_turns_the_creature_again_and_starts_no_path_test`, `a_root_that_breaks_a_charge_leaves_the_creature_standing_as_the_opened_guard_holds_it_test` |
 //// | the walk home stops where it stands, or starts again after a state | the arrival timer of the stopped walk is cancelled, and the walk that follows has a new arrival timer | `a_walk_home_after_a_leash_in_a_state_starts_one_fresh_arrival_timer_test` |
 //// | the walk home ends with a player near | the spawn's facing, then the new fight's turn | `a_creature_that_walks_home_and_finds_a_player_near_turns_to_the_spawn_before_it_turns_to_the_player_test` |
