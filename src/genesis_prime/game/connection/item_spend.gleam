@@ -8,9 +8,9 @@
 ////             NothingToSpend ─▶ the cast adopted and its effects carried out, InWorld
 ////             otherwise      ─▶ ask the store (SpendItem or DeleteItem), SpendingCharge,
 ////                               the cast's state and effects held
-//// SpendingCharge ─ the store's answer ─▶ ItemsSaved: the inventory frame, the press decided
-////                                        again at the answer's time, its cast adopted with the
-////                                        press id, its effects, InWorld
+//// SpendingCharge ─ the store's answer ─▶ ItemsSaved: the inventory frame, the cast of the press
+////                                        with its stamps moved to the answer's time, adopted
+////                                        with the press id, its effects, InWorld
 ////                                      ItemsNotSaved | SaveRefused: 0x7fc result 1 and a
 ////                                        log line, the items and the cast as before, InWorld
 ////                  the store unavailable, not running, ended or past its deadline
@@ -19,10 +19,11 @@
 ////
 //// - **The shell takes no input while the ask is out**, so a second 0x943 waits behind the
 ////   answer and meets the lowered item and the recorded press id.
-//// - **The cast's timers and cooldowns run from its release**: the press is decided again
-////   at the answer's time on the items as they were, since the cast rule stamps the
-////   times of a start into its state and effects. The press-time decision stands when the
-////   second one starts nothing.
+//// - **The press is decided once, at the press.** The cast rule stamps the times of a start
+////   into its state and effects, and the answer comes later by the save's delay, so the
+////   answer moves the stamps the press made by that delay (`item_press_delay.delayed`): the
+////   cast's timers, its cooldowns and its start run from its release. A second decision at
+////   the answer could disagree with the first, as when a creature ran out of range meanwhile.
 //// - **A refused save is the server's failure**, shown with result 1 (`UnableToCreateSpell`,
 ////   text 119668), and the connection goes on: the store is not known to be away.
 //// - **The cast's effects are carried out by the caller's `release`** (the connection's
@@ -30,6 +31,7 @@
 
 import genesis_prime/client_connection.{type Answer, type Request, Continue}
 import genesis_prime/game/cast/frame as cast_frame
+import genesis_prime/game/cast/item_press_delay
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection/inventory as connection_inventory
 import genesis_prime/game/connection/objective as connection_objective
@@ -49,20 +51,13 @@ import genesis_prime/step.{
 import genesis_prime/store.{ItemsNotSaved, ItemsSaved, SaveRefused}
 import gleam/int
 import gleam/list
-import gleam/option.{type Option, None, Some}
+import gleam/option.{None, Some}
 
 /// What carries out the cast rule's effects for the connection, in order
 /// (`connection/casting.cast_effects`).
 pub type Release =
   fn(Session, Now, List(cast_state.Effect)) ->
     #(Session, List(Effect(ConnectionEffect(Request))))
-
-/// The cast rule's decision of a 0x943's body again, at the time and for the items it is
-/// given: the state and effects of the cast it starts, none when it starts nothing
-/// (`casting.item_use_started`).
-pub type Decide =
-  fn(Session, Now, world_entry.Entered, BitArray) ->
-    Option(#(cast_state.State, List(cast_state.Effect)))
 
 /// The cast the player's 0x943 started, taken from `cast.use_item`: the item the press
 /// named is spent from (`item_charge.spend`); a spend that takes nothing applies the cast
@@ -74,7 +69,6 @@ pub fn started(
   holder holder: Holder,
   entered entered: world_entry.Entered,
   press press: cast_state.ItemPress,
-  body body: BitArray,
   cast cast: cast_state.State,
   effects effects: List(cast_state.Effect),
   release release: Release,
@@ -91,7 +85,14 @@ pub fn started(
     as "the use check read the item's row"
   let spend = item_charge.spend(item:, stack_limit:, max_charges:)
   let spending =
-    item_charge.Spending(press:, body:, item:, spend:, cast:, effects:)
+    item_charge.Spending(
+      press:,
+      pressed_ms: now.monotonic_ms,
+      item:,
+      spend:,
+      cast:,
+      effects:,
+    )
   case
     item_charge.request(
       spend:,
@@ -131,7 +132,6 @@ pub fn answered(
   entered entered: world_entry.Entered,
   spending spending: item_charge.Spending,
   outcome outcome: Outcome(Answer),
-  decide decide: Decide,
   release release: Release,
 ) -> client_connection.Handled(Session) {
   let what = "the spend of the item's charge was not saved"
@@ -146,15 +146,7 @@ pub fn answered(
     saved: fn(session, answer) {
       case answer {
         ItemsSaved ->
-          released(
-            session:,
-            now:,
-            holder:,
-            entered:,
-            spending:,
-            decide:,
-            release:,
-          )
+          released(session:, now:, holder:, entered:, spending:, release:)
         ItemsNotSaved ->
           cancelled(
             session:,
@@ -190,30 +182,24 @@ pub fn answered(
   )
 }
 
-/// The spend is saved: the inventory frame, the cast the press starts at this time adopted
-/// with the press id and its effects carried out, then what the items now held count for
-/// the objectives and, for a worn item, the gear. The press is decided again on the items as
-/// the press found them; the press-time decision stands when that starts nothing.
+/// The spend is saved: the inventory frame, the cast the press started with its stamps
+/// moved to this time, adopted with the press id and its effects carried out, then what the
+/// items now held count for the objectives and, for a worn item, the gear.
 fn released(
   session session: Session,
   now now: Now,
   holder holder: Holder,
   entered entered: world_entry.Entered,
   spending spending: item_charge.Spending,
-  decide decide: Decide,
   release release: Release,
 ) -> client_connection.Handled(Session) {
-  let #(cast, effects) = case
-    decide(
-      Session(..session, status: InWorld(holder:, entered:)),
-      now,
-      entered,
-      spending.body,
+  let #(cast, effects) =
+    item_press_delay.delayed(
+      before: entered.cast,
+      started: spending.cast,
+      effects: spending.effects,
+      by_ms: now.monotonic_ms - spending.pressed_ms,
     )
-  {
-    Some(decided) -> decided
-    None -> #(spending.cast, spending.effects)
-  }
   let #(items, frame) =
     item_charge.spent(
       items: entered.items,

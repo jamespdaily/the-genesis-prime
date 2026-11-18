@@ -20,6 +20,8 @@ import genesis_prime/store.{
 }
 import genesis_prime/table/id.{Creature2Id, Item2Id}
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/world_map/creature_life
+import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/map.{ObjectsSeen}
 import genesis_prime/world_map/static_object.{StaticObject}
 import gleam/list
@@ -28,6 +30,7 @@ import place_support
 import planted_table.{Integer}
 import quest_support
 import spawn_support
+import vendor_support
 import world_entry_support
 
 /// The flags of an Item2 row that make it a proxy item (`0x1404445d0.proxy`).
@@ -216,6 +219,79 @@ pub fn seeing_a_shack(
     ),
   ).0
 }
+
+/// The connection of `seeing_a_shack` where the shack is a creature of the same row that
+/// runs straight away from the player at 10 units a second from monotonic time 0, standing
+/// 29.0 from the player's edge at that time: Spell4 26663's targetMaxRange is 30.0, so the
+/// grenade reaches it at 0 ms and not at 400 ms, where it is 33.0 away.
+pub fn seeing_a_runner(
+  tables tables: table_store.Tables,
+  items items: List(HeldItem),
+) -> game_connection.State {
+  let #(state, _) =
+    connection_support.entered_with_quests_and_items_on(
+      tables:,
+      quests: [quest_support.accepted(quest_id: 4743, progress: [0, 0, 0, 0])],
+      items:,
+    )
+  let state =
+    connection_support.feed(
+      state:,
+      event: connection_support.creature_appears(
+        unit_id: shack_unit,
+        creature_id: shack_creature,
+        display_info_id: shack_display,
+        outfit_info_id: 0,
+        hit_radius: runner_radius,
+        place: vendor_support.ahead_of_the_player(
+          hit_radius: runner_radius,
+          gap: 29.0,
+        ),
+        hostile_to: creature_life.Hostile(exile: False, dominion: False),
+      ),
+    ).0
+  connection_support.feed(
+    state:,
+    event: connection_support.news_sent_by_a_peer(
+      unit_id: shack_unit,
+      news: client_connection.CreatureMoved(path: creature_path.Running(
+        from: vendor_support.ahead_of_the_player(
+          hit_radius: runner_radius,
+          gap: 29.0,
+        ),
+        via: [],
+        to: vendor_support.ahead_of_the_player(
+          hit_radius: runner_radius,
+          gap: 129.0,
+        ),
+        started_ms: 0,
+        speed: 10.0,
+      )),
+    ),
+  ).0
+}
+
+/// The runner of `seeing_a_runner` set down again 10.0 from the player's edge at 400 ms,
+/// where the grenade reaches it, for a press after the run took it out of range.
+pub fn runner_set_down_in_range(
+  state state: game_connection.State,
+) -> game_connection.State {
+  connection_support.feed(
+    state:,
+    event: connection_support.news_sent_by_a_peer(
+      unit_id: shack_unit,
+      news: client_connection.CreaturePlaced(
+        place: vendor_support.ahead_of_the_player(
+          hit_radius: runner_radius,
+          gap: 10.0,
+        ),
+        at_ms: 400,
+      ),
+    ),
+  ).0
+}
+
+const runner_radius = 1.0
 
 /// The client's 0x943 of the item at `place`, at the shack, with this client cast id,
 /// inside the client's 0x038C.

@@ -495,13 +495,25 @@ pub fn a_cast_released_after_a_slow_answer_keeps_its_cooldown_from_the_release_t
   let #(state, taken) =
     pressed(state:, client_cast_id: 9, place: single_place, at: 0)
   let #(state, _) = answered_at(state:, taken:, outcome: saved(), at: 400)
-  // The cooldown (2000 ms) runs from the release at 400 ms and ends at 2400 ms. A press
-  // with more than the queue window (500 ms) left is refused 15; one inside the window is
-  // held by the server, which an item's use answers 14.
+  // The cooldown (2000 ms) runs from the release at 400 ms and ends at 2400 ms.
+  assert_cooldown_ends_at(state:, ends_ms: 2400)
+}
+
+/// A press of the grenade at 600 ms before the end of its cooldown and at 100 ms before:
+/// one with more than the queue window (500 ms) left is refused 15, one inside the window
+/// is held by the server, which an item's use answers 14.
+fn assert_cooldown_ends_at(
+  state state: game_connection.State,
+  ends_ms ends_ms: Int,
+) -> Nil {
   list.each(
     [
-      #(1800, 15, "600 ms left: SpellCooldown (15)"),
-      #(2300, 14, "100 ms left, inside the queue window: held, answered 14"),
+      #(ends_ms - 600, 15, "600 ms left: SpellCooldown (15)"),
+      #(
+        ends_ms - 100,
+        14,
+        "100 ms left, inside the queue window: held, answered 14",
+      ),
     ],
     fn(row) {
       let #(at, result, why) = row
@@ -512,6 +524,32 @@ pub fn a_cast_released_after_a_slow_answer_keeps_its_cooldown_from_the_release_t
         == #(10, support_items.grenade_spell, result)
         as why
     },
+  )
+}
+
+pub fn a_cast_decided_at_the_press_is_released_when_its_target_ran_out_of_range_during_the_save_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use tables <- charged_rows(cast_time_ms: None, cooldown_ms: 2000, body: _)
+  let fresh =
+    support_items.seeing_a_runner(tables:, items: [single(charges: 3)])
+  let #(_, late) =
+    pressed(state: fresh, client_cast_id: 9, place: single_place, at: 400)
+  assert refusal_of(taken: late) == #(9, support_items.grenade_spell, 105)
+    as "the runner is 4.0 further away at 400 ms, beyond Spell4 26663's targetMaxRange 30.0 (TargetRangeMax 105): a press made at the answer's time is refused"
+  let #(state, taken) =
+    pressed(state: fresh, client_cast_id: 9, place: single_place, at: 0)
+  let #(state, answered) =
+    answered_at(state:, taken:, outcome: saved(), at: 400)
+  assert list.take(ids(taken: answered), 3) == [0x00CA, 0x07FD, 0x07F4]
+    as "the press decided at 0 ms, in range, is released: the inventory frame, the cast's start and its go, and no refusal"
+  assert !list.contains(ids(taken: answered), 0x07FC)
+    && support.asked(answered) == None
+    as "the cast is decided once, so the one charge is spent once"
+  // The cooldown (2000 ms) runs from the release at 400 ms and ends at 2400 ms; the
+  // runner is set down in range for the presses that prove it.
+  assert_cooldown_ends_at(
+    state: support_items.runner_set_down_in_range(state:),
+    ends_ms: 2400,
   )
 }
 

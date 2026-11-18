@@ -23,6 +23,7 @@ import fixture_tables
 import genesis_prime/client_connection.{CastStarted}
 import genesis_prime/game/activate.{type Target, Body, NoLink, Usable}
 import genesis_prime/game/cast
+import genesis_prime/game/cast/item_press_delay
 import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
 import genesis_prime/game/item_use
 import genesis_prime/game/prerequisite
@@ -1162,4 +1163,108 @@ pub fn a_resent_press_starts_nothing_and_spends_nothing_test() -> Nil {
     Dropped -> False
   }
     as "an id whose start was never adopted (the save was refused) is a new press"
+}
+
+/// The grenade pressed at the shack 10.0 away on these tables: the state and effects the
+/// press holds until the store has saved its spend.
+fn grenade_pressed(
+  tables tables: table_store.Tables,
+  state state: State,
+  client_cast_id client_cast_id: Int,
+  at ms: Int,
+) -> #(State, List(Effect)) {
+  let assert Ok(pair) =
+    use_with(
+      tables:,
+      state:,
+      caster: throwing(),
+      held: Some(grenade),
+      body: the_body(
+        client_cast_id:,
+        item: the_item_place,
+        target_unit_id: its_unit,
+      ),
+      target: shown(creature_id: a_slaver_shack, metres: 10.0),
+      at: ms,
+    )
+    as "the press is taken"
+  pair
+}
+
+/// The cast and the effects a press holds, taken as made `delay_ms` later, are the ones a
+/// press made then would hold: the stamps the press created move by the delay and nothing
+/// else does. The rows are the grenade (Spell4 26663, spellCoolDown 2000, castTime 0, which
+/// goes at once) with a castTime of 1000 and none, on a caster that cast the generic item
+/// before (its cooldown and global cooldown stay as they were).
+pub fn a_press_taken_as_made_later_is_the_press_made_then_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let delay_ms = 400
+  list.each(
+    [
+      #(None, False, "an instant cast on a caster that cast nothing before"),
+      #(
+        Some(1000),
+        False,
+        "a cast with a cast time, which a time left is counted from",
+      ),
+      #(
+        None,
+        True,
+        "an instant cast after another item's cast, whose stamps stay",
+      ),
+    ],
+    fn(row) {
+      let #(cast_time_ms, after_another, why) = row
+      let changes = case cast_time_ms {
+        Some(cast_time_ms) -> [#("castTime", Integer(cast_time_ms))]
+        None -> []
+      }
+      fixture_tables.changed(
+        table: "Spell4",
+        id: 26_663,
+        with: changes,
+        body: fn(tables) {
+          let before = case after_another {
+            True -> {
+              let assert Ok(#(earlier, _)) =
+                use_item_in(
+                  tables:,
+                  state: cast_state.new(),
+                  caster: throwing(),
+                  item: generic_item,
+                  target: shown(creature_id: a_farmhand, metres: 3.0),
+                  at: 0,
+                )
+                as "the earlier press is taken"
+              earlier
+            }
+            False -> cast_state.new()
+          }
+          let #(started, effects) =
+            grenade_pressed(
+              tables:,
+              state: before,
+              client_cast_id: 10,
+              at: 2000,
+            )
+          let later =
+            grenade_pressed(
+              tables:,
+              state: before,
+              client_cast_id: 10,
+              at: 2000 + delay_ms,
+            )
+          assert before != started && later != #(started, effects) as why
+          assert item_press_delay.delayed(
+              before:,
+              started:,
+              effects:,
+              by_ms: delay_ms,
+            )
+            == later
+            as why
+        },
+      )
+    },
+  )
 }
