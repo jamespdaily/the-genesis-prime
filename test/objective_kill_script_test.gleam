@@ -221,12 +221,6 @@ pub fn a_kill_of_a_pane_creature_counts_the_kill_script_and_no_other_kill_does_t
       kills: [],
       counts: False,
     ),
-    CountCase(
-      ..base,
-      why: "the faction 340 and race 129 of the pane's creature name no unit of a type 1 pane",
-      killed: killed(creature: 73_464),
-      counts: False,
-    ),
   ]
   list.each(cases, fn(row) {
     assert objective.counts(

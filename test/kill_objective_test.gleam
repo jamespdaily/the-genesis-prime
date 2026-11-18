@@ -1,4 +1,4 @@
-//// The kill_objective content table (migration 0044, `genesis_prime/content/kill_objective`)
+//// The kill_objective content table (`genesis_prime/content/kill_objective`)
 //// and the load's check of its rows (`genesis_prime/game/kill_objective`): the visible
 //// scripted objectives whose text asks only to kill. Expected values come from these places.
 //// - `QuestObjective.type.5`: a type 5 objective is done only by the server's 0x361, and
@@ -15,25 +15,34 @@
 ////   7515 (quest 5101, flags 17, pane 7617 that lists Creature2 20041 of CreationTypeEnum 10)
 ////   has no creature the server fights; 4849 (quest 3769) is named by Spell4Effects 89873;
 ////   1962 (quest 1859) has no marker; 9659 (quest 6296, type 12) is linked by Creature2 27768.
-//// - Migration 0044: 9 rows, each a `server_choice` with its reason.
+//// - A row of the migration is a `server_choice` with its reason.
+//// - Faction2Relationship 952, 726 and 711 (377, 219 and 200 to 165, level 10, the parent of
+////   the Exile faction 167 and the Dominion faction 166), 771 (171 to 167, level 10) and 685
+////   (166 to 171, level 0): a creature of faction 377, 219 or 200 is Friendly to both
+////   player factions, one of faction 171 is Friendly to Exile and Hostile to Dominion. The
+////   client lets a player attack a unit that is not Friendly (`0x1403ad540`).
 
 import client_tables
 import content_support
+import fixture_tables
 import genesis_prime/content/refusal.{RowId}
-import genesis_prime/game/kill_objective.{Row}
+import genesis_prime/game/kill_objective
 import genesis_prime/game/objective
 import genesis_prime/game/place_objective
 import genesis_prime/game/quest_log
 import genesis_prime/game/target_group
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id, QuestObjectiveId}
+import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest2
 import genesis_prime/table/quest_objective
+import genesis_prime/world_map/spawn
 import gleam/int
 import gleam/list
 import gleam/set
 import gleam/string
 import owned_test
+import planted_table.{Integer}
 import quest_support
 import unitest
 
@@ -41,7 +50,7 @@ import unitest
 /// unlinked type 5 whose pane lists one creature the server fights.
 const blood_for_blood = 15_996
 
-/// The 9 objectives migration 0044 lists.
+/// The objectives the migration lists.
 const kill_ids = [8010, 8281, 8537, 8866, 8867, 9252, 14_676, 14_681, 15_996]
 
 /// What a row of the table does to the load.
@@ -65,8 +74,7 @@ pub fn the_kill_table_refuses_a_row_that_is_not_a_fightable_visible_required_unl
   use <- owned_test.run(120_000)
   list.each(cases(), fn(row) {
     use tables <- quest_support.with_objectives(edits: row.edits)
-    let selected =
-      kill_objective.select(rows: [Row(objective_id: row.objective)], tables:)
+    let selected = kill_objective.select(ids: [row.objective], tables:)
     case row.outcome {
       Accepted -> {
         assert selected == Ok(set.from_list([row.objective]))
@@ -173,7 +181,7 @@ pub fn every_row_of_the_kill_table_is_a_kill_script_with_a_pane_a_fightable_crea
   let tables = client_tables.shared()
   let rows = content_support.kill_objective_ids()
   assert set.to_list(rows) |> list.sort(int.compare) == kill_ids
-    as "migration 0044 lists the 9 kills whose creatures start in their marker's world"
+    as "the migration lists the kills whose creatures start in their marker's world"
   let scripts = objective.ScriptRows(kills: rows)
   let arrivals = content_support.arrival_objective_ids()
   let wrong =
@@ -231,12 +239,8 @@ pub fn every_row_of_the_kill_table_is_a_kill_script_with_a_pane_a_fightable_crea
     })
     |> list.flatten
   assert wrong == []
-    as "each of the 9 is the kill script, its pane lists a creature of CreationTypeEnum 0, and its markers are in World 22 or 51, the worlds with stored spawns"
-  assert kill_objective.select(
-      rows: list.map(kill_ids, fn(id) { Row(objective_id: id) }),
-      tables:,
-    )
-    == Ok(rows)
+    as "each row is the kill script, its pane lists a creature of CreationTypeEnum 0, and its markers are in World 22 or 51, the worlds with stored spawns"
+  assert kill_objective.select(ids: kill_ids, tables:) == Ok(rows)
     as "the load takes every row over the client's own tables"
 }
 
@@ -257,9 +261,9 @@ type Stays {
   /// Its marker is in a world the server holds no stored spawn for, so no creature of its
   /// pane can stand there (`objective_spawn.place` skips it).
   NoSpawnsInWorld(world: Int)
-  /// No creature of its pane starts in its marker's world, stored or placed: the load leaves
-  /// them out as Friendly to both factions (`spawn.select`), so no player can fight one;
-  /// `world_data_counts_test` holds the check against the whole world database.
+  /// Every creature of its pane is Friendly to both player factions, so the load leaves it
+  /// out (`spawn.select`) and no player can fight one; `world_data_counts_test` holds the
+  /// check against the whole world database.
   NothingStarts
   /// Its reward pane is 0: no unit is the one to kill.
   NoPane
@@ -352,13 +356,10 @@ pub fn the_kill_rows_left_on_the_stand_in_are_listed_with_their_reasons_test() -
           worlds != []
           && list.all(worlds, fn(marker_world) { marker_world == world })
           && !list.contains([22, 51], world)
-        NothingStarts -> True
+        NothingStarts -> friendly_to_both(tables:, pane: listed.reward_pane)
         NoPane -> listed.reward_pane == 0
         StaticPane ->
-          kill_objective.select(
-            rows: [Row(objective_id: stay.objective)],
-            tables:,
-          )
+          kill_objective.select(ids: [stay.objective], tables:)
           != Ok(set.from_list([stay.objective]))
         Condition(_) -> True
       }
@@ -374,4 +375,88 @@ pub fn the_kill_rows_left_on_the_stand_in_are_listed_with_their_reasons_test() -
     })
   assert wrong == []
     as "each listed row is the stand-in on accept, outside the kill table, and its reason holds in the client's tables"
+}
+
+/// Whether the pane lists a creature and every one is Friendly to the Exile and to the
+/// Dominion faction (level 8 to 10, `0x140787830`), which no player can attack (`0x1403ad540`).
+fn friendly_to_both(tables tables: table_store.Tables, pane pane: Int) -> Bool {
+  let creatures = target_group.listed_creatures(tables:, group: pane)
+  creatures != []
+  && list.all(creatures, fn(creature) {
+    let assert Ok(row) = creature2.get(tables, Creature2Id(creature))
+      as "the pane's creature is in the client's table"
+    let #(exile, dominion) =
+      spawn.faction_levels(tables:, faction: row.faction_id)
+    exile >= 8 && dominion >= 8
+  })
+}
+
+pub fn the_rows_left_for_friendly_creatures_have_panes_friendly_to_both_factions_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = fixture_tables.shared()
+  let pane_of = fn(objective_id) {
+    let assert Ok(row) =
+      quest_objective.get(tables:, id: QuestObjectiveId(objective_id))
+      as "the objective is in the fixture"
+    row.target_group_id_reward_pane
+  }
+  list.each(
+    [
+      #(4282, [10_125, 10_150], "quest 3295's pane of factions 377 and 200"),
+      #(7272, [19_965], "quest 5074's first pane, faction 219"),
+      #(7491, [21_524], "quest 5074's second pane, faction 219"),
+      #(7492, [21_525], "quest 5074's third pane, faction 219"),
+    ],
+    fn(row) {
+      let #(objective_id, creatures, why) = row
+      assert target_group.listed_creatures(
+          tables:,
+          group: pane_of(objective_id),
+        )
+        == creatures
+        as { why <> ": the pane lists these creatures" }
+      assert friendly_to_both(tables:, pane: pane_of(objective_id))
+        as { why <> ": each is Friendly to both player factions" }
+    },
+  )
+  // The check can fail: objective 9252's creature (33767, faction 171) is Friendly to Exile and
+  // Hostile to Dominion, so its pane is not Friendly to both, and the load takes the row.
+  assert spawn.faction_levels(tables:, faction: 171) == #(10, 0)
+    as "faction 171 is level 10 to Exile (Faction2Relationship 771) and 0 to Dominion (685)"
+  assert !friendly_to_both(tables:, pane: pane_of(9252))
+    as "a pane with a creature Hostile to one faction is not Friendly to both"
+}
+
+pub fn a_pane_with_one_fightable_creature_among_static_ones_is_a_kill_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Quest 3295's objective 4282 has pane creatures 10125 and 10150, both CreationTypeEnum 0.
+  // A static object (type 10) in place of one of them leaves the other, which the server
+  // fights; in place of both it leaves none. Edited rows: no client row mixes the two kinds.
+  let static_object = Integer(10)
+  fixture_tables.changed(
+    table: "Creature2",
+    id: 10_150,
+    with: [#("CreationTypeEnum", static_object)],
+    body: fn(tables) {
+      assert kill_objective.select(ids: [4282], tables:)
+        == Ok(set.from_list([4282]))
+        as "one fightable creature among the pane's is enough"
+    },
+  )
+  let assert Ok(rows) =
+    fixture_tables.change(
+      rows: fixture_tables.rows(),
+      table: "Creature2",
+      id: 10_150,
+      with: [#("CreationTypeEnum", static_object)],
+    )
+  let assert Ok(rows) =
+    fixture_tables.change(rows:, table: "Creature2", id: 10_125, with: [
+      #("CreationTypeEnum", static_object),
+    ])
+  fixture_tables.on_rows(rows:, reaching: [], body: fn(tables) {
+    let assert Error([refusal]) = kill_objective.select(ids: [4282], tables:)
+      as "no fightable creature in the pane is one refusal"
+    assert string.contains(refusal.rule, "no creature of creation type 0")
+  })
 }

@@ -1391,6 +1391,7 @@ Creature2	24041	a creature of pane 2539, the pane of objectives 8281 and 8537	ob
 Creature2	24042	a creature of pane 2539, the pane of objectives 8281 and 8537	objective_spawn_test
 Creature2	54033	a creature of pane 2539, the pane of objectives 8281 and 8537	objective_spawn_test
 Creature2	10125	a creature of the pane of kill objective 4282 (quest 3295), so the load of the kill table finds a creature the server fights	content_load_test
+Creature2	10150	a creature of the pane of kill objective 4282 (quest 3295), Friendly to both factions, so the kill table leaves the objective on the stand-in	kill_objective_test
 Creature2	19965	a creature of the pane of kill objective 7272 (quest 5074), so the load of the kill table finds a creature the server fights	content_load_test
 Creature2	21524	a creature of the pane of kill objective 7491 (quest 5074), so the load of the kill table finds a creature the server fights	content_load_test
 Creature2	21525	a creature of the pane of kill objective 7492 (quest 5074), so the load of the kill table finds a creature the server fights	content_load_test
