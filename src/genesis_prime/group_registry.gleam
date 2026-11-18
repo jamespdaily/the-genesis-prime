@@ -39,7 +39,7 @@ import gleam/otp/actor
 import gleam/otp/supervision.{type ChildSpecification}
 
 /// How long the scope has to stop once the supervisor stops it.
-const shutdown_ms = 1000
+pub const shutdown_ms = 1000
 
 /// A scope of groups whose members take `message`, made once with `new` and
 /// given to the tree and to the processes that join it and look in it.

@@ -17,13 +17,17 @@ import genesis_prime/client_connection.{
 }
 import genesis_prime/connection/closer
 import genesis_prime/game/leaving_save.{Retries}
+import genesis_prime/group_registry
 import genesis_prime/server
 import genesis_prime/step.{
   type ConnectionEffect, type Effect, Ask, AskId, Effects, EffectsThenAsk, Log,
   LogInfo, LogLine, Stop,
 }
 import genesis_prime/store
+import genesis_prime/store/worker
+import genesis_prime/world_map/registry as world_map_registry
 import gleam/int
+import gleam/list
 import gleam/option.{None, Some}
 import owned_test
 import spawn_support
@@ -110,25 +114,48 @@ pub fn the_production_leaving_save_settings_are_the_approved_ladder_and_the_stop
     as "the server's choice: 1, 2, 4, 8 s then 10 s, 20 s for a logout"
   assert settings.connection_shutdown_ms == 25_000
     as "Ranch's bound on a connection"
-  assert settings.stop_reserve_ms == 7000
-    as "a late take, the notice's write, the socket's close and a margin"
+  assert settings.stop_reserve_ms == 10_000
+    as "the map ask's 5 s, the notice's write and the socket's close (2 s each) and a margin of 1 s"
 }
 
-pub fn a_stops_window_is_the_shutdown_less_the_reserve_so_18_seconds_against_a_logouts_20_test() -> Nil {
+/// The reserve must cover the longest wait the shell can make before it looks
+/// at its mailbox, then the closing notice's write and the socket's close.
+/// Every call the shell makes that waits for another process is listed here
+/// with its bound: a new one is added to the list, or the reserve may not
+/// cover it.
+pub fn the_stop_reserve_covers_the_longest_synchronous_call_the_shell_makes_and_the_two_writes_after_it_test() -> Nil {
   use <- owned_test.run(10_000)
   let settings = production_settings()
-  // A stop taken one step late (one write, bounded by the send deadline), the
-  // closing notice (one write) and the socket's close, which lingers for as
-  // long as a write may wait, then 1 s of margin.
-  assert settings.stop_reserve_ms >= 3 * settings.send_deadline_ms + 1000
-    as "the reserve is a late take, a write and the close, each the send deadline, and a second"
-  // The stop's window is 2 s shorter than a logout's 20 s (the coordinator's
-  // shape decision: the reserve counts the close), so a stop with the database
-  // away tries for 18 s, and a logout that is begun before a stop keeps its
-  // own deadline only until the stop replaces it.
+  let game = settings.game.settings
+  let synchronous_calls_ms = [
+    // directory: AskMap, a call to Maps (world_map_registry.find_or_start)
+    #("the map ask finds or starts the map", game.ask_deadline_ms),
+    // directory: AskMapRun, a call to Maps (world_map_registry.ask_run)
+    #("the map-run ask finds the run", game.ask_deadline_ms),
+    // connection_locate: Watch of a map, a call to Maps (find_run)
+    #("the map watch finds the run", settings.world.maps_call_ms),
+    // directory: AskStore, AskHandOff, AskSessions and every Tell are sends;
+    // locate: the registries' lookups read a local table
+    #("the sends and the registry lookups", 0),
+  ]
+  let longest_ms =
+    list.fold(synchronous_calls_ms, 0, fn(longest, call) {
+      int.max(longest, call.1)
+    })
+  assert longest_ms == 5000 as "the map ask's and the map watch's 5 s"
+  assert settings.stop_reserve_ms
+    >= longest_ms + 2 * settings.send_deadline_ms + 1000
+    as "a step in progress at the exit's arrival may wait out the longest call; then the notice's write and the socket's close (a send deadline each) and a second"
+}
+
+pub fn a_stops_window_is_the_shutdown_less_the_reserve_so_15_seconds_against_a_logouts_20_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let settings = production_settings()
+  // A logout that is begun before a stop keeps its own deadline only until the
+  // stop replaces it.
   let window_ms = settings.connection_shutdown_ms - settings.stop_reserve_ms
-  assert window_ms == 18_000
-    as "the stop's deadline is taken + 18 s, inside Ranch's 25 s"
+  assert window_ms == 15_000
+    as "the stop's deadline is taken + 15 s, inside Ranch's 25 s"
   assert window_ms < settings.game.settings.leaving_save.within_ms
     as "shorter than a logout's 20 s"
 }
@@ -145,25 +172,24 @@ pub fn the_login_listeners_have_five_seconds_and_the_stops_bounds_in_order_fit_t
   // (the auth listener's connections, then the STS listener's), the world
   // subtree (the map supervisor's maps, the creature supervisor's creatures,
   // Maps, the creatures' registry), Sessions, the hand-off, the store's
-  // workers. The registries, Maps and the store's workers have 1 s each
-  // (their modules' `shutdown_ms`, the store worker's `timeout`). The pool is
-  // the last and has no bound here. The host stops the service after 60 s
-  // (dev/play_service/lib.sh `--stop-timeout 60`).
-  let one_second_each_ms = 1000
+  // workers. The pool is the tree's first child and stops last, after every
+  // save: a kill during its stop loses none, so its bound is not counted. The
+  // host stops the service after 60 s (dev/play_service/lib.sh
+  // `--stop-timeout 60`).
   let stop_ms =
     [
       closer.shutdown_ms,
       settings.connection_shutdown_ms,
-      one_second_each_ms,
+      group_registry.shutdown_ms,
       settings.login_connection_shutdown_ms,
       settings.login_connection_shutdown_ms,
       settings.world.map_shutdown_ms,
       settings.world.creature_shutdown_ms,
-      one_second_each_ms,
-      one_second_each_ms,
+      world_map_registry.shutdown_ms,
+      group_registry.shutdown_ms,
       settings.sessions_shutdown_ms,
       settings.hand_off_shutdown_ms,
-      one_second_each_ms,
+      worker.shutdown_ms,
     ]
     |> int.sum
   assert stop_ms == 55_000 as "2 + 25 + 1 + 5 + 5 + 2 + 2 + 1 + 1 + 5 + 5 + 1 s"

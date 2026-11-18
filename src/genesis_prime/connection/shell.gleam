@@ -83,16 +83,23 @@
 ////   `WriteFailed` it arms no more reads, since arming a closed socket fails
 ////   every time, and drops every later message of the socket, a close, an
 ////   error or bytes, whichever order they come in: a rule that goes on after
-////   one of them is given the end once and takes no other socket input.
+////   one of them is given the end once and no other socket message. Its own
+////   writes still fail, and each comes back as `WriteFailed`.
 //// - **The server stopping.** The shell traps its parent's exit, so the
 ////   tree's stop arrives as `Stopping`, with a deadline of the listener's
 ////   shutdown time less its stop reserve, counted from when the shell takes
 ////   the exit and not from when it arrived, while Ranch counts from when it
 ////   sent the stop. The shell takes the exit after the step in progress,
-////   ahead of the mail queued before it, so it is late by one step's work (a
-////   write waits at most the send deadline). The reserve covers that, the
-////   rule's closing write and the socket's close, which lingers for queued
-////   bytes for as long as a write may wait. A rule that has not stopped by
+////   ahead of the mail queued before it (a frame or a `Woken` queued before
+////   the exit is then handled after the stop, so the rule's last place is the
+////   one it knew before them). It looks for the exit at most every
+////   `exit_look_every_ms` and not at every step, so the take is late by that
+////   and by the step in progress. A step may wait on another process before
+////   it reads its mail again: a call to Maps for a map ask or a map watch (up
+////   to the ask's deadline or `maps_call_ms`), and each write up to the send
+////   deadline. The reserve covers the longest such wait, the rule's closing
+////   write and the socket's close, which lingers for queued bytes for as long
+////   as a write may wait, and a margin. A rule that has not stopped by
 ////   whichever deadline comes first is killed, and its recording has no
 ////   closing line.
 //// - **A crash.** When the rule's step crashes, the actor ends with that
@@ -408,6 +415,9 @@ type Running(state, request) {
     watches: Watches(fn(request) -> Nil),
     timers: timer_book.Timers,
     stopping: Option(Int),
+    /// The node's monotonic time when the shell last looked for the parent's
+    /// exit ahead of the mail in front of it (`keep_open`).
+    exit_looked_ms: Int,
     /// The side the recording's closing line names: the client once the shell
     /// has taken the socket's close, the server until then. The rule may ask
     /// before it stops, so the step that stops is not always the one that took
@@ -422,7 +432,7 @@ type Running(state, request) {
 /// `ReadFailed`, `WriteFailed`). Arming a socket after its end fails every time,
 /// so the shell then arms no more reads, and the socket's later messages (a
 /// close or an error queued behind the end, whichever order they come in) are
-/// dropped: the rule is given the end once.
+/// dropped: the rule is given the end once, and its own writes still fail.
 type SocketEnd {
   SocketOpen
   SocketEnded
@@ -737,6 +747,7 @@ fn accepted(
       watches: watch.new(),
       timers: timer_book.new(),
       stopping: None,
+      exit_looked_ms: runtime.monotonic_ms() - exit_look_every_ms,
       closed_by: wire_recording.Server,
       socket_end: SocketOpen,
     ),
@@ -818,29 +829,19 @@ fn take(
   }
   let rule = connection.settings.rule
   let #(state, step) = rule.step(running.state, Input(now:, event:))
-  let closing = case event {
-    OwnEvent(step.PeerClosed) -> wire_recording.Client
-    OwnEvent(Accepted(..))
-    | OwnEvent(step.Read(..))
-    | OwnEvent(Answered(..))
-    | OwnEvent(step.TimerFired(..))
-    | OwnEvent(ReadFailed(..))
-    | OwnEvent(WriteFailed(..))
-    | OwnEvent(step.Woken(..))
-    | step.WatchEnded(..)
-    | Stopping(..) -> running.closed_by
-  }
-  let socket_end = case event {
-    OwnEvent(step.PeerClosed)
-    | OwnEvent(ReadFailed(..))
-    | OwnEvent(WriteFailed(..)) -> SocketEnded
+  let #(closing, socket_end) = case event {
+    OwnEvent(step.PeerClosed) -> #(wire_recording.Client, SocketEnded)
+    OwnEvent(ReadFailed(..)) | OwnEvent(WriteFailed(..)) -> #(
+      running.closed_by,
+      SocketEnded,
+    )
     OwnEvent(Accepted(..))
     | OwnEvent(step.Read(..))
     | OwnEvent(Answered(..))
     | OwnEvent(step.TimerFired(..))
     | OwnEvent(step.Woken(..))
     | step.WatchEnded(..)
-    | Stopping(..) -> running.socket_end
+    | Stopping(..) -> #(running.closed_by, running.socket_end)
   }
   let running =
     Running(
@@ -1677,9 +1678,20 @@ fn wire_recording_failed(socket: ClientSocket, error: WriteError) -> a {
   panic as "a connection's wire recording could not be written"
 }
 
+/// How often, in milliseconds, the shell looks for the parent's exit ahead of
+/// the mail in front of it once a look has found mail and no exit: a look reads
+/// the whole mailbox when the exit is not there, so a busy world's queue is not
+/// read at every step. A connection fed 10,000 queued messages at once took 1.7
+/// s to take them when it looked at every step and 1.0 s when it never did,
+/// 30,000 took 14 s and 8 s. The stop is late by this and the step in
+/// progress, which the reserve's margin covers.
+const exit_look_every_ms = 100
+
 /// Continues with the connection open, after the stop if the parent's exit is
 /// waiting: the exit is taken ahead of any mail queued before it, so a stop is
-/// late by the step in progress and not by the messages a busy world queued.
+/// late by the step in progress and the time between looks, and not by the
+/// messages a busy world queued. With nothing queued there is no exit to look
+/// for, and the look costs nothing.
 fn keep_open(
   connection connection: Connection(settings, state, message, answer, request),
   running running: Running(state, request),
@@ -1687,9 +1699,23 @@ fn keep_open(
   Connection(settings, state, message, answer, request),
   Mail(message, answer),
 ) {
-  case parent_exit_waiting(connection.parent) {
-    True -> take_stop(connection:, running:)
+  let now_ms = runtime.monotonic_ms()
+  case
+    mailbox_length() > 0
+    && now_ms - running.exit_looked_ms >= exit_look_every_ms
+  {
     False -> actor.continue(Connection(..connection, status: Open(running:)))
+    True ->
+      case parent_exit_waiting(connection.parent) {
+        True -> take_stop(connection:, running:)
+        False ->
+          actor.continue(
+            Connection(
+              ..connection,
+              status: Open(running: Running(..running, exit_looked_ms: now_ms)),
+            ),
+          )
+      }
   }
 }
 
@@ -1822,9 +1848,9 @@ fn drop_kept(
 
 /// The deadline a stopping rule is given: the shutdown time from when the
 /// shell takes the exit, less the settings' reserve. The reserve covers an exit
-/// taken late (after the step in progress, whose write waits at most the send
-/// deadline), the one write the rule makes after its last ask, the socket's
-/// close, which lingers for queued bytes for the send deadline, and a margin.
+/// taken late (after the step in progress, which may wait on a call to Maps),
+/// the one write the rule makes after its last ask, the socket's close, which
+/// lingers for queued bytes for the send deadline, and a margin.
 pub fn stop_deadline(
   now now: step.Now,
   settings settings: Settings(settings, state, message, answer, request),
@@ -1846,6 +1872,21 @@ type QueueLocation {
 
 /// The flag's value before it was set, which the shell does not read.
 type PreviousQueueLocation
+
+/// What `erlang:process_info` is asked for: how many messages wait.
+type ProcessInfoItem {
+  MessageQueueLen
+}
+
+/// How many messages wait in the shell's own mailbox.
+fn mailbox_length() -> Int {
+  process_info(process.self(), MessageQueueLen).1
+}
+
+/// What `erlang:process_info` gives for a running process: the item and its
+/// value. It reads the queue's own counter, not the queue.
+@external(erlang, "erlang", "process_info")
+fn process_info(pid: Pid, item: ProcessInfoItem) -> #(ProcessInfoItem, Int)
 
 /// Sets the flag and gives its old value.
 @external(erlang, "erlang", "process_flag")

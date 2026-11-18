@@ -185,6 +185,10 @@ pub type Probed {
   Unreached
 }
 
+/// How long the store's supervisor waits for its workers when it stops, in
+/// milliseconds: a worker traps no exits, so it ends the moment it is told to.
+pub const shutdown_ms = 1000
+
 /// The store's factory supervisor as a permanent child of the server's
 /// supervisor, registered as `name`, its workers running on `pool`.
 pub fn supervised(
@@ -196,8 +200,7 @@ pub fn supervised(
   |> factory_supervisor.restart_strategy(supervision.Temporary)
   // A temporary worker is never restarted, so this limit is never reached.
   |> factory_supervisor.restart_tolerance(intensity: 1, period: 5)
-  // A worker traps no exits, so it ends the moment it is told to.
-  |> factory_supervisor.timeout(ms: 1000)
+  |> factory_supervisor.timeout(ms: shutdown_ms)
   |> factory_supervisor.supervised
   |> supervision.restart(supervision.Permanent)
 }

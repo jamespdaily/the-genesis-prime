@@ -6,7 +6,7 @@
 //// - The rule: a retry is made only when its wait ends before the deadline; a
 ////   stop's deadline, the listener's shutdown bound, replaces a logout's; the
 ////   first stop reconciles the running retry with its deadline.
-//// - The Design's worked table (issue 965): the attempts of a logout whose every
+//// - The worked table of the design: the attempts of a logout whose every
 ////   try fails at once are at 0, 1, 3, 7 and 15 s, and the next wait ends at 25 s.
 
 import genesis_prime/game/leaving_save.{
@@ -16,6 +16,7 @@ import genesis_prime/game/leaving_save.{
 import gleam/list
 import leaving_support
 import owned_test
+import qcheck
 
 fn production() -> leaving_save.Retries {
   leaving_support.retries()
@@ -72,21 +73,60 @@ pub fn every_failure_of_a_logout_is_retried_while_its_wait_ends_inside_the_windo
   let attempts_at = [0, 1000, 3000, 7000, 15_000]
   let deadline = leaving_save.logout_deadline(retries: production(), now_ms: 0)
   assert deadline == ForLogout(20_000) as "within_ms after the end began"
-  list.index_map(attempts_at, fn(now, failed) {
-    let expected = case failed {
-      4 -> GiveUp
-      _ -> RetryAfter(leaving_save.wait_ms(retries: production(), failed:))
-    }
+  let expected = [
+    RetryAfter(1000),
+    RetryAfter(2000),
+    RetryAfter(4000),
+    RetryAfter(8000),
+    GiveUp,
+  ]
+  list.zip(attempts_at, expected)
+  |> list.index_map(fn(attempt, failed) {
     assert leaving_save.after_failure(
         retries: production(),
         failed:,
         deadline:,
-        now_ms: now,
+        now_ms: attempt.0,
       )
-      == expected
-      as "the fifth failure gives up: 15 s + 10 s ends at 25 s, past 20 s"
+      == attempt.1
+      as "the ladder's waits, and the fifth failure gives up: 15 s + 10 s ends at 25 s, past 20 s"
   })
   Nil
+}
+
+pub fn a_retry_always_ends_before_the_deadline_and_an_ask_never_outlasts_it_test() -> Nil {
+  use <- owned_test.run(20_000)
+  use #(failed, #(deadline_ms, now_ms)) <- qcheck.given(qcheck.tuple2(
+    qcheck.bounded_int(from: 0, to: 20),
+    qcheck.tuple2(
+      qcheck.bounded_int(from: 0, to: 100_000),
+      qcheck.bounded_int(from: 0, to: 100_000),
+    ),
+  ))
+  list.each([ForLogout(deadline_ms), ForStop(deadline_ms)], fn(deadline) {
+    case
+      leaving_save.after_failure(
+        retries: production(),
+        failed:,
+        deadline:,
+        now_ms:,
+      )
+    {
+      RetryAfter(wait_ms:) -> {
+        assert now_ms + wait_ms < deadline_ms
+          as "a retry's wait ends before the deadline"
+      }
+      GiveUp -> {
+        assert now_ms + 10_000 >= deadline_ms
+          as "a failure gives up only when its wait, at most the ladder's 10 s, would end at or past the deadline"
+      }
+    }
+    let within_ms =
+      leaving_save.ask_within_ms(deadline:, now_ms:, ask_deadline_ms: 5000)
+    assert within_ms <= 5000 as "an ask is never longer than the ask deadline"
+    assert within_ms <= deadline_ms - now_ms
+      as "an ask never outlasts what the deadline leaves"
+  })
 }
 
 pub fn an_asks_time_is_the_shorter_of_the_ask_deadline_and_what_the_deadline_leaves_test() -> Nil {

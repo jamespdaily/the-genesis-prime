@@ -265,9 +265,14 @@ fn next_heard(heard: Subject(Heard)) -> Heard {
   open_wait.received(from: heard, what: "the rule's next input")
 }
 
-/// Advances the driven clock past the rule's timer, waits for the shell to end
-/// after the timer's firing and the stop it gave, and gives what the rule heard
-/// from then on.
+/// Waits until the connection has taken everything queued for it (its rule's
+/// timer is then started on the driven clock, and the socket messages the test
+/// sent are taken), advances the driven clock past the rule's timer, waits for
+/// the shell to end after the timer's firing and the stop it gave, and gives
+/// what the rule heard from then on. The messages are taken before the timer
+/// fires: the test sends the socket's messages and the barrier's request from
+/// one process, which Erlang orders, where the driver's `Elapsed` comes from
+/// another.
 fn timer_then_the_end(
   server server: ask_support.Server,
   time time: driven_time.Time,
@@ -276,6 +281,7 @@ fn timer_then_the_end(
   let assert [connection] = ask_support.connections(server)
     as "one connection process"
   let watched = process.monitor(connection)
+  driven_time.wait_until_quiet(time)
   driven_time.advance(time:, ms: 100)
   let _reason =
     ask_support.ended(

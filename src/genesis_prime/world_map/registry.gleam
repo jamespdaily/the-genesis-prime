@@ -130,7 +130,7 @@ type State {
 }
 
 /// How long Maps has to stop, in milliseconds: it holds nothing to save.
-const shutdown_ms = 1000
+pub const shutdown_ms = 1000
 
 /// Maps, named, as a permanent child of the world supervisor.
 pub fn supervised(

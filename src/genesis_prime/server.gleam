@@ -1125,8 +1125,9 @@ fn subtree(
 
 /// Adds one listener, whose connections run the rule `rule` makes from the
 /// listener's own settings, with the send deadline every listener shares and
-/// the shutdown time and reserve the caller gives. Its connections join `registry` when there is one, so a
-/// rule can be sent to and watched by its connection's id.
+/// the shutdown time and reserve the caller gives. Its connections join
+/// `registry` when there is one, so a rule can be sent to and watched by its
+/// connection's id.
 fn serve(
   tree: supervisor.Builder,
   settings settings: Settings,

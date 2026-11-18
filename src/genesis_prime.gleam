@@ -361,6 +361,8 @@ pub fn settings(
   tables tables: store.Tables,
   spawns spawns: store.Key,
 ) -> server.Settings {
+  let send_deadline_ms = 2000
+  let world = world(spawns)
   server.Settings(
     pool: pool(),
     store: process.new_name("store"),
@@ -370,17 +372,16 @@ pub fn settings(
     sessions: process.new_name("sessions"),
     sessions_shutdown_ms: 5000,
     registry: registry.new(),
-    world: world(spawns),
-    send_deadline_ms: 2000,
+    world:,
+    send_deadline_ms:,
     // A game connection has 25 s to stop (Ranch's kill, counted from when it
     // sends the stop). Its stop deadline is when the shell takes the exit plus
-    // 25 s less the 7 s reserve, so 18 s. The shell takes the exit ahead of
-    // queued messages, so it is late by at most the step in progress: one
-    // write, 2 s. After the deadline the rule writes the closing notice (2 s),
-    // and the close lingers for queued bytes (2 s). 2 + 18 + 2 + 2 = 24 s, 1 s
-    // inside the kill.
+    // 25 s less the reserve (`stop_reserve_ms`), so 15 s.
     connection_shutdown_ms: 25_000,
-    stop_reserve_ms: 7000,
+    stop_reserve_ms: stop_reserve_ms(
+      longest_synchronous_call_ms: int.max(ask_deadline_ms, world.maps_call_ms),
+      send_deadline_ms:,
+    ),
     // A login connection holds no save: it ends at once, and its 5 s covers a
     // late take, the closing write and the socket's close (2 + 2 s).
     login_connection_shutdown_ms: 5000,
@@ -390,11 +391,26 @@ pub fn settings(
     // auth listener's connections 5 s, then the STS listener's 5 s), the world
     // subtree (maps 2 s, creatures 2 s, Maps 1 s, the creatures' registry
     // 1 s), Sessions 5 s, the hand-off 5 s, the store's workers 1 s: 2 + 26 +
-    // 10 + 6 + 5 + 5 + 1 = 55 s, under the host's 60 s (the pool, last, holds
-    // no wait of its own).
+    // 10 + 6 + 5 + 5 + 1 = 55 s, under the host's 60 s. The pool is the tree's
+    // first child and stops last, after every save, so a kill during its stop
+    // loses none and its bound (an infinite shutdown, 5 s for each of the
+    // driver pool's three supervisors) is not counted.
     login: login(),
     game: game(tables:, spawns:),
   )
+}
+
+/// The part of a game connection's stop time kept for what comes after its
+/// last ask: the longest wait the shell can make before it looks at its mailbox
+/// (a call to Maps, bounded by `longest_synchronous_call_ms`), the closing
+/// notice's write and the socket's close, which lingers for queued bytes as
+/// long as a write may wait (`send_deadline_ms` each), and 1 s of margin. The
+/// calls the shell makes are listed in the client_connection tests.
+fn stop_reserve_ms(
+  longest_synchronous_call_ms longest_synchronous_call_ms: Int,
+  send_deadline_ms send_deadline_ms: Int,
+) -> Int {
+  longest_synchronous_call_ms + 2 * send_deadline_ms + 1000
 }
 
 /// The world subtree's names, and its times: a watch's call to Maps may take
