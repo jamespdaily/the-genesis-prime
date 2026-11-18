@@ -35,8 +35,9 @@
 # ~/.genesis-prime/env.sh, worked out at each run, and the server container is
 # labelled with the commit and the address it was given, which is how the next
 # run knows what is deployed; $state/good names the last commit that came up and
-# $state/skipped the commits not to try again. After a deploy the installed copies
-# of these scripts (in $state/bin) are replaced with the new commit's.
+# $state/skipped the commits not to try again. Before a deploy the installed copies
+# of these scripts (in $state/bin) are replaced with the new commit's and read again, so
+# the new commit's launcher starts the new container.
 #
 # Only one run goes at a time: the lock is the folder $state/update.lock, whose
 # owner file (the process id) is written whole by a move. A lock whose owner is
@@ -172,7 +173,7 @@ build_image() {
   log "building genesis-play:$commit"
   podman build --quiet --build-arg "REVISION=$commit" \
     -t "genesis-play:$commit" -f "$context/release/Containerfile" "$context" >/dev/null || return 1
-  local client_folders=("$tables")
+  local client_folders=("$tables" "$terrain")
   [ ! -d "$home/client-files" ] || client_folders+=("$home/client-files")
   "$here/check_image.sh" "genesis-play:$commit" "${client_folders[@]}"
 }
@@ -301,8 +302,13 @@ if [ -n "$main_commit" ] && [ "$main_commit" != "$deployed_commit" ]; then
         log_once "a live session took the lock during the migration; the server is not replaced"
         exit 0
       fi
-      deploy "$main_commit" || exit 1
+      # The new commit's launcher (its mounts and variables) starts the new container, so the
+      # installed scripts are replaced and read again before the deploy, not after it.
       install_scripts
+      # shellcheck source=lib.sh
+      . "$here/lib.sh"
+      load_environment
+      deploy "$main_commit" || exit 1
       exit 0
       ;;
     1) log_once "the check of $main_commit has not passed or has not finished; nothing done for it" ;;

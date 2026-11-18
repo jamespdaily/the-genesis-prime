@@ -28,6 +28,7 @@ import database_support
 import genesis_prime/import_world_data
 import genesis_prime/load_player.{Account}
 import genesis_prime/table/loader/server_table
+import genesis_prime/world_map/spawn.{type Row}
 import gleam/bool
 import gleam/int
 import gleam/list
@@ -38,6 +39,7 @@ import owned_test
 import real_start_node
 import recording_support
 import serving_node.{type Node}
+import terrain_support
 import unitest
 
 /// The spawns the tutorial's opening needs and a migrated database does not hold: the
@@ -83,6 +85,10 @@ fn with_node(
     }
     False -> Nil
   }
+  use terrain <- with_terrain(
+    tables:,
+    rows: content_support.stored_spawns(database:),
+  )
   let settings = database_support.settings()
   let password = case settings.password {
     option.Some(password) -> [#("PGPASSWORD", password)]
@@ -96,10 +102,30 @@ fn with_node(
       #("PGUSER", settings.user),
       #("PGDATABASE", database),
       #("GENESIS_TABLE_DIR", tables),
+      #("GENESIS_TERRAIN_DIR", terrain),
       #("GENESIS_GAME_ADDRESS", "127.0.0.1"),
       #("GENESIS_REALM_NAME", "Boot"),
     ]),
   ))
+}
+
+/// The terrain folder the node reads: flat ground for every square a spawn of the database
+/// stands in, over the client's World table, when the node runs on the client's tables;
+/// an empty folder for a node that stops before it reads one.
+fn with_terrain(
+  tables tables: String,
+  rows rows: List(Row),
+  body body: fn(String) -> a,
+) -> a {
+  case tables == client_tables.folder() {
+    True ->
+      terrain_support.flat_folder_for(
+        rows:,
+        tables: client_tables.with_content_tables(),
+        body:,
+      )
+    False -> terrain_support.planted_folder(files: [], body:)
+  }
 }
 
 /// What a failed test says of a node that ended before it printed `wanted`: its exit

@@ -163,6 +163,7 @@ import quest_support
 import rating_support
 import socket_read
 import spawn_support
+import terrain_support
 import tutorial_bot
 import unitest
 import vendor_support
@@ -4149,6 +4150,7 @@ fn start_with_world_data_by(
         pool: pog.Config(..pool, pool_name: process.new_name("load_pool")),
         ask: readiness.Settings(within_ms: 5000, attempt_ms: 2000, pause_ms: 50),
         probe: content.pool_probe,
+        terrain: terrain_support.flat_reader(),
         key:,
       )
       as "the content load puts the seeded spawns in the world's term"

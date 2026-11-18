@@ -99,6 +99,7 @@ import gleam/option.{None, Some}
 import owned_key
 import owned_test
 import spawn_support
+import terrain_support
 import unitest
 
 /// How the load asks: the database is up, so one attempt answers.
@@ -141,6 +142,7 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
       pool:,
       ask: asking(),
       probe: content.pool_probe,
+      terrain: terrain_support.flat_reader(),
       key:,
     )
   let took = runtime.now().monotonic_ms - before

@@ -13,8 +13,8 @@
 #
 # Every download is a public release asset fetched by release/fetch_release.sh,
 # which checks its digest; the build holds no GitHub login. The image holds none
-# of the client's files, no table and no secret: the client's tables are mounted
-# at /tables, the recordings at /sittings, and the database's address and
+# of the client's files, no table, no ground file and no secret: the client's tables are
+# mounted at /tables, the ground files at /terrain, the recordings at /sittings, and the database's address and
 # password and the game address come in as environment variables when the
 # container starts.
 
@@ -69,9 +69,10 @@ COPY release/container_start /app/container_start
 COPY dev/apply_migrations.sh /migrate/dev/apply_migrations.sh
 COPY setup_check/sha256.sh /migrate/setup_check/sha256.sh
 COPY priv/migrations /migrate/priv/migrations
-RUN ! find / -xdev -type f -name '*.tbl' | grep -q .
+RUN ! find / -xdev -type f \( -name '*.tbl' -o -name '*.heights' \) | grep -q .
 ENV PATH=/opt/otp/bin:$PATH \
     GENESIS_TABLE_DIR=/tables \
+    GENESIS_TERRAIN_DIR=/terrain \
     GENESIS_REVISION=$REVISION
 LABEL genesis.revision=$REVISION
 ENTRYPOINT ["/app/container_start"]

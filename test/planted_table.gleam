@@ -344,8 +344,10 @@ pub fn digest_of_read(
   store.digest(tables)
 }
 
+/// Makes a folder of its own inside `base`, runs the body with its path and removes the
+/// folder afterwards, also when the body crashes.
 @external(erlang, "planted_table_ffi", "with_folder")
-fn with_folder(base: String, body: fn(String) -> a) -> a
+pub fn with_folder(base: String, body: fn(String) -> a) -> a
 
 /// How many persistent terms are stored under a load's key.
 @external(erlang, "planted_table_ffi", "persistent_terms_under")

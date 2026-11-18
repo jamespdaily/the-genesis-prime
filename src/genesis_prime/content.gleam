@@ -39,6 +39,7 @@
 ////           compares the migrations the database recorded with the files (genesis_prime/migration)
 ////           for each table, in order:
 ////             its one query ─▶ rows ─▶ its pure check ─▶ typed records and refusals
+////           the ground: the terrain reader ─▶ each World row's asset files, a file for every spawn's square
 ////           every refusal of every table logged; any ─▶ Error(Refused(all of them))
 ////           else each table's terms put under key; the coverage logged
 ////           ends its pool
@@ -62,6 +63,10 @@
 //// - **The terms** are put once, one for each table and world, under `key`
 ////   (genesis_prime/content/term); a world of the client's World table with no
 ////   spawn gets an empty one, so a missing term is a bug and crashes its reader.
+//// - **The ground** is read beside the spawns (genesis_prime/content/terrain): each World
+////   row's asset has its `.heights` files read through the terrain reader the load is given,
+////   and a spawn standing in a square with no file is refused, so the start never serves a
+////   spawn with no ground to ask. A world with no spawn holds an empty ground.
 //// - **The server's Proxies** are planned over the ability trees the tables' load derived
 ////   (genesis_prime/game/server_proxy), so a row naming a base, a go or a spell those trees
 ////   lack is refused with the plan's reason.
@@ -117,6 +122,7 @@ import genesis_prime/content/projector_landing as content_projector_landing
 import genesis_prime/content/refusal.{type Refusal}
 import genesis_prime/content/server_proxy as content_server_proxy
 import genesis_prime/content/spawn as content_spawn
+import genesis_prime/content/terrain as content_terrain
 import genesis_prime/content/tutorial_quest as content_tutorial_quest
 import genesis_prime/content/vendor as content_vendor
 import genesis_prime/content/zone_welcome as content_zone_welcome
@@ -177,7 +183,8 @@ pub fn pool_probe(db db: pog.Connection) -> readiness.Probe {
 /// migrations with `migrations`, checks every row against the client's `tables`,
 /// logs every refusal and puts the terms only when there is none. `pool` is the
 /// configuration of the load's own pool, which it makes one connection. `probe`
-/// asks that pool whether the database answers (`pool_probe`). `tables` are only
+/// asks that pool whether the database answers (`pool_probe`). `terrain` reads each
+/// asset's ground files (`content_terrain.folder_reader`). `tables` are only
 /// read: the load stores none of them.
 pub fn load(
   tables tables: store.Tables,
@@ -185,12 +192,14 @@ pub fn load(
   pool pool: pog.Config,
   ask ask: readiness.Settings,
   probe probe: fn(pog.Connection) -> readiness.Probe,
+  terrain terrain: content_terrain.Reader,
   key key: Key,
 ) -> Result(Nil, LoadError) {
   let assert Ok(started) = pog.start(pog.pool_size(pool, 1))
     as "the content load's database pool started"
   process.unlink(started.pid)
-  let loaded = read(tables:, migrations:, db: started.data, ask:, probe:, key:)
+  let loaded =
+    read(tables:, migrations:, db: started.data, ask:, probe:, terrain:, key:)
   process.send_abnormal_exit(started.pid, runtime.Shutdown)
   loaded
 }
@@ -203,6 +212,7 @@ fn read(
   db db: pog.Connection,
   ask ask: readiness.Settings,
   probe probe: fn(pog.Connection) -> readiness.Probe,
+  terrain terrain: content_terrain.Reader,
   key key: Key,
 ) -> Result(Nil, LoadError) {
   use _ready <- result.try(
@@ -459,9 +469,11 @@ fn read(
         visibility: dict.new(),
       )
   }
+  let grounds = content_terrain.grounds(tables:, rows:, read: terrain)
   case
     list.flatten([
       objective_spawn.labelled(refusals: selection.refusals, placed:),
+      result.unwrap_error(grounds, or: []),
       kind_refusals,
       faction_refusals,
       number_refusals,
@@ -489,6 +501,10 @@ fn read(
       log_levels_out_of_range(selection)
       log_place_objectives(tables:, selection:)
       content_spawn.put(key:, selection:)
+      case grounds {
+        Ok(grounds) -> content_terrain.put(key:, grounds:)
+        Error(..) -> Nil
+      }
       content_spawn.put_reused_unit_objectives(
         key:,
         objectives: objective_units.reused(

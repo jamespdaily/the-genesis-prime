@@ -29,6 +29,7 @@ import genesis_prime/content/projector_landing as content_projector_landing
 import genesis_prime/content/refusal.{Refusal}
 import genesis_prime/content/server_proxy as content_server_proxy
 import genesis_prime/content/spawn as content_spawn
+import genesis_prime/content/terrain as content_terrain
 import genesis_prime/content/tutorial_quest as content_tutorial_quest
 import genesis_prime/content/vendor as content_vendor
 import genesis_prime/content/zone_welcome as content_zone_welcome
@@ -101,6 +102,14 @@ pub fn the_load_puts_the_migrated_databases_spawns_in_the_worlds_term_test() -> 
     as "objective 21286 (quest 10518) counts 5 of Creature2 73464, which stands 5 times"
   assert dict.size(content_spawn.world(key:, world_id: 22).by_id) == 0
     as "a World row with no spawn that starts has an empty term"
+  assert list.sort(
+      dict.keys(content_terrain.world(key:, world_id: 3460).areas),
+      int.compare,
+    )
+    == [64 * 128 + 63, 64 * 128 + 64]
+    as "migration 0008's 27 stored spawns stand at x -9.0 to 84.8 and z 252.1 to 328.7: area row 64, columns 63 and 64 (area_file.cell), the two squares the ground holds"
+  assert dict.size(content_terrain.world(key:, world_id: 22).areas) == 0
+    as "a World row with no stored spawn holds an empty ground"
 }
 
 pub fn the_boss_starts_with_its_chosen_faction_test() -> Nil {
