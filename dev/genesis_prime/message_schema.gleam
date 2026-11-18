@@ -49,6 +49,12 @@ pub type Record {
 /// leading kind, such as one movement command. The kind is the first
 /// `tag_bits` bits of the item, and each variant's record reads them again as
 /// its first field, a constant of that kind.
+///
+/// The client's reader refuses a kind from `refused_from` up (the width's own
+/// limit, `2^tag_bits`, when it refuses none earlier). A kind below that which
+/// is no variant is either one the client reads and the server must never send
+/// (`never_tags`, each with the fact that says why) or one whose meaning is
+/// still a question (`open_tags`). A kind in none of the three is untraced.
 pub type Union {
   Union(
     name: String,
@@ -56,21 +62,48 @@ pub type Union {
     summary: String,
     tag_bits: Int,
     variants: List(Variant),
+    refused_from: Int,
+    never_tags: List(NeverTag),
+    open_tags: List(OpenTag),
   )
 }
 
 /// One variant of a union: the kind that picks it, its name (the constructor
-/// the generated type gives it), the record that reads it and, when the kind
-/// has a name beyond its number, the fact-file key that gives it.
+/// the generated type gives it), the record that reads it, when the kind has a
+/// name beyond its number the fact-file key that gives it, and, when what the
+/// kind means is a question, that question.
 pub type Variant {
-  Variant(tag: Int, name: String, record: String, named_by: Option(String))
+  Variant(
+    tag: Int,
+    name: String,
+    record: String,
+    named_by: Option(String),
+    open: Option(String),
+  )
+}
+
+/// A kind the client reads and the server must not send, with its name and the
+/// fact-file key that shows why (for example that the client builds the line
+/// itself). It has no record, so the generated union refuses it on read.
+pub type NeverTag {
+  NeverTag(tag: Int, name: String, named_by: String)
+}
+
+/// A kind the client reads whose meaning or whose use by the server is still a
+/// question, with the question and, when a fact holds the layout read so far,
+/// its fact-file key. It has no record, so the generated union refuses it on
+/// read.
+pub type OpenTag {
+  OpenTag(tag: Int, question: String, named_by: Option(String))
 }
 
 /// One field: its name, how its value is written, the fact-file key that gives
 /// its width, the key that says what it is when it has a name beyond its
 /// position, and, for a field with no name, the key that shows the value the
-/// server sends is safe. A field with no `evidence` is read as such, so the
-/// rule that every field names its evidence can report it.
+/// server sends is safe. A field the client's reader cannot settle carries
+/// `open`, the question, instead of `named_by`, and keeps its position name. A
+/// field with no `evidence` is read as such, so the rule that every field names
+/// its evidence can report it.
 pub type Field {
   Field(
     name: String,
@@ -78,6 +111,7 @@ pub type Field {
     evidence: Option(String),
     named_by: Option(String),
     safe_by: Option(String),
+    open: Option(String),
   )
 }
 
@@ -171,8 +205,13 @@ pub type SchemaError {
   /// A field is counted by a field that is not an array before it in the same
   /// message or record.
   UnknownCountField(field: String, counted_by: String)
-  /// Two variants of a union have one kind.
+  /// Two of a union's variants, never tags and open tags have one kind.
   DuplicateTag(union: String, tag: Int)
+  /// A variant, never tag or open tag of a union has a kind at or above the
+  /// union's `refused_from`, which the client's reader refuses.
+  TagBeyondRefused(union: String, tag: Int)
+  /// A field has both `named_by` and `open`, but one field is traced or open.
+  OpenAndNamed(field: String)
   /// Two variants of a union have one name.
   DuplicateVariantName(union: String, name: String)
   /// A variant names a record the schema does not hold.
@@ -260,7 +299,117 @@ fn parse_union(
       check_variant_record(union: name, tag_bits:, records:, variant:)
     }),
   )
-  Ok(Union(name:, evidence:, summary:, tag_bits:, variants:))
+  let tag_count = int.bitwise_shift_left(1, tag_bits)
+  use refused_from <- result.try(case tom.get_int(table, ["refused_from"]) {
+    Error(tom.NotFound(_)) -> Ok(tag_count)
+    _ ->
+      int_in(
+        table:,
+        owner: name,
+        key: "refused_from",
+        least: 1,
+        most: tag_count,
+      )
+  })
+  use never_tags <- result.try(
+    optional_tables(table:, owner: name, key: "never_tags")
+    |> result.try(list.try_map(_, parse_never_tag(_, tag_bits))),
+  )
+  use open_tags <- result.try(
+    optional_tables(table:, owner: name, key: "open_tags")
+    |> result.try(list.try_map(_, parse_open_tag(_, tag_bits))),
+  )
+  let tags =
+    list.flatten([
+      list.map(variants, fn(variant) { variant.tag }),
+      list.map(never_tags, fn(never) { never.tag }),
+      list.map(open_tags, fn(open) { open.tag }),
+    ])
+  use Nil <- result.try(check_tags_are_distinct(union: name, tags:))
+  use Nil <- result.try(check_tags_are_below(union: name, refused_from:, tags:))
+  Ok(Union(
+    name:,
+    evidence:,
+    summary:,
+    tag_bits:,
+    variants:,
+    refused_from:,
+    never_tags:,
+    open_tags:,
+  ))
+}
+
+/// The tables of an array key, none when the key is absent.
+fn optional_tables(
+  table table: Dict(String, Toml),
+  owner owner: String,
+  key key: String,
+) -> Result(List(Dict(String, Toml)), SchemaError) {
+  case tables(table:, owner:, key:) {
+    Error(MissingKey(..)) -> Ok([])
+    found -> found
+  }
+}
+
+fn parse_never_tag(
+  table: Dict(String, Toml),
+  tag_bits: Int,
+) -> Result(NeverTag, SchemaError) {
+  use name <- result.try(string_of(table:, owner: "never tag", key: "name"))
+  use tag <- result.try(int_in(
+    table:,
+    owner: name,
+    key: "tag",
+    least: 0,
+    most: int.bitwise_shift_left(1, tag_bits) - 1,
+  ))
+  use named_by <- result.try(text_of(table:, owner: name, key: "named_by"))
+  Ok(NeverTag(tag:, name:, named_by:))
+}
+
+fn parse_open_tag(
+  table: Dict(String, Toml),
+  tag_bits: Int,
+) -> Result(OpenTag, SchemaError) {
+  use tag <- result.try(int_in(
+    table:,
+    owner: "open tag",
+    key: "tag",
+    least: 0,
+    most: int.bitwise_shift_left(1, tag_bits) - 1,
+  ))
+  let owner = "open tag " <> int.to_string(tag)
+  use question <- result.try(text_of(table:, owner:, key: "question"))
+  use named_by <- result.try(optional_text(table:, owner:, key: "named_by"))
+  Ok(OpenTag(tag:, question:, named_by:))
+}
+
+/// No kind is given twice among a union's variants, never tags and open tags.
+fn check_tags_are_distinct(
+  union union: String,
+  tags tags: List(Int),
+) -> Result(Nil, SchemaError) {
+  let repeated =
+    list.index_map(tags, fn(tag, index) { #(tag, list.take(tags, index)) })
+    |> list.find(fn(tag_and_earlier) {
+      list.contains(tag_and_earlier.1, tag_and_earlier.0)
+    })
+  case repeated {
+    Ok(#(tag, _)) -> Error(DuplicateTag(union:, tag:))
+    Error(Nil) -> Ok(Nil)
+  }
+}
+
+/// No kind the union holds is one the client's reader refuses.
+fn check_tags_are_below(
+  union union: String,
+  refused_from refused_from: Int,
+  tags tags: List(Int),
+) -> Result(Nil, SchemaError) {
+  case list.find(tags, fn(tag) { tag >= refused_from }) {
+    Ok(tag) -> Error(TagBeyondRefused(union:, tag:))
+    Error(Nil) -> Ok(Nil)
+  }
 }
 
 fn parse_variant(
@@ -276,7 +425,9 @@ fn parse_variant(
     most: int.bitwise_shift_left(1, tag_bits) - 1,
   ))
   use record <- result.try(string_of(table:, owner: name, key: "record"))
-  Ok(Variant(tag:, name:, record:, named_by: optional_string(table, "named_by")))
+  use named_by <- result.try(optional_text(table:, owner: name, key: "named_by"))
+  use open <- result.try(optional_text(table:, owner: name, key: "open"))
+  Ok(Variant(tag:, name:, record:, named_by:, open:))
 }
 
 /// Where two items of a list share what must be unique: the number of the
@@ -530,13 +681,15 @@ fn parse_field(
     | Constant(..)
     | OneRecord(..) -> refuse_values(table:, field: name)
   })
-  Ok(Field(
-    name:,
-    kind:,
-    evidence: optional_string(table, "evidence"),
-    named_by: optional_string(table, "named_by"),
-    safe_by: optional_string(table, "safe_by"),
-  ))
+  use evidence <- result.try(optional_text(table:, owner: name, key: "evidence"))
+  use named_by <- result.try(optional_text(table:, owner: name, key: "named_by"))
+  use safe_by <- result.try(optional_text(table:, owner: name, key: "safe_by"))
+  use open <- result.try(optional_text(table:, owner: name, key: "open"))
+  use Nil <- result.try(case named_by, open {
+    Some(_), Some(_) -> Error(OpenAndNamed(field: name))
+    _, _ -> Ok(Nil)
+  })
+  Ok(Field(name:, kind:, evidence:, named_by:, safe_by:, open:))
 }
 
 /// The values a field's kind names, none for any kind but an unsigned one.
@@ -641,7 +794,12 @@ fn parse_value(
     most: int.bitwise_shift_left(1, bits) - 1,
   ))
   use name <- result.try(string_of(table:, owner: field, key: "name"))
-  Ok(Value(value:, name:, evidence: optional_string(table, "evidence")))
+  use evidence <- result.try(optional_text(
+    table:,
+    owner: field,
+    key: "evidence",
+  ))
+  Ok(Value(value:, name:, evidence:))
 }
 
 fn check_values_are_distinct(
@@ -768,7 +926,12 @@ fn parse_array(
   record_names record_names: List(String),
 ) -> Result(Kind, SchemaError) {
   use element <- result.try(string_of(table:, owner: field, key: "element"))
-  case optional_string(table, "counted_by") {
+  use counted_by <- result.try(optional_text(
+    table:,
+    owner: field,
+    key: "counted_by",
+  ))
+  case counted_by {
     Some(counted_by) -> {
       case element, list.contains(record_names, element) {
         "unsigned", _ -> {
@@ -871,8 +1034,33 @@ fn int_in(
   }
 }
 
-fn optional_string(table: Dict(String, Toml), key: String) -> Option(String) {
-  tom.get_string(table, [key]) |> option.from_result
+/// The text of a key that must be there and hold something: a blank text is
+/// refused like a missing key.
+fn text_of(
+  table table: Dict(String, Toml),
+  owner owner: String,
+  key key: String,
+) -> Result(String, SchemaError) {
+  use text <- result.try(string_of(table:, owner:, key:))
+  case string.trim(text) {
+    "" -> Error(MissingKey(owner, key))
+    _ -> Ok(text)
+  }
+}
+
+/// The text of an optional key: none when the key is absent. A key that holds
+/// a value of another type, or a blank text, is refused and never read as
+/// absent.
+fn optional_text(
+  table table: Dict(String, Toml),
+  owner owner: String,
+  key key: String,
+) -> Result(Option(String), SchemaError) {
+  case tom.get_string(table, [key]) {
+    Ok(_) -> text_of(table:, owner:, key:) |> result.map(Some)
+    Error(tom.NotFound(_)) -> Ok(None)
+    Error(tom.WrongType(..)) -> Error(WrongTypeOfKey(owner, key))
+  }
 }
 
 /// What is wrong with the schema file, in a sentence.
@@ -893,7 +1081,17 @@ pub fn describe(error: SchemaError) -> String {
       <> counted_by
       <> ", which is no array field before it"
     DuplicateTag(union:, tag:) ->
-      union <> " gives the kind " <> int.to_string(tag) <> " to two variants"
+      union
+      <> " gives the kind "
+      <> int.to_string(tag)
+      <> " to two of its variants, never tags and open tags"
+    TagBeyondRefused(union:, tag:) ->
+      union
+      <> " holds the kind "
+      <> int.to_string(tag)
+      <> ", which the client's reader refuses"
+    OpenAndNamed(field:) ->
+      field <> " has both named_by and open, but a field is traced or open"
     DuplicateVariantName(union:, name:) ->
       union <> " gives the name " <> name <> " to two variants"
     UnknownVariantRecord(union:, variant:, record:) ->

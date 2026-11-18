@@ -13,7 +13,7 @@ evidence = "planted"
 summary = "a planted layout of kind 2: one bit"
 fields = [
   { name = "kind", kind = "constant", bits = 3, value = 2 },
-  { name = "on", kind = "unsigned", bits = 1 },
+  { name = "on", kind = "unsigned", bits = 1, open = "what the client does with the bit" },
 ]
 
 [[record]]
@@ -31,6 +31,13 @@ name = "planted_union"
 evidence = "planted"
 summary = "a planted list item whose first 3 bits pick its layout"
 tag_bits = 3
+refused_from = 7
+never_tags = [
+  { tag = 3, name = "never", named_by = "planted" },
+]
+open_tags = [
+  { tag = 4, question = "what the layout of kind 4 is" },
+]
 variants = [
   { tag = 2, name = "flag", record = "planted_flag" },
   { tag = 5, name = "pair", record = "planted_pair" },
