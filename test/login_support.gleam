@@ -150,6 +150,7 @@ pub fn game() -> server.Served(game_connection.Settings) {
       projector_landings: projector_support.none(),
       reused_unit_objectives: set.new(),
       arrival_objectives: set.new(),
+      item_objectives: dict.new(),
       held_objectives: set.new(),
     ),
     wire_recorder: None,

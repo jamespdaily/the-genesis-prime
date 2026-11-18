@@ -133,6 +133,7 @@ pub fn sale_answered(
           effects,
         )
       },
+      bought: fn(_, _) { Error(Nil) },
     )
   case handled {
     Continue(

@@ -191,5 +191,13 @@ pub fn buy_answered(
         )
       #(world_entry.Entered(..entered, items:, currencies:, buyback:), effects)
     },
+    bought: fn(answer, entered) {
+      vendor_purchase.bought_from(
+        purchase:,
+        answer:,
+        picture: entered.shown,
+        tables: session.settings.tables,
+      )
+    },
   )
 }

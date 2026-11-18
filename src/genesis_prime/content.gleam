@@ -86,6 +86,11 @@
 ////   (genesis_prime/game/arrival_objective): a row naming an objective the table lacks or
 ////   no quest lists, one that is not a visible scripted objective, one with no marker row,
 ////   or one a spell effect or an item names is refused.
+//// - **The item objectives** are checked against the same rows and the client's Item2 and
+////   Creature2 rows (genesis_prime/game/item_objective_table): a row naming an objective the table
+////   lacks or no quest lists, one that is not a visible marked scripted objective of count
+////   1, one a spell effect or an item names, one the arrival or held tables list, an item
+////   or a vendor the tables lack, a buy with no vendor or an equip with one is refused.
 //// - **The projector landings** are checked against the client's Creature2, WorldLocation2,
 ////   QuestObjective, Quest2 and WorldZone rows (genesis_prime/game/projector): a creature
 ////   that does not cast the projector spell, a landing outside World 3460, an objective that
@@ -118,6 +123,7 @@ import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/creature_special as content_creature_special
 import genesis_prime/content/game_number as content_game_number
 import genesis_prime/content/held_objective as content_held_objective
+import genesis_prime/content/item_objective as content_item_objective
 import genesis_prime/content/projector_landing as content_projector_landing
 import genesis_prime/content/refusal.{type Refusal}
 import genesis_prime/content/server_proxy as content_server_proxy
@@ -129,6 +135,7 @@ import genesis_prime/content/zone_welcome as content_zone_welcome
 import genesis_prime/game/arrival_objective
 import genesis_prime/game/class_resource
 import genesis_prime/game/held_objective
+import genesis_prime/game/item_objective_table
 import genesis_prime/game/objective_units
 import genesis_prime/game/place_objective
 import genesis_prime/game/projector
@@ -158,6 +165,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{None}
 import gleam/result
+import gleam/set
 import gleam/string
 import pog
 
@@ -326,6 +334,15 @@ fn read(
       )
     }),
   )
+  use item_rows <- result.try(
+    content_item_objective.rows(db)
+    |> result.map_error(fn(error) {
+      QueryFailed(
+        table: content_item_objective.table,
+        reason: worker.describe_query_error(error),
+      )
+    }),
+  )
   use projector_rows <- result.try(
     content_projector_landing.rows(db)
     |> result.map_error(fn(error) {
@@ -379,6 +396,16 @@ fn read(
   let held_refusals = result.unwrap_error(held, or: [])
   let arrivals = arrival_objective.select(rows: arrival_rows, tables:)
   let arrival_refusals = result.unwrap_error(arrivals, or: [])
+  let items =
+    item_objective_table.select(
+      rows: item_rows,
+      tables:,
+      taken: set.union(
+        result.unwrap(arrivals, or: set.new()),
+        result.unwrap(held, or: set.new()),
+      ),
+    )
+  let item_refusals = result.unwrap_error(items, or: [])
   let projectors = projector.select(rows: projector_rows, tables:)
   let projector_refusals = result.unwrap_error(projectors, or: [])
   let vendors =
@@ -483,6 +510,7 @@ fn read(
       tutorial_refusals,
       held_refusals,
       arrival_refusals,
+      item_refusals,
       projector_refusals,
       vendor_refusals,
     ])
@@ -554,6 +582,10 @@ fn read(
       }
       case arrivals {
         Ok(arrivals) -> content_arrival_objective.put(key:, arrivals:)
+        Error(..) -> Nil
+      }
+      case items {
+        Ok(wanted) -> content_item_objective.put(key:, wanted:)
         Error(..) -> Nil
       }
       case projectors {

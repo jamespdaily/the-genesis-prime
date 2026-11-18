@@ -1250,3 +1250,41 @@ SpellLevel	1270	Spellslinger ability after level 1	ability_book_test, experience
 SpellLevel	1144	Spellslinger ability after level 1	ability_book_test, experience_book_test, world_entry_loadout_test
 SpellLevel	1148	Spellslinger ability after level 1	ability_book_test, experience_book_test, world_entry_loadout_test
 SpellLevel	1155	Spellslinger ability after level 1	ability_book_test, experience_book_test, world_entry_loadout_test
+Quest2	5079	Hot on the Icy Trail: three marked unlinked type 5 objectives (7217, 7423, 7424), the first of flags 0	objective_script_place_test, content_load_test
+Quest2	5119	Following the Elder Voices: objective 7342, a marked type 5 place	objective_script_place_test, content_load_test
+Quest2	5362	Missing in Action: objective 8074 (a place) then 8075 (a type 12 use) that it opens	objective_script_place_test, content_load_test
+Quest2	5539	objective 8204, a marked type 5 place	objective_script_place_test, content_load_test
+Quest2	5971	objective 9043, a marked type 5 place	objective_script_place_test, content_load_test
+Quest2	6785	objective 11479, a marked type 5 place	objective_script_place_test, content_load_test
+Quest2	6901	The Reaper's Harvest: objective 12933, a timed marked type 5 place	objective_script_place_test, content_load_test
+Quest2	7964	objective 14378, a marked type 5 place with two markers	objective_script_place_test, content_load_test
+Quest2	8044	objective 14544, a marked type 5 place with two markers	objective_script_place_test, content_load_test
+Quest2	9180	Endgame: objective 16621, a marked type 5 place	objective_script_place_test, content_load_test
+Quest2	9186	Endgame: objective 17877, a marked type 5 place	objective_script_place_test, content_load_test
+Quest2	9315	objective 18072, a marked type 5 place	objective_script_place_test, content_load_test
+Quest2	9058	Algoroc Mining Expedition: objective 16311, a type 5 equip of Item2 12631	objective_script_place_test, content_load_test
+Quest2	9077	Hunting for Eldan Relics: objective 16379, a type 5 equip of Item2 17978	objective_script_place_test, content_load_test
+Quest2	9448	Vouchers: objective 18069, a type 5 buy of Item2 54409 from Creature2 47172	objective_script_place_test, content_load_test
+Quest2	9449	Vouchers: objective 18070, a type 5 buy of Item2 54409 from Creature2 47413	objective_script_place_test, content_load_test
+WorldLocation2	15108	marker of objective 7217	objective_script_place_test, content_load_test
+WorldLocation2	15109	marker of objective 7423	objective_script_place_test, content_load_test
+WorldLocation2	15110	marker of objective 7424	objective_script_place_test, content_load_test
+WorldLocation2	14792	marker of objective 7342	objective_script_place_test, content_load_test
+WorldLocation2	17073	marker of objective 8074	objective_script_place_test, content_load_test
+WorldLocation2	17755	marker of objective 8204	objective_script_place_test, content_load_test
+WorldLocation2	20075	marker of objective 9043	objective_script_place_test, content_load_test
+WorldLocation2	24566	marker of objective 11479	objective_script_place_test, content_load_test
+WorldLocation2	26072	marker of objective 12933	objective_script_place_test, content_load_test
+WorldLocation2	30943	marker of objective 14378	objective_script_place_test, content_load_test
+WorldLocation2	30942	marker of objective 14378	objective_script_place_test, content_load_test
+WorldLocation2	42848	marker of objective 16621	objective_script_place_test, content_load_test
+WorldLocation2	43518	marker of objective 17877	objective_script_place_test, content_load_test
+WorldLocation2	42207	marker of objective 18072	objective_script_place_test, content_load_test
+Item2	17978	the item objective 16379 names	objective_script_place_test, content_load_test
+Item2	54409	the item the buy objectives 18069 and 18070 name	objective_script_place_test, content_load_test
+Creature2	47172	the vendor objective 18069 names	objective_script_place_test, content_load_test
+Creature2	47413	the vendor objective 18070 names	objective_script_place_test, content_load_test
+WorldLocation2	18687	marker of objective 16311	objective_script_place_test, content_load_test
+WorldLocation2	25939	marker of objective 16379	objective_script_place_test, content_load_test
+WorldLocation2	45699	marker of objective 18069	objective_script_place_test, content_load_test
+WorldLocation2	45818	marker of objective 18070	objective_script_place_test, content_load_test

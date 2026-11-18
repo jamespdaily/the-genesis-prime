@@ -364,6 +364,7 @@ pub fn joined_state(
       defaults: unit_properties.defaults(tables:),
       chain: tutorial_support.none(),
       arrival_objectives: set.new(),
+      item_objectives: dict.new(),
       held_objectives: set.new(),
       tables:,
       now:,

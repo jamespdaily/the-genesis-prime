@@ -94,10 +94,11 @@ import genesis_prime/store.{
   type AccountId, type CharacterId, type HeldItem, type ItemsAnswer,
   type SessionEpoch, ItemsNotSaved, SaveRefused,
 }
-import genesis_prime/table/id.{type Item2Id, Item2Id}
+import genesis_prime/table/id.{type Creature2Id, type Item2Id, Item2Id}
 import genesis_prime/table/item2
 import genesis_prime/table/loader/store as table_store
 import gleam/bool
+import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{type Option}
@@ -586,6 +587,26 @@ fn removed_frame(buyback_id buyback_id: Int) -> Frame {
     buyback_removed.encode(buyback_removed.BuybackRemoved(buyback_id:))
     as "an id the list held, a 32-bit value, is written"
   frame.Frame(message_id: buyback_removed.message_id, body:)
+}
+
+/// The item and the vendor's Creature2 of a purchase the store's answer made: a buy from the
+/// vendor's stock that the store saved, at a vendor unit the picture still shows (an item
+/// bought back, a buy the store refused, or a vendor that left sight makes none). It is what
+/// an objective that asks for an item bought from a vendor counts (`objective.purchased`).
+pub fn bought_from(
+  purchase purchase: Purchase,
+  answer answer: ItemsAnswer,
+  picture picture: Picture,
+  tables tables: table_store.Tables,
+) -> Result(#(Item2Id, Creature2Id), Nil) {
+  case purchase.kind, answer {
+    Bought, store.Bought(..) -> {
+      use shown <- result.try(dict.get(picture, purchase.unit_id))
+      use #(unit, _) <- result.map(shown.target_of(tables:, shown:))
+      #(purchase.item2_id, unit.creature_id)
+    }
+    BoughtBack(..), _ | Bought, _ -> Error(Nil)
+  }
 }
 
 /// What a buy that was not saved did not do, for the log.

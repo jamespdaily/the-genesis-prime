@@ -374,6 +374,60 @@ order by objective_id;
   |> pog.execute(db)
 }
 
+/// A row you get from running the `load_item_objectives` query
+/// defined in `./src/genesis_prime/content/sql/load_item_objectives.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type LoadItemObjectivesRow {
+  LoadItemObjectivesRow(
+    objective_id: Int,
+    kind: String,
+    item2_id: Int,
+    creature2_id: Option(Int),
+  )
+}
+
+/// Every row of the item_objective table in key order: the one query the load makes of
+/// the table at start (genesis_prime/content/item_objective). The checks run on these
+/// rows, not in SQL.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn load_item_objectives(
+  db: pog.Connection,
+) -> Result(pog.Returned(LoadItemObjectivesRow), pog.QueryError) {
+  let decoder = {
+    use objective_id <- decode.field(0, decode.int)
+    use kind <- decode.field(1, decode.string)
+    use item2_id <- decode.field(2, decode.int)
+    use creature2_id <- decode.field(3, decode.optional(decode.int))
+    decode.success(LoadItemObjectivesRow(
+      objective_id:,
+      kind:,
+      item2_id:,
+      creature2_id:,
+    ))
+  }
+
+  "-- Every row of the item_objective table in key order: the one query the load makes of
+-- the table at start (genesis_prime/content/item_objective). The checks run on these
+-- rows, not in SQL.
+select
+  objective_id,
+  kind,
+  item2_id,
+  creature2_id
+from item_objective
+order by objective_id;
+"
+  |> pog.query
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
 /// A row you get from running the `load_projector_landings` query
 /// defined in `./src/genesis_prime/content/sql/load_projector_landings.sql`.
 ///

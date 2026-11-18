@@ -131,6 +131,7 @@ pub fn settings() -> game_connection.Settings {
     projector_landings: projector_support.landings(),
     reused_unit_objectives: set.new(),
     arrival_objectives: set.new(),
+    item_objectives: dict.new(),
     held_objectives: set.new(),
   )
 }
