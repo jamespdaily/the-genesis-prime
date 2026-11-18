@@ -157,6 +157,12 @@ fn effect_rolls_needed(
         condition: row.condition,
         units_reached: reached(row.aim),
       )
+    spell_plan.QuestAdvanceEffect(quest_advance: row) ->
+      caster_rolls
+      + target_rolls_needed(
+        condition: row.condition,
+        units_reached: reached(row.aim),
+      )
     spell_plan.ForcedMoveEffect(..)
     | spell_plan.CooldownEffect(..)
     | spell_plan.StealthEffect(..)
@@ -639,6 +645,8 @@ pub fn gates_checked_on_caster(
     spell_plan.UnitStateEffect(unit_state: row) ->
       Ok(caster_gates(condition: row.condition))
     spell_plan.HealEffect(heal: row) ->
+      Ok(caster_gates(condition: row.condition))
+    spell_plan.QuestAdvanceEffect(quest_advance: row) ->
       Ok(caster_gates(condition: row.condition))
     spell_plan.ForcedMoveEffect(forced_move: row) ->
       Ok(only_on_caster_gates(condition: row.condition))

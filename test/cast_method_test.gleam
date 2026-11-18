@@ -1072,6 +1072,7 @@ fn count_logs(effects effects: List(cast_state.Effect)) -> Int {
       | cast_state.CreatureHoldsUnitStates(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
+      | cast_state.QuestAdvanced(..)
       | cast_state.TickStrike(..)
       | cast_state.StealthChanged(..) -> False
     }

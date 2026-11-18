@@ -16,21 +16,15 @@
 ////   alone names no objective.
 ////
 //// The sets are built once when the tables load, from every Spell4Effects and Item2 row.
-//// The effect type 42 is read here from its raw number: `effect_kind` has no kind for it,
-//// because no rule carries the effect out yet (the issue "A spell's QuestAdvanceObjective
-//// effect advances its quest objective, so the Loftite Railgun counts its hits" gives it
-//// one and removes this read).
 //// An objective in either set is one a cast does, so `objective.script_of` leaves a marked
 //// scripted one of them open until the cast counts for it.
 
+import genesis_prime/game/effect_kind
 import genesis_prime/table/item2
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4_effects
 import gleam/list
 import gleam/set.{type Set}
-
-/// The effect type of `QuestAdvanceObjective` (`Spell4Effects.effectType.42`).
-const quest_advance_objective = 42
 
 /// The (quest id, objective index) pairs of each source, kept apart so that each can be
 /// told from the other.
@@ -47,7 +41,10 @@ pub fn derivation() -> table_store.Derivation {
   table_store.derivation(key: named_key, build: fn(tables) {
     Ok(Named(
       by_effect: spell4_effects.all(tables)
-        |> list.filter(fn(row) { row.effect_type == quest_advance_objective })
+        |> list.filter(fn(row) {
+          effect_kind.kind_of(effect_type: row.effect_type)
+          == effect_kind.QuestAdvance
+        })
         |> list.map(fn(row) { #(row.data_bits00, row.data_bits01) })
         |> set.from_list,
       by_item: item2.all(tables)
