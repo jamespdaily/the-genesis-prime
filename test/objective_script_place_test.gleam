@@ -1041,72 +1041,6 @@ fn classes() -> List(objective.Script) {
   ]
 }
 
-pub fn every_type_5_objective_in_a_quest_has_one_completing_rule_test() -> Nil {
-  use <- owned_test.run(300_000)
-  use <- unitest.guard(client_tables.present())
-  let tables = client_tables.shared()
-  let arrivals = arrival_ids()
-  let held = held_ids()
-  let items = item_wanted(tables:, taken: set.union(arrivals, held))
-  let places = type_5_places(tables:)
-  assert list.length(places) == 1498
-    as "1556 QuestObjective rows of type 5, 58 of them in no quest, the others in one quest each"
-  assert quest_objective.all(tables)
-    |> list.filter(fn(row) { row.type_ == 5 })
-    |> list.count(fn(row) {
-      !list.any(places, fn(place) { { place.2 }.objective_id == row.id })
-    })
-    == 58
-    as "the objectives no quest lists are none of the rules'"
-  // The class counts come from the client's rows (the objective's flags, the marker rows,
-  // the creatures' links, the type 42 rows and the items), the arrival table's 57 rows and
-  // the item table's 4.
-  assert counted_classes(tables:, arrivals:, items:)
-    == [
-      #(objective.UsedByCreature, 267),
-      #(objective.Optional, 59),
-      #(objective.NamedAction, 70),
-      #(objective.PlaceScript, 57),
-      #(objective.ItemScript, 4),
-      #(objective.StandInOnAccept, 435),
-      #(objective.StandInWithQuest, 606),
-    ]
-    as "each type 5 objective in a quest has exactly one class: 259 linked required and 8 linked optional, 59 visible optional, 70 a spell or an item names, 57 places, 4 items, 435 stand-ins on accept (454 less the 15 places and 4 items moved), and 606 that wait for the quest (87 hidden, 519 visible with no marker)"
-  assert set.size(arrivals) == 57
-    as "the arrival table's rows: the 42 of migration 0038 and the 15 of 0041"
-  assert dict.size(items) == 4 as "the item table's rows (migration 0042)"
-  assert set.size(held) == 145
-    as "the held table's rows: the 130 of the unmarked scripts and the 15 of the instance quests"
-  // The hold is an override: of the 145, the 15 marked rows of the instance quests are of
-  // two classes named by a spell, four places (the other two of the six the text reads as
-  // places are stand-ins), and nine stand-ins on accept.
-  let held_places =
-    list.filter(places, fn(place) {
-      set.contains(held, { place.2 }.objective_id)
-    })
-  let held_class = fn(wanted: objective.Script) {
-    list.count(held_places, fn(place) {
-      objective.script_of(
-        tables:,
-        quest_id: { place.0 }.id,
-        index: place.1,
-        objective: place.2,
-        arrival_objectives: arrivals,
-        item_objectives: items,
-      )
-      == wanted
-    })
-  }
-  assert held_class(objective.NamedAction) == 2
-    as "the instance quests 10130 and 10131 each hold one objective a spell names"
-  assert held_class(objective.PlaceScript) == 4
-    as "four held places: 18629, 18630, 19346 and 19357"
-  assert held_class(objective.StandInOnAccept) == 9
-    as "nine held stand-ins on accept"
-  assert held_class(objective.StandInWithQuest) == 130
-    as "the 130 of migration 0034"
-}
-
 /// The log of the quest accepted with these objective indexes done, or the place a unit
 /// of test needs; the sweeps below build one per objective.
 fn others_done(
@@ -1295,6 +1229,72 @@ pub fn every_marked_stand_in_completes_on_accept_and_every_held_one_stays_open_t
     })
   assert wrong == []
     as "a marked stand-in is done as soon as it is open whatever else the quest holds, and a held one never is"
+}
+
+pub fn every_type_5_objective_in_a_quest_has_one_completing_rule_test() -> Nil {
+  use <- owned_test.run(300_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let arrivals = arrival_ids()
+  let held = held_ids()
+  let items = item_wanted(tables:, taken: set.union(arrivals, held))
+  let places = type_5_places(tables:)
+  assert list.length(places) == 1498
+    as "1556 QuestObjective rows of type 5, 58 of them in no quest, the others in one quest each"
+  assert quest_objective.all(tables)
+    |> list.filter(fn(row) { row.type_ == 5 })
+    |> list.count(fn(row) {
+      !list.any(places, fn(place) { { place.2 }.objective_id == row.id })
+    })
+    == 58
+    as "the objectives no quest lists are none of the rules'"
+  // The class counts come from the client's rows (the objective's flags, the marker rows,
+  // the creatures' links, the type 42 rows and the items), the arrival table's 57 rows and
+  // the item table's 4.
+  assert counted_classes(tables:, arrivals:, items:)
+    == [
+      #(objective.UsedByCreature, 267),
+      #(objective.Optional, 59),
+      #(objective.NamedAction, 70),
+      #(objective.PlaceScript, 57),
+      #(objective.ItemScript, 4),
+      #(objective.StandInOnAccept, 435),
+      #(objective.StandInWithQuest, 606),
+    ]
+    as "each type 5 objective in a quest has exactly one class: 259 linked required and 8 linked optional, 59 visible optional, 70 a spell or an item names, 57 places, 4 items, 435 stand-ins on accept (454 less the 15 places and 4 items moved), and 606 that wait for the quest (87 hidden, 519 visible with no marker)"
+  assert set.size(arrivals) == 57
+    as "the arrival table's rows: the 42 of migration 0038 and the 15 of 0041"
+  assert dict.size(items) == 4 as "the item table's rows (migration 0042)"
+  assert set.size(held) == 145
+    as "the held table's rows: the 130 of the unmarked scripts and the 15 of the instance quests"
+  // The hold is an override: of the 145, the 15 marked rows of the instance quests are of
+  // two classes named by a spell, four places (the other two of the six the text reads as
+  // places are stand-ins), and nine stand-ins on accept.
+  let held_places =
+    list.filter(places, fn(place) {
+      set.contains(held, { place.2 }.objective_id)
+    })
+  let held_class = fn(wanted: objective.Script) {
+    list.count(held_places, fn(place) {
+      objective.script_of(
+        tables:,
+        quest_id: { place.0 }.id,
+        index: place.1,
+        objective: place.2,
+        arrival_objectives: arrivals,
+        item_objectives: items,
+      )
+      == wanted
+    })
+  }
+  assert held_class(objective.NamedAction) == 2
+    as "the instance quests 10130 and 10131 each hold one objective a spell names"
+  assert held_class(objective.PlaceScript) == 4
+    as "four held places: 18629, 18630, 19346 and 19357"
+  assert held_class(objective.StandInOnAccept) == 9
+    as "nine held stand-ins on accept"
+  assert held_class(objective.StandInWithQuest) == 130
+    as "the 130 of migration 0034"
 }
 
 // ---- the places and equips that left the stand-in ----
