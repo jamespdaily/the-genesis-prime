@@ -123,7 +123,7 @@ pub fn spectral_forms_go_lists_its_absorb_on_the_caster_and_starts_it_for_five_s
       #(effect.spell4_effects_id, effect.delay_ms, effect.result)
     })
     == [
-      #(178_144, 0, spell_effect_result.Bit(SpellEffectBit(field_2: 0))),
+      #(178_144, 0, spell_effect_result.Bit(SpellEffectBit(unread_2: 0))),
     ]
     as "row 178144 is listed with a bit result, as a Fluff effect is"
   assert support.finished_ids(support.writes(effects:)) == []

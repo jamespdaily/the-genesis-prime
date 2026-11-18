@@ -108,43 +108,6 @@ pub const known_gaps: List(Gap) = [
     ],
     issue: 979,
   ),
-  UntracedFields(owner: "spell_effect_bit", fields: ["field_2"], issue: 979),
-  UntracedFields(owner: "spell_effect_info", fields: ["field_4"], issue: 979),
-  UntracedFields(owner: "spell_failed", fields: ["field_4"], issue: 979),
-  UntracedFields(
-    owner: "spell_hit_entry",
-    fields: [
-      "field_1",
-      "field_2",
-      "field_3",
-      "field_4",
-      "field_5",
-      "field_6",
-      "field_7",
-    ],
-    issue: 979,
-  ),
-  UntracedFields(
-    owner: "spell_initial_position",
-    fields: ["field_2", "field_4", "field_5"],
-    issue: 979,
-  ),
-  UntracedFields(owner: "spell_miss", fields: ["time_ms"], issue: 979),
-  UntracedFields(
-    owner: "spell_missile_info",
-    fields: ["field_1", "field_2", "field_3", "field_4", "field_5"],
-    issue: 979,
-  ),
-  UntracedFields(
-    owner: "spell_started",
-    fields: ["field_6", "field_12", "field_13"],
-    issue: 979,
-  ),
-  UntracedFields(
-    owner: "spell_telegraph_position",
-    fields: ["field_1", "field_3", "field_5", "field_6"],
-    issue: 979,
-  ),
   UntracedFields(
     owner: "unit_create_ghost",
     fields: ["field_9", "field_10", "field_11", "field_12"],

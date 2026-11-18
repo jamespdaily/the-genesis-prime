@@ -2,10 +2,10 @@
 //// never edited by hand.
 ////
 //// A record inside a message body: one missed target of a cast: the unit id,
-//// the reason (0 is Dodge, which the client shows as Deflect) and a time in
-//// milliseconds the client adds to the miss's visual. Its fields are listed in
-//// `schema.toml` with the client's evidence, and the fact file's
-//// `opcode.0x7fb` names the record.
+//// the reason (0 is Dodge, which the client shows as Deflect) and a word in
+//// milliseconds the client adds to the miss's visual; whether it is a delay or
+//// a clock time is open. Its fields are listed in `schema.toml` with the
+//// client's evidence, and the fact file's `opcode.0x7fb` names the record.
 
 import genesis_prime/message/bit_stream.{
   type DecodeError, type Reader, type Writer,
@@ -20,6 +20,8 @@ pub type SpellMiss {
   SpellMiss(
     unit_id: Int,
     reason: MissReason,
+    /// Open: Is the word the client adds to the miss's visual offset a delay or
+    /// a clock time? It never tests it; 0 adds nothing (opcode.0x7fb.time)
     /// Safe by `opcode.0x7fb.time`: the client's code gives this field no use
     /// the server needs, and that fact shows its value is safe.
     time_ms: Int,

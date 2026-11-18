@@ -2,9 +2,10 @@
 //// never edited by hand.
 ////
 //// A record inside a message body: one telegraph position of a cast message:
-//// 16 bits, a unit id, 8 bits, a position, a float and 32 bits; their meanings
-//// are not read. Its fields are listed in `schema.toml` with the client's
-//// evidence, and the fact file's `opcode.0x7ff` names the record.
+//// the TelegraphDamage id, a unit id, the target flags, a position, the
+//// telegraph's facing and the id of the unit the telegraph is anchored to. Its
+//// fields are listed in `schema.toml` with the client's evidence, and the fact
+//// file's `opcode.0x7ff` names the record.
 
 import genesis_prime/message/bit_stream.{
   type DecodeError, type Reader, type Writer,
@@ -17,20 +18,12 @@ import gleam/result
 /// with no such doc has no use the client's code shows.
 pub type SpellTelegraphPosition {
   SpellTelegraphPosition(
-    /// Safe by `spell.empty_lists`: the client's code gives this field no use
-    /// the server needs, and that fact shows its value is safe.
-    field_1: Int,
+    telegraph_damage_id: Int,
     unit_id: Int,
-    /// Safe by `spell.empty_lists`: the client's code gives this field no use
-    /// the server needs, and that fact shows its value is safe.
-    field_3: Int,
+    target_flags: Int,
     position: SpellPosition,
-    /// Safe by `spell.empty_lists`: the client's code gives this field no use
-    /// the server needs, and that fact shows its value is safe.
-    field_5: Int,
-    /// Safe by `spell.empty_lists`: the client's code gives this field no use
-    /// the server needs, and that fact shows its value is safe.
-    field_6: Int,
+    yaw: Int,
+    anchor_unit_id: Int,
   )
 }
 
@@ -40,32 +33,42 @@ pub fn write(
   record record: SpellTelegraphPosition,
 ) -> Writer {
   writer
-  |> bit_stream.write_unsigned("field_1", record.field_1, 16)
+  |> bit_stream.write_unsigned(
+    "telegraph_damage_id",
+    record.telegraph_damage_id,
+    16,
+  )
   |> bit_stream.write_unsigned("unit_id", record.unit_id, 32)
-  |> bit_stream.write_unsigned("field_3", record.field_3, 8)
+  |> bit_stream.write_unsigned("target_flags", record.target_flags, 8)
   |> spell_position.write(record.position)
-  |> bit_stream.write_float32_bits("field_5", record.field_5)
-  |> bit_stream.write_unsigned("field_6", record.field_6, 32)
+  |> bit_stream.write_float32_bits("yaw", record.yaw)
+  |> bit_stream.write_unsigned("anchor_unit_id", record.anchor_unit_id, 32)
 }
 
 /// Reads the record from the stream, and the stream after it.
 pub fn read(
   reader: Reader,
 ) -> Result(#(SpellTelegraphPosition, Reader), DecodeError) {
-  use #(field_1, reader) <- result.try(bit_stream.read_unsigned(reader, 16))
+  use #(telegraph_damage_id, reader) <- result.try(bit_stream.read_unsigned(
+    reader,
+    16,
+  ))
   use #(unit_id, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
-  use #(field_3, reader) <- result.try(bit_stream.read_unsigned(reader, 8))
+  use #(target_flags, reader) <- result.try(bit_stream.read_unsigned(reader, 8))
   use #(position, reader) <- result.try(spell_position.read(reader))
-  use #(field_5, reader) <- result.try(bit_stream.read_float32_bits(reader))
-  use #(field_6, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
+  use #(yaw, reader) <- result.try(bit_stream.read_float32_bits(reader))
+  use #(anchor_unit_id, reader) <- result.try(bit_stream.read_unsigned(
+    reader,
+    32,
+  ))
   Ok(#(
     SpellTelegraphPosition(
-      field_1:,
+      telegraph_damage_id:,
       unit_id:,
-      field_3:,
+      target_flags:,
       position:,
-      field_5:,
-      field_6:,
+      yaw:,
+      anchor_unit_id:,
     ),
     reader,
   ))

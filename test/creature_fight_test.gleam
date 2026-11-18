@@ -3942,7 +3942,7 @@ fn effects_listed(go go: spell_go.SpellGo) -> List(#(Int, Int, Int)) {
   let assert [SpellTargetInfo(effects:, ..)] = go.targets
     as "the go names the turret alone"
   list.map(effects, fn(effect) {
-    #(effect.spell4_effects_id, effect.instance_id, effect.field_4)
+    #(effect.spell4_effects_id, effect.instance_id, effect.lifetime_ms)
   })
 }
 

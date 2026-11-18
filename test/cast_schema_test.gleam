@@ -1,12 +1,14 @@
-//// The unnamed fields of the cast messages the server sends each name the fact
-//// that shows the value sent is safe (`code_rule/schema_evidence` holds the rule
-//// for the whole schema; this holds which fact each of these fields names). The
-//// keys and the safe values are the decode's records for 0x7ff, 0x7f4 and the
-//// cast messages' lists: `opcode.0x7ff.caster_item_level` (0),
-//// `opcode.0x7ff.own_cast` (1), `opcode.0x7ff.activate` (0),
-//// `opcode.0x7f4.effect_time` (0), `opcode.0x7f4.effect_bit` (0) and
-//// `spell.empty_lists` (the lists the server sends empty), whose statements name
-//// the safe value; each statement is read from the fact file here.
+//// Tests of the cast messages: the fact that shows each sent default safe, the
+//// item use body, and the names and evidence of the cast results.
+////
+//// Each named scalar field the server sends a default for keeps `safe_by`, the
+//// fact whose statement gives the value sent (`code_rule/schema_evidence` holds
+//// the rule for the whole schema; this holds that the key points to the fact
+//// that supports the default). The element fields of the lists the server sends
+//// empty (initial positions, telegraph positions, missiles, hit entries) carry
+//// no `safe_by`: a list with no entries sends none of their values, and each
+//// names the fact of its layout with `named_by`, so there is no sent default
+//// for a fact to support.
 
 import fact_file
 import genesis_prime/message/cast_result
@@ -22,45 +24,32 @@ import simplifile
 
 const schema_path = "src/genesis_prime/message/schema.toml"
 
-/// The fields the cast messages leave unnamed, by the owner's name, with the
-/// fact each names and the words of that fact's statement that give the safe
-/// value the server sends.
-const unnamed = [
+/// The named fields of the cast messages the server sends a default for, by the
+/// owner's name, with the fact each names and the words of that fact's
+/// statement that give the value sent.
+const sent_defaults = [
   #(
     "spell_started",
-    "field_6",
+    "caster_item_level",
     "opcode.0x7ff.caster_item_level",
     "Safe value: 0",
   ),
-  #("spell_started", "field_12", "opcode.0x7ff.own_cast", "Safe value: 1"),
+  #("spell_started", "own_cast", "opcode.0x7ff.own_cast", "Safe value: 1"),
   #(
     "spell_started",
-    "field_13",
+    "creature_activate",
     "opcode.0x7ff.activate",
     "Safe value for ability casts: 0",
   ),
-  #("spell_effect_info", "field_4", "opcode.0x7f4.effect_time", "Safe value: 0"),
-  #("spell_effect_bit", "field_2", "opcode.0x7f4.effect_bit", "Safe value: 0"),
-  #("spell_failed", "field_4", "opcode.0x7f9", "Safe value for the bit: 0"),
-  #("spell_initial_position", "field_2", "spell.empty_lists", "may be empty"),
-  #("spell_initial_position", "field_4", "spell.empty_lists", "may be empty"),
-  #("spell_initial_position", "field_5", "spell.empty_lists", "may be empty"),
-  #("spell_telegraph_position", "field_1", "spell.empty_lists", "may be empty"),
-  #("spell_telegraph_position", "field_3", "spell.empty_lists", "may be empty"),
-  #("spell_telegraph_position", "field_5", "spell.empty_lists", "may be empty"),
-  #("spell_telegraph_position", "field_6", "spell.empty_lists", "may be empty"),
-  #("spell_missile_info", "field_1", "spell.empty_lists", "may be empty"),
-  #("spell_missile_info", "field_2", "spell.empty_lists", "may be empty"),
-  #("spell_missile_info", "field_3", "spell.empty_lists", "may be empty"),
-  #("spell_missile_info", "field_4", "spell.empty_lists", "may be empty"),
-  #("spell_missile_info", "field_5", "spell.empty_lists", "may be empty"),
-  #("spell_hit_entry", "field_1", "spell.empty_lists", "may be empty"),
-  #("spell_hit_entry", "field_2", "spell.empty_lists", "may be empty"),
-  #("spell_hit_entry", "field_3", "spell.empty_lists", "may be empty"),
-  #("spell_hit_entry", "field_4", "spell.empty_lists", "may be empty"),
-  #("spell_hit_entry", "field_5", "spell.empty_lists", "may be empty"),
-  #("spell_hit_entry", "field_6", "spell.empty_lists", "may be empty"),
-  #("spell_hit_entry", "field_7", "spell.empty_lists", "may be empty"),
+  #(
+    "spell_effect_info",
+    "lifetime_ms",
+    "opcode.0x7f4.effect_time",
+    "Safe value: 0",
+  ),
+  #("spell_effect_bit", "unread_2", "opcode.0x7f4.effect_bit", "Safe value: 0"),
+  #("spell_failed", "cut_visuals", "opcode.0x7f9", "Safe value for the bit: 0"),
+  #("spell_miss", "time_ms", "opcode.0x7fb.time", "Safe value: 0"),
 ]
 
 fn fields_of(owner owner: String) -> List(Field) {
@@ -78,9 +67,9 @@ fn fields_of(owner owner: String) -> List(Field) {
   }
 }
 
-pub fn each_unnamed_field_of_the_cast_messages_names_the_fact_that_shows_its_value_safe_test() -> Nil {
+pub fn each_default_the_cast_messages_send_names_the_fact_that_shows_it_safe_test() -> Nil {
   use <- owned_test.run(10_000)
-  list.each(unnamed, fn(row) {
+  list.each(sent_defaults, fn(row) {
     let #(owner, field, key, safe_words) = row
     let assert Ok(found) =
       list.find(fields_of(owner:), fn(candidate) { candidate.name == field })

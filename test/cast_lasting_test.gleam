@@ -151,8 +151,8 @@ pub fn a_go_lists_a_fluff_effect_on_the_caster_with_count_1_and_no_lifetime_test
         spell4_effects_id: 96_819,
         instance_id: 1,
         delay_ms: 0,
-        field_4: 0,
-        result: spell_effect_result.Bit(SpellEffectBit(field_2: 0)),
+        lifetime_ms: 0,
+        result: spell_effect_result.Bit(SpellEffectBit(unread_2: 0)),
       ),
     ]
     as "the fourth value 0 leaves the lifetime to the client (opcode.0x7f4.effect_time)"

@@ -275,7 +275,7 @@ pub fn a_go_with_a_shield_heal_lists_it_on_the_caster_with_a_heal_description_te
         spell4_effects_id: 228_914,
         instance_id: 1,
         delay_ms: 10,
-        field_4: 0,
+        lifetime_ms: 0,
         result: heal_description(
           amount: 60,
           kind: damage_type.HealShields,
@@ -840,7 +840,7 @@ pub fn a_self_heal_go_describes_the_heal_and_starts_the_change_test() -> Nil {
         spell4_effects_id: 62_019,
         instance_id: 1,
         delay_ms: 20,
-        field_4: 0,
+        lifetime_ms: 0,
         result: heal_description(
           amount: 121,
           kind: damage_type.Heal,
