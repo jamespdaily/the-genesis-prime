@@ -145,9 +145,7 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
     )
   let took = runtime.now().monotonic_ms - before
   assert loaded == Ok(Nil) as "the whole world database loads"
-  let assert Ok(rows) =
-    content_spawn.rows(db: content_support.connect(database:))
-    as "the spawn rows read back"
+  let rows = content_support.stored_spawns(database:)
   // The kill objectives' creatures that have no stored spawn in their marker's
   // world stand at its marker (`objective_spawn.place`): the rows placed, by
   // world, are the counts named in the head of this file, and the load starts the
@@ -343,9 +341,7 @@ pub fn world_3460_visibility_index_is_19_41795_and_41803_test() -> Nil {
     )
     as "the world database imports"
   let tables = client_tables.with_content_tables()
-  let assert Ok(rows) =
-    content_spawn.rows(db: content_support.connect(database:))
-    as "the spawn rows read back"
+  let rows = content_support.stored_spawns(database:)
   let selection =
     spawn.select(
       rows: list.filter(rows, fn(row) { row.world_id == 3460 }),
