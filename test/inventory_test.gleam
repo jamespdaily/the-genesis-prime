@@ -199,7 +199,7 @@ fn failed_with(effects: List(Effect)) -> List(#(Int, Int)) {
       Send(frame:) -> {
         assert frame.message_id == item_action_failed.message_id
           as "a refusal is written as 0x56A"
-        let assert Ok(ItemActionFailed(item_guid:, code:)) =
+        let assert Ok(ItemActionFailed(unread_1: item_guid, code:)) =
           item_action_failed.decode(frame.body)
           as "0x56A decodes"
         Ok(#(item_guid, code))
@@ -1782,4 +1782,50 @@ pub fn a_split_stack_keeps_the_charges_of_its_source_test() -> Nil {
       as "the new stack is held"
     assert split.charges == charges as why
   })
+}
+
+pub fn item_added_frames_carry_the_held_charges_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // A split copies the source's charges (opcode.0x111.charges): the new stack's 0x111 holds
+  // the 1 charge the source holds.
+  let stack =
+    HeldItem(
+      ..in_bag(guid: 20, item2_id: stackable(), index: 1, count: 10),
+      charges: 1,
+    )
+  let items = list.append(held(), [stack])
+  let moving =
+    asked(split_taken(
+      items:,
+      life: player_life_support.alive(),
+      guid: 20,
+      to: #(1, 2),
+      count: 3,
+    ))
+  let #(_, effects) =
+    inventory.answered(items:, moving:, answer: ItemMade(item_guid: 77))
+  let assert [_, added] = sent(effects)
+  let assert Ok(item_added.ItemAdded(held_item:)) =
+    item_added.decode(added.body)
+  assert held_item.item.charges == 1
+    as "the split's 0x111 carries the source's charges"
+  // The frame builder writes the charges it is given.
+  let charges_of = fn(charges) {
+    let frame =
+      inventory.item_added_frame(
+        item_guid: 5,
+        item_id: stackable(),
+        location: 1,
+        bag_index: 0,
+        stack_count: 1,
+        random_stats: 0,
+        charges:,
+        reason: 0,
+      )
+    let assert Ok(item_added.ItemAdded(held_item:)) =
+      item_added.decode(frame.body)
+    held_item.item.charges
+  }
+  assert list.map([0, 1, 99, 9999], charges_of) == [0, 1, 99, 9999]
+    as "opcode.0x111.charges: the 32-bit value is written as given"
 }

@@ -37,6 +37,7 @@ import genesis_prime/game/unit_state
 import genesis_prime/message/cast_result
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/message/float32
+import genesis_prime/message/item_place.{type ItemPlace}
 import genesis_prime/message/spell_damage_description.{
   type SpellDamageDescription,
 }
@@ -794,6 +795,49 @@ pub type HeldProc {
   HeldProc(row: spell_plan.ProcRow, fires_ms: List(Int))
 }
 
+/// The press of an item that started a cast: the client's id of the cast (the 0x943's
+/// first field, `opcode.0x943`), the Spell4 the item casts and the place of the item the
+/// press named. The connection finds the held item at `place` to spend its charge.
+pub type ItemPress {
+  ItemPress(client_cast_id: Int, spell4_id: Int, place: ItemPlace)
+}
+
+/// What an activate press whose checks passed keeps for the start of its cast
+/// (`cast.item_started`): the client's id of the cast, the caster as it was checked, the
+/// spell with its cast time, the unit the cast activates, the interaction the spell has,
+/// the rows the activation drops and the costs the checks found paid. Nothing here is a
+/// time: the start stamps the cast with the time it is made at.
+pub type ActivationStart {
+  ActivationStart(
+    client_cast_id: Int,
+    caster: Caster,
+    spell: Spell,
+    activating: Activating,
+    interaction: Interaction,
+    dropped: activate.Dropped,
+    paid: Paid,
+  )
+}
+
+/// What the rule makes of the caster's 0x943 (`cast.use_item`).
+pub type Used {
+  /// The press ends here: a refusal's frame, or a press whose id the caster already used.
+  /// `cast` and `effects` are applied at once.
+  Frames(cast: State, effects: List(Effect))
+  /// The press passed its checks and starts a cast, which the rule has not made: the
+  /// caster's state is as it was, and the cast is made by `cast.item_started` once the store
+  /// has saved the spend of the item's charge (genesis_prime/game/item_charge), at the time
+  /// of the answer. It is dropped when the store did not save, so a refused save leaves
+  /// the caster as it was.
+  Started(press: ItemPress, start: ActivationStart)
+}
+
+/// The item the caster holds at the place a 0x943 names: its Item2 and the charges it has
+/// left, which the use check reads (`item_use.check`).
+pub type ItemAtPlace {
+  ItemAtPlace(item2_id: Item2Id, charges: Int)
+}
+
 /// What the rule keeps for one player: its cooldowns, its live casts, its open
 /// thresholds and what waits on a timer, and the counters its cast ids and timer
 /// ids are made from.
@@ -855,6 +899,12 @@ pub type State {
     /// How many such states the caster has told, which their instance ids are made from
     /// (genesis_prime/game/crowd_control `instance_id`).
     restrictions_told: Int,
+    /// The highest client cast id of the item presses the caster's state took, once one
+    /// has been. The client's id of a cast is its counter's next value, which rises with
+    /// every cast and never resets (`0x140c1e71c`), and a connection cannot press the 2^32
+    /// times that would wrap it, so a press whose id is not above this one is a repeat
+    /// and starts and spends nothing.
+    item_press_watermark: Option(Int),
   )
 }
 
@@ -904,7 +954,28 @@ pub fn new() -> State {
     on_creatures: dict.new(),
     restrictions: dict.new(),
     restrictions_told: 0,
+    item_press_watermark: None,
   )
+}
+
+/// Whether an item press with this client cast id is a repeat: its id is not above the
+/// highest the caster's state took.
+pub fn item_press_refused(
+  cast cast: State,
+  client_cast_id client_cast_id: Int,
+) -> Bool {
+  case cast.item_press_watermark {
+    Some(watermark) -> client_cast_id <= watermark
+    None -> False
+  }
+}
+
+/// The state with the item press's client cast id taken: the watermark rises to it.
+pub fn item_press_recorded(
+  cast cast: State,
+  client_cast_id client_cast_id: Int,
+) -> State {
+  State(..cast, item_press_watermark: Some(client_cast_id))
 }
 
 /// Whether the caster is stealthed: some Stealth row of its casts holds. The client
@@ -1048,8 +1119,6 @@ pub type Unbuilt {
   UnbuiltPlayerTarget(spell4_id: Int)
   /// The spell of an item that is used, by Spell4 id.
   UnbuiltItemSpell(spell4_id: Int)
-  /// An item with charges, by Item2 id.
-  UnbuiltItemCharges(item_id: Int)
   /// A prerequisite type the server does not read, in the prerequisite of an item.
   UnreadItemPrerequisite(prerequisite_type: Int)
 }

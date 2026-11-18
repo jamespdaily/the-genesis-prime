@@ -394,8 +394,8 @@ pub type DeleteCharacterItemRow {
 /// `$2`, in one statement. It deletes only while the character is still held by
 /// the login that asks, that is while its `session_epoch` ($3) is still the one
 /// that login was told (load_character.sql), and only when the item is as the
-/// request holds it, at the place `$5` and `$6` with the count `$7`; otherwise it
-/// changes nothing and returns no row. The account's id is in the statement, as
+/// request holds it, at the place `$5` and `$6` with the count `$7` and the charges `$8`;
+/// otherwise it changes nothing and returns no row. The account's id is in the statement, as
 /// for a load. The row it returns is the item it deleted.
 ///
 /// The statement runs after lock_character_for_save.sql in one transaction, so it
@@ -414,6 +414,7 @@ pub fn delete_character_item(
   item_location: Int,
   item_bag_index: Int,
   item_stack_count: Int,
+  item_charges: Int,
 ) -> Result(pog.Returned(DeleteCharacterItemRow), pog.QueryError) {
   let decoder = {
     use item_guid <- decode.field(0, decode.int)
@@ -424,8 +425,8 @@ pub fn delete_character_item(
 -- `$2`, in one statement. It deletes only while the character is still held by
 -- the login that asks, that is while its `session_epoch` ($3) is still the one
 -- that login was told (load_character.sql), and only when the item is as the
--- request holds it, at the place `$5` and `$6` with the count `$7`; otherwise it
--- changes nothing and returns no row. The account's id is in the statement, as
+-- request holds it, at the place `$5` and `$6` with the count `$7` and the charges `$8`;
+-- otherwise it changes nothing and returns no row. The account's id is in the statement, as
 -- for a load. The row it returns is the item it deleted.
 --
 -- The statement runs after lock_character_for_save.sql in one transaction, so it
@@ -441,6 +442,7 @@ where character.character_id = item.character_id
   and item.location = $5
   and item.bag_index = $6
   and item.stack_count = $7
+  and item.charges = $8
 returning item.item_guid;
 "
   |> pog.query
@@ -451,6 +453,7 @@ returning item.item_guid;
   |> pog.parameter(pog.int(item_location))
   |> pog.parameter(pog.int(item_bag_index))
   |> pog.parameter(pog.int(item_stack_count))
+  |> pog.parameter(pog.int(item_charges))
   |> pog.returning(decoder)
   |> pog.execute(db)
 }
@@ -1879,6 +1882,90 @@ order by gone.item_guid;
   |> pog.parameter(pog.array(fn(value) { pog.int(value) }, arg_8))
   |> pog.parameter(pog.array(fn(value) { pog.int(value) }, arg_9))
   |> pog.parameter(pog.array(fn(value) { pog.int(value) }, arg_10))
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
+/// A row you get from running the `spend_character_item` query
+/// defined in `./src/genesis_prime/store/sql/spend_character_item.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type SpendCharacterItemRow {
+  SpendCharacterItemRow(item_guid: Int)
+}
+
+/// Lowers the stack count and the charges of the item `$4` of the character `$1` of
+/// the account `$2` to `$8` and `$9`, in one statement. It lowers only while the
+/// character is still held by the login that asks, that is while its `session_epoch`
+/// ($3) is still the one that login was told (load_character.sql), and only when the
+/// item is as the request holds it, at the place `$5` and `$6` with the count `$7` and
+/// the charges `$10`; otherwise it changes nothing and returns no row. The account's id
+/// is in the statement, as for a load. The row it returns is the item it lowered.
+///
+/// The statement runs after lock_character_for_save.sql in one transaction, so it
+/// waits for a login that is raising the epoch and then reads the epoch that login
+/// stored.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn spend_character_item(
+  db: pog.Connection,
+  item_character_id: Int,
+  character_account_id: Int,
+  character_session_epoch: Int,
+  item_guid: Int,
+  item_location: Int,
+  item_bag_index: Int,
+  item_stack_count: Int,
+  arg_8: Int,
+  charges: Int,
+  item_charges: Int,
+) -> Result(pog.Returned(SpendCharacterItemRow), pog.QueryError) {
+  let decoder = {
+    use item_guid <- decode.field(0, decode.int)
+    decode.success(SpendCharacterItemRow(item_guid:))
+  }
+
+  "-- Lowers the stack count and the charges of the item `$4` of the character `$1` of
+-- the account `$2` to `$8` and `$9`, in one statement. It lowers only while the
+-- character is still held by the login that asks, that is while its `session_epoch`
+-- ($3) is still the one that login was told (load_character.sql), and only when the
+-- item is as the request holds it, at the place `$5` and `$6` with the count `$7` and
+-- the charges `$10`; otherwise it changes nothing and returns no row. The account's id
+-- is in the statement, as for a load. The row it returns is the item it lowered.
+--
+-- The statement runs after lock_character_for_save.sql in one transaction, so it
+-- waits for a login that is raising the epoch and then reads the epoch that login
+-- stored.
+update character_item as item
+set stack_count = $8,
+    charges = $9
+from character
+where character.character_id = item.character_id
+  and item.item_guid = $4
+  and item.character_id = $1
+  and character.account_id = $2
+  and character.session_epoch = $3
+  and item.location = $5
+  and item.bag_index = $6
+  and item.stack_count = $7
+  and item.charges = $10
+returning item.item_guid;
+"
+  |> pog.query
+  |> pog.parameter(pog.int(item_character_id))
+  |> pog.parameter(pog.int(character_account_id))
+  |> pog.parameter(pog.int(character_session_epoch))
+  |> pog.parameter(pog.int(item_guid))
+  |> pog.parameter(pog.int(item_location))
+  |> pog.parameter(pog.int(item_bag_index))
+  |> pog.parameter(pog.int(item_stack_count))
+  |> pog.parameter(pog.int(arg_8))
+  |> pog.parameter(pog.int(charges))
+  |> pog.parameter(pog.int(item_charges))
   |> pog.returning(decoder)
   |> pog.execute(db)
 }

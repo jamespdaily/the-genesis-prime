@@ -165,7 +165,7 @@ pub fn the_costume_key_set_and_action_set_are_the_clients_start_values_and_every
       as "opcode.0x25e.safe_body: below 4; the entry's bar is set 0"
     assert state.held_items == []
       as "opcode.0x25e.safe_body: no items, the server sends them by 0x111"
-    assert state.reputations == ReputationList(field_1: 0, reputations: [])
+    assert state.reputations == ReputationList(unread_1: 0, reputations: [])
       as "opcode.0x25e.safe_body: no reputations"
     assert state.pets == [] as "opcode.0x25e.safe_body: no pets"
     assert state.unlocked_amps == []
@@ -188,7 +188,7 @@ pub fn the_costume_key_set_and_action_set_are_the_clients_start_values_and_every
     assert state.pvp_flag_time_left_ms == 0
     assert state.gear_score == 0
     assert state.is_pvp_server == 0
-    assert state.field_23 == 0
+    assert state.matching_map_mask == 0
       as "opcode.0x25e.safe_body: every other value is 0"
   })
 }

@@ -6,10 +6,13 @@
 //// and that the committed files are the generated ones. Every case is planted from the generated files, so
 //// no expected text is written here.
 
+import genesis_prime/message/cast_result
+import genesis_prime/message/item_charges_changed.{ItemChargesChanged}
 import genesis_prime/message_generator.{
   type GeneratedFile, Edited, GeneratedFile, Missing, Stale,
 }
 import gleam/list
+import gleam/result
 import gleam/string
 import owned_test
 
@@ -136,6 +139,7 @@ pub fn the_schema_generates_one_module_for_each_message_and_record_and_the_clien
       "src/genesis_prime/message/interaction_result.gleam",
       "src/genesis_prime/message/item_action_failed.gleam",
       "src/genesis_prime/message/item_added.gleam",
+      "src/genesis_prime/message/item_charges_changed.gleam",
       "src/genesis_prime/message/item_count_changed.gleam",
       "src/genesis_prime/message/item_delete.gleam",
       "src/genesis_prime/message/item_move.gleam",
@@ -421,4 +425,40 @@ pub fn a_generated_encoder_states_the_width_of_every_field_test() -> Nil {
     as "ReadMessage0003Body 0x1400a9140: the seventh value is 5 bits"
   assert string.contains(text, "bit_stream.read_unsigned(reader, 5)")
     as "the reader states the same width"
+}
+
+/// `opcode.0xca`: the client's reader (0x14008de20) takes the item's guid as a 64-bit value
+/// and then 32 bits for the charges, so the body is those 96 bits, low byte first, and
+/// nothing else. No recording holds the message.
+pub fn item_charges_changed_reads_in_the_client_order_test() -> Nil {
+  use <- owned_test.run(5000)
+  let body = <<0x0123_4567_89AB_CDEF:64-little, 99:32-little>>
+  assert item_charges_changed.decode(body)
+    == Ok(ItemChargesChanged(item_guid: 0x0123_4567_89AB_CDEF, charges: 99))
+    as "the guid is the first 64 bits and the charges the next 32"
+  assert item_charges_changed.encode(ItemChargesChanged(
+      item_guid: 0x0123_4567_89AB_CDEF,
+      charges: 99,
+    ))
+    == Ok(body)
+    as "the message writes the same bits"
+  assert result.is_error(
+    item_charges_changed.decode(<<
+      0x0123_4567_89AB_CDEF:64-little,
+      99:31-little,
+    >>),
+  )
+    as "a body one bit short is refused"
+}
+
+/// `table_rows -- Spell4CastResult 25`: the result 25 is ItemCharges; the values around it
+/// that the schema names keep their numbers (22 ItemBad, 26 ItemTooHighLevel).
+pub fn cast_result_25_is_item_charges_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert cast_result.from_value(25) == cast_result.ItemCharges
+    as "the value 25 names ItemCharges"
+  assert cast_result.to_value(cast_result.ItemCharges) == 25
+  assert cast_result.from_value(22) == cast_result.ItemBad
+    && cast_result.from_value(26) == cast_result.ItemTooHighLevel
+    as "the named neighbours are unchanged"
 }

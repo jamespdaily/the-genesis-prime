@@ -559,7 +559,11 @@ fn two_places() -> #(vendor_purchase.Purchase, List(HeldItem)) {
 pub fn a_saved_buy_sends_the_new_total_then_the_items_with_reason_vendor_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(purchase, items) = two_places()
-  let made = in_bag(guid: 500, item2_id: 14_838, index: 0, count: 3)
+  let made =
+    HeldItem(
+      ..in_bag(guid: 500, item2_id: 14_838, index: 0, count: 3),
+      charges: 7,
+    )
   let listed = held_back()
   let #(held, held_credits, buyback, effects) =
     vendor_purchase.answered(
@@ -603,6 +607,8 @@ pub fn a_saved_buy_sends_the_new_total_then_the_items_with_reason_vendor_test() 
   assert held_item.item.location == 1
   assert held_item.item.bag_index == 0
   assert held_item.item.stack_count == 3
+  assert held_item.item.charges == 7
+    as "opcode.0x111.charges: the new stack's 0x111 carries the charges the store gave it"
 }
 
 pub fn a_buy_the_store_did_not_save_sends_db_failure_and_keeps_credits_and_items_test() -> Nil {
@@ -1365,7 +1371,7 @@ pub fn buying_a_random_stat_item_rolls_it_and_sends_the_word_test() -> Nil {
   let sent = added_item(effects:).held_item.item
   assert sent.random_stats == 0x0100000000050401
     as "the 0x111 is sent with the word"
-  assert sent.list_a == [] as "the item's list is empty"
+  assert sent.stat_multipliers == [] as "the item's list is empty"
 }
 
 /// An item with no random stat entry is made with no roll: Item2 1375's ItemStat 4 has one

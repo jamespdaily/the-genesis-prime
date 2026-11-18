@@ -102,7 +102,7 @@ pub fn frame(
         active_action_set: 0,
         bonus_amp_power: 0,
         bonus_ability_tier_points: 0,
-        reputations: ReputationList(field_1: 0, reputations: []),
+        reputations: ReputationList(unread_1: 0, reputations: []),
         pets: [],
         input_key_set: 3,
         bind_point: 0,
@@ -113,7 +113,7 @@ pub fn frame(
         supply_satchel_counts: <<0:size(8192)>>,
         gear_score: 0,
         is_pvp_server: 0,
-        field_23: 0,
+        matching_map_mask: 0,
         character_entitlements: [],
       ),
     )

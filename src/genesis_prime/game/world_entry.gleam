@@ -1552,6 +1552,7 @@ fn items_sent(items items: List(store.HeldItem)) -> List(Effect) {
       bag_index: item.bag_index,
       stack_count: item.stack_count,
       random_stats: item.random_stats,
+      charges: item.charges,
     )
   })
 }
@@ -1609,6 +1610,7 @@ fn held_item(
   bag_index bag_index: Int,
   stack_count stack_count: Int,
   random_stats random_stats: Int,
+  charges charges: Int,
 ) -> Effect {
   Send(inventory.item_added_frame(
     item_guid:,
@@ -1617,6 +1619,7 @@ fn held_item(
     bag_index:,
     stack_count:,
     random_stats:,
+    charges:,
     reason: ability_book_frame.held_from_the_start,
   ))
 }

@@ -7,7 +7,7 @@
 ////   second place other than {300, 0xffffffff}, spell not type 6    ─▶ NotSentByClient
 ////   Item2.prerequisiteId (UseItem) fails                           ─▶ 17
 ////                                      is of a type not read       ─▶ UnreadPrerequisite
-////   Item2.maxCharges above 0 (25 in the client)                    ─▶ Charged
+////   effective maxCharges above 0 and the item holds none           ─▶ 25
 ////   player level below Item2.requiredLevel                         ─▶ 26
 ////   Item2.quest2IdActivationRequired set:
 ////     objective -1 (the quest): state 2 or 3                       ─▶ 29
@@ -31,18 +31,21 @@
 ////   level and quest checks) except that the second place comes first: a body the client
 ////   never sends ends the connection whatever else would refuse it.
 ////
-//// Gaps, each reported as missing: the item's charges (result 25, StartItemUseCast's first
-//// check; the server holds none, so an item with `maxCharges` above 0 is refused as
-//// not built; #333), and the objective check of a
-//// castMethod 3 quest item, whose unit is read from the quest record's word 0x18 (#334).
+//// - **The charges** are those the server holds for the item (`HeldItem.charges`); the
+////   client's maxCharges is the row's own, or a proxy row's source row's
+////   (`item_property.max_charges`, `Item2.maxCharges.proxy`).
+////
+//// Gap, reported as missing: the objective check of a castMethod 3 quest item, whose unit
+//// is read from the quest record's word 0x18 (#334).
 
+import genesis_prime/game/item_property
 import genesis_prime/game/prerequisite
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/shortcut_spell
 import genesis_prime/game/target_mechanic
 import genesis_prime/message/cast_result.{
-  type CastResult, ItemObjectiveComplete, ItemQuestRequirementsNotMet,
-  ItemTooHighLevel, SpellPreRequisites,
+  type CastResult, ItemCharges, ItemObjectiveComplete,
+  ItemQuestRequirementsNotMet, ItemTooHighLevel, SpellPreRequisites,
 }
 import genesis_prime/message/item_place.{type ItemPlace, ItemPlace}
 import genesis_prime/table/id.{
@@ -65,8 +68,6 @@ pub type Refusal {
   NotSentByClient
   /// The client refuses the use with this result, naming the item's spell.
   Declined(spell4_id: Spell4Id, result: CastResult)
-  /// The item has charges (Item2.maxCharges above 0), which the server does not hold.
-  Charged(spell4_id: Spell4Id, max_charges: Int)
   /// The item's prerequisite is of a type the server does not read.
   UnreadPrerequisite(spell4_id: Spell4Id, prerequisite_type: Int)
 }
@@ -79,12 +80,14 @@ const no_second_item = ItemPlace(location: 300, bag_index: 0xffffffff)
 /// one of the Caster kind's four numbers, so the kind cannot tell an item on item.
 const item_on_item = 6
 
-/// The spell the item casts when the client's checks let the player use it. The unit
+/// The spell the item casts when the client's checks let the player use it; `charges` are
+/// the charges the player's item has left. The unit
 /// tested for a checklist objective is the checklist index of the player's target, or
 /// `None` when the target is no unit that has one (nothing is tested then).
 pub fn check(
   tables tables: table_store.Tables,
   item item: Item2Id,
+  charges charges: Int,
   player_level player_level: Int,
   quests quests: QuestLog,
   second_item second_item: ItemPlace,
@@ -118,8 +121,11 @@ pub fn check(
           Error(UnreadPrerequisite(spell4_id:, prerequisite_type:))
       }
   })
-  use Nil <- result.try(case row.max_charges > 0 {
-    True -> Error(Charged(spell4_id:, max_charges: row.max_charges))
+  let assert Ok(max_charges) =
+    item_property.max_charges(tables:, item2_id: item.value)
+    as "the item's row is in the tables, and so is the row a proxy item takes its charges from"
+  use Nil <- result.try(case max_charges > 0 && charges == 0 {
+    True -> Error(declined(ItemCharges))
     False -> Ok(Nil)
   })
   use Nil <- result.try(case player_level < row.required_level {

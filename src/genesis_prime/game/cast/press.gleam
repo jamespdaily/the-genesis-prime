@@ -89,9 +89,9 @@ import genesis_prime/game/cast/state.{
   Holding, ItemsIssue, Log, ModifierEnd, ModifierStart, NoInteraction, NodesEnd,
   NotBuilt, Passive, PrerequisitesIssue, ProcDue, Refuse, RepeatHeld, Resolution,
   RestrictionEnd, Shortcut, SpellsIssue, Stage, StartChild, StartHeld, Starts,
-  State, StateEnd, TargetModifierStart, Tick, UnbuiltItemCharges,
-  UnbuiltItemSpell, UnbuiltPlayerTarget, UnbuiltShortcut, UnbuiltSpell, Unheld,
-  Unpaid, UnreadItemPrerequisite, UnreadLinkPrerequisite, UnreadPrerequisite,
+  State, StateEnd, TargetModifierStart, Tick, UnbuiltItemSpell,
+  UnbuiltPlayerTarget, UnbuiltShortcut, UnbuiltSpell, Unheld, Unpaid,
+  UnreadItemPrerequisite, UnreadLinkPrerequisite, UnreadPrerequisite,
   UnreadShortcutPick, UnreadSpend, UntilRemovedIssue, WindowEnd,
 } as cast_state
 import genesis_prime/game/cast/tick as cast_tick
@@ -540,9 +540,8 @@ pub fn not_built_refusal(
   let what = case key {
     UnbuiltShortcut(..) | UnreadShortcutPick(..) | UnbuiltPlayerTarget(..) ->
       "the shortcut cast of Spell4 "
-    UnbuiltItemSpell(..)
-    | UnbuiltItemCharges(..)
-    | UnreadItemPrerequisite(..) -> "the use of an item whose spell is Spell4 "
+    UnbuiltItemSpell(..) | UnreadItemPrerequisite(..) ->
+      "the use of an item whose spell is Spell4 "
     UnbuiltSpell(..)
     | UnreadPrerequisite(..)
     | UnreadLinkPrerequisite(..)

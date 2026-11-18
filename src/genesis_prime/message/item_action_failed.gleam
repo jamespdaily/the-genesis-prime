@@ -20,7 +20,7 @@ pub type ItemActionFailed {
   ItemActionFailed(
     /// Safe by `opcode.0x56a`: the client's code gives this field no use the
     /// server needs, and that fact shows its value is safe.
-    item_guid: Int,
+    unread_1: Int,
     code: Int,
   )
 }
@@ -29,7 +29,7 @@ pub type ItemActionFailed {
 /// written.
 pub fn encode(message: ItemActionFailed) -> Result(BitArray, EncodeError) {
   bit_stream.new_writer()
-  |> bit_stream.write_unsigned("item_guid", message.item_guid, 64)
+  |> bit_stream.write_unsigned("unread_1", message.unread_1, 64)
   |> bit_stream.write_unsigned("code", message.code, 32)
   |> bit_stream.finish
 }
@@ -37,8 +37,8 @@ pub fn encode(message: ItemActionFailed) -> Result(BitArray, EncodeError) {
 /// The message read from the bytes of a body, or why they are not one.
 pub fn decode(body: BitArray) -> Result(ItemActionFailed, DecodeError) {
   let reader = bit_stream.new_reader(body)
-  use #(item_guid, reader) <- result.try(bit_stream.read_unsigned(reader, 64))
+  use #(unread_1, reader) <- result.try(bit_stream.read_unsigned(reader, 64))
   use #(code, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   use Nil <- result.try(bit_stream.finish_reading(reader))
-  Ok(ItemActionFailed(item_guid:, code:))
+  Ok(ItemActionFailed(unread_1:, code:))
 }
