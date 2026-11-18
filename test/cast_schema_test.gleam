@@ -1,11 +1,21 @@
-//// Tests of the cast messages: the item use body, and the names and evidence of the cast results.
+//// Tests of the cast messages: the fact that shows each sent default safe, the
+//// item use body, and the names and evidence of the cast results.
+////
+//// Each named scalar field the server sends a default for keeps `safe_by`, the
+//// fact whose statement gives the value sent (`code_rule/schema_evidence` holds
+//// the rule for the whole schema; this holds that the key points to the fact
+//// that supports the default). The element fields of the lists the server sends
+//// empty (initial positions, telegraph positions, missiles, hit entries) carry
+//// no `safe_by`: a list with no entries sends none of their values, and each
+//// names the fact of its layout with `named_by`, so there is no sent default
+//// for a fact to support.
 
 import fact_file
 import genesis_prime/message/cast_result
 import genesis_prime/message/client_message
 import genesis_prime/message/item_place.{ItemPlace}
 import genesis_prime/message/item_use
-import genesis_prime/message_schema
+import genesis_prime/message_schema.{type Field}
 import gleam/list
 import gleam/option.{Some}
 import gleam/string
@@ -13,6 +23,72 @@ import owned_test
 import simplifile
 
 const schema_path = "src/genesis_prime/message/schema.toml"
+
+/// The named fields of the cast messages the server sends a default for, by the
+/// owner's name, with the fact each names and the words of that fact's
+/// statement that give the value sent.
+const sent_defaults = [
+  #(
+    "spell_started",
+    "caster_item_level",
+    "opcode.0x7ff.caster_item_level",
+    "Safe value: 0",
+  ),
+  #("spell_started", "own_cast", "opcode.0x7ff.own_cast", "Safe value: 1"),
+  #(
+    "spell_started",
+    "creature_activate",
+    "opcode.0x7ff.activate",
+    "Safe value for ability casts: 0",
+  ),
+  #(
+    "spell_effect_info",
+    "lifetime_ms",
+    "opcode.0x7f4.effect_time",
+    "Safe value: 0",
+  ),
+  #("spell_effect_bit", "unread_2", "opcode.0x7f4.effect_bit", "Safe value: 0"),
+  #("spell_failed", "cut_visuals", "opcode.0x7f9", "Safe value for the bit: 0"),
+  #("spell_miss", "time_ms", "opcode.0x7fb.time", "Safe value: 0"),
+]
+
+fn fields_of(owner owner: String) -> List(Field) {
+  let assert Ok(text) = simplifile.read(schema_path)
+    as "the schema file is read from the project folder"
+  let assert Ok(schema) = message_schema.parse(text) as "the real schema parses"
+  case list.find(schema.messages, fn(message) { message.name == owner }) {
+    Ok(message) -> message.fields
+    Error(Nil) -> {
+      let assert Ok(record) =
+        list.find(schema.records, fn(record) { record.name == owner })
+        as { "the schema holds no message or record named " <> owner }
+      record.fields
+    }
+  }
+}
+
+pub fn each_default_the_cast_messages_send_names_the_fact_that_shows_it_safe_test() -> Nil {
+  use <- owned_test.run(10_000)
+  list.each(sent_defaults, fn(row) {
+    let #(owner, field, key, safe_words) = row
+    let assert Ok(found) =
+      list.find(fields_of(owner:), fn(candidate) { candidate.name == field })
+      as { owner <> " holds no field " <> field }
+    assert found.safe_by == Some(key)
+      as {
+        owner
+        <> "."
+        <> field
+        <> " names "
+        <> key
+        <> " as what shows its value safe"
+      }
+    let assert Ok(statement) = fact_file.statement(record: key)
+      as { key <> " is a record of the fact file" }
+    assert string.contains(statement, safe_words)
+      as { key <> " states the safe value: " <> safe_words }
+  })
+}
 
 /// The bytes are the client's writer's output for the body, least significant
 /// bit first (WriteMessage0943Body `0x1400937b0`, `opcode.0x943`): the cast id

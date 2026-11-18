@@ -2443,11 +2443,11 @@ fields = [
 [[record]]
 name = "spell_miss"
 evidence = "opcode.0x7fb"
-summary = "one missed target of a cast: the unit id, the reason (0 is Dodge, which the client shows as Deflect) and a time in milliseconds the client adds to the miss's visual"
+summary = "one missed target of a cast: the unit id, the reason (0 is Dodge, which the client shows as Deflect) and a word in milliseconds the client adds to the miss's visual; whether it is a delay or a clock time is open"
 fields = [
   { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x7fb", named_by = "opcode.0x7fb" },
   { name = "reason", kind = "unsigned", bits = 4, evidence = "opcode.0x7fb", named_by = "opcode.0x7fb", values_type = "MissReason", values = [ { value = 0, name = "dodge", evidence = "opcode.0x7fb" } ] },
-  { name = "time_ms", kind = "unsigned", bits = 32, evidence = "opcode.0x7fb", named_by = "opcode.0x7fb.time", safe_by = "opcode.0x7fb.time" },
+  { name = "time_ms", kind = "unsigned", bits = 32, evidence = "opcode.0x7fb", open = "Is the word the client adds to the miss's visual offset a delay or a clock time? It never tests it; 0 adds nothing (opcode.0x7fb.time)", safe_by = "opcode.0x7fb.time" },
 ]
 
 [[message]]
