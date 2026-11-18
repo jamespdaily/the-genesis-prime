@@ -81,8 +81,9 @@ import gleam/result
 /// movement? Candidate: a unit's mode changes along a kind 3 flight.) (layout
 /// so far in the fact file's `0x140c1f070`); 29 (What makes the server send
 /// kind 29 (mode default) in a message about a unit's movement? Candidate: a
-/// unit's mode is 0 on every update, the same as kind 27 of 0.) (layout so far
-/// in the fact file's `0x1407168f0`).
+/// unit's mode is 0 on every update, the same as kind 27 of 0. The wire carries
+/// one bit after the tag (0x140c1f070 entry 29); the handler 0x1407168f0 takes
+/// no data.) (layout so far in the fact file's `0x140c1f070`).
 pub type RelayedMovement {
   /// Kind 0, read by `movement_time`. The fact file's `movement_command.kind_0`
   /// names the kind.

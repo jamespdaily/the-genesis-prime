@@ -1529,7 +1529,7 @@ open_tags = [
   { tag = 23, question = "What makes the server send kind 23 (timed movement scale keys) in a message about a unit's movement? Candidate: a unit's growing or shrinking is keyed in time.", named_by = "movement_command.kind_22" },
   { tag = 25, question = "What makes the server send kind 25 (timed state flags) in a message about a unit's movement? Candidate: a unit's state flags are keyed in time, as a kind 3 flight does.", named_by = "movement_command.kind_25" },
   { tag = 28, question = "What makes the server send kind 28 (timed movement modes) in a message about a unit's movement? Candidate: a unit's mode changes along a kind 3 flight.", named_by = "0x140c1f070" },
-  { tag = 29, question = "What makes the server send kind 29 (mode default) in a message about a unit's movement? Candidate: a unit's mode is 0 on every update, the same as kind 27 of 0.", named_by = "0x1407168f0" },
+  { tag = 29, question = "What makes the server send kind 29 (mode default) in a message about a unit's movement? Candidate: a unit's mode is 0 on every update, the same as kind 27 of 0. The wire carries one bit after the tag (0x140c1f070 entry 29); the handler 0x1407168f0 takes no data.", named_by = "0x140c1f070" },
 ]
 variants = [
   { tag = 0, name = "time", record = "movement_time", named_by = "movement_command.kind_0" },
@@ -1553,42 +1553,42 @@ variants = [
 [[union]]
 name = "start_movement"
 evidence = "0x140c1f070"
-summary = "one movement command of a new unit that the server writes: the kind in 5 bits picks the layout of its data, and the server writes only kind 2, the position, and kind 14, the rotation; the client's reader takes all 30 kinds (movement_command)"
+summary = "one movement command of a new unit that the server writes: the kind in 5 bits picks the layout of its data, and the server writes only kind 2, the position, and kind 14, the rotation; kinds 0, 1, 3, 4, 8, 10, 11, 13, 18, 19, 21, 24, 26 and 27 share the layouts of the relayed movement commands, and the client's reader takes all 30 kinds (movement_command)"
 tag_bits = 5
 refused_from = 30
 open_tags = [
-  { tag = 0, question = "What makes the server send kind 0 (time) in a new unit's command list? Candidate: a new unit's later commands apply at a server time.", named_by = "movement_command.kind_0" },
-  { tag = 1, question = "What makes the server send kind 1 (platform) in a new unit's command list? Candidate: a new unit stands on another unit.", named_by = "opcode.0x637" },
-  { tag = 3, question = "What makes the server send kind 3 (timed path) in a new unit's command list? Candidate: a new unit follows a path timed in server time.", named_by = "movement_command.kind_3" },
-  { tag = 4, question = "What makes the server send kind 4 (path) in a new unit's command list? Candidate: a new unit follows a path of points at a speed.", named_by = "movement_command.kind_4" },
   { tag = 5, question = "What makes the server send kind 5 (one authored spline) in a new unit's command list? Candidate: a new unit follows one Spline2 spline, a patrol (a guess).", named_by = "movement_command.kind_5" },
   { tag = 6, question = "What makes the server send kind 6 (a chain of authored splines) in a new unit's command list? Candidate: a new unit flies a chain of Spline2 splines, as a taxi does (a guess).", named_by = "movement_command.kind_6" },
   { tag = 7, question = "What makes the server send kind 7 (a ballistic arc) in a new unit's command list? Candidate: a unit leaps or is thrown along an arc to a point.", named_by = "movement_command.kind_7" },
-  { tag = 8, question = "What makes the server send kind 8 (velocity) in a new unit's command list? Candidate: a new unit has a velocity.", named_by = "movement_command.kind_8" },
   { tag = 9, question = "What makes the server send kind 9 (timed velocity keys) in a new unit's command list? Candidate: a unit's velocity is keyed in time, which kind 10 covers for a path.", named_by = "0x140c1f070" },
-  { tag = 10, question = "What makes the server send kind 10 (velocity default) in a new unit's command list? Candidate: a new unit's velocity follows its position path.", named_by = "movement_command.defaults_with_kind_4_path" },
-  { tag = 11, question = "What makes the server send kind 11 (move asked) in a new unit's command list? Candidate: a new unit has a requested move.", named_by = "movement_command.kind_11" },
   { tag = 12, question = "What makes the server send kind 12 (timed requested-move keys) in a new unit's command list? Candidate: a unit's requested move is keyed in time, which kind 13 covers for a path.", named_by = "0x140c1f070" },
-  { tag = 13, question = "What makes the server send kind 13 (move default) in a new unit's command list? Candidate: a new unit's requested move follows its position path.", named_by = "movement_command.kind_13" },
   { tag = 15, question = "What makes the server send kind 15 (timed rotation keys) in a new unit's command list? Candidate: a unit's rotation is keyed in time, which kinds 14, 18 and 21 cover.", named_by = "0x140c1f070" },
   { tag = 16, question = "What makes the server send kind 16 (rotation along one spline) in a new unit's command list? Candidate: a unit's rotation follows one Spline2 spline, as a pair of kind 5 (a guess).", named_by = "0x140c1f070" },
   { tag = 17, question = "What makes the server send kind 17 (rotation along a chain of splines) in a new unit's command list? Candidate: a unit's rotation follows a chain of Spline2 splines, as a pair of kind 6 (a guess).", named_by = "0x140c1f070" },
-  { tag = 18, question = "What makes the server send kind 18 (face a unit) in a new unit's command list? Candidate: a new unit turns to face another unit.", named_by = "movement_command.kind_18" },
-  { tag = 19, question = "What makes the server send kind 19 (face a point) in a new unit's command list? Candidate: a new unit turns to face a point.", named_by = "movement_command.kind_19" },
   { tag = 20, question = "What makes the server send kind 20 (spin) in a new unit's command list? Candidate: a unit spins, as a whirlwind attack does.", named_by = "movement_command.kind_20" },
-  { tag = 21, question = "What makes the server send kind 21 (rotation default) in a new unit's command list? Candidate: a new unit's rotation follows its position path.", named_by = "movement_command.kind_21" },
   { tag = 22, question = "What makes the server send kind 22 (movement scale) in a new unit's command list? Candidate: a unit grows or shrinks.", named_by = "movement_command.kind_22" },
   { tag = 23, question = "What makes the server send kind 23 (timed movement scale keys) in a new unit's command list? Candidate: a unit's growing or shrinking is keyed in time.", named_by = "movement_command.kind_22" },
-  { tag = 24, question = "What makes the server send kind 24 (state flags) in a new unit's command list? Candidate: a new unit has movement state flags.", named_by = "movement_command.kind_24" },
   { tag = 25, question = "What makes the server send kind 25 (timed state flags) in a new unit's command list? Candidate: a unit's state flags are keyed in time, as a kind 3 flight does.", named_by = "movement_command.kind_25" },
-  { tag = 26, question = "What makes the server send kind 26 (state default) in a new unit's command list? Candidate: a new unit's state flags follow its position path.", named_by = "movement_command.defaults_with_kind_4_path" },
-  { tag = 27, question = "What makes the server send kind 27 (mode) in a new unit's command list? Candidate: a new unit has a movement mode.", named_by = "movement_command.kind_27" },
   { tag = 28, question = "What makes the server send kind 28 (timed movement modes) in a new unit's command list? Candidate: a unit's mode changes along a kind 3 flight.", named_by = "0x140c1f070" },
-  { tag = 29, question = "What makes the server send kind 29 (mode default) in a new unit's command list? Candidate: a unit's mode is 0 on every update, the same as kind 27 of 0.", named_by = "0x1407168f0" },
+  { tag = 29, question = "What makes the server send kind 29 (mode default) in a new unit's command list? Candidate: a unit's mode is 0 on every update, the same as kind 27 of 0. The wire carries one bit after the tag (0x140c1f070 entry 29); the handler 0x1407168f0 takes no data.", named_by = "0x140c1f070" },
 ]
 variants = [
+  { tag = 0, name = "time", record = "movement_time", named_by = "movement_command.kind_0" },
+  { tag = 1, name = "platform", record = "movement_platform", named_by = "opcode.0x637" },
   { tag = 2, name = "position", record = "unit_position_command", named_by = "0x1400ad350" },
+  { tag = 3, name = "timed_path", record = "movement_timed_path", named_by = "movement_command.kind_3" },
+  { tag = 4, name = "path", record = "movement_path", named_by = "movement_command.kind_4" },
+  { tag = 8, name = "velocity", record = "movement_velocity", named_by = "movement_command.kind_8" },
+  { tag = 10, name = "velocity_default", record = "movement_kind_10", named_by = "movement_command.defaults_with_kind_4_path" },
+  { tag = 11, name = "move_asked", record = "movement_move_asked", named_by = "movement_command.kind_11" },
+  { tag = 13, name = "move_default", record = "movement_kind_13", named_by = "movement_command.kind_13" },
   { tag = 14, name = "rotation", record = "movement_rotation", named_by = "0x140715350" },
+  { tag = 18, name = "face_unit", record = "movement_face_unit", named_by = "movement_command.kind_18" },
+  { tag = 19, name = "face_point", record = "movement_face_point", named_by = "movement_command.kind_19" },
+  { tag = 21, name = "rotation_default", record = "movement_kind_21", named_by = "movement_command.kind_21" },
+  { tag = 24, name = "state_flags", record = "movement_state_flags", named_by = "movement_command.kind_24" },
+  { tag = 26, name = "state_default", record = "movement_kind_26", named_by = "movement_command.defaults_with_kind_4_path" },
+  { tag = 27, name = "mode", record = "movement_mode", named_by = "movement_command.kind_27" },
 ]
 
 

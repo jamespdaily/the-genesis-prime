@@ -950,6 +950,19 @@ pub fn the_movement_unions_classify_every_kind_the_client_reads_test() -> Nil {
     as "CLAUDE.md: every movement kind the client reads (tags 0 to 29) is a traced variant, a never tag or an open tag whose named fact exists"
   assert list.filter(unions, list.contains(listed_unions, _)) == []
     as "these unions are classified, so the allow-list has no entry for them"
+  let assert Ok(start) =
+    list.find(schema.unions, fn(union) { union.name == "start_movement" })
+    as "no union named start_movement in the schema"
+  let assert Ok(relayed) =
+    list.find(schema.unions, fn(union) { union.name == "relayed_movement" })
+    as "no union named relayed_movement in the schema"
+  let layout = fn(union: message_schema.Union) {
+    list.map(union.variants, fn(variant) {
+      #(variant.tag, variant.name, variant.record)
+    })
+  }
+  assert layout(start) == layout(relayed)
+    as "0x140c1f070: both messages read the one reader table, so a kind traced in the relayed message is a variant of the new unit's list with the same record"
 }
 
 // ---- the real schema ----
