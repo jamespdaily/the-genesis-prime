@@ -1,9 +1,9 @@
-//// The committed session (`test/wire_recording/2026-11-10-gear-budget-session`)
+//// The committed session (`test/wire_recording/2026-11-18-ability-points-session`)
 //// replayed through the real server tree on a database of its own, with the
 //// recorded seed, times and fixture, and compared byte for byte. Expected
 //// values come from these places.
 //// - The recordings: a live login of the real client through the STS, auth and
-////   game servers, played into the world with a level-3 Veteran character
+////   game servers, played into the world with a level-3 Medic character
 ////   (the playing-live skill's `session.sh`, with no person), recorded by the
 ////   server as wire recordings of the bytes, times, seeds and answers. The
 ////   client's own movement messages (0x0637, 0x063A, 0x00D5, 0x063B and
@@ -14,8 +14,10 @@
 ////   for each message the game rule took and did not handle (opcode.0x38c: the
 ////   world messages inside 0x038C are logged under their own id), and one for
 ////   each STS request the STS rule has no handler for (`/Auth/PageVerifiedIps`).
-//// - The rows the store answered: the account `genesis` and two characters,
-////   `Tess Renamed` (id 1, level 3) and `Grozim Vroc` (id 13, level 3).
+//// - The rows the store answered: the account `genesis` and its eight
+////   characters, the first of them `Grozim Vroc` (id 13, level 3, class 4 the
+////   Medic, race 13, faction 166), the character the client played (verdict.txt:
+////   strName = 'Grozim Vroc').
 //// - The character list (0x0117) carries the FILETIME of the answer that made
 ////   it (character_select.list_effects), so a replay with another time for that
 ////   input writes other bytes.
@@ -141,8 +143,8 @@ pub fn the_committed_session_replays_to_its_recorded_bytes_with_the_recorded_see
   let assert Ok(fixture) = simplifile.read(session.fixture)
     as "the fixture reads"
   assert string.contains(fixture, "'genesis'")
-    && string.contains(fixture, "'Tess Renamed'")
     && string.contains(fixture, "'Grozim Vroc'")
+    && string.contains(fixture, "'Faniana Sagewalk'")
     as "the rows the store answered the live session with"
   let #(result, _logged) =
     support.replay_tree(folder: support.committed_session)
