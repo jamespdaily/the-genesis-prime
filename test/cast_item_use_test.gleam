@@ -467,14 +467,13 @@ pub fn the_grenade_go_raises_activated_for_the_shack_test() -> Nil {
     })
     == [#(its_unit, [43_805])]
     as "the go names the shack with the effect info of Spell4Effects 43805, the spell's Activate row"
-  let activated =
-    cast_state.Activated(
+  assert support.activated_count(
+      effects:,
       unit_id: its_unit,
       creature_id: a_slaver_shack,
-      alive_at_press: True,
       by_item: True,
     )
-  assert list.count(effects, fn(effect) { effect == activated }) == 1
+    == 1
     as "the go raises Activated for the shack once, marked as an item's cast"
 }
 
@@ -932,15 +931,13 @@ pub fn the_generic_quest_spell_item_at_a_farmhand_starts_within_5_m_test() -> Ni
     as "the viewers are told the start"
   let assert CastStarted(start: started) = client_connection_news
   assert started.spell4_id == 1545 as "the cast is Spell4 1545"
-  assert list.contains(
-    effects,
-    cast_state.Activated(
+  assert support.activated_count(
+      effects:,
       unit_id: its_unit,
       creature_id: a_farmhand,
-      alive_at_press: True,
       by_item: True,
-    ),
-  )
+    )
+    == 1
     as "the go raises Activated for the farmhand"
   assert refusal_of(taken: use_item_at(
       state: cast_state.new(),

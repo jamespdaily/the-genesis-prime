@@ -3106,7 +3106,7 @@ pub fn a_spellslingers_quick_draw_goes_in_five_phases_and_its_charged_shot_is_he
     ]
     as "the release casts the row at level 1, 34722 (Spell4Thresholds 123), then 0x814 closes the threshold and the base cast ends with its 0x7fe (cast.charge_release_base)"
   let #(seen, _) =
-    game_client.read_kept(game: second, have: second_have, count: 7)
+    game_client.read_kept(game: second, have: second_have, count: 6)
   assert cast_support.cast_lines(frames: seen)
     == [
       "started k1 34718 root 34718 parent 0",
@@ -3116,7 +3116,7 @@ pub fn a_spellslingers_quick_draw_goes_in_five_phases_and_its_charged_shot_is_he
       "finished k3",
       "finished k1",
     ]
-    as "cast.stage_root_parent: a player in sight reads the charge (seven messages: the 0x811 of the lasting row's node, which the lines leave out, comes before its finish), then the stage with root and parent 34718, and no go for the base cast"
+    as "cast.stage_root_parent: a player in sight reads the charge, then the stage with root and parent 34718, and no go for the base cast"
   game_client.close(game: first)
   game_client.close(game: second)
   login_support.stop(started)
@@ -8690,8 +8690,8 @@ fn frames_of_cast(
 /// sight of a second player and, as the client does 2000 ms after the rise, asks for the
 /// fanfare of level 4 with 0x07A5: it is answered with the start and the go of Spell4 77409,
 /// Level Up tier 3 (`Spell4.tierIndex.level_up`), which lists its own unit with the tier's one
-/// effect row 202345, with no 0x07FD (that answers a press), and both players read the 0x0811
-/// and the 0x07FE of that cast 5000 ms after the go, the effect's life (`spell.level_up.cast`).
+/// effect row 202345, with no 0x07FD (that answers a press), and both players read the 0x07FE
+/// of that cast 5000 ms after the go, the effect's life (`spell.level_up.cast`).
 /// A Replay of level 2 is answered with Spell4 77398, and a level above the player's ends the
 /// connection, which the second player reads as a leave. The full-screen text, the announcer's
 /// voice and the "Level Up!" box are the client's own drawing and are not observable here. The
@@ -8805,13 +8805,13 @@ pub fn a_level_ups_0x07a5_is_answered_with_the_level_up_cast_and_a_player_in_sig
     game_client.read_until(game: first, have: first_have, found: fn(frames) {
       list.contains(frames_of_cast(frames:, cast_id:), 0x07FE)
     })
-  assert frames_of_cast(frames: first_end, cast_id:) == [0x0811, 0x07FE]
-    as "spell.level_up.cast: the node's end and then the finish, and nothing else of the cast"
+  assert frames_of_cast(frames: first_end, cast_id:) == [0x07FE]
+    as "spell.level_up.cast: the finish, and nothing else of the cast"
   let #(second_end, second_have) =
     game_client.read_until(game: second, have: second_have, found: fn(frames) {
       list.contains(frames_of_cast(frames:, cast_id:), 0x07FE)
     })
-  assert frames_of_cast(frames: second_end, cast_id:) == [0x0811, 0x07FE]
+  assert frames_of_cast(frames: second_end, cast_id:) == [0x07FE]
     as "a player in sight reads the same end"
   // A Replay of level 2 is answered with the tier of level 2.
   game_client.replay_level_up(game: first, level: 2)

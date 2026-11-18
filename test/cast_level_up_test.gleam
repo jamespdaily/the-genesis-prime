@@ -4,11 +4,11 @@
 //// - `opcode.0x7ff`, `opcode.0x7f4` and `opcode.0x7fe`: the start names the Spell4 as spell and
 ////   root, no parent, and the caster as its own primary target; a go lists the caster in a
 ////   target info with the effect info of the row and the fourth value 0, which leaves the
-////   lifetime to the client; the cast is finished by 0x811 and 0x7fe.
+////   lifetime to the client; the cast is finished by 0x7fe.
 //// - `spell.level_up.cast`: the answer is a full cast with no 0x7fd (that answers a press), and
-////   its 0x811 and 0x7fe come when the effect's life is over, 5000 ms after the go: a finish at
-////   once would destroy the node and with it the effect (`cast.target_node_end`). The recorded
-////   server's answer has the same order, as a lead.
+////   its 0x7fe comes when the effect's life is over, 5000 ms after the go (Spell4Effects
+////   durationTime): a finish at once would destroy the node and with it the effect
+////   (`cast.target_node_end`).
 //// - `Spell4StackGroup 2` (stackCap 0): two live casts of the spell coexist, so the second
 ////   cast's go ends nothing of the first.
 //// - `Spell4.tierIndex.level_up`: global cooldown kind 3 starts none, the Spell4 ids of the
@@ -26,7 +26,6 @@ import genesis_prime/message/spell_effect_info.{SpellEffectInfo}
 import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started
-import genesis_prime/message/spell_targets_removed
 import genesis_prime/step.{ConnectionId}
 import gleam/dict
 import gleam/int
@@ -151,22 +150,11 @@ pub fn a_fanfare_cast_starts_goes_at_once_and_ends_after_the_effects_life_with_n
       }
     let assert [#(timer, 1)] = support.started_timers(effects: early)
     let #(state, ended) = support.fired(state:, timer:, at: 6000)
-    assert support.ids(frames: support.writes(effects: ended))
-      == [0x0811, 0x07FE]
-      as { name <> "the node's end, then the finish" }
-    let assert [removed] =
-      list.map(
-        support.frames_of(
-          message_id: spell_targets_removed.message_id,
-          effects: ended,
-        ),
-        fn(frame) {
-          let assert Ok(removed) = spell_targets_removed.decode(frame.body)
-          removed
-        },
-      )
-    assert removed.cast_id == start.cast_id && removed.unit_ids == [caster_unit]
-      as { name <> "0x811 {cast, the caster}" }
+    assert support.ids(frames: support.writes(effects: ended)) == [0x07FE]
+      as {
+        name
+        <> "the finish alone: it destroys every node of the cast (cast.target_node_end)"
+      }
     assert support.finished_ids(support.writes(effects: ended))
       == [start.cast_id]
       as { name <> "0x7fe of the cast" }
@@ -202,18 +190,17 @@ pub fn two_fanfares_in_one_second_are_two_casts_that_end_on_their_own_timers_tes
       support.fired(state:, timer: first_timer, at: 6000)
     let #(state, second_ended) =
       support.fired(state:, timer: second_timer, at: 6000 + gap)
-    assert support.removed_targets(support.writes(effects: first_ended))
-      == [#(first_start.cast_id, [caster_unit])]
-      as { name <> "the first's 0x811 comes 5000 ms after its go" }
     assert support.finished_ids(support.writes(effects: first_ended))
       == [first_start.cast_id]
-      as { name <> "and only its own 0x7fe" }
-    assert support.removed_targets(support.writes(effects: second_ended))
-      == [#(second_start.cast_id, [caster_unit])]
-      as { name <> "the second's 0x811 comes 5000 ms after its own go" }
+      as {
+        name <> "the first's 0x7fe comes 5000 ms after its go, its own only"
+      }
     assert support.finished_ids(support.writes(effects: second_ended))
       == [second_start.cast_id]
-      as { name <> "and only its own 0x7fe" }
+      as {
+        name
+        <> "the second's 0x7fe comes 5000 ms after its own go, its own only"
+      }
     assert state.casts == dict.new() && state.lingering == dict.new()
       as { name <> "both casts are over" }
   })

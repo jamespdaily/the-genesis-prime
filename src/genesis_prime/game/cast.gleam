@@ -93,25 +93,26 @@ import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{
   type ActivationStart, type Aimed, type AimedPress, type Applied, type Caster,
   type Effect, type Fact, type HeldProc, type Holder, type Interaction,
-  type ItemAtPlace, type ItemPress, type Listed, type Live, type Message,
-  type Paid, type Reached, type Refusal, type Resolution, type Restricting,
-  type Role, type State, type Struck, type TargetVerdict, type TickAsked,
-  type Used, type UsedUnit, Accept, Activated, Activating, Activation,
-  ActivationStart, Aimed, AimedPress, AnswerSucceeded, Answered, AwaitingAnswer,
-  Base, Cancelled, CannotTell, CastClears, CasterChangeEnds, CasterChangeStarts,
-  ChargeLevel, Child, CooldownEnds, CooldownKept, CooldownModifierEnds,
-  CooldownModifierStarts, Deflected, Finish, ForcedMoveStart, Frames, GateFails,
-  Go, GoAsked, Healing, Held, HeldProc, Hit, Hold, HoldForCast, Holding, Immune,
-  ItemAtPlace, ItemPress, ItemsIssue, KeyHeld, Lingering, Listed, Live, Log,
-  ModifierEnd, ModifierStart, NoClientCastId, NoInteraction, NoInteractionWaits,
-  NoItemSpell, NodesEnd, NotBuilt, NotDecoded, NotSentByClient, Passive, Plain,
-  PrerequisitesIssue, Pressed, PressedAt, ProcDue, Reached, Refuse, RepeatHeld,
-  Resolution, ResourceMoved, RestrictionEnd, Send, Shortcut, ShortcutCast,
-  SpellsIssue, Stage, StartChild, StartHeld, Started, StartedMoving, Starts,
-  State, StateEnd, StealthChanged, Strike, TargetModifierStart, Tell, Threshold,
-  Tick, UnbuiltItemSpell, UnbuiltShortcut, UnbuiltSpell, UnknownAnswer,
-  UnknownCancel, UnreadItemPrerequisite, UnreadLinkPrerequisite,
-  UnreadPrerequisite, UnreadShortcutPick, UsedUnit, WindowEnd, WrongAnswerSpell,
+  type ItemAtPlace, type ItemPress, type Lingering, type Listed, type Live,
+  type Message, type Paid, type Reached, type Refusal, type Resolution,
+  type Restricting, type Role, type State, type Struck, type TargetVerdict,
+  type TickAsked, type Used, type UsedUnit, Accept, Activated, Activating,
+  Activation, ActivationStart, Aimed, AimedPress, AnswerSucceeded, Answered,
+  AwaitingAnswer, Base, Cancelled, CannotTell, CastClears, CasterChangeEnds,
+  CasterChangeStarts, ChargeLevel, Child, CooldownEnds, CooldownKept,
+  CooldownModifierEnds, CooldownModifierStarts, Deflected, Finish,
+  ForcedMoveStart, Frames, GateFails, Go, GoAsked, Healing, Held, HeldProc, Hit,
+  Hold, HoldForCast, Holding, Immune, ItemAtPlace, ItemPress, ItemsIssue,
+  KeyHeld, Lingering, Listed, Live, Log, ModifierEnd, ModifierStart,
+  NoClientCastId, NoInteraction, NoInteractionWaits, NoItemSpell, NodesEnd,
+  NotBuilt, NotDecoded, NotSentByClient, Passive, Plain, PrerequisitesIssue,
+  Pressed, PressedAt, ProcDue, Reached, Refuse, RepeatHeld, Resolution,
+  ResourceMoved, RestrictionEnd, Send, Shortcut, ShortcutCast, SpellsIssue,
+  Stage, StartChild, StartHeld, Started, StartedMoving, Starts, State, StateEnd,
+  StealthChanged, Strike, TargetModifierStart, Tell, Threshold, Tick,
+  UnbuiltItemSpell, UnbuiltShortcut, UnbuiltSpell, UnknownAnswer, UnknownCancel,
+  UnreadItemPrerequisite, UnreadLinkPrerequisite, UnreadPrerequisite,
+  UnreadShortcutPick, UsedUnit, WindowEnd, WrongAnswerSpell,
 } as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/class_resource.{type Payment}
@@ -1054,6 +1055,7 @@ pub fn activate_unit(
                 creature_id:,
                 alive_at_press: True,
                 by_item: False,
+                cast_id: None,
               ),
             ]
             activate.Picked(spell4_id:) ->
@@ -3217,26 +3219,51 @@ fn persistence_end(
       )
     }
     Error(Nil), Ok(lingering) -> {
-      let #(cast, ticks) = cast_tick.ticks_all_dropped(cast:, cast_id:)
-      let cast = State(..cast, lingering: dict.delete(cast.lingering, cast_id))
-      let #(cast, nodes) = cast_tick.cancel_nodes_end(cast:, cast_id:)
-      let #(cast, ended) =
-        cast_proc.effects_ended(cast:, cast_id:, spell: lingering.spell)
-      let #(cast, on_creatures) =
-        cast_control.creature_modifiers_all_ended(cast:, cast_id:)
-      #(
-        cast_proc.passive_cleared(cast:, cast_id:),
-        list.flatten([
-          [failure],
-          ticks,
-          nodes,
-          ended,
-          on_creatures,
-          cast_tick.finished_effects(cast_id:, audience: lingering.audience),
-        ]),
-      )
+      let #(cast, ended) = lingering_ended(cast:, cast_id:, lingering:)
+      #(cast, [failure, ..ended])
     }
     Error(Nil), Error(Nil) -> #(cast, [])
+  }
+}
+
+/// A lingering cast ends before its nodes' time: its ticks stop, its timers are cancelled,
+/// its effects end and its nodes with them, and its 0x7fe goes to the caster and the audience.
+fn lingering_ended(
+  cast cast: State,
+  cast_id cast_id: Int,
+  lingering lingering: Lingering,
+) -> #(State, List(Effect)) {
+  let #(cast, ticks) = cast_tick.ticks_all_dropped(cast:, cast_id:)
+  let cast = State(..cast, lingering: dict.delete(cast.lingering, cast_id))
+  let #(cast, nodes) = cast_tick.cancel_nodes_end(cast:, cast_id:)
+  let #(cast, ended) =
+    cast_proc.effects_ended(cast:, cast_id:, spell: lingering.spell)
+  let #(cast, on_creatures) =
+    cast_control.creature_modifiers_all_ended(cast:, cast_id:)
+  #(
+    cast_proc.passive_cleared(cast:, cast_id:),
+    list.flatten([
+      ticks,
+      nodes,
+      ended,
+      on_creatures,
+      cast_tick.finished_effects(cast_id:, audience: lingering.audience),
+    ]),
+  )
+}
+
+/// The activate cast `cast_id` is stopped by the move the activation made: the client's
+/// 0x83c stops the cast it is making (`opcode.0x83c`), so a cast of the activation that
+/// lingers for a row of its own (the projectors' hologram, Spell4Effects 227425) ends
+/// with its 0x7fe, written before the move, and writes nothing at its nodes' end. A cast
+/// that has ended or is not lingering changes nothing.
+pub fn activation_stopped(
+  cast cast: State,
+  cast_id cast_id: Int,
+) -> #(State, List(Effect)) {
+  case dict.get(cast.lingering, cast_id) {
+    Ok(lingering) -> lingering_ended(cast:, cast_id:, lingering:)
+    Error(Nil) -> #(cast, [])
   }
 }
 
@@ -4105,7 +4132,15 @@ fn go(
       let activated = case live.activation {
         Some(Activating(unit_id:, creature_id:, alive_at_press:, by_item:, ..))
           if live.gone == go_count
-        -> [Activated(unit_id:, creature_id:, alive_at_press:, by_item:)]
+        -> [
+          Activated(
+            unit_id:,
+            creature_id:,
+            alive_at_press:,
+            by_item:,
+            cast_id: Some(cast_id),
+          ),
+        ]
         Some(_) | None -> []
       }
       // The first go of a quest button's cast counts the objective: a later go of the

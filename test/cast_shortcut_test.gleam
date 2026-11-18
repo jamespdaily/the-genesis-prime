@@ -625,8 +625,8 @@ pub fn a_press_of_a_targeted_spell_at_a_cast_group_unit_starts_on_it_test() -> N
     as "the viewers see the cast by the caster on the unit"
   let #(_, effects) = played(state:, pressed:, at: 1000)
   assert support.ids(frames: support.writes(effects:))
-    == [0x07FD, 0x07F4, 0x0811, 0x07FE]
-    as "Spell4 42735 has castTime 0: the start, the go, then, when its RavelSignal node's 2000 ms are over, the node's end and the finish"
+    == [0x07FD, 0x07F4, 0x07FE]
+    as "Spell4 42735 has castTime 0: the start, the go, then the finish"
   assert support.shortcut_casts(effects:)
     == [
       cast_state.ShortcutCast(

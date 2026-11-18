@@ -12,8 +12,7 @@ pub type Tier {
 /// The tiers the tests name, from `table_rows -- Spell4 spell4BaseIdBaseSpell=53378` and
 /// `-- Spell4Effects spellId=<id>` (`Spell4.tierIndex.level_up`): the Spell4 ids are not
 /// consecutive (tier 1 is 77398, tier 2 is 77407, tiers 3 to 49 are 77409 to 77455), and the
-/// level is the tier's tierIndex plus 1. The Spell4 and effect ids of levels 12 and 22 are also
-/// the ones the recordings' go lists, which is a lead only.
+/// level is the tier's tierIndex plus 1.
 pub const tiers = [
   Tier(level: 2, spell4_id: 77_398, effect_id: 202_311),
   Tier(level: 3, spell4_id: 77_407, effect_id: 202_340),

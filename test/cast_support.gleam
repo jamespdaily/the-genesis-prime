@@ -1181,6 +1181,58 @@ pub fn frames_of(
   list.filter(writes(effects:), fn(frame) { frame.message_id == message_id })
 }
 
+/// The `Activated` effects among the effects, as the unit, its creature, whether it lived at
+/// the press, whether the cast was an item's, and the cast that raised it.
+pub fn activations(
+  effects effects: List(Effect),
+) -> List(#(Int, Int, Bool, Bool, Option(Int))) {
+  list.filter_map(effects, fn(effect) {
+    case effect {
+      cast_state.Activated(
+        unit_id:,
+        creature_id:,
+        alive_at_press:,
+        by_item:,
+        cast_id:,
+      ) -> Ok(#(unit_id, creature_id, alive_at_press, by_item, cast_id))
+      cast_state.Send(..)
+      | cast_state.Tell(..)
+      | cast_state.StartTimer(..)
+      | cast_state.CancelTimer(..)
+      | cast_state.Strike(..)
+      | cast_state.Pay(..)
+      | cast_state.Gain(..)
+      | cast_state.Log(..)
+      | cast_state.CasterChangeStarts(..)
+      | cast_state.CasterChangeEnds(..)
+      | cast_state.TargetChangeStarts(..)
+      | cast_state.TargetChangeEnds(..)
+      | cast_state.ForcedMoveStarts(..)
+      | cast_state.CreatureDespawns(..)
+      | cast_state.CreatureHoldsUnitStates(..)
+      | cast_state.ShortcutCast(..)
+      | cast_state.TickStrike(..)
+      | cast_state.StealthChanged(..) -> Error(Nil)
+    }
+  })
+}
+
+/// How many `Activated` effects name the unit and its creature, which lived at the press,
+/// whichever cast raised them.
+pub fn activated_count(
+  effects effects: List(Effect),
+  unit_id unit_id: Int,
+  creature_id creature_id: Int,
+  by_item by_item: Bool,
+) -> Int {
+  list.count(activations(effects:), fn(found) {
+    found.0 == unit_id
+    && found.1 == creature_id
+    && found.2
+    && found.3 == by_item
+  })
+}
+
 /// The cast id of the first press the effects confirm: the server's id in its 0x7fd.
 pub fn pressed_id(effects effects: List(Effect)) -> Int {
   let assert [frame, ..] =

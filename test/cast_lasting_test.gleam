@@ -16,7 +16,7 @@
 ////   cast; the oldest cast goes first).
 
 import cast_support as support
-import genesis_prime/client_connection.{CastFinished, CastTargetsRemoved}
+import genesis_prime/client_connection.{CastFinished}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
@@ -32,7 +32,6 @@ import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
 import genesis_prime/message/spell_effect_info.{SpellEffectInfo}
 import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_go
-import genesis_prime/message/spell_targets_removed.{SpellTargetsRemoved}
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import gleam/list
@@ -272,15 +271,60 @@ pub fn the_finish_and_the_audiences_news_come_when_the_life_is_over_and_not_befo
   let assert [#(timer, 1)] = support.started_timers(effects: early)
   let #(_, ended) = support.fired(state:, timer:, at: 9000)
   assert support.finished_ids(support.writes(effects: ended)) == [id]
-  let removed = SpellTargetsRemoved(cast_id: id, unit_ids: [7])
   assert support.tells(effects: ended)
     == [
-      #(ConnectionId(2), CastTargetsRemoved(removed:, destroyed: False)),
-      #(ConnectionId(3), CastTargetsRemoved(removed:, destroyed: False)),
       #(ConnectionId(2), CastFinished(cast_id: id)),
       #(ConnectionId(3), CastFinished(cast_id: id)),
     ]
-    as "each viewer is told the node's end and then the finish"
+}
+
+/// A lingering cast ends with its 0x7fe alone, for a cast method the client destroys at 0x811
+/// and one it does not: the client runs FinishCast for it, which starts the cooldowns of a
+/// method 1 or 2 cast (`opcode.0x7fe`) and destroys every node of the cast
+/// (`cast.target_node_end`); a 0x811 first would destroy a cast whose method the client does
+/// not keep (`opcode.0x811`) and so skip that FinishCast. The casts are the server's own
+/// (`cast.level_up_started`), since a press of a PressHold spell is not built. A Channeled
+/// cast's end is in the channel test below.
+pub fn a_lingering_cast_ends_with_the_finish_alone_whatever_its_method_test() -> Nil {
+  use <- owned_test.run(5000)
+  list.each(
+    [
+      #(spell_plan.Normal, "Normal, which the client destroys at 0x811"),
+      #(
+        spell_plan.PressHold,
+        "PressHold (method 2), whose cooldowns FinishCast starts",
+      ),
+    ],
+    fn(row) {
+      let spell =
+        spell_plan.Spell(
+          ..buff(spell4_id: 77_116, base: 3, lasting: [
+            fluff(
+              id: 200_468,
+              aim: spell_plan.AimsAtCaster,
+              duration_ms: 8000,
+              until_removed: False,
+            ),
+          ]),
+          method: row.0,
+        )
+      let #(state, started) =
+        cast.level_up_started(
+          cast: cast_state.new(),
+          caster: support.caster(),
+          spell:,
+          now: support.at(ms: 1000),
+        )
+      let #(state, effects) =
+        support.answered_with_no_targets(state:, effects: started, at: 1000)
+      let assert [#(timer, 8000)] = support.started_timers(effects:) as row.1
+      let #(state, early) = support.fired(state:, timer:, at: 8999)
+      let assert [#(timer, 1)] = support.started_timers(effects: early) as row.1
+      let #(_, ended) = support.fired(state:, timer:, at: 9000)
+      assert support.ids(frames: support.writes(effects: ended)) == [0x07FE]
+        as row.1
+    },
+  )
 }
 
 pub fn nodes_ending_at_two_times_end_with_a_0x811_and_then_the_finish_test() -> Nil {
@@ -330,9 +374,7 @@ pub fn nodes_ending_at_two_times_end_with_a_0x811_and_then_the_finish_test() -> 
   let assert [#(second, 5000)] = support.started_timers(effects: at_3000)
   let #(_, at_9000) = support.fired(state:, timer: second, at: 9000)
   assert support.finished_ids(support.writes(effects: at_9000)) == [id]
-  assert support.removed_targets(support.writes(effects: at_9000))
-    == [#(id, [20])]
-    as "the last node's end names its unit, then the finish"
+  assert support.removed_targets(support.writes(effects: at_9000)) == []
 }
 
 pub fn two_nodes_ending_at_the_same_time_are_one_0x811_naming_both_test() -> Nil {
@@ -881,9 +923,9 @@ pub fn a_node_whose_life_ends_while_its_cast_is_live_is_ended_and_the_cast_goes_
       #(4000, [], []),
       #(5000, [#(id, [7])], []),
       #(7000, [], []),
-      #(8000, [#(id, [7])], [id]),
+      #(8000, [], [id]),
     ]
-    as "each 1 s node ends with a 0x811 while the channel goes on; the last go lingers and its end is the 0x811 and then the 0x7fe (cast.target_node_end)"
+    as "each 1 s node ends with a 0x811 while the channel goes on; the last go lingers and its end is the 0x7fe (cast.target_node_end)"
 }
 
 pub fn a_node_ended_by_time_is_no_longer_held_test() -> Nil {
