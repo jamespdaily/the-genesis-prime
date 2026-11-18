@@ -44,7 +44,9 @@
 //// place here.
 ////
 //// The creatures of a click objective (QuestObjective types 5 and 32, whose
-//// creature `objective_link.links` ties to the objective) are placed the same
+//// creature `objective_link.links` ties to the objective, and the type 5 rows of the
+//// click table, whose reward pane's creatures the client offers a click on,
+//// `activate.offers_click`) are placed the same
 //// way (`Placed.click_rows`), where no stored row serves the marker: every
 //// stored row of the creature, whatever its unit type, serves the one marker of
 //// the creature's objectives that it stands nearest to in its own world (a tie
@@ -63,6 +65,7 @@
 //// and is not. A placed creature stays after it is used.
 
 import genesis_prime/content/refusal.{type Refusal}
+import genesis_prime/game/activate
 import genesis_prime/game/objective_kind
 import genesis_prime/game/objective_link
 import genesis_prime/game/place_objective
@@ -168,8 +171,10 @@ type Job {
 /// with no kind of its own is left out (`TurretHasNoKind`), since no server fight
 /// would run it.
 /// `kills` is the kill table's objectives (genesis_prime/game/kill_objective), whose reward
-/// pane names the creatures to place as a type 8 or 16 objective's data does.
-/// Pure: the tables, the chosen factions, the kinds, the kill table and the stored rows are
+/// pane names the creatures to place as a type 8 or 16 objective's data does, and `clicks`
+/// the click table's (genesis_prime/game/click_objective), whose pane's clickable creatures
+/// stand at the marker as a linked creature does.
+/// Pure: the tables, the chosen factions, the kinds, the two tables and the stored rows are
 /// all it reads.
 pub fn place(
   tables tables: table_store.Tables,
@@ -177,6 +182,7 @@ pub fn place(
   factions factions: Factions,
   kinds kinds: Kinds,
   kills kills: Set(Int),
+  clicks clicks: Set(Int),
 ) -> Placed {
   let objectives =
     quest_objective.all(tables)
@@ -223,6 +229,7 @@ pub fn place(
   let #(click_rows, click_skipped, unread_links) =
     click_placed(
       tables:,
+      clicks:,
       worlds:,
       stored:,
       factions:,
@@ -248,12 +255,14 @@ type Want {
 /// unit type the server does not start is skipped as `NotStarted`.
 fn click_placed(
   tables tables: table_store.Tables,
+  clicks clicks: Set(Int),
   worlds worlds: Set(Int),
   stored stored: List(Row),
   factions factions: Factions,
   first first: Int,
 ) -> #(List(Row), List(Skipped), List(UnreadLink)) {
-  let #(pairs, unread_links) = click_pairs(tables:)
+  let #(linked_pairs, unread_links) = click_pairs(tables:)
+  let pairs = list.append(linked_pairs, pane_pairs(tables:, clicks:))
   let #(wants, marker_skips) =
     list.map(pairs, fn(pair) {
       let #(objective_id, creature, marker_id) = pair
@@ -313,6 +322,37 @@ fn click_placed(
       spawn.Row(..row, id: SpawnId(first + index))
     })
   #(rows, list.unique(list.append(marker_skips, not_started)), unread_links)
+}
+
+/// Every (objective, creature, marker) of the click table's objectives: each creature of
+/// the reward pane that the client offers a click on (`activate.offers_click`), at each of
+/// the objective's markers, in objective order.
+fn pane_pairs(
+  tables tables: table_store.Tables,
+  clicks clicks: Set(Int),
+) -> List(#(Int, Creature2, Int)) {
+  quest_objective.all(tables)
+  |> list.filter(fn(objective) { set.contains(clicks, objective.id) })
+  |> list.flat_map(fn(objective) {
+    target_group.listed_creatures(
+      tables:,
+      group: quest_objective.target_group_id_reward_pane(objective).value,
+    )
+    |> list.unique
+    |> list.filter_map(fn(creature_id) {
+      creature2.get(tables, Creature2Id(creature_id))
+      |> result.try(fn(row) {
+        case activate.offers_click(row:) {
+          True -> Ok(row)
+          False -> Error(Nil)
+        }
+      })
+    })
+    |> list.flat_map(fn(creature) {
+      place_objective.marker_ids(objective:)
+      |> list.map(fn(marker_id) { #(objective.id, creature, marker_id) })
+    })
+  })
 }
 
 /// Every (objective, creature, marker) a creature's link and its objective's markers

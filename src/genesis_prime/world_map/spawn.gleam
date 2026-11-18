@@ -1720,6 +1720,17 @@ fn bases_of(
   })
 }
 
+/// Whether a unit of the faction is Friendly to the player's faction: its level is above
+/// `highest_neutral_level` (8 to 10, `0x140787830`), and a Friendly target is refused an
+/// attack (`0x1403ad540`).
+pub fn friendly_to(
+  levels levels: faction_level.Levels,
+  player player: Int,
+  unit unit: Int,
+) -> Bool {
+  faction_level.level(levels:, from: player, to: unit) > highest_neutral_level
+}
+
 /// Whether a player of the faction may attack a unit of the other: the unit is
 /// not Friendly to it (`0x1403ad540`: a Friendly target is refused, a Hostile or a
 /// Neutral one is not).
@@ -1728,8 +1739,7 @@ fn attackable_by(
   player player: Int,
   unit unit: Int,
 ) -> Bool {
-  faction_level.level(levels: catalog.factions, from: player, to: unit)
-  <= highest_neutral_level
+  !friendly_to(levels: catalog.factions, player:, unit:)
 }
 
 /// Which player factions a unit of the faction fights on sight: its level toward the

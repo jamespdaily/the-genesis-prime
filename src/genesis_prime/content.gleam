@@ -92,6 +92,13 @@
 ////   whose reward pane lists no creature the server fights, or one a spell effect or an item
 ////   names is refused. The creatures of its pane stand at its marker
 ////   (genesis_prime/world_map/objective_spawn).
+//// - **The click objectives** are checked against the same rows
+////   (genesis_prime/game/click_objective): a row naming an objective the table lacks or no
+////   quest lists, one that is not a visible scripted objective, one with no marker row, one
+////   whose reward pane lists no creature the client offers a click on whose activate spell
+////   the server builds, or one a spell effect or an item names is refused. The creatures of
+////   its pane the client offers a click on stand at its marker
+////   (genesis_prime/world_map/objective_spawn).
 //// - **The projector landings** are checked against the client's Creature2, WorldLocation2,
 ////   QuestObjective, Quest2 and WorldZone rows (genesis_prime/game/projector): a creature
 ////   that does not cast the projector spell, a landing outside World 3460, an objective that
@@ -131,9 +138,8 @@ import genesis_prime/content/terrain as content_terrain
 import genesis_prime/content/tutorial_quest as content_tutorial_quest
 import genesis_prime/content/vendor as content_vendor
 import genesis_prime/content/zone_welcome as content_zone_welcome
-import genesis_prime/game/arrival_objective
 import genesis_prime/game/class_resource
-import genesis_prime/game/held_objective
+import genesis_prime/game/click_objective
 import genesis_prime/game/kill_objective
 import genesis_prime/game/objective_units
 import genesis_prime/game/place_objective
@@ -164,7 +170,6 @@ import gleam/int
 import gleam/list
 import gleam/option.{None}
 import gleam/result
-import gleam/set
 import gleam/string
 import pog
 
@@ -373,27 +378,7 @@ fn read(
   }
   let tutorials = tutorial.select(rows: tutorial_rows, tables:)
   let tutorial_refusals = result.unwrap_error(tutorials, or: [])
-  let held =
-    held_objective.select(
-      ids: objective_set.ids(rows: objective_rows, table: held_objective.table),
-      tables:,
-    )
-  let held_refusals = result.unwrap_error(held, or: [])
-  let arrivals =
-    arrival_objective.select(
-      ids: objective_set.ids(
-        rows: objective_rows,
-        table: arrival_objective.table,
-      ),
-      tables:,
-    )
-  let arrival_refusals = result.unwrap_error(arrivals, or: [])
-  let kills =
-    kill_objective.select(
-      ids: objective_set.ids(rows: objective_rows, table: kill_objective.table),
-      tables:,
-    )
-  let kill_refusals = result.unwrap_error(kills, or: [])
+  let objectives = objective_set.check(rows: objective_rows, tables:)
   let projectors = projector.select(rows: projector_rows, tables:)
   let projector_refusals = result.unwrap_error(projectors, or: [])
   let vendors =
@@ -455,7 +440,14 @@ fn read(
         stored: rows,
         factions: factions_for_spawns,
         kinds:,
-        kills: result.unwrap(kills, or: set.new()),
+        kills: objective_set.accepted(
+          checked: objectives,
+          table: kill_objective.table,
+        ),
+        clicks: objective_set.accepted(
+          checked: objectives,
+          table: click_objective.table,
+        ),
       )
     Error(..) ->
       objective_spawn.Placed(
@@ -497,9 +489,7 @@ fn read(
       proxy_refusals,
       welcome_refusals,
       tutorial_refusals,
-      held_refusals,
-      arrival_refusals,
-      kill_refusals,
+      objective_set.refusals(checked: objectives),
       projector_refusals,
       vendor_refusals,
     ])
@@ -565,21 +555,7 @@ fn read(
         Ok(chain) -> content_tutorial_quest.put(key:, chain:)
         Error(..) -> Nil
       }
-      case held {
-        Ok(objectives) ->
-          objective_set.put(key:, table: held_objective.table, objectives:)
-        Error(..) -> Nil
-      }
-      case arrivals {
-        Ok(objectives) ->
-          objective_set.put(key:, table: arrival_objective.table, objectives:)
-        Error(..) -> Nil
-      }
-      case kills {
-        Ok(objectives) ->
-          objective_set.put(key:, table: kill_objective.table, objectives:)
-        Error(..) -> Nil
-      }
+      objective_set.put_accepted(key:, checked: objectives)
       case projectors {
         Ok(landings) -> content_projector_landing.put(key:, landings:)
         Error(..) -> Nil

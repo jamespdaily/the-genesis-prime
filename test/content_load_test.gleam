@@ -35,9 +35,9 @@ import genesis_prime/content/zone_welcome as content_zone_welcome
 import genesis_prime/game/activate
 import genesis_prime/game/arrival_objective
 import genesis_prime/game/class_resource
+import genesis_prime/game/click_objective
 import genesis_prime/game/held_objective
 import genesis_prime/game/kill_objective
-import genesis_prime/game/objective
 import genesis_prime/game/projector
 import genesis_prime/game/spell_plan
 import genesis_prime/game/start_place
@@ -305,8 +305,8 @@ pub fn the_kill_objective_table_loads_and_a_refused_row_stops_the_load_test() ->
     as "the first row of the table by id (8010), quest 5895's (8866) and the last (15996)"
   assert !set.contains(kills, 7515)
     as "an objective the kill_objective migration does not list is no kill row"
-  assert login_support.servers_settings_over(spawns: key).game.settings.script_rows
-    == objective.ScriptRows(kills:)
+  assert login_support.servers_settings_over(spawns: key).game.settings.script_rows.kills
+    == kills
     as "the settings the load's key gave carry the kill table"
   // QuestObjective 4000000 is no row of the client's table.
   let refused = database_support.new_database(on: database_support.shared())
@@ -319,6 +319,33 @@ pub fn the_kill_objective_table_loads_and_a_refused_row_stops_the_load_test() ->
     as "a refused kill row stops the start"
   assert list.map(refusals, fn(refused) { #(refused.table, refused.row) })
     == [#("kill_objective", refusal.RowId(4_000_000))]
+}
+
+pub fn the_click_objective_table_loads_and_a_refused_row_stops_the_load_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let database = database_support.new_database(on: database_support.shared())
+  let #(loaded, key) = content_support.load(database:)
+  assert loaded == Ok(Nil)
+  let clicks = objective_set.read(key:, table: click_objective.table)
+  assert set.to_list(clicks) |> list.sort(int.compare)
+    == [7652, 7653, 7654, 9002, 16_170]
+    as "the click_objective migration seeds its rows"
+  assert !set.contains(clicks, 7515)
+    as "an objective the click_objective migration does not list is no click row"
+  assert login_support.servers_settings_over(spawns: key).game.settings.script_rows.clicks
+    == clicks
+    as "the settings the load's key gave carry the click table"
+  // QuestObjective 4000000 is no row of the client's table.
+  let refused = database_support.new_database(on: database_support.shared())
+  content_support.change(
+    database: refused,
+    sql: "insert into click_objective (objective_id, source, reason) values (4000000, 'server_choice', 'an objective the client lacks')",
+  )
+  let #(loaded, _key) = content_support.load(database: refused)
+  let assert Error(content.Refused(refusals:)) = loaded
+    as "a refused click row stops the start"
+  assert list.map(refusals, fn(refused) { #(refused.table, refused.row) })
+    == [#("click_objective", refusal.RowId(4_000_000))]
 }
 
 pub fn the_load_puts_every_term_the_game_listener_reads_at_start_test() -> Nil {
@@ -340,6 +367,7 @@ pub fn the_load_puts_every_term_the_game_listener_reads_at_start_test() -> Nil {
   let _held = objective_set.read(key:, table: held_objective.table)
   let _arrivals = objective_set.read(key:, table: arrival_objective.table)
   let _kills = objective_set.read(key:, table: kill_objective.table)
+  let _clicks = objective_set.read(key:, table: click_objective.table)
   Nil
 }
 

@@ -30,15 +30,10 @@ import genesis_prime/content/refusal.{type Refusal}
 import genesis_prime/game/objective
 import genesis_prime/game/objective_action
 import genesis_prime/game/objective_row
-import genesis_prime/game/place_objective
-import genesis_prime/game/quest_log
-import genesis_prime/game/target_group
 import genesis_prime/table/creature2
-import genesis_prime/table/id.{Creature2Id, QuestObjectiveId}
+import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/table/loader/store as table_store
-import genesis_prime/table/quest_objective
 import genesis_prime/world_map/creation_type
-import gleam/int
 import gleam/list
 import gleam/set.{type Set}
 
@@ -62,15 +57,17 @@ pub fn select(
           index:,
           objective: listed_objective,
         ),
-        case
-          has_marker_row(tables:, objective_id: listed_objective.objective_id)
-        {
-          True -> []
-          False -> [
-            "none of its worldLocationsIdIndicator markers names a WorldLocation2 row, so no creature can stand at it",
-          ]
-        },
-        pane_broken(tables:, objective: listed_objective),
+        objective_row.marker_broken(
+          tables:,
+          objective_id: listed_objective.objective_id,
+        ),
+        objective_row.pane_broken(
+          tables:,
+          objective: listed_objective,
+          action: "kill",
+          wanted: fights(tables:, creature_id: _),
+          missing: "no creature of creation type 0, which the server fights",
+        ),
         case objective_action.named(tables:, quest_id: quest.id, index:) {
           True -> [
             "a spell effect or an item names it, so a cast advances it, not a kill",
@@ -80,45 +77,6 @@ pub fn select(
       ])
     },
   )
-}
-
-fn has_marker_row(
-  tables tables: table_store.Tables,
-  objective_id objective_id: Int,
-) -> Bool {
-  case quest_objective.get(tables:, id: QuestObjectiveId(objective_id)) {
-    Ok(row) -> place_objective.markers(tables:, objective: row) != []
-    Error(Nil) -> False
-  }
-}
-
-/// What is wrong with the reward pane as the list of units a kill counts for: none, a pane
-/// that lists no creature, or one whose creatures the server never fights.
-fn pane_broken(
-  tables tables: table_store.Tables,
-  objective objective: quest_log.Objective,
-) -> List(String) {
-  let id = "QuestObjective " <> int.to_string(objective.objective_id)
-  case objective.reward_pane {
-    0 -> [id <> " has no reward pane, so no unit is the one to kill"]
-    pane ->
-      case target_group.listed_creatures(tables:, group: pane) {
-        [] -> [
-          id
-          <> "'s reward pane TargetGroup "
-          <> int.to_string(pane)
-          <> " lists no creature, so no kill counts",
-        ]
-        creatures ->
-          case list.any(creatures, fights(tables:, creature_id: _)) {
-            True -> []
-            False -> [
-              id
-              <> "'s reward pane lists no creature of creation type 0, which the server fights",
-            ]
-          }
-      }
-  }
 }
 
 fn fights(

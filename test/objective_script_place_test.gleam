@@ -945,9 +945,12 @@ pub fn the_spell_advanced_set_names_every_type_42_and_item_objective_test() -> N
     as "53 are advanced by a spell effect"
 }
 
-/// The script tables the migrated database holds: the kill table's rows.
+/// The script tables the migrated database holds: the kill and click tables' rows.
 fn script_rows() -> objective.ScriptRows {
-  objective.ScriptRows(kills: content_support.kill_objective_ids())
+  objective.ScriptRows(
+    kills: content_support.kill_objective_ids(),
+    clicks: content_support.click_objective_ids(),
+  )
 }
 
 /// How many of the places `script_of` gives each class, in the order of `classes`.
@@ -979,6 +982,7 @@ fn classes() -> List(objective.Script) {
     objective.NamedAction,
     objective.PlaceScript,
     objective.KillScript,
+    objective.ClickScript,
     objective.StandInOnAccept,
     objective.StandInWithQuest,
   ]
@@ -1132,6 +1136,7 @@ pub fn every_place_script_completes_at_its_marker_and_no_spell_advanced_one_comp
         | objective.UsedByCreature, _
         | objective.Optional, _
         | objective.KillScript, _
+        | objective.ClickScript, _
         | objective.StandInOnAccept, _
         | objective.StandInWithQuest, _
         -> Ok(Nil)
@@ -1200,6 +1205,7 @@ pub fn every_marked_stand_in_completes_on_accept_and_every_held_one_stays_open_t
         | objective.NamedAction
         | objective.PlaceScript
         | objective.KillScript
+        | objective.ClickScript
         | objective.StandInWithQuest -> Error(Nil)
       }
     })
@@ -1233,10 +1239,11 @@ pub fn every_type_5_objective_in_a_quest_has_one_completing_rule_test() -> Nil {
       #(objective.NamedAction, 70),
       #(objective.PlaceScript, 50),
       #(objective.KillScript, 9),
-      #(objective.StandInOnAccept, 437),
+      #(objective.ClickScript, 5),
+      #(objective.StandInOnAccept, 432),
       #(objective.StandInWithQuest, 606),
     ]
-    as "each type 5 objective in a quest has exactly one class: 259 linked required and 8 linked optional, 59 visible optional, 70 a spell or an item names, 50 places, 9 kills, 437 stand-ins on accept (454 less the 8 places and the 9 kills moved), and 606 that wait for the quest (87 hidden, 519 visible with no marker)"
+    as "each type 5 objective in a quest has exactly one class: 259 linked required and 8 linked optional, 59 visible optional, 70 a spell or an item names, 50 places, 9 kills, 5 clicks, 432 stand-ins on accept (454 less the 8 places, the 9 kills and the 5 clicks moved), and 606 that wait for the quest (87 hidden, 519 visible with no marker)"
   assert set.size(arrivals) == 50
     as "the arrival table's rows: the 42 of migration 0038 and the 8 of 0043"
   assert set.size(held) == 146

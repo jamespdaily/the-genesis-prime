@@ -404,6 +404,7 @@ pub fn activate_unit_message(
         tables:,
         picture: entered.shown,
         quests: entered.quests,
+        scripts: session.settings.script_rows,
         entered:,
         link_of: link_of(
           tables:,
@@ -435,11 +436,12 @@ fn used_unit(
   tables tables: table_store.Tables,
   picture picture: shown.Picture,
   quests quests: QuestLog,
+  scripts scripts: objective.ScriptRows,
   entered entered: world_entry.Entered,
   link_of link_of: fn(Int, creature2.Creature2, Int) -> activate.Link,
   now_ms now_ms: Int,
 ) -> fn(Int) -> Result(cast_state.UsedUnit, Nil) {
-  let use_targets = objective.use_targets(log: quests, tables:)
+  let use_targets = objective.use_targets(log: quests, tables:, scripts:)
   fn(unit_id) {
     use one <- result.try(dict.get(picture, unit_id))
     let unit = unit_ref(entered:, unit_id:)

@@ -68,7 +68,10 @@ fn quest_frames(
 fn killing(kills kills: List(Int)) -> connection_state.Settings {
   connection_state.Settings(
     ..connection_support.settings(),
-    script_rows: objective.ScriptRows(kills: set.from_list(kills)),
+    script_rows: objective.ScriptRows(
+      ..objective.no_rows(),
+      kills: set.from_list(kills),
+    ),
   )
 }
 

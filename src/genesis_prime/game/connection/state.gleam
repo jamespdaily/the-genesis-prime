@@ -119,16 +119,17 @@ pub type Settings {
     /// (genesis_prime/game/quest_log `used`).
     reused_unit_objectives: Set(Int),
     /// The scripted objectives that only an instance run or a PvP match can complete, from
-    /// the content load (genesis_prime/content/held_objective): the settle leaves them
-    /// open (genesis_prime/game/objective `stand_in_scripts`).
+    /// the content load (genesis_prime/content/objective_set, table `held_objective`): the
+    /// settle leaves them open (genesis_prime/game/objective `stand_in_scripts`).
     held_objectives: Set(Int),
     /// The scripted objectives whose text asks only to reach a place, from the content load
-    /// (genesis_prime/content/arrival_objective): the settle completes one when the player
-    /// stands at a marker (genesis_prime/game/objective `script_of`).
+    /// (genesis_prime/content/objective_set, table `arrival_objective`): the settle completes
+    /// one when the player stands at a marker (genesis_prime/game/objective `script_of`).
     arrival_objectives: Set(Int),
-    /// The scripted objectives whose real rule is a kill, from the content load
-    /// (genesis_prime/content/kill_objective): a kill of a creature of the objective's
-    /// reward pane counts for one (genesis_prime/game/objective `counts`).
+    /// The scripted objectives whose real rule is a kill or a click, from the content load
+    /// (genesis_prime/content/objective_set, tables `kill_objective` and `click_objective`): a
+    /// kill or an activation of a creature of the objective's reward pane counts for one
+    /// (genesis_prime/game/objective `counts`).
     script_rows: objective.ScriptRows,
   )
 }

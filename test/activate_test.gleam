@@ -13,6 +13,7 @@ import genesis_prime/game/prerequisite.{Fails, NotRead, Passes}
 import genesis_prime/game/spell_plan
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id, Spell4EffectsId}
+import genesis_prime/table/loader/store
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_base
 import gleam/int
@@ -21,6 +22,7 @@ import gleam/option.{Some}
 import gleam/set
 import gleam/string
 import owned_test
+import planted_table.{Integer}
 import prerequisite_support
 import unitest
 
@@ -446,4 +448,69 @@ pub fn the_cast_group_rule_follows_the_clients_three_branches_test() -> Nil {
     )
     == activate.OutsideCastGroup
     as "outside the group, an unread pick no column of the creature ties to the spell is refused 89, not left open"
+}
+
+/// Whether the client can offer a click on the creature by its own row.
+fn offers_click(
+  tables tables: store.Tables,
+  creature_id creature_id: Int,
+) -> Bool {
+  let assert Ok(row) = creature2.get(tables:, id: Creature2Id(creature_id))
+    as "the creature is a root of the fixture"
+  activate.offers_click(row:)
+}
+
+pub fn a_creature_offers_a_spell_click_only_when_its_row_says_so_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = fixture_tables.shared()
+  // Creature2 rows (`table_rows -- Creature2 51440 27996 9612 44498`): 51440 has activate
+  // spell 1817 and no flags; 27996 has an activate spell and uiFlags 175 (bit 0x80, locked to
+  // the path kinds); 9612 and 44498 have no activate column. The Spell kind (50) is offered
+  // when the unit's activate spell is not 0, activationFlags bit 0x800 is clear and the
+  // datacube words are 0 (`0x140479560`); a unit with uiFlags bit 0x80 on no path offers none
+  // of the kinds (`0x14046c6a0`).
+  list.each(
+    [
+      #(51_440, True, "an activate spell 1817 and nothing against it"),
+      #(27_996, False, "uiFlags 0x80 locks its clicks to the path kinds"),
+      #(9612, False, "no activate column names a spell"),
+      #(44_498, False, "a mailbox: no activate column names a spell"),
+    ],
+    fn(row) {
+      assert offers_click(tables:, creature_id: row.0) == row.1 as row.2
+    },
+  )
+  // No client row has a datacube or activationFlags bit 0x800 beside a spell: each case is
+  // Creature2 51440 with one cell edited.
+  list.each(
+    [
+      #(
+        "activationFlags",
+        0x800,
+        False,
+        "activationFlags bit 0x800 keeps the Spell kind off",
+      ),
+      #(
+        "activationFlags",
+        0x1,
+        True,
+        "another activationFlags bit leaves the Spell kind on",
+      ),
+      #("datacubeId", 7, False, "a datacube leaves no click"),
+      #("datacubeVolumeId", 7, False, "a datacube volume leaves no click"),
+      #("uiFlags", 0x80, False, "uiFlags bit 0x80 locks it to the path kinds"),
+      #("uiFlags", 0x20, True, "another uiFlags bit leaves the Spell kind on"),
+    ],
+    fn(edit) {
+      let #(column, value, expected, why) = edit
+      assert fixture_tables.changed(
+          table: "Creature2",
+          id: 51_440,
+          with: [#(column, Integer(value))],
+          body: fn(edited) { offers_click(tables: edited, creature_id: 51_440) },
+        )
+        == expected
+        as why
+    },
+  )
 }

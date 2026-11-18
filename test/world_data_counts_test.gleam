@@ -56,9 +56,9 @@
 ////   73494 rows + 9 placed rows = 104.
 //// - The creatures of type 5 and 32 objectives (the click targets) that have no stored
 ////   spawn at their objective's marker are placed there too
-////   (`objective_spawn.place`'s `click_rows`): 344 rows in all, 109 of them entity
+////   (`objective_spawn.place`'s `click_rows`): 349 rows in all, 114 of them entity
 ////   type 0, the units that `WorldSpawns.by_id` holds (the others stand as the
-////   static objects counted below), 111, 114, 5, 2, 106, 3 and 3 of them in worlds 22,
+////   static objects counted below), 113, 117, 5, 2, 106, 3 and 3 of them in worlds 22,
 ////   51, 426, 990, 1061, 1387 and 3460 (the whole-table test of `objective_spawn_test`
 ////   holds the count over the client's tables and `spawn.tsv`). The selection leaves
 ////   out none of the type 0 rows, Creature2 13133 in world 22 (no faction) among
@@ -69,6 +69,11 @@
 ////   rows: it places 40, 27, 3 and 39 units (CreationTypeEnum 0) in worlds 22, 51, 426
 ////   and 1061, of which Creature2 13133 (factionId 0 in the Creature2 table) is the one
 ////   of world 22 that has no faction, and the play database's rows give the same.
+////   The click table's pane creatures (`objective_spawn.place`'s `clicks`) add 2 started
+////   units in world 22 (Creature2 26436 and 51440) and 3 in world 51 (Creature2 21688, 27100
+////   and 27101), each placed at its marker; the table's other candidate, objective 13760's
+////   Creature2 36601 of faction 219, is Friendly to both player factions with no quest or
+////   link, so the selection leaves it out and the objective stays on the stand-in.
 //// The test needs the client's tables and the world database (`GENESIS_WORLD_DATA`),
 //// so it is skipped where either is missing (a fork's CI run without the client's
 //// data); it imports the whole file into a database of its own.
@@ -80,9 +85,11 @@ import envoy
 import genesis_prime
 import genesis_prime/content
 import genesis_prime/content/spawn as content_spawn
+import genesis_prime/game/activate
 import genesis_prime/game/faction_level
 import genesis_prime/game/place_objective
 import genesis_prime/game/prerequisite
+import genesis_prime/game/quest as quest_rules
 import genesis_prime/game/quest_log
 import genesis_prime/game/rating
 import genesis_prime/game/target_group
@@ -90,7 +97,8 @@ import genesis_prime/game/vendor
 import genesis_prime/import_world_data
 import genesis_prime/readiness
 import genesis_prime/step/runtime
-import genesis_prime/table/id.{Quest2Id, QuestObjectiveId}
+import genesis_prime/table/creature2
+import genesis_prime/table/id.{Creature2Id, Quest2Id, QuestObjectiveId}
 import genesis_prime/table/quest2
 import genesis_prime/table/quest_objective
 import genesis_prime/table/world
@@ -167,6 +175,7 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
       factions: spawn_support.the_boss_is_given_233(tables:),
       kinds: spawn_support.turret_kinds(),
       kills: content_support.kill_objective_ids(),
+      clicks: content_support.click_objective_ids(),
     ).rows
   assert list.length(placed) == 1762
     as "the rows placed in all, none of them in a world with no stored spawn"
@@ -185,23 +194,24 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
       factions: spawn_support.the_boss_is_given_233(tables:),
       kinds: spawn_support.turret_kinds(),
       kills: content_support.kill_objective_ids(),
+      clicks: content_support.click_objective_ids(),
     ).click_rows
-  assert list.length(clicked) == 344 as "the click targets' rows placed in all"
-  assert list.count(clicked, fn(row) { row.entity_type == 0 }) == 109
+  assert list.length(clicked) == 349 as "the click targets' rows placed in all"
+  assert list.count(clicked, fn(row) { row.entity_type == 0 }) == 114
     as "the click rows placed as units"
   assert list.map(
       [22, 51, 426, 870, 990, 1061, 1387, 3460, 1535, 3022],
       fn(world_id) { list.count(clicked, fn(row) { row.world_id == world_id }) },
     )
-    == [111, 114, 5, 0, 2, 106, 3, 3, 0, 0]
+    == [113, 117, 5, 0, 2, 106, 3, 3, 0, 0]
     as "the click rows placed in each world"
   assert list.map(
       [22, 51, 426, 870, 990, 1061, 1387, 3460, 1535, 3022],
       fn(world_id) { dict.size(content_spawn.world(key:, world_id:).by_id) },
     )
     == [
-      11_847 + 214 + 423 + 40,
-      13_754 + 180 + 605 + 27,
+      11_847 + 214 + 423 + 40 + 2,
+      13_754 + 180 + 605 + 27 + 3,
       407 + 20 + 38 + 3,
       702 + 20,
       799 + 12,
@@ -231,19 +241,28 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
   let player_factions = fn(quest_id) {
     let assert Ok(quest) = quest2.get(tables:, id: Quest2Id(quest_id))
       as "the listing quest is in the client's table"
-    case quest.quest_player_faction_enum {
-      0 -> [spawn.exile_faction]
-      1 -> [spawn.dominion_faction]
-      _ -> [spawn.exile_faction, spawn.dominion_faction]
-    }
+    quest_rules.allowed_factions(quest:)
   }
   let fought_by = fn(player: Int, started: List(#(Int, Int)), pane: List(Int)) {
     list.any(started, fn(one) {
       list.contains(pane, one.0)
-      && faction_level.level(levels:, from: player, to: one.1) <= 7
+      && !spawn.friendly_to(levels:, player:, unit: one.1)
     })
   }
-  let unfightable = fn(objective_ids) {
+  // A click row leaves the stand-in only when its rule can fire: for each player faction its
+  // quest allows, a creature of its reward pane starts in the world of each of its markers and
+  // the client offers that player a click on it (`activate.offers_click`; a Hostile unit is
+  // offered no use, `activate.Withheld`).
+  let clicked_by = fn(player: Int, started: List(#(Int, Int)), pane: List(Int)) {
+    list.any(started, fn(one) {
+      let assert Ok(row) = creature2.get(tables, Creature2Id(one.0))
+        as "a started creature is in the client's table"
+      list.contains(pane, one.0)
+      && activate.offers_click(row:)
+      && !faction_level.hostile(levels:, from: player, to: one.1)
+    })
+  }
+  let unreached = fn(objective_ids, reached_by) {
     list.filter(objective_ids, fn(objective_id) {
       let assert Ok(row) =
         quest_objective.get(tables:, id: QuestObjectiveId(objective_id))
@@ -259,14 +278,24 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
         list.flat_map(places, fn(place) { player_factions({ place.0 }.id) })
       list.any(place_objective.markers(tables:, objective: row), fn(marker) {
         let started = started_by_world(marker.world_id)
-        list.any(factions, fn(player) { !fought_by(player, started, pane) })
+        list.any(factions, fn(player) { !reached_by(player, started, pane) })
       })
     })
   }
-  assert unfightable(set.to_list(content_support.kill_objective_ids())) == []
+  assert unreached(set.to_list(content_support.kill_objective_ids()), fought_by)
+    == []
     as "every kill row has, for each faction its quest allows, a creature of its pane that starts in each world its markers are in and that faction can fight"
-  assert unfightable([4282, 7272, 7491, 7492]) == [4282, 7272, 7491, 7492]
+  assert unreached([4282, 7272, 7491, 7492], fought_by)
+    == [4282, 7272, 7491, 7492]
     as "the four kill rows left on the stand-in have no such creature (the CI test of the table shows their creatures are Friendly to both factions)"
+  assert unreached(
+      set.to_list(content_support.click_objective_ids()),
+      clicked_by,
+    )
+    == []
+    as "every click row has, for each faction its quest allows, a creature of its pane that starts in each world its markers are in and that the client offers that faction a click on"
+  assert unreached([13_760], clicked_by) == [13_760]
+    as "objective 13760 (quest 6959), left on the stand-in, has no such creature: Creature2 36601 of faction 219 is Friendly to both player factions and the selection leaves it out"
   // A NonPlayer row placed as part of a map object (`active_prop_id` not 0) never
   // moves: `spawn.tsv` holds 630 such rows of 164 creatures, and each one that
   // starts has no run speed.

@@ -23,7 +23,9 @@
 //// count 1 (the client's needed value is 1 for count 1, `0x140551840`). A type 5
 //// objective (`QuestObjective.type.5`, a scripted objective) that no creature links takes
 //// a kill only when it is a row of the kill table (`ScriptRows.kills`, a visible one whose
-//// text asks only to kill), by the reward pane alone (`counts`). Nothing else the client
+//// text asks only to kill), and a use of a unit only when it is a row of the click table
+//// (`ScriptRows.clicks`, a visible one whose text asks only to click a creature the client
+//// offers a click on), each by the reward pane alone (`counts`). Nothing else the client
 //// sends completes one, so the server completes it by what `script_of` says, and a timed one
 //// the server does not complete runs out (`quest_log.expire`):
 //// - a hidden one (`QuestObjective.flags.8`) and a visible, required one with no marker
@@ -38,6 +40,9 @@
 ////   (`arrivals`), because its text asks only to go there;
 //// - one of the kill table's objectives (`ScriptRows.kills`) stays open until the player
 ////   kills a creature of its reward pane, as many times as it counts (`KillScript`);
+//// - one of the click table's objectives (`ScriptRows.clicks`) stays open until the player
+////   activates a creature of its reward pane with the creature's own activate spell, as
+////   many times as it counts, each creature once (`ClickScript`);
 //// - one a spell effect or an item names (`objective_action`) stays open until a cast
 ////   counts for it: a QuestAdvanceObjective row of the cast's spell advances it
 ////   (genesis_prime/game/quest_advance);
@@ -234,7 +239,7 @@ pub fn talk_targets(
   log log: QuestLog,
   tables tables: table_store.Tables,
 ) -> fn(target_group.Unit, Int) -> Bool {
-  // The script tables decide only what a kill counts for, so a talk reads none.
+  // The script tables decide only what a kill or a use counts for, so a talk reads none.
   let offered = counted_by(log:, tables:, scripts: no_rows())
   fn(unit, checklist_index) {
     offered(TalkedTo(target: unit, checklist_index:))
@@ -249,9 +254,9 @@ pub fn talk_targets(
 pub fn use_targets(
   log log: QuestLog,
   tables tables: table_store.Tables,
+  scripts scripts: ScriptRows,
 ) -> fn(target_group.Unit, Int, quest_log.UnitRef) -> Bool {
-  // The script tables decide only what a kill counts for, so a use reads none.
-  let offered = counted_by(log:, tables:, scripts: no_rows())
+  let offered = counted_by(log:, tables:, scripts:)
   fn(unit, checklist_index, ref) {
     offered(Used(target: unit, checklist_index:, unit: ref, by_item: False))
   }
@@ -440,6 +445,11 @@ pub fn counts(
           #(quest_id, index),
         )
       }
+      || {
+        !by_item
+        && in_script_rows(objective:, rows: scripts.clicks)
+        && in_listed_pane(tables:, objective:, unit: target)
+      }
     Cast(spell4_id:, target:) ->
       objective_kind.cast_spell(objective.kind) == Ok(spell4_id)
       && case target {
@@ -474,13 +484,29 @@ fn killed_in_pane(
 ) -> Bool {
   let kills =
     objective_kind.is_kill(objective.kind)
-    || {
-      objective.kind == objective_kind.Scripted
-      && set.contains(scripts.kills, objective.objective_id)
-    }
-  kills
-  && objective.reward_pane != 0
-  && target_group.contains(tables:, group: objective.reward_pane, unit: target)
+    || in_script_rows(objective:, rows: scripts.kills)
+  kills && in_listed_pane(tables:, objective:, unit: target)
+}
+
+/// Whether the objective names a reward pane and the unit is in it: a script row counts no
+/// unit when it names none.
+fn in_listed_pane(
+  tables tables: table_store.Tables,
+  objective objective: quest_log.Objective,
+  unit unit: target_group.Unit,
+) -> Bool {
+  objective.reward_pane != 0
+  && target_group.contains(tables:, group: objective.reward_pane, unit:)
+}
+
+/// Whether the objective is a type 5 objective (a scripted one) of the content table whose
+/// ids are `rows`.
+fn in_script_rows(
+  objective objective: quest_log.Objective,
+  rows rows: Set(Int),
+) -> Bool {
+  objective.kind == objective_kind.Scripted
+  && set.contains(rows, objective.objective_id)
 }
 
 /// Whether the unit is in the objective's reward pane, which counts a unit for any
@@ -900,12 +926,15 @@ pub type ScriptRows {
     /// The objectives done by killing the creatures of their reward pane
     /// (genesis_prime/game/kill_objective).
     kills: Set(Int),
+    /// The objectives done by activating a creature of their reward pane with its own
+    /// activate spell (genesis_prime/game/click_objective).
+    clicks: Set(Int),
   )
 }
 
 /// The rows of no table: every type 5 objective that no creature links is a stand-in.
 pub fn no_rows() -> ScriptRows {
-  ScriptRows(kills: set.new())
+  ScriptRows(kills: set.new(), clicks: set.new())
 }
 
 /// How the rules treat an objective of a quest, decided in one place so no objective falls
@@ -927,6 +956,9 @@ pub type Script {
   /// Visible, required, marked and listed in the kill table: done by killing the creatures
   /// of its reward pane (`counts`), which `objective_spawn.place` stands at its marker.
   KillScript
+  /// Visible, required, marked and listed in the click table: done by activating a creature
+  /// of its reward pane (`counts`), which `objective_spawn.place` stands at its marker.
+  ClickScript
   /// Visible, required and marked, and none of the above: done when it is open, whatever
   /// else the quest holds.
   StandInOnAccept
@@ -943,9 +975,9 @@ pub type Script {
 /// (`0x1405fbc40`). A visible required one without a marker waits for the quest (a
 /// `worldLocationsIdIndicator` that names no WorldLocation2 row is no marker: no position is
 /// at it, `0x140485fa0`); one with a marker sends the player to a place (`0x140553890`) and is
-/// the named action's, a place script (`arrival_objectives`), a kill script (`scripts`) or a
-/// stand-in on accept, in that order. The held objectives are not looked at here: each
-/// rule leaves a held one open.
+/// the named action's, a place script (`arrival_objectives`), a kill script or a click
+/// script (`scripts`) or a stand-in on accept, in that order. The held objectives are not
+/// looked at here: each rule leaves a held one open.
 pub fn script_of(
   tables tables: table_store.Tables,
   quest_id quest_id: Int,
@@ -976,10 +1008,15 @@ pub fn script_of(
     set.contains(arrival_objectives, objective.objective_id),
     PlaceScript,
   )
-  case set.contains(scripts.kills, objective.objective_id) {
-    True -> KillScript
-    False -> StandInOnAccept
-  }
+  use <- bool.guard(
+    set.contains(scripts.kills, objective.objective_id),
+    KillScript,
+  )
+  use <- bool.guard(
+    set.contains(scripts.clicks, objective.objective_id),
+    ClickScript,
+  )
+  StandInOnAccept
 }
 
 /// The quest's stand-in scripts (`script_of`), a held one left open:
@@ -1058,7 +1095,8 @@ fn stand_in_scripts(
           | Optional
           | NamedAction
           | PlaceScript
-          | KillScript -> Error(Nil)
+          | KillScript
+          | ClickScript -> Error(Nil)
         }
       }),
     )

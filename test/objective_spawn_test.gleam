@@ -107,12 +107,24 @@ fn placed_with_kills(
   factions factions: creature_faction.Factions,
   kills kills: Set(Int),
 ) -> Placed {
+  placed_with_tables(tables:, stored:, factions:, kills:, clicks: set.new())
+}
+
+/// `placed_by_the_load` with these objectives as the kill table's and the click table's rows.
+fn placed_with_tables(
+  tables tables: store.Tables,
+  stored stored: List(Row),
+  factions factions: creature_faction.Factions,
+  kills kills: Set(Int),
+  clicks clicks: Set(Int),
+) -> Placed {
   objective_spawn.place(
     tables:,
     stored:,
     factions:,
     kinds: spawn_support.turret_kinds(),
     kills:,
+    clicks:,
   )
 }
 
@@ -369,6 +381,7 @@ pub fn a_turret_creature_with_no_kind_is_not_placed_and_is_reported_test() -> Ni
       factions: creature_faction.none(),
       kinds: spawn_support.kinds(),
       kills: set.new(),
+      clicks: set.new(),
     )
   assert of_creatures(placed:, creatures: [73_494, turret]) == []
     as "neither Sim-Turret is placed"
@@ -1944,4 +1957,134 @@ pub fn the_kill_targets_stand_in_the_marker_circle_test() -> Nil {
     assert row.world_id == 51 && row.area_id == 1252
       as "the marker's world and zone"
   })
+}
+
+/// What the click table's rows make the placement do: the rows stored (creature, world), the
+/// objectives in the click table, and how many click rows of the creature are placed.
+type ClickTarget {
+  ClickTarget(
+    why: String,
+    stored: List(#(Int, Int)),
+    clicks: List(Int),
+    creature: Int,
+    placed: Int,
+  )
+}
+
+pub fn the_click_targets_stand_at_the_marker_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.content_tables()
+  // Quest 6591's objective 16170 is type 5, count 1, on TargetGroup 6299 (Creature2 51440) at
+  // marker 40836 in World 22; quest 5918's 9002 is on TargetGroup 7874 (Creature2 26436) at
+  // marker 19699 in World 22 (`table_rows -- QuestObjective 16170 9002`, `-- TargetGroup 6299
+  // 7874`, `-- WorldLocation2 40836 19699`). Objective 10256 of quest 6591 is a type 2 kill of
+  // Creature2 51440 on the same pane and marker. Creature2 26436's own link names quest 5918's
+  // objective 8903, a type 12 objective, which names no click target. Objective 6159's pane
+  // lists Creature2 16595, which has no activate spell, at marker 12358 in World 51.
+  let pyrius = 51_440
+  let base =
+    ClickTarget(
+      why: "a click-table row whose creature has no stored spawn gets one at its marker",
+      stored: [#(filler, 22)],
+      clicks: [16_170],
+      creature: pyrius,
+      placed: 1,
+    )
+  let cases = [
+    base,
+    ClickTarget(
+      ..base,
+      why: "a stored row of the creature in the marker's world serves it",
+      stored: [#(filler, 22), #(pyrius, 22)],
+      placed: 0,
+    ),
+    ClickTarget(
+      ..base,
+      why: "a stored row of the creature in another world serves no marker",
+      stored: [#(filler, 22), #(pyrius, 51)],
+      placed: 1,
+    ),
+    ClickTarget(
+      ..base,
+      why: "a type 5 row not in the click table places nothing",
+      clicks: [],
+      placed: 0,
+    ),
+    ClickTarget(
+      ..base,
+      why: "a type 2 and a type 5 row of one pane and marker place the creature once",
+      clicks: [16_170, 10_256],
+      placed: 1,
+    ),
+    ClickTarget(
+      ..base,
+      why: "a marker in a world with no stored spawn places nothing",
+      stored: [#(filler, 51)],
+      placed: 0,
+    ),
+    ClickTarget(
+      ..base,
+      why: "quest 5918's creature is placed once at the marker of 9002, and its link to the type 12 objective 8903 places none",
+      clicks: [9002],
+      creature: 26_436,
+    ),
+    ClickTarget(
+      why: "a pane creature the client offers no click on is not placed",
+      stored: [#(filler, 51)],
+      clicks: [6159],
+      creature: 16_595,
+      placed: 0,
+    ),
+  ]
+  list.each(cases, fn(row) {
+    let placed =
+      placed_with_tables(
+        tables:,
+        stored: list.index_map(row.stored, fn(pair, index) {
+          stored(tables:, id: index + 1, creature_id: pair.0, world_id: pair.1)
+        }),
+        factions: creature_faction.none(),
+        kills: set.new(),
+        clicks: set.from_list(row.clicks),
+      )
+    assert list.length(click_of(placed:, creatures: [row.creature]))
+      == row.placed
+      as row.why
+  })
+  let placed =
+    placed_with_tables(
+      tables:,
+      stored: [stored(tables:, id: 1, creature_id: filler, world_id: 22)],
+      factions: creature_faction.none(),
+      kills: set.new(),
+      clicks: set.from_list([16_170]),
+    )
+  let assert [row] = click_of(placed:, creatures: [pyrius])
+    as "one row of the creature"
+  let marker = the_marker_of(tables:, marker_id: 40_836)
+  assert stands_at(
+    row:,
+    x: marker.position0,
+    y: marker.position1,
+    z: marker.position2,
+  )
+    as "the creature stands at the marker's centre"
+  assert row.world_id == 22 && row.area_id == marker.world_zone_id
+    as "the marker's world and zone"
+  let skipped =
+    placed_with_tables(
+      tables:,
+      stored: [stored(tables:, id: 1, creature_id: filler, world_id: 51)],
+      factions: creature_faction.none(),
+      kills: set.new(),
+      clicks: set.from_list([16_170]),
+    )
+  assert list.contains(
+    skipped.click_skipped,
+    objective_spawn.Skipped(
+      objective_id: 16_170,
+      why: objective_spawn.NoSpawnsInWorld(marker_id: 40_836, world_id: 22),
+    ),
+  )
+    as "the report names the objective, the marker and the world that holds no spawn"
 }
