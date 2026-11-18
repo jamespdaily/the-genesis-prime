@@ -1176,18 +1176,21 @@ fn beast_takes(
 
 /// The attack tick the creature's step starts, of the kind's 1500 ms.
 fn tick_of(taken: step.ServiceStep(creature.Outgoing)) -> step.TimerId {
-  let assert [timer] =
-    list.filter_map(support.effects_of(taken), fn(effect) {
-      case effect {
-        OwnEffect(step.StartServiceTimer(timer:, after_ms: 1500))
-          if timer != creature.chase_arrival_timer
-        -> Ok(timer)
-        OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
-          Error(Nil)
-      }
+  let assert [#(timer, _)] =
+    list.filter(started_but_the_arrival(taken), fn(started) {
+      started.1 == 1500
     })
     as "the step starts the next attack tick"
   timer
+}
+
+/// The timers a step starts, with their delays, but for the chase's arrival timer.
+fn started_but_the_arrival(
+  taken: step.ServiceStep(creature.Outgoing),
+) -> List(#(step.TimerId, Int)) {
+  list.filter(support.service_timers_started(taken), fn(started) {
+    started.0 != creature.chase_arrival_timer
+  })
 }
 
 /// The creature after its timer fires at `at_ms`, and its step.
@@ -1365,14 +1368,8 @@ fn home_timer_of(
   taken: step.ServiceStep(creature.Outgoing),
 ) -> #(step.TimerId, Int) {
   let assert [started] =
-    list.filter_map(support.effects_of(taken), fn(effect) {
-      case effect {
-        OwnEffect(step.StartServiceTimer(timer:, after_ms:))
-          if after_ms != 1500 && timer != creature.chase_arrival_timer
-        -> Ok(#(timer, after_ms))
-        OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
-          Error(Nil)
-      }
+    list.filter(started_but_the_arrival(taken), fn(started) {
+      started.1 != 1500
     })
     as "the step starts one timer besides the chase's arrival and the attack tick"
   started
@@ -1380,15 +1377,9 @@ fn home_timer_of(
 
 /// The delay of the chase's arrival timer a step starts.
 fn chase_arrival_after_ms(taken: step.ServiceStep(creature.Outgoing)) -> Int {
-  let assert [after_ms] =
-    list.filter_map(support.effects_of(taken), fn(effect) {
-      case effect {
-        OwnEffect(step.StartServiceTimer(timer:, after_ms:))
-          if timer == creature.chase_arrival_timer
-        -> Ok(after_ms)
-        OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
-          Error(Nil)
-      }
+  let assert [#(_, after_ms)] =
+    list.filter(support.service_timers_started(taken), fn(started) {
+      started.0 == creature.chase_arrival_timer
     })
     as "the step starts the chase's arrival timer"
   after_ms

@@ -400,19 +400,7 @@ fn news_to(taken: ServiceStep(creature.Outgoing), number: Int) -> List(News) {
 
 /// The timers the step starts, with their times.
 fn timers(taken: ServiceStep(creature.Outgoing)) -> List(#(step.TimerId, Int)) {
-  list.filter_map(support.effects_of(taken), fn(effect) {
-    case effect {
-      OwnEffect(StartServiceTimer(timer:, after_ms:)) -> Ok(#(timer, after_ms))
-      OwnEffect(step.Send(..))
-      | OwnEffect(step.Reply(..))
-      | OwnEffect(step.StartCreature(..))
-      | OwnEffect(step.CancelServiceTimer(..))
-      | step.Watch(..)
-      | step.Unwatch(..)
-      | step.Log(..)
-      | step.Stop -> Error(Nil)
-    }
-  })
+  support.service_timers_started(taken)
 }
 
 /// The one timer the step starts for `after_ms`.
@@ -931,10 +919,12 @@ pub fn a_creature_whose_path_has_ended_at_the_leash_circle_sends_no_placement_te
     tell(state:, at_ms: 0, message: moved(number: 2, x: 100.0, seq: 2))
   assert x_of(creature_path.end(path: path_sent(chased))) == 55.0
     as "the path to 96 is clipped at the leash circle, 55 from the spawn"
+  let #(state, _) =
+    fire(state:, at_ms: 5500, timer: creature.chase_arrival_timer)
   let #(_, again) =
     tell(state:, at_ms: 5800, message: moved(number: 2, x: 100.0, seq: 3))
   assert said(again) == []
-    as "the path ended at 5500 ms, at the circle: a replan finds nothing to run and the viewers hold no path that still runs, so nothing is sent"
+    as "the path ended at 5500 ms, at the circle, and the arrival timer stopped the viewers' run: a replan finds nothing to run, so nothing is sent"
 }
 
 pub fn a_leash_of_a_creature_that_stands_at_home_sends_no_path_test() -> Nil {
@@ -7299,19 +7289,12 @@ type Arrival {
 }
 
 fn arrival_timers(taken: ServiceStep(creature.Outgoing)) -> List(Arrival) {
-  list.filter_map(support.effects_of(taken), fn(effect) {
-    case effect {
-      OwnEffect(StartServiceTimer(timer:, after_ms:))
-        if timer == creature.chase_arrival_timer
-      -> Ok(ArrivalStarted(after_ms:))
-      OwnEffect(step.CancelServiceTimer(timer:))
-        if timer == creature.chase_arrival_timer
-      -> Ok(ArrivalCancelled)
-      OwnEffect(_)
-      | step.Watch(..)
-      | step.Unwatch(..)
-      | step.Log(..)
-      | step.Stop -> Error(Nil)
+  list.filter_map(support.service_timers(taken), fn(timer) {
+    case timer {
+      #(id, Some(after_ms)) if id == creature.chase_arrival_timer ->
+        Ok(ArrivalStarted(after_ms:))
+      #(id, None) if id == creature.chase_arrival_timer -> Ok(ArrivalCancelled)
+      #(_, _) -> Error(Nil)
     }
   })
 }
@@ -7457,6 +7440,40 @@ pub fn the_arrival_timer_of_a_path_that_is_no_longer_run_sends_nothing_test() ->
     let #(_, fired) =
       fire(state: held, at_ms:, timer: creature.chase_arrival_timer)
     assert said(fired) == [] && timers(fired) == [] as reason
+  })
+}
+
+pub fn a_run_stood_between_its_end_and_its_arrival_timer_is_stopped_once_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) = chasing(viewers: [2, 5])
+  let stun =
+    controlling(number: 2, cast_id: 1, controls: [
+      crowd_control_support.stagger_stun(instance_id: 28_673),
+    ])
+  let #(walking_home, leashed) =
+    tell(state:, at_ms: 1000, message: creature.Unwatched(by: ConnectionId(2)))
+  let cases = [
+    #("stood by a state", state, 2600, stun, creature.chase_arrival_timer),
+    #(
+      "killed",
+      state,
+      2600,
+      killing(number: 2, cast_id: 1, controls: []),
+      creature.chase_arrival_timer,
+    ),
+    #("walking home", walking_home, 2000, stun, timer_for(leashed, 1000)),
+  ]
+  list.each(cases, fn(row) {
+    let #(reason, run, at_ms, message, timer) = row
+    let #(stood, standing) = tell(state: run, at_ms:, message:)
+    let #(_, fired) = fire(state: stood, at_ms:, timer:)
+    assert list.length(
+        list.filter(list.append(said(standing), said(fired)), fn(line) {
+          line == "0x638(placed) to 5"
+        }),
+      )
+      == 1
+      as reason
   })
 }
 

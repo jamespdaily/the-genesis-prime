@@ -822,12 +822,15 @@ fn stepped(
       }
     TimerFired(timer: ChaseArrival) ->
       case state.status, state.path {
-        Fighting(..), Running(..) -> #(state, [
-          ToViewers(client_connection.CreaturePlaced(
-            place: creature_path.end(path: state.path),
-            at_ms: now_ms,
-          )),
-        ])
+        Fighting(..), Running(..) -> {
+          let end = creature_path.end(path: state.path)
+          #(State(..state, path: Standing(at: end)), [
+            ToViewers(client_connection.CreaturePlaced(
+              place: end,
+              at_ms: now_ms,
+            )),
+          ])
+        }
         Fighting(..), Standing(..)
         | Fighting(..), Timed(..)
         | Resting, _
@@ -2511,15 +2514,19 @@ fn chase_arrival(path path: Path, now_ms now_ms: Int) -> List(Effect) {
 }
 
 /// What the viewers are told of the creature's new path: a running path as 0x638 of
-/// kind 4, and a standing one as 0x638 of kind 2 only when the path they were last
-/// sent is still being run, since a client left running it would run on from a
-/// creature that stands. A creature that has stood since its path ended says nothing.
+/// kind 4, and a standing one as 0x638 of kind 2 when the path they were last sent is a
+/// run, which a client ends only by an explicit stop, or a flight still in the air. A
+/// run's arrival timer sends its stop and sets the path standing, so a stand after that
+/// says nothing, and a stand before it, though the run has ended, sends the stop.
 fn path_news(was was: Path, now now: Path, now_ms now_ms: Int) -> List(Effect) {
   case now, was {
     Running(..), _ | Timed(..), _ -> [
       ToViewers(client_connection.CreatureMoved(path: now)),
     ]
-    Standing(at:), Running(..) | Standing(at:), Timed(..) ->
+    Standing(at:), Running(..) -> [
+      ToViewers(client_connection.CreaturePlaced(place: at, at_ms: now_ms)),
+    ]
+    Standing(at:), Timed(..) ->
       case creature_path.arrives_ms(path: was, now_ms:) > now_ms {
         True -> [
           ToViewers(client_connection.CreaturePlaced(place: at, at_ms: now_ms)),

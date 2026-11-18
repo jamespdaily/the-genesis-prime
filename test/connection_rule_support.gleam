@@ -170,6 +170,39 @@ pub fn timers_started(step: ConnectionStep(request)) -> List(step.TimerId) {
   })
 }
 
+/// The timers a service step starts and cancels, in order: a start carries its delay
+/// as `Some(after_ms)`, a cancel `None`.
+pub fn service_timers(
+  step: ServiceStep(outgoing),
+) -> List(#(step.TimerId, Option(Int))) {
+  list.filter_map(effects_of(step), fn(effect) {
+    case effect {
+      OwnEffect(StartServiceTimer(timer:, after_ms:)) ->
+        Ok(#(timer, Some(after_ms)))
+      OwnEffect(CancelServiceTimer(timer:)) -> Ok(#(timer, None))
+      OwnEffect(Send(..))
+      | OwnEffect(Reply(..))
+      | OwnEffect(StartCreature(..))
+      | Watch(..)
+      | Unwatch(..)
+      | Log(..)
+      | Stop -> Error(Nil)
+    }
+  })
+}
+
+/// The timers a service step starts, with their delays, in order.
+pub fn service_timers_started(
+  step: ServiceStep(outgoing),
+) -> List(#(step.TimerId, Int)) {
+  list.filter_map(service_timers(step), fn(timer) {
+    case timer {
+      #(timer, Some(after_ms)) -> Ok(#(timer, after_ms))
+      #(_, None) -> Error(Nil)
+    }
+  })
+}
+
 /// The bytes the step writes, in order.
 pub fn writes(step: ConnectionStep(request)) -> List(BitArray) {
   list.filter_map(effects_of(step), fn(effect) {
