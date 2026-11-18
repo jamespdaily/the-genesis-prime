@@ -356,7 +356,7 @@ pub fn a_viewer_writes_one_0x1c8_with_every_field_the_design_lists_test() -> Nil
       text: bit_stream.utf16_units("Hello"),
       formats: [Kind1(ChatFormatKind1(start: 0, end: 5, field_4: 0xA1B2))],
       cross_faction: 0,
-      unread_14: 0,
+      field_14: 0,
       unit_id: 5,
       premium_tier: 0,
     )
@@ -975,7 +975,7 @@ fn system_line_with(text: String) -> ChatLine {
     text: bit_stream.utf16_units(text),
     formats: [],
     cross_faction: 0,
-    unread_14: 0,
+    field_14: 0,
     unit_id: 0,
     premium_tier: 0,
   )

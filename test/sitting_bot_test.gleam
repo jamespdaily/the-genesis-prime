@@ -387,7 +387,7 @@ fn heard_frame(sender: String) -> Frame {
       text: bit_stream.utf16_units("look"),
       formats: [],
       cross_faction: 0,
-      unread_14: 0,
+      field_14: 0,
       unit_id: 5,
       premium_tier: 0,
     )),

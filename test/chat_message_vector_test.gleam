@@ -271,7 +271,7 @@ pub fn a_line_to_show_is_the_channel_the_speaker_the_text_and_the_cross_faction_
       text: bit_stream.utf16_units("Hello"),
       formats: [Kind0(ChatFormatKind0(start: 0, end: 5, field_4: 0))],
       cross_faction: 1,
-      unread_14: 0,
+      field_14: 0,
       unit_id: 0x0A0B0C0D,
       premium_tier: 0,
     ),

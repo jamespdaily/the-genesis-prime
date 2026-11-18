@@ -27,7 +27,7 @@ fn line_frame(sender sender: String, text text: String) -> Frame {
       text: bit_stream.utf16_units(text),
       formats: [],
       cross_faction: 0,
-      unread_14: 0,
+      field_14: 0,
       unit_id: 5,
       premium_tier: 0,
     ))
