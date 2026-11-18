@@ -20,9 +20,9 @@ import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{
   Applied, ControlEffect, CooldownEffect, DelayEffect, DespawnEffect,
   ForcedMoveEffect, GainEffect, HealEffect, Held, LastingEffect, LeftOut,
-  ModifierEffect, ProcEffect, ProxyEffect, ReadByActivation, ReadByArea,
-  ReadEffects, ReadProc, ReadProxy, RemoveEffect, RemoveStealthEffect,
-  StealthEffect, StruckMoveEffect, UnitStateEffect,
+  ModifierEffect, ProcEffect, ProxyEffect, QuestAdvanceEffect, ReadByActivation,
+  ReadByArea, ReadEffects, ReadProc, ReadProxy, RemoveEffect,
+  RemoveStealthEffect, StealthEffect, StruckMoveEffect, UnitStateEffect,
 }
 import genesis_prime/table/spell4_effects
 import gleam/bool
@@ -140,6 +140,7 @@ fn kind_name(
     DespawnEffect(..) -> "DespawnEffect"
     UnitStateEffect(..) -> "UnitStateEffect"
     DelayEffect(..) -> "DelayEffect"
+    QuestAdvanceEffect(..) -> "QuestAdvanceEffect"
   }
 }
 
@@ -180,6 +181,7 @@ fn outcomes_of(kind kind: effect_kind.Kind) -> List(String) {
     effect_kind.Activate -> ["ReadByActivation"]
     effect_kind.Despawn -> ["DespawnEffect"]
     effect_kind.NpcExecutionDelay -> ["DelayEffect"]
+    effect_kind.QuestAdvance -> ["QuestAdvanceEffect"]
     effect_kind.Immunity | effect_kind.UnitState | effect_kind.Unread(..) -> []
   }
 }

@@ -435,7 +435,9 @@ fn describe_proc_left_out(why why: spell_plan.LeftOutReason) -> String {
     | spell_plan.UnitStateBehindPersistence
     | spell_plan.UnitStateDataNotRead(..)
     | spell_plan.DelayOnAnotherUnit
-    | spell_plan.DelayHasNoDuration -> "a reason no Proc row has"
+    | spell_plan.DelayHasNoDuration
+    | spell_plan.QuestAdvanceColumnNotRead(..)
+    | spell_plan.QuestAdvanceAddsNothing -> "a reason no Proc row has"
   }
 }
 
@@ -661,6 +663,7 @@ fn counted_namings(
         | effect_kind.Despawn
         | effect_kind.UnitState
         | effect_kind.NpcExecutionDelay
+        | effect_kind.QuestAdvance
         | effect_kind.Unread(..) -> []
       }
       named(table: "Spell4Effects", id: effect.id, columns: [

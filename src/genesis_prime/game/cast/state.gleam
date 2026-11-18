@@ -24,6 +24,7 @@ import genesis_prime/game/lasting
 import genesis_prime/game/look
 import genesis_prime/game/prerequisite
 import genesis_prime/game/proc
+import genesis_prime/game/quest_advance
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/shortcut_spell
 import genesis_prime/game/spell_area
@@ -264,7 +265,8 @@ pub type Effect {
   /// `unit_id`, of the Creature2 row `creature_id`, which lived when the press started the
   /// cast or did not (`alive_at_press`). The cast is an item's when `by_item`, the
   /// creature's own activate cast otherwise; `cast_id` is that cast, none for the use of a unit
-  /// with no activate spell, which casts nothing.
+  /// with no activate spell, which casts nothing. An item's cast of a spell with no Activate row
+  /// raises none: the Activate effect is what makes a use.
   Activated(
     unit_id: Int,
     creature_id: Int,
@@ -275,6 +277,20 @@ pub type Effect {
   /// The first go of a cast of a quest button's spell (`cast.shortcut`), by its Spell4 id, and
   /// the unit the press aimed it at: none for a spell that takes the caster.
   ShortcutCast(spell4_id: Int, target: Option(PressedAt))
+  /// The QuestAdvanceObjective rows of the caster's spell applied: the connection advances the
+  /// player's quest objectives (genesis_prime/game/quest_advance), skipping each one the cast's
+  /// own use or cast (`with`) counts, which is raised before this effect in the same go.
+  QuestAdvanced(advances: List(quest_advance.Advance), with: AdvanceWith)
+}
+
+/// The use or cast a QuestAdvanceObjective row was applied with, which counts the objectives
+/// it names itself (genesis_prime/game/quest_advance): the activate cast of the unit, as
+/// `Activated` raises it, or the quest button's cast, as `ShortcutCast` raises it, or none for
+/// a cast that raises neither.
+pub type AdvanceWith {
+  WithUse(unit_id: Int, creature_id: Int, alive_at_press: Bool, by_item: Bool)
+  WithCast(spell4_id: Int, target: Option(PressedAt))
+  WithNothing
 }
 
 /// The unit a press of a quest button's spell aimed it at (`opcode.0x9d`).
@@ -418,6 +434,7 @@ pub type Due {
     parent: Spell4Id,
     primary_target: Int,
     proxy: Proxy,
+    counted_with: AdvanceWith,
   )
   /// The earliest node of the lingering cast `cast_id` ends: its units' 0x811, or
   /// the finish when no node is left.
@@ -457,6 +474,10 @@ pub type Due {
   /// ago (`proc.Fires`): its spell is cast at the unit `at`. The fire was counted at the
   /// event. The end of the holder's node cancels it.
   ProcDue(source: unit_properties.Source, row: spell_plan.ProcRow, at: Int)
+  /// The QuestAdvanceObjective rows of the go `advances` name apply, after their delay, with the
+  /// use or cast of their cast: it becomes `QuestAdvanced`. Neither the cast's end nor the
+  /// caster's death cancels it.
+  QuestAdvanceDue(advances: List(quest_advance.Advance), with: AdvanceWith)
   /// The held press starts.
   StartHeld
   /// The ability the player holds down casts again: its cooldowns have ended.
@@ -641,8 +662,10 @@ pub type Resolution {
 /// What a cast is to its ability's threshold.
 pub type Role {
   /// A child a Proxy started, or a cast the server starts of its own for no press (the level-up
-  /// fanfare): no threshold is touched.
-  Child
+  /// fanfare): no threshold is touched. It counts its QuestAdvanceObjective rows with the use
+  /// or cast of the cast that started it, `counted_with` (none for a child a proc fire or the
+  /// server started).
+  Child(counted_with: AdvanceWith)
   /// The ability's own spell, which opens a threshold when its method has one.
   Base(ability: Spell, bag_spell: Spell4Id)
   /// The stage at `index` of the ability's open threshold.
@@ -730,6 +753,12 @@ pub type Live {
     shortcut: Bool,
     /// The unit a quest button's cast was aimed at, when it takes one.
     aimed: Option(PressedAt),
+    /// The use or cast the cast's QuestAdvanceObjective rows count with: its own for an activate
+    /// or quest button cast, the cast's that started it for a child.
+    counted_with: AdvanceWith,
+    /// The QuestAdvanceObjective rows an earlier go of the cast applied: a row applies once per
+    /// cast, at the first go that reaches it.
+    advance_rows_applied: Set(Spell4EffectsId),
     /// Whether a channel's finish timer fired while a go's strike round was still open:
     /// the cast ends when its last go is written, which a round's deadline bounds
     /// (`opcode.0x7f4`: the client counts the gos before its 0x7fe, `cast.channel_sequence`).
@@ -1353,6 +1382,19 @@ pub type Reached {
   )
 }
 
+/// The rows of one kind among the effects a go reached, each with the entry that reached it,
+/// in the order they were reached (`as_kind` is the kind's projection, such as
+/// `spell_plan.as_modifier`). Every effect of a go that arms or tells something per row
+/// starts from this list.
+pub fn rows_reached(
+  reached reached: List(Reached),
+  as_kind as_kind: fn(spell_plan.Kind) -> Result(payload, Nil),
+) -> List(#(Reached, payload)) {
+  list.filter_map(reached, fn(entry) {
+    result.map(as_kind(entry.effect.kind), fn(row) { #(entry, row) })
+  })
+}
+
 /// What the reach stage made of an effect beside its unit.
 pub type Product {
   /// Nothing: the effect stands on its unit as it is.
@@ -1427,11 +1469,69 @@ pub fn source_of(due due: Due) -> Option(unit_properties.Source) {
     | NodesEnd(..)
     | StateEnd(..)
     | ProcDue(..)
+    | QuestAdvanceDue(..)
     | StartHeld
     | RepeatHeld
     | WindowEnd(..)
     | ChargeLevel(..)
     | Tick(..) -> None
+  }
+}
+
+/// The effects without the cancels of the timers in `kept`.
+pub fn without_cancels(
+  effects effects: List(Effect),
+  of kept: Dict(TimerId, Due),
+) -> List(Effect) {
+  list.filter(effects, fn(effect) {
+    case effect {
+      CancelTimer(timer:) -> !dict.has_key(kept, timer)
+      Send(..)
+      | Tell(..)
+      | StartTimer(..)
+      | Log(..)
+      | Strike(..)
+      | TickStrike(..)
+      | Pay(..)
+      | Gain(..)
+      | CasterChangeStarts(..)
+      | CasterChangeEnds(..)
+      | TargetChangeStarts(..)
+      | ForcedMoveStarts(..)
+      | CreatureDespawns(..)
+      | CreatureHoldsUnitStates(..)
+      | TargetChangeEnds(..)
+      | StealthChanged(..)
+      | Activated(..)
+      | ShortcutCast(..)
+      | QuestAdvanced(..) -> True
+    }
+  })
+}
+
+/// Whether a timer holds QuestAdvanceObjective rows back for their delay, which the caster's
+/// death leaves running (`cast.died`).
+pub fn is_quest_advance(due due: Due) -> Bool {
+  case due {
+    QuestAdvanceDue(..) -> True
+    Go(..)
+    | Finish(..)
+    | StartChild(..)
+    | NodesEnd(..)
+    | StateEnd(..)
+    | ModifierStart(..)
+    | TargetModifierStart(..)
+    | ForcedMoveStart(..)
+    | ModifierEnd(..)
+    | RestrictionEnd(..)
+    | CooldownModifierStarts(..)
+    | CooldownModifierEnds(..)
+    | ProcDue(..)
+    | StartHeld
+    | RepeatHeld
+    | WindowEnd(..)
+    | ChargeLevel(..)
+    | Tick(..) -> False
   }
 }
 

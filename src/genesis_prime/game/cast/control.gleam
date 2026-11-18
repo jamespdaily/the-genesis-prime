@@ -143,9 +143,9 @@ import genesis_prime/game/cast/state.{
   ChargeLevel, CooldownModifierEnds, CooldownModifierStarts, CreatureDespawns,
   CreatureHoldsUnitStates, Deflected, Finish, ForcedMoveStart, ForcedMoveStarts,
   Go, HeldRestriction, Hit, Immune, Look, ModifierEnd, ModifierStart, NodesEnd,
-  OnCreature, ProcDue, Property, RepeatHeld, Restricting, RestrictionEnd, Send,
-  StartChild, StartHeld, State, StateEnd, TargetChangeEnds, TargetChangeStarts,
-  TargetModifierStart, Tell, Tick, WindowEnd,
+  OnCreature, ProcDue, Property, QuestAdvanceDue, RepeatHeld, Restricting,
+  RestrictionEnd, Send, StartChild, StartHeld, State, StateEnd, TargetChangeEnds,
+  TargetChangeStarts, TargetModifierStart, Tell, Tick, WindowEnd,
 } as cast_state
 import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
@@ -346,6 +346,8 @@ fn effect_named(kind kind: spell_plan.Kind) -> Result(String, Nil) {
     spell_plan.ProcEffect(proc: row) -> named("the Proc", row.effect_id)
     spell_plan.HealEffect(heal: row) ->
       named("the Heal or HealShields", row.effect_id)
+    spell_plan.QuestAdvanceEffect(quest_advance: row) ->
+      named("the QuestAdvanceObjective", row.effect_id)
     spell_plan.ControlEffect(control: row) ->
       named("the ability restriction", row.effect_id)
   }
@@ -578,65 +580,54 @@ pub fn modifiers_armed(
   aimed aimed: Aimed,
   struck struck: List(Struck),
 ) -> #(State, List(Effect)) {
-  list.fold(aimed.reached, #(cast, []), fn(so_far, entry) {
-    let #(cast, effects) = so_far
-    case entry.effect.kind {
-      spell_plan.ModifierEffect(modifier: row) -> {
-        let source = unit_properties.Source(cast_id:, effect_id: row.effect_id)
-        let #(cast, more) = case row.change {
-          spell_plan.StruckChange(modifier:, ..) ->
-            creature_modifier_armed(
-              cast:,
-              cast_id:,
-              row:,
-              modifier:,
-              unit_id: entry.unit_id,
-              struck:,
-            )
-          spell_plan.PropertyChange(modifier:) ->
-            caster_modifier_armed(
-              cast:,
-              row:,
-              source:,
-              change: Property(modifier:),
-            )
-          spell_plan.LookChange(disguise:) ->
-            caster_modifier_armed(cast:, row:, source:, change: Look(disguise:))
-          spell_plan.AbsorbChange(absorption:) ->
-            // An absorb's pool is worked out at the go from the caster as it stood before
-            // the go's own effects, as a shield heal's amount is (`cast_heal.healed_on`).
-            caster_modifier_armed(
-              cast:,
-              row:,
-              source:,
-              change: Absorb(
-                amount: damage.amount_on_caster(
-                  formula: absorption.formula,
-                  caster: cast_heal.on_caster_of(caster:),
-                ),
-                mask: absorption.mask,
+  list.fold(
+    cast_state.rows_reached(
+      reached: aimed.reached,
+      as_kind: spell_plan.as_modifier,
+    ),
+    #(cast, []),
+    fn(so_far, found) {
+      let #(cast, effects) = so_far
+      let #(entry, row) = found
+      let source = unit_properties.Source(cast_id:, effect_id: row.effect_id)
+      let #(cast, more) = case row.change {
+        spell_plan.StruckChange(modifier:, ..) ->
+          creature_modifier_armed(
+            cast:,
+            cast_id:,
+            row:,
+            modifier:,
+            unit_id: entry.unit_id,
+            struck:,
+          )
+        spell_plan.PropertyChange(modifier:) ->
+          caster_modifier_armed(
+            cast:,
+            row:,
+            source:,
+            change: Property(modifier:),
+          )
+        spell_plan.LookChange(disguise:) ->
+          caster_modifier_armed(cast:, row:, source:, change: Look(disguise:))
+        spell_plan.AbsorbChange(absorption:) ->
+          // An absorb's pool is worked out at the go from the caster as it stood before
+          // the go's own effects, as a shield heal's amount is (`cast_heal.healed_on`).
+          caster_modifier_armed(
+            cast:,
+            row:,
+            source:,
+            change: Absorb(
+              amount: damage.amount_on_caster(
+                formula: absorption.formula,
+                caster: cast_heal.on_caster_of(caster:),
               ),
-            )
-        }
-        #(cast, list.append(effects, more))
+              mask: absorption.mask,
+            ),
+          )
       }
-      spell_plan.ProxyEffect(..)
-      | spell_plan.GainEffect(..)
-      | spell_plan.LastingEffect(..)
-      | spell_plan.RemoveEffect(..)
-      | spell_plan.ForcedMoveEffect(..)
-      | spell_plan.StruckMoveEffect(..)
-      | spell_plan.CooldownEffect(..)
-      | spell_plan.StealthEffect(..)
-      | spell_plan.RemoveStealthEffect(..)
-      | spell_plan.ProcEffect(..)
-      | spell_plan.HealEffect(..)
-      | spell_plan.ControlEffect(..)
-      | spell_plan.DespawnEffect(..)
-      | spell_plan.UnitStateEffect(..)
-      | spell_plan.DelayEffect(..) -> so_far
-    }
-  })
+      #(cast, list.append(effects, more))
+    },
+  )
 }
 
 /// A property modifier on a creature the go struck, armed from this go: the modifier
@@ -695,37 +686,23 @@ pub fn struck_moves_armed(
   reached reached: List(Reached),
   struck struck: List(Struck),
 ) -> #(State, List(Effect)) {
-  list.fold(reached, #(cast, []), fn(so_far, entry) {
-    let #(cast, effects) = so_far
-    case entry.effect.kind {
-      spell_plan.StruckMoveEffect(struck_move: row) -> {
-        let #(cast, more) =
-          struck_move_armed(
-            cast:,
-            cast_id:,
-            row:,
-            unit_id: entry.unit_id,
-            struck:,
-          )
-        #(cast, list.append(effects, more))
-      }
-      spell_plan.ProxyEffect(..)
-      | spell_plan.GainEffect(..)
-      | spell_plan.LastingEffect(..)
-      | spell_plan.RemoveEffect(..)
-      | spell_plan.ModifierEffect(..)
-      | spell_plan.ForcedMoveEffect(..)
-      | spell_plan.CooldownEffect(..)
-      | spell_plan.StealthEffect(..)
-      | spell_plan.RemoveStealthEffect(..)
-      | spell_plan.ProcEffect(..)
-      | spell_plan.HealEffect(..)
-      | spell_plan.ControlEffect(..)
-      | spell_plan.DespawnEffect(..)
-      | spell_plan.UnitStateEffect(..)
-      | spell_plan.DelayEffect(..) -> so_far
-    }
-  })
+  list.fold(
+    cast_state.rows_reached(reached:, as_kind: spell_plan.as_struck_move),
+    #(cast, []),
+    fn(so_far, found) {
+      let #(cast, effects) = so_far
+      let #(entry, row) = found
+      let #(cast, more) =
+        struck_move_armed(
+          cast:,
+          cast_id:,
+          row:,
+          unit_id: entry.unit_id,
+          struck:,
+        )
+      #(cast, list.append(effects, more))
+    },
+  )
 }
 
 /// The creatures a go removes: each despawn among the effects the go `reached` (a DespawnUnit
@@ -765,24 +742,24 @@ pub fn despawns_told(
   struck struck: List(Struck),
   went_at_ms went_at_ms: Int,
 ) -> List(Effect) {
-  list.flat_map(reached, fn(entry) {
-    case spell_plan.as_despawn(entry.effect.kind) {
-      Ok(row) ->
-        case cast_gate.creature_hit(struck:, unit_id: entry.unit_id) {
-          Error(Nil) -> []
-          Ok(#(life, struck_at_ms)) -> [
-            CreatureDespawns(
-              unit_id: entry.unit_id,
-              life:,
-              struck_at_ms:,
-              went_at_ms:,
-              delay_ms: row.delay_ms,
-            ),
-          ]
-        }
-      Error(Nil) -> []
-    }
-  })
+  list.flat_map(
+    cast_state.rows_reached(reached:, as_kind: spell_plan.as_despawn),
+    fn(found) {
+      let #(entry, row) = found
+      case cast_gate.creature_hit(struck:, unit_id: entry.unit_id) {
+        Error(Nil) -> []
+        Ok(#(life, struck_at_ms)) -> [
+          CreatureDespawns(
+            unit_id: entry.unit_id,
+            life:,
+            struck_at_ms:,
+            went_at_ms:,
+            delay_ms: row.delay_ms,
+          ),
+        ]
+      }
+    },
+  )
 }
 
 /// The creatures a go holds unit states on: each unit state among the effects the go
@@ -826,14 +803,17 @@ pub fn unit_states_told(
   went_at_ms went_at_ms: Int,
 ) -> List(Effect) {
   let held =
-    list.filter_map(reached, fn(entry) {
-      use row <- result.try(spell_plan.as_unit_state(entry.effect.kind))
-      use #(life, struck_at_ms) <- result.map(cast_gate.creature_hit(
-        struck:,
-        unit_id: entry.unit_id,
-      ))
-      #(entry.unit_id, life, struck_at_ms, row.row)
-    })
+    list.filter_map(
+      cast_state.rows_reached(reached:, as_kind: spell_plan.as_unit_state),
+      fn(found) {
+        let #(entry, row) = found
+        use #(life, struck_at_ms) <- result.map(cast_gate.creature_hit(
+          struck:,
+          unit_id: entry.unit_id,
+        ))
+        #(entry.unit_id, life, struck_at_ms, row.row)
+      },
+    )
   list.unique(list.map(held, fn(row) { row.0 }))
   |> list.filter_map(fn(unit_id) {
     let mine = list.filter(held, fn(row) { row.0 == unit_id })
@@ -928,6 +908,7 @@ fn target_start_of(due due: Due) -> Result(OnCreature, Nil) {
     | CooldownModifierStarts(..)
     | CooldownModifierEnds(..)
     | ProcDue(..)
+    | QuestAdvanceDue(..)
     | StartHeld
     | RepeatHeld
     | WindowEnd(..)

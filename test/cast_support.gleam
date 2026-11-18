@@ -24,6 +24,7 @@ import genesis_prime/game/damage
 import genesis_prime/game/heal_split
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/prerequisite
+import genesis_prime/game/quest_advance
 import genesis_prime/game/spell_plan.{
   type Plans, type Spell, Always, AtFirstGo, GlobalCooldown, KeepsStealth,
   NoWeaponNeeded, Normal, Spell, StealthRow,
@@ -488,6 +489,7 @@ pub fn payments(effects effects: List(Effect)) -> List(class_resource.Payment) {
       | cast_state.CreatureHoldsUnitStates(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
+      | cast_state.QuestAdvanced(..)
       | cast_state.TickStrike(..)
       | cast_state.StealthChanged(..) -> []
     }
@@ -515,8 +517,40 @@ pub fn shortcut_casts(effects effects: List(Effect)) -> List(Effect) {
       | cast_state.CreatureDespawns(..)
       | cast_state.CreatureHoldsUnitStates(..)
       | cast_state.Activated(..)
+      | cast_state.QuestAdvanced(..)
       | cast_state.TickStrike(..)
       | cast_state.StealthChanged(..) -> False
+    }
+  })
+}
+
+/// The `QuestAdvanced` effects among the effects, each as its advances and the use or cast
+/// they were made with, in order.
+pub fn quest_advances(
+  effects effects: List(Effect),
+) -> List(#(List(quest_advance.Advance), cast_state.AdvanceWith)) {
+  list.filter_map(effects, fn(effect) {
+    case effect {
+      cast_state.QuestAdvanced(advances:, with:) -> Ok(#(advances, with))
+      cast_state.Send(..)
+      | cast_state.Tell(..)
+      | cast_state.StartTimer(..)
+      | cast_state.CancelTimer(..)
+      | cast_state.Strike(..)
+      | cast_state.Pay(..)
+      | cast_state.Gain(..)
+      | cast_state.Log(..)
+      | cast_state.CasterChangeStarts(..)
+      | cast_state.CasterChangeEnds(..)
+      | cast_state.TargetChangeStarts(..)
+      | cast_state.TargetChangeEnds(..)
+      | cast_state.ForcedMoveStarts(..)
+      | cast_state.CreatureDespawns(..)
+      | cast_state.CreatureHoldsUnitStates(..)
+      | cast_state.Activated(..)
+      | cast_state.ShortcutCast(..)
+      | cast_state.TickStrike(..)
+      | cast_state.StealthChanged(..) -> Error(Nil)
     }
   })
 }
@@ -542,6 +576,7 @@ pub fn gains(effects effects: List(Effect)) -> List(List(class_resource.Gain)) {
       | cast_state.CreatureHoldsUnitStates(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
+      | cast_state.QuestAdvanced(..)
       | cast_state.TickStrike(..)
       | cast_state.StealthChanged(..) -> Error(Nil)
     }
@@ -571,6 +606,7 @@ pub fn caster_change_ends(
       | cast_state.CreatureHoldsUnitStates(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
+      | cast_state.QuestAdvanced(..)
       | cast_state.TickStrike(..)
       | cast_state.StealthChanged(..) -> Error(Nil)
     }
@@ -600,6 +636,7 @@ pub fn caster_change_starts(
       | cast_state.CreatureHoldsUnitStates(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
+      | cast_state.QuestAdvanced(..)
       | cast_state.TickStrike(..)
       | cast_state.StealthChanged(..) -> Error(Nil)
     }
@@ -648,6 +685,7 @@ pub fn target_changes(effects effects: List(Effect)) -> List(Effect) {
       | cast_state.CasterChangeEnds(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
+      | cast_state.QuestAdvanced(..)
       | cast_state.TickStrike(..)
       | cast_state.StealthChanged(..) -> False
     }
@@ -685,6 +723,7 @@ pub fn throws(effects effects: List(Effect)) -> List(Effect) {
       | cast_state.CasterChangeEnds(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
+      | cast_state.QuestAdvanced(..)
       | cast_state.TickStrike(..)
       | cast_state.StealthChanged(..) -> False
     }
@@ -712,6 +751,7 @@ pub fn despawns(effects effects: List(Effect)) -> List(Effect) {
       | cast_state.CasterChangeEnds(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
+      | cast_state.QuestAdvanced(..)
       | cast_state.TickStrike(..)
       | cast_state.StealthChanged(..) -> False
     }
@@ -739,6 +779,7 @@ pub fn unit_states_told(effects effects: List(Effect)) -> List(Effect) {
       | cast_state.CasterChangeEnds(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
+      | cast_state.QuestAdvanced(..)
       | cast_state.TickStrike(..)
       | cast_state.StealthChanged(..) -> False
     }
@@ -1167,6 +1208,7 @@ pub fn writes(effects effects: List(Effect)) -> List(Frame) {
       | cast_state.CreatureHoldsUnitStates(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
+      | cast_state.QuestAdvanced(..)
       | cast_state.TickStrike(..)
       | cast_state.StealthChanged(..) -> Error(Nil)
     }
@@ -1212,7 +1254,8 @@ pub fn activations(
       | cast_state.CreatureHoldsUnitStates(..)
       | cast_state.ShortcutCast(..)
       | cast_state.TickStrike(..)
-      | cast_state.StealthChanged(..) -> Error(Nil)
+      | cast_state.StealthChanged(..)
+      | cast_state.QuestAdvanced(..) -> Error(Nil)
     }
   })
 }
@@ -1303,6 +1346,7 @@ pub fn tells(effects effects: List(Effect)) -> List(#(ConnectionId, News)) {
       | cast_state.CreatureHoldsUnitStates(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
+      | cast_state.QuestAdvanced(..)
       | cast_state.TickStrike(..)
       | cast_state.StealthChanged(..) -> Error(Nil)
     }
@@ -1330,6 +1374,7 @@ pub fn logs(effects effects: List(Effect)) -> List(#(LogLevel, String)) {
       | cast_state.CreatureHoldsUnitStates(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
+      | cast_state.QuestAdvanced(..)
       | cast_state.TickStrike(..)
       | cast_state.StealthChanged(..) -> Error(Nil)
     }
@@ -1357,6 +1402,7 @@ pub fn goes_asked(effects effects: List(Effect)) -> List(cast_state.GoAsked) {
       | cast_state.CreatureHoldsUnitStates(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
+      | cast_state.QuestAdvanced(..)
       | cast_state.TickStrike(..)
       | cast_state.StealthChanged(..) -> Error(Nil)
     }
@@ -1384,6 +1430,7 @@ pub fn started_timers(effects effects: List(Effect)) -> List(#(TimerId, Int)) {
       | cast_state.CreatureHoldsUnitStates(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
+      | cast_state.QuestAdvanced(..)
       | cast_state.TickStrike(..)
       | cast_state.StealthChanged(..) -> Error(Nil)
     }
@@ -1411,6 +1458,7 @@ pub fn cancelled_timers(effects effects: List(Effect)) -> List(TimerId) {
       | cast_state.CreatureHoldsUnitStates(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
+      | cast_state.QuestAdvanced(..)
       | cast_state.TickStrike(..)
       | cast_state.StealthChanged(..) -> Error(Nil)
     }
@@ -1645,6 +1693,7 @@ pub fn answered_known(
       | cast_state.CreatureHoldsUnitStates(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
+      | cast_state.QuestAdvanced(..)
       | cast_state.TickStrike(..)
       | cast_state.StealthChanged(..) -> #(state, list.append(done, [effect]))
     }
@@ -2079,6 +2128,7 @@ pub fn tick_strikes(
       | cast_state.CreatureHoldsUnitStates(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
+      | cast_state.QuestAdvanced(..)
       | cast_state.StealthChanged(..) -> Error(Nil)
     }
   })

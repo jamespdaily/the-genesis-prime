@@ -707,7 +707,8 @@ fn held_of(kind kind: spell_plan.Kind) -> Result(Held, Nil) {
     | spell_plan.StruckMoveEffect(..)
     | spell_plan.DespawnEffect(..)
     | spell_plan.UnitStateEffect(..)
-    | spell_plan.DelayEffect(..) -> Error(Nil)
+    | spell_plan.DelayEffect(..)
+    | spell_plan.QuestAdvanceEffect(..) -> Error(Nil)
   }
 }
 

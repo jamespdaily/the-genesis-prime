@@ -384,6 +384,7 @@ fn only_damage_and_delay(
       | effect_kind.Immunity
       | effect_kind.Despawn
       | effect_kind.UnitState
+      | effect_kind.QuestAdvance
       | effect_kind.Unread(..) ->
         Error(OtherEffectType(
           spell4_effects_id: effect.id,

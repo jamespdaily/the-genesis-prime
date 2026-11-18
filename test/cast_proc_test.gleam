@@ -316,7 +316,8 @@ fn trace(
       | cast_state.CreatureDespawns(..)
       | cast_state.CreatureHoldsUnitStates(..)
       | cast_state.Activated(..)
-      | cast_state.ShortcutCast(..) -> []
+      | cast_state.ShortcutCast(..)
+      | cast_state.QuestAdvanced(..) -> []
     }
   })
 }
@@ -379,6 +380,7 @@ fn is_strike(effect effect: Effect) -> Bool {
     | cast_state.CreatureHoldsUnitStates(..)
     | cast_state.Activated(..)
     | cast_state.ShortcutCast(..)
+    | cast_state.QuestAdvanced(..)
     | cast_state.TickStrike(..)
     | cast_state.StealthChanged(..) -> False
   }

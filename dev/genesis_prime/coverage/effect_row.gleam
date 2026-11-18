@@ -45,7 +45,8 @@ import gleam/set
 /// has no entry. A DespawnUnit row the plan applies in a spell the activate cast names
 /// (`activate.activated_spell_ids`) is not read either: the activate cast drops it
 /// (`activate.drops_despawn`), unless a Proxy or Proc names the spell as its child, which
-/// applies the row by that route.
+/// applies the row by that route; a QuestAdvanceObjective row aimed at the primary target
+/// alone is dropped the same way (`activate.drops_quest_advance`).
 pub fn unread_by_type(
   tables tables: store.Tables,
   effects effects: List(Spell4Effects),
@@ -55,7 +56,9 @@ pub fn unread_by_type(
   let activated = activate.activated_spell_ids(tables:, sources:)
   list.fold(effects, dict.new(), fn(counts, effect) {
     let dropped =
-      activate.drops_despawn(effect:)
+      {
+        activate.drops_despawn(effect:) || activate.drops_quest_advance(effect:)
+      }
       && set.contains(activated, effect.spell_id)
       && !spell_plan.is_child(sources:, spell4_id: effect.spell_id)
     case

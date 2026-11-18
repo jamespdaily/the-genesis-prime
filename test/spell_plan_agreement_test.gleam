@@ -411,6 +411,7 @@ fn children_of(
           | effect_kind.Despawn
           | effect_kind.UnitState
           | effect_kind.NpcExecutionDelay
+          | effect_kind.QuestAdvance
           | effect_kind.Unread(..) -> Error(Nil)
         }
       })

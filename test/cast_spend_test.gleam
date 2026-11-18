@@ -102,6 +102,7 @@ fn asked_goes(effects effects: List(cast_state.Effect)) -> List(GoAsked) {
       | cast_state.CreatureHoldsUnitStates(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
+      | cast_state.QuestAdvanced(..)
       | cast_state.TickStrike(..)
       | cast_state.StealthChanged(..) -> Error(Nil)
     }

@@ -195,6 +195,13 @@
 ////   at other units is not read. A spell also holds its cooldown groups, the non-zero
 ////   spellCoolDownId00 to 02, each of which must be a SpellCoolDown row. Its caster
 ////   apply prerequisite, phases and spend tag are a Fluff effect's.
+//// - **The quest advances.** A QuestAdvanceObjective effect (`Spell4Effects.effectType.42`) whose
+////   targetFlags include the caster, or name the primary target alone, is a `QuestAdvance` row: the
+////   Quest2 id (dataBits00), the objective's index (dataBits01) and the amount (dataBits02), and its
+////   delay. The client has no effect for the type, so the go lists none; the cast hands the
+////   connection the advance (genesis_prime/game/quest_advance). A row with a column the client does
+////   not read that is not 0, or an amount below 1, is left out by name. Its caster apply
+////   prerequisite, phases and spend tag are a Fluff effect's.
 //// - **The phases** of a Multiphase spell (`Spell.CodeEnumCastMethod` 8) are the
 ////   SpellPhase rows of its owner kept by the client's rule (`0x14055e180`: order
 ////   index below 32, and index 0 or a non-zero delay), each delay the gap after
@@ -1107,6 +1114,31 @@ pub type Delay {
   )
 }
 
+/// A QuestAdvanceObjective effect (`Spell4Effects.effectType.42`) of a spell whose targetFlags
+/// reach the caster or the primary target alone (`effect_kind.is_row_read`): `amount`
+/// (dataBits02) added to the progress of the objective at `objective_index` (dataBits01) of the
+/// quest `quest_id` (dataBits00, a Quest2 id) of the player the cast reaches, `delay_ms` after
+/// the go. The client has no case for the type, so what the player sees is the server's 0x361.
+/// `aim` is the caster or the primary target alone (`Spell4Effects.targetFlags` has no reader in
+/// the client, a guess), `condition` when it holds (its caster apply prerequisite against the
+/// caster, its target apply prerequisite against the unit it reaches), `phase_flags` the phases
+/// it applies in and `tag` when it holds for the points the cast spent
+/// (genesis_prime/game/spend). A quest or an index the tables lack is planned and names no
+/// objective at run time.
+pub type QuestAdvance {
+  QuestAdvance(
+    effect_id: Spell4EffectsId,
+    phase_flags: Int,
+    aim: Aim,
+    condition: Condition,
+    tag: spend.Tag,
+    quest_id: Int,
+    objective_index: Int,
+    amount: Int,
+    delay_ms: Int,
+  )
+}
+
 /// The target apply prerequisite of one row aimed past the caster, which the struck
 /// creature checks against its own state (`Spell4Effects.prerequisiteIdTargetApply`): the
 /// row's Spell4Effects id, the phases of `phase_flags` it applies in, who it aims at, the
@@ -1407,6 +1439,8 @@ pub type Kind {
   ControlEffect(control: CrowdControl)
   /// An NpcExecutionDelay row aimed at the caster with a duration, which holds a creature caster still after a go (`Delay`); a player's cast applies none.
   DelayEffect(delay: Delay)
+  /// A QuestAdvanceObjective row that reaches the caster, which advances a quest objective of the player (`QuestAdvance`).
+  QuestAdvanceEffect(quest_advance: QuestAdvance)
 }
 
 /// The effect a payload is: its row, phases and tag, read from the payload itself.
@@ -1524,6 +1558,13 @@ pub fn effect_of(kind kind: Kind) -> PlannedEffect(Kind) {
         tag: delay.tag,
         kind:,
       )
+    QuestAdvanceEffect(quest_advance:) ->
+      PlannedEffect(
+        effect_id: quest_advance.effect_id,
+        phase_flags: quest_advance.phase_flags,
+        tag: quest_advance.tag,
+        kind:,
+      )
   }
 }
 
@@ -1559,6 +1600,7 @@ pub fn kind_rank(kind kind: Kind) -> Int {
     DespawnEffect(..) -> 140
     UnitStateEffect(..) -> 150
     DelayEffect(..) -> 160
+    QuestAdvanceEffect(..) -> 170
   }
 }
 
@@ -1581,7 +1623,8 @@ fn rank(kind kind: Kind) -> Int {
     | ControlEffect(..)
     | DespawnEffect(..)
     | UnitStateEffect(..)
-    | DelayEffect(..) -> False
+    | DelayEffect(..)
+    | QuestAdvanceEffect(..) -> False
   }
   case armored {
     True -> kind_rank(kind:) + 5
@@ -1607,7 +1650,8 @@ pub fn as_proxy(kind kind: Kind) -> Result(Proxy, Nil) {
     | ControlEffect(..)
     | DespawnEffect(..)
     | UnitStateEffect(..)
-    | DelayEffect(..) -> Error(Nil)
+    | DelayEffect(..)
+    | QuestAdvanceEffect(..) -> Error(Nil)
   }
 }
 
@@ -1629,7 +1673,8 @@ pub fn as_gain(kind kind: Kind) -> Result(Gain, Nil) {
     | ControlEffect(..)
     | DespawnEffect(..)
     | UnitStateEffect(..)
-    | DelayEffect(..) -> Error(Nil)
+    | DelayEffect(..)
+    | QuestAdvanceEffect(..) -> Error(Nil)
   }
 }
 
@@ -1651,7 +1696,8 @@ pub fn as_lasting(kind kind: Kind) -> Result(Lasting, Nil) {
     | ControlEffect(..)
     | DespawnEffect(..)
     | UnitStateEffect(..)
-    | DelayEffect(..) -> Error(Nil)
+    | DelayEffect(..)
+    | QuestAdvanceEffect(..) -> Error(Nil)
   }
 }
 
@@ -1673,7 +1719,8 @@ pub fn as_remove(kind kind: Kind) -> Result(ForceRemove, Nil) {
     | ControlEffect(..)
     | DespawnEffect(..)
     | UnitStateEffect(..)
-    | DelayEffect(..) -> Error(Nil)
+    | DelayEffect(..)
+    | QuestAdvanceEffect(..) -> Error(Nil)
   }
 }
 
@@ -1695,7 +1742,8 @@ pub fn as_modifier(kind kind: Kind) -> Result(PropertyModifier, Nil) {
     | ControlEffect(..)
     | DespawnEffect(..)
     | UnitStateEffect(..)
-    | DelayEffect(..) -> Error(Nil)
+    | DelayEffect(..)
+    | QuestAdvanceEffect(..) -> Error(Nil)
   }
 }
 
@@ -1717,7 +1765,8 @@ pub fn as_forced_move(kind kind: Kind) -> Result(ForcedMove, Nil) {
     | ControlEffect(..)
     | DespawnEffect(..)
     | UnitStateEffect(..)
-    | DelayEffect(..) -> Error(Nil)
+    | DelayEffect(..)
+    | QuestAdvanceEffect(..) -> Error(Nil)
   }
 }
 
@@ -1739,7 +1788,8 @@ pub fn as_struck_move(kind kind: Kind) -> Result(StruckMove, Nil) {
     | ControlEffect(..)
     | DespawnEffect(..)
     | UnitStateEffect(..)
-    | DelayEffect(..) -> Error(Nil)
+    | DelayEffect(..)
+    | QuestAdvanceEffect(..) -> Error(Nil)
   }
 }
 
@@ -1761,7 +1811,8 @@ pub fn as_despawn(kind kind: Kind) -> Result(Despawn, Nil) {
     | HealEffect(..)
     | ControlEffect(..)
     | UnitStateEffect(..)
-    | DelayEffect(..) -> Error(Nil)
+    | DelayEffect(..)
+    | QuestAdvanceEffect(..) -> Error(Nil)
   }
 }
 
@@ -1783,7 +1834,8 @@ pub fn as_unit_state(kind kind: Kind) -> Result(UnitState, Nil) {
     | ProcEffect(..)
     | HealEffect(..)
     | ControlEffect(..)
-    | DelayEffect(..) -> Error(Nil)
+    | DelayEffect(..)
+    | QuestAdvanceEffect(..) -> Error(Nil)
   }
 }
 
@@ -1805,7 +1857,8 @@ pub fn as_cooldown_modifier(kind kind: Kind) -> Result(CooldownModifier, Nil) {
     | ControlEffect(..)
     | DespawnEffect(..)
     | UnitStateEffect(..)
-    | DelayEffect(..) -> Error(Nil)
+    | DelayEffect(..)
+    | QuestAdvanceEffect(..) -> Error(Nil)
   }
 }
 
@@ -1827,7 +1880,8 @@ pub fn as_stealth(kind kind: Kind) -> Result(StealthRow, Nil) {
     | ControlEffect(..)
     | DespawnEffect(..)
     | UnitStateEffect(..)
-    | DelayEffect(..) -> Error(Nil)
+    | DelayEffect(..)
+    | QuestAdvanceEffect(..) -> Error(Nil)
   }
 }
 
@@ -1849,7 +1903,8 @@ pub fn as_remove_stealth(kind kind: Kind) -> Result(RemoveStealthRow, Nil) {
     | ControlEffect(..)
     | DespawnEffect(..)
     | UnitStateEffect(..)
-    | DelayEffect(..) -> Error(Nil)
+    | DelayEffect(..)
+    | QuestAdvanceEffect(..) -> Error(Nil)
   }
 }
 
@@ -1871,7 +1926,8 @@ pub fn as_proc(kind kind: Kind) -> Result(ProcRow, Nil) {
     | ControlEffect(..)
     | DespawnEffect(..)
     | UnitStateEffect(..)
-    | DelayEffect(..) -> Error(Nil)
+    | DelayEffect(..)
+    | QuestAdvanceEffect(..) -> Error(Nil)
   }
 }
 
@@ -1893,7 +1949,8 @@ pub fn as_heal(kind kind: Kind) -> Result(Heal, Nil) {
     | ControlEffect(..)
     | DespawnEffect(..)
     | UnitStateEffect(..)
-    | DelayEffect(..) -> Error(Nil)
+    | DelayEffect(..)
+    | QuestAdvanceEffect(..) -> Error(Nil)
   }
 }
 
@@ -1915,7 +1972,8 @@ pub fn as_control(kind kind: Kind) -> Result(CrowdControl, Nil) {
     | HealEffect(..)
     | DespawnEffect(..)
     | UnitStateEffect(..)
-    | DelayEffect(..) -> Error(Nil)
+    | DelayEffect(..)
+    | QuestAdvanceEffect(..) -> Error(Nil)
   }
 }
 
@@ -1924,6 +1982,30 @@ pub fn as_delay(kind kind: Kind) -> Result(Delay, Nil) {
   case kind {
     DelayEffect(delay:) -> Ok(delay)
     ProxyEffect(..)
+    | GainEffect(..)
+    | LastingEffect(..)
+    | RemoveEffect(..)
+    | ModifierEffect(..)
+    | ForcedMoveEffect(..)
+    | StruckMoveEffect(..)
+    | CooldownEffect(..)
+    | StealthEffect(..)
+    | RemoveStealthEffect(..)
+    | ProcEffect(..)
+    | HealEffect(..)
+    | ControlEffect(..)
+    | DespawnEffect(..)
+    | UnitStateEffect(..)
+    | QuestAdvanceEffect(..) -> Error(Nil)
+  }
+}
+
+/// The payload of an effect of kind `QuestAdvanceEffect`, and nothing for one of another kind.
+pub fn as_quest_advance(kind kind: Kind) -> Result(QuestAdvance, Nil) {
+  case kind {
+    QuestAdvanceEffect(quest_advance:) -> Ok(quest_advance)
+    ProxyEffect(..)
+    | DelayEffect(..)
     | GainEffect(..)
     | LastingEffect(..)
     | RemoveEffect(..)
@@ -2119,6 +2201,12 @@ pub type LeftOutReason {
   /// An NpcExecutionDelay row with no durationTime, which holds its caster still for
   /// nothing.
   DelayHasNoDuration
+  /// A QuestAdvanceObjective row (`Spell4Effects.effectType.42`) whose `column` is not 0: no
+  /// code of the client reads the type, so what a value means is not known and the row
+  /// advances nothing.
+  QuestAdvanceColumnNotRead(column: String)
+  /// A QuestAdvanceObjective row whose amount (dataBits02) is below 1, which advances nothing.
+  QuestAdvanceAddsNothing
 }
 
 /// A row as its spell holds it. A Proxy's child and a Proc's spell are planned from the
@@ -4063,6 +4151,7 @@ pub fn modifier_of(
     | effect_kind.Despawn
     | effect_kind.UnitState
     | effect_kind.NpcExecutionDelay
+    | effect_kind.QuestAdvance
     | effect_kind.Unread(..) ->
       change_of(tables:, spell4_id:, effect:)
       |> result.map(PropertyChange)
@@ -5062,6 +5151,7 @@ fn struck_aim_of_kind(kind kind: Kind) -> Result(Aim, Nil) {
     | HealEffect(..)
     | ProcEffect(..)
     | DelayEffect(..)
+    | QuestAdvanceEffect(..)
     | ProxyEffect(..) -> Error(Nil)
   }
 }
@@ -5256,6 +5346,10 @@ fn kind_reading(
     effect_kind.Despawn -> despawn_reading(tables:, place:, effect:)
     effect_kind.UnitState -> unit_state_reading(tables:, place:, effect:)
     effect_kind.NpcExecutionDelay -> Ok(delay_reading(reaches:, effect:))
+    effect_kind.QuestAdvance -> {
+      use <- when_reached(reaches:)
+      quest_advance_reading(tables:, effect:)
+    }
     effect_kind.Immunity | effect_kind.Unread(..) ->
       Ok(LeftOut(why: TypeNotRead))
   }
@@ -5287,6 +5381,110 @@ fn delay_reading(
         ),
       )
   }
+}
+
+/// A QuestAdvanceObjective row (`Spell4Effects.effectType.42`) as a `QuestAdvance` on the
+/// caster (bit 1 of its targetFlags) or, for a row aimed at the primary target alone, on the
+/// primary target, which is the caster in a press: left out with `QuestAdvanceColumnNotRead` when
+/// a column the client does not read for the type is not 0 (`quest_advance_unread_column`) and
+/// with `QuestAdvanceAddsNothing` when the amount is below 1. Its apply prerequisites are read
+/// as a heal's are (`applied_condition_of`). The quest and the index are not looked up: a pair
+/// the tables lack names no objective at run time.
+fn quest_advance_reading(
+  tables tables: table_store.Tables,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(RowReading, PlanError) {
+  case quest_advance_unread_column(effect:), effect.data_bits02 < 1 {
+    Some(column), _ -> Ok(LeftOut(why: QuestAdvanceColumnNotRead(column:)))
+    None, True -> Ok(LeftOut(why: QuestAdvanceAddsNothing))
+    None, False -> {
+      let aim = quest_advance_aim_of(target_flags: effect.target_flags)
+      // Both aims land on the caster's own unit, which a target apply prerequisite reads as
+      // its first unit; a row aimed at a creature advances nothing, so no creature's state is
+      // read for it.
+      use condition <- result.map(applied_condition_of(
+        tables:,
+        effect:,
+        reach: OnlyTheCaster,
+      ))
+      Applied(
+        read_as(
+          QuestAdvanceEffect(quest_advance: QuestAdvance(
+            effect_id: Spell4EffectsId(effect.id),
+            phase_flags: effect.phase_flags,
+            aim:,
+            condition:,
+            tag: tag_of(effect:),
+            quest_id: effect.data_bits00,
+            objective_index: effect.data_bits01,
+            amount: effect.data_bits02,
+            delay_ms: effect.delay_time,
+          )),
+        ),
+      )
+    }
+  }
+}
+
+/// The aim of a QuestAdvanceObjective row from its `targetFlags`: the caster when bit 1 is set,
+/// else the primary target (the plan reads no area for the type, `effect_kind.is_row_read`).
+pub fn quest_advance_aim_of(target_flags target_flags: Int) -> Aim {
+  use <- bool.guard(
+    when: spell_effect.has_flag(flags: target_flags, bit: 1),
+    return: AimsAtCaster,
+  )
+  AimsAtPrimaryTarget
+}
+
+/// Whether a QuestAdvanceObjective row aimed by `aim` lands on the caster: its aim names the
+/// caster, or names the primary target and the primary target is the caster (a press of a spell
+/// on the caster). Any other row reaches a unit with no player quest log and advances nothing (a
+/// guess: `Spell4Effects.targetFlags` has no reader in the client). The cast's go and the
+/// coverage measure of an activate cast, whose primary target is the activated unit, both read
+/// this.
+pub fn quest_advance_lands_on_the_caster(
+  aim aim: Aim,
+  primary_target_is_caster primary_target_is_caster: Bool,
+) -> Bool {
+  reaches_caster(aim:)
+  || { reaches_primary_target(aim:) && primary_target_is_caster }
+}
+
+/// The first column of a QuestAdvanceObjective row that the client does not read for the type
+/// and that is not 0: the tick and duration, the damage type, the flags, dataBits03 to
+/// dataBits09, the four parameter types and the persistence and suspend prerequisites.
+fn quest_advance_unread_column(
+  effect effect: spell4_effects.Spell4Effects,
+) -> Option(String) {
+  [
+    #("tickTime", effect.tick_time),
+    #("durationTime", effect.duration_time),
+    #("damageType", effect.damage_type),
+    #("flags", effect.flags),
+    #("dataBits03", effect.data_bits03),
+    #("dataBits04", effect.data_bits04),
+    #("dataBits05", effect.data_bits05),
+    #("dataBits06", effect.data_bits06),
+    #("dataBits07", effect.data_bits07),
+    #("dataBits08", effect.data_bits08),
+    #("dataBits09", effect.data_bits09),
+    #("parameterType00", effect.parameter_type00),
+    #("parameterType01", effect.parameter_type01),
+    #("parameterType02", effect.parameter_type02),
+    #("parameterType03", effect.parameter_type03),
+    #(
+      "prerequisiteIdCasterPersistence",
+      effect.prerequisite_id_caster_persistence,
+    ),
+    #(
+      "prerequisiteIdTargetPersistence",
+      effect.prerequisite_id_target_persistence,
+    ),
+    #("prerequisiteIdTargetSuspend", effect.prerequisite_id_target_suspend),
+  ]
+  |> list.find(fn(column) { column.1 != 0 })
+  |> result.map(fn(column) { column.0 })
+  |> option.from_result
 }
 
 /// A DespawnUnit row (`Spell4Effects.effectType.97`) as a `Despawn` of the part of its aim
