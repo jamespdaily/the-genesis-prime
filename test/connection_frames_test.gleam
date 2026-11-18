@@ -197,61 +197,121 @@ pub fn a_face_point_frame_is_kind_0_then_kind_19_at_the_place_test() -> Nil {
     as "kind 0, then kind 19 with the place's x, y and z as float bits, blend 1"
 }
 
-pub fn a_creature_arriving_home_turns_to_its_spawn_facing_over_the_clients_blend_test() -> Nil {
+pub fn a_fixed_face_frame_is_kind_0_then_kind_14_that_takes_the_facing_at_once_test() -> Nil {
   use <- owned_test.run(5000)
-  // A fixed facing is written as kind 19 toward the point 1 m on along the yaw from the unit's
-  // place (1, 2, -3), blend bit set: the client turns the unit over half a second and its
-  // facing from the unit to the point is the yaw (`movement_command.kind_19`, `0x140715c00`).
-  // A yaw faces the direction (-sin yaw, 0, -cos yaw), as `movement_command.kind_14.facing`'s
-  // atan2(-dx, -dz) reads it: yaw 0 faces -z, pi/2 faces -x, pi faces +z, -pi/2 faces +x.
-  // Float bits: 1.0 0x3F800000, 2.0 0x40000000, -2.0 0xC0000000, -3.0 0xC0400000,
-  // -4.0 0xC0800000, 0.0 0.
-  let half_turn = 3.141592653589793
+  // A creature killed or held keeps its facing by kind 14 with the blend bit clear
+  // (`0x140715350`), as the client reads the bit: no kind 19, which would keep turning a corpse
+  // that flies on after its death toward a point it left behind. The roll is carried as it is.
   let cases = [
-    #("yaw 0 faces -z", 0.0, #(0x3F800000, 0xC0800000)),
-    #("yaw pi/2 faces -x", half_turn /. 2.0, #(0, 0xC0400000)),
-    #("yaw pi faces +z", half_turn, #(0x3F800000, 0xC0000000)),
-    #("yaw -pi/2 faces +x", 0.0 -. half_turn /. 2.0, #(0x40000000, 0xC0400000)),
+    #("yaw only", Facing(yaw: 1.5, pitch: 0.0, roll: 0.0), #(0x3FC00000, 0, 0)),
+    #(
+      "yaw, pitch and roll",
+      Facing(yaw: -2.0, pitch: 0.5, roll: 0.25),
+      #(0xC0000000, 0x3F000000, 0x3E800000),
+    ),
   ]
   list.each(cases, fn(row) {
-    let #(reason, yaw, #(x, z)) = row
-    let movement =
-      faced(
-        face: creature_turn.Fixed(facing: Facing(yaw:, pitch: 0.0, roll: 0.0)),
-      )
+    let #(reason, facing, #(yaw, pitch, roll)) = row
+    let movement = faced(face: creature_turn.Fixed(facing:))
     assert movement.commands
       == [
         relayed_movement.Time(MovementTime(time: 400)),
-        relayed_movement.FacePoint(MovementFacePoint(
-          x:,
-          y: 0x40000000,
-          z:,
-          blends: 1,
+        relayed_movement.Rotation(MovementRotation(
+          yaw:,
+          pitch:,
+          roll:,
+          blends: 0,
         )),
       ]
       as {
         reason
-        <> ": kind 0, then kind 19 at the point 1 m along the yaw, blend 1"
+        <> ": kind 0, then kind 14 with the bit clear, no position command"
       }
   })
 }
 
-pub fn a_fixed_facing_with_a_pitch_is_kind_19_at_a_point_above_the_place_test() -> Nil {
+pub fn a_creature_arriving_home_turns_to_its_spawn_facing_over_the_clients_blend_test() -> Nil {
   use <- owned_test.run(5000)
-  // Pitch pi/2 faces straight up (the direction's y is sin pitch, `movement_command.kind_14`'s
-  // arcsine of y): the point is 1 m above the place (1, 2, -3), whatever the yaw.
-  let movement =
-    faced(
-      face: creature_turn.Fixed(facing: Facing(
-        yaw: 0.0,
-        pitch: 3.141592653589793 /. 2.0,
-        roll: 0.0,
-      )),
-    )
-  let assert [_, relayed_movement.FacePoint(point)] = movement.commands
-    as "kind 0, then kind 19"
-  assert point.y == 0x40400000 && point.blends == 1
-    as "the point is at y 3.0 (0x40400000)"
+  // A home facing is written as kind 19 toward the point 1 m on along the facing from the
+  // unit's place (1, 2, -3), blend bit set: the client turns the unit over half a second and
+  // its facing from the unit to the point is the facing (`movement_command.kind_19`,
+  // `0x140715c00`). The client's yaw and pitch of a direction are atan2(-x, -z) and asin(y)
+  // (`0x1401b3170`), so the direction is (-sin yaw cos pitch, sin pitch, -cos yaw cos pitch):
+  // yaw 0 faces -z, pi/2 faces -x, pi faces +z, -pi/2 faces +x, a positive pitch faces up.
+  // Float bits written from that formula: 1.0 0x3F800000, 1.5 0x3FC00000, 2.0 0x40000000,
+  // 2.5 0x40200000, -2.0 0xC0000000, -3.0 0xC0400000, -4.0 0xC0800000; 1 - sqrt(3)/2 is
+  // 0x3E0930A3 and -3 + sqrt(3)/2 is 0xC008930A.
+  let half_turn = 3.141592653589793
+  let cases = [
+    #("yaw 0 faces -z", 0.0, 0.0, #(0x3F800000, 0x40000000, 0xC0800000)),
+    #("yaw pi/2 faces -x", half_turn /. 2.0, 0.0, #(0, 0x40000000, 0xC0400000)),
+    #("yaw pi faces +z", half_turn, 0.0, #(0x3F800000, 0x40000000, 0xC0000000)),
+    #(
+      "yaw -pi/2 faces +x",
+      0.0 -. half_turn /. 2.0,
+      0.0,
+      #(0x40000000, 0x40000000, 0xC0400000),
+    ),
+    #(
+      "yaw pi/2 and pitch pi/6 faces -x, tilted up: x is cos 30 degrees short, y 0.5 above",
+      half_turn /. 2.0,
+      half_turn /. 6.0,
+      #(0x3E0930A3, 0x40200000, 0xC0400000),
+    ),
+    #(
+      "yaw pi and pitch -pi/6 faces +z, tilted down: z is cos 30 degrees on, y 0.5 below",
+      half_turn,
+      0.0 -. half_turn /. 6.0,
+      #(0x3F800000, 0x3FC00000, 0xC008930A),
+    ),
+  ]
+  list.each(cases, fn(row) {
+    let #(reason, yaw, pitch, #(x, y, z)) = row
+    let movement =
+      faced(face: creature_turn.Home(facing: Facing(yaw:, pitch:, roll: 0.0)))
+    assert movement.commands
+      == [
+        relayed_movement.Time(MovementTime(time: 400)),
+        relayed_movement.FacePoint(MovementFacePoint(x:, y:, z:, blends: 1)),
+      ]
+      as {
+        reason
+        <> ": kind 0, then kind 19 at the point 1 m along the facing, blend 1"
+      }
+  })
+}
+
+pub fn a_home_facing_straight_up_or_down_is_kind_19_at_a_point_over_or_under_the_place_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Straight up or down is the point 1 m above or below the place (1, 2, -3), whatever the
+  // yaw: the client's direction-to-angles gives yaw 0 and pitch plus or minus pi/2 there
+  // (`0x1401b3170`), so the yaw is not shown. Yaw pi is the one that would show if it were.
+  let half_turn = 3.141592653589793
+  list.each(
+    [#(half_turn /. 2.0, 0x40400000), #(0.0 -. half_turn /. 2.0, 0x3F800000)],
+    fn(row) {
+      let #(pitch, y) = row
+      let movement =
+        faced(
+          face: creature_turn.Home(facing: Facing(
+            yaw: half_turn,
+            pitch:,
+            roll: 0.0,
+          )),
+        )
+      assert movement.commands
+        == [
+          relayed_movement.Time(MovementTime(time: 400)),
+          relayed_movement.FacePoint(MovementFacePoint(
+            x: 0x3F800000,
+            y:,
+            z: 0xC0400000,
+            blends: 1,
+          )),
+        ]
+        as "the point is straight over or under the place: x 1.0 and z -3.0 are the place's"
+    },
+  )
 }
 
 /// The 0x638 of a creature that stops at a place, decoded.

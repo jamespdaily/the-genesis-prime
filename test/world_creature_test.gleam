@@ -3089,7 +3089,7 @@ pub fn a_creature_fighting_a_player_standing_apart_faces_the_player_through_chas
       wanted: seen_of,
     )
     as "on arrival one rotation"
-  assert arrived == creature_turn.Fixed(facing: start_place.facing(spawn.place))
-    as "a kind 14 with the facing of the spawn's 0x262"
+  assert arrived == creature_turn.Home(facing: start_place.facing(spawn.place))
+    as "the home turn with the facing of the spawn's 0x262, which a viewer blends"
   world_support.stop(world:)
 }

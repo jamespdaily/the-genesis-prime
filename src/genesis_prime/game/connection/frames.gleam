@@ -598,8 +598,10 @@ fn path_defaults(face face: Option(Face)) -> List(RelayedMovement) {
   let rotation = case face {
     Some(creature_turn.Unit(unit_id:)) ->
       relayed_movement.FaceUnit(MovementFaceUnit(unit_id:, blends: 1))
-    Some(creature_turn.Point(..)) | Some(creature_turn.Fixed(..)) | None ->
-      relayed_movement.RotationDefault(MovementKind21(blends: 1))
+    Some(creature_turn.Point(..))
+    | Some(creature_turn.Fixed(..))
+    | Some(creature_turn.Home(..))
+    | None -> relayed_movement.RotationDefault(MovementKind21(blends: 1))
   }
   [
     relayed_movement.VelocityDefault(MovementKind10(blends: 1)),
@@ -622,12 +624,15 @@ fn stopped(state_flags state_flags: Int) -> List(RelayedMovement) {
 /// 0, then the rotation the face is. A unit is faced by kind 18 and a point by kind 19, each
 /// with the blend bit set, so the client turns the creature over half a second and keeps it
 /// facing the unit or the point (`movement_command.kind_18`, `movement_command.kind_19`,
-/// `0x140715c00`). A fixed facing is written as kind 19 toward the point 1 m from
-/// `standing_at` along the facing, so the client blends it too (a kind 14 with the bit clear
-/// takes it at once, `0x140715350`, which a creature home from a walk would show as a snap;
-/// kind 14's own blend timing is not read, `0x140785050`). The choice to blend it is Jim's.
-/// Kind 19 leaves the roll 0, and the creature does not move, so the point stays 1 m off.
-/// No kind 2 or 3 is in the frame: the creature's position is left as it is.
+/// `0x140715c00`). A `Fixed` facing is kind 14 with the bit clear, which takes it at once
+/// (`0x140715350`), so a creature killed or held stays as it was. A `Home` facing, the creature
+/// arriving at its spawn, is written as kind 19 toward the point 1 m from `standing_at` along
+/// the facing, so the client blends the turn instead of showing a snap (kind 14's own blend
+/// timing is not read, `0x140785050`; the choice to blend it is Jim's). That kind 19 holds only
+/// while the creature stands: it keeps facing the point as the creature moves. It carries yaw
+/// and pitch only, so a roll is dropped, and a facing within about 0.004 rad of straight up or
+/// down shows yaw 0, which is what the client's direction-to-angles gives there
+/// (`0x1401b3170`). No kind 2 or 3 is in the frame: the creature's position is left as it is.
 pub fn face_frame(
   entered entered: world_entry.Entered,
   unit_id unit_id: Int,
@@ -646,10 +651,17 @@ pub fn face_frame(
         y: start_place.y(place),
         z: start_place.z(place),
       )
-    creature_turn.Fixed(facing:) -> {
+    creature_turn.Fixed(facing:) ->
+      relayed_movement.Rotation(MovementRotation(
+        yaw: float32.to_bits(facing.yaw),
+        pitch: float32.to_bits(facing.pitch),
+        roll: float32.to_bits(facing.roll),
+        blends: 0,
+      ))
+    creature_turn.Home(facing:) -> {
       // 1 m from the unit along the facing: the client's yaw and pitch of a direction are the
-      // atan2 of its negated x and z and the arcsine of its y (`movement_command.kind_14`,
-      // `0x140715350`), so the direction is (-sin yaw cos pitch, sin pitch, -cos yaw cos pitch).
+      // atan2 of its negated x and z and the arcsine of its y (`0x1401b3170`), so the
+      // direction is (-sin yaw cos pitch, sin pitch, -cos yaw cos pitch).
       let level = maths.cos(facing.pitch)
       face_point(
         x: start_place.x(standing_at) -. maths.sin(facing.yaw) *. level,

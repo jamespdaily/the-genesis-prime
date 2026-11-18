@@ -31,6 +31,7 @@ import genesis_prime/message/movement_kind_13.{MovementKind13}
 import genesis_prime/message/movement_kind_21.{MovementKind21}
 import genesis_prime/message/movement_kind_26.{MovementKind26}
 import genesis_prime/message/movement_move_asked
+import genesis_prime/message/movement_rotation.{MovementRotation}
 import genesis_prime/message/movement_state_flags
 import genesis_prime/message/movement_time
 import genesis_prime/message/player_health.{PlayerHealth}
@@ -2506,6 +2507,35 @@ pub fn a_viewer_writes_a_creatures_facing_as_0x638_only_when_the_unit_is_shown_t
     )
   assert game_connection_support.written_ids(home) == [0x0638]
     as "a point is written as well"
+  // A creature that dies, in flight or not, keeps its facing by kind 14 with the bit clear: the
+  // viewer writes the face as the creature's rule gave it (`0x140715350`).
+  let #(state, frozen) =
+    game_connection_support.feed(
+      state,
+      beast_news(
+        unit_id: 40,
+        news: faces(
+          creature_turn.Fixed(facing: start_place.Facing(
+            yaw: 1.5,
+            pitch: 0.0,
+            roll: 0.0,
+          )),
+        ),
+      ),
+    )
+  let assert [Frame(message_id: 0x0638, body:)] =
+    game_connection_support.heard(frozen, game_connection_support.keyed())
+    as "a fixed facing is one 0x638"
+  let assert Ok(UnitMovement(commands: [_, rotation], ..)) =
+    unit_movement.decode(body)
+  assert rotation
+    == relayed_movement.Rotation(MovementRotation(
+      yaw: 0x3FC00000,
+      pitch: 0,
+      roll: 0,
+      blends: 0,
+    ))
+    as "kind 14 with the blend bit clear, so a corpse in flight is not turned"
   let #(state, _) =
     game_connection_support.feed(state, beast_news(unit_id: 40, news: Removed))
   let #(_, removed) =

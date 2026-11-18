@@ -353,6 +353,8 @@ fn name_of(news: News) -> String {
       "turn(kind 19, home)"
     client_connection.CreatureFaces(face: creature_turn.Fixed(..), ..) ->
       "turn(kind 14)"
+    client_connection.CreatureFaces(face: creature_turn.Home(..), ..) ->
+      "turn(kind 19, spawn facing)"
     CastStarted(..) -> "0x7ff"
     CastWent(..) -> "0x7f4"
     client_connection.CastMissed(..) -> "0x7fb"
@@ -1276,7 +1278,7 @@ pub fn a_creature_told_player_died_for_its_only_entry_leashes_and_at_home_aggroe
       "0x90a(20, 0) to 2",
       "0x89a(0) to 2",
       "0x937(52) to 2",
-      "turn(kind 14) to 2",
+      "turn(kind 19, spawn facing) to 2",
       "Released(7) to 2",
     ]
     as "the leash of a creature standing at its spawn: the entry erased, out of combat, full health (52), no path, the turn to the spawn's facing (it is home), the body told Released"
@@ -2832,7 +2834,8 @@ pub fn move_speed_change_while_walking_home_replans_the_walk_and_its_arrival_tes
   assert said(stale) == [] && said(still_walking) == ["Refused(Returning) to 5"]
     as "the old arrival, fired late, does nothing: the creature is still walking"
   let #(state, arrived) = fire(state:, at_ms: 2500, timer: arrival)
-  assert said(arrived) == ["0x638(placed) to 5", "turn(kind 14) to 5"]
+  assert said(arrived)
+    == ["0x638(placed) to 5", "turn(kind 19, spawn facing) to 5"]
     as "home: the walk's stop, then the creature takes the facing of its spawn"
   let #(_, struck) =
     tell(
@@ -3053,7 +3056,8 @@ pub fn run_speed_restored_walks_home_again_test() -> Nil {
   let assert [#(arrival, 1000)] = timers(back)
     as "its arrival is the 1 s the 10 units take"
   let #(state, arrived) = fire(state:, at_ms: 4000, timer: arrival)
-  assert said(arrived) == ["0x638(placed) to 5", "turn(kind 14) to 5"]
+  assert said(arrived)
+    == ["0x638(placed) to 5", "turn(kind 19, spawn facing) to 5"]
     as "home: the walk's stop, then the creature takes the facing of its spawn"
   assert stands_at(state:, at_ms: 4000) == 0.0
 }
@@ -6901,8 +6905,8 @@ pub fn a_leashed_creature_faces_home_while_it_runs_and_its_spawn_yaw_when_it_arr
     as "the turn to home goes before the walk home"
   let #(_, arrived) = fire(state:, at_ms: 2000, timer: timer_for(leashed, 1000))
   assert faces_to(arrived, 5)
-    == [creature_turn.Fixed(facing: start_place.facing(home()))]
-    as "on arrival one kind 14 gives the facing of the spawn's 0x262"
+    == [creature_turn.Home(facing: start_place.facing(home()))]
+    as "on arrival one turn gives the facing of the spawn's 0x262, which the viewer blends"
   // A leash while a Stun holds the creature starts no walk and no turn: both wait for the end
   // of the state.
   let #(state, _) = chasing(viewers: [2, 5])
@@ -7092,8 +7096,11 @@ pub fn a_creature_that_dies_walking_home_or_in_a_charge_or_in_flight_freezes_the
         went_at_ms: 1200,
       ),
     )
-  assert list.length(faces_to(flight_gone, 2)) == 1
-    && !list.contains(said(flight_gone), "0x638(placed) to 2")
+  let assert [face] = faces_to(flight_gone, 2)
+    as "dying in flight sends one turn"
+  let assert creature_turn.Fixed(..) = face
+    as "the corpse is held by a kind 14, which no kind 19 toward a point it flies from can turn"
+  assert !list.contains(said(flight_gone), "0x638(placed) to 2")
     as "dying in flight sends the turn alone: no kind 2 stops the flight the server still holds"
 }
 
@@ -7235,7 +7242,8 @@ pub fn a_creature_that_walks_home_and_finds_a_player_near_turns_to_the_spawn_bef
       string.starts_with(line, "turn(") || string.starts_with(line, "0x908")
     })
     == [
-      "turn(kind 14) to 5", "0x908(50, 1) to 5", "turn(kind 18, unit 50) to 5",
+      "turn(kind 19, spawn facing) to 5", "0x908(50, 1) to 5",
+      "turn(kind 18, unit 50) to 5",
     ]
     as "the spawn's facing, the new target, then the turn to it"
 }
@@ -7271,8 +7279,8 @@ pub fn a_walk_home_after_a_leash_in_a_state_starts_one_fresh_arrival_timer_test(
     as "the 10 units home take a second"
   let #(_, arrived) = fire(state:, at_ms: 4600, timer: arrival)
   assert faces_to(arrived, 5)
-    == [creature_turn.Fixed(facing: start_place.facing(home()))]
-    as "it arrives once, taking the spawn's facing"
+    == [creature_turn.Home(facing: start_place.facing(home()))]
+    as "it arrives once, taking the spawn's facing, which the viewer blends"
 }
 
 // ---- the chase's arrival: the stop the client's walk animation needs
@@ -7486,6 +7494,7 @@ pub fn the_walk_home_arrival_sends_the_creature_placed_at_home_before_the_turn_t
   let assert [CreaturePlaced(place:, ..), ..] = news_to(at_home, 5)
     as "the first news is the stop"
   assert x_of(place) == 0.0 as "at the spawn"
-  assert said(at_home) == ["0x638(placed) to 5", "turn(kind 14) to 5"]
+  assert said(at_home)
+    == ["0x638(placed) to 5", "turn(kind 19, spawn facing) to 5"]
     as "the stop, then the spawn's facing it takes on arrival"
 }

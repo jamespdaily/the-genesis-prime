@@ -4,7 +4,7 @@
 //// position of kind 2 and 3) leaves the rotation as it was.
 ////
 //// ```
-//// creature_fight: Face ─▶ CreatureFaces news ─▶ viewer's 0x638 [kind 0, kind 18 or kind 19]
+//// creature_fight: Face ─▶ CreatureFaces news ─▶ viewer's 0x638 [kind 0, kind 18, kind 19 or kind 14]
 //// creature and viewer: yaw_of(face, from, ..) ─▶ the yaw the client shows, for a gate's arc
 //// ```
 ////
@@ -12,10 +12,13 @@
 ////   the unit by its id; a unit it does not find, or one closer than 1e-5, leaves the facing
 ////   where it was (`movement_command.kind_18`, `0x140782cd0`).
 //// - **`Point`** is kind 19, the same toward a fixed point (`movement_command.kind_19`).
-//// - **`Fixed`** is one yaw and pitch until the next rotation command. A viewer is sent it as
-////   kind 19 toward a point 1 m along it from the creature, which the client blends over half
-////   a second (`connection/frames.face_frame`); a creature's 0x262 or path that turns it holds
-////   it by kind 14 (`movement_command.kind_14`).
+//// - **`Fixed`** is kind 14: one yaw, pitch and roll until the next rotation command, which
+////   the client takes at once (`movement_command.kind_14`). A creature killed or held keeps
+////   its facing by it, so a corpse in flight stays as it was.
+//// - **`Home`** is the same facing for a creature that has arrived at its spawn: a viewer is
+////   sent it as kind 19 toward a point 1 m along it, which the client blends over half a
+////   second, so the creature turns to its spawn's facing and does not snap
+////   (`connection/frames.face_frame`).
 //// - **The yaw toward a target** is the angle `area.bearing` gives for the yaw that faces it
 ////   (`movement_command.kind_14.facing`), and the facing it showed last when the target is on the
 ////   unit's own ground point (the client's too-close case). The client blends a kind 18 or 19
@@ -33,6 +36,9 @@ pub type Face {
   Point(place: Place)
   /// Facing one way, until a later rotation command.
   Fixed(facing: Facing)
+  /// Facing the way its spawn does on arriving there, until a later rotation command; the
+  /// client turns the creature to it over half a second instead of at once.
+  Home(facing: Facing)
 }
 
 /// The facing of a unit at `from` that faces `target`, keeping `kept` when the target is on
