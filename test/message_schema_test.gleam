@@ -734,7 +734,7 @@ pub fn the_real_schema_marks_the_combat_log_types_the_client_logs_itself_as_neve
     as "the schema holds the combat log union"
   // The client builds the log lines of these types itself from a spell
   // result (LogEffectResult 0x140563dc0), so a server copy would double the
-  // line; it reads type 34 and does nothing (opcode.0x247.unhandled_34).
+  // line.
   assert list.map(union.never_tags, fn(never) { #(never.tag, never.name) })
     == [
       #(3, "damage"),
@@ -744,7 +744,6 @@ pub fn the_real_schema_marks_the_combat_log_types_the_client_logs_itself_as_neve
       #(12, "heal"),
       #(13, "multi_heal"),
       #(17, "deflect"),
-      #(34, "unhandled_34"),
     ]
   list.each(union.never_tags, fn(never) {
     assert never.named_by == "opcode.0x247." <> never.name
