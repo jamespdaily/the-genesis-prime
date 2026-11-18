@@ -64,7 +64,7 @@ pub fn a_timed_path_frame_turns_each_time_into_server_time_test() -> Nil {
       unit_id: 40,
       server_time: 400,
       reset_movement: 0,
-      kept: 0,
+      kept: 1,
       commands: [
         relayed_movement.Time(MovementTime(time: 400)),
         relayed_movement.TimedPath(
@@ -250,12 +250,16 @@ fn moving(
   ]
 }
 
-pub fn a_path_frame_carries_the_movement_state_its_path_implies_test() -> Nil {
+pub fn a_creatures_0x638_turns_the_clients_ground_lift_on_and_carries_the_movement_state_its_path_implies_test() -> Nil {
   use <- owned_test.run(5000)
   // The client animates a unit by kind 24's bit 0x2 and the horizontal length of kind 11's
   // vector, both from the unit's movement commands and not from its path (0x1405b5070); the
   // player sends kind 11 in units a second with the blend bit 1 (the recorded sitting).
   // Half floats: 3.0 is 0x4200, 4.0 0x4400, 10.0 0x4900.
+  // The client's ground lift runs only while the 0x638's second bit is 1 (the unit's
+  // ground-follow flag), and pulls a unit above the ground down only while its state flags
+  // hold 0x100, so a creature's moving state is 0x102 and its standing state 0x100; a flight's
+  // state is 0, so its arc is not pulled down (`unit.ground_lift.server_commands`).
   let cases = [
     #(
       "a run along +x at 10.0 is a move of 10.0 along x and the moving bit",
@@ -266,7 +270,7 @@ pub fn a_path_frame_carries_the_movement_state_its_path_implies_test() -> Nil {
         started_ms: 1000,
         speed: 10.0,
       )),
-      moving(x: 0x4900, z: 0, flags: 2),
+      moving(x: 0x4900, z: 0, flags: 0x102),
     ),
     #(
       "a run up a slope keeps the horizontal part of the velocity and drops its height: 13.0 along (3, 12, 4) is (3, 12, 4) a second",
@@ -277,10 +281,10 @@ pub fn a_path_frame_carries_the_movement_state_its_path_implies_test() -> Nil {
         started_ms: 1000,
         speed: 13.0,
       )),
-      moving(x: 0x4200, z: 0x4400, flags: 2),
+      moving(x: 0x4200, z: 0x4400, flags: 0x102),
     ),
     #(
-      "a flight is no walk: it stops the one that ran before the throw",
+      "a flight is no walk and has no ground bit: it stops the one that ran before the throw and its arc is not pulled down",
       sent(path: creature_path.Timed(
         first: #(1000, at(x: 1.0, y: 2.0, z: -3.0)),
         rest: [#(1375, at(x: 4.0, y: 5.0, z: 6.0))],
@@ -289,7 +293,7 @@ pub fn a_path_frame_carries_the_movement_state_its_path_implies_test() -> Nil {
       moving(x: 0, z: 0, flags: 0),
     ),
     #(
-      "a turn in place is no walk",
+      "a turn in place is a timed frame: no walk and no ground bit",
       sent(path: creature_path.Timed(
         first: #(1000, at(x: 1.0, y: 2.0, z: -3.0)),
         rest: [],
@@ -297,7 +301,7 @@ pub fn a_path_frame_carries_the_movement_state_its_path_implies_test() -> Nil {
       )),
       moving(x: 0, z: 0, flags: 0),
     ),
-    #("a stop ends the animation", placed(), moving(x: 0, z: 0, flags: 0)),
+    #("a stop ends the animation", placed(), moving(x: 0, z: 0, flags: 0x100)),
     #(
       "a turn at a unit says nothing of movement, so it does not stop a run",
       faced(face: creature_turn.Unit(unit_id: 20)),
@@ -323,7 +327,20 @@ pub fn a_path_frame_carries_the_movement_state_its_path_implies_test() -> Nil {
   list.each(cases, fn(row) {
     let #(reason, movement, expected) = row
     assert movement_states(movement) == expected as reason
+    assert movement.kept == 1
+      as { reason <> ": the second bit is 1, which turns the client's lift on" }
   })
+  // Another player's relayed move has no evidence for the lift: the client's code reads the bit
+  // for every unit, but what a player's own client sends for another's unit is not in the
+  // facts, so its bit stays 0 and its commands go through as they came
+  // (`unit.ground_lift.server_commands`).
+  let relayed = [relayed_movement.StateFlags(MovementStateFlags(flags: 0x102))]
+  let Frame(body:, ..) =
+    frames.unit_moved_frame(unit_id: 41, server_time_ms: 400, commands: relayed)
+  let assert Ok(UnitMovement(kept:, commands:, ..)) = unit_movement.decode(body)
+    as "the frame is a 0x638 the client's reader takes"
+  assert kept == 0 && commands == relayed
+    as "another player's relayed move keeps the bit 0 and its own commands"
   assert frames.path_frame(
       entered: entered(),
       unit_id: 40,
@@ -423,10 +440,13 @@ pub fn a_two_point_path_frame_is_the_bytes_it_was_test() -> Nil {
   // The body the path frame made for this run before a run could hold more points,
   // taken from origin/main 548056f0: unit 40, kind 0 at 400 (1000 less the map's 600),
   // kind 4 of (1.5, -2, 3) and (26, 4.5, -7.25) at 7.5 (half float 0x4780), type 0, mode 0,
-  // then kind 11 and kind 24.
+  // then kind 11 and kind 24. Two bits differ from that body: bit 65, the second bit after the
+  // unit and the time and the reset bit, now 1 (0x10 to 0x12 in byte 8), and bit 437, 0x100
+  // of the kind 24 flags, which are 0x102 (byte 54 from 0x00 to 0x20)
+  // (`unit.ground_lift.server_commands`).
   let assert Ok(before) =
     bit_array.base16_decode(
-      "280000009001000010001900004004000000FE01000000060000020200800E0200800402004007063C02000000002C5C230000D0E05800000000",
+      "280000009001000012001900004004000000FE01000000060000020200800E0200800402004007063C02000000002C5C230000D0E05820000000",
     )
     as "a hex string"
   let assert Some(Frame(message_id: 0x0638, body:)) =
