@@ -73,9 +73,10 @@ jobs:
     # A cold run builds the patched OTP in 146 seconds on the runner and the
     # whole cold job takes 3 minutes 11 seconds (run 40316762854). With the client's
     # data, ./check took 181 s on a normal runner and 359 s on a slow one (the world-data
-    # test alone past 300 s), and its hang limit is 720 s (see GENESIS_CHECK_BUDGET_SECONDS
-    # below); 20 minutes covers the cold setup, that limit and the steps after it.
-    timeout-minutes: 20
+    # test alone past 300 s); by 2026-11-18 the tests alone took 467 s and 617 s on two
+    # runs, and its hang limit is 1200 s (see GENESIS_CHECK_BUDGET_SECONDS below);
+    # 30 minutes covers the cold setup, that limit and the steps after it.
+    timeout-minutes: 30
     services:
       postgres:
         image: postgres:18
@@ -96,9 +97,10 @@ jobs:
       # on PATH for ./check.
       GENESIS_NO_CLIENT: ${{ secrets.CLIENT_DATA_KEY == '' && '1' || '' }}
       # The wall time ./check warns over, and a third of its hang limit (the only time
-      # limit that fails the run): 181 s on a normal runner, 359 s on a slow one, so 240
-      # warns on a slow runner and the hang limit of 720 s is twice the slowest run seen.
-      GENESIS_CHECK_BUDGET_SECONDS: "240"
+      # limit that fails the run): the tests alone took 617 s on the slowest run seen
+      # (2026-11-18), so 400 warns on a slow runner and the hang limit of 1200 s is about
+      # twice that run.
+      GENESIS_CHECK_BUDGET_SECONDS: "400"
       PGHOST: localhost
       PGPORT: "5432"
       PGUSER: postgres
