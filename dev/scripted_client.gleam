@@ -20,6 +20,7 @@ import gleam/bit_array
 import gleam/bool
 import gleam/crypto
 import gleam/int
+import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
@@ -31,11 +32,26 @@ pub fn request(
   command command: String,
   body body: String,
 ) -> BitArray {
+  request_with_headers(sequence:, protocol:, command:, body:, headers: [])
+}
+
+/// The same with more headers after `l`, each written as `name:value`, as the
+/// library's LoginStart on a reconnect carries a `p` header.
+fn request_with_headers(
+  sequence sequence: Option(Int),
+  protocol protocol: String,
+  command command: String,
+  body body: String,
+  headers headers: List(#(String, String)),
+) -> BitArray {
   let length = bit_array.byte_size(<<body:utf8>>)
   let sequence_header = case sequence {
     Some(number) -> "s:" <> int.to_string(number) <> "\r\n"
     None -> ""
   }
+  let more_headers =
+    list.map(headers, fn(header) { header.0 <> ":" <> header.1 <> "\r\n" })
+    |> string.concat
   <<
     "POST /":utf8,
     protocol:utf8,
@@ -45,9 +61,54 @@ pub fn request(
     sequence_header:utf8,
     "l:":utf8,
     int.to_string(length):utf8,
-    "\r\n\r\n":utf8,
+    "\r\n":utf8,
+    more_headers:utf8,
+    "\r\n":utf8,
     body:utf8,
   >>
+}
+
+/// The sequence the library's LoginStart carries on a reconnect: its numbers
+/// go on from the login the stopped server was running.
+pub const reconnect_sequence = 30
+
+/// What a client whose server restarted writes in its first read after the
+/// reconnect, as the recorded retries show it: LoginStart for the name, with
+/// its `p` header, and then the one-way Connect, in one read. Everything but
+/// the name is as recorded.
+pub fn reconnect_read(name name: String) -> BitArray {
+  let login_start =
+    request_with_headers(
+      sequence: Some(reconnect_sequence),
+      protocol: "Auth",
+      command: "LoginStart",
+      body: sts_xml.render(
+        sts_xml.Parent("Request", [
+          sts_xml.Text("LoginName", name),
+          sts_xml.Text("NetAddress", "100.88.52.85"),
+        ]),
+      ),
+      headers: [#("p", "*100.88.52.85 0 1 0 816635237")],
+    )
+  let connect =
+    request(
+      sequence: None,
+      protocol: "Sts",
+      command: "Connect",
+      body: sts_xml.render(
+        sts_xml.Parent("Connect", [
+          sts_xml.Text("ConnType", "400"),
+          sts_xml.Text("Address", "100.88.52.85"),
+          sts_xml.Text("ProductType", "0"),
+          sts_xml.Text("AppIndex", "1"),
+          sts_xml.Text("Epoch", "816635237"),
+          sts_xml.Text("Program", "902"),
+          sts_xml.Text("Build", "1001"),
+          sts_xml.Text("Process", "16596"),
+        ]),
+      ),
+    )
+  <<login_start:bits, connect:bits>>
 }
 
 /// A reply the library reads: its status, the sequence it answers and its

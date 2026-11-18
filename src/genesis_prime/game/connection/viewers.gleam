@@ -663,20 +663,29 @@ pub fn viewer_takes(
         ),
       ])
     }
-    client_connection.CreatureFaces(face:, at_ms:) -> {
-      use <- bool.guard(when: !shown, return: Continue(session, []))
-      let session = creatures_resolved(session:, now:)
-      let session =
-        shown_changed(session:, change: fn(picture) {
-          shown.with_face(picture:, unit_id:, face:)
-        })
-      Continue(session, [
-        connection_state.to_client(
-          session,
-          connection_frames.face_frame(entered:, unit_id:, face:, at_ms:),
-        ),
-      ])
-    }
+    client_connection.CreatureFaces(face:, at_ms:) ->
+      case shown.place_of(picture: entered.shown, unit_id:, now_ms: at_ms) {
+        Error(Nil) -> Continue(session, [])
+        Ok(standing_at) -> {
+          let session = creatures_resolved(session:, now:)
+          let session =
+            shown_changed(session:, change: fn(picture) {
+              shown.with_face(picture:, unit_id:, face:)
+            })
+          Continue(session, [
+            connection_state.to_client(
+              session,
+              connection_frames.face_frame(
+                entered:,
+                unit_id:,
+                standing_at:,
+                face:,
+                at_ms:,
+              ),
+            ),
+          ])
+        }
+      }
     client_connection.Targeting(target_unit_id:, threat:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
       let assert Ok(body) =
