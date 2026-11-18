@@ -4856,12 +4856,16 @@ pub fn a_spellslinger_that_levels_from_3_to_4_casts_its_new_ability_and_a_relog_
       #(4, 20_718),
     ]
     as "a relog holds the book a rise made, in its order"
-  // The ring's other creature is shown to the player again, alive, before the press.
+  // The ring's other creature is shown to the player again, alive, before the press. The map
+  // tells the connection of it and the connection itself writes the 0x01BC the entry read ends
+  // on: two senders, so the creature may already be in the entry's frames, and the wait looks
+  // in them too.
   let #(_, have) =
     game_client.read_until(game:, have:, found: fn(shown) {
-      list.any(targets_in(frames: shown), fn(creature) {
-        creature.unit_id == other.unit_id
-      })
+      list.any(
+        targets_in(frames: list.append(second_entry, shown)),
+        fn(creature) { creature.unit_id == other.unit_id },
+      )
     })
   game_client.press_ability(
     game:,
