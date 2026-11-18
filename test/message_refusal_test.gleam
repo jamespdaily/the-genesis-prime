@@ -31,24 +31,24 @@ pub fn a_server_hello_field_wider_than_5_bits_is_refused_test() -> Nil {
     ServerHello(
       build: 16_042,
       realm_id: 0,
-      field_3: 0,
-      field_4: 0,
-      field_5: 0,
-      field_6: 0,
-      field_7: 0x1F,
+      unread_3: 0,
+      unread_4: 0,
+      unread_5: 0,
+      unread_6: 0,
+      unread_7: 0x1F,
       message_table_checksum: 0x097998A0,
-      field_9: 0,
-      field_10: 0,
-      field_11: 0,
+      unread_9: 0,
+      unread_10: 0,
+      unread_11: 0,
     )
-  assert server_hello.encode(ServerHello(..hello, field_7: 0x20))
-    == Error(bit_stream.ValueDoesNotFit("field_7", 5, 0x20))
+  assert server_hello.encode(ServerHello(..hello, unread_7: 0x20))
+    == Error(bit_stream.ValueDoesNotFit("unread_7", 5, 0x20))
     as "vector.opcode.0x3.body: the 5-bit field holds up to 0x1F"
   assert server_hello.encode(ServerHello(..hello, build: 0x1_0000_0000))
     == Error(bit_stream.ValueDoesNotFit("build", 32, 0x1_0000_0000))
     as "ReadMessage0003Body 0x1400a9140: the build is 32 bits"
-  assert server_hello.encode(ServerHello(..hello, field_10: -1))
-    == Error(bit_stream.ValueDoesNotFit("field_10", 64, -1))
+  assert server_hello.encode(ServerHello(..hello, unread_10: -1))
+    == Error(bit_stream.ValueDoesNotFit("unread_10", 64, -1))
     as "the client's fields are unsigned"
 }
 
@@ -163,8 +163,8 @@ pub fn an_enter_world_value_wider_than_15_bits_is_refused_test() -> Nil {
       position_x: 0,
       position_y: 0,
       position_z: 0,
-      field_5: 0,
-      field_6: 0,
+      unread_5: 0,
+      unread_6: 0,
     )
   assert enter_world.encode(EnterWorld(..world, world_id: 0x8000))
     == Error(bit_stream.ValueDoesNotFit("world_id", 15, 0x8000))
@@ -187,14 +187,14 @@ pub fn a_realm_list_with_a_wide_entry_value_or_too_many_texts_is_refused_test() 
       population: 3,
       field_8: 0,
       field_9: message_support.hex("a0a1a2a3a4a5a6a7a8a9aaabacadaeaf"),
-      field_10: 0x3FFF,
+      unread_10: 0x3FFF,
       count: 0,
       last_played: "",
       field_13: 0,
-      field_14: 0,
-      field_15: 0,
-      field_16: 0,
-      field_17: 0,
+      unread_14: 0,
+      unread_15: 0,
+      unread_16: 0,
+      unread_17: 0,
     )
   let list_of = fn(entry) {
     RealmList(field_1: 0, realms: [entry], text_groups: [])
@@ -205,8 +205,8 @@ pub fn a_realm_list_with_a_wide_entry_value_or_too_many_texts_is_refused_test() 
   assert realm_list.encode(list_of(RealmEntry(..entry, status: 8)))
     == Error(bit_stream.ValueDoesNotFit("status", 3, 8))
     as "ReadRealmListEntry 0x1400ac130: status is 3 bits"
-  assert realm_list.encode(list_of(RealmEntry(..entry, field_10: 0x4000)))
-    == Error(bit_stream.ValueDoesNotFit("field_10", 14, 0x4000))
+  assert realm_list.encode(list_of(RealmEntry(..entry, unread_10: 0x4000)))
+    == Error(bit_stream.ValueDoesNotFit("unread_10", 14, 0x4000))
     as "ReadRealmListEntry 0x1400ac130: a 14-bit value"
   assert realm_list.encode(list_of(RealmEntry(..entry, field_9: <<1>>)))
     == Error(bit_stream.WrongByteCount("field_9", 16, 1))
@@ -224,17 +224,17 @@ pub fn a_realm_handoff_with_a_wide_value_is_refused_test() -> Nil {
   use <- owned_test.run(5000)
   let handoff =
     RealmHandoff(
-      field_1: 0x99,
+      unread_1: 0x99,
       session_key: message_support.session_key(),
       realm_server: Endpoint(address: 0x7F000001, port: 24_001),
-      field_4: 1,
+      unread_4: 1,
       realm_name: "Nexus",
       field_6: 0x1234,
       field_7: 2,
       field_8: 0x0BCDEF,
     )
-  assert realm_handoff.encode(RealmHandoff(..handoff, field_4: 2))
-    == Error(bit_stream.ValueDoesNotFit("field_4", 1, 2))
+  assert realm_handoff.encode(RealmHandoff(..handoff, unread_4: 2))
+    == Error(bit_stream.ValueDoesNotFit("unread_4", 1, 2))
     as "ReadMessage07A1Body 0x1400a2110: a 1-bit flag"
   assert realm_handoff.encode(RealmHandoff(..handoff, field_8: 0x200000))
     == Error(bit_stream.ValueDoesNotFit("field_8", 21, 0x200000))

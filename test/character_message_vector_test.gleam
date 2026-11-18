@@ -99,12 +99,12 @@ pub fn the_character_list_is_the_clients_1372_bits_test() -> Nil {
           ],
           world_id: 0x33,
           world_zone_id: 0x44,
-          field_12: 0x55,
+          unread_12: 0x55,
           position_x: 0x3FC00000,
           position_y: 0x40200000,
           position_z: 0x40600000,
-          field_16: 0x40900000,
-          field_17: 0x40B00000,
+          unread_16: 0x40900000,
+          unread_17: 0x40B00000,
           path: 2,
           disabled: 1,
           requires_rename: 0,
@@ -123,7 +123,7 @@ pub fn the_character_list_is_the_clients_1372_bits_test() -> Nil {
       in_world_logoff_ms: 600,
       reservations: 3,
       max_characters: 12,
-      field_11: 0x5C5C,
+      unread_11: 0x5C5C,
       faction_restriction: 167,
       free_level_50_available: 1,
     ),
@@ -150,7 +150,7 @@ pub fn a_character_list_with_no_characters_and_empty_lists_is_395_bits_test() ->
       in_world_logoff_ms: 0,
       reservations: 0,
       max_characters: 0,
-      field_11: 0,
+      unread_11: 0,
       faction_restriction: 0,
       free_level_50_available: 0,
     ),
@@ -206,7 +206,7 @@ pub fn create_character_result_is_the_clients_102_bits_test() -> Nil {
     body: message_support.hex("8877665544332211feca000003"),
     value: CreateCharacterResult(
       character_id: 0x1122334455667788,
-      field_2: 0xCAFE,
+      unread_2: 0xCAFE,
       result: create_result.CreateOk,
     ),
     encode: create_character_result.encode,
@@ -246,7 +246,7 @@ pub fn every_create_result_the_client_names_decodes_to_its_case_and_any_other_to
     let message =
       CreateCharacterResult(
         character_id: 0x1122334455667788,
-        field_2: 0xCAFE,
+        unread_2: 0xCAFE,
         result: expected,
       )
     assert create_character_result.decode(body) == Ok(message)
@@ -309,7 +309,7 @@ pub fn delete_character_result_is_the_clients_38_bits_test() -> Nil {
   message_support.assert_vector(
     name: "vector.opcode.0xe6.body",
     body: message_support.hex("008d040000"),
-    value: DeleteCharacterResult(result: delete_result.DeleteOk, value: 0x1234),
+    value: DeleteCharacterResult(result: delete_result.DeleteOk, data: 0x1234),
     encode: delete_character_result.encode,
     decode: delete_character_result.decode,
   )
@@ -335,7 +335,7 @@ pub fn every_delete_result_the_client_names_decodes_to_its_case_and_any_other_to
       Ok(named) -> named
       Error(Nil) -> delete_result.Other(value)
     }
-    let message = DeleteCharacterResult(result: expected, value: 0xCAFE)
+    let message = DeleteCharacterResult(result: expected, data: 0xCAFE)
     let assert Ok(body) = delete_character_result.encode(message)
       as "a result of 6 bits and a value of 32 bits encode"
     assert first_six_bits(body) == value
@@ -432,7 +432,7 @@ pub fn unit_is_player_is_two_32_bit_values_test() -> Nil {
   message_support.assert_vector(
     name: "vector.opcode.0x19b.body",
     body: message_support.hex("0110000002200000"),
-    value: UnitIsPlayer(unit_id: 0x1001, field_2: 0x2002),
+    value: UnitIsPlayer(unit_id: 0x1001, unread_2: 0x2002),
     encode: unit_is_player.encode,
     decode: unit_is_player.decode,
   )

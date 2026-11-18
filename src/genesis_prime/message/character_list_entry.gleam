@@ -27,18 +27,12 @@ pub type CharacterListEntry {
     worn_visuals: List(ItemVisual),
     world_id: Int,
     world_zone_id: Int,
-    /// Safe by `opcode.0x117.character_unread`: the client's code gives this
-    /// field no use the server needs, and that fact shows its value is safe.
-    field_12: Int,
+    unread_12: Int,
     position_x: Int,
     position_y: Int,
     position_z: Int,
-    /// Safe by `opcode.0x117.character_unread`: the client's code gives this
-    /// field no use the server needs, and that fact shows its value is safe.
-    field_16: Int,
-    /// Safe by `opcode.0x117.character_unread`: the client's code gives this
-    /// field no use the server needs, and that fact shows its value is safe.
-    field_17: Int,
+    unread_16: Int,
+    unread_17: Int,
     path: Int,
     disabled: Int,
     requires_rename: Int,
@@ -77,12 +71,12 @@ pub fn write(
   )
   |> bit_stream.write_unsigned("world_id", record.world_id, 15)
   |> bit_stream.write_unsigned("world_zone_id", record.world_zone_id, 15)
-  |> bit_stream.write_unsigned("field_12", record.field_12, 14)
+  |> bit_stream.write_unsigned("unread_12", record.unread_12, 14)
   |> bit_stream.write_float32_bits("position_x", record.position_x)
   |> bit_stream.write_float32_bits("position_y", record.position_y)
   |> bit_stream.write_float32_bits("position_z", record.position_z)
-  |> bit_stream.write_float32_bits("field_16", record.field_16)
-  |> bit_stream.write_float32_bits("field_17", record.field_17)
+  |> bit_stream.write_float32_bits("unread_16", record.unread_16)
+  |> bit_stream.write_float32_bits("unread_17", record.unread_17)
   |> bit_stream.write_unsigned("path", record.path, 3)
   |> bit_stream.write_unsigned("disabled", record.disabled, 1)
   |> bit_stream.write_unsigned("requires_rename", record.requires_rename, 1)
@@ -136,12 +130,12 @@ pub fn read(
     reader,
     15,
   ))
-  use #(field_12, reader) <- result.try(bit_stream.read_unsigned(reader, 14))
+  use #(unread_12, reader) <- result.try(bit_stream.read_unsigned(reader, 14))
   use #(position_x, reader) <- result.try(bit_stream.read_float32_bits(reader))
   use #(position_y, reader) <- result.try(bit_stream.read_float32_bits(reader))
   use #(position_z, reader) <- result.try(bit_stream.read_float32_bits(reader))
-  use #(field_16, reader) <- result.try(bit_stream.read_float32_bits(reader))
-  use #(field_17, reader) <- result.try(bit_stream.read_float32_bits(reader))
+  use #(unread_16, reader) <- result.try(bit_stream.read_float32_bits(reader))
+  use #(unread_17, reader) <- result.try(bit_stream.read_float32_bits(reader))
   use #(path, reader) <- result.try(bit_stream.read_unsigned(reader, 3))
   use #(disabled, reader) <- result.try(bit_stream.read_unsigned(reader, 1))
   use #(requires_rename, reader) <- result.try(bit_stream.read_unsigned(
@@ -182,12 +176,12 @@ pub fn read(
       worn_visuals:,
       world_id:,
       world_zone_id:,
-      field_12:,
+      unread_12:,
       position_x:,
       position_y:,
       position_z:,
-      field_16:,
-      field_17:,
+      unread_16:,
+      unread_17:,
       path:,
       disabled:,
       requires_rename:,

@@ -17,13 +17,7 @@ pub const message_id = 0x00DC
 /// `field_N` is the Nth of the body: its own doc names the fact that shows its
 /// value is safe, and one with no such doc has no use the client's code shows.
 pub type CreateCharacterResult {
-  CreateCharacterResult(
-    character_id: Int,
-    /// Safe by `opcode.0xdc.field_2`: the client's code gives this field no use
-    /// the server needs, and that fact shows its value is safe.
-    field_2: Int,
-    result: CreateResult,
-  )
+  CreateCharacterResult(character_id: Int, unread_2: Int, result: CreateResult)
 }
 
 /// The message as the bytes of its body, or the first field that cannot be
@@ -31,7 +25,7 @@ pub type CreateCharacterResult {
 pub fn encode(message: CreateCharacterResult) -> Result(BitArray, EncodeError) {
   bit_stream.new_writer()
   |> bit_stream.write_unsigned("character_id", message.character_id, 64)
-  |> bit_stream.write_unsigned("field_2", message.field_2, 32)
+  |> bit_stream.write_unsigned("unread_2", message.unread_2, 32)
   |> bit_stream.write_unsigned(
     "result",
     create_result.to_value(message.result),
@@ -44,9 +38,9 @@ pub fn encode(message: CreateCharacterResult) -> Result(BitArray, EncodeError) {
 pub fn decode(body: BitArray) -> Result(CreateCharacterResult, DecodeError) {
   let reader = bit_stream.new_reader(body)
   use #(character_id, reader) <- result.try(bit_stream.read_unsigned(reader, 64))
-  use #(field_2, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
+  use #(unread_2, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   use #(result, reader) <- result.try(bit_stream.read_unsigned(reader, 6))
   let result = create_result.from_value(result)
   use Nil <- result.try(bit_stream.finish_reading(reader))
-  Ok(CreateCharacterResult(character_id:, field_2:, result:))
+  Ok(CreateCharacterResult(character_id:, unread_2:, result:))
 }

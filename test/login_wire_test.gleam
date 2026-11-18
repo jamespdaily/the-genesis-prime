@@ -106,15 +106,15 @@ pub fn a_client_that_connects_to_the_auth_listener_gets_the_hello_test() -> Nil 
     == ServerHello(
       build: 16_042,
       realm_id: 1,
-      field_3: 0,
-      field_4: 0,
-      field_5: 0,
-      field_6: 0,
-      field_7: 0,
+      unread_3: 0,
+      unread_4: 0,
+      unread_5: 0,
+      unread_6: 0,
+      unread_7: 0,
       message_table_checksum: 0x097998A0,
-      field_9: 0,
-      field_10: 0,
-      field_11: 0,
+      unread_9: 0,
+      unread_10: 0,
+      unread_11: 0,
     )
     as "CheckAuthServerVersion 0x140037b70: build 16042, checksum 0x097998A0; the realm's id; 0 in every field the client never reads"
   login_support.stop(started)

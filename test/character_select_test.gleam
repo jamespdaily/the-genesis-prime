@@ -317,28 +317,28 @@ pub fn the_stores_answer_to_a_create_becomes_the_result_the_client_shows_test() 
   assert result_for(CharacterCreated(character_id: CharacterId(0x1_0000_0001)))
     == CreateCharacterResult(
       character_id: 0x1_0000_0001,
-      field_2: 0,
+      unread_2: 0,
       result: create_result.CreateOk,
     )
     as "opcode.0xdc: the new character's id, 0 in the field the client never reads (opcode.0xdc.field_2), and CreateOk"
   assert result_for(NameTaken)
     == CreateCharacterResult(
       character_id: 0,
-      field_2: 0,
+      unread_2: 0,
       result: create_result.NameUnavailable,
     )
     as "lua.Character.OnCreateCharacterFailed: 6, 'that name is not available'"
   assert result_for(NameBreaksRule)
     == CreateCharacterResult(
       character_id: 0,
-      field_2: 0,
+      unread_2: 0,
       result: create_result.NameLength,
     )
     as "lua.Character.OnCreateCharacterFailed: 10, 'Character names may only contain 3 to 20 letters.'"
   assert result_for(NoFreeSlot)
     == CreateCharacterResult(
       character_id: 0,
-      field_2: 0,
+      unread_2: 0,
       result: create_result.AccountFull,
     )
     as "lua.Character.OnCreateCharacterFailed: 9, 'your account is full'"
@@ -434,7 +434,7 @@ pub fn a_deleted_character_is_0x00e6_result_0_with_value_0_and_no_new_list_follo
   let assert Ok(#(state, effects)) =
     character_select.deleted(asking, CharacterDeleted)
   assert character_support.delete_result_in(sent(effects))
-    == DeleteCharacterResult(result: delete_result.DeleteOk, value: 0)
+    == DeleteCharacterResult(result: delete_result.DeleteOk, data: 0)
     as "opcode.0xe6: result 0 removes the character from the client's own list, and the value is read only for result 2 (opcode.0xe6.value), so 0 is safe"
   assert list.length(effects) == 1
     as "lua.CharacterSelection.OnCharacterDeleteResult: the client rebuilds its list itself, so no new 0x0117 is needed"
@@ -447,7 +447,7 @@ pub fn a_character_the_account_does_not_have_is_0x00e6_result_1_with_a_warning_t
   let assert Ok(#(state, effects)) =
     character_select.deleted(asking, NoSuchCharacter)
   assert character_support.delete_result_in(sent(effects))
-    == DeleteCharacterResult(result: delete_result.DeleteFailed, value: 0)
+    == DeleteCharacterResult(result: delete_result.DeleteFailed, data: 0)
     as "lua.CharacterSelection.OnCharacterDeleteResult: 1 DeleteFailed shows 'Something went wrong...'"
   let assert [text] = warnings(effects)
     as "the real client deletes only a listed character, so the request is logged once"

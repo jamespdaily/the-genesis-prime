@@ -3,11 +3,11 @@
 ////
 //// Message 0x019D (action_set), server to client: one action set of the action
 //// bar: the set's index, which the client refuses above 3 (the whole message),
-//// a 2-bit value it keeps per set, the result (1 is ok, any other raises
-//// ActionSetError) and the shortcuts, each replacing the bar slot it names,
-//// which the client refuses above 47. Its fields are listed in `schema.toml`
-//// with the client's evidence, and the fact file's `opcode.0x19d` names the
-//// message.
+//// whether the set is unlocked (bit 0 of a 2-bit value it keeps per set), the
+//// result (1 is ok, any other raises ActionSetError) and the shortcuts, each
+//// replacing the bar slot it names, which the client refuses above 47. Its
+//// fields are listed in `schema.toml` with the client's evidence, and the fact
+//// file's `opcode.0x19d` names the message.
 
 import genesis_prime/message/action_shortcut.{type ActionShortcut}
 import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}
@@ -22,9 +22,7 @@ pub const message_id = 0x019D
 pub type ActionSet {
   ActionSet(
     action_set_index: Int,
-    /// Safe by `opcode.0x19d.set_value`: the client's code gives this field no
-    /// use the server needs, and that fact shows its value is safe.
-    field_2: Int,
+    unlocked: Int,
     result: Int,
     shortcuts: List(ActionShortcut),
   )
@@ -40,7 +38,7 @@ pub fn encode(message: ActionSet) -> Result(BitArray, EncodeError) {
     3,
     4,
   )
-  |> bit_stream.write_unsigned("field_2", message.field_2, 2)
+  |> bit_stream.write_unsigned("unlocked", message.unlocked, 2)
   |> bit_stream.write_unsigned("result", message.result, 6)
   |> bit_stream.write_array(
     "shortcuts",
@@ -60,7 +58,7 @@ pub fn decode(body: BitArray) -> Result(ActionSet, DecodeError) {
     3,
     4,
   ))
-  use #(field_2, reader) <- result.try(bit_stream.read_unsigned(reader, 2))
+  use #(unlocked, reader) <- result.try(bit_stream.read_unsigned(reader, 2))
   use #(result, reader) <- result.try(bit_stream.read_unsigned(reader, 6))
   use #(shortcuts, reader) <- result.try(bit_stream.read_array(
     reader,
@@ -68,5 +66,5 @@ pub fn decode(body: BitArray) -> Result(ActionSet, DecodeError) {
     action_shortcut.read,
   ))
   use Nil <- result.try(bit_stream.finish_reading(reader))
-  Ok(ActionSet(action_set_index:, field_2:, result:, shortcuts:))
+  Ok(ActionSet(action_set_index:, unlocked:, result:, shortcuts:))
 }

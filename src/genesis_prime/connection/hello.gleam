@@ -20,15 +20,15 @@ pub fn frame(realm_id realm_id: Int) -> Frame {
     server_hello.encode(ServerHello(
       build: client_archive.target_build,
       realm_id:,
-      field_3: 0,
-      field_4: 0,
-      field_5: 0,
-      field_6: 0,
-      field_7: 0,
+      unread_3: 0,
+      unread_4: 0,
+      unread_5: 0,
+      unread_6: 0,
+      unread_7: 0,
       message_table_checksum:,
-      field_9: 0,
-      field_10: 0,
-      field_11: 0,
+      unread_9: 0,
+      unread_10: 0,
+      unread_11: 0,
     ))
     as "the realm's id is within 32 bits"
   Frame(message_id: server_hello.message_id, body:)

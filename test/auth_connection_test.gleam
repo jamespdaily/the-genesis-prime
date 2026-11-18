@@ -186,15 +186,15 @@ pub fn on_connect_the_server_sends_the_hello_with_build_16042_the_checksum_and_t
     == ServerHello(
       build: 16_042,
       realm_id: 1,
-      field_3: 0,
-      field_4: 0,
-      field_5: 0,
-      field_6: 0,
-      field_7: 0,
+      unread_3: 0,
+      unread_4: 0,
+      unread_5: 0,
+      unread_6: 0,
+      unread_7: 0,
       message_table_checksum: 0x097998A0,
-      field_9: 0,
-      field_10: 0,
-      field_11: 0,
+      unread_9: 0,
+      unread_10: 0,
+      unread_11: 0,
     )
     as "CheckAuthServerVersion 0x140037b70: build 16042 and checksum 0x097998A0; the realm's id; every field the client never reads is 0 (opcode.0x3)"
   // A planted frame follows the hello in the wrapper, and only when set.

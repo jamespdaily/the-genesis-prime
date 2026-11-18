@@ -19,31 +19,15 @@ pub type ServerHello {
   ServerHello(
     build: Int,
     realm_id: Int,
-    /// Safe by `opcode.0x3`: the client's code gives this field no use the
-    /// server needs, and that fact shows its value is safe.
-    field_3: Int,
-    /// Safe by `opcode.0x3`: the client's code gives this field no use the
-    /// server needs, and that fact shows its value is safe.
-    field_4: Int,
-    /// Safe by `opcode.0x3`: the client's code gives this field no use the
-    /// server needs, and that fact shows its value is safe.
-    field_5: Int,
-    /// Safe by `opcode.0x3`: the client's code gives this field no use the
-    /// server needs, and that fact shows its value is safe.
-    field_6: Int,
-    /// Safe by `opcode.0x3`: the client's code gives this field no use the
-    /// server needs, and that fact shows its value is safe.
-    field_7: Int,
+    unread_3: Int,
+    unread_4: Int,
+    unread_5: Int,
+    unread_6: Int,
+    unread_7: Int,
     message_table_checksum: Int,
-    /// Safe by `opcode.0x3`: the client's code gives this field no use the
-    /// server needs, and that fact shows its value is safe.
-    field_9: Int,
-    /// Safe by `opcode.0x3`: the client's code gives this field no use the
-    /// server needs, and that fact shows its value is safe.
-    field_10: Int,
-    /// Safe by `opcode.0x3`: the client's code gives this field no use the
-    /// server needs, and that fact shows its value is safe.
-    field_11: Int,
+    unread_9: Int,
+    unread_10: Int,
+    unread_11: Int,
   )
 }
 
@@ -53,19 +37,19 @@ pub fn encode(message: ServerHello) -> Result(BitArray, EncodeError) {
   bit_stream.new_writer()
   |> bit_stream.write_unsigned("build", message.build, 32)
   |> bit_stream.write_unsigned("realm_id", message.realm_id, 32)
-  |> bit_stream.write_unsigned("field_3", message.field_3, 32)
-  |> bit_stream.write_unsigned("field_4", message.field_4, 32)
-  |> bit_stream.write_unsigned("field_5", message.field_5, 64)
-  |> bit_stream.write_unsigned("field_6", message.field_6, 16)
-  |> bit_stream.write_unsigned("field_7", message.field_7, 5)
+  |> bit_stream.write_unsigned("unread_3", message.unread_3, 32)
+  |> bit_stream.write_unsigned("unread_4", message.unread_4, 32)
+  |> bit_stream.write_unsigned("unread_5", message.unread_5, 64)
+  |> bit_stream.write_unsigned("unread_6", message.unread_6, 16)
+  |> bit_stream.write_unsigned("unread_7", message.unread_7, 5)
   |> bit_stream.write_unsigned(
     "message_table_checksum",
     message.message_table_checksum,
     32,
   )
-  |> bit_stream.write_unsigned("field_9", message.field_9, 32)
-  |> bit_stream.write_unsigned("field_10", message.field_10, 64)
-  |> bit_stream.write_unsigned("field_11", message.field_11, 32)
+  |> bit_stream.write_unsigned("unread_9", message.unread_9, 32)
+  |> bit_stream.write_unsigned("unread_10", message.unread_10, 64)
+  |> bit_stream.write_unsigned("unread_11", message.unread_11, 32)
   |> bit_stream.finish
 }
 
@@ -74,30 +58,30 @@ pub fn decode(body: BitArray) -> Result(ServerHello, DecodeError) {
   let reader = bit_stream.new_reader(body)
   use #(build, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   use #(realm_id, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
-  use #(field_3, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
-  use #(field_4, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
-  use #(field_5, reader) <- result.try(bit_stream.read_unsigned(reader, 64))
-  use #(field_6, reader) <- result.try(bit_stream.read_unsigned(reader, 16))
-  use #(field_7, reader) <- result.try(bit_stream.read_unsigned(reader, 5))
+  use #(unread_3, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
+  use #(unread_4, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
+  use #(unread_5, reader) <- result.try(bit_stream.read_unsigned(reader, 64))
+  use #(unread_6, reader) <- result.try(bit_stream.read_unsigned(reader, 16))
+  use #(unread_7, reader) <- result.try(bit_stream.read_unsigned(reader, 5))
   use #(message_table_checksum, reader) <- result.try(bit_stream.read_unsigned(
     reader,
     32,
   ))
-  use #(field_9, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
-  use #(field_10, reader) <- result.try(bit_stream.read_unsigned(reader, 64))
-  use #(field_11, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
+  use #(unread_9, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
+  use #(unread_10, reader) <- result.try(bit_stream.read_unsigned(reader, 64))
+  use #(unread_11, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   use Nil <- result.try(bit_stream.finish_reading(reader))
   Ok(ServerHello(
     build:,
     realm_id:,
-    field_3:,
-    field_4:,
-    field_5:,
-    field_6:,
-    field_7:,
+    unread_3:,
+    unread_4:,
+    unread_5:,
+    unread_6:,
+    unread_7:,
     message_table_checksum:,
-    field_9:,
-    field_10:,
-    field_11:,
+    unread_9:,
+    unread_10:,
+    unread_11:,
   ))
 }

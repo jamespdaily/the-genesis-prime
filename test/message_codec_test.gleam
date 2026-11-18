@@ -354,8 +354,8 @@ pub fn a_planted_hand_edit_to_a_generated_file_is_a_mismatch_test() -> Nil {
             ..file,
             text: string.replace(
               file.text,
-              "\"field_7\", message.field_7, 5)",
-              "\"field_7\", message.field_7, 6)",
+              "\"unread_7\", message.unread_7, 5)",
+              "\"unread_7\", message.unread_7, 6)",
             ),
           )
         False -> file
@@ -411,12 +411,12 @@ pub fn a_generated_encoder_states_the_width_of_every_field_test() -> Nil {
     as "ReadMessage0003Body 0x1400a9140: the build is 32 bits, written in the code"
   assert string.contains(
     text,
-    "bit_stream.write_unsigned(\"field_5\", message.field_5, 64)",
+    "bit_stream.write_unsigned(\"unread_5\", message.unread_5, 64)",
   )
     as "ReadMessage0003Body 0x1400a9140: the fifth value is 64 bits"
   assert string.contains(
     text,
-    "bit_stream.write_unsigned(\"field_7\", message.field_7, 5)",
+    "bit_stream.write_unsigned(\"unread_7\", message.unread_7, 5)",
   )
     as "ReadMessage0003Body 0x1400a9140: the seventh value is 5 bits"
   assert string.contains(text, "bit_stream.read_unsigned(reader, 5)")
