@@ -84,7 +84,8 @@ pub fn all() -> List(store.Derivation) {
 
 /// Whether a loadout holds the abilities above level 1 that the spell plans leave out
 /// (`spell_plan.unplanned`): the book then lists them and a press of one is refused
-/// unknown. `False` leaves them out of every loadout, so no character holds them.
+/// unknown. `False` leaves them out of every loadout, so no character holds them. The
+/// switch stays `True`; the gap closes with issue #1003.
 const give_unplanned_abilities = True
 
 /// The Spell4 ids of the later abilities no loadout holds, or `Error(Nil)` when the plans

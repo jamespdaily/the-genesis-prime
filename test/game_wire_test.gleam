@@ -4526,7 +4526,7 @@ pub fn a_placed_target_is_shown_killed_and_counted_test() -> Nil {
 /// The Medic of the marker ring that levels from 3 to 4 on the kill at slot 0: its abilities
 /// are the level-1 three and the innate, then SpellLevel 614's base 26038 (Fissure) at bag
 /// index 4, written after the level and before the properties, on the whole server and again
-/// at the entry of the relog. Fissure has no plan (`spell_plan.unplanned`: its second spell's
+/// at the entry of the relog. Fissure has no plan (`spell_plan.unplanned`, issue #1003: its second spell's
 /// hit telegraph 2996 is placed by flags 8, which the area rule does not build), so the press
 /// of slot 4 at the other creature of the ring is refused unknown, as any bag slot with no
 /// plan is (`0x14039a040`); the press of a level-up ability that has a plan is the cast

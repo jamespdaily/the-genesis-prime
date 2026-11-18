@@ -9,7 +9,8 @@
 ////   names Spell4 32078 (base 18309); Class 1's first innate is Spell4 46867.
 //// - A load refuses a row the data faults on (a Spell4 row that is not there, a number that is
 ////   no number, an innate that is also an ability), and goes on for an ability whose effect or
-////   rule the server does not build yet; `is_unbuilt` is the one place that says which.
+////   rule the server does not build (issue #1003 builds them); `is_unbuilt` is the one place
+////   that says which.
 
 import client_tables
 import fixture_tables

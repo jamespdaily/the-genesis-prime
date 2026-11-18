@@ -2813,7 +2813,8 @@ type Phase {
 }
 
 /// A class ability above level 1 that no plan is built for: its Spell4 id and the
-/// error that names what the server does not build (`is_unbuilt`).
+/// error that names what the server does not build (`is_unbuilt`). Its press is refused
+/// as an unknown spell until issue #1003 builds it.
 pub type Unplanned {
   Unplanned(spell4_id: Int, error: PlanError)
 }

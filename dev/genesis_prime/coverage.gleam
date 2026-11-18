@@ -192,7 +192,7 @@ fn later_abilities_report(tables tables: store.Tables) -> String {
         })
       string.join(
         [
-          "Later abilities, not planned (granted at their level, a press refused as an unknown spell): "
+          "Later abilities, not planned (granted at their level, a press refused as an unknown spell, issue #1003): "
             <> int.to_string(list.length(found))
             <> " (by class: "
             <> string.join(by_class, ", ")
