@@ -1666,3 +1666,65 @@ pub fn the_equip_and_buy_objectives_are_stand_ins_on_accept_over_every_client_qu
     == list.repeat(objective.StandInOnAccept, 5)
     as "the four equip and buy objectives and the shield's stay stand-ins on accept"
 }
+
+// ---- the cast steps stay stand-ins on accept ----
+//
+// The seven support-training quests (10037, 10069, 10070, 10071, 10043, 10072 and 10074: the
+// second objective of each, a type 5 of count 3) and quest 6346's objective 9724 (count 1) are
+// named by spell columns: `Spell4.prerequisiteIdRunner00` and `01`, and
+// `prerequisiteIdCasterCast` of Spell4 32897. The training room (world 3406) has no stored
+// spawn, so no creature stands there to be cast at, and the Detonator's counting rule is
+// open; each objective is a stand-in on accept.
+
+pub fn the_eight_cast_quests_still_complete_on_accept_over_every_client_quest_test() -> Nil {
+  use <- owned_test.run(300_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let arrivals = arrival_ids()
+  let held = content_support.objective_ids(table: held_objective.table)
+  let rows = script_rows()
+  let cases = [
+    #(10_037, 19_138),
+    #(10_069, 19_168),
+    #(10_070, 19_170),
+    #(10_071, 19_172),
+    #(10_043, 19_143),
+    #(10_072, 19_174),
+    #(10_074, 19_178),
+    #(6346, 9724),
+  ]
+  let wrong =
+    list.filter_map(cases, fn(row) {
+      let #(quest_id, objective_id) = row
+      let #(quest, index, listed) = place_of(tables:, objective_id:)
+      let script =
+        objective.script_of(
+          tables:,
+          quest_id:,
+          index:,
+          objective: listed,
+          arrival_objectives: arrivals,
+          scripts: rows,
+        )
+      // The objectives before it done, so that it is open.
+      let log =
+        logged(
+          tables:,
+          quest_id:,
+          done: list.index_map(quest.objectives, fn(_, before) { before })
+            |> list.take(index),
+        )
+      let settled =
+        settle_sets(log:, tables:, at: away(), arrivals:, held:, scripts: rows)
+      case
+        quest.id == quest_id
+        && script == objective.StandInOnAccept
+        && quest_log.objective_done(log: settled.log, quest:, index:)
+      {
+        True -> Error(Nil)
+        False -> Ok(#(quest_id, objective_id))
+      }
+    })
+  assert wrong == []
+    as "the seven training-room quests and quest 6346 are stand-ins on accept and complete their cast objective as soon as it is open"
+}
