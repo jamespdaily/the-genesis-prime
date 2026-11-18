@@ -17,9 +17,15 @@ import gleam/result
 /// with no such doc has no use the client's code shows.
 pub type RewardPropertyModifier {
   RewardPropertyModifier(
+    /// Open: What does a modifier's 4-bit kind select? The reader reads it
+    /// (0x1400acd60) and no use of it was traced; the server sends no modifiers
+    /// (opcode.0x92c).
     /// Safe by `opcode.0x92c`: the client's code gives this field no use the
     /// server needs, and that fact shows its value is safe.
     kind: Int,
+    /// Open: What does a modifier's 32-bit data select? The reader reads it
+    /// (0x1400acd60) and no use of it was traced; the server sends no modifiers
+    /// (opcode.0x92c).
     /// Safe by `opcode.0x92c`: the client's code gives this field no use the
     /// server needs, and that fact shows its value is safe.
     data: Int,

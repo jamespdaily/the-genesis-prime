@@ -3,11 +3,13 @@
 ////
 //// A record inside a message body: the item record message 0x111 carries: the
 //// GUID, the item id, the location and bag index, the stack count and charges,
-//// the random-stat word, the durability and the values the client's code names
-//// only by width and position. Gap: the server writes no id in the list of
-//// realm and character ids (a count of 0), since the width of one entry is not
-//// read. Its fields are listed in `schema.toml` with the client's evidence,
-//// and the fact file's `opcode.0x111.ability_bag` names the record.
+//// the random-stat word, the durability, the dye, the flags, the refund and
+//// trade windows, the refund price entries, the rune slots and rune data, the
+//// stat multipliers and the level-scaling input. Gap: the server writes no id
+//// in the list of realm and character ids (a count of 0), since the width of
+//// one entry is not read. Its fields are listed in `schema.toml` with the
+//// client's evidence, and the fact file's `opcode.0x111.ability_bag` names the
+//// record.
 
 import genesis_prime/message/bit_stream.{
   type DecodeError, type Reader, type Writer,
@@ -22,64 +24,68 @@ pub type SharedItem {
     item_guid: Int,
     /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
     /// field no use the server needs, and that fact shows its value is safe.
-    field_2: Int,
+    crafter_character_id: Int,
     item_id: Int,
     location: Int,
     bag_index: Int,
     stack_count: Int,
     charges: Int,
     random_stats: Int,
-    /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
-    /// field no use the server needs, and that fact shows its value is safe.
-    field_9: Int,
-    /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
-    /// field no use the server needs, and that fact shows its value is safe.
+    rune_slots: Int,
+    /// Open: What reads the 64-bit rune value's 4-bit part and three 10-bit
+    /// parts in the current item format, and what does retail send for a new
+    /// item? No reader of the unpacked parts was found; 0x14040c610 reads it
+    /// only to convert the old format (opcode.0x111.shared_item_fields).
     field_10: Int,
     durability: Int,
     /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
     /// field no use the server needs, and that fact shows its value is safe.
-    field_12: Int,
-    /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
-    /// field no use the server needs, and that fact shows its value is safe.
+    dye_channels: Int,
+    /// Open: When does the server set the item's flags (bit 0 soulbound, bit 3
+    /// no refund, bit 6 account-bound, bit 7 not tradeable)? The client binds
+    /// nothing itself and shows a bind-on-equip item unbound until the server
+    /// sets bit 0 (opcode.0x111.shared_item_unnamed, 0x14008c0d0).
     field_13: Int,
-    /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
-    /// field no use the server needs, and that fact shows its value is safe.
-    field_14: Int,
-    /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
-    /// field no use the server needs, and that fact shows its value is safe.
+    refund_window_ms: Int,
+    /// Open: What gives an item its remaining duration, which the tooltip
+    /// counts down? With 0 the client shows the row's full lifetime and removes
+    /// nothing (opcode.0x111.shared_item_unnamed, 0x14008c0d0).
     field_15: Int,
     /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
     /// field no use the server needs, and that fact shows its value is safe.
-    field_16: Int,
+    soulbound_trade_window_ms: Int,
     /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
     /// field no use the server needs, and that fact shows its value is safe.
-    field_17: Int,
+    refund_cost_0_kind: Int,
     /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
     /// field no use the server needs, and that fact shows its value is safe.
-    field_18: Int,
+    refund_cost_0_value_a: Int,
     /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
     /// field no use the server needs, and that fact shows its value is safe.
-    field_19: Int,
+    refund_cost_0_value_b: Int,
     /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
     /// field no use the server needs, and that fact shows its value is safe.
-    field_20: Int,
+    refund_cost_1_kind: Int,
     /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
     /// field no use the server needs, and that fact shows its value is safe.
-    field_21: Int,
+    refund_cost_1_value_a: Int,
     /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
     /// field no use the server needs, and that fact shows its value is safe.
-    field_22: Int,
+    refund_cost_1_value_b: Int,
     /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
     /// field no use the server needs, and that fact shows its value is safe.
-    field_23: Int,
+    budget_item_id: Int,
     /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
     /// field no use the server needs, and that fact shows its value is safe.
-    list_a: List(Int),
+    stat_multipliers: List(Int),
     /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
     /// field no use the server needs, and that fact shows its value is safe.
-    list_b: List(Int),
-    /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
-    /// field no use the server needs, and that fact shows its value is safe.
+    socketed_rune_item_ids: List(Int),
+    /// Open: What must the server send in the level-scaling input for an item
+    /// whose Item2 flags bit 20 asks for a power level override? The client
+    /// reads its low 16 bits as that override and its bits 16 to 23 as a
+    /// quality override (0x140445320, 0x14040c610); 0 shows the row's own level
+    /// and quality, scaled by the player's level.
     field_27: Int,
   )
 }
@@ -88,30 +94,72 @@ pub type SharedItem {
 pub fn write(writer writer: Writer, record record: SharedItem) -> Writer {
   writer
   |> bit_stream.write_unsigned("item_guid", record.item_guid, 64)
-  |> bit_stream.write_unsigned("field_2", record.field_2, 64)
+  |> bit_stream.write_unsigned(
+    "crafter_character_id",
+    record.crafter_character_id,
+    64,
+  )
   |> bit_stream.write_unsigned("item_id", record.item_id, 18)
   |> bit_stream.write_unsigned("location", record.location, 9)
   |> bit_stream.write_unsigned("bag_index", record.bag_index, 32)
   |> bit_stream.write_unsigned("stack_count", record.stack_count, 32)
   |> bit_stream.write_unsigned("charges", record.charges, 32)
   |> bit_stream.write_unsigned("random_stats", record.random_stats, 64)
-  |> bit_stream.write_unsigned("field_9", record.field_9, 32)
+  |> bit_stream.write_unsigned("rune_slots", record.rune_slots, 32)
   |> bit_stream.write_unsigned("field_10", record.field_10, 64)
   |> bit_stream.write_float32_bits("durability", record.durability)
-  |> bit_stream.write_unsigned("field_12", record.field_12, 32)
+  |> bit_stream.write_unsigned("dye_channels", record.dye_channels, 32)
   |> bit_stream.write_unsigned("field_13", record.field_13, 8)
-  |> bit_stream.write_unsigned("field_14", record.field_14, 32)
+  |> bit_stream.write_unsigned("refund_window_ms", record.refund_window_ms, 32)
   |> bit_stream.write_unsigned("field_15", record.field_15, 32)
-  |> bit_stream.write_unsigned("field_16", record.field_16, 32)
-  |> bit_stream.write_unsigned("field_17", record.field_17, 3)
-  |> bit_stream.write_unsigned("field_18", record.field_18, 32)
-  |> bit_stream.write_unsigned("field_19", record.field_19, 32)
-  |> bit_stream.write_unsigned("field_20", record.field_20, 3)
-  |> bit_stream.write_unsigned("field_21", record.field_21, 32)
-  |> bit_stream.write_unsigned("field_22", record.field_22, 32)
-  |> bit_stream.write_unsigned("field_23", record.field_23, 18)
-  |> bit_stream.write_unsigned_array("list_a", record.list_a, 3, 32)
-  |> bit_stream.write_unsigned_array("list_b", record.list_b, 4, 32)
+  |> bit_stream.write_unsigned(
+    "soulbound_trade_window_ms",
+    record.soulbound_trade_window_ms,
+    32,
+  )
+  |> bit_stream.write_unsigned(
+    "refund_cost_0_kind",
+    record.refund_cost_0_kind,
+    3,
+  )
+  |> bit_stream.write_unsigned(
+    "refund_cost_0_value_a",
+    record.refund_cost_0_value_a,
+    32,
+  )
+  |> bit_stream.write_unsigned(
+    "refund_cost_0_value_b",
+    record.refund_cost_0_value_b,
+    32,
+  )
+  |> bit_stream.write_unsigned(
+    "refund_cost_1_kind",
+    record.refund_cost_1_kind,
+    3,
+  )
+  |> bit_stream.write_unsigned(
+    "refund_cost_1_value_a",
+    record.refund_cost_1_value_a,
+    32,
+  )
+  |> bit_stream.write_unsigned(
+    "refund_cost_1_value_b",
+    record.refund_cost_1_value_b,
+    32,
+  )
+  |> bit_stream.write_unsigned("budget_item_id", record.budget_item_id, 18)
+  |> bit_stream.write_unsigned_array(
+    "stat_multipliers",
+    record.stat_multipliers,
+    3,
+    32,
+  )
+  |> bit_stream.write_unsigned_array(
+    "socketed_rune_item_ids",
+    record.socketed_rune_item_ids,
+    4,
+    32,
+  )
   |> bit_stream.write_constant("no_character_ids", 0, 6)
   |> bit_stream.write_unsigned("field_27", record.field_27, 32)
 }
@@ -119,38 +167,65 @@ pub fn write(writer writer: Writer, record record: SharedItem) -> Writer {
 /// Reads the record from the stream, and the stream after it.
 pub fn read(reader: Reader) -> Result(#(SharedItem, Reader), DecodeError) {
   use #(item_guid, reader) <- result.try(bit_stream.read_unsigned(reader, 64))
-  use #(field_2, reader) <- result.try(bit_stream.read_unsigned(reader, 64))
+  use #(crafter_character_id, reader) <- result.try(bit_stream.read_unsigned(
+    reader,
+    64,
+  ))
   use #(item_id, reader) <- result.try(bit_stream.read_unsigned(reader, 18))
   use #(location, reader) <- result.try(bit_stream.read_unsigned(reader, 9))
   use #(bag_index, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   use #(stack_count, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   use #(charges, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   use #(random_stats, reader) <- result.try(bit_stream.read_unsigned(reader, 64))
-  use #(field_9, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
+  use #(rune_slots, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   use #(field_10, reader) <- result.try(bit_stream.read_unsigned(reader, 64))
   use #(durability, reader) <- result.try(bit_stream.read_float32_bits(reader))
-  use #(field_12, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
+  use #(dye_channels, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   use #(field_13, reader) <- result.try(bit_stream.read_unsigned(reader, 8))
-  use #(field_14, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
+  use #(refund_window_ms, reader) <- result.try(bit_stream.read_unsigned(
+    reader,
+    32,
+  ))
   use #(field_15, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
-  use #(field_16, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
-  use #(field_17, reader) <- result.try(bit_stream.read_unsigned(reader, 3))
-  use #(field_18, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
-  use #(field_19, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
-  use #(field_20, reader) <- result.try(bit_stream.read_unsigned(reader, 3))
-  use #(field_21, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
-  use #(field_22, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
-  use #(field_23, reader) <- result.try(bit_stream.read_unsigned(reader, 18))
-  use #(list_a, reader) <- result.try(bit_stream.read_unsigned_array(
+  use #(soulbound_trade_window_ms, reader) <- result.try(
+    bit_stream.read_unsigned(reader, 32),
+  )
+  use #(refund_cost_0_kind, reader) <- result.try(bit_stream.read_unsigned(
+    reader,
+    3,
+  ))
+  use #(refund_cost_0_value_a, reader) <- result.try(bit_stream.read_unsigned(
+    reader,
+    32,
+  ))
+  use #(refund_cost_0_value_b, reader) <- result.try(bit_stream.read_unsigned(
+    reader,
+    32,
+  ))
+  use #(refund_cost_1_kind, reader) <- result.try(bit_stream.read_unsigned(
+    reader,
+    3,
+  ))
+  use #(refund_cost_1_value_a, reader) <- result.try(bit_stream.read_unsigned(
+    reader,
+    32,
+  ))
+  use #(refund_cost_1_value_b, reader) <- result.try(bit_stream.read_unsigned(
+    reader,
+    32,
+  ))
+  use #(budget_item_id, reader) <- result.try(bit_stream.read_unsigned(
+    reader,
+    18,
+  ))
+  use #(stat_multipliers, reader) <- result.try(bit_stream.read_unsigned_array(
     reader,
     3,
     32,
   ))
-  use #(list_b, reader) <- result.try(bit_stream.read_unsigned_array(
-    reader,
-    4,
-    32,
-  ))
+  use #(socketed_rune_item_ids, reader) <- result.try(
+    bit_stream.read_unsigned_array(reader, 4, 32),
+  )
   use reader <- result.try(bit_stream.read_constant(
     reader,
     "no_character_ids",
@@ -161,30 +236,30 @@ pub fn read(reader: Reader) -> Result(#(SharedItem, Reader), DecodeError) {
   Ok(#(
     SharedItem(
       item_guid:,
-      field_2:,
+      crafter_character_id:,
       item_id:,
       location:,
       bag_index:,
       stack_count:,
       charges:,
       random_stats:,
-      field_9:,
+      rune_slots:,
       field_10:,
       durability:,
-      field_12:,
+      dye_channels:,
       field_13:,
-      field_14:,
+      refund_window_ms:,
       field_15:,
-      field_16:,
-      field_17:,
-      field_18:,
-      field_19:,
-      field_20:,
-      field_21:,
-      field_22:,
-      field_23:,
-      list_a:,
-      list_b:,
+      soulbound_trade_window_ms:,
+      refund_cost_0_kind:,
+      refund_cost_0_value_a:,
+      refund_cost_0_value_b:,
+      refund_cost_1_kind:,
+      refund_cost_1_value_a:,
+      refund_cost_1_value_b:,
+      budget_item_id:,
+      stat_multipliers:,
+      socketed_rune_item_ids:,
       field_27:,
     ),
     reader,

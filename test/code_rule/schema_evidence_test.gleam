@@ -2,14 +2,13 @@
 //// evidence, a key of the client's fact file (CLAUDE.md: every packet layout
 //// lives in one schema with its evidence), and every field of a message the
 //// server sends is traced or open and every union kind of one is a traced
-//// variant, a never tag or an open tag, unless the allow-list lists it. Every
+//// variant, a never tag or an open tag. Every
 //// case is planted in a made-up schema, as a row of a table that one check
 //// runs; the last tests read the real schema and the real fact file.
 
 import code_rule/repository
 import code_rule/schema_evidence
 import code_rule/source.{SourceFile}
-import code_rule/untraced_gaps.{type Gap, UnclassifiedTags, UntracedFields}
 import genesis_prime/message_schema
 import gleam/int
 import gleam/list
@@ -163,19 +162,17 @@ fn union_block(
 const flag_variant =
   "  { tag = 2, name = \"flag\", record = \"planted_flag\", named_by = \"opcode.0x2\" },"
 
-/// The breaches of a planted schema with the allow-list `gaps`, each as its
-/// line and rule.
-fn found(text: String, gaps: List(Gap)) -> List(#(Int, String)) {
+/// The breaches of a planted schema, each as its line and rule.
+fn found(text: String) -> List(#(Int, String)) {
   schema_evidence.breaches(
     file: SourceFile(path: "src/planted/schema.toml", text:),
     fact_keys:,
-    gaps:,
   )
   |> list.map(fn(breach) { #(breach.line, breach.rule) })
 }
 
-fn rule_lines(text: String, gaps: List(Gap)) -> List(Int) {
-  found(text, gaps) |> list.map(fn(breach) { breach.0 })
+fn rule_lines(text: String) -> List(Int) {
+  found(text) |> list.map(fn(breach) { breach.0 })
 }
 
 /// The number of the first line of the text that holds `needle`.
@@ -188,17 +185,17 @@ fn line_with(text: String, needle: String) -> Int {
   number
 }
 
-/// A table row: what the case is, the schema, the allow-list and the breaches
-/// expected, each as the number of its line and a part of its rule. A case with
-/// no breach expects none.
+/// A table row: what the case is, the schema and the breaches expected, each as
+/// the number of its line and a part of its rule. A case with no breach expects
+/// none.
 type Row =
-  #(String, String, List(Gap), List(#(Int, String)))
+  #(String, String, List(#(Int, String)))
 
 /// Runs each row through the rule: the breaches are exactly the expected ones.
 fn check_rows(rows: List(Row)) -> Nil {
   list.each(rows, fn(row) {
-    let #(case_name, text, gaps, expected) = row
-    let got = found(text, gaps)
+    let #(case_name, text, expected) = row
+    let got = found(text)
     let shown =
       string.join(
         list.map(got, fn(breach) { int.to_string(breach.0) <> " " <> breach.1 }),
@@ -238,7 +235,7 @@ pub fn a_field_that_names_no_evidence_is_a_breach_at_its_line_test() -> Nil {
       record_fields: [good_field],
       unions: [],
     )
-  let assert [#(line, rule)] = found(text, []) as "expected exactly one breach"
+  let assert [#(line, rule)] = found(text) as "expected exactly one breach"
   assert line == 9 as "the field is the second line of the fields array"
   assert string.contains(rule, "planted_hello.other")
     as "the breach names the message and the field"
@@ -254,7 +251,7 @@ pub fn a_field_of_a_record_that_names_no_evidence_is_a_breach_test() -> Nil {
       record_fields: ["  { name = \"loose\", kind = \"wide_text\" },"],
       unions: [],
     )
-  assert rule_lines(text, []) == [16]
+  assert rule_lines(text) == [16]
 }
 
 pub fn a_field_whose_evidence_is_not_a_fact_key_is_a_breach_test() -> Nil {
@@ -269,7 +266,7 @@ pub fn a_field_whose_evidence_is_not_a_fact_key_is_a_breach_test() -> Nil {
       record_fields: [good_field],
       unions: [],
     )
-  assert rule_lines(text, []) == [8]
+  assert rule_lines(text) == [8]
 }
 
 pub fn a_named_by_key_that_is_not_a_fact_key_is_a_breach_test() -> Nil {
@@ -282,7 +279,7 @@ pub fn a_named_by_key_that_is_not_a_fact_key_is_a_breach_test() -> Nil {
       record_fields: [good_field],
       unions: [],
     )
-  assert rule_lines(text, []) == [8]
+  assert rule_lines(text) == [8]
 }
 
 pub fn a_message_whose_evidence_is_not_a_fact_key_is_a_breach_test() -> Nil {
@@ -299,7 +296,7 @@ pub fn a_message_whose_evidence_is_not_a_fact_key_is_a_breach_test() -> Nil {
       "evidence = \"opcode.0x1\"",
       "evidence = \"opcode.0x7\"",
     )
-  assert rule_lines(text, []) == [5]
+  assert rule_lines(text) == [5]
 }
 
 pub fn fields_that_name_their_evidence_are_not_a_breach_test() -> Nil {
@@ -312,13 +309,13 @@ pub fn fields_that_name_their_evidence_are_not_a_breach_test() -> Nil {
       record_fields: [good_field],
       unions: [],
     )
-  assert rule_lines(text, []) == []
+  assert rule_lines(text) == []
 }
 
 pub fn a_file_that_is_not_a_schema_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
-  assert rule_lines("[[message]]\nid = \"seven\"\n", []) == [1]
+  assert rule_lines("[[message]]\nid = \"seven\"\n") == [1]
 }
 
 /// A field whose values are named, with the planted fact keys as evidence.
@@ -346,7 +343,6 @@ pub fn a_named_value_whose_evidence_is_a_fact_key_is_not_a_breach_test() -> Nil 
           values: "{ value = 6, name = \"gone\", evidence = \"0x1400ac130\" }, { value = 7, name = \"idle\", evidence = \"opcode.0x1\" }",
         ),
       ]),
-      [],
     )
     == []
 }
@@ -360,7 +356,7 @@ pub fn a_named_value_that_names_no_evidence_is_a_breach_at_its_field_test() -> N
         values: "{ value = 6, name = \"gone\", evidence = \"0x1400ac130\" }, { value = 7, name = \"idle\" }",
       ),
     ])
-  let assert [#(line, rule)] = found(text, []) as "expected exactly one breach"
+  let assert [#(line, rule)] = found(text) as "expected exactly one breach"
   assert line == 8 as "the field is the first line of the fields array"
   assert string.contains(rule, "planted_hello.cause")
     as "the breach names the field"
@@ -378,7 +374,7 @@ pub fn a_named_value_whose_evidence_is_not_a_fact_key_is_a_breach_test() -> Nil 
         values: "{ value = 6, name = \"gone\", evidence = \"opcode.0x7\" }",
       ),
     ])
-  let assert [#(line, rule)] = found(text, []) as "expected exactly one breach"
+  let assert [#(line, rule)] = found(text) as "expected exactly one breach"
   assert line == 9 as "the valued field is the second line of the fields array"
   assert string.contains(rule, "opcode.0x7")
     as "the breach names the key the fact file lacks"
@@ -393,7 +389,6 @@ pub fn a_value_or_a_name_that_two_values_share_is_a_breach_test() -> Nil {
           values: "{ value = 6, name = \"gone\", evidence = \"0x1400ac130\" }, { value = 6, name = \"idle\", evidence = \"0x1400ac130\" }",
         ),
       ]),
-      [],
     )
     == [1]
     as "two values of 6: the schema is refused, which the rule reports as a schema that is not one"
@@ -403,7 +398,6 @@ pub fn a_value_or_a_name_that_two_values_share_is_a_breach_test() -> Nil {
           values: "{ value = 6, name = \"gone\", evidence = \"0x1400ac130\" }, { value = 7, name = \"gone\", evidence = \"0x1400ac130\" }",
         ),
       ]),
-      [],
     )
     == [1]
     as "two values named gone: the schema is refused too"
@@ -455,7 +449,7 @@ pub fn a_field_of_a_sent_message_is_traced_or_open_or_a_breach_test() -> Nil {
           record_fields: [good_field],
           unions: [],
         )
-      #(row.0, text, [], case row.2 {
+      #(row.0, text, case row.2 {
         True -> [#(8, untraced)]
         False -> []
       })
@@ -482,7 +476,7 @@ pub fn a_message_is_sent_by_its_direction_and_not_by_an_import_test() -> Nil {
             record_fields: [good_field],
             unions: [],
           )
-        #(row.0, text, [], case row.2 {
+        #(row.0, text, case row.2 {
           True -> [#(8, untraced)]
           False -> []
         })
@@ -555,7 +549,7 @@ pub fn a_record_a_sent_message_reaches_is_sent_and_one_only_a_received_message_h
         [_, name] -> name
         _ -> row.2
       }
-      #(row.0, row.1, [], [
+      #(row.0, row.1, [
         #(line_with(row.1, "{ name = \"" <> field_name <> "\","), row.2),
       ])
     }),
@@ -566,7 +560,6 @@ pub fn a_record_a_sent_message_reaches_is_sent_and_one_only_a_received_message_h
       nested("client_to_server", [unsigned("field_3", "")], [
         unsigned("field_4", ""),
       ]),
-      [],
       [],
     ),
   ])
@@ -656,30 +649,27 @@ pub fn a_union_tag_of_a_sent_message_is_a_variant_never_sent_open_or_a_breach_te
       "a variant, a never tag and an open tag below the bound",
       sent(marks, [flag_variant]),
       [],
-      [],
     ),
-    #("a kind below the bound that is none of them", below_the_bound, [], [
+    #("a kind below the bound that is none of them", below_the_bound, [
       #(union_line(below_the_bound), kind_rule(3)),
     ]),
     #(
       "the kinds from the bound up are not checked",
       sent(["refused_from = 2", never_damage, open_one], []),
       [],
-      [],
     ),
     #(
       "a union with no bound checks every kind its tag holds",
       no_bound,
-      [],
       list.map([3, 4, 5, 6, 7], fn(tag) {
         #(union_line(no_bound), kind_rule(tag))
       }),
     ),
-    #("a variant with no named_by and no open", unmarked, [], [
+    #("a variant with no named_by and no open", unmarked, [
       #(union_line(unmarked), kind_rule(2)),
     ]),
-    #("a variant with open", sent(marks, [open_variant]), [], []),
-    #("a variant named by its position with named_by only", positional, [], [
+    #("a variant with open", sent(marks, [open_variant]), []),
+    #("a variant named by its position with named_by only", positional, [
       #(union_line(positional), kind_rule(2)),
     ]),
     #(
@@ -688,205 +678,18 @@ pub fn a_union_tag_of_a_sent_message_is_a_variant_never_sent_open_or_a_breach_te
         flag_variant,
       ]),
       [],
-      [],
     ),
-    #("a union a record of a sent message holds", in_a_record, [], [
+    #("a union a record of a sent message holds", in_a_record, [
       #(union_line(in_a_record), kind_rule(3)),
     ]),
-    #("a never tag whose named_by is no fact key", bad_never, [], [
+    #("a never tag whose named_by is no fact key", bad_never, [
       #(tag_line(bad_never, 0), "opcode.0x9"),
     ]),
-    #("an open tag whose named_by is no fact key", bad_open, [], [
+    #("an open tag whose named_by is no fact key", bad_open, [
       #(tag_line(bad_open, 1), "opcode.0x9"),
     ]),
-    #("an open tag with no named_by", sent(marks, [flag_variant]), [], []),
+    #("an open tag with no named_by", sent(marks, [flag_variant]), []),
   ])
-}
-
-// ---- the allow-list ----
-
-pub fn a_listed_gap_is_not_a_breach_and_a_stale_or_repeated_one_is_test() -> Nil {
-  use <- owned_test.run(5000)
-  use <- unitest.tag("code_rule")
-  let issue = 979
-  let two_fields = fn(first, second) {
-    planted(
-      direction: "server_to_client",
-      fields: [first, second],
-      record_fields: [good_field],
-      unions: [],
-    )
-  }
-  let untraced_pair =
-    two_fields(unsigned("field_3", ""), unsigned("field_4", ""))
-  let hello = fn(fields) {
-    [UntracedFields(owner: "planted_hello", fields:, issue:)]
-  }
-  let owner_line = 3
-  let received_text =
-    planted(
-      direction: "client_to_server",
-      fields: [unsigned("field_3", "")],
-      record_fields: [good_field],
-      unions: [],
-    )
-  let marks = ["refused_from = 3", never_damage, open_one]
-  let union_text = fn(keys, variants) {
-    union_message(direction: "server_to_client", keys:, variants:)
-  }
-  let union_gap = fn(tags) {
-    [UnclassifiedTags(union: "planted_union", tags:, issue:)]
-  }
-  let at_union = union_line(union_text(marks, [flag_variant]))
-  check_rows([
-    #(
-      "a listed field passes and its sibling is a breach",
-      untraced_pair,
-      hello(["field_3"]),
-      [#(9, "planted_hello.field_4")],
-    ),
-    #(
-      "a listed field that now has named_by",
-      two_fields(unsigned("build", traced), unsigned("field_4", "")),
-      hello(["build", "field_4"]),
-      [#(owner_line, "planted_hello.build")],
-    ),
-    #(
-      "a listed field that is now an open question",
-      two_fields(
-        unsigned("field_3", ", open = \"what is it\""),
-        unsigned("field_4", ""),
-      ),
-      hello(["field_3", "field_4"]),
-      [#(owner_line, "planted_hello.field_3")],
-    ),
-    #(
-      "a listed field the owner lacks",
-      untraced_pair,
-      hello(["field_3", "field_4", "field_9"]),
-      [#(owner_line, "planted_hello.field_9")],
-    ),
-    #(
-      "a listed field of an owner only a client to server message reaches",
-      received_text,
-      hello(["field_3"]),
-      [#(owner_line, "owner no message the server sends holds")],
-    ),
-    #(
-      "an owner the schema lacks",
-      untraced_pair,
-      list.append(hello(["field_3", "field_4"]), [
-        UntracedFields(owner: "planted_gone", fields: ["field_1"], issue:),
-      ]),
-      [#(1, "planted_gone")],
-    ),
-    #(
-      "an owner listed in two entries",
-      untraced_pair,
-      list.append(hello(["field_3"]), hello(["field_4"])),
-      [
-        #(owner_line, "repeats the owner planted_hello"),
-        #(owner_line, "repeats the owner planted_hello"),
-      ],
-    ),
-    #(
-      "one entry that lists a field twice",
-      untraced_pair,
-      hello(["field_3", "field_4", "field_3"]),
-      [#(owner_line, "planted_hello.field_3 twice")],
-    ),
-    #("an entry that lists no field", untraced_pair, hello([]), [
-      #(owner_line, "lists no field"),
-      #(8, "planted_hello.field_3"),
-      #(9, "planted_hello.field_4"),
-    ]),
-    #(
-      "a listed field whose evidence is no fact key still fails its evidence",
-      two_fields(
-        "  { name = \"field_3\", kind = \"unsigned\", bits = 32, evidence = \"opcode.0x9\" },",
-        unsigned("build", traced),
-      ),
-      hello(["field_3"]),
-      [#(8, "opcode.0x9")],
-    ),
-    #(
-      "a listed kind that is unclassified passes",
-      union_text(marks, [unmarked_variant]),
-      union_gap([2]),
-      [],
-    ),
-    #(
-      "a listed kind that is now a traced variant",
-      union_text(marks, [flag_variant]),
-      union_gap([2]),
-      [#(at_union, "planted_union kind 2")],
-    ),
-    #(
-      "a listed kind that is now a never tag",
-      union_text(marks, [flag_variant]),
-      union_gap([0]),
-      [#(at_union, "planted_union kind 0")],
-    ),
-    #(
-      "a listed kind that is now an open tag",
-      union_text(marks, [flag_variant]),
-      union_gap([1]),
-      [#(at_union, "planted_union kind 1")],
-    ),
-    #(
-      "a listed kind at or above the bound",
-      union_text(marks, [flag_variant]),
-      union_gap([3]),
-      [#(at_union, "planted_union kind 3")],
-    ),
-    #(
-      "a union listed in two entries",
-      union_text(marks, [unmarked_variant]),
-      list.append(union_gap([2]), union_gap([2])),
-      [
-        #(at_union, "repeats the union planted_union"),
-        #(at_union, "repeats the union planted_union"),
-      ],
-    ),
-    #(
-      "one entry that lists a kind twice",
-      union_text(["refused_from = 4", ..list.drop(marks, 1)], [unmarked_variant]),
-      union_gap([2, 3, 2]),
-      [#(at_union, "planted_union kind 2 twice")],
-    ),
-    #(
-      "an entry that lists no kind",
-      union_text(marks, [flag_variant]),
-      union_gap([]),
-      [#(at_union, "lists no kind")],
-    ),
-    #(
-      "a union the schema lacks",
-      union_text(marks, [flag_variant]),
-      [UnclassifiedTags(union: "planted_gone", tags: [1], issue:)],
-      [#(1, "planted_gone")],
-    ),
-    #(
-      "a union no message the server sends reaches",
-      string.replace(
-        union_text(marks, [unmarked_variant]),
-        "direction = \"server_to_client\"",
-        "direction = \"client_to_server\"",
-      ),
-      union_gap([2]),
-      [#(at_union, "whose union no message the server sends holds")],
-    ),
-  ])
-}
-
-pub fn each_known_gap_names_the_open_issue_test() -> Nil {
-  use <- owned_test.run(5000)
-  use <- unitest.tag("code_rule")
-  let open_issues: List(Int) = [979]
-  assert list.all(untraced_gaps.known_gaps, fn(gap) {
-    list.contains(open_issues, gap.issue)
-  })
-    as "each entry of the allow-list names the open issue whose work removes it"
 }
 
 // ---- the movement unions ----
@@ -932,13 +735,6 @@ pub fn the_movement_unions_classify_every_kind_the_client_reads_test() -> Nil {
   let assert Ok(schema) = message_schema.parse(text)
     as "the schema file is not a schema"
   let fact_keys = repository.fact_keys()
-  let listed_unions =
-    list.filter_map(untraced_gaps.known_gaps, fn(gap) {
-      case gap {
-        UnclassifiedTags(union:, ..) -> Ok(union)
-        UntracedFields(..) -> Error(Nil)
-      }
-    })
   let unions = ["start_movement", "relayed_movement"]
   assert list.map(unions, fn(name) {
       let assert Ok(union) =
@@ -948,8 +744,6 @@ pub fn the_movement_unions_classify_every_kind_the_client_reads_test() -> Nil {
     })
     == list.map(unions, fn(name) { #(name, []) })
     as "CLAUDE.md: every movement kind the client reads (tags 0 to 29) is a traced variant, a never tag or an open tag whose named fact exists"
-  assert list.filter(unions, list.contains(listed_unions, _)) == []
-    as "these unions are classified, so the allow-list has no entry for them"
   let assert Ok(start) =
     list.find(schema.unions, fn(union) { union.name == "start_movement" })
     as "no union named start_movement in the schema"
@@ -967,7 +761,7 @@ pub fn the_movement_unions_classify_every_kind_the_client_reads_test() -> Nil {
 
 // ---- the real schema ----
 
-pub fn the_real_schema_has_no_gap_the_allow_list_does_not_name_test() -> Nil {
+pub fn the_real_schema_has_no_untraced_field_or_unclassified_tag_test() -> Nil {
   use <- owned_test.run(10_000)
   use <- unitest.tag("code_rule")
   let assert Ok(text) = simplifile.read("src/genesis_prime/message/schema.toml")
@@ -975,10 +769,9 @@ pub fn the_real_schema_has_no_gap_the_allow_list_does_not_name_test() -> Nil {
   assert schema_evidence.breaches(
       file: SourceFile(path: "src/genesis_prime/message/schema.toml", text:),
       fact_keys: repository.fact_keys(),
-      gaps: untraced_gaps.known_gaps,
     )
     == []
-    as "CLAUDE.md: every field of a message the server sends is traced or open, in the three messages no module builds as in the rest, and every union kind is a traced variant, a never tag or an open tag; no entry of the allow-list is stale; each key a never tag or an open tag names is a fact"
+    as "CLAUDE.md: every field of a message the server sends is traced or open, in the three messages no module builds as in the rest, and every union kind is a traced variant, a never tag or an open tag; each key a never tag or an open tag names is a fact"
 }
 
 // ---- the combat log and stat unions ----
@@ -1034,13 +827,6 @@ pub fn the_combat_log_and_stat_unions_classify_every_tag_the_client_reads_test()
   let assert Ok(schema) = message_schema.parse(text)
     as "the schema file is not a schema"
   let fact_keys = repository.fact_keys()
-  let listed_unions =
-    list.filter_map(untraced_gaps.known_gaps, fn(gap) {
-      case gap {
-        UnclassifiedTags(union:, ..) -> Ok(union)
-        UntracedFields(..) -> Error(Nil)
-      }
-    })
   list.each(combat_and_stat_rows, fn(row) {
     let assert Ok(union) =
       list.find(schema.unions, fn(union) { union.name == row.union })
@@ -1069,8 +855,6 @@ pub fn the_combat_log_and_stat_unions_classify_every_tag_the_client_reads_test()
       ])
     assert list.filter(cited, fn(key) { !list.contains(fact_keys, key) }) == []
       as { row.union <> ": each key a never or open tag cites is a fact" }
-    assert !list.contains(listed_unions, row.union)
-      as { row.union <> ": no allow-list entry once every tag is classified" }
   })
 }
 
@@ -1139,28 +923,18 @@ fn untraced_fields(
   })
 }
 
-/// Asserts that every field of each owner is traced or open and that the
-/// allow-list of untraced fields holds no entry for any of them.
+/// Asserts that every field of each owner is traced or open.
 fn assert_owners_are_traced(owners: List(String)) -> Nil {
   let assert Ok(text) = simplifile.read("src/genesis_prime/message/schema.toml")
     as "the schema file could not be read"
   let assert Ok(schema) = message_schema.parse(text)
     as "the schema file is not a schema"
   let fact_keys = repository.fact_keys()
-  let listed =
-    list.filter_map(untraced_gaps.known_gaps, fn(gap) {
-      case gap {
-        UntracedFields(owner:, ..) -> Ok(owner)
-        UnclassifiedTags(..) -> Error(Nil)
-      }
-    })
   assert list.map(owners, fn(owner) {
       #(owner, untraced_fields(schema:, owner:, fact_keys:))
     })
     == list.map(owners, fn(owner) { #(owner, []) })
     as "CLAUDE.md: every field of a message the server sends is traced or open: each field of these owners is named by a fact or open with its question"
-  assert list.filter(owners, list.contains(listed, _)) == []
-    as "these owners are traced, so the allow-list has no entry for them"
 }
 
 pub fn the_connection_and_realm_messages_carry_no_untraced_field_test() -> Nil {
@@ -1179,4 +953,18 @@ pub fn the_unit_and_chat_messages_carry_no_untraced_field_test() -> Nil {
   use <- owned_test.run(10_000)
   use <- unitest.tag("code_rule")
   assert_owners_are_traced(unit_and_chat_owners)
+}
+
+/// The owners of the item, vendor, currency, pet and reputation messages the
+/// server sends, each a message or a record of the schema.
+const item_and_vendor_owners = [
+  "buyback_entry", "currency_changed", "item_action_failed",
+  "player_character_state", "player_pet", "reputation_list",
+  "reward_property_modifier", "shared_item", "vendor_item", "vendor_tab",
+]
+
+pub fn the_item_and_vendor_messages_carry_no_untraced_field_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use <- unitest.tag("code_rule")
+  assert_owners_are_traced(item_and_vendor_owners)
 }

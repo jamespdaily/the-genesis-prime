@@ -489,7 +489,7 @@ fields = [
   { name = "supply_satchel_counts", kind = "raw_bytes", count = 1024, evidence = "0x14008cee0", named_by = "opcode.0x25e" },
   { name = "gear_score", kind = "float32", evidence = "0x14008cee0", named_by = "opcode.0x25e" },
   { name = "is_pvp_server", kind = "unsigned", bits = 1, evidence = "0x14008cee0", named_by = "opcode.0x25e" },
-  { name = "field_23", kind = "unsigned", bits = 32, evidence = "0x14008cee0", safe_by = "opcode.0x25e.safe_body" },
+  { name = "matching_map_mask", kind = "unsigned", bits = 32, evidence = "0x14008cee0", named_by = "0x14008cee0.unread_values", safe_by = "opcode.0x25e.safe_body" },
   { name = "character_entitlements", kind = "array", count_bits = 32, element = "character_entitlement", evidence = "0x14008cee0", named_by = "opcode.0x25e" },
 ]
 
@@ -498,7 +498,7 @@ name = "reputation_list"
 evidence = "0x14008cee0"
 summary = "message 0x25E's reputations: a 14-bit value the handler does not read, then the reputations; a Faction2 id with no row is skipped"
 fields = [
-  { name = "field_1", kind = "unsigned", bits = 14, evidence = "0x14008cee0", safe_by = "opcode.0x25e.safe_body" },
+  { name = "unread_1", kind = "unsigned", bits = 14, evidence = "0x14008cee0", named_by = "0x14008cee0.unread_values", safe_by = "opcode.0x25e.safe_body" },
   { name = "reputations", kind = "array", count_bits = 16, element = "reputation", evidence = "0x14008cee0", named_by = "opcode.0x25e" },
 ]
 
@@ -514,12 +514,12 @@ fields = [
 [[record]]
 name = "player_pet"
 evidence = "0x14008cee0"
-summary = "one of the player's pets, kept by its unit id (GetPlayerPets); the three values after it have no reader found"
+summary = "one of the player's pets, kept by its unit id (GetPlayerPets), then an 18-bit value no reader was found for, the valid stances mask and the current stance as a one-bit mask"
 fields = [
   { name = "unit_id", kind = "unsigned", bits = 32, evidence = "0x14008cee0", named_by = "opcode.0x25e" },
-  { name = "field_2", kind = "unsigned", bits = 18, evidence = "0x14008cee0", safe_by = "opcode.0x25e.safe_body" },
-  { name = "field_3", kind = "unsigned", bits = 5, evidence = "0x14008cee0", safe_by = "opcode.0x25e.safe_body" },
-  { name = "field_4", kind = "unsigned", bits = 5, evidence = "0x14008cee0", safe_by = "opcode.0x25e.safe_body" },
+  { name = "field_2", kind = "unsigned", bits = 18, evidence = "0x14008cee0", open = "What reads a pet's 18-bit value? No reader was found among the functions that touch the pet map (0x1403c08d0 adds an entry; 0x14008cee0.unread_values).", safe_by = "opcode.0x25e.safe_body" },
+  { name = "valid_stance_mask", kind = "unsigned", bits = 5, evidence = "0x14008cee0", named_by = "0x14008cee0.unread_values", safe_by = "opcode.0x25e.safe_body" },
+  { name = "stance_mask", kind = "unsigned", bits = 5, evidence = "0x14008cee0", named_by = "0x14008cee0.unread_values", safe_by = "opcode.0x25e.safe_body" },
 ]
 
 [[record]]
@@ -1990,35 +1990,35 @@ fields = [
 [[record]]
 name = "shared_item"
 evidence = "opcode.0x111.ability_bag"
-summary = "the item record message 0x111 carries: the GUID, the item id, the location and bag index, the stack count and charges, the random-stat word, the durability and the values the client's code names only by width and position. Gap: the server writes no id in the list of realm and character ids (a count of 0), since the width of one entry is not read"
+summary = "the item record message 0x111 carries: the GUID, the item id, the location and bag index, the stack count and charges, the random-stat word, the durability, the dye, the flags, the refund and trade windows, the refund price entries, the rune slots and rune data, the stat multipliers and the level-scaling input. Gap: the server writes no id in the list of realm and character ids (a count of 0), since the width of one entry is not read"
 fields = [
   { name = "item_guid", kind = "unsigned", bits = 64, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.ability_bag" },
-  { name = "field_2", kind = "unsigned", bits = 64, evidence = "opcode.0x111.ability_bag", safe_by = "opcode.0x111.shared_item_unnamed" },
+  { name = "crafter_character_id", kind = "unsigned", bits = 64, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.shared_item_unnamed", safe_by = "opcode.0x111.shared_item_unnamed" },
   { name = "item_id", kind = "unsigned", bits = 18, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.ability_bag" },
   { name = "location", kind = "unsigned", bits = 9, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.ability_bag" },
   { name = "bag_index", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.ability_bag" },
   { name = "stack_count", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.ability_bag" },
   { name = "charges", kind = "unsigned", bits = 32, evidence = "opcode.0x111.charges", named_by = "opcode.0x111.charges" },
   { name = "random_stats", kind = "unsigned", bits = 64, evidence = "opcode.0x111.shared_item_random_stats", named_by = "opcode.0x111.shared_item_random_stats" },
-  { name = "field_9", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", safe_by = "opcode.0x111.shared_item_unnamed" },
-  { name = "field_10", kind = "unsigned", bits = 64, evidence = "opcode.0x111.ability_bag", safe_by = "opcode.0x111.shared_item_unnamed" },
+  { name = "rune_slots", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.shared_item_fields" },
+  { name = "field_10", kind = "unsigned", bits = 64, evidence = "opcode.0x111.ability_bag", open = "What reads the 64-bit rune value's 4-bit part and three 10-bit parts in the current item format, and what does retail send for a new item? No reader of the unpacked parts was found; 0x14040c610 reads it only to convert the old format (opcode.0x111.shared_item_fields)." },
   { name = "durability", kind = "float32", evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.ability_bag" },
-  { name = "field_12", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", safe_by = "opcode.0x111.shared_item_unnamed" },
-  { name = "field_13", kind = "unsigned", bits = 8, evidence = "opcode.0x111.ability_bag", safe_by = "opcode.0x111.shared_item_unnamed" },
-  { name = "field_14", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", safe_by = "opcode.0x111.shared_item_unnamed" },
-  { name = "field_15", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", safe_by = "opcode.0x111.shared_item_unnamed" },
-  { name = "field_16", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", safe_by = "opcode.0x111.shared_item_unnamed" },
-  { name = "field_17", kind = "unsigned", bits = 3, evidence = "opcode.0x111.ability_bag", safe_by = "opcode.0x111.shared_item_unnamed" },
-  { name = "field_18", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", safe_by = "opcode.0x111.shared_item_unnamed" },
-  { name = "field_19", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", safe_by = "opcode.0x111.shared_item_unnamed" },
-  { name = "field_20", kind = "unsigned", bits = 3, evidence = "opcode.0x111.ability_bag", safe_by = "opcode.0x111.shared_item_unnamed" },
-  { name = "field_21", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", safe_by = "opcode.0x111.shared_item_unnamed" },
-  { name = "field_22", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", safe_by = "opcode.0x111.shared_item_unnamed" },
-  { name = "field_23", kind = "unsigned", bits = 18, evidence = "opcode.0x111.ability_bag", safe_by = "opcode.0x111.shared_item_unnamed" },
-  { name = "list_a", kind = "array", count_bits = 3, element = "unsigned", element_bits = 32, evidence = "opcode.0x111.ability_bag", safe_by = "opcode.0x111.shared_item_unnamed" },
-  { name = "list_b", kind = "array", count_bits = 4, element = "unsigned", element_bits = 32, evidence = "opcode.0x111.ability_bag", safe_by = "opcode.0x111.shared_item_unnamed" },
+  { name = "dye_channels", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.shared_item_unnamed", safe_by = "opcode.0x111.shared_item_unnamed" },
+  { name = "field_13", kind = "unsigned", bits = 8, evidence = "opcode.0x111.ability_bag", open = "When does the server set the item's flags (bit 0 soulbound, bit 3 no refund, bit 6 account-bound, bit 7 not tradeable)? The client binds nothing itself and shows a bind-on-equip item unbound until the server sets bit 0 (opcode.0x111.shared_item_unnamed, 0x14008c0d0)." },
+  { name = "refund_window_ms", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.shared_item_unnamed" },
+  { name = "field_15", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", open = "What gives an item its remaining duration, which the tooltip counts down? With 0 the client shows the row's full lifetime and removes nothing (opcode.0x111.shared_item_unnamed, 0x14008c0d0)." },
+  { name = "soulbound_trade_window_ms", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.shared_item_unnamed", safe_by = "opcode.0x111.shared_item_unnamed" },
+  { name = "refund_cost_0_kind", kind = "unsigned", bits = 3, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.shared_item_fields", safe_by = "opcode.0x111.shared_item_unnamed" },
+  { name = "refund_cost_0_value_a", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.shared_item_fields", safe_by = "opcode.0x111.shared_item_unnamed" },
+  { name = "refund_cost_0_value_b", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.shared_item_fields", safe_by = "opcode.0x111.shared_item_unnamed" },
+  { name = "refund_cost_1_kind", kind = "unsigned", bits = 3, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.shared_item_fields", safe_by = "opcode.0x111.shared_item_unnamed" },
+  { name = "refund_cost_1_value_a", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.shared_item_fields", safe_by = "opcode.0x111.shared_item_unnamed" },
+  { name = "refund_cost_1_value_b", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.shared_item_fields", safe_by = "opcode.0x111.shared_item_unnamed" },
+  { name = "budget_item_id", kind = "unsigned", bits = 18, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.shared_item_random_stats", safe_by = "opcode.0x111.shared_item_unnamed" },
+  { name = "stat_multipliers", kind = "array", count_bits = 3, element = "unsigned", element_bits = 32, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.shared_item_random_stats", safe_by = "opcode.0x111.shared_item_unnamed" },
+  { name = "socketed_rune_item_ids", kind = "array", count_bits = 4, element = "unsigned", element_bits = 32, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.shared_item_fields", safe_by = "opcode.0x111.shared_item_unnamed" },
   { name = "no_character_ids", kind = "constant", bits = 6, value = 0, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.ability_bag" },
-  { name = "field_27", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", safe_by = "opcode.0x111.shared_item_unnamed" },
+  { name = "field_27", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", open = "What must the server send in the level-scaling input for an item whose Item2 flags bit 20 asks for a power level override? The client reads its low 16 bits as that override and its bits 16 to 23 as a quality override (0x140445320, 0x14040c610); 0 shows the row's own level and quality, scaled by the player's level." },
 ]
 
 [[message]]
@@ -2128,7 +2128,7 @@ direction = "server_to_client"
 evidence = "opcode.0x56a"
 summary = "an item action failed: a guid the client does not read and a GenericError code, which the client raises to its UI when it is not 0; the client always clears its move wait"
 fields = [
-  { name = "item_guid", kind = "unsigned", bits = 64, evidence = "opcode.0x56a", safe_by = "opcode.0x56a" },
+  { name = "unread_1", kind = "unsigned", bits = 64, evidence = "opcode.0x56a", named_by = "opcode.0x56a", safe_by = "opcode.0x56a" },
   { name = "code", kind = "unsigned", bits = 32, evidence = "opcode.0x56a", named_by = "opcode.0x56a" },
 ]
 
@@ -3268,8 +3268,8 @@ name = "vendor_tab"
 evidence = "opcode.0x90b"
 summary = "one tab of a vendor's window: two 32-bit values (the tab's id and its text id, as GetVendorGroups reads them; not read in the client's code)"
 fields = [
-  { name = "field_1", kind = "unsigned", bits = 32, evidence = "opcode.0x90b", safe_by = "opcode.0x90b" },
-  { name = "field_2", kind = "unsigned", bits = 32, evidence = "opcode.0x90b", safe_by = "opcode.0x90b" },
+  { name = "field_1", kind = "unsigned", bits = 32, evidence = "opcode.0x90b", open = "Is the first value of a tab the tab's id? It is named from GetVendorGroups and the handler's use of it was not read (opcode.0x90b).", safe_by = "opcode.0x90b" },
+  { name = "field_2", kind = "unsigned", bits = 32, evidence = "opcode.0x90b", open = "Is the second value of a tab the tab's text id? It is named from GetVendorGroups and the handler's use of it was not read (opcode.0x90b).", safe_by = "opcode.0x90b" },
 ]
 
 [[record]]
@@ -3286,8 +3286,8 @@ fields = [
   { name = "amount", kind = "unsigned", bits = 32, evidence = "0x140097ae0", named_by = "0x140097ae0" },
   { name = "tab_id", kind = "unsigned", bits = 32, evidence = "0x140097ae0", named_by = "0x140097ae0" },
   { name = "flags", kind = "unsigned", bits = 32, evidence = "0x140097ae0", named_by = "0x140097ae0" },
-  { name = "field_10", kind = "unsigned", bits = 64, evidence = "0x140097ae0", safe_by = "0x140097ae0" },
-  { name = "field_11", kind = "unsigned", bits = 32, evidence = "0x140097ae0", safe_by = "0x140097ae0" },
+  { name = "field_10", kind = "unsigned", bits = 64, evidence = "0x140097ae0", open = "What does the client do with the 64-bit value after the flags, which it passes to the item data of a kind 0 item? Its meaning was not read (0x140097ae0).", safe_by = "0x140097ae0" },
+  { name = "field_11", kind = "unsigned", bits = 32, evidence = "0x140097ae0", open = "What does the client do with the 32-bit value after the 64-bit one, which it passes to the item data of a kind 0 item? Its meaning was not read (0x140097ae0).", safe_by = "0x140097ae0" },
   { name = "price_slot_1", kind = "record", record = "vendor_price_slot", evidence = "0x140097ae0", named_by = "0x140097ae0" },
   { name = "price_slot_2", kind = "record", record = "vendor_price_slot", evidence = "0x140097ae0", named_by = "0x140097ae0" },
 ]
@@ -3325,34 +3325,34 @@ fields = [
 [[record]]
 name = "buyback_entry"
 evidence = "opcode.0xba"
-summary = "one buyback entry as messages 0xBA and 0xBC carry it: the buyback id, the Item2 id and the quantity, the item property inputs (fields 4 to 21, read as message 0x111's are; the server writes the random-stat word, field 4, as the item's, the five multipliers, fields 9 to 13, as the float 1.0 and the rest as 0), the two amounts and their currency types as the tab shows them, and a last 32-bit value"
+summary = "one buyback entry as messages 0xBA and 0xBC carry it: the buyback id, the Item2 id and the quantity, the item property inputs (fields 4 to 21, read as message 0x111's are; the server writes the random-stat word, field 4, as the item's, the five multipliers, fields 9 to 13, as the float 1.0 and the rest as 0), the rune slots, the budget item id and the eight socketed rune item ids among them, the two amounts and their currency types as the tab shows them, and a last 32-bit value"
 fields = [
   { name = "buyback_id", kind = "unsigned", bits = 32, evidence = "opcode.0xba", named_by = "opcode.0xba" },
   { name = "item_id", kind = "unsigned", bits = 18, evidence = "opcode.0xba", named_by = "opcode.0xba" },
   { name = "quantity", kind = "unsigned", bits = 32, evidence = "opcode.0xba", named_by = "opcode.0xba" },
   { name = "random_stats", kind = "unsigned", bits = 64, evidence = "opcode.0xba.random_stats", named_by = "opcode.0xba.random_stats" },
-  { name = "field_5", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
-  { name = "field_6", kind = "unsigned", bits = 64, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
-  { name = "field_7", kind = "unsigned", bits = 64, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
-  { name = "field_8", kind = "unsigned", bits = 18, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
+  { name = "rune_slots", kind = "unsigned", bits = 32, evidence = "opcode.0xba", named_by = "opcode.0xba.random_stats", safe_by = "opcode.0xba.price" },
+  { name = "field_6", kind = "unsigned", bits = 64, evidence = "opcode.0xba", open = "What reads the 64-bit rune value's 4-bit part and three 10-bit parts in the current item format, and what does retail send for a new item? No reader of the unpacked parts was found; 0x14040c610 reads it only to convert the old format (opcode.0x111.shared_item_fields).", safe_by = "opcode.0xba.price" },
+  { name = "field_7", kind = "unsigned", bits = 64, evidence = "opcode.0xba", open = "What does the 64-bit value after the rune value do? GetBuybackItems has no reader for it (opcode.0xba.random_stats).", safe_by = "opcode.0xba.price" },
+  { name = "budget_item_id", kind = "unsigned", bits = 18, evidence = "opcode.0xba", named_by = "opcode.0xba.random_stats", safe_by = "opcode.0xba.price" },
   { name = "multiplier_1", kind = "float32", evidence = "opcode.0xba.random_stats", named_by = "opcode.0xba.random_stats" },
   { name = "multiplier_2", kind = "float32", evidence = "opcode.0xba.random_stats", named_by = "opcode.0xba.random_stats" },
   { name = "multiplier_3", kind = "float32", evidence = "opcode.0xba.random_stats", named_by = "opcode.0xba.random_stats" },
   { name = "multiplier_4", kind = "float32", evidence = "opcode.0xba.random_stats", named_by = "opcode.0xba.random_stats" },
   { name = "multiplier_5", kind = "float32", evidence = "opcode.0xba.random_stats", named_by = "opcode.0xba.random_stats" },
-  { name = "field_14", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
-  { name = "field_15", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
-  { name = "field_16", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
-  { name = "field_17", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
-  { name = "field_18", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
-  { name = "field_19", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
-  { name = "field_20", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
-  { name = "field_21", kind = "unsigned", bits = 32, evidence = "opcode.0xba", safe_by = "opcode.0xba.price" },
+  { name = "socketed_rune_item_id_1", kind = "unsigned", bits = 32, evidence = "opcode.0xba", named_by = "opcode.0xba.random_stats", safe_by = "opcode.0xba.price" },
+  { name = "socketed_rune_item_id_2", kind = "unsigned", bits = 32, evidence = "opcode.0xba", named_by = "opcode.0xba.random_stats", safe_by = "opcode.0xba.price" },
+  { name = "socketed_rune_item_id_3", kind = "unsigned", bits = 32, evidence = "opcode.0xba", named_by = "opcode.0xba.random_stats", safe_by = "opcode.0xba.price" },
+  { name = "socketed_rune_item_id_4", kind = "unsigned", bits = 32, evidence = "opcode.0xba", named_by = "opcode.0xba.random_stats", safe_by = "opcode.0xba.price" },
+  { name = "socketed_rune_item_id_5", kind = "unsigned", bits = 32, evidence = "opcode.0xba", named_by = "opcode.0xba.random_stats", safe_by = "opcode.0xba.price" },
+  { name = "socketed_rune_item_id_6", kind = "unsigned", bits = 32, evidence = "opcode.0xba", named_by = "opcode.0xba.random_stats", safe_by = "opcode.0xba.price" },
+  { name = "socketed_rune_item_id_7", kind = "unsigned", bits = 32, evidence = "opcode.0xba", named_by = "opcode.0xba.random_stats", safe_by = "opcode.0xba.price" },
+  { name = "socketed_rune_item_id_8", kind = "unsigned", bits = 32, evidence = "opcode.0xba", named_by = "opcode.0xba.random_stats", safe_by = "opcode.0xba.price" },
   { name = "amount_1", kind = "unsigned", bits = 64, evidence = "opcode.0xba.price", named_by = "opcode.0xba.price" },
   { name = "amount_2", kind = "unsigned", bits = 64, evidence = "opcode.0xba.price", named_by = "opcode.0xba.price" },
   { name = "currency_type_1", kind = "unsigned", bits = 4, evidence = "opcode.0xba.price", named_by = "opcode.0xba.price" },
   { name = "currency_type_2", kind = "unsigned", bits = 4, evidence = "opcode.0xba.price", named_by = "opcode.0xba.price" },
-  { name = "field_26", kind = "unsigned", bits = 32, evidence = "opcode.0xba.price", safe_by = "opcode.0xba.price" },
+  { name = "field_26", kind = "unsigned", bits = 32, evidence = "opcode.0xba.price", open = "What must the server send in the level-scaling input for an item whose Item2 flags bit 20 asks for a power level override? The client reads its low 16 bits as that override and its bits 16 to 23 as a quality override (0x140445320, 0x14040c610); 0 shows the row's own level and quality, scaled by the player's level.", safe_by = "opcode.0xba.price" },
 ]
 
 [[message]]
@@ -3391,8 +3391,8 @@ name = "reward_property_modifier"
 evidence = "opcode.0x92c"
 summary = "one modifier of a reward property's value: its kind, its data and its value; the server sends none"
 fields = [
-  { name = "kind", kind = "unsigned", bits = 4, evidence = "opcode.0x92c", safe_by = "opcode.0x92c" },
-  { name = "data", kind = "unsigned", bits = 32, evidence = "opcode.0x92c", safe_by = "opcode.0x92c" },
+  { name = "kind", kind = "unsigned", bits = 4, evidence = "opcode.0x92c", open = "What does a modifier's 4-bit kind select? The reader reads it (0x1400acd60) and no use of it was traced; the server sends no modifiers (opcode.0x92c).", safe_by = "opcode.0x92c" },
+  { name = "data", kind = "unsigned", bits = 32, evidence = "opcode.0x92c", open = "What does a modifier's 32-bit data select? The reader reads it (0x1400acd60) and no use of it was traced; the server sends no modifiers (opcode.0x92c).", safe_by = "opcode.0x92c" },
   { name = "value", kind = "record", record = "reward_property_integer", evidence = "0x140c1f178", named_by = "0x140c1f178" },
 ]
 
@@ -3464,8 +3464,8 @@ summary = "a currency's new total (a total, not a change): the kind, 0 to 13 for
 fields = [
   { name = "kind", kind = "unsigned", bits = 5, evidence = "opcode.0x919", named_by = "opcode.0x919" },
   { name = "total", kind = "unsigned", bits = 64, evidence = "opcode.0x919", named_by = "opcode.0x919" },
-  { name = "field_3", kind = "unsigned", bits = 32, evidence = "opcode.0x919", safe_by = "opcode.0x919" },
-  { name = "field_4", kind = "unsigned", bits = 32, evidence = "opcode.0x919", safe_by = "opcode.0x919" },
+  { name = "field_3", kind = "unsigned", bits = 32, evidence = "opcode.0x919", open = "What does the client do with the first 32-bit value of the combat momentum kinds 23 to 28, which it looks up (0x1403c70e0 calls 0x1401f4b60 on it)? The server sends kinds 0 to 13, which do not read it (opcode.0x919.credits).", safe_by = "opcode.0x919" },
+  { name = "field_4", kind = "unsigned", bits = 32, evidence = "opcode.0x919", open = "What does the client do with the second 32-bit value of the combat momentum kinds 23 to 28? The server sends kinds 0 to 13, which do not read it (opcode.0x919.credits).", safe_by = "opcode.0x919" },
 ]
 
 [[message]]

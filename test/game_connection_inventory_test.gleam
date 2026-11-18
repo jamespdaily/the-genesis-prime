@@ -363,7 +363,7 @@ pub fn an_equip_is_checked_against_the_entered_character_test() -> Nil {
   assert failed.message_id == 0x056A
     as "opcode.0x56a: a refused move is answered 0x56A"
   assert item_action_failed.decode(failed.body)
-    == Ok(ItemActionFailed(item_guid: 9, code: 42))
+    == Ok(ItemActionFailed(unread_1: 9, code: 42))
     as "Item_LevelToLow, with the guid of the item at the source"
   let #(state, credit) =
     experience_support.credited(state:, creature_id: 73_464, level: 1)
