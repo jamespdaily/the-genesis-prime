@@ -99,7 +99,7 @@ pub fn a_held_press_of_a_normal_ability_starts_it_with_a_server_cast_id_and_no_0
   assert started.spell4_id == 32_809
     as "Spell4.32809, Mind Burst (Spell4Base 19019), the Esper's ability at bag index 2"
   assert started.caster_unit_id == 7 as "cast.hold_answer: the player casts"
-  assert started.field_12 == 1 as "opcode.0x7ff.own_cast: the own-cast bit is 1"
+  assert started.own_cast == 1 as "opcode.0x7ff.own_cast: the own-cast bit is 1"
   assert list.filter_map(support.tells(effects:), fn(told) {
       case told {
         #(viewer, CastStarted(..)) -> Ok(viewer)

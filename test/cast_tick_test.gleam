@@ -468,8 +468,8 @@ pub fn the_go_lists_ticking_rows_and_no_tick_is_logged_test() -> Nil {
         spell4_effects_id: 96_125,
         instance_id: 1,
         delay_ms: 0,
-        field_4: 0,
-        result: spell_effect_result.Bit(SpellEffectBit(field_2: 0)),
+        lifetime_ms: 0,
+        result: spell_effect_result.Bit(SpellEffectBit(unread_2: 0)),
       ),
     ]
     as "the go lists the periodic row on the unit it hit as a bit, with no description: the ticks carry the damage"

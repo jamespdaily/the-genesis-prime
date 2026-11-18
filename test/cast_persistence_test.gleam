@@ -81,7 +81,7 @@ fn failed(effects effects: List(Effect)) -> List(#(Int, Int, Int, Int)) {
           failure.cast_id,
           cast_result.to_value(failure.result),
           failure.unit_id,
-          failure.field_4,
+          failure.cut_visuals,
         ))
       }
       False -> Error(Nil)

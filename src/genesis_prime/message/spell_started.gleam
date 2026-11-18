@@ -2,12 +2,12 @@
 //// never edited by hand.
 ////
 //// Message 0x07FF (spell_started), server to client: a unit starts a cast: the
-//// cast id, the Spell4 id and its root and parent, the caster, a 16-bit value,
-//// the primary target, the field position and the yaw, the initial and
-//// telegraph positions and two bits; the client shows the caster's cast bar
-//// when it has the caster, and starts the player's global cooldown when the
-//// caster is the player. Gap: the 16-bit value, the two bits and the uses of
-//// the root and parent ids are not read. Its fields are listed in
+//// cast id, the Spell4 id and its root and parent, the caster, the caster's
+//// item level, the primary target, the field position and the yaw, the initial
+//// and telegraph positions, the own-cast bit and the creature-activate bit;
+//// the client shows the caster's cast bar when it has the caster, and starts
+//// the player's global cooldown when the caster is the player. Gap: the uses
+//// of the root and parent ids are not read. Its fields are listed in
 //// `schema.toml` with the client's evidence, and the fact file's
 //// `opcode.0x7ff` names the message.
 
@@ -34,7 +34,7 @@ pub type SpellStarted {
     caster_unit_id: Int,
     /// Safe by `opcode.0x7ff.caster_item_level`: the client's code gives this
     /// field no use the server needs, and that fact shows its value is safe.
-    field_6: Int,
+    caster_item_level: Int,
     primary_target_unit_id: Int,
     position: SpellPosition,
     yaw: Int,
@@ -42,10 +42,10 @@ pub type SpellStarted {
     telegraph_positions: List(SpellTelegraphPosition),
     /// Safe by `opcode.0x7ff.own_cast`: the client's code gives this field no
     /// use the server needs, and that fact shows its value is safe.
-    field_12: Int,
+    own_cast: Int,
     /// Safe by `opcode.0x7ff.activate`: the client's code gives this field no
     /// use the server needs, and that fact shows its value is safe.
-    field_13: Int,
+    creature_activate: Int,
   )
 }
 
@@ -58,7 +58,11 @@ pub fn encode(message: SpellStarted) -> Result(BitArray, EncodeError) {
   |> bit_stream.write_unsigned("root_spell4_id", message.root_spell4_id, 18)
   |> bit_stream.write_unsigned("parent_spell4_id", message.parent_spell4_id, 18)
   |> bit_stream.write_unsigned("caster_unit_id", message.caster_unit_id, 32)
-  |> bit_stream.write_unsigned("field_6", message.field_6, 16)
+  |> bit_stream.write_unsigned(
+    "caster_item_level",
+    message.caster_item_level,
+    16,
+  )
   |> bit_stream.write_unsigned(
     "primary_target_unit_id",
     message.primary_target_unit_id,
@@ -78,8 +82,12 @@ pub fn encode(message: SpellStarted) -> Result(BitArray, EncodeError) {
     8,
     spell_telegraph_position.write,
   )
-  |> bit_stream.write_unsigned("field_12", message.field_12, 1)
-  |> bit_stream.write_unsigned("field_13", message.field_13, 1)
+  |> bit_stream.write_unsigned("own_cast", message.own_cast, 1)
+  |> bit_stream.write_unsigned(
+    "creature_activate",
+    message.creature_activate,
+    1,
+  )
   |> bit_stream.finish
 }
 
@@ -100,7 +108,10 @@ pub fn decode(body: BitArray) -> Result(SpellStarted, DecodeError) {
     reader,
     32,
   ))
-  use #(field_6, reader) <- result.try(bit_stream.read_unsigned(reader, 16))
+  use #(caster_item_level, reader) <- result.try(bit_stream.read_unsigned(
+    reader,
+    16,
+  ))
   use #(primary_target_unit_id, reader) <- result.try(bit_stream.read_unsigned(
     reader,
     32,
@@ -117,8 +128,11 @@ pub fn decode(body: BitArray) -> Result(SpellStarted, DecodeError) {
     8,
     spell_telegraph_position.read,
   ))
-  use #(field_12, reader) <- result.try(bit_stream.read_unsigned(reader, 1))
-  use #(field_13, reader) <- result.try(bit_stream.read_unsigned(reader, 1))
+  use #(own_cast, reader) <- result.try(bit_stream.read_unsigned(reader, 1))
+  use #(creature_activate, reader) <- result.try(bit_stream.read_unsigned(
+    reader,
+    1,
+  ))
   use Nil <- result.try(bit_stream.finish_reading(reader))
   Ok(SpellStarted(
     cast_id:,
@@ -126,13 +140,13 @@ pub fn decode(body: BitArray) -> Result(SpellStarted, DecodeError) {
     root_spell4_id:,
     parent_spell4_id:,
     caster_unit_id:,
-    field_6:,
+    caster_item_level:,
     primary_target_unit_id:,
     position:,
     yaw:,
     initial_positions:,
     telegraph_positions:,
-    field_12:,
-    field_13:,
+    own_cast:,
+    creature_activate:,
   ))
 }

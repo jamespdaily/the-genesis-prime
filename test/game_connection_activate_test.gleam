@@ -744,7 +744,7 @@ pub fn activating_varonia_cazalon_writes_48373s_go_with_its_delayed_item_visual_
                 target.unit_id,
                 effect.spell4_effects_id,
                 effect.delay_ms,
-                effect.field_4,
+                effect.lifetime_ms,
               ))
             False -> Error(Nil)
           }

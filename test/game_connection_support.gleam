@@ -2482,14 +2482,14 @@ pub fn spell_started_of(
     root_spell4_id: 32_893,
     parent_spell4_id: 0,
     caster_unit_id: caster,
-    field_6: 0,
+    caster_item_level: 0,
     primary_target_unit_id: caster,
     position:,
     yaw: 0,
     initial_positions: [],
     telegraph_positions: [],
-    field_12: 1,
-    field_13: 0,
+    own_cast: 1,
+    creature_activate: 0,
   )
 }
 

@@ -175,7 +175,7 @@ pub fn a_hit_unit_is_listed_with_the_answers_description_and_a_critical_one_is_a
         spell4_effects_id: 96_125,
         instance_id: 1,
         delay_ms: 166,
-        field_4: 0,
+        lifetime_ms: 0,
         result: spell_effect_result.Damage(SpellEffectDamage(
           description: tech_hit(combat_result: combat_result.Hit).damage,
         )),

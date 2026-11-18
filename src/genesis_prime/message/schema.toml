@@ -2261,21 +2261,21 @@ id = 0x07FF
 name = "spell_started"
 direction = "server_to_client"
 evidence = "opcode.0x7ff"
-summary = "a unit starts a cast: the cast id, the Spell4 id and its root and parent, the caster, a 16-bit value, the primary target, the field position and the yaw, the initial and telegraph positions and two bits; the client shows the caster's cast bar when it has the caster, and starts the player's global cooldown when the caster is the player. Gap: the 16-bit value, the two bits and the uses of the root and parent ids are not read"
+summary = "a unit starts a cast: the cast id, the Spell4 id and its root and parent, the caster, the caster's item level, the primary target, the field position and the yaw, the initial and telegraph positions, the own-cast bit and the creature-activate bit; the client shows the caster's cast bar when it has the caster, and starts the player's global cooldown when the caster is the player. Gap: the uses of the root and parent ids are not read"
 fields = [
   { name = "cast_id", kind = "unsigned", bits = 32, evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
   { name = "spell4_id", kind = "unsigned", bits = 18, evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
   { name = "root_spell4_id", kind = "unsigned", bits = 18, evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
   { name = "parent_spell4_id", kind = "unsigned", bits = 18, evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
   { name = "caster_unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
-  { name = "field_6", kind = "unsigned", bits = 16, evidence = "opcode.0x7ff", safe_by = "opcode.0x7ff.caster_item_level" },
+  { name = "caster_item_level", kind = "unsigned", bits = 16, evidence = "opcode.0x7ff", named_by = "opcode.0x7ff.caster_item_level", safe_by = "opcode.0x7ff.caster_item_level" },
   { name = "primary_target_unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
   { name = "position", kind = "record", record = "spell_position", evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
   { name = "yaw", kind = "float32", evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
   { name = "initial_positions", kind = "array", count_bits = 8, element = "spell_initial_position", evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
   { name = "telegraph_positions", kind = "array", count_bits = 8, element = "spell_telegraph_position", evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
-  { name = "field_12", kind = "unsigned", bits = 1, evidence = "opcode.0x7ff", safe_by = "opcode.0x7ff.own_cast" },
-  { name = "field_13", kind = "unsigned", bits = 1, evidence = "opcode.0x7ff", safe_by = "opcode.0x7ff.activate" },
+  { name = "own_cast", kind = "unsigned", bits = 1, evidence = "opcode.0x7ff", named_by = "opcode.0x7ff.own_cast", safe_by = "opcode.0x7ff.own_cast" },
+  { name = "creature_activate", kind = "unsigned", bits = 1, evidence = "opcode.0x7ff", named_by = "opcode.0x7ff.activate", safe_by = "opcode.0x7ff.activate" },
 ]
 
 [[record]]
@@ -2291,26 +2291,26 @@ fields = [
 [[record]]
 name = "spell_initial_position"
 evidence = "opcode.0x7ff"
-summary = "one initial position of a cast message: a unit id, 8 bits, a position, a float and 32 bits; their meanings are not read"
+summary = "one initial position of a cast message: a unit id, the target flags, a position, the telegraph's facing and the id of the unit the telegraph is anchored to"
 fields = [
   { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
-  { name = "field_2", kind = "unsigned", bits = 8, evidence = "opcode.0x7ff", safe_by = "spell.empty_lists" },
+  { name = "target_flags", kind = "unsigned", bits = 8, evidence = "opcode.0x7ff", named_by = "spell.initial_position_flags" },
   { name = "position", kind = "record", record = "spell_position", evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
-  { name = "field_4", kind = "float32", evidence = "opcode.0x7ff", safe_by = "spell.empty_lists" },
-  { name = "field_5", kind = "unsigned", bits = 32, evidence = "opcode.0x7ff", safe_by = "spell.empty_lists" },
+  { name = "yaw", kind = "float32", evidence = "opcode.0x7ff", named_by = "spell.initial_position_flags" },
+  { name = "anchor_unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x7ff", named_by = "spell.position_unit" },
 ]
 
 [[record]]
 name = "spell_telegraph_position"
 evidence = "opcode.0x7ff"
-summary = "one telegraph position of a cast message: 16 bits, a unit id, 8 bits, a position, a float and 32 bits; their meanings are not read"
+summary = "one telegraph position of a cast message: the TelegraphDamage id, a unit id, the target flags, a position, the telegraph's facing and the id of the unit the telegraph is anchored to"
 fields = [
-  { name = "field_1", kind = "unsigned", bits = 16, evidence = "opcode.0x7ff", safe_by = "spell.empty_lists" },
+  { name = "telegraph_damage_id", kind = "unsigned", bits = 16, evidence = "opcode.0x7ff", named_by = "spell.telegraph_position" },
   { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
-  { name = "field_3", kind = "unsigned", bits = 8, evidence = "opcode.0x7ff", safe_by = "spell.empty_lists" },
+  { name = "target_flags", kind = "unsigned", bits = 8, evidence = "opcode.0x7ff", named_by = "spell.telegraph_position" },
   { name = "position", kind = "record", record = "spell_position", evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
-  { name = "field_5", kind = "float32", evidence = "opcode.0x7ff", safe_by = "spell.empty_lists" },
-  { name = "field_6", kind = "unsigned", bits = 32, evidence = "opcode.0x7ff", safe_by = "spell.empty_lists" },
+  { name = "yaw", kind = "float32", evidence = "opcode.0x7ff", named_by = "spell.position_unit" },
+  { name = "anchor_unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x7ff", named_by = "spell.position_unit" },
 ]
 
 [[message]]
@@ -2333,13 +2333,13 @@ fields = [
 [[record]]
 name = "spell_missile_info"
 evidence = "opcode.0x7f4"
-summary = "one missile of a go: a position, two 32-bit values, a position and one bit; their meanings are not read"
+summary = "one missile of a go: the start position, an extra delay in milliseconds, the target unit id, the end position and the force bit"
 fields = [
-  { name = "field_1", kind = "record", record = "spell_position", evidence = "opcode.0x7f4", safe_by = "spell.empty_lists" },
-  { name = "field_2", kind = "unsigned", bits = 32, evidence = "opcode.0x7f4", safe_by = "spell.empty_lists" },
-  { name = "field_3", kind = "unsigned", bits = 32, evidence = "opcode.0x7f4", safe_by = "spell.empty_lists" },
-  { name = "field_4", kind = "record", record = "spell_position", evidence = "opcode.0x7f4", safe_by = "spell.empty_lists" },
-  { name = "field_5", kind = "unsigned", bits = 1, evidence = "opcode.0x7f4", safe_by = "spell.empty_lists" },
+  { name = "start_position", kind = "record", record = "spell_position", evidence = "opcode.0x7f4", named_by = "opcode.0x7f4.missile" },
+  { name = "delay_ms", kind = "unsigned", bits = 32, evidence = "opcode.0x7f4", named_by = "opcode.0x7f4.missile" },
+  { name = "target_unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x7f4", named_by = "opcode.0x7f4.missile" },
+  { name = "end_position", kind = "record", record = "spell_position", evidence = "opcode.0x7f4", named_by = "opcode.0x7f4.missile" },
+  { name = "force_launch", kind = "unsigned", bits = 1, evidence = "opcode.0x7f4", named_by = "opcode.0x7f4.missile" },
 ]
 
 [[record]]
@@ -2358,12 +2358,12 @@ fields = [
 [[record]]
 name = "spell_effect_info"
 evidence = "0x140094890"
-summary = "one effect on a target of a go: the Spell4Effects id, the effect instance id, the delay in milliseconds, the effect's lifetime in milliseconds (0 never ends by time) and the result, which is a bit or a damage description"
+summary = "one effect on a target of a go: the Spell4Effects id, the effect instance id, the delay in milliseconds, the effect's lifetime in milliseconds (0 is the client's own lifetime: the delay plus the Spell4Effects durationTime) and the result, which is a bit or a damage description"
 fields = [
   { name = "spell4_effects_id", kind = "unsigned", bits = 19, evidence = "0x140094890", named_by = "0x140094890" },
   { name = "instance_id", kind = "unsigned", bits = 32, evidence = "0x140094890", named_by = "0x140094890" },
   { name = "delay_ms", kind = "unsigned", bits = 32, evidence = "0x140094890", named_by = "0x140094890" },
-  { name = "field_4", kind = "unsigned", bits = 32, evidence = "0x140094890", safe_by = "opcode.0x7f4.effect_time" },
+  { name = "lifetime_ms", kind = "unsigned", bits = 32, evidence = "0x140094890", named_by = "opcode.0x7f4.effect_time", safe_by = "opcode.0x7f4.effect_time" },
   { name = "result", kind = "record", record = "spell_effect_result", evidence = "0x140094890", named_by = "0x140094890" },
 ]
 
@@ -2384,7 +2384,7 @@ evidence = "0x140094890"
 summary = "an effect result of tag 0: one bit, which the client does not read"
 fields = [
   { name = "kind", kind = "constant", bits = 2, value = 0, evidence = "0x140094890", named_by = "0x140094890" },
-  { name = "field_2", kind = "unsigned", bits = 1, evidence = "0x140094890", safe_by = "opcode.0x7f4.effect_bit" },
+  { name = "unread_2", kind = "unsigned", bits = 1, evidence = "0x140094890", named_by = "opcode.0x7f4.effect_bit", safe_by = "opcode.0x7f4.effect_bit" },
 ]
 
 [[record]]
@@ -2417,15 +2417,15 @@ fields = [
 [[record]]
 name = "spell_hit_entry"
 evidence = "0x1400945e0"
-summary = "one hit entry of a damage description: seven 32-bit values and a 3-bit kind, of which 2 and 3 make a multi-hit line and any other a deflect line; the values' meanings are not read"
+summary = "one hit entry of a damage description: the raw damage, the amount, the overheal, the absorption, the shield, the glance amount and the overkill, 32 bits each, and a 3-bit kind, of which 2 and 3 make a multi-hit line and any other a deflect line"
 fields = [
-  { name = "field_1", kind = "unsigned", bits = 32, evidence = "0x1400945e0", safe_by = "spell.empty_lists" },
-  { name = "field_2", kind = "unsigned", bits = 32, evidence = "0x1400945e0", safe_by = "spell.empty_lists" },
-  { name = "field_3", kind = "unsigned", bits = 32, evidence = "0x1400945e0", safe_by = "spell.empty_lists" },
-  { name = "field_4", kind = "unsigned", bits = 32, evidence = "0x1400945e0", safe_by = "spell.empty_lists" },
-  { name = "field_5", kind = "unsigned", bits = 32, evidence = "0x1400945e0", safe_by = "spell.empty_lists" },
-  { name = "field_6", kind = "unsigned", bits = 32, evidence = "0x1400945e0", safe_by = "spell.empty_lists" },
-  { name = "field_7", kind = "unsigned", bits = 32, evidence = "0x1400945e0", safe_by = "spell.empty_lists" },
+  { name = "raw_damage", kind = "unsigned", bits = 32, evidence = "0x1400945e0", named_by = "opcode.0x7f4.hit_entry" },
+  { name = "amount", kind = "unsigned", bits = 32, evidence = "0x1400945e0", named_by = "opcode.0x7f4.hit_entry" },
+  { name = "overheal", kind = "unsigned", bits = 32, evidence = "0x1400945e0", named_by = "opcode.0x7f4.hit_entry" },
+  { name = "absorption", kind = "unsigned", bits = 32, evidence = "0x1400945e0", named_by = "opcode.0x7f4.hit_entry" },
+  { name = "shield", kind = "unsigned", bits = 32, evidence = "0x1400945e0", named_by = "opcode.0x7f4.hit_entry" },
+  { name = "glance", kind = "unsigned", bits = 32, evidence = "0x1400945e0", named_by = "opcode.0x7f4.hit_entry" },
+  { name = "overkill", kind = "unsigned", bits = 32, evidence = "0x1400945e0", named_by = "opcode.0x7f4.hit_entry" },
   { name = "kind", kind = "unsigned", bits = 3, evidence = "0x1400945e0", named_by = "0x1400946c0" },
 ]
 
@@ -2447,7 +2447,7 @@ summary = "one missed target of a cast: the unit id, the reason (0 is Dodge, whi
 fields = [
   { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x7fb", named_by = "opcode.0x7fb" },
   { name = "reason", kind = "unsigned", bits = 4, evidence = "opcode.0x7fb", named_by = "opcode.0x7fb", values_type = "MissReason", values = [ { value = 0, name = "dodge", evidence = "opcode.0x7fb" } ] },
-  { name = "time_ms", kind = "unsigned", bits = 32, evidence = "opcode.0x7fb", safe_by = "opcode.0x7fb.time" },
+  { name = "time_ms", kind = "unsigned", bits = 32, evidence = "opcode.0x7fb", named_by = "opcode.0x7fb.time", safe_by = "opcode.0x7fb.time" },
 ]
 
 [[message]]
@@ -2483,7 +2483,7 @@ fields = [
   { name = "cast_id", kind = "unsigned", bits = 32, evidence = "opcode.0x7f9", named_by = "opcode.0x7f9" },
   { name = "result", kind = "unsigned", bits = 9, evidence = "opcode.0x7f9", named_by = "opcode.0x7f9", values_type = "CastResult", values = [ { value = 1, name = "unable_to_create_spell", evidence = "Spell.CodeEnumCastResult" }, { value = 4, name = "spell_unknown", evidence = "Spell.CodeEnumCastResult" }, { value = 5, name = "spell_bad", evidence = "Spell.CodeEnumCastResult" }, { value = 6, name = "spell_cancelled", evidence = "opcode.0x801" }, { value = 11, name = "spell_interrupted", evidence = "opcode.0x801" }, { value = 13, name = "spell_already_casting", evidence = "Spell.CodeEnumCastResult" }, { value = 14, name = "spell_global_cooldown", evidence = "Spell.CodeEnumCastResult" }, { value = 15, name = "spell_cooldown", evidence = "Spell.CodeEnumCastResult" }, { value = 16, name = "spell_group_cooldown", evidence = "Spell.CodeEnumCastResult" }, { value = 17, name = "spell_pre_requisites", evidence = "Spell.CodeEnumCastResult" }, { value = 22, name = "item_bad", evidence = "0x1403998e0" }, { value = 26, name = "item_too_high_level", evidence = "0x140398cc0" }, { value = 28, name = "item_quest_requirements_not_met", evidence = "0x140398cc0" }, { value = 29, name = "item_objective_complete", evidence = "0x140398cc0" }, { value = 30, name = "caster_unknown", evidence = "Spell.CodeEnumCastResult" }, { value = 31, name = "caster_must_have_target", evidence = "Spell.CodeEnumCastResult" }, { value = 32, name = "caster_cannot_be_primary_target", evidence = "Spell.CodeEnumCastResult" }, { value = 33, name = "caster_not_incontrol_of_self", evidence = "Spell.CodeEnumCastResult" }, { value = 34, name = "caster_movement", evidence = "Spell.CodeEnumCastResult" }, { value = 51, name = "caster_vital_cost_resource1", evidence = "Spell4CastResult.vital_cost" }, { value = 53, name = "caster_vital_cost_resource3", evidence = "Spell4CastResult.vital_cost" }, { value = 55, name = "caster_vital_cost_resource5", evidence = "Spell4CastResult.vital_cost" }, { value = 57, name = "caster_cannot_be_dead", evidence = "Spell.CodeEnumCastResult" }, { value = 89, name = "target_group", evidence = "0x1403b44b0" }, { value = 90, name = "target_unknown", evidence = "Spell.CodeEnumCastResult" }, { value = 91, name = "no_target", evidence = "Spell.CodeEnumCastResult" }, { value = 99, name = "target_faction", evidence = "Spell.CodeEnumCastResult" }, { value = 100, name = "target_is_not_useable", evidence = "Spell.CodeEnumCastResult" }, { value = 101, name = "target_orientation", evidence = "Spell.CodeEnumCastResult" }, { value = 102, name = "target_cannot_be_player", evidence = "Spell.CodeEnumCastResult" }, { value = 104, name = "target_range_min", evidence = "Spell.CodeEnumCastResult" }, { value = 105, name = "target_range_max", evidence = "Spell.CodeEnumCastResult" }, { value = 106, name = "target_cannot_be_dead", evidence = "Spell.CodeEnumCastResult" }, { value = 107, name = "target_must_be_dead", evidence = "Spell.CodeEnumCastResult" }, { value = 108, name = "target_cannot_be_in_combat", evidence = "Spell.CodeEnumCastResult" }, { value = 146, name = "client_side_interaction_fail", evidence = "Spell.CodeEnumCastResult.146" }, { value = 151, name = "prereq_caster_cast", evidence = "0x1405648a0" }, { value = 166, name = "caster_needs_los", evidence = "Spell.CodeEnumCastResult" }, { value = 169, name = "weapon_slot", evidence = "Spell.CodeEnumCastResult" }, { value = 182, name = "spell_no_charges", evidence = "Spell.CodeEnumCastResult" }, { value = 183, name = "target_range_vertical", evidence = "Spell.CodeEnumCastResult" }, { value = 281, name = "prereq_target_cast", evidence = "0x1405648a0" }, { value = 282, name = "prereq_caster_persistence", evidence = "0x1405648a0" }, { value = 283, name = "prereq_target_persistence", evidence = "0x1405648a0" }, { value = 285, name = "illegal_spell_cast", evidence = "Spell.CodeEnumCastResult" }, { value = 302, name = "caster_cannot_be_ability_restriction", evidence = "0x1403b2c40" }, { value = 303, name = "target_cannot_be_ability_restriction", evidence = "0x1403b2c40" }, { value = 306, name = "target_hostile_invulnerability", evidence = "Spell.CodeEnumCastResult.306_308" }, { value = 307, name = "target_invulnerable_to_other", evidence = "Spell.CodeEnumCastResult.306_308" }, { value = 308, name = "target_beneficial_invulnerability", evidence = "Spell.CodeEnumCastResult.306_308" }, { value = 317, name = "queued", evidence = "Spell.CodeEnumCastResult" } ] },
   { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x7f9", named_by = "opcode.0x7f9" },
-  { name = "field_4", kind = "unsigned", bits = 1, evidence = "opcode.0x7f9", safe_by = "opcode.0x7f9" },
+  { name = "cut_visuals", kind = "unsigned", bits = 1, evidence = "opcode.0x7f9", named_by = "opcode.0x7f9.cut_visuals", safe_by = "opcode.0x7f9" },
 ]
 
 [[message]]
