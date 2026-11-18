@@ -20,7 +20,9 @@ import gleam/result
 /// Bit 0: the item is bound to its owner (`opcode.0x111.shared_item_unnamed`).
 const soulbound = 1
 
-/// The location of the worn slots (`opcode.0x111.shared_item_unnamed`'s place).
+/// The location of the worn slots. The client's confirm tests locations 0, 8 and 9
+/// (`0x1403c17d0.equip_confirm`); the move check refuses a move to any place from 3 to 99,
+/// so only 0 is reached.
 const equipped_location = 0
 
 /// Whether the byte holds the soulbound bit.

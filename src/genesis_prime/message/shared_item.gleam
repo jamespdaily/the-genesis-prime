@@ -41,8 +41,6 @@ pub type SharedItem {
     /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
     /// field no use the server needs, and that fact shows its value is safe.
     dye_channels: Int,
-    /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
-    /// field no use the server needs, and that fact shows its value is safe.
     item_flags: Int,
     /// Open: How long is the refund window a bought item gets, and which
     /// message asks for the refund? opcode.0x111.shared_item_unnamed names the

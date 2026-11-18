@@ -3,7 +3,7 @@
 -- server sets soulbound when a bind-on-equip item is put in a worn slot, and sends the
 -- byte whole at every entry and when it changes. An item is made with 0.
 --
--- Only the bits the server sets are allowed; a step that sets another bit widens the check.
+-- The check allows bits 0 and 3 and nothing else.
 
 alter table character_item
   add column item_flags smallint not null default 0,
