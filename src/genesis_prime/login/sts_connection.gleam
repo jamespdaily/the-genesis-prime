@@ -4,7 +4,7 @@
 ////
 //// ```
 //// client                              rule                         asks
-//// Connect (one-way)                ─▶ nothing
+//// Connect (one-way, any time)      ─▶ nothing
 //// LoginStart(name, address)        ─▶                            ─▶ store: FindAccount(name)
 ////   AccountFound                   ◀─ KeyData(salt, B)               (b from the seed)
 ////   NoSuchAccount                  ◀─ Error 3002
@@ -53,8 +53,13 @@
 ////   up, with an error log; and more requests than the rate allows
 ////   (`Settings.rate`, a bucket counted in whole requests when they are taken),
 ////   with a warning.
-//// - **Out of order.** A request the client never sends at that point, such
-////   as KeyData before LoginStart, ends the connection with an error log;
+//// - **Connect.** It is one-way, so nothing waits on the server's reaction,
+////   and the library writes it whenever its socket is up: a client that
+////   reconnects after the server restarted writes LoginStart before it, in
+////   the same read (StsConnLib64.MT.dll!0x18002f410, 0x18003e690). It is taken
+////   in every status, with no write and no change of status.
+//// - **Out of order.** A transaction the client never sends at that point,
+////   such as KeyData before LoginStart, ends the connection with an error log;
 ////   bytes that are no STS request end it too. A whole request of a command
 ////   the rule does not know is logged as unhandled and the connection goes on.
 //// - **Reads during an ask.** A read's requests after the one that asked stay
@@ -130,7 +135,7 @@ type Ciphers {
 
 /// The login's one status, in the order the client's requests come.
 type Status {
-  /// Waiting for Connect, then LoginStart.
+  /// Waiting for LoginStart.
   AwaitingLoginStart
   /// The store is asked for the account LoginStart named.
   FindingAccount(sequence: Int)
@@ -346,13 +351,7 @@ fn handle(
         log(session:, level: LogError, text: sts_message.describe(error)),
         Stop,
       ])
-    Ok(ConnectionOpened(..)) ->
-      case session.status {
-        AwaitingLoginStart -> Continue(session, [])
-        FindingAccount(..) | AwaitingProof(..) | Proven(..) ->
-          out_of_order(session, "Connect")
-      }
-    Ok(Ping) -> Continue(session, [])
+    Ok(ConnectionOpened(..)) | Ok(Ping) -> Continue(session, [])
     Ok(Transaction(sequence:, request: transaction)) ->
       transact(session:, now:, sequence:, transaction:)
   }

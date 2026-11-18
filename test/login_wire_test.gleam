@@ -176,3 +176,35 @@ pub fn a_login_request_with_the_stss_game_token_gets_0x591_then_0x3db_and_the_ha
   assert holder.login_name == vector.name
   login_support.stop(started)
 }
+
+pub fn a_client_that_reconnects_writing_login_start_before_connect_logs_in_to_the_game_token_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(started, ports, account_id) = login_support.start_with_jim()
+  let login =
+    login_client.sts_login_in_order(
+      ports:,
+      name: vector.name,
+      password: vector.password,
+      seed: 7,
+      limit: socket_read.Open,
+      order: login_client.LoginStartThenConnect,
+    )
+  assert login.user_id == guid.to_text(support.jim().game_account_id)
+    as "the login that began with LoginStart and Connect in one read ends as the usual one does, for the account"
+  // The token the client was given is the one the hand-off keeps for the account.
+  let assert Ok(token) = guid.from_text(login.token)
+    as "the client was given a GUID as its game token"
+  let answers = process.new_subject()
+  let assert Ok(_) =
+    service.call(
+      name: started.settings.hand_off,
+      message: hand_off.Take(hand_off.GameToken(token:)),
+      reply: fn(answer) { process.send(answers, answer) },
+    )
+    as "the hand-off is running"
+  let assert hand_off.Taken(holder:) =
+    open_wait.received(from: answers, what: "the hand-off's answer")
+  assert holder.account_id == AccountId(account_id)
+  assert holder.login_name == vector.name
+  login_support.stop(started)
+}

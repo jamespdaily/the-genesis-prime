@@ -236,6 +236,17 @@ pub fn srp_exchange(
         sts_xml.Text("NetAddress", "192.168.1.5"),
       ]),
     )
+  srp_answer(started:, name:, password:, seed:)
+}
+
+/// The SRP answer to a LoginStart reply: the reply to the answer, and what the
+/// client computed, for a password the client chooses.
+fn srp_answer(
+  started started: Heard,
+  name name: String,
+  password password: String,
+  seed seed: Int,
+) -> #(Heard, scripted_client.Exchange) {
   let assert Ok(server_key_data) =
     bit_array.base64_decode(child(reply: started.reply, name: "KeyData"))
     as "KeyData is base64"
@@ -258,6 +269,41 @@ pub fn srp_exchange(
   #(answered, exchange)
 }
 
+/// The order in which a client writes its first two requests.
+pub type StartOrder {
+  /// The one-way Connect, then LoginStart.
+  ConnectThenLoginStart
+  /// LoginStart and then Connect in one write, as a client whose server
+  /// restarted writes them (`scripted_client.reconnect_read`).
+  LoginStartThenConnect
+}
+
+/// Connects to the STS listener and writes a reconnecting client's first read,
+/// LoginStart then Connect in one write, and reads the reply to LoginStart.
+fn reconnect_login_start(
+  ports ports: Ports,
+  name name: String,
+  limit limit: Limit,
+) -> Heard {
+  let client =
+    StsClient(
+      socket: connect(ports.sts_port),
+      ciphers: None,
+      next_sequence: scripted_client.reconnect_sequence,
+      limit:,
+    )
+  send(client: client.socket, bytes: scripted_client.reconnect_read(name:))
+  let #(ciphers, reply) = read_reply(client, <<>>)
+  Heard(
+    client: StsClient(
+      ..client,
+      ciphers:,
+      next_sequence: client.next_sequence + 1,
+    ),
+    reply:,
+  )
+}
+
 /// The client's whole STS login to the game token, as the library goes, its
 /// reads waiting by `limit`.
 pub fn sts_login(
@@ -267,13 +313,42 @@ pub fn sts_login(
   seed seed: Int,
   limit limit: Limit,
 ) -> scripted_client.StsLogin {
-  let #(answered, exchange) =
-    srp_exchange(
-      client: StsClient(..sts_connect(ports), limit:),
-      name: string.lowercase(name),
-      password:,
-      seed:,
-    )
+  sts_login_in_order(
+    ports:,
+    name:,
+    password:,
+    seed:,
+    limit:,
+    order: ConnectThenLoginStart,
+  )
+}
+
+/// The same with the order the client writes its first two requests in.
+pub fn sts_login_in_order(
+  ports ports: Ports,
+  name name: String,
+  password password: String,
+  seed seed: Int,
+  limit limit: Limit,
+  order order: StartOrder,
+) -> scripted_client.StsLogin {
+  let lowercase = string.lowercase(name)
+  let #(answered, exchange) = case order {
+    ConnectThenLoginStart ->
+      srp_exchange(
+        client: StsClient(..sts_connect(ports), limit:),
+        name: lowercase,
+        password:,
+        seed:,
+      )
+    LoginStartThenConnect ->
+      srp_answer(
+        started: reconnect_login_start(ports:, name: lowercase, limit:),
+        name: lowercase,
+        password:,
+        seed:,
+      )
+  }
   assert answered.reply.status == 200
     as "StsConnLib64.MT.dll!0x18002d3b0: the client accepts the server's M2"
   assert child(reply: answered.reply, name: "KeyData")
