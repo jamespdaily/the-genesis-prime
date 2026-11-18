@@ -334,11 +334,17 @@ fn union_module(union: Union) -> String {
           <> int.to_string(union.tag_bits)
           <> " bits are its kind, which picks the variant, and the variant's record reads them again as its first field. A kind no variant has is refused.",
       ),
+      never_tags_doc(union.never_tags),
+      open_tags_doc(union.open_tags),
       ["pub type " <> type_name <> " {"],
       list.flat_map(union.variants, fn(variant) {
         let named = case variant.named_by {
           Some(key) -> " The fact file's `" <> key <> "` names the kind."
           None -> ""
+        }
+        let named = case variant.open {
+          Some(question) -> named <> " Open: " <> question
+          None -> named
         }
         list.flatten([
           wrap(
@@ -392,6 +398,62 @@ fn union_module(union: Union) -> String {
       ["  }", "}"],
     ]),
   )
+}
+
+/// The paragraph of a union's doc that names the kinds the client reads and the
+/// server never sends, each with the fact that says why, or nothing.
+fn never_tags_doc(never_tags: List(message_schema.NeverTag)) -> List(String) {
+  case never_tags {
+    [] -> []
+    _ ->
+      list.flatten([
+        ["///"],
+        wrap(
+          "///",
+          "The client reads these kinds and the server never sends them, so no variant holds them and a read refuses them: "
+            <> string.join(
+            list.map(never_tags, fn(never) {
+              int.to_string(never.tag)
+              <> " "
+              <> never.name
+              <> " (the fact file's `"
+              <> never.named_by
+              <> "`)"
+            }),
+            ", ",
+          )
+            <> ".",
+        ),
+      ])
+  }
+}
+
+/// The paragraph of a union's doc that gives the question of each kind the
+/// client reads and the schema leaves open, or nothing.
+fn open_tags_doc(open_tags: List(message_schema.OpenTag)) -> List(String) {
+  case open_tags {
+    [] -> []
+    _ ->
+      list.flatten([
+        ["///"],
+        wrap(
+          "///",
+          "These kinds are open, so no variant holds them and a read refuses them: "
+            <> string.join(
+            list.map(open_tags, fn(open) {
+              let layout = case open.named_by {
+                Some(key) ->
+                  " (layout so far in the fact file's `" <> key <> "`)"
+                None -> ""
+              }
+              int.to_string(open.tag) <> " (" <> open.question <> ")" <> layout
+            }),
+            "; ",
+          )
+            <> ".",
+        ),
+      ])
+  }
 }
 
 /// The last arm of a union's `read`, which refuses a kind no variant has, laid
@@ -885,7 +947,11 @@ fn type_declaration(type_name: String, fields: List(Field)) -> List(String) {
   let declaration = case message_schema.held(fields) {
     [] -> ["  " <> type_name]
     held_fields ->
-      case list.any(held_fields, fn(field) { option.is_some(field.safe_by) }) {
+      case
+        list.any(held_fields, fn(field) {
+          option.is_some(field.safe_by) || option.is_some(field.open)
+        })
+      {
         True -> documented_fields(type_name, held_fields)
         False ->
           call(
@@ -901,18 +967,28 @@ fn type_declaration(type_name: String, fields: List(Field)) -> List(String) {
   list.flatten([["pub type " <> type_name <> " {"], declaration, ["}"]])
 }
 
-/// The variant with one field to a line, each field with a `safe_by` carrying
-/// a doc that names the fact that shows its value is safe.
+/// The variant with one field to a line, each field with an `open` carrying a
+/// doc with its question and each field with a `safe_by` a doc that names the
+/// fact that shows its value is safe.
 fn documented_fields(type_name: String, fields: List(Field)) -> List(String) {
   list.flatten([
     ["  " <> type_name <> "("],
     list.flat_map(fields, fn(field) {
-      list.append(safe_by_doc(field), [
-        "    " <> field.name <> ": " <> field_type(field) <> ",",
+      list.flatten([
+        open_doc(field),
+        safe_by_doc(field),
+        ["    " <> field.name <> ": " <> field_type(field) <> ","],
       ])
     }),
     ["  )"],
   ])
+}
+
+fn open_doc(field: Field) -> List(String) {
+  case field.open {
+    Some(question) -> wrap("    ///", "Open: " <> question)
+    None -> []
+  }
 }
 
 fn safe_by_doc(field: Field) -> List(String) {

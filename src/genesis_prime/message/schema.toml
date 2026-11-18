@@ -916,6 +916,7 @@ name = "unit_stat_value"
 evidence = "0x140096230"
 summary = "the value of one stat of a new unit: the form in 2 bits picks how it is written, 0 a 32-bit integer and 1 a 32-bit float; the server writes no form 2 (two integers), and form 3 refuses the message"
 tag_bits = 2
+refused_from = 3
 variants = [
   { tag = 0, name = "integer", record = "unit_stat_integer", named_by = "0x140096230" },
   { tag = 1, name = "float", record = "unit_stat_float", named_by = "0x140080c60" },
@@ -1471,6 +1472,7 @@ name = "movement_command"
 evidence = "0x140c1f070"
 summary = "one movement command: the kind in 5 bits picks the layout of its data, and the client's reader refuses a kind of 30 or 31"
 tag_bits = 5
+refused_from = 30
 variants = [
   { tag = 0, name = "time", record = "movement_time", named_by = "movement_command.kind_0" },
   { tag = 1, name = "platform", record = "movement_platform", named_by = "opcode.0x637" },
@@ -1509,6 +1511,7 @@ name = "relayed_movement"
 evidence = "opcode.0x637"
 summary = "one movement command of a message about a unit's movement: the kinds of the per-frame batch the client's writer builds after the time command (1 platform, 2 position, 8 velocity, 11 move asked, 14 rotation, 24 state flags, 27 mode), which the server relays to the players who see a unit, every field named, and the nine a server that moves a unit writes itself, 0 (the time its later commands apply at), 3 (a timed path), 4 (a path), 10, 13, 21 and 26 (the velocity, move, rotation and state that follow a path by default), 18 (face a unit) and 19 (face a point). Gap: the other kinds, which game moves queue and the client's writer may send, are not relayed, since opcode.0x637 does not say which queuers exist or what they mean"
 tag_bits = 5
+refused_from = 30
 variants = [
   { tag = 0, name = "time", record = "movement_time", named_by = "movement_command.kind_0" },
   { tag = 1, name = "platform", record = "movement_platform", named_by = "opcode.0x637" },
@@ -1533,6 +1536,7 @@ name = "start_movement"
 evidence = "0x140c1f070"
 summary = "one movement command of a new unit that the server writes: the kind in 5 bits picks the layout of its data, and the server writes only kind 2, the position, and kind 14, the rotation; the client's reader takes all 30 kinds (movement_command)"
 tag_bits = 5
+refused_from = 30
 variants = [
   { tag = 2, name = "position", record = "unit_position_command", named_by = "0x1400ad350" },
   { tag = 14, name = "rotation", record = "movement_rotation", named_by = "0x140715350" },
@@ -1664,6 +1668,7 @@ name = "chat_format"
 evidence = "0x140085ca0"
 summary = "one format of a chat line: the type in 4 bits picks the layout of its data, and the client's reader refuses a type of 12 to 15. Type 8 carries a full item record (0x140085790)"
 tag_bits = 4
+refused_from = 12
 variants = [
   { tag = 0, name = "kind_0", record = "chat_format_kind_0" },
   { tag = 1, name = "kind_1", record = "chat_format_kind_1" },
@@ -2367,6 +2372,7 @@ name = "spell_effect_result"
 evidence = "0x140094890"
 summary = "the result of an effect: the tag in 2 bits picks the layout, and the client's reader fails a tag of 2 or 3"
 tag_bits = 2
+refused_from = 2
 variants = [
   { tag = 0, name = "bit", record = "spell_effect_bit", named_by = "0x140094890" },
   { tag = 1, name = "damage", record = "spell_effect_damage", named_by = "0x140094890" },
@@ -2839,8 +2845,19 @@ fields = [
 [[union]]
 name = "combat_log_entry"
 evidence = "opcode.0x247"
-summary = "one entry of the combat log: the type in 6 bits picks the layout of its data. Gap: the schema holds types 1, 2, 14, 18, 22, 23 and 24, and the client's reader takes 0 to 35; the other types are open under the issue \"Spells work in depth on the real client: cast times, telegraphs, buffs, crowd control and ticking effects\""
+summary = "one entry of the combat log: the type in 6 bits picks the layout of its data"
 tag_bits = 6
+refused_from = 36
+never_tags = [
+  { tag = 3, name = "damage", named_by = "opcode.0x247.damage" },
+  { tag = 4, name = "damage_shields", named_by = "opcode.0x247.damage_shields" },
+  { tag = 6, name = "multi_hit", named_by = "opcode.0x247.multi_hit" },
+  { tag = 7, name = "multi_hit_shields", named_by = "opcode.0x247.multi_hit_shields" },
+  { tag = 12, name = "heal", named_by = "opcode.0x247.heal" },
+  { tag = 13, name = "multi_heal", named_by = "opcode.0x247.multi_heal" },
+  { tag = 17, name = "deflect", named_by = "opcode.0x247.deflect" },
+  { tag = 34, name = "unhandled_34", named_by = "opcode.0x247.unhandled_34" },
+]
 variants = [
   { tag = 1, name = "cc_state", record = "combat_log_cc_state", named_by = "opcode.0x247.cc_state" },
   { tag = 2, name = "cc_state_break", record = "combat_log_cc_state_break", named_by = "opcode.0x247.cc_state" },

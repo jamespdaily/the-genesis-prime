@@ -48,6 +48,27 @@ pub fn the_codec_generated_for_a_schema_with_a_field_of_every_kind_round_trips_t
   )
 }
 
+pub fn the_planted_codec_with_an_open_field_and_a_union_of_never_and_open_tags_builds_and_refuses_those_tags_test() -> Nil {
+  use <- owned_test.run(180_000)
+  use folder <- recording_support.in_folder
+  let files = planted_files()
+  assert list.any(files, fn(file) {
+    string.ends_with(file.path, "/planted_flag.gleam")
+    && string.contains(file.text, "/// Open: what the client does with the")
+  })
+    as "the open field's question is a doc of the generated record"
+  let ran = build_and_run(folder:, files:)
+  let assert Ok(output) = ran
+    as "the scratch project builds with the open field and the marked union, and the driver passes"
+  assert string.contains(output, "the never and open kinds are refused")
+    as {
+      "the driver printed that kinds 3 (never) and 4 (open) fail with UnexpectedValue; it printed: "
+      <> output
+    }
+  assert string.contains(output, "the full message round-trips")
+    as "the round trips still pass"
+}
+
 pub fn a_generated_codec_whose_decoder_reads_another_width_fails_the_round_trip_test() -> Nil {
   use <- owned_test.run(180_000)
   use folder <- recording_support.in_folder

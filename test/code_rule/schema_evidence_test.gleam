@@ -1,13 +1,16 @@
 //// The schema-evidence rule: every field of the message schema names its
 //// evidence, a key of the client's fact file (CLAUDE.md: every packet layout
-//// lives in one schema with its evidence). A field with no `evidence`, or one
-//// whose key is not in the fact file, is a breach at the field's line, and so
-//// is a `named_by` key the fact file lacks. Every case is planted in a made-up
-//// schema; the last test reads the real schema and the real fact file.
+//// lives in one schema with its evidence), and every field of a message the
+//// server sends is traced or open and every union kind of one is a traced
+//// variant, a never tag or an open tag, unless the allow-list lists it. Every
+//// case is planted in a made-up schema, as a row of a table that one check
+//// runs; the last tests read the real schema and the real fact file.
 
 import code_rule/repository
 import code_rule/schema_evidence
 import code_rule/source.{SourceFile}
+import code_rule/untraced_gaps.{type Gap, UnclassifiedTags, UntracedFields}
+import gleam/int
 import gleam/list
 import gleam/string
 import owned_test
@@ -16,532 +19,83 @@ import unitest
 
 const fact_keys = ["opcode.0x1", "0x1400a9140", "0x1400ac130", "opcode.0x2"]
 
-fn schema(
-  fields fields: List(String),
-  record_fields record_fields: List(String),
-) -> String {
-  string.join(
-    list.flatten([
-      [
-        "[[message]]",
-        "id = 0x0001",
-        "name = \"planted_hello\"",
-        "direction = \"server_to_client\"",
-        "evidence = \"opcode.0x1\"",
-        "summary = \"a planted message\"",
-        "fields = [",
-      ],
-      fields,
-      [
-        "]",
-        "",
-        "[[record]]",
-        "name = \"planted_entry\"",
-        "evidence = \"0x1400ac130\"",
-        "summary = \"a planted record\"",
-        "fields = [",
-      ],
-      record_fields,
-      ["]", ""],
-    ]),
-    "\n",
-  )
+// ---- planted schemas ----
+
+/// A planted field of 32 bits, with the keys `extra` adds.
+fn unsigned(name: String, extra: String) -> String {
+  "  { name = \""
+  <> name
+  <> "\", kind = \"unsigned\", bits = 32, evidence = \"0x1400a9140\""
+  <> extra
+  <> " },"
 }
+
+const traced = ", named_by = \"opcode.0x2\""
 
 const good_field =
-  "  { name = \"build\", kind = \"unsigned\", bits = 32, evidence = \"0x1400a9140\" },"
-
-fn breach_lines(text: String) -> List(Int) {
-  breach_lines_when_sent(text, sent_messages: [])
-}
-
-/// The breach lines when the modules outside the message folder import the
-/// message modules named in `sent_messages`.
-fn breach_lines_when_sent(
-  text: String,
-  sent_messages sent_messages: List(String),
-) -> List(Int) {
-  schema_evidence.breaches(
-    file: SourceFile(path: "src/planted/schema.toml", text:),
-    fact_keys:,
-    sent_messages:,
-  )
-  |> list.map(fn(breach) { breach.line })
-}
-
-pub fn a_field_that_names_no_evidence_is_a_breach_at_its_line_test() -> Nil {
-  use <- owned_test.run(5000)
-  use <- unitest.tag("code_rule")
-  let text =
-    schema(
-      fields: [
-        good_field,
-        "  { name = \"other\", kind = \"unsigned\", bits = 32 },",
-      ],
-      record_fields: [good_field],
-    )
-  let breaches =
-    schema_evidence.breaches(
-      file: SourceFile(path: "src/planted/schema.toml", text:),
-      fact_keys:,
-      sent_messages: [],
-    )
-  let assert [breach] = breaches as "expected exactly one breach"
-  assert breach.path == "src/planted/schema.toml"
-  assert breach.line == 9 as "the field is the second line of the fields array"
-  assert string.contains(breach.rule, "planted_hello.other")
-    as "the breach names the message and the field"
-}
-
-pub fn a_field_of_a_record_that_names_no_evidence_is_a_breach_test() -> Nil {
-  use <- owned_test.run(5000)
-  use <- unitest.tag("code_rule")
-  let text =
-    schema(fields: [good_field], record_fields: [
-      "  { name = \"loose\", kind = \"wide_text\" },",
-    ])
-  assert breach_lines(text) == [16]
-}
-
-pub fn a_field_whose_evidence_is_not_a_fact_key_is_a_breach_test() -> Nil {
-  use <- owned_test.run(5000)
-  use <- unitest.tag("code_rule")
-  let text =
-    schema(
-      fields: [
-        "  { name = \"build\", kind = \"unsigned\", bits = 32, evidence = \"planted.not_a_fact_key\" },",
-      ],
-      record_fields: [good_field],
-    )
-  assert breach_lines(text) == [8]
-}
-
-pub fn a_named_by_key_that_is_not_a_fact_key_is_a_breach_test() -> Nil {
-  use <- owned_test.run(5000)
-  use <- unitest.tag("code_rule")
-  let text =
-    schema(
-      fields: [
-        "  { name = \"build\", kind = \"unsigned\", bits = 32, evidence = \"0x1400a9140\", named_by = \"opcode.0x9\" },",
-      ],
-      record_fields: [good_field],
-    )
-  assert breach_lines(text) == [8]
-}
-
-pub fn a_message_whose_evidence_is_not_a_fact_key_is_a_breach_test() -> Nil {
-  use <- owned_test.run(5000)
-  use <- unitest.tag("code_rule")
-  let text =
-    string.replace(
-      schema(fields: [good_field], record_fields: [good_field]),
-      "evidence = \"opcode.0x1\"",
-      "evidence = \"opcode.0x7\"",
-    )
-  assert breach_lines(text) == [5]
-}
-
-pub fn fields_that_name_their_evidence_are_not_a_breach_test() -> Nil {
-  use <- owned_test.run(5000)
-  use <- unitest.tag("code_rule")
-  let text =
-    schema(
-      fields: [
-        good_field,
-        "  { name = \"named\", kind = \"unsigned\", bits = 8, evidence = \"0x1400a9140\", named_by = \"opcode.0x2\" },",
-      ],
-      record_fields: [good_field],
-    )
-  assert breach_lines(text) == []
-}
-
-pub fn a_file_that_is_not_a_schema_is_a_breach_test() -> Nil {
-  use <- owned_test.run(5000)
-  use <- unitest.tag("code_rule")
-  assert breach_lines("[[message]]\nid = \"seven\"\n") == [1]
-}
-
-pub fn every_field_of_the_message_schema_names_its_evidence_test() -> Nil {
-  use <- owned_test.run(10_000)
-  use <- unitest.tag("code_rule")
-  let assert Ok(text) = simplifile.read("src/genesis_prime/message/schema.toml")
-    as "the schema file could not be read"
-  assert schema_evidence.breaches(
-      file: SourceFile(path: "src/genesis_prime/message/schema.toml", text:),
-      fact_keys: repository.fact_keys(),
-      sent_messages: [],
-    )
-    == []
-    as "CLAUDE.md: every packet layout lives in one schema with its evidence"
-}
-
-/// A field whose values are named, with the planted fact keys as evidence.
-fn valued_field(values values: String) -> String {
-  "  { name = \"cause\", kind = \"unsigned\", bits = 5, evidence = \"0x1400a9140\", named_by = \"opcode.0x2\", values_type = \"Cause\", values = [ "
-  <> values
-  <> " ] },"
-}
-
-pub fn a_named_value_whose_evidence_is_a_fact_key_is_not_a_breach_test() -> Nil {
-  use <- owned_test.run(5000)
-  use <- unitest.tag("code_rule")
-  let text =
-    schema(
-      fields: [
-        valued_field(
-          values: "{ value = 6, name = \"gone\", evidence = \"0x1400ac130\" }, { value = 7, name = \"idle\", evidence = \"opcode.0x1\" }",
-        ),
-      ],
-      record_fields: [good_field],
-    )
-  assert breach_lines(text) == []
-}
-
-pub fn a_named_value_that_names_no_evidence_is_a_breach_at_its_field_test() -> Nil {
-  use <- owned_test.run(5000)
-  use <- unitest.tag("code_rule")
-  let text =
-    schema(
-      fields: [
-        valued_field(
-          values: "{ value = 6, name = \"gone\", evidence = \"0x1400ac130\" }, { value = 7, name = \"idle\" }",
-        ),
-      ],
-      record_fields: [good_field],
-    )
-  let assert [breach] =
-    schema_evidence.breaches(
-      file: SourceFile(path: "src/planted/schema.toml", text:),
-      fact_keys:,
-      sent_messages: [],
-    )
-    as "expected exactly one breach"
-  assert breach.line == 8 as "the field is the first line of the fields array"
-  assert string.contains(breach.rule, "planted_hello.cause")
-    as "the breach names the field"
-  assert string.contains(breach.rule, "idle")
-    as "the breach names the value that has no evidence"
-}
-
-pub fn a_named_value_whose_evidence_is_not_a_fact_key_is_a_breach_test() -> Nil {
-  use <- owned_test.run(5000)
-  use <- unitest.tag("code_rule")
-  let text =
-    schema(
-      fields: [
-        good_field,
-        valued_field(
-          values: "{ value = 6, name = \"gone\", evidence = \"opcode.0x7\" }",
-        ),
-      ],
-      record_fields: [good_field],
-    )
-  let assert [breach] =
-    schema_evidence.breaches(
-      file: SourceFile(path: "src/planted/schema.toml", text:),
-      fact_keys:,
-      sent_messages: [],
-    )
-    as "expected exactly one breach"
-  assert breach.line == 9
-    as "the valued field is the second line of the fields array"
-  assert string.contains(breach.rule, "opcode.0x7")
-    as "the breach names the key the fact file lacks"
-}
-
-pub fn a_value_or_a_name_that_two_values_share_is_a_breach_test() -> Nil {
-  use <- owned_test.run(5000)
-  use <- unitest.tag("code_rule")
-  assert breach_lines(
-      schema(
-        fields: [
-          valued_field(
-            values: "{ value = 6, name = \"gone\", evidence = \"0x1400ac130\" }, { value = 6, name = \"idle\", evidence = \"0x1400ac130\" }",
-          ),
-        ],
-        record_fields: [good_field],
-      ),
-    )
-    == [1]
-    as "two values of 6: the schema is refused, which the rule reports as a schema that is not one"
-  assert breach_lines(
-      schema(
-        fields: [
-          valued_field(
-            values: "{ value = 6, name = \"gone\", evidence = \"0x1400ac130\" }, { value = 7, name = \"gone\", evidence = \"0x1400ac130\" }",
-          ),
-        ],
-        record_fields: [good_field],
-      ),
-    )
-    == [1]
-    as "two values named gone: the schema is refused too"
-}
-
-const named_field =
   "  { name = \"build\", kind = \"unsigned\", bits = 32, evidence = \"0x1400a9140\", named_by = \"opcode.0x2\" },"
 
-const unnamed_field =
-  "  { name = \"field_3\", kind = \"unsigned\", bits = 32, evidence = \"0x1400a9140\" },"
+const entries_field =
+  "  { name = \"entries\", kind = \"array\", count_bits = 4, element = \"planted_entry\", evidence = \"0x1400a9140\", named_by = \"opcode.0x2\" },"
 
-const unnamed_safe_field =
-  "  { name = \"field_3\", kind = \"unsigned\", bits = 32, evidence = \"0x1400a9140\", safe_by = \"opcode.0x2\" },"
+const shapes_field =
+  "  { name = \"shapes\", kind = \"array\", count_bits = 4, element = \"planted_union\", evidence = \"0x1400a9140\", named_by = \"opcode.0x2\" },"
 
-pub fn an_unnamed_field_with_no_safe_by_in_a_message_the_server_sends_is_a_breach_test() -> Nil {
-  use <- owned_test.run(5000)
-  use <- unitest.tag("code_rule")
-  let text =
-    schema(fields: [named_field, unnamed_field], record_fields: [good_field])
-  let assert [breach] =
-    schema_evidence.breaches(
-      file: SourceFile(path: "src/planted/schema.toml", text:),
-      fact_keys:,
-      sent_messages: ["planted_hello"],
-    )
-    as "expected exactly one breach"
-  assert breach.line == 9 as "the field is the second line of the fields array"
-  assert string.contains(breach.rule, "planted_hello.field_3")
-    as "the breach names the message and the field"
-  assert string.contains(breach.rule, "safe_by")
-    as "the breach says what the field lacks"
-}
-
-pub fn an_unnamed_field_with_a_safe_by_key_of_the_fact_file_is_not_a_breach_test() -> Nil {
-  use <- owned_test.run(5000)
-  use <- unitest.tag("code_rule")
-  let text =
-    schema(fields: [named_field, unnamed_safe_field], record_fields: [
-      good_field,
-    ])
-  assert breach_lines_when_sent(text, sent_messages: ["planted_hello"]) == []
-}
-
-pub fn a_safe_by_key_that_is_not_a_fact_key_is_a_breach_test() -> Nil {
-  use <- owned_test.run(5000)
-  use <- unitest.tag("code_rule")
-  let text =
-    schema(
-      fields: [
-        named_field,
-        string.replace(unnamed_safe_field, "opcode.0x2", "opcode.0x9"),
-      ],
-      record_fields: [good_field],
-    )
-  assert breach_lines_when_sent(text, sent_messages: ["planted_hello"]) == [9]
-}
-
-pub fn a_message_the_client_sends_may_have_unnamed_fields_with_no_safe_by_test() -> Nil {
-  use <- owned_test.run(5000)
-  use <- unitest.tag("code_rule")
-  let text =
-    string.replace(
-      schema(fields: [named_field, unnamed_field], record_fields: [good_field]),
-      "direction = \"server_to_client\"",
-      "direction = \"client_to_server\"",
-    )
-  assert breach_lines_when_sent(text, sent_messages: ["planted_hello"]) == []
-    as "the server never writes a client-to-server message, so no value of it is the server's to prove safe"
-}
-
-/// A message whose one field is an array of `planted_entry`, whose last field
-/// is an array of `planted_inner`; the fields of each record are given.
-fn schema_with_nested_records(
-  entry_fields entry_fields: List(String),
-  inner_fields inner_fields: List(String),
+/// A planted constant of 3 bits.
+fn constant_field(
+  name name: String,
+  value value: Int,
+  extra extra: String,
 ) -> String {
-  string.join(
-    list.flatten([
-      [
-        "[[message]]",
-        "id = 0x0001",
-        "name = \"planted_hello\"",
-        "direction = \"server_to_client\"",
-        "evidence = \"opcode.0x1\"",
-        "summary = \"a planted message\"",
-        "fields = [",
-        "  { name = \"entries\", kind = \"array\", count_bits = 32, element = \"planted_entry\", evidence = \"0x1400a9140\", named_by = \"opcode.0x2\" },",
-        "]",
-        "",
-        "[[record]]",
-        "name = \"planted_entry\"",
-        "evidence = \"0x1400ac130\"",
-        "summary = \"a planted record\"",
-        "fields = [",
-      ],
-      entry_fields,
-      [
-        "  { name = \"inners\", kind = \"array\", count_bits = 4, element = \"planted_inner\", evidence = \"0x1400a9140\", named_by = \"opcode.0x2\" },",
-        "]",
-        "",
-        "[[record]]",
-        "name = \"planted_inner\"",
-        "evidence = \"0x1400ac130\"",
-        "summary = \"a planted record inside a record\"",
-        "fields = [",
-      ],
-      inner_fields,
-      ["]", ""],
-    ]),
-    "\n",
-  )
+  "  { name = \""
+  <> name
+  <> "\", kind = \"constant\", bits = 3, value = "
+  <> int.to_string(value)
+  <> ", evidence = \"0x1400a9140\""
+  <> extra
+  <> " },"
 }
 
-fn breach_rules(text: String, sent_messages: List(String)) -> List(String) {
-  schema_evidence.breaches(
-    file: SourceFile(path: "src/planted/schema.toml", text:),
-    fact_keys:,
-    sent_messages:,
-  )
-  |> list.map(fn(breach) { breach.rule })
-}
-
-pub fn an_unnamed_field_with_no_safe_by_in_a_record_a_message_the_server_sends_holds_is_a_breach_test() -> Nil {
-  use <- owned_test.run(5000)
-  use <- unitest.tag("code_rule")
-  let text =
-    schema_with_nested_records(
-      entry_fields: [named_field, unnamed_field],
-      inner_fields: [
-        named_field,
-      ],
-    )
-  let assert [breach] = breach_rules(text, ["planted_hello"])
-    as "the entry's field is sent inside the message's array, so it needs a name or a safe_by"
-  assert string.contains(breach, "planted_entry.field_3")
-    as "the breach names the record and the field"
-  assert breach_rules(text, []) == []
-    as "a message no module outside the message folder imports is never sent, nor its records"
-}
-
-pub fn an_unnamed_field_with_no_safe_by_in_a_record_inside_a_record_is_a_breach_test() -> Nil {
-  use <- owned_test.run(5000)
-  use <- unitest.tag("code_rule")
-  let text =
-    schema_with_nested_records(entry_fields: [named_field], inner_fields: [
-      named_field,
-      unnamed_field,
-    ])
-  let assert [breach] = breach_rules(text, ["planted_hello"])
-    as "the inner record is sent inside the entry, which is sent inside the message"
-  assert string.contains(breach, "planted_inner.field_3")
-  let safe =
-    schema_with_nested_records(entry_fields: [named_field], inner_fields: [
-      named_field,
-      unnamed_safe_field,
-    ])
-  assert breach_rules(safe, ["planted_hello"]) == []
-}
-
-pub fn a_record_only_a_message_the_client_sends_holds_may_have_unnamed_fields_test() -> Nil {
-  use <- owned_test.run(5000)
-  use <- unitest.tag("code_rule")
-  let text =
-    string.replace(
-      schema_with_nested_records(
-        entry_fields: [named_field, unnamed_field],
-        inner_fields: [
-          unnamed_field,
-        ],
-      ),
-      "direction = \"server_to_client\"",
-      "direction = \"client_to_server\"",
-    )
-  assert breach_rules(text, ["planted_hello"]) == []
-    as "the server never writes a message the client sends, so no value of its records is the server's"
-}
-
-pub fn a_message_no_module_outside_the_message_folder_imports_is_not_sent_test() -> Nil {
-  use <- owned_test.run(5000)
-  use <- unitest.tag("code_rule")
-  let text =
-    schema(fields: [named_field, unnamed_field], record_fields: [good_field])
-  assert breach_lines_when_sent(text, sent_messages: ["another_message"]) == []
-    as "a message nothing imports is never written by the server"
-}
-
-pub fn the_sent_messages_are_the_ones_a_module_outside_the_message_folder_imports_test() -> Nil {
-  use <- owned_test.run(5000)
-  use <- unitest.tag("code_rule")
-  let sources = [
-    SourceFile(
-      path: "src/genesis_prime/login/planted_rule.gleam",
-      text: "import genesis_prime/message/planted_hello.{PlantedHello}\nimport genesis_prime/message/bit_stream\nimport genesis_prime/message/other as renamed\n",
-    ),
-    SourceFile(
-      path: "src/genesis_prime/message/planted_carrier.gleam",
-      text: "import genesis_prime/message/planted_inner\n",
-    ),
-  ]
-  assert schema_evidence.sent_messages(sources)
-    == ["bit_stream", "other", "planted_hello"]
-    as "each module imported outside src/genesis_prime/message/, sorted and once; the message folder's own imports do not count"
-}
-
-pub fn every_unnamed_field_of_a_message_the_server_sends_names_its_safe_by_in_the_real_schema_test() -> Nil {
-  use <- owned_test.run(10_000)
-  use <- unitest.tag("code_rule")
-  let assert Ok(text) = simplifile.read("src/genesis_prime/message/schema.toml")
-    as "the schema file could not be read"
-  let sent_messages =
-    schema_evidence.sent_messages(repository.sources(under: ["src"]))
-  assert list.contains(sent_messages, "server_hello")
-    as "the auth rule imports the hello, so the real schema is read with it as a sent message"
-  assert schema_evidence.breaches(
-      file: SourceFile(path: "src/genesis_prime/message/schema.toml", text:),
-      fact_keys: repository.fact_keys(),
-      sent_messages:,
-    )
-    == []
-    as "CLAUDE.md: a value the server sends that the client never reads is shown safe by a fact"
-}
-
-pub fn the_game_servers_messages_with_their_records_name_every_field_or_its_safe_by_in_the_real_schema_test() -> Nil {
-  use <- owned_test.run(10_000)
-  use <- unitest.tag("code_rule")
-  let assert Ok(text) = simplifile.read("src/genesis_prime/message/schema.toml")
-    as "the schema file could not be read"
-  let sent_messages =
-    schema_evidence.sent_messages(repository.sources(under: ["src"]))
-  assert list.all(
+fn record_block(
+  name name: String,
+  fields fields: List(String),
+) -> List(String) {
+  list.flatten([
     [
-      "server_hello",
-      "character_list",
-      "disconnect_notice",
-      "create_character_result",
-      "play_character_refused",
-      "max_character_level",
-      "enter_world",
-      "unit_create_player",
-      "unit_is_player",
-      "player_path",
-      "client_control_granted",
-      "movement_send_interval",
-      "player_entered_world",
+      "[[record]]",
+      "name = \"" <> name <> "\"",
+      "evidence = \"0x1400ac130\"",
+      "summary = \"a planted record\"",
+      "fields = [",
     ],
-    list.contains(sent_messages, _),
-  )
-    as "the game rule imports the hello (through genesis_prime/connection/hello), the character list, the disconnect notice, the create result, the play refusal and the highest level, and world entry imports the seven messages that put the player in the world, so each is read as sent"
-  assert schema_evidence.breaches(
-      file: SourceFile(path: "src/genesis_prime/message/schema.toml", text:),
-      fact_keys: repository.fact_keys(),
-      sent_messages:,
-    )
-    == []
-    as "CLAUDE.md: a value the server sends that the client never reads is shown safe by a fact, in the character list's entry and its visuals as in the messages, and in the player's 0x262 with its stats, movement commands and properties, 0xAD, 0x19B, 0x6BC and 0xF1"
+    fields,
+    ["]", ""],
+  ])
 }
 
-// ---- unions, and records counted by an earlier array ----
-
-/// A message that holds an array of `planted_union`, the union's one record
-/// (`planted_entry`, which fixes the kind 2 in 3 bits, then has
-/// `entry_fields`), and the union with the given evidence and `named_by` key on
-/// its one variant.
-fn schema_with_union(
+/// A message whose fields are `fields`, then each of `records` as a record,
+/// then each of `unions` as a union text; a planted union's variants need the
+/// records `planted_flag` (kind 2) and `planted_pair` (kind 5), which come with
+/// the unions.
+fn planted_with(
   direction direction: String,
-  entry_fields entry_fields: List(String),
-  union_evidence union_evidence: String,
-  named_by named_by: String,
+  fields fields: List(String),
+  records records: List(#(String, List(String))),
+  unions unions: List(String),
 ) -> String {
+  let union_records = case unions {
+    [] -> []
+    _ -> [
+      #("planted_flag", [
+        constant_field(name: "kind", value: 2, extra: traced),
+        unsigned("on", traced),
+      ]),
+      #("planted_pair", [
+        constant_field(name: "kind", value: 5, extra: traced),
+        unsigned("first", traced),
+      ]),
+    ]
+  }
   string.join(
     list.flatten([
       [
@@ -552,136 +106,792 @@ fn schema_with_union(
         "evidence = \"opcode.0x1\"",
         "summary = \"a planted message\"",
         "fields = [",
-        "  { name = \"shapes\", kind = \"array\", count_bits = 4, element = \"planted_union\", evidence = \"0x1400a9140\", named_by = \"opcode.0x2\" },",
-        "]",
-        "",
-        "[[record]]",
-        "name = \"planted_entry\"",
-        "evidence = \"0x1400ac130\"",
-        "summary = \"a planted record\"",
-        "fields = [",
-        "  { name = \"kind\", kind = \"constant\", bits = 3, value = 2, evidence = \"0x1400a9140\", named_by = \"opcode.0x2\" },",
       ],
-      entry_fields,
-      [
-        "]",
-        "",
-        "[[union]]",
-        "name = \"planted_union\"",
-        "evidence = \"" <> union_evidence <> "\"",
-        "summary = \"a planted union\"",
-        "tag_bits = 3",
-        "variants = [",
-        "  { tag = 2, name = \"entry\", record = \"planted_entry\", named_by = \""
-          <> named_by
-          <> "\" },",
-        "]",
-        "",
-      ],
+      fields,
+      ["]", ""],
+      list.flat_map(list.append(records, union_records), fn(record) {
+        record_block(name: record.0, fields: record.1)
+      }),
+      unions,
     ]),
     "\n",
   )
 }
 
-pub fn a_union_whose_evidence_is_not_a_fact_key_is_a_breach_at_its_evidence_test() -> Nil {
-  use <- owned_test.run(5000)
-  use <- unitest.tag("code_rule")
-  let good =
-    schema_with_union(
-      direction: "client_to_server",
-      entry_fields: [named_field],
-      union_evidence: "0x1400ac130",
-      named_by: "opcode.0x2",
-    )
-  assert breach_lines(good) == []
-    as "a union with evidence and a named kind that are fact keys is no breach"
-  let bad =
-    schema_with_union(
-      direction: "client_to_server",
-      entry_fields: [named_field],
-      union_evidence: "opcode.0x7",
-      named_by: "opcode.0x2",
-    )
-  let assert [breach] =
-    schema_evidence.breaches(
-      file: SourceFile(path: "src/planted/schema.toml", text: bad),
-      fact_keys:,
-      sent_messages: [],
-    )
-    as "expected exactly one breach"
-  assert breach.line == 22 as "the union's evidence line"
-  assert string.contains(breach.rule, "planted_union")
-    as "the breach names the union"
-  assert string.contains(breach.rule, "opcode.0x7")
-    as "the breach names the key the fact file lacks"
+/// The message `planted_hello` with `fields`, and the record `planted_entry`
+/// with `record_fields`, which the message holds only when `fields` hold
+/// `entries_field`.
+fn planted(
+  direction direction: String,
+  fields fields: List(String),
+  record_fields record_fields: List(String),
+  unions unions: List(String),
+) -> String {
+  planted_with(
+    direction:,
+    fields:,
+    records: [#("planted_entry", record_fields)],
+    unions:,
+  )
 }
 
-pub fn a_variant_whose_kind_is_named_by_no_fact_key_is_a_breach_at_its_line_test() -> Nil {
+/// A union of 3-bit kinds with the given keys (`refused_from`, `never_tags`,
+/// `open_tags`) and variants.
+fn union_block(
+  keys keys: List(String),
+  variants variants: List(String),
+) -> String {
+  string.join(
+    list.flatten([
+      [
+        "[[union]]",
+        "name = \"planted_union\"",
+        "evidence = \"0x1400ac130\"",
+        "summary = \"a planted union\"",
+        "tag_bits = 3",
+      ],
+      keys,
+      ["variants = [", ..variants],
+      ["]", ""],
+    ]),
+    "\n",
+  )
+}
+
+const flag_variant =
+  "  { tag = 2, name = \"flag\", record = \"planted_flag\", named_by = \"opcode.0x2\" },"
+
+/// The breaches of a planted schema with the allow-list `gaps`, each as its
+/// line and rule.
+fn found(text: String, gaps: List(Gap)) -> List(#(Int, String)) {
+  schema_evidence.breaches(
+    file: SourceFile(path: "src/planted/schema.toml", text:),
+    fact_keys:,
+    gaps:,
+  )
+  |> list.map(fn(breach) { #(breach.line, breach.rule) })
+}
+
+fn rule_lines(text: String, gaps: List(Gap)) -> List(Int) {
+  found(text, gaps) |> list.map(fn(breach) { breach.0 })
+}
+
+/// The number of the first line of the text that holds `needle`.
+fn line_with(text: String, needle: String) -> Int {
+  let assert Ok(#(_, number)) =
+    string.split(text, "\n")
+    |> list.index_map(fn(line, index) { #(line, index + 1) })
+    |> list.find(fn(numbered) { string.contains(numbered.0, needle) })
+    as { "the planted text holds " <> needle }
+  number
+}
+
+/// A table row: what the case is, the schema, the allow-list and the breaches
+/// expected, each as the number of its line and a part of its rule. A case with
+/// no breach expects none.
+type Row =
+  #(String, String, List(Gap), List(#(Int, String)))
+
+/// Runs each row through the rule: the breaches are exactly the expected ones.
+fn check_rows(rows: List(Row)) -> Nil {
+  list.each(rows, fn(row) {
+    let #(case_name, text, gaps, expected) = row
+    let got = found(text, gaps)
+    let shown =
+      string.join(
+        list.map(got, fn(breach) { int.to_string(breach.0) <> " " <> breach.1 }),
+        "; ",
+      )
+    assert list.length(got) == list.length(expected)
+      as { case_name <> ": the breaches are " <> shown }
+    list.each(expected, fn(wanted) {
+      assert list.any(got, fn(breach) {
+        breach.0 == wanted.0 && string.contains(breach.1, wanted.1)
+      })
+        as {
+          case_name
+          <> ": wanted "
+          <> int.to_string(wanted.0)
+          <> " "
+          <> wanted.1
+          <> " in "
+          <> shown
+        }
+    })
+  })
+}
+
+// ---- the evidence of every field ----
+
+pub fn a_field_that_names_no_evidence_is_a_breach_at_its_line_test() -> Nil {
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
   let text =
-    schema_with_union(
+    planted(
       direction: "client_to_server",
-      entry_fields: [named_field],
-      union_evidence: "0x1400ac130",
-      named_by: "opcode.0x9",
+      fields: [
+        good_field,
+        "  { name = \"other\", kind = \"unsigned\", bits = 32 },",
+      ],
+      record_fields: [good_field],
+      unions: [],
     )
-  let assert [breach] =
-    schema_evidence.breaches(
-      file: SourceFile(path: "src/planted/schema.toml", text:),
-      fact_keys:,
-      sent_messages: [],
-    )
-    as "expected exactly one breach"
-  assert breach.line == 26 as "the variant's line"
-  assert string.contains(breach.rule, "planted_union.entry")
-    as "the breach names the union and the variant"
-  assert string.contains(breach.rule, "opcode.0x9")
-    as "the breach names the key the fact file lacks"
+  let assert [#(line, rule)] = found(text, []) as "expected exactly one breach"
+  assert line == 9 as "the field is the second line of the fields array"
+  assert string.contains(rule, "planted_hello.other")
+    as "the breach names the message and the field"
 }
 
-pub fn an_unnamed_field_with_no_safe_by_in_a_record_a_union_of_a_sent_message_holds_is_a_breach_test() -> Nil {
+pub fn a_field_of_a_record_that_names_no_evidence_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
   let text =
-    schema_with_union(
-      direction: "server_to_client",
-      entry_fields: [named_field, unnamed_field],
-      union_evidence: "0x1400ac130",
-      named_by: "opcode.0x2",
+    planted(
+      direction: "client_to_server",
+      fields: [good_field],
+      record_fields: ["  { name = \"loose\", kind = \"wide_text\" },"],
+      unions: [],
     )
-  let assert [breach] = breach_rules(text, ["planted_hello"])
-    as "the union's record is sent inside the message's array, so its field needs a name or a safe_by"
-  assert string.contains(breach, "planted_entry.field_3")
-    as "the breach names the record and the field"
-  assert breach_rules(text, []) == []
-    as "a message no module outside the message folder imports is never sent, nor the records of its unions"
-  let safe =
-    schema_with_union(
-      direction: "server_to_client",
-      entry_fields: [named_field, unnamed_safe_field],
-      union_evidence: "0x1400ac130",
-      named_by: "opcode.0x2",
-    )
-  assert breach_rules(safe, ["planted_hello"]) == []
+  assert rule_lines(text, []) == [16]
 }
 
-pub fn an_unnamed_field_in_a_record_counted_by_an_array_of_a_sent_message_is_a_breach_test() -> Nil {
+pub fn a_field_whose_evidence_is_not_a_fact_key_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
-  let ids =
-    "  { name = \"ids\", kind = \"array\", count_bits = 4, element = \"unsigned\", element_bits = 32, evidence = \"0x1400a9140\", named_by = \"opcode.0x2\" },"
+  let text =
+    planted(
+      direction: "client_to_server",
+      fields: [
+        "  { name = \"build\", kind = \"unsigned\", bits = 32, evidence = \"planted.not_a_fact_key\" },",
+      ],
+      record_fields: [good_field],
+      unions: [],
+    )
+  assert rule_lines(text, []) == [8]
+}
+
+pub fn a_named_by_key_that_is_not_a_fact_key_is_a_breach_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let text =
+    planted(
+      direction: "client_to_server",
+      fields: [unsigned("build", ", named_by = \"opcode.0x9\"")],
+      record_fields: [good_field],
+      unions: [],
+    )
+  assert rule_lines(text, []) == [8]
+}
+
+pub fn a_message_whose_evidence_is_not_a_fact_key_is_a_breach_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let text =
     string.replace(
-      schema_with_nested_records(
-        entry_fields: [named_field, ids],
-        inner_fields: [named_field, unnamed_field],
+      planted(
+        direction: "client_to_server",
+        fields: [good_field],
+        record_fields: [good_field],
+        unions: [],
       ),
-      "{ name = \"inners\", kind = \"array\", count_bits = 4,",
-      "{ name = \"inners\", kind = \"array\", counted_by = \"ids\",",
+      "evidence = \"opcode.0x1\"",
+      "evidence = \"opcode.0x7\"",
     )
-  let assert [breach] = breach_rules(text, ["planted_hello"])
-    as "the records counted by an array are sent inside the entry"
-  assert string.contains(breach, "planted_inner.field_3")
-    as "the breach names the record and the field"
+  assert rule_lines(text, []) == [5]
+}
+
+pub fn fields_that_name_their_evidence_are_not_a_breach_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let text =
+    planted(
+      direction: "client_to_server",
+      fields: [good_field, unsigned("named", traced)],
+      record_fields: [good_field],
+      unions: [],
+    )
+  assert rule_lines(text, []) == []
+}
+
+pub fn a_file_that_is_not_a_schema_is_a_breach_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  assert rule_lines("[[message]]\nid = \"seven\"\n", []) == [1]
+}
+
+/// A field whose values are named, with the planted fact keys as evidence.
+fn valued_field(values values: String) -> String {
+  "  { name = \"cause\", kind = \"unsigned\", bits = 5, evidence = \"0x1400a9140\", named_by = \"opcode.0x2\", values_type = \"Cause\", values = [ "
+  <> values
+  <> " ] },"
+}
+
+fn received(fields: List(String)) -> String {
+  planted(
+    direction: "client_to_server",
+    fields:,
+    record_fields: [good_field],
+    unions: [],
+  )
+}
+
+pub fn a_named_value_whose_evidence_is_a_fact_key_is_not_a_breach_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  assert rule_lines(
+      received([
+        valued_field(
+          values: "{ value = 6, name = \"gone\", evidence = \"0x1400ac130\" }, { value = 7, name = \"idle\", evidence = \"opcode.0x1\" }",
+        ),
+      ]),
+      [],
+    )
+    == []
+}
+
+pub fn a_named_value_that_names_no_evidence_is_a_breach_at_its_field_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let text =
+    received([
+      valued_field(
+        values: "{ value = 6, name = \"gone\", evidence = \"0x1400ac130\" }, { value = 7, name = \"idle\" }",
+      ),
+    ])
+  let assert [#(line, rule)] = found(text, []) as "expected exactly one breach"
+  assert line == 8 as "the field is the first line of the fields array"
+  assert string.contains(rule, "planted_hello.cause")
+    as "the breach names the field"
+  assert string.contains(rule, "idle")
+    as "the breach names the value that has no evidence"
+}
+
+pub fn a_named_value_whose_evidence_is_not_a_fact_key_is_a_breach_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let text =
+    received([
+      good_field,
+      valued_field(
+        values: "{ value = 6, name = \"gone\", evidence = \"opcode.0x7\" }",
+      ),
+    ])
+  let assert [#(line, rule)] = found(text, []) as "expected exactly one breach"
+  assert line == 9 as "the valued field is the second line of the fields array"
+  assert string.contains(rule, "opcode.0x7")
+    as "the breach names the key the fact file lacks"
+}
+
+pub fn a_value_or_a_name_that_two_values_share_is_a_breach_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  assert rule_lines(
+      received([
+        valued_field(
+          values: "{ value = 6, name = \"gone\", evidence = \"0x1400ac130\" }, { value = 6, name = \"idle\", evidence = \"0x1400ac130\" }",
+        ),
+      ]),
+      [],
+    )
+    == [1]
+    as "two values of 6: the schema is refused, which the rule reports as a schema that is not one"
+  assert rule_lines(
+      received([
+        valued_field(
+          values: "{ value = 6, name = \"gone\", evidence = \"0x1400ac130\" }, { value = 7, name = \"gone\", evidence = \"0x1400ac130\" }",
+        ),
+      ]),
+      [],
+    )
+    == [1]
+    as "two values named gone: the schema is refused too"
+}
+
+// ---- the fields of a message the server sends ----
+
+pub fn a_field_of_a_sent_message_is_traced_or_open_or_a_breach_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let untraced = "a field of a message the server sends"
+  let rows: List(#(String, String, Bool)) = [
+    #("a word name with named_by", unsigned("build", traced), False),
+    #(
+      "a constant with named_by",
+      constant_field(name: "kind", value: 1, extra: traced),
+      False,
+    ),
+    #(
+      "field_of_view is no position name",
+      unsigned("field_of_view", traced),
+      False,
+    ),
+    #(
+      "a position name with open",
+      unsigned("field_3", ", open = \"what is it\""),
+      False,
+    ),
+    #(
+      "a word name with open",
+      unsigned("build", ", open = \"what is it\""),
+      False,
+    ),
+    #("neither named_by nor open", unsigned("build", ""), True),
+    #(
+      "a constant with neither",
+      constant_field(name: "kind", value: 1, extra: ""),
+      True,
+    ),
+    #("safe_by only", unsigned("field_3", ", safe_by = \"opcode.0x2\""), True),
+    #("a position name with named_by", unsigned("field_3", traced), True),
+  ]
+  check_rows(
+    list.map(rows, fn(row) {
+      let text =
+        planted(
+          direction: "server_to_client",
+          fields: [row.1],
+          record_fields: [good_field],
+          unions: [],
+        )
+      #(row.0, text, [], case row.2 {
+        True -> [#(8, untraced)]
+        False -> []
+      })
+    }),
+  )
+}
+
+pub fn a_message_is_sent_by_its_direction_and_not_by_an_import_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let untraced = "a field of a message the server sends"
+  check_rows(
+    list.map(
+      [
+        #("server to client, whatever imports it", "server_to_client", True),
+        #("both ways", "both", True),
+        #("client to server", "client_to_server", False),
+      ],
+      fn(row) {
+        let text =
+          planted(
+            direction: row.1,
+            fields: [unsigned("field_3", "")],
+            record_fields: [good_field],
+            unions: [],
+          )
+        #(row.0, text, [], case row.2 {
+          True -> [#(8, untraced)]
+          False -> []
+        })
+      },
+    ),
+  )
+}
+
+pub fn a_record_a_sent_message_reaches_is_sent_and_one_only_a_received_message_holds_is_not_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let inners_field =
+    "  { name = \"inners\", kind = \"array\", count_bits = 4, element = \"planted_inner\", evidence = \"0x1400a9140\", named_by = \"opcode.0x2\" },"
+  let ids_field =
+    "  { name = \"ids\", kind = \"array\", count_bits = 4, element = \"unsigned\", element_bits = 32, evidence = \"0x1400a9140\", named_by = \"opcode.0x2\" },"
+  let counted_inners_field =
+    "  { name = \"inners\", kind = \"array\", counted_by = \"ids\", element = \"planted_inner\", evidence = \"0x1400a9140\", named_by = \"opcode.0x2\" },"
+  let nested = fn(direction, entry_fields, inner_fields) {
+    planted_with(
+      direction:,
+      fields: [entries_field],
+      records: [
+        #("planted_entry", entry_fields),
+        #("planted_inner", inner_fields),
+      ],
+      unions: [],
+    )
+  }
+  let rows: List(#(String, String, String)) = [
+    #(
+      "a record held by an array of a sent message",
+      nested("server_to_client", [unsigned("field_3", "")], [good_field]),
+      "planted_entry.field_3",
+    ),
+    #(
+      "a record inside a record",
+      nested("server_to_client", [inners_field], [unsigned("field_4", "")]),
+      "planted_inner.field_4",
+    ),
+    #(
+      "a record counted by an earlier array",
+      nested("server_to_client", [ids_field, counted_inners_field], [
+        unsigned("field_4", ""),
+      ]),
+      "planted_inner.field_4",
+    ),
+    #(
+      "a record a union variant of a sent message holds",
+      string.replace(
+        planted_with(
+          direction: "server_to_client",
+          fields: [shapes_field],
+          records: [],
+          unions: [
+            union_block(
+              keys: ["refused_from = 3", never_damage, open_one],
+              variants: [flag_variant],
+            ),
+          ],
+        ),
+        unsigned("on", traced),
+        unsigned("on", ""),
+      ),
+      "planted_flag.on",
+    ),
+  ]
+  check_rows(
+    list.map(rows, fn(row) {
+      let field_name = case string.split(row.2, ".") {
+        [_, name] -> name
+        _ -> row.2
+      }
+      #(row.0, row.1, [], [
+        #(line_with(row.1, "{ name = \"" <> field_name <> "\","), row.2),
+      ])
+    }),
+  )
+  check_rows([
+    #(
+      "a record only a client to server message holds",
+      nested("client_to_server", [unsigned("field_3", "")], [
+        unsigned("field_4", ""),
+      ]),
+      [],
+      [],
+    ),
+  ])
+}
+
+// ---- the kinds of a union of a message the server sends ----
+
+const never_damage =
+  "never_tags = [\n  { tag = 0, name = \"damage\", named_by = \"opcode.0x2\" },\n]"
+
+const open_one = "open_tags = [\n  { tag = 1, question = \"what is it\" },\n]"
+
+const unmarked_variant =
+  "  { tag = 2, name = \"flag\", record = \"planted_flag\" },"
+
+/// A planted message holding one array of the union with `keys` and `variants`.
+fn union_message(
+  direction direction: String,
+  keys keys: List(String),
+  variants variants: List(String),
+) -> String {
+  planted_with(direction:, fields: [shapes_field], records: [], unions: [
+    union_block(keys:, variants:),
+  ])
+}
+
+fn union_line(text: String) -> Int {
+  line_with(text, "name = \"planted_union\"")
+}
+
+fn kind_rule(tag: Int) -> String {
+  "planted_union kind " <> int.to_string(tag)
+}
+
+pub fn a_union_tag_of_a_sent_message_is_a_variant_never_sent_open_or_a_breach_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let marks = ["refused_from = 3", never_damage, open_one]
+  let open_variant =
+    "  { tag = 2, name = \"flag\", record = \"planted_flag\", open = \"what is it\" },"
+  let sent = fn(keys, variants) {
+    union_message(direction: "server_to_client", keys:, variants:)
+  }
+  let tag_line = fn(text, tag) {
+    line_with(text, "{ tag = " <> int.to_string(tag) <> ",")
+  }
+  let bad_never =
+    sent(
+      [
+        "refused_from = 3",
+        "never_tags = [\n  { tag = 0, name = \"damage\", named_by = \"opcode.0x9\" },\n]",
+        open_one,
+      ],
+      [flag_variant],
+    )
+  let bad_open =
+    sent(
+      [
+        "refused_from = 3",
+        never_damage,
+        "open_tags = [\n  { tag = 1, question = \"what is it\", named_by = \"opcode.0x9\" },\n]",
+      ],
+      [flag_variant],
+    )
+  let below_the_bound =
+    sent(["refused_from = 4", never_damage, open_one], [flag_variant])
+  let no_bound = sent([never_damage, open_one], [flag_variant])
+  let unmarked = sent(marks, [unmarked_variant])
+  let in_a_record =
+    planted_with(
+      direction: "server_to_client",
+      fields: [entries_field],
+      records: [#("planted_entry", [shapes_field])],
+      unions: [
+        union_block(
+          keys: ["refused_from = 4", never_damage, open_one],
+          variants: [flag_variant],
+        ),
+      ],
+    )
+  check_rows([
+    #(
+      "a variant, a never tag and an open tag below the bound",
+      sent(marks, [flag_variant]),
+      [],
+      [],
+    ),
+    #("a kind below the bound that is none of them", below_the_bound, [], [
+      #(union_line(below_the_bound), kind_rule(3)),
+    ]),
+    #(
+      "the kinds from the bound up are not checked",
+      sent(["refused_from = 2", never_damage, open_one], []),
+      [],
+      [],
+    ),
+    #(
+      "a union with no bound checks every kind its tag holds",
+      no_bound,
+      [],
+      list.map([3, 4, 5, 6, 7], fn(tag) {
+        #(union_line(no_bound), kind_rule(tag))
+      }),
+    ),
+    #("a variant with no named_by and no open", unmarked, [], [
+      #(union_line(unmarked), kind_rule(2)),
+    ]),
+    #("a variant with open", sent(marks, [open_variant]), [], []),
+    #(
+      "a union only a client to server message holds",
+      union_message(direction: "client_to_server", keys: [], variants: [
+        flag_variant,
+      ]),
+      [],
+      [],
+    ),
+    #("a union a record of a sent message holds", in_a_record, [], [
+      #(union_line(in_a_record), kind_rule(3)),
+    ]),
+    #("a never tag whose named_by is no fact key", bad_never, [], [
+      #(tag_line(bad_never, 0), "opcode.0x9"),
+    ]),
+    #("an open tag whose named_by is no fact key", bad_open, [], [
+      #(tag_line(bad_open, 1), "opcode.0x9"),
+    ]),
+    #("an open tag with no named_by", sent(marks, [flag_variant]), [], []),
+  ])
+}
+
+// ---- the allow-list ----
+
+pub fn a_listed_gap_is_not_a_breach_and_a_stale_or_repeated_one_is_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let issue = 979
+  let two_fields = fn(first, second) {
+    planted(
+      direction: "server_to_client",
+      fields: [first, second],
+      record_fields: [good_field],
+      unions: [],
+    )
+  }
+  let untraced_pair =
+    two_fields(unsigned("field_3", ""), unsigned("field_4", ""))
+  let hello = fn(fields) {
+    [UntracedFields(owner: "planted_hello", fields:, issue:)]
+  }
+  let owner_line = 3
+  let received_text =
+    planted(
+      direction: "client_to_server",
+      fields: [unsigned("field_3", "")],
+      record_fields: [good_field],
+      unions: [],
+    )
+  let marks = ["refused_from = 3", never_damage, open_one]
+  let union_text = fn(keys, variants) {
+    union_message(direction: "server_to_client", keys:, variants:)
+  }
+  let union_gap = fn(tags) {
+    [UnclassifiedTags(union: "planted_union", tags:, issue:)]
+  }
+  let at_union = union_line(union_text(marks, [flag_variant]))
+  check_rows([
+    #(
+      "a listed field passes and its sibling is a breach",
+      untraced_pair,
+      hello(["field_3"]),
+      [#(9, "planted_hello.field_4")],
+    ),
+    #(
+      "a listed field that now has named_by",
+      two_fields(unsigned("build", traced), unsigned("field_4", "")),
+      hello(["build", "field_4"]),
+      [#(owner_line, "planted_hello.build")],
+    ),
+    #(
+      "a listed field that is now an open question",
+      two_fields(
+        unsigned("field_3", ", open = \"what is it\""),
+        unsigned("field_4", ""),
+      ),
+      hello(["field_3", "field_4"]),
+      [#(owner_line, "planted_hello.field_3")],
+    ),
+    #(
+      "a listed field the owner lacks",
+      untraced_pair,
+      hello(["field_3", "field_4", "field_9"]),
+      [#(owner_line, "planted_hello.field_9")],
+    ),
+    #(
+      "a listed field of an owner only a client to server message reaches",
+      received_text,
+      hello(["field_3"]),
+      [#(owner_line, "owner no message the server sends holds")],
+    ),
+    #(
+      "an owner the schema lacks",
+      untraced_pair,
+      list.append(hello(["field_3", "field_4"]), [
+        UntracedFields(owner: "planted_gone", fields: ["field_1"], issue:),
+      ]),
+      [#(1, "planted_gone")],
+    ),
+    #(
+      "an owner listed in two entries",
+      untraced_pair,
+      list.append(hello(["field_3"]), hello(["field_4"])),
+      [
+        #(owner_line, "repeats the owner planted_hello"),
+        #(owner_line, "repeats the owner planted_hello"),
+      ],
+    ),
+    #(
+      "one entry that lists a field twice",
+      untraced_pair,
+      hello(["field_3", "field_4", "field_3"]),
+      [#(owner_line, "planted_hello.field_3 twice")],
+    ),
+    #("an entry that lists no field", untraced_pair, hello([]), [
+      #(owner_line, "lists no field"),
+      #(8, "planted_hello.field_3"),
+      #(9, "planted_hello.field_4"),
+    ]),
+    #(
+      "a listed field whose evidence is no fact key still fails its evidence",
+      two_fields(
+        "  { name = \"field_3\", kind = \"unsigned\", bits = 32, evidence = \"opcode.0x9\" },",
+        unsigned("build", traced),
+      ),
+      hello(["field_3"]),
+      [#(8, "opcode.0x9")],
+    ),
+    #(
+      "a listed kind that is unclassified passes",
+      union_text(marks, [unmarked_variant]),
+      union_gap([2]),
+      [],
+    ),
+    #(
+      "a listed kind that is now a traced variant",
+      union_text(marks, [flag_variant]),
+      union_gap([2]),
+      [#(at_union, "planted_union kind 2")],
+    ),
+    #(
+      "a listed kind that is now a never tag",
+      union_text(marks, [flag_variant]),
+      union_gap([0]),
+      [#(at_union, "planted_union kind 0")],
+    ),
+    #(
+      "a listed kind that is now an open tag",
+      union_text(marks, [flag_variant]),
+      union_gap([1]),
+      [#(at_union, "planted_union kind 1")],
+    ),
+    #(
+      "a listed kind at or above the bound",
+      union_text(marks, [flag_variant]),
+      union_gap([3]),
+      [#(at_union, "planted_union kind 3")],
+    ),
+    #(
+      "a union listed in two entries",
+      union_text(marks, [unmarked_variant]),
+      list.append(union_gap([2]), union_gap([2])),
+      [
+        #(at_union, "repeats the union planted_union"),
+        #(at_union, "repeats the union planted_union"),
+      ],
+    ),
+    #(
+      "one entry that lists a kind twice",
+      union_text(["refused_from = 4", ..list.drop(marks, 1)], [unmarked_variant]),
+      union_gap([2, 3, 2]),
+      [#(at_union, "planted_union kind 2 twice")],
+    ),
+    #(
+      "an entry that lists no kind",
+      union_text(marks, [flag_variant]),
+      union_gap([]),
+      [#(at_union, "lists no kind")],
+    ),
+    #(
+      "a union the schema lacks",
+      union_text(marks, [flag_variant]),
+      [UnclassifiedTags(union: "planted_gone", tags: [1], issue:)],
+      [#(1, "planted_gone")],
+    ),
+    #(
+      "a union no message the server sends reaches",
+      string.replace(
+        union_text(marks, [unmarked_variant]),
+        "direction = \"server_to_client\"",
+        "direction = \"client_to_server\"",
+      ),
+      union_gap([2]),
+      [#(at_union, "whose union no message the server sends holds")],
+    ),
+  ])
+}
+
+pub fn each_known_gap_names_the_open_issue_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let open_issues: List(Int) = [979]
+  assert list.all(untraced_gaps.known_gaps, fn(gap) {
+    list.contains(open_issues, gap.issue)
+  })
+    as "each entry of the allow-list names the open issue whose work removes it"
+}
+
+// ---- the real schema ----
+
+pub fn the_real_schema_has_no_gap_the_allow_list_does_not_name_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use <- unitest.tag("code_rule")
+  let assert Ok(text) = simplifile.read("src/genesis_prime/message/schema.toml")
+    as "the schema file could not be read"
+  assert schema_evidence.breaches(
+      file: SourceFile(path: "src/genesis_prime/message/schema.toml", text:),
+      fact_keys: repository.fact_keys(),
+      gaps: untraced_gaps.known_gaps,
+    )
+    == []
+    as "CLAUDE.md: every field of a message the server sends is traced or open, in the three messages no module builds as in the rest, and every union kind is a traced variant, a never tag or an open tag; no entry of the allow-list is stale; each key a never tag or an open tag names is a fact"
 }

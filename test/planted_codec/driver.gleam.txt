@@ -54,6 +54,13 @@ pub fn main() -> Nil {
   })
   refusals()
   io.println("the refusals hold")
+  list.each([3, 4], fn(kind) {
+    assert planted_union.read(bit_stream.new_reader(<<kind, 0, 0, 0, 0>>))
+      |> result.map(fn(read) { read.0 })
+      == Error(bit_stream.UnexpectedValue(field: "planted_union", value: kind))
+      as "a never tag and an open tag have no variant, so a read refuses them"
+  })
+  io.println("the never and open kinds are refused")
 }
 
 fn is_end_of_data(result: Result(a, bit_stream.DecodeError)) -> Bool {

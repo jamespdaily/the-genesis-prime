@@ -3,18 +3,32 @@
 //// position, a key that says what it is. So does every message and record, and
 //// every named value of a field, which names the key that shows the client
 //// gives the value that meaning (the schema reader refuses a number or a name
-//// listed twice). So does every union, and each of its variants that names the
-//// key that gives the variant's kind a meaning.
-//// A field of a message the server sends that has no name must carry a
-//// `safe_by` key of the fact file, which shows the value the server sends is
-//// safe. A message is sent when it travels to the client, or both ways, and a
-//// module outside `src/genesis_prime/message/` imports its module; a record is
-//// sent when a message that is sent holds it, directly or inside another
-//// record that is sent, and a record of a union is held by whatever holds the
-//// union.
+//// listed twice). So does every union, and each of its variants, never tags
+//// and open tags that names a key.
+////
+//// A message is sent when it does not travel only from the client; a record is
+//// sent when a sent message holds it, directly or inside another sent record,
+//// and the records of a union's variants are held by whatever holds the union.
+//// A union is sent when a sent message or record holds it.
+////
+//// ```text
+//// schema.toml -> sent owners -> untraced fields, unclassified tags
+////                               -> minus the allow-list's entries -> breaches
+//// ```
+////
+//// - A field of a sent owner is traced when it has a `named_by` and a name
+////   that is not its position (`field_3`), or is `open` with its question. A
+////   `safe_by` key is no licence: it shows a value is safe, not what it is.
+//// - Each tag below the union's `refused_from` is a variant that is traced
+////   (`named_by`, or `open`), a never tag or an open tag.
+//// - An entry of the allow-list drops the tracing breach of what it lists and
+////   nothing else: a key the fact file lacks is still a breach. An entry whose
+////   owner or union no sent message reaches, that lists what is now traced, a
+////   name or tag twice, nothing, or an owner or union another entry lists, is a
+////   breach too, so a rename or a classification removes its line.
 
 import code_rule/source.{type Breach, type SourceFile, Breach}
-import code_rule/syntax
+import code_rule/untraced_gaps.{type Gap, UnclassifiedTags, UntracedFields}
 import genesis_prime/message_schema.{
   type Field, type Record, type Schema, type Union, ArrayOfFloat32,
   ArrayOfRecord, ArrayOfRecordCountedBy, ArrayOfUnsigned, ArrayOfWideText,
@@ -22,33 +36,22 @@ import genesis_prime/message_schema.{
   HalfFloatAtLeast, OneRecord, RawBytes, Unsigned, UnsignedArrayCountedBy,
   UnsignedBelow, WholeFrame, WideText, WideUnits,
 }
+import gleam/int
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
+import gleam/pair
 import gleam/string
-
-/// The names of the message modules the given source files import, from the
-/// files outside `src/genesis_prime/message/`, sorted and each once.
-pub fn sent_messages(sources sources: List(SourceFile)) -> List(String) {
-  sources
-  |> list.filter(fn(file) {
-    !string.starts_with(file.path, "src/genesis_prime/message/")
-  })
-  |> list.flat_map(syntax.imported_modules)
-  |> list.filter(string.starts_with(_, "genesis_prime/message/"))
-  |> list.map(string.remove_prefix(_, "genesis_prime/message/"))
-  |> list.unique
-  |> list.sort(string.compare)
-}
 
 /// Each field, message or record of the schema that names no evidence or
 /// names a key the fact file does not hold, at the line of the field; each
-/// `safe_by` key the fact file does not hold; and each unnamed field with no
-/// `safe_by` in a message the server sends, which is one named in
-/// `sent_messages` that does not travel only from the client.
+/// `safe_by`, `named_by` or tag key the fact file does not hold; each field of
+/// a message the server sends that is neither traced nor open, and each tag of
+/// a union it sends that is neither a traced variant, a never tag nor an open
+/// tag, unless `gaps` lists it; and each entry of `gaps` that does not match.
 pub fn breaches(
   file file: SourceFile,
   fact_keys fact_keys: List(String),
-  sent_messages sent_messages: List(String),
+  gaps gaps: List(Gap),
 ) -> List(Breach) {
   case message_schema.parse(file.text) {
     Error(error) -> [
@@ -59,7 +62,7 @@ pub fn breaches(
           <> message_schema.describe(error),
       ),
     ]
-    Ok(schema) -> owners_breaches(file:, schema:, fact_keys:, sent_messages:)
+    Ok(schema) -> owners_breaches(file:, schema:, fact_keys:, gaps:)
   }
 }
 
@@ -67,11 +70,10 @@ type Owner {
   Owner(name: String, evidence: String, fields: List(Field), sent: Bool)
 }
 
-fn owners(schema: Schema, sent_messages: List(String)) -> List(Owner) {
+fn owners(schema: Schema) -> List(Owner) {
   let sent =
     list.filter(schema.messages, fn(message) {
       message.direction != ClientToServer
-      && list.contains(sent_messages, message.name)
     })
   let sent_records =
     records_reached(
@@ -100,6 +102,31 @@ fn owners(schema: Schema, sent_messages: List(String)) -> List(Owner) {
   )
 }
 
+/// The record or union a field holds, when it holds one.
+fn held_record(field: Field) -> Option(String) {
+  case field.kind {
+    ArrayOfRecord(record:, ..)
+    | ArrayOfRecordCountedBy(record:, ..)
+    | OneRecord(record:) -> Some(record)
+    Unsigned(..)
+    | UnsignedBelow(..)
+    | HalfFloatAtLeast(..)
+    | Float32
+    | WideText
+    | WideUnits
+    | CountedWideText(..)
+    | Guid
+    | Endpoint
+    | RawBytes(..)
+    | WholeFrame
+    | ArrayOfWideText(..)
+    | ArrayOfUnsigned(..)
+    | ArrayOfFloat32(..)
+    | UnsignedArrayCountedBy(..)
+    | Constant(..) -> None
+  }
+}
+
 /// The names of the records the fields hold in arrays, the records of the
 /// variants of each union they hold, and the records those hold in turn, each
 /// once.
@@ -110,31 +137,11 @@ fn records_reached(
   found found: List(String),
 ) -> List(String) {
   let named =
-    list.flat_map(fields, fn(field) {
-      case field.kind {
-        ArrayOfRecord(record:, ..)
-        | ArrayOfRecordCountedBy(record:, ..)
-        | OneRecord(record:) ->
-          records_of(unions:, name: record)
-          |> list.filter(fn(record) { !list.contains(found, record) })
-        Unsigned(..)
-        | UnsignedBelow(..)
-        | HalfFloatAtLeast(..)
-        | Float32
-        | WideText
-        | WideUnits
-        | CountedWideText(..)
-        | Guid
-        | Endpoint
-        | RawBytes(..)
-        | WholeFrame
-        | ArrayOfWideText(..)
-        | ArrayOfUnsigned(..)
-        | ArrayOfFloat32(..)
-        | UnsignedArrayCountedBy(..)
-        | Constant(..) -> []
-      }
+    list.filter_map(fields, fn(field) {
+      option.to_result(held_record(field), Nil)
     })
+    |> list.flat_map(records_of(unions:, name: _))
+    |> list.filter(fn(record) { !list.contains(found, record) })
     |> list.unique
   case named {
     [] -> found
@@ -162,21 +169,101 @@ fn records_of(unions unions: List(Union), name name: String) -> List(String) {
   }
 }
 
+/// The unions a sent message or a sent record holds.
+fn sent_unions(schema: Schema, owners: List(Owner)) -> List(Union) {
+  let held =
+    owners
+    |> list.filter(fn(owner) { owner.sent })
+    |> list.flat_map(fn(owner) { owner.fields })
+    |> list.filter_map(fn(field) { option.to_result(held_record(field), Nil) })
+  list.filter(schema.unions, fn(union) { list.contains(held, union.name) })
+}
+
+/// A field is traced when it names a fact and a name that is not its position,
+/// or is open with its question.
+fn is_traced(field: Field) -> Bool {
+  case field.open, field.named_by {
+    Some(_), _ -> True
+    None, Some(_) -> !is_position_name(field.name)
+    None, None -> False
+  }
+}
+
+/// `field_` and then digits only: the name a field has until a fact names it.
+fn is_position_name(name: String) -> Bool {
+  case string.remove_prefix(name, "field_") {
+    "" -> False
+    digits ->
+      name != digits
+      && list.all(string.to_graphemes(digits), string.contains("0123456789", _))
+  }
+}
+
+/// The kinds below a union's `refused_from` that no variant, never tag or open
+/// tag holds, and the variants that have neither `named_by` nor `open`.
+fn untraced_tags(union: Union) -> List(Int) {
+  int.range(from: 0, to: union.refused_from, with: [], run: fn(tags, tag) {
+    [tag, ..tags]
+  })
+  |> list.reverse
+  |> list.filter(fn(tag) {
+    case list.find(union.variants, fn(variant) { variant.tag == tag }) {
+      Ok(variant) ->
+        option.is_none(variant.named_by) && option.is_none(variant.open)
+      Error(Nil) ->
+        !list.any(union.never_tags, fn(never) { never.tag == tag })
+        && !list.any(union.open_tags, fn(open) { open.tag == tag })
+    }
+  })
+}
+
+fn owners_breaches(
+  file file: SourceFile,
+  schema schema: Schema,
+  fact_keys fact_keys: List(String),
+  gaps gaps: List(Gap),
+) -> List(Breach) {
+  let lines = string.split(file.text, "\n")
+  let owners = owners(schema)
+  let sent_unions = sent_unions(schema, owners)
+  list.flatten([
+    list.flat_map(schema.unions, union_breaches(
+      file:,
+      lines:,
+      union: _,
+      fact_keys:,
+    )),
+    list.flat_map(sent_unions, untraced_tag_breaches(
+      file:,
+      lines:,
+      union: _,
+      gaps:,
+    )),
+    owners_field_breaches(file:, lines:, owners:, fact_keys:, gaps:),
+    gap_breaches(file:, lines:, owners:, sent_unions:, gaps:),
+  ])
+}
+
+fn at(file file: SourceFile, line line: Int, rule rule: String) -> Breach {
+  Breach(path: file.path, line:, rule:)
+}
+
 /// Each union whose evidence is not a key of the fact file, at its evidence's
-/// line, and each variant whose `named_by` is not, at the variant's line.
+/// line, and each variant, never tag or open tag whose `named_by` is not, at
+/// its line.
 fn union_breaches(
   file file: SourceFile,
+  lines lines: List(String),
   union union: Union,
   fact_keys fact_keys: List(String),
 ) -> List(Breach) {
-  let lines = string.split(file.text, "\n")
   let union_line =
     line_of(lines:, from: 0, text: "name = \"" <> union.name <> "\"")
   let own = case list.contains(fact_keys, union.evidence) {
     True -> []
     False -> [
-      Breach(
-        path: file.path,
+      at(
+        file:,
         line: line_of(
           lines:,
           from: union_line - 1,
@@ -191,60 +278,130 @@ fn union_breaches(
   }
   let variants =
     list.filter_map(union.variants, fn(variant) {
-      case variant.named_by {
-        Some(key) ->
-          case list.contains(fact_keys, key) {
-            True -> Error(Nil)
-            False ->
-              Ok(Breach(
-                path: file.path,
-                line: line_of(
-                  lines:,
-                  from: union_line,
-                  text: "name = \"" <> variant.name <> "\"",
-                ),
-                rule: "a schema variant whose named_by is not a key of the fact file: "
-                  <> union.name
-                  <> "."
-                  <> variant.name
-                  <> " names "
-                  <> key,
-              ))
-          }
-        None -> Error(Nil)
-      }
+      unknown_tag_key(
+        file:,
+        line: line_of(
+          lines:,
+          from: union_line,
+          text: "name = \"" <> variant.name <> "\"",
+        ),
+        what: "variant",
+        where: union.name <> "." <> variant.name,
+        key: variant.named_by,
+        fact_keys:,
+      )
     })
-  list.append(own, variants)
+  let never_tags =
+    list.filter_map(union.never_tags, fn(never) {
+      unknown_tag_key(
+        file:,
+        line: tag_line(lines:, union_line:, tag: never.tag),
+        what: "never tag",
+        where: union.name <> " kind " <> int.to_string(never.tag),
+        key: Some(never.named_by),
+        fact_keys:,
+      )
+    })
+  let open_tags =
+    list.filter_map(union.open_tags, fn(open) {
+      unknown_tag_key(
+        file:,
+        line: tag_line(lines:, union_line:, tag: open.tag),
+        what: "open tag",
+        where: union.name <> " kind " <> int.to_string(open.tag),
+        key: open.named_by,
+        fact_keys:,
+      )
+    })
+  list.flatten([own, variants, never_tags, open_tags])
 }
 
-fn owners_breaches(
+fn unknown_tag_key(
   file file: SourceFile,
-  schema schema: Schema,
+  line line: Int,
+  what what: String,
+  where where: String,
+  key key: Option(String),
   fact_keys fact_keys: List(String),
-  sent_messages sent_messages: List(String),
-) -> List(Breach) {
-  let lines = string.split(file.text, "\n")
-  list.append(
-    list.flat_map(schema.unions, union_breaches(file:, union: _, fact_keys:)),
-    owners_field_breaches(file:, lines:, schema:, fact_keys:, sent_messages:),
+) -> Result(Breach, Nil) {
+  case key {
+    Some(key) ->
+      case list.contains(fact_keys, key) {
+        True -> Error(Nil)
+        False ->
+          Ok(at(
+            file:,
+            line:,
+            rule: "a schema "
+              <> what
+              <> " whose named_by is not a key of the fact file: "
+              <> where
+              <> " names "
+              <> key,
+          ))
+      }
+    None -> Error(Nil)
+  }
+}
+
+fn tag_line(
+  lines lines: List(String),
+  union_line union_line: Int,
+  tag tag: Int,
+) -> Int {
+  line_of(
+    lines:,
+    from: union_line,
+    text: "{ tag = " <> int.to_string(tag) <> ",",
   )
+}
+
+/// Each kind below a sent union's `refused_from` that is no traced variant, no
+/// never tag and no open tag and that `gaps` does not list, at the union's line.
+fn untraced_tag_breaches(
+  file file: SourceFile,
+  lines lines: List(String),
+  union union: Union,
+  gaps gaps: List(Gap),
+) -> List(Breach) {
+  let line = line_of(lines:, from: 0, text: "name = \"" <> union.name <> "\"")
+  untraced_tags(union)
+  |> list.filter(fn(tag) {
+    !list.any(gaps, fn(gap) {
+      case gap {
+        UnclassifiedTags(union: listed, tags:, ..) ->
+          listed == union.name && list.contains(tags, tag)
+        UntracedFields(..) -> False
+      }
+    })
+  })
+  |> list.map(fn(tag) {
+    at(
+      file:,
+      line:,
+      rule: "a union kind of a message the server sends that is no traced variant, never tag or open tag: "
+        <> union.name
+        <> " kind "
+        <> int.to_string(tag),
+    )
+  })
 }
 
 fn owners_field_breaches(
   file file: SourceFile,
   lines lines: List(String),
-  schema schema: Schema,
+  owners owners: List(Owner),
   fact_keys fact_keys: List(String),
-  sent_messages sent_messages: List(String),
+  gaps gaps: List(Gap),
 ) -> List(Breach) {
-  list.flat_map(owners(schema, sent_messages), fn(owner) {
+  list.flat_map(owners, fn(owner) {
     let owner_line =
       line_of(lines:, from: 0, text: "name = \"" <> owner.name <> "\"")
     let own = case list.contains(fact_keys, owner.evidence) {
       True -> []
       False -> [
-        Breach(
-          path: file.path,
+        at(
+          file:,
           line: line_of(
             lines:,
             from: owner_line - 1,
@@ -266,7 +423,7 @@ fn owners_field_breaches(
             from: owner_line,
             text: "{ name = \"" <> field.name <> "\",",
           )
-        field_breaches(file:, owner:, field:, line:, fact_keys:)
+        field_breaches(file:, owner:, field:, line:, fact_keys:, gaps:)
       }),
     )
   })
@@ -278,15 +435,12 @@ fn field_breaches(
   field field: Field,
   line line: Int,
   fact_keys fact_keys: List(String),
+  gaps gaps: List(Gap),
 ) -> List(Breach) {
   let where = owner.name <> "." <> field.name
   let evidence = case field.evidence {
     None -> [
-      Breach(
-        path: file.path,
-        line:,
-        rule: "a schema field that names no evidence: " <> where,
-      ),
+      at(file:, line:, rule: "a schema field that names no evidence: " <> where),
     ]
     Some(key) -> unknown_key(file:, line:, where:, key:, fact_keys:)
   }
@@ -294,17 +448,22 @@ fn field_breaches(
     None -> []
     Some(key) -> unknown_key(file:, line:, where:, key:, fact_keys:)
   }
-  let safe_by = case field.safe_by, field.named_by {
-    Some(key), _ -> unknown_key(file:, line:, where:, key:, fact_keys:)
-    None, None if owner.sent -> [
-      Breach(
-        path: file.path,
+  let safe_by = case field.safe_by {
+    None -> []
+    Some(key) -> unknown_key(file:, line:, where:, key:, fact_keys:)
+  }
+  let untraced = case
+    owner.sent && !is_traced(field) && !listed(gaps:, owner:, field:)
+  {
+    True -> [
+      at(
+        file:,
         line:,
-        rule: "a field of a message the server sends that has no name and no safe_by key: "
+        rule: "a field of a message the server sends that is neither traced nor open: "
           <> where,
       ),
     ]
-    None, _ -> []
+    False -> []
   }
   let values = case message_schema.named_values(field:) {
     None -> []
@@ -313,8 +472,8 @@ fn field_breaches(
         let where = where <> " value " <> value.name
         case value.evidence {
           None -> [
-            Breach(
-              path: file.path,
+            at(
+              file:,
               line:,
               rule: "a schema value that names no evidence: " <> where,
             ),
@@ -323,7 +482,21 @@ fn field_breaches(
         }
       })
   }
-  list.flatten([evidence, named_by, safe_by, values])
+  list.flatten([evidence, named_by, safe_by, untraced, values])
+}
+
+fn listed(
+  gaps gaps: List(Gap),
+  owner owner: Owner,
+  field field: Field,
+) -> Bool {
+  list.any(gaps, fn(gap) {
+    case gap {
+      UntracedFields(owner: listed, fields:, ..) ->
+        listed == owner.name && list.contains(fields, field.name)
+      UnclassifiedTags(..) -> False
+    }
+  })
 }
 
 fn unknown_key(
@@ -336,8 +509,8 @@ fn unknown_key(
   case list.contains(fact_keys, key) {
     True -> []
     False -> [
-      Breach(
-        path: file.path,
+      at(
+        file:,
         line:,
         rule: "a schema field whose evidence is not a key of the fact file: "
           <> where
@@ -346,6 +519,159 @@ fn unknown_key(
       ),
     ]
   }
+}
+
+/// Each entry of the allow-list that does not match the schema: one that lists
+/// nothing, a name or a tag twice, or an owner or union another entry lists, one
+/// whose owner or union no sent message reaches, and each listed field or tag
+/// that is absent or is traced now, at the owner's or the union's line.
+fn gap_breaches(
+  file file: SourceFile,
+  lines lines: List(String),
+  owners owners: List(Owner),
+  sent_unions sent_unions: List(Union),
+  gaps gaps: List(Gap),
+) -> List(Breach) {
+  let listed_owners =
+    list.filter_map(gaps, fn(gap) {
+      case gap {
+        UntracedFields(owner:, ..) -> Ok(owner)
+        UnclassifiedTags(..) -> Error(Nil)
+      }
+    })
+  let listed_unions =
+    list.filter_map(gaps, fn(gap) {
+      case gap {
+        UnclassifiedTags(union:, ..) -> Ok(union)
+        UntracedFields(..) -> Error(Nil)
+      }
+    })
+  list.flat_map(gaps, fn(gap) {
+    case gap {
+      UntracedFields(owner: name, fields:, ..) ->
+        field_gap_breaches(
+          file:,
+          line: line_of(lines:, from: 0, text: "name = \"" <> name <> "\""),
+          owner: list.find(owners, fn(owner) {
+            owner.name == name && owner.sent
+          }),
+          name:,
+          fields:,
+          listed: listed_owners,
+        )
+      UnclassifiedTags(union: name, tags:, ..) ->
+        tag_gap_breaches(
+          file:,
+          line: line_of(lines:, from: 0, text: "name = \"" <> name <> "\""),
+          union: list.find(sent_unions, fn(union) { union.name == name }),
+          name:,
+          tags:,
+          listed: listed_unions,
+        )
+    }
+  })
+}
+
+fn entry_breach(
+  file file: SourceFile,
+  line line: Int,
+  rule rule: String,
+) -> Breach {
+  at(file:, line:, rule: "an allow-list entry " <> rule)
+}
+
+/// The breaches of one `UntracedFields` entry; `owner` is the sent owner of the
+/// entry's name, when there is one, and `listed` the owner of every entry.
+fn field_gap_breaches(
+  file file: SourceFile,
+  line line: Int,
+  owner owner: Result(Owner, Nil),
+  name name: String,
+  fields fields: List(String),
+  listed listed: List(String),
+) -> List(Breach) {
+  let entry = entry_breach(file:, line:, rule: _)
+  let own = case fields, list.count(listed, fn(other) { other == name }) {
+    [], _ -> [entry("lists no field: " <> name)]
+    _, 1 -> []
+    _, _ -> [entry("repeats the owner " <> name <> " of another entry")]
+  }
+  let twice =
+    list.map(repeated(fields), fn(field_name) {
+      entry("lists " <> name <> "." <> field_name <> " twice")
+    })
+  let stale = case owner {
+    Error(Nil) -> [
+      entry("whose owner no message the server sends holds: " <> name),
+    ]
+    Ok(owner) ->
+      list.filter_map(fields, fn(field_name) {
+        let where = name <> "." <> field_name
+        case list.find(owner.fields, fn(field) { field.name == field_name }) {
+          Error(Nil) ->
+            Ok(entry("lists " <> where <> ", which the owner lacks"))
+          Ok(field) ->
+            case is_traced(field) {
+              True ->
+                Ok(entry("lists " <> where <> ", which is traced or open now"))
+              False -> Error(Nil)
+            }
+        }
+      })
+  }
+  list.flatten([own, twice, stale])
+}
+
+/// The breaches of one `UnclassifiedTags` entry; `union` is the sent union of
+/// the entry's name, when there is one, and `listed` the union of every entry.
+fn tag_gap_breaches(
+  file file: SourceFile,
+  line line: Int,
+  union union: Result(Union, Nil),
+  name name: String,
+  tags tags: List(Int),
+  listed listed: List(String),
+) -> List(Breach) {
+  let entry = entry_breach(file:, line:, rule: _)
+  let own = case tags, list.count(listed, fn(other) { other == name }) {
+    [], _ -> [entry("lists no kind: " <> name)]
+    _, 1 -> []
+    _, _ -> [entry("repeats the union " <> name <> " of another entry")]
+  }
+  let twice =
+    list.map(repeated(tags), fn(tag) {
+      entry("lists " <> name <> " kind " <> int.to_string(tag) <> " twice")
+    })
+  let stale = case union {
+    Error(Nil) -> [
+      entry("whose union no message the server sends holds: " <> name),
+    ]
+    Ok(union) ->
+      list.filter_map(tags, fn(tag) {
+        case list.contains(untraced_tags(union), tag) {
+          True -> Error(Nil)
+          False ->
+            Ok(entry(
+              "lists "
+              <> name
+              <> " kind "
+              <> int.to_string(tag)
+              <> ", which is traced, never sent, open or refused now",
+            ))
+        }
+      })
+  }
+  list.flatten([own, twice, stale])
+}
+
+/// Each item that an item before it in the list equals, once for each extra
+/// appearance.
+fn repeated(items: List(a)) -> List(a) {
+  list.index_map(items, fn(item, index) { #(item, list.take(items, index)) })
+  |> list.filter(fn(item_and_earlier) {
+    list.contains(item_and_earlier.1, item_and_earlier.0)
+  })
+  |> list.map(pair.first)
 }
 
 /// The 1-based number of the first line at or after the 0-based `from` that
