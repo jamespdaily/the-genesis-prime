@@ -5825,11 +5825,11 @@ pub fn a_move_that_does_not_match_binds_nothing_test() -> Nil {
     )
     as "a character holding the Novice set"
   let CharacterId(number) = character_id
-  let stale = epoch_of_load(store:, account:, character_id: number)
-  let current = epoch_of_load(store:, account:, character_id: number)
   let before = account_store_support.held_by(store:, account:, character_id:)
   let assert [chest, _, _, _, hands, ..] = before
     as "the Novice set is seven items"
+  let stale = epoch_of_load(store:, account:, character_id: number)
+  let current = epoch_of_load(store:, account:, character_id: number)
   let chest_binding =
     ItemMove(
       item_guid: chest.item_guid,
@@ -5888,9 +5888,9 @@ pub fn a_move_with_a_refused_flag_bit_is_save_refused_and_moves_nothing_test() -
     )
     as "a character holding the Novice set"
   let CharacterId(number) = character_id
-  let epoch = epoch_of_load(store:, account:, character_id: number)
   let before = account_store_support.held_by(store:, account:, character_id:)
   let assert [chest, ..] = before as "the Novice set is seven items"
+  let epoch = epoch_of_load(store:, account:, character_id: number)
   assert moved(store:, account:, character_id:, epoch:, moves: [
       ItemMove(
         item_guid: chest.item_guid,
