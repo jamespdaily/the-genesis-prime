@@ -108,7 +108,6 @@ fn settled_with(
     now_ms: 0,
     numbers: spawn_support.numbers,
     arrival_objectives: set.new(),
-    item_objectives: dict.new(),
     held_objectives: set.from_list(held),
     unix_ms: settled_at_ms,
   )
@@ -1235,7 +1234,6 @@ pub fn a_store_purchase_objective_completes_as_a_stand_in_unless_it_is_held_test
       index: 0,
       objective: store_purchase,
       arrival_objectives: set.new(),
-      item_objectives: dict.new(),
     )
     == objective.StandInWithQuest
     as "a visible required unmarked unlinked scripted objective is the stand-in's"

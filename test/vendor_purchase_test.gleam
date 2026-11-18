@@ -60,7 +60,6 @@ import genesis_prime/store.{
 }
 import genesis_prime/table/id.{Item2Id}
 import genesis_prime/table/loader/store as table_store
-import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -1457,91 +1456,4 @@ pub fn a_buy_sends_no_gain_test() -> Nil {
     frame.message_id == currency_gained.message_id
   })
     as "opcode.0xdd: a buy back is a spend, so no gain line"
-}
-
-pub fn a_buy_back_and_a_refused_purchase_count_nothing_test() -> Nil {
-  use <- owned_test.run(10_000)
-  let tables = character_tables.shared()
-  let bought_item = Item2Id(14_838)
-  let buy = asked(scene: scene(unique_id: position_14838, quantity: 1))
-  let back = asked_back(scene: buying_back(buyback_id: 2))
-  let walker = vendor_support.picture_with_walker(gap: 1.0)
-  let saved = Bought(amount: 33, made: [])
-  // The unit the picture shows at the vendor's unit is Dorian Walker, Creature2 74812 (the
-  // Creature2 row the test's picture names); an objective that asks for an item from a
-  // vendor counts what the store saved from the vendor's stock and nothing else.
-  let cases = [
-    #(
-      "a buy from the stock that the store saved",
-      vendor_purchase.bought_from(
-        purchase: buy,
-        answer: saved,
-        picture: walker,
-        tables:,
-      ),
-      Ok(#(bought_item, id.Creature2Id(74_812))),
-    ),
-    #(
-      "a buy back that the store saved",
-      vendor_purchase.bought_from(
-        purchase: back,
-        answer: saved,
-        picture: walker,
-        tables:,
-      ),
-      Error(Nil),
-    ),
-    #(
-      "a buy the store did not save",
-      vendor_purchase.bought_from(
-        purchase: buy,
-        answer: ItemsNotSaved,
-        picture: walker,
-        tables:,
-      ),
-      Error(Nil),
-    ),
-    #(
-      "a buy the store refused",
-      vendor_purchase.bought_from(
-        purchase: buy,
-        answer: SaveRefused(constraint: "the inventory changed"),
-        picture: walker,
-        tables:,
-      ),
-      Error(Nil),
-    ),
-    #(
-      "a buy whose vendor has left the picture",
-      vendor_purchase.bought_from(
-        purchase: buy,
-        answer: saved,
-        picture: dict.new(),
-        tables:,
-      ),
-      Error(Nil),
-    ),
-    #(
-      "a buy at another player's unit",
-      vendor_purchase.bought_from(
-        purchase: buy,
-        answer: saved,
-        picture: dict.from_list([
-          #(vendor_support.walker_unit, shown.ShownPlayer(at: None)),
-        ]),
-        tables:,
-      ),
-      Error(Nil),
-    ),
-  ]
-  let wrong =
-    list.filter_map(cases, fn(row) {
-      let #(reason, got, wanted) = row
-      case got == wanted {
-        True -> Error(Nil)
-        False -> Ok(reason)
-      }
-    })
-  assert wrong == []
-    as "only a buy from the stock that the store saved is a purchase of an item from a vendor"
 }

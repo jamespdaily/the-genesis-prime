@@ -46,7 +46,6 @@
 ////   0, VirtualItem 363) counts one; a guess, graded so.
 
 import cast_support
-import character_tables
 import connection_rule_support as support
 import experience_support
 import fixture_tables
@@ -56,7 +55,6 @@ import genesis_prime/client_connection.{type Answer, type Message, type Request}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
-import genesis_prime/game/item_objective
 import genesis_prime/message/cast_activate.{CastActivate}
 import genesis_prime/message/cast_result
 import genesis_prime/message/client_activate_unit.{ClientActivateUnit}
@@ -66,7 +64,6 @@ import genesis_prime/message/client_side_interaction_result.{
 import genesis_prime/message/experience_gained.{ExperienceGained}
 import genesis_prime/message/interaction_result
 import genesis_prime/message/item_delete
-import genesis_prime/message/item_move
 import genesis_prime/message/item_place.{ItemPlace}
 import genesis_prime/message/item_use.{ItemUse}
 import genesis_prime/message/quest_accept.{QuestAccept}
@@ -80,9 +77,7 @@ import genesis_prime/world_map/creature_life.{Hostile}
 import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/map.{ObjectsSeen, ObjectsUnseen}
 import genesis_prime/world_map/static_object.{StaticObject}
-import gleam/dict
 import gleam/list
-import gleam/option.{None, Some}
 import gleam/set
 import message_support
 import owned_test
@@ -1848,7 +1843,6 @@ fn arriving_at_the_tower(
     ..connection_support.settings(),
     tables:,
     arrival_objectives: set.from_list([4770]),
-    item_objectives: dict.new(),
   )
 }
 
@@ -1972,15 +1966,11 @@ pub fn entering_the_world_at_the_marker_of_a_place_script_holds_it_done_test() -
     as "the entry log holds quest 3667 Achieved with objective 4770 at its count 1"
 }
 
-// ---- a place, an equip and a buy that left the stand-in ----
+// ---- a place that left the stand-in ----
 //
 // Quest 5362 "Missing in Action": objective 8074 (index 0, type 5, count 1, "Travel to ... last
 // known position", marker WorldLocation2 17073, radius 1 m) then 8075 (index 1, type 12, flags
-// 3). Quest 9058 "Algoroc Mining Expedition": objective 16310 (talk), 16311 (type 5, count 1,
-// "Equip the $(item=12631)") and 16312 (type 4, count 5, made optional here so that the worn
-// item Achieves the quest). Quest 9448 "Vouchers: What Are They Good For?": objective 18069
-// (type 5, count 1, "Buy a $(item=54409) from $(creature=47172) in Thayd"). The completions are
-// the server's choice (`QuestObjective.type.5`), told by 0x361 and 0x35c.
+// 3). The completion is the server's choice (`QuestObjective.type.5`), told by 0x361 and 0x35c.
 
 /// The fixture's rows with this WorldLocation2 marker moved to World 3460, zone 6009, centred
 /// at x, y, z, and these edits of other rows.
@@ -2065,274 +2055,4 @@ pub fn travelling_to_the_last_known_position_sends_progress_and_achieved_test() 
       state_frame(quest: 5362, state: 2),
     ]
     as "opcode.0x361 then 0x35c state 2: the last open objective is done"
-}
-
-/// The worn Novice items without the chest piece, and a chest piece of this Item2 in the
-/// first inventory slot (guid 9): a character of level 5 who has the experience for it.
-fn holding_a_chest_to_wear(
-  settings settings: connection_state.Settings,
-  chest chest: Int,
-  quests quests: List(QuestRow),
-) -> #(game_connection.State, step.ConnectionStep(Request)) {
-  let character =
-    store.Character(..connection_support.world_character(), level: 5)
-  let worn =
-    list.filter(world_entry_support.novice_items(character:), fn(item) {
-      item.bag_index != 0
-    })
-  let #(state, taken) =
-    connection_support.joining_holding_items(
-      in_character_select: connection_support.in_select_from(
-        connection_support.accepted(settings).0,
-      ),
-      character:,
-      saved_health: None,
-      saved_experience: Some(4320),
-      quests:,
-      items: list.append(worn, [
-        HeldItem(
-          item_guid: 9,
-          item2_id: Item2Id(chest),
-          location: 1,
-          bag_index: 0,
-          stack_count: 1,
-          random_stats: 0,
-          charges: 0,
-        ),
-      ]),
-    )
-  connection_support.answer(
-    state:,
-    taken:,
-    outcome: step.Answer(
-      client_connection.FromMap(connection_support.map_answer(taken)),
-    ),
-  )
-}
-
-/// A 0x182 of inventory slot 0 to the worn chest slot, inside 0x038C.
-fn chest_equipped() -> BitArray {
-  let assert Ok(body) =
-    item_move.encode(item_move.ItemMove(
-      from: ItemPlace(location: 1, bag_index: 0),
-      to: ItemPlace(location: 0, bag_index: 0),
-    ))
-    as "a place fits the message"
-  connection_support.world_message(message_id: item_move.message_id, body:)
-}
-
-pub fn wearing_the_named_item_sends_progress_and_achieved_test() -> Nil {
-  use <- owned_test.run(10_000)
-  // The server refuses to equip Item2 12631 itself (its tradeskill tier prerequisite is one
-  // the server does not read, `equip_requirement`), so the row of the settings names a chest
-  // piece the server does equip, Item2 27106 (`game_connection_inventory_test`), for
-  // objective 16311.
-  use tables <- quest_support.with_objectives(edits: [#(16_312, "flags", 0x20)])
-  let settings =
-    connection_state.Settings(
-      ..connection_support.settings(),
-      tables:,
-      item_objectives: dict.from_list([
-        #(16_311, item_objective.Wear(Item2Id(27_106))),
-      ]),
-    )
-  let #(state, entry) =
-    holding_a_chest_to_wear(settings:, chest: 27_106, quests: [
-      quest_support.active(
-        quest_id: 9058,
-        state: 1,
-        placeholder: 0,
-        tracked: False,
-        done_mask: 1,
-        progress: [1, 0, 0],
-      ),
-    ])
-  assert quest_frames(taken: entry) == []
-    as "the chest is in the bag at entry, so nothing is worn"
-  let #(state, taken) = connection_support.read(state, chest_equipped())
-  let #(_, answered) =
-    connection_support.answer(
-      state:,
-      taken:,
-      outcome: step.Answer(
-        client_connection.FromStore(store.ForItems(store.ItemsSaved)),
-      ),
-    )
-  assert connection_support.written_ids(answered)
-    == [0x0569, 0x0361, 0x035C, 0x0933, 0x093A]
-    as "opcode.0x569 tells the move, then 0x361 and 0x35c from the settle, then the look and the properties the chest gives"
-  assert quest_frames(taken: answered)
-    == [
-      progress_frame(quest: 9058, index: 1, progress: 1),
-      state_frame(quest: 9058, state: 2),
-    ]
-    as "opcode.0x361 sets objective 16311 to its count 1, and 0x35c state 2: the talk is done and the type 4 objective is optional"
-}
-
-pub fn logging_in_with_the_item_worn_holds_the_row_done_test() -> Nil {
-  use <- owned_test.run(10_000)
-  use tables <- quest_support.with_objectives(edits: [#(16_312, "flags", 0x20)])
-  let character = connection_support.world_character()
-  let assert [chest, ..] =
-    list.filter(world_entry_support.novice_items(character:), fn(item) {
-      item.bag_index == 0
-    })
-    as "the Novice set has a chest piece worn at slot 0"
-  let settings =
-    connection_state.Settings(
-      ..connection_support.settings(),
-      tables:,
-      item_objectives: dict.from_list([
-        #(16_311, item_objective.Wear(chest.item2_id)),
-      ]),
-    )
-  let progress_of_the_log = fn(entry) {
-    let log_frame =
-      world_entry_support.only_frame(
-        frames: connection_support.written(taken: entry),
-        message_id: quest_message.message_id,
-      )
-    let assert Ok(message) = quest_message.decode(log_frame.body)
-      as "the quest log frame decodes"
-    list.map(message.active, fn(active) {
-      #(active.quest_id, active.state, active.progress)
-    })
-  }
-  // Saved Accepted with the row not done, the player wearing the item as they log in: the
-  // log the client is sent holds the row done and the quest Achieved, with no 0x361 after it.
-  let #(_, entry) =
-    connection_support.entered_with_quests_in(settings:, quests: [
-      quest_support.active(
-        quest_id: 9058,
-        state: 1,
-        placeholder: 0,
-        tracked: False,
-        done_mask: 1,
-        progress: [1, 0, 0],
-      ),
-    ])
-  assert progress_of_the_log(entry) == [#(9058, 2, [1, 1, 0])]
-    as "opcode.0x35f: the entry log holds quest 9058 Achieved, objective 16311 at its count 1, as the worn chest completes it"
-  assert quest_frames(taken: entry) == []
-    as "the entry's log is the one message: no 0x361 or 0x35c follows it"
-  // Saved done with the item no longer worn (the settings name an item the player lacks): the
-  // row stays done, and nothing is sent again.
-  let settings =
-    connection_state.Settings(
-      ..settings,
-      item_objectives: dict.from_list([
-        #(16_311, item_objective.Wear(Item2Id(27_106))),
-      ]),
-    )
-  let #(_, relogged) =
-    connection_support.entered_with_quests_in(settings:, quests: [
-      quest_support.active(
-        quest_id: 9058,
-        state: 2,
-        placeholder: 0,
-        tracked: False,
-        done_mask: 3,
-        progress: [1, 1, 0],
-      ),
-    ])
-  assert progress_of_the_log(relogged) == [#(9058, 2, [1, 1, 0])]
-    as "a saved done row is kept when the item is not worn: nothing takes it back"
-  assert quest_frames(taken: relogged) == [] as "and no second 0x361 is sent"
-}
-
-pub fn buying_the_named_item_from_the_named_vendor_sends_progress_test() -> Nil {
-  use <- owned_test.run(10_000)
-  // Brigade Researcher Seagarden (Creature2 47172) sells Item2 54409 at stock position 1 in
-  // this test's vendors; the objective of quest 9448 counts one of it from him. Dorian
-  // Walker (74812) sells it too, and a buy from him counts for nothing.
-  let tables = character_tables.shared()
-  let bought_at = fn(vendor_creature: Int) {
-    let settings =
-      connection_state.Settings(
-        ..connection_support.settings(),
-        tables:,
-        vendors: vendor_support.stocking_items(
-          creature_ids: [vendor_creature],
-          items: [
-            54_409,
-          ],
-        ),
-        item_objectives: dict.from_list([
-          #(
-            18_069,
-            item_objective.BuyFrom(
-              item2_id: Item2Id(54_409),
-              vendor: Creature2Id(47_172),
-            ),
-          ),
-        ]),
-      )
-    let state =
-      connection_support.entered_stocking_with_quests(
-        in_character_select: connection_support.in_select_from(
-          connection_support.accepted(settings).0,
-        ),
-        credits: 1_000_000,
-        items: [],
-        quests: [quest_support.accepted(quest_id: 9448, progress: [0])],
-      )
-    let walker =
-      spawn_support.dorian_walker(
-        number: 1,
-        place: connection_support.entry_place(),
-      )
-    let #(state, _) =
-      connection_support.feed(
-        state:,
-        event: appears(
-          creature_id: vendor_creature,
-          display_info_id: walker.display_info_id,
-          outfit_info_id: walker.outfit_info_id,
-          hit_radius: walker.combat.hit_radius,
-        ),
-      )
-    let #(state, _) =
-      connection_support.interaction_requested(
-        state:,
-        unit_id: unit,
-        kind: 0x31,
-      )
-    let #(state, taken) =
-      connection_support.purchase_requested(state:, unique_id: 1, quantity: 1)
-    let #(_, answered) =
-      connection_support.answer(
-        state:,
-        taken:,
-        outcome: step.Answer(
-          client_connection.FromStore(
-            store.ForItems(
-              store.Bought(amount: 999_000, made: [
-                HeldItem(
-                  item_guid: 900,
-                  item2_id: Item2Id(54_409),
-                  location: 1,
-                  bag_index: 0,
-                  stack_count: 1,
-                  random_stats: 0,
-                  charges: 0,
-                ),
-              ]),
-            ),
-          ),
-        ),
-      )
-    answered
-  }
-  let from_the_named_vendor = bought_at(47_172)
-  assert connection_support.written_ids(from_the_named_vendor)
-    == [0x0919, 0x0111, 0x0361, 0x035C]
-    as "opcode.0x919 sets the credits, 0x111 tells the new stack, then 0x361 and 0x35c from the settle"
-  assert quest_frames(taken: from_the_named_vendor)
-    == [
-      progress_frame(quest: 9448, index: 0, progress: 1),
-      state_frame(quest: 9448, state: 2),
-    ]
-    as "opcode.0x361 sets objective 18069 to its count 1 and 0x35c state 2: the quest's only objective"
-  assert quest_frames(taken: bought_at(74_812)) == []
-    as "the same item bought from another vendor sends no 0x361"
 }

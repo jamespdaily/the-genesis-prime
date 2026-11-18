@@ -910,7 +910,6 @@ fn settled_at(
     now_ms: 0,
     numbers: spawn_support.numbers,
     arrival_objectives: set.new(),
-    item_objectives: dict.new(),
     held_objectives: set.new(),
     unix_ms: settled_at_ms,
   )

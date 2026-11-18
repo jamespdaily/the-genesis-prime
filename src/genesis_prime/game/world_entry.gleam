@@ -155,7 +155,6 @@ import genesis_prime/game/experience
 import genesis_prime/game/gear.{type Gear}
 import genesis_prime/game/innate
 import genesis_prime/game/inventory
-import genesis_prime/game/item_objective.{type Wanted}
 import genesis_prime/game/item_property
 import genesis_prime/game/loadout.{type Loadout}
 import genesis_prime/game/look
@@ -946,7 +945,6 @@ pub fn joined(
   defaults defaults: List(#(UnitProperty2Id, Float)),
   chain chain: tutorial.Chain,
   arrival_objectives arrival_objectives: Set(Int),
-  item_objectives item_objectives: Dict(Int, Wanted),
   held_objectives held_objectives: Set(Int),
   tables tables: table_store.Tables,
   now now: Now,
@@ -1025,7 +1023,6 @@ pub fn joined(
               place:,
               numbers:,
               arrival_objectives:,
-              item_objectives:,
               held_objectives:,
               tables:,
               now:,
@@ -1220,7 +1217,6 @@ fn quest_log_sent(
   place place: Place,
   numbers numbers: GameNumbers,
   arrival_objectives arrival_objectives: Set(Int),
-  item_objectives item_objectives: Dict(Int, Wanted),
   held_objectives held_objectives: Set(Int),
   tables tables: table_store.Tables,
   now now: Now,
@@ -1237,7 +1233,6 @@ fn quest_log_sent(
           shown: dict.new(),
           numbers:,
           arrival_objectives:,
-          item_objectives:,
           held_objectives:,
           unix_ms: step.unix_milliseconds(now:),
           now_ms: now.monotonic_ms,

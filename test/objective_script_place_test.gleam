@@ -44,9 +44,6 @@ import content_support
 import database_support
 import fixture_tables
 import genesis_prime/content/arrival_objective as content_arrival_objective
-import genesis_prime/content/item_objective as content_item_objective
-import genesis_prime/game/item_objective.{type Wanted}
-import genesis_prime/game/item_objective_table
 import genesis_prime/game/objective.{
   type Advanced, type Effect, Advanced, CompleteByServer, ReleaseUnit,
   SendProgress, SendState,
@@ -56,17 +53,14 @@ import genesis_prime/game/objective_kind
 import genesis_prime/game/place_objective
 import genesis_prime/game/quest_log
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/store.{type HeldItem, HeldItem}
-import genesis_prime/table/id.{
-  Creature2Id, Item2Id, QuestObjectiveId, WorldLocation2Id,
-}
+import genesis_prime/table/id.{QuestObjectiveId, WorldLocation2Id}
 import genesis_prime/table/item2
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest2
 import genesis_prime/table/quest_objective
 import genesis_prime/table/spell4_effects
 import genesis_prime/table/world_location2
-import gleam/dict.{type Dict}
+import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{Some}
@@ -132,7 +126,6 @@ fn settle_sets(
     shown: dict.new(),
     numbers: spawn_support.numbers,
     arrival_objectives: arrivals,
-    item_objectives: dict.new(),
     held_objectives: held,
     unix_ms:,
     now_ms: 0,
@@ -613,7 +606,6 @@ pub fn a_timed_stand_in_completes_before_its_deadline_and_not_after_test() -> Ni
       shown: dict.new(),
       numbers: spawn_support.numbers,
       arrival_objectives: set.new(),
-      item_objectives: dict.new(),
       held_objectives: set.new(),
       unix_ms:,
       now_ms: 200_000,
@@ -899,21 +891,6 @@ fn arrival_ids() -> Set(Int) {
   set.from_list(list.map(rows, fn(row) { row.objective_id }))
 }
 
-/// What each objective of the migrated database's item table asks, as the load selects it
-/// over the tables, the arrival and held tables' ids being `taken`.
-fn item_wanted(
-  tables tables: table_store.Tables,
-  taken taken: Set(Int),
-) -> Dict(Int, Wanted) {
-  let database = database_support.new_database(on: database_support.shared())
-  let assert Ok(rows) =
-    content_item_objective.rows(db: content_support.connect(database:))
-    as "the query ran"
-  let assert Ok(wanted) = item_objective_table.select(rows:, tables:, taken:)
-    as "the migrated rows are ones the client's tables allow"
-  wanted
-}
-
 /// Every type 5 objective of the client's quests: the quest as the log reads it, the index,
 /// and the objective.
 fn type_5_places(
@@ -980,7 +957,6 @@ pub fn the_spell_advanced_set_names_every_type_42_and_item_objective_test() -> N
         index: place.1,
         objective: place.2,
         arrival_objectives: set.new(),
-        item_objectives: dict.new(),
       )
       == objective.NamedAction
     })
@@ -1001,7 +977,6 @@ pub fn the_spell_advanced_set_names_every_type_42_and_item_objective_test() -> N
 fn counted_classes(
   tables tables: table_store.Tables,
   arrivals arrivals: Set(Int),
-  items items: Dict(Int, Wanted),
 ) -> List(#(objective.Script, Int)) {
   let scripts =
     list.map(type_5_places(tables:), fn(place) {
@@ -1011,7 +986,6 @@ fn counted_classes(
         index: place.1,
         objective: place.2,
         arrival_objectives: arrivals,
-        item_objectives: items,
       )
     })
   list.map(classes(), fn(class) {
@@ -1025,7 +999,6 @@ fn classes() -> List(objective.Script) {
     objective.Optional,
     objective.NamedAction,
     objective.PlaceScript,
-    objective.ItemScript,
     objective.StandInOnAccept,
     objective.StandInWithQuest,
   ]
@@ -1096,7 +1069,6 @@ pub fn every_place_script_completes_at_its_marker_and_no_spell_advanced_one_comp
   let tables = client_tables.shared()
   let arrivals = arrival_ids()
   let held = content_support.held_objective_ids()
-  let items = item_wanted(tables:, taken: set.union(arrivals, held))
   let none = set.new()
   let scripted =
     list.map(type_5_places(tables:), fn(place) {
@@ -1108,7 +1080,6 @@ pub fn every_place_script_completes_at_its_marker_and_no_spell_advanced_one_comp
           index: place.1,
           objective: place.2,
           arrival_objectives: arrivals,
-          item_objectives: items,
         ),
       )
     })
@@ -1146,7 +1117,6 @@ pub fn every_place_script_completes_at_its_marker_and_no_spell_advanced_one_comp
         objective.NotScripted, _
         | objective.UsedByCreature, _
         | objective.Optional, _
-        | objective.ItemScript, _
         | objective.StandInOnAccept, _
         | objective.StandInWithQuest, _
         -> Ok(Nil)
@@ -1166,7 +1136,6 @@ pub fn every_marked_stand_in_completes_on_accept_and_every_held_one_stays_open_t
   let tables = client_tables.shared()
   let arrivals = arrival_ids()
   let held = content_support.held_objective_ids()
-  let items = item_wanted(tables:, taken: set.union(arrivals, held))
   let wrong =
     list.filter_map(type_5_places(tables:), fn(place) {
       let id = { place.2 }.objective_id
@@ -1177,7 +1146,6 @@ pub fn every_marked_stand_in_completes_on_accept_and_every_held_one_stays_open_t
           index: place.1,
           objective: place.2,
           arrival_objectives: arrivals,
-          item_objectives: items,
         )
       let #(quest, index, _) = place
       // The objectives before it done, the ones after it not: it is reachable, and the
@@ -1213,7 +1181,6 @@ pub fn every_marked_stand_in_completes_on_accept_and_every_held_one_stays_open_t
         | objective.Optional
         | objective.NamedAction
         | objective.PlaceScript
-        | objective.ItemScript
         | objective.StandInWithQuest -> Error(Nil)
       }
     })
@@ -1227,7 +1194,6 @@ pub fn every_type_5_objective_in_a_quest_has_one_completing_rule_test() -> Nil {
   let tables = client_tables.shared()
   let arrivals = arrival_ids()
   let held = content_support.held_objective_ids()
-  let items = item_wanted(tables:, taken: set.union(arrivals, held))
   let places = type_5_places(tables:)
   assert list.length(places) == 1498
     as "1556 QuestObjective rows of type 5, 58 of them in no quest, the others in one quest each"
@@ -1239,23 +1205,19 @@ pub fn every_type_5_objective_in_a_quest_has_one_completing_rule_test() -> Nil {
     == 58
     as "the objectives no quest lists are none of the rules'"
   // The class counts come from the client's rows (the objective's flags, the marker rows,
-  // the creatures' links, the type 42 rows and the items), the arrival table's 57 rows and
-  // the item table's none.
-  assert counted_classes(tables:, arrivals:, items:)
+  // the creatures' links, the type 42 rows and the items) and the arrival table's 50 rows.
+  assert counted_classes(tables:, arrivals:)
     == [
       #(objective.UsedByCreature, 267),
       #(objective.Optional, 59),
       #(objective.NamedAction, 70),
-      #(objective.PlaceScript, 57),
-      #(objective.ItemScript, 0),
-      #(objective.StandInOnAccept, 439),
+      #(objective.PlaceScript, 50),
+      #(objective.StandInOnAccept, 446),
       #(objective.StandInWithQuest, 606),
     ]
-    as "each type 5 objective in a quest has exactly one class: 259 linked required and 8 linked optional, 59 visible optional, 70 a spell or an item names, 57 places, no items, 439 stand-ins on accept (454 less the 15 places moved), and 606 that wait for the quest (87 hidden, 519 visible with no marker)"
-  assert set.size(arrivals) == 57
-    as "the arrival table's rows: the 42 of migration 0038 and the 15 of 0043"
-  assert dict.size(items) == 0
-    as "the item table's rows (migration 0044 seeds none)"
+    as "each type 5 objective in a quest has exactly one class: 259 linked required and 8 linked optional, 59 visible optional, 70 a spell or an item names, 50 places, 446 stand-ins on accept (454 less the 8 places moved), and 606 that wait for the quest (87 hidden, 519 visible with no marker)"
+  assert set.size(arrivals) == 50
+    as "the arrival table's rows: the 42 of migration 0038 and the 8 of 0043"
   assert set.size(held) == 146
     as "the held table's rows: the 130 of the unmarked scripts, the 15 of the instance quests and the store purchase 21267"
   // The hold is an override: of the 146, the 15 marked rows of the instance quests are of
@@ -1273,7 +1235,6 @@ pub fn every_type_5_objective_in_a_quest_has_one_completing_rule_test() -> Nil {
         index: place.1,
         objective: place.2,
         arrival_objectives: arrivals,
-        item_objectives: items,
       )
       == wanted
     })
@@ -1292,22 +1253,20 @@ pub fn every_type_5_objective_in_a_quest_has_one_completing_rule_test() -> Nil {
 
 /// Every type 5 objective of the client's quests, the 31 sized as places by the issue
 /// "Each kind of scripted quest step that the Tower fix completes on accept gets its real
-/// rule", with what `script_of` gives it and why. The 15 that ask only to reach a place the
-/// marker shows are `PlaceScript`; the others stay `StandInOnAccept` for the reason stated
-/// (every one of these needs a trigger the position does not show).
+/// rule", with what `script_of` gives it and why. The 8 that ask only to reach a place the
+/// marker shows, whose quest's giver is spawned in the marker's world, are `PlaceScript`; the
+/// others stay `StandInOnAccept` for the reason stated (the 16 of them that ask for more than a
+/// position need a trigger the position does not show; the 7 that ask only to reach a place
+/// have no giver the server spawns, so no player can accept their quest).
 fn sized_places() -> List(#(Int, objective.Script, String)) {
   let place = objective.PlaceScript
   let stays = objective.StandInOnAccept
   [
-    #(7217, place, "Locate the first clue (marker radius 57 m)"),
-    #(7423, place, "Locate the second clue (65 m)"),
-    #(7424, place, "Locate the third clue (64 m)"),
     #(7342, place, "Find the musical voice of the Wise One (1 m point)"),
     #(8074, place, "Travel to the last known position (1 m point)"),
     #(8204, place, "Find the wedding party caravan (1 m point)"),
     #(9043, place, "Search for survey data at the camp (20 m)"),
     #(11_479, place, "Locate the origin of the relic (36 m)"),
-    #(12_933, place, "Escape the blast (1 m point, a 60 s limit)"),
     #(
       14_378,
       place,
@@ -1319,9 +1278,41 @@ fn sized_places() -> List(#(Int, objective.Script, String)) {
       "Find the lover in Ghostwind Hollow (two markers of 160 m)",
     ),
     #(18_099, place, "Find a way down from the Keeper's Sanctuary (1 m point)"),
-    #(16_621, place, "Search for Trinette (1 m point, no giver)"),
-    #(17_877, place, "Find Stephanus (1 m point, no giver)"),
-    #(18_072, place, "Reach the creature on the opposite tower (1 m point)"),
+    #(
+      7217,
+      stays,
+      "Locate the first clue (57 m): quest 5079's giver, Creature2 19935, has no spawn",
+    ),
+    #(
+      7423,
+      stays,
+      "Locate the second clue (65 m): quest 5079's giver, Creature2 19935, has no spawn",
+    ),
+    #(
+      7424,
+      stays,
+      "Locate the third clue (64 m): quest 5079's giver, Creature2 19935, has no spawn",
+    ),
+    #(
+      12_933,
+      stays,
+      "Escape the blast (1 m point, a 60 s limit): quest 6901's giver, Creature2 33806, has no spawn",
+    ),
+    #(
+      16_621,
+      stays,
+      "Search for Trinette (1 m point): quest 9180 has no giver creature",
+    ),
+    #(
+      17_877,
+      stays,
+      "Find Stephanus (1 m point): quest 9186 has no giver creature",
+    ),
+    #(
+      18_072,
+      stays,
+      "Reach the creature on the opposite tower (1 m point): quest 9315 has no giver creature",
+    ),
     #(
       6474,
       stays,
@@ -1395,12 +1386,11 @@ fn place_of(
   place
 }
 
-pub fn the_place_rows_are_the_listed_fifteen_and_the_sixteen_others_stay_stand_ins_test() -> Nil {
+pub fn the_place_rows_are_the_listed_eight_and_the_twenty_three_others_stay_stand_ins_test() -> Nil {
   use <- owned_test.run(300_000)
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   let arrivals = arrival_ids()
-  let items = item_wanted(tables:, taken: arrivals)
   let wrong =
     list.filter_map(sized_places(), fn(row) {
       let #(objective_id, wanted, reason) = row
@@ -1412,7 +1402,6 @@ pub fn the_place_rows_are_the_listed_fifteen_and_the_sixteen_others_stay_stand_i
           index:,
           objective: listed,
           arrival_objectives: arrivals,
-          item_objectives: items,
         )
       case got == wanted {
         True -> Error(Nil)
@@ -1420,12 +1409,12 @@ pub fn the_place_rows_are_the_listed_fifteen_and_the_sixteen_others_stay_stand_i
       }
     })
   assert wrong == []
-    as "the 15 rows that only ask to reach a place are place scripts and the 16 others stay stand-ins on accept"
+    as "the 8 rows that only ask to reach a place and have a spawned giver are place scripts and the 23 others stay stand-ins on accept"
   assert list.length(sized_places()) == 31
     as "the sizing's 31 go-to-a-place stand-ins"
   assert list.count(sized_places(), fn(row) { row.1 == objective.PlaceScript })
-    == 15
-    as "15 of them are places"
+    == 8
+    as "8 of them are places"
 }
 
 /// How far to put the player east of a marker's centre, in the marker's own radii plus 2 m:
@@ -1468,7 +1457,8 @@ pub fn a_new_place_row_completes_at_its_markers_and_nowhere_else_test() -> Nil {
   // horizontal distance within the row's radius). Objective 14378 has two markers of 160 m
   // that are 238 m apart, and either completes it.
   let cases = [
-    #(7217, 15_108, True),
+    #(7342, 14_792, True),
+    #(9043, 20_075, True),
     #(8074, 17_073, True),
     #(14_378, 30_943, True),
     #(14_378, 30_942, False),
@@ -1513,472 +1503,66 @@ pub fn a_new_place_row_completes_at_its_markers_and_nowhere_else_test() -> Nil {
     as "each completes inside a marker's radius, not 2 m beyond it and not in another world"
 }
 
-pub fn a_chain_and_a_time_limit_hold_for_new_place_rows_test() -> Nil {
+pub fn a_new_place_row_behind_other_objectives_waits_for_them_test() -> Nil {
   use <- owned_test.run(120_000)
+  let tables = character_tables.shared()
   let arrivals = arrival_ids()
-  the_limit_of_a_new_place_row_holds(arrivals:)
-  // Quest 5079's second clue (7423, flags 3) is closed until the first (7217) is done
-  // (`0x140553790`). The client's two marker circles (56.5 m and 65.4 m, centres 126 m
-  // apart) do not overlap, so no position is in both: the second marker is moved onto the
-  // first's centre, which is the only way to see both complete in one settle.
-  use tables <- fixture_tables.changed(
-    table: "WorldLocation2",
-    id: 15_109,
-    with: [
-      #("position0", planted_table.Float(4758.7998046875)),
-      #("position1", planted_table.Float(-941.77001953125)),
-      #("position2", planted_table.Float(-651.8699951171875)),
-    ],
-  )
-  let log = accepted(tables:, quest_id: 5079)
-  let first = centre_of(tables:, marker: 15_108)
-  assert told(
-      effects: settle_sets(log:, tables:, at: first, arrivals:, held: set.new()).effects,
-    )
-    == [
-      SendProgress(quest_id: 5079, objective_index: 0, progress: 1),
-      SendProgress(quest_id: 5079, objective_index: 1, progress: 1),
-    ]
-    as "the first clue completes at its marker, which opens the second, whose marker is here too: both complete in the one settle, and the quest, with its other objectives open, is not Achieved"
+  // Quest 9068's objective 18099 (index 2, flags 3) is closed until the two objectives before
+  // it (16347 and 16348) are done (`0x140553790`); its marker is WorldLocation2 45330.
+  let at_the_marker = centre_of(tables:, marker: 45_330)
+  let waiting = logged(tables:, quest_id: 9068, done: [])
   assert settle_sets(
-      log:,
+      log: waiting,
       tables:,
-      at: centre_of(tables:, marker: 15_110),
+      at: at_the_marker,
       arrivals:,
       held: set.new(),
     )
-    == Advanced(log:, effects: [])
-    as "at the third clue's marker nothing completes: it is closed behind the clues before it"
-  assert settle_sets(
-      log:,
-      tables:,
-      at: first,
-      arrivals:,
-      held: set.from_list([7217, 7423]),
+    == Advanced(log: waiting, effects: [])
+    as "with the objectives before it open, its marker counts for nothing"
+  let opened = logged(tables:, quest_id: 9068, done: [0, 1])
+  assert told(
+      effects: settle_sets(
+        log: opened,
+        tables:,
+        at: at_the_marker,
+        arrivals:,
+        held: set.new(),
+      ).effects,
     )
-    == Advanced(log:, effects: [])
+    == [
+      SendProgress(quest_id: 9068, objective_index: 2, progress: 1),
+      SendState(quest_id: 9068, state: 2),
+    ]
+    as "once they are done the marker completes it, the quest's last objective, and the quest is Achieved"
+  assert settle_sets(
+      log: opened,
+      tables:,
+      at: at_the_marker,
+      arrivals:,
+      held: set.from_list([18_099]),
+    )
+    == Advanced(log: opened, effects: [])
     as "a held place stays open at its marker"
 }
 
-/// Objective 12933 completes before its 60 s limit and runs out after it.
-fn the_limit_of_a_new_place_row_holds(arrivals arrivals: Set(Int)) -> Nil {
-  let tables = character_tables.shared()
-  // Quest 6901's objective 12933 (index 1, a 60 s limit: QuestObjective maxTimeAllowedMS
-  // 60000) opens when the objective before it is done: accepted at 0 ms, that one done at
-  // 1000 ms starts the timer, whose deadline is 61000 ms.
-  let assert Ok(quest) = quest_log.quest_of(tables:, id: 6901)
-    as "the fixture holds quest 6901"
-  let accepted_log =
-    quest_log.accept(
-      log: quest_support.log_of(rows: []),
-      quest:,
-      max_time_ms: 0,
-      now_ms: 0,
-    )
-  let assert Ok(first) =
-    quest_log.counted(
-      log: accepted_log,
-      quest:,
-      index: 0,
-      value: 1,
-      now_ms: 1000,
-    )
-  assert quest_log.next_deadline(log: first.log) == Some(61_000)
-    as "the 60000 ms of objective 12933 from the moment it opened"
-  let at_marker = centre_of(tables:, marker: 26_072)
-  let settled =
-    objective.settle(
-      log: first.log,
-      tables:,
-      items: [],
-      zones: [],
-      place: at_marker,
-      shown: dict.new(),
-      numbers: spawn_support.numbers,
-      arrival_objectives: arrivals,
-      item_objectives: dict.new(),
-      held_objectives: set.new(),
-      unix_ms:,
-      now_ms: 30_000,
-    )
-  assert told(effects: settled.effects)
-    == [
-      SendProgress(quest_id: 6901, objective_index: 1, progress: 1),
-      SendState(quest_id: 6901, state: 2),
-    ]
-    as "the player at the marker 30 s in completes the objective and the quest is Achieved"
-  assert quest_log.expire(log: settled.log, now_ms: 70_000).1 == []
-    as "an Achieved quest never runs out"
-  let #(botched, due) = quest_log.expire(log: first.log, now_ms: 70_000)
-  assert due == [6901]
-    as "the player who has not reached the marker when the 60 s are gone loses the quest (quest_log.expire)"
-  assert settle_sets(
-      log: botched,
-      tables:,
-      at: at_marker,
-      arrivals:,
-      held: set.new(),
-    )
-    == Advanced(log: botched, effects: [])
-    as "a botched quest is not in the active list, so the marker completes nothing"
-}
-
-// ---- the equips and buys that left the stand-in ----
+// ---- the equips and buys stay stand-ins on accept ----
 //
-// Quest 9058 "Algoroc Mining Expedition": objective 16310 (index 0, type 3), 16311 (index 1,
-// type 5, flags 0, count 1, the text "Equip the $(item=12631)") and 16312 (index 2, type 4,
-// count 5). Quest 9448 "Vouchers: What Are They Good For?": the one objective 18069 (type 5,
-// count 1, "Buy a $(item=54409) from $(creature=47172) in Thayd"); quest 9449 the same from
-// $(creature=47413). The client holds nothing for either kind (`QuestObjective.type.5`); a
-// worn item is the items the player holds at the equipped location (`opcode.0x182`).
-
-const equip_quest = 9058
-
-const equip_objective = 16_311
-
-const buy_quest = 9448
-
-const buy_objective = 18_069
-
-/// The item of objective 16311's text and the vendor and item of 18069's.
-const worn_item = 12_631
-
-const voucher_item = 54_409
-
-const thayd_vendor = 47_172
-
-const illium_vendor = 47_413
-
-/// A held item of the Item2 at the location (0 equipped, 1 the bags, 2 the bank).
-fn held_at(item2_id item2_id: Int, location location: Int) -> HeldItem {
-  HeldItem(
-    item_guid: 500 + item2_id,
-    item2_id: Item2Id(item2_id),
-    location:,
-    bag_index: 0,
-    stack_count: 1,
-    random_stats: 0,
-    charges: 0,
-  )
-}
-
-/// The settle of the log with a player who holds these items, stands far from every marker,
-/// and has these item objectives and held ones.
-fn settle_items(
-  log log: quest_log.QuestLog,
-  tables tables: table_store.Tables,
-  items items: List(HeldItem),
-  wanted wanted: List(#(Int, Wanted)),
-  held held: List(Int),
-) -> Advanced {
-  objective.settle(
-    log:,
-    tables:,
-    items:,
-    zones: [],
-    place: away(),
-    shown: dict.new(),
-    numbers: spawn_support.numbers,
-    arrival_objectives: set.new(),
-    item_objectives: dict.from_list(wanted),
-    held_objectives: set.from_list(held),
-    unix_ms:,
-    now_ms: 0,
-  )
-}
-
-/// The log of these quests, each accepted with nothing done.
-fn accepted_all(
-  tables tables: table_store.Tables,
-  quest_ids quest_ids: List(Int),
-) -> quest_log.QuestLog {
-  list.fold(quest_ids, quest_support.log_of(rows: []), fn(log, quest_id) {
-    let assert Ok(quest) = quest_log.quest_of(tables:, id: quest_id)
-      as "the fixture holds the quest"
-    quest_log.accept(log:, quest:, max_time_ms: 0, now_ms: 0)
-  })
-}
-
-pub fn a_worn_item_completes_an_equip_row_test() -> Nil {
-  use <- owned_test.run(120_000)
-  let tables = character_tables.shared()
-  two_quests_and_an_unequip(tables:)
-  let equips = [#(equip_objective, item_objective.Wear(Item2Id(worn_item)))]
-  let progress = [
-    SendProgress(quest_id: equip_quest, objective_index: 1, progress: 1),
-  ]
-  // (reason, the player's items, held, the 0x361 told): the quest is accepted with nothing
-  // done, and its objective 16311 has flags 0, so it is open from the accept.
-  let cases = [
-    #("worn", [held_at(item2_id: worn_item, location: 0)], [], progress),
-    #(
-      "worn beside another item",
-      [
-        held_at(item2_id: 17_978, location: 1),
-        held_at(item2_id: worn_item, location: 0),
-      ],
-      [],
-      progress,
-    ),
-    #(
-      "in the bag, not worn",
-      [held_at(item2_id: worn_item, location: 1)],
-      [],
-      [],
-    ),
-    #(
-      "in the bank, not worn",
-      [held_at(item2_id: worn_item, location: 2)],
-      [],
-      [],
-    ),
-    #("another item worn", [held_at(item2_id: 17_978, location: 0)], [], []),
-    #("nothing worn", [], [], []),
-    #(
-      "worn while the row is held",
-      [held_at(item2_id: worn_item, location: 0)],
-      [equip_objective],
-      [],
-    ),
-  ]
-  let wrong =
-    list.filter_map(cases, fn(row) {
-      let #(reason, items, held, expected) = row
-      let settled =
-        settle_items(
-          log: accepted(tables:, quest_id: equip_quest),
-          tables:,
-          items:,
-          wanted: equips,
-          held:,
-        )
-      case told(effects: settled.effects) == expected {
-        True -> Error(Nil)
-        False -> Ok(reason)
-      }
-    })
-  assert wrong == []
-    as "an item worn (held at the equipped location) completes its row, wherever else the item is held or whatever else is worn, and a held row stays open"
-  // The row behind flags 3 (edited from the client's 0) waits for the objective before it
-  // (`0x140553790`), and completes once that one is done.
-  quest_support.with_objectives(
-    edits: [#(16_311, "flags", 3)],
-    body: fn(tables) {
-      let worn = [held_at(item2_id: worn_item, location: 0)]
-      assert settle_items(
-          log: accepted(tables:, quest_id: equip_quest),
-          tables:,
-          items: worn,
-          wanted: equips,
-          held: [],
-        ).effects
-        == []
-        as "the objective before it is open, so the row is closed"
-      assert told(
-          effects: settle_items(
-            log: logged(tables:, quest_id: equip_quest, done: [0]),
-            tables:,
-            items: worn,
-            wanted: equips,
-            held: [],
-          ).effects,
-        )
-        == progress
-        as "the objective before it done opens the row, which the worn item completes"
-    },
-  )
-  // The objective before it a collect of the same item (edited from the client's talk), so
-  // that the one worn item finishes it and the row it opens in the same settle.
-  use tables <- quest_support.with_objectives(edits: [
-    #(16_311, "flags", 3),
-    #(16_310, "type", 4),
-    #(16_310, "data", worn_item),
-  ])
-  assert told(
-      effects: settle_items(
-        log: accepted(tables:, quest_id: equip_quest),
-        tables:,
-        items: [held_at(item2_id: worn_item, location: 0)],
-        wanted: equips,
-        held: [],
-      ).effects,
-    )
-    == [
-      SendProgress(quest_id: equip_quest, objective_index: 0, progress: 1),
-      SendProgress(quest_id: equip_quest, objective_index: 1, progress: 1),
-    ]
-    as "the worn item finishes the collect, which opens the row, and the row completes in the same settle"
-}
-
-/// Two quests naming one item both count it, and an unequip takes nothing back.
-fn two_quests_and_an_unequip(tables tables: table_store.Tables) -> Nil {
-  let equips = [#(equip_objective, item_objective.Wear(Item2Id(worn_item)))]
-  // Two quests that name the same item both complete from the one worn item.
-  let both =
-    settle_items(
-      log: accepted_all(tables:, quest_ids: [equip_quest, 9077]),
-      tables:,
-      items: [held_at(item2_id: worn_item, location: 0)],
-      wanted: [
-        #(equip_objective, item_objective.Wear(Item2Id(worn_item))),
-        #(16_379, item_objective.Wear(Item2Id(worn_item))),
-      ],
-      held: [],
-    )
-  assert list.filter(told(effects: both.effects), fn(effect) {
-      case effect {
-        SendProgress(objective_index: 1, ..) -> True
-        SendProgress(..)
-        | SendState(..)
-        | CompleteByServer(..)
-        | ReleaseUnit(..) -> False
-      }
-    })
-    == [
-      SendProgress(quest_id: equip_quest, objective_index: 1, progress: 1),
-      SendProgress(quest_id: 9077, objective_index: 1, progress: 1),
-    ]
-    as "quests 9058 and 9077 both count the item, in quest order"
-  // An unequip after the objective is done leaves it done: the client has no rule that
-  // takes the count back (the objective is a type 5, which the server's 0x361 alone sets).
-  let worn =
-    settle_items(
-      log: logged(tables:, quest_id: equip_quest, done: [0]),
-      tables:,
-      items: [held_at(item2_id: worn_item, location: 0)],
-      wanted: equips,
-      held: [],
-    )
-  assert settle_items(
-      log: worn.log,
-      tables:,
-      items: [held_at(item2_id: worn_item, location: 1)],
-      wanted: equips,
-      held: [],
-    )
-    == Advanced(log: worn.log, effects: [])
-    as "the item back in the bag takes nothing back and tells nothing"
-  assert quest_log.objective_done(
-    log: worn.log,
-    quest: quest_of(tables:, quest_id: equip_quest),
-    index: 1,
-  )
-    as "the row stays done"
-}
-
-/// The quest as the log reads it.
-fn quest_of(
-  tables tables: table_store.Tables,
-  quest_id quest_id: Int,
-) -> quest_log.Quest {
-  let assert Ok(quest) = quest_log.quest_of(tables:, id: quest_id)
-    as "the fixture holds the quest"
-  quest
-}
-
-pub fn a_purchase_counts_for_a_buy_row_test() -> Nil {
-  use <- owned_test.run(120_000)
-  let tables = character_tables.shared()
-  let buys = [
-    #(
-      buy_objective,
-      item_objective.BuyFrom(
-        item2_id: Item2Id(voucher_item),
-        vendor: Creature2Id(thayd_vendor),
-      ),
-    ),
-  ]
-  let bought = fn(log, item2_id, vendor, wanted, held) {
-    objective.purchased(
-      log:,
-      tables:,
-      item2_id: Item2Id(item2_id),
-      vendor: Creature2Id(vendor),
-      arrival_objectives: set.new(),
-      item_objectives: dict.from_list(wanted),
-      held_objectives: set.from_list(held),
-      now_ms: 0,
-    )
-  }
-  let open = accepted_all(tables:, quest_ids: [buy_quest])
-  assert told(
-      effects: bought(open, voucher_item, thayd_vendor, buys, []).effects,
-    )
-    == [
-      SendProgress(quest_id: buy_quest, objective_index: 0, progress: 1),
-      SendState(quest_id: buy_quest, state: 2),
-    ]
-    as "the item bought from the vendor the text names counts the one and, the quest's only objective, Achieves it"
-  assert bought(open, voucher_item, illium_vendor, buys, [])
-    == Advanced(log: open, effects: [])
-    as "the same item from another vendor counts nothing"
-  assert bought(open, worn_item, thayd_vendor, buys, [])
-    == Advanced(log: open, effects: [])
-    as "another item from the right vendor counts nothing"
-  assert bought(open, voucher_item, thayd_vendor, buys, [buy_objective])
-    == Advanced(log: open, effects: [])
-    as "a held row stays open"
-  let done = bought(open, voucher_item, thayd_vendor, buys, [])
-  assert bought(done.log, voucher_item, thayd_vendor, buys, [])
-    == Advanced(log: done.log, effects: [])
-    as "a done row is not counted again"
-  let closed = quest_support.log_of(rows: [])
-  assert bought(closed, voucher_item, thayd_vendor, buys, [])
-    == Advanced(log: closed, effects: [])
-    as "a quest the log does not hold has no open row"
-  // Two open quests that name the same item and vendor both count the one purchase: quest
-  // 9449's objective 18070 is given the Thayd vendor.
-  let twins = [
-    #(
-      buy_objective,
-      item_objective.BuyFrom(
-        item2_id: Item2Id(voucher_item),
-        vendor: Creature2Id(thayd_vendor),
-      ),
-    ),
-    #(
-      18_070,
-      item_objective.BuyFrom(
-        item2_id: Item2Id(voucher_item),
-        vendor: Creature2Id(thayd_vendor),
-      ),
-    ),
-  ]
-  assert told(
-      effects: bought(
-        accepted_all(tables:, quest_ids: [buy_quest, 9449]),
-        voucher_item,
-        thayd_vendor,
-        twins,
-        [],
-      ).effects,
-    )
-    == [
-      SendProgress(quest_id: buy_quest, objective_index: 0, progress: 1),
-      SendState(quest_id: buy_quest, state: 2),
-      SendProgress(quest_id: 9449, objective_index: 0, progress: 1),
-      SendState(quest_id: 9449, state: 2),
-    ]
-    as "both quests count, each in quest order"
-}
-
-/// The QuestObjective ids the migrated database holds in the item table.
-fn item_ids() -> Set(Int) {
-  let database = database_support.new_database(on: database_support.shared())
-  let assert Ok(rows) =
-    content_item_objective.rows(db: content_support.connect(database:))
-    as "the query ran"
-  set.from_list(list.map(rows, fn(row) { row.objective_id }))
-}
+// Quest 9058 "Algoroc Mining Expedition": objective 16311 (type 5, count 1, the text "Equip
+// the $(item=12631)"); quest 9077 the same for Item2 17978; quest 9448 "Vouchers": objective
+// 18069 (type 5, count 1, "Buy a $(item=54409) from $(creature=47172) in Thayd"), quest 9449
+// the same from $(creature=47413). The client holds nothing for either kind
+// (`QuestObjective.type.5`), and neither rule can fire in this server: the two items carry a
+// tradeskill-tier prerequisite the server refuses with 144, and the two vendors have no
+// `vendor` rows.
 
 pub fn the_four_equip_and_buy_quests_still_complete_on_accept_test() -> Nil {
   use <- owned_test.run(120_000)
   let tables = character_tables.shared()
   let arrivals = arrival_ids()
   let held = content_support.held_objective_ids()
-  let wanted = item_wanted(tables:, taken: set.union(arrivals, held))
-  // (quest, objective, why its real rule cannot fire yet): the two items need a prerequisite
-  // of type 19 (a tradeskill tier) that the server does not read, so wearing them is refused
+  // (quest, objective, why its real rule cannot fire): the two items need a prerequisite of
+  // type 19 (a tradeskill tier) that the server does not read, so wearing them is refused
   // with 144; the two vendors have no `vendor` rows, so nothing is bought from them. Each
   // objective stays a stand-in on accept until its rule can fire.
   let cases = [
@@ -1999,14 +1583,7 @@ pub fn the_four_equip_and_buy_quests_still_complete_on_accept_test() -> Nil {
           done: list.index_map(quest.objectives, fn(_, before) { before })
             |> list.take(index),
         )
-      let settled =
-        settle_items(
-          log:,
-          tables:,
-          items: [],
-          wanted: dict.to_list(wanted),
-          held: set.to_list(held),
-        )
+      let settled = settle_sets(log:, tables:, at: away(), arrivals:, held:)
       case
         quest.id == quest_id
         && quest_log.objective_done(log: settled.log, quest:, index:)
@@ -2019,36 +1596,11 @@ pub fn the_four_equip_and_buy_quests_still_complete_on_accept_test() -> Nil {
     as "quests 9058, 9077, 9448 and 9449 complete their equip or buy objective as soon as it is open"
 }
 
-pub fn the_curated_sets_share_no_objective_test() -> Nil {
-  use <- owned_test.run(60_000)
-  let arrivals = arrival_ids()
-  let held = content_support.held_objective_ids()
-  let items = item_ids()
-  assert set.size(arrivals) == 57
-    && set.size(held) == 146
-    && set.size(items) == 0
-    as "the tables the migrations seed"
-  assert set.intersection(arrivals, held)
-    == set.from_list([18_629, 18_630, 19_346, 19_357])
-    as "the four places of the instance quests that migration 0039 holds open on purpose (the hold overrides the place), and no other objective is both"
-  assert set.intersection(arrivals, items) == set.new()
-    as "no objective is both a place and an item"
-  assert set.intersection(held, items) == set.new()
-    as "no objective is both held and an item"
-}
-
 pub fn the_equip_and_buy_objectives_are_stand_ins_on_accept_over_every_client_quest_test() -> Nil {
   use <- owned_test.run(300_000)
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   let arrivals = arrival_ids()
-  let items =
-    item_wanted(
-      tables:,
-      taken: set.union(arrivals, content_support.held_objective_ids()),
-    )
-  assert items == dict.new()
-    as "migration 0044 seeds no item row: the rules of the four equip and buy objectives cannot fire"
   let script_of = fn(objective_id) {
     let #(quest, index, listed) = place_of(tables:, objective_id:)
     objective.script_of(
@@ -2057,7 +1609,6 @@ pub fn the_equip_and_buy_objectives_are_stand_ins_on_accept_over_every_client_qu
       index:,
       objective: listed,
       arrival_objectives: arrivals,
-      item_objectives: items,
     )
   }
   // The ids of the objective texts: 487701 "Equip the $(item=12631)", 492421 "Equip the

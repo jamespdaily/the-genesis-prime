@@ -14,7 +14,6 @@ import genesis_prime/game/character_select
 import genesis_prime/game/class_resource
 import genesis_prime/game/inventory
 import genesis_prime/game/item_charge
-import genesis_prime/game/item_objective.{type Wanted}
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
 import genesis_prime/game/prerequisite.{type Prerequisite}
@@ -124,11 +123,6 @@ pub type Settings {
     /// (genesis_prime/content/arrival_objective): the settle completes one when the player
     /// stands at a marker (genesis_prime/game/objective `script_of`).
     arrival_objectives: Set(Int),
-    /// The scripted objectives that ask the player to wear an item or to buy one from a
-    /// vendor, and what each asks, from the content load
-    /// (genesis_prime/content/item_objective): the settle completes a worn item's, and a
-    /// purchase counts for a buy's (genesis_prime/game/objective `script_of`, `purchased`).
-    item_objectives: dict.Dict(Int, Wanted),
   )
 }
 

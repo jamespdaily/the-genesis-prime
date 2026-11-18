@@ -232,16 +232,6 @@ type Stop {
 /// The location the worn items are held at (`opcode.0x182`).
 const equipped = 0
 
-/// Whether an item of the Item2 is worn: held at the equipped location (`opcode.0x182`).
-pub fn is_worn(
-  items items: List(HeldItem),
-  item2_id item2_id: Item2Id,
-) -> Bool {
-  list.any(items, fn(held) {
-    held.location == equipped && held.item2_id == item2_id
-  })
-}
-
 /// The location of the inventory.
 const in_bags = 1
 
@@ -822,7 +812,11 @@ fn unique_at(
       |> result.replace_error(Broken(NoItemRow(item2_id: item.item2_id)))
     False -> Ok(False)
   })
-  case unique_equipped && is_worn(items:, item2_id: item.item2_id) {
+  let worn_already =
+    list.any(items, fn(held) {
+      held.location == equipped && held.item2_id == item.item2_id
+    })
+  case unique_equipped && worn_already {
     True -> Error(Code(item_unique))
     False -> Ok(Nil)
   }

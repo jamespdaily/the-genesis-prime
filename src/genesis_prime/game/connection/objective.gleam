@@ -19,7 +19,6 @@ import genesis_prime/step.{
   type ConnectionEffect, type Effect, type Now, OwnEffect, StartTimer,
 }
 import genesis_prime/table/creature2
-import genesis_prime/table/id.{type Creature2Id, type Item2Id}
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/set
@@ -99,51 +98,18 @@ pub fn counted(
   now now: Now,
   event event: objective.Event,
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
-  counting(session:, now:, advance: fn(log) {
-    objective.advance(
-      log:,
-      tables: session.settings.tables,
-      event:,
-      reused: session.settings.reused_unit_objectives,
-      now_ms: now.monotonic_ms,
-    )
-  })
-}
-
-/// The session and what is written after the player bought the Item2 from the vendor, a
-/// Creature2 (`objective.purchased`), and then after what that opened is counted as well
-/// (`settled`). A connection with no player in the world counts nothing.
-pub fn purchased(
-  session session: Session,
-  now now: Now,
-  item2_id item2_id: Item2Id,
-  vendor vendor: Creature2Id,
-) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
-  counting(session:, now:, advance: fn(log) {
-    objective.purchased(
-      log:,
-      tables: session.settings.tables,
-      item2_id:,
-      vendor:,
-      arrival_objectives: session.settings.arrival_objectives,
-      item_objectives: session.settings.item_objectives,
-      held_objectives: session.settings.held_objectives,
-      now_ms: now.monotonic_ms,
-    )
-  })
-}
-
-/// What an event of the player does to the log (`advance` of the log), then what that opens
-/// (`settle`), told to the client.
-fn counting(
-  session session: Session,
-  now now: Now,
-  advance advance: fn(quest_log.QuestLog) -> objective.Advanced,
-) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
   case connection_state.entered_of(session.status) {
     None -> #(session, [])
     Some(entered) -> {
-      let advanced = advance(entered.quests)
+      let tables = session.settings.tables
+      let advanced =
+        objective.advance(
+          log: entered.quests,
+          tables:,
+          event:,
+          reused: session.settings.reused_unit_objectives,
+          now_ms: now.monotonic_ms,
+        )
       let settled = settle(session:, entered:, log: advanced.log, now:)
       told(
         session:,
@@ -195,7 +161,6 @@ fn settle(
     shown: entered.shown,
     numbers: session.settings.numbers,
     arrival_objectives: session.settings.arrival_objectives,
-    item_objectives: session.settings.item_objectives,
     held_objectives: session.settings.held_objectives,
     unix_ms: step.unix_milliseconds(now:),
     now_ms: now.monotonic_ms,

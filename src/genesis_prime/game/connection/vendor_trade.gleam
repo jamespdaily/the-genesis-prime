@@ -15,7 +15,6 @@ import genesis_prime/step.{
   type ConnectionEffect, type Effect, type Now, type Outcome,
 }
 import genesis_prime/store.{type ItemsAnswer}
-import genesis_prime/table/id.{type Creature2Id, type Item2Id}
 import gleam/list
 
 /// The connection's effects for what a rule decided, in order.
@@ -51,8 +50,6 @@ pub fn answered(
   kind kind: String,
   outcome outcome: Outcome(Answer),
   left left: fn(ItemsAnswer) -> #(world_entry.Entered, List(TradeEffect)),
-  bought bought: fn(ItemsAnswer, world_entry.Entered) ->
-    Result(#(Item2Id, Creature2Id), Nil),
 ) -> client_connection.Handled(Session) {
   connection_inventory.answered(
     session:,
@@ -65,11 +62,7 @@ pub fn answered(
     saved: fn(session, answer) {
       let #(entered, effects) = left(answer)
       let session = Session(..session, status: InWorld(holder:, entered:))
-      let #(session, settled) = case bought(answer, entered) {
-        Ok(#(item2_id, vendor)) ->
-          connection_objective.purchased(session:, now:, item2_id:, vendor:)
-        Error(Nil) -> connection_objective.settled(session:, now:)
-      }
+      let #(session, settled) = connection_objective.settled(session:, now:)
       Continue(session, list.append(effects_of(session:, effects:), settled))
     },
   )

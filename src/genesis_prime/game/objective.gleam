@@ -35,9 +35,6 @@
 ////   Tower fix completes on accept gets its real rule");
 //// - one of the `arrival_objectives` is done when the player stands at one of its markers
 ////   (`arrivals`), because its text asks only to go there;
-//// - one of the `item_objectives` asks for an item the text names: an equip is done while
-////   the item is worn (`wears`) and a buy counts the item bought from the vendor the text
-////   names (`purchased`), a server's rule the client's text states;
 //// - one a spell effect or an item names (`objective_action`) stays open until a cast
 ////   counts for it, the issue "A spell's QuestAdvanceObjective effect advances its
 ////   quest objective, so the Loftite Railgun counts its hits";
@@ -90,8 +87,6 @@
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/communicator
 import genesis_prime/game/departures
-import genesis_prime/game/inventory
-import genesis_prime/game/item_objective.{type Wanted, BuyFrom, Wear}
 import genesis_prime/game/objective_action
 import genesis_prime/game/objective_kind
 import genesis_prime/game/objective_link
@@ -113,7 +108,6 @@ import genesis_prime/table/spell4
 import genesis_prime/table/tradeskill_schematic2
 import genesis_prime/world_map/game_number.{type GameNumbers}
 import gleam/bool
-import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -374,59 +368,6 @@ pub fn advance(
       }
     Used(..), False | TalkedTo(..), _ | Killed(..), _ | Cast(..), _ -> advanced
   }
-}
-
-/// The log and the messages after the player bought the Item2 from the vendor, a Creature2
-/// (a purchase from the vendor's stock; a buy back is no purchase of the item here): every
-/// open buy objective of the log's quests that names this item and this vendor
-/// (`item_objectives`, a held one left open) counts one. The client counts nothing for a
-/// buy objective (`QuestObjective.type.5`), so the count is the server's rule, read from the
-/// objective's text; it keeps no record of the units, one count for each purchase.
-pub fn purchased(
-  log log: QuestLog,
-  tables tables: table_store.Tables,
-  item2_id item2_id: Item2Id,
-  vendor vendor: Creature2Id,
-  arrival_objectives arrival_objectives: Set(Int),
-  item_objectives item_objectives: Dict(Int, Wanted),
-  held_objectives held_objectives: Set(Int),
-  now_ms now_ms: Int,
-) -> Advanced {
-  list.fold(
-    quest_log.active_ids(log:),
-    Advanced(log:, effects: []),
-    fn(advanced, quest_id) {
-      let quest = quest_of(tables:, quest_id:)
-      advance_quest(
-        so_far: advanced,
-        tables:,
-        quest:,
-        now_ms:,
-        reused: set.new(),
-        counts: fn(index, objective) {
-          case dict.get(item_objectives, objective.objective_id) {
-            Ok(BuyFrom(item2_id: wanted_item, vendor: wanted_vendor)) ->
-              wanted_item == item2_id
-              && wanted_vendor == vendor
-              && !set.contains(held_objectives, objective.objective_id)
-              && script_of(
-                tables:,
-                quest_id:,
-                index:,
-                objective:,
-                arrival_objectives:,
-                item_objectives:,
-              )
-              == ItemScript
-            Ok(Wear(..)) | Error(Nil) -> False
-          }
-        },
-        group_member: fn(_) { Error(Nil) },
-        checklist_index: -1,
-        used_unit: Error(Nil),
-      ).0
-    },
-  )
 }
 
 /// Whether the event counts for the objective at `index` of the quest (`0x140550c50`).
@@ -808,7 +749,6 @@ pub fn settle(
   shown shown: shown.Picture,
   numbers numbers: GameNumbers,
   arrival_objectives arrival_objectives: Set(Int),
-  item_objectives item_objectives: Dict(Int, Wanted),
   held_objectives held_objectives: Set(Int),
   unix_ms unix_ms: Int,
   now_ms now_ms: Int,
@@ -842,13 +782,11 @@ pub fn settle(
           settling: held,
           quest:,
           tables:,
-          items:,
           zones:,
           place:,
           shown:,
           numbers:,
           arrival_objectives:,
-          item_objectives:,
           held_objectives:,
           unix_ms:,
           now_ms:,
@@ -883,13 +821,11 @@ fn opened(
   settling settling: Settling,
   quest quest: quest_log.Quest,
   tables tables: table_store.Tables,
-  items items: List(HeldItem),
   zones zones: List(Int),
   place place: Place,
   shown shown: shown.Picture,
   numbers numbers: GameNumbers,
   arrival_objectives arrival_objectives: Set(Int),
-  item_objectives item_objectives: Dict(Int, Wanted),
   held_objectives held_objectives: Set(Int),
   unix_ms unix_ms: Int,
   now_ms now_ms: Int,
@@ -902,16 +838,6 @@ fn opened(
       place:,
       shown:,
       arrival_objectives:,
-      item_objectives:,
-      held_objectives:,
-      now_ms:,
-    )
-    |> wears(
-      quest:,
-      tables:,
-      items:,
-      arrival_objectives:,
-      item_objectives:,
       held_objectives:,
       now_ms:,
     )
@@ -920,7 +846,6 @@ fn opened(
       quest:,
       tables:,
       arrival_objectives:,
-      item_objectives:,
       held_objectives:,
       now_ms:,
     )
@@ -930,13 +855,11 @@ fn opened(
         settling: next,
         quest:,
         tables:,
-        items:,
         zones:,
         place:,
         shown:,
         numbers:,
         arrival_objectives:,
-        item_objectives:,
         held_objectives:,
         unix_ms:,
         now_ms:,
@@ -961,17 +884,8 @@ pub type Script {
   /// Visible, required, marked and listed in the arrival table: done when the player
   /// stands at one of its markers.
   PlaceScript
-  /// Visible, required, marked and listed in the item table: an equip is done while the
-  /// item is worn (`wears`), and a buy counts the item bought from its vendor (`purchased`).
-  ItemScript
   /// Visible, required and marked, and none of the above: done when it is open, whatever
-  /// else the quest holds. The place rows that stay here, each with the reason its rule
-  /// cannot be a position (`sized_places` in test/objective_script_place_test), and the
-  /// item row whose text names no item (objective 16407), are the ones a later rule takes.
-  /// The four item rows of quests 9058 and 9077 (wear Item2 12631 and 17978) and 9448 and
-  /// 9449 (buy Item2 54409 from Creature2 47172 and 47413) stay here: the items carry
-  /// Prerequisite 40040 and 40044, whose type 19 the server does not read, so wearing
-  /// either is refused with 144, and the two vendors have no `vendor` rows.
+  /// else the quest holds.
   StandInOnAccept
   /// Hidden, or visible, required and unmarked: done once every other required
   /// objective of the quest is.
@@ -986,15 +900,14 @@ pub type Script {
 /// (`0x1405fbc40`). A visible required one without a marker waits for the quest (a
 /// `worldLocationsIdIndicator` that names no WorldLocation2 row is no marker: no position is
 /// at it, `0x140485fa0`); one with a marker sends the player to a place (`0x140553890`) and is
-/// the named action's, a place script (`arrival_objectives`), an item script
-/// (`item_objectives`) or a stand-in on accept, in that order. The held objectives are not looked at here: each rule leaves a held one open.
+/// the named action's, a place script (`arrival_objectives`) or a stand-in on accept, in
+/// that order. The held objectives are not looked at here: each rule leaves a held one open.
 pub fn script_of(
   tables tables: table_store.Tables,
   quest_id quest_id: Int,
   index index: Int,
   objective objective: quest_log.Objective,
   arrival_objectives arrival_objectives: Set(Int),
-  item_objectives item_objectives: Dict(Int, Wanted),
 ) -> Script {
   use <- bool.guard(objective.kind != objective_kind.Scripted, NotScripted)
   use <- bool.guard(
@@ -1014,12 +927,8 @@ pub fn script_of(
     objective_action.named(tables:, quest_id:, index:),
     NamedAction,
   )
-  use <- bool.guard(
-    set.contains(arrival_objectives, objective.objective_id),
-    PlaceScript,
-  )
-  case dict.has_key(item_objectives, objective.objective_id) {
-    True -> ItemScript
+  case set.contains(arrival_objectives, objective.objective_id) {
+    True -> PlaceScript
     False -> StandInOnAccept
   }
 }
@@ -1046,7 +955,6 @@ fn stand_in_scripts(
   quest quest: quest_log.Quest,
   tables tables: table_store.Tables,
   arrival_objectives arrival_objectives: Set(Int),
-  item_objectives item_objectives: Dict(Int, Wanted),
   held_objectives held_objectives: Set(Int),
   now_ms now_ms: Int,
 ) -> Settling {
@@ -1061,7 +969,6 @@ fn stand_in_scripts(
           index:,
           objective:,
           arrival_objectives:,
-          item_objectives:,
         ),
       )
     })
@@ -1095,12 +1002,8 @@ fn stand_in_scripts(
       scripts: list.filter_map(scripts, fn(triple) {
         case triple.2 {
           StandInOnAccept | StandInWithQuest -> Ok(triple.0)
-          NotScripted
-          | UsedByCreature
-          | Optional
-          | NamedAction
-          | PlaceScript
-          | ItemScript -> Error(Nil)
+          NotScripted | UsedByCreature | Optional | NamedAction | PlaceScript ->
+            Error(Nil)
         }
       }),
     )
@@ -1227,7 +1130,6 @@ fn arrivals(
   place place: Place,
   shown shown: shown.Picture,
   arrival_objectives arrival_objectives: Set(Int),
-  item_objectives item_objectives: Dict(Int, Wanted),
   held_objectives held_objectives: Set(Int),
   now_ms now_ms: Int,
 ) -> Settling {
@@ -1244,7 +1146,6 @@ fn arrivals(
             index:,
             objective:,
             arrival_objectives:,
-            item_objectives:,
           )
           == PlaceScript
           && !set.contains(held_objectives, objective.objective_id)
@@ -1315,58 +1216,11 @@ fn arrivals(
         place:,
         shown:,
         arrival_objectives:,
-        item_objectives:,
         held_objectives:,
         now_ms:,
       )
     False -> counted
   }
-}
-
-/// The quest's open equip objectives (`item_objectives`, a held one left open) whose item
-/// is worn done: a worn item is a fact of the player's items, so an item worn before the
-/// quest was taken, or at login, completes the objective as an item worn later does. The
-/// objective is never taken back when the item comes off: the client has no rule for that.
-fn wears(
-  settling settling: Settling,
-  quest quest: quest_log.Quest,
-  tables tables: table_store.Tables,
-  items items: List(HeldItem),
-  arrival_objectives arrival_objectives: Set(Int),
-  item_objectives item_objectives: Dict(Int, Wanted),
-  held_objectives held_objectives: Set(Int),
-  now_ms now_ms: Int,
-) -> Settling {
-  list.index_fold(quest.objectives, settling, fn(settling, objective, index) {
-    case dict.get(item_objectives, objective.objective_id) {
-      Ok(Wear(item2_id:)) ->
-        case
-          script_of(
-            tables:,
-            quest_id: quest.id,
-            index:,
-            objective:,
-            arrival_objectives:,
-            item_objectives:,
-          )
-          == ItemScript
-          && !set.contains(held_objectives, objective.objective_id)
-          && quest_log.objective_open(log: settling.log, quest:, index:)
-          && inventory.is_worn(items:, item2_id:)
-        {
-          True ->
-            set_count(
-              settling:,
-              quest:,
-              index:,
-              value: objective.count,
-              now_ms:,
-            )
-          False -> settling
-        }
-      Ok(BuyFrom(..)) | Error(Nil) -> settling
-    }
-  })
 }
 
 /// Whether the held objective is one of a place (type 22).

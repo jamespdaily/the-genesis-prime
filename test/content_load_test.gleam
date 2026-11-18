@@ -25,7 +25,6 @@ import genesis_prime/content/class_resource as content_class_resource
 import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/game_number as content_game_number
 import genesis_prime/content/held_objective as content_held_objective
-import genesis_prime/content/item_objective as content_item_objective
 import genesis_prime/content/projector_landing as content_projector_landing
 import genesis_prime/content/refusal.{Refusal}
 import genesis_prime/content/server_proxy as content_server_proxy
@@ -36,14 +35,13 @@ import genesis_prime/content/vendor as content_vendor
 import genesis_prime/content/zone_welcome as content_zone_welcome
 import genesis_prime/game/activate
 import genesis_prime/game/class_resource
-import genesis_prime/game/item_objective
 import genesis_prime/game/projector
 import genesis_prime/game/spell_plan
 import genesis_prime/game/start_place
 import genesis_prime/game/zone_welcome
 import genesis_prime/migration
 import genesis_prime/readiness
-import genesis_prime/table/id.{ClassId, Creature2Id, Item2Id, Spell4Id}
+import genesis_prime/table/id.{ClassId, Creature2Id, Spell4Id}
 import genesis_prime/world_map/creature_kind
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_id.{SpawnId}
@@ -281,51 +279,14 @@ pub fn the_content_load_puts_the_arrival_objectives_test() -> Nil {
   let #(loaded, key) = content_support.load(database:)
   assert loaded == Ok(Nil)
   let arrivals = content_arrival_objective.arrivals(key:)
-  assert set.size(arrivals) == 57
-    as "migrations 0038 and 0043 seed 42 and 15 arrival_objective rows"
-  assert list.all([4770, 19_336, 19_357, 7217, 18_099], fn(objective) {
+  assert set.size(arrivals) == 50
+    as "migrations 0038 and 0043 seed 42 and 8 arrival_objective rows"
+  assert list.all([4770, 19_336, 19_357, 7342, 18_099], fn(objective) {
     set.contains(arrivals, objective)
   })
-    as "the Tower's objective (4770), the first checkpoint of quest 10115 (19336), the last row of 0038 (19357), and the first and last rows of 0043 (7217, 18099)"
+    as "the Tower's objective (4770), the first checkpoint of quest 10115 (19336) and the last row of 0038 (19357), and the first and last rows of 0043 (7342, 18099)"
   assert !set.contains(arrivals, 4849)
     as "an objective migration 0038 does not list is no arrival"
-}
-
-pub fn an_item_row_naming_an_objective_that_asks_for_no_item_stops_the_load_test() -> Nil {
-  use <- owned_test.run(60_000)
-  let database = database_support.new_database(on: database_support.shared())
-  // QuestObjective 4849 is a visible marked script that a type 42 spell effect names: a cast
-  // advances it, so it asks for no item (`objective_action.named`).
-  content_support.change(
-    database:,
-    sql: "insert into item_objective (objective_id, kind, item2_id, source, reason) values (4849, 'equip', 12631, 'server_choice', 'an objective a spell effect names')",
-  )
-  let #(loaded, _key) = content_support.load(database:)
-  let assert Error(content.Refused(refusals:)) = loaded
-    as "a refused item row stops the start"
-  assert list.map(refusals, fn(refused) { #(refused.table, refused.row) })
-    == [#("item_objective", refusal.RowId(4849))]
-}
-
-pub fn the_content_load_puts_the_item_objectives_test() -> Nil {
-  use <- owned_test.run(60_000)
-  let database = database_support.new_database(on: database_support.shared())
-  let #(loaded, key) = content_support.load(database:)
-  assert loaded == Ok(Nil)
-  assert content_item_objective.wanted(key:) == dict.new()
-    as "migration 0044 seeds no item_objective row: the four equip and buy objectives stay stand-ins on accept, whose rules cannot fire"
-  // A row the table's checks and the client's tables allow is loaded as what it asks: the
-  // objective 16311's text asks to wear Item2 12631.
-  let database = database_support.new_database(on: database_support.shared())
-  content_support.change(
-    database:,
-    sql: "insert into item_objective (objective_id, kind, item2_id, source, reason) values (16311, 'equip', 12631, 'server_choice', 'Quest2 9058 objective text Equip the item 12631')",
-  )
-  let #(loaded, key) = content_support.load(database:)
-  assert loaded == Ok(Nil)
-  assert content_item_objective.wanted(key:)
-    == dict.from_list([#(16_311, item_objective.Wear(Item2Id(12_631)))])
-    as "an equip row is loaded as the item its objective's text asks to wear"
 }
 
 pub fn the_load_puts_every_term_the_game_listener_reads_at_start_test() -> Nil {
@@ -346,7 +307,6 @@ pub fn the_load_puts_every_term_the_game_listener_reads_at_start_test() -> Nil {
   let _reused = content_spawn.reused_unit_objectives(key:)
   let _held = content_held_objective.held(key:)
   let _arrivals = content_arrival_objective.arrivals(key:)
-  let _items = content_item_objective.wanted(key:)
   Nil
 }
 
@@ -383,9 +343,6 @@ pub fn the_servers_settings_run_over_a_real_load_test() -> Nil {
     as "migration 0034's first held objective (12547) is in the settings the load's key gave"
   assert set.contains(settings.game.settings.arrival_objectives, 4770)
     as "migration 0038's Tower objective (4770) is in the settings the load's key gave"
-  assert settings.game.settings.item_objectives
-    == content_item_objective.wanted(key:)
-    as "the settings carry the item objectives the load put"
   assert settings.game.settings.tutorial_chain
     == content_tutorial_quest.chain(key:)
     as "the settings carry the tutorial chain the load put"

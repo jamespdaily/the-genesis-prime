@@ -1,7 +1,7 @@
 //// The load's check of a content table whose rows each name a QuestObjective: the
 //// objective's row and a Quest2 that lists it must exist, and a rule of the table must hold
-//// for the objective at every place a quest lists it. `held_objective`,
-//// `arrival_objective` and `item_objective_table` give the rule.
+//// for the objective at every place a quest lists it. `held_objective` and
+//// `arrival_objective` give the rule.
 ////
 //// ```
 //// content.load: ids ─▶ select(table, ids, tables, broken) ─▶ Set(objective id) | refusals

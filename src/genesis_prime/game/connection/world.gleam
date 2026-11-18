@@ -707,7 +707,6 @@ pub fn entry_answered(
           defaults: unit_properties.defaults(tables: session.settings.tables),
           chain: session.settings.tutorial_chain,
           arrival_objectives: session.settings.arrival_objectives,
-          item_objectives: session.settings.item_objectives,
           held_objectives: session.settings.held_objectives,
           tables: session.settings.tables,
           now:,
