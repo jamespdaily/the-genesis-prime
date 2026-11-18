@@ -871,6 +871,7 @@ fn held(
     stack_count:,
     random_stats: 0,
     charges: 0,
+    item_flags: 0,
   )
 }
 

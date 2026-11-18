@@ -194,6 +194,7 @@ pub fn a_load_with_an_unset_item_asks_the_store_to_fill_it_before_the_map_is_ask
                   bag_index: 0,
                   stack_count: 1,
                   random_stats: 0,
+                  item_flags: 0,
                 ),
               ],
               currencies: [],

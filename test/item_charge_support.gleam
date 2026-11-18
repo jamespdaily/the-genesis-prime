@@ -77,6 +77,7 @@ pub fn held(
     stack_count: count,
     random_stats: 0,
     charges:,
+    item_flags: 0,
   )
 }
 
@@ -95,6 +96,7 @@ pub fn unset(
     bag_index:,
     stack_count: count,
     random_stats: 0,
+    item_flags: 0,
   )
 }
 

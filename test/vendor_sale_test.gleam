@@ -136,6 +136,7 @@ fn held(
     stack_count: count,
     random_stats: 0,
     charges: 0,
+    item_flags: 0,
   )
 }
 
@@ -396,6 +397,7 @@ pub fn a_buyback_entry_sends_multipliers_of_one_test() -> Nil {
       amount: 10,
       random_stats: 0,
       charges: 0,
+      item_flags: 0,
     ))
   // `opcode.0xba.random_stats`: the client builds the properties with 5 multipliers read
   // as 32-bit floats, and 0x3f800000 is the float 1.0 (IEEE 754 single precision).
@@ -446,7 +448,12 @@ pub fn selling_a_whole_stack_removes_it_pays_the_shown_price_and_adds_a_buyback_
       currencies: scene.credits,
       buyback: Buyback(next_id: 3, entries: []),
       answer: store.Sold(amount: 1105, words: [
-        store.SoldWord(item_guid: 11, random_stats: 0, charges: 0),
+        store.SoldWord(
+          item_guid: 11,
+          random_stats: 0,
+          charges: 0,
+          item_flags: 0,
+        ),
       ]),
     )
   assert left == [] as "the stack is gone"
@@ -461,6 +468,7 @@ pub fn selling_a_whole_stack_removes_it_pays_the_shown_price_and_adds_a_buyback_
         amount: 105,
         random_stats: 0,
         charges: 0,
+        item_flags: 0,
       ),
     ])
     as "the sale is the buyback list's entry 3, the next id 4"
@@ -506,7 +514,12 @@ pub fn selling_part_of_a_stack_lowers_its_count_and_pays_for_the_part_sold_test(
       currencies: scene.credits,
       buyback: Buyback(next_id: 1, entries: []),
       answer: store.Sold(amount: 102, words: [
-        store.SoldWord(item_guid: 12, random_stats: 0, charges: 0),
+        store.SoldWord(
+          item_guid: 12,
+          random_stats: 0,
+          charges: 0,
+          item_flags: 0,
+        ),
       ]),
     )
   assert left == [in_bag(guid: 12, item2_id: 20_791, index: 0, count: 3)]
@@ -522,6 +535,7 @@ pub fn selling_part_of_a_stack_lowers_its_count_and_pays_for_the_part_sold_test(
         amount: 2,
         random_stats: 0,
         charges: 0,
+        item_flags: 0,
       ),
     ]
     as "lua.Vendor.buyback_price: the entry holds the 2 items sold and the 2 credits"
@@ -814,7 +828,12 @@ pub fn a_sale_at_the_credit_cap_still_sells_and_its_entry_keeps_the_full_price_t
       currencies: scene.credits,
       buyback: Buyback(next_id: 1, entries: []),
       answer: store.Sold(amount: 500_000, words: [
-        store.SoldWord(item_guid: 11, random_stats: 0, charges: 0),
+        store.SoldWord(
+          item_guid: 11,
+          random_stats: 0,
+          charges: 0,
+          item_flags: 0,
+        ),
       ]),
     )
   assert left == [] as "the item still leaves"
@@ -836,6 +855,7 @@ pub fn a_sale_at_the_credit_cap_still_sells_and_its_entry_keeps_the_full_price_t
         amount: 30,
         random_stats: 0,
         charges: 0,
+        item_flags: 0,
       ),
     ]
     as "lua.Vendor.buyback_price: the entry holds the price the sale paid for the stack, before the cap"
@@ -890,9 +910,9 @@ pub fn sell_junk_sells_every_sellable_category_94_stack_in_the_bags_test() -> Ni
       currencies: scene.credits,
       buyback: Buyback(next_id: 1, entries: []),
       answer: store.Sold(amount: 106, words: [
-        store.SoldWord(item_guid: 1, random_stats: 0, charges: 0),
-        store.SoldWord(item_guid: 5, random_stats: 0, charges: 0),
-        store.SoldWord(item_guid: 7, random_stats: 0, charges: 0),
+        store.SoldWord(item_guid: 1, random_stats: 0, charges: 0, item_flags: 0),
+        store.SoldWord(item_guid: 5, random_stats: 0, charges: 0, item_flags: 0),
+        store.SoldWord(item_guid: 7, random_stats: 0, charges: 0, item_flags: 0),
       ]),
     )
   assert list.map(left, fn(item) { item.item_guid }) == [2, 3, 4, 6]
@@ -1095,7 +1115,12 @@ pub fn selling_a_worn_item_removes_it_with_0x148_reason_vendor_and_adds_a_buybac
       currencies: scene.credits,
       buyback: Buyback(next_id: 1, entries: []),
       answer: store.Sold(amount: 178, words: [
-        store.SoldWord(item_guid: 16, random_stats: 0, charges: 0),
+        store.SoldWord(
+          item_guid: 16,
+          random_stats: 0,
+          charges: 0,
+          item_flags: 0,
+        ),
       ]),
     )
   assert left == [bagged]
@@ -1121,6 +1146,7 @@ pub fn selling_a_worn_item_removes_it_with_0x148_reason_vendor_and_adds_a_buybac
         amount: 78,
         random_stats: 0,
         charges: 0,
+        item_flags: 0,
       ),
     ]
     as "opcode.0xba.price: the sale is the buyback list's entry 1"
@@ -1171,7 +1197,12 @@ pub fn selling_an_item_priced_in_glory_pays_its_row_amount_in_glory_and_its_entr
       currencies: scene.credits,
       buyback: Buyback(next_id: 1, entries: []),
       answer: store.Sold(amount: 60, words: [
-        store.SoldWord(item_guid: 21, random_stats: 0, charges: 0),
+        store.SoldWord(
+          item_guid: 21,
+          random_stats: 0,
+          charges: 0,
+          item_flags: 0,
+        ),
       ]),
     )
   assert left == [] as "the item leaves"
@@ -1205,6 +1236,7 @@ pub fn selling_an_item_priced_in_glory_pays_its_row_amount_in_glory_and_its_entr
         amount: 60,
         random_stats: 0,
         charges: 0,
+        item_flags: 0,
       ),
     ]
     as "opcode.0xba.price: the entry names Glory (type 7) and the 60 paid"
@@ -1241,7 +1273,12 @@ pub fn a_sale_past_a_currency_cap_stops_that_currency_at_its_cap_and_its_entry_k
       currencies: scene.credits,
       buyback: Buyback(next_id: 1, entries: []),
       answer: store.Sold(amount: 5000, words: [
-        store.SoldWord(item_guid: 21, random_stats: 0, charges: 0),
+        store.SoldWord(
+          item_guid: 21,
+          random_stats: 0,
+          charges: 0,
+          item_flags: 0,
+        ),
       ]),
     )
   assert currency.held(currencies: held_currencies, currency_type_id: 2) == 5000
@@ -1280,6 +1317,7 @@ pub fn a_buyback_entry_carries_the_sold_items_word_test() -> Nil {
       stack_count: 1,
       random_stats: word,
       charges: 0,
+      item_flags: 0,
     ),
   ]
   let scene = sell(items:, index: 2, quantity: 1)
@@ -1291,7 +1329,12 @@ pub fn a_buyback_entry_carries_the_sold_items_word_test() -> Nil {
       currencies: scene.credits,
       buyback: Buyback(next_id: 3, entries: []),
       answer: store.Sold(amount: 100 + sale.first.paid, words: [
-        store.SoldWord(item_guid: 11, random_stats: word, charges: 0),
+        store.SoldWord(
+          item_guid: 11,
+          random_stats: word,
+          charges: 0,
+          item_flags: 0,
+        ),
       ]),
     )
   let assert [entry] = buyback.entries as "the sale is one entry"
@@ -1338,7 +1381,12 @@ pub fn a_sale_sends_the_gain_after_the_total_test() -> Nil {
       currencies: scene.credits,
       buyback: Buyback(next_id: 3, entries: []),
       answer: store.Sold(amount: 130, words: [
-        store.SoldWord(item_guid: 11, random_stats: 0, charges: 0),
+        store.SoldWord(
+          item_guid: 11,
+          random_stats: 0,
+          charges: 0,
+          item_flags: 0,
+        ),
       ]),
     )
   let assert [total, gain, removed, added] = frames(effects:)
@@ -1373,6 +1421,7 @@ pub fn a_sold_stack_keeps_its_charges_on_the_buyback_entry_test() -> Nil {
         stack_count: held_count,
         random_stats: 0,
         charges:,
+        item_flags: 0,
       ),
     ]
     let scene = sell(items:, index: 2, quantity:)
@@ -1384,10 +1433,62 @@ pub fn a_sold_stack_keeps_its_charges_on_the_buyback_entry_test() -> Nil {
         currencies: scene.credits,
         buyback: Buyback(next_id: 3, entries: []),
         answer: store.Sold(amount: 100 + sale.first.paid, words: [
-          store.SoldWord(item_guid: 11, random_stats: 0, charges:),
+          store.SoldWord(
+            item_guid: 11,
+            random_stats: 0,
+            charges:,
+            item_flags: 0,
+          ),
         ]),
       )
     let assert [entry] = buyback.entries as "the sale is one entry"
     assert entry.charges == charges as why
+  })
+}
+
+/// A sold stack's buyback entry keeps the flags byte the stack held, which the store answers
+/// with the stack (`store.SoldWord`), so a buy back returns a bound item bound: a whole sale
+/// of a single item (Item2 48169) holding the soulbound bit, and a part sale (2 of 5) of a
+/// stackable stack (Item2 20791) holding none. The client's sell price reads no bind rule
+/// (`opcode.0xba.price`), so a bound item sells as any other.
+pub fn a_sold_item_keeps_its_flags_on_the_buyback_entry_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let cases = [
+    #("a whole sale of a soulbound single item", 48_169, 1, 1, 1),
+    #("a part sale of a stackable stack holding none", 20_791, 5, 2, 0),
+  ]
+  list.each(cases, fn(row) {
+    let #(why, item2, held_count, quantity, item_flags) = row
+    let items = [
+      HeldItem(
+        item_guid: 11,
+        item2_id: Item2Id(fixture_tables.root("Item2", item2)),
+        location: 1,
+        bag_index: 2,
+        stack_count: held_count,
+        random_stats: 0,
+        charges: 0,
+        item_flags:,
+      ),
+    ]
+    let scene = sell(items:, index: 2, quantity:)
+    let sale = asked(scene:)
+    let #(_, _, buyback, _) =
+      vendor_sale.answered(
+        sale:,
+        items:,
+        currencies: scene.credits,
+        buyback: Buyback(next_id: 3, entries: []),
+        answer: store.Sold(amount: 100 + sale.first.paid, words: [
+          store.SoldWord(
+            item_guid: 11,
+            random_stats: 0,
+            charges: 0,
+            item_flags:,
+          ),
+        ]),
+      )
+    let assert [entry] = buyback.entries as "the sale is one entry"
+    assert entry.item_flags == item_flags as why
   })
 }

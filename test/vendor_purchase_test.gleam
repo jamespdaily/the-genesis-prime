@@ -66,6 +66,7 @@ import gleam/option.{type Option, None, Some}
 import gleam/set
 import gleam/string
 import item_charge_support
+import item_flags_support
 import owned_test
 import player_life_support
 import vendor_support
@@ -121,6 +122,7 @@ fn in_bag(
     stack_count: count,
     random_stats: 0,
     charges: 0,
+    item_flags: 0,
   )
 }
 
@@ -222,6 +224,7 @@ fn held_back() -> Buyback {
       amount: 40,
       random_stats: 0,
       charges: 0,
+      item_flags: 0,
     ),
     BuybackEntry(
       buyback_id: 3,
@@ -231,6 +234,7 @@ fn held_back() -> Buyback {
       amount: 91,
       random_stats: 0,
       charges: 0,
+      item_flags: 0,
     ),
   ])
 }
@@ -318,6 +322,7 @@ pub fn a_buy_at_the_shown_price_asks_the_store_to_take_the_price_and_add_the_ite
           stack_count: 1,
           random_stats: 0,
           charges: 1,
+          item_flags: 0,
         ),
       ],
     )
@@ -343,6 +348,7 @@ pub fn a_buy_at_the_shown_price_asks_the_store_to_take_the_price_and_add_the_ite
           stack_count: 1,
           random_stats: 0,
           charges: 1,
+          item_flags: 0,
         ),
       ],
       item2_id: Item2Id(14_838),
@@ -366,6 +372,7 @@ pub fn a_buy_of_several_lots_gives_stack_count_times_quantity_items_test() -> Ni
         stack_count: 15,
         random_stats: 0,
         charges: 1,
+        item_flags: 0,
       ),
     ]
     as "20791 stacks to 99, so the 15 items are one stack"
@@ -392,6 +399,7 @@ pub fn a_buy_fills_a_held_stack_with_room_before_an_empty_slot_test() -> Nil {
         stack_count: 3,
         random_stats: 0,
         charges: 1,
+        item_flags: 0,
       ),
     ]
     as "the rest goes to the lowest empty slot"
@@ -406,6 +414,7 @@ pub fn a_buy_fills_a_held_stack_with_room_before_an_empty_slot_test() -> Nil {
         stack_count: 50,
         random_stats: 0,
         charges: 1,
+        item_flags: 0,
       ),
       NewStack(
         location: 1,
@@ -413,6 +422,7 @@ pub fn a_buy_fills_a_held_stack_with_room_before_an_empty_slot_test() -> Nil {
         stack_count: 50,
         random_stats: 0,
         charges: 1,
+        item_flags: 0,
       ),
       NewStack(
         location: 1,
@@ -420,6 +430,7 @@ pub fn a_buy_fills_a_held_stack_with_room_before_an_empty_slot_test() -> Nil {
         stack_count: 20,
         random_stats: 0,
         charges: 1,
+        item_flags: 0,
       ),
     ]
     as "a stack holds at most the Item2's maxStackCount"
@@ -696,6 +707,7 @@ pub fn a_buy_back_takes_the_entry_price_and_returns_its_items_test() -> Nil {
           stack_count: 1,
           random_stats: 0,
           charges: 0,
+          item_flags: 0,
         ),
       ],
     )
@@ -721,6 +733,7 @@ pub fn a_buy_back_takes_the_entry_price_and_returns_its_items_test() -> Nil {
           stack_count: 1,
           random_stats: 0,
           charges: 0,
+          item_flags: 0,
         ),
       ],
       item2_id: Item2Id(14_838),
@@ -752,6 +765,7 @@ pub fn a_buy_back_takes_the_entry_price_and_returns_its_items_test() -> Nil {
         amount: 91,
         random_stats: 0,
         charges: 0,
+        item_flags: 0,
       ),
     ])
     as "entry 2 leaves the list and nothing else changes, not even the next id"
@@ -958,6 +972,7 @@ pub fn a_bought_back_item_returns_with_the_charges_it_was_sold_with_test() -> Ni
       amount: 10,
       random_stats: 0,
       charges:,
+      item_flags: 0,
     )
   }
   let buyback =
@@ -972,6 +987,67 @@ pub fn a_bought_back_item_returns_with_the_charges_it_was_sold_with_test() -> Ni
     as "the single item holds the 40 it was sold with, not its row's 99"
   assert list.map(back(2).make, fn(stack) { stack.charges }) == [1]
     as "the stackable stack holds the 1 it was sold with"
+}
+
+/// An item a purchase makes is unbound (`character_item.item_flags` is made 0): a bind-on-equip
+/// row bought binds only when it is worn (`0x1403c17d0.equip_confirm`), and a lot bought into an
+/// existing stack changes only its count. The stock is Dorian Walker's, as for the charges.
+pub fn items_a_purchase_makes_are_unbound_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let cases = [
+    #("one of a bind-on-equip row", [], [0], 0),
+    #(
+      "a lot of a bind-on-equip row into an existing stack",
+      [in_bag(guid: 30, item2_id: 14_838, index: 0, count: 5)],
+      [],
+      1,
+    ),
+  ]
+  list.each(cases, fn(case_) {
+    let #(why, held, made, grown) = case_
+    use tables <- item_flags_support.with_bind_flags(
+      item2_id: 14_838,
+      bind_flags: item_flags_support.bind_on_equip,
+      flags: None,
+    )
+    let purchase =
+      asked(
+        scene: Scene(
+          ..scene(unique_id: stock_position(14_838), quantity: 1),
+          items: held,
+          tables:,
+        ),
+      )
+    assert list.map(purchase.make, fn(stack) { stack.item_flags }) == made
+      as why
+    assert list.length(purchase.grow) == grown as why
+  })
+}
+
+/// A buy back returns the stack with the flags byte it was sold with (the entry in memory
+/// holds it): a bound item sold and bought back stays bound, and an unbound one stays unbound.
+pub fn a_bought_back_item_returns_with_the_flags_it_was_sold_with_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let entry = fn(id, item_flags) {
+    BuybackEntry(
+      buyback_id: id,
+      item2_id: Item2Id(14_838),
+      quantity: 1,
+      currency_type_id: 1,
+      amount: 10,
+      random_stats: 0,
+      charges: 0,
+      item_flags:,
+    )
+  }
+  let buyback = Buyback(next_id: 3, entries: [entry(1, 1), entry(2, 0)])
+  let back = fn(buyback_id) {
+    asked_back(scene: Scene(..buying_back(buyback_id:), buyback:))
+  }
+  assert list.map(back(1).make, fn(stack) { stack.item_flags }) == [1]
+    as "the soulbound item comes back soulbound"
+  assert list.map(back(2).make, fn(stack) { stack.item_flags }) == [0]
+    as "the unbound item comes back unbound"
 }
 
 pub fn a_buy_back_of_an_id_not_in_the_list_is_refused_with_unknown_item_test() -> Nil {
@@ -1035,6 +1111,7 @@ fn sold_elsewhere() -> Buyback {
       amount: 60,
       random_stats: 0,
       charges: 0,
+      item_flags: 0,
     ),
     BuybackEntry(
       buyback_id: 6,
@@ -1044,6 +1121,7 @@ fn sold_elsewhere() -> Buyback {
       amount: 78,
       random_stats: 0,
       charges: 0,
+      item_flags: 0,
     ),
   ])
 }
@@ -1086,6 +1164,7 @@ pub fn a_buy_back_of_an_entry_sold_for_glory_takes_glory_and_sends_its_total_tes
           stack_count: 1,
           random_stats: 0,
           charges: 0,
+          item_flags: 0,
         ),
       ],
     )
@@ -1111,6 +1190,7 @@ pub fn a_buy_back_of_an_entry_sold_for_glory_takes_glory_and_sends_its_total_tes
           stack_count: 1,
           random_stats: 0,
           charges: 0,
+          item_flags: 0,
         ),
       ],
       item2_id: Item2Id(16_053),
@@ -1196,6 +1276,7 @@ pub fn a_bought_back_worn_item_returns_to_the_bags_test() -> Nil {
         stack_count: 1,
         random_stats: 0,
         charges: 0,
+        item_flags: 0,
       ),
     ]
     as "a new stack in the bags: the entry holds no worn place"
@@ -1269,6 +1350,7 @@ pub fn buying_back_an_item_keeps_its_word_and_draws_nothing_test() -> Nil {
           amount: 40,
           random_stats: word,
           charges: 0,
+          item_flags: 0,
         ),
       ]),
     )
@@ -1281,6 +1363,7 @@ pub fn buying_back_an_item_keeps_its_word_and_draws_nothing_test() -> Nil {
         stack_count: 1,
         random_stats: word,
         charges: 0,
+        item_flags: 0,
       ),
     ]
     as "the stack is placed with the word the item was sold with"
@@ -1306,6 +1389,7 @@ pub fn buying_back_an_item_keeps_its_word_and_draws_nothing_test() -> Nil {
       stack_count: 1,
       random_stats: word,
       charges: 0,
+      item_flags: 0,
     )
   let #(_, _, _, effects) =
     vendor_purchase.answered(
@@ -1347,6 +1431,7 @@ pub fn buying_a_random_stat_item_rolls_it_and_sends_the_word_test() -> Nil {
         stack_count: 1,
         random_stats: 0x0100000000050401,
         charges: 0,
+        item_flags: 0,
       ),
     ]
     as "the stack is made with the rolled word"
@@ -1359,6 +1444,7 @@ pub fn buying_a_random_stat_item_rolls_it_and_sends_the_word_test() -> Nil {
       stack_count: 1,
       random_stats: 0x0100000000050401,
       charges: 0,
+      item_flags: 0,
     )
   let #(_, _, _, effects) =
     vendor_purchase.answered(
@@ -1401,6 +1487,7 @@ pub fn buying_an_item_without_random_stats_draws_nothing_test() -> Nil {
       stack_count: 1,
       random_stats: 0,
       charges: 0,
+      item_flags: 0,
     )
   let #(_, _, _, effects) =
     vendor_purchase.answered(

@@ -683,6 +683,7 @@ fn held_for(
       stack_count: objective.count,
       random_stats: 0,
       charges: 0,
+      item_flags: 0,
     )
   })
 }
@@ -1186,6 +1187,7 @@ pub fn the_mining_expedition_equip_objective_completes_after_the_collects_test()
       stack_count: 5,
       random_stats: 0,
       charges: 0,
+      item_flags: 0,
     )
   let done = settled_with(log:, tables:, items: [five], held: [])
   assert done.effects
