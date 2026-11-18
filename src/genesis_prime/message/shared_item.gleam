@@ -46,6 +46,10 @@ pub type SharedItem {
     /// nothing itself and shows a bind-on-equip item unbound until the server
     /// sets bit 0 (opcode.0x111.shared_item_unnamed, 0x14008c0d0).
     field_13: Int,
+    /// Open: How long is the refund window a bought item gets, and which
+    /// message asks for the refund? opcode.0x111.shared_item_unnamed names the
+    /// field; its gap leaves the retail length and the request unread, so the
+    /// server sends 0 and refunds are off.
     refund_window_ms: Int,
     /// Open: What gives an item its remaining duration, which the tooltip
     /// counts down? With 0 the client shows the row's full lifetime and removes
