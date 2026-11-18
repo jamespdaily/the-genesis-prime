@@ -116,15 +116,13 @@
 //// | several rows are refused | every refusal is logged, then the start stops |
 //// | a query fails | the start stops with the database's reason |
 
-import genesis_prime/content/arrival_objective as content_arrival_objective
 import genesis_prime/content/class_resource as content_class_resource
 import genesis_prime/content/creature_auto_attack as content_creature_auto_attack
 import genesis_prime/content/creature_faction as content_creature_faction
 import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/creature_special as content_creature_special
 import genesis_prime/content/game_number as content_game_number
-import genesis_prime/content/held_objective as content_held_objective
-import genesis_prime/content/kill_objective as content_kill_objective
+import genesis_prime/content/objective_set
 import genesis_prime/content/projector_landing as content_projector_landing
 import genesis_prime/content/refusal.{type Refusal}
 import genesis_prime/content/server_proxy as content_server_proxy
@@ -317,29 +315,11 @@ fn read(
       )
     }),
   )
-  use held_rows <- result.try(
-    content_held_objective.rows(db)
+  use objective_rows <- result.try(
+    objective_set.rows(db)
     |> result.map_error(fn(error) {
       QueryFailed(
-        table: content_held_objective.table,
-        reason: worker.describe_query_error(error),
-      )
-    }),
-  )
-  use arrival_rows <- result.try(
-    content_arrival_objective.rows(db)
-    |> result.map_error(fn(error) {
-      QueryFailed(
-        table: content_arrival_objective.table,
-        reason: worker.describe_query_error(error),
-      )
-    }),
-  )
-  use kill_rows <- result.try(
-    content_kill_objective.rows(db)
-    |> result.map_error(fn(error) {
-      QueryFailed(
-        table: content_kill_objective.table,
+        table: objective_set.query_name,
         reason: worker.describe_query_error(error),
       )
     }),
@@ -393,11 +373,26 @@ fn read(
   }
   let tutorials = tutorial.select(rows: tutorial_rows, tables:)
   let tutorial_refusals = result.unwrap_error(tutorials, or: [])
-  let held = held_objective.select(rows: held_rows, tables:)
+  let held =
+    held_objective.select(
+      ids: objective_set.ids(rows: objective_rows, table: held_objective.table),
+      tables:,
+    )
   let held_refusals = result.unwrap_error(held, or: [])
-  let arrivals = arrival_objective.select(rows: arrival_rows, tables:)
+  let arrivals =
+    arrival_objective.select(
+      ids: objective_set.ids(
+        rows: objective_rows,
+        table: arrival_objective.table,
+      ),
+      tables:,
+    )
   let arrival_refusals = result.unwrap_error(arrivals, or: [])
-  let kills = kill_objective.select(rows: kill_rows, tables:)
+  let kills =
+    kill_objective.select(
+      ids: objective_set.ids(rows: objective_rows, table: kill_objective.table),
+      tables:,
+    )
   let kill_refusals = result.unwrap_error(kills, or: [])
   let projectors = projector.select(rows: projector_rows, tables:)
   let projector_refusals = result.unwrap_error(projectors, or: [])
@@ -571,15 +566,18 @@ fn read(
         Error(..) -> Nil
       }
       case held {
-        Ok(held) -> content_held_objective.put(key:, held:)
+        Ok(objectives) ->
+          objective_set.put(key:, table: held_objective.table, objectives:)
         Error(..) -> Nil
       }
       case arrivals {
-        Ok(arrivals) -> content_arrival_objective.put(key:, arrivals:)
+        Ok(objectives) ->
+          objective_set.put(key:, table: arrival_objective.table, objectives:)
         Error(..) -> Nil
       }
       case kills {
-        Ok(kills) -> content_kill_objective.put(key:, kills:)
+        Ok(objectives) ->
+          objective_set.put(key:, table: kill_objective.table, objectives:)
         Error(..) -> Nil
       }
       case projectors {

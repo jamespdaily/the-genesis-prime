@@ -23,9 +23,9 @@ import character_tables
 import content_support
 import database_support
 import fixture_tables
-import genesis_prime/content/held_objective as content_held_objective
+import genesis_prime/content/objective_set
 import genesis_prime/content/refusal.{type Refusal, RowId}
-import genesis_prime/game/held_objective.{Row}
+import genesis_prime/game/held_objective
 import gleam/list
 import gleam/set
 import gleam/string
@@ -38,7 +38,7 @@ const stand_in = 1962
 pub fn a_row_naming_a_visible_script_is_held_test() -> Nil {
   use <- owned_test.run(60_000)
   assert held_objective.select(
-      rows: [Row(objective_id: stand_in)],
+      ids: [stand_in],
       tables: character_tables.shared(),
     )
     == Ok(set.from_list([stand_in]))
@@ -83,8 +83,7 @@ pub fn the_held_load_refuses_an_objective_that_cannot_be_a_stand_in_test() -> Ni
     id: 99_001,
     with: [],
   )
-  let assert Error([refusal]) =
-    held_objective.select(rows: [Row(objective_id: 99_001)], tables:)
+  let assert Error([refusal]) = held_objective.select(ids: [99_001], tables:)
     as "one refusal: the copy lists in no quest"
   assert refusal.row == RowId(99_001)
   assert string.contains(refusal.rule, "no Quest2 row lists the objective")
@@ -101,7 +100,7 @@ pub fn a_marked_unlinked_script_is_accepted_and_the_other_refusals_stand_test() 
     #(9658, "data", 0),
     #(9658, "count", 1),
   ])
-  assert held_objective.select(rows: [Row(objective_id: 9658)], tables:)
+  assert held_objective.select(ids: [9658], tables:)
     == Ok(set.from_list([9658]))
     as "a marked unlinked visible required type 5 objective is held"
   // The refusals that stand, each on the same objective.
@@ -143,10 +142,7 @@ pub fn the_held_load_names_every_refused_row_test() -> Nil {
 /// The refusals of the rows over the fixture's tables.
 fn refused(rows rows: List(Int)) -> List(Refusal) {
   let assert Error(refusals) =
-    held_objective.select(
-      rows: list.map(rows, fn(id) { Row(objective_id: id) }),
-      tables: character_tables.shared(),
-    )
+    held_objective.select(ids: rows, tables: character_tables.shared())
     as "the rows are refused"
   refusals
 }
@@ -160,7 +156,7 @@ fn assert_refused(
 ) -> Nil {
   use tables <- quest_support.with_objectives(edits:)
   let assert Error([refusal]) =
-    held_objective.select(rows: [Row(objective_id:)], tables:)
+    held_objective.select(ids: [objective_id], tables:)
     as "one refusal for the objective"
   assert refusal.row == RowId(objective_id)
   assert string.contains(refusal.rule, saying)
@@ -219,9 +215,11 @@ pub fn the_held_migrations_seed_146_server_choice_rows_test() -> Nil {
   use <- owned_test.run(60_000)
   let database = database_support.new_database(on: database_support.shared())
   let assert Ok(rows) =
-    content_held_objective.rows(db: content_support.connect(database:))
+    objective_set.rows(db: content_support.connect(database:))
     as "the query ran"
-  assert list.length(rows) == 146 as "the migrations seed 146 rows"
+  assert list.length(objective_set.ids(rows:, table: held_objective.table))
+    == 146
+    as "the migrations seed 146 rows"
   assert content_support.count(
       database:,
       sql: "select count(*) from held_objective where kind = 'instance_run'",

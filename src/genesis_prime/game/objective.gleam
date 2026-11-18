@@ -944,7 +944,8 @@ pub type Script {
 /// `worldLocationsIdIndicator` that names no WorldLocation2 row is no marker: no position is
 /// at it, `0x140485fa0`); one with a marker sends the player to a place (`0x140553890`) and is
 /// the named action's, a place script (`arrival_objectives`), a kill script (`scripts`) or a
-/// stand-in on accept, in that order. The held objectives are not looked at here: each rule leaves a held one open.
+/// stand-in on accept, in that order. The held objectives are not looked at here: each
+/// rule leaves a held one open.
 pub fn script_of(
   tables tables: table_store.Tables,
   quest_id quest_id: Int,

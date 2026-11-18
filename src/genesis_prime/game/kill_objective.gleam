@@ -8,7 +8,7 @@
 //// with its reason.
 ////
 //// ```
-//// content.load: rows ─▶ select(rows, tables) ─▶ Set(objective id) | refusals (the load stops)
+//// content.load: ids ─▶ select(ids, tables) ─▶ Set(objective id) | refusals (the load stops)
 //// each connection's settings ─▶ the set ─▶ objective.advance(Killed) ─▶ a pane kill counts one
 //// ```
 ////
@@ -18,6 +18,11 @@
 ////   reward pane lists a creature of creation type 0, which the server fights, and no
 ////   spell effect or item names it (`objective_action.named`): an objective a cast
 ////   advances stays open until the cast counts, not when a creature dies.
+////
+//// - **A gap.** The load has no spawn table, so it does not check that a creature of the pane
+////   starts in its marker's world and that a player can fight it; the world-data check of
+////   `./check` does. A row added for a creature that never starts loads, and stops a quest
+////   that completes on accept from completing until that check runs.
 ////
 //// The failure points are those of `objective_row`.
 
@@ -40,19 +45,14 @@ import gleam/set.{type Set}
 /// The table's name in the log and in a refusal.
 pub const table = "kill_objective"
 
-/// One row of the kill_objective table as the load reads it: a QuestObjective id.
-pub type Row {
-  Row(objective_id: Int)
-}
-
-/// The QuestObjective ids the rows hold, or every row the load refuses.
+/// The QuestObjective ids the table's rows hold, or every row the load refuses.
 pub fn select(
-  rows rows: List(Row),
+  ids ids: List(Int),
   tables tables: table_store.Tables,
 ) -> Result(Set(Int), List(Refusal)) {
   objective_row.select(
     table:,
-    ids: list.map(rows, fn(row) { row.objective_id }),
+    ids:,
     tables:,
     broken: fn(tables, quest, index, listed_objective) {
       list.flatten([

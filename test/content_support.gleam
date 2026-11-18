@@ -7,18 +7,18 @@ import database_support
 import event_wait
 import genesis_prime
 import genesis_prime/content
-import genesis_prime/content/arrival_objective as content_arrival_objective
-import genesis_prime/content/held_objective as content_held_objective
-import genesis_prime/content/kill_objective as content_kill_objective
+import genesis_prime/content/objective_set
 import genesis_prime/content/spawn as content_spawn
 import genesis_prime/content/terrain as content_terrain
 import genesis_prime/dev_database
+import genesis_prime/game/arrival_objective
+import genesis_prime/game/held_objective
+import genesis_prime/game/kill_objective
 import genesis_prime/readiness
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/spawn.{type Row}
 import gleam/erlang/process
 import gleam/int
-import gleam/list
 import gleam/result
 import gleam/set.{type Set}
 import gleam/string
@@ -172,26 +172,24 @@ pub fn change(database database: String, sql sql: String) -> Nil {
 /// The QuestObjective ids the migrated database holds in the arrival table, read from a
 /// database of the test's own.
 pub fn arrival_objective_ids() -> Set(Int) {
-  let database = database_support.new_database(on: database_support.shared())
-  let assert Ok(rows) = content_arrival_objective.rows(db: connect(database:))
-    as "the query ran"
-  set.from_list(list.map(rows, fn(row) { row.objective_id }))
+  objective_ids(table: arrival_objective.table)
 }
 
 /// The QuestObjective ids the migrated database holds in the kill table, read from a
 /// database of the test's own.
 pub fn kill_objective_ids() -> Set(Int) {
-  let database = database_support.new_database(on: database_support.shared())
-  let assert Ok(rows) = content_kill_objective.rows(db: connect(database:))
-    as "the query ran"
-  set.from_list(list.map(rows, fn(row) { row.objective_id }))
+  objective_ids(table: kill_objective.table)
 }
 
 /// The QuestObjective ids the migrated database holds as held, read from a database of
 /// the test's own.
 pub fn held_objective_ids() -> Set(Int) {
+  objective_ids(table: held_objective.table)
+}
+
+fn objective_ids(table table: String) -> Set(Int) {
   let database = database_support.new_database(on: database_support.shared())
-  let assert Ok(rows) = content_held_objective.rows(db: connect(database:))
+  let assert Ok(rows) = objective_set.rows(db: connect(database:))
     as "the query ran"
-  set.from_list(list.map(rows, fn(row) { row.objective_id }))
+  set.from_list(objective_set.ids(rows:, table:))
 }
