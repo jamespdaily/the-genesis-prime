@@ -312,7 +312,7 @@ fn kinds() -> List(Kind) {
         field_6: 1,
       )),
     ),
-    Kind(10, [bit(1)], Kind10(MovementKind10(field_2: 1))),
+    Kind(10, [bit(1)], Kind10(MovementKind10(blends: 1))),
     Kind(
       11,
       [half(0x3C00), half(0xBC00), half(0x7C00), bit(0)],
@@ -333,7 +333,7 @@ fn kinds() -> List(Kind) {
         field_6: 0,
       )),
     ),
-    Kind(13, [bit(0)], Kind13(MovementKind13(field_2: 0))),
+    Kind(13, [bit(0)], Kind13(MovementKind13(blends: 0))),
     Kind(
       14,
       [u32(0x3F800001), u32(0xBF800002), u32(0), bit(1)],
@@ -435,7 +435,7 @@ fn kinds() -> List(Kind) {
         field_8: 1,
       )),
     ),
-    Kind(21, [bit(1)], Kind21(MovementKind21(field_2: 1))),
+    Kind(21, [bit(1)], Kind21(MovementKind21(blends: 1))),
     Kind(
       22,
       [#(16, 0x1234), bit(1)],
@@ -467,7 +467,7 @@ fn kinds() -> List(Kind) {
       [#(8, 2), u32(91), u32(92), u32(93), u32(94), u32(95)],
       Kind25(MovementKind25(field_2: [91, 92], field_3: [93, 94], field_4: 95)),
     ),
-    Kind(26, [bit(0)], Kind26(MovementKind26(field_2: 0))),
+    Kind(26, [bit(0)], Kind26(MovementKind26(blends: 0))),
     Kind(27, [u32(3)], Mode(MovementMode(mode: 3))),
     Kind(
       28,
@@ -592,6 +592,48 @@ pub fn kind_18_and_kind_19_round_trip_with_their_named_fields_test() -> Nil {
           z: 0xC0400000,
           blends: 0,
         )),
+      ],
+    ),
+    encode: unit_movement.encode,
+    decode: unit_movement.decode,
+  )
+}
+
+pub fn kinds_10_13_21_and_26_round_trip_in_a_0x638_as_one_blend_bit_each_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Each of the four defaults is its 5-bit kind then one bit, the blend bit
+  // (`0x140c1f070`; `movement_command.kind_13`, `movement_command.kind_21` and
+  // `movement_command.defaults_with_kind_4_path` name it), so a 0x638 holding
+  // them in the order a creature's path frame sends them is the bits below.
+  let body =
+    message_support.packed([
+      u32(0x0102),
+      u32(0x0A0B),
+      bit(0),
+      bit(1),
+      #(5, 4),
+      #(5, 10),
+      bit(1),
+      #(5, 13),
+      bit(1),
+      #(5, 21),
+      bit(1),
+      #(5, 26),
+      bit(1),
+    ])
+  message_support.assert_codec(
+    name: "0x638 holding kinds 10, 13, 21 and 26",
+    body:,
+    value: UnitMovement(
+      unit_id: 0x0102,
+      server_time: 0x0A0B,
+      reset_movement: 0,
+      kept: 1,
+      commands: [
+        relayed_movement.VelocityDefault(MovementKind10(blends: 1)),
+        relayed_movement.MoveDefault(MovementKind13(blends: 1)),
+        relayed_movement.RotationDefault(MovementKind21(blends: 1)),
+        relayed_movement.StateDefault(MovementKind26(blends: 1)),
       ],
     ),
     encode: unit_movement.encode,

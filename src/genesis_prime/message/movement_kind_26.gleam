@@ -1,8 +1,9 @@
 //// Generated from `schema.toml` by `genesis_prime/generate_messages`;
 //// never edited by hand.
 ////
-//// A record inside a message body: a movement command of kind 26, whose
-//// meaning the client's code does not show: one bit. Its fields are listed in
+//// A record inside a message body: a movement command of kind 26, the unit's
+//// movement state flags are derived from its requested move and velocity (the
+//// default state): the bit is the blend bit. Its fields are listed in
 //// `schema.toml` with the client's evidence, and the fact file's `0x140c1f070`
 //// names the record.
 
@@ -15,19 +16,19 @@ import gleam/result
 /// record: its own doc names the fact that shows its value is safe, and one
 /// with no such doc has no use the client's code shows.
 pub type MovementKind26 {
-  MovementKind26(field_2: Int)
+  MovementKind26(blends: Int)
 }
 
 /// Writes the record's fields to the stream.
 pub fn write(writer writer: Writer, record record: MovementKind26) -> Writer {
   writer
   |> bit_stream.write_constant("kind", 26, 5)
-  |> bit_stream.write_unsigned("field_2", record.field_2, 1)
+  |> bit_stream.write_unsigned("blends", record.blends, 1)
 }
 
 /// Reads the record from the stream, and the stream after it.
 pub fn read(reader: Reader) -> Result(#(MovementKind26, Reader), DecodeError) {
   use reader <- result.try(bit_stream.read_constant(reader, "kind", 5, 26))
-  use #(field_2, reader) <- result.try(bit_stream.read_unsigned(reader, 1))
-  Ok(#(MovementKind26(field_2:), reader))
+  use #(blends, reader) <- result.try(bit_stream.read_unsigned(reader, 1))
+  Ok(#(MovementKind26(blends:), reader))
 }

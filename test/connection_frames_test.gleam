@@ -14,6 +14,10 @@ import genesis_prime/message/float32
 import genesis_prime/message/movement_face_point.{MovementFacePoint}
 import genesis_prime/message/movement_face_unit.{MovementFaceUnit}
 import genesis_prime/message/movement_float_vector.{MovementFloatVector}
+import genesis_prime/message/movement_kind_10.{MovementKind10}
+import genesis_prime/message/movement_kind_13.{MovementKind13}
+import genesis_prime/message/movement_kind_21.{MovementKind21}
+import genesis_prime/message/movement_kind_26.{MovementKind26}
 import genesis_prime/message/movement_move_asked.{MovementMoveAsked}
 import genesis_prime/message/movement_rotation.{MovementRotation}
 import genesis_prime/message/movement_state_flags.{MovementStateFlags}
@@ -44,7 +48,7 @@ fn at(x x: Float, y y: Float, z z: Float) -> Place {
 /// The one 0x638 of a path for unit 40, decoded.
 fn sent(path path: creature_path.Path) -> UnitMovement {
   let assert Some(Frame(message_id: 0x0638, body:)) =
-    frames.path_frame(entered: entered(), unit_id: 40, path:)
+    frames.path_frame(entered: entered(), unit_id: 40, path:, face: None)
     as "a timed path is written as one 0x638"
   let assert Ok(movement) = unit_movement.decode(body)
     as "the frame is a 0x638 the client's reader takes"
@@ -134,6 +138,7 @@ pub fn a_standing_creature_has_no_path_frame_test() -> Nil {
   assert frames.path_frame(
       entered: entered(),
       unit_id: 40,
+      face: None,
       path: creature_path.Standing(at: at(x: 1.0, y: 2.0, z: -3.0)),
     )
     == None
@@ -216,13 +221,19 @@ fn placed() -> UnitMovement {
   movement
 }
 
-/// The kind 11 and kind 24 commands of a frame, in order.
+/// The commands of a frame that set the unit's velocity, requested move, rotation or movement
+/// state by a track or a default (kinds 10, 11, 13, 21, 24 and 26), in order.
 fn movement_states(
   movement: UnitMovement,
 ) -> List(relayed_movement.RelayedMovement) {
   list.filter(movement.commands, fn(command) {
     case command {
-      relayed_movement.MoveAsked(..) | relayed_movement.StateFlags(..) -> True
+      relayed_movement.MoveAsked(..)
+      | relayed_movement.StateFlags(..)
+      | relayed_movement.VelocityDefault(..)
+      | relayed_movement.MoveDefault(..)
+      | relayed_movement.RotationDefault(..)
+      | relayed_movement.StateDefault(..) -> True
       relayed_movement.Time(..)
       | relayed_movement.Platform(..)
       | relayed_movement.Position(..)
@@ -250,19 +261,31 @@ fn moving(
   ]
 }
 
+/// Kinds 10, 13, 21 and 26, each with its blend bit 1: the client's own defaults for a unit
+/// that runs a kind 4 path (`movement_command.defaults_with_kind_4_path`,
+/// `movement_command.kind_13`, `movement_command.kind_21`).
+fn path_defaults() -> List(relayed_movement.RelayedMovement) {
+  [
+    relayed_movement.VelocityDefault(MovementKind10(blends: 1)),
+    relayed_movement.MoveDefault(MovementKind13(blends: 1)),
+    relayed_movement.RotationDefault(MovementKind21(blends: 1)),
+    relayed_movement.StateDefault(MovementKind26(blends: 1)),
+  ]
+}
+
 pub fn a_creatures_0x638_turns_the_clients_ground_lift_on_and_carries_the_movement_state_its_path_implies_test() -> Nil {
   use <- owned_test.run(5000)
-  // The client animates a unit by kind 24's bit 0x2 and the horizontal length of kind 11's
-  // vector, both from the unit's movement commands and not from its path (0x1405b5070); the
-  // player sends kind 11 in units a second with the blend bit 1 (the recorded sitting).
-  // Half floats: 3.0 is 0x4200, 4.0 0x4400, 10.0 0x4900.
+  // A run sends kinds 10, 13, 21 and 26 with the blend bit 1: the client then takes the
+  // velocity, the requested move (which its pace and its state's moving bit follow), the
+  // facing and the state from the path itself (`movement_command.defaults_with_kind_4_path`).
+  // A stop, a flight and a turn keep their explicit commands.
   // The client's ground lift runs only while the 0x638's second bit is 1 (the unit's
   // ground-follow flag), and pulls a unit above the ground down only while its state flags
   // hold 0x100, so a creature's moving state is 0x102 and its standing state 0x100; a flight's
   // state is 0, so its arc is not pulled down (`unit.ground_lift.server_commands`).
   let cases = [
     #(
-      "a run along +x at 10.0 is a move of 10.0 along x and the moving bit",
+      "a run along +x at 10.0 takes the client's four defaults and no explicit move or state",
       sent(path: creature_path.Running(
         from: at(x: 0.0, y: 0.0, z: 0.0),
         via: [],
@@ -270,10 +293,10 @@ pub fn a_creatures_0x638_turns_the_clients_ground_lift_on_and_carries_the_moveme
         started_ms: 1000,
         speed: 10.0,
       )),
-      moving(x: 0x4900, z: 0, flags: 0x102),
+      path_defaults(),
     ),
     #(
-      "a run up a slope keeps the horizontal part of the velocity and drops its height: 13.0 along (3, 12, 4) is (3, 12, 4) a second",
+      "a run up a slope takes the same four defaults: the path gives the velocity and the facing",
       sent(path: creature_path.Running(
         from: at(x: 0.0, y: 0.0, z: 0.0),
         via: [],
@@ -281,7 +304,18 @@ pub fn a_creatures_0x638_turns_the_clients_ground_lift_on_and_carries_the_moveme
         started_ms: 1000,
         speed: 13.0,
       )),
-      moving(x: 0x4200, z: 0x4400, flags: 0x102),
+      path_defaults(),
+    ),
+    #(
+      "a run of three points takes the same four defaults: they follow each leg",
+      sent(path: creature_path.Running(
+        from: at(x: 0.0, y: 0.0, z: 0.0),
+        via: [at(x: 10.0, y: 0.0, z: 0.0)],
+        to: at(x: 10.0, y: 0.0, z: 10.0),
+        started_ms: 1000,
+        speed: 10.0,
+      )),
+      path_defaults(),
     ),
     #(
       "a flight is no walk and has no ground bit: it stops the one that ran before the throw and its arc is not pulled down",
@@ -344,6 +378,7 @@ pub fn a_creatures_0x638_turns_the_clients_ground_lift_on_and_carries_the_moveme
   assert frames.path_frame(
       entered: entered(),
       unit_id: 40,
+      face: None,
       path: creature_path.Running(
         from: at(x: 0.0, y: 0.0, z: 0.0),
         via: [],
@@ -360,7 +395,7 @@ pub fn a_creatures_0x638_turns_the_clients_ground_lift_on_and_carries_the_moveme
 fn written_points(
   path path: creature_path.Path,
 ) -> Option(List(#(Int, Int, Int))) {
-  case frames.path_frame(entered: entered(), unit_id: 40, path:) {
+  case frames.path_frame(entered: entered(), unit_id: 40, path:, face: None) {
     None -> None
     Some(Frame(body:, ..)) -> {
       let assert Ok(UnitMovement(commands:, ..)) = unit_movement.decode(body)
@@ -374,10 +409,14 @@ fn written_points(
             | relayed_movement.Position(..)
             | relayed_movement.TimedPath(..)
             | relayed_movement.Velocity(..)
+            | relayed_movement.VelocityDefault(..)
+            | relayed_movement.MoveDefault(..)
             | relayed_movement.Rotation(..)
+            | relayed_movement.RotationDefault(..)
             | relayed_movement.FaceUnit(..)
             | relayed_movement.FacePoint(..)
             | relayed_movement.StateFlags(..)
+            | relayed_movement.StateDefault(..)
             | relayed_movement.MoveAsked(..)
             | relayed_movement.Mode(..) -> False
           }
@@ -440,19 +479,22 @@ pub fn a_two_point_path_frame_is_the_bytes_it_was_test() -> Nil {
   // The body the path frame made for this run before a run could hold more points,
   // taken from origin/main 548056f0: unit 40, kind 0 at 400 (1000 less the map's 600),
   // kind 4 of (1.5, -2, 3) and (26, 4.5, -7.25) at 7.5 (half float 0x4780), type 0, mode 0,
-  // then kind 11 and kind 24. Two bits differ from that body: bit 65, the second bit after the
-  // unit and the time and the reset bit, now 1 (0x10 to 0x12 in byte 8), and bit 437, 0x100
-  // of the kind 24 flags, which are 0x102 (byte 54 from 0x00 to 0x20)
-  // (`unit.ground_lift.server_commands`).
+  // then kind 11 and kind 24. Three things differ from that body: bit 65, the second bit after
+  // the unit and the time and the reset bit, is 1 (byte 8 0x10 to 0x12), the command count
+  // (5 bits after it) is 6 and not 4, and the 91 bits of kind 11 and kind 24 are replaced by the
+  // 24 bits of kinds 10, 13, 21 and 26, each its kind and the blend bit 1
+  // (`movement_command.defaults_with_kind_4_path`); the bytes were repacked by a script that
+  // reads the old bits and shares no code with the codec.
   let assert Ok(before) =
     bit_array.base16_decode(
-      "280000009001000012001900004004000000FE01000000060000020200800E0200800402004007063C02000000002C5C230000D0E05820000000",
+      "28000000900100001A001900004004000000FE01000000060000020200800E0200800402004007063C0200000000A86DAD03",
     )
     as "a hex string"
   let assert Some(Frame(message_id: 0x0638, body:)) =
     frames.path_frame(
       entered: entered(),
       unit_id: 40,
+      face: None,
       path: creature_path.Running(
         from: at(x: 1.5, y: -2.0, z: 3.0),
         via: [],

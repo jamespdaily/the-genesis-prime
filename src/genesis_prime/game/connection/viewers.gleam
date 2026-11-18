@@ -467,11 +467,15 @@ pub fn viewer_takes(
             | relayed_movement.TimedPath(..)
             | relayed_movement.Path(..)
             | relayed_movement.Velocity(..)
+            | relayed_movement.VelocityDefault(..)
             | relayed_movement.MoveAsked(..)
+            | relayed_movement.MoveDefault(..)
             | relayed_movement.Rotation(..)
+            | relayed_movement.RotationDefault(..)
             | relayed_movement.FaceUnit(..)
             | relayed_movement.FacePoint(..)
             | relayed_movement.StateFlags(..)
+            | relayed_movement.StateDefault(..)
             | relayed_movement.Mode(..) -> Error(Nil)
           }
         })
@@ -614,7 +618,14 @@ pub fn viewer_takes(
         })
       Continue(
         session,
-        case connection_frames.path_frame(entered:, unit_id:, path:) {
+        case
+          connection_frames.path_frame(
+            entered:,
+            unit_id:,
+            path:,
+            face: shown.face_of(picture: entered.shown, unit_id:),
+          )
+        {
           Some(frame) -> [connection_state.to_client(session, frame)]
           None -> []
         },
