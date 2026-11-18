@@ -58,6 +58,7 @@ fn seeing_a_chua_holding_the_railgun() -> game_connection.State {
           stack_count: 1,
           random_stats: 0,
           charges: 0,
+          item_flags: 0,
         ),
       ],
       quests: [quest_support.accepted(quest_id: 3769, progress: [0])],
