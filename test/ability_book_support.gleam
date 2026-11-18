@@ -24,7 +24,7 @@ import gleam/option.{Some}
 
 /// The Creature2 and its level a kill is credited for: a creature of Creature2Difficulty 1
 /// (`experience_test`), which gives experience at the levels the tests rise from.
-const killed_creature = 73_464
+pub const killed_creature = 73_464
 
 /// The faction of the tests' characters (Dominion).
 const faction = 166

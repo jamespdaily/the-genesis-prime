@@ -2153,6 +2153,17 @@ fields = [
 ]
 
 [[message]]
+id = 0x0169
+name = "ability_points"
+direction = "server_to_client"
+evidence = "opcode.0x169"
+summary = "the player's ability points: the points left to spend and the points the player can hold in all, which the spellbook window shows and the interface menu's Abilities button alerts on while the first is above 0"
+fields = [
+  { name = "ability_points", kind = "unsigned", bits = 32, evidence = "opcode.0x169", named_by = "opcode.0x169" },
+  { name = "total_ability_points", kind = "unsigned", bits = 32, evidence = "opcode.0x169", named_by = "opcode.0x169" },
+]
+
+[[message]]
 id = 0x019D
 name = "action_set"
 direction = "server_to_client"

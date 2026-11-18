@@ -1,7 +1,7 @@
 //// The recording dump reads recordings as messages, both ways. Expected values
 //// come from these places.
 //// - The session's own verdict (`verdict.txt` beside the recordings): the
-////   client reported the played character as 'Tess Renamed'.
+////   client reported the played character as 'Grozim Vroc'.
 //// - The client's code: it sends 0x07CC through SendWorldMessageKind0B (0x1403f4740,
 ////   which lists 0x7cc among the ids it sends), inside 0x038C inside the
 ////   client's wrapper; the schema has no message of that number.
@@ -57,8 +57,8 @@ pub fn the_dump_names_the_players_unit_and_lists_a_message_with_no_decoder_by_it
       && entry.name == "unit_create_player"
     })
     as "the server wrote the player's unit, named by the schema"
-  assert string.contains(created.fields, "name: \"Tess Renamed\"")
-    as "the unit is the character the client reported (verdict.txt: strName = 'Tess Renamed')"
+  assert string.contains(created.fields, "name: \"Grozim Vroc\"")
+    as "the unit is the character the client reported (verdict.txt: strName = 'Grozim Vroc')"
   let assert Ok(unhandled) =
     list.find(entries, fn(entry) {
       entry.direction == Some(ClientToServer)

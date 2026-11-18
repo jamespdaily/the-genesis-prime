@@ -228,6 +228,55 @@ pub fn novice_items(character character: Character) -> List(HeldItem) {
   }
 }
 
+/// The frames of the entry of a Dominion character of the class and level on the committed
+/// rows, and the player the connection keeps.
+pub fn entering(
+  class_id class_id: Int,
+  level level: Int,
+) -> #(List(Frame), world_entry.Entered) {
+  let #(effects, entered) =
+    entry(
+      tables: character_tables.shared(),
+      character: character(class: class_id, faction: 166, level:),
+    )
+  #(frames_of(effects:), entered)
+}
+
+/// The frames of the Holocrypt's join for a Dominion character of the class that entered at
+/// `entered_at` and rose to `risen_to` in the session: the rejoin takes the level the
+/// session holds (`experience.gained` keeps it in `Entered`).
+pub fn rejoining(
+  class_id class_id: Int,
+  entered_at entered_at: Int,
+  risen_to risen_to: Int,
+) -> List(Frame) {
+  let tables = character_tables.shared()
+  let #(_, entered) = entering(class_id:, level: entered_at)
+  let character = Character(..entered.character, level: risen_to)
+  let landing =
+    place_support.at(
+      world_id: 426,
+      world_zone_id: 648,
+      x: 4098.16015625,
+      y: -665.9780883789062,
+      z: -5165.10009765625,
+    )
+  let #(state, _) =
+    world_entry.rejoining(
+      entered: world_entry.Entered(..entered, character:),
+      place: landing,
+      health: None,
+      connection: ConnectionId(1),
+      stay: map_support.stay(count: 2),
+      tables:,
+      visibility: dict.new(),
+    )
+  let assert world_entry.InTheWorld(effects:, ..) =
+    joined_state(state:, tables:, character:, place: landing, now: now())
+    as "the map's answer to the rejoin puts the player in the world"
+  frames_of(effects:)
+}
+
 /// What a character's entry decides on these tables, with the Novice set its
 /// create stored: its effects, in order, and the player the connection keeps.
 pub fn entry(

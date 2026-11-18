@@ -28,6 +28,7 @@
 //// Every wait is for bytes the server writes, with a deadline a passing test
 //// never reaches.
 
+import ability_points_support
 import ask_support
 import bot_frames
 import cast_support
@@ -132,6 +133,7 @@ import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/xp_per_level
 import genesis_prime/world_map/creature_faction
 import genesis_prime/world_map/creature_registry
+import genesis_prime/world_map/game_number.{type GameNumbers, GameNumbers}
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/registry as world_map_registry
 import genesis_prime/world_map/spawn
@@ -143,6 +145,7 @@ import gleam/dynamic/decode
 import gleam/erlang/atom
 import gleam/erlang/process
 import gleam/float
+import gleam/function
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -4331,9 +4334,31 @@ fn world_on(
   time time: driven_time.Time,
   tutorial tutorial: Bool,
 ) -> login_support.Started {
+  world_with_numbers(
+    folder:,
+    tables:,
+    time:,
+    tutorial:,
+    numbers: function.identity,
+  )
+}
+
+/// The world of `world_on` whose game connections take the game numbers `numbers` makes
+/// of the tests' own.
+fn world_with_numbers(
+  folder folder: String,
+  tables tables: table_store.Tables,
+  time time: driven_time.Time,
+  tutorial tutorial: Bool,
+  numbers numbers: fn(GameNumbers) -> GameNumbers,
+) -> login_support.Started {
   start_with_world_data_by(folder:, adjusted: fn(settings) {
     let settings = login_support.driven_by(settings:, time:)
-    let held = settings.game.settings
+    let held =
+      connection_state.Settings(
+        ..settings.game.settings,
+        numbers: numbers(settings.game.settings.numbers),
+      )
     let key = settings.world.spawns
     server.Settings(
       ..settings,
@@ -4487,26 +4512,7 @@ pub fn a_placed_target_is_shown_killed_and_counted_test() -> Nil {
   let target = the_target_at_slot_0(frames:)
   assert target.tail.faction_id == 170 && target.tail.base_faction_id == 170
     as "opcode.0x262: both factions are the Creature2 row's, 170"
-  let slot = ring_slot(index: 0)
-  game_client.face(
-    game:,
-    yaw: game_client.yaw_toward(from: #(slot.0 +. 12.0, slot.2), target: #(
-      slot.0,
-      slot.2,
-    )),
-    clock: 100,
-  )
-  let assert Ok(#(killed, have)) =
-    fight_bot.presses_until_the_target_dies(
-      ability: fight_bot.paralytic_surge,
-      advance: driven_time.advance(time:, ms: _),
-      recharge_ms: 0,
-      game:,
-      have:,
-      target: target.unit_id,
-      cast_id: 1,
-      seen: [],
-    )
+  let #(killed, have) = kills_the_target_at_slot_0(game:, have:, frames:, time:)
   // The kill's credit comes from the creature after its death is written.
   let #(counted, _) = game_client.read_until_pong(game:, have:, number: 7)
   assert list.filter(list.append(killed, counted), fn(frame) {
@@ -4547,32 +4553,12 @@ pub fn a_medic_that_levels_from_3_to_4_holds_fissure_castable_and_a_relog_at_4_h
       level: 3,
       saved_experience: Some(level_four.min_xp_for_level - 1),
     )
-  let target = the_target_at_slot_0(frames:)
   let other =
     list.find(targets_in(frames:), fn(creature) {
-      creature.unit_id != target.unit_id
+      creature.unit_id != the_target_at_slot_0(frames:).unit_id
     })
   let assert Ok(other) = other as "the ring's second 73492 stands at slot 2"
-  let slot = ring_slot(index: 0)
-  game_client.face(
-    game:,
-    yaw: game_client.yaw_toward(from: #(slot.0 +. 12.0, slot.2), target: #(
-      slot.0,
-      slot.2,
-    )),
-    clock: 100,
-  )
-  let assert Ok(#(killed, have)) =
-    fight_bot.presses_until_the_target_dies(
-      ability: fight_bot.paralytic_surge,
-      advance: driven_time.advance(time:, ms: _),
-      recharge_ms: 0,
-      game:,
-      have:,
-      target: target.unit_id,
-      cast_id: 1,
-      seen: [],
-    )
+  let #(killed, have) = kills_the_target_at_slot_0(game:, have:, frames:, time:)
   let #(rest, have) =
     game_client.read_until(game:, have:, found: fn(rest) {
       list.any(list.append(killed, rest), fn(frame) {
@@ -4631,6 +4617,130 @@ pub fn a_medic_that_levels_from_3_to_4_holds_fissure_castable_and_a_relog_at_4_h
     as "the entry's location-4 items are the level-1 three, the innate and Fissure's base in slot 4: a relog holds the book a rise made"
   game_client.close(game:)
   login_support.stop(started)
+}
+
+/// The player at the marker ring faces the target at ring slot 0 and presses Paralytic Surge on
+/// the driven clock until it dies: the frames up to its death and the bytes beyond them.
+fn kills_the_target_at_slot_0(
+  game game: game_client.Game,
+  have have: BitArray,
+  frames frames: List(Frame),
+  time time: driven_time.Time,
+) -> #(List(Frame), BitArray) {
+  let target = the_target_at_slot_0(frames:)
+  let slot = ring_slot(index: 0)
+  game_client.face(
+    game:,
+    yaw: game_client.yaw_toward(from: #(slot.0 +. 12.0, slot.2), target: #(
+      slot.0,
+      slot.2,
+    )),
+    clock: 100,
+  )
+  let assert Ok(killed) =
+    fight_bot.presses_until_the_target_dies(
+      ability: fight_bot.paralytic_surge,
+      advance: driven_time.advance(time:, ms: _),
+      recharge_ms: 0,
+      game:,
+      have:,
+      target: target.unit_id,
+      cast_id: 1,
+      seen: [],
+    )
+  killed
+}
+
+/// A Medic of level 9 whose saved experience is one short of level 10 (XpPerLevel row 10,
+/// minXpForLevel 23860) kills the target at ring slot 0: the 0x0169 of its entry holds 0 and 0
+/// before 0x025E, the rise to 10 sends 1 and 1 after the level (`XpPerLevel.abilityPointsPerLevel`
+/// is 1 from ID 10; `opcode.0x169`), and the relog at 10 sends 1 and 1 again in the same place.
+/// The clock is driven and nothing waits on real time.
+pub fn a_medic_that_levels_from_9_to_10_receives_one_point_and_a_relog_at_10_sends_it_again_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use tables <- on_rows_without_paralytic_surges_recharge()
+  let time = driven_time.new()
+  let started =
+    world_with_kill_experience_below_the_fourth_level_gap(tables:, time:)
+  let assert Ok(level_ten) = xp_per_level.get(tables:, id: XpPerLevelId(10))
+    as "XpPerLevel has a row 10"
+  let #(game, frames, have, character) =
+    a_medic_of_a_level_at_the_marker_ring(
+      started:,
+      sixth: 0,
+      level: 9,
+      saved_experience: Some(level_ten.min_xp_for_level - 1),
+    )
+  assert ability_points_support.points_in(frames:) == [#(0, 0)]
+    as "XpPerLevel.abilityPointsPerLevel: IDs 1 to 9 give none, so the entry's 0x0169 holds 0 and 0"
+  assert entry_places_the_points_between_the_reward_properties_and_the_state(
+    frames:,
+  )
+    as "lua.Abilities.UpdateInterfaceMenuAlerts: before 0x025E, after 0x092C"
+  let #(killed, have) = kills_the_target_at_slot_0(game:, have:, frames:, time:)
+  let #(rest, have) =
+    game_client.read_until(game:, have:, found: fn(rest) {
+      list.any(list.append(killed, rest), fn(frame) {
+        frame.message_id == 0x0169
+      })
+    })
+  let from_the_kill = list.append(killed, rest)
+  assert ability_points_support.points_in(frames: from_the_kill) == [#(1, 1)]
+    as "the rise to 10 sends a 0x0169 of 1 and 1"
+  let rise =
+    list.filter(from_the_kill, fn(frame) {
+      list.contains([0x01AC, 0x0938, 0x0169], frame.message_id)
+      && !is_other_stat(frame:)
+    })
+  assert list.map(rise, fn(frame) { frame.message_id })
+    == [0x01AC, 0x0938, 0x0169]
+    as "the experience, the level, then the points: the client re-reads the points when it raises PlayerLevelChange, after the level's stat"
+  let assert [_, level, _] = rise
+  assert unit_stat_changed.decode(level.body)
+    |> result.map(fn(changed) { changed.change })
+    == Ok(unit_stat_change.Level(UnitStatLevel(value: 10)))
+    as "opcode.0x938: stat 10 is 10"
+  let #(second_entry, _) =
+    game_client.camp_and_play(game:, have:, character_id: character)
+  assert ability_points_support.points_in(frames: second_entry) == [#(1, 1)]
+    as "the relog at 10 sends one 0x0169 of 1 and 1"
+  assert entry_places_the_points_between_the_reward_properties_and_the_state(
+    frames: second_entry,
+  )
+    as "the relog's entry sends it in the same place"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+/// The marker world whose kills give experience to a player four or more levels above the
+/// creature. The ring's creatures are level 2 and the level 9 Medic's gap clamps to -4, whose
+/// multiplier (`kill_experience_multiplier_below_4`, a `game_number` server choice: the client
+/// has no kill formula) is 0 in the content; only that one is set to 1, so the test changes
+/// the server's content and no client rule.
+fn world_with_kill_experience_below_the_fourth_level_gap(
+  tables tables: table_store.Tables,
+  time time: driven_time.Time,
+) -> login_support.Started {
+  world_with_numbers(
+    folder: content_support.fixture_folder,
+    tables:,
+    time:,
+    tutorial: False,
+    numbers: fn(numbers) {
+      GameNumbers(..numbers, kill_experience_multipliers: [
+        1.0,
+        ..list.drop(numbers.kill_experience_multipliers, up_to: 1)
+      ])
+    },
+  )
+}
+
+/// Whether 0x0169 follows 0x092C and comes before 0x025E in the frames.
+fn entry_places_the_points_between_the_reward_properties_and_the_state(
+  frames frames: List(Frame),
+) -> Bool {
+  list.window(cast_support.ids(frames:), 3)
+  |> list.contains([0x092C, 0x0169, 0x025E])
 }
 
 /// The Spellslinger of the marker ring that levels from 3 to 4 on the kill at slot 0 with
@@ -4746,12 +4856,16 @@ pub fn a_spellslinger_that_levels_from_3_to_4_casts_its_new_ability_and_a_relog_
       #(4, 20_718),
     ]
     as "a relog holds the book a rise made, in its order"
-  // The ring's other creature is shown to the player again, alive, before the press.
+  // The ring's other creature is shown to the player again, alive, before the press. The map
+  // tells the connection of it and the connection itself writes the 0x01BC the entry read ends
+  // on: two senders, so the creature may already be in the entry's frames, and the wait looks
+  // in them too.
   let #(_, have) =
     game_client.read_until(game:, have:, found: fn(shown) {
-      list.any(targets_in(frames: shown), fn(creature) {
-        creature.unit_id == other.unit_id
-      })
+      list.any(
+        targets_in(frames: list.append(second_entry, shown)),
+        fn(creature) { creature.unit_id == other.unit_id },
+      )
     })
   game_client.press_ability(
     game:,
@@ -4817,27 +4931,7 @@ pub fn the_last_kill_of_quest_10518_is_followed_by_0x35c_state_2_its_rewards_and
   let time = driven_time.new()
   let started = world_with_the_markers_creatures(tables:, time:)
   let #(game, frames, have, _) = a_medic_at_the_marker_ring(started:, sixth: 2)
-  let target = the_target_at_slot_0(frames:)
-  let slot = ring_slot(index: 0)
-  game_client.face(
-    game:,
-    yaw: game_client.yaw_toward(from: #(slot.0 +. 12.0, slot.2), target: #(
-      slot.0,
-      slot.2,
-    )),
-    clock: 100,
-  )
-  let assert Ok(#(killed, have)) =
-    fight_bot.presses_until_the_target_dies(
-      ability: fight_bot.paralytic_surge,
-      advance: driven_time.advance(time:, ms: _),
-      recharge_ms: 0,
-      game:,
-      have:,
-      target: target.unit_id,
-      cast_id: 1,
-      seen: [],
-    )
+  let #(killed, have) = kills_the_target_at_slot_0(game:, have:, frames:, time:)
   // No wait on time: the read goes on until the frame that completes the quest arrives.
   let #(rest, _) =
     game_client.read_until(game:, have:, found: fn(rest) {
@@ -4880,26 +4974,7 @@ pub fn a_placed_target_respawns_at_its_slot_test() -> Nil {
   let started = world_with_the_markers_creatures(tables:, time:)
   let #(game, frames, have, _) = a_medic_at_the_marker_ring(started:, sixth: 0)
   let target = the_target_at_slot_0(frames:)
-  let slot = ring_slot(index: 0)
-  game_client.face(
-    game:,
-    yaw: game_client.yaw_toward(from: #(slot.0 +. 12.0, slot.2), target: #(
-      slot.0,
-      slot.2,
-    )),
-    clock: 100,
-  )
-  let assert Ok(#(_, have)) =
-    fight_bot.presses_until_the_target_dies(
-      ability: fight_bot.paralytic_surge,
-      advance: driven_time.advance(time:, ms: _),
-      recharge_ms: 0,
-      game:,
-      have:,
-      target: target.unit_id,
-      cast_id: 1,
-      seen: [],
-    )
+  let #(_, have) = kills_the_target_at_slot_0(game:, have:, frames:, time:)
   // The respawn time is the row every creature without one of its own takes
   // (death.creature_respawn): the creature kind row 0 of the content.
   let assert Ok(kind) =

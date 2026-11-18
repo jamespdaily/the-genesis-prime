@@ -1,11 +1,11 @@
 {
   "nMaxHealth": 942,
-  "nTime": 1794332153,
-  "strName": "Tess Renamed",
+  "nTime": 1795006232,
+  "strName": "Grozim Vroc",
   "tPos": {
-    "y": -716.9922485351562,
-    "x": 4158.67041015625,
-    "z": -5338.72216796875
+    "y": -994.7713012695312,
+    "x": -8093.958984375,
+    "z": -200.6783294677734
   },
   "arAddonsWithoutInfo": [
     "GroupFrame",
@@ -17,15 +17,15 @@
   ],
   "bModelLoaded": true,
   "bControlled": true,
-  "nPolls": 14,
+  "nPolls": 15,
   "nHealth": 942,
   "bCharacterLoaded": true,
   "bPlayerUnit": true,
   "bReported": true,
   "nLevel": 3,
-  "nReportedAt": 1794332153,
+  "nReportedAt": 1795006232,
   "tAddonErrors": {},
   "bDead": false,
   "tLuaErrorEvents": {},
-  "ePath": 0
+  "ePath": 1
 }
