@@ -8,7 +8,9 @@ import connection_rule_support as support
 import fixture_tables
 import game_connection_support
 import genesis_prime/client_connection.{type Request, AskStore}
+import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
+import genesis_prime/message/item_added
 import genesis_prime/step.{
   type ConnectionStep, type Outcome, CancelTimer, Input, Now, OwnEffect,
   OwnEvent, StartTimer, TimerId,
@@ -62,12 +64,7 @@ pub fn held(
     location:,
     bag_index:,
     stack_count: count,
-    words: store.ItemWords(
-      random_stats: 0,
-      charges: 0,
-      item_flags: 0,
-      expires_at_unix_ms:,
-    ),
+    words: store.ItemWords(..store.plain_words, expires_at_unix_ms:),
   )
 }
 
@@ -113,6 +110,21 @@ pub fn timers(taken taken: ConnectionStep(Request)) -> List(#(String, Int)) {
       | step.Unwatch(..)
       | step.Log(..)
       | step.Stop -> Error(Nil)
+    }
+  })
+}
+
+/// The guid and time left of each 0x111 the step wrote.
+pub fn times_left(taken taken: ConnectionStep(Request)) -> List(#(Int, Int)) {
+  list.filter_map(game_connection_support.written(taken:), fn(frame: Frame) {
+    case frame.message_id == item_added.message_id {
+      True -> {
+        let assert Ok(added) = item_added.decode(frame.body)
+          as "the 0x111 decodes"
+        let item = added.held_item.item
+        Ok(#(item.item_guid, item.time_left_ms))
+      }
+      False -> Error(Nil)
     }
   })
 }

@@ -32,7 +32,6 @@ import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings} as connection_state
 import genesis_prime/game/movement
 import genesis_prime/message/disconnect_reason.{LostUserServer}
-import genesis_prime/message/item_added
 import genesis_prime/message/item_delete
 import genesis_prime/message/item_place.{ItemPlace}
 import genesis_prime/message/item_removed
@@ -41,7 +40,7 @@ import genesis_prime/message/vendor_buyback.{VendorBuyback}
 import genesis_prime/step.{type ConnectionStep, type Outcome, NoAnswerInTime}
 import genesis_prime/store.{
   type HeldItem, DeleteItem, ForItems, Items, ItemsNotSaved, ItemsSaved,
-  MergeItems, SaveRefused, SplitItem,
+  SaveRefused,
 }
 import genesis_prime/table/id.{Item2Id}
 import genesis_prime/table/item2
@@ -106,19 +105,18 @@ fn removed_in(taken taken: ConnectionStep(Request)) -> List(#(Int, Int)) {
   })
 }
 
-/// The guid and time left of each 0x111 the step wrote.
-fn time_left_in(taken taken: ConnectionStep(Request)) -> List(#(Int, Int)) {
-  list.filter_map(game_connection_support.written(taken:), fn(frame: Frame) {
-    case frame.message_id == item_added.message_id {
-      True -> {
-        let assert Ok(added) = item_added.decode(frame.body)
-          as "the 0x111 decodes"
-        let item = added.held_item.item
-        Ok(#(item.item_guid, item.time_left_ms))
-      }
-      False -> Error(Nil)
-    }
-  })
+/// The word of a stack a sale sold that runs out at the moment.
+fn sold_word(
+  guid guid: Int,
+  expires_at_unix_ms expires_at_unix_ms: Int,
+) -> store.SoldWord {
+  store.SoldWord(
+    item_guid: guid,
+    words: store.ItemWords(
+      ..store.plain_words,
+      expires_at_unix_ms: Some(expires_at_unix_ms),
+    ),
+  )
 }
 
 /// The tables with the stackable and the single row running out after an hour, for the
@@ -256,7 +254,7 @@ pub fn every_change_of_the_held_items_moves_the_timer_test() -> Nil {
     )
   assert item_expiry_support.timers(taken: answered) == [#("start", 60_000)]
     as "the first timed item starts the timer for its lifetime"
-  assert time_left_in(taken: answered) == [#(900, 60_000)]
+  assert item_expiry_support.times_left(taken: answered) == [#(900, 60_000)]
     as "opcode.0x111.time_left: the new item is sent with its whole lifetime"
   // A sale of the only timed item, a stack of 5, takes its moment off the timer.
   let state =
@@ -284,14 +282,9 @@ pub fn every_change_of_the_held_items_moves_the_timer_test() -> Nil {
         FromStore(
           ForItems(
             store.Sold(amount: 1100, words: [
-              store.SoldWord(
-                item_guid: 104,
-                words: store.ItemWords(
-                  random_stats: 0,
-                  charges: 0,
-                  item_flags: 0,
-                  expires_at_unix_ms: Some(item_expiry_support.unix_at(25_000)),
-                ),
+              sold_word(
+                guid: 104,
+                expires_at_unix_ms: item_expiry_support.unix_at(25_000),
               ),
             ]),
           ),
@@ -302,9 +295,11 @@ pub fn every_change_of_the_held_items_moves_the_timer_test() -> Nil {
     as "the stack sold is no longer held, so its moment is no deadline and the timer is cancelled"
 }
 
-pub fn a_split_keeps_the_moment_and_a_merge_keeps_the_earlier_one_test() -> Nil {
+pub fn a_split_stack_is_sent_with_its_sources_moment_and_a_merged_one_runs_out_at_the_earlier_test() -> Nil {
   use <- owned_test.run(60_000)
   use tables <- with_timed_rows
+  // The rule (`item_expiry.earlier`) and the store's statements are tested apart; this is
+  // what the connection adds: the held items carry the moments on.
   // A stack of 10 that runs out at 50,000 ms, split by 3 to slot 5 at 2,000 ms.
   let stack =
     item_expiry_support.held(
@@ -323,17 +318,7 @@ pub fn a_split_keeps_the_moment_and_a_merge_keeps_the_earlier_one_test() -> Nil 
       bytes: split_to(guid: 104, bag_index: 5, count: 3),
       after_ms: 2000,
     )
-  assert item_expiry_support.items_asked(taken:)
-    == SplitItem(
-      account_id: store.AccountId(7),
-      character_id: store.CharacterId(42),
-      session_epoch: game_connection_support_epoch(),
-      source: stack,
-      count: 3,
-      to: store.ItemPlace(location: 1, bag_index: 5),
-    )
-    as "the split names the source as held, with its moment, which the store's statement copies"
-  let #(state, answered) =
+  let #(_, answered) =
     item_expiry_support.answered_at(
       state:,
       taken:,
@@ -342,51 +327,11 @@ pub fn a_split_keeps_the_moment_and_a_merge_keeps_the_earlier_one_test() -> Nil 
     )
   assert item_expiry_support.timers(taken: answered) == []
     as "the split changes no moment: the earliest is the same"
-  assert time_left_in(taken: answered) == [#(204, 48_000)]
+  assert item_expiry_support.times_left(taken: answered) == [#(204, 48_000)]
     as "opcode.0x111.time_left: the new stack carries the source's moment, 50,000 - 2,000 ms away"
-  // At 50,000 ms both stacks are due, the lower guid first, and the second follows at once.
-  let #(state, firing) =
-    item_expiry_support.fired_at(
-      state:,
-      timer: item_expiry_support.timer,
-      after_ms: 50_000,
-    )
-  assert item_expiry_support.items_asked(taken: firing)
-    == DeleteItem(
-      account_id: store.AccountId(7),
-      character_id: store.CharacterId(42),
-      session_epoch: game_connection_support_epoch(),
-      item: item_expiry_support.held(
-        guid: 104,
-        item2: item_expiry_support.stackable,
-        location: 1,
-        bag_index: 3,
-        count: 7,
-        expires_at_unix_ms: Some(item_expiry_support.unix_at(50_000)),
-      ),
-    )
-    as "the stack that was split holds 7 and still runs out at 50,000 ms"
-  let #(_, answered) =
-    item_expiry_support.answered_at(
-      state:,
-      taken: firing,
-      outcome: saved(),
-      after_ms: 50_000,
-    )
-  assert item_expiry_support.timers(taken: answered)
-    == [#("cancel", 0), #("start", 0)]
-    as "the new stack's moment is due too, so the timer starts in 0 ms"
   // A merge of the stack that runs out at 20,000 ms onto the one that runs out at 50,000 ms
   // leaves the target the earlier moment.
-  let later =
-    item_expiry_support.held(
-      guid: 104,
-      item2: item_expiry_support.stackable,
-      location: 1,
-      bag_index: 3,
-      count: 10,
-      expires_at_unix_ms: Some(item_expiry_support.unix_at(50_000)),
-    )
+  let later = stack
   let earlier =
     item_expiry_support.held(
       guid: 105,
@@ -396,10 +341,8 @@ pub fn a_split_keeps_the_moment_and_a_merge_keeps_the_earlier_one_test() -> Nil 
       count: 5,
       expires_at_unix_ms: Some(item_expiry_support.unix_at(20_000)),
     )
-  let #(entered, entry) =
+  let #(entered, _) =
     item_expiry_support.entered_holding(tables:, items: [later, earlier])
-  assert item_expiry_support.timers(taken: entry) == [#("start", 20_000)]
-    as "the earlier of the two stacks' moments"
   let #(state, taken) =
     item_expiry_support.read_at(
       state: entered,
@@ -409,44 +352,27 @@ pub fn a_split_keeps_the_moment_and_a_merge_keeps_the_earlier_one_test() -> Nil 
       ),
       after_ms: 1000,
     )
-  assert item_expiry_support.items_asked(taken:)
-    == MergeItems(
-      account_id: store.AccountId(7),
-      character_id: store.CharacterId(42),
-      session_epoch: game_connection_support_epoch(),
-      source: earlier,
-      target: later,
-      count: 5,
-    )
-    as "the merge names both stacks as held"
-  let #(state, answered) =
+  let #(state, _) =
     item_expiry_support.answered_at(
       state:,
       taken:,
       outcome: saved(),
       after_ms: 1000,
     )
-  assert item_expiry_support.timers(taken: answered) == []
-    as "the merged stack runs out at the earlier moment, which was the earliest already"
   let #(_, firing) =
     item_expiry_support.fired_at(
       state:,
       timer: item_expiry_support.timer,
       after_ms: 20_000,
     )
-  assert item_expiry_support.items_asked(taken: firing)
-    == DeleteItem(
-      account_id: store.AccountId(7),
-      character_id: store.CharacterId(42),
-      session_epoch: game_connection_support_epoch(),
-      item: item_expiry_support.held(
-        guid: 104,
-        item2: item_expiry_support.stackable,
-        location: 1,
-        bag_index: 3,
-        count: 15,
-        expires_at_unix_ms: Some(item_expiry_support.unix_at(20_000)),
-      ),
+  assert item_expiry_support.deleted_by(taken: firing)
+    == item_expiry_support.held(
+      guid: 104,
+      item2: item_expiry_support.stackable,
+      location: 1,
+      bag_index: 3,
+      count: 15,
+      expires_at_unix_ms: Some(item_expiry_support.unix_at(20_000)),
     )
     as "the target of the merge holds 15 and runs out at the earlier moment, 20,000 ms"
 }
@@ -695,7 +621,7 @@ fn at_the_vendor(
   )
 }
 
-pub fn leaving_saves_the_time_left_and_cancels_the_timer_test() -> Nil {
+pub fn leaving_cancels_the_timer_and_saves_no_item_time_test() -> Nil {
   use <- owned_test.run(60_000)
   use tables <- with_timed_rows
   // The moment is saved with the item (the store's statements write it), so the place's save
@@ -749,6 +675,8 @@ pub fn a_firing_in_a_busy_status_is_held_until_it_ends_test() -> Nil {
   // The moment of g104 (a stack of 10 in slot 3) comes at 30,000 ms, while the connection waits
   // on the store in each status that returns the player to the world: the firing is held, and
   // taken once the answer has put the player back.
+  // SpendingCharge and TurningIn are tried in `game_connection_item_charges_test` and
+  // `game_connection_quest_turn_in_test`, whose scenes they need.
   let stack =
     item_expiry_support.held(
       guid: 104,
@@ -841,14 +769,9 @@ pub fn a_firing_in_a_busy_status_is_held_until_it_ends_test() -> Nil {
       FromStore(
         ForItems(
           store.Sold(amount: 1000, words: [
-            store.SoldWord(
-              item_guid: 104,
-              words: store.ItemWords(
-                random_stats: 0,
-                charges: 0,
-                item_flags: 0,
-                expires_at_unix_ms: Some(item_expiry_support.unix_at(30_000)),
-              ),
+            sold_word(
+              guid: 104,
+              expires_at_unix_ms: item_expiry_support.unix_at(30_000),
             ),
           ]),
         ),
@@ -954,14 +877,9 @@ pub fn a_sold_timed_item_is_bought_back_with_the_time_it_had_test() -> Nil {
           FromStore(
             ForItems(
               store.Sold(amount: 1013, words: [
-                store.SoldWord(
-                  item_guid: 500,
-                  words: store.ItemWords(
-                    random_stats: 0,
-                    charges: 0,
-                    item_flags: 0,
-                    expires_at_unix_ms: Some(item_expiry_support.unix_at(25_000)),
-                  ),
+                sold_word(
+                  guid: 500,
+                  expires_at_unix_ms: item_expiry_support.unix_at(25_000),
                 ),
               ]),
             ),
@@ -1004,7 +922,8 @@ pub fn a_sold_timed_item_is_bought_back_with_the_time_it_had_test() -> Nil {
         ),
         after_ms:,
       )
-    assert time_left_in(taken: answered) == [#(900, time_left)]
+    assert item_expiry_support.times_left(taken: answered)
+      == [#(900, time_left)]
       as "opcode.0x111.time_left: the time left to the same moment, at least 1 once it has passed"
     assert item_expiry_support.timers(taken: answered) == timers
       as "the timer is set for the moment, in 0 ms when it has passed"

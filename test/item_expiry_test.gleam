@@ -86,54 +86,72 @@ pub fn the_clients_timed_rows_are_37_and_each_fits_the_tooltips_31_bits_test() -
     as "0x1404445d0.proxy: the row a proxy takes its fields from holds no lifetime"
 }
 
-pub fn a_deadline_is_the_entry_time_plus_the_time_left_test() -> Nil {
+pub fn a_new_timed_item_runs_out_one_lifetime_from_now_and_a_bought_back_one_keeps_its_moment_test() -> Nil {
   use <- owned_test.run(60_000)
   use tables <- item_expiry_support.tables_with(lifetimes: [
     #(item_expiry_support.single, 60),
     #(item_expiry_support.stackable, 1),
   ])
-  // An item made at `now` (a purchase, a reward) runs out when its lifetime has passed.
+  // An item made at `now` (a purchase, a reward) runs out when its lifetime has passed; an
+  // item bought back keeps the moment it had when it was sold, whether it has passed or not,
+  // and a row with no lifetime is made with none.
   let cases = [
-    // #(Item2, now, the moment)
-    #(item_expiry_support.single, 1000, Ok(Some(3_601_000))),
-    #(item_expiry_support.stackable, 1000, Ok(Some(61_000))),
-    #(item_expiry_support.stackable, 5_000_000, Ok(Some(5_060_000))),
-    #(2509, 1000, Ok(None)),
-    #(999_999_999, 1000, Error(NoRow(table: "Item2", id: 999_999_999))),
+    // #(Item2, the moment kept, now, the moment made, why)
+    #(
+      item_expiry_support.single,
+      None,
+      1000,
+      Ok(Some(3_601_000)),
+      "a 60-minute row: now plus 3,600,000 ms",
+    ),
+    #(
+      item_expiry_support.stackable,
+      None,
+      5_000_000,
+      Ok(Some(5_060_000)),
+      "a 1-minute row: now plus 60,000 ms",
+    ),
+    #(2509, None, 1000, Ok(None), "a row with no lifetime has no moment"),
+    #(
+      item_expiry_support.single,
+      Some(500_000),
+      1000,
+      Ok(Some(500_000)),
+      "a bought back item keeps the moment it had, not a new lifetime",
+    ),
+    #(
+      item_expiry_support.single,
+      Some(500),
+      1000,
+      Ok(Some(500)),
+      "a kept moment already past stays past, so the item is removed at once",
+    ),
+    #(
+      2509,
+      Some(42_000),
+      1000,
+      Ok(Some(42_000)),
+      "a kept moment is kept for any row",
+    ),
+    #(
+      999_999_999,
+      None,
+      1000,
+      Error(NoRow(table: "Item2", id: 999_999_999)),
+      "a row the tables lack is an error, not a lifetime of 0",
+    ),
   ]
   list.each(cases, fn(row) {
-    let #(item2_id, now_unix_ms, expected) = row
+    let #(item2_id, kept, now_unix_ms, expected, why) = row
     assert item_expiry.made_at(
         tables:,
         item2_id: Item2Id(item2_id),
-        kept: None,
+        kept:,
         now_unix_ms:,
       )
       == expected
-      as "the moment is now plus the row's lifetime, none for a row with no lifetime"
+      as why
   })
-  // The earliest moment held is the timer's, and an item with none is no deadline.
-  assert item_expiry.next_deadline([]) == None as "no item, no deadline"
-  assert item_expiry.next_deadline([
-      item_expiry_support.lasting(guid: 1, bag_index: 0),
-    ])
-    == None
-    as "an item with no moment is no deadline"
-  assert item_expiry.next_deadline([
-      item_expiry_support.single_in_slot(
-        guid: 1,
-        bag_index: 0,
-        expires_at_unix_ms: 9000,
-      ),
-      item_expiry_support.lasting(guid: 2, bag_index: 1),
-      item_expiry_support.single_in_slot(
-        guid: 3,
-        bag_index: 2,
-        expires_at_unix_ms: 4000,
-      ),
-    ])
-    == Some(4000)
-    as "the earliest of the moments held"
 }
 
 pub fn the_time_sent_is_the_time_left_and_never_0_for_a_timed_item_test() -> Nil {
@@ -216,35 +234,10 @@ pub fn a_split_copies_the_deadline_and_a_merge_keeps_the_earlier_test() -> Nil {
   })
 }
 
-pub fn a_new_timed_item_gets_a_full_lifetime_and_an_old_one_keeps_its_time_test() -> Nil {
-  use <- owned_test.run(60_000)
-  use tables <- item_expiry_support.tables_with(lifetimes: [
-    #(item_expiry_support.single, 60),
-  ])
-  let made = fn(item2_id, kept) {
-    item_expiry.made_at(
-      tables:,
-      item2_id: Item2Id(item2_id),
-      kept:,
-      now_unix_ms: 1000,
-    )
-  }
-  assert made(item_expiry_support.single, None) == Ok(Some(3_601_000))
-    as "a new item has a full lifetime from now"
-  assert made(item_expiry_support.single, Some(500_000)) == Ok(Some(500_000))
-    as "an item bought back keeps the moment it had when it was sold, not a new lifetime"
-  assert made(item_expiry_support.single, Some(500)) == Ok(Some(500))
-    as "a kept moment already past stays past, so the item is removed at once"
-  assert made(2509, Some(42_000)) == Ok(Some(42_000))
-    as "a kept moment is kept for any row"
-  assert made(2509, None) == Ok(None)
-    as "a row with no lifetime is made with no moment"
-}
-
-pub fn the_rows_to_save_are_the_time_left_of_each_held_timed_item_test() -> Nil {
+pub fn the_timer_follows_the_earliest_moment_held_test() -> Nil {
   use <- owned_test.run(10_000)
-  // The moment is saved with the item and the timer follows the earliest moment held, so a
-  // change of the items moves the timer by the earliest moment before and after.
+  // The timer follows the earliest moment held, so a change of the items moves it by the
+  // earliest moment before and after.
   let early =
     item_expiry_support.single_in_slot(
       guid: 1,

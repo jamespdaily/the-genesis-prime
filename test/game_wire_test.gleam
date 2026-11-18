@@ -8703,14 +8703,12 @@ fn rows_of_item(
   count
 }
 
-/// A timed item counts down in real time, also while its owner is logged out (the approved
-/// list's name says it pauses; the owner's later decision made the countdown run offline, and
-/// this test checks that it does not pause): on the driven clock, one item runs out a minute
+/// A timed item counts down in real time, also while its owner is logged out: on the driven clock, one item runs out a minute
 /// after the entry while the player is in the world, and the other while the player is away.
 /// The entry sends each its time left (`opcode.0x111.time_left`); the one in the world is
 /// removed with 0x148 reason 26 at its moment and not before (`opcode.0x148.expired`), its row
 /// goes, and an item whose moment passed while the player was away is gone at the next entry.
-pub fn a_timed_item_counts_down_pauses_while_its_owner_is_away_and_is_removed_when_its_time_runs_out_test() -> Nil {
+pub fn a_timed_item_is_removed_at_its_moment_and_one_that_ran_out_while_away_is_gone_at_entry_test() -> Nil {
   use <- owned_test.run(60_000)
   let time = driven_time.new()
   let started =

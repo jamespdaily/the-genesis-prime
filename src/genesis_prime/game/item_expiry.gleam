@@ -24,7 +24,9 @@
 ////   is wall-clock, and an item past it at load is deleted before the entry sends its items.
 //// - **A split and a merge** keep a moment of the same item: a split copies the source's and a
 ////   merge keeps the earlier of the two (the server's choice; the client holds no rule).
-//// - **A timed row saved before the moment was stored** holds none and never runs out.
+//// - **A timed row saved before the moment was stored** holds none and never runs out: the
+////   load gives it no moment (open: the items issue, #333, closes it). The play database
+////   held no such row when the column was added.
 
 import genesis_prime/game/deadline_timer.{type DeadlineTimer}
 import genesis_prime/game/item_property

@@ -6285,7 +6285,7 @@ fn holding_the_novice_set(
 /// buy back store and answer the moment each new stack is given, a split copies its source's,
 /// a merge leaves the target the earlier moment of the two, a sale answers the moment of each
 /// stack it sold, and a statement of a stale epoch writes none.
-pub fn an_item_time_is_saved_only_for_the_row_and_epoch_held_test() -> Nil {
+pub fn an_item_moment_is_saved_only_for_the_row_and_epoch_held_test() -> Nil {
   use <- owned_test.run(60_000)
   let store = account_store_support.start_store(pool_size: 2)
   let #(account, character_id) = holding_the_novice_set(store:)
@@ -6514,7 +6514,7 @@ pub fn an_item_time_is_saved_only_for_the_row_and_epoch_held_test() -> Nil {
 /// A statement that makes a row for an item that does not run out stores no moment: the
 /// character's starting items (the Novice set never runs out), a purchase and a reward given
 /// none, and a split of a stack that holds none, and a load returns none for each.
-pub fn an_item_made_by_each_statement_has_no_time_saved_test() -> Nil {
+pub fn an_item_that_never_runs_out_is_stored_with_no_moment_by_each_statement_test() -> Nil {
   use <- owned_test.run(60_000)
   let store = account_store_support.start_store(pool_size: 2)
   let #(account, character_id) = holding_the_novice_set(store:)
@@ -6584,7 +6584,7 @@ pub fn an_item_made_by_each_statement_has_no_time_saved_test() -> Nil {
 }
 
 /// The moment is 0 or more or none: the table's check refuses a negative one by its name.
-pub fn an_item_time_below_0_is_refused_by_its_check_test() -> Nil {
+pub fn an_item_moment_below_0_is_refused_by_its_check_test() -> Nil {
   use <- owned_test.run(60_000)
   let store = account_store_support.start_store(pool_size: 2)
   let account =

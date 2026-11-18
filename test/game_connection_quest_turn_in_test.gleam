@@ -37,6 +37,7 @@ import genesis_prime/table/id.{Item2Id}
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
+import item_expiry_support
 import message_support
 import owned_test
 import planted_table.{type Cell, Integer}
@@ -134,6 +135,25 @@ pub fn turned_in_answer_sends_rewards_then_state_test() -> Nil {
     as "opcode.0x35c: the quest in state 3 with objective 0"
 }
 
+/// The items a turn-in's stacks become once the store has saved them: one stack of each Item2,
+/// the Item2s' counts being 1, with the guid 900 and up the database gives and every word as
+/// the ask made it.
+fn saved_as_held(placed placed: List(store.Placed)) -> List(store.HeldItem) {
+  list.index_map(placed, fn(one, index) {
+    let assert [NewStack(location:, bag_index:, stack_count:, words:)] =
+      one.make
+      as "one stack of each, the Item2s' counts being 1"
+    HeldItem(
+      item_guid: 900 + index,
+      item2_id: one.item2_id,
+      location:,
+      bag_index:,
+      stack_count:,
+      words:,
+    )
+  })
+}
+
 pub fn turned_in_rewards_are_written_before_the_experience_and_the_state_test() -> Nil {
   use <- owned_test.run(10_000)
   // Quest 5859 gives Item2 81917 and 29661 (one of each), 152 experience and 145 credits.
@@ -150,36 +170,15 @@ pub fn turned_in_rewards_are_written_before_the_experience_and_the_state_test() 
   assert credits_after == 145
   assert list.map(placed, fn(one) { one.item2_id })
     == [Item2Id(81_917), Item2Id(29_661)]
-  let made =
-    list.index_map(placed, fn(one, index) {
-      let assert [
-        NewStack(
-          location:,
-          bag_index:,
-          stack_count:,
-          words: store.ItemWords(
-            random_stats: 0,
-            charges:,
-            item_flags: 0,
-            expires_at_unix_ms: None,
-          ),
-        ),
-      ] = one.make
-        as "one stack of each, the Item2s' counts being 1"
-      HeldItem(
-        item_guid: 900 + index,
-        item2_id: one.item2_id,
-        location:,
-        bag_index:,
-        stack_count:,
-        words: store.ItemWords(
-          random_stats: 0,
-          charges:,
-          item_flags: 0,
-          expires_at_unix_ms: None,
-        ),
-      )
+  assert list.all(placed, fn(one) {
+    list.all(one.make, fn(stack) {
+      stack.words.random_stats == 0
+      && stack.words.item_flags == 0
+      && stack.words.expires_at_unix_ms == None
     })
+  })
+    as "a reward with no lifetime has no moment, no roll yet and no flags"
+  let made = saved_as_held(placed:)
   let #(_, answered) =
     game_connection_support.answer(
       state:,
@@ -208,36 +207,7 @@ pub fn reward_items_advance_the_held_item_objectives_of_other_quests_test() -> N
   let #(state, taken) =
     game_connection_support.read(state:, bytes: turn_in_of(quest_id: 5859))
   let assert TurnInQuest(placed:, ..) = asked_turn_in(taken:)
-  let made =
-    list.index_map(placed, fn(one, index) {
-      let assert [
-        NewStack(
-          location:,
-          bag_index:,
-          stack_count:,
-          words: store.ItemWords(
-            random_stats: 0,
-            charges:,
-            item_flags: 0,
-            expires_at_unix_ms: None,
-          ),
-        ),
-      ] = one.make
-        as "one stack of each, the Item2s' counts being 1"
-      HeldItem(
-        item_guid: 900 + index,
-        item2_id: one.item2_id,
-        location:,
-        bag_index:,
-        stack_count:,
-        words: store.ItemWords(
-          random_stats: 0,
-          charges:,
-          item_flags: 0,
-          expires_at_unix_ms: None,
-        ),
-      )
-    })
+  let made = saved_as_held(placed:)
   let #(_, answered) =
     game_connection_support.answer(
       state:,
@@ -251,6 +221,103 @@ pub fn reward_items_advance_the_held_item_objectives_of_other_quests_test() -> N
   assert progress.body
     == message_support.packed([#(15, 1854), #(32, 0), #(32, 1)])
     as "opcode.0x361: quest 1854's objective 0 holds 1 of 3, the stack of 81917 the reward made"
+}
+
+pub fn a_timed_reward_is_made_with_its_lifetime_and_starts_the_expiry_timer_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Quest 5859 gives Item2 81917 and 29661; 81917 is given a lifetime of 1 minute
+  // (`Item2.expirationTimeMinutes`), which no row of the client's rewards holds.
+  use tables <- quest_turn_in_support.with_changes(changes: [
+    quest_turn_in_support.receiving(5859),
+    #("Item2", 81_917, [#("expirationTimeMinutes", Integer(1))]),
+  ])
+  let state =
+    quest_walker_support.in_world_with_walker(tables:, quests: [
+      quest_turn_in_support.achieved(quest_id: 5859),
+    ])
+  let #(state, taken) =
+    item_expiry_support.read_at(
+      state:,
+      bytes: turn_in_of(quest_id: 5859),
+      after_ms: 2000,
+    )
+  let assert TurnInQuest(placed:, ..) = asked_turn_in(taken:)
+  let moments =
+    list.map(placed, fn(one) {
+      list.map(one.make, fn(stack) { stack.words.expires_at_unix_ms })
+    })
+  assert moments == [[Some(item_expiry_support.unix_at(62_000))], [None]]
+    as "the timed reward runs out one lifetime, 60,000 ms, after the turn-in at 2,000 ms; the other has no moment"
+  let #(_, answered) =
+    item_expiry_support.answered_at(
+      state:,
+      taken:,
+      outcome: step.Answer(
+        FromStore(
+          ForItems(TurnedIn(credits: 145, made: saved_as_held(placed:))),
+        ),
+      ),
+      after_ms: 2000,
+    )
+  assert item_expiry_support.timers(taken: answered) == [#("start", 60_000)]
+    as "the first timed item the reward made starts the timer for its lifetime"
+  assert item_expiry_support.times_left(taken: answered)
+    == [#(900, 60_000), #(901, 0)]
+    as "opcode.0x111.time_left: the timed reward is sent with its whole lifetime, the other with 0"
+}
+
+pub fn an_expiry_firing_during_a_turn_in_is_held_until_the_answer_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use tables <- quest_turn_in_support.with_changes(changes: [
+    quest_turn_in_support.receiving(5859),
+  ])
+  // A held item runs out at 30,000 ms; the turn-in's ask is out when the timer fires.
+  let #(entered, _) =
+    game_connection_support.entered_with_quests_and_items_on(
+      tables:,
+      quests: [quest_turn_in_support.achieved(quest_id: 5859)],
+      items: [
+        item_expiry_support.single_in_slot(
+          guid: 101,
+          bag_index: 3,
+          expires_at_unix_ms: item_expiry_support.unix_at(30_000),
+        ),
+      ],
+    )
+  let #(state, _) =
+    game_connection_support.feed(
+      state: entered,
+      event: quest_walker_support.walker_appears(),
+    )
+  let #(state, taken) =
+    item_expiry_support.read_at(
+      state:,
+      bytes: turn_in_of(quest_id: 5859),
+      after_ms: 29_000,
+    )
+  let assert TurnInQuest(placed:, ..) = asked_turn_in(taken:)
+  let #(state, firing) =
+    item_expiry_support.fired_at(
+      state:,
+      timer: item_expiry_support.timer,
+      after_ms: 30_000,
+    )
+  assert support.asked(firing) == None
+    && game_connection_support.written_ids(firing) == []
+    as "the firing is held while the turn-in is out: nothing is asked or written"
+  let #(_, answered) =
+    item_expiry_support.answered_at(
+      state:,
+      taken:,
+      outcome: step.Answer(
+        FromStore(
+          ForItems(TurnedIn(credits: 145, made: saved_as_held(placed:))),
+        ),
+      ),
+      after_ms: 30_500,
+    )
+  assert item_expiry_support.deleted_by(taken: answered).item_guid == 101
+    as "once the answer has returned the player to the world, the held firing asks for the delete"
 }
 
 pub fn turn_in_not_saved_leaves_the_quest_achieved_test() -> Nil {

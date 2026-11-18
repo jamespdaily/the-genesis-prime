@@ -457,7 +457,7 @@ pub fn the_charges_column_is_nullable_with_a_check_and_a_comment_test() -> Nil {
 /// The expires_at_unix_ms column of character_item (migration 0045): the Unix milliseconds a
 /// timed item runs out, a bigint that is null for an item that does not, with no default, a
 /// check that holds it at 0 or more, and a comment without change-log words.
-pub fn the_time_left_column_is_nullable_with_a_check_and_a_comment_test() -> Nil {
+pub fn the_expiry_moment_column_is_nullable_with_a_check_and_a_comment_test() -> Nil {
   use <- owned_test.run(60_000)
   let shared = database_support.shared()
   let database = database_support.new_database(on: shared)
