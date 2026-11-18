@@ -62,6 +62,16 @@
 ////   that has no go of its own, pays at its accept, in the step of its check
 ////   (`pays_at_accept`). A second press taken in the same step is checked against what
 ////   the first left (genesis_prime/game/class_resource).
+//// - **A channel pays its cost at every go** (`pulse_costs`): the tooltip prices every pulse of
+////   a Channeled spell ("per tick", `UI/ToolTips/ToolTips.lua` 2458-2491) and the tables hold
+////   no cost per pulse, so each go after the first pays the spell's costs again, checked at
+////   that go against the caster as it is then and less the other casts' reservations. A go
+////   the caster cannot pay is not struck and ends the channel as a cancel ends it, with a
+////   0x7fe and no 0x7f9 (the client has no rule for a channel that ran dry, the server's
+////   choice; a 0x7f9 would destroy on the client the target nodes the server keeps). A press
+////   needs one pulse's cost only, as the client checks it (`0x1403b3320`); a channel a
+////   Proxy started pays nothing, as at its first go, and one whose cost spends every point
+////   held pays once, at its first go, the six rows of it being no player's.
 //// - **A spend of every point held** (`spell_plan.SpendAllCost`, genesis_prime/game/spend):
 ////   the check is of the base cost alone, as the client's is (`0x1403b3320`), and the
 ////   accept then reserves every whole point the slot holds less the reserved, which the
@@ -87,6 +97,7 @@ import genesis_prime/game/crowd_control
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{type Spell}
 import genesis_prime/message/cast_result
+import genesis_prime/table/id.{type Spell4Id}
 import gleam/bool
 import gleam/dict
 import gleam/float
@@ -309,11 +320,55 @@ pub fn paying(payments payments: List(Payment)) -> List(Effect) {
 /// Whether a press's costs are paid at its accept: a cast whose first go is at once
 /// and a cast with no go of its own (a charge held until its release) have no later
 /// moment to pay at. Any other cast reserves its costs at the accept and pays them
-/// at its first go.
+/// at its first go. A channel's later gos pay its costs again, nothing reserved
+/// (`pulse_costs`), whichever of the two its first go is.
 pub fn pays_at_accept(spell spell: Spell) -> Bool {
   case spell_plan.go_times_ms(spell:) {
     [] | [0, ..] -> True
     [_, ..] -> False
+  }
+}
+
+/// The costs a go after a cast's first pays again: those of a pressed Channeled
+/// spell, whose tooltip prices every pulse (`ToolTips.lua` 2458-2491, "per tick"
+/// text 469255). None for any other method (Multiphase has no label, ChanneledField
+/// none, ChargeRelease is priced per charge by its stage rows), for a cast a Proxy
+/// started (`parent` set: no press, so no cost, as at its first go) and for a spell
+/// whose cost spends every point held: such a cast pays once, at its first go, since
+/// a spend of all points has no per-pulse meaning in the client.
+pub fn pulse_costs(
+  spell spell: Spell,
+  parent parent: Option(Spell4Id),
+) -> List(spell_plan.Cost) {
+  case spell.method, parent {
+    spell_plan.Channeled, None ->
+      case list.any(spell.costs, spends_every_point) {
+        True -> []
+        False -> spell.costs
+      }
+    spell_plan.Channeled, Some(_)
+    | spell_plan.Normal, _
+    | spell_plan.PressHold, _
+    | spell_plan.ChanneledField, _
+    | spell_plan.ClientSideInteraction, _
+    | spell_plan.RapidTap, _
+    | spell_plan.ChargeRelease, _
+    | spell_plan.Multiphase, _
+    | spell_plan.Transactional, _
+    | spell_plan.OtherMethod(..), _
+    -> []
+  }
+}
+
+/// Whether the cost takes every point the slot holds.
+fn spends_every_point(cost: spell_plan.Cost) -> Bool {
+  case cost {
+    spell_plan.SpendAllCost(..) -> True
+    spell_plan.UnheldCost(..)
+    | spell_plan.UnreadSpendCost(..)
+    | spell_plan.SlotCost(..)
+    | spell_plan.ClassVitalCost(..)
+    | spell_plan.RowClassCost(..) -> False
   }
 }
 

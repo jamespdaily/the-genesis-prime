@@ -1094,6 +1094,8 @@ Spell4	6652	Spider auto-attack #2, whose damage formula reads a parameter the cr
 Spell4	55308	Reaching Bite, a cone special of 3000 ms	creature_auto_attack_test
 Spell4	55283	Whirl, a special of 3000 ms	creature_auto_attack_test
 Spell4	34361	Asura auto-attack #1 whose damage effect for difficulty 7 and above reads parameter type 2	creature_attack_test
+Spell4	34658	Engineer Particle Ejector, a channel costing 5 of vital 6	cast_channel_cost_test
+Spell4	39366	Stalker Frenzy, a channel costing 10 of vital 8 whose first go is at 0 ms	cast_channel_cost_test
 Quest2	3667	The Tower: one visible marked unlinked type 5 objective, marker on its receiver	objective_script_place_test
 Quest2	4509	Urgent Rescue: one marked unlinked type 5 objective of count 6, three markers	objective_script_place_test
 Quest2	3163	a type 22 objective then a marked type 5 objective of flags 3	objective_script_place_test

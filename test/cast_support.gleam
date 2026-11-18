@@ -16,6 +16,7 @@ import genesis_prime/client_connection.{type News}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/area.{type Pose}
 import genesis_prime/game/cast
+import genesis_prime/game/cast/cost as cast_cost
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/class_resource
@@ -236,6 +237,9 @@ pub fn abilities() -> List(Spell4BaseId) {
 }
 
 pub const electrocute = 7
+
+/// The bag index of the base 3 ability that `plans_starting_on_each_struck` plants.
+pub const started_bag_index = 11
 
 pub const pulse_blast = 12
 
@@ -1073,6 +1077,21 @@ pub fn pressed_raw_in(
   target target: Int,
   at ms: Int,
 ) -> #(State, List(Effect)) {
+  let #(state, effects, _) =
+    pressed_counting(plans:, state:, caster:, bag_index:, target:, at: ms)
+  #(state, effects)
+}
+
+/// The same, with how many `SpendsResource` events the press raised for the held procs
+/// before the connection matched them.
+pub fn pressed_counting(
+  plans plans: Plans,
+  state state: State,
+  caster caster: Caster,
+  bag_index bag_index: Int,
+  target target: Int,
+  at ms: Int,
+) -> #(State, List(Effect), Int) {
   let assert Ok(taken) =
     cast.take(
       cast: state,
@@ -1083,7 +1102,9 @@ pub fn pressed_raw_in(
       now: at(ms:),
     )
     as "the press is taken: a refusal of the client's own checks is a 0x7fc, never an error"
-  then_procs(step: taken, caster:, at: ms)
+  let spends = spends_pending(state: taken.0)
+  let #(state, effects) = then_procs(step: taken, caster:, at: ms)
+  #(state, effects, spends)
 }
 
 /// The client's 0x801 at the time, taken by the rule.
@@ -1589,9 +1610,15 @@ pub fn ids(frames frames: List(Frame)) -> List(Int) {
 }
 
 /// One timer that fired: the time it fired at, the goes the rule asked for (before they
-/// were answered) and the effects of its answered step.
+/// were answered), the `SpendsResource` events its step raised for the held procs (before
+/// the connection matched them) and the effects of its answered step.
 pub type Fired {
-  Fired(at_ms: Int, asked: List(cast_state.GoAsked), effects: List(Effect))
+  Fired(
+    at_ms: Int,
+    asked: List(cast_state.GoAsked),
+    spends: Int,
+    effects: List(Effect),
+  )
 }
 
 /// Fires every timer a step started, earliest first, and each timer those steps
@@ -1672,14 +1699,49 @@ pub fn run_timers_posed(
   poses poses: dict.Dict(Int, Pose),
   until_ms until_ms: Option(Int),
 ) -> #(State, List(Fired)) {
+  let #(state, fired, _) =
+    run_pending(
+      caster: cast_cost.after_payments(caster:, effects:),
+      state:,
+      pending: due_of(effects:, now_ms: from_ms),
+      fired_so_far: [],
+      struck_at:,
+      poses:,
+      until_ms:,
+      before: fn(_, caster) { caster },
+      leaves_open: fn(_) { False },
+    )
+  #(state, fired)
+}
+
+/// The same, as a script: `before` changes the caster at the time a timer is due, before
+/// it fires (another cast spending a vital, the vital regenerating), and a timer for which
+/// `leaves_open` holds is not answered, so its go's strike round stays open (its effects
+/// are the raw ones, with the `Strike`). Only the timers due at `until_ms` or before fire,
+/// when it is given. Each step's payments and gains are taken into the caster the next
+/// timer fires for, as the connection builds the caster again from the session after each
+/// `Pay` (`genesis_prime/game/connection/casting.caster_of`); the caster after the last
+/// step is returned.
+pub fn run_timers_scripted(
+  caster caster: Caster,
+  state state: State,
+  effects effects: List(Effect),
+  from_ms from_ms: Int,
+  struck struck: List(cast_state.Struck),
+  until_ms until_ms: Option(Int),
+  before before: fn(Int, Caster) -> Caster,
+  leaves_open leaves_open: fn(Int) -> Bool,
+) -> #(State, List(Fired), Caster) {
   run_pending(
-    caster:,
+    caster: cast_cost.after_payments(caster:, effects:),
     state:,
     pending: due_of(effects:, now_ms: from_ms),
     fired_so_far: [],
-    struck_at:,
-    poses:,
+    struck_at: fn(_, _) { struck },
+    poses: dict.new(),
     until_ms:,
+    before:,
+    leaves_open:,
   )
 }
 
@@ -1703,15 +1765,17 @@ pub fn run_timers_until_as(
   from_ms from_ms: Int,
   until_ms until_ms: Int,
 ) -> #(State, List(#(Int, List(Effect)))) {
-  let #(state, fired) =
+  let #(state, fired, _) =
     run_pending(
-      caster:,
+      caster: cast_cost.after_payments(caster:, effects:),
       state:,
       pending: due_of(effects:, now_ms: from_ms),
       fired_so_far: [],
       struck_at: fn(_, _) { [] },
       poses: dict.new(),
       until_ms: Some(until_ms),
+      before: fn(_, caster) { caster },
+      leaves_open: fn(_) { False },
     )
   #(state, list.map(fired, fn(step) { #(step.at_ms, step.effects) }))
 }
@@ -1726,6 +1790,13 @@ pub fn due_of(
   })
 }
 
+/// How many `SpendsResource` events the state holds for the held procs.
+pub fn spends_pending(state state: State) -> Int {
+  list.count(state.pending, fn(event) {
+    event.trigger == spell_plan.SpendsResource
+  })
+}
+
 fn run_pending(
   caster caster: Caster,
   state state: State,
@@ -1734,40 +1805,55 @@ fn run_pending(
   struck_at struck_at: fn(Int, cast_state.GoAsked) -> List(cast_state.Struck),
   poses poses: dict.Dict(Int, Pose),
   until_ms until_ms: Option(Int),
-) -> #(State, List(Fired)) {
+  before before: fn(Int, Caster) -> Caster,
+  leaves_open leaves_open: fn(Int) -> Bool,
+) -> #(State, List(Fired), Caster) {
   let limit = option.unwrap(until_ms, 9_007_199_254_740_991)
   case
     list.sort(pending, fn(first, second) { int.compare(first.0, second.0) })
   {
-    [] -> #(state, list.reverse(fired_so_far))
-    [#(due, _), ..] if due > limit -> #(state, list.reverse(fired_so_far))
+    [] -> #(state, list.reverse(fired_so_far), caster)
+    [#(due, _), ..] if due > limit -> #(
+      state,
+      list.reverse(fired_so_far),
+      caster,
+    )
     [#(due, timer), ..rest] -> {
-      let #(state, raw) = fired_raw_as(caster:, state:, timer:, at: due)
-      let #(state, effects) =
-        answered_each(
-          caster:,
-          state:,
-          effects: raw,
-          at: due,
-          struck_of: fn(asked) { struck_at(due, asked) },
-          rolls: [],
-          poses:,
-        )
+      let caster = before(due, caster)
+      let #(state, raw) =
+        cast.timer_fired(cast: state, timer:, caster:, now: at(ms: due))
+      let spends = spends_pending(state:)
+      let #(state, raw) = then_procs(step: #(state, raw), caster:, at: due)
+      let #(state, effects) = case leaves_open(due) {
+        True -> #(state, raw)
+        False ->
+          answered_each(
+            caster:,
+            state:,
+            effects: raw,
+            at: due,
+            struck_of: fn(asked) { struck_at(due, asked) },
+            rolls: [],
+            poses:,
+          )
+      }
       let cancelled = cancelled_timers(effects:)
       run_pending(
-        caster:,
+        caster: cast_cost.after_payments(caster:, effects:),
         state:,
         pending: list.append(
           list.filter(rest, fn(other) { !list.contains(cancelled, other.1) }),
           due_of(effects:, now_ms: due),
         ),
         fired_so_far: [
-          Fired(at_ms: due, asked: goes_asked(effects: raw), effects:),
+          Fired(at_ms: due, asked: goes_asked(effects: raw), spends:, effects:),
           ..fired_so_far
         ],
         struck_at:,
         poses:,
         until_ms:,
+        before:,
+        leaves_open:,
       )
     }
   }

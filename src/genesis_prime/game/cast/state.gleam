@@ -687,6 +687,8 @@ pub type Live {
     spent: Option(Int),
     /// The costs the accept checked and the cast's first go pays: empty once paid,
     /// for a cast whose accept paid them (`cast_cost.pays_at_accept`) and for a child.
+    /// A channel's later gos pay its costs again without reserving them
+    /// (`cast_cost.pulse_costs`).
     reserved: List(Payment),
     /// The spell the player pressed, the root of every child.
     root: Spell4Id,
@@ -697,6 +699,9 @@ pub type Live {
     audience: Set(ConnectionId),
     /// How many of its gos have been sent.
     gone: Int,
+    /// How many of its gos have been asked: the pulse a channel's cost is paid at is
+    /// decided when the go is asked, while `gone` moves when a round closes.
+    goes_asked: Int,
     /// The monotonic time the cast started at, which its time left is counted from.
     started_ms: Int,
     /// The ability whose open threshold this cast is a stage of.

@@ -1688,8 +1688,8 @@ fn answered_by_the_beast(
   }
 }
 
-/// What the Engineer's client hears from its Electrocute at a Beast in the camp, after a Pulse
-/// Blast that opens the fight, with `tables` as the server's rows: the Beast and the Engineer
+/// What the Engineer's client hears from its Electrocute at a Beast in the camp, after four Pulse
+/// Blasts, the first of which opens the fight, with `tables` as the server's rows: the Beast and the Engineer
 /// are run by their own rules and answer each other (`answered_by_the_beast`).
 fn electrocute_frames(tables tables: table_store.Tables) -> List(Frame) {
   let #(engineer, _) =
@@ -1728,26 +1728,36 @@ fn electrocute_frames(tables tables: table_store.Tables) -> List(Frame) {
     )
   let #(engineer, shown, _) = medic_takes(engineer, to_the_medic(started))
   assert shown != [] as "the client is shown the Beast"
-  // Electrocute costs 8 of the Volatility a Pulse Blast that opens a fight gives
-  // (Spell4 41276 innateCostType0 6; Spell4.42148).
-  let #(engineer, beast, _) =
-    game_connection_support.pressed_until_answered(
-      state: engineer,
-      world: beast,
-      bag_index: pulse_blast,
-      client_cast_id: 1,
-      ms: 1000,
-      until_ms: 2500,
-      answer: answered_by_the_beast,
+  // Electrocute costs 8 of the Volatility at each of its six pulses (Spell4 41276
+  // innateCostType0 6, a cost per tick), 48 in all, and each Pulse Blast gives 15 (Spell4.42148),
+  // the first of a fight included: four give 60.
+  let #(engineer, beast) =
+    list.index_fold(
+      list.repeat(Nil, 4),
+      #(engineer, beast),
+      fn(so_far, _, blast) {
+        let ms = 1000 + blast * 3000
+        let #(engineer, beast, _) =
+          game_connection_support.pressed_until_answered(
+            state: so_far.0,
+            world: so_far.1,
+            bag_index: pulse_blast,
+            client_cast_id: blast + 1,
+            ms:,
+            until_ms: ms + 1500,
+            answer: answered_by_the_beast,
+          )
+        #(engineer, beast)
+      },
     )
   let #(_, _, steps) =
     game_connection_support.pressed_until_answered(
       state: engineer,
       world: beast,
       bag_index: electrocute,
-      client_cast_id: 2,
-      ms: 4000,
-      until_ms: 8000,
+      client_cast_id: 5,
+      ms: 14_000,
+      until_ms: 18_000,
       answer: answered_by_the_beast,
     )
   list.flat_map(steps, game_connection_support.heard(

@@ -22,6 +22,7 @@ import genesis_prime/game/class_resource
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/strike_tell
 import genesis_prime/message/float32
+import genesis_prime/message/spell_failed
 import genesis_prime/message/unit_float_stat_changed.{
   type UnitFloatStatChanged, UnitFloatStatChanged,
 }
@@ -33,6 +34,7 @@ import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/table/spell4
 import gleam/int
 import gleam/list
+import gleam/string
 import owned_test
 import spell_tables
 
@@ -321,7 +323,106 @@ pub fn electrocute_is_refused_51_at_0_volatility_and_costs_8_of_the_15_a_pulse_b
     == [
       UnitFloatStatChanged(unit_id:, stat_id: 3, value: float32.to_bits(7.0)),
     ]
-    as "with the 15 a Pulse Blast gave, Electrocute is accepted and its first go pays 8: the slot shows 7"
+    as "with the 15 a Pulse Blast gave, Electrocute is accepted and its first go pays 8: the slot shows 7, and the second go finds 7 below its 8, so the channel ends and no 0x935 follows"
+}
+
+// ---- Electrocute pays at each pulse ----
+
+type Channel {
+  Channel(
+    name: String,
+    blasts: Int,
+    volatility: List(Float),
+    went: Int,
+    reason: String,
+  )
+}
+
+/// The Engineer after `blasts` in-combat Pulse Blasts (each gives +15, the seventh is clamped
+/// to 100): the connection and what it needs to press Electrocute at once.
+fn engineer_holding(blasts blasts: Int) -> #(game_connection.State, Int, Int) {
+  let #(state, unit_id, pulse_blast, electrocute) = engineer()
+  let #(state, _) =
+    game_connection_support.at(
+      state:,
+      ms: 950,
+      event: game_connection_support.foe(strike_tell.Threatened(
+        unit_id: beast,
+        life: 4,
+      )),
+    )
+  let state =
+    list.index_fold(list.repeat(Nil, blasts), state, fn(state, _, blast) {
+      let ms = 1000 + blast * 3000
+      pressed_in_combat(
+        state:,
+        bag_index: pulse_blast,
+        client_cast_id: blast + 1,
+        ms:,
+        until_ms: ms + 1500,
+      ).0
+    })
+  #(state, unit_id, electrocute)
+}
+
+pub fn electrocute_drops_the_volatility_bar_at_each_pulse_and_ends_when_it_cannot_pay_test() -> Nil {
+  use <- owned_test.run(120_000)
+  [
+    Channel(
+      name: "8.1",
+      blasts: 2,
+      volatility: [22.0, 14.0, 6.0],
+      went: 3,
+      reason: "two in-combat blasts give 30 (Spell4Effects 95337, +15 each); Electrocute (Spell4 41276: 8 a pulse) pays at three gos, 30 - 8 each, and the 6 left cannot pay the fourth, which ends the channel (Jim's decision; opcode.0x935: one 0x935 of slot 1, stat 3, each)",
+    ),
+    Channel(
+      name: "8.3",
+      blasts: 7,
+      volatility: [92.0, 84.0, 76.0, 68.0, 60.0, 52.0],
+      went: 6,
+      reason: "the Engineer's 100 (migration 0011 maximum) pays all six gos of the channel (delay 500, max 3000, pulse 500)",
+    ),
+  ]
+  |> list.each(fn(row) {
+    let #(state, unit_id, electrocute) = engineer_holding(blasts: row.blasts)
+    let ms = 1000 + row.blasts * 3000 + 500
+    let #(_, cast) =
+      game_connection_support.pressed_until(
+        state:,
+        bag_index: electrocute,
+        client_cast_id: 99,
+        ms:,
+        until_ms: ms + 6000,
+      )
+    assert changes(cast)
+      == list.map(row.volatility, fn(volatility) {
+        UnitFloatStatChanged(
+          unit_id:,
+          stat_id: 3,
+          value: float32.to_bits(volatility),
+        )
+      })
+      as { row.name <> ": " <> row.reason }
+    let frames =
+      list.flat_map(cast, fn(taken) {
+        game_connection_support.heard(taken, game_connection_support.keyed())
+      })
+    let lines = cast_support.cast_lines(frames:)
+    assert list.count(lines, string.starts_with(_, "went")) == row.went
+      as { row.name <> ": the client reads one 0x7f4 for each go that paid" }
+    assert list.count(lines, string.starts_with(_, "finished")) == 1
+      as {
+        row.name
+        <> ": one 0x7fe ends the channel (opcode.0x7fe), at its last go or at the go that cannot be paid"
+      }
+    assert list.all(frames, fn(frame) {
+      frame.message_id != spell_failed.message_id
+    })
+      as {
+        row.name
+        <> ": no 0x7f9: the client's FinishCast would destroy the target nodes the server keeps (opcode.0x7f9)"
+      }
+  })
 }
 
 // ---- 6 ----

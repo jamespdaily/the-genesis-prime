@@ -1,7 +1,9 @@
 //// When a spell's innate cost is paid (`genesis_prime/game/cast` with
 //// `genesis_prime/game/class_resource`): checked at the accept against the slot less
 //// what live casts have reserved, reserved on the live cast, and paid at the cast's
-//// first go. Expected values come from these places, each named at its assertion:
+//// first go, once, for every spell but a pressed channel, which pays at each of its gos
+//// (`cast_channel_cost_test`). Expected values come from these places, each named at its
+//// assertion:
 //// - `Spell4.innateCost0.timing`: the client checks a cost only before it sends a
 ////   press, never lowers a resource itself and shows only what 0x935 says, so when to
 ////   pay is the server's; Jim's retail video shows Gamma Rays' Actuators dropping
@@ -20,11 +22,12 @@
 ////   (the server's choice).
 
 import cast_support as support
+import channel_support
 import genesis_prime/game/cast
 import genesis_prime/game/cast/cost as cast_cost
 import genesis_prime/game/cast/state.{type Effect} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
-import genesis_prime/game/class_resource.{type Resources, Payment}
+import genesis_prime/game/class_resource.{type Payment, type Resources, Payment}
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan.{type Spell, Spell}
 import genesis_prime/game/spend
@@ -33,7 +36,7 @@ import genesis_prime/step.{type TimerId}
 import genesis_prime/table/id.{Spell4EffectsId}
 import gleam/int
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
 import owned_test
 import spell_tables
 
@@ -142,28 +145,128 @@ pub fn gamma_rays_pays_its_actuators_at_its_go_and_not_at_the_press_test() -> Ni
     as "opcode.0x935: one 0x935 of slot 1 with the new value, 4 less 2"
 }
 
-pub fn a_cast_pays_once_at_its_first_go_and_not_at_a_later_one_test() -> Nil {
-  use <- owned_test.run(5000)
-  let caster = esper_holding(points: 5)
-  let discharge = charging_discharge()
-  let #(state, pressed) =
-    support.pressed_raw_in(
-      plans: support.plans_with(spell: discharge),
-      state: cast_state.new(),
-      caster:,
-      bag_index: support.discharge,
-      target: 0,
-      at: 1000,
-    )
-  assert support.payments(effects: pressed) == []
-    as "the accept reserves, it does not pay"
-  let #(_, steps) = support.run_timers(state:, effects: pressed, from_ms: 1000)
-  let assert [first, ..later] = steps as "a channel has several pulses"
-  assert support.payments(effects: first.1) == [Payment(slot: 1, amount: 3)]
-    as "a Channeled spell pays at its first pulse"
-  assert list.flat_map(later, fn(step) { support.payments(effects: step.1) })
-    == []
-    as "the later pulses pay nothing: the cost is the cast's, taken once"
+type Once {
+  Once(
+    name: String,
+    scene: channel_support.Scene,
+    refusal: Option(Int),
+    paid: List(#(Int, Payment)),
+    gos: Int,
+    reason: String,
+  )
+}
+
+/// A channel whose cost spends every point the slot holds (`spell_plan.SpendAllCost`):
+/// Electrocute's base cost of 8 as the check, every point taken.
+fn spending_all_electrocute() -> Spell {
+  Spell(..spell_tables.client_spell(41_276), costs: [
+    spell_plan.SpendAllCost(slot: 1, amount: 8, result: 51),
+  ])
+}
+
+pub fn a_cast_that_is_not_a_channel_pays_once_at_its_first_go_test() -> Nil {
+  use <- owned_test.run(10_000)
+  [
+    Once(
+      name: "4.1",
+      scene: channel_support.channel_scene(
+        spell: support.ability(base: 16_322),
+        class_id: 4,
+        holding: 4.0,
+      ),
+      refusal: None,
+      paid: [#(1250, Payment(slot: 1, amount: 2))],
+      gos: 1,
+      reason: "Gamma Rays (Spell4 29874, castTime 1250, a Normal spell) takes its 2 Actuators at its one go",
+    ),
+    Once(
+      name: "4.2",
+      scene: channel_support.channel_scene(
+        spell: support.ability(base: 23_161),
+        class_id: 5,
+        holding: 100.0,
+      ),
+      refusal: None,
+      paid: [#(0, Payment(slot: 3, amount: 35))],
+      gos: 2,
+      reason: "Impale (Spell4 38779, Multiphase, gos at 0 and 300 ms) costs 35 of type 8, paid once at the accept: ToolTips.lua labels only Channeled '/tick'",
+    ),
+    Once(
+      name: "4.3",
+      scene: channel_support.channel_scene(
+        spell: support.ability(base: 52_215),
+        class_id: 7,
+        holding: 100.0,
+      ),
+      refusal: None,
+      paid: [#(0, Payment(slot: 4, amount: 25))],
+      gos: 5,
+      reason: "Spell4 76002 (Multiphase, five gos from 0 to 1000 ms) costs 25 of type 19, paid once at the accept",
+    ),
+    Once(
+      name: "4.4",
+      scene: channel_support.channel_scene(
+        spell: Spell(
+          ..spell_tables.client_spell(41_276),
+          method: spell_plan.ChanneledField,
+        ),
+        class_id: 2,
+        holding: 100.0,
+      ),
+      refusal: Some(285),
+      paid: [],
+      gos: 0,
+      reason: "castMethod 3 has no '/tick' label and the rule does not cast it: the press is refused 285 (cast_cost.is_built) and nothing is paid",
+    ),
+    Once(
+      name: "4.5",
+      scene: channel_support.started_scene(
+        spell: spell_tables.client_spell(41_276),
+        class_id: 2,
+        holding: 100.0,
+      ),
+      refusal: None,
+      paid: [],
+      gos: 6,
+      reason: "a channel a Proxy starts has no press: no cost at its first go and none at its later ones, as before",
+    ),
+    Once(
+      name: "4.6",
+      scene: channel_support.channel_scene(
+        spell: spending_all_electrocute(),
+        class_id: 2,
+        holding: 100.0,
+      ),
+      refusal: None,
+      paid: [#(500, Payment(slot: 1, amount: 100))],
+      gos: 6,
+      reason: "a spend of every point held has no per-pulse meaning in the client (0x1403b3320 checks the base cost alone): the first go takes the 100 and the later gos take nothing",
+    ),
+  ]
+  |> list.each(fn(row) {
+    let reason = row.name <> ": " <> row.reason
+    case row.refusal {
+      Some(result) -> {
+        let #(_, effects, _) = channel_support.pressed(scene: row.scene)
+        assert support.refusal_results(effects:) == [result] as reason
+        assert support.payments(effects:) == []
+          as { row.name <> ": a refused press pays nothing" }
+      }
+      None -> {
+        let run = channel_support.run_channel(scene: row.scene)
+        assert channel_support.payments(run:) == row.paid as reason
+        assert list.length(channel_support.goes_of(
+            run:,
+            spell4_id: row.scene.spell.spell4_id,
+          ))
+          == row.gos
+          as {
+            row.name
+            <> ": the cast's gos all ran, so the later ones were met and paid nothing"
+          }
+      }
+    }
+  })
 }
 
 // ---- 2: a cast that ends before its go pays nothing ----

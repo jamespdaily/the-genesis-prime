@@ -263,7 +263,7 @@ pub fn electrocute_is_refused_51_at_0_volatility_and_accepted_after_a_pulse_blas
   assert support.refusal_results(effects: accepted) == []
     as "with the 15 a Pulse Blast gave, Electrocute is accepted"
   assert support.payments(effects: accepted) == [Payment(slot: 1, amount: 8)]
-    as "its first go pays 8, so the slot shows 15 - 8 = 7"
+    as "its first go pays 8, so the slot shows 15 - 8 = 7, and the second go finds 7 below its 8, so the channel ends there: one payment, not one a go"
 }
 
 // ---- 9 ----
