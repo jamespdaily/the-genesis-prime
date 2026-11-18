@@ -397,10 +397,11 @@ fn fire_until(time time: Time, limit_ms limit_ms: Int) -> Nil {
 /// A participant that ends during a pass is dropped by the next look, which counts
 /// it as a change, so the last signals of an ended participant get one more pass.
 ///
-/// `advance` runs it only after a timer fires. A test runs it itself after an input
-/// of its own whose chain goes through another participant with no timer on the
-/// way (a press whose go strikes a creature at once), once the connection has taken
-/// that input (`game_client.read_until_pong`).
+/// `advance` runs it before the clock moves and after each timer it fires. A test
+/// runs it itself, with no advance, after an input of its own whose chain goes
+/// through another participant with no timer on the way (a press whose go strikes
+/// a creature at once), once the connection has taken that input
+/// (`game_client.read_until_pong`).
 pub fn wait_until_quiet(time: Time) -> Nil {
   let opening = asked(time:, make: Observe)
   pass(time:, opening:, after_a_quiet_pass: False)

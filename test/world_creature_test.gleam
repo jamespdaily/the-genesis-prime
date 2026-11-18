@@ -357,13 +357,6 @@ pub fn a_dead_creature_comes_back_exactly_at_its_respawn_test() -> Nil {
       what: "the creature's 0x262",
       wanted: world_watch_support.appearance,
     )
-  let pid =
-    world_watch_support.creature_pid(
-      world:,
-      run:,
-      unit_id: first.unit_id,
-      life: 2,
-    )
   world_watch_support.strike_with(
     world:,
     run:,
@@ -382,9 +375,8 @@ pub fn a_dead_creature_comes_back_exactly_at_its_respawn_test() -> Nil {
   ) = outcome
   assert description.damage.killed == 1
     as "the 60 damage takes the Beast's 52 health to 0"
-  // The answer is sent before the corpse timer starts: the clock moves only after
-  // the creature has taken the strike whole.
-  driven_time.settled(pid)
+  // The answer is sent before the corpse timer starts: the advance's barrier waits
+  // for the creature to take the strike whole.
   driven_time.advance(time:, ms: respawn_ms - 1)
   world_watch_support.strike_with(
     world:,
@@ -2203,9 +2195,8 @@ pub fn a_creature_that_crashes_with_a_despawn_pending_is_gone_and_returns_new_te
     )
   assert gone == watched.beast.unit_id
     as "the map speaks of the unit once its owner has ended"
-  // `Gone` is sent before the restart timer starts (`map.waiting_for_restart`): the clock
-  // moves once the map has finished that step.
-  driven_time.settled(watched.run.pid)
+  // `Gone` is sent before the restart timer starts (`map.waiting_for_restart`): the
+  // advance's barrier waits for the map to finish that step.
   driven_time.advance(time: watched.time, ms: respawn_ms)
   let returned =
     world_watch_support.next(
@@ -2258,7 +2249,6 @@ pub fn a_creature_that_crashes_with_a_despawn_pending_is_gone_and_returns_new_te
     )
   assert gone == returned.unit_id
     as "a despawned creature that crashes is gone to the players as one that stands is"
-  driven_time.settled(watched.run.pid)
   driven_time.advance(time: watched.time, ms: respawn_ms)
   let again =
     world_watch_support.next(
@@ -2685,7 +2675,6 @@ pub fn a_player_outside_the_cone_sees_the_cast_and_takes_nothing_test() -> Nil {
     damage: 1,
     cast_id: 2,
   )
-  driven_time.settled(roaring.pid)
   driven_time.advance(time: roaring.time, ms: 1500)
   let start = next_cast_started(received: received_2)
   assert start.spell4_id == 55_317 as "player 2 sees the cast bar"
