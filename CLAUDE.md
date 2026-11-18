@@ -23,6 +23,7 @@ A server for WildStar that the original client connects to and plays on. Gleam o
 - Refuse any value the client sends that its own code or tables would not allow.
 - Game tables load once at start into named records; a missing row fails the load.
 - Every packet layout lives in one schema with its evidence. The generated codec states each field's size and byte order and is never edited by hand; the bit stream's field kinds and the generator are property-tested, and each message with a client vector is checked against it.
+- A message the server sends has every field traced before it ships: Eldan's name for the field is the lead, and the client's reader settles the value. A field the reader cannot settle is marked open with its question, never a silent 0.
 - A bug fix starts with a test that fails because of the bug.
 - CI's full check passes on the commit handed back for review: a builder runs single tests and `./check fast` locally, and pushes to a draft pull request so CI runs. The coordinator runs `./check` locally once, on the commit it merges, for the parts that need the client. Files are staged by name.
 - No shortcut makes a check pass: no stub or hard-coded value in place of the client's behaviour, no test skipped or loosened without its reason in the test, no swallowed error. A gap is stated where it is enforced, names the open issue that will close it, and is reported as missing or a question.
