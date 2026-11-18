@@ -1118,7 +1118,7 @@ pub fn a_quest_reward_with_random_stats_is_made_rolled_test() -> Nil {
       bag_index: 0,
       stack_count: 1,
       random_stats: word,
-      charges: 0,
+      charges: 3,
     )
   let assert quest_turn_in.Saved(items:, rewards:, ..) =
     quest_turn_in.answered(
@@ -1140,6 +1140,8 @@ pub fn a_quest_reward_with_random_stats_is_made_rolled_test() -> Nil {
   let assert Ok(sent) = item_added.decode(frame.body) as "0x111 decodes"
   assert sent.held_item.item.random_stats == word
     as "opcode.0x111: the item is sent with its word"
+  assert sent.held_item.item.charges == 3
+    as "opcode.0x111.charges: the reward's 0x111 carries the charges the store gave it"
 }
 
 /// The ids of the messages a turn-in's answer sends after its items, which are all sends.

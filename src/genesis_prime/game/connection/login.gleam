@@ -49,8 +49,8 @@ import genesis_prime/game/character_select
 import genesis_prime/game/connection/state.{
   type Resume, type Session, AwaitingHelloReply, Buying, ClaimingSession,
   EnteringWorld, InCharacterSelect, InWorld, LeavingMap, MovingItem,
-  ResumeSelect, ResumeWorld, SavingPlace, Selling, Session, Summoning,
-  TakingSessionKey, TurningIn, WaitingToClaim,
+  ResumeSelect, ResumeWorld, SavingPlace, Selling, Session, SpendingCharge,
+  Summoning, TakingSessionKey, TurningIn, WaitingToClaim,
 } as connection_state
 import genesis_prime/game/connection/world as connection_world
 import genesis_prime/hand_off.{type Holder}
@@ -253,6 +253,7 @@ pub fn sessions_sent(
     | account_session.TakenOver, InWorld(..)
     | account_session.TakenOver, Summoning(..)
     | account_session.TakenOver, MovingItem(..)
+    | account_session.TakenOver, SpendingCharge(..)
     | account_session.TakenOver, Buying(..)
     | account_session.TakenOver, Selling(..)
     | account_session.TakenOver, TurningIn(..)
@@ -306,6 +307,7 @@ pub fn own_watch_ended(
     | EnteringWorld(..), _
     | Summoning(..), _
     | MovingItem(..), _
+    | SpendingCharge(..), _
     | Buying(..), _
     | Selling(..), _
     | TurningIn(..), _
@@ -366,6 +368,7 @@ pub fn claim_wait_over(
     | InWorld(..)
     | Summoning(..)
     | MovingItem(..)
+    | SpendingCharge(..)
     | Buying(..)
     | Selling(..)
     | TurningIn(..)

@@ -156,6 +156,7 @@ import genesis_prime/game/connection/effects as connection_effects
 import genesis_prime/game/connection/experience as connection_experience
 import genesis_prime/game/connection/interaction as connection_interaction
 import genesis_prime/game/connection/inventory as connection_inventory
+import genesis_prime/game/connection/item_spend as connection_item_spend
 import genesis_prime/game/connection/life as connection_life
 import genesis_prime/game/connection/login as connection_login
 import genesis_prime/game/connection/movement as connection_movement
@@ -168,7 +169,7 @@ import genesis_prime/game/connection/state.{
   type Ending, type Session, type Status, AwaitingHelloReply, Busy, Buying,
   ClaimingSession, Ending, EnteringWorld, Greeting, InCharacterSelect, InWorld,
   LeavingMap, MovingItem, Present, SavingPlace, Selecting, Selling, Session,
-  Summoning, TakingSessionKey, TurningIn, WaitingToClaim,
+  SpendingCharge, Summoning, TakingSessionKey, TurningIn, WaitingToClaim,
 } as connection_state
 import genesis_prime/game/connection/vendor_purchase as connection_vendor_purchase
 import genesis_prime/game/connection/vendor_sale as connection_vendor_sale
@@ -447,6 +448,7 @@ fn asking(status: Status) -> Bool {
     | EnteringWorld(..)
     | Summoning(..)
     | MovingItem(..)
+    | SpendingCharge(..)
     | Buying(..)
     | Selling(..)
     | TurningIn(..)
@@ -774,6 +776,7 @@ fn world_carried(
                   connection_casting.item_use_message(
                     session:,
                     now:,
+                    holder:,
                     entered:,
                     inner: whole,
                   )
@@ -1152,6 +1155,16 @@ fn answered_by_status(
         entered:,
         moving:,
         outcome:,
+      )
+    SpendingCharge(holder:, entered:, spending:) ->
+      connection_item_spend.answered(
+        session:,
+        now:,
+        holder:,
+        entered:,
+        spending:,
+        outcome:,
+        release: connection_casting.cast_effects,
       )
     Buying(holder:, entered:, purchase:) ->
       connection_vendor_purchase.buy_answered(

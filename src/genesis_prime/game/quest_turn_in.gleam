@@ -1141,6 +1141,7 @@ pub fn answered(
                 bag_index: stack.bag_index,
                 stack_count: stack.stack_count,
                 random_stats: stack.random_stats,
+                charges: stack.charges,
                 reason: quest_reason,
               )
             }),

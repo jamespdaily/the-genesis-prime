@@ -90,6 +90,7 @@ import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/connection/absorption as connection_absorption
 import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/healing as connection_healing
+import genesis_prime/game/connection/item_spend as connection_item_spend
 import genesis_prime/game/connection/look as connection_look
 import genesis_prime/game/connection/objective as connection_objective
 import genesis_prime/game/connection/prerequisite_player
@@ -102,6 +103,7 @@ import genesis_prime/game/forced_move
 import genesis_prime/game/heal_split
 import genesis_prime/game/hit_radius
 import genesis_prime/game/interaction
+import genesis_prime/game/inventory
 import genesis_prime/game/item_use
 import genesis_prime/game/loadout
 import genesis_prime/game/movement
@@ -120,6 +122,7 @@ import genesis_prime/game/strike_tell.{type Answered}
 import genesis_prime/game/target_group
 import genesis_prime/game/unit_state
 import genesis_prime/game/world_entry
+import genesis_prime/hand_off.{type Holder}
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/message/unit_health.{UnitHealth}
 import genesis_prime/random
@@ -215,6 +218,7 @@ pub fn activate_message(
 pub fn item_use_message(
   session session: Session,
   now now: Now,
+  holder holder: Holder,
   entered entered: world_entry.Entered,
   inner inner: Frame,
 ) -> client_connection.Handled(Session) {
@@ -227,16 +231,23 @@ pub fn item_use_message(
       body: inner.body,
       caster:,
       held_at: fn(place) {
-        list.find(entered.items, fn(held) {
-          held.location == place.location && held.bag_index == place.bag_index
+        inventory.held_at(items: entered.items, place:)
+        |> result.map(fn(held) {
+          cast_state.ItemAtPlace(item2_id: held.item2_id, charges: held.charges)
         })
-        |> result.map(fn(held) { held.item2_id })
         |> option.from_result
       },
-      check: fn(item, second_item, target_checklist_index, prerequisite) {
+      check: fn(
+        item,
+        charges,
+        second_item,
+        target_checklist_index,
+        prerequisite,
+      ) {
         item_use.check(
           tables:,
           item:,
+          charges:,
           player_level: caster.player.level,
           quests: caster.quests,
           second_item:,
@@ -253,8 +264,18 @@ pub fn item_use_message(
       now:,
     )
   {
-    Ok(#(updated, effects)) ->
+    Ok(cast_state.Frames(cast: updated, effects:)) ->
       carry_cast(session: with_cast(session:, cast: updated), now:, effects:)
+    Ok(cast_state.Started(press:, start:)) ->
+      connection_item_spend.started(
+        session:,
+        now:,
+        holder:,
+        entered:,
+        press:,
+        start:,
+        release: cast_effects,
+      )
     Error(refusal) ->
       connection_state.end_for(
         session:,

@@ -43,7 +43,9 @@ import gleam/bit_array
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/result
 import gleam/string
+import item_charge_support
 import owned_test
 import place_support
 import planted_table.{Integer}
@@ -54,9 +56,6 @@ const grenade = 12_444
 const generic_item = 12_402
 
 const objective_item = 21_966
-
-/// Item2 2509, whose maxCharges is 99 and whose spell 1274 has an Activate effect.
-const charged_item = 2509
 
 const grenade_quest = 4743
 
@@ -162,29 +161,32 @@ fn the_body(
 
 /// The use of the item at `item`, held when its place is the one the test names, by the
 /// caster; the unit `its_unit` is the one the picture shows.
-fn use_with(
+fn used_with(
   tables tables: table_store.Tables,
   state state: State,
   caster caster: cast_state.Caster,
   held held: Option(Int),
+  charges charges: Int,
   body body: BitArray,
   target target: Target,
   at ms: Int,
-) -> Result(#(State, List(Effect)), cast_state.Refusal) {
+) -> Result(cast_state.Used, cast_state.Refusal) {
   cast.use_item(
     cast: state,
     body:,
     caster:,
     held_at: fn(place) {
       case place == the_item_place, held {
-        True, Some(item) -> Some(Item2Id(item))
+        True, Some(item) ->
+          Some(cast_state.ItemAtPlace(item2_id: Item2Id(item), charges:))
         _, _ -> None
       }
     },
-    check: fn(item, second_item, target_checklist_index, prerequisite) {
+    check: fn(item, charges, second_item, target_checklist_index, prerequisite) {
       item_use.check(
         tables:,
         item:,
+        charges:,
         player_level: caster.player.level,
         quests: caster.quests,
         second_item:,
@@ -222,6 +224,34 @@ fn use_with(
     caster_radius:,
     now: support.at(ms:),
   )
+}
+
+/// The use as `used_with` takes it, with what the press started or refused as one pair:
+/// the state and effects `Frames` holds, or of the cast `Started` makes at the press's own
+/// time, as when the store answers at once.
+fn use_with(
+  tables tables: table_store.Tables,
+  state state: State,
+  caster caster: cast_state.Caster,
+  held held: Option(Int),
+  body body: BitArray,
+  target target: Target,
+  at ms: Int,
+) -> Result(#(State, List(Effect)), cast_state.Refusal) {
+  used_with(tables:, state:, caster:, held:, charges: 1, body:, target:, at: ms)
+  |> result.map(pair_of(used: _, state:, at: ms))
+}
+
+fn pair_of(
+  used used: cast_state.Used,
+  state state: State,
+  at ms: Int,
+) -> #(State, List(Effect)) {
+  case used {
+    cast_state.Frames(cast:, effects:) -> #(cast, effects)
+    cast_state.Started(start:, ..) ->
+      cast.item_started(cast: state, start:, now: support.at(ms:))
+  }
 }
 
 /// The use of item `item`, held at its place, at the unit `its_unit`.
@@ -760,37 +790,6 @@ fn unread_types() -> List(Int) {
   })
 }
 
-pub fn an_item_with_charges_is_refused_285_and_logged_once_test() -> Nil {
-  use <- owned_test.run(10_000)
-  let caster = standing(level: 50, quests: quest_support.log_of(rows: []))
-  let no_target = activate.Unseen
-  let assert Ok(#(state, first)) =
-    use_item_at(
-      state: cast_state.new(),
-      caster:,
-      item: charged_item,
-      target: no_target,
-      at: 1000,
-    )
-    as "the first use is answered"
-  let assert Ok(#(_, second)) =
-    use_item_at(
-      state:,
-      caster:,
-      item: charged_item,
-      target: no_target,
-      at: 2000,
-    )
-    as "the second use is answered"
-  assert refused_with(effects: first) == [#(clients_cast_id, 1274, 285)]
-    && refused_with(effects: second) == [#(clients_cast_id, 1274, 285)]
-    as "Item2 2509 has maxCharges 99, which StartItemUseCast (0x140398cc0) tests first with 25 and the server does not hold (#333): IllegalSpellCast (285), with the item's spell 1274"
-  let assert [#(LogWarning, line)] =
-    list.append(support.logs(effects: first), support.logs(effects: second))
-    as "the gap is logged once"
-  assert string.contains(line, "2509") as "the log line names the item"
-}
-
 pub fn the_grenade_again_within_its_2_s_cooldown_is_refused_15_test() -> Nil {
   use <- owned_test.run(10_000)
   let target = shown(creature_id: a_slaver_shack, metres: 10.0)
@@ -809,17 +808,29 @@ pub fn the_grenade_again_within_its_2_s_cooldown_is_refused_15_test() -> Nil {
   // (`player.abilityQueueMax`); a cast the client sent with a cast id is never queued, so
   // the server refuses the press as it refuses a hold (14), and the refusal 15 is a press
   // with more than 500 ms left.
-  assert refusal_of(taken: use_item_at(
+  assert refused_with(effects: used_as(
       state:,
-      caster: throwing(),
+      client_cast_id: 10,
       item: grenade,
       target:,
       at: 2499,
     ))
-    == #(26_663, 15)
+    == [#(10, 26_663, 15)]
     as "1499 ms after the cooldown started, 501 of Spell4 26663's spellCoolDown 2000 are left: SpellCooldown (15)"
   let assert Ok(#(_, again)) =
-    use_item_at(state:, caster: throwing(), item: grenade, target:, at: 3000)
+    use_with(
+      tables: tables(),
+      state:,
+      caster: throwing(),
+      held: Some(grenade),
+      body: the_body(
+        client_cast_id: 11,
+        item: the_item_place,
+        target_unit_id: its_unit,
+      ),
+      target:,
+      at: 3000,
+    )
     as "the use at 2000 ms is taken"
   assert support.refusal_results(effects: again) == []
     as "the cooldown has run out"
@@ -829,6 +840,33 @@ pub fn the_grenade_again_within_its_2_s_cooldown_is_refused_15_test() -> Nil {
     ))
     == 1
     as "the cast starts"
+}
+
+/// The effects of a use of `item` with this client cast id on a state that has taken an
+/// earlier press (the client's ids rise with every cast).
+fn used_as(
+  state state: State,
+  client_cast_id client_cast_id: Int,
+  item item: Int,
+  target target: Target,
+  at ms: Int,
+) -> List(Effect) {
+  let assert Ok(#(_, effects)) =
+    use_with(
+      tables: tables(),
+      state:,
+      caster: throwing(),
+      held: Some(item),
+      body: the_body(
+        client_cast_id:,
+        item: the_item_place,
+        target_unit_id: its_unit,
+      ),
+      target:,
+      at: ms,
+    )
+    as "the use is taken"
+  effects
 }
 
 pub fn an_item_spell_with_no_activate_effect_is_refused_285_and_logged_once_test() -> Nil {
@@ -913,4 +951,356 @@ pub fn the_generic_quest_spell_item_at_a_farmhand_starts_within_5_m_test() -> Ni
     ))
     == #(1545, 105)
     as "a gap of 5.5 is beyond Spell4 1545's 5.0: TargetRangeMax (105)"
+}
+
+/// Item2 2509, whose maxCharges is 99 and whose spell 1274 has an Activate effect.
+const charged_item = 2509
+
+/// What the press of one kind of refusal gives: the tables it runs on, the caster, the
+/// item held at the place, the charges held, the target and the 0x7fc the press is
+/// answered with.
+type Refusing {
+  Refusing(
+    tables: table_store.Tables,
+    caster: cast_state.Caster,
+    held: Option(Int),
+    charges: Int,
+    target: Target,
+    refused: #(Int, Int),
+    why: String,
+  )
+}
+
+pub fn an_item_use_spends_only_when_its_cast_starts_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let level_30_grenade = fn(body) {
+    fixture_tables.changed(
+      table: "Item2",
+      id: grenade,
+      with: [#("requiredLevel", Integer(30))],
+      body:,
+    )
+  }
+  use level_tables <- level_30_grenade
+  let shack = shown(creature_id: a_slaver_shack, metres: 10.0)
+  let objective_log =
+    quest_support.log_of(rows: [
+      quest_support.active(
+        quest_id: security_quest,
+        state: 1,
+        placeholder: 0,
+        tracked: False,
+        done_mask: 0b1,
+        progress: [1, 0],
+      ),
+    ])
+  let grenade_row = fn(why, result, target) {
+    Refusing(
+      tables: tables(),
+      caster: throwing(),
+      held: Some(grenade),
+      charges: 0,
+      target:,
+      refused: #(26_663, result),
+      why:,
+    )
+  }
+  list.each(
+    [
+      Refusing(
+        ..grenade_row("an empty place is 22", 22, shack),
+        held: None,
+        refused: #(0, 22),
+      ),
+      Refusing(
+        ..grenade_row("a charged item holding none is 25", 25, activate.Unseen),
+        held: Some(charged_item),
+        caster: standing(level: 50, quests: quest_support.log_of(rows: [])),
+        charges: 0,
+        refused: #(1274, 25),
+      ),
+      Refusing(
+        ..grenade_row("a player below the item's level is 26", 26, shack),
+        tables: level_tables,
+      ),
+      grenade_row(
+        "a target the picture does not show is 91",
+        91,
+        activate.Unseen,
+      ),
+      grenade_row("another player's unit is 100", 100, activate.AnotherPlayer),
+      grenade_row(
+        "a unit outside the spell's cast group is 89",
+        89,
+        shown(creature_id: a_farmhand, metres: 10.0),
+      ),
+      grenade_row(
+        "a target beyond the spell's 30 m is 105",
+        105,
+        shown(creature_id: a_slaver_shack, metres: 31.0),
+      ),
+      Refusing(
+        ..grenade_row(
+          "a spell with no Activate effect is 285",
+          285,
+          activate.Unseen,
+        ),
+        held: Some(objective_item),
+        caster: standing(level: 50, quests: objective_log),
+        refused: #(41_914, 285),
+      ),
+    ],
+    fn(row) {
+      let assert Ok(cast_state.Frames(cast: after, effects:)) =
+        used_with(
+          tables: row.tables,
+          state: cast_state.new(),
+          caster: row.caster,
+          held: row.held,
+          charges: row.charges,
+          body: the_body(
+            client_cast_id: clients_cast_id,
+            item: the_item_place,
+            target_unit_id: its_unit,
+          ),
+          target: row.target,
+          at: 1000,
+        )
+        as row.why
+      assert list.map(refused_with(effects:), fn(refused) {
+          #(refused.1, refused.2)
+        })
+        == [row.refused]
+        as row.why
+      assert after.item_press_watermark == None
+        && support.started_timers(effects:) == []
+        as "a refusal takes no press id and starts nothing"
+    },
+  )
+  let assert Ok(cast_state.Started(press:, start:)) =
+    used_with(
+      tables: tables(),
+      state: cast_state.new(),
+      caster: throwing(),
+      held: Some(grenade),
+      charges: 0,
+      body: the_body(
+        client_cast_id: clients_cast_id,
+        item: the_item_place,
+        target_unit_id: its_unit,
+      ),
+      target: shown(creature_id: a_slaver_shack, metres: 10.0),
+      at: 1000,
+    )
+    as "an accepted press starts a cast"
+  assert press
+    == cast_state.ItemPress(
+      client_cast_id: clients_cast_id,
+      spell4_id: 26_663,
+      place: the_item_place,
+    )
+    as "the press names the client's cast id, the item's spell and the place"
+  let #(started, effects) =
+    cast.item_started(cast: cast_state.new(), start:, now: support.at(ms: 1000))
+  assert started.item_press_watermark == Some(clients_cast_id)
+    as "the cast made from the passed press records the press id"
+  assert support.frames_of(
+      message_id: spell_cast_confirmed.message_id,
+      effects:,
+    )
+    != []
+    as "the cast made from the passed press holds the cast's frames"
+}
+
+/// What a press with this client cast id is given on this state.
+type Pressed {
+  Dropped
+  Began(cast_state.State)
+}
+
+fn pressed_with(
+  state state: State,
+  client_cast_id client_cast_id: Int,
+  at ms: Int,
+) -> Pressed {
+  let assert Ok(used) =
+    used_with(
+      tables: tables(),
+      state:,
+      caster: throwing(),
+      held: Some(grenade),
+      charges: 0,
+      body: the_body(
+        client_cast_id:,
+        item: the_item_place,
+        target_unit_id: its_unit,
+      ),
+      target: shown(creature_id: a_slaver_shack, metres: 10.0),
+      at: ms,
+    )
+    as "the press is taken"
+  case used {
+    cast_state.Started(start:, ..) ->
+      Began(cast.item_started(cast: state, start:, now: support.at(ms:)).0)
+    cast_state.Frames(effects: [], ..) -> Dropped
+    cast_state.Frames(..) -> panic as "a repeat or a start, not a refusal"
+  }
+}
+
+pub fn a_resent_press_starts_nothing_and_spends_nothing_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let assert Began(first) =
+    pressed_with(state: cast_state.new(), client_cast_id: 9, at: 1000)
+    as "the first press starts"
+  // The client's ids rise with every cast and never reset (`0x140c1e71c`): an id not
+  // above the highest taken is a repeat.
+  assert pressed_with(state: first, client_cast_id: 9, at: 1001) == Dropped
+    as "the same id at once is a repeat"
+  assert pressed_with(state: first, client_cast_id: 9, at: 6000) == Dropped
+    as "the same id after the cast is done is a repeat"
+  assert pressed_with(state: first, client_cast_id: 5, at: 6000) == Dropped
+    as "an id below the highest taken, never seen, is refused"
+  assert case pressed_with(state: first, client_cast_id: 10, at: 6000) {
+    Began(after) -> after.item_press_watermark == Some(10)
+    Dropped -> False
+  }
+    as "an id one above the highest starts and raises it"
+  assert case
+    pressed_with(state: cast_state.new(), client_cast_id: 9, at: 6000)
+  {
+    Began(_) -> True
+    Dropped -> False
+  }
+    as "an id whose start was never adopted (the save was refused) is a new press"
+}
+
+/// The grenade pressed at the shack 10.0 away on these tables at `pressed_ms`, whose cast
+/// the store's answer makes at `answered_ms`: the state and effects of the cast.
+fn grenade_made(
+  tables tables: table_store.Tables,
+  state state: State,
+  client_cast_id client_cast_id: Int,
+  pressed_ms pressed_ms: Int,
+  answered_ms answered_ms: Int,
+) -> #(State, List(Effect)) {
+  let assert Ok(cast_state.Started(start:, ..)) =
+    used_with(
+      tables:,
+      state:,
+      caster: throwing(),
+      held: Some(grenade),
+      charges: 0,
+      body: the_body(
+        client_cast_id:,
+        item: the_item_place,
+        target_unit_id: its_unit,
+      ),
+      target: shown(creature_id: a_slaver_shack, metres: 10.0),
+      at: pressed_ms,
+    )
+    as "the press passes its checks"
+  cast.item_started(cast: state, start:, now: support.at(ms: answered_ms))
+}
+
+/// The cast a press checked at one time and made at the store's answer, later, is the cast
+/// a press made then makes: its cooldowns, its start, the times its effects carry and the
+/// nodes and ticks of the effects it lasts through all run from the answer. The rows are
+/// the grenade (Spell4 26663, spellCoolDown 2000, castTime 0, which goes at once) with a
+/// castTime of 1000 and none, on a caster that cast the generic item before (its cooldown
+/// and global cooldown stay as they were), and with a heal over time on the caster (a
+/// lasting effect and four ticks).
+pub fn a_cast_made_at_the_answer_is_the_cast_a_press_made_then_makes_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let delay_ms = 400
+  list.each(
+    [
+      #(
+        None,
+        False,
+        False,
+        "an instant cast on a caster that cast nothing before",
+      ),
+      #(
+        Some(1000),
+        False,
+        False,
+        "a cast with a cast time, which a time left is counted from",
+      ),
+      #(
+        None,
+        True,
+        False,
+        "an instant cast after another item's cast, whose stamps stay",
+      ),
+      #(
+        None,
+        False,
+        True,
+        "an instant cast with a heal over time on the caster, whose lasting effect and ticks are stamped at the go",
+      ),
+    ],
+    fn(row) {
+      let #(cast_time_ms, after_another, heals, why) = row
+      let changes = case cast_time_ms {
+        Some(cast_time_ms) -> [#("castTime", Integer(cast_time_ms))]
+        None -> []
+      }
+      let assert Ok(rows) =
+        fixture_tables.change(
+          rows: fixture_tables.rows(),
+          table: "Spell4",
+          id: 26_663,
+          with: changes,
+        )
+        as "Spell4 26663 is in the fixture"
+      let rows = case heals {
+        True -> item_charge_support.with_a_heal_over_time(rows:)
+        False -> rows
+      }
+      use tables <- fixture_tables.on_rows(rows:, reaching: [])
+      let before = case after_another {
+        True -> {
+          let assert Ok(#(earlier, _)) =
+            use_item_in(
+              tables:,
+              state: cast_state.new(),
+              caster: throwing(),
+              item: generic_item,
+              target: shown(creature_id: a_farmhand, metres: 3.0),
+              at: 0,
+            )
+            as "the earlier press is taken"
+          earlier
+        }
+        False -> cast_state.new()
+      }
+      let made_at_the_answer =
+        grenade_made(
+          tables:,
+          state: before,
+          client_cast_id: 10,
+          pressed_ms: 2000,
+          answered_ms: 2000 + delay_ms,
+        )
+      let pressed_then =
+        grenade_made(
+          tables:,
+          state: before,
+          client_cast_id: 10,
+          pressed_ms: 2000 + delay_ms,
+          answered_ms: 2000 + delay_ms,
+        )
+      let made_at_the_press =
+        grenade_made(
+          tables:,
+          state: before,
+          client_cast_id: 10,
+          pressed_ms: 2000,
+          answered_ms: 2000,
+        )
+      assert made_at_the_answer == pressed_then as why
+      assert made_at_the_answer != made_at_the_press
+        as { "the answer's time shows in the cast: " <> why }
+    },
+  )
 }

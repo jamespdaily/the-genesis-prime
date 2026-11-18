@@ -28,6 +28,8 @@ pub type CastResult {
   SpellPreRequisites
   /// The value 22, the fact file's `0x1403998e0`.
   ItemBad
+  /// The value 25, the fact file's `0x140398cc0`.
+  ItemCharges
   /// The value 26, the fact file's `0x140398cc0`.
   ItemTooHighLevel
   /// The value 28, the fact file's `0x140398cc0`.
@@ -126,6 +128,7 @@ pub fn to_value(value: CastResult) -> Int {
     SpellGroupCooldown -> 16
     SpellPreRequisites -> 17
     ItemBad -> 22
+    ItemCharges -> 25
     ItemTooHighLevel -> 26
     ItemQuestRequirementsNotMet -> 28
     ItemObjectiveComplete -> 29
@@ -184,6 +187,7 @@ pub fn from_value(number: Int) -> CastResult {
     16 -> SpellGroupCooldown
     17 -> SpellPreRequisites
     22 -> ItemBad
+    25 -> ItemCharges
     26 -> ItemTooHighLevel
     28 -> ItemQuestRequirementsNotMet
     29 -> ItemObjectiveComplete

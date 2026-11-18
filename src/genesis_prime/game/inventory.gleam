@@ -127,6 +127,7 @@ import genesis_prime/message/float32
 import genesis_prime/message/held_item
 import genesis_prime/message/item_action_failed.{ItemActionFailed}
 import genesis_prime/message/item_added.{ItemAdded}
+import genesis_prime/message/item_charges_changed.{ItemChargesChanged}
 import genesis_prime/message/item_count_changed.{ItemCountChanged}
 import genesis_prime/message/item_delete
 import genesis_prime/message/item_move
@@ -296,6 +297,10 @@ const cannot_while_in_combat = 63
 /// The reason of the replies to a split and a merge: 0 StackSplit, which raises
 /// no notice (0x1403b8060).
 const stack_split = 0
+
+/// The reason of the frames that tell a spent charge, a lowered stack or the removal of
+/// the last of either: 1 ConsumeCharge (`Item.CodeEnumItemUpdateReason`).
+pub const consume_charge = 1
 
 /// The reason of the reply to a delete: 21 PlayerRequested (0x1403b8250).
 const player_requested = 21
@@ -648,8 +653,9 @@ fn merged(
   )
 }
 
-/// The item held at the place, if any.
-fn held_at(
+/// The item held at the place, if any: the first of the items at that location and bag
+/// index.
+pub fn held_at(
   items items: List(HeldItem),
   place place: ItemPlace,
 ) -> Result(HeldItem, Nil) {
@@ -1125,9 +1131,9 @@ fn failed(guid guid: Int, code code: Int) -> Frame {
   Frame(message_id: item_action_failed.message_id, body:)
 }
 
-/// 0x111 for an item the character holds, with no charges and full durability,
-/// added for `reason`, carrying the item's random-stat word as stored
-/// (`opcode.0x111.shared_item_random_stats`). Every other value the client's code does not
+/// 0x111 for an item the character holds, with full durability, added for `reason`,
+/// carrying the item's random-stat word as stored (`opcode.0x111.shared_item_random_stats`)
+/// and the charges it has left (`opcode.0x111.charges`; 0 for an ability, which has none). Every other value the client's code does not
 /// name is 0 (`opcode.0x111.shared_item_unnamed`), the lists empty.
 pub fn item_added_frame(
   item_guid item_guid: Int,
@@ -1136,6 +1142,7 @@ pub fn item_added_frame(
   bag_index bag_index: Int,
   stack_count stack_count: Int,
   random_stats random_stats: Int,
+  charges charges: Int,
   reason reason: Int,
 ) -> Frame {
   let assert Ok(body) =
@@ -1148,7 +1155,7 @@ pub fn item_added_frame(
           location:,
           bag_index:,
           stack_count:,
-          charges: 0,
+          charges:,
           random_stats:,
           field_9: 0,
           field_10: 0,
@@ -1274,6 +1281,7 @@ pub fn answered(
               bag_index: to.bag_index,
               stack_count: count,
               random_stats: source.random_stats,
+              charges: source.charges,
               reason: stack_split,
             )),
           ],
@@ -1326,6 +1334,15 @@ pub fn count_changed_frame(
     item_count_changed.encode(ItemCountChanged(item_guid: guid, count:, reason:))
     as "a guid, a count and a reason of 6 bits fit 0x17F"
   Frame(message_id: item_count_changed.message_id, body:)
+}
+
+/// The 0xCA that gives a held item's charges their new count (`opcode.0xca`); the client
+/// raises no event for it.
+pub fn charges_changed_frame(guid guid: Int, charges charges: Int) -> Frame {
+  let assert Ok(body) =
+    item_charges_changed.encode(ItemChargesChanged(item_guid: guid, charges:))
+    as "a guid of 64 bits and charges of 32 bits fit 0xCA"
+  Frame(message_id: item_charges_changed.message_id, body:)
 }
 
 /// The 0x148 that takes a held item away.

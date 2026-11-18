@@ -41,6 +41,7 @@ import genesis_prime/message/generic_error.{type GenericError}
 import genesis_prime/message/innate_index_set.{type InnateIndexSet}
 import genesis_prime/message/item_action_failed.{type ItemActionFailed}
 import genesis_prime/message/item_added.{type ItemAdded}
+import genesis_prime/message/item_charges_changed.{type ItemChargesChanged}
 import genesis_prime/message/item_count_changed.{type ItemCountChanged}
 import genesis_prime/message/item_moved.{type ItemMoved}
 import genesis_prime/message/item_removed.{type ItemRemoved}
@@ -165,6 +166,7 @@ pub type ServerMessage {
   ItemAdded(message: ItemAdded)
   ItemCountChanged(message: ItemCountChanged)
   ItemRemoved(message: ItemRemoved)
+  ItemChargesChanged(message: ItemChargesChanged)
   ItemMoved(message: ItemMoved)
   ItemsSwapped(message: ItemsSwapped)
   ItemActionFailed(message: ItemActionFailed)
@@ -378,6 +380,8 @@ pub fn decode(
     0x017F ->
       decoded(body, message_id, item_count_changed.decode, ItemCountChanged)
     0x0148 -> decoded(body, message_id, item_removed.decode, ItemRemoved)
+    0x00CA ->
+      decoded(body, message_id, item_charges_changed.decode, ItemChargesChanged)
     0x0569 -> decoded(body, message_id, item_moved.decode, ItemMoved)
     0x0568 -> decoded(body, message_id, items_swapped.decode, ItemsSwapped)
     0x056A ->
@@ -543,6 +547,7 @@ pub fn name(message: ServerMessage) -> String {
     ItemAdded(..) -> "item_added"
     ItemCountChanged(..) -> "item_count_changed"
     ItemRemoved(..) -> "item_removed"
+    ItemChargesChanged(..) -> "item_charges_changed"
     ItemMoved(..) -> "item_moved"
     ItemsSwapped(..) -> "items_swapped"
     ItemActionFailed(..) -> "item_action_failed"

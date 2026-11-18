@@ -10,7 +10,8 @@
 //// - The Item2 rows are the client's own (`fixture_tables`): 2509 holds 99 charges and a stack
 ////   of 1, 14838 stacks to 50 with 1 charge, 12078 is a proxy whose own row holds 1, and
 ////   12402 holds none.
-//// - The 0x111 of an entry carries charges 0 for every item, held or filled.
+//// - The 0x111 of an entry carries each held item's charges, filled ones included
+////   (`opcode.0x111.charges`); an ability, which is no stored item, carries 0.
 
 import character_support
 import equip_requirement_support
@@ -129,8 +130,26 @@ pub fn rows_saved_before_the_charges_column_get_their_rows_charges_once_test() -
   assert none.asked == [] as "a load with no unset item asks nothing"
   let sent = world_entry_support.items_added(frames: entry.frames)
   assert sent != [] as "the entry sends its items"
-  assert list.all(sent, fn(added) { added.held_item.item.charges == 0 })
-    as "the entry's 0x111 still carries charges 0 for every item"
+  let held_charges =
+    list.map(entry.items, fn(item) { #(item.item_guid, item.charges) })
+  let sent_charges =
+    sent
+    |> list.map(fn(added) {
+      #(added.held_item.item.item_guid, added.held_item.item.charges)
+    })
+    |> list.filter(fn(sent) {
+      list.key_find(held_charges, sent.0) != Error(Nil)
+    })
+  assert list.sort(sent_charges, fn(a, b) { int.compare(a.0, b.0) })
+    == list.sort(held_charges, fn(a, b) { int.compare(a.0, b.0) })
+    as "the entry's 0x111 carries the charges each held item holds"
+  assert list.any(sent_charges, fn(sent) { sent.1 == 99 })
+    as "the filled item of 2509 is sent with its row's 99 charges"
+  assert list.all(sent, fn(added) {
+    list.key_find(held_charges, added.held_item.item.item_guid) != Error(Nil)
+    || added.held_item.item.charges == 0
+  })
+    as "an ability, which no row stores, carries 0"
 }
 
 /// An unset stack is normalized at entry, before any purchase, reward or split can touch
