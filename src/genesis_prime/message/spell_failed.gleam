@@ -30,7 +30,7 @@ pub type SpellFailed {
     unit_id: Int,
     /// Safe by `opcode.0x7f9`: the client's code gives this field no use the
     /// server needs, and that fact shows its value is safe.
-    field_4: Int,
+    cut_visuals: Int,
   )
 }
 
@@ -45,7 +45,7 @@ pub fn encode(message: SpellFailed) -> Result(BitArray, EncodeError) {
     9,
   )
   |> bit_stream.write_unsigned("unit_id", message.unit_id, 32)
-  |> bit_stream.write_unsigned("field_4", message.field_4, 1)
+  |> bit_stream.write_unsigned("cut_visuals", message.cut_visuals, 1)
   |> bit_stream.finish
 }
 
@@ -56,7 +56,7 @@ pub fn decode(body: BitArray) -> Result(SpellFailed, DecodeError) {
   use #(result, reader) <- result.try(bit_stream.read_unsigned(reader, 9))
   let result = cast_result.from_value(result)
   use #(unit_id, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
-  use #(field_4, reader) <- result.try(bit_stream.read_unsigned(reader, 1))
+  use #(cut_visuals, reader) <- result.try(bit_stream.read_unsigned(reader, 1))
   use Nil <- result.try(bit_stream.finish_reading(reader))
-  Ok(SpellFailed(cast_id:, result:, unit_id:, field_4:))
+  Ok(SpellFailed(cast_id:, result:, unit_id:, cut_visuals:))
 }

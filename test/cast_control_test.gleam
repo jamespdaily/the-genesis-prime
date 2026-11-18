@@ -147,8 +147,8 @@ pub fn a_go_lists_a_state_the_creature_took_with_the_instance_id_its_strike_gave
         spell4_effects_id: 140_382,
         instance_id: 28_673,
         delay_ms: 166,
-        field_4: 0,
-        result: spell_effect_result.Bit(SpellEffectBit(field_2: 0)),
+        lifetime_ms: 0,
+        result: spell_effect_result.Bit(SpellEffectBit(unread_2: 0)),
       ),
     ]
     as "Spell4Effects.140382's delay 166 and the instance id the strike gave, which the 0x87f carries too (cc_state.instance_id)"

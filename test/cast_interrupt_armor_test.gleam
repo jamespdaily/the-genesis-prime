@@ -87,7 +87,7 @@ pub fn a_go_with_interrupt_armor_lists_it_on_the_caster_and_gives_the_node_its_t
       #(effect.spell4_effects_id, effect.delay_ms, effect.result)
     })
     == [
-      #(199_192, 0, spell_effect_result.Bit(SpellEffectBit(field_2: 0))),
+      #(199_192, 0, spell_effect_result.Bit(SpellEffectBit(unread_2: 0))),
     ]
     as "row 199192 is listed with a bit result, as a Fluff effect is"
   assert support.finished_ids(support.writes(effects:)) == []

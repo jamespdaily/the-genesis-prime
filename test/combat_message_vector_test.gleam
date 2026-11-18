@@ -347,7 +347,7 @@ pub fn a_creature_is_created_as_type_0_with_its_row_id_and_the_players_tail_test
         base_faction_id: 1441,
         tagged_by_unit_id: 0,
         tagged_by_group_id: 0,
-        field_14: 0,
+        unread_14: 0,
         world_object_id: 0,
         world_socket_id: 0,
         cluster_id: 0,
@@ -398,7 +398,7 @@ fn static_tail(
     base_faction_id:,
     tagged_by_unit_id: 0,
     tagged_by_group_id: 0,
-    field_14: 0,
+    unread_14: 0,
     world_object_id:,
     world_socket_id:,
     cluster_id: 0,
@@ -548,10 +548,10 @@ pub fn a_ghost_is_created_as_type_23_with_a_players_data_less_three_values_test(
       race_id: 3,
       class_id: 2,
       gender: 1,
-      field_9: 0x1112131415161718,
-      field_10: "Gd",
-      field_11: 5,
-      field_12: [0x2122232425262728],
+      group_id: 0x1112131415161718,
+      guild_name: "Gd",
+      guild_type: 5,
+      guild_ids: [0x2122232425262728],
       bone_values: [0x31323334],
       title_id: 0x155,
       tail: UnitCreateTail(
@@ -579,7 +579,7 @@ pub fn a_ghost_is_created_as_type_23_with_a_players_data_less_three_values_test(
         base_faction_id: 167,
         tagged_by_unit_id: 0,
         tagged_by_group_id: 0,
-        field_14: 0,
+        unread_14: 0,
         world_object_id: 0,
         world_socket_id: 0,
         cluster_id: 0,
@@ -643,14 +643,14 @@ pub fn a_cast_start_is_the_cast_its_spells_its_caster_a_place_and_two_lists_test
       root_spell4_id: 38_766,
       parent_spell4_id: 38_767,
       caster_unit_id: 0x1001,
-      field_6: 0x1234,
+      caster_item_level: 0x1234,
       primary_target_unit_id: 0x12345,
       position: SpellPosition(x: 0x3F800000, y: 0x40000000, z: 0xC0400000),
       yaw: 0x3FC00000,
       initial_positions: [initial_position()],
       telegraph_positions: [telegraph_position()],
-      field_12: 1,
-      field_13: 0,
+      own_cast: 1,
+      creature_activate: 0,
     ),
     encode: spell_started.encode,
     decode: spell_started.decode,
@@ -816,7 +816,7 @@ pub fn a_death_state_is_a_unit_a_dead_bit_a_5_bit_value_and_a_32_bit_value_test(
   message_support.assert_codec(
     name: "opcode.0x88c: unit id, dead 1, the 5-bit value 0, the 32-bit value 0",
     body: message_support.hex("01 20 00 00 01 00 00 00 00"),
-    value: UnitDeathState(unit_id: 0x2001, dead: 1, field_3: 0, field_4: 0),
+    value: UnitDeathState(unit_id: 0x2001, dead: 1, unread_3: 0, health: 0),
     encode: unit_death_state.encode,
     decode: unit_death_state.decode,
   )
@@ -1091,21 +1091,21 @@ fn list_of_results() -> List(Int) {
 fn initial_position() -> SpellInitialPosition {
   SpellInitialPosition(
     unit_id: 0x1001,
-    field_2: 1,
+    target_flags: 1,
     position: SpellPosition(x: 0x40800000, y: 0x40A00000, z: 0x40C00000),
-    field_4: 0x3F000000,
-    field_5: 7,
+    yaw: 0x3F000000,
+    anchor_unit_id: 7,
   )
 }
 
 fn telegraph_position() -> SpellTelegraphPosition {
   SpellTelegraphPosition(
-    field_1: 8,
+    telegraph_damage_id: 8,
     unit_id: 0x1001,
-    field_3: 2,
+    target_flags: 2,
     position: SpellPosition(x: 0x40E00000, y: 0x41000000, z: 0x41100000),
-    field_5: 0x3E800000,
-    field_6: 9,
+    yaw: 0x3E800000,
+    anchor_unit_id: 9,
   )
 }
 
@@ -1126,14 +1126,14 @@ fn spell_go() -> SpellGo {
             spell4_effects_id: 83_788,
             instance_id: 0x41,
             delay_ms: 0x42,
-            field_4: 0x43,
-            result: spell_effect_result.Bit(SpellEffectBit(field_2: 1)),
+            lifetime_ms: 0x43,
+            result: spell_effect_result.Bit(SpellEffectBit(unread_2: 1)),
           ),
           SpellEffectInfo(
             spell4_effects_id: 83_789,
             instance_id: 0x51,
             delay_ms: 0x52,
-            field_4: 0x53,
+            lifetime_ms: 0x53,
             result: spell_effect_result.Damage(
               SpellEffectDamage(
                 description: SpellDamageDescription(
@@ -1149,13 +1149,13 @@ fn spell_go() -> SpellGo {
                   damage_type: damage_type.Physical,
                   hits: [
                     SpellHitEntry(
-                      field_1: 1,
-                      field_2: 2,
-                      field_3: 3,
-                      field_4: 4,
-                      field_5: 5,
-                      field_6: 6,
-                      field_7: 7,
+                      raw_damage: 1,
+                      amount: 2,
+                      overheal: 3,
+                      absorption: 4,
+                      shield: 5,
+                      glance: 6,
+                      overkill: 7,
                       kind: 3,
                     ),
                   ],
@@ -1170,11 +1170,15 @@ fn spell_go() -> SpellGo {
     telegraph_positions: [telegraph_position()],
     missiles: [
       SpellMissileInfo(
-        field_1: SpellPosition(x: 0x3F800000, y: 0x3F800000, z: 0x3F800000),
-        field_2: 5,
-        field_3: 6,
-        field_4: SpellPosition(x: 0x40000000, y: 0x40000000, z: 0x40000000),
-        field_5: 1,
+        start_position: SpellPosition(
+          x: 0x3F800000,
+          y: 0x3F800000,
+          z: 0x3F800000,
+        ),
+        delay_ms: 5,
+        target_unit_id: 6,
+        end_position: SpellPosition(x: 0x40000000, y: 0x40000000, z: 0x40000000),
+        force_launch: 1,
       ),
     ],
     phase: 0,

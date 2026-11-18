@@ -101,8 +101,8 @@ pub fn death_state_frame(unit_id unit_id: Int, dead dead: Bool) -> Frame {
     unit_death_state.encode(UnitDeathState(
       unit_id:,
       dead: bit(dead),
-      field_3: 0,
-      field_4: 0,
+      unread_3: 0,
+      health: 0,
     ))
     as "a unit id of 32 bits and the safe values fit the message (opcode.0x88c)"
   Frame(message_id: unit_death_state.message_id, body:)
@@ -143,10 +143,10 @@ fn ghost_created_frame(
       race_id: player.race_id,
       class_id: player.class_id,
       gender: player.gender,
-      field_9: 0,
-      field_10: "",
-      field_11: 0,
-      field_12: [],
+      group_id: 0,
+      guild_name: "",
+      guild_type: 0,
+      guild_ids: [],
       bone_values: player.bone_values,
       title_id: player.title_id,
       tail: UnitCreateTail(..player.tail, stats: []),
@@ -667,7 +667,7 @@ fn vector_of(place: Place) -> movement_float_vector.MovementFloatVector {
 /// bit the client's reader needs after it, clear.
 pub fn dialog_open_frame(unit_id unit_id: Int) -> Frame {
   let assert Ok(body) =
-    unit_dialog_open.encode(UnitDialogOpen(unit_id:, field_2: 0))
+    unit_dialog_open.encode(UnitDialogOpen(unit_id:, unread_2: 0))
     as "a unit id the player's picture holds fits the message's 32 bits"
   Frame(message_id: unit_dialog_open.message_id, body:)
 }
@@ -792,7 +792,7 @@ pub fn object_created_frame(unit unit: Created) -> Frame {
 /// (opcode.0x355).
 pub fn unit_removed_frame(unit_id unit_id: Int) -> Frame {
   let assert Ok(body) =
-    unit_destroyed.encode(UnitDestroyed(unit_id:, field_2: 0))
+    unit_destroyed.encode(UnitDestroyed(unit_id:, chest_world_object_delay: 0))
     as "a unit id of 32 bits fits the message"
   Frame(message_id: unit_destroyed.message_id, body:)
 }

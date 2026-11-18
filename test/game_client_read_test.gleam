@@ -21,7 +21,10 @@ import socket_read
 
 fn destroyed(unit_id unit_id: Int) -> Frame {
   let assert Ok(body) =
-    unit_destroyed.encode(unit_destroyed.UnitDestroyed(unit_id:, field_2: 0))
+    unit_destroyed.encode(unit_destroyed.UnitDestroyed(
+      unit_id:,
+      chest_world_object_delay: 0,
+    ))
   Frame(0x0355, body)
 }
 

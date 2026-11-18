@@ -368,7 +368,9 @@ pub fn an_accepted_press_answers_0x7fd_to_the_caster_and_tells_0x7ff_with_root_o
     && first.parent_spell4_id == 0
     as "opcode.0x7ff.root_parent: the pressed spell is its own root and has no parent"
   assert first.caster_unit_id == 7 && first.primary_target_unit_id == 7
-  assert first.field_6 == 0 && first.field_12 == 1 && first.field_13 == 0
+  assert first.caster_item_level == 0
+    && first.own_cast == 1
+    && first.creature_activate == 0
     as "opcode.0x7ff.caster_item_level, opcode.0x7ff.own_cast and opcode.0x7ff.activate: 0, 1 and 0"
   assert first.initial_positions == [] && first.telegraph_positions == []
 }

@@ -67,7 +67,7 @@ pub fn failed_frame(
   unit_id unit_id: Int,
 ) -> Frame {
   let assert Ok(body) =
-    spell_failed.encode(SpellFailed(cast_id:, result:, unit_id:, field_4: 0))
+    spell_failed.encode(SpellFailed(cast_id:, result:, unit_id:, cut_visuals: 0))
     as "a cast id of 32 bits, a result of 9, a unit id of 32 and a bit fit the message"
   Frame(message_id: spell_failed.message_id, body:)
 }
@@ -261,14 +261,14 @@ pub fn started_message(
       None -> 0
     },
     caster_unit_id: caster.unit_id,
-    field_6: 0,
+    caster_item_level: 0,
     primary_target_unit_id: primary_target,
     position: cast_state.position_of(place: caster.place),
     yaw: cast_state.yaw_of(place: caster.place),
     initial_positions: [],
     telegraph_positions: [],
-    field_12: 1,
-    field_13: case activating {
+    own_cast: 1,
+    creature_activate: case activating {
       True -> 1
       False -> 0
     },
@@ -444,14 +444,14 @@ pub fn creature_started(
     root_spell4_id: spell4_id,
     parent_spell4_id: 0,
     caster_unit_id:,
-    field_6: 0,
+    caster_item_level: 0,
     primary_target_unit_id: target_unit_id,
     position: cast_state.position_of(place:),
     yaw: cast_state.yaw_of(place:),
     initial_positions: [],
     telegraph_positions: [],
-    field_12: 1,
-    field_13: 0,
+    own_cast: 1,
+    creature_activate: 0,
   )
 }
 
@@ -467,8 +467,8 @@ pub fn creature_went(
 }
 
 /// 0x7f4 for the one go, phase 0, of a creature's cast that applies effects to one unit, as the
-/// unit's one target info lists them: each effect with its instance id, delay 0 and lifetime in
-/// `field_4` (`opcode.0x7f4.effect_time`) and no result of its own (`SpellEffectBit`), in the
+/// unit's one target info lists them: each effect with its instance id, delay 0 and lifetime
+/// (`lifetime_ms`, `opcode.0x7f4.effect_time`) and no result of its own (`SpellEffectBit`), in the
 /// order given.
 pub fn creature_applied(
   cast_id cast_id: Int,
@@ -492,8 +492,8 @@ pub fn creature_applied(
             spell4_effects_id: effect.effect_id,
             instance_id: effect.instance_id,
             delay_ms: 0,
-            field_4: effect.lifetime_ms,
-            result: spell_effect_result.Bit(SpellEffectBit(field_2: 0)),
+            lifetime_ms: effect.lifetime_ms,
+            result: spell_effect_result.Bit(SpellEffectBit(unread_2: 0)),
           )
         }),
       ),
@@ -628,7 +628,7 @@ fn target_info(
           spell4_effects_id: description.spell4_effects_id,
           instance_id: effect_index + 1,
           delay_ms: description.delay_ms,
-          field_4: 0,
+          lifetime_ms: 0,
           result: spell_effect_result.Damage(SpellEffectDamage(
             description: description.damage,
           )),
@@ -642,11 +642,11 @@ fn target_info(
             list.length(descriptions) + effect_index + 1,
           ),
           delay_ms: effect.delay_ms,
-          field_4: 0,
+          lifetime_ms: 0,
           result: case effect.damage {
             Some(description) ->
               spell_effect_result.Damage(SpellEffectDamage(description:))
-            None -> spell_effect_result.Bit(SpellEffectBit(field_2: 0))
+            None -> spell_effect_result.Bit(SpellEffectBit(unread_2: 0))
           },
         )
       }),

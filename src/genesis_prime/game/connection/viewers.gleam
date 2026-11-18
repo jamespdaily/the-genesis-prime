@@ -400,7 +400,21 @@ pub fn viewer_takes(
             |> list.filter_map(fn(command) {
               case command {
                 start_movement.Position(position) -> Ok(position)
-                start_movement.Rotation(..) -> Error(Nil)
+                start_movement.Rotation(_)
+                | start_movement.Time(_)
+                | start_movement.Platform(_)
+                | start_movement.TimedPath(_)
+                | start_movement.Path(_)
+                | start_movement.Velocity(_)
+                | start_movement.VelocityDefault(_)
+                | start_movement.MoveAsked(_)
+                | start_movement.MoveDefault(_)
+                | start_movement.FaceUnit(_)
+                | start_movement.FacePoint(_)
+                | start_movement.RotationDefault(_)
+                | start_movement.StateFlags(_)
+                | start_movement.StateDefault(_)
+                | start_movement.Mode(_) -> Error(Nil)
               }
             }),
           )),

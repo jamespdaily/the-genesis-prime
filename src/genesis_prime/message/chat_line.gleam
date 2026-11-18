@@ -34,6 +34,9 @@ pub type ChatLine {
     text: List(Int),
     formats: List(ChatFormat),
     cross_faction: Int,
+    /// Open: Is the 16-bit value after the cross-faction bit read anywhere?
+    /// RaiseChatMessage never reads it; the segment builder 0x140408850 and the
+    /// channel 0x13 handler were not checked for it (opcode.0x1c8.unread_word).
     /// Safe by `opcode.0x1c8`: the client's code gives this field no use the
     /// server needs, and that fact shows its value is safe.
     field_14: Int,

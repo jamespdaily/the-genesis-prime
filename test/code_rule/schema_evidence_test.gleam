@@ -889,6 +889,82 @@ pub fn each_known_gap_names_the_open_issue_test() -> Nil {
     as "each entry of the allow-list names the open issue whose work removes it"
 }
 
+// ---- the movement unions ----
+
+/// The tags below a union's `refused_from` that are not classified: a tag is
+/// classified when it is a variant named by what it is (not by its kind
+/// number), a never tag or an open tag, and each fact key such a tag names is
+/// in the fact file.
+fn unclassified_movement_tags(
+  union union: message_schema.Union,
+  fact_keys fact_keys: List(String),
+) -> List(Int) {
+  int.range(from: 0, to: union.refused_from, with: [], run: fn(tags, tag) {
+    [tag, ..tags]
+  })
+  |> list.reverse
+  |> list.filter(fn(tag) {
+    let names_a_fact = fn(key) {
+      case key {
+        Some(key) -> list.contains(fact_keys, key)
+        None -> True
+      }
+    }
+    let variant = list.find(union.variants, fn(variant) { variant.tag == tag })
+    let never = list.find(union.never_tags, fn(never) { never.tag == tag })
+    let open = list.find(union.open_tags, fn(open) { open.tag == tag })
+    case variant, never, open {
+      Ok(variant), _, _ ->
+        variant.name == "kind_" <> int.to_string(tag)
+        || !names_a_fact(variant.named_by)
+      Error(Nil), Ok(never), _ -> !names_a_fact(Some(never.named_by))
+      Error(Nil), Error(Nil), Ok(open) -> !names_a_fact(open.named_by)
+      Error(Nil), Error(Nil), Error(Nil) -> True
+    }
+  })
+}
+
+pub fn the_movement_unions_classify_every_kind_the_client_reads_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use <- unitest.tag("code_rule")
+  let assert Ok(text) = simplifile.read("src/genesis_prime/message/schema.toml")
+    as "the schema file could not be read"
+  let assert Ok(schema) = message_schema.parse(text)
+    as "the schema file is not a schema"
+  let fact_keys = repository.fact_keys()
+  let listed_unions =
+    list.filter_map(untraced_gaps.known_gaps, fn(gap) {
+      case gap {
+        UnclassifiedTags(union:, ..) -> Ok(union)
+        UntracedFields(..) -> Error(Nil)
+      }
+    })
+  let unions = ["start_movement", "relayed_movement"]
+  assert list.map(unions, fn(name) {
+      let assert Ok(union) =
+        list.find(schema.unions, fn(union) { union.name == name })
+        as { "no union named " <> name <> " in the schema" }
+      #(name, unclassified_movement_tags(union:, fact_keys:))
+    })
+    == list.map(unions, fn(name) { #(name, []) })
+    as "CLAUDE.md: every movement kind the client reads (tags 0 to 29) is a traced variant, a never tag or an open tag whose named fact exists"
+  assert list.filter(unions, list.contains(listed_unions, _)) == []
+    as "these unions are classified, so the allow-list has no entry for them"
+  let assert Ok(start) =
+    list.find(schema.unions, fn(union) { union.name == "start_movement" })
+    as "no union named start_movement in the schema"
+  let assert Ok(relayed) =
+    list.find(schema.unions, fn(union) { union.name == "relayed_movement" })
+    as "no union named relayed_movement in the schema"
+  let layout = fn(union: message_schema.Union) {
+    list.map(union.variants, fn(variant) {
+      #(variant.tag, variant.name, variant.record)
+    })
+  }
+  assert layout(start) == layout(relayed)
+    as "0x140c1f070: both messages read the one reader table, so a kind traced in the relayed message is a variant of the new unit's list with the same record"
+}
+
 // ---- the real schema ----
 
 pub fn the_real_schema_has_no_gap_the_allow_list_does_not_name_test() -> Nil {
@@ -905,7 +981,100 @@ pub fn the_real_schema_has_no_gap_the_allow_list_does_not_name_test() -> Nil {
     as "CLAUDE.md: every field of a message the server sends is traced or open, in the three messages no module builds as in the rest, and every union kind is a traced variant, a never tag or an open tag; no entry of the allow-list is stale; each key a never tag or an open tag names is a fact"
 }
 
-// ---- the connection and realm messages ----
+// ---- the combat log and stat unions ----
+
+/// One union the client reads by a tag: its bound (the first tag the client's
+/// reader refuses), the tags the client reads that the server must not send, and
+/// the tags it reads that nothing in the server builds yet.
+type TagRow {
+  TagRow(
+    union: String,
+    refused_from: Int,
+    never: List(Int),
+    open: List(Int),
+    reason: String,
+  )
+}
+
+const combat_and_stat_rows = [
+  TagRow(
+    union: "combat_log_entry",
+    refused_from: 36,
+    never: [3, 4, 6, 7, 12, 13, 17],
+    open: [
+      0, 5, 8, 9, 10, 11, 15, 16, 19, 20, 21, 25, 26, 27, 28, 29, 30, 31, 32, 33,
+      34, 35,
+    ],
+    reason: "union-kinds.md: the client reads types 0 to 35; the NEVER rows are never sent, every other lacking type waits for its system or for a question about the client's dispatch",
+  ),
+  TagRow(
+    union: "unit_stat_change",
+    refused_from: 32,
+    never: [
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 12, 13, 14, 16, 18, 19, 23, 24, 25, 27, 28, 29,
+      30, 31,
+    ],
+    open: [0, 11, 15, 17, 26],
+    reason: "union-kinds.md: the client reads stats 0 to 31; 23 of the 28 lacking stats are NEVER by 0x938, five wait for their systems or for a question",
+  ),
+  TagRow(
+    union: "unit_stat_value",
+    refused_from: 3,
+    never: [],
+    open: [2],
+    reason: "fact 0x140096230: forms 0 to 2 are read, 3 refuses the message; form 2 (two integers) has no verdict",
+  ),
+]
+
+pub fn the_combat_log_and_stat_unions_classify_every_tag_the_client_reads_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use <- unitest.tag("code_rule")
+  let assert Ok(text) = simplifile.read("src/genesis_prime/message/schema.toml")
+    as "the schema file could not be read"
+  let assert Ok(schema) = message_schema.parse(text)
+    as "the schema file is not a schema"
+  let fact_keys = repository.fact_keys()
+  let listed_unions =
+    list.filter_map(untraced_gaps.known_gaps, fn(gap) {
+      case gap {
+        UnclassifiedTags(union:, ..) -> Ok(union)
+        UntracedFields(..) -> Error(Nil)
+      }
+    })
+  list.each(combat_and_stat_rows, fn(row) {
+    let assert Ok(union) =
+      list.find(schema.unions, fn(union) { union.name == row.union })
+      as { "no union named " <> row.union }
+    let variants = list.map(union.variants, fn(variant) { variant.tag })
+    let never = list.map(union.never_tags, fn(never) { never.tag })
+    let open = list.map(union.open_tags, fn(open) { open.tag })
+    assert union.refused_from == row.refused_from as row.reason
+    assert list.sort(never, int.compare) == row.never as row.reason
+    assert list.sort(open, int.compare) == row.open as row.reason
+    let classified = list.flatten([variants, never, open])
+    assert list.sort(classified, int.compare)
+      == int.range(from: 0, to: row.refused_from, with: [], run: fn(tags, tag) {
+        list.append(tags, [tag])
+      })
+      as {
+        row.union
+        <> ": each tag the client reads is a variant, never or open once"
+      }
+    let cited =
+      list.flatten([
+        list.map(union.never_tags, fn(never) { never.named_by }),
+        list.filter_map(union.open_tags, fn(open) {
+          option.to_result(open.named_by, Nil)
+        }),
+      ])
+    assert list.filter(cited, fn(key) { !list.contains(fact_keys, key) }) == []
+      as { row.union <> ": each key a never or open tag cites is a fact" }
+    assert !list.contains(listed_unions, row.union)
+      as { row.union <> ": no allow-list entry once every tag is classified" }
+  })
+}
+
+// ---- the connection, realm and spell cast messages ----
 
 /// The owners of the connection, login, character select and realm messages
 /// the server sends or has ready to send.
@@ -916,9 +1085,33 @@ const connection_and_realm_owners = [
   "text_group", "realm_handoff",
 ]
 
-/// The fields of an owner that are neither named for what they are (not by
-/// their position) with a `named_by` that is a key of the fact file, nor open
-/// with a question.
+/// The owners of the spell cast messages the server sends, each a message or a
+/// record of the schema.
+const spell_cast_owners = [
+  "spell_hit_entry",
+  "spell_missile_info",
+  "spell_initial_position",
+  "spell_telegraph_position",
+  "spell_started",
+  "spell_effect_info",
+  "spell_effect_bit",
+  "spell_failed",
+  "spell_miss",
+]
+
+/// The owners of the unit create, destroy, death and dialog messages and of
+/// the chat channel, chat line and chat format messages the server sends, each
+/// a message or a record of the schema.
+const unit_and_chat_owners = [
+  "unit_create_tail", "unit_create_ghost", "unit_death_state", "unit_destroyed",
+  "unit_dialog_open", "chat_channel_joined", "chat_line",
+  "chat_format_item_record", "chat_format_kind_0", "chat_format_kind_1",
+  "chat_format_kind_2", "chat_format_kind_3", "chat_format_kind_11",
+]
+
+/// The fields of an owner that the schema check does not count as traced (not
+/// named for what they are, not open with a question), or that name a key the
+/// fact file does not hold.
 fn untraced_fields(
   schema schema: message_schema.Schema,
   owner owner: String,
@@ -935,22 +1128,20 @@ fn untraced_fields(
       }
   }
   list.filter_map(fields, fn(field) {
-    let named = case field.named_by {
-      Some(key) ->
-        list.contains(fact_keys, key)
-        && !string.starts_with(field.name, "field_")
-      None -> False
+    let names_a_fact = case field.named_by {
+      Some(key) -> list.contains(fact_keys, key)
+      None -> True
     }
-    case named || option.is_some(field.open) {
+    case schema_evidence.is_traced(field) && names_a_fact {
       True -> Error(Nil)
       False -> Ok(field.name)
     }
   })
 }
 
-pub fn the_connection_and_realm_messages_carry_no_untraced_field_test() -> Nil {
-  use <- owned_test.run(10_000)
-  use <- unitest.tag("code_rule")
+/// Asserts that every field of each owner is traced or open and that the
+/// allow-list of untraced fields holds no entry for any of them.
+fn assert_owners_are_traced(owners: List(String)) -> Nil {
   let assert Ok(text) = simplifile.read("src/genesis_prime/message/schema.toml")
     as "the schema file could not be read"
   let assert Ok(schema) = message_schema.parse(text)
@@ -963,12 +1154,29 @@ pub fn the_connection_and_realm_messages_carry_no_untraced_field_test() -> Nil {
         UnclassifiedTags(..) -> Error(Nil)
       }
     })
-  assert list.map(connection_and_realm_owners, fn(owner) {
+  assert list.map(owners, fn(owner) {
       #(owner, untraced_fields(schema:, owner:, fact_keys:))
     })
-    == list.map(connection_and_realm_owners, fn(owner) { #(owner, []) })
+    == list.map(owners, fn(owner) { #(owner, []) })
     as "CLAUDE.md: every field of a message the server sends is traced or open: each field of these owners is named by a fact or open with its question"
-  assert list.filter(connection_and_realm_owners, list.contains(listed, _))
-    == []
+  assert list.filter(owners, list.contains(listed, _)) == []
     as "these owners are traced, so the allow-list has no entry for them"
+}
+
+pub fn the_connection_and_realm_messages_carry_no_untraced_field_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use <- unitest.tag("code_rule")
+  assert_owners_are_traced(connection_and_realm_owners)
+}
+
+pub fn the_spell_cast_messages_carry_no_untraced_field_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use <- unitest.tag("code_rule")
+  assert_owners_are_traced(spell_cast_owners)
+}
+
+pub fn the_unit_and_chat_messages_carry_no_untraced_field_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use <- unitest.tag("code_rule")
+  assert_owners_are_traced(unit_and_chat_owners)
 }

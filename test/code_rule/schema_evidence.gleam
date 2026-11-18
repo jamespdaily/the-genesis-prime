@@ -181,7 +181,7 @@ fn sent_unions(schema: Schema, owners: List(Owner)) -> List(Union) {
 
 /// A field is traced when it names a fact and a name that is not its position,
 /// or is open with its question.
-fn is_traced(field: Field) -> Bool {
+pub fn is_traced(field: Field) -> Bool {
   is_named_or_open(name: field.name, named_by: field.named_by, open: field.open)
 }
 

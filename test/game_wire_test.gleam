@@ -2911,7 +2911,7 @@ pub fn a_stalkers_connection_ending_mid_hold_removes_it_for_a_player_in_sight_an
   assert list.any(seen, fn(frame) {
     frame.message_id == 0x0355
     && unit_destroyed.decode(frame.body)
-    == Ok(unit_destroyed.UnitDestroyed(unit_id: 1, field_2: 0))
+    == Ok(unit_destroyed.UnitDestroyed(unit_id: 1, chest_world_object_delay: 0))
   })
     as "opcode.0x355: the map removes the unit that held a key when its connection ended"
   game_client.hold_ability(game: second, bag_index: 0, target: 0, held: 1)
@@ -2975,7 +2975,7 @@ fn a_suited_players_connection_ends(
   assert list.any(after, fn(frame) {
     frame.message_id == 0x0355
     && unit_destroyed.decode(frame.body)
-    == Ok(unit_destroyed.UnitDestroyed(unit_id: 1, field_2: 0))
+    == Ok(unit_destroyed.UnitDestroyed(unit_id: 1, chest_world_object_delay: 0))
   })
     as "opcode.0x355: the map removes the suited unit when its connection ended"
   let #(rest, _) =

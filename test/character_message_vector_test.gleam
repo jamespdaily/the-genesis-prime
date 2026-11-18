@@ -484,7 +484,7 @@ pub fn unit_destroyed_is_a_32_bit_unit_id_and_one_bit_test() -> Nil {
   message_support.assert_vector(
     name: "vector.opcode.0x355.body",
     body: message_support.hex("0110000001"),
-    value: UnitDestroyed(unit_id: 0x1001, field_2: 1),
+    value: UnitDestroyed(unit_id: 0x1001, chest_world_object_delay: 1),
     encode: unit_destroyed.encode,
     decode: unit_destroyed.decode,
   )
@@ -537,7 +537,7 @@ pub fn unit_create_player_is_the_clients_907_bits_test() -> Nil {
         base_faction_id: 0xD8,
         tagged_by_unit_id: 0xDC,
         tagged_by_group_id: 0xE0E0E0E0E0E0E0E0,
-        field_14: 1,
+        unread_14: 1,
         world_object_id: 0x5A5A5A5A5A5A5A5A,
         world_socket_id: 0x99,
         cluster_id: 0x10C,
@@ -592,7 +592,7 @@ fn minimal_player() -> UnitCreatePlayer {
       base_faction_id: 0,
       tagged_by_unit_id: 0,
       tagged_by_group_id: 0,
-      field_14: 0,
+      unread_14: 0,
       world_object_id: 0,
       world_socket_id: 0,
       cluster_id: 0,

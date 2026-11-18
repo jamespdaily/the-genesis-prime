@@ -4,13 +4,11 @@
 //// Message 0x0262 (unit_create_ghost), server to client: creates a unit of
 //// type 23, a ghost: a player's data without its owned units, its PvP flags
 //// and its premium tier (the character id, the realm, the name, the race,
-//// which the client refuses above 17, the class, the gender, a 64-bit value, a
-//// text, a 4-bit value, a list of 64-bit values, the bone values and the
-//// title), then the values of a player's create; the values the schema leaves
-//// unnamed (the 64-bit value, the text, the 4-bit value and the list of 64-bit
-//// values) are the player's own, set the same way, and not read for the
-//// ghost's looks. Its fields are listed in `schema.toml` with the client's
-//// evidence, and the fact file's `0x140096970` names the message.
+//// which the client refuses above 17, the class, the gender, the group id, the
+//// guild name, the guild type, the guild ids, the bone values and the title),
+//// then the values of a player's create. Its fields are listed in
+//// `schema.toml` with the client's evidence, and the fact file's `0x140096970`
+//// names the message.
 
 import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}
 import genesis_prime/message/unit_create_tail.{type UnitCreateTail}
@@ -33,16 +31,16 @@ pub type UnitCreateGhost {
     gender: Int,
     /// Safe by `opcode.0x262.ghost`: the client's code gives this field no use
     /// the server needs, and that fact shows its value is safe.
-    field_9: Int,
+    group_id: Int,
     /// Safe by `opcode.0x262.ghost`: the client's code gives this field no use
     /// the server needs, and that fact shows its value is safe.
-    field_10: String,
+    guild_name: String,
     /// Safe by `opcode.0x262.ghost`: the client's code gives this field no use
     /// the server needs, and that fact shows its value is safe.
-    field_11: Int,
+    guild_type: Int,
     /// Safe by `opcode.0x262.ghost`: the client's code gives this field no use
     /// the server needs, and that fact shows its value is safe.
-    field_12: List(Int),
+    guild_ids: List(Int),
     bone_values: List(Int),
     title_id: Int,
     tail: UnitCreateTail,
@@ -61,10 +59,10 @@ pub fn encode(message: UnitCreateGhost) -> Result(BitArray, EncodeError) {
   |> bit_stream.write_unsigned_below("race_id", message.race_id, 5, 18)
   |> bit_stream.write_unsigned("class_id", message.class_id, 5)
   |> bit_stream.write_unsigned("gender", message.gender, 2)
-  |> bit_stream.write_unsigned("field_9", message.field_9, 64)
-  |> bit_stream.write_wide_text("field_10", message.field_10)
-  |> bit_stream.write_unsigned("field_11", message.field_11, 4)
-  |> bit_stream.write_unsigned_array("field_12", message.field_12, 5, 64)
+  |> bit_stream.write_unsigned("group_id", message.group_id, 64)
+  |> bit_stream.write_wide_text("guild_name", message.guild_name)
+  |> bit_stream.write_unsigned("guild_type", message.guild_type, 4)
+  |> bit_stream.write_unsigned_array("guild_ids", message.guild_ids, 5, 64)
   |> bit_stream.write_unsigned_array("bone_values", message.bone_values, 6, 32)
   |> bit_stream.write_unsigned("title_id", message.title_id, 14)
   |> unit_create_tail.write(message.tail)
@@ -87,10 +85,10 @@ pub fn decode(body: BitArray) -> Result(UnitCreateGhost, DecodeError) {
   ))
   use #(class_id, reader) <- result.try(bit_stream.read_unsigned(reader, 5))
   use #(gender, reader) <- result.try(bit_stream.read_unsigned(reader, 2))
-  use #(field_9, reader) <- result.try(bit_stream.read_unsigned(reader, 64))
-  use #(field_10, reader) <- result.try(bit_stream.read_wide_text(reader))
-  use #(field_11, reader) <- result.try(bit_stream.read_unsigned(reader, 4))
-  use #(field_12, reader) <- result.try(bit_stream.read_unsigned_array(
+  use #(group_id, reader) <- result.try(bit_stream.read_unsigned(reader, 64))
+  use #(guild_name, reader) <- result.try(bit_stream.read_wide_text(reader))
+  use #(guild_type, reader) <- result.try(bit_stream.read_unsigned(reader, 4))
+  use #(guild_ids, reader) <- result.try(bit_stream.read_unsigned_array(
     reader,
     5,
     64,
@@ -111,10 +109,10 @@ pub fn decode(body: BitArray) -> Result(UnitCreateGhost, DecodeError) {
     race_id:,
     class_id:,
     gender:,
-    field_9:,
-    field_10:,
-    field_11:,
-    field_12:,
+    group_id:,
+    guild_name:,
+    guild_type:,
+    guild_ids:,
     bone_values:,
     title_id:,
     tail:,

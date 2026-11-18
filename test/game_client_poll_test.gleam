@@ -24,7 +24,10 @@ pub fn a_poll_gives_the_whole_messages_it_already_holds_without_waiting_for_the_
   let cipher = game_client.session_cipher(session_key: <<1:128>>)
   let game = game_client.new(socket:, cipher:, limit: socket_read.Open)
   let assert Ok(body) =
-    unit_destroyed.encode(unit_destroyed.UnitDestroyed(unit_id: 9, field_2: 0))
+    unit_destroyed.encode(unit_destroyed.UnitDestroyed(
+      unit_id: 9,
+      chest_world_object_delay: 0,
+    ))
   let assert Ok(whole) =
     encrypted_frame.wrap(GameWrapper, Frame(0x0355, body), cipher)
   let assert Ok(next) =

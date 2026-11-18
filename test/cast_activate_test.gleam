@@ -310,7 +310,7 @@ pub fn activate_starts_with_activate_bit_and_creature_cast_time_test() -> Nil {
     && started.caster_unit_id == 7
     && started.primary_target_unit_id == its_unit
     as "the viewers see Spell4 1817, the pick, cast by the caster at the unit"
-  assert started.field_13 == 1
+  assert started.creature_activate == 1
     as "opcode.0x7ff.activate: the activate bit is set on the start a viewer is told"
   assert support.writes(effects:)
     |> list.all(fn(frame) { frame.message_id != spell_go.message_id })
@@ -377,8 +377,8 @@ pub fn activate_go_raises_activated_test() -> Nil {
           spell4_effects_id: 2821,
           instance_id: 1,
           delay_ms: 0,
-          field_4: 0,
-          result: spell_effect_result.Bit(SpellEffectBit(field_2: 0)),
+          lifetime_ms: 0,
+          result: spell_effect_result.Bit(SpellEffectBit(unread_2: 0)),
         ),
       ]),
     ]
@@ -1618,8 +1618,8 @@ fn assert_went_and_finished(effects effects: List(Effect)) -> Nil {
           spell4_effects_id: 68_913,
           instance_id: 1,
           delay_ms: 0,
-          field_4: 0,
-          result: spell_effect_result.Bit(SpellEffectBit(field_2: 0)),
+          lifetime_ms: 0,
+          result: spell_effect_result.Bit(SpellEffectBit(unread_2: 0)),
         ),
       ]),
     ]
@@ -1662,7 +1662,7 @@ pub fn a_client_side_interaction_activate_cast_starts_and_waits_for_the_answer_t
   assert news_2 == news_3
   let assert CastStarted(start: started) = news_2
   assert started.spell4_id == 34_681
-    && started.field_13 == 1
+    && started.creature_activate == 1
     && started.caster_unit_id == 7
     && started.primary_target_unit_id == its_unit
     as "the viewers see Spell4 34681 cast by the caster at the unit, with the activate bit (opcode.0x7ff.activate)"

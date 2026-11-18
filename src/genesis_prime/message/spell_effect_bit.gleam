@@ -17,7 +17,7 @@ pub type SpellEffectBit {
   SpellEffectBit(
     /// Safe by `opcode.0x7f4.effect_bit`: the client's code gives this field no
     /// use the server needs, and that fact shows its value is safe.
-    field_2: Int,
+    unread_2: Int,
   )
 }
 
@@ -25,12 +25,12 @@ pub type SpellEffectBit {
 pub fn write(writer writer: Writer, record record: SpellEffectBit) -> Writer {
   writer
   |> bit_stream.write_constant("kind", 0, 2)
-  |> bit_stream.write_unsigned("field_2", record.field_2, 1)
+  |> bit_stream.write_unsigned("unread_2", record.unread_2, 1)
 }
 
 /// Reads the record from the stream, and the stream after it.
 pub fn read(reader: Reader) -> Result(#(SpellEffectBit, Reader), DecodeError) {
   use reader <- result.try(bit_stream.read_constant(reader, "kind", 2, 0))
-  use #(field_2, reader) <- result.try(bit_stream.read_unsigned(reader, 1))
-  Ok(#(SpellEffectBit(field_2:), reader))
+  use #(unread_2, reader) <- result.try(bit_stream.read_unsigned(reader, 1))
+  Ok(#(SpellEffectBit(unread_2:), reader))
 }

@@ -2,9 +2,10 @@
 //// never edited by hand.
 ////
 //// A record inside a message body: one initial position of a cast message: a
-//// unit id, 8 bits, a position, a float and 32 bits; their meanings are not
-//// read. Its fields are listed in `schema.toml` with the client's evidence,
-//// and the fact file's `opcode.0x7ff` names the record.
+//// unit id, the target flags, a position, the telegraph's facing and the id of
+//// the unit the telegraph is anchored to. Its fields are listed in
+//// `schema.toml` with the client's evidence, and the fact file's
+//// `opcode.0x7ff` names the record.
 
 import genesis_prime/message/bit_stream.{
   type DecodeError, type Reader, type Writer,
@@ -18,16 +19,10 @@ import gleam/result
 pub type SpellInitialPosition {
   SpellInitialPosition(
     unit_id: Int,
-    /// Safe by `spell.empty_lists`: the client's code gives this field no use
-    /// the server needs, and that fact shows its value is safe.
-    field_2: Int,
+    target_flags: Int,
     position: SpellPosition,
-    /// Safe by `spell.empty_lists`: the client's code gives this field no use
-    /// the server needs, and that fact shows its value is safe.
-    field_4: Int,
-    /// Safe by `spell.empty_lists`: the client's code gives this field no use
-    /// the server needs, and that fact shows its value is safe.
-    field_5: Int,
+    yaw: Int,
+    anchor_unit_id: Int,
   )
 }
 
@@ -38,10 +33,10 @@ pub fn write(
 ) -> Writer {
   writer
   |> bit_stream.write_unsigned("unit_id", record.unit_id, 32)
-  |> bit_stream.write_unsigned("field_2", record.field_2, 8)
+  |> bit_stream.write_unsigned("target_flags", record.target_flags, 8)
   |> spell_position.write(record.position)
-  |> bit_stream.write_float32_bits("field_4", record.field_4)
-  |> bit_stream.write_unsigned("field_5", record.field_5, 32)
+  |> bit_stream.write_float32_bits("yaw", record.yaw)
+  |> bit_stream.write_unsigned("anchor_unit_id", record.anchor_unit_id, 32)
 }
 
 /// Reads the record from the stream, and the stream after it.
@@ -49,12 +44,21 @@ pub fn read(
   reader: Reader,
 ) -> Result(#(SpellInitialPosition, Reader), DecodeError) {
   use #(unit_id, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
-  use #(field_2, reader) <- result.try(bit_stream.read_unsigned(reader, 8))
+  use #(target_flags, reader) <- result.try(bit_stream.read_unsigned(reader, 8))
   use #(position, reader) <- result.try(spell_position.read(reader))
-  use #(field_4, reader) <- result.try(bit_stream.read_float32_bits(reader))
-  use #(field_5, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
+  use #(yaw, reader) <- result.try(bit_stream.read_float32_bits(reader))
+  use #(anchor_unit_id, reader) <- result.try(bit_stream.read_unsigned(
+    reader,
+    32,
+  ))
   Ok(#(
-    SpellInitialPosition(unit_id:, field_2:, position:, field_4:, field_5:),
+    SpellInitialPosition(
+      unit_id:,
+      target_flags:,
+      position:,
+      yaw:,
+      anchor_unit_id:,
+    ),
     reader,
   ))
 }

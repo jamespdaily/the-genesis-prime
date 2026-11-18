@@ -147,8 +147,8 @@ pub fn a_go_lists_a_scale_row_on_the_caster_and_the_nodes_life_is_the_rows_test(
         spell4_effects_id: 99_071,
         instance_id: 1,
         delay_ms: 120,
-        field_4: 0,
-        result: spell_effect_result.Bit(SpellEffectBit(field_2: 0)),
+        lifetime_ms: 0,
+        result: spell_effect_result.Bit(SpellEffectBit(unread_2: 0)),
       ),
     ]
     as "the row's delay, the result bit and the fourth value 0 that leaves the lifetime to the client (opcode.0x7f4.effect_time)"
@@ -423,7 +423,7 @@ fn swaps_of(
     #(
       info.unit_id,
       list.map(info.effects, fn(effect) {
-        #(effect.spell4_effects_id, effect.delay_ms, effect.field_4)
+        #(effect.spell4_effects_id, effect.delay_ms, effect.lifetime_ms)
       }),
     )
   })
@@ -450,8 +450,8 @@ pub fn a_go_lists_an_item_visual_swap_row_on_the_caster_with_its_delay_and_lifet
         spell4_effects_id: 122_321,
         instance_id: 1,
         delay_ms: 4000,
-        field_4: 0,
-        result: spell_effect_result.Bit(SpellEffectBit(field_2: 0)),
+        lifetime_ms: 0,
+        result: spell_effect_result.Bit(SpellEffectBit(unread_2: 0)),
       ),
     ]
     as "the row's delay 4000 and the fourth value 0 that leaves the lifetime to the client (opcode.0x7f4.effect_time)"
