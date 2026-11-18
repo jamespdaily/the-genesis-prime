@@ -465,11 +465,7 @@ fn part(
   logged logged: Set(String),
 ) -> Result(Picked, Refusal) {
   use <- bool.guard(quantity == 0, Ok(stopped(code: no_quantity, logged:)))
-  case
-    list.find(items, fn(item) {
-      item.location == place.location && item.bag_index == place.bag_index
-    })
-  {
+  case inventory.held_at(items:, place:) {
     Error(Nil) ->
       Ok(stopped_logged(
         reason: "no item",

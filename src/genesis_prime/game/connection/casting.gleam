@@ -103,6 +103,7 @@ import genesis_prime/game/forced_move
 import genesis_prime/game/heal_split
 import genesis_prime/game/hit_radius
 import genesis_prime/game/interaction
+import genesis_prime/game/inventory
 import genesis_prime/game/item_use
 import genesis_prime/game/loadout
 import genesis_prime/game/movement
@@ -221,50 +222,7 @@ pub fn item_use_message(
   entered entered: world_entry.Entered,
   inner inner: Frame,
 ) -> client_connection.Handled(Session) {
-  let tables = session.settings.tables
-  let WorldCast(caster:, caster_radius:, target_of:) =
-    world_cast(session:, now:, entered:)
-  case
-    cast.use_item(
-      cast: entered.cast,
-      body: inner.body,
-      caster:,
-      held_at: fn(place) {
-        list.find(entered.items, fn(held) {
-          held.location == place.location && held.bag_index == place.bag_index
-        })
-        |> result.map(fn(held) {
-          cast_state.ItemAtPlace(item2_id: held.item2_id, charges: held.charges)
-        })
-        |> option.from_result
-      },
-      check: fn(
-        item,
-        charges,
-        second_item,
-        target_checklist_index,
-        prerequisite,
-      ) {
-        item_use.check(
-          tables:,
-          item:,
-          charges:,
-          player_level: caster.player.level,
-          quests: caster.quests,
-          second_item:,
-          target_checklist_index:,
-          prerequisite:,
-        )
-      },
-      activations: connection_state.activations_of(session:),
-      target_of:,
-      in_cast_group: fn(group, unit_id) {
-        shown.in_group(tables:, picture: entered.shown, group:, unit_id:)
-      },
-      caster_radius:,
-      now:,
-    )
-  {
+  case item_use_decided(session:, now:, entered:, body: inner.body) {
     Ok(cast_state.Frames(cast: updated, effects:)) ->
       carry_cast(session: with_cast(session:, cast: updated), now:, effects:)
     Ok(cast_state.Started(press:, cast: started, effects:)) ->
@@ -274,6 +232,7 @@ pub fn item_use_message(
         holder:,
         entered:,
         press:,
+        body: inner.body,
         cast: started,
         effects:,
         release: cast_effects,
@@ -285,6 +244,67 @@ pub fn item_use_message(
         text: cast_frame.describe(refusal),
       )
   }
+}
+
+/// The cast rule's decision of a 0x943's body at `now` for the items `entered` holds: the
+/// state and effects of the cast it starts, none when it starts nothing.
+pub fn item_use_started(
+  session session: Session,
+  now now: Now,
+  entered entered: world_entry.Entered,
+  body body: BitArray,
+) -> Option(#(cast_state.State, List(cast_state.Effect))) {
+  case item_use_decided(session:, now:, entered:, body:) {
+    Ok(cast_state.Started(cast:, effects:, ..)) -> Some(#(cast, effects))
+    Ok(cast_state.Frames(..)) -> None
+    Error(refusal) ->
+      panic as {
+        "the body the press decided is decided again on the same items and tables: "
+        <> cast_frame.describe(refusal)
+      }
+  }
+}
+
+fn item_use_decided(
+  session session: Session,
+  now now: Now,
+  entered entered: world_entry.Entered,
+  body body: BitArray,
+) -> Result(cast_state.Used, cast_state.Refusal) {
+  let tables = session.settings.tables
+  let WorldCast(caster:, caster_radius:, target_of:) =
+    world_cast(session:, now:, entered:)
+  cast.use_item(
+    cast: entered.cast,
+    body:,
+    caster:,
+    held_at: fn(place) {
+      inventory.held_at(items: entered.items, place:)
+      |> result.map(fn(held) {
+        cast_state.ItemAtPlace(item2_id: held.item2_id, charges: held.charges)
+      })
+      |> option.from_result
+    },
+    check: fn(item, charges, second_item, target_checklist_index, prerequisite) {
+      item_use.check(
+        tables:,
+        item:,
+        charges:,
+        player_level: caster.player.level,
+        quests: caster.quests,
+        second_item:,
+        target_checklist_index:,
+        prerequisite:,
+      )
+    },
+    activations: connection_state.activations_of(session:),
+    target_of:,
+    in_cast_group: fn(group, unit_id) {
+      shown.in_group(tables:, picture: entered.shown, group:, unit_id:)
+    },
+    caster_radius:,
+    now:,
+  )
 }
 
 /// The player's 0x9d, the press of the button an open cast objective gave it, from inside

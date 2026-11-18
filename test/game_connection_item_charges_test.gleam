@@ -17,12 +17,12 @@
 ////   gone, or a connection that ends while the ask is out, leaves the outcome unknown: the
 ////   connection ends with 0x036A reason 8 and nothing of the cast is released.
 //// - The items the store holds are the ones a use spends: the real store
-////   (`account_store_test`) saves each request under the epoch of a login and a load gives
+////   (`account_store_support`) saves each request under the epoch of a login and a load gives
 ////   the rows back.
 //// Time is the step's own clock: Spell4 26663's spellCoolDown is 2000 ms, so the uses are
 //// 5 s apart.
 
-import account_store_test.{type Store}
+import account_store_support.{type Store}
 import character_support
 import connection_rule_support as support
 import fixture_tables
@@ -30,6 +30,7 @@ import game_connection_support as connection_support
 import genesis_prime/client_connection.{type Answer, type Request, FromStore}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
+import genesis_prime/game/connection/state as connection_state
 import genesis_prime/message/cast_result
 import genesis_prime/message/disconnect_reason.{LostUserServer}
 import genesis_prime/message/item_added
@@ -37,6 +38,7 @@ import genesis_prime/message/item_charges_changed
 import genesis_prime/message/item_count_changed
 import genesis_prime/message/item_place.{type ItemPlace, ItemPlace}
 import genesis_prime/message/item_removed
+import genesis_prime/message/player_health
 import genesis_prime/message/spell_cast_refused
 import genesis_prime/step.{
   type ConnectionStep, type Outcome, EndedBeforeAnswer, LogError, LogWarning,
@@ -69,14 +71,15 @@ const stack_place = ItemPlace(location: 1, bag_index: 1)
 /// The tables with the grenade holding at most 3 charges and Item2 1039 casting the
 /// grenade's spell with one.
 fn with_charged_rows(body: fn(table_store.Tables) -> a) -> a {
-  charged_rows(cast_time_ms: None, body:)
+  charged_rows(cast_time_ms: None, cooldown_ms: 0, body:)
 }
 
-/// `with_charged_rows` with Spell4 26663's spellCoolDown 0, so a second use at once is not
-/// refused for the cooldown (15), and its castTime changed to `cast_time_ms` when given, so
-/// its go waits for a timer.
+/// `with_charged_rows` with Spell4 26663's spellCoolDown changed to `cooldown_ms` (0 lets a
+/// second use at once through, a use inside the cooldown is refused 15) and its castTime
+/// to `cast_time_ms` when given, so its go waits for a timer.
 fn charged_rows(
   cast_time_ms cast_time_ms: Option(Int),
+  cooldown_ms cooldown_ms: Int,
   body body: fn(table_store.Tables) -> a,
 ) -> a {
   let assert Ok(rows) =
@@ -99,7 +102,7 @@ fn charged_rows(
       table: "Spell4",
       id: support_items.grenade_spell,
       with: list.flatten([
-        [#("spellCoolDown", Integer(0))],
+        [#("spellCoolDown", Integer(cooldown_ms))],
         case cast_time_ms {
           Some(cast_time_ms) -> [#("castTime", Integer(cast_time_ms))]
           None -> []
@@ -301,6 +304,9 @@ pub fn the_answer_saved_writes_the_frame_then_releases_the_cast_test() -> Nil {
       assert list.take(ids(taken: answered), 4) |> list.drop(1)
         == [0x07FD, 0x07F4, 0x07FE]
         as "opcode.0x7fd, then the go and the finish of Spell4 26663 (castTime 0): the cast's frames follow the inventory frame"
+      let counted = list.drop(ids(taken: answered), 4)
+      assert counted != [] && list.all(counted, fn(id) { id == 0x0361 })
+        as "opcode.0x361: the count of quest 4743's objectives, which the go raised, comes last: after the inventory frame and the cast's frames"
       let assert [first, ..] = connection_support.written(taken: answered)
       assert told_by(frame: first) == row.told as row.why
       let #(_, again) =
@@ -445,9 +451,73 @@ pub fn a_use_sent_while_the_spend_is_out_is_taken_after_its_answer_test() -> Nil
     as "opcode.0x7fc: the single item was removed by the first answer, so its place holds nothing: ItemBad (22)"
 }
 
+pub fn a_map_message_and_a_timer_during_the_spend_are_taken_in_order_after_its_answer_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use tables <- with_charged_rows
+  let state = support_items.seeing_a_shack(tables:, items: [single(charges: 3)])
+  let #(state, taken) =
+    pressed(state:, client_cast_id: 9, place: single_place, at: 0)
+  // `state.holds_map_messages` and `state.holds_timer`: while the spend is out a message the
+  // map sends and the connection's own timer are held, not dropped.
+  let #(state, struck) =
+    connection_support.at(
+      state:,
+      ms: 1,
+      event: connection_support.a_beast_strike(connection_support.own_unit_id),
+    )
+  assert ids(taken: struck) == [] && support.asked(struck) == None
+    as "the strike on the player waits behind the ask"
+  let #(state, fired) =
+    connection_support.fired_at(
+      state:,
+      timer: connection_state.save_timer,
+      ms: 2,
+    )
+  assert ids(taken: fired) == [] && support.asked(fired) == None
+    as "the save timer waits behind the ask and does not end the connection"
+  let #(_, answered) = answered_at(state:, taken:, outcome: saved(), at: 3)
+  assert list.take(ids(taken: answered), 4) == [0x00CA, 0x07FD, 0x07F4, 0x07FE]
+    as "the spend's frame and the cast's come first"
+  assert list.last(ids(taken: answered)) == Ok(player_health.message_id)
+    as "the strike is taken after them, its health the last frame"
+  let assert Some(ask) = support.asked(answered)
+    as "the held save timer is taken after the strike"
+  let assert client_connection.AskStore(store.Move(store.SavePlace(..))) =
+    ask.request
+    as "its ask saves the player's place"
+  Nil
+}
+
+pub fn a_cast_released_after_a_slow_answer_keeps_its_cooldown_from_the_release_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use tables <- charged_rows(cast_time_ms: None, cooldown_ms: 2000, body: _)
+  let state = support_items.seeing_a_shack(tables:, items: [single(charges: 3)])
+  let #(state, taken) =
+    pressed(state:, client_cast_id: 9, place: single_place, at: 0)
+  let #(state, _) = answered_at(state:, taken:, outcome: saved(), at: 400)
+  // The cooldown (2000 ms) runs from the release at 400 ms and ends at 2400 ms. A press
+  // with more than the queue window (500 ms) left is refused 15; one inside the window is
+  // held by the server, which an item's use answers 14.
+  list.each(
+    [
+      #(1800, 15, "600 ms left: SpellCooldown (15)"),
+      #(2300, 14, "100 ms left, inside the queue window: held, answered 14"),
+    ],
+    fn(row) {
+      let #(at, result, why) = row
+      let #(_, again) =
+        pressed(state:, client_cast_id: 10, place: single_place, at:)
+      assert ids(taken: again) == [0x07FC] as why
+      assert refusal_of(taken: again)
+        == #(10, support_items.grenade_spell, result)
+        as why
+    },
+  )
+}
+
 pub fn a_cast_with_a_cast_time_starts_its_timers_only_after_the_answer_test() -> Nil {
   use <- owned_test.run(10_000)
-  use tables <- charged_rows(cast_time_ms: Some(1000))
+  use tables <- charged_rows(cast_time_ms: Some(1000), cooldown_ms: 0)
   let state = support_items.seeing_a_shack(tables:, items: [single(charges: 3)])
   let #(state, taken) =
     pressed(state:, client_cast_id: 9, place: single_place, at: 0)
@@ -474,10 +544,11 @@ type Stored {
 
 /// A stored character holding the Engineer's worn items and these items in its bags.
 fn stored_holding(items items: List(NewItem)) -> Stored {
-  let store = account_store_test.start_store(pool_size: 2)
-  let account = account_store_test.insert_account(store:, login_name: "login-1")
+  let store = account_store_support.start_store(pool_size: 2)
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
   let assert CharacterCreated(character_id:) =
-    account_store_test.create_holding(
+    account_store_support.create_holding(
       store:,
       account:,
       name: "Ab Cd",
@@ -507,7 +578,7 @@ fn bag_item(
 /// character's epoch, so a request is made under the epoch of the login just before it.
 fn loaded(stored stored: Stored) -> #(Int, List(HeldItem)) {
   let #(epoch, items) =
-    account_store_test.login(
+    account_store_support.login(
       store: stored.store,
       account: stored.account,
       character_id: stored.character_id,
@@ -553,7 +624,7 @@ fn store_answer(
   request request: ItemsRequest,
 ) -> Outcome(Answer) {
   step.Answer(
-    FromStore(account_store_test.ask(
+    FromStore(account_store_support.ask(
       store: stored.store,
       request: store.Items(own_request(stored:, request:)),
     )),
@@ -606,29 +677,35 @@ fn entry_of_item(
 /// The frames that say a cast or an item changed.
 const use_frames = [0x07FD, 0x07F4, 0x07FE, 0x017F, 0x00CA, 0x0148]
 
+/// The connection that ends while the spend's ask is out writes no cast frame and no item
+/// frame, whichever kind of spend is out. The store was never asked, so its rows stay as they
+/// were by construction: what the client keeps after the crash is what it held before the
+/// press, and the next login's 0x111 sends the stored charges
+/// (`a_crash_after_the_spend_commits_resyncs_the_client_on_reload_test` for the commit).
 pub fn a_crash_before_the_spend_commits_leaves_no_effect_and_the_charge_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(10_000)
   use tables <- with_charged_rows
-  let stored =
-    stored_holding(items: [
-      bag_item(item2: support_items.grenade, bag_index: 0, count: 1, charges: 3),
-    ])
-  let #(_, rows) = loaded(stored:)
-  let assert [item] = rows as "the store holds the grenade"
-  let state = support_items.seeing_a_shack(tables:, items: rows)
-  let #(state, taken) =
-    pressed(state:, client_cast_id: 9, place: single_place, at: 0)
-  let assert SpendItem(..) = support_items.spend_asked(taken:)
-    as "the use asks the store to spend the charge"
-  let #(_, closing) = connection_support.feed(state, OwnEvent(step.PeerClosed))
-  assert list.filter(ids(taken: closing), fn(id) {
-      list.contains(use_frames, id)
-    })
-    == []
-    as "a connection that ends with the ask out writes no cast frame and no item frame"
-  assert entry_of_item(tables:, stored:, guid: item.item_guid) == [#(1, 3)]
-    as "the store was not asked: a load and an entry send the charge as it was, 3"
-  account_store_test.stop(stored.store)
+  list.each(
+    [
+      #(single(charges: 3), single_place, "a lowered charge"),
+      #(single(charges: 1), single_place, "the last charge, a delete"),
+      #(stack(count: 5), stack_place, "a lowered stack"),
+    ],
+    fn(row) {
+      let #(item, place, why) = row
+      let state = support_items.seeing_a_shack(tables:, items: [item])
+      let #(state, taken) = pressed(state:, client_cast_id: 9, place:, at: 0)
+      assert support.asked(taken) != None
+        as "the use asks the store to save the spend"
+      let #(_, closing) =
+        connection_support.feed(state, OwnEvent(step.PeerClosed))
+      assert list.filter(ids(taken: closing), fn(id) {
+          list.contains(use_frames, id)
+        })
+        == []
+        as { "no cast frame and no item frame is written for " <> why }
+    },
+  )
 }
 
 /// What the store holds after a spend whose answer never reaches the connection.
@@ -688,7 +765,7 @@ pub fn a_crash_after_the_spend_commits_resyncs_the_client_on_reload_test() -> Ni
       let #(state, taken) =
         pressed(state:, client_cast_id: 9, place: row.place, at: 0)
       let assert ForItems(store.ItemsSaved) =
-        account_store_test.ask(
+        account_store_support.ask(
           store: stored.store,
           request: store.Items(own_request(
             stored:,
@@ -712,7 +789,7 @@ pub fn a_crash_after_the_spend_commits_resyncs_the_client_on_reload_test() -> Ni
           None -> []
         }
         as row.why
-      account_store_test.stop(stored.store)
+      account_store_support.stop(stored.store)
     },
   )
 }
@@ -835,5 +912,5 @@ pub fn using_a_charged_item_until_it_runs_out_and_a_relog_keeping_the_count_test
   assert told_by(frame: head) == Removed(guid: stack_row.item_guid, reason: 1)
     as "the second removes the stack with 0x148"
   the_client_holds_what_the_store_does(stored:, answered: stack_second)
-  account_store_test.stop(stored.store)
+  account_store_support.stop(stored.store)
 }

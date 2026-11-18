@@ -9,7 +9,8 @@
 ////         StackLowered | ChargeLowered         ─▶ ask SpendItem
 ////         Gone                                 ─▶ ask DeleteItem
 ////    ─▶ the store's answer (genesis_prime/game/connection/item_spend)
-////         ItemsSaved                ─▶ the inventory frame, then cast' adopted, then the effects
+////         ItemsSaved                ─▶ the inventory frame, then the press decided again at the
+////                                      answer's time: its cast adopted, then its effects
 ////         ItemsNotSaved | SaveRefused ─▶ 0x7fc result 1; the item and the cast are as before
 ////         the store away, past its deadline, or the connection ended ─▶ the connection ends
 //// ```
@@ -48,12 +49,15 @@ pub type Spend {
   Gone
 }
 
-/// A use whose cast is held back until the store answers the spend: the press, the held
-/// item as it was, what the use spends, and the state and effects of the cast it started,
-/// which the connection applies after the answer (`cast_state.Started`).
+/// A use whose cast is held back until the store answers the spend: the press, its 0x943
+/// body, the held item as it was, what the use spends, and the state and effects of the cast
+/// it started at the press (`cast_state.Started`). The connection decides the body again at
+/// the answer, so the cast's timers and cooldowns run from its release, and applies the
+/// press-time state and effects only when that decision starts nothing.
 pub type Spending {
   Spending(
     press: cast_state.ItemPress,
+    body: BitArray,
     item: HeldItem,
     spend: Spend,
     cast: cast_state.State,
@@ -96,30 +100,22 @@ pub fn request(
   character_id character_id: CharacterId,
   session_epoch session_epoch: SessionEpoch,
 ) -> Option(store.Request) {
+  let lowered = fn(stack_count, charges) {
+    Some(
+      store.Items(store.SpendItem(
+        account_id:,
+        character_id:,
+        session_epoch:,
+        item:,
+        stack_count:,
+        charges:,
+      )),
+    )
+  }
   case spend {
     NothingToSpend -> None
-    StackLowered(stack_count:) ->
-      Some(
-        store.Items(store.SpendItem(
-          account_id:,
-          character_id:,
-          session_epoch:,
-          item:,
-          stack_count:,
-          charges: item.charges,
-        )),
-      )
-    ChargeLowered(charges:) ->
-      Some(
-        store.Items(store.SpendItem(
-          account_id:,
-          character_id:,
-          session_epoch:,
-          item:,
-          stack_count: item.stack_count,
-          charges:,
-        )),
-      )
+    StackLowered(stack_count:) -> lowered(stack_count, item.charges)
+    ChargeLowered(charges:) -> lowered(item.stack_count, charges)
     Gone ->
       Some(
         store.Items(store.DeleteItem(

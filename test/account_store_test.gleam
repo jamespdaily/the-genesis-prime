@@ -22,6 +22,7 @@
 //// Every wait is for an event, with a deadline a passing test never reaches,
 //// except the asks that are about a deadline passing.
 
+import account_store_support.{type Store, Store}
 import ask_support
 import asking_rule
 import character_support
@@ -57,7 +58,6 @@ import gleam/erlang/process
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
-import gleam/otp/factory_supervisor
 import gleam/otp/static_supervisor as supervisor
 import gleam/result
 import gleam/string
@@ -66,12 +66,11 @@ import open_wait
 import owned_test
 import place_support
 import pog
-import readiness_support
 import relay
 
 pub fn a_stored_login_name_gives_its_account_id_salt_verifier_and_game_account_id_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let id =
     login_support.insert_account(
       pool: store.pool,
@@ -88,7 +87,10 @@ pub fn a_stored_login_name_gives_its_account_id_salt_verifier_and_game_account_i
       0x89, 0xAB, 0xCD, 0xEF,
     >>)
     as "sixteen bytes are a GUID"
-  assert ask(store:, request: Login(FindAccount("login-1")))
+  assert account_store_support.ask(
+      store:,
+      request: Login(FindAccount("login-1")),
+    )
     == ForLogin(
       AccountFound(Account(
         account_id: AccountId(id),
@@ -99,12 +101,12 @@ pub fn a_stored_login_name_gives_its_account_id_salt_verifier_and_game_account_i
       )),
     )
     as "the row the test inserted, as the STS login needs it"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn an_unknown_login_name_gives_no_such_account_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let _id =
     login_support.insert_account(
       pool: store.pool,
@@ -113,10 +115,13 @@ pub fn an_unknown_login_name_gives_no_such_account_test() -> Nil {
       verifier: <<2>>,
       game_account_id: a_game_account_id(),
     )
-  assert ask(store:, request: Login(FindAccount("login-2")))
+  assert account_store_support.ask(
+      store:,
+      request: Login(FindAccount("login-2")),
+    )
     == ForLogin(NoSuchAccount)
     as "no row has that login name"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn with_no_database_connection_the_answer_is_unavailable_and_the_asking_connection_goes_on_test() -> Nil {
@@ -140,7 +145,7 @@ pub fn with_no_database_connection_the_answer_is_unavailable_and_the_asking_conn
     |> pog.port(away.port)
     |> pog.queue_target(50)
     |> pog.queue_interval(100)
-  let store = start_store_on(config)
+  let store = account_store_support.start_store_on(config)
   let server = start_asker(store, ask_support.unreported)
   let client = ask_support.connect(server)
   ask_support.command(
@@ -157,12 +162,12 @@ pub fn with_no_database_connection_the_answer_is_unavailable_and_the_asking_conn
   assert ask_support.read_pong(client) == <<0x70, 9>>
     as "the connection goes on"
   ask_support.stop(server)
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_query_still_running_at_the_askers_deadline_has_its_worker_ended_and_the_asker_gets_no_answer_in_time_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 3)
+  let store = account_store_support.start_store(pool_size: 3)
   let workers = process.new_subject()
   // The connection's directory reports the worker and waits for the test to
   // have its monitor on it, so the worker's end is seen as `shutdown` however
@@ -203,7 +208,7 @@ pub fn a_query_still_running_at_the_askers_deadline_has_its_worker_ended_and_the
     as "the asker ended the worker with exit shutdown, the lock still held"
   release_lock(lock)
   ask_support.stop(server)
-  stop(store)
+  account_store_support.stop(store)
 }
 
 /// The pool is stopped the moment the lock is released, as a test's end does;
@@ -212,15 +217,15 @@ pub fn a_query_still_running_at_the_askers_deadline_has_its_worker_ended_and_the
 pub fn a_lock_released_and_the_pool_stopped_at_once_does_not_crash_the_test_test() -> Nil {
   use <- owned_test.run(60_000)
   list.each(list.repeat(Nil, 20), fn(_) {
-    let store = start_store(pool_size: 2)
+    let store = account_store_support.start_store(pool_size: 2)
     release_lock(lock_table(store.pool))
-    stop(store)
+    account_store_support.stop(store)
   })
 }
 
 pub fn a_worker_that_crashes_gives_ended_before_answer_and_the_store_goes_on_serving_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let server = start_asker(store, ask_support.unreported)
   let client = ask_support.connect(server)
   // With the table gone the query fails in the database, which is a bug in
@@ -248,7 +253,7 @@ pub fn a_worker_that_crashes_gives_ended_before_answer_and_the_store_goes_on_ser
   assert next.code == asking_rule.code_no_such_account
     as "the store answers the next ask"
   ask_support.stop(server)
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn with_the_stores_supervisor_not_running_an_ask_to_the_store_gives_not_running_and_the_connection_goes_on_test() -> Nil {
@@ -296,16 +301,22 @@ pub fn with_the_database_pool_not_running_an_ask_to_the_store_gives_unavailable_
   process.unlink(started.pid)
   ask_support.guard(started.pid)
   let store = Store(tree: started.pid, pool:, name:)
-  assert ask(store:, request: Login(FindAccount("login-1"))) == Unavailable
+  assert account_store_support.ask(
+      store:,
+      request: Login(FindAccount("login-1")),
+    )
+    == Unavailable
     as "the pool is not running, so the query cannot reach the database"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn the_list_gives_the_accounts_characters_in_creation_order_and_no_other_accounts_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
-  let account = insert_account(store:, login_name: "login-1")
-  let other = insert_account(store:, login_name: "login-2")
+  let store = account_store_support.start_store(pool_size: 2)
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
+  let other =
+    account_store_support.insert_account(store:, login_name: "login-2")
   // Created in this order; their names sort the other way.
   let first =
     character_support.insert(
@@ -331,7 +342,10 @@ pub fn the_list_gives_the_accounts_characters_in_creation_order_and_no_other_acc
       class_id: 1,
       path: 1,
     )
-  assert ask(store:, request: Select(ListCharacters(account)))
+  assert account_store_support.ask(
+      store:,
+      request: Select(ListCharacters(account)),
+    )
     == ForSelect(
       Listed([
         Character(
@@ -377,23 +391,27 @@ pub fn the_list_gives_the_accounts_characters_in_creation_order_and_no_other_acc
       ]),
     )
     as "the account's two rows as inserted, in the order of their ids, and not the other account's row"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn an_account_with_no_characters_or_no_account_gives_an_empty_list_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
-  let account = insert_account(store:, login_name: "login-1")
-  assert ask(store:, request: Select(ListCharacters(account)))
+  let store = account_store_support.start_store(pool_size: 2)
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
+  assert account_store_support.ask(
+      store:,
+      request: Select(ListCharacters(account)),
+    )
     == ForSelect(Listed([]))
     as "no row has that account's id"
-  assert ask(
+  assert account_store_support.ask(
       store:,
       request: Select(ListCharacters(AccountId(account_id_nobody_has))),
     )
     == ForSelect(Listed([]))
     as "the contract of store.Characters: none when no such account exists"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn with_the_database_pool_not_running_a_list_of_characters_gives_unavailable_test() -> Nil {
@@ -408,28 +426,32 @@ pub fn with_the_database_pool_not_running_a_list_of_characters_gives_unavailable
   process.unlink(started.pid)
   ask_support.guard(started.pid)
   let store = Store(tree: started.pid, pool:, name:)
-  assert ask(store:, request: Select(ListCharacters(AccountId(1))))
+  assert account_store_support.ask(
+      store:,
+      request: Select(ListCharacters(AccountId(1))),
+    )
     == Unavailable
     as "the pool is not running, so the query cannot reach the database"
-  assert ask(
+  assert account_store_support.ask(
       store:,
       request: Select(DeleteCharacter(AccountId(1), CharacterId(1))),
     )
     == Unavailable
     as "a delete the database cannot be reached for is unavailable, not a character that is none"
-  assert ask(
+  assert account_store_support.ask(
       store:,
       request: Select(RenameCharacter(AccountId(1), CharacterId(1), "Ab Cd")),
     )
     == Unavailable
     as "and so is a rename"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn the_table_refuses_a_class_outside_1_to_20_and_a_path_outside_0_to_3_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
-  let account = insert_account(store:, login_name: "login-1")
+  let store = account_store_support.start_store(pool_size: 2)
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
   let refused = fn(name, class_id, path) {
     refusal_of(store:, account:, name:, class_id:, path:)
   }
@@ -444,7 +466,7 @@ pub fn the_table_refuses_a_class_outside_1_to_20_and_a_path_outside_0_to_3_test(
   // name is unique ignoring case (migrations 0003 and 0005).
   assert refused("Eve Qu", 1, 0) == "accepted"
   assert refused("Eva Qu", 20, 3) == "accepted"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 /// What the table said of a character row with the name, class and path:
@@ -474,8 +496,9 @@ fn refusal_of(
 
 pub fn the_table_refuses_a_name_that_breaks_text_rule_0_by_character_name_follows_rule_0_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
-  let account = insert_account(store:, login_name: "login-1")
+  let store = account_store_support.start_store(pool_size: 2)
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
   let refused = fn(name) {
     refusal_of(store:, account:, name:, class_id: 1, path: 0)
   }
@@ -557,13 +580,14 @@ pub fn the_table_refuses_a_name_that_breaks_text_rule_0_by_character_name_follow
       == "character_name_follows_rule_0"
       as { "a character the client does not list is refused: " <> character }
   })
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_character_the_developer_tool_adds_is_listed_with_the_values_it_was_given_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
-  let account = insert_account(store:, login_name: "login-1")
+  let store = account_store_support.start_store(pool_size: 2)
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
   // Sex 1, race 1, class 1 and faction 167, as CharacterCreation rows 21, 338,
   // 402, 466 and 539 give them; the tool's other columns are its defaults.
   let assert Ok(returned) =
@@ -580,7 +604,10 @@ pub fn a_character_the_developer_tool_adds_is_listed_with_the_values_it_was_give
   let assert [add_character_sql.InsertCharacterRow(character_id:)] =
     returned.rows
     as "the account of that login name got one row"
-  assert ask(store:, request: Select(ListCharacters(account)))
+  assert account_store_support.ask(
+      store:,
+      request: Select(ListCharacters(account)),
+    )
     == ForSelect(
       Listed([
         Character(
@@ -612,7 +639,7 @@ pub fn a_character_the_developer_tool_adds_is_listed_with_the_values_it_was_give
     )
     as "the query ran"
   assert none.rows == [] as "no account of that name gives no row"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 // ---- delete and rename ----
@@ -620,7 +647,7 @@ pub fn a_character_the_developer_tool_adds_is_listed_with_the_values_it_was_give
 /// The names of the account's characters, in the order they were created.
 fn names_listed(store: Store, account: AccountId) -> List(String) {
   let assert ForSelect(Listed(characters)) =
-    ask(store:, request: Select(ListCharacters(account)))
+    account_store_support.ask(store:, request: Select(ListCharacters(account)))
     as "a list is answered with a list"
   list.map(characters, fn(character) { character.name })
 }
@@ -631,7 +658,7 @@ fn deleted(
   character_id character_id: Int,
 ) -> store.DeleteAnswer {
   let assert ForSelect(Deleted(answer)) =
-    ask(
+    account_store_support.ask(
       store:,
       request: Select(DeleteCharacter(account, CharacterId(character_id))),
     )
@@ -646,7 +673,7 @@ fn renamed(
   name name: String,
 ) -> store.RenameAnswer {
   let assert ForSelect(Renamed(answer)) =
-    ask(
+    account_store_support.ask(
       store:,
       request: Select(RenameCharacter(account, CharacterId(character_id), name)),
     )
@@ -656,8 +683,9 @@ fn renamed(
 
 pub fn a_delete_removes_the_accounts_character_and_the_list_omits_it_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
-  let account = insert_account(store:, login_name: "login-1")
+  let store = account_store_support.start_store(pool_size: 2)
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
   let zed =
     character_support.insert(
       pool: store.pool,
@@ -681,14 +709,16 @@ pub fn a_delete_removes_the_accounts_character_and_the_list_omits_it_test() -> N
     as "the next list omits it and keeps the account's other character"
   assert deleted(store:, account: account, character_id: zed) == NoSuchCharacter
     as "a character deleted is gone, so a repeated delete finds none"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_delete_of_another_accounts_character_or_of_none_is_no_such_character_and_deletes_nothing_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
-  let account = insert_account(store:, login_name: "login-1")
-  let other = insert_account(store:, login_name: "login-2")
+  let store = account_store_support.start_store(pool_size: 2)
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
+  let other =
+    account_store_support.insert_account(store:, login_name: "login-2")
   let theirs =
     character_support.insert(
       pool: store.pool,
@@ -704,13 +734,14 @@ pub fn a_delete_of_another_accounts_character_or_of_none_is_no_such_character_an
     == NoSuchCharacter
   assert names_listed(store, other) == ["Cal Qu"]
     as "the other account's character is untouched"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_rename_of_a_marked_character_stores_the_name_clears_the_mark_and_answers_the_stored_name_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
-  let account = insert_account(store:, login_name: "login-1")
+  let store = account_store_support.start_store(pool_size: 2)
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
   let zed =
     character_support.insert(
       pool: store.pool,
@@ -734,23 +765,25 @@ pub fn a_rename_of_a_marked_character_stores_the_name_clears_the_mark_and_answer
     == NotRenamable
     as "the mark is cleared, so a second rename is none the client offers"
   assert names_listed(store, account) == ["Ab Cd"]
-  stop(store)
+  account_store_support.stop(store)
 }
 
 /// How each of the account's characters stands for a rename, in the order they
 /// were created.
 fn naming_of(store: Store, account: AccountId) -> List(store.Naming) {
   let assert ForSelect(Listed(characters)) =
-    ask(store:, request: Select(ListCharacters(account)))
+    account_store_support.ask(store:, request: Select(ListCharacters(account)))
     as "a list is answered with a list"
   list.map(characters, fn(character) { character.naming })
 }
 
 pub fn a_rename_to_a_name_taken_in_any_case_is_new_name_taken_and_changes_nothing_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
-  let account = insert_account(store:, login_name: "login-1")
-  let other = insert_account(store:, login_name: "login-2")
+  let store = account_store_support.start_store(pool_size: 2)
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
+  let other =
+    account_store_support.insert_account(store:, login_name: "login-2")
   let zed =
     character_support.insert(
       pool: store.pool,
@@ -777,14 +810,16 @@ pub fn a_rename_to_a_name_taken_in_any_case_is_new_name_taken_and_changes_nothin
   assert renamed(store:, account: account, character_id: zed, name: "Ab Cd")
     == CharacterRenamed("Ab Cd")
     as "and another name is taken"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_rename_of_an_unmarked_or_another_accounts_character_or_of_none_is_not_renamable_and_changes_nothing_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
-  let account = insert_account(store:, login_name: "login-1")
-  let other = insert_account(store:, login_name: "login-2")
+  let store = account_store_support.start_store(pool_size: 2)
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
+  let other =
+    account_store_support.insert_account(store:, login_name: "login-2")
   let mine =
     character_support.insert(
       pool: store.pool,
@@ -819,41 +854,10 @@ pub fn a_rename_of_an_unmarked_or_another_accounts_character_or_of_none_is_not_r
   assert names_listed(store, other) == ["Abe Qu"]
   assert naming_of(store, other) == [NeedsRename]
     as "the other account's character keeps its mark"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 // ---- create ----
-
-/// A new character with the values of CharacterCreation row 466 (class 1,
-/// race 1, sex 1, faction 167), the level 3 of a Veteran row's xp 1710, the
-/// path 2, the start place of WorldLocation2 row 51596 and a look and bones.
-fn a_new_character(name: String) -> store.NewCharacter {
-  NewCharacter(
-    name:,
-    gender: 1,
-    race_id: RaceId(1),
-    class_id: ClassId(1),
-    faction_id: 167,
-    level: 3,
-    experience: 1710,
-    path: 2,
-    place: place_support.at(
-      world_id: 3460,
-      world_zone_id: 6009,
-      x: 29.128599166870117,
-      y: -853.87158203125,
-      z: -560.18798828125,
-    ),
-    look: [
-      LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
-      LookEntry(label: CharacterCustomizationLabelId(22), value: 4_000_000_000),
-    ],
-    // 0xBF800000 is -1.0 and has its top bit set; 0x3F800000 is 1.0.
-    bones: [0xBF800000, 0x3F800000, 0],
-    starting_items: [],
-    starting_credits: 1000,
-  )
-}
 
 fn create(
   store store: Store,
@@ -861,38 +865,27 @@ fn create(
   name name: String,
   slots slots: Int,
 ) -> store.CreateAnswer {
-  create_holding(store:, account:, name:, slots:, items: [])
-}
-
-/// A create of the character that starts with these items.
-pub fn create_holding(
-  store store: Store,
-  account account: AccountId,
-  name name: String,
-  slots slots: Int,
-  items items: List(store.NewItem),
-) -> store.CreateAnswer {
-  let assert ForSelect(Created(answer)) =
-    ask(
-      store:,
-      request: Select(CreateCharacter(
-        account_id: account,
-        character: NewCharacter(..a_new_character(name), starting_items: items),
-        character_slots: slots,
-      )),
-    )
-    as "a create is answered with a create's answer"
-  answer
+  account_store_support.create_holding(
+    store:,
+    account:,
+    name:,
+    slots:,
+    items: [],
+  )
 }
 
 pub fn a_create_stores_the_character_at_the_level_it_was_given_with_the_values_it_was_given_and_the_list_returns_it_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
-  let account = insert_account(store:, login_name: "login-1")
+  let store = account_store_support.start_store(pool_size: 2)
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
   let assert CharacterCreated(character_id:) =
     create(store:, account: account, name: "Ab Cd", slots: 2)
     as "the first create of an account with 2 slots is stored"
-  assert ask(store:, request: Select(ListCharacters(account)))
+  assert account_store_support.ask(
+      store:,
+      request: Select(ListCharacters(account)),
+    )
     == ForSelect(
       Listed([
         Character(
@@ -924,13 +917,14 @@ pub fn a_create_stores_the_character_at_the_level_it_was_given_with_the_values_i
       ]),
     )
     as "the create's result: race, sex, class and faction from the creation row, the level the create gave (3, not 1), the start place the create gave (World 3460, zone 6009 and the position of WorldLocation2 row 51596, as 32-bit floats), the look and the bones as the client sent them (32-bit values come back as they went in)"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_stored_character_with_world_0_loads_as_no_place_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
-  let account = insert_account(store:, login_name: "login-1")
+  let store = account_store_support.start_store(pool_size: 2)
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
   let AccountId(id) = account
   let assert Ok(pog.Returned(rows: [character_id], ..)) =
     pog.query(
@@ -955,10 +949,13 @@ pub fn a_stored_character_with_world_0_loads_as_no_place_test() -> Nil {
       bones: [],
       naming: NameStands,
     )
-  assert ask(store:, request: Select(ListCharacters(account)))
+  assert account_store_support.ask(
+      store:,
+      request: Select(ListCharacters(account)),
+    )
     == ForSelect(Listed([character]))
     as "world 0 is no World row, which 0xAD needs (opcode.0xad), so the list reads no place"
-  assert ask(
+  assert account_store_support.ask(
       store:,
       request: World(LoadCharacter(account, CharacterId(character_id))),
     )
@@ -975,13 +972,14 @@ pub fn a_stored_character_with_world_0_loads_as_no_place_test() -> Nil {
       ),
     )
     as "the load reads the same row the same way, and raises the epoch of a character made at 0 to 1"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn the_table_refuses_a_character_with_no_world_that_has_a_zone_or_a_position_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
-  let account = insert_account(store:, login_name: "login-1")
+  let store = account_store_support.start_store(pool_size: 2)
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
   let AccountId(id) = account
   let insert = fn(name, world_id, world_zone_id, x, y, z) {
     pog.query(
@@ -1013,14 +1011,16 @@ pub fn the_table_refuses_a_character_with_no_world_that_has_a_zone_or_a_position
     as "a character with no place is world 0, zone 0 and position 0"
   assert insert("Placed Ab", 1387, 1100, 1.5, 2.5, 3.5) == Ok(Nil)
     as "a character with a world keeps its zone and position"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_load_gives_the_accounts_character_with_its_saved_place_and_not_another_accounts_or_a_missing_one_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
-  let account = insert_account(store:, login_name: "login-1")
-  let other = insert_account(store:, login_name: "login-2")
+  let store = account_store_support.start_store(pool_size: 2)
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
+  let other =
+    account_store_support.insert_account(store:, login_name: "login-2")
   // Class 12 has no Dominion Novice set, so the characters hold no item and
   // this test checks the place, the epoch and the health alone.
   let mine =
@@ -1039,7 +1039,10 @@ pub fn a_load_gives_the_accounts_character_with_its_saved_place_and_not_another_
       class_id: 12,
       path: 2,
     )
-  assert ask(store:, request: World(LoadCharacter(account, CharacterId(mine))))
+  assert account_store_support.ask(
+      store:,
+      request: World(LoadCharacter(account, CharacterId(mine))),
+    )
     == ForWorld(
       CharacterLoaded(
         Character(
@@ -1072,50 +1075,55 @@ pub fn a_load_gives_the_accounts_character_with_its_saved_place_and_not_another_
       ),
     )
     as "the row as character_support inserted it: the saved world, zone and position come with it, the epoch the load raised from 0 to 1, and no saved health: a character never saved enters at full health"
-  assert ask(
+  assert account_store_support.ask(
       store:,
       request: World(LoadCharacter(account, CharacterId(theirs))),
     )
     == ForWorld(NotTheAccounts)
     as "a modified client could name any id: the read is scoped by the account's id (genesis_prime/store)"
-  assert ask(
+  assert account_store_support.ask(
       store:,
       request: World(LoadCharacter(account, CharacterId(account_id_nobody_has))),
     )
     == ForWorld(NotTheAccounts)
     as "no row has the id"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_name_taken_in_any_case_is_name_taken_and_nothing_is_stored_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
-  let account = insert_account(store:, login_name: "login-1")
-  let other = insert_account(store:, login_name: "login-2")
+  let store = account_store_support.start_store(pool_size: 2)
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
+  let other =
+    account_store_support.insert_account(store:, login_name: "login-2")
   let assert CharacterCreated(_) =
     create(store:, account: account, name: "Ab Cd", slots: 2)
   assert create(store:, account: other, name: "aB cD", slots: 2) == NameTaken
     as "lua.Character.OnCreateCharacterFailed: 6; a name is unique ignoring case, across accounts, held by a unique index on the lower-cased name"
   assert create(store:, account: account, name: "AB CD", slots: 2) == NameTaken
     as "the same account too"
-  assert ask(store:, request: Select(ListCharacters(other)))
+  assert account_store_support.ask(
+      store:,
+      request: Select(ListCharacters(other)),
+    )
     == ForSelect(Listed([]))
     as "nothing was stored for the refused create"
   let assert ForSelect(Listed([_])) =
-    ask(store:, request: Select(ListCharacters(account)))
+    account_store_support.ask(store:, request: Select(ListCharacters(account)))
     as "the account still holds its one character"
   let assert CharacterCreated(_) =
     create(store:, account: other, name: "Éb Cd", slots: 2)
   assert create(store:, account: account, name: "éB cD", slots: 2) == NameTaken
     as "the Latin-1 letters the client lists fold too (IsTextRuleLetter 0x1403e09d0), so 'É' and 'é' are one letter"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_name_taken_in_any_case_is_refused_on_a_database_made_with_the_c_locale_test() -> Nil {
   use <- owned_test.run(60_000)
   let shared = database_support.shared()
   let store =
-    start_store_in(
+    account_store_support.start_store_in(
       database: database_support.new_database_with_locale(
         on: shared,
         locale: "C",
@@ -1129,23 +1137,30 @@ pub fn a_name_taken_in_any_case_is_refused_on_a_database_made_with_the_c_locale_
     |> pog.returning(decode.at([0], decode.string))
     |> pog.execute(store.pool)
     as "the database says it was made with the C locale and the libc provider, not the ICU one the index folds under"
-  let account = insert_account(store:, login_name: "login-1")
-  let other = insert_account(store:, login_name: "login-2")
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
+  let other =
+    account_store_support.insert_account(store:, login_name: "login-2")
   let assert CharacterCreated(_) =
     create(store:, account: account, name: "Éb Cd", slots: 2)
   assert create(store:, account: other, name: "éB cD", slots: 2) == NameTaken
     as "lua.Character.OnCreateCharacterFailed: 6; a name is unique ignoring case on any database locale, and the Latin-1 letters the client lists fold too (IsTextRuleLetter 0x1403e09d0), so 'É' and 'é' are one letter, though the C locale's own lower() leaves 'É' alone"
-  assert ask(store:, request: Select(ListCharacters(other)))
+  assert account_store_support.ask(
+      store:,
+      request: Select(ListCharacters(other)),
+    )
     == ForSelect(Listed([]))
     as "nothing was stored for the refused create"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn an_account_at_its_slot_count_gets_no_free_slot_and_nothing_is_stored_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
-  let account = insert_account(store:, login_name: "login-1")
-  let other = insert_account(store:, login_name: "login-2")
+  let store = account_store_support.start_store(pool_size: 2)
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
+  let other =
+    account_store_support.insert_account(store:, login_name: "login-2")
   let assert CharacterCreated(_) =
     create(store:, account: account, name: "Ab Cd", slots: 2)
   let assert CharacterCreated(_) =
@@ -1153,7 +1168,7 @@ pub fn an_account_at_its_slot_count_gets_no_free_slot_and_nothing_is_stored_test
   assert create(store:, account: account, name: "Ij Kl", slots: 2) == NoFreeSlot
     as "lua.CharacterSelection.OnLoadFromCharacter: 2 slots without an entitlement; a create past them is account full (9)"
   let assert ForSelect(Listed([_, _])) =
-    ask(store:, request: Select(ListCharacters(account)))
+    account_store_support.ask(store:, request: Select(ListCharacters(account)))
     as "nothing was stored for the refused create"
   let assert CharacterCreated(_) =
     create(store:, account: other, name: "Mn Op", slots: 2)
@@ -1161,13 +1176,14 @@ pub fn an_account_at_its_slot_count_gets_no_free_slot_and_nothing_is_stored_test
   assert create(store:, account: account, name: "Ij Kl", slots: 3)
     |> is_created
     as "with 3 slots the same account may make a third"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn with_6_slots_an_account_with_6_characters_gets_no_free_slot_and_with_5_gets_one_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
-  let account = insert_account(store:, login_name: "login-1")
+  let store = account_store_support.start_store(pool_size: 2)
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
   let names = ["Ab Cd", "Ef Gh", "Ij Kl", "Mn Op", "Qr St", "Uv Wx"]
   list.each(list.take(names, 5), fn(name) {
     let assert CharacterCreated(_) =
@@ -1180,16 +1196,17 @@ pub fn with_6_slots_an_account_with_6_characters_gets_no_free_slot_and_with_5_ge
   assert create(store:, account: account, name: "Yz Ab", slots: 6) == NoFreeSlot
     as "lua.CharacterSelection.OnLoadFromCharacter: 2 slots and an entitlement 12 of 4 are 6; the client shows no create entry at 6 of 6, and the server's refusal is account full (9)"
   let assert ForSelect(Listed(six)) =
-    ask(store:, request: Select(ListCharacters(account)))
+    account_store_support.ask(store:, request: Select(ListCharacters(account)))
     as "the characters are listed"
   assert list.length(six) == 6 as "nothing was stored for the refused create"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn two_creates_at_once_for_an_account_with_one_slot_make_one_character_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 4)
-  let account = insert_account(store:, login_name: "login-1")
+  let store = account_store_support.start_store(pool_size: 4)
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
   let answers = process.new_subject()
   list.each(["Ab Cd", "Ef Gh", "Ij Kl", "Mn Op"], fn(name) {
     let _spawned =
@@ -1205,14 +1222,15 @@ pub fn two_creates_at_once_for_an_account_with_one_slot_make_one_character_test(
     as "storing-data: the slot count is held by Postgres, in one statement under the account's row lock, so racing creates of one account make one character"
   assert list.count(received, fn(answer) { answer == NoFreeSlot }) == 3
   let assert ForSelect(Listed([_])) =
-    ask(store:, request: Select(ListCharacters(account)))
-  stop(store)
+    account_store_support.ask(store:, request: Select(ListCharacters(account)))
+  account_store_support.stop(store)
 }
 
 pub fn the_table_refuses_a_look_whose_labels_and_values_differ_in_number_and_a_third_in_bones_beyond_48_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
-  let account = insert_account(store:, login_name: "login-1")
+  let store = account_store_support.start_store(pool_size: 2)
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
   let AccountId(id) = account
   let insert = fn(labels, values, bones) {
     pog.query(
@@ -1249,7 +1267,7 @@ pub fn the_table_refuses_a_look_whose_labels_and_values_differ_in_number_and_a_t
     )
     == Ok(Nil)
     as "27 pairs and 48 bones are the most a request carries"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 // ---- the epoch and the save of the player's place ----
@@ -1261,7 +1279,7 @@ fn epoch_of_load(
   character_id character_id: Int,
 ) -> Int {
   let assert ForWorld(CharacterLoaded(session_epoch:, ..)) =
-    ask(
+    account_store_support.ask(
       store:,
       request: World(LoadCharacter(account, CharacterId(character_id))),
     )
@@ -1328,7 +1346,7 @@ fn save_progress(
   experience experience: Int,
   level level: Int,
 ) -> store.Answer {
-  ask(
+  account_store_support.ask(
     store:,
     request: Move(
       SavePlace(
@@ -1354,7 +1372,7 @@ fn experience_and_level_loaded(
   character_id character_id: Int,
 ) -> #(Option(Int), Int) {
   let assert ForWorld(CharacterLoaded(character:, saved_experience:, ..)) =
-    ask(
+    account_store_support.ask(
       store:,
       request: World(LoadCharacter(account, CharacterId(character_id))),
     )
@@ -1371,7 +1389,7 @@ fn health_row_and_load(
 ) -> #(Option(Int), Option(Int)) {
   let row = character_support.place_row(pool: store.pool, character_id:)
   let assert ForWorld(CharacterLoaded(saved_health:, ..)) =
-    ask(
+    account_store_support.ask(
       store:,
       request: World(LoadCharacter(account, CharacterId(character_id))),
     )
@@ -1398,7 +1416,8 @@ fn place_facing(
 /// An account with one character that the account's first login holds, and
 /// the character's id.
 fn one_character(store store: Store) -> #(AccountId, Int) {
-  let account = insert_account(store:, login_name: "login-1")
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
   let id =
     character_support.insert(
       pool: store.pool,
@@ -1421,7 +1440,7 @@ pub fn a_session_epoch_is_1_or_more_and_only_that_makes_one_test() -> Nil {
 
 pub fn each_load_raises_the_epoch_by_one_and_starts_the_saves_of_its_login_again_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let #(account, id) = one_character(store:)
   assert epoch_of_load(store:, account:, character_id: id) == 1
     as "a character that was never loaded is at 0, and the first login raises it to 1"
@@ -1444,12 +1463,12 @@ pub fn each_load_raises_the_epoch_by_one_and_starts_the_saves_of_its_login_again
   assert row.session_epoch == 2 && row.save_sequence == 0
     as "and its saves are numbered from 1 again, whatever the last login reached"
   assert epoch_of_load(store:, account:, character_id: id) == 3
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_save_stores_the_place_and_the_facing_and_the_next_load_reads_them_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let #(account, id) = one_character(store:)
   let _epoch = epoch_of_load(store:, account:, character_id: id)
   let here =
@@ -1483,15 +1502,18 @@ pub fn a_save_stores_the_place_and_the_facing_and_the_next_load_reads_them_test(
     )
     as "the world, zone, position and facing of the save, in the row, and the login's numbers; a save with no health to keep leaves none"
   let assert ForWorld(CharacterLoaded(character:, ..)) =
-    ask(store:, request: World(LoadCharacter(account, CharacterId(id))))
+    account_store_support.ask(
+      store:,
+      request: World(LoadCharacter(account, CharacterId(id))),
+    )
   assert character.place == Some(here)
     as "the next login finds the character where the last one left it, facing the way it faced"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_save_naming_an_older_epoch_changes_nothing_and_the_newer_logins_saves_do_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let #(account, id) = one_character(store:)
   let first =
     place_facing(x: 10.0, y: 20.0, z: 30.0, yaw: 0.0, pitch: 0.0, roll: 0.0)
@@ -1530,12 +1552,12 @@ pub fn a_save_naming_an_older_epoch_changes_nothing_and_the_newer_logins_saves_d
   let row = character_support.place_row(pool: store.pool, character_id: id)
   assert row.position == #(11.0, 21.0, 31.0)
   assert row.health == Some(250) as "with its health"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_save_that_reaches_the_database_after_a_newer_one_of_its_login_changes_nothing_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let #(account, id) = one_character(store:)
   let older =
     place_facing(x: 10.0, y: 20.0, z: 30.0, yaw: 0.0, pitch: 0.0, roll: 0.0)
@@ -1595,14 +1617,15 @@ pub fn a_save_that_reaches_the_database_after_a_newer_one_of_its_login_changes_n
   let row = character_support.place_row(pool: store.pool, character_id: id)
   assert row.save_sequence == 3
   assert row.health == Some(200)
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_save_for_a_character_the_account_does_not_have_or_that_does_not_exist_changes_nothing_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let #(account, id) = one_character(store:)
-  let other = insert_account(store:, login_name: "login-2")
+  let other =
+    account_store_support.insert_account(store:, login_name: "login-2")
   let _login = epoch_of_load(store:, account:, character_id: id)
   let there =
     place_facing(x: 10.0, y: 20.0, z: 30.0, yaw: 0.0, pitch: 0.0, roll: 0.0)
@@ -1628,12 +1651,12 @@ pub fn a_save_for_a_character_the_account_does_not_have_or_that_does_not_exist_c
     as "no such character"
   assert character_support.place_row(pool: store.pool, character_id: id).position
     == #(1.5, 2.5, 3.5)
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn the_table_refuses_a_position_a_rotation_or_a_save_sequence_it_cannot_hold_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let #(_account, id) = one_character(store:)
   let update = fn(set) {
     pog.query("update character set " <> set <> " where character_id = $1")
@@ -1668,12 +1691,12 @@ pub fn the_table_refuses_a_position_a_rotation_or_a_save_sequence_it_cannot_hold
   assert update("position_y = -2048, rotation_yaw = 3.5, save_sequence = 0")
     == Ok(Nil)
     as "any finite place is held"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn the_health_column_is_a_nullable_integer_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let assert Ok(returned) =
     pog.query(
       "select data_type, is_nullable from information_schema.columns where table_name = 'character' and column_name = 'health'",
@@ -1687,12 +1710,12 @@ pub fn the_health_column_is_a_nullable_integer_test() -> Nil {
     as "the catalog reads"
   assert returned.rows == [#("integer", "YES")]
     as "NULL is nothing saved, so existing rows need no backfill"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_save_writes_the_health_with_the_place_and_the_next_load_reads_it_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let #(account, id) = one_character(store:)
   let here =
     place_facing(x: 10.0, y: 20.0, z: 30.0, yaw: 0.0, pitch: 0.0, roll: 0.0)
@@ -1738,12 +1761,12 @@ pub fn a_save_writes_the_health_with_the_place_and_the_next_load_reads_it_test()
   assert health_row_and_load(store:, account:, character_id: id)
     == #(None, None)
     as "a save that asks to keep no health clears the saved one: nothing saved enters alive at full health"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_save_with_a_health_the_table_refuses_is_answered_health_refused_and_saves_nothing_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let #(account, id) = one_character(store:)
   let _login = epoch_of_load(store:, account:, character_id: id)
   let there =
@@ -1784,13 +1807,14 @@ pub fn a_save_with_a_health_the_table_refuses_is_answered_health_refused_and_sav
     )
     == ForMove(PlaceSaved)
     as "the store answers the next save"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_save_keeps_the_experience_and_level_for_the_next_load_and_a_create_writes_its_xp_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
-  let account = insert_account(store:, login_name: "login-1")
+  let store = account_store_support.start_store(pool_size: 2)
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
   let assert CharacterCreated(CharacterId(created)) =
     create(store:, account:, name: "Ab Cd", slots: 2)
     as "the account has a free slot"
@@ -1814,12 +1838,12 @@ pub fn a_save_keeps_the_experience_and_level_for_the_next_load_and_a_create_writ
   assert experience_and_level_loaded(store:, account:, character_id: created)
     == #(Some(1840), 4)
     as "the save's experience and level, which the next login enters with"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_save_with_an_experience_the_table_refuses_is_answered_experience_refused_and_saves_nothing_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let #(account, id) = one_character(store:)
   let _login = epoch_of_load(store:, account:, character_id: id)
   let there =
@@ -1843,12 +1867,12 @@ pub fn a_save_with_an_experience_the_table_refuses_is_answered_experience_refuse
   assert experience_and_level_loaded(store:, account:, character_id: id)
     == #(None, 9)
     as "and the level beside it was not written either"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_save_the_database_refuses_for_a_check_is_answered_place_refused_with_the_constraints_name_and_the_store_goes_on_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let #(account, id) = one_character(store:)
   let _login = epoch_of_load(store:, account:, character_id: id)
   execute(
@@ -1893,30 +1917,35 @@ pub fn a_save_the_database_refuses_for_a_check_is_answered_place_refused_with_th
     )
     == ForMove(PlaceSaved)
     as "the store answers the next save, and the refused ones took no sequence"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_create_with_a_name_that_breaks_rule_0_is_name_breaks_rule_and_nothing_is_stored_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
-  let account = insert_account(store:, login_name: "login-1")
+  let store = account_store_support.start_store(pool_size: 2)
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
   list.each(["Abcd", "Ab  Cd", "Ab1 Cd", " Ab Cd", ""], fn(name) {
     assert create(store:, account:, name:, slots: 2) == NameBreaksRule
       as "lua.Character.OnCreateCharacterFailed: 10, the name's length; CheckTextRule 0x1403e1170 refuses it, and the table's check is the one copy of the rule"
   })
-  assert ask(store:, request: Select(ListCharacters(account)))
+  assert account_store_support.ask(
+      store:,
+      request: Select(ListCharacters(account)),
+    )
     == ForSelect(Listed([]))
     as "nothing was stored for a refused create"
   let assert CharacterCreated(_) =
     create(store:, account:, name: "Ab Cd", slots: 2)
     as "the store answers the next create, so the refusal did not crash its worker"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_rename_to_a_name_that_breaks_rule_0_is_new_name_breaks_rule_and_changes_nothing_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
-  let account = insert_account(store:, login_name: "login-1")
+  let store = account_store_support.start_store(pool_size: 2)
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
   let zed =
     character_support.insert(
       pool: store.pool,
@@ -1937,12 +1966,12 @@ pub fn a_rename_to_a_name_that_breaks_rule_0_is_new_name_breaks_rule_and_changes
   assert renamed(store:, account: account, character_id: zed, name: "Ab Cd")
     == CharacterRenamed("Ab Cd")
     as "and another name is taken"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_create_for_an_account_that_does_not_exist_is_create_for_no_such_account_and_the_store_goes_on_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   assert create(
       store:,
       account: AccountId(account_id_nobody_has),
@@ -1951,16 +1980,17 @@ pub fn a_create_for_an_account_that_does_not_exist_is_create_for_no_such_account
     )
     == CreateForNoSuchAccount
     as "the lock of the account's row finds no row, so no character is inserted to break the foreign key"
-  let account = insert_account(store:, login_name: "login-1")
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
   let assert CharacterCreated(_) =
     create(store:, account:, name: "Ab Cd", slots: 2)
     as "the store answers the next create: the worker did not crash"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn every_constraint_the_worker_maps_exists_in_the_schema_by_that_name_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   assert worker.mapped_constraints()
     == [
       "character_name_unique",
@@ -1994,12 +2024,12 @@ pub fn every_constraint_the_worker_maps_exists_in_the_schema_by_that_name_test()
     assert returned.rows == [1]
       as { "the schema has one constraint or unique index named " <> name }
   })
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn the_schema_names_its_constraints_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let named = fn(table, constraint) {
     let assert Ok(returned) =
       pog.query(
@@ -2021,12 +2051,12 @@ pub fn the_schema_names_its_constraints_test() -> Nil {
   named("character", "character_session_epoch_is_not_negative")
   named("character", "character_account_is_an_account")
   named("spawn_stat", "spawn_stat_spawn_is_a_spawn")
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn the_table_refuses_an_empty_login_name_and_a_second_account_with_one_by_their_names_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let attempt = fn(login_name) {
     case
       pog.query(
@@ -2045,7 +2075,7 @@ pub fn the_table_refuses_an_empty_login_name_and_a_second_account_with_one_by_th
   assert attempt("login-1") == "accepted"
   assert attempt("login-1") == "account_login_name_is_unique"
     as "a login name is held by one account"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_save_with_the_database_pool_not_running_is_unavailable_test() -> Nil {
@@ -2072,7 +2102,7 @@ pub fn a_save_with_the_database_pool_not_running_is_unavailable_test() -> Nil {
     )
     == Unavailable
     as "the pool is not running, so the save cannot reach the database, and the place saved before it stands"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 fn is_created(answer: store.CreateAnswer) -> Bool {
@@ -2086,87 +2116,6 @@ fn is_created(answer: store.CreateAnswer) -> Bool {
 
 /// An account id no test account has.
 const account_id_nobody_has = 999_999
-
-pub fn insert_account(
-  store store: Store,
-  login_name login_name: String,
-) -> AccountId {
-  AccountId(login_support.insert_account(
-    pool: store.pool,
-    login_name:,
-    salt: <<1>>,
-    verifier: <<2>>,
-    game_account_id: game_account_id_of(login_name),
-  ))
-}
-
-/// A game account id for each login name, so two accounts differ.
-fn game_account_id_of(login_name: String) -> guid.Guid {
-  let assert Ok(game_account_id) = case login_name {
-    "login-1" -> guid.from_text("01234567-89ab-cdef-0123-456789abcdef")
-    _ -> guid.from_text("76543210-89ab-cdef-0123-456789abcdef")
-  }
-    as "the text is a GUID"
-  game_account_id
-}
-
-/// A running pool and store: the tree they run in, the pool as a connection
-/// for queries and the store's name.
-pub type Store {
-  Store(
-    tree: process.Pid,
-    pool: pog.Connection,
-    name: process.Name(factory_supervisor.Message(worker.Job, Nil)),
-  )
-}
-
-/// A pool of `pool_size` connections to a migrated database of its own, and the
-/// store on it, started once the pool has its connections.
-pub fn start_store(pool_size pool_size: Int) -> Store {
-  let shared = database_support.shared()
-  start_store_in(
-    database: database_support.new_database(on: shared),
-    pool_size:,
-  )
-}
-
-/// A pool of `pool_size` connections to `database`, a migrated database, and
-/// the store on it, started once the pool has its connections.
-fn start_store_in(
-  database database: String,
-  pool_size pool_size: Int,
-) -> Store {
-  let config =
-    database_support.config(
-      for: database_support.shared().settings,
-      database:,
-      pool_name: process.new_name("account_pool"),
-      pool_size:,
-    )
-  let store = start_store_on(config)
-  readiness_support.await(tree: store.tree, store: store.name)
-  store
-}
-
-/// The pool `config` describes and the store on it, as children of a tree.
-fn start_store_on(config: pog.Config) -> Store {
-  let name = process.new_name("store")
-  let pool = pog.named_connection(config.pool_name)
-  let assert Ok(started) =
-    supervisor.new(supervisor.OneForOne)
-    |> supervisor.add(pog.supervised(config))
-    |> supervisor.add(worker.supervised(name:, pool:))
-    |> supervisor.start
-    as "the pool and the store started"
-  process.unlink(started.pid)
-  ask_support.guard(started.pid)
-  Store(tree: started.pid, pool:, name:)
-}
-
-pub fn stop(store: Store) -> Nil {
-  let _reason = ask_support.stop_tree(store.tree)
-  Nil
-}
 
 /// Starts a listener whose connections ask this store, and report each worker
 /// they ask to `sent`.
@@ -2184,16 +2133,6 @@ fn start_asker(
     shutdown_ms: 1000,
     with: fn(builder) { builder },
   )
-}
-
-/// Asks the store and waits for the answer.
-pub fn ask(store store: Store, request request: store.Request) -> store.Answer {
-  let #(sent, answer) =
-    ask_support.ask_and_wait(send: fn(reply) {
-      worker.ask(store.name, request, reply)
-    })
-  let assert ToWorker(_) = sent as "the store started a worker"
-  answer
 }
 
 /// The GUID of the text the tests insert as an account's game account id.
@@ -2255,18 +2194,6 @@ fn release_lock(lock: Lock) -> Nil {
 
 // ---- held items ----
 
-/// The items the store loads for the character, in the order it sends them.
-pub fn held_by(
-  store store: Store,
-  account account: AccountId,
-  character_id character_id: store.CharacterId,
-) -> List(store.HeldItem) {
-  let assert ForWorld(CharacterLoaded(items:, ..)) =
-    ask(store:, request: World(LoadCharacter(account, character_id)))
-    as "the account's character loads"
-  items
-}
-
 /// An item as the create gave it: what a row holds besides its guid.
 fn without_guid(item: store.HeldItem) -> store.NewItem {
   NewItem(
@@ -2327,10 +2254,11 @@ fn put_item(
 
 pub fn a_create_stores_the_novice_set_with_new_guids_and_the_load_returns_them_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
-  let account = insert_account(store:, login_name: "login-1")
+  let store = account_store_support.start_store(pool_size: 2)
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
   let assert CharacterCreated(character_id: first) =
-    create_holding(
+    account_store_support.create_holding(
       store:,
       account:,
       name: "Ab Cd",
@@ -2339,7 +2267,7 @@ pub fn a_create_stores_the_novice_set_with_new_guids_and_the_load_returns_them_t
     )
     as "a create with the Novice set is stored"
   let assert CharacterCreated(character_id: second) =
-    create_holding(
+    account_store_support.create_holding(
       store:,
       account:,
       name: "Ef Gh",
@@ -2347,8 +2275,10 @@ pub fn a_create_stores_the_novice_set_with_new_guids_and_the_load_returns_them_t
       items: character_support.row_466_items(),
     )
     as "a second character gets the same set"
-  let first_items = held_by(store:, account:, character_id: first)
-  let second_items = held_by(store:, account:, character_id: second)
+  let first_items =
+    account_store_support.held_by(store:, account:, character_id: first)
+  let second_items =
+    account_store_support.held_by(store:, account:, character_id: second)
   assert list.map(first_items, without_guid)
     == character_support.row_466_items()
     as "opcode.0x111.equipped_set: seven items at location 0 in the bag indexes 0, 1, 3, 4, 5, 15 and 16, as the create gave them, in the order of their places"
@@ -2360,16 +2290,18 @@ pub fn a_create_stores_the_novice_set_with_new_guids_and_the_load_returns_them_t
     as "opcode.0x111.equipped_set: a held item's guid is never 0"
   assert list.length(list.unique(guids)) == 14
     as "opcode.0x111.guid: every item has a guid of its own, and the second character's differ from the first's"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_refused_create_stores_no_items_and_a_delete_removes_the_characters_items_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
-  let account = insert_account(store:, login_name: "login-1")
-  let other = insert_account(store:, login_name: "login-2")
+  let store = account_store_support.start_store(pool_size: 2)
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
+  let other =
+    account_store_support.insert_account(store:, login_name: "login-2")
   let assert CharacterCreated(character_id: kept) =
-    create_holding(
+    account_store_support.create_holding(
       store:,
       account:,
       name: "Ab Cd",
@@ -2378,7 +2310,7 @@ pub fn a_refused_create_stores_no_items_and_a_delete_removes_the_characters_item
     )
     as "the first create is stored"
   assert item_rows(store:) == 7
-  assert create_holding(
+  assert account_store_support.create_holding(
       store:,
       account:,
       name: "Ef Gh",
@@ -2387,7 +2319,7 @@ pub fn a_refused_create_stores_no_items_and_a_delete_removes_the_characters_item
     )
     == NoFreeSlot
     as "lua.CharacterSelection.OnLoadFromCharacter: an account holds its slots only, so a create past them is refused"
-  assert create_holding(
+  assert account_store_support.create_holding(
       store:,
       account: other,
       name: "ab cd",
@@ -2399,7 +2331,7 @@ pub fn a_refused_create_stores_no_items_and_a_delete_removes_the_characters_item
   assert item_rows(store:) == 7
     as "a refused create stores its character's items with the character or not at all: the table holds only the first character's seven"
   let assert CharacterCreated(character_id: theirs) =
-    create_holding(
+    account_store_support.create_holding(
       store:,
       account: other,
       name: "Ij Kl",
@@ -2413,15 +2345,21 @@ pub fn a_refused_create_stores_no_items_and_a_delete_removes_the_characters_item
     == CharacterDeleted
   assert item_rows(store:) == 7
     as "a delete removes the character's seven rows with it (character_item_character_exists, on delete cascade)"
-  assert list.length(held_by(store:, account: other, character_id: theirs)) == 7
+  assert list.length(account_store_support.held_by(
+      store:,
+      account: other,
+      character_id: theirs,
+    ))
+    == 7
     as "and the other character's rows stay"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn the_table_refuses_a_second_item_in_one_place_a_place_the_client_has_not_and_a_stack_of_0_by_their_names_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
-  let account = insert_account(store:, login_name: "login-1")
+  let store = account_store_support.start_store(pool_size: 2)
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
   let assert CharacterCreated(character_id:) =
     create(store:, account:, name: "Ab Cd", slots: 1)
     as "a character that holds nothing yet"
@@ -2465,15 +2403,16 @@ pub fn the_table_refuses_a_second_item_in_one_place_a_place_the_client_has_not_a
     == Error(ItemRefused("character_item_stack_count_is_positive"))
     as "the client reads a stack of 0 as 1, so only 1 or more is stored (opcode.0x111.shared_item_unnamed)"
   assert item_rows(store:) == 5 as "only the five accepted rows are stored"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn an_item_keeps_its_guid_when_its_place_changes_and_two_items_swap_places_in_one_update_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
-  let account = insert_account(store:, login_name: "login-1")
+  let store = account_store_support.start_store(pool_size: 2)
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
   let assert CharacterCreated(character_id:) =
-    create_holding(
+    account_store_support.create_holding(
       store:,
       account:,
       name: "Ab Cd",
@@ -2490,13 +2429,13 @@ pub fn an_item_keeps_its_guid_when_its_place_changes_and_two_items_swap_places_i
       as "the update was accepted"
     Nil
   }
-  let before = held_by(store:, account:, character_id:)
+  let before = account_store_support.held_by(store:, account:, character_id:)
   let assert [chest, legs, shoulder, feet, hands, shield, weapon] = before
     as "the Novice set is seven items"
   update(
     "update character_item set location = 1, bag_index = 2 where character_id = $1 and location = 0 and bag_index = 5",
   )
-  assert held_by(store:, account:, character_id:)
+  assert account_store_support.held_by(store:, account:, character_id:)
     == [
       chest,
       legs,
@@ -2510,7 +2449,7 @@ pub fn an_item_keeps_its_guid_when_its_place_changes_and_two_items_swap_places_i
   update(
     "update character_item set bag_index = case bag_index when 0 then 1 else 0 end where character_id = $1 and location = 0 and bag_index in (0, 1)",
   )
-  assert held_by(store:, account:, character_id:)
+  assert account_store_support.held_by(store:, account:, character_id:)
     == [
       HeldItem(..legs, bag_index: 0),
       HeldItem(..chest, bag_index: 1),
@@ -2533,7 +2472,7 @@ pub fn an_item_keeps_its_guid_when_its_place_changes_and_two_items_swap_places_i
     as "the place the hands left is free"
   assert !list.contains(list.map(before, fn(item) { item.item_guid }), made)
     as "opcode.0x111.guid: a guid is never made again, so an item that takes a freed place does not take the guid of the item that left it"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 // ---- moving held items ----
@@ -2546,7 +2485,7 @@ fn moved(
   epoch epoch: Int,
   moves moves: List(store.ItemMove),
 ) -> store.Answer {
-  ask(
+  account_store_support.ask(
     store:,
     request: Items(MoveItems(
       account_id: account,
@@ -2559,10 +2498,11 @@ fn moved(
 
 pub fn a_moved_and_a_swapped_item_are_where_the_next_login_finds_them_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
-  let account = insert_account(store:, login_name: "login-1")
+  let store = account_store_support.start_store(pool_size: 2)
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
   let assert CharacterCreated(character_id:) =
-    create_holding(
+    account_store_support.create_holding(
       store:,
       account:,
       name: "Ab Cd",
@@ -2572,7 +2512,7 @@ pub fn a_moved_and_a_swapped_item_are_where_the_next_login_finds_them_test() -> 
     as "a character holding the Novice set"
   let CharacterId(number) = character_id
   let assert [chest, legs, shoulder, feet, hands, shield, weapon] =
-    held_by(store:, account:, character_id:)
+    account_store_support.held_by(store:, account:, character_id:)
     as "the Novice set is seven items"
   let epoch = epoch_of_load(store:, account:, character_id: number)
   assert moved(store:, account:, character_id:, epoch:, moves: [
@@ -2598,7 +2538,7 @@ pub fn a_moved_and_a_swapped_item_are_where_the_next_login_finds_them_test() -> 
     ])
     == ForItems(ItemsSaved)
     as "migration 0019's unique key is deferrable and checked at the end of the statement, so the equipped chest piece and the inventory item trade places in one update"
-  assert held_by(store:, account:, character_id:)
+  assert account_store_support.held_by(store:, account:, character_id:)
     == [
       HeldItem(..hands, location: 0, bag_index: 0),
       legs,
@@ -2609,16 +2549,18 @@ pub fn a_moved_and_a_swapped_item_are_where_the_next_login_finds_them_test() -> 
       HeldItem(..chest, location: 1, bag_index: 2),
     ]
     as "opcode.0x111.guid: each item is at its new place with the guid, item and stack it had"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_move_moves_every_item_or_none_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
-  let account = insert_account(store:, login_name: "login-1")
-  let other = insert_account(store:, login_name: "login-2")
+  let store = account_store_support.start_store(pool_size: 2)
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
+  let other =
+    account_store_support.insert_account(store:, login_name: "login-2")
   let assert CharacterCreated(character_id:) =
-    create_holding(
+    account_store_support.create_holding(
       store:,
       account:,
       name: "Ab Cd",
@@ -2627,7 +2569,7 @@ pub fn a_move_moves_every_item_or_none_test() -> Nil {
     )
     as "a character holding the Novice set"
   let CharacterId(number) = character_id
-  let before = held_by(store:, account:, character_id:)
+  let before = account_store_support.held_by(store:, account:, character_id:)
   let assert [chest, _, _, _, hands, ..] = before
     as "the Novice set is seven items"
   let chest_to_inventory =
@@ -2680,20 +2622,22 @@ pub fn a_move_moves_every_item_or_none_test() -> Nil {
     ])
     == ForItems(SaveRefused(constraint: "character_item_one_per_slot"))
     as "a place holds one item"
-  assert held_by(store:, account:, character_id:) == before
+  assert account_store_support.held_by(store:, account:, character_id:)
+    == before
     as "every move that did not happen left every item where it was"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_bag_off_and_its_displaced_items_save_all_or_none_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
-  let account = insert_account(store:, login_name: "login-1")
+  let store = account_store_support.start_store(pool_size: 2)
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
   // A bag of 8 (Item2 5423) worn at equipped 17 and an item in each of inventory
   // slots 20, 21 and 23, which an inventory of 16 does not show.
   let bag = 5423
   let assert CharacterCreated(character_id:) =
-    create_holding(
+    account_store_support.create_holding(
       store:,
       account:,
       name: "Ab Cd",
@@ -2731,7 +2675,7 @@ pub fn a_bag_off_and_its_displaced_items_save_all_or_none_test() -> Nil {
     )
     as "a character holding the Novice set, a worn bag and three items past slot 16"
   let CharacterId(number) = character_id
-  let before = held_by(store:, account:, character_id:)
+  let before = account_store_support.held_by(store:, account:, character_id:)
   let at = fn(items: List(store.HeldItem), location, index) {
     let assert Ok(item) =
       list.find(items, fn(item) {
@@ -2776,20 +2720,21 @@ pub fn a_bag_off_and_its_displaced_items_save_all_or_none_test() -> Nil {
   assert moved(store:, account:, character_id:, epoch:, moves: moves(22))
     == ForItems(ItemsNotSaved)
     as "one move from a place that holds no such item saves none of the four"
-  assert held_by(store:, account:, character_id:) == before
+  assert account_store_support.held_by(store:, account:, character_id:)
+    == before
     as "the bag and the three items are where they were"
   let epoch = epoch_of_load(store:, account:, character_id: number)
   assert moved(store:, account:, character_id:, epoch:, moves: moves(23))
     == ForItems(ItemsSaved)
     as "the four moves of a bag taken off and its displaced items are saved together"
-  let after = held_by(store:, account:, character_id:)
+  let after = account_store_support.held_by(store:, account:, character_id:)
   assert at(after, 1, 3) == HeldItem(..worn_bag, location: 1, bag_index: 3)
   assert at(after, 1, 5) == HeldItem(..far_20, bag_index: 5)
   assert at(after, 1, 7) == HeldItem(..far_21, bag_index: 7)
   assert at(after, 1, 9) == HeldItem(..far_23, bag_index: 9)
     as "each item is at its new place with the guid it had"
   assert list.length(after) == list.length(before) as "no item was made or lost"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 // ---- splitting, merging and deleting stacks ----
@@ -2804,9 +2749,10 @@ fn holding_stacks(
   store store: Store,
   stacks stacks: List(#(Int, Int)),
 ) -> #(AccountId, store.CharacterId, List(store.HeldItem)) {
-  let account = insert_account(store:, login_name: "login-1")
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
   let assert CharacterCreated(character_id:) =
-    create_holding(
+    account_store_support.create_holding(
       store:,
       account:,
       name: "Ab Cd",
@@ -2825,25 +2771,12 @@ fn holding_stacks(
       ),
     )
     as "a character holding the Novice set and the stacks"
-  let held = held_by(store:, account:, character_id:)
+  let held = account_store_support.held_by(store:, account:, character_id:)
   #(
     account,
     character_id,
     list.map(stacks, fn(stack) { item_in_bag(items: held, index: stack.0) }),
   )
-}
-
-/// A login: the epoch it is told and the items it finds. Each load raises the
-/// epoch, so a request is made under the epoch of the login just before it.
-pub fn login(
-  store store: Store,
-  account account: AccountId,
-  character_id character_id: store.CharacterId,
-) -> #(Int, List(store.HeldItem)) {
-  let assert ForWorld(CharacterLoaded(session_epoch:, items:, ..)) =
-    ask(store:, request: World(LoadCharacter(account, character_id)))
-    as "the account's character loads"
-  #(store.session_epoch_number(session_epoch), items)
 }
 
 /// The item the load finds in the inventory slot.
@@ -2866,7 +2799,7 @@ fn split(
   count count: Int,
   to to: Int,
 ) -> store.Answer {
-  ask(
+  account_store_support.ask(
     store:,
     request: Items(SplitItem(
       account_id: account,
@@ -2888,7 +2821,7 @@ fn merge(
   target target: store.HeldItem,
   count count: Int,
 ) -> store.Answer {
-  ask(
+  account_store_support.ask(
     store:,
     request: Items(MergeItems(
       account_id: account,
@@ -2908,7 +2841,7 @@ fn destroy(
   epoch epoch: Int,
   item item: store.HeldItem,
 ) -> store.Answer {
-  ask(
+  account_store_support.ask(
     store:,
     request: Items(DeleteItem(
       account_id: account,
@@ -2921,11 +2854,12 @@ fn destroy(
 
 pub fn a_split_item_is_found_with_its_new_guid_after_load_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let #(account, character_id, stacks) =
     holding_stacks(store:, stacks: [#(1, 10)])
   let assert [stack] = stacks
-  let #(epoch, before) = login(store:, account:, character_id:)
+  let #(epoch, before) =
+    account_store_support.login(store:, account:, character_id:)
   let assert ForItems(ItemMade(item_guid: first)) =
     split(
       store:,
@@ -2937,7 +2871,8 @@ pub fn a_split_item_is_found_with_its_new_guid_after_load_test() -> Nil {
       to: 2,
     )
     as "a split onto an empty slot makes a stack"
-  let #(epoch, after) = login(store:, account:, character_id:)
+  let #(epoch, after) =
+    account_store_support.login(store:, account:, character_id:)
   assert item_in_bag(items: after, index: 1)
     == HeldItem(..stack, stack_count: 7)
     as "the source keeps its guid and what is left of it"
@@ -2968,21 +2903,21 @@ pub fn a_split_item_is_found_with_its_new_guid_after_load_test() -> Nil {
     as "a second split of the stack as it now is"
   assert second != first && second != stack.item_guid
     as "the identity column never makes a guid twice"
-  let #(_, last) = login(store:, account:, character_id:)
+  let #(_, last) = account_store_support.login(store:, account:, character_id:)
   assert item_in_bag(items: last, index: 1).stack_count == 5
   assert item_in_bag(items: last, index: 3).item_guid == second
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_merge_saved_whole_or_in_part_is_found_after_load_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   // Item2 1039 holds 20: 3 and 4 fit in one stack; 5 and 18 fill one to 20 and
   // leave 3.
   let #(account, character_id, stacks) =
     holding_stacks(store:, stacks: [#(1, 3), #(2, 4), #(3, 5), #(4, 18)])
   let assert [whole_source, whole_target, part_source, part_target] = stacks
-  let #(epoch, _) = login(store:, account:, character_id:)
+  let #(epoch, _) = account_store_support.login(store:, account:, character_id:)
   assert merge(
       store:,
       account:,
@@ -2994,7 +2929,8 @@ pub fn a_merge_saved_whole_or_in_part_is_found_after_load_test() -> Nil {
     )
     == ForItems(ItemsSaved)
     as "a whole merge is stored"
-  let #(epoch, after) = login(store:, account:, character_id:)
+  let #(epoch, after) =
+    account_store_support.login(store:, account:, character_id:)
   assert list.find(after, fn(item) { item.item_guid == whole_source.item_guid })
     == Error(Nil)
     as "the source's row is gone"
@@ -3012,42 +2948,44 @@ pub fn a_merge_saved_whole_or_in_part_is_found_after_load_test() -> Nil {
     )
     == ForItems(ItemsSaved)
     as "a partial merge is stored"
-  let #(_, after) = login(store:, account:, character_id:)
+  let #(_, after) = account_store_support.login(store:, account:, character_id:)
   assert item_in_bag(items: after, index: 3)
     == HeldItem(..part_source, stack_count: 3)
     as "the source keeps what did not fit"
   assert item_in_bag(items: after, index: 4)
     == HeldItem(..part_target, stack_count: 20)
     as "the target holds 20, the Item2's maxStackCount"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_deleted_item_is_gone_after_load_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let #(account, character_id, stacks) =
     holding_stacks(store:, stacks: [#(1, 10), #(2, 4)])
   let assert [doomed, kept] = stacks
-  let #(epoch, before) = login(store:, account:, character_id:)
+  let #(epoch, before) =
+    account_store_support.login(store:, account:, character_id:)
   assert destroy(store:, account:, character_id:, epoch:, item: doomed)
     == ForItems(ItemsSaved)
     as "a delete of the stack as held is stored"
-  let #(_, after) = login(store:, account:, character_id:)
+  let #(_, after) = account_store_support.login(store:, account:, character_id:)
   assert after
     == list.filter(before, fn(item) { item.item_guid != doomed.item_guid })
     as "the row is gone and no other item changed"
   assert list.contains(after, kept)
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_split_merge_or_delete_with_a_stale_epoch_or_count_changes_nothing_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let #(account, character_id, stacks) =
     holding_stacks(store:, stacks: [#(1, 10), #(2, 4)])
   let assert [first, second] = stacks
-  let #(stale, _) = login(store:, account:, character_id:)
-  let #(current, before) = login(store:, account:, character_id:)
+  let #(stale, _) = account_store_support.login(store:, account:, character_id:)
+  let #(current, before) =
+    account_store_support.login(store:, account:, character_id:)
   assert current > stale as "a later login raised the epoch"
   // Stacks that are no longer as the rule held them.
   let first_counted_wrong = HeldItem(..first, stack_count: 9)
@@ -3131,7 +3069,8 @@ pub fn a_split_merge_or_delete_with_a_stale_epoch_or_count_changes_nothing_test(
   list.each(refused, fn(row) {
     assert row.1 == ForItems(ItemsNotSaved) as { row.0 <> " saves nothing" }
   })
-  let #(current, after) = login(store:, account:, character_id:)
+  let #(current, after) =
+    account_store_support.login(store:, account:, character_id:)
   assert after == before
     as "every change that did not happen left every row as it was"
   assert split(
@@ -3145,9 +3084,9 @@ pub fn a_split_merge_or_delete_with_a_stale_epoch_or_count_changes_nothing_test(
     )
     == ForItems(SaveRefused(constraint: "character_item_one_per_slot"))
     as "migration 0019's unique key refuses a split onto a taken slot"
-  let #(_, last) = login(store:, account:, character_id:)
+  let #(_, last) = account_store_support.login(store:, account:, character_id:)
   assert last == before as "the refused split left its source as it was"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 // ---- the quest log ----
@@ -3197,7 +3136,7 @@ fn save_log(
   sequence sequence: Int,
   quests quests: List(QuestRow),
 ) -> store.Answer {
-  ask(
+  account_store_support.ask(
     store:,
     request: Move(SavePlace(
       account_id: account,
@@ -3227,7 +3166,7 @@ fn quests_of_load(
   character_id character_id: Int,
 ) -> List(QuestRow) {
   let assert ForWorld(CharacterLoaded(quests:, ..)) =
-    ask(
+    account_store_support.ask(
       store:,
       request: World(LoadCharacter(account, CharacterId(character_id))),
     )
@@ -3258,7 +3197,7 @@ fn quest_states(
 
 pub fn a_save_writes_the_quest_log_with_the_place_and_the_next_load_reads_it_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let #(account, id) = one_character(store:)
   assert quests_of_load(store:, account:, character_id: id) == []
     as "a character never saved has an empty quest log"
@@ -3298,7 +3237,7 @@ pub fn a_save_writes_the_quest_log_with_the_place_and_the_next_load_reads_it_tes
   assert quests_of_load(store:, account:, character_id: id)
     == [completed_quest(1001), completed_quest(1003)]
     as "an active quest that was completed is rewritten, its active columns cleared (a completed quest is in the completed list only, opcode.0x35f.adds_not_replaces)"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 /// A checklist objective's progress is the 32-bit mask of the targets counted
@@ -3306,7 +3245,7 @@ pub fn a_save_writes_the_quest_log_with_the_place_and_the_next_load_reads_it_tes
 /// target, so 0x80000001 is a progress the table must keep.
 pub fn a_checklist_mask_with_bit_31_is_saved_and_read_back_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let #(account, id) = one_character(store:)
   let _login = epoch_of_load(store:, account:, character_id: id)
   let with_progress = fn(progress) {
@@ -3328,7 +3267,7 @@ pub fn a_checklist_mask_with_bit_31_is_saved_and_read_back_test() -> Nil {
     as "a progress of 2147483649 is within the 32 bits a mask has"
   assert quests_of_load(store:, account:, character_id: id) == log
     as "the load reads each mask back whole, bit 31 set"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 /// A group objective's kill mask is a server-only value the table keeps with the quest
@@ -3336,7 +3275,7 @@ pub fn a_checklist_mask_with_bit_31_is_saved_and_read_back_test() -> Nil {
 /// the group's entry i killed (TargetGroup type 1 holds data0 to data6, seven entries).
 pub fn a_partial_group_mask_is_saved_and_read_back_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let #(account, id) = one_character(store:)
   let _login = epoch_of_load(store:, account:, character_id: id)
   let log = [
@@ -3359,12 +3298,12 @@ pub fn a_partial_group_mask_is_saved_and_read_back_test() -> Nil {
     as "a mask of 3 in slot 1 and of 127 (all seven entries) in slot 5 is within 7 bits and six slots"
   assert quests_of_load(store:, account:, character_id: id) == log
     as "the load reads the row back equal, each slot's mask whole"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_group_mask_outside_7_bits_is_refused_by_its_named_constraint_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let #(account, id) = one_character(store:)
   let _login = epoch_of_load(store:, account:, character_id: id)
   let refused = fn(kill_mask: List(Int), constraint: String, why: String) {
@@ -3399,12 +3338,12 @@ pub fn a_group_mask_outside_7_bits_is_refused_by_its_named_constraint_test() -> 
     "character_quest_kill_mask_has_six_slots",
     "0x1405510d0: a quest has six objective slots (kQuestMaxObjective), so five masks are refused",
   )
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn an_active_quest_row_without_a_group_mask_is_refused_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let #(account, id) = one_character(store:)
   let _login = epoch_of_load(store:, account:, character_id: id)
   let put = fn(
@@ -3448,12 +3387,12 @@ pub fn an_active_quest_row_without_a_group_mask_is_refused_test() -> Nil {
     as "a completed row with none of the active columns is accepted"
   assert result.is_ok(put(1012, 1, "null", "'{0,0,0,0,0,0}'"))
     as "an active row with every column is accepted"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_quest_log_save_naming_an_older_epoch_or_sequence_changes_no_quest_row_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 4)
+  let store = account_store_support.start_store(pool_size: 4)
   let #(account, id) = one_character(store:)
   let _first_login = epoch_of_load(store:, account:, character_id: id)
   let _second_login = epoch_of_load(store:, account:, character_id: id)
@@ -3544,7 +3483,7 @@ pub fn a_quest_log_save_naming_an_older_epoch_or_sequence_changes_no_quest_row_t
   assert answered == ForMove(PlaceSaved)
   assert quest_states(store:, character_id: id) == [#(1001, 3), #(1002, 4)]
     as "two saves of one character run one after another: the later log, which dropped the quest, is the whole log"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 /// A save of the character that is still open: another connection's transaction
@@ -3625,7 +3564,7 @@ fn await_a_statement_waiting_for_a_lock(store store: Store) -> Nil {
 
 pub fn a_constraint_of_the_quest_table_the_worker_does_not_map_is_refused_as_a_place_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let #(account, id) = one_character(store:)
   let _login = epoch_of_load(store:, account:, character_id: id)
   // The primary key and the foreign key of the table share its `character_quest_`
@@ -3646,12 +3585,12 @@ pub fn a_constraint_of_the_quest_table_the_worker_does_not_map_is_refused_as_a_p
     )
     == ForMove(PlaceRefused(constraint: "character_quest_test_refuses_1100"))
     as "only the thirteen checks the client's limits name are a refused quest log: any other constraint of the table is a refused place"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_quest_row_the_client_would_refuse_is_refused_by_its_named_constraint_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let #(account, id) = one_character(store:)
   let _login = epoch_of_load(store:, account:, character_id: id)
   let refused = fn(quest: QuestRow, constraint: String, why: String) {
@@ -3742,7 +3681,7 @@ pub fn a_quest_row_the_client_would_refuse_is_refused_by_its_named_constraint_te
   assert constraint == "character_quest_active_has_its_entry"
   assert result.is_ok(put("tracked", "null"))
     as "a botched row with none of them is accepted"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 // ---- buying from a vendor ----
@@ -3754,7 +3693,10 @@ fn bought_state(
   character_id character_id: store.CharacterId,
 ) -> #(Int, List(store.HeldItem)) {
   let assert ForWorld(CharacterLoaded(currencies:, items:, ..)) =
-    ask(store:, request: World(LoadCharacter(account, character_id)))
+    account_store_support.ask(
+      store:,
+      request: World(LoadCharacter(account, character_id)),
+    )
     as "the account's character loads"
   let assert [store.HeldCurrency(currency_type_id: 1, amount:)] = currencies
     as "the character holds credits only"
@@ -3824,7 +3766,7 @@ fn buy_item(
   grow grow: List(store.StackGrowth),
   make make: List(store.NewStack),
 ) -> store.Answer {
-  ask(
+  account_store_support.ask(
     store:,
     request: Items(store.BuyFromVendor(
       account_id: account,
@@ -3842,11 +3784,11 @@ fn buy_item(
 
 pub fn a_buy_takes_the_credits_and_adds_the_items_in_one_statement_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let #(account, character_id, stacks) =
     holding_stacks(store:, stacks: [#(1, 10), #(2, 4)])
   let assert [first, second] = stacks
-  let #(epoch, _) = login(store:, account:, character_id:)
+  let #(epoch, _) = account_store_support.login(store:, account:, character_id:)
   let assert ForItems(store.Bought(amount:, made:)) =
     buy(
       store:,
@@ -3905,16 +3847,16 @@ pub fn a_buy_takes_the_credits_and_adds_the_items_in_one_statement_test() -> Nil
   assert item_in_bag(items:, index: 6) == made_second
   assert list.length(items) == 11
     as "the Novice set's seven, the two stacks and the two made"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_buy_with_only_grown_stacks_answers_the_credits_left_and_no_made_stack_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let #(account, character_id, stacks) =
     holding_stacks(store:, stacks: [#(1, 10)])
   let assert [first] = stacks
-  let #(epoch, _) = login(store:, account:, character_id:)
+  let #(epoch, _) = account_store_support.login(store:, account:, character_id:)
   assert buy(
       store:,
       account:,
@@ -3936,17 +3878,18 @@ pub fn a_buy_with_only_grown_stacks_answers_the_credits_left_and_no_made_stack_t
   let #(saved_credits, items) = bought_state(store:, account:, character_id:)
   assert saved_credits == 0
   assert item_in_bag(items:, index: 1) == HeldItem(..first, stack_count: 11)
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_buy_under_a_stale_epoch_changes_nothing_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let #(account, character_id, stacks) =
     holding_stacks(store:, stacks: [#(1, 10)])
   let assert [first] = stacks
-  let #(stale, _) = login(store:, account:, character_id:)
-  let #(current, before) = login(store:, account:, character_id:)
+  let #(stale, _) = account_store_support.login(store:, account:, character_id:)
+  let #(current, before) =
+    account_store_support.login(store:, account:, character_id:)
   assert current > stale as "a later login raised the epoch"
   assert buy(
       store:,
@@ -3976,16 +3919,17 @@ pub fn a_buy_under_a_stale_epoch_changes_nothing_test() -> Nil {
     as "an older login's purchase is not saved"
   assert bought_state(store:, account:, character_id:) == #(1000, before)
     as "neither the credits nor an item changed"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_buy_with_too_few_credits_saved_changes_nothing_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let #(account, character_id, stacks) =
     holding_stacks(store:, stacks: [#(1, 10)])
   let assert [first] = stacks
-  let #(epoch, before) = login(store:, account:, character_id:)
+  let #(epoch, before) =
+    account_store_support.login(store:, account:, character_id:)
   let assert Ok(novice_item) =
     list.find(before, fn(item) { item.location == 0 })
     as "the character holds the Novice set, of other Item2s"
@@ -4100,16 +4044,17 @@ pub fn a_buy_with_too_few_credits_saved_changes_nothing_test() -> Nil {
   })
   assert bought_state(store:, account:, character_id:) == #(1000, before)
     as "each refusal changed nothing, the credits and the stack included"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_buy_into_a_taken_place_changes_nothing_and_names_the_constraint_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let #(account, character_id, stacks) =
     holding_stacks(store:, stacks: [#(1, 10), #(2, 4)])
   let assert [first, _] = stacks
-  let #(epoch, before) = login(store:, account:, character_id:)
+  let #(epoch, before) =
+    account_store_support.login(store:, account:, character_id:)
   assert buy(
       store:,
       account:,
@@ -4138,7 +4083,7 @@ pub fn a_buy_into_a_taken_place_changes_nothing_and_names_the_constraint_test() 
     as "a made stack at a place that holds an item breaks the table's unique key"
   assert bought_state(store:, account:, character_id:) == #(1000, before)
     as "the credits were not taken and the stack not grown: the statement changed nothing"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 // ---- selling to a vendor ----
@@ -4190,7 +4135,7 @@ fn sell_in(
   after after: Int,
   sold sold: List(store.SoldStack),
 ) -> store.Answer {
-  ask(
+  account_store_support.ask(
     store:,
     request: Items(store.SellToVendor(
       account_id: account,
@@ -4206,11 +4151,12 @@ fn sell_in(
 
 pub fn a_sale_writes_the_credits_and_removes_or_lowers_the_stacks_in_one_statement_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let #(account, character_id, stacks) =
     holding_stacks(store:, stacks: [#(1, 10), #(2, 4), #(3, 6)])
   let assert [first, second, third] = stacks
-  let #(epoch, before) = login(store:, account:, character_id:)
+  let #(epoch, before) =
+    account_store_support.login(store:, account:, character_id:)
   assert sell(
       store:,
       account:,
@@ -4249,17 +4195,18 @@ pub fn a_sale_writes_the_credits_and_removes_or_lowers_the_stacks_in_one_stateme
     as "a stack not named is as it was"
   assert list.length(items) == list.length(before) - 1
     as "only the whole stack left"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_sale_under_a_stale_guard_changes_nothing_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let #(account, character_id, stacks) =
     holding_stacks(store:, stacks: [#(1, 10), #(2, 4)])
   let assert [first, second] = stacks
-  let #(stale, _) = login(store:, account:, character_id:)
-  let #(epoch, before) = login(store:, account:, character_id:)
+  let #(stale, _) = account_store_support.login(store:, account:, character_id:)
+  let #(epoch, before) =
+    account_store_support.login(store:, account:, character_id:)
   assert epoch > stale as "a later login raised the epoch"
   let part =
     store.SoldStack(
@@ -4402,7 +4349,8 @@ pub fn a_sale_under_a_stale_guard_changes_nothing_test() -> Nil {
   // The Glory row, made by selling the worn chest for 70, so the guard compares a saved
   // amount: the refusals above reached only the missing-row path of the currency guard. The
   // check above loaded the character, which raised the epoch, so the sales log in again.
-  let #(epoch, before) = login(store:, account:, character_id:)
+  let #(epoch, before) =
+    account_store_support.login(store:, account:, character_id:)
   let chest = worn_chest(items: before)
   assert sell_in(
       store:,
@@ -4438,7 +4386,7 @@ pub fn a_sale_under_a_stale_guard_changes_nothing_test() -> Nil {
   assert items
     == list.filter(before, fn(item) { item.item_guid != chest.item_guid })
     as "the stack of the refused sale is as it was"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 /// Every amount a login finds, sorted by currency type, and the items it finds.
@@ -4448,7 +4396,10 @@ fn held_everything(
   character_id character_id: store.CharacterId,
 ) -> #(List(store.HeldCurrency), List(store.HeldItem)) {
   let assert ForWorld(CharacterLoaded(currencies:, items:, ..)) =
-    ask(store:, request: World(LoadCharacter(account, character_id)))
+    account_store_support.ask(
+      store:,
+      request: World(LoadCharacter(account, character_id)),
+    )
     as "the account's character loads"
   #(
     list.sort(currencies, fn(a, b) {
@@ -4478,11 +4429,12 @@ fn worn_whole(item item: store.HeldItem) -> store.SoldStack {
 
 pub fn a_sale_in_another_currency_writes_that_currency_and_makes_its_row_when_none_is_held_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let #(account, character_id, stacks) =
     holding_stacks(store:, stacks: [#(1, 10), #(2, 4)])
   let assert [first, second] = stacks
-  let #(epoch, before) = login(store:, account:, character_id:)
+  let #(epoch, before) =
+    account_store_support.login(store:, account:, character_id:)
   assert sell_in(
       store:,
       account:,
@@ -4513,14 +4465,15 @@ pub fn a_sale_in_another_currency_writes_that_currency_and_makes_its_row_when_no
     as "only the stack sold left"
   assert item_in_bag(items:, index: 2) == second
     as "the other stack is as it was"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_sale_of_a_worn_stack_deletes_it_from_its_worn_place_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let #(account, character_id, _) = holding_stacks(store:, stacks: [])
-  let #(epoch, before) = login(store:, account:, character_id:)
+  let #(epoch, before) =
+    account_store_support.login(store:, account:, character_id:)
   let chest = worn_chest(items: before)
   assert sell(
       store:,
@@ -4541,16 +4494,16 @@ pub fn a_sale_of_a_worn_stack_deletes_it_from_its_worn_place_test() -> Nil {
   assert list.filter(before, fn(item) { item.item_guid != chest.item_guid })
     == items
     as "the rest of the set stays where it was worn"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_buy_back_in_another_currency_takes_that_currency_in_one_statement_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let #(account, character_id, stacks) =
     holding_stacks(store:, stacks: [#(1, 10)])
   let assert [first] = stacks
-  let #(epoch, _) = login(store:, account:, character_id:)
+  let #(epoch, _) = account_store_support.login(store:, account:, character_id:)
   assert sell_in(
       store:,
       account:,
@@ -4602,14 +4555,15 @@ pub fn a_buy_back_in_another_currency_takes_that_currency_in_one_statement_test(
   let assert [made_stack] = made as "the one stack is made"
   assert item_in_bag(items:, index: 1) == made_stack
   assert made_stack.stack_count == 10
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn the_same_sale_sent_twice_to_the_store_changes_nothing_the_second_time_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let #(account, character_id, _) = holding_stacks(store:, stacks: [])
-  let #(epoch, before) = login(store:, account:, character_id:)
+  let #(epoch, before) =
+    account_store_support.login(store:, account:, character_id:)
   let chest = worn_chest(items: before)
   let send = fn() {
     sell_in(
@@ -4637,23 +4591,24 @@ pub fn the_same_sale_sent_twice_to_the_store_changes_nothing_the_second_time_tes
   assert list.filter(before, fn(item) { item.item_guid != chest.item_guid })
     == items
     as "the worn item is gone once and nothing else changed"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_new_character_starts_with_the_starting_credits_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
-  let account = insert_account(store:, login_name: "login-1")
+  let store = account_store_support.start_store(pool_size: 2)
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
   let assert CharacterCreated(character_id: first) =
     create(store:, account:, name: "Ab Cd", slots: 2)
     as "a create with the starting credits of the tests"
   let assert ForSelect(Created(CharacterCreated(character_id: second))) =
-    ask(
+    account_store_support.ask(
       store:,
       request: Select(CreateCharacter(
         account_id: account,
         character: NewCharacter(
-          ..a_new_character("Ef Gh"),
+          ..account_store_support.a_new_character("Ef Gh"),
           starting_credits: 250,
         ),
         character_slots: 2,
@@ -4663,7 +4618,7 @@ pub fn a_new_character_starts_with_the_starting_credits_test() -> Nil {
   assert bought_state(store:, account:, character_id: first).0 == 1000
     as "a character holds the credits it was created with"
   assert bought_state(store:, account:, character_id: second).0 == 250
-  stop(store)
+  account_store_support.stop(store)
 }
 
 // ---- turning in a quest ----
@@ -4682,7 +4637,7 @@ fn turn_in(
   credits_after credits_after: Int,
   placed placed: List(store.Placed),
 ) -> store.Answer {
-  ask(
+  account_store_support.ask(
     store:,
     request: Items(store.TurnInQuest(
       account_id: account,
@@ -4735,12 +4690,12 @@ fn two_made(bag_index bag_index: Int) -> List(store.Placed) {
 
 pub fn turn_in_saves_quest_progress_and_rewards_together_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let #(account, character_id, stacks) =
     holding_stacks(store:, stacks: [#(1, 10), #(2, 4)])
   let assert [first, _] = stacks
   let CharacterId(id) = character_id
-  let #(epoch, _) = login(store:, account:, character_id:)
+  let #(epoch, _) = account_store_support.login(store:, account:, character_id:)
   let assert ForItems(store.TurnedIn(credits:, made:)) =
     turn_in(
       store:,
@@ -4806,17 +4761,18 @@ pub fn turn_in_saves_quest_progress_and_rewards_together_test() -> Nil {
   assert experience_and_level_loaded(store:, account:, character_id: id)
     == #(Some(300), 2)
     as "the experience and level are saved with the place"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn turn_in_changes_nothing_when_any_part_is_refused_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let #(account, character_id, stacks) =
     holding_stacks(store:, stacks: [#(1, 10)])
   let assert [first] = stacks
   let CharacterId(id) = character_id
-  let #(_, before) = login(store:, account:, character_id:)
+  let #(_, before) =
+    account_store_support.login(store:, account:, character_id:)
   let refused = fn(
     case_: String,
     answer: store.Answer,
@@ -4833,7 +4789,7 @@ pub fn turn_in_changes_nothing_when_any_part_is_refused_test() -> Nil {
   }
   // Each load raises the epoch: the checks above load, so every request below is made
   // under the epoch of the load just before it.
-  let #(epoch, _) = login(store:, account:, character_id:)
+  let #(epoch, _) = account_store_support.login(store:, account:, character_id:)
   refused(
     "credits not as the login held them",
     turn_in(
@@ -4849,7 +4805,7 @@ pub fn turn_in_changes_nothing_when_any_part_is_refused_test() -> Nil {
     ),
     ItemsNotSaved,
   )
-  let #(epoch, _) = login(store:, account:, character_id:)
+  let #(epoch, _) = account_store_support.login(store:, account:, character_id:)
   refused(
     "a stale epoch",
     turn_in(
@@ -4865,7 +4821,7 @@ pub fn turn_in_changes_nothing_when_any_part_is_refused_test() -> Nil {
     ),
     ItemsNotSaved,
   )
-  let #(epoch, _) = login(store:, account:, character_id:)
+  let #(epoch, _) = account_store_support.login(store:, account:, character_id:)
   refused(
     "a stack to grow that is not as held",
     turn_in(
@@ -4893,7 +4849,7 @@ pub fn turn_in_changes_nothing_when_any_part_is_refused_test() -> Nil {
     ),
     ItemsNotSaved,
   )
-  let #(epoch, _) = login(store:, account:, character_id:)
+  let #(epoch, _) = account_store_support.login(store:, account:, character_id:)
   refused(
     "a made stack's slot already taken",
     turn_in(
@@ -4911,7 +4867,7 @@ pub fn turn_in_changes_nothing_when_any_part_is_refused_test() -> Nil {
   )
   // The refused attempts took no save sequence: the same turn-in under sequence 1 is
   // saved, and a second under the same sequence is stale.
-  let #(epoch, _) = login(store:, account:, character_id:)
+  let #(epoch, _) = account_store_support.login(store:, account:, character_id:)
   let assert ForItems(store.TurnedIn(..)) =
     turn_in(
       store:,
@@ -4942,15 +4898,15 @@ pub fn turn_in_changes_nothing_when_any_part_is_refused_test() -> Nil {
     as "the stale turn-in wrote no second quest row"
   let #(saved_credits, _) = bought_state(store:, account:, character_id:)
   assert saved_credits == 1100 as "and gave no credits"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn older_place_save_after_turn_in_changes_nothing_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let #(account, character_id, _) = holding_stacks(store:, stacks: [#(1, 10)])
   let CharacterId(id) = character_id
-  let #(epoch, _) = login(store:, account:, character_id:)
+  let #(epoch, _) = account_store_support.login(store:, account:, character_id:)
   let assert ForItems(store.TurnedIn(..)) =
     turn_in(
       store:,
@@ -4979,7 +4935,7 @@ pub fn older_place_save_after_turn_in_changes_nothing_test() -> Nil {
   assert experience_and_level_loaded(store:, account:, character_id: id)
     == #(Some(300), 2)
     as "and the experience of the turn-in stands, not the older save's 0"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 // ---- random stats ----
@@ -5026,9 +4982,10 @@ fn buy_rolled(
 
 pub fn an_items_random_stats_are_kept_across_a_save_and_load_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let #(account, character_id, _) = holding_stacks(store:, stacks: [])
-  let #(epoch, novice) = login(store:, account:, character_id:)
+  let #(epoch, novice) =
+    account_store_support.login(store:, account:, character_id:)
   let word = 0x0100000000030201
   let assert ForItems(store.Bought(made: [made], ..)) =
     buy_rolled(store:, account:, character_id:, epoch:, make: [
@@ -5036,17 +4993,17 @@ pub fn an_items_random_stats_are_kept_across_a_save_and_load_test() -> Nil {
     ])
     as "the purchase is saved"
   assert made.random_stats == word as "the answer carries the word it saved"
-  let items = held_by(store:, account:, character_id:)
+  let items = account_store_support.held_by(store:, account:, character_id:)
   assert item_in_bag(items:, index: 5).random_stats == word
     as "the next load finds the item with its word"
   assert novice != [] && list.all(novice, fn(item) { item.random_stats == 0 })
     as "an item stored without one, the Novice set's, loads with 0"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_random_stats_value_the_client_would_clear_or_refuse_is_rejected_by_its_check_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let #(_, character_id, _) = holding_stacks(store:, stacks: [])
   let CharacterId(number) = character_id
   let put = fn(bag_index, random_stats) {
@@ -5079,14 +5036,14 @@ pub fn a_random_stats_value_the_client_would_clear_or_refuse_is_rejected_by_its_
         as "a word with no choice byte, in version 0 (the client clears it), in version 2, or with a byte in bits 40 to 55 is refused by the check"
     },
   )
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_buy_makes_each_stack_with_its_own_word_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let #(account, character_id, _) = holding_stacks(store:, stacks: [])
-  let #(epoch, _) = login(store:, account:, character_id:)
+  let #(epoch, _) = account_store_support.login(store:, account:, character_id:)
   let first = 0x0100000000030201
   let second = 0x0100000000050401
   let assert ForItems(store.Bought(made:, ..)) =
@@ -5098,18 +5055,18 @@ pub fn a_buy_makes_each_stack_with_its_own_word_test() -> Nil {
   assert list.map(made, fn(item) { #(item.bag_index, item.random_stats) })
     == [#(5, first), #(6, second)]
     as "each stack is answered with the word it was given"
-  let items = held_by(store:, account:, character_id:)
+  let items = account_store_support.held_by(store:, account:, character_id:)
   assert item_in_bag(items:, index: 5).random_stats == first
   assert item_in_bag(items:, index: 6).random_stats == second
     as "and saved with it, one row for each"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_sale_returns_the_sold_items_word_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let #(account, character_id, _) = holding_stacks(store:, stacks: [])
-  let #(epoch, _) = login(store:, account:, character_id:)
+  let #(epoch, _) = account_store_support.login(store:, account:, character_id:)
   let word = 0x0100000000050401
   let assert ForItems(store.Bought(made: [made], ..)) =
     buy_rolled(store:, account:, character_id:, epoch:, make: [
@@ -5142,14 +5099,14 @@ pub fn a_sale_returns_the_sold_items_word_test() -> Nil {
       ]),
     )
     as "the sale answers the word the sold stack was saved with, for the buyback entry"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 pub fn a_turn_ins_reward_is_made_and_saved_with_its_word_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let #(account, character_id, _) = holding_stacks(store:, stacks: [])
-  let #(epoch, _) = login(store:, account:, character_id:)
+  let #(epoch, _) = account_store_support.login(store:, account:, character_id:)
   let word = 0x0100000000050401
   let assert ForItems(store.TurnedIn(made: [made], ..)) =
     turn_in(
@@ -5169,10 +5126,10 @@ pub fn a_turn_ins_reward_is_made_and_saved_with_its_word_test() -> Nil {
     )
     as "a turn-in whose reward is made rolled is saved"
   assert made.random_stats == word as "the answer carries the word it saved"
-  let items = held_by(store:, account:, character_id:)
+  let items = account_store_support.held_by(store:, account:, character_id:)
   assert item_in_bag(items:, index: 5).random_stats == word
     as "the next load finds the reward with its word"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 // ---- item charges ----
@@ -5226,7 +5183,10 @@ fn login_unset(
   character_id character_id: store.CharacterId,
 ) -> #(Int, List(store.HeldItem), List(store.UnsetItem)) {
   let assert ForWorld(CharacterLoaded(session_epoch:, items:, unset:, ..)) =
-    ask(store:, request: World(LoadCharacter(account, character_id)))
+    account_store_support.ask(
+      store:,
+      request: World(LoadCharacter(account, character_id)),
+    )
     as "the account's character loads"
   #(store.session_epoch_number(session_epoch), items, unset)
 }
@@ -5238,7 +5198,7 @@ fn fill(
   epoch epoch: Int,
   fills fills: List(#(Int, Int)),
 ) -> store.Answer {
-  ask(
+  account_store_support.ask(
     store:,
     request: World(store.FillCharges(
       account_id: account,
@@ -5257,11 +5217,18 @@ fn fill(
 /// every row as it was, and a fill never asked leaves the next load finding the rows unset.
 pub fn fill_charges_sets_only_null_rows_as_held_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let #(account, character_id, _) = holding_stacks(store:, stacks: [])
-  let other = insert_account(store:, login_name: "login-2")
+  let other =
+    account_store_support.insert_account(store:, login_name: "login-2")
   let assert CharacterCreated(character_id: others) =
-    create_holding(store:, account: other, name: "Ef Gh", slots: 1, items: [])
+    account_store_support.create_holding(
+      store:,
+      account: other,
+      name: "Ef Gh",
+      slots: 1,
+      items: [],
+    )
     as "a second character of another account"
   let assert Ok(first) =
     put_charged(store:, character_id:, bag_index: 8, charges: None)
@@ -5313,7 +5280,7 @@ pub fn fill_charges_sets_only_null_rows_as_held_test() -> Nil {
     as "a replay changes no row"
   let #(_, _, unset) = login_unset(store:, account:, character_id:)
   assert unset == [] as "the next login finds none unset"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 /// Every statement that makes an item row writes the charges it is given and the load
@@ -5322,10 +5289,11 @@ pub fn fill_charges_sets_only_null_rows_as_held_test() -> Nil {
 /// with no charges column loads as unset.
 pub fn charges_survive_every_statement_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
-  let account = insert_account(store:, login_name: "login-1")
+  let store = account_store_support.start_store(pool_size: 2)
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
   let assert CharacterCreated(character_id:) =
-    create_holding(
+    account_store_support.create_holding(
       store:,
       account:,
       name: "Ab Cd",
@@ -5443,17 +5411,24 @@ pub fn charges_survive_every_statement_test() -> Nil {
   let #(_, _, unset) = login_unset(store:, account:, character_id:)
   assert list.map(unset, fn(item) { item.bag_index }) == [9]
     as "a row inserted with no charges column loads as unset"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 /// The column holds 0 or more, or nothing: 0 and a large count are stored, null is stored,
 /// and -1 is refused by its check.
 pub fn a_negative_charge_count_is_refused_by_its_check_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
-  let account = insert_account(store:, login_name: "login-1")
+  let store = account_store_support.start_store(pool_size: 2)
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
   let assert CharacterCreated(character_id:) =
-    create_holding(store:, account:, name: "Ab Cd", slots: 1, items: [])
+    account_store_support.create_holding(
+      store:,
+      account:,
+      name: "Ab Cd",
+      slots: 1,
+      items: [],
+    )
     as "a character that holds nothing yet"
   let put = fn(bag_index, charges) {
     result.replace(
@@ -5467,7 +5442,7 @@ pub fn a_negative_charge_count_is_refused_by_its_check_test() -> Nil {
   assert put(3, Some(-1))
     == Error(ItemRefused("character_item_charges_not_negative"))
     as "a negative count is refused by its check"
-  stop(store)
+  account_store_support.stop(store)
 }
 
 // ---- spending charges ----
@@ -5478,9 +5453,10 @@ pub fn a_negative_charge_count_is_refused_by_its_check_test() -> Nil {
 fn holding_charges(
   store store: Store,
 ) -> #(AccountId, store.CharacterId, store.CharacterId) {
-  let account = insert_account(store:, login_name: "login-1")
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
   let assert CharacterCreated(character_id:) =
-    create_holding(
+    account_store_support.create_holding(
       store:,
       account:,
       name: "Ab Cd",
@@ -5503,9 +5479,10 @@ fn holding_charges(
       ]),
     )
     as "a character holding a stack and a charged item"
-  let other_account = insert_account(store:, login_name: "login-2")
+  let other_account =
+    account_store_support.insert_account(store:, login_name: "login-2")
   let assert CharacterCreated(character_id: other) =
-    create_holding(
+    account_store_support.create_holding(
       store:,
       account: other_account,
       name: "Ef Gh",
@@ -5525,7 +5502,7 @@ fn spend(
   stack_count stack_count: Int,
   charges charges: Int,
 ) -> store.Answer {
-  ask(
+  account_store_support.ask(
     store:,
     request: Items(SpendItem(
       account_id: account,
@@ -5540,9 +5517,10 @@ fn spend(
 
 pub fn a_spend_changes_the_row_only_as_held_test() -> Nil {
   use <- owned_test.run(60_000)
-  let store = start_store(pool_size: 2)
+  let store = account_store_support.start_store(pool_size: 2)
   let #(account, character_id, other) = holding_charges(store:)
-  let #(epoch, items) = login(store:, account:, character_id:)
+  let #(epoch, items) =
+    account_store_support.login(store:, account:, character_id:)
   let stack = item_in_bag(items:, index: 1)
   let charged = item_in_bag(items:, index: 2)
   assert spend(
@@ -5556,7 +5534,8 @@ pub fn a_spend_changes_the_row_only_as_held_test() -> Nil {
     )
     == ForItems(ItemsSaved)
     as "a spend with the values held lowers the count"
-  let #(epoch, after) = login(store:, account:, character_id:)
+  let #(epoch, after) =
+    account_store_support.login(store:, account:, character_id:)
   assert item_in_bag(items: after, index: 1)
     == HeldItem(..stack, stack_count: 4)
     as "the row holds the lowered count and keeps its guid and charges"
@@ -5571,7 +5550,7 @@ pub fn a_spend_changes_the_row_only_as_held_test() -> Nil {
     )
     == ForItems(ItemsNotSaved)
     as "the same request again holds a count of 5 that the row no longer has: it changes nothing"
-  let #(epoch, _) = login(store:, account:, character_id:)
+  let #(epoch, _) = account_store_support.login(store:, account:, character_id:)
   assert spend(
       store:,
       account:,
@@ -5583,8 +5562,8 @@ pub fn a_spend_changes_the_row_only_as_held_test() -> Nil {
     )
     == ForItems(ItemsNotSaved)
     as "an item held with other charges than the row's changes nothing"
-  let #(stale, _) = login(store:, account:, character_id:)
-  let #(_, _) = login(store:, account:, character_id:)
+  let #(stale, _) = account_store_support.login(store:, account:, character_id:)
+  let #(_, _) = account_store_support.login(store:, account:, character_id:)
   assert spend(
       store:,
       account:,
@@ -5596,7 +5575,7 @@ pub fn a_spend_changes_the_row_only_as_held_test() -> Nil {
     )
     == ForItems(ItemsNotSaved)
     as "a request under the epoch of an older login changes nothing"
-  let #(epoch, _) = login(store:, account:, character_id:)
+  let #(epoch, _) = account_store_support.login(store:, account:, character_id:)
   assert spend(
       store:,
       account:,
@@ -5608,7 +5587,8 @@ pub fn a_spend_changes_the_row_only_as_held_test() -> Nil {
     )
     == ForItems(ItemsNotSaved)
     as "a row of another character is not changed by a request that names the other"
-  let #(epoch, held) = login(store:, account:, character_id:)
+  let #(epoch, held) =
+    account_store_support.login(store:, account:, character_id:)
   assert item_in_bag(items: held, index: 2) == charged
     as "no refused spend changed the charged item"
   assert spend(
@@ -5622,7 +5602,8 @@ pub fn a_spend_changes_the_row_only_as_held_test() -> Nil {
     )
     == ForItems(ItemsSaved)
     as "the spend of the charged item as held lowers its charges"
-  let #(epoch, held) = login(store:, account:, character_id:)
+  let #(epoch, held) =
+    account_store_support.login(store:, account:, character_id:)
   assert item_in_bag(items: held, index: 2) == HeldItem(..charged, charges: 2)
     as "the row holds the lowered charges"
   // The delete a last charge asks is fenced on the held charges too.
@@ -5635,7 +5616,8 @@ pub fn a_spend_changes_the_row_only_as_held_test() -> Nil {
     )
     == ForItems(ItemsNotSaved)
     as "a delete with the held place and count but other charges changes nothing"
-  let #(epoch, held) = login(store:, account:, character_id:)
+  let #(epoch, held) =
+    account_store_support.login(store:, account:, character_id:)
   assert item_in_bag(items: held, index: 2) == HeldItem(..charged, charges: 2)
     as "the charged item is still held"
   assert destroy(
@@ -5647,5 +5629,5 @@ pub fn a_spend_changes_the_row_only_as_held_test() -> Nil {
     )
     == ForItems(ItemsSaved)
     as "a delete with the values held removes it"
-  stop(store)
+  account_store_support.stop(store)
 }

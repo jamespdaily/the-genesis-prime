@@ -328,11 +328,22 @@ pub fn refused_unknown(
   refused(client_cast_id:, spell4_id:, result: cast_result.SpellUnknown)
 }
 
+/// The refusal of a cast as an effect that writes it: `refused_frame`.
 pub fn refused(
   client_cast_id client_cast_id: Int,
   spell4_id spell4_id: Int,
   result result: cast_result.CastResult,
 ) -> Effect {
+  Send(frame: refused_frame(client_cast_id:, spell4_id:, result:))
+}
+
+/// The 0x07FC that refuses the cast the client numbered `client_cast_id` of the spell with
+/// `result`.
+pub fn refused_frame(
+  client_cast_id client_cast_id: Int,
+  spell4_id spell4_id: Int,
+  result result: cast_result.CastResult,
+) -> Frame {
   let assert Ok(body) =
     spell_cast_refused.encode(SpellCastRefused(
       client_cast_id:,
@@ -340,7 +351,7 @@ pub fn refused(
       result:,
     ))
     as "a cast id of 32 bits, a Spell4 id of 18 and a result of 9 fit the message"
-  Send(frame: Frame(message_id: spell_cast_refused.message_id, body:))
+  Frame(message_id: spell_cast_refused.message_id, body:)
 }
 
 /// 0x07FD for the press's cast: the client's id, the server's, the caster as its

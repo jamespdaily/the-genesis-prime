@@ -366,31 +366,42 @@ fn item_used(
             in_cast_group:,
             spell4_id: spell4_id.value,
           )
-          |> result.map(started_press(
-            before: cast,
-            press: ItemPress(
-              client_cast_id:,
-              spell4_id: spell4_id.value,
-              place: press.item,
-            ),
-            taken: _,
-          ))
+          |> result.map(fn(pressed) {
+            case pressed {
+              CastBegan(taken:) ->
+                ItemDecided(
+                  taken:,
+                  press: Some(ItemPress(
+                    client_cast_id:,
+                    spell4_id: spell4_id.value,
+                    place: press.item,
+                  )),
+                )
+              PressAnswered(taken:) -> ItemDecided(taken:, press: None)
+            }
+          })
       }
   }
 }
 
-/// What the press decided: it started a cast when the caster's state counts one more cast
-/// than before (`start`); every other answer is a frame.
-fn started_press(
-  before before: State,
-  press press: ItemPress,
-  taken taken: #(State, List(Effect)),
-) -> ItemDecided {
-  use <- bool.guard(
-    when: { taken.0 }.presses <= before.presses,
-    return: ItemDecided(taken:, press: None),
-  )
-  ItemDecided(taken:, press: Some(press))
+/// What a press of an activate cast came to: a cast it started (`accepted_and_started`'s
+/// `start`), or an answer to the press, a refusal's frame, that started none.
+type Pressed {
+  CastBegan(taken: #(State, List(Effect)))
+  PressAnswered(taken: #(State, List(Effect)))
+}
+
+/// The state and effects of a press, whichever it came to.
+fn pressed_taken(pressed pressed: Pressed) -> #(State, List(Effect)) {
+  pressed.taken
+}
+
+/// A press the client's reader let through that was answered, not started: `taken` is
+/// the refusal's state and effects.
+fn answered_press(
+  taken taken: Result(#(State, List(Effect)), Refusal),
+) -> Result(Pressed, Refusal) {
+  result.map(taken, PressAnswered)
 }
 
 fn framed(
@@ -416,13 +427,19 @@ fn item_spell_cast(
   activations activations: activate.Activations,
   in_cast_group in_cast_group: fn(Int, Int) -> Bool,
   spell4_id spell4_id: Int,
-) -> Result(#(State, List(Effect)), Refusal) {
+) -> Result(Pressed, Refusal) {
   let refusal = fn(spell4_id, result) {
-    Ok(#(cast, [cast_frame.refused(client_cast_id:, spell4_id:, result:)]))
+    Ok(
+      PressAnswered(
+        #(cast, [
+          cast_frame.refused(client_cast_id:, spell4_id:, result:),
+        ]),
+      ),
+    )
   }
   case activate.planned_of(activations:, spell4_id:) {
     Error(Nil) ->
-      cast_press.not_built_refusal(
+      answered_press(taken: cast_press.not_built_refusal(
         cast:,
         client_cast_id:,
         spell4_id:,
@@ -430,10 +447,10 @@ fn item_spell_cast(
         result: cast_result.IllegalSpellCast,
         why: "has no Activate effect, which is all the server counts an item's use through",
         issue: ItemsIssue,
-      )
+      ))
     Ok(activate.NoSpell4Row) -> refusal(spell4_id, cast_result.SpellUnknown)
     Ok(activate.CannotBePlanned(why:)) ->
-      cast_press.not_built_refusal(
+      answered_press(taken: cast_press.not_built_refusal(
         cast:,
         client_cast_id:,
         spell4_id:,
@@ -441,7 +458,7 @@ fn item_spell_cast(
         result: cast_result.IllegalSpellCast,
         why: "cannot be planned: " <> why,
         issue: SpellsIssue,
-      )
+      ))
     Ok(activate.Planned(spell:, effects:, dropped:, limits:, cast_group_id:)) ->
       // A creature's `withheld` and `ClosedLink` are what the client's interact menu does
       // not offer; an item's use never goes through that menu, and a closed link only
@@ -476,7 +493,7 @@ fn item_spell_cast(
                   in_cast_group:,
                 )
               {
-                Error(taken) -> taken
+                Error(taken) -> answered_press(taken:)
                 Ok(Nil) ->
                   activation_reached(
                     cast:,
@@ -640,7 +657,7 @@ fn shortcut_pressed(
         issue: SpellsIssue,
       )
     Ok(shortcut_spell.Planned(spell:)) ->
-      accepted_and_started(
+      accepted_press(
         cast:,
         caster:,
         now_ms:,
@@ -654,6 +671,7 @@ fn shortcut_pressed(
         target_subject: None,
         dropping: fn(cast) { #(cast, []) },
       )
+      |> result.map(pressed_taken)
     Ok(shortcut_spell.Aimed(spell:, aim:)) ->
       aimed_shortcut(
         cast:,
@@ -871,7 +889,7 @@ fn aimed_in_range(
     activate.TooHigh ->
       cast_press.press_refused(press:, result: cast_result.TargetRangeVertical)
     activate.Within ->
-      accepted_and_started(
+      accepted_press(
         cast: press.cast,
         caster: press.caster,
         now_ms: press.now_ms,
@@ -892,6 +910,7 @@ fn aimed_in_range(
         )),
         dropping: fn(cast) { #(cast, []) },
       )
+      |> result.map(pressed_taken)
   }
 }
 
@@ -1242,6 +1261,7 @@ fn activation_in_range(
         dropped:,
         limits:,
       )
+      |> result.map(pressed_taken)
   }
 }
 
@@ -1265,10 +1285,16 @@ fn activation_reached(
   effects effects: List(activate.ActivateEffect),
   dropped dropped: activate.Dropped,
   limits limits: activate.Limits,
-) -> Result(#(State, List(Effect)), Refusal) {
+) -> Result(Pressed, Refusal) {
   let spell4_id = spell.spell4_id.value
   let refusal = fn(result) {
-    Ok(#(cast, [cast_frame.refused(client_cast_id:, spell4_id:, result:)]))
+    Ok(
+      PressAnswered(
+        #(cast, [
+          cast_frame.refused(client_cast_id:, spell4_id:, result:),
+        ]),
+      ),
+    )
   }
   case
     activate.range_of(
@@ -1314,9 +1340,9 @@ fn activation_started(
   interaction interaction: Interaction,
   effects effects: List(activate.ActivateEffect),
   dropped dropped: activate.Dropped,
-) -> Result(#(State, List(Effect)), Refusal) {
+) -> Result(Pressed, Refusal) {
   let spell4_id = spell.spell4_id.value
-  accepted_and_started(
+  accepted_press(
     cast:,
     caster:,
     now_ms:,
@@ -1347,10 +1373,11 @@ fn activation_started(
 }
 
 /// A cast the client sent a cast id for (an activate or a shortcut cast), under the same
-/// checks as a press of its spell, then started in `role`: the verdict's holds are
+/// checks as a press of its spell, then started in `role` (`CastBegan`; a refusal is
+/// `PressAnswered`): the verdict's holds are
 /// refusals, since the client does not send the cast again. `dropping` is what the start
 /// leaves to log, after the payments and before the start's own effects.
-fn accepted_and_started(
+fn accepted_press(
   cast cast: State,
   caster caster: Caster,
   now_ms now_ms: Int,
@@ -1360,10 +1387,16 @@ fn accepted_and_started(
   role role: Role,
   target_subject target_subject: Option(prerequisite.Subject),
   dropping dropping: fn(State) -> #(State, List(Effect)),
-) -> Result(#(State, List(Effect)), Refusal) {
+) -> Result(Pressed, Refusal) {
   let spell4_id = spell.spell4_id.value
   let refusal = fn(result) {
-    Ok(#(cast, [cast_frame.refused(client_cast_id:, spell4_id:, result:)]))
+    Ok(
+      PressAnswered(
+        #(cast, [
+          cast_frame.refused(client_cast_id:, spell4_id:, result:),
+        ]),
+      ),
+    )
   }
   use <- bool.guard(
     when: cast_press.answer_is_out(cast:),
@@ -1383,7 +1416,7 @@ fn accepted_and_started(
     Hold(..) -> refusal(cast_result.SpellGlobalCooldown)
     HoldForCast -> refusal(cast_result.SpellAlreadyCasting)
     NotBuilt(result:, why:, issue:) ->
-      cast_press.not_built_refusal(
+      answered_press(taken: cast_press.not_built_refusal(
         cast:,
         client_cast_id:,
         spell4_id:,
@@ -1395,7 +1428,7 @@ fn accepted_and_started(
         result:,
         why:,
         issue:,
-      )
+      ))
     Accept(paid:) -> {
       let #(taken, reserved) = case cast_cost.pays_at_accept(spell:) {
         True -> #(cast_cost.paying(payments: paid.payments), [])
@@ -1416,7 +1449,7 @@ fn accepted_and_started(
           reserved:,
         )
       let #(cast, dropped) = dropping(cast)
-      Ok(#(cast, list.flatten([taken, dropped, started])))
+      Ok(CastBegan(#(cast, list.flatten([taken, dropped, started]))))
     }
   }
 }

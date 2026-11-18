@@ -45,7 +45,7 @@ import genesis_prime/message/disconnect_reason.{LostUserServer}
 import genesis_prime/step.{
   type ConnectionEffect, type Effect, type Now, type Outcome,
 }
-import genesis_prime/store.{ForItems}
+import genesis_prime/store.{type ItemsAnswer, ForItems}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/player_unit
 import gleam/bool
@@ -127,9 +127,9 @@ fn wearer_of(
   )
 }
 
-/// The store's answer to the change: the player is in the world again with the
-/// items the answer leaves and the change's replies or a 0x56A written; a store
-/// that failed ends the connection with reason 8.
+/// The store's answer to the change: the player is in the world again with the items
+/// the answer leaves and the change's replies or a 0x56A written; a store that
+/// failed ends the connection with reason 8.
 pub fn move_answered(
   session session: Session,
   now now: Now,
@@ -138,8 +138,15 @@ pub fn move_answered(
   moving moving: inventory.Moving,
   outcome outcome: Outcome(Answer),
 ) -> client_connection.Handled(Session) {
-  case outcome {
-    step.Answer(FromStore(ForItems(answer))) -> {
+  answered(
+    session:,
+    now:,
+    holder:,
+    entered:,
+    what: inventory.not_done(moving.change),
+    asked: "an item change",
+    outcome:,
+    saved: fn(session, answer) {
       let #(items, effects) =
         inventory.answered(items: entered.items, moving:, answer:)
       let entered = world_entry.Entered(..entered, items:)
@@ -152,29 +159,42 @@ pub fn move_answered(
         entered:,
         moved: list.append(effects_of(session:, effects:), settled),
       )
-    }
+    },
+  )
+}
+
+/// The store's answer to a change of the player's items, for every change that asks the
+/// store for one (a move, a trade, a spend): the answer of the store goes to `saved`, which
+/// puts the player in the world again. A server that is stopping ends the connection with
+/// no log line. A store that is unavailable, gone, past its deadline, or whose answer is
+/// none `asked` names ends the connection with reason 8 and an error line that starts with
+/// `what` (the change that was not done), the player's place saved as in the world with
+/// `entered`.
+pub fn answered(
+  session session: Session,
+  now now: Now,
+  holder holder: Holder,
+  entered entered: world_entry.Entered,
+  what what: String,
+  asked asked: String,
+  outcome outcome: Outcome(Answer),
+  saved saved: fn(Session, ItemsAnswer) -> client_connection.Handled(Session),
+) -> client_connection.Handled(Session) {
+  let lost = fn(text) { lost(session:, now:, holder:, entered:, text:) }
+  case outcome {
+    step.Answer(FromStore(ForItems(answer))) -> saved(session, answer)
     step.StoppedWaiting ->
       connection_state.stopped(
         Session(..session, status: InWorld(holder:, entered:)),
         now,
       )
     step.Answer(FromStore(store.Unavailable)) ->
-      lost(
-        session:,
-        now:,
-        holder:,
-        entered:,
-        text: inventory.not_done(moving.change) <> ": the store is unavailable",
-      )
+      lost(what <> ": the store is unavailable")
     step.NotRunning | step.NoAnswerInTime | step.EndedBeforeAnswer ->
       lost(
-        session:,
-        now:,
-        holder:,
-        entered:,
-        text: inventory.not_done(moving.change)
-          <> ": "
-          <> client_connection.without_answer(who: "the store", outcome:),
+        what
+        <> ": "
+        <> client_connection.without_answer(who: "the store", outcome:),
       )
     step.Answer(FromStore(store.ForLogin(..)))
     | step.Answer(FromStore(store.ForSelect(..)))
@@ -183,14 +203,7 @@ pub fn move_answered(
     | step.Answer(client_connection.FromHandOff(..))
     | step.Answer(client_connection.FromSessions(..))
     | step.Answer(client_connection.FromMap(..)) ->
-      lost(
-        session:,
-        now:,
-        holder:,
-        entered:,
-        text: inventory.not_done(moving.change)
-          <> ": the answer is none an item change asked for",
-      )
+      lost(what <> ": the answer is none " <> asked <> " asked for")
   }
 }
 

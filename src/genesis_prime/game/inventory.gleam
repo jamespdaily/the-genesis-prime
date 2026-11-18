@@ -653,8 +653,9 @@ fn merged(
   )
 }
 
-/// The item held at the place, if any.
-fn held_at(
+/// The item held at the place, if any: the first of the items at that location and bag
+/// index.
+pub fn held_at(
   items items: List(HeldItem),
   place place: ItemPlace,
 ) -> Result(HeldItem, Nil) {
