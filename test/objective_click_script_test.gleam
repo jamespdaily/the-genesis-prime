@@ -310,6 +310,19 @@ pub fn an_activation_of_a_pane_creature_counts_the_click_script_and_nothing_else
     == Advanced(log: first.log, effects: [])
     as "a done objective counts nothing for another unit"
 
+  // The server offers a use of the creature only while an open objective counts it
+  // (`use_targets`): the click row's pane creature, and only with the click table.
+  let offered = fn(clicks) {
+    objective.use_targets(
+      log: open,
+      tables:,
+      scripts: click_rows(objectives: clicks),
+    )(unit_of(creature: pyrius), 0, quest_support.unit_ref(unit_id: 7))
+  }
+  assert offered([16_170])
+    as "an open click row offers a use of its pane creature"
+  assert !offered([]) as "a type 5 row not in the click table offers none"
+
   // Closed behind an earlier objective: 16170's flags 3 keep it closed while 16165 is open.
   let closed = quest_support.logged(tables:, quest_id: 6591, done: [])
   assert advanced(
