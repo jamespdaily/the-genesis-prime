@@ -236,7 +236,10 @@ pub fn item_use_message(
       held_at: fn(place) {
         inventory.held_at(items: entered.items, place:)
         |> result.map(fn(held) {
-          cast_state.ItemAtPlace(item2_id: held.item2_id, charges: held.charges)
+          cast_state.ItemAtPlace(
+            item2_id: held.item2_id,
+            charges: held.words.charges,
+          )
         })
         |> option.from_result
       },

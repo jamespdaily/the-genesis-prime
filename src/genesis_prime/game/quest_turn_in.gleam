@@ -944,8 +944,11 @@ fn place_items(
         size:,
         limit:,
         wanted: amount,
-        charges:,
-        expires_at_unix_ms:,
+        words: store.ItemWords(
+          ..store.plain_words,
+          charges:,
+          expires_at_unix_ms:,
+        ),
       )
     {
       Error(Nil) -> Error(NoRoom)
@@ -977,10 +980,7 @@ fn after(
         location: stack.location,
         bag_index: stack.bag_index,
         stack_count: stack.stack_count,
-        random_stats: stack.random_stats,
-        charges: stack.charges,
-        item_flags: stack.item_flags,
-        expires_at_unix_ms: stack.expires_at_unix_ms,
+        words: stack.words,
       )
     }),
   )

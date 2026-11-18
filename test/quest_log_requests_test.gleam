@@ -100,10 +100,12 @@ fn item(location location: Int) -> HeldItem {
     location:,
     bag_index: 0,
     stack_count: 1,
-    random_stats: 0,
-    charges: 0,
-    item_flags: 0,
-    expires_at_unix_ms: option.None,
+    words: store.ItemWords(
+      random_stats: 0,
+      charges: 0,
+      item_flags: 0,
+      expires_at_unix_ms: option.None,
+    ),
   )
 }
 

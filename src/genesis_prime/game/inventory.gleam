@@ -663,9 +663,12 @@ fn merged(
       store.HeldItem(
         ..item,
         stack_count: target.stack_count + count,
-        expires_at_unix_ms: item_expiry.earlier(
-          first: target.expires_at_unix_ms,
-          second: source.expires_at_unix_ms,
+        words: store.ItemWords(
+          ..item.words,
+          expires_at_unix_ms: item_expiry.earlier(
+            first: target.words.expires_at_unix_ms,
+            second: source.words.expires_at_unix_ms,
+          ),
         ),
       )
     })
@@ -1036,7 +1039,10 @@ fn flagged(
     changed(items: held, guid: move.item_guid, with: fn(item) {
       store.HeldItem(
         ..item,
-        item_flags: int.bitwise_or(item.item_flags, move.flags_set),
+        words: store.ItemWords(
+          ..item.words,
+          item_flags: int.bitwise_or(item.words.item_flags, move.flags_set),
+        ),
       )
     })
   })
@@ -1056,7 +1062,7 @@ fn flag_frames(
         |> result.map(fn(item) {
           item_flags_changed_frame(
             guid: item.item_guid,
-            item_flags: item.item_flags,
+            item_flags: item.words.item_flags,
           )
         })
     }
@@ -1232,11 +1238,11 @@ pub fn held_item_frame(
     location: item.location,
     bag_index: item.bag_index,
     stack_count: item.stack_count,
-    random_stats: item.random_stats,
-    charges: item.charges,
-    item_flags: item.item_flags,
+    random_stats: item.words.random_stats,
+    charges: item.words.charges,
+    item_flags: item.words.item_flags,
     time_left_ms: item_expiry.time_left_ms(
-      expires_at_unix_ms: item.expires_at_unix_ms,
+      expires_at_unix_ms: item.words.expires_at_unix_ms,
       now_unix_ms:,
     ),
     reason:,
@@ -1382,10 +1388,7 @@ pub fn answered(
               location: to.location,
               bag_index: to.bag_index,
               stack_count: count,
-              random_stats: source.random_stats,
-              charges: source.charges,
-              item_flags: source.item_flags,
-              expires_at_unix_ms: source.expires_at_unix_ms,
+              words: source.words,
             )
           #(list.append(moving.items, [made]), [
             Send(count_changed_frame(
@@ -1543,17 +1546,15 @@ pub fn grown(
 
 /// Where `wanted` items of an Item2 go (a server choice): the stacks of it in the usable
 /// inventory below the limit, lowest bag index first, then the empty usable slots, lowest
-/// first, each up to the limit, each new stack holding `charges` and running out at
-/// `expires_at_unix_ms` (a stack that grows keeps its own moment). Nothing when they do not
-/// all fit.
+/// first, each up to the limit, each new stack holding `words` (a stack that grows keeps its
+/// own). Nothing when they do not all fit.
 pub fn placed(
   items items: List(HeldItem),
   item2_id item2_id: Item2Id,
   size size: Int,
   limit limit: Int,
   wanted wanted: Int,
-  charges charges: Int,
-  expires_at_unix_ms expires_at_unix_ms: Option(Int),
+  words words: store.ItemWords,
 ) -> Result(#(List(store.StackGrowth), List(store.NewStack)), Nil) {
   let usable =
     list.filter(items, fn(item) {
@@ -1571,8 +1572,7 @@ pub fn placed(
     |> list.reverse
     |> list.filter(fn(index) { !set.contains(taken_places, index) })
   let #(wanted, grow) = fill(growable:, limit:, wanted:)
-  let #(wanted, make) =
-    open(empty:, limit:, wanted:, charges:, expires_at_unix_ms:)
+  let #(wanted, make) = open(empty:, limit:, wanted:, words:)
   case wanted {
     0 -> Ok(#(grow, make))
     _ -> Error(Nil)
@@ -1609,30 +1609,20 @@ fn open(
   empty empty: List(Int),
   limit limit: Int,
   wanted wanted: Int,
-  charges charges: Int,
-  expires_at_unix_ms expires_at_unix_ms: Option(Int),
+  words words: store.ItemWords,
 ) -> #(Int, List(store.NewStack)) {
   case empty, wanted {
     [], _ | _, 0 -> #(wanted, [])
     [index, ..rest], _ -> {
       let added = int.min(wanted, limit)
       let #(left, made) =
-        open(
-          empty: rest,
-          limit:,
-          wanted: wanted - added,
-          charges:,
-          expires_at_unix_ms:,
-        )
+        open(empty: rest, limit:, wanted: wanted - added, words:)
       #(left, [
         store.NewStack(
           location: in_bags,
           bag_index: index,
           stack_count: added,
-          random_stats: 0,
-          charges:,
-          item_flags: 0,
-          expires_at_unix_ms:,
+          words:,
         ),
         ..made
       ])

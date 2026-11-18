@@ -252,10 +252,12 @@ fn held(item item: #(Int, Int), index index: Int) -> HeldItem {
     location: item.1,
     bag_index: index,
     stack_count: 1,
-    random_stats: 0,
-    charges: 0,
-    item_flags: 0,
-    expires_at_unix_ms: None,
+    words: store.ItemWords(
+      random_stats: 0,
+      charges: 0,
+      item_flags: 0,
+      expires_at_unix_ms: None,
+    ),
   )
 }
 

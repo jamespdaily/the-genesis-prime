@@ -2898,10 +2898,12 @@ pub fn a_split_item_is_found_with_its_new_guid_after_load_test() -> Nil {
       location: 1,
       bag_index: 2,
       stack_count: 3,
-      random_stats: 0,
-      charges: 0,
-      item_flags: 0,
-      expires_at_unix_ms: None,
+      words: store.ItemWords(
+        random_stats: 0,
+        charges: 0,
+        item_flags: 0,
+        expires_at_unix_ms: None,
+      ),
     )
     as "opcode.0x111.guid: the new row has the guid the store answered, the same Item2, the destination and the count"
   assert first != stack.item_guid
@@ -3831,19 +3833,23 @@ pub fn a_buy_takes_the_credits_and_adds_the_items_in_one_statement_test() -> Nil
           location: 1,
           bag_index: 5,
           stack_count: 7,
-          random_stats: 0,
-          charges: 0,
-          item_flags: 0,
-          expires_at_unix_ms: None,
+          words: store.ItemWords(
+            random_stats: 0,
+            charges: 0,
+            item_flags: 0,
+            expires_at_unix_ms: None,
+          ),
         ),
         store.NewStack(
           location: 1,
           bag_index: 6,
           stack_count: 1,
-          random_stats: 0,
-          charges: 0,
-          item_flags: 0,
-          expires_at_unix_ms: None,
+          words: store.ItemWords(
+            random_stats: 0,
+            charges: 0,
+            item_flags: 0,
+            expires_at_unix_ms: None,
+          ),
         ),
       ],
     )
@@ -3931,10 +3937,12 @@ pub fn a_buy_under_a_stale_epoch_changes_nothing_test() -> Nil {
           location: 1,
           bag_index: 5,
           stack_count: 7,
-          random_stats: 0,
-          charges: 0,
-          item_flags: 0,
-          expires_at_unix_ms: None,
+          words: store.ItemWords(
+            random_stats: 0,
+            charges: 0,
+            item_flags: 0,
+            expires_at_unix_ms: None,
+          ),
         ),
       ],
     )
@@ -3964,10 +3972,12 @@ pub fn a_buy_with_too_few_credits_saved_changes_nothing_test() -> Nil {
       location: 1,
       bag_index: 5,
       stack_count: 7,
-      random_stats: 0,
-      charges: 0,
-      item_flags: 0,
-      expires_at_unix_ms: None,
+      words: store.ItemWords(
+        random_stats: 0,
+        charges: 0,
+        item_flags: 0,
+        expires_at_unix_ms: None,
+      ),
     ),
   ]
   let refused = [
@@ -4099,10 +4109,12 @@ pub fn a_buy_into_a_taken_place_changes_nothing_and_names_the_constraint_test() 
           location: 1,
           bag_index: 2,
           stack_count: 7,
-          random_stats: 0,
-          charges: 0,
-          item_flags: 0,
-          expires_at_unix_ms: None,
+          words: store.ItemWords(
+            random_stats: 0,
+            charges: 0,
+            item_flags: 0,
+            expires_at_unix_ms: None,
+          ),
         ),
       ],
     )
@@ -4148,10 +4160,12 @@ fn sold_with_no_word(
     words: list.map(guids, fn(guid) {
       store.SoldWord(
         item_guid: guid,
-        random_stats: 0,
-        charges: 0,
-        item_flags: 0,
-        expires_at_unix_ms: None,
+        words: store.ItemWords(
+          random_stats: 0,
+          charges: 0,
+          item_flags: 0,
+          expires_at_unix_ms: None,
+        ),
       )
     }),
   ))
@@ -4571,10 +4585,12 @@ pub fn a_buy_back_in_another_currency_takes_that_currency_in_one_statement_test(
           location: 1,
           bag_index: 1,
           stack_count: 10,
-          random_stats: 0,
-          charges: 0,
-          item_flags: 0,
-          expires_at_unix_ms: None,
+          words: store.ItemWords(
+            random_stats: 0,
+            charges: 0,
+            item_flags: 0,
+            expires_at_unix_ms: None,
+          ),
         ),
       ],
     )
@@ -4707,10 +4723,12 @@ fn two_made(bag_index bag_index: Int) -> List(store.Placed) {
         location: 1,
         bag_index:,
         stack_count: 7,
-        random_stats: 0,
-        charges: 0,
-        item_flags: 0,
-        expires_at_unix_ms: None,
+        words: store.ItemWords(
+          random_stats: 0,
+          charges: 0,
+          item_flags: 0,
+          expires_at_unix_ms: None,
+        ),
       ),
     ]),
     store.Placed(item2_id: Item2Id(1154), grow: [], make: [
@@ -4718,10 +4736,12 @@ fn two_made(bag_index bag_index: Int) -> List(store.Placed) {
         location: 1,
         bag_index: bag_index + 1,
         stack_count: 1,
-        random_stats: 0,
-        charges: 0,
-        item_flags: 0,
-        expires_at_unix_ms: None,
+        words: store.ItemWords(
+          random_stats: 0,
+          charges: 0,
+          item_flags: 0,
+          expires_at_unix_ms: None,
+        ),
       ),
     ]),
   ]
@@ -4760,10 +4780,12 @@ pub fn turn_in_saves_quest_progress_and_rewards_together_test() -> Nil {
               location: 1,
               bag_index: 5,
               stack_count: 7,
-              random_stats: 0,
-              charges: 0,
-              item_flags: 0,
-              expires_at_unix_ms: None,
+              words: store.ItemWords(
+                random_stats: 0,
+                charges: 0,
+                item_flags: 0,
+                expires_at_unix_ms: None,
+              ),
             ),
           ],
         ),
@@ -4772,10 +4794,12 @@ pub fn turn_in_saves_quest_progress_and_rewards_together_test() -> Nil {
             location: 1,
             bag_index: 6,
             stack_count: 1,
-            random_stats: 0,
-            charges: 0,
-            item_flags: 0,
-            expires_at_unix_ms: None,
+            words: store.ItemWords(
+              random_stats: 0,
+              charges: 0,
+              item_flags: 0,
+              expires_at_unix_ms: None,
+            ),
           ),
         ]),
       ],
@@ -4996,10 +5020,12 @@ fn rolled_stack(
     location: 1,
     bag_index:,
     stack_count: 1,
-    random_stats:,
-    charges: 0,
-    item_flags: 0,
-    expires_at_unix_ms: None,
+    words: store.ItemWords(
+      random_stats:,
+      charges: 0,
+      item_flags: 0,
+      expires_at_unix_ms: None,
+    ),
   )
 }
 
@@ -5037,11 +5063,13 @@ pub fn an_items_random_stats_are_kept_across_a_save_and_load_test() -> Nil {
       rolled_stack(bag_index: 5, random_stats: word),
     ])
     as "the purchase is saved"
-  assert made.random_stats == word as "the answer carries the word it saved"
+  assert made.words.random_stats == word
+    as "the answer carries the word it saved"
   let items = account_store_support.held_by(store:, account:, character_id:)
-  assert item_in_bag(items:, index: 5).random_stats == word
+  assert item_in_bag(items:, index: 5).words.random_stats == word
     as "the next load finds the item with its word"
-  assert novice != [] && list.all(novice, fn(item) { item.random_stats == 0 })
+  assert novice != []
+    && list.all(novice, fn(item) { item.words.random_stats == 0 })
     as "an item stored without one, the Novice set's, loads with 0"
   account_store_support.stop(store)
 }
@@ -5097,12 +5125,12 @@ pub fn a_buy_makes_each_stack_with_its_own_word_test() -> Nil {
       rolled_stack(bag_index: 6, random_stats: second),
     ])
     as "a buy of two units of a kind-2 item is saved"
-  assert list.map(made, fn(item) { #(item.bag_index, item.random_stats) })
+  assert list.map(made, fn(item) { #(item.bag_index, item.words.random_stats) })
     == [#(5, first), #(6, second)]
     as "each stack is answered with the word it was given"
   let items = account_store_support.held_by(store:, account:, character_id:)
-  assert item_in_bag(items:, index: 5).random_stats == first
-  assert item_in_bag(items:, index: 6).random_stats == second
+  assert item_in_bag(items:, index: 5).words.random_stats == first
+  assert item_in_bag(items:, index: 6).words.random_stats == second
     as "and saved with it, one row for each"
   account_store_support.stop(store)
 }
@@ -5138,10 +5166,12 @@ pub fn a_sale_returns_the_sold_items_word_test() -> Nil {
       store.Sold(amount: 1050, words: [
         store.SoldWord(
           item_guid: made.item_guid,
-          random_stats: word,
-          charges: 0,
-          item_flags: 0,
-          expires_at_unix_ms: None,
+          words: store.ItemWords(
+            random_stats: word,
+            charges: 0,
+            item_flags: 0,
+            expires_at_unix_ms: None,
+          ),
         ),
       ]),
     )
@@ -5172,9 +5202,10 @@ pub fn a_turn_ins_reward_is_made_and_saved_with_its_word_test() -> Nil {
       ],
     )
     as "a turn-in whose reward is made rolled is saved"
-  assert made.random_stats == word as "the answer carries the word it saved"
+  assert made.words.random_stats == word
+    as "the answer carries the word it saved"
   let items = account_store_support.held_by(store:, account:, character_id:)
-  assert item_in_bag(items:, index: 5).random_stats == word
+  assert item_in_bag(items:, index: 5).words.random_stats == word
     as "the next load finds the reward with its word"
   account_store_support.stop(store)
 }
@@ -5306,7 +5337,7 @@ pub fn fill_charges_sets_only_null_rows_as_held_test() -> Nil {
       as why
     assert charges_of(store:, guid: first) == None
       as { why <> ": the null row stays null" }
-    assert charges_of(store:, guid: set.item_guid) == Some(set.charges)
+    assert charges_of(store:, guid: set.item_guid) == Some(set.words.charges)
     assert charges_of(store:, guid: theirs) == None
   })
   assert fill(store:, account:, character_id:, epoch:, fills: [
@@ -5359,7 +5390,7 @@ pub fn charges_survive_every_statement_test() -> Nil {
   let #(epoch, items, unset) = login_unset(store:, account:, character_id:)
   assert unset == [] as "a create writes every starting item's charges"
   let stack = item_in_bag(items:, index: 0)
-  assert stack.charges == 4 as "a create stores the charges it was given"
+  assert stack.words.charges == 4 as "a create stores the charges it was given"
   let assert ForItems(store.Bought(made: [bought], ..)) =
     buy_item(
       store:,
@@ -5376,15 +5407,17 @@ pub fn charges_survive_every_statement_test() -> Nil {
           location: 1,
           bag_index: 5,
           stack_count: 1,
-          random_stats: 0,
-          charges: 5,
-          item_flags: 0,
-          expires_at_unix_ms: None,
+          words: store.ItemWords(
+            random_stats: 0,
+            charges: 5,
+            item_flags: 0,
+            expires_at_unix_ms: None,
+          ),
         ),
       ],
     )
     as "a purchase is saved"
-  assert bought.charges == 5 as "a purchase answers the charges it stored"
+  assert bought.words.charges == 5 as "a purchase answers the charges it stored"
   let assert ForItems(store.TurnedIn(made: [rewarded], ..)) =
     turn_in(
       store:,
@@ -5401,16 +5434,19 @@ pub fn charges_survive_every_statement_test() -> Nil {
             location: 1,
             bag_index: 6,
             stack_count: 1,
-            random_stats: 0,
-            charges: 7,
-            item_flags: 0,
-            expires_at_unix_ms: None,
+            words: store.ItemWords(
+              random_stats: 0,
+              charges: 7,
+              item_flags: 0,
+              expires_at_unix_ms: None,
+            ),
           ),
         ]),
       ],
     )
     as "a turn-in whose reward holds 7 charges is saved"
-  assert rewarded.charges == 7 as "a turn-in answers the charges it stored"
+  assert rewarded.words.charges == 7
+    as "a turn-in answers the charges it stored"
   let assert ForItems(store.ItemMade(item_guid: split_guid)) =
     split(
       store:,
@@ -5442,17 +5478,21 @@ pub fn charges_survive_every_statement_test() -> Nil {
       store.Sold(amount: 1010, words: [
         store.SoldWord(
           item_guid: bought.item_guid,
-          random_stats: 0,
-          charges: 5,
-          item_flags: 0,
-          expires_at_unix_ms: None,
+          words: store.ItemWords(
+            random_stats: 0,
+            charges: 5,
+            item_flags: 0,
+            expires_at_unix_ms: None,
+          ),
         ),
       ]),
     )
     as "a sale answers the charges the sold stack held, for the buyback entry"
   let #(_, loaded, unset) = login_unset(store:, account:, character_id:)
   assert unset == [] as "no row a statement made is null"
-  let charges_at = fn(index) { item_in_bag(items: loaded, index:).charges }
+  let charges_at = fn(index) {
+    item_in_bag(items: loaded, index:).words.charges
+  }
   assert #(charges_at(0), charges_at(6), charges_at(7)) == #(4, 7, 4)
     as "the load returns the created stack's charges, the reward's, and the split's copy of its source's"
   assert item_in_bag(items: loaded, index: 7).item_guid == split_guid
@@ -5613,7 +5653,10 @@ pub fn a_spend_changes_the_row_only_as_held_test() -> Nil {
       account:,
       character_id:,
       epoch:,
-      item: HeldItem(..charged, charges: 2),
+      item: HeldItem(
+        ..charged,
+        words: store.ItemWords(..charged.words, charges: 2),
+      ),
       stack_count: 1,
       charges: 1,
     )
@@ -5661,7 +5704,8 @@ pub fn a_spend_changes_the_row_only_as_held_test() -> Nil {
     as "the spend of the charged item as held lowers its charges"
   let #(epoch, held) =
     account_store_support.login(store:, account:, character_id:)
-  assert item_in_bag(items: held, index: 2) == HeldItem(..charged, charges: 2)
+  assert item_in_bag(items: held, index: 2)
+    == HeldItem(..charged, words: store.ItemWords(..charged.words, charges: 2))
     as "the row holds the lowered charges"
   // The delete a last charge asks is fenced on the held charges too.
   assert destroy(
@@ -5669,20 +5713,27 @@ pub fn a_spend_changes_the_row_only_as_held_test() -> Nil {
       account:,
       character_id:,
       epoch:,
-      item: HeldItem(..charged, charges: 3),
+      item: HeldItem(
+        ..charged,
+        words: store.ItemWords(..charged.words, charges: 3),
+      ),
     )
     == ForItems(ItemsNotSaved)
     as "a delete with the held place and count but other charges changes nothing"
   let #(epoch, held) =
     account_store_support.login(store:, account:, character_id:)
-  assert item_in_bag(items: held, index: 2) == HeldItem(..charged, charges: 2)
+  assert item_in_bag(items: held, index: 2)
+    == HeldItem(..charged, words: store.ItemWords(..charged.words, charges: 2))
     as "the charged item is still held"
   assert destroy(
       store:,
       account:,
       character_id:,
       epoch:,
-      item: HeldItem(..charged, charges: 2),
+      item: HeldItem(
+        ..charged,
+        words: store.ItemWords(..charged.words, charges: 2),
+      ),
     )
     == ForItems(ItemsSaved)
     as "a delete with the values held removes it"
@@ -5813,7 +5864,7 @@ pub fn a_move_sets_the_flag_bits_it_carries_and_never_clears_one_test() -> Nil {
           item.item_guid,
         )
       {
-        True -> Ok(#(item.item_guid, item.item_flags))
+        True -> Ok(#(item.item_guid, item.words.item_flags))
         False -> Error(Nil)
       }
     })
@@ -6009,16 +6060,18 @@ pub fn split_sale_and_purchase_rows_hold_their_flags_test() -> Nil {
   let #(epoch, items, unset) = login_unset(store:, account:, character_id:)
   assert unset == [] as "both rows hold their charges"
   let stack = item_in_bag(items:, index: 0)
-  assert stack.item_flags == 1 as "the load returns the byte"
+  assert stack.words.item_flags == 1 as "the load returns the byte"
   let new_stack = fn(bag_index, item_flags) {
     store.NewStack(
       location: 1,
       bag_index:,
       stack_count: 1,
-      random_stats: 0,
-      charges: 0,
-      item_flags:,
-      expires_at_unix_ms: None,
+      words: store.ItemWords(
+        random_stats: 0,
+        charges: 0,
+        item_flags:,
+        expires_at_unix_ms: None,
+      ),
     )
   }
   let assert ForItems(store.Bought(made: [bought_back, bought], ..)) =
@@ -6035,7 +6088,7 @@ pub fn split_sale_and_purchase_rows_hold_their_flags_test() -> Nil {
       make: [new_stack(5, 1), new_stack(6, 0)],
     )
     as "a purchase is saved"
-  assert #(bought_back.item_flags, bought.item_flags) == #(1, 0)
+  assert #(bought_back.words.item_flags, bought.words.item_flags) == #(1, 0)
     as "a purchase stores and answers the byte each new stack is given"
   let assert ForItems(store.TurnedIn(made: [rewarded_back, rewarded], ..)) =
     turn_in(
@@ -6055,7 +6108,7 @@ pub fn split_sale_and_purchase_rows_hold_their_flags_test() -> Nil {
       ],
     )
     as "a turn-in is saved"
-  assert #(rewarded_back.item_flags, rewarded.item_flags) == #(1, 0)
+  assert #(rewarded_back.words.item_flags, rewarded.words.item_flags) == #(1, 0)
     as "a turn-in stores and answers the byte each new stack is given"
   assert #(
       item_flags_of(store:, guid: bought_back.item_guid),
@@ -6104,17 +6157,21 @@ pub fn split_sale_and_purchase_rows_hold_their_flags_test() -> Nil {
       store.Sold(amount: 1010, words: [
         store.SoldWord(
           item_guid: unbound,
-          random_stats: 0,
-          charges: 0,
-          item_flags: 0,
-          expires_at_unix_ms: None,
+          words: store.ItemWords(
+            random_stats: 0,
+            charges: 0,
+            item_flags: 0,
+            expires_at_unix_ms: None,
+          ),
         ),
         store.SoldWord(
           item_guid: split_guid,
-          random_stats: 0,
-          charges: 0,
-          item_flags: 1,
-          expires_at_unix_ms: None,
+          words: store.ItemWords(
+            random_stats: 0,
+            charges: 0,
+            item_flags: 1,
+            expires_at_unix_ms: None,
+          ),
         ),
       ]),
     )
@@ -6196,10 +6253,12 @@ fn timed_stack(
     location: 1,
     bag_index:,
     stack_count: 1,
-    random_stats: 0,
-    charges: 0,
-    item_flags: 0,
-    expires_at_unix_ms:,
+    words: store.ItemWords(
+      random_stats: 0,
+      charges: 0,
+      item_flags: 0,
+      expires_at_unix_ms:,
+    ),
   )
 }
 
@@ -6260,7 +6319,7 @@ pub fn an_item_time_is_saved_only_for_the_row_and_epoch_held_test() -> Nil {
   let #(epoch, items, unset) = login_unset(store:, account:, character_id:)
   assert unset == [] as "the rows hold their charges"
   assert list.map([0, 1, 2], fn(index) {
-      item_in_bag(items:, index:).expires_at_unix_ms
+      item_in_bag(items:, index:).words.expires_at_unix_ms
     })
     == [Some(5_000_000_000_000), Some(2_000_000_000_000), None]
     as "the load returns the moment each row holds"
@@ -6305,7 +6364,10 @@ pub fn an_item_time_is_saved_only_for_the_row_and_epoch_held_test() -> Nil {
       ],
     )
     as "a purchase is saved"
-  assert #(bought.expires_at_unix_ms, bought_back.expires_at_unix_ms)
+  assert #(
+      bought.words.expires_at_unix_ms,
+      bought_back.words.expires_at_unix_ms,
+    )
     == #(Some(9_000_000_000_000), Some(1_000_000_000_000))
     as "the answer names the moment each new stack was made with"
   assert #(
@@ -6332,7 +6394,7 @@ pub fn an_item_time_is_saved_only_for_the_row_and_epoch_held_test() -> Nil {
       ],
     )
     as "a turn-in is saved"
-  assert rewarded.expires_at_unix_ms == Some(3_000_000_000_000)
+  assert rewarded.words.expires_at_unix_ms == Some(3_000_000_000_000)
     && expires_at_of(store:, guid: rewarded.item_guid)
     == Some(3_000_000_000_000)
     as "a reward stack is made with its moment"
@@ -6427,17 +6489,21 @@ pub fn an_item_time_is_saved_only_for_the_row_and_epoch_held_test() -> Nil {
       store.Sold(amount: 1010, words: [
         store.SoldWord(
           item_guid: bought.item_guid,
-          random_stats: 0,
-          charges: 0,
-          item_flags: 0,
-          expires_at_unix_ms: Some(9_000_000_000_000),
+          words: store.ItemWords(
+            random_stats: 0,
+            charges: 0,
+            item_flags: 0,
+            expires_at_unix_ms: Some(9_000_000_000_000),
+          ),
         ),
         store.SoldWord(
           item_guid: split_lasting,
-          random_stats: 0,
-          charges: 0,
-          item_flags: 0,
-          expires_at_unix_ms: None,
+          words: store.ItemWords(
+            random_stats: 0,
+            charges: 0,
+            item_flags: 0,
+            expires_at_unix_ms: None,
+          ),
         ),
       ]),
     )
@@ -6462,7 +6528,7 @@ pub fn an_item_made_by_each_statement_has_no_time_saved_test() -> Nil {
     )
     as "a stack that never runs out"
   let #(epoch, items, _) = login_unset(store:, account:, character_id:)
-  assert list.all(items, fn(item) { item.expires_at_unix_ms == None })
+  assert list.all(items, fn(item) { item.words.expires_at_unix_ms == None })
     as "the starting items and the stack hold no moment, and the load returns none"
   let assert ForItems(store.Bought(made: [bought], ..)) =
     buy_item(
@@ -6506,7 +6572,7 @@ pub fn an_item_made_by_each_statement_has_no_time_saved_test() -> Nil {
       to: 8,
     )
     as "a split is saved"
-  assert [bought.expires_at_unix_ms, rewarded.expires_at_unix_ms]
+  assert [bought.words.expires_at_unix_ms, rewarded.words.expires_at_unix_ms]
     == [None, None]
     as "the answers name no moment"
   assert list.map([bought.item_guid, rewarded.item_guid, split_guid], fn(guid) {

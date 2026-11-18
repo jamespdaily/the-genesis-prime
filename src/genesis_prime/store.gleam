@@ -10,7 +10,7 @@ import genesis_prime/table/id.{
 }
 import gleam/bool
 import gleam/list
-import gleam/option.{type Option}
+import gleam/option.{type Option, None}
 
 /// An account, keyed by the account table's id.
 pub type AccountId {
@@ -119,14 +119,8 @@ pub type Character {
   )
 }
 
-/// An item a character holds in its equipped slots, inventory or bank, as the
-/// character_item table keeps it. `item_guid` is the item's identity for every
-/// later message about it: the database made it with the row, never makes it
-/// again, and it stays with the item when the item changes place
-/// (opcode.0x111.guid). `location` is 0 (equipped), 1 (inventory) or 2 (bank)
-/// and `bag_index` the slot in it (the client's own numbers; the table's checks
-/// hold the ranges); ability items (location 4) are not stored. `stack_count` is
-/// 1 or more. `random_stats` is the item's random-stat word as the client reads it
+/// The four words an item carries beside its place, as the character_item table keeps them.
+/// `random_stats` is the item's random-stat word as the client reads it
 /// (`opcode.0x111.shared_item_random_stats`): chosen when the item was made, sent as it is
 /// with the item, and 0 for an item with no roll. `charges` are the charges the item has
 /// left as the client reads them (`opcode.0x111.charges`): its row's maxCharges when it is
@@ -136,7 +130,33 @@ pub type Character {
 /// split. `expires_at_unix_ms` is the moment a timed item runs out, in Unix milliseconds
 /// (`Item2.expirationTimeMinutes` after the item was made, genesis_prime/game/item_expiry):
 /// `None` for an item that does not, the source's for a split and the earlier of the two for
-/// a merge.
+/// a merge. A stack made, held, sold and bought back carries the same record at each step.
+pub type ItemWords {
+  ItemWords(
+    random_stats: Int,
+    charges: Int,
+    item_flags: Int,
+    expires_at_unix_ms: Option(Int),
+  )
+}
+
+/// The words of an item made with no roll, no charges, no flags and no time limit.
+pub const plain_words =
+  ItemWords(
+    random_stats: 0,
+    charges: 0,
+    item_flags: 0,
+    expires_at_unix_ms: None,
+  )
+
+/// An item a character holds in its equipped slots, inventory or bank, as the
+/// character_item table keeps it. `item_guid` is the item's identity for every
+/// later message about it: the database made it with the row, never makes it
+/// again, and it stays with the item when the item changes place
+/// (opcode.0x111.guid). `location` is 0 (equipped), 1 (inventory) or 2 (bank)
+/// and `bag_index` the slot in it (the client's own numbers; the table's checks
+/// hold the ranges); ability items (location 4) are not stored. `stack_count` is
+/// 1 or more. `words` are the item's four stored words.
 pub type HeldItem {
   HeldItem(
     item_guid: Int,
@@ -144,10 +164,7 @@ pub type HeldItem {
     location: Int,
     bag_index: Int,
     stack_count: Int,
-    random_stats: Int,
-    charges: Int,
-    item_flags: Int,
-    expires_at_unix_ms: Option(Int),
+    words: ItemWords,
   )
 }
 
@@ -472,31 +489,15 @@ pub type StackGrowth {
 }
 
 /// A stack a purchase or a reward makes, at a place that holds no item: the place, the
-/// count, the random-stat word, the charges, the flags byte and the moment it runs out of
-/// the new row, whose Item2 is the request's.
+/// count and the words of the new row, whose Item2 is the request's.
 pub type NewStack {
-  NewStack(
-    location: Int,
-    bag_index: Int,
-    stack_count: Int,
-    random_stats: Int,
-    charges: Int,
-    item_flags: Int,
-    expires_at_unix_ms: Option(Int),
-  )
+  NewStack(location: Int, bag_index: Int, stack_count: Int, words: ItemWords)
 }
 
-/// The random-stat word (`opcode.0xba.random_stats`: the buyback entry carries it), the
-/// charges, the flags byte and the moment it runs out of a stack a sale sold, as the
-/// database held them.
+/// The words of a stack a sale sold, as the database held them: the random-stat word is what
+/// the buyback entry carries to the client (`opcode.0xba.random_stats`).
 pub type SoldWord {
-  SoldWord(
-    item_guid: Int,
-    random_stats: Int,
-    charges: Int,
-    item_flags: Int,
-    expires_at_unix_ms: Option(Int),
-  )
+  SoldWord(item_guid: Int, words: ItemWords)
 }
 
 /// What the STS login asks the store.

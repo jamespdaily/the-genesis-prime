@@ -120,10 +120,12 @@ fn in_bag(
     location: 1,
     bag_index: index,
     stack_count: count,
-    random_stats: 0,
-    charges: 0,
-    item_flags: 0,
-    expires_at_unix_ms: None,
+    words: store.ItemWords(
+      random_stats: 0,
+      charges: 0,
+      item_flags: 0,
+      expires_at_unix_ms: None,
+    ),
   )
 }
 
@@ -224,10 +226,12 @@ fn held_back() -> Buyback {
       quantity: 3,
       currency_type_id: 1,
       amount: 40,
-      random_stats: 0,
-      charges: 0,
-      item_flags: 0,
-      expires_at_unix_ms: None,
+      words: store.ItemWords(
+        random_stats: 0,
+        charges: 0,
+        item_flags: 0,
+        expires_at_unix_ms: None,
+      ),
     ),
     BuybackEntry(
       buyback_id: 3,
@@ -235,10 +239,12 @@ fn held_back() -> Buyback {
       quantity: 7,
       currency_type_id: 1,
       amount: 91,
-      random_stats: 0,
-      charges: 0,
-      item_flags: 0,
-      expires_at_unix_ms: None,
+      words: store.ItemWords(
+        random_stats: 0,
+        charges: 0,
+        item_flags: 0,
+        expires_at_unix_ms: None,
+      ),
     ),
   ])
 }
@@ -325,10 +331,12 @@ pub fn a_buy_at_the_shown_price_asks_the_store_to_take_the_price_and_add_the_ite
           location: 1,
           bag_index: 0,
           stack_count: 1,
-          random_stats: 0,
-          charges: 1,
-          item_flags: 0,
-          expires_at_unix_ms: None,
+          words: store.ItemWords(
+            random_stats: 0,
+            charges: 1,
+            item_flags: 0,
+            expires_at_unix_ms: None,
+          ),
         ),
       ],
     )
@@ -352,10 +360,12 @@ pub fn a_buy_at_the_shown_price_asks_the_store_to_take_the_price_and_add_the_ite
           location: 1,
           bag_index: 0,
           stack_count: 1,
-          random_stats: 0,
-          charges: 1,
-          item_flags: 0,
-          expires_at_unix_ms: None,
+          words: store.ItemWords(
+            random_stats: 0,
+            charges: 1,
+            item_flags: 0,
+            expires_at_unix_ms: None,
+          ),
         ),
       ],
       item2_id: Item2Id(14_838),
@@ -377,10 +387,12 @@ pub fn a_buy_of_several_lots_gives_stack_count_times_quantity_items_test() -> Ni
         location: 1,
         bag_index: 0,
         stack_count: 15,
-        random_stats: 0,
-        charges: 1,
-        item_flags: 0,
-        expires_at_unix_ms: None,
+        words: store.ItemWords(
+          random_stats: 0,
+          charges: 1,
+          item_flags: 0,
+          expires_at_unix_ms: None,
+        ),
       ),
     ]
     as "20791 stacks to 99, so the 15 items are one stack"
@@ -405,10 +417,12 @@ pub fn a_buy_fills_a_held_stack_with_room_before_an_empty_slot_test() -> Nil {
         location: 1,
         bag_index: 0,
         stack_count: 3,
-        random_stats: 0,
-        charges: 1,
-        item_flags: 0,
-        expires_at_unix_ms: None,
+        words: store.ItemWords(
+          random_stats: 0,
+          charges: 1,
+          item_flags: 0,
+          expires_at_unix_ms: None,
+        ),
       ),
     ]
     as "the rest goes to the lowest empty slot"
@@ -421,28 +435,34 @@ pub fn a_buy_fills_a_held_stack_with_room_before_an_empty_slot_test() -> Nil {
         location: 1,
         bag_index: 0,
         stack_count: 50,
-        random_stats: 0,
-        charges: 1,
-        item_flags: 0,
-        expires_at_unix_ms: None,
+        words: store.ItemWords(
+          random_stats: 0,
+          charges: 1,
+          item_flags: 0,
+          expires_at_unix_ms: None,
+        ),
       ),
       NewStack(
         location: 1,
         bag_index: 1,
         stack_count: 50,
-        random_stats: 0,
-        charges: 1,
-        item_flags: 0,
-        expires_at_unix_ms: None,
+        words: store.ItemWords(
+          random_stats: 0,
+          charges: 1,
+          item_flags: 0,
+          expires_at_unix_ms: None,
+        ),
       ),
       NewStack(
         location: 1,
         bag_index: 2,
         stack_count: 20,
-        random_stats: 0,
-        charges: 1,
-        item_flags: 0,
-        expires_at_unix_ms: None,
+        words: store.ItemWords(
+          random_stats: 0,
+          charges: 1,
+          item_flags: 0,
+          expires_at_unix_ms: None,
+        ),
       ),
     ]
     as "a stack holds at most the Item2's maxStackCount"
@@ -582,11 +602,8 @@ fn two_places() -> #(vendor_purchase.Purchase, List(HeldItem)) {
 pub fn a_saved_buy_sends_the_new_total_then_the_items_with_reason_vendor_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(purchase, items) = two_places()
-  let made =
-    HeldItem(
-      ..in_bag(guid: 500, item2_id: 14_838, index: 0, count: 3),
-      charges: 7,
-    )
+  let bag = in_bag(guid: 500, item2_id: 14_838, index: 0, count: 3)
+  let made = HeldItem(..bag, words: store.ItemWords(..bag.words, charges: 7))
   let listed = held_back()
   let #(held, held_credits, buyback, effects) =
     vendor_purchase.answered(
@@ -719,10 +736,12 @@ pub fn a_buy_back_takes_the_entry_price_and_returns_its_items_test() -> Nil {
           location: 1,
           bag_index: 0,
           stack_count: 1,
-          random_stats: 0,
-          charges: 0,
-          item_flags: 0,
-          expires_at_unix_ms: None,
+          words: store.ItemWords(
+            random_stats: 0,
+            charges: 0,
+            item_flags: 0,
+            expires_at_unix_ms: None,
+          ),
         ),
       ],
     )
@@ -746,10 +765,12 @@ pub fn a_buy_back_takes_the_entry_price_and_returns_its_items_test() -> Nil {
           location: 1,
           bag_index: 0,
           stack_count: 1,
-          random_stats: 0,
-          charges: 0,
-          item_flags: 0,
-          expires_at_unix_ms: None,
+          words: store.ItemWords(
+            random_stats: 0,
+            charges: 0,
+            item_flags: 0,
+            expires_at_unix_ms: None,
+          ),
         ),
       ],
       item2_id: Item2Id(14_838),
@@ -780,10 +801,12 @@ pub fn a_buy_back_takes_the_entry_price_and_returns_its_items_test() -> Nil {
         quantity: 7,
         currency_type_id: 1,
         amount: 91,
-        random_stats: 0,
-        charges: 0,
-        item_flags: 0,
-        expires_at_unix_ms: None,
+        words: store.ItemWords(
+          random_stats: 0,
+          charges: 0,
+          item_flags: 0,
+          expires_at_unix_ms: None,
+        ),
       ),
     ])
     as "entry 2 leaves the list and nothing else changes, not even the next id"
@@ -960,12 +983,16 @@ pub fn a_bought_item_is_made_with_its_rows_charges_test() -> Nil {
             quantity: case_.quantity,
           ),
           items: list.map(case_.held, fn(item) {
-            HeldItem(..item, charges: case_.max_charges)
+            HeldItem(
+              ..item,
+              words: store.ItemWords(..item.words, charges: case_.max_charges),
+            )
           }),
           tables:,
         ),
       )
-    assert list.map(purchase.make, fn(stack) { stack.charges }) == case_.made
+    assert list.map(purchase.make, fn(stack) { stack.words.charges })
+      == case_.made
       as case_.why
     assert list.length(purchase.grow) == case_.grown as case_.why
   })
@@ -989,10 +1016,12 @@ pub fn a_bought_back_item_returns_with_the_charges_it_was_sold_with_test() -> Ni
       quantity:,
       currency_type_id: 1,
       amount: 10,
-      random_stats: 0,
-      charges:,
-      item_flags: 0,
-      expires_at_unix_ms: None,
+      words: store.ItemWords(
+        random_stats: 0,
+        charges:,
+        item_flags: 0,
+        expires_at_unix_ms: None,
+      ),
     )
   }
   let buyback =
@@ -1003,9 +1032,9 @@ pub fn a_bought_back_item_returns_with_the_charges_it_was_sold_with_test() -> Ni
   let back = fn(buyback_id) {
     asked_back(scene: Scene(..buying_back(buyback_id:), buyback:, tables:))
   }
-  assert list.map(back(1).make, fn(stack) { stack.charges }) == [40]
+  assert list.map(back(1).make, fn(stack) { stack.words.charges }) == [40]
     as "the single item holds the 40 it was sold with, not its row's 99"
-  assert list.map(back(2).make, fn(stack) { stack.charges }) == [1]
+  assert list.map(back(2).make, fn(stack) { stack.words.charges }) == [1]
     as "the stackable stack holds the 1 it was sold with"
 }
 
@@ -1038,7 +1067,7 @@ pub fn items_a_purchase_makes_are_unbound_test() -> Nil {
           tables:,
         ),
       )
-    assert list.map(purchase.make, fn(stack) { stack.item_flags }) == made
+    assert list.map(purchase.make, fn(stack) { stack.words.item_flags }) == made
       as why
     assert list.length(purchase.grow) == grown as why
   })
@@ -1055,19 +1084,21 @@ pub fn a_bought_back_item_returns_with_the_flags_it_was_sold_with_test() -> Nil 
       quantity: 1,
       currency_type_id: 1,
       amount: 10,
-      random_stats: 0,
-      charges: 0,
-      item_flags:,
-      expires_at_unix_ms: None,
+      words: store.ItemWords(
+        random_stats: 0,
+        charges: 0,
+        item_flags:,
+        expires_at_unix_ms: None,
+      ),
     )
   }
   let buyback = Buyback(next_id: 3, entries: [entry(1, 1), entry(2, 0)])
   let back = fn(buyback_id) {
     asked_back(scene: Scene(..buying_back(buyback_id:), buyback:))
   }
-  assert list.map(back(1).make, fn(stack) { stack.item_flags }) == [1]
+  assert list.map(back(1).make, fn(stack) { stack.words.item_flags }) == [1]
     as "the soulbound item comes back soulbound"
-  assert list.map(back(2).make, fn(stack) { stack.item_flags }) == [0]
+  assert list.map(back(2).make, fn(stack) { stack.words.item_flags }) == [0]
     as "the unbound item comes back unbound"
 }
 
@@ -1130,10 +1161,12 @@ fn sold_elsewhere() -> Buyback {
       quantity: 1,
       currency_type_id: 7,
       amount: 60,
-      random_stats: 0,
-      charges: 0,
-      item_flags: 0,
-      expires_at_unix_ms: None,
+      words: store.ItemWords(
+        random_stats: 0,
+        charges: 0,
+        item_flags: 0,
+        expires_at_unix_ms: None,
+      ),
     ),
     BuybackEntry(
       buyback_id: 6,
@@ -1141,10 +1174,12 @@ fn sold_elsewhere() -> Buyback {
       quantity: 1,
       currency_type_id: 1,
       amount: 78,
-      random_stats: 0,
-      charges: 0,
-      item_flags: 0,
-      expires_at_unix_ms: None,
+      words: store.ItemWords(
+        random_stats: 0,
+        charges: 0,
+        item_flags: 0,
+        expires_at_unix_ms: None,
+      ),
     ),
   ])
 }
@@ -1185,10 +1220,12 @@ pub fn a_buy_back_of_an_entry_sold_for_glory_takes_glory_and_sends_its_total_tes
           location: 1,
           bag_index: 0,
           stack_count: 1,
-          random_stats: 0,
-          charges: 0,
-          item_flags: 0,
-          expires_at_unix_ms: None,
+          words: store.ItemWords(
+            random_stats: 0,
+            charges: 0,
+            item_flags: 0,
+            expires_at_unix_ms: None,
+          ),
         ),
       ],
     )
@@ -1212,10 +1249,12 @@ pub fn a_buy_back_of_an_entry_sold_for_glory_takes_glory_and_sends_its_total_tes
           location: 1,
           bag_index: 0,
           stack_count: 1,
-          random_stats: 0,
-          charges: 0,
-          item_flags: 0,
-          expires_at_unix_ms: None,
+          words: store.ItemWords(
+            random_stats: 0,
+            charges: 0,
+            item_flags: 0,
+            expires_at_unix_ms: None,
+          ),
         ),
       ],
       item2_id: Item2Id(16_053),
@@ -1300,10 +1339,12 @@ pub fn a_bought_back_worn_item_returns_to_the_bags_test() -> Nil {
         location: 1,
         bag_index: 1,
         stack_count: 1,
-        random_stats: 0,
-        charges: 0,
-        item_flags: 0,
-        expires_at_unix_ms: None,
+        words: store.ItemWords(
+          random_stats: 0,
+          charges: 0,
+          item_flags: 0,
+          expires_at_unix_ms: None,
+        ),
       ),
     ]
     as "a new stack in the bags: the entry holds no worn place"
@@ -1376,10 +1417,12 @@ pub fn buying_back_an_item_keeps_its_word_and_draws_nothing_test() -> Nil {
           quantity: 1,
           currency_type_id: 1,
           amount: 40,
-          random_stats: word,
-          charges: 0,
-          item_flags: 0,
-          expires_at_unix_ms: None,
+          words: store.ItemWords(
+            random_stats: word,
+            charges: 0,
+            item_flags: 0,
+            expires_at_unix_ms: None,
+          ),
         ),
       ]),
     )
@@ -1390,10 +1433,12 @@ pub fn buying_back_an_item_keeps_its_word_and_draws_nothing_test() -> Nil {
         location: 1,
         bag_index: 0,
         stack_count: 1,
-        random_stats: word,
-        charges: 0,
-        item_flags: 0,
-        expires_at_unix_ms: None,
+        words: store.ItemWords(
+          random_stats: word,
+          charges: 0,
+          item_flags: 0,
+          expires_at_unix_ms: None,
+        ),
       ),
     ]
     as "the stack is placed with the word the item was sold with"
@@ -1417,10 +1462,12 @@ pub fn buying_back_an_item_keeps_its_word_and_draws_nothing_test() -> Nil {
       location: 1,
       bag_index: 0,
       stack_count: 1,
-      random_stats: word,
-      charges: 0,
-      item_flags: 0,
-      expires_at_unix_ms: None,
+      words: store.ItemWords(
+        random_stats: word,
+        charges: 0,
+        item_flags: 0,
+        expires_at_unix_ms: None,
+      ),
     )
   let #(_, _, _, effects) =
     vendor_purchase.answered(
@@ -1461,10 +1508,12 @@ pub fn buying_a_random_stat_item_rolls_it_and_sends_the_word_test() -> Nil {
         location: 1,
         bag_index: 0,
         stack_count: 1,
-        random_stats: 0x0100000000050401,
-        charges: 0,
-        item_flags: 0,
-        expires_at_unix_ms: None,
+        words: store.ItemWords(
+          random_stats: 0x0100000000050401,
+          charges: 0,
+          item_flags: 0,
+          expires_at_unix_ms: None,
+        ),
       ),
     ]
     as "the stack is made with the rolled word"
@@ -1475,10 +1524,12 @@ pub fn buying_a_random_stat_item_rolls_it_and_sends_the_word_test() -> Nil {
       location: 1,
       bag_index: 0,
       stack_count: 1,
-      random_stats: 0x0100000000050401,
-      charges: 0,
-      item_flags: 0,
-      expires_at_unix_ms: None,
+      words: store.ItemWords(
+        random_stats: 0x0100000000050401,
+        charges: 0,
+        item_flags: 0,
+        expires_at_unix_ms: None,
+      ),
     )
   let #(_, _, _, effects) =
     vendor_purchase.answered(
@@ -1520,10 +1571,12 @@ pub fn buying_an_item_without_random_stats_draws_nothing_test() -> Nil {
       location: 1,
       bag_index: 0,
       stack_count: 1,
-      random_stats: 0,
-      charges: 0,
-      item_flags: 0,
-      expires_at_unix_ms: None,
+      words: store.ItemWords(
+        random_stats: 0,
+        charges: 0,
+        item_flags: 0,
+        expires_at_unix_ms: None,
+      ),
     )
   let #(_, _, _, effects) =
     vendor_purchase.answered(

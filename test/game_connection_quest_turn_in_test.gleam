@@ -157,10 +157,12 @@ pub fn turned_in_rewards_are_written_before_the_experience_and_the_state_test() 
           location:,
           bag_index:,
           stack_count:,
-          random_stats: 0,
-          charges:,
-          item_flags: 0,
-          expires_at_unix_ms: None,
+          words: store.ItemWords(
+            random_stats: 0,
+            charges:,
+            item_flags: 0,
+            expires_at_unix_ms: None,
+          ),
         ),
       ] = one.make
         as "one stack of each, the Item2s' counts being 1"
@@ -170,10 +172,12 @@ pub fn turned_in_rewards_are_written_before_the_experience_and_the_state_test() 
         location:,
         bag_index:,
         stack_count:,
-        random_stats: 0,
-        charges:,
-        item_flags: 0,
-        expires_at_unix_ms: None,
+        words: store.ItemWords(
+          random_stats: 0,
+          charges:,
+          item_flags: 0,
+          expires_at_unix_ms: None,
+        ),
       )
     })
   let #(_, answered) =
@@ -211,10 +215,12 @@ pub fn reward_items_advance_the_held_item_objectives_of_other_quests_test() -> N
           location:,
           bag_index:,
           stack_count:,
-          random_stats: 0,
-          charges:,
-          item_flags: 0,
-          expires_at_unix_ms: None,
+          words: store.ItemWords(
+            random_stats: 0,
+            charges:,
+            item_flags: 0,
+            expires_at_unix_ms: None,
+          ),
         ),
       ] = one.make
         as "one stack of each, the Item2s' counts being 1"
@@ -224,10 +230,12 @@ pub fn reward_items_advance_the_held_item_objectives_of_other_quests_test() -> N
         location:,
         bag_index:,
         stack_count:,
-        random_stats: 0,
-        charges:,
-        item_flags: 0,
-        expires_at_unix_ms: None,
+        words: store.ItemWords(
+          random_stats: 0,
+          charges:,
+          item_flags: 0,
+          expires_at_unix_ms: None,
+        ),
       )
     })
   let #(_, answered) =
@@ -407,7 +415,9 @@ pub fn a_turn_in_asks_the_store_to_make_a_random_stat_reward_with_a_rolled_word_
   let assert TurnInQuest(placed: [placed], ..) = asked_turn_in(taken:)
     as "one reward item"
   assert placed.item2_id == Item2Id(48_169)
-  let assert [NewStack(random_stats: word, ..)] = placed.make as "one stack"
+  let assert [NewStack(words: store.ItemWords(random_stats: word, ..), ..)] =
+    placed.make
+    as "one stack"
   assert random_stat_word.has_data(word:)
     as "the stack is made with a word the client reads"
   let choices =

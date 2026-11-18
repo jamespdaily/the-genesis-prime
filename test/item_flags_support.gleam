@@ -74,10 +74,12 @@ pub fn held_with(
     location:,
     bag_index:,
     stack_count: 1,
-    random_stats: 0,
-    charges: 0,
-    item_flags:,
-    expires_at_unix_ms: None,
+    words: store.ItemWords(
+      random_stats: 0,
+      charges: 0,
+      item_flags:,
+      expires_at_unix_ms: None,
+    ),
   )
 }
 
@@ -140,5 +142,5 @@ pub fn frame_ids(effects: List(Effect)) -> List(Int) {
 pub fn flags_of(items items: List(HeldItem), guid guid: Int) -> Int {
   let assert Ok(item) = list.find(items, fn(item) { item.item_guid == guid })
     as "the item is held"
-  item.item_flags
+  item.words.item_flags
 }

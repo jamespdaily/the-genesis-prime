@@ -94,10 +94,12 @@ fn held() -> List(HeldItem) {
       location: 1,
       bag_index: 0,
       stack_count: 1,
-      random_stats: 0,
-      charges: 0,
-      item_flags: 0,
-      expires_at_unix_ms: None,
+      words: store.ItemWords(
+        random_stats: 0,
+        charges: 0,
+        item_flags: 0,
+        expires_at_unix_ms: None,
+      ),
     ),
   ])
 }
@@ -513,10 +515,12 @@ fn with_spare(item2_id: Int) -> List(HeldItem) {
       location: 1,
       bag_index: 1,
       stack_count: 1,
-      random_stats: 0,
-      charges: 0,
-      item_flags: 0,
-      expires_at_unix_ms: None,
+      words: store.ItemWords(
+        random_stats: 0,
+        charges: 0,
+        item_flags: 0,
+        expires_at_unix_ms: None,
+      ),
     ),
   ])
 }
@@ -675,10 +679,12 @@ fn in_bag(
     location: 1,
     bag_index: index,
     stack_count: count,
-    random_stats: 0,
-    charges: 0,
-    item_flags: 0,
-    expires_at_unix_ms: None,
+    words: store.ItemWords(
+      random_stats: 0,
+      charges: 0,
+      item_flags: 0,
+      expires_at_unix_ms: None,
+    ),
   )
 }
 
@@ -1176,10 +1182,12 @@ fn worn_with_slot_zero(item2_id: Int) -> List(HeldItem) {
       location: 1,
       bag_index: 0,
       stack_count: 1,
-      random_stats: 0,
-      charges: 0,
-      item_flags: 0,
-      expires_at_unix_ms: None,
+      words: store.ItemWords(
+        random_stats: 0,
+        charges: 0,
+        item_flags: 0,
+        expires_at_unix_ms: None,
+      ),
     ),
   ])
 }
@@ -1358,10 +1366,12 @@ fn with_two_bags() -> List(HeldItem) {
       location: 0,
       bag_index: 17,
       stack_count: 1,
-      random_stats: 0,
-      charges: 0,
-      item_flags: 0,
-      expires_at_unix_ms: None,
+      words: store.ItemWords(
+        random_stats: 0,
+        charges: 0,
+        item_flags: 0,
+        expires_at_unix_ms: None,
+      ),
     ),
     HeldItem(
       item_guid: 21,
@@ -1369,10 +1379,12 @@ fn with_two_bags() -> List(HeldItem) {
       location: 1,
       bag_index: 0,
       stack_count: 1,
-      random_stats: 0,
-      charges: 0,
-      item_flags: 0,
-      expires_at_unix_ms: None,
+      words: store.ItemWords(
+        random_stats: 0,
+        charges: 0,
+        item_flags: 0,
+        expires_at_unix_ms: None,
+      ),
     ),
   ])
 }
@@ -1490,10 +1502,12 @@ fn worn_bag(
     location: 0,
     bag_index: slot,
     stack_count: 1,
-    random_stats: 0,
-    charges: 0,
-    item_flags: 0,
-    expires_at_unix_ms: None,
+    words: store.ItemWords(
+      random_stats: 0,
+      charges: 0,
+      item_flags: 0,
+      expires_at_unix_ms: None,
+    ),
   )
 }
 
@@ -1872,11 +1886,8 @@ pub fn a_split_stack_keeps_the_charges_of_its_source_test() -> Nil {
   ]
   list.each(cases, fn(row) {
     let #(why, item2, charges) = row
-    let stack =
-      HeldItem(
-        ..in_bag(guid: 20, item2_id: item2, index: 1, count: 10),
-        charges:,
-      )
+    let bag = in_bag(guid: 20, item2_id: item2, index: 1, count: 10)
+    let stack = HeldItem(..bag, words: store.ItemWords(..bag.words, charges:))
     let items = list.append(held(), [stack])
     let moving =
       asked(split_taken(
@@ -1895,7 +1906,7 @@ pub fn a_split_stack_keeps_the_charges_of_its_source_test() -> Nil {
       )
     let assert Ok(split) = list.find(made, fn(item) { item.item_guid == 77 })
       as "the new stack is held"
-    assert split.charges == charges as why
+    assert split.words.charges == charges as why
   })
 }
 
@@ -1903,11 +1914,8 @@ pub fn item_added_frames_carry_the_held_charges_test() -> Nil {
   use <- owned_test.run(10_000)
   // A split copies the source's charges (opcode.0x111.charges): the new stack's 0x111 holds
   // the 1 charge the source holds.
-  let stack =
-    HeldItem(
-      ..in_bag(guid: 20, item2_id: stackable(), index: 1, count: 10),
-      charges: 1,
-    )
+  let bag = in_bag(guid: 20, item2_id: stackable(), index: 1, count: 10)
+  let stack = HeldItem(..bag, words: store.ItemWords(..bag.words, charges: 1))
   let items = list.append(held(), [stack])
   let moving =
     asked(split_taken(
@@ -1959,8 +1967,15 @@ fn chest_scene(worn worn: Option(Int), spare spare: Int) -> List(HeldItem) {
   list.filter_map(held(), fn(item) {
     case item.item_guid, worn {
       1, None -> Error(Nil)
-      1, Some(item_flags) -> Ok(HeldItem(..item, item_flags:))
-      8, _ -> Ok(HeldItem(..item, item_flags: spare))
+      1, Some(item_flags) ->
+        Ok(HeldItem(..item, words: store.ItemWords(..item.words, item_flags:)))
+      8, _ ->
+        Ok(
+          HeldItem(
+            ..item,
+            words: store.ItemWords(..item.words, item_flags: spare),
+          ),
+        )
       _, _ -> Ok(item)
     }
   })
@@ -2172,11 +2187,9 @@ pub fn a_split_stack_keeps_the_flags_of_its_source_test() -> Nil {
   ]
   list.each(cases, fn(case_) {
     let #(why, item_flags) = case_
+    let bag = in_bag(guid: 20, item2_id: stackable(), index: 1, count: 10)
     let stack =
-      HeldItem(
-        ..in_bag(guid: 20, item2_id: stackable(), index: 1, count: 10),
-        item_flags:,
-      )
+      HeldItem(..bag, words: store.ItemWords(..bag.words, item_flags:))
     let items = list.append(held(), [stack])
     let moving =
       asked(split_taken(
@@ -2195,7 +2208,7 @@ pub fn a_split_stack_keeps_the_flags_of_its_source_test() -> Nil {
       )
     let assert Ok(split) = list.find(made, fn(item) { item.item_guid == 77 })
       as "the new stack is held"
-    assert split.item_flags == item_flags as why
+    assert split.words.item_flags == item_flags as why
     let assert [_, added] = item_flags_support.sent(effects)
     let assert Ok(item_added.ItemAdded(held_item:)) =
       item_added.decode(added.body)
@@ -2220,11 +2233,9 @@ pub fn item_added_frames_carry_the_time_left_test() -> Nil {
   ]
   list.each(cases, fn(row) {
     let #(expires_at_unix_ms, expected) = row
+    let bag = in_bag(guid: 20, item2_id: stackable(), index: 1, count: 10)
     let item =
-      HeldItem(
-        ..in_bag(guid: 20, item2_id: stackable(), index: 1, count: 10),
-        expires_at_unix_ms:,
-      )
+      HeldItem(..bag, words: store.ItemWords(..bag.words, expires_at_unix_ms:))
     let frame = inventory.held_item_frame(item:, now_unix_ms: now, reason: 0)
     let assert Ok(added) = item_added.decode(frame.body) as "the 0x111 decodes"
     assert added.held_item.item.time_left_ms == expected

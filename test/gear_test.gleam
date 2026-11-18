@@ -61,10 +61,12 @@ fn held_at(set set: Set, location location: Int) -> List(HeldItem) {
       location:,
       bag_index: pair.1,
       stack_count: 1,
-      random_stats: 0,
-      charges: 0,
-      item_flags: 0,
-      expires_at_unix_ms: None,
+      words: store.ItemWords(
+        random_stats: 0,
+        charges: 0,
+        item_flags: 0,
+        expires_at_unix_ms: None,
+      ),
     )
   })
 }
@@ -303,10 +305,12 @@ pub fn an_item_the_reader_refuses_is_worn_and_shown_but_gives_nothing_test() -> 
             location: 0,
             bag_index: 0,
             stack_count: 1,
-            random_stats: 0,
-            charges: 0,
-            item_flags: 0,
-            expires_at_unix_ms: None,
+            words: store.ItemWords(
+              random_stats: 0,
+              charges: 0,
+              item_flags: 0,
+              expires_at_unix_ms: None,
+            ),
           ),
         ])
       assert worn.properties == nothing as "a PvP item gives no properties"
@@ -342,10 +346,12 @@ pub fn an_item_the_reader_refuses_is_worn_and_shown_but_gives_nothing_test() -> 
             location: 0,
             bag_index: 0,
             stack_count: 1,
-            random_stats: 0,
-            charges: 0,
-            item_flags: 0,
-            expires_at_unix_ms: None,
+            words: store.ItemWords(
+              random_stats: 0,
+              charges: 0,
+              item_flags: 0,
+              expires_at_unix_ms: None,
+            ),
           ),
         ])
       assert worn.properties == nothing
@@ -437,10 +443,12 @@ pub fn an_item_whose_display_row_is_missing_is_not_drawn_and_gives_one_warning_t
             location: 0,
             bag_index: 0,
             stack_count: 1,
-            random_stats: 0,
-            charges: 0,
-            item_flags: 0,
-            expires_at_unix_ms: None,
+            words: store.ItemWords(
+              random_stats: 0,
+              charges: 0,
+              item_flags: 0,
+              expires_at_unix_ms: None,
+            ),
           ),
         ])
       assert worn.visuals == []
@@ -467,10 +475,12 @@ pub fn an_item_whose_display_row_is_missing_is_not_drawn_and_gives_one_warning_t
             location: 0,
             bag_index: 0,
             stack_count: 1,
-            random_stats: 0,
-            charges: 0,
-            item_flags: 0,
-            expires_at_unix_ms: None,
+            words: store.ItemWords(
+              random_stats: 0,
+              charges: 0,
+              item_flags: 0,
+              expires_at_unix_ms: None,
+            ),
           ),
         ])
       assert worn.visuals == [] as "an item with no display is not drawn"
@@ -493,10 +503,12 @@ fn one_item(
       location:,
       bag_index:,
       stack_count: 1,
-      random_stats: 0,
-      charges: 0,
-      item_flags: 0,
-      expires_at_unix_ms: None,
+      words: store.ItemWords(
+        random_stats: 0,
+        charges: 0,
+        item_flags: 0,
+        expires_at_unix_ms: None,
+      ),
     ),
   ]
 }
@@ -566,10 +578,12 @@ fn one_rolled(random_stats random_stats: Int) -> List(HeldItem) {
       location: 0,
       bag_index: 10,
       stack_count: 1,
-      random_stats:,
-      charges: 0,
-      item_flags: 0,
-      expires_at_unix_ms: None,
+      words: store.ItemWords(
+        random_stats:,
+        charges: 0,
+        item_flags: 0,
+        expires_at_unix_ms: None,
+      ),
     ),
   ]
 }

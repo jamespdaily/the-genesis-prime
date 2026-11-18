@@ -230,7 +230,8 @@ pub fn every_change_of_the_held_items_moves_the_timer_test() -> Nil {
   let assert AskStore(Items(store.BuyFromVendor(make: [made], ..))) =
     game_connection_support.ask_request(taken)
     as "the purchase asks the store to make one stack"
-  assert made.expires_at_unix_ms == Some(item_expiry_support.unix_at(60_000))
+  assert made.words.expires_at_unix_ms
+    == Some(item_expiry_support.unix_at(60_000))
     as "the new stack runs out one lifetime, 60,000 ms, from the purchase"
   let #(_, answered) =
     game_connection_support.answer(
@@ -246,7 +247,7 @@ pub fn every_change_of_the_held_items_moves_the_timer_test() -> Nil {
                 location: made.location,
                 bag_index: made.bag_index,
                 count: 1,
-                expires_at_unix_ms: made.expires_at_unix_ms,
+                expires_at_unix_ms: made.words.expires_at_unix_ms,
               ),
             ]),
           ),
@@ -285,10 +286,12 @@ pub fn every_change_of_the_held_items_moves_the_timer_test() -> Nil {
             store.Sold(amount: 1100, words: [
               store.SoldWord(
                 item_guid: 104,
-                random_stats: 0,
-                charges: 0,
-                item_flags: 0,
-                expires_at_unix_ms: Some(item_expiry_support.unix_at(25_000)),
+                words: store.ItemWords(
+                  random_stats: 0,
+                  charges: 0,
+                  item_flags: 0,
+                  expires_at_unix_ms: Some(item_expiry_support.unix_at(25_000)),
+                ),
               ),
             ]),
           ),
@@ -840,10 +843,12 @@ pub fn a_firing_in_a_busy_status_is_held_until_it_ends_test() -> Nil {
           store.Sold(amount: 1000, words: [
             store.SoldWord(
               item_guid: 104,
-              random_stats: 0,
-              charges: 0,
-              item_flags: 0,
-              expires_at_unix_ms: Some(item_expiry_support.unix_at(30_000)),
+              words: store.ItemWords(
+                random_stats: 0,
+                charges: 0,
+                item_flags: 0,
+                expires_at_unix_ms: Some(item_expiry_support.unix_at(30_000)),
+              ),
             ),
           ]),
         ),
@@ -951,10 +956,12 @@ pub fn a_sold_timed_item_is_bought_back_with_the_time_it_had_test() -> Nil {
               store.Sold(amount: 1013, words: [
                 store.SoldWord(
                   item_guid: 500,
-                  random_stats: 0,
-                  charges: 0,
-                  item_flags: 0,
-                  expires_at_unix_ms: Some(item_expiry_support.unix_at(25_000)),
+                  words: store.ItemWords(
+                    random_stats: 0,
+                    charges: 0,
+                    item_flags: 0,
+                    expires_at_unix_ms: Some(item_expiry_support.unix_at(25_000)),
+                  ),
                 ),
               ]),
             ),
@@ -972,7 +979,8 @@ pub fn a_sold_timed_item_is_bought_back_with_the_time_it_had_test() -> Nil {
     let assert AskStore(Items(store.BuyFromVendor(make: [made], ..))) =
       game_connection_support.ask_request(taken)
       as "the buy back asks the store to make the stack again"
-    assert made.expires_at_unix_ms == Some(item_expiry_support.unix_at(25_000))
+    assert made.words.expires_at_unix_ms
+      == Some(item_expiry_support.unix_at(25_000))
       as "the stack is made with the moment it had when it was sold, not a new lifetime: the countdown does not stop on the buyback list"
     let #(_, answered) =
       item_expiry_support.answered_at(
@@ -988,7 +996,7 @@ pub fn a_sold_timed_item_is_bought_back_with_the_time_it_had_test() -> Nil {
                   location: made.location,
                   bag_index: made.bag_index,
                   count: 5,
-                  expires_at_unix_ms: made.expires_at_unix_ms,
+                  expires_at_unix_ms: made.words.expires_at_unix_ms,
                 ),
               ]),
             ),
@@ -1027,7 +1035,10 @@ pub fn a_worn_timed_item_that_expires_leaves_as_a_delete_does_test() -> Nil {
   let worn =
     store.HeldItem(
       ..boots(),
-      expires_at_unix_ms: Some(item_expiry_support.unix_at(30_000)),
+      words: store.ItemWords(
+        ..boots().words,
+        expires_at_unix_ms: Some(item_expiry_support.unix_at(30_000)),
+      ),
     )
   let in_the_set =
     list.map(novice_items(), fn(item) {

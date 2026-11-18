@@ -112,10 +112,12 @@ pub fn in_bag(
     location: 1,
     bag_index: index,
     stack_count: count,
-    random_stats: 0,
-    charges: 0,
-    item_flags: 0,
-    expires_at_unix_ms: option.None,
+    words: store.ItemWords(
+      random_stats: 0,
+      charges: 0,
+      item_flags: 0,
+      expires_at_unix_ms: option.None,
+    ),
   )
 }
 

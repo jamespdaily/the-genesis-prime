@@ -101,7 +101,7 @@ import genesis_prime/table/loader/store as table_store
 import gleam/bool
 import gleam/int
 import gleam/list
-import gleam/option.{type Option, None}
+import gleam/option.{type Option}
 import gleam/result
 import gleam/set.{type Set}
 
@@ -308,10 +308,7 @@ pub fn take_back(
             items_bought: entry.quantity,
             cost: entry.amount,
             currency_type_id: entry.currency_type_id,
-            random_stats: entry.random_stats,
-            charges: entry.charges,
-            item_flags: entry.item_flags,
-            kept_expiry: entry.expires_at_unix_ms,
+            words: entry.words,
             items:,
             currencies:,
             tables:,
@@ -365,10 +362,7 @@ fn buy_from(
     items_bought:,
     cost: stocked.price * items_bought,
     currency_type_id: currency.credits_type,
-    random_stats: 0,
-    charges:,
-    item_flags: 0,
-    kept_expiry: None,
+    words: store.ItemWords(..store.plain_words, charges:),
     items:,
     currencies:,
     tables:,
@@ -386,10 +380,7 @@ fn asked(
   items_bought items_bought: Int,
   cost cost: Int,
   currency_type_id currency_type_id: Int,
-  random_stats random_stats: Int,
-  charges charges: Int,
-  item_flags item_flags: Int,
-  kept_expiry kept_expiry: Option(Int),
+  words words: store.ItemWords,
   items items: List(HeldItem),
   currencies currencies: Currencies,
   tables tables: table_store.Tables,
@@ -410,7 +401,12 @@ fn asked(
     inventory.size(items:, tables:) |> result.map_error(inventory_row),
   )
   use expires_at_unix_ms <- result.try(
-    item_expiry.made_at(tables:, item2_id:, kept: kept_expiry, now_unix_ms:)
+    item_expiry.made_at(
+      tables:,
+      item2_id:,
+      kept: words.expires_at_unix_ms,
+      now_unix_ms:,
+    )
     |> result.replace_error(NoItemRow(item2_id:)),
   )
   case
@@ -420,16 +416,11 @@ fn asked(
       size:,
       limit:,
       wanted: items_bought,
-      charges:,
-      expires_at_unix_ms:,
+      words: store.ItemWords(..words, expires_at_unix_ms:),
     )
   {
     Error(Nil) -> Ok(refused(code: inventory_full, logged:))
     Ok(#(grow, make)) -> {
-      let make =
-        list.map(make, fn(stack) {
-          store.NewStack(..stack, random_stats:, item_flags:)
-        })
       Ok(Asks(
         purchase: Purchase(
           kind:,

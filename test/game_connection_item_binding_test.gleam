@@ -225,7 +225,7 @@ pub fn equipping_a_bind_on_equip_item_binds_it_and_the_binding_survives_unequipp
         item.item_guid == guid
       })
       as "the store holds the item"
-    item.item_flags
+    item.words.item_flags
   }
   // Unequip the Novice chest piece to free the slot, then equip the spare.
   let first = moved_on_the_store(stored:, state:, from: #(0, 0), to: #(1, 5))

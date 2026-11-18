@@ -202,10 +202,12 @@ fn stack() -> HeldItem {
     location: 1,
     bag_index: 1,
     stack_count: 10,
-    random_stats: 0,
-    charges: 0,
-    item_flags: 0,
-    expires_at_unix_ms: None,
+    words: store.ItemWords(
+      random_stats: 0,
+      charges: 0,
+      item_flags: 0,
+      expires_at_unix_ms: None,
+    ),
   )
 }
 
@@ -323,10 +325,12 @@ fn holding_a_level_3_chest() -> game_connection.State {
           location: 1,
           bag_index: 0,
           stack_count: 1,
-          random_stats: 0,
-          charges: 0,
-          item_flags: 0,
-          expires_at_unix_ms: None,
+          words: store.ItemWords(
+            random_stats: 0,
+            charges: 0,
+            item_flags: 0,
+            expires_at_unix_ms: None,
+          ),
         ),
       ]),
     )
@@ -406,10 +410,12 @@ pub fn an_equip_is_checked_against_the_entered_character_test() -> Nil {
         location: 0,
         bag_index: 0,
         stack_count: 1,
-        random_stats: 0,
-        charges: 0,
-        item_flags: 0,
-        expires_at_unix_ms: None,
+        words: store.ItemWords(
+          random_stats: 0,
+          charges: 0,
+          item_flags: 0,
+          expires_at_unix_ms: None,
+        ),
       ),
     ])
   assert worn_chest.unread == []
@@ -781,10 +787,12 @@ pub fn equipping_a_level_scaled_item_gives_it_at_the_players_level_test() -> Nil
           location: 1,
           bag_index: 0,
           stack_count: 1,
-          random_stats: 0,
-          charges: 0,
-          item_flags: 0,
-          expires_at_unix_ms: None,
+          words: store.ItemWords(
+            random_stats: 0,
+            charges: 0,
+            item_flags: 0,
+            expires_at_unix_ms: None,
+          ),
         ),
       ]),
     )

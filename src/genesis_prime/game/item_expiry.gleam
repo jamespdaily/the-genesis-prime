@@ -1,5 +1,5 @@
 //// A timed item: an item whose Item2 row has an expirationTimeMinutes above 0 (37 rows) is
-//// made with the moment its lifetime ends, kept with the item as `HeldItem.expires_at_unix_ms`
+//// made with the moment its lifetime ends, kept with the item as `HeldItem.words.expires_at_unix_ms`
 //// (Unix milliseconds, so the countdown runs in real time, also while its owner is logged
 //// out), and removed when that moment comes. This module is the rules; the connection
 //// (genesis_prime/game/connection/item_expiry) carries them out.
@@ -108,7 +108,7 @@ pub fn earlier(
 /// connection's timer is set for.
 pub fn next_deadline(items: List(HeldItem)) -> Option(Int) {
   list.fold(items, None, fn(earliest, item) {
-    earlier(first: earliest, second: item.expires_at_unix_ms)
+    earlier(first: earliest, second: item.words.expires_at_unix_ms)
   })
 }
 
@@ -119,15 +119,15 @@ pub fn due(
   now_unix_ms now_unix_ms: Int,
 ) -> List(HeldItem) {
   list.filter(items, fn(item) {
-    case item.expires_at_unix_ms {
+    case item.words.expires_at_unix_ms {
       Some(moment) -> moment <= now_unix_ms
       None -> False
     }
   })
   |> list.sort(fn(first, second) {
     int.compare(
-      option.unwrap(first.expires_at_unix_ms, 0),
-      option.unwrap(second.expires_at_unix_ms, 0),
+      option.unwrap(first.words.expires_at_unix_ms, 0),
+      option.unwrap(second.words.expires_at_unix_ms, 0),
     )
     |> order.break_tie(int.compare(first.item_guid, second.item_guid))
   })

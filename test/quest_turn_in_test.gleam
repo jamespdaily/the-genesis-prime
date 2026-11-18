@@ -906,28 +906,34 @@ pub fn reward_items_fill_stacks_then_lowest_free_slots_test() -> Nil {
           location: 1,
           bag_index: 2,
           stack_count: 1,
-          random_stats: 0,
-          charges: 0,
-          item_flags: 0,
-          expires_at_unix_ms: None,
+          words: store.ItemWords(
+            random_stats: 0,
+            charges: 0,
+            item_flags: 0,
+            expires_at_unix_ms: None,
+          ),
         ),
         NewStack(
           location: 1,
           bag_index: 3,
           stack_count: 1,
-          random_stats: 0,
-          charges: 0,
-          item_flags: 0,
-          expires_at_unix_ms: None,
+          words: store.ItemWords(
+            random_stats: 0,
+            charges: 0,
+            item_flags: 0,
+            expires_at_unix_ms: None,
+          ),
         ),
         NewStack(
           location: 1,
           bag_index: 4,
           stack_count: 1,
-          random_stats: 0,
-          charges: 0,
-          item_flags: 0,
-          expires_at_unix_ms: None,
+          words: store.ItemWords(
+            random_stats: 0,
+            charges: 0,
+            item_flags: 0,
+            expires_at_unix_ms: None,
+          ),
         ),
       ]),
       Placed(
@@ -938,19 +944,23 @@ pub fn reward_items_fill_stacks_then_lowest_free_slots_test() -> Nil {
             location: 1,
             bag_index: 5,
             stack_count: 100,
-            random_stats: 0,
-            charges: 0,
-            item_flags: 0,
-            expires_at_unix_ms: None,
+            words: store.ItemWords(
+              random_stats: 0,
+              charges: 0,
+              item_flags: 0,
+              expires_at_unix_ms: None,
+            ),
           ),
           NewStack(
             location: 1,
             bag_index: 6,
             stack_count: 40,
-            random_stats: 0,
-            charges: 0,
-            item_flags: 0,
-            expires_at_unix_ms: None,
+            words: store.ItemWords(
+              random_stats: 0,
+              charges: 0,
+              item_flags: 0,
+              expires_at_unix_ms: None,
+            ),
           ),
         ],
       ),
@@ -977,46 +987,56 @@ pub fn reward_items_fill_stacks_then_lowest_free_slots_test() -> Nil {
           location: 1,
           bag_index: 0,
           stack_count: 1,
-          random_stats: 0,
-          charges: 0,
-          item_flags: 0,
-          expires_at_unix_ms: None,
+          words: store.ItemWords(
+            random_stats: 0,
+            charges: 0,
+            item_flags: 0,
+            expires_at_unix_ms: None,
+          ),
         ),
         NewStack(
           location: 1,
           bag_index: 1,
           stack_count: 1,
-          random_stats: 0,
-          charges: 0,
-          item_flags: 0,
-          expires_at_unix_ms: None,
+          words: store.ItemWords(
+            random_stats: 0,
+            charges: 0,
+            item_flags: 0,
+            expires_at_unix_ms: None,
+          ),
         ),
         NewStack(
           location: 1,
           bag_index: 2,
           stack_count: 1,
-          random_stats: 0,
-          charges: 0,
-          item_flags: 0,
-          expires_at_unix_ms: None,
+          words: store.ItemWords(
+            random_stats: 0,
+            charges: 0,
+            item_flags: 0,
+            expires_at_unix_ms: None,
+          ),
         ),
         NewStack(
           location: 1,
           bag_index: 3,
           stack_count: 1,
-          random_stats: 0,
-          charges: 0,
-          item_flags: 0,
-          expires_at_unix_ms: None,
+          words: store.ItemWords(
+            random_stats: 0,
+            charges: 0,
+            item_flags: 0,
+            expires_at_unix_ms: None,
+          ),
         ),
         NewStack(
           location: 1,
           bag_index: 4,
           stack_count: 1,
-          random_stats: 0,
-          charges: 0,
-          item_flags: 0,
-          expires_at_unix_ms: None,
+          words: store.ItemWords(
+            random_stats: 0,
+            charges: 0,
+            item_flags: 0,
+            expires_at_unix_ms: None,
+          ),
         ),
       ]),
     ]
@@ -1124,10 +1144,12 @@ pub fn a_quest_reward_with_random_stats_is_made_rolled_test() -> Nil {
           location: 1,
           bag_index: 0,
           stack_count: 1,
-          random_stats: word,
-          charges: 0,
-          item_flags: 0,
-          expires_at_unix_ms: None,
+          words: store.ItemWords(
+            random_stats: word,
+            charges: 0,
+            item_flags: 0,
+            expires_at_unix_ms: None,
+          ),
         ),
       ]),
     ]
@@ -1139,10 +1161,12 @@ pub fn a_quest_reward_with_random_stats_is_made_rolled_test() -> Nil {
       location: 1,
       bag_index: 0,
       stack_count: 1,
-      random_stats: word,
-      charges: 3,
-      item_flags: 0,
-      expires_at_unix_ms: None,
+      words: store.ItemWords(
+        random_stats: word,
+        charges: 3,
+        item_flags: 0,
+        expires_at_unix_ms: None,
+      ),
     )
   let assert quest_turn_in.Saved(items:, rewards:, ..) =
     quest_turn_in.answered(
@@ -1429,10 +1453,12 @@ pub fn a_server_completion_of_a_quest_with_a_reward_choice_gives_only_its_fixed_
           location: 1,
           bag_index: 0,
           stack_count: 1,
-          random_stats: 0,
-          charges: 0,
-          item_flags: 0,
-          expires_at_unix_ms: None,
+          words: store.ItemWords(
+            random_stats: 0,
+            charges: 0,
+            item_flags: 0,
+            expires_at_unix_ms: None,
+          ),
         ),
       ]),
     ]
@@ -1449,10 +1475,12 @@ pub fn a_server_completion_of_a_quest_with_a_reward_choice_gives_only_its_fixed_
           location: 1,
           bag_index: 0,
           stack_count: 1,
-          random_stats: 0,
-          charges: 0,
-          item_flags: 0,
-          expires_at_unix_ms: None,
+          words: store.ItemWords(
+            random_stats: 0,
+            charges: 0,
+            item_flags: 0,
+            expires_at_unix_ms: None,
+          ),
         ),
       ]),
       now_unix_ms: 0,
@@ -1490,10 +1518,12 @@ pub fn a_server_completion_answered_saved_ends_with_0x35c_state_3_test() -> Nil 
           location:,
           bag_index:,
           stack_count:,
-          random_stats: 0,
-          charges:,
-          item_flags: 0,
-          expires_at_unix_ms: None,
+          words: store.ItemWords(
+            random_stats: 0,
+            charges:,
+            item_flags: 0,
+            expires_at_unix_ms: None,
+          ),
         ),
       ] = one.make
         as "one stack of each, the Item2s' counts being 1"
@@ -1503,10 +1533,12 @@ pub fn a_server_completion_answered_saved_ends_with_0x35c_state_3_test() -> Nil 
         location:,
         bag_index:,
         stack_count:,
-        random_stats: 0,
-        charges:,
-        item_flags: 0,
-        expires_at_unix_ms: None,
+        words: store.ItemWords(
+          random_stats: 0,
+          charges:,
+          item_flags: 0,
+          expires_at_unix_ms: None,
+        ),
       )
     })
   let assert quest_turn_in.Saved(rewards:, then:, ..) =
@@ -1566,7 +1598,7 @@ pub fn a_reward_item_is_made_with_its_rows_charges_test() -> Nil {
     let assert Ok(Placed(grow:, make:, ..)) =
       list.find(turn_in.placed, fn(placed) { placed.item2_id == Item2Id(item2) })
       as "the reward item is placed"
-    assert list.map(make, fn(stack) { stack.charges }) == made as why
+    assert list.map(make, fn(stack) { stack.words.charges }) == made as why
     assert list.length(grow) == grown as why
   })
 }
@@ -1590,6 +1622,6 @@ pub fn a_reward_item_is_made_unbound_test() -> Nil {
   let assert Ok(Placed(make:, ..)) =
     list.find(turn_in.placed, fn(placed) { placed.item2_id == Item2Id(2509) })
     as "the reward item is placed"
-  assert list.map(make, fn(stack) { stack.item_flags }) == [0]
+  assert list.map(make, fn(stack) { stack.words.item_flags }) == [0]
     as "the bind-on-equip reward is made with no flags"
 }

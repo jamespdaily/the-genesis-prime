@@ -442,12 +442,9 @@ pub type Buyback {
 }
 
 /// One sale on the buyback list: the id the client names it by, the Item2 sold,
-/// how many were sold, the random-stat word the item held (which the entry carries to the
-/// client and a buy back gives the item again), the charges the sold stack held (which a buy
-/// back gives the item again; the client's entry has no field for them), the flags byte the
-/// sold stack held (which a buy back gives the item again), the moment the sold stack ran out
-/// (`HeldItem.expires_at_unix_ms`, kept by a buy back: the countdown does not stop while the
-/// item is on the list) and what the vendor paid for them all:
+/// how many were sold, the words the sold stack held (the entry carries the random-stat word
+/// to the client, and a buy back gives the item all of them again: the countdown of a timed
+/// item does not stop while it is on the list) and what the vendor paid for them all:
 /// `amount` of the currency `currency_type_id` (a CurrencyType row's id), before the
 /// currency's cap.
 pub type BuybackEntry {
@@ -455,10 +452,7 @@ pub type BuybackEntry {
     buyback_id: Int,
     item2_id: Item2Id,
     quantity: Int,
-    random_stats: Int,
-    charges: Int,
-    item_flags: Int,
-    expires_at_unix_ms: Option(Int),
+    words: store.ItemWords,
     currency_type_id: Int,
     amount: Int,
   )
@@ -837,10 +831,12 @@ fn charges_asked(
           location: item.location,
           bag_index: item.bag_index,
           stack_count: item.stack_count,
-          random_stats: item.random_stats,
-          charges:,
-          item_flags: item.item_flags,
-          expires_at_unix_ms: item.expires_at_unix_ms,
+          words: store.ItemWords(
+            random_stats: item.random_stats,
+            charges:,
+            item_flags: item.item_flags,
+            expires_at_unix_ms: item.expires_at_unix_ms,
+          ),
         )
       })
     })
@@ -871,7 +867,10 @@ fn charges_asked(
             character_id: character.character_id,
             session_epoch:,
             fills: list.map(filled, fn(item) {
-              store.ItemFill(item_guid: item.item_guid, charges: item.charges)
+              store.ItemFill(
+                item_guid: item.item_guid,
+                charges: item.words.charges,
+              )
             }),
           )),
         ],

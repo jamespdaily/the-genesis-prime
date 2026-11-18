@@ -856,7 +856,7 @@ fn the_client_holds_what_the_store_does(
     Charges(guid:, charges:) -> {
       let assert Ok(row) = list.find(rows, fn(row) { row.item_guid == guid })
         as "the item is held"
-      assert row.charges == charges
+      assert row.words.charges == charges
         as "the client's charges are the stored charges"
     }
     Count(guid:, count:, ..) -> {
