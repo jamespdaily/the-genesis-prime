@@ -481,7 +481,7 @@ pub fn a_charged_item_is_refused_25_only_at_0_charges_test() -> Nil {
   )
 }
 
-pub fn an_item_with_no_charges_row_is_not_refused_for_them_test() -> Nil {
+pub fn an_item_with_no_charges_is_not_refused_for_them_test() -> Nil {
   use <- owned_test.run(10_000)
   assert used(
       tables: character_tables.shared(),
