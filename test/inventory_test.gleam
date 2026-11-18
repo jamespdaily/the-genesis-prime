@@ -40,7 +40,7 @@ import equip_requirement_support
 import fixture_tables
 import game_connection_support
 import genesis_prime/client_connection.{type Undecoded}
-import genesis_prime/connection/frame.{type Frame}
+import genesis_prime/game/ability_book_frame
 import genesis_prime/game/equip_requirement.{type Wearer, Wearer}
 import genesis_prime/game/inventory.{
   type Effect, type Moving, type Taken, Asks, DeleteAsked, EquipCheckBroken, Log,
@@ -51,7 +51,7 @@ import genesis_prime/message/item_action_failed.{ItemActionFailed}
 import genesis_prime/message/item_added
 import genesis_prime/message/item_count_changed.{ItemCountChanged}
 import genesis_prime/message/item_delete.{ItemDelete}
-import genesis_prime/message/item_move
+import genesis_prime/message/item_flags_changed.{ItemFlagsChanged}
 import genesis_prime/message/item_moved.{ItemMoved}
 import genesis_prime/message/item_place
 import genesis_prime/message/item_removed.{ItemRemoved}
@@ -62,14 +62,16 @@ import genesis_prime/store.{
   type HeldItem, AccountId, CharacterId, HeldItem, ItemMade, ItemMove, ItemPlace,
   ItemsNotSaved, ItemsSaved, MergeItems, MoveItems, SaveRefused, SplitItem,
 }
-import genesis_prime/table/id.{Item2Id}
+import genesis_prime/table/id.{Item2Id, Spell4BaseId}
 import genesis_prime/table/loader/derivation
 import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store as table_store
 import gleam/int
 import gleam/list
+import gleam/option.{type Option, None, Some}
 import gleam/set
 import gleam/string
+import item_flags_support
 import owned_test
 import player_life_support
 import world_entry_support
@@ -94,6 +96,7 @@ fn held() -> List(HeldItem) {
       stack_count: 1,
       random_stats: 0,
       charges: 0,
+      item_flags: 0,
     ),
   ])
 }
@@ -118,13 +121,10 @@ fn fighting() -> Life {
 
 /// The body of a 0x182 from one place to another.
 fn move_body(from from: #(Int, Int), to to: #(Int, Int)) -> BitArray {
-  let assert Ok(body) =
-    item_move.encode(item_move.ItemMove(
-      from: item_place.ItemPlace(location: from.0, bag_index: from.1),
-      to: item_place.ItemPlace(location: to.0, bag_index: to.1),
-    ))
-    as "two places of 9 and 32 bits fit the message"
-  body
+  game_connection_support.item_move_body(
+    from: item_place.ItemPlace(location: from.0, bag_index: from.1),
+    to: item_place.ItemPlace(location: to.0, bag_index: to.1),
+  )
 }
 
 /// The move of the Engineer of the tests (`equip_requirement_support.engineer`).
@@ -185,13 +185,6 @@ fn accepted(
   moving
 }
 
-/// The moves of an accepted move or swap.
-fn moves_of(moving: Moving) -> List(store.ItemMove) {
-  let assert inventory.Moved(moves:, ..) = moving.change
-    as "a 0x182 onto an empty slot or a different item is saved as moves"
-  moves
-}
-
 /// The 0x56A the effects write, decoded: its guid and code.
 fn failed_with(effects: List(Effect)) -> List(#(Int, Int)) {
   list.filter_map(effects, fn(effect) {
@@ -204,15 +197,6 @@ fn failed_with(effects: List(Effect)) -> List(#(Int, Int)) {
           as "0x56A decodes"
         Ok(#(item_guid, code))
       }
-      Log(..) -> Error(Nil)
-    }
-  })
-}
-
-fn sent(effects: List(Effect)) -> List(Frame) {
-  list.filter_map(effects, fn(effect) {
-    case effect {
-      Send(frame:) -> Ok(frame)
       Log(..) -> Error(Nil)
     }
   })
@@ -231,8 +215,15 @@ pub fn a_move_to_an_empty_slot_is_saved_then_answered_with_its_new_place_test() 
   let items = held()
   let moving = accepted(items:, from: #(1, 0), to: #(1, 5))
   assert moving.guid == 8
-  assert moves_of(moving)
-    == [ItemMove(item_guid: 8, from: ItemPlace(1, 0), to: ItemPlace(1, 5))]
+  assert item_flags_support.moves_of(moving)
+    == [
+      ItemMove(
+        item_guid: 8,
+        from: ItemPlace(1, 0),
+        to: ItemPlace(1, 5),
+        flags_set: 0,
+      ),
+    ]
     as "one move, the item from where it is held to where the client asked"
   assert inventory.request(
       moving:,
@@ -244,7 +235,7 @@ pub fn a_move_to_an_empty_slot_is_saved_then_answered_with_its_new_place_test() 
       account_id: AccountId(7),
       character_id: CharacterId(42),
       session_epoch: character_support.epoch(1),
-      moves: moves_of(moving),
+      moves: item_flags_support.moves_of(moving),
     ))
     as "the store is asked for the moves, fenced by the login's epoch"
   assert items == held() as "nothing is moved before the store has answered"
@@ -256,7 +247,7 @@ pub fn a_move_to_an_empty_slot_is_saved_then_answered_with_its_new_place_test() 
   assert list.filter(moved, fn(item) { item.item_guid != 8 })
     == list.filter(items, fn(item) { item.item_guid != 8 })
     as "no other item changed"
-  assert list.map(sent(effects), fn(frame) {
+  assert list.map(item_flags_support.sent(effects), fn(frame) {
       let assert Ok(message) = item_moved.decode(frame.body)
       #(frame.message_id, message)
     })
@@ -267,7 +258,7 @@ pub fn a_move_to_an_empty_slot_is_saved_then_answered_with_its_new_place_test() 
     inventory.answered(items:, moving: unequipped, answer: ItemsSaved)
   assert at(items: moved, guid: 1) == #(1, 3)
     as "an unequip is the same message: the chest piece is in inventory slot 3"
-  assert list.map(sent(effects), fn(frame) {
+  assert list.map(item_flags_support.sent(effects), fn(frame) {
       let assert Ok(message) = item_moved.decode(frame.body)
       message
     })
@@ -281,10 +272,20 @@ pub fn a_move_onto_an_item_swaps_the_two_test() -> Nil {
   // chest piece (guid 8): the spare is equipped and the worn one unequipped.
   let items = held()
   let moving = accepted(items:, from: #(0, 0), to: #(1, 0))
-  assert moves_of(moving)
+  assert item_flags_support.moves_of(moving)
     == [
-      ItemMove(item_guid: 1, from: ItemPlace(0, 0), to: ItemPlace(1, 0)),
-      ItemMove(item_guid: 8, from: ItemPlace(1, 0), to: ItemPlace(0, 0)),
+      ItemMove(
+        item_guid: 1,
+        from: ItemPlace(0, 0),
+        to: ItemPlace(1, 0),
+        flags_set: 0,
+      ),
+      ItemMove(
+        item_guid: 8,
+        from: ItemPlace(1, 0),
+        to: ItemPlace(0, 0),
+        flags_set: 0,
+      ),
     ]
     as "two moves, each item to the other's place, which the store applies together"
   let #(moved, effects) =
@@ -292,7 +293,7 @@ pub fn a_move_onto_an_item_swaps_the_two_test() -> Nil {
   assert at(items: moved, guid: 1) == #(1, 0)
   assert at(items: moved, guid: 8) == #(0, 0)
     as "each item keeps its guid and takes the other's place"
-  assert list.map(sent(effects), fn(frame) {
+  assert list.map(item_flags_support.sent(effects), fn(frame) {
       let assert Ok(message) = items_swapped.decode(frame.body)
       #(frame.message_id, message)
     })
@@ -508,6 +509,7 @@ fn with_spare(item2_id: Int) -> List(HeldItem) {
       stack_count: 1,
       random_stats: 0,
       charges: 0,
+      item_flags: 0,
     ),
   ])
 }
@@ -541,10 +543,20 @@ pub fn gear_with_stats_is_equipped_into_its_slot_test() -> Nil {
       to: #(0, 0),
     )
     as "the move passes every check, so the store is asked"
-  assert moves_of(moving)
+  assert item_flags_support.moves_of(moving)
     == [
-      ItemMove(item_guid: 9, from: ItemPlace(1, 1), to: ItemPlace(0, 0)),
-      ItemMove(item_guid: 1, from: ItemPlace(0, 0), to: ItemPlace(1, 1)),
+      ItemMove(
+        item_guid: 9,
+        from: ItemPlace(1, 1),
+        to: ItemPlace(0, 0),
+        flags_set: 0,
+      ),
+      ItemMove(
+        item_guid: 1,
+        from: ItemPlace(0, 0),
+        to: ItemPlace(1, 1),
+        flags_set: 0,
+      ),
     ]
     as "the statted chest piece is worn in place of the novice one, which goes to the bag slot it left"
   let assert Ok(Refused(effects:)) =
@@ -657,6 +669,7 @@ fn in_bag(
     stack_count: count,
     random_stats: 0,
     charges: 0,
+    item_flags: 0,
   )
 }
 
@@ -725,7 +738,7 @@ fn asked(result: Result(Taken, inventory.Refusal)) -> Moving {
 
 /// The guid, count and reason of each 0x17F the effects write, in order.
 fn counts_in(effects: List(Effect)) -> List(#(Int, Int, Int)) {
-  list.map(sent(effects), fn(frame) {
+  list.map(item_flags_support.sent(effects), fn(frame) {
     assert frame.message_id == item_count_changed.message_id
       as "opcode.0x17f: only count changes are written"
     let assert Ok(ItemCountChanged(item_guid:, count:, reason:)) =
@@ -788,7 +801,7 @@ pub fn a_split_onto_an_empty_slot_is_saved_then_answered_with_the_new_stack_test
     as "opcode.0x111.guid: the new stack is held with the guid the store made, the same Item2, the empty slot and the count"
   assert without(items: made, guids: [20, 77]) == without(items:, guids: [20])
     as "no other item changed"
-  let frames = sent(effects)
+  let frames = item_flags_support.sent(effects)
   assert list.map(frames, fn(frame) { frame.message_id }) == [0x017F, 0x0111]
     as "opcode.0x17f of the source then opcode.0x111 of the new stack"
   let assert [counted, added] = frames
@@ -902,7 +915,7 @@ pub fn a_move_onto_a_stack_of_the_same_item_merges_it_whole_test() -> Nil {
     as "the source is gone"
   assert without(items: merged, guids: [21]) == without(items:, guids: [20, 21])
     as "no other item changed"
-  let frames = sent(effects)
+  let frames = item_flags_support.sent(effects)
   assert list.map(frames, fn(frame) { frame.message_id }) == [0x017F, 0x0148]
     as "opcode.0x17f of the target then opcode.0x148 of the source"
   let assert [counted, removed] = frames
@@ -965,10 +978,20 @@ pub fn a_move_onto_a_full_stack_or_an_item_that_does_not_stack_swaps_test() -> N
     let #(what, first, second) = row
     let items = list.append(held(), [first, second])
     let moving = accepted(items:, from: #(1, 1), to: #(1, 2))
-    assert moves_of(moving)
+    assert item_flags_support.moves_of(moving)
       == [
-        ItemMove(item_guid: 20, from: ItemPlace(1, 1), to: ItemPlace(1, 2)),
-        ItemMove(item_guid: 21, from: ItemPlace(1, 2), to: ItemPlace(1, 1)),
+        ItemMove(
+          item_guid: 20,
+          from: ItemPlace(1, 1),
+          to: ItemPlace(1, 2),
+          flags_set: 0,
+        ),
+        ItemMove(
+          item_guid: 21,
+          from: ItemPlace(1, 2),
+          to: ItemPlace(1, 1),
+          flags_set: 0,
+        ),
       ]
       as { what <> ": the two items trade places" }
     let #(swapped, effects) =
@@ -977,7 +1000,10 @@ pub fn a_move_onto_a_full_stack_or_an_item_that_does_not_stack_swaps_test() -> N
     assert at(items: swapped, guid: 21) == #(1, 1)
     assert count_of(items: swapped, guid: 20) == first.stack_count
       as { what <> ": no count changed" }
-    assert list.map(sent(effects), fn(frame) { frame.message_id }) == [0x0568]
+    assert list.map(item_flags_support.sent(effects), fn(frame) {
+        frame.message_id
+      })
+      == [0x0568]
       as { what <> ": opcode.0x568, the swap's answer" }
   })
 }
@@ -1005,7 +1031,7 @@ pub fn a_delete_is_saved_then_answered_with_the_destroy_reason_test() -> Nil {
     as "the store is asked for the delete, fenced by the login's epoch and the item as held"
   let #(left, effects) = inventory.answered(items:, moving:, answer: ItemsSaved)
   assert left == held() as "the stack is gone and no other item changed"
-  let assert [frame] = sent(effects)
+  let assert [frame] = item_flags_support.sent(effects)
   assert frame.message_id == 0x0148
   assert item_removed.decode(frame.body)
     == Ok(ItemRemoved(item_guid: 20, reason: 21))
@@ -1135,6 +1161,7 @@ fn worn_with_slot_zero(item2_id: Int) -> List(HeldItem) {
       stack_count: 1,
       random_stats: 0,
       charges: 0,
+      item_flags: 0,
     ),
   ])
 }
@@ -1315,6 +1342,7 @@ fn with_two_bags() -> List(HeldItem) {
       stack_count: 1,
       random_stats: 0,
       charges: 0,
+      item_flags: 0,
     ),
     HeldItem(
       item_guid: 21,
@@ -1324,6 +1352,7 @@ fn with_two_bags() -> List(HeldItem) {
       stack_count: 1,
       random_stats: 0,
       charges: 0,
+      item_flags: 0,
     ),
   ])
 }
@@ -1353,17 +1382,24 @@ pub fn gear_the_character_can_wear_is_equipped_test() -> Nil {
   use <- owned_test.run(10_000)
   // 0x1403b4710 passes: 50770 needs level 3, which the wearer has reached, and
   // 12918 has requiredLevel 36 with flags bit 0, which sets it to 1. Each takes
-  // the place of the chest piece worn.
+  // the place of the chest piece worn. 50770's bindFlags hold bind on equip, so the equip
+  // binds it (`0x1403c17d0.equip_confirm`); 12918's hold bind on pickup, which binds nothing.
   let rows = [
     #(
       "level reached",
       50_770,
       Wearer(..equip_requirement_support.engineer(), level: 3),
+      1,
     ),
-    #("flags bit 0 sets level 1", 12_918, equip_requirement_support.engineer()),
+    #(
+      "flags bit 0 sets level 1",
+      12_918,
+      equip_requirement_support.engineer(),
+      0,
+    ),
   ]
   list.each(rows, fn(row) {
-    let #(what, item2_id, wearer) = row
+    let #(what, item2_id, wearer, flags_set) = row
     let assert Ok(Asks(moving:)) =
       taken_by(
         wearer:,
@@ -1373,10 +1409,20 @@ pub fn gear_the_character_can_wear_is_equipped_test() -> Nil {
         to: #(0, 0),
       )
       as { what <> ": the move passes every check, so the store is asked" }
-    assert moves_of(moving)
+    assert item_flags_support.moves_of(moving)
       == [
-        ItemMove(item_guid: 9, from: ItemPlace(1, 0), to: ItemPlace(0, 0)),
-        ItemMove(item_guid: 1, from: ItemPlace(0, 0), to: ItemPlace(1, 0)),
+        ItemMove(
+          item_guid: 9,
+          from: ItemPlace(1, 0),
+          to: ItemPlace(0, 0),
+          flags_set:,
+        ),
+        ItemMove(
+          item_guid: 1,
+          from: ItemPlace(0, 0),
+          to: ItemPlace(1, 0),
+          flags_set: 0,
+        ),
       ]
       as {
         what <> ": worn in place of the chest piece, which takes the bag slot"
@@ -1426,6 +1472,7 @@ fn worn_bag(
     stack_count: 1,
     random_stats: 0,
     charges: 0,
+    item_flags: 0,
   )
 }
 
@@ -1455,9 +1502,9 @@ fn refusal(result: Result(Taken, inventory.Refusal)) -> List(#(Int, Int)) {
   failed_with(effects)
 }
 
-/// The guid and place of each 0x569 the effects write.
+/// The guid and place of each 0x569 the effects write; any other frame fails.
 fn moved_places(effects: List(Effect)) -> List(#(Int, Int)) {
-  list.map(sent(effects), fn(frame) {
+  list.map(item_flags_support.sent(effects), fn(frame) {
     assert frame.message_id == item_moved.message_id
       as "opcode.0x569: an item moved to an empty place"
     let assert Ok(ItemMoved(item_guid:, place:)) = item_moved.decode(frame.body)
@@ -1498,15 +1545,27 @@ pub fn a_bag_worn_in_a_bag_slot_opens_its_slots_test() -> Nil {
   assert size_of(items) == 16 as "no bag is worn"
   list.each([17, 18, 19, 20], fn(slot) {
     let moving = asked(bagged(items:, from: #(1, 2), to: #(0, slot)))
-    assert moves_of(moving)
+    assert item_flags_support.moves_of(moving)
       == [
-        ItemMove(item_guid: 21, from: ItemPlace(1, 2), to: ItemPlace(0, slot)),
+        ItemMove(
+          item_guid: 21,
+          from: ItemPlace(1, 2),
+          to: ItemPlace(0, slot),
+          flags_set: 1,
+        ),
       ]
-      as "a bag goes into each of the four bag slots"
+      as "a bag goes into each of the four bag slots, and 4753 binds on equip (bindFlags 16)"
   })
   let moving = asked(bagged(items:, from: #(1, 1), to: #(0, 17)))
-  assert moves_of(moving)
-    == [ItemMove(item_guid: 20, from: ItemPlace(1, 1), to: ItemPlace(0, 17))]
+  assert item_flags_support.moves_of(moving)
+    == [
+      ItemMove(
+        item_guid: 20,
+        from: ItemPlace(1, 1),
+        to: ItemPlace(0, 17),
+        flags_set: 1,
+      ),
+    ]
   assert inventory.request(
       moving:,
       account_id: AccountId(7),
@@ -1517,12 +1576,14 @@ pub fn a_bag_worn_in_a_bag_slot_opens_its_slots_test() -> Nil {
       account_id: AccountId(7),
       character_id: CharacterId(42),
       session_epoch: character_support.epoch(1),
-      moves: moves_of(moving),
+      moves: item_flags_support.moves_of(moving),
     ))
     as "the store is asked for the bag's move"
   let #(worn, effects) = inventory.answered(items:, moving:, answer: ItemsSaved)
   assert at(items: worn, guid: 20) == #(0, 17)
-  assert moved_places(effects) == [#(20, 17)]
+  assert item_flags_support.frame_ids(effects) == [0x0569, 0x0567]
+    as "opcode.0x569 then the 0x567 of its bind on equip (bindFlags 16)"
+  assert moved_places(list.take(effects, 1)) == [#(20, 17)]
     as "opcode.0x569: the bag at location 0, index 17"
   assert size_of(worn) == 24 as "16 and the 8 slots of Item2 5423"
   // The room the bag opened takes a move: slots 16 to 23 exist, 24 does not.
@@ -1533,7 +1594,9 @@ pub fn a_bag_worn_in_a_bag_slot_opens_its_slots_test() -> Nil {
   let moving = asked(bagged(items: worn, from: #(1, 2), to: #(0, 18)))
   let #(both, effects) =
     inventory.answered(items: worn, moving:, answer: ItemsSaved)
-  assert moved_places(effects) == [#(21, 18)]
+  assert item_flags_support.frame_ids(effects) == [0x0569, 0x0567]
+    as "opcode.0x569 then the 0x567 of its bind on equip (bindFlags 16)"
+  assert moved_places(list.take(effects, 1)) == [#(21, 18)]
     as "opcode.0x569: the second bag at location 0, index 18"
   assert size_of(both) == 28 as "16, 8 and the 4 slots of Item2 4753"
   assert is_ask(bagged(items: both, from: #(1, 0), to: #(1, 27)))
@@ -1662,12 +1725,32 @@ pub fn items_past_a_shrunk_inventory_move_to_free_slots_test() -> Nil {
       fillers(indexes: [0, 1, 2, 4, 6, 8, 20, 21, 23]),
     ])
   let moving = asked(bagged(items:, from: #(0, 17), to: #(1, 3)))
-  assert moves_of(moving)
+  assert item_flags_support.moves_of(moving)
     == [
-      ItemMove(item_guid: 20, from: ItemPlace(0, 17), to: ItemPlace(1, 3)),
-      ItemMove(item_guid: 220, from: ItemPlace(1, 20), to: ItemPlace(1, 5)),
-      ItemMove(item_guid: 221, from: ItemPlace(1, 21), to: ItemPlace(1, 7)),
-      ItemMove(item_guid: 223, from: ItemPlace(1, 23), to: ItemPlace(1, 9)),
+      ItemMove(
+        item_guid: 20,
+        from: ItemPlace(0, 17),
+        to: ItemPlace(1, 3),
+        flags_set: 0,
+      ),
+      ItemMove(
+        item_guid: 220,
+        from: ItemPlace(1, 20),
+        to: ItemPlace(1, 5),
+        flags_set: 0,
+      ),
+      ItemMove(
+        item_guid: 221,
+        from: ItemPlace(1, 21),
+        to: ItemPlace(1, 7),
+        flags_set: 0,
+      ),
+      ItemMove(
+        item_guid: 223,
+        from: ItemPlace(1, 23),
+        to: ItemPlace(1, 9),
+        flags_set: 0,
+      ),
     ]
     as "the bag, then each item past the new end, in index order, to the lowest free slot but the bag's own"
   let #(moved, effects) =
@@ -1728,7 +1811,7 @@ pub fn a_worn_bag_cannot_be_deleted_test() -> Nil {
   assert moving.guid == 22
   let #(_, effects) =
     inventory.answered(items: stacked, moving:, answer: ItemMade(item_guid: 77))
-  let assert [_, added] = sent(effects)
+  let assert [_, added] = item_flags_support.sent(effects)
     as "opcode.0x17f of the source then opcode.0x111 of the new stack"
   let assert Ok(item_added.ItemAdded(held_item:)) =
     item_added.decode(added.body)
@@ -1804,7 +1887,7 @@ pub fn item_added_frames_carry_the_held_charges_test() -> Nil {
     ))
   let #(_, effects) =
     inventory.answered(items:, moving:, answer: ItemMade(item_guid: 77))
-  let assert [_, added] = sent(effects)
+  let assert [_, added] = item_flags_support.sent(effects)
   let assert Ok(item_added.ItemAdded(held_item:)) =
     item_added.decode(added.body)
   assert held_item.item.charges == 1
@@ -1821,6 +1904,7 @@ pub fn item_added_frames_carry_the_held_charges_test() -> Nil {
         random_stats: 0,
         charges:,
         reason: 0,
+        item_flags: 0,
       )
     let assert Ok(item_added.ItemAdded(held_item:)) =
       item_added.decode(frame.body)
@@ -1828,4 +1912,250 @@ pub fn item_added_frames_carry_the_held_charges_test() -> Nil {
   }
   assert list.map([0, 1, 99, 9999], charges_of) == [0, 1, 99, 9999]
     as "opcode.0x111.charges: the 32-bit value is written as given"
+}
+
+/// The held items with the chest piece (guid 1, worn at bag index 0) holding the flags byte
+/// `worn` (or gone, for an empty chest slot) and the spare chest piece (guid 8, inventory
+/// slot 0) holding `spare`.
+fn chest_scene(worn worn: Option(Int), spare spare: Int) -> List(HeldItem) {
+  list.filter_map(held(), fn(item) {
+    case item.item_guid, worn {
+      1, None -> Error(Nil)
+      1, Some(item_flags) -> Ok(HeldItem(..item, item_flags:))
+      8, _ -> Ok(HeldItem(..item, item_flags: spare))
+      _, _ -> Ok(item)
+    }
+  })
+}
+
+/// The flags byte of each 0x567 the effects write, with the guid it names.
+fn flags_changed_in(effects: List(Effect)) -> List(#(Int, Int)) {
+  list.filter_map(item_flags_support.sent(effects), fn(frame) {
+    case frame.message_id == item_flags_changed.message_id {
+      False -> Error(Nil)
+      True -> {
+        let assert Ok(ItemFlagsChanged(item_guid:, item_flags:)) =
+          item_flags_changed.decode(frame.body)
+          as "0x567 decodes"
+        Ok(#(item_guid, item_flags))
+      }
+    }
+  })
+}
+
+/// A move binds what the client's own equip check asks to confirm: a bind-on-equip item that
+/// is not soulbound and goes to a worn slot (`0x1403c17d0.equip_confirm`), the one that lands
+/// in a worn slot in a swap too. The ask carries the bits to set, the store's answer writes
+/// 0x567 with the whole byte after the move's own frame (`opcode.0x567`, `opcode.0x569`,
+/// `opcode.0x568`), and the held items hold the byte.
+pub fn an_equip_asks_the_move_with_the_flags_it_sets_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let row = item_flags_support.chest()
+  // What it shows, the row's bindFlags, the items, the move, the bits each move of the ask
+  // sets, the message ids written, each 0x567 written (guid, byte), and the byte each item
+  // holds after.
+  let cases = [
+    #(
+      "unbound bind on equip, inventory to the empty worn slot",
+      16,
+      chest_scene(worn: None, spare: 0),
+      #(#(1, 0), #(0, 0)),
+      [1],
+      [0x0569, 0x0567],
+      [#(8, 1)],
+      [#(8, 1)],
+    ),
+    #(
+      "the same row bind on pickup",
+      8,
+      chest_scene(worn: None, spare: 0),
+      #(#(1, 0), #(0, 0)),
+      [0],
+      [0x0569],
+      [],
+      [#(8, 0)],
+    ),
+    #(
+      "the same row already soulbound",
+      16,
+      chest_scene(worn: None, spare: 1),
+      #(#(1, 0), #(0, 0)),
+      [0],
+      [0x0569],
+      [],
+      [#(8, 1)],
+    ),
+    #(
+      "soulbound worn to the inventory keeps the bit",
+      16,
+      chest_scene(worn: Some(1), spare: 0),
+      #(#(0, 0), #(1, 5)),
+      [0],
+      [0x0569],
+      [],
+      [#(1, 1)],
+    ),
+    #(
+      "unbound to another inventory slot",
+      16,
+      chest_scene(worn: None, spare: 0),
+      #(#(1, 0), #(1, 5)),
+      [0],
+      [0x0569],
+      [],
+      [#(8, 0)],
+    ),
+    #(
+      "unbound dragged onto an occupied worn slot: the incoming item binds, the displaced keeps its byte",
+      16,
+      chest_scene(worn: Some(1), spare: 0),
+      #(#(1, 0), #(0, 0)),
+      [1, 0],
+      [0x0568, 0x0567],
+      [#(8, 1)],
+      [#(8, 1), #(1, 1)],
+    ),
+    #(
+      "a soulbound worn item dragged onto an inventory slot holding an unbound one: that one binds",
+      16,
+      chest_scene(worn: Some(1), spare: 0),
+      #(#(0, 0), #(1, 0)),
+      [0, 1],
+      [0x0568, 0x0567],
+      [#(8, 1)],
+      [#(8, 1), #(1, 1)],
+    ),
+  ]
+  list.each(cases, fn(case_) {
+    let #(
+      why,
+      bind_flags,
+      items,
+      move,
+      flags_set,
+      ids,
+      flags_written,
+      held_after,
+    ) = case_
+    use tables <- item_flags_support.with_bind_flags(
+      item2_id: row,
+      bind_flags:,
+      flags: None,
+    )
+    let moving =
+      item_flags_support.asking(items:, tables:, from: move.0, to: move.1)
+    assert list.map(item_flags_support.moves_of(moving), fn(move) {
+        move.flags_set
+      })
+      == flags_set
+      as { why <> ": the bits the ask sets in each moved item" }
+    let #(moved, effects) =
+      inventory.answered(items:, moving:, answer: ItemsSaved)
+    assert item_flags_support.frame_ids(effects) == ids
+      as { why <> ": the move's own frame, then each 0x567" }
+    assert flags_changed_in(effects) == flags_written
+      as { why <> ": the guid and the whole byte of each 0x567" }
+    assert list.map(held_after, fn(pair) {
+        #(pair.0, item_flags_support.flags_of(items: moved, guid: pair.0))
+      })
+      == held_after
+      as { why <> ": the byte each item holds once the store has saved" }
+    let moved_guids =
+      list.map(item_flags_support.moves_of(moving), fn(move) { move.item_guid })
+    let others = fn(items: List(HeldItem)) {
+      list.filter(items, fn(item) {
+        !list.contains(moved_guids, item.item_guid)
+      })
+    }
+    assert others(moved) == others(items)
+      as { why <> ": no item the move leaves alone changed" }
+  })
+  // An equip the wearer's requirements refuse binds nothing and asks nothing: Item2 50770 is
+  // a chest piece that binds on equip and needs level 3, the Engineer of the tests is
+  // level 1 (code 42, as in `gear_the_character_cannot_wear_is_refused_with_its_code_test`).
+  let items = with_spare(50_770)
+  let assert Ok(Refused(effects:)) =
+    item_flags_support.take(
+      items:,
+      tables: fixture_tables.shared(),
+      from: #(1, 1),
+      to: #(0, 0),
+    )
+    as "the equip is refused, so the store is not asked"
+  assert failed_with(effects) == [#(9, 42)]
+  assert flags_changed_in(effects) == [] as "a refused equip writes no 0x567"
+}
+
+/// 0x111 writes the flags byte it is given, whole (`opcode.0x111.shared_item_unnamed`), and
+/// the ability bag's items hold none.
+pub fn item_added_frames_carry_the_held_flags_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let flags_of = fn(item_flags) {
+    let frame =
+      inventory.item_added_frame(
+        item_guid: 5,
+        item_id: stackable(),
+        location: 1,
+        bag_index: 0,
+        stack_count: 1,
+        random_stats: 0,
+        charges: 0,
+        item_flags:,
+        reason: 0,
+      )
+    let assert Ok(item_added.ItemAdded(held_item:)) =
+      item_added.decode(frame.body)
+    held_item.item.item_flags
+  }
+  assert list.map([0, 1, 9], flags_of) == [0, 1, 9]
+    as "the byte is written as given"
+  let ability =
+    ability_book_frame.held_ability(
+      character_number: 1,
+      bag_index: 0,
+      base: Spell4BaseId(1),
+    )
+  let assert Ok(item_added.ItemAdded(held_item:)) =
+    item_added.decode(ability.body)
+  assert held_item.item.item_flags == 0
+    as "an ability at location 4 holds no flags"
+}
+
+/// A split makes the new stack with the flags byte its source holds, so a split never loses a
+/// binding: the stack of Item2 1039 holding 0 splits into one holding 0, and one holding 1
+/// (a state the data does not make, so the copy is proved here) into one holding 1; the new
+/// stack's 0x111 carries the byte.
+pub fn a_split_stack_keeps_the_flags_of_its_source_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let cases = [
+    #("a stack holding no flags", 0),
+    #("a stack holding the soulbound bit", 1),
+  ]
+  list.each(cases, fn(case_) {
+    let #(why, item_flags) = case_
+    let stack =
+      HeldItem(
+        ..in_bag(guid: 20, item2_id: stackable(), index: 1, count: 10),
+        item_flags:,
+      )
+    let items = list.append(held(), [stack])
+    let moving =
+      asked(split_taken(
+        items:,
+        life: player_life_support.alive(),
+        guid: 20,
+        to: #(1, 2),
+        count: 2,
+      ))
+    let #(made, effects) =
+      inventory.answered(items:, moving:, answer: ItemMade(item_guid: 77))
+    let assert Ok(split) = list.find(made, fn(item) { item.item_guid == 77 })
+      as "the new stack is held"
+    assert split.item_flags == item_flags as why
+    let assert [_, added] = item_flags_support.sent(effects)
+    let assert Ok(item_added.ItemAdded(held_item:)) =
+      item_added.decode(added.body)
+    assert held_item.item.item_flags == item_flags
+      as { why <> ": the new stack's 0x111" }
+  })
 }

@@ -130,7 +130,10 @@ pub type Character {
 /// (`opcode.0x111.shared_item_random_stats`): chosen when the item was made, sent as it is
 /// with the item, and 0 for an item with no roll. `charges` are the charges the item has
 /// left as the client reads them (`opcode.0x111.charges`): its row's maxCharges when it is
-/// made, 0 for a row with none, and the source's for a split.
+/// made, 0 for a row with none, and the source's for a split. `item_flags` is the item's
+/// flags byte as the client reads it (`opcode.0x111.shared_item_unnamed`): bit 0 is
+/// soulbound and bit 3 no refund; it is 0 when the item is made, and the source's for a
+/// split.
 pub type HeldItem {
   HeldItem(
     item_guid: Int,
@@ -140,6 +143,7 @@ pub type HeldItem {
     stack_count: Int,
     random_stats: Int,
     charges: Int,
+    item_flags: Int,
   )
 }
 
@@ -155,6 +159,7 @@ pub type UnsetItem {
     bag_index: Int,
     stack_count: Int,
     random_stats: Int,
+    item_flags: Int,
   )
 }
 
@@ -317,10 +322,11 @@ pub type ItemPlace {
   ItemPlace(location: Int, bag_index: Int)
 }
 
-/// One item's move: the item `item_guid`, held at `from`, goes to `to`. A swap is
-/// two moves, each item to the other's place.
+/// One item's move: the item `item_guid`, held at `from`, goes to `to`, and the bits
+/// `flags_set` are set in its flags byte (0 sets none; a move never clears a bit). A swap
+/// is two moves, each item to the other's place.
 pub type ItemMove {
-  ItemMove(item_guid: Int, from: ItemPlace, to: ItemPlace)
+  ItemMove(item_guid: Int, from: ItemPlace, to: ItemPlace, flags_set: Int)
 }
 
 /// What the player's items ask the store. Each request changes the character's
@@ -331,8 +337,9 @@ pub type ItemMove {
 /// statement, as for a load.
 pub type ItemsRequest {
   /// Moves the character's items, all or none, only when each item is at the
-  /// place its move leaves. The statement is one UPDATE under the character_item
-  /// table's deferrable unique key, so the moves of a swap pass it together.
+  /// place its move leaves, and sets each move's `flags_set` bits in its item's flags byte in
+  /// the same statement. The statement is one UPDATE under the character_item table's
+  /// deferrable unique key, so the moves of a swap pass it together.
   MoveItems(
     account_id: AccountId,
     character_id: CharacterId,
@@ -454,7 +461,8 @@ pub type StackGrowth {
 }
 
 /// A stack a purchase or a reward makes, at a place that holds no item: the place, the
-/// count, the random-stat word and the charges of the new row, whose Item2 is the request's.
+/// count, the random-stat word, the charges and the flags byte of the new row, whose Item2
+/// is the request's.
 pub type NewStack {
   NewStack(
     location: Int,
@@ -462,13 +470,14 @@ pub type NewStack {
     stack_count: Int,
     random_stats: Int,
     charges: Int,
+    item_flags: Int,
   )
 }
 
-/// The random-stat word (`opcode.0xba.random_stats`: the buyback entry carries it) and the
-/// charges of a stack a sale sold, as the database held them.
+/// The random-stat word (`opcode.0xba.random_stats`: the buyback entry carries it), the
+/// charges and the flags byte of a stack a sale sold, as the database held them.
 pub type SoldWord {
-  SoldWord(item_guid: Int, random_stats: Int, charges: Int)
+  SoldWord(item_guid: Int, random_stats: Int, charges: Int, item_flags: Int)
 }
 
 /// What the STS login asks the store.

@@ -444,8 +444,9 @@ pub type Buyback {
 /// One sale on the buyback list: the id the client names it by, the Item2 sold,
 /// how many were sold, the random-stat word the item held (which the entry carries to the
 /// client and a buy back gives the item again), the charges the sold stack held (which a buy
-/// back gives the item again; the client's entry has no field for them) and what the vendor
-/// paid for them all:
+/// back gives the item again; the client's entry has no field for them), the flags byte the
+/// sold stack held (which a buy back gives the item again) and what the vendor paid for them
+/// all:
 /// `amount` of the currency `currency_type_id` (a CurrencyType row's id), before the
 /// currency's cap.
 pub type BuybackEntry {
@@ -455,6 +456,7 @@ pub type BuybackEntry {
     quantity: Int,
     random_stats: Int,
     charges: Int,
+    item_flags: Int,
     currency_type_id: Int,
     amount: Int,
   )
@@ -830,6 +832,7 @@ fn charges_asked(
           stack_count: item.stack_count,
           random_stats: item.random_stats,
           charges:,
+          item_flags: item.item_flags,
         )
       })
     })
@@ -1550,15 +1553,10 @@ fn items_sent(items items: List(store.HeldItem)) -> List(Effect) {
   items
   |> in_sending_order
   |> list.map(fn(item) {
-    held_item(
-      item_guid: item.item_guid,
-      item_id: item.item2_id.value,
-      location: item.location,
-      bag_index: item.bag_index,
-      stack_count: item.stack_count,
-      random_stats: item.random_stats,
-      charges: item.charges,
-    )
+    Send(inventory.held_item_frame(
+      item:,
+      reason: ability_book_frame.held_from_the_start,
+    ))
   })
 }
 
@@ -1605,28 +1603,6 @@ fn innate_index_frame() -> Effect {
     innate_index_set.encode(InnateIndexSet(innate_index: first_innate_slot))
     as "the first slot fits the message's 2 bits"
   Send(Frame(message_id: innate_index_set.message_id, body:))
-}
-
-/// 0x111 for an item the character holds from the start, with the reason 49.
-fn held_item(
-  item_guid item_guid: Int,
-  item_id item_id: Int,
-  location location: Int,
-  bag_index bag_index: Int,
-  stack_count stack_count: Int,
-  random_stats random_stats: Int,
-  charges charges: Int,
-) -> Effect {
-  Send(inventory.item_added_frame(
-    item_guid:,
-    item_id:,
-    location:,
-    bag_index:,
-    stack_count:,
-    random_stats:,
-    charges:,
-    reason: ability_book_frame.held_from_the_start,
-  ))
 }
 
 /// 0x19D for action set 0, the abilities in bar slots 0, 1 and 2. A shortcut

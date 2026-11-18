@@ -507,6 +507,7 @@ pub fn the_entry_sends_an_item_added_for_each_saved_item_with_its_saved_guid_and
       stack_count: 5,
       random_stats: 0,
       charges: 0,
+      item_flags: 0,
     ),
     HeldItem(
       item_guid: 5_000_000_001,
@@ -516,6 +517,7 @@ pub fn the_entry_sends_an_item_added_for_each_saved_item_with_its_saved_guid_and
       stack_count: 1,
       random_stats: 0,
       charges: 0,
+      item_flags: 0,
     ),
     HeldItem(
       item_guid: 7,
@@ -525,6 +527,7 @@ pub fn the_entry_sends_an_item_added_for_each_saved_item_with_its_saved_guid_and
       stack_count: 1,
       random_stats: 0,
       charges: 0,
+      item_flags: 0,
     ),
   ]
   let #(effects, entered) =
@@ -722,6 +725,7 @@ pub fn a_held_rolled_item_is_sent_with_its_word_at_world_entry_test() -> Nil {
       stack_count: 1,
       random_stats: word,
       charges: 0,
+      item_flags: 0,
     )
   let items = [
     rolled,
