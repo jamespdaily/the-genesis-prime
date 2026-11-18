@@ -1250,3 +1250,53 @@ SpellLevel	1270	Spellslinger ability after level 1	ability_book_test, experience
 SpellLevel	1144	Spellslinger ability after level 1	ability_book_test, experience_book_test, world_entry_loadout_test
 SpellLevel	1148	Spellslinger ability after level 1	ability_book_test, experience_book_test, world_entry_loadout_test
 SpellLevel	1155	Spellslinger ability after level 1	ability_book_test, experience_book_test, world_entry_loadout_test
+Spell4Base	53378	Level Up (castMethod 0)	level_up_test
+Spell4	77398	Level Up tier 1	level_up_test, spell_plan_full_screen_test
+Spell4	77407	Level Up tier 2	level_up_test, spell_plan_full_screen_test
+Spell4	77409	Level Up tier 3	level_up_test, spell_plan_full_screen_test
+Spell4	77410	Level Up tier 4	level_up_test, spell_plan_full_screen_test
+Spell4	77411	Level Up tier 5	level_up_test, spell_plan_full_screen_test
+Spell4	77412	Level Up tier 6	level_up_test, spell_plan_full_screen_test
+Spell4	77413	Level Up tier 7	level_up_test, spell_plan_full_screen_test
+Spell4	77414	Level Up tier 8	level_up_test, spell_plan_full_screen_test
+Spell4	77415	Level Up tier 9	level_up_test, spell_plan_full_screen_test
+Spell4	77416	Level Up tier 10	level_up_test, spell_plan_full_screen_test
+Spell4	77417	Level Up tier 11	level_up_test, spell_plan_full_screen_test
+Spell4	77418	Level Up tier 12	level_up_test, spell_plan_full_screen_test
+Spell4	77419	Level Up tier 13	level_up_test, spell_plan_full_screen_test
+Spell4	77420	Level Up tier 14	level_up_test, spell_plan_full_screen_test
+Spell4	77421	Level Up tier 15	level_up_test, spell_plan_full_screen_test
+Spell4	77422	Level Up tier 16	level_up_test, spell_plan_full_screen_test
+Spell4	77423	Level Up tier 17	level_up_test, spell_plan_full_screen_test
+Spell4	77424	Level Up tier 18	level_up_test, spell_plan_full_screen_test
+Spell4	77425	Level Up tier 19	level_up_test, spell_plan_full_screen_test
+Spell4	77426	Level Up tier 20	level_up_test, spell_plan_full_screen_test
+Spell4	77427	Level Up tier 21	level_up_test, spell_plan_full_screen_test
+Spell4	77428	Level Up tier 22	level_up_test, spell_plan_full_screen_test
+Spell4	77429	Level Up tier 23	level_up_test, spell_plan_full_screen_test
+Spell4	77430	Level Up tier 24	level_up_test, spell_plan_full_screen_test
+Spell4	77431	Level Up tier 25	level_up_test, spell_plan_full_screen_test
+Spell4	77432	Level Up tier 26	level_up_test, spell_plan_full_screen_test
+Spell4	77433	Level Up tier 27	level_up_test, spell_plan_full_screen_test
+Spell4	77434	Level Up tier 28	level_up_test, spell_plan_full_screen_test
+Spell4	77435	Level Up tier 29	level_up_test, spell_plan_full_screen_test
+Spell4	77436	Level Up tier 30	level_up_test, spell_plan_full_screen_test
+Spell4	77437	Level Up tier 31	level_up_test, spell_plan_full_screen_test
+Spell4	77438	Level Up tier 32	level_up_test, spell_plan_full_screen_test
+Spell4	77439	Level Up tier 33	level_up_test, spell_plan_full_screen_test
+Spell4	77440	Level Up tier 34	level_up_test, spell_plan_full_screen_test
+Spell4	77441	Level Up tier 35	level_up_test, spell_plan_full_screen_test
+Spell4	77442	Level Up tier 36	level_up_test, spell_plan_full_screen_test
+Spell4	77443	Level Up tier 37	level_up_test, spell_plan_full_screen_test
+Spell4	77444	Level Up tier 38	level_up_test, spell_plan_full_screen_test
+Spell4	77445	Level Up tier 39	level_up_test, spell_plan_full_screen_test
+Spell4	77446	Level Up tier 40	level_up_test, spell_plan_full_screen_test
+Spell4	77447	Level Up tier 41	level_up_test, spell_plan_full_screen_test
+Spell4	77448	Level Up tier 42	level_up_test, spell_plan_full_screen_test
+Spell4	77449	Level Up tier 43	level_up_test, spell_plan_full_screen_test
+Spell4	77450	Level Up tier 44	level_up_test, spell_plan_full_screen_test
+Spell4	77451	Level Up tier 45	level_up_test, spell_plan_full_screen_test
+Spell4	77452	Level Up tier 46	level_up_test, spell_plan_full_screen_test
+Spell4	77453	Level Up tier 47	level_up_test, spell_plan_full_screen_test
+Spell4	77454	Level Up tier 48	level_up_test, spell_plan_full_screen_test
+Spell4	77455	Level Up tier 49	level_up_test, spell_plan_full_screen_test
