@@ -10,6 +10,7 @@
 ////   before 0x025E and after 0x092C (`opcode.0x25e.entry_order`).
 
 import ability_points_support as support
+import cast_support
 import gleam/list
 import owned_test
 import world_entry_support
@@ -35,7 +36,7 @@ pub fn entry_sends_one_0x0169_between_0x092c_and_0x025e_holding_the_levels_point
     let #(frames, _) =
       world_entry_support.entering(class_id: case_.class_id, level: case_.level)
     assert support.points_in(frames:) == [case_.points] as case_.why
-    let ids = support.ids_of(frames:)
+    let ids = cast_support.ids(frames:)
     assert list.window(ids, 4)
       |> list.contains([0x019B, 0x092C, 0x0169, 0x025E])
       as { case_.why <> ": 0x0169 follows 0x092C and comes before 0x025E" }
@@ -60,7 +61,7 @@ pub fn a_rejoin_sends_the_points_of_the_level_the_session_holds_test() -> Nil {
       let frames =
         world_entry_support.rejoining(class_id: 4, entered_at:, risen_to:)
       assert support.points_in(frames:) == [points] as why
-      let ids = support.ids_of(frames:)
+      let ids = cast_support.ids(frames:)
       assert list.window(ids, 3) |> list.contains([0x019B, 0x092C, 0x0169])
         as { why <> ": 0x0169 follows 0x092C" }
       assert !list.contains(ids, 0x025E)

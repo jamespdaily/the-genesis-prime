@@ -28,11 +28,6 @@ pub fn points_in(frames frames: List(Frame)) -> List(#(Int, Int)) {
   })
 }
 
-/// The ids of the frames, in order.
-pub fn ids_of(frames frames: List(Frame)) -> List(Int) {
-  list.map(frames, fn(frame) { frame.message_id })
-}
-
 /// A player of the class at `from` in the world on these tables, whose saved experience is
 /// one short of the level `to`, credited a kill: every level between in one rise
 /// (`ability_book_support.level_up`, on the tables the connection is given).
