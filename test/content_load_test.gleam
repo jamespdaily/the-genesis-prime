@@ -36,6 +36,7 @@ import genesis_prime/game/activate
 import genesis_prime/game/arrival_objective
 import genesis_prime/game/class_resource
 import genesis_prime/game/click_objective
+import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/held_objective
 import genesis_prime/game/kill_objective
 import genesis_prime/game/projector
@@ -260,92 +261,92 @@ pub fn the_content_load_puts_the_held_objectives_test() -> Nil {
     as "an objective migration 0034 does not list is not held"
 }
 
-pub fn an_arrival_row_naming_an_objective_that_is_no_place_stops_the_load_test() -> Nil {
-  use <- owned_test.run(60_000)
-  let database = database_support.new_database(on: database_support.shared())
-  // QuestObjective 4849 is a visible marked script that a type 42 spell effect names: a
-  // cast advances it, so it is no place (`objective_action.named`).
-  content_support.change(
-    database:,
-    sql: "insert into arrival_objective (objective_id, source, reason) values (4849, 'server_choice', 'an objective a spell effect names')",
+/// A content table whose rows each name a QuestObjective: what the migrated database holds in
+/// it, how the connections' settings carry it, and a row the load refuses.
+type ObjectiveTable {
+  ObjectiveTable(
+    table: String,
+    /// How many rows the migrations seed.
+    size: Int,
+    /// Rows the migrations seed, and the reason each is listed.
+    members: List(Int),
+    /// An objective the migrations do not list.
+    not_a_member: Int,
+    carried: fn(connection_state.Settings) -> set.Set(Int),
+    /// An objective the load refuses, and why.
+    refused: Int,
+    refused_because: String,
   )
-  let #(loaded, _key) = content_support.load(database:)
-  let assert Error(content.Refused(refusals:)) = loaded
-    as "a refused arrival row stops the start"
-  assert list.map(refusals, fn(refused) { #(refused.table, refused.row) })
-    == [#("arrival_objective", refusal.RowId(4849))]
 }
 
-pub fn the_content_load_puts_the_arrival_objectives_test() -> Nil {
+pub fn an_objective_table_loads_its_rows_and_a_refused_row_stops_the_load_test() -> Nil {
   use <- owned_test.run(60_000)
-  let database = database_support.new_database(on: database_support.shared())
-  let #(loaded, key) = content_support.load(database:)
-  assert loaded == Ok(Nil)
-  let arrivals = objective_set.read(key:, table: arrival_objective.table)
-  assert set.size(arrivals) == 50
-    as "migrations 0038 and 0043 seed 42 and 8 arrival_objective rows"
-  assert list.all([4770, 19_336, 19_357, 7342, 18_099], fn(objective) {
-    set.contains(arrivals, objective)
+  let tables = [
+    ObjectiveTable(
+      table: arrival_objective.table,
+      size: 50,
+      members: [4770, 19_336, 19_357, 7342, 18_099],
+      not_a_member: 4849,
+      carried: fn(settings) { settings.arrival_objectives },
+      // QuestObjective 4849 is a visible marked script that a type 42 spell effect names: a
+      // cast advances it, so it is no place (`objective_action.named`).
+      refused: 4849,
+      refused_because: "an objective a spell effect names",
+    ),
+    ObjectiveTable(
+      table: kill_objective.table,
+      size: 9,
+      members: [8010, 8866, 15_996],
+      not_a_member: 7515,
+      carried: fn(settings) { settings.script_rows.kills },
+      // QuestObjective 4000000 is no row of the client's table.
+      refused: 4_000_000,
+      refused_because: "an objective the client lacks",
+    ),
+    ObjectiveTable(
+      table: click_objective.table,
+      size: 5,
+      members: [7652, 7653, 7654, 9002, 16_170],
+      not_a_member: 7515,
+      carried: fn(settings) { settings.script_rows.clicks },
+      refused: 4_000_000,
+      refused_because: "an objective the client lacks",
+    ),
+  ]
+  list.each(tables, fn(row) {
+    let database = database_support.new_database(on: database_support.shared())
+    let #(loaded, key) = content_support.load(database:)
+    assert loaded == Ok(Nil) as row.table
+    let rows = objective_set.read(key:, table: row.table)
+    assert set.size(rows) == row.size
+      as { row.table <> ": the migrations seed this many rows" }
+    assert list.all(row.members, fn(objective) { set.contains(rows, objective) })
+      as { row.table <> ": the first, last or named rows its migrations list" }
+    assert !set.contains(rows, row.not_a_member)
+      as { row.table <> ": an objective its migrations do not list is no row" }
+    assert row.carried(
+        login_support.servers_settings_over(spawns: key).game.settings,
+      )
+      == rows
+      as { row.table <> ": the settings the load's key gave carry the table" }
+    let refused = database_support.new_database(on: database_support.shared())
+    content_support.change(
+      database: refused,
+      sql: "insert into "
+        <> row.table
+        <> " (objective_id, source, reason) values ("
+        <> int.to_string(row.refused)
+        <> ", 'server_choice', '"
+        <> row.refused_because
+        <> "')",
+    )
+    let #(loaded, _key) = content_support.load(database: refused)
+    let assert Error(content.Refused(refusals:)) = loaded
+      as { row.table <> ": a refused row stops the start" }
+    assert list.map(refusals, fn(refused) { #(refused.table, refused.row) })
+      == [#(row.table, refusal.RowId(row.refused))]
+      as { row.table <> ": the refusal names the table and the row" }
   })
-    as "the Tower's objective (4770), the first checkpoint of quest 10115 (19336) and the last row of 0038 (19357), and the first and last rows of 0043 (7342, 18099)"
-  assert !set.contains(arrivals, 4849)
-    as "an objective migration 0038 does not list is no arrival"
-}
-
-pub fn the_kill_objective_table_loads_and_a_refused_row_stops_the_load_test() -> Nil {
-  use <- owned_test.run(60_000)
-  let database = database_support.new_database(on: database_support.shared())
-  let #(loaded, key) = content_support.load(database:)
-  assert loaded == Ok(Nil)
-  let kills = objective_set.read(key:, table: kill_objective.table)
-  assert set.size(kills) == 9 as "the kill_objective migration seeds its rows"
-  assert list.all([8010, 8866, 15_996], fn(objective) {
-    set.contains(kills, objective)
-  })
-    as "the first row of the table by id (8010), quest 5895's (8866) and the last (15996)"
-  assert !set.contains(kills, 7515)
-    as "an objective the kill_objective migration does not list is no kill row"
-  assert login_support.servers_settings_over(spawns: key).game.settings.script_rows.kills
-    == kills
-    as "the settings the load's key gave carry the kill table"
-  // QuestObjective 4000000 is no row of the client's table.
-  let refused = database_support.new_database(on: database_support.shared())
-  content_support.change(
-    database: refused,
-    sql: "insert into kill_objective (objective_id, source, reason) values (4000000, 'server_choice', 'an objective the client lacks')",
-  )
-  let #(loaded, _key) = content_support.load(database: refused)
-  let assert Error(content.Refused(refusals:)) = loaded
-    as "a refused kill row stops the start"
-  assert list.map(refusals, fn(refused) { #(refused.table, refused.row) })
-    == [#("kill_objective", refusal.RowId(4_000_000))]
-}
-
-pub fn the_click_objective_table_loads_and_a_refused_row_stops_the_load_test() -> Nil {
-  use <- owned_test.run(60_000)
-  let database = database_support.new_database(on: database_support.shared())
-  let #(loaded, key) = content_support.load(database:)
-  assert loaded == Ok(Nil)
-  let clicks = objective_set.read(key:, table: click_objective.table)
-  assert set.to_list(clicks) |> list.sort(int.compare)
-    == [7652, 7653, 7654, 9002, 16_170]
-    as "the click_objective migration seeds its rows"
-  assert !set.contains(clicks, 7515)
-    as "an objective the click_objective migration does not list is no click row"
-  assert login_support.servers_settings_over(spawns: key).game.settings.script_rows.clicks
-    == clicks
-    as "the settings the load's key gave carry the click table"
-  // QuestObjective 4000000 is no row of the client's table.
-  let refused = database_support.new_database(on: database_support.shared())
-  content_support.change(
-    database: refused,
-    sql: "insert into click_objective (objective_id, source, reason) values (4000000, 'server_choice', 'an objective the client lacks')",
-  )
-  let #(loaded, _key) = content_support.load(database: refused)
-  let assert Error(content.Refused(refusals:)) = loaded
-    as "a refused click row stops the start"
-  assert list.map(refusals, fn(refused) { #(refused.table, refused.row) })
-    == [#("click_objective", refusal.RowId(4_000_000))]
 }
 
 pub fn the_load_puts_every_term_the_game_listener_reads_at_start_test() -> Nil {

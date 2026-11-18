@@ -42,6 +42,10 @@ import character_tables
 import client_tables
 import content_support
 import fixture_tables
+import genesis_prime/game/arrival_objective
+import genesis_prime/game/click_objective
+import genesis_prime/game/held_objective
+import genesis_prime/game/kill_objective
 import genesis_prime/game/objective.{
   type Advanced, type Effect, Advanced, CompleteByServer, ReleaseUnit,
   SendProgress, SendState,
@@ -859,7 +863,7 @@ pub fn an_abandoned_and_retaken_quest_starts_its_place_script_again_test() -> Ni
 
 /// The QuestObjective ids the migrated database holds in the arrival table.
 fn arrival_ids() -> Set(Int) {
-  content_support.arrival_objective_ids()
+  content_support.objective_ids(table: arrival_objective.table)
 }
 
 /// Every type 5 objective of the client's quests: the quest as the log reads it, the index,
@@ -948,8 +952,8 @@ pub fn the_spell_advanced_set_names_every_type_42_and_item_objective_test() -> N
 /// The script tables the migrated database holds: the kill and click tables' rows.
 fn script_rows() -> objective.ScriptRows {
   objective.ScriptRows(
-    kills: content_support.kill_objective_ids(),
-    clicks: content_support.click_objective_ids(),
+    kills: content_support.objective_ids(table: kill_objective.table),
+    clicks: content_support.objective_ids(table: click_objective.table),
   )
 }
 
@@ -1054,7 +1058,7 @@ pub fn every_place_script_completes_at_its_marker_and_no_spell_advanced_one_comp
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   let arrivals = arrival_ids()
-  let held = content_support.held_objective_ids()
+  let held = content_support.objective_ids(table: held_objective.table)
   let rows = script_rows()
   let none = set.new()
   let scripted =
@@ -1155,7 +1159,7 @@ pub fn every_marked_stand_in_completes_on_accept_and_every_held_one_stays_open_t
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   let arrivals = arrival_ids()
-  let held = content_support.held_objective_ids()
+  let held = content_support.objective_ids(table: held_objective.table)
   let rows = script_rows()
   let wrong =
     list.filter_map(type_5_places(tables:), fn(place) {
@@ -1218,7 +1222,7 @@ pub fn every_type_5_objective_in_a_quest_has_one_completing_rule_test() -> Nil {
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   let arrivals = arrival_ids()
-  let held = content_support.held_objective_ids()
+  let held = content_support.objective_ids(table: held_objective.table)
   let rows = script_rows()
   let places = type_5_places(tables:)
   assert list.length(places) == 1498
@@ -1600,7 +1604,7 @@ pub fn the_four_equip_and_buy_quests_still_complete_on_accept_test() -> Nil {
   use <- owned_test.run(120_000)
   let tables = character_tables.shared()
   let arrivals = arrival_ids()
-  let held = content_support.held_objective_ids()
+  let held = content_support.objective_ids(table: held_objective.table)
   let rows = script_rows()
   // (quest, objective, why its real rule cannot fire): the two items need a prerequisite of
   // type 19 (a tradeskill tier) that the server does not read, so wearing them is refused

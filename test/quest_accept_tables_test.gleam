@@ -15,6 +15,7 @@
 
 import client_tables
 import content_support
+import genesis_prime/game/held_objective
 import genesis_prime/game/objective
 import genesis_prime/game/prerequisite.{Factions}
 import genesis_prime/game/quest.{
@@ -242,7 +243,7 @@ pub fn the_one_quest_behind_a_title_check_is_10510_and_each_store_text_objective
         panic as "only a prerequisite row the table lacks stops the gaps"
     }
   })
-  let held = content_support.held_objective_ids()
+  let held = content_support.objective_ids(table: held_objective.table)
   // Each case: QuestObjective id, its quest, its script, whether the migrated database
   // holds it, and why. The ids are the five whose text names the In-Game Store
   // (`client_files.py text` 745285, 753381, 753384, 753435 and 753437), with flags 64,

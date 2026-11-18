@@ -26,7 +26,10 @@ import client_tables
 import content_support
 import fixture_tables
 import genesis_prime/content/refusal.{RowId}
+import genesis_prime/game/arrival_objective
+import genesis_prime/game/click_objective
 import genesis_prime/game/faction_level
+import genesis_prime/game/held_objective
 import genesis_prime/game/kill_objective
 import genesis_prime/game/objective
 import genesis_prime/game/place_objective
@@ -180,11 +183,11 @@ pub fn every_row_of_the_kill_table_is_a_kill_script_with_a_pane_a_fightable_crea
   use <- owned_test.run(300_000)
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
-  let rows = content_support.kill_objective_ids()
+  let rows = content_support.objective_ids(table: kill_objective.table)
   assert set.to_list(rows) |> list.sort(int.compare) == kill_ids
     as "the migration lists the kills whose creatures start in their marker's world"
   let scripts = objective.ScriptRows(..objective.no_rows(), kills: rows)
-  let arrivals = content_support.arrival_objective_ids()
+  let arrivals = content_support.objective_ids(table: arrival_objective.table)
   let wrong =
     list.filter_map(quest2.all(tables), fn(row) {
       let assert Ok(quest) = quest_log.quest_of(tables:, id: row.id)
@@ -247,11 +250,10 @@ pub fn every_row_of_the_kill_table_is_a_kill_script_with_a_pane_a_fightable_crea
 
 pub fn no_objective_is_in_two_content_tables_and_none_is_held_test() -> Nil {
   use <- owned_test.run(120_000)
-  use <- unitest.guard(client_tables.present())
-  let kills = content_support.kill_objective_ids()
-  let arrivals = content_support.arrival_objective_ids()
-  let clicks = content_support.click_objective_ids()
-  let held = content_support.held_objective_ids()
+  let kills = content_support.objective_ids(table: kill_objective.table)
+  let arrivals = content_support.objective_ids(table: arrival_objective.table)
+  let clicks = content_support.objective_ids(table: click_objective.table)
+  let held = content_support.objective_ids(table: held_objective.table)
   assert set.intersection(kills, arrivals) == set.new()
     as "a row is a kill or an arrival, never both"
   assert set.intersection(clicks, arrivals) == set.new()
@@ -290,8 +292,8 @@ pub fn the_kill_rows_left_on_the_stand_in_are_listed_with_their_reasons_test() -
   use <- owned_test.run(300_000)
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
-  let rows = content_support.kill_objective_ids()
-  let arrivals = content_support.arrival_objective_ids()
+  let rows = content_support.objective_ids(table: kill_objective.table)
+  let arrivals = content_support.objective_ids(table: arrival_objective.table)
   let scripts = objective.ScriptRows(..objective.no_rows(), kills: rows)
   // The worlds the server holds stored spawns for are 22, 51, 426, 870, 990, 1061 and 1387.
   let silo = Stay(9382, 6157, 0, NoSpawnsInWorld(1421))
