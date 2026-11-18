@@ -843,6 +843,90 @@ pub fn a_split_onto_an_empty_slot_is_saved_then_answered_with_the_new_stack_test
     as "opcode.0x111: the new stack's guid, item, place and count, reason 0"
 }
 
+pub fn a_split_stack_holds_all_the_words_of_its_source_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The new stack is the same item as the source, so it holds the source's random stats,
+  // charges, flags and moment; the store copies the same words from its own row.
+  let words =
+    store.ItemWords(
+      random_stats: 6,
+      charges: 4,
+      item_flags: 2,
+      expires_at_unix_ms: Some(48_000),
+    )
+  let source =
+    HeldItem(
+      ..in_bag(guid: 20, item2_id: stackable(), index: 1, count: 10),
+      words:,
+    )
+  let items = list.append(held(), [source])
+  let moving =
+    asked(split_taken(
+      items:,
+      life: player_life_support.alive(),
+      guid: 20,
+      to: #(1, 2),
+      count: 3,
+    ))
+  let #(made, _) =
+    inventory.answered(
+      items:,
+      moving:,
+      answer: ItemMade(item_guid: 77),
+      now_unix_ms: 0,
+    )
+  let assert Ok(new_stack) = list.find(made, fn(item) { item.item_guid == 77 })
+  assert new_stack.words == words
+    as "the new stack holds the source's words, moment included"
+  let assert Ok(left) = list.find(made, fn(item) { item.item_guid == 20 })
+  assert left.words == words as "the source keeps its words"
+}
+
+pub fn a_merged_stack_runs_out_at_the_earlier_moment_of_the_two_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The target keeps the earlier moment of the two stacks, or the one there is; what is
+  // left of the source keeps its own moment.
+  // #(the target's moment, the source's moment, the target's moment after the merge)
+  let rows = [
+    #(Some(5000), Some(9000), Some(5000)),
+    #(Some(9000), Some(5000), Some(5000)),
+    #(None, Some(5000), Some(5000)),
+    #(Some(5000), None, Some(5000)),
+    #(None, None, None),
+  ]
+  list.each(rows, fn(row) {
+    let #(target_moment, source_moment, expected) = row
+    let source =
+      timed(
+        in_bag(guid: 20, item2_id: stackable(), index: 1, count: 5),
+        expires_at_unix_ms: source_moment,
+      )
+    let target =
+      timed(
+        in_bag(guid: 21, item2_id: stackable(), index: 2, count: 18),
+        expires_at_unix_ms: target_moment,
+      )
+    let items = list.append(held(), [source, target])
+    // 2 of the source's 5 fit under the stack limit of 20, so the source stays with 3.
+    let moving = accepted(items:, from: #(1, 1), to: #(1, 2))
+    let #(merged, _) =
+      inventory.answered(items:, moving:, answer: ItemsSaved, now_unix_ms: 0)
+    let assert Ok(raised) = list.find(merged, fn(item) { item.item_guid == 21 })
+    assert raised.words.expires_at_unix_ms == expected
+      as "the target runs out at the earlier of the moments present"
+    let assert Ok(left) = list.find(merged, fn(item) { item.item_guid == 20 })
+    assert left.words.expires_at_unix_ms == source_moment
+      as "what is left of the source keeps its own moment"
+  })
+}
+
+fn timed(
+  item: HeldItem,
+  expires_at_unix_ms expires_at_unix_ms: Option(Int),
+) -> HeldItem {
+  HeldItem(..item, words: store.ItemWords(..item.words, expires_at_unix_ms:))
+}
+
 pub fn a_split_the_client_would_not_send_is_refused_with_its_code_test() -> Nil {
   use <- owned_test.run(10_000)
   let stack = in_bag(guid: 20, item2_id: stackable(), index: 1, count: 10)

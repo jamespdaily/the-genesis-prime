@@ -216,7 +216,7 @@ pub fn the_earliest_due_item_goes_first_test() -> Nil {
     as "a stack is one item, and an item with no moment is never due"
 }
 
-pub fn a_split_copies_the_deadline_and_a_merge_keeps_the_earlier_test() -> Nil {
+pub fn a_merge_keeps_the_earlier_moment_test() -> Nil {
   use <- owned_test.run(10_000)
   // The merge rule: the target keeps the earlier of the two moments, or the one there is.
   let cases = [

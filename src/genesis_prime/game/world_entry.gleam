@@ -824,21 +824,7 @@ fn charges_asked(
   let filled =
     list.try_map(unset, fn(item) {
       item_property.max_charges(tables:, item2_id: item.item2_id.value)
-      |> result.map(fn(charges) {
-        store.HeldItem(
-          item_guid: item.item_guid,
-          item2_id: item.item2_id,
-          location: item.location,
-          bag_index: item.bag_index,
-          stack_count: item.stack_count,
-          words: store.ItemWords(
-            random_stats: item.random_stats,
-            charges:,
-            item_flags: item.item_flags,
-            expires_at_unix_ms: item.expires_at_unix_ms,
-          ),
-        )
-      })
+      |> result.map(fn(charges) { store.filled(unset: item, charges:) })
     })
   case filled {
     Error(error) ->

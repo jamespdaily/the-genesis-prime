@@ -185,6 +185,24 @@ pub type UnsetItem {
   )
 }
 
+/// The held item an unset one becomes once it has `charges`: the same item with the words
+/// the row holds and these charges.
+pub fn filled(unset unset: UnsetItem, charges charges: Int) -> HeldItem {
+  HeldItem(
+    item_guid: unset.item_guid,
+    item2_id: unset.item2_id,
+    location: unset.location,
+    bag_index: unset.bag_index,
+    stack_count: unset.stack_count,
+    words: ItemWords(
+      random_stats: unset.random_stats,
+      charges:,
+      item_flags: unset.item_flags,
+      expires_at_unix_ms: unset.expires_at_unix_ms,
+    ),
+  )
+}
+
 /// One quest of a character's log as the character_quest table keeps it, read
 /// and written whole: the quest's id (15 bits), its lua QuestState `state` (1 to
 /// 7), the Unix seconds it was completed at (`Some` for state 3 and for no other,
