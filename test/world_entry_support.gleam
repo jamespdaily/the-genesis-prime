@@ -173,16 +173,29 @@ pub fn filled(
   tables tables: table_store.Tables,
 ) -> world_entry.State {
   let assert Ok(world_entry.Join(state:, ..)) =
-    world_entry.loaded(
+    answered(
       state:,
       answer: store.ChargesFilled(answer: store.ItemsSaved),
-      connection: ConnectionId(1),
-      stay: map_support.stay(count: 1),
       tables:,
-      visibility: dict.new(),
     )
     as "the saved fill leads to the join"
   state
+}
+
+/// What the rule makes of the store's answer `answer` in the state `state`.
+pub fn answered(
+  state state: world_entry.State,
+  answer answer: store.WorldAnswer,
+  tables tables: table_store.Tables,
+) -> Result(world_entry.Loaded, Nil) {
+  world_entry.loaded(
+    state:,
+    answer:,
+    connection: ConnectionId(1),
+    stay: map_support.stay(count: 1),
+    tables:,
+    visibility: dict.new(),
+  )
 }
 
 /// The items a character of a created class and faction holds after its create:

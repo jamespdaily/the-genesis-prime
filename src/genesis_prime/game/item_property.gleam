@@ -815,17 +815,37 @@ pub fn max_charges(
   item2_id item2_id: Int,
 ) -> Result(Int, ItemPropertyError) {
   use item <- result.try(item_row(tables:, item2_id:))
-  use source <- result.map(case is_proxy(item) {
-    False -> Ok(item)
-    True -> {
-      use formula <- result.try(
-        game_formula.get(tables:, id: GameFormulaId(proxy_formula))
-        |> result.replace_error(NoRow(table: "GameFormula", id: proxy_formula)),
-      )
-      item_row(tables:, item2_id: formula.dataint0)
-    }
-  })
+  use source <- result.map(
+    proxy_source(tables:, item:)
+    |> result.map_error(fn(missing) {
+      NoRow(table: missing.table, id: missing.id)
+    }),
+  )
   int.max(0, source.max_charges)
+}
+
+/// The table row a proxy item's source lookup did not find.
+pub type SourceRowMissing {
+  SourceRowMissing(table: String, id: Int)
+}
+
+/// The Item2 row the client reads the item's fields from: the item itself, or for a proxy
+/// item (Item2.flags 0x4000) the row GameFormula 1214's dataint0 names (FillItemInfo
+/// 0x1404445d0, `0x1404445d0.proxy`). Only a missing GameFormula or Item2 row is an error.
+pub fn proxy_source(
+  tables tables: table_store.Tables,
+  item item: item2.Item2,
+) -> Result(item2.Item2, SourceRowMissing) {
+  use <- bool.guard(when: !is_proxy(item), return: Ok(item))
+  use formula <- result.try(
+    game_formula.get(tables:, id: GameFormulaId(proxy_formula))
+    |> result.replace_error(SourceRowMissing(
+      table: "GameFormula",
+      id: proxy_formula,
+    )),
+  )
+  item2.get(tables:, id: Item2Id(formula.dataint0))
+  |> result.replace_error(SourceRowMissing(table: "Item2", id: formula.dataint0))
 }
 
 /// The number of inventory slots the item opens when it is worn in a bag slot:

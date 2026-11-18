@@ -15,11 +15,13 @@
 
 import character_support
 import database_support
+import fixture_tables
 import game_client.{HeardLine}
 import genesis_prime/add_account
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/dev_database
 import genesis_prime/game/chat_channel
+import genesis_prime/game/item_property
 import genesis_prime/message/bit_stream
 import genesis_prime/message/chat_channel_result
 import genesis_prime/message/chat_line
@@ -36,6 +38,7 @@ import gleam/dynamic/decode
 import gleam/erlang/process
 import gleam/float
 import gleam/list
+import gleam/option
 import open_wait
 import owned_test
 import pog
@@ -548,6 +551,45 @@ pub fn the_bot_is_seated_at_the_named_characters_own_place_test() -> Nil {
     as "the named character's world, zone and position, which the bot walks from"
   assert bot_row(pool) == #("Sitting Bot", 1387, 1100, 1.5, 2.5, 3.5)
     as "the bot character's row holds the place it was seated at"
+}
+
+/// What each of the bot's items holds: its Item2 id and the charges stored for it,
+/// an error for none stored.
+fn bot_items(pool: pog.Connection) -> List(#(Int, Result(Int, Nil))) {
+  let assert Ok(returned) =
+    pog.query(
+      "select item2_id, charges from character_item join character using (character_id) where character.name = 'Sitting Bot' order by bag_index",
+    )
+    |> pog.returning({
+      use item2_id <- decode.field(0, decode.int)
+      use charges <- decode.field(1, decode.optional(decode.int))
+      decode.success(#(item2_id, option.to_result(charges, Nil)))
+    })
+    |> pog.execute(pool)
+    as "the items read"
+  returned.rows
+}
+
+/// The Novice set's items are made with their rows' charges, as character creation makes
+/// them (`opcode.0x111.charges`), so no row of the bot's holds a null charge count.
+pub fn the_bots_novice_items_are_stored_with_their_rows_charges_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.tag("dev_tool")
+  let pool = pool()
+  insert_named(pool, "Zed Qu")
+  let assert Ok(_) = sitting_bot.seat(pool:, near: "Zed Qu")
+  let tables = fixture_tables.shared()
+  let items = bot_items(pool)
+  assert list.map(items, fn(item) { item.0 })
+    == [81_359, 81_344, 81_381, 81_345, 81_380, 8534, 81_346]
+    as "the bot holds the Novice set's seven items"
+  list.each(items, fn(item) {
+    let assert Ok(charges) =
+      item_property.max_charges(tables:, item2_id: item.0)
+      as "the Novice set's items are rows of the Item2 table"
+    assert item.1 == Ok(charges)
+      as "the item is stored with its row's charges, never null"
+  })
 }
 
 pub fn a_sitting_bot_character_of_another_account_is_refused_and_left_as_it_is_test() -> Nil {

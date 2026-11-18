@@ -10,13 +10,13 @@
 //// - The Item2 rows are the client's own (`fixture_tables`): 2509 holds 99 charges and a stack
 ////   of 1, 14838 stacks to 50 with 1 charge, 12078 is a proxy whose own row holds 1, and
 ////   12402 holds none.
-//// - The 0x111 of an entry still carries charges 0 for every item: the frames change in the
-////   step that spends a charge.
+//// - The 0x111 of an entry carries charges 0 for every item, held or filled.
 
 import character_support
 import equip_requirement_support
 import fixture_tables
 import genesis_prime/game/inventory
+import genesis_prime/game/world_entry
 import genesis_prime/message/item_place
 import genesis_prime/message/item_split.{ItemSplit}
 import genesis_prime/store.{
@@ -160,7 +160,8 @@ pub fn a_migrated_stack_grows_and_splits_with_its_rows_charges_test() -> Nil {
     list.find(entry.items, fn(item) { item.item_guid == 20 })
     as "the migrated stack is held"
   assert stack.charges == 1 as "the stack is filled with its row's maxCharges"
-  // A purchase: the shared placement every buy makes.
+  // A purchase of 2: growing the filled stack changes its count only; the charges it holds
+  // are the ones asserted above.
   let assert Ok(#(grow, make)) =
     inventory.placed(
       items: entry.items,
@@ -226,6 +227,100 @@ pub fn a_migrated_stack_grows_and_splits_with_its_rows_charges_test() -> Nil {
     item.item2_id != Item2Id(14_838) || item.charges == 1
   })
     as "no stack of the row holds 0"
+}
+
+/// What the rule made of an answer, in words: `join` and `fill` for the map or the store
+/// asked next, `refused 42` for the play sent back to character select, `fault` for the
+/// connection ended with an error, `no ask` for an answer to an ask the rule did not make.
+fn outcome(loaded: Result(world_entry.Loaded, Nil)) -> String {
+  case loaded {
+    Ok(world_entry.Join(..)) -> "join"
+    Ok(world_entry.Fill(..)) -> "fill"
+    Ok(world_entry.Refused(character_id:, ..)) ->
+      "refused " <> int.to_string(character_id)
+    Ok(world_entry.Fault(..)) -> "fault"
+    Error(Nil) -> "no ask"
+  }
+}
+
+/// What the rule does with each answer of the store to the fill it asked, and to a load
+/// whose unset item the tables cannot read: the play of a character whose fill the store did
+/// not change (a later login took it, or its rows held charges already) is sent back to
+/// character select with its rows as they were, a refused value ends the connection with an
+/// error, an answer to no ask is no answer, and an unset item whose Item2 row is missing
+/// ends the connection with an error before the store is asked.
+pub fn the_entry_follows_each_answer_to_the_fill_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tables = fixture_tables.shared()
+  let character =
+    world_entry_support.character(class: 4, faction: 167, level: 1)
+  let #(loading, loaded) =
+    world_entry_support.loaded_with_unset(
+      tables:,
+      character:,
+      held: world_entry_support.novice_items(character:),
+      unset: [
+        item_charge_support.unset(
+          guid: 21,
+          item2: 2509,
+          location: 1,
+          bag_index: 0,
+          count: 1,
+        ),
+      ],
+    )
+  let assert world_entry.Fill(state: filling, ..) = loaded
+    as "an unset item asks for the fill"
+  let cases = [
+    #(
+      "the store stored the charges: the map is asked",
+      filling,
+      store.ChargesFilled(answer: store.ItemsSaved),
+      "join",
+    ),
+    #(
+      "the store changed no row: a later login took the character or the rows were set",
+      filling,
+      store.ChargesFilled(answer: store.ItemsNotSaved),
+      "refused 42",
+    ),
+    #(
+      "the database refused a value",
+      filling,
+      store.ChargesFilled(answer: store.SaveRefused(constraint: "a check")),
+      "fault",
+    ),
+    #(
+      "a refused play of the character is no answer to the fill",
+      filling,
+      store.NotTheAccounts,
+      "no ask",
+    ),
+    #(
+      "an answer to a fill that was never asked",
+      loading,
+      store.ChargesFilled(answer: store.ItemsSaved),
+      "no ask",
+    ),
+  ]
+  list.each(cases, fn(row) {
+    let #(why, state, answer, expected) = row
+    assert outcome(world_entry_support.answered(state:, answer:, tables:))
+      == expected
+      as why
+  })
+  let #(_, unreadable) =
+    world_entry_support.loaded_with_unset(tables:, character:, held: [], unset: [
+      item_charge_support.unset(
+        guid: 22,
+        item2: 999_999_999,
+        location: 1,
+        bag_index: 0,
+        count: 1,
+      ),
+    ])
+  assert outcome(Ok(unreadable)) == "fault"
+    as "an item whose Item2 row the tables lack ends the connection before the store is asked"
 }
 
 /// The body of a 0x17D that splits `count` of the stack `guid` onto a place.

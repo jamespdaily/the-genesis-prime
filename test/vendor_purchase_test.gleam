@@ -810,6 +810,31 @@ pub fn a_buy_back_works_at_a_vendor_other_than_the_one_sold_to_test() -> Nil {
   assert purchase.kind == vendor_purchase.BoughtBack(buyback_id: 2)
 }
 
+/// One case of the bought item's charges: the row bought and the maxCharges the test gives
+/// it, how many are bought, the row's stack size changed to `max_stack` (`None` leaves it),
+/// the stacks the buyer holds, the charges of the stacks made and the number of stacks grown.
+type ChargeCase {
+  ChargeCase(
+    why: String,
+    item2_id: Int,
+    quantity: Int,
+    max_charges: Int,
+    max_stack: Option(Int),
+    held: List(HeldItem),
+    made: List(Int),
+    grown: Int,
+  )
+}
+
+/// The position of an item in Dorian Walker's stock.
+fn stock_position(item2_id: Int) -> Int {
+  case item2_id {
+    12_078 -> position_12078
+    14_838 -> position_14838
+    _ -> position_20791
+  }
+}
+
 /// What a bought item is made with (`opcode.0x111.charges`: the client refuses to use a
 /// charged item that holds none): the row's maxCharges, 0 for a row with none and for a
 /// proxy row. The stock is Dorian Walker's: position 1 is the proxy 12078 (own maxCharges
@@ -820,100 +845,90 @@ pub fn a_buy_back_works_at_a_vendor_other_than_the_one_sold_to_test() -> Nil {
 pub fn a_bought_item_is_made_with_its_rows_charges_test() -> Nil {
   use <- owned_test.run(10_000)
   let cases = [
-    #(
-      "a single row of 99 charges",
-      position_14838,
-      1,
-      99,
-      None,
-      Some(1),
-      [],
-      [
-        99,
-      ],
-      0,
+    ChargeCase(
+      why: "a single row of 99 charges",
+      item2_id: 14_838,
+      quantity: 1,
+      max_charges: 99,
+      max_stack: Some(1),
+      held: [],
+      made: [99],
+      grown: 0,
     ),
-    #(
-      "7 of a stackable row of 1 charge, 3 to a stack, into no stack",
-      position_14838,
-      7,
-      1,
-      None,
-      Some(3),
-      [],
-      [1, 1, 1],
-      0,
+    ChargeCase(
+      why: "7 of a stackable row of 1 charge, 3 to a stack, into no stack",
+      item2_id: 14_838,
+      quantity: 7,
+      max_charges: 1,
+      max_stack: Some(3),
+      held: [],
+      made: [1, 1, 1],
+      grown: 0,
     ),
-    #(
-      "a lot of a stackable row of 1 charge",
-      position_20791,
-      1,
-      1,
-      None,
-      None,
-      [],
-      [1],
-      0,
+    ChargeCase(
+      why: "a lot of a stackable row of 1 charge",
+      item2_id: 20_791,
+      quantity: 1,
+      max_charges: 1,
+      max_stack: None,
+      held: [],
+      made: [1],
+      grown: 0,
     ),
-    #(
-      "a lot into an existing stack that was given its row's charges: only its count changes",
-      position_20791,
-      1,
-      1,
-      None,
-      None,
-      [in_bag(guid: 30, item2_id: 20_791, index: 0, count: 5)],
-      [],
-      1,
+    ChargeCase(
+      why: "a lot into an existing stack that was given its row's charges: only its count changes",
+      item2_id: 20_791,
+      quantity: 1,
+      max_charges: 1,
+      max_stack: None,
+      held: [in_bag(guid: 30, item2_id: 20_791, index: 0, count: 5)],
+      made: [],
+      grown: 1,
     ),
-    #(
-      "a proxy row with its own maxCharges of 5",
-      position_12078,
-      1,
-      5,
-      None,
-      None,
-      [],
-      [0],
-      0,
+    ChargeCase(
+      why: "a proxy row with its own maxCharges of 5",
+      item2_id: 12_078,
+      quantity: 1,
+      max_charges: 5,
+      max_stack: None,
+      held: [],
+      made: [0],
+      grown: 0,
     ),
-    #("a row with no charges", position_14838, 1, 0, None, None, [], [0], 0),
+    ChargeCase(
+      why: "a row with no charges",
+      item2_id: 14_838,
+      quantity: 1,
+      max_charges: 0,
+      max_stack: None,
+      held: [],
+      made: [0],
+      grown: 0,
+    ),
   ]
-  list.each(cases, fn(row) {
-    let #(
-      why,
-      position,
-      quantity,
-      max_charges,
-      flags,
-      stack,
-      items,
-      made,
-      grown,
-    ) = row
-    let item2_id = case position {
-      p if p == position_12078 -> 12_078
-      p if p == position_14838 -> 14_838
-      _ -> 20_791
-    }
+  list.each(cases, fn(case_) {
     use tables <- item_charge_support.tables_with(
-      item2_id:,
-      max_charges:,
-      flags:,
-      max_stack_count: stack,
+      item2_id: case_.item2_id,
+      max_charges: case_.max_charges,
+      flags: None,
+      max_stack_count: case_.max_stack,
     )
     let purchase =
       asked(
         scene: Scene(
-          ..scene(unique_id: position, quantity:),
-          items: list.map(items, fn(item) {
-            HeldItem(..item, charges: max_charges)
+          ..scene(
+            unique_id: stock_position(case_.item2_id),
+            quantity: case_.quantity,
+          ),
+          items: list.map(case_.held, fn(item) {
+            HeldItem(..item, charges: case_.max_charges)
           }),
           tables:,
         ),
       )
-    assert list.map(purchase.make, fn(stack) { stack.charges }) == made as why
-    assert list.length(purchase.grow) == grown as why
+    assert list.map(purchase.make, fn(stack) { stack.charges }) == case_.made
+      as case_.why
+    assert list.length(purchase.grow) == case_.grown as case_.why
   })
 }
 

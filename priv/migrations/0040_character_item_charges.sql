@@ -16,4 +16,4 @@ alter table character_item
   );
 
 comment on column character_item.charges is
-  'The charges the item has left as the client reads them; 0 for an item with none; empty for an item saved before this column existed.';
+  'The charges the item has left as the client reads them; 0 for an item with none; empty where none are recorded.';

@@ -1557,10 +1557,7 @@ const set_unlocked = 1
 /// The 0x111 of each saved item, in location then bag index order.
 fn items_sent(items items: List(store.HeldItem)) -> List(Effect) {
   items
-  |> list.sort(fn(first, second) {
-    int.compare(first.location, second.location)
-    |> order.break_tie(int.compare(first.bag_index, second.bag_index))
-  })
+  |> in_sending_order
   |> list.map(fn(item) {
     held_item(
       item_guid: item.item_guid,
