@@ -297,6 +297,7 @@ pub fn take_back(
             cost: entry.amount,
             currency_type_id: entry.currency_type_id,
             random_stats: entry.random_stats,
+            charges: entry.charges,
             items:,
             currencies:,
             tables:,
@@ -337,6 +338,10 @@ fn buy_from(
     |> result.replace_error(NoItemRow(item2_id:)),
   )
   let items_bought = buy.quantity * lot
+  use charges <- result.try(
+    item_property.max_charges(tables:, item2_id: item2_id.value)
+    |> result.replace_error(NoItemRow(item2_id:)),
+  )
   asked(
     kind: Bought,
     window:,
@@ -345,6 +350,7 @@ fn buy_from(
     cost: stocked.price * items_bought,
     currency_type_id: currency.credits_type,
     random_stats: 0,
+    charges:,
     items:,
     currencies:,
     tables:,
@@ -362,6 +368,7 @@ fn asked(
   cost cost: Int,
   currency_type_id currency_type_id: Int,
   random_stats random_stats: Int,
+  charges charges: Int,
   items items: List(HeldItem),
   currencies currencies: Currencies,
   tables tables: table_store.Tables,
@@ -381,7 +388,14 @@ fn asked(
     inventory.size(items:, tables:) |> result.map_error(inventory_row),
   )
   case
-    inventory.placed(items:, item2_id:, size:, limit:, wanted: items_bought)
+    inventory.placed(
+      items:,
+      item2_id:,
+      size:,
+      limit:,
+      wanted: items_bought,
+      charges:,
+    )
   {
     Error(Nil) -> Ok(refused(code: inventory_full, logged:))
     Ok(#(grow, make)) -> {

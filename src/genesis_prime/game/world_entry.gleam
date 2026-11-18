@@ -7,6 +7,9 @@
 ////
 //// ```
 //// 0x07DD play, character id  ─▶ play_requested ─▶ Ask store LoadCharacter(account, id)
+//// Loaded(character, unset items)
+////                            ─▶ loaded         ─▶ Ask store FillCharges(account, id, epoch, each unset item's row charges)
+//// ChargesFilled(ItemsSaved)  ─▶ loaded         ─▶ (as the next line; ItemsNotSaved refuses the play, SaveRefused is a Fault)
 //// Loaded(character)          ─▶ loaded         ─▶ Ask map MapId(world, 0): Join(connection, character, place, stay, alive, hidden)
 ////                                                 (or Refused, for a level with no XpPerLevel row too: the rule hands back to select)
 //// Joined(unit record, loadout, run)
@@ -149,6 +152,7 @@ import genesis_prime/game/experience
 import genesis_prime/game/gear.{type Gear}
 import genesis_prime/game/innate
 import genesis_prime/game/inventory
+import genesis_prime/game/item_property
 import genesis_prime/game/loadout.{type Loadout}
 import genesis_prime/game/look
 import genesis_prime/game/movement
@@ -239,7 +243,21 @@ pub type Refusal {
 /// Where world entry is.
 pub opaque type State {
   /// The store is asked for the character.
-  Loading(character_id: CharacterId)
+  Loading(account_id: AccountId, character_id: CharacterId)
+  /// The store is asked to store the charges of the items the load found with none
+  /// (`store.FillCharges`); the rest is what the join needs once it answers, `items` being
+  /// every item the character holds, with the charges the fill gives.
+  Filling(
+    account_id: AccountId,
+    character: Character,
+    place: Place,
+    session_epoch: store.SessionEpoch,
+    saved_health: Option(Int),
+    saved_experience: Option(Int),
+    items: List(store.HeldItem),
+    currencies: Currencies,
+    quests: QuestLog,
+  )
   /// The map is asked to take the character at `place`, with the movement it
   /// enters with: at a play, the saved place as the login whose epoch the store
   /// gave; at the Holocrypt, the stay's own movement placed there, so its saves
@@ -288,6 +306,9 @@ type Entry {
 pub type Loaded {
   /// The map is asked to take the player.
   Join(state: State, effects: List(Effect))
+  /// The store is asked to store the charges of the items the load found with none; its
+  /// answer comes back to `loaded`, which then goes on to the join.
+  Fill(state: State, effects: List(Effect))
   /// The character is not entered; character select refuses the play.
   Refused(character_id: Int, warning: String)
   /// The character's saved quest log holds an entry the client would refuse. Only
@@ -421,7 +442,9 @@ pub type Buyback {
 
 /// One sale on the buyback list: the id the client names it by, the Item2 sold,
 /// how many were sold, the random-stat word the item held (which the entry carries to the
-/// client and a buy back gives the item again) and what the vendor paid for them all:
+/// client and a buy back gives the item again), the charges the sold stack held (which a buy
+/// back gives the item again; the client's entry has no field for them) and what the vendor
+/// paid for them all:
 /// `amount` of the currency `currency_type_id` (a CurrencyType row's id), before the
 /// currency's cap.
 pub type BuybackEntry {
@@ -430,6 +453,7 @@ pub type BuybackEntry {
     item2_id: Item2Id,
     quantity: Int,
     random_stats: Int,
+    charges: Int,
     currency_type_id: Int,
     amount: Int,
   )
@@ -598,7 +622,7 @@ fn play_requested(
   account_id account_id: AccountId,
   request request: PlayCharacter,
 ) -> #(State, List(Effect)) {
-  #(Loading(character_id: CharacterId(request.character_id)), [
+  #(Loading(account_id:, character_id: CharacterId(request.character_id)), [
     AskStore(request: store.LoadCharacter(
       account_id:,
       character_id: CharacterId(request.character_id),
@@ -609,7 +633,7 @@ fn play_requested(
 /// Whose answer is awaited.
 pub fn awaiting(state state: State) -> Awaiting {
   case state {
-    Loading(..) -> AwaitingStore
+    Loading(..) | Filling(..) -> AwaitingStore
     Joining(..) -> AwaitingMap
   }
 }
@@ -617,8 +641,12 @@ pub fn awaiting(state state: State) -> Awaiting {
 /// The store's answer to `play_requested`'s ask: the map is asked to take the
 /// character at its saved world for the stay `stay`, or the play is refused, for
 /// a character the account does not have, one with no saved place or one whose
-/// level has no XpPerLevel row (`character_state.frame`). With no read asked for,
-/// it is none this module asked for and gives an `Error`.
+/// level has no XpPerLevel row (`character_state.frame`). A load that holds items with no
+/// charges recorded (`store.UnsetItem`) first asks the store to store each one's row charges
+/// (`Fill`), and the answer to that ask takes the same road on; a fill the store did not
+/// change (a later login took the character, or the rows were not unset) refuses the play, so
+/// no entry goes on with charges the database does not hold. With no read asked for, it is
+/// none this module asked for and gives an `Error`.
 pub fn loaded(
   state state: State,
   answer answer: store.WorldAnswer,
@@ -627,43 +655,47 @@ pub fn loaded(
   tables tables: table_store.Tables,
   visibility visibility: Dict(Int, List(Prerequisite)),
 ) -> Result(Loaded, Nil) {
-  case state {
-    Loading(character_id: CharacterId(character_id)) ->
-      Ok(case answer {
-        store.NotTheAccounts ->
+  case state, answer {
+    Loading(character_id: CharacterId(character_id), ..), store.NotTheAccounts
+    ->
+      Ok(Refused(
+        character_id:,
+        warning: "a play of character "
+          <> int.to_string(character_id)
+          <> ", which the account does not have",
+      ))
+    Loading(account_id:, character_id: CharacterId(character_id)),
+      store.CharacterLoaded(
+        character:,
+        session_epoch:,
+        saved_health:,
+        saved_experience:,
+        items:,
+        unset:,
+        currencies:,
+        quests:,
+      )
+    ->
+      Ok(case character.place {
+        None ->
           Refused(
             character_id:,
             warning: "a play of character "
               <> int.to_string(character_id)
-              <> ", which the account does not have",
+              <> ", which has no saved place",
           )
-        store.CharacterLoaded(
-          character:,
-          session_epoch:,
-          saved_health:,
-          saved_experience:,
-          items:,
-          currencies:,
-          quests:,
-        ) ->
-          case character.place {
-            None ->
-              Refused(
-                character_id:,
-                warning: "a play of character "
-                  <> int.to_string(character_id)
-                  <> ", which has no saved place",
+        Some(place) ->
+          case quest_log.from_rows(rows: quests, tables:) {
+            Error(refused) ->
+              Fault(
+                text: "a play of character "
+                <> int.to_string(character_id)
+                <> ", whose saved quest log the client would refuse: "
+                <> quest_log.describe(refused:),
               )
-            Some(place) ->
-              case quest_log.from_rows(rows: quests, tables:) {
-                Error(refused) ->
-                  Fault(
-                    text: "a play of character "
-                    <> int.to_string(character_id)
-                    <> ", whose saved quest log the client would refuse: "
-                    <> quest_log.describe(refused:),
-                  )
-                Ok(log) ->
+            Ok(log) ->
+              case unset {
+                [] ->
                   joining_a_play(
                     character:,
                     place:,
@@ -678,10 +710,160 @@ pub fn loaded(
                     tables:,
                     visibility:,
                   )
+                _ ->
+                  charges_asked(
+                    account_id:,
+                    character:,
+                    place:,
+                    session_epoch:,
+                    saved_health:,
+                    saved_experience:,
+                    items:,
+                    unset:,
+                    currencies: currency.from_held(held: currencies),
+                    quests: log,
+                    tables:,
+                  )
               }
           }
       })
-    Joining(..) -> Error(Nil)
+    Filling(
+      character:,
+      place:,
+      session_epoch:,
+      saved_health:,
+      saved_experience:,
+      items:,
+      currencies:,
+      quests:,
+      ..,
+    ),
+      store.ChargesFilled(answer:)
+    ->
+      Ok(case answer {
+        store.ItemsSaved ->
+          joining_a_play(
+            character:,
+            place:,
+            session_epoch:,
+            saved_health:,
+            saved_experience:,
+            items:,
+            currencies:,
+            quests:,
+            connection:,
+            stay:,
+            tables:,
+            visibility:,
+          )
+        store.ItemsNotSaved ->
+          Refused(
+            character_id: character_number(character),
+            warning: "a play of character "
+              <> int.to_string(character_number(character))
+              <> ", whose items' charges the store did not change: a later login took the character, or the rows already held charges",
+          )
+        store.SaveRefused(constraint:) ->
+          Fault(
+            text: "a play of character "
+            <> int.to_string(character_number(character))
+            <> ", whose items' charges the database refused for "
+            <> constraint,
+          )
+        store.ItemMade(..)
+        | store.Bought(..)
+        | store.Sold(..)
+        | store.TurnedIn(..) ->
+          panic as "the store answers a fill of charges only with ItemsSaved, ItemsNotSaved or SaveRefused"
+      })
+    Loading(..), store.ChargesFilled(..)
+    | Filling(..), store.CharacterLoaded(..)
+    | Filling(..), store.NotTheAccounts
+    | Joining(..), _
+    -> Error(Nil)
+  }
+}
+
+/// The character's id as the number the log lines name it by.
+fn character_number(character: Character) -> Int {
+  let CharacterId(number) = character.character_id
+  number
+}
+
+/// The items by location, then bag index, the order the client is sent them in.
+fn in_sending_order(items: List(store.HeldItem)) -> List(store.HeldItem) {
+  list.sort(items, fn(first, second) {
+    int.compare(first.location, second.location)
+    |> order.break_tie(int.compare(first.bag_index, second.bag_index))
+  })
+}
+
+/// The ask for the charges of the loaded items that hold none: each gets its row's charges
+/// (`item_property.max_charges`, 0 for a row with none or a proxy row) and the store is asked
+/// to store them, once, under the character's `session_epoch`. A character with none of
+/// them asks nothing (`loaded` joins at once). The items the join goes on with are those the
+/// load held and these filled, by location then bag index. A row of an Item2 the tables lack
+/// is a `Fault`, as a saved quest the client would refuse is.
+fn charges_asked(
+  account_id account_id: AccountId,
+  character character: Character,
+  place place: Place,
+  session_epoch session_epoch: store.SessionEpoch,
+  saved_health saved_health: Option(Int),
+  saved_experience saved_experience: Option(Int),
+  items items: List(store.HeldItem),
+  unset unset: List(store.UnsetItem),
+  currencies currencies: Currencies,
+  quests quests: QuestLog,
+  tables tables: table_store.Tables,
+) -> Loaded {
+  let filled =
+    list.try_map(unset, fn(item) {
+      item_property.max_charges(tables:, item2_id: item.item2_id.value)
+      |> result.map(fn(charges) {
+        store.HeldItem(
+          item_guid: item.item_guid,
+          item2_id: item.item2_id,
+          location: item.location,
+          bag_index: item.bag_index,
+          stack_count: item.stack_count,
+          random_stats: item.random_stats,
+          charges:,
+        )
+      })
+    })
+  case filled {
+    Error(error) ->
+      Fault(
+        text: "a play of character "
+        <> int.to_string(character_number(character))
+        <> ", with an item the tables do not read: "
+        <> item_property.describe(error:),
+      )
+    Ok(filled) ->
+      Fill(
+        state: Filling(
+          account_id:,
+          character:,
+          place:,
+          session_epoch:,
+          saved_health:,
+          saved_experience:,
+          items: list.append(items, filled) |> in_sending_order,
+          currencies:,
+          quests:,
+        ),
+        effects: [
+          AskStore(request: store.FillCharges(
+            account_id:,
+            character_id: character.character_id,
+            session_epoch:,
+            fills: list.map(filled, fn(item) {
+              store.ItemFill(item_guid: item.item_guid, charges: item.charges)
+            }),
+          )),
+        ],
+      )
   }
 }
 
@@ -951,7 +1133,7 @@ pub fn joined(
         | map.PlayerDied(..) -> Error(Nil)
       }
     }
-    Loading(..) -> Error(Nil)
+    Loading(..) | Filling(..) -> Error(Nil)
   }
 }
 

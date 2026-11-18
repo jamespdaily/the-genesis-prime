@@ -662,7 +662,8 @@ pub fn entry_answered(
           visibility: session.settings.visibility,
         )
       {
-        Ok(world_entry.Join(state:, effects:)) ->
+        Ok(world_entry.Join(state:, effects:))
+        | Ok(world_entry.Fill(state:, effects:)) ->
           connection_select.entering_world(
             session: Session(..session, last_stay: stay),
             now:,

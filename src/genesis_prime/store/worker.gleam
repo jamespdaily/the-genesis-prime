@@ -89,21 +89,22 @@ import genesis_prime/service.{type Sent, ToWorker}
 import genesis_prime/store.{
   type AccountId, type Answer, type Character, type CharacterId,
   type CreateAnswer, type DeleteAnswer, type FindAccountAnswer, type HeldItem,
-  type ItemsAnswer, type ItemsRequest, type MoveAnswer, type MoveRequest,
-  type Naming, type NewCharacter, type NewItem, type QuestRow, type RenameAnswer,
-  type Request, type SelectAnswer, type SelectRequest, type WorldAnswer,
-  type WorldRequest, Account, AccountFound, AccountId, ActiveQuest, Bought,
-  BuyFromVendor, Character, CharacterCreated, CharacterDeleted, CharacterId,
-  CharacterLoaded, CharacterRenamed, CreateCharacter, CreateForNoSuchAccount,
-  Created, DeleteCharacter, DeleteItem, Deleted, ExperienceRefused, FindAccount,
-  ForItems, ForLogin, ForMove, ForSelect, ForWorld, HealthRefused, HeldCurrency,
-  HeldItem, ItemMade, Items, ItemsNotSaved, ItemsSaved, ListCharacters, Listed,
-  LoadCharacter, Login, MergeItems, Move, MoveItems, NameBreaksRule, NameStands,
-  NameTaken, NeedsRename, NewNameBreaksRule, NewNameTaken, NoFreeSlot,
-  NoSuchAccount, NoSuchCharacter, NotTheAccounts, NothingSaved, PlaceRefused,
-  PlaceSaved, QuestLogRefused, QuestRow, RenameCharacter, Renamed, SavePlace,
-  SaveRefused, Select, SellToVendor, SplitItem, TurnInQuest, TurnedIn,
-  Unavailable, World,
+  type ItemFill, type ItemsAnswer, type ItemsRequest, type MoveAnswer,
+  type MoveRequest, type Naming, type NewCharacter, type NewItem, type QuestRow,
+  type RenameAnswer, type Request, type SelectAnswer, type SelectRequest,
+  type UnsetItem, type WorldAnswer, type WorldRequest, Account, AccountFound,
+  AccountId, ActiveQuest, Bought, BuyFromVendor, Character, CharacterCreated,
+  CharacterDeleted, CharacterId, CharacterLoaded, CharacterRenamed,
+  ChargesFilled, CreateCharacter, CreateForNoSuchAccount, Created,
+  DeleteCharacter, DeleteItem, Deleted, ExperienceRefused, FillCharges,
+  FindAccount, ForItems, ForLogin, ForMove, ForSelect, ForWorld, HealthRefused,
+  HeldCurrency, HeldItem, ItemMade, Items, ItemsNotSaved, ItemsSaved,
+  ListCharacters, Listed, LoadCharacter, Login, MergeItems, Move, MoveItems,
+  NameBreaksRule, NameStands, NameTaken, NeedsRename, NewNameBreaksRule,
+  NewNameTaken, NoFreeSlot, NoSuchAccount, NoSuchCharacter, NotTheAccounts,
+  NothingSaved, PlaceRefused, PlaceSaved, QuestLogRefused, QuestRow,
+  RenameCharacter, Renamed, SavePlace, SaveRefused, Select, SellToVendor,
+  SplitItem, TurnInQuest, TurnedIn, Unavailable, UnsetItem, World,
 }
 import genesis_prime/store/sql
 import genesis_prime/table/id.{type Item2Id, ClassId, Item2Id, RaceId}
@@ -525,6 +526,7 @@ fn turn_in_quest(
           list.map(made, fn(one) { { one.1 }.bag_index }),
           list.map(made, fn(one) { { one.1 }.stack_count }),
           list.map(made, fn(one) { { one.1 }.random_stats }),
+          list.map(made, fn(one) { { one.1 }.charges }),
         )
         |> result.map_error(Failed),
       )
@@ -554,14 +556,16 @@ fn turn_in_quest(
           row.location,
           row.bag_index,
           row.stack_count,
-          row.random_stats
+          row.random_stats,
+          row.charges
         {
           Some(item_guid),
             Some(item2_id),
             Some(location),
             Some(bag_index),
             Some(stack_count),
-            Some(random_stats)
+            Some(random_stats),
+            Some(charges)
           ->
             Ok(HeldItem(
               item_guid:,
@@ -570,8 +574,9 @@ fn turn_in_quest(
               bag_index:,
               stack_count:,
               random_stats:,
+              charges:,
             ))
-          _, _, _, _, _, _ -> Error(Nil)
+          _, _, _, _, _, _, _ -> Error(Nil)
         }
       }),
     )
@@ -620,7 +625,11 @@ fn sell_to_vendor(
     store.Sold(
       amount: first.amount,
       words: list.map(rows, fn(row) {
-        store.SoldWord(item_guid: row.item_guid, random_stats: row.random_stats)
+        store.SoldWord(
+          item_guid: row.item_guid,
+          random_stats: row.random_stats,
+          charges: row.charges,
+        )
       }),
     )
   })
@@ -736,6 +745,7 @@ fn buy_from_vendor(
       list.map(make, fn(stack) { stack.bag_index }),
       list.map(make, fn(stack) { stack.stack_count }),
       list.map(make, fn(stack) { stack.random_stats }),
+      list.map(make, fn(stack) { stack.charges }),
     )
   })
   |> items_answer(saved: fn(rows) {
@@ -748,13 +758,15 @@ fn buy_from_vendor(
           row.location,
           row.bag_index,
           row.stack_count,
-          row.random_stats
+          row.random_stats,
+          row.charges
         {
           Some(item_guid),
             Some(location),
             Some(bag_index),
             Some(stack_count),
-            Some(random_stats)
+            Some(random_stats),
+            Some(charges)
           ->
             Ok(HeldItem(
               item_guid:,
@@ -763,8 +775,9 @@ fn buy_from_vendor(
               bag_index:,
               stack_count:,
               random_stats:,
+              charges:,
             ))
-          _, _, _, _, _ -> Error(Nil)
+          _, _, _, _, _, _ -> Error(Nil)
         }
       }),
     )
@@ -924,8 +937,44 @@ fn world(
   pool: pog.Connection,
   request: WorldRequest,
 ) -> Result(WorldAnswer, Nil) {
-  let LoadCharacter(account_id:, character_id:) = request
-  load_character(pool:, account_id:, character_id:)
+  case request {
+    LoadCharacter(account_id:, character_id:) ->
+      load_character(pool:, account_id:, character_id:)
+    FillCharges(account_id:, character_id:, session_epoch:, fills:) ->
+      fill_charges(pool:, account_id:, character_id:, session_epoch:, fills:)
+  }
+}
+
+/// Stores the charges of the items that hold none: fill_character_item_charges.sql under the
+/// character's row lock, answered `ChargesFilled(ItemsSaved)` when it set as many rows as the
+/// request has fills and `ChargesFilled(ItemsNotSaved)` when it set none (a stale epoch, or
+/// rows that no longer hold none: a replay).
+fn fill_charges(
+  pool pool: pog.Connection,
+  account_id account_id: store.AccountId,
+  character_id character_id: store.CharacterId,
+  session_epoch session_epoch: store.SessionEpoch,
+  fills fills: List(ItemFill),
+) -> Result(WorldAnswer, Nil) {
+  let AccountId(account_id) = account_id
+  let CharacterId(character_id) = character_id
+  locked(pool:, account_id:, character_id:, statement: fn(connection) {
+    sql.fill_character_item_charges(
+      connection,
+      character_id,
+      account_id,
+      store.session_epoch_number(session_epoch),
+      list.map(fills, fn(fill) { fill.item_guid }),
+      list.map(fills, fn(fill) { fill.charges }),
+    )
+  })
+  |> items_answer(saved: fn(rows) {
+    case list.length(rows) == list.length(fills) {
+      True -> ItemsSaved
+      False -> panic as "the statement fills every item of the request or none"
+    }
+  })
+  |> result.map(ChargesFilled)
 }
 
 /// Runs one of the player's movement's requests: a save is one transaction, the
@@ -1082,6 +1131,7 @@ fn load_character(
     ] -> {
       let assert Ok(epoch) = store.session_epoch(row.session_epoch)
         as "a load raises the epoch by one, so it is 1 or more"
+      let held = held_items(item_rows)
       CharacterLoaded(
         character: Character(
           character_id: CharacterId(row.character_id),
@@ -1109,7 +1159,8 @@ fn load_character(
         session_epoch: epoch,
         saved_health: row.health,
         saved_experience: row.experience,
-        items: held_items(item_rows),
+        items: held.0,
+        unset: held.1,
         quests: quest_rows_of(quest_rows),
         currencies: list.map(currency_rows, fn(row) {
           HeldCurrency(
@@ -1236,18 +1287,41 @@ fn quests_json(quests: List(QuestRow)) -> Json {
   )
 }
 
-/// The rows of a character's items as the items they hold, in the order the
-/// query gave them.
-fn held_items(rows: List(sql.LoadCharacterItemsRow)) -> List(HeldItem) {
-  list.map(rows, fn(row) {
-    HeldItem(
-      item_guid: row.item_guid,
-      item2_id: Item2Id(row.item2_id),
-      location: row.location,
-      bag_index: row.bag_index,
-      stack_count: row.stack_count,
-      random_stats: row.random_stats,
-    )
+/// The rows of a character's items as the items they hold, in the order the query gave
+/// them, and apart from those the rows that hold no charges (`UnsetItem`).
+fn held_items(
+  rows: List(sql.LoadCharacterItemsRow),
+) -> #(List(HeldItem), List(UnsetItem)) {
+  list.fold_right(rows, #([], []), fn(kept, row) {
+    let #(set, unset) = kept
+    case row.charges {
+      Some(charges) -> #(
+        [
+          HeldItem(
+            item_guid: row.item_guid,
+            item2_id: Item2Id(row.item2_id),
+            location: row.location,
+            bag_index: row.bag_index,
+            stack_count: row.stack_count,
+            random_stats: row.random_stats,
+            charges:,
+          ),
+          ..set
+        ],
+        unset,
+      )
+      None -> #(set, [
+        UnsetItem(
+          item_guid: row.item_guid,
+          item2_id: Item2Id(row.item2_id),
+          location: row.location,
+          bag_index: row.bag_index,
+          stack_count: row.stack_count,
+          random_stats: row.random_stats,
+        ),
+        ..unset
+      ])
+    }
   })
 }
 
@@ -1264,6 +1338,7 @@ fn store_items(
     list.map(items, fn(item) { item.location }),
     list.map(items, fn(item) { item.bag_index }),
     list.map(items, fn(item) { item.stack_count }),
+    list.map(items, fn(item) { item.charges }),
   )
   |> result.replace(Nil)
 }

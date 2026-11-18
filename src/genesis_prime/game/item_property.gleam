@@ -352,6 +352,10 @@ const pvp_flag = 0x8000
 /// of GameFormula 1214 (FillItemInfo 0x1404445d0).
 const proxy_flag = 0x4000
 
+/// The GameFormula row whose dataint0 is the Item2 a proxy item takes its fields from
+/// (`0x1404445d0.proxy`).
+const proxy_formula = 1214
+
 /// The Item2Family of runes: the client never looks their slot up (0x14040c610)
 /// and reads their budget on another curve (0x14041f1b0).
 const rune_family = 33
@@ -799,6 +803,29 @@ pub fn stack_limit(
     0 -> None
     _ -> Some(rows.item.max_stack_count)
   }
+}
+
+/// The charges an item is made with: the client's effective maxCharges of its row. A proxy
+/// item (Item2.flags 0x4000) takes it from the Item2 row GameFormula 1214's dataint0 names
+/// (FillItemInfo 0x1404445d0, `0x1404445d0.proxy`), any other item from its own row. A row
+/// whose maxCharges is below 0 (one row holds -1, which the client reads as 0xffffffff) is
+/// made with 0, because a stored count is 0 or more. Only a missing row is an error.
+pub fn max_charges(
+  tables tables: table_store.Tables,
+  item2_id item2_id: Int,
+) -> Result(Int, ItemPropertyError) {
+  use item <- result.try(item_row(tables:, item2_id:))
+  use source <- result.map(case is_proxy(item) {
+    False -> Ok(item)
+    True -> {
+      use formula <- result.try(
+        game_formula.get(tables:, id: GameFormulaId(proxy_formula))
+        |> result.replace_error(NoRow(table: "GameFormula", id: proxy_formula)),
+      )
+      item_row(tables:, item2_id: formula.dataint0)
+    }
+  })
+  int.max(0, source.max_charges)
 }
 
 /// The number of inventory slots the item opens when it is worn in a bag slot:

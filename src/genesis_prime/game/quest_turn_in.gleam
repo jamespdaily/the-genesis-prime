@@ -895,6 +895,17 @@ fn place_items(
         )
       }),
     )
+    use charges <- result.try(
+      item_property.max_charges(tables:, item2_id:)
+      |> result.map_error(fn(error) {
+        Declined(
+          key: "item " <> int.to_string(item2_id),
+          text: turning
+            <> ", whose reward item is not read: "
+            <> item_property.describe(error:),
+        )
+      }),
+    )
     case
       inventory.placed(
         items: working,
@@ -902,6 +913,7 @@ fn place_items(
         size:,
         limit:,
         wanted: amount,
+        charges:,
       )
     {
       Error(Nil) -> Error(NoRoom)
@@ -934,6 +946,7 @@ fn after(
         bag_index: stack.bag_index,
         stack_count: stack.stack_count,
         random_stats: stack.random_stats,
+        charges: stack.charges,
       )
     }),
   )
