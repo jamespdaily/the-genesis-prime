@@ -86,7 +86,7 @@ pub fn place_at(path path: Path, now_ms now_ms: Int) -> Place {
     Timed(first:, rest:, turned_to:) ->
       facing_of_turn(place: timed_place_at(first:, rest:, now_ms:), turned_to:)
     Running(from:, via:, to:, started_ms:, speed:) ->
-      case walk(from:, via:, to:, run: run_by(started_ms:, speed:, now_ms:)) {
+      case walked(from:, via:, to:, started_ms:, speed:, now_ms:) {
         Arrived -> to
         On(from:, via:, to:, into:) -> along_leg(from:, via:, to:, into:)
       }
@@ -121,21 +121,43 @@ fn run_by(
   speed *. int.to_float(int.max(0, now_ms - started_ms)) /. 1000.0
 }
 
-/// The rule every function of a run reads: the legs are walked in order, one leg left
-/// behind while `run` reaches its length, so a leg of length 0 is skipped and a point
-/// passed exactly belongs to the next leg. `Arrived` when the last leg is left behind.
+/// The rule every function of a run reads: a run is over at its arrival time
+/// (`arrives_ms`), and before it is on the leg its distance covered falls in, the legs
+/// measured as cumulative lengths from the start, so arrival and leg agree on one sum.
+fn walked(
+  from from: Place,
+  via via: List(Place),
+  to to: Place,
+  started_ms started_ms: Int,
+  speed speed: Float,
+  now_ms now_ms: Int,
+) -> Walked {
+  use <- bool.guard(
+    when: runs(speed:)
+      && now_ms >= run_over_ms(from:, via:, to:, started_ms:, speed:),
+    return: Arrived,
+  )
+  walk(from:, via:, to:, before: 0.0, run: run_by(started_ms:, speed:, now_ms:))
+}
+
+/// The leg a run of `run` units is on, `before` units being the length of the legs
+/// already left behind: a leg is left behind once `run` reaches its end, so a leg of
+/// length 0 is skipped and a point passed exactly belongs to the next leg. The last leg
+/// is never left, and a run past it is at its end.
 fn walk(
   from from: Place,
   via via: List(Place),
   to to: Place,
+  before before: Float,
   run run: Float,
 ) -> Walked {
   let length = distance(from:, to: next_point(via:, to:))
-  case run >=. length, via {
-    False, _ -> On(from:, via:, to:, into: run)
-    True, [] -> Arrived
+  let end = before +. length
+  case run >=. end, via {
     True, [point, ..more] ->
-      walk(from: point, via: more, to:, run: run -. length)
+      walk(from: point, via: more, to:, before: end, run:)
+    True, [] -> On(from:, via:, to:, into: length)
+    False, _ -> On(from:, via:, to:, into: run -. before)
   }
 }
 
@@ -261,12 +283,24 @@ pub fn arrives_ms(path path: Path, now_ms now_ms: Int) -> Int {
     Timed(first:, rest:, ..) -> last_of(first:, rest:).0
     Running(from:, via:, to:, started_ms:, speed:) -> {
       let assert True = runs(speed:) as "a running path has a speed above 0"
-      started_ms
-      + float.truncate(float.ceiling(
-        total_length(from:, via:, to:) /. speed *. 1000.0,
-      ))
+      run_over_ms(from:, via:, to:, started_ms:, speed:)
     }
   }
+}
+
+/// The monotonic time a run is over: `started_ms` plus its length over its speed,
+/// rounded up to the millisecond.
+fn run_over_ms(
+  from from: Place,
+  via via: List(Place),
+  to to: Place,
+  started_ms started_ms: Int,
+  speed speed: Float,
+) -> Int {
+  started_ms
+  + float.truncate(float.ceiling(
+    total_length(from:, via:, to:) /. speed *. 1000.0,
+  ))
 }
 
 /// The rest of the path from `now_ms` on, as a path of its own: a running path from
@@ -281,9 +315,7 @@ pub fn rest_of(path path: Path, now_ms now_ms: Int) -> Path {
       case now_ms < started_ms {
         True -> path
         False ->
-          case
-            walk(from:, via:, to:, run: run_by(started_ms:, speed:, now_ms:))
-          {
+          case walked(from:, via:, to:, started_ms:, speed:, now_ms:) {
             Arrived -> Standing(at: to)
             On(from:, via: ahead, to:, into:) ->
               Running(
@@ -338,7 +370,7 @@ pub fn velocity(path path: Path, now_ms now_ms: Int) -> #(Float, Float, Float) {
   case path {
     Standing(..) -> #(0.0, 0.0, 0.0)
     Running(from:, via:, to:, started_ms:, speed:) ->
-      case walk(from:, via:, to:, run: run_by(started_ms:, speed:, now_ms:)) {
+      case walked(from:, via:, to:, started_ms:, speed:, now_ms:) {
         Arrived -> #(0.0, 0.0, 0.0)
         On(from:, via:, to:, ..) -> {
           let next = next_point(via:, to:)

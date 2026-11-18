@@ -492,15 +492,15 @@ pub fn path_frame(
       ))
     }
     creature_path.Running(from:, via:, to:, started_ms:, speed:) -> {
-      let #(x, _, z) = creature_path.velocity(path:, now_ms: started_ms)
       let points = [from, ..list.append(via, [to])]
-      case
-        list.length(points) > creature_path.most_points,
-        half_float.to_bits(value: speed),
-        moving(x:, z:)
-      {
-        True, _, _ | _, Error(Nil), _ | _, _, Error(Nil) -> None
-        False, Ok(speed), Ok(moving) -> {
+      use <- bool.guard(
+        when: list.length(points) > creature_path.most_points,
+        return: None,
+      )
+      let #(x, _, z) = creature_path.velocity(path:, now_ms: started_ms)
+      case half_float.to_bits(value: speed), moving(x:, z:) {
+        Error(Nil), _ | _, Error(Nil) -> None
+        Ok(speed), Ok(moving) -> {
           let time =
             map.server_time(
               origin_ms: entered.clock_origin_ms,

@@ -406,6 +406,16 @@ pub fn a_path_frame_holds_every_point_or_none_test() -> Nil {
       }
     }
   })
+  // The count is checked before any geometry: a first leg of 1e200 squares past the
+  // largest float, which the geometry would crash on.
+  let huge =
+    support.running(
+      points: [#(1.0e200, 0.0, 0.0), ..support.line(count: 1023)],
+      started_ms: 1000,
+      speed: 10.0,
+    )
+  assert written_points(path: huge) == None
+    as "1024 points are refused before the geometry of their first leg is computed"
 }
 
 pub fn a_two_point_path_frame_is_the_bytes_it_was_test() -> Nil {

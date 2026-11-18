@@ -189,6 +189,15 @@ fn l_path(speed speed: Float) -> creature_path.Path {
   )
 }
 
+/// Points 0, 0.1, 0.2 and 1.1 along x run at 1.1 a second: 1.1 long, so 1 s, though
+/// taking each leg off the run in turn leaves 0.9 against a last leg of 0.9000000000000001.
+const decimal_run_points = [
+  #(0.0, 0.0, 0.0),
+  #(0.1, 0.0, 0.0),
+  #(0.2, 0.0, 0.0),
+  #(1.1, 0.0, 0.0),
+]
+
 fn coordinates(place: Place) -> Point {
   #(start_place.x(place), start_place.y(place), start_place.z(place))
 }
@@ -238,6 +247,8 @@ fn same_outline(first: creature_path.Path, second: creature_path.Path) -> Bool {
 
 pub fn a_path_with_corners_is_walked_leg_by_leg_test() -> Nil {
   use <- owned_test.run(5000)
+  let decimal_run =
+    support.running(points: decimal_run_points, started_ms: 1000, speed: 1.1)
   let cases = [
     #(
       "at exactly the corner (3000 ms in) the creature is at it and runs the second leg, a point passed exactly belongs to the next leg",
@@ -289,6 +300,27 @@ pub fn a_path_with_corners_is_walked_leg_by_leg_test() -> Nil {
       ),
       1500,
       #(#(5.0, 5.0, 5.0), #(0.0, 0.0, 0.0), 1000),
+    ),
+    #(
+      "decimal legs that sum to the length at the arrival time: at 2000 the run is over, with no velocity, though the last leg alone is 0.9000000000000001",
+      decimal_run,
+      2000,
+      #(#(1.1, 0.0, 0.0), #(0.0, 0.0, 0.0), 2000),
+    ),
+    #(
+      "a corner reached exactly in decimals (1.0 at 1 a second) belongs to the next leg, whose velocity is along z",
+      support.running(
+        points: [
+          #(0.1, 0.0, 0.0),
+          #(0.4, 0.0, 0.0),
+          #(1.1, 0.0, 0.0),
+          #(1.1, 0.0, 1.0),
+        ],
+        started_ms: 1000,
+        speed: 1.0,
+      ),
+      2000,
+      #(#(1.1, 0.0, 0.0), #(0.0, 0.0, 1.0), 3000),
     ),
   ]
   list.each(cases, fn(row) {
@@ -342,6 +374,14 @@ pub fn the_rest_of_a_path_drops_the_points_it_has_passed_test() -> Nil {
     )
       as reason
   })
+  // The arrival time is when the rest is Standing, whatever the float noise of the legs.
+  let decimal_run =
+    support.running(points: decimal_run_points, started_ms: 1000, speed: 1.1)
+  assert same_outline(
+    creature_path.rest_of(path: decimal_run, now_ms: 2000),
+    Standing(at: support.at(#(1.1, 0.0, 0.0))),
+  )
+    as "decimal legs run exactly to the arrival time (2000) are run: the creature stands at the end"
 }
 
 pub fn a_run_at_another_speed_goes_on_through_its_points_test() -> Nil {
