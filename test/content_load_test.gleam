@@ -279,12 +279,12 @@ pub fn the_content_load_puts_the_arrival_objectives_test() -> Nil {
   let #(loaded, key) = content_support.load(database:)
   assert loaded == Ok(Nil)
   let arrivals = content_arrival_objective.arrivals(key:)
-  assert set.size(arrivals) == 42
-    as "migration 0038 seeds 42 arrival_objective rows"
-  assert list.all([4770, 19_336, 19_357], fn(objective) {
+  assert set.size(arrivals) == 50
+    as "migrations 0038 and 0043 seed 42 and 8 arrival_objective rows"
+  assert list.all([4770, 19_336, 19_357, 7342, 18_099], fn(objective) {
     set.contains(arrivals, objective)
   })
-    as "the Tower's objective (4770), the first checkpoint of quest 10115 (19336) and the last row (19357)"
+    as "the Tower's objective (4770), the first checkpoint of quest 10115 (19336) and the last row of 0038 (19357), and the first and last rows of 0043 (7342, 18099)"
   assert !set.contains(arrivals, 4849)
     as "an objective migration 0038 does not list is no arrival"
 }
