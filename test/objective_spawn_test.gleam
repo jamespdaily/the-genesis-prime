@@ -97,11 +97,22 @@ fn placed_by_the_load(
   stored stored: List(Row),
   factions factions: creature_faction.Factions,
 ) -> Placed {
+  placed_with_kills(tables:, stored:, factions:, kills: set.new())
+}
+
+/// `placed_by_the_load` with these objectives as the kill table's rows.
+fn placed_with_kills(
+  tables tables: store.Tables,
+  stored stored: List(Row),
+  factions factions: creature_faction.Factions,
+  kills kills: Set(Int),
+) -> Placed {
   objective_spawn.place(
     tables:,
     stored:,
     factions:,
     kinds: spawn_support.turret_kinds(),
+    kills:,
   )
 }
 
@@ -357,6 +368,7 @@ pub fn a_turret_creature_with_no_kind_is_not_placed_and_is_reported_test() -> Ni
       stored: the_world_holds_spawns(tables:),
       factions: creature_faction.none(),
       kinds: spawn_support.kinds(),
+      kills: set.new(),
     )
   assert of_creatures(placed:, creatures: [73_494, turret]) == []
     as "neither Sim-Turret is placed"
@@ -1821,4 +1833,115 @@ pub fn every_click_objective_with_a_marker_starts_or_has_a_spawn_test() -> Nil {
       + list.fold(coverage.other_types, 0, fn(count, pair) { count + pair.1 })
     })
   assert sent == 344 as "every placed row starts or is sent"
+}
+
+/// What the kill table's rows make the placement do: the rows stored, the objectives in the
+/// table, and how many rows of the creature are placed.
+type KillTarget {
+  KillTarget(
+    why: String,
+    stored: List(#(Int, Int)),
+    kills: List(Int),
+    creature: Int,
+    placed: Int,
+  )
+}
+
+pub fn the_kill_targets_stand_in_the_marker_circle_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.content_tables()
+  // Quest 5895's objective 8866 and quest 5896's 8867 are type 5, count 1, on TargetGroup
+  // 5256 (Creature2 26037) at marker 19529 in World 51 (`table_rows -- QuestObjective 8866
+  // 8867`, `-- TargetGroup 5256`, `-- WorldLocation2 19529`).
+  let scientist = 26_037
+  let base =
+    KillTarget(
+      why: "a kill-table row whose creature has no stored spawn gets one at its marker",
+      stored: [#(filler, 51)],
+      kills: [8866],
+      creature: scientist,
+      placed: 1,
+    )
+  let cases = [
+    base,
+    KillTarget(
+      ..base,
+      why: "a creature with a stored spawn in the marker's world is left to it",
+      stored: [#(filler, 51), #(scientist, 51)],
+      placed: 0,
+    ),
+    KillTarget(
+      ..base,
+      why: "a type 5 row not in the kill table places nothing",
+      kills: [],
+      placed: 0,
+    ),
+    KillTarget(
+      ..base,
+      why: "two objectives of the same pane and marker place the creature once",
+      kills: [8866, 8867],
+      placed: 1,
+    ),
+    KillTarget(
+      ..base,
+      why: "a marker in a world with no stored spawn places nothing",
+      stored: [#(filler, 22)],
+      placed: 0,
+    ),
+  ]
+  list.each(cases, fn(row) {
+    let placed =
+      placed_with_kills(
+        tables:,
+        stored: list.index_map(row.stored, fn(pair, index) {
+          stored(tables:, id: index + 1, creature_id: pair.0, world_id: pair.1)
+        }),
+        factions: creature_faction.none(),
+        kills: set.from_list(row.kills),
+      )
+    assert list.length(of_creatures(placed:, creatures: [row.creature]))
+      == row.placed
+      as row.why
+  })
+  let placed =
+    placed_with_kills(
+      tables:,
+      stored: [stored(tables:, id: 1, creature_id: filler, world_id: 22)],
+      factions: creature_faction.none(),
+      kills: set.from_list([8866]),
+    )
+  assert list.contains(
+    placed.skipped,
+    objective_spawn.Skipped(
+      objective_id: 8866,
+      why: objective_spawn.NoSpawnsInWorld(marker_id: 19_529, world_id: 51),
+    ),
+  )
+    as "the report names the objective, the marker and the world that holds no spawn"
+  // Objective 8281 is type 5, count 25, on TargetGroup 2539 (Creature2 24039, 24040, 24041,
+  // 24042 and 54033, in that order) at marker 18235: radius 100 at (4252.03125, -943.09375,
+  // 313.00586) in World 51, zone 1252.
+  let placed =
+    placed_with_kills(
+      tables:,
+      stored: [stored(tables:, id: 1, creature_id: filler, world_id: 51)],
+      factions: creature_faction.none(),
+      kills: set.from_list([8281]),
+    )
+  let creatures = [24_039, 24_040, 24_041, 24_042, 54_033]
+  let rows = of_creatures(placed:, creatures:)
+  assert list.length(rows) == 25 as "as many as the objective counts"
+  assert list.map(rows, fn(row) { row.creature_id })
+    == list.flatten(list.repeat(creatures, 5))
+    as "the pane's creatures take the places in its order, cycling"
+  list.each(rows, fn(row) {
+    let dx = row.x -. 4252.03125
+    let dz = row.z -. 313.005859375
+    let assert Ok(across) = float.square_root(dx *. dx +. dz *. dz)
+      as "a sum of squares has a root"
+    assert close(across, 50.0)
+      as "each stands on the circle of half the marker's radius"
+    assert row.world_id == 51 && row.area_id == 1252
+      as "the marker's world and zone"
+  })
 }

@@ -193,6 +193,7 @@ pub fn a_talk_advances_each_open_type_3_objective_naming_the_creature_test() -> 
       tables:,
       event: a_talk(Creature2Id(talk_target)),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
   assert talked.effects
     == [
@@ -214,6 +215,7 @@ pub fn a_talk_advances_each_open_type_3_objective_naming_the_creature_test() -> 
       tables:,
       event: a_talk(Creature2Id(talk_target)),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
     == Advanced(log: talked.log, effects: [])
     as "a done objective and gated objectives take nothing from a second talk"
@@ -223,6 +225,7 @@ pub fn a_talk_advances_each_open_type_3_objective_naming_the_creature_test() -> 
       tables:,
       event: a_talk(Creature2Id(unnamed)),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
     == Advanced(log:, effects: [])
     as "a creature no open objective names changes nothing"
@@ -245,6 +248,7 @@ pub fn a_talk_advances_each_open_type_3_objective_naming_the_creature_test() -> 
       tables:,
       event: a_talk(Creature2Id(talk_target)),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
   assert late.effects
     == [SendProgress(quest_id: 5622, objective_index: 0, progress: 1)]
@@ -278,6 +282,7 @@ pub fn a_use_advances_each_open_type_12_objective_naming_the_creature_test() -> 
       tables:,
       event: a_use(Creature2Id(use_target)),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
   assert used.effects
     == [
@@ -305,6 +310,7 @@ pub fn a_use_advances_each_open_type_12_objective_naming_the_creature_test() -> 
       tables:,
       event: a_use(Creature2Id(use_target)),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
     == Advanced(log: waiting, effects: [])
     as "9428's objective 1 has flag 2 and waits for objective 0, so it takes nothing (0x140553790)"
@@ -364,6 +370,7 @@ pub fn a_kill_advances_each_open_type_2_objective_naming_the_creature_test() -> 
       tables:,
       event: killed(creature: kill_target, faction: unlisted_faction),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
   assert slain.effects
     == [
@@ -387,6 +394,7 @@ pub fn a_kill_advances_each_open_type_2_objective_naming_the_creature_test() -> 
       tables:,
       event: killed(creature: stranger, faction: unlisted_faction),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
     == Advanced(log:, effects: [])
     as "a creature no open objective names changes nothing"
@@ -411,6 +419,7 @@ pub fn a_kill_advances_each_open_type_2_objective_naming_the_creature_test() -> 
       tables:,
       event: killed(creature: kill_target, faction: unlisted_faction),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
     == Advanced(log: closed, effects: [])
     as "a done objective, and a quest that is not in the active list, take no kill"
@@ -433,6 +442,7 @@ pub fn a_kill_in_its_target_group_advances_types_8_and_16_test() -> Nil {
       tables:,
       event: killed(creature: group_member, faction: unlisted_faction),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
   assert slain.effects
     == [
@@ -446,6 +456,7 @@ pub fn a_kill_in_its_target_group_advances_types_8_and_16_test() -> Nil {
       tables:,
       event: killed(creature: stranger, faction: unlisted_faction),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
     == Advanced(log:, effects: [])
     as "a creature outside the group advances neither"
@@ -470,6 +481,7 @@ pub fn a_kill_in_its_target_group_advances_types_8_and_16_test() -> Nil {
       tables:,
       event: killed(creature: stranger, faction: 248),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
   assert by_faction.effects
     == [SendProgress(quest_id: 3204, objective_index: 1, progress: 28)]
@@ -480,6 +492,7 @@ pub fn a_kill_in_its_target_group_advances_types_8_and_16_test() -> Nil {
       tables:,
       event: killed(creature: stranger, faction: 249),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
     == Advanced(log: factions, effects: [])
     as "a unit of another faction is not"
@@ -497,6 +510,7 @@ pub fn a_kill_in_its_target_group_advances_types_8_and_16_test() -> Nil {
       tables:,
       event: killed(creature: 4976, faction: unlisted_faction),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
     == Advanced(log: clustered, effects: [])
     as "a type 15 objective takes no kill by its data"
@@ -507,6 +521,7 @@ pub fn a_kill_in_its_target_group_advances_types_8_and_16_test() -> Nil {
       tables: ranked,
       event: killed(creature: 4976, faction: unlisted_faction),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
     == Advanced(log: clustered, effects: [])
     as "nor does the same objective as type 46"
@@ -537,6 +552,7 @@ pub fn a_kill_in_an_objectives_reward_pane_counts_test() -> Nil {
       tables:,
       event: killed(creature: group_member, faction: unlisted_faction),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
   assert slain.effects
     == [SendProgress(quest_id: 1804, objective_index: 0, progress: 333)]
@@ -549,6 +565,7 @@ pub fn a_kill_in_an_objectives_reward_pane_counts_test() -> Nil {
       tables:,
       event: killed(creature: stranger, faction: unlisted_faction),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
     == Advanced(log:, effects: [])
     as "a creature outside every pane changes nothing"
@@ -579,6 +596,7 @@ fn slain(
     tables:,
     event: killed(creature:, faction: unlisted_faction),
     now_ms: 0,
+    scripts: objective.no_rows(),
   )
 }
 
@@ -913,6 +931,7 @@ fn settled_at(
     arrival_objectives: set.new(),
     held_objectives: set.new(),
     unix_ms: settled_at_ms,
+    scripts: objective.no_rows(),
   )
 }
 
@@ -1147,6 +1166,7 @@ pub fn settle_counts_a_visit_once_its_objective_opens_test() -> Nil {
       tables:,
       event: killed(creature: 73_499, faction: unlisted_faction),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
   assert slain.effects
     == [SendProgress(quest_id: 10_520, objective_index: 3, progress: 1)]
@@ -1214,6 +1234,7 @@ pub fn using_a_quest_anim_creature_advances_its_named_type_32_objective_test() -
       tables:,
       event: a_use(collectible),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
   assert used.effects
     == [
@@ -1239,6 +1260,7 @@ pub fn using_a_quest_anim_creature_advances_its_named_type_32_objective_test() -
       tables:,
       event: a_use(collectible),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
     == Advanced(log: done, effects: [])
     as "a done objective takes nothing"
@@ -1250,6 +1272,7 @@ pub fn using_a_quest_anim_creature_advances_its_named_type_32_objective_test() -
       tables:,
       event: a_use(collectible),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
     == Advanced(log: finished, effects: [])
     as "a completed quest takes nothing"
@@ -1263,6 +1286,7 @@ pub fn using_a_quest_anim_creature_advances_its_named_type_32_objective_test() -
       tables:,
       event: a_use(collectible),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
     == Advanced(log: other, effects: [])
     as "a creature naming another quest does nothing for a quest whose type 32 objective it does not name"
@@ -1279,6 +1303,7 @@ pub fn using_a_quest_anim_creature_advances_its_named_type_32_objective_test() -
       tables: named_elsewhere,
       event: a_use(collectible),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
     == Advanced(log: waiting, effects: [])
     as "an unreachable objective takes nothing (0x140553790)"
@@ -1299,6 +1324,7 @@ pub fn using_a_quest_anim_creature_advances_its_named_type_32_objective_test() -
       tables: named_elsewhere,
       event: a_use(collectible),
       now_ms: 0,
+      scripts: objective.no_rows(),
     ).effects
     == [
       SendProgress(quest_id: 5857, objective_index: 1, progress: 1),
@@ -1311,6 +1337,7 @@ pub fn using_a_quest_anim_creature_advances_its_named_type_32_objective_test() -
       tables: named_elsewhere,
       event: a_use(collectible),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
     == Advanced(log:, effects: [])
     as "and the creature now names quest 5857, so quest 3741's objective takes nothing from it"
@@ -1379,6 +1406,7 @@ pub fn a_use_of_a_mine_counts_its_exile_type_5_objective_test() -> Nil {
       tables:,
       event: a_use(Creature2Id(73_463)),
       now_ms: 0,
+      scripts: objective.no_rows(),
     ).effects
     == [
       SendProgress(quest_id: 10_518, objective_index: 1, progress: 1),
@@ -1408,6 +1436,7 @@ pub fn a_use_of_the_same_mine_counts_the_dominion_objective_test() -> Nil {
       tables:,
       event: a_use(Creature2Id(73_463)),
       now_ms: 0,
+      scripts: objective.no_rows(),
     ).effects
     == [
       SendProgress(quest_id: 10_524, objective_index: 1, progress: 1),
@@ -1431,6 +1460,7 @@ pub fn a_quest_anim_link_counts_a_type_5_objective_test() -> Nil {
       tables:,
       event: a_use(Creature2Id(4989)),
       now_ms: 0,
+      scripts: objective.no_rows(),
     ).effects
     == [
       SendProgress(quest_id: 2020, objective_index: 1, progress: 1),
@@ -1448,6 +1478,7 @@ pub fn a_quest_anim_link_counts_a_type_5_objective_test() -> Nil {
         by_item: True,
       ),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
     == Advanced(log:, effects: [])
     as "an item's spell at the same creature is not the creature's own activate cast, so the link does not count it"
@@ -1470,6 +1501,7 @@ pub fn a_prerequisite_link_counts_a_type_32_objective_test() -> Nil {
       tables:,
       event: a_use(Creature2Id(12_321)),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
   assert used.effects
     == [
@@ -1483,6 +1515,7 @@ pub fn a_prerequisite_link_counts_a_type_32_objective_test() -> Nil {
       tables:,
       event: a_use(Creature2Id(12_321)),
       now_ms: 0,
+      scripts: objective.no_rows(),
     ).effects
     == []
     as "and the same unit again counts nothing, whatever the link that reached the objective"
@@ -1510,6 +1543,7 @@ pub fn a_use_counts_nothing_once_its_linked_objective_is_done_test() -> Nil {
       tables:,
       event: a_use(Creature2Id(12_919)),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
     == Advanced(log:, effects: [])
     as "a done objective counts no more uses"
@@ -1529,6 +1563,7 @@ pub fn a_link_to_an_objective_not_yet_reachable_counts_nothing_test() -> Nil {
       tables:,
       event: a_use(Creature2Id(73_463)),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
     == Advanced(log:, effects: [])
     as "an unreachable objective takes nothing (0x140553790)"
@@ -1549,6 +1584,7 @@ pub fn a_link_to_a_type_4_objective_counts_nothing_by_the_link_test() -> Nil {
       tables:,
       event: a_use(Creature2Id(7952)),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
     == Advanced(log:, effects: [])
     as "a use does not count an objective the server counts by what is held"
@@ -1571,6 +1607,7 @@ pub fn a_nested_prerequisite_link_counts_its_objective_test() -> Nil {
       tables:,
       event: a_use(Creature2Id(19_277)),
       now_ms: 0,
+      scripts: objective.no_rows(),
     ).effects
     == [
       SendProgress(quest_id: 4975, objective_index: 0, progress: 1),
@@ -1892,6 +1929,7 @@ pub fn a_cast_of_the_objective_spell_completes_it_test() -> Nil {
       tables:,
       event: cast_of(spell: the_first_cast_spell),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
   assert cast.effects
     == [
@@ -1922,6 +1960,7 @@ pub fn each_cast_counts_one_up_to_the_count_test() -> Nil {
           tables:,
           event: cast_of(spell: the_counted_cast_spell),
           now_ms: 0,
+          scripts: objective.no_rows(),
         )
       let progress =
         SendProgress(
@@ -1954,6 +1993,7 @@ pub fn each_cast_counts_one_up_to_the_count_test() -> Nil {
       tables:,
       event: cast_of(spell: the_counted_cast_spell),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
     == Advanced(log: after, effects: [])
     as "a done objective takes nothing from a 21st cast"
@@ -1972,6 +2012,7 @@ pub fn a_cast_of_another_spell_counts_nothing_test() -> Nil {
       tables:,
       event: cast_of(spell: the_first_cast_spell),
       now_ms: 0,
+      scripts: objective.no_rows(),
     ).effects
     != []
     as "row 13884's own spell 40471 counts, so the empty answer below is the other spell's"
@@ -1981,6 +2022,7 @@ pub fn a_cast_of_another_spell_counts_nothing_test() -> Nil {
       tables:,
       event: cast_of(spell: the_gated_cast_spell),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
     == Advanced(log:, effects: [])
     as "row 13884's data is 40471, not 25306"
@@ -2008,6 +2050,7 @@ pub fn a_cast_counts_the_open_objective_and_not_one_waiting_on_another_test() ->
       tables: fixture_tables.shared(),
       event: cast_of(spell: the_shared_cast_spell),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
   assert cast.effects
     == [
@@ -2032,6 +2075,7 @@ pub fn a_cast_counts_nothing_on_a_quest_not_in_the_active_list_test() -> Nil {
       tables:,
       event: cast_of(spell: the_first_cast_spell),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
   assert counted.effects != []
     as "the quest in the active list counts the cast, so the empty answers below are its state's"
@@ -2043,6 +2087,7 @@ pub fn a_cast_counts_nothing_on_a_quest_not_in_the_active_list_test() -> Nil {
         tables:,
         event: cast_of(spell: the_first_cast_spell),
         now_ms: 0,
+        scripts: objective.no_rows(),
       )
       == Advanced(log:, effects: [])
       as "0x1405510d0: an objective is open only for a quest in the active list"
@@ -2084,6 +2129,7 @@ pub fn a_use_of_a_group_unit_counts_a_type_23_objective_test() -> Nil {
       tables:,
       event: a_use(Creature2Id(72_197)),
       now_ms: 0,
+      scripts: objective.no_rows(),
     ).effects
     == [
       SendProgress(quest_id: 10_415, objective_index: 0, progress: 1),
@@ -2102,6 +2148,7 @@ pub fn a_use_of_a_unit_outside_the_group_counts_nothing_test() -> Nil {
       tables:,
       event: a_use(Creature2Id(73_606)),
       now_ms: 0,
+      scripts: objective.no_rows(),
     ).effects
     == []
     as "a unit outside the objective's group counts nothing"
@@ -2117,6 +2164,7 @@ pub fn each_use_counts_one_toward_a_larger_count_test() -> Nil {
       tables:,
       event: a_use(Creature2Id(creature)),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
   }
   let first = count(group_use_log(), 72_197)
@@ -2144,6 +2192,7 @@ pub fn the_northern_wilds_terminal_counts_travel_and_its_own_choice_test() -> Ni
       tables:,
       event: a_use(Creature2Id(73_606)),
       now_ms: 0,
+      scripts: objective.no_rows(),
     ).effects
     == [
       SendProgress(quest_id: 10_528, objective_index: 1, progress: 1),
@@ -2162,6 +2211,7 @@ pub fn the_everstar_terminal_counts_only_its_own_choice_test() -> Nil {
       tables:,
       event: a_use(Creature2Id(73_605)),
       now_ms: 0,
+      scripts: objective.no_rows(),
     ).effects
     == [
       SendProgress(quest_id: 10_528, objective_index: 1, progress: 1),
@@ -2182,6 +2232,7 @@ pub fn each_dominion_terminal_counts_its_own_choice_test() -> Nil {
       tables:,
       event: a_use(Creature2Id(74_773)),
       now_ms: 0,
+      scripts: objective.no_rows(),
     ).effects
     == [
       SendProgress(quest_id: 10_530, objective_index: 1, progress: 1),
@@ -2195,6 +2246,7 @@ pub fn each_dominion_terminal_counts_its_own_choice_test() -> Nil {
       tables:,
       event: a_use(Creature2Id(74_772)),
       now_ms: 0,
+      scripts: objective.no_rows(),
     ).effects
     == [
       SendProgress(quest_id: 10_530, objective_index: 1, progress: 1),
@@ -2213,6 +2265,7 @@ pub fn a_talk_to_a_terminal_counts_no_type_23_test() -> Nil {
       tables:,
       event: a_talk(Creature2Id(73_606)),
       now_ms: 0,
+      scripts: objective.no_rows(),
     ).effects
     == []
     as "a type 23 objective counts a use, not a talk"
@@ -2230,6 +2283,7 @@ pub fn travel_done_leaves_bon_voyage_achieved_test() -> Nil {
       tables:,
       event: a_use(Creature2Id(73_606)),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
   let quest = quest_of(id: 10_528, tables:)
   assert quest_log.stored_state(log: used.log, quest_id: 10_528) == 2
@@ -2257,7 +2311,14 @@ fn used_by(
   tables tables: table_store.Tables,
   event event: objective.Event,
 ) -> objective.Advanced {
-  objective.advance(reused: set.new(), log:, tables:, event:, now_ms: 0)
+  objective.advance(
+    reused: set.new(),
+    log:,
+    tables:,
+    event:,
+    now_ms: 0,
+    scripts: objective.no_rows(),
+  )
 }
 
 pub fn a_second_use_of_the_same_unit_counts_nothing_test() -> Nil {
@@ -2584,9 +2645,17 @@ pub fn a_reused_type_12_objective_counts_the_same_unit_again_test() -> Nil {
       tables:,
       event:,
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
   let again =
-    objective.advance(reused:, log: first.log, tables:, event:, now_ms: 0)
+    objective.advance(
+      reused:,
+      log: first.log,
+      tables:,
+      event:,
+      now_ms: 0,
+      scripts: objective.no_rows(),
+    )
   assert again.effects
     == [SendProgress(quest_id: 3480, objective_index: 0, progress: 2)]
     as "the second use of unit 224 counts the second"
@@ -2895,6 +2964,7 @@ pub fn an_items_use_does_not_advance_a_type_32_objective_test() -> Nil {
         by_item: True,
       ),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
     == Advanced(log:, effects: [])
     as "an item's spell at the collectible is not the creature's own activate cast"
@@ -2904,6 +2974,7 @@ pub fn an_items_use_does_not_advance_a_type_32_objective_test() -> Nil {
       tables:,
       event: a_use(collectible),
       now_ms: 0,
+      scripts: objective.no_rows(),
     ).effects
     == [
       SendProgress(quest_id: 3741, objective_index: 0, progress: 1),
@@ -2947,6 +3018,7 @@ pub fn a_kill_that_achieves_a_quest_no_creature_receives_emits_its_server_comple
       tables:,
       event: killed(creature: kill_target, faction: unlisted_faction),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
   assert slain.effects
     == [
@@ -3097,6 +3169,7 @@ fn used_reusing(
     tables:,
     event:,
     now_ms: 0,
+    scripts: objective.no_rows(),
   )
 }
 
@@ -3323,6 +3396,7 @@ pub fn an_items_use_of_a_type_32_unit_releases_nothing_test() -> Nil {
         by_item: True,
       ),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
     == Advanced(log:, effects: [])
     as "nothing is counted and nothing is released"

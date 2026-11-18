@@ -179,6 +179,7 @@ pub fn no_activate_spell_is_refused_for_a_type_42_row_and_the_use_rule_counts_th
             quest_id: quest.id,
             index: effect.data_bits01,
             objective:,
+            scripts: objective.no_rows(),
           )
         })
       Ok(
@@ -264,6 +265,7 @@ pub fn the_objectives_a_row_names_are_reachable_or_pinned_as_a_gap_test() -> Nil
         index:,
         objective:,
         arrival_objectives: set.new(),
+        scripts: objective.no_rows(),
       )
       == objective.NamedAction
     })

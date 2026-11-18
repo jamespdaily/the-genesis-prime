@@ -25,6 +25,7 @@ import genesis_prime/content/class_resource as content_class_resource
 import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/game_number as content_game_number
 import genesis_prime/content/held_objective as content_held_objective
+import genesis_prime/content/kill_objective as content_kill_objective
 import genesis_prime/content/projector_landing as content_projector_landing
 import genesis_prime/content/refusal.{Refusal}
 import genesis_prime/content/server_proxy as content_server_proxy
@@ -35,6 +36,7 @@ import genesis_prime/content/vendor as content_vendor
 import genesis_prime/content/zone_welcome as content_zone_welcome
 import genesis_prime/game/activate
 import genesis_prime/game/class_resource
+import genesis_prime/game/objective
 import genesis_prime/game/projector
 import genesis_prime/game/spell_plan
 import genesis_prime/game/start_place
@@ -289,6 +291,35 @@ pub fn the_content_load_puts_the_arrival_objectives_test() -> Nil {
     as "an objective migration 0038 does not list is no arrival"
 }
 
+pub fn the_kill_objective_table_loads_and_a_refused_row_stops_the_load_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let database = database_support.new_database(on: database_support.shared())
+  let #(loaded, key) = content_support.load(database:)
+  assert loaded == Ok(Nil)
+  let kills = content_kill_objective.kills(key:)
+  assert set.size(kills) == 9 as "migration 0044 seeds 9 kill_objective rows"
+  assert list.all([8010, 8866, 15_996], fn(objective) {
+    set.contains(kills, objective)
+  })
+    as "the first row of the table by id (8010), quest 5895's (8866) and the last (15996)"
+  assert !set.contains(kills, 7515)
+    as "an objective migration 0044 does not list is no kill row"
+  assert login_support.servers_settings_over(spawns: key).game.settings.script_rows
+    == objective.ScriptRows(kills:)
+    as "the settings the load's key gave carry the kill table"
+  // QuestObjective 4000000 is no row of the client's table.
+  let refused = database_support.new_database(on: database_support.shared())
+  content_support.change(
+    database: refused,
+    sql: "insert into kill_objective (objective_id, source, reason) values (4000000, 'server_choice', 'an objective the client lacks')",
+  )
+  let #(loaded, _key) = content_support.load(database: refused)
+  let assert Error(content.Refused(refusals:)) = loaded
+    as "a refused kill row stops the start"
+  assert list.map(refusals, fn(refused) { #(refused.table, refused.row) })
+    == [#("kill_objective", refusal.RowId(4_000_000))]
+}
+
 pub fn the_load_puts_every_term_the_game_listener_reads_at_start_test() -> Nil {
   use <- owned_test.run(60_000)
   let database = database_support.new_database(on: database_support.shared())
@@ -307,6 +338,7 @@ pub fn the_load_puts_every_term_the_game_listener_reads_at_start_test() -> Nil {
   let _reused = content_spawn.reused_unit_objectives(key:)
   let _held = content_held_objective.held(key:)
   let _arrivals = content_arrival_objective.arrivals(key:)
+  let _kills = content_kill_objective.kills(key:)
   Nil
 }
 

@@ -22,9 +22,10 @@
 //// `opcode.0x361` carries only the progress), and the last one's kill makes it 1 of its
 //// count 1 (the client's needed value is 1 for count 1, `0x140551840`). A type 5
 //// objective (`QuestObjective.type.5`, a scripted objective) that no creature links takes
-//// none of these events: nothing the client sends completes one, so the server completes
-//// it by what `script_of` says, and a timed one the server does not complete runs out
-//// (`quest_log.expire`):
+//// a kill only when it is a row of the kill table (`ScriptRows.kills`, a visible one whose
+//// text asks only to kill), by the reward pane alone (`counts`). Nothing else the client
+//// sends completes one, so the server completes it by what `script_of` says, and a timed one
+//// the server does not complete runs out (`quest_log.expire`):
 //// - a hidden one (`QuestObjective.flags.8`) and a visible, required one with no marker
 ////   are done once the quest's other required objectives are (`stand_in_scripts`, a
 ////   server choice);
@@ -35,6 +36,8 @@
 ////   Tower fix completes on accept gets its real rule");
 //// - one of the `arrival_objectives` is done when the player stands at one of its markers
 ////   (`arrivals`), because its text asks only to go there;
+//// - one of the kill table's objectives (`ScriptRows.kills`) stays open until the player
+////   kills a creature of its reward pane, as many times as it counts (`KillScript`);
 //// - one a spell effect or an item names (`objective_action`) stays open until a cast
 ////   counts for it: a QuestAdvanceObjective row of the cast's spell advances it
 ////   (genesis_prime/game/quest_advance);
@@ -231,7 +234,8 @@ pub fn talk_targets(
   log log: QuestLog,
   tables tables: table_store.Tables,
 ) -> fn(target_group.Unit, Int) -> Bool {
-  let offered = counted_by(log:, tables:)
+  // The script tables decide only what a kill counts for, so a talk reads none.
+  let offered = counted_by(log:, tables:, scripts: no_rows())
   fn(unit, checklist_index) {
     offered(TalkedTo(target: unit, checklist_index:))
   }
@@ -246,7 +250,8 @@ pub fn use_targets(
   log log: QuestLog,
   tables tables: table_store.Tables,
 ) -> fn(target_group.Unit, Int, quest_log.UnitRef) -> Bool {
-  let offered = counted_by(log:, tables:)
+  // The script tables decide only what a kill counts for, so a use reads none.
+  let offered = counted_by(log:, tables:, scripts: no_rows())
   fn(unit, checklist_index, ref) {
     offered(Used(target: unit, checklist_index:, unit: ref, by_item: False))
   }
@@ -255,6 +260,7 @@ pub fn use_targets(
 fn counted_by(
   log log: QuestLog,
   tables tables: table_store.Tables,
+  scripts scripts: ScriptRows,
 ) -> fn(Event) -> Bool {
   let open =
     list.flat_map(quest_log.active_ids(log:), fn(quest_id) {
@@ -265,7 +271,7 @@ fn counted_by(
   fn(event) {
     list.any(open, fn(found) {
       let #(quest, index, objective) = found
-      counts(tables:, event:, quest_id: quest.id, index:, objective:)
+      counts(tables:, event:, quest_id: quest.id, index:, objective:, scripts:)
       && !counted_already(log:, quest:, index:, event:)
     })
   }
@@ -316,6 +322,7 @@ pub fn advance(
   tables tables: table_store.Tables,
   event event: Event,
   reused reused: Set(Int),
+  scripts scripts: ScriptRows,
   now_ms now_ms: Int,
 ) -> Advanced {
   let #(advanced, credited_a_new_unit) =
@@ -332,7 +339,7 @@ pub fn advance(
             now_ms:,
             reused:,
             counts: fn(index, objective) {
-              counts(tables:, event:, quest_id:, index:, objective:)
+              counts(tables:, event:, quest_id:, index:, objective:, scripts:)
             },
             group_member: fn(objective) {
               case event {
@@ -379,6 +386,7 @@ pub fn counts(
   quest_id quest_id: Int,
   index index: Int,
   objective objective: quest_log.Objective,
+  scripts scripts: ScriptRows,
 ) -> Bool {
   case event {
     TalkedTo(target:, ..) ->
@@ -450,18 +458,29 @@ pub fn counts(
           )
         Error(Nil) -> False
       }
-      by_data
-      || {
-        objective_kind.is_kill(objective.kind)
-        && objective.reward_pane != 0
-        && target_group.contains(
-          tables:,
-          group: objective.reward_pane,
-          unit: target,
-        )
-      }
+      by_data || killed_in_pane(tables:, objective:, target:, scripts:)
     }
   }
+}
+
+/// Whether a kill of the unit counts for the objective by its reward pane
+/// (`0x140550c50`): a kill objective (`objective_kind.is_kill`) or a kill script, a type 5
+/// objective of the kill table (`ScriptRows.kills`), whose pane lists the unit.
+fn killed_in_pane(
+  tables tables: table_store.Tables,
+  objective objective: quest_log.Objective,
+  target target: target_group.Unit,
+  scripts scripts: ScriptRows,
+) -> Bool {
+  let kills =
+    objective_kind.is_kill(objective.kind)
+    || {
+      objective.kind == objective_kind.Scripted
+      && set.contains(scripts.kills, objective.objective_id)
+    }
+  kills
+  && objective.reward_pane != 0
+  && target_group.contains(tables:, group: objective.reward_pane, unit: target)
 }
 
 /// Whether the unit is in the objective's reward pane, which counts a unit for any
@@ -748,6 +767,7 @@ pub fn settle(
   shown shown: shown.Picture,
   numbers numbers: GameNumbers,
   arrival_objectives arrival_objectives: Set(Int),
+  scripts scripts: ScriptRows,
   held_objectives held_objectives: Set(Int),
   unix_ms unix_ms: Int,
   now_ms now_ms: Int,
@@ -786,6 +806,7 @@ pub fn settle(
           shown:,
           numbers:,
           arrival_objectives:,
+          scripts:,
           held_objectives:,
           unix_ms:,
           now_ms:,
@@ -825,6 +846,7 @@ fn opened(
   shown shown: shown.Picture,
   numbers numbers: GameNumbers,
   arrival_objectives arrival_objectives: Set(Int),
+  scripts scripts: ScriptRows,
   held_objectives held_objectives: Set(Int),
   unix_ms unix_ms: Int,
   now_ms now_ms: Int,
@@ -837,6 +859,7 @@ fn opened(
       place:,
       shown:,
       arrival_objectives:,
+      scripts:,
       held_objectives:,
       now_ms:,
     )
@@ -845,6 +868,7 @@ fn opened(
       quest:,
       tables:,
       arrival_objectives:,
+      scripts:,
       held_objectives:,
       now_ms:,
     )
@@ -859,12 +883,29 @@ fn opened(
         shown:,
         numbers:,
         arrival_objectives:,
+        scripts:,
         held_objectives:,
         unix_ms:,
         now_ms:,
       )
     False -> next
   }
+}
+
+/// The content tables that choose the real rule of a type 5 objective, beside
+/// `arrival_objectives`: the QuestObjective ids each holds. A kind of scripted step that
+/// needs a set adds a field here and its empty value to `no_rows`.
+pub type ScriptRows {
+  ScriptRows(
+    /// The objectives done by killing the creatures of their reward pane
+    /// (genesis_prime/game/kill_objective).
+    kills: Set(Int),
+  )
+}
+
+/// The rows of no table: every type 5 objective that no creature links is a stand-in.
+pub fn no_rows() -> ScriptRows {
+  ScriptRows(kills: set.new())
 }
 
 /// How the rules treat an objective of a quest, decided in one place so no objective falls
@@ -883,6 +924,9 @@ pub type Script {
   /// Visible, required, marked and listed in the arrival table: done when the player
   /// stands at one of its markers.
   PlaceScript
+  /// Visible, required, marked and listed in the kill table: done by killing the creatures
+  /// of its reward pane (`counts`), which `objective_spawn.place` stands at its marker.
+  KillScript
   /// Visible, required and marked, and none of the above: done when it is open, whatever
   /// else the quest holds.
   StandInOnAccept
@@ -899,14 +943,15 @@ pub type Script {
 /// (`0x1405fbc40`). A visible required one without a marker waits for the quest (a
 /// `worldLocationsIdIndicator` that names no WorldLocation2 row is no marker: no position is
 /// at it, `0x140485fa0`); one with a marker sends the player to a place (`0x140553890`) and is
-/// the named action's, a place script (`arrival_objectives`) or a stand-in on accept, in
-/// that order. The held objectives are not looked at here: each rule leaves a held one open.
+/// the named action's, a place script (`arrival_objectives`), a kill script (`scripts`) or a
+/// stand-in on accept, in that order. The held objectives are not looked at here: each rule leaves a held one open.
 pub fn script_of(
   tables tables: table_store.Tables,
   quest_id quest_id: Int,
   index index: Int,
   objective objective: quest_log.Objective,
   arrival_objectives arrival_objectives: Set(Int),
+  scripts scripts: ScriptRows,
 ) -> Script {
   use <- bool.guard(objective.kind != objective_kind.Scripted, NotScripted)
   use <- bool.guard(
@@ -926,8 +971,12 @@ pub fn script_of(
     objective_action.named(tables:, quest_id:, index:),
     NamedAction,
   )
-  case set.contains(arrival_objectives, objective.objective_id) {
-    True -> PlaceScript
+  use <- bool.guard(
+    set.contains(arrival_objectives, objective.objective_id),
+    PlaceScript,
+  )
+  case set.contains(scripts.kills, objective.objective_id) {
+    True -> KillScript
     False -> StandInOnAccept
   }
 }
@@ -954,10 +1003,11 @@ fn stand_in_scripts(
   quest quest: quest_log.Quest,
   tables tables: table_store.Tables,
   arrival_objectives arrival_objectives: Set(Int),
+  scripts scripts: ScriptRows,
   held_objectives held_objectives: Set(Int),
   now_ms now_ms: Int,
 ) -> Settling {
-  let scripts =
+  let classified =
     list.index_map(quest.objectives, fn(objective, index) {
       #(
         index,
@@ -968,11 +1018,12 @@ fn stand_in_scripts(
           index:,
           objective:,
           arrival_objectives:,
+          scripts:,
         ),
       )
     })
   let open_and_free = fn(settling: Settling, wanted: Script) {
-    list.filter(scripts, fn(triple) {
+    list.filter(classified, fn(triple) {
       triple.2 == wanted
       && !set.contains(held_objectives, { triple.1 }.objective_id)
       && quest_log.objective_open(log: settling.log, quest:, index: triple.0)
@@ -998,11 +1049,15 @@ fn stand_in_scripts(
     && other_required_objectives_done(
       log: on_accept.log,
       quest:,
-      scripts: list.filter_map(scripts, fn(triple) {
+      scripts: list.filter_map(classified, fn(triple) {
         case triple.2 {
           StandInOnAccept | StandInWithQuest -> Ok(triple.0)
-          NotScripted | UsedByCreature | Optional | NamedAction | PlaceScript ->
-            Error(Nil)
+          NotScripted
+          | UsedByCreature
+          | Optional
+          | NamedAction
+          | PlaceScript
+          | KillScript -> Error(Nil)
         }
       }),
     )
@@ -1129,6 +1184,7 @@ fn arrivals(
   place place: Place,
   shown shown: shown.Picture,
   arrival_objectives arrival_objectives: Set(Int),
+  scripts scripts: ScriptRows,
   held_objectives held_objectives: Set(Int),
   now_ms now_ms: Int,
 ) -> Settling {
@@ -1145,6 +1201,7 @@ fn arrivals(
             index:,
             objective:,
             arrival_objectives:,
+            scripts:,
           )
           == PlaceScript
           && !set.contains(held_objectives, objective.objective_id)
@@ -1215,6 +1272,7 @@ fn arrivals(
         place:,
         shown:,
         arrival_objectives:,
+        scripts:,
         held_objectives:,
         now_ms:,
       )

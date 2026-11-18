@@ -25,6 +25,7 @@ import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{type Settings, Settings}
 import genesis_prime/game/hit.{type Offence, Blow, Offence, Worked}
 import genesis_prime/game/loadout
+import genesis_prime/game/objective
 import genesis_prime/game/server_proxy
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
@@ -132,6 +133,7 @@ pub fn settings() -> game_connection.Settings {
     reused_unit_objectives: set.new(),
     arrival_objectives: set.new(),
     held_objectives: set.new(),
+    script_rows: objective.no_rows(),
   )
 }
 

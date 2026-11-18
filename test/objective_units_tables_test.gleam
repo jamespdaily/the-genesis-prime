@@ -253,6 +253,7 @@ pub fn every_creature_an_objective_lists_is_counted_by_its_use_test() -> Nil {
               quest_id:,
               index:,
               objective:,
+              scripts: rule.no_rows(),
             )
               as {
                 name

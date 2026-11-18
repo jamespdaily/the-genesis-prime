@@ -125,6 +125,7 @@ fn settled_among(
     arrival_objectives: set.new(),
     held_objectives: set.new(),
     unix_ms: 0,
+    scripts: objective.no_rows(),
   )
 }
 

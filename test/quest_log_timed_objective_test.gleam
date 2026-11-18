@@ -421,6 +421,7 @@ pub fn the_deadline_timer_follows_the_earliest_objective_deadline_test() -> Nil 
       tables:,
       event: killed_5006(),
       now_ms: 10_000,
+      scripts: objective.no_rows(),
     )
   assert quest_log.deadline_moved(
       before: quest_log.next_deadline(log:),
@@ -457,6 +458,7 @@ pub fn the_deadline_timer_follows_the_earliest_objective_deadline_test() -> Nil 
       tables:,
       event: killed_5006(),
       now_ms: 20_000,
+      scripts: objective.no_rows(),
     )
   assert quest_log.deadline_moved(
       before: quest_log.next_deadline(log:),

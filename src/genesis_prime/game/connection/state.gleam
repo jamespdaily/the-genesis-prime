@@ -15,6 +15,7 @@ import genesis_prime/game/class_resource
 import genesis_prime/game/inventory
 import genesis_prime/game/item_charge
 import genesis_prime/game/movement
+import genesis_prime/game/objective
 import genesis_prime/game/player_life
 import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/projector
@@ -123,6 +124,10 @@ pub type Settings {
     /// (genesis_prime/content/arrival_objective): the settle completes one when the player
     /// stands at a marker (genesis_prime/game/objective `script_of`).
     arrival_objectives: Set(Int),
+    /// The scripted objectives whose real rule is a kill, from the content load
+    /// (genesis_prime/content/kill_objective): a kill of a creature of the objective's
+    /// reward pane counts for one (genesis_prime/game/objective `counts`).
+    script_rows: objective.ScriptRows,
   )
 }
 

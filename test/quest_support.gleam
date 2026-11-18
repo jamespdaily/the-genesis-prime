@@ -19,6 +19,7 @@ import genesis_prime/table/id
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest2
 import genesis_prime/world_map/map_id.{MapId}
+import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import planted_table.{Integer}
@@ -298,4 +299,40 @@ pub fn with_objectives(
       }
     })
   fixture_tables.on_rows(rows:, reaching: [], body:)
+}
+
+/// A log of the quest, accepted, with these objectives (by index) done: each at its count
+/// and its done bit set, read from the tables' rows of the quest.
+pub fn logged(
+  tables tables: table_store.Tables,
+  quest_id quest_id: Int,
+  done done: List(Int),
+) -> QuestLog {
+  let assert Ok(quest) = quest_log.quest_of(tables:, id: quest_id)
+    as "the tables hold the quest"
+  let progress =
+    list.index_map(quest.objectives, fn(objective, index) {
+      case list.contains(done, index) {
+        True -> objective.count
+        False -> 0
+      }
+    })
+  let assert Ok(log) =
+    quest_log.from_rows(
+      rows: [
+        active(
+          quest_id:,
+          state: 1,
+          placeholder: 0,
+          tracked: False,
+          done_mask: list.fold(done, 0, fn(mask, index) {
+            int.bitwise_or(mask, int.bitwise_shift_left(1, index))
+          }),
+          progress:,
+        ),
+      ],
+      tables:,
+    )
+    as "the saved rows are ones the client takes"
+  log
 }

@@ -102,6 +102,7 @@ pub fn counted(
       tables: session.settings.tables,
       event:,
       reused: session.settings.reused_unit_objectives,
+      scripts: session.settings.script_rows,
       now_ms: now.monotonic_ms,
     )
   })
@@ -190,6 +191,7 @@ fn settle(
     shown: entered.shown,
     numbers: session.settings.numbers,
     arrival_objectives: session.settings.arrival_objectives,
+    scripts: session.settings.script_rows,
     held_objectives: session.settings.held_objectives,
     unix_ms: step.unix_milliseconds(now:),
     now_ms: now.monotonic_ms,

@@ -106,6 +106,7 @@ pub fn activating_a_checklist_target_sets_its_bit_test() -> Nil {
       tables:,
       event: used(tables:, creature: checklist_creature, index: 2),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
   assert counted.effects
     == [
@@ -131,6 +132,7 @@ pub fn a_checklist_is_done_when_its_bit_count_reaches_its_count_test() -> Nil {
       tables:,
       event: used(tables:, creature: checklist_creature, index:),
       now_ms: 0,
+      scripts: objective.no_rows(),
     ).log
   }
 
@@ -164,6 +166,7 @@ pub fn a_target_already_counted_changes_nothing_test() -> Nil {
       tables:,
       event:,
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
   let again =
     objective.advance(
@@ -172,6 +175,7 @@ pub fn a_target_already_counted_changes_nothing_test() -> Nil {
       tables:,
       event:,
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
   assert again == Advanced(log: first.log, effects: [])
     as "the bit is set already: no second 0x361 and the log is as it was"
@@ -193,6 +197,7 @@ pub fn activating_a_path_soldier_target_sets_its_bit_test() -> Nil {
       tables:,
       event: used(tables:, creature: path_creature, index: 1),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
   assert counted.effects
     == [
@@ -223,6 +228,7 @@ pub fn activating_a_type_27_path_soldier_target_sets_its_bit_test() -> Nil {
       tables:,
       event: used(tables:, creature: path_creature, index: 1),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
   assert counted.effects
     == [
@@ -244,6 +250,7 @@ pub fn a_unit_outside_the_target_group_changes_nothing_test() -> Nil {
       tables:,
       event: used(tables:, creature: outsider, index: 1),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
     == Advanced(log:, effects: [])
     as "a unit TargetGroup 14425 does not hold takes no bit"
@@ -253,6 +260,7 @@ pub fn a_unit_outside_the_target_group_changes_nothing_test() -> Nil {
       tables:,
       event: used(tables:, creature: checklist_creature, index: 32),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
     == Advanced(log:, effects: [])
     as "an index of 32 or more is never counted (0x140611680)"
@@ -286,6 +294,7 @@ pub fn a_checklist_target_whose_bit_is_set_is_not_used_test() -> Nil {
       tables:,
       event: used(tables:, creature: checklist_creature, index: 2),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
   let used_now = objective.use_targets(log: counted.log, tables:)
   let unit = unit_of(tables:, creature: checklist_creature)
@@ -305,6 +314,7 @@ pub fn a_checklist_target_of_a_done_objective_is_not_used_test() -> Nil {
       tables:,
       event: used(tables:, creature: checklist_creature, index:),
       now_ms: 0,
+      scripts: objective.no_rows(),
     ).log
   }
   let done = list.fold([0, 1, 2], fresh_log(), count)
@@ -329,6 +339,7 @@ pub fn a_use_that_sets_a_new_type_14_bit_releases_the_unit_test() -> Nil {
       tables:,
       event: used(tables:, creature: checklist_creature, index: 2),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
   assert list.last(first.effects) == Ok(ReleaseUnit(unit_id: 2))
     as "the use that sets bit 2 ends with the release of that unit"
@@ -339,6 +350,7 @@ pub fn a_use_that_sets_a_new_type_14_bit_releases_the_unit_test() -> Nil {
       tables:,
       event: used(tables:, creature: checklist_creature, index: 2),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
   assert again == Advanced(log: first.log, effects: [])
     as "the unit whose bit is set counts nothing and releases nothing"
@@ -349,6 +361,7 @@ pub fn a_use_that_sets_a_new_type_14_bit_releases_the_unit_test() -> Nil {
       tables:,
       event: used(tables:, creature: checklist_creature, index: 1),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
   assert list.last(other.effects) == Ok(ReleaseUnit(unit_id: 1))
     as "another unit of the objective, bit 1, is released by its own use"
@@ -370,6 +383,7 @@ pub fn a_use_that_sets_a_new_type_28_bit_releases_the_unit_test() -> Nil {
       tables:,
       event: used(tables:, creature: path_creature, index: 1),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
   assert list.last(first.effects) == Ok(ReleaseUnit(unit_id: 1))
     as "the use that sets bit 1 ends with the release of the unit"
@@ -379,6 +393,7 @@ pub fn a_use_that_sets_a_new_type_28_bit_releases_the_unit_test() -> Nil {
       tables:,
       event: used(tables:, creature: path_creature, index: 1),
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
     == Advanced(log: first.log, effects: [])
     as "the unit whose bit is set counts nothing and releases nothing"

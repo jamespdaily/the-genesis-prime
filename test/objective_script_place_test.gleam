@@ -41,9 +41,7 @@
 import character_tables
 import client_tables
 import content_support
-import database_support
 import fixture_tables
-import genesis_prime/content/arrival_objective as content_arrival_objective
 import genesis_prime/game/objective.{
   type Advanced, type Effect, Advanced, CompleteByServer, ReleaseUnit,
   SendProgress, SendState,
@@ -61,7 +59,6 @@ import genesis_prime/table/quest_objective
 import genesis_prime/table/spell4_effects
 import genesis_prime/table/world_location2
 import gleam/dict
-import gleam/int
 import gleam/list
 import gleam/option.{Some}
 import gleam/result
@@ -107,6 +104,7 @@ fn settle(
     at: place,
     arrivals: set.from_list(arrivals),
     held: set.from_list(held),
+    scripts: objective.no_rows(),
   )
 }
 
@@ -116,6 +114,7 @@ fn settle_sets(
   at place: Place,
   arrivals arrivals: Set(Int),
   held held: Set(Int),
+  scripts scripts: objective.ScriptRows,
 ) -> Advanced {
   objective.settle(
     log:,
@@ -129,6 +128,7 @@ fn settle_sets(
     held_objectives: held,
     unix_ms:,
     now_ms: 0,
+    scripts:,
   )
 }
 
@@ -169,33 +169,7 @@ fn logged(
   quest_id quest_id: Int,
   done done: List(Int),
 ) -> quest_log.QuestLog {
-  let assert Ok(quest) = quest_log.quest_of(tables:, id: quest_id)
-    as "the fixture holds the quest"
-  let progress =
-    list.index_map(quest.objectives, fn(objective, index) {
-      case list.contains(done, index) {
-        True -> objective.count
-        False -> 0
-      }
-    })
-  let assert Ok(log) =
-    quest_log.from_rows(
-      rows: [
-        quest_support.active(
-          quest_id:,
-          state: 1,
-          placeholder: 0,
-          tracked: False,
-          done_mask: list.fold(done, 0, fn(mask, index) {
-            int.bitwise_or(mask, int.bitwise_shift_left(1, index))
-          }),
-          progress:,
-        ),
-      ],
-      tables:,
-    )
-    as "the saved rows are ones the client takes"
-  log
+  quest_support.logged(tables:, quest_id:, done:)
 }
 
 /// The quest accepted with nothing done.
@@ -609,6 +583,7 @@ pub fn a_timed_stand_in_completes_before_its_deadline_and_not_after_test() -> Ni
       held_objectives: set.new(),
       unix_ms:,
       now_ms: 200_000,
+      scripts: objective.no_rows(),
     )
   assert told(effects: before.effects)
     == [
@@ -884,11 +859,7 @@ pub fn an_abandoned_and_retaken_quest_starts_its_place_script_again_test() -> Ni
 
 /// The QuestObjective ids the migrated database holds in the arrival table.
 fn arrival_ids() -> Set(Int) {
-  let database = database_support.new_database(on: database_support.shared())
-  let assert Ok(rows) =
-    content_arrival_objective.rows(db: content_support.connect(database:))
-    as "the query ran"
-  set.from_list(list.map(rows, fn(row) { row.objective_id }))
+  content_support.arrival_objective_ids()
 }
 
 /// Every type 5 objective of the client's quests: the quest as the log reads it, the index,
@@ -957,6 +928,7 @@ pub fn the_spell_advanced_set_names_every_type_42_and_item_objective_test() -> N
         index: place.1,
         objective: place.2,
         arrival_objectives: set.new(),
+        scripts: objective.no_rows(),
       )
       == objective.NamedAction
     })
@@ -973,10 +945,16 @@ pub fn the_spell_advanced_set_names_every_type_42_and_item_objective_test() -> N
     as "53 are advanced by a spell effect"
 }
 
+/// The script tables the migrated database holds: the kill table's rows.
+fn script_rows() -> objective.ScriptRows {
+  objective.ScriptRows(kills: content_support.kill_objective_ids())
+}
+
 /// How many of the places `script_of` gives each class, in the order of `classes`.
 fn counted_classes(
   tables tables: table_store.Tables,
   arrivals arrivals: Set(Int),
+  rows rows: objective.ScriptRows,
 ) -> List(#(objective.Script, Int)) {
   let scripts =
     list.map(type_5_places(tables:), fn(place) {
@@ -986,6 +964,7 @@ fn counted_classes(
         index: place.1,
         objective: place.2,
         arrival_objectives: arrivals,
+        scripts: rows,
       )
     })
   list.map(classes(), fn(class) {
@@ -999,6 +978,7 @@ fn classes() -> List(objective.Script) {
     objective.Optional,
     objective.NamedAction,
     objective.PlaceScript,
+    objective.KillScript,
     objective.StandInOnAccept,
     objective.StandInWithQuest,
   ]
@@ -1025,6 +1005,7 @@ fn done_after(
   at at: Place,
   arrivals arrivals: Set(Int),
   held held: Set(Int),
+  scripts scripts: objective.ScriptRows,
 ) -> Bool {
   let #(quest, index, _) = place
   let settled =
@@ -1034,6 +1015,7 @@ fn done_after(
       at:,
       arrivals:,
       held:,
+      scripts:,
     )
   quest_log.objective_done(log: settled.log, quest:, index:)
 }
@@ -1069,6 +1051,7 @@ pub fn every_place_script_completes_at_its_marker_and_no_spell_advanced_one_comp
   let tables = client_tables.shared()
   let arrivals = arrival_ids()
   let held = content_support.held_objective_ids()
+  let rows = script_rows()
   let none = set.new()
   let scripted =
     list.map(type_5_places(tables:), fn(place) {
@@ -1080,6 +1063,7 @@ pub fn every_place_script_completes_at_its_marker_and_no_spell_advanced_one_comp
           index: place.1,
           objective: place.2,
           arrival_objectives: arrivals,
+          scripts: rows,
         ),
       )
     })
@@ -1095,21 +1079,51 @@ pub fn every_place_script_completes_at_its_marker_and_no_spell_advanced_one_comp
       let problem = case class, is_held {
         objective.PlaceScript, False ->
           case
-            done_after(tables:, place:, at: at_marker(), arrivals:, held: none),
-            done_after(tables:, place:, at: far_away(), arrivals:, held: none)
+            done_after(
+              tables:,
+              place:,
+              at: at_marker(),
+              arrivals:,
+              held: none,
+              scripts: rows,
+            ),
+            done_after(
+              tables:,
+              place:,
+              at: far_away(),
+              arrivals:,
+              held: none,
+              scripts: rows,
+            )
           {
             True, False -> Ok(Nil)
             True, True -> Error("done a long way from its marker")
             False, _ -> Error("not done at its first marker")
           }
         objective.PlaceScript, True ->
-          case done_after(tables:, place:, at: at_marker(), arrivals:, held:) {
+          case
+            done_after(
+              tables:,
+              place:,
+              at: at_marker(),
+              arrivals:,
+              held:,
+              scripts: rows,
+            )
+          {
             False -> Ok(Nil)
             True -> Error("a held place done at its marker")
           }
         objective.NamedAction, _ ->
           case
-            done_after(tables:, place:, at: at_marker(), arrivals:, held: none)
+            done_after(
+              tables:,
+              place:,
+              at: at_marker(),
+              arrivals:,
+              held: none,
+              scripts: rows,
+            )
           {
             False -> Ok(Nil)
             True -> Error("a spell or item objective done at its marker")
@@ -1117,6 +1131,7 @@ pub fn every_place_script_completes_at_its_marker_and_no_spell_advanced_one_comp
         objective.NotScripted, _
         | objective.UsedByCreature, _
         | objective.Optional, _
+        | objective.KillScript, _
         | objective.StandInOnAccept, _
         | objective.StandInWithQuest, _
         -> Ok(Nil)
@@ -1136,6 +1151,7 @@ pub fn every_marked_stand_in_completes_on_accept_and_every_held_one_stays_open_t
   let tables = client_tables.shared()
   let arrivals = arrival_ids()
   let held = content_support.held_objective_ids()
+  let rows = script_rows()
   let wrong =
     list.filter_map(type_5_places(tables:), fn(place) {
       let id = { place.2 }.objective_id
@@ -1146,6 +1162,7 @@ pub fn every_marked_stand_in_completes_on_accept_and_every_held_one_stays_open_t
           index: place.1,
           objective: place.2,
           arrival_objectives: arrivals,
+          scripts: rows,
         )
       let #(quest, index, _) = place
       // The objectives before it done, the ones after it not: it is reachable, and the
@@ -1157,7 +1174,8 @@ pub fn every_marked_stand_in_completes_on_accept_and_every_held_one_stays_open_t
           done: list.index_map(quest.objectives, fn(_, before) { before })
             |> list.filter(fn(before) { before < index }),
         )
-      let settled = settle_sets(log:, tables:, at: away(), arrivals:, held:)
+      let settled =
+        settle_sets(log:, tables:, at: away(), arrivals:, held:, scripts: rows)
       let done = quest_log.objective_done(log: settled.log, quest:, index:)
       // A collected or crafted objective before it is counted from the items held, so a
       // log that marks it done without the item loses the mark at the settle: the three
@@ -1181,6 +1199,7 @@ pub fn every_marked_stand_in_completes_on_accept_and_every_held_one_stays_open_t
         | objective.Optional
         | objective.NamedAction
         | objective.PlaceScript
+        | objective.KillScript
         | objective.StandInWithQuest -> Error(Nil)
       }
     })
@@ -1194,6 +1213,7 @@ pub fn every_type_5_objective_in_a_quest_has_one_completing_rule_test() -> Nil {
   let tables = client_tables.shared()
   let arrivals = arrival_ids()
   let held = content_support.held_objective_ids()
+  let rows = script_rows()
   let places = type_5_places(tables:)
   assert list.length(places) == 1498
     as "1556 QuestObjective rows of type 5, 58 of them in no quest, the others in one quest each"
@@ -1206,16 +1226,17 @@ pub fn every_type_5_objective_in_a_quest_has_one_completing_rule_test() -> Nil {
     as "the objectives no quest lists are none of the rules'"
   // The class counts come from the client's rows (the objective's flags, the marker rows,
   // the creatures' links, the type 42 rows and the items) and the arrival table's 50 rows.
-  assert counted_classes(tables:, arrivals:)
+  assert counted_classes(tables:, arrivals:, rows:)
     == [
       #(objective.UsedByCreature, 267),
       #(objective.Optional, 59),
       #(objective.NamedAction, 70),
       #(objective.PlaceScript, 50),
-      #(objective.StandInOnAccept, 446),
+      #(objective.KillScript, 9),
+      #(objective.StandInOnAccept, 437),
       #(objective.StandInWithQuest, 606),
     ]
-    as "each type 5 objective in a quest has exactly one class: 259 linked required and 8 linked optional, 59 visible optional, 70 a spell or an item names, 50 places, 446 stand-ins on accept (454 less the 8 places moved), and 606 that wait for the quest (87 hidden, 519 visible with no marker)"
+    as "each type 5 objective in a quest has exactly one class: 259 linked required and 8 linked optional, 59 visible optional, 70 a spell or an item names, 50 places, 9 kills, 437 stand-ins on accept (454 less the 8 places and the 9 kills moved), and 606 that wait for the quest (87 hidden, 519 visible with no marker)"
   assert set.size(arrivals) == 50
     as "the arrival table's rows: the 42 of migration 0038 and the 8 of 0043"
   assert set.size(held) == 146
@@ -1235,6 +1256,7 @@ pub fn every_type_5_objective_in_a_quest_has_one_completing_rule_test() -> Nil {
         index: place.1,
         objective: place.2,
         arrival_objectives: arrivals,
+        scripts: rows,
       )
       == wanted
     })
@@ -1402,6 +1424,7 @@ pub fn the_place_rows_are_the_listed_eight_and_the_twenty_three_others_stay_stan
           index:,
           objective: listed,
           arrival_objectives: arrivals,
+          scripts: objective.no_rows(),
         )
       case got == wanted {
         True -> Error(Nil)
@@ -1469,7 +1492,14 @@ pub fn a_new_place_row_completes_at_its_markers_and_nowhere_else_test() -> Nil {
       let #(objective_id, marker, east) = row
       let place = place_of(tables:, objective_id:)
       let done_at = fn(at) {
-        done_after(tables:, place:, at:, arrivals:, held: set.new())
+        done_after(
+          tables:,
+          place:,
+          at:,
+          arrivals:,
+          held: set.new(),
+          scripts: objective.no_rows(),
+        )
       }
       case
         done_at(at_marker(
@@ -1517,6 +1547,7 @@ pub fn a_new_place_row_behind_other_objectives_waits_for_them_test() -> Nil {
       at: at_the_marker,
       arrivals:,
       held: set.new(),
+      scripts: objective.no_rows(),
     )
     == Advanced(log: waiting, effects: [])
     as "with the objectives before it open, its marker counts for nothing"
@@ -1528,6 +1559,7 @@ pub fn a_new_place_row_behind_other_objectives_waits_for_them_test() -> Nil {
         at: at_the_marker,
         arrivals:,
         held: set.new(),
+        scripts: objective.no_rows(),
       ).effects,
     )
     == [
@@ -1541,6 +1573,7 @@ pub fn a_new_place_row_behind_other_objectives_waits_for_them_test() -> Nil {
       at: at_the_marker,
       arrivals:,
       held: set.from_list([18_099]),
+      scripts: objective.no_rows(),
     )
     == Advanced(log: opened, effects: [])
     as "a held place stays open at its marker"
@@ -1561,6 +1594,7 @@ pub fn the_four_equip_and_buy_quests_still_complete_on_accept_test() -> Nil {
   let tables = character_tables.shared()
   let arrivals = arrival_ids()
   let held = content_support.held_objective_ids()
+  let rows = script_rows()
   // (quest, objective, why its real rule cannot fire): the two items need a prerequisite of
   // type 19 (a tradeskill tier) that the server does not read, so wearing them is refused
   // with 144; the two vendors have no `vendor` rows, so nothing is bought from them. Each
@@ -1583,7 +1617,8 @@ pub fn the_four_equip_and_buy_quests_still_complete_on_accept_test() -> Nil {
           done: list.index_map(quest.objectives, fn(_, before) { before })
             |> list.take(index),
         )
-      let settled = settle_sets(log:, tables:, at: away(), arrivals:, held:)
+      let settled =
+        settle_sets(log:, tables:, at: away(), arrivals:, held:, scripts: rows)
       case
         quest.id == quest_id
         && quest_log.objective_done(log: settled.log, quest:, index:)
@@ -1609,6 +1644,7 @@ pub fn the_equip_and_buy_objectives_are_stand_ins_on_accept_over_every_client_qu
       index:,
       objective: listed,
       arrival_objectives: arrivals,
+      scripts: objective.no_rows(),
     )
   }
   // The ids of the objective texts: 487701 "Equip the $(item=12631)", 492421 "Equip the

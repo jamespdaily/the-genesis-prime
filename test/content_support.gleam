@@ -7,7 +7,9 @@ import database_support
 import event_wait
 import genesis_prime
 import genesis_prime/content
+import genesis_prime/content/arrival_objective as content_arrival_objective
 import genesis_prime/content/held_objective as content_held_objective
+import genesis_prime/content/kill_objective as content_kill_objective
 import genesis_prime/content/spawn as content_spawn
 import genesis_prime/content/terrain as content_terrain
 import genesis_prime/dev_database
@@ -165,6 +167,24 @@ pub fn change(database database: String, sql sql: String) -> Nil {
     )
     as "the change to the database ran"
   Nil
+}
+
+/// The QuestObjective ids the migrated database holds in the arrival table, read from a
+/// database of the test's own.
+pub fn arrival_objective_ids() -> Set(Int) {
+  let database = database_support.new_database(on: database_support.shared())
+  let assert Ok(rows) = content_arrival_objective.rows(db: connect(database:))
+    as "the query ran"
+  set.from_list(list.map(rows, fn(row) { row.objective_id }))
+}
+
+/// The QuestObjective ids the migrated database holds in the kill table, read from a
+/// database of the test's own.
+pub fn kill_objective_ids() -> Set(Int) {
+  let database = database_support.new_database(on: database_support.shared())
+  let assert Ok(rows) = content_kill_objective.rows(db: connect(database:))
+    as "the query ran"
+  set.from_list(list.map(rows, fn(row) { row.objective_id }))
 }
 
 /// The QuestObjective ids the migrated database holds as held, read from a database of

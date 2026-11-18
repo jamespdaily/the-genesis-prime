@@ -646,6 +646,7 @@ ID	itemSourceId	item2TypeId	itemMinLevel	itemMaxLevel	itemDisplayId	icon
 5485	85	5	50	100	4098	IconSprites:Icon_ItemArmorFeet_boot_0001
 5486	85	6	50	100	4353	IconSprites:Icon_ItemArmorHands_UI_Item_Battle_Glove_001
 6014	100	298	1	999	0	IconSprites:Icon_ItemWeapon_Weapon_Attachment_01
+6015	101	298	1	999	0	IconSprites:Icon_ItemWeapon_Weapon_Attachment_02
 6016	102	298	1	999	0	IconSprites:Icon_ItemWeapon_Weapon_Attachment_03
 6017	103	298	1	999	0	IconSprites:Icon_ItemWeapon_Weapon_Attachment_04
 6018	104	298	1	999	0	IconSprites:Icon_ItemWeapon_Weapon_Attachment_05

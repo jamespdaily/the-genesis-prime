@@ -168,7 +168,14 @@ fn counts_once(
       by_item: False,
     )
   let first =
-    objective.advance(reused: set.new(), log:, tables:, event:, now_ms: 0)
+    objective.advance(
+      reused: set.new(),
+      log:,
+      tables:,
+      event:,
+      now_ms: 0,
+      scripts: objective.no_rows(),
+    )
   let where = "objective " <> label(row.id) <> " of quest " <> label(quest_id)
   assert list.contains(
     first.effects,
@@ -188,6 +195,7 @@ fn counts_once(
       tables:,
       event:,
       now_ms: 0,
+      scripts: objective.no_rows(),
     )
   // A later objective the first use opened may count the unit itself: quest 6251's
   // objective 9944 follows 9943 with a group (3260) that lists the same creature, so the

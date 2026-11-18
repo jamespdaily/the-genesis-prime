@@ -29,6 +29,7 @@ import genesis_prime/content/arrival_objective as content_arrival_objective
 import genesis_prime/content/class_resource as content_class_resource
 import genesis_prime/content/game_number as content_game_number
 import genesis_prime/content/held_objective as content_held_objective
+import genesis_prime/content/kill_objective as content_kill_objective
 import genesis_prime/content/projector_landing as content_projector_landing
 import genesis_prime/content/server_proxy as content_server_proxy
 import genesis_prime/content/spawn as content_spawn
@@ -39,6 +40,7 @@ import genesis_prime/content/zone_welcome as content_zone_welcome
 import genesis_prime/digest
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
+import genesis_prime/game/objective
 import genesis_prime/game_settings
 import genesis_prime/login/auth_connection
 import genesis_prime/login/sts_connection
@@ -653,6 +655,9 @@ fn game(
       reused_unit_objectives: content_spawn.reused_unit_objectives(key: spawns),
       arrival_objectives: content_arrival_objective.arrivals(key: spawns),
       held_objectives: content_held_objective.held(key: spawns),
+      script_rows: objective.ScriptRows(kills: content_kill_objective.kills(
+        key: spawns,
+      )),
     ),
     wire_recorder: None,
     scripts: script.operating_system,

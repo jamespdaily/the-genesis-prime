@@ -6,6 +6,7 @@ import character_support
 import character_tables
 import class_resource_support
 import genesis_prime/connection/frame.{type Frame}
+import genesis_prime/game/objective
 import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/unit_properties
@@ -365,6 +366,7 @@ pub fn joined_state(
       defaults: unit_properties.defaults(tables:),
       chain: tutorial_support.none(),
       arrival_objectives: set.new(),
+      scripts: objective.no_rows(),
       held_objectives: set.new(),
       tables:,
       now:,
