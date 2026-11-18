@@ -619,7 +619,7 @@ pub fn a_target_out_of_reach_is_chased_at_run_speed_10_and_no_new_path_is_planne
       at_ms: 0,
       message: approached(number: 2, x: 30.0, seq: 1),
     )
-  let assert Running(from:, to:, started_ms:, speed:) = path_sent(aggro)
+  let assert Running(from:, to:, started_ms:, speed:, ..) = path_sent(aggro)
   assert x_of(from) == 0.0
     && x_of(to) == 26.0
     && speed == 10.0
@@ -2733,7 +2733,7 @@ pub fn move_speed_change_mid_chase_replans_test() -> Nil {
   assert said(slowed)
     == ["other to 2", "other to 5", "0x638 to 2", "0x638 to 5"]
     as "the property first, then the new path"
-  let assert Running(from:, to:, started_ms:, speed:) = path_sent(slowed)
+  let assert Running(from:, to:, started_ms:, speed:, ..) = path_sent(slowed)
   assert x_of(from) == 10.0
     && x_of(to) == 26.0
     && started_ms == start_ms + 1000
@@ -2749,7 +2749,7 @@ pub fn move_speed_change_mid_chase_replans_test() -> Nil {
         effect_id: 1901,
       )),
     )
-  let assert Running(from:, to:, started_ms:, speed:) = path_sent(back)
+  let assert Running(from:, to:, started_ms:, speed:, ..) = path_sent(back)
   assert x_of(from) == 15.0
     && x_of(to) == 26.0
     && started_ms == start_ms + 2000
@@ -2809,7 +2809,7 @@ pub fn move_speed_change_while_walking_home_replans_the_walk_and_its_arrival_tes
     )
   assert list.map(news_to(slowed, 5), name_of) == ["other", "0x638"]
     as "the property, then the new walk"
-  let assert [CreatureMoved(path: Running(from:, to:, started_ms:, speed:))] =
+  let assert [CreatureMoved(path: Running(from:, to:, started_ms:, speed:, ..))] =
     list.filter(news_to(slowed, 5), fn(news) { name_of(news) == "0x638" })
     as "one path to the viewer that stayed"
   assert x_of(from) == 5.0
@@ -3005,7 +3005,7 @@ pub fn run_speed_restored_moves_again_test() -> Nil {
         effect_id: 1901,
       )),
     )
-  let assert Running(from:, to:, started_ms:, speed:) = path_sent(back)
+  let assert Running(from:, to:, started_ms:, speed:, ..) = path_sent(back)
   assert x_of(from) == 10.0
     && x_of(to) == 26.0
     && started_ms == start_ms + 3000
@@ -3042,7 +3042,7 @@ pub fn run_speed_restored_walks_home_again_test() -> Nil {
         effect_id: 1901,
       )),
     )
-  let assert [CreatureMoved(path: Running(from:, to:, started_ms:, speed:))] =
+  let assert [CreatureMoved(path: Running(from:, to:, started_ms:, speed:, ..))] =
     list.filter(news_to(back, 5), fn(news) { name_of(news) == "0x638" })
     as "the walk home starts"
   assert x_of(from) == 10.0
@@ -3208,7 +3208,7 @@ pub fn speed_restored_while_held_stays_until_control_ends_test() -> Nil {
   assert sends_no_path(restored)
     as "the speed is back, but the Root state still holds the creature"
   let #(_, ended) = fire(state:, at_ms: 3000, timer: timer_for(landed, 2500))
-  let assert Running(from:, to:, started_ms:, speed:) = path_sent(ended)
+  let assert Running(from:, to:, started_ms:, speed:, ..) = path_sent(ended)
   assert x_of(from) == 5.0
     && x_of(to) == 26.0
     && started_ms == start_ms + 3000
@@ -4844,7 +4844,7 @@ pub fn a_bare_throw_resumes_the_chase_from_the_landing_test() -> Nil {
   let #(_, landed) = fire(state:, at_ms: 1375, timer: lands)
   assert said(landed) == ["0x638 to 2"]
     as "the landing sends no kind 2: the one 0x638 is the new chase"
-  let assert Running(from:, to:, started_ms:, speed:) = path_sent(landed)
+  let assert Running(from:, to:, started_ms:, speed:, ..) = path_sent(landed)
   assert near(x_of(from), 20.0)
     && x_of(to) == 26.0
     && started_ms == start_ms + 1375

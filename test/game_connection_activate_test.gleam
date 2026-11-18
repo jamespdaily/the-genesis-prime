@@ -435,6 +435,7 @@ pub fn an_activate_cast_judges_a_creature_where_its_path_puts_it_now_test() -> N
       unit_id: nearby,
       news: client_connection.CreatureMoved(path: creature_path.Running(
         from: far,
+        via: [],
         to: vendor_support.ahead_of_the_player(
           hit_radius: survivors_radius,
           gap: 1.0,

@@ -424,6 +424,7 @@ fn seeing_the_walking_survivors(
             hit_radius: survivors_radius,
             gap: 1.0,
           ),
+          via: [],
           to: vendor_support.ahead_of_the_player(
             hit_radius: survivors_radius,
             gap: 2.0,

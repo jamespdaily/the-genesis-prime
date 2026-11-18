@@ -439,15 +439,15 @@ pub fn unit_moved_frame(
 }
 
 /// 0x638 for a creature that runs a path: kind 0, the map's time the path starts at
-/// (`movement_command.kind_0`), and kind 4, its two points at its speed as a half
-/// float, type 0 (straight lines) and mode 0 (`movement_command.kind_4`). A thrown
+/// (`movement_command.kind_0`), and kind 4, its points (a kind 4 holds 1023 at most) at its
+/// speed as a half float, type 0 (straight lines) and mode 0 (`movement_command.kind_4`). A thrown
 /// creature's timed path is kind 0 and kind 3, each point with its own map time
 /// (`movement_command.kind_3`), or kind 2 for a path of one point, and a kind 14 when
 /// the throw turns it. A run ends with kind 11 (the horizontal part of its velocity) and kind
 /// 24 holding bit 0x2, which make the client play the unit's walk or run animation by its
 /// speed (`unit.pace`, `movement_command.kind_11`, `movement_command.kind_24`); a flight ends
 /// with the stop (`stopped`), so a creature thrown mid-run stops running. None for a creature
-/// that stands, or a speed no half float holds.
+/// that stands, a speed no half float holds, or a path of more points than a kind 4 holds.
 pub fn path_frame(
   entered entered: world_entry.Entered,
   unit_id unit_id: Int,
@@ -491,7 +491,12 @@ pub fn path_frame(
         ]),
       ))
     }
-    creature_path.Running(from:, to:, started_ms:, speed:) -> {
+    creature_path.Running(from:, via:, to:, started_ms:, speed:) -> {
+      let points = [from, ..list.append(via, [to])]
+      use <- bool.guard(
+        when: list.length(points) > creature_path.most_points,
+        return: None,
+      )
       let #(x, _, z) = creature_path.velocity(path:, now_ms: started_ms)
       case half_float.to_bits(value: speed), moving(x:, z:) {
         Error(Nil), _ | _, Error(Nil) -> None
@@ -505,7 +510,7 @@ pub fn path_frame(
             unit_moved_frame(unit_id:, server_time_ms: time, commands: [
               relayed_movement.Time(MovementTime(time:)),
               relayed_movement.Path(MovementPath(
-                points: [vector_of(from), vector_of(to)],
+                points: list.map(points, vector_of),
                 speed:,
                 path_type: 0,
                 mode: 0,

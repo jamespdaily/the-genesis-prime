@@ -6,20 +6,27 @@
 ////
 //// ```
 //// creature_fight: chase or home ─▶ toward(from, to, ..) ─▶ Path ─▶ 0x638 [kind 0, kind 4] to its viewers
+//// creature_fight: a late viewer ─▶ rest_of(path, now); a speed change ─▶ with_speed(path, speed, now)
 //// creature_fight: a throw ─▶ forced_move.path(..) ─▶ Timed ─▶ 0x638 [kind 0, kind 3 (+ kind 14)] to its viewers
 //// creature and viewer: place_at(path, now) ─▶ the place along it, the end once it is run
 //// ```
 ////
-//// - **One straight path of two points**, kind 4 type 0 (straight lines), at the
-////   creature's run speed in units a second (`movement_command.kind_4`). The client
-////   runs it from the time of the 0x638's kind 0 (`movement_command.kind_0`).
+//// - **A run** (`Running`) is straight lines through 2 to 1023 points, kind 4 type 0, at one
+////   speed in units a second over the whole length (`movement_command.kind_4`). The client
+////   runs it from the time of the 0x638's kind 0 (`movement_command.kind_0`), point i at
+////   the start plus its summed 3D length over the speed, and holds the last point after
+////   the end (`0x1407813d0`). The server's timing is that model from the command's time with the
+////   speed as sent and continuous distance, where the client starts at its first update at
+////   or after the command and rounds each point's time to a millisecond. A leg of length 0 is
+////   skipped, and a point passed exactly belongs to the next leg.
 //// - **A timed path** (`Timed`) is the points of a throw (genesis_prime/game/forced_move) with the
 ////   monotonic time of each, kind 3 type 0 (`movement_command.kind_3`): the client draws straight
 ////   lines between the points, holds the first before the first time and the last after the last
 ////   (`0x140783e10`). A path of one point is a creature set at once at that point at that time,
 ////   which is kind 2 and has no flight; it is the form of a move that turns the creature
 ////   (`turned_to`, kind 14).
-//// - **A path is clipped at the leash circle**: no point of it lies farther from the
+//// - **A path from `toward` is clipped at the leash circle** (it has one leg; `through` clips
+////   nothing): no point of it lies farther from the
 ////   spawn than the circle's radius, so a creature never runs past the circle it
 ////   leashes at. Distances are in three dimensions, as sight's are
 ////   (genesis_prime/world_map/sight).
@@ -34,12 +41,18 @@ import gleam/int
 import gleam/list
 import gleam/option.{type Option}
 
-/// A creature's movement: standing at a place, running a straight path from
-/// `from` to `to`, started at monotonic time `started_ms`, at `speed` units a
-/// second, or thrown along timed points.
+/// A creature's movement: standing at a place, running straight lines from `from`
+/// through each of `via` in order to `to`, started at monotonic time `started_ms`, at
+/// `speed` units a second over the whole length, or thrown along timed points.
 pub type Path {
   Standing(at: Place)
-  Running(from: Place, to: Place, started_ms: Int, speed: Float)
+  Running(
+    from: Place,
+    via: List(Place),
+    to: Place,
+    started_ms: Int,
+    speed: Float,
+  )
   /// The points a throw passes, each at its monotonic time in milliseconds: `first`
   /// and then `rest`, so a timed path always has a point, and the times rise along
   /// them; the creature turns to `turned_to` when it has one.
@@ -48,6 +61,15 @@ pub type Path {
     rest: List(#(Int, Place)),
     turned_to: Option(Facing),
   )
+}
+
+/// The most points a kind 4 path holds: its count is 10 bits
+/// (`movement_command.kind_4`).
+pub const most_points = 1023
+
+/// A path given more points than a kind 4 holds.
+pub type TooManyPoints {
+  TooManyPoints(count: Int)
 }
 
 /// The circle a creature's paths stay inside: its spawn's place and the leash
@@ -63,14 +85,87 @@ pub fn place_at(path path: Path, now_ms now_ms: Int) -> Place {
     Standing(at:) -> at
     Timed(first:, rest:, turned_to:) ->
       facing_of_turn(place: timed_place_at(first:, rest:, now_ms:), turned_to:)
-    Running(from:, to:, started_ms:, speed:) -> {
-      let length = distance(from: from, to: to)
-      let run = speed *. int.to_float(int.max(0, now_ms - started_ms)) /. 1000.0
-      case length <=. 0.0 || run >=. length {
-        True -> to
-        False -> along(from:, to:, fraction: run /. length)
+    Running(from:, via:, to:, started_ms:, speed:) ->
+      case walked(from:, via:, to:, started_ms:, speed:, now_ms:) {
+        Arrived -> to
+        On(from:, via:, to:, into:) -> along_leg(from:, via:, to:, into:)
       }
-    }
+  }
+}
+
+/// The place `into` units along the leg of a run that starts at `from`.
+fn along_leg(
+  from from: Place,
+  via via: List(Place),
+  to to: Place,
+  into into: Float,
+) -> Place {
+  let next = next_point(via:, to:)
+  along(from:, to: next, fraction: into /. distance(from:, to: next))
+}
+
+/// Where a run has got to: on the leg that starts at `from`, `into` units along it, with
+/// the points after that leg's start in `via` and then `to`, or at its end.
+type Walked {
+  On(from: Place, via: List(Place), to: Place, into: Float)
+  Arrived
+}
+
+/// The distance a run that began at `started_ms` has covered at `now_ms`: its speed over the
+/// time since the start, 0 before it.
+fn run_by(
+  started_ms started_ms: Int,
+  speed speed: Float,
+  now_ms now_ms: Int,
+) -> Float {
+  speed *. int.to_float(int.max(0, now_ms - started_ms)) /. 1000.0
+}
+
+/// The rule every function of a run reads: a run is over at its arrival time
+/// (`arrives_ms`), and before it is on the leg its distance covered falls in, the legs
+/// measured as cumulative lengths from the start, so arrival and leg agree on one sum.
+fn walked(
+  from from: Place,
+  via via: List(Place),
+  to to: Place,
+  started_ms started_ms: Int,
+  speed speed: Float,
+  now_ms now_ms: Int,
+) -> Walked {
+  use <- bool.guard(
+    when: runs(speed:)
+      && now_ms >= run_over_ms(from:, via:, to:, started_ms:, speed:),
+    return: Arrived,
+  )
+  walk(from:, via:, to:, before: 0.0, run: run_by(started_ms:, speed:, now_ms:))
+}
+
+/// The leg a run of `run` units is on, `before` units being the length of the legs
+/// already left behind: a leg is left behind once `run` reaches its end, so a leg of
+/// length 0 is skipped and a point passed exactly belongs to the next leg. The last leg
+/// is never left, and a run past it is at its end.
+fn walk(
+  from from: Place,
+  via via: List(Place),
+  to to: Place,
+  before before: Float,
+  run run: Float,
+) -> Walked {
+  let length = distance(from:, to: next_point(via:, to:))
+  let end = before +. length
+  case run >=. end, via {
+    True, [point, ..more] ->
+      walk(from: point, via: more, to:, before: end, run:)
+    True, [] -> On(from:, via:, to:, into: length)
+    False, _ -> On(from:, via:, to:, into: run -. before)
+  }
+}
+
+/// The end of the leg that starts a run's `via` list: its first point, or `to`.
+fn next_point(via via: List(Place), to to: Place) -> Place {
+  case via {
+    [] -> to
+    [point, ..] -> point
   }
 }
 
@@ -126,7 +221,7 @@ pub fn toward(
   let end = clipped(from:, to: wanted, circle:)
   case distance(from: from, to: end) <=. 0.0 {
     True -> Standing(at: from)
-    False -> Running(from:, to: end, started_ms: now_ms, speed:)
+    False -> Running(from:, via: [], to: end, started_ms: now_ms, speed:)
   }
 }
 
@@ -139,12 +234,43 @@ pub fn straight(
   speed speed: Float,
   now_ms now_ms: Int,
 ) -> Path {
+  let assert Ok(path) = through(from:, via: [], to:, speed:, now_ms:)
+    as "two points are under the most a kind 4 holds"
+  path
+}
+
+/// The path from `from` through each of `via` in order to `to`, started at `now_ms`
+/// at `speed` over its whole length (`0x1407813d0`): `straight`'s guards on its total
+/// length (0 stands at `to`, so a loop back to `from` still runs) and speed, and
+/// `Error` for more points than `most_points`.
+pub fn through(
+  from from: Place,
+  via via: List(Place),
+  to to: Place,
+  speed speed: Float,
+  now_ms now_ms: Int,
+) -> Result(Path, TooManyPoints) {
+  let count = 2 + list.length(via)
   use <- bool.guard(
-    when: distance(from: from, to: to) <=. 0.0,
-    return: Standing(at: to),
+    when: count > most_points,
+    return: Error(TooManyPoints(count:)),
   )
-  use <- bool.guard(when: !runs(speed:), return: Standing(at: from))
-  Running(from:, to:, started_ms: now_ms, speed:)
+  use <- bool.guard(
+    when: total_length(from:, via:, to:) <=. 0.0,
+    return: Ok(Standing(at: to)),
+  )
+  use <- bool.guard(when: !runs(speed:), return: Ok(Standing(at: from)))
+  Ok(Running(from:, via:, to:, started_ms: now_ms, speed:))
+}
+
+/// The sum of the lengths of the legs from `from` through `via` to `to`, added left
+/// to right from 0.0.
+fn total_length(from from: Place, via via: List(Place), to to: Place) -> Float {
+  list.fold(
+    list.window_by_2([from, ..list.append(via, [to])]),
+    0.0,
+    fn(sum, leg) { sum +. distance(from: leg.0, to: leg.1) },
+  )
 }
 
 /// The monotonic time the path is run by: `started_ms` plus its length over its
@@ -155,23 +281,52 @@ pub fn arrives_ms(path path: Path, now_ms now_ms: Int) -> Int {
   case path {
     Standing(..) -> now_ms
     Timed(first:, rest:, ..) -> last_of(first:, rest:).0
-    Running(from:, to:, started_ms:, speed:) -> {
+    Running(from:, via:, to:, started_ms:, speed:) -> {
       let assert True = runs(speed:) as "a running path has a speed above 0"
-      started_ms
-      + float.truncate(float.ceiling(
-        distance(from: from, to: to) /. speed *. 1000.0,
-      ))
+      run_over_ms(from:, via:, to:, started_ms:, speed:)
     }
   }
 }
 
+/// The monotonic time a run is over: `started_ms` plus its length over its speed,
+/// rounded up to the millisecond.
+fn run_over_ms(
+  from from: Place,
+  via via: List(Place),
+  to to: Place,
+  started_ms started_ms: Int,
+  speed speed: Float,
+) -> Int {
+  started_ms
+  + float.truncate(float.ceiling(
+    total_length(from:, via:, to:) /. speed *. 1000.0,
+  ))
+}
+
 /// The rest of the path from `now_ms` on, as a path of its own: a running path from
-/// where the creature is now to the same end at the same speed, a timed path from
-/// its place now and the points still ahead of it, and a standing one itself. What a
-/// viewer that arrives mid-path is sent.
+/// where the creature is now through the points still ahead of it to the same end at
+/// the same speed (itself before it starts, standing at its end once it is run), a
+/// timed path from its place now and the points still ahead of it, and a standing one
+/// itself. What a viewer that arrives mid-path is sent.
 pub fn rest_of(path path: Path, now_ms now_ms: Int) -> Path {
   case path {
-    Standing(..) | Running(..) -> path
+    Standing(..) -> path
+    Running(from:, via:, to:, started_ms:, speed:) ->
+      case now_ms < started_ms {
+        True -> path
+        False ->
+          case walked(from:, via:, to:, started_ms:, speed:, now_ms:) {
+            Arrived -> Standing(at: to)
+            On(from:, via: ahead, to:, into:) ->
+              Running(
+                from: along_leg(from:, via: ahead, to:, into:),
+                via: ahead,
+                to:,
+                started_ms: now_ms,
+                speed:,
+              )
+          }
+      }
     Timed(first:, rest:, turned_to:) ->
       case list.filter([first, ..rest], fn(point) { point.0 > now_ms }) {
         [] ->
@@ -189,40 +344,46 @@ pub fn rest_of(path path: Path, now_ms now_ms: Int) -> Path {
   }
 }
 
+/// The rest of a running path from `now_ms` on at another `speed`: the same points
+/// from where the creature is, as `rest_of`; `Standing` where it is when it does not run
+/// at `speed` (`runs`). A standing or timed path is itself. What a change of run speed
+/// makes of the path under way.
+pub fn with_speed(
+  path path: Path,
+  speed speed: Float,
+  now_ms now_ms: Int,
+) -> Path {
+  case rest_of(path:, now_ms:) {
+    Running(from:, via:, to:, started_ms:, ..) ->
+      case runs(speed:) {
+        True -> Running(from:, via:, to:, started_ms:, speed:)
+        False -> Standing(at: place_at(path:, now_ms:))
+      }
+    Standing(..) as unchanged | Timed(..) as unchanged -> unchanged
+  }
+}
+
 /// The creature's velocity along the path at `now_ms` in units a second, the
-/// direction of the path's segment now times its speed; zero when it stands, or
+/// direction of the path's leg now times its speed; zero when it stands, or
 /// when the path is run.
 pub fn velocity(path path: Path, now_ms now_ms: Int) -> #(Float, Float, Float) {
   case path {
     Standing(..) -> #(0.0, 0.0, 0.0)
-    Running(from:, to:, started_ms:, speed:) ->
-      running_velocity(from:, to:, started_ms:, speed:, now_ms:)
+    Running(from:, via:, to:, started_ms:, speed:) ->
+      case walked(from:, via:, to:, started_ms:, speed:, now_ms:) {
+        Arrived -> #(0.0, 0.0, 0.0)
+        On(from:, via:, to:, ..) -> {
+          let next = next_point(via:, to:)
+          let scale = speed /. distance(from:, to: next)
+          #(
+            { start_place.x(next) -. start_place.x(from) } *. scale,
+            { start_place.y(next) -. start_place.y(from) } *. scale,
+            { start_place.z(next) -. start_place.z(from) } *. scale,
+          )
+        }
+      }
     Timed(first:, rest:, ..) -> timed_velocity(first:, rest:, now_ms:)
   }
-}
-
-/// The velocity of a run from `from` to `to` that began at `started_ms`: its speed along
-/// the line, zero once it has arrived.
-fn running_velocity(
-  from from: Place,
-  to to: Place,
-  started_ms started_ms: Int,
-  speed speed: Float,
-  now_ms now_ms: Int,
-) -> #(Float, Float, Float) {
-  let length = distance(from:, to:)
-  let run = speed *. int.to_float(int.max(0, now_ms - started_ms)) /. 1000.0
-  use <- bool.guard(when: length <=. 0.0 || run >=. length, return: #(
-    0.0,
-    0.0,
-    0.0,
-  ))
-  let scale = speed /. length
-  #(
-    { start_place.x(to) -. start_place.x(from) } *. scale,
-    { start_place.y(to) -. start_place.y(from) } *. scale,
-    { start_place.z(to) -. start_place.z(from) } *. scale,
-  )
 }
 
 /// The last point of a timed path.
