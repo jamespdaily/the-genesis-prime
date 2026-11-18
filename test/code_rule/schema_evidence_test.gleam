@@ -905,6 +905,99 @@ pub fn the_real_schema_has_no_gap_the_allow_list_does_not_name_test() -> Nil {
     as "CLAUDE.md: every field of a message the server sends is traced or open, in the three messages no module builds as in the rest, and every union kind is a traced variant, a never tag or an open tag; no entry of the allow-list is stale; each key a never tag or an open tag names is a fact"
 }
 
+// ---- the combat log and stat unions ----
+
+/// One union the client reads by a tag: its bound (the first tag the client's
+/// reader refuses), the tags the client reads that the server must not send, and
+/// the tags it reads that nothing in the server builds yet.
+type TagRow {
+  TagRow(
+    union: String,
+    refused_from: Int,
+    never: List(Int),
+    open: List(Int),
+    reason: String,
+  )
+}
+
+const combat_and_stat_rows = [
+  TagRow(
+    union: "combat_log_entry",
+    refused_from: 36,
+    never: [3, 4, 6, 7, 12, 13, 17, 34],
+    open: [
+      0, 5, 8, 9, 10, 11, 15, 16, 19, 20, 21, 25, 26, 27, 28, 29, 30, 31, 32, 33,
+      35,
+    ],
+    reason: "union-kinds.md: the client reads types 0 to 35; the NEVER rows are never sent, every other lacking type waits for its system",
+  ),
+  TagRow(
+    union: "unit_stat_change",
+    refused_from: 32,
+    never: [
+      0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 12, 13, 14, 16, 18, 19, 23, 24, 25, 27, 28,
+      29, 30, 31,
+    ],
+    open: [11, 15, 17, 26],
+    reason: "union-kinds.md: the client reads stats 0 to 31; 24 of the 28 lacking stats are NEVER by 0x938, four wait for their systems",
+  ),
+  TagRow(
+    union: "unit_stat_value",
+    refused_from: 3,
+    never: [],
+    open: [2],
+    reason: "fact 0x140096230: forms 0 to 2 are read, 3 refuses the message; form 2 (two integers) has no verdict",
+  ),
+]
+
+pub fn the_combat_log_and_stat_unions_classify_every_tag_the_client_reads_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use <- unitest.tag("code_rule")
+  let assert Ok(text) = simplifile.read("src/genesis_prime/message/schema.toml")
+    as "the schema file could not be read"
+  let assert Ok(schema) = message_schema.parse(text)
+    as "the schema file is not a schema"
+  let fact_keys = repository.fact_keys()
+  let listed_unions =
+    list.filter_map(untraced_gaps.known_gaps, fn(gap) {
+      case gap {
+        UnclassifiedTags(union:, ..) -> Ok(union)
+        UntracedFields(..) -> Error(Nil)
+      }
+    })
+  list.each(combat_and_stat_rows, fn(row) {
+    let assert Ok(union) =
+      list.find(schema.unions, fn(union) { union.name == row.union })
+      as { "no union named " <> row.union }
+    let variants = list.map(union.variants, fn(variant) { variant.tag })
+    let never = list.map(union.never_tags, fn(never) { never.tag })
+    let open = list.map(union.open_tags, fn(open) { open.tag })
+    assert union.refused_from == row.refused_from as row.reason
+    assert list.sort(never, int.compare) == row.never as row.reason
+    assert list.sort(open, int.compare) == row.open as row.reason
+    let classified = list.flatten([variants, never, open])
+    assert list.sort(classified, int.compare)
+      == int.range(from: 0, to: row.refused_from, with: [], run: fn(tags, tag) {
+        list.append(tags, [tag])
+      })
+      as {
+        row.union
+        <> ": each tag the client reads is a variant, never or open once"
+      }
+    let cited =
+      list.flatten([
+        list.map(union.never_tags, fn(never) { never.named_by }),
+        list.filter_map(union.open_tags, fn(open) {
+          option.to_result(open.named_by, Nil)
+        }),
+      ])
+    assert list.filter(cited, fn(key) { !list.contains(fact_keys, key) }) == []
+      as { row.union <> ": each key a never or open tag cites is a fact" }
+    assert !list.contains(listed_unions, row.union)
+      as { row.union <> ": no allow-list entry once every tag is classified" }
+  })
+}
+
 // ---- the connection, realm and spell cast messages ----
 
 /// The owners of the connection, login, character select and realm messages

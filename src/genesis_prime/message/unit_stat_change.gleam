@@ -20,6 +20,45 @@ import gleam/result
 /// One item of the union: its first 5 bits are its kind, which picks the
 /// variant, and the variant's record reads them again as its first field. A
 /// kind no variant has is refused.
+///
+/// The client reads these kinds and the server never sends them, so no variant
+/// holds them and a read refuses them: 0 health (the fact file's
+/// `opcode.0x938.all_stats`), 1 float_stat_0x218 (the fact file's
+/// `opcode.0x938.all_stats`), 2 resource_slot_0 (the fact file's
+/// `opcode.0x938.all_stats`), 3 resource_slot_1 (the fact file's
+/// `opcode.0x938.all_stats`), 4 resource_slot_2 (the fact file's
+/// `opcode.0x938.all_stats`), 5 resource_slot_3 (the fact file's
+/// `opcode.0x938.all_stats`), 6 resource_slot_4 (the fact file's
+/// `opcode.0x938.all_stats`), 7 resource_slot_5 (the fact file's
+/// `opcode.0x938.all_stats`), 8 resource_slot_6 (the fact file's
+/// `opcode.0x938.all_stats`), 9 resource_slot_7 (the fact file's
+/// `opcode.0x938.all_stats`), 12 unread_12 (the fact file's
+/// `opcode.0x938.all_stats`), 13 unread_13 (the fact file's
+/// `opcode.0x938.all_stats`), 14 unread_14 (the fact file's
+/// `opcode.0x938.all_stats`), 16 unread_16 (the fact file's
+/// `opcode.0x938.all_stats`), 18 unread_18 (the fact file's
+/// `opcode.0x938.all_stats`), 19 float_stat_slot_0x68 (the fact file's
+/// `opcode.0x938.all_stats`), 23 float_stat_0x23c (the fact file's
+/// `opcode.0x938.all_stats`), 24 float_stat_0x240 (the fact file's
+/// `opcode.0x938.all_stats`), 25 float_stat_0x244 (the fact file's
+/// `opcode.0x938.all_stats`), 27 unread_27 (the fact file's
+/// `opcode.0x938.all_stats`), 28 unread_28 (the fact file's
+/// `opcode.0x938.all_stats`), 29 unread_29 (the fact file's
+/// `opcode.0x938.all_stats`), 30 unread_30 (the fact file's
+/// `opcode.0x938.all_stats`), 31 unread_31 (the fact file's
+/// `opcode.0x938.all_stats`).
+///
+/// These kinds are open, so no variant holds them and a read refuses them: 11
+/// (effective_level: what builds it: mentoring, which is not built; the name
+/// MentorLevel is a lead from the earlier server, not the client's) (layout so
+/// far in the fact file's `opcode.0x938.all_stats`); 15 (sheathed: what builds
+/// it: creatures drawing weapons at a fight start, a guess; a recording of a
+/// fight start settles it; the name is a lead from the earlier server, not the
+/// client's) (layout so far in the fact file's `opcode.0x938.all_stats`); 17
+/// (cluster: what builds it: unit clusters, which are not built) (layout so far
+/// in the fact file's `opcode.0x938.all_stats`); 26 (integer stored at unit
+/// 0x50: what builds it: nothing is known, the client does not read its
+/// meaning) (layout so far in the fact file's `opcode.0x938.all_stats`).
 pub type UnitStatChange {
   /// Kind 10, read by `unit_stat_level`. The fact file's `opcode.0x938` names
   /// the kind.
