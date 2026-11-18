@@ -347,3 +347,35 @@ pub fn applied(
     | store.TurnInQuest(..) -> panic as "only a spend or a delete is applied"
   }
 }
+
+/// The rows with a heal over time on the caster added beside the grenade spell's Activate
+/// row (Spell4Effects 43805): a type 10 Heal aimed at the caster (targetFlags 1) with
+/// tickTime 1000 and durationTime 4000, so the spell's go gives the caster a lasting effect
+/// and arms four ticks. Kept edit: no item spell of the client holds such a row. The heal's
+/// formula is the caster's level (parameter kind 10, `Spell4Effects.effectType.10`) times 40.
+pub fn with_a_heal_over_time(
+  rows rows: fixture_tables.Rows,
+) -> fixture_tables.Rows {
+  let assert Ok(rows) =
+    fixture_tables.add(
+      rows:,
+      table: "Spell4Effects",
+      copy_of: 43_805,
+      id: 99_985,
+      with: [
+        #("targetFlags", Integer(1)),
+        #("effectType", Integer(10)),
+        #("tickTime", Integer(1000)),
+        #("durationTime", Integer(4000)),
+        #("flags", Integer(0)),
+        #("dataBits00", Integer(1_065_353_216)),
+        #("dataBits01", Integer(0)),
+        #("parameterType00", Integer(10)),
+        #("parameterValue00", planted_table.Float(40.0)),
+        #("phaseFlags", Integer(-1)),
+        #("orderIndex", Integer(1)),
+      ],
+    )
+    as "Spell4Effects 43805, the grenade's Activate row, is in the fixture"
+  rows
+}

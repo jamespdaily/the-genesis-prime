@@ -266,15 +266,14 @@ pub fn item_use_message(
   {
     Ok(cast_state.Frames(cast: updated, effects:)) ->
       carry_cast(session: with_cast(session:, cast: updated), now:, effects:)
-    Ok(cast_state.Started(press:, cast: started, effects:)) ->
+    Ok(cast_state.Started(press:, start:)) ->
       connection_item_spend.started(
         session:,
         now:,
         holder:,
         entered:,
         press:,
-        cast: started,
-        effects:,
+        start:,
         release: cast_effects,
       )
     Error(refusal) ->

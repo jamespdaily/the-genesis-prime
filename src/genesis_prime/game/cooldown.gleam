@@ -154,21 +154,6 @@ fn through_kept(
   })
 }
 
-/// The book with every cooldown that differs from the one `before` held for its spell (a
-/// cooldown started since) ending `by_ms` later; the cooldowns `before` held and the kept
-/// modifiers stay as they are.
-pub fn delayed(book book: Book, since before: Book, by_ms by_ms: Int) -> Book {
-  Book(
-    ..book,
-    running: dict.map_values(book.running, fn(spell4_id, running) {
-      case dict.get(before.running, spell4_id) == Ok(running) {
-        True -> running
-        False -> Running(..running, ends_ms: running.ends_ms + by_ms)
-      }
-    }),
-  )
-}
-
 /// The time the spell's cooldown has left at `now_ms`, 0 when it has none.
 pub fn left_ms(
   book book: Book,

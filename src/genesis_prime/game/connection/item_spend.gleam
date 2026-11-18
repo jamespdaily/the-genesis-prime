@@ -5,12 +5,12 @@
 ////
 //// ```
 //// InWorld ─ cast.use_item gave Started ─▶ item_charge.spend
-////             NothingToSpend ─▶ the cast adopted and its effects carried out, InWorld
+////             NothingToSpend ─▶ cast.item_started now, adopted, its effects carried out, InWorld
 ////             otherwise      ─▶ ask the store (SpendItem or DeleteItem), SpendingCharge,
-////                               the cast's state and effects held
-//// SpendingCharge ─ the store's answer ─▶ ItemsSaved: the inventory frame, the cast of the press
-////                                        with its stamps moved to the answer's time, adopted
-////                                        with the press id, its effects, InWorld
+////                               the checked start held
+//// SpendingCharge ─ the store's answer ─▶ ItemsSaved: the inventory frame, cast.item_started at
+////                                        the answer's time, adopted with the press id, its
+////                                        effects, InWorld
 ////                                      ItemsNotSaved | SaveRefused: 0x7fc result 1 and a
 ////                                        log line, the items and the cast as before, InWorld
 ////                  the store unavailable, not running, ended or past its deadline
@@ -19,19 +19,20 @@
 ////
 //// - **The shell takes no input while the ask is out**, so a second 0x943 waits behind the
 ////   answer and meets the lowered item and the recorded press id.
-//// - **The press is decided once, at the press.** The cast rule stamps the times of a start
-////   into its state and effects, and the answer comes later by the save's delay, so the
-////   answer moves the stamps the press made by that delay (`item_press_delay.delayed`): the
-////   cast's timers, its cooldowns and its start run from its release. A second decision at
-////   the answer could disagree with the first, as when a creature ran out of range meanwhile.
+//// - **The press is checked once, at the press, and the cast is made at the answer.** The
+////   checks (range, cooldown, costs, the item) decide that the use starts and are not made
+////   again; the cast is made by the start rule with the answer's time (`cast.item_started`),
+////   so every time of it, its cooldowns, its timers, its nodes and ticks, is the time of its
+////   release. Checking again at the answer could disagree with the first check, as when a
+////   creature ran out of range meanwhile.
 //// - **A refused save is the server's failure**, shown with result 1 (`UnableToCreateSpell`,
 ////   text 119668), and the connection goes on: the store is not known to be away.
 //// - **The cast's effects are carried out by the caller's `release`** (the connection's
 ////   casting), which this module cannot import: casting asks this module to start the spend.
 
 import genesis_prime/client_connection.{type Answer, type Request, Continue}
+import genesis_prime/game/cast
 import genesis_prime/game/cast/frame as cast_frame
-import genesis_prime/game/cast/item_press_delay
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection/inventory as connection_inventory
 import genesis_prime/game/connection/objective as connection_objective
@@ -59,18 +60,17 @@ pub type Release =
   fn(Session, Now, List(cast_state.Effect)) ->
     #(Session, List(Effect(ConnectionEffect(Request))))
 
-/// The cast the player's 0x943 started, taken from `cast.use_item`: the item the press
-/// named is spent from (`item_charge.spend`); a spend that takes nothing applies the cast
-/// at once, any other asks the store and the connection waits in `SpendingCharge` with the
-/// cast's state and effects held.
+/// The press of the player's 0x943 that passed its checks, taken from `cast.use_item`: the
+/// item the press named is spent from (`item_charge.spend`); a spend that takes nothing
+/// makes the cast at once, any other asks the store and the connection waits in
+/// `SpendingCharge` with the checked start held.
 pub fn started(
   session session: Session,
   now now: Now,
   holder holder: Holder,
   entered entered: world_entry.Entered,
   press press: cast_state.ItemPress,
-  cast cast: cast_state.State,
-  effects effects: List(cast_state.Effect),
+  start start: cast_state.ActivationStart,
   release release: Release,
 ) -> client_connection.Handled(Session) {
   let tables = session.settings.tables
@@ -84,15 +84,7 @@ pub fn started(
     item_property.stack_limit(tables:, item2_id: item.item2_id.value)
     as "the use check read the item's row"
   let spend = item_charge.spend(item:, stack_limit:, max_charges:)
-  let spending =
-    item_charge.Spending(
-      press:,
-      pressed_ms: now.monotonic_ms,
-      item:,
-      spend:,
-      cast:,
-      effects:,
-    )
+  let spending = item_charge.Spending(press:, item:, spend:, start:)
   case
     item_charge.request(
       spend:,
@@ -103,6 +95,7 @@ pub fn started(
     )
   {
     None -> {
+      let #(cast, effects) = cast.item_started(cast: entered.cast, start:, now:)
       let entered = world_entry.Entered(..entered, cast:)
       let session = Session(..session, status: InWorld(holder:, entered:))
       let #(session, written) = release(session, now, effects)
@@ -182,9 +175,9 @@ pub fn answered(
   )
 }
 
-/// The spend is saved: the inventory frame, the cast the press started with its stamps
-/// moved to this time, adopted with the press id and its effects carried out, then what the
-/// items now held count for the objectives and, for a worn item, the gear.
+/// The spend is saved: the inventory frame, the cast the press started made at this time,
+/// adopted with the press id and its effects carried out, then what the items now held
+/// count for the objectives and, for a worn item, the gear.
 fn released(
   session session: Session,
   now now: Now,
@@ -194,12 +187,7 @@ fn released(
   release release: Release,
 ) -> client_connection.Handled(Session) {
   let #(cast, effects) =
-    item_press_delay.delayed(
-      before: entered.cast,
-      started: spending.cast,
-      effects: spending.effects,
-      by_ms: now.monotonic_ms - spending.pressed_ms,
-    )
+    cast.item_started(cast: entered.cast, start: spending.start, now:)
   let #(items, frame) =
     item_charge.spent(
       items: entered.items,

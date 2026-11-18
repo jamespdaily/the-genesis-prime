@@ -802,16 +802,34 @@ pub type ItemPress {
   ItemPress(client_cast_id: Int, spell4_id: Int, place: ItemPlace)
 }
 
+/// What an activate press whose checks passed keeps for the start of its cast
+/// (`cast.item_started`): the client's id of the cast, the caster as it was checked, the
+/// spell with its cast time, the unit the cast activates, the interaction the spell has,
+/// the rows the activation drops and the costs the checks found paid. Nothing here is a
+/// time: the start stamps the cast with the time it is made at.
+pub type ActivationStart {
+  ActivationStart(
+    client_cast_id: Int,
+    caster: Caster,
+    spell: Spell,
+    activating: Activating,
+    interaction: Interaction,
+    dropped: activate.Dropped,
+    paid: Paid,
+  )
+}
+
 /// What the rule makes of the caster's 0x943 (`cast.use_item`).
 pub type Used {
   /// The press ends here: a refusal's frame, or a press whose id the caster already used.
   /// `cast` and `effects` are applied at once.
   Frames(cast: State, effects: List(Effect))
-  /// The press started a cast. `cast` (which records the press id, `item_press_recorded`)
-  /// and `effects` are held back: they are applied only after the store has saved the
-  /// spend of the item's charge (genesis_prime/game/item_charge), and dropped when it did
-  /// not, so a refused save leaves the cast as it was.
-  Started(press: ItemPress, cast: State, effects: List(Effect))
+  /// The press passed its checks and starts a cast, which the rule has not made: the
+  /// caster's state is as it was, and the cast is made by `cast.item_started` once the store
+  /// has saved the spend of the item's charge (genesis_prime/game/item_charge), at the time
+  /// of the answer. It is dropped when the store did not save, so a refused save leaves
+  /// the caster as it was.
+  Started(press: ItemPress, start: ActivationStart)
 }
 
 /// The item the caster holds at the place a 0x943 names: its Item2 and the charges it has

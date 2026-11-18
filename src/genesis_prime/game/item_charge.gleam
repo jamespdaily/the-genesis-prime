@@ -3,14 +3,14 @@
 ////
 //// ```
 //// 0x943 ─▶ cast.use_item ─ refused, or an id already taken ─▶ Frames: written at once
-////                        └ a cast started ─▶ Started(press, cast', effects), all held
+////                        └ every check passed ─▶ Started(press, start), the cast not made
 ////    ─▶ spend(item, stack limit, max charges)
-////         NothingToSpend (Item2.maxCharges 0) ─▶ cast' adopted, effects released, nothing asked
+////         NothingToSpend (Item2.maxCharges 0) ─▶ cast.item_started, effects released, nothing asked
 ////         StackLowered | ChargeLowered         ─▶ ask SpendItem
 ////         Gone                                 ─▶ ask DeleteItem
 ////    ─▶ the store's answer (genesis_prime/game/connection/item_spend)
-////         ItemsSaved                ─▶ the inventory frame, then the cast of the press, its stamps
-////                                      moved to the answer's time, adopted, then its effects
+////         ItemsSaved                ─▶ the inventory frame, then cast.item_started at the
+////                                      answer's time, adopted, then its effects
 ////         ItemsNotSaved | SaveRefused ─▶ 0x7fc result 1; the item and the cast are as before
 ////         the store away, past its deadline, or the connection ended ─▶ the connection ends
 //// ```
@@ -49,19 +49,16 @@ pub type Spend {
   Gone
 }
 
-/// A use whose cast is held back until the store answers the spend: the press, the
-/// monotonic time it was made at, the held item as it was, what the use spends, and the
-/// state and effects of the cast it started at the press (`cast_state.Started`). The press
-/// is decided once; the answer moves the times that decision made to the answer's time
-/// (`item_press_delay.delayed`), so the cast's timers and cooldowns run from its release.
+/// A use whose cast waits for the store's answer to the spend: the press, the held item as
+/// it was, what the use spends, and what the press's checks kept for the cast
+/// (`cast_state.ActivationStart`). The checks are made once, at the press; the cast is made
+/// at the answer by `cast.item_started`, so every time of it is the answer's.
 pub type Spending {
   Spending(
     press: cast_state.ItemPress,
-    pressed_ms: Int,
     item: HeldItem,
     spend: Spend,
-    cast: cast_state.State,
-    effects: List(cast_state.Effect),
+    start: cast_state.ActivationStart,
   )
 }
 

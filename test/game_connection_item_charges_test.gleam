@@ -82,6 +82,18 @@ fn charged_rows(
   cooldown_ms cooldown_ms: Int,
   body body: fn(table_store.Tables) -> a,
 ) -> a {
+  fixture_tables.on_rows(
+    rows: charged_row_set(cast_time_ms:, cooldown_ms:),
+    reaching: [],
+    body:,
+  )
+}
+
+/// The rows `charged_rows` loads.
+fn charged_row_set(
+  cast_time_ms cast_time_ms: Option(Int),
+  cooldown_ms cooldown_ms: Int,
+) -> fixture_tables.Rows {
   let assert Ok(rows) =
     fixture_tables.change(
       rows: fixture_tables.rows(),
@@ -110,7 +122,7 @@ fn charged_rows(
       ]),
     )
     as "Spell4 26663 is in the fixture"
-  fixture_tables.on_rows(rows:, reaching: [], body:)
+  rows
 }
 
 /// The grenade with this many charges at {1, 0}.
@@ -567,6 +579,61 @@ pub fn a_cast_with_a_cast_time_starts_its_timers_only_after_the_answer_test() ->
     as "the answer releases the cast's effects, its go timer among them"
   assert list.take(ids(taken: answered), 2) |> list.drop(1) == [0x07FD]
     as "opcode.0x7fd follows the inventory frame; the go waits for its timer"
+}
+
+/// The tables with the grenade's spell holding a heal over time on the caster
+/// (`item_charge_support.with_a_heal_over_time`).
+fn with_a_heal_over_time(body body: fn(table_store.Tables) -> a) -> a {
+  fixture_tables.on_rows(
+    rows: support_items.with_a_heal_over_time(rows: charged_row_set(
+      cast_time_ms: None,
+      cooldown_ms: 0,
+    )),
+    reaching: [],
+    body:,
+  )
+}
+
+/// Every cast timer the steps leave pending, fired in due order at its due time, with the
+/// timers each firing starts; the due times in the order they fired.
+fn fired_in_order(
+  state state: game_connection.State,
+  pending pending: List(#(Int, step.TimerId)),
+) -> List(Int) {
+  case list.sort(pending, fn(a, b) { int.compare(a.0, b.0) }) {
+    [] -> []
+    [#(due, timer), ..rest] -> {
+      let #(state, taken) = connection_support.fired_at(state:, timer:, ms: due)
+      [
+        due,
+        ..fired_in_order(
+          state:,
+          pending: list.append(
+            rest,
+            connection_support.cast_timers(steps: [taken], ms: due),
+          ),
+        )
+      ]
+    }
+  }
+}
+
+pub fn the_lasting_and_periodic_effects_of_a_cast_released_after_a_slow_answer_count_from_the_release_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use tables <- with_a_heal_over_time
+  let state = support_items.seeing_a_shack(tables:, items: [single(charges: 3)])
+  let #(state, taken) =
+    pressed(state:, client_cast_id: 9, place: single_place, at: 0)
+  let #(state, answered) =
+    answered_at(state:, taken:, outcome: saved(), at: 400)
+  // The release is at 400 ms: the heal's four ticks (tickTime 1000, durationTime 4000) are
+  // due 1000, 2000, 3000 and 4000 ms after it, and the lasting effect ends with the last.
+  assert fired_in_order(
+      state:,
+      pending: connection_support.cast_timers(steps: [answered], ms: 400),
+    )
+    == [1400, 2400, 3400, 4400, 4400]
+    as "the ticks and the end of the lasting effect run from the release, not from the press at 0 ms"
 }
 
 // ---- on the real store ----

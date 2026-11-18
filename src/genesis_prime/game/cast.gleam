@@ -91,27 +91,27 @@ import genesis_prime/game/cast/persist as cast_persist
 import genesis_prime/game/cast/press as cast_press
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{
-  type Aimed, type AimedPress, type Applied, type Caster, type Effect, type Fact,
-  type HeldProc, type Holder, type Interaction, type ItemAtPlace, type ItemPress,
-  type Listed, type Live, type Message, type Reached, type Refusal,
-  type Resolution, type Restricting, type Role, type State, type Struck,
-  type TargetVerdict, type TickAsked, type Used, type UsedUnit, Accept,
-  Activated, Activating, Activation, Aimed, AimedPress, AnswerSucceeded,
-  Answered, AwaitingAnswer, Base, Cancelled, CannotTell, CastClears,
-  CasterChangeEnds, CasterChangeStarts, ChargeLevel, Child, CooldownEnds,
-  CooldownKept, CooldownModifierEnds, CooldownModifierStarts, Deflected, Finish,
-  ForcedMoveStart, Frames, GateFails, Go, GoAsked, Healing, Held, HeldProc, Hit,
-  Hold, HoldForCast, Holding, Immune, ItemAtPlace, ItemPress, ItemsIssue,
-  KeyHeld, Lingering, Listed, Live, Log, ModifierEnd, ModifierStart,
-  NoClientCastId, NoInteraction, NoInteractionWaits, NoItemSpell, NodesEnd,
-  NotBuilt, NotDecoded, NotSentByClient, Passive, Plain, PrerequisitesIssue,
-  Pressed, PressedAt, ProcDue, Reached, Refuse, RepeatHeld, Resolution,
-  ResourceMoved, RestrictionEnd, Send, Shortcut, ShortcutCast, SpellsIssue,
-  Stage, StartChild, StartHeld, Started, StartedMoving, Starts, State, StateEnd,
-  StealthChanged, Strike, TargetModifierStart, Tell, Threshold, Tick,
-  UnbuiltItemSpell, UnbuiltShortcut, UnbuiltSpell, UnknownAnswer, UnknownCancel,
-  UnreadItemPrerequisite, UnreadLinkPrerequisite, UnreadPrerequisite,
-  UnreadShortcutPick, UsedUnit, WindowEnd, WrongAnswerSpell,
+  type ActivationStart, type Aimed, type AimedPress, type Applied, type Caster,
+  type Effect, type Fact, type HeldProc, type Holder, type Interaction,
+  type ItemAtPlace, type ItemPress, type Listed, type Live, type Message,
+  type Paid, type Reached, type Refusal, type Resolution, type Restricting,
+  type Role, type State, type Struck, type TargetVerdict, type TickAsked,
+  type Used, type UsedUnit, Accept, Activated, Activating, Activation,
+  ActivationStart, Aimed, AimedPress, AnswerSucceeded, Answered, AwaitingAnswer,
+  Base, Cancelled, CannotTell, CastClears, CasterChangeEnds, CasterChangeStarts,
+  ChargeLevel, Child, CooldownEnds, CooldownKept, CooldownModifierEnds,
+  CooldownModifierStarts, Deflected, Finish, ForcedMoveStart, Frames, GateFails,
+  Go, GoAsked, Healing, Held, HeldProc, Hit, Hold, HoldForCast, Holding, Immune,
+  ItemAtPlace, ItemPress, ItemsIssue, KeyHeld, Lingering, Listed, Live, Log,
+  ModifierEnd, ModifierStart, NoClientCastId, NoInteraction, NoInteractionWaits,
+  NoItemSpell, NodesEnd, NotBuilt, NotDecoded, NotSentByClient, Passive, Plain,
+  PrerequisitesIssue, Pressed, PressedAt, ProcDue, Reached, Refuse, RepeatHeld,
+  Resolution, ResourceMoved, RestrictionEnd, Send, Shortcut, ShortcutCast,
+  SpellsIssue, Stage, StartChild, StartHeld, Started, StartedMoving, Starts,
+  State, StateEnd, StealthChanged, Strike, TargetModifierStart, Tell, Threshold,
+  Tick, UnbuiltItemSpell, UnbuiltShortcut, UnbuiltSpell, UnknownAnswer,
+  UnknownCancel, UnreadItemPrerequisite, UnreadLinkPrerequisite,
+  UnreadPrerequisite, UnreadShortcutPick, UsedUnit, WindowEnd, WrongAnswerSpell,
 } as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/class_resource.{type Payment}
@@ -218,9 +218,9 @@ pub fn activate(
 /// run as an activate cast does, and the go raises `Activated` for the unit. The answer is
 /// `Frames` for a refusal and for a press whose client cast id is not above the highest the
 /// state took (`item_press_refused`), which start nothing and spend nothing, and `Started` for
-/// a cast the press began: its state (which records the id) and effects are returned and not
-/// applied, because the connection applies them only after the store has saved the item's
-/// spend.
+/// a press that passed every check: the checks are made here, at the press, and the cast is
+/// made by `item_started` when the connection has the store's answer to the item's spend, at
+/// that time.
 pub fn use_item(
   cast cast: State,
   body body: BitArray,
@@ -253,28 +253,60 @@ pub fn use_item(
     now_ms:,
   )
   |> result.map(fn(decided) {
-    let #(after, effects) =
-      continued(taken: decided.taken, caster:, now_ms:)
-      |> fn(taken) { settled(cast:, own: [], step: fn() { taken }) }
-    case decided.press {
-      Some(press) ->
-        Started(
-          press:,
-          cast: cast_state.item_press_recorded(
-            cast: after,
-            client_cast_id: press.client_cast_id,
-          ),
-          effects:,
-        )
-      None -> Frames(cast: after, effects:)
+    case decided {
+      ItemAnswered(taken:) -> {
+        let #(after, effects) = item_settled(cast:, caster:, taken:, now_ms:)
+        Frames(cast: after, effects:)
+      }
+      ItemChecked(press:, start:) -> Started(press:, start:)
     }
   })
 }
 
-/// What `item_used` decided: the state and effects of the press, and the press when it
-/// started a cast.
+/// The cast of an item whose press passed its checks (`use_item`), made at `now`: the
+/// activate cast starts as an activate press's does, on the caster's state `cast` as the
+/// press found it, with every time of it taken from `now`, then the press's id is recorded
+/// (`item_press_refused`). No check is made again: the press's checks decided that the use
+/// starts, and `start` kept what they found.
+pub fn item_started(
+  cast cast: State,
+  start start: ActivationStart,
+  now now: Now,
+) -> #(State, List(Effect)) {
+  let now_ms = now.monotonic_ms
+  let #(after, effects) =
+    item_settled(
+      cast:,
+      caster: start.caster,
+      taken: activation_begun(cast:, now_ms:, start:),
+      now_ms:,
+    )
+  #(
+    cast_state.item_press_recorded(
+      cast: after,
+      client_cast_id: start.client_cast_id,
+    ),
+    effects,
+  )
+}
+
+/// What an item's press did to `cast`, `taken`, with the held ability cast again when it
+/// left nothing in its way (`continued`) and the input's events settled (`settled`).
+fn item_settled(
+  cast cast: State,
+  caster caster: Caster,
+  taken taken: #(State, List(Effect)),
+  now_ms now_ms: Int,
+) -> #(State, List(Effect)) {
+  let taken = continued(taken:, caster:, now_ms:)
+  settled(cast:, own: [], step: fn() { taken })
+}
+
+/// What `item_used` decided: the state and effects of an answer that starts nothing, or
+/// the press and the start of the cast it passed.
 type ItemDecided {
-  ItemDecided(taken: #(State, List(Effect)), press: Option(ItemPress))
+  ItemAnswered(taken: #(State, List(Effect)))
+  ItemChecked(press: ItemPress, start: ActivationStart)
 }
 
 fn item_used(
@@ -307,7 +339,7 @@ fn item_used(
   let client_cast_id = press.client_cast_id
   use <- bool.guard(
     when: cast_state.item_press_refused(cast:, client_cast_id:),
-    return: Ok(ItemDecided(taken: #(cast, []), press: None)),
+    return: Ok(ItemAnswered(taken: #(cast, []))),
   )
   let unit_id = press.target_unit_id
   let target = target_of(unit_id)
@@ -366,18 +398,18 @@ fn item_used(
             in_cast_group:,
             spell4_id: spell4_id.value,
           )
-          |> result.map(fn(pressed) {
-            case pressed {
-              CastBegan(taken:) ->
-                ItemDecided(
-                  taken:,
-                  press: Some(ItemPress(
+          |> result.map(fn(checked) {
+            case checked {
+              ActivationPassed(start:) ->
+                ItemChecked(
+                  press: ItemPress(
                     client_cast_id:,
                     spell4_id: spell4_id.value,
                     place: press.item,
-                  )),
+                  ),
+                  start:,
                 )
-              PressAnswered(taken:) -> ItemDecided(taken:, press: None)
+              ActivationAnswered(taken:) -> ItemAnswered(taken:)
             }
           })
       }
@@ -407,7 +439,20 @@ fn answered_press(
 fn framed(
   taken: Result(#(State, List(Effect)), Refusal),
 ) -> Result(ItemDecided, Refusal) {
-  result.map(taken, fn(taken) { ItemDecided(taken:, press: None) })
+  result.map(taken, ItemAnswered)
+}
+
+/// What the checks of an activate press came to: an answer that starts nothing, or the
+/// start they let through (`activation_begun`).
+type ActivationChecked {
+  ActivationAnswered(taken: #(State, List(Effect)))
+  ActivationPassed(start: ActivationStart)
+}
+
+fn activation_answered(
+  taken taken: Result(#(State, List(Effect)), Refusal),
+) -> Result(ActivationChecked, Refusal) {
+  result.map(taken, ActivationAnswered)
 }
 
 /// The cast of an item's spell, which the item's checks let through, at the unit the
@@ -427,10 +472,10 @@ fn item_spell_cast(
   activations activations: activate.Activations,
   in_cast_group in_cast_group: fn(Int, Int) -> Bool,
   spell4_id spell4_id: Int,
-) -> Result(Pressed, Refusal) {
+) -> Result(ActivationChecked, Refusal) {
   let refusal = fn(spell4_id, result) {
     Ok(
-      PressAnswered(
+      ActivationAnswered(
         #(cast, [
           cast_frame.refused(client_cast_id:, spell4_id:, result:),
         ]),
@@ -439,7 +484,7 @@ fn item_spell_cast(
   }
   case activate.planned_of(activations:, spell4_id:) {
     Error(Nil) ->
-      answered_press(taken: cast_press.not_built_refusal(
+      activation_answered(taken: cast_press.not_built_refusal(
         cast:,
         client_cast_id:,
         spell4_id:,
@@ -450,7 +495,7 @@ fn item_spell_cast(
       ))
     Ok(activate.NoSpell4Row) -> refusal(spell4_id, cast_result.SpellUnknown)
     Ok(activate.CannotBePlanned(why:)) ->
-      answered_press(taken: cast_press.not_built_refusal(
+      activation_answered(taken: cast_press.not_built_refusal(
         cast:,
         client_cast_id:,
         spell4_id:,
@@ -493,7 +538,7 @@ fn item_spell_cast(
                   in_cast_group:,
                 )
               {
-                Error(taken) -> answered_press(taken:)
+                Error(taken) -> activation_answered(taken:)
                 Ok(Nil) ->
                   activation_reached(
                     cast:,
@@ -1261,13 +1306,18 @@ fn activation_in_range(
         dropped:,
         limits:,
       )
-      |> result.map(pressed_taken)
+      |> result.map(fn(checked) {
+        case checked {
+          ActivationAnswered(taken:) -> taken
+          ActivationPassed(start:) -> activation_begun(cast:, now_ms:, start:)
+        }
+      })
   }
 }
 
 /// An activate cast whose target's life and states, and cast group, let it through: refused
 /// with the range's result when the caster stands out of the limits the creature and the
-/// spell hold, else started.
+/// spell hold, else checked through (`activation_checked`).
 fn activation_reached(
   cast cast: State,
   caster caster: Caster,
@@ -1285,11 +1335,11 @@ fn activation_reached(
   effects effects: List(activate.ActivateEffect),
   dropped dropped: activate.Dropped,
   limits limits: activate.Limits,
-) -> Result(Pressed, Refusal) {
+) -> Result(ActivationChecked, Refusal) {
   let spell4_id = spell.spell4_id.value
   let refusal = fn(result) {
     Ok(
-      PressAnswered(
+      ActivationAnswered(
         #(cast, [
           cast_frame.refused(client_cast_id:, spell4_id:, result:),
         ]),
@@ -1307,7 +1357,7 @@ fn activation_reached(
     activate.TooFar -> refusal(cast_result.TargetRangeMax)
     activate.TooHigh -> refusal(cast_result.TargetRangeVertical)
     activate.Within ->
-      activation_started(
+      activation_checked(
         cast:,
         caster:,
         now_ms:,
@@ -1324,10 +1374,11 @@ fn activation_reached(
   }
 }
 
-/// The activate cast of `unit_id` under the same checks as a press of its spell, then
-/// started: the verdict's holds are refusals here, since the client does not send the
-/// cast again.
-fn activation_started(
+/// The activate cast of `unit_id` under the same checks as a press of its spell: the verdict's
+/// holds are refusals here, since the client does not send the cast again. A press that
+/// passes keeps what the cast needs (`ActivationStart`), and `activation_begun` makes the cast
+/// from it at the time the caller chooses.
+fn activation_checked(
   cast cast: State,
   caster caster: Caster,
   now_ms now_ms: Int,
@@ -1340,43 +1391,73 @@ fn activation_started(
   interaction interaction: Interaction,
   effects effects: List(activate.ActivateEffect),
   dropped dropped: activate.Dropped,
-) -> Result(Pressed, Refusal) {
-  let spell4_id = spell.spell4_id.value
-  accepted_press(
+) -> Result(ActivationChecked, Refusal) {
+  let activating =
+    Activating(unit_id:, creature_id:, alive_at_press:, by_item:, effects:)
+  case
+    press_checked(
+      cast:,
+      caster:,
+      now_ms:,
+      client_cast_id:,
+      spell:,
+      role: Activation(activating:, interaction:),
+      target_subject: None,
+    )
+  {
+    Error(taken) -> activation_answered(taken:)
+    Ok(paid) ->
+      Ok(
+        ActivationPassed(ActivationStart(
+          client_cast_id:,
+          caster:,
+          spell:,
+          activating:,
+          interaction:,
+          dropped:,
+          paid:,
+        )),
+      )
+  }
+}
+
+/// The activate cast a press that passed its checks starts (`activation_checked`), made at
+/// `now_ms` on `cast`: the payments the accept takes, the rows the activation drops, the
+/// cast's start and its first go when it has no wait.
+fn activation_begun(
+  cast cast: State,
+  now_ms now_ms: Int,
+  start start: ActivationStart,
+) -> #(State, List(Effect)) {
+  let Activating(unit_id:, creature_id:, ..) = start.activating
+  press_started(
     cast:,
-    caster:,
+    caster: start.caster,
     now_ms:,
-    client_cast_id:,
-    spell:,
+    client_cast_id: start.client_cast_id,
+    spell: start.spell,
     primary_target: unit_id,
     role: Activation(
-      activating: Activating(
-        unit_id:,
-        creature_id:,
-        alive_at_press:,
-        by_item:,
-        effects:,
-      ),
-      interaction:,
+      activating: start.activating,
+      interaction: start.interaction,
     ),
-    target_subject: None,
+    paid: start.paid,
     dropping: fn(cast) {
       cast_press.rows_dropped(
         cast:,
-        spell4_id:,
+        spell4_id: start.spell.spell4_id.value,
         unit_id:,
         creature_id:,
-        dropped:,
+        dropped: start.dropped,
       )
     },
   )
 }
 
 /// A cast the client sent a cast id for (an activate or a shortcut cast), under the same
-/// checks as a press of its spell, then started in `role` (`CastBegan`; a refusal is
-/// `PressAnswered`): the verdict's holds are
-/// refusals, since the client does not send the cast again. `dropping` is what the start
-/// leaves to log, after the payments and before the start's own effects.
+/// checks as a press of its spell (`press_checked`), then started in `role` (`CastBegan`; a
+/// refusal is `PressAnswered`). `dropping` is what the start leaves to log, after the
+/// payments and before the start's own effects.
 fn accepted_press(
   cast cast: State,
   caster caster: Caster,
@@ -1388,14 +1469,51 @@ fn accepted_press(
   target_subject target_subject: Option(prerequisite.Subject),
   dropping dropping: fn(State) -> #(State, List(Effect)),
 ) -> Result(Pressed, Refusal) {
+  case
+    press_checked(
+      cast:,
+      caster:,
+      now_ms:,
+      client_cast_id:,
+      spell:,
+      role:,
+      target_subject:,
+    )
+  {
+    Error(taken) -> answered_press(taken:)
+    Ok(paid) ->
+      Ok(
+        CastBegan(press_started(
+          cast:,
+          caster:,
+          now_ms:,
+          client_cast_id:,
+          spell:,
+          primary_target:,
+          role:,
+          paid:,
+          dropping:,
+        )),
+      )
+  }
+}
+
+/// The checks of a press of a cast the client sent a cast id for: the costs it pays when
+/// every check lets it through, else the answer to the press, which starts nothing. The
+/// verdict's holds are refusals, since the client does not send the cast again.
+fn press_checked(
+  cast cast: State,
+  caster caster: Caster,
+  now_ms now_ms: Int,
+  client_cast_id client_cast_id: Int,
+  spell spell: Spell,
+  role role: Role,
+  target_subject target_subject: Option(prerequisite.Subject),
+) -> Result(Paid, Result(#(State, List(Effect)), Refusal)) {
   let spell4_id = spell.spell4_id.value
   let refusal = fn(result) {
-    Ok(
-      PressAnswered(
-        #(cast, [
-          cast_frame.refused(client_cast_id:, spell4_id:, result:),
-        ]),
-      ),
+    Error(
+      Ok(#(cast, [cast_frame.refused(client_cast_id:, spell4_id:, result:)])),
     )
   }
   use <- bool.guard(
@@ -1416,7 +1534,7 @@ fn accepted_press(
     Hold(..) -> refusal(cast_result.SpellGlobalCooldown)
     HoldForCast -> refusal(cast_result.SpellAlreadyCasting)
     NotBuilt(result:, why:, issue:) ->
-      answered_press(taken: cast_press.not_built_refusal(
+      Error(cast_press.not_built_refusal(
         cast:,
         client_cast_id:,
         spell4_id:,
@@ -1429,29 +1547,43 @@ fn accepted_press(
         why:,
         issue:,
       ))
-    Accept(paid:) -> {
-      let #(taken, reserved) = case cast_cost.pays_at_accept(spell:) {
-        True -> #(cast_cost.paying(payments: paid.payments), [])
-        False -> #([], paid.payments)
-      }
-      let #(cast, started) =
-        start(
-          cast:,
-          caster:,
-          now_ms:,
-          spell:,
-          root: spell.spell4_id,
-          parent: None,
-          primary_target:,
-          client_cast_id: Some(client_cast_id),
-          role:,
-          spent: paid.spent,
-          reserved:,
-        )
-      let #(cast, dropped) = dropping(cast)
-      Ok(CastBegan(#(cast, list.flatten([taken, dropped, started]))))
-    }
+    Accept(paid:) -> Ok(paid)
   }
+}
+
+/// The start of a cast whose press passed its checks (`press_checked`), made at `now_ms`
+/// on `cast`.
+fn press_started(
+  cast cast: State,
+  caster caster: Caster,
+  now_ms now_ms: Int,
+  client_cast_id client_cast_id: Int,
+  spell spell: Spell,
+  primary_target primary_target: Int,
+  role role: Role,
+  paid paid: Paid,
+  dropping dropping: fn(State) -> #(State, List(Effect)),
+) -> #(State, List(Effect)) {
+  let #(taken, reserved) = case cast_cost.pays_at_accept(spell:) {
+    True -> #(cast_cost.paying(payments: paid.payments), [])
+    False -> #([], paid.payments)
+  }
+  let #(cast, started) =
+    start(
+      cast:,
+      caster:,
+      now_ms:,
+      spell:,
+      root: spell.spell4_id,
+      parent: None,
+      primary_target:,
+      client_cast_id: Some(client_cast_id),
+      role:,
+      spent: paid.spent,
+      reserved:,
+    )
+  let #(cast, dropped) = dropping(cast)
+  #(cast, list.flatten([taken, dropped, started]))
 }
 
 /// What an input did, with `StealthChanged` after its own effects when the caster's stealth
