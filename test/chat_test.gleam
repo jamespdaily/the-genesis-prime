@@ -356,7 +356,7 @@ pub fn a_viewer_writes_one_0x1c8_with_every_field_the_design_lists_test() -> Nil
       text: bit_stream.utf16_units("Hello"),
       formats: [Kind1(ChatFormatKind1(start: 0, end: 5, field_4: 0xA1B2))],
       cross_faction: 0,
-      field_14: 0,
+      unread_14: 0,
       unit_id: 5,
       premium_tier: 0,
     )
@@ -975,7 +975,7 @@ fn system_line_with(text: String) -> ChatLine {
     text: bit_stream.utf16_units(text),
     formats: [],
     cross_faction: 0,
-    field_14: 0,
+    unread_14: 0,
     unit_id: 0,
     premium_tier: 0,
   )
@@ -1382,9 +1382,9 @@ pub fn the_entry_burst_names_the_channel_joins_it_and_joins_the_groups_in_order_
       channel_type: 9,
       channel_id: zone_channel_id,
       name: "",
-      field_4: 0,
-      field_5: 0,
-      field_6: 0,
+      unread_4: 0,
+      custom_channel_slot: 0,
+      unread_6: 0,
     ))
     as "opcode.0x1bc: type 9, the fixed id 1, an empty name and three zeros; the order lets the flag 0x400 row take the name 0x1da last gave"
   assert zone == zone_channel(4961)

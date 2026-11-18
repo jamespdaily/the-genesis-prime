@@ -387,7 +387,7 @@ fn heard_frame(sender: String) -> Frame {
       text: bit_stream.utf16_units("look"),
       formats: [],
       cross_faction: 0,
-      field_14: 0,
+      unread_14: 0,
       unit_id: 5,
       premium_tier: 0,
     )),
@@ -429,7 +429,10 @@ pub fn a_removal_an_accept_a_refusal_and_a_failed_whisper_are_read_from_their_me
   use <- unitest.tag("dev_tool")
   assert sitting_bot.events_of(frame_of(
       0x0355,
-      unit_destroyed.encode(unit_destroyed.UnitDestroyed(unit_id: 9, field_2: 0)),
+      unit_destroyed.encode(unit_destroyed.UnitDestroyed(
+        unit_id: 9,
+        chest_world_object_delay: 0,
+      )),
     ))
     == [sitting_bot.UnitRemoved(unit_id: 9)]
     as "opcode.0x355: the unit is removed"

@@ -29,6 +29,10 @@ pub type UnitCreateTail {
     movement_commands: List(StartMovement),
     properties: List(UnitProperty),
     item_visuals: List(ItemVisual),
+    /// Open: Which cast is the unit casting when it comes into sight? The
+    /// client sets the unit's cast bar from this id once the creation's casts
+    /// list holds the cast (SetUnitCast 0x1404697a0); the server sends 0, so a
+    /// viewer arriving mid-cast sees no bar.
     cast_id: Int,
     faction_id: Int,
     base_faction_id: Int,
@@ -36,10 +40,14 @@ pub type UnitCreateTail {
     tagged_by_group_id: Int,
     /// Safe by `opcode.0x262.unit_fields`: the client's code gives this field
     /// no use the server needs, and that fact shows its value is safe.
-    field_14: Int,
+    unread_14: Int,
     world_object_id: Int,
     world_socket_id: Int,
     cluster_id: Int,
+    /// Open: Which creature carries which creature-set id? The client tests
+    /// this value in TargetGroup type 9 (unit_create_tail.field_20) and 40
+    /// quest objectives reach such groups; neither the client nor the world
+    /// database says which creature belongs to which set.
     /// Safe by `opcode.0x262.unit_fields`: the client's code gives this field
     /// no use the server needs, and that fact shows its value is safe.
     field_20: Int,
@@ -92,7 +100,7 @@ pub fn write(writer writer: Writer, record record: UnitCreateTail) -> Writer {
     64,
   )
   |> bit_stream.write_constant("first_tag", 0, 2)
-  |> bit_stream.write_unsigned("field_14", record.field_14, 1)
+  |> bit_stream.write_unsigned("unread_14", record.unread_14, 1)
   |> bit_stream.write_constant("second_tag", 1, 2)
   |> bit_stream.write_unsigned("world_object_id", record.world_object_id, 64)
   |> bit_stream.write_unsigned("world_socket_id", record.world_socket_id, 14)
@@ -155,7 +163,7 @@ pub fn read(reader: Reader) -> Result(#(UnitCreateTail, Reader), DecodeError) {
     64,
   ))
   use reader <- result.try(bit_stream.read_constant(reader, "first_tag", 2, 0))
-  use #(field_14, reader) <- result.try(bit_stream.read_unsigned(reader, 1))
+  use #(unread_14, reader) <- result.try(bit_stream.read_unsigned(reader, 1))
   use reader <- result.try(bit_stream.read_constant(reader, "second_tag", 2, 1))
   use #(world_object_id, reader) <- result.try(bit_stream.read_unsigned(
     reader,
@@ -193,7 +201,7 @@ pub fn read(reader: Reader) -> Result(#(UnitCreateTail, Reader), DecodeError) {
       base_faction_id:,
       tagged_by_unit_id:,
       tagged_by_group_id:,
-      field_14:,
+      unread_14:,
       world_object_id:,
       world_socket_id:,
       cluster_id:,

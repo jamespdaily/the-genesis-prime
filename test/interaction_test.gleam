@@ -173,7 +173,7 @@ pub fn talk_to_giver_in_range_opens_dialog_test() -> Nil {
     connection_support.written(taken:)
     as "a TalkTo of a giver within 6.0 + 3.0 is answered with 0x357 alone"
   assert unit_dialog_open.decode(body)
-    == Ok(UnitDialogOpen(unit_id: walker_unit, field_2: 0))
+    == Ok(UnitDialogOpen(unit_id: walker_unit, unread_2: 0))
     as "opcode.0x357: the answer names the unit"
   assert support.logs_of(step: taken, level: LogWarning) == []
   let #(_, again) =
@@ -550,7 +550,7 @@ pub fn a_click_on_a_simple_quest_giver_opens_its_dialog_test() -> Nil {
     connection_support.written(taken:)
     as "a TalkTo of a Simple giver within 6.0 + 3.0 is answered with 0x357 alone"
   assert unit_dialog_open.decode(body)
-    == Ok(UnitDialogOpen(unit_id: simple_unit_support.unit, field_2: 0))
+    == Ok(UnitDialogOpen(unit_id: simple_unit_support.unit, unread_2: 0))
     as "opcode.0x357: the answer names the unit"
   assert support.logs_of(step: taken, level: LogWarning) == []
 }

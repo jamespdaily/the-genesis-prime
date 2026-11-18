@@ -36,8 +36,8 @@ fn death(unit_id unit_id: Int, dead dead: Int) -> Frame {
     unit_death_state.encode(UnitDeathState(
       unit_id:,
       dead:,
-      field_3: 0,
-      field_4: 0,
+      unread_3: 0,
+      health: 0,
     ))
     as "0x88c encodes"
   Frame(message_id: 0x088C, body:)

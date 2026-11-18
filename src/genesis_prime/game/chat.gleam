@@ -452,9 +452,9 @@ fn zone_joined_frame() -> Frame {
       channel_type: chat_channel.id(chat_channel.Zone),
       channel_id: zone_channel_id,
       name: "",
-      field_4: 0,
-      field_5: 0,
-      field_6: 0,
+      unread_4: 0,
+      custom_channel_slot: 0,
+      unread_6: 0,
     ))
     as "the channel id 1 fits the field"
   Frame(message_id: chat_channel_joined.message_id, body:)
@@ -774,7 +774,7 @@ pub fn system_line_frame(text text: String) -> Frame {
       text: bit_stream.utf16_units(text),
       formats: [],
       cross_faction: 0,
-      field_14: 0,
+      unread_14: 0,
       unit_id: 0,
       premium_tier: 0,
     ))
@@ -1056,7 +1056,7 @@ fn line_frame(
         True -> 0
         False -> 1
       },
-      field_14: 0,
+      unread_14: 0,
       unit_id: speaker.unit_id,
       premium_tier: 0,
     ))

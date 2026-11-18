@@ -1877,7 +1877,7 @@ fn ticks_until_the_player_dies(
   case
     list.contains(
       game_connection_support.decoded(struck, 0x088C, unit_death_state.decode),
-      UnitDeathState(unit_id: medic_unit, dead: 1, field_3: 0, field_4: 0),
+      UnitDeathState(unit_id: medic_unit, dead: 1, unread_3: 0, health: 0),
     )
   {
     True -> player
@@ -1955,7 +1955,7 @@ fn presses_until_the_beast_dies(
   case
     list.contains(
       game_connection_support.decoded(frames, 0x088C, unit_death_state.decode),
-      UnitDeathState(unit_id: 7, dead: 1, field_3: 0, field_4: 0),
+      UnitDeathState(unit_id: 7, dead: 1, unread_3: 0, health: 0),
     )
   {
     True -> #(player, beast)
@@ -2001,7 +2001,7 @@ pub fn a_player_of_each_class_fights_a_planted_creature_until_one_dies_and_both_
   let #(_, frames, _) = medic_takes(medic, to_the_medic(respawned))
   assert list.take(cast_support.ids(frames:), 2) == [0x0355, 0x0262]
     && game_connection_support.decoded(frames, 0x0355, unit_destroyed.decode)
-    == [UnitDestroyed(unit_id: 7, field_2: 0)]
+    == [UnitDestroyed(unit_id: 7, chest_world_object_delay: 0)]
     && list.map(
       game_connection_support.decoded(
         frames,

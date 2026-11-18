@@ -189,7 +189,7 @@ pub fn what_a_viewer_writes_is_the_owners_message_as_the_client_takes_it_test() 
     game_connection_support.heard(taken, game_connection_support.keyed())
     as "opcode.0x355"
   assert unit_destroyed.decode(body)
-    == Ok(UnitDestroyed(unit_id: 9, field_2: 0))
+    == Ok(UnitDestroyed(unit_id: 9, chest_world_object_delay: 0))
   let #(state, _) =
     game_connection_support.feed(
       game_connection_support.in_world(),
@@ -204,7 +204,7 @@ pub fn what_a_viewer_writes_is_the_owners_message_as_the_client_takes_it_test() 
     game_connection_support.heard(taken, game_connection_support.keyed())
     as "a unit the map reports gone is removed from the client"
   assert unit_destroyed.decode(body)
-    == Ok(UnitDestroyed(unit_id: 9, field_2: 0))
+    == Ok(UnitDestroyed(unit_id: 9, chest_world_object_delay: 0))
 }
 
 pub fn a_0x262_or_0x355_naming_the_viewers_own_unit_or_unit_0_is_refused_with_an_error_line_test() -> Nil {
@@ -1143,7 +1143,7 @@ pub fn objects_unseen_writes_a_0x355_for_each_shown_object_and_none_for_one_not_
     game_connection_support.heard(taken, game_connection_support.keyed())
     as "one 0x355, for the shown object 20 and not for 22"
   assert unit_destroyed.decode(body)
-    == Ok(UnitDestroyed(unit_id: 20, field_2: 0))
+    == Ok(UnitDestroyed(unit_id: 20, chest_world_object_delay: 0))
   let #(_, taken) =
     game_connection_support.feed(
       state,
@@ -1190,7 +1190,7 @@ pub fn an_object_notice_naming_the_players_own_unit_or_unit_0_writes_nothing_for
     game_connection_support.heard(taken, game_connection_support.keyed())
     as "a 0x355 for object 20 only"
   assert unit_destroyed.decode(body)
-    == Ok(UnitDestroyed(unit_id: 20, field_2: 0))
+    == Ok(UnitDestroyed(unit_id: 20, chest_world_object_delay: 0))
   assert list.length(support.logs_of(step: taken, level: LogError)) == 2
     as "an error line for each of unit 0 and the player's own unit"
 }

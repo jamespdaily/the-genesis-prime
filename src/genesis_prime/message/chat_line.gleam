@@ -36,7 +36,7 @@ pub type ChatLine {
     cross_faction: Int,
     /// Safe by `opcode.0x1c8`: the client's code gives this field no use the
     /// server needs, and that fact shows its value is safe.
-    field_14: Int,
+    unread_14: Int,
     unit_id: Int,
     premium_tier: Int,
   )
@@ -63,7 +63,7 @@ pub fn encode(message: ChatLine) -> Result(BitArray, EncodeError) {
   |> bit_stream.write_wide_units("text", message.text)
   |> bit_stream.write_array("formats", message.formats, 5, chat_format.write)
   |> bit_stream.write_unsigned("cross_faction", message.cross_faction, 1)
-  |> bit_stream.write_unsigned("field_14", message.field_14, 16)
+  |> bit_stream.write_unsigned("unread_14", message.unread_14, 16)
   |> bit_stream.write_unsigned("unit_id", message.unit_id, 32)
   |> bit_stream.write_unsigned("premium_tier", message.premium_tier, 8)
   |> bit_stream.finish
@@ -100,7 +100,7 @@ pub fn decode(body: BitArray) -> Result(ChatLine, DecodeError) {
     chat_format.read,
   ))
   use #(cross_faction, reader) <- result.try(bit_stream.read_unsigned(reader, 1))
-  use #(field_14, reader) <- result.try(bit_stream.read_unsigned(reader, 16))
+  use #(unread_14, reader) <- result.try(bit_stream.read_unsigned(reader, 16))
   use #(unit_id, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   use #(premium_tier, reader) <- result.try(bit_stream.read_unsigned(reader, 8))
   use Nil <- result.try(bit_stream.finish_reading(reader))
@@ -118,7 +118,7 @@ pub fn decode(body: BitArray) -> Result(ChatLine, DecodeError) {
     text:,
     formats:,
     cross_faction:,
-    field_14:,
+    unread_14:,
     unit_id:,
     premium_tier:,
   ))

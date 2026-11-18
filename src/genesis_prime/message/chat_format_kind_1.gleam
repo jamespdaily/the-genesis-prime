@@ -18,6 +18,8 @@ pub type ChatFormatKind1 {
   ChatFormatKind1(
     start: Int,
     end: Int,
+    /// Open: What does the 32-bit value of a chat format of type 1 mark? The
+    /// client reads it and nothing in its code shows the use (0x140085ca0).
     /// Safe by `0x140085ca0`: the client's code gives this field no use the
     /// server needs, and that fact shows its value is safe.
     field_4: Int,

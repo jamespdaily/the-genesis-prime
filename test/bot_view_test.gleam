@@ -77,7 +77,7 @@ fn moved(
 
 fn removed(unit_id: Int) -> Frame {
   let assert Ok(body) =
-    unit_destroyed.encode(UnitDestroyed(unit_id:, field_2: 0))
+    unit_destroyed.encode(UnitDestroyed(unit_id:, chest_world_object_delay: 0))
     as "0x355 encodes"
   Frame(message_id: 0x0355, body:)
 }

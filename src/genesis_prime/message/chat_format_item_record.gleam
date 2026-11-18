@@ -24,24 +24,48 @@ pub type ChatFormatItemRecord {
     item_guid: Int,
     item_id: Int,
     character_id: Int,
+    /// Open: What does the item record's 64-bit value at position 4 mean?
+    /// ReadChatItemRecord reads it and its use was not traced;
+    /// BuildChatItemLink may read it as the random-stat word
+    /// (chat_format_item_record.random_stats).
     /// Safe by `0x140085790`: the client's code gives this field no use the
     /// server needs, and that fact shows its value is safe.
     field_4: Int,
+    /// Open: What does the item record's 32-bit value at position 5 mean?
+    /// ReadChatItemRecord reads it and its use was not traced;
+    /// BuildChatItemLink may read it as the rune slots
+    /// (chat_format_item_record.random_stats).
     /// Safe by `0x140085790`: the client's code gives this field no use the
     /// server needs, and that fact shows its value is safe.
     field_5: Int,
+    /// Open: What does the item record's 64-bit value at position 6 mean?
+    /// ReadChatItemRecord reads it and its use was not traced;
+    /// BuildChatItemLink may read it as the 4 + 3x10-bit value
+    /// (chat_format_item_record.random_stats).
     /// Safe by `0x140085790`: the client's code gives this field no use the
     /// server needs, and that fact shows its value is safe.
     field_6: Int,
+    /// Open: What does the item record's 32-bit value at position 7 mean?
+    /// ReadChatItemRecord reads it and no use of it was found.
     /// Safe by `0x140085790`: the client's code gives this field no use the
     /// server needs, and that fact shows its value is safe.
     field_7: Int,
+    /// Open: What does the item record's 32-bit value at position 8 mean?
+    /// ReadChatItemRecord reads it and its use was not traced;
+    /// BuildChatItemLink may read it as the item level
+    /// (chat_format_item_record.random_stats).
     /// Safe by `0x140085790`: the client's code gives this field no use the
     /// server needs, and that fact shows its value is safe.
     field_8: Int,
+    /// Open: What does the item record's 8-bit value at position 9 mean?
+    /// ReadChatItemRecord reads it and no use of it was found.
     /// Safe by `0x140085790`: the client's code gives this field no use the
     /// server needs, and that fact shows its value is safe.
     field_9: Int,
+    /// Open: What does the item record's 18-bit value at position 10 mean?
+    /// ReadChatItemRecord reads it and its use was not traced;
+    /// BuildChatItemLink may read it as the category-143 id
+    /// (chat_format_item_record.random_stats).
     /// Safe by `0x140085790`: the client's code gives this field no use the
     /// server needs, and that fact shows its value is safe.
     field_10: Int,

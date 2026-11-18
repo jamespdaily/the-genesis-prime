@@ -143,7 +143,7 @@ pub fn tail(
     base_faction_id:,
     tagged_by_unit_id: 0,
     tagged_by_group_id: 0,
-    field_14: 0,
+    unread_14: 0,
     world_object_id:,
     world_socket_id:,
     cluster_id: 0,

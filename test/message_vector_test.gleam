@@ -407,7 +407,7 @@ pub fn unit_dialog_open_matches_client_layout_test() -> Nil {
   message_support.assert_vector(
     name: "vector.opcode.0x355.body",
     body: message_support.hex("0110000001"),
-    value: UnitDialogOpen(unit_id: 0x1001, field_2: 1),
+    value: UnitDialogOpen(unit_id: 0x1001, unread_2: 1),
     encode: unit_dialog_open.encode,
     decode: unit_dialog_open.decode,
   )
