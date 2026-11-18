@@ -383,17 +383,17 @@ pub fn activate_go_raises_activated_test() -> Nil {
       ]),
     ]
     as "opcode.0x7f4.target_info: the go names the unit with the effect info of Spell4 1817's Activate row, Spell4Effects 2821 (delay 0), never the unit with no effect info"
-  assert list.count(effects, fn(effect) {
-      effect
-      == cast_state.Activated(
-        unit_id: its_unit,
-        creature_id: the_mollusk,
-        alive_at_press: True,
-        by_item: False,
-      )
-    })
-    == 1
-    as "the go raises Activated for the unit and its creature, once"
+  assert support.activations(effects:)
+    == [
+      #(
+        its_unit,
+        the_mollusk,
+        True,
+        False,
+        Some(support.pressed_id(effects: pressed)),
+      ),
+    ]
+    as "the go raises Activated for the unit and its creature once, naming the cast that raised it"
   // A creature whose columns pass nobody casts the default spell, Spell4 8, which is not
   // among its columns, so the creature's cast time is not its time (`0x1407a1680`): the
   // spell's own castTime, 0, is.
@@ -502,15 +502,12 @@ pub fn an_activate_cast_of_a_channel_stays_a_channel_test() -> Nil {
     as "cast.channel_sequence: the second go is sent before the finish, and nothing else is"
   assert go_phases(effects: flattened(steps:)) == [1]
     as "the go at 2999 ms is the channel's second"
-  assert list.count(flattened(steps:), fn(effect) {
-      effect
-      == cast_state.Activated(
-        unit_id: its_unit,
-        creature_id: a_scanning_crystal,
-        alive_at_press: True,
-        by_item: False,
-      )
-    })
+  assert support.activated_count(
+      effects: flattened(steps:),
+      unit_id: its_unit,
+      creature_id: a_scanning_crystal,
+      by_item: False,
+    )
     == 1
     as "Spell4Effects 10256, the Activate row (delayTime 2999), is applied once, at the last go"
   assert list.contains(
@@ -598,15 +595,7 @@ pub fn a_channel_activation_stopped_before_its_last_go_counts_nothing_test() -> 
     as "opcode.0x801: the client cancels the cast it is playing"
   let #(_, steps) = support.run_timers(state:, effects: clicked, from_ms: 1000)
   let everything = list.append(stopped, flattened(steps:))
-  assert !list.contains(
-    everything,
-    cast_state.Activated(
-      unit_id: its_unit,
-      creature_id: a_scanning_crystal,
-      alive_at_press: True,
-      by_item: False,
-    ),
-  )
+  assert support.activations(effects: everything) == []
     as "the channel's timers run after the cancel and nothing is activated"
   assert go_phases(effects: everything) == []
     as "no later go is sent for a cancelled cast"
@@ -1456,15 +1445,13 @@ pub fn an_activation_with_a_dropped_despawn_logs_it_once_and_activates_test() ->
         0x07F4,
       )
         as "the cast goes after its castTime, as without the row"
-      assert list.contains(
-        effects,
-        cast_state.Activated(
+      assert support.activated_count(
+          effects:,
           unit_id: its_unit,
           creature_id: the_mollusk,
-          alive_at_press: True,
           by_item: False,
-        ),
-      )
+        )
+        == 1
         as "and raises the activation the objectives count"
       assert support.despawns(effects:) == []
         as "the activate cast tells no creature to despawn: it strikes no unit"
@@ -1493,15 +1480,7 @@ pub fn activate_cancelled_raises_nothing_test() -> Nil {
     as "the cast ends with its finish and no go"
   assert support.cancelled_timers(effects:) != []
     as "the go's timer is cancelled"
-  assert !list.contains(
-    effects,
-    cast_state.Activated(
-      unit_id: its_unit,
-      creature_id: the_mollusk,
-      alive_at_press: True,
-      by_item: False,
-    ),
-  )
+  assert support.activations(effects:) == []
     as "a cast cancelled before its go raises no Activated"
 }
 
@@ -1596,15 +1575,12 @@ fn answered_ok(
 }
 
 fn activated_by(effects effects: List(Effect)) -> Int {
-  list.count(effects, fn(effect) {
-    effect
-    == cast_state.Activated(
-      unit_id: its_unit,
-      creature_id: the_terminal,
-      alive_at_press: True,
-      by_item: False,
-    )
-  })
+  support.activated_count(
+    effects:,
+    unit_id: its_unit,
+    creature_id: the_terminal,
+    by_item: False,
+  )
 }
 
 /// The go and the finish of a cast that went, and the activation it raises.
@@ -1624,15 +1600,12 @@ fn assert_went_and_finished(effects effects: List(Effect)) -> Nil {
       ]),
     ]
     as "opcode.0x7f4.activate: the go names the unit with the effect info of Spell4 34681's Activate row, Spell4Effects 68913 (delay 0)"
-  assert list.count(effects, fn(effect) {
-      effect
-      == cast_state.Activated(
-        unit_id: its_unit,
-        creature_id: the_terminal,
-        alive_at_press: True,
-        by_item: False,
-      )
-    })
+  assert support.activated_count(
+      effects:,
+      unit_id: its_unit,
+      creature_id: the_terminal,
+      by_item: False,
+    )
     == 1
     as "the go raises Activated for the unit and its creature, once"
 }

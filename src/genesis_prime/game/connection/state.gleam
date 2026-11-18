@@ -15,6 +15,7 @@ import genesis_prime/game/class_resource
 import genesis_prime/game/deadline_timer
 import genesis_prime/game/inventory
 import genesis_prime/game/item_charge
+import genesis_prime/game/level_up
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
 import genesis_prime/game/prerequisite.{type Prerequisite}
@@ -148,6 +149,11 @@ pub fn shortcut_spells_of(
   session session: Session,
 ) -> shortcut_spell.Shortcuts {
   shortcut_spell.shortcuts(tables: session.settings.tables)
+}
+
+/// The plans of the level-up fanfares (genesis_prime/game/level_up).
+pub fn level_ups_of(session session: Session) -> level_up.Fanfares {
+  level_up.fanfares(tables: session.settings.tables)
 }
 
 /// What an accepted connection keeps.

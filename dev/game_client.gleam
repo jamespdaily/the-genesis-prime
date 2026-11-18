@@ -41,6 +41,7 @@ import genesis_prime/message/play_character.{PlayCharacter}
 import genesis_prime/message/player_health
 import genesis_prime/message/player_movement.{PlayerMovement}
 import genesis_prime/message/relayed_movement
+import genesis_prime/message/replay_level_up.{ReplayLevelUp}
 import genesis_prime/message/send_chat_line.{SendChatLine}
 import genesis_prime/message/send_whisper.{SendWhisper}
 import genesis_prime/message/server_hello
@@ -295,6 +296,14 @@ pub fn press_ability(
     message_id: cast_ability.message_id,
     body: press_body(client_cast_id:, bag_index:, target:, press: 1),
   )
+}
+
+/// Asks for the fanfare of a level, as the client's level-up fanfare and the Level Up
+/// Unlocks window's Replay button do (opcode.0x7a5): the level in 32 bits.
+pub fn replay_level_up(game game: Game, level level: Int) -> Nil {
+  let assert Ok(body) = replay_level_up.encode(ReplayLevelUp(level:))
+    as "a level fits 32 bits"
+  send_world(game:, message_id: replay_level_up.message_id, body:)
 }
 
 /// The body of the client's 0x9a (opcode.0x9a): its cast id, the bag index, the

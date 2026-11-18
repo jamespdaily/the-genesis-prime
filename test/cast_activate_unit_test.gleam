@@ -28,6 +28,7 @@ import genesis_prime/step.{LogWarning}
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id}
 import gleam/dict
+import gleam/option.{None}
 import gleam/string
 import owned_test
 import place_support
@@ -154,6 +155,7 @@ pub fn a_client_activate_unit_on_a_unit_with_no_activate_spell_is_used_at_once_t
         creature_id: a_manifestation,
         alive_at_press: True,
         by_item: False,
+        cast_id: None,
       ),
     ]
     as "a creature with no activate column is used with no cast and no wait"
@@ -227,6 +229,7 @@ pub fn a_client_activate_unit_is_refused_out_of_the_interaction_range_test() -> 
         creature_id: a_manifestation,
         alive_at_press: True,
         by_item: False,
+        cast_id: None,
       ),
     ]
     as "the gap between the edges is 5.75 less 0.5 and 0.25, exactly the range 5.0: within it"
@@ -313,6 +316,7 @@ pub fn a_client_activate_unit_picks_with_the_checklist_bit_of_the_unit_test() ->
         creature_id: a_market_terminal,
         alive_at_press: True,
         by_item: False,
+        cast_id: None,
       ),
     ]
     as "bit 5 is set: the condition fails and the next column, prerequisite 0 with spell 0, wins: no activate spell, so the client's use is at once (0x14046c580)"
@@ -375,6 +379,7 @@ pub fn a_use_of_a_creature_with_no_open_link_is_refused_test() -> Nil {
         creature_id: a_linked_creature,
         alive_at_press: True,
         by_item: False,
+        cast_id: None,
       ),
     ]
     as "quest 3244 is Accepted with its objective 4242 open: the link is open, and a creature with no activate spell is used at once"
