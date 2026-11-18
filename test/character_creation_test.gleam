@@ -29,6 +29,7 @@ import genesis_prime/game/character_creation.{
   NoStartPlace, NoSuchRow, PathAbove3, RowDisabled, TooManyLabels,
   WrongBoneCount,
 }
+import genesis_prime/game/item_property
 import genesis_prime/game/start_place.{Level50, Novice, OtherStart, Veteran}
 import genesis_prime/message/create_character.{
   type CreateCharacter, CreateCharacter,
@@ -670,6 +671,33 @@ pub fn the_novice_items_are_made_with_their_rows_charges_test() -> Nil {
       charges: 3,
     ))
     as "a weapon row that holds 3 charges is made with 3"
+}
+
+/// A character is made with its Novice items worn and no flags byte (a made item is unbound,
+/// `character_item.item_flags` defaults to 0), which is right only while none of them binds on
+/// equip: every item of every Novice set binds on pickup (`Item2.bindFlags.bind_on_equip_rows`:
+/// bindFlags bit 3, which the client shows bound whatever the item holds, `0x14056a3f0`), so
+/// nothing in the worn set would be asked to confirm. A set with a bind-on-equip item would
+/// need its flags made with it.
+pub fn no_novice_item_binds_on_equip_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.shared()
+  list.each(novice_tables.sets(), fn(set) {
+    list.each(created_with(tables:, set:).starting_items, fn(item) {
+      assert item_property.binds_on_equip(
+          tables:,
+          item2_id: item.item2_id.value,
+        )
+        == Ok(False)
+        as {
+          "CharacterCreation row "
+          <> int.to_string(set.creation_id)
+          <> ": Item2 "
+          <> int.to_string(item.item2_id.value)
+          <> " does not bind on equip"
+        }
+    })
+  })
 }
 
 /// The credits a character created in these tests starts with, passed to the rule as

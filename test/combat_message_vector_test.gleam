@@ -239,7 +239,7 @@ pub fn an_ability_is_a_shared_item_at_location_4_and_a_reason_test() -> Nil {
         field_10: 0x5152535455565758,
         durability: 0x3FC00000,
         dye_channels: 0x61,
-        field_13: 0x71,
+        item_flags: 0x71,
         refund_window_ms: 0x81,
         field_15: 0x82,
         soulbound_trade_window_ms: 0x83,

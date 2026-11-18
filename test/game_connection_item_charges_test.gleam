@@ -22,7 +22,7 @@
 //// Time is the step's own clock: Spell4 26663's spellCoolDown is 2000 ms, so the uses are
 //// 5 s apart.
 
-import account_store_support.{type Store}
+import account_store_support.{type Stored}
 import character_support
 import connection_rule_support as support
 import fixture_tables
@@ -45,9 +45,9 @@ import genesis_prime/step.{
   NoAnswerInTime, NotRunning, OwnEvent,
 }
 import genesis_prime/store.{
-  type HeldItem, type ItemsRequest, type NewItem, AccountId, CharacterCreated,
-  CharacterId, DeleteItem, ForItems, ItemsNotSaved, ItemsSaved, NewItem,
-  SaveRefused, SpendItem,
+  type HeldItem, type ItemsRequest, type NewItem, AccountId, CharacterId,
+  DeleteItem, ForItems, ItemsNotSaved, ItemsSaved, NewItem, SaveRefused,
+  SpendItem,
 }
 import genesis_prime/table/id.{Item2Id}
 import genesis_prime/table/loader/store as table_store
@@ -638,30 +638,12 @@ pub fn the_lasting_and_periodic_effects_of_a_cast_released_after_a_slow_answer_c
 
 // ---- on the real store ----
 
-/// A character the real store holds, with its account.
-type Stored {
-  Stored(
-    store: Store,
-    account: store.AccountId,
-    character_id: store.CharacterId,
-  )
-}
-
 /// A stored character holding the Engineer's worn items and these items in its bags.
 fn stored_holding(items items: List(NewItem)) -> Stored {
-  let store = account_store_support.start_store(pool_size: 2)
-  let account =
-    account_store_support.insert_account(store:, login_name: "login-1")
-  let assert CharacterCreated(character_id:) =
-    account_store_support.create_holding(
-      store:,
-      account:,
-      name: "Ab Cd",
-      slots: 1,
-      items: list.append(character_support.row_466_items(), items),
-    )
-    as "a character holding the worn items and the bag items"
-  Stored(store:, account:, character_id:)
+  account_store_support.stored_holding(
+    worn: character_support.row_466_items(),
+    items:,
+  )
 }
 
 fn bag_item(
@@ -679,48 +661,10 @@ fn bag_item(
   )
 }
 
-/// The items of the bags the store holds now, as a login finds them. A login raises the
-/// character's epoch, so a request is made under the epoch of the login just before it.
+/// The items of the bags the store holds now, as a login finds them.
 fn loaded(stored stored: Stored) -> #(Int, List(HeldItem)) {
-  let #(epoch, items) =
-    account_store_support.login(
-      store: stored.store,
-      account: stored.account,
-      character_id: stored.character_id,
-    )
+  let #(epoch, items) = account_store_support.loaded(stored:)
   #(epoch, list.filter(items, fn(item) { item.location == 1 }))
-}
-
-/// The connection's request made the stored character's own: its account and id, and the
-/// epoch of a login just before it.
-fn own_request(
-  stored stored: Stored,
-  request request: ItemsRequest,
-) -> ItemsRequest {
-  let #(epoch, _) = loaded(stored:)
-  let session_epoch = character_support.epoch(epoch)
-  case request {
-    SpendItem(..) ->
-      SpendItem(
-        ..request,
-        account_id: stored.account,
-        character_id: stored.character_id,
-        session_epoch:,
-      )
-    DeleteItem(..) ->
-      DeleteItem(
-        ..request,
-        account_id: stored.account,
-        character_id: stored.character_id,
-        session_epoch:,
-      )
-    store.MoveItems(..)
-    | store.SplitItem(..)
-    | store.MergeItems(..)
-    | store.BuyFromVendor(..)
-    | store.SellToVendor(..)
-    | store.TurnInQuest(..) -> panic as "a use asks a spend or a delete"
-  }
 }
 
 /// The store's answer to the connection's request.
@@ -731,7 +675,7 @@ fn store_answer(
   step.Answer(
     FromStore(account_store_support.ask(
       store: stored.store,
-      request: store.Items(own_request(stored:, request:)),
+      request: store.Items(account_store_support.own_request(stored:, request:)),
     )),
   )
 }
@@ -872,7 +816,7 @@ pub fn a_crash_after_the_spend_commits_resyncs_the_client_on_reload_test() -> Ni
       let assert ForItems(store.ItemsSaved) =
         account_store_support.ask(
           store: stored.store,
-          request: store.Items(own_request(
+          request: store.Items(account_store_support.own_request(
             stored:,
             request: support_items.spend_asked(taken:),
           )),

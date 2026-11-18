@@ -712,10 +712,20 @@ pub fn entered_with_items(
 pub fn entered_with_quests(
   quests quests: List(store.QuestRow),
 ) -> #(game_connection.State, ConnectionStep(Request)) {
+  entered_under(settings: settings(), character: world_character(), quests:)
+}
+
+/// The connection made with these settings after the store gave `character` these quest
+/// rows and the map took it: the burst is written.
+pub fn entered_under(
+  settings settings: game_connection.Settings,
+  character character: store.Character,
+  quests quests: List(store.QuestRow),
+) -> #(game_connection.State, ConnectionStep(Request)) {
   let #(state, taken) =
     joining_holding(
-      in_character_select: in_select(),
-      character: world_character(),
+      in_character_select: in_select_from(accepted(settings).0),
+      character:,
       saved_health: None,
       saved_experience: None,
       quests:,
@@ -2923,14 +2933,26 @@ pub fn pressed_until(
   #(state, steps)
 }
 
+/// The body of a 0x182 of the item at `from` to the empty or other place `to`.
+pub fn item_move_body(
+  from from: item_place.ItemPlace,
+  to to: item_place.ItemPlace,
+) -> BitArray {
+  let assert Ok(body) = item_move.encode(item_move.ItemMove(from:, to:))
+    as "two places of 9 and 32 bits fit the message"
+  body
+}
+
 /// A 0x182 of the item at `from` to the empty or other place `to`, as the client sends
 /// it, inside 0x038C.
 pub fn item_moved_message(
   from from: item_place.ItemPlace,
   to to: item_place.ItemPlace,
 ) -> BitArray {
-  let assert Ok(body) = item_move.encode(item_move.ItemMove(from:, to:))
-  world_message(message_id: item_move.message_id, body:)
+  world_message(
+    message_id: item_move.message_id,
+    body: item_move_body(from:, to:),
+  )
 }
 
 /// The connection that took the client's message that changes a held item at `ms`,
@@ -2971,6 +2993,7 @@ pub fn turn_in_saved(taken taken: ConnectionStep(Request)) -> Outcome(Answer) {
               stack_count:,
               random_stats: 0,
               charges:,
+              item_flags: 0,
             ),
           ] = one.make
             as "one stack of each, the Item2s' counts being 1"
@@ -2982,6 +3005,7 @@ pub fn turn_in_saved(taken taken: ConnectionStep(Request)) -> Outcome(Answer) {
             stack_count:,
             random_stats: 0,
             charges:,
+            item_flags: 0,
           )
         }),
       )),

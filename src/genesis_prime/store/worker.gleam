@@ -544,6 +544,7 @@ fn turn_in_quest(
           list.map(made, fn(one) { { one.1 }.stack_count }),
           list.map(made, fn(one) { { one.1 }.random_stats }),
           list.map(made, fn(one) { { one.1 }.charges }),
+          list.map(made, fn(one) { { one.1 }.item_flags }),
         )
         |> result.map_error(Failed),
       )
@@ -574,7 +575,8 @@ fn turn_in_quest(
           row.bag_index,
           row.stack_count,
           row.random_stats,
-          row.charges
+          row.charges,
+          row.item_flags
         {
           Some(item_guid),
             Some(item2_id),
@@ -582,7 +584,8 @@ fn turn_in_quest(
             Some(bag_index),
             Some(stack_count),
             Some(random_stats),
-            Some(charges)
+            Some(charges),
+            Some(item_flags)
           ->
             Ok(HeldItem(
               item_guid:,
@@ -592,8 +595,9 @@ fn turn_in_quest(
               stack_count:,
               random_stats:,
               charges:,
+              item_flags:,
             ))
-          _, _, _, _, _, _, _ -> Error(Nil)
+          _, _, _, _, _, _, _, _ -> Error(Nil)
         }
       }),
     )
@@ -646,6 +650,7 @@ fn sell_to_vendor(
           item_guid: row.item_guid,
           random_stats: row.random_stats,
           charges: row.charges,
+          item_flags: row.item_flags,
         )
       }),
     )
@@ -763,6 +768,7 @@ fn buy_from_vendor(
       list.map(make, fn(stack) { stack.stack_count }),
       list.map(make, fn(stack) { stack.random_stats }),
       list.map(make, fn(stack) { stack.charges }),
+      list.map(make, fn(stack) { stack.item_flags }),
     )
   })
   |> items_answer(saved: fn(rows) {
@@ -776,14 +782,16 @@ fn buy_from_vendor(
           row.bag_index,
           row.stack_count,
           row.random_stats,
-          row.charges
+          row.charges,
+          row.item_flags
         {
           Some(item_guid),
             Some(location),
             Some(bag_index),
             Some(stack_count),
             Some(random_stats),
-            Some(charges)
+            Some(charges),
+            Some(item_flags)
           ->
             Ok(HeldItem(
               item_guid:,
@@ -793,8 +801,9 @@ fn buy_from_vendor(
               stack_count:,
               random_stats:,
               charges:,
+              item_flags:,
             ))
-          _, _, _, _, _, _ -> Error(Nil)
+          _, _, _, _, _, _, _ -> Error(Nil)
         }
       }),
     )
@@ -891,6 +900,7 @@ fn move_items(
       list.map(moves, fn(move) { move.from.bag_index }),
       list.map(moves, fn(move) { move.to.location }),
       list.map(moves, fn(move) { move.to.bag_index }),
+      list.map(moves, fn(move) { move.flags_set }),
     )
   })
   |> items_answer(saved: fn(rows) {
@@ -1359,6 +1369,7 @@ fn held_items(
             stack_count: row.stack_count,
             random_stats: row.random_stats,
             charges:,
+            item_flags: row.item_flags,
           ),
           ..set
         ],
@@ -1372,6 +1383,7 @@ fn held_items(
           bag_index: row.bag_index,
           stack_count: row.stack_count,
           random_stats: row.random_stats,
+          item_flags: row.item_flags,
         ),
         ..unset
       ])

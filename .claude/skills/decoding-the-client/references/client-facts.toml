@@ -11739,7 +11739,7 @@ grade = "fairly sure"
 gap = "Not needed in the start zones beyond 6 rows; the delivery rule is not decoded."
 
 ["QuestObjective.type.5"]
-statement = "QuestObjective type 5: a scripted objective. The client gives it no rule of its own. Its data has no single meaning: 1267 of the 1556 rows have 0, and in the training simulation the data is a Creature2 id (73463, 73494), a WorldZone id (5968, 4965) or an id with no row (73468). QuestObjectiveCountsUnit counts no unit for it, and its only type-specific client code is the progress floater's sound (0x1b for type 5, else 0x7a or 0x1a). The client sends nothing for it; it shows progress and completion only from the server's 0x361 (progress at the needed count sets the done bit). In the training simulation it stands for detonating a mine (21287, 21340, 21318 and the Dominion 21313 to 21315; Creature2.73463.detonate) and for the In-Game Store (21371, 21372, 21374, 21375). 99 rows in the start zones."
+statement = "QuestObjective type 5: a scripted objective. The client gives it no rule of its own. Its data has no single meaning: 1267 of the 1556 rows have 0, and in the training simulation the data is a Creature2 id (73463, 73494), a WorldZone id (5968, 4965) or an id with no row (73468). QuestObjectiveCountsUnit counts no unit for it, and its only type-specific client code is the progress floater's sound (0x1b for type 5, else 0x7a or 0x1a). The client sends nothing for it; it shows progress and completion only from the server's 0x361 (progress at the needed count sets the done bit). In the training simulation it stands for detonating a mine (21287, 21340, 21318 and the Dominion 21313 to 21315; Creature2.73463.detonate) and for the In-Game Store (21267, 21371, 21372, 21374, 21375: a purchase for 21267, 21371 and 21375, opening the store for 21372 and 21374). 99 rows in the start zones."
 proof = "`gleam run -m genesis_prime/table_rows -- QuestObjective type=5` (1556 rows, 1267 with data 0); `-- Creature2 73463 73494 73468` (73468 prints no row); `-- WorldZone 5968 4965`. Saved C 0x1405512f0.c (hash e9b6b6af37d00314) line 91: the objective's type equal to 5 picks sound 0x1b. 0x140550c50.c (5c7a982a369b504f) tests types 2, 8, 16, 15, 46, 3, 9, 21, 12, 23 and the checklist types only; 0x140551d40.c has no case for 5. opcode.0x361."
 grade = "fairly sure"
 gap = "Only the three readers named were searched for a type 5 test; other quest code was not swept for one. What completes each row is the server's script, read from its text and the units the client ties to it."
@@ -12326,10 +12326,10 @@ gap = "As Prerequisite.prerequisiteTypeId.268."
 name = "PrerequisiteAccountSettingIs"
 
 ["Prerequisite.prerequisiteTypeId.288"]
-statement = "Prerequisite type 288 ('Character title', text 754899): with a first unit of type 20 (a player) or 23: whether the player owns character title objectId (a CharacterTitle id): comparison 1 passes when owned, 2 when not; any other unit fails. The value is not read. Start content: 1 condition(s) in 1 row(s); (comparison, value): (2, 0) 1; objectIds: 400."
-proof = "Saved C 0x1404a2100.c (hash 2580df99bb1ce2aa): case 288 dispatches to 0x1404a1830, slot 0x6b8 of the prerequisite class 0x140b67740 (bytes at 0x140b67df8). Saved C 0x1404a1830.c (hash 8eb22adb6de47956): 0x1404a1830: 0x1403d4080(game 0x140c65898 word 0x6300, objectId) searches the title tree and returns 0x1403d6d10 of the entry. Counts: start_prereqs.py (scratch) over `gleam run -m genesis_prime/table_rows -- <T>` dumps of Quest2, Prerequisite, Creature2, Tutorial, QuestObjective, WorldLocation2, WorldZone and the play database's spawn rows of worlds 3460, 426, 990, 1387 and 870. `gleam run -m genesis_prime/table_rows -- PrerequisiteType 288`."
+statement = "Prerequisite type 288 ('Character title', text 754899): when the first unit is a player (unit type 0x14) or a ghost (0x17), the client looks the objectId up in its own set of owned titles (one set for the whole game, not the unit's): comparison 1 passes when the entry is owned, 2 when it is not, any other comparison fails; any other unit type fails. The value is not read. An entry counts as owned when it is not revoked, its title's lifetime (CharacterTitle lifeTimeSeconds) is 0 or has not run out, and its schedule (scheduleId) is 0 or the entry is scheduled; CharacterTitle 400 has both 0. The set is filled only by messages 0x018A and 0x018B, so a client sent neither owns no title and comparison 2 passes. Start content: 1 condition(s) in 1 row(s); (comparison, value): (2, 0) 1; objectIds: 400."
+proof = "Saved C 0x1404a2100.c (hash 2580df99bb1ce2aa): case 288 dispatches to 0x1404a1830, slot 0x6b8 of the prerequisite class 0x140b67740 (bytes at 0x140b67df8). Saved C 0x1404a1830.c (hash 8eb22adb6de47956): the unit type 0x14 or 0x17 is tested, 0x1403d4080 looks the objectId up in the title tree of the game object and the entry goes to 0x1403d6d10; comparison 1 passes on its 1, comparison 2 on its 0. Saved C 0x1403d6d10.c: 1 when the entry's revoked word is 0, and the row's lifeTimeSeconds is 0 or the clock is before the entry's receive time plus its remaining time, and the row's scheduleId is 0 or the entry's scheduled word is not 0. `gleam run -m genesis_prime/table_rows -- CharacterTitle 400` (lifeTimeSeconds 0, scheduleId 0). Writers of the title tree: grep for 0x1403d61d0 over the saved C finds the handlers of opcode.0x18a and opcode.0x18b only. Counts: start_prereqs.py (scratch) over `gleam run -m genesis_prime/table_rows -- <T>` dumps of Quest2, Prerequisite, Creature2, Tutorial, QuestObjective, WorldLocation2, WorldZone and the play database's spawn rows of worlds 3460, 426, 990, 1387 and 870. `gleam run -m genesis_prime/table_rows -- PrerequisiteType 288`."
 grade = "fairly sure"
-gap = "What 0x1403d6d10 returns for an entry (owned, most likely) is not read."
+gap = "The entry's method that returns its CharacterTitle row (the virtual call in 0x1403d6d10) is not read; the row offsets match lifeTimeSeconds and scheduleId by their columns only."
 
 ["0x1404a1830"]
 statement = "Prerequisite type 288's test. See Prerequisite.prerequisiteTypeId.288."
@@ -12337,6 +12337,31 @@ proof = "As Prerequisite.prerequisiteTypeId.288."
 grade = "fairly sure"
 gap = "As Prerequisite.prerequisiteTypeId.288."
 name = "PrerequisiteHasTitle"
+
+["0x1403d6d10"]
+statement = "Whether an entry of the client's owned-title set is held: 1 when it is not revoked, its title's lifetime is 0 or has not run out, and its schedule is 0 or the entry is scheduled. Read by prerequisite type 288."
+proof = "As Prerequisite.prerequisiteTypeId.288."
+grade = "fairly sure"
+gap = "As Prerequisite.prerequisiteTypeId.288."
+name = "IsOwnedTitleHeld"
+
+["0x1403d4080"]
+statement = "Looks a title id up in the client's owned-title set (the tree of the game object) and returns its entry, or none. Read by prerequisite type 288."
+proof = "As Prerequisite.prerequisiteTypeId.288."
+grade = "fairly sure"
+gap = "The tree's own search is not read."
+
+["opcode.0x18a"]
+statement = "Message 0x18a, world server to client: one owned title. Body: the title id (14 bits), 1 bit 'already owned' and 1 bit 'revoked'. The client adds or updates the entry in its owned-title set (the one prerequisite type 288 reads), sets the entry's revoked word when the last bit is 1, and raises the Lua event PlayerTitleUpdate."
+proof = "Handler 0x1403ca390 writes the title tree through 0x1403d61d0; reader 0x14008e900. Eldan names it ServerTitleUpdate (a lead only). grep for 0x1403d61d0 over the saved C: this handler, the handler of opcode.0x18b and the function's own file."
+grade = "fairly sure"
+gap = "The use of the 'already owned' bit is not read. The server sends no 0x018A: no title is granted yet."
+
+["opcode.0x18b"]
+statement = "Message 0x18b, world server to client: the owned titles. Body: a 32-bit count, then per entry the title id (14 bits), a revoked bit, a scheduled bit and 32 bits of remaining time. The client writes each entry into its owned-title set (the one prerequisite type 288 reads) and raises the Lua event PlayerTitleUpdate."
+proof = "Handler 0x140615f20 writes the title tree through 0x1403d61d0; entry reader 0x14008e970, reader 0x14008e9f0. Eldan names it ServerTitles (a lead only). grep for 0x1403d61d0 over the saved C: this handler, the handler of opcode.0x18a and the function's own file."
+grade = "fairly sure"
+gap = "The lifetime and schedule words are not used by any step yet. The server sends no 0x018B: an empty set needs no message."
 
 ["0x1405fbc40"]
 statement = "The state of a quest for the player (QuestState): a quest in the quest log's active list has its log state; when that is Accepted (1) and every objective without flag 0x20 is done (done bit 1 << (index + 2); an objective index above 5 never is), it is Achieved (2), and a quest with no objectives is Achieved; a quest with no quest record stays Accepted. A quest not in the active list is Completed (3) when it is in the completed set, else the state of its entry in the second list, else Unknown (0)."
@@ -15793,7 +15818,37 @@ gap = "The reader's widths are not read; a client vector would settle them. Whet
 statement = "Message 0x567 (1383), game server to client: sets a held item's flags byte (bit 0 soulbound, bit 3 no refund, bit 4 skip the salvage check, bit 6 account-bound, bit 7 not tradeable). Body record: the item's guid (64 bits) and the flags (one byte). It does nothing before the player exists or for an unknown guid. No UI event is raised."
 proof = "HandleWorldMessage's jump table entry for 1383 is 0x1403eeeac. 0x1403eeeac cmp qword ptr [rsi+0x78], 0x0 (no player: done); 0x1403eeec1 call 0x1403acbb0 (FindHeldItemByGuid); 0x1403eeecf movzx ecx, byte ptr [rdi+0x8]; 0x1403eeed5 mov dword ptr [rax+0x80], ecx. The item word at 0x80 is the flags byte per opcode.0x111.shared_item_unnamed (record byte 0x48 -> 0x80, bits as its statement gives)."
 grade = "fairly sure"
-gap = "The reader's widths are not read; a client vector would settle them."
+gap = "The reader is read from the decompile, not run (opcode.0x567.reader); a client vector would confirm it."
+
+["opcode.0x567.reader"]
+statement = "Message 0x567's reader takes a 64-bit value (the item's guid) and then an 8-bit value (the flags byte); the record is 16 bytes. So the body is 72 bits, low byte first. The handler stores the byte into the held item's flags word whole (a replace, not an OR), so the message must carry every bit the item should hold."
+proof = "Registry 0x14006c290 line 1069: id 0x567, record 16, reader FUN_1400a48d0. Saved C 0x1400a48d0.c (8eb22adb6de47956): ReadUint64(stream, record) then, when it did not fail, ReadBits8(stream, record + 8, 8). Handler: opcode.0x567 (0x1403eeeac mov dword ptr [rax+0x80], ecx)."
+grade = "fairly sure"
+gap = "Read from the decompile, not run; a client vector through the generated codec would confirm the bit order."
+
+["0x1403c17d0.equip_confirm"]
+statement = "The client's move sender, before it sends 0x182. For a move whose destination location is 0, 8 or 9, it asks the moved item's row for bindFlags bit 4 (bind on equip) and IsSoulbound (0x14056a3f0); when the row binds on equip and the item is not soulbound it raises the UI event ItemConfirmSoulboundOnEquip (the Character window's text 626285 'Equipping this item will bind it to you!', title 626284 'Soulbind Item?') and sends nothing; the confirm button sends the move again with its confirm argument set, which goes straight to 0x182. It makes the same two checks for the item at the destination when the source location is 0, 8 or 9 (a swap). When it raises no soulbound confirm, an item whose refund time left is above 0 and whose flags bit 3 is clear (0x1403d8bc0) raises ItemConfirmClearRestockOnEquip (Lua text name Character_SoulbindConfirmText_NoRefund) before the move is sent. The client never sets the soulbound bit itself, so while the server sends 0 the dialog comes at every equip of a bind-on-equip item."
+proof = "Saved C 0x1403c17d0.c (e9b6b6af37d00314) line 70 (local_res20, the confirm argument, non-zero goes to the send), lines 71-82 (the (uVar1 & 0xfffffff6) == 0 && uVar1 != 1 test on the destination, bindFlags & 0x10 at lVar6+0x40 -> +0x150, FUN_14056a3f0, the raise 'ItemConfirmSoulboundOnEquip'), lines 128-138 (the same for the item at the destination, when the source is equip-like), line 152 ('ItemConfirmClearRestockOnEquip'), line 121 (SendWorldMessage 0x182). Character.lua lines 1478-1492: OnItemConfirmSoulboundOnEquip -> ShowEquipConfirmation, ConfirmBtn:SetActionData(GameLib.CodeEnumConfirmButtonType.EquipItem, nItemEquip, nItemDestination). 0x14056a3f0.c: IsSoulbound. 0x1403d8bc0.c: refund time left (flags bit 3 clear, +0xec - now > 0)."
+grade = "fairly sure"
+gap = "Read from the decompile, not run; that the confirm button calls 0x1403c17d0 with its argument set is read from SetActionData's name and the EquipItem button type, not from the button's handler. The texts 626284/626285 are matched by wording, not by the string name."
+
+["0x14056a3f0"]
+statement = "IsSoulbound of a held item (the Lua Item:IsSoulbound 0x140418cb0 and the move sender use it): 1 for a row that is not bindable at all, which is any row with bindFlags bit 3 (bind on pickup), Item2.flags bit 6 or 7, expirationTimeMinutes above 0, or joined type, category and family flags without 0x80; for any other row, the item's own flags bit 0."
+proof = "Saved C 0x14056a3f0.c (8eb22adb6de47956): (row+0x150 & 8) == 0 && (row+0x14c & 0xc0) == 0 && row+0x1a8 == 0 && (row+0x154 & 0x80) != 0 ? item+0x80 & 1 : 1. 0x140418cb0.c the same test behind the Lua method. Row words: FillItemInfo 0x1404445d0 (opcode and Item2.bindFlags records)."
+grade = "fairly sure"
+gap = "What the joined flag 0x80 means is not read; it is set for every equippable row and for 116 non-equippable bind-on-equip rows."
+
+["Item2.bindFlags.bind_on_equip_rows"]
+statement = "Item2.bindFlags bit 3 (8) is bind on pickup and bit 4 (16) is bind on equip; no row holds both. Of 72,106 Item2 rows, 32,120 hold bit 3 and 29,440 hold bit 4 (29,371 hold exactly 16). A proxy row (Item2.flags 0x4000) takes its bindFlags from Item2 74201 (bindFlags 8), so its own bit 4 is ignored by the client: 6,194 of the 29,440 are proxies. The other 23,246 bind on equip for the client; 23,128 of them are equippable (joined type, category and family flags hold 0x400) and hold the joined flag 0x80 (the soulbound bit is visible); 116 hold 0x80 but are not equippable (companion pets 35, runes 32, miscellaneous 22, housing 12, AMP 6, consumables 4, schematics 4, charged items 1); 2 lack 0x80 (the client shows them soulbound whatever the item holds). None of the 23,246 has Item2.flags bit 6 or 7, or an expiry. 45 of them stack (42 above 1) and none of those is equippable, so an equipped bind-on-equip item is never a stack. 50 hold charges. All 44 distinct items of the Novice sets (CharacterCreation rows with characterCreationStartEnum 4) are bind on pickup."
+proof = "`gleam run -m genesis_prime/table_rows -- Item2` counted by scratch script (bindFlags bits 3 and 4, flags, expirationTimeMinutes, maxStackCount, maxCharges); Item2Type, Item2Category and Item2Family flags joined as FillItemInfo does; Item2 74201 and the proxy rule from `0x1404445d0.proxy`; `-- CharacterCreation characterCreationStartEnum=4` item columns."
+grade = "fairly sure"
+gap = "The counts come from a scratch script over the tables, not a committed test; the joined flag 0x80's meaning is unread."
+
+["opcode.0x111.shared_item_unnamed.flags_writers"]
+statement = "Only two messages write a held item's flags word: 0x111 (the constructor 0x140569d30, byte 0x48 of the record) and 0x567 (opcode.0x567). 0x7e writes the soulbound-trade list and time, 0x1a8 the dye, 0x1a7 the durability, 0xca the charges and 0x17f the count; 0x569 and 0x568 change only the place. A resent 0x111 of a held item removes it first with reason 49 (an ItemRemoved and an ItemAdded)."
+proof = "Messages 0xca, 0x17f, 0x148, 0x1a7, 0x1a8, 0x7e: their facts; 0x567: opcode.0x567; 0x111: opcode.0x111.shared_item_unnamed's proof (the occupied-key path 0x1403b7d40(guid, 0x31))."
+grade = "fairly sure"
+gap = "A grep for other writers of +0x80 in the saved C is by text; a writer that reaches an item another way would be missed."
 
 ["opcode.0x56d"]
 statement = "Message 0x56d (1389), game server to client: sets a held item's runes and rebuilds its properties. Body record: the item's guid (64 bits), a count of 32-bit rune values (up to 8), the list, and one 32-bit value. The client makes the item's property object if it has none, stores the count, the list and the value, and rebuilds the item's properties (BuildHeldItemProperties); on success it raises ItemModified, on failure it sets the count to 0. An unknown guid does nothing."

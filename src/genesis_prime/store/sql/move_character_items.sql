@@ -1,10 +1,12 @@
 -- Moves held items to other places, all or none, in one statement: the moves are
--- the lists $4 to $8 at the same position (an item's guid, the location and bag
--- index it is held at, the location and bag index it goes to). It moves only
+-- the lists $4 to $9 at the same position (an item's guid, the location and bag
+-- index it is held at, the location and bag index it goes to, the flag bits the move
+-- sets in the item's flags byte). A move only ever adds bits: the byte after it is the
+-- byte before OR the bits. It moves only
 -- while the character is still held by the login that asks, that is while its
 -- `session_epoch` ($3) is still the one that login was told (load_character.sql),
 -- and only when every item is at the place its move leaves; otherwise it changes
--- nothing and returns no row. The account's id ($2) is in the statement, as for a
+-- nothing and returns no row, the bits included. The account's id ($2) is in the statement, as for a
 -- load. The rows it returns are the items it moved: as many as the moves, or none.
 --
 -- The places are swapped by one update under the table's deferrable unique key
@@ -15,11 +17,11 @@
 -- is raising the epoch and then reads the epoch that login stored.
 with incoming as (
   select *
-  from unnest($4::bigint[], $5::int[], $6::int[], $7::int[], $8::int[])
-    as move (item_guid, from_location, from_index, to_location, to_index)
+  from unnest($4::bigint[], $5::int[], $6::int[], $7::int[], $8::int[], $9::int[])
+    as move (item_guid, from_location, from_index, to_location, to_index, flags_set)
 ),
 matched as (
-  select held.item_guid, incoming.to_location, incoming.to_index
+  select held.item_guid, incoming.to_location, incoming.to_index, incoming.flags_set
   from incoming
   join character_item as held on held.item_guid = incoming.item_guid
   join character on character.character_id = held.character_id
@@ -30,7 +32,9 @@ matched as (
     and held.bag_index = incoming.from_index
 )
 update character_item as held
-set location = matched.to_location::smallint, bag_index = matched.to_index
+set location = matched.to_location::smallint,
+  bag_index = matched.to_index,
+  item_flags = (held.item_flags | matched.flags_set)::smallint
 from matched
 where held.item_guid = matched.item_guid
   and (select count(*) from matched) = (select count(*) from incoming)

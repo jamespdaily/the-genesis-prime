@@ -63,6 +63,7 @@ fn held_at(set set: Set, location location: Int) -> List(HeldItem) {
       stack_count: 1,
       random_stats: 0,
       charges: 0,
+      item_flags: 0,
     )
   })
 }
@@ -303,6 +304,7 @@ pub fn an_item_the_reader_refuses_is_worn_and_shown_but_gives_nothing_test() -> 
             stack_count: 1,
             random_stats: 0,
             charges: 0,
+            item_flags: 0,
           ),
         ])
       assert worn.properties == nothing as "a PvP item gives no properties"
@@ -340,6 +342,7 @@ pub fn an_item_the_reader_refuses_is_worn_and_shown_but_gives_nothing_test() -> 
             stack_count: 1,
             random_stats: 0,
             charges: 0,
+            item_flags: 0,
           ),
         ])
       assert worn.properties == nothing
@@ -433,6 +436,7 @@ pub fn an_item_whose_display_row_is_missing_is_not_drawn_and_gives_one_warning_t
             stack_count: 1,
             random_stats: 0,
             charges: 0,
+            item_flags: 0,
           ),
         ])
       assert worn.visuals == []
@@ -461,6 +465,7 @@ pub fn an_item_whose_display_row_is_missing_is_not_drawn_and_gives_one_warning_t
             stack_count: 1,
             random_stats: 0,
             charges: 0,
+            item_flags: 0,
           ),
         ])
       assert worn.visuals == [] as "an item with no display is not drawn"
@@ -485,6 +490,7 @@ fn one_item(
       stack_count: 1,
       random_stats: 0,
       charges: 0,
+      item_flags: 0,
     ),
   ]
 }
@@ -556,6 +562,7 @@ fn one_rolled(random_stats random_stats: Int) -> List(HeldItem) {
       stack_count: 1,
       random_stats:,
       charges: 0,
+      item_flags: 0,
     ),
   ]
 }

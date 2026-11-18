@@ -94,7 +94,7 @@ import genesis_prime/store.{
   type AccountId, type CharacterId, type HeldItem, type ItemsAnswer,
   type SessionEpoch, ItemsNotSaved, SaveRefused,
 }
-import genesis_prime/table/id.{type Item2Id, Item2Id}
+import genesis_prime/table/id.{type Item2Id}
 import genesis_prime/table/item2
 import genesis_prime/table/loader/store as table_store
 import gleam/bool
@@ -298,6 +298,7 @@ pub fn take_back(
             currency_type_id: entry.currency_type_id,
             random_stats: entry.random_stats,
             charges: entry.charges,
+            item_flags: entry.item_flags,
             items:,
             currencies:,
             tables:,
@@ -351,6 +352,7 @@ fn buy_from(
     currency_type_id: currency.credits_type,
     random_stats: 0,
     charges:,
+    item_flags: 0,
     items:,
     currencies:,
     tables:,
@@ -369,6 +371,7 @@ fn asked(
   currency_type_id currency_type_id: Int,
   random_stats random_stats: Int,
   charges charges: Int,
+  item_flags item_flags: Int,
   items items: List(HeldItem),
   currencies currencies: Currencies,
   tables tables: table_store.Tables,
@@ -401,7 +404,7 @@ fn asked(
     Ok(#(grow, make)) -> {
       let make =
         list.map(make, fn(stack) {
-          store.NewStack(..stack, random_stats: random_stats)
+          store.NewStack(..stack, random_stats:, item_flags:)
         })
       Ok(Asks(
         purchase: Purchase(
@@ -544,17 +547,7 @@ pub fn answered(
             ))
           }),
           list.map(made, fn(item) {
-            let Item2Id(item_id) = item.item2_id
-            Send(inventory.item_added_frame(
-              item_guid: item.item_guid,
-              item_id:,
-              location: item.location,
-              bag_index: item.bag_index,
-              stack_count: item.stack_count,
-              random_stats: item.random_stats,
-              charges: item.charges,
-              reason:,
-            ))
+            Send(inventory.held_item_frame(item:, reason:))
           }),
           removal,
         ]),

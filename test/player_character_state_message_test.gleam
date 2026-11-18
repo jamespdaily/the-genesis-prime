@@ -187,7 +187,7 @@ fn item() -> SharedItem {
     field_10: 0,
     durability: 0x3F80_0000,
     dye_channels: 0,
-    field_13: 0,
+    item_flags: 0,
     refund_window_ms: 0,
     field_15: 0,
     soulbound_trade_window_ms: 0,
