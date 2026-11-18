@@ -326,7 +326,7 @@ pub fn derivation() -> table_store.Derivation {
 /// (genesis_prime/game/spell_plan `plans`).
 pub fn build(tables tables: table_store.Tables) -> Result(Areas, AreaError) {
   let spells =
-    dict.values(spell_plan.plans(tables:))
+    dict.values(spell_plan.plans_with_later(tables:))
     |> list.flat_map(spells_of_tree)
   let effects = spell_plan.effects_by_spell(tables:)
   let links = telegraph_links_by_spell(tables:)
@@ -340,6 +340,46 @@ pub fn build(tables tables: table_store.Tables) -> Result(Areas, AreaError) {
       }
     }
   })
+}
+
+/// What a later ability's spells must pass to be planned (genesis_prime/game/spell_plan
+/// `Checker`): the area of each is built as `build` builds it, and an error of what the
+/// rule does not build leaves the ability out of the plans, so no ability holds a
+/// spell the load of the areas would refuse.
+pub fn checker(tables tables: table_store.Tables) -> spell_plan.Checker {
+  let effects = spell_plan.effects_by_spell(tables:)
+  let links = telegraph_links_by_spell(tables:)
+  fn(spell) {
+    area_of(tables:, effects:, links:, spell:)
+    |> result.replace(Nil)
+    |> result.map_error(plan_error_of(
+      error: _,
+      spell4_id: spell.spell4_id.value,
+    ))
+  }
+}
+
+/// An area error as the plan's: the one inside an apply gate as itself, a missing row or a
+/// number that is no number as a fault of the data, and the rest as what the area rule
+/// does not build.
+fn plan_error_of(
+  error error: AreaError,
+  spell4_id spell4_id: Int,
+) -> spell_plan.PlanError {
+  case error {
+    ApplyGateNotRead(error: inner) -> inner
+    NoRow(..) | NoAreaRow(..) | MultiplierNotFinite(..) ->
+      spell_plan.AreaDataFault(spell4_id:, reason: describe(error:))
+    SelectionNotClosest(..)
+    | ValidTargetsNotAlive(..)
+    | TelegraphNotOnCaster(..)
+    | ShapeNotBuilt(..)
+    | AimNotRead(..)
+    | FormulaNotRead(..)
+    | TickingUntilRemoved(..)
+    | TickingNoTick(..) ->
+      spell_plan.AreaNotBuilt(spell4_id:, reason: describe(error:))
+  }
 }
 
 /// The spell, the stage spells a RapidTap or ChargeRelease ability casts and every
@@ -478,27 +518,24 @@ fn area_row_of(
 /// are pictures of another spell's hit shape (a spell's own copy of its child's beam),
 /// unless every drawn row has it: then they are all kept
 /// (`TelegraphDamage.telegraphDamageFlags.0x20.rows`). The phases a row fires in are
-/// not read, so a spell's shapes hold for each of its gos. The shapes of the spell `id`
-/// that its Spell4Telegraph rows in `links` choose, or the refusal of one.
+/// not read, so a spell's shapes hold for each of its gos. A Spell4Telegraph row whose
+/// TelegraphDamage row the table lacks gives no shape, as the client leaves it out of its
+/// spell's telegraphs (`Spell4Telegraph.telegraphDamageId.no_row`). The shapes of the
+/// spell `id` that its Spell4Telegraph rows in `links` choose, or the refusal of one.
 pub fn hit_shapes_of(
   tables tables: table_store.Tables,
   links links: Dict(Int, List(spell4_telegraph.Spell4Telegraph)),
   id id: Int,
 ) -> Result(List(Placement), AreaError) {
-  use rows <- result.try(
+  let rows =
     dict.get(links, id)
     |> result.unwrap([])
-    |> list.try_map(fn(link) {
+    |> list.filter_map(fn(link) {
       telegraph_damage.get(
         tables:,
         id: TelegraphDamageId(link.telegraph_damage_id),
       )
-      |> result.replace_error(NoRow(
-        table: "TelegraphDamage",
-        id: link.telegraph_damage_id,
-      ))
-    }),
-  )
+    })
   let twins =
     list.filter(rows, fn(row) {
       spell_effect.has_flag(flags: row.telegraph_damage_flags, bit: 0x40)
@@ -819,7 +856,7 @@ fn inside_of(shapes shapes: List(Placement)) -> Inside {
 /// The area of a spell read from its own rows, for a spell no player's ability tree
 /// holds, such as a creature's charge: the area row and how a unit counts as inside it,
 /// the same pair a player's cast selects by (`inside`). `None` for a spell with no
-/// `Spell4AoeTargetConstraints` row. A row or telegraph the tables lack, or a shape the
+/// `Spell4AoeTargetConstraints` row. A row the tables lack, or a shape the
 /// rule does not build, is the refusal.
 pub fn area_of_spell(
   tables tables: table_store.Tables,

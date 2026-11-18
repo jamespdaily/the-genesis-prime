@@ -1,10 +1,10 @@
 //// What the client's tables say a pressed ability does: for each ability a class
-//// holds at level 1, and each class's innate active and passive spell, the tree of
+//// holds, and each class's innate active and passive spell, the tree of
 //// casts it starts, built once when the tables load. The cast rule (genesis_prime/game/cast) reads the tree and decides
 //// nothing from the tables itself.
 ////
 //// ```
-//// SpellLevel (class, level 1, no prerequisite) ─▶ Spell4 (the ability) ─▶ Spell4Base
+//// SpellLevel (class, no prerequisite) ─▶ Spell4 (the ability) ─▶ Spell4Base
 //// Class (the first innate slot, genesis_prime/game/innate) ─▶ Spell4 (the innate's active and passive) ─▶ Spell4Base
 ////      Spell4Effects (spellId = the Spell4 id), each effect of type Proxy (26) ─▶ the Spell4 it names, as a child
 ////      Spell4Thresholds (parent = the Spell4 id), by order index ─▶ the Spell4 each tap or charge level casts, as a stage
@@ -14,6 +14,11 @@
 //// all of them, once, when the tables load ─▶ Plans ─▶ in_plans(base)
 //// ```
 ////
+//// - **Which abilities.** A level-1 ability and an innate must plan or the load fails. An
+////   ability a class gains above level 1 with no prerequisite
+////   (`SpellLevel.spell4Id.no_prerequisite`) is planned too, and one whose error
+////   `is_unbuilt` names is left out and listed by `unplanned`; any other error fails the
+////   load. A press of a base with no plan is refused unknown (`cast_press.ability_at`).
 //// - **One decision for each effect row.** `read_row` says what the plan makes of a
 ////   Spell4Effects row in the place its spell is planned (`RowPlace`): in the effects of its
 ////   spell and applied by a go (`Applied`), in the effects and applied by none (`Held`: a
@@ -2322,6 +2327,12 @@ pub type PlanError {
   /// A Prerequisite row a spell or effect names nests itself through the rows it
   /// nests (type 11): the ids from the named row to the one that repeats.
   PrerequisiteCycle(path: List(Int))
+  /// A spell of a tree has an area or a strike the area rule does not build
+  /// (genesis_prime/game/spell_area): the reason is the area rule's sentence.
+  AreaNotBuilt(spell4_id: Int, reason: String)
+  /// A spell of a tree has an area row the client's table leaves incomplete or a
+  /// number that is no number: the reason is the area rule's sentence.
+  AreaDataFault(spell4_id: Int, reason: String)
 }
 
 /// What an aim refusal says of the flag values `aim_of` reads: 1 to 7, and for a value with
@@ -2657,6 +2668,7 @@ pub fn describe(error error: PlanError) -> String {
       <> " that starts a child on each struck unit, which holds the Absorption effect "
       <> int.to_string(effect_id)
       <> " whose aim names that unit, and an absorb on a struck unit is not built"
+    AreaNotBuilt(reason:, ..) | AreaDataFault(reason:, ..) -> reason
     ProcKindNotRead(spell4_id:, effect_id:, kind:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -2703,19 +2715,35 @@ fn string_of(chain: List(Int)) -> String {
 pub type Plans =
   Dict(Int, Spell)
 
-const plans_key: table_store.DerivedKey(Plans) =
+/// What the plans' derivation holds: the plans of the level-1 abilities and the innates,
+/// and the same with each later ability of a class that the server can plan.
+type PlanSet {
+  PlanSet(starting: Plans, with_later: Plans)
+}
+
+const plans_key: table_store.DerivedKey(PlanSet) =
   table_store.DerivedKey("SpellPlans")
 
 /// The plans as a value the tables' load builds once, under the tables' key
 /// (genesis_prime/table/loader/store `derived`): a plan for the Spell4BaseId of
 /// each class's level-1 ability and of each class's innate active and passive spell.
-/// A missing row, a cost not read or a cycle fails the load.
-pub fn derivation() -> table_store.Derivation {
+/// A missing row, a cost not read or a cycle fails the load. `area_checked` is what a
+/// later ability's spells must also pass (`Checker`).
+pub fn derivation(
+  area_checked area_checked: fn(table_store.Tables) -> Checker,
+) -> table_store.Derivation {
   table_store.derivation(key: plans_key, build: fn(tables) {
-    build(tables:)
+    plan_all(tables:, checker: area_checked(tables))
+    |> result.map(fn(planned) { planned.0 })
     |> result.map_error(fn(error) { describe(error:) })
   })
 }
+
+/// What a spell of a later ability must also pass to be planned: the area rule builds every
+/// spell of its tree (genesis_prime/game/spell_area `checker`). Its error is a `PlanError`,
+/// and `is_unbuilt` says whether the ability is left out or the load fails.
+pub type Checker =
+  fn(Spell) -> Result(Nil, PlanError)
 
 /// The rows the tree reads, grouped by the spell they belong to.
 pub opaque type Sources {
@@ -2784,15 +2812,112 @@ type Phase {
   Phase(delay_ms: Int, flags: Int)
 }
 
+/// A class ability above level 1 that no plan is built for: its Spell4 id and the
+/// error that names what the server does not build (`is_unbuilt`). Its press is refused
+/// as an unknown spell until issue #1003 builds it.
+pub type Unplanned {
+  Unplanned(spell4_id: Int, error: PlanError)
+}
+
 /// Builds every plan from the loaded tables, or why one cannot be built; the
 /// derivation's body, and the function a test of a missing row or a cycle runs
 /// on planted tables.
 pub fn build(tables tables: table_store.Tables) -> Result(Plans, PlanError) {
+  use #(held, _) <- result.map(plan_all(tables:, checker: fn(_) { Ok(Nil) }))
+  held.starting
+}
+
+/// The class abilities above level 1 the plans leave out, by the error that says what
+/// the server does not build; a level-1 ability, an innate or any other error
+/// fails the load instead (`build`).
+pub fn unplanned(
+  tables tables: table_store.Tables,
+  area_checked area_checked: fn(table_store.Tables) -> Checker,
+) -> Result(List(Unplanned), PlanError) {
+  use #(_, left_out) <- result.map(plan_all(
+    tables:,
+    checker: area_checked(tables),
+  ))
+  left_out
+}
+
+/// Whether a plan error names an effect or a rule the server does not build, so the
+/// ability that holds it is left out of the plans without failing the load. A missing row
+/// or a number that is no number is a fault of the data and is not one of these.
+pub fn is_unbuilt(error error: PlanError) -> Bool {
+  case error {
+    ProxyAimNotRead(..)
+    | ProxyCycle(..)
+    | UnreadCost(..)
+    | UnreadRequirement(..)
+    | GainAimNotRead(..)
+    | GainVitalNotRead(..)
+    | ApplyPrerequisiteNotRead(..)
+    | TargetPrerequisiteReadsStruckUnit(..)
+    | StruckMoveNotRead(error: forced_move.UnknownKind(..), ..)
+    | ControlHelperNotRead(..)
+    | SpendComparisonNotRead(..)
+    | ForceRemoveSelectorNotRead(..)
+    | ForceRemoveCountsDiffer(..)
+    | LastingAimNotRead(..)
+    | ControlStateNotRead(..)
+    | ControlAimNotRead(..)
+    | FriendlyAreaNotRead(..)
+    | ControlPersistenceNotRead(..)
+    | StealthAimNotRead(..)
+    | StealthTimedNotRead(..)
+    | StealthBreaksNotRead(..)
+    | StealthConditionNotRead(..)
+    | StealthChangeNotRead(..)
+    | HealParameterNotRead(..)
+    | HealUntilRemovedNotRead(..)
+    | HealNoTick(..)
+    | HealOnStruckUnit(..)
+    | InterruptArmorTakeBackNotRead(..)
+    | InterruptArmorOnStruckUnit(..)
+    | AbsorptionParameterNotRead(..)
+    | AbsorptionAmountNotRead(..)
+    | AbsorptionPeriodic(..)
+    | AbsorptionHasNoLifetime(..)
+    | AbsorptionOnStruckUnit(..)
+    | ProcKindNotRead(..)
+    | DisguiseNotRead(..)
+    | AreaNotBuilt(..) -> True
+    NoRow(..)
+    | StruckMoveNotRead(error: forced_move.NotAFloat(..), ..)
+    | ChannelWithoutPulse(..)
+    | NoThresholdTime(..)
+    | ModifierPropertyHasNoRow(..)
+    | ModifierNumberNotFinite(..)
+    | CooldownNumberNotFinite(..)
+    | HealNumberNotFinite(..)
+    | AbsorptionNumberNotFinite(..)
+    | ProcNotRead(..)
+    | InnateFailed(..)
+    | PrerequisiteCycle(..)
+    | AreaDataFault(..) -> False
+  }
+}
+
+/// The plans of every level-1 ability and innate, which fail the load on any error, and
+/// of every other class ability with no prerequisite, which a row `is_unbuilt` names is
+/// left out of, and listed.
+fn plan_all(
+  tables tables: table_store.Tables,
+  checker checker: Checker,
+) -> Result(#(PlanSet, List(Unplanned)), PlanError) {
   let sources = sources_of(tables:)
   use held <- result.try(innate.held(tables:) |> result.map_error(InnateFailed))
+  let rows = spell_level.all(tables)
   let abilities =
-    spell_level.all(tables)
+    rows
     |> list.filter(loadout.is_level_one_ability)
+    |> list.map(fn(row) { row.spell4_id })
+  let later =
+    rows
+    |> list.filter(fn(row) {
+      loadout.is_class_ability(row:) && !loadout.is_level_one_ability(row:)
+    })
     |> list.map(fn(row) { row.spell4_id })
   let innates =
     dict.to_list(held)
@@ -2807,19 +2932,57 @@ pub fn build(tables tables: table_store.Tables) -> Result(Plans, PlanError) {
         }
       ]
     })
-  list.try_fold(
-    list.append(abilities, innates),
-    dict.new(),
-    fn(plans, spell4_id) {
-      use spell <- result.try(ability_alone(tables:, sources:, spell4_id:))
-      let plans = case spell.alternate {
-        Some(alternate) ->
-          dict.insert(plans, alternate.spell4_base_id.value, alternate)
-        None -> plans
-      }
-      Ok(dict.insert(plans, spell.spell4_base_id.value, spell))
-    },
+  use plans <- result.try(
+    list.try_fold(
+      list.append(abilities, innates),
+      dict.new(),
+      fn(plans, spell4_id) {
+        use spell <- result.map(ability_alone(tables:, sources:, spell4_id:))
+        plan_added(plans:, spell:)
+      },
+    ),
   )
+  use #(with_later, left_out) <- result.map(
+    list.try_fold(later, #(plans, []), fn(held, spell4_id) {
+      let #(plans, left_out) = held
+      case
+        ability_alone(tables:, sources:, spell4_id:)
+        |> result.try(checked(_, checker:))
+      {
+        Ok(spell) -> Ok(#(plan_added(plans:, spell:), left_out))
+        Error(error) ->
+          case is_unbuilt(error:) {
+            True -> Ok(#(plans, [Unplanned(spell4_id:, error:), ..left_out]))
+            False -> Error(error)
+          }
+      }
+    }),
+  )
+  #(PlanSet(starting: plans, with_later:), list.reverse(left_out))
+}
+
+/// The spell when every spell of its tree and of its alternate's tree passes the checker.
+fn checked(
+  spell spell: Spell,
+  checker checker: Checker,
+) -> Result(Spell, PlanError) {
+  let trees = case spell.alternate {
+    Some(alternate) -> [spell, alternate]
+    None -> [spell]
+  }
+  list.flat_map(trees, tree(spell: _, started: fn(_) { True }))
+  |> list.try_each(checker)
+  |> result.replace(spell)
+}
+
+/// The plans with the spell and the alternate it names.
+fn plan_added(plans plans: Plans, spell spell: Spell) -> Plans {
+  let plans = case spell.alternate {
+    Some(alternate) ->
+      dict.insert(plans, alternate.spell4_base_id.value, alternate)
+    None -> plans
+  }
+  dict.insert(plans, spell.spell4_base_id.value, spell)
 }
 
 /// One ability or innate spell as `build` plans it, its alternate included: the plan of a
@@ -6612,9 +6775,17 @@ fn comparison_of(eval eval: Int) -> Comparison {
   }
 }
 
-/// The plans the tables' load built, which a rule reads by `in_plans`.
+/// The plans of the level-1 abilities and the innates the tables' load built, which the
+/// coverage measure and the rules of the starting abilities read by `in_plans`.
 pub fn plans(tables tables: table_store.Tables) -> Plans {
-  table_store.derived(tables:, key: plans_key)
+  table_store.derived(tables:, key: plans_key).starting
+}
+
+/// The plans of the level-1 abilities and the innates and of each later ability the server
+/// can plan (`unplanned` lists the others): the ones the cast of any ability a character
+/// holds reads by `in_plans`.
+pub fn plans_with_later(tables tables: table_store.Tables) -> Plans {
+  table_store.derived(tables:, key: plans_key).with_later
 }
 
 /// The ability book as the client holds it: the bag, then the alternate each bag

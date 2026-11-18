@@ -17,6 +17,12 @@
 //// a Proxy's child behind a gate a level-1 character cannot open
 //// (genesis_prime/coverage/starting_ability).
 ////
+//// It then counts the class abilities above level 1 that no plan is built for
+//// (genesis_prime/game/spell_plan `unplanned`): the total, a count for each class, and a line
+//// for each ability with its class, level, Spell4 and the sentence that says what the server
+//// does not build. A character is granted each of them; a press of one is refused as an
+//// unknown spell.
+////
 //// It then counts the press spells apart (genesis_prime/coverage/starting_ability.press_spells):
 //// the threshold spells with no threshold time whose Proxies the caster's gate picks, which no
 //// level tree holds, with the rows a press applies (its gated Proxies and the rows of the
@@ -56,11 +62,13 @@ import genesis_prime/dev_database
 import genesis_prime/dev_exit
 import genesis_prime/game/rating
 import genesis_prime/game/server_proxy
+import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan
 import genesis_prime/game/vendor
 import genesis_prime/store/worker
 import genesis_prime/table
 import genesis_prime/table/loader/store
+import genesis_prime/table/spell_level
 import genesis_prime/table_folder
 import genesis_prime/tooltip_token
 import genesis_prime/world_map/creature_faction
@@ -69,6 +77,7 @@ import genesis_prime/world_map/spawn
 import gleam/int
 import gleam/io
 import gleam/list
+import gleam/order
 import gleam/result
 import gleam/string
 import pog
@@ -108,6 +117,8 @@ pub fn main() -> Nil {
       io.println(checklist.render(measurements))
       io.println("")
       io.println(left_out)
+      io.println("")
+      io.println(later_abilities_report(tables:))
       io.println("")
       io.println(press_report(tables:))
       io.println("")
@@ -151,6 +162,83 @@ pub fn left_out_report(tables tables: store.Tables) -> String {
         "\n",
       )
   }
+}
+
+/// A class ability above level 1 that no plan is built for, with the SpellLevel row that
+/// gives it and the sentence that says what the server does not build.
+type LaterAbility {
+  LaterAbility(class_id: Int, character_level: Int, spell4_id: Int, why: String)
+}
+
+/// The class abilities above level 1 no plan is built for: how many, how many for each
+/// class, and each with its class, level, Spell4 and why, so the gap between the abilities
+/// a character is granted and the ones it can cast is read here.
+fn later_abilities_report(tables tables: store.Tables) -> String {
+  case spell_plan.unplanned(tables:, area_checked: spell_area.checker) {
+    Error(error) ->
+      "Later abilities, not planned: not listed, "
+      <> spell_plan.describe(error:)
+    Ok(left_out) -> {
+      let found = later_abilities_of(tables:, left_out:)
+      let classes = list.unique(list.map(found, fn(one) { one.class_id }))
+      let by_class =
+        list.map(classes, fn(class_id) {
+          "class "
+          <> int.to_string(class_id)
+          <> " "
+          <> int.to_string(
+            list.count(found, fn(one) { one.class_id == class_id }),
+          )
+        })
+      string.join(
+        [
+          "Later abilities, not planned (granted at their level, a press refused as an unknown spell, issue #1003): "
+            <> int.to_string(list.length(found))
+            <> " (by class: "
+            <> string.join(by_class, ", ")
+            <> ")",
+          ..list.map(found, fn(one) {
+            "- class "
+            <> int.to_string(one.class_id)
+            <> ", level "
+            <> int.to_string(one.character_level)
+            <> ", Spell4 "
+            <> int.to_string(one.spell4_id)
+            <> ": "
+            <> one.why
+          })
+        ],
+        "\n",
+      )
+    }
+  }
+}
+
+/// The unplanned abilities with the SpellLevel row above level 1 that gives each, in class,
+/// level and Spell4 order.
+fn later_abilities_of(
+  tables tables: store.Tables,
+  left_out left_out: List(spell_plan.Unplanned),
+) -> List(LaterAbility) {
+  let rows = spell_level.all(tables)
+  list.filter_map(left_out, fn(one) {
+    use row <- result.map(
+      list.find(rows, fn(row) {
+        row.spell4_id == one.spell4_id && row.character_level > 1
+      }),
+    )
+    LaterAbility(
+      class_id: row.class_id,
+      character_level: row.character_level,
+      spell4_id: one.spell4_id,
+      why: spell_plan.describe(error: one.error),
+    )
+  })
+  |> list.sort(by: fn(left, right) {
+    int.compare(left.class_id, right.class_id)
+    |> order.break_tie(int.compare(left.character_level, right.character_level))
+    |> order.break_tie(int.compare(left.spell4_id, right.spell4_id))
+  })
 }
 
 /// The press spells (threshold spells with no threshold time that press a Proxy by the

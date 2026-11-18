@@ -77,6 +77,7 @@
 
 import genesis_prime/client_connection.{type Request, Continue}
 import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/game/ability_book
 import genesis_prime/game/activate
 import genesis_prime/game/area
 import genesis_prime/game/cast
@@ -105,7 +106,7 @@ import genesis_prime/game/hit_radius
 import genesis_prime/game/interaction
 import genesis_prime/game/inventory
 import genesis_prime/game/item_use
-import genesis_prime/game/loadout
+
 import genesis_prime/game/movement
 import genesis_prime/game/objective
 import genesis_prime/game/objective_link
@@ -792,14 +793,13 @@ pub fn caster_of(
   entered entered: world_entry.Entered,
 ) -> cast_state.Caster {
   let life = entered.life
+  let bag =
+    ability_book.bag(loadout: entered.loadout, level: entered.character.level)
   cast_state.Caster(
     unit_id: entered.unit_id,
     place: movement.place(entered.movement),
-    abilities: loadout.bag(loadout: entered.loadout),
-    book: spell_plan.book(
-      plans: spell_plan.plans(tables:),
-      bag: loadout.bag(loadout: entered.loadout),
-    ),
+    abilities: bag,
+    book: spell_plan.book(plans: spell_plan.plans_with_later(tables:), bag:),
     surge_spell: spell_surge.spell(tables:),
     weapon: entered.gear.weapon,
     audience: connection_state.viewer_connections(entered:),

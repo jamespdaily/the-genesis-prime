@@ -469,6 +469,30 @@ pub fn casts_in(frames frames: List(Frame)) -> List(CastEvent) {
   })
 }
 
+/// The server cast id the first 0x7fd among the frames gives the press with this client
+/// cast id; `Error(Nil)` when no 0x7fd answers that press.
+pub fn confirmed_cast_of(
+  frames frames: List(Frame),
+  client_cast_id client_cast_id: Int,
+) -> Result(Int, Nil) {
+  list.find_map(casts_in(frames:), fn(event) {
+    case event {
+      CastConfirmed(client_cast_id: pressed, server_cast_id:)
+        if pressed == client_cast_id
+      -> Ok(server_cast_id)
+      CastConfirmed(..)
+      | CastRefused(..)
+      | CastStarted(..)
+      | CastWent(..)
+      | CastFinished(..)
+      | ThresholdOpened(..)
+      | ThresholdIndex(..)
+      | ThresholdClosed(..)
+      | ThresholdEnded(..) -> Error(Nil)
+    }
+  })
+}
+
 /// The casts the frames break (0x7f9), in order, each as the cast id, the result value and
 /// the unit whose cast it was.
 pub fn broken_casts_in(frames frames: List(Frame)) -> List(#(Int, Int, Int)) {

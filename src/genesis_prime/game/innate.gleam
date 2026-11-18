@@ -17,7 +17,7 @@
 ////   no row has (`Class.spell4IdInnateAbilityActive00`).
 //// - **What fails the load:** a gate on slot 0, which the server does not check; a
 ////   Spell4 row the Class row names that the table lacks; and an innate whose
-////   Spell4Base is also a level-1 SpellLevel ability of its class, which would hold
+////   Spell4Base is also a SpellLevel ability of its class with no prerequisite, which would hold
 ////   one base twice in the ability bag (`not_an_ability`, which the loadout checks).
 //// - **The passive** is never cast by the client, which shows no buff for it
 ////   (`Class.spell4IdInnateAbilityPassive00`), so the server starts it itself at each
@@ -54,7 +54,7 @@ pub type InnateError {
   SlotZeroGated(class_id: Int, prerequisite_id: Int)
   /// A Class row names a Spell4 row the table lacks.
   NoSpell(class_id: Int, spell4_id: Int)
-  /// A class's innate has the Spell4Base of one of its level-1 abilities.
+  /// A class's innate has the Spell4Base of one of its abilities with no prerequisite.
   InnateAlsoAnAbility(class_id: Int, spell4_base_id: Int)
 }
 
@@ -116,7 +116,7 @@ pub fn of_slot_zero(
   Some(Innate(active: Spell4Id(active), active_base:, passive:))
 }
 
-/// Whether the innate's Spell4Base differs from every level-1 ability of the class: the
+/// Whether the innate's Spell4Base differs from every ability with no prerequisite of the class: the
 /// ability bag holds one item of a base, which the client finds the spell by
 /// (`0x14077dfa0`).
 pub fn not_an_ability(
@@ -149,6 +149,6 @@ pub fn describe(error error: InnateError) -> String {
       <> int.to_string(class_id)
       <> " has Spell4Base "
       <> int.to_string(spell4_base_id)
-      <> ", which is also one of its level-1 SpellLevel abilities, so the ability bag would hold it twice"
+      <> ", which is also one of its SpellLevel abilities with no prerequisite, so the ability bag would hold it twice"
   }
 }

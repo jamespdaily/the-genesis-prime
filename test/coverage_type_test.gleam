@@ -39,6 +39,7 @@ import genesis_prime/coverage/measurement.{
   type Measurement, HandledWithGap, Measured,
 }
 import genesis_prime/coverage/starting_ability.{MissingRow}
+import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan.{Spell}
 import genesis_prime/table/class
 import genesis_prime/table/eldan_augmentation
@@ -1151,7 +1152,7 @@ fn with_trees_loaded(
   spell_tables.with_loaded_deriving(
     rows:,
     reaching: [#("SpellLevel", 1086)],
-    derivations: [spell_plan.derivation()],
+    derivations: [spell_plan.derivation(area_checked: spell_area.checker)],
     body:,
   )
 }

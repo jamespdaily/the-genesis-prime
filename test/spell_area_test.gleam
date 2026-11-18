@@ -200,9 +200,14 @@ pub fn a_channel_of_the_level_1_abilities_has_a_phase_for_each_pulse_and_none_af
         <> int.to_string(pulses - 1)
       }
   })
+  let level_one_spells =
+    dict.values(spell_plan.plans(tables: client_tables.shared()))
+    |> list.flat_map(spell_plan.tree(spell: _, started: fn(_) { True }))
+    |> list.map(fn(spell) { spell.spell4_id.value })
   assert list.length(
       list.filter(dict.values(areas), fn(found) {
         option.is_some(found.spell.channel)
+        && list.contains(level_one_spells, found.spell4_id.value)
       }),
     )
     == list.length(channels)
@@ -240,6 +245,35 @@ pub fn a_client_spell_leaves_out_a_drawn_row_with_bit_0x20_while_another_is_draw
       ),
     ]
     as "TelegraphDamage.telegraphDamageFlags.0x20.rows: spell 29874's TelegraphDamage 310 (flags 0x200) is drawn without 0x20, so it is the hit shape; 311 and 312 (flags 0x220, offsets aside of 1.2 and -1.2) are the pictures of the side beams and are left out"
+}
+
+pub fn a_telegraph_link_to_a_row_the_table_lacks_is_left_out_as_the_client_leaves_it_out_test() -> Nil {
+  use <- owned_test.run(60_000)
+  fixture_tables.added(
+    table: "Spell4Telegraph",
+    copy_of: 69,
+    id: 99_001,
+    with: [
+      #("spell4Id", Integer(29_874)),
+      #("telegraphDamageId", Integer(999_999)),
+    ],
+    body: fn(tables) {
+      assert spell_area.hit_shapes_of(
+          tables:,
+          links: spell_area.telegraph_links_by_spell(tables:),
+          id: 29_874,
+        )
+        == Ok([
+          Placement(
+            shape: Rectangle(width: 0.8999999761581421, length: 19.0),
+            ahead: 1.0,
+            aside: 0.0,
+            turn_degrees: 0.0,
+          ),
+        ])
+        as "0x14055e180 (BuildSpellTables) adds a Spell4Telegraph link to its spell's telegraph list only when GetTelegraphDamageRow finds the row, so a link to a row the table lacks adds no shape and the spell keeps the shapes of its other rows"
+    },
+  )
 }
 
 pub fn a_client_spell_whose_drawn_rows_all_have_bit_0x20_keeps_them_all_test() -> Nil {

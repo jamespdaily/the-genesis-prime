@@ -35,14 +35,17 @@ import unit_support
 /// The system time every entry of the tests is made at, as a FILETIME.
 pub const filetime = 133_900_000_000_000_000
 
-/// The Spell4Base of each alternate spell the class's abilities name, in bag order: the
-/// ability book holds them (GetAbilityBookSpell `0x1403bad30`), after the bag. Spell4.43468
+/// The Spell4Base of each alternate spell the class's abilities at the level name, in bag order:
+/// the ability book holds them (GetAbilityBookSpell `0x1403bad30`), after the bag. Spell4.43468
 /// (Quick Draw) names 76002 of base 52215 and Spell4.34718 (Charged Shot) names 34719 of base
-/// 20685 in `spell4IdMechanicAlternateSpell`; no other class's level-1 spell names one.
-pub fn alternate_bases(class_id class_id: Int) -> List(Int) {
-  case class_id {
-    7 -> [52_215, 20_685]
-    _ -> []
+/// 20685 in `spell4IdMechanicAlternateSpell`; no other class's level-1 spell names one. The
+/// Spellslinger's SpellLevel 1012 (Spell4 34756, level 4) names 79171 of base 54909; the
+/// Spellslinger's other rows through level 6 name none that is planned.
+pub fn alternate_bases(class_id class_id: Int, level level: Int) -> List(Int) {
+  case class_id, level >= 4 {
+    7, True -> [52_215, 20_685, 54_909]
+    7, False -> [52_215, 20_685]
+    _, _ -> []
   }
 }
 

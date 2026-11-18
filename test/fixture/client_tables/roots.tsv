@@ -1235,3 +1235,18 @@ WorldLocation2	53261	marker of objective 21504 of quest 10613	objective_script_p
 WorldLocation2	53262	marker of objective 21505 of quest 10613	objective_script_place_test, content_load_test
 WorldLocation2	21383	marker of objective 9658 of quest 6296	objective_script_place_test
 WorldLocation2	21384	marker of objective 9658 of quest 6296	objective_script_place_test
+SpellLevel	921	Warrior ability after level 1	ability_book_test, experience_book_test, world_entry_loadout_test
+SpellLevel	934	Warrior ability after level 1	ability_book_test, experience_book_test, world_entry_loadout_test
+SpellLevel	929	Warrior ability after level 1	ability_book_test, experience_book_test, world_entry_loadout_test
+SpellLevel	933	Warrior ability after level 1	ability_book_test, experience_book_test, world_entry_loadout_test
+SpellLevel	944	Warrior ability after level 1	ability_book_test, experience_book_test, world_entry_loadout_test
+SpellLevel	614	Medic ability after level 1	ability_book_test, experience_book_test, world_entry_loadout_test
+SpellLevel	1087	Medic ability after level 1	ability_book_test, experience_book_test, world_entry_loadout_test
+SpellLevel	1191	Medic ability after level 1	ability_book_test, experience_book_test, world_entry_loadout_test
+SpellLevel	1194	Medic ability after level 1	ability_book_test, experience_book_test, world_entry_loadout_test
+SpellLevel	1221	Medic ability after level 1	ability_book_test, experience_book_test, world_entry_loadout_test
+SpellLevel	1012	Spellslinger ability after level 1	ability_book_test, experience_book_test, world_entry_loadout_test
+SpellLevel	1270	Spellslinger ability after level 1	ability_book_test, experience_book_test, world_entry_loadout_test
+SpellLevel	1144	Spellslinger ability after level 1	ability_book_test, experience_book_test, world_entry_loadout_test
+SpellLevel	1148	Spellslinger ability after level 1	ability_book_test, experience_book_test, world_entry_loadout_test
+SpellLevel	1155	Spellslinger ability after level 1	ability_book_test, experience_book_test, world_entry_loadout_test

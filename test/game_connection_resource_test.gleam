@@ -34,6 +34,7 @@ import genesis_prime/step.{
 import genesis_prime/store.{Character}
 import genesis_prime/table/id.{ClassId}
 import gleam/list
+import gleam/result
 import owned_test
 
 /// The 0x935s among the frames, decoded.
@@ -204,20 +205,7 @@ pub fn a_warriors_relentless_strikes_on_a_beast_fills_kinetic_energy_and_rampage
       game_connection_support.heard(taken, game_connection_support.keyed())
     })
   let events = game_client.casts_in(frames:)
-  assert list.any(events, fn(event) {
-      case event {
-        game_client.CastConfirmed(client_cast_id: 3, ..) -> True
-        game_client.CastRefused(..)
-        | game_client.CastConfirmed(..)
-        | game_client.CastStarted(..)
-        | game_client.CastWent(..)
-        | game_client.ThresholdOpened(..)
-        | game_client.ThresholdIndex(..)
-        | game_client.ThresholdClosed(..)
-        | game_client.ThresholdEnded(..)
-        | game_client.CastFinished(..) -> False
-      }
-    })
+  assert result.is_ok(game_client.confirmed_cast_of(frames:, client_cast_id: 3))
     && !list.any(events, fn(event) {
       case event {
         game_client.CastRefused(..) -> True

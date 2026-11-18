@@ -12,6 +12,7 @@
 ////   20684, 20325. The innate bases are the Class rows' (`innate_test`).
 
 import client_tables
+import genesis_prime/game/ability_book
 import genesis_prime/game/innate.{Passive}
 import genesis_prime/game/loadout
 import genesis_prime/table/id.{ClassId, Spell4BaseId, Spell4Id}
@@ -49,7 +50,7 @@ pub fn a_loadouts_bag_is_its_three_abilities_in_order_then_the_innate_and_the_ba
           <> int.to_string(class_id)
           <> " holds the three SpellLevel abilities alone"
         }
-      assert loadout.bag(loadout: held)
+      assert ability_book.bag(loadout: held, level: 1)
         == list.map(list.append(abilities, [innate_base]), Spell4BaseId)
         as {
           "0x14077dfa0: class "

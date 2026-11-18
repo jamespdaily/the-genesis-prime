@@ -346,7 +346,11 @@ pub fn derivation_result(
   rows rows: Rows,
   reaching roots: List(#(String, Int)),
 ) -> Result(Nil, table_store.LoadError) {
-  case edited(rows:, roots:, derivations: [spell_plan.derivation()]) {
+  case
+    edited(rows:, roots:, derivations: [
+      spell_plan.derivation(area_checked: spell_area.checker),
+    ])
+  {
     Ok(_) -> Ok(Nil)
     Error(error) -> Error(error)
   }
