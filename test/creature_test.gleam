@@ -1525,14 +1525,18 @@ fn flown_to(taken: ServiceStep(creature.Outgoing)) -> List(Int) {
   })
 }
 
-/// The timers the step starts, as the timer and its time.
+/// The timers the step starts, as the timer and its time, but for the chase's arrival
+/// timer, which the fight test file covers.
 fn timers_started(
   taken: ServiceStep(creature.Outgoing),
 ) -> List(#(step.TimerId, Int)) {
   list.filter_map(support.effects_of(taken), fn(effect) {
     case effect {
-      OwnEffect(StartServiceTimer(timer:, after_ms:)) -> Ok(#(timer, after_ms))
-      OwnEffect(Send(..))
+      OwnEffect(StartServiceTimer(timer:, after_ms:))
+        if timer != creature.chase_arrival_timer
+      -> Ok(#(timer, after_ms))
+      OwnEffect(StartServiceTimer(..))
+      | OwnEffect(Send(..))
       | OwnEffect(Reply(..))
       | OwnEffect(StartCreature(..))
       | OwnEffect(step.CancelServiceTimer(..))

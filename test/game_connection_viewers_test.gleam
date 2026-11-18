@@ -22,6 +22,8 @@ import genesis_prime/message/movement_command
 import genesis_prime/message/movement_float_vector.{MovementFloatVector}
 import genesis_prime/message/movement_kind_26.{MovementKind26}
 import genesis_prime/message/movement_mode.{MovementMode}
+import genesis_prime/message/movement_move_asked.{MovementMoveAsked}
+import genesis_prime/message/movement_state_flags.{MovementStateFlags}
 import genesis_prime/message/movement_time.{MovementTime}
 import genesis_prime/message/movement_timed_path.{MovementTimedPath}
 import genesis_prime/message/relayed_movement
@@ -1474,10 +1476,17 @@ pub fn a_viewer_writes_the_creatures_kind_3_flight_test() -> Nil {
               MovementFloatVector(x: 0x40800000, y: 0x40A00000, z: 0x40C00000),
             ]),
           ),
+          relayed_movement.MoveAsked(MovementMoveAsked(
+            x: 0,
+            y: 0,
+            z: 0,
+            blends: 1,
+          )),
+          relayed_movement.StateFlags(MovementStateFlags(flags: 0)),
         ],
       ),
     )
-    as "kind 0 at 1000 - 600, then kind 3 with the times 400 and 775 and the two points"
+    as "kind 0 at 1000 - 600, kind 3 with the times 400 and 775 and the two points, then the stop that ends any walk"
 }
 
 pub fn an_object_unseen_and_seen_again_under_the_same_id_writes_a_0x355_then_a_0x262_test() -> Nil {

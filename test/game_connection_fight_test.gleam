@@ -25,6 +25,8 @@ import genesis_prime/message/cast_result
 import genesis_prime/message/float32
 import genesis_prime/message/movement_face_unit.{MovementFaceUnit}
 import genesis_prime/message/movement_float_vector.{MovementFloatVector}
+import genesis_prime/message/movement_move_asked
+import genesis_prime/message/movement_state_flags
 import genesis_prime/message/movement_time
 import genesis_prime/message/player_health.{PlayerHealth}
 import genesis_prime/message/relayed_movement
@@ -821,8 +823,14 @@ pub fn a_viewer_writes_a_running_creatures_0x638_as_kind_0_then_kind_4_at_its_sp
   let assert [
     relayed_movement.Time(movement_time.MovementTime(..)),
     relayed_movement.Path(path),
+    relayed_movement.MoveAsked(move),
+    relayed_movement.StateFlags(state),
   ] = commands
-    as "kind 0, the time the path starts at, then kind 4, the path"
+    as "kind 0, the time the path starts at, kind 4, the path, then kind 11 and kind 24 that animate it"
+  assert move
+    == movement_move_asked.MovementMoveAsked(x: 0x4900, y: 0, z: 0, blends: 1)
+    && state.flags == 2
+    as "the velocity 10.0 along +x as half floats, and the moving bit"
   assert path.speed == 0x4900 && path.path_type == 0 && path.mode == 0
     as "straight lines, mode 0, at 10.0 as a half float (sign 0, exponent 18, fraction 256)"
   assert path.points
@@ -831,7 +839,7 @@ pub fn a_viewer_writes_a_running_creatures_0x638_as_kind_0_then_kind_4_at_its_sp
       MovementFloatVector(x: float32.to_bits(26.0), y: 0, z: 0),
     ]
     as "the two points of the path, as 32-bit floats: 0, 0, 0 and 26, 0, 0"
-  let assert [relayed_movement.Time(movement_time.MovementTime(time:)), _] =
+  let assert [relayed_movement.Time(movement_time.MovementTime(time:)), ..] =
     commands
   assert time == support.now_ms
     as "kind 0's time is the map's time the path starts at: its monotonic start, 1000, less the origin the tests' map took, 0 (map.server_time)"
@@ -873,8 +881,17 @@ pub fn a_viewer_writes_a_creature_placed_while_it_ran_as_kind_0_then_kind_2_with
         z: 0,
         blends: 0,
       )),
+      relayed_movement.MoveAsked(movement_move_asked.MovementMoveAsked(
+        x: 0,
+        y: 0,
+        z: 0,
+        blends: 1,
+      )),
+      relayed_movement.StateFlags(movement_state_flags.MovementStateFlags(
+        flags: 0,
+      )),
     ]
-    as "kind 0, the time of the placing, then kind 2 at the place with its bit clear, which places the unit at once (0x140714120)"
+    as "kind 0, the time of the placing, kind 2 at the place with its bit clear, which places the unit at once (0x140714120), then kind 11 zero and kind 24 clear, which stop the animation"
 }
 
 pub fn a_press_during_a_chase_finds_the_creature_where_its_path_puts_it_test() -> Nil {
@@ -1162,7 +1179,9 @@ fn tick_of(taken: step.ServiceStep(creature.Outgoing)) -> step.TimerId {
   let assert [timer] =
     list.filter_map(support.effects_of(taken), fn(effect) {
       case effect {
-        OwnEffect(step.StartServiceTimer(timer:, after_ms: 1500)) -> Ok(timer)
+        OwnEffect(step.StartServiceTimer(timer:, after_ms: 1500))
+          if timer != creature.chase_arrival_timer
+        -> Ok(timer)
         OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
           Error(Nil)
       }
@@ -1320,9 +1339,185 @@ pub fn a_beasts_aggro_strike_and_leash_reach_the_medics_client_with_the_worked_v
   assert MovementFloatVector(x: point.x, y: point.y, z: point.z) == spawn_bits
     && point.blends == 1
     as "kind 19 names the Beast's spawn, turning it over half a second"
-  let assert [_, relayed_movement.Path(path)] = home.commands
+  let assert [_, relayed_movement.Path(path), ..] = home.commands
   let assert [_, end] = path.points
   assert end == spawn_bits as "the path home ends at the Beast's spawn"
+}
+
+/// The Medic's 0x638 commands for the Beast (unit 7), one list per frame, in order.
+fn beast_movements(
+  frames: List(Frame),
+) -> List(List(relayed_movement.RelayedMovement)) {
+  list.filter_map(
+    game_connection_support.decoded(frames, 0x0638, unit_movement.decode),
+    fn(movement) {
+      case movement.unit_id {
+        7 -> Ok(movement.commands)
+        _ -> Error(Nil)
+      }
+    },
+  )
+}
+
+/// The one timer a step starts besides the chase's arrival and the attack tick, with
+/// its delay: the walk home's arrival.
+fn home_timer_of(
+  taken: step.ServiceStep(creature.Outgoing),
+) -> #(step.TimerId, Int) {
+  let assert [started] =
+    list.filter_map(support.effects_of(taken), fn(effect) {
+      case effect {
+        OwnEffect(step.StartServiceTimer(timer:, after_ms:))
+          if after_ms != 1500 && timer != creature.chase_arrival_timer
+        -> Ok(#(timer, after_ms))
+        OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+          Error(Nil)
+      }
+    })
+    as "the step starts one timer besides the chase's arrival and the attack tick"
+  started
+}
+
+/// The delay of the chase's arrival timer a step starts.
+fn chase_arrival_after_ms(taken: step.ServiceStep(creature.Outgoing)) -> Int {
+  let assert [after_ms] =
+    list.filter_map(support.effects_of(taken), fn(effect) {
+      case effect {
+        OwnEffect(step.StartServiceTimer(timer:, after_ms:))
+          if timer == creature.chase_arrival_timer
+        -> Ok(after_ms)
+        OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+          Error(Nil)
+      }
+    })
+    as "the step starts the chase's arrival timer"
+  after_ms
+}
+
+pub fn a_beast_that_chases_the_player_runs_in_the_clients_view_and_stops_where_it_arrives_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(medic, beast, aggro, _) = an_aggroed_medic()
+  // The Medic steps 12 m out, so the Beast stands 15 m off, beyond its reach 8.
+  let #(medic, moved) =
+    game_connection_support.read(
+      medic,
+      game_connection_support.moves_message([
+        game_client.position_command(
+          x: 29.128599166870117,
+          y: -853.87158203125,
+          z: -548.18798828125,
+        ),
+      ]),
+    )
+  let #(beast, chasing) =
+    beast_takes(state: beast, at_ms: 1100, messages: to_the_beast(moved))
+  let assert [chase] = chasing
+  let #(medic, run, _) = medic_takes(medic, to_the_medic(chase))
+  let assert [
+    [
+      relayed_movement.Time(_),
+      relayed_movement.Path(path),
+      relayed_movement.MoveAsked(velocity),
+      relayed_movement.StateFlags(state),
+    ],
+  ] = beast_movements(run)
+    as "kind 0, the path, then kind 11 and kind 24 that make the client animate it"
+  assert velocity
+    == movement_move_asked.MovementMoveAsked(x: 0, y: 0, z: 0x4900, blends: 1)
+    as "kind 11 is the path's speed along +z, 10.0 as a half float, as the player sends it (0x140715020)"
+  assert int.bitwise_and(state.flags, 2) == 2
+    as "kind 24 holds bit 0x2, the one the pace step reads (0x1405b5070)"
+  assert chase_arrival_after_ms(chase) == 1100
+    as "the Beast stops 4 m short of the Medic: 11 m at 10 m/s"
+  let #(beast, arrived) =
+    fire_beast(state: beast, at_ms: 2200, timer: creature.chase_arrival_timer)
+  let #(medic, stop, _) = medic_takes(medic, to_the_medic(arrived))
+  let assert [end] = list.drop(path.points, 1)
+  let assert [
+    [
+      relayed_movement.Time(_),
+      relayed_movement.Position(position),
+      relayed_movement.MoveAsked(stopped),
+      relayed_movement.StateFlags(standing),
+    ],
+  ] = beast_movements(stop)
+    as "kind 0, kind 2, then kind 11 zero and kind 24 clear: the creature stands"
+  assert MovementFloatVector(x: position.x, y: position.y, z: position.z) == end
+    && stopped
+    == movement_move_asked.MovementMoveAsked(x: 0, y: 0, z: 0, blends: 1)
+    && int.bitwise_and(standing.flags, 2) == 0
+    as "the creature is placed where the path ended and its animation stops"
+  // The Medic stands still: the Beast's tick strikes from where it stands and sends no movement.
+  let #(beast, ticked) =
+    fire_beast(state: beast, at_ms: 2500, timer: tick_of(aggro))
+  let #(medic, struck, answers) = medic_takes(medic, to_the_medic(ticked))
+  assert beast_movements(struck) == []
+    as "a creature in reach of a player who stands still is sent no movement"
+  let #(beast, answered) =
+    beast_takes(state: beast, at_ms: 2600, messages: answers)
+  let #(medic, _, _) = medic_takes(medic, list.flat_map(answered, to_the_medic))
+  // The Medic walks 100 m out: the Beast runs to the leash circle, 55 from its spawn, and
+  // leashes at the tick that finds it there (7 s), walking home with the same animation.
+  let #(medic, moved) =
+    game_connection_support.read(
+      medic,
+      game_connection_support.moves_message([
+        game_client.position_command(
+          x: 29.128599166870117,
+          y: -853.87158203125,
+          z: -460.18798828125,
+        ),
+      ]),
+    )
+  let #(beast, _) =
+    beast_takes(state: beast, at_ms: 2600, messages: to_the_beast(moved))
+  let #(beast, at_4000) =
+    fire_beast(state: beast, at_ms: 4000, timer: tick_of(ticked))
+  let #(beast, at_5500) =
+    fire_beast(state: beast, at_ms: 5500, timer: tick_of(at_4000))
+  let #(beast, leashed) =
+    fire_beast(state: beast, at_ms: 7000, timer: tick_of(at_5500))
+  let #(medic, leash, _) = medic_takes(medic, to_the_medic(leashed))
+  let assert [_, [_, relayed_movement.Path(_), ..home_tail]] =
+    beast_movements(leash)
+    as "the turn to home, then the path home"
+  assert home_tail
+    == [
+      relayed_movement.MoveAsked(movement_move_asked.MovementMoveAsked(
+        x: 0,
+        y: 0,
+        z: 0xC900,
+        blends: 1,
+      )),
+      relayed_movement.StateFlags(movement_state_flags.MovementStateFlags(
+        flags: 2,
+      )),
+    ]
+    as "the walk home runs along -z at 10.0 (0xC900) with the moving bit"
+  let #(home_timer, home_after_ms) = home_timer_of(leashed)
+  let #(_, home) =
+    fire_beast(state: beast, at_ms: 7000 + home_after_ms, timer: home_timer)
+  let #(_, at_home, _) = medic_takes(medic, to_the_medic(home))
+  let assert [
+    [
+      relayed_movement.Time(_),
+      relayed_movement.Position(spawn),
+      relayed_movement.MoveAsked(stopped),
+      relayed_movement.StateFlags(standing),
+    ],
+    ..
+  ] = beast_movements(at_home)
+    as "the arrival home places the Beast and stops it, before the turn and the chase of the Medic it finds near"
+  assert MovementFloatVector(x: spawn.x, y: spawn.y, z: spawn.z)
+    == MovementFloatVector(
+      x: float32.to_bits(29.128599166870117),
+      y: float32.to_bits(-853.87158203125),
+      z: float32.to_bits(-563.18798828125),
+    )
+    && stopped
+    == movement_move_asked.MovementMoveAsked(x: 0, y: 0, z: 0, blends: 1)
+    && standing.flags == 0
+    as "at the spawn, kind 11 zero and kind 24 clear"
 }
 
 pub fn a_medic_and_a_beast_striking_each_other_at_one_instant_both_get_their_answers_before_either_deadline_test() -> Nil {

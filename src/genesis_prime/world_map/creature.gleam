@@ -248,8 +248,8 @@ import genesis_prime/step.{
 import genesis_prime/table/id.{type Creature2Id, type Faction2Id, Faction2Id}
 import genesis_prime/world_map/creature_control
 import genesis_prime/world_map/creature_fight.{
-  type Fighter, AttackTick, CastEnds, Fighter, FlightEnds, HomeArrival,
-  StrikeDeadline,
+  type Fighter, AttackTick, CastEnds, ChaseArrival, Fighter, FlightEnds,
+  HomeArrival, StrikeDeadline,
 }
 import genesis_prime/world_map/creature_guard
 import genesis_prime/world_map/creature_kind.{type Kind}
@@ -304,6 +304,14 @@ const despawn_timer = TimerId(3)
 /// or 6, never 4; the corpse, refill and despawn timers are 1, 2 and 3. A state cannot have
 /// an id of its own, since the fight, the controls and the guard take all seven residues of 7.
 const unit_state_timer = TimerId(4)
+
+/// The one timer of a chase's arrival, which ends the walk animation of the creature that has run
+/// its path (`creature_fight.ChaseArrival`): 5, which is free. A creature has one chase path at a
+/// time, so the timer has no generation. The fight timers are 7 times a generation plus 0 to 3 or
+/// 6, the controls' 4 above a multiple of 7 from 11, and the guard's 5 above one from 12 (the id 5
+/// would be a guard timer of generation 0, which is never issued); the corpse, refill, despawn
+/// and unit state timers are 1 to 4. Public for a test.
+pub const chase_arrival_timer = TimerId(5)
 
 /// What a creature is started with: which creature of which run it is and the
 /// map's clock (`CreatureStart`), the spawn it stands at, found by the id the start
@@ -2079,7 +2087,8 @@ fn guard_timer_fired(
 /// generation (from 1), so none is the corpse timer's 1 or the refill timer's 2 and a timer of
 /// an old generation is never the new one's. The ids 4 above a multiple of 7 are the controls'
 /// (11, 18, 25 ...: `control_timer`) and 5 above it the guard's (12, 19, 26 ...:
-/// `guard_timer_id`), so no two timers of a creature share an id.
+/// `guard_timer_id`), so no two timers of a creature share an id. The chase's arrival, which has
+/// no generation, is `chase_arrival_timer`.
 fn timer_id(timer timer: creature_fight.Timer) -> step.TimerId {
   case timer {
     AttackTick(generation:) -> TimerId(7 * generation)
@@ -2087,6 +2096,7 @@ fn timer_id(timer timer: creature_fight.Timer) -> step.TimerId {
     StrikeDeadline(generation:) -> TimerId(7 * generation + 2)
     CastEnds(generation:) -> TimerId(7 * generation + 3)
     FlightEnds(generation:) -> TimerId(7 * generation + 6)
+    ChaseArrival -> chase_arrival_timer
   }
 }
 
@@ -2126,6 +2136,10 @@ fn guard_timer(timer timer: step.TimerId) -> Result(creature_guard.Timer, Nil) {
 /// corpse timer's, the refill timer's, a control's, a guard's, or any other.
 fn fight_timer(timer timer: step.TimerId) -> Result(creature_fight.Timer, Nil) {
   let TimerId(number) = timer
+  use <- bool.guard(
+    when: timer == chase_arrival_timer,
+    return: Ok(ChaseArrival),
+  )
   case number >= 7, number % 7 {
     True, 0 -> Ok(AttackTick(generation: number / 7))
     True, 1 -> Ok(HomeArrival(generation: { number - 1 } / 7))

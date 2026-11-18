@@ -3,6 +3,7 @@
 //// decided and the player it keeps.
 
 import character_support
+import character_tables
 import class_resource_support
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/prerequisite.{type Prerequisite}
@@ -286,6 +287,19 @@ pub fn character(
     bones: [],
     naming: NameStands,
   )
+}
+
+/// A player that entered a map whose clock started at `clock_origin_ms` on the
+/// monotonic clock: what the frames of another unit's movement are written from.
+pub fn entered_after(
+  clock_origin_ms clock_origin_ms: Int,
+) -> world_entry.Entered {
+  let #(_, entered) =
+    entry(
+      tables: character_tables.shared(),
+      character: character(class: 4, faction: 167, level: 1),
+    )
+  world_entry.Entered(..entered, clock_origin_ms:)
 }
 
 /// The `item_added` (0x0111) messages among the frames, decoded, in order.

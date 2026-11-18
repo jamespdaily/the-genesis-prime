@@ -5,7 +5,6 @@
 //// float bits as IEEE 754 binary32 (1.0 is 0x3F800000, 2.0 0x40000000, -3.0 0xC0400000,
 //// 4.0 0x40800000, 5.0 0x40A00000, 6.0 0x40C00000 and 1.5 0x3FC00000).
 
-import character_tables
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/connection/frames
 import genesis_prime/game/start_place.{type Place, Facing}
@@ -13,7 +12,9 @@ import genesis_prime/game/world_entry
 import genesis_prime/message/movement_face_point.{MovementFacePoint}
 import genesis_prime/message/movement_face_unit.{MovementFaceUnit}
 import genesis_prime/message/movement_float_vector.{MovementFloatVector}
+import genesis_prime/message/movement_move_asked.{MovementMoveAsked}
 import genesis_prime/message/movement_rotation.{MovementRotation}
+import genesis_prime/message/movement_state_flags.{MovementStateFlags}
 import genesis_prime/message/movement_time.{MovementTime}
 import genesis_prime/message/movement_timed_path.{MovementTimedPath}
 import genesis_prime/message/relayed_movement
@@ -21,6 +22,7 @@ import genesis_prime/message/unit_movement.{type UnitMovement, UnitMovement}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_turn
+import gleam/list
 import gleam/option.{None, Some}
 import owned_test
 import place_support
@@ -28,12 +30,7 @@ import world_entry_support
 
 /// A player that entered a map whose clock started at 600 ms on the monotonic clock.
 fn entered() -> world_entry.Entered {
-  let #(_, entered) =
-    world_entry_support.entry(
-      tables: character_tables.shared(),
-      character: world_entry_support.character(class: 4, faction: 167, level: 1),
-    )
-  world_entry.Entered(..entered, clock_origin_ms: 600)
+  world_entry_support.entered_after(clock_origin_ms: 600)
 }
 
 fn at(x x: Float, y y: Float, z z: Float) -> Place {
@@ -72,6 +69,7 @@ pub fn a_timed_path_frame_turns_each_time_into_server_time_test() -> Nil {
             MovementFloatVector(x: 0x40800000, y: 0x40A00000, z: 0x40C00000),
           ]),
         ),
+        ..moving(x: 0, z: 0, flags: 0)
       ],
     )
     as "the monotonic times 1000 and 1375 less the map's start 600 are 400 and 775, the first also the clock of kind 0"
@@ -94,6 +92,7 @@ pub fn a_timed_path_of_one_point_places_the_creature_there_test() -> Nil {
         z: 0xC0400000,
         blends: 0,
       )),
+      ..moving(x: 0, z: 0, flags: 0)
     ]
     as "a flight of no length is a kind 2 at its point, which places the unit at once (0x140714120)"
 }
@@ -121,6 +120,7 @@ pub fn a_timed_path_that_turns_the_creature_ends_with_its_rotation_test() -> Nil
         roll: 0,
         blends: 0,
       )),
+      ..moving(x: 0, z: 0, flags: 0)
     ]
     as "the path's turn is one kind 14 after the path, the yaw 1.5 as float bits"
 }
@@ -195,4 +195,139 @@ pub fn a_fixed_face_frame_is_kind_0_then_kind_14_that_takes_the_facing_at_once_t
       )),
     ]
     as "kind 0, then kind 14 with the blend bit clear (`0x140715350`), and no position command"
+}
+
+/// The 0x638 of a creature that stops at a place, decoded.
+fn placed() -> UnitMovement {
+  let Frame(message_id:, body:) =
+    frames.placed_frame(
+      entered: entered(),
+      unit_id: 40,
+      place: at(x: 1.0, y: 2.0, z: -3.0),
+      at_ms: 1000,
+    )
+  assert message_id == 0x0638 as "a stop is written as one 0x638"
+  let assert Ok(movement) = unit_movement.decode(body)
+    as "the frame is a 0x638 the client's reader takes"
+  movement
+}
+
+/// The kind 11 and kind 24 commands of a frame, in order.
+fn movement_states(
+  movement: UnitMovement,
+) -> List(relayed_movement.RelayedMovement) {
+  list.filter(movement.commands, fn(command) {
+    case command {
+      relayed_movement.MoveAsked(..) | relayed_movement.StateFlags(..) -> True
+      relayed_movement.Time(..)
+      | relayed_movement.Platform(..)
+      | relayed_movement.Position(..)
+      | relayed_movement.TimedPath(..)
+      | relayed_movement.Path(..)
+      | relayed_movement.Velocity(..)
+      | relayed_movement.Rotation(..)
+      | relayed_movement.FaceUnit(..)
+      | relayed_movement.FacePoint(..)
+      | relayed_movement.Mode(..) -> False
+    }
+  })
+}
+
+/// Kind 11 for a move of `x` and `z` (half float bits) with the blend bit the
+/// player sends, and kind 24 with the flags.
+fn moving(
+  x x: Int,
+  z z: Int,
+  flags flags: Int,
+) -> List(relayed_movement.RelayedMovement) {
+  [
+    relayed_movement.MoveAsked(MovementMoveAsked(x:, y: 0, z:, blends: 1)),
+    relayed_movement.StateFlags(MovementStateFlags(flags:)),
+  ]
+}
+
+pub fn a_path_frame_carries_the_movement_state_its_path_implies_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The client animates a unit by kind 24's bit 0x2 and the horizontal length of kind 11's
+  // vector, both from the unit's movement commands and not from its path (0x1405b5070); the
+  // player sends kind 11 in units a second with the blend bit 1 (the recorded sitting).
+  // Half floats: 3.0 is 0x4200, 4.0 0x4400, 10.0 0x4900.
+  let cases = [
+    #(
+      "a run along +x at 10.0 is a move of 10.0 along x and the moving bit",
+      sent(path: creature_path.Running(
+        from: at(x: 0.0, y: 0.0, z: 0.0),
+        to: at(x: 26.0, y: 0.0, z: 0.0),
+        started_ms: 1000,
+        speed: 10.0,
+      )),
+      moving(x: 0x4900, z: 0, flags: 2),
+    ),
+    #(
+      "a run up a slope keeps the horizontal part of the velocity and drops its height: 13.0 along (3, 12, 4) is (3, 12, 4) a second",
+      sent(path: creature_path.Running(
+        from: at(x: 0.0, y: 0.0, z: 0.0),
+        to: at(x: 3.0, y: 12.0, z: 4.0),
+        started_ms: 1000,
+        speed: 13.0,
+      )),
+      moving(x: 0x4200, z: 0x4400, flags: 2),
+    ),
+    #(
+      "a flight is no walk: it stops the one that ran before the throw",
+      sent(path: creature_path.Timed(
+        first: #(1000, at(x: 1.0, y: 2.0, z: -3.0)),
+        rest: [#(1375, at(x: 4.0, y: 5.0, z: 6.0))],
+        turned_to: None,
+      )),
+      moving(x: 0, z: 0, flags: 0),
+    ),
+    #(
+      "a turn in place is no walk",
+      sent(path: creature_path.Timed(
+        first: #(1000, at(x: 1.0, y: 2.0, z: -3.0)),
+        rest: [],
+        turned_to: Some(Facing(yaw: 1.5, pitch: 0.0, roll: 0.0)),
+      )),
+      moving(x: 0, z: 0, flags: 0),
+    ),
+    #("a stop ends the animation", placed(), moving(x: 0, z: 0, flags: 0)),
+    #(
+      "a turn at a unit says nothing of movement, so it does not stop a run",
+      faced(face: creature_turn.Unit(unit_id: 20)),
+      [],
+    ),
+    #(
+      "a turn at a point says nothing of movement",
+      faced(face: creature_turn.Point(place: at(x: 1.0, y: 2.0, z: -3.0))),
+      [],
+    ),
+    #(
+      "a fixed turn says nothing of movement",
+      faced(
+        face: creature_turn.Fixed(facing: Facing(
+          yaw: 1.5,
+          pitch: 0.0,
+          roll: 0.0,
+        )),
+      ),
+      [],
+    ),
+  ]
+  list.each(cases, fn(row) {
+    let #(reason, movement, expected) = row
+    assert movement_states(movement) == expected as reason
+  })
+  assert frames.path_frame(
+      entered: entered(),
+      unit_id: 40,
+      path: creature_path.Running(
+        from: at(x: 0.0, y: 0.0, z: 0.0),
+        to: at(x: 26.0, y: 0.0, z: 0.0),
+        started_ms: 1000,
+        speed: 70_000.0,
+      ),
+    )
+    == None
+    as "a speed no half float holds is still no frame"
 }
