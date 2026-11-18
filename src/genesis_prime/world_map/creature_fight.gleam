@@ -1215,7 +1215,9 @@ pub fn arrival_news(
     Running(..) ->
       case creature_path.rest_of(path: state.path, now_ms:) {
         Standing(..) -> []
-        rest -> [client_connection.CreatureMoved(path: rest)]
+        Running(..) as rest | Timed(..) as rest -> [
+          client_connection.CreatureMoved(path: rest),
+        ]
       }
     Standing(..) -> []
     Timed(..) ->

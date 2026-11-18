@@ -4,8 +4,10 @@
 //// the first time and the last held after the last time (`cc_state.forced_move_end`: the
 //// unit keeps the path's last point).
 
+import creature_path_support as support
 import genesis_prime/game/start_place.{type Place, Facing}
-import genesis_prime/world_map/creature_path.{Standing, Timed}
+import genesis_prime/world_map/creature_path.{Standing, Timed, TooManyPoints}
+import gleam/float
 import gleam/list
 import gleam/option.{None, Some}
 import owned_test
@@ -167,4 +169,262 @@ pub fn arrives_ms_refuses_a_speed_of_zero_or_below_test() -> Nil {
       speed: 10.0,
     )
     as "a speed above 0 runs"
+}
+
+// ------------------------------------------------------------ a run along many points
+//
+// Expected values come from the client's timing of a kind 4 path: one constant speed
+// over the whole polyline, each leg taking its 3D length over the speed, the last point
+// held after the end (`0x1407813d0`, `movement_command.kind_4` mode 0). The L is (0, 0, 0),
+// (30, 0, 0), (30, 0, 40): 70 long, so at 10 a second it runs 7 s.
+
+type Point =
+  #(Float, Float, Float)
+
+fn l_path(speed speed: Float) -> creature_path.Path {
+  support.running(
+    points: [#(0.0, 0.0, 0.0), #(30.0, 0.0, 0.0), #(30.0, 0.0, 40.0)],
+    started_ms: 1000,
+    speed:,
+  )
+}
+
+fn coordinates(place: Place) -> Point {
+  #(start_place.x(place), start_place.y(place), start_place.z(place))
+}
+
+fn close(first: Point, second: Point) -> Bool {
+  float.absolute_value(first.0 -. second.0) <=. 0.000_000_001
+  && float.absolute_value(first.1 -. second.1) <=. 0.000_000_001
+  && float.absolute_value(first.2 -. second.2) <=. 0.000_000_001
+}
+
+/// The place, the velocity and the arrival time of a path at `now_ms`.
+fn walked(
+  path path: creature_path.Path,
+  now_ms now_ms: Int,
+) -> #(Point, Point, Int) {
+  #(
+    coordinates(creature_path.place_at(path:, now_ms:)),
+    creature_path.velocity(path:, now_ms:),
+    creature_path.arrives_ms(path:, now_ms:),
+  )
+}
+
+/// A path as its points, its start and its speed, which is what two paths of one run
+/// share whatever the float noise of the walk that made them.
+fn outline(path path: creature_path.Path) -> #(List(Point), Int, Float) {
+  case path {
+    Standing(at:) -> #([coordinates(at)], 0, 0.0)
+    creature_path.Running(started_ms:, speed:, ..) -> #(
+      list.map(support.points_of(path:), coordinates),
+      started_ms,
+      speed,
+    )
+    Timed(..) -> panic as "a run's rest is a run or standing"
+  }
+}
+
+fn same_outline(first: creature_path.Path, second: creature_path.Path) -> Bool {
+  let #(first_points, first_start, first_speed) = outline(path: first)
+  let #(second_points, second_start, second_speed) = outline(path: second)
+  first_start == second_start
+  && first_speed == second_speed
+  && list.length(first_points) == list.length(second_points)
+  && list.all(list.zip(first_points, second_points), fn(pair) {
+    close(pair.0, pair.1)
+  })
+}
+
+pub fn a_path_with_corners_is_walked_leg_by_leg_test() -> Nil {
+  use <- owned_test.run(5000)
+  let cases = [
+    #(
+      "at exactly the corner (3000 ms in) the creature is at it and runs the second leg, a point passed exactly belongs to the next leg",
+      l_path(speed: 10.0),
+      4000,
+      #(#(30.0, 0.0, 0.0), #(0.0, 0.0, 10.0), 8000),
+    ),
+    #(
+      "a repeated middle point makes an empty leg that is skipped: 15 along is 5 into the last leg, with no division by zero",
+      support.running(
+        points: [
+          #(0.0, 0.0, 0.0),
+          #(10.0, 0.0, 0.0),
+          #(10.0, 0.0, 0.0),
+          #(10.0, 0.0, 20.0),
+        ],
+        started_ms: 1000,
+        speed: 10.0,
+      ),
+      2500,
+      #(#(10.0, 0.0, 5.0), #(0.0, 0.0, 10.0), 4000),
+    ),
+    #(
+      "a rising leg is counted along its 3D length: 13 a second along 3-4-0 is (7.8, 10.4, 0) a second",
+      support.running(
+        points: [#(0.0, 0.0, 0.0), #(3.0, 4.0, 0.0), #(3.0, 4.0, 12.0)],
+        started_ms: 1000,
+        speed: 13.0,
+      ),
+      1000,
+      #(#(0.0, 0.0, 0.0), #(7.8, 10.4, 0.0), 2308),
+    ),
+    #(
+      "8.5 units in at 17 a second (500 ms) is 3.5 into the leg after the 5 of the rising one",
+      support.running(
+        points: [#(0.0, 0.0, 0.0), #(3.0, 4.0, 0.0), #(3.0, 4.0, 12.0)],
+        started_ms: 1000,
+        speed: 17.0,
+      ),
+      1500,
+      #(#(3.0, 4.0, 3.5), #(0.0, 0.0, 17.0), 2000),
+    ),
+    #(
+      "a hand-built run of points all equal has no length: it arrives where it starts and has no velocity",
+      support.running(
+        points: [#(5.0, 5.0, 5.0), #(5.0, 5.0, 5.0), #(5.0, 5.0, 5.0)],
+        started_ms: 1000,
+        speed: 10.0,
+      ),
+      1500,
+      #(#(5.0, 5.0, 5.0), #(0.0, 0.0, 0.0), 1000),
+    ),
+  ]
+  list.each(cases, fn(row) {
+    let #(reason, path, now_ms, expected) = row
+    let #(place, velocity, arrives_ms) = walked(path:, now_ms:)
+    assert close(place, expected.0) as reason
+    assert close(velocity, expected.1) as reason
+    assert arrives_ms == expected.2 as reason
+  })
+}
+
+pub fn the_rest_of_a_path_drops_the_points_it_has_passed_test() -> Nil {
+  use <- owned_test.run(5000)
+  let corner = #(30.0, 0.0, 0.0)
+  let end = #(30.0, 0.0, 40.0)
+  let cases = [
+    #(
+      "1000 ms in, before the corner: the run from (10, 0, 0) through the corner, started now",
+      2000,
+      support.running(
+        points: [#(10.0, 0.0, 0.0), corner, end],
+        started_ms: 2000,
+        speed: 10.0,
+      ),
+    ),
+    #(
+      "4000 ms in, past the corner: the run from (30, 0, 10) to the end",
+      5000,
+      support.running(
+        points: [#(30.0, 0.0, 10.0), end],
+        started_ms: 5000,
+        speed: 10.0,
+      ),
+    ),
+    #(
+      "after the arrival, before its timer: the creature stands at the end, so a viewer is sent no run",
+      9000,
+      Standing(at: support.at(end)),
+    ),
+    #(
+      "before the start: the path itself, the run does not start early",
+      500,
+      l_path(speed: 10.0),
+    ),
+  ]
+  list.each(cases, fn(row) {
+    let #(reason, now_ms, expected) = row
+    assert same_outline(
+      creature_path.rest_of(path: l_path(speed: 10.0), now_ms:),
+      expected,
+    )
+      as reason
+  })
+}
+
+pub fn a_run_at_another_speed_goes_on_through_its_points_test() -> Nil {
+  use <- owned_test.run(5000)
+  let cases = [
+    #(
+      "at 5 a second from 1000 ms in: the same points from (10, 0, 0), the 60 left taking 12 s",
+      5.0,
+      support.running(
+        points: [#(10.0, 0.0, 0.0), #(30.0, 0.0, 0.0), #(30.0, 0.0, 40.0)],
+        started_ms: 2000,
+        speed: 5.0,
+      ),
+      14_000,
+    ),
+    #(
+      "a speed of 0 roots the creature where it is",
+      0.0,
+      Standing(at: support.at(#(10.0, 0.0, 0.0))),
+      2000,
+    ),
+    #(
+      "a speed below 0 roots it too",
+      -3.0,
+      Standing(at: support.at(#(10.0, 0.0, 0.0))),
+      2000,
+    ),
+  ]
+  list.each(cases, fn(row) {
+    let #(reason, speed, expected, arrives_ms) = row
+    let changed =
+      creature_path.with_speed(path: l_path(speed: 10.0), speed:, now_ms: 2000)
+    assert same_outline(changed, expected) as reason
+    assert creature_path.arrives_ms(path: changed, now_ms: 2000) == arrives_ms
+      as reason
+  })
+}
+
+pub fn more_points_than_a_kind_4_holds_are_refused_test() -> Nil {
+  use <- owned_test.run(5000)
+  let through = fn(points: List(Point), speed: Float) {
+    let assert [from, ..rest] = list.map(points, support.at)
+      as "a path has points"
+    let assert [to, ..before_to] = list.reverse(rest) as "a path has two points"
+    creature_path.through(
+      from:,
+      via: list.reverse(before_to),
+      to:,
+      speed:,
+      now_ms: 1000,
+    )
+  }
+  let origin = #(0.0, 0.0, 0.0)
+  let loop = [origin, #(10.0, 0.0, 0.0), origin]
+  let equal = [#(5.0, 5.0, 5.0), #(5.0, 5.0, 5.0), #(5.0, 5.0, 5.0)]
+  let cases = [
+    #(
+      "1024 points are one more than the 10-bit count holds",
+      through(support.line(count: 1024), 10.0),
+      Error(TooManyPoints(count: 1024)),
+    ),
+    #(
+      "1023 points are the most it holds",
+      through(support.line(count: 1023), 10.0),
+      Ok(support.running(
+        points: support.line(count: 1023),
+        started_ms: 1000,
+        speed: 10.0,
+      )),
+    ),
+    #(
+      "a loop that returns to its start still runs",
+      through(loop, 10.0),
+      Ok(support.running(points: loop, started_ms: 1000, speed: 10.0)),
+    ),
+    #(
+      "points all equal have no length: the creature stands at the last",
+      through(equal, 10.0),
+      Ok(Standing(at: support.at(#(5.0, 5.0, 5.0)))),
+    ),
+  ]
+  list.each(cases, fn(row) {
+    let #(reason, made, expected) = row
+    assert made == expected as reason
+  })
 }

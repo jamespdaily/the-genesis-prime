@@ -5,10 +5,12 @@
 //// float bits as IEEE 754 binary32 (1.0 is 0x3F800000, 2.0 0x40000000, -3.0 0xC0400000,
 //// 4.0 0x40800000, 5.0 0x40A00000, 6.0 0x40C00000 and 1.5 0x3FC00000).
 
+import creature_path_support as support
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/connection/frames
 import genesis_prime/game/start_place.{type Place, Facing}
 import genesis_prime/game/world_entry
+import genesis_prime/message/float32
 import genesis_prime/message/movement_face_point.{MovementFacePoint}
 import genesis_prime/message/movement_face_unit.{MovementFaceUnit}
 import genesis_prime/message/movement_float_vector.{MovementFloatVector}
@@ -22,8 +24,10 @@ import genesis_prime/message/unit_movement.{type UnitMovement, UnitMovement}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_turn
+import gleam/bit_array
+import gleam/int
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
 import owned_test
 import place_support
 import world_entry_support
@@ -333,4 +337,99 @@ pub fn a_path_frame_carries_the_movement_state_its_path_implies_test() -> Nil {
     )
     == None
     as "a speed no half float holds is still no frame"
+}
+
+/// The kind 4 points a path frame carries, in order, as the float bits of each.
+fn written_points(
+  path path: creature_path.Path,
+) -> Option(List(#(Int, Int, Int))) {
+  case frames.path_frame(entered: entered(), unit_id: 40, path:) {
+    None -> None
+    Some(Frame(body:, ..)) -> {
+      let assert Ok(UnitMovement(commands:, ..)) = unit_movement.decode(body)
+        as "the frame is a 0x638 the client's reader takes"
+      let assert [relayed_movement.Path(path)] =
+        list.filter(commands, fn(command) {
+          case command {
+            relayed_movement.Path(..) -> True
+            relayed_movement.Time(..)
+            | relayed_movement.Platform(..)
+            | relayed_movement.Position(..)
+            | relayed_movement.TimedPath(..)
+            | relayed_movement.Velocity(..)
+            | relayed_movement.Rotation(..)
+            | relayed_movement.FaceUnit(..)
+            | relayed_movement.FacePoint(..)
+            | relayed_movement.StateFlags(..)
+            | relayed_movement.MoveAsked(..)
+            | relayed_movement.Mode(..) -> False
+          }
+        })
+        as "one kind 4"
+      Some(list.map(path.points, fn(point) { #(point.x, point.y, point.z) }))
+    }
+  }
+}
+
+pub fn a_path_frame_holds_every_point_or_none_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Kind 4's count is 10 bits, so 1023 points are the most it holds
+  // (`movement_command.kind_4`); a point is three 32-bit floats, x counting up here.
+  let cases = [
+    #("28 points are written in order", 28),
+    #("1023 points, the most a kind 4 holds, are written in order", 1023),
+    #(
+      "1024 points are more than the count holds: no frame, and the connection lives",
+      1024,
+    ),
+  ]
+  list.each(cases, fn(row) {
+    let #(reason, count) = row
+    let path =
+      support.running(
+        points: support.line(count:),
+        started_ms: 1000,
+        speed: 10.0,
+      )
+    case count > 1023 {
+      True -> {
+        assert written_points(path:) == None as reason
+      }
+      False -> {
+        assert written_points(path:)
+          == Some(
+            list.index_map(support.line(count:), fn(_, index) {
+              #(float32.to_bits(int.to_float(index)), 0, 0)
+            }),
+          )
+          as reason
+      }
+    }
+  })
+}
+
+pub fn a_two_point_path_frame_is_the_bytes_it_was_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The body the path frame made for this run before a run could hold more points,
+  // taken from origin/main 548056f0: unit 40, kind 0 at 400 (1000 less the map's 600),
+  // kind 4 of (1.5, -2, 3) and (26, 4.5, -7.25) at 7.5 (half float 0x4780), type 0, mode 0,
+  // then kind 11 and kind 24.
+  let assert Ok(before) =
+    bit_array.base16_decode(
+      "280000009001000010001900004004000000FE01000000060000020200800E0200800402004007063C02000000002C5C230000D0E05800000000",
+    )
+    as "a hex string"
+  let assert Some(Frame(message_id: 0x0638, body:)) =
+    frames.path_frame(
+      entered: entered(),
+      unit_id: 40,
+      path: creature_path.Running(
+        from: at(x: 1.5, y: -2.0, z: 3.0),
+        via: [],
+        to: at(x: 26.0, y: 4.5, z: -7.25),
+        started_ms: 1000,
+        speed: 7.5,
+      ),
+    )
+  assert body == before
 }

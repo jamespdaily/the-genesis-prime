@@ -6,6 +6,7 @@
 
 import cast_support
 import connection_rule_support as support
+import creature_path_support as path_support
 import fixture_tables
 import game_client
 import game_connection_support
@@ -64,6 +65,7 @@ import genesis_prime/world_map/map.{Left}
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_id
 import genesis_prime/world_map/spawn_source
+import gleam/bit_array
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
@@ -844,6 +846,109 @@ pub fn a_viewer_writes_a_running_creatures_0x638_as_kind_0_then_kind_4_at_its_sp
     commands
   assert time == support.now_ms
     as "kind 0's time is the map's time the path starts at: its monotonic start, 1000, less the origin the tests' map took, 0 (map.server_time)"
+}
+
+/// A staircase of 28 points two units apart: point 0 is the origin, and each leg goes 2 along
+/// +x when its index is even and 2 along +z when it is odd, so the creature bends every 2 units.
+fn staircase() -> List(#(Float, Float, Float)) {
+  let #(points, _) =
+    list.fold(list.repeat(Nil, 27), #([#(0.0, 0.0, 0.0)], 0), fn(state, _) {
+      let #(points, leg) = state
+      let assert [#(x, y, z), ..] = points
+        as "the staircase starts at the origin"
+      let next = case leg % 2 == 0 {
+        True -> #(x +. 2.0, y, z)
+        False -> #(x, y, z +. 2.0)
+      }
+      #([next, ..points], leg + 1)
+    })
+  list.reverse(points)
+}
+
+/// The 32-bit float bits of each coordinate of the points.
+fn bits(points: List(#(Float, Float, Float))) -> List(#(Int, Int, Int)) {
+  list.map(points, fn(point) {
+    #(
+      float32.to_bits(point.0),
+      float32.to_bits(point.1),
+      float32.to_bits(point.2),
+    )
+  })
+}
+
+/// What a viewer writes of a creature's run news: kind 0's time, kind 4's points as
+/// float bits, the speed's half float, type and mode, kind 11's x and z, kind 24's flags,
+/// and the frame's size in bytes.
+fn drawn_run(
+  news news: client_connection.News,
+) -> #(Int, List(#(Int, Int, Int)), #(Int, Int, Int), #(Int, Int, Int), Int) {
+  let #(state, _) =
+    game_connection_support.feed(
+      game_connection_support.medic_in_world(),
+      game_connection_support.beast_appears(unit_id: 40),
+    )
+  let #(_, taken) =
+    game_connection_support.feed(state, beast_news(unit_id: 40, news:))
+  let assert [Frame(message_id: 0x0638, body:)] =
+    game_connection_support.heard(taken, game_connection_support.keyed())
+  let assert Ok(UnitMovement(unit_id: 40, commands:, ..)) =
+    unit_movement.decode(body)
+  let assert [
+    relayed_movement.Time(movement_time.MovementTime(time:)),
+    relayed_movement.Path(path),
+    relayed_movement.MoveAsked(move),
+    relayed_movement.StateFlags(flags),
+  ] = commands
+    as "kind 0, kind 4, then kind 11 and kind 24 that animate it"
+  #(
+    time,
+    list.map(path.points, fn(point) { #(point.x, point.y, point.z) }),
+    #(path.speed, path.path_type, path.mode),
+    #(move.x, move.z, flags.flags),
+    bit_array.byte_size(body),
+  )
+}
+
+pub fn a_creature_that_runs_28_points_is_drawn_along_all_of_them_and_a_late_viewer_gets_the_rest_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Expected values come from the client's reading of a kind 4 path: its points in order,
+  // the command's own half-float speed (7.5 is 0x4780), type 0 and mode 0, at constant speed over
+  // the whole polyline (`movement_command.kind_4`, `0x1407813d0`), and kind 11 and kind 24 as
+  // for any run (`unit.pace`). The staircase's first leg runs +x, so kind 11 is (7.5, 0, 0).
+  let path =
+    path_support.running(
+      points: staircase(),
+      started_ms: support.now_ms,
+      speed: 7.5,
+    )
+  let #(time, points, shape, moving, size) =
+    drawn_run(news: client_connection.CreatureMoved(path:))
+  assert time == support.now_ms
+    as "kind 0's time is the monotonic start less the origin the tests' map took, 0"
+  assert points == bits(staircase()) as "kind 4 holds all 28 points, in order"
+  assert shape == #(0x4780, 0, 0)
+    as "at 7.5 as a half float, straight lines, mode 0"
+  assert moving == #(0x4780, 0, 2)
+    as "kind 11 of the first leg's speed along x, and the moving bit"
+  assert size < 500
+    as "28 points make a frame of under half a kilobyte: 28 x 12 bytes of points and a short fixed part"
+  // Three seconds later the creature has run 22.5 units: 11 legs of 2, and 0.5 into the 12th,
+  // which goes along +z from (12, 0, 10) to (12, 0, 12), so a viewer that arrives then is
+  // drawn the run from (12, 0, 10.5) through the 16 points still ahead.
+  let later = support.now_ms + 3000
+  let #(time, points, shape, moving, _) =
+    drawn_run(
+      news: client_connection.CreatureMoved(path: creature_path.rest_of(
+        path:,
+        now_ms: later,
+      )),
+    )
+  assert time == later as "the late viewer's run starts when it arrives"
+  assert points == bits([#(12.0, 0.0, 10.5), ..list.drop(staircase(), 12)])
+    as "it starts at the creature's place and holds the points ahead of it, 17 in all"
+  assert shape == #(0x4780, 0, 0)
+  assert moving == #(0, 0x4780, 2)
+    as "kind 11 is the second leg's direction, along z, and the moving bit"
 }
 
 pub fn a_viewer_writes_a_creature_placed_while_it_ran_as_kind_0_then_kind_2_with_the_blend_bit_clear_test() -> Nil {
