@@ -68,12 +68,12 @@ pub fn a_character_with_16_customisations_is_refused_test() -> Nil {
       worn_visuals: [],
       world_id: 1,
       world_zone_id: 1,
-      field_12: 0,
+      unread_12: 0,
       position_x: 0,
       position_y: 0,
       position_z: 0,
-      field_16: 0,
-      field_17: 0,
+      unread_16: 0,
+      unread_17: 0,
       path: 0,
       disabled: 0,
       requires_rename: 0,
@@ -105,7 +105,7 @@ pub fn a_result_wider_than_6_bits_is_refused_test() -> Nil {
   use <- owned_test.run(5000)
   assert create_character_result.encode(CreateCharacterResult(
       character_id: 1,
-      field_2: 0,
+      unread_2: 0,
       result: create_result.Other(64),
     ))
     == Error(bit_stream.ValueDoesNotFit("result", 6, 64))

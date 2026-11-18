@@ -204,15 +204,15 @@ fn hello() -> server_hello.ServerHello {
   ServerHello(
     build: 16_042,
     realm_id: 0x11223344,
-    field_3: 0x55667788,
-    field_4: 0x99AABBCC,
-    field_5: 0x0102030405060708,
-    field_6: 0xBEEF,
-    field_7: 0x1F,
+    unread_3: 0x55667788,
+    unread_4: 0x99AABBCC,
+    unread_5: 0x0102030405060708,
+    unread_6: 0xBEEF,
+    unread_7: 0x1F,
     message_table_checksum: 0x097998A0,
-    field_9: 0xCAFEBABE,
-    field_10: 0x1112131415161718,
-    field_11: 0x21222324,
+    unread_9: 0xCAFEBABE,
+    unread_10: 0x1112131415161718,
+    unread_11: 0x21222324,
   )
 }
 

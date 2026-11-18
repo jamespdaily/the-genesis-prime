@@ -16,13 +16,7 @@ pub const message_id = 0x063D
 /// `field_N` is the Nth of the body: its own doc names the fact that shows its
 /// value is safe, and one with no such doc has no use the client's code shows.
 pub type LoginRefused {
-  LoginRefused(
-    reason: Int,
-    value: Int,
-    /// Safe by `opcode.0x63d`: the client's code gives this field no use the
-    /// server needs, and that fact shows its value is safe.
-    field_3: Int,
-  )
+  LoginRefused(reason: Int, value: Int, suspension_duration: Int)
 }
 
 /// The message as the bytes of its body, or the first field that cannot be
@@ -31,7 +25,10 @@ pub fn encode(message: LoginRefused) -> Result(BitArray, EncodeError) {
   bit_stream.new_writer()
   |> bit_stream.write_unsigned("reason", message.reason, 32)
   |> bit_stream.write_unsigned("value", message.value, 32)
-  |> bit_stream.write_float32_bits("field_3", message.field_3)
+  |> bit_stream.write_float32_bits(
+    "suspension_duration",
+    message.suspension_duration,
+  )
   |> bit_stream.finish
 }
 
@@ -40,7 +37,9 @@ pub fn decode(body: BitArray) -> Result(LoginRefused, DecodeError) {
   let reader = bit_stream.new_reader(body)
   use #(reason, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   use #(value, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
-  use #(field_3, reader) <- result.try(bit_stream.read_float32_bits(reader))
+  use #(suspension_duration, reader) <- result.try(bit_stream.read_float32_bits(
+    reader,
+  ))
   use Nil <- result.try(bit_stream.finish_reading(reader))
-  Ok(LoginRefused(reason:, value:, field_3:))
+  Ok(LoginRefused(reason:, value:, suspension_duration:))
 }

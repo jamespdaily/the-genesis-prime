@@ -17,12 +17,7 @@ pub const message_id = 0x00E6
 /// `field_N` is the Nth of the body: its own doc names the fact that shows its
 /// value is safe, and one with no such doc has no use the client's code shows.
 pub type DeleteCharacterResult {
-  DeleteCharacterResult(
-    result: DeleteResult,
-    /// Safe by `opcode.0xe6.value`: the client's code gives this field no use
-    /// the server needs, and that fact shows its value is safe.
-    value: Int,
-  )
+  DeleteCharacterResult(result: DeleteResult, data: Int)
 }
 
 /// The message as the bytes of its body, or the first field that cannot be
@@ -34,7 +29,7 @@ pub fn encode(message: DeleteCharacterResult) -> Result(BitArray, EncodeError) {
     delete_result.to_value(message.result),
     6,
   )
-  |> bit_stream.write_unsigned("value", message.value, 32)
+  |> bit_stream.write_unsigned("data", message.data, 32)
   |> bit_stream.finish
 }
 
@@ -43,7 +38,7 @@ pub fn decode(body: BitArray) -> Result(DeleteCharacterResult, DecodeError) {
   let reader = bit_stream.new_reader(body)
   use #(result, reader) <- result.try(bit_stream.read_unsigned(reader, 6))
   let result = delete_result.from_value(result)
-  use #(value, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
+  use #(data, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   use Nil <- result.try(bit_stream.finish_reading(reader))
-  Ok(DeleteCharacterResult(result:, value:))
+  Ok(DeleteCharacterResult(result:, data:))
 }

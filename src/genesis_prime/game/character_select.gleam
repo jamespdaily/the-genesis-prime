@@ -527,7 +527,7 @@ fn create_result(
   let assert Ok(body) =
     create_character_result.encode(CreateCharacterResult(
       character_id:,
-      field_2: 0,
+      unread_2: 0,
       result:,
     ))
     as "an id of the table's 64 bits and a result of 6 bits fit their fields"
@@ -538,7 +538,7 @@ fn create_result(
 /// a guild leader's count (opcode.0xe6.value).
 fn delete_result(result result: DeleteResult) -> Effect {
   let assert Ok(body) =
-    delete_character_result.encode(DeleteCharacterResult(result:, value: 0))
+    delete_character_result.encode(DeleteCharacterResult(result:, data: 0))
     as "a result of 6 bits and a value of 32 bits fit their fields"
   Send(frame: Frame(message_id: delete_character_result.message_id, body:))
 }
@@ -621,7 +621,7 @@ fn list_effects(
       in_world_logoff_ms: 0,
       reservations: 0,
       max_characters:,
-      field_11: 0,
+      unread_11: 0,
       faction_restriction: 0,
       free_level_50_available: 0,
     ))
@@ -667,12 +667,12 @@ fn entry(
     worn_visuals: [],
     world_id:,
     world_zone_id:,
-    field_12: 0,
+    unread_12: 0,
     position_x:,
     position_y:,
     position_z:,
-    field_16: 0,
-    field_17: 0,
+    unread_16: 0,
+    unread_17: 0,
     path: character.path,
     disabled: 0,
     requires_rename: case character.naming {

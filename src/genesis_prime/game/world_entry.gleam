@@ -1229,8 +1229,8 @@ fn enter_world(place place: Place) -> Effect {
       position_x: float32.to_bits(start_place.x(place)),
       position_y: float32.to_bits(start_place.y(place)),
       position_z: float32.to_bits(start_place.z(place)),
-      field_5: float32.to_bits(0.0),
-      field_6: float32.to_bits(0.0),
+      unread_5: float32.to_bits(0.0),
+      unread_6: float32.to_bits(0.0),
     ))
     as "a saved world of the table's 15 bits and a position's floats fit the message"
   Send(Frame(message_id: enter_world.message_id, body:))
@@ -1253,7 +1253,7 @@ fn player_created(unit unit: UnitCreatePlayer) -> Effect {
 /// (opcode.0x19b.second_value).
 fn unit_is_player(unit_id unit_id: Int) -> Effect {
   let assert Ok(body) =
-    unit_is_player.encode(UnitIsPlayer(unit_id:, field_2: 0))
+    unit_is_player.encode(UnitIsPlayer(unit_id:, unread_2: 0))
     as "a unit id of 32 bits fits the message"
   Send(Frame(message_id: unit_is_player.message_id, body:))
 }
@@ -1494,7 +1494,7 @@ fn action_set_frame(abilities abilities: List(Spell4BaseId)) -> Effect {
   let assert Ok(body) =
     action_set.encode(ActionSet(
       action_set_index: first_action_set,
-      field_2: set_unlocked,
+      unlocked: set_unlocked,
       result: action_set_ok,
       shortcuts: list.index_map(abilities, fn(ability, slot) {
         ActionShortcut(

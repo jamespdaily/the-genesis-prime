@@ -10,8 +10,10 @@ import code_rule/repository
 import code_rule/schema_evidence
 import code_rule/source.{SourceFile}
 import code_rule/untraced_gaps.{type Gap, UnclassifiedTags, UntracedFields}
+import genesis_prime/message_schema
 import gleam/int
 import gleam/list
+import gleam/option.{None, Some}
 import gleam/string
 import owned_test
 import simplifile
@@ -901,4 +903,72 @@ pub fn the_real_schema_has_no_gap_the_allow_list_does_not_name_test() -> Nil {
     )
     == []
     as "CLAUDE.md: every field of a message the server sends is traced or open, in the three messages no module builds as in the rest, and every union kind is a traced variant, a never tag or an open tag; no entry of the allow-list is stale; each key a never tag or an open tag names is a fact"
+}
+
+// ---- the connection and realm messages ----
+
+/// The owners of the connection, login, character select and realm messages
+/// the server sends or has ready to send.
+const connection_and_realm_owners = [
+  "server_hello", "login_refused", "delete_character_result",
+  "create_character_result", "character_list", "character_list_entry",
+  "enter_world", "unit_is_player", "action_set", "realm_list", "realm_entry",
+  "text_group", "realm_handoff",
+]
+
+/// The fields of an owner that are neither named for what they are (not by
+/// their position) with a `named_by` that is a key of the fact file, nor open
+/// with a question.
+fn untraced_fields(
+  schema schema: message_schema.Schema,
+  owner owner: String,
+  fact_keys fact_keys: List(String),
+) -> List(String) {
+  let fields = case
+    list.find(schema.messages, fn(message) { message.name == owner })
+  {
+    Ok(message) -> message.fields
+    Error(Nil) ->
+      case list.find(schema.records, fn(record) { record.name == owner }) {
+        Ok(record) -> record.fields
+        Error(Nil) -> panic as { "no owner named " <> owner <> " in the schema" }
+      }
+  }
+  list.filter_map(fields, fn(field) {
+    let named = case field.named_by {
+      Some(key) ->
+        list.contains(fact_keys, key)
+        && !string.starts_with(field.name, "field_")
+      None -> False
+    }
+    case named || option.is_some(field.open) {
+      True -> Error(Nil)
+      False -> Ok(field.name)
+    }
+  })
+}
+
+pub fn the_connection_and_realm_messages_carry_no_untraced_field_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use <- unitest.tag("code_rule")
+  let assert Ok(text) = simplifile.read("src/genesis_prime/message/schema.toml")
+    as "the schema file could not be read"
+  let assert Ok(schema) = message_schema.parse(text)
+    as "the schema file is not a schema"
+  let fact_keys = repository.fact_keys()
+  let listed =
+    list.filter_map(untraced_gaps.known_gaps, fn(gap) {
+      case gap {
+        UntracedFields(owner:, ..) -> Ok(owner)
+        UnclassifiedTags(..) -> Error(Nil)
+      }
+    })
+  assert list.map(connection_and_realm_owners, fn(owner) {
+      #(owner, untraced_fields(schema:, owner:, fact_keys:))
+    })
+    == list.map(connection_and_realm_owners, fn(owner) { #(owner, []) })
+    as "CLAUDE.md: every field of a message the server sends is traced or open: each field of these owners is named by a fact or open with its question"
+  assert list.filter(connection_and_realm_owners, list.contains(listed, _))
+    == []
+    as "these owners are traced, so the allow-list has no entry for them"
 }
