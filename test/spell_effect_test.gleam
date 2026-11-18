@@ -193,8 +193,8 @@ pub fn every_read_effect_kind_plans_one_variant_or_names_why_not_test() -> Nil {
     list.map(effects, fn(effect) { effect_kind.kind_of(effect.effect_type) })
     |> list.unique
     |> list.filter(fn(kind) { outcomes_of(kind:) != [] })
-  assert list.length(kinds) == 25
-    as "the client's table holds a row of each of the 25 kinds the plan reads"
+  assert list.length(kinds) == 26
+    as "the client's table holds a row of each of the 26 kinds the plan reads"
   list.each(kinds, fn(kind) {
     let outcome =
       list.find_map(effects, fn(effect) {
