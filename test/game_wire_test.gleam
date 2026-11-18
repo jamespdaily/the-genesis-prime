@@ -1099,7 +1099,27 @@ pub fn a_character_saved_with_less_health_enters_with_it_in_its_own_0x262_and_a_
 
 pub fn a_stop_with_a_player_in_the_world_saves_the_place_it_last_stood_at_before_the_tree_ends_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(started, port, account) = start()
+  // A stop gives the place's save the connection's shutdown time less the send
+  // deadline, and an end whose store has not answered by then gives the save up
+  // with a warning (genesis_prime/game/connection/state `end_with`). The test's
+  // settings leave that 700 ms, which a loaded machine passes; the test is about
+  // what the stop saves, so the save has no bound but the test's own deadline.
+  let started =
+    login_support.start_with(change: fn(settings) {
+      server.Settings(
+        ..settings,
+        connection_shutdown_ms: ask_support.beyond_the_test_ms,
+        game: server.Served(
+          ..settings.game,
+          settings: connection_state.Settings(
+            ..settings.game.settings,
+            ask_deadline_ms: ask_support.beyond_the_test_ms,
+          ),
+        ),
+      )
+    })
+  let account = AccountId(login_support.insert_jim(started))
+  let port = login_support.ports(started).game_port
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let character =
     character_support.insert(
