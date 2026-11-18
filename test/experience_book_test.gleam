@@ -245,13 +245,13 @@ pub fn the_new_ability_is_in_the_casters_bag_and_the_ability_known_prerequisite_
     == [SpellUnknown]
     as "opcode.0x7fc: slot 4 holds nothing at level 3, so the press is refused unknown"
   let #(state, _) = support.level_up(class_id: 7, from: 3, to: 4)
-  assert connection_support.refusal_results(taken: support.pressed(
+  assert connection_support.written_ids(support.pressed(
       state:,
       bag_index: 4,
       ms: 1000,
     ))
-    != [SpellUnknown]
-    as "after the rise the press at slot 4 reaches the cast rule and is not refused unknown"
+    == [0x07FD]
+    as "opcode.0x7fd: after the rise the press at slot 4 starts the plan-built cast, which the caster is told with its start"
   Nil
 }
 
@@ -286,6 +286,6 @@ pub fn an_ability_with_no_plan_is_granted_and_its_press_is_refused_unknown_test(
       bag_index: 8,
       ms: 1000,
     ))
-    != [SpellUnknown]
-    as "the press of slot 8, whose base has a plan, is not refused unknown"
+    == [cast_result.Other(167)]
+    as "opcode.0x7fc: the press of slot 8 has a plan, so it is not refused unknown; its Spell4 58841 costs 15 focus (innateCostType0 15), a cost the caster holds none of, which the plan refuses with its own result 167 (`Spell4CastResult.vital_cost`)"
 }

@@ -1,4 +1,4 @@
-//// A scripted client's Paralytic Surge fight: it presses the ability at a unit it
+//// A scripted client's fight: it presses one ability of its bag at a unit it
 //// faces until the unit's death is read. Time moves only by the `advance` the caller
 //// passes, which moves the clock the server's timers run on by that many milliseconds,
 //// so a fight waits on the server's frames and never on a fixed time.
@@ -19,12 +19,30 @@ pub const paralytic_surge_cast_ms = 0
 /// (`Spell4Effects.durationTime`, 2700 ms).
 pub const paralytic_surge_lingers_ms = 2700
 
+/// The ability a fight presses: its slot in the ability bag (the bag index of a press),
+/// the Spell4's `castTime` that the clock runs before its go, and how long a hit of it
+/// lasts after its go.
+pub type Ability {
+  Ability(bag_index: Int, cast_ms: Int, lingers_ms: Int)
+}
+
+/// Paralytic Surge as the Medic of the marker ring holds it, in bag slot 2.
+pub const paralytic_surge =
+  Ability(
+    bag_index: 2,
+    cast_ms: paralytic_surge_cast_ms,
+    lingers_ms: paralytic_surge_lingers_ms,
+  )
+
 /// How long the bot lets the clock run after a press that did not kill, before it presses
 /// again: the hit's lingering, or the spell's own recharge when that is longer. The
 /// caller gives the recharge: the Spell4's `spellCoolDown` its rows hold (25 000 ms on
 /// the client's own row 42352, 0 on a row whose recharge a test plants away).
-fn between_presses_ms(recharge_ms recharge_ms: Int) -> Int {
-  int.max(paralytic_surge_lingers_ms, recharge_ms)
+fn between_presses_ms(
+  ability ability: Ability,
+  recharge_ms recharge_ms: Int,
+) -> Int {
+  int.max(ability.lingers_ms, recharge_ms)
 }
 
 /// A press the server refused (0x7fc), with the result of each refusal: a caster that
@@ -50,7 +68,7 @@ pub fn refusals_in(
   })
 }
 
-/// Presses Paralytic Surge at the unit, facing it, until its death is read, and
+/// Presses the ability at the unit, facing it, until its death is read, and
 /// gives every frame read and the bytes beyond, or the press the server refused. A
 /// press that neither struck the unit
 /// nor was shown missing it (0x7fb) ends the test; a deflected press is pressed
@@ -59,6 +77,7 @@ pub fn refusals_in(
 /// six sees one in the nine presses its 117 health takes), each on the rolls of the
 /// connection's own random seed.
 pub fn presses_until_the_target_dies(
+  ability ability: Ability,
   advance advance: fn(Int) -> Nil,
   recharge_ms recharge_ms: Int,
   game game: game_client.Game,
@@ -68,6 +87,7 @@ pub fn presses_until_the_target_dies(
   seen seen: List(Frame),
 ) -> Result(#(List(Frame), BitArray), Refused) {
   presses_at_most(
+    ability:,
     advance:,
     recharge_ms:,
     game:,
@@ -134,6 +154,7 @@ fn unstruck_message(
 /// The same, at most `presses` presses: the frames read and the bytes beyond, the
 /// target's death among them or not, or the press the server refused.
 pub fn presses_at_most(
+  ability ability: Ability,
   advance advance: fn(Int) -> Nil,
   recharge_ms recharge_ms: Int,
   game game: game_client.Game,
@@ -146,11 +167,11 @@ pub fn presses_at_most(
   game_client.press_ability(
     game:,
     client_cast_id: cast_id,
-    bag_index: 2,
+    bag_index: ability.bag_index,
     target: 0,
   )
   let #(taken, have) = game_client.read_until_pong(game:, have:, number: 1)
-  advance(paralytic_surge_cast_ms)
+  advance(ability.cast_ms)
   let #(went, have) =
     game_client.read_until(game:, have:, found: fn(went) {
       let heard = list.append(seen, list.append(taken, went))
@@ -198,9 +219,10 @@ pub fn presses_at_most(
     }
     False, False if presses <= 1 -> Ok(#(seen, have))
     False, False -> {
-      advance(between_presses_ms(recharge_ms:))
+      advance(between_presses_ms(ability:, recharge_ms:))
       let #(later, have) = game_client.read_until_pong(game:, have:, number: 3)
       presses_at_most(
+        ability:,
         advance:,
         recharge_ms:,
         game:,

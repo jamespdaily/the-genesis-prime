@@ -678,12 +678,13 @@ pub fn the_end_of_the_players_map_tells_the_client_reason_8_and_ends_the_connect
   let #(started, port, account) = start()
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let character =
-    character_support.insert(
+    character_support.insert_at_level(
       pool:,
       account:,
       name: "Zed Qu",
       class_id: 4,
       path: 2,
+      level: 1,
     )
   let game = in_select(started:, port:, account:)
   send_play(game:, character_id: character)
@@ -1253,12 +1254,13 @@ pub fn a_player_camps_returns_to_character_select_and_plays_the_same_character_a
   let port = login_support.ports(started).game_port
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let character =
-    character_support.insert(
+    character_support.insert_at_level(
       pool:,
       account:,
       name: "Zed Qu",
       class_id: 4,
       path: 2,
+      level: 1,
     )
   let game = in_select(started:, port:, account:)
   send_play(game:, character_id: character)
@@ -2414,7 +2416,7 @@ fn new_player_at_level(
 }
 
 fn two_players_enter_one_map() -> TwoEntered {
-  two_players_enter(started: login_support.start(), first_class: 4)
+  two_players_enter(started: login_support.start(), first_class: 4, level: 1)
 }
 
 /// As `two_players_enter_one_map`, the first player being of the class given, the
@@ -2445,22 +2447,33 @@ fn two_players_enter_on(
         ),
       )
     })
-  two_players_enter(started:, first_class:)
+  two_players_enter(started:, first_class:, level: 9)
 }
 
+/// Two players of the level given enter one map, the first of the class given and the
+/// second a Medic. A test of the entry's burst takes level 1, whose bag is the level-1
+/// three and the innate (`game_client.world_entry_ids`); a higher level's bag holds more.
 fn two_players_enter(
   started started: login_support.Started,
   first_class first_class: Int,
+  level level: Int,
 ) -> TwoEntered {
   let #(first, first_character) =
-    new_player_of_class(
+    new_player_at_level(
       started:,
       number: 1,
       character_name: "Zed Qu",
       class_id: first_class,
+      level:,
     )
   let #(second, second_character) =
-    new_player(started:, number: 2, character_name: "Ann Qu")
+    new_player_at_level(
+      started:,
+      number: 2,
+      character_name: "Ann Qu",
+      class_id: 4,
+      level:,
+    )
   send_play(game: first, character_id: first_character)
   let #(first_burst, first_have) =
     game_client.read_entry_kept(game: first, have: <<>>)
@@ -4362,13 +4375,30 @@ fn a_medic_of_a_level_at_the_marker_ring(
   level level: Int,
   saved_experience saved_experience: Option(Int),
 ) -> #(game_client.Game, List(Frame), BitArray, Int) {
+  a_player_of_a_level_at_the_marker_ring(
+    started:,
+    class_id: 4,
+    sixth:,
+    level:,
+    saved_experience:,
+  )
+}
+
+/// The same player of the class given.
+fn a_player_of_a_level_at_the_marker_ring(
+  started started: login_support.Started,
+  class_id class_id: Int,
+  sixth sixth: Int,
+  level level: Int,
+  saved_experience saved_experience: Option(Int),
+) -> #(game_client.Game, List(Frame), BitArray, Int) {
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let #(game, character) =
     new_player_at_level(
       started:,
       number: 1,
       character_name: "Zed Qu",
-      class_id: 4,
+      class_id:,
       level:,
     )
   case saved_experience {
@@ -4468,6 +4498,7 @@ pub fn a_placed_target_is_shown_killed_and_counted_test() -> Nil {
   )
   let assert Ok(#(killed, have)) =
     fight_bot.presses_until_the_target_dies(
+      ability: fight_bot.paralytic_surge,
       advance: driven_time.advance(time:, ms: _),
       recharge_ms: 0,
       game:,
@@ -4533,6 +4564,7 @@ pub fn a_medic_that_levels_from_3_to_4_holds_fissure_castable_and_a_relog_at_4_h
   )
   let assert Ok(#(killed, have)) =
     fight_bot.presses_until_the_target_dies(
+      ability: fight_bot.paralytic_surge,
       advance: driven_time.advance(time:, ms: _),
       recharge_ms: 0,
       game:,
@@ -4609,6 +4641,171 @@ pub fn a_medic_that_levels_from_3_to_4_holds_fissure_castable_and_a_relog_at_4_h
   login_support.stop(started)
 }
 
+/// The Spellslinger of the marker ring that levels from 3 to 4 on the kill at slot 0 with
+/// its slot 0 ability (SpellLevel 1011's Spell4 43468, base 27638, castTime 1000), then casts
+/// SpellLevel 1012's base 20718 (Spell4 34756: castTime 1000, no cost, a living target; the
+/// plan holds it) at the ring's other creature, and again after a relog at level 4: the
+/// press of slot 4 is confirmed (0x07FD) and not refused (`opcode.0x7fd`, `opcode.0x7fc`).
+/// The clock is driven and nothing waits on real time.
+pub fn a_spellslinger_that_levels_from_3_to_4_casts_its_new_ability_and_a_relog_at_4_casts_it_too_test() -> Nil {
+  use <- owned_test.run(120_000)
+  let time = driven_time.new()
+  let tables = fixture_tables.shared()
+  let started = world_with_the_markers_creatures(tables:, time:)
+  let assert Ok(level_four) = xp_per_level.get(tables:, id: XpPerLevelId(4))
+    as "XpPerLevel has a row 4"
+  let #(game, frames, have, character) =
+    a_player_of_a_level_at_the_marker_ring(
+      started:,
+      class_id: 7,
+      sixth: 0,
+      level: 3,
+      saved_experience: Some(level_four.min_xp_for_level - 1),
+    )
+  assert location_4_items(frames:)
+    == [#(0, 27_638), #(1, 20_684), #(2, 20_325), #(3, 31_213)]
+    as "SpellLevel 1011, 1036 and 1236 (level 1, in id order) then Class 7's innate Spell4 47273 (base 31213)"
+  let target = the_target_at_slot_0(frames:)
+  let assert Ok(other) =
+    list.find(targets_in(frames:), fn(creature) {
+      creature.unit_id != target.unit_id
+    })
+    as "the ring's second 73492 stands at slot 2"
+  let slot = ring_slot(index: 0)
+  game_client.face(
+    game:,
+    yaw: game_client.yaw_toward(from: #(slot.0 +. 12.0, slot.2), target: #(
+      slot.0,
+      slot.2,
+    )),
+    clock: 100,
+  )
+  let assert Ok(#(killed, have)) =
+    fight_bot.presses_until_the_target_dies(
+      ability: fight_bot.Ability(
+        bag_index: 0,
+        cast_ms: spellslinger_cast_ms,
+        lingers_ms: spellslinger_cast_ms,
+      ),
+      advance: driven_time.advance(time:, ms: _),
+      recharge_ms: 0,
+      game:,
+      have:,
+      target: target.unit_id,
+      cast_id: 1,
+      seen: [],
+    )
+  let #(rest, have) =
+    game_client.read_until(game:, have:, found: fn(rest) {
+      list.any(list.append(killed, rest), fn(frame) {
+        frame.message_id == 0x01A0
+      })
+    })
+  let risen =
+    list.filter(list.append(killed, rest), fn(frame) {
+      list.contains([0x0111, 0x01A0], frame.message_id)
+    })
+  let assert [ability, book] = list.drop(risen, list.length(risen) - 2)
+  let assert Ok(added) = item_added.decode(ability.body)
+  assert #(
+      added.held_item.item.location,
+      added.held_item.item.bag_index,
+      added.held_item.item.item_id,
+      added.held_item.reason,
+    )
+    == #(4, 4, 20_718, 49)
+    as "opcode.0x111.ability_level_up: SpellLevel 1012's base at the slot after the bag of 4, reason 49"
+  let assert Ok(tiers) = ability_tiers.decode(book.body)
+  assert tiers.tiers
+    == list.flat_map([20_718, 54_909], fn(base) {
+      list.map([0, 1, 2, 3], fn(action_set_index) {
+        AbilityTier(spell4_base_id: base, tier: 1, action_set_index:)
+      })
+    })
+    as "opcode.0x1a0: tier 1 of the base and of its alternate (Spell4Base 54909) in each of the four action sets"
+  // The press of slot 4 at the ring's other creature, which stands alive and untouched,
+  // once the global cooldown of the last press of the fight has run.
+  driven_time.advance(time:, ms: spellslinger_cast_ms)
+  game_client.press_ability(
+    game:,
+    client_cast_id: 50,
+    bag_index: 4,
+    target: other.unit_id,
+  )
+  let #(pressed, have) = game_client.read_until_pong(game:, have:, number: 8)
+  assert refusals(frames: pressed) == []
+    as "opcode.0x7fc: the press of the new ability is not refused"
+  assert cast_confirmed(frames: pressed, client_cast_id: 50)
+    as "opcode.0x7fd: the press of the new ability is confirmed"
+  // The relog at level 4 holds the new ability in slot 4 and casts it.
+  let #(second_entry, have) =
+    game_client.camp_and_play(game:, have:, character_id: character)
+  assert location_4_items(frames: second_entry)
+    == [
+      #(0, 27_638),
+      #(1, 20_684),
+      #(2, 20_325),
+      #(3, 31_213),
+      #(4, 20_718),
+    ]
+    as "a relog holds the book a rise made, in its order"
+  // The ring's other creature is shown to the player again, alive, before the press.
+  let #(_, have) =
+    game_client.read_until(game:, have:, found: fn(shown) {
+      list.any(targets_in(frames: shown), fn(creature) {
+        creature.unit_id == other.unit_id
+      })
+    })
+  game_client.press_ability(
+    game:,
+    client_cast_id: 60,
+    bag_index: 4,
+    target: other.unit_id,
+  )
+  let #(pressed, _) = game_client.read_until_pong(game:, have:, number: 9)
+  assert refusals(frames: pressed) == []
+    as "opcode.0x7fc: the press after the relog is not refused"
+  assert cast_confirmed(frames: pressed, client_cast_id: 60)
+    as "opcode.0x7fd: the press after the relog is confirmed"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+/// The cast time of the Spellslinger's slot 0 ability (Spell4 43468) and of the level 4
+/// one (Spell4 34756): 1000 ms each, with a global cooldown of 1000 ms.
+const spellslinger_cast_ms = 1000
+
+/// Whether the frames hold the 0x7fd that confirms the press with this client cast id.
+fn cast_confirmed(
+  frames frames: List(Frame),
+  client_cast_id client_cast_id: Int,
+) -> Bool {
+  list.any(game_client.casts_in(frames:), fn(event) {
+    case event {
+      game_client.CastConfirmed(client_cast_id: confirmed, ..) ->
+        confirmed == client_cast_id
+      game_client.CastRefused(..)
+      | game_client.CastStarted(..)
+      | game_client.CastWent(..)
+      | game_client.CastFinished(..)
+      | game_client.ThresholdOpened(..)
+      | game_client.ThresholdIndex(..)
+      | game_client.ThresholdClosed(..)
+      | game_client.ThresholdEnded(..) -> False
+    }
+  })
+}
+
+/// The location-4 items of the entry frames as (bag index, base).
+fn location_4_items(frames frames: List(Frame)) -> List(#(Int, Int)) {
+  list.filter_map(item_bot.answer_in(frames:).added, fn(held) {
+    case held.item.location {
+      4 -> Ok(#(held.item.bag_index, held.item.item_id))
+      _ -> Error(Nil)
+    }
+  })
+}
+
 /// Whether the frame is a 0x938 of a stat other than the level.
 fn is_other_stat(frame frame: Frame) -> Bool {
   use <- bool.guard(when: frame.message_id != 0x0938, return: False)
@@ -4653,6 +4850,7 @@ pub fn the_last_kill_of_quest_10518_is_followed_by_0x35c_state_2_its_rewards_and
   )
   let assert Ok(#(killed, have)) =
     fight_bot.presses_until_the_target_dies(
+      ability: fight_bot.paralytic_surge,
       advance: driven_time.advance(time:, ms: _),
       recharge_ms: 0,
       game:,
@@ -4714,6 +4912,7 @@ pub fn a_placed_target_respawns_at_its_slot_test() -> Nil {
   )
   let assert Ok(#(_, have)) =
     fight_bot.presses_until_the_target_dies(
+      ability: fight_bot.paralytic_surge,
       advance: driven_time.advance(time:, ms: _),
       recharge_ms: 0,
       game:,
@@ -7523,6 +7722,7 @@ pub fn an_exile_kills_the_boss_and_objective_21296_counts_test() -> Nil {
   )
   let assert Ok(#(killed, have)) =
     fight_bot.presses_until_the_target_dies(
+      ability: fight_bot.paralytic_surge,
       advance: driven_time.advance(time:, ms: _),
       recharge_ms: 0,
       game:,
@@ -7820,6 +8020,7 @@ fn interrupts_and_destroys(
   let #(lingered, have) = game_client.read_until_pong(game:, have:, number: 2)
   let assert Ok(#(killed, have)) =
     fight_bot.presses_at_most(
+      ability: fight_bot.paralytic_surge,
       advance: driven_time.advance(time:, ms: _),
       recharge_ms: 0,
       game:,

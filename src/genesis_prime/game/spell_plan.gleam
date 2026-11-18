@@ -2327,7 +2327,7 @@ pub type PlanError {
   /// A Prerequisite row a spell or effect names nests itself through the rows it
   /// nests (type 11): the ids from the named row to the one that repeats.
   PrerequisiteCycle(path: List(Int))
-  /// A spell of a tree has an area or a strike the area rule does not build yet
+  /// A spell of a tree has an area or a strike the area rule does not build
   /// (genesis_prime/game/spell_area): the reason is the area rule's sentence.
   AreaNotBuilt(spell4_id: Int, reason: String)
   /// A spell of a tree has an area row the client's table leaves incomplete or a
@@ -2812,7 +2812,7 @@ type Phase {
   Phase(delay_ms: Int, flags: Int)
 }
 
-/// A class ability above level 1 that no plan is built for yet: its Spell4 id and the
+/// A class ability above level 1 that no plan is built for: its Spell4 id and the
 /// error that names what the server does not build (`is_unbuilt`).
 pub type Unplanned {
   Unplanned(spell4_id: Int, error: PlanError)
@@ -2827,7 +2827,7 @@ pub fn build(tables tables: table_store.Tables) -> Result(Plans, PlanError) {
 }
 
 /// The class abilities above level 1 the plans leave out, by the error that says what
-/// the server does not build yet; a level-1 ability, an innate or any other error
+/// the server does not build; a level-1 ability, an innate or any other error
 /// fails the load instead (`build`).
 pub fn unplanned(
   tables tables: table_store.Tables,
@@ -2840,7 +2840,7 @@ pub fn unplanned(
   left_out
 }
 
-/// Whether a plan error names an effect or a rule the server does not build yet, so the
+/// Whether a plan error names an effect or a rule the server does not build, so the
 /// ability that holds it is left out of the plans without failing the load. A missing row
 /// or a number that is no number is a fault of the data and is not one of these.
 pub fn is_unbuilt(error error: PlanError) -> Bool {
@@ -2853,7 +2853,7 @@ pub fn is_unbuilt(error error: PlanError) -> Bool {
     | GainVitalNotRead(..)
     | ApplyPrerequisiteNotRead(..)
     | TargetPrerequisiteReadsStruckUnit(..)
-    | StruckMoveNotRead(..)
+    | StruckMoveNotRead(error: forced_move.UnknownKind(..), ..)
     | ControlHelperNotRead(..)
     | SpendComparisonNotRead(..)
     | ForceRemoveSelectorNotRead(..)
@@ -2883,6 +2883,7 @@ pub fn is_unbuilt(error error: PlanError) -> Bool {
     | DisguiseNotRead(..)
     | AreaNotBuilt(..) -> True
     NoRow(..)
+    | StruckMoveNotRead(error: forced_move.NotAFloat(..), ..)
     | ChannelWithoutPulse(..)
     | NoThresholdTime(..)
     | ModifierPropertyHasNoRow(..)

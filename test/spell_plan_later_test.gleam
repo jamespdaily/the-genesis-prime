@@ -13,6 +13,8 @@
 
 import client_tables
 import fixture_tables
+import genesis_prime/game/forced_move
+import genesis_prime/game/innate
 import genesis_prime/game/loadout
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan.{type PlanError}
@@ -135,6 +137,29 @@ fn refused_cases() -> List(Refused) {
       ],
       ["138014", "dataBits02"],
     ),
+    Refused(
+      "a later row with a forced move whose distance is no number fails the load: a data fault, not a move the server does not build",
+      [],
+      [
+        #("Spell4Effects", later_effect, [
+          #("effectType", Integer(3)),
+          #("targetFlags", Integer(2)),
+          #("dataBits00", Integer(4)),
+          #("dataBits01", Integer(2_143_289_344)),
+        ]),
+      ],
+      ["138014", "dataBits01"],
+    ),
+    Refused(
+      "a later row whose Spell4 names an area row the table lacks fails the load, naming the table and the row",
+      [],
+      [
+        #("Spell4", later_spell, [
+          #("spell4AoeTargetConstraintsId", Integer(999_999)),
+        ]),
+      ],
+      ["Spell4AoeTargetConstraints", "999999"],
+    ),
   ]
 }
 
@@ -216,6 +241,11 @@ fn errors() -> List(#(PlanError, Bool)) {
     #(spell_plan.AbsorptionHasNoLifetime(1, 2), True),
     #(spell_plan.AbsorptionOnStruckUnit(1, 2, 3), True),
     #(spell_plan.ProcKindNotRead(1, 2, 3), True),
+    #(spell_plan.StruckMoveNotRead(1, 2, forced_move.UnknownKind(2, 16)), True),
+    #(
+      spell_plan.StruckMoveNotRead(1, 2, forced_move.NotAFloat(2, "dataBits01")),
+      False,
+    ),
     #(spell_plan.DisguiseNotRead(1, 2, spell_plan.NamesNoDisplay), True),
     #(spell_plan.AreaNotBuilt(1, "an area"), True),
     #(spell_plan.NoRow("Spell4", 1), False),
@@ -229,6 +259,7 @@ fn errors() -> List(#(PlanError, Bool)) {
     #(spell_plan.ProcNotRead(1, 2, "dataBits02", 3), False),
     #(spell_plan.PrerequisiteCycle([1]), False),
     #(spell_plan.AreaDataFault(1, "an area"), False),
+    #(spell_plan.InnateFailed(innate.NoSpell(1, 2)), False),
   ]
 }
 

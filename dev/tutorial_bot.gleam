@@ -975,6 +975,7 @@ fn slay_since(
   let bot = Bot(..bot, clock: bot.clock + 100)
   use #(seen, have) <- result.try(result.map_error(
     fight_bot.presses_until_the_target_dies(
+      ability: fight_bot.paralytic_surge,
       advance: bot.env.advance,
       recharge_ms: bot.env.recharge_ms,
       game: bot.game,
@@ -1199,6 +1200,7 @@ fn open_and_press(
   let bot = settle(bot)
   use #(killed, have) <- result.try(result.map_error(
     fight_bot.presses_at_most(
+      ability: fight_bot.paralytic_surge,
       advance: bot.env.advance,
       recharge_ms: bot.env.recharge_ms,
       game: bot.game,
