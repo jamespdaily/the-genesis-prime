@@ -11733,7 +11733,7 @@ grade = "fairly sure"
 gap = "Not needed in the start zones beyond 6 rows; the delivery rule is not decoded."
 
 ["QuestObjective.type.5"]
-statement = "QuestObjective type 5: a scripted objective. The client gives it no rule of its own. Its data has no single meaning: 1267 of the 1556 rows have 0, and in the training simulation the data is a Creature2 id (73463, 73494), a WorldZone id (5968, 4965) or an id with no row (73468). QuestObjectiveCountsUnit counts no unit for it, and its only type-specific client code is the progress floater's sound (0x1b for type 5, else 0x7a or 0x1a). The client sends nothing for it; it shows progress and completion only from the server's 0x361 (progress at the needed count sets the done bit). In the training simulation it stands for detonating a mine (21287, 21340, 21318 and the Dominion 21313 to 21315; Creature2.73463.detonate) and for the In-Game Store (21371, 21372, 21374, 21375). 99 rows in the start zones."
+statement = "QuestObjective type 5: a scripted objective. The client gives it no rule of its own. Its data has no single meaning: 1267 of the 1556 rows have 0, and in the training simulation the data is a Creature2 id (73463, 73494), a WorldZone id (5968, 4965) or an id with no row (73468). QuestObjectiveCountsUnit counts no unit for it, and its only type-specific client code is the progress floater's sound (0x1b for type 5, else 0x7a or 0x1a). The client sends nothing for it; it shows progress and completion only from the server's 0x361 (progress at the needed count sets the done bit). In the training simulation it stands for detonating a mine (21287, 21340, 21318 and the Dominion 21313 to 21315; Creature2.73463.detonate) and for the In-Game Store (21267, 21371, 21372, 21374, 21375: a purchase for 21267, 21371 and 21375, opening the store for 21372 and 21374). 99 rows in the start zones."
 proof = "`gleam run -m genesis_prime/table_rows -- QuestObjective type=5` (1556 rows, 1267 with data 0); `-- Creature2 73463 73494 73468` (73468 prints no row); `-- WorldZone 5968 4965`. Saved C 0x1405512f0.c (hash e9b6b6af37d00314) line 91: the objective's type equal to 5 picks sound 0x1b. 0x140550c50.c (5c7a982a369b504f) tests types 2, 8, 16, 15, 46, 3, 9, 21, 12, 23 and the checklist types only; 0x140551d40.c has no case for 5. opcode.0x361."
 grade = "fairly sure"
 gap = "Only the three readers named were searched for a type 5 test; other quest code was not swept for one. What completes each row is the server's script, read from its text and the units the client ties to it."
@@ -12320,10 +12320,10 @@ gap = "As Prerequisite.prerequisiteTypeId.268."
 name = "PrerequisiteAccountSettingIs"
 
 ["Prerequisite.prerequisiteTypeId.288"]
-statement = "Prerequisite type 288 ('Character title', text 754899): with a first unit of type 20 (a player) or 23: whether the player owns character title objectId (a CharacterTitle id): comparison 1 passes when owned, 2 when not; any other unit fails. The value is not read. Start content: 1 condition(s) in 1 row(s); (comparison, value): (2, 0) 1; objectIds: 400."
-proof = "Saved C 0x1404a2100.c (hash 2580df99bb1ce2aa): case 288 dispatches to 0x1404a1830, slot 0x6b8 of the prerequisite class 0x140b67740 (bytes at 0x140b67df8). Saved C 0x1404a1830.c (hash 8eb22adb6de47956): 0x1404a1830: 0x1403d4080(game 0x140c65898 word 0x6300, objectId) searches the title tree and returns 0x1403d6d10 of the entry. Counts: start_prereqs.py (scratch) over `gleam run -m genesis_prime/table_rows -- <T>` dumps of Quest2, Prerequisite, Creature2, Tutorial, QuestObjective, WorldLocation2, WorldZone and the play database's spawn rows of worlds 3460, 426, 990, 1387 and 870. `gleam run -m genesis_prime/table_rows -- PrerequisiteType 288`."
+statement = "Prerequisite type 288 ('Character title', text 754899): when the first unit is a player (unit type 0x14) or a ghost (0x17), the client looks the objectId up in its own set of owned titles (one set for the whole game, not the unit's): comparison 1 passes when the entry is owned, 2 when it is not, any other comparison fails; any other unit type fails. The value is not read. An entry counts as owned when it is not revoked, its title's lifetime (CharacterTitle lifeTimeSeconds) is 0 or has not run out, and its schedule (scheduleId) is 0 or the entry is scheduled; CharacterTitle 400 has both 0. The set is filled only by messages 0x018A and 0x018B, so a client sent neither owns no title and comparison 2 passes. Start content: 1 condition(s) in 1 row(s); (comparison, value): (2, 0) 1; objectIds: 400."
+proof = "Saved C 0x1404a2100.c (hash 2580df99bb1ce2aa): case 288 dispatches to 0x1404a1830, slot 0x6b8 of the prerequisite class 0x140b67740 (bytes at 0x140b67df8). Saved C 0x1404a1830.c (hash 8eb22adb6de47956): the unit type 0x14 or 0x17 is tested, 0x1403d4080 looks the objectId up in the title tree of the game object and the entry goes to 0x1403d6d10; comparison 1 passes on its 1, comparison 2 on its 0. Saved C 0x1403d6d10.c: 1 when the entry's revoked word is 0, and the row's lifeTimeSeconds is 0 or the clock is before the entry's receive time plus its remaining time, and the row's scheduleId is 0 or the entry's scheduled word is not 0. `gleam run -m genesis_prime/table_rows -- CharacterTitle 400` (lifeTimeSeconds 0, scheduleId 0). Writers of the title tree: grep for 0x1403d61d0 over the saved C finds the handlers of opcode.0x18a and opcode.0x18b only. Counts: start_prereqs.py (scratch) over `gleam run -m genesis_prime/table_rows -- <T>` dumps of Quest2, Prerequisite, Creature2, Tutorial, QuestObjective, WorldLocation2, WorldZone and the play database's spawn rows of worlds 3460, 426, 990, 1387 and 870. `gleam run -m genesis_prime/table_rows -- PrerequisiteType 288`."
 grade = "fairly sure"
-gap = "What 0x1403d6d10 returns for an entry (owned, most likely) is not read."
+gap = "The entry's method that returns its CharacterTitle row (the virtual call in 0x1403d6d10) is not read; the row offsets match lifeTimeSeconds and scheduleId by their columns only."
 
 ["0x1404a1830"]
 statement = "Prerequisite type 288's test. See Prerequisite.prerequisiteTypeId.288."
@@ -12331,6 +12331,30 @@ proof = "As Prerequisite.prerequisiteTypeId.288."
 grade = "fairly sure"
 gap = "As Prerequisite.prerequisiteTypeId.288."
 name = "PrerequisiteHasTitle"
+
+["0x1403d6d10"]
+statement = "Whether an entry of the client's owned-title set is held: 1 when it is not revoked, its title's lifetime is 0 or has not run out, and its schedule is 0 or the entry is scheduled. Read by prerequisite type 288."
+proof = "As Prerequisite.prerequisiteTypeId.288."
+grade = "fairly sure"
+gap = "As Prerequisite.prerequisiteTypeId.288."
+
+["0x1403d4080"]
+statement = "Looks a title id up in the client's owned-title set (the tree of the game object) and returns its entry, or none. Read by prerequisite type 288."
+proof = "As Prerequisite.prerequisiteTypeId.288."
+grade = "fairly sure"
+gap = "The tree's own search is not read."
+
+["opcode.0x18a"]
+statement = "Message 0x18a, world server to client: one owned title. Body: the title id (14 bits), 1 bit 'already owned' and 1 bit 'revoked'. The client adds or updates the entry in its owned-title set (the one prerequisite type 288 reads), sets the entry's revoked word when the last bit is 1, and raises the Lua event PlayerTitleUpdate."
+proof = "Handler 0x1403ca390 writes the title tree through 0x1403d61d0; reader 0x14008e900. Eldan names it ServerTitleUpdate (a lead only). grep for 0x1403d61d0 over the saved C: this handler, the handler of opcode.0x18b and the function's own file."
+grade = "fairly sure"
+gap = "The use of the 'already owned' bit is not read. The server sends no 0x018A: no title is granted yet."
+
+["opcode.0x18b"]
+statement = "Message 0x18b, world server to client: the owned titles. Body: a 32-bit count, then per entry the title id (14 bits), a revoked bit, a scheduled bit and 32 bits of remaining time. The client writes each entry into its owned-title set (the one prerequisite type 288 reads) and raises the Lua event PlayerTitleUpdate."
+proof = "Handler 0x140615f20 writes the title tree through 0x1403d61d0; entry reader 0x14008e970, reader 0x14008e9f0. Eldan names it ServerTitles (a lead only). grep for 0x1403d61d0 over the saved C: this handler, the handler of opcode.0x18a and the function's own file."
+grade = "fairly sure"
+gap = "The lifetime and schedule words are not used by any step yet. The server sends no 0x018B: an empty set needs no message."
 
 ["0x1405fbc40"]
 statement = "The state of a quest for the player (QuestState): a quest in the quest log's active list has its log state; when that is Accepted (1) and every objective without flag 0x20 is done (done bit 1 << (index + 2); an objective index above 5 never is), it is Achieved (2), and a quest with no objectives is Achieved; a quest with no quest record stays Accepted. A quest not in the active list is Completed (3) when it is in the completed set, else the state of its entry in the second list, else Unknown (0)."
