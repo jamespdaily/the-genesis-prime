@@ -850,7 +850,7 @@ pub fn a_0x637_with_nothing_to_relay_tells_nobody_test() -> Nil {
 
 pub fn a_command_kind_that_is_not_relayed_is_named_once_a_connection_and_not_relayed_test() -> Nil {
   use <- owned_test.run(10_000)
-  let unrelayed = movement_command.Kind26(MovementKind26(field_2: 0))
+  let unrelayed = movement_command.Kind26(MovementKind26(blends: 0))
   let message =
     game_connection_support.moves_message([
       unrelayed,

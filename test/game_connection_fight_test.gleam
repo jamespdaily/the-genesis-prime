@@ -26,6 +26,10 @@ import genesis_prime/message/cast_result
 import genesis_prime/message/float32
 import genesis_prime/message/movement_face_unit.{MovementFaceUnit}
 import genesis_prime/message/movement_float_vector.{MovementFloatVector}
+import genesis_prime/message/movement_kind_10.{MovementKind10}
+import genesis_prime/message/movement_kind_13.{MovementKind13}
+import genesis_prime/message/movement_kind_21.{MovementKind21}
+import genesis_prime/message/movement_kind_26.{MovementKind26}
 import genesis_prime/message/movement_move_asked
 import genesis_prime/message/movement_state_flags
 import genesis_prime/message/movement_time
@@ -826,14 +830,11 @@ pub fn a_viewer_writes_a_running_creatures_0x638_as_kind_0_then_kind_4_at_its_sp
   let assert [
     relayed_movement.Time(movement_time.MovementTime(..)),
     relayed_movement.Path(path),
-    relayed_movement.MoveAsked(move),
-    relayed_movement.StateFlags(state),
+    ..defaults
   ] = commands
-    as "kind 0, the time the path starts at, kind 4, the path, then kind 11 and kind 24 that animate it"
-  assert move
-    == movement_move_asked.MovementMoveAsked(x: 0x4900, y: 0, z: 0, blends: 1)
-    && state.flags == 0x102
-    as "the velocity 10.0 along +x as half floats, and the moving bit with the ground bit (`unit.ground_lift.server_commands`)"
+    as "kind 0, the time the path starts at, kind 4, the path, then the defaults"
+  assert defaults == path_defaults()
+    as "kinds 10, 13, 21 and 26 with bit 1: the client takes the velocity, move, facing and state from the path (`movement_command.defaults_with_kind_4_path`)"
   assert path.speed == 0x4900 && path.path_type == 0 && path.mode == 0
     as "straight lines, mode 0, at 10.0 as a half float (sign 0, exponent 18, fraction 256)"
   assert path.points
@@ -842,10 +843,23 @@ pub fn a_viewer_writes_a_running_creatures_0x638_as_kind_0_then_kind_4_at_its_sp
       MovementFloatVector(x: float32.to_bits(26.0), y: 0, z: 0),
     ]
     as "the two points of the path, as 32-bit floats: 0, 0, 0 and 26, 0, 0"
-  let assert [relayed_movement.Time(movement_time.MovementTime(time:)), _, _, _] =
+  let assert [relayed_movement.Time(movement_time.MovementTime(time:)), ..] =
     commands
   assert time == support.now_ms
     as "kind 0's time is the map's time the path starts at: its monotonic start, 1000, less the origin the tests' map took, 0 (map.server_time)"
+}
+
+/// Kinds 10, 13, 21 and 26, each with its blend bit 1: what a creature's run sends after its
+/// path, for the client to take the velocity, requested move, facing and state from the path
+/// (`movement_command.defaults_with_kind_4_path`, `movement_command.kind_13`,
+/// `movement_command.kind_21`).
+fn path_defaults() -> List(relayed_movement.RelayedMovement) {
+  [
+    relayed_movement.VelocityDefault(MovementKind10(blends: 1)),
+    relayed_movement.MoveDefault(MovementKind13(blends: 1)),
+    relayed_movement.RotationDefault(MovementKind21(blends: 1)),
+    relayed_movement.StateDefault(MovementKind26(blends: 1)),
+  ]
 }
 
 /// A staircase of 28 points two units apart: point 0 is the origin, and each leg goes 2 along
@@ -877,11 +891,17 @@ fn bits(points: List(#(Float, Float, Float))) -> List(#(Int, Int, Int)) {
 }
 
 /// What a viewer writes of a creature's run news: kind 0's time, kind 4's points as
-/// float bits, the speed's half float, type and mode, kind 11's x and z, kind 24's flags,
+/// float bits, the speed's half float, type and mode, the commands after the path,
 /// and the frame's size in bytes.
 fn drawn_run(
   news news: client_connection.News,
-) -> #(Int, List(#(Int, Int, Int)), #(Int, Int, Int), #(Int, Int, Int), Int) {
+) -> #(
+  Int,
+  List(#(Int, Int, Int)),
+  #(Int, Int, Int),
+  List(relayed_movement.RelayedMovement),
+  Int,
+) {
   let #(state, _) =
     game_connection_support.feed(
       game_connection_support.medic_in_world(),
@@ -896,15 +916,14 @@ fn drawn_run(
   let assert [
     relayed_movement.Time(movement_time.MovementTime(time:)),
     relayed_movement.Path(path),
-    relayed_movement.MoveAsked(move),
-    relayed_movement.StateFlags(flags),
+    ..defaults
   ] = commands
-    as "kind 0, kind 4, then kind 11 and kind 24 that animate it"
+    as "kind 0, kind 4, then the defaults that animate it"
   #(
     time,
     list.map(path.points, fn(point) { #(point.x, point.y, point.z) }),
     #(path.speed, path.path_type, path.mode),
-    #(move.x, move.z, flags.flags),
+    defaults,
     bit_array.byte_size(body),
   )
 }
@@ -913,30 +932,30 @@ pub fn a_creature_that_runs_28_points_is_drawn_along_all_of_them_and_a_late_view
   use <- owned_test.run(10_000)
   // Expected values come from the client's reading of a kind 4 path: its points in order,
   // the command's own half-float speed (7.5 is 0x4780), type 0 and mode 0, at constant speed over
-  // the whole polyline (`movement_command.kind_4`, `0x1407813d0`), and kind 11 and kind 24 as
-  // for any run (`unit.pace`). The staircase's first leg runs +x, so kind 11 is (7.5, 0, 0).
+  // the whole polyline (`movement_command.kind_4`, `0x1407813d0`), and the four defaults, which
+  // follow each leg of the bent path by themselves (`movement_command.defaults_with_kind_4_path`).
   let path =
     path_support.running(
       points: staircase(),
       started_ms: support.now_ms,
       speed: 7.5,
     )
-  let #(time, points, shape, moving, size) =
+  let #(time, points, shape, defaults, size) =
     drawn_run(news: client_connection.CreatureMoved(path:))
   assert time == support.now_ms
     as "kind 0's time is the monotonic start less the origin the tests' map took, 0"
   assert points == bits(staircase()) as "kind 4 holds all 28 points, in order"
   assert shape == #(0x4780, 0, 0)
     as "at 7.5 as a half float, straight lines, mode 0"
-  assert moving == #(0x4780, 0, 0x102)
-    as "kind 11 of the first leg's speed along x, and the moving bit"
+  assert defaults == path_defaults()
+    as "kinds 10, 13, 21 and 26 with bit 1, and no kind 11 or kind 24"
   assert size < 500
     as "28 points make a frame of under half a kilobyte: 28 x 12 bytes of points and a short fixed part"
   // Three seconds later the creature has run 22.5 units: 11 legs of 2, and 0.5 into the 12th,
   // which goes along +z from (12, 0, 10) to (12, 0, 12), so a viewer that arrives then is
   // drawn the run from (12, 0, 10.5) through the 16 points still ahead.
   let later = support.now_ms + 3000
-  let #(time, points, shape, moving, _) =
+  let #(time, points, shape, defaults, _) =
     drawn_run(
       news: client_connection.CreatureMoved(path: creature_path.rest_of(
         path:,
@@ -947,8 +966,8 @@ pub fn a_creature_that_runs_28_points_is_drawn_along_all_of_them_and_a_late_view
   assert points == bits([#(12.0, 0.0, 10.5), ..list.drop(staircase(), 12)])
     as "it starts at the creature's place and holds the points ahead of it, 17 in all"
   assert shape == #(0x4780, 0, 0)
-  assert moving == #(0, 0x4780, 0x102)
-    as "kind 11 is the second leg's direction, along z, and the moving bit"
+  assert defaults == path_defaults()
+    as "the late viewer's run takes the same four defaults: the second leg's direction is the client's to find"
 }
 
 pub fn a_viewer_writes_a_creature_placed_while_it_ran_as_kind_0_then_kind_2_with_the_blend_bit_clear_test() -> Nil {
@@ -1450,20 +1469,13 @@ pub fn a_beasts_aggro_strike_and_leash_reach_the_medics_client_with_the_worked_v
   assert MovementFloatVector(x: point.x, y: point.y, z: point.z) == spawn_bits
     && point.blends == 1
     as "kind 19 names the Beast's spawn, turning it over half a second"
-  let assert [
-    relayed_movement.Time(_),
-    relayed_movement.Path(path),
-    relayed_movement.MoveAsked(velocity),
-    relayed_movement.StateFlags(state),
-  ] = home.commands
-    as "kind 0, the path home, then kind 11 and kind 24 that animate the walk; nothing else follows"
+  let assert [relayed_movement.Time(_), relayed_movement.Path(path), ..defaults] =
+    home.commands
+    as "kind 0, the path home, then the defaults that animate the walk; nothing else follows"
   let assert [_, end] = path.points
   assert end == spawn_bits as "the path home ends at the Beast's spawn"
-  assert velocity
-    == movement_move_asked.MovementMoveAsked(x: 0, y: 0, z: 0xC900, blends: 1)
-    as "kind 11 is the walk's speed, 10.0, along -z (from z -508 to the spawn at -563), as half floats (sign 1, 0xC900); the old frame had no kind 11"
-  assert state.flags == 0x102
-    as "kind 24 is the moving bit 0x2, the bit the pace step reads (0x1405b5070), with the ground bit 0x100; without the moving bit the client shows the Beast standing as it slides home"
+  assert defaults == path_defaults()
+    as "kinds 10, 13, 21 and 26 with bit 1: the walk home is animated, grounded and faced by the client's own defaults"
 }
 
 /// The Medic's 0x638 commands for the Beast (unit 7), one list per frame, in order.
@@ -1524,19 +1536,11 @@ pub fn a_beast_that_chases_the_player_runs_in_the_clients_view_and_stops_where_i
   let assert [chase] = chasing
   let #(medic, run, _) = medic_takes(medic, to_the_medic(chase))
   let assert [
-    [
-      relayed_movement.Time(_),
-      relayed_movement.Path(path),
-      relayed_movement.MoveAsked(velocity),
-      relayed_movement.StateFlags(state),
-    ],
+    [relayed_movement.Time(_), relayed_movement.Path(path), ..defaults],
   ] = beast_movements(run)
-    as "kind 0, the path, then kind 11 and kind 24 that make the client animate it"
-  assert velocity
-    == movement_move_asked.MovementMoveAsked(x: 0, y: 0, z: 0x4900, blends: 1)
-    as "kind 11 is the path's speed along +z, 10.0 as a half float, as the player sends it (0x140715020)"
-  assert state.flags == 0x102
-    as "kind 24 holds bit 0x2, the one the pace step reads (0x1405b5070), and the ground bit 0x100"
+    as "kind 0, the path, then the defaults that make the client animate it"
+  assert defaults == path_defaults()
+    as "kinds 10, 13, 21 and 26 with bit 1: the run is animated, grounded and faced by the client's own defaults"
   assert chase_arrival_after_ms(chase) == 1100
     as "the Beast stops 4 m short of the Medic: 11 m at 10 m/s"
   let #(beast, arrived) =
@@ -1591,19 +1595,8 @@ pub fn a_beast_that_chases_the_player_runs_in_the_clients_view_and_stops_where_i
   let assert [_, [_, relayed_movement.Path(_), ..home_tail]] =
     beast_movements(leash)
     as "the turn to home, then the path home"
-  assert home_tail
-    == [
-      relayed_movement.MoveAsked(movement_move_asked.MovementMoveAsked(
-        x: 0,
-        y: 0,
-        z: 0xC900,
-        blends: 1,
-      )),
-      relayed_movement.StateFlags(movement_state_flags.MovementStateFlags(
-        flags: 0x102,
-      )),
-    ]
-    as "the walk home runs along -z at 10.0 (0xC900) with the moving bit and the ground bit"
+  assert home_tail == path_defaults()
+    as "the walk home takes the same four defaults"
   let #(home_timer, home_after_ms) = home_timer_of(leashed)
   let #(_, home) =
     fire_beast(state: beast, at_ms: 7000 + home_after_ms, timer: home_timer)
