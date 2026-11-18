@@ -16,9 +16,13 @@ import gleam/result
 /// with no such doc has no use the client's code shows.
 pub type VendorTab {
   VendorTab(
+    /// Open: Is the first value of a tab the tab's id? It is named from
+    /// GetVendorGroups and the handler's use of it was not read (opcode.0x90b).
     /// Safe by `opcode.0x90b`: the client's code gives this field no use the
     /// server needs, and that fact shows its value is safe.
     field_1: Int,
+    /// Open: Is the second value of a tab the tab's text id? It is named from
+    /// GetVendorGroups and the handler's use of it was not read (opcode.0x90b).
     /// Safe by `opcode.0x90b`: the client's code gives this field no use the
     /// server needs, and that fact shows its value is safe.
     field_2: Int,

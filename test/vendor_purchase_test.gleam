@@ -1371,7 +1371,7 @@ pub fn buying_a_random_stat_item_rolls_it_and_sends_the_word_test() -> Nil {
   let sent = added_item(effects:).held_item.item
   assert sent.random_stats == 0x0100000000050401
     as "the 0x111 is sent with the word"
-  assert sent.list_a == [] as "the item's list is empty"
+  assert sent.stat_multipliers == [] as "the item's list is empty"
 }
 
 /// An item with no random stat entry is made with no roll: Item2 1375's ItemStat 4 has one

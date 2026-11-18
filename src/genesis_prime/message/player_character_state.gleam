@@ -51,7 +51,7 @@ pub type PlayerCharacterState {
     is_pvp_server: Int,
     /// Safe by `opcode.0x25e.safe_body`: the client's code gives this field no
     /// use the server needs, and that fact shows its value is safe.
-    field_23: Int,
+    matching_map_mask: Int,
     character_entitlements: List(CharacterEntitlement),
   )
 }
@@ -121,7 +121,11 @@ pub fn encode(message: PlayerCharacterState) -> Result(BitArray, EncodeError) {
   )
   |> bit_stream.write_float32_bits("gear_score", message.gear_score)
   |> bit_stream.write_unsigned("is_pvp_server", message.is_pvp_server, 1)
-  |> bit_stream.write_unsigned("field_23", message.field_23, 32)
+  |> bit_stream.write_unsigned(
+    "matching_map_mask",
+    message.matching_map_mask,
+    32,
+  )
   |> bit_stream.write_array(
     "character_entitlements",
     message.character_entitlements,
@@ -205,7 +209,10 @@ pub fn decode(body: BitArray) -> Result(PlayerCharacterState, DecodeError) {
   ))
   use #(gear_score, reader) <- result.try(bit_stream.read_float32_bits(reader))
   use #(is_pvp_server, reader) <- result.try(bit_stream.read_unsigned(reader, 1))
-  use #(field_23, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
+  use #(matching_map_mask, reader) <- result.try(bit_stream.read_unsigned(
+    reader,
+    32,
+  ))
   use #(character_entitlements, reader) <- result.try(bit_stream.read_array(
     reader,
     32,
@@ -235,7 +242,7 @@ pub fn decode(body: BitArray) -> Result(PlayerCharacterState, DecodeError) {
     supply_satchel_counts:,
     gear_score:,
     is_pvp_server:,
-    field_23:,
+    matching_map_mask:,
     character_entitlements:,
   ))
 }

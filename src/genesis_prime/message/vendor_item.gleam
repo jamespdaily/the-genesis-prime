@@ -30,9 +30,15 @@ pub type VendorItem {
     amount: Int,
     tab_id: Int,
     flags: Int,
+    /// Open: What does the client do with the 64-bit value after the flags,
+    /// which it passes to the item data of a kind 0 item? Its meaning was not
+    /// read (0x140097ae0).
     /// Safe by `0x140097ae0`: the client's code gives this field no use the
     /// server needs, and that fact shows its value is safe.
     field_10: Int,
+    /// Open: What does the client do with the 32-bit value after the 64-bit
+    /// one, which it passes to the item data of a kind 0 item? Its meaning was
+    /// not read (0x140097ae0).
     /// Safe by `0x140097ae0`: the client's code gives this field no use the
     /// server needs, and that fact shows its value is safe.
     field_11: Int,

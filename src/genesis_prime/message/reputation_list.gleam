@@ -19,7 +19,7 @@ pub type ReputationList {
   ReputationList(
     /// Safe by `opcode.0x25e.safe_body`: the client's code gives this field no
     /// use the server needs, and that fact shows its value is safe.
-    field_1: Int,
+    unread_1: Int,
     reputations: List(Reputation),
   )
 }
@@ -27,7 +27,7 @@ pub type ReputationList {
 /// Writes the record's fields to the stream.
 pub fn write(writer writer: Writer, record record: ReputationList) -> Writer {
   writer
-  |> bit_stream.write_unsigned("field_1", record.field_1, 14)
+  |> bit_stream.write_unsigned("unread_1", record.unread_1, 14)
   |> bit_stream.write_array(
     "reputations",
     record.reputations,
@@ -38,11 +38,11 @@ pub fn write(writer writer: Writer, record record: ReputationList) -> Writer {
 
 /// Reads the record from the stream, and the stream after it.
 pub fn read(reader: Reader) -> Result(#(ReputationList, Reader), DecodeError) {
-  use #(field_1, reader) <- result.try(bit_stream.read_unsigned(reader, 14))
+  use #(unread_1, reader) <- result.try(bit_stream.read_unsigned(reader, 14))
   use #(reputations, reader) <- result.try(bit_stream.read_array(
     reader,
     16,
     reputation.read,
   ))
-  Ok(#(ReputationList(field_1:, reputations:), reader))
+  Ok(#(ReputationList(unread_1:, reputations:), reader))
 }

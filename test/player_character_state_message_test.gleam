@@ -72,7 +72,7 @@ fn minimal() -> player_character_state.PlayerCharacterState {
     active_action_set: 0,
     bonus_amp_power: 0,
     bonus_ability_tier_points: 0,
-    reputations: ReputationList(field_1: 0, reputations: []),
+    reputations: ReputationList(unread_1: 0, reputations: []),
     pets: [],
     input_key_set: 3,
     bind_point: 0,
@@ -83,7 +83,7 @@ fn minimal() -> player_character_state.PlayerCharacterState {
     supply_satchel_counts: zeros(count: 1024),
     gear_score: 0,
     is_pvp_server: 0,
-    field_23: 0,
+    matching_map_mask: 0,
     character_entitlements: [],
   )
 }
@@ -128,7 +128,7 @@ pub fn every_fixed_field_is_written_at_its_own_width_and_offset_test() -> Nil {
       active_action_set: 3,
       bonus_amp_power: 0x8001,
       bonus_ability_tier_points: 0x8000_0006,
-      reputations: ReputationList(field_1: 0x2001, reputations: []),
+      reputations: ReputationList(unread_1: 0x2001, reputations: []),
       pets: [],
       input_key_set: 0x8000_0007,
       bind_point: 0x8002,
@@ -139,7 +139,7 @@ pub fn every_fixed_field_is_written_at_its_own_width_and_offset_test() -> Nil {
       supply_satchel_counts: satchel,
       gear_score: 0x3F80_0000,
       is_pvp_server: 1,
-      field_23: 0x8000_000B,
+      matching_map_mask: 0x8000_000B,
       character_entitlements: [],
     )
   let expected =
@@ -176,30 +176,30 @@ pub fn every_fixed_field_is_written_at_its_own_width_and_offset_test() -> Nil {
 fn item() -> SharedItem {
   SharedItem(
     item_guid: 0x1234,
-    field_2: 0,
+    crafter_character_id: 0,
     item_id: 4321,
     location: 4,
     bag_index: 2,
     stack_count: 1,
     charges: 0,
     random_stats: 0,
-    field_9: 0,
+    rune_slots: 0,
     field_10: 0,
     durability: 0x3F80_0000,
-    field_12: 0,
+    dye_channels: 0,
     field_13: 0,
-    field_14: 0,
+    refund_window_ms: 0,
     field_15: 0,
-    field_16: 0,
-    field_17: 0,
-    field_18: 0,
-    field_19: 0,
-    field_20: 0,
-    field_21: 0,
-    field_22: 0,
-    field_23: 0,
-    list_a: [],
-    list_b: [],
+    soulbound_trade_window_ms: 0,
+    refund_cost_0_kind: 0,
+    refund_cost_0_value_a: 0,
+    refund_cost_0_value_b: 0,
+    refund_cost_1_kind: 0,
+    refund_cost_1_value_a: 0,
+    refund_cost_1_value_b: 0,
+    budget_item_id: 0,
+    stat_multipliers: [],
+    socketed_rune_item_ids: [],
     field_27: 0,
   )
 }
@@ -225,10 +225,17 @@ pub fn one_entry_in_each_list_is_counted_and_written_at_its_element_widths_test(
       ..minimal(),
       experience: 1710,
       held_items: [HeldItem(item: item(), reason: 49)],
-      reputations: ReputationList(field_1: 0, reputations: [
+      reputations: ReputationList(unread_1: 0, reputations: [
         Reputation(faction_id: 166, value: 0x4000_0000),
       ]),
-      pets: [PlayerPet(unit_id: 77, field_2: 0x20001, field_3: 17, field_4: 18)],
+      pets: [
+        PlayerPet(
+          unit_id: 77,
+          field_2: 0x20001,
+          valid_stance_mask: 17,
+          stance_mask: 18,
+        ),
+      ],
       unlocked_amps: [54],
       character_entitlements: [
         CharacterEntitlement(entitlement_id: 0x2001, count: 5),
@@ -281,13 +288,18 @@ pub fn lists_of_several_entries_round_trip_test() -> Nil {
         HeldItem(item: item(), reason: 49),
         HeldItem(item: item(), reason: 1),
       ],
-      reputations: ReputationList(field_1: 0, reputations: [
+      reputations: ReputationList(unread_1: 0, reputations: [
         Reputation(faction_id: 166, value: 0x3F80_0000),
         Reputation(faction_id: 0x3FFF, value: 0xBF80_0000),
       ]),
       pets: [
-        PlayerPet(unit_id: 77, field_2: 0x3FFFF, field_3: 31, field_4: 31),
-        PlayerPet(unit_id: 78, field_2: 1, field_3: 1, field_4: 1),
+        PlayerPet(
+          unit_id: 77,
+          field_2: 0x3FFFF,
+          valid_stance_mask: 31,
+          stance_mask: 31,
+        ),
+        PlayerPet(unit_id: 78, field_2: 1, valid_stance_mask: 1, stance_mask: 1),
       ],
       unlocked_amps: [1, 54, 0xFFFF],
       character_entitlements: [

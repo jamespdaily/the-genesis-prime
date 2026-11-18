@@ -199,7 +199,7 @@ fn failed_with(effects: List(Effect)) -> List(#(Int, Int)) {
       Send(frame:) -> {
         assert frame.message_id == item_action_failed.message_id
           as "a refusal is written as 0x56A"
-        let assert Ok(ItemActionFailed(item_guid:, code:)) =
+        let assert Ok(ItemActionFailed(unread_1: item_guid, code:)) =
           item_action_failed.decode(frame.body)
           as "0x56A decodes"
         Ok(#(item_guid, code))

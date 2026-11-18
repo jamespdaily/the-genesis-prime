@@ -1126,7 +1126,7 @@ fn frame_of_swap(
 /// A 0x56A with the code.
 fn failed(guid guid: Int, code code: Int) -> Frame {
   let assert Ok(body) =
-    item_action_failed.encode(ItemActionFailed(item_guid: guid, code:))
+    item_action_failed.encode(ItemActionFailed(unread_1: guid, code:))
     as "a guid and a code fit 0x56A"
   Frame(message_id: item_action_failed.message_id, body:)
 }
@@ -1150,30 +1150,30 @@ pub fn item_added_frame(
       ItemAdded(held_item: held_item.HeldItem(
         item: SharedItem(
           item_guid:,
-          field_2: 0,
+          crafter_character_id: 0,
           item_id:,
           location:,
           bag_index:,
           stack_count:,
           charges:,
           random_stats:,
-          field_9: 0,
+          rune_slots: 0,
           field_10: 0,
           durability: float32.to_bits(1.0),
-          field_12: 0,
+          dye_channels: 0,
           field_13: 0,
-          field_14: 0,
+          refund_window_ms: 0,
           field_15: 0,
-          field_16: 0,
-          field_17: 0,
-          field_18: 0,
-          field_19: 0,
-          field_20: 0,
-          field_21: 0,
-          field_22: 0,
-          field_23: 0,
-          list_a: [],
-          list_b: [],
+          soulbound_trade_window_ms: 0,
+          refund_cost_0_kind: 0,
+          refund_cost_0_value_a: 0,
+          refund_cost_0_value_b: 0,
+          refund_cost_1_kind: 0,
+          refund_cost_1_value_a: 0,
+          refund_cost_1_value_b: 0,
+          budget_item_id: 0,
+          stat_multipliers: [],
+          socketed_rune_item_ids: [],
           field_27: 0,
         ),
         reason:,

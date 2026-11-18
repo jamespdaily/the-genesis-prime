@@ -21,9 +21,16 @@ pub type CurrencyChanged {
   CurrencyChanged(
     kind: Int,
     total: Int,
+    /// Open: What does the client do with the first 32-bit value of the combat
+    /// momentum kinds 23 to 28, which it looks up (0x1403c70e0 calls
+    /// 0x1401f4b60 on it)? The server sends kinds 0 to 13, which do not read it
+    /// (opcode.0x919.credits).
     /// Safe by `opcode.0x919`: the client's code gives this field no use the
     /// server needs, and that fact shows its value is safe.
     field_3: Int,
+    /// Open: What does the client do with the second 32-bit value of the combat
+    /// momentum kinds 23 to 28? The server sends kinds 0 to 13, which do not
+    /// read it (opcode.0x919.credits).
     /// Safe by `opcode.0x919`: the client's code gives this field no use the
     /// server needs, and that fact shows its value is safe.
     field_4: Int,
