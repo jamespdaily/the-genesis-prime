@@ -32,6 +32,7 @@ import genesis_prime/content/held_objective as content_held_objective
 import genesis_prime/content/projector_landing as content_projector_landing
 import genesis_prime/content/server_proxy as content_server_proxy
 import genesis_prime/content/spawn as content_spawn
+import genesis_prime/content/terrain as content_terrain
 import genesis_prime/content/tutorial_quest as content_tutorial_quest
 import genesis_prime/content/vendor as content_vendor
 import genesis_prime/content/zone_welcome as content_zone_welcome
@@ -125,7 +126,8 @@ pub fn with_sitting(
 /// persistent terms, after the client's tables and before the tree, so the
 /// listeners open once the world's spawns are in place: waits for the database
 /// as the readiness ask does, and stops the program with the reasons when the
-/// migrations differ or any row is refused. `tables` are the server's own, which
+/// migrations differ or any row is refused, or a spawn stands in a square with no ground
+/// file in GENESIS_TERRAIN_DIR. `tables` are the server's own, which
 /// the selection reads the creature tables from; the tables only it reads are
 /// read beside them on this heap. Gives the key the terms are under.
 pub fn load_content(tables tables: store.Tables) -> store.Key {
@@ -143,6 +145,7 @@ pub fn load_content(tables tables: store.Tables) -> store.Key {
       pool: pool(),
       ask: ready_ask(),
       probe: content.pool_probe,
+      terrain: content_terrain.folder_reader(terrain_folder()),
       key:,
     )
   case loaded {
@@ -172,6 +175,17 @@ fn table_folder() -> String {
     Ok(folder) -> folder
     Error(Nil) ->
       panic as "GENESIS_TABLE_DIR is not set; the server loads the client's game tables from the folder it names"
+  }
+}
+
+/// The folder GENESIS_TERRAIN_DIR names, which holds the ground files of the client's
+/// area files (dev/terrain_extract.py); a missing variable stops the program with the
+/// reason.
+fn terrain_folder() -> String {
+  case envoy.get("GENESIS_TERRAIN_DIR") {
+    Ok(folder) -> folder
+    Error(Nil) ->
+      panic as "GENESIS_TERRAIN_DIR is not set; the server reads the ground's height from the files in the folder it names"
   }
 }
 

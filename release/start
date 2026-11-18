@@ -2,7 +2,7 @@
 # Starts the server from the folder this script is in, the shipment that
 # release/build makes. The settings come from the environment: PGHOST (a TCP
 # host name or address, not a socket directory), PGPORT, PGUSER, PGDATABASE,
-# PGPASSWORD (optional) and GENESIS_TABLE_DIR. The VM's
+# PGPASSWORD (optional), GENESIS_TABLE_DIR and GENESIS_TERRAIN_DIR. The VM's
 # flags are in vm.args beside this script, and `erl` is the first one on PATH,
 # which must be the patched OTP.
 

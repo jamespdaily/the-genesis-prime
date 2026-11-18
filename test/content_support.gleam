@@ -8,6 +8,7 @@ import event_wait
 import genesis_prime
 import genesis_prime/content
 import genesis_prime/content/spawn as content_spawn
+import genesis_prime/content/terrain as content_terrain
 import genesis_prime/dev_database
 import genesis_prime/readiness
 import genesis_prime/table/loader/store as table_store
@@ -18,6 +19,7 @@ import gleam/result
 import gleam/string
 import owned_key
 import pog
+import terrain_support
 
 /// The folder that holds the planted file of the world database
 /// (`test/fixture/world_data/spawn.tsv`): the header and the 27 rows of the
@@ -100,11 +102,29 @@ pub fn load(
   load_asking(database:, ask: asking(), probe: content.pool_probe)
 }
 
-/// The load with the way it asks the pool chosen by the test.
+/// The load with the way it asks the pool chosen by the test, over flat ground for every
+/// square a spawn stands in.
 pub fn load_asking(
   database database: String,
   ask ask: readiness.Settings,
   probe probe: fn(pog.Connection) -> readiness.Probe,
+) -> #(Result(Nil, content.LoadError), table_store.Key) {
+  load_with(database:, ask:, probe:, terrain: terrain_support.flat_reader())
+}
+
+/// The load with the ground read by the test's own reader.
+pub fn load_terrain(
+  database database: String,
+  terrain terrain: content_terrain.Reader,
+) -> #(Result(Nil, content.LoadError), table_store.Key) {
+  load_with(database:, ask: asking(), probe: content.pool_probe, terrain:)
+}
+
+fn load_with(
+  database database: String,
+  ask ask: readiness.Settings,
+  probe probe: fn(pog.Connection) -> readiness.Probe,
+  terrain terrain: content_terrain.Reader,
 ) -> #(Result(Nil, content.LoadError), table_store.Key) {
   let key = owned_key.new_fixture_key()
   let pool =
@@ -121,6 +141,7 @@ pub fn load_asking(
       pool:,
       ask:,
       probe:,
+      terrain:,
       key:,
     ),
     key,

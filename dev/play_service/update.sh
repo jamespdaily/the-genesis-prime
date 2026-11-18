@@ -35,8 +35,9 @@
 # ~/.genesis-prime/env.sh, worked out at each run, and the server container is
 # labelled with the commit and the address it was given, which is how the next
 # run knows what is deployed; $state/good names the last commit that came up and
-# $state/skipped the commits not to try again. After a deploy the installed copies
-# of these scripts (in $state/bin) are replaced with the new commit's.
+# $state/skipped the commits not to try again. Before a deploy the installed copies
+# of these scripts (in $state/bin) are replaced with the new commit's and read again, so
+# the new commit's launcher starts the new container.
 #
 # Only one run goes at a time: the lock is the folder $state/update.lock, whose
 # owner file (the process id) is written whole by a move. A lock whose owner is
@@ -121,9 +122,11 @@ if ! take_lock; then
   exit 0
 fi
 context=
+scripts_folder=
 cleanup() {
   rm -rf "$lock"
   [ -z "$context" ] || rm -rf "$context"
+  [ -z "$scripts_folder" ] || rm -rf "$scripts_folder"
 }
 trap cleanup EXIT
 
@@ -150,6 +153,16 @@ ci_passed() {
   fi
 }
 
+# fetch_repository: brings the bare copy of the remote in $state up to date, making it
+# when there is none.
+fetch_repository() {
+  if [ -d "$state/repository.git" ]; then
+    git -C "$state/repository.git" fetch --quiet origin "+refs/heads/$branch:refs/heads/$branch"
+  else
+    git clone --quiet --bare "$remote" "$state/repository.git"
+  fi
+}
+
 # build_image COMMIT: builds the image of the commit from a clean archive of it
 # and refuses it when it holds a file of the client's. Gives 2 for a commit with
 # no release/Containerfile.
@@ -158,11 +171,7 @@ build_image() {
   # The caller tests this function's status, which turns set -e off inside it:
   # each step that can fail ends it with return.
   context=$(mktemp -d "$state/context.XXXXXX") || return 1
-  if [ -d "$state/repository.git" ]; then
-    git -C "$state/repository.git" fetch --quiet origin "+refs/heads/$branch:refs/heads/$branch" || return 1
-  else
-    git clone --quiet --bare "$remote" "$state/repository.git" || return 1
-  fi
+  fetch_repository || return 1
   git -C "$state/repository.git" archive "$commit" | tar -x -C "$context" || return 1
   if [ ! -f "$context/release/Containerfile" ]; then
     skip_commit "$commit"
@@ -172,7 +181,7 @@ build_image() {
   log "building genesis-play:$commit"
   podman build --quiet --build-arg "REVISION=$commit" \
     -t "genesis-play:$commit" -f "$context/release/Containerfile" "$context" >/dev/null || return 1
-  local client_folders=("$tables")
+  local client_folders=("$tables" "$terrain")
   [ ! -d "$home/client-files" ] || client_folders+=("$home/client-files")
   "$here/check_image.sh" "genesis-play:$commit" "${client_folders[@]}"
 }
@@ -184,13 +193,23 @@ migrate() {
     --entrypoint /migrate/dev/apply_migrations.sh "$1" "$play_database"
 }
 
-# install_scripts: replaces the installed copies of the scripts with the ones of
-# the archive just built, so the next run is the new commit's updater.
+# install_scripts COMMIT: replaces the installed copies of the scripts with the ones of
+# the commit, so the next run is the new commit's updater. They are taken from the
+# commit itself, not from the build's archive: a retry finds the image already built
+# and extracts nothing. Fails, installing nothing, when the commit holds no script.
 install_scripts() {
-  local script
+  local commit=$1 script found=0
   [ "$here" = "$state/bin" ] || return 0
-  for script in "$context"/dev/play_service/*.sh; do
-    [ -e "$script" ] || continue
+  if ! git -C "$state/repository.git" cat-file -e "$commit^{commit}" 2>/dev/null; then
+    fetch_repository || return 1
+  fi
+  scripts_folder=$(mktemp -d "$state/scripts.XXXXXX") || return 1
+  git -C "$state/repository.git" archive "$commit" dev/play_service | tar -x -C "$scripts_folder" || return 1
+  for script in "$scripts_folder"/dev/play_service/*.sh; do
+    [ -e "$script" ] && found=1
+  done
+  [ "$found" = 1 ] || return 1
+  for script in "$scripts_folder"/dev/play_service/*.sh; do
     cp "$script" "$here/$(basename "$script").next"
     mv -f "$here/$(basename "$script").next" "$here/$(basename "$script")"
   done
@@ -301,8 +320,13 @@ if [ -n "$main_commit" ] && [ "$main_commit" != "$deployed_commit" ]; then
         log_once "a live session took the lock during the migration; the server is not replaced"
         exit 0
       fi
+      # The new commit's launcher (its mounts and variables) starts the new container, so the
+      # installed scripts are replaced and read again before the deploy, not after it.
+      install_scripts "$main_commit" || { log "the scripts of $main_commit could not be installed; the running server is left as it was"; exit 1; }
+      # shellcheck source=lib.sh
+      . "$here/lib.sh"
+      load_environment
       deploy "$main_commit" || exit 1
-      install_scripts
       exit 0
       ;;
     1) log_once "the check of $main_commit has not passed or has not finished; nothing done for it" ;;

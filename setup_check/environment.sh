@@ -8,7 +8,8 @@
 # GENESIS_OTP_DIR, so it runs on the patched build it caches.
 # Where the client is installed it also names GENESIS_TABLE_DIR, the folder
 # setup_check/extract_tables.py fills with the client's game tables (default
-# $GENESIS_HOME/tables); env.sh may set it first.
+# $GENESIS_HOME/tables), and GENESIS_TERRAIN_DIR, the folder dev/terrain_extract.py fills
+# with the ground files (default $GENESIS_HOME/terrain); env.sh may set either first.
 genesis_home=${GENESIS_HOME:-$HOME/.genesis-prime}
 if [ -f "$genesis_home/env.sh" ]; then
   . "$genesis_home/env.sh"
@@ -23,5 +24,7 @@ fi
 if [ "${GENESIS_NO_CLIENT:-}" != 1 ]; then
   GENESIS_TABLE_DIR=${GENESIS_TABLE_DIR:-$genesis_home/tables}
   export GENESIS_TABLE_DIR
+  GENESIS_TERRAIN_DIR=${GENESIS_TERRAIN_DIR:-$genesis_home/terrain}
+  export GENESIS_TERRAIN_DIR
 fi
 unset genesis_home

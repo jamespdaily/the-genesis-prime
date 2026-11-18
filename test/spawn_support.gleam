@@ -16,6 +16,7 @@ import genesis_prime/content/held_objective as content_held_objective
 import genesis_prime/content/projector_landing as content_projector_landing
 import genesis_prime/content/server_proxy as content_server_proxy
 import genesis_prime/content/spawn as content_spawn
+import genesis_prime/content/terrain as content_terrain
 import genesis_prime/content/tutorial_quest as content_tutorial_quest
 import genesis_prime/content/vendor as content_vendor
 import genesis_prime/content/zone_welcome as content_zone_welcome
@@ -27,6 +28,7 @@ import genesis_prime/game/vendor
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id, Spell4Id}
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/terrain
 import genesis_prime/world_map/creature_faction
 import genesis_prime/world_map/creature_guard_spells
 import genesis_prime/world_map/creature_kind.{type Kinds, Kind, Kinds}
@@ -691,6 +693,14 @@ fn put_worlds(
   content_creature_kind.put(
     key:,
     kinds: Kinds(..kinds(), default: Kind(..kinds().default, respawn_ms:)),
+  )
+  content_terrain.put(
+    key:,
+    grounds: dict.from_list(
+      list.map(character_tables.content_worlds(), fn(world_id) {
+        #(world_id, terrain.empty())
+      }),
+    ),
   )
   list.each(character_tables.content_worlds(), fn(world_id) {
     content_spawn.put_world(

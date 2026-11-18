@@ -81,6 +81,7 @@ load_environment() {
   : "${GENESIS_PLAY_ACCOUNT:?set GENESIS_PLAY_ACCOUNT in $home/env.sh}"
   : "${GENESIS_PLAY_PGPASSWORD:?set GENESIS_PLAY_PGPASSWORD (the password of the play Postgres) in $home/env.sh; dev/play_service/install.sh makes it}"
   tables=${GENESIS_TABLE_DIR:-$home/tables}
+  terrain=${GENESIS_TERRAIN_DIR:-$home/terrain}
   PGPASSWORD=$GENESIS_PLAY_PGPASSWORD
   POSTGRES_PASSWORD=$GENESIS_PLAY_PGPASSWORD
   export PGPASSWORD POSTGRES_PASSWORD GENESIS_PLAY_ACCOUNT
@@ -151,7 +152,7 @@ run_server() {
   podman run -d --replace --name "$server_container" --network "$network" \
     --restart=on-failure:5 --memory 3g --stop-timeout 60 \
     -p 6600:6600 -p 23115:23115 -p 24000:24000 \
-    -v "$tables:/tables:ro" -v "$home/sittings:/sittings" \
+    -v "$tables:/tables:ro" -v "$terrain:/terrain:ro" -v "$home/sittings:/sittings" \
     --label "genesis.revision=$revision" --label "genesis.address=$address" \
     -e PGHOST="$postgres_container" -e PGPORT=5432 -e PGUSER=postgres \
     -e PGDATABASE="$play_database" -e PGPASSWORD \
