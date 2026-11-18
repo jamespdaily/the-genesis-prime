@@ -109,8 +109,8 @@ pub fn a_player_struck_to_0_dies_with_0x88c_0x89a_off_and_0x247_type_22_then_see
       UnitDeathState(
         unit_id: game_connection_support.own_unit_id,
         dead: 1,
-        field_3: 0,
-        field_4: 0,
+        unread_3: 0,
+        health: 0,
       ),
     ]
     as "0x88c: the player's unit is dead; the 5-bit and the 32-bit values 0"
@@ -226,13 +226,13 @@ pub fn a_viewer_writes_a_players_death_and_coming_back_for_a_unit_it_shows_and_n
       0x088C,
       unit_death_state.decode,
     )
-    == [UnitDeathState(unit_id: 9, dead: 1, field_3: 0, field_4: 0)]
+    == [UnitDeathState(unit_id: 9, dead: 1, unread_3: 0, health: 0)]
   assert game_connection_support.decoded(
       written(client_connection.CameBack),
       0x088C,
       unit_death_state.decode,
     )
-    == [UnitDeathState(unit_id: 9, dead: 0, field_3: 0, field_4: 0)]
+    == [UnitDeathState(unit_id: 9, dead: 0, unread_3: 0, health: 0)]
     as "0x88c dead 0: the unit stands again"
   assert game_connection_support.decoded(
       written(client_connection.DeathLogged),
@@ -308,7 +308,7 @@ pub fn a_viewer_writes_a_players_death_and_coming_back_as_the_clients_frames_tes
     == [0x0938, 0x0937, 0x088C, 0x089A, 0x0247]
     as "the shield and the health, then 0x88c, 0x89a and 0x247, in the order told"
   assert game_connection_support.decoded(death, 0x088C, unit_death_state.decode)
-    == [UnitDeathState(unit_id: 9, dead: 1, field_3: 0, field_4: 0)]
+    == [UnitDeathState(unit_id: 9, dead: 1, unread_3: 0, health: 0)]
     as "opcode.0x88c: the unit dead"
   assert game_connection_support.decoded(
       death,
@@ -334,7 +334,7 @@ pub fn a_viewer_writes_a_players_death_and_coming_back_as_the_clients_frames_tes
     ]
     as "the full shield, 450 (player.level1_gear_properties)"
   assert game_connection_support.decoded(back, 0x088C, unit_death_state.decode)
-    == [UnitDeathState(unit_id: 9, dead: 0, field_3: 0, field_4: 0)]
+    == [UnitDeathState(unit_id: 9, dead: 0, unread_3: 0, health: 0)]
   assert game_connection_support.decoded(back, 0x0247, combat_log.decode)
     == [CombatLog(entry: combat_log_entry.Resurrect(CombatLogResurrect(9)))]
     as "opcode.0x247.death: type 23"
@@ -657,8 +657,8 @@ pub fn wake_here_writes_the_coming_back_in_the_clients_order_where_the_body_lies
       UnitDeathState(
         unit_id: game_connection_support.own_unit_id,
         dead: 0,
-        field_3: 0,
-        field_4: 0,
+        unread_3: 0,
+        health: 0,
       ),
     ]
   assert game_connection_support.decoded(
@@ -679,7 +679,7 @@ pub fn wake_here_writes_the_coming_back_in_the_clients_order_where_the_body_lies
       ),
     ]
   assert game_connection_support.decoded(frames, 0x0355, unit_destroyed.decode)
-    == [UnitDestroyed(unit_id: ghost_unit_id, field_2: 0)]
+    == [UnitDestroyed(unit_id: ghost_unit_id, chest_world_object_delay: 0)]
   assert game_connection_support.decoded(
       frames,
       0x0636,

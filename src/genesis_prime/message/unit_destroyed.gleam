@@ -2,8 +2,10 @@
 //// never edited by hand.
 ////
 //// Message 0x0355 (unit_destroyed), server to client: removes a unit from the
-//// world. Its fields are listed in `schema.toml` with the client's evidence,
-//// and the fact file's `opcode.0x355` names the message.
+//// world: the unit id and a bit the client reads only for a unit of type 1 (a
+//// chest), whose removal then takes its delay from its world object instead of
+//// the standard fade. Its fields are listed in `schema.toml` with the client's
+//// evidence, and the fact file's `opcode.0x355` names the message.
 
 import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}
 import gleam/result
@@ -19,7 +21,7 @@ pub type UnitDestroyed {
     unit_id: Int,
     /// Safe by `0x1403d98f0`: the client's code gives this field no use the
     /// server needs, and that fact shows its value is safe.
-    field_2: Int,
+    chest_world_object_delay: Int,
   )
 }
 
@@ -28,7 +30,11 @@ pub type UnitDestroyed {
 pub fn encode(message: UnitDestroyed) -> Result(BitArray, EncodeError) {
   bit_stream.new_writer()
   |> bit_stream.write_unsigned("unit_id", message.unit_id, 32)
-  |> bit_stream.write_unsigned("field_2", message.field_2, 1)
+  |> bit_stream.write_unsigned(
+    "chest_world_object_delay",
+    message.chest_world_object_delay,
+    1,
+  )
   |> bit_stream.finish
 }
 
@@ -36,7 +42,9 @@ pub fn encode(message: UnitDestroyed) -> Result(BitArray, EncodeError) {
 pub fn decode(body: BitArray) -> Result(UnitDestroyed, DecodeError) {
   let reader = bit_stream.new_reader(body)
   use #(unit_id, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
-  use #(field_2, reader) <- result.try(bit_stream.read_unsigned(reader, 1))
+  use #(chest_world_object_delay, reader) <- result.try(
+    bit_stream.read_unsigned(reader, 1),
+  )
   use Nil <- result.try(bit_stream.finish_reading(reader))
-  Ok(UnitDestroyed(unit_id:, field_2:))
+  Ok(UnitDestroyed(unit_id:, chest_world_object_delay:))
 }

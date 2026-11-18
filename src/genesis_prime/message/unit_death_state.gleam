@@ -23,10 +23,10 @@ pub type UnitDeathState {
     dead: Int,
     /// Safe by `opcode.0x88c`: the client's code gives this field no use the
     /// server needs, and that fact shows its value is safe.
-    field_3: Int,
+    unread_3: Int,
     /// Safe by `opcode.0x88c`: the client's code gives this field no use the
     /// server needs, and that fact shows its value is safe.
-    field_4: Int,
+    health: Int,
   )
 }
 
@@ -36,8 +36,8 @@ pub fn encode(message: UnitDeathState) -> Result(BitArray, EncodeError) {
   bit_stream.new_writer()
   |> bit_stream.write_unsigned("unit_id", message.unit_id, 32)
   |> bit_stream.write_unsigned("dead", message.dead, 1)
-  |> bit_stream.write_unsigned("field_3", message.field_3, 5)
-  |> bit_stream.write_unsigned("field_4", message.field_4, 32)
+  |> bit_stream.write_unsigned("unread_3", message.unread_3, 5)
+  |> bit_stream.write_unsigned("health", message.health, 32)
   |> bit_stream.finish
 }
 
@@ -46,8 +46,8 @@ pub fn decode(body: BitArray) -> Result(UnitDeathState, DecodeError) {
   let reader = bit_stream.new_reader(body)
   use #(unit_id, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   use #(dead, reader) <- result.try(bit_stream.read_unsigned(reader, 1))
-  use #(field_3, reader) <- result.try(bit_stream.read_unsigned(reader, 5))
-  use #(field_4, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
+  use #(unread_3, reader) <- result.try(bit_stream.read_unsigned(reader, 5))
+  use #(health, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   use Nil <- result.try(bit_stream.finish_reading(reader))
-  Ok(UnitDeathState(unit_id:, dead:, field_3:, field_4:))
+  Ok(UnitDeathState(unit_id:, dead:, unread_3:, health:))
 }

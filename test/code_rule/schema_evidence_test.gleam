@@ -930,6 +930,16 @@ const spell_cast_owners = [
   "spell_miss",
 ]
 
+/// The owners of the unit create, destroy, death and dialog messages and of
+/// the chat channel, chat line and chat format messages the server sends, each
+/// a message or a record of the schema.
+const unit_and_chat_owners = [
+  "unit_create_tail", "unit_create_ghost", "unit_death_state", "unit_destroyed",
+  "unit_dialog_open", "chat_channel_joined", "chat_line",
+  "chat_format_item_record", "chat_format_kind_0", "chat_format_kind_1",
+  "chat_format_kind_2", "chat_format_kind_3", "chat_format_kind_11",
+]
+
 /// The fields of an owner that the schema check does not count as traced (not
 /// named for what they are, not open with a question), or that name a key the
 /// fact file does not hold.
@@ -994,4 +1004,10 @@ pub fn the_spell_cast_messages_carry_no_untraced_field_test() -> Nil {
   use <- owned_test.run(10_000)
   use <- unitest.tag("code_rule")
   assert_owners_are_traced(spell_cast_owners)
+}
+
+pub fn the_unit_and_chat_messages_carry_no_untraced_field_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use <- unitest.tag("code_rule")
+  assert_owners_are_traced(unit_and_chat_owners)
 }
