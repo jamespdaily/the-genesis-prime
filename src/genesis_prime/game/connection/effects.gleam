@@ -252,7 +252,7 @@ pub fn carry_out(
 /// What the player leaves behind as it leaves its stay in the world, by its camp
 /// or the Holocrypt: its chat groups, its casts and its strikes are left, its
 /// class resource's and its life's regeneration timers and the stay's timers
-/// (`connection_state.stay_timers`) cancelled; the session keeps the chat's next whisper number,
+/// (`stay_timers_cancelled`) cancelled; the session keeps the chat's next whisper number,
 /// which counts for the connection's life.
 pub fn world_left(
   session session: Session,

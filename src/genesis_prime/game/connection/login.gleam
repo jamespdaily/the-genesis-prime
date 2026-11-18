@@ -327,7 +327,7 @@ pub fn own_watch_ended(
 /// The connection waits on the claim timer before it claims its account
 /// again, with the place of the client kept. A player in the world is not
 /// saved by the timer meanwhile, and no quest timer fires: the stay's timers
-/// (`connection_state.stay_timers`) are cancelled, and a firing already waiting is dropped
+/// (`stay_timers_cancelled`) are cancelled, and a firing already waiting is dropped
 /// by the shell. The claim starts them again (`connection/world.claimed_again`).
 fn waiting_to_claim(
   session session: Session,

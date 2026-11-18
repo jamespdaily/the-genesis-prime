@@ -368,7 +368,7 @@ pub const item_expiry_timer = TimerId(13)
 
 /// The timers the player's stay in the world runs, which the claim made again and the leaving
 /// of the world cancel and the claim starts again.
-pub const stay_timers = [
+const stay_timers = [
   save_timer,
   quest_reset_timer,
   quest_deadline_timer,
