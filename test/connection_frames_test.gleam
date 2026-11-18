@@ -73,7 +73,7 @@ pub fn a_timed_path_frame_turns_each_time_into_server_time_test() -> Nil {
             MovementFloatVector(x: 0x40800000, y: 0x40A00000, z: 0x40C00000),
           ]),
         ),
-        ..moving(x: 0, z: 0, flags: 0x100)
+        ..moving(x: 0, z: 0, flags: 0)
       ],
     )
     as "the monotonic times 1000 and 1375 less the map's start 600 are 400 and 775, the first also the clock of kind 0"
@@ -96,7 +96,7 @@ pub fn a_timed_path_of_one_point_places_the_creature_there_test() -> Nil {
         z: 0xC0400000,
         blends: 0,
       )),
-      ..moving(x: 0, z: 0, flags: 0x100)
+      ..moving(x: 0, z: 0, flags: 0)
     ]
     as "a flight of no length is a kind 2 at its point, which places the unit at once (0x140714120)"
 }
@@ -124,7 +124,7 @@ pub fn a_timed_path_that_turns_the_creature_ends_with_its_rotation_test() -> Nil
         roll: 0,
         blends: 0,
       )),
-      ..moving(x: 0, z: 0, flags: 0x100)
+      ..moving(x: 0, z: 0, flags: 0)
     ]
     as "the path's turn is one kind 14 after the path, the yaw 1.5 as float bits"
 }
@@ -258,8 +258,8 @@ pub fn a_creatures_0x638_turns_the_clients_ground_lift_on_and_carries_the_moveme
   // Half floats: 3.0 is 0x4200, 4.0 0x4400, 10.0 0x4900.
   // The client's ground lift runs only while the 0x638's second bit is 1 (the unit's
   // ground-follow flag), and pulls a unit above the ground down only while its state flags
-  // hold 0x100, so a creature's moving state is 0x102 and its standing state 0x100
-  // (`unit.ground_lift.server_commands`).
+  // hold 0x100, so a creature's moving state is 0x102 and its standing state 0x100; a flight's
+  // state is 0, so its arc is not pulled down (`unit.ground_lift.server_commands`).
   let cases = [
     #(
       "a run along +x at 10.0 is a move of 10.0 along x and the moving bit",
@@ -284,22 +284,22 @@ pub fn a_creatures_0x638_turns_the_clients_ground_lift_on_and_carries_the_moveme
       moving(x: 0x4200, z: 0x4400, flags: 0x102),
     ),
     #(
-      "a flight is no walk: it stops the one that ran before the throw",
+      "a flight is no walk and has no ground bit: it stops the one that ran before the throw and its arc is not pulled down",
       sent(path: creature_path.Timed(
         first: #(1000, at(x: 1.0, y: 2.0, z: -3.0)),
         rest: [#(1375, at(x: 4.0, y: 5.0, z: 6.0))],
         turned_to: None,
       )),
-      moving(x: 0, z: 0, flags: 0x100),
+      moving(x: 0, z: 0, flags: 0),
     ),
     #(
-      "a turn in place is no walk",
+      "a turn in place is a timed frame: no walk and no ground bit",
       sent(path: creature_path.Timed(
         first: #(1000, at(x: 1.0, y: 2.0, z: -3.0)),
         rest: [],
         turned_to: Some(Facing(yaw: 1.5, pitch: 0.0, roll: 0.0)),
       )),
-      moving(x: 0, z: 0, flags: 0x100),
+      moving(x: 0, z: 0, flags: 0),
     ),
     #("a stop ends the animation", placed(), moving(x: 0, z: 0, flags: 0x100)),
     #(

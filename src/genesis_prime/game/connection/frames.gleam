@@ -468,7 +468,8 @@ fn moved_frame(
 /// speed (`unit.pace`, `movement_command.kind_11`, `movement_command.kind_24`); every
 /// creature frame keeps the second bit 1, which turns the client's ground lift on
 /// (`creature_moved_frame`); a flight ends
-/// with the stop (`stopped`), so a creature thrown mid-run stops running. None for a creature
+/// with the stop with state 0, so a creature thrown mid-run stops running and its arc is not
+/// pulled down by the lift (`unit.ground_lift.server_commands`). None for a creature
 /// that stands, a speed no half float holds, or a path of more points than a kind 4 holds.
 pub fn path_frame(
   entered entered: world_entry.Entered,
@@ -509,7 +510,7 @@ pub fn path_frame(
           [relayed_movement.Time(MovementTime(time: server_time(first.0)))],
           [move],
           turn,
-          stopped(),
+          stopped(state_flags: 0),
         ]),
       ))
     }
@@ -553,8 +554,8 @@ pub fn path_frame(
 /// ApplyMoveCommandSetPosition, `movement_command.kind_4`), and the client starts
 /// due segments in order, so the unit is placed at once and the path no longer
 /// runs (`0x140714120` StartDuePositionSegments). The command is the one that
-/// puts a unit at a place in its 0x262 (`0x1400ad350` reads it). It ends with the stop
-/// (`stopped`), which ends the walk animation of a unit that ran.
+/// puts a unit at a place in its 0x262 (`0x1400ad350` reads it). It ends with the stop with
+/// the ground bit 0x100 (`stopped`), which ends the walk animation of a unit that ran.
 pub fn placed_frame(
   entered entered: world_entry.Entered,
   unit_id unit_id: Int,
@@ -566,7 +567,7 @@ pub fn placed_frame(
   creature_moved_frame(unit_id:, server_time_ms: time, commands: [
     relayed_movement.Time(MovementTime(time:)),
     relayed_movement.Position(player_unit.standing(place:).0),
-    ..stopped()
+    ..stopped(state_flags: on_the_ground_flag)
   ])
 }
 
@@ -593,11 +594,12 @@ fn moving(x x: Float, z z: Float) -> Result(List(RelayedMovement), Nil) {
   ])
 }
 
-/// Kind 11 zero and kind 24 holding only the ground bit: the unit stands.
-fn stopped() -> List(RelayedMovement) {
+/// Kind 11 zero and kind 24 holding `state_flags`: the unit stands, with the ground bit when
+/// it is on the ground and without it in a flight, whose arc the lift must not pull down.
+fn stopped(state_flags state_flags: Int) -> List(RelayedMovement) {
   [
     relayed_movement.MoveAsked(MovementMoveAsked(x: 0, y: 0, z: 0, blends: 1)),
-    relayed_movement.StateFlags(MovementStateFlags(flags: on_the_ground_flag)),
+    relayed_movement.StateFlags(MovementStateFlags(flags: state_flags)),
   ]
 }
 
