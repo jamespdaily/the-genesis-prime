@@ -1,4 +1,4 @@
-//// The kill_objective content table (`genesis_prime/content/kill_objective`)
+//// The kill_objective content table (read by `genesis_prime/content/objective_set`)
 //// and the load's check of its rows (`genesis_prime/game/kill_objective`): the visible
 //// scripted objectives whose text asks only to kill. Expected values come from these places.
 //// - `QuestObjective.type.5`: a type 5 objective is done only by the server's 0x361, and
@@ -26,6 +26,7 @@ import client_tables
 import content_support
 import fixture_tables
 import genesis_prime/content/refusal.{RowId}
+import genesis_prime/game/faction_level
 import genesis_prime/game/kill_objective
 import genesis_prime/game/objective
 import genesis_prime/game/place_objective
@@ -182,7 +183,7 @@ pub fn every_row_of_the_kill_table_is_a_kill_script_with_a_pane_a_fightable_crea
   let rows = content_support.kill_objective_ids()
   assert set.to_list(rows) |> list.sort(int.compare) == kill_ids
     as "the migration lists the kills whose creatures start in their marker's world"
-  let scripts = objective.ScriptRows(kills: rows)
+  let scripts = objective.ScriptRows(..objective.no_rows(), kills: rows)
   let arrivals = content_support.arrival_objective_ids()
   let wrong =
     list.filter_map(quest2.all(tables), fn(row) {
@@ -249,11 +250,18 @@ pub fn no_objective_is_in_two_content_tables_and_none_is_held_test() -> Nil {
   use <- unitest.guard(client_tables.present())
   let kills = content_support.kill_objective_ids()
   let arrivals = content_support.arrival_objective_ids()
+  let clicks = content_support.click_objective_ids()
   let held = content_support.held_objective_ids()
   assert set.intersection(kills, arrivals) == set.new()
     as "a row is a kill or an arrival, never both"
+  assert set.intersection(clicks, arrivals) == set.new()
+    as "a row is a click or an arrival, never both"
+  assert set.intersection(clicks, kills) == set.new()
+    as "a row is a click or a kill, never both: a pane creature's kill and activation would count for one objective"
   assert set.intersection(kills, held) == set.new()
     as "a held objective stays open whatever its kind, so it is never a kill row: a quest that works today must still complete"
+  assert set.intersection(clicks, held) == set.new()
+    as "a held objective stays open whatever its kind, so it is never a click row: a quest that works today must still complete"
 }
 
 /// Why a kill row stays on the stand-in, and what the client's tables show of it.
@@ -284,7 +292,7 @@ pub fn the_kill_rows_left_on_the_stand_in_are_listed_with_their_reasons_test() -
   let tables = client_tables.shared()
   let rows = content_support.kill_objective_ids()
   let arrivals = content_support.arrival_objective_ids()
-  let scripts = objective.ScriptRows(kills: rows)
+  let scripts = objective.ScriptRows(..objective.no_rows(), kills: rows)
   // The worlds the server holds stored spawns for are 22, 51, 426, 870, 990, 1061 and 1387.
   let silo = Stay(9382, 6157, 0, NoSpawnsInWorld(1421))
   let stays = [
@@ -381,13 +389,21 @@ pub fn the_kill_rows_left_on_the_stand_in_are_listed_with_their_reasons_test() -
 /// Dominion faction (level 8 to 10, `0x140787830`), which no player can attack (`0x1403ad540`).
 fn friendly_to_both(tables tables: table_store.Tables, pane pane: Int) -> Bool {
   let creatures = target_group.listed_creatures(tables:, group: pane)
+  let levels = faction_level.build(tables:)
   creatures != []
   && list.all(creatures, fn(creature) {
     let assert Ok(row) = creature2.get(tables, Creature2Id(creature))
       as "the pane's creature is in the client's table"
-    let #(exile, dominion) =
-      spawn.faction_levels(tables:, faction: row.faction_id)
-    exile >= 8 && dominion >= 8
+    spawn.friendly_to(
+      levels:,
+      player: spawn.exile_faction,
+      unit: row.faction_id,
+    )
+    && spawn.friendly_to(
+      levels:,
+      player: spawn.dominion_faction,
+      unit: row.faction_id,
+    )
   })
 }
 

@@ -532,15 +532,23 @@ fn not_held(quest quest: Quest2, asker asker: Asker) -> Result(Nil, Stop) {
   )
 }
 
-/// Check 14: the quest's faction, 0 Exile, 1 Dominion, 2 either; any other refuses.
-fn faction(quest quest: Quest2, asker asker: Asker) -> Result(Nil, Stop) {
-  let current = asker.factions.current
-  let allowed = case quest.quest_player_faction_enum {
-    0 -> current == exile
-    1 -> current == dominion
-    2 -> True
-    _ -> False
+/// The player factions the quest lets take it by its questPlayerFactionEnum: 0 Exile,
+/// 1 Dominion, 2 either; any other value lets none.
+pub fn allowed_factions(quest quest: Quest2) -> List(Int) {
+  case quest.quest_player_faction_enum {
+    0 -> [exile]
+    1 -> [dominion]
+    2 -> [exile, dominion]
+    _ -> []
   }
+}
+
+/// Check 14: the quest's faction (`allowed_factions`); a quest for either is taken by any
+/// faction.
+fn faction(quest quest: Quest2, asker asker: Asker) -> Result(Nil, Stop) {
+  let allowed =
+    quest.quest_player_faction_enum == 2
+    || list.contains(allowed_factions(quest:), asker.factions.current)
   refuse_when(when: !allowed, code: wrong_faction)
 }
 

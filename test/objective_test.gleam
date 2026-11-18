@@ -2671,7 +2671,7 @@ pub fn use_targets_leaves_out_a_used_unit_test() -> Nil {
   use tables <- quest_support.with_objectives(edits: [])
   let captive = fn(creature) { plain_unit(creature: Creature2Id(creature)) }
   let log = fresh(quest_id: 9122)
-  assert objective.use_targets(log:, tables:)(
+  assert objective.use_targets(log:, tables:, scripts: objective.no_rows())(
     captive(52_900),
     0,
     quest_support.unit_ref(unit_id: 7),
@@ -2686,7 +2686,8 @@ pub fn use_targets_leaves_out_a_used_unit_test() -> Nil {
         unit: quest_support.unit_ref(unit_id: 7),
       ),
     )
-  let offered = objective.use_targets(log: used.log, tables:)
+  let offered =
+    objective.use_targets(log: used.log, tables:, scripts: objective.no_rows())
   assert !offered(captive(52_900), 0, quest_support.unit_ref(unit_id: 7))
     as "the unit used already is not offered again"
   assert offered(captive(52_901), 0, quest_support.unit_ref(unit_id: 8))
@@ -3413,7 +3414,11 @@ pub fn use_targets_leaves_out_a_used_type_12_unit_test() -> Nil {
   let survivor = plain_unit(creature: Creature2Id(11_070))
   let ref = fn(unit_id) { quest_support.unit_ref(unit_id:) }
   let log = fresh(quest_id: 3480)
-  assert objective.use_targets(log:, tables:)(survivor, 0, ref(7))
+  assert objective.use_targets(log:, tables:, scripts: objective.no_rows())(
+    survivor,
+    0,
+    ref(7),
+  )
     as "an unused survivor is offered"
   let used =
     used_by(
@@ -3421,7 +3426,8 @@ pub fn use_targets_leaves_out_a_used_type_12_unit_test() -> Nil {
       tables:,
       event: a_use_of(creature: Creature2Id(11_070), unit: ref(7)),
     )
-  let offered = objective.use_targets(log: used.log, tables:)
+  let offered =
+    objective.use_targets(log: used.log, tables:, scripts: objective.no_rows())
   assert !offered(survivor, 0, ref(7))
     as "the survivor used already is not offered again"
   assert offered(survivor, 0, ref(8)) as "another survivor is still offered"
@@ -3435,7 +3441,11 @@ pub fn use_targets_leaves_out_a_used_type_32_unit_test() -> Nil {
   let crate = plain_unit(creature: Creature2Id(12_919))
   let ref = fn(unit_id) { quest_support.unit_ref(unit_id:) }
   let log = fresh(quest_id: 3741)
-  assert objective.use_targets(log:, tables:)(crate, 0, ref(7))
+  assert objective.use_targets(log:, tables:, scripts: objective.no_rows())(
+    crate,
+    0,
+    ref(7),
+  )
     as "an unused crate is offered"
   let used =
     used_by(
@@ -3443,7 +3453,8 @@ pub fn use_targets_leaves_out_a_used_type_32_unit_test() -> Nil {
       tables:,
       event: a_use_of(creature: Creature2Id(12_919), unit: ref(7)),
     )
-  let offered = objective.use_targets(log: used.log, tables:)
+  let offered =
+    objective.use_targets(log: used.log, tables:, scripts: objective.no_rows())
   assert !offered(crate, 0, ref(7))
     as "the crate used already is not offered again"
   assert offered(crate, 0, ref(8)) as "another crate is still offered"
@@ -3459,7 +3470,11 @@ pub fn use_targets_leaves_out_a_used_type_5_unit_test() -> Nil {
     quest_support.log_of(rows: [
       quest_support.accepted(quest_id: 4975, progress: [0, 0, 0, 0]),
     ])
-  assert objective.use_targets(log:, tables:)(unit, 0, ref(7))
+  assert objective.use_targets(log:, tables:, scripts: objective.no_rows())(
+    unit,
+    0,
+    ref(7),
+  )
     as "an unused unit is offered"
   let used =
     used_by(
@@ -3467,7 +3482,8 @@ pub fn use_targets_leaves_out_a_used_type_5_unit_test() -> Nil {
       tables:,
       event: a_use_of(creature: Creature2Id(19_277), unit: ref(7)),
     )
-  let offered = objective.use_targets(log: used.log, tables:)
+  let offered =
+    objective.use_targets(log: used.log, tables:, scripts: objective.no_rows())
   assert !offered(unit, 0, ref(7))
     as "the unit used already is not offered again"
   assert offered(unit, 0, ref(8)) as "another unit is still offered"

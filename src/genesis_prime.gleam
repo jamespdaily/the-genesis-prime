@@ -37,6 +37,7 @@ import genesis_prime/content/vendor as content_vendor
 import genesis_prime/content/zone_welcome as content_zone_welcome
 import genesis_prime/digest
 import genesis_prime/game/arrival_objective
+import genesis_prime/game/click_objective
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/held_objective
@@ -662,10 +663,10 @@ fn game(
         key: spawns,
         table: held_objective.table,
       ),
-      script_rows: objective.ScriptRows(kills: objective_set.read(
-        key: spawns,
-        table: kill_objective.table,
-      )),
+      script_rows: objective.ScriptRows(
+        kills: objective_set.read(key: spawns, table: kill_objective.table),
+        clicks: objective_set.read(key: spawns, table: click_objective.table),
+      ),
     ),
     wire_recorder: None,
     scripts: script.operating_system,

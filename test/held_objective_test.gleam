@@ -1,4 +1,4 @@
-//// The held_objective content table (migrations 0034 and 0039, `genesis_prime/content/held_objective`)
+//// The held_objective content table (migrations 0034, 0039 and 0041, read by `genesis_prime/content/objective_set`)
 //// and the load's check of its rows (`genesis_prime/game/held_objective`): the visible
 //// scripted objectives the server leaves open because only an instance run or a PvP match
 //// completes them. Expected values come from these places.

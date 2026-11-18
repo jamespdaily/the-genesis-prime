@@ -1390,12 +1390,51 @@ Creature2	24040	a creature of pane 2539, the pane of objectives 8281 and 8537	ob
 Creature2	24041	a creature of pane 2539, the pane of objectives 8281 and 8537	objective_spawn_test
 Creature2	24042	a creature of pane 2539, the pane of objectives 8281 and 8537	objective_spawn_test
 Creature2	54033	a creature of pane 2539, the pane of objectives 8281 and 8537	objective_spawn_test
-Creature2	10125	a creature of the pane of kill objective 4282 (quest 3295), so the load of the kill table finds a creature the server fights	content_load_test
+Creature2	10125	a creature of the pane of kill objective 4282 (quest 3295), Friendly to both factions, so the kill table leaves the objective on the stand-in	kill_objective_test
 Creature2	10150	a creature of the pane of kill objective 4282 (quest 3295), Friendly to both factions, so the kill table leaves the objective on the stand-in	kill_objective_test
-Creature2	19965	a creature of the pane of kill objective 7272 (quest 5074), so the load of the kill table finds a creature the server fights	content_load_test
-Creature2	21524	a creature of the pane of kill objective 7491 (quest 5074), so the load of the kill table finds a creature the server fights	content_load_test
-Creature2	21525	a creature of the pane of kill objective 7492 (quest 5074), so the load of the kill table finds a creature the server fights	content_load_test
+Creature2	19965	a creature of the pane of kill objective 7272 (quest 5074), Friendly to both factions, so the kill table leaves the objective on the stand-in	kill_objective_test
+Creature2	21524	a creature of the pane of kill objective 7491 (quest 5074), Friendly to both factions, so the kill table leaves the objective on the stand-in	kill_objective_test
+Creature2	21525	a creature of the pane of kill objective 7492 (quest 5074), Friendly to both factions, so the kill table leaves the objective on the stand-in	kill_objective_test
 Creature2	9633	a creature of the pane of kill objective 8010 (quest 5444), so the load of the kill table finds a creature the server fights	content_load_test
 Creature2	33767	a creature of the pane of kill objective 9252 (quest 6047), so the load of the kill table finds a creature the server fights	content_load_test
 Creature2	28256	a creature of the pane of kill objective 14676 and 14681 (quests 6237 and 6242), so the load of the kill table finds a creature the server fights	content_load_test
 Creature2	26042	the creature of quest 5895 objective 8936, a type 2 kill the connection test credits	game_connection_kill_script_test
+Quest2	5918	Eldan Decryption: objective 9002 is a click on the Eldan Augmentor, creature 26436, activate spell 1817 (count 1, flags 3)	click_objective_test, objective_click_script_test, objective_spawn_test
+Quest2	6591	The Face of Justice: objective 16170 is a click on creature 51440, activate spell 1817 (count 1, flags 3), after a place and before a kill of the same creature	click_objective_test, objective_click_script_test, game_connection_click_script_test, objective_spawn_test
+Quest2	6959	Horizon: objective 13760 is a click on the Building Teleporter creature 36601, activate spell 1817 (count 1, flags 3)	click_objective_test, objective_click_script_test
+Quest2	4508	a quest whose objective 6159 (index 3) is a scripted click on creature 16595, which has no activate spell	click_objective_test
+Quest2	3963	a quest whose objective 5201 (index 0) is a click on creature 27196, locked to the path kinds (uiFlags 0x80)	click_objective_test
+Quest2	6269	a quest whose objective 9998 (index 2) is a click on creature 27996, locked to the path kinds (uiFlags 0x80)	click_objective_test
+Quest2	8767	a quest whose objective 15737 (index 0) is a click on creature 45780, whose activate spells hold an effect no rule reads	click_objective_test
+Creature2	51440	the creature of objective 16170's pane: activate spell 1817, no path lock, no datacube	activate_test, click_objective_test, objective_click_script_test, game_connection_click_script_test, objective_spawn_test
+Creature2	26436	the creature of objective 9002's pane: activate spell 1817	click_objective_test, objective_click_script_test, objective_spawn_test
+Creature2	36601	the creature of objective 13760's pane: activate spell 1817	click_objective_test
+Creature2	27996	the creature of objective 9998's pane: uiFlags 0x80 locks it to the path kinds	activate_test, click_objective_test
+Creature2	27196	the creature of objective 5201's pane: uiFlags 0x80 locks it to the path kinds	click_objective_test
+Creature2	16595	the creature of objective 6159's pane: no activate spell	click_objective_test
+Creature2	45780	the creature of objective 15737's pane: activate spells 44757 and 42154 hold an effect no rule reads	click_objective_test
+Creature2	9612	Clanlord Makaza, a quest giver with no activate spell	activate_test
+Creature2	44498	a mailbox: no activate spell, uiFlags 47	activate_test
+Creature2	30238	a receiver of quest 6591, so the server does not complete it	click_objective_test
+Creature2	31037	a receiver of quest 6591, so the server does not complete it	click_objective_test
+Creature2	26200	a receiver of quest 5918, so the server does not complete it	click_objective_test
+Creature2	36519	a receiver of quest 6959, so the server does not complete it	click_objective_test
+Creature2	16594	a receiver of quest 4508, so the server does not complete it	click_objective_test
+Creature2	16814	a receiver of quest 4508, so the server does not complete it	click_objective_test
+Creature2	16622	a receiver of quest 3963, so the server does not complete it	click_objective_test
+Creature2	44963	a receiver of quest 8767, so the server does not complete it	click_objective_test
+WorldLocation2	19699	marker of click objective 9002	click_objective_test, objective_spawn_test
+WorldLocation2	40836	marker of click objective 16170	click_objective_test, objective_spawn_test
+WorldLocation2	28756	marker of click objective 13760	click_objective_test, objective_spawn_test
+WorldLocation2	12358	marker of click objective 6159	click_objective_test, objective_spawn_test
+WorldLocation2	45401	marker of click objective 5201	click_objective_test, objective_spawn_test
+WorldLocation2	21256	marker of click objective 9998	click_objective_test, objective_spawn_test
+WorldLocation2	37644	marker of click objective 15737	click_objective_test, objective_spawn_test
+Quest2	5263	The Emissary: objectives 7652, 7653 and 7654 are clicks on three Special Agent Boyd creatures, activate spell 40565 (count 1), for an Exile player	click_objective_test, content_load_test
+Creature2	21688	the creature of objective 7652's pane: activate spell 40565, faction 171	click_objective_test
+Creature2	27100	the creature of objective 7653's pane: activate spell 40565, faction 171	click_objective_test
+Creature2	27101	the creature of objective 7654's pane: activate spell 40565, faction 171	click_objective_test
+Creature2	21658	a receiver of quest 5263, so the server does not complete it	click_objective_test
+WorldLocation2	15884	marker of click objective 7652	click_objective_test
+WorldLocation2	15885	marker of click objective 7653	click_objective_test
+WorldLocation2	15886	marker of click objective 7654	click_objective_test

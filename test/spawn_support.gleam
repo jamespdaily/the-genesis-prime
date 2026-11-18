@@ -21,6 +21,7 @@ import genesis_prime/content/vendor as content_vendor
 import genesis_prime/content/zone_welcome as content_zone_welcome
 import genesis_prime/game/area
 import genesis_prime/game/arrival_objective
+import genesis_prime/game/click_objective
 import genesis_prime/game/held_objective
 import genesis_prime/game/hit.{Blow, Defence, Offence, Worked}
 import genesis_prime/game/kill_objective
@@ -689,7 +690,12 @@ fn put_worlds(
   content_zone_welcome.put(key:, welcomes: zone_welcome_support.none())
   content_tutorial_quest.put(key:, chain: tutorial_support.none())
   list.each(
-    [held_objective.table, arrival_objective.table, kill_objective.table],
+    [
+      held_objective.table,
+      arrival_objective.table,
+      kill_objective.table,
+      click_objective.table,
+    ],
     fn(table) { objective_set.put(key:, table:, objectives: set.new()) },
   )
   content_projector_landing.put(key:, landings: projector_support.none())

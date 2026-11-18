@@ -12,6 +12,7 @@ import genesis_prime/content/spawn as content_spawn
 import genesis_prime/content/terrain as content_terrain
 import genesis_prime/dev_database
 import genesis_prime/game/arrival_objective
+import genesis_prime/game/click_objective
 import genesis_prime/game/held_objective
 import genesis_prime/game/kill_objective
 import genesis_prime/readiness
@@ -179,6 +180,12 @@ pub fn arrival_objective_ids() -> Set(Int) {
 /// database of the test's own.
 pub fn kill_objective_ids() -> Set(Int) {
   objective_ids(table: kill_objective.table)
+}
+
+/// The QuestObjective ids the migrated database holds in the click table, read from a
+/// database of the test's own.
+pub fn click_objective_ids() -> Set(Int) {
+  objective_ids(table: click_objective.table)
 }
 
 /// The QuestObjective ids the migrated database holds as held, read from a database of

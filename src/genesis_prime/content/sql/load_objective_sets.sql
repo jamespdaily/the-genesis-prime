@@ -6,4 +6,6 @@ union all
 select 'arrival_objective', objective_id from arrival_objective
 union all
 select 'kill_objective', objective_id from kill_objective
+union all
+select 'click_objective', objective_id from click_objective
 order by table_name, objective_id;

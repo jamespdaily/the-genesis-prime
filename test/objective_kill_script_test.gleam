@@ -56,7 +56,7 @@ fn killed(creature creature: Int) -> objective.Event {
 /// The rows of the kill table these tests use: every kill objective of the table that
 /// the tests name.
 fn kill_rows(objectives objectives: List(Int)) -> objective.ScriptRows {
-  objective.ScriptRows(kills: set.from_list(objectives))
+  objective.ScriptRows(..objective.no_rows(), kills: set.from_list(objectives))
 }
 
 /// The quest as the log reads it, with the objective at `index`.

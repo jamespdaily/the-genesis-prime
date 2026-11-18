@@ -269,7 +269,12 @@ pub fn a_unit_outside_the_target_group_changes_nothing_test() -> Nil {
 pub fn a_checklist_target_is_used_while_its_objective_is_open_and_its_bit_clear_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = character_tables.shared()
-  let used_now = objective.use_targets(log: fresh_log(), tables:)
+  let used_now =
+    objective.use_targets(
+      log: fresh_log(),
+      tables:,
+      scripts: objective.no_rows(),
+    )
   assert used_now(
     unit_of(tables:, creature: checklist_creature),
     2,
@@ -296,7 +301,12 @@ pub fn a_checklist_target_whose_bit_is_set_is_not_used_test() -> Nil {
       now_ms: 0,
       scripts: objective.no_rows(),
     )
-  let used_now = objective.use_targets(log: counted.log, tables:)
+  let used_now =
+    objective.use_targets(
+      log: counted.log,
+      tables:,
+      scripts: objective.no_rows(),
+    )
   let unit = unit_of(tables:, creature: checklist_creature)
   assert !used_now(unit, 2, quest_support.unit_ref(unit_id: 2))
     as "bit 2 is set: the client counts the unit never again (0x140611680)"
@@ -318,7 +328,11 @@ pub fn a_checklist_target_of_a_done_objective_is_not_used_test() -> Nil {
     ).log
   }
   let done = list.fold([0, 1, 2], fresh_log(), count)
-  assert !objective.use_targets(log: done, tables:)(
+  assert !objective.use_targets(
+    log: done,
+    tables:,
+    scripts: objective.no_rows(),
+  )(
     unit_of(tables:, creature: checklist_creature),
     3,
     quest_support.unit_ref(unit_id: 3),

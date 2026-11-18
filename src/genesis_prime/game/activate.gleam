@@ -113,6 +113,30 @@ pub fn creature_of(row row: creature2.Creature2) -> Creature {
   )
 }
 
+/// The Creature2.activationFlags bit that keeps the client from offering the Spell kind
+/// (`0x140479560`).
+const no_spell_offer_flag = 0x800
+
+/// The Creature2.uiFlags bit that locks a creature's clicks to the path kinds unless its
+/// quest link is open (`0x14046c6a0`).
+const path_lock_flag = 0x80
+
+/// Whether the client can offer a click on the creature by its own activate spell, from its
+/// row alone: a column names a spell, activationFlags bit 0x800 is clear, the datacube and
+/// the datacube volume are 0 (`0x140479560`, kind Spell 50), and uiFlags bit 0x80 is clear.
+/// A creature with that bit is locked to the path kinds and offers no click while its quest
+/// link is closed (`0x14046c6a0`, `0x14046c4d0`); the row cannot tell whether a link is open
+/// now, so such a creature is taken as offering none. Whether a column's prerequisite passes
+/// for a player, and the client words 0x6c and 0x148 that make the pick 0, are not read
+/// (`pick`).
+pub fn offers_click(row row: creature2.Creature2) -> Bool {
+  list.any(creature_of(row:).columns, fn(column) { column.spell4_id != 0 })
+  && int.bitwise_and(row.activation_flags, no_spell_offer_flag) == 0
+  && row.datacube_id == 0
+  && row.datacube_volume_id == 0
+  && int.bitwise_and(row.ui_flags, path_lock_flag) == 0
+}
+
 /// Which spell a creature casts for a player.
 pub type Pick {
   /// The Spell4 id of the spell, never 0.

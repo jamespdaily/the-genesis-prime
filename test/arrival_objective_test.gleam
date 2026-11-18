@@ -1,5 +1,5 @@
 //// The arrival_objective content table (migration 0038,
-//// `genesis_prime/content/arrival_objective`) and the load's check of its rows
+//// `genesis_prime/content/objective_set`) and the load's check of its rows
 //// (`genesis_prime/game/arrival_objective`): the visible scripted objectives whose text
 //// asks only to reach a place. Expected values come from these places.
 //// - A row must be a place a position can complete: a visible, required type 5 objective
