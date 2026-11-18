@@ -9,11 +9,8 @@
 //// moves a unit writes itself, 0 (the time its later commands apply at), 3 (a
 //// timed path), 4 (a path), 10, 13, 21 and 26 (the velocity, move, rotation
 //// and state that follow a path by default), 18 (face a unit) and 19 (face a
-//// point). Gap: the other kinds, which game moves queue and the client's
-//// writer may send, are not relayed, since opcode.0x637 does not say which
-//// queuers exist or what they mean. Its variants are listed in `schema.toml`
-//// with the client's evidence, and the fact file's `opcode.0x637` names the
-//// union.
+//// point). Its variants are listed in `schema.toml` with the client's
+//// evidence, and the fact file's `opcode.0x637` names the union.
 
 import genesis_prime/message/bit_stream.{
   type DecodeError, type Reader, type Writer,
@@ -40,6 +37,53 @@ import gleam/result
 /// One item of the union: its first 5 bits are its kind, which picks the
 /// variant, and the variant's record reads them again as its first field. A
 /// kind no variant has is refused.
+///
+/// These kinds are open, so no variant holds them and a read refuses them: 5
+/// (What makes the server send kind 5 (one authored spline) in a message about
+/// a unit's movement? Candidate: a new unit follows one Spline2 spline, a
+/// patrol (a guess).) (layout so far in the fact file's
+/// `movement_command.kind_5`); 6 (What makes the server send kind 6 (a chain of
+/// authored splines) in a message about a unit's movement? Candidate: a new
+/// unit flies a chain of Spline2 splines, as a taxi does (a guess).) (layout so
+/// far in the fact file's `movement_command.kind_6`); 7 (What makes the server
+/// send kind 7 (a ballistic arc) in a message about a unit's movement?
+/// Candidate: a unit leaps or is thrown along an arc to a point.) (layout so
+/// far in the fact file's `movement_command.kind_7`); 9 (What makes the server
+/// send kind 9 (timed velocity keys) in a message about a unit's movement?
+/// Candidate: a unit's velocity is keyed in time, which kind 10 covers for a
+/// path.) (layout so far in the fact file's `0x140c1f070`); 12 (What makes the
+/// server send kind 12 (timed requested-move keys) in a message about a unit's
+/// movement? Candidate: a unit's requested move is keyed in time, which kind 13
+/// covers for a path.) (layout so far in the fact file's `0x140c1f070`); 15
+/// (What makes the server send kind 15 (timed rotation keys) in a message about
+/// a unit's movement? Candidate: a unit's rotation is keyed in time, which
+/// kinds 14, 18 and 21 cover.) (layout so far in the fact file's
+/// `0x140c1f070`); 16 (What makes the server send kind 16 (rotation along one
+/// spline) in a message about a unit's movement? Candidate: a unit's rotation
+/// follows one Spline2 spline, as a pair of kind 5 (a guess).) (layout so far
+/// in the fact file's `0x140c1f070`); 17 (What makes the server send kind 17
+/// (rotation along a chain of splines) in a message about a unit's movement?
+/// Candidate: a unit's rotation follows a chain of Spline2 splines, as a pair
+/// of kind 6 (a guess).) (layout so far in the fact file's `0x140c1f070`); 20
+/// (What makes the server send kind 20 (spin) in a message about a unit's
+/// movement? Candidate: a unit spins, as a whirlwind attack does.) (layout so
+/// far in the fact file's `movement_command.kind_20`); 22 (What makes the
+/// server send kind 22 (movement scale) in a message about a unit's movement?
+/// Candidate: a unit grows or shrinks.) (layout so far in the fact file's
+/// `movement_command.kind_22`); 23 (What makes the server send kind 23 (timed
+/// movement scale keys) in a message about a unit's movement? Candidate: a
+/// unit's growing or shrinking is keyed in time.) (layout so far in the fact
+/// file's `movement_command.kind_22`); 25 (What makes the server send kind 25
+/// (timed state flags) in a message about a unit's movement? Candidate: a
+/// unit's state flags are keyed in time, as a kind 3 flight does.) (layout so
+/// far in the fact file's `movement_command.kind_25`); 28 (What makes the
+/// server send kind 28 (timed movement modes) in a message about a unit's
+/// movement? Candidate: a unit's mode changes along a kind 3 flight.) (layout
+/// so far in the fact file's `0x140c1f070`); 29 (What makes the server send
+/// kind 29 (mode default) in a message about a unit's movement? Candidate: a
+/// unit's mode is 0 on every update, the same as kind 27 of 0. The wire carries
+/// one bit after the tag (0x140c1f070 entry 29); the handler 0x1407168f0 takes
+/// no data.) (layout so far in the fact file's `0x140c1f070`).
 pub type RelayedMovement {
   /// Kind 0, read by `movement_time`. The fact file's `movement_command.kind_0`
   /// names the kind.

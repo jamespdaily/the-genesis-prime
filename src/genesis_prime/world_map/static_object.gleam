@@ -34,7 +34,7 @@
 
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/float32
-import genesis_prime/message/start_movement.{Position, Rotation}
+import genesis_prime/message/start_movement
 import genesis_prime/message/static_unit_type
 import genesis_prime/message/unit_create_door.{
   type UnitCreateDoor, UnitCreateDoor,
@@ -234,8 +234,22 @@ pub fn standing_at(
   use command <- result.try(
     list.find_map(tail_of(created:).movement_commands, fn(command) {
       case command {
-        Position(position) -> Ok(position)
-        Rotation(..) -> Error(Nil)
+        start_movement.Position(position) -> Ok(position)
+        start_movement.Rotation(_)
+        | start_movement.Time(_)
+        | start_movement.Platform(_)
+        | start_movement.TimedPath(_)
+        | start_movement.Path(_)
+        | start_movement.Velocity(_)
+        | start_movement.VelocityDefault(_)
+        | start_movement.MoveAsked(_)
+        | start_movement.MoveDefault(_)
+        | start_movement.FaceUnit(_)
+        | start_movement.FacePoint(_)
+        | start_movement.RotationDefault(_)
+        | start_movement.StateFlags(_)
+        | start_movement.StateDefault(_)
+        | start_movement.Mode(_) -> Error(Nil)
       }
     }),
   )

@@ -889,6 +889,82 @@ pub fn each_known_gap_names_the_open_issue_test() -> Nil {
     as "each entry of the allow-list names the open issue whose work removes it"
 }
 
+// ---- the movement unions ----
+
+/// The tags below a union's `refused_from` that are not classified: a tag is
+/// classified when it is a variant named by what it is (not by its kind
+/// number), a never tag or an open tag, and each fact key such a tag names is
+/// in the fact file.
+fn unclassified_movement_tags(
+  union union: message_schema.Union,
+  fact_keys fact_keys: List(String),
+) -> List(Int) {
+  int.range(from: 0, to: union.refused_from, with: [], run: fn(tags, tag) {
+    [tag, ..tags]
+  })
+  |> list.reverse
+  |> list.filter(fn(tag) {
+    let names_a_fact = fn(key) {
+      case key {
+        Some(key) -> list.contains(fact_keys, key)
+        None -> True
+      }
+    }
+    let variant = list.find(union.variants, fn(variant) { variant.tag == tag })
+    let never = list.find(union.never_tags, fn(never) { never.tag == tag })
+    let open = list.find(union.open_tags, fn(open) { open.tag == tag })
+    case variant, never, open {
+      Ok(variant), _, _ ->
+        variant.name == "kind_" <> int.to_string(tag)
+        || !names_a_fact(variant.named_by)
+      Error(Nil), Ok(never), _ -> !names_a_fact(Some(never.named_by))
+      Error(Nil), Error(Nil), Ok(open) -> !names_a_fact(open.named_by)
+      Error(Nil), Error(Nil), Error(Nil) -> True
+    }
+  })
+}
+
+pub fn the_movement_unions_classify_every_kind_the_client_reads_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use <- unitest.tag("code_rule")
+  let assert Ok(text) = simplifile.read("src/genesis_prime/message/schema.toml")
+    as "the schema file could not be read"
+  let assert Ok(schema) = message_schema.parse(text)
+    as "the schema file is not a schema"
+  let fact_keys = repository.fact_keys()
+  let listed_unions =
+    list.filter_map(untraced_gaps.known_gaps, fn(gap) {
+      case gap {
+        UnclassifiedTags(union:, ..) -> Ok(union)
+        UntracedFields(..) -> Error(Nil)
+      }
+    })
+  let unions = ["start_movement", "relayed_movement"]
+  assert list.map(unions, fn(name) {
+      let assert Ok(union) =
+        list.find(schema.unions, fn(union) { union.name == name })
+        as { "no union named " <> name <> " in the schema" }
+      #(name, unclassified_movement_tags(union:, fact_keys:))
+    })
+    == list.map(unions, fn(name) { #(name, []) })
+    as "CLAUDE.md: every movement kind the client reads (tags 0 to 29) is a traced variant, a never tag or an open tag whose named fact exists"
+  assert list.filter(unions, list.contains(listed_unions, _)) == []
+    as "these unions are classified, so the allow-list has no entry for them"
+  let assert Ok(start) =
+    list.find(schema.unions, fn(union) { union.name == "start_movement" })
+    as "no union named start_movement in the schema"
+  let assert Ok(relayed) =
+    list.find(schema.unions, fn(union) { union.name == "relayed_movement" })
+    as "no union named relayed_movement in the schema"
+  let layout = fn(union: message_schema.Union) {
+    list.map(union.variants, fn(variant) {
+      #(variant.tag, variant.name, variant.record)
+    })
+  }
+  assert layout(start) == layout(relayed)
+    as "0x140c1f070: both messages read the one reader table, so a kind traced in the relayed message is a variant of the new unit's list with the same record"
+}
+
 // ---- the real schema ----
 
 pub fn the_real_schema_has_no_gap_the_allow_list_does_not_name_test() -> Nil {
