@@ -4987,12 +4987,8 @@ pub fn a_placed_target_respawns_at_its_slot_test() -> Nil {
     |> pog.execute(pog.named_connection(started.settings.pool.pool_name))
     as "the default creature kind is read"
   let assert [respawn_ms] = kind.rows
-  // The creature sends its news before it starts the corpse's timer, so the clock
-  // moves on after it has taken all it was sent.
-  character_support.marker_creature_settled(
-    settings: started.settings,
-    unit_id: target.unit_id,
-  )
+  // The creature sends its news before it starts the corpse's timer, which the
+  // advance's barrier waits for.
   driven_time.advance(time:, ms: respawn_ms)
   let #(after, _) =
     game_client.read_until(game:, have:, found: fn(frames) {
@@ -5402,9 +5398,7 @@ pub fn a_medic_kills_a_planted_beast_with_paralytic_surge_and_a_watcher_reads_th
     as "opcode.0x937: health 0 with the dead bit, from the creature itself"
   // The creature stands again after its respawn time, 1000 ms from the kill, which
   // the clock moves on by: 0x355, then a full 0x262. The creature sends its news
-  // before it starts the corpse's timer, so the clock moves on after it has taken
-  // all it was sent.
-  the_creature_has_taken_what_it_was_sent(started:, unit_id: beast_unit)
+  // before it starts the corpse's timer, which the advance's barrier waits for.
   driven_time.advance(time:, ms: 1000)
   let #(after_first, first_have) =
     game_client.read_until(game: first, have: first_have, found: fn(frames) {
@@ -5477,10 +5471,9 @@ pub fn three_ticks_reach_the_client_and_health_falls_three_times_test() -> Nil {
   game_client.press_ability(game:, client_cast_id: 1, bag_index: 2, target: 0)
   let #(taken, have) = game_client.read_until_pong(game:, have:, number: 1)
   driven_time.advance(time:, ms: fight_bot.paralytic_surge_cast_ms)
-  // The go strikes the Beast as the press is taken, with no timer on the way, so the
-  // advance fires none and runs no barrier: the barrier is run here, and the Beast's
-  // answer, the 0x7f4 it lets out and the Beast's 0x937 are written before the pong.
-  driven_time.wait_until_quiet(time)
+  // The go strikes the Beast as the press is taken, with no timer on the way: the
+  // advance's barrier waits for the Beast's answer, the 0x7f4 it lets out and the
+  // Beast's 0x937, written before the pong.
   let #(went, have) = game_client.read_until_pong(game:, have:, number: 2)
   let at_go = list.append(taken, went)
   let assert Ok(cast_id) =
@@ -6071,9 +6064,9 @@ fn world_with_a_dagun(time time: driven_time.Time) -> login_support.Started {
 }
 
 /// Returns when the first creature of the map, unit `unit_id`, has taken all it was
-/// sent, so a timer its last step started is on the clock: a creature's frames are
-/// sent before its step's timer is started, and an advance with no timer due waits
-/// for nothing.
+/// sent, for a test whose next step is an input, not an advance (an advance waits
+/// for the participants itself): a creature's frames are sent before its step's
+/// timer is started.
 fn the_creature_has_taken_what_it_was_sent(
   started started: login_support.Started,
   unit_id unit_id: Int,
@@ -7936,10 +7929,6 @@ fn interrupts_and_destroys(
       )
     })
   // The attack tick, 3000 ms after the aggro, opens the charge.
-  character_support.marker_creature_settled(
-    settings: started.settings,
-    unit_id: turret,
-  )
   driven_time.advance(time:, ms: 3000)
   let #(opened, have) =
     game_client.read_until(game:, have:, found: fn(frames) {
@@ -8029,10 +8018,6 @@ fn interrupts_and_destroys(
   // The turret never deflects (`on_rows_with_turrets_that_never_deflect`), so the five presses
   // all hit, whatever the connection's rolls are, and the kill below tells whether their
   // damage takes the turret's health.
-  character_support.marker_creature_settled(
-    settings: started.settings,
-    unit_id: turret,
-  )
   driven_time.advance(time:, ms: fight_bot.paralytic_surge_lingers_ms)
   let #(lingered, have) = game_client.read_until_pong(game:, have:, number: 2)
   let assert Ok(#(killed, have)) =
@@ -8163,12 +8148,6 @@ pub fn a_charge_hits_a_player_who_stays_in_its_rectangle_test() -> Nil {
     game_client.Targeted(unit_id: turret, target_unit_id: own, threat: 1),
   )
     as "0x908: the turret fights the player who walked into its aggro range"
-  // The turret's frames are sent before its step's timer is started, so the tick is
-  // on the clock only once it has taken all it was sent.
-  character_support.marker_creature_settled(
-    settings: started.settings,
-    unit_id: turret,
-  )
   // The attack tick, 3000 ms after the aggro, opens the charge.
   driven_time.advance(time:, ms: 3000)
   let #(opened, have) =
@@ -8189,11 +8168,7 @@ pub fn a_charge_hits_a_player_who_stays_in_its_rectangle_test() -> Nil {
   assert game_client.go_targets_in(frames: opened) == []
     as "the 8 s cast has not gone: no 0x7f4 yet"
   // Its cast time passes with the player in the rectangle, once the charge's own
-  // timer is on the clock.
-  character_support.marker_creature_settled(
-    settings: started.settings,
-    unit_id: turret,
-  )
+  // timer is on the clock, which the advance's barrier waits for.
   driven_time.advance(time:, ms: 8000)
   let #(went, _) =
     game_client.read_until(game:, have:, found: fn(frames) {
@@ -8623,9 +8598,7 @@ pub fn rescuing_an_exile_removes_the_trap_and_the_exile_for_another_player_too_t
   assert list.sort(removed_units(seen_gone), int.compare)
     == list.sort([trap, mordesh], int.compare)
     as "opcode.0x355: the player who did not use the trap is told the trap and the Mordesh are gone, each once"
-  // The restart timer is the release's 30000 ms, started when the units went: the
-  // clock moves only once the timer is registered.
-  driven_time.wait_until_quiet(time)
+  // The restart timer is the release's 30000 ms, started when the units went.
   driven_time.advance(time:, ms: 30_000)
   let #(back, _) =
     game_client.read_until(game: second, have: second_have, found: both_in)

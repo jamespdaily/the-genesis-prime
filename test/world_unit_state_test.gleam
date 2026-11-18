@@ -992,9 +992,8 @@ pub fn a_creature_that_crashes_holding_a_state_returns_without_it_test() -> Nil 
       wanted: world_watch_support.gone_unit,
     )
   assert gone == unit_id
-  // `Gone` is sent before the restart timer starts: the clock moves once the map has
-  // finished that step.
-  driven_time.settled(watched.run.pid)
+  // `Gone` is sent before the restart timer starts: the advance's barrier waits for
+  // the map to finish that step.
   driven_time.advance(time: watched.time, ms: respawn_ms)
   let returned =
     world_watch_support.next(
