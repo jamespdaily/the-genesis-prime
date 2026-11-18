@@ -5835,8 +5835,8 @@ pub fn a_bot_entering_a_daguns_ring_is_targeted_and_chased_on_the_whole_server_t
     as "the Dagun turns, then runs"
   assert turn_kinds == [0, 18]
     as "the turn goes before the path: kind 0, then kind 18 naming the bot (a kind 4 path leaves the rotation)"
-  assert kinds == [0, 4, 10, 13, 21, 26]
-    as "the chase: kind 0, the kind 4 path, then the client's four defaults (velocity, move, rotation, state), with no kind 11 or kind 24"
+  assert kinds == [0, 4, 10, 13, 18, 26]
+    as "the chase: kind 0, the kind 4 path, then the defaults for the velocity, move and state with kind 18 for the bot in place of kind 21, so the Dagun goes on facing the bot after it stops, and no kind 11 or kind 24"
   let assert [#(1, []), #(1, []), ..] =
     game_client.ground_lift_of(events: fight, unit: dagun)
     as "unit.ground_lift.server_commands: the turn and the run both keep the second bit 1, and neither holds a kind 24, the run's state coming from the state default"
@@ -6021,8 +6021,8 @@ pub fn a_stealthed_bot_walking_into_a_daguns_ring_gets_no_aggro_and_pressing_ste
     as "the Dagun turns, then runs"
   assert turn_kinds == [0, 18]
     as "the turn goes before the path: kind 0, then kind 18 naming the bot (a kind 4 path leaves the rotation)"
-  assert kinds == [0, 4, 10, 13, 21, 26]
-    as "the chase: kind 0, the kind 4 path, then the client's four defaults (velocity, move, rotation, state), with no kind 11 or kind 24"
+  assert kinds == [0, 4, 10, 13, 18, 26]
+    as "the chase: kind 0, the kind 4 path, then the defaults for the velocity, move and state with kind 18 for the bot in place of kind 21, so the Dagun goes on facing the bot after it stops, and no kind 11 or kind 24"
   assert ends_at == Some(#(1.5, 2.5, dagun_z +. 9.0 -. 3.5))
     as "to the bot less half the Dagun's reach of 7 (chase_stop_fraction 0.5)"
   game_client.close(game:)

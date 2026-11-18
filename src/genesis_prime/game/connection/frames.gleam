@@ -466,8 +466,8 @@ fn moved_frame(
 /// speed as a half float, type 0 (straight lines) and mode 0 (`movement_command.kind_4`). A thrown
 /// creature's timed path is kind 0 and kind 3, each point with its own map time
 /// (`movement_command.kind_3`), or kind 2 for a path of one point, and a kind 14 when
-/// the throw turns it. A run ends with kinds 10, 13, 21 and 26, each with its blend bit 1
-/// (`path_defaults`), so the client takes the velocity, the requested move, the facing and the
+/// the throw turns it. A run ends with kinds 10, 13, 21 and 26, each with its blend bit 1, kind 21
+/// being kind 18 for the unit a chase faces (`path_defaults`), so the client takes the velocity, the requested move, the facing and the
 /// state from the path itself and plays the walk or run animation by the pace that move gives
 /// (`movement_command.defaults_with_kind_4_path`, `unit.pace`); every
 /// creature frame keeps the second bit 1, which turns the client's ground lift on
@@ -479,6 +479,7 @@ pub fn path_frame(
   entered entered: world_entry.Entered,
   unit_id unit_id: Int,
   path path: creature_path.Path,
+  face face: Option(Face),
 ) -> Option(Frame) {
   case path {
     creature_path.Standing(..) -> None
@@ -541,7 +542,7 @@ pub fn path_frame(
                 path_type: 0,
                 mode: 0,
               )),
-              ..path_defaults()
+              ..path_defaults(face:)
             ]),
           )
         }
@@ -587,12 +588,20 @@ const on_the_ground_flag = 0x100
 /// state default derives the moving bit from it and holds 0x100 in mode 0, and the rotation
 /// default faces each leg and keeps the last at the end
 /// (`movement_command.defaults_with_kind_4_path`, `movement_command.kind_13`,
-/// `movement_command.kind_21`).
-fn path_defaults() -> List(RelayedMovement) {
+/// `movement_command.kind_21`). A creature that faces a unit (a chase) takes kind 18 for that
+/// unit in place of kind 21, so it goes on facing the unit along the path and after the end
+/// (`movement_command.kind_18`); a walk home, which faces a point, and any other run keep kind 21.
+fn path_defaults(face face: Option(Face)) -> List(RelayedMovement) {
+  let rotation = case face {
+    Some(creature_turn.Unit(unit_id:)) ->
+      relayed_movement.FaceUnit(MovementFaceUnit(unit_id:, blends: 1))
+    Some(creature_turn.Point(..)) | Some(creature_turn.Fixed(..)) | None ->
+      relayed_movement.RotationDefault(MovementKind21(blends: 1))
+  }
   [
     relayed_movement.VelocityDefault(MovementKind10(blends: 1)),
     relayed_movement.MoveDefault(MovementKind13(blends: 1)),
-    relayed_movement.RotationDefault(MovementKind21(blends: 1)),
+    rotation,
     relayed_movement.StateDefault(MovementKind26(blends: 1)),
   ]
 }

@@ -331,6 +331,16 @@ pub fn place_of(
   }
 }
 
+/// What the creature's rotation is held to by its owner's `CreatureFaces` news, or none for a
+/// unit that is not a shown creature, a creature no news has turned, and one a path that
+/// turned it has since set (`with_path`).
+pub fn face_of(picture picture: Picture, unit_id unit_id: Int) -> Option(Face) {
+  case dict.get(picture, unit_id) {
+    Ok(ShownCreature(face:, ..)) -> face
+    Ok(ShownPlayer(..)) | Ok(ShownObject(..)) | Error(Nil) -> None
+  }
+}
+
 /// The viewer's own unit and where it stands, which a creature that faces the viewer is
 /// turned toward.
 pub type Viewer {

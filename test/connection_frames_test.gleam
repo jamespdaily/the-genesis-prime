@@ -48,7 +48,7 @@ fn at(x x: Float, y y: Float, z z: Float) -> Place {
 /// The one 0x638 of a path for unit 40, decoded.
 fn sent(path path: creature_path.Path) -> UnitMovement {
   let assert Some(Frame(message_id: 0x0638, body:)) =
-    frames.path_frame(entered: entered(), unit_id: 40, path:)
+    frames.path_frame(entered: entered(), unit_id: 40, path:, face: None)
     as "a timed path is written as one 0x638"
   let assert Ok(movement) = unit_movement.decode(body)
     as "the frame is a 0x638 the client's reader takes"
@@ -138,6 +138,7 @@ pub fn a_standing_creature_has_no_path_frame_test() -> Nil {
   assert frames.path_frame(
       entered: entered(),
       unit_id: 40,
+      face: None,
       path: creature_path.Standing(at: at(x: 1.0, y: 2.0, z: -3.0)),
     )
     == None
@@ -377,6 +378,7 @@ pub fn a_creatures_0x638_turns_the_clients_ground_lift_on_and_carries_the_moveme
   assert frames.path_frame(
       entered: entered(),
       unit_id: 40,
+      face: None,
       path: creature_path.Running(
         from: at(x: 0.0, y: 0.0, z: 0.0),
         via: [],
@@ -393,7 +395,7 @@ pub fn a_creatures_0x638_turns_the_clients_ground_lift_on_and_carries_the_moveme
 fn written_points(
   path path: creature_path.Path,
 ) -> Option(List(#(Int, Int, Int))) {
-  case frames.path_frame(entered: entered(), unit_id: 40, path:) {
+  case frames.path_frame(entered: entered(), unit_id: 40, path:, face: None) {
     None -> None
     Some(Frame(body:, ..)) -> {
       let assert Ok(UnitMovement(commands:, ..)) = unit_movement.decode(body)
@@ -492,6 +494,7 @@ pub fn a_two_point_path_frame_is_the_bytes_it_was_test() -> Nil {
     frames.path_frame(
       entered: entered(),
       unit_id: 40,
+      face: None,
       path: creature_path.Running(
         from: at(x: 1.5, y: -2.0, z: 3.0),
         via: [],

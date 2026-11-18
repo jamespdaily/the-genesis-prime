@@ -618,7 +618,14 @@ pub fn viewer_takes(
         })
       Continue(
         session,
-        case connection_frames.path_frame(entered:, unit_id:, path:) {
+        case
+          connection_frames.path_frame(
+            entered:,
+            unit_id:,
+            path:,
+            face: shown.face_of(picture: entered.shown, unit_id:),
+          )
+        {
           Some(frame) -> [connection_state.to_client(session, frame)]
           None -> []
         },

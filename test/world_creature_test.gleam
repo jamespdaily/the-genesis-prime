@@ -1706,7 +1706,7 @@ pub fn a_knockback_spell_on_a_creature_shows_its_flight_to_a_watching_client_tes
     )
   let entered = world_entry.Entered(..entered, clock_origin_ms: go_ms - 5000)
   let assert Some(Frame(message_id: 0x0638, body:)) =
-    frames.path_frame(entered:, unit_id: thrown, path:)
+    frames.path_frame(entered:, unit_id: thrown, path:, face: None)
     as "the flight is one 0x638"
   let assert Ok(movement) = unit_movement.decode(body)
   let assert [

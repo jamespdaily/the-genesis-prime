@@ -970,6 +970,133 @@ pub fn a_creature_that_runs_28_points_is_drawn_along_all_of_them_and_a_late_view
     as "the late viewer's run takes the same four defaults: the second leg's direction is the client's to find"
 }
 
+/// The commands after the kind 4 path of the 0x638 a viewer writes for `news` once it has
+/// taken each of `earlier` for the Beast (unit 40), in order.
+fn run_tail_after(
+  earlier earlier: List(client_connection.News),
+  news news: client_connection.News,
+) -> List(relayed_movement.RelayedMovement) {
+  let state =
+    list.fold(
+      earlier,
+      game_connection_support.feed(
+        game_connection_support.medic_in_world(),
+        game_connection_support.beast_appears(unit_id: 40),
+      ).0,
+      fn(state, earlier) {
+        game_connection_support.feed(
+          state,
+          beast_news(unit_id: 40, news: earlier),
+        ).0
+      },
+    )
+  let #(_, taken) =
+    game_connection_support.feed(state, beast_news(unit_id: 40, news:))
+  let assert [Frame(message_id: 0x0638, body:)] =
+    game_connection_support.heard(taken, game_connection_support.keyed())
+  let assert Ok(UnitMovement(unit_id: 40, commands:, ..)) =
+    unit_movement.decode(body)
+  let assert [_, relayed_movement.Path(_), ..tail] = commands
+    as "kind 0, kind 4, then the tail"
+  tail
+}
+
+pub fn a_run_that_faces_a_unit_keeps_kind_18_for_it_and_any_other_run_takes_kind_21_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The client keeps a unit facing another unit by kind 18 (`movement_command.kind_18`,
+  // `0x140782cd0`) until a later rotation command, and kind 21 turns it along its path and
+  // keeps the last facing (`movement_command.kind_21`, `0x140783030`), so a chase keeps kind 18
+  // for its target and the player circling the creature after the arrival cannot leave it
+  // facing away; every other run takes kind 21.
+  let run =
+    client_connection.CreatureMoved(path: creature_path.Running(
+      from: place_support.at(
+        world_id: 3460,
+        world_zone_id: 6009,
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+      ),
+      via: [],
+      to: place_support.at(
+        world_id: 3460,
+        world_zone_id: 6009,
+        x: 26.0,
+        y: 0.0,
+        z: 0.0,
+      ),
+      started_ms: support.now_ms,
+      speed: 10.0,
+    ))
+  let chasing_unit_20 = [
+    relayed_movement.VelocityDefault(MovementKind10(blends: 1)),
+    relayed_movement.MoveDefault(MovementKind13(blends: 1)),
+    relayed_movement.FaceUnit(MovementFaceUnit(unit_id: 20, blends: 1)),
+    relayed_movement.StateDefault(MovementKind26(blends: 1)),
+  ]
+  let faces = fn(face) {
+    client_connection.CreatureFaces(face:, at_ms: support.now_ms)
+  }
+  let cases = [
+    #(
+      "a run of a creature that faces no one takes kind 21",
+      [],
+      path_defaults(),
+    ),
+    #(
+      "a chase faces its target's unit by kind 18, in place of kind 21",
+      [faces(creature_turn.Unit(unit_id: 20))],
+      chasing_unit_20,
+    ),
+    #(
+      "a walk home faces a point and takes kind 21",
+      [
+        faces(
+          creature_turn.Point(place: place_support.at(
+            world_id: 3460,
+            world_zone_id: 6009,
+            x: 5.0,
+            y: 0.0,
+            z: 5.0,
+          )),
+        ),
+      ],
+      path_defaults(),
+    ),
+    #(
+      "a run held to a fixed facing takes kind 21",
+      [
+        faces(
+          creature_turn.Fixed(facing: start_place.Facing(
+            yaw: 1.5,
+            pitch: 0.0,
+            roll: 0.0,
+          )),
+        ),
+      ],
+      path_defaults(),
+    ),
+    #(
+      "a run after a turn at a unit and then at a fixed facing takes kind 21: the last turn counts",
+      [
+        faces(creature_turn.Unit(unit_id: 20)),
+        faces(
+          creature_turn.Fixed(facing: start_place.Facing(
+            yaw: 1.5,
+            pitch: 0.0,
+            roll: 0.0,
+          )),
+        ),
+      ],
+      path_defaults(),
+    ),
+  ]
+  list.each(cases, fn(row) {
+    let #(reason, earlier, expected) = row
+    assert run_tail_after(earlier:, news: run) == expected as reason
+  })
+}
+
 pub fn a_viewer_writes_a_creature_placed_while_it_ran_as_kind_0_then_kind_2_with_the_blend_bit_clear_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, _) =
@@ -1539,8 +1666,14 @@ pub fn a_beast_that_chases_the_player_runs_in_the_clients_view_and_stops_where_i
     [relayed_movement.Time(_), relayed_movement.Path(path), ..defaults],
   ] = beast_movements(run)
     as "kind 0, the path, then the defaults that make the client animate it"
-  assert defaults == path_defaults()
-    as "kinds 10, 13, 21 and 26 with bit 1: the run is animated, grounded and faced by the client's own defaults"
+  assert defaults
+    == [
+      relayed_movement.VelocityDefault(MovementKind10(blends: 1)),
+      relayed_movement.MoveDefault(MovementKind13(blends: 1)),
+      relayed_movement.FaceUnit(MovementFaceUnit(unit_id: medic_unit, blends: 1)),
+      relayed_movement.StateDefault(MovementKind26(blends: 1)),
+    ]
+    as "kinds 10, 13 and 26 with bit 1 animate and ground the run, and kind 18 keeps the Beast facing the Medic along the path and after it stops"
   assert chase_arrival_after_ms(chase) == 1100
     as "the Beast stops 4 m short of the Medic: 11 m at 10 m/s"
   let #(beast, arrived) =
