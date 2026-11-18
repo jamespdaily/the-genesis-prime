@@ -1212,20 +1212,11 @@ pub fn arrival_news(
     Fighting(..) | Resting | Returning(..) -> []
   }
   let path = case state.path {
-    Running(to:, speed:, ..) -> {
-      let here = creature_path.place_at(path: state.path, now_ms:)
-      case here == to {
-        True -> []
-        False -> [
-          client_connection.CreatureMoved(path: Running(
-            from: here,
-            to:,
-            started_ms: now_ms,
-            speed:,
-          )),
-        ]
+    Running(..) ->
+      case creature_path.rest_of(path: state.path, now_ms:) {
+        Standing(..) -> []
+        rest -> [client_connection.CreatureMoved(path: rest)]
       }
-    }
     Standing(..) -> []
     Timed(..) ->
       case creature_path.arrives_ms(path: state.path, now_ms:) > now_ms {
@@ -2823,9 +2814,8 @@ fn speed_changed(
       if still_run && speed != fighter.attack.run_speed
     -> {
       let path =
-        creature_path.straight(
-          from: creature_path.place_at(path: was, now_ms:),
-          to: creature_path.end(path: was),
+        creature_path.with_speed(
+          path: was,
           speed: fighter.attack.run_speed,
           now_ms:,
         )

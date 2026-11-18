@@ -269,6 +269,7 @@ pub fn a_running_creatures_pose_is_where_its_path_puts_it_with_the_yaw_its_path_
           ..from,
           path: creature_path.Running(
             from: start,
+            via: [],
             to: start_place.moved(place: start, x: 0.0, y: 0.0, z: -20.0),
             started_ms: 1000,
             speed: 10.0,

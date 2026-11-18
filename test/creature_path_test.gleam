@@ -159,6 +159,12 @@ pub fn arrives_ms_refuses_a_speed_of_zero_or_below_test() -> Nil {
     == Standing(at: target)
     as "a creature already at its target is there, whatever its speed"
   assert creature_path.straight(from:, to: target, speed: 10.0, now_ms: 5000)
-    == creature_path.Running(from:, to: target, started_ms: 5000, speed: 10.0)
+    == creature_path.Running(
+      from:,
+      via: [],
+      to: target,
+      started_ms: 5000,
+      speed: 10.0,
+    )
     as "a speed above 0 runs"
 }

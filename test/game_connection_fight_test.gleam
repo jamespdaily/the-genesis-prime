@@ -810,6 +810,7 @@ pub fn a_viewer_writes_a_running_creatures_0x638_as_kind_0_then_kind_4_at_its_sp
         unit_id: 40,
         news: client_connection.CreatureMoved(path: creature_path.Running(
           from:,
+          via: [],
           to:,
           started_ms: support.now_ms,
           speed: 10.0,
@@ -927,6 +928,7 @@ pub fn a_press_during_a_chase_finds_the_creature_where_its_path_puts_it_test() -
         unit_id: 40,
         news: client_connection.CreatureMoved(path: creature_path.Running(
           from:,
+          via: [],
           to:,
           started_ms: support.now_ms,
           speed: 10.0,
@@ -964,6 +966,7 @@ pub fn a_press_finds_a_creature_whose_path_brought_it_within_the_area_test() -> 
         unit_id: 40,
         news: client_connection.CreatureMoved(path: creature_path.Running(
           from: at_z(-583.18798828125),
+          via: [],
           to: at_z(-565.18798828125),
           started_ms: support.now_ms - 180,
           speed: 100.0,

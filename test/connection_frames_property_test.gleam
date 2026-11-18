@@ -72,6 +72,7 @@ pub fn a_running_frames_move_vector_points_along_its_path_at_its_horizontal_spee
           unit_id: 40,
           path: creature_path.Running(
             from: at(from),
+            via: [],
             to: at(to),
             started_ms: 1000,
             speed:,

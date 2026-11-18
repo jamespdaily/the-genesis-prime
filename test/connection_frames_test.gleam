@@ -257,6 +257,7 @@ pub fn a_path_frame_carries_the_movement_state_its_path_implies_test() -> Nil {
       "a run along +x at 10.0 is a move of 10.0 along x and the moving bit",
       sent(path: creature_path.Running(
         from: at(x: 0.0, y: 0.0, z: 0.0),
+        via: [],
         to: at(x: 26.0, y: 0.0, z: 0.0),
         started_ms: 1000,
         speed: 10.0,
@@ -267,6 +268,7 @@ pub fn a_path_frame_carries_the_movement_state_its_path_implies_test() -> Nil {
       "a run up a slope keeps the horizontal part of the velocity and drops its height: 13.0 along (3, 12, 4) is (3, 12, 4) a second",
       sent(path: creature_path.Running(
         from: at(x: 0.0, y: 0.0, z: 0.0),
+        via: [],
         to: at(x: 3.0, y: 12.0, z: 4.0),
         started_ms: 1000,
         speed: 13.0,
@@ -323,6 +325,7 @@ pub fn a_path_frame_carries_the_movement_state_its_path_implies_test() -> Nil {
       unit_id: 40,
       path: creature_path.Running(
         from: at(x: 0.0, y: 0.0, z: 0.0),
+        via: [],
         to: at(x: 26.0, y: 0.0, z: 0.0),
         started_ms: 1000,
         speed: 70_000.0,
