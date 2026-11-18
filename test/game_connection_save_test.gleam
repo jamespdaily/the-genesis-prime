@@ -1104,6 +1104,7 @@ pub fn the_save_timer_is_cancelled_while_the_connection_claims_again_and_started
       OwnEffect(CancelTimer(TimerId(2))),
       OwnEffect(CancelTimer(TimerId(10))),
       OwnEffect(CancelTimer(TimerId(11))),
+      OwnEffect(CancelTimer(TimerId(13))),
       OwnEffect(StartTimer(TimerId(1), 100)),
     ]
     as "the save timer is cancelled with the claim's wait, so no save fires while the claim is out; a firing already queued is dropped by the shell"

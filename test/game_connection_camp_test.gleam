@@ -269,8 +269,9 @@ pub fn message_0xc0_cancels_the_save_timer_saves_the_place_asks_the_map_run_to_l
       OwnEffect(CancelTimer(TimerId(2))),
       OwnEffect(CancelTimer(TimerId(10))),
       OwnEffect(CancelTimer(TimerId(11))),
+      OwnEffect(CancelTimer(TimerId(13))),
     ]
-    as "the player leaves its chat groups, and the 60 s save timer, the quest reset timer and the quest deadline timer are cancelled before the save, so none fires while the player leaves"
+    as "the player leaves its chat groups, and the 60 s save timer, the quest reset timer, the quest deadline timer and the item expiry timer are cancelled before the save, so none fires while the player leaves"
   assert game_connection_support.ask_request(taken)
     == game_connection_support.save_asked(
       1,
