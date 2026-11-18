@@ -373,7 +373,8 @@ pub fn pose_of(
       }
       let aim = case face {
         None -> Error(Nil)
-        Some(creature_turn.Fixed(facing:)) -> Ok(Fixed(facing.yaw))
+        Some(creature_turn.Fixed(facing:))
+        | Some(creature_turn.Home(facing:)) -> Ok(Fixed(facing.yaw))
         Some(creature_turn.Point(place: point)) ->
           Ok(Toward(area.point_of(place: point)))
         Some(creature_turn.Unit(unit_id: faced)) ->
@@ -562,7 +563,8 @@ pub fn with_face(
   case dict.get(picture, unit_id) {
     Ok(ShownCreature(..) as creature) -> {
       let faced_yaw = case face {
-        creature_turn.Fixed(facing:) -> Some(facing.yaw)
+        creature_turn.Fixed(facing:) | creature_turn.Home(facing:) ->
+          Some(facing.yaw)
         creature_turn.Unit(..) | creature_turn.Point(..) -> creature.faced_yaw
       }
       dict.insert(

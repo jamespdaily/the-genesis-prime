@@ -31,6 +31,7 @@ import genesis_prime/message/movement_kind_13.{MovementKind13}
 import genesis_prime/message/movement_kind_21.{MovementKind21}
 import genesis_prime/message/movement_kind_26.{MovementKind26}
 import genesis_prime/message/movement_move_asked
+import genesis_prime/message/movement_rotation.{MovementRotation}
 import genesis_prime/message/movement_state_flags
 import genesis_prime/message/movement_time
 import genesis_prime/message/player_health.{PlayerHealth}
@@ -1756,6 +1757,52 @@ pub fn a_beast_that_chases_the_player_runs_in_the_clients_view_and_stops_where_i
     as "at the spawn, kind 11 zero and kind 24 holding only the ground bit"
 }
 
+pub fn a_creature_back_at_its_spawn_sends_the_blended_turn_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(medic, beast, aggro, _) = an_aggroed_medic()
+  // The Medic walks 100 m out; the Beast chases to the leash circle and leashes, walks home and
+  // arrives at its spawn (the arrival places it and then turns it).
+  let #(medic, moved) =
+    game_connection_support.read(
+      medic,
+      game_connection_support.moves_message([
+        game_client.position_command(
+          x: 29.128599166870117,
+          y: -853.87158203125,
+          z: -460.18798828125,
+        ),
+      ]),
+    )
+  let #(beast, _) =
+    beast_takes(state: beast, at_ms: 1100, messages: to_the_beast(moved))
+  let #(beast, at_2500) =
+    fire_beast(state: beast, at_ms: 2500, timer: tick_of(aggro))
+  let #(beast, at_4000) =
+    fire_beast(state: beast, at_ms: 4000, timer: tick_of(at_2500))
+  let #(beast, at_5500) =
+    fire_beast(state: beast, at_ms: 5500, timer: tick_of(at_4000))
+  let #(beast, leashed) =
+    fire_beast(state: beast, at_ms: 7000, timer: tick_of(at_5500))
+  let #(medic, _, _) = medic_takes(medic, to_the_medic(leashed))
+  let #(home_timer, home_after_ms) = home_timer_of(leashed)
+  let #(_, home) =
+    fire_beast(state: beast, at_ms: 7000 + home_after_ms, timer: home_timer)
+  let #(_, at_home, _) = medic_takes(medic, to_the_medic(home))
+  // The Beast's spawn faces yaw 0 (`place_support.at`), which faces -z, so the point is the
+  // spawn 1 m on in -z (`movement_command.kind_19`, `movement_command.kind_14.facing`).
+  let assert [_placed, [_, relayed_movement.FacePoint(point)], ..] =
+    beast_movements(at_home)
+    as "the arrival places the Beast, then turns it: kind 0 and kind 19, no kind 14"
+  assert point.blends == 1 as "the client blends the turn over half a second"
+  assert MovementFloatVector(x: point.x, y: point.y, z: point.z)
+    == MovementFloatVector(
+      x: float32.to_bits(29.128599166870117),
+      y: float32.to_bits(-853.87158203125),
+      z: float32.to_bits(-564.18798828125),
+    )
+    as "the point is 1 m from the spawn along its facing"
+}
+
 pub fn a_medic_and_a_beast_striking_each_other_at_one_instant_both_get_their_answers_before_either_deadline_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(medic, beast, aggro, _) = an_aggroed_medic()
@@ -2460,6 +2507,35 @@ pub fn a_viewer_writes_a_creatures_facing_as_0x638_only_when_the_unit_is_shown_t
     )
   assert game_connection_support.written_ids(home) == [0x0638]
     as "a point is written as well"
+  // A creature that dies, in flight or not, keeps its facing by kind 14 with the bit clear: the
+  // viewer writes the face as the creature's rule gave it (`0x140715350`).
+  let #(state, frozen) =
+    game_connection_support.feed(
+      state,
+      beast_news(
+        unit_id: 40,
+        news: faces(
+          creature_turn.Fixed(facing: start_place.Facing(
+            yaw: 1.5,
+            pitch: 0.0,
+            roll: 0.0,
+          )),
+        ),
+      ),
+    )
+  let assert [Frame(message_id: 0x0638, body:)] =
+    game_connection_support.heard(frozen, game_connection_support.keyed())
+    as "a fixed facing is one 0x638"
+  let assert Ok(UnitMovement(commands: [_, rotation], ..)) =
+    unit_movement.decode(body)
+  assert rotation
+    == relayed_movement.Rotation(MovementRotation(
+      yaw: 0x3FC00000,
+      pitch: 0,
+      roll: 0,
+      blends: 0,
+    ))
+    as "kind 14 with the blend bit clear, so a corpse in flight is not turned"
   let #(state, _) =
     game_connection_support.feed(state, beast_news(unit_id: 40, news: Removed))
   let #(_, removed) =
