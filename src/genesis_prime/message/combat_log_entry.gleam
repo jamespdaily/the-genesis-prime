@@ -35,8 +35,7 @@ import gleam/result
 /// `opcode.0x247.multi_hit_shields`), 12 heal (the fact file's
 /// `opcode.0x247.heal`), 13 multi_heal (the fact file's
 /// `opcode.0x247.multi_heal`), 17 deflect (the fact file's
-/// `opcode.0x247.deflect`), 34 unhandled_34 (the fact file's
-/// `opcode.0x247.unhandled_34`).
+/// `opcode.0x247.deflect`).
 ///
 /// These kinds are open, so no variant holds them and a read refuses them: 0
 /// (absorption: what builds it: a spell that grants an absorption pool, which
@@ -84,9 +83,13 @@ import gleam/result
 /// action set switching, which is not built) (layout so far in the fact file's
 /// `opcode.0x247.build_switch`); 33 (datacube: what builds it: datacubes
 /// (lore), which are not built; which addon handles its event is not searched)
-/// (layout so far in the fact file's `opcode.0x247.datacube`); 35
-/// (healing_absorption: what builds it: a heal-absorb effect, none is built)
-/// (layout so far in the fact file's `opcode.0x247.healing_absorption`).
+/// (layout so far in the fact file's `opcode.0x247.datacube`); 34
+/// (unhandled_34: does the real dispatch handle it: the saved decompile shows
+/// no case 34 in HandleCombatLog, but it may omit one, so a run of the client
+/// with a type 34 settles it) (layout so far in the fact file's
+/// `opcode.0x247.unhandled_34`); 35 (healing_absorption: what builds it: a
+/// heal-absorb effect, none is built) (layout so far in the fact file's
+/// `opcode.0x247.healing_absorption`).
 pub type CombatLogEntry {
   /// Kind 1, read by `combat_log_cc_state`. The fact file's
   /// `opcode.0x247.cc_state` names the kind.

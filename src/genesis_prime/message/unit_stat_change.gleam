@@ -22,8 +22,7 @@ import gleam/result
 /// kind no variant has is refused.
 ///
 /// The client reads these kinds and the server never sends them, so no variant
-/// holds them and a read refuses them: 0 health (the fact file's
-/// `opcode.0x938.all_stats`), 1 float_stat_0x218 (the fact file's
+/// holds them and a read refuses them: 1 float_stat_0x218 (the fact file's
 /// `opcode.0x938.all_stats`), 2 resource_slot_0 (the fact file's
 /// `opcode.0x938.all_stats`), 3 resource_slot_1 (the fact file's
 /// `opcode.0x938.all_stats`), 4 resource_slot_2 (the fact file's
@@ -48,17 +47,21 @@ import gleam/result
 /// `opcode.0x938.all_stats`), 31 unread_31 (the fact file's
 /// `opcode.0x938.all_stats`).
 ///
-/// These kinds are open, so no variant holds them and a read refuses them: 11
-/// (effective_level: what builds it: mentoring, which is not built; the name
-/// MentorLevel is a lead from the earlier server, not the client's) (layout so
-/// far in the fact file's `opcode.0x938.all_stats`); 15 (sheathed: what builds
-/// it: creatures drawing weapons at a fight start, a guess; a recording of a
-/// fight start settles it; the name is a lead from the earlier server, not the
-/// client's) (layout so far in the fact file's `opcode.0x938.all_stats`); 17
-/// (cluster: what builds it: unit clusters, which are not built) (layout so far
-/// in the fact file's `opcode.0x938.all_stats`); 26 (integer stored at unit
-/// 0x50: what builds it: nothing is known, the client does not read its
-/// meaning) (layout so far in the fact file's `opcode.0x938.all_stats`).
+/// These kinds are open, so no variant holds them and a read refuses them: 0
+/// (health: what builds it: the client sets no health from it, but for the
+/// player's own unit raises UI_HealthChanged with the value and the unit's real
+/// health; when that notification is needed is not settled) (layout so far in
+/// the fact file's `opcode.0x938.all_stats`); 11 (effective_level: what builds
+/// it: mentoring, which is not built; the name MentorLevel is a lead from the
+/// earlier server, not the client's) (layout so far in the fact file's
+/// `opcode.0x938.all_stats`); 15 (sheathed: what builds it: creatures drawing
+/// weapons at a fight start, a guess; a recording of a fight start settles it;
+/// the name is a lead from the earlier server, not the client's) (layout so far
+/// in the fact file's `opcode.0x938.all_stats`); 17 (cluster: what builds it:
+/// unit clusters, which are not built) (layout so far in the fact file's
+/// `opcode.0x938.all_stats`); 26 (integer stored at unit 0x50: what builds it:
+/// nothing is known, the client does not read its meaning) (layout so far in
+/// the fact file's `opcode.0x938.all_stats`).
 pub type UnitStatChange {
   /// Kind 10, read by `unit_stat_level`. The fact file's `opcode.0x938` names
   /// the kind.

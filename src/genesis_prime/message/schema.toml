@@ -2658,7 +2658,6 @@ summary = "the stat of a 0x938 in 5 bits picks the layout of its value"
 tag_bits = 5
 refused_from = 32
 never_tags = [
-  { tag = 0, name = "health", named_by = "opcode.0x938.all_stats" },
   { tag = 1, name = "float_stat_0x218", named_by = "opcode.0x938.all_stats" },
   { tag = 2, name = "resource_slot_0", named_by = "opcode.0x938.all_stats" },
   { tag = 3, name = "resource_slot_1", named_by = "opcode.0x938.all_stats" },
@@ -2684,6 +2683,7 @@ never_tags = [
   { tag = 31, name = "unread_31", named_by = "opcode.0x938.all_stats" },
 ]
 open_tags = [
+  { tag = 0, question = "health: what builds it: the client sets no health from it, but for the player's own unit raises UI_HealthChanged with the value and the unit's real health; when that notification is needed is not settled", named_by = "opcode.0x938.all_stats" },
   { tag = 11, question = "effective_level: what builds it: mentoring, which is not built; the name MentorLevel is a lead from the earlier server, not the client's", named_by = "opcode.0x938.all_stats" },
   { tag = 15, question = "sheathed: what builds it: creatures drawing weapons at a fight start, a guess; a recording of a fight start settles it; the name is a lead from the earlier server, not the client's", named_by = "opcode.0x938.all_stats" },
   { tag = 17, question = "cluster: what builds it: unit clusters, which are not built", named_by = "opcode.0x938.all_stats" },
@@ -2892,7 +2892,6 @@ never_tags = [
   { tag = 12, name = "heal", named_by = "opcode.0x247.heal" },
   { tag = 13, name = "multi_heal", named_by = "opcode.0x247.multi_heal" },
   { tag = 17, name = "deflect", named_by = "opcode.0x247.deflect" },
-  { tag = 34, name = "unhandled_34", named_by = "opcode.0x247.unhandled_34" },
 ]
 open_tags = [
   { tag = 0, question = "absorption: what builds it: a spell that grants an absorption pool, which no other message logs", named_by = "opcode.0x247.absorption" },
@@ -2915,6 +2914,7 @@ open_tags = [
   { tag = 31, question = "las: what builds it: Limited Action Set edits, which the server does not take", named_by = "opcode.0x247.las" },
   { tag = 32, question = "build_switch: what builds it: action set switching, which is not built", named_by = "opcode.0x247.build_switch" },
   { tag = 33, question = "datacube: what builds it: datacubes (lore), which are not built; which addon handles its event is not searched", named_by = "opcode.0x247.datacube" },
+  { tag = 34, question = "unhandled_34: does the real dispatch handle it: the saved decompile shows no case 34 in HandleCombatLog, but it may omit one, so a run of the client with a type 34 settles it", named_by = "opcode.0x247.unhandled_34" },
   { tag = 35, question = "healing_absorption: what builds it: a heal-absorb effect, none is built", named_by = "opcode.0x247.healing_absorption" },
 ]
 variants = [

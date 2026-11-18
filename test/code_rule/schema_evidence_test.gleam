@@ -924,22 +924,22 @@ const combat_and_stat_rows = [
   TagRow(
     union: "combat_log_entry",
     refused_from: 36,
-    never: [3, 4, 6, 7, 12, 13, 17, 34],
+    never: [3, 4, 6, 7, 12, 13, 17],
     open: [
       0, 5, 8, 9, 10, 11, 15, 16, 19, 20, 21, 25, 26, 27, 28, 29, 30, 31, 32, 33,
-      35,
+      34, 35,
     ],
-    reason: "union-kinds.md: the client reads types 0 to 35; the NEVER rows are never sent, every other lacking type waits for its system",
+    reason: "union-kinds.md: the client reads types 0 to 35; the NEVER rows are never sent, every other lacking type waits for its system or for a question about the client's dispatch",
   ),
   TagRow(
     union: "unit_stat_change",
     refused_from: 32,
     never: [
-      0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 12, 13, 14, 16, 18, 19, 23, 24, 25, 27, 28,
-      29, 30, 31,
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 12, 13, 14, 16, 18, 19, 23, 24, 25, 27, 28, 29,
+      30, 31,
     ],
-    open: [11, 15, 17, 26],
-    reason: "union-kinds.md: the client reads stats 0 to 31; 24 of the 28 lacking stats are NEVER by 0x938, four wait for their systems",
+    open: [0, 11, 15, 17, 26],
+    reason: "union-kinds.md: the client reads stats 0 to 31; 23 of the 28 lacking stats are NEVER by 0x938, five wait for their systems or for a question",
   ),
   TagRow(
     union: "unit_stat_value",
