@@ -140,6 +140,8 @@
 
 import genesis_prime/client_connection
 import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/game/ability_book
+import genesis_prime/game/ability_book_frame
 import genesis_prime/game/camp
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/character_state
@@ -169,8 +171,6 @@ import genesis_prime/game/tutorial
 import genesis_prime/game/unit_properties
 import genesis_prime/game/vendor
 import genesis_prime/game/visibility
-import genesis_prime/message/ability_tier.{AbilityTier}
-import genesis_prime/message/ability_tiers.{AbilityTiers}
 import genesis_prime/message/action_set.{ActionSet}
 import genesis_prime/message/action_shortcut.{ActionShortcut}
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
@@ -1093,9 +1093,10 @@ pub fn joined(
               loadout_sent(
                 character_number: character_id_number,
                 loadout:,
+                level: character.level,
                 book: spell_plan.book(
-                  plans: spell_plan.plans(tables:),
-                  bag: loadout.bag(loadout:),
+                  plans: spell_plan.plans_with_later(tables:),
+                  bag: ability_book.bag(loadout:, level: character.level),
                 ),
               ),
               [player_path(character:)],
@@ -1520,21 +1521,6 @@ fn entered_world() -> Effect {
   Send(Frame(message_id: player_entered_world.message_id, body:))
 }
 
-/// The location of the held items that are abilities (`opcode.0x111.ability_bag`).
-const ability_location = 4
-
-/// The reason an item is added for when it is held from the start: 49, which
-/// adds an ability without raising the ability book's change
-/// (`opcode.0x111.ability_bag`) and, as every reason but 27, shows the ability
-/// in its bar slot (`0x1403c1bf0`).
-const held_from_the_start = 49
-
-/// The action sets an ability book entry holds, 0 to 3 (`opcode.0x1a0`).
-const action_sets = [0, 1, 2, 3]
-
-/// The tier every ability starts at (`opcode.0x1a0`: tier 0 counts as 1).
-const first_tier = 1
-
 /// The result of an action set the client takes as ok (`opcode.0x19d`).
 const action_set_ok = 1
 
@@ -1576,22 +1562,12 @@ fn items_sent(items items: List(store.HeldItem)) -> List(Effect) {
 fn loadout_sent(
   character_number character_number: Int,
   loadout loadout: Loadout,
+  level level: Int,
   book book: List(Spell4BaseId),
 ) -> List(Effect) {
   let abilities =
-    list.index_map(loadout.bag(loadout:), fn(ability, bag_index) {
-      held_item(
-        item_guid: loadout.item_guid(
-          character_number:,
-          location: ability_location,
-          bag_index:,
-        ),
-        item_id: ability.value,
-        location: ability_location,
-        bag_index:,
-        stack_count: 1,
-        random_stats: 0,
-      )
+    list.index_map(ability_book.bag(loadout:, level:), fn(base, bag_index) {
+      Send(ability_book_frame.held_ability(character_number:, bag_index:, base:))
     })
   let innate = case loadout.innate {
     Some(_) -> [innate_index_frame()]
@@ -1600,7 +1576,7 @@ fn loadout_sent(
   list.flatten([
     abilities,
     [
-      ability_tiers_frame(abilities: book),
+      Send(ability_book_frame.tiers(abilities: book)),
       action_set_frame(abilities: loadout.abilities),
     ],
     innate,
@@ -1641,28 +1617,8 @@ fn held_item(
     bag_index:,
     stack_count:,
     random_stats:,
-    reason: held_from_the_start,
+    reason: ability_book_frame.held_from_the_start,
   ))
-}
-
-/// 0x1A0 with tier 1 of each ability in each action set.
-fn ability_tiers_frame(abilities abilities: List(Spell4BaseId)) -> Effect {
-  let assert Ok(body) =
-    ability_tiers.encode(
-      AbilityTiers(
-        tiers: list.flat_map(abilities, fn(ability) {
-          list.map(action_sets, fn(action_set_index) {
-            AbilityTier(
-              spell4_base_id: ability.value,
-              tier: first_tier,
-              action_set_index:,
-            )
-          })
-        }),
-      ),
-    )
-    as "a Spell4Base id of 18 bits, a tier of 4 and a set of 3 fit the message"
-  Send(Frame(message_id: ability_tiers.message_id, body:))
 }
 
 /// 0x19D for action set 0, the abilities in bar slots 0, 1 and 2. A shortcut
@@ -1678,7 +1634,7 @@ fn action_set_frame(abilities abilities: List(Spell4BaseId)) -> Effect {
       shortcuts: list.index_map(abilities, fn(ability, slot) {
         ActionShortcut(
           shortcut_type: ability_shortcut,
-          location: ability_location,
+          location: ability_book_frame.ability_location,
           bag_index: slot,
           object_id: ability.value,
         )

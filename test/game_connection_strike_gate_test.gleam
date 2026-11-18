@@ -16,6 +16,7 @@
 
 import fixture_tables
 import game_connection_support as support
+import genesis_prime/game/ability_book
 import genesis_prime/game/connection/state.{Settings}
 import genesis_prime/game/loadout
 import genesis_prime/table/id.{ClassId, Spell4BaseId}
@@ -51,7 +52,9 @@ fn bag_index_of(base base: Int) -> Int {
     )
     as "the fixture holds the Stalker's Novice set"
   let assert Ok(index) =
-    list.index_map(loadout.bag(loadout: set), fn(held, index) { #(held, index) })
+    list.index_map(ability_book.bag(loadout: set, level: 1), fn(held, index) {
+      #(held, index)
+    })
     |> list.key_find(Spell4BaseId(base))
     as "the Stalker's bag holds the ability"
   index

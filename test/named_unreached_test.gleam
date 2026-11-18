@@ -30,6 +30,7 @@ import client_tables
 import genesis_prime/coverage/named_unreached.{Entry, Naming, NoRow}
 import genesis_prime/coverage/starting_ability.{ProcKindNotRead, ProcLeftOut}
 import genesis_prime/game/server_proxy
+import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan
 import genesis_prime/table/loader/store
 import genesis_prime/tooltip_token.{Token}
@@ -86,7 +87,7 @@ fn named_in(
   spell_tables.with_loaded_deriving(
     rows:,
     reaching: [#("SpellLevel", 1111), #("Spell4", 42_148)],
-    derivations: [spell_plan.derivation()],
+    derivations: [spell_plan.derivation(area_checked: spell_area.checker)],
     body: fn(tables) {
       let reached = reached_ids(tables:, proxies:)
       #(named_unreached.find(tables:, tokens:, reached:, left_out:), reached)

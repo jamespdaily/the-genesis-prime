@@ -12,8 +12,8 @@
 ////   (0x1403c92e0, `Prerequisite.prerequisiteTypeId.26`). A zone with no row has
 ////   no parent to walk to, so it is the one zone the player is in.
 
+import genesis_prime/game/ability_book
 import genesis_prime/game/connection/state as connection_state
-import genesis_prime/game/loadout
 import genesis_prime/game/movement
 import genesis_prime/game/prerequisite.{type Player}
 import genesis_prime/game/start_place
@@ -43,7 +43,10 @@ pub fn checker_of(
 ) -> prerequisite.Checker {
   prerequisite.Checker(
     items: entered.items,
-    book: loadout.bag(loadout: entered.loadout),
+    book: ability_book.bag(
+      loadout: entered.loadout,
+      level: entered.character.level,
+    ),
     world_difficulty: world_entry.world_difficulty,
   )
 }

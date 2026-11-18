@@ -326,7 +326,7 @@ pub fn derivation() -> table_store.Derivation {
 /// (genesis_prime/game/spell_plan `plans`).
 pub fn build(tables tables: table_store.Tables) -> Result(Areas, AreaError) {
   let spells =
-    dict.values(spell_plan.plans(tables:))
+    dict.values(spell_plan.plans_with_later(tables:))
     |> list.flat_map(spells_of_tree)
   let effects = spell_plan.effects_by_spell(tables:)
   let links = telegraph_links_by_spell(tables:)
@@ -340,6 +340,48 @@ pub fn build(tables tables: table_store.Tables) -> Result(Areas, AreaError) {
       }
     }
   })
+}
+
+/// What a later ability's spells must pass to be planned (genesis_prime/game/spell_plan
+/// `Checker`): the area of each is built as `build` builds it, and an error of what the
+/// rule does not build yet leaves the ability out of the plans, so no ability holds a
+/// spell the load of the areas would refuse.
+pub fn checker(tables tables: table_store.Tables) -> spell_plan.Checker {
+  let effects = spell_plan.effects_by_spell(tables:)
+  let links = telegraph_links_by_spell(tables:)
+  fn(spell) {
+    area_of(tables:, effects:, links:, spell:)
+    |> result.replace(Nil)
+    |> result.map_error(plan_error_of(
+      error: _,
+      spell4_id: spell.spell4_id.value,
+    ))
+  }
+}
+
+/// An area error as the plan's: the one inside an apply gate as itself, and the rest as
+/// what the area rule does not build or as a fault of the data. A row the client's own
+/// table lacks for a hit telegraph (a TelegraphDamage row a Spell4Telegraph row names) is
+/// not built: the area has no shape to place.
+fn plan_error_of(
+  error error: AreaError,
+  spell4_id spell4_id: Int,
+) -> spell_plan.PlanError {
+  case error {
+    ApplyGateNotRead(error: inner) -> inner
+    NoAreaRow(..) | MultiplierNotFinite(..) ->
+      spell_plan.AreaDataFault(spell4_id:, reason: describe(error:))
+    NoRow(..)
+    | SelectionNotClosest(..)
+    | ValidTargetsNotAlive(..)
+    | TelegraphNotOnCaster(..)
+    | ShapeNotBuilt(..)
+    | AimNotRead(..)
+    | FormulaNotRead(..)
+    | TickingUntilRemoved(..)
+    | TickingNoTick(..) ->
+      spell_plan.AreaNotBuilt(spell4_id:, reason: describe(error:))
+  }
 }
 
 /// The spell, the stage spells a RapidTap or ChargeRelease ability casts and every

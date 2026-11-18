@@ -156,7 +156,7 @@ pub fn one_0x1a0_sets_tier_1_of_the_abilities_and_the_innate_in_action_sets_0_to
       == list.flat_map(
         list.append(
           list.append(abilities, [innate_base]),
-          world_entry_support.alternate_bases(class_id:),
+          world_entry_support.alternate_bases(class_id:, level: 1),
         ),
         fn(base) {
           list.map([0, 1, 2, 3], fn(action_set_index) {

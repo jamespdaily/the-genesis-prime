@@ -30,6 +30,7 @@ import fixture_tables
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{type Request}
 import genesis_prime/connection/frame.{type Frame}
+import genesis_prime/game/ability_book
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
@@ -508,7 +509,7 @@ pub fn a_spellslinger_entry_lists_its_alternates_in_the_ability_book_test() -> N
       faction_id: 166,
     )
   assert warrior_tiers.tiers
-    == list.flat_map(loadout.bag(loadout: set), fn(base) {
+    == list.flat_map(ability_book.bag(loadout: set, level: 1), fn(base) {
       list.map([0, 1, 2, 3], fn(action_set_index) {
         AbilityTier(spell4_base_id: base.value, tier: 1, action_set_index:)
       })

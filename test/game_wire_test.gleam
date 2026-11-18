@@ -56,10 +56,12 @@ import genesis_prime/game_settings.{GameSettings}
 import genesis_prime/hand_off.{Holder, Put, SessionKey}
 import genesis_prime/import_world_data
 import genesis_prime/login/guid
+import genesis_prime/message/ability_tier.{AbilityTier}
+import genesis_prime/message/ability_tiers
 import genesis_prime/message/bit_stream
 import genesis_prime/message/camp_countdown
 import genesis_prime/message/cast_activate.{CastActivate}
-import genesis_prime/message/cast_result.{TargetIsNotUseable}
+import genesis_prime/message/cast_result.{SpellUnknown, TargetIsNotUseable}
 import genesis_prime/message/character_list
 import genesis_prime/message/character_list_entry
 import genesis_prime/message/chat_line_accepted
@@ -81,6 +83,7 @@ import genesis_prime/message/experience_gained
 import genesis_prime/message/float32
 import genesis_prime/message/interaction_request.{InteractionRequest}
 import genesis_prime/message/interaction_result
+import genesis_prime/message/item_added
 import genesis_prime/message/item_move
 import genesis_prime/message/item_place
 import genesis_prime/message/item_visual.{ItemVisual}
@@ -115,6 +118,7 @@ import genesis_prime/message/unit_properties_changed
 import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed
+import genesis_prime/message/unit_stat_level.{UnitStatLevel}
 import genesis_prime/message/unit_stat_shield.{UnitStatShield}
 import genesis_prime/message/unit_stealth
 import genesis_prime/message/whisper_failed
@@ -141,7 +145,7 @@ import gleam/erlang/process
 import gleam/float
 import gleam/int
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
 import gleam/otp/system
 import gleam/result
 import gleam_community/maths
@@ -4342,6 +4346,22 @@ fn a_medic_at_the_marker_ring(
   started started: login_support.Started,
   sixth sixth: Int,
 ) -> #(game_client.Game, List(Frame), BitArray, Int) {
+  a_medic_of_a_level_at_the_marker_ring(
+    started:,
+    sixth:,
+    level: 1,
+    saved_experience: None,
+  )
+}
+
+/// The same Medic of the level given, holding the experience its last save kept (`None`
+/// for the least of its level).
+fn a_medic_of_a_level_at_the_marker_ring(
+  started started: login_support.Started,
+  sixth sixth: Int,
+  level level: Int,
+  saved_experience saved_experience: Option(Int),
+) -> #(game_client.Game, List(Frame), BitArray, Int) {
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let #(game, character) =
     new_player_at_level(
@@ -4349,8 +4369,22 @@ fn a_medic_at_the_marker_ring(
       number: 1,
       character_name: "Zed Qu",
       class_id: 4,
-      level: 1,
+      level:,
     )
+  case saved_experience {
+    Some(experience) -> {
+      let assert Ok(_) =
+        pog.query(
+          "update character set experience = $2 where character_id = $1",
+        )
+        |> pog.parameter(pog.int(character))
+        |> pog.parameter(pog.int(experience))
+        |> pog.execute(pool)
+        as "the character's last save kept this experience"
+      Nil
+    }
+    None -> Nil
+  }
   let assert Ok(_) =
     pog.query("update character set faction_id = 167 where character_id = $1")
     |> pog.parameter(pog.int(character))
@@ -4456,6 +4490,136 @@ pub fn a_placed_target_is_shown_killed_and_counted_test() -> Nil {
     as "opcode.0x361: the kill counts objective 21290, the sixth of quest 10518, once"
   game_client.close(game:)
   login_support.stop(started)
+}
+
+/// The Medic of the marker ring that levels from 3 to 4 on the kill at slot 0: its abilities
+/// are the level-1 three and the innate, then SpellLevel 614's base 26038 (Fissure) at bag
+/// index 4, written after the level and before the properties, on the whole server and again
+/// at the entry of the relog. Fissure has no plan (`spell_plan.unplanned`: its second spell's
+/// hit telegraph 2996 is placed by flags 8, which the area rule does not build), so the press
+/// of slot 4 at the other creature of the ring is refused unknown, as any bag slot with no
+/// plan is (`0x14039a040`); the press of a level-up ability that has a plan is the cast
+/// tests' (`experience_book_test`). The clock is driven and nothing waits on real time.
+pub fn a_medic_that_levels_from_3_to_4_holds_fissure_castable_and_a_relog_at_4_holds_it_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use tables <- on_rows_without_paralytic_surges_recharge()
+  let time = driven_time.new()
+  let started = world_with_the_markers_creatures(tables:, time:)
+  // The saved experience is one short of level 4 (XpPerLevel row 4, minXpForLevel 2860), so
+  // the one kill, which gives at least 1, reaches it.
+  let assert Ok(level_four) = xp_per_level.get(tables:, id: XpPerLevelId(4))
+    as "XpPerLevel has a row 4"
+  let #(game, frames, have, character) =
+    a_medic_of_a_level_at_the_marker_ring(
+      started:,
+      sixth: 0,
+      level: 3,
+      saved_experience: Some(level_four.min_xp_for_level - 1),
+    )
+  let target = the_target_at_slot_0(frames:)
+  let other =
+    list.find(targets_in(frames:), fn(creature) {
+      creature.unit_id != target.unit_id
+    })
+  let assert Ok(other) = other as "the ring's second 73492 stands at slot 2"
+  let slot = ring_slot(index: 0)
+  game_client.face(
+    game:,
+    yaw: game_client.yaw_toward(from: #(slot.0 +. 12.0, slot.2), target: #(
+      slot.0,
+      slot.2,
+    )),
+    clock: 100,
+  )
+  let assert Ok(#(killed, have)) =
+    fight_bot.presses_until_the_target_dies(
+      advance: driven_time.advance(time:, ms: _),
+      recharge_ms: 0,
+      game:,
+      have:,
+      target: target.unit_id,
+      cast_id: 1,
+      seen: [],
+    )
+  let #(rest, have) =
+    game_client.read_until(game:, have:, found: fn(rest) {
+      list.any(list.append(killed, rest), fn(frame) {
+        frame.message_id == 0x01A0
+      })
+    })
+  let risen =
+    list.filter(list.append(killed, rest), fn(frame) {
+      list.contains([0x01AC, 0x0938, 0x0111, 0x01A0], frame.message_id)
+      && !is_other_stat(frame:)
+    })
+  assert list.map(risen, fn(frame) { frame.message_id })
+    == [0x01AC, 0x0938, 0x0111, 0x01A0]
+    as "the experience, then the level, then the ability the level grants and its book entry (opcode.0x111.ability_level_up)"
+  let assert [_, level, ability, book] = risen
+  assert unit_stat_changed.decode(level.body)
+    |> result.map(fn(changed) { changed.change })
+    == Ok(unit_stat_change.Level(UnitStatLevel(value: 4)))
+    as "opcode.0x938: stat 10 is 4, written before the ability the client checks it for (0x1403bb040)"
+  let assert Ok(added) = item_added.decode(ability.body)
+  assert #(
+      added.held_item.item.location,
+      added.held_item.item.bag_index,
+      added.held_item.item.item_id,
+      added.held_item.reason,
+    )
+    == #(4, 4, 26_038, 49)
+    as "opcode.0x111.ability_level_up: SpellLevel 614's base at the slot after the bag of 4, reason 49"
+  let assert Ok(tiers) = ability_tiers.decode(book.body)
+  assert tiers.tiers
+    == list.map([0, 1, 2, 3], fn(action_set_index) {
+      AbilityTier(spell4_base_id: 26_038, tier: 1, action_set_index:)
+    })
+    as "opcode.0x1a0: tier 1 of the base in each of the four action sets"
+  // The press of slot 4 at the ring's other creature, which stands alive and untouched.
+  game_client.press_ability(
+    game:,
+    client_cast_id: 50,
+    bag_index: 4,
+    target: other.unit_id,
+  )
+  let #(pressed, have) = game_client.read_until_pong(game:, have:, number: 8)
+  assert refusals(frames: pressed) == [cast_result.to_value(SpellUnknown)]
+    as "opcode.0x7fc: Fissure has no plan, so the press is refused unknown"
+  // The relog at level 4 holds the same five abilities, the new one in slot 4.
+  let #(second_entry, _) =
+    game_client.camp_and_play(game:, have:, character_id: character)
+  assert list.filter_map(
+      item_bot.answer_in(frames: second_entry).added,
+      fn(held) {
+        case held.item.location {
+          4 -> Ok(#(held.item.bag_index, held.item.item_id))
+          _ -> Error(Nil)
+        }
+      },
+    )
+    == [
+      #(0, 38_201),
+      #(1, 16_322),
+      #(2, 26_543),
+      #(3, 46_615),
+      #(4, 26_038),
+    ]
+    as "the entry's location-4 items are the level-1 three, the innate and Fissure's base in slot 4: a relog holds the book a rise made"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+/// Whether the frame is a 0x938 of a stat other than the level.
+fn is_other_stat(frame frame: Frame) -> Bool {
+  use <- bool.guard(when: frame.message_id != 0x0938, return: False)
+  let assert Ok(changed) = unit_stat_changed.decode(frame.body)
+    as "the server's 0x938 decodes"
+  case changed.change {
+    unit_stat_change.Level(..) -> False
+    unit_stat_change.Shield(..)
+    | unit_stat_change.InterruptArmor(..)
+    | unit_stat_change.Absorption(..) -> True
+  }
 }
 
 /// Whether the frames hold the 0x35c that completes quest 10518 (state 3, objective 0).

@@ -200,9 +200,14 @@ pub fn a_channel_of_the_level_1_abilities_has_a_phase_for_each_pulse_and_none_af
         <> int.to_string(pulses - 1)
       }
   })
+  let level_one_spells =
+    dict.values(spell_plan.plans(tables: client_tables.shared()))
+    |> list.flat_map(spell_plan.tree(spell: _, started: fn(_) { True }))
+    |> list.map(fn(spell) { spell.spell4_id.value })
   assert list.length(
       list.filter(dict.values(areas), fn(found) {
         option.is_some(found.spell.channel)
+        && list.contains(level_one_spells, found.spell4_id.value)
       }),
     )
     == list.length(channels)

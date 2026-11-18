@@ -129,7 +129,7 @@ pub type Settings {
 /// planted into them (genesis_prime/game/server_proxy).
 pub fn plans_of(session session: Session) -> spell_plan.Plans {
   server_proxy.planted_into(
-    plans: spell_plan.plans(session.settings.tables),
+    plans: spell_plan.plans_with_later(session.settings.tables),
     proxies: session.settings.server_proxies,
   )
 }

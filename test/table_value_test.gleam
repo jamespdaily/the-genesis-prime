@@ -262,7 +262,7 @@ pub fn a_derivation_refused_on_an_edited_value_gives_the_text_a_load_gives_test(
       tables: fixture_tables.shared(),
       with: [],
       requirements: [],
-      derivations: [spell_plan.derivation()],
+      derivations: [spell_plan.derivation(area_checked: spell_area.checker)],
     )
     |> result.is_ok
     as "the plans build from the fixture's own rows"
@@ -271,7 +271,7 @@ pub fn a_derivation_refused_on_an_edited_value_gives_the_text_a_load_gives_test(
       tables: fixture_tables.shared(),
       with: [store.remove_rows(spell4.entry(), ids: [30_900])],
       requirements: [],
-      derivations: [spell_plan.derivation()],
+      derivations: [spell_plan.derivation(area_checked: spell_area.checker)],
     )
   assert refused
     == Error(store.DerivationFailed(

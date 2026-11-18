@@ -18,6 +18,10 @@ import genesis_prime/game/top_zone
 import genesis_prime/game/unit_properties
 import genesis_prime/table/loader/store
 import genesis_prime/world_map/creature_attack
+import gleam/bool
+import gleam/list
+import gleam/result
+import gleam/set.{type Set}
 
 /// Each derived value. A feature whose rule reads a value of the tables that
 /// is costly to build adds it here.
@@ -26,7 +30,8 @@ import genesis_prime/world_map/creature_attack
 /// - The loadouts: each class and faction's Novice weapon, abilities and gear
 ///   properties, whose missing rows fail the load (genesis_prime/game/loadout).
 /// - The spell plans: the tree of casts each class's level-1 ability starts, whose
-///   missing rows, unread costs and cycles fail the load (genesis_prime/game/spell_plan).
+///   missing rows, unread costs and cycles fail the load, and that of each later ability
+///   of a class that the server can plan (genesis_prime/game/spell_plan).
 /// - Spell Surge's spell, GameFormula 913's dataint0, whose missing row fails the load
 ///   (genesis_prime/game/spell_surge).
 /// - The spell areas: what each spell of those trees strikes (genesis_prime/game/spell_area),
@@ -59,8 +64,8 @@ import genesis_prime/world_map/creature_attack
 pub fn all() -> List(store.Derivation) {
   [
     appearance.derivation(),
-    loadout.derivation(),
-    spell_plan.derivation(),
+    loadout.derivation(left_out: abilities_left_out),
+    spell_plan.derivation(area_checked: spell_area.checker),
     spell_surge.derivation(),
     spell_area.derivation(),
     activate.derivation(),
@@ -75,4 +80,20 @@ pub fn all() -> List(store.Derivation) {
     unit_properties.derivation(),
     creature_attack.derivation(),
   ]
+}
+
+/// Whether a loadout holds the abilities above level 1 that the spell plans leave out
+/// (`spell_plan.unplanned`): the book then lists them and a press of one is refused
+/// unknown. `False` leaves them out of every loadout, so no character holds them.
+const give_unplanned_abilities = True
+
+/// The Spell4 ids of the later abilities no loadout holds, or `Error(Nil)` when the plans
+/// cannot be built (the plans' own derivation then fails the load with the reason).
+fn abilities_left_out(tables: store.Tables) -> Result(Set(Int), Nil) {
+  use <- bool.guard(when: give_unplanned_abilities, return: Ok(set.new()))
+  spell_plan.unplanned(tables:, area_checked: spell_area.checker)
+  |> result.replace_error(Nil)
+  |> result.map(fn(unplanned) {
+    list.map(unplanned, fn(one) { one.spell4_id }) |> set.from_list
+  })
 }

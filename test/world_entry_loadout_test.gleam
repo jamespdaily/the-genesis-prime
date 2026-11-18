@@ -211,7 +211,7 @@ pub fn one_0x1a0_sets_tier_1_of_each_ability_in_action_sets_0_to_3_test() -> Nil
       list.flat_map(
         list.append(
           list.append(class.abilities, [class.innate]),
-          world_entry_support.alternate_bases(class_id: class.id),
+          world_entry_support.alternate_bases(class_id: class.id, level: 1),
         ),
         fn(base) {
           list.map([0, 1, 2, 3], fn(action_set_index) {

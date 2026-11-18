@@ -146,6 +146,7 @@ pub fn the_checker_comes_from_the_entered_player_test() -> Nil {
       loadout: loadout.Loadout(
         ..entered().loadout,
         abilities: [Spell4BaseId(8740), Spell4BaseId(2823)],
+        later: [],
         innate: None,
       ),
     )

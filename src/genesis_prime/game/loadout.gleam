@@ -30,6 +30,10 @@
 //// - **The abilities** are the class's SpellLevel rows of level 1 with no
 ////   prerequisite, in id order, each as the Spell4Base id of its Spell4 row
 ////   (`SpellLevel.spell4Id`). They are the action bar's.
+//// - **The later abilities** are the class's SpellLevel rows above level 1 with no
+////   prerequisite, by level then id, each with the level that gives it
+////   (`SpellLevel.spell4Id.no_prerequisite`); genesis_prime/game/ability_book
+////   holds the ones a level has reached. The innate's base is in none of them.
 //// - **The innate** is the class's first innate slot (genesis_prime/game/innate). The
 ////   ability bag holds its active spell's Spell4Base after the abilities, at the index
 ////   the abilities number (3): the innate button finds the spell by its base in the bag
@@ -63,12 +67,14 @@ import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/order
 import gleam/result
+import gleam/set.{type Set}
 
 /// A character's loadout: the weapon and the slot it is equipped in, the armor
 /// pieces and shield with their slots, what is drawn of them and the weapon,
-/// the abilities as Spell4Base ids in bar order, the class's innate, if it
-/// holds one, and what the gear gives.
+/// the abilities as Spell4Base ids in bar order, the abilities a later level
+/// gives, the class's innate, if it holds one, and what the gear gives.
 pub type Loadout {
   Loadout(
     weapon: Item2Id,
@@ -76,18 +82,16 @@ pub type Loadout {
     armor: List(Equipped),
     visuals: List(WornVisual),
     abilities: List(Spell4BaseId),
+    later: List(Unlock),
     innate: Option(Innate),
     properties: ItemProperties,
   )
 }
 
-/// The ability bag, as Spell4Base ids by bag index: the abilities in bar order, then
-/// the class's innate, if it holds one. A press names a bag index.
-pub fn bag(loadout loadout: Loadout) -> List(Spell4BaseId) {
-  case loadout.innate {
-    Some(held) -> list.append(loadout.abilities, [held.active_base])
-    None -> loadout.abilities
-  }
+/// An ability a class gains above level 1: the Spell4Base id and the SpellLevel
+/// row's `characterLevel` that gives it.
+pub type Unlock {
+  Unlock(level: Int, base: Spell4BaseId)
 }
 
 /// An item held equipped, at location 0, and the bag index it is held at.
@@ -130,10 +134,19 @@ fn items_of(row row: CharacterCreation) -> List(Int) {
 /// The loadouts as a value the tables' load builds once, under the tables' key
 /// (genesis_prime/table/loader/store `derived`); a row a formula reads that the
 /// tables lack, or a class and faction a player can make with no set, fails the
-/// load.
-pub fn derivation() -> table_store.Derivation {
+/// load. `left_out` names the Spell4 ids of the later abilities no loadout holds
+/// (genesis_prime/table/loader/derivation); an error of it fails the load.
+pub fn derivation(
+  left_out left_out: fn(table_store.Tables) -> Result(Set(Int), Nil),
+) -> table_store.Derivation {
   table_store.derivation(key: loadouts_key, build: fn(tables) {
-    build(tables)
+    use left_out <- result.try(
+      left_out(tables)
+      |> result.replace_error(
+        "the abilities the spell plans leave out cannot be listed, because the plans do not build",
+      ),
+    )
+    build(tables, left_out)
     |> result.map_error(fn(error) { describe(error:) })
   })
 }
@@ -215,7 +228,10 @@ fn describe(error error: LoadoutError) -> String {
 const loadouts_key: table_store.DerivedKey(Loadouts) =
   table_store.DerivedKey("Loadouts")
 
-fn build(tables: table_store.Tables) -> Result(Loadouts, LoadoutError) {
+fn build(
+  tables: table_store.Tables,
+  left_out: Set(Int),
+) -> Result(Loadouts, LoadoutError) {
   let rows = character_creation.all(tables)
   let novice =
     list.filter(rows, fn(row) {
@@ -235,6 +251,7 @@ fn build(tables: table_store.Tables) -> Result(Loadouts, LoadoutError) {
         False ->
           build_set(
             tables:,
+            left_out:,
             row:,
             innate: dict.get(innates, row.class_id) |> option.from_result,
           )
@@ -277,6 +294,7 @@ fn health_rows(tables tables: table_store.Tables) -> Result(Nil, LoadoutError) {
 
 fn build_set(
   tables tables: table_store.Tables,
+  left_out left_out: Set(Int),
   row row: CharacterCreation,
   innate held: Option(Innate),
 ) -> Result(Loadout, LoadoutError) {
@@ -308,9 +326,17 @@ fn build_set(
   )
   use visuals <- result.try(visuals_of(tables:, items:))
   use abilities <- result.try(abilities_of(tables:, class_id: row.class_id))
+  use later <- result.try(later_of(tables:, class_id: row.class_id, left_out:))
   use Nil <- result.try(case held {
     Some(held) ->
-      innate.not_an_ability(class_id: row.class_id, innate: held, abilities:)
+      innate.not_an_ability(
+        class_id: row.class_id,
+        innate: held,
+        abilities: list.append(
+          abilities,
+          list.map(later, fn(unlock) { unlock.base }),
+        ),
+      )
       |> result.map_error(InnateFailed)
     None -> Ok(Nil)
   })
@@ -320,6 +346,7 @@ fn build_set(
     armor:,
     visuals:,
     abilities:,
+    later:,
     innate: held,
     properties:,
   ))
@@ -387,10 +414,16 @@ fn weapon_of(
   }
 }
 
+/// Whether a SpellLevel row is a class's ability with no prerequisite, which the
+/// level of the row gives (`SpellLevel.spell4Id.no_prerequisite`).
+pub fn is_class_ability(row row: SpellLevel) -> Bool {
+  row.prerequisite_id == 0
+}
+
 /// Whether a SpellLevel row is a class's ability at level 1 with no
 /// prerequisite, which a character holds from the start.
 pub fn is_level_one_ability(row row: SpellLevel) -> Bool {
-  row.character_level == 1 && row.prerequisite_id == 0
+  row.character_level == 1 && is_class_ability(row:)
 }
 
 fn abilities_of(
@@ -403,14 +436,42 @@ fn abilities_of(
       row.class_id == class_id && is_level_one_ability(row:)
     })
   use <- bool.guard(rows == [], Error(NoAbilities(class_id:)))
-  list.try_map(rows, fn(row) {
-    spell4.get(tables:, id: Spell4Id(row.spell4_id))
-    |> result.replace_error(NoSpell(
-      spell_level_id: row.id,
-      spell4_id: row.spell4_id,
-    ))
-    |> result.map(fn(spell) { Spell4BaseId(spell.spell4_base_id_base_spell) })
+  list.try_map(rows, base_of(tables:, row: _))
+}
+
+/// The class's abilities above level 1 with no prerequisite, by level then SpellLevel id.
+fn later_of(
+  tables tables: table_store.Tables,
+  class_id class_id: Int,
+  left_out left_out: Set(Int),
+) -> Result(List(Unlock), LoadoutError) {
+  spell_level.all(tables)
+  |> list.filter(fn(row) {
+    row.class_id == class_id
+    && is_class_ability(row:)
+    && row.character_level > 1
+    && !set.contains(left_out, row.spell4_id)
   })
+  |> list.sort(fn(first, second) {
+    int.compare(first.character_level, second.character_level)
+    |> order.break_tie(int.compare(first.id, second.id))
+  })
+  |> list.try_map(fn(row) {
+    base_of(tables:, row:)
+    |> result.map(Unlock(level: row.character_level, base: _))
+  })
+}
+
+fn base_of(
+  tables tables: table_store.Tables,
+  row row: SpellLevel,
+) -> Result(Spell4BaseId, LoadoutError) {
+  spell4.get(tables:, id: Spell4Id(row.spell4_id))
+  |> result.replace_error(NoSpell(
+    spell_level_id: row.id,
+    spell4_id: row.spell4_id,
+  ))
+  |> result.map(fn(spell) { Spell4BaseId(spell.spell4_base_id_base_spell) })
 }
 
 /// The loadout of a class and faction, or `Error(Nil)` for a pair no

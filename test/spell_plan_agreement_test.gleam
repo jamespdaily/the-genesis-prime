@@ -91,6 +91,8 @@ fn effect_row_of(error: PlanError) -> Refusal {
     spell_plan.StealthConditionNotRead(..) -> NamesNoRow("a stealth condition")
     spell_plan.StealthChangeNotRead(..) -> NamesNoRow("a stealth change")
     spell_plan.InnateFailed(..) -> NamesNoRow("an innate")
+    spell_plan.AreaNotBuilt(..) | spell_plan.AreaDataFault(..) ->
+      NamesNoRow("an area")
     spell_plan.PrerequisiteCycle(..) ->
       MayNameARow(kind: "a cycle of prerequisites", only_rows_read_it: False)
     spell_plan.HealOnStruckUnit(effect_id:, ..) ->

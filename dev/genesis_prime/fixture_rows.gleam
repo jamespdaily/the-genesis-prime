@@ -916,7 +916,7 @@ const load_rules = [
   LoadRule(
     "SpellLevel",
     [#("characterLevel", 1), #("prerequisiteId", 0)],
-    "loadout.is_level_one_ability: a class's abilities at level 1 with no prerequisite, read by loadout and spell_plan",
+    "loadout.is_class_ability: a class's abilities with no prerequisite, read by loadout and spell_plan; the fixture keeps those of level 1 and, as roots, the later rows a test names",
   ),
 ]
 

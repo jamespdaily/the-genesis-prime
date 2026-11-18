@@ -15,6 +15,7 @@
 
 import client_tables
 import fixture_tables
+import genesis_prime/game/ability_book
 import genesis_prime/game/loadout
 import genesis_prime/game/spell_plan.{type Spell}
 import genesis_prime/game/spell_surge
@@ -88,7 +89,7 @@ pub fn the_spellslinger_book_is_its_bag_then_its_alternates_test() -> Nil {
   let tables = fixture_tables.shared()
   let assert Ok(set) =
     loadout.of(tables:, class_id: ClassId(7), faction_id: 166)
-  let bag = loadout.bag(loadout: set)
+  let bag = ability_book.bag(loadout: set, level: 1)
   assert bag
     == [
       Spell4BaseId(27_638),
@@ -106,7 +107,7 @@ pub fn the_spellslinger_book_is_its_bag_then_its_alternates_test() -> Nil {
   list.each([1, 2, 3, 4, 5, 7], fn(class_id) {
     let assert Ok(set) =
       loadout.of(tables: real, class_id: ClassId(class_id), faction_id: 166)
-    let bag = loadout.bag(loadout: set)
+    let bag = ability_book.bag(loadout: set, level: 1)
     let book = spell_plan.book(plans:, bag:)
     case class_id {
       7 -> {

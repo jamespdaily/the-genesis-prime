@@ -28,6 +28,7 @@ import game_connection_support as support
 import genesis_prime/client_connection.{
   type News, type Request, Appeared, FromMap, LookChanged, PeerNews, Removed,
 }
+import genesis_prime/game/ability_book
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/loadout
 import genesis_prime/message/item_place
@@ -89,7 +90,9 @@ fn engineer_of(faction_id faction_id: Int) -> World {
     )
     as "the client's tables hold the Engineer's Novice set"
   let assert Ok(bag_index) =
-    list.index_map(loadout.bag(loadout: set), fn(base, index) { #(base, index) })
+    list.index_map(ability_book.bag(loadout: set, level: 1), fn(base, index) {
+      #(base, index)
+    })
     |> list.key_find(Spell4BaseId(31_779))
     as "the Engineer's bag holds Mode: Eradicate, its innate (Class 2 spell4IdInnateAbilityActive00 47866, Spell4Base 31779)"
   World(
