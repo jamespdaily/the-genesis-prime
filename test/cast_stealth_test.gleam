@@ -151,7 +151,8 @@ fn trace(effects effects: List(Effect)) -> List(String) {
       | cast_state.CreatureDespawns(..)
       | cast_state.CreatureHoldsUnitStates(..)
       | cast_state.Activated(..)
-      | cast_state.ShortcutCast(..) -> Error(Nil)
+      | cast_state.ShortcutCast(..)
+      | cast_state.QuestAdvanced(..) -> Error(Nil)
     }
   })
 }
@@ -178,7 +179,8 @@ fn changes(effects effects: List(Effect)) -> List(Bool) {
       | cast_state.CreatureDespawns(..)
       | cast_state.CreatureHoldsUnitStates(..)
       | cast_state.Activated(..)
-      | cast_state.ShortcutCast(..) -> Error(Nil)
+      | cast_state.ShortcutCast(..)
+      | cast_state.QuestAdvanced(..) -> Error(Nil)
     }
   })
 }
@@ -321,6 +323,7 @@ fn goes_apart(
       | cast_state.CreatureHoldsUnitStates(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
+      | cast_state.QuestAdvanced(..)
       | cast_state.TickStrike(..)
       | cast_state.StealthChanged(..) -> so_far
     }

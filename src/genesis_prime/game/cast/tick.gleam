@@ -24,9 +24,9 @@ import genesis_prime/game/cast/state.{
   CasterSide, ChargeLevel, CooldownModifierEnds, CooldownModifierStarts,
   Deflected, Finish, ForcedMoveStart, Go, Heal, Healed, Hit, Immune, Lingering,
   Live, Look, ModifierEnd, ModifierStart, NodesEnd, NotBuilt, PrerequisitesIssue,
-  ProcDue, Property, Refuse, RepeatHeld, RestrictionEnd, Send, StartChild,
-  StartHeld, Starts, State, StateEnd, TargetChangeEnds, TargetModifierStart,
-  Tell, Tick, TickAsked, TickStrike, UnitSide, WindowEnd,
+  ProcDue, Property, QuestAdvanceDue, Refuse, RepeatHeld, RestrictionEnd, Send,
+  StartChild, StartHeld, Starts, State, StateEnd, TargetChangeEnds,
+  TargetModifierStart, Tell, Tick, TickAsked, TickStrike, UnitSide, WindowEnd,
 } as cast_state
 import genesis_prime/game/class_resource
 import genesis_prime/game/cooldown
@@ -304,6 +304,7 @@ fn tick_timers_cancelled(
       | CooldownModifierStarts(..)
       | CooldownModifierEnds(..)
       | ProcDue(..)
+      | QuestAdvanceDue(..)
       | StartHeld
       | RepeatHeld
       | WindowEnd(..)
@@ -915,6 +916,7 @@ pub fn cancel_nodes_end(
       | CooldownModifierStarts(..)
       | CooldownModifierEnds(..)
       | ProcDue(..)
+      | QuestAdvanceDue(..)
       | StartHeld
       | RepeatHeld
       | WindowEnd(..)
@@ -1055,6 +1057,7 @@ fn pending_heals(
       | StartChild(..)
       | NodesEnd(..)
       | StateEnd(..)
+      | QuestAdvanceDue(..)
       | StartHeld
       | RepeatHeld
       | WindowEnd(..)
@@ -1089,6 +1092,7 @@ pub fn pending_heals_cancelled(
       | StartChild(..)
       | NodesEnd(..)
       | StateEnd(..)
+      | QuestAdvanceDue(..)
       | StartHeld
       | RepeatHeld
       | WindowEnd(..)
@@ -1196,6 +1200,7 @@ fn node_row_of(entry entry: Reached) -> Result(lasting.LastingRow, Nil) {
     | spell_plan.DespawnEffect(..), _
     | spell_plan.UnitStateEffect(..), _
     | spell_plan.DelayEffect(..), _
+    | spell_plan.QuestAdvanceEffect(..), _
     -> Error(Nil)
   }
 }
