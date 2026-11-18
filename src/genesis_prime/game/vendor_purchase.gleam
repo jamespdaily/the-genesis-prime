@@ -94,7 +94,7 @@ import genesis_prime/store.{
   type AccountId, type CharacterId, type HeldItem, type ItemsAnswer,
   type SessionEpoch, ItemsNotSaved, SaveRefused,
 }
-import genesis_prime/table/id.{type Item2Id, Item2Id}
+import genesis_prime/table/id.{type Item2Id}
 import genesis_prime/table/item2
 import genesis_prime/table/loader/store as table_store
 import gleam/bool
@@ -547,18 +547,7 @@ pub fn answered(
             ))
           }),
           list.map(made, fn(item) {
-            let Item2Id(item_id) = item.item2_id
-            Send(inventory.item_added_frame(
-              item_guid: item.item_guid,
-              item_id:,
-              location: item.location,
-              bag_index: item.bag_index,
-              stack_count: item.stack_count,
-              random_stats: item.random_stats,
-              charges: item.charges,
-              item_flags: item.item_flags,
-              reason:,
-            ))
+            Send(inventory.held_item_frame(item:, reason:))
           }),
           removal,
         ]),

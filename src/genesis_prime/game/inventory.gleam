@@ -1200,6 +1200,22 @@ fn failed(guid guid: Int, code code: Int) -> Frame {
   Frame(message_id: item_action_failed.message_id, body:)
 }
 
+/// 0x111 for a stored item, added for `reason`: its every stored word goes to the frame
+/// (see `item_added_frame`).
+pub fn held_item_frame(item item: store.HeldItem, reason reason: Int) -> Frame {
+  item_added_frame(
+    item_guid: item.item_guid,
+    item_id: item.item2_id.value,
+    location: item.location,
+    bag_index: item.bag_index,
+    stack_count: item.stack_count,
+    random_stats: item.random_stats,
+    charges: item.charges,
+    item_flags: item.item_flags,
+    reason:,
+  )
+}
+
 /// 0x111 for an item the character holds, with full durability, added for `reason`,
 /// carrying the item's random-stat word as stored (`opcode.0x111.shared_item_random_stats`),
 /// the charges it has left (`opcode.0x111.charges`; 0 for an ability, which has none) and
@@ -1327,8 +1343,8 @@ pub fn answered(
       }
     ItemMade(item_guid:) ->
       case moving.change {
-        Split(source:, count:, to:) -> #(
-          list.append(moving.items, [
+        Split(source:, count:, to:) -> {
+          let made =
             store.HeldItem(
               item_guid:,
               item2_id: source.item2_id,
@@ -1338,27 +1354,16 @@ pub fn answered(
               random_stats: source.random_stats,
               charges: source.charges,
               item_flags: source.item_flags,
-            ),
-          ]),
-          [
+            )
+          #(list.append(moving.items, [made]), [
             Send(count_changed_frame(
               guid: source.item_guid,
               count: source.stack_count - count,
               reason: stack_split,
             )),
-            Send(item_added_frame(
-              item_guid:,
-              item_id: source.item2_id.value,
-              location: to.location,
-              bag_index: to.bag_index,
-              stack_count: count,
-              random_stats: source.random_stats,
-              charges: source.charges,
-              item_flags: source.item_flags,
-              reason: stack_split,
-            )),
-          ],
-        )
+            Send(held_item_frame(item: made, reason: stack_split)),
+          ])
+        }
         Moved(..) | Merged(..) | Deleted(..) ->
           panic as "the store answers only a split with ItemMade"
       }

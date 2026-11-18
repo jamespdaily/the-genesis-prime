@@ -1135,17 +1135,7 @@ pub fn answered(
         rewards: list.map(
           list.append(
             list.map(made, fn(stack) {
-              inventory.item_added_frame(
-                item_guid: stack.item_guid,
-                item_id: stack.item2_id.value,
-                location: stack.location,
-                bag_index: stack.bag_index,
-                stack_count: stack.stack_count,
-                random_stats: stack.random_stats,
-                charges: stack.charges,
-                item_flags: stack.item_flags,
-                reason: quest_reason,
-              )
+              inventory.held_item_frame(item: stack, reason: quest_reason)
             }),
             list.map(grow, fn(growth) {
               inventory.count_changed_frame(

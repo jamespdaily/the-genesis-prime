@@ -1553,16 +1553,10 @@ fn items_sent(items items: List(store.HeldItem)) -> List(Effect) {
   items
   |> in_sending_order
   |> list.map(fn(item) {
-    held_item(
-      item_guid: item.item_guid,
-      item_id: item.item2_id.value,
-      location: item.location,
-      bag_index: item.bag_index,
-      stack_count: item.stack_count,
-      random_stats: item.random_stats,
-      charges: item.charges,
-      item_flags: item.item_flags,
-    )
+    Send(inventory.held_item_frame(
+      item:,
+      reason: ability_book_frame.held_from_the_start,
+    ))
   })
 }
 
@@ -1609,30 +1603,6 @@ fn innate_index_frame() -> Effect {
     innate_index_set.encode(InnateIndexSet(innate_index: first_innate_slot))
     as "the first slot fits the message's 2 bits"
   Send(Frame(message_id: innate_index_set.message_id, body:))
-}
-
-/// 0x111 for an item the character holds from the start, with the reason 49.
-fn held_item(
-  item_guid item_guid: Int,
-  item_id item_id: Int,
-  location location: Int,
-  bag_index bag_index: Int,
-  stack_count stack_count: Int,
-  random_stats random_stats: Int,
-  charges charges: Int,
-  item_flags item_flags: Int,
-) -> Effect {
-  Send(inventory.item_added_frame(
-    item_guid:,
-    item_id:,
-    location:,
-    bag_index:,
-    stack_count:,
-    random_stats:,
-    charges:,
-    item_flags:,
-    reason: ability_book_frame.held_from_the_start,
-  ))
 }
 
 /// 0x19D for action set 0, the abilities in bar slots 0, 1 and 2. A shortcut

@@ -818,14 +818,21 @@ pub fn max_charges(
   tables tables: table_store.Tables,
   item2_id item2_id: Int,
 ) -> Result(Int, ItemPropertyError) {
-  use item <- result.try(item_row(tables:, item2_id:))
-  use source <- result.map(
-    proxy_source(tables:, item:)
-    |> result.map_error(fn(missing) {
-      NoRow(table: missing.table, id: missing.id)
-    }),
-  )
+  use source <- result.map(source_row(tables:, item2_id:))
   int.max(0, source.max_charges)
+}
+
+/// The Item2 row the client reads an item's own fields (maxCharges, bindFlags) from: the
+/// item's row, or for a proxy item the row `proxy_source` names.
+fn source_row(
+  tables tables: table_store.Tables,
+  item2_id item2_id: Int,
+) -> Result(item2.Item2, ItemPropertyError) {
+  use item <- result.try(item_row(tables:, item2_id:))
+  proxy_source(tables:, item:)
+  |> result.map_error(fn(missing) {
+    NoRow(table: missing.table, id: missing.id)
+  })
 }
 
 /// Whether the item binds to the player who equips it: bindFlags bit 4 of the row the
@@ -836,13 +843,7 @@ pub fn binds_on_equip(
   tables tables: table_store.Tables,
   item2_id item2_id: Int,
 ) -> Result(Bool, ItemPropertyError) {
-  use item <- result.try(item_row(tables:, item2_id:))
-  use source <- result.map(
-    proxy_source(tables:, item:)
-    |> result.map_error(fn(missing) {
-      NoRow(table: missing.table, id: missing.id)
-    }),
-  )
+  use source <- result.map(source_row(tables:, item2_id:))
   int.bitwise_and(source.bind_flags, bind_on_equip_flag) != 0
 }
 
