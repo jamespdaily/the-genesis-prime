@@ -10,6 +10,14 @@
 -- the item is worn) or 'buy' (counts the item bought from the vendor `creature2_id`, which
 -- only a buy names). The load checks each row against the client's tables
 -- (genesis_prime/game/item_objective).
+--
+-- The table holds no row: the four objectives that ask for an item (Quest2 9058 and 9077
+-- to wear Item2 12631 and 17978, Quest2 9448 and 9449 to buy Item2 54409 from Creature2
+-- 47172 and 47413) have a rule that cannot fire on this server, so each stays a stand-in
+-- on accept and its quest stays finishable. The two items carry Prerequisite 40040 and
+-- 40044, whose type 19 (a tradeskill tier) the server does not read, so wearing either is
+-- refused with 144; the two vendors have no `vendor` rows, and the voucher has no price.
+-- A row is added when its rule can fire.
 
 create table item_objective (
   objective_id integer not null,
@@ -38,13 +46,3 @@ create table item_objective (
   constraint item_objective_reason_says_something
     check (reason is null or length(trim(reason)) > 0)
 );
-
-insert into item_objective (objective_id, kind, item2_id, creature2_id, source, reason) values
-  (16311, 'equip', 12631, null, 'server_choice',
-   'Quest2 9058 "Algoroc Mining Expedition", objective text "Equip the $(item=12631)"; done while the player wears Item2 12631'),
-  (16379, 'equip', 17978, null, 'server_choice',
-   'Quest2 9077 "Hunting for Eldan Relics", objective text "Equip the $(item=17978)"; done while the player wears Item2 17978'),
-  (18069, 'buy', 54409, 47172, 'server_choice',
-   'Quest2 9448 "Vouchers: What Are They Good For?", objective text "Buy a $(item=54409) from $(creature=47172) in Thayd"; counts Item2 54409 bought from Creature2 47172'),
-  (18070, 'buy', 54409, 47413, 'server_choice',
-   'Quest2 9449 "Vouchers: What Are They Good For?", objective text "Buy a $(item=54409) from $(creature=47413) in Illium"; counts Item2 54409 bought from Creature2 47413');

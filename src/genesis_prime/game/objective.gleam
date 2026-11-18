@@ -968,6 +968,10 @@ pub type Script {
   /// else the quest holds. The place rows that stay here, each with the reason its rule
   /// cannot be a position (`sized_places` in test/objective_script_place_test), and the
   /// item row whose text names no item (objective 16407), are the ones a later rule takes.
+  /// The four item rows of quests 9058 and 9077 (wear Item2 12631 and 17978) and 9448 and
+  /// 9449 (buy Item2 54409 from Creature2 47172 and 47413) stay here: the items carry
+  /// Prerequisite 40040 and 40044, whose type 19 the server does not read, so wearing
+  /// either is refused with 144, and the two vendors have no `vendor` rows.
   StandInOnAccept
   /// Hidden, or visible, required and unmarked: done once every other required
   /// objective of the quest is.

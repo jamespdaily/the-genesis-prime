@@ -312,16 +312,20 @@ pub fn the_content_load_puts_the_item_objectives_test() -> Nil {
   let database = database_support.new_database(on: database_support.shared())
   let #(loaded, key) = content_support.load(database:)
   assert loaded == Ok(Nil)
-  let items = content_item_objective.wanted(key:)
-  assert dict.size(items) == 4 as "migration 0044 seeds 4 item_objective rows"
-  assert dict.get(items, 16_311) == Ok(item_objective.Wear(Item2Id(12_631)))
-    as "Quest2 9058's objective 16311 asks to wear Item2 12631 (its text)"
-  assert dict.get(items, 18_070)
-    == Ok(item_objective.BuyFrom(
-      item2_id: Item2Id(54_409),
-      vendor: Creature2Id(47_413),
-    ))
-    as "Quest2 9449's objective 18070 asks for Item2 54409 from Creature2 47413 (its text)"
+  assert content_item_objective.wanted(key:) == dict.new()
+    as "migration 0044 seeds no item_objective row: the four equip and buy objectives stay stand-ins on accept, whose rules cannot fire"
+  // A row the table's checks and the client's tables allow is loaded as what it asks: the
+  // objective 16311's text asks to wear Item2 12631.
+  let database = database_support.new_database(on: database_support.shared())
+  content_support.change(
+    database:,
+    sql: "insert into item_objective (objective_id, kind, item2_id, source, reason) values (16311, 'equip', 12631, 'server_choice', 'Quest2 9058 objective text Equip the item 12631')",
+  )
+  let #(loaded, key) = content_support.load(database:)
+  assert loaded == Ok(Nil)
+  assert content_item_objective.wanted(key:)
+    == dict.from_list([#(16_311, item_objective.Wear(Item2Id(12_631)))])
+    as "an equip row is loaded as the item its objective's text asks to wear"
 }
 
 pub fn the_load_puts_every_term_the_game_listener_reads_at_start_test() -> Nil {
@@ -379,8 +383,9 @@ pub fn the_servers_settings_run_over_a_real_load_test() -> Nil {
     as "migration 0034's first held objective (12547) is in the settings the load's key gave"
   assert set.contains(settings.game.settings.arrival_objectives, 4770)
     as "migration 0038's Tower objective (4770) is in the settings the load's key gave"
-  assert dict.has_key(settings.game.settings.item_objectives, 16_311)
-    as "migration 0044's first equip objective (16311) is in the settings the load's key gave"
+  assert settings.game.settings.item_objectives
+    == content_item_objective.wanted(key:)
+    as "the settings carry the item objectives the load put"
   assert settings.game.settings.tutorial_chain
     == content_tutorial_quest.chain(key:)
     as "the settings carry the tutorial chain the load put"

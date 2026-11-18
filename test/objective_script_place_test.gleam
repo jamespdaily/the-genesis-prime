@@ -1240,21 +1240,22 @@ pub fn every_type_5_objective_in_a_quest_has_one_completing_rule_test() -> Nil {
     as "the objectives no quest lists are none of the rules'"
   // The class counts come from the client's rows (the objective's flags, the marker rows,
   // the creatures' links, the type 42 rows and the items), the arrival table's 57 rows and
-  // the item table's 4.
+  // the item table's none.
   assert counted_classes(tables:, arrivals:, items:)
     == [
       #(objective.UsedByCreature, 267),
       #(objective.Optional, 59),
       #(objective.NamedAction, 70),
       #(objective.PlaceScript, 57),
-      #(objective.ItemScript, 4),
-      #(objective.StandInOnAccept, 435),
+      #(objective.ItemScript, 0),
+      #(objective.StandInOnAccept, 439),
       #(objective.StandInWithQuest, 606),
     ]
-    as "each type 5 objective in a quest has exactly one class: 259 linked required and 8 linked optional, 59 visible optional, 70 a spell or an item names, 57 places, 4 items, 435 stand-ins on accept (454 less the 15 places and 4 items moved), and 606 that wait for the quest (87 hidden, 519 visible with no marker)"
+    as "each type 5 objective in a quest has exactly one class: 259 linked required and 8 linked optional, 59 visible optional, 70 a spell or an item names, 57 places, no items, 439 stand-ins on accept (454 less the 15 places moved), and 606 that wait for the quest (87 hidden, 519 visible with no marker)"
   assert set.size(arrivals) == 57
     as "the arrival table's rows: the 42 of migration 0038 and the 15 of 0043"
-  assert dict.size(items) == 4 as "the item table's rows (migration 0044)"
+  assert dict.size(items) == 0
+    as "the item table's rows (migration 0044 seeds none)"
   assert set.size(held) == 146
     as "the held table's rows: the 130 of the unmarked scripts, the 15 of the instance quests and the store purchase 21267"
   // The hold is an override: of the 146, the 15 marked rows of the instance quests are of
@@ -1970,14 +1971,62 @@ fn item_ids() -> Set(Int) {
   set.from_list(list.map(rows, fn(row) { row.objective_id }))
 }
 
+pub fn the_four_equip_and_buy_quests_still_complete_on_accept_test() -> Nil {
+  use <- owned_test.run(120_000)
+  let tables = character_tables.shared()
+  let arrivals = arrival_ids()
+  let held = content_support.held_objective_ids()
+  let wanted = item_wanted(tables:, taken: set.union(arrivals, held))
+  // (quest, objective, why its real rule cannot fire yet): the two items need a prerequisite
+  // of type 19 (a tradeskill tier) that the server does not read, so wearing them is refused
+  // with 144; the two vendors have no `vendor` rows, so nothing is bought from them. Each
+  // objective stays a stand-in on accept until its rule can fire.
+  let cases = [
+    #(9058, 16_311, "item 12631 needs prerequisite 40040, which is refused"),
+    #(9077, 16_379, "item 17978 needs prerequisite 40044, which is refused"),
+    #(9448, 18_069, "creature 47172 has no vendor rows"),
+    #(9449, 18_070, "creature 47413 has no vendor rows"),
+  ]
+  let wrong =
+    list.filter_map(cases, fn(row) {
+      let #(quest_id, objective_id, reason) = row
+      let #(quest, index, _) = place_of(tables:, objective_id:)
+      // The objectives before it done, so that it is open.
+      let log =
+        logged(
+          tables:,
+          quest_id:,
+          done: list.index_map(quest.objectives, fn(_, before) { before })
+            |> list.take(index),
+        )
+      let settled =
+        settle_items(
+          log:,
+          tables:,
+          items: [],
+          wanted: dict.to_list(wanted),
+          held: set.to_list(held),
+        )
+      case
+        quest.id == quest_id
+        && quest_log.objective_done(log: settled.log, quest:, index:)
+      {
+        True -> Error(Nil)
+        False -> Ok(#(quest_id, objective_id, reason))
+      }
+    })
+  assert wrong == []
+    as "quests 9058, 9077, 9448 and 9449 complete their equip or buy objective as soon as it is open"
+}
+
 pub fn the_curated_sets_share_no_objective_test() -> Nil {
   use <- owned_test.run(60_000)
   let arrivals = arrival_ids()
   let held = content_support.held_objective_ids()
   let items = item_ids()
   assert set.size(arrivals) == 57
-    && set.size(held) == 145
-    && set.size(items) == 4
+    && set.size(held) == 146
+    && set.size(items) == 0
     as "the tables the migrations seed"
   assert set.intersection(arrivals, held)
     == set.from_list([18_629, 18_630, 19_346, 19_357])
@@ -1988,7 +2037,7 @@ pub fn the_curated_sets_share_no_objective_test() -> Nil {
     as "no objective is both held and an item"
 }
 
-pub fn every_item_row_names_its_tables_rows_and_leaves_the_stand_in_test() -> Nil {
+pub fn the_equip_and_buy_objectives_are_stand_ins_on_accept_over_every_client_quest_test() -> Nil {
   use <- owned_test.run(300_000)
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
@@ -1998,31 +2047,8 @@ pub fn every_item_row_names_its_tables_rows_and_leaves_the_stand_in_test() -> Ni
       tables:,
       taken: set.union(arrivals, content_support.held_objective_ids()),
     )
-  // The ids of the objective texts: 487701 "Equip the $(item=12631)", 492421 "Equip the
-  // $(item=17978)", 563643 "Buy a $(item=54409) from $(creature=47172) in Thayd" and 563647
-  // "... $(creature=47413) in Illium" (`client_files.py text`).
-  assert list.sort(dict.to_list(items), fn(one, other) {
-      int.compare(one.0, other.0)
-    })
-    == [
-      #(16_311, item_objective.Wear(Item2Id(12_631))),
-      #(16_379, item_objective.Wear(Item2Id(17_978))),
-      #(
-        18_069,
-        item_objective.BuyFrom(
-          item2_id: Item2Id(54_409),
-          vendor: Creature2Id(47_172),
-        ),
-      ),
-      #(
-        18_070,
-        item_objective.BuyFrom(
-          item2_id: Item2Id(54_409),
-          vendor: Creature2Id(47_413),
-        ),
-      ),
-    ]
-    as "the four rows name the items and vendors of their texts"
+  assert items == dict.new()
+    as "migration 0044 seeds no item row: the rules of the four equip and buy objectives cannot fire"
   let script_of = fn(objective_id) {
     let #(quest, index, listed) = place_of(tables:, objective_id:)
     objective.script_of(
@@ -2034,18 +2060,11 @@ pub fn every_item_row_names_its_tables_rows_and_leaves_the_stand_in_test() -> Ni
       item_objectives: items,
     )
   }
-  assert list.map(dict.keys(items), script_of)
-    == list.map(dict.keys(items), fn(_) { objective.ItemScript })
-    as "each row's objective is an item script, not a stand-in on accept"
-  assert script_of(16_407) == objective.StandInOnAccept
-    as "quest 7012's 'right-click on the new shield' names no item, so it stays a stand-in on accept"
-  assert list.all(dict.to_list(items), fn(row) {
-    let #(_, wanted) = row
-    let item2_id = case wanted {
-      item_objective.Wear(item2_id:) | item_objective.BuyFrom(item2_id:, ..) ->
-        item2_id
-    }
-    result.is_ok(item2.get(tables:, id: item2_id))
-  })
-    as "every item is a row of the client's Item2 table"
+  // The ids of the objective texts: 487701 "Equip the $(item=12631)", 492421 "Equip the
+  // $(item=17978)", 563643 "Buy a $(item=54409) from $(creature=47172) in Thayd" and 563647
+  // "... $(creature=47413) in Illium" (`client_files.py text`); 16407 is quest 7012's
+  // "right-click on the new shield", which names no item.
+  assert list.map([16_311, 16_379, 18_069, 18_070, 16_407], script_of)
+    == list.repeat(objective.StandInOnAccept, 5)
+    as "the four equip and buy objectives and the shield's stay stand-ins on accept"
 }
