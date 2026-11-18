@@ -44,7 +44,6 @@ import content_support
 import database_support
 import fixture_tables
 import genesis_prime/content/arrival_objective as content_arrival_objective
-import genesis_prime/content/held_objective as content_held_objective
 import genesis_prime/game/objective.{
   type Advanced, type Effect, Advanced, CompleteByServer, ReleaseUnit,
   SendProgress, SendState,
@@ -892,15 +891,6 @@ fn arrival_ids() -> Set(Int) {
   set.from_list(list.map(rows, fn(row) { row.objective_id }))
 }
 
-/// The QuestObjective ids the migrated database holds as held.
-fn held_ids() -> Set(Int) {
-  let database = database_support.new_database(on: database_support.shared())
-  let assert Ok(rows) =
-    content_held_objective.rows(db: content_support.connect(database:))
-    as "the query ran"
-  set.from_list(list.map(rows, fn(row) { row.objective_id }))
-}
-
 /// Every type 5 objective of the client's quests: the quest as the log reads it, the index,
 /// and the objective.
 fn type_5_places(
@@ -1019,7 +1009,7 @@ pub fn every_type_5_objective_in_a_quest_has_one_completing_rule_test() -> Nil {
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   let arrivals = arrival_ids()
-  let held = held_ids()
+  let held = content_support.held_objective_ids()
   let places = type_5_places(tables:)
   assert list.length(places) == 1498
     as "1556 QuestObjective rows of type 5, 58 of them in no quest, the others in one quest each"
@@ -1043,9 +1033,9 @@ pub fn every_type_5_objective_in_a_quest_has_one_completing_rule_test() -> Nil {
     ]
     as "each type 5 objective in a quest has exactly one class: 259 linked required and 8 linked optional, 59 visible optional, 70 a spell or an item names, 42 places, 454 stand-ins on accept, and 606 that wait for the quest (87 hidden, 519 visible with no marker)"
   assert set.size(arrivals) == 42 as "the arrival table's rows"
-  assert set.size(held) == 145
-    as "the held table's rows: the 130 of the unmarked scripts and the 15 of the instance quests"
-  // The hold is an override: of the 145, the 15 marked rows of the instance quests are of
+  assert set.size(held) == 146
+    as "the held table's rows: the 130 of the unmarked scripts, the 15 of the instance quests and the store purchase 21267"
+  // The hold is an override: of the 146, the 15 marked rows of the instance quests are of
   // two classes named by a spell, four places (the other two of the six the text reads as
   // places are stand-ins), and nine stand-ins on accept.
   let held_places =
@@ -1070,8 +1060,8 @@ pub fn every_type_5_objective_in_a_quest_has_one_completing_rule_test() -> Nil {
     as "four held places: 18629, 18630, 19346 and 19357"
   assert held_class(objective.StandInOnAccept) == 9
     as "nine held stand-ins on accept"
-  assert held_class(objective.StandInWithQuest) == 130
-    as "the 130 of migration 0034"
+  assert held_class(objective.StandInWithQuest) == 131
+    as "the 130 of migration 0034 and 21267 of migration 0041"
 }
 
 /// The log of the quest accepted with these objective indexes done, or the place a unit
@@ -1138,7 +1128,7 @@ pub fn every_place_script_completes_at_its_marker_and_no_spell_advanced_one_comp
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   let arrivals = arrival_ids()
-  let held = held_ids()
+  let held = content_support.held_objective_ids()
   let none = set.new()
   let scripted =
     list.map(type_5_places(tables:), fn(place) {
@@ -1205,7 +1195,7 @@ pub fn every_marked_stand_in_completes_on_accept_and_every_held_one_stays_open_t
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   let arrivals = arrival_ids()
-  let held = held_ids()
+  let held = content_support.held_objective_ids()
   let wrong =
     list.filter_map(type_5_places(tables:), fn(place) {
       let id = { place.2 }.objective_id

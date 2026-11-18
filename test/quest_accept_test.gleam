@@ -24,6 +24,9 @@
 ////   3215 and 3216; 3243 needs reputation; 3627 and 9793 need an item; 3678, 4943 and
 ////   5084 name a prerequisite; 4004 and 4940 need a path; 9578, 9713 and 1857 repeat and
 ////   9880 is a contract.
+//// - Quest 10510 names Prerequisite 43306, a type 288 condition (the client's own title set,
+////   `Prerequisite.prerequisiteTypeId.288`: empty, as the server sends no title) and a type
+////   109 condition (Worlds 1537, 1634 and 3460 refused).
 //// - Dorian Walker (Creature2 74812) gives quest 10528, which needs 10520 completed.
 
 import character_tables
@@ -479,6 +482,45 @@ pub fn accept_checks_the_prerequisite_for_the_player_test() -> Nil {
     )
     == Ok(Refused(code: 12))
     as "a prerequisite id with no row fails, so the quest is refused by check 12"
+}
+
+pub fn quest_10510_is_acceptable_outside_the_tutorial_worlds_and_refused_inside_them_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Quest2 10510 has flags 0x0C (mentioned first), level 3, either faction, and
+  // Prerequisite 43306: 43305 (type 288, comparison 2, title 400: no title is owned)
+  // and 41782 (type 109, comparison 2, Worlds 1537, 1634 and 3460).
+  let exile_at = fn(world_id, level) {
+    let base = asker(log: [quest_support.known(10_510, 5)])
+    Asker(..base, player: Player(..base.player, world_id:, level:))
+  }
+  // Each case: world, level, the verdict, and why.
+  let cases = [
+    #(426, 3, Acceptable, "Prerequisite 41782 excludes only three worlds"),
+    #(1387, 3, Acceptable, "Prerequisite 41782 excludes only three worlds"),
+    #(870, 3, Acceptable, "Prerequisite 41782 excludes only three worlds"),
+    #(3460, 3, Refused(code: 12), "World 3460 is excluded by 41782"),
+    #(1537, 3, Refused(code: 12), "World 1537 is excluded by 41782"),
+    #(1634, 3, Refused(code: 12), "World 1634 is excluded by 41782"),
+    #(
+      426,
+      2,
+      Refused(code: 3),
+      "the level check (3) runs before the prerequisite's (12)",
+    ),
+  ]
+  list.each(cases, fn(case_) {
+    let #(world_id, level, expected, reason) = case_
+    assert verdict_of(10_510, exile_at(world_id, level)) == expected as reason
+  })
+  let dominion_at_3 =
+    Asker(
+      ..exile_at(426, 3),
+      factions: Factions(current: dominion, base: dominion),
+    )
+  assert verdict_of(10_510, dominion_at_3) == Acceptable
+    as "Quest2.questPlayerFactionEnum 2 is either faction"
+  assert quest.gaps(tables: tables(), quest: row(10_510)) == Ok([])
+    as "type 288 is read, so the quest names no gap"
 }
 
 pub fn accept_refuses_another_path_test() -> Nil {

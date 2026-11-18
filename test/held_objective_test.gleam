@@ -11,6 +11,9 @@
 //// - The fixture's rows: objective 1962 (quest 1859, type 5, flags 0, data 0, unmarked,
 ////   unlinked) is a stand-in; 16132 (quest 6296, flags 8) is hidden; 9659 (type 12) is
 ////   linked by Creature2 27768; 9658 (type 8, markers 21383 and 21384) is marked.
+//// - Migration 0041 adds objective 21267 (Quest2 10510 "Learning to Shop", whose text asks
+////   for a purchase in the In-Game Store, `table_rows -- QuestObjective 21267`) of kind
+////   `store_purchase`, a `server_choice` with its reason.
 //// - Migration 0034: 130 rows, 88 of kind `instance_run` and 42 of kind `pvp_match`;
 ////   migration 0039 adds the 15 marked scripts of the instance quests (Quest2
 ////   questContentFinderTypeEnum 1 to 3), each of kind `instance_run`. Each is a
@@ -212,13 +215,13 @@ pub fn the_held_table_refuses_bad_rows_test() -> Nil {
   )
 }
 
-pub fn the_held_migrations_seed_145_server_choice_rows_test() -> Nil {
+pub fn the_held_migrations_seed_146_server_choice_rows_test() -> Nil {
   use <- owned_test.run(60_000)
   let database = database_support.new_database(on: database_support.shared())
   let assert Ok(rows) =
     content_held_objective.rows(db: content_support.connect(database:))
     as "the query ran"
-  assert list.length(rows) == 145 as "the migrations seed 145 rows"
+  assert list.length(rows) == 146 as "the migrations seed 146 rows"
   assert content_support.count(
       database:,
       sql: "select count(*) from held_objective where kind = 'instance_run'",
@@ -233,8 +236,14 @@ pub fn the_held_migrations_seed_145_server_choice_rows_test() -> Nil {
     as "42 PvP matches"
   assert content_support.count(
       database:,
+      sql: "select count(*) from held_objective where kind = 'store_purchase' and objective_id = 21267 and source = 'server_choice' and source_row is null and reason like '%Quest2 10510%' and reason like '%In-Game Store%'",
+    )
+    == 1
+    as "migration 0041's one row is objective 21267, whose reason names its quest and the store"
+  assert content_support.count(
+      database:,
       sql: "select count(*) from held_objective where source = 'server_choice' and reason is not null and source_row is null",
     )
-    == 145
+    == 146
     as "each row is the server's choice and states its reason"
 }
