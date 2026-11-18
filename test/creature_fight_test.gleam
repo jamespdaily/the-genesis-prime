@@ -400,19 +400,7 @@ fn news_to(taken: ServiceStep(creature.Outgoing), number: Int) -> List(News) {
 
 /// The timers the step starts, with their times.
 fn timers(taken: ServiceStep(creature.Outgoing)) -> List(#(step.TimerId, Int)) {
-  list.filter_map(support.effects_of(taken), fn(effect) {
-    case effect {
-      OwnEffect(StartServiceTimer(timer:, after_ms:)) -> Ok(#(timer, after_ms))
-      OwnEffect(step.Send(..))
-      | OwnEffect(step.Reply(..))
-      | OwnEffect(step.StartCreature(..))
-      | OwnEffect(step.CancelServiceTimer(..))
-      | step.Watch(..)
-      | step.Unwatch(..)
-      | step.Log(..)
-      | step.Stop -> Error(Nil)
-    }
-  })
+  support.service_timers_started(taken)
 }
 
 /// The one timer the step starts for `after_ms`.
@@ -931,10 +919,12 @@ pub fn a_creature_whose_path_has_ended_at_the_leash_circle_sends_no_placement_te
     tell(state:, at_ms: 0, message: moved(number: 2, x: 100.0, seq: 2))
   assert x_of(creature_path.end(path: path_sent(chased))) == 55.0
     as "the path to 96 is clipped at the leash circle, 55 from the spawn"
+  let #(state, _) =
+    fire(state:, at_ms: 5500, timer: creature.chase_arrival_timer)
   let #(_, again) =
     tell(state:, at_ms: 5800, message: moved(number: 2, x: 100.0, seq: 3))
   assert said(again) == []
-    as "the path ended at 5500 ms, at the circle: a replan finds nothing to run and the viewers hold no path that still runs, so nothing is sent"
+    as "the path ended at 5500 ms, at the circle, and the arrival timer stopped the viewers' run: a replan finds nothing to run, so nothing is sent"
 }
 
 pub fn a_leash_of_a_creature_that_stands_at_home_sends_no_path_test() -> Nil {
@@ -2842,8 +2832,8 @@ pub fn move_speed_change_while_walking_home_replans_the_walk_and_its_arrival_tes
   assert said(stale) == [] && said(still_walking) == ["Refused(Returning) to 5"]
     as "the old arrival, fired late, does nothing: the creature is still walking"
   let #(state, arrived) = fire(state:, at_ms: 2500, timer: arrival)
-  assert said(arrived) == ["turn(kind 14) to 5"]
-    as "home: the creature takes the facing of its spawn"
+  assert said(arrived) == ["0x638(placed) to 5", "turn(kind 14) to 5"]
+    as "home: the walk's stop, then the creature takes the facing of its spawn"
   let #(_, struck) =
     tell(
       state:,
@@ -3063,8 +3053,8 @@ pub fn run_speed_restored_walks_home_again_test() -> Nil {
   let assert [#(arrival, 1000)] = timers(back)
     as "its arrival is the 1 s the 10 units take"
   let #(state, arrived) = fire(state:, at_ms: 4000, timer: arrival)
-  assert said(arrived) == ["turn(kind 14) to 5"]
-    as "home: the creature takes the facing of its spawn"
+  assert said(arrived) == ["0x638(placed) to 5", "turn(kind 14) to 5"]
+    as "home: the walk's stop, then the creature takes the facing of its spawn"
   assert stands_at(state:, at_ms: 4000) == 0.0
 }
 
@@ -7283,4 +7273,219 @@ pub fn a_walk_home_after_a_leash_in_a_state_starts_one_fresh_arrival_timer_test(
   assert faces_to(arrived, 5)
     == [creature_turn.Fixed(facing: start_place.facing(home()))]
     as "it arrives once, taking the spawn's facing"
+}
+
+// ---- the chase's arrival: the stop the client's walk animation needs
+//
+// A path the client runs ends silently, and the movement state the path frame carries
+// (kind 11 and kind 24) never expires, so the creature that arrives is told it stands
+// (`creature_fight` module doc). The beast at x = 0 chasing player 2 at x = 30 stops
+// 0.5 x reach 8 = 4 short of it, at x = 26, 2600 ms on at run speed 10.
+
+/// What a step does to the chase's arrival timer, in order.
+type Arrival {
+  ArrivalStarted(after_ms: Int)
+  ArrivalCancelled
+}
+
+fn arrival_timers(taken: ServiceStep(creature.Outgoing)) -> List(Arrival) {
+  list.filter_map(support.service_timers(taken), fn(timer) {
+    case timer {
+      #(id, Some(after_ms)) if id == creature.chase_arrival_timer ->
+        Ok(ArrivalStarted(after_ms:))
+      #(id, None) if id == creature.chase_arrival_timer -> Ok(ArrivalCancelled)
+      #(_, _) -> Error(Nil)
+    }
+  })
+}
+
+/// The position of the first of `lines` that names `name`, or -1.
+fn line_of(lines: List(String), name: String) -> Int {
+  case list.drop_while(lines, fn(line) { !string.starts_with(line, name) }) {
+    [] -> -1
+    rest -> list.length(lines) - list.length(rest)
+  }
+}
+
+pub fn a_chase_sends_the_turn_before_the_path_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) = chasing(viewers: [2, 5])
+  let #(_, leashed) =
+    tell(state:, at_ms: 1000, message: creature.Unwatched(by: ConnectionId(2)))
+  let cases = [
+    #("a fight's start", aggro, "turn(kind 18, unit 20) to 5"),
+    #("the walk home after a leash", leashed, "turn(kind 19, home) to 5"),
+  ]
+  list.each(cases, fn(row) {
+    let #(reason, taken, turn) = row
+    let lines = said(taken)
+    assert line_of(lines, turn) >= 0
+      && line_of(lines, turn) < line_of(lines, "0x638 to 5")
+      as reason
+  })
+}
+
+pub fn a_chase_path_cancels_and_restarts_the_arrival_timer_for_the_paths_end_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, first) = chasing(viewers: [2, 5])
+  let #(_, second) =
+    tell(state:, at_ms: 1000, message: moved(number: 2, x: 60.0, seq: 2))
+  let #(_, sped) =
+    tell(
+      state:,
+      at_ms: 500,
+      message: modifier_start(
+        cast_id: 1,
+        modifier: scaled_by(property: 100, factor: 2.0),
+        struck_at_ms: 500,
+      ),
+    )
+  let #(_, in_reach) =
+    tell(
+      state: beast(viewers: [2, 5]),
+      at_ms: 0,
+      message: approached(number: 2, x: 5.0, seq: 1),
+    )
+  let #(leash_state, _) = chasing(viewers: [2, 5])
+  let #(leash_state, leashed) =
+    tell(
+      state: leash_state,
+      at_ms: 1000,
+      message: creature.Unwatched(by: ConnectionId(2)),
+    )
+  let #(_, home_sped) =
+    tell(
+      state: leash_state,
+      at_ms: 1500,
+      message: modifier_start(
+        cast_id: 1,
+        modifier: scaled_by(property: 100, factor: 2.0),
+        struck_at_ms: 1500,
+      ),
+    )
+  let cases = [
+    #("the first path: 26 m at 10 m/s", first, [
+      ArrivalCancelled,
+      ArrivalStarted(after_ms: 2600),
+    ]),
+    #(
+      "a second path from x = 10, clipped at the leash circle 55 from the spawn: 45 m, the old timer cancelled first, since the shell ends a creature that starts a running timer",
+      second,
+      [ArrivalCancelled, ArrivalStarted(after_ms: 4500)],
+    ),
+    #("a speed doubled 0.5 s in: 21 m left at 20 m/s", sped, [
+      ArrivalCancelled,
+      ArrivalStarted(after_ms: 1050),
+    ]),
+    #("a target in reach: no path", in_reach, []),
+    #("the walk home of a leash has its own timer", leashed, []),
+    #("a speed change while walking home restarts that one", home_sped, []),
+  ]
+  list.each(cases, fn(row) {
+    let #(reason, taken, expected) = row
+    assert arrival_timers(taken) == expected as reason
+  })
+}
+
+pub fn the_arrival_timer_sends_the_creature_placed_where_the_chase_ends_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) = chasing(viewers: [2, 5])
+  let #(state, arrived) =
+    fire(state:, at_ms: 2600, timer: creature.chase_arrival_timer)
+  let assert [CreaturePlaced(place:, at_ms:)] = news_to(arrived, 5)
+    as "one placement for the viewer"
+  assert x_of(place) == 26.0 && at_ms == start_ms + 2600
+    as "where the path ends, 4 short of the target, at the time it arrives"
+  assert said(arrived) == ["0x638(placed) to 2", "0x638(placed) to 5"]
+    && timers(arrived) == []
+    as "each viewer is placed, and nothing else is sent or timed"
+  let #(_, followed) =
+    tell(state:, at_ms: 2700, message: moved(number: 2, x: 60.0, seq: 2))
+  let assert Running(from:, ..) = path_sent(followed)
+    as "the target moved: the chase goes on"
+  assert x_of(from) == 26.0 as "from the end of the path it arrived at"
+}
+
+pub fn the_arrival_timer_of_a_path_that_is_no_longer_run_sends_nothing_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) = chasing(viewers: [2, 5])
+  let #(left_home, _) =
+    tell(state:, at_ms: 1000, message: creature.Unwatched(by: ConnectionId(2)))
+  let cases = [
+    #(
+      "stood by a state",
+      tell(
+        state:,
+        at_ms: 100,
+        message: controlling(number: 2, cast_id: 1, controls: [
+          crowd_control_support.stagger_stun(instance_id: 28_673),
+        ]),
+      ).0,
+      200,
+    ),
+    #(
+      "killed",
+      tell(
+        state:,
+        at_ms: 100,
+        message: killing(number: 2, cast_id: 1, controls: []),
+      ).0,
+      200,
+    ),
+    #("thrown", tell(state:, at_ms: 100, message: knockback(at_ms: 100)).0, 200),
+    #("walking home", left_home, 1500),
+  ]
+  list.each(cases, fn(row) {
+    let #(reason, held, at_ms) = row
+    let #(_, fired) =
+      fire(state: held, at_ms:, timer: creature.chase_arrival_timer)
+    assert said(fired) == [] && timers(fired) == [] as reason
+  })
+}
+
+pub fn a_run_stood_between_its_end_and_its_arrival_timer_is_stopped_once_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) = chasing(viewers: [2, 5])
+  let stun =
+    controlling(number: 2, cast_id: 1, controls: [
+      crowd_control_support.stagger_stun(instance_id: 28_673),
+    ])
+  let #(walking_home, leashed) =
+    tell(state:, at_ms: 1000, message: creature.Unwatched(by: ConnectionId(2)))
+  let cases = [
+    #("stood by a state", state, 2600, stun, creature.chase_arrival_timer),
+    #(
+      "killed",
+      state,
+      2600,
+      killing(number: 2, cast_id: 1, controls: []),
+      creature.chase_arrival_timer,
+    ),
+    #("walking home", walking_home, 2000, stun, timer_for(leashed, 1000)),
+  ]
+  list.each(cases, fn(row) {
+    let #(reason, run, at_ms, message, timer) = row
+    let #(stood, standing) = tell(state: run, at_ms:, message:)
+    let #(_, fired) = fire(state: stood, at_ms:, timer:)
+    assert list.length(
+        list.filter(list.append(said(standing), said(fired)), fn(line) {
+          line == "0x638(placed) to 5"
+        }),
+      )
+      == 1
+      as reason
+  })
+}
+
+pub fn the_walk_home_arrival_sends_the_creature_placed_at_home_before_the_turn_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) = chasing(viewers: [2, 5])
+  let #(state, leashed) =
+    tell(state:, at_ms: 1000, message: creature.Unwatched(by: ConnectionId(2)))
+  let #(_, at_home) = fire(state:, at_ms: 2000, timer: timer_for(leashed, 1000))
+  let assert [CreaturePlaced(place:, ..), ..] = news_to(at_home, 5)
+    as "the first news is the stop"
+  assert x_of(place) == 0.0 as "at the spawn"
+  assert said(at_home) == ["0x638(placed) to 5", "turn(kind 14) to 5"]
+    as "the stop, then the spawn's facing it takes on arrival"
 }

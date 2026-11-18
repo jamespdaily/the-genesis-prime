@@ -329,6 +329,11 @@
 //// | a Stun ends while a Root holds the creature, or the guard opens as a Root breaks a charge | `Reconsidered`: it turns to its target again or stands as it faces, and starts no path | `a_stun_ending_while_a_root_holds_turns_the_creature_again_and_starts_no_path_test`, `a_root_that_breaks_a_charge_leaves_the_creature_standing_as_the_opened_guard_holds_it_test` |
 //// | the walk home stops where it stands, or starts again after a state | the arrival timer of the stopped walk is cancelled, and the walk that follows has a new arrival timer | `a_walk_home_after_a_leash_in_a_state_starts_one_fresh_arrival_timer_test` |
 //// | the walk home ends with a player near | the spawn's facing, then the new fight's turn | `a_creature_that_walks_home_and_finds_a_player_near_turns_to_the_spawn_before_it_turns_to_the_player_test` |
+//// | a chase path is built, or its speed changes while the creature fights | `CancelTimer(ChaseArrival)` then `StartTimer(ChaseArrival)` for the path's end, so the creature's shell never starts a timer whose id runs | `a_chase_path_cancels_and_restarts_the_arrival_timer_for_the_paths_end_test` |
+//// | `ChaseArrival` fires while the creature fights along a running path | the viewers are sent `CreaturePlaced` at the path's end, which ends the walk animation the path's frame started (kind 11 and kind 24); the state does not change | `the_arrival_timer_sends_the_creature_placed_where_the_chase_ends_test` |
+//// | `ChaseArrival` fires after a stand, a flight, a walk home or a death replaced the path | nothing | `the_arrival_timer_of_a_path_that_is_no_longer_run_sends_nothing_test` |
+//// | `HomeArrival` fires of the walk's generation | `CreaturePlaced` at the spawn when the walk is a running path, then the spawn's facing and the aggro | `the_walk_home_arrival_sends_the_creature_placed_at_home_before_the_turn_test` |
+//// | a chase starts | the turn goes out before the path | `a_chase_sends_the_turn_before_the_path_test` |
 //// | a viewer arrives in flight | it is sent the rest of the path from where the creature is now | `an_arriving_viewer_mid_flight_is_sent_the_rest_of_the_path_test` |
 
 import genesis_prime/client_connection.{type News}
@@ -614,6 +619,10 @@ pub type Timer {
   /// The thrown creature's path is run: it stands at the path's last point, and acts
   /// again unless a state holds it.
   FlightEnds(generation: Int)
+  /// The chase path is run: the viewers are told the creature stands at its end, which stops the
+  /// walk animation the path's frame started. A creature has one chase path at a time, so the
+  /// timer has no generation; it does nothing unless the creature is Fighting with a running path.
+  ChaseArrival
 }
 
 /// What the fight asks the creature's rule to do, in order.
@@ -787,6 +796,15 @@ fn stepped(
     TimerFired(timer: HomeArrival(generation:)) ->
       case state.status {
         Returning(home:) if home == generation -> {
+          let arrived = case state.path {
+            Running(..) -> [
+              ToViewers(client_connection.CreaturePlaced(
+                place: fighter.home,
+                at_ms: now_ms,
+              )),
+            ]
+            Standing(..) | Timed(..) -> []
+          }
           let state =
             State(..state, status: Resting, path: Standing(at: fighter.home))
           let #(state, turned) = faced(state:, fighter:, now_ms:)
@@ -798,9 +816,26 @@ fn stepped(
               players: near_viewers(state:, viewers:),
               now_ms:,
             )
-          #(state, list.append(turned, fought))
+          #(state, list.flatten([arrived, turned, fought]))
         }
         Returning(..) | Resting | Fighting(..) -> #(state, [])
+      }
+    TimerFired(timer: ChaseArrival) ->
+      case state.status, state.path {
+        Fighting(..), Running(..) -> {
+          let end = creature_path.end(path: state.path)
+          #(State(..state, path: Standing(at: end)), [
+            ToViewers(client_connection.CreaturePlaced(
+              place: end,
+              at_ms: now_ms,
+            )),
+          ])
+        }
+        Fighting(..), Standing(..)
+        | Fighting(..), Timed(..)
+        | Resting, _
+        | Returning(..), _
+        -> #(state, [])
       }
     Killed | Despawned -> killed(state:, fighter:, now_ms:)
     Reconsidered -> #(state, [])
@@ -2401,7 +2436,11 @@ fn chase(
   }
   case target_place {
     Error(Nil) -> #(state, [])
-    Ok(target_place) -> chase_to(state:, fighter:, target_place:, now_ms:)
+    Ok(target_place) -> {
+      let #(state, turned) = faced(state:, fighter:, now_ms:)
+      let #(state, chased) = chase_to(state:, fighter:, target_place:, now_ms:)
+      #(state, list.append(turned, chased))
+    }
   }
 }
 
@@ -2448,19 +2487,46 @@ fn chase_to(
       speed: fighter.attack.run_speed,
       now_ms:,
     )
-  #(State(..state, path:), path_news(was: state.path, now: path, now_ms:))
+  #(
+    State(..state, path:),
+    list.append(
+      path_news(was: state.path, now: path, now_ms:),
+      chase_arrival(path:, now_ms:),
+    ),
+  )
+}
+
+/// The timer that tells the viewers the creature stands when a chase path is run, started
+/// after the path's own time and after a cancel of the one a path it replaces started (the
+/// creature's shell ends a process that starts a timer whose id runs). A path that is not run
+/// starts none.
+fn chase_arrival(path path: Path, now_ms now_ms: Int) -> List(Effect) {
+  case path {
+    Running(..) -> [
+      CancelTimer(timer: ChaseArrival),
+      StartTimer(
+        timer: ChaseArrival,
+        after_ms: creature_path.arrives_ms(path:, now_ms:) - now_ms,
+      ),
+    ]
+    Standing(..) | Timed(..) -> []
+  }
 }
 
 /// What the viewers are told of the creature's new path: a running path as 0x638 of
-/// kind 4, and a standing one as 0x638 of kind 2 only when the path they were last
-/// sent is still being run, since a client left running it would run on from a
-/// creature that stands. A creature that has stood since its path ended says nothing.
+/// kind 4, and a standing one as 0x638 of kind 2 when the path they were last sent is a
+/// run, which a client ends only by an explicit stop, or a flight still in the air. A
+/// run's arrival timer sends its stop and sets the path standing, so a stand after that
+/// says nothing, and a stand before it, though the run has ended, sends the stop.
 fn path_news(was was: Path, now now: Path, now_ms now_ms: Int) -> List(Effect) {
   case now, was {
     Running(..), _ | Timed(..), _ -> [
       ToViewers(client_connection.CreatureMoved(path: now)),
     ]
-    Standing(at:), Running(..) | Standing(at:), Timed(..) ->
+    Standing(at:), Running(..) -> [
+      ToViewers(client_connection.CreaturePlaced(place: at, at_ms: now_ms)),
+    ]
+    Standing(at:), Timed(..) ->
       case creature_path.arrives_ms(path: was, now_ms:) > now_ms {
         True -> [
           ToViewers(client_connection.CreaturePlaced(place: at, at_ms: now_ms)),
@@ -2777,7 +2843,11 @@ fn speed_changed(
             ]),
           )
         }
-        Fighting(..) | Resting -> #(state, moved)
+        Fighting(..) -> #(
+          state,
+          list.append(moved, chase_arrival(path:, now_ms:)),
+        )
+        Resting -> #(state, moved)
       }
     }
     Standing(at:) -> {

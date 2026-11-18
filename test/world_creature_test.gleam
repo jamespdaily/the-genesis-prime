@@ -1712,8 +1712,10 @@ pub fn a_knockback_spell_on_a_creature_shows_its_flight_to_a_watching_client_tes
   let assert [
     relayed_movement.Time(MovementTime(time: started)),
     relayed_movement.TimedPath(MovementTimedPath(times:, points:)),
+    relayed_movement.MoveAsked(_),
+    relayed_movement.StateFlags(_),
   ] = movement.commands
-    as "opcode.0x638: kind 0, then kind 3"
+    as "opcode.0x638: kind 0, then kind 3, then the stop (kind 11 and kind 24) that ends any walk"
   assert started == 5000
     as "the flight starts at the go's time on the map's clock"
   assert times == [5000, 5375]

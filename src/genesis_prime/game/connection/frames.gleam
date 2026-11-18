@@ -27,8 +27,10 @@ import genesis_prime/message/leave_world.{LeaveWorld}
 import genesis_prime/message/movement_face_point.{MovementFacePoint}
 import genesis_prime/message/movement_face_unit.{MovementFaceUnit}
 import genesis_prime/message/movement_float_vector.{MovementFloatVector}
+import genesis_prime/message/movement_move_asked.{MovementMoveAsked}
 import genesis_prime/message/movement_path.{MovementPath}
 import genesis_prime/message/movement_rotation.{MovementRotation}
+import genesis_prime/message/movement_state_flags.{MovementStateFlags}
 import genesis_prime/message/movement_time.{MovementTime}
 import genesis_prime/message/movement_timed_path.{MovementTimedPath}
 import genesis_prime/message/player_health.{PlayerHealth}
@@ -80,6 +82,7 @@ import gleam/bool
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/result
 
 /// A yes or no as the 1-bit value a message holds it in: 1 for yes.
 pub fn bit(yes: Bool) -> Int {
@@ -440,7 +443,11 @@ pub fn unit_moved_frame(
 /// float, type 0 (straight lines) and mode 0 (`movement_command.kind_4`). A thrown
 /// creature's timed path is kind 0 and kind 3, each point with its own map time
 /// (`movement_command.kind_3`), or kind 2 for a path of one point, and a kind 14 when
-/// the throw turns it. None for a creature that stands, or a speed no half float holds.
+/// the throw turns it. A run ends with kind 11 (the horizontal part of its velocity) and kind
+/// 24 holding bit 0x2, which make the client play the unit's walk or run animation by its
+/// speed (`unit.pace`, `movement_command.kind_11`, `movement_command.kind_24`); a flight ends
+/// with the stop (`stopped`), so a creature thrown mid-run stops running. None for a creature
+/// that stands, or a speed no half float holds.
 pub fn path_frame(
   entered entered: world_entry.Entered,
   unit_id unit_id: Int,
@@ -480,13 +487,15 @@ pub fn path_frame(
           [relayed_movement.Time(MovementTime(time: server_time(first.0)))],
           [move],
           turn,
+          stopped(),
         ]),
       ))
     }
-    creature_path.Running(from:, to:, started_ms:, speed:) ->
-      case half_float.to_bits(value: speed) {
-        Error(Nil) -> None
-        Ok(speed) -> {
+    creature_path.Running(from:, to:, started_ms:, speed:) -> {
+      let #(x, _, z) = creature_path.velocity(path:, now_ms: started_ms)
+      case half_float.to_bits(value: speed), moving(x:, z:) {
+        Error(Nil), _ | _, Error(Nil) -> None
+        Ok(speed), Ok(moving) -> {
           let time =
             map.server_time(
               origin_ms: entered.clock_origin_ms,
@@ -501,10 +510,12 @@ pub fn path_frame(
                 path_type: 0,
                 mode: 0,
               )),
+              ..moving
             ]),
           )
         }
       }
+    }
   }
 }
 
@@ -515,7 +526,8 @@ pub fn path_frame(
 /// ApplyMoveCommandSetPosition, `movement_command.kind_4`), and the client starts
 /// due segments in order, so the unit is placed at once and the path no longer
 /// runs (`0x140714120` StartDuePositionSegments). The command is the one that
-/// puts a unit at a place in its 0x262 (`0x1400ad350` reads it).
+/// puts a unit at a place in its 0x262 (`0x1400ad350` reads it). It ends with the stop
+/// (`stopped`), which ends the walk animation of a unit that ran.
 pub fn placed_frame(
   entered entered: world_entry.Entered,
   unit_id unit_id: Int,
@@ -527,7 +539,35 @@ pub fn placed_frame(
   unit_moved_frame(unit_id:, server_time_ms: time, commands: [
     relayed_movement.Time(MovementTime(time:)),
     relayed_movement.Position(player_unit.standing(place:).0),
+    ..stopped()
   ])
+}
+
+/// The client reads a unit's walk animation from kind 24's bit 0x2 and the horizontal length
+/// of kind 11's vector (`unit.pace`), and neither expires, so each frame that moves or stops a
+/// unit sets both. The moving bit is the one bit the animation needs, a server choice: the
+/// player's own frames also carry 0x100, on the ground, which pulls the drawn height down by
+/// up to 2 and is left out (`unit.ground_lift`).
+const moving_flag = 2
+
+/// Kind 11 and kind 24 of a run: the horizontal part of its velocity in units a second, the unit
+/// the player sends it in, with the blend bit 1 as every move the player sends has it, and the
+/// moving bit. Its height is 0, as the player's is. Error for a part no half float holds.
+fn moving(x x: Float, z z: Float) -> Result(List(RelayedMovement), Nil) {
+  use x <- result.try(half_float.to_bits(value: x))
+  use z <- result.try(half_float.to_bits(value: z))
+  Ok([
+    relayed_movement.MoveAsked(MovementMoveAsked(x:, y: 0, z:, blends: 1)),
+    relayed_movement.StateFlags(MovementStateFlags(flags: moving_flag)),
+  ])
+}
+
+/// Kind 11 zero and kind 24 clear: the unit stands, which is also the state its 0x262 gives it.
+fn stopped() -> List(RelayedMovement) {
+  [
+    relayed_movement.MoveAsked(MovementMoveAsked(x: 0, y: 0, z: 0, blends: 1)),
+    relayed_movement.StateFlags(MovementStateFlags(flags: 0)),
+  ]
 }
 
 /// 0x638 that turns a creature, in the map's time of `at_ms`: kind 0, then the rotation the

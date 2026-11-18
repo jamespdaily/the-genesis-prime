@@ -5833,7 +5833,8 @@ pub fn a_bot_entering_a_daguns_ring_is_targeted_and_chased_on_the_whole_server_t
     as "the Dagun turns, then runs"
   assert turn_kinds == [0, 18]
     as "the turn goes before the path: kind 0, then kind 18 naming the bot (a kind 4 path leaves the rotation)"
-  assert kinds == [0, 4] as "the chase: kind 0, then the kind 4 path"
+  assert kinds == [0, 4, 11, 24]
+    as "the chase: kind 0, the kind 4 path, then the kind 11 move and the kind 24 state flags that make the client animate the run"
   assert ends_at == Some(#(1.5, 2.5, dagun_z +. 9.0 -. 3.5))
     as "to the bot less half the Dagun's reach of 7 (chase_stop_fraction 0.5)"
   game_client.close(game:)
@@ -6015,7 +6016,8 @@ pub fn a_stealthed_bot_walking_into_a_daguns_ring_gets_no_aggro_and_pressing_ste
     as "the Dagun turns, then runs"
   assert turn_kinds == [0, 18]
     as "the turn goes before the path: kind 0, then kind 18 naming the bot (a kind 4 path leaves the rotation)"
-  assert kinds == [0, 4] as "the chase: kind 0, then the kind 4 path"
+  assert kinds == [0, 4, 11, 24]
+    as "the chase: kind 0, the kind 4 path, then the kind 11 move and the kind 24 state flags that make the client animate the run"
   assert ends_at == Some(#(1.5, 2.5, dagun_z +. 9.0 -. 3.5))
     as "to the bot less half the Dagun's reach of 7 (chase_stop_fraction 0.5)"
   game_client.close(game:)
