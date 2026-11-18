@@ -166,10 +166,10 @@ import genesis_prime/game/cast/state.{
   CreatureDespawns, CreatureHoldsUnitStates, Deflected, Finish, ForcedMoveStart,
   ForcedMoveStarts, Gain, Go, Heal, HeldProc, Hit, HitCreature, HitPlayer,
   Immune, Log, Look, ModifierEnd, ModifierStart, NodesEnd, Pay, ProcDue,
-  Property, RepeatHeld, RestrictionEnd, Send, ShortcutCast, StartChild,
-  StartHeld, StartTimer, State, StateEnd, StealthChanged, Strike,
-  TargetChangeEnds, TargetChangeStarts, TargetModifierStart, Tell, Tick,
-  TickStrike, WindowEnd,
+  Property, QuestAdvanceDue, QuestAdvanced, RepeatHeld, RestrictionEnd, Send,
+  ShortcutCast, StartChild, StartHeld, StartTimer, State, StateEnd,
+  StealthChanged, Strike, TargetChangeEnds, TargetChangeStarts,
+  TargetModifierStart, Tell, Tick, TickStrike, WindowEnd,
 } as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/cooldown
@@ -244,6 +244,7 @@ pub fn heals_landed(
       | CreatureHoldsUnitStates(..)
       | Activated(..)
       | ShortcutCast(..)
+      | QuestAdvanced(..)
       | StealthChanged(..) -> []
     }
   })
@@ -279,6 +280,7 @@ pub fn resources_spent(effects effects: List(Effect)) -> List(proc.Event) {
       | CreatureHoldsUnitStates(..)
       | Activated(..)
       | ShortcutCast(..)
+      | QuestAdvanced(..)
       | StealthChanged(..) -> Error(Nil)
     }
   })
@@ -584,6 +586,7 @@ pub fn unit_removed(
         | CooldownModifierStarts(..)
         | CooldownModifierEnds(..)
         | ProcDue(..)
+        | QuestAdvanceDue(..)
         | StartHeld
         | RepeatHeld
         | WindowEnd(..)
@@ -636,6 +639,7 @@ pub fn proc_fires_dropped(
             | ForcedMoveStart(..)
             | StartChild(..)
             | StateEnd(..)
+            | QuestAdvanceDue(..)
             | StartHeld
             | RepeatHeld
             | WindowEnd(..)
@@ -747,8 +751,12 @@ fn belongs_to_passive(
     TargetModifierStart(on:, ..) | ForcedMoveStart(on:, ..) ->
       on.source.cast_id == id
     StartChild(root:, ..) -> Some(root) == spell4_id
-    StateEnd(..) | StartHeld | RepeatHeld | WindowEnd(..) | ChargeLevel(..) ->
-      False
+    StateEnd(..)
+    | QuestAdvanceDue(..)
+    | StartHeld
+    | RepeatHeld
+    | WindowEnd(..)
+    | ChargeLevel(..) -> False
   }
 }
 
@@ -814,6 +822,7 @@ pub fn modifiers_pending(cast cast: State) -> List(Effect) {
         | StartChild(..)
         | NodesEnd(..)
         | StateEnd(..)
+        | QuestAdvanceDue(..)
         | StartHeld
         | RepeatHeld
         | WindowEnd(..)
@@ -910,6 +919,7 @@ pub fn effects_ended(
         | ModifierEnd(..)
         | CooldownModifierStarts(..)
         | CooldownModifierEnds(..)
+        | QuestAdvanceDue(..)
         | StartHeld
         | RepeatHeld
         | WindowEnd(..)

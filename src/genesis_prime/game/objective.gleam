@@ -36,8 +36,8 @@
 //// - one of the `arrival_objectives` is done when the player stands at one of its markers
 ////   (`arrivals`), because its text asks only to go there;
 //// - one a spell effect or an item names (`objective_action`) stays open until a cast
-////   counts for it, the issue "A spell's QuestAdvanceObjective effect advances its
-////   quest objective, so the Loftite Railgun counts its hits";
+////   counts for it: a QuestAdvanceObjective row of the cast's spell advances it
+////   (genesis_prime/game/quest_advance);
 //// - one of the `held_objectives` stays open whichever of these it is, because only an
 ////   instance run or a PvP match completes it.
 //// An objective takes the event only while it is open (`0x1405510d0`, `0x140553790`): its
@@ -516,7 +516,7 @@ fn is_the_terminals_choice(
 /// What the objectives of one quest have counted so far for one event: the log, the
 /// progress effects in reverse order, whether the quest became Achieved, and whether any
 /// objective counted a unit new to it.
-type Pass {
+pub type Pass {
   Pass(
     log: QuestLog,
     progress: List(Effect),
@@ -575,10 +575,11 @@ fn advance_quest(
               // dead, tells nothing: the client's progress stays 0. The kill that
               // fills the group counts as a kill does.
               Ok(#(marked, True)) ->
-                progressed_by_one(
+                progressed_by(
                   pass: Pass(..pass, log: marked),
                   quest:,
                   index:,
+                  amount: 1,
                   now_ms:,
                 )
               Ok(#(marked, False)) -> Pass(..pass, log: marked)
@@ -615,16 +616,13 @@ fn advance_quest(
               // A kill, a talk, a cast aimed at the caster, and an objective whose unit
               // counts again, count one at each event with no record of the unit.
               Ok(_), True | Error(Nil), _ ->
-                progressed_by_one(pass:, quest:, index:, now_ms:)
+                progressed_by(pass:, quest:, index:, amount: 1, now_ms:)
             }
         }
       },
     )
   let state = case counted.became_achieved {
-    True -> [
-      SendState(quest_id: quest.id, state: achieved_state),
-      ..completion_of(tables:, quest_id: quest.id)
-    ]
+    True -> achieved(tables:, quest_id: quest.id)
     False -> []
   }
   #(
@@ -664,15 +662,16 @@ fn counted_a_new_unit(
   )
 }
 
-/// The pass after one more counted for the quest's objective at `index`, added to what the
+/// The pass after `amount` more counted for the quest's objective at `index`, added to what the
 /// quest's earlier objectives made; a count with no unit record credits no unit.
-fn progressed_by_one(
+pub fn progressed_by(
   pass pass: Pass,
   quest quest: quest_log.Quest,
   index index: Int,
+  amount amount: Int,
   now_ms now_ms: Int,
 ) -> Pass {
-  case quest_log.progressed(log: pass.log, quest:, index:, amount: 1, now_ms:) {
+  case quest_log.progressed(log: pass.log, quest:, index:, amount:, now_ms:) {
     Ok(progressed) ->
       Pass(
         ..pass,
@@ -1372,6 +1371,18 @@ fn visits(
       })
       |> visits(quest:, zones:, now_ms:)
   }
+}
+
+/// What follows the progress that made the quest Achieved: its state 2 (0x35c) and, for a quest
+/// no creature receives, the server's completion (`completion_of`).
+pub fn achieved(
+  tables tables: table_store.Tables,
+  quest_id quest_id: Int,
+) -> List(Effect) {
+  [
+    SendState(quest_id:, state: achieved_state),
+    ..completion_of(tables:, quest_id:)
+  ]
 }
 
 /// The server's completion of the quest, when no creature receives it and the client's

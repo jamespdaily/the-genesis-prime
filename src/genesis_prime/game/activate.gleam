@@ -21,9 +21,11 @@
 ////   the Prerequisite rows the columns name; the Creature2 rows are read from the tables
 ////   when an activation arrives (the derivation stores none of the 8,463 creatures that
 ////   have an activate column).
-//// - **An item's spell** (ItemSpecial.spell4IdOnActivate) with an Activate effect is planned
-////   too, for the cast of an item (`cast.use_item`): its use at a unit counts that unit as an
-////   activate cast does. Item spells with no Activate effect are not planned.
+//// - **An item's spell** (ItemSpecial.spell4IdOnActivate) with an Activate effect or a
+////   QuestAdvanceObjective effect is planned too, for the cast of an item (`cast.use_item`):
+////   its use at a unit counts that unit as an activate cast does when the spell has an Activate
+////   effect, and a QuestAdvanceObjective row advances the player's objective
+////   (genesis_prime/game/quest_advance). Item spells with neither are not planned.
 //// - **The cast group** of a spell cast at a creature is checked as the client does
 ////   (`passes_cast_group`): a member of the group passes, and so does any creature when the
 ////   spell has no group and Creature2.flags bit 0 is clear; otherwise only the creature's
@@ -348,7 +350,7 @@ fn build(tables tables: table_store.Tables) -> Result(Activations, BuildError) {
 
 /// The spells an activate cast can name: the default spell (when the tables hold its
 /// GameFormula row), the spells in a creature's activate columns and the spells an item
-/// casts when used that hold an Activate row. These are the spells `planned_rows` reads
+/// casts when used that hold an Activate or a QuestAdvanceObjective row. These are the spells `planned_rows` reads
 /// and whose despawn rows the activate cast drops (`drops_despawn`).
 pub fn activated_spell_ids(
   tables tables: table_store.Tables,
@@ -372,8 +374,9 @@ pub fn activated_spell_ids(
 }
 
 /// The spells an item casts when used (ItemSpecial.spell4IdOnActivate) that have an
-/// Activate effect: an item's use counts an objective only through that effect, and the
-/// other item spells are the cast rule's to refuse as unbuilt.
+/// Activate or a QuestAdvanceObjective effect: an item's use counts an objective through the
+/// first and a cast advances one through the second, and the other item spells are the cast
+/// rule's to refuse as unbuilt.
 fn item_spell_ids(
   tables tables: table_store.Tables,
   sources sources: spell_plan.Sources,
@@ -383,8 +386,8 @@ fn item_spell_ids(
   |> list.filter(fn(spell4_id) {
     spell4_id != 0
     && list.any(spell_plan.effects_of(sources:, spell4_id:), fn(effect) {
-      effect_kind.kind_of(effect_type: effect.effect_type)
-      == effect_kind.Activate
+      let kind = effect_kind.kind_of(effect_type: effect.effect_type)
+      kind == effect_kind.Activate || kind == effect_kind.QuestAdvance
     })
   })
   |> list.unique
@@ -553,6 +556,13 @@ fn reaches_past_caster(effect effect: Spell4Effects) -> Bool {
 /// struck unit (genesis_prime/game/cast `aimed_at`) and starts a Proxy's spell at it. A
 /// row of a type no rule reads is dropped by every cast, so it does not refuse the spell.
 ///
+/// A QuestAdvanceObjective row aimed at the target does not refuse the spell either: the
+/// plan keeps it, and the go applies it by `spell_plan.quest_advance_lands_on_the_caster`
+/// (genesis_prime/game/cast `quest_advances_armed`), so a row aimed at the primary target alone,
+/// which is the unit the activate cast names and not the caster, advances nothing (a guess:
+/// `Spell4Effects.targetFlags` has no reader). Such a spell (40061, rows 88719 and 88720)
+/// activates as before.
+///
 /// A Heal row aimed at the target or an area does not refuse the spell either, and the
 /// activate cast drops it: the server restores only the caster's own vitals, so a heal
 /// aimed at a creature lands nothing in any cast (`cast_heal.healed_on`), and the activate
@@ -598,6 +608,7 @@ fn activate_rows_of(
     list.find(others, fn(effect) {
       reaches_past_caster(effect:)
       && !is_heal(effect_type: effect.effect_type)
+      && !is_quest_advance(effect_type: effect.effect_type)
       && effect_kind.is_row_read(
         effect_type: effect.effect_type,
         target_flags: effect.target_flags,
@@ -639,6 +650,25 @@ pub fn drops_despawn(effect effect: Spell4Effects) -> Bool {
 fn drops_unit_state(effect effect: Spell4Effects) -> Bool {
   effect_kind.kind_of(effect_type: effect.effect_type) == effect_kind.UnitState
   && reaches_past_caster(effect:)
+}
+
+/// Whether the effect type is a QuestAdvanceObjective: its row advances the caster's own
+/// objective, so a row aimed past the caster stays in the plan and the go does not apply it
+/// (`drops_quest_advance`).
+fn is_quest_advance(effect_type effect_type: Int) -> Bool {
+  effect_kind.kind_of(effect_type:) == effect_kind.QuestAdvance
+}
+
+/// Whether the activate cast advances nothing for this effect: a QuestAdvanceObjective row
+/// that does not land on the caster when the primary target is the unit it activates
+/// (`spell_plan.quest_advance_lands_on_the_caster`, the rule the cast's go applies), which is a row aimed
+/// at the primary target alone.
+pub fn drops_quest_advance(effect effect: Spell4Effects) -> Bool {
+  is_quest_advance(effect_type: effect.effect_type)
+  && !spell_plan.quest_advance_lands_on_the_caster(
+    aim: spell_plan.quest_advance_aim_of(target_flags: effect.target_flags),
+    primary_target_is_caster: False,
+  )
 }
 
 /// Whether the effect type is a heal of health or of shield.

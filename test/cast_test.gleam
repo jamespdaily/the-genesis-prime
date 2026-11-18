@@ -778,6 +778,7 @@ pub fn a_non_normal_ability_is_refused_285_and_logged_once_test() -> Nil {
         | cast_state.CreatureHoldsUnitStates(..)
         | cast_state.Activated(..)
         | cast_state.ShortcutCast(..)
+        | cast_state.QuestAdvanced(..)
         | cast_state.TickStrike(..)
         | cast_state.StealthChanged(..) -> False
       }

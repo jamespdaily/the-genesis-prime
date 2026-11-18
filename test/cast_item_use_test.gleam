@@ -51,7 +51,7 @@ import place_support
 import planted_table.{Integer}
 import quest_support
 
-const grenade = 12_444
+pub const grenade = 12_444
 
 const generic_item = 12_402
 
@@ -61,13 +61,13 @@ const grenade_quest = 4743
 
 const security_quest = 7833
 
-const a_slaver_shack = 17_397
+pub const a_slaver_shack = 17_397
 
-const a_farmhand = 17_107
+pub const a_farmhand = 17_107
 
-const its_unit = 5000
+pub const its_unit = 5000
 
-const clients_cast_id = 9
+pub const clients_cast_id = 9
 
 /// The place of the item the player uses.
 const the_item_place = ItemPlace(location: 1, bag_index: 0)
@@ -92,7 +92,10 @@ fn throwing() -> cast_state.Caster {
 }
 
 /// The caster stands at a place of exactly representable numbers.
-fn standing(level level: Int, quests quests: QuestLog) -> cast_state.Caster {
+pub fn standing(
+  level level: Int,
+  quests quests: QuestLog,
+) -> cast_state.Caster {
   let caster = support.caster()
   cast_state.Caster(
     ..caster,
@@ -116,7 +119,7 @@ fn creature_of(creature_id creature_id: Int) -> activate.Creature {
 }
 
 /// A creature standing this far from the caster, edge to edge.
-fn shown(creature_id creature_id: Int, metres metres: Float) -> Target {
+pub fn shown(creature_id creature_id: Int, metres metres: Float) -> Target {
   Usable(
     creature_id:,
     creature: creature_of(creature_id:),
@@ -255,7 +258,7 @@ fn pair_of(
 }
 
 /// The use of item `item`, held at its place, at the unit `its_unit`.
-fn use_item_at(
+pub fn use_item_at(
   state state: State,
   caster caster: cast_state.Caster,
   item item: Int,
@@ -266,7 +269,7 @@ fn use_item_at(
 }
 
 /// The use of item `item` as `use_item_at` does, on these tables.
-fn use_item_in(
+pub fn use_item_in(
   tables tables: table_store.Tables,
   state state: State,
   caster caster: cast_state.Caster,
@@ -290,7 +293,7 @@ fn use_item_in(
 }
 
 /// What the effects refuse: each 0x7fc's cast id, spell and result.
-fn refused_with(effects effects: List(Effect)) -> List(#(Int, Int, Int)) {
+pub fn refused_with(effects effects: List(Effect)) -> List(#(Int, Int, Int)) {
   list.map(
     support.frames_of(message_id: spell_cast_refused.message_id, effects:),
     fn(frame) {
@@ -1301,6 +1304,108 @@ pub fn a_cast_made_at_the_answer_is_the_cast_a_press_made_then_makes_test() -> N
       assert made_at_the_answer == pressed_then as why
       assert made_at_the_answer != made_at_the_press
         as { "the answer's time shows in the cast: " <> why }
+    },
+  )
+}
+
+pub const loftite_railgun = 6938
+
+pub const a_chua = 20_794
+
+/// A player of level 50 who holds quest 3769 accepted with its objective open, which the
+/// railgun's item row requires (`Item2.quest2IdActivationRequired`, `0x140398cc0`).
+pub fn railgunner() -> cast_state.Caster {
+  standing(
+    level: 50,
+    quests: quest_support.log_of(rows: [
+      quest_support.accepted(quest_id: 3769, progress: [0]),
+    ]),
+  )
+}
+
+type RailgunCase {
+  RailgunCase(why: String, target: Target, refused: Option(Int))
+}
+
+/// The `Activated` effects among the effects.
+fn activations_of(effects effects: List(Effect)) -> List(Effect) {
+  list.filter(effects, fn(effect) {
+    effect
+    == cast_state.Activated(
+      unit_id: its_unit,
+      creature_id: a_chua,
+      alive_at_press: True,
+      by_item: True,
+    )
+  })
+}
+
+/// What the railgun's cast at a Chua holds: no refusal, a go that lists none of the spell's
+/// rows, no use of the Chua and the timer of row 89873.
+fn railgun_started(effects effects: List(Effect), why why: String) -> Nil {
+  assert support.refusal_results(effects:) == [] as why
+  let assert [go_frame] =
+    support.frames_of(message_id: spell_go.message_id, effects:)
+    as "the cast's time is 0, so the go is written with the start"
+  let assert Ok(go) = spell_go.decode(go_frame.body)
+  assert list.flat_map(go.targets, fn(target) {
+      list.map(target.effects, fn(info) { info.spell4_effects_id })
+    })
+    == []
+    as "the go lists no effect of the type 42 rows, the despawn or the unread row"
+  assert activations_of(effects:) == []
+    as "the spell holds no Activate row, so the cast is no use of the Chua"
+  assert list.map(support.started_timers(effects:), fn(started) { started.1 })
+    == [6000]
+    as "the row 89873 waits its delayTime of 6000 ms"
+}
+
+pub fn an_item_spell_with_a_type_42_row_is_planned_and_cast_without_a_use_of_its_target_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Item2 6938 -> ItemSpecial 3942 -> Spell4 24501: castTime 0, targetMaxRange 25.0, the cast
+  // group TargetGroup 2125 ({Creature2 20794, 20795, 20798}); its rows are two type 42, a
+  // DespawnUnit and a type 71, and none is an Activate row (type 7).
+  list.each(
+    [
+      RailgunCase(
+        "a Chua of the cast group within 25 m starts the cast",
+        shown(creature_id: a_chua, metres: 10.0),
+        None,
+      ),
+      RailgunCase(
+        "a creature outside TargetGroup 2125 is refused 89",
+        shown(creature_id: a_farmhand, metres: 10.0),
+        Some(89),
+      ),
+      RailgunCase(
+        "another player's unit is refused 100",
+        activate.AnotherPlayer,
+        Some(100),
+      ),
+      RailgunCase(
+        "a unit the picture does not show is refused 91",
+        activate.Unseen,
+        Some(91),
+      ),
+    ],
+    fn(row) {
+      let assert Ok(#(_, effects)) =
+        use_item_at(
+          state: cast_state.new(),
+          caster: railgunner(),
+          item: loftite_railgun,
+          target: row.target,
+          at: 1000,
+        )
+        as row.why
+      case row.refused {
+        Some(result) -> {
+          assert refused_with(effects:) == [#(clients_cast_id, 24_501, result)]
+            as row.why
+          Nil
+        }
+        None -> railgun_started(effects:, why: row.why)
+      }
     },
   )
 }

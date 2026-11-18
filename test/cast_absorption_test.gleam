@@ -400,6 +400,7 @@ pub fn the_absorb_amount_reads_the_caster_before_the_gos_own_effects_test() -> N
       | cast_state.CreatureHoldsUnitStates(..)
       | cast_state.Activated(..)
       | cast_state.ShortcutCast(..)
+      | cast_state.QuestAdvanced(..)
       | cast_state.StealthChanged(..)
       | cast_state.Gain(..) -> False
     }

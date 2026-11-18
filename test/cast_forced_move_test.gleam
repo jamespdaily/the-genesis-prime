@@ -116,6 +116,7 @@ fn changes_a_property(effect effect: cast_state.Effect) -> Bool {
     | cast_state.CreatureHoldsUnitStates(..)
     | cast_state.Activated(..)
     | cast_state.ShortcutCast(..)
+    | cast_state.QuestAdvanced(..)
     | cast_state.StealthChanged(..)
     | cast_state.Gain(..) -> False
   }
@@ -223,6 +224,7 @@ pub fn a_forced_move_behind_a_type_37_gate_takes_one_roll_and_is_listed_when_it_
         | cast_state.CreatureHoldsUnitStates(..)
         | cast_state.Activated(..)
         | cast_state.ShortcutCast(..)
+        | cast_state.QuestAdvanced(..)
         | cast_state.TickStrike(..)
         | cast_state.StealthChanged(..) -> Error(Nil)
       }

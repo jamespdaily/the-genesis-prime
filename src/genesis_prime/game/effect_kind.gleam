@@ -94,6 +94,12 @@
 ////   targetFlags are the caster alone (1); the plan leaves out a row aimed at another unit,
 ////   and one with no duration, by name (genesis_prime/game/spell_plan `delay_reading`). A
 ////   player's cast reads none (`Spell4Effects.effectType.35`).
+//// - **QuestAdvance** (42) advances the quest objective `dataBits00` (a Quest2 id) names at the index
+////   `dataBits01` by `dataBits02` for the player the cast reaches; the client has no case for it
+////   (its effect switch skips 42), so the server counts the progress and tells the client with
+////   0x361 alone. A row is read when its targetFlags include the caster or are the primary target
+////   alone (`is_row_read`; the aim is a guess, `Spell4Effects.targetFlags` has no reader)
+////   (`Spell4Effects.effectType.42`, genesis_prime/game/spell_plan `quest_advance_reading`).
 //// - **Unread** is any other type: the client's data holds it and no rule of the
 ////   server reads it.
 ////
@@ -202,6 +208,9 @@ pub type Kind {
   /// An NpcExecutionDelay effect (35): holds the creature that casts it still for its
   /// duration after the go its phases name (`Spell4Effects.effectType.35`).
   NpcExecutionDelay
+  /// A QuestAdvanceObjective effect (42): adds `dataBits02` to the progress of the objective
+  /// at index `dataBits01` of the quest `dataBits00` names (`Spell4Effects.effectType.42`).
+  QuestAdvance
   /// A type no rule reads.
   Unread(effect_type: Int)
 }
@@ -242,6 +251,7 @@ pub fn kind_of(effect_type effect_type: Int) -> Kind {
     97 -> Despawn
     15 -> UnitState
     35 -> NpcExecutionDelay
+    42 -> QuestAdvance
     other -> Unread(effect_type: other)
   }
 }
@@ -276,7 +286,8 @@ pub fn is_read(effect_type effect_type: Int) -> Bool {
     | Activate
     | Despawn
     | UnitState
-    | NpcExecutionDelay -> True
+    | NpcExecutionDelay
+    | QuestAdvance -> True
     Immunity | Unread(..) -> False
   }
 }
@@ -287,8 +298,8 @@ pub fn is_read(effect_type effect_type: Int) -> Bool {
 /// include the caster (bit 1, `Spell4Effects.targetFlags`), a PropertyModifier or
 /// ForcedMove row when they include the caster or are 2, 4 or 6 (the units a strike
 /// hits), a Heal,
-/// InterruptArmor or Absorption row when they include the caster or are the primary
-/// target alone (2), and a ShieldOverload row only when they are the area alone (4); a
+/// InterruptArmor, Absorption or QuestAdvance row when they include the caster or are the
+/// primary target alone (2), and a ShieldOverload row only when they are the area alone (4); a
 /// row aimed at other units is left out. A plan of
 /// a spell with a Stealth or RemoveStealth row aimed other than at the caster alone
 /// fails to load (genesis_prime/game/spell_plan `StealthAimNotRead`).
@@ -308,7 +319,7 @@ pub fn is_row_read(
     | RemoveStealth
     | Proc
     | DisguiseOutfit -> int.bitwise_and(target_flags, 1) == 1
-    Heal(..) | InterruptArmor | Absorption ->
+    Heal(..) | InterruptArmor | Absorption | QuestAdvance ->
       int.bitwise_and(target_flags, 1) == 1 || target_flags == 2
     ShieldOverload -> target_flags == 4
     Despawn | UnitState -> target_flags >= 2 && target_flags <= 7
