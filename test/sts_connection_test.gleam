@@ -49,6 +49,7 @@ import gleam/crypto
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/result
 import gleam/string
 import login_client
 import login_support
@@ -130,17 +131,22 @@ fn one_way(
   )
 }
 
+/// The client's one-way Connect, as the library writes it.
+fn connect(session: Session) -> #(Session, ConnectionStep(Request)) {
+  one_way(
+    session:,
+    protocol: "Sts",
+    command: "Connect",
+    body: sts_xml.render(
+      sts_xml.Parent("Connect", [sts_xml.Text("ConnType", "1281")]),
+    ),
+  )
+}
+
 /// The connection after the client's Connect.
 fn connected(seed seed: BitArray) -> Session {
   let #(session, taken) =
-    one_way(
-      session: accepted(seed:, settings: login_support.sts_settings()),
-      protocol: "Sts",
-      command: "Connect",
-      body: sts_xml.render(
-        sts_xml.Parent("Connect", [sts_xml.Text("ConnType", "1281")]),
-      ),
-    )
+    connect(accepted(seed:, settings: login_support.sts_settings()))
   assert support.effects_of(taken) == []
     as "Connect is one-way and gets no answer"
   session
@@ -223,11 +229,13 @@ fn key_data_exchange(
       outcome: step.Answer(FromStore(ForLogin(AccountFound(support.jim())))),
     )
   let #(session, bytes) = hear(session, taken)
+  #(session, exchange_from(reply: reply_of(bytes), password:))
+}
+
+/// The client's side of the exchange for the KeyData a LoginStart reply holds.
+fn exchange_from(reply reply: Reply, password password: String) -> Exchange {
   let assert Ok(server_key_data) =
-    bit_array.base64_decode(login_client.child(
-      reply: reply_of(bytes),
-      name: "KeyData",
-    ))
+    bit_array.base64_decode(login_client.child(reply:, name: "KeyData"))
     as "KeyData is base64"
   let assert Ok(exchange) =
     scripted_client.exchange(
@@ -237,7 +245,7 @@ fn key_data_exchange(
       server_key_data:,
     )
     as "the server's key data is the salt and B"
-  #(session, exchange)
+  exchange
 }
 
 fn key_data_request(
@@ -270,15 +278,16 @@ fn proven_with_m2(
     key_data_exchange(connected(seed:), password: vector.password)
   let #(session, taken) = key_data_request(session, exchange)
   let #(session, m2) = hear(session, taken)
+  #(ciphering(session:, exchange:), exchange, taken, m2)
+}
+
+/// The client's side with RC4 under K on in both directions, as it starts
+/// after M2.
+fn ciphering(session session: Session, exchange exchange: Exchange) -> Session {
   let assert Ok(stream) = rc4.start(exchange.session_key)
-  #(
-    Session(
-      ..session,
-      ciphers: Some(login_client.Ciphers(sending: stream, receiving: stream)),
-    ),
-    exchange,
-    taken,
-    m2,
+  Session(
+    ..session,
+    ciphers: Some(login_client.Ciphers(sending: stream, receiving: stream)),
   )
 }
 
@@ -722,34 +731,8 @@ pub fn a_hand_off_that_gives_no_answer_at_login_finish_answers_error_42_and_logs
   })
 }
 
-pub fn a_request_the_client_never_sends_at_that_point_ends_the_connection_and_an_unknown_command_is_logged_as_unhandled_test() -> Nil {
+pub fn an_unknown_command_is_logged_as_unhandled_and_bytes_that_are_no_request_end_the_connection_test() -> Nil {
   use <- owned_test.run(10_000)
-  // KeyData before LoginStart.
-  let #(_, taken) =
-    request(
-      session: connected(seed: support.seed(first: 1)),
-      protocol: "Auth",
-      command: "KeyData",
-      body: sts_xml.Parent("Request", [sts_xml.Text("KeyData", "AAAA")]),
-    )
-  assert support.stops(taken) && support.writes(taken) == []
-    as "KeyData before LoginStart is a request the client never sends"
-  assert list.length(support.logs_of(step: taken, level: LogError)) == 1
-    as "the connection ends with an error log"
-  // LoginFinish before LoginStart, and before the proof.
-  let #(_, taken) = login_finish(connected(seed: support.seed(first: 1)))
-  assert support.stops(taken)
-    && list.length(support.logs_of(step: taken, level: LogError)) == 1
-    as "LoginFinish before the proof ends the connection"
-  let #(session, _exchange) =
-    key_data_exchange(
-      connected(seed: support.seed(first: 1)),
-      password: vector.password,
-    )
-  let #(_, taken) = login_finish(session)
-  assert support.stops(taken)
-    && list.length(support.logs_of(step: taken, level: LogError)) == 1
-    as "LoginFinish while the proof is still to come ends the connection"
   // A whole request of a command the rule does not know.
   let #(session, taken) =
     request(
@@ -776,6 +759,320 @@ pub fn a_request_the_client_never_sends_at_that_point_ends_the_connection_and_an
   assert support.stops(taken)
     && list.length(support.logs_of(step: taken, level: LogError)) == 1
     as "bytes the library never writes end the connection with an error log"
+}
+
+// ---- the login in each of its eight statuses ----
+
+/// The places a login can stand, in the order the client takes it through.
+type Status {
+  AwaitingLoginStart
+  FindingAccount
+  AwaitingProof
+  AwaitingLoginFinish
+  KeepingToken
+  AwaitingAccountList
+  AwaitingTokenRequest
+  TokenGiven
+}
+
+const statuses = [
+  AwaitingLoginStart,
+  FindingAccount,
+  AwaitingProof,
+  AwaitingLoginFinish,
+  KeepingToken,
+  AwaitingAccountList,
+  AwaitingTokenRequest,
+  TokenGiven,
+]
+
+fn named(status: Status) -> String {
+  case status {
+    AwaitingLoginStart -> "AwaitingLoginStart"
+    FindingAccount -> "FindingAccount"
+    AwaitingProof -> "AwaitingProof"
+    AwaitingLoginFinish -> "AwaitingLoginFinish"
+    KeepingToken -> "KeepingToken"
+    AwaitingAccountList -> "AwaitingAccountList"
+    AwaitingTokenRequest -> "AwaitingTokenRequest"
+    TokenGiven -> "TokenGiven"
+  }
+}
+
+/// Whether an ask is out in the status: the client's next requests are held
+/// until the answer.
+fn asking(status: Status) -> Bool {
+  case status {
+    FindingAccount | KeepingToken -> True
+    AwaitingLoginStart
+    | AwaitingProof
+    | AwaitingLoginFinish
+    | AwaitingAccountList
+    | AwaitingTokenRequest
+    | TokenGiven -> False
+  }
+}
+
+/// The transaction the status takes next, by name. While an ask is out the
+/// client's request is held and taken once the answer has moved the login on,
+/// so it is the next one of the status the answer leads to; none once the
+/// token is given.
+fn in_order(status: Status) -> Option(String) {
+  case status {
+    AwaitingLoginStart -> Some("LoginStart")
+    FindingAccount | AwaitingProof -> Some("KeyData")
+    AwaitingLoginFinish -> Some("LoginFinish")
+    KeepingToken | AwaitingAccountList -> Some("ListMyAccounts")
+    AwaitingTokenRequest -> Some("RequestGameToken")
+    TokenGiven -> None
+  }
+}
+
+/// A login standing in a status: the client's side of it, the step that
+/// brought it there (which holds the ask while one is out) and the client's
+/// exchange while the proof is still to come.
+type Standing {
+  Standing(
+    session: Session,
+    taken: ConnectionStep(Request),
+    exchange: Option(Exchange),
+  )
+}
+
+fn in_status(status: Status) -> Standing {
+  let seed = support.seed(first: 1)
+  let idle = fn(session) {
+    Standing(session:, taken: Effects([]), exchange: None)
+  }
+  case status {
+    AwaitingLoginStart -> idle(connected(seed:))
+    FindingAccount -> {
+      let #(session, taken) = login_start(connected(seed:))
+      Standing(session:, taken:, exchange: None)
+    }
+    AwaitingProof -> {
+      let #(session, exchange) =
+        key_data_exchange(connected(seed:), password: vector.password)
+      Standing(session:, taken: Effects([]), exchange: Some(exchange))
+    }
+    AwaitingLoginFinish -> idle(proven(seed:).0)
+    KeepingToken -> {
+      let #(session, taken) = login_finish(proven(seed:).0)
+      Standing(session:, taken:, exchange: None)
+    }
+    AwaitingAccountList -> idle(finished(seed:).0)
+    AwaitingTokenRequest -> {
+      let #(session, taken) = list_my_accounts(finished(seed:).0)
+      idle(hear(session, taken).0)
+    }
+    TokenGiven -> {
+      let #(session, taken) = list_my_accounts(finished(seed:).0)
+      let #(session, taken) = request_game_token(hear(session, taken).0)
+      idle(hear(session, taken).0)
+    }
+  }
+}
+
+/// The answer that ends the ask a status holds out.
+fn the_answer(status: Status) -> Outcome(Answer) {
+  case status {
+    FindingAccount ->
+      step.Answer(FromStore(ForLogin(AccountFound(support.jim()))))
+    KeepingToken -> step.Answer(FromHandOff(Kept))
+    AwaitingLoginStart
+    | AwaitingProof
+    | AwaitingLoginFinish
+    | AwaitingAccountList
+    | AwaitingTokenRequest
+    | TokenGiven -> panic as "no ask is out in this status"
+  }
+}
+
+/// What the client's next in-order request does in the status, once an
+/// earlier request or read has left the status as it was.
+fn the_login_goes_on(status: Status, standing: Standing) -> Nil {
+  let Standing(session:, taken:, exchange:) = standing
+  let reason = "after the Connect in " <> named(status)
+  case status {
+    AwaitingLoginStart -> {
+      let #(_, taken) = login_start(session)
+      assert option.is_some(support.asked(taken))
+        as { "LoginStart asks the store " <> reason }
+    }
+    FindingAccount | KeepingToken -> {
+      let #(session, taken) =
+        answer(session:, taken:, outcome: the_answer(status))
+      assert !support.stops(taken)
+        && support.logs_of(step: taken, level: LogError) == []
+        as { "the answer ends no connection " <> reason }
+      let #(_, bytes) = hear(session, taken)
+      assert reply_of(bytes).status == 200
+        as { "the answer writes its reply " <> reason }
+    }
+    AwaitingProof -> {
+      let assert Some(exchange) = exchange
+        as "the exchange is kept for this row"
+      let #(session, taken) = key_data_request(session, exchange)
+      let #(_, bytes) = hear(session, taken)
+      assert login_client.child(reply: reply_of(bytes), name: "KeyData")
+        == bit_array.base64_encode(
+          <<32:size(32)-little, exchange.expected_m2:bits>>,
+          True,
+        )
+        as { "the right M1 is answered with M2 " <> reason }
+    }
+    AwaitingLoginFinish -> {
+      let #(_, taken) = login_finish(session)
+      let _token = token_asked(taken)
+      Nil
+    }
+    AwaitingAccountList -> {
+      let #(session, taken) = list_my_accounts(session)
+      let #(_, bytes) = hear(session, taken)
+      assert sts_xml.child(reply_of(bytes).root, "GameAccount") |> result.is_ok
+        as { "ListMyAccounts answers its GameAccount " <> reason }
+    }
+    AwaitingTokenRequest -> {
+      let #(session, taken) = request_game_token(session)
+      let #(_, bytes) = hear(session, taken)
+      assert login_client.child(reply: reply_of(bytes), name: "Token") != ""
+        as { "RequestGameToken answers the token " <> reason }
+    }
+    TokenGiven -> {
+      let #(session, taken) = connect(session)
+      assert taken == Effects([]) as { "a second Connect is taken " <> reason }
+      let #(_, taken) =
+        one_way(session:, protocol: "Sts", command: "Ping", body: "")
+      assert taken == Effects([]) as { "a Ping is taken " <> reason }
+    }
+  }
+}
+
+pub fn a_connect_in_any_status_is_taken_with_nothing_written_and_the_login_goes_on_test() -> Nil {
+  use <- owned_test.run(60_000)
+  list.each(statuses, fn(status) {
+    let standing = in_status(status)
+    let #(session, taken) = connect(standing.session)
+    assert taken == Effects([])
+      as {
+        "a Connect in "
+        <> named(status)
+        <> " stops nothing, writes nothing and logs nothing"
+      }
+    the_login_goes_on(status, Standing(..standing, session:))
+  })
+}
+
+pub fn the_clients_reconnect_read_of_login_start_then_connect_is_answered_with_key_data_and_the_login_runs_to_m2_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let seed = support.seed(first: 1)
+  // The recorded retry's first read: LoginStart s:30, then Connect, in one read.
+  let #(session, taken) =
+    send_bytes(
+      Session(
+        ..accepted(seed:, settings: login_support.sts_settings()),
+        sequence: scripted_client.reconnect_sequence + 1,
+      ),
+      scripted_client.reconnect_read(name: vector.name),
+    )
+  let assert Some(ask) = support.asked(taken)
+    as "LoginStart asks the store at once"
+  assert ask.request == AskStore(Login(FindAccount(vector.name)))
+    as "the store is asked for the name the retry carries"
+  let #(session, taken) =
+    answer(
+      session:,
+      taken:,
+      outcome: step.Answer(FromStore(ForLogin(AccountFound(support.jim())))),
+    )
+  assert !support.stops(taken)
+    && support.logs_of(step: taken, level: LogError) == []
+    as "the Connect that follows LoginStart in the read is taken once the store answers"
+  let #(session, bytes) = hear(session, taken)
+  let reply = reply_of(bytes)
+  assert reply.status == 200
+    && reply.sequence == scripted_client.reconnect_sequence
+    as "the reply is s:30R, the LoginStart's sequence"
+  let assert Ok(key_data) =
+    bit_array.base64_decode(login_client.child(reply:, name: "KeyData"))
+  assert key_data == expected_key_data(support.block(seed:, counter: 0))
+    as "B comes from the seed's first block"
+  let exchange = exchange_from(reply:, password: vector.password)
+  let #(session, taken) = key_data_request(session, exchange)
+  let #(session, m2) = hear(session, taken)
+  assert reply_of(m2).sequence == scripted_client.reconnect_sequence + 1
+    && login_client.child(reply: reply_of(m2), name: "KeyData")
+    == bit_array.base64_encode(
+      <<32:size(32)-little, exchange.expected_m2:bits>>,
+      True,
+    )
+    as "the client's KeyData s:31 is answered with M2, in plain text"
+  let #(session, taken) = login_finish(ciphering(session:, exchange:))
+  let #(session, taken) =
+    answer(session:, taken:, outcome: step.Answer(FromHandOff(Kept)))
+  let #(_, bytes) = hear(session, taken)
+  assert login_client.child(reply: reply_of(bytes), name: "AuthType") == "0"
+    as "RC4 under K starts after M2, as for any login"
+}
+
+/// A valid KeyData request, for a status that must refuse one.
+fn some_key_data_request(
+  session: Session,
+) -> #(Session, ConnectionStep(Request)) {
+  let assert Ok(exchange) =
+    scripted_client.exchange(
+      name: vector.name,
+      password: vector.password,
+      secret: client_secret(),
+      server_key_data: vector.server_key_data(),
+    )
+    as "the library's vector holds a server key data"
+  key_data_request(session, exchange)
+}
+
+pub fn a_transaction_outside_its_status_ends_the_connection_in_every_status_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let transactions = [
+    #("LoginStart", login_start),
+    #("KeyData", some_key_data_request),
+    #("LoginFinish", login_finish),
+    #("ListMyAccounts", list_my_accounts),
+    #("RequestGameToken", request_game_token),
+  ]
+  list.each(statuses, fn(status) {
+    transactions
+    |> list.filter(fn(transaction) { in_order(status) != Some(transaction.0) })
+    |> list.each(fn(transaction) {
+      assert_refused_in(status:, name: transaction.0, send: transaction.1)
+    })
+  })
+}
+
+/// The transaction sent in the status ends the connection with one error log
+/// and no write. While an ask is out the request is held and refused once the
+/// answer has been written, which is the one write.
+fn assert_refused_in(
+  status status: Status,
+  name name: String,
+  send send: fn(Session) -> #(Session, ConnectionStep(Request)),
+) -> Nil {
+  let reason = name <> " in " <> named(status)
+  let standing = in_status(status)
+  let #(session, sent) = send(standing.session)
+  let #(refused, writes) = case asking(status) {
+    True -> {
+      assert !support.stops(sent) as { reason <> " is held" }
+      let #(_, answered) =
+        answer(session:, taken: standing.taken, outcome: the_answer(status))
+      #(answered, 1)
+    }
+    False -> #(sent, 0)
+  }
+  assert support.stops(refused) as { reason <> " ends the connection" }
+  assert list.length(support.logs_of(step: refused, level: LogError)) == 1
+    as { reason <> " is logged once, as an error" }
+  assert list.length(support.writes(refused)) == writes
+    as { reason <> " is told nothing" }
 }
 
 pub fn the_srp_secret_and_the_token_come_from_the_connections_seed_only_test() -> Nil {
