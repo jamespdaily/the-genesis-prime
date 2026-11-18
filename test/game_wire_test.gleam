@@ -87,6 +87,7 @@ import genesis_prime/message/interaction_result
 import genesis_prime/message/item_added
 import genesis_prime/message/item_move
 import genesis_prime/message/item_place
+import genesis_prime/message/item_removed
 import genesis_prime/message/item_visual.{ItemVisual}
 import genesis_prime/message/movement_command
 import genesis_prime/message/movement_rotation.{MovementRotation}
@@ -103,6 +104,7 @@ import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
 import genesis_prime/message/rename_result
 import genesis_prime/message/spell_cast_confirmed
+import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started
 import genesis_prime/message/start_movement
 import genesis_prime/message/static_unit_type
@@ -127,6 +129,7 @@ import genesis_prime/readiness
 import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/sitting_bot
+import genesis_prime/step
 import genesis_prime/store.{type AccountId, AccountId}
 import genesis_prime/table/id.{XpPerLevelId}
 import genesis_prime/table/loader/store as table_store
@@ -153,6 +156,7 @@ import gleam/otp/system
 import gleam/result
 import gleam_community/maths
 import item_bot
+import level_up_support
 import log_capture
 import login_client
 import login_support
@@ -8642,6 +8646,341 @@ pub fn rescuing_an_exile_removes_the_trap_and_the_exile_for_another_player_too_t
   assert both_in(first_back)
     as "opcode.0x262: the player who used the trap is shown both again as well"
   game_client.close(game: first)
+  game_client.close(game: second)
+  login_support.stop(started)
+}
+
+// ---- a timed item runs out ----
+
+/// The guid and time left of each 0x111 in the frames that adds an item of this Item2.
+fn time_left_of(
+  frames frames: List(Frame),
+  item2_id item2_id: Int,
+) -> List(#(Int, Int)) {
+  list.filter_map(frames, fn(frame) {
+    case frame.message_id == item_added.message_id {
+      True -> {
+        let assert Ok(added) = item_added.decode(frame.body)
+          as "the 0x111 decodes"
+        let item = added.held_item.item
+        case item.item_id == item2_id {
+          True -> Ok(#(item.item_guid, item.time_left_ms))
+          False -> Error(Nil)
+        }
+      }
+      False -> Error(Nil)
+    }
+  })
+}
+
+/// The guid and reason of each 0x148 in the frames.
+fn removed_in(frames frames: List(Frame)) -> List(#(Int, Int)) {
+  list.filter_map(frames, fn(frame) {
+    case frame.message_id == item_removed.message_id {
+      True -> {
+        let assert Ok(removed) = item_removed.decode(frame.body)
+          as "the 0x148 decodes"
+        Ok(#(removed.item_guid, removed.reason))
+      }
+      False -> Error(Nil)
+    }
+  })
+}
+
+/// How many rows of the Item2 the character holds, read straight from the table.
+fn rows_of_item(
+  pool pool: pog.Connection,
+  character_id character_id: Int,
+  item2_id item2_id: Int,
+) -> Int {
+  let assert Ok(pog.Returned(rows: [count], ..)) =
+    pog.query(
+      "select count(*)::int from character_item where character_id = $1 and item2_id = $2",
+    )
+    |> pog.parameter(pog.int(character_id))
+    |> pog.parameter(pog.int(item2_id))
+    |> pog.returning(decode.at([0], decode.int))
+    |> pog.execute(pool)
+    as "the rows were counted"
+  count
+}
+
+/// A timed item counts down in real time, also while its owner is logged out: on the driven clock, one item runs out a minute
+/// after the entry while the player is in the world, and the other while the player is away.
+/// The entry sends each its time left (`opcode.0x111.time_left`); the one in the world is
+/// removed with 0x148 reason 26 at its moment and not before (`opcode.0x148.expired`), its row
+/// goes, and an item whose moment passed while the player was away is gone at the next entry.
+pub fn a_timed_item_is_removed_at_its_moment_and_one_that_ran_out_while_away_is_gone_at_entry_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let time = driven_time.new()
+  let started =
+    login_support.start_with(change: fn(settings) {
+      login_support.driven_by(settings:, time:)
+    })
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let #(game, character) =
+    new_player_at_level(
+      started:,
+      number: 1,
+      character_name: "Zed Qu",
+      class_id: 4,
+      level: 1,
+    )
+  // Item2 12402 (a single item) and 14838 (a stack) are rows of the client's tables; the
+  // moments are 60,000 and 100,000 ms after the clock's time now.
+  let now_unix_ms = step.unix_milliseconds(now: driven_time.now(time:))
+  let put = fn(item2_id, bag_index, moment) {
+    let assert Ok(_) =
+      pog.query(
+        "insert into character_item (character_id, item2_id, location, bag_index, stack_count, charges, expires_at_unix_ms) values ($1, $2, 1, $3, 1, 0, $4)",
+      )
+      |> pog.parameter(pog.int(character))
+      |> pog.parameter(pog.int(item2_id))
+      |> pog.parameter(pog.int(bag_index))
+      |> pog.parameter(pog.int(moment))
+      |> pog.execute(pool)
+      as "the timed item is stored"
+    Nil
+  }
+  put(12_402, 0, now_unix_ms + 60_000)
+  put(14_838, 1, now_unix_ms + 100_000)
+  send_play(game:, character_id: character)
+  let #(entry, have) =
+    game_client.read_until(game:, have: <<>>, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x01BC })
+    })
+  assert list.map(time_left_of(frames: entry, item2_id: 12_402), fn(sent) {
+      sent.1
+    })
+    == [60_000]
+    as "the entry sends the first item's time to its moment"
+  assert list.map(time_left_of(frames: entry, item2_id: 14_838), fn(sent) {
+      sent.1
+    })
+    == [100_000]
+    as "and the second's"
+  let assert [#(guid, _)] = time_left_of(frames: entry, item2_id: 12_402)
+  // One millisecond before its moment nothing is removed.
+  driven_time.advance(time:, ms: 59_999)
+  let #(early, have) = game_client.read_until_pong(game:, have:, number: 1)
+  assert removed_in(frames: early) == []
+    as "the client is told nothing before the moment"
+  // At its moment the item is removed, as a delete is, with the reason Expired.
+  driven_time.advance(time:, ms: 1)
+  let #(due, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      removed_in(frames:) != []
+    })
+  assert removed_in(frames: due) == [#(guid, 26)]
+    as "opcode.0x148.expired: 0x148 for the item with the reason 26"
+  assert rows_of_item(pool:, character_id: character, item2_id: 12_402) == 0
+    as "the store deleted its row"
+  // The player camps; the second item's moment passes while it is away.
+  game_client.send_world(game:, message_id: 0x00BF, body: <<1>>)
+  let #(_, have) = game_client.read_message(game:, have:, message_id: 0x0092)
+  game_client.send_world(game:, message_id: 0x00C0, body: <<>>)
+  let #(_, have) = game_client.read_message(game:, have:, message_id: 0x0594)
+  driven_time.advance(time:, ms: 600_000)
+  game_client.send(game:, message_id: 0x07E0, body: <<>>)
+  let #(_, have) = game_client.read_message(game:, have:, message_id: 0x0117)
+  send_play(game:, character_id: character)
+  let #(second_entry, _) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x01BC })
+    })
+  assert time_left_of(frames: second_entry, item2_id: 14_838) == []
+    as "the second item ran out while its owner was away, so the entry does not send it"
+  assert rows_of_item(pool:, character_id: character, item2_id: 14_838) == 0
+    as "and its row is gone"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+/// The cast id of the cast of `spell4_id` that the frames both start and send the go of, and
+/// the unit its start names as caster.
+fn started_and_gone(
+  frames frames: List(Frame),
+  spell4_id spell4_id: Int,
+) -> Result(#(Int, Int), Nil) {
+  let events = game_client.casts_in(frames:)
+  use #(cast_id, caster) <- result.try(
+    list.first(game_client.starts_of(events:, spell4_id:)),
+  )
+  case
+    list.any(events, fn(event) {
+      event == game_client.CastWent(cast_id:, phase: 0)
+    })
+  {
+    True -> Ok(#(cast_id, caster))
+    False -> Error(Nil)
+  }
+}
+
+/// The ids of the frames of one cast: the start, the go, the removal of its nodes and the
+/// finish, which each begin with the cast id in 32 bits.
+fn frames_of_cast(
+  frames frames: List(Frame),
+  cast_id cast_id: Int,
+) -> List(Int) {
+  list.filter_map(frames, fn(frame) {
+    case frame.message_id, frame.body {
+      0x07FF, <<id:32-little, _:bits>>
+      | 0x07F4, <<id:32-little, _:bits>>
+      | 0x0811, <<id:32-little, _:bits>>
+      | 0x07FE, <<id:32-little, _:bits>>
+      | 0x07FD, <<_:32-little, id:32-little, _:bits>>
+        if id == cast_id
+      -> Ok(frame.message_id)
+      _, _ -> Error(Nil)
+    }
+  })
+}
+
+/// A Medic of level 3 one experience short of level 4 kills the creature at ring slot 0 in
+/// sight of a second player and, as the client does 2000 ms after the rise, asks for the
+/// fanfare of level 4 with 0x07A5: it is answered with the start and the go of Spell4 77409,
+/// Level Up tier 3 (`Spell4.tierIndex.level_up`), which lists its own unit with the tier's one
+/// effect row 202345, with no 0x07FD (that answers a press), and both players read the 0x07FE
+/// of that cast 5000 ms after the go, the effect's life (`spell.level_up.cast`).
+/// A Replay of level 2 is answered with Spell4 77398, and a level above the player's ends the
+/// connection, which the second player reads as a leave. The full-screen text, the announcer's
+/// voice and the "Level Up!" box are the client's own drawing and are not observable here. The
+/// clock is driven and nothing waits on real time.
+pub fn a_level_ups_0x07a5_is_answered_with_the_level_up_cast_and_a_player_in_sight_reads_the_same_cast_on_the_whole_server_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use tables <- on_rows_without_paralytic_surges_recharge()
+  let time = driven_time.new()
+  let started = world_with_the_markers_creatures(tables:, time:)
+  let assert Ok(level_four) = xp_per_level.get(tables:, id: XpPerLevelId(4))
+    as "XpPerLevel has a row 4"
+  let #(first, frames, first_have, _) =
+    a_medic_of_a_level_at_the_marker_ring(
+      started:,
+      sixth: 0,
+      level: 3,
+      saved_experience: Some(level_four.min_xp_for_level - 1),
+    )
+  let first_unit = game_client.unit_create_player_in(frames:).unit_id
+  // A second player stands 14 units beyond the first, in sight of it.
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let slot = ring_slot(index: 0)
+  let #(second, second_character) =
+    new_player_at_level(
+      started:,
+      number: 2,
+      character_name: "Ab Cd",
+      class_id: 4,
+      level: 9,
+    )
+  character_support.move_to(
+    pool:,
+    character_id: second_character,
+    world_id: 3460,
+    world_zone_id: 5967,
+    position: #(slot.0 +. 14.0, slot.1, slot.2),
+  )
+  send_play(game: second, character_id: second_character)
+  let #(_, second_have) =
+    game_client.read_until(game: second, have: <<>>, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x01BC })
+    })
+  let #(_, first_have) =
+    game_client.read_until(game: first, have: first_have, found: fn(frames) {
+      list.any(frames, fn(frame) {
+        frame.message_id == 0x0262
+        && case game_client.created_unit(body: frame.body) {
+          Ok(game_client.PlayerCreated(unit:)) -> unit.unit_id != first_unit
+          _ -> False
+        }
+      })
+    })
+  let #(killed, first_have) =
+    kills_the_target_at_slot_0(game: first, have: first_have, frames:, time:)
+  let #(rest, first_have) =
+    game_client.read_until(game: first, have: first_have, found: fn(rest) {
+      list.any(list.append(killed, rest), fn(frame) {
+        frame.message_id == 0x01A0
+      })
+    })
+  assert list.any(list.append(killed, rest), fn(frame) {
+    frame.message_id == 0x0938 && !is_other_stat(frame:)
+  })
+    as "the kill raised the level to 4 (opcode.0x938), as the 0x07A5 of the fanfare follows it"
+  // The client's fanfare asks 2000 ms after the rise; the clock is driven, so the test
+  // does not wait.
+  game_client.replay_level_up(game: first, level: 4)
+  let #(answered, first_have) =
+    game_client.read_until(game: first, have: first_have, found: fn(frames) {
+      result.is_ok(started_and_gone(frames:, spell4_id: 77_409))
+    })
+  let assert Ok(#(cast_id, caster)) =
+    started_and_gone(frames: answered, spell4_id: 77_409)
+  assert caster == first_unit
+    as "opcode.0x7ff: the cast is the player's own, started on the player's unit"
+  assert frames_of_cast(frames: answered, cast_id:) == [0x07FF, 0x07F4]
+    as "spell.level_up.cast: the start and the go, and no 0x07FD (it answers a press)"
+  assert game_client.go_targets_in(frames: answered)
+    |> list.filter(fn(go) { go.0 == cast_id })
+    == [#(cast_id, [first_unit])]
+    as "opcode.0x7f4: the go names the player's own unit"
+  let assert [go_frame] =
+    list.filter(answered, fn(frame) {
+      frame.message_id == 0x07F4
+      && case frame.body {
+        <<id:32-little, _:bits>> -> id == cast_id
+        _ -> False
+      }
+    })
+  let assert Ok(go) = spell_go.decode(go_frame.body)
+  let assert [info] = go.targets
+  assert list.map(info.effects, fn(effect) { effect.spell4_effects_id })
+    == [level_up_support.tier(level: 4).effect_id]
+    as "Spell4Effects 202345, the one row of tier 3 (Spell4.tierIndex.level_up)"
+  let #(seen, second_have) =
+    game_client.read_until(game: second, have: second_have, found: fn(frames) {
+      result.is_ok(started_and_gone(frames:, spell4_id: 77_409))
+    })
+  let assert Ok(#(seen_id, seen_caster)) =
+    started_and_gone(frames: seen, spell4_id: 77_409)
+  assert seen_id == cast_id && seen_caster == first_unit
+    as "a player in sight reads the same cast, started by the first player's unit"
+  assert game_client.go_targets_in(frames: seen)
+    |> list.filter(fn(go) { go.0 == cast_id })
+    == [#(cast_id, [first_unit])]
+  assert frames_of_cast(frames: seen, cast_id:) == [0x07FF, 0x07F4]
+    as "and no 0x07FD"
+  // The effect's life is over 5000 ms after the go.
+  driven_time.advance(time:, ms: 5000)
+  let #(first_end, first_have) =
+    game_client.read_until(game: first, have: first_have, found: fn(frames) {
+      list.contains(frames_of_cast(frames:, cast_id:), 0x07FE)
+    })
+  assert frames_of_cast(frames: first_end, cast_id:) == [0x07FE]
+    as "spell.level_up.cast: the finish, and nothing else of the cast"
+  let #(second_end, second_have) =
+    game_client.read_until(game: second, have: second_have, found: fn(frames) {
+      list.contains(frames_of_cast(frames:, cast_id:), 0x07FE)
+    })
+  assert frames_of_cast(frames: second_end, cast_id:) == [0x07FE]
+    as "a player in sight reads the same end"
+  // A Replay of level 2 is answered with the tier of level 2.
+  game_client.replay_level_up(game: first, level: 2)
+  let #(replayed, _) =
+    game_client.read_until(game: first, have: first_have, found: fn(frames) {
+      result.is_ok(started_and_gone(frames:, spell4_id: 77_398))
+    })
+  assert result.is_ok(started_and_gone(frames: replayed, spell4_id: 77_398))
+    as "lua.LevelUpUnlocks.ReplayLevelUp: the Replay button asks for an earlier level and gets that tier"
+  // A level above the player's is refused: the connection ends, and the second player
+  // reads the first leave.
+  game_client.replay_level_up(game: first, level: 5)
+  game_client.await_closed(game: first)
+  let #(left, _) =
+    game_client.read_until(game: second, have: second_have, found: fn(frames) {
+      list.contains(destroyed_units(frames:), first_unit)
+    })
+  assert list.contains(destroyed_units(frames: left), first_unit)
+    as "opcode.0x355: the player whose connection ended leaves the other's sight"
   game_client.close(game: second)
   login_support.stop(started)
 }

@@ -402,6 +402,7 @@ fn children_of(
           | effect_kind.Scale
           | effect_kind.ItemVisualSwap
           | effect_kind.RavelSignal
+          | effect_kind.FullScreenEffect
           | effect_kind.PropertyConversion
           | effect_kind.DisguiseOutfit
           | effect_kind.Absorption

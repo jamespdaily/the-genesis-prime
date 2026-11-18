@@ -11,8 +11,9 @@
 -- is held with; a stack that is missing, that another login moved or that holds another
 -- count stops the whole sale, and it changes nothing and returns no row. The account's id
 -- is in the statement, as for a load. The rows it returns are one for each stack sold,
--- each with the amount after the sale and the stack's random-stat word, charges and flags byte as the
--- database held them, which the buyback entry keeps (a sale names at least one stack).
+-- each with the amount after the sale and the stack's random-stat word, charges, flags byte and moment it runs
+-- out as the database held them (-1 for an item that does not run out, which the union's
+-- column would otherwise type as never NULL), which the buyback entry keeps (a sale names at least one stack).
 --
 -- The statement runs after lock_character_for_save.sql in one transaction, so it waits for
 -- a login that is raising the epoch and then reads the epoch that login stored.
@@ -60,7 +61,7 @@ removed as (
     and held.character_id = $1
     and sold.sold_count = sold.held_count
     and exists (select 1 from allowed)
-  returning held.item_guid, held.random_stats, held.charges, held.item_flags
+  returning held.item_guid, held.random_stats, held.charges, held.item_flags, held.expires_at_unix_ms
 ),
 lowered as (
   update character_item as held
@@ -70,18 +71,19 @@ lowered as (
     and held.character_id = $1
     and sold.sold_count < sold.held_count
     and exists (select 1 from allowed)
-  returning held.item_guid, held.random_stats, held.charges, held.item_flags
+  returning held.item_guid, held.random_stats, held.charges, held.item_flags, held.expires_at_unix_ms
 )
 select
   paid.amount as amount,
   gone.item_guid,
   gone.random_stats,
   gone.charges,
-  gone.item_flags::int as item_flags
+  gone.item_flags::int as item_flags,
+  coalesce(gone.expires_at_unix_ms, -1) as expires_at_unix_ms
 from paid
 join (
-  select item_guid, random_stats, charges, item_flags from removed
+  select item_guid, random_stats, charges, item_flags, expires_at_unix_ms from removed
   union all
-  select item_guid, random_stats, charges, item_flags from lowered
+  select item_guid, random_stats, charges, item_flags, expires_at_unix_ms from lowered
 ) as gone on true
 order by gone.item_guid;

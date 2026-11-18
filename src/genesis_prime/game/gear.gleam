@@ -88,7 +88,7 @@ pub fn of_items(
         item_property.of_item(
           tables:,
           item2_id: item.item2_id.value,
-          random_stats: item.random_stats,
+          random_stats: item.words.random_stats,
           level:,
         ),
       )

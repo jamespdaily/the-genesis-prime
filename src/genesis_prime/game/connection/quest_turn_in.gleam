@@ -31,12 +31,14 @@ import genesis_prime/client_connection.{Continue, FromStore}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/character_state
 import genesis_prime/game/connection/experience as connection_experience
+import genesis_prime/game/connection/item_expiry as connection_item_expiry
 import genesis_prime/game/connection/objective as connection_objective
 import genesis_prime/game/connection/quest as connection_quest
 import genesis_prime/game/connection/state.{
   type Session, InWorld, Session, TurningIn,
 } as connection_state
 import genesis_prime/game/connection/vendor_trade
+import genesis_prime/game/deadline_timer
 import genesis_prime/game/experience
 import genesis_prime/game/interaction
 import genesis_prime/game/movement
@@ -90,6 +92,7 @@ pub fn turn_in_message(
       tables:,
       now_ms: now.monotonic_ms,
       unix_seconds: step.unix_milliseconds(now:) / 1000,
+      unix_ms: step.unix_milliseconds(now:),
       logged: session.interaction_logged,
     )
   {
@@ -237,6 +240,7 @@ fn completed(
       item_proficiencies: proficiencies_of(tables:, entered:),
       tables:,
       unix_seconds: step.unix_milliseconds(now:) / 1000,
+      unix_ms: step.unix_milliseconds(now:),
       logged: session.interaction_logged,
     )
   {
@@ -281,23 +285,28 @@ pub fn turn_in_answered(
           items: entered.items,
           currencies: entered.currencies,
           answer:,
+          now_unix_ms: step.unix_milliseconds(now:),
         )
       {
         quest_turn_in.Saved(items:, currencies:, rewards:, then:) ->
-          saved(
-            session:,
-            now:,
-            holder:,
-            entered: world_entry.Entered(
-              ..entered,
-              items:,
-              currencies:,
-              quests: turn_in.log,
+          connection_item_expiry.rearmed(
+            handled: saved(
+              session:,
+              now:,
+              holder:,
+              entered: world_entry.Entered(
+                ..entered,
+                items:,
+                currencies:,
+                quests: turn_in.log,
+              ),
+              before: entered.quests,
+              turn_in:,
+              rewards:,
+              then:,
             ),
-            before: entered.quests,
-            turn_in:,
-            rewards:,
-            then:,
+            before: entered.items,
+            now:,
           )
         quest_turn_in.NotSaved(effects:) -> {
           let session = Session(..session, status: InWorld(holder:, entered:))
@@ -361,12 +370,15 @@ fn saved(
       }
       let timers =
         list.map(
-          quest_log.deadline_moved(
+          deadline_timer.moved(
             before: quest_log.next_deadline(log: before),
             after: quest_log.next_deadline(log: after),
             now_ms: now.monotonic_ms,
           ),
-          connection_state.quest_deadline_timer_move,
+          connection_state.deadline_timer_move(
+            connection_state.quest_deadline_timer,
+            _,
+          ),
         )
       let #(session, settled) = connection_objective.settled(session:, now:)
       Continue(

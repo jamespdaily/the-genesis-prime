@@ -30,6 +30,7 @@ import genesis_prime/message/quest_log as quest_message
 import genesis_prime/store.{HeldItem}
 import genesis_prime/table/id.{Item2Id, Spell4Id}
 import gleam/list
+import gleam/option
 import gleam/set
 import message_support
 import owned_test
@@ -89,9 +90,12 @@ pub fn the_play_entry_sends_the_quest_log_after_the_character_state_and_a_holocr
           location: 1,
           bag_index: 7,
           stack_count: 1,
-          random_stats: 0,
-          charges: 0,
-          item_flags: 0,
+          words: store.ItemWords(
+            random_stats: 0,
+            charges: 0,
+            item_flags: 0,
+            expires_at_unix_ms: option.None,
+          ),
         ),
       ]),
       quests: [
@@ -182,9 +186,12 @@ pub fn login_sends_the_log_with_the_held_count_test() -> Nil {
       location: 1,
       bag_index: 0,
       stack_count: 1,
-      random_stats: 0,
-      charges: 0,
-      item_flags: 0,
+      words: store.ItemWords(
+        random_stats: 0,
+        charges: 0,
+        item_flags: 0,
+        expires_at_unix_ms: option.None,
+      ),
     ),
   ]
   let saved =

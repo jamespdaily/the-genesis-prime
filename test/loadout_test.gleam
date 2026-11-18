@@ -461,9 +461,12 @@ fn warrior_in(rows rows: fixture_tables.Rows) -> #(Loadout, Int) {
             location: 0,
             bag_index: equipped.bag_index,
             stack_count: 1,
-            random_stats: 0,
-            charges: 0,
-            item_flags: 0,
+            words: store.ItemWords(
+              random_stats: 0,
+              charges: 0,
+              item_flags: 0,
+              expires_at_unix_ms: None,
+            ),
           )
         },
       ),

@@ -822,6 +822,18 @@ pub fn max_charges(
   int.max(0, source.max_charges)
 }
 
+/// The minutes a timed item lasts after it is made: its own Item2 row's expirationTimeMinutes
+/// (`Item2.expirationTimeMinutes`; 0 for an item that does not run out, which is every row but
+/// 37). The proxy rows (Item2.flags 0x4000) hold 0 and their source row 74201 does too, so the
+/// own row is the client's value. Only a missing row is an error.
+pub fn expiration_minutes(
+  tables tables: table_store.Tables,
+  item2_id item2_id: Int,
+) -> Result(Int, ItemPropertyError) {
+  use item <- result.map(item_row(tables:, item2_id:))
+  item.expiration_time_minutes
+}
+
 /// The Item2 row the client reads an item's own fields (maxCharges, bindFlags) from: the
 /// item's row, or for a proxy item the row `proxy_source` names.
 fn source_row(

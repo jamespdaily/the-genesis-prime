@@ -336,6 +336,11 @@ pub fn pending_of(time time: Time, owner owner: Pid) -> List(TimerId) {
   asked(time:, make: PendingOf(owner, _))
 }
 
+/// The clock's time now, which the participants read for each input.
+pub fn now(time time: Time) -> Now {
+  asked(time:, make: Peek)
+}
+
 /// Moves the clock on by `ms`, firing each timer due within it, one at a time in
 /// the order of their due times. Each fires at its own due time; then the barrier
 /// (`wait_until_quiet`) runs, and only after it is the next due timer chosen, so a

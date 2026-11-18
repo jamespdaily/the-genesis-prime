@@ -89,22 +89,23 @@ import genesis_prime/service.{type Sent, ToWorker}
 import genesis_prime/store.{
   type AccountId, type Answer, type Character, type CharacterId,
   type CreateAnswer, type DeleteAnswer, type FindAccountAnswer, type HeldItem,
-  type ItemFill, type ItemsAnswer, type ItemsRequest, type MoveAnswer,
-  type MoveRequest, type Naming, type NewCharacter, type NewItem, type QuestRow,
-  type RenameAnswer, type Request, type SelectAnswer, type SelectRequest,
-  type UnsetItem, type WorldAnswer, type WorldRequest, Account, AccountFound,
-  AccountId, ActiveQuest, Bought, BuyFromVendor, Character, CharacterCreated,
-  CharacterDeleted, CharacterId, CharacterLoaded, CharacterRenamed,
-  ChargesFilled, CreateCharacter, CreateForNoSuchAccount, Created,
-  DeleteCharacter, DeleteItem, Deleted, ExperienceRefused, FillCharges,
-  FindAccount, ForItems, ForLogin, ForMove, ForSelect, ForWorld, HealthRefused,
-  HeldCurrency, HeldItem, ItemMade, Items, ItemsNotSaved, ItemsSaved,
-  ListCharacters, Listed, LoadCharacter, Login, MergeItems, Move, MoveItems,
-  NameBreaksRule, NameStands, NameTaken, NeedsRename, NewNameBreaksRule,
-  NewNameTaken, NoFreeSlot, NoSuchAccount, NoSuchCharacter, NotTheAccounts,
-  NothingSaved, PlaceRefused, PlaceSaved, QuestLogRefused, QuestRow,
-  RenameCharacter, Renamed, SavePlace, SaveRefused, Select, SellToVendor,
-  SpendItem, SplitItem, TurnInQuest, TurnedIn, Unavailable, UnsetItem, World,
+  type ItemFill, type ItemWords, type ItemsAnswer, type ItemsRequest,
+  type MoveAnswer, type MoveRequest, type Naming, type NewCharacter,
+  type NewItem, type QuestRow, type RenameAnswer, type Request,
+  type SelectAnswer, type SelectRequest, type UnsetItem, type WorldAnswer,
+  type WorldRequest, Account, AccountFound, AccountId, ActiveQuest, Bought,
+  BuyFromVendor, Character, CharacterCreated, CharacterDeleted, CharacterId,
+  CharacterLoaded, CharacterRenamed, ChargesFilled, CreateCharacter,
+  CreateForNoSuchAccount, Created, DeleteCharacter, DeleteItem, Deleted,
+  ExperienceRefused, FillCharges, FindAccount, ForItems, ForLogin, ForMove,
+  ForSelect, ForWorld, HealthRefused, HeldCurrency, HeldItem, ItemMade,
+  ItemWords, Items, ItemsNotSaved, ItemsSaved, ListCharacters, Listed,
+  LoadCharacter, Login, MergeItems, Move, MoveItems, NameBreaksRule, NameStands,
+  NameTaken, NeedsRename, NewNameBreaksRule, NewNameTaken, NoFreeSlot,
+  NoSuchAccount, NoSuchCharacter, NotTheAccounts, NothingSaved, PlaceRefused,
+  PlaceSaved, QuestLogRefused, QuestRow, RenameCharacter, Renamed, SavePlace,
+  SaveRefused, Select, SellToVendor, SpendItem, SplitItem, TurnInQuest, TurnedIn,
+  Unavailable, UnsetItem, World,
 }
 import genesis_prime/store/sql
 import genesis_prime/table/id.{type Item2Id, ClassId, Item2Id, RaceId}
@@ -525,6 +526,7 @@ fn turn_in_quest(
         save_place(connection, save) |> result.map_error(Failed),
       )
       use <- bool.guard(saved.rows == [], Error(Unchanged))
+      let made_words = word_lists(list.map(made, fn(one) { { one.1 }.words }))
       use rewarded <- result.try(
         sql.turn_in_rewards(
           connection,
@@ -542,9 +544,10 @@ fn turn_in_quest(
           list.map(made, fn(one) { { one.1 }.location }),
           list.map(made, fn(one) { { one.1 }.bag_index }),
           list.map(made, fn(one) { { one.1 }.stack_count }),
-          list.map(made, fn(one) { { one.1 }.random_stats }),
-          list.map(made, fn(one) { { one.1 }.charges }),
-          list.map(made, fn(one) { { one.1 }.item_flags }),
+          made_words.random_stats,
+          made_words.charges,
+          made_words.item_flags,
+          made_words.expires_at_unix_ms,
         )
         |> result.map_error(Failed),
       )
@@ -593,9 +596,12 @@ fn turn_in_quest(
               location:,
               bag_index:,
               stack_count:,
-              random_stats:,
-              charges:,
-              item_flags:,
+              words: ItemWords(
+                random_stats:,
+                charges:,
+                item_flags:,
+                expires_at_unix_ms: row.expires_at_unix_ms,
+              ),
             ))
           _, _, _, _, _, _, _, _ -> Error(Nil)
         }
@@ -648,9 +654,12 @@ fn sell_to_vendor(
       words: list.map(rows, fn(row) {
         store.SoldWord(
           item_guid: row.item_guid,
-          random_stats: row.random_stats,
-          charges: row.charges,
-          item_flags: row.item_flags,
+          words: ItemWords(
+            random_stats: row.random_stats,
+            charges: row.charges,
+            item_flags: row.item_flags,
+            expires_at_unix_ms: minus_one_as_never(row.expires_at_unix_ms),
+          ),
         )
       }),
     )
@@ -750,6 +759,7 @@ fn buy_from_vendor(
   let AccountId(account_id) = account_id
   let CharacterId(character_id) = character_id
   let Item2Id(item2) = item2_id
+  let made_words = word_lists(list.map(make, fn(stack) { stack.words }))
   locked(pool:, account_id:, character_id:, statement: fn(connection) {
     sql.buy_from_vendor(
       connection,
@@ -766,9 +776,10 @@ fn buy_from_vendor(
       list.map(make, fn(stack) { stack.location }),
       list.map(make, fn(stack) { stack.bag_index }),
       list.map(make, fn(stack) { stack.stack_count }),
-      list.map(make, fn(stack) { stack.random_stats }),
-      list.map(make, fn(stack) { stack.charges }),
-      list.map(make, fn(stack) { stack.item_flags }),
+      made_words.random_stats,
+      made_words.charges,
+      made_words.item_flags,
+      made_words.expires_at_unix_ms,
     )
   })
   |> items_answer(saved: fn(rows) {
@@ -799,9 +810,12 @@ fn buy_from_vendor(
               location:,
               bag_index:,
               stack_count:,
-              random_stats:,
-              charges:,
-              item_flags:,
+              words: ItemWords(
+                random_stats:,
+                charges:,
+                item_flags:,
+                expires_at_unix_ms: row.expires_at_unix_ms,
+              ),
             ))
           _, _, _, _, _, _, _ -> Error(Nil)
         }
@@ -831,7 +845,7 @@ fn delete_item(
       item.location,
       item.bag_index,
       item.stack_count,
-      item.charges,
+      item.words.charges,
     )
   })
   |> items_answer(saved: fn(rows) {
@@ -867,7 +881,7 @@ fn spend_item(
       item.stack_count,
       stack_count,
       charges,
-      item.charges,
+      item.words.charges,
     )
   })
   |> items_answer(saved: fn(rows) {
@@ -1002,8 +1016,8 @@ fn world(
   request: WorldRequest,
 ) -> Result(WorldAnswer, Nil) {
   case request {
-    LoadCharacter(account_id:, character_id:) ->
-      load_character(pool:, account_id:, character_id:)
+    LoadCharacter(account_id:, character_id:, now_unix_ms:) ->
+      load_character(pool:, account_id:, character_id:, now_unix_ms:)
     FillCharges(account_id:, character_id:, session_epoch:, fills:) ->
       fill_charges(pool:, account_id:, character_id:, session_epoch:, fills:)
   }
@@ -1143,11 +1157,14 @@ fn list_characters(
 /// character's items then runs on the same connection before the commit, so a
 /// delete of the character waits for the lock and an answer never holds a
 /// character without the items it had. `NotTheAccounts` when the account has no
-/// such character, and `Error(Nil)` when the database is away.
+/// such character, and `Error(Nil)` when the database is away. Between the raise and the read
+/// of the items it deletes the items that ran out at `now_unix_ms` or earlier
+/// (delete_expired_character_items.sql).
 fn load_character(
   pool pool: pog.Connection,
   account_id account_id: AccountId,
   character_id character_id: CharacterId,
+  now_unix_ms now_unix_ms: Int,
 ) -> Result(WorldAnswer, Nil) {
   let AccountId(account_id) = account_id
   let CharacterId(character_id) = character_id
@@ -1159,7 +1176,14 @@ fn load_character(
         account_id,
       ))
       use item_rows <- result.try(case loaded.rows {
-        [_] -> sql.load_character_items(connection, character_id)
+        [_] -> {
+          use _ <- result.try(sql.delete_expired_character_items(
+            connection,
+            character_id,
+            now_unix_ms,
+          ))
+          sql.load_character_items(connection, character_id)
+        }
         _ -> Ok(pog.Returned(count: 0, rows: []))
       })
       use quest_rows <- result.try(case loaded.rows {
@@ -1352,7 +1376,9 @@ fn quests_json(quests: List(QuestRow)) -> Json {
 }
 
 /// The rows of a character's items as the items they hold, in the order the query gave
-/// them, and apart from those the rows that hold no charges (`UnsetItem`).
+/// them, and apart from those the rows that hold no charges (`UnsetItem`). A moment is read
+/// as the row holds it: a timed row saved before the column has none and never runs out
+/// (open: #333).
 fn held_items(
   rows: List(sql.LoadCharacterItemsRow),
 ) -> #(List(HeldItem), List(UnsetItem)) {
@@ -1367,9 +1393,12 @@ fn held_items(
             location: row.location,
             bag_index: row.bag_index,
             stack_count: row.stack_count,
-            random_stats: row.random_stats,
-            charges:,
-            item_flags: row.item_flags,
+            words: ItemWords(
+              random_stats: row.random_stats,
+              charges:,
+              item_flags: row.item_flags,
+              expires_at_unix_ms: row.expires_at_unix_ms,
+            ),
           ),
           ..set
         ],
@@ -1384,6 +1413,7 @@ fn held_items(
           stack_count: row.stack_count,
           random_stats: row.random_stats,
           item_flags: row.item_flags,
+          expires_at_unix_ms: row.expires_at_unix_ms,
         ),
         ..unset
       ])
@@ -1407,6 +1437,39 @@ fn store_items(
     list.map(items, fn(item) { item.charges }),
   )
   |> result.replace(Nil)
+}
+
+/// The words of the stacks a statement makes, as one list for each word in the stacks' order,
+/// which its parallel `unnest` lists take. A moment that never comes is -1 (a list cannot
+/// hold a missing value); the statement stores it as NULL, and `minus_one_as_never` reads it
+/// back.
+fn word_lists(words: List(ItemWords)) -> WordLists {
+  WordLists(
+    random_stats: list.map(words, fn(word) { word.random_stats }),
+    charges: list.map(words, fn(word) { word.charges }),
+    item_flags: list.map(words, fn(word) { word.item_flags }),
+    expires_at_unix_ms: list.map(words, fn(word) {
+      option.unwrap(word.expires_at_unix_ms, -1)
+    }),
+  )
+}
+
+/// One list for each of the four words of the stacks a statement makes.
+type WordLists {
+  WordLists(
+    random_stats: List(Int),
+    charges: List(Int),
+    item_flags: List(Int),
+    expires_at_unix_ms: List(Int),
+  )
+}
+
+/// The moment a statement returned for an item (-1 when it never comes) as the item's own.
+fn minus_one_as_never(expires_at_unix_ms: Int) -> Option(Int) {
+  case expires_at_unix_ms {
+    -1 -> None
+    moment -> Some(moment)
+  }
 }
 
 /// One row as the character it holds.

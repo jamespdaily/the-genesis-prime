@@ -453,3 +453,42 @@ pub fn the_charges_column_is_nullable_with_a_check_and_a_comment_test() -> Nil {
     == "CHECK (((charges IS NULL) OR (charges >= 0)))"
     as "a check holds the column at 0 or more, or null"
 }
+
+/// The expires_at_unix_ms column of character_item (migration 0045): the Unix milliseconds a
+/// timed item runs out, a bigint that is null for an item that does not, with no default, a
+/// check that holds it at 0 or more, and a comment without change-log words.
+pub fn the_expiry_moment_column_is_nullable_with_a_check_and_a_comment_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let shared = database_support.shared()
+  let database = database_support.new_database(on: shared)
+  let read = fn(query) {
+    let assert Ok(printed) =
+      database_support.psql(with: shared.settings, database:, arguments: [
+        "-At",
+        "-c",
+        query,
+      ])
+      as "the catalogue reads"
+    string.trim(printed)
+  }
+  assert read(
+      "select data_type || '|' || is_nullable || '|' || coalesce(column_default, 'none') from information_schema.columns where table_name = 'character_item' and column_name = 'expires_at_unix_ms'",
+    )
+    == "bigint|YES|none"
+    as "a bigint, nullable, with no default"
+  let comment =
+    read(
+      "select col_description('character_item'::regclass, ordinal_position) from information_schema.columns where table_name = 'character_item' and column_name = 'expires_at_unix_ms'",
+    )
+  assert comment != "" as "the column has a comment"
+  assert list.all(
+    ["no longer", "used to", "not yet", "for now", "so far"],
+    fn(word) { !string.contains(string.lowercase(comment), word) },
+  )
+    as "the comment says what the column is, with no change-log words"
+  assert read(
+      "select pg_get_constraintdef(oid) from pg_constraint where conname = 'character_item_expires_at_not_negative' and conrelid = 'character_item'::regclass",
+    )
+    == "CHECK (((expires_at_unix_ms IS NULL) OR (expires_at_unix_ms >= 0)))"
+    as "a check holds the column at 0 or more, or null"
+}

@@ -37,6 +37,7 @@
 //// - The times are the tests' choice: a connection's monotonic milliseconds.
 
 import character_tables
+import genesis_prime/game/deadline_timer
 import genesis_prime/game/objective.{Killed}
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/target_group
@@ -423,14 +424,14 @@ pub fn the_deadline_timer_follows_the_earliest_objective_deadline_test() -> Nil 
       now_ms: 10_000,
       scripts: objective.no_rows(),
     )
-  assert quest_log.deadline_moved(
+  assert deadline_timer.moved(
       before: quest_log.next_deadline(log:),
       after: quest_log.next_deadline(log: advanced.log),
       now_ms: 10_000,
     )
     == [
-      quest_log.CancelDeadlineTimer,
-      quest_log.StartDeadlineTimer(after_ms: 111_000),
+      deadline_timer.CancelDeadlineTimer,
+      deadline_timer.StartDeadlineTimer(after_ms: 111_000),
     ]
     as "the timer for 31,000 ms is cancelled and starts for the quest's 121,000 ms"
 
@@ -440,12 +441,12 @@ pub fn the_deadline_timer_follows_the_earliest_objective_deadline_test() -> Nil 
     accepted(log: nothing(), quest_id: gated_timer, max_time_ms: 0, at: 1000)
   let done =
     progressed(log:, quest_id: gated_timer, index: 0, amount: 1, at: 5000)
-  assert quest_log.deadline_moved(
+  assert deadline_timer.moved(
       before: quest_log.next_deadline(log:),
       after: quest_log.next_deadline(log: done),
       now_ms: 5000,
     )
-    == [quest_log.StartDeadlineTimer(after_ms: 600_000)]
+    == [deadline_timer.StartDeadlineTimer(after_ms: 600_000)]
     as "a first timed deadline starts the timer and cancels nothing"
 
   // The only objective of 2911 done: the quest is Achieved, which no longer runs out.
@@ -460,11 +461,11 @@ pub fn the_deadline_timer_follows_the_earliest_objective_deadline_test() -> Nil 
       now_ms: 20_000,
       scripts: objective.no_rows(),
     )
-  assert quest_log.deadline_moved(
+  assert deadline_timer.moved(
       before: quest_log.next_deadline(log:),
       after: quest_log.next_deadline(log: advanced.log),
       now_ms: 20_000,
     )
-    == [quest_log.CancelDeadlineTimer]
+    == [deadline_timer.CancelDeadlineTimer]
     as "no deadline is left, so the timer is cancelled and not started"
 }

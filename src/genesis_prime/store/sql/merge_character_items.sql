@@ -7,8 +7,9 @@
 -- that is while its `session_epoch` ($3) is still the one that login was told
 -- (load_character.sql), only when both items are as the request holds them, and
 -- only when `$12` is at least 1 and at most `$7`; otherwise it changes nothing and
--- returns no row. The account's id is in the statement, as for a load. The rows it
--- returns are the two items it changed: two, or none. Whether the target may hold
+-- returns no row. The account's id is in the statement, as for a load. The target keeps the
+-- earlier of the two moments the items run out (the one that has a moment when only one
+-- does). The rows it returns are the two items it changed: two, or none. Whether the target may hold
 -- the sum is the Item2's maxStackCount, which the rule checks.
 --
 -- The statement runs after lock_character_for_save.sql in one transaction, so it
@@ -39,7 +40,10 @@ with matched as (
 ),
 raised as (
   update character_item as target
-  set stack_count = target.stack_count + $12
+  set stack_count = target.stack_count + $12,
+    expires_at_unix_ms = least(target.expires_at_unix_ms, (
+      select source.expires_at_unix_ms from character_item as source where source.item_guid = $4
+    ))
   where target.item_guid = $8
     and (select count(*) from matched) = 2
   returning target.item_guid

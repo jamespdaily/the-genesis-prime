@@ -22,7 +22,9 @@ import connection_rule_support as support
 import departures_support
 import game_client
 import game_connection_support as connection_support
-import genesis_prime/client_connection.{type Request, AskStore, TellMoved}
+import genesis_prime/client_connection.{
+  type Request, AskStore, FromStore, TellMoved,
+}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/start_place.{type Place}
@@ -44,6 +46,7 @@ import genesis_prime/step.{
 import genesis_prime/store
 import genesis_prime/world_map/map.{ObjectsUnseen}
 import gleam/list
+import gleam/option.{Some}
 import owned_test
 import place_support
 import quest_support
@@ -144,6 +147,48 @@ fn run_to(
   List(ConnectionStep(Request)),
 ) {
   connection_support.casts_left(state:, pending:, until_ms:, steps: [])
+}
+
+/// The steps the cast's timers take up to `until_ms`, with the store answering a quest
+/// turn-in the use asks for (the use of the Combat projector closes the Combat Simulation),
+/// as the running server's store does: the connection holds its timers until it has.
+fn run_to_with_turn_in_answered(
+  state state: game_connection.State,
+  pending pending: List(#(Int, TimerId)),
+  until_ms until_ms: Int,
+) -> #(
+  game_connection.State,
+  List(#(Int, TimerId)),
+  List(ConnectionStep(Request)),
+) {
+  let #(state, _, pending, steps) =
+    connection_support.casts_left_answered(
+      state:,
+      world: Nil,
+      pending:,
+      until_ms:,
+      steps: [],
+      answer: fn(world, state, ms, taken) {
+        let #(state, steps) = connection_support.landing(state:, ms:, taken:)
+        case option.map(support.asked(taken), fn(ask) { ask.request }) {
+          Some(AskStore(store.Items(store.TurnInQuest(..)))) -> {
+            let #(state, answered) =
+              connection_support.answer(
+                state:,
+                taken:,
+                outcome: step.Answer(
+                  FromStore(
+                    store.ForItems(store.TurnedIn(credits: 0, made: [])),
+                  ),
+                ),
+              )
+            #(world, state, list.append(steps, [answered]))
+          }
+          _ -> #(world, state, steps)
+        }
+      },
+    )
+  #(state, pending, steps)
 }
 
 fn frames_of(steps steps: List(ConnectionStep(Request))) -> List(Frame) {
@@ -254,6 +299,8 @@ pub fn the_combat_projector_moves_the_player_to_warfare_woods_at_the_casts_end_t
     == [0x083C, 0x0639, 0x0638, 0x0636]
     as "the placement is the last of the go's frames, in the client's order"
   assert list.contains(ids, 0x07FE) as "opcode.0x7fe: the cast's finish"
+  assert !list.contains(ids, 0x0811)
+    as "the cast's only end is the finish before the move"
   assert connection_support.decoded(
       frames,
       0x0361,
@@ -302,6 +349,35 @@ pub fn the_move_is_written_after_the_casts_finish_test() -> Nil {
   }
   assert position(0x07FE) < position(0x083C)
     as "opcode.0x83c stops the current cast, so the finish is written before it"
+}
+
+/// Each projector's cast (Spell4Effects 227425, type 95, 1000 ms, aimed at the caster, keeps
+/// a cast lingering) is stopped by the move: nothing of it is written after the move, with the
+/// quest turn-in the Combat projector's use asks for answered or not asked at all.
+pub fn the_move_stops_the_projectors_cast_and_it_writes_no_end_later_test() -> Nil {
+  use <- owned_test.run(60_000)
+  list.each(
+    [
+      #("Combat (the use closes Quest2 10527: a turn-in is asked)", combat),
+      #("Mission (an arrival objective: no turn-in)", mission),
+    ],
+    fn(row) {
+      let state = case row.1 == combat {
+        True -> exile_before_the_combat_projector()
+        False -> exile_before_the_mission_projector()
+      }
+      let #(state, _, pending) = pressed(state:)
+      let #(state, pending, at_the_go) =
+        run_to_with_turn_in_answered(state:, pending:, until_ms: 1000)
+      assert list.contains(ids_of(frames: frames_of(steps: at_the_go)), 0x083C)
+        as row.0
+      let #(_, pending, later) =
+        run_to_with_turn_in_answered(state:, pending:, until_ms: 10_000)
+      assert ids_of(frames: frames_of(steps: later)) == []
+        as "the move stopped the cast (opcode.0x83c): no 0x811 and no 0x7fe come at the effect's end, and no timer of it is left"
+      assert pending == [] as row.0
+    },
+  )
 }
 
 pub fn the_dominion_cryo_projector_lands_in_the_dominion_pod_test() -> Nil {
@@ -370,10 +446,10 @@ pub fn a_projector_gone_from_the_picture_by_the_go_moves_no_one_test() -> Nil {
         ObjectsUnseen(unit_ids: [departures_support.terminal_unit]),
       ),
     )
-  let #(_, _, steps) = run_to(state:, pending:, until_ms: 1000)
+  let #(_, _, steps) = run_to(state:, pending:, until_ms: 2000)
   let ids = ids_of(frames: frames_of(steps:))
   assert list.contains(ids, 0x07FE)
-    as "opcode.0x7fe: the cast ran to its end, so the absences below are the move's and not a cast that never went"
+    as "opcode.0x7fe: the cast ran to its end (its 1000 ms hologram, Spell4Effects 227425, after the go), so the absences below are the move's and not a cast that never went"
   assert !list.contains(ids, 0x0361) && !list.contains(ids, 0x083C)
     as "a use of a unit the player no longer sees counts for no objective and moves no one"
   assert told_the_map(steps:) == []

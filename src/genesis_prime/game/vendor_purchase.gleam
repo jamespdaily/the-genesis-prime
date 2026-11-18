@@ -78,6 +78,7 @@ import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/currency.{type Currencies}
 import genesis_prime/game/interaction
 import genesis_prime/game/inventory
+import genesis_prime/game/item_expiry
 import genesis_prime/game/item_property
 import genesis_prime/game/player_life.{type Life}
 import genesis_prime/game/random_stat
@@ -202,6 +203,7 @@ pub fn take(
   tables tables: table_store.Tables,
   vendors vendors: Vendors,
   now_ms now_ms: Int,
+  now_unix_ms now_unix_ms: Int,
   logged logged: Set(String),
 ) -> Result(Taken, Refusal) {
   use buy <- result.try(
@@ -225,7 +227,16 @@ pub fn take(
   {
     Error(vendor_trade.Declined(effects:, logged:)) ->
       Ok(Refused(effects:, logged:))
-    Ok(window) -> buy_from(buy:, window:, items:, currencies:, tables:, logged:)
+    Ok(window) ->
+      buy_from(
+        buy:,
+        window:,
+        items:,
+        currencies:,
+        tables:,
+        now_unix_ms:,
+        logged:,
+      )
   }
 }
 
@@ -245,6 +256,7 @@ pub fn take_back(
   tables tables: table_store.Tables,
   vendors vendors: Vendors,
   now_ms now_ms: Int,
+  now_unix_ms now_unix_ms: Int,
   logged logged: Set(String),
 ) -> Result(Taken, Refusal) {
   use back <- result.try(
@@ -296,12 +308,11 @@ pub fn take_back(
             items_bought: entry.quantity,
             cost: entry.amount,
             currency_type_id: entry.currency_type_id,
-            random_stats: entry.random_stats,
-            charges: entry.charges,
-            item_flags: entry.item_flags,
+            words: entry.words,
             items:,
             currencies:,
             tables:,
+            now_unix_ms:,
             logged:,
           )
       }
@@ -316,6 +327,7 @@ fn buy_from(
   items items: List(HeldItem),
   currencies currencies: Currencies,
   tables tables: table_store.Tables,
+  now_unix_ms now_unix_ms: Int,
   logged logged: Set(String),
 ) -> Result(Taken, Refusal) {
   let stocked =
@@ -350,12 +362,11 @@ fn buy_from(
     items_bought:,
     cost: stocked.price * items_bought,
     currency_type_id: currency.credits_type,
-    random_stats: 0,
-    charges:,
-    item_flags: 0,
+    words: store.ItemWords(..store.plain_words, charges:),
     items:,
     currencies:,
     tables:,
+    now_unix_ms:,
     logged:,
   )
 }
@@ -369,12 +380,11 @@ fn asked(
   items_bought items_bought: Int,
   cost cost: Int,
   currency_type_id currency_type_id: Int,
-  random_stats random_stats: Int,
-  charges charges: Int,
-  item_flags item_flags: Int,
+  words words: store.ItemWords,
   items items: List(HeldItem),
   currencies currencies: Currencies,
   tables tables: table_store.Tables,
+  now_unix_ms now_unix_ms: Int,
   logged logged: Set(String),
 ) -> Result(Taken, Refusal) {
   let held = currency.held(currencies:, currency_type_id:)
@@ -390,6 +400,15 @@ fn asked(
   use size <- result.try(
     inventory.size(items:, tables:) |> result.map_error(inventory_row),
   )
+  use expires_at_unix_ms <- result.try(
+    item_expiry.made_at(
+      tables:,
+      item2_id:,
+      kept: words.expires_at_unix_ms,
+      now_unix_ms:,
+    )
+    |> result.replace_error(NoItemRow(item2_id:)),
+  )
   case
     inventory.placed(
       items:,
@@ -397,15 +416,11 @@ fn asked(
       size:,
       limit:,
       wanted: items_bought,
-      charges:,
+      words: store.ItemWords(..words, expires_at_unix_ms:),
     )
   {
     Error(Nil) -> Ok(refused(code: inventory_full, logged:))
     Ok(#(grow, make)) -> {
-      let make =
-        list.map(make, fn(stack) {
-          store.NewStack(..stack, random_stats:, item_flags:)
-        })
       Ok(Asks(
         purchase: Purchase(
           kind:,
@@ -505,6 +520,7 @@ pub fn answered(
   currencies currencies: Currencies,
   buyback buyback: Buyback,
   answer answer: ItemsAnswer,
+  now_unix_ms now_unix_ms: Int,
 ) -> #(List(HeldItem), Currencies, Buyback, List(Effect)) {
   case answer {
     store.Bought(amount:, made:) -> {
@@ -547,7 +563,7 @@ pub fn answered(
             ))
           }),
           list.map(made, fn(item) {
-            Send(inventory.held_item_frame(item:, reason:))
+            Send(inventory.held_item_frame(item:, now_unix_ms:, reason:))
           }),
           removal,
         ]),

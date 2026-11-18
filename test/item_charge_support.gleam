@@ -75,9 +75,12 @@ pub fn held(
     location:,
     bag_index:,
     stack_count: count,
-    random_stats: 0,
-    charges:,
-    item_flags: 0,
+    words: store.ItemWords(
+      random_stats: 0,
+      charges:,
+      item_flags: 0,
+      expires_at_unix_ms: None,
+    ),
   )
 }
 
@@ -97,6 +100,7 @@ pub fn unset(
     stack_count: count,
     random_stats: 0,
     item_flags: 0,
+    expires_at_unix_ms: None,
   )
 }
 
@@ -335,7 +339,12 @@ pub fn applied(
     store.SpendItem(item:, stack_count:, charges:, ..) ->
       list.map(items, fn(held) {
         case held.item_guid == item.item_guid {
-          True -> HeldItem(..held, stack_count:, charges:)
+          True ->
+            HeldItem(
+              ..held,
+              stack_count:,
+              words: store.ItemWords(..held.words, charges:),
+            )
           False -> held
         }
       })

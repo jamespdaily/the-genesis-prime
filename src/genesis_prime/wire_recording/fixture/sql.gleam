@@ -423,6 +423,7 @@ pub type ItemsOfCharactersOfAccountsNamedRow {
     random_stats: Int,
     charges: Option(Int),
     item_flags: Int,
+    expires_at_unix_ms: Option(Int),
   )
 }
 
@@ -430,7 +431,8 @@ pub type ItemsOfCharactersOfAccountsNamedRow {
 /// the order of their guids, with every column the fixture of a recorded session
 /// keeps (genesis_prime/wire_recording/fixture): the guid, the character that
 /// holds it, the item's id, its place, its stack count, its random-stat word and its
-/// charges (null for a row saved before the column existed) and its flags byte.
+/// charges (null for a row saved before the column existed), its flags byte and the Unix
+/// milliseconds it runs out (null for an item that does not).
 ///
 /// > 🐿️ This function was generated automatically using v4.7.0 of
 /// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
@@ -449,6 +451,7 @@ pub fn items_of_characters_of_accounts_named(
     use random_stats <- decode.field(6, decode.int)
     use charges <- decode.field(7, decode.optional(decode.int))
     use item_flags <- decode.field(8, decode.int)
+    use expires_at_unix_ms <- decode.field(9, decode.optional(decode.int))
     decode.success(ItemsOfCharactersOfAccountsNamedRow(
       item_guid:,
       character_id:,
@@ -459,6 +462,7 @@ pub fn items_of_characters_of_accounts_named(
       random_stats:,
       charges:,
       item_flags:,
+      expires_at_unix_ms:,
     ))
   }
 
@@ -466,7 +470,8 @@ pub fn items_of_characters_of_accounts_named(
 -- the order of their guids, with every column the fixture of a recorded session
 -- keeps (genesis_prime/wire_recording/fixture): the guid, the character that
 -- holds it, the item's id, its place, its stack count, its random-stat word and its
--- charges (null for a row saved before the column existed) and its flags byte.
+-- charges (null for a row saved before the column existed), its flags byte and the Unix
+-- milliseconds it runs out (null for an item that does not).
 select
   item_guid,
   character_id,
@@ -476,7 +481,8 @@ select
   stack_count,
   random_stats,
   charges,
-  item_flags::int as item_flags
+  item_flags::int as item_flags,
+  expires_at_unix_ms
 from character_item
 where character_id in (
   select character_id

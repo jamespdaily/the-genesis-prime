@@ -55,6 +55,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import item_charge_support as support_items
+import item_expiry_support
 import owned_test
 import planted_table.{Integer}
 
@@ -367,6 +368,77 @@ fn refusing_answers() -> List(#(Outcome(Answer), step.LogLevel)) {
       LogError,
     ),
   ]
+}
+
+/// The item held, running out `due_in_ms` after the system time 0 these tests step at.
+fn timed(item item: HeldItem, due_in_ms due_in_ms: Int) -> HeldItem {
+  store.HeldItem(
+    ..item,
+    words: store.ItemWords(
+      ..item.words,
+      expires_at_unix_ms: Some(
+        support.unix_ms_of_filetime(filetime: 0) + due_in_ms,
+      ),
+    ),
+  )
+}
+
+pub fn a_spend_moves_the_expiry_timer_only_when_it_removes_a_timed_item_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use tables <- with_charged_rows
+  // #(the items held, the place pressed, the moves of the expiry timer once the spend is saved, why)
+  let cases = [
+    #(
+      [timed(item: single(charges: 1), due_in_ms: 30_000)],
+      single_place,
+      [#("cancel", 0)],
+      "the last charge removes the only timed item, so no moment is left and the timer is cancelled",
+    ),
+    #(
+      [timed(item: single(charges: 3), due_in_ms: 30_000)],
+      single_place,
+      [],
+      "a charge lowered leaves the item and its moment: the timer stays",
+    ),
+    #(
+      [timed(item: stack(count: 5), due_in_ms: 30_000)],
+      stack_place,
+      [],
+      "a stack lowered by one leaves the item and its moment: the timer stays",
+    ),
+  ]
+  list.each(cases, fn(row) {
+    let #(items, place, timers, why) = row
+    let state = support_items.seeing_a_shack(tables:, items:)
+    let #(state, taken) = pressed(state:, client_cast_id: 9, place:, at: 0)
+    let #(_, answered) = answered_at(state:, taken:, outcome: saved(), at: 0)
+    assert item_expiry_support.timers(taken: answered) == timers as why
+  })
+}
+
+pub fn an_expiry_firing_during_a_spend_is_held_until_the_answer_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use tables <- with_charged_rows
+  // These tests' system time stays 0 whatever the monotonic time is, so the stack of 5 is
+  // due from the start; the timer fires while the grenade's spend is out.
+  let state =
+    support_items.seeing_a_shack(tables:, items: [
+      single(charges: 3),
+      timed(item: stack(count: 5), due_in_ms: 0),
+    ])
+  let #(state, taken) =
+    pressed(state:, client_cast_id: 9, place: single_place, at: 29_000)
+  let #(state, firing) =
+    connection_support.fired_at(
+      state:,
+      timer: item_expiry_support.timer,
+      ms: 30_000,
+    )
+  assert support.asked(firing) == None && ids(taken: firing) == []
+    as "the firing is held while the spend is out: nothing is asked or written"
+  let #(_, answered) = answered_at(state:, taken:, outcome: saved(), at: 30_500)
+  assert item_expiry_support.deleted_by(taken: answered).item_guid == 4_000_002
+    as "once the answer has returned the player to the world, the held firing asks for the delete"
 }
 
 pub fn a_refused_spend_cancels_the_cast_and_leaves_the_item_test() -> Nil {
@@ -856,7 +928,7 @@ fn the_client_holds_what_the_store_does(
     Charges(guid:, charges:) -> {
       let assert Ok(row) = list.find(rows, fn(row) { row.item_guid == guid })
         as "the item is held"
-      assert row.charges == charges
+      assert row.words.charges == charges
         as "the client's charges are the stored charges"
     }
     Count(guid:, count:, ..) -> {

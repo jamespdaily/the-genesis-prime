@@ -80,7 +80,7 @@ pub fn spend(
         _ -> Gone
       }
     True, Some(_) | True, None ->
-      case item.charges {
+      case item.words.charges {
         charges if charges > 1 -> ChargeLowered(charges: charges - 1)
         _ -> Gone
       }
@@ -111,7 +111,7 @@ pub fn request(
   }
   case spend {
     NothingToSpend -> None
-    StackLowered(stack_count:) -> lowered(stack_count, item.charges)
+    StackLowered(stack_count:) -> lowered(stack_count, item.words.charges)
     ChargeLowered(charges:) -> lowered(item.stack_count, charges)
     Gone ->
       Some(
@@ -152,7 +152,7 @@ pub fn spent(
       )),
     )
     ChargeLowered(charges:) -> #(
-      replaced(HeldItem(..item, charges:)),
+      replaced(HeldItem(..item, words: store.ItemWords(..item.words, charges:))),
       Some(inventory.charges_changed_frame(guid: item.item_guid, charges:)),
     )
     Gone -> #(

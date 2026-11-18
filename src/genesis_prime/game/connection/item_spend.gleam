@@ -35,6 +35,7 @@ import genesis_prime/game/cast
 import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection/inventory as connection_inventory
+import genesis_prime/game/connection/item_expiry as connection_item_expiry
 import genesis_prime/game/connection/objective as connection_objective
 import genesis_prime/game/connection/state.{
   type Session, InWorld, Session, SpendingCharge,
@@ -128,50 +129,54 @@ pub fn answered(
   release release: Release,
 ) -> client_connection.Handled(Session) {
   let what = "the spend of the item's charge was not saved"
-  connection_inventory.answered(
-    session:,
+  connection_item_expiry.rearmed(
+    handled: connection_inventory.answered(
+      session:,
+      now:,
+      holder:,
+      entered:,
+      what:,
+      asked: "a spend",
+      outcome:,
+      saved: fn(session, answer) {
+        case answer {
+          ItemsSaved ->
+            released(session:, now:, holder:, entered:, spending:, release:)
+          ItemsNotSaved ->
+            cancelled(
+              session:,
+              holder:,
+              entered:,
+              spending:,
+              level: step.LogWarning,
+              text: "a later login holds the character, or the item is not as the server holds it",
+            )
+          SaveRefused(constraint:) ->
+            cancelled(
+              session:,
+              holder:,
+              entered:,
+              spending:,
+              level: step.LogError,
+              text: "the store refused the change by the constraint "
+                <> constraint,
+            )
+          store.ItemMade(..)
+          | store.Bought(..)
+          | store.Sold(..)
+          | store.TurnedIn(..) ->
+            connection_inventory.lost(
+              session:,
+              now:,
+              holder:,
+              entered:,
+              text: what <> ": the answer is none a spend asked for",
+            )
+        }
+      },
+    ),
+    before: entered.items,
     now:,
-    holder:,
-    entered:,
-    what:,
-    asked: "a spend",
-    outcome:,
-    saved: fn(session, answer) {
-      case answer {
-        ItemsSaved ->
-          released(session:, now:, holder:, entered:, spending:, release:)
-        ItemsNotSaved ->
-          cancelled(
-            session:,
-            holder:,
-            entered:,
-            spending:,
-            level: step.LogWarning,
-            text: "a later login holds the character, or the item is not as the server holds it",
-          )
-        SaveRefused(constraint:) ->
-          cancelled(
-            session:,
-            holder:,
-            entered:,
-            spending:,
-            level: step.LogError,
-            text: "the store refused the change by the constraint "
-              <> constraint,
-          )
-        store.ItemMade(..)
-        | store.Bought(..)
-        | store.Sold(..)
-        | store.TurnedIn(..) ->
-          connection_inventory.lost(
-            session:,
-            now:,
-            holder:,
-            entered:,
-            text: what <> ": the answer is none a spend asked for",
-          )
-      }
-    },
   )
 }
 

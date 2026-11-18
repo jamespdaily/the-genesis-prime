@@ -5,6 +5,7 @@
 import character_support
 import character_tables
 import class_resource_support
+import connection_rule_support
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/objective
 import genesis_prime/game/prerequisite.{type Prerequisite}
@@ -147,7 +148,11 @@ fn loaded_answer(
   let assert Ok(body) = play_character.encode(PlayCharacter(character_id: 42))
     as "a character id fits the message"
   let assert Ok(#(state, _asks)) =
-    world_entry.take(account_id: AccountId(7), body:)
+    world_entry.take(
+      account_id: AccountId(7),
+      body:,
+      now_unix_ms: connection_rule_support.unix_ms_of_filetime(filetime:),
+    )
     as "the client's request to play decodes"
   let assert Ok(loaded) =
     world_entry.loaded(
@@ -221,9 +226,12 @@ pub fn novice_items(character character: Character) -> List(HeldItem) {
           location: 0,
           bag_index: pair.1,
           stack_count: 1,
-          random_stats: 0,
-          charges: 0,
-          item_flags: 0,
+          words: store.ItemWords(
+            random_stats: 0,
+            charges: 0,
+            item_flags: 0,
+            expires_at_unix_ms: None,
+          ),
         )
       })
     Error(Nil) -> []

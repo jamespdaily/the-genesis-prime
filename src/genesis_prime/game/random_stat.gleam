@@ -106,7 +106,10 @@ pub fn roll_stacks(
         rest,
         store.NewStack(
           ..stack,
-          random_stats: roll(tables:, item2_id:, entropy: part),
+          words: store.ItemWords(
+            ..stack.words,
+            random_stats: roll(tables:, item2_id:, entropy: part),
+          ),
         ),
       )
     })

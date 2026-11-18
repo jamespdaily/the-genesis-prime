@@ -11,6 +11,7 @@ import genesis_prime/game/connection/effects as connection_effects
 import genesis_prime/game/connection/objective as connection_objective
 import genesis_prime/game/connection/prerequisite_player
 import genesis_prime/game/connection/state.{type Session, Session} as connection_state
+import genesis_prime/game/deadline_timer
 import genesis_prime/game/interaction
 import genesis_prime/game/movement
 import genesis_prime/game/prerequisite.{Factions}
@@ -77,12 +78,15 @@ pub fn quest_message(
           ),
           now:,
           effects: list.map(
-            quest_log.deadline_moved(
+            deadline_timer.moved(
               before: quest_log.next_deadline(log: entered.quests),
               after: quest_log.next_deadline(log: taken.log),
               now_ms: now.monotonic_ms,
             ),
-            connection_effects.MovesQuestDeadlineTimer,
+            connection_effects.MovesDeadlineTimer(
+              connection_state.quest_deadline_timer,
+              _,
+            ),
           ),
           written: list.reverse(
             list.map(taken.effects, fn(effect) {

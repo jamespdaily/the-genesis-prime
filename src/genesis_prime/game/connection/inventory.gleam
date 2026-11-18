@@ -26,6 +26,7 @@
 import genesis_prime/client_connection.{type Answer, Continue, FromStore}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/character_state
+import genesis_prime/game/connection/item_expiry as connection_item_expiry
 import genesis_prime/game/connection/look as connection_look
 import genesis_prime/game/connection/objective as connection_objective
 import genesis_prime/game/connection/prerequisite_player
@@ -138,6 +139,7 @@ pub fn move_answered(
   moving moving: inventory.Moving,
   outcome outcome: Outcome(Answer),
 ) -> client_connection.Handled(Session) {
+  let before = entered.items
   answered(
     session:,
     now:,
@@ -148,17 +150,42 @@ pub fn move_answered(
     outcome:,
     saved: fn(session, answer) {
       let #(items, effects) =
-        inventory.answered(items: entered.items, moving:, answer:)
+        inventory.answered(
+          items: entered.items,
+          moving:,
+          answer:,
+          now_unix_ms: step.unix_milliseconds(now:),
+        )
       let entered = world_entry.Entered(..entered, items:)
       let session = Session(..session, status: InWorld(holder:, entered:))
       let #(session, settled) = connection_objective.settled(session:, now:)
-      regeared(
-        session:,
-        now:,
-        holder:,
-        entered:,
-        moved: list.append(effects_of(session:, effects:), settled),
-      )
+      let handled =
+        regeared(
+          session:,
+          now:,
+          holder:,
+          entered:,
+          moved: list.append(effects_of(session:, effects:), settled),
+        )
+      case moving.change {
+        // The timer fired to start this removal: it goes on to the next moment, or tries
+        // again later when the store did not delete the item.
+        inventory.Deleted(by: inventory.RemovedByExpiry, ..) ->
+          case answer {
+            store.ItemsSaved -> connection_item_expiry.restarted(handled:, now:)
+            store.ItemsNotSaved
+            | store.SaveRefused(..)
+            | store.ItemMade(..)
+            | store.Bought(..)
+            | store.Sold(..)
+            | store.TurnedIn(..) -> connection_item_expiry.retried(handled:)
+          }
+        inventory.Moved(..)
+        | inventory.Merged(..)
+        | inventory.Split(..)
+        | inventory.Deleted(by: inventory.RemovedByPlayer, ..) ->
+          connection_item_expiry.rearmed(handled:, before:, now:)
+      }
     },
   )
 }

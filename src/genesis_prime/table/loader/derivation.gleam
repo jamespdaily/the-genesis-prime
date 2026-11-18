@@ -5,6 +5,7 @@ import genesis_prime/game/activate
 import genesis_prime/game/appearance
 import genesis_prime/game/communicator
 import genesis_prime/game/faction_level
+import genesis_prime/game/level_up
 import genesis_prime/game/loadout
 import genesis_prime/game/objective_action
 import genesis_prime/game/objective_link
@@ -46,6 +47,8 @@ import gleam/set.{type Set}
 ///   open (genesis_prime/game/objective_action).
 /// - The shortcut spells: the plan of each spell a cast-a-spell objective names, built
 ///   after the ability trees' sources (genesis_prime/game/shortcut_spell).
+/// - The level-up fanfares: the plan of each tier of the Level Up spell, the cast a 0x07A5 is
+///   answered with, built after the ability trees' sources (genesis_prime/game/level_up).
 /// - The faction levels: each faction's parent and the level of each pair of factions
 ///   that has a relationship (genesis_prime/game/faction_level).
 /// - The communicator's index: the CommunicatorMessages rows of each quest they
@@ -72,6 +75,7 @@ pub fn all() -> List(store.Derivation) {
     objective_link.derivation(),
     objective_action.derivation(),
     shortcut_spell.derivation(),
+    level_up.derivation(),
     faction_level.derivation(),
     communicator.derivation(),
     quest_turn_in.derivation(),

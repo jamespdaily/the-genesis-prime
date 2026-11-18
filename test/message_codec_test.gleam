@@ -7,9 +7,11 @@
 //// no expected text is written here.
 
 import genesis_prime/message/ability_points.{AbilityPoints}
+import genesis_prime/message/bit_stream
 import genesis_prime/message/cast_result
 import genesis_prime/message/item_charges_changed.{ItemChargesChanged}
 import genesis_prime/message/item_flags_changed.{ItemFlagsChanged}
+import genesis_prime/message/replay_level_up.{ReplayLevelUp}
 import genesis_prime/message_generator.{
   type GeneratedFile, Edited, GeneratedFile, Missing, Stale,
 }
@@ -237,6 +239,7 @@ pub fn the_schema_generates_one_module_for_each_message_and_record_and_the_clien
       "src/genesis_prime/message/rename_character.gleam",
       "src/genesis_prime/message/rename_character_result.gleam",
       "src/genesis_prime/message/rename_result.gleam",
+      "src/genesis_prime/message/replay_level_up.gleam",
       "src/genesis_prime/message/reputation.gleam",
       "src/genesis_prime/message/reputation_list.gleam",
       "src/genesis_prime/message/resurrection_window.gleam",
@@ -529,4 +532,37 @@ pub fn the_ability_points_are_the_points_to_spend_then_the_total_in_32_bits_each
       )
     },
   )
+}
+
+/// `opcode.0x7a5`: the client's writer (`WriteUint32Body 0x14007d010`) writes one 32-bit
+/// level, low byte first, and the client has no reader, so no body is received. The writer's
+/// emulator vector is the one `vector.opcode.0x7df.body` holds, since the same writer
+/// serves 0x07DF.
+pub fn the_replay_level_up_is_one_32_bit_level_test() -> Nil {
+  use <- owned_test.run(5000)
+  list.each(
+    [
+      #("level 4", <<4, 0, 0, 0>>, 4),
+      #("level 50, the highest the unlocks window lists", <<0x32, 0, 0, 0>>, 50),
+      #("byte order: the low byte comes first", <<4, 3, 2, 1>>, 0x01020304),
+      #("the largest of 32 bits", <<0xFF, 0xFF, 0xFF, 0xFF>>, 0xFFFFFFFF),
+    ],
+    fn(case_) {
+      let #(name, body, level) = case_
+      message_support.assert_codec(
+        name:,
+        body:,
+        value: ReplayLevelUp(level:),
+        encode: replay_level_up.encode,
+        decode: replay_level_up.decode,
+      )
+    },
+  )
+  assert replay_level_up.decode(<<>>) == Error(bit_stream.EndOfData)
+    as "an empty body ends inside the level"
+  assert replay_level_up.decode(<<4, 0, 0>>) == Error(bit_stream.EndOfData)
+    as "three bytes end inside the 32-bit level"
+  assert replay_level_up.decode(<<4, 0, 0, 0, 0>>)
+    == Error(bit_stream.TrailingBytes(count: 1))
+    as "the client's writer adds 32 bits, so a body of five bytes is longer than any the client writes"
 }

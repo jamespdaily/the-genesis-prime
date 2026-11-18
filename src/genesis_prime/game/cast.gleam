@@ -94,10 +94,10 @@ import genesis_prime/game/cast/state.{
   type Activating, type ActivationStart, type AdvanceWith, type Aimed,
   type AimedPress, type Applied, type Caster, type Effect, type Fact,
   type HeldProc, type Holder, type Interaction, type ItemAtPlace, type ItemPress,
-  type Listed, type Live, type Message, type Paid, type Reached, type Refusal,
-  type Resolution, type Restricting, type Role, type State, type Struck,
-  type TargetVerdict, type TickAsked, type Used, type UsedUnit, Accept,
-  Activated, Activating, Activation, ActivationStart, Aimed, AimedPress,
+  type Lingering, type Listed, type Live, type Message, type Paid, type Reached,
+  type Refusal, type Resolution, type Restricting, type Role, type State,
+  type Struck, type TargetVerdict, type TickAsked, type Used, type UsedUnit,
+  Accept, Activated, Activating, Activation, ActivationStart, Aimed, AimedPress,
   AnswerSucceeded, Answered, AwaitingAnswer, Base, Cancelled, CannotTell,
   CastClears, CasterChangeEnds, CasterChangeStarts, ChargeLevel, Child,
   CooldownEnds, CooldownKept, CooldownModifierEnds, CooldownModifierStarts,
@@ -1059,6 +1059,7 @@ pub fn activate_unit(
                 creature_id:,
                 alive_at_press: True,
                 by_item: False,
+                cast_id: None,
               ),
             ]
             activate.Picked(spell4_id:) ->
@@ -3225,26 +3226,51 @@ fn persistence_end(
       )
     }
     Error(Nil), Ok(lingering) -> {
-      let #(cast, ticks) = cast_tick.ticks_all_dropped(cast:, cast_id:)
-      let cast = State(..cast, lingering: dict.delete(cast.lingering, cast_id))
-      let #(cast, nodes) = cast_tick.cancel_nodes_end(cast:, cast_id:)
-      let #(cast, ended) =
-        cast_proc.effects_ended(cast:, cast_id:, spell: lingering.spell)
-      let #(cast, on_creatures) =
-        cast_control.creature_modifiers_all_ended(cast:, cast_id:)
-      #(
-        cast_proc.passive_cleared(cast:, cast_id:),
-        list.flatten([
-          [failure],
-          ticks,
-          nodes,
-          ended,
-          on_creatures,
-          cast_tick.finished_effects(cast_id:, audience: lingering.audience),
-        ]),
-      )
+      let #(cast, ended) = lingering_ended(cast:, cast_id:, lingering:)
+      #(cast, [failure, ..ended])
     }
     Error(Nil), Error(Nil) -> #(cast, [])
+  }
+}
+
+/// A lingering cast ends before its nodes' time: its ticks stop, its timers are cancelled,
+/// its effects end and its nodes with them, and its 0x7fe goes to the caster and the audience.
+fn lingering_ended(
+  cast cast: State,
+  cast_id cast_id: Int,
+  lingering lingering: Lingering,
+) -> #(State, List(Effect)) {
+  let #(cast, ticks) = cast_tick.ticks_all_dropped(cast:, cast_id:)
+  let cast = State(..cast, lingering: dict.delete(cast.lingering, cast_id))
+  let #(cast, nodes) = cast_tick.cancel_nodes_end(cast:, cast_id:)
+  let #(cast, ended) =
+    cast_proc.effects_ended(cast:, cast_id:, spell: lingering.spell)
+  let #(cast, on_creatures) =
+    cast_control.creature_modifiers_all_ended(cast:, cast_id:)
+  #(
+    cast_proc.passive_cleared(cast:, cast_id:),
+    list.flatten([
+      ticks,
+      nodes,
+      ended,
+      on_creatures,
+      cast_tick.finished_effects(cast_id:, audience: lingering.audience),
+    ]),
+  )
+}
+
+/// The activate cast `cast_id` is stopped by the move the activation made: the client's
+/// 0x83c stops the cast it is making (`opcode.0x83c`), so a cast of the activation that
+/// lingers for a row of its own (the projectors' hologram, Spell4Effects 227425) ends
+/// with its 0x7fe, written before the move, and writes nothing at its nodes' end. A cast
+/// that has ended or is not lingering changes nothing.
+pub fn activation_stopped(
+  cast cast: State,
+  cast_id cast_id: Int,
+) -> #(State, List(Effect)) {
+  case dict.get(cast.lingering, cast_id) {
+    Ok(lingering) -> lingering_ended(cast:, cast_id:, lingering:)
+    Error(Nil) -> #(cast, [])
   }
 }
 
@@ -3286,6 +3312,33 @@ pub fn passive_started(
   }
 }
 
+/// A tier of the Level Up spell, which the client's 0x07A5 asks for (genesis_prime/game/level_up),
+/// starts: a cast of the player's own with its caster as root, no parent and its primary target,
+/// written as 0x7ff with no 0x7fd, and its go at once (its cast time is 0). It starts no global
+/// cooldown (the spell's global cooldown kind is 3) and touches no threshold; the go lists the
+/// caster's full-screen row with the life 0, which the client turns into the row's own, and the
+/// cast lingers until its node's time is over (`spell.level_up.cast`).
+pub fn level_up_started(
+  cast cast: State,
+  caster caster: Caster,
+  spell spell: Spell,
+  now now: Now,
+) -> #(State, List(Effect)) {
+  start(
+    cast:,
+    caster:,
+    now_ms: now.monotonic_ms,
+    spell:,
+    root: spell.spell4_id,
+    parent: None,
+    primary_target: caster.unit_id,
+    client_cast_id: None,
+    role: Child(counted_with: WithNothing),
+    spent: None,
+    reserved: [],
+  )
+}
+
 /// The caster's casts, press, hold, thresholds and timers ended by its death.
 fn all_ended(cast cast: State, now now: Now) -> #(State, List(Effect)) {
   let #(cast, aside) = cast_proc.passive_set_aside(cast:)
@@ -3303,7 +3356,7 @@ fn all_ended(cast cast: State, now now: Now) -> #(State, List(Effect)) {
   // A lingering cast ends with its 0x7fe when its caster dies: the server's choice,
   // since the client has no path that ends a buff on a unit's death
   // (`cast.target_node_end`).
-  let lingering_ended =
+  let lingering_finished =
     dict.to_list(cast.lingering)
     |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
     |> list.flat_map(fn(entry) {
@@ -3324,7 +3377,7 @@ fn all_ended(cast cast: State, now now: Now) -> #(State, List(Effect)) {
     list.flatten([
       fires_dropped,
       ended,
-      lingering_ended,
+      lingering_finished,
       modifiers_ended,
       cast_state.without_cancels(effects: cancelled, of: advance_timers),
     ]),
@@ -4104,7 +4157,13 @@ fn go(
         ) ->
           case live.gone == go_count && makes_a_use(activating:) {
             True -> [
-              Activated(unit_id:, creature_id:, alive_at_press:, by_item:),
+              Activated(
+                unit_id:,
+                creature_id:,
+                alive_at_press:,
+                by_item:,
+                cast_id: Some(cast_id),
+              ),
             ]
             False -> []
           }

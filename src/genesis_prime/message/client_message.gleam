@@ -69,6 +69,7 @@ import genesis_prime/message/quest_track.{type QuestTrack}
 import genesis_prime/message/quest_turn_in.{type QuestTurnIn}
 import genesis_prime/message/realm_select_start.{type RealmSelectStart}
 import genesis_prime/message/rename_character.{type RenameCharacter}
+import genesis_prime/message/replay_level_up.{type ReplayLevelUp}
 import genesis_prime/message/scanbot_request.{type ScanbotRequest}
 import genesis_prime/message/send_chat_line.{type SendChatLine}
 import genesis_prime/message/send_whisper.{type SendWhisper}
@@ -129,6 +130,7 @@ pub type ClientMessage {
   ItemSplit(message: ItemSplit)
   ItemDelete(message: ItemDelete)
   InnateIndexChosen(message: InnateIndexChosen)
+  ReplayLevelUp(message: ReplayLevelUp)
   CancelCast(message: CancelCast)
   ClientSideInteractionResult(message: ClientSideInteractionResult)
   ChooseResurrection(message: ChooseResurrection)
@@ -250,6 +252,7 @@ pub fn decode(
     0x0149 -> decoded(body, message_id, item_delete.decode, ItemDelete)
     0x016F ->
       decoded(body, message_id, innate_index_chosen.decode, InnateIndexChosen)
+    0x07A5 -> decoded(body, message_id, replay_level_up.decode, ReplayLevelUp)
     0x0801 -> decoded(body, message_id, cancel_cast.decode, CancelCast)
     0x0805 ->
       decoded(
@@ -359,6 +362,7 @@ pub fn encode(message: ClientMessage) -> Result(BitArray, EncodeError) {
     ItemSplit(message:) -> item_split.encode(message)
     ItemDelete(message:) -> item_delete.encode(message)
     InnateIndexChosen(message:) -> innate_index_chosen.encode(message)
+    ReplayLevelUp(message:) -> replay_level_up.encode(message)
     CancelCast(message:) -> cancel_cast.encode(message)
     ClientSideInteractionResult(message:) ->
       client_side_interaction_result.encode(message)
@@ -433,6 +437,7 @@ pub fn message_id(message: ClientMessage) -> Int {
     ItemSplit(..) -> item_split.message_id
     ItemDelete(..) -> item_delete.message_id
     InnateIndexChosen(..) -> innate_index_chosen.message_id
+    ReplayLevelUp(..) -> replay_level_up.message_id
     CancelCast(..) -> cancel_cast.message_id
     ClientSideInteractionResult(..) -> client_side_interaction_result.message_id
     ChooseResurrection(..) -> choose_resurrection.message_id
@@ -505,6 +510,7 @@ pub fn name(message: ClientMessage) -> String {
     ItemSplit(..) -> "item_split"
     ItemDelete(..) -> "item_delete"
     InnateIndexChosen(..) -> "innate_index_chosen"
+    ReplayLevelUp(..) -> "replay_level_up"
     CancelCast(..) -> "cancel_cast"
     ClientSideInteractionResult(..) -> "client_side_interaction_result"
     ChooseResurrection(..) -> "choose_resurrection"

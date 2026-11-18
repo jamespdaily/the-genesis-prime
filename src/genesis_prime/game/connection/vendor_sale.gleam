@@ -23,6 +23,7 @@
 
 import genesis_prime/client_connection.{type Answer, Asking, Continue, Done}
 import genesis_prime/game/connection/inventory as connection_inventory
+import genesis_prime/game/connection/item_expiry as connection_item_expiry
 import genesis_prime/game/connection/state.{
   type Session, InWorld, Selling, Session,
 } as connection_state
@@ -134,18 +135,22 @@ pub fn sale_answered(
         )
       },
     )
-  case handled {
-    Continue(
-      session: Session(status: InWorld(holder:, entered:), ..) as session,
-      effects:,
-    ) ->
-      connection_inventory.regeared(
-        session:,
-        now:,
-        holder:,
-        entered:,
-        moved: effects,
-      )
-    Continue(..) | Asking(..) | Done(..) -> handled
-  }
+  connection_item_expiry.rearmed(
+    handled: case handled {
+      Continue(
+        session: Session(status: InWorld(holder:, entered:), ..) as session,
+        effects:,
+      ) ->
+        connection_inventory.regeared(
+          session:,
+          now:,
+          holder:,
+          entered:,
+          moved: effects,
+        )
+      Continue(..) | Asking(..) | Done(..) -> handled
+    },
+    before: entered.items,
+    now:,
+  )
 }

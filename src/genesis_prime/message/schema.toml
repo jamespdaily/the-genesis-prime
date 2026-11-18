@@ -2006,7 +2006,7 @@ fields = [
   { name = "dye_channels", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.shared_item_unnamed", safe_by = "opcode.0x111.shared_item_unnamed" },
   { name = "item_flags", kind = "unsigned", bits = 8, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.shared_item_unnamed" },
   { name = "refund_window_ms", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", open = "How long is the refund window a bought item gets, and which message asks for the refund? opcode.0x111.shared_item_unnamed names the field; its gap leaves the retail length and the request unread, so the server sends 0 and refunds are off." },
-  { name = "field_15", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", open = "What gives an item its remaining duration, which the tooltip counts down? With 0 the client shows the row's full lifetime and removes nothing (opcode.0x111.shared_item_unnamed, 0x14008c0d0)." },
+  { name = "time_left_ms", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.time_left" },
   { name = "soulbound_trade_window_ms", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.shared_item_unnamed", safe_by = "opcode.0x111.shared_item_unnamed" },
   { name = "refund_cost_0_kind", kind = "unsigned", bits = 3, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.shared_item_fields", safe_by = "opcode.0x111.shared_item_unnamed" },
   { name = "refund_cost_0_value_a", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.shared_item_fields", safe_by = "opcode.0x111.shared_item_unnamed" },
@@ -2216,6 +2216,16 @@ evidence = "opcode.0x16f"
 summary = "the player switches to an innate: the Class slot, 0 to 2, which the client has already switched its own index and button to; the client never sends the index it already holds"
 fields = [
   { name = "innate_index", kind = "unsigned", bits = 8, evidence = "opcode.0x16f", named_by = "opcode.0x16f" },
+]
+
+[[message]]
+id = 0x07A5
+name = "replay_level_up"
+direction = "client_to_server"
+evidence = "opcode.0x7a5"
+summary = "the client asks for the fanfare of a level: its level-up fanfare sends its unit's level 2000 ms after the level rises, and the Level Up Unlocks window's Replay button sends the level the player picked, never above the unit's own; the client draws and plays nothing for it itself, the answer is a cast of the Level Up spell"
+fields = [
+  { name = "level", kind = "unsigned", bits = 32, evidence = "opcode.0x7a5", named_by = "opcode.0x7a5" },
 ]
 
 [[message]]
