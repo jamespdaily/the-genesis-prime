@@ -1608,7 +1608,7 @@ fields = [
   { name = "text", kind = "wide_units", evidence = "opcode.0x1c8", named_by = "opcode.0x1c8" },
   { name = "formats", kind = "array", count_bits = 5, element = "chat_format", evidence = "opcode.0x1c8", named_by = "opcode.0x1c8" },
   { name = "cross_faction", kind = "unsigned", bits = 1, evidence = "opcode.0x1c8", named_by = "opcode.0x1c8" },
-  { name = "field_14", kind = "unsigned", bits = 16, evidence = "opcode.0x1c8", open = "Is the 16-bit value after the cross-faction bit read anywhere? RaiseChatMessage never reads it; the segment builder 0x140408850 and the channel 0x13 handler 0x140645bb0 were not checked for it (opcode.0x1c8.unread_word).", safe_by = "opcode.0x1c8" },
+  { name = "field_14", kind = "unsigned", bits = 16, evidence = "opcode.0x1c8", open = "Is the 16-bit value after the cross-faction bit read anywhere? RaiseChatMessage never reads it; the segment builder 0x140408850 and the channel 0x13 handler were not checked for it (opcode.0x1c8.unread_word).", safe_by = "opcode.0x1c8" },
   { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x1c8", named_by = "opcode.0x1c8" },
   { name = "premium_tier", kind = "unsigned", bits = 8, evidence = "opcode.0x1c8", named_by = "opcode.0x1c8" },
 ]
