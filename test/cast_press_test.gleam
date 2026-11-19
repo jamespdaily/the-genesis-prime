@@ -1,6 +1,5 @@
 //// What a press the server cannot build says: the refusal's log names what is missing
-//// and no issue, a press is logged once for its key, and the gaps the press module
-//// lists are the five cases a refusal can name.
+//// and no issue, and a press is logged once for its key.
 ////
 //// - A refused right-click is answered with its result and logged once for its key
 ////   (`cast_press.not_built_refusal`); the key's family says which cast it was.
@@ -73,33 +72,4 @@ pub fn a_press_the_server_cannot_build_is_refused_and_logged_once_with_what_is_m
         as family.name
     },
   )
-}
-
-pub fn the_cast_gaps_list_the_five_cases_the_issue_type_named_test() -> Nil {
-  use <- owned_test.run(5000)
-  let entries = cast_press.gaps()
-  assert list.length(entries) == 5 as "one entry for each of the five cases"
-  list.each(
-    [
-      #("another player's unit", "an effect cast at another player"),
-      #("prerequisite type", "the unread prerequisite types"),
-      #("cannot plan", "spells in depth"),
-      #("activate cast", "the activate cast's checks"),
-      #("until removed", "the states that last until removed"),
-    ],
-    fn(case_) {
-      let #(word, name) = case_
-      assert list.count(entries, fn(entry) {
-          string.contains(entry.missing, word)
-        })
-        == 1
-        as name
-    },
-  )
-  assert list.all(entries, fn(entry) {
-    entry.area == "Casting"
-    && !string.contains(string.lowercase(entry.missing), "issue")
-    && !string.contains(entry.missing, "#")
-  })
-    as "each is in the area Casting and names no issue"
 }

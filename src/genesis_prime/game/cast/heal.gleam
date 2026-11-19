@@ -35,6 +35,7 @@ import genesis_prime/game/heal_split
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan
 import genesis_prime/game/unit_properties
+import genesis_prime/gap
 import genesis_prime/message/combat_result
 import genesis_prime/message/damage_type
 import genesis_prime/message/spell_damage_description.{
@@ -274,4 +275,14 @@ fn heal_armed(
     }
     False -> #(cast, [CasterChangeStarts(source:, change:)])
   }
+}
+
+/// What a heal does not reach.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Casting",
+      missing: "A heal aimed at a unit other than the caster lands nothing, with a debug line, because the server gives no other unit a heal.",
+    ),
+  ]
 }

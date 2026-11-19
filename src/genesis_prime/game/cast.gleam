@@ -128,6 +128,7 @@ import genesis_prime/game/shortcut_spell
 import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{type Plans, type Proxy, type Spell}
 import genesis_prime/game/unit_properties
+import genesis_prime/gap
 import genesis_prime/message/ability_hold
 import genesis_prime/message/cancel_cast.{type CancelCast}
 import genesis_prime/message/cast_ability
@@ -5467,4 +5468,14 @@ fn finish_or_linger(
       #(cast, list.flatten([ticks, expired, armed, closed]))
     }
   }
+}
+
+/// What a lasting cast does not hold.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Casting",
+      missing: "A cast whose persistence is that the caster holds a mount, the hoverboard's ride, ends in the input of its own go, because the server does not read a mount summon: the client is shown the ride's Ability Restriction and its end at once.",
+    ),
+  ]
 }

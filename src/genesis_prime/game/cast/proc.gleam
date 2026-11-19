@@ -179,6 +179,7 @@ import genesis_prime/game/proc
 import genesis_prime/game/spell_plan.{type Spell}
 import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_properties
+import genesis_prime/gap
 import genesis_prime/message/crowd_control_state
 import genesis_prime/step.{LogDebug}
 import genesis_prime/table/id.{type Spell4Id}
@@ -1105,4 +1106,14 @@ fn node_off(
 pub fn passive_cleared(cast cast: State, cast_id cast_id: Int) -> State {
   use <- bool.guard(when: cast.passive != Some(cast_id), return: cast)
   State(..cast, passive: None)
+}
+
+/// What the procs of the casts never see.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Casting",
+      missing: "A heal is never a critical heal: the server rolls no critical for a heal, so a proc that waits for a critical heal never fires.",
+    ),
+  ]
 }

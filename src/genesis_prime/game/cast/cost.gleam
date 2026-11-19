@@ -96,6 +96,7 @@ import genesis_prime/game/cooldown
 import genesis_prime/game/crowd_control
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{type Spell}
+import genesis_prime/gap
 import genesis_prime/message/cast_result
 import genesis_prime/table/id.{type Spell4Id}
 import gleam/bool
@@ -520,4 +521,14 @@ pub fn casting(cast: State) -> Bool {
         Error(Nil) -> False
       }
   }
+}
+
+/// What the cost and restriction checks of a press do not read.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Casting",
+      missing: "The client's cast request word, which it sets for the presses the ride spells make, is read as 0 for every press, so the caster's Ability Restriction is checked for those presses too.",
+    ),
+  ]
 }

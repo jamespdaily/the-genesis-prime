@@ -1,0 +1,157 @@
+//// The gaps the cast modules state reach the coverage measure: every limit a comment of
+//// the casting modules states is one entry of its module's `gaps()`, in the registry the
+//// section prints (`genesis_prime/coverage/gaps`). The registry's own layout is
+//// `coverage_gaps_test`.
+
+import genesis_prime/coverage/gaps
+import genesis_prime/game/ability_points
+import genesis_prime/game/activate
+import genesis_prime/game/cast
+import genesis_prime/game/cast/control as cast_control
+import genesis_prime/game/cast/cost as cast_cost
+import genesis_prime/game/cast/heal as cast_heal
+import genesis_prime/game/cast/press as cast_press
+import genesis_prime/game/cast/proc as cast_proc
+import genesis_prime/gap.{type Entry}
+import gleam/list
+import gleam/string
+import owned_test
+import unitest
+
+/// A limit the code states: the entries of the module that lists it, the area it is in,
+/// the words its one entry holds, and what the limit is.
+type Limit {
+  Limit(entries: List(Entry), area: String, words: List(String), limit: String)
+}
+
+fn limits() -> List(Limit) {
+  [
+    Limit(
+      cast_press.gaps(),
+      "Casting",
+      ["another player's unit", "does not land"],
+      "a cast at another player is refused",
+    ),
+    Limit(
+      cast_press.gaps(),
+      "Casting",
+      ["prerequisite type the server does not read"],
+      "a prerequisite type the server does not read refuses a press",
+    ),
+    Limit(
+      cast_press.gaps(),
+      "Casting",
+      ["cannot plan", "cast method is not built"],
+      "a spell the server cannot plan or cast is refused",
+    ),
+    Limit(
+      cast_press.gaps(),
+      "Casting",
+      ["until removed", "dropped"],
+      "a crowd-control state that lasts until removed is dropped",
+    ),
+    Limit(
+      cast_press.gaps(),
+      "Casting",
+      ["invulnerable", "zone", "vital", "immunity"],
+      "a press at a creature does not test its invulnerable, zone, vital or immunity state",
+    ),
+    Limit(
+      cast_press.gaps(),
+      "Casting",
+      ["Channeled", "Normal"],
+      "an activate cast of a mismatched Channeled spell is cast as a Normal one",
+    ),
+    Limit(
+      activate.gaps(),
+      "Casting",
+      ["crowd-control state", "fight state"],
+      "an activate cast does not test the target's crowd-control or fight state",
+    ),
+    Limit(
+      activate.gaps(),
+      "Casting",
+      ["strikes no unit", "refused"],
+      "an activate cast strikes no unit, so a spell with a strike effect is refused",
+    ),
+    Limit(
+      activate.gaps(),
+      "Casting",
+      ["Heal", "RavelSignal", "DespawnUnit", "UnitStateSet", "drops"],
+      "an activate cast drops the target and area effects it cannot apply",
+    ),
+    Limit(
+      activate.gaps(),
+      "Casting",
+      ["QuestAdvanceObjective", "advances nothing"],
+      "a quest advance aimed at the target alone advances nothing",
+    ),
+    Limit(
+      activate.gaps(),
+      "Casting",
+      ["vertical offset"],
+      "the client's per-unit vertical offset is not modelled",
+    ),
+    Limit(
+      activate.gaps(),
+      "Casting",
+      ["0x6c", "0x148"],
+      "the creature words that make the client pick no spell are not read",
+    ),
+    Limit(
+      ability_points.gaps(),
+      "Abilities",
+      ["tier", "action set"],
+      "tier spending and action set edits are not built",
+    ),
+    Limit(
+      cast_proc.gaps(),
+      "Casting",
+      ["critical heal"],
+      "no heal is a critical heal",
+    ),
+    Limit(
+      cast.gaps(),
+      "Casting",
+      ["hoverboard", "mount"],
+      "the hoverboard's ride ends in the input of its own go",
+    ),
+    Limit(
+      cast_cost.gaps(),
+      "Casting",
+      ["request word"],
+      "the cast request word is read as 0 for every press",
+    ),
+    Limit(
+      cast_heal.gaps(),
+      "Casting",
+      ["unit other than the caster"],
+      "a heal on another unit lands nothing",
+    ),
+    Limit(
+      cast_control.gaps(),
+      "Casting",
+      ["stack", "different casters"],
+      "the modifiers of different casters on one creature do not stack",
+    ),
+  ]
+}
+
+pub fn each_limit_the_cast_modules_state_is_one_entry_of_its_module_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tags(["dev_tool", "coverage"])
+  list.each(limits(), fn(limit) {
+    let matching =
+      list.filter(limit.entries, fn(entry) {
+        list.all(limit.words, string.contains(entry.missing, _))
+      })
+    assert list.length(matching) == 1 as limit.limit
+    let assert [entry] = matching
+    assert entry.area == limit.area as limit.limit
+    assert !string.contains(string.lowercase(entry.missing), "issue")
+      && !string.contains(entry.missing, "#")
+      as limit.limit
+    assert list.contains(gaps.registry(), entry)
+      as { limit.limit <> ": the registry prints it" }
+  })
+}

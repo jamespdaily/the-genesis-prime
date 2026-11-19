@@ -31,7 +31,8 @@
 ////   spell has no group and Creature2.flags bit 0 is clear; otherwise only the creature's
 ////   own activate spell passes, and the rest are refused 89.
 //// - A spell with an effect the strike would apply, aimed at the target or an area, is
-////   refused with result 285 and logged once, since the activate cast strikes no unit; a heal, RavelSignal, DespawnUnit or UnitStateSet row aimed there is dropped instead
+////   refused with result 285 and logged once, since the activate cast strikes no unit; a
+////   heal, RavelSignal, DespawnUnit or UnitStateSet row aimed there is dropped instead
 ////   (`activate_rows_of`).
 //// - **The target's life** is judged before the range: the spell's target row says a dead
 ////   creature is refused 106 or a living one 107 (`CheckCastUnitTargetRange`,
@@ -466,14 +467,17 @@ fn planned(
   }
 }
 
-/// What the activate cast does not check of a target.
+/// What the activate cast does not check of a target, strike or pick.
 pub fn gaps() -> List(gap.Entry) {
   [
-    gap.Entry(
-      area: "Casting",
-      missing: "An activate cast does not test the target's crowd-control state, fight state or creature word 0x1e4 against the Spell4Conditions mask of its spell, and passes bit 5 of the mask without testing it, because the meaning of the unit word 0xc4 that bit reads is not decoded.",
-    ),
+    "An activate cast does not test the target's crowd-control state, fight state or creature word 0x1e4 against the Spell4Conditions mask of its spell, and passes bit 5 of the mask without testing it, because the meaning of the unit word 0xc4 that bit reads is not decoded.",
+    "An activate cast strikes no unit: it carries out the effects of its spell that reach the caster and its Activate effects, and a spell with any other effect the strike would apply to the target or an area is refused.",
+    "An activate cast drops a Heal, RavelSignal, DespawnUnit or UnitStateSet effect aimed at the target or an area, the last three with one log line for the spell, so a spell with such an effect stays usable without it.",
+    "An activate cast of a QuestAdvanceObjective effect aimed at the primary target alone advances nothing, because the unit the cast names is not the caster.",
+    "The client's per-unit vertical offset of an activate cast is not modelled.",
+    "The creature words 0x6c and 0x148, which make the client pick no spell for a creature, are not read.",
   ]
+  |> list.map(fn(missing) { gap.Entry(area: "Casting", missing:) })
 }
 
 /// The mask of a Spell4Conditions row of a target and its bits that the activate cast

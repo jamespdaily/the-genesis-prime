@@ -155,6 +155,7 @@ import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{type Spell}
 import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_properties
+import genesis_prime/gap
 import genesis_prime/message/crowd_control_state
 import genesis_prime/table/id.{type Spell4EffectsId}
 import genesis_prime/world_map/map
@@ -968,4 +969,14 @@ pub fn caster_rows(spell spell: Spell) -> List(spell_plan.PropertyModifier) {
       | spell_plan.AbsorbChange(..) -> True
     }
   })
+}
+
+/// What the lasting effects of a cast do not do.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Casting",
+      missing: "The stacking of the property modifiers that different casters put on one creature is not built, so each caster's modifier on the creature is kept by its caster.",
+    ),
+  ]
 }

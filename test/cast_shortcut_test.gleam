@@ -801,9 +801,17 @@ pub fn a_press_at_a_player_is_refused_102_when_the_valid_targets_forbid_it_test(
 
 pub fn a_press_at_a_player_that_reaches_the_faction_test_is_not_built_test() -> Nil {
   use <- owned_test.run(10_000)
+  // Spell4 30485's target conditions row 15 (mask 129, value 0) refuses a dead target, so
+  // the press would stop at the life and combat branch before the faction test. The row is
+  // planted without it: any life, combat allowed, and no cast group (Spell4Base 30485's
+  // targetGroupIdCastGroup is 0), so the press can reach only the faction test.
+  use tables <- fixture_tables.changed(table: "Spell4", id: 30_485, with: [
+    #("spell4ConditionsIdTarget", Integer(0)),
+  ])
   let scene = Scene(units: [], players: [909])
   let #(_, effects) =
-    press_at(
+    press_at_with(
+      shortcuts: shortcut_spell.shortcuts(tables:),
       scene:,
       state: cast_state.new(),
       spell4_id: 30_485,
@@ -814,10 +822,15 @@ pub fn a_press_at_a_player_that_reaches_the_faction_test_is_not_built_test() -> 
     == [code(cast_result.IllegalSpellCast)]
     as "Spell4 30485 (valid targets bitmask 2) lets a player be its target, and a player reaches the client's player faction test (0x1403b4560), which is not built: refused 285"
   let assert [line] = warnings(effects:)
-  assert string.contains(line, "30485 names another player")
+  assert string.contains(
+      line,
+      "30485 names another player, who reaches the client's player faction test",
+    )
+    && !string.contains(line, "life and combat")
+    && !string.contains(line, "cast group")
     && string.ends_with(line, ": it is refused with 285")
     && !string.contains(line, "#")
-    as "the log names the spell and what is missing, another player, and names no issue"
+    as "the log names the spell and the faction test, not the life and combat branch, and names no issue"
   let #(_, own) =
     press_at(
       scene: nothing_shown(),

@@ -118,15 +118,17 @@ import gleam/result
 import gleam/set
 import gleam/string
 
-/// The cases a press is refused, and logged once, because the server does not build what
-/// the cast needs: each is the sentence of a kind of `NotBuilt` or `Dropped*` key.
+/// What a press is refused or cast without, because the server does not build what the cast
+/// needs: the sentence of each kind of `NotBuilt` or `Dropped*` key, then the limits of the
+/// press and of the activate cast's timing.
 pub fn gaps() -> List(gap.Entry) {
   [
     "A spell cast at another player's unit is refused, because the server holds no other player's life, combat, faction or race to test it by, so an effect a player casts on another player does not land on that player.",
     "A spell whose cast condition, caster requirement's waiver or creature pick is of a prerequisite type the server does not read is refused.",
     "A spell the server cannot plan, whose cast method is not built, or whose innate cost is in a vital the server does not hold or is spent by an EMM id it does not read, is refused.",
-    "A cast at a unit (an activate cast) plays only the Activate and QuestAdvanceObjective effects of its spell, and a spell with any other effect the strike would apply is refused instead; the client's per-unit vertical offset is not modelled.",
     "A crowd-control state on another unit that lasts until removed is dropped from a cast, because no rule of the server ends it when its spell ends.",
+    "A press at a creature is not refused for an invulnerable, zone, vital or immunity state of its target that the server does not hold.",
+    "An activate cast of a Channeled spell whose activate time is not the channel's maximum time is cast as a Normal spell, with one go after the cast time, because the times the client picks for the channel's gos are not settled.",
   ]
   |> list.map(fn(missing) { gap.Entry(area: "Casting", missing:) })
 }
