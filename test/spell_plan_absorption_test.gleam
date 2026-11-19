@@ -333,15 +333,17 @@ pub fn an_absorption_row_with_a_formula_kind_not_read_fails_the_load_test() -> N
     )
   }
   assert with_kind(9)
-    == spell_plan.AbsorptionParameterNotRead(
+    == spell_plan.ParameterNotRead(
       spell4_id: strike,
       effect_id: 99_064,
+      row: spell_plan.AbsorptionRow,
       parameter_kind: 9,
     )
   assert with_kind(18)
-    != spell_plan.AbsorptionParameterNotRead(
+    != spell_plan.ParameterNotRead(
       spell4_id: strike,
       effect_id: 99_064,
+      row: spell_plan.AbsorptionRow,
       parameter_kind: 18,
     )
     as "kind 18 is read: the row goes on to the amount's own check"

@@ -29,7 +29,7 @@ import gleam/dict
 import gleam/list
 import gleam/string
 import owned_test
-import planted_table.{type Cell, Integer}
+import planted_table.{type Cell, Float, Integer}
 import unitest
 
 /// The Warrior's level 6 row, whose Spell4 and effect the cases edit, and the Spell4 of its
@@ -38,6 +38,9 @@ const later_row = 929
 
 const later_spell = 57_694
 
+/// Row 138014 is a damage row with two parameter factors; a case that makes it a type 11
+/// row zeroes them, since a modifier row with a parameter factor is not read
+/// (`ParameterNotRead`) and the case is about another refusal.
 const later_effect = 138_014
 
 const level_one_spell = 32_078
@@ -121,6 +124,8 @@ fn refused_cases() -> List(Refused) {
           #("effectType", Integer(11)),
           #("targetFlags", Integer(1)),
           #("dataBits00", Integer(99_999)),
+          #("parameterValue00", Float(0.0)),
+          #("parameterValue01", Float(0.0)),
         ]),
       ],
       ["UnitProperty2", "99999"],
@@ -134,6 +139,8 @@ fn refused_cases() -> List(Refused) {
           #("targetFlags", Integer(1)),
           #("dataBits00", Integer(102)),
           #("dataBits02", Integer(2_143_289_344)),
+          #("parameterValue00", Float(0.0)),
+          #("parameterValue01", Float(0.0)),
         ]),
       ],
       ["138014", "dataBits02"],
@@ -230,13 +237,14 @@ fn errors() -> List(#(PlanError, Bool)) {
     #(spell_plan.StealthBreaksNotRead(1, 2, 3), True),
     #(spell_plan.StealthConditionNotRead(1, 2), True),
     #(spell_plan.StealthChangeNotRead(1, 2), True),
-    #(spell_plan.HealParameterNotRead(1, 2, 3), True),
+    #(spell_plan.ParameterNotRead(1, 2, spell_plan.ModifierRow, 3), True),
+    #(spell_plan.ParameterNotRead(1, 2, spell_plan.HealRow, 3), True),
     #(spell_plan.HealUntilRemovedNotRead(1, 2), True),
     #(spell_plan.HealNoTick(1, 2, 3, 4), True),
     #(spell_plan.HealOnStruckUnit(1, 2, 3), True),
     #(spell_plan.InterruptArmorTakeBackNotRead(1, 2, 3), True),
     #(spell_plan.InterruptArmorOnStruckUnit(1, 2, 3), True),
-    #(spell_plan.AbsorptionParameterNotRead(1, 2, 3), True),
+    #(spell_plan.ParameterNotRead(1, 2, spell_plan.AbsorptionRow, 3), True),
     #(spell_plan.AbsorptionAmountNotRead(1, 2), True),
     #(spell_plan.AbsorptionPeriodic(1, 2, 3), True),
     #(spell_plan.AbsorptionHasNoLifetime(1, 2), True),

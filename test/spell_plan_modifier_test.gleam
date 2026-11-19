@@ -34,8 +34,9 @@ import genesis_prime/table/id.{
 import genesis_prime/table/spell4_effects
 import gleam/list
 import gleam/option.{None}
+import gleam/result
 import owned_test
-import planted_table.{type Cell, Integer}
+import planted_table.{type Cell, Float, Integer}
 import spell_tables
 import unitest
 
@@ -418,6 +419,95 @@ pub fn type_11_is_read_for_the_rows_aimed_at_the_caster_or_struck_units_test() -
 }
 
 // ---- the client's own rows ----
+
+pub fn a_modifier_row_with_a_parameter_factor_is_not_read_and_one_without_still_plans_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Row 86849's shape (`table_rows -- Spell4Effects 86849`): parameters 12, 13 and 10 with
+  // factors. A parameter whose factor is 0.0 adds nothing to the amount, and a parameter
+  // of type 0 names none (rows 128380 and 128381 hold a value of 0.1 with type 0), so
+  // neither is a parameter the plan must read.
+  let parameter = fn(slot, kind, value) {
+    [
+      #("parameterType0" <> slot, Integer(kind)),
+      #("parameterValue0" <> slot, Float(value)),
+    ]
+  }
+  let cases = [
+    #("no parameter", 99_061, 1, [], Ok(Nil)),
+    #(
+      "a parameter type with no factor",
+      99_062,
+      1,
+      parameter("0", 12, 0.0),
+      Ok(Nil),
+    ),
+    #(
+      "a value on parameter type 0, which names no parameter",
+      99_067,
+      1,
+      parameter("0", 0, 0.1),
+      Ok(Nil),
+    ),
+    #(
+      "a stat parameter with a factor on the caster",
+      99_063,
+      1,
+      parameter("0", 12, 0.19),
+      Error(12),
+    ),
+    #(
+      "a stat parameter with a factor on a struck unit",
+      99_064,
+      2,
+      parameter("0", 12, 0.19),
+      Error(12),
+    ),
+    #(
+      "the first of two factors, with a zero factor before it",
+      99_065,
+      1,
+      list.flatten([
+        parameter("0", 12, 0.0),
+        parameter("1", 13, 0.19),
+        parameter("3", 10, 16.59),
+      ]),
+      Error(13),
+    ),
+    #(
+      "a flat parameter with a factor",
+      99_066,
+      1,
+      parameter("3", 10, 16.59),
+      Error(10),
+    ),
+  ]
+  list.each(cases, fn(case_) {
+    let #(why, id, target_flags, columns, expected) = case_
+    let planned =
+      spell_tables.planned_strike(
+        rows: spell_tables.rows_with_effect(effect: modifier_row(
+          id:,
+          target_flags:,
+          columns:,
+        )),
+      )
+    case expected {
+      Ok(Nil) -> {
+        assert result.is_ok(planned) as why
+      }
+      Error(parameter_kind) -> {
+        assert planned
+          == Error(spell_plan.ParameterNotRead(
+            spell4_id: strike,
+            effect_id: id,
+            row: spell_plan.ModifierRow,
+            parameter_kind:,
+          ))
+          as why
+      }
+    }
+  })
+}
 
 pub fn the_kits_two_rows_are_read_from_the_clients_tables_test() -> Nil {
   use <- owned_test.run(120_000)
