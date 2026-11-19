@@ -653,8 +653,11 @@ pub fn bit_eight_aims_stay_refused_test() -> Nil {
         target_flags: flags,
       )
       as "aim_of reads targetFlags 1 to 7 only; a flag with bit 8 is refused"
-    assert string.contains(spell_plan.describe(error:), "#336")
-      as "the refusal names the issue that will read bit 8"
+    assert string.contains(
+      spell_plan.describe(error:),
+      "bit 8's meaning is not known",
+    )
+      as "the refusal says bit 8's meaning is not known"
   })
 }
 
@@ -670,11 +673,11 @@ pub fn a_state_until_removed_on_another_unit_is_dropped_and_the_spell_plans_test
           ]),
         ),
       )
-      as "the spell plans without the row: the server ends no creature's state when its cast's node ends, and the issue that will end it is open"
+      as "the spell plans without the row: the server ends no creature's state when its cast's node ends"
     assert spell_plan.payloads(spell:, as_kind: spell_plan.as_control) == []
-      as "cc_state.instance_id: flags bit 2 never times out, so the row lands nothing until the issue that ends it is built"
+      as "cc_state.instance_id: flags bit 2 never times out, so the row lands nothing"
     assert spell.dropped_controls == [Spell4EffectsId(99_040)]
-      as "the plan names the row it drops, which the cast logs as a gap"
+      as "the plan names the row it drops, which the cast logs"
   })
   let assert Ok(on_caster) =
     spell_tables.planned_strike(
@@ -776,8 +779,11 @@ pub fn a_persistence_prerequisite_on_another_unit_is_refused_test() -> Nil {
           effect_id: 99_040,
         )
         as "Spell4Effects.prerequisiteIdTargetPersistence and its two siblings keep a state through a death or a leave, which no creature rule holds"
-      assert string.contains(spell_plan.describe(error:), "#787")
-        as "the refusal names the issue that will read persistence"
+      assert string.ends_with(
+        spell_plan.describe(error:),
+        "kept through death or leaving by a persistence prerequisite, which the server does not read",
+      )
+        as "the refusal says persistence is not read, with no issue"
     },
   )
   let assert Ok(on_caster) =

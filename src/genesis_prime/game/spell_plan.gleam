@@ -117,7 +117,7 @@
 ////   row whose `armor` is set: a change of UnitProperty2 44, the maximum, of x * 1.0 +
 ////   dataBits00, which the player's armor follows (genesis_prime/game/player_life
 ////   `armor_followed`); dataBits01 1 takes the points back at the end and 0 keeps them,
-////   which matters only once armor is worn, and nothing wears a player's armor down yet.
+////   which matters only once armor is worn, and nothing wears a player's armor down.
 ////   Its delay, durationTime, flags bit 2, caster apply prerequisite, phases and spend
 ////   tag are a type 11 row's. A dataBits01 other than 0 and 1 fails the load. A row aimed
 ////   only at other units is not read. A child a Proxy starts on each struck unit that
@@ -144,7 +144,7 @@
 ////   prerequisite, which the cast rule checks, and target apply prerequisite, which it
 ////   checks for the unit the row heals; a row with a tickTime is a `TickingHeal`, with the schedule of
 ////   its ticks (genesis_prime/game/ticking), each tick its own 0x7f8. A periodic row that
-////   lasts until removed (flags bit 2) is left out (`HealUntilRemoved`, issue 803). A row
+////   lasts until removed (flags bit 2) is left out (`HealUntilRemoved`). A row
 ////   aimed only at other units (4 and 6) is not read. A child a Proxy starts on each struck unit that holds a heal whose
 ////   aim names its primary target (flags 2, 3 or 7) fails the load: a heal on a struck unit is not built.
 //// - **The shield overloads.** A ShieldOverload effect (`Spell4Effects.effectType.64`)
@@ -173,8 +173,8 @@
 ////   The delay, durationTime and flags bit 2 give the holder's node its life
 ////   (`.lifetime`), and its caster apply prerequisite is a Fluff effect's. A Proc row of
 ////   another kind is in no list and the load goes on (`proc_read`, `ProcKindNotRead`), as
-////   does a row of a kind the texts name that waits on an open issue (`ProcKindWaits`, which
-////   names the issue), and a row held by another unit, behind a persistence or target apply prerequisite,
+////   does a row of a kind the texts name whose event the server does not raise (`ProcKindWaits`,
+////   which names the event), and a row held by another unit, behind a persistence or target apply prerequisite,
 ////   with a group and no filter kind, with an aim of 32 or above, or with no life
 ////   (`ProcIsLeftOut`), and a row whose spell the Spell4 table has no row for, which the
 ////   client's table keeps because the client never reads a Proc row (`ProcCastsNoSpell`);
@@ -289,10 +289,10 @@
 ////   not read, a cycle of Proxy effects, a channel with no pulse time, a gain
 ////   aimed other than at the caster, of a vital other than 6 or 8, or behind a
 ////   target apply prerequisite, an effect behind a target apply prerequisite with a
-////   condition of a type not read (issue 818) or, past the caster, of a type that reads
-////   what the casts held on a struck creature hold (issue 569) or, on a row that does not
+////   condition of a type not read or, past the caster, of a type that reads
+////   what the casts held on a struck creature hold or, on a row that does not
 ////   reach struck units alone or that the strike does not carry to the creature, the
-////   creature's own state (issue 851), and an effect of a spell that spends
+////   creature's own state, and an effect of a spell that spends
 ////   every point held with an emmComparison other than 0 or 1; a Fluff or SpellForceRemove effect
 ////   aimed other than at the caster, the primary target or the area; a type 80
 ////   effect with a dataBits00 other than 1 to 3, naming no group, Spell4 or
@@ -320,6 +320,7 @@ import genesis_prime/game/ticking
 import genesis_prime/game/unit_properties
 import genesis_prime/game/unit_state
 import genesis_prime/game/worn_visual
+import genesis_prime/gap
 import genesis_prime/message/crowd_control_state
 import genesis_prime/message/float32
 import genesis_prime/table/cc_state_additional_data
@@ -490,7 +491,7 @@ pub type Aim {
 /// (1), the primary target (2) and the area (4). 0 and every value with bit 8 or above
 /// have no aim: the client refuses 0 (`Spell4Effects.targetFlags.load`), and bit 8's
 /// meaning is not known ([B8]: the guess is that no row holds it in a spell the server
-/// plays; it waits for the question under #336).
+/// plays).
 ///
 /// [C] That 3, 5 and 7 are the union of their bits is a guess: the client's load
 /// refuses only 0 and no other reader of the column was found.
@@ -560,7 +561,7 @@ fn past_the_caster(aim aim: Aim) -> Result(Aim, Nil) {
 
 /// The aim of a row that holds the caster's bit and the area's bit, read in a spell that
 /// hits no foes ([F] `spell_hits_foes`): the area's bit is left out, since a friendly
-/// spell's area waits for #834. An aim without the caster's bit is as it is.
+/// spell's area finds no allies of the caster. An aim without the caster's bit is as it is.
 fn without_friendly_area(aim aim: Aim) -> Aim {
   case aim {
     AimsAtCasterAndArea -> AimsAtCaster
@@ -728,9 +729,8 @@ pub type Spell {
     /// `Spell4StackGroup.stackCap`).
     stack: lasting.Stack,
     /// The CCStateSet effects the plan drops: those aimed at another unit that hold their
-    /// state until removed, which no rule of the server ends when the spell ends (the
-    /// issue "A crowd-control state that lasts until removed ends when its spell ends").
-    /// The rest of the spell plans without them, and the cast logs each as a gap.
+    /// state until removed, which no rule of the server ends when the spell ends.
+    /// The rest of the spell plans without them, and the cast logs each.
     dropped_controls: List(Spell4EffectsId),
     /// The target apply prerequisites of rows aimed only at units past the caster whose
     /// conditions all read the struck creature's own state, which the creature checks when
@@ -853,8 +853,8 @@ pub type Trigger {
   Kills
   /// 20: a heal of the holder's lands.
   LandsHeal
-  /// 147: a heal of the holder's lands as a critical. No heal is rolled a critical yet,
-  /// so a row of this kind is held and never fires; the gap is issue 830.
+  /// 147: a heal of the holder's lands as a critical. No heal is rolled a critical,
+  /// so a row of this kind is held and never fires.
   LandsCriticalHeal
   /// 10: the holder uses an ability: a press the rule accepts, or a stage of one. A
   /// guess: no client code reads a Proc row, and the texts say 'Using an ability',
@@ -866,8 +866,8 @@ pub type Trigger {
   /// slot counting; the row's gate names the vital.
   SpendsResource
   /// 21: the holder receives a heal. A guess (`.fairly_sure`, text 569376 'On Taking a
-  /// Heal'): only a heal the holder lands on itself counts, until another unit can heal
-  /// it (issue 570).
+  /// Heal'): only a heal the holder lands on itself counts, since no other unit heals
+  /// it.
   ReceivesHeal
   /// 52: a foe deflects a strike of the holder's. A guess (`.fairly_sure`, texts 364190
   /// and 498616).
@@ -1045,7 +1045,7 @@ pub type ForcedMove {
 /// unit it throws), and when its `tag` holds for the points
 /// the cast spent (genesis_prime/game/spend). The cast throws each creature the go
 /// `Hit` (genesis_prime/game/cast/control `struck_moves_armed`); a unit that is the caster or
-/// another player is not thrown until a move of another player is built (issue 570).
+/// another player is not thrown, since no rule moves another player.
 pub type StruckMove {
   StruckMove(
     effect_id: Spell4EffectsId,
@@ -1213,7 +1213,7 @@ pub type PropertyModifier {
 /// What a ModifyInterruptArmor row (`Spell4Effects.effectType.52`) adds to the change of
 /// property 44 it makes, which the player's armor follows. `points` is dataBits00,
 /// `takes_back` is dataBits01 (1 takes the points back when the row ends, 0 keeps the
-/// armor: it matters only once armor is worn, and nothing wears a player's armor down yet)
+/// armor: it matters only once armor is worn, and nothing wears a player's armor down)
 /// and `aim` is the unit the row's targetFlags name: the caster, or the primary target,
 /// which a spell cast on the caster makes the caster.
 pub type InterruptArmor {
@@ -2077,7 +2077,7 @@ pub fn spells_that_throw_target(
 ///
 /// [F] What "hits foes" means is the server's choice, made by Jim: the client's tables
 /// hold no flag for it. A spell that hits none has an area the server reads as a friendly
-/// spell's, which waits for #834 ("A friendly spell's area finds the caster's allies").
+/// spell's, which finds no allies of the caster.
 pub fn spell_hits_foes(
   effects effects: List(spell4_effects.Spell4Effects),
 ) -> Bool {
@@ -2118,7 +2118,7 @@ pub type RowReading {
   /// The row is in a list of its spell and no go applies it: a periodic gain
   /// (`TickingGain`), a property change or disguise with no life
   /// (`lasting.has_life`), an ItemVisualSwap row with a delayTime (the go lists it, the
-  /// client applies an effect from the go only when its delay is 0; the gap is #827) and a row whose
+  /// client applies an effect from the go only when its delay is 0) and a row whose
   /// phaseFlags is 0, which no phase selects (`in_phase`). The measure counts it not read.
   Held(row: ReadRow)
   /// The row is in no list of its spell and the load goes on.
@@ -2141,12 +2141,12 @@ pub type LeftOutReason {
   AimedAtOtherUnits
   /// A Proc of a kind the holder's own events do not make (`proc_read`).
   ProcOfAnotherKind(kind: Int)
-  /// A Proc of a kind the server knows a reading for and cannot raise yet: it waits on
-  /// the open issue (`proc_read`).
-  ProcKindWaits(kind: Int, issue: Int)
+  /// A Proc of a kind the server knows a reading for and does not raise the event of:
+  /// `event` is the plain name of that event (`proc_read`).
+  ProcKindWaits(kind: Int, event: String)
   /// A Proc whose targetFlags are not the caster's alone: it lands on the spell's target
   /// or a struck unit, so a unit other than the caster holds it, which no rule of the
-  /// server holds yet (issue 829).
+  /// server holds.
   ProcHeldByAnotherUnit(target_flags: Int)
   /// A Proc behind a caster or target persistence prerequisite, which no rule checks
   /// while a proc is held (`Spell4Effects.effectType.14.prerequisites`).
@@ -2170,13 +2170,12 @@ pub type LeftOutReason {
   /// A damage row whose phaseFlags is 0: no phase selects it (`spell_area` `phase`).
   InNoPhase
   /// A CCStateSet row aimed at another unit that holds its state until removed
-  /// (`Spell4Effects.flags` bit 2), which no rule of the server ends when its spell ends
-  /// (the issue "A crowd-control state that lasts until removed ends when its spell
-  /// ends"): the plan drops the row, the rest of the spell plans, and the cast logs the
-  /// gap (`Spell.dropped_controls`).
+  /// (`Spell4Effects.flags` bit 2), which no rule of the server ends when its spell ends:
+  /// the plan drops the row, the rest of the spell plans, and the cast logs the drop
+  /// (`Spell.dropped_controls`).
   StateUntilRemovedNotRead
   /// A periodic Heal or HealShields row that lasts until removed (`Spell4Effects.flags`
-  /// bit 2), which no schedule ends (issue 803).
+  /// bit 2), which no schedule ends.
   HealUntilRemoved
   /// A DespawnUnit row (`Spell4Effects.effectType.97`) whose `column` (dataBits00 or
   /// dataBits01) is not 0: no code of the client reads either column of this type, so what a
@@ -2277,8 +2276,7 @@ pub type PlanError {
   GainVitalNotRead(spell4_id: Int, effect_id: Int, vital: Int)
   /// An effect of a tree is behind a target apply prerequisite, or, for a lasting, remove,
   /// modifier or heal row, a caster apply prerequisite, with a condition of a type the
-  /// server has not decoded (`prerequisite.unread_types`): the issue "The prerequisite
-  /// types effects use that the server does not read yet are read" (#818) reads them.
+  /// server has not decoded (`prerequisite.unread_types`).
   ApplyPrerequisiteNotRead(
     spell4_id: Int,
     effect_id: Int,
@@ -2286,10 +2284,10 @@ pub type PlanError {
   )
   /// An effect of a tree aimed past the caster is behind a target apply prerequisite with a
   /// condition that reads what a struck creature holds, and nobody can check it: either the
-  /// casts held on it, which the creature does not hold yet (`prerequisite.struck_unread_types`,
-  /// issue 569), or the creature's own state, on a row that does not reach struck units alone
+  /// casts held on it, which the creature does not hold (`prerequisite.struck_unread_types`),
+  /// or the creature's own state, on a row that does not reach struck units alone
   /// or that the strike does not carry, so the caster's check is the only one and it holds none
-  /// of that state (`prerequisite.unread_on_a_struck_unit`, issue 851).
+  /// of that state (`prerequisite.unread_on_a_struck_unit`).
   TargetPrerequisiteReadsStruckUnit(
     spell4_id: Int,
     effect_id: Int,
@@ -2329,14 +2327,12 @@ pub type PlanError {
   ControlAimNotRead(spell4_id: Int, effect_id: Int, target_flags: Int)
   /// An effect of a spell that hits no foes (`spell_hits_foes`) is aimed by a flag value
   /// that holds the caster's bit and the area's bit (5 or 7), and the effect's kind keeps a
-  /// state or a child on the area's units: a friendly spell's area finds the caster's
-  /// allies, which the issue "A friendly spell's area finds the caster's allies" (#834)
-  /// builds.
+  /// state or a child on the area's units: a friendly spell's area finds no allies of the
+  /// caster.
   FriendlyAreaNotRead(spell4_id: Int, effect_id: Int, target_flags: Int)
   /// A CCStateSet effect of a tree aimed at another unit keeps its state through a death
   /// or a leave by a caster persistence, target persistence or target suspend
-  /// prerequisite, which no rule of the server holds (the issue "An effect behind an
-  /// apply prerequisite lands only on the units that pass it" closes it).
+  /// prerequisite, which no rule of the server holds.
   ControlPersistenceNotRead(spell4_id: Int, effect_id: Int)
   /// A UnitPropertyModifier or UnitPropertyConversion effect of a tree names a property
   /// that UnitProperty2 has no row for, which the client's 0x93a refuses from id 197
@@ -2379,7 +2375,7 @@ pub type PlanError {
   /// A Heal or HealShields effect of a tree has a dataBits00 that is not a finite 32-bit float.
   HealNumberNotFinite(spell4_id: Int, effect_id: Int)
   /// A periodic Heal or HealShields effect lasts until removed (flags bit 2): its reading
-  /// leaves it out (`HealUntilRemoved`, issue 803).
+  /// leaves it out (`HealUntilRemoved`).
   HealUntilRemovedNotRead(spell4_id: Int, effect_id: Int)
   /// A periodic Heal or HealShields effect lives shorter than one tick
   /// (genesis_prime/game/ticking `NoTick`).
@@ -2444,7 +2440,7 @@ pub type PlanError {
 pub fn aim_values_read_text(target_flags target_flags: Int) -> String {
   use <- bool.guard(
     when: target_flags >= 8,
-    return: "and only the values 1 to 7 are read; bit 8's meaning waits for the bit-8 question of #336",
+    return: "and only the values 1 to 7 are read; bit 8's meaning is not known",
   )
   "and only the values 1 to 7 are read; the client refuses 0"
 }
@@ -2514,7 +2510,7 @@ pub fn describe(error error: PlanError) -> String {
       <> int.to_string(effect_id)
       <> " behind an apply prerequisite with a condition of type "
       <> int.to_string(prerequisite_type)
-      <> ", which is not decoded (#818)"
+      <> ", which is not decoded"
     TargetPrerequisiteReadsStruckUnit(
       spell4_id:,
       effect_id:,
@@ -2528,9 +2524,9 @@ pub fn describe(error error: PlanError) -> String {
       <> int.to_string(prerequisite_type)
       <> case prerequisite_type {
         15 | 59 | 129 ->
-          ", which reads what the casts held on the creature it strikes hold (#569)"
+          ", which reads what the casts held on the creature it strikes hold"
         _ ->
-          ", which reads the state of the creature it strikes, and the row is not one its strike carries to the creature (#851)"
+          ", which reads the state of the creature it strikes, and the row is not one its strike carries to the creature"
       }
     ControlHelperNotRead(spell4_id:, effect_id:, helper:) ->
       "the Spell4 row "
@@ -2613,13 +2609,13 @@ pub fn describe(error error: PlanError) -> String {
       <> int.to_string(effect_id)
       <> " aimed by flags "
       <> int.to_string(target_flags)
-      <> ", which hold the caster and the area: a friendly spell's area finds the caster's allies, which the server does not read yet (#834)"
+      <> ", which hold the caster and the area: a friendly spell's area finds the caster's allies, which the server does not read"
     ControlPersistenceNotRead(spell4_id:, effect_id:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
       <> " has a CCStateSet effect "
       <> int.to_string(effect_id)
-      <> " on another unit kept through death or leaving by a persistence prerequisite, which the server does not read (#787)"
+      <> " on another unit kept through death or leaving by a persistence prerequisite, which the server does not read"
     ModifierPropertyHasNoRow(spell4_id:, effect_id:, property:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -2912,7 +2908,7 @@ type Phase {
 
 /// A class ability above level 1 that no plan is built for: its Spell4 id and the
 /// error that names what the server does not build (`is_unbuilt`). Its press is refused
-/// as an unknown spell until issue #1003 builds it.
+/// as an unknown spell.
 pub type Unplanned {
   Unplanned(spell4_id: Int, error: PlanError)
 }
@@ -4808,8 +4804,8 @@ fn procs_of(
 
 /// What a Proc row says without a table: its reading, or why the row is left out. A row
 /// of a kind the server does not read is `ProcKindNotRead`, which the load skips, as is
-/// a row of a kind the texts name that waits on an open issue (`ProcKindWaits`, checked
-/// first) and any row `ProcIsLeftOut` names, in this order: targetFlags other than the caster's
+/// a row of a kind the texts name whose event the server does not raise (`ProcKindWaits`,
+/// checked first) and any row `ProcIsLeftOut` names, in this order: targetFlags other than the caster's
 /// alone, a persistence prerequisite, a target apply prerequisite, a group (dataBits08)
 /// with no filter kind, a dataBits03 of 32 or above, and a row with no durationTime and
 /// no flags bit 2, which gives its holder's node no life. Any other value outside the
@@ -4823,26 +4819,33 @@ pub fn proc_read(
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(ProcRead, PlanError) {
   case proc_waits_on(kind: effect.data_bits00) {
-    Ok(issue) ->
-      Ok(ProcIsLeftOut(why: ProcKindWaits(kind: effect.data_bits00, issue:)))
+    Ok(event) ->
+      Ok(ProcIsLeftOut(why: ProcKindWaits(kind: effect.data_bits00, event:)))
     Error(Nil) -> proc_read_of_a_kind_to_read(spell4_id:, effect:)
   }
 }
 
-/// The open issue that raises the event of a fairly-sure kind the server does not raise
-/// yet (`Spell4Effects.effectType.14.dataBits00.fairly_sure`): the row is left out naming
-/// it, so the issue has its rows to read.
-fn proc_waits_on(kind kind: Int) -> Result(Int, Nil) {
+/// The plain name of the event of a fairly-sure kind the server does not raise
+/// (`Spell4Effects.effectType.14.dataBits00.fairly_sure`): the row is left out naming it.
+fn proc_waits_on(kind kind: Int) -> Result(String, Nil) {
   case kind {
-    57 | 40 | 117 | 154 -> Ok(869)
-    23 | 50 | 114 | 131 | 234 | 249 -> Ok(870)
-    124 | 102 | 112 -> Ok(871)
-    152 -> Ok(872)
-    155 | 197 | 159 | 41 | 153 | 236 -> Ok(801)
-    46 -> Ok(803)
-    2 -> Ok(56)
-    148 -> Ok(830)
-    251 | 253 -> Ok(336)
+    57 | 40 | 117 | 154 ->
+      Ok("the holder entering combat, or its health or shield crossing a value")
+    23 | 50 | 114 | 131 | 234 | 249 ->
+      Ok(
+        "the holder taking a blow: direct, magic or critical damage, damage to its shield, an absorb destroyed, or a glance",
+      )
+    124 | 102 | 112 ->
+      Ok("the holder dashing, dodging, or using up its endurance")
+    152 -> Ok("the holder's focus dropping below a value")
+    155 | 197 | 159 | 41 | 153 | 236 ->
+      Ok(
+        "the holder being stunned, snared, rooted or crowd-controlled, breaking a crowd control, or having its cast interrupted",
+      )
+    46 -> Ok("a crowd control on the holder ending")
+    2 -> Ok("the holder killing a player")
+    148 -> Ok("the holder receiving a critical heal")
+    251 | 253 -> Ok("the holder landing a multi-hit strike or heal")
     _ -> Error(Nil)
   }
 }
@@ -4955,7 +4958,7 @@ fn proc_limit_of(
 /// A Proc row's filter: kind 0 is every spell, 1 the Spell4 and 2 the group dataBits08
 /// names; any other kind is the column and value the plan does not read.
 ///
-/// Gap (issue 870): a filter of kind 1 that names Spell4 0 is read like any other and then
+/// A filter of kind 1 that names Spell4 0 is read like any other and then
 /// refused, because the Spell4 table has no row 0 (`NoRow("Spell4", 0)`). The client never
 /// reads a Proc row, so nothing says whether it means "every spell"; 17 Proc rows have it
 /// (kinds 12, 16 and 117), 4 of them of kind 16 (Procs 92542, 107509, 162927, 189684).
@@ -5666,7 +5669,7 @@ fn when_reached(
 
 /// An ItemVisualSwap row with a delayTime as `Held`: the client applies an effect from
 /// the go only when its delay is 0 (`0x1405d6880.delayed_apply`), so the go lists the row
-/// with its delay and the visual does not change (the gap is #827). A row with no delay
+/// with its delay and the visual does not change. A row with no delay
 /// stays `Applied`.
 fn held_while_delayed(
   reading reading: RowReading,
@@ -5815,7 +5818,7 @@ fn row_aim_of(
 }
 
 /// The aim in a place: the area's bit is read only in a spell that hits foes. A friendly
-/// spell's area waits for #834, so a row of a kind that reads the caster and the units
+/// spell's area finds no allies of the caster, so a row of a kind that reads the caster and the units
 /// past it keeps its caster and primary target parts ([F] `spell_hits_foes`).
 fn aim_in_place(place place: RowPlace, aim aim: Aim) -> Aim {
   use <- bool.guard(when: place.hits_foes, return: aim)
@@ -6815,7 +6818,7 @@ fn global_cooldown_of(
 ///   the activate target (the client sends no cast at a creature in combat);
 /// - bits 6 and 7 (118, 120): pass, because no unit the server shows is seated on another;
 /// - bit 5 (116): passes, pending the decoder question of what the client's unit word
-///   0xc4 holds (gap, issue 1053).
+///   0xc4 holds.
 /// A mask bit outside these is a condition the server does not judge.
 pub const target_mask_read = 227
 
@@ -7305,5 +7308,28 @@ fn group_ids_of(row row: spell4_group_list.Spell4GroupList) -> List(Int) {
     row.spell_group_id29,
     row.spell_group_id30,
     row.spell_group_id31,
+  ]
+}
+
+/// What a spell's plan does not read that the client's rows hold, beyond the left-out
+/// reasons and plan errors the coverage measure prints for each row.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Spell areas",
+      missing: "the allies of the caster in the area of a spell that hits no foes: the area's bit is left out of an aim that holds the caster's bit too, and an effect that keeps a state or a child on the area's units is refused",
+    ),
+    gap.Entry(
+      area: "Procs",
+      missing: "a Proc on receiving a heal from another unit: it fires only for a heal the holder lands on itself",
+    ),
+    gap.Entry(
+      area: "Procs",
+      missing: "a Proc on landing a critical heal, which never fires because no heal is rolled a critical",
+    ),
+    gap.Entry(
+      area: "Procs",
+      missing: "a Proc whose filter names Spell4 0, which is refused for lack of a Spell4 row 0, since the client never reads a Proc row and nothing in it says whether the filter means every spell",
+    ),
   ]
 }

@@ -20,6 +20,7 @@
 import client_tables
 import genesis_prime/coverage/level_one_gate
 import genesis_prime/coverage/starting_ability.{InnateSlotClosed}
+import genesis_prime/game/spell_plan
 import genesis_prime/table/class
 import gleam/int
 import gleam/list
@@ -165,4 +166,22 @@ pub fn the_innate_slots_behind_a_level_gate_are_listed_as_left_out_and_none_is_o
       why: level_one_gate.FailsAtLevelOne(comparison: 4, value: 10),
     ))
     == "Class 5 innate slot 2 (Spell4 38782, passive 46059) is not counted: its gate Prerequisite 39779 holds a level condition that needs level 10"
+}
+
+pub fn the_starting_ability_report_names_the_unraised_event_not_an_issue_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tags(["dev_tool", "coverage"])
+  assert starting_ability.describe_left_out(
+      left_out: starting_ability.ProcLeftOut(
+        spell4_id: 38_784,
+        effect_id: 178_239,
+        why: spell_plan.ProcKindWaits(
+          kind: 57,
+          event: "the holder entering combat, or its health or shield crossing a value",
+        ),
+        casts: 72_838,
+      ),
+    )
+    == "Proc effect 178239 of Spell4 38784 is left out by the plan (its kind 57 is not raised: the holder entering combat, or its health or shield crossing a value), so the Spell4 72838 it casts is not counted"
+    as "the line names the kind and the event the server does not raise, and no issue"
 }

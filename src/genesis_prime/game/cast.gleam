@@ -857,8 +857,8 @@ fn shortcut_pressed(
 /// any cast's with the unit as the TargetCast's first unit. Then started on
 /// the unit. A player or the caster itself reaches the client's player faction test, which
 /// the server does not build, and another player's life and combat are not held: those
-/// are refused 285 as not built. The target states the server does not hold (96
-/// invulnerable, 140 zone, 98 vital, 92 immunity) are not checked.
+/// are refused 285 as not built. The target's zone (140) and vital (98) states are not
+/// checked.
 fn aimed_shortcut(
   cast cast: State,
   caster caster: Caster,

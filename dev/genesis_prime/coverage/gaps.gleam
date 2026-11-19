@@ -22,6 +22,7 @@ import genesis_prime/game/cast/heal as cast_heal
 import genesis_prime/game/cast/press as cast_press
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/communicator
+import genesis_prime/game/forced_move
 import genesis_prime/game/interaction
 import genesis_prime/game/item_price
 import genesis_prime/game/item_property
@@ -31,11 +32,16 @@ import genesis_prime/game/prerequisite
 import genesis_prime/game/quest
 import genesis_prime/game/quest_turn_in
 import genesis_prime/game/random_stat
+import genesis_prime/game/spell_plan
 import genesis_prime/game/target_group
+import genesis_prime/game/ticking
+import genesis_prime/game/unit_properties
 import genesis_prime/game/vendor_purchase
 import genesis_prime/game/vendor_sale
 import genesis_prime/game/world_entry
 import genesis_prime/gap.{type Entry}
+import genesis_prime/world_map/creature
+import genesis_prime/world_map/creature_control
 import gleam/int
 import gleam/list
 import gleam/string
@@ -57,6 +63,12 @@ pub fn registry() -> List(Entry) {
     vendor_purchase.gaps(),
     vendor_sale.gaps(),
     world_entry.gaps(),
+    spell_plan.gaps(),
+    ticking.gaps(),
+    forced_move.gaps(),
+    unit_properties.gaps(),
+    creature_control.gaps(),
+    creature.gaps(),
     cast_press.gaps(),
     activate.gaps(),
     ability_points.gaps(),

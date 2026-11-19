@@ -164,14 +164,16 @@ pub fn a_spell_with_another_effect_type_is_refused_naming_it_test() -> Nil {
     as "Spell4Effects 97539 is the first row of Spell4 42764 that is neither damage (8) nor NpcExecutionDelay (35): type 17"
 }
 
-pub fn a_spell_with_several_strike_phases_is_refused_naming_its_step_test() -> Nil {
+pub fn a_creature_fight_cast_with_several_hits_refuses_with_what_it_does_not_run_test() -> Nil {
   use <- owned_test.run(60_000)
   let rule = rule_of(row: special(spell4_id: 55_635))
   assert string.contains(rule, "55635")
     && string.contains(rule, "go 1 and go 2")
     as "Spell4Effects 132757 strikes at phaseFlags 6: go 1 and go 2"
-  assert string.contains(rule, "several hits")
-    as "the sentence names the step that closes the gap: a creature's cast with several hits"
+  assert string.ends_with(rule, "which a creature's fight does not run")
+    as "the sentence says what the creature's fight does not run, with no step title"
+  assert !string.contains(rule, "issue") && !string.contains(rule, "step")
+    as "the sentence names no issue and no step"
 }
 
 pub fn a_spell_that_strikes_before_its_last_go_is_refused_test() -> Nil {

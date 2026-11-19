@@ -121,7 +121,7 @@
 ////   worn is the maximum). Stat 21 follows the maximum up and down (`armor_followed`),
 ////   clamped by the client to 0 and the maximum when a 0x938 arrives
 ////   (`opcode.0x938.interrupt_armor`). Nothing wears a player's armor down: no strike
-////   carries a crowd-control state onto a player yet (`struck` answers `controls: []`),
+////   carries a crowd-control state onto a player (`struck` answers `controls: []`),
 ////   so the armor worn is none, and whether a type 52 row's end takes its points back
 ////   (dataBits01) or keeps them matters only once armor is worn. An infinite maximum (-1)
 ////   shows 0.
@@ -1306,7 +1306,7 @@ fn shield_gained(
 /// is the one function the cast rule's go also tells the client its amount and overheal
 /// by: the amount times HealingMultiplierOutgoing (162) and HealingMultiplierIncoming
 /// (163), both the player's own because it heals only itself (a heal of another unit
-/// takes the healer's outgoing value and the target's incoming one, which #570 builds),
+/// takes the healer's outgoing value and the target's incoming one, which no rule here works out),
 /// and for a health heal the share HealToShieldConversion (111) gives the shield
 /// (`0x1405d8350`). Each vital rises by its part, capped at its maximum
 /// (`Spell4Effects.effectType.10`, `.118`), and is written to the player's client and

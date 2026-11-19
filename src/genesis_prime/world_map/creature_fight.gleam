@@ -243,9 +243,8 @@
 ////   - A state the attack spell's caster conditions mask (Spell4CCConditions) starts no strike
 ////     of an instant attack, and a Stun, Knockdown or Knockback starts none whatever the mask
 ////     (`Fighter.attack_refused`).
-////   - A charge starts only while no state is held (`Fighter.holds_a_state`); that is a gap,
-////     since the client's conditions for the charge spells mask nothing (the issue "Creatures
-////     cast spells, and the effect types only creature spells use work" closes it).
+////   - A charge starts only while no state is held (`Fighter.holds_a_state`), although the
+////     client's conditions for the charge spells mask nothing.
 ////   - The attack tick goes on and does nothing else; threat, targets and the viewers' news are
 ////     kept as usual, and a creature that stands still (`Fighter.still`) does not leash from its
 ////     tick: out of reach at its leash circle it stays in the fight, with its threat and its health,
@@ -381,8 +380,7 @@ import gleam/set.{type Set}
 ///   takes hold stands it where it is.
 /// - `attack_refused`: it holds a state its attack spell's caster conditions mask, or a
 ///   Stun, Knockdown or Knockback, so `ticked` starts no strike of an instant attack.
-/// - `holds_a_state`: it holds any state, so `ticked` starts no charge (a gap that the issue
-///   "Creatures cast spells, and the effect types only creature spells use work" closes) and a state that takes hold during a charge breaks it.
+/// - `holds_a_state`: it holds any state, so `ticked` starts no charge (though the client's conditions for the charge spells mask nothing) and a state that takes hold during a charge breaks it.
 /// - `can_move`: the creature may move (`creature_unit_type.can_move`); one that may not never
 ///   chases or walks home.
 /// - `alternates`: the auto-attacks it strikes with after `attack` in turn, in the order its kind

@@ -127,7 +127,7 @@ pub fn gaps() -> List(gap.Entry) {
     "A spell whose cast condition, caster requirement's waiver or creature pick is of a prerequisite type the server does not read is refused.",
     "A spell the server cannot plan, whose cast method is not built, or whose innate cost is in a vital the server does not hold or is spent by an EMM id it does not read, is refused.",
     "A crowd-control state on another unit that lasts until removed is dropped from a cast, because no rule of the server ends it when its spell ends.",
-    "A press at a creature is not refused for an invulnerable, zone, vital or immunity state of its target that the server does not hold.",
+    "A press at a creature is not refused for a zone or vital state of its target that the server does not hold.",
     "An activate cast of a Channeled spell whose activate time is not the channel's maximum time is cast as a Normal spell, with one go after the cast time, because the times the client picks for the channel's gos are not settled.",
   ]
   |> list.map(fn(missing) { gap.Entry(area: "Casting", missing:) })

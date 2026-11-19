@@ -24,12 +24,11 @@
 ////   or the area (Defense Grid Aura 54475, rows 129039, 183223, 183224). An absorb, an
 ////   armor or a look row aimed at others names no creature to change and selects nobody
 ////   (`spell_plan.StruckChange`).
-////   Gap: a damage row aimed at its caster alone (targetFlags 1) loads and strikes
+////   A damage row aimed at its caster alone (targetFlags 1) loads and strikes
 ////   nobody, since the phase keeps only the rows aimed past the caster; the coverage
-////   measure does not count it as handled (`strikes_past_caster`, issue 831).
-////   Gap: no plan holds a spell with a type 11 row aimed at other units, since
-////   `spell_plan.build` plans each class's level-1 tier-1 trees only, which hold none
-////   (issue 336).
+////   measure does not count it as handled (`strikes_past_caster`).
+////   No plan holds a spell with a type 11 row aimed at other units, since
+////   `spell_plan.build` plans each class's level-1 tier-1 trees only, which hold none.
 //// - **Who is inside** is the telegraph's shape capped by the area row: the never-drawn
 ////   twin rows (flag 0x40) are the hit shapes, or the drawn rows where a spell has no
 ////   twin, less the drawn rows with bit 0x20 (the picture of a child spell's beam,
@@ -46,7 +45,7 @@
 ////   tick of its schedule (genesis_prime/game/ticking), each tick its own 0x7f8 from the
 ////   server: the go selects with it as with any row, and `PhaseStrike.ticking` holds it
 ////   apart from the rows that strike once. A row that lasts until removed (flags bit 2)
-////   is left out and the load goes on (`TickingUntilRemoved`, issue 803).
+////   is left out and the load goes on (`TickingUntilRemoved`).
 //// - **Closest first.** Every area row of the level-1 abilities has `targetSelection`
 ////   1, and none strikes a dead unit (`Spell4AoeTargetConstraints.targetSelection`,
 ////   `Spell4ValidTargets.targetBitmask`).
@@ -64,8 +63,7 @@
 ////   and 9, the passed-in value 18, and any kind above 26; the vital kinds are read,
 ////   the target's finished when the blow lands); and a phase that
 ////   selects units from a spell with no area row. A hit row's phases are not read, so
-////   a spell's shapes hold for each of its gos. Each gap is stated where it is
-////   enforced.
+////   a spell's shapes hold for each of its gos.
 
 import genesis_prime/game/area.{
   type Inside, type Placement, type Row, Box, Circle, Cone, InsideRow,
@@ -201,8 +199,7 @@ pub type AreaError {
   /// A damage effect's formula reads a parameter a player's value does not.
   FormulaNotRead(spell4_id: Int, effect_id: Int, parameter_kind: Int)
   /// A periodic damage effect lasts until removed (flags bit 2), which no schedule
-  /// ends: the load leaves the row out and the coverage measure counts it as not read
-  /// (issue 803).
+  /// ends: the load leaves the row out and the coverage measure counts it as not read.
   TickingUntilRemoved(spell4_id: Int, effect_id: Int)
   /// A periodic damage effect lives shorter than one tick (genesis_prime/game/ticking
   /// `NoTick`).

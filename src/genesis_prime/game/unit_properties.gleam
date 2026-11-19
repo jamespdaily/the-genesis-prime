@@ -38,7 +38,7 @@
 //// - **A conversion adds a share of one property to another.** A UnitPropertyConversion
 ////   row makes property `to` gain `share` times the value of property `from`
 ////   (`Spell4Effects.effectType.145`). The client works out no property, so the server
-////   works out the amount. This is the server's choice, with its gap: values are worked out
+////   works out the amount. This is the server's choice: values are worked out
 ////   from the bases in two passes after any start or end, first each change in the order
 ////   it started, then each conversion in the order it started, each adding its share of the
 ////   source's value as the values stand at that point, so a conversion sees a change that
@@ -61,7 +61,7 @@
 ////   no rule reads it (for example FallingDamageMultiplier, 134: falling damage is not
 ////   handled). A creature's chase speed reads MoveSpeedMultiplier, 100, and a player's
 ////   movement does not: the client moves the player at it and the server checks no speed.
-//// - **Stacking across casters is a gap, #569.** `Spell4StackGroup.server_rule` has more
+//// - **Stacking is the per-source rule only.** `Spell4StackGroup.server_rule` has more
 ////   rules than one slot for each source: type 0 is one slot for each unit shared by
 ////   casters, type 1 one for each caster, and a stronger one keeps the slot by priority.
 ////   Only the per-source rule is built, so two casters' modifiers both count. Properties
@@ -73,7 +73,7 @@
 ////   (`Spell4Effects.effectType.52`, `opcode.0x938.interrupt_armor`). A modifier applied
 ////   to a maximum of -1 (infinite) gives a finite number: a player's base is the default
 ////   0.0, and a row that sets -1 (Unstoppable Force) is not kept infinite under a later
-////   change; that is a gap.
+////   change.
 ////
 //// What happens at each failure point:
 ////
@@ -84,6 +84,7 @@
 //// | The caster dies | each modifier of its casts is removed by the cast rule's `CasterChangeEnds`, each reported | | |
 //// | The caster leaves | the connection's `Entered` goes with its properties; the next entry starts from the bases | | |
 
+import genesis_prime/gap
 import genesis_prime/message/float32
 import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
 import genesis_prime/table/id.{
@@ -592,4 +593,26 @@ pub fn overlay(
   |> list.sort(fn(first, second) {
     int.compare(first.property_id, second.property_id)
   })
+}
+
+/// What a property modifier or conversion does not do that the client's rows ask for.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Property modifiers",
+      missing: "the stacking of modifiers across casters: Spell4StackGroup has a slot for each unit shared by casters and one for each caster, and the server builds only the rule of one slot for each source, so two casters' modifiers on one property both count",
+    ),
+    gap.Entry(
+      area: "Property modifiers",
+      missing: "a conversion into the source of a conversion that started earlier: the earlier one does not see the change, so a chain of conversions does not settle",
+    ),
+    gap.Entry(
+      area: "Property modifiers",
+      missing: "whether a conversion's source is the property's base or its value, when its share is worked out again and how the rows' orderIndex orders conversions, none of which the client's code shows",
+    ),
+    gap.Entry(
+      area: "Property modifiers",
+      missing: "a maximum of -1 (infinite) that a row sets and a later modifier changes: the result is a finite number, so the maximum does not stay infinite",
+    ),
+  ]
 }

@@ -12,7 +12,7 @@
 ////   4000, phaseFlags 1) and 70045 (Spell4 35046, targetFlags 2, dataBits01 5).
 //// - `Spell4Effects.targetFlags`: bit 1 is the caster, 2 the primary target, 4 the area.
 //// - `Prerequisite` condition types 38 and 12: the server decodes the first and not the
-////   second (`prerequisite.is_read`, #818); a type 38 condition reads a creature's own
+////   second (`prerequisite.is_read`); a type 38 condition reads a creature's own
 ////   state, which each struck creature checks.
 
 import fixture_tables
@@ -277,7 +277,7 @@ pub fn a_gated_despawn_row_yields_a_struck_gate_test() -> Nil {
   assert prerequisite.id(prerequisite: gate) == PrerequisiteId(99_907)
 }
 
-pub fn a_despawn_behind_an_unread_prerequisite_refuses_its_spell_naming_the_issue_test() -> Nil {
+pub fn a_despawn_behind_an_unread_prerequisite_refuses_its_spell_naming_what_it_does_not_read_test() -> Nil {
   use <- owned_test.run(60_000)
   // Prerequisite 681 is of type 12 (`Prerequisite.prerequisiteTypeId.12`), which the server
   // has not decoded; planted here as a one-condition prerequisite.
@@ -295,8 +295,9 @@ pub fn a_despawn_behind_an_unread_prerequisite_refuses_its_spell_naming_the_issu
       prerequisite_type: 12,
     )
   let text = spell_plan.describe(error:)
-  assert string.contains(text, "12") && string.contains(text, "#818")
-    as "the refusal names the type and the issue that will read it"
+  assert string.contains(text, "12")
+    && string.ends_with(text, "which is not decoded")
+    as "the refusal names the type and says it is not decoded, with no issue"
 }
 
 pub fn a_despawn_with_no_phase_is_held_not_applied_test() -> Nil {

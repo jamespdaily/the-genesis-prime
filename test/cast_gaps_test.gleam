@@ -53,8 +53,8 @@ fn limits() -> List(Limit) {
     Limit(
       cast_press.gaps(),
       "Casting",
-      ["invulnerable", "zone", "vital", "immunity"],
-      "a press at a creature does not test its invulnerable, zone, vital or immunity state",
+      ["zone", "vital"],
+      "a press at a creature does not test its zone or vital state",
     ),
     Limit(
       cast_press.gaps(),
@@ -176,4 +176,19 @@ pub fn each_limit_the_cast_modules_state_is_one_entry_of_its_module_test() -> Ni
     assert list.contains(gaps.registry(), entry)
       as { limit.limit <> ": the registry prints it" }
   })
+}
+
+/// A press at a creature is refused for a held invulnerable or immune-to-beneficial state
+/// (`cast.aimed_at_a_creature` runs `press.unit_state_refusal` first), so the entry names
+/// only the states the press does not test.
+pub fn the_press_entry_names_only_the_creature_states_a_press_does_not_test_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tags(["dev_tool", "coverage"])
+  assert list.contains(
+    cast_press.gaps(),
+    gap.Entry(
+      area: "Casting",
+      missing: "A press at a creature is not refused for a zone or vital state of its target that the server does not hold.",
+    ),
+  )
 }
