@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Starts the WildStar client on the PC in the person's session, types into it and closes it, without
-# moving focus: Jim may be using the PC. Only click and key <scan>, in takeover mode, take the focus and the mouse or keyboard.
+# moving focus: Jim may be using the PC. Only click, rclick and key <scan>, in takeover mode, take the focus and the mouse or keyboard.
 #
 #   client.sh start [--type-login]   starts the client hidden and logged in from its command line;
 #                                    with --type-login, without an account or password
@@ -22,6 +22,9 @@
 #                                    create-none and create-one (the create row with no or one
 #                                    character), next, novice, veteran, human, warrior, soldier,
 #                                    randomize, first-name, last-name
+#   client.sh rclick <x> <y> --pc-free  and
+#   client.sh rclick <target> --pc-free  the same as click, with the right button: a creature's
+#                                    interact, a bag item's use
 #   client.sh stop                   closes the client this script started
 #
 # Needs GENESIS_PLAY_PC (user@host), GENESIS_PLAY_ADDRESS (the server host the client is pointed
@@ -38,9 +41,10 @@
 # Outside one, the lock is the start's own and stays until client.sh stop releases it, since the
 # client it started runs on; a start that fails without recording a client gives it back.
 # session.sh --recover stops such a client and releases the lock.
-# type, key, click and stop act only on the process with that pid, that name and that start time, so
-# a reused pid never reaches another client; with no client recorded, type, key and click refuse.
-# click runs genesis-click.ps1 (task GenesisClick) and key with a scan code runs genesis-key.ps1 (task
+# type, key, click, rclick and stop act only on the process with that pid, that name and that start time, so
+# a reused pid never reaches another client; with no client recorded, type, key, click and rclick refuse.
+# click and rclick run genesis-click.ps1 (task GenesisClick; rclick sends right as the fifth input
+# line where click sends left) and key with a scan code runs genesis-key.ps1 (task
 # GenesisKey); they are the commands that move focus: the client reads the real cursor for its
 # pointer (fact 0x1403f3790), so a posted click never reaches it, and reads in-world keys by scan
 # code only while it is in front (genesis-key.ps1's header), so a posted key never reaches them. Both
@@ -49,9 +53,16 @@
 # up whenever the task ends, short of a kill, which the limit keeps from falling in the hold.
 set -euo pipefail
 
-usage() { sed -n '5,25p' "$0" >&2; exit 2; }
+usage() { sed -n '5,28p' "$0" >&2; exit 2; }
 
 command=${1:-}
+# rclick is click with the right button: the arity, numeric and --pc-free checks below are click's.
+button=left
+if [ "$command" = rclick ]; then
+  button=right
+  command=click
+  set -- click "${@:2}"
+fi
 case "$command" in
   start) [ $# -eq 1 ] || { [ $# -eq 2 ] && [ "$2" = --type-login ]; } || usage ;;
   type) [ $# -eq 2 ] || usage ;;
@@ -109,7 +120,7 @@ case "$command" in
     [ $# -eq 3 ] || { [ $# -eq 4 ] && [ "$4" = --pc-free ]; } || usage
     [[ $2 =~ ^[0-9]+$ && $3 =~ ^[0-9]+$ ]] || usage
     if [ $# -eq 3 ] && [ "${GENESIS_PC_FREE:-}" != 1 ]; then
-      echo "client: click takes the PC's focus and mouse; it runs only with --pc-free or GENESIS_PC_FREE=1, when the PC is free" >&2
+      echo "client: click and rclick take the PC's focus and mouse; it runs only with --pc-free or GENESIS_PC_FREE=1, when the PC is free" >&2
       exit 1
     fi ;;
   stop) [ $# -eq 1 ] || usage ;;
@@ -163,10 +174,10 @@ send_input() {
   esac
 }
 
-# Clicks the client point $1, $2 with the real mouse (takeover mode, checked above).
+# Clicks the client point $1, $2 with the real mouse and the button $3, left or right (takeover mode, checked above).
 send_click() {
   read_state
-  printf '%s\n%s\n%s\n%s' "$pid" "$started" "$1" "$2" > "$pc_tmp/click"
+  printf '%s\n%s\n%s\n%s\n%s' "$pid" "$started" "$1" "$2" "$3" > "$pc_tmp/click"
   run_task GenesisClick genesis-click.ps1 genesis-click-result.txt 30 "$pc_tmp/click"
   case "$result" in
     clicked=*) echo "$result" ;;
@@ -207,7 +218,7 @@ case "$command" in
   type) send_input "$2" ;;
   key) send_input "$text" ;;
   press) send_key "$scan_code" "$hold" ;;
-  click) send_click "$2" "$3" ;;
+  click) send_click "$2" "$3" "$button" ;;
   stop)
     read_state
     # On the PC in one call: the process must be WildStar64 with the recorded start time, or it is
