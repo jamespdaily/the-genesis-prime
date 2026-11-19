@@ -2828,3 +2828,25 @@ pub fn the_fixtures_type_35_rows_are_counted_by_the_plans_reading_test() -> Nil 
     == dict.from_list([#(35, 6)])
     as "the same rows aimed at the target are left out by name, so not read"
 }
+
+pub fn the_planted_tables_hold_every_table_the_plan_and_the_activate_cast_read_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use <- unitest.tags(["dev_tool", "coverage"])
+  // One plain type 8 row aimed at the area is read by the plan, so the measure counts it
+  // handled. The measure reads the plan's sources and the activate cast's spells over the
+  // planted tables first, and a table of theirs that `planted_files` leaves out ends the
+  // read with "no table X in the tables".
+  let assert Measured(types:, ..) =
+    measure_planted(rows: [
+      planted_table.row(spell4_effects.schema, [
+        #("ID", planted_table.Integer(1)),
+        #("effectType", planted_table.Integer(8)),
+        #("targetFlags", planted_table.Integer(4)),
+      ]),
+    ])
+    as "the planted tables load and the measure reads them"
+  let assert Ok(line) = list.find(types, fn(line) { line.type_number == 8 })
+  assert line.rows == 1 as "the one planted row of type 8"
+  assert measurement.is_handled(line.status)
+    as "a type 8 row aimed at the area is read by the plan"
+}
