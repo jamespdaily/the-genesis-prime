@@ -243,6 +243,38 @@ pub fn a_held_press_during_another_cast_waits_for_its_end_and_is_never_refused_1
     as "the held ability starts at the finish of the current cast, 1000 ms of its global cooldown having ended at 2000"
 }
 
+pub fn a_placement_drops_the_press_waiting_behind_the_current_cast_so_no_cast_starts_after_it_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, pressed) =
+    support.pressed_raw(
+      state: cast_state.new(),
+      caster: support.caster(),
+      bag_index: telekinetic_strike,
+      target: 0,
+      at: 1000,
+    )
+  let assert [#(go, 1250)] = support.started_timers(effects: pressed)
+  let #(state, waiting) =
+    key_raw(state:, bag_index: mind_burst, held: 1, at: 1100)
+  assert waiting == []
+    as "cast.hold_answer: the press waits for the cast bar to end"
+  let #(state, placed) =
+    cast.stopped_by_placement(
+      cast: state,
+      caster: support.caster(),
+      now: support.at(ms: 2100),
+    )
+  assert started_ids(placed) == []
+    as "opcode.0x83c stops the cast the client is making, so a press released by the stop would start a cast the client never sees"
+  assert state.current == None
+    as "the placement leaves the server no current cast"
+  assert state.held == None
+    as "the placement leaves the server no waiting press"
+  let #(_, fired) = support.fired(state:, timer: go, at: 2250)
+  assert started_ids(fired) == []
+    as "the cancelled go starts no cast, so nothing runs after the placement"
+}
+
 pub fn a_second_abilitys_held_press_replaces_the_held_one_and_the_firsts_release_changes_nothing_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, first) =

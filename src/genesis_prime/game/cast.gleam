@@ -3383,8 +3383,10 @@ pub fn activation_stopped(
 
 /// The caster's current cast stops because the server placed the caster: the client's 0x83c
 /// stops the cast it is making (`opcode.0x83c`), so the cast ends as one the client cancels
-/// does (`cancelling`), with its 0x7fe written before the placement. A caster with no
-/// current cast changes nothing.
+/// does (`cancelling`), with its 0x7fe written before the placement. A press that waited
+/// for the cast to clear is dropped, since a cast it started would run on the server and
+/// be stopped on the client by the 0x83c; so is the hold of a key, which would start the
+/// ability again. A caster with no current cast changes nothing.
 pub fn stopped_by_placement(
   cast cast: State,
   caster caster: Caster,
@@ -3393,15 +3395,28 @@ pub fn stopped_by_placement(
   case cast.current {
     None -> #(cast, [])
     Some(cast_id) -> {
-      let now_ms = now.monotonic_ms
       let cancel =
         CancelCast(cast_id:, reason: cast_result.from_value(6), field_3: 1)
       use <- settled(cast:, own: [])
-      let #(held, stopped) = cast_press.stop_holding_cast(cast:, cast_id:)
-      let #(cast, ended) = cancelling(cast: held, cancel:, caster:, now_ms:)
-      released(taken: #(cast, list.append(stopped, ended)), caster:, now_ms:)
-      |> continued(caster:, now_ms:)
+      let #(unheld, stopped) = cast_press.stop_holding(cast:)
+      let #(cast, ended) =
+        cancelling(
+          cast: dropped_while_waiting(cast: unheld),
+          cancel:,
+          caster:,
+          now_ms: now.monotonic_ms,
+        )
+      #(cast, list.append(stopped, ended))
     }
+  }
+}
+
+/// The state without a press that waits for the current cast to clear; a press that
+/// waits for a cooldown stays.
+fn dropped_while_waiting(cast cast: State) -> State {
+  case cast.held {
+    Some(Held(until: CastClears, ..)) -> State(..cast, held: None)
+    Some(Held(until: CooldownEnds, ..)) | None -> cast
   }
 }
 
