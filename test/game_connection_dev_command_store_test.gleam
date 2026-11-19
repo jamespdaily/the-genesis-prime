@@ -5,6 +5,8 @@
 //// - `save_place.sql` writes the experience and the level the save carries, and
 ////   `load_character.sql` gives them back (`store.CharacterLoaded`).
 //// - The character is `account_store_support.a_new_character`: level 3, experience 1710.
+//// - `save_place.sql` writes the quest log the save carries, a Completed row with its
+////   completion time, and `load_character.sql` gives it back (`store.CharacterLoaded.quests`).
 
 import account_store_support
 import game_connection_dev_command_store_support as store_support
@@ -179,5 +181,47 @@ pub fn an_item_that_committed_and_was_not_acknowledged_is_loaded_by_the_next_log
   let assert [loaded] = items
     as "the next login holds the stack the store committed"
   assert loaded.item2_id == Item2Id(90_021)
+  account_store_support.stop(stored.store)
+}
+
+pub fn the_quest_commanded_is_loaded_by_the_next_login_test() -> Nil {
+  use <- owned_test.run(120_000)
+  let stored = account_store_support.stored_holding(worn: [], items: [])
+  let assert ForWorld(CharacterLoaded(
+    character:,
+    saved_experience:,
+    quests:,
+    ..,
+  )) =
+    account_store_support.ask(
+      store: stored.store,
+      request: World(LoadCharacter(stored.account, stored.character_id, 0)),
+    )
+    as "the account's character loads"
+  assert quests == [] as "the stored character holds no quest"
+  let state = dev_support.in_world_as(character:, experience: saved_experience)
+  let #(state, _) = dev_support.said(state:, text: "!quest 5972 done")
+  let #(state, save) =
+    support.feed(
+      state:,
+      event: step.OwnEvent(step.TimerFired(connection_state.save_timer)),
+    )
+  let assert AskStore(Move(SavePlace(..)) as asked) = support.ask_request(save)
+    as "the save timer asks the store to save the place and the quests"
+  let answer = store_support.through_the_store(stored:, request: asked)
+  assert answer == ForMove(PlaceSaved) as "the store saved the place"
+  let #(_, _) =
+    support.answer(state:, taken: save, outcome: step.Answer(FromStore(answer)))
+  let assert ForWorld(CharacterLoaded(quests: reloaded, ..)) =
+    account_store_support.ask(
+      store: stored.store,
+      request: World(LoadCharacter(stored.account, stored.character_id, 0)),
+    )
+    as "the next login loads the character"
+  let assert [row] = reloaded as "the next login holds the one quest"
+  assert row.quest_id == 5972 && row.state == 3 && row.active == None
+    as "quest 5972 is Completed, in no active entry"
+  assert option.is_some(row.completed_at)
+    as "save_place.sql: a Completed row keeps its completion time"
   account_store_support.stop(stored.store)
 }

@@ -45,7 +45,9 @@ import genesis_prime/message/experience_gained.{
 }
 import genesis_prime/message/item_place
 import genesis_prime/message/player_health.{PlayerHealth}
+import genesis_prime/message/quest_accept.{QuestAccept}
 import genesis_prime/message/quest_periodic_reset.{QuestPeriodicReset}
+import genesis_prime/message/quest_state.{QuestState}
 import genesis_prime/message/send_chat_line.{SendChatLine}
 import genesis_prime/step.{
   type ConnectionEvent, type Event, OwnEffect, OwnEvent, StartTimer, TimerFired,
@@ -58,6 +60,7 @@ import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/string
 import owned_test
 import planted_table.{Integer}
 import quest_support
@@ -1158,4 +1161,44 @@ pub fn an_xp_command_in_two_steps_reaches_the_level_at_its_minimum_test() -> Nil
     client_connection.Level(level: 4),
   )
     as "a watcher is told the level"
+}
+
+/// 0x035B of the dialog's place (location 300, bag index 0xFFFFFFFF) for this quest.
+fn accept_message(quest_id quest_id: Int) -> BitArray {
+  let assert Ok(body) =
+    quest_accept.encode(QuestAccept(
+      item: item_place.ItemPlace(location: 300, bag_index: 0xFFFFFFFF),
+      quest_id:,
+    ))
+    as "the request fits its fields"
+  connection_support.world_message(message_id: quest_accept.message_id, body:)
+}
+
+pub fn quest_done_lets_the_player_accept_the_quest_that_needs_it_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Quest2 5918 (preq_level 10, questPlayerFactionEnum 1 for the Dominion player, preq_quest0
+  // 5972) is given by Creature2 26200 (`questIdGiven00`), shown to the level 10 player in reach.
+  let state =
+    connection_support.feed(
+      state: dev_support.in_world_holding_quests(level: 10, quests: []),
+      event: quest_walker_support.creature_appears(creature_id: 26_200),
+    ).0
+  let #(state, refused) =
+    connection_support.read(state, accept_message(quest_id: 5918))
+  assert connection_support.quest_states(taken: refused) == []
+    as "opcode.0x35c: the accept of 5918 is refused, and nothing is told"
+  assert list.any(support.logs(refused), fn(line) {
+    string.contains(line.text, "refuses with code 8")
+  })
+    as "0x140552550 check 6: the refusal is the prerequisite quests, code 8"
+  let #(state, _) = dev_support.said(state:, text: "!quest 5972 done")
+  let #(_, accepted) =
+    connection_support.read(state, accept_message(quest_id: 5918))
+  assert connection_support.decoded(
+      connection_support.written(taken: accepted),
+      quest_state.message_id,
+      quest_state.decode,
+    )
+    == [QuestState(quest_id: 5918, state: 1, objective_id: 0)]
+    as "opcode.0x35c: with 5972 done the accept is answered in state 1"
 }

@@ -19,10 +19,13 @@
 ////   experience; a number has any length, so the tables refuse one too large.
 ////   `item` takes one whole decimal number, an Item2 id, and then optionally a
 ////   second, the count, which is 1 when there is none.
+////   `quest` takes one whole decimal number, a Quest2 id, and the word `done`.
 //// - **The tables' refusals** are `checked`'s: a level outside 1 to the highest
 ////   level (GameFormula 145 dataint0), an experience above the highest
 ////   level's minXpForLevel (its XpPerLevel row), an item with no Item2 row, a
-////   proxy item and a count of 0, compared as whole numbers.
+////   proxy item and a count of 0, compared as whole numbers, and a
+////   quest with no Quest2 row (the client refuses a quest it has no row for,
+////   FindQuestById 0xa00b0001).
 //// - **A proxy item is refused**: the client reads its stack limit and its
 ////   deletable flag from another item, and the server reads the item's own row
 ////   (`item_property.is_proxy`, Item2 flags 0x4000), so a given one could be
@@ -35,10 +38,12 @@ import genesis_prime/game/item_property
 import genesis_prime/game/level
 import genesis_prime/gap
 import genesis_prime/table/id.{
-  type Creature2Id, type Item2Id, Creature2Id, Item2Id, XpPerLevelId,
+  type Creature2Id, type Item2Id, type Quest2Id, Creature2Id, Item2Id, Quest2Id,
+  XpPerLevelId,
 }
 import genesis_prime/table/item2
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/table/quest2
 import genesis_prime/table/xp_per_level
 import gleam/int
 import gleam/list
@@ -62,6 +67,9 @@ pub type Command {
   /// in the player's bag, saved as a purchase of no cost, with the client's
   /// own loot notice.
   GiveItem(item2_id: Item2Id, count: Int)
+  /// `!quest <Quest2 id> done`: complete that quest in the player's log, with the
+  /// follow-ups a turn-in's completion has and none of the quest's own rewards.
+  CompleteQuest(quest2_id: Quest2Id)
 }
 
 /// Why a `!` line is no command.
@@ -91,6 +99,11 @@ pub type Refusal {
   ItemIsAProxy(item2_id: Item2Id)
   /// The count is 0.
   ItemCountIsZero
+  /// The word is `quest`, but what follows is not one whole number and the word
+  /// `done`, and nothing more.
+  QuestTakesAQuest2IdAndDone
+  /// The quest has no Quest2 row.
+  NoQuest2Row(quest2_id: Quest2Id)
 }
 
 /// Whether the text is a command line: its first UTF-16 unit is `!`.
@@ -138,6 +151,16 @@ pub fn parse(text text: List(Int)) -> Result(Command, Refusal) {
         [item, count] -> item_of(item:, count: decimal(units: count))
         [] | [_, _, _, ..] -> Error(ItemTakesAnItem2IdAndACount)
       }
+    [command, ..arguments] if command == quest_word ->
+      case arguments {
+        [quest, done] if done == done_word ->
+          decimal(units: quest)
+          |> result.map(fn(number) {
+            CompleteQuest(quest2_id: Quest2Id(number))
+          })
+          |> result.replace_error(QuestTakesAQuest2IdAndDone)
+        [] | [_] | [_, _] | [_, _, _, ..] -> Error(QuestTakesAQuest2IdAndDone)
+      }
     [_, ..] | [] -> Error(UnknownCommand)
   }
 }
@@ -146,7 +169,7 @@ pub fn parse(text text: List(Int)) -> Result(Command, Refusal) {
 /// hold: a level outside 1 to the highest level, an experience above the
 /// highest level's minXpForLevel, an item with no Item2 row, a proxy item and a
 /// count of 0, compared as whole numbers so a number of any length is a
-/// refusal.
+/// refusal, and a quest with no Quest2 row.
 pub fn checked(
   command command: Command,
   tables tables: table_store.Tables,
@@ -183,6 +206,11 @@ pub fn checked(
           Error(ExperienceOutOfRange(experience:, highest: top.min_xp_for_level))
       }
     }
+    CompleteQuest(quest2_id:) ->
+      case quest2.get(tables:, id: quest2_id) {
+        Ok(_) -> Ok(command)
+        Error(Nil) -> Error(NoQuest2Row(quest2_id:))
+      }
   }
 }
 
@@ -218,6 +246,12 @@ const experience_word = [0x21, 0x78, 0x70]
 
 /// `!item` as the UTF-16 units the client sends.
 const item_word = [0x21, 0x69, 0x74, 0x65, 0x6D]
+
+/// `!quest` as the UTF-16 units the client sends.
+const quest_word = [0x21, 0x71, 0x75, 0x65, 0x73, 0x74]
+
+/// `done` as the UTF-16 units the client sends.
+const done_word = [0x64, 0x6F, 0x6E, 0x65]
 
 /// The words of the units, split at spaces (0x20), in order: a run of spaces is
 /// one split, and spaces at either end hold no word.
@@ -284,6 +318,10 @@ pub fn describe(refusal refusal: Refusal) -> String {
       <> int.to_string(item2_id.value)
       <> "): the client reads its stack limit and its deletable flag from another item, and the server reads the item's own row"
     ItemCountIsZero -> "!item's count is at least 1"
+    QuestTakesAQuest2IdAndDone ->
+      "!quest takes a Quest2 id and the word done, as !quest 5972 done"
+    NoQuest2Row(quest2_id: Quest2Id(value:)) ->
+      "!quest " <> int.to_string(value) <> " names no Quest2 row"
   }
 }
 

@@ -7,21 +7,25 @@
 //// refuses is answered, never said. The one Creature2 id, 75048, is Commander
 //// Durek's, the live check's creature. `level` and `xp` each take one whole
 //// decimal number. The highest level is 50 (GameFormula 145 dataint0) and the
-//// experience of level 50 is 26,360,090 (XpPerLevel row 50, minXpForLevel).
+//// experience of level 50 is 26,360,090 (XpPerLevel row 50, minXpForLevel). `quest` takes one
+//// whole decimal number, a Quest2 id, and the word `done`; Quest2 5972 is a row of the
+//// fixture and 999999 is none (the client refuses an unknown quest: `opcode.0x35c`,
+//// FindQuestById fails 0xa00b0001).
 
 import fixture_tables
 import genesis_prime/game/currency
 import genesis_prime/game/dev_command.{
-  ExperienceOutOfRange, ExperienceTakesAWholeNumber, GiveItem, ItemCountIsZero,
-  ItemHasNoRow, ItemIsAProxy, ItemTakesAnItem2IdAndACount, LevelOutOfRange,
-  LevelTakesAWholeNumber, RaiseToExperience, RaiseToLevel,
+  CompleteQuest, ExperienceOutOfRange, ExperienceTakesAWholeNumber, GiveItem,
+  ItemCountIsZero, ItemHasNoRow, ItemIsAProxy, ItemTakesAnItem2IdAndACount,
+  LevelOutOfRange, LevelTakesAWholeNumber, NoQuest2Row,
+  QuestTakesAQuest2IdAndDone, RaiseToExperience, RaiseToLevel,
   SummonLevelIsNotAWholeNumber, SummonTakesACreature2Id, UnknownCommand,
 }
 import genesis_prime/game/vendor_purchase
 import genesis_prime/game/vendor_trade
 import genesis_prime/message/bit_stream
 import genesis_prime/message/chat_line
-import genesis_prime/table/id.{Creature2Id, Item2Id}
+import genesis_prime/table/id.{Creature2Id, Item2Id, Quest2Id}
 import gleam/bool
 import gleam/list
 import gleam/option.{None, Some}
@@ -177,6 +181,14 @@ pub fn the_answers_to_a_refused_line_say_what_was_wrong_test() -> Nil {
   assert dev_command.describe(refusal: ExperienceTakesAWholeNumber)
     == "!xp takes one whole number, a total experience, as !xp 2860"
     as "the design: a malformed !xp answers its usage"
+  assert dev_command.describe(refusal: QuestTakesAQuest2IdAndDone)
+    == "!quest takes a Quest2 id and the word done, as !quest 5972 done"
+    as "the design: a malformed !quest answers its usage, which names the word done"
+  assert dev_command.describe(
+      refusal: NoQuest2Row(quest2_id: Quest2Id(999_999)),
+    )
+    == "!quest 999999 names no Quest2 row"
+    as "the design: a quest the tables do not hold names the command and the quest id"
 }
 
 pub fn level_and_experience_take_whole_decimal_numbers_test() -> Nil {
@@ -406,4 +418,77 @@ pub fn an_item_count_of_any_length_parses_and_is_answered_bag_full_not_by_a_cras
     == bit_stream.utf16_units(
       "bag full: no room for 99999999999999999999999999 x Item2 90021",
     )
+}
+
+pub fn quest_takes_a_quest2_id_and_the_word_done_test() -> Nil {
+  use <- owned_test.run(5000)
+  list.each(
+    [
+      #(
+        "!quest 5972 done",
+        Ok(CompleteQuest(quest2_id: Quest2Id(5972))),
+        "a Quest2 id and the word done",
+      ),
+      #(
+        "!quest 5972",
+        Error(QuestTakesAQuest2IdAndDone),
+        "no word after the id",
+      ),
+      #("!quest", Error(QuestTakesAQuest2IdAndDone), "no argument"),
+      #(
+        "!quest 5972 finish",
+        Error(QuestTakesAQuest2IdAndDone),
+        "a word other than done",
+      ),
+      #("!quest 5972 Done", Error(QuestTakesAQuest2IdAndDone), "read as typed"),
+      #(
+        "!quest x done",
+        Error(QuestTakesAQuest2IdAndDone),
+        "an id that is no number",
+      ),
+      #(
+        "!quest 5972 done now",
+        Error(QuestTakesAQuest2IdAndDone),
+        "a third word",
+      ),
+    ],
+    fn(row) {
+      assert parsed(row.0) == row.1 as row.2
+    },
+  )
+}
+
+pub fn a_quest_number_of_any_length_is_refused_by_its_row_lookup_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert parsed("!quest 99999999999999999999 done")
+    == Ok(CompleteQuest(quest2_id: Quest2Id(99_999_999_999_999_999_999)))
+    as "a number of any length parses"
+  assert dev_command.checked(
+      command: CompleteQuest(quest2_id: Quest2Id(99_999_999_999_999_999_999)),
+      tables: fixture_tables.shared(),
+    )
+    == Error(NoQuest2Row(quest2_id: Quest2Id(99_999_999_999_999_999_999)))
+    as "no Quest2 row has an id of that length, and the refusal is not a crash"
+}
+
+pub fn a_quest_the_tables_do_not_hold_is_refused_by_checked_before_anything_is_asked_test() -> Nil {
+  use <- owned_test.run(5000)
+  let tables = fixture_tables.shared()
+  list.each(
+    [
+      #(
+        CompleteQuest(quest2_id: Quest2Id(5972)),
+        Ok(CompleteQuest(quest2_id: Quest2Id(5972))),
+        "Quest2 5972 is a row of the client's table",
+      ),
+      #(
+        CompleteQuest(quest2_id: Quest2Id(999_999)),
+        Error(NoQuest2Row(quest2_id: Quest2Id(999_999))),
+        "the client refuses a quest it has no row for",
+      ),
+    ],
+    fn(row) {
+      assert dev_command.checked(command: row.0, tables:) == row.1 as row.2
+    },
+  )
 }
