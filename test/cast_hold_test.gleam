@@ -264,14 +264,14 @@ pub fn a_placement_drops_the_press_waiting_behind_the_current_cast_so_no_cast_st
       caster: support.caster(),
       now: support.at(ms: 2100),
     )
-  assert started_ids(placed) == []
+  assert started_ids(effects: placed) == []
     as "opcode.0x83c stops the cast the client is making, so a press released by the stop would start a cast the client never sees"
   assert state.current == None
     as "the placement leaves the server no current cast"
   assert state.held == None
     as "the placement leaves the server no waiting press"
   let #(_, fired) = support.fired(state:, timer: go, at: 2250)
-  assert started_ids(fired) == []
+  assert started_ids(effects: fired) == []
     as "the cancelled go starts no cast, so nothing runs after the placement"
 }
 

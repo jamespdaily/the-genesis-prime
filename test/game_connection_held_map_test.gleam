@@ -50,8 +50,8 @@ import genesis_prime/message/movement_rotation.{MovementRotation}
 import genesis_prime/message/player_health.{PlayerHealth}
 import genesis_prime/message/quest_accept.{QuestAccept}
 import genesis_prime/message/quest_periodic_reset.{QuestPeriodicReset}
-import genesis_prime/message/relayed_movement
 import genesis_prime/message/quest_state.{QuestState}
+import genesis_prime/message/relayed_movement
 import genesis_prime/message/send_chat_line.{SendChatLine}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/step.{
