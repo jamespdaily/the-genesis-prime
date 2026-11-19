@@ -12,8 +12,8 @@
 ////   is 0 or passes for the player with the creature as the second unit, even when that
 ////   column's spell is 0; when none passes it is GameFormula 414's dataint0 (8)
 ////   (`0x14046c580`). Spell 0 is refused with result 100.
-//// - **The range** is edge to edge, in three dimensions, with no margin: the gap is the
-////   distance between the two units less both hit radii, never below 0
+//// - **The range** is edge to edge, in three dimensions, with no margin: the distance is
+////   that between the two units' places less both hit radii, never below 0
 ////   (`opcode.0x97.range`, `0x1403b2240`). A spell among the creature's columns is held to
 ////   the creature's own limits (a max of 0 falls back to the spell's), any other spell to
 ////   the Spell4 row's (`0x1403ad860`, `0x1403ad8f0`).
@@ -844,7 +844,7 @@ pub fn limits_for(
   )
 }
 
-/// The gap between two bodies: the distance between their places less both radii, never
+/// The distance between two bodies: that between their places less both radii, never
 /// below 0 (`0x1403b2240`).
 fn gap(from from: Body, to to: Body) -> Float {
   float.max(

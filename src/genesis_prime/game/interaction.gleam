@@ -28,9 +28,9 @@
 ////   The connection goes on, since the picture is one news message stale at worst
 ////   (genesis_prime/game/shown).
 //// - **The reach** is 6.0 for a quest kind, measured between the two bodies' edges
-////   (`0x1403ad690`), plus the 3.0 a request may add (`opcode.0x7ea`). The gap here
+////   (`0x1403ad690`), plus the 3.0 a request may add (`opcode.0x7ea`). The distance here
 ////   is on the ground, with the hit radii at scale 1.0, from the player's place at
-////   its last movement message; the 3.0 covers both for any gap the client opens at.
+////   its last movement message; the 3.0 covers both for any distance the client opens at.
 //// - **A quest to show** is what the client marks for the creature from the player's quest
 ////   log (`0x1405a8d40`), which `offers` says for the creature's row: a creature with
 ////   nothing to show gets no request, and one whose quest the server cannot decide for a
@@ -47,7 +47,7 @@
 ////   are the same.
 //// - **A vendor's request** (kind 0x31) is checked as the client's CheckInteractionTarget
 ////   checks it (`opcode.0x7ea`), in its order: a unit not in the picture is 59, a unit that is
-////   not a creature, a creature with no stock or a dead one is 16, a gap over the reach is
+////   not a creature, a creature with no stock or a dead one is 16, a distance over the reach is
 ////   17, and a creature Hostile to the player is 62. The client sends none of these, so each
 ////   is answered as the client would be: 0x106 with the code, then a 0x90b that opens and
 ////   refuses, which ends the interaction (`opcode.0x90b`), and the log line says why. The
@@ -194,7 +194,7 @@ pub type VendorReason {
 
 /// Whether the vendor's window is checked against the reach of a request.
 pub type ReachCheck {
-  /// The gap between the two edges is no more than the request's reach.
+  /// The distance between the two edges is no more than the request's reach.
   CheckReach
   /// The request has a range of its own, which the caller checks.
   SkipReach
@@ -234,7 +234,7 @@ const vendor_too_far = 17
 /// Vendor_Vendor_Disposition, the client's code for a vendor Hostile to the player.
 const vendor_disposition = 62
 
-/// The edge to edge gap a request is answered within: 6.0 for a quest kind
+/// The edge to edge distance a request is answered within: 6.0 for a quest kind
 /// (`0x1403ad690`) and for the vendor kind (`0x140c48160`, entry 0x31), and the 3.0 a
 /// request may add (`opcode.0x7ea`).
 const reach = 9.0
@@ -412,7 +412,7 @@ pub fn hostile_to_player(
   }
 }
 
-/// Whether the unit, standing at `place`, is within reach of the player: the gap
+/// Whether the unit, standing at `place`, is within reach of the player: the distance
 /// between the two bodies' edges is no more than the reach. The player's Race row is
 /// in the tables (the load fails otherwise), so a missing one crashes.
 pub fn within_reach(
@@ -424,7 +424,7 @@ pub fn within_reach(
   within(player:, tables:, place:, unit_radius:, range: reach)
 }
 
-/// Whether the unit, standing at `place`, is within `range` of the player, the gap
+/// Whether the unit, standing at `place`, is within `range` of the player, the distance
 /// counted between the two bodies' edges. The player's Race row is in the tables (the
 /// load fails otherwise), so a missing one crashes.
 pub fn within(
@@ -450,7 +450,7 @@ pub fn within(
 /// The vendor whose window the player may open: the unit is a shown creature that is
 /// alive and has stock, within reach and not Hostile to the player, checked in the order
 /// of the client's CheckInteractionTarget (`opcode.0x7ea`), or the refusal the client's
-/// check would have given. `reach` says whether the gap is checked: a trade with a range
+/// check would have given. `reach` says whether the distance is checked: a trade with a range
 /// of its own skips it.
 pub fn vendor_opened(
   unit_id unit_id: Int,

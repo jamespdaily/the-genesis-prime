@@ -3,7 +3,7 @@
 //// for a message `encode` and `decode`, for a record or a union `write` and
 //// `read`; and the `client_message` and `server_message` modules, which decode
 //// a message the client or the server sends by its number. A message or record
-//// whose schema entry lists gaps also gets `pub fn gaps() -> List(gap.Entry)`,
+//// whose schema entry has a `gaps` list also gets `pub fn gaps() -> List(gap.Entry)`,
 //// which the coverage measure's registry calls. The text is
 //// already in `gleam format`'s layout, so a regenerated file equals the
 //// committed one byte for byte, and `mismatches` names each file that does
@@ -878,7 +878,7 @@ fn header(description: List(String)) -> List(String) {
   ])
 }
 
-/// The import lines: the gap module when there are gaps, the bit stream module
+/// The import lines: the `gap` module when the `gaps` list is not empty, the bit stream module
 /// with the types the code names, each record module an array field reads, and
 /// `gleam/result`.
 fn imports(
@@ -924,10 +924,10 @@ fn imports(
   ])
 }
 
-/// The `gaps` function of a message or record: one `gap.Entry` for each gap, in
+/// The `gaps` function of a message or record: one `gap.Entry` for each `Gap`, in
 /// the order the schema lists them, each on one line when it fits and else one
-/// argument to a line, as `gleam format` lays it out. None when there are no
-/// gaps.
+/// argument to a line, as `gleam format` lays it out. None when the list is
+/// empty.
 fn gaps_function(gaps: List(Gap), subject: String) -> List(String) {
   case gaps {
     [] -> []
@@ -935,9 +935,9 @@ fn gaps_function(gaps: List(Gap), subject: String) -> List(String) {
       list.flatten([
         [
           "",
-          "/// The gaps in this "
+          "/// What this "
             <> subject
-            <> "'s codec, which the coverage measure prints.",
+            <> "'s codec leaves unhandled, which the coverage measure prints.",
           "pub fn gaps() -> List(gap.Entry) {",
           "  [",
         ],

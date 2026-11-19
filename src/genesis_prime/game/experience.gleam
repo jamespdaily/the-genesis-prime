@@ -22,7 +22,7 @@
 //// - **The amount is the server's choice.** The client has no kill formula: the
 ////   server sends the amount in 0x1ac (`0x14050cbf0`, `opcode.0x1ac`). The base is the
 ////   client's XpPerLevel `baseQuestXpPerLevel` at the creature's level, and the fraction and
-////   the nine level-gap multipliers are game_number rows, each with its reason
+////   the nine level-difference multipliers are game_number rows, each with its reason
 ////   (genesis_prime/world_map/game_number, migration 0022). The creature's difficulty
 ////   weight is the client's Creature2Difficulty `clusterContributionValueDifficulty`; no
 ////   client code shows that column feeds experience, so using it is a server choice too.
@@ -106,11 +106,11 @@ pub fn entering(
 }
 
 /// The experience a kill of the creature gives a player of `player_level`: the formula
-/// in the module's head, rounded, 0 for a gap that gives nothing and 0 for a creature
+/// in the module's head, rounded, 0 for a level difference that gives nothing and 0 for a creature
 /// whose Creature2Difficulty row does not exist (Creature2Difficulty 0, which 17,990
 /// Creature2 rows name, has none: kill experience works as the-eldan-experiment's
 /// does, which gives 0 there). The creature was spawned from its Creature2 row, and
-/// the level-gap multipliers are nine numbers (`game_number`).
+/// the level-difference multipliers are nine numbers (`game_number`).
 fn gain(
   credit credit: Credit,
   player_level player_level: Int,
@@ -146,7 +146,7 @@ fn gain(
 }
 
 /// The progress after a credit, and what the connection sends for it: a gain that
-/// adds nothing (a gap that gives 0, or the highest level) changes and sends nothing,
+/// adds nothing (a level difference that gives 0, or the highest level) changes and sends nothing,
 /// the gain sent is what was added after the stop at the highest level's
 /// minXpForLevel, and a level never falls.
 pub fn credited(

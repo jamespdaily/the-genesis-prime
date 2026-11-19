@@ -9,7 +9,7 @@
 //// starting abilities' spells. It exits with 1 when the tables do not load, an
 //// engine declares a type no row uses, an engine both handles a type and
 //// lists it as missing, an engine handles a type with rows no rule reads and states no
-//// gap for it, or a starting ability's tree names a Spell4 or Prerequisite row the tables
+//// reason for it, or a starting ability's tree names a Spell4 or Prerequisite row the tables
 //// lack.
 ////
 //// It then lists the parts of the starting abilities' trees the starting abilities'
@@ -23,7 +23,7 @@
 //// does not build. A character is granted each of them; a press of one is refused as an
 //// unknown spell.
 ////
-//// It then lists the gaps the server has that no other part prints, grouped by area, each
+//// It then lists what the server leaves undone that no other part prints, grouped by area, each
 //// module's own entries (`genesis_prime/coverage/gaps`); an entry with no area or sentence, a
 //// sentence with a change-log word, and an entry listed twice are breaches.
 ////
@@ -186,7 +186,7 @@ type LaterAbility {
 }
 
 /// The class abilities above level 1 no plan is built for: how many, how many for each
-/// class, and each with its class, level, Spell4 and why, so the gap between the abilities
+/// class, and each with its class, level, Spell4 and why, so the difference between the abilities
 /// a character is granted and the ones it can cast is read here.
 fn later_abilities_report(tables tables: store.Tables) -> String {
   case spell_plan.unplanned(tables:, area_checked: spell_area.checker) {
@@ -462,7 +462,7 @@ fn spawn_coverage(tables tables: store.Tables) -> String {
 
 /// A line for each engine that declares a type no row uses, one for each that
 /// both handles a type and lists it as missing or lists as partial a type it does not
-/// handle, one for each type it handles with rows no rule reads and no gap stated, and one
+/// handle, one for each type it handles with rows no rule reads and no reason stated, and one
 /// for each that names a row of a starting ability's tree the client's tables lack.
 pub fn breaches(measurements: List(Measurement)) -> List(String) {
   list.flat_map(measurements, fn(measured) {

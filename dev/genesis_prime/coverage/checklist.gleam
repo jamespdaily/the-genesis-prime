@@ -205,7 +205,7 @@ fn type_line(line: TypeLine) -> String {
   }
 }
 
-/// The rows of a type line that no rule reads: those of a handled type with a gap the
+/// The rows of a type line that no rule reads: those of a handled type with a stated reason the
 /// rules leave out whole, and none for any other line.
 fn unread_rows_of(line: TypeLine) -> Int {
   case line.status {

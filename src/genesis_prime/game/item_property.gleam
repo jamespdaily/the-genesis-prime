@@ -59,7 +59,7 @@
 ////   from GameFormula 1214's item), a supportPowerPercentage beyond -1 to 1,
 ////   and a budget entry on a ResourceMax property are items whose properties
 ////   the client's code gives by branches this code does not follow, so such an
-////   item is an `Unread` error, with its gap. A mentored player's level
+////   item is an `Unread` error, with its `Gap`. A mentored player's level
 ////   override, the World type's +30 and the match and PvP level caps change the
 ////   level an item reads; the callers give the character's own level.
 //// - **A random stat entry** (kind 2) names an ItemRandomStatGroup, and the
@@ -153,7 +153,7 @@ pub type Gap {
 
 /// The branches of the client's code that the server does not follow and that an item in
 /// the tables can take: a PvP item and a proxy item, each with the reason `why` gives. The
-/// other gaps are for data no client row holds, or a base the class resource sets.
+/// other `Gap`s are for data no client row holds, or a base the class resource sets.
 pub fn gaps() -> List(gap.Entry) {
   [PvpItem, ProxyItem]
   |> list.map(fn(kind) {

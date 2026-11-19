@@ -250,7 +250,7 @@ const bank_vault_location = 3
 /// Item2Category Junk (`lua.Item.CodeEnumItem2Category`).
 const junk_category = 94
 
-/// The gap between the two edges the sale's sender allows (`opcode.0x166`: 0 to 6.0).
+/// The distance between the two edges the sale's sender allows (`opcode.0x166`: 0 to 6.0).
 const sale_range = 6.0
 
 /// What the client's sale message is answered with: a refusal with the code of the first

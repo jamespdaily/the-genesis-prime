@@ -548,7 +548,7 @@ pub fn read(
 }
 
 /// Decodes the record each lookup entry names, for ids from `id`, collecting
-/// the rows in reverse with a gap at each id that has none.
+/// the rows in reverse with a hole at each id that has none.
 fn walk(
   reader reader: Reader(row),
   lookup lookup: BitArray,
@@ -674,7 +674,7 @@ fn utf16_text(bytes: BitArray) -> Result(String, Nil)
 @external(erlang, "genesis_prime_tbl_file_ffi", "gap")
 fn gap() -> row
 
-/// Puts the rows, and the gaps among them, in one tuple: a table of these rows
+/// Puts the rows, and the holes among them, in one tuple: a table of these rows
 /// in order, so each row's position is its id.
 @external(erlang, "genesis_prime_tbl_file_ffi", "table_of")
 pub fn table_of(rows: List(row)) -> Table(row)

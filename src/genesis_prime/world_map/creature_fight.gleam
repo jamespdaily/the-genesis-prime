@@ -285,7 +285,7 @@
 //// | a strike P sent before it died reaches C after `PlayerDied` | `StruckBy` adds P to the threat list; C's first strike is refused `Dead` and releases it |  |
 //// | `PlayerDied` for a player on neither `near` nor the threat list (its `Unwatched` came first, or the killing answer dropped it) | nothing | `player_died_for_a_player_neither_near_nor_on_the_list_changes_nothing_test` |
 //// | C is Returning, or dead, when `PlayerDied` reaches it | Returning: P out of `near`, nothing sent; dead: the send is dropped, and the map's `inside` holds no dead player for C's next start | `a_near_player_told_player_died_is_not_aggroed_at_the_home_timer_nor_by_the_corpse_timer_and_one_approached_again_is_test` |
-//// | P dies, wakes inside C's ring, and C's killing answer reaches C after the wake's `Approached` | the answer drops P from `near` after the wake put it there: P stands in the ring and is not aggroed until it enters again; the answer is taken only before the strike deadline (`strike_tell.deadline_ms`, 1000 ms), so the gap is a Wake Here chosen within that second of the death |  |
+//// | P dies, wakes inside C's ring, and C's killing answer reaches C after the wake's `Approached` | the answer drops P from `near` after the wake put it there: P stands in the ring and is not aggroed until it enters again; the answer is taken only before the strike deadline (`strike_tell.deadline_ms`, 1000 ms), so it is a Wake Here chosen within that second of the death |  |
 //// | the home timer fires | C stands at its spawn, Resting, at full health, and aggroes the near players it sees | `at_home_the_creature_aggroes_the_near_players_test` |
 //// | Charge start: the attack tick finds the target in reach, no round open, the attack is `Charged` | round Charging, 0x7ff of the spell, `StartTimer(CastEnds, cast time)`, no strike and no next attack tick; the tick's generation moves on | `a_charge_starts_with_its_cast_time_and_telegraph_test` |
 //// | Charge start: a second attack tick finds the charge open | nothing: the tick it came from is of an old generation | `a_second_attack_tick_during_a_charge_starts_nothing_test`, `a_second_attack_tick_during_a_special_starts_nothing_test` |
@@ -346,6 +346,7 @@ import genesis_prime/game/strike_tell.{
   type Answered, type Fight as Told, type Key, Attacks, CreatureStriker,
   Released, Threatened,
 }
+import genesis_prime/gap
 import genesis_prime/step.{type Address, type ConnectionId}
 import genesis_prime/table/id.{type Spell4Id}
 import genesis_prime/world_map/creature_life.{
@@ -2867,4 +2868,14 @@ fn generation(state: State) -> #(State, Int) {
 /// A threat as the client's 32-bit field holds it: rounded half away from zero.
 fn whole(threat: Float) -> Int {
   float.round(threat)
+}
+
+/// What a creature's fight does that the client's rules ask differently.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Creature fights",
+      missing: "a player who dies and chooses Wake Here within a second of the death, inside the ring of a creature that was told of the death, is not aggroed by that creature until the player leaves the ring and enters it again",
+    ),
+  ]
 }

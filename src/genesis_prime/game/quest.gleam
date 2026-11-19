@@ -304,7 +304,7 @@ pub fn can_accept(
   }
 }
 
-/// Every gap the quest's own columns reach, for any player: the reputation it names,
+/// Every `Gap` the quest's own columns reach, for any player: the reputation it names,
 /// its contract flag, the per-item counter of its prerequisite item, the group's draw
 /// of a periodic quest, and each unread type of its prerequisite and the rows that
 /// prerequisite nests. A check stops on the first of these a player meets; this is
@@ -359,7 +359,7 @@ pub fn unread_gaps(
 /// not had, one the player may not accept yet, and one whose Quest2 row the tables lack.
 /// A quest that starts with a click that activates the unit (kind 12) shows no dialog
 /// though the creature is marked for another of its quests. Only a refusal hides a quest:
-/// one the server cannot decide for a gap in what it reads counts as shown, so that no
+/// one the server cannot decide for a `Gap` in what it reads counts as shown, so that no
 /// giver is hidden, and one a table row it needs is missing from is `Undecided`, which
 /// the caller logs, unless another quest of the creature shows.
 pub fn offers(
@@ -460,7 +460,7 @@ fn waits_for_mention(
   |> result.map(fn(verdict) { verdict == Acceptable })
 }
 
-/// Whether the client's check with the giver's mask refuses the quest. A gap the server
+/// Whether the client's check with the giver's mask refuses the quest. A `Gap` the server
 /// does not read is not a refusal.
 fn refused(
   tables tables: table_store.Tables,
@@ -908,7 +908,7 @@ pub fn describe(error error: CheckError) -> String {
   }
 }
 
-/// What the server does not read, of one kind of gap and with no row's id in it.
+/// What the server does not read, of one kind of `Gap` and with no row's id in it.
 pub fn gap_kind(gap gap: Gap) -> String {
   case gap {
     Reputation -> "the reputation a quest needs, which the server does not hold"
@@ -922,7 +922,7 @@ pub fn gap_kind(gap gap: Gap) -> String {
   }
 }
 
-/// A sentence that says what the server does not read, for the log: the kind of gap and
+/// A sentence that says what the server does not read, for the log: the kind of `Gap` and
 /// the type or group it met.
 pub fn describe_gap(gap gap: Gap) -> String {
   case gap {
@@ -934,7 +934,7 @@ pub fn describe_gap(gap gap: Gap) -> String {
   }
 }
 
-/// The kinds of gap in a quest's checks: a quest that needs one is not accepted.
+/// The kinds of `Gap` in a quest's checks: a quest that needs one is not accepted.
 pub fn gaps() -> List(gap.Entry) {
   [
     Reputation,
