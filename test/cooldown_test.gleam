@@ -457,6 +457,44 @@ pub fn a_modifier_picks_a_group_cooldown_by_the_spell_that_started_it_test() -> 
   )
 }
 
+pub fn a_group_another_spell_sets_again_stays_the_first_spells_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Spell 7 starts group 130 at 0 and spell 8 of the same group sets it again at 1000
+  // (ends at 181,000). Planted ids, not client rows.
+  let keys_of = fn(id) {
+    cooldown.keys(
+      spell4_id: Spell4Id(id),
+      spell4_base_id: Spell4BaseId(id),
+      spell_groups: [],
+      cooldown_groups: group_130(),
+    )
+  }
+  let book =
+    cooldown.start(
+      book: cooldown.new(),
+      keys: keys_of(7),
+      cooldown_ms: 0,
+      now_ms: 0,
+    )
+    |> cooldown.start(keys: keys_of(8), cooldown_ms: 0, now_ms: 1000)
+  // Spell 7 goes again at 179,000 (a Proxy or a proc, not a press) while the group runs.
+  let again =
+    cooldown.start(book:, keys: keys_of(7), cooldown_ms: 5000, now_ms: 179_000)
+  assert again == book
+    as "0x14046b1e0: the entry still carries spell 7's id, which 0x14046a3d0 never rewrites, so nothing starts"
+  assert cooldown.left_ms(book: again, spell4_id: Spell4Id(7), now_ms: 182_000)
+    == 0
+    as "the press the client sends after the group ends meets no own cooldown, so it is not refused 15"
+  let halved =
+    cooldown.modify(
+      book:,
+      modifier: Modifier(selector: Spell(Spell4Id(7)), operation: NoLonger(0.5)),
+      now_ms: 1000,
+    )
+  assert group_left(book: halved, id: 130, at: 1000) == 90_000
+    as "0x14046b920: a modifier that picks spell 7 still changes the group spell 7 started"
+}
+
 pub fn a_new_group_cooldown_goes_through_the_kept_modifiers_test() -> Nil {
   use <- owned_test.run(5000)
   let kept =

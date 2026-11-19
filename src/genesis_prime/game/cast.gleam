@@ -3591,6 +3591,11 @@ fn start(
         cast_state.armed(cast:, due: wait.1, after_ms: wait.0)
       #(cast, list.append(effects, [start]))
     })
+  let pressed = case role {
+    Shortcut(from:, ..) -> Some(from)
+    Child(from:, ..) -> from
+    Base(..) | Stage(..) | Passive | Activation(..) -> None
+  }
   let start_message =
     cast_frame.started_message(
       id:,
@@ -3603,14 +3608,9 @@ fn start(
         Activation(..) -> True
         Child(..) | Base(..) | Stage(..) | Passive | Shortcut(..) -> False
       },
-      caster_item_level: case role {
-        Shortcut(from: Item(item_level:, ..), ..) -> item_level
-        Shortcut(from: QuestButton, ..)
-        | Child(..)
-        | Base(..)
-        | Stage(..)
-        | Passive
-        | Activation(..) -> 0
+      caster_item_level: case pressed {
+        Some(Item(item_level:, ..)) -> item_level
+        Some(QuestButton) | None -> 0
       },
     )
   let live =
@@ -3639,11 +3639,7 @@ fn start(
         Activation(interaction:, ..) | Shortcut(interaction:, ..) -> interaction
         Child(..) | Base(..) | Stage(..) | Passive -> NoInteraction
       },
-      pressed: case role {
-        Shortcut(from:, ..) -> Some(from)
-        Child(from:, ..) -> from
-        Base(..) | Stage(..) | Passive | Activation(..) -> None
-      },
+      pressed:,
       aimed: case role {
         Shortcut(aimed:, ..) -> aimed
         Child(..) | Base(..) | Stage(..) | Passive | Activation(..) -> None

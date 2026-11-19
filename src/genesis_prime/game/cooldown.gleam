@@ -159,21 +159,19 @@ pub fn start(
     False -> book
   }
   list.fold(keys.cooldown_groups, book, fn(book, group) {
-    Book(
-      ..book,
-      grouped: case left(entries: book.grouped, key: group.id, now_ms:) > 0 {
-        True -> set(entries: book.grouped, group:, keys:, now_ms:)
-        False ->
-          started(
-            entries: book.grouped,
-            key: group.id,
-            lasting: book.lasting,
-            keys:,
-            time_ms: group.time_ms,
-            now_ms:,
-          )
-      },
-    )
+    Book(..book, grouped: case dict.get(book.grouped, group.id) {
+      Ok(running) if running.ends_ms > now_ms ->
+        set(entries: book.grouped, group:, running:, now_ms:)
+      Ok(_) | Error(Nil) ->
+        started(
+          entries: book.grouped,
+          key: group.id,
+          lasting: book.lasting,
+          keys:,
+          time_ms: group.time_ms,
+          now_ms:,
+        )
+    })
   })
 }
 
@@ -211,11 +209,12 @@ fn started(
 }
 
 /// A group entry that runs set to the group's time as it is, without the kept modifiers;
-/// a time of 0 ends it.
+/// a time of 0 ends it. The entry keeps the keys of the spell that first started it: the
+/// client re-arms only the timer of an entry that exists (`0x14046a3d0`).
 fn set(
   entries entries: Dict(Int, Running),
   group group: Group,
-  keys keys: Keys,
+  running running: Running,
   now_ms now_ms: Int,
 ) -> Dict(Int, Running) {
   case group.time_ms > 0 {
@@ -223,7 +222,7 @@ fn set(
       dict.insert(
         entries,
         group.id,
-        Running(ends_ms: now_ms + group.time_ms, keys:),
+        Running(..running, ends_ms: now_ms + group.time_ms),
       )
     False -> dict.delete(entries, group.id)
   }

@@ -23,6 +23,7 @@
 
 import cast_support as support
 import fixture_tables
+import game_connection_support
 import genesis_prime/client_connection.{CastStarted}
 import genesis_prime/game/activate.{type Target, Body, NoLink, Usable}
 import genesis_prime/game/cast
@@ -1782,6 +1783,16 @@ pub fn a_child_an_items_cast_starts_heals_by_the_items_level_test() -> Nil {
   assert list.map(support.caster_change_starts(effects:), fn(start) { start.1 })
     == [cast_state.Heal(vital: effect_kind.Health, amount: 1900)]
     as "the Proxy's child reads the passed-in value at the item's level, as the item's own cast does"
+  assert list.unique(
+      list.map(
+        game_connection_support.cast_starts(
+          list.map(support.tells(effects:), fn(tell) { tell.1 }),
+        ),
+        fn(start) { start.caster_item_level },
+      ),
+    )
+    == [15]
+    as "opcode.0x7ff.caster_item_level: every start of the item's cast, its child's too, tells the item's level 15, since its buff reads its tooltip at that level"
 }
 
 pub fn an_item_spell_with_no_activate_effect_is_refused_285_and_logged_once_test() -> Nil {
