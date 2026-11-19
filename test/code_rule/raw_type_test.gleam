@@ -343,10 +343,10 @@ pub fn every_site_is_a_known_gap_and_a_new_site_fails_test() -> Nil {
       "  row.type_ == 16",
       "}",
     ])
-  let gaps = [Gap(path: game_path, function: "known", sites: 1, issue: 888)]
+  let gaps = [Gap(path: game_path, function: "known", sites: 1)]
   assert planted.lines(raw_type.breaches(files: [planted_file], gaps: gaps))
     == [2, 6]
-  let gaps = [Gap(path: game_path, function: "known", sites: 2, issue: 888)]
+  let gaps = [Gap(path: game_path, function: "known", sites: 2)]
   assert planted.lines(raw_type.breaches(files: [planted_file], gaps: gaps))
     == [6]
 }
@@ -360,8 +360,8 @@ pub fn a_listed_gap_with_fewer_sites_than_listed_fails_test() -> Nil {
       "  row.type_ == 2",
       "}",
     ])
-  let removed = Gap(path: game_path, function: "removed", sites: 1, issue: 888)
-  let fewer = Gap(path: game_path, function: "known", sites: 2, issue: 888)
+  let removed = Gap(path: game_path, function: "removed", sites: 1)
+  let fewer = Gap(path: game_path, function: "known", sites: 2)
   assert list.length(raw_type.breaches(files: [file], gaps: [removed])) == 2
     as "the unlisted site, and the listed gap that has none"
   assert list.length(raw_type.breaches(files: [file], gaps: [fewer])) == 1
@@ -377,7 +377,7 @@ pub fn a_function_listed_twice_in_the_known_gaps_fails_test() -> Nil {
       "  row.type_ == 2",
       "}",
     ])
-  let once = Gap(path: game_path, function: "known", sites: 1, issue: 888)
+  let once = Gap(path: game_path, function: "known", sites: 1)
   assert raw_type.breaches(files: [file], gaps: [once]) == []
   assert planted.lines(raw_type.breaches(files: [file], gaps: [once, once]))
     == [1]

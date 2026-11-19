@@ -24,10 +24,9 @@
 ////   (a parameter, a `let`, a closure's parameter, a pattern) or the name is
 ////   `type_`. `option_type` (the client option message) and `unit_type` (a
 ////   spawned object) are fields no table holds and are not read.
-//// - Each site that exists today is a known gap, counted per function and
-////   naming the open issue whose work removes it. A function with more sites
-////   than listed fails, and so does a gap whose function has fewer, and a
-////   function listed twice.
+//// - Each site that exists is a known gap, counted per function. A function
+////   with more sites than listed fails, and so does a gap whose function has
+////   fewer, and a function listed twice.
 
 import code_rule/source.{type Breach, type SourceFile, Breach}
 import code_rule/syntax
@@ -40,14 +39,12 @@ import gleam/order
 import gleam/result
 import gleam/string
 
-/// The raw-type sites one function holds today, and the open issue whose work
-/// removes them.
+/// The raw-type sites one function holds.
 pub type Gap {
-  Gap(path: String, function: String, sites: Int, issue: Int)
+  Gap(path: String, function: String, sites: Int)
 }
 
-/// Every site in `src/`, and the open issue whose work removes it; the gap-owner
-/// rule (`code_rule/gap_issue`) fails a gap whose issue is closed.
+/// Every site in `src/`.
 pub const known_gaps: List(Gap) = []
 
 /// One raw-type site: the function that holds it and its line.
