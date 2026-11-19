@@ -256,8 +256,11 @@ pub fn union_row_with_the_area_bit_in_a_spell_that_hits_no_foes_is_refused_namin
         ))
         as "a union row with the caster's bit and the area's in a spell that hits no foes has an area the server cannot find the allies of"
       let assert Error(why) = error
-      assert string.contains(spell_plan.describe(error: why), "#834")
-        as "the refusal names the issue that will read a friendly spell's area"
+      assert string.ends_with(
+        spell_plan.describe(error: why),
+        "a friendly spell's area finds the caster's allies, which the server does not read",
+      )
+        as "the refusal says what is not read and names no issue"
     },
   )
   list.each([90_024, 121_485], fn(id) {
@@ -279,7 +282,7 @@ pub fn read_today_union_row_in_a_spell_that_hits_no_foes_keeps_its_caster_and_ta
   let assert Ok(urgency) =
     read_client_row(id: 123_870, place: spell_tables.pressed)
   assert aims_of(reading: urgency) == [AimsAtCasterAndPrimaryTarget]
-    as "urgency, flags 7 in a spell that hits no foes: a heal for the caster and the primary target, the area part waits for #834"
+    as "urgency, flags 7 in a spell that hits no foes: a heal for the caster and the primary target, the area part finds no allies"
   let assert Ok(shield_surge) =
     read_client_row(id: 55_294, place: spell_tables.pressed)
   assert aims_of(reading: shield_surge) == [AimsAtCaster]
@@ -333,11 +336,12 @@ pub fn bit_eight_rows_are_still_refused_naming_the_bit_eight_question_test() -> 
   list.each(refusals, fn(refusal) {
     let #(name, read, expected) = refusal
     assert read == Error(expected) as name
-    assert string.contains(spell_plan.describe(error: expected), "#336") as name
-    assert !string.contains(spell_plan.describe(error: expected), "#794")
+    assert string.contains(
+      spell_plan.describe(error: expected),
+      "bit 8's meaning is not known",
+    )
       as name
-    assert !string.contains(spell_plan.describe(error: expected), "#834")
-      as name
+    assert !string.contains(spell_plan.describe(error: expected), "#") as name
   })
   let refused =
     spell_area.AimNotRead(
@@ -355,8 +359,11 @@ pub fn bit_eight_rows_are_still_refused_naming_the_bit_eight_question_test() -> 
     )
     == Error(refused)
     as "a type 8 row with flags 12 is refused by the area"
-  assert string.contains(spell_area.describe(error: refused), "#336")
-    as "the damage refusal names the bit-8 question"
+  assert string.contains(
+    spell_area.describe(error: refused),
+    "bit 8's meaning is not known",
+  )
+    as "the damage refusal says bit 8's meaning is not known"
 }
 
 /// The client's row `id` with its targetFlags set to `flags`, read in a spell that hits foes.

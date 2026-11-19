@@ -18,8 +18,7 @@
 ////     whose caster apply is 0.
 //// - `prerequisite.press_unread_types`: a press gate whose check draws a roll (type 37)
 ////   or reads the unit the press names second (types 50, 108 and 130) is refused at load,
-////   as an undecoded gate is (`Prerequisite.prerequisiteTypeId`, the issue "The
-////   prerequisite types effects use that the server does not read yet are read" (#818)).
+////   as an undecoded gate is (`Prerequisite.prerequisiteTypeId`).
 
 import client_tables
 import fixture_tables
@@ -130,8 +129,8 @@ pub fn proxy_press_gate_that_needs_a_roll_or_the_second_unit_is_refused_at_load_
         let assert Error(error) = result
         let text = spell_plan.describe(error:)
         assert string.contains(text, int.to_string(type_id))
-          && string.contains(text, "#818")
-          as "the text names the type and the issue that will read it"
+          && string.ends_with(text, "which is not decoded")
+          as "the text names the type and says it is not decoded, with no issue"
       },
     )
   })
@@ -166,5 +165,5 @@ pub fn every_press_spell_of_the_client_plans_but_the_two_the_plan_cannot_read_te
       ),
       #(76_511, spell_plan.NoRow(table: "Spell4Base", id: 76_506)),
     ]
-    as "Spell4 34759 is refused for the type 102 gate (Prerequisite 11196) of its Proxy row 69198, which no decoder reads (the issue \"The prerequisite types effects use that the server does not read yet are read\", #818); once that is read its child 34760 is refused for row 69200, aimed by flag 5 (the issue \"An effect aimed by a combined flag reaches every unit each of its bits names\"). Spell4 76511 is refused for the Spell4Base row 76506 its tree names, which the client's table does not hold"
+    as "Spell4 34759 is refused for the type 102 gate (Prerequisite 11196) of its Proxy row 69198, which no decoder reads; were it read, its child 34760 is refused for row 69200, aimed by flag 5. Spell4 76511 is refused for the Spell4Base row 76506 its tree names, which the client's table does not hold"
 }

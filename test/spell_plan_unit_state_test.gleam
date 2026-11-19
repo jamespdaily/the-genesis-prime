@@ -335,7 +335,7 @@ pub fn a_gated_unit_state_row_yields_a_struck_gate_test() -> Nil {
   assert prerequisite.id(prerequisite: gate) == PrerequisiteId(99_907)
 }
 
-pub fn a_unit_state_behind_an_unread_prerequisite_refuses_its_spell_naming_the_issue_test() -> Nil {
+pub fn a_unit_state_behind_an_unread_prerequisite_refuses_its_spell_naming_what_it_does_not_read_test() -> Nil {
   use <- owned_test.run(60_000)
   // Prerequisite 681 is of type 12 (`Prerequisite.prerequisiteTypeId.12`), which the server
   // has not decoded; planted here as a one-condition prerequisite. A refused row fails its
@@ -354,8 +354,9 @@ pub fn a_unit_state_behind_an_unread_prerequisite_refuses_its_spell_naming_the_i
       prerequisite_type: 12,
     )
   let text = spell_plan.describe(error:)
-  assert string.contains(text, "12") && string.contains(text, "#818")
-    as "the refusal names the type and the issue that will read it"
+  assert string.contains(text, "12")
+    && string.ends_with(text, "which is not decoded")
+    as "the refusal names the type and says it is not decoded, with no issue"
 }
 
 pub fn a_state_1_row_is_planned_and_held_with_no_reading_test() -> Nil {

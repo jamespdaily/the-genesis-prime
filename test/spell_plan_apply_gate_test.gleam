@@ -13,9 +13,9 @@
 ////     type 37 (comparison 6, value 10).
 //// - `Spell4Effects.prerequisiteIdTargetApply` and `prerequisiteIdCasterApply`: a row lands
 ////   only where its prerequisites pass, so a row whose prerequisite the server cannot read
-////   cannot be applied and fails the load, naming the issue that will read it.
-//// - `Prerequisite.prerequisiteTypeId.12`: the server has not decoded it (#818). Type 15
-////   reads what the casts held on the creature it is tested on hold (#569), which a strike's picture does not
+////   cannot be applied and fails the load, naming what is not read.
+//// - `Prerequisite.prerequisiteTypeId.12`: the server has not decoded it. Type 15
+////   reads what the casts held on the creature it is tested on hold, which a strike's picture does not
 ////   hold (`prerequisite.struck_unread_types`).
 
 import client_tables
@@ -95,7 +95,7 @@ fn control_of(
   row
 }
 
-pub fn damage_row_with_undecoded_gate_is_refused_at_load_naming_its_issue_test() -> Nil {
+pub fn damage_row_with_undecoded_gate_is_refused_at_load_naming_what_is_not_read_test() -> Nil {
   use <- owned_test.run(60_000)
   assert !prerequisite.is_read(type_id: 12)
     as "the server has not decoded type 12"
@@ -122,8 +122,9 @@ pub fn damage_row_with_undecoded_gate_is_refused_at_load_naming_its_issue_test()
         )
       let assert Error(error) = result
       let text = spell_area.describe(error:)
-      assert string.contains(text, "12") && string.contains(text, "#818")
-        as "the refusal names the type and the issue that will read it"
+      assert string.contains(text, "12")
+        && string.ends_with(text, "which is not decoded")
+        as "the refusal names the type and says it is not decoded, with no issue"
       assert !is_read_by_the_measure(tables:, id: 38_307)
         as "the coverage measure counts the row as not read"
       assert is_read_by_the_measure(tables: fixture_tables.shared(), id: 38_307)
@@ -204,8 +205,11 @@ pub fn damage_row_past_the_caster_reading_struck_state_is_refused_at_load_test()
       )),
     )
   let assert Error(error) = result
-  assert string.contains(spell_area.describe(error:), "#569")
-    as "the refusal names the issue that will read the struck unit's state"
+  assert string.ends_with(
+    spell_area.describe(error:),
+    "which reads what the casts held on the creature it strikes hold",
+  )
+    as "the refusal says the struck unit's casts are not read, with no issue"
 }
 
 pub fn ccstateset_row_behind_an_apply_prerequisite_is_read_with_its_gates_test() -> Nil {

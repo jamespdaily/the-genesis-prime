@@ -238,6 +238,7 @@ import genesis_prime/game/unit_properties.{
   type Modifier, type Properties, type Source,
 }
 import genesis_prime/game/unit_state
+import genesis_prime/gap
 import genesis_prime/step.{
   type ConnectionId, type CreatureStart, type Effect, type ServiceEffect,
   type ServiceInput, type ServiceRule, type ServiceStep, type WatchId, Asked,
@@ -1632,7 +1633,7 @@ fn controls_after(
 /// (`Immune`) keeps its states and is not thrown. The creature is alive on the life this
 /// strike struck, so no throw is dropped as a stale one is (`thrown`). Each landed row
 /// throws once, a server guess for the spells that hold more than one state row, and a
-/// delayed row throws at the landing, not after its delay (issue 827).
+/// delayed row throws at the landing, not after its delay.
 fn thrown_by_states(
   state state: State,
   outcome outcome: strike_tell.Outcome,
@@ -1737,8 +1738,7 @@ fn gates_checked(
 
 /// What the creature holds that its gates read, for `prerequisite.of_creature`: its level and
 /// class, factions, combat state, vitals, difficulty and Creature2 row, and the two poses.
-/// What the strike's caster's casts hold on it is not held (`under` is empty, gap: issue
-/// 569), and the zones it stands in are its place's own zone, without the zones above it.
+/// What the strike's caster's casts hold on it is not held (`under` is empty), and the zones it stands in are its place's own zone, without the zones above it.
 fn creature_facts(
   state state: State,
   tell tell: StrikeTell,
@@ -2250,4 +2250,18 @@ pub fn told_by_map(outgoing outgoing: map.Outgoing) -> Result(Message, Nil) {
     | map.Left
     | map.Noticed(..) -> Error(Nil)
   }
+}
+
+/// What a creature holds and does for a strike that the client's rows ask more of.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Creature crowd control",
+      missing: "the timing of a crowd-control state's throw: each landed row throws once, a server guess for a spell that holds more than one state row, and a delayed row throws at the landing, not after its delay",
+    ),
+    gap.Entry(
+      area: "Creature prerequisites",
+      missing: "the casts the strike's caster holds on a creature and the zones above the creature's place, which a prerequisite on the creature reads as none",
+    ),
+  ]
 }
