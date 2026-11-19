@@ -9,6 +9,11 @@
 //// - The rise's frames are those of a gain of any source: `experience_book_test` (a Medic's
 ////   3 to 4 writes 0x1ac, 0x938, 0x111, 0x1a0, 0x93a, with the ability of Spell4Base 26038
 ////   in slot 4; 5 to 6 adds 25530, 25579 and 38210) and `experience_points_test`.
+//// - `SpellLevel.spell4Id.no_prerequisite`: the committed rows hold a Medic's abilities up to
+////   level 6 (`ability_book_test`): 614 (level 4, Spell4Base 26038), 1087 (5, 25692), 1191,
+////   1194 and 1221 (6, 25530, 25579, 38210). A rise to level 9 grants all five, in that
+////   order, in slots 4 to 8 after the bag of 4 items, and one 0x1a0 holds each at tier 1 in
+////   the four action sets (`opcode.0x1a0`).
 //// - The line each command is answered with is the design's choice (a System line,
 ////   ChatChannel row 2).
 
@@ -34,8 +39,8 @@ fn medic() -> game_connection.State {
 }
 
 /// One raise: the line said, what the frames start and end with, the gain and
-/// the levels written, the abilities the rise adds that the oracle names, the
-/// line answered and what the player holds afterwards.
+/// the levels written, the abilities the rise adds (bag index and Spell4Base, in order),
+/// the line answered and what the player holds afterwards.
 type Raise {
   Raise(
     text: String,
@@ -43,7 +48,7 @@ type Raise {
     ends: List(Int),
     gain: Int,
     levels: List(Int),
-    bases: List(Int),
+    added: List(#(Int, Int)),
     line: String,
     held: #(Int, Int),
     why: String,
@@ -60,7 +65,7 @@ pub fn a_raise_writes_the_frames_of_an_experience_gain_and_the_level_rise_then_o
         ends: [0x01A0, 0x093A, 0x01C8],
         gain: 1060,
         levels: [4],
-        bases: [26_038],
+        added: [#(4, 26_038)],
         line: "level 4, experience 2860",
         held: #(4, 2860),
         why: "level 4 starts at 2860, 1060 above 1800; the Medic's 3 to 4 adds Spell4Base 26038",
@@ -71,7 +76,7 @@ pub fn a_raise_writes_the_frames_of_an_experience_gain_and_the_level_rise_then_o
         ends: [0x01AC, 0x01C8],
         gain: 1059,
         levels: [],
-        bases: [],
+        added: [],
         line: "level 3, experience 2859",
         held: #(3, 2859),
         why: "2859 is one short of level 4: a gain and no level",
@@ -82,10 +87,16 @@ pub fn a_raise_writes_the_frames_of_an_experience_gain_and_the_level_rise_then_o
         ends: [0x01A0, 0x093A, 0x01C8],
         gain: 15_530,
         levels: [9],
-        bases: [26_038, 25_530, 25_579, 38_210],
+        added: [
+          #(4, 26_038),
+          #(5, 25_692),
+          #(6, 25_530),
+          #(7, 25_579),
+          #(8, 38_210),
+        ],
         line: "level 9, experience 17330",
         held: #(9, 17_330),
-        why: "level 9 starts at 17330: one 0x938 for the whole jump, and the abilities of levels 4 to 9",
+        why: "level 9 starts at 17330: one 0x938 for the whole jump, and the five abilities the rows hold for levels 4 to 6",
       ),
     ],
     fn(row) {
@@ -112,10 +123,17 @@ pub fn a_raise_writes_the_frames_of_an_experience_gain_and_the_level_rise_then_o
         == row.levels
         as row.why
       let frames = book_support.written(taken:)
-      let added =
-        list.map(book_support.added_in(frames:), fn(added) { added.base })
-      assert list.all(row.bases, list.contains(added, _))
-        as "the rise adds the abilities its levels grant"
+      let added = book_support.added_in(frames:)
+      assert list.map(added, fn(item) { #(item.bag_index, item.base) })
+        == row.added
+        as "the rise adds exactly the abilities its levels grant, in order, once each"
+      assert list.all(added, fn(item) { item.reason == 49 })
+        as "opcode.0x111.ability_level_up: reason 49, as the entry's"
+      assert book_support.tiers_in(frames:)
+        == book_support.tiers_of(
+          bases: list.map(row.added, fn(item) { item.1 }),
+        )
+        as "one 0x1a0 holds each added ability at tier 1 in the four action sets"
       assert points_support.points_in(frames:) == []
         as "levels 1 to 9 give no ability points"
       assert support.system_lines(taken) == [row.line] as row.why
