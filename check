@@ -2,8 +2,8 @@
 # The full check, run locally and in CI (.github/workflows/check.yml).
 #
 # Usage: ./check          every part, the gate before a merge
-#        ./check fast     format, gleam-build, glinter and code-rules only, for
-#                         the loop while editing
+#        ./check fast     format, gleam-build, glinter, code-rules and fact-checker
+#                         only, for the loop while editing and the gate before a push
 #
 # The wall time counts from the start of this script, setup check included. The
 # budget is a target: GENESIS_CHECK_BUDGET_SECONDS (default 157; ./check fast has
@@ -37,6 +37,14 @@
 # skipped and the output says so; so is a shallow history (CI's pushes to main),
 # where the count of commits HEAD lacks can include commits it holds.
 # ./check fast does not run it.
+#
+# A run that passes (./check fast or the full check, light scope included) on a clean
+# working tree, with HEAD the commit it started on, writes that commit to
+# check-passed-commit in the worktree's own git directory (git rev-parse
+# --absolute-git-dir). A failed run, a dirty tree or a git that cannot say writes
+# nothing, and the file it replaced is removed when the run starts, so it names only a
+# commit a later run passed. The PreToolUse hook dev/hooks/push_needs_fast_check.py
+# reads it and refuses the push of a step branch whose HEAD is another commit.
 #
 # Then the setup check (./setup-check): it names every part this machine is
 # missing, and when it fails nothing else runs. Before it, this script reads
@@ -117,7 +125,7 @@
 #                  en-US.bin and Spell4.tbl, and the test tagged client_rows, started
 #                  on the built code: the committed test/fixture/client_tables against
 #                  the client's tables                  (after gleam-build)
-#   fact-checker   check_facts.py over the fact file
+#   fact-checker   check_facts.py over the fact file; ./check fast runs it too
 #
 # The database is on the Postgres named by PGHOST, PGPORT and PGUSER (defaults
 # /tmp, 5433 and postgres: the native Postgres 18 on the development machine)
@@ -157,6 +165,25 @@ case "$mode" in
     exit 2
     ;;
 esac
+
+# The record of a passed run: the file's path in the worktree's own git directory, and
+# the commit the run started on. The file a run replaces is removed at once, so it
+# never outlives a commit a later run did not pass.
+git_directory=$(git rev-parse --absolute-git-dir 2>/dev/null)
+passed_record=${git_directory:+$git_directory/check-passed-commit}
+start_commit=$(git rev-parse HEAD 2>/dev/null)
+[ -z "$passed_record" ] || rm -f "$passed_record"
+
+# record_passed_commit: writes start_commit to the record when HEAD is still it and the
+# working tree holds no change and no file git does not ignore.
+record_passed_commit() {
+  [ -n "$start_commit" ] && [ -n "$passed_record" ] || return 0
+  [ "$(git rev-parse HEAD 2>/dev/null)" = "$start_commit" ] || return 0
+  local changes
+  changes=$(git status --porcelain 2>/dev/null) || return 0
+  [ -z "$changes" ] || return 0
+  echo "$start_commit" >"$passed_record"
+}
 
 # The wall time the check may take, in seconds: the slowest of 3 full checks on the
 # idle development Mac, with the parts beside each other and 2 test workers, was
@@ -210,7 +237,7 @@ literal_limit_percent=85
 export PGHOST PGPORT PGUSER
 
 # The parts of ./check fast, which a full check whose branch is light also runs.
-fast_parts="format gleam-build glinter code-rules"
+fast_parts="format gleam-build glinter code-rules fact-checker"
 
 work=$(mktemp -d)
 database="genesis_check_$$_${started}"
@@ -811,6 +838,7 @@ case "$mode" in
     ;;
   fast)
     in_background fast_chain
+    in_background step fact-checker facts_with_the_client_named
     ;;
 esac
 wait "${part_pids[@]}"
@@ -900,4 +928,5 @@ if [ -n "$failed" ] || [ "$hung" = yes ]; then
   echo "wall time ${elapsed}s, budget ${budget}s"
   exit 1
 fi
+record_passed_commit
 echo "check passed${scope_label:-}, wall time ${elapsed}s, budget ${budget}s"

@@ -26,7 +26,8 @@ the real toolchain, the real database or the real client:
   rows planted for it in $PLANT_LOG.table.workers (the run with workers) or
   $PLANT_LOG.table.serial, in unitest's own layout;
 - `python3.13` is the real one, except for the run the stub stands in for:
-  check_facts.py, which succeeds at once;
+  check_facts.py, which succeeds at once, and fails when the fact file holds
+  PLANTED_FACT_ERROR;
 - the client query process's scripts are the real check_support.py (with the
   query_client.py and ghidra_env.py it imports) and formulas_by_hand.py with
   one planted test file whose test is gated by
@@ -213,7 +214,9 @@ PLANT_AS=built exec "$(dirname "$0")/gleam" "$@"
 PYTHON_STUB = """#!/bin/sh
 echo "python3.13 $*" >>"$PLANT_LOG"
 case "$*" in
-  *check_facts.py*) exit 0 ;;
+  *check_facts.py*)
+    grep -q PLANTED_FACT_ERROR .claude/skills/decoding-the-client/references/client-facts.toml 2>/dev/null && { echo "planted fact-file error"; exit 1; }
+    exit 0 ;;
   *client_files.py*) [ -n "$PLANT_TOKENS_STALE" ] && exit 1; exit 0 ;;
 esac
 exec "$PLANT_REAL_PYTHON" "$@"
@@ -398,6 +401,8 @@ class Run:
     marker_ran: bool
     hang: str
     left_running: list[str]
+    head: str
+    recorded: str
 
     @property
     def output(self) -> str:
@@ -431,7 +436,11 @@ def shared_run(key: str, *arguments: str, client: bool = False, prepare=None, ha
         done = case.run_check(*arguments, client=client, timeout=timeout, **settings)
         took = time.monotonic() - started
         left = subprocess.run(["pgrep", "-f", hang_pattern(seconds)], capture_output=True, text=True).stdout.split() if seconds else []
-        run = Run(done, case.commands(), case.side_log("environment"), case.side_log("peak"), case.side_log("erl"), took, case.marker.exists(), seconds, left)
+        record = Path(case.git("rev-parse", "--absolute-git-dir")) / "check-passed-commit"
+        run = Run(
+            done, case.commands(), case.side_log("environment"), case.side_log("peak"), case.side_log("erl"), took,
+            case.marker.exists(), seconds, left, case.git("rev-parse", "HEAD"), record.read_text().strip() if record.exists() else "",
+        )
     finally:
         if seconds:
             subprocess.run(["pkill", "-f", hang_pattern(seconds)])
@@ -878,12 +887,13 @@ class BranchHoldsMainTest(unittest.TestCase):
 @unittest.skipUnless(RUNNABLE, "the check needs bash, python3.13 and ./check here")
 class FastModeTest(unittest.TestCase):
     """`./check fast` is the format check, the build with
-    warnings as errors, glinter and the code-rule tests, and nothing else.
+    warnings as errors, glinter, the code-rule tests and the fact checker, and nothing else.
 
     The planted `gleam` stands for the tools: it fails the format check on a
     planted format error and any run of tests on a planted breach of a code
-    rule. What these tests hold is that the fast check runs each of those four
-    and fails, naming the part, when one fails."""
+    rule, and the fact checker on a planted fact-file error. What these tests hold is
+    that the fast check runs each of those five and fails, naming the part, when one
+    fails, and that only a passing run on a clean tree records its commit."""
 
     def test_a_planted_format_error_fails_the_fast_check_naming_the_format_part(self):
         run = shared_run("fast-format-error", "fast", prepare=lambda case: (case.repository / "src" / "planted.gleam").write_text("// PLANTED_FORMAT_ERROR\n"))
@@ -895,16 +905,46 @@ class FastModeTest(unittest.TestCase):
         self.assertNotEqual(run.done.returncode, 0, run.output)
         self.assertRegex(failed_line(self, run.output), r"\bcode-rules\b")
 
-    def test_the_fast_check_runs_the_four_parts_and_no_other(self):
+    def test_a_planted_fact_file_error_fails_the_fast_check_naming_the_fact_checker_part(self):
+        run = shared_run("fast-fact-error", "fast", prepare=lambda case: plant_fact_file_error(case))
+        self.assertNotEqual(run.done.returncode, 0, run.output)
+        self.assertRegex(failed_line(self, run.output), r"\bfact-checker\b")
+
+    def test_a_passing_fast_check_records_its_commit(self):
+        run = shared_run("fast", "fast")
+        self.assertEqual(run.done.returncode, 0, run.output)
+        self.assertEqual(run.recorded, run.head, "the record names the commit the run passed on")
+
+    def test_a_failing_fast_check_records_no_commit_and_removes_the_one_an_earlier_run_left(self):
+        def plant(case):
+            case.settle()
+            (Path(case.git("rev-parse", "--absolute-git-dir")) / "check-passed-commit").write_text("an earlier commit\n")
+            executable(case.root / "tools" / "gleam", GLEAM_STUB.replace("build) exit 0", "build) exit 1"))
+
+        run = shared_run("fast-build-fails-with-a-record", "fast", prepare=plant)
+        self.assertNotEqual(run.done.returncode, 0, run.output)
+        self.assertEqual(run.recorded, "")
+
+    def test_a_passing_fast_check_on_a_dirty_tree_records_no_commit(self):
+        def plant(case):
+            case.settle()
+            (case.repository / "src" / "uncommitted.gleam").write_text("// not committed\n")
+
+        run = shared_run("fast-dirty", "fast", prepare=plant)
+        self.assertEqual(run.done.returncode, 0, run.output)
+        self.assertEqual(run.recorded, "")
+
+    def test_the_fast_check_runs_the_five_parts_and_no_other(self):
         run = shared_run("fast", "fast")
         self.assertEqual(run.done.returncode, 0, run.output)
         listed = re.findall(r"^\s*([a-z-]+)\s+(?:ok|FAILED)\b", run.output, re.MULTILINE)
-        self.assertEqual(sorted(listed), ["code-rules", "format", "gleam-build", "glinter"])
+        self.assertEqual(sorted(listed), ["code-rules", "fact-checker", "format", "gleam-build", "glinter"])
         commands = run.commands
         self.assertTrue(any(c.startswith("gleam format --check") for c in commands), commands)
         self.assertIn("gleam build --warnings-as-errors", commands)
         self.assertIn("built run -m glinter", commands)
-        self.assertFalse([c for c in commands if c.startswith(("psql", "python3.13"))], commands)
+        self.assertFalse(foreign_commands(commands), commands)
+        self.assertIn(FACT_CHECKER_COMMAND, commands)
         for module in NOT_TEST_RUNS:
             if module != "glinter":
                 self.assertFalse([c for c in commands if module in c], commands)
@@ -920,6 +960,25 @@ class FastModeTest(unittest.TestCase):
         run = shared_run("fast-build-fails", "fast", prepare=plant)
         self.assertNotEqual(run.done.returncode, 0, run.output)
         self.assertRegex(failed_line(self, run.output), r"gleam-build")
+
+
+FACT_FILE = ".claude/skills/decoding-the-client/references/client-facts.toml"
+FACT_CHECKER_COMMAND = "python3.13 -I .claude/skills/decoding-the-client/scripts/check_facts.py"
+
+
+def plant_fact_file_error(case: PlantedCheckCase) -> None:
+    fact_file = case.repository / FACT_FILE
+    fact_file.parent.mkdir(parents=True, exist_ok=True)
+    fact_file.write_text("# PLANTED_FACT_ERROR\n")
+
+
+def foreign_commands(commands: list[str]) -> list[str]:
+    """The psql and python3.13 commands that are not the fact checker's call (its own script,
+    and on a machine with the client the `-c` lookup of the client's path before it)."""
+    return [
+        c for c in commands
+        if c.startswith(("psql", "python3.13")) and c not in (FACT_CHECKER_COMMAND, "python3.13 -I -c ")
+    ]
 
 
 def commit_new_file(case: PlantedCheckCase, path: str) -> None:
@@ -952,7 +1011,7 @@ EVERY_PART = [
     "format", "gleam-build", "glinter", "generated-tables", "gleam-test", "real-start", "world-data", "literal-area",
     "migrations", "squirrel", "client-suite", "fact-checker",
 ]
-QUICK_PARTS = ["format", "gleam-build", "glinter", "code-rules"]
+QUICK_PARTS = ["format", "gleam-build", "glinter", "code-rules", "fact-checker"]
 
 # Files that guidance and untested tools are made of (the issue's light set), one per entry.
 LIGHT_FILES = [
@@ -1023,7 +1082,7 @@ class LightScopeTest(unittest.TestCase):
     def test_a_branch_changing_only_light_files_runs_the_fast_parts_and_no_other(self):
         run = self.light()
         self.assert_light(run)
-        self.assertFalse([c for c in run.commands if c.startswith(("psql", "python3.13"))], run.commands)
+        self.assertFalse(foreign_commands(run.commands), run.commands)
         self.assertEqual([c for c in run.commands if re.fullmatch(r"built test( -- --workers \d+)?", c)], [])
 
     def test_a_branch_changing_only_light_files_says_the_scope_and_why(self):
@@ -1730,7 +1789,7 @@ class FactFileMergeTest(unittest.TestCase):
     """The fact file merges by union (.gitattributes): every step appends its records at
     the end, so two branches' records would otherwise conflict on every merge."""
 
-    FACT_FILE = ".claude/skills/decoding-the-client/references/client-facts.toml"
+    FACT_FILE = FACT_FILE
 
     def test_the_fact_file_merges_by_union(self):
         result = subprocess.run(
