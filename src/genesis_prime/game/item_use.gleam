@@ -148,7 +148,7 @@ pub fn check(
 }
 
 /// ItemSpecial.spell4IdOnActivate of the item's ItemSpecial row, when it names one.
-fn spell_of(
+pub fn spell_of(
   tables tables: table_store.Tables,
   row row: item2.Item2,
 ) -> Result(Spell4Id, Refusal) {

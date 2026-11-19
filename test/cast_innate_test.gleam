@@ -128,8 +128,8 @@ pub fn the_innates_own_cooldown_runs_for_25_seconds_in_combat_test() -> Nil {
   let #(state, _) =
     pressed(state: cast_state.new(), caster:, bag_index: 3, at: 1000)
   let #(_, again) = pressed(state:, caster:, bag_index: 3, at: 20_000)
-  assert support.refusal_results(effects: again) == [15]
-    as "Spell4.46073: spellCoolDown 25000, so a press 19 s later is refused with the cooldown result 15; Prerequisite 390 (not in combat) fails in combat, so 38784's cooldown effect does not clear it"
+  assert support.refusal_results(effects: again) == [16]
+    as "Spell4.46073: spellCoolDown 25000 and the group 182's 25000, so a press 19 s later is refused with the group result 16 (0x1403b14c0, the last of the cooldowns it finds); Prerequisite 390 (not in combat) fails in combat, so 38784's cooldown effect does not clear it"
   let #(_, later) = pressed(state:, caster:, bag_index: 3, at: 26_000)
   assert support.refusal_results(effects: later) == []
     as "the cooldown ends at 26000"

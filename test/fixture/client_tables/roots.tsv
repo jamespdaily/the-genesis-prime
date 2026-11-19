@@ -1438,3 +1438,13 @@ Creature2	21658	a receiver of quest 5263, so the server does not complete it	cli
 WorldLocation2	15884	marker of click objective 7652	click_objective_test
 WorldLocation2	15885	marker of click objective 7653	click_objective_test
 WorldLocation2	15886	marker of click objective 7654	click_objective_test
+Item2	4730	(a buff consumable: Spell4 3792, BaseHealth buff, power level 15)	shortcut_spell_test, cast_item_use_test, game_connection_item_spell_test
+Item2	37649	(a heal-over-time consumable: Spell4 34993)	shortcut_spell_test, cast_item_use_test
+Item2	14850	(a consumable whose Spell4 35022 holds a type 11 row with a type 18 parameter)	shortcut_spell_test, cast_item_use_test
+Item2	13027	(a consumable whose Spell4 28682 holds a type 38 row)	shortcut_spell_test, cast_item_use_test
+Item2	2900	(a consumable whose Spell4 1664 holds an Activate row)	shortcut_spell_test, cast_item_use_test
+Item2	5733	(a consumable whose Spell4 5640 is a Ground kind)	shortcut_spell_test
+Item2	6914	(a consumable whose Spell4 34776 holds a VitalModifier of vital 15)	shortcut_spell_test
+Item2	49372	(Basic Medishot: Instant Healing at power level 60)	passed_in_value_test, cast_item_use_test
+Item2	461	(a Targeted-kind item spell, Spell4 28, with no rows)	cast_item_use_test
+Item2	7117	(an item of Spell4 25306, which a quest objective also names; Spell4 25306 holds an Activate row)	shortcut_spell_test

@@ -12,21 +12,28 @@
 ////   Spell4Effects 43805 is its Activate row (effectType 7).
 //// - Item2 12402 -> ItemSpecial 4350 -> Spell4 1545: castTime 0, targetMaxRange 5.0, no cast
 ////   group; Spell4Effects 2348 is its Activate row.
-//// - Item2 21966 -> ItemSpecial 5410 -> Spell4 41914, whose one effect, Spell4Effects 94446, is a
-////   RavelSignal: no Activate row, so the server has no plan for it.
+//// - Item2 461 -> ItemSpecial 2697 -> Spell4 28, cast at a unit (targetType 1) and holding
+////   no effect row: no Activate row, so the creature's activate cast has no plan for it.
+//// - Item2 21966 -> ItemSpecial 5410 -> Spell4 41914, cast on its user (targetType 0), whose
+////   one effect, Spell4Effects 94446, is a RavelSignal: the client signals a script it does
+////   not hold, so the cast lists the row (`effect_kind`).
 //// - `opcode.0x97.range` (`0x1403b2240`): the gap between the units' edges is held to the
 ////   spell's limits.
 //// - `opcode.0x7fc`: the refusal carries the client's cast id, the spell and the result.
 
 import cast_support as support
 import fixture_tables
+import game_connection_support
 import genesis_prime/client_connection.{CastStarted}
 import genesis_prime/game/activate.{type Target, Body, NoLink, Usable}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
+import genesis_prime/game/effect_kind
 import genesis_prime/game/item_use
+import genesis_prime/game/passed_in_value
 import genesis_prime/game/prerequisite
 import genesis_prime/game/quest_log.{type QuestLog}
+import genesis_prime/game/shortcut_spell
 import genesis_prime/game/target_group
 import genesis_prime/message/cast_result
 import genesis_prime/message/crowd_control_state
@@ -55,11 +62,9 @@ pub const grenade = 12_444
 
 const generic_item = 12_402
 
-const objective_item = 21_966
+const a_spell_at_a_unit_with_no_rows = 461
 
 const grenade_quest = 4743
-
-const security_quest = 7833
 
 pub const a_slaver_shack = 17_397
 
@@ -198,6 +203,13 @@ fn used_with(
       )
     },
     activations: activate.activations(tables:),
+    shortcuts: shortcut_spell.shortcuts(tables:),
+    item_cast_of: fn(item) {
+      cast_state.Item(
+        item_level: passed_in_value.level_of_item(tables:, item2_id: item),
+        passed_in: passed_in_value.of_item(tables:, item2_id: item),
+      )
+    },
     target_of: fn(unit_id) {
       case unit_id == its_unit {
         True -> target
@@ -871,51 +883,6 @@ fn used_as(
   effects
 }
 
-pub fn an_item_spell_with_no_activate_effect_is_refused_285_and_logged_once_test() -> Nil {
-  use <- owned_test.run(10_000)
-  let caster =
-    standing(
-      level: 50,
-      quests: quest_support.log_of(rows: [
-        quest_support.active(
-          quest_id: security_quest,
-          state: 1,
-          placeholder: 0,
-          tracked: False,
-          done_mask: 0b1,
-          progress: [1, 0],
-        ),
-      ]),
-    )
-  let no_target = activate.Unseen
-  let assert Ok(#(state, first)) =
-    use_item_at(
-      state: cast_state.new(),
-      caster:,
-      item: objective_item,
-      target: no_target,
-      at: 1000,
-    )
-    as "the first use is answered"
-  let assert Ok(#(_, second)) =
-    use_item_at(
-      state:,
-      caster:,
-      item: objective_item,
-      target: no_target,
-      at: 2000,
-    )
-    as "the second use is answered"
-  assert refused_with(effects: first) == [#(clients_cast_id, 41_914, 285)]
-    as "Spell4 41914's one effect, Spell4Effects 94446, is a RavelSignal: the server has no plan for it (#334): IllegalSpellCast (285)"
-  assert refused_with(effects: second) == [#(clients_cast_id, 41_914, 285)]
-    as "the second use is refused the same"
-  let assert [#(LogWarning, line)] =
-    list.append(support.logs(effects: first), support.logs(effects: second))
-    as "the gap is logged once"
-  assert string.contains(line, "41914") as "the log line names the spell"
-}
-
 pub fn the_generic_quest_spell_item_at_a_farmhand_starts_within_5_m_test() -> Nil {
   use <- owned_test.run(10_000)
   let caster = standing(level: 20, quests: quest_support.log_of(rows: []))
@@ -983,17 +950,6 @@ pub fn an_item_use_spends_only_when_its_cast_starts_test() -> Nil {
   }
   use level_tables <- level_30_grenade
   let shack = shown(creature_id: a_slaver_shack, metres: 10.0)
-  let objective_log =
-    quest_support.log_of(rows: [
-      quest_support.active(
-        quest_id: security_quest,
-        state: 1,
-        placeholder: 0,
-        tracked: False,
-        done_mask: 0b1,
-        progress: [1, 0],
-      ),
-    ])
   let grenade_row = fn(why, result, target) {
     Refusing(
       tables: tables(),
@@ -1041,13 +997,13 @@ pub fn an_item_use_spends_only_when_its_cast_starts_test() -> Nil {
       ),
       Refusing(
         ..grenade_row(
-          "a spell with no Activate effect is 285",
+          "a spell cast at a unit with no Activate effect is 285",
           285,
           activate.Unseen,
         ),
-        held: Some(objective_item),
-        caster: standing(level: 50, quests: objective_log),
-        refused: #(41_914, 285),
+        held: Some(a_spell_at_a_unit_with_no_rows),
+        caster: standing(level: 50, quests: quest_support.log_of(rows: [])),
+        refused: #(28, 285),
       ),
     ],
     fn(row) {
@@ -1398,4 +1354,475 @@ pub fn an_item_spell_with_a_type_42_row_is_planned_and_cast_without_a_use_of_its
       }
     },
   )
+}
+
+// Consumables: the spells items cast on their user (`shortcut_spell`), by the client's rows:
+// - Item2 14838 (Basic Medishot: Instant Healing, power level 5, level 1 to use) -> Spell4
+//   34985: castTime 0, cooldown group 130 (SpellCoolDown 130: 180,000 ms), globalCooldownEnum
+//   3; its Heal row 69917 is parameter 18 x 200.0 (dataBits00 1.0, dataBits01 0).
+// - Item2 49372 is the same spell at power level 60 (level 50 to use); the curve at 60 is
+//   20.0 x e^(0.01 x 10) (GameFormula 65 at 60 - 50), 22.10, so 200 x it is 4,421.
+// - Item2 37649 -> Spell4 34993: Heal row 69936 of 206 every 2,000 ms for 20,000 ms.
+// - Item2 4730 -> Spell4 3792: a type 11 row 6403 of 900,000 ms, globalCooldownEnum 0.
+// - Item2 14850 -> 35022 (row 69997, type 11 with a type 18 parameter), 13027 -> 28682 (row
+//   49524, type 38), 2900 -> 1664 (Activate row 2530) and 90021 -> 87129 (rows holding the
+//   suspend prerequisite 43393).
+// - Item2 461 -> Spell4 28, a Targeted kind with no rows: the creature's activate cast has no
+//   plan for it.
+// - `opcode.0x7ff.caster_item_level`: an item's cast tells its item level, Item2.powerLevel;
+//   `opcode.0x7ff.activate`: no item cast sets the creature-activate bit.
+
+/// What an earlier input of the player did to the state.
+type Earlier {
+  /// Nothing.
+  NothingEarlier
+  /// An ability press at this time (bag index 0).
+  AbilityAt(ms: Int)
+  /// The use of this item at this time, which the stack's store answered at once.
+  DrinkAt(item: Int, ms: Int)
+}
+
+/// What a consumable's use comes to.
+type Comes {
+  /// The cast starts at once and its go heals the caster by `amount`, the viewers told the
+  /// item level `item_level` in the start.
+  Heals(amount: Int, item_level: Int)
+  /// The cast starts, and its first tick, due `first_tick_ms` after the press, heals `amount`.
+  HealsEvery(amount: Int, first_tick_ms: Int)
+  /// The cast starts and its go starts one property change on the caster.
+  Buffs
+  /// The press is refused with this result, and the stack is not spent.
+  RefusedWith(result: Int)
+  /// The press is refused 285 and logged once with the issue named, the text naming these.
+  NotBuilt(issue: String, naming: List(String))
+}
+
+type Drink {
+  Drink(
+    why: String,
+    item: Int,
+    level: Int,
+    press_target: Int,
+    earlier: Earlier,
+    at_ms: Int,
+    comes: Comes,
+  )
+}
+
+fn drinker(level level: Int) -> cast_state.Caster {
+  standing(level:, quests: quest_support.log_of(rows: []))
+}
+
+fn after(earlier earlier: Earlier) -> State {
+  case earlier {
+    NothingEarlier -> cast_state.new()
+    AbilityAt(ms:) ->
+      support.pressed(state: cast_state.new(), bag_index: 0, target: 0, at: ms).0
+    DrinkAt(item:, ms:) -> {
+      let assert Ok(#(state, effects)) =
+        use_item_at(
+          state: cast_state.new(),
+          caster: drinker(level: 50),
+          item:,
+          target: activate.Unseen,
+          at: ms,
+        )
+        as "the earlier use is taken"
+      support.answered_with_no_targets(state:, effects:, at: ms).0
+    }
+  }
+}
+
+fn drink_press(
+  state state: State,
+  case_ case_: Drink,
+) -> Result(cast_state.Used, cast_state.Refusal) {
+  used_with(
+    tables: tables(),
+    state:,
+    caster: drinker(level: case_.level),
+    held: Some(case_.item),
+    charges: 1,
+    body: the_body(
+      client_cast_id: clients_cast_id + 1,
+      item: the_item_place,
+      target_unit_id: case_.press_target,
+    ),
+    target: activate.Unseen,
+    at: case_.at_ms,
+  )
+}
+
+pub fn a_consumables_use_is_decided_by_its_spell_test() -> Nil {
+  use <- owned_test.run(20_000)
+  list.each(
+    [
+      Drink(
+        "Medishot at player level 1: 200 x the curve at its power level 5 (6.5)",
+        14_838,
+        1,
+        0,
+        NothingEarlier,
+        1000,
+        Heals(amount: 1300, item_level: 5),
+      ),
+      Drink(
+        "the same Medishot at player level 50 heals the same: the player's level is not read",
+        14_838,
+        50,
+        0,
+        NothingEarlier,
+        1000,
+        Heals(amount: 1300, item_level: 5),
+      ),
+      Drink(
+        "Medishot of power level 60: 200 x the curve at 60",
+        49_372,
+        50,
+        0,
+        NothingEarlier,
+        1000,
+        Heals(amount: 4421, item_level: 60),
+      ),
+      Drink(
+        "a press naming a unit starts the same: the target is not read for a Caster kind",
+        14_838,
+        1,
+        its_unit,
+        NothingEarlier,
+        1000,
+        Heals(amount: 1300, item_level: 5),
+      ),
+      Drink(
+        "the heal over time: Spell4Effects 69936 heals 206 a tick, the first 2,000 ms after its delay of 2,000",
+        37_649,
+        1,
+        0,
+        NothingEarlier,
+        1000,
+        HealsEvery(amount: 206, first_tick_ms: 4000),
+      ),
+      Drink(
+        "the buff starts one property change",
+        4730,
+        1,
+        0,
+        NothingEarlier,
+        1000,
+        Buffs,
+      ),
+      Drink(
+        "the buff potion 50 ms after another is refused 14: its globalCooldownEnum 0 starts the global cooldown and is held back by it, and a refusal leaves the stack unspent",
+        4730,
+        1,
+        0,
+        DrinkAt(item: 4730, ms: 1000),
+        1050,
+        RefusedWith(result: 14),
+      ),
+      Drink(
+        "a second Medishot 1 s after the first is refused 16: its go started the group 130 for SpellCoolDown 130's 180,000 ms (0x14046b1e0), and the refusal leaves the stack unspent",
+        14_838,
+        1,
+        0,
+        DrinkAt(item: 14_838, ms: 1000),
+        2000,
+        RefusedWith(result: 16),
+      ),
+      Drink(
+        "another Medishot item of the same spell 1 s after is refused 16 too: the group is the spell's, not the item's",
+        49_372,
+        50,
+        0,
+        DrinkAt(item: 14_838, ms: 1000),
+        2000,
+        RefusedWith(result: 16),
+      ),
+      Drink(
+        "a Medishot when the group's 180,000 ms have run out is taken: 1000 + 180,000",
+        49_372,
+        50,
+        0,
+        DrinkAt(item: 14_838, ms: 1000),
+        181_000,
+        Heals(amount: 4421, item_level: 60),
+      ),
+      Drink(
+        "Medishot 50 ms after an ability press: its globalCooldownEnum 3 passes a global cooldown",
+        14_838,
+        1,
+        0,
+        AbilityAt(ms: 1000),
+        1050,
+        Heals(amount: 1300, item_level: 5),
+      ),
+      Drink(
+        "a type 11 row with a type 18 parameter is not built",
+        14_850,
+        50,
+        0,
+        NothingEarlier,
+        1000,
+        NotBuilt("#336", ["69997", "type 11"]),
+      ),
+      Drink(
+        "a type 38 row is not built",
+        13_027,
+        50,
+        0,
+        NothingEarlier,
+        1000,
+        NotBuilt("#336", ["49524", "type 38"]),
+      ),
+      Drink(
+        "an Activate row is not built (it was 91)",
+        2900,
+        50,
+        0,
+        NothingEarlier,
+        1000,
+        NotBuilt("#336", ["2530", "Activate"]),
+      ),
+      Drink(
+        "a row holding a suspend prerequisite is not built",
+        90_021,
+        50,
+        0,
+        NothingEarlier,
+        1000,
+        NotBuilt("#336", ["227562", "43393"]),
+      ),
+    ],
+    fn(case_) {
+      let before = after(earlier: case_.earlier)
+      let used = drink_press(state: before, case_:)
+      case case_.comes {
+        Heals(amount:, item_level:) -> {
+          let #(state, effects) = started(used:, before:, case_:)
+          assert state.global_cooldown_ends_ms == before.global_cooldown_ends_ms
+            as "no global cooldown starts: globalCooldownEnum 3"
+          assert list.map(support.caster_change_starts(effects:), fn(start) {
+              start.1
+            })
+            == [cast_state.Heal(vital: effect_kind.Health, amount:)]
+            as case_.why
+          assert support.refusal_results(effects:) == [] as case_.why
+          let assert [#(_, CastStarted(start: started))] =
+            list.take(support.tells(effects:), 1)
+            as case_.why
+          assert started.creature_activate == 0 as case_.why
+          assert started.caster_item_level == item_level as case_.why
+          assert support.started_timers(effects:) == [] as case_.why
+        }
+        HealsEvery(amount:, first_tick_ms:) -> {
+          let #(state, effects) = started(used:, before:, case_:)
+          assert first_tick_heals(
+              state:,
+              effects:,
+              case_:,
+              first_tick_ms:,
+              caster: drinker(level: case_.level),
+            )
+            == [cast_state.Heal(vital: effect_kind.Health, amount:)]
+            as case_.why
+        }
+        Buffs -> {
+          let #(_, effects) = started(used:, before:, case_:)
+          assert list.length(support.property_starts(effects:)) == 1
+            as case_.why
+        }
+        RefusedWith(result:) -> {
+          let assert Ok(cast_state.Frames(effects:, ..)) = used as case_.why
+          assert list.map(refused_with(effects:), fn(refusal) { refusal.2 })
+            == [result]
+            as case_.why
+        }
+        NotBuilt(issue:, naming:) -> {
+          let assert Ok(cast_state.Frames(effects:, ..)) = used as case_.why
+          assert list.map(refused_with(effects:), fn(refusal) { refusal.2 })
+            == [285]
+            as case_.why
+          let assert [#(LogWarning, line)] = support.logs(effects:) as case_.why
+          assert string.contains(line, issue) as case_.why
+          assert list.all(naming, fn(word) { string.contains(line, word) })
+            as case_.why
+        }
+      }
+    },
+  )
+}
+
+/// The state and effects of the cast a passed press starts, made at the press's own time,
+/// its go answered as a round that struck nobody.
+fn started(
+  used used: Result(cast_state.Used, cast_state.Refusal),
+  before before: State,
+  case_ case_: Drink,
+) -> #(State, List(Effect)) {
+  let assert Ok(cast_state.Started(start:, ..)) = used as case_.why
+  let #(state, effects) =
+    cast.item_started(cast: before, start:, now: support.at(ms: case_.at_ms))
+  support.answered_with_no_targets(state:, effects:, at: case_.at_ms)
+}
+
+/// What the cast's first tick heals the caster by: the timer due `first_tick_ms` after the
+/// press is fired at its time.
+fn first_tick_heals(
+  state state: State,
+  effects effects: List(Effect),
+  case_ case_: Drink,
+  first_tick_ms first_tick_ms: Int,
+  caster caster: cast_state.Caster,
+) -> List(cast_state.CasterChange) {
+  let assert [#(timer, _)] =
+    list.filter(support.started_timers(effects:), fn(timer) {
+      timer.1 == first_tick_ms
+    })
+    as case_.why
+  let #(_, ticked) =
+    support.fired_raw_as(
+      caster:,
+      state:,
+      timer:,
+      at: case_.at_ms + first_tick_ms,
+    )
+  list.map(support.caster_change_starts(effects: ticked), fn(start) { start.1 })
+}
+
+pub fn a_heal_over_time_with_a_type_18_parameter_ticks_by_the_items_level_test() -> Nil {
+  use <- owned_test.run(20_000)
+  // Spell4Effects 69936 given Medishot's formula, parameter 18 x 200 with no base: Item2
+  // 37649 has power level 15, where the curve is 5.0 + 0.3 x 15 = 9.5 (GameFormula 991), so a
+  // tick heals 1,900 whatever the player's level.
+  use edited <- fixture_tables.changed(
+    table: "Spell4Effects",
+    id: 69_936,
+    with: [
+      #("dataBits01", Integer(0)),
+      #("parameterType00", Integer(18)),
+      #("parameterValue00", planted_table.Float(200.0)),
+    ],
+  )
+  let case_ =
+    Drink(
+      "a tick of the heal over time",
+      37_649,
+      1,
+      0,
+      NothingEarlier,
+      1000,
+      HealsEvery(amount: 1900, first_tick_ms: 4000),
+    )
+  let used =
+    used_with(
+      tables: edited,
+      state: cast_state.new(),
+      caster: drinker(level: 1),
+      held: Some(37_649),
+      charges: 1,
+      body: the_body(
+        client_cast_id: clients_cast_id,
+        item: the_item_place,
+        target_unit_id: 0,
+      ),
+      target: activate.Unseen,
+      at: 1000,
+    )
+  let #(state, effects) = started(used:, before: cast_state.new(), case_:)
+  assert first_tick_heals(
+      state:,
+      effects:,
+      case_:,
+      first_tick_ms: 4000,
+      caster: drinker(level: 1),
+    )
+    == [cast_state.Heal(vital: effect_kind.Health, amount: 1900)]
+    as "each tick reads the passed-in value at the item's level, not the player's"
+}
+
+pub fn a_child_an_items_cast_starts_heals_by_the_items_level_test() -> Nil {
+  use <- owned_test.run(20_000)
+  // Spell4Effects 6403, the buff potion's row (Item2 4730, power level 15), made a Proxy
+  // aimed at the caster that starts Medishot's Spell4 34985, whose Heal row 69917 is
+  // parameter 18 x 200: at the item's level, the curve at 15 is 9.5 (GameFormula 991), so
+  // the child heals 1,900 whatever the player's level (1 would give 200 x 5.3 = 1,060).
+  use edited <- fixture_tables.changed(table: "Spell4Effects", id: 6403, with: [
+    #("effectType", Integer(26)),
+    #("dataBits00", Integer(34_985)),
+    #("dataBits01", Integer(0)),
+    #("dataBits02", Integer(0)),
+    #("dataBits03", Integer(0)),
+    #("durationTime", Integer(0)),
+  ])
+  let case_ =
+    Drink(
+      "the child of the buff potion's cast",
+      4730,
+      1,
+      0,
+      NothingEarlier,
+      1000,
+      Buffs,
+    )
+  let used =
+    used_with(
+      tables: edited,
+      state: cast_state.new(),
+      caster: drinker(level: 1),
+      held: Some(4730),
+      charges: 1,
+      body: the_body(
+        client_cast_id: clients_cast_id,
+        item: the_item_place,
+        target_unit_id: 0,
+      ),
+      target: activate.Unseen,
+      at: 1000,
+    )
+  let #(_, effects) = started(used:, before: cast_state.new(), case_:)
+  assert list.map(support.caster_change_starts(effects:), fn(start) { start.1 })
+    == [cast_state.Heal(vital: effect_kind.Health, amount: 1900)]
+    as "the Proxy's child reads the passed-in value at the item's level, as the item's own cast does"
+  assert list.unique(
+      list.map(
+        game_connection_support.cast_starts(
+          list.map(support.tells(effects:), fn(tell) { tell.1 }),
+        ),
+        fn(start) { start.caster_item_level },
+      ),
+    )
+    == [15]
+    as "opcode.0x7ff.caster_item_level: every start of the item's cast, its child's too, tells the item's level 15, since its buff reads its tooltip at that level"
+}
+
+pub fn an_item_spell_with_no_activate_effect_is_refused_285_and_logged_once_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let no_target = activate.Unseen
+  let assert Ok(#(state, first)) =
+    use_item_at(
+      state: cast_state.new(),
+      caster: drinker(level: 50),
+      item: a_spell_at_a_unit_with_no_rows,
+      target: no_target,
+      at: 1000,
+    )
+    as "the first use is answered"
+  let assert Ok(#(_, second)) =
+    use_item_at(
+      state:,
+      caster: drinker(level: 50),
+      item: a_spell_at_a_unit_with_no_rows,
+      target: no_target,
+      at: 2000,
+    )
+    as "the second use is answered"
+  assert refused_with(effects: first) == [#(clients_cast_id, 28, 285)]
+    as "Spell4 28 is cast at a unit and has no Activate and no QuestAdvanceObjective row, which is all the creature's activate cast plays (#333): IllegalSpellCast (285)"
+  assert refused_with(effects: second) == [#(clients_cast_id, 28, 285)]
+    as "the second use is refused the same"
+  let assert [#(LogWarning, line)] =
+    list.append(support.logs(effects: first), support.logs(effects: second))
+    as "the gap is logged once"
+  assert string.contains(line, "Spell4 28") as "the log line names the spell"
+  assert string.contains(line, "#333") as "and the issue"
 }

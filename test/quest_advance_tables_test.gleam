@@ -6,6 +6,7 @@
 
 import client_tables
 import genesis_prime/game/activate
+import genesis_prime/game/item_property
 import genesis_prime/game/objective
 import genesis_prime/game/objective_action
 import genesis_prime/game/quest_log
@@ -306,11 +307,9 @@ pub fn the_item_spells_that_start_only_for_a_type_42_row_are_these_test() -> Nil
   let with_a_row =
     set.from_list(list.map(type_42_rows(tables:), fn(row) { row.spell_id }))
   let starting =
-    item_special.all(tables)
-    |> list.map(fn(row) { row.spell4_id_on_activate })
+    item_property.spells_on_activate(tables:)
     |> list.filter(fn(spell4_id) {
-      spell4_id != 0
-      && set.contains(with_a_row, spell4_id)
+      set.contains(with_a_row, spell4_id)
       && !list.any(spell_plan.effects_of(sources:, spell4_id:), fn(effect) {
         effect.effect_type == 7
       })

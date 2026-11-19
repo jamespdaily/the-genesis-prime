@@ -422,14 +422,20 @@ pub fn after_payments(
   )
 }
 
-/// What is left of the global cooldown, when it refuses the spell, and of the
-/// spell's own cooldown, in milliseconds.
-pub fn cooldown_left_ms(
+/// What the cooldowns a press meets have left, in milliseconds: the global cooldown when
+/// it refuses the spell, the spell's own cooldown, and the longest of its cooldown groups.
+pub type CooldownsLeft {
+  CooldownsLeft(global_ms: Int, own_ms: Int, group_ms: Int)
+}
+
+/// What is left of the global cooldown, when it refuses the spell, of the spell's own
+/// cooldown and of its cooldown groups.
+pub fn cooldowns_left(
   cast cast: State,
   spell spell: Spell,
   now_ms now_ms: Int,
-) -> #(Int, Int) {
-  let global_left = case
+) -> CooldownsLeft {
+  let global_ms = case
     spell.global_cooldown.refused_while_running,
     option.map(cast.global_cooldown_ends_ms, fn(ends_ms) {
       int.max(0, ends_ms - now_ms)
@@ -438,9 +444,40 @@ pub fn cooldown_left_ms(
     True, Some(left_ms) -> left_ms
     True, None | False, Some(_) | False, None -> 0
   }
-  let own_left =
-    cooldown.left_ms(book: cast.cooldowns, spell4_id: spell.spell4_id, now_ms:)
-  #(global_left, own_left)
+  CooldownsLeft(
+    global_ms:,
+    own_ms: cooldown.left_ms(
+      book: cast.cooldowns,
+      spell4_id: spell.spell4_id,
+      now_ms:,
+    ),
+    group_ms: cooldown.group_left_ms(
+      book: cast.cooldowns,
+      groups: spell.cooldown_groups,
+      now_ms:,
+    ),
+  )
+}
+
+/// The longest of the cooldowns left: how long a press waits before it can be cast.
+pub fn longest_left_ms(left left: CooldownsLeft) -> Int {
+  int.max(left.global_ms, int.max(left.own_ms, left.group_ms))
+}
+
+/// The result a press is refused with when the longest cooldown left is more than the
+/// queue window: the last kind that runs, group, then own, then global, as the client's
+/// check gives it to an ability press (`0x1403b14c0`, queue argument 1). A press with no
+/// more than the window left is not refused: it is held.
+pub fn cooldown_refusal(
+  left left: CooldownsLeft,
+  window_ms window_ms: Int,
+) -> Option(cast_result.CastResult) {
+  use <- bool.guard(when: longest_left_ms(left:) <= window_ms, return: None)
+  Some(case left.group_ms > 0, left.own_ms > 0 {
+    True, _ -> cast_result.SpellGroupCooldown
+    False, True -> cast_result.SpellCooldown
+    False, False -> cast_result.SpellGlobalCooldown
+  })
 }
 
 /// The methods the rule casts; a spell of any other is refused 285.

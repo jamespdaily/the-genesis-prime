@@ -605,6 +605,15 @@ pub type EquipRequirements {
   )
 }
 
+/// The Spell4 ids the client's items cast when used (`ItemSpecial.spell4IdOnActivate`),
+/// each once; an ItemSpecial row with none casts nothing.
+pub fn spells_on_activate(tables tables: table_store.Tables) -> List(Int) {
+  item_special.all(tables)
+  |> list.map(fn(row) { row.spell4_id_on_activate })
+  |> list.filter(fn(spell4_id) { spell4_id != 0 })
+  |> list.unique
+}
+
 /// The item's equip requirements. Only a missing Item2, category or ItemSpecial
 /// row is an error; a category with no ItemProficiency row needs no proficiency
 /// (HasItemProficiency 0x1403ca2b0).
@@ -1553,6 +1562,15 @@ fn banded_curve(
     float32.product(row.datafloat0, growth),
     float32.product(row.datafloat02, float32.rounded(power)),
   )
+}
+
+/// A rune's budget curve at a power level (0x14041f1b0): the family-33 curve
+/// `EvaluateEffectToken` raises a type 18 parameter by (0x1404de840).
+pub fn rune_budget_curve(
+  tables tables: table_store.Tables,
+  level level: Int,
+) -> Result(Float, ItemPropertyError) {
+  banded_curve(tables:, bands: rune_budget_bands, level:)
 }
 
 /// The Assault Rating and Support Rating of an item (0x14040df10).

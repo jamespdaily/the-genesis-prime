@@ -33,7 +33,7 @@ fn charged_shot_keys() -> cooldown.Keys {
     spell4_id: Spell4Id(34_718),
     spell4_base_id: Spell4BaseId(20_684),
     spell_groups: [],
-    cooldown_groups: [133],
+    cooldown_groups: [cooldown.Group(id: 133, time_ms: 0)],
   )
 }
 
@@ -169,7 +169,7 @@ fn three_running() -> Book {
           spell4_id: Spell4Id(spell.0),
           spell4_base_id: Spell4BaseId(spell.1),
           spell_groups: [spell.2],
-          cooldown_groups: [spell.3],
+          cooldown_groups: [cooldown.Group(id: spell.3, time_ms: 0)],
         ),
         cooldown_ms: 10_000,
         now_ms: 0,
@@ -275,6 +275,238 @@ pub fn a_cooldown_that_has_ended_is_none_left_test() -> Nil {
     as "a time left is never below 0"
   assert cooldown.left_ms(book:, spell4_id: Spell4Id(1), now_ms: 4000) == 0
     as "a spell that never started one has none"
+}
+
+// ---- the cooldown groups ----
+
+/// Basic Medishot, Spell4 34985 of base 20834, with no cooldown of its own and the group
+/// 130, whose SpellCoolDown row holds 180,000 ms (`table_rows -- Spell4 34985`,
+/// `-- SpellCoolDown 130`).
+fn medishot_keys() -> cooldown.Keys {
+  cooldown.keys(
+    spell4_id: Spell4Id(34_985),
+    spell4_base_id: Spell4BaseId(20_834),
+    spell_groups: [],
+    cooldown_groups: [cooldown.Group(id: 130, time_ms: 180_000)],
+  )
+}
+
+fn group_130() -> List(cooldown.Group) {
+  [cooldown.Group(id: 130, time_ms: 180_000)]
+}
+
+/// The time the group `id` has left at `now_ms`.
+fn group_left(book book: Book, id id: Int, at now_ms: Int) -> Int {
+  cooldown.group_left_ms(
+    book:,
+    groups: [cooldown.Group(id:, time_ms: 0)],
+    now_ms:,
+  )
+}
+
+pub fn a_go_starts_each_cooldown_group_for_its_own_time_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Three groups of planted times and the spell's own 5000 ms, started at 0.
+  let book =
+    cooldown.start(
+      book: cooldown.new(),
+      keys: cooldown.keys(
+        spell4_id: Spell4Id(7),
+        spell4_base_id: Spell4BaseId(7),
+        spell_groups: [],
+        cooldown_groups: [
+          cooldown.Group(id: 130, time_ms: 180_000),
+          cooldown.Group(id: 182, time_ms: 25_000),
+          cooldown.Group(id: 133, time_ms: 0),
+        ],
+      ),
+      cooldown_ms: 5000,
+      now_ms: 0,
+    )
+  list.each(
+    [
+      #("group 130 holds its row's time", 130, 1000, 179_000),
+      #("group 182 holds its row's time", 182, 1000, 24_000),
+      #("a group time of 0 starts none (0x14046a3d0)", 133, 1000, 0),
+      #("group 182 ends at its time", 182, 25_000, 0),
+      #(
+        "group 130 runs on after the spell's own cooldown",
+        130,
+        25_000,
+        155_000,
+      ),
+    ],
+    fn(row) {
+      assert group_left(book:, id: row.1, at: row.2) == row.3 as row.0
+    },
+  )
+  assert cooldown.left_ms(book:, spell4_id: Spell4Id(7), now_ms: 1000) == 4000
+    as "the spell's own cooldown runs beside its groups"
+}
+
+pub fn a_group_cooldown_one_spell_started_is_left_for_every_spell_that_names_the_group_test() -> Nil {
+  use <- owned_test.run(5000)
+  let book =
+    cooldown.start(
+      book: cooldown.new(),
+      keys: medishot_keys(),
+      cooldown_ms: 0,
+      now_ms: 1000,
+    )
+  assert cooldown.group_left_ms(book:, groups: group_130(), now_ms: 2000)
+    == 179_000
+    as "0x1403b14c0 finds the group entry by the group's id, whatever spell started it"
+  assert cooldown.group_left_ms(
+      book:,
+      groups: [
+        cooldown.Group(id: 182, time_ms: 25_000),
+        cooldown.Group(id: 130, time_ms: 180_000),
+      ],
+      now_ms: 2000,
+    )
+    == 179_000
+    as "the longest of a spell's groups that run is what is left"
+  assert cooldown.group_left_ms(
+      book:,
+      groups: [cooldown.Group(id: 182, time_ms: 25_000)],
+      now_ms: 2000,
+    )
+    == 0
+    as "a spell of another group meets none"
+  assert cooldown.left_ms(book:, spell4_id: Spell4Id(34_985), now_ms: 2000) == 0
+    as "Medishot has no cooldown of its own"
+}
+
+pub fn a_spell_whose_group_cooldown_runs_starts_no_cooldown_again_test() -> Nil {
+  use <- owned_test.run(5000)
+  let own_and_group =
+    cooldown.keys(
+      spell4_id: Spell4Id(7),
+      spell4_base_id: Spell4BaseId(7),
+      spell_groups: [],
+      cooldown_groups: group_130(),
+    )
+  let book =
+    cooldown.start(
+      book: cooldown.new(),
+      keys: own_and_group,
+      cooldown_ms: 5000,
+      now_ms: 0,
+    )
+  // At 6000 the spell's own 5000 ms are over and its group has 174,000 ms left.
+  let again =
+    cooldown.start(book:, keys: own_and_group, cooldown_ms: 5000, now_ms: 6000)
+  assert again == book
+    as "0x14046b1e0 returns when an entry of the unit carries the spell's id, and a group entry does"
+  assert group_left(book: again, id: 130, at: 6000) == 174_000
+    && cooldown.left_ms(book: again, spell4_id: Spell4Id(7), now_ms: 6000) == 0
+    as "neither the group nor the own cooldown starts again"
+}
+
+pub fn a_group_time_of_zero_ends_a_group_cooldown_that_runs_test() -> Nil {
+  use <- owned_test.run(5000)
+  let book =
+    cooldown.start(
+      book: cooldown.new(),
+      keys: medishot_keys(),
+      cooldown_ms: 0,
+      now_ms: 0,
+    )
+  let ended =
+    cooldown.start(
+      book:,
+      keys: cooldown.keys(
+        spell4_id: Spell4Id(8),
+        spell4_base_id: Spell4BaseId(8),
+        spell_groups: [],
+        cooldown_groups: [cooldown.Group(id: 130, time_ms: 0)],
+      ),
+      cooldown_ms: 0,
+      now_ms: 1000,
+    )
+  assert group_left(book: ended, id: 130, at: 1000) == 0
+    as "0x14046a3d0: a spell that goes with the group's time 0 sets that group to 0, which ends the entry (opcode.0x804 says the same of a time of 0)"
+}
+
+pub fn a_modifier_picks_a_group_cooldown_by_the_spell_that_started_it_test() -> Nil {
+  use <- owned_test.run(5000)
+  let started =
+    cooldown.start(
+      book: cooldown.new(),
+      keys: medishot_keys(),
+      cooldown_ms: 0,
+      now_ms: 0,
+    )
+  list.each(
+    [
+      #("selector 0, the starter's base", Base(Spell4BaseId(20_834)), 90_000),
+      #("selector 1, the starter", Spell(Spell4Id(34_985)), 90_000),
+      #("selector 3, a group of the starter", CooldownGroup(130), 90_000),
+      #("selector 3 of another group", CooldownGroup(182), 180_000),
+      #("selector 0 of another base", Base(Spell4BaseId(1)), 180_000),
+    ],
+    fn(row) {
+      let book =
+        cooldown.modify(
+          book: started,
+          modifier: Modifier(selector: row.1, operation: NoLonger(0.5)),
+          now_ms: 0,
+        )
+      assert group_left(book:, id: 130, at: 0) == row.2 as row.0
+    },
+  )
+}
+
+pub fn a_group_another_spell_sets_again_stays_the_first_spells_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Spell 7 starts group 130 at 0 and spell 8 of the same group sets it again at 1000
+  // (ends at 181,000). Planted ids, not client rows.
+  let keys_of = fn(id) {
+    cooldown.keys(
+      spell4_id: Spell4Id(id),
+      spell4_base_id: Spell4BaseId(id),
+      spell_groups: [],
+      cooldown_groups: group_130(),
+    )
+  }
+  let book =
+    cooldown.start(
+      book: cooldown.new(),
+      keys: keys_of(7),
+      cooldown_ms: 0,
+      now_ms: 0,
+    )
+    |> cooldown.start(keys: keys_of(8), cooldown_ms: 0, now_ms: 1000)
+  // Spell 7 goes again at 179,000 (a Proxy or a proc, not a press) while the group runs.
+  let again =
+    cooldown.start(book:, keys: keys_of(7), cooldown_ms: 5000, now_ms: 179_000)
+  assert again == book
+    as "0x14046b1e0: the entry still carries spell 7's id, which 0x14046a3d0 never rewrites, so nothing starts"
+  assert cooldown.left_ms(book: again, spell4_id: Spell4Id(7), now_ms: 182_000)
+    == 0
+    as "the press the client sends after the group ends meets no own cooldown, so it is not refused 15"
+  let halved =
+    cooldown.modify(
+      book:,
+      modifier: Modifier(selector: Spell(Spell4Id(7)), operation: NoLonger(0.5)),
+      now_ms: 1000,
+    )
+  assert group_left(book: halved, id: 130, at: 1000) == 90_000
+    as "0x14046b920: a modifier that picks spell 7 still changes the group spell 7 started"
+}
+
+pub fn a_new_group_cooldown_goes_through_the_kept_modifiers_test() -> Nil {
+  use <- owned_test.run(5000)
+  let kept =
+    cooldown.keep(
+      book: cooldown.new(),
+      source: cast_support.source_of(cast_id: 1, effect_id: 1),
+      modifier: Modifier(selector: CooldownGroup(130), operation: NoLonger(0.5)),
+    )
+  let book =
+    cooldown.start(book: kept, keys: medishot_keys(), cooldown_ms: 0, now_ms: 0)
+  assert group_left(book:, id: 130, at: 0) == 90_000
+    as "0x14046a890 runs a new entry's time, a group's too, through the kept modifiers"
 }
 
 // ---- the lasting modifiers ----

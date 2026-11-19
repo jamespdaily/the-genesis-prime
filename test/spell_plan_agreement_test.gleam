@@ -21,8 +21,8 @@
 ////   each of its rows is counted by its own columns.
 
 import client_tables
-import genesis_prime/coverage/effect_row
 import genesis_prime/game/effect_kind
+import genesis_prime/game/effect_row_read
 import genesis_prime/game/spell_plan.{
   type PlanError, type RowReading, type Spell, Applied, Held, LeftOut,
   ReadByActivation, ReadByArea,
@@ -436,7 +436,7 @@ pub fn every_planned_spell_holds_exactly_the_rows_read_row_keeps_test() -> Nil {
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   let effects = spell4_effects.all(tables)
-  let place_of = effect_row.places(tables:, effects:)
+  let place_of = effect_row_read.places(tables:, effects:)
   let sources = spell_plan.sources_of(tables:)
   let spell4_ids = list.map(spell4.all(tables), fn(row) { row.id })
   let compared =

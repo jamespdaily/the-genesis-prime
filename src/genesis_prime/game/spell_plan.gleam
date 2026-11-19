@@ -739,8 +739,9 @@ pub type Spell {
     /// and its `condition` holds none of the gate.
     struck_gates: List(StruckGate),
     /// The non-zero cooldown groups of the Spell4 row (`spellCoolDownId00` to `02`),
-    /// each a SpellCoolDown row, which a selector 3 of a cooldown effect tests.
-    cooldown_groups: List(Int),
+    /// each a SpellCoolDown row with the time it runs from the go, which a selector 3 of
+    /// a cooldown effect tests (`cooldown_groups_of`).
+    cooldown_groups: List(cooldown.Group),
     /// What the spell does to the caster's stealth, and at which go (`StealthChange`).
     stealth_change: StealthChange,
     /// The spell the ability's press casts instead while the caster is under Spell Surge
@@ -2355,7 +2356,7 @@ pub type PlanError {
   /// (`Spell4.spellCastStealthChange`).
   StealthChangeNotRead(spell4_id: Int, value: Int)
   /// A Heal or HealShields effect of a tree has a parameter type the formula for an effect on
-  /// its caster does not read (`damage.unread`).
+  /// its caster does not read (`damage.unread_on_caster`).
   HealParameterNotRead(spell4_id: Int, effect_id: Int, parameter_kind: Int)
   /// A Heal or HealShields effect of a tree has a dataBits00 that is not a finite 32-bit float.
   HealNumberNotFinite(spell4_id: Int, effect_id: Int)
@@ -2382,7 +2383,7 @@ pub type PlanError {
     effect_id: Int,
   )
   /// An Absorption effect of a tree has a parameter type the formula for an effect on its
-  /// caster does not read (`damage.unread`).
+  /// caster does not read (`damage.unread_on_caster`).
   AbsorptionParameterNotRead(
     spell4_id: Int,
     effect_id: Int,
@@ -4331,7 +4332,7 @@ fn caster_formula_read(
   not_read not_read: fn(Int) -> PlanError,
 ) -> Result(damage.Formula, PlanError) {
   use formula <- result.try(result.replace_error(formula, not_finite))
-  case damage.unread(formula:) {
+  case damage.unread_on_caster(formula:) {
     Some(damage.Unread(parameter_kind:)) -> Error(not_read(parameter_kind))
     None -> Ok(formula)
   }
@@ -6013,17 +6014,36 @@ fn cooldown_operation_of(
 
 /// The cooldown groups of a spell: the non-zero of spellCoolDownId00 to 02, each of
 /// which must be a SpellCoolDown row, as the client's StartSpellCooldowns reports an
-/// error for a group it finds none for (`0x14046b1e0`).
+/// error for a group it finds none for (`0x14046b1e0`). A group runs for its row's
+/// `cooldownTime`; a row of 0 gives the spell's own cooldown when one of the spell's tags
+/// is 1, 2 or 7 (`0x1404823c0`), the spells whose cooldowns the client scales by the
+/// unit's cooldown rate, and no time at all otherwise. The rate itself is not applied.
 fn cooldown_groups_of(
   tables tables: table_store.Tables,
   row row: spell4.Spell4,
-) -> Result(List(Int), PlanError) {
+) -> Result(List(cooldown.Group), PlanError) {
+  let scaled =
+    list.any(
+      [
+        row.spell4_tag_id00,
+        row.spell4_tag_id01,
+        row.spell4_tag_id02,
+        row.spell4_tag_id03,
+        row.spell4_tag_id04,
+      ],
+      fn(tag) { tag == 1 || tag == 2 || tag == 7 },
+    )
   [row.spell_cool_down_id00, row.spell_cool_down_id01, row.spell_cool_down_id02]
   |> list.filter(fn(group) { group != 0 })
   |> list.try_map(fn(group) {
-    spell_cool_down.get(tables:, id: SpellCoolDownId(group))
-    |> result.replace_error(NoRow(table: "SpellCoolDown", id: group))
-    |> result.replace(group)
+    use found <- result.map(
+      spell_cool_down.get(tables:, id: SpellCoolDownId(group))
+      |> result.replace_error(NoRow(table: "SpellCoolDown", id: group)),
+    )
+    cooldown.Group(id: group, time_ms: case found.cooldown_time, scaled {
+      0, True -> row.spell_cool_down
+      time_ms, _ -> time_ms
+    })
   })
 }
 

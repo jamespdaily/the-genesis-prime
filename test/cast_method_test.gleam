@@ -945,8 +945,8 @@ pub fn charged_shots_cooldown_runs_10_s_from_the_stages_go_test() -> Nil {
   assert started_by_viewer(effects: release) == [#(36_691, 34_718, 34_718)]
     as "Spell4Thresholds 124: a release after 2400 ms casts 36691, which holds no type 73 row (Spell4Effects 77123 is its only row), so nothing changes the cooldown its go starts"
   let #(_, soon) = press(state:, bag_index: support.charged_shot, at: 12_000)
-  assert refusal_line(effects: soon) == "7fc 34718 15"
-    as "Spell4.34718: spellCoolDown 10000, started by the release's go at 4000 (0x14053e5a0, opcode.0x814) and over at 14000; from the base press at 1000 it would be over at 11000"
+  assert refusal_line(effects: soon) == "7fc 34718 16"
+    as "Spell4.34718: spellCoolDown 10000, started by the release's go at 4000 (0x14053e5a0, opcode.0x814) and over at 14000; from the base press at 1000 it would be over at 11000. Its group 133 runs as long (tag 1), so the result is the group's, 16 (0x1403b14c0, queue argument 1)"
   let #(_, near_the_end) =
     press(state:, bag_index: support.charged_shot, at: 13_700)
   assert is_held(effects: near_the_end)

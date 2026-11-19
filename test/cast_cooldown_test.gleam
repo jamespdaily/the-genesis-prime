@@ -17,7 +17,10 @@
 //// - `opcode.0x804`: the client's own cooldown comes from the go, and an 0x804 would
 ////   undo a type 73 change, so the server sends none.
 //// - `0x1403b14c0`: a press with 500 ms of a cooldown left or less is sent by the client
-////   and held by the server; with more it is refused 15 (own) or 14 (global).
+////   and held by the server; with more it is refused 14 (global), 15 (own) or 16 (a
+////   cooldown group), the last of those that runs.
+//// - `0x14046b1e0`: a go starts the spell's cooldown groups beside its own cooldown, and
+////   `0x14046b920` changes a group with the spell that started it.
 //// - The kit's rows (`table_rows -- Spell4Effects 80977 80979 180712 231992 231993`):
 ////   80977 of Charged Shot's stage 34720 (index 0) multiplies the cooldowns of base 20684
 ////   by 0.0, and 80979 of stage 34722 (index 1) by 0.4; 180712, 231992 and 231993 of
@@ -123,6 +126,17 @@ fn remover() -> Spell {
       tag: spend.always,
     )),
   ])
+}
+
+/// What a press of the spell at this bag index meets.
+fn meets_at_bag(
+  plans plans: Plans,
+  state state: State,
+  bag bag: Int,
+  at ms: Int,
+) -> Meets {
+  let #(_, effects) = support.press(plans:, state:, bag:, at: ms)
+  meets_of(effects:)
 }
 
 /// The slow spell pressed at the time and its go fired: its cooldown runs for 5000 ms
@@ -248,8 +262,8 @@ pub fn without_the_type_73_row_the_same_release_leaves_the_cooldown_running_test
   let #(state, _) = charged(plans:, state: cast_state.new(), at: 1000)
   let #(state, _) = charged(plans:, state:, at: 1100)
   let #(_, again) = charged(plans:, state:, at: 2000)
-  assert support.refusal_results(effects: again) == [15]
-    as "Spell4.34718: a cooldown of 10 s from the release's go"
+  assert support.refusal_results(effects: again) == [16]
+    as "Spell4.34718: a cooldown of 10 s from the release's go, and its group 133 runs as long (SpellCoolDown 133 holds 0 and the spell's tag 1 is one the client scales, so the group takes the spell's own time, 0x14046b1e0); with both running, the check an ability press meets (queue argument 1) gives the group's result, the last it finds (0x1403b14c0)"
 }
 
 pub fn charged_shot_released_at_index_1_leaves_four_seconds_of_its_cooldown_test() -> Nil {
@@ -263,8 +277,8 @@ pub fn charged_shot_released_at_index_1_leaves_four_seconds_of_its_cooldown_test
     as "Spell4Thresholds 123: a release after 1000 ms casts 34722, whose go lists 80979"
   // The go at 2500 starts 10000 ms and 80979 leaves 10000 x 0.4 = 4000: the end is 6500.
   let #(_, early) = charged(plans:, state:, at: 2500 + 3400)
-  assert support.refusal_results(effects: early) == [15]
-    as "600 ms are left, more than the queue window of 500: refused 15"
+  assert support.refusal_results(effects: early) == [16]
+    as "600 ms are left, more than the queue window of 500: refused, with the group 133's result since its 80979-shortened 4000 ms run beside the spell's own (0x1403b14c0)"
   let #(held, near) = charged(plans:, state:, at: 2500 + 3600)
   assert support.writes(effects: near) == []
     && delays_of(effects: near) == [400]
@@ -305,6 +319,71 @@ pub fn no_0x804_is_written_at_a_go_with_a_type_73_row_test() -> Nil {
     as "the run holds the go that lists the row"
   assert !list.contains(support.ids(frames:), 0x0804)
     as "opcode.0x804 would give back the 10 s the row took away; the client's own cooldown comes from the go"
+}
+
+// ---- the cooldown groups ----
+
+/// Cooldown group 182, whose SpellCoolDown row holds 25,000 ms (`table_rows --
+/// SpellCoolDown 182`), planted in two spells that go at once, so the group is what a
+/// press meets (no pair of the kit's abilities shares a group that has a time of its own).
+fn group_182() -> List(cooldown.Group) {
+  [cooldown.Group(id: 182, time_ms: 25_000)]
+}
+
+/// The slow spell (bag 11) and the base 1 spell (bag 8) in group 182, and a spell of
+/// base 2 (bag 10) holding these rows.
+fn plans_in_a_group(rows rows: List(spell_plan.CooldownModifier)) -> Plans {
+  support.plans_of([
+    spell_plan.Spell(..support.slow(), cooldown_groups: group_182()),
+    spell_plan.Spell(
+      ..holder_of(spell4_id: 1, base: 1, rows: []),
+      cooldown_groups: group_182(),
+    ),
+    holder_of(spell4_id: 2, base: 2, rows:),
+  ])
+}
+
+pub fn a_press_of_another_spell_of_a_running_group_is_refused_16_held_near_its_end_and_taken_after_test() -> Nil {
+  use <- owned_test.run(20_000)
+  let plans = plans_in_a_group(rows: [])
+  // The slow spell's go at 2000 starts its own 5000 ms and the group's 25,000 ms, to 27,000.
+  let state = slow_cast(plans:, state: cast_state.new(), at: 1000)
+  list.each(
+    [
+      #(
+        "inside the group's time: refused 16 (the base 1 spell has no cooldown of its own)",
+        8000,
+        Refused(result: 16),
+      ),
+      #(
+        "300 ms before the group ends: inside the 500 ms queue window, so the press is held",
+        26_700,
+        Held(wait_ms: 300),
+      ),
+      #("the group has ended: taken", 27_000, Accepted),
+    ],
+    fn(row) {
+      assert meets_at_bag(plans:, state:, bag: bag_of_holder, at: row.1)
+        == row.2
+        as row.0
+    },
+  )
+}
+
+pub fn a_row_that_picks_a_spell_changes_the_group_that_spell_started_too_test() -> Nil {
+  use <- owned_test.run(20_000)
+  // 0x14046b920: a group cooldown carries the id of the spell that started it, so a row
+  // that picks the slow spell (base 3) and halves what is left halves the group's time.
+  let plans =
+    plans_in_a_group(rows: [
+      row(effect_id: 1, operation: NoLonger(0.5), delay: 0, duration: 0),
+    ])
+  let state = slow_cast(plans:, state: cast_state.new(), at: 1000)
+  let #(state, _) = support.press(plans:, state:, bag: bag_of_remover, at: 2500)
+  // The group has 24,500 ms left at 2500: halved, 12,250, it ends at 14,750.
+  assert meets_at_bag(plans:, state:, bag: bag_of_holder, at: 14_700)
+    == Held(wait_ms: 50)
+    as "the group's 24,500 ms left at 2500, times 0.5, end at 14,750"
 }
 
 // ---- Impale's child ----

@@ -9,6 +9,7 @@ import genesis_prime/game/level_up
 import genesis_prime/game/loadout
 import genesis_prime/game/objective_action
 import genesis_prime/game/objective_link
+import genesis_prime/game/passed_in_value
 import genesis_prime/game/quest_turn_in
 import genesis_prime/game/rating
 import genesis_prime/game/shortcut_spell
@@ -45,8 +46,11 @@ import gleam/set.{type Set}
 ///   the activations whose prerequisites its links read (genesis_prime/game/objective_link).
 /// - The named objectives: the quest objectives a spell effect advances and an item needs
 ///   open (genesis_prime/game/objective_action).
-/// - The shortcut spells: the plan of each spell a cast-a-spell objective names, built
-///   after the ability trees' sources (genesis_prime/game/shortcut_spell).
+/// - The passed-in value: the family-33 budget curve at each level 0 to 150, whose missing
+///   GameFormula rows fail the load (genesis_prime/game/passed_in_value).
+/// - The shortcut spells: the plan of each spell a cast-a-spell objective names or an item
+///   casts on its user, built after the ability trees' sources
+///   (genesis_prime/game/shortcut_spell).
 /// - The level-up fanfares: the plan of each tier of the Level Up spell, the cast a 0x07A5 is
 ///   answered with, built after the ability trees' sources (genesis_prime/game/level_up).
 /// - The faction levels: each faction's parent and the level of each pair of factions
@@ -74,6 +78,7 @@ pub fn all() -> List(store.Derivation) {
     activate.derivation(),
     objective_link.derivation(),
     objective_action.derivation(),
+    passed_in_value.derivation(),
     shortcut_spell.derivation(),
     level_up.derivation(),
     faction_level.derivation(),
