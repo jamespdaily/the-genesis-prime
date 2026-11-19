@@ -4,7 +4,11 @@
 # one line for each action, and one line for a decision that is new (the same
 # decision at the next run is not written again):
 #
-#   live lock held, or the service held (stop.sh --hold)   does nothing at all
+#   live lock held, or the service held (stop.sh --hold)   does nothing at all, and once the lock or
+#                                                            hold has stood over an hour while main's
+#                                                            commit is not the one the server runs,
+#                                                            posts one alert line (alert_stale_stands
+#                                                            in lib.sh), once per lock or hold
 #   Podman machine down                                    starts it
 #   Postgres container missing or stopped                  makes or starts it, and waits for it
 #   main's commit new, its check run passed, and no image  builds genesis-play:<commit> from a
@@ -50,6 +54,11 @@
 # come up is replaced by the last good one). A deploy whose server does not come up
 # posts one line to the Discord channel (alert in lib.sh): the commit, how it failed and
 # whether the last good revision is back up. The restart of an unchanged commit posts none.
+# A lock or hold that has stood over an hour posts one line naming its holder, whether the
+# holder's process runs and the command that releases it; the updater never takes a lock
+# or a hold over. The age is the mtime of the lock's owner record (of the lock folder when
+# it has none) or of $state/held; the once-marker is $state/stale_lock_alerted or
+# stale_hold_alerted, removed when the lock or hold is gone.
 #
 # GENESIS_PLAY_UP_ATTEMPTS (default 300) and GENESIS_PLAY_POLL_SECONDS (default 1)
 # set how long a new container has to say its ready line.
@@ -61,6 +70,7 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=lib.sh
 . "$here/lib.sh"
 
+alert_stale_stands
 if live_lock_held; then
   log_once "a live session holds $home/live.lock; nothing done"
   exit 0
@@ -131,10 +141,7 @@ cleanup() {
 trap cleanup EXIT
 
 load_environment
-# shellcheck source=/dev/null
-. "$state/config.sh"
-: "${remote:?config.sh sets no remote}" "${repository:?config.sh sets no repository}"
-branch=${branch:-main}
+load_config
 
 machine_up || { log "the Podman machine could not be started"; exit 1; }
 ensure_postgres || exit 1
@@ -267,7 +274,7 @@ deploy() {
     log "$commit did not come up, and no earlier revision came up to put back; $commit is not tried again"
     outcome="no earlier revision to put back"
   fi
-  alert "genesis play: ${commit:0:8} did not come up ($reason); $outcome"
+  alert "genesis play: ${commit:0:8} did not come up ($reason); $outcome" || true
   return 1
 }
 
@@ -281,7 +288,7 @@ if [ ! -s "$state/good" ] && [ -n "$deployed_commit" ] && [ "$running" = true ];
 fi
 
 main_commit=
-if ! main_commit=$(git ls-remote "$remote" "refs/heads/$branch" | cut -f1) || [ -z "$main_commit" ]; then
+if ! main_commit=$(remote_head); then
   log_once "could not read $branch from $remote; nothing built"
   main_commit=
 fi

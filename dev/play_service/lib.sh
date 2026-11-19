@@ -24,8 +24,17 @@
 #   log_once MESSAGE               the same, unless the last line the service wrote was this
 #                                  one, so a decision that stays is written once
 #   skip_commit COMMIT, is_skipped COMMIT   the commits not to try again (a file in state)
+#   read_environment_file          reads env.sh when there is one, setting nothing else
 #   load_environment               reads env.sh and checks the values above are set
+#   load_config                    reads $state/config.sh and checks it sets remote and repository;
+#                                  branch defaults to main
+#   remote_head                    prints the commit the remote's branch is at; fails when it
+#                                  cannot be read
 #   live_lock_held                 whether a live session holds ~/.genesis-prime/live.lock
+#   alert_stale_stands             posts one alert line, once per lock or hold, when the live lock
+#                                  or the hold has stood over an hour while the remote's branch is
+#                                  at a commit the server container does not run; never takes the
+#                                  lock or the hold over
 #   machine_up                     starts the Podman machine when it is not running
 #   container_running NAME         whether the container exists and is running
 #   ensure_postgres                makes the network and the Postgres container, starts it,
@@ -37,8 +46,9 @@
 #                                  that exited or restarted, or no line in time, logs its state,
 #                                  exit code and last lines and fails; sets up_failure to the
 #                                  state, exit code and restarts, without the last lines
-#   alert MESSAGE                  posts one line to the Discord channel; a missing setting or a
-#                                  refused post is logged and never fails the caller
+#   alert MESSAGE                  posts one line to the Discord channel; a missing setting is
+#                                  logged and returns 0, a post that was tried and refused is
+#                                  logged and returns 1
 
 home=${GENESIS_HOME:-$HOME/.genesis-prime}
 state=$home/play-service
@@ -72,11 +82,15 @@ skip_commit() { mkdir -p "$state" && echo "$1" >>"$state/skipped"; }
 
 is_skipped() { grep -qx "$1" "$state/skipped" 2>/dev/null; }
 
-load_environment() {
+read_environment_file() {
   if [ -f "$home/env.sh" ]; then
     # shellcheck disable=SC1091
     . "$home/env.sh"
   fi
+}
+
+load_environment() {
+  read_environment_file
   : "${GENESIS_PLAY_ADDRESS:?set GENESIS_PLAY_ADDRESS (the address of this machine on the PC network) in $home/env.sh}"
   : "${GENESIS_PLAY_ACCOUNT:?set GENESIS_PLAY_ACCOUNT in $home/env.sh}"
   : "${GENESIS_PLAY_PGPASSWORD:?set GENESIS_PLAY_PGPASSWORD (the password of the play Postgres) in $home/env.sh; dev/play_service/install.sh makes it}"
@@ -87,7 +101,115 @@ load_environment() {
   export PGPASSWORD POSTGRES_PASSWORD GENESIS_PLAY_ACCOUNT
 }
 
+# load_config: reads config.sh, which install.sh wrote: the remote, the repository and,
+# to follow a branch other than main before it merges, a `branch=` line.
+load_config() {
+  # shellcheck source=/dev/null
+  . "$state/config.sh"
+  : "${remote:?config.sh sets no remote}" "${repository:?config.sh sets no repository}"
+  branch=${branch:-main}
+}
+
+# remote_head: prints the commit the remote's branch is at. Fails when the remote cannot
+# be asked or has no such branch.
+remote_head() {
+  local head
+  head=$(git ls-remote "$remote" "refs/heads/$branch" | cut -f1) || return 1
+  [ -n "$head" ] || return 1
+  printf '%s\n' "$head"
+}
+
 live_lock_held() { [ -d "$home/live.lock" ]; }
+
+# The time a live lock or a hold may stand, with the remote's branch ahead of the server,
+# before alert_stale_stands posts it.
+stale_stand_seconds=3600
+
+# lock_field KEY: a field of the live lock's owner record (live_lock.sh writes one key=value
+# line per field), empty when there is none. The lock's script is not sourced here: the
+# installed copies of this service's scripts stand alone.
+lock_field() { sed -n "/^$1=/{s///p;q;}" "$home/live.lock/owner" 2>/dev/null || true; }
+
+# lock_owner_running: whether the process that took the live lock is still the one that
+# started at the recorded time (a pid the system has reused is not it).
+lock_owner_running() {
+  local pid started
+  pid=$(lock_field pid)
+  started=$(lock_field started)
+  [ -n "$pid" ] || return 1
+  [ -n "$started" ] || return 1
+  [ "$(ps -o lstart= -p "$pid" 2>/dev/null | awk '{ $1 = $1; print }')" = "$started" ]
+}
+
+# stale_stand_description KIND: who holds the live lock, or the hold, and the command that
+# releases it, as one phrase for the alert.
+stale_stand_description() {
+  local scripts=.claude/skills/playing-live/scripts running=gone
+  if [ "$1" = hold ]; then
+    echo "the service is held by stop.sh --hold; dev/play_service/start.sh releases it"
+    return 0
+  fi
+  if [ -z "$(lock_field pid)" ]; then
+    echo "live.lock has no owner record; $scripts/session.sh --recover releases it once it is over a minute old"
+    return 0
+  fi
+  if lock_owner_running; then running=running; fi
+  if [ "$(lock_field kind)" = client ]; then
+    echo "live.lock is held by a client.sh start (process $(lock_field pid), $running); $scripts/client.sh stop releases it"
+  elif [ "$running" = running ]; then
+    echo "live.lock is held by the run in $(lock_field folder) (session.sh process $(lock_field pid), running); it is released when the run ends"
+  else
+    echo "live.lock is held by the run in $(lock_field folder) (session.sh process $(lock_field pid), gone); $scripts/session.sh --recover releases it"
+  fi
+}
+
+# alert_stale_stands: for the live lock and for the hold, once it has stood over
+# stale_stand_seconds (by the mtime of the lock's owner record, or of the lock folder when
+# it has none, and of the held file) while the remote's branch is at a commit that is not
+# skipped and not the one the server container runs, posts one alert line naming the
+# holder, whether its process runs and the command that releases it. The marker
+# $state/stale_<lock|hold>_alerted holds the lock's token (or the stand file's mtime), so
+# a stand is announced once; it is removed when the stand is gone. Nothing is taken over,
+# and a stand with no config, no answer from the remote or no server container is left
+# unannounced. The marker is written when the alert was posted or its settings are not set;
+# a post that failed leaves it unwritten, so the next run tries again. A lock or hold that
+# disappears while it is read is skipped. The line it logs does not replace the last line
+# log_once compares.
+alert_stale_stands() {
+  local kind file key mtime age branch_commit deployed previous_line
+  for kind in lock hold; do
+    if [ "$kind" = lock ]; then
+      file=$home/live.lock/owner
+      [ -e "$file" ] || file=$home/live.lock
+    else
+      file=$state/held
+    fi
+    if [ ! -e "$file" ]; then
+      rm -f "$state/stale_${kind}_alerted"
+      continue
+    fi
+    mtime=$(stat -f %m "$file") || continue
+    key=
+    [ "$kind" != lock ] || key=$(lock_field token)
+    [ -n "$key" ] || key=$mtime
+    [ "$(cat "$state/stale_${kind}_alerted" 2>/dev/null || true)" != "$key" ] || continue
+    age=$(($(date +%s) - mtime))
+    [ "$age" -gt "$stale_stand_seconds" ] || continue
+    [ -f "$state/config.sh" ] || continue
+    branch_commit=$(load_config && remote_head) || continue
+    ! is_skipped "$branch_commit" || continue
+    read -r deployed _ <<<"$(server_state)"
+    deployed=${deployed:-}
+    [ -n "$deployed" ] || continue
+    [ "$deployed" != "$branch_commit" ] || continue
+    read_environment_file
+    previous_line=$(cat "$state/last_line" 2>/dev/null || true)
+    if alert "genesis play: ${branch_commit:0:8} is the remote branch's head but the server runs ${deployed:0:8}, and the updater has done nothing for $((age / 3600)) h: $(stale_stand_description "$kind")"; then
+      printf '%s' "$key" >"$state/stale_${kind}_alerted"
+    fi
+    printf '%s' "$previous_line" >"$state/last_line"
+  done
+}
 
 machine_up() {
   podman info >/dev/null 2>&1 && return 0
@@ -209,8 +331,9 @@ wait_up() {
 # bot token in the file GENESIS_PLAY_ALERT_TOKEN_FILE (a DISCORD_BOT_TOKEN= line; env.sh
 # holds the two names, never the token). The token goes to curl on its standard input
 # as a config line, so it is in no argument list, no environment and no log; the log
-# gets the HTTP status alone. A missing setting or a failed post is logged and never
-# fails the caller.
+# gets the HTTP status alone. A missing setting is logged and returns 0 (nothing to
+# retry); a post that was tried and not answered 200 is logged and returns 1, so a caller
+# under set -e guards it with || true.
 alert() {
   local token status
   if [ -z "${GENESIS_PLAY_ALERT_CHANNEL:-}" ] || [ -z "${GENESIS_PLAY_ALERT_TOKEN_FILE:-}" ]; then
@@ -228,7 +351,9 @@ alert() {
       "https://discord.com/api/v10/channels/$GENESIS_PLAY_ALERT_CHANNEL/messages" 2>/dev/null) || status=failed
   case "$status" in
     200) log "alert sent to the channel" ;;
-    *) log "alert not sent: Discord answered $status" ;;
+    *)
+      log "alert not sent: Discord answered $status"
+      return 1
+      ;;
   esac
-  return 0
 }
