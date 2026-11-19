@@ -2,16 +2,20 @@
 //// experience in the world with the `dev_commands` setting on, and a line said
 //// on Say.
 
+import character_support
 import connection_rule_support as rule_support
 import game_connection_support as support
-import genesis_prime/client_connection.{type Request, AskMap, FromMap, SentByMap}
+import genesis_prime/client_connection.{
+  type Answer, type Request, AskMap, AskStore, FromMap, FromStore, SentByMap,
+}
 import genesis_prime/game/connection as game_connection
-import genesis_prime/step.{type ConnectionStep, OwnEvent}
+import genesis_prime/step.{type ConnectionStep, type Outcome, OwnEvent}
 import genesis_prime/store
 import genesis_prime/table/id.{ClassId}
 import genesis_prime/world_map/map
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import world_entry_support
 
 /// The tests' player of this class, level and experience in the world, its
 /// connection made with the development commands on, its burst taken.
@@ -43,6 +47,31 @@ pub fn in_world_as(
     ),
     character:,
     saved_experience: experience,
+  ).0
+}
+
+/// The tests' player in the world with the development commands on, whose store held
+/// these currency rows (a type with no row is held as 0), its burst taken.
+pub fn in_world_holding_currencies(
+  currencies currencies: List(store.HeldCurrency),
+) -> game_connection.State {
+  let character = support.world_character()
+  let #(state, taken) =
+    support.joining_holding_currencies(
+      in_character_select: support.in_select_from(
+        support.accepted(support.settings_with_dev_commands()).0,
+      ),
+      character:,
+      saved_health: None,
+      saved_experience: None,
+      quests: [],
+      items: world_entry_support.novice_items(character:),
+      currencies:,
+    )
+  support.answer(
+    state:,
+    taken:,
+    outcome: step.Answer(client_connection.FromMap(support.map_answer(taken))),
   ).0
 }
 
@@ -105,4 +134,28 @@ pub fn said(
   text text: String,
 ) -> #(game_connection.State, ConnectionStep(Request)) {
   support.read(state, support.chat_line_message(4, text))
+}
+
+/// The ask of a `!currency` line of the tests' player: the store sets the currency to
+/// `after` while the player holds `held`, under the epoch the tests' connection holds.
+pub fn currency_asked(
+  currency_type_id currency_type_id: Int,
+  held held: Int,
+  after after: Int,
+) -> Request {
+  AskStore(
+    store.Items(store.SetCurrency(
+      account_id: store.AccountId(7),
+      character_id: store.CharacterId(42),
+      session_epoch: character_support.epoch(1),
+      currency_type_id:,
+      held:,
+      after:,
+    )),
+  )
+}
+
+/// The store's answer that a currency is set to `amount`.
+pub fn currency_set(amount amount: Int) -> Outcome(Answer) {
+  step.Answer(FromStore(store.ForItems(store.CurrencySet(amount:))))
 }

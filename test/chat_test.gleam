@@ -41,7 +41,7 @@ import genesis_prime/message/send_whisper.{SendWhisper}
 import genesis_prime/message/whisper_failed.{type WhisperFailed, WhisperFailed}
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/chat_channel as chat_channel_table
-import genesis_prime/table/id.{ChatChannelId, Creature2Id}
+import genesis_prime/table/id.{ChatChannelId, Creature2Id, CurrencyTypeId}
 import genesis_prime/world_map/map_id.{MapId}
 import gleam/int
 import gleam/list
@@ -1055,6 +1055,14 @@ pub fn a_command_line_with_the_setting_on_asks_the_connection_to_run_it_test() -
         dev_command.RaiseToExperience(experience: 2859),
         "an experience",
       ),
+      #(
+        "!currency 1 5000",
+        dev_command.SetCurrency(
+          currency_type_id: CurrencyTypeId(1),
+          amount: 5000,
+        ),
+        "a currency type and a total",
+      ),
     ],
     fn(row) {
       let effects = say_taken(text: row.0, dev_commands: True)
@@ -1078,6 +1086,11 @@ pub fn a_refused_or_unknown_command_is_one_system_line_and_nothing_to_run_test()
         "!level 51",
         "!level 51 is outside the levels 1 to 50",
         "GameFormula 145: the highest level is 50",
+      ),
+      #(
+        "!currency 99 1",
+        "!currency 99 is no currency type the client keeps (1 to 7 and 9 to 14)",
+        "CurrencyType has no row 99",
       ),
     ],
     fn(row) {
@@ -1122,29 +1135,32 @@ pub fn a_summon_with_a_level_that_is_no_whole_number_or_with_extra_words_answers
 
 pub fn a_bang_line_on_another_channel_is_a_line_of_that_channel_with_the_setting_on_test() -> Nil {
   use <- owned_test.run(5000)
-  list.each(["!summon 75048", "!level 4", "!xp 2859"], fn(text) {
-    list.each([5, 8], fn(type_id) {
-      let #(_, effects) =
-        take_with(
-          message: chat.LineSent,
-          chat: a_chat(),
-          body: body(
-            type_id:,
-            channel_id: 0,
-            text: bit_stream.utf16_units(text),
-            formats: [],
-            message_id: 1,
-          ),
-          viewers: [7, 8],
-          dev_commands: True,
-        )
-      assert said_to(effects) == [7, 8]
-        as "the design: a command is a line on Say only; a yell or an emote that starts with `!` is said"
-      assert list.length(frames_of(effects)) == 1
-      assert !runs_a_command(effects)
-        as "a line of another channel runs nothing"
-    })
-  })
+  list.each(
+    ["!summon 75048", "!level 4", "!xp 2859", "!currency 1 5000"],
+    fn(text) {
+      list.each([5, 8], fn(type_id) {
+        let #(_, effects) =
+          take_with(
+            message: chat.LineSent,
+            chat: a_chat(),
+            body: body(
+              type_id:,
+              channel_id: 0,
+              text: bit_stream.utf16_units(text),
+              formats: [],
+              message_id: 1,
+            ),
+            viewers: [7, 8],
+            dev_commands: True,
+          )
+        assert said_to(effects) == [7, 8]
+          as "the design: a command is a line on Say only; a yell or an emote that starts with `!` is said"
+        assert list.length(frames_of(effects)) == 1
+        assert !runs_a_command(effects)
+          as "a line of another channel runs nothing"
+      })
+    },
+  )
 }
 
 pub fn the_system_line_is_the_same_whatever_the_refused_text_is_test() -> Nil {

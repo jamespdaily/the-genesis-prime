@@ -534,24 +534,43 @@ pub fn joining_holding_items(
   quests quests: List(store.QuestRow),
   items items: List(store.HeldItem),
 ) -> #(game_connection.State, ConnectionStep(Request)) {
+  joining_holding_currencies(
+    in_character_select:,
+    character:,
+    saved_health:,
+    saved_experience:,
+    quests:,
+    items:,
+    currencies: [],
+  )
+}
+
+/// `joining_holding_items` for a character whose store holds these currency rows.
+pub fn joining_holding_currencies(
+  in_character_select in_character_select: game_connection.State,
+  character character: store.Character,
+  saved_health saved_health: Option(Int),
+  saved_experience saved_experience: Option(Int),
+  quests quests: List(store.QuestRow),
+  items items: List(store.HeldItem),
+  currencies currencies: List(store.HeldCurrency),
+) -> #(game_connection.State, ConnectionStep(Request)) {
   let #(state, taken) = playing_from(in_character_select:, character_id: 42)
   answer(
     state:,
     taken:,
     outcome: step.Answer(
       FromStore(
-        ForWorld(
-          CharacterLoaded(
-            character,
-            character_support.epoch(1),
-            saved_health,
-            saved_experience,
-            items,
-            [],
-            quests,
-            [],
-          ),
-        ),
+        ForWorld(CharacterLoaded(
+          character,
+          character_support.epoch(1),
+          saved_health,
+          saved_experience,
+          items,
+          [],
+          quests,
+          currencies,
+        )),
       ),
     ),
   )
@@ -1684,6 +1703,29 @@ pub fn entered_with_quests_and_items_on(
       saved_experience: None,
       quests:,
       items: list.append(world_entry_support.novice_items(character:), items),
+    )
+  answer(state:, taken:, outcome: step.Answer(FromMap(map_answer(taken))))
+}
+
+/// The tests' character in the world on these tables with the development chat commands
+/// on, holding these items besides the Novice set and these currency rows: the burst is
+/// written.
+pub fn entered_with_dev_commands_on(
+  tables tables: store_tables.Tables,
+  items items: List(store.HeldItem),
+  currencies currencies: List(store.HeldCurrency),
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let fresh = accepted(Settings(..settings_with_dev_commands(), tables:)).0
+  let character = world_character()
+  let #(state, taken) =
+    joining_holding_currencies(
+      in_character_select: in_select_from(fresh),
+      character:,
+      saved_health: None,
+      saved_experience: None,
+      quests: [],
+      items: list.append(world_entry_support.novice_items(character:), items),
+      currencies:,
     )
   answer(state:, taken:, outcome: step.Answer(FromMap(map_answer(taken))))
 }

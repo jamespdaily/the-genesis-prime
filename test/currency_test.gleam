@@ -16,6 +16,7 @@ import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/currency
 import genesis_prime/message/currency_changed.{CurrencyChanged}
 import genesis_prime/message/currency_gained.{CurrencyGained}
+import gleam/list
 import gleam/option.{None, Some}
 import owned_test
 
@@ -83,6 +84,27 @@ pub fn no_gain_sends_the_total_alone_test() -> Nil {
     currency.total_frames(currency_type_id: 1, before: 500_000, total: 500_000)
     as "opcode.0xdd: an amount of 0 or less does nothing, so a total at the cap (GameFormula 1115) gives no 0xdd"
   assert total_of(frame: total).total == 500_000
+}
+
+pub fn a_currency_set_sends_the_total_and_the_gain_when_it_is_higher_test() -> Nil {
+  use <- owned_test.run(10_000)
+  list.each(
+    [
+      #(0, 5000, Some(5000), "0 to 5000: the 0x919 total, then a 0xdd of 5000"),
+      #(5000, 100, None, "5000 to 100: a lowering is the 0x919 alone"),
+      #(100, 100, None, "100 to 100: no gain, the 0x919 alone"),
+    ],
+    fn(row) {
+      let #(before, total, gain, why) = row
+      let frames = currency.total_frames(currency_type_id: 1, before:, total:)
+      let assert [first, ..rest] = frames as why
+      assert total_of(frame: first).total == total
+        as "opcode.0x919: the new total, whatever the old"
+      assert list.map(rest, fn(frame) { gain_of(frame:).amount })
+        == option.values([gain])
+        as "opcode.0xdd.with_0x919: one 0xdd of the gain beside the 0x919 when the total is higher, none otherwise"
+    },
+  )
 }
 
 pub fn the_gain_names_the_currency_type_not_the_kind_test() -> Nil {

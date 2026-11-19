@@ -16,20 +16,28 @@
 ////   optionally a second, the level; the word is read as typed, in lower case.
 ////   Whether a CreatureLevel row has the level is the map's check.
 ////   `level` takes one whole decimal number, a level, and `xp` one, a total
-////   experience; a number has any length, so the tables refuse one too large.
+////   experience; `currency` takes two, a currency type and an amount; a number
+////   has any length, so the tables refuse one too large.
 //// - **The tables' refusals** are `checked`'s: a level outside 1 to the highest
 ////   level (GameFormula 145 dataint0) and an experience above the highest
-////   level's minXpForLevel (its XpPerLevel row), compared as whole numbers.
+////   level's minXpForLevel (its XpPerLevel row), compared as whole numbers; a
+////   currency type with no CurrencyType row (the client keeps types 1 to 14 and
+////   the table has no row 8), an amount above the column's 2^63 - 1 and an amount
+////   above the type's cap (genesis_prime/game/currency `cap`).
 //// - **A word with no command**, and a command whose arguments are not what it
 ////   takes, are each answered with a system line, never as a Say line, so a
 ////   mistyped command is not said aloud to the players who see the speaker.
 
+import genesis_prime/game/currency
 import genesis_prime/game/level
+import genesis_prime/table/currency_type
 import genesis_prime/table/id.{
-  type Creature2Id, type CurrencyTypeId, Creature2Id, XpPerLevelId,
+  type Creature2Id, type CurrencyTypeId, Creature2Id, CurrencyTypeId,
+  XpPerLevelId,
 }
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/xp_per_level
+import gleam/bool
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -79,6 +87,17 @@ pub type Refusal {
   LevelOutOfRange(level: Int, highest: Int)
   /// The experience is above `highest`, the highest level's minXpForLevel.
   ExperienceOutOfRange(experience: Int, highest: Int)
+  /// The word is `currency`, but what follows is not two whole numbers, a currency
+  /// type and an amount.
+  CurrencyTakesATypeAndAnAmount
+  /// No CurrencyType row has the number, so the client keeps no such currency
+  /// (it keeps types 1 to 14, and the table has no row 8).
+  CurrencyTypeIsNotKept(currency_type_id: Int)
+  /// The amount is above `cap`, the most the currency holds (genesis_prime/game/currency `cap`).
+  CurrencyAmountAboveCap(currency_type_id: Int, amount: Int, cap: Int)
+  /// The amount is above `highest`, the most the character_currency amount column
+  /// (a bigint) holds.
+  CurrencyAmountAboveColumn(amount: Int, highest: Int)
 }
 
 /// Whether the text is a command line: its first UTF-16 unit is `!`.
@@ -120,14 +139,29 @@ pub fn parse(text text: List(Int)) -> Result(Command, Refusal) {
           |> result.replace_error(ExperienceTakesAWholeNumber)
         [] | [_, _, ..] -> Error(ExperienceTakesAWholeNumber)
       }
+    [command, ..arguments] if command == currency_word ->
+      case arguments {
+        [currency_type, amount] ->
+          case decimal(units: currency_type), decimal(units: amount) {
+            Ok(currency_type), Ok(amount) ->
+              Ok(SetCurrency(
+                currency_type_id: CurrencyTypeId(currency_type),
+                amount:,
+              ))
+            Error(Nil), _ | _, Error(Nil) ->
+              Error(CurrencyTakesATypeAndAnAmount)
+          }
+        [] | [_] | [_, _, _, ..] -> Error(CurrencyTakesATypeAndAnAmount)
+      }
     [_, ..] | [] -> Error(UnknownCommand)
   }
 }
 
 /// The command the tables allow, or the refusal that names what they do not
-/// hold: a level outside 1 to the highest level and an experience above the
-/// highest level's minXpForLevel, compared as whole numbers so a number of any
-/// length is a refusal.
+/// hold: a level outside 1 to the highest level, an experience above the
+/// highest level's minXpForLevel, and a currency type with no row or an amount
+/// above the column's limit or the type's cap, compared as whole numbers so a
+/// number of any length is a refusal.
 pub fn checked(
   command command: Command,
   tables tables: table_store.Tables,
@@ -154,8 +188,33 @@ pub fn checked(
           Error(ExperienceOutOfRange(experience:, highest: top.min_xp_for_level))
       }
     }
-    SetCurrency(..) ->
-      panic as "the tables' refusals of !currency are not written"
+    SetCurrency(currency_type_id:, amount:) ->
+      checked_currency(command:, currency_type_id:, amount:, tables:)
+  }
+}
+
+/// The `!currency` command when the type has a CurrencyType row and the amount is within
+/// the column's limit and the type's cap; the column is tested first, so a number of any
+/// length is refused for it.
+fn checked_currency(
+  command command: Command,
+  currency_type_id currency_type_id: CurrencyTypeId,
+  amount amount: Int,
+  tables tables: table_store.Tables,
+) -> Result(Command, Refusal) {
+  let CurrencyTypeId(number) = currency_type_id
+  use _ <- result.try(
+    currency_type.get(tables:, id: currency_type_id)
+    |> result.replace_error(CurrencyTypeIsNotKept(currency_type_id: number)),
+  )
+  use <- bool.guard(
+    when: amount > column_limit,
+    return: Error(CurrencyAmountAboveColumn(amount:, highest: column_limit)),
+  )
+  case currency.cap(tables:, currency_type_id: number) {
+    Some(cap) if amount > cap ->
+      Error(CurrencyAmountAboveCap(currency_type_id: number, amount:, cap:))
+    Some(_) | None -> Ok(command)
   }
 }
 
@@ -177,6 +236,12 @@ const level_word = [0x21, 0x6C, 0x65, 0x76, 0x65, 0x6C]
 
 /// `!xp` as the UTF-16 units the client sends.
 const experience_word = [0x21, 0x78, 0x70]
+
+/// `!currency` as the UTF-16 units the client sends.
+const currency_word = [0x21, 0x63, 0x75, 0x72, 0x72, 0x65, 0x6E, 0x63, 0x79]
+
+/// The most the character_currency amount column holds: a bigint, 2^63 - 1.
+const column_limit = 9_223_372_036_854_775_807
 
 /// The words of the units, split at spaces (0x20), in order: a run of spaces is
 /// one split, and spaces at either end hold no word.
@@ -231,6 +296,24 @@ pub fn describe(refusal refusal: Refusal) -> String {
       "!xp "
       <> int.to_string(experience)
       <> " is above the experience of the highest level, "
+      <> int.to_string(highest)
+    CurrencyTakesATypeAndAnAmount ->
+      "!currency takes a currency type and an amount, as !currency 1 5000"
+    CurrencyTypeIsNotKept(currency_type_id:) ->
+      "!currency "
+      <> int.to_string(currency_type_id)
+      <> " is no currency type the client keeps (1 to 7 and 9 to 14)"
+    CurrencyAmountAboveCap(currency_type_id:, amount:, cap:) ->
+      "!currency "
+      <> int.to_string(currency_type_id)
+      <> " "
+      <> int.to_string(amount)
+      <> " is above the most that currency holds, "
+      <> int.to_string(cap)
+    CurrencyAmountAboveColumn(amount:, highest:) ->
+      "!currency amount "
+      <> int.to_string(amount)
+      <> " is above the most a total can hold, "
       <> int.to_string(highest)
   }
 }

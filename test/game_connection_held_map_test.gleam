@@ -39,6 +39,8 @@ import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/departures
 import genesis_prime/game/experience.{Credit}
 import genesis_prime/message/bit_stream
+import genesis_prime/message/currency_changed.{CurrencyChanged}
+import genesis_prime/message/currency_gained.{CurrencyGained}
 import genesis_prime/message/disconnect_reason.{LostUserServer}
 import genesis_prime/message/experience_gained.{
   type ExperienceGained, ExperienceGained,
@@ -621,6 +623,19 @@ fn summoning() -> #(game_connection.State, step.ConnectionStep(Request)) {
 
 /// The connection whose 0xBE bought one of Dorian Walker's lots with 100 credits held:
 /// it waits on the store.
+/// The player's `!currency` line: the connection waits on the store.
+fn granting() -> #(game_connection.State, step.ConnectionStep(Request)) {
+  let #(state, taken) =
+    dev_support.said(
+      state: dev_support.in_world_holding_currencies(currencies: []),
+      text: "!currency 1 5000",
+    )
+  assert connection_support.ask_request(taken)
+    == dev_support.currency_asked(currency_type_id: 1, held: 0, after: 5000)
+    as "the connection waits on the store"
+  #(state, taken)
+}
+
 fn buying_plainly() -> #(game_connection.State, step.ConnectionStep(Request)) {
   connection_support.purchase_requested(
     state: at_the_vendor(
@@ -810,6 +825,7 @@ pub fn each_in_world_wait_takes_each_timer_without_ending_the_connection_test() 
     #("an item move", moving_an_item().0),
     #("a buy", buying_plainly().0),
     #("a sale", selling().0),
+    #("a currency set", granting().0),
     #("a turn-in", turning_state),
     #(
       "the periodic save",
@@ -1158,4 +1174,38 @@ pub fn an_xp_command_in_two_steps_reaches_the_level_at_its_minimum_test() -> Nil
     client_connection.Level(level: 4),
   )
     as "a watcher is told the level"
+}
+
+pub fn a_currency_command_sets_the_total_the_client_reads_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let state = dev_support.in_world_holding_currencies(currencies: [])
+  let #(state, taken) = dev_support.said(state:, text: "!currency 1 5000")
+  let #(_, answered) =
+    connection_support.answer(
+      state:,
+      taken:,
+      outcome: dev_support.currency_set(amount: 5000),
+    )
+  let frames =
+    connection_support.heard(
+      taken: answered,
+      cipher: connection_support.keyed(),
+    )
+  assert connection_support.decoded(
+      frames,
+      currency_changed.message_id,
+      currency_changed.decode,
+    )
+    == [CurrencyChanged(kind: 0, total: 5000, field_3: 0, field_4: 0)]
+    as "opcode.0x919: credits are kind 0, and the total is the new amount held"
+  assert connection_support.decoded(
+      frames,
+      currency_gained.message_id,
+      currency_gained.decode,
+    )
+    == [CurrencyGained(currency_type_id: 1, amount: 5000, signature_amount: 0)]
+    as "opcode.0xdd.with_0x919: one 0xdd of the gain beside the 0x919 that sets the total"
+  assert list.map(frames, fn(frame) { frame.message_id })
+    == [0x0919, 0x00DD, 0x01C8]
+    as "the total, then its gain, then the command's line"
 }
