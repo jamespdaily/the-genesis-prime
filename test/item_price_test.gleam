@@ -22,6 +22,7 @@ import genesis_prime/game/vendor.{ItemRow, VendorRow}
 import genesis_prime/table/id.{Item2Id}
 import genesis_prime/table/item2
 import gleam/list
+import gleam/string
 import owned_test
 import planted_table.{Integer}
 import unitest
@@ -461,4 +462,18 @@ pub fn an_item_with_a_buy_currency_in_either_slot_has_no_credit_price_test() -> 
   assert priced_with([#("currencyTypeId1", Integer(7))])
     == Error(item_price.OtherCurrency(item2_id: item))
     as "0x14040bee0: nor does another currency in the second slot"
+}
+
+/// Only the buy price rejects a trade skill additive: `sell_price` still gives such an
+/// item one, so the entry says the item has no buy price.
+pub fn the_additive_entry_names_the_buy_price_only_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let sentences = list.map(item_price.gaps(), fn(entry) { entry.missing })
+  assert list.any(sentences, fn(sentence) {
+    string.contains(sentence, "trade skill additive")
+    && string.contains(sentence, "no buy price")
+  })
+    as "the additive entry says buy price"
+  assert !list.any(sentences, string.ends_with(_, "with one no price"))
+    as "no entry says an item with an additive has no price at all"
 }

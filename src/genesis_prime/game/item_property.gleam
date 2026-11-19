@@ -172,6 +172,10 @@ pub fn gaps() -> List(gap.Entry) {
       area: "Item properties",
       missing: "the property a crafting entry (an ItemStat of kind 4) picks: the entry gives nothing",
     ),
+    gap.Entry(
+      area: "Item properties",
+      missing: "the stack limit and the deletable flag of a proxy item: the client reads them from the item GameFormula 1214 names, and the server reads the proxy's own row",
+    ),
   ])
 }
 

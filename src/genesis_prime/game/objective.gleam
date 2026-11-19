@@ -1549,5 +1549,9 @@ pub fn gaps() -> List(gap.Entry) {
       area: "Quest objectives",
       missing: "what completes a type 24 objective: the client's code does not show it, so the server reads it from the objective's text and title",
     ),
+    gap.Entry(
+      area: "Quest objectives",
+      missing: "the real trigger of a required objective the server has no script for (a hidden one, or a visible one with a marker): the server completes it when the quest is accepted or opened, or once the quest's other required objectives are done, as a guess",
+    ),
   ]
 }

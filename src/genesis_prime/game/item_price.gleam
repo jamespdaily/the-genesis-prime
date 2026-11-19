@@ -302,7 +302,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Vendor prices",
-      missing: "the price bonus of a trade skill additive: the server gives an item with one no price",
+      missing: "the price bonus of a trade skill additive: the server gives an item with one no buy price",
     ),
   ]
 }

@@ -679,5 +679,9 @@ pub fn gaps() -> List(gap.Entry) {
       area: "Vendor window",
       missing: "the refusal of a vendor's request for a player in a control state (60, 61): the server opens the window for a stunned player",
     ),
+    gap.Entry(
+      area: "Vendor window",
+      missing: "the refusal of a vendor's request for a player in combat: the server opens the window for a player in combat",
+    ),
   ]
 }

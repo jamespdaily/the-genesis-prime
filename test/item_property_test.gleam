@@ -1350,3 +1350,16 @@ pub fn binds_on_equip_of_each_kind_of_row_test() -> Nil {
     == Error(item_property.NoRow(table: "Item2", id: 999_999_999))
     as "a missing row is an error, not an answer of no"
 }
+
+/// A proxy item's stack limit and deletable flag are read from its own row, not from the
+/// item GameFormula 1214 names (FillItemInfo 0x1404445d0), so they are an entry.
+pub fn the_proxy_items_stack_and_delete_decisions_have_an_entry_test() -> Nil {
+  use <- owned_test.run(10_000)
+  assert list.any(item_property.gaps(), fn(entry) {
+    string.contains(
+      entry.missing,
+      "stack limit and the deletable flag of a proxy item",
+    )
+  })
+    as "the proxy's own row decides both, which the client reads from its source row"
+}

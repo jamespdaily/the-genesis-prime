@@ -118,6 +118,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/set
+import gleam/string
 import owned_test
 import place_support
 import planted_table.{Integer}
@@ -3765,4 +3766,14 @@ pub fn a_departures_terminal_counts_and_releases_nothing_test() -> Nil {
     as "the terminal's use counts for the travel and its own choice"
   assert releases(effects: used.effects) == []
     as "and the terminal is not released"
+}
+
+/// A required objective the server has no script for is completed by a guess, which is an
+/// entry, since a stand-in that marks a case done is reported as a guess.
+pub fn the_scripted_objective_stand_ins_have_an_entry_test() -> Nil {
+  use <- owned_test.run(10_000)
+  assert list.any(objective.gaps(), fn(entry) {
+    string.contains(entry.missing, "as a guess")
+  })
+    as "the stand-in completion of a required objective with no script is reported as a guess"
 }
