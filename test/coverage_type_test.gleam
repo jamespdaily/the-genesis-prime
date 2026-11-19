@@ -42,11 +42,14 @@ import genesis_prime/coverage/starting_ability.{MissingRow}
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan.{Spell}
 import genesis_prime/table/class
+import genesis_prime/table/creature2
 import genesis_prime/table/eldan_augmentation
+import genesis_prime/table/game_formula
 import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/table/item2_type
 import genesis_prime/table/item_display
 import genesis_prime/table/item_slot
+import genesis_prime/table/item_special
 import genesis_prime/table/loader/store
 import genesis_prime/table/positional_requirement
 import genesis_prime/table/prerequisite as prerequisite_table
@@ -54,6 +57,8 @@ import genesis_prime/table/spell4
 import genesis_prime/table/spell4_base
 import genesis_prime/table/spell4_effects
 import genesis_prime/table/spell4_group_list
+import genesis_prime/table/spell4_thresholds
+import genesis_prime/table/spell_phase
 import genesis_prime/table/unit_property2
 import gleam/dict
 import gleam/int
@@ -67,8 +72,10 @@ import simplifile
 import spell_tables
 import unitest
 
-/// The tables the plan's decision about an effect row reads, planted with no row beside
-/// the Spell4Effects rows given, so a row that names a prerequisite, a spell, a spell group,
+/// The tables the plan's decision about an effect row reads (`spell_plan.sources_of`
+/// reads Spell4Effects, SpellPhase, Spell4Thresholds and Spell4GroupList, and the activate
+/// cast reads GameFormula, Creature2 and ItemSpecial), planted with no
+/// row beside the Spell4Effects rows given, so a row that names a prerequisite, a spell, a spell group,
 /// a property or a display finds none (`spell_plan.read_row`). A planted row that leaves
 /// phaseFlags out holds -1, every phase, as the client's rows do; a row with phaseFlags 0 is
 /// selected by no phase and is not read.
@@ -103,6 +110,11 @@ fn planted_files(
     planted_table.file(item_display.schema, []),
     planted_table.file(item2_type.schema, []),
     planted_table.file(item_slot.schema, []),
+    planted_table.file(spell4_thresholds.schema, []),
+    planted_table.file(spell_phase.schema, []),
+    planted_table.file(game_formula.schema, []),
+    planted_table.file(creature2.schema, []),
+    planted_table.file(item_special.schema, []),
   ]
 }
 
@@ -119,6 +131,11 @@ fn planted_entries() -> List(store.Entry) {
     item_display.entry(),
     item2_type.entry(),
     item_slot.entry(),
+    spell4_thresholds.entry(),
+    spell_phase.entry(),
+    game_formula.entry(),
+    creature2.entry(),
+    item_special.entry(),
   ]
 }
 
@@ -2201,9 +2218,9 @@ pub fn the_starting_abilities_totals_hold_208_of_217_effect_rows_and_79_of_79_co
     as "the walk reaches 217 effect rows: the 196 of before, the 19 that the alternates of Spell Surge add and the 2 of Spell4 72838 (the spell the Proc 178239 casts, read since issue 828), all 21 handled. 9 of the 196 are not handled: the Proc row the plan skips (123744), 90 x4, 24 once, the two Proxies 121345 and 178429 whose dataBits00 is 0, and the Medic's gain 228918, which ticks every 2000 ms (scratch count over the 196 rows the coverage walk reaches). The other 187 of the 196 are handled, and so are the 21 added rows, which makes 208 of 217. Among the handled ones: the Stalker's 91018 of type 81, behind target apply prerequisite 11311, whose condition the plan reads; the five other Proc rows; the Medic's row 228914; 109482 of type 18; 229304 of type 145; the Esper's type 52 row 199192 and its type 29 row 178144, aimed at the caster with a durationTime; the two ExoSuit rows of type 112, 112543 and 178142, aimed at the caster with a durationTime and a display; and the Warrior's periodic row 210834 of type 118, aimed at the caster and ticking every 1000 ms for 8000 ms. The whole-game columns are the walk's of 2026-11-05, with types 10, 14, 18, 29, 52, 64, 81, 83, 84, 112, 118 and 145 handled beside the nine; no starting ability's row is of type 10. Type 76 (Spell4Effects.effectType.76) is read since: it is a type in use, so the types handled go from 22 to 23, and no starting ability holds a row of it; type 97 (Spell4Effects.effectType.97) is read after it, so they go to 24, and no starting ability holds a row of it either; type 15 (Spell4Effects.effectType.15) is read after that, so they go to 25, and no starting ability holds a row of it; type 35 (Spell4Effects.effectType.35) is read after that, so they go to 26, and no starting ability holds a row of it; type 95 (Spell4Effects.effectType.95) is read after that, so they go to 27, and no starting ability holds a row of it"
   assert string.contains(
     totals,
-    "| Prerequisites (#47) | 232 | 49184 | 47209 | 47 | 79 of 79 |",
+    "| Prerequisites (#47) | 232 | 49184 | 47209 | 48 | 79 of 79 |",
   )
-    as "79 conditions are left, all handled: types 4, 243 and 250 are read beside the fourteen handled before (Prerequisite.prerequisiteTypeId.4, .243, .250), and the equip check decides 10 and 109 (Prerequisite.prerequisiteTypeId.10 and .109), so 19 types were handled before the quest log; it adds 6, 22, 23, 33 to 36, 43, 68 and 94 (Prerequisite.prerequisiteTypeId.6, .22, .43, .68 and .94), which the client's table uses, so 29 types are handled; a cast now gives its subject the player (its gender, World and zones), so 10 and 109 are read in every row, and the player's level, race, class, zone, kind and path add 1, 2, 3, 26, 39 and 52 (Prerequisite.prerequisiteTypeId.1, .2, .3, .26, .39 and .52), so 35 types are handled; the activate pick reads 125, a challenge in cooldown (Prerequisite.prerequisiteTypeId.125), so 36 types are handled; the link of a creature to an objective reads 69 and 74, a challenge active and unlocked (Prerequisite.prerequisiteTypeId.69 and .74), so 38 types are handled; the creature, item, ability book, world difficulty, public event objective, carried cast and always-failing types 13, 14, 38, 47, 118, 130, 143, 214 and 246 (Prerequisite.prerequisiteTypeId.13, .14, .38, .47, .118, .130, .143, .214 and .246) are read, so 47 types are handled"
+    as "79 conditions are left, all handled: types 4, 243 and 250 are read beside the fourteen handled before (Prerequisite.prerequisiteTypeId.4, .243, .250), and the equip check decides 10 and 109 (Prerequisite.prerequisiteTypeId.10 and .109), so 19 types were handled before the quest log; it adds 6, 22, 23, 33 to 36, 43, 68 and 94 (Prerequisite.prerequisiteTypeId.6, .22, .43, .68 and .94), which the client's table uses, so 29 types are handled; a cast now gives its subject the player (its gender, World and zones), so 10 and 109 are read in every row, and the player's level, race, class, zone, kind and path add 1, 2, 3, 26, 39 and 52 (Prerequisite.prerequisiteTypeId.1, .2, .3, .26, .39 and .52), so 35 types are handled; the activate pick reads 125, a challenge in cooldown (Prerequisite.prerequisiteTypeId.125), so 36 types are handled; the link of a creature to an objective reads 69 and 74, a challenge active and unlocked (Prerequisite.prerequisiteTypeId.69 and .74), so 38 types are handled; the creature, item, ability book, world difficulty, public event objective, carried cast and always-failing types 13, 14, 38, 47, 118, 130, 143, 214 and 246 (Prerequisite.prerequisiteTypeId.13, .14, .38, .47, .118, .130, .143, .214 and .246) are read, so 47 types are handled; the character title type 288 (Prerequisite.prerequisiteTypeId.288, which reads as no title owned) is read after them, so 48 types are handled"
 }
 
 pub fn the_fact_file_holds_the_records_the_starting_reach_rules_cite_test() -> Nil {
@@ -2730,8 +2747,8 @@ pub fn the_despawn_type_is_counted_read_by_the_rows_the_plan_applies_test() -> N
   let assert HandledWithGap(unread_rows:, fact_key:, ..) = line.status
     as "the type is handled with a stated gap"
   assert fact_key == "Spell4Effects.effectType.97"
-  assert unread_rows == 587
-    as "scratch count over `table_rows -- Spell4Effects effectType=97`: 329 aimed at the caster alone, 36 aimed past it with a dataBits00 or dataBits01 that is not 0, 213 aimed past it in a spell the activate cast names (a creature's activate column, the default spell or an item's use) that no Proxy or Proc names as its child (the 4 rows of Spell4 44132 to 44135 are read by that route), where the activate cast drops them, and 9 behind a target apply prerequisite of a type the server does not decode (12, 30 and 44, #818): 587 of 855, so 268 are read"
+  assert unread_rows == 588
+    as "scratch count over `table_rows -- Spell4Effects effectType=97`: 329 aimed at the caster alone, 36 aimed past it with a dataBits00 or dataBits01 that is not 0, 214 aimed past it in a spell the activate cast names (a creature's activate column, the default spell or an item's use, among them row 89875 of Spell4 24501, an item's spell with QuestAdvanceObjective rows 89873 and 89874) that no Proxy or Proc names as its child (the 4 rows of Spell4 44132 to 44135 are read by that route), where the activate cast drops them, and 9 behind a target apply prerequisite of a type the server does not decode (12, 30 and 44, #818): 588 of 855, so 267 are read"
   let tables = client_tables.every_table()
   let proxy_children =
     list.filter(spell4_effects.all(client_tables.shared()), fn(row) {
