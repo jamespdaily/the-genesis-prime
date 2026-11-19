@@ -1014,7 +1014,10 @@ fn poll_open(
   case game.limit {
     socket_read.Open ->
       case poll(game:, have:, wait_ms: socket_read.look_ms) {
-        Ok(#([], have)) -> poll_open(game:, have:)
+        Ok(#([], have)) -> {
+          open_wait.looked_and_found_nothing()
+          poll_open(game:, have:)
+        }
         found -> found
       }
     socket_read.Within(wait_ms:) ->

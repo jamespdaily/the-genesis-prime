@@ -13,14 +13,23 @@
 ////
 //// A process that is not a test body (a bot, a load player) runs the wait and
 //// reports it to no one: it keeps the bound its own caller gives it.
+////
+//// A read that looks at its socket again after each empty look tells
+//// `looked_and_found_nothing`. A test body that has a way to tell whether
+//// anything can still end the wait (`judging`: a driven clock, which knows
+//// whether the server took an input) is told, once for each wait, when it
+//// cannot: the test's owner warns and the wait goes on.
 
 import gleam/erlang/process.{type Selector, type Subject}
 
-/// What a test body is told of: a wait for the server, or a one-time build its
-/// deadline does not count (`database_support_ffi:once/2`).
+/// What a test body is told of: a wait for the server, a one-time build its
+/// deadline does not count (`database_support_ffi:once/2`), or a wait that
+/// can no longer end (`looked_and_found_nothing`; its `opened` is called with
+/// the wait's name and its `closed` never).
 pub type Slot {
   Wait
   Build
+  Hopeless
 }
 
 /// Runs `wait`, and tells the test whose body this process is that it waits for
@@ -40,6 +49,23 @@ pub fn selected(selector selector: Selector(a), what what: String) -> a {
   named(what:, wait: fn() { process.selector_receive_forever(selector) })
 }
 
+/// Makes the calling process a test body that can tell whether anything can
+/// still end a wait it is in: `can_still_end` answers whether the server is
+/// doing something that could write what the wait waits for.
+pub fn judging(can_still_end can_still_end: fn() -> Bool) -> Nil {
+  judge_with(can_still_end)
+}
+
+/// Tells the calling process that a look at the socket found nothing, which
+/// the innermost wait it is in was waiting for. When the process judges
+/// (`judging`) and the judgement says nothing can still end the wait, the
+/// test's owner is told once for that wait (the `Hopeless` slot of
+/// `reporting`). A process that does not judge, or is in no wait, is not
+/// told anything.
+pub fn looked_and_found_nothing() -> Nil {
+  looked_without_finding()
+}
+
 /// Makes the calling process a test body that is told of each `slot` it runs:
 /// `opened` is called with the name when one starts and `closed` when it has
 /// ended.
@@ -53,6 +79,12 @@ pub fn reporting(
 
 @external(erlang, "open_wait_ffi", "named")
 fn named_in_process(what: String, wait: fn() -> a) -> a
+
+@external(erlang, "open_wait_ffi", "judge_with")
+fn judge_with(can_still_end: fn() -> Bool) -> Nil
+
+@external(erlang, "open_wait_ffi", "looked_without_finding")
+fn looked_without_finding() -> Nil
 
 @external(erlang, "open_wait_ffi", "report_to")
 fn report_to(slot: Slot, opened: fn(String) -> Nil, closed: fn() -> Nil) -> Nil

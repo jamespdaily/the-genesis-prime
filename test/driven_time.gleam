@@ -90,6 +90,7 @@ type State {
     pending: List(Pending),
     changes: Int,
     participants: List(Pid),
+    judged_changes: Option(Int),
   )
 }
 
@@ -108,6 +109,10 @@ type Message {
   /// The change counter and the participants still running; an ended one is dropped
   /// and counts as a change.
   Observe(reply: Subject(Participation))
+  /// A look of the test's open read that found nothing: whether the change
+  /// counter moved since the last such look, or no participant has ever taken an
+  /// input. The counter is then remembered for the next look.
+  Judge(reply: Subject(Bool))
   Start(
     owner: Pid,
     subject: Subject(Elapsed),
@@ -129,21 +134,22 @@ pub fn new() -> Time {
   let monotonic_ms = monotonic_ms + ahead_ms
   let filetime = filetime + ahead_ms * 10_000
   let assert Ok(started) =
-    actor.new(
-      State(
-        now_ms: monotonic_ms,
-        start_ms: monotonic_ms,
-        start_filetime: filetime,
-        next_number: 0,
-        pending: [],
-        changes: 0,
-        participants: [],
-      ),
-    )
+    actor.new(State(
+      now_ms: monotonic_ms,
+      start_ms: monotonic_ms,
+      start_filetime: filetime,
+      next_number: 0,
+      pending: [],
+      changes: 0,
+      participants: [],
+      judged_changes: None,
+    ))
     |> actor.on_message(handle)
     |> actor.start
     as "the driven clock started"
-  Time(driver: started.data)
+  let time = Time(driver: started.data)
+  open_wait.judging(fn() { can_still_end(time) })
+  time
 }
 
 fn handle(state: State, message: Message) -> actor.Next(State, Message) {
@@ -168,6 +174,14 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
         state.changes + list.length(state.participants) - list.length(running)
       process.send(reply, Participation(changes:, running:))
       actor.continue(State(..state, changes:, participants: running))
+    }
+    Judge(reply:) -> {
+      let moved = case state.judged_changes {
+        Some(before) -> before != state.changes
+        None -> True
+      }
+      process.send(reply, moved || state.changes == 0)
+      actor.continue(State(..state, judged_changes: Some(state.changes)))
     }
     Start(owner:, subject:, timer:, reference:, after_ms:, reply:) -> {
       process.send(reply, state.next_number)
@@ -421,6 +435,19 @@ fn pass(
     True, False -> pass(time:, opening: closing, after_a_quiet_pass: True)
     False, _ -> pass(time:, opening: closing, after_a_quiet_pass: False)
   }
+}
+
+/// Whether anything can still end a read of the test that owns this clock,
+/// asked after each look of the read that found nothing
+/// (`open_wait.looked_and_found_nothing`). The test is in its read, so it moves
+/// neither the clock nor a timer: only a participant taking an input can still
+/// bring a frame. After the barrier, so work in progress has ended, the answer is
+/// no when no participant read the clock (or ended) since the last such look,
+/// and at least one has read it. A participant that has never read the clock
+/// leaves the answer yes: the server may not have begun.
+fn can_still_end(time: Time) -> Bool {
+  wait_until_quiet(time)
+  asked(time:, make: Judge)
 }
 
 /// Returns when the participant has taken what was in its mailbox when this was
