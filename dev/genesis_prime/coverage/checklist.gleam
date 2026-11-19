@@ -1,5 +1,4 @@
-//// The coverage measure as Markdown: one checklist per engine, to post on its
-//// area issue and on the milestone's issue.
+//// The coverage measure as Markdown: one checklist per engine.
 
 import genesis_prime/coverage/engine.{type EngineDeclaration}
 import genesis_prime/coverage/measurement.{
@@ -108,11 +107,7 @@ fn render_engine(measurement: Measurement) -> String {
 }
 
 fn heading(engine: EngineDeclaration) -> String {
-  "## " <> engine_title(engine)
-}
-
-fn engine_title(engine: EngineDeclaration) -> String {
-  engine.name <> " (#" <> int.to_string(engine.area_issue) <> ")"
+  "## " <> engine.name
 }
 
 fn source_columns(engine: EngineDeclaration) -> String {
@@ -251,10 +246,10 @@ pub fn totals(measurements: List(Measurement)) -> String {
     list.map(measurements, fn(measurement) {
       case measurement {
         Unmeasured(engine:, ..) ->
-          "| " <> engine_title(engine) <> " | not measured | | | | |"
+          "| " <> engine.name <> " | not measured | | | | |"
         Measured(engine:, types:, rows:, zero_values:, ..) ->
           "| "
-          <> engine_title(engine)
+          <> engine.name
           <> " | "
           <> int.to_string(list.length(types))
           <> " | "

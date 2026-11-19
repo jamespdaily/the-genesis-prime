@@ -522,7 +522,7 @@ pub fn quest_10510_is_acceptable_outside_the_tutorial_worlds_and_refused_inside_
     )
   assert verdict_of(10_510, dominion_at_3) == Acceptable
     as "Quest2.questPlayerFactionEnum 2 is either faction"
-  assert quest.gaps(tables: tables(), quest: row(10_510)) == Ok([])
+  assert quest.unread_gaps(tables: tables(), quest: row(10_510)) == Ok([])
     as "type 288 is read, so the quest names no gap"
 }
 
@@ -1108,6 +1108,117 @@ pub fn retry_takes_only_a_botched_quest_test() -> Nil {
   assert_declined(mentioned, quest: 2417)
   let assert Ok(none) = retry([])
   assert_declined(none, quest: 2417)
+}
+
+/// Quest 2417 is Botched in the log and its item is in a bag, so a retry reaches the
+/// accept's checks (`retry_takes_only_a_botched_quest_test`). Each row changes one column of
+/// its Quest2 row so that a check needs what the server does not read: the factions
+/// (factionIdPreq0 names 648), the prerequisite item's counter (preq_item names 6873), a
+/// Prerequisite with a condition of type 19 (Prerequisite 8252, which quest 5084 names) and
+/// a contract (flags 0x80000). The log's line says what the server does not read and names no
+/// issue.
+pub fn a_quest_the_server_cannot_check_logs_what_it_does_not_read_and_no_issue_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let cases = [
+    #(
+      "factionIdPreq0",
+      648,
+      "the reputation a quest needs, which the server does not hold",
+    ),
+    #(
+      "preq_item",
+      6873,
+      "a prerequisite item in the per-item inventory counter, which the server does not read",
+    ),
+    #(
+      "prerequisiteId",
+      8252,
+      "a prerequisite condition of a type the server does not read, type 19",
+    ),
+    #("flags", 0x80000, "a contract, which the contracts manager holds"),
+  ]
+  list.each(cases, fn(row) {
+    let #(column, value, sentence) = row
+    use tables <- fixture_tables.changed(table: "Quest2", id: 2417, with: [
+      #(column, Integer(value)),
+    ])
+    let assert Ok(taken) =
+      quest.take(
+        message: quest.Retry,
+        body: retry_body(quest_id: 2417),
+        asker: quest_support.with_items(
+          asker(log: [quest_support.known(2417, 4)]),
+          items: [item(item2_id: 4861, location: 1, bag_index: 0)],
+        ),
+        standing: standing(),
+        picture: dict.new(),
+        tables:,
+        now_ms: 0,
+        logged: set.new(),
+      )
+    let assert [quest.Log(level: LogWarning, text:)] = taken.effects
+      as { "one warning for " <> column }
+    assert string.ends_with(
+      text,
+      ", which needs " <> sentence <> ": nothing is answered",
+    )
+      as { "the line says what is not read, for " <> column }
+    assert !string.contains(text, "#") as "the line names no issue"
+  })
+}
+
+/// Each kind of `quest.Gap` has one sentence with no id in it, which is an entry of
+/// `quest.gaps()` and which the log's `describe_gap` contains. The `case` names every
+/// variant, so a new kind does not compile until its sentence is written here.
+pub fn every_quest_gap_kind_has_its_static_sentence_in_the_quest_gaps_test() -> Nil {
+  use <- owned_test.run(5000)
+  let sentence_of = fn(kind: quest.Gap) {
+    case kind {
+      quest.Reputation ->
+        "the reputation a quest needs, which the server does not hold"
+      quest.PrerequisiteItemCounter ->
+        "a prerequisite item in the per-item inventory counter, which the server does not read"
+      quest.PrerequisiteType(..) ->
+        "a prerequisite condition of a type the server does not read"
+      quest.PeriodicDraw(..) ->
+        "the draw of a periodic quest group, which the server does not read"
+      quest.Contract -> "a contract, which the contracts manager holds"
+    }
+  }
+  let entries = quest.gaps()
+  list.each(
+    [
+      quest.Reputation,
+      quest.PrerequisiteItemCounter,
+      quest.PrerequisiteType(prerequisite_type: 118),
+      quest.PeriodicDraw(group_id: 34),
+      quest.Contract,
+    ],
+    fn(kind) {
+      let sentence = sentence_of(kind)
+      assert quest.gap_kind(gap: kind) == sentence
+        as "the kind's sentence is the one the entry holds"
+      assert list.any(entries, fn(entry) {
+        entry.missing == sentence && entry.area == "Quest acceptance"
+      })
+        as { "the entry for " <> sentence }
+      assert string.contains(quest.describe_gap(gap: kind), sentence)
+        as "the log's description holds the sentence whole"
+      assert !string.contains(sentence, "118")
+        && !string.contains(sentence, "34")
+        as "the sentence names no id"
+    },
+  )
+  assert quest.gap_kind(gap: quest.PrerequisiteType(prerequisite_type: 118))
+    == quest.gap_kind(gap: quest.PrerequisiteType(prerequisite_type: 7))
+    as "the sentence of a kind is the same for every id"
+  assert quest.describe_gap(gap: quest.PrerequisiteType(prerequisite_type: 118))
+    == sentence_of(quest.PrerequisiteType(prerequisite_type: 118))
+    <> ", type 118"
+    as "the log's description adds the type"
+  assert quest.describe_gap(gap: quest.PeriodicDraw(group_id: 34))
+    == sentence_of(quest.PeriodicDraw(group_id: 34)) <> ", group 34"
+    as "and the group"
 }
 
 pub fn a_request_the_client_would_not_send_is_logged_and_unanswered_test() -> Nil {

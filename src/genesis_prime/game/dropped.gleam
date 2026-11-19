@@ -17,8 +17,8 @@
 ////   character-select connection, which has no reader for an answer
 ////   (`opcode.0x241`).
 //// - **The requests** 0x180, 0x3ED, 0x3EC, 0x269, 0x18F and 0x570 are taken
-////   without the reply they ask for: the reply each waits for is stated as a
-////   gap of the coverage measure, with the issue that closes it.
+////   without the reply they ask for: the coverage measure's messages checklist lists
+////   the reply each waits for.
 //// - **0x23D's name** is refused when it has more UTF-16 units than GameFormula
 ////   row 2375's dataint02, which the client's sender reads as the limit and
 ////   does not send past (`opcode.0x23d`). Its character id is refused when it
@@ -26,11 +26,9 @@
 ////   names it (`opcode.0x23d`). The 6 bits before the window id are read and
 ////   not checked.
 //// - **0x0180's profile** is read and not checked: what a value means is not
-////   read, and no scanbot is made to compare it with (`opcode.0x180`); the
-////   step that makes the scanbot checks it (#55).
+////   read, and no scanbot is made to compare it with (`opcode.0x180`).
 //// - **0x0570's key set id** is read and not checked: the player's key sets
-////   are not kept, so no id can be compared with one (`opcode.0x570`); the
-////   step that sends the saved key bindings checks it (#60).
+////   are not kept, so no id can be compared with one (`opcode.0x570`).
 //// - **0x12B's type** is 0 (the input flags) or 1 (the shared-challenge
 ////   preference): the senders write no other (`opcode.0x12b`).
 //// - **A signed 32-bit field of 0x23C** is read as unsigned 32 bits: the bits

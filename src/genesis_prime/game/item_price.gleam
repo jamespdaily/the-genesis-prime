@@ -20,8 +20,8 @@
 //// - **A proxy item** (Item2.flags 0x4000) takes its quality from the Item2 its row
 ////   names (GameFormula 1214) and keeps its own power level.
 //// - **Only a credit price is read.** An item whose row names another currency, or a
-////   trade skill additive, has no buy price here, and the error names the row: other
-////   currencies and the additive are issue 1052's. The computed sell price does not read those
+////   trade skill additive, has no buy price here, and the error names the row. The
+////   computed sell price does not read those
 ////   columns (`0x14040bfb0` computes it from the computed buy price), so a row with no
 ////   SellToVendor currency type sells for that whatever they hold.
 ////
@@ -35,6 +35,7 @@
 import genesis_prime/game/currency
 import genesis_prime/game/currency_kind
 import genesis_prime/game/item_property
+import genesis_prime/gap
 import genesis_prime/message/float32
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{
@@ -272,7 +273,7 @@ pub fn describe(error error: PriceError) -> String {
     OtherCurrency(item2_id: Item2Id(item)) ->
       "Item2 "
       <> int.to_string(item)
-      <> " is priced in a currency other than credits, which #1052 builds"
+      <> " is priced in a currency other than credits, which the server does not read"
     TwoSellCurrencies(item2_id: Item2Id(item)) ->
       "Item2 "
       <> int.to_string(item)
@@ -282,11 +283,26 @@ pub fn describe(error error: PriceError) -> String {
       <> int.to_string(item)
       <> " has tradeskill additive "
       <> int.to_string(additive_id)
-      <> ", whose price bonus #1052 builds"
+      <> ", whose price bonus the server does not read"
     NoCurveValue(formula:, level:) ->
       "the curve of GameFormula "
       <> int.to_string(formula)
       <> " has no value at power level "
       <> int.to_string(level)
   }
+}
+
+/// What the price does not read that the client's does: a price in another currency and a
+/// trade skill additive's bonus.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Vendor prices",
+      missing: "the buy price of an item priced in a currency other than credits: the server gives the item no price",
+    ),
+    gap.Entry(
+      area: "Vendor prices",
+      missing: "the price bonus of a trade skill additive: the server gives an item with one no price",
+    ),
+  ]
 }

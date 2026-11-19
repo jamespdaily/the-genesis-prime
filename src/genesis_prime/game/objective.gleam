@@ -13,9 +13,8 @@
 //// of any of these types or of types 15 and 46, a unit in the objective's reward pane
 //// TargetGroup (the pane counts whatever the type, but only a kill is wanted here:
 //// the other types' own tests are not kills). Types 15 and 46 count by a cluster value
-//// and a rank the server has no unit data for, so they take a kill only by the pane
-//// (a gap, the issue "Kill objectives count by cluster, rank and a unit's tagged
-//// value"). A type 15 objective whose pane is a list of creatures (TargetGroup type 1) is
+//// and a rank the server has no unit data for, so they take a kill only by the pane.
+//// A type 15 objective whose pane is a list of creatures (TargetGroup type 1) is
 //// a named group: its progress stays 0, and is not sent, until the player's blow has
 //// killed every creature of the list, each recorded once as a bit of the objective's
 //// kill mask in the log (`group_member`, `quest_log.kill_marked`; the mask is never sent:
@@ -34,8 +33,7 @@
 //// - a visible, required one with a marker is done when the quest is accepted, or when it
 ////   is open if flags 1 and 2 keep it closed until then, whatever else the quest holds
 ////   (`stand_in_scripts`, a server choice that stands in for the real trigger each
-////   objective asks for, the issue "Each kind of scripted quest step that the
-////   Tower fix completes on accept gets its real rule");
+////   objective asks for);
 //// - one of the `arrival_objectives` is done when the player stands at one of its markers
 ////   (`arrivals`), because its text asks only to go there;
 //// - one of the kill table's objectives (`ScriptRows.kills`) stays open until the player
@@ -80,7 +78,7 @@
 //// objective with no pane), and each unit once, as a type
 //// 23 objective does (`quest_log.used`; the client keeps no per-unit record, so the once is
 //// the server's choice, and an objective in `reused` counts the same unit again); a cast of a spell aimed at the caster names no unit and counts
-//// at each go. Gaps, each closed by issue 1055: the
+//// at each go. The
 //// go is the moment a cast counts by a guess, until a retail recording of quest 3915, 4832
 //// or 7618 shows it; the place an objective names is not tested; a spell aimed at the
 //// caster whose objective sets a reward pane (rows 14187 and 14203) counts at the go, not
@@ -105,6 +103,7 @@ import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/shown
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/target_group
+import genesis_prime/gap
 import genesis_prime/store.{type HeldItem}
 import genesis_prime/table/id.{
   type Creature2Id, type Item2Id, type PathSoldierActivateId, type Spell4Id,
@@ -774,8 +773,7 @@ fn activates_creature(
 /// marker the player is at, and a place-counted checklist counts, at each place reached,
 /// the checklist index of the shown unit that stands there. A type 22 objective with a
 /// count above 1 is left alone: nothing says how many visits it takes, and the server
-/// does not count them (the issue "Place objectives with no marker or a count above one
-/// complete (objective type 22)"). An objective such a pass opens is settled in the same
+/// does not count them. An objective such a pass opens is settled in the same
 /// call.
 ///
 /// The client sends nothing for a type 24 objective either (`QuestObjective.type.24`):
@@ -783,7 +781,7 @@ fn activates_creature(
 /// `unix_ms`, the Unix time in milliseconds, whose repeat periods `numbers` sets). The
 /// objective counts when it is open, and an objective that this opens counts in the same
 /// call. That a completion is what sets it is read from the objective's text and title,
-/// not from client code (a gap in the fact's record; recording quest 7540 live would settle it).
+/// not from client code.
 pub fn settle(
   log log: QuestLog,
   tables tables: table_store.Tables,
@@ -1530,4 +1528,26 @@ pub fn frames(effects effects: List(Effect)) -> List(Frame) {
       CompleteByServer(..) | ReleaseUnit(..) -> Error(Nil)
     }
   })
+}
+
+/// What the objectives count differently from the client, or by a guess.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Quest objectives",
+      missing: "a kill that counts for a type 15 or 46 objective by a unit's cluster and rank, for which the server has no unit data: only a kill by the objective's reward pane counts",
+    ),
+    gap.Entry(
+      area: "Quest objectives",
+      missing: "the place a spell-cast objective names: the cast counts wherever the player stands",
+    ),
+    gap.Entry(
+      area: "Quest objectives",
+      missing: "a cast of a spell aimed at the caster whose objective sets a reward pane: it counts at the go, not on a unit of the pane",
+    ),
+    gap.Entry(
+      area: "Quest objectives",
+      missing: "what completes a type 24 objective: the client's code does not show it, so the server reads it from the objective's text and title",
+    ),
+  ]
 }

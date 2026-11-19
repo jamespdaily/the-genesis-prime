@@ -54,17 +54,14 @@
 ////   factors. An entry the client refuses (a property that is no item property,
 ////   is off the item's slot, is a shield property on a non-shield) is
 ////   `Refused`.
-//// - **What the code does not read** is a `Gap`: a PvP item (flags 0x8000,
-////   open issue #56), a proxy item (flags 0x4000, whose fields FillItemInfo
-////   0x1404445d0 takes from GameFormula 1214's item, open issue #1052), a
-////   supportPowerPercentage beyond -1 to 1, and a budget entry on a
-////   ResourceMax property are items whose properties the client's code gives by
-////   branches this code does not follow, so such an item is an `Unread` error,
-////   with its gap, which names the open issue that closes it. Two more gaps
-////   are in what calls this code, not in an item: a mentored player's level
-////   override (open issue #338) and the World type's +30 and the match and PvP
-////   level caps (open issue #56) change the level an item reads, and the
-////   callers give the character's own level.
+//// - **What the code does not read** is a `Gap`: a PvP item (flags 0x8000),
+////   a proxy item (flags 0x4000, whose fields FillItemInfo 0x1404445d0 takes
+////   from GameFormula 1214's item), a supportPowerPercentage beyond -1 to 1,
+////   and a budget entry on a ResourceMax property are items whose properties
+////   the client's code gives by branches this code does not follow, so such an
+////   item is an `Unread` error, with its gap. A mentored player's level
+////   override, the World type's +30 and the match and PvP level caps change the
+////   level an item reads; the callers give the character's own level.
 //// - **A random stat entry** (kind 2) names an ItemRandomStatGroup, and the
 ////   item's random-stat word (`genesis_prime/game/random_stat_word`) says which
 ////   row of it the entry takes, in table order: that row's property is the
@@ -73,11 +70,12 @@
 ////   past the group is `RandomStatsRefused`: the client fails the whole build
 ////   and keeps the item without its instance properties. Two entries that take
 ////   one property add on a non-shield and give one share on a shield. A kind-4
-////   entry (a property crafting picks) gives nothing: the open issue #53
-////   closes that, and no client row mixes it with a kind-2 entry.
+////   entry (a property crafting picks) gives nothing, and no client row mixes
+////   it with a kind-2 entry.
 
 import genesis_prime/game/item_stat_kind
 import genesis_prime/game/random_stat_word
+import genesis_prime/gap
 import genesis_prime/message/float32
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{
@@ -135,15 +133,16 @@ pub type ItemProperties {
 }
 
 /// A branch of the client's code that this code does not follow, so an item that
-/// takes it is not read. Each names the open issue that closes it, or none.
+/// takes it is not read.
 pub type Gap {
-  /// Item2.flags 0x8000. Open issue #56.
+  /// Item2.flags 0x8000.
   PvpItem
   /// Item2.flags 0x4000: the client takes the item's fields from GameFormula
-  /// 1214's item (FillItemInfo 0x1404445d0). Open issue #1052.
+  /// 1214's item (FillItemInfo 0x1404445d0).
   ProxyItem
   /// A budget entry on a ResourceMax property. The player's class resource sets
-  /// that base (`genesis_prime/game/class_resource`), so nothing is open.
+  /// that base (`genesis_prime/game/class_resource`), so the server follows no branch
+  /// for it.
   ResourceMaximum
   /// A supportPowerPercentage beyond -1 to 1, which no client row holds.
   SupportBeyondRange
@@ -152,13 +151,28 @@ pub type Gap {
   StatKind(kind: Int)
 }
 
-/// The open issue that closes a gap, `None` when none is open.
-pub fn gap_issue(gap gap: Gap) -> Option(Int) {
-  case gap {
-    PvpItem -> Some(56)
-    ProxyItem -> Some(1052)
-    ResourceMaximum | SupportBeyondRange | StatKind(..) -> None
-  }
+/// The branches of the client's code that the server does not follow and that an item in
+/// the tables can take: a PvP item and a proxy item, each with the reason `why` gives. The
+/// other gaps are for data no client row holds, or a base the class resource sets.
+pub fn gaps() -> List(gap.Entry) {
+  [PvpItem, ProxyItem]
+  |> list.map(fn(kind) {
+    gap.Entry(
+      area: "Item properties",
+      missing: "the properties of an item, which the server does not give when "
+        <> why(gap: kind),
+    )
+  })
+  |> list.append([
+    gap.Entry(
+      area: "Item properties",
+      missing: "the level an item reads for a mentored player, for the World type's +30 and for the match and PvP level caps: the callers give the character's own level",
+    ),
+    gap.Entry(
+      area: "Item properties",
+      missing: "the property a crafting entry (an ItemStat of kind 4) picks: the entry gives nothing",
+    ),
+  ])
 }
 
 /// Why the client refuses a budget entry (0x95 from 0x14040db30).
@@ -806,7 +820,7 @@ fn missing_prerequisites(
 /// that does not stack. Only a missing row is an error. The client takes the
 /// fields of an item whose Item2.flags hold 0x4000 from GameFormula 1214's item
 /// (FillItemInfo 0x1404445d0), which this does not read: such an item is judged
-/// by its own row, a gap open in #1052.
+/// by its own row.
 pub fn stack_limit(
   tables tables: table_store.Tables,
   item2_id item2_id: Int,
@@ -931,7 +945,7 @@ pub fn sellable(
 
 /// Whether the player may destroy the item: Item2.flags lacks 0x10000
 /// (SendItemDelete 0x1403c1360 refuses with Item_CannotBeDeleted when it holds
-/// it). The proxy gap of `stack_limit` applies (#1052).
+/// it). Like `stack_limit`, a proxy item is judged by its own row.
 pub fn deletable(
   tables tables: table_store.Tables,
   item2_id item2_id: Int,
@@ -1158,8 +1172,7 @@ fn give_entry(
   case kind {
     // None.
     item_stat_kind.NoStat -> Ok(given)
-    // A random property crafting picks: nothing is given until crafting is
-    // built (open issue #53).
+    // A random property crafting picks: nothing is given.
     item_stat_kind.CraftingSocket -> Ok(given)
     // A random stat group: the word's choice picks the row.
     item_stat_kind.RandomGroup(item_random_stat_group_id: group_id) ->

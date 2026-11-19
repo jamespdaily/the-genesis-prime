@@ -32,15 +32,15 @@
 ////   which the client reads as no data: Item2 37685 is a weapon whose ItemStat names the
 ////   shield group.
 //// - An item with an entry of kind 4 gets no roll (word 0), because the client's builder
-////   fails a word with data whose kind-4 choice is 0 (0x14040e6d0, 0x50). Crafting and
-////   gathering work on the real client (open issue #53) fills a kind-4 entry; loot is made
-////   by open issue #58.
+////   fails a word with data whose kind-4 choice is 0 (0x14040e6d0, 0x50). Nothing the
+////   server does fills a kind-4 entry, and it makes no loot.
 //// - A proxy item (Item2.flags 0x4000) gets no roll: the client takes its stats from the
 ////   Item2 row GameFormula 1214 names, which has no ItemStat (`0x1404445d0.proxy`).
 
 import genesis_prime/game/item_property
 import genesis_prime/game/item_stat_kind
 import genesis_prime/game/random_stat_word
+import genesis_prime/gap
 import genesis_prime/random
 import genesis_prime/store.{type NewStack}
 import genesis_prime/table/id.{type ItemRandomStatGroupId, Item2Id}
@@ -259,4 +259,14 @@ fn accepted(
     }
     Error(Nil) -> False
   }
+}
+
+/// What the random stats do not cover that the client's items have.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Random item stats",
+      missing: "the random stat of an item with a crafting entry (kind 4) and of an item loot gives: the server rolls neither",
+    ),
+  ]
 }

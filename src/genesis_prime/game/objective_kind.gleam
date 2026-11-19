@@ -62,7 +62,7 @@ pub type Kind {
   /// Type 15: kill a unit whose cluster equals the data (`QuestObjective.type.15`), a
   /// server cluster id that is neither a Creature2 id nor a TargetGroup. The server
   /// counts such a kill by the objective's reward pane (genesis_prime/game/objective),
-  /// which is not how the client counts it (gap, issue 1055).
+  /// which is not how the client counts it.
   KillByCluster(cluster: Int)
   /// Type 17: visit a zone (`QuestObjective.type.17`); the data is a WorldZone id.
   VisitZone(world_zone_id: WorldZoneId)

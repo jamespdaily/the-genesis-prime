@@ -2,6 +2,7 @@
 //// test calls for its data and its reward pane).
 
 import genesis_prime/game/target_group_kind
+import genesis_prime/gap
 import genesis_prime/table/id.{
   type Creature2Id, type Faction2Id, type UnitRaceId, Creature2Id, TargetGroupId,
 }
@@ -29,8 +30,8 @@ pub type Unit {
 /// negations. Type 10 needs every sub-group its words name (not its own id) and type 11
 /// any. A missing row, or a type the client has no case for, is not a member. Types 5 to
 /// 9 read the unit's race, class and the third tagged value of its 0x262, which the
-/// server does not hold, so they are never members here: a gap of the server, though
-/// server rules reach type 9 groups (open issue #901).
+/// server does not hold, so they are never members here, though server rules reach type 9
+/// groups.
 pub fn contains(
   tables tables: table_store.Tables,
   group group: Int,
@@ -166,4 +167,14 @@ fn by_faction(
 /// The non-zero words of a type 10 or 11 group that are not its own id.
 fn others(words words: List(Int), row row: TargetGroup) -> List(Int) {
   list.filter(words, fn(word) { word != 0 && word != row.id })
+}
+
+/// The memberships the client's TargetGroup types give that the server does not.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Target groups",
+      missing: "the membership of a TargetGroup of types 5 to 9, which read a unit's race, class and the third tagged value of its 0x262: the server holds none, so no unit is a member",
+    ),
+  ]
 }

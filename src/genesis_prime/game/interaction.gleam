@@ -52,7 +52,7 @@
 ////   is answered as the client would be: 0x106 with the code, then a 0x90b that opens and
 ////   refuses, which ends the interaction (`opcode.0x90b`), and the log line says why. The
 ////   control states (60 and 61) and the combat checks are left to the client, so the server
-////   opens the window for a vendor whose player is stunned (gap, issue 1052). The window opens with the stock and the player's buyback list.
+////   opens the window for a vendor whose player is stunned. The window opens with the stock and the player's buyback list.
 //// - **The vendor window ends with any 0x07EA but the one that opens a vendor**: the
 ////   client sets its interaction kind and closes the previous interaction's window before
 ////   it sends any 0x07EA, its own end (unit 0, kind 0x65) among them, and it sends 0x00BE only
@@ -72,6 +72,7 @@ import genesis_prime/game/shown.{
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/target_group.{type Unit, Unit}
 import genesis_prime/game/vendor.{type Vendor, type Vendors}
+import genesis_prime/gap
 import genesis_prime/message/dialog_responses_shown
 import genesis_prime/message/interaction_request
 import genesis_prime/step.{type LogLevel, LogDebug, LogWarning}
@@ -669,4 +670,14 @@ fn describe(declined declined: Declined) -> String {
 pub fn describe_refusal(refusal refusal: Refusal) -> String {
   let NotDecoded(undecoded:) = refusal
   client_connection.describe_undecoded(undecoded:)
+}
+
+/// What the checks of a request do not do that the client's do.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Vendor window",
+      missing: "the refusal of a vendor's request for a player in a control state (60, 61): the server opens the window for a stunned player",
+    ),
+  ]
 }

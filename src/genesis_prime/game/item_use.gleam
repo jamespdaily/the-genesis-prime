@@ -35,14 +35,15 @@
 ////   client's maxCharges is the row's own, or a proxy row's source row's
 ////   (`item_property.max_charges`, `Item2.maxCharges.proxy`).
 ////
-//// Gap, reported as missing: the objective check of a castMethod 3 quest item, whose unit
-//// is read from the quest record's word 0x18 (issue 1054).
+//// The objective check of a castMethod 3 quest item, whose unit the client reads from the
+//// quest record's word 0x18, is not made.
 
 import genesis_prime/game/item_property
 import genesis_prime/game/prerequisite
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/shortcut_spell
 import genesis_prime/game/target_mechanic
+import genesis_prime/gap
 import genesis_prime/message/cast_result.{
   type CastResult, ItemCharges, ItemObjectiveComplete,
   ItemQuestRequirementsNotMet, ItemTooHighLevel, SpellPreRequisites,
@@ -227,4 +228,14 @@ fn is_checklist(quest quest: quest_log.Quest, index index: Int) -> Bool {
     [objective, ..] -> objective.checklist
     [] -> False
   }
+}
+
+/// What the use of an item does not do that the client does.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Item use",
+      missing: "the objective check of a castMethod 3 quest item, whose unit the client reads from the quest record's word 0x18",
+    ),
+  ]
 }

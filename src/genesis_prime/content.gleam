@@ -604,11 +604,11 @@ fn log_place_objectives(
 ) -> Nil {
   log_objective_ids(
     place_objective.unmarked(tables:),
-    "type 22 objectives with no marker, which nothing completes (issue 714)",
+    "type 22 objectives with no marker, which nothing completes",
   )
   log_objective_ids(
     place_objective.repeated(tables:),
-    "type 22 objectives with a count above 1, which an arrival does not complete (issue 714)",
+    "type 22 objectives with a count above 1, which an arrival does not complete",
   )
   list.each(
     place_objective.places_without_unit(tables:, worlds: selection.worlds),

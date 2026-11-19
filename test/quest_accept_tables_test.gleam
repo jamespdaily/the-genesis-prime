@@ -77,12 +77,12 @@ pub fn every_quest_runs_the_accept_check_and_counts_its_gaps_test() -> Nil {
   // that row, so `gaps` states the same error. Every other quest has its gaps.
   let #(stated, lacking) =
     list.partition(quests, fn(target) {
-      result.is_ok(quest.gaps(tables:, quest: target))
+      result.is_ok(quest.unread_gaps(tables:, quest: target))
     })
   assert list.length(lacking) == 2
     as "only the two quests naming a Prerequisite row the table lacks"
   let gaps_of = fn(target) {
-    let assert Ok(found) = quest.gaps(tables:, quest: target)
+    let assert Ok(found) = quest.unread_gaps(tables:, quest: target)
     found
   }
   // A gap a check stops on is one the quest's own columns reach.
@@ -229,7 +229,7 @@ pub fn the_one_quest_behind_a_title_check_is_10510_and_each_store_text_objective
     as "Prerequisite.prerequisiteTypeId.288: the table's one condition of the type (row 43305, title 400) is nested in 43306, which only Quest2 10510 names"
   list.each(quest2.all(tables), fn(target) {
     // The two quests that name a Prerequisite row the table lacks state no gaps.
-    case quest.gaps(tables:, quest: target) {
+    case quest.unread_gaps(tables:, quest: target) {
       Ok(found) -> {
         assert !list.contains(
           found,

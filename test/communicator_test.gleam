@@ -183,7 +183,7 @@ pub fn delivering_row_class_race_and_base_faction_test() -> Nil {
 pub fn delivering_row_reputation_condition_is_not_read_test() -> Nil {
   use <- owned_test.run(10_000)
   // `0x14043d3d0` code 8 measures the standing with factionIdReputation, which the
-  // server does not keep (the open issue 674 gives it). The row is not read: a row that
+  // server does not keep. The row is not read: a row that
   // fails an earlier code still fails with that code.
   use tables <- support.with_changes(changes: [
     row_with(id: 1281, cells: [#("factionIdReputation", Integer(167))]),
@@ -194,13 +194,16 @@ pub fn delivering_row_reputation_condition_is_not_read_test() -> Nil {
   assert asked(scene: in_world(quest_id: 3673, world_id: 870), tables:)
     == failed_with(code: 2)
     as "the World is tested before the reputation"
-  // Through the turn-in the refusal is one log line naming the issue.
+  // Through the turn-in the refusal is one log line saying what the server does not hold.
   let by_communicator =
     support.Scene(..scene, by_communicator: 1, picture: dict.new())
   let #(effects, _) = support.refused(scene: by_communicator, tables:)
   let assert [Log(text:, ..)] = effects as "one log line"
-  assert string.contains(text, "#674")
-    as "the log line names the issue that will close the gap"
+  assert string.ends_with(
+    text,
+    "needs the player's reputation with faction 167, which the server does not hold",
+  )
+    as "the log line says what the server does not hold, and names no issue"
 }
 
 pub fn delivering_row_prerequisite_test() -> Nil {

@@ -244,8 +244,7 @@ pub fn shield_capacity(gear gear: Gear) -> Option(Int) {
 
 /// One warning for each worn item `gear` lists unread or undrawn that `known`, the gear
 /// the player wore before, does not list: the item and why it gives no properties or no
-/// drawing, and the open issue that closes the gap when the item is unread for one.
-/// `None` at entry, where nothing is known yet.
+/// drawing. `None` at entry, where nothing is known yet.
 pub fn warnings(gear gear: Gear, known known: Option(Gear)) -> List(String) {
   let #(known_unread, known_undrawn) = case known {
     Some(before) -> #(before.unread, before.undrawn)
@@ -259,18 +258,6 @@ pub fn warnings(gear gear: Gear, known known: Option(Gear)) -> List(String) {
       <> int.to_string(item2_id.value)
       <> " gives no properties: "
       <> item_property.describe(error:)
-      <> case error {
-        item_property.Unread(gap:, ..) ->
-          case item_property.gap_issue(gap:) {
-            Some(issue) -> " (open issue " <> int.to_string(issue) <> ")"
-            None -> ""
-          }
-        item_property.TwoShields
-        | item_property.NoRow(..)
-        | item_property.Refused(..)
-        | item_property.RandomStatsRefused(..)
-        | item_property.NoCurveValue(..) -> ""
-      }
     })
   let undrawn =
     new_items(items: gear.undrawn, known: known_undrawn)

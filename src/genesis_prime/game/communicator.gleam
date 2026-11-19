@@ -23,7 +23,7 @@
 ////   own queue and is taken as passing; code 0xe is the client's own test and is not read.
 ////   A row with flags bit 0 set is not read
 ////   (`0x14043d1f0` mode 1).
-//// - **Reputation is not read**: the server keeps none (#674). A row that
+//// - **Reputation is not read**: the server keeps none. A row that
 ////   reaches the condition is reported as unread, never as passing or failing.
 //// - **Built once**, when the tables load (genesis_prime/table/loader/derivation): the rows of
 ////   each quest they deliver (`0x14043add0`'s index by questIdDelivered) and the creatures that
@@ -34,6 +34,7 @@
 import genesis_prime/game/faction_level
 import genesis_prime/game/quest
 import genesis_prime/game/quest_log.{type QuestLog}
+import genesis_prime/gap
 import genesis_prime/table/communicator_messages.{type CommunicatorMessages}
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Quest2Id}
@@ -473,7 +474,7 @@ pub fn describe(refusal refusal: Refusal) -> String {
       <> int.to_string(row_id)
       <> " needs the player's reputation with faction "
       <> int.to_string(faction_id)
-      <> ", which the server does not hold (#674)"
+      <> ", which the server does not hold"
     Unread(gap: PrerequisiteCondition(row_id:, gap:)) ->
       "whose delivering CommunicatorMessages row "
       <> int.to_string(row_id)
@@ -496,4 +497,14 @@ pub fn completed_by_server(
   receivers_of(tables:, quest_id: quest.id) == []
   && int.bitwise_and(quest.flags, by_row_flag) == 0
   && int.bitwise_and(quest.flags, quest.contract_flag) == 0
+}
+
+/// What a communicator row's checks need that the server does not hold.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Quest communicator",
+      missing: "the reputation a communicator row's condition needs, which the server does not hold: the row is reported as unread",
+    ),
+  ]
 }

@@ -41,12 +41,11 @@
 ////   12. the vendor is beyond 6.0 between the two edges, the sale's own range
 ////       (`opcode.0x166`): 17 Vendor_TooFar, logged
 ////   Then the refusal the client has no check for, 23 and logged, runs after all of the
-////   above: a location the client has no check for (4 and up), which no open issue
-////   builds. The logged cases
-////   are a modified or stale client, or a gap this server has: each reason is a warning
+////   above: a location the client has no check for (4 and up). The logged cases
+////   are a modified or stale client, or a case this server does not read: each reason is a warning
 ////   the first time on the connection and a debug line after, and the connection goes on,
 ////   as the buy's cases do. The client's checks for the vendor's crowd-control states
-////   (60, 61) are not modelled.
+////   (60, 61) are not made.
 //// - **Junk** (0x167) sells every held item of Item2Category 94
 ////   (`lua.Item.CodeEnumItem2Category.Junk`) in the usable inventory that passes check 11
 ////   and is priced in credits, whole, in bag-index order, in one statement; the others stay.
@@ -99,6 +98,7 @@ import genesis_prime/game/vendor_trade.{
 import genesis_prime/game/world_entry.{
   type Buyback, type BuybackEntry, Buyback, BuybackEntry,
 }
+import genesis_prime/gap
 import genesis_prime/message/buyback_added
 import genesis_prime/message/buyback_entry
 import genesis_prime/message/float32
@@ -546,7 +546,7 @@ fn checked(
         text: label
           <> " sells from location "
           <> int.to_string(location)
-          <> ", which the client's checks do not name and the server holds no item at; no open issue builds it, so the server answers "
+          <> ", which the client's checks do not name and the server holds no item at, so the server answers "
           <> int.to_string(wont_buy),
       ))
     location ->
@@ -881,4 +881,14 @@ fn list_sold(sale sale: Sale) -> List(store.SoldStack) {
       sold_count: stack.sold_count,
     )
   })
+}
+
+/// The refusals of a sale the client's checks give and this code does not.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Vendor sales",
+      missing: "the refusals for the vendor's crowd-control states (60, 61)",
+    ),
+  ]
 }

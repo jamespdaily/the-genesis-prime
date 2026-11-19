@@ -1,6 +1,6 @@
 //// The walking load run: what a map and its creatures cost when a player walks
 //// through a world of the whole world database, and when many players crowd the
-//// densest place in it (issue 375, tests 21 and 22).
+//// densest place in it.
 ////
 //// ```
 //// gleam run -m genesis_prime/load_walk                 one player walks world 51 corner to corner
