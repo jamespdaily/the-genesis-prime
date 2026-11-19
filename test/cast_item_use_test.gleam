@@ -459,6 +459,24 @@ pub fn the_grenade_at_a_slaver_shack_starts_the_activate_cast_test() -> Nil {
     as "the viewers see Spell4 26663, the item's spell, cast by the caster at the shack"
 }
 
+pub fn an_item_cast_at_a_creature_leaves_the_activate_bit_clear_in_the_start_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let assert Ok(#(_, effects)) =
+    use_item_at(
+      state: cast_state.new(),
+      caster: throwing(),
+      item: grenade,
+      target: shown(creature_id: a_slaver_shack, metres: 10.0),
+      at: 1000,
+    )
+    as "the use is taken"
+  let assert [#(_, CastStarted(start: started)), ..] = support.tells(effects:)
+    as "the viewers are told the start"
+  assert started.creature_activate == 0
+    as "opcode.0x7ff.activate: only CastActivateSpell sets info 0x54; StartItemUseCast writes 0x58, so an item's cast at a creature takes the item spell's own cast time and name"
+  Nil
+}
+
 pub fn the_grenade_go_raises_activated_for_the_shack_test() -> Nil {
   use <- owned_test.run(10_000)
   let assert Ok(#(_, effects)) =

@@ -242,7 +242,9 @@ pub fn armor_logged_frame(
 /// (`Spell4TargetMechanics.targetType`), the lists are empty (`spell.empty_lists`),
 /// the 16-bit value is the level of the item whose use started the cast, 0 for a cast
 /// that no item started (`opcode.0x7ff.caster_item_level`), and the two bits are the
-/// decode's safe values (`opcode.0x7ff.own_cast`, `opcode.0x7ff.activate`).
+/// decode's safe values (`opcode.0x7ff.own_cast`, `opcode.0x7ff.activate`). The activate
+/// bit is set only for the creature's own activate cast, never for an item's cast at a
+/// creature (`opcode.0x7ff.activate`: only `CastActivateSpell` sets it).
 pub fn started_message(
   id id: Int,
   spell spell: Spell,
