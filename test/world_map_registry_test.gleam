@@ -32,11 +32,11 @@ import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId, MapId}
 import genesis_prime/world_map/registry.{type MapProcess} as world_map_registry
+import gleam/dynamic.{type Dynamic}
 import gleam/erlang/process.{type Name, type Pid}
 import gleam/list
 import gleam/otp/static_supervisor as supervisor
 import gleam/set
-import mailbox_support
 import map_support
 import open_wait
 import owned_test
@@ -428,10 +428,22 @@ fn join_message(id: Int) -> map.Message {
 /// How long a stand-in Maps that never answers is given to be asked.
 const unanswered_ms = 100
 
-/// How many finds Maps has been sent: the messages waiting in the stand-in's
-/// mailbox, which is the test's own, and which nothing else writes to.
-fn finds_sent_to_stand_in() -> Int {
-  mailbox_support.queued(process.self())
+/// How many finds Maps has been sent since the last call, taken out of the
+/// stand-in's mailbox, which is the test's own and which nothing else writes
+/// to. A find sends from the test's own process, so the message it sent is in
+/// the mailbox when it returns: this is a look at the mailbox now, not a wait
+/// for a state that comes later.
+fn finds_taken_from_stand_in() -> Int {
+  let anything =
+    process.new_selector() |> process.select_other(fn(message) { message })
+  count_messages(anything, 0)
+}
+
+fn count_messages(anything: process.Selector(Dynamic), counted: Int) -> Int {
+  case process.selector_receive(anything, within: 0) {
+    Ok(_) -> count_messages(anything, counted + 1)
+    Error(Nil) -> counted
+  }
 }
 
 /// How many times a find is tried for Maps to be asked before the test fails.
@@ -450,9 +462,8 @@ fn find_left_unanswered_in(
   find find: fn(Int) -> answer,
   tries_left tries_left: Int,
 ) -> answer {
-  let asked_before = finds_sent_to_stand_in()
   let answer = find(ask_support.monotonic_ms() + unanswered_ms)
-  case finds_sent_to_stand_in() > asked_before, tries_left > 1 {
+  case finds_taken_from_stand_in() > 0, tries_left > 1 {
     True, _ -> answer
     False, True -> find_left_unanswered_in(find:, tries_left: tries_left - 1)
     False, False ->
@@ -473,7 +484,6 @@ pub fn a_find_that_maps_does_not_answer_by_its_deadline_is_no_reply_and_not_not_
     })
     == Error(world_map_registry.NoReply)
     as "Maps was asked and gave no answer: a live map may still hold the player, so the find does not say the map is not running"
-  let asked = finds_sent_to_stand_in()
   assert world_map_registry.find(
       stand_in,
       ship,
@@ -482,7 +492,7 @@ pub fn a_find_that_maps_does_not_answer_by_its_deadline_is_no_reply_and_not_not_
     )
     == Error(world_map_registry.NoReply)
     as "a deadline that has passed leaves no time to ask, and says nothing about the map"
-  assert finds_sent_to_stand_in() == asked
+  assert finds_taken_from_stand_in() == 0
     as "the find whose deadline had passed asked Maps nothing"
 }
 

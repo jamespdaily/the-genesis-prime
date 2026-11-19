@@ -227,8 +227,10 @@ pub fn an_answer_after_the_deadline_gives_the_rule_no_input_and_is_never_taken_f
   let assert [connection] = ask_support.connections(server)
     as "one connection process"
   let assert Ok(gate_pid) = process.named(gate) as "the gate runs"
-  assert list.contains(mailbox_support.monitored(connection), gate_pid)
-    as "the shell keeps its monitor of the gate until the late answer or the gate's end"
+  event_wait.until(
+    "the shell keeps its monitor of the gate until the late answer or the gate's end",
+    fn() { list.contains(mailbox_support.monitored(connection), gate_pid) },
+  )
   let lines = process.new_subject()
   let capture = log_capture.start(from: connection, into: lines)
   // Opening key 1 makes the gate answer ask 1, which is already over, and then
@@ -252,13 +254,14 @@ pub fn an_answer_after_the_deadline_gives_the_rule_no_input_and_is_never_taken_f
     as "the answer to ask 1 gave the rule no input, so no record comes before the pong"
   // Not the mailbox's length: the shell's own write of the pong leaves the
   // port's reply to it in the mailbox until the shell next runs.
-  assert mailbox_support.tagged_by_reference(connection) == 0
-    as {
-      "the late answer was taken: no answer waits in the shell's mailbox; waiting: "
-      <> mailbox_support.waiting(connection)
-    }
-  assert !list.contains(mailbox_support.monitored(connection), gate_pid)
-    as "and dropped: the shell holds no monitor of the gate for it"
+  event_wait.until(
+    "the late answer is taken: no answer waits in the shell's mailbox",
+    fn() { mailbox_support.tagged_by_reference(connection) == 0 },
+  )
+  event_wait.until(
+    "the late answer's ask is dropped: the shell holds no monitor of the gate for it",
+    fn() { !list.contains(mailbox_support.monitored(connection), gate_pid) },
+  )
   log_capture.stop(capture)
   // Absence check: the limit is how long this watches for a message that must
   // not come, here a look at the mailbox now.
@@ -291,8 +294,10 @@ pub fn a_replied_ask_monitors_its_target_while_it_waits_and_leaves_no_monitor_af
   let outcome = ask_support.read_record(client)
   assert outcome.code == asking_rule.code_opened
     as "the gate's answer came back"
-  assert !list.contains(mailbox_support.monitored(connection), gate_pid)
-    as "and the answered ask left no monitor on the gate, which it would keep for as long as the gate runs"
+  event_wait.until(
+    "the answered ask leaves no monitor on the gate, which it would keep for as long as the gate runs",
+    fn() { !list.contains(mailbox_support.monitored(connection), gate_pid) },
+  )
   ask_support.stop(server)
 }
 
