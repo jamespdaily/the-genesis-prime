@@ -111,6 +111,14 @@ pub fn in_world_as(
 /// The 0x262 news of Dorian Walker as unit 40, as his process sends it, standing 1.0 from the
 /// player's edge as `walker` does.
 pub fn walker_appears() -> Event(ConnectionEvent(Message, Answer)) {
+  creature_appears(creature_id: 74_812)
+}
+
+/// The same news for the creature of this Creature2 id, as unit 40 at the walker's place and
+/// with his hit radius, friendly and attackable by both factions.
+pub fn creature_appears(
+  creature_id creature_id: Int,
+) -> Event(ConnectionEvent(Message, Answer)) {
   let assert Ok(shown_walker) =
     dict.get(walker(gap: 1.0, alive: True, hostile: False), 40)
     as "the picture holds unit 40"
@@ -121,7 +129,7 @@ pub fn walker_appears() -> Event(ConnectionEvent(Message, Answer)) {
   let spawned =
     Spawn(
       ..beast,
-      creature_id: id.Creature2Id(74_812),
+      creature_id: id.Creature2Id(creature_id),
       combat: creature_life.Combat(
         ..beast.combat,
         hit_radius: 1.1,

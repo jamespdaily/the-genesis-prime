@@ -1448,3 +1448,9 @@ Item2	6914	(a consumable whose Spell4 34776 holds a VitalModifier of vital 15)	s
 Item2	49372	(Basic Medishot: Instant Healing at power level 60)	passed_in_value_test, cast_item_use_test
 Item2	461	(a Targeted-kind item spell, Spell4 28, with no rows)	cast_item_use_test
 Item2	7117	(an item of Spell4 25306, which a quest objective also names; Spell4 25306 holds an Activate row)	shortcut_spell_test
+Quest2	5972	quest with no objectives, flags 0x200000, the prerequisite of quest 5918	game_connection_dev_command
+Quest2	2910	timed quest, 30000 ms	game_connection_dev_command
+Quest2	9497	quest whose objective 18604 is a type 24 on quest 9695	game_connection_dev_command
+Quest2	9695	quest the type 24 objective of quest 9497 waits on	game_connection_dev_command
+QuestObjective	18252	type 3 objective of quest 9497	game_connection_dev_command
+QuestObjective	18604	type 24 objective of quest 9497 on quest 9695	game_connection_dev_command
