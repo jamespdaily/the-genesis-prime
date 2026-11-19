@@ -1,6 +1,6 @@
 """Reads a shell command line the way the hooks need: its simple commands and `git push`es.
 
-Shared by the Bash hooks in this folder (progress_lines, push_needs_test_list). A hook script
+Shared by the Bash hooks in this folder (progress_lines, push_needs_test_list, push_needs_fast_check). A hook script
 puts this folder on `sys.path` first, because `python3 -I` leaves the script's folder off it.
 
   simple_commands(command, folder)   each simple command's words and the folder it runs in
