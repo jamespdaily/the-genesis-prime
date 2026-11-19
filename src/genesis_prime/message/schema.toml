@@ -536,7 +536,10 @@ id = 0x035F
 name = "quest_log"
 direction = "server_to_client"
 evidence = "opcode.0x35f"
-summary = "the quest log at login, sent after message 0x25E, which empties the log it fills (opcode.0x35f.entry_order): the completed quests, the quests of the second list (states 4 to 7 and 0), the active quests (states 1 and 2) and the periodic reset time the client seeds its offer picks with; the handler adds to the log and never empties it, and answers an id with no Quest2 row with the Client/Server Data Mismatch disconnect (opcode.0x35f.unknown_quest). Gap: the width of the first list's count and of the quest ids come from the saved C, not an instruction"
+summary = "the quest log at login, sent after message 0x25E, which empties the log it fills (opcode.0x35f.entry_order): the completed quests, the quests of the second list (states 4 to 7 and 0), the active quests (states 1 and 2) and the periodic reset time the client seeds its offer picks with; the handler adds to the log and never empties it, and answers an id with no Quest2 row with the Client/Server Data Mismatch disconnect (opcode.0x35f.unknown_quest)"
+gaps = [
+  { area = "Quest log", missing = "the width of the completed quests' count and of each quest id in the quest log: the client's decompiled code gives them, with no instruction that shows them" },
+]
 fields = [
   { name = "completed", kind = "array", count_bits = 32, element = "quest_completed", evidence = "opcode.0x35f", named_by = "opcode.0x35f" },
   { name = "known", kind = "array", count_bits = 32, element = "quest_known", evidence = "opcode.0x35f", named_by = "opcode.0x35f" },
@@ -1102,7 +1105,10 @@ fields = [
 [[record]]
 name = "movement_timed_path"
 evidence = "movement_command.kind_3"
-summary = "a movement command of kind 3 as the server writes it, a timed path: the times of its points (32 bits each, a count in 10 bits) and the points (three floats each, one for each time), which the client draws as straight lines between the points, holding the first before the first time and the last after the last. The path type is 0 (straight lines; 1 is a curve), and the server writes 0 in the value that shifts the sampling time and 0 in the blend bit. Gap: the codec does not check that the times rise or that there is a point"
+summary = "a movement command of kind 3 as the server writes it, a timed path: the times of its points (32 bits each, a count in 10 bits) and the points (three floats each, one for each time), which the client draws as straight lines between the points, holding the first before the first time and the last after the last. The path type is 0 (straight lines; 1 is a curve), and the server writes 0 in the value that shifts the sampling time and 0 in the blend bit"
+gaps = [
+  { area = "Movement paths", missing = "that the times of a timed path rise and that it holds a point: the codec writes and reads any times and any number of points" },
+]
 fields = [
   { name = "kind", kind = "constant", bits = 5, value = 3, evidence = "0x140c1f070", named_by = "0x140c1f070" },
   { name = "times", kind = "array", count_bits = 10, element = "unsigned", element_bits = 32, evidence = "movement_command.kind_3", named_by = "movement_command.kind_3" },
@@ -1115,7 +1121,11 @@ fields = [
 [[record]]
 name = "movement_kind_4"
 evidence = "0x140c1f070"
-summary = "a movement command of kind 4, a path: the points (three floats each), the speed in units a second as a half float, which the client's apply fails below 0.00001, the path type (0 is straight lines through at least one point, 1 a curve through at least three, and the client's apply fails 2 and 3), a 4-bit mode, a 32-bit value and one bit. Gap: the mode, the 32-bit value and the last bit are not read, and the codec does not check the point count each type needs"
+summary = "a movement command of kind 4, a path: the points (three floats each), the speed in units a second as a half float, which the client's apply fails below 0.00001, the path type (0 is straight lines through at least one point, 1 a curve through at least three, and the client's apply fails 2 and 3), a 4-bit mode, a 32-bit value and one bit"
+gaps = [
+  { area = "Movement paths", missing = "what the mode, the 32-bit value and the last bit of a kind 4 command do in the client: the codec carries them as `mode`, `field_5` and `field_6` without a meaning" },
+  { area = "Movement paths", missing = "that a kind 4 command read from the client holds the number of points its path type needs: the codec does not check the count" },
+]
 fields = [
   { name = "kind", kind = "constant", bits = 5, value = 4, evidence = "0x140c1f070", named_by = "0x140c1f070" },
   { name = "points", kind = "array", count_bits = 10, element = "movement_float_vector", evidence = "movement_command.kind_4", named_by = "movement_command.kind_4" },
@@ -1129,7 +1139,11 @@ fields = [
 [[record]]
 name = "movement_path"
 evidence = "movement_command.kind_4"
-summary = "a movement command of kind 4 as the server writes it, a path: the points (three floats each), the speed in units a second as a half float, which the client's apply fails below 0.00001, the path type (0 is straight lines through at least one point, 1 a curve through at least three, and the client's apply fails 2 and 3) and a 4-bit mode. Gap: the client's code does not show what the mode, the 32-bit value and the last bit do, so the server writes 0 in the value and the bit, and the codec does not check the point count each type needs"
+summary = "a movement command of kind 4 as the server writes it, a path: the points (three floats each), the speed in units a second as a half float, which the client's apply fails below 0.00001, the path type (0 is straight lines through at least one point, 1 a curve through at least three, and the client's apply fails 2 and 3) and a 4-bit mode"
+gaps = [
+  { area = "Movement paths", missing = "what the mode, the 32-bit value and the last bit of a path command do: the client's code does not show it, so the server writes 0 in the value and the bit" },
+  { area = "Movement paths", missing = "that a path command the server writes holds the number of points its path type needs: the codec does not check the count" },
+]
 fields = [
   { name = "kind", kind = "constant", bits = 5, value = 4, evidence = "0x140c1f070", named_by = "0x140c1f070" },
   { name = "points", kind = "array", count_bits = 10, element = "movement_float_vector", evidence = "movement_command.kind_4", named_by = "movement_command.kind_4" },
@@ -1990,7 +2004,11 @@ fields = [
 [[record]]
 name = "shared_item"
 evidence = "opcode.0x111.ability_bag"
-summary = "the item record message 0x111 carries: the GUID, the item id, the location and bag index, the stack count and charges, the random-stat word, the durability, the dye, the flags, the refund and trade windows, the refund price entries, the rune slots and rune data, the stat multipliers and the level-scaling input. Gap: the server writes no id in the list of realm and character ids (a count of 0), since the width of one entry is not read"
+summary = "the item record message 0x111 carries: the GUID, the item id, the location and bag index, the stack count and charges, the random-stat word, the durability, the dye, the flags, the refund and trade windows, the refund price entries, the rune slots and rune data, the stat multipliers and the level-scaling input"
+gaps = [
+  { area = "Item records", missing = "the length of the refund window a bought item gets and the message that asks for a refund: the server writes a refund window of 0 and no refund price, so no item can be refunded" },
+  { area = "Item records", missing = "the ids in an item record's list of realm and character ids: the server writes a count of 0, since the width of one entry is not read" },
+]
 fields = [
   { name = "item_guid", kind = "unsigned", bits = 64, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.ability_bag" },
   { name = "crafter_character_id", kind = "unsigned", bits = 64, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.shared_item_unnamed", safe_by = "opcode.0x111.shared_item_unnamed" },
@@ -2005,7 +2023,7 @@ fields = [
   { name = "durability", kind = "float32", evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.ability_bag" },
   { name = "dye_channels", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.shared_item_unnamed", safe_by = "opcode.0x111.shared_item_unnamed" },
   { name = "item_flags", kind = "unsigned", bits = 8, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.shared_item_unnamed" },
-  { name = "refund_window_ms", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", open = "How long is the refund window a bought item gets, and which message asks for the refund? opcode.0x111.shared_item_unnamed names the field; its gap leaves the retail length and the request unread, so the server sends 0 and refunds are off." },
+  { name = "refund_window_ms", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", open = "How long is the refund window a bought item gets, and which message asks for the refund? opcode.0x111.shared_item_unnamed names the field; the retail length and the request are unread, so the server sends 0 and refunds are off." },
   { name = "time_left_ms", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.time_left" },
   { name = "soulbound_trade_window_ms", kind = "unsigned", bits = 32, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.shared_item_unnamed", safe_by = "opcode.0x111.shared_item_unnamed" },
   { name = "refund_cost_0_kind", kind = "unsigned", bits = 3, evidence = "opcode.0x111.ability_bag", named_by = "opcode.0x111.shared_item_fields", safe_by = "opcode.0x111.shared_item_unnamed" },
@@ -2353,7 +2371,10 @@ id = 0x07FF
 name = "spell_started"
 direction = "server_to_client"
 evidence = "opcode.0x7ff"
-summary = "a unit starts a cast: the cast id, the Spell4 id and its root and parent, the caster, the caster's item level, the primary target, the field position and the yaw, the initial and telegraph positions, the own-cast bit and the creature-activate bit; the client shows the caster's cast bar when it has the caster, and starts the player's global cooldown when the caster is the player. Gap: the uses of the root and parent ids are not read"
+summary = "a unit starts a cast: the cast id, the Spell4 id and its root and parent, the caster, the caster's item level, the primary target, the field position and the yaw, the initial and telegraph positions, the own-cast bit and the creature-activate bit; the client shows the caster's cast bar when it has the caster, and starts the player's global cooldown when the caster is the player"
+gaps = [
+  { area = "Cast start", missing = "what the client does with the root and parent Spell4 ids of a started cast: no use of them is read" },
+]
 fields = [
   { name = "cast_id", kind = "unsigned", bits = 32, evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
   { name = "spell4_id", kind = "unsigned", bits = 18, evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },
@@ -2491,7 +2512,10 @@ fields = [
 [[record]]
 name = "spell_damage_description"
 evidence = "0x1400946c0"
-summary = "a damage description: the raw damage, the scaled raw damage, the damage absorbed, the damage the shield absorbed, the health damage with the overkill, the overkill, the glance amount, the killed bit, the combat result, the damage type and the hit entries. Gap: the second value is a level-scaled raw damage by inference only"
+summary = "a damage description: the raw damage, the scaled raw damage, the damage absorbed, the damage the shield absorbed, the health damage with the overkill, the overkill, the glance amount, the killed bit, the combat result, the damage type and the hit entries"
+gaps = [
+  { area = "Damage description", missing = "what the second value of a damage description is: the client's code does not show it, and its reading as a level-scaled raw damage is an inference" },
+]
 fields = [
   { name = "raw_damage", kind = "unsigned", bits = 32, evidence = "0x1400946c0", named_by = "0x1400946c0" },
   { name = "scaled_raw_damage", kind = "unsigned", bits = 32, evidence = "0x1400946c0", named_by = "0x1400946c0" },
@@ -2526,7 +2550,10 @@ id = 0x07FB
 name = "spell_missed"
 direction = "server_to_client"
 evidence = "opcode.0x7fb"
-summary = "some of a cast's targets were missed: the cast id and, for each, the target unit, a 4-bit reason and a time in milliseconds; the client finds the cast (an unknown id drops the message) and, for reason 0 with the player the caster or the target, raises AttackMissed, which it shows over the target as Deflect. A description with combat result 0 raises no floater, so this is how a deflect is shown. Gap: what any other reason means is not read"
+summary = "some of a cast's targets were missed: the cast id and, for each, the target unit, a 4-bit reason and a time in milliseconds; the client finds the cast (an unknown id drops the message) and, for reason 0 with the player the caster or the target, raises AttackMissed, which it shows over the target as Deflect. A description with combat result 0 raises no floater, so this is how a deflect is shown"
+gaps = [
+  { area = "Missed targets", missing = "what a miss reason other than 0 does in the client: no use of it is read" },
+]
 fields = [
   { name = "cast_id", kind = "unsigned", bits = 32, evidence = "opcode.0x7fb", named_by = "opcode.0x7fb" },
   { name = "misses", kind = "array", count_bits = 32, element = "spell_miss", evidence = "opcode.0x7fb", named_by = "opcode.0x7fb" },
@@ -3283,7 +3310,10 @@ id = 0x090B
 name = "vendor_items"
 direction = "server_to_client"
 evidence = "opcode.0x90b"
-summary = "a vendor's stock: the vendor's unit id, its tabs (none puts every item under one tab), its items, the buy and sell multipliers the client keeps on the unit, and three bits: open (the client opens the vendor window), full list (the items replace the list the client holds, not one item of it) and refuse (with open, the client ends the interaction itself and shows nothing). Gap: the 64-bit and 32-bit values after each item's amounts have no reader found and are sent as 0"
+summary = "a vendor's stock: the vendor's unit id, its tabs (none puts every item under one tab), its items, the buy and sell multipliers the client keeps on the unit, and three bits: open (the client opens the vendor window), full list (the items replace the list the client holds, not one item of it) and refuse (with open, the client ends the interaction itself and shows nothing)"
+gaps = [
+  { area = "Vendor stock", missing = "what the 64-bit and 32-bit values after each vendor item's amounts are: no reader of them is found, so the server sends 0" },
+]
 fields = [
   { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x90b", named_by = "opcode.0x90b" },
   { name = "tabs", kind = "array", count_bits = 32, element = "vendor_tab", evidence = "opcode.0x90b", named_by = "opcode.0x90b" },
@@ -3431,7 +3461,10 @@ fields = [
 [[record]]
 name = "reward_property_integer"
 evidence = "0x140c1f178"
-summary = "a reward property's value in the integer form (type 1), the only form the server writes: the client also reads types 0 and 2 as a 32-bit float, which are a gap until a property the server sends needs one, and type 3 refuses the message"
+summary = "a reward property's value in the integer form (type 1), the only form the server writes: the client also reads types 0 and 2 as a 32-bit float, which the server does not write, and type 3 refuses the message"
+gaps = [
+  { area = "Reward properties", missing = "a reward property's value in the float form (types 0 and 2): the server writes only the integer form" },
+]
 fields = [
   { name = "type", kind = "constant", bits = 2, value = 1, evidence = "0x140c1f178", named_by = "0x140c1f178" },
   { name = "value", kind = "unsigned", bits = 32, evidence = "0x140c1f178", named_by = "0x140c1f178" },

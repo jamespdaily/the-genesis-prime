@@ -116,6 +116,25 @@ pub fn the_registry_holds_the_spell_plans_and_the_creatures_entries_test() -> Ni
   })
 }
 
+pub fn the_registry_holds_the_item_refund_and_the_kind_4_meaning_entries_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tags(["dev_tool", "coverage"])
+  let entries = gaps.registry()
+  let known = [
+    Entry(
+      area: "Item records",
+      missing: "the length of the refund window a bought item gets and the message that asks for a refund: the server writes a refund window of 0 and no refund price, so no item can be refunded",
+    ),
+    Entry(
+      area: "Movement paths",
+      missing: "what the mode, the 32-bit value and the last bit of a kind 4 command do in the client: the codec carries them as `mode`, `field_5` and `field_6` without a meaning",
+    ),
+  ]
+  list.each(known, fn(entry) {
+    assert list.contains(entries, entry) as entry.missing
+  })
+}
+
 pub fn the_measure_prints_the_gaps_section_with_every_registered_entry_test() -> Nil {
   use <- owned_test.run(5000)
   use <- unitest.tags(["dev_tool", "coverage"])

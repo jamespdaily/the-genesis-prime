@@ -44,7 +44,7 @@
 ////   same `SetUnitItemVisual` (`0x140466d20`), so a viewer created with the overlay and
 ////   a viewer sent the 0x933 draw the same unit. The overlay is one message and needs
 ////   no ordering.
-//// - **A gap:** dataBits03 of a DisguiseOutfit row is 1 on both ExoSuit rows and on 17
+//// - **dataBits03 of a DisguiseOutfit row** is 1 on both ExoSuit rows and on 17
 ////   others, and no client code reads a type 112 row, so the plan reads it as nothing
 ////   (genesis_prime/game/spell_plan `disguise_of`).
 ////
@@ -60,6 +60,7 @@
 
 import genesis_prime/game/unit_properties
 import genesis_prime/game/worn_visual.{type WornVisual}
+import genesis_prime/gap
 import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
 import gleam/bool
 import gleam/int
@@ -199,4 +200,14 @@ fn changed_by(
       }
     })
   #(after, changed)
+}
+
+/// What a disguise does not do that the client's does.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Disguises",
+      missing: "what dataBits03 of a DisguiseOutfit row does: it is 1 on both ExoSuit rows and on 17 others, and no client code reads a type 112 row, so the plan reads it as nothing",
+    ),
+  ]
 }

@@ -1080,11 +1080,9 @@ pub fn joined(
                 enter_world(place: sent),
                 player_created(unit:),
                 unit_is_player(unit_id:),
-                // That 0x92C belongs right after 0x19B is not proven by the
-                // client (it reads the properties when a bag is worn and keeps
-                // them in a map); the place is the server's, and the frame is sent
-                // once per play and join. Only a live check of a worn
-                // bag settles it on the real client.
+                // The client reads the properties when a bag is worn and keeps
+                // them in a map, so the place of 0x92C is the server's; the
+                // frame is sent once per play and join.
                 reward_properties_sent(tables:),
                 // Before 0x25E, whose handler raises CharacterCreated, when the
                 // interface menu's Abilities button reads the points

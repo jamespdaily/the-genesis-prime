@@ -7,11 +7,11 @@
 //// client draws as straight lines between the points, holding the first before
 //// the first time and the last after the last. The path type is 0 (straight
 //// lines; 1 is a curve), and the server writes 0 in the value that shifts the
-//// sampling time and 0 in the blend bit. Gap: the codec does not check that
-//// the times rise or that there is a point. Its fields are listed in
+//// sampling time and 0 in the blend bit. Its fields are listed in
 //// `schema.toml` with the client's evidence, and the fact file's
 //// `movement_command.kind_3` names the record.
 
+import genesis_prime/gap
 import genesis_prime/message/bit_stream.{
   type DecodeError, type Reader, type Writer,
 }
@@ -63,4 +63,14 @@ pub fn read(
   use reader <- result.try(bit_stream.read_constant(reader, "value", 32, 0))
   use reader <- result.try(bit_stream.read_constant(reader, "blend", 1, 0))
   Ok(#(MovementTimedPath(times:, points:), reader))
+}
+
+/// The gaps in this record's codec, which the coverage measure prints.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Movement paths",
+      missing: "that the times of a timed path rise and that it holds a point: the codec writes and reads any times and any number of points",
+    ),
+  ]
 }

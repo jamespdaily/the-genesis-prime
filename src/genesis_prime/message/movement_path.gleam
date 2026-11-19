@@ -6,12 +6,10 @@
 //// second as a half float, which the client's apply fails below 0.00001, the
 //// path type (0 is straight lines through at least one point, 1 a curve
 //// through at least three, and the client's apply fails 2 and 3) and a 4-bit
-//// mode. Gap: the client's code does not show what the mode, the 32-bit value
-//// and the last bit do, so the server writes 0 in the value and the bit, and
-//// the codec does not check the point count each type needs. Its fields are
-//// listed in `schema.toml` with the client's evidence, and the fact file's
-//// `movement_command.kind_4` names the record.
+//// mode. Its fields are listed in `schema.toml` with the client's evidence,
+//// and the fact file's `movement_command.kind_4` names the record.
 
+import genesis_prime/gap
 import genesis_prime/message/bit_stream.{
   type DecodeError, type Reader, type Writer,
 }
@@ -70,4 +68,18 @@ pub fn read(reader: Reader) -> Result(#(MovementPath, Reader), DecodeError) {
   use reader <- result.try(bit_stream.read_constant(reader, "value", 32, 0))
   use reader <- result.try(bit_stream.read_constant(reader, "last_bit", 1, 0))
   Ok(#(MovementPath(points:, speed:, path_type:, mode:), reader))
+}
+
+/// The gaps in this record's codec, which the coverage measure prints.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Movement paths",
+      missing: "what the mode, the 32-bit value and the last bit of a path command do: the client's code does not show it, so the server writes 0 in the value and the bit",
+    ),
+    gap.Entry(
+      area: "Movement paths",
+      missing: "that a path command the server writes holds the number of points its path type needs: the codec does not check the count",
+    ),
+  ]
 }
