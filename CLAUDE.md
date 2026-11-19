@@ -7,7 +7,7 @@ A server for WildStar that the original client connects to and plays on. Gleam o
 - **Evidence:** the client's code and tables, then recordings; a retail record or Jim's world database only where the client lacks the data or the rule.
 - **Rule:** a pure function: state and input in, new state and effects (actions to carry out) out. Every game and connection decision is a rule.
 - **Shell:** the process that carries out its rule's effects in order and turns all it sees into that rule's inputs; it decides nothing.
-- **Full check:** `./check`: the setup check, format, warnings as errors, glinter, generated code matching the schema, migrations, squirrel, the tests and the fact checker. CI runs it without the client's parts.
+- **Full check:** `./check`; its header lists the parts and when each runs. CI runs every part with the client's data.
 - **Coverage measure:** what the client's tables require, against what the server handles.
 
 ## Authority
@@ -25,11 +25,11 @@ A server for WildStar that the original client connects to and plays on. Gleam o
 - Every packet layout lives in one schema with its evidence. The generated codec states each field's size and byte order and is never edited by hand; the bit stream's field kinds and the generator are property-tested, and each message with a client vector is checked against it.
 - A message the server sends has every field traced before it ships: Eldan's name for the field is the lead, and the client's reader settles the value. A field the reader cannot settle is marked open with its question, never a silent 0.
 - A bug fix starts with a test that fails because of the bug.
-- CI's full check passes on the commit handed back for review: a builder runs single tests and `./check fast` locally, and pushes to a draft pull request so CI runs. The coordinator runs `./check` locally once, on the commit it merges, for the parts that need the client. Files are staged by name.
+- CI's full check passes on the commit the coordinator merges: a builder runs single tests and `./check fast` locally, and pushes to a draft pull request so CI runs. The coordinator also runs `./check` locally on that commit when the branch changes the fact file or the client scripts. Files are staged by name.
 - No shortcut makes a check pass: no stub or hard-coded value in place of the client's behaviour, no test skipped or loosened without its reason in the test, no swallowed error. A gap is stated where it is enforced, names the open issue that will close it, and is reported as missing or a question.
 - A requirement or fact lives in the code, test, config or check that enforces it. No design documents or decision records: the issue keeps the reasoning, and a choice becomes one line in its place. Tools that gate a merge (the check script, the setup check, the table extractor) have tests that CI runs; other tools and guidance are checked by real use.
 - A branch is `jimd/<issue>-<topic>`; each commit names its issue and says why.
-- A lesson becomes a test, a shared function or a permission first; a written rule only for a recurring judgement, and it names the failure it fixes, seen in real work. A new rule replaces an old one where it can. A change to this file, a skill or an agent lands in its own pull request once Jim approves it; an approved change that waits for a step is written on that step's issue.
+- A lesson becomes a test, a shared function or a permission first; a written rule only for a recurring judgement, and it names the failure it fixes, seen in real work. A new rule replaces an old one where it can. A change to this file, a skill or an agent lands in its own pull request, naming the milestone's parent issue, once Jim approves it; an approved change that waits for a step is written on that step's issue.
 
 ## Steps
-The coordinator runs each step by the `running-a-step` skill. Jim decides only when expected game behaviour changes, an acceptance condition weakens, the evidence cannot settle a question, or authority widens: ask those as one batch of yes-or-no questions, each with a recommendation.
+The coordinator runs each step by the `running-a-step` skill. Jim decides only when expected game behaviour changes, an acceptance condition weakens, the evidence cannot settle a question, or authority widens: ask those as one batch of plain yes-or-no questions, each with a recommendation, in chat when Jim is at the terminal and on Discord when he is away.

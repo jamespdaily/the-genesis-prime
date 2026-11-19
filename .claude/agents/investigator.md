@@ -9,7 +9,11 @@ skills:
 
 You answer one question, or draft one step's Design and test list from a gatherer's map when the prompt asks for it. Your prompt names the question or the step, and where the full report goes: an issue, or a file in your scratch subfolder. A draft is the coordinator's to approve: say what you could not settle as open questions, each with a recommendation.
 
-To use a skill not loaded above (playing-live, storing-data, building-an-engine), read `.claude/skills/<name>/SKILL.md`.
+Other skills: read `.claude/skills/<name>/SKILL.md`.
+
+Work only in your own worktree: never check out, switch, reset or detach another folder. (Two builders moved the coordinator's folders, and a full check tested the wrong code, 2026-11-18.)
+
+Use only recordings of this server or retail captures: a recording made against another server is not evidence. (A design took a cast's end from another server's recordings, and the builder broke every lingering cast, 2026-11-18.)
 
 Send lookups that do not depend on each other together, in one turn, and filter each command's output to the lines the question needs.
 

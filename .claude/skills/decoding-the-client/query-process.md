@@ -9,4 +9,4 @@
 
 ## Saving names
 
-`scripts/name_functions.py` needs the project to itself, so it refuses while a holder runs. While other decoders run, return your names to the coordinator instead (SKILL.md). When none run: `python3 -I scripts/query.py stop`, then `scripts/name_functions.py` as its docstring says, then `python3 -I scripts/decompiled.py refresh`.
+`scripts/name_functions.py` needs the project to itself, so it refuses while a holder runs. When no other decoder runs: `python3 -I scripts/query.py stop`, then `scripts/name_functions.py` as its docstring says, then `python3 -I scripts/decompiled.py refresh`.
