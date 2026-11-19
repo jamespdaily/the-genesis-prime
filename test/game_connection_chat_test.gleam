@@ -913,24 +913,27 @@ fn goes_on_in_the_world(state: game_connection.State) -> Bool {
 
 pub fn with_the_setting_off_a_command_line_is_said_and_nothing_is_asked_test() -> Nil {
   use <- owned_test.run(10_000)
-  list.each(["!summon 75048", "!level 4", "!xp 2859"], fn(text) {
-    let state =
-      game_connection_support.watched_by(game_connection_support.in_world(), [
-        2,
-        3,
-      ])
-    let #(_, taken) =
-      game_connection_support.read(
-        state,
-        game_connection_support.chat_line_message(4, text),
-      )
-    assert game_connection_support.written_ids(taken) == [0x01C2]
-      as "opcode.0x1c2: the speaker's own line"
-    assert list.map(chat_tells(taken), fn(told) { told.0 })
-      == [step.Connection(ConnectionId(2)), step.Connection(ConnectionId(3))]
-      as "the design: with the setting off a `!` line is a Say line, told to each viewer"
-    assert support.asked(taken) == None as "nothing is asked of the map"
-  })
+  list.each(
+    ["!summon 75048", "!level 4", "!xp 2859", "!go 22 1189 1 2 3"],
+    fn(text) {
+      let state =
+        game_connection_support.watched_by(game_connection_support.in_world(), [
+          2,
+          3,
+        ])
+      let #(_, taken) =
+        game_connection_support.read(
+          state,
+          game_connection_support.chat_line_message(4, text),
+        )
+      assert game_connection_support.written_ids(taken) == [0x01C2]
+        as "opcode.0x1c2: the speaker's own line"
+      assert list.map(chat_tells(taken), fn(told) { told.0 })
+        == [step.Connection(ConnectionId(2)), step.Connection(ConnectionId(3))]
+        as "the design: with the setting off a `!` line is a Say line, told to each viewer"
+      assert support.asked(taken) == None as "nothing is asked of the map"
+    },
+  )
 }
 
 pub fn with_the_setting_on_a_summon_line_is_answered_told_to_no_viewer_and_asks_the_map_test() -> Nil {

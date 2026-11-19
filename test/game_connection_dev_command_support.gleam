@@ -6,6 +6,8 @@ import connection_rule_support as rule_support
 import game_connection_support as support
 import genesis_prime/client_connection.{type Request, AskMap, FromMap, SentByMap}
 import genesis_prime/game/connection as game_connection
+import genesis_prime/game/connection/state as connection_state
+import genesis_prime/game/start_place.{type Place}
 import genesis_prime/step.{type ConnectionStep, OwnEvent}
 import genesis_prime/store
 import genesis_prime/table/id.{ClassId}
@@ -105,4 +107,26 @@ pub fn said(
   text text: String,
 ) -> #(game_connection.State, ConnectionStep(Request)) {
   support.read(state, support.chat_line_message(4, text))
+}
+
+/// The tests' player at `place`, in whatever world it names, with the development
+/// commands on and its burst taken.
+pub fn in_world_at_place(place place: Place) -> game_connection.State {
+  in_world_as(
+    character: store.Character(..support.world_character(), place: Some(place)),
+    experience: None,
+  )
+}
+
+/// The place the save timer's ask holds: the place the player would be saved at.
+pub fn saved_place(state state: game_connection.State) -> Place {
+  let #(_, taken) =
+    support.feed(
+      state:,
+      event: OwnEvent(step.TimerFired(connection_state.save_timer)),
+    )
+  let assert client_connection.AskStore(store.Move(store.SavePlace(place:, ..))) =
+    support.ask_request(taken)
+    as "the save timer asks the store to save the place"
+  place
 }

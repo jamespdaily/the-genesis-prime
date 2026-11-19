@@ -1448,3 +1448,4 @@ Item2	6914	(a consumable whose Spell4 34776 holds a VitalModifier of vital 15)	s
 Item2	49372	(Basic Medishot: Instant Healing at power level 60)	passed_in_value_test, cast_item_use_test
 Item2	461	(a Targeted-kind item spell, Spell4 28, with no rows)	cast_item_use_test
 Item2	7117	(an item of Spell4 25306, which a quest objective also names; Spell4 25306 holds an Activate row)	shortcut_spell_test
+WorldLocation2	8300	place in World 870, zone 1227	dev_command_test, game_connection_dev_command_test, game_connection_held_map_test

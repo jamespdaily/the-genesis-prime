@@ -1055,6 +1055,22 @@ pub fn a_command_line_with_the_setting_on_asks_the_connection_to_run_it_test() -
         dev_command.RaiseToExperience(experience: 2859),
         "an experience",
       ),
+      #(
+        "!go 22 1189 1 2 3",
+        dev_command.Go(destination: dev_command.Coordinates(
+          world_id: 22,
+          world_zone_id: 1189,
+          x: 1,
+          y: 2,
+          z: 3,
+        )),
+        "a place by coordinates, in a World and a WorldZone the tables hold",
+      ),
+      #(
+        "!go 8300",
+        dev_command.Go(destination: dev_command.Named(world_location2_id: 8300)),
+        "a place by a WorldLocation2 row the tables hold",
+      ),
     ],
     fn(row) {
       let effects = say_taken(text: row.0, dev_commands: True)
@@ -1078,6 +1094,11 @@ pub fn a_refused_or_unknown_command_is_one_system_line_and_nothing_to_run_test()
         "!level 51",
         "!level 51 is outside the levels 1 to 50",
         "GameFormula 145: the highest level is 50",
+      ),
+      #(
+        "!go 99999 1 0 0 0",
+        "!go: World 99999 is not in the client's tables",
+        "a World the tables do not hold",
       ),
     ],
     fn(row) {
@@ -1122,29 +1143,32 @@ pub fn a_summon_with_a_level_that_is_no_whole_number_or_with_extra_words_answers
 
 pub fn a_bang_line_on_another_channel_is_a_line_of_that_channel_with_the_setting_on_test() -> Nil {
   use <- owned_test.run(5000)
-  list.each(["!summon 75048", "!level 4", "!xp 2859"], fn(text) {
-    list.each([5, 8], fn(type_id) {
-      let #(_, effects) =
-        take_with(
-          message: chat.LineSent,
-          chat: a_chat(),
-          body: body(
-            type_id:,
-            channel_id: 0,
-            text: bit_stream.utf16_units(text),
-            formats: [],
-            message_id: 1,
-          ),
-          viewers: [7, 8],
-          dev_commands: True,
-        )
-      assert said_to(effects) == [7, 8]
-        as "the design: a command is a line on Say only; a yell or an emote that starts with `!` is said"
-      assert list.length(frames_of(effects)) == 1
-      assert !runs_a_command(effects)
-        as "a line of another channel runs nothing"
-    })
-  })
+  list.each(
+    ["!summon 75048", "!level 4", "!xp 2859", "!go 22 1189 1 2 3"],
+    fn(text) {
+      list.each([5, 8], fn(type_id) {
+        let #(_, effects) =
+          take_with(
+            message: chat.LineSent,
+            chat: a_chat(),
+            body: body(
+              type_id:,
+              channel_id: 0,
+              text: bit_stream.utf16_units(text),
+              formats: [],
+              message_id: 1,
+            ),
+            viewers: [7, 8],
+            dev_commands: True,
+          )
+        assert said_to(effects) == [7, 8]
+          as "the design: a command is a line on Say only; a yell or an emote that starts with `!` is said"
+        assert list.length(frames_of(effects)) == 1
+        assert !runs_a_command(effects)
+          as "a line of another channel runs nothing"
+      })
+    },
+  )
 }
 
 pub fn the_system_line_is_the_same_whatever_the_refused_text_is_test() -> Nil {

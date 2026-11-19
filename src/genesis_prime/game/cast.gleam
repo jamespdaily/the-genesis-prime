@@ -130,7 +130,7 @@ import genesis_prime/game/spell_plan.{type Plans, type Proxy, type Spell}
 import genesis_prime/game/unit_properties
 import genesis_prime/gap
 import genesis_prime/message/ability_hold
-import genesis_prime/message/cancel_cast.{type CancelCast}
+import genesis_prime/message/cancel_cast.{type CancelCast, CancelCast}
 import genesis_prime/message/cast_ability
 import genesis_prime/message/cast_activate
 import genesis_prime/message/cast_objective_ability
@@ -3378,6 +3378,30 @@ pub fn activation_stopped(
   case dict.get(cast.lingering, cast_id) {
     Ok(lingering) -> lingering_ended(cast:, cast_id:, lingering:)
     Error(Nil) -> #(cast, [])
+  }
+}
+
+/// The caster's current cast stops because the server placed the caster: the client's 0x83c
+/// stops the cast it is making (`opcode.0x83c`), so the cast ends as one the client cancels
+/// does (`cancelling`), with its 0x7fe written before the placement. A caster with no
+/// current cast changes nothing.
+pub fn stopped_by_placement(
+  cast cast: State,
+  caster caster: Caster,
+  now now: Now,
+) -> #(State, List(Effect)) {
+  case cast.current {
+    None -> #(cast, [])
+    Some(cast_id) -> {
+      let now_ms = now.monotonic_ms
+      let cancel =
+        CancelCast(cast_id:, reason: cast_result.from_value(6), field_3: 1)
+      use <- settled(cast:, own: [])
+      let #(held, stopped) = cast_press.stop_holding_cast(cast:, cast_id:)
+      let #(cast, ended) = cancelling(cast: held, cancel:, caster:, now_ms:)
+      released(taken: #(cast, list.append(stopped, ended)), caster:, now_ms:)
+      |> continued(caster:, now_ms:)
+    }
   }
 }
 
