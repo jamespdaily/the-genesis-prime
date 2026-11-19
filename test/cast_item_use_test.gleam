@@ -1837,12 +1837,12 @@ pub fn an_item_spell_with_no_activate_effect_is_refused_285_and_logged_once_test
     )
     as "the second use is answered"
   assert refused_with(effects: first) == [#(clients_cast_id, 28, 285)]
-    as "Spell4 28 is cast at a unit and has no Activate and no QuestAdvanceObjective row, which is all the creature's activate cast plays (#333): IllegalSpellCast (285)"
+    as "Spell4 28 is cast at a unit and has no Activate and no QuestAdvanceObjective row, which is all the creature's activate cast plays (#1053): IllegalSpellCast (285)"
   assert refused_with(effects: second) == [#(clients_cast_id, 28, 285)]
     as "the second use is refused the same"
   let assert [#(LogWarning, line)] =
     list.append(support.logs(effects: first), support.logs(effects: second))
     as "the gap is logged once"
   assert string.contains(line, "Spell4 28") as "the log line names the spell"
-  assert string.contains(line, "#333") as "and the issue"
+  assert string.contains(line, "#1053") as "and the issue"
 }

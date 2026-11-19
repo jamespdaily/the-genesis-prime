@@ -21,7 +21,7 @@
 ////   names (GameFormula 1214) and keeps its own power level.
 //// - **Only a credit price is read.** An item whose row names another currency, or a
 ////   trade skill additive, has no buy price here, and the error names the row: other
-////   currencies and the additive are #333's. The computed sell price does not read those
+////   currencies and the additive are issue 1052's. The computed sell price does not read those
 ////   columns (`0x14040bfb0` computes it from the computed buy price), so a row with no
 ////   SellToVendor currency type sells for that whatever they hold.
 ////
@@ -272,7 +272,7 @@ pub fn describe(error error: PriceError) -> String {
     OtherCurrency(item2_id: Item2Id(item)) ->
       "Item2 "
       <> int.to_string(item)
-      <> " is priced in a currency other than credits, which #333 builds"
+      <> " is priced in a currency other than credits, which #1052 builds"
     TwoSellCurrencies(item2_id: Item2Id(item)) ->
       "Item2 "
       <> int.to_string(item)
@@ -282,7 +282,7 @@ pub fn describe(error error: PriceError) -> String {
       <> int.to_string(item)
       <> " has tradeskill additive "
       <> int.to_string(additive_id)
-      <> ", whose price bonus #333 builds"
+      <> ", whose price bonus #1052 builds"
     NoCurveValue(formula:, level:) ->
       "the curve of GameFormula "
       <> int.to_string(formula)

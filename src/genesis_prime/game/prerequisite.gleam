@@ -117,7 +117,7 @@
 ////   instead (`check_for_visibility`): the creature stays shown. Gap: the 1,788 conditions
 ////   of the type name server-only ids the client never reads, so which creatures it hides
 ////   is open (Creature2 30305 and 34586 are the spawns of the world database that
-////   carry it; issue 334).
+////   carry it; issue 818).
 //// - **Type 38** compares the first unit's Creature2 id, 0 for a player, with the value:
 ////   comparison 1 equal, 2 different, any other fails, and its objectId is not read
 ////   (`Prerequisite.prerequisiteTypeId.38`, `0x14049ecc0`). A first unit the check cannot
@@ -712,8 +712,7 @@ pub fn of_struck(
 /// facing give, and the caster second, with its quest log. The connection holds no life,
 /// vital, faction or flag of a creature, so the subject holds none of them either: a
 /// condition that reads what else it holds is `NotRead`. Another player's casts on the
-/// creature are not in `under` (gap: Quests, zones and prerequisites work on the real
-/// client, #334). `creature_id` is the Creature2 row of the pressed creature, which type 38
+/// creature are not in `under` (gap, issue 569). `creature_id` is the Creature2 row of the pressed creature, which type 38
 /// reads, and `checker` is what the caster holds of its own.
 pub fn of_target(
   under under: List(lasting.Held),
@@ -1712,7 +1711,7 @@ pub fn check(
 
 /// The prerequisite checked for what a unit's visibility prerequisite decides: as `check`,
 /// except that type 47, which fails every cast, effect and gossip entry, is `NotRead`, so
-/// a creature behind it stays shown (gap: issue 334).
+/// a creature behind it stays shown (gap, issue 818).
 pub fn check_for_visibility(
   prerequisite prerequisite: Prerequisite,
   subject subject: Subject,
@@ -2090,7 +2089,7 @@ fn condition_decided(
     NeverMet -> #(rolls, Fails)
     // Type 47 is never met by a cast, an effect or a gossip entry; the visibility
     // check does not decide it, so the creature stays shown. Gap: the condition's real
-    // test waits for "Quests, zones and prerequisites work on the real client" (issue 334).
+    // test waits for issue 818.
     ServerGated ->
       case purpose {
         Gating -> #(rolls, Fails)

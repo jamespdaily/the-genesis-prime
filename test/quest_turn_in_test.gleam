@@ -498,7 +498,7 @@ pub fn communicator_turn_in_does_not_auto_complete_test() -> Nil {
   use <- owned_test.run(10_000)
   // Flags 9 (bits 0 and 3): communicable and auto-completing. The communicator's accept path
   // for it needs a side-list entry that only a call (0x757) makes, which the server does not
-  // send (#334), so a quest not in the log is not turned in over the communicator.
+  // send (#1054), so a quest not in the log is not turned in over the communicator.
   use tables <- support.with_changes(changes: [
     #("Quest2", 1806, [#("flags", Integer(9))]),
     support.receiving(1806),
@@ -510,7 +510,7 @@ pub fn communicator_turn_in_does_not_auto_complete_test() -> Nil {
       tables:,
       because: "a communicable auto-complete quest not in the log",
     )
-  assert string.contains(text, "#334") as "the line names the gap"
+  assert string.contains(text, "#1054") as "the line names the gap"
   // The unit path completes the same quest with flags 1 (bit 0).
   use tables <- support.with_changes(changes: [
     #("Quest2", 1806, [#("flags", Integer(1))]),

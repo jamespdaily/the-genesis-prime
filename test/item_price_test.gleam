@@ -224,7 +224,7 @@ pub fn a_stock_row_priced_in_another_currency_stops_the_load_test() -> Nil {
       Refusal(
         table: "vendor_item",
         row: RowName("28739/2"),
-        rule: "Item2 14838 is priced in a currency other than credits, which #333 builds",
+        rule: "Item2 14838 is priced in a currency other than credits, which #1052 builds",
       ),
     ])
     as "0x14040d160: only both currency ids 0 give the computed credit price; paying another currency is a later step"
@@ -248,7 +248,7 @@ pub fn a_stock_row_with_a_tradeskill_additive_stops_the_load_test() -> Nil {
       Refusal(
         table: "vendor_item",
         row: RowName("28739/2"),
-        rule: "Item2 14838 has tradeskill additive 1, whose price bonus #333 builds",
+        rule: "Item2 14838 has tradeskill additive 1, whose price bonus #1052 builds",
       ),
     ])
     as "0x140243a00, 0x1405e6230: a row with a tradeskillAdditiveId is priced with a bonus factor in place of the vendor multiplier, which is not built here"

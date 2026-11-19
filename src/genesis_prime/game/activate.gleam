@@ -38,7 +38,7 @@
 ////   creature is refused 106 or a living one 107 (`CheckCastUnitTargetRange`,
 ////   `0x1403b2240`). A unit hostile to the player or in combat is offered no use at all
 ////   (`Withheld`, result 100).
-//// - Gaps, each closed by the quests, zones and prerequisites issue (#334): the client's
+//// - Gaps, each closed by issue 1053: the client's
 ////   per-unit vertical offset and the creature words 0x6c and 0x148 that make the client
 ////   pick no spell are not modelled; nor are the target row's crowd-control and
 ////   fight-state conditions and the unit word 0xc4 that bit 5 reads (`planned`).
@@ -472,7 +472,7 @@ fn planned(
 ///
 /// Gap: the client also tests the unit's crowd-control state, its fight state and the
 /// creature word 0x1e4 against such a row, and the meaning of the unit word 0xc4 that
-/// bit 5 tests is not decoded, so bit 5 passes (#334); no activate spell of the tables
+/// bit 5 tests is not decoded, so bit 5 passes (gap, issue 1053); no activate spell of the tables
 /// tests a bit outside the ones read, so the spell that does is not planned.
 fn unread_target_bits(
   tables tables: table_store.Tables,

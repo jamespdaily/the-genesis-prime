@@ -36,7 +36,7 @@
 ////   (`item_property.max_charges`, `Item2.maxCharges.proxy`).
 ////
 //// Gap, reported as missing: the objective check of a castMethod 3 quest item, whose unit
-//// is read from the quest record's word 0x18 (#334).
+//// is read from the quest record's word 0x18 (issue 1054).
 
 import genesis_prime/game/item_property
 import genesis_prime/game/prerequisite

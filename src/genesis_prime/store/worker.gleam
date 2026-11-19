@@ -1377,8 +1377,7 @@ fn quests_json(quests: List(QuestRow)) -> Json {
 
 /// The rows of a character's items as the items they hold, in the order the query gave
 /// them, and apart from those the rows that hold no charges (`UnsetItem`). A moment is read
-/// as the row holds it: a timed row saved before the column has none and never runs out
-/// (open: #333).
+/// as the row holds it: a timed row saved before the column has none and never runs out.
 fn held_items(
   rows: List(sql.LoadCharacterItemsRow),
 ) -> #(List(HeldItem), List(UnsetItem)) {

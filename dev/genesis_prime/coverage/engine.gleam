@@ -239,7 +239,7 @@ fn quest_rewards() -> EngineDeclaration {
   }
   EngineDeclaration(
     name: "Quest rewards",
-    area_issue: 334,
+    area_issue: 1059,
     source: TableColumns(
       table: "Quest2Reward",
       columns: ["quest2RewardTypeId"],

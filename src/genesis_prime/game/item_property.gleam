@@ -56,7 +56,7 @@
 ////   `Refused`.
 //// - **What the code does not read** is a `Gap`: a PvP item (flags 0x8000,
 ////   open issue #56), a proxy item (flags 0x4000, whose fields FillItemInfo
-////   0x1404445d0 takes from GameFormula 1214's item, open issue #333), a
+////   0x1404445d0 takes from GameFormula 1214's item, open issue #1052), a
 ////   supportPowerPercentage beyond -1 to 1, and a budget entry on a
 ////   ResourceMax property are items whose properties the client's code gives by
 ////   branches this code does not follow, so such an item is an `Unread` error,
@@ -140,7 +140,7 @@ pub type Gap {
   /// Item2.flags 0x8000. Open issue #56.
   PvpItem
   /// Item2.flags 0x4000: the client takes the item's fields from GameFormula
-  /// 1214's item (FillItemInfo 0x1404445d0). Open issue #333.
+  /// 1214's item (FillItemInfo 0x1404445d0). Open issue #1052.
   ProxyItem
   /// A budget entry on a ResourceMax property. The player's class resource sets
   /// that base (`genesis_prime/game/class_resource`), so nothing is open.
@@ -156,7 +156,7 @@ pub type Gap {
 pub fn gap_issue(gap gap: Gap) -> Option(Int) {
   case gap {
     PvpItem -> Some(56)
-    ProxyItem -> Some(333)
+    ProxyItem -> Some(1052)
     ResourceMaximum | SupportBeyondRange | StatKind(..) -> None
   }
 }
@@ -806,7 +806,7 @@ fn missing_prerequisites(
 /// that does not stack. Only a missing row is an error. The client takes the
 /// fields of an item whose Item2.flags hold 0x4000 from GameFormula 1214's item
 /// (FillItemInfo 0x1404445d0), which this does not read: such an item is judged
-/// by its own row, a gap open in #333.
+/// by its own row, a gap open in #1052.
 pub fn stack_limit(
   tables tables: table_store.Tables,
   item2_id item2_id: Int,
@@ -931,7 +931,7 @@ pub fn sellable(
 
 /// Whether the player may destroy the item: Item2.flags lacks 0x10000
 /// (SendItemDelete 0x1403c1360 refuses with Item_CannotBeDeleted when it holds
-/// it). The proxy gap of `stack_limit` applies (#333).
+/// it). The proxy gap of `stack_limit` applies (#1052).
 pub fn deletable(
   tables tables: table_store.Tables,
   item2_id item2_id: Int,

@@ -52,8 +52,7 @@
 ////   is answered as the client would be: 0x106 with the code, then a 0x90b that opens and
 ////   refuses, which ends the interaction (`opcode.0x90b`), and the log line says why. The
 ////   control states (60 and 61) and the combat checks are left to the client, so the server
-////   opens the window for a vendor whose player is stunned; that gap is issue 333's
-////   (vendors on the real client). The window opens with the stock and the player's buyback list.
+////   opens the window for a vendor whose player is stunned (gap, issue 1052). The window opens with the stock and the player's buyback list.
 //// - **The vendor window ends with any 0x07EA but the one that opens a vendor**: the
 ////   client sets its interaction kind and closes the previous interaction's window before
 ////   it sends any 0x07EA, its own end (unit 0, kind 0x65) among them, and it sends 0x00BE only

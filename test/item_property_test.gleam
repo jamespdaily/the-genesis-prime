@@ -728,9 +728,9 @@ pub fn a_pvp_or_proxy_rune_is_still_refused_with_its_gap_test() -> Nil {
   assert gap_of(83_331) == Ok(item_property.PvpItem)
     as "flags 0x8000 is PvP, which issue 56 closes"
   assert gap_of(29_213) == Ok(item_property.ProxyItem)
-    as "flags 0x4000 is a proxy, which issue 333 closes"
+    as "flags 0x4000 is a proxy, which issue 1052 closes"
   assert item_property.gap_issue(gap: item_property.PvpItem) == Some(56)
-  assert item_property.gap_issue(gap: item_property.ProxyItem) == Some(333)
+  assert item_property.gap_issue(gap: item_property.ProxyItem) == Some(1052)
 }
 
 /// Every wearable client row of the four kinds this step reads (flags bit 3, an
@@ -812,7 +812,7 @@ pub fn every_client_item_of_the_four_kinds_is_read_or_refused_only_for_another_g
 }
 
 /// Every wearable client row is given, or is `Unread` for one of the gaps that remain.
-/// A row is wearable when it is no proxy (Item2.flags 0x4000, which issue 333 closes) and
+/// A row is wearable when it is no proxy (Item2.flags 0x4000, which issue 1052 closes) and
 /// its slot flags are not 0, as the client's slot rows say. The remaining gaps are
 /// flags 0x8000, PvP, worked out here from the column and open under issue 56, and the
 /// budget's own (an ItemStat kind no row holds, a support beyond its range, a resource

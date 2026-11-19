@@ -62,10 +62,10 @@
 //// - **The roll.** A bought item with random stat entries is made with a word rolled when
 ////   the store is asked (`entropy_needed`, `rolled`, `genesis_prime/game/random_stat`), one
 ////   roll for each made stack. A buy back makes no roll: the entry's word returns with the item.
-//// - **Gaps, each left to the vendor system** (#333): the control states (60, 61), the
+//// - **Gaps, each left to issue 1052**: the control states (60, 61), the
 ////   prerequisites (15), Item_Unique (30) and sold out (13) are not checked. No stock row has
 ////   a prerequisite or a stock limit (0x90B sends 0 for both), and the held-unique rule is not
-////   read. A stocked item priced in another currency is #333's.
+////   read. A stocked item priced in another currency is issue 1052's.
 ////
 //// | Point | What happens |
 //// |---|---|
