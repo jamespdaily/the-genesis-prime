@@ -531,7 +531,11 @@ pub fn a_message_no_selector_takes_is_dropped_and_logged_by_its_kind_with_the_co
     Error(Nil) -> False
   }
     as "and the client's address"
-  assert mailbox_support.tagged(connection, atom.create("stray_message")) == 0
+  assert mailbox_support.tagged(
+      mailbox_support.settled(connection),
+      atom.create("stray_message"),
+    )
+    == 0
     as "the message was taken from the mailbox"
   ask_support.command(
     client:,
@@ -573,14 +577,20 @@ pub fn a_late_answer_between_steps_gives_the_rule_no_input_and_drops_the_kept_as
   assert read_record(client) == Record(signalling_rule.answered, 1)
     as "the ask came back as the rule's input"
   assert kept_asks(connection) == 1 as "the shell keeps the ask"
-  assert list.contains(mailbox_support.monitored(connection), target)
+  assert list.contains(
+    mailbox_support.monitored(mailbox_support.settled(connection)),
+    target,
+  )
     as "and its monitor of the target"
   // The answer comes between steps, with no ask waiting.
   reply(Nil)
   event_wait.until("the late answer was taken and its ask dropped", fn() {
     kept_asks(connection) == 0
   })
-  assert !list.contains(mailbox_support.monitored(connection), target)
+  assert !list.contains(
+    mailbox_support.monitored(mailbox_support.settled(connection)),
+    target,
+  )
     as "the ask's monitor was dropped with it"
   ask_support.command(
     client:,

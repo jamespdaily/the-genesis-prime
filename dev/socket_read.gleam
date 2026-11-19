@@ -34,10 +34,14 @@ pub fn receive(
 }
 
 /// Receives the next bytes the server writes, looking at the socket again after
-/// each `look_ms` until it writes or the connection ends.
+/// each `look_ms` until it writes or the connection ends. Each empty look is
+/// told to `open_wait.looked_and_found_nothing`.
 pub fn looking(socket: mug.Socket) -> Result(BitArray, mug.Error) {
   case mug.receive(socket, timeout_milliseconds: look_ms) {
-    Error(mug.Timeout) -> looking(socket)
+    Error(mug.Timeout) -> {
+      open_wait.looked_and_found_nothing()
+      looking(socket)
+    }
     received -> received
   }
 }
@@ -60,7 +64,10 @@ fn looking_for(
   byte_size: Int,
 ) -> Result(BitArray, mug.Error) {
   case mug.receive_exact(socket, byte_size:, timeout_milliseconds: look_ms) {
-    Error(mug.Timeout) -> looking_for(socket, byte_size)
+    Error(mug.Timeout) -> {
+      open_wait.looked_and_found_nothing()
+      looking_for(socket, byte_size)
+    }
     received -> received
   }
 }

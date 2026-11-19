@@ -33,6 +33,8 @@ type Event(a) {
   BuildClosed
   WaitOpened(what: String)
   WaitClosed
+  /// The body is in `what`, a wait that can no longer end.
+  WaitHopeless(what: String)
 }
 
 /// How long a one-time build may stay open, the body's own build or its wait
@@ -86,6 +88,19 @@ pub fn run_listed_in(
   timeout_ms timeout_ms: Int,
   body body: fn() -> a,
 ) -> a {
+  run_warning_to(warn: io.println_error, progress_file:, timeout_ms:, body:)
+}
+
+/// `run_listed_in` with the place the warnings go given: every `check WARNING`
+/// line of the run (a deadline passed, a build open too long, a wait that can
+/// no longer end) is handed to `warn` in the process that called, instead of
+/// being written to standard error.
+pub fn run_warning_to(
+  warn warn: fn(String) -> Nil,
+  progress_file progress_file: Option(String),
+  timeout_ms timeout_ms: Int,
+  body body: fn() -> a,
+) -> a {
   let listed = case progress_file {
     Some(file) -> Some(#(file, test_progress.started(file, body_name(body))))
     None -> None
@@ -103,6 +118,11 @@ pub fn run_listed_in(
         opened: fn(what) { process.send(reply, WaitOpened(what)) },
         closed: fn() { process.send(reply, WaitClosed) },
       )
+      open_wait.reporting(
+        slot: open_wait.Hopeless,
+        opened: fn(what) { process.send(reply, WaitHopeless(what)) },
+        closed: fn() { Nil },
+      )
       process.send(
         reply,
         Finished(case run_unless_skipped(body) {
@@ -118,6 +138,7 @@ pub fn run_listed_in(
     wait(
       reply:,
       monitor:,
+      warn:,
       test_name: body_name(body),
       timeout_ms:,
       own_left: timeout_ms,
@@ -177,6 +198,20 @@ pub fn deadline_warning(
   }
 }
 
+/// The warning for a wait that can no longer end: the server took no input
+/// since the last look and the driven clock does not move on its own, so
+/// nothing is left that could write what the wait waits for (`open_wait`). It
+/// warns and the wait goes on.
+pub fn hopeless_warning(
+  test_name test_name: String,
+  what what: String,
+) -> String {
+  "check WARNING: test "
+  <> test_name
+  <> " is in a wait that can no longer end, since the server took no input since the last look and the clock does not move: "
+  <> what
+}
+
 /// The warning for a one-time build open past `build_limit_ms`: the keys of the
 /// builds the body is inside (`open`, the innermost first), the outermost first.
 pub fn build_warning(
@@ -203,6 +238,7 @@ pub fn build_warning(
 fn wait(
   reply reply: process.Subject(Event(a)),
   monitor monitor: process.Monitor,
+  warn warn: fn(String) -> Nil,
   test_name test_name: String,
   timeout_ms timeout_ms: Int,
   own_left own_left: Int,
@@ -239,10 +275,11 @@ fn wait(
     Error(Nil) ->
       case open {
         [] -> {
-          io.println_error(deadline_warning(test_name:, timeout_ms:, waiting:))
+          warn(deadline_warning(test_name:, timeout_ms:, waiting:))
           wait(
             reply:,
             monitor:,
+            warn:,
             test_name:,
             timeout_ms:,
             own_left:,
@@ -255,10 +292,11 @@ fn wait(
           )
         }
         _ -> {
-          io.println_error(build_warning(test_name:, open:))
+          warn(build_warning(test_name:, open:))
           wait(
             reply:,
             monitor:,
+            warn:,
             test_name:,
             timeout_ms:,
             own_left:,
@@ -277,6 +315,7 @@ fn wait(
       wait(
         reply:,
         monitor:,
+        warn:,
         test_name:,
         timeout_ms:,
         own_left:,
@@ -295,6 +334,7 @@ fn wait(
       wait(
         reply:,
         monitor:,
+        warn:,
         test_name:,
         timeout_ms:,
         own_left:,
@@ -310,6 +350,7 @@ fn wait(
       wait(
         reply:,
         monitor:,
+        warn:,
         test_name:,
         timeout_ms:,
         own_left:,
@@ -320,10 +361,28 @@ fn wait(
         deadline_warned:,
         build_warned:,
       )
+    Ok(WaitHopeless(what)) -> {
+      warn(hopeless_warning(test_name:, what:))
+      wait(
+        reply:,
+        monitor:,
+        warn:,
+        test_name:,
+        timeout_ms:,
+        own_left:,
+        open:,
+        waiting:,
+        build_began:,
+        since: now,
+        deadline_warned:,
+        build_warned:,
+      )
+    }
     Ok(WaitClosed) ->
       wait(
         reply:,
         monitor:,
+        warn:,
         test_name:,
         timeout_ms:,
         own_left:,
