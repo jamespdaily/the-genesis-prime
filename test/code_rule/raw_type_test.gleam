@@ -324,15 +324,11 @@ pub fn a_type_field_looked_up_in_a_list_of_numbers_is_a_breach_test() -> Nil {
   assert breach_lines(lines) == [5, 9, 13, 17]
 }
 
-pub fn each_known_gap_names_an_open_issue_and_a_new_site_fails_test() -> Nil {
+pub fn every_site_is_a_known_gap_and_a_new_site_fails_test() -> Nil {
   // Deadline: the tests of this file ran in 205 ms together, so 5 s is more than
   // 20 times the body.
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
-  let open_issues: List(Int) = []
-  assert list.all(raw_type.known_gaps, fn(gap) {
-    list.contains(open_issues, gap.issue)
-  })
   let files = repository.sources(["src"])
   assert raw_type.breaches(files: files, gaps: raw_type.known_gaps) == []
   // A site in a function with no listed gap, and one beyond a listed count,

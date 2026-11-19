@@ -46,7 +46,8 @@ pub type Gap {
   Gap(path: String, function: String, sites: Int, issue: Int)
 }
 
-/// Every site in `src/`, and the open issue whose work removes it.
+/// Every site in `src/`, and the open issue whose work removes it; the gap-owner
+/// rule (`code_rule/gap_issue`) fails a gap whose issue is closed.
 pub const known_gaps: List(Gap) = []
 
 /// One raw-type site: the function that holds it and its line.

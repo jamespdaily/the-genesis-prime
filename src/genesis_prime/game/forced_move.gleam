@@ -50,7 +50,7 @@
 ////
 //// - **No ground or walls.** The server holds no terrain, so a thrown creature can end inside a
 ////   wall or in the air past a ledge: "A thrown creature stops at walls and lands on the ground
-////   the zone's map shows" is issue 824.
+////   the zone's map shows" is part of issue 1010 ("The server knows each zone's ground and walls").
 //// - **No turn rate and no PositionSwitch.** dataBits08 feeds the client's kind 20 timed turn,
 ////   which is not decoded, so the creature does not spin; PositionSwitch has no data in the
 ////   client and moves a player. Both are issue 825.
