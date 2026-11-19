@@ -7,6 +7,8 @@ description: Conventions for Gleam code - format, build, types, errors, module l
 
 Gleam code also follows the writing-code skill: reuse, module naming and splitting, naming, comments.
 
+A comment is concise, self-contained and informational: it says what the code does or why, in a sentence or two, and reads true without any other text. It never narrates how the code came to be, what was tried, or what comes next.
+
 ## Format and build
 
 - `./check` runs `gleam format --check`, builds with warnings as errors, and runs glinter as configured under `[tools.glinter]` in `gleam.toml`: annotations on module functions, no `todo`, `echo`, `string.inspect`, `String` error or discarded `Result`, and functions called through their module. A rule turned off or a finding suppressed there carries its reason.
