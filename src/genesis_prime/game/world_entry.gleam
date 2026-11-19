@@ -1082,8 +1082,8 @@ pub fn joined(
                 // Gap: that 0x92C belongs right after 0x19B is not proven by the
                 // client (it reads the properties when a bag is worn and keeps
                 // them in a map); the place is the server's, and the frame is sent
-                // once per play and join. The open issue "Worn bags open more
-                // inventory slots" (#587) settles it on the live client.
+                // once per play and join. The live check of a worn bag, owed
+                // to the items sitting (issue 333), settles it on the real client.
                 reward_properties_sent(tables:),
                 // Before 0x25E, whose handler raises CharacterCreated, when the
                 // interface menu's Abilities button reads the points
