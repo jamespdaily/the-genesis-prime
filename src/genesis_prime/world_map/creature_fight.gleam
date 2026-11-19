@@ -2875,7 +2875,7 @@ pub fn gaps() -> List(gap.Entry) {
   [
     gap.Entry(
       area: "Creature fights",
-      missing: "a player who dies and chooses Wake Here within a second of the death, inside the ring of a creature that was told of the death, is not aggroed by that creature until the player leaves the ring and enters it again",
+      missing: "a player who dies and chooses Wake Here within a second of the death, inside the ring of the creature that killed it, when the creature's killing answer arrives after the wake's approach: the creature does not aggro the player until it leaves the ring and enters it again",
     ),
   ]
 }
