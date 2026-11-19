@@ -17,7 +17,7 @@
 //// - A UnitStateSet row the plan applies is read only when what it holds can refuse a cast
 ////   or a strike: its state has a reading (`unit_state.reading_of`), it has a duration, and
 ////   its spell has a Spell4 row to be cast from. The other rows are held where they can be
-////   and counted not read, each by a reason the type's gap names.
+////   and counted not read, each by the reason `spell_plan.LeftOutReason` names.
 //// - A spell the plan refuses for a column of its own (a cost, a requirement, a cycle) is
 ////   not refused here: each of its rows is counted by its own columns. A row a Proxy or Proc
 ////   names is counted on the child's rows.

@@ -1,13 +1,13 @@
-//// The gaps the server has, as the coverage measure prints them.
+//// What the server leaves undone, as the coverage measure prints it.
 ////
 //// ```
-//// each module's `gaps()`  ──▶  registry  ──▶  render  ──▶  "Gaps the server has"
+//// each module's `gaps()`  ──▶  registry  ──▶  render  ──▶  the measure's section
 //// ```
 ////
 //// - The registry calls `gaps()` of every module that declares it, in the order of the
 ////   list below; `test/code_rule/gap_registry` fails a module that declares `gaps` and is
 ////   not called here.
-//// - The section holds the gaps no other section of the measure prints: the engine
+//// - The section holds the entries no other section of the measure prints: the engine
 ////   checklists, the later abilities, the press report, the items' uses and the left-out
 ////   parts keep printing what they print.
 //// - The render groups the entries by area in the order each area is first met, and keeps
@@ -59,6 +59,7 @@ import genesis_prime/message/spell_started
 import genesis_prime/message/vendor_items
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_control
+import genesis_prime/world_map/creature_fight
 import gleam/int
 import gleam/list
 import gleam/string
@@ -86,6 +87,7 @@ pub fn registry() -> List(Entry) {
     unit_properties.gaps(),
     creature_control.gaps(),
     creature.gaps(),
+    creature_fight.gaps(),
     movement_kind_4.gaps(),
     movement_path.gaps(),
     movement_timed_path.gaps(),
@@ -115,7 +117,7 @@ pub fn registry() -> List(Entry) {
 }
 
 /// The section: a first line with the counts, then each area with a bullet for each of
-/// its entries, or "no gaps" when the list is empty.
+/// its entries, or a line saying there are none when the list is empty.
 pub fn render(entries entries: List(Entry)) -> String {
   let heading = "Gaps the server has: "
   case entries {

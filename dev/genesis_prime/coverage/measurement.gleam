@@ -14,12 +14,12 @@ import gleam/result
 pub type Status {
   /// A rule of the engine handles the type.
   Handled
-  /// A rule of the engine handles the type with a gap: what it does not handle, the
+  /// A rule of the engine handles the type with a stated reason: what it does not handle, the
   /// fact file's key of the client's reading, and how many of the type's rows no rule
   /// reads (they are not handled).
   HandledWithGap(reason: String, fact_key: String, unread_rows: Int)
   /// A rule of the engine handles the type, and some of its rows no rule reads, but the
-  /// engine states no gap for it: the measure stops on it.
+  /// engine states no reason for it: the measure stops on it.
   HandledWithUnstatedGap(unread_rows: Int)
   /// The client's code was read for the type and the engine does not handle it:
   /// what it lacks and the fact file's key of the reading.
@@ -242,7 +242,7 @@ fn measured(
   )
 }
 
-/// Whether a rule handles the type, with a gap or without.
+/// Whether a rule handles the type, with a stated reason or without.
 pub fn is_handled(status status: Status) -> Bool {
   case status {
     Handled | HandledWithGap(..) | HandledWithUnstatedGap(..) -> True
@@ -250,9 +250,9 @@ pub fn is_handled(status status: Status) -> Bool {
   }
 }
 
-/// Where the type stands: handled when the engine handles it, with its gap when the
-/// engine lists it as partial (or, with rows no rule reads and no gap stated, with an
-/// unstated gap), else decoded and missing when the engine lists it so, else not decoded.
+/// Where the type stands: handled when the engine handles it, with its reason when the
+/// engine lists it as partial (or, with rows no rule reads and no reason stated, with an
+/// unstated one), else decoded and missing when the engine lists it so, else not decoded.
 fn status_of(
   engine engine: EngineDeclaration,
   type_number type_number: Int,

@@ -72,7 +72,7 @@ pub fn decode(body: BitArray) -> Result(QuestLog, DecodeError) {
   Ok(QuestLog(completed:, known:, active:, reset_time:))
 }
 
-/// The gaps in this message's codec, which the coverage measure prints.
+/// What this message's codec leaves unhandled, which the coverage measure prints.
 pub fn gaps() -> List(gap.Entry) {
   [
     gap.Entry(

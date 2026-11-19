@@ -76,7 +76,7 @@ pub type EngineDeclaration {
     name: String,
     source: Source,
     handled: Handling,
-    /// The types handled with a stated gap. A type is never both partial and missing,
+    /// The types handled with a stated reason. A type is never both partial and missing,
     /// and each is one the engine handles. A handled type with rows no rule reads and no
     /// entry here stops the measure.
     partial: List(Missing),
@@ -181,7 +181,7 @@ fn quest_objectives() -> EngineDeclaration {
     // (types 4 and 33) objectives take the held count and visit (type 17) objectives the
     // player's zone chain, both after every change of either. A use of a creature whose
     // row names the objective counts a scripted objective (type 5) or a collectible
-    // (type 32), which the partial list states the gaps of. Checklist objectives (types
+    // (type 32), which the partial list states the reasons of. Checklist objectives (types
     // 14 and 18 by a TargetGroup, types 27 and 28 by a PathSoldierActivate row) count a talk to or
     // an activate of a target as the target's bit of the objective's 32-bit mask, and the
     // objective is done at its count of bits
@@ -190,7 +190,7 @@ fn quest_objectives() -> EngineDeclaration {
     // completion of the quest its data names, now or earlier in its repeat period. A cast
     // of the spell of a type 11 objective completes it (objective_test
     // a_cast_of_the_objective_spell_completes_it_test), which the partial list states the
-    // gaps of. Types 10 and 13 are not counted. A use of a unit of the TargetGroup of a
+    // reasons of. Types 10 and 13 are not counted. A use of a unit of the TargetGroup of a
     // type 23 objective counts one for each unit, once (the once is the server's choice),
     // and a departures choice objective counts only its own terminal
     // (genesis_prime/game/objective).

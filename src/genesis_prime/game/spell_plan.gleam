@@ -205,9 +205,9 @@
 ////   prerequisite, phases and spend tag are a Fluff effect's.
 //// - **The phases** of a Multiphase spell (`Spell.CodeEnumCastMethod` 8) are the
 ////   SpellPhase rows of its owner kept by the client's rule (`0x14055e180`: order
-////   index below 32, and index 0 or a non-zero delay), each delay the gap after
+////   index below 32, and index 0 or a non-zero delay), each delay the time after
 ////   the phase before: the client sums the delays into the cast's duration when
-////   its castTime is 0 (`0x14053d1f0`), which a gap reading fits, and schedules no
+////   its castTime is 0 (`0x14053d1f0`), which that reading fits, and schedules no
 ////   phase itself, so the go times are the server's choice
 ////   (`SpellPhase.phaseDelay`). A phase with the flag 0x200 moves the spell's
 ////   cooldown to its last phase (`0x14053e5a0`). Any other spell has one go, at
@@ -706,7 +706,7 @@ pub type Spell {
     caster_persistence: Option(Prerequisite),
     /// The spell's prerequisiteIdTargetPersistence: failure 283.
     target_persistence: Option(Prerequisite),
-    /// The gap before each phase's go, in order; empty for a spell that is not
+    /// The time before each phase's go, in order; empty for a spell that is not
     /// Multiphase.
     phase_delays_ms: List(Int),
     /// How long the threshold a RapidTap or ChargeRelease ability opens stays open:

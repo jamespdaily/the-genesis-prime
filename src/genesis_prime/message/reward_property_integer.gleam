@@ -39,7 +39,7 @@ pub fn read(
   Ok(#(RewardPropertyInteger(value:), reader))
 }
 
-/// The gaps in this record's codec, which the coverage measure prints.
+/// What this record's codec leaves unhandled, which the coverage measure prints.
 pub fn gaps() -> List(gap.Entry) {
   [
     gap.Entry(

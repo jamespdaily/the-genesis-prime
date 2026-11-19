@@ -36,7 +36,7 @@
 ////   migration 0016): the creature starts a timer of that many, and the client holds no
 ////   value for it, so it is a server choice that states its reason.
 //// - **A kill's experience** is the fraction of the creature's level's base quest
-////   experience, above 0 and at most 1, times a level-gap multiplier of 0 or more
+////   experience, above 0 and at most 1, times a level-difference multiplier of 0 or more
 ////   (`game_number_kill_experience_fraction_is_above_0_up_to_1`,
 ////   `game_number_kill_experience_multiplier_is_not_negative`, migration 0022). The
 ////   client holds no kill formula, so each is a server choice that states its reason,
@@ -101,12 +101,12 @@ pub type GameNumbers {
     /// last point destroyed, in whole milliseconds (migration 0016).
     interrupt_armor_refill_ms: Int,
     /// The share of the base quest experience of a creature's level that a kill
-    /// gives before the creature's difficulty weight and the level gap's multiplier
+    /// gives before the creature's difficulty weight and the level difference's multiplier
     /// (migration 0022).
     kill_experience_fraction: Float,
     /// The multiplier of a kill's experience for the creature's level minus the
-    /// player's, from 4 or more below to 4 or more above: nine numbers, the gap -4
-    /// first and the gap 4 last (migration 0022).
+    /// player's, from 4 or more below to 4 or more above: nine numbers, the difference -4
+    /// first and the difference 4 last (migration 0022).
     kill_experience_multipliers: List(Float),
     /// The time of day the daily quests reset at, in whole milliseconds after
     /// 00:00 UTC (migration 0021).
@@ -124,7 +124,7 @@ pub type GameNumbers {
   )
 }
 
-/// The names of the nine level-gap multipliers, the creature 4 or more levels below
+/// The names of the nine level-difference multipliers, the creature 4 or more levels below
 /// the player first and 4 or more above last.
 const kill_experience_multiplier_names = [
   "kill_experience_multiplier_below_4",

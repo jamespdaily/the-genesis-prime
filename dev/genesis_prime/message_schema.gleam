@@ -27,8 +27,8 @@ pub type Direction {
 }
 
 /// One message: its number, its name, which way it travels, the fact-file key
-/// of its record, a sentence on what the client does with it and the gaps its
-/// codec has.
+/// of its record, a sentence on what the client does with it and the `Gap`s of its
+/// codec.
 pub type Message {
   Message(
     id: Int,
@@ -53,7 +53,7 @@ pub type Record {
   )
 }
 
-/// One gap of a message's or record's codec: the part of the game it is in and
+/// One `Gap` of a message's or record's codec: the part of the game it is in and
 /// one plain sentence of what the client's code does not show or the server
 /// does not do. The generator writes each as a `gap.Entry` in the module's
 /// `gaps` function.

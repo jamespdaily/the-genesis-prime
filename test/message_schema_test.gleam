@@ -1070,14 +1070,14 @@ pub fn a_schema_message_with_gaps_generates_a_gaps_function_with_exactly_those_e
     as "the module imports the gap type before the message modules"
   assert string.ends_with(
     generated_file(files, "planted"),
-    "}\n\n/// The gaps in this message's codec, which the coverage measure prints.\npub fn gaps() -> List(gap.Entry) {\n  [\n    gap.Entry(area: \"Planted area\", missing: \"first sentence\"),\n    gap.Entry(area: \"Planted area\", missing: \"a \\\"quoted\\\" second sentence\"),\n    gap.Entry(\n      area: \"Other area\",\n      missing: \""
+    "}\n\n/// What this message's codec leaves unhandled, which the coverage measure prints.\npub fn gaps() -> List(gap.Entry) {\n  [\n    gap.Entry(area: \"Planted area\", missing: \"first sentence\"),\n    gap.Entry(area: \"Planted area\", missing: \"a \\\"quoted\\\" second sentence\"),\n    gap.Entry(\n      area: \"Other area\",\n      missing: \""
       <> long_sentence
       <> "\",\n    ),\n  ]\n}\n",
   )
     as "the message's gaps function lists exactly the three entries, a quote escaped, each on one line when it fits in 80 columns and else with one argument to a line"
   assert string.ends_with(
     generated_file(files, "planted_record"),
-    "\n/// The gaps in this record's codec, which the coverage measure prints.\npub fn gaps() -> List(gap.Entry) {\n  [\n    gap.Entry(area: \"Record area\", missing: \"the record's sentence\"),\n  ]\n}\n",
+    "\n/// What this record's codec leaves unhandled, which the coverage measure prints.\npub fn gaps() -> List(gap.Entry) {\n  [\n    gap.Entry(area: \"Record area\", missing: \"the record's sentence\"),\n  ]\n}\n",
   )
     as "a record's gaps function is the same, said of the record"
   let without = generated(schema_with_gaps("", ""))

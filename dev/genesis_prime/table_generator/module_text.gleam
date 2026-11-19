@@ -381,7 +381,7 @@ fn row_id(type_name: String) -> String {
 }
 
 /// The record decoder: one pattern over the record's bytes, a segment for each
-/// field and a skip for each padding gap, then the conversions of booleans and
+/// field and a skip for each run of padding, then the conversions of booleans and
 /// strings, then the row. Matched values are `c0`, `c1`, and so on, by column.
 fn decoder(
   type_name type_name: String,

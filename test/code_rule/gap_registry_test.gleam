@@ -146,7 +146,7 @@ pub fn the_registry_calls_the_gaps_of_every_generated_message_module_test() -> N
       "",
       "import genesis_prime/gap",
       "",
-      "/// The gaps in this message's codec, which the coverage measure prints.",
+      "/// What this message's codec leaves unhandled, which the coverage measure prints.",
       "pub fn gaps() -> List(gap.Entry) {",
       "  []",
       "}",
