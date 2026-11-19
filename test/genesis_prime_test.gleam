@@ -36,9 +36,6 @@ import unitest
 /// they guard no client outcome, so no merge waits for them. They run by hand
 /// with `gleam test -- --tag dev_tool`; the coverage measure's own are also
 /// tagged `coverage` (`gleam test -- --tag coverage`).
-/// The test tagged `github` (the open issues a comment in `src` names, read from
-/// GitHub) is skipped with `GENESIS_TEST_SKIP_GITHUB=1`, which CI's repeat job
-/// sets because it reads the network, not the code under repeat.
 ///
 /// A one-time build (`database_support.once`) never counts against a test's
 /// deadline: `owned_test.run` stops the clock while its body is inside one, so
@@ -102,7 +99,6 @@ pub fn main() -> Nil {
           skipped_when_set("GENESIS_TEST_SKIP_REAL_START", tag: "real_start"),
           skipped_when_set("GENESIS_TEST_SKIP_CLIENT_ROWS", tag: "client_rows"),
           skipped_when_set("GENESIS_TEST_SKIP_DEV_TOOL", tag: "dev_tool"),
-          skipped_when_set("GENESIS_TEST_SKIP_GITHUB", tag: "github"),
         ]),
       ),
     ),
