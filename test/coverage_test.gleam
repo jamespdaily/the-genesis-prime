@@ -244,8 +244,8 @@ pub fn every_engine_declares_its_area_and_the_type_columns_its_table_has_test() 
   use <- unitest.tags(["dev_tool", "coverage"])
   let declared = engine.all()
   assert list.map(declared, fn(declaration) { declaration.area_issue })
-    == [47, 48, 334, 49, 50, 51, 437]
-    as "Milestone 2's area issues: prerequisites 47, quest objectives 48, then the quest rewards' 334, spell effects 49, unit types 50, messages 51; then the spend-scaled costs' issue 437"
+    == [47, 48, 1059, 49, 50, 51, 437]
+    as "Milestone 2's area issues: prerequisites 47, quest objectives 48, then the quest rewards' 1059, spell effects 49, unit types 50, messages 51; then the spend-scaled costs' issue 437"
   assert list.map(declared, fn(declaration) { declaration.name })
     == [
       "Prerequisites",

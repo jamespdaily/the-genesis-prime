@@ -87,16 +87,16 @@ import genesis_prime/game/cast/state.{
   type Refusal, type Resolution, type Role, type State, type Threshold,
   type Unbuilt, type Verdict, ActivateCastIssue, Activation, AnswerSucceeded,
   AwaitingAnswer, Base, CancelTimer, CannotTell, ChargeLevel, Child,
-  CooldownModifierEnds, CooldownModifierStarts, DroppedControls, DroppedDespawns,
-  DroppedSignals, DroppedUnitStates, Finish, ForcedMoveStart, GateFails, Go,
-  Hold, HoldForCast, Holding, Log, ModifierEnd, ModifierStart, NoInteraction,
-  NodesEnd, NotBuilt, Passive, PlayerTargetIssue, PrerequisitesIssue, ProcDue,
-  QuestAdvanceDue, Refuse, RepeatHeld, Resolution, RestrictionEnd, Shortcut,
-  SpellsIssue, Stage, StartChild, StartHeld, Starts, State, StateEnd,
-  TargetModifierStart, Tick, UnbuiltItemSpell, UnbuiltPlayerTarget,
-  UnbuiltShortcut, UnbuiltSpell, Unheld, Unpaid, UnreadItemPrerequisite,
-  UnreadLinkPrerequisite, UnreadPrerequisite, UnreadShortcutPick, UnreadSpend,
-  UntilRemovedIssue, WindowEnd,
+  CooldownModifierEnds, CooldownModifierStarts, CreatureStateIssue,
+  DroppedControls, DroppedDespawns, DroppedSignals, DroppedUnitStates, Finish,
+  ForcedMoveStart, GateFails, Go, Hold, HoldForCast, Holding, Log, ModifierEnd,
+  ModifierStart, NoInteraction, NodesEnd, NotBuilt, Passive, PlayerTargetIssue,
+  PrerequisitesIssue, ProcDue, QuestAdvanceDue, Refuse, RepeatHeld, Resolution,
+  RestrictionEnd, Shortcut, SpellsIssue, Stage, StartChild, StartHeld, Starts,
+  State, StateEnd, TargetModifierStart, Tick, UnbuiltItemSpell,
+  UnbuiltPlayerTarget, UnbuiltShortcut, UnbuiltSpell, Unheld, Unpaid,
+  UnreadItemPrerequisite, UnreadLinkPrerequisite, UnreadPrerequisite,
+  UnreadShortcutPick, UnreadSpend, UntilRemovedIssue, WindowEnd,
 } as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/crowd_control
@@ -123,6 +123,8 @@ pub fn issue_name(issue issue: Issue) -> String {
   case issue {
     ActivateCastIssue ->
       "A cast at a unit is judged and timed as the client does (#1053)"
+    CreatureStateIssue ->
+      "A creature-state target prerequisite is checked by the struck creature on every route a row reaches it (#851)"
     PlayerTargetIssue ->
       "An effect a player casts on another player lands on that player (#570)"
     PrerequisitesIssue ->

@@ -712,7 +712,7 @@ pub fn of_struck(
 /// facing give, and the caster second, with its quest log. The connection holds no life,
 /// vital, faction or flag of a creature, so the subject holds none of them either: a
 /// condition that reads what else it holds is `NotRead`. Another player's casts on the
-/// creature are not in `under` (gap, issue 818). `creature_id` is the Creature2 row of the pressed creature, which type 38
+/// creature are not in `under` (gap, issue 569). `creature_id` is the Creature2 row of the pressed creature, which type 38
 /// reads, and `checker` is what the caster holds of its own.
 pub fn of_target(
   under under: List(lasting.Held),
