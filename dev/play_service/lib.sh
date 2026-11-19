@@ -46,8 +46,9 @@
 #                                  that exited or restarted, or no line in time, logs its state,
 #                                  exit code and last lines and fails; sets up_failure to the
 #                                  state, exit code and restarts, without the last lines
-#   alert MESSAGE                  posts one line to the Discord channel; a missing setting or a
-#                                  refused post is logged and never fails the caller
+#   alert MESSAGE                  posts one line to the Discord channel; a missing setting is
+#                                  logged and returns 0, a post that was tried and refused is
+#                                  logged and returns 1
 
 home=${GENESIS_HOME:-$HOME/.genesis-prime}
 state=$home/play-service
@@ -170,9 +171,12 @@ stale_stand_description() {
 # $state/stale_<lock|hold>_alerted holds the lock's token (or the stand file's mtime), so
 # a stand is announced once; it is removed when the stand is gone. Nothing is taken over,
 # and a stand with no config, no answer from the remote or no server container is left
-# unannounced. The line it logs does not replace the last line log_once compares.
+# unannounced. The marker is written when the alert was posted or its settings are not set;
+# a post that failed leaves it unwritten, so the next run tries again. A lock or hold that
+# disappears while it is read is skipped. The line it logs does not replace the last line
+# log_once compares.
 alert_stale_stands() {
-  local kind file key age branch_commit deployed previous_line
+  local kind file key mtime age branch_commit deployed previous_line
   for kind in lock hold; do
     if [ "$kind" = lock ]; then
       file=$home/live.lock/owner
@@ -184,11 +188,12 @@ alert_stale_stands() {
       rm -f "$state/stale_${kind}_alerted"
       continue
     fi
+    mtime=$(stat -f %m "$file") || continue
     key=
     [ "$kind" != lock ] || key=$(lock_field token)
-    [ -n "$key" ] || key=$(stat -f %m "$file")
+    [ -n "$key" ] || key=$mtime
     [ "$(cat "$state/stale_${kind}_alerted" 2>/dev/null || true)" != "$key" ] || continue
-    age=$(($(date +%s) - $(stat -f %m "$file")))
+    age=$(($(date +%s) - mtime))
     [ "$age" -gt "$stale_stand_seconds" ] || continue
     [ -f "$state/config.sh" ] || continue
     branch_commit=$(load_config && remote_head) || continue
@@ -199,9 +204,10 @@ alert_stale_stands() {
     [ "$deployed" != "$branch_commit" ] || continue
     read_environment_file
     previous_line=$(cat "$state/last_line" 2>/dev/null || true)
-    alert "genesis play: ${branch_commit:0:8} is the remote branch's head but the server runs ${deployed:0:8}, and the updater has done nothing for $((age / 3600)) h: $(stale_stand_description "$kind")"
+    if alert "genesis play: ${branch_commit:0:8} is the remote branch's head but the server runs ${deployed:0:8}, and the updater has done nothing for $((age / 3600)) h: $(stale_stand_description "$kind")"; then
+      printf '%s' "$key" >"$state/stale_${kind}_alerted"
+    fi
     printf '%s' "$previous_line" >"$state/last_line"
-    printf '%s' "$key" >"$state/stale_${kind}_alerted"
   done
 }
 
@@ -325,8 +331,9 @@ wait_up() {
 # bot token in the file GENESIS_PLAY_ALERT_TOKEN_FILE (a DISCORD_BOT_TOKEN= line; env.sh
 # holds the two names, never the token). The token goes to curl on its standard input
 # as a config line, so it is in no argument list, no environment and no log; the log
-# gets the HTTP status alone. A missing setting or a failed post is logged and never
-# fails the caller.
+# gets the HTTP status alone. A missing setting is logged and returns 0 (nothing to
+# retry); a post that was tried and not answered 200 is logged and returns 1, so a caller
+# under set -e guards it with || true.
 alert() {
   local token status
   if [ -z "${GENESIS_PLAY_ALERT_CHANNEL:-}" ] || [ -z "${GENESIS_PLAY_ALERT_TOKEN_FILE:-}" ]; then
@@ -344,7 +351,9 @@ alert() {
       "https://discord.com/api/v10/channels/$GENESIS_PLAY_ALERT_CHANNEL/messages" 2>/dev/null) || status=failed
   case "$status" in
     200) log "alert sent to the channel" ;;
-    *) log "alert not sent: Discord answered $status" ;;
+    *)
+      log "alert not sent: Discord answered $status"
+      return 1
+      ;;
   esac
-  return 0
 }

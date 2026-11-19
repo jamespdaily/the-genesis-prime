@@ -274,7 +274,7 @@ deploy() {
     log "$commit did not come up, and no earlier revision came up to put back; $commit is not tried again"
     outcome="no earlier revision to put back"
   fi
-  alert "genesis play: ${commit:0:8} did not come up ($reason); $outcome"
+  alert "genesis play: ${commit:0:8} did not come up ($reason); $outcome" || true
   return 1
 }
 
