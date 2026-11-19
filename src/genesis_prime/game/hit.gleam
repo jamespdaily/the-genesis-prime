@@ -55,7 +55,7 @@
 ////   damage after the crit and the glance: the physical percentage is from the target's
 ////   Armor and ResistPhysical (`0x140464240`, `0x14064d9b0`), the tech and magic ones are
 ////   by the same formula from their twin properties, which the client's bodies were not
-////   read for (a gap; the Virtual Battle Beast has none of the three,
+////   read for (the Virtual Battle Beast has none of the three,
 ////   `Creature2.73464.mitigation`). That it multiplies the damage is the server's
 ////   choice (`Creature2.73464.mitigation`). The damage absorbed is the amount taken, and the
 ////   absorbs' part is added to it.
@@ -93,6 +93,7 @@
 
 import genesis_prime/game/damage
 import genesis_prime/game/unit_properties
+import genesis_prime/gap
 import genesis_prime/message/combat_result.{Critical, Hit}
 import genesis_prime/message/damage_type
 import genesis_prime/message/spell_damage_description.{
@@ -468,4 +469,14 @@ fn described(
 /// Whether the client is told this description as a critical hit.
 pub fn is_critical(description description: Description) -> Bool {
   description.damage.combat_result == Critical
+}
+
+/// What a blow's mitigation does not do that the client's does.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Damage mitigation",
+      missing: "the tech and magic mitigation percentages: the server takes them by the physical formula from their twin properties, which the client's code was not read for",
+    ),
+  ]
 }

@@ -6,11 +6,11 @@
 //// a time in milliseconds; the client finds the cast (an unknown id drops the
 //// message) and, for reason 0 with the player the caster or the target, raises
 //// AttackMissed, which it shows over the target as Deflect. A description with
-//// combat result 0 raises no floater, so this is how a deflect is shown. Gap:
-//// what any other reason means is not read. Its fields are listed in
-//// `schema.toml` with the client's evidence, and the fact file's
-//// `opcode.0x7fb` names the message.
+//// combat result 0 raises no floater, so this is how a deflect is shown. Its
+//// fields are listed in `schema.toml` with the client's evidence, and the fact
+//// file's `opcode.0x7fb` names the message.
 
+import genesis_prime/gap
 import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}
 import genesis_prime/message/spell_miss.{type SpellMiss}
 import gleam/result
@@ -45,4 +45,14 @@ pub fn decode(body: BitArray) -> Result(SpellMissed, DecodeError) {
   ))
   use Nil <- result.try(bit_stream.finish_reading(reader))
   Ok(SpellMissed(cast_id:, misses:))
+}
+
+/// The gaps in this message's codec, which the coverage measure prints.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Missed targets",
+      missing: "what a miss reason other than 0 does in the client: no use of it is read",
+    ),
+  ]
 }

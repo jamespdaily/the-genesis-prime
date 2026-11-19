@@ -105,7 +105,7 @@
 ////   one order. A news held for a unit the client then stops showing (its 0x355) is
 ////   dropped, since the unit may stand again under the same id (`forget`). Another
 ////   watcher's connection is told the news and the cast's 0x7f4 by two senders, which
-////   no order holds (a gap, which the live sitting checks).
+////   no order holds; the live sitting checks it.
 
 import genesis_prime/client_connection.{type News}
 import genesis_prime/game/area.{type Pose, Pose}
@@ -123,6 +123,7 @@ import genesis_prime/game/spell_plan
 import genesis_prime/game/start_place
 import genesis_prime/game/strike_tell.{type Answered, type Tell}
 import genesis_prime/game/unit_properties.{type Properties}
+import genesis_prime/gap
 import genesis_prime/step.{
   type ConnectionId, type LogLevel, type Now, type TimerId, TimerId,
 }
@@ -1307,4 +1308,14 @@ fn timer_effects(state state: State, now now: Now) -> #(State, List(Effect)) {
       ),
     ])
   }
+}
+
+/// What a strike does not order that the client's does.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Strikes",
+      missing: "the order, at another watcher's connection, between a creature's health news and the cast's damage message: two senders tell them, and no order holds between them",
+    ),
+  ]
 }

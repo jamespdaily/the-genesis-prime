@@ -1023,3 +1023,70 @@ pub fn an_import_of_exactly_81_characters_is_one_line_and_one_of_82_is_split_tes
   assert string.contains(longer, split)
     as "an import of 82 characters is split, one type to a line"
 }
+
+fn schema_with_gaps(message_gaps: String, record_gaps: String) -> String {
+  "[[message]]\nid = 0x0001\nname = \"planted\"\ndirection = \"client_to_server\"\nevidence = \"opcode.0x1\"\nsummary = \"a planted message\"\n"
+  <> message_gaps
+  <> "fields = [\n  { name = \"id\", kind = \"unsigned\", bits = 8, evidence = \"x\" },\n]\n\n[[record]]\nname = \"planted_record\"\nevidence = \"x\"\nsummary = \"a planted record\"\n"
+  <> record_gaps
+  <> "fields = [\n  { name = \"id\", kind = \"unsigned\", bits = 8, evidence = \"x\" },\n]\n"
+}
+
+pub fn a_schema_message_with_gaps_generates_a_gaps_function_with_exactly_those_entries_test() -> Nil {
+  use <- owned_test.run(5000)
+  let long_sentence =
+    "the client's code does not show what the third word of the body does, so the server writes 0 and the codec checks nothing"
+  let text =
+    schema_with_gaps(
+      "gaps = [\n  { area = \"Planted area\", missing = \"first sentence\" },\n  { area = \"Planted area\", missing = \"a \\\"quoted\\\" second sentence\" },\n  { area = \"Other area\", missing = \""
+        <> long_sentence
+        <> "\" },\n]\n",
+      "gaps = [\n  { area = \"Record area\", missing = \"the record's sentence\" },\n]\n",
+    )
+  let assert Ok(schema) = message_schema.parse(text)
+    as "the planted schema parses"
+  let assert [message] = schema.messages
+  let assert [record] = schema.records
+  assert message.gaps
+    == [
+      message_schema.Gap(area: "Planted area", missing: "first sentence"),
+      message_schema.Gap(
+        area: "Planted area",
+        missing: "a \"quoted\" second sentence",
+      ),
+      message_schema.Gap(area: "Other area", missing: long_sentence),
+    ]
+    as "the reader keeps each message gap in the order written"
+  assert record.gaps
+    == [
+      message_schema.Gap(area: "Record area", missing: "the record's sentence"),
+    ]
+    as "a record's gaps are read the same way"
+  let files = generated(text)
+  assert string.contains(
+    generated_file(files, "planted"),
+    "\nimport genesis_prime/gap\nimport genesis_prime/message/bit_stream.{",
+  )
+    as "the module imports the gap type before the message modules"
+  assert string.ends_with(
+    generated_file(files, "planted"),
+    "}\n\n/// The gaps in this message's codec, which the coverage measure prints.\npub fn gaps() -> List(gap.Entry) {\n  [\n    gap.Entry(area: \"Planted area\", missing: \"first sentence\"),\n    gap.Entry(area: \"Planted area\", missing: \"a \\\"quoted\\\" second sentence\"),\n    gap.Entry(\n      area: \"Other area\",\n      missing: \""
+      <> long_sentence
+      <> "\",\n    ),\n  ]\n}\n",
+  )
+    as "the message's gaps function lists exactly the three entries, a quote escaped, each on one line when it fits in 80 columns and else with one argument to a line"
+  assert string.ends_with(
+    generated_file(files, "planted_record"),
+    "\n/// The gaps in this record's codec, which the coverage measure prints.\npub fn gaps() -> List(gap.Entry) {\n  [\n    gap.Entry(area: \"Record area\", missing: \"the record's sentence\"),\n  ]\n}\n",
+  )
+    as "a record's gaps function is the same, said of the record"
+  let without = generated(schema_with_gaps("", ""))
+  list.each(["planted", "planted_record"], fn(name) {
+    let module = generated_file(without, name)
+    assert !string.contains(module, "gaps")
+      && !string.contains(module, "genesis_prime/gap")
+      as {
+        "a module with no gaps generates no gaps function or import: " <> name
+      }
+  })
+}

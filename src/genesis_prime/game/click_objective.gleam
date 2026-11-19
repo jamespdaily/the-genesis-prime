@@ -22,10 +22,10 @@
 ////   (`objective_action.named`): an objective a cast advances stays open until the cast
 ////   counts, not when a creature is clicked.
 ////
-//// - **A gap.** The load has no spawn table, so it does not check that a pane creature
-////   starts in its marker's world; `objective_spawn.place` stands one at the marker where
-////   no stored row serves it. A row for a marker in a world with no stored spawn loads, and
-////   keeps the quest from completing until the world has one.
+//// - **A pane creature's start** is not checked by the load, which has no spawn table;
+////   `objective_spawn.place` stands one at the marker where no stored row serves it. A row
+////   for a marker in a world with no stored spawn loads, and keeps the quest from
+////   completing until the world has one.
 ////
 //// The failure points are those of `objective_row`.
 
@@ -37,6 +37,7 @@ import genesis_prime/game/objective
 import genesis_prime/game/objective_action
 import genesis_prime/game/objective_row
 import genesis_prime/game/quest
+import genesis_prime/gap
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id, Quest2Id}
 import genesis_prime/table/loader/store as table_store
@@ -160,4 +161,14 @@ fn click_built(
       | Error(Nil) -> False
     }
   })
+}
+
+/// What the load of click objectives does not check.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Click objectives",
+      missing: "that a pane creature of a click objective starts in its marker's world: the load has no spawn table to check it, so a row for a marker in a world with no stored spawn loads and keeps the quest from completing",
+    ),
+  ]
 }

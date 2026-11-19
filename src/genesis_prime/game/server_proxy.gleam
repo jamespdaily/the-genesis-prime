@@ -27,14 +27,12 @@
 ////   (genesis_prime/world_map/creature `struck`: one process, one order; the strike rounds
 ////   of a cast close in phase order), so prerequisite 903 (in combat) passes at the
 ////   opener. A go that starts no such spell takes the Proxy itself.
-//// - **The opener's gap.** The opener gives 0 when the first strike's threat has not
+//// - **The opener's flag.** The opener gives 0 when the first strike's threat has not
 ////   reached the player by the last go's round: the go's selection finds no creature that
 ////   threatened (the creature left the area between go 1 and go 3), the rounds close at
 ////   their 1 s deadline before a late `Threatened`, or the creature died before the last
 ////   go. A host with a single go gives 0 at the opener, as the answer closes its round
-////   before the threat. Turning the flag on from a `Landed` answer, or the answer carrying
-////   the threat, would close the gap; it belongs to the step that reads the hit rows'
-////   phases.
+////   before the threat.
 //// - **A row is refused** when its base has no plan (it is not a class's level-1
 ////   ability or innate), when its phase is not a go of that plan
 ////   (`spell_plan.go_count`, the length of `spell_plan.go_times_ms`), or when its spell has no row or its tree cannot be
@@ -55,6 +53,7 @@
 import genesis_prime/content/refusal.{type Refusal, Refusal, RowName}
 import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{type Plans, type Proxy, type Spell}
+import genesis_prime/gap
 import genesis_prime/table/id.{Spell4BaseId}
 import genesis_prime/table/loader/store as table_store
 import gleam/bool
@@ -266,4 +265,14 @@ fn planted_in(ability ability: Spell, planned planned: Planned) -> Spell {
         ),
       )
   }
+}
+
+/// What a Proxy's opener does not do that the client's does.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Proxy openers",
+      missing: "that a Proxy's opener flag is on when the first strike's threat reaches the player late: the opener gives 0 when the creature left the area between the first and last go, the rounds close at their deadline before the threat, the creature died before the last go, or the host has a single go",
+    ),
+  ]
 }

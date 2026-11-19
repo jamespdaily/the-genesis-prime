@@ -6,11 +6,11 @@
 //// item level, the primary target, the field position and the yaw, the initial
 //// and telegraph positions, the own-cast bit and the creature-activate bit;
 //// the client shows the caster's cast bar when it has the caster, and starts
-//// the player's global cooldown when the caster is the player. Gap: the uses
-//// of the root and parent ids are not read. Its fields are listed in
-//// `schema.toml` with the client's evidence, and the fact file's
+//// the player's global cooldown when the caster is the player. Its fields are
+//// listed in `schema.toml` with the client's evidence, and the fact file's
 //// `opcode.0x7ff` names the message.
 
+import genesis_prime/gap
 import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}
 import genesis_prime/message/spell_initial_position.{type SpellInitialPosition}
 import genesis_prime/message/spell_position.{type SpellPosition}
@@ -149,4 +149,14 @@ pub fn decode(body: BitArray) -> Result(SpellStarted, DecodeError) {
     own_cast:,
     creature_activate:,
   ))
+}
+
+/// The gaps in this message's codec, which the coverage measure prints.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Cast start",
+      missing: "what the client does with the root and parent Spell4 ids of a started cast: no use of them is read",
+    ),
+  ]
 }

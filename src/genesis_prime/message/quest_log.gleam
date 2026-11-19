@@ -8,11 +8,10 @@
 //// periodic reset time the client seeds its offer picks with; the handler adds
 //// to the log and never empties it, and answers an id with no Quest2 row with
 //// the Client/Server Data Mismatch disconnect (opcode.0x35f.unknown_quest).
-//// Gap: the width of the first list's count and of the quest ids come from the
-//// saved C, not an instruction. Its fields are listed in `schema.toml` with
-//// the client's evidence, and the fact file's `opcode.0x35f` names the
-//// message.
+//// Its fields are listed in `schema.toml` with the client's evidence, and the
+//// fact file's `opcode.0x35f` names the message.
 
+import genesis_prime/gap
 import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}
 import genesis_prime/message/quest_active.{type QuestActive}
 import genesis_prime/message/quest_completed.{type QuestCompleted}
@@ -71,4 +70,14 @@ pub fn decode(body: BitArray) -> Result(QuestLog, DecodeError) {
   use #(reset_time, reader) <- result.try(bit_stream.read_unsigned(reader, 64))
   use Nil <- result.try(bit_stream.finish_reading(reader))
   Ok(QuestLog(completed:, known:, active:, reset_time:))
+}
+
+/// The gaps in this message's codec, which the coverage measure prints.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Quest log",
+      missing: "the width of the completed quests' count and of each quest id in the quest log: the client's decompiled code gives them, with no instruction that shows them",
+    ),
+  ]
 }

@@ -4,11 +4,11 @@
 //// A record inside a message body: a damage description: the raw damage, the
 //// scaled raw damage, the damage absorbed, the damage the shield absorbed, the
 //// health damage with the overkill, the overkill, the glance amount, the
-//// killed bit, the combat result, the damage type and the hit entries. Gap:
-//// the second value is a level-scaled raw damage by inference only. Its fields
-//// are listed in `schema.toml` with the client's evidence, and the fact file's
-//// `0x1400946c0` names the record.
+//// killed bit, the combat result, the damage type and the hit entries. Its
+//// fields are listed in `schema.toml` with the client's evidence, and the fact
+//// file's `0x1400946c0` names the record.
 
+import genesis_prime/gap
 import genesis_prime/message/bit_stream.{
   type DecodeError, type Reader, type Writer,
 }
@@ -116,4 +116,14 @@ pub fn read(
     ),
     reader,
   ))
+}
+
+/// The gaps in this record's codec, which the coverage measure prints.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Damage description",
+      missing: "what the second value of a damage description is: the client's code does not show it, and its reading as a level-scaled raw damage is an inference",
+    ),
+  ]
 }

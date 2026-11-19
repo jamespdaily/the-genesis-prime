@@ -6,11 +6,11 @@
 //// the buy and sell multipliers the client keeps on the unit, and three bits:
 //// open (the client opens the vendor window), full list (the items replace the
 //// list the client holds, not one item of it) and refuse (with open, the
-//// client ends the interaction itself and shows nothing). Gap: the 64-bit and
-//// 32-bit values after each item's amounts have no reader found and are sent
-//// as 0. Its fields are listed in `schema.toml` with the client's evidence,
-//// and the fact file's `opcode.0x90b` names the message.
+//// client ends the interaction itself and shows nothing). Its fields are
+//// listed in `schema.toml` with the client's evidence, and the fact file's
+//// `opcode.0x90b` names the message.
 
+import genesis_prime/gap
 import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}
 import genesis_prime/message/vendor_item.{type VendorItem}
 import genesis_prime/message/vendor_tab.{type VendorTab}
@@ -84,4 +84,14 @@ pub fn decode(body: BitArray) -> Result(VendorItems, DecodeError) {
     full_list:,
     refuse:,
   ))
+}
+
+/// The gaps in this message's codec, which the coverage measure prints.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Vendor stock",
+      missing: "what the 64-bit and 32-bit values after each vendor item's amounts are: no reader of them is found, so the server sends 0",
+    ),
+  ]
 }
