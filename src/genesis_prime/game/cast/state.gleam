@@ -601,7 +601,11 @@ pub fn round_closed(row row: Ticking) -> Ticking {
 /// caster's vital by its formula, read for the caster at the tick.
 pub opaque type TickKind {
   DamageTick(blow: spell_area.DamageEffect)
-  HealTick(vital: effect_kind.Vital, formula: damage.Formula)
+  HealTick(
+    vital: effect_kind.Vital,
+    formula: damage.Formula,
+    passed_in: Option(Float),
+  )
 }
 
 /// A tick that strikes its unit with `blow`.
@@ -609,24 +613,27 @@ pub fn damage_tick(blow blow: spell_area.DamageEffect) -> TickKind {
   DamageTick(blow:)
 }
 
-/// A tick that heals the caster's `vital` by `formula`.
+/// A tick that heals the caster's `vital` by `formula`, reading the passed-in value of the
+/// item that started the cast when there is one.
 pub fn heal_tick(
   vital vital: effect_kind.Vital,
   formula formula: damage.Formula,
+  passed_in passed_in: Option(Float),
 ) -> TickKind {
-  HealTick(vital:, formula:)
+  HealTick(vital:, formula:, passed_in:)
 }
 
-/// What a tick of `kind` does: `damage` gets the blow and `heal` the vital and formula.
-/// The one match over the kinds, so a new kind adds an argument here and names each fold.
+/// What a tick of `kind` does: `damage` gets the blow and `heal` the vital, formula and
+/// passed-in value. The one match over the kinds, so a new kind adds an argument here and
+/// names each fold.
 pub fn on_tick_kind(
   kind kind: TickKind,
   damage damage: fn(spell_area.DamageEffect) -> result,
-  heal heal: fn(effect_kind.Vital, damage.Formula) -> result,
+  heal heal: fn(effect_kind.Vital, damage.Formula, Option(Float)) -> result,
 ) -> result {
   case kind {
     DamageTick(blow:) -> damage(blow)
-    HealTick(vital:, formula:) -> heal(vital, formula)
+    HealTick(vital:, formula:, passed_in:) -> heal(vital, formula, passed_in)
   }
 }
 
@@ -675,10 +682,25 @@ pub type Role {
   Passive
   /// The activate cast of a unit the player right-clicked: no threshold is touched.
   Activation(activating: Activating, interaction: Interaction)
-  /// The cast of a quest button's spell (`opcode.0x9d`), on the caster: no threshold is
-  /// touched, and its first go counts the objective that holds the button, with the unit
-  /// the press aimed it at when it takes one.
-  Shortcut(interaction: Interaction, aimed: Option(PressedAt))
+  /// The cast of a spell on its caster, from a quest button (`opcode.0x9d`) or an item's use
+  /// (`opcode.0x943`): no threshold is touched. A quest button's first go counts the
+  /// objective that holds the button, with the unit the press aimed it at when it takes one.
+  Shortcut(
+    interaction: Interaction,
+    aimed: Option(PressedAt),
+    from: PressedFrom,
+  )
+}
+
+/// What pressed a cast of a spell on its caster.
+pub type PressedFrom {
+  /// The button of a cast-a-spell objective: its first go raises `ShortcutCast`.
+  QuestButton
+  /// An item's use, which counts no objective. `item_level` is Item2.powerLevel, the level
+  /// the cast's start tells (`opcode.0x7ff.caster_item_level`); `passed_in` is the
+  /// passed-in value at that level (genesis_prime/game/passed_in_value), which the cast's
+  /// heals and absorbs read in place of the player's own.
+  Item(item_level: Int, passed_in: Float)
 }
 
 /// The unit an activate cast activates and what its go names on it.
@@ -751,6 +773,9 @@ pub type Live {
     interaction: Interaction,
     /// Whether the cast is a quest button's, whose first go counts the objective.
     shortcut: Bool,
+    /// The passed-in value the cast's heals and absorbs read in place of the caster's own,
+    /// for an item's cast (`Item`).
+    passed_in: Option(Float),
     /// The unit a quest button's cast was aimed at, when it takes one.
     aimed: Option(PressedAt),
     /// The use or cast the cast's QuestAdvanceObjective rows count with: its own for an activate
@@ -839,18 +864,18 @@ pub type ItemPress {
   ItemPress(client_cast_id: Int, spell4_id: Int, place: ItemPlace)
 }
 
-/// What an activate press whose checks passed keeps for the start of its cast
+/// What an item's press whose checks passed keeps for the start of its cast
 /// (`cast.item_started`): the client's id of the cast, the caster as it was checked, the
-/// spell with its cast time, the unit the cast activates, the interaction the spell has,
-/// the rows the activation drops and the costs the checks found paid. Nothing here is a
-/// time: the start stamps the cast with the time it is made at.
+/// spell with its cast time, the role the cast has and its primary target, the rows an
+/// activation drops and the costs the checks found paid. Nothing here is a time: the start
+/// stamps the cast with the time it is made at.
 pub type ActivationStart {
   ActivationStart(
     client_cast_id: Int,
     caster: Caster,
     spell: Spell,
-    activating: Activating,
-    interaction: Interaction,
+    role: Role,
+    primary_target: Int,
     dropped: activate.Dropped,
     paid: Paid,
   )

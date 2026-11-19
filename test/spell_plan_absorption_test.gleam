@@ -321,8 +321,8 @@ pub fn the_water_shield_row_68969_loads_as_an_absorb_test() -> Nil {
 
 pub fn an_absorption_row_with_a_formula_kind_not_read_fails_the_load_test() -> Nil {
   use <- owned_test.run(60_000)
-  // Kind 18 is the passed-in value: `damage.unread` refuses it for an effect on its
-  // caster (0x140565600).
+  // Kind 9 is the caster's Weapon DPS, which `damage.unread_on_caster` refuses for an effect
+  // on its caster; kind 18, the passed-in value, it reads (0x140565600).
   let with_kind = fn(kind) {
     plan_error(
       row: absorption_row(id: 99_064, target_flags: 1, columns: [
@@ -332,12 +332,19 @@ pub fn an_absorption_row_with_a_formula_kind_not_read_fails_the_load_test() -> N
       ]),
     )
   }
-  assert with_kind(18)
+  assert with_kind(9)
     == spell_plan.AbsorptionParameterNotRead(
+      spell4_id: strike,
+      effect_id: 99_064,
+      parameter_kind: 9,
+    )
+  assert with_kind(18)
+    != spell_plan.AbsorptionParameterNotRead(
       spell4_id: strike,
       effect_id: 99_064,
       parameter_kind: 18,
     )
+    as "kind 18 is read: the row goes on to the amount's own check"
   assert plan_error(
       row: absorption_row(id: 99_065, target_flags: 1, columns: [
         #("durationTime", Integer(5000)),
@@ -431,10 +438,15 @@ pub fn effect_kind_reads_absorption_aimed_at_the_caster_and_the_measure_counts_t
   )
     as "and one with flags bit 2 is read"
   assert !counted(
+    Spell4Effects(..spectral_form_row(), parameter_type01: 9),
+    none,
+  )
+    as "a formula kind not read (9, the caster's Weapon DPS) is refused"
+  assert counted(
     Spell4Effects(..spectral_form_row(), parameter_type01: 18),
     none,
   )
-    as "a formula kind not read (18, the passed-in value) is refused"
+    as "and the passed-in value (18) is read"
   assert !counted(
     Spell4Effects(..spectral_form_row(), data_bits01: 2_139_095_040),
     none,

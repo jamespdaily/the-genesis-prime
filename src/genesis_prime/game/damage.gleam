@@ -32,10 +32,17 @@
 ////   23, 25, 26) or the target's (7, 15, 17, 19, 21, 22) (`0x140566ad0`). The caster's
 ////   connection works the stat part and the caster's kinds out at the go (`partial`) and
 ////   the struck unit's owner adds its own vitals when the blow lands (`finish`).
+//// - **The passed-in value** (type 18) is the family-33 budget curve at the level the
+////   effect is evaluated at, which the caster's `passed_in` holds
+////   (genesis_prime/game/passed_in_value); `ComputeEffectValue` multiplies the parameter
+////   by it in the flat part (`0x140565600`, `0x1404de840`). Only an effect on its caster
+////   reads it (`unread_on_caster`): a strike would read the caster's value at the go, not
+////   the level of an item's spell.
 //// - **What is not built:** the caster's Weapon and Weapon DPS (types 6 and 9,
-////   `Spell4Effects.parameterType.6_9`, #807), the passed-in value (18, #336), and types
-////   20, 24 and any above 26, which neither part reads; a formula that names one with a
-////   factor is refused at load (genesis_prime/game/spell_area, `unread`).
+////   `Spell4Effects.parameterType.6_9`, #807), the passed-in value in a strike's row
+////   (18, #336), and types 20, 24 and any above 26, which neither part reads; a formula
+////   that names one with a factor is refused at load (genesis_prime/game/spell_area,
+////   `unread`).
 //// - **The multiplier** M is the caster's DamageDealtMultiplier for the damage type,
 ////   1.0 for a player (UnitProperty2 140 to 143: the multiplier's default).
 //// - **An Absorption row** (`absorption_formula_of`) reads dataBits00 and dataBits01 as
@@ -147,14 +154,18 @@ fn is_target_kind(kind: Int) -> Bool {
   }
 }
 
-/// What the formula reads of the caster: its level, its two ratings and its six
-/// attributes.
+/// What the formula reads of the caster: its level, its two ratings, its six attributes
+/// and the passed-in value (parameter type 18).
 pub type Attacker {
   Attacker(
     level: Int,
     assault_rating: Float,
     support_rating: Float,
     attributes: Attributes,
+    /// The family-33 budget curve at the level the effect is evaluated at, which
+    /// parameter type 18 multiplies (genesis_prime/game/passed_in_value): the caster's
+    /// own level for a spell it casts, an item's level for the spell of an item.
+    passed_in: Float,
   )
 }
 
@@ -175,10 +186,12 @@ pub type Attributes {
 /// What the formula reads of a player caster at `level` with `properties`: the live
 /// value of each rating and attribute, as the client reads each of its unit
 /// (`0x140466a70`). A player starts each at its UnitProperty2 defaultValue
-/// (`0x1404584b0`), the attributes at 1.0.
+/// (`0x1404584b0`), the attributes at 1.0. `passed_in` is the passed-in value at the
+/// player's level.
 pub fn attacker_of(
   properties properties: unit_properties.Properties,
   level level: Int,
+  passed_in passed_in: Float,
 ) -> Attacker {
   let read = fn(property) { unit_properties.value(properties:, property:) }
   Attacker(
@@ -193,6 +206,7 @@ pub fn attacker_of(
       wisdom: read(unit_properties.wisdom),
       stamina: read(unit_properties.stamina),
     ),
+    passed_in:,
   )
 }
 
@@ -218,6 +232,13 @@ pub fn power_of(rating rating: Float) -> Float {
 /// Weapon and Weapon DPS (6 and 9, #807) and the passed-in value (18, #336) are not read.
 pub fn unread(formula formula: Formula) -> Option(Unread) {
   first_unread(formula:, is_read:)
+}
+
+/// The first parameter type of the formula that an effect on its caster does not read:
+/// `unread` less the passed-in value (18), which `value_on_caster` multiplies by the
+/// caster's `passed_in`.
+pub fn unread_on_caster(formula formula: Formula) -> Option(Unread) {
+  first_unread(formula:, is_read: is_read_on_caster)
 }
 
 /// The first parameter with a factor whose type `is_read` refuses.
@@ -397,6 +418,12 @@ fn is_read(kind: Int) -> Bool {
   kind == 0 || is_stat(kind) || is_flat(kind)
 }
 
+/// Whether an effect on its caster reads the parameter type: the kinds `is_read` names and
+/// 18, the passed-in value (`0x140565600`).
+fn is_read_on_caster(kind: Int) -> Bool {
+  is_read(kind) || kind == 18
+}
+
 /// Whether the flat part reads the parameter type (`0x140566ad0`): the level and a
 /// vital of the caster or of the target.
 fn is_flat(kind: Int) -> Bool {
@@ -421,11 +448,12 @@ pub fn value_on_caster(
   })
 }
 
-/// What a flat kind reads of the caster: the level for 10, else the vital the kind names
-/// (`0x140566ad0`).
+/// What a flat kind reads of the caster: the level for 10, the passed-in value for 18,
+/// else the vital the kind names (`0x140566ad0`).
 fn unit_value_of(caster caster: OnCaster, kind kind: Int) -> Float {
   case kind {
     10 -> unsigned_unit_value(number: caster.attacker.level)
+    18 -> caster.attacker.passed_in
     _ -> vital_of(vitals: caster.vitals, kind:)
   }
 }

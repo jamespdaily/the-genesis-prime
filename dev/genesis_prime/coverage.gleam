@@ -29,6 +29,10 @@
 //// spells they reach), a line for the press spells' other rows, which are never applied,
 //// by effect type, and each press spell the plan refuses.
 ////
+//// It then counts the items' uses (genesis_prime/coverage/item_use): the Item2 rows whose spell
+//// is played when the item is used and, for the rest, the reason with the row's id left
+//// out, and the spells the passed-in value (parameter type 18) opened to the plan.
+////
 //// It then lists the spells the reached spells' tooltips name that no row reaches, with the
 //// server's Proxies (the play database's server_proxy table) planted into the trees, and a
 //// count line under the totals (genesis_prime/coverage/named_unreached). A play database,
@@ -55,6 +59,7 @@ import genesis_prime/content/server_proxy as content_server_proxy
 import genesis_prime/content/spawn as content_spawn
 import genesis_prime/coverage/checklist
 import genesis_prime/coverage/engine
+import genesis_prime/coverage/item_use
 import genesis_prime/coverage/measurement.{type Measurement, Measured}
 import genesis_prime/coverage/named_unreached
 import genesis_prime/coverage/starting_ability
@@ -121,6 +126,8 @@ pub fn main() -> Nil {
       io.println(later_abilities_report(tables:))
       io.println("")
       io.println(press_report(tables:))
+      io.println("")
+      io.println(item_use.render(report: item_use.measure(tables:)))
       io.println("")
       io.println(case named {
         Ok(#(_, named_list)) -> named_list

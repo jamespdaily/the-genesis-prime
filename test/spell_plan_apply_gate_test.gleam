@@ -20,7 +20,7 @@
 
 import client_tables
 import fixture_tables
-import genesis_prime/coverage/effect_row
+import genesis_prime/game/effect_row_read
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan.{
@@ -58,7 +58,7 @@ fn no_proxy_place() -> spell_plan.RowPlace {
 
 /// Whether the coverage measure counts the client's row `id` as read in `tables`.
 fn is_read_by_the_measure(tables tables: store.Tables, id id: Int) -> Bool {
-  effect_row.is_read(
+  effect_row_read.is_read(
     tables:,
     sources: spell_plan.sources_of(tables:),
     place: no_proxy_place(),
@@ -149,7 +149,7 @@ pub fn damage_row_with_undecoded_gate_is_refused_at_load_naming_its_issue_test()
       )),
     )
     as "a row behind a caster gate the server cannot read is refused too"
-  assert !effect_row.is_read(
+  assert !effect_row_read.is_read(
     tables:,
     sources: spell_plan.sources_of(tables:),
     place: no_proxy_place(),

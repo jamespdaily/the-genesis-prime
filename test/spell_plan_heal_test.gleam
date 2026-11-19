@@ -267,7 +267,7 @@ pub fn the_esper_shield_heal_proc_row_94299_loads_as_a_shield_heal_test() -> Nil
 
 pub fn a_heal_shields_row_with_a_parameter_the_caster_formula_does_not_read_fails_the_load_test() -> Nil {
   use <- owned_test.run(5000)
-  list.each([6, 9, 18], fn(kind) {
+  list.each([6, 9], fn(kind) {
     let row =
       Spell4Effects(..energize_row(), id: 99_118, parameter_type00: kind)
     assert heal_read(effect: row)
@@ -279,19 +279,22 @@ pub fn a_heal_shields_row_with_a_parameter_the_caster_formula_does_not_read_fail
       as {
         "type "
         <> int.to_string(kind)
-        <> " is the caster's Weapon or Weapon DPS (0x140b0b580) or the passed-in value (0x140565600), which an effect on its caster does not read"
+        <> " is the caster's Weapon or Weapon DPS (0x140b0b580), which an effect on its caster does not read"
       }
   })
   list.each(
     [
-      1, 2, 3, 4, 5, 7, 8, 10, 11, 12, 13, 14, 15, 16, 17, 19, 21, 22, 23, 25,
-      26,
+      1, 2, 3, 4, 5, 7, 8, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 21, 22, 23,
+      25, 26,
     ],
     fn(kind) {
       let row =
         Spell4Effects(..energize_row(), id: 99_119, parameter_type00: kind)
       let assert Ok(Heal(..)) = heal_read(effect: row)
-        as { "0x140566ad0 or 0x140566d40 reads type " <> int.to_string(kind) }
+        as {
+          "0x140566ad0, 0x140566d40 or the passed-in value (0x140565600) reads type "
+          <> int.to_string(kind)
+        }
     },
   )
   let not_a_number =
@@ -569,13 +572,24 @@ pub fn a_heal_row_with_an_unread_parameter_or_number_is_refused_test() -> Nil {
       parameter_value00: 200.0,
       parameter_value01: 0.0,
     )
-  assert heal_read(effect: passed_in)
+  let assert Ok(Heal(formula:, ..)) = heal_read(effect: passed_in)
+    as "row 69917: parameter 18 is the value passed in, which an effect on its caster reads (0x140565600)"
+  assert formula.parameters
+    == [
+      Parameter(kind: 18, value: 200.0),
+      Parameter(kind: 0, value: 0.0),
+      Parameter(kind: 0, value: 0.0),
+      Parameter(kind: 0, value: 0.0),
+    ]
+    as "and keeps it as the row gives it"
+  let weapon_dps = Spell4Effects(..passed_in, parameter_type00: 9)
+  assert heal_read(effect: weapon_dps)
     == Error(spell_plan.HealParameterNotRead(
       spell4_id: 34_985,
       effect_id: 69_917,
-      parameter_kind: 18,
+      parameter_kind: 9,
     ))
-    as "row 69917: parameter 18 is the value passed in, which an effect on its caster does not read (0x140565600)"
+    as "parameter 9, the caster's Weapon DPS, is not read"
   let not_a_number =
     Spell4Effects(..mind_over_body_row(), data_bits00: 0x7F800000)
   assert heal_read(effect: not_a_number)

@@ -110,6 +110,7 @@ import genesis_prime/game/item_use
 import genesis_prime/game/movement
 import genesis_prime/game/objective
 import genesis_prime/game/objective_link
+import genesis_prime/game/passed_in_value
 import genesis_prime/game/player_life
 import genesis_prime/game/prerequisite
 import genesis_prime/game/quest_log.{type QuestLog}
@@ -262,6 +263,13 @@ pub fn item_use_message(
         )
       },
       activations: connection_state.activations_of(session:),
+      shortcuts: connection_state.shortcut_spells_of(session:),
+      item_cast_of: fn(item) {
+        cast_state.Item(
+          item_level: passed_in_value.level_of_item(tables:, item2_id: item),
+          passed_in: passed_in_value.of_item(tables:, item2_id: item),
+        )
+      },
       target_of:,
       in_cast_group: fn(group, unit_id) {
         shown.in_group(tables:, picture: entered.shown, group:, unit_id:)
@@ -833,7 +841,7 @@ pub fn caster_of(
       current: entered.unit.tail.faction_id,
       base: entered.unit.tail.base_faction_id,
     ),
-    stats: stats_of(entered:),
+    stats: stats_of(tables:, entered:),
     vitals: player_life.vitals(life:),
     heal_scaling: heal_split.scaling_of(properties: entered.properties),
     quests: entered.quests,
@@ -843,11 +851,16 @@ pub fn caster_of(
 }
 
 /// What the player's damage and heals read of it: its level, its Assault and Support
-/// Rating and its attributes.
-fn stats_of(entered entered: world_entry.Entered) -> damage.Attacker {
+/// Rating, its attributes and the passed-in value at its level.
+fn stats_of(
+  tables tables: table_store.Tables,
+  entered entered: world_entry.Entered,
+) -> damage.Attacker {
+  let level = connection_state.level_of(entered:)
   damage.attacker_of(
     properties: entered.properties,
-    level: connection_state.level_of(entered:),
+    level:,
+    passed_in: passed_in_value.of_level(tables:, level:),
   )
 }
 
@@ -1617,7 +1630,7 @@ fn attacker_of(
       race_id: entered.character.race_id,
     ),
     faction:,
-    stats: stats_of(entered:),
+    stats: stats_of(tables: session.settings.tables, entered:),
     vitals: player_life.vitals(life: entered.life),
     properties: entered.properties,
   )

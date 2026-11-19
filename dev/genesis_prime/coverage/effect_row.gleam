@@ -1,44 +1,21 @@
-//// Whether the plan reads a Spell4Effects row, which the effect measure counts rows by.
+//// How many Spell4Effects rows the plan does not read, by effect type, which the effect
+//// measure counts rows by. A row is read as `effect_row_read.is_read` says; the measure
+//// restates none of the load's rules.
 ////
-//// ```
-//// Spell4Effects rows ─▶ spell_plan.read_row (the plan's own decision, in the place the
-////                         row's spell is planned) ─▶ Applied: read
-////                                                  ─▶ Held, LeftOut or an error: not read
-////                       a damage row ─▶ spell_area.damage_row_of (the area load's own)
-////                       a UnitStateSet row the plan applies ─▶ `unit_state_refuses`
-//// ```
-////
-//// - A row is read exactly when a list of the plan holds it and a go applies it, or, for a
-////   damage row, when the area load builds it and it strikes a unit but its caster
-////   (`spell_area.strikes_past_caster`); the measure calls the functions the load
-////   calls and restates none of their rules. A DespawnUnit row in a spell the activate
+//// - A DespawnUnit row in a spell the activate
 ////   cast names (a creature's activate column, the default spell or an item's use) is the
 ////   exception `unread_by_type` makes: the plan applies it, the activate cast drops it
 ////   (`activate.drops_despawn`), so it is not read, unless a Proxy or Proc names the spell
 ////   as its child, which applies the row by that route.
-//// - A UnitStateSet row the plan applies is read only when what it holds can refuse a cast
-////   or a strike: its state has a reading (`unit_state.reading_of`), it has a duration, and
-////   its spell has a Spell4 row to be cast from. The other rows are held where they can be
-////   and counted not read, each by a reason the type's gap names.
-//// - A spell the plan refuses for a column of its own (a cost, a requirement, a cycle) is
-////   not refused here: each of its rows is counted by its own columns. A row a Proxy or Proc
-////   names is counted on the child's rows.
-//// - The place of a row is worked out from the rows given: the spells a Proxy among them
-////   starts on each struck unit, whether a spell's costs spend every point held, and whether
-////   a spell's own rows hit foes.
 
 import genesis_prime/game/activate
-import genesis_prime/game/spell_area
+import genesis_prime/game/effect_row_read
 import genesis_prime/game/spell_plan
-import genesis_prime/game/unit_state
-import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/table/loader/store
-import genesis_prime/table/spell4
 import genesis_prime/table/spell4_effects.{type Spell4Effects}
 import gleam/dict.{type Dict}
 import gleam/list
 import gleam/option
-import gleam/result
 import gleam/set
 
 /// How many of these rows the plan does not read, by effect type. A type with no such row
@@ -52,7 +29,7 @@ pub fn unread_by_type(
   effects effects: List(Spell4Effects),
 ) -> Dict(Int, Int) {
   let sources = spell_plan.sources_of(tables:)
-  let place_of = places(tables:, effects:)
+  let place_of = effect_row_read.places(tables:, effects:)
   let activated = activate.activated_spell_ids(tables:, sources:)
   list.fold(effects, dict.new(), fn(counts, effect) {
     let dropped =
@@ -62,7 +39,12 @@ pub fn unread_by_type(
       && set.contains(activated, effect.spell_id)
       && !spell_plan.is_child(sources:, spell4_id: effect.spell_id)
     case
-      is_read(tables:, sources:, place: place_of(effect.spell_id), effect:)
+      effect_row_read.is_read(
+        tables:,
+        sources:,
+        place: place_of(effect.spell_id),
+        effect:,
+      )
       && !dropped
     {
       True -> counts
@@ -70,80 +52,6 @@ pub fn unread_by_type(
         dict.upsert(counts, effect.effect_type, fn(found) {
           option.unwrap(found, 0) + 1
         })
-    }
-  })
-}
-
-/// Where each spell of these rows is planned, by the spell's Spell4 id: whether a Proxy
-/// among the rows starts it on each struck unit, whether its costs spend every point held, and
-/// whether its own rows hit foes and whether they throw the units they strike.
-pub fn places(
-  tables tables: store.Tables,
-  effects effects: List(Spell4Effects),
-) -> fn(Int) -> spell_plan.RowPlace {
-  let struck = spell_plan.struck_unit_children(effects:)
-  let spends = spends_all_by_spell(tables:, effects:)
-  let hitting = spell_plan.spells_that_hit_foes(effects:)
-  let throwing = spell_plan.spells_that_throw_target(effects:)
-  fn(spell4_id) {
-    spell_plan.RowPlace(
-      struck_by: option.from_result(dict.get(struck, spell4_id)),
-      spends_all: result.unwrap(dict.get(spends, spell4_id), False),
-      hits_foes: set.contains(hitting, spell4_id),
-      throws_target: set.contains(throwing, spell4_id),
-    )
-  }
-}
-
-/// Whether the plan reads this row in this place: its list holds it and a go applies it,
-/// or the area load builds it.
-pub fn is_read(
-  tables tables: store.Tables,
-  sources sources: spell_plan.Sources,
-  place place: spell_plan.RowPlace,
-  effect effect: Spell4Effects,
-) -> Bool {
-  case spell_plan.read_row(tables:, sources:, place:, effect:) {
-    Ok(spell_plan.Applied(..)) ->
-      effect.effect_type != 15 || unit_state_refuses(tables:, effect:)
-    Ok(spell_plan.ReadByActivation) -> True
-    Ok(spell_plan.ReadByArea) ->
-      case
-        spell_area.damage_row_of(tables:, spell4_id: effect.spell_id, effect:)
-      {
-        Ok(row) -> spell_area.strikes_past_caster(row:)
-        Error(..) -> False
-      }
-    Ok(spell_plan.Held(..)) | Ok(spell_plan.LeftOut(..)) | Error(..) -> False
-  }
-}
-
-/// Whether the state a UnitStateSet row holds can refuse anything: it has a reading
-/// (`unit_state.reading_of`), a duration (a row with none is never held), and a spell with a
-/// Spell4 row, which a cast needs.
-fn unit_state_refuses(
-  tables tables: store.Tables,
-  effect effect: Spell4Effects,
-) -> Bool {
-  unit_state.reading_of(state: effect.data_bits00) != unit_state.NoReading
-  && effect.duration_time > 0
-  && result.is_ok(spell4.get(tables:, id: Spell4Id(effect.spell_id)))
-}
-
-/// Whether each spell of these rows spends every point held, by its Spell4 row's costs.
-fn spends_all_by_spell(
-  tables tables: store.Tables,
-  effects effects: List(Spell4Effects),
-) -> Dict(Int, Bool) {
-  list.fold(effects, dict.new(), fn(found, effect) {
-    case dict.has_key(found, effect.spell_id) {
-      True -> found
-      False ->
-        case spell4.get(tables:, id: Spell4Id(effect.spell_id)) {
-          Ok(row) ->
-            dict.insert(found, effect.spell_id, spell_plan.spends_all(row:))
-          Error(Nil) -> found
-        }
     }
   })
 }

@@ -94,27 +94,27 @@ import genesis_prime/game/cast/state.{
   type Activating, type ActivationStart, type AdvanceWith, type Aimed,
   type AimedPress, type Applied, type Caster, type Effect, type Fact,
   type HeldProc, type Holder, type Interaction, type ItemAtPlace, type ItemPress,
-  type Lingering, type Listed, type Live, type Message, type Paid, type Reached,
-  type Refusal, type Resolution, type Restricting, type Role, type State,
-  type Struck, type TargetVerdict, type TickAsked, type Used, type UsedUnit,
-  Accept, Activated, Activating, Activation, ActivationStart, Aimed, AimedPress,
-  AnswerSucceeded, Answered, AwaitingAnswer, Base, Cancelled, CannotTell,
-  CastClears, CasterChangeEnds, CasterChangeStarts, ChargeLevel, Child,
-  CooldownEnds, CooldownKept, CooldownModifierEnds, CooldownModifierStarts,
-  Deflected, Finish, ForcedMoveStart, Frames, GateFails, Go, GoAsked, Healing,
-  Held, HeldProc, Hit, Hold, HoldForCast, Holding, Immune, ItemAtPlace,
-  ItemPress, ItemsIssue, KeyHeld, Lingering, Listed, Live, Log, ModifierEnd,
-  ModifierStart, NoClientCastId, NoInteraction, NoInteractionWaits, NoItemSpell,
-  NodesEnd, NotBuilt, NotDecoded, NotSentByClient, Passive, Plain,
-  PrerequisitesIssue, Pressed, PressedAt, ProcDue, QuestAdvanceDue,
-  QuestAdvanced, Reached, Refuse, RepeatHeld, Resolution, ResourceMoved,
-  RestrictionEnd, Send, Shortcut, ShortcutCast, SpellsIssue, Stage, StartChild,
-  StartHeld, Started, StartedMoving, Starts, State, StateEnd, StealthChanged,
-  Strike, TargetModifierStart, Tell, Threshold, Tick, UnbuiltItemSpell,
-  UnbuiltShortcut, UnbuiltSpell, UnknownAnswer, UnknownCancel,
-  UnreadItemPrerequisite, UnreadLinkPrerequisite, UnreadPrerequisite,
-  UnreadShortcutPick, UsedUnit, WindowEnd, WithCast, WithNothing, WithUse,
-  WrongAnswerSpell,
+  type Lingering, type Listed, type Live, type Message, type Paid,
+  type PressedFrom, type Reached, type Refusal, type Resolution,
+  type Restricting, type Role, type State, type Struck, type TargetVerdict,
+  type TickAsked, type Used, type UsedUnit, Accept, Activated, Activating,
+  Activation, ActivationStart, Aimed, AimedPress, AnswerSucceeded, Answered,
+  AwaitingAnswer, Base, Cancelled, CannotTell, CastClears, CasterChangeEnds,
+  CasterChangeStarts, ChargeLevel, Child, CooldownEnds, CooldownKept,
+  CooldownModifierEnds, CooldownModifierStarts, Deflected, Finish,
+  ForcedMoveStart, Frames, GateFails, Go, GoAsked, Healing, Held, HeldProc, Hit,
+  Hold, HoldForCast, Holding, Immune, Item, ItemAtPlace, ItemPress, ItemsIssue,
+  KeyHeld, Lingering, Listed, Live, Log, ModifierEnd, ModifierStart,
+  NoClientCastId, NoInteraction, NoInteractionWaits, NoItemSpell, NodesEnd,
+  NotBuilt, NotDecoded, NotSentByClient, Passive, Plain, PrerequisitesIssue,
+  Pressed, PressedAt, ProcDue, QuestAdvanceDue, QuestAdvanced, QuestButton,
+  Reached, Refuse, RepeatHeld, Resolution, ResourceMoved, RestrictionEnd, Send,
+  Shortcut, ShortcutCast, SpellsIssue, Stage, StartChild, StartHeld, Started,
+  StartedMoving, Starts, State, StateEnd, StealthChanged, Strike,
+  TargetModifierStart, Tell, Threshold, Tick, UnbuiltItemSpell, UnbuiltShortcut,
+  UnbuiltSpell, UnknownAnswer, UnknownCancel, UnreadItemPrerequisite,
+  UnreadLinkPrerequisite, UnreadPrerequisite, UnreadShortcutPick, UsedUnit,
+  WindowEnd, WithCast, WithNothing, WithUse, WrongAnswerSpell,
 } as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/class_resource.{type Payment}
@@ -218,8 +218,11 @@ pub fn activate(
 /// connection, and `in_cast_group` whether the unit is in a TargetGroup (the spell's cast
 /// group, which the client does not test). A use the client would not have sent ends the
 /// connection; one it sends and refuses is refused with its result; one the server has no
-/// plan for (the item's spell has no Activate and no QuestAdvanceObjective effect) is refused as not built; the others
-/// run as an activate cast does, and the go raises `Activated` for the unit. The answer is
+/// plan for is refused as not built. An item whose spell is cast on its user (a Caster kind,
+/// `shortcut_spell.item_spell_of`) casts it on the caster as any cast of the caster's does,
+/// its press's target not read, and its heals and absorbs read the passed-in value at the
+/// item's level (`item_cast_of`); the others run as an activate cast does, and the go raises
+/// `Activated` for the unit. The answer is
 /// `Frames` for a refusal and for a press whose client cast id is not above the highest the
 /// state took (`item_press_refused`), which start nothing and spend nothing, and `Started` for
 /// a press that passed every check: the checks are made here, at the press, and the cast is
@@ -238,6 +241,8 @@ pub fn use_item(
     fn(Int) -> prerequisite.Verdict,
   ) -> Result(Spell4Id, item_use.Refusal),
   activations activations: activate.Activations,
+  shortcuts shortcuts: shortcut_spell.Shortcuts,
+  item_cast_of item_cast_of: fn(Item2Id) -> PressedFrom,
   target_of target_of: fn(Int) -> activate.Target,
   in_cast_group in_cast_group: fn(Int, Int) -> Bool,
   caster_radius caster_radius: Float,
@@ -251,6 +256,8 @@ pub fn use_item(
     held_at:,
     check:,
     activations:,
+    shortcuts:,
+    item_cast_of:,
     target_of:,
     in_cast_group:,
     caster_radius:,
@@ -326,6 +333,8 @@ fn item_used(
     fn(Int) -> prerequisite.Verdict,
   ) -> Result(Spell4Id, item_use.Refusal),
   activations activations: activate.Activations,
+  shortcuts shortcuts: shortcut_spell.Shortcuts,
+  item_cast_of item_cast_of: fn(Item2Id) -> PressedFrom,
   target_of target_of: fn(Int) -> activate.Target,
   in_cast_group in_cast_group: fn(Int, Int) -> Bool,
   caster_radius caster_radius: Float,
@@ -399,6 +408,9 @@ fn item_used(
             unit_id:,
             target:,
             activations:,
+            shortcuts:,
+            item:,
+            item_cast_of:,
             in_cast_group:,
             spell4_id: spell4_id.value,
           )
@@ -475,6 +487,9 @@ fn item_spell_cast(
   unit_id unit_id: Int,
   target target: activate.Target,
   activations activations: activate.Activations,
+  shortcuts shortcuts: shortcut_spell.Shortcuts,
+  item item: Item2Id,
+  item_cast_of item_cast_of: fn(Item2Id) -> PressedFrom,
   in_cast_group in_cast_group: fn(Int, Int) -> Bool,
   spell4_id spell4_id: Int,
 ) -> Result(ActivationChecked, Refusal) {
@@ -487,6 +502,100 @@ fn item_spell_cast(
       ),
     )
   }
+  case shortcut_spell.item_spell_of(shortcuts:, spell4_id:) {
+    shortcut_spell.NotBuilt(why:) ->
+      activation_answered(taken: cast_press.not_built_refusal(
+        cast:,
+        client_cast_id:,
+        spell4_id:,
+        key: UnbuiltItemSpell(spell4_id:),
+        result: cast_result.IllegalSpellCast,
+        why:,
+        issue: SpellsIssue,
+      ))
+    shortcut_spell.PlayedOnUser(spell:) ->
+      item_on_user(
+        cast:,
+        caster:,
+        now_ms:,
+        client_cast_id:,
+        spell:,
+        from: item_cast_of(item),
+      )
+    shortcut_spell.OnAUnit ->
+      item_on_a_unit(
+        cast:,
+        caster:,
+        caster_radius:,
+        now_ms:,
+        client_cast_id:,
+        unit_id:,
+        target:,
+        activations:,
+        in_cast_group:,
+        spell4_id:,
+        refusal:,
+      )
+  }
+}
+
+/// The cast of an item's spell on the user, which the press's target does not enter (the
+/// client's picker gives the caster for a Caster kind, `0x14055bdc0`), as the caster's own
+/// cast under the verdict every cast meets.
+fn item_on_user(
+  cast cast: State,
+  caster caster: Caster,
+  now_ms now_ms: Int,
+  client_cast_id client_cast_id: Int,
+  spell spell: Spell,
+  from from: PressedFrom,
+) -> Result(ActivationChecked, Refusal) {
+  let spell = cast_press.shortcut_spell_of(spell:)
+  let role =
+    Shortcut(interaction: cast_press.interaction_of(spell:), aimed: None, from:)
+  case
+    press_checked(
+      cast:,
+      caster:,
+      now_ms:,
+      client_cast_id:,
+      spell:,
+      role:,
+      target_subject: None,
+    )
+  {
+    Error(taken) -> activation_answered(taken:)
+    Ok(paid) ->
+      Ok(
+        ActivationPassed(ActivationStart(
+          client_cast_id:,
+          caster:,
+          spell:,
+          role:,
+          primary_target: caster.unit_id,
+          dropped: activate.Dropped(signals: [], despawns: [], unit_states: []),
+          paid:,
+        )),
+      )
+  }
+}
+
+/// The cast of an item's spell at the unit the press names, which the creature's activate
+/// cast plays.
+fn item_on_a_unit(
+  cast cast: State,
+  caster caster: Caster,
+  caster_radius caster_radius: Float,
+  now_ms now_ms: Int,
+  client_cast_id client_cast_id: Int,
+  unit_id unit_id: Int,
+  target target: activate.Target,
+  activations activations: activate.Activations,
+  in_cast_group in_cast_group: fn(Int, Int) -> Bool,
+  spell4_id spell4_id: Int,
+  refusal refusal: fn(Int, cast_result.CastResult) ->
+    Result(ActivationChecked, Refusal),
+) -> Result(ActivationChecked, Refusal) {
   case activate.planned_of(activations:, spell4_id:) {
     Error(Nil) ->
       activation_answered(taken: cast_press.not_built_refusal(
@@ -495,7 +604,7 @@ fn item_spell_cast(
         spell4_id:,
         key: UnbuiltItemSpell(spell4_id:),
         result: cast_result.IllegalSpellCast,
-        why: "has no Activate and no QuestAdvanceObjective effect, which is all the server plays of an item's spell",
+        why: "has no Activate and no QuestAdvanceObjective effect, which is all the server plays of an item's spell cast at a unit",
         issue: ItemsIssue,
       ))
     Ok(activate.NoSpell4Row) -> refusal(spell4_id, cast_result.SpellUnknown)
@@ -717,6 +826,7 @@ fn shortcut_pressed(
         role: Shortcut(
           interaction: cast_press.interaction_of(spell:),
           aimed: None,
+          from: QuestButton,
         ),
         target_subject: None,
         dropping: fn(cast) { #(cast, []) },
@@ -949,6 +1059,7 @@ fn aimed_in_range(
         role: Shortcut(
           interaction: cast_press.interaction_of(spell: press.spell),
           aimed: Some(PressedAt(unit_id: press.unit_id, alive_at_press: alive)),
+          from: QuestButton,
         ),
         target_subject: Some(cast_tick.target_subject_of(
           cast: press.cast,
@@ -1418,8 +1529,8 @@ fn activation_checked(
           client_cast_id:,
           caster:,
           spell:,
-          activating:,
-          interaction:,
+          role: Activation(activating:, interaction:),
+          primary_target: unit_id,
           dropped:,
           paid:,
         )),
@@ -1435,27 +1546,27 @@ fn activation_begun(
   now_ms now_ms: Int,
   start start: ActivationStart,
 ) -> #(State, List(Effect)) {
-  let Activating(unit_id:, creature_id:, ..) = start.activating
   press_started(
     cast:,
     caster: start.caster,
     now_ms:,
     client_cast_id: start.client_cast_id,
     spell: start.spell,
-    primary_target: unit_id,
-    role: Activation(
-      activating: start.activating,
-      interaction: start.interaction,
-    ),
+    primary_target: start.primary_target,
+    role: start.role,
     paid: start.paid,
     dropping: fn(cast) {
-      cast_press.rows_dropped(
-        cast:,
-        spell4_id: start.spell.spell4_id.value,
-        unit_id:,
-        creature_id:,
-        dropped: start.dropped,
-      )
+      case start.role {
+        Activation(activating: Activating(unit_id:, creature_id:, ..), ..) ->
+          cast_press.rows_dropped(
+            cast:,
+            spell4_id: start.spell.spell4_id.value,
+            unit_id:,
+            creature_id:,
+            dropped: start.dropped,
+          )
+        Child(..) | Base(..) | Stage(..) | Passive | Shortcut(..) -> #(cast, [])
+      }
     },
   )
 }
@@ -3483,6 +3594,15 @@ fn start(
         Activation(..) -> True
         Child(..) | Base(..) | Stage(..) | Passive | Shortcut(..) -> False
       },
+      caster_item_level: case role {
+        Shortcut(from: Item(item_level:, ..), ..) -> item_level
+        Shortcut(from: QuestButton, ..)
+        | Child(..)
+        | Base(..)
+        | Stage(..)
+        | Passive
+        | Activation(..) -> 0
+      },
     )
   let live =
     Live(
@@ -3511,8 +3631,22 @@ fn start(
         Child(..) | Base(..) | Stage(..) | Passive -> NoInteraction
       },
       shortcut: case role {
-        Shortcut(..) -> True
-        Child(..) | Base(..) | Stage(..) | Passive | Activation(..) -> False
+        Shortcut(from: QuestButton, ..) -> True
+        Shortcut(from: Item(..), ..)
+        | Child(..)
+        | Base(..)
+        | Stage(..)
+        | Passive
+        | Activation(..) -> False
+      },
+      passed_in: case role {
+        Shortcut(from: Item(passed_in:, ..), ..) -> Some(passed_in)
+        Shortcut(from: QuestButton, ..)
+        | Child(..)
+        | Base(..)
+        | Stage(..)
+        | Passive
+        | Activation(..) -> None
       },
       aimed: case role {
         Shortcut(aimed:, ..) -> aimed
@@ -3520,8 +3654,9 @@ fn start(
       },
       counted_with: case role {
         Activation(activating:, ..) -> activation_counted_with(activating:)
-        Shortcut(aimed:, ..) ->
+        Shortcut(from: QuestButton, aimed:, ..) ->
           WithCast(spell4_id: spell.spell4_id.value, target: aimed)
+        Shortcut(from: Item(..), ..) -> WithNothing
         Child(counted_with:) -> counted_with
         Base(..) | Stage(..) | Passive -> WithNothing
       },
@@ -4061,7 +4196,14 @@ fn go(
         )
       let #(cast, never_held) = cast_proc.procs_held(cast:, cast_id:, applied:)
       let #(cast, modifying) =
-        cast_control.modifiers_armed(cast:, cast_id:, caster:, aimed:, struck:)
+        cast_control.modifiers_armed(
+          cast:,
+          cast_id:,
+          caster:,
+          passed_in: live.passed_in,
+          aimed:,
+          struck:,
+        )
       let #(cast, throwing) =
         cast_control.struck_moves_armed(
           cast:,
@@ -4543,6 +4685,7 @@ fn reach_units(
 fn products_made(
   reached reached: List(Reached),
   caster caster: Caster,
+  passed_in passed_in: Option(Float),
   longer_of_delay_and_duration longer_of_delay_and_duration: Bool,
 ) -> #(List(Reached), List(Effect)) {
   let made =
@@ -4550,7 +4693,12 @@ fn products_made(
       case entry.effect.kind {
         spell_plan.HealEffect(heal: row) -> {
           let #(product, logs) =
-            cast_heal.healed_on(row:, unit_id: entry.unit_id, caster:)
+            cast_heal.healed_on(
+              row:,
+              unit_id: entry.unit_id,
+              caster:,
+              passed_in:,
+            )
           #(Reached(..entry, product:), logs)
         }
         spell_plan.CooldownEffect(modifier: row) -> #(
@@ -4614,6 +4762,7 @@ pub fn aimed_at(
     products_made(
       reached: walk.reached,
       caster:,
+      passed_in: live.passed_in,
       longer_of_delay_and_duration: live.spell.longer_of_delay_and_duration,
     )
   let rolls = walk.rolls
@@ -4626,7 +4775,7 @@ pub fn aimed_at(
         spell: live.spell,
         gates_passed:,
       )),
-      cast_heal.ticking_heals(reached:, caster:),
+      cast_heal.ticking_heals(reached:, caster:, passed_in: live.passed_in),
     )
   let listed =
     list.flatten([

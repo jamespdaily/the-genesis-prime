@@ -362,8 +362,10 @@ pub fn applied(
 /// The rows with a heal over time on the caster added beside the grenade spell's Activate
 /// row (Spell4Effects 43805): a type 10 Heal aimed at the caster (targetFlags 1) with
 /// tickTime 1000 and durationTime 4000, so the spell's go gives the caster a lasting effect
-/// and arms four ticks. Kept edit: no item spell of the client holds such a row. The heal's
-/// formula is the caster's level (parameter kind 10, `Spell4Effects.effectType.10`) times 40.
+/// and arms four ticks. Kept edit: the client's item spell with a heal over time (Spell4
+/// 34993) is cast on its user and holds no Activate row, so the grenade's spell is given
+/// one. The heal's formula is the caster's level (parameter kind 10,
+/// `Spell4Effects.effectType.10`) times 40.
 pub fn with_a_heal_over_time(
   rows rows: fixture_tables.Rows,
 ) -> fixture_tables.Rows {

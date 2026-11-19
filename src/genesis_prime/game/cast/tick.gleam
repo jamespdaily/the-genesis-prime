@@ -456,7 +456,7 @@ fn tick_landed(
               )),
             ])
           },
-          heal: fn(vital, formula) {
+          heal: fn(vital, formula, passed_in) {
             let #(caster, healed) =
               healed_by_tick(
                 caster:,
@@ -465,6 +465,7 @@ fn tick_landed(
                 audience: holder.audience,
                 vital:,
                 formula:,
+                passed_in:,
               )
             #(cast_state.with_tick(row:, tick:), caster, healed)
           },
@@ -543,10 +544,14 @@ fn healed_by_tick(
   audience audience: Set(ConnectionId),
   vital vital: effect_kind.Vital,
   formula formula: damage.Formula,
+  passed_in passed_in: Option(Float),
 ) -> #(Caster, List(Effect)) {
   use <- bool.guard(when: caster.dead, return: #(caster, []))
   let amount =
-    damage.amount_on_caster(formula:, caster: cast_heal.on_caster_of(caster:))
+    damage.amount_on_caster(
+      formula:,
+      caster: cast_heal.on_caster_of(caster:, passed_in:),
+    )
   let split = cast_heal.split_of(vital:, amount:, caster:)
   let healed = Healed(effect_id:, vital:, delay_ms: 0, amount:, split:)
   #(

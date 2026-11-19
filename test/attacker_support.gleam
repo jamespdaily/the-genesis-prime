@@ -3,12 +3,18 @@
 import genesis_prime/game/damage.{
   type Attacker, type OnCaster, type Vitals, Attacker, OnCaster, Vitals,
 }
+import genesis_prime/message/float32
 import properties_support
 
 /// A level-1 player with no gear: every property at its UnitProperty2 default, as the
-/// formula reads them (`damage.attacker_of`).
+/// formula reads them (`damage.attacker_of`), and the passed-in value at level 1, 5.3 as a
+/// 32-bit float (the family-33 curve, `0x14041f1b0`).
 pub fn fresh() -> Attacker {
-  damage.attacker_of(properties: properties_support.fresh(level: 1), level: 1)
+  damage.attacker_of(
+    properties: properties_support.fresh(level: 1),
+    level: 1,
+    passed_in: float32.rounded(5.3),
+  )
 }
 
 /// A level-1 Novice's gear gives Assault Rating 203.0625 and Support Rating 55.6875 for

@@ -577,6 +577,7 @@ pub fn modifiers_armed(
   cast cast: State,
   cast_id cast_id: Int,
   caster caster: Caster,
+  passed_in passed_in: Option(Float),
   aimed aimed: Aimed,
   struck struck: List(Struck),
 ) -> #(State, List(Effect)) {
@@ -619,7 +620,7 @@ pub fn modifiers_armed(
             change: Absorb(
               amount: damage.amount_on_caster(
                 formula: absorption.formula,
-                caster: cast_heal.on_caster_of(caster:),
+                caster: cast_heal.on_caster_of(caster:, passed_in:),
               ),
               mask: absorption.mask,
             ),

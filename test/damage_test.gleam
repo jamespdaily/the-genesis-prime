@@ -102,6 +102,7 @@ fn player_listing(listed listed: List(#(Int, Float))) -> damage.Attacker {
       level: 1,
     ),
     level: 1,
+    passed_in: attacker_support.fresh().passed_in,
   )
 }
 
@@ -205,23 +206,6 @@ pub fn the_gear_ratings_add_a_rounded_stat_part_test() -> Nil {
     as "Kick: 0.0656 x 50.77 + 0.0656 x 13.92 = 4.24 rounds to 4, plus 4.16"
 }
 
-pub fn a_parameter_type_the_rule_does_not_read_is_named_test() -> Nil {
-  use <- owned_test.run(5000)
-  assert damage.unread(formula: row(
-      assault: 0.0656,
-      support: 0.0656,
-      per_level: 4.16,
-    ))
-    == None
-  assert damage.unread(
-      formula: Formula(multiplier: 1.0, base: 0.0, parameters: [
-        Parameter(kind: 18, value: 0.1),
-      ]),
-    )
-    == Some(Unread(parameter_kind: 18))
-    as "type 19 reads the target's health (0x140566ad0), which is not built"
-}
-
 pub fn spellslinger_insight_damage_row_96307_is_2_with_wisdom_at_its_default_test() -> Nil {
   use <- owned_test.run(5000)
   assert damage.value(
@@ -229,6 +213,7 @@ pub fn spellslinger_insight_damage_row_96307_is_2_with_wisdom_at_its_default_tes
       attacker: damage.attacker_of(
         properties: properties_support.fresh(level: 1),
         level: 1,
+        passed_in: 1.0,
       ),
     )
     == 2.0
@@ -678,6 +663,7 @@ pub fn a_fresh_players_attributes_are_the_tables_defaults_test() -> Nil {
   assert damage.attacker_of(
       properties: properties_support.fresh(level: 1),
       level: 1,
+      passed_in: 1.0,
     ).attributes
     == Attributes(
       strength: 1.0,
@@ -711,17 +697,21 @@ pub fn a_modifier_on_strength_reaches_the_formula_test() -> Nil {
       ),
     )
   let strength = one_parameter(kind: 1, factor: 1.0)
-  assert damage.attacker_of(properties: modified, level: 1).attributes.strength
+  assert damage.attacker_of(properties: modified, level: 1, passed_in: 1.0).attributes.strength
     == 2.0
     as "1.0 x 1.0 + 1.0"
   assert damage.value(
       formula: strength,
-      attacker: damage.attacker_of(properties: fresh, level: 1),
+      attacker: damage.attacker_of(properties: fresh, level: 1, passed_in: 1.0),
     )
     == 1.0
   assert damage.value(
       formula: strength,
-      attacker: damage.attacker_of(properties: modified, level: 1),
+      attacker: damage.attacker_of(
+        properties: modified,
+        level: 1,
+        passed_in: 1.0,
+      ),
     )
     == 2.0
     as "the formula reads the live value of Strength, not its base"

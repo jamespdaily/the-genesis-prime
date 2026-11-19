@@ -1555,6 +1555,15 @@ fn banded_curve(
   )
 }
 
+/// A rune's budget curve at a power level (0x14041f1b0): the family-33 curve
+/// `EvaluateEffectToken` raises a type 18 parameter by (0x1404de840).
+pub fn rune_budget_curve(
+  tables tables: table_store.Tables,
+  level level: Int,
+) -> Result(Float, ItemPropertyError) {
+  banded_curve(tables:, bands: rune_budget_bands, level:)
+}
+
 /// The Assault Rating and Support Rating of an item (0x14040df10).
 fn ratings(
   tables tables: table_store.Tables,

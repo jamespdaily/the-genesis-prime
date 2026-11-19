@@ -17,8 +17,8 @@
 
 import client_tables
 import fixture_tables
-import genesis_prime/coverage/effect_row
 import genesis_prime/game/effect_kind
+import genesis_prime/game/effect_row_read
 import genesis_prime/game/forced_move
 import genesis_prime/game/spell_plan
 import genesis_prime/message/crowd_control_state.{
@@ -226,7 +226,7 @@ pub fn a_position_switch_state_carries_no_move_test() -> Nil {
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   let effects = spell4_effects.all(tables)
-  let place_of = effect_row.places(tables:, effects:)
+  let place_of = effect_row_read.places(tables:, effects:)
   let sources = spell_plan.sources_of(tables:)
   let states =
     list.filter(effects, fn(effect) {
@@ -319,7 +319,7 @@ pub fn every_knockback_pull_and_pushback_row_names_a_helper_with_a_throw_test() 
   }
   assert [count(Knockback), count(Pushback), count(Pull)] == [362, 47, 60]
     as "362 Knockback, 47 Pushback and 60 Pull rows"
-  let place_of = effect_row.places(tables:, effects:)
+  let place_of = effect_row_read.places(tables:, effects:)
   let sources = spell_plan.sources_of(tables:)
   let read = fn(row: Spell4Effects, own_throw: Bool) {
     read_state_row(tables:, sources:, place_of:, row:, own_throw:)

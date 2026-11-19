@@ -2354,7 +2354,7 @@ pub type PlanError {
   /// (`Spell4.spellCastStealthChange`).
   StealthChangeNotRead(spell4_id: Int, value: Int)
   /// A Heal or HealShields effect of a tree has a parameter type the formula for an effect on
-  /// its caster does not read (`damage.unread`).
+  /// its caster does not read (`damage.unread_on_caster`).
   HealParameterNotRead(spell4_id: Int, effect_id: Int, parameter_kind: Int)
   /// A Heal or HealShields effect of a tree has a dataBits00 that is not a finite 32-bit float.
   HealNumberNotFinite(spell4_id: Int, effect_id: Int)
@@ -2381,7 +2381,7 @@ pub type PlanError {
     effect_id: Int,
   )
   /// An Absorption effect of a tree has a parameter type the formula for an effect on its
-  /// caster does not read (`damage.unread`).
+  /// caster does not read (`damage.unread_on_caster`).
   AbsorptionParameterNotRead(
     spell4_id: Int,
     effect_id: Int,
@@ -4330,7 +4330,7 @@ fn caster_formula_read(
   not_read not_read: fn(Int) -> PlanError,
 ) -> Result(damage.Formula, PlanError) {
   use formula <- result.try(result.replace_error(formula, not_finite))
-  case damage.unread(formula:) {
+  case damage.unread_on_caster(formula:) {
     Some(damage.Unread(parameter_kind:)) -> Error(not_read(parameter_kind))
     None -> Ok(formula)
   }

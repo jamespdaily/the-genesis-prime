@@ -4,7 +4,7 @@
 
 import database_support
 import fixture_tables
-import genesis_prime/coverage/effect_row
+import genesis_prime/game/effect_row_read
 import genesis_prime/game/server_proxy
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan
@@ -573,7 +573,7 @@ pub fn with_measure(
   let tables = fixture_tables.shared()
   let sources = spell_plan.sources_of(tables:)
   body(fn(effect, place) {
-    effect_row.is_read(tables:, sources:, place:, effect:)
+    effect_row_read.is_read(tables:, sources:, place:, effect:)
   })
 }
 

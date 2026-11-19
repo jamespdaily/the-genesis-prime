@@ -43,6 +43,7 @@ import genesis_prime/message/spell_damage_description.{
 import genesis_prime/step.{LogDebug}
 import gleam/int
 import gleam/list
+import gleam/option.{type Option}
 
 /// The periodic damage rows of the go on each creature the round hit or found immune,
 /// in the life it struck (`Hit.ticking`, `Immune.ticking`); a deflected unit takes none,
@@ -71,6 +72,7 @@ pub fn ticking_struck(struck struck: List(Struck)) -> List(TickingOn) {
 pub fn ticking_heals(
   reached reached: List(Reached),
   caster caster: Caster,
+  passed_in passed_in: Option(Float),
 ) -> List(TickingOn) {
   list.filter_map(reached, fn(entry) {
     case entry.effect.kind, entry.unit_id == caster.unit_id {
@@ -88,7 +90,7 @@ pub fn ticking_heals(
           life: 0,
           effect_id:,
           schedule:,
-          kind: cast_state.heal_tick(vital:, formula:),
+          kind: cast_state.heal_tick(vital:, formula:, passed_in:),
         ))
       spell_plan.HealEffect(..), _
       | spell_plan.ProxyEffect(..), _
@@ -126,11 +128,15 @@ pub fn healed_on(
   row row: spell_plan.Heal,
   unit_id unit_id: Int,
   caster caster: Caster,
+  passed_in passed_in: Option(Float),
 ) -> #(Product, List(Effect)) {
   case row, unit_id == caster.unit_id {
     spell_plan.Heal(effect_id:, vital:, formula:, delay_ms:, ..), True -> {
       let amount =
-        damage.amount_on_caster(formula:, caster: on_caster_of(caster:))
+        damage.amount_on_caster(
+          formula:,
+          caster: on_caster_of(caster:, passed_in:),
+        )
       #(
         Healing(healed: Healed(
           effect_id:,
@@ -181,9 +187,20 @@ pub fn split_of(
 }
 
 /// What a formula reads of the caster when it is also the target of its effect: the stats
-/// and the vitals it had before the go's own effects (`cast_tick.subject_of`).
-pub fn on_caster_of(caster caster: Caster) -> damage.OnCaster {
-  damage.OnCaster(attacker: caster.stats, vitals: caster.vitals)
+/// and the vitals it had before the go's own effects (`cast_tick.subject_of`). The
+/// passed-in value is the cast's own when it has one (an item's), else the caster's at its
+/// level.
+pub fn on_caster_of(
+  caster caster: Caster,
+  passed_in passed_in: Option(Float),
+) -> damage.OnCaster {
+  damage.OnCaster(
+    attacker: damage.Attacker(
+      ..caster.stats,
+      passed_in: option.unwrap(passed_in, caster.stats.passed_in),
+    ),
+    vitals: caster.vitals,
+  )
 }
 
 /// The damage description of a heal: the split's amount as the raw, the scaled raw and the

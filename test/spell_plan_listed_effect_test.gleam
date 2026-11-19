@@ -34,8 +34,8 @@
 
 import client_tables
 import fixture_tables
-import genesis_prime/coverage/effect_row
 import genesis_prime/game/effect_kind
+import genesis_prime/game/effect_row_read
 import genesis_prime/game/lasting.{LastingRow}
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{
@@ -545,7 +545,12 @@ pub fn the_measure_counts_an_item_visual_swap_row_with_a_delay_not_read_and_one_
   let read_of = fn(id) {
     let assert Ok(effect) = spell4_effects.get(tables:, id: Spell4EffectsId(id))
       as "the fixture holds the client's row"
-    effect_row.is_read(tables:, sources:, place: spell_tables.pressed, effect:)
+    effect_row_read.is_read(
+      tables:,
+      sources:,
+      place: spell_tables.pressed,
+      effect:,
+    )
   }
   assert read_of(106_570)
     as "`table_rows -- Spell4Effects 106570`: delayTime 0, so the client applies the swap from the go (InitSpellEffect 0x1405d6880 applies an effect only when its delay is 0, `0x1405d6880.delayed_apply`)"

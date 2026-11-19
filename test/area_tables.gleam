@@ -11,7 +11,7 @@
 ////   4), multiplier 1.0, with the formula's parameters of kinds 12, 13 and 10.
 
 import fixture_tables
-import genesis_prime/coverage/effect_row
+import genesis_prime/game/effect_row_read
 import genesis_prime/game/spell_area.{type AreaError, type Areas}
 import genesis_prime/game/spell_plan
 import genesis_prime/table/id.{
@@ -200,7 +200,7 @@ pub fn read_by_the_measure(kick kick: Kick) -> Bool {
       let assert Ok(row) =
         spell4_effects.get(tables:, id: Spell4EffectsId(effect_row_id))
         as "Kick holds its damage effect, row 140383"
-      effect_row.is_read(
+      effect_row_read.is_read(
         tables:,
         sources: spell_plan.sources_of(tables:),
         place: spell_tables.pressed,

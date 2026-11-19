@@ -239,10 +239,10 @@ pub fn armor_logged_frame(
 }
 
 /// 0x7ff for a cast that starts: the caster is its own primary target
-/// (`Spell4TargetMechanics.targetType`), the lists are empty (`spell.empty_lists`)
-/// and the 16-bit value and the two bits are the decode's safe values
-/// (`opcode.0x7ff.caster_item_level`, `opcode.0x7ff.own_cast`,
-/// `opcode.0x7ff.activate`).
+/// (`Spell4TargetMechanics.targetType`), the lists are empty (`spell.empty_lists`),
+/// the 16-bit value is the level of the item whose use started the cast, 0 for a cast
+/// that no item started (`opcode.0x7ff.caster_item_level`), and the two bits are the
+/// decode's safe values (`opcode.0x7ff.own_cast`, `opcode.0x7ff.activate`).
 pub fn started_message(
   id id: Int,
   spell spell: Spell,
@@ -251,6 +251,7 @@ pub fn started_message(
   primary_target primary_target: Int,
   caster caster: Caster,
   activating activating: Bool,
+  caster_item_level caster_item_level: Int,
 ) -> SpellStarted {
   SpellStarted(
     cast_id: id,
@@ -261,7 +262,7 @@ pub fn started_message(
       None -> 0
     },
     caster_unit_id: caster.unit_id,
-    caster_item_level: 0,
+    caster_item_level:,
     primary_target_unit_id: primary_target,
     position: cast_state.position_of(place: caster.place),
     yaw: cast_state.yaw_of(place: caster.place),

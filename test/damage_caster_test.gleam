@@ -137,8 +137,8 @@ pub fn the_amount_rounds_half_away_from_zero_test() -> Nil {
 
 pub fn a_parameter_the_formula_does_not_read_is_named_by_its_type_test() -> Nil {
   use <- owned_test.run(5000)
-  // 18 is a value passed in (0x140565600): the server does not read it for an effect on
-  // its caster.
+  // 18 is a value passed in (0x140565600): `unread`, the rule of a strike's row, does not
+  // read it; `unread_on_caster` does (damage_passed_in_test).
   list.each([18], fn(kind) {
     assert damage.unread(formula: formula(kind:, factor: 0.5))
       == Some(damage.Unread(parameter_kind: kind))
