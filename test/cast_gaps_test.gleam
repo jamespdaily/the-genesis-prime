@@ -137,6 +137,28 @@ fn limits() -> List(Limit) {
   ]
 }
 
+pub fn the_cast_gaps_list_the_five_cases_the_issue_type_named_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tags(["dev_tool", "coverage"])
+  let printed = list.map(gaps.registry(), fn(entry) { entry.missing })
+  list.each(
+    [
+      #("another player's unit", "an effect cast at another player"),
+      #(
+        "prerequisite type the server does not read",
+        "the unread prerequisite types",
+      ),
+      #("cannot plan", "a spell the server cannot plan"),
+      #("strikes no unit", "the activate cast's checks and effects"),
+      #("until removed", "a state that lasts until removed"),
+    ],
+    fn(named) {
+      let #(words, name) = named
+      assert list.count(printed, string.contains(_, words)) == 1 as name
+    },
+  )
+}
+
 pub fn each_limit_the_cast_modules_state_is_one_entry_of_its_module_test() -> Nil {
   use <- owned_test.run(5000)
   use <- unitest.tags(["dev_tool", "coverage"])
