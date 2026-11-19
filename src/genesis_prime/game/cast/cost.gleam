@@ -472,15 +472,12 @@ pub fn cooldown_refusal(
   left left: CooldownsLeft,
   window_ms window_ms: Int,
 ) -> Option(cast_result.CastResult) {
-  case longest_left_ms(left:) > window_ms {
-    False -> None
-    True ->
-      Some(case left.group_ms > 0, left.own_ms > 0 {
-        True, _ -> cast_result.SpellGroupCooldown
-        False, True -> cast_result.SpellCooldown
-        False, False -> cast_result.SpellGlobalCooldown
-      })
-  }
+  use <- bool.guard(when: longest_left_ms(left:) <= window_ms, return: None)
+  Some(case left.group_ms > 0, left.own_ms > 0 {
+    True, _ -> cast_result.SpellGroupCooldown
+    False, True -> cast_result.SpellCooldown
+    False, False -> cast_result.SpellGlobalCooldown
+  })
 }
 
 /// The methods the rule casts; a spell of any other is refused 285.
