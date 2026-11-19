@@ -60,6 +60,7 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/order
 import gleam/otp/actor
+import mailbox_support
 import open_wait
 
 /// How far ahead of the node's own time the clock starts.
@@ -143,7 +144,9 @@ pub fn new() -> Time {
     |> actor.on_message(handle)
     |> actor.start
     as "the driven clock started"
-  Time(driver: started.data)
+  let time = Time(driver: started.data)
+  open_wait.judging(fn() { taken_inputs(time) })
+  time
 }
 
 fn handle(state: State, message: Message) -> actor.Next(State, Message) {
@@ -423,18 +426,18 @@ fn pass(
   }
 }
 
-/// Returns when the participant has taken what was in its mailbox when this was
-/// called (`sys:suspend` is answered in the order of its mailbox), or has ended.
-/// The wait has no limit of its own (`open_wait`).
-pub fn settled(participant: Pid) -> Nil {
-  open_wait.named("a driven process to take its mailbox", fn() {
-    taken_or_ended(participant)
-  })
+/// How many inputs the participants have taken so far, which the test's open
+/// reads look at after each empty look (`open_wait.looked_and_found_nothing`):
+/// the counter of reads of the clock, which each input moves when it starts. It
+/// is a look at the counter, so it neither waits for a participant nor holds one
+/// back.
+fn taken_inputs(time: Time) -> Int {
+  asked(time:, make: Observe).changes
 }
 
-/// `sys:suspend` and `sys:resume` of the process, which wait until the process
-/// answers or ends; the call monitors the process, so one that ends gives its exit
-/// at once and leaves no crash report. The ones in `gleam/otp/system` have no way
-/// to lift their five seconds, and `get_state` copies the process's whole state.
-@external(erlang, "driven_time_ffi", "taken_or_ended")
-fn taken_or_ended(participant: Pid) -> Nil
+/// Returns when the participant has taken what was in its mailbox when this was
+/// called, or has ended (`mailbox_support.settled`).
+pub fn settled(participant: Pid) -> Nil {
+  let _settled = mailbox_support.settled(participant)
+  Nil
+}

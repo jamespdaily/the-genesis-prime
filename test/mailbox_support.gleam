@@ -5,6 +5,28 @@
 
 import gleam/erlang/atom.{type Atom}
 import gleam/erlang/process.{type Pid, type Subject}
+import open_wait
+
+/// The process, once it has taken every message that was in its mailbox when
+/// this was called, or has ended. A read of its monitors or its mailbox after
+/// this does not depend on timing: what the process was sent before is taken
+/// (`sys:suspend` is answered in the order of its mailbox), so a test that
+/// asserts on it fails at once when the process did not do what it should. A
+/// process that does not answer system messages (one made with
+/// `process.spawn`) cannot be settled. The wait has no limit of its own
+/// (`open_wait`).
+pub fn settled(pid: Pid) -> Pid {
+  open_wait.named("a process to take its mailbox", fn() { taken_or_ended(pid) })
+  pid
+}
+
+/// `sys:suspend` and `sys:resume` of the process, which wait until the process
+/// answers or ends; the call monitors the process, so one that ends gives its
+/// exit at once and leaves no crash report. The ones in `gleam/otp/system` have
+/// no way to lift their five seconds, and `get_state` copies the process's whole
+/// state.
+@external(erlang, "mailbox_support_ffi", "taken_or_ended")
+fn taken_or_ended(pid: Pid) -> Nil
 
 /// The number of messages waiting in the process's mailbox.
 @external(erlang, "mailbox_support_ffi", "queued")

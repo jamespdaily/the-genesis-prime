@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs Codex read-only on a clean, detached worktree of a commit, and always removes it.
 #
-#   dev/codex_review.sh code BASE HEAD "instructions"   review the changes in BASE..HEAD
+#   dev/codex_review.sh code BASE HEAD "instructions"   review the changes since BASE's merge base with HEAD
 #   dev/codex_review.sh ask COMMIT "question"           a design question
 #
 # CODEX_REVIEW_SECONDS limits the run (default 900).
@@ -14,9 +14,10 @@ case "$mode" in
   *) sed -n '2,7p' "$0"; exit 2 ;;
 esac
 
-# Names like HEAD~1 mean another commit inside the worktree, so both are fixed as hashes first.
+# Names like HEAD~1 mean another commit inside the worktree, so both are fixed as hashes first;
+# the base is the merge base, so a main that moved on is not read as removals.
 commit=$(git rev-parse --verify --quiet "$commit_name^{commit}") || { echo "codex_review: no commit $commit_name" >&2; exit 1; }
-[ "$mode" = ask ] || base=$(git rev-parse --verify --quiet "$base_name^{commit}") || { echo "codex_review: no commit $base_name" >&2; exit 1; }
+[ "$mode" = ask ] || base=$(git merge-base "$base_name" "$commit_name") || { echo "codex_review: no merge base of $base_name and $commit_name" >&2; exit 1; }
 
 worktree=$(mktemp -d "${TMPDIR:-/tmp}/codex-review-XXXXXX")
 rmdir "$worktree"
@@ -33,9 +34,9 @@ seconds=${CODEX_REVIEW_SECONDS:-900}
 case "$mode" in
   code)
     timeout --kill-after=10 "$seconds" codex review -c sandbox_mode='"read-only"' \
-      "$text Review the changes in $base..$commit. Follow this repository's CLAUDE.md."
+      "$text Review the changes in $base..$commit. Follow this repository's CLAUDE.md." </dev/null
     ;;
   ask)
-    timeout --kill-after=10 "$seconds" codex exec -s read-only "$text Follow this repository's CLAUDE.md."
+    timeout --kill-after=10 "$seconds" codex exec -s read-only "$text Follow this repository's CLAUDE.md." </dev/null
     ;;
 esac

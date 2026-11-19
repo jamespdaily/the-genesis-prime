@@ -9,7 +9,14 @@ environment ghidra_env reads, while no query process holds the project open: it 
 while a holder runs (`python3 -I query.py stop` ends it). After it saves names, run
 `decompiled.py refresh`: the saved C still carries the old ones.
 
-Usage: python3 -I name_functions.py
+Usage, from the decoding-the-client folder:
+
+    cd .claude/skills/decoding-the-client && source ~/.genesis-prime/env.sh
+    python3 -I scripts/query.py stop
+    GHIDRA_WRITE=1 "$GENESIS_PYGHIDRA_PYTHON" -I scripts/name_functions.py
+    python3 -I scripts/decompiled.py refresh
+
+Plain `python3` fails with "GENESIS_GHIDRA_DIR is not set", then "No module named pyghidra".
 """
 
 import os

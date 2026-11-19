@@ -418,7 +418,11 @@ pub fn a_message_no_selector_takes_is_dropped_and_logged_by_its_kind_and_the_ser
     as "the line names the message's kind, its tag"
   assert !string.contains(text, "a-fake-session-key")
     as "and never its contents, which could hold a secret"
-  assert mailbox_support.tagged(pid, atom.create("stray_message")) == 0
+  assert mailbox_support.tagged(
+      mailbox_support.settled(pid),
+      atom.create("stray_message"),
+    )
+    == 0
     as "the message was taken from the mailbox"
   assert ask_support.call_gate(gate:, message: gate_rule.Echo(3))
     == gate_rule.Echoed(3)

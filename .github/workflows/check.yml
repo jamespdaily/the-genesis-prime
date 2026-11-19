@@ -9,6 +9,8 @@ permissions:
   contents: read
   # tested reads the check runs of the pull request head a merge came from.
   checks: read
+  # The gap-owner test lists the open issues (test/code_rule/gap_issue.gleam).
+  issues: read
 
 # A newer push to the same branch cancels the run it replaces.
 concurrency:
@@ -101,6 +103,8 @@ jobs:
       # (2026-11-18), so 400 warns on a slow runner and the hang limit of 1200 s is about
       # twice that run.
       GENESIS_CHECK_BUDGET_SECONDS: "400"
+      # gh reads the open issues for the gap-owner test.
+      GH_TOKEN: ${{ github.token }}
       PGHOST: localhost
       PGPORT: "5432"
       PGUSER: postgres
@@ -183,6 +187,8 @@ jobs:
           --health-retries 15
     env:
       GENESIS_NO_CLIENT: "1"
+      # The gap-owner test reads the open issues from GitHub, not the code under repeat.
+      GENESIS_TEST_SKIP_GITHUB: "1"
       PGHOST: localhost
       PGPORT: "5432"
       PGUSER: postgres

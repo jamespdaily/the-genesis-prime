@@ -75,8 +75,9 @@
 //// 2, keyed by the objective's id) while the objective is open and takes the button away
 //// when the objective closes (`buttons`, `button_changes`), and the server counts one
 //// for each cast of the spell at its go (`Cast`), for every open objective that names it.
-//// A cast at a unit counts only for a unit of the objective's reward pane, any unit when
-//// it names none (`0x140550c50`, issue 724's decision 2c), and each unit once, as a type
+//// A cast at a unit counts only for a unit of the objective's reward pane (`0x140550c50`),
+//// and any unit when it names none (the server's choice: `0x140550c50` says nothing of an
+//// objective with no pane), and each unit once, as a type
 //// 23 objective does (`quest_log.used`; the client keeps no per-unit record, so the once is
 //// the server's choice, and an objective in `reused` counts the same unit again); a cast of a spell aimed at the caster names no unit and counts
 //// at each go. Gaps, each closed by the quests, zones and prerequisites issue (#334): the
@@ -510,8 +511,8 @@ fn in_script_rows(
 }
 
 /// Whether the unit is in the objective's reward pane, which counts a unit for any
-/// objective type (`0x140550c50`); an objective with no pane counts any unit (issue 724's
-/// decision 2c).
+/// objective type (`0x140550c50`); an objective with no pane counts any unit (the server's
+/// choice: `0x140550c50` says nothing of an objective with no pane).
 fn in_pane(
   tables tables: table_store.Tables,
   objective objective: quest_log.Objective,

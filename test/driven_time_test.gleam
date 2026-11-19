@@ -220,10 +220,18 @@ fn visit(visits: Subject(Who), what what: String) -> Who {
   open_wait.received(from: visits, what: what)
 }
 
-/// How many system messages (`sys:suspend` is one) wait in the process's
-/// mailbox, which a process busy in an input does not take.
-fn system_messages_waiting(pid: Pid) -> Int {
-  mailbox_support.tagged(pid, atom.create("system"))
+/// Returns when `advancing` has ended, or when one system message
+/// (`sys:suspend` is one) waits in the participant's mailbox, which a process
+/// busy in an input does not take.
+fn until_the_advance_returns_or_waits_for(
+  advancing advancing: Pid,
+  participant participant: Pid,
+  what what: String,
+) -> Nil {
+  event_wait.until(what, fn() {
+    !process.is_alive(advancing)
+    || mailbox_support.tagged(participant, atom.create("system")) == 1
+  })
 }
 
 pub fn a_message_sent_late_in_a_pass_is_taken_before_advance_returns_test() -> Nil {
@@ -258,9 +266,11 @@ pub fn a_message_sent_late_in_a_pass_is_taken_before_advance_returns_test() -> N
     )
     == HolderHoldsMessage
   assert visit(visits, what: "the barrier's look at the sender") == Sender
-  event_wait.until("the advance to return or to wait for the holder", fn() {
-    !process.is_alive(advancing) || system_messages_waiting(holder.pid) == 1
-  })
+  until_the_advance_returns_or_waits_for(
+    advancing:,
+    participant: holder.pid,
+    what: "the advance to return or to wait for the holder",
+  )
   assert process.is_alive(advancing)
     as "advance returned while the holder held a message the sender sent late in the pass"
   process.send(holder.release, Nil)
@@ -293,9 +303,11 @@ pub fn a_timer_an_input_already_taken_starts_is_started_before_the_clock_moves_t
   // the timer falls due 1000 ms after the clock stood where it does now.
   let advancing = process.spawn(fn() { driven_time.advance(time:, ms: 500) })
   let advanced = process.monitor(advancing)
-  event_wait.until("the advance to return or to wait for the starter", fn() {
-    !process.is_alive(advancing) || system_messages_waiting(starter.pid) == 1
-  })
+  until_the_advance_returns_or_waits_for(
+    advancing:,
+    participant: starter.pid,
+    what: "the advance to return or to wait for the starter",
+  )
   assert process.is_alive(advancing)
     as "advance returned while a participant held an input that starts a timer"
   process.send(starter.release, Nil)
