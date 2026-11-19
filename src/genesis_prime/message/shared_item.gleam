@@ -267,6 +267,10 @@ pub fn gaps() -> List(gap.Entry) {
   [
     gap.Entry(
       area: "Item records",
+      missing: "the length of the refund window a bought item gets and the message that asks for a refund: the server writes a refund window of 0 and no refund price, so no item can be refunded",
+    ),
+    gap.Entry(
+      area: "Item records",
       missing: "the ids in an item record's list of realm and character ids: the server writes a count of 0, since the width of one entry is not read",
     ),
   ]

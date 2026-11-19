@@ -80,7 +80,7 @@ pub fn gaps() -> List(gap.Entry) {
   [
     gap.Entry(
       area: "Movement paths",
-      missing: "what the mode, the 32-bit value and the last bit of a kind 4 command read from the client do: the codec does not read them",
+      missing: "what the mode, the 32-bit value and the last bit of a kind 4 command do in the client: the codec carries them as `mode`, `field_5` and `field_6` without a meaning",
     ),
     gap.Entry(
       area: "Movement paths",

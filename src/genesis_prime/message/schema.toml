@@ -1123,7 +1123,7 @@ name = "movement_kind_4"
 evidence = "0x140c1f070"
 summary = "a movement command of kind 4, a path: the points (three floats each), the speed in units a second as a half float, which the client's apply fails below 0.00001, the path type (0 is straight lines through at least one point, 1 a curve through at least three, and the client's apply fails 2 and 3), a 4-bit mode, a 32-bit value and one bit"
 gaps = [
-  { area = "Movement paths", missing = "what the mode, the 32-bit value and the last bit of a kind 4 command read from the client do: the codec does not read them" },
+  { area = "Movement paths", missing = "what the mode, the 32-bit value and the last bit of a kind 4 command do in the client: the codec carries them as `mode`, `field_5` and `field_6` without a meaning" },
   { area = "Movement paths", missing = "that a kind 4 command read from the client holds the number of points its path type needs: the codec does not check the count" },
 ]
 fields = [
@@ -2006,6 +2006,7 @@ name = "shared_item"
 evidence = "opcode.0x111.ability_bag"
 summary = "the item record message 0x111 carries: the GUID, the item id, the location and bag index, the stack count and charges, the random-stat word, the durability, the dye, the flags, the refund and trade windows, the refund price entries, the rune slots and rune data, the stat multipliers and the level-scaling input"
 gaps = [
+  { area = "Item records", missing = "the length of the refund window a bought item gets and the message that asks for a refund: the server writes a refund window of 0 and no refund price, so no item can be refunded" },
   { area = "Item records", missing = "the ids in an item record's list of realm and character ids: the server writes a count of 0, since the width of one entry is not read" },
 ]
 fields = [
