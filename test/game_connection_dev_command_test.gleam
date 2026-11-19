@@ -16,6 +16,14 @@
 ////   the four action sets (`opcode.0x1a0`).
 //// - The line each command is answered with is the design's choice (a System line,
 ////   ChatChannel row 2).
+//// - `opcode.0x35c.complete_unheld`, `0x1405fbdc0.state_3`: the client takes 0x35c state 3
+////   for a quest with no log entry. Quest2 2910 holds a limit of 30000 ms, 1857 is daily
+////   (questRepeatPeriodEnum 1) and 10503 yearly (4); the tests' clock is 2025-04-24 20:26:40
+////   UTC, the latest daily reset 2025-04-24 10:00 and the latest yearly reset 2025-01-01
+////   10:00 (`quest_log_test`).
+//// - QuestObjective 18604 (type 24, data 9695) of Quest2 9497 is done when quest 9695 is
+////   finished; no Creature2 row receives 9497 or 9695, so the server completes them
+////   (`communicator.completed_by_server`).
 
 import ability_book_support as book_support
 import ability_points_support as points_support
@@ -33,15 +41,20 @@ import genesis_prime/message/disconnect_reason.{
 }
 import genesis_prime/message/experience_gained.{ExperienceGained}
 import genesis_prime/message/player_health
+import genesis_prime/message/quest_objective_progress.{QuestObjectiveProgress}
+import genesis_prime/message/quest_state.{type QuestState, QuestState}
 import genesis_prime/step.{
-  type ConnectionEvent, type Event, type Outcome, ConnectionId, OwnEvent,
-  StoppedWaiting, TimerId, WatchEnded, WatchId, Woken,
+  type ConnectionEvent, type ConnectionStep, type Event, type Outcome,
+  ConnectionId, OwnEvent, StoppedWaiting, TimerId, WatchEnded, WatchId, Woken,
 }
 import genesis_prime/store
+import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
 import owned_test
+import quest_support
+import quest_turn_in_support
 
 /// A Medic (class 4), level 3, holding 1800 experience: 90 past level 3's 1710.
 fn medic() -> game_connection.State {
@@ -220,6 +233,343 @@ pub fn each_accepted_command_is_logged_once_at_info_and_a_refused_one_not_test()
   let #(_, refused) = dev_support.said(state: medic(), text: "!level 51")
   assert rule_support.logs(refused) == []
     as "a refused command is its System line, with no log"
+}
+
+// ---------------------------------------------------------------- !quest
+
+/// The Unix seconds of the tests' clock: the FILETIME 133,900,000,000,000,000 is
+/// 2025-04-24 20:26:40 UTC.
+const now_seconds = 1_745_526_400
+
+/// The daily quest reset before `now_seconds`: 2025-04-24 10:00 UTC
+/// (`quest_log_test`).
+const daily_reset_seconds = 1_745_488_800
+
+/// The first FILETIME after the next daily reset (2025-04-25 10:00 UTC, one second
+/// past it) and after the next yearly reset (2026-01-01 10:00 UTC, one second past
+/// it).
+const after_the_next_daily_reset = 133_900_488_010_000_000
+
+const after_the_next_yearly_reset = 134_117_352_010_000_000
+
+/// The quest states the step writes, decoded.
+fn quest_states_written(
+  taken taken: ConnectionStep(Request),
+) -> List(QuestState) {
+  support.decoded(
+    support.written(taken:),
+    quest_state.message_id,
+    quest_state.decode,
+  )
+}
+
+/// The effects of the step that start or cancel the quest deadline timer.
+fn deadline_timer_effects(
+  taken taken: ConnectionStep(Request),
+) -> List(step.Effect(step.ConnectionEffect(Request))) {
+  list.filter(rule_support.effects_of(taken), fn(effect) {
+    case effect {
+      step.OwnEffect(step.StartTimer(timer:, ..))
+      | step.OwnEffect(step.CancelTimer(timer:)) ->
+        timer == connection_state.quest_deadline_timer
+      step.OwnEffect(_)
+      | step.Watch(..)
+      | step.Unwatch(..)
+      | step.Log(..)
+      | step.Stop -> False
+    }
+  })
+}
+
+/// One quest done by command: what the log holds, the quest, the timer effects the step
+/// holds, and why.
+type Completion {
+  Completion(
+    held: List(store.QuestRow),
+    quest_id: Int,
+    timer: List(step.Effect(step.ConnectionEffect(Request))),
+    why: String,
+  )
+}
+
+pub fn a_completed_quest_is_completed_in_the_log_and_told_as_state_3_test() -> Nil {
+  use <- owned_test.run(60_000)
+  list.each(
+    [
+      Completion(
+        held: [],
+        quest_id: 5972,
+        timer: [],
+        why: "a quest with no entry: the client takes state 3 for it (opcode.0x35c.complete_unheld)",
+      ),
+      Completion(
+        held: [quest_support.timed(2910, progress: [0], quest_ms_left: 0)],
+        quest_id: 2910,
+        timer: [
+          step.OwnEffect(step.CancelTimer(connection_state.quest_deadline_timer)),
+        ],
+        why: "Quest2 2910's limit is 30000 ms: the entry's running deadline timer is cancelled with the quest completed",
+      ),
+      Completion(
+        held: [quest_turn_in_support.achieved(quest_id: 10_520)],
+        quest_id: 10_520,
+        timer: [],
+        why: "an Achieved quest a creature receives is completed in the log as well",
+      ),
+    ],
+    fn(row) {
+      let state =
+        dev_support.in_world_holding_quests(level: 1, quests: row.held)
+      let #(state, taken) =
+        dev_support.said(
+          state:,
+          text: "!quest " <> int.to_string(row.quest_id) <> " done",
+        )
+      assert support.written_ids(taken) == [0x01C2, 0x035C, 0x01C8] as row.why
+      assert quest_states_written(taken:)
+        == [QuestState(quest_id: row.quest_id, state: 3, objective_id: 0)]
+        as row.why
+      assert support.system_lines(taken)
+        == ["quest " <> int.to_string(row.quest_id) <> " completed"]
+        as row.why
+      assert deadline_timer_effects(taken:) == row.timer as row.why
+      assert dev_support.saved_quests(state:)
+        == [quest_support.completed(row.quest_id, at: now_seconds)]
+        as "the log holds the quest Completed at now, and nothing else"
+    },
+  )
+}
+
+pub fn a_quest_already_done_is_answered_so_and_writes_no_frame_test() -> Nil {
+  use <- owned_test.run(60_000)
+  list.each(
+    [
+      #(
+        quest_support.completed(quest_support.one_time, at: 1_700_000_000),
+        "a quest with no period that was completed",
+      ),
+      #(
+        quest_support.completed(
+          quest_support.daily,
+          at: daily_reset_seconds + 100,
+        ),
+        "a daily quest completed after the latest daily reset",
+      ),
+    ],
+    fn(row) {
+      let held = row.0
+      let state = dev_support.in_world_holding_quests(level: 1, quests: [held])
+      let #(state, taken) =
+        dev_support.said(
+          state:,
+          text: "!quest " <> int.to_string(held.quest_id) <> " done",
+        )
+      assert support.written_ids(taken) == [0x01C2, 0x01C8] as row.1
+      assert support.system_lines(taken)
+        == ["quest " <> int.to_string(held.quest_id) <> " is already done"]
+        as row.1
+      assert dev_support.saved_quests(state:) == [held]
+        as "the entry is as it was"
+      assert rule_support.logs(taken) == []
+        as "a command that changes nothing is its line, with no log"
+    },
+  )
+}
+
+pub fn a_periodic_quest_done_in_an_earlier_period_is_completed_again_test() -> Nil {
+  use <- owned_test.run(60_000)
+  list.each(
+    [
+      #(
+        quest_support.daily,
+        daily_reset_seconds - 1,
+        "one second before the latest daily reset",
+      ),
+      #(
+        10_503,
+        1_735_646_400,
+        "before the latest yearly reset, 2025-01-01 10:00 UTC",
+      ),
+    ],
+    fn(row) {
+      let held = quest_support.completed(row.0, at: row.1)
+      let state = dev_support.in_world_holding_quests(level: 1, quests: [held])
+      let #(state, taken) =
+        dev_support.said(
+          state:,
+          text: "!quest " <> int.to_string(row.0) <> " done",
+        )
+      assert quest_states_written(taken:)
+        == [QuestState(quest_id: row.0, state: 3, objective_id: 0)]
+        as row.2
+      assert dev_support.saved_quests(state:)
+        == [quest_support.completed(row.0, at: now_seconds)]
+        as "the entry is Completed at now"
+    },
+  )
+}
+
+pub fn a_periodic_quests_completion_is_read_the_same_after_a_relog_test() -> Nil {
+  use <- owned_test.run(60_000)
+  list.each(
+    [
+      #(quest_support.daily, after_the_next_daily_reset, "the daily reset"),
+      #(10_503, after_the_next_yearly_reset, "the yearly reset"),
+    ],
+    fn(row) {
+      let text = "!quest " <> int.to_string(row.0) <> " done"
+      let #(first, _) =
+        dev_support.said(
+          state: dev_support.in_world_holding_quests(level: 1, quests: []),
+          text:,
+        )
+      let saved = dev_support.saved_quests(state: first)
+      assert saved == [quest_support.completed(row.0, at: now_seconds)]
+        as "the command's completion is saved at now"
+      let #(_, before_the_reset) =
+        dev_support.said(
+          state: dev_support.in_world_holding_quests(level: 1, quests: saved),
+          text:,
+        )
+      assert support.system_lines(before_the_reset)
+        == ["quest " <> int.to_string(row.0) <> " is already done"]
+        as "a new login before the reset reads the saved row as finished"
+      let relogged =
+        dev_support.in_world_holding_quests(level: 1, quests: saved)
+      let #(_, after_the_reset) =
+        dev_support.said_at(state: relogged, text:, filetime: row.1)
+      assert quest_states_written(taken: after_the_reset)
+        == [QuestState(quest_id: row.0, state: 3, objective_id: 0)]
+        as row.2
+    },
+  )
+}
+
+pub fn the_quest_the_command_completes_finishes_the_quest_waiting_on_it_and_the_server_completes_that_one_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Quest2 9497 holds QuestObjective 18252 (type 3, done here) and 18604 (type 24, flags 3,
+  // data 9695: done when quest 9695 is finished). No Creature2 row receives 9497, so the
+  // server completes it once it is Achieved (`communicator.completed_by_server`).
+  let state =
+    dev_support.in_world_holding_quests(level: 1, quests: [
+      quest_support.active(
+        quest_id: 9497,
+        state: 1,
+        placeholder: 0,
+        tracked: False,
+        done_mask: 1,
+        progress: [1, 0],
+      ),
+    ])
+  let #(state, taken) = dev_support.said(state:, text: "!quest 9695 done")
+  assert quest_states_written(taken:)
+    == [
+      QuestState(quest_id: 9695, state: 3, objective_id: 0),
+      QuestState(quest_id: 9497, state: 2, objective_id: 0),
+    ]
+    as "0x35c: 9695 Completed, then 9497 Achieved, which its objective 18604 waiting on 9695 makes"
+  assert support.decoded(
+      support.written(taken:),
+      quest_objective_progress.message_id,
+      quest_objective_progress.decode,
+    )
+    == [
+      QuestObjectiveProgress(quest_id: 9497, objective_index: 1, progress: 1),
+    ]
+    as "0x361: the type 24 objective 18604, the second of 9497, is done"
+  assert list.last(support.written_ids(taken)) == Ok(0x01C8)
+    as "the command's line is written after the follow-ups' frames"
+  let assert client_connection.AskStore(store.Items(store.TurnInQuest(
+    quests: asked,
+    ..,
+  ))) = support.ask_request(taken)
+    as "the connection asks the store for a turn-in, as it does for a quest the server completes"
+  assert asked
+    == [
+      quest_support.completed(9497, at: now_seconds),
+      quest_support.completed(9695, at: now_seconds),
+    ]
+    as "the turn-in saves the log with 9497 Completed beside the 9695 the command completed"
+  let #(state, answered) =
+    support.answer(state:, taken:, outcome: support.turn_in_saved(taken:))
+  assert quest_states_written(taken: answered)
+    == [QuestState(quest_id: 9497, state: 3, objective_id: 0)]
+    as "the turn-in's answer tells the client 9497 is Completed"
+  assert dev_support.saved_quests(state:)
+    == [
+      quest_support.completed(9497, at: now_seconds),
+      quest_support.completed(9695, at: now_seconds),
+    ]
+    as "both quests are Completed in the log"
+}
+
+pub fn the_next_save_holds_the_completed_quest_row_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(state, _) =
+    dev_support.said(
+      state: dev_support.in_world_holding_quests(level: 1, quests: []),
+      text: "!quest 5972 done",
+    )
+  let #(_, taken) =
+    support.feed(
+      state:,
+      event: step.OwnEvent(step.TimerFired(connection_state.save_timer)),
+    )
+  let assert client_connection.AskStore(store.Move(store.SavePlace(quests:, ..))) =
+    support.ask_request(taken)
+    as "the save timer asks the store to save the place and the quests"
+  assert quests == [quest_support.completed(5972, at: now_seconds)]
+    as "store.SavePlace carries a Completed row, state 3 with its completion time"
+}
+
+pub fn an_accepted_quest_command_is_logged_once_at_info_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let state = dev_support.in_world_holding_quests(level: 1, quests: [])
+  let #(_, taken) = dev_support.said(state:, text: "!quest 5972 done")
+  let assert [line] = rule_support.logs_of(step: taken, level: step.LogInfo)
+    as "one info line for an accepted command"
+  assert string.contains(line.text, "!quest 5972 done")
+    as "it names the command and the quest"
+  assert rule_support.logs(taken) == [line] as "and no other line"
+}
+
+pub fn a_command_for_a_quest_the_server_is_completing_runs_after_its_turn_in_and_finds_it_done_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Quests 9497 and 9695 are Achieved and no Creature2 row receives either, so the entry
+  // queues the server's completion of both: 9497 is asked of the store first and 9695
+  // waits in the queue. The command line for 9695 is held behind the asks.
+  let #(state, entry) =
+    support.entered_under(
+      settings: support.settings_with_dev_commands(),
+      character: support.world_character(),
+      quests: [
+        quest_turn_in_support.achieved(quest_id: 9497),
+        quest_turn_in_support.achieved(quest_id: 9695),
+      ],
+    )
+  let #(state, held) = dev_support.said(state:, text: "!quest 9695 done")
+  assert support.written_ids(held) == []
+    as "the line waits while the store works"
+  let #(state, second) =
+    support.answer(
+      state:,
+      taken: entry,
+      outcome: support.turn_in_saved(taken: entry),
+    )
+  let assert client_connection.AskStore(store.Items(store.TurnInQuest(..))) =
+    support.ask_request(second)
+    as "the answer's input asks for the quest that waited in the queue"
+  let #(_, third) =
+    support.answer(
+      state:,
+      taken: second,
+      outcome: support.turn_in_saved(taken: second),
+    )
+  assert quest_states_written(taken: third)
+    == [QuestState(quest_id: 9695, state: 3, objective_id: 0)]
+    as "the server's completion writes 9695's state 3 once, and the command writes none"
+  assert support.system_lines(third) == ["quest 9695 is already done"]
+    as "the held command finds the quest finished by the server's completion"
 }
 
 // ---- !currency ----

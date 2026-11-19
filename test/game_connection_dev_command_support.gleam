@@ -9,6 +9,7 @@ import genesis_prime/client_connection.{
   type Answer, type Request, AskMap, AskStore, FromMap, FromStore, SentByMap,
 }
 import genesis_prime/game/connection as game_connection
+import genesis_prime/game/connection/state as connection_state
 import genesis_prime/step.{type ConnectionStep, type Outcome, OwnEvent}
 import genesis_prime/store
 import genesis_prime/table/id.{ClassId}
@@ -158,4 +159,46 @@ pub fn currency_asked(
 /// The store's answer that a currency is set to `amount`.
 pub fn currency_set(amount amount: Int) -> Outcome(Answer) {
   step.Answer(FromStore(store.ForItems(store.CurrencySet(amount:))))
+}
+
+/// The connection after the player said this text on Say at this system time, as
+/// a FILETIME.
+pub fn said_at(
+  state state: game_connection.State,
+  text text: String,
+  filetime filetime: Int,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  support.feed_at(
+    state:,
+    filetime:,
+    event: OwnEvent(step.Read(support.chat_line_message(4, text))),
+  )
+}
+
+/// The tests' player of this level in the world, its connection made with the
+/// development commands on, holding these quest rows, its burst taken.
+pub fn in_world_holding_quests(
+  level level: Int,
+  quests quests: List(store.QuestRow),
+) -> game_connection.State {
+  support.entered_under(
+    settings: support.settings_with_dev_commands(),
+    character: store.Character(..support.world_character(), level:),
+    quests:,
+  ).0
+}
+
+/// The quest rows the connection saves at its next save timer: what the log holds.
+pub fn saved_quests(
+  state state: game_connection.State,
+) -> List(store.QuestRow) {
+  let #(_, taken) =
+    support.feed(
+      state:,
+      event: OwnEvent(step.TimerFired(connection_state.save_timer)),
+    )
+  let assert AskStore(store.Move(store.SavePlace(quests:, ..))) =
+    support.ask_request(taken)
+    as "the save timer asks the store to save the place and the quest log"
+  quests
 }

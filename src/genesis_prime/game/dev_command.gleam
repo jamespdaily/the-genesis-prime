@@ -18,12 +18,15 @@
 ////   `level` takes one whole decimal number, a level, and `xp` one, a total
 ////   experience; `currency` takes two, a currency type and an amount; a number
 ////   has any length, so the tables refuse one too large.
+////   `quest` takes one whole decimal number, a Quest2 id, and the word `done`.
 //// - **The tables' refusals** are `checked`'s: a level outside 1 to the highest
-////   level (GameFormula 145 dataint0) and an experience above the highest
-////   level's minXpForLevel (its XpPerLevel row), compared as whole numbers; a
-////   currency type with no CurrencyType row (the client keeps types 1 to 14 and
-////   the table has no row 8), an amount above the column's 2^63 - 1 and an amount
-////   above the type's cap (genesis_prime/game/currency `cap`).
+////   level (GameFormula 145 dataint0), an experience above the highest
+////   level's minXpForLevel (its XpPerLevel row), compared as whole numbers, a
+////   quest with no Quest2 row (the client refuses a quest it has no row for,
+////   FindQuestById 0xa00b0001), a currency type with no CurrencyType row (the
+////   client keeps types 1 to 14 and the table has no row 8), an amount above the
+////   column's 2^63 - 1 and an amount above the type's cap
+////   (genesis_prime/game/currency `cap`).
 //// - **A word with no command**, and a command whose arguments are not what it
 ////   takes, are each answered with a system line, never as a Say line, so a
 ////   mistyped command is not said aloud to the players who see the speaker.
@@ -32,10 +35,11 @@ import genesis_prime/game/currency
 import genesis_prime/game/level
 import genesis_prime/table/currency_type
 import genesis_prime/table/id.{
-  type Creature2Id, type CurrencyTypeId, Creature2Id, CurrencyTypeId,
-  XpPerLevelId,
+  type Creature2Id, type CurrencyTypeId, type Quest2Id, Creature2Id,
+  CurrencyTypeId, Quest2Id, XpPerLevelId,
 }
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/table/quest2
 import genesis_prime/table/xp_per_level
 import gleam/bool
 import gleam/int
@@ -60,6 +64,9 @@ pub type Command {
   /// amount, saved at once (genesis_prime/store `SetCurrency`), and give the client
   /// the new total (`opcode.0x919`). The total may be lower than the one held.
   SetCurrency(currency_type_id: CurrencyTypeId, amount: Int)
+  /// `!quest <Quest2 id> done`: complete that quest in the player's log, with the
+  /// follow-ups a turn-in's completion has and none of the quest's own rewards.
+  CompleteQuest(quest2_id: Quest2Id)
 }
 
 /// A `!currency` total asked of the store, kept while its answer is awaited: the
@@ -98,6 +105,11 @@ pub type Refusal {
   /// The amount is above `highest`, the most the character_currency amount column
   /// (a bigint) holds.
   CurrencyAmountAboveColumn(amount: Int, highest: Int)
+  /// The word is `quest`, but what follows is not one whole number and the word
+  /// `done`, and nothing more.
+  QuestTakesAQuest2IdAndDone
+  /// The quest has no Quest2 row.
+  NoQuest2Row(quest2_id: Quest2Id)
 }
 
 /// Whether the text is a command line: its first UTF-16 unit is `!`.
@@ -153,15 +165,25 @@ pub fn parse(text text: List(Int)) -> Result(Command, Refusal) {
           }
         [] | [_] | [_, _, _, ..] -> Error(CurrencyTakesATypeAndAnAmount)
       }
+    [command, ..arguments] if command == quest_word ->
+      case arguments {
+        [quest, done] if done == done_word ->
+          decimal(units: quest)
+          |> result.map(fn(number) {
+            CompleteQuest(quest2_id: Quest2Id(number))
+          })
+          |> result.replace_error(QuestTakesAQuest2IdAndDone)
+        [] | [_] | [_, _] | [_, _, _, ..] -> Error(QuestTakesAQuest2IdAndDone)
+      }
     [_, ..] | [] -> Error(UnknownCommand)
   }
 }
 
 /// The command the tables allow, or the refusal that names what they do not
 /// hold: a level outside 1 to the highest level, an experience above the
-/// highest level's minXpForLevel, and a currency type with no row or an amount
-/// above the column's limit or the type's cap, compared as whole numbers so a
-/// number of any length is a refusal.
+/// highest level's minXpForLevel, a quest with no Quest2 row, and a currency type
+/// with no row or an amount above the column's limit or the type's cap, compared as
+/// whole numbers so a number of any length is a refusal.
 pub fn checked(
   command command: Command,
   tables tables: table_store.Tables,
@@ -190,6 +212,11 @@ pub fn checked(
     }
     SetCurrency(currency_type_id:, amount:) ->
       checked_currency(command:, currency_type_id:, amount:, tables:)
+    CompleteQuest(quest2_id:) ->
+      case quest2.get(tables:, id: quest2_id) {
+        Ok(_) -> Ok(command)
+        Error(Nil) -> Error(NoQuest2Row(quest2_id:))
+      }
   }
 }
 
@@ -242,6 +269,12 @@ const currency_word = [0x21, 0x63, 0x75, 0x72, 0x72, 0x65, 0x6E, 0x63, 0x79]
 
 /// The most the character_currency amount column holds: a bigint, 2^63 - 1.
 const column_limit = 9_223_372_036_854_775_807
+
+/// `!quest` as the UTF-16 units the client sends.
+const quest_word = [0x21, 0x71, 0x75, 0x65, 0x73, 0x74]
+
+/// `done` as the UTF-16 units the client sends.
+const done_word = [0x64, 0x6F, 0x6E, 0x65]
 
 /// The words of the units, split at spaces (0x20), in order: a run of spaces is
 /// one split, and spaces at either end hold no word.
@@ -315,5 +348,9 @@ pub fn describe(refusal refusal: Refusal) -> String {
       <> int.to_string(amount)
       <> " is above the most a total can hold, "
       <> int.to_string(highest)
+    QuestTakesAQuest2IdAndDone ->
+      "!quest takes a Quest2 id and the word done, as !quest 5972 done"
+    NoQuest2Row(quest2_id: Quest2Id(value:)) ->
+      "!quest " <> int.to_string(value) <> " names no Quest2 row"
   }
 }
