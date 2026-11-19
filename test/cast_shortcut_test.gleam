@@ -814,11 +814,10 @@ pub fn a_press_at_a_player_that_reaches_the_faction_test_is_not_built_test() -> 
     == [code(cast_result.IllegalSpellCast)]
     as "Spell4 30485 (valid targets bitmask 2) lets a player be its target, and a player reaches the client's player faction test (0x1403b4560), which is not built: refused 285"
   let assert [line] = warnings(effects:)
-  assert string.contains(
-    line,
-    "An effect a player casts on another player lands on that player",
-  )
-    as "the log names the open issue"
+  assert string.contains(line, "30485 names another player")
+    && string.ends_with(line, ": it is refused with 285")
+    && !string.contains(line, "#")
+    as "the log names the spell and what is missing, another player, and names no issue"
   let #(_, own) =
     press_at(
       scene: nothing_shown(),
@@ -831,11 +830,12 @@ pub fn a_press_at_a_player_that_reaches_the_faction_test_is_not_built_test() -> 
     == [code(cast_result.IllegalSpellCast)]
     as "Spell4TargetMechanics 4's flags (11) have value 2: the caster may be its own target, and then the player faction test judges it: refused 285"
   let assert [own_line] = warnings(effects: own)
-  assert string.contains(
-    own_line,
-    "An effect a player casts on another player lands on that player",
-  )
-    as "the log names the same issue"
+  assert string.ends_with(
+      own_line,
+      "names the caster itself, which the client's player faction test judges: it is refused with 285",
+    )
+    && !string.contains(own_line, "#")
+    as "the log says what is missing, the caster itself reaching the faction test, and names no issue"
 }
 
 pub fn a_target_condition_reads_the_casts_the_player_holds_on_the_unit_test() -> Nil {
@@ -974,8 +974,12 @@ pub fn a_target_condition_the_server_does_not_hold_refuses_as_not_built_test() -
   let assert [line] = warnings(effects: first)
   assert string.contains(line, "43164") && string.contains(line, "71")
     as "the log names the spell and the type"
-  assert string.contains(line, "(#818)") && !string.contains(line, "(#336)")
-    as "a target condition the server does not read is the issue of the prerequisite types, #818"
+  assert string.ends_with(
+      line,
+      ", which the server does not read: it is refused with 281",
+    )
+    && !string.contains(line, "#")
+    as "the log says what is missing, a prerequisite type the server does not read, and names no issue"
   let #(_, second) =
     press_at(scene:, state:, spell4_id: 43_164, target: 911, at: 2000)
   assert support.refusal_results(effects: second)
@@ -1001,8 +1005,12 @@ pub fn a_caster_condition_of_an_unread_type_refuses_as_not_built_test() -> Nil {
     as "Spell4 32581's CasterCast is Prerequisite 28094, a type 16 the server does not read"
   let assert [line] = warnings(effects:)
   assert string.contains(line, "16") as "the log names the type"
-  assert string.contains(line, "(#818)")
-    as "a caster condition the server does not read is the issue of the prerequisite types, #818"
+  assert string.ends_with(
+      line,
+      ", which the server does not read: it is refused with 151",
+    )
+    && !string.contains(line, "#")
+    as "the log says what is missing, a prerequisite type the server does not read, and names no issue"
 }
 
 pub fn a_press_of_a_targeted_spell_that_cannot_be_planned_stays_not_built_test() -> Nil {
@@ -1029,11 +1037,12 @@ pub fn a_press_of_a_targeted_spell_that_cannot_be_planned_stays_not_built_test()
     == [code(cast_result.IllegalSpellCast)]
     as "a bit-8 aim is not read, so the plan refuses the spell and its press is refused 285"
   let assert [line] = warnings(effects:)
-  assert string.contains(line, "35436") && string.contains(line, "(#336)")
-    as "the log names the spell and the issue that will close the gap, #336"
+  assert string.contains(line, "35436")
+    && string.ends_with(line, ": it is refused with 285")
+    as "the log names the spell and what is missing, the plan's refusal"
 }
 
-pub fn a_press_of_a_spell_whose_state_lasts_until_removed_starts_and_logs_the_dropped_row_test() -> Nil {
+pub fn a_press_that_drops_crowd_control_effects_logs_once_drops_them_and_goes_on_test() -> Nil {
   use <- owned_test.run(10_000)
   // Spell4 35436's Spell4Effects 212028 is a Knockdown (dataBits00 8) aimed at the primary
   // target (targetFlags 2) that lasts until removed (flags bit 2), with no prerequisite.
@@ -1055,8 +1064,12 @@ pub fn a_press_of_a_spell_whose_state_lasts_until_removed_starts_and_logs_the_dr
   let assert [line] = warnings(effects: pressed)
   assert string.contains(line, "35436")
     && string.contains(line, "212028")
-    && string.contains(line, "#803")
-    as "the log names the spell, the dropped row and the issue that will end the state"
+    && string.ends_with(
+      line,
+      "each a state on another unit held until removed, which the server does not end with its spell",
+    )
+    && !string.contains(line, "#")
+    as "the log names the spell, the dropped row and what is missing, and names no issue"
   let #(_, again) =
     press_at(scene:, state:, spell4_id: 35_436, target: 913, at: 20_000)
   assert warnings(effects: again) == []

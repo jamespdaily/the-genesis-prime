@@ -1411,8 +1411,8 @@ type Comes {
   Buffs
   /// The press is refused with this result, and the stack is not spent.
   RefusedWith(result: Int)
-  /// The press is refused 285 and logged once with the issue named, the text naming these.
-  NotBuilt(issue: String, naming: List(String))
+  /// The press is refused 285 and logged once, the text naming these and no issue.
+  NotBuilt(naming: List(String))
 }
 
 type Drink {
@@ -1581,7 +1581,7 @@ pub fn a_consumables_use_is_decided_by_its_spell_test() -> Nil {
         0,
         NothingEarlier,
         1000,
-        NotBuilt("#336", [
+        NotBuilt([
           "UnitPropertyModifier effect 69997 with a parameter of type 18",
         ]),
       ),
@@ -1592,7 +1592,7 @@ pub fn a_consumables_use_is_decided_by_its_spell_test() -> Nil {
         0,
         NothingEarlier,
         1000,
-        NotBuilt("#336", ["49524", "type 38"]),
+        NotBuilt(["49524", "type 38"]),
       ),
       Drink(
         "an Activate row is not built (it was 91)",
@@ -1601,7 +1601,7 @@ pub fn a_consumables_use_is_decided_by_its_spell_test() -> Nil {
         0,
         NothingEarlier,
         1000,
-        NotBuilt("#336", ["2530", "Activate"]),
+        NotBuilt(["2530", "Activate"]),
       ),
       Drink(
         "a row holding a suspend prerequisite is not built",
@@ -1610,7 +1610,7 @@ pub fn a_consumables_use_is_decided_by_its_spell_test() -> Nil {
         0,
         NothingEarlier,
         1000,
-        NotBuilt("#336", ["227562", "43393"]),
+        NotBuilt(["227562", "43393"]),
       ),
     ],
     fn(case_) {
@@ -1657,13 +1657,15 @@ pub fn a_consumables_use_is_decided_by_its_spell_test() -> Nil {
             == [result]
             as case_.why
         }
-        NotBuilt(issue:, naming:) -> {
+        NotBuilt(naming:) -> {
           let assert Ok(cast_state.Frames(effects:, ..)) = used as case_.why
           assert list.map(refused_with(effects:), fn(refusal) { refusal.2 })
             == [285]
             as case_.why
           let assert [#(LogWarning, line)] = support.logs(effects:) as case_.why
-          assert string.contains(line, issue) as case_.why
+          assert string.ends_with(line, ": it is refused with 285")
+            && !string.contains(line, "#")
+            as case_.why
           assert list.all(naming, fn(word) { string.contains(line, word) })
             as case_.why
         }
@@ -1837,12 +1839,14 @@ pub fn an_item_spell_with_no_activate_effect_is_refused_285_and_logged_once_test
     )
     as "the second use is answered"
   assert refused_with(effects: first) == [#(clients_cast_id, 28, 285)]
-    as "Spell4 28 is cast at a unit and has no Activate and no QuestAdvanceObjective row, which is all the creature's activate cast plays (#1053): IllegalSpellCast (285)"
+    as "Spell4 28 is cast at a unit and has no Activate and no QuestAdvanceObjective row, which is all the creature's activate cast plays: IllegalSpellCast (285)"
   assert refused_with(effects: second) == [#(clients_cast_id, 28, 285)]
     as "the second use is refused the same"
   let assert [#(LogWarning, line)] =
     list.append(support.logs(effects: first), support.logs(effects: second))
     as "the gap is logged once"
   assert string.contains(line, "Spell4 28") as "the log line names the spell"
-  assert string.contains(line, "#1053") as "and the issue"
+  assert string.ends_with(line, ": it is refused with 285")
+    && !string.contains(line, "#")
+    as "and what is missing, with no issue named"
 }

@@ -14,9 +14,7 @@
 ////   client never adds the column up; this sum is the server's.
 //// - **Points spent are 0.** The server saves no tier, so every point a level gives is
 ////   unspent and the two fields are equal. A tier button enables on the unspent points, and
-////   a click sends 0x00B1 or 0x017A, which the connection logs as unhandled. The open issue
-////   "Spells work in depth on the real client" (#336) closes this gap with tier spending and
-////   action set edits, which save the tiers.
+////   a click sends 0x00B1 or 0x017A, which the connection logs as unhandled: tier spending and action set edits are not built.
 
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/message/ability_points.{AbilityPoints}

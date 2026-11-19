@@ -13,6 +13,8 @@
 //// - The render groups the entries by area in the order each area is first met, and keeps
 ////   the entries' order within an area.
 
+import genesis_prime/game/activate
+import genesis_prime/game/cast/press as cast_press
 import genesis_prime/game/communicator
 import genesis_prime/game/interaction
 import genesis_prime/game/item_price
@@ -49,6 +51,8 @@ pub fn registry() -> List(Entry) {
     vendor_purchase.gaps(),
     vendor_sale.gaps(),
     world_entry.gaps(),
+    cast_press.gaps(),
+    activate.gaps(),
   ])
 }
 

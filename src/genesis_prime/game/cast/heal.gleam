@@ -19,9 +19,9 @@
 ////   pending heal with its timer; a later go of the cast heals again and cancels no
 ////   earlier heal. A periodic heal (a tickTime) heals the caster at each tick, after
 ////   the tick's 0x7f8 (`ticking_heals`). A heal on a unit other than the caster (a child on a
-////   struck unit) lands nothing and a debug line says so (#570). The server rolls no
+////   struck unit) lands nothing and a debug line says so. The server rolls no
 ////   critical for a heal: the description is always a Hit, so the seed draws nothing for
-////   it (the server's choice; the crit of a heal is #336).
+////   it (the server's choice).
 
 import genesis_prime/game/cast/state.{
   type Aimed, type Caster, type Effect, type Healed, type Product, type Reached,
@@ -121,7 +121,7 @@ pub fn ticking_heals(
 /// A row's units are those its aim names (`cast_gate.units_aimed_at`) and only the caster
 /// is healed: the server gives no other unit a heal, so a heal aimed at another unit (the
 /// primary target of a cast on someone else, a unit the round hit) is left `Plain`, with a
-/// debug line naming its row (other players come with #570). The plan refuses a heal that
+/// debug line naming its row (the server heals no other player). The plan refuses a heal that
 /// names the primary target in a child started on each struck unit
 /// (`spell_plan.not_on_a_struck_unit`).
 pub fn healed_on(
@@ -158,7 +158,7 @@ pub fn healed_on(
           <> int.to_string(effect_id.value)
           <> " is aimed at the unit "
           <> int.to_string(unit_id)
-          <> ", not the caster, and heals on other units are not built (#570), so it lands nothing",
+          <> ", not the caster, and the server heals no other unit, so it lands nothing",
       ),
     ])
   }

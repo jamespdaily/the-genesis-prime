@@ -101,7 +101,7 @@
 //// | a persistence check while the player is leaving or dead | nothing: `cast_tick.left` and `cast.died` have already dropped every cast |
 //// | a press while one is held | 0x7fc 13 |
 //// | a press of a spell whose caster conditions mask Ability Restriction while the caster holds it | 0x7fc 302, ahead of the cooldowns; a spell whose mask lacks bit 27 passes |
-//// | a go gives the caster Ability Restriction | 0x87f to the caster and its audience, once for the effect; a `RestrictionEnd` timer at the row's delay plus duration, none for flag 2; the cast lingers until its persistence ends (the server reads no ride, so the hoverboard's ends in the go's own input: gap, #336) |
+//// | a go gives the caster Ability Restriction | 0x87f to the caster and its audience, once for the effect; a `RestrictionEnd` timer at the row's delay plus duration, none for flag 2; the cast lingers until its persistence ends (the server reads no ride, so the hoverboard's ends in the go's own input) |
 //// | a `RestrictionEnd` fires for a state the caster holds | 0x880 with the cast and the instance id of its 0x87f, before the cast's node ends; a row of duration 0 without flag 2 ends in the go's own step |
 //// | a cast that holds Ability Restriction ends (its persistence fails, a type 80 removal takes its node off, its node ends by time) | the `RestrictionEnd` timers cancelled, and 0x880 for a state the row's end has not already ended, after the 0x7f9 or the 0x811; a death or a leave drops the state and writes nothing |
 //// | a 0x805 result 3 of an activate cast of castMethod 5 | nothing: the interaction only began |
@@ -197,8 +197,7 @@ import gleam/result
 /// does (the client reads no Proc row to say what a heal is,
 /// `Spell4Effects.effectType.14.dataBits00`). The event's spell is the spell of the cast
 /// whose row healed, as `after` holds it or, for a cast the input ended, `before`.
-/// `LandsCriticalHeal` is never raised: no heal is rolled a critical yet, and issue 830
-/// closes that gap.
+/// `LandsCriticalHeal` is never raised: no heal is rolled a critical.
 pub fn heals_landed(
   before before: State,
   after after: State,

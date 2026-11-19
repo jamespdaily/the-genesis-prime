@@ -19,8 +19,7 @@
 //// - **A row with a prerequisite** is not a level's grant: the load keeps none of them
 ////   (`SpellLevel.spell4Id.no_prerequisite`).
 //// - **An ability the server cannot plan** is in the bag and in the book like any
-////   other, and a press of it is refused unknown (`cast_press.ability_at`; the gap
-////   closes with issue #1003);
+////   other, and a press of it is refused unknown (`cast_press.ability_at`);
 ////   `spell_plan.unplanned` lists them, and `give_unplanned_abilities` in
 ////   genesis_prime/table/loader/derivation holds the one switch that leaves them out.
 

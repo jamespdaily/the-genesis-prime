@@ -83,20 +83,18 @@ import genesis_prime/game/cast/cost as cast_cost
 import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/state.{
-  type AimedPress, type Caster, type Effect, type Interaction, type Issue,
-  type Refusal, type Resolution, type Role, type State, type Threshold,
-  type Unbuilt, type Verdict, ActivateCastIssue, Activation, AnswerSucceeded,
-  AwaitingAnswer, Base, CancelTimer, CannotTell, ChargeLevel, Child,
-  CooldownModifierEnds, CooldownModifierStarts, DroppedControls, DroppedDespawns,
-  DroppedSignals, DroppedUnitStates, Finish, ForcedMoveStart, GateFails, Go,
-  Hold, HoldForCast, Holding, Log, ModifierEnd, ModifierStart, NoInteraction,
-  NodesEnd, NotBuilt, Passive, PlayerTargetIssue, PrerequisitesIssue, ProcDue,
+  type AimedPress, type Caster, type Effect, type Interaction, type Refusal,
+  type Resolution, type Role, type State, type Threshold, type Unbuilt,
+  type Verdict, Activation, AnswerSucceeded, AwaitingAnswer, Base, CancelTimer,
+  CannotTell, ChargeLevel, Child, CooldownModifierEnds, CooldownModifierStarts,
+  DroppedControls, DroppedDespawns, DroppedSignals, DroppedUnitStates, Finish,
+  ForcedMoveStart, GateFails, Go, Hold, HoldForCast, Holding, Log, ModifierEnd,
+  ModifierStart, NoInteraction, NodesEnd, NotBuilt, Passive, ProcDue,
   QuestAdvanceDue, Refuse, RepeatHeld, Resolution, RestrictionEnd, Shortcut,
-  SpellsIssue, Stage, StartChild, StartHeld, Starts, State, StateEnd,
-  TargetModifierStart, Tick, UnbuiltItemSpell, UnbuiltPlayerTarget,
-  UnbuiltShortcut, UnbuiltSpell, Unheld, Unpaid, UnreadItemPrerequisite,
-  UnreadLinkPrerequisite, UnreadPrerequisite, UnreadShortcutPick, UnreadSpend,
-  UntilRemovedIssue, WindowEnd,
+  Stage, StartChild, StartHeld, Starts, State, StateEnd, TargetModifierStart,
+  Tick, UnbuiltItemSpell, UnbuiltPlayerTarget, UnbuiltShortcut, UnbuiltSpell,
+  Unheld, Unpaid, UnreadItemPrerequisite, UnreadLinkPrerequisite,
+  UnreadPrerequisite, UnreadShortcutPick, UnreadSpend, WindowEnd,
 } as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/crowd_control
@@ -106,6 +104,7 @@ import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{type Plans, type Spell}
 import genesis_prime/game/unit_properties
 import genesis_prime/game/unit_state
+import genesis_prime/gap
 import genesis_prime/message/cast_result
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/step.{type TimerId, LogDebug, LogWarning}
@@ -119,18 +118,17 @@ import gleam/result
 import gleam/set
 import gleam/string
 
-pub fn issue_name(issue issue: Issue) -> String {
-  case issue {
-    ActivateCastIssue ->
-      "A cast at a unit is judged and timed as the client does (#1053)"
-    PlayerTargetIssue ->
-      "An effect a player casts on another player lands on that player (#570)"
-    PrerequisitesIssue ->
-      "The prerequisite types effects use that the server does not read yet are read (#818)"
-    SpellsIssue -> "Spells work in depth on the real client (#336)"
-    UntilRemovedIssue ->
-      "A crowd-control state that lasts until removed ends when its spell ends (#803)"
-  }
+/// The cases a press is refused, and logged once, because the server does not build what
+/// the cast needs: each is the sentence of a kind of `NotBuilt` or `Dropped*` key.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    "A spell cast at another player's unit is refused, because the server holds no other player's life, combat, faction or race to test it by, so an effect a player casts on another player does not land on that player.",
+    "A spell whose cast condition, caster requirement's waiver or creature pick is of a prerequisite type the server does not read is refused.",
+    "A spell the server cannot plan, whose cast method is not built, or whose innate cost is in a vital the server does not hold or is spent by an EMM id it does not read, is refused.",
+    "A cast at a unit (an activate cast) plays only the Activate and QuestAdvanceObjective effects of its spell, and a spell with any other effect the strike would apply is refused instead; the client's per-unit vertical offset is not modelled.",
+    "A crowd-control state on another unit that lasts until removed is dropped from a cast, because no rule of the server ends it when its spell ends.",
+  ]
+  |> list.map(fn(missing) { gap.Entry(area: "Casting", missing:) })
 }
 
 /// The plan's spell as a quest button's cast casts it: a castMethod 5 spell waits for the
@@ -161,7 +159,6 @@ pub fn press_unbuilt(
   press press: AimedPress,
   key key: Unbuilt,
   why why: String,
-  issue issue: Issue,
 ) -> Result(#(State, List(Effect)), Refusal) {
   not_built_refusal(
     cast: press.cast,
@@ -170,7 +167,6 @@ pub fn press_unbuilt(
     key:,
     result: cast_result.IllegalSpellCast,
     why:,
-    issue:,
   )
 }
 
@@ -182,7 +178,6 @@ fn press_at_player_unbuilt(
     press:,
     key: UnbuiltPlayerTarget(spell4_id: press.spell.spell4_id.value),
     why:,
-    issue: PlayerTargetIssue,
   )
 }
 
@@ -372,10 +367,10 @@ pub fn interaction_of(spell spell: Spell) -> Interaction {
 /// the client's answer (`cast.asked`). A spell whose method is not built is left as it is, so
 /// the verdict refuses it.
 ///
-/// Gap: a Channeled spell whose activate time is not its channelMaxTime (one whose own
+/// A Channeled spell whose activate time is not its channelMaxTime (one whose own
 /// castTime is 0 with no creature time, or a creature time other than the channel's) is
 /// cast as a Normal spell: the client keeps its go count and the times the server picks
-/// for them are not settled (issue 1053).
+/// for them are not settled.
 pub fn activation_spell(
   spell spell: Spell,
   cast_time_ms cast_time_ms: Int,
@@ -525,8 +520,7 @@ pub fn controls_dropped(
           }),
           ", ",
         )
-          <> ", each a state on another unit held until removed, which the server does not end with its spell yet, the issue "
-          <> issue_name(issue: UntilRemovedIssue),
+          <> ", each a state on another unit held until removed, which the server does not end with its spell",
       ),
     ])
   }
@@ -541,7 +535,6 @@ pub fn not_built_refusal(
   key key: Unbuilt,
   result result: cast_result.CastResult,
   why why: String,
-  issue issue: Issue,
 ) -> Result(#(State, List(Effect)), Refusal) {
   let refusal = cast_frame.refused(client_cast_id:, spell4_id:, result:)
   let what = case key {
@@ -568,8 +561,6 @@ pub fn not_built_refusal(
               <> int.to_string(spell4_id)
               <> " "
               <> why
-              <> ", the issue "
-              <> issue_name(issue:)
               <> ": it is refused with "
               <> int.to_string(cast_result.to_value(result)),
           ),
@@ -931,7 +922,6 @@ pub fn verdict(
     return: NotBuilt(
       result: cast_result.IllegalSpellCast,
       why: "is not cast by a method that is built",
-      issue: SpellsIssue,
     ),
   )
   use <- bool.guard(
@@ -961,7 +951,6 @@ pub fn verdict(
       NotBuilt(
         result: cast_result.from_value(result),
         why: "has an innate cost of a vital the server does not hold",
-        issue: SpellsIssue,
       )
     None, Error(UnreadSpend(result:, emm_id:)) ->
       NotBuilt(
@@ -969,7 +958,6 @@ pub fn verdict(
         why: "has an innate cost spent by the EMM id "
           <> int.to_string(emm_id)
           <> ", which the server does not read",
-        issue: SpellsIssue,
       )
     None, Ok(paid) ->
       case

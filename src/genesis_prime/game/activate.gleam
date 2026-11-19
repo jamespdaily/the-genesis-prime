@@ -31,23 +31,22 @@
 ////   spell has no group and Creature2.flags bit 0 is clear; otherwise only the creature's
 ////   own activate spell passes, and the rest are refused 89.
 //// - A spell with an effect the strike would apply, aimed at the target or an area, is
-////   refused with result 285 and logged once, since the activate cast strikes no unit
-////   (gap, #336); a heal, RavelSignal, DespawnUnit or UnitStateSet row aimed there is dropped instead
+////   refused with result 285 and logged once, since the activate cast strikes no unit; a heal, RavelSignal, DespawnUnit or UnitStateSet row aimed there is dropped instead
 ////   (`activate_rows_of`).
 //// - **The target's life** is judged before the range: the spell's target row says a dead
 ////   creature is refused 106 or a living one 107 (`CheckCastUnitTargetRange`,
 ////   `0x1403b2240`). A unit hostile to the player or in combat is offered no use at all
 ////   (`Withheld`, result 100).
-//// - Gaps, each closed by issue 1053: the client's
-////   per-unit vertical offset and the creature words 0x6c and 0x148 that make the client
-////   pick no spell are not modelled; nor are the target row's crowd-control and
-////   fight-state conditions and the unit word 0xc4 that bit 5 reads (`planned`).
+//// - **Not modelled** (`planned`): the client's per-unit vertical offset, the creature
+////   words 0x6c and 0x148 that make the client pick no spell, the target row's
+////   crowd-control and fight-state conditions and the unit word 0xc4 that bit 5 reads.
 
 import genesis_prime/game/effect_kind
 import genesis_prime/game/item_property
 import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/spell_plan.{type Spell}
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/gap
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/table/creature2
 import genesis_prime/table/game_formula
@@ -467,12 +466,22 @@ fn planned(
   }
 }
 
+/// What the activate cast does not check of a target.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Casting",
+      missing: "An activate cast does not test the target's crowd-control state, fight state or creature word 0x1e4 against the Spell4Conditions mask of its spell, and passes bit 5 of the mask without testing it, because the meaning of the unit word 0xc4 that bit reads is not decoded.",
+    ),
+  ]
+}
+
 /// The mask of a Spell4Conditions row of a target and its bits that the activate cast
 /// does not read (`spell_plan.target_mask_read`), when it has any.
 ///
-/// Gap: the client also tests the unit's crowd-control state, its fight state and the
+/// The client also tests the unit's crowd-control state, its fight state and the
 /// creature word 0x1e4 against such a row, and the meaning of the unit word 0xc4 that
-/// bit 5 tests is not decoded, so bit 5 passes (gap, issue 1053); no activate spell of the tables
+/// bit 5 tests is not decoded, so bit 5 passes; no activate spell of the tables
 /// tests a bit outside the ones read, so the spell that does is not planned.
 fn unread_target_bits(
   tables tables: table_store.Tables,
@@ -569,10 +578,9 @@ fn reaches_past_caster(effect effect: Spell4Effects) -> Bool {
 /// The Activate rows of the spell and the RavelSignal rows it drops, or the first effect
 /// that aims at the target or an area and that the strike would apply.
 ///
-/// Gap: the activate cast carries out the caster's effects and the Activate rows and
+/// The activate cast carries out the caster's effects and the Activate rows and
 /// strikes no unit, so a spell with such an effect would lose it without a word; it is
-/// refused instead, until the issue for spells in depth (#336) builds the strike of an
-/// activate cast. An effect is one the strike applies when `effect_kind.is_row_read`
+/// refused instead. An effect is one the strike applies when `effect_kind.is_row_read`
 /// holds for its type and aim: the strike lists a Fluff or Scale row as a life on each
 /// struck unit (genesis_prime/game/cast `aimed_at`) and starts a Proxy's spell at it. A
 /// row of a type no rule reads is dropped by every cast, so it does not refuse the spell.
@@ -593,7 +601,7 @@ fn reaches_past_caster(effect effect: Spell4Effects) -> Bool {
 ///
 /// A RavelSignal row aimed at the target does not refuse the spell, and the activate cast
 /// drops it: the row starts a script on the server (`Spell4Effects.effectType.81`), and
-/// the server has none to start until the issue for spells in depth (#336) builds them;
+/// the server has no script to start;
 /// the client holds no script for it, so what it shows is not lost. The tutorial mine's
 /// activate spell 85452 holds two such rows. They are returned, and the cast logs them
 /// once when it drops them (`cast.activation_started`).
