@@ -476,7 +476,7 @@ pub fn the_effect_types_3_10_11_14_15_17_18_29_35_42_52_64_73_76_80_81_83_84_95_
       ),
       Missing(
         type_number: 11,
-        reason: "rows aimed at another player, which the cast applies to creatures only (#570, under #336); rows behind an apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses",
+        reason: "rows aimed at another player, which the cast applies to creatures only (#570, under #336); rows behind an apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses; rows with a parameter that has a factor, which the plan refuses (`ModifierParameterNotRead`)",
         fact_key: "Spell4Effects.effectType.11",
       ),
       Missing(
@@ -742,7 +742,7 @@ pub fn the_type_11_rows_behind_a_target_prerequisite_are_counted_as_not_handled_
   assert eleven.rows == 5
   assert eleven.status
     == HandledWithGap(
-      reason: "rows aimed at another player, which the cast applies to creatures only (#570, under #336); rows behind an apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses",
+      reason: "rows aimed at another player, which the cast applies to creatures only (#570, under #336); rows behind an apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses; rows with a parameter that has a factor, which the plan refuses (`ModifierParameterNotRead`)",
       fact_key: "Spell4Effects.effectType.11",
       unread_rows: 1,
     )
@@ -750,7 +750,7 @@ pub fn the_type_11_rows_behind_a_target_prerequisite_are_counted_as_not_handled_
   let text = checklist.render([measured])
   assert string.contains(
     text,
-    "- [x] type 11: 5 rows (83.33%); handled with a gap, 1 of its 5 rows not read: rows aimed at another player, which the cast applies to creatures only (#570, under #336); rows behind an apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses (Spell4Effects.effectType.11)",
+    "- [x] type 11: 5 rows (83.33%); handled with a gap, 1 of its 5 rows not read: rows aimed at another player, which the cast applies to creatures only (#570, under #336); rows behind an apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses; rows with a parameter that has a factor, which the plan refuses (`ModifierParameterNotRead`) (Spell4Effects.effectType.11)",
   )
     as "the line lists the rows left out with the gap's reason"
   assert string.contains(text, "2 of 2 types handled (83.33% of rows)")

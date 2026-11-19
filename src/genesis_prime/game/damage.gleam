@@ -253,6 +253,19 @@ pub fn holds_passed_in(effect effect: spell4_effects.Spell4Effects) -> Bool {
   }
 }
 
+/// The first parameter type of the effect row whose factor is not 0.0, whatever its
+/// type but 0, which names no parameter (`is_read`): for a row whose data bits are no
+/// formula, such as a stat modifier's, whose amount the plan reads from its data bits alone.
+pub fn first_parameter_with_factor(
+  effect effect: spell4_effects.Spell4Effects,
+) -> Option(Unread) {
+  list.find(parameters_of(effect:), fn(parameter) {
+    parameter.kind != 0 && parameter.value != 0.0
+  })
+  |> result.map(fn(parameter) { Unread(parameter_kind: parameter.kind) })
+  |> option.from_result
+}
+
 /// The first parameter with a factor whose type `is_read` refuses.
 fn first_unread(
   formula formula: Formula,

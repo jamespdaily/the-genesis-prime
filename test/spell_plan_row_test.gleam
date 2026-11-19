@@ -13,6 +13,7 @@
 ////   point held, which gives each effect of the spell a tag the rule must read (0 or 1).
 //// The rows are planted on Telekinetic Strike's spell (`spell_tables`).
 
+import client_tables
 import fixture_tables
 import genesis_prime/coverage/effect_row
 import genesis_prime/game/spell_plan.{
@@ -30,6 +31,7 @@ import gleam/result
 import owned_test
 import planted_table.{type Cell, Integer}
 import spell_tables
+import unitest
 
 /// A planted row of Telekinetic Strike's spell.
 fn row(
@@ -383,4 +385,59 @@ pub fn a_row_no_phase_selects_is_held_and_a_damage_row_left_out_test() -> Nil {
         as "the measure counts the three rows no phase selects not read, and the Fluff of -1 read"
     },
   )
+}
+
+/// The spell of a level-20 class ability that holds row 86849, a type 11 BaseHealth row
+/// with the parameters 12 (0.19), 13 (0.19) and 10 (16.59)
+/// (`table_rows -- Spell4Effects 86849`).
+const spell_with_parameters = 39_566
+
+pub fn a_modifier_row_whose_parameters_have_factors_is_not_read_on_the_clients_spell_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  assert spell_plan.spell_alone(
+      tables:,
+      sources: spell_plan.sources_of(tables:),
+      spell4_id: spell_with_parameters,
+      chain: [],
+    )
+    == Error(spell_plan.ModifierParameterNotRead(
+      spell4_id: spell_with_parameters,
+      effect_id: 86_849,
+      parameter_kind: 12,
+    ))
+    as "row 86849's parameter 12 has the factor 0.19: the amount the tooltip shows is not the data bits alone, and the plan does not give them"
+}
+
+pub fn no_level_one_or_innate_ability_holds_a_modifier_row_with_a_parameter_factor_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let sources = spell_plan.sources_of(tables:)
+  let held =
+    dict.values(spell_plan.plans(tables))
+    |> list.flat_map(fn(spell) {
+      spell_plan.tree(spell:, started: fn(_) { True })
+    })
+    |> list.map(fn(member) { member.spell4_id.value })
+    |> list.unique
+    |> list.flat_map(fn(spell4_id) {
+      spell_plan.effects_of(sources:, spell4_id:)
+    })
+    |> list.filter(fn(effect) {
+      effect.effect_type == 11
+      && list.any(
+        [
+          effect.parameter_value00,
+          effect.parameter_value01,
+          effect.parameter_value02,
+          effect.parameter_value03,
+        ],
+        fn(value) { value != 0.0 },
+      )
+    })
+    |> list.map(fn(effect) { effect.id })
+  assert held == []
+    as "the trees of the level-1 abilities and the innates hold no type 11 row with a parameter factor, so refusing one fails no load"
 }

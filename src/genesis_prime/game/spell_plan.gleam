@@ -2336,6 +2336,11 @@ pub type PlanError {
   /// amount, or a UnitPropertyConversion effect a share, that is not a finite number:
   /// `column` is its dataBits column.
   ModifierNumberNotFinite(spell4_id: Int, effect_id: Int, column: String)
+  /// A UnitPropertyModifier effect of a tree has a parameter with a factor, of type
+  /// `parameter_kind`: the amount the client shows adds the parameter's stat or flat value
+  /// to the data bits, which the plan does not
+  /// (`Spell4Effects.effectType.11.change`).
+  ModifierParameterNotRead(spell4_id: Int, effect_id: Int, parameter_kind: Int)
   /// A ModifySpellCooldown effect of a tree has a dataBits03 that is not a finite
   /// number, for an operation that reads it (`Spell4Effects.effectType.73`).
   CooldownNumberNotFinite(spell4_id: Int, effect_id: Int)
@@ -2625,6 +2630,14 @@ pub fn describe(error error: PlanError) -> String {
       <> " whose "
       <> column
       <> " is not a finite number"
+    ModifierParameterNotRead(spell4_id:, effect_id:, parameter_kind:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a UnitPropertyModifier effect "
+      <> int.to_string(effect_id)
+      <> " with a parameter of type "
+      <> int.to_string(parameter_kind)
+      <> ", whose amount is not read"
     CooldownNumberNotFinite(spell4_id:, effect_id:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -2962,6 +2975,7 @@ pub fn is_unbuilt(error error: PlanError) -> Bool {
     | StealthBreaksNotRead(..)
     | StealthConditionNotRead(..)
     | StealthChangeNotRead(..)
+    | ModifierParameterNotRead(..)
     | HealParameterNotRead(..)
     | HealUntilRemovedNotRead(..)
     | HealNoTick(..)
@@ -4099,7 +4113,8 @@ fn helper_row_move(
 /// fails the load. A type 11 row (`Spell4Effects.effectType.11.change`): dataBits00 is the
 /// property, which UnitProperty2 must have a row for, dataBits01 the mode, dataBits02 the
 /// multiplier, dataBits03 the flat amount and dataBits04 the amount for each level, all
-/// three as the 32-bit floats their columns hold, which must be finite. A type 145 row
+/// three as the 32-bit floats their columns hold, which must be finite; a parameter with a
+/// factor makes it `ModifierParameterNotRead`. A type 145 row
 /// (`conversion_of`).
 pub fn modifier_of(
   tables tables: table_store.Tables,
@@ -4118,7 +4133,10 @@ pub fn modifier_of(
       conversion_of(tables:, spell4_id:, effect:)
       |> result.map(PropertyChange)
     effect_kind.PropertyModifier ->
-      change_of(tables:, spell4_id:, effect:)
+      {
+        use Nil <- result.try(modifier_parameters_read(spell4_id:, effect:))
+        change_of(tables:, spell4_id:, effect:)
+      }
       |> result.map(fn(modifier) {
         case spell_effect.has_flag(flags: effect.target_flags, bit: 1) {
           True -> PropertyChange(modifier:)
@@ -4429,6 +4447,24 @@ fn modifier_not_on_a_struck_unit(
           )
         },
       )
+  }
+}
+
+/// Whether a UnitPropertyModifier row's amount is its data bits alone: a row with a
+/// parameter that has a factor adds the parameter's value to them in the client's
+/// tooltip, which the plan does not, so it is `ModifierParameterNotRead`.
+fn modifier_parameters_read(
+  spell4_id spell4_id: Int,
+  effect effect: spell4_effects.Spell4Effects,
+) -> Result(Nil, PlanError) {
+  case damage.first_parameter_with_factor(effect:) {
+    Some(damage.Unread(parameter_kind:)) ->
+      Error(ModifierParameterNotRead(
+        spell4_id:,
+        effect_id: effect.id,
+        parameter_kind:,
+      ))
+    None -> Ok(Nil)
   }
 }
 

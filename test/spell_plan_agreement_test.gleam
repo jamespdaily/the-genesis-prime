@@ -120,6 +120,7 @@ fn effect_row_of(error: PlanError) -> Refusal {
     | spell_plan.StealthAimNotRead(effect_id:, ..)
     | spell_plan.StealthTimedNotRead(effect_id:, ..)
     | spell_plan.StealthBreaksNotRead(effect_id:, ..)
+    | spell_plan.ModifierParameterNotRead(effect_id:, ..)
     | spell_plan.HealParameterNotRead(effect_id:, ..)
     | spell_plan.HealNumberNotFinite(effect_id:, ..)
     | spell_plan.HealUntilRemovedNotRead(effect_id:, ..)
