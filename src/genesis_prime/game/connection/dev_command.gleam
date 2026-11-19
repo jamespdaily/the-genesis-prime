@@ -1,0 +1,229 @@
+//// The development commands carried out on the game connection
+//// (genesis_prime/game/connection): a command line the chat took with the
+//// setting on and the tables allowed (genesis_prime/game/dev_command) is run
+//// here, with the state the connection holds. The chat cannot run it itself:
+//// the commands reach modules that import the connection's effects, which
+//// import the chat.
+////
+//// ```
+//// chat_message ─▶ Command(session, written, command) ─▶ run
+////   Summon                           ─▶ chat.summoning ─▶ the map is asked
+////   RaiseToLevel / RaiseToExperience ─▶ experience.raised(held, target)
+////        Ok(credited) ─▶ info log, connection/experience.gained (0x1ac, 0x938 ...), one system line
+////        Already, Lowering ─▶ one system line, nothing changes
+//// ```
+////
+//// - **The client takes experience only upward**, by 0x1ac adding to it, so a
+////   target at or below what the player holds changes nothing and is answered
+////   with a line (`opcode.0x1ac`).
+//// - **A raise is a gain of kind 1, Cheat**, written as any gain is, with the
+////   level rise's frames when it crosses a level (genesis_prime/game/connection/experience).
+//// - **Every accepted command is logged once** at info, naming the command and
+////   what it changed; a refused one writes its line and no log, since the line is
+////   its record.
+//// - **A raise asks no process**: the new level and experience are saved with the
+////   place by the next save, as any gain is.
+
+import genesis_prime/client_connection.{type Request, Asking, Continue, Done}
+import genesis_prime/connection/frame.{type Frame}
+import genesis_prime/game/chat
+import genesis_prime/game/connection/chat as connection_chat
+import genesis_prime/game/connection/experience as connection_experience
+import genesis_prime/game/connection/state.{type Session} as connection_state
+import genesis_prime/game/dev_command
+import genesis_prime/game/experience.{type Progress, Already, Lowering, Progress}
+import genesis_prime/game/world_entry
+import genesis_prime/step.{type ConnectionEffect, type Effect, type Now}
+import gleam/int
+import gleam/list
+import gleam/option.{None, Some}
+
+/// What the chat messages do (genesis_prime/game/connection/chat), with a
+/// command line the chat hands back carried out here.
+pub fn chat_message(
+  session session: Session,
+  now now: Now,
+  entered entered: world_entry.Entered,
+  inner inner: Frame,
+  message message: chat.Message,
+) -> client_connection.Handled(Session) {
+  case
+    connection_chat.chat_message(session:, now:, entered:, inner:, message:)
+  {
+    connection_chat.Taken(handled:) -> handled
+    connection_chat.Command(session:, written:, command:) ->
+      run(session:, now:, written:, command:)
+  }
+}
+
+/// Carries out a command, after the effects `written` that come before it (the
+/// 0x1c2 that answers its line).
+fn run(
+  session session: Session,
+  now now: Now,
+  written written: List(Effect(ConnectionEffect(Request))),
+  command command: dev_command.Command,
+) -> client_connection.Handled(Session) {
+  case command {
+    dev_command.Summon(creature2_id:, level:) ->
+      connection_chat.summoning(
+        session:,
+        now:,
+        creature2_id:,
+        level:,
+        before: written,
+      )
+    dev_command.RaiseToLevel(level:) ->
+      raised(
+        session:,
+        now:,
+        written:,
+        named: "!level " <> int.to_string(level),
+        target: experience.ToLevel(level:),
+      )
+    dev_command.RaiseToExperience(experience: total) ->
+      raised(
+        session:,
+        now:,
+        written:,
+        named: "!xp " <> int.to_string(total),
+        target: experience.ToExperience(experience: total),
+      )
+  }
+}
+
+/// A raise of the held level or experience to the target: the gain's frames and
+/// one system line with the level and experience reached, or one system line and
+/// nothing changed when the target is the held value or below it.
+fn raised(
+  session session: Session,
+  now now: Now,
+  written written: List(Effect(ConnectionEffect(Request))),
+  named named: String,
+  target target: experience.Target,
+) -> client_connection.Handled(Session) {
+  case connection_state.entered_of(session.status) {
+    None ->
+      connection_state.end_for(
+        session:,
+        now:,
+        text: named <> " was run while the player was not in the world",
+      )
+    Some(entered) -> {
+      let held =
+        Progress(experience: entered.experience, level: entered.character.level)
+      case
+        experience.raised(
+          progress: held,
+          target:,
+          tables: session.settings.tables,
+        )
+      {
+        Error(Already) ->
+          Continue(
+            session,
+            list.append(written, [
+              line(
+                session:,
+                text: "already at level "
+                  <> int.to_string(held.level)
+                  <> ", experience "
+                  <> int.to_string(held.experience),
+              ),
+            ]),
+          )
+        Error(Lowering) ->
+          Continue(
+            session,
+            list.append(written, [
+              line(session:, text: lowering_text(named:, held:, target:)),
+            ]),
+          )
+        Ok(credited) ->
+          gained(session:, now:, written:, named:, entered:, held:, credited:)
+      }
+    }
+  }
+}
+
+/// The gain carried out, between the log of the command and its system line.
+fn gained(
+  session session: Session,
+  now now: Now,
+  written written: List(Effect(ConnectionEffect(Request))),
+  named named: String,
+  entered entered: world_entry.Entered,
+  held held: Progress,
+  credited credited: experience.Credited,
+) -> client_connection.Handled(Session) {
+  let reached = credited.progress
+  let logged =
+    connection_state.log(
+      session:,
+      level: step.LogInfo,
+      text: "dev command "
+        <> named
+        <> ": level "
+        <> int.to_string(held.level)
+        <> ", experience "
+        <> int.to_string(held.experience)
+        <> " to level "
+        <> int.to_string(reached.level)
+        <> ", experience "
+        <> int.to_string(reached.experience),
+    )
+  case connection_experience.gained(session:, now:, entered:, credited:) {
+    Continue(session, told) ->
+      Continue(
+        session,
+        list.flatten([
+          written,
+          [logged],
+          told,
+          [
+            line(
+              session:,
+              text: "level "
+                <> int.to_string(reached.level)
+                <> ", experience "
+                <> int.to_string(reached.experience),
+            ),
+          ],
+        ]),
+      )
+    Done(session, effects) -> Done(session, list.append(written, effects))
+    Asking(..) as asking -> asking
+  }
+}
+
+/// The text that says a target is below what the player holds, and why it is
+/// refused.
+fn lowering_text(
+  named named: String,
+  held held: Progress,
+  target target: experience.Target,
+) -> String {
+  let #(held_text, asked_text) = case target {
+    experience.ToLevel(level:) -> #(
+      "level " <> int.to_string(held.level),
+      "level " <> int.to_string(level),
+    )
+    experience.ToExperience(experience:) -> #(
+      "experience " <> int.to_string(held.experience),
+      "experience " <> int.to_string(experience),
+    )
+  }
+  named
+  <> " would lower "
+  <> held_text
+  <> "; the client takes experience only upward: use a character at or below "
+  <> asked_text
+}
+
+/// A system line, written to the player's client.
+fn line(
+  session session: Session,
+  text text: String,
+) -> Effect(ConnectionEffect(Request)) {
+  connection_state.to_client(session, chat.system_line_frame(text:))
+}

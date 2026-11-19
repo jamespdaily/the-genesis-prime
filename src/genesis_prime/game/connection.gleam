@@ -151,6 +151,7 @@ import genesis_prime/game/class_resource
 import genesis_prime/game/connection/casting as connection_casting
 import genesis_prime/game/connection/chat as connection_chat
 import genesis_prime/game/connection/departures as connection_departures
+import genesis_prime/game/connection/dev_command as connection_dev_command
 import genesis_prime/game/connection/dropped as connection_dropped
 import genesis_prime/game/connection/effects as connection_effects
 import genesis_prime/game/connection/experience as connection_experience
@@ -738,7 +739,7 @@ fn world_carried(
                     message:,
                   )
                 Ok(routing.Chat(message:)) ->
-                  connection_chat.chat_message(
+                  connection_dev_command.chat_message(
                     session:,
                     now:,
                     entered:,

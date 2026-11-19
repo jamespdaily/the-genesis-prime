@@ -27,6 +27,7 @@ import connection_rule_support as support
 import departures_support
 import experience_support
 import fixture_tables
+import game_connection_dev_command_support as dev_support
 import game_connection_support as connection_support
 import genesis_prime/account_session.{Claimed}
 import genesis_prime/client_connection.{
@@ -39,6 +40,9 @@ import genesis_prime/game/departures
 import genesis_prime/game/experience.{Credit}
 import genesis_prime/message/bit_stream
 import genesis_prime/message/disconnect_reason.{LostUserServer}
+import genesis_prime/message/experience_gained.{
+  type ExperienceGained, ExperienceGained,
+}
 import genesis_prime/message/item_place
 import genesis_prime/message/player_health.{PlayerHealth}
 import genesis_prime/message/quest_periodic_reset.{QuestPeriodicReset}
@@ -1096,4 +1100,62 @@ pub fn a_regeneration_firing_while_the_session_is_claimed_again_runs_once_the_cl
     as "the held tick is taken once the claim is answered: the player's health is written"
   assert starts_of(taken: claimed, timer: health_timer) == 1
     as "the health timer starts again for the next tick: the regeneration is not left marked running with no timer"
+}
+
+/// The gain a development command sends: 0x1ac of kind 1, Cheat, from no unit.
+fn cheat_gain(experience experience: Int) -> ExperienceGained {
+  ExperienceGained(
+    experience:,
+    rest_experience_used: 0,
+    bonus_experience: 0,
+    source_kind: 1,
+    source_unit_id: 0,
+  )
+}
+
+pub fn level_by_command_reaches_the_client_as_the_gain_and_the_level_stat_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let state =
+    dev_support.entered_among_watchers(class_id: 4, level: 3, experience: 1800)
+  let #(_, taken) = dev_support.said(state:, text: "!level 4")
+  assert experience_support.gains(taken:) == [cheat_gain(experience: 1060)]
+    as "opcode.0x1ac: XpPerLevel level 4 starts at 2860, 1060 above the 1800 held"
+  assert experience_support.level_writes(taken:)
+    == [#(connection_support.own_unit_id, 4)]
+    as "opcode.0x938: stat 10 of the player's own unit is the new level"
+  let watchers = [2, 3, 4, 5]
+  assert list.all(watchers, fn(viewer) {
+    list.contains(
+      connection_support.news_told(taken:, viewer:),
+      client_connection.Level(level: 4),
+    )
+  })
+    as "each connection the map named as a watcher is told the level, to write the same 0x938 under the unit it shows"
+}
+
+pub fn an_xp_command_in_two_steps_reaches_the_level_at_its_minimum_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let state =
+    dev_support.entered_among_watchers(class_id: 4, level: 3, experience: 1800)
+  let #(state, below) = dev_support.said(state:, text: "!xp 2859")
+  assert experience_support.gains(taken: below)
+    == [cheat_gain(experience: 1059)]
+    as "2859 is one short of level 4's 2860 (XpPerLevel)"
+  assert experience_support.level_writes(taken: below) == []
+    as "no level is written below level 4's minimum"
+  assert list.all([2, 3, 4, 5], fn(viewer) {
+    connection_support.news_told(taken: below, viewer:) == []
+  })
+    as "no watcher is told a level"
+  let #(_, reached) = dev_support.said(state:, text: "!xp 2860")
+  assert experience_support.gains(taken: reached) == [cheat_gain(experience: 1)]
+    as "the one experience that reaches 2860"
+  assert experience_support.level_writes(taken: reached)
+    == [#(connection_support.own_unit_id, 4)]
+    as "level 4 at its minimum"
+  assert list.contains(
+    connection_support.news_told(taken: reached, viewer: 2),
+    client_connection.Level(level: 4),
+  )
+    as "a watcher is told the level"
 }

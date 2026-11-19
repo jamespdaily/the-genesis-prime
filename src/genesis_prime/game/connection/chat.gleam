@@ -16,11 +16,12 @@
 ////   and leaves them in the step that starts the camp's leave, so a new entry
 ////   joins again (genesis_prime/game/chat has the sequences, the refusals and
 ////   the failure table).
-//// - **A development summon** (genesis_prime/game/dev_command): a `!summon` line
-////   with the setting on is answered by the chat's 0x1c2, then the connection
-////   asks the player's map to start the creature and waits in `Summoning`;
-////   the answer is told to the player only when it is a refusal, as one System
-////   line.
+//// - **A development command** (genesis_prime/game/dev_command): a `!` line the
+////   tables allow, with the setting on, is answered by the chat's 0x1c2 and
+////   handed back as `Command` for genesis_prime/game/connection/dev_command to
+////   run. A `!summon` is run by `summoning`: the connection asks the player's
+////   map to start the creature and waits in `Summoning`; the answer is told to
+////   the player only when it is a refusal, as one System line.
 ////
 //// ```
 //// InWorld ─ !summon id [level] ─▶ 0x1c2, AskMapRun(Summon) ─▶ Summoning ─ answer ─▶ InWorld
@@ -41,6 +42,7 @@ import genesis_prime/game/connection/state.{
   Session, SpendingCharge, Summoning, TakingSessionKey, TurningIn,
   WaitingToClaim,
 } as connection_state
+import genesis_prime/game/dev_command
 import genesis_prime/game/world_entry
 import genesis_prime/hand_off.{type Holder}
 import genesis_prime/message/disconnect_reason.{LostUserServer}
@@ -56,16 +58,34 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/set
 
+/// What taking a chat message decided.
+pub type Taken {
+  /// The message is taken: its effects are carried out or its ask is made.
+  Taken(handled: client_connection.Handled(Session))
+  /// A development command line the tables allow, to be run by
+  /// genesis_prime/game/connection/dev_command: the session holds the chat the
+  /// line left, and `written` holds the effects that come before the command
+  /// (the 0x1c2 that answers the line). The command is not run here because
+  /// the commands' module imports the connection's world rules, which import
+  /// this one through their effects.
+  Command(
+    session: Session,
+    written: List(Effect(ConnectionEffect(Request))),
+    command: dev_command.Command,
+  )
+}
+
 /// What the chat messages do, taken from inside 0x038C, in the world
 /// (genesis_prime/game/chat): the line or whisper is answered, told or refused,
-/// the effects are carried out, and a refusal ends the connection.
+/// the effects are carried out, and a refusal ends the connection. A command
+/// line is handed back as `Command`.
 pub fn chat_message(
   session session: Session,
   now now: Now,
   entered entered: world_entry.Entered,
   inner inner: Frame,
   message message: chat.Message,
-) -> client_connection.Handled(Session) {
+) -> Taken {
   case
     chat.take(
       chat: entered.chat,
@@ -80,16 +100,24 @@ pub fn chat_message(
   {
     Ok(#(updated, effects)) ->
       case list.reverse(effects) {
-        [chat.AskSummon(creature2_id:, level:), ..before] -> {
+        [chat.RunCommand(command:), ..before] -> {
           let session = with_chat(session:, chat: updated)
           let #(session, written) =
             chat_effects(session:, effects: list.reverse(before))
-          summoning(session:, now:, creature2_id:, level:, before: written)
+          Command(session:, written:, command:)
         }
-        _ -> carry_chat(session: with_chat(session:, chat: updated), effects:)
+        _ ->
+          Taken(carry_chat(
+            session: with_chat(session:, chat: updated),
+            effects:,
+          ))
       }
     Error(refusal) ->
-      connection_state.end_for(session:, now:, text: chat.describe(refusal))
+      Taken(connection_state.end_for(
+        session:,
+        now:,
+        text: chat.describe(refusal),
+      ))
   }
 }
 
@@ -99,7 +127,7 @@ pub fn chat_message(
 /// client's frames held, as in a save, and the shell takes no other input
 /// until the outcome. A status other than `InWorld` cannot have taken the line,
 /// so it is a bug that ends the connection.
-fn summoning(
+pub fn summoning(
   session session: Session,
   now now: Now,
   creature2_id creature2_id: Creature2Id,
@@ -290,8 +318,8 @@ pub fn chat_effects(
           OwnEffect(step.LeaveGroup(address:)),
           ..written
         ])
-        chat.AskSummon(..) ->
-          panic as "an ask for a summon is made by chat_message, which ends the step with it"
+        chat.RunCommand(..) ->
+          panic as "a command is handed back by chat_message, which ends the step with it"
         chat.UnknownZone(world_zone_id:) ->
           case set.contains(session.unknown_zones_logged, world_zone_id) {
             True -> #(session, written)
