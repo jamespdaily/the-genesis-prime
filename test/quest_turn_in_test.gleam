@@ -498,7 +498,7 @@ pub fn communicator_turn_in_does_not_auto_complete_test() -> Nil {
   use <- owned_test.run(10_000)
   // Flags 9 (bits 0 and 3): communicable and auto-completing. The communicator's accept path
   // for it needs a side-list entry that only a call (0x757) makes, which the server does not
-  // send (#1054), so a quest not in the log is not turned in over the communicator.
+  // send, so a quest not in the log is not turned in over the communicator.
   use tables <- support.with_changes(changes: [
     #("Quest2", 1806, [#("flags", Integer(9))]),
     support.receiving(1806),
@@ -510,7 +510,12 @@ pub fn communicator_turn_in_does_not_auto_complete_test() -> Nil {
       tables:,
       because: "a communicable auto-complete quest not in the log",
     )
-  assert string.contains(text, "#1054") as "the line names the gap"
+  assert string.contains(
+    text,
+    "it completes over the communicator only through a side-list entry a call from the server makes, which the server does not send",
+  )
+    as "the line says why the communicator does not complete it"
+  assert !string.contains(text, "#") as "the line names no issue"
   // The unit path completes the same quest with flags 1 (bit 0).
   use tables <- support.with_changes(changes: [
     #("Quest2", 1806, [#("flags", Integer(1))]),
@@ -733,8 +738,10 @@ pub fn fixed_tradeskill_reward_refuses_the_turn_in_test() -> Nil {
       == [Item2Id(13_375)]
       as "the type-4 choice is not refused and gives nothing; the fixed item (row 2486) is placed"
     let assert [Log(level: LogWarning, text:)] = effects
-    assert string.contains(text, "#677")
-      as "the left-out tradeskill experience names its issue"
+    assert text
+      == "quest 5084 has a tradeskill reward the server does not give; the turn-in goes on without it"
+      as "the left-out tradeskill experience is said in plain words"
+    assert !string.contains(text, "#") as "the line names no issue"
   }
 }
 
@@ -1103,10 +1110,16 @@ pub fn left_out_reward_kinds_are_logged_once_test() -> Nil {
       text
     })
   assert list.length(texts) == 2 as "one line for each kind left out"
-  assert list.any(texts, string.contains(_, "#674"))
-    as "reputation names its issue"
-  assert list.any(texts, string.contains(_, "#675"))
-    as "other currencies name theirs"
+  assert list.any(texts, string.ends_with(
+    _,
+    " has a reputation reward the server does not give; the turn-in goes on without it",
+  ))
+    as "the reputation reward is left out in plain words"
+  assert list.any(texts, string.ends_with(
+    _,
+    "a reward of a currency but credits the server does not give; the turn-in goes on without it",
+  ))
+    as "so is a reward of another currency"
   assert set.size(logged) == 2
   let #(_, again) =
     support.asked(scene: support.Scene(..scene, logged:), tables:)

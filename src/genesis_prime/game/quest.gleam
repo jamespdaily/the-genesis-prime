@@ -27,10 +27,10 @@
 ////   place is a held item there whose Item2 `quest2IdActivation` is the quest. A retry
 ////   carries no place, so it takes any of the three.
 //// - **The checks** are the client's, in its order, and the first that does not pass
-////   decides: `can_accept` gives the code the client would show, or the gap it names when
+////   decides: `can_accept` gives the code the client would show, or the `Gap` it names when
 ////   the server does not read what the check needs (reputation, a prerequisite item's
-////   per-item counter, an unread prerequisite type, a drawn periodic quest, a contract;
-////   each gap's issue is `gap_issue`). A quest the server cannot say a gap of is never accepted.
+////   per-item counter, an unread prerequisite type, a drawn periodic quest, a contract).
+////   A quest the server cannot decide is never accepted.
 //// - **Abandon** follows `CanAbandonQuest` (`0x140552930`): a Botched quest (4) may always
 ////   be let go, otherwise Quest2 flags 0x4000 forbid it and an Achieved quest (2) with flags
 ////   0x8000 may not be, and past those only an Accepted, Achieved or Botched quest (1, 2, 4)
@@ -55,6 +55,7 @@ import genesis_prime/game/interaction
 import genesis_prime/game/prerequisite
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/shown.{type Picture}
+import genesis_prime/gap
 import genesis_prime/message/item_place
 import genesis_prime/message/quest_abandon
 import genesis_prime/message/quest_accept
@@ -102,8 +103,7 @@ pub type Message {
   Ignore
 }
 
-/// What the server does not read that a check of the client's needs. `gap_issue`
-/// names the open issue that closes each.
+/// What the server does not read that a check of the client's needs.
 pub type Gap {
   /// The reputation a quest requires (Quest2 `factionIdPreq`): the server holds none.
   Reputation
@@ -310,7 +310,7 @@ pub fn can_accept(
 /// prerequisite nests. A check stops on the first of these a player meets; this is
 /// the whole of what the quest needs the server to read. A prerequisite or periodic
 /// group row the table lacks is the error.
-pub fn gaps(
+pub fn unread_gaps(
   tables tables: table_store.Tables,
   quest quest: Quest2,
 ) -> Result(List(Gap), CheckError) {
@@ -692,8 +692,7 @@ const counted_locations = [0, 1, 8, 9]
 /// How many of the Item2 the player holds in the counted locations: the sum of the
 /// stacks there (a stack's `stack_count`), which a collect objective takes as its
 /// progress. The client also adds the supply satchel's count of the Item2
-/// (`0x1403ac840`); it is not counted here because the server holds no satchel items
-/// yet (issue 53, "Crafting and gathering work on the real client").
+/// (`0x1403ac840`); the server holds no satchel items, so none is counted here.
 pub fn held_count(
   items items: List(HeldItem),
   item2_id item2_id: Item2Id,
@@ -909,31 +908,50 @@ pub fn describe(error error: CheckError) -> String {
   }
 }
 
-/// The open issue that closes a gap.
-fn gap_issue(gap gap: Gap) -> Int {
-  case gap {
-    Reputation | PrerequisiteItemCounter | PeriodicDraw(..) -> 1054
-    PrerequisiteType(..) -> 818
-    Contract -> 678
-  }
-}
-
-/// A sentence that says what the server does not read, for the log.
-pub fn describe_gap(gap gap: Gap) -> String {
+/// What the server does not read, of one kind of gap and with no row's id in it.
+pub fn gap_kind(gap gap: Gap) -> String {
   case gap {
     Reputation -> "the reputation a quest needs, which the server does not hold"
     PrerequisiteItemCounter ->
       "a prerequisite item in the per-item inventory counter, which the server does not read"
-    PrerequisiteType(prerequisite_type:) ->
-      "a prerequisite condition of type "
-      <> int.to_string(prerequisite_type)
-      <> ", which the server does not read"
-    PeriodicDraw(group_id:) ->
-      "the draw of periodic group "
-      <> int.to_string(group_id)
-      <> ", which the server does not read"
+    PrerequisiteType(..) ->
+      "a prerequisite condition of a type the server does not read"
+    PeriodicDraw(..) ->
+      "the draw of a periodic quest group, which the server does not read"
     Contract -> "a contract, which the contracts manager holds"
   }
+}
+
+/// A sentence that says what the server does not read, for the log: the kind of gap and
+/// the type or group it met.
+pub fn describe_gap(gap gap: Gap) -> String {
+  case gap {
+    Reputation | PrerequisiteItemCounter | Contract -> gap_kind(gap:)
+    PrerequisiteType(prerequisite_type:) ->
+      gap_kind(gap:) <> ", type " <> int.to_string(prerequisite_type)
+    PeriodicDraw(group_id:) ->
+      gap_kind(gap:) <> ", group " <> int.to_string(group_id)
+  }
+}
+
+/// The kinds of gap in a quest's checks: a quest that needs one is not accepted.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    Reputation,
+    PrerequisiteItemCounter,
+    PrerequisiteType(prerequisite_type: 0),
+    PeriodicDraw(group_id: 0),
+    Contract,
+  ]
+  |> list.map(fn(kind) {
+    gap.Entry(area: "Quest acceptance", missing: gap_kind(gap: kind))
+  })
+  |> list.append([
+    gap.Entry(
+      area: "Quest objectives",
+      missing: "the count of an item in the supply satchel, which the client adds to what a collect objective counts: the server holds no satchel items",
+    ),
+  ])
 }
 
 /// What the rule asks the connection to do.
@@ -1481,9 +1499,7 @@ fn describe_declined(
       <> of(quest_id)
       <> ", which needs "
       <> describe_gap(gap:)
-      <> " (#"
-      <> int.to_string(gap_issue(gap:))
-      <> "): nothing is answered"
+      <> ": nothing is answered"
     Unchecked(quest_id:, error:) ->
       request
       <> of(quest_id)

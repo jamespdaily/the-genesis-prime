@@ -74,8 +74,6 @@ pub type EngineDeclaration {
   EngineDeclaration(
     /// What the engine owns, as a heading.
     name: String,
-    /// The number of the GitHub issue of the engine's area.
-    area_issue: Int,
     source: Source,
     handled: Handling,
     /// The types handled with a stated gap. A type is never both partial and missing,
@@ -133,7 +131,6 @@ pub fn handles(
 fn prerequisites() -> EngineDeclaration {
   EngineDeclaration(
     name: "Prerequisites",
-    area_issue: 47,
     source: TableColumns(
       table: "Prerequisite",
       columns: [
@@ -167,7 +164,6 @@ fn prerequisites() -> EngineDeclaration {
 fn quest_objectives() -> EngineDeclaration {
   EngineDeclaration(
     name: "Quest objectives",
-    area_issue: 48,
     source: TableColumns(
       table: "QuestObjective",
       columns: ["type"],
@@ -181,8 +177,7 @@ fn quest_objectives() -> EngineDeclaration {
     // Talk (type 3) and use (type 12) objectives count a talk to a creature or a use of
     // one, and kill objectives count a kill: type 2 by the creature, types 8 and 16 by a
     // TargetGroup (genesis_prime/game/objective). Types 15 and 46 need a unit's cluster
-    // and rank the server does not hold, so no kill advances them; the issue "Kill
-    // objectives count by cluster, rank and a unit's tagged value" closes that. Collect
+    // and rank the server does not hold, so no kill advances them. Collect
     // (types 4 and 33) objectives take the held count and visit (type 17) objectives the
     // player's zone chain, both after every change of either. A use of a creature whose
     // row names the objective counts a scripted objective (type 5) or a collectible
@@ -203,22 +198,22 @@ fn quest_objectives() -> EngineDeclaration {
     partial: [
       Missing(
         type_number: 11,
-        reason: "a cast of the objective's spell completes it, but the client never ties the spell to the objective's data, so that link is a guess until a retail recording of quest 3915, 4832 or 7618 shows it; 6 rows cannot finish, since the client refuses the press of a spell with no Spell4 row (data 0 in 7378, 8042, 9882, 16525 and 16577; Spell4 46171 in 15816); Spell4 43461 cannot be planned, so its press is refused, behind a target gate whose prerequisite condition of type 12 the server does not read (#818); 11 rows (8389, 9399, 9401, 9768, 9770, 9771, 14966, 15332, 15363, 17880, 17933) have a cast condition the server cannot judge: a caster cast of prerequisite type 16 or 102 (#818), or a target cast of type 4, 71 or 102 that needs the struck creature's own facts (#851 for 4 and 71, #818 for 102)",
+        reason: "a cast of the objective's spell completes it, but the client never ties the spell to the objective's data, so that link is a guess until a retail recording of quest 3915, 4832 or 7618 shows it; 6 rows cannot finish, since the client refuses the press of a spell with no Spell4 row (data 0 in 7378, 8042, 9882, 16525 and 16577; Spell4 46171 in 15816); Spell4 43461 cannot be planned, so its press is refused, behind a target gate whose prerequisite condition of type 12 the server does not read; 11 rows (8389, 9399, 9401, 9768, 9770, 9771, 14966, 15332, 15363, 17880, 17933) have a cast condition the server cannot judge: a caster cast of prerequisite type 16 or 102, or a target cast of type 4, 71 or 102 that needs the struck creature's own facts",
         fact_key: "QuestObjective.type.11",
       ),
       Missing(
         type_number: 22,
-        reason: "an arrival at a marker completes a place objective of count 1; the 43 with no marker and the 2 with a count above 1 (14205, 14577) are not counted, which the issue \"Place objectives with no marker or a count above one complete (objective type 22)\" closes",
+        reason: "an arrival at a marker completes a place objective of count 1; the 43 with no marker and the 2 with a count above 1 (14205, 14577) are not counted, which nothing completes",
         fact_key: "QuestObjective.type.22",
       ),
       Missing(
         type_number: 5,
-        reason: "a use of a creature linked to the objective by its row (a finished activate cast, or a use with no activate spell) counts one, which is a guess; 250 of the 1556 rows have a linked creature, and the rest have no source; the 12 linked creatures whose Collect click sends 0x14f are not counted, and a linked creature with no stored spawn is not placed (the issue \"A click target with no spawn stands at its objective's marker\"); a hidden row (flag 8) with data 0 that no creature links, 91 hidden data 0 rows less the 8 whose slot a creature links, is completed by the server once its quest's other required objectives are done, which is a server choice (the issue \"A hidden scripted objective with no target completes once its quest's other required objectives are done\")",
+        reason: "a use of a creature linked to the objective by its row (a finished activate cast, or a use with no activate spell) counts one, which is a guess; 250 of the 1556 rows have a linked creature, and the rest have no source; the 12 linked creatures whose Collect click sends 0x14f are not counted, and a linked creature with no stored spawn is not placed; a hidden row (flag 8) with data 0 that no creature links, 91 hidden data 0 rows less the 8 whose slot a creature links, is completed by the server once its quest's other required objectives are done, which is a server choice",
         fact_key: "QuestObjective.type.5",
       ),
       Missing(
         type_number: 32,
-        reason: "a use of a creature linked to the objective by its row (a finished activate cast, or a use with no activate spell) counts one, which is a guess; 293 of the 709 rows have a linked creature, and the 416 others have no source; the 12 linked creatures whose Collect click sends 0x14f are not counted, and a linked creature with no stored spawn is not placed (the issue \"A click target with no spawn stands at its objective's marker\")",
+        reason: "a use of a creature linked to the objective by its row (a finished activate cast, or a use with no activate spell) counts one, which is a guess; 293 of the 709 rows have a linked creature, and the 416 others have no source; the 12 linked creatures whose Collect click sends 0x14f are not counted, and a linked creature with no stored spawn is not placed",
         fact_key: "QuestObjective.type.32.sources",
       ),
     ],
@@ -239,7 +234,6 @@ fn quest_rewards() -> EngineDeclaration {
   }
   EngineDeclaration(
     name: "Quest rewards",
-    area_issue: 1059,
     source: TableColumns(
       table: "Quest2Reward",
       columns: ["quest2RewardTypeId"],
@@ -254,17 +248,17 @@ fn quest_rewards() -> EngineDeclaration {
     partial: [
       not_given(
         3,
-        "rows of a currency but credits (objectId other than 1), which no turn-in gives (#675)",
+        "rows of a currency but credits (objectId other than 1), which no turn-in gives",
       ),
     ],
     unread_rows: no_unread_rows,
     unread_starting_rows: no_unread_starting_rows,
     missing: [
-      not_given(2, "a reputation reward is not given (#674)"),
-      not_given(4, "a tradeskill experience reward is not given (#677)"),
-      not_given(5, "a new tradeskill is not given (#677)"),
-      not_given(7, "an account currency reward is not given (#675)"),
-      not_given(10, "a rotation essence reward is not given (#676)"),
+      not_given(2, "a reputation reward is not given"),
+      not_given(4, "a tradeskill experience reward is not given"),
+      not_given(5, "a new tradeskill is not given"),
+      not_given(7, "an account currency reward is not given"),
+      not_given(10, "a rotation essence reward is not given"),
     ],
     starting_abilities: None,
   )
@@ -280,21 +274,21 @@ fn unread_effect_rows(tables: store.Tables) -> Dict(Int, Int) {
 /// by flags the plan refuses, and none behind a target apply prerequisite the plan cannot
 /// check.
 const lasting_gap =
-  "rows aimed by a flag with bit 8 (#336) or by 3, 5 or 7 in a spell that hits no foes (#834) or behind an apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses"
+  "rows aimed by a flag with bit 8 or by 3, 5 or 7 in a spell that hits no foes or behind an apply prerequisite whose conditions the plan cannot check, which the plan refuses"
 
 /// The same for type 76, whose rows with a delayTime the client does not apply from the
 /// go: the server lists them with their delay and the measure counts them not read.
 const item_visual_swap_gap =
-  "rows aimed by flags the plan refuses or behind an apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses; rows with a delayTime, which the go lists and the measure counts not read: an effect with a start delay shows on the client when its delay ends (#827, 0x1405d6880.delayed_apply)"
+  "rows aimed by flags the plan refuses or behind an apply prerequisite whose conditions the plan cannot check, which the plan refuses; rows with a delayTime, which the go lists and the measure counts not read: an effect with a start delay shows on the client when its delay ends (0x1405d6880.delayed_apply)"
 
 /// The same for type 80, whose rows the plan also refuses where the two columns that hold
 /// the count of stacks differ or a selector names no row.
 const force_remove_gap =
-  "rows aimed by a flag with bit 8 (#336) or by 3, 5 or 7 in a spell that hits no foes (#834), behind an apply prerequisite whose conditions the plan cannot check (#817, #818), with differing stack counts (dataBits03 and dataBits04) or a selector that names no spell group, Spell4 or Spell4Base, which the plan refuses"
+  "rows aimed by a flag with bit 8 or by 3, 5 or 7 in a spell that hits no foes, behind an apply prerequisite whose conditions the plan cannot check, with differing stack counts (dataBits03 and dataBits04) or a selector that names no spell group, Spell4 or Spell4Base, which the plan refuses"
 
 /// The same for type 81, whose script the client does not hold either.
 const signal_gap =
-  "rows aimed by a flag with bit 8 (#336) or by 3, 5 or 7 in a spell that hits no foes (#834) or behind an apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses; the script a signal stands for is not in the client"
+  "rows aimed by a flag with bit 8 or by 3, 5 or 7 in a spell that hits no foes or behind an apply prerequisite whose conditions the plan cannot check, which the plan refuses; the script a signal stands for is not in the client"
 
 /// What type 145 reads of a row, whose computation is the server's choice.
 const conversion_gap =
@@ -310,7 +304,6 @@ const conversion_gap =
 fn spell_effects() -> EngineDeclaration {
   EngineDeclaration(
     name: "Spell effects",
-    area_issue: 49,
     source: TableColumns(
       table: "Spell4Effects",
       columns: ["effectType"],
@@ -330,37 +323,37 @@ fn spell_effects() -> EngineDeclaration {
       ),
       Missing(
         type_number: 3,
-        reason: "rows aimed at another unit behind a target apply prerequisite, which the plan refuses (#815); rows behind a prerequisite whose conditions the plan cannot check (#817, #818)",
+        reason: "rows aimed at another unit behind a target apply prerequisite, which the plan refuses; rows behind a prerequisite whose conditions the plan cannot check",
         fact_key: "Spell4Effects.effectType.3",
       ),
       Missing(
         type_number: 4,
-        reason: "rows behind an apply prerequisite (#787); rows aimed at another unit that last until removed (#803) or hold a persistence prerequisite (#787); rows aimed by 9, 10 or 12, which hold bit 8 (#336); rows with a phaseFlags of 0, which no phase selects",
+        reason: "rows behind an apply prerequisite; rows aimed at another unit that last until removed or hold a persistence prerequisite; rows aimed by 9, 10 or 12, which hold bit 8; rows with a phaseFlags of 0, which no phase selects",
         fact_key: "Spell4Effects.effectType.4",
       ),
       Missing(
         type_number: 8,
-        reason: "rows with a formula parameter a player's value does not read (the weapon types 6 and 9, the passed-in value 18), aimed by a flag the area load refuses, or with a multiplier that is not a finite number, which the area load refuses; periodic rows that last until removed (flags bit 2, #803), which the area load leaves out; rows aimed at their caster alone, which load and strike nobody (#831)",
+        reason: "rows with a formula parameter a player's value does not read (the weapon types 6 and 9, the passed-in value 18), aimed by a flag the area load refuses, or with a multiplier that is not a finite number, which the area load refuses; periodic rows that last until removed (flags bit 2), which the area load leaves out; rows aimed at their caster alone, which load and strike nobody",
         fact_key: "0x140566ad0",
       ),
       Missing(
         type_number: 10,
-        reason: "rows aimed only at other units or behind an apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses; periodic rows that last until removed (flags bit 2, #803), which the plan leaves out; rows with a formula parameter the plan refuses; rows of a spell a Proxy starts on each struck unit, whose heal on that unit is not built (#570)",
+        reason: "rows aimed only at other units or behind an apply prerequisite whose conditions the plan cannot check, which the plan refuses; periodic rows that last until removed (flags bit 2), which the plan leaves out; rows with a formula parameter the plan refuses; rows of a spell a Proxy starts on each struck unit, whose heal on that unit is not built",
         fact_key: "spell.heal_result_log",
       ),
       Missing(
         type_number: 11,
-        reason: "rows aimed at another player, which the cast applies to creatures only (#570, under #336); rows behind an apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses; rows with a parameter that has a factor, which the plan refuses (`ParameterNotRead`) because no rule reads a stat modifier's parameter factors into its amount (the work that builds that reading closes this gap)",
+        reason: "rows aimed at another player, which the cast applies to creatures only; rows behind an apply prerequisite whose conditions the plan cannot check, which the plan refuses; rows with a parameter that has a factor, which the plan refuses (`ParameterNotRead`) because no rule reads a stat modifier's parameter factors into its amount (the work that builds that reading closes this gap)",
         fact_key: "Spell4Effects.effectType.11",
       ),
       Missing(
         type_number: 14,
-        reason: "kinds other than entering and leaving stealth, leaving combat, dying, the hits, criticals, kills and heals the holder lands, and using an ability, spending or changing the class resource, receiving a heal, a deflect, a finisher critical, a taunt landed, starting to move, and the damage, critical, deflect and depleted shield a creature's blow deals the holder (the other kinds the texts name wait on their own issues), and rows held by another unit, behind a persistence or target apply prerequisite, with a group and no filter kind, with an aim of 32 or above, with no life or naming a Spell4 the tables lack, which the plan leaves out or refuses",
+        reason: "kinds other than entering and leaving stealth, leaving combat, dying, the hits, criticals, kills and heals the holder lands, and using an ability, spending or changing the class resource, receiving a heal, a deflect, a finisher critical, a taunt landed, starting to move, and the damage, critical, deflect and depleted shield a creature's blow deals the holder (the other kinds the texts name are not raised), and rows held by another unit, behind a persistence or target apply prerequisite, with a group and no filter kind, with an aim of 32 or above, with no life or naming a Spell4 the tables lack, which the plan leaves out or refuses",
         fact_key: "Spell4Effects.effectType.14",
       ),
       Missing(
         type_number: 15,
-        reason: "rows aimed at the caster alone, which need a creature that casts, or a creature's strike on a player, to read (#801); rows that last until removed (flags bit 2, #803); rows behind a persistence prerequisite and rows with a dataBits01 to dataBits09 that is not 0, which no client code reads (#925); rows behind a target apply prerequisite that reads the casts a struck creature holds, which the plan refuses (#569); and the rows the plan applies that refuse nothing: those of a state with no reading (0, 1, 2, 10 and 23), which a creature holds and which refuse nothing since the client does not say what they do (#925), those with a durationTime of 0, which a creature never holds (#925), and those of a spell with no Spell4 row, which no cast reaches (#925)",
+        reason: "rows aimed at the caster alone, which need a creature that casts, or a creature's strike on a player, to read; rows that last until removed (flags bit 2); rows behind a persistence prerequisite and rows with a dataBits01 to dataBits09 that is not 0, which no client code reads; rows behind a target apply prerequisite that reads the casts a struck creature holds, which the plan refuses; and the rows the plan applies that refuse nothing: those of a state with no reading (0, 1, 2, 10 and 23), which a creature holds and which refuse nothing since the client does not say what they do, those with a durationTime of 0, which a creature never holds, and those of a spell with no Spell4 row, which no cast reaches",
         fact_key: "Spell4Effects.effectType.15",
       ),
       Missing(
@@ -375,12 +368,12 @@ fn spell_effects() -> EngineDeclaration {
       ),
       Missing(
         type_number: 26,
-        reason: "rows whose dataBits00 names no spell (the plan holds no Proxy for them) or that are aimed by a flag with bit 8 (#336) or by 3, 5 or 7 in a spell that hits no foes (#834)",
+        reason: "rows whose dataBits00 names no spell (the plan holds no Proxy for them) or that are aimed by a flag with bit 8 or by 3, 5 or 7 in a spell that hits no foes",
         fact_key: "Spell4Effects.effectType.26",
       ),
       Missing(
         type_number: 29,
-        reason: "rows aimed only at other units, periodic (tickTime), with no lifetime, with a formula parameter the plan refuses, whose amount is 0 for every caster (which of dataBits00 and dataBits01 is the amount when the other is 0 is not read), behind an apply prerequisite whose conditions the plan cannot check (#817, #818), or aimed at the primary target of a spell a Proxy starts on each struck unit, whose pool the server does not hold",
+        reason: "rows aimed only at other units, periodic (tickTime), with no lifetime, with a formula parameter the plan refuses, whose amount is 0 for every caster (which of dataBits00 and dataBits01 is the amount when the other is 0 is not read), behind an apply prerequisite whose conditions the plan cannot check, or aimed at the primary target of a spell a Proxy starts on each struck unit, whose pool the server does not hold",
         fact_key: "Spell4Effects.effectType.29",
       ),
       Missing(
@@ -390,7 +383,7 @@ fn spell_effects() -> EngineDeclaration {
       ),
       Missing(
         type_number: 42,
-        reason: "rows aimed at the area (4, 6) or with no aim (0, 8 and above without bit 1), which reach no quest log; rows with a column the client does not read that is not 0 (a tick, a duration, a damage type, flags, dataBits03 to dataBits09, a parameter, a persistence or suspend prerequisite) or an amount below 1, which the plan leaves out; rows aimed at the primary target alone in a spell the activate cast names (a creature's activate column, the default spell or an item's use), which the activate cast drops since the unit it activates holds no quest log; rows behind an apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses",
+        reason: "rows aimed at the area (4, 6) or with no aim (0, 8 and above without bit 1), which reach no quest log; rows with a column the client does not read that is not 0 (a tick, a duration, a damage type, flags, dataBits03 to dataBits09, a parameter, a persistence or suspend prerequisite) or an amount below 1, which the plan leaves out; rows aimed at the primary target alone in a spell the activate cast names (a creature's activate column, the default spell or an item's use), which the activate cast drops since the unit it activates holds no quest log; rows behind an apply prerequisite whose conditions the plan cannot check, which the plan refuses",
         fact_key: "Spell4Effects.effectType.42",
       ),
       Missing(
@@ -405,7 +398,7 @@ fn spell_effects() -> EngineDeclaration {
       ),
       Missing(
         type_number: 73,
-        reason: "rows, or parts of rows, aimed at another unit, whose cooldowns no server rule keeps; rows behind a target apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses",
+        reason: "rows, or parts of rows, aimed at another unit, whose cooldowns no server rule keeps; rows behind a target apply prerequisite whose conditions the plan cannot check, which the plan refuses",
         fact_key: "Spell4Effects.effectType.73",
       ),
       Missing(
@@ -425,12 +418,12 @@ fn spell_effects() -> EngineDeclaration {
       ),
       Missing(
         type_number: 83,
-        reason: "rows aimed at another unit, behind a target prerequisite whose conditions the plan cannot check (#818) or timed (a delayTime or durationTime: timed stealth), which the plan refuses",
+        reason: "rows aimed at another unit, behind a target prerequisite whose conditions the plan cannot check or timed (a delayTime or durationTime: timed stealth), which the plan refuses",
         fact_key: "Spell4Effects.effectType.83",
       ),
       Missing(
         type_number: 84,
-        reason: "rows aimed at another unit or behind a target prerequisite whose conditions the plan cannot check (#818), which the plan refuses",
+        reason: "rows aimed at another unit or behind a target prerequisite whose conditions the plan cannot check, which the plan refuses",
         fact_key: "Spell4Effects.effectType.84",
       ),
       Missing(
@@ -440,7 +433,7 @@ fn spell_effects() -> EngineDeclaration {
       ),
       Missing(
         type_number: 97,
-        reason: "rows aimed at the caster alone, which only a creature caster could remove (#921); rows with a dataBits00 or dataBits01 that is not 0, which no client code reads (#921); rows in a spell the activate cast names (a creature's activate column, the default spell or an item's use) that no Proxy or Proc names as its child, which the activate cast drops since it strikes no unit (#921); rows behind a target apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses",
+        reason: "rows aimed at the caster alone, which only a creature caster could remove; rows with a dataBits00 or dataBits01 that is not 0, which no client code reads; rows in a spell the activate cast names (a creature's activate column, the default spell or an item's use) that no Proxy or Proc names as its child, which the activate cast drops since it strikes no unit; rows behind a target apply prerequisite whose conditions the plan cannot check, which the plan refuses",
         fact_key: "Spell4Effects.effectType.97",
       ),
       Missing(
@@ -450,7 +443,7 @@ fn spell_effects() -> EngineDeclaration {
       ),
       Missing(
         type_number: 118,
-        reason: "rows aimed at another unit, periodic rows that last until removed (flags bit 2, #803), rows behind an apply prerequisite whose conditions the plan cannot check (#817, #818) or with a formula parameter the plan refuses",
+        reason: "rows aimed at another unit, periodic rows that last until removed (flags bit 2), rows behind an apply prerequisite whose conditions the plan cannot check or with a formula parameter the plan refuses",
         fact_key: "Spell4Effects.effectType.118",
       ),
       Missing(
@@ -486,7 +479,6 @@ fn spend_scaled_costs() -> EngineDeclaration {
   }
   EngineDeclaration(
     name: "Spend-scaled costs",
-    area_issue: 437,
     source: TableColumns(
       table: "Spell4",
       columns: ["innateCostEMMId0", "innateCostEMMId1"],
@@ -520,7 +512,6 @@ fn spend_scaled_costs() -> EngineDeclaration {
 fn unit_types() -> EngineDeclaration {
   EngineDeclaration(
     name: "Unit types",
-    area_issue: 50,
     source: TableColumns(
       table: "Creature2",
       columns: ["CreationTypeEnum"],
@@ -553,7 +544,6 @@ fn unit_types() -> EngineDeclaration {
 fn messages() -> EngineDeclaration {
   EngineDeclaration(
     name: "Client message routing",
-    area_issue: 51,
     source: Cases(
       evidence: "the messages the client sends, from the facts of its send paths: SendWorldMessage 0x1403f4900 (245 ids), 0x1403f4740 (58), 0x140016010 (7), 0x1400161d0 (23), the 14 ids serialised directly (0x140332920), 0x244, 0x38c and the network layer's ids 0, 1 and 2 (0x140332580): 352 ids (RegisterMessage 0x1403309a0). Each id is one row: the facts give each path's ids and send sites, not the sites of each id",
       ids: sent_message.all(),
@@ -562,37 +552,37 @@ fn messages() -> EngineDeclaration {
     partial: [
       Missing(
         type_number: 0x012B,
-        reason: "type 1, the shared-challenge preference, is not kept, so the server does not know it (#52)",
+        reason: "type 1, the shared-challenge preference, is not kept, so the server does not know it",
         fact_key: "opcode.0x12b",
       ),
       Missing(
         type_number: 0x0180,
-        reason: "the scanbot unit is not made, so no scanbot appears (#55)",
+        reason: "the scanbot unit is not made, so no scanbot appears",
         fact_key: "opcode.0x180",
       ),
       Missing(
         type_number: 0x018F,
-        reason: "the trade it cancels, begun by 0x192, is not built (#58)",
+        reason: "the trade it cancels, begun by 0x192, is not built",
         fact_key: "opcode.0x18f",
       ),
       Missing(
         type_number: 0x0269,
-        reason: "the reply 0x26A is not sent, so the CREDD tab shows no price (#58)",
+        reason: "the reply 0x26A is not sent, so the CREDD tab shows no price",
         fact_key: "opcode.0x269",
       ),
       Missing(
         type_number: 0x03EC,
-        reason: "the reply 0x64C is not sent, so the player's commodity order list stays empty (#58)",
+        reason: "the reply 0x64C is not sent, so the player's commodity order list stays empty",
         fact_key: "opcode.0x3ec",
       ),
       Missing(
         type_number: 0x03ED,
-        reason: "the reply 0x64D is not sent, so the player's auction list stays empty (#58)",
+        reason: "the reply 0x64D is not sent, so the player's auction list stays empty",
         fact_key: "opcode.0x3ed",
       ),
       Missing(
         type_number: 0x0570,
-        reason: "the reply 0x56F is not sent, so the player's saved key bindings do not load (#60)",
+        reason: "the reply 0x56F is not sent, so the player's saved key bindings do not load",
         fact_key: "opcode.0x570",
       ),
     ],
@@ -614,7 +604,7 @@ pub fn handled_client_message_ids() -> List(Int) {
   ])
 }
 
-/// Every engine's declaration, in the order of their area issues.
+/// Every engine's declaration, in the order they print.
 pub fn all() -> List(EngineDeclaration) {
   [
     prerequisites(),

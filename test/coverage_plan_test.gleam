@@ -203,9 +203,9 @@ pub fn the_coverage_measure_counts_the_type_3_rows_the_plan_refuses_test() -> Ni
       reason,
       "aimed at another unit behind a target apply prerequisite",
     )
-    && string.contains(reason, "(#815)")
-    as "the gap names the rows still unread and the issue that will read them"
-  assert !string.contains(reason, "(#336)")
+    && !string.contains(reason, "#")
+    as "the gap names the rows still unread and no issue"
+  assert !string.contains(reason, "bit 8")
     as "the rows aimed at other units are no longer the gap"
 }
 

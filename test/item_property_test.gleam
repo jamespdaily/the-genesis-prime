@@ -487,7 +487,7 @@ pub fn the_sum_of_a_set_adds_in_32_bits_test() -> Nil {
 /// A budget entry on a ResourceMax property is left to the class resource, which sets that
 /// property's base (`genesis_prime/game/class_resource`, the player unit's resource).
 /// UnitProperty2 12 is ResourceMax_3, with flags 52 and valuePerPoint 0.2, so a client
-/// row would give it; the code does not, and says why, naming no open issue.
+/// row would give it; the code does not, and says why.
 pub fn a_resource_maximum_from_a_budget_is_unread_with_its_reason_test() -> Nil {
   use <- owned_test.run(10_000)
   let item2_id = fixture_tables.root("Item2", 1375)
@@ -502,8 +502,6 @@ pub fn a_resource_maximum_from_a_budget_is_unread_with_its_reason_test() -> Nil 
   let assert Error(error) = result
   assert string.contains(item_property.describe(error:), "class resource")
     as "the reason says the class resource sets that base"
-  assert item_property.gap_issue(gap: item_property.ResourceMaximum) == None
-    as "no open issue closes it: the class resource sets that base by design"
 }
 
 /// What an item gives for a wearer of `level`.
@@ -725,12 +723,43 @@ pub fn a_pvp_or_proxy_rune_is_still_refused_with_its_gap_test() -> Nil {
       _ -> Error(Nil)
     }
   }
-  assert gap_of(83_331) == Ok(item_property.PvpItem)
-    as "flags 0x8000 is PvP, which issue 56 closes"
+  assert gap_of(83_331) == Ok(item_property.PvpItem) as "flags 0x8000 is PvP"
   assert gap_of(29_213) == Ok(item_property.ProxyItem)
-    as "flags 0x4000 is a proxy, which issue 1052 closes"
-  assert item_property.gap_issue(gap: item_property.PvpItem) == Some(56)
-  assert item_property.gap_issue(gap: item_property.ProxyItem) == Some(1052)
+    as "flags 0x4000 is a proxy"
+}
+
+/// A PvP item and a proxy item are what the code does not follow and an item of the tables
+/// can take, so they are the entries of `gaps`. A resource maximum is set by the class
+/// resource (`genesis_prime/game/class_resource`), and a support beyond its range and a
+/// stat kind outside 0, 1, 2 and 4 are data no client row holds, so none has an entry. The
+/// entry's sentence carries the reason an unread item is logged with.
+pub fn the_item_property_branches_the_code_does_not_follow_have_entries_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let sentences = list.map(item_property.gaps(), fn(entry) { entry.missing })
+  let entry_for = fn(kind) {
+    "the properties of an item, which the server does not give when "
+    <> reason_of(kind)
+  }
+  assert list.contains(sentences, entry_for(item_property.PvpItem))
+    as "a PvP item (Item2.flags 0x8000) is an entry"
+  assert list.contains(sentences, entry_for(item_property.ProxyItem))
+    as "a proxy item (Item2.flags 0x4000) is an entry"
+  assert !list.contains(sentences, entry_for(item_property.ResourceMaximum))
+    as "the class resource sets the base, so nothing is missing"
+  assert !list.contains(sentences, entry_for(item_property.SupportBeyondRange))
+    as "no client row holds a support beyond its range"
+  assert !list.contains(sentences, entry_for(item_property.StatKind(kind: 3)))
+    as "no client row holds an ItemStat kind outside 0, 1, 2 and 4"
+  assert list.all(item_property.gaps(), fn(entry) {
+    !string.contains(entry.missing, "#")
+  })
+    as "no entry names an issue"
+}
+
+/// The reason an unread item is logged with, for a kind of gap.
+fn reason_of(kind: item_property.Gap) -> String {
+  item_property.describe(error: item_property.Unread(item2_id: 0, gap: kind))
+  |> string.remove_prefix("the item 0 is not read: ")
 }
 
 /// Every wearable client row of the four kinds this step reads (flags bit 3, an
@@ -1320,4 +1349,17 @@ pub fn binds_on_equip_of_each_kind_of_row_test() -> Nil {
     )
     == Error(item_property.NoRow(table: "Item2", id: 999_999_999))
     as "a missing row is an error, not an answer of no"
+}
+
+/// A proxy item's stack limit and deletable flag are read from its own row, not from the
+/// item GameFormula 1214 names (FillItemInfo 0x1404445d0), so they are an entry.
+pub fn the_proxy_items_stack_and_delete_decisions_have_an_entry_test() -> Nil {
+  use <- owned_test.run(10_000)
+  assert list.any(item_property.gaps(), fn(entry) {
+    string.contains(
+      entry.missing,
+      "stack limit and the deletable flag of a proxy item",
+    )
+  })
+    as "the proxy's own row decides both, which the client reads from its source row"
 }

@@ -172,6 +172,7 @@ import genesis_prime/game/tutorial
 import genesis_prime/game/unit_properties
 import genesis_prime/game/vendor
 import genesis_prime/game/visibility
+import genesis_prime/gap
 import genesis_prime/message/action_set.{ActionSet}
 import genesis_prime/message/action_shortcut.{ActionShortcut}
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
@@ -1079,7 +1080,7 @@ pub fn joined(
                 enter_world(place: sent),
                 player_created(unit:),
                 unit_is_player(unit_id:),
-                // Gap: that 0x92C belongs right after 0x19B is not proven by the
+                // That 0x92C belongs right after 0x19B is not proven by the
                 // client (it reads the properties when a bag is worn and keeps
                 // them in a map); the place is the server's, and the frame is sent
                 // once per play and join. Only a live check of a worn
@@ -1501,8 +1502,7 @@ pub fn control_granted_frame(unit_id unit_id: Int) -> Frame {
 }
 
 /// The world difficulty the server tells every player and a type 143 condition reads: 0,
-/// Normal. The server holds one world difficulty for all: instances, matching and PvP
-/// work on the real client (issue 56).
+/// Normal. The server holds one world difficulty for all.
 pub const world_difficulty = 0
 
 /// 0xF1 with the world difficulty, prime level 0, flags 0 and the client's own
@@ -1628,4 +1628,18 @@ fn action_set_frame(abilities abilities: List(Spell4BaseId)) -> Effect {
     ))
     as "a bar slot below 48 and an id of 32 bits fit the message"
   Send(Frame(message_id: action_set.message_id, body:))
+}
+
+/// What the world entry tells that differs from the client's.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "World entry",
+      missing: "a world difficulty other than Normal, which instances, matching and PvP set: the server tells every player 0",
+    ),
+    gap.Entry(
+      area: "World entry",
+      missing: "that the reward properties (0x92C) belong right after the player's creation (0x19B): the client's code does not show it, so the place is the server's",
+    ),
+  ]
 }

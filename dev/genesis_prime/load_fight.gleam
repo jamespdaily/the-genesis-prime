@@ -1,5 +1,5 @@
 //// The fight load run: what the map and the creatures cost when many ready players
-//// walk among a pack of creatures that fight them (issue 367's load run).
+//// walk among a pack of creatures that fight them.
 ////
 //// ```
 //// gleam run -m genesis_prime/load_fight              50 walkers

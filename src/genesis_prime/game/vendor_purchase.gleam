@@ -62,10 +62,10 @@
 //// - **The roll.** A bought item with random stat entries is made with a word rolled when
 ////   the store is asked (`entropy_needed`, `rolled`, `genesis_prime/game/random_stat`), one
 ////   roll for each made stack. A buy back makes no roll: the entry's word returns with the item.
-//// - **Gaps, each left to issue 1052**: the control states (60, 61), the
-////   prerequisites (15), Item_Unique (30) and sold out (13) are not checked. No stock row has
-////   a prerequisite or a stock limit (0x90B sends 0 for both), and the held-unique rule is not
-////   read. A stocked item priced in another currency is issue 1052's.
+//// - **Not checked**: the control states (60, 61), the prerequisites (15), Item_Unique (30)
+////   and sold out (13). No stock row has a prerequisite or a stock limit (0x90B sends 0 for
+////   both), and the held-unique rule is not read. A stocked item priced in another currency
+////   has no buy price (`genesis_prime/game/item_price`).
 ////
 //// | Point | What happens |
 //// |---|---|
@@ -88,6 +88,7 @@ import genesis_prime/game/vendor_trade.{
   type Effect, type Refusal, NoItemRow, NotDecoded, Refuse, Send,
 }
 import genesis_prime/game/world_entry.{type Buyback, Buyback}
+import genesis_prime/gap
 import genesis_prime/message/buyback_removed
 import genesis_prime/message/vendor_buyback
 import genesis_prime/message/vendor_purchase as vendor_purchase_message
@@ -612,4 +613,14 @@ pub fn not_bought(purchase purchase: Purchase) -> String {
   <> " of currency type "
   <> int.to_string(purchase.currency_type_id)
   <> " was not saved"
+}
+
+/// The refusals of a buy the client's checks give and this code does not.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Vendor purchases",
+      missing: "the refusals for the vendor's control states (60, 61), a stock row's prerequisite (15), Item_Unique (30) and sold out (13)",
+    ),
+  ]
 }

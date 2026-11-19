@@ -67,6 +67,7 @@ import genesis_prime/world_map/creature_unit_type.{NonPlayer}
 import gleam/list
 import gleam/option.{None}
 import gleam/set
+import gleam/string
 import owned_test
 import planted_table.{Integer}
 import quest_support
@@ -1304,4 +1305,18 @@ pub fn two_buys_of_a_random_stat_item_on_one_connection_make_different_words_tes
     as "each stack is made with a rolled word the client reads"
   assert first != second
     as "the second buy drew its own bytes, not the first's again"
+}
+
+/// The checks of a vendor's request that the server leaves to the client are entries:
+/// the control states (60, 61) and the combat refusal.
+pub fn the_vendor_checks_left_to_the_client_have_entries_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let sentences = list.map(interaction.gaps(), fn(entry) { entry.missing })
+  list.each(
+    ["a player in a control state (60, 61)", "a player in combat"],
+    fn(who) {
+      assert list.any(sentences, string.contains(_, who))
+        as { "the refusal for " <> who <> " is an entry" }
+    },
+  )
 }

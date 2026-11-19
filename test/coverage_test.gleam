@@ -243,9 +243,6 @@ pub fn every_engine_declares_its_area_and_the_type_columns_its_table_has_test() 
   use <- owned_test.run(10_000)
   use <- unitest.tags(["dev_tool", "coverage"])
   let declared = engine.all()
-  assert list.map(declared, fn(declaration) { declaration.area_issue })
-    == [47, 48, 1059, 49, 50, 51, 437]
-    as "Milestone 2's area issues: prerequisites 47, quest objectives 48, then the quest rewards' 1059, spell effects 49, unit types 50, messages 51; then the spend-scaled costs' issue 437"
   assert list.map(declared, fn(declaration) { declaration.name })
     == [
       "Prerequisites",
@@ -433,8 +430,8 @@ pub fn the_checklist_lists_each_type_heaviest_first_with_its_rows_share_and_whet
   ]
   assert string.contains(text, string.join(expected_lines, "\n"))
     as "the area's checklist: a line per type, [x] when handled, heaviest first, a type with one row written 'row'"
-  assert string.starts_with(text, "## Quest objectives (#48)\n")
-    as "the heading names the engine and its area issue"
+  assert string.starts_with(text, "## Quest objectives\n")
+    as "the heading is the engine's name"
   assert string.contains(text, "QuestObjective.type")
     as "the heading's text names the column that holds the type"
   assert string.contains(
@@ -442,6 +439,28 @@ pub fn the_checklist_lists_each_type_heaviest_first_with_its_rows_share_and_whet
     "8 rows over 4 types; 3 zero values left out; 2 of 4 types handled (75.0% of rows)",
   )
     as "the totals: 8 non-zero rows, 4 types, 3 zeros, the two handled types carry 6 of the 8 rows"
+}
+
+/// An engine declaration holds no issue number (the record has no such field), so a heading
+/// is the engine's name and nothing else, in the checklist and in the totals.
+pub fn an_engine_heading_is_its_name_and_declares_no_issue_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use <- unitest.tags(["dev_tool", "coverage"])
+  list.each(engine.all(), fn(declaration) {
+    let measurements = [Unmeasured(engine: declaration, needed: "the ids")]
+    assert string.starts_with(
+      checklist.render(measurements),
+      "## " <> declaration.name <> "\n",
+    )
+      as "the heading is the engine's name"
+    assert string.contains(
+      checklist.totals(measurements),
+      "| " <> declaration.name <> " | not measured |",
+    )
+      as "the totals row starts with the engine's name"
+    assert !string.contains(checklist.render(measurements), "(#")
+      as "no issue number in the heading"
+  })
 }
 
 pub fn the_totals_give_each_engine_its_types_rows_zeros_and_handled_types_test() -> Nil {
@@ -460,8 +479,8 @@ pub fn the_totals_give_each_engine_its_types_rows_zeros_and_handled_types_test()
       [
         "| Engine | Types in use | Rows | Zero values | Types handled | Starting abilities' rows handled |",
         "| --- | --- | --- | --- | --- | --- |",
-        "| Quest objectives (#48) | 4 | 8 | 3 | 2 |  |",
-        "| Client message routing (#51) | not measured | | | | |",
+        "| Quest objectives | 4 | 8 | 3 | 2 |  |",
+        "| Client message routing | not measured | | | | |",
       ],
       "\n",
     )
@@ -478,8 +497,8 @@ pub fn an_engine_whose_cases_are_not_recorded_says_what_is_needed_test() -> Nil 
         needed: "the 645 ids",
       ),
     ])
-  assert string.starts_with(text, "## Client message routing (#51)\n")
-    as "the heading names the engine and its area issue"
+  assert string.starts_with(text, "## Client message routing\n")
+    as "the heading is the engine's name"
   assert string.contains(text, "Not measured: the 645 ids")
     as "no list is made from ids nobody recorded; the text says what is needed"
   assert !string.contains(text, "- [")
@@ -500,8 +519,8 @@ pub fn the_message_checklist_says_each_id_the_client_sends_is_one_row_test() -> 
         starting: [],
       ),
     ])
-  assert string.starts_with(text, "## Client message routing (#51)\n")
-    as "the heading names the engine and its area issue"
+  assert string.starts_with(text, "## Client message routing\n")
+    as "the heading is the engine's name"
   assert string.contains(
     text,
     "Type: the message ids the client sends to the server, one row for each id.",

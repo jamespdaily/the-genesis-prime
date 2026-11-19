@@ -45,16 +45,15 @@ const dropped_ids = [
   0x0269, 0x018F, 0x0570,
 ]
 
-/// Each id taken with a stated gap: its fact key, words its reason holds and the
-/// issue that owns the gap.
+/// Each id taken with a stated gap: its fact key and words its reason holds.
 const partial_ids = [
-  #(0x03ED, "opcode.0x3ed", "0x64D", "#58"),
-  #(0x03EC, "opcode.0x3ec", "0x64C", "#58"),
-  #(0x0269, "opcode.0x269", "0x26A", "#58"),
-  #(0x018F, "opcode.0x18f", "0x192", "#58"),
-  #(0x0180, "opcode.0x180", "scanbot", "#55"),
-  #(0x0570, "opcode.0x570", "0x56F", "#60"),
-  #(0x012B, "opcode.0x12b", "shared-challenge", "#52"),
+  #(0x03ED, "opcode.0x3ed", "0x64D"),
+  #(0x03EC, "opcode.0x3ec", "0x64C"),
+  #(0x0269, "opcode.0x269", "0x26A"),
+  #(0x018F, "opcode.0x18f", "0x192"),
+  #(0x0180, "opcode.0x180", "scanbot"),
+  #(0x0570, "opcode.0x570", "0x56F"),
+  #(0x012B, "opcode.0x12b", "shared-challenge"),
 ]
 
 fn named(message_id message_id: Int) -> String {
@@ -114,7 +113,7 @@ pub fn dropped_ids_are_handled_and_the_missing_replies_are_stated_test() -> Nil 
     as "the routing engine is measured over the ids the client sends"
   assert breaches == [] as "every handled id is one the client sends"
   list.each(partial_ids, fn(entry) {
-    let #(id, fact_key, words, owner) = entry
+    let #(id, fact_key, words) = entry
     let label = named(message_id: id)
     let assert Ok(TypeLine(status:, ..)) =
       list.find(types, fn(line) { line.type_number == id })
@@ -127,8 +126,8 @@ pub fn dropped_ids_are_handled_and_the_missing_replies_are_stated_test() -> Nil 
       as {
         label <> ": the reason says what the client lacks (" <> reason <> ")"
       }
-    assert string.contains(reason, owner)
-      as { label <> ": the reason names the issue that owns it" }
+    assert !string.contains(reason, "#")
+      as { label <> ": the reason names no issue" }
   })
   let partial_numbers = list.map(partial_ids, fn(entry) { entry.0 })
   list.each(dropped_ids, fn(id) {

@@ -25,8 +25,8 @@
 ////   bag is refused (0x106 code 27) and stays Achieved.
 //// - **The checks, in the order of the client's turn-in** (`opcode.0x35d`), each a log line
 ////   once per reason on the connection, because the client sends the message only from a dialog
-////   it built from the same tables, so a refusal is a modified or stale client or a gap this
-////   server has; the first that fails answers:
+////   it built from the same tables, so a refusal is a modified or stale client or a case this
+////   server does not read; the first that fails answers:
 ////   1. a body the client's reader refuses ends the connection (`NotDecoded`)
 ////   1a. the player is dead, over the communicator or at a creature: 0x106 code 57
 ////      (Player_CantDoWhileDead), as a buy answers; the client's dialog closes on death
@@ -101,6 +101,7 @@ import genesis_prime/game/random_stat
 import genesis_prime/game/shown.{type Picture}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/vendor_trade.{type Effect, Log, Refuse, Send}
+import genesis_prime/gap
 import genesis_prime/message/quest_turn_in as quest_turn_in_message
 import genesis_prime/step.{LogError, LogWarning}
 import genesis_prime/store.{
@@ -561,7 +562,7 @@ fn rewarded(
     return: Error(Declined(
       key: "tradeskill reward",
       text: turning
-        <> ", which has a fixed tradeskill experience reward the client refuses for a player with no learned tradeskill (#677)",
+        <> ", which has a fixed tradeskill experience reward the client refuses for a player with no learned tradeskill",
     )),
   )
   let given =
@@ -664,7 +665,7 @@ fn state_allows(
 /// Achieved (2), as `0x14043c700` requires before it opens the dialog, and
 /// `communicator.turn_in` allows it. The communicator does not complete a quest that
 /// completes without being taken: the client's path for it needs a side-list entry only a
-/// call from the server makes, and the server sends no call (gap, issue 1054).
+/// call from the server makes, and the server sends no call.
 fn by_communicator_allows(
   turning turning: String,
   row row: Quest2,
@@ -686,7 +687,7 @@ fn by_communicator_allows(
         && int.bitwise_and(row.flags, completes_by_call_flags) != 0
       {
         True ->
-          ", and with flag 1 or 4 it completes over the communicator only through a side-list entry a call from the server makes, which the server does not send (#1054)"
+          ", and with flag 1 or 4 it completes over the communicator only through a side-list entry a call from the server makes, which the server does not send"
         False -> ""
       },
     )),
@@ -987,7 +988,7 @@ fn after(
 }
 
 /// The reward kinds the quest has that the server does not build, one line for each kind (its
-/// log key and text), in the order of their issues.
+/// log key and text), in the order of `kinds`.
 fn left_out(
   quest_id quest_id: Int,
   row row: Quest2,
@@ -997,37 +998,35 @@ fn left_out(
   let has = fn(left: Left) {
     list.any(kinds_given, fn(kind) { left_of(kind) == left })
   }
-  let line = fn(kind: String, issue: String) {
+  let line = fn(kind: String) {
     "quest "
     <> int.to_string(quest_id)
     <> " has "
     <> kind
-    <> " the server does not give yet ("
-    <> issue
-    <> "); the turn-in goes on without it"
+    <> " the server does not give; the turn-in goes on without it"
   }
   let kinds = [
     #(
       row.faction2_id_reward_reputation00 != 0
         || row.faction2_id_reward_reputation01 != 0
         || has(ReputationLeft),
-      #("reputation reward", line("a reputation reward", "#674")),
+      #("reputation reward", line("a reputation reward")),
     ),
     #(
       has(CurrencyLeft),
-      #("currency reward", line("a reward of a currency but credits", "#675")),
+      #("currency reward", line("a reward of a currency but credits")),
     ),
     #(
       has(RotationLeft),
-      #("rotation essence reward", line("a rotation essence reward", "#676")),
+      #("rotation essence reward", line("a rotation essence reward")),
     ),
     #(
       has(TradeskillLeft),
-      #("tradeskill reward kind", line("a tradeskill reward", "#677")),
+      #("tradeskill reward kind", line("a tradeskill reward")),
     ),
     #(
       int.bitwise_and(row.flags, quest.contract_flag) != 0,
-      #("contract reward", line("a contract reward", "#678")),
+      #("contract reward", line("a contract reward")),
     ),
   ]
   let unknown = list.filter_map(kinds_given, quest_reward_kind.unread_type)
@@ -1235,4 +1234,15 @@ pub fn answered(
 /// Which turn-in a log line is about.
 pub fn not_turned_in(turn_in turn_in: TurnIn) -> String {
   "the turn-in of quest " <> int.to_string(turn_in.quest_id)
+}
+
+/// What the turn-in does not do that the client does, apart from the reward kinds
+/// `left_out` logs.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Quest turn-in",
+      missing: "a communicator quest of flag 1 or 4 that completes without being taken: the client's path needs a side-list entry a call from the server makes, and the server sends no call",
+    ),
+  ]
 }

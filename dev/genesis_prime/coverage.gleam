@@ -23,6 +23,10 @@
 //// does not build. A character is granted each of them; a press of one is refused as an
 //// unknown spell.
 ////
+//// It then lists the gaps the server has that no other part prints, grouped by area, each
+//// module's own entries (`genesis_prime/coverage/gaps`); an entry with no area or sentence, a
+//// sentence with a change-log word, and an entry listed twice are breaches.
+////
 //// It then counts the press spells apart (genesis_prime/coverage/starting_ability.press_spells):
 //// the threshold spells with no threshold time whose Proxies the caster's gate picks, which no
 //// level tree holds, with the rows a press applies (its gated Proxies and the rows of the
@@ -59,6 +63,7 @@ import genesis_prime/content/server_proxy as content_server_proxy
 import genesis_prime/content/spawn as content_spawn
 import genesis_prime/coverage/checklist
 import genesis_prime/coverage/engine
+import genesis_prime/coverage/gaps
 import genesis_prime/coverage/item_use
 import genesis_prime/coverage/measurement.{type Measurement, Measured}
 import genesis_prime/coverage/named_unreached
@@ -125,6 +130,8 @@ pub fn main() -> Nil {
       io.println("")
       io.println(later_abilities_report(tables:))
       io.println("")
+      io.println(gaps.report())
+      io.println("")
       io.println(press_report(tables:))
       io.println("")
       io.println(item_use.render(report: item_use.measure(tables:)))
@@ -140,6 +147,7 @@ pub fn main() -> Nil {
         Error(why) ->
           list.append(breaches(measurements), [describe_named_failure(why)])
       }
+      let found = list.append(found, gaps.breaches(entries: gaps.registry()))
       case found {
         [] -> Nil
         _ -> {
@@ -199,7 +207,7 @@ fn later_abilities_report(tables tables: store.Tables) -> String {
         })
       string.join(
         [
-          "Later abilities, not planned (granted at their level, a press refused as an unknown spell, issue #1003): "
+          "Later abilities, not planned (granted at their level, a press refused as an unknown spell): "
             <> int.to_string(list.length(found))
             <> " (by class: "
             <> string.join(by_class, ", ")

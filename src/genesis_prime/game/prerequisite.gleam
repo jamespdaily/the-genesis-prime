@@ -114,10 +114,10 @@
 //// - **Type 47** never passes on the client, whatever the comparison (its slot is the same
 ////   `0x140001ba0` as type 243's), so a cast, an effect or a gossip entry behind it fails
 ////   (`Prerequisite.prerequisiteTypeId.47`). The visibility check leaves it `NotRead`
-////   instead (`check_for_visibility`): the creature stays shown. Gap: the 1,788 conditions
+////   instead (`check_for_visibility`): the creature stays shown. The 1,788 conditions
 ////   of the type name server-only ids the client never reads, so which creatures it hides
 ////   is open (Creature2 30305 and 34586 are the spawns of the world database that
-////   carry it; issue 818).
+////   carry it).
 //// - **Type 38** compares the first unit's Creature2 id, 0 for a player, with the value:
 ////   comparison 1 equal, 2 different, any other fails, and its objectId is not read
 ////   (`Prerequisite.prerequisiteTypeId.38`, `0x14049ecc0`). A first unit the check cannot
@@ -131,17 +131,15 @@
 ////   2 when it does not; any other fails (`Prerequisite.prerequisiteTypeId.13`, `.14`,
 ////   `.246`, `0x1403ac590`). Bit n of the mask selects the client's location n, whose list
 ////   the constructor `0x1403faa60` tags with that location; the store saves items only in
-////   locations 0, 1 and 2, so bits 5, 8, 9 and 10 read as holding nothing. Gap: the
-////   checker's satchel is not held, so an item there reads as not held, and the issue that
-////   saves items in locations 5, 8, 9 and 10 keeps bit n as location n (issue 53).
+////   locations 0, 1 and 2, so bits 5, 8, 9 and 10 read as holding nothing. The
+////   checker's satchel is not held, so an item there reads as not held.
 //// - **Type 143** compares the checker's world difficulty with the value: comparison 1
 ////   equal, 2 different, any other fails (`Prerequisite.prerequisiteTypeId.143`,
 ////   `0x14049ef70`).
 //// - **Type 118** compares the status of the public event objective the objectId names with
 ////   the value: comparison 1 equal, 2 different, any other fails. The server holds no
 ////   public event, so every objective has status 0 (inactive)
-////   (`Prerequisite.prerequisiteTypeId.118`, `0x1404a0590`). Gap: "Public events and
-////   challenges work on the real client" (issue 52).
+////   (`Prerequisite.prerequisiteTypeId.118`, `0x1404a0590`).
 //// - **Type 130** passes, by comparison 1, when the first unit carries a cast of a spell
 ////   in the spell group the objectId names whose caster is the check's second unit, and by
 ////   comparison 2 when it does not; any other fails, group 0 matches no spell and the value
@@ -168,20 +166,19 @@
 ////   (`Prerequisite.prerequisiteTypeId.6`, `.68`, `.43`, `.22`).
 //// - **Types 125, 69 and 74** read a flag of the player's challenge objectId: in
 ////   cooldown (125), active (69), unlocked (74, a guess at the flag's meaning: the
-////   client's name for it is not read; the challenge records are issue 52's). Comparison 1 passes when the flag is
+////   client's name for it is not read). Comparison 1 passes when the flag is
 ////   set, comparison 2 when it is clear, any other fails: a challenge the server has sent
 ////   no record for has every flag clear, and the server sends none, so comparison 2
 ////   always passes and comparison 1 never; the objectId and the value are not read
 ////   (`Prerequisite.prerequisiteTypeId.125`, `.69`, `.74`, `0x14049fac0`,
-////   `0x14049f990`, `0x14049fa80`). Gap: the records of challenges are issue 52's.
+////   `0x14049f990`, `0x14049fa80`).
 //// - **Type 288** passes, by comparison 1, when the client's own set of owned titles holds
 ////   the title the objectId names, and by comparison 2 when it does not, for a first unit
 ////   that is a player; any other comparison fails, and so does a creature, and the value is
 ////   not read (`Prerequisite.prerequisiteTypeId.288`, `0x1404a1830`). The set is the
 ////   client's single one, filled only by messages 0x018A and 0x018B (`opcode.0x18a`,
 ////   `opcode.0x18b`); the server sends neither and owns no title, so it is empty and the
-////   condition reads it so. Gap: owned titles are "Paths and titles work on the real
-////   client" (issue 55), which gives this condition its real set.
+////   condition reads it so.
 //// - **Type 94** (the target is counted by a checklist objective) reads the check's
 ////   creature, the first unit unless it is a player and then the second, and the objective
 ////   `value` of the quest `objectId` (`Prerequisite.prerequisiteTypeId.94`,
@@ -215,7 +212,7 @@
 ////   (`of_struck`), so every condition that reads what else it holds is `NotRead`; a struck
 ////   creature that checks its own gate holds its own facts and the caster as its second
 ////   unit (`of_creature`), and only types 15, 59 and 129, which read every caster's casts
-////   on it, stay unread (`struck_unread_types`, issue 569).
+////   on it, stay unread (`struck_unread_types`).
 
 import genesis_prime/game/area.{type Pose}
 import genesis_prime/game/lasting
@@ -223,6 +220,7 @@ import genesis_prime/game/quest_log.{
   type Quest, type QuestLog, type QuestRowError,
 }
 import genesis_prime/game/top_zone
+import genesis_prime/gap
 import genesis_prime/message/float32
 import genesis_prime/random
 import genesis_prime/store.{type Character, type HeldItem}
@@ -413,7 +411,7 @@ type Condition {
     quest: Option(Quest),
   )
   /// Types 125, 69 and 74: a flag of the player's challenge record (in cooldown,
-  /// active, unlocked: a guess for 74, issue 52); the server holds no challenge record, so every flag is clear
+  /// active, unlocked: a guess for 74); the server holds no challenge record, so every flag is clear
   /// (`Prerequisite.prerequisiteTypeId.125`, `.69`, `.74`).
   ChallengeFlag(comparison: Comparison)
   /// Type 288: whether the client's own set of owned titles holds a title
@@ -712,7 +710,7 @@ pub fn of_struck(
 /// facing give, and the caster second, with its quest log. The connection holds no life,
 /// vital, faction or flag of a creature, so the subject holds none of them either: a
 /// condition that reads what else it holds is `NotRead`. Another player's casts on the
-/// creature are not in `under` (gap, issue 569). `creature_id` is the Creature2 row of the pressed creature, which type 38
+/// creature are not in `under`. `creature_id` is the Creature2 row of the pressed creature, which type 38
 /// reads, and `checker` is what the caster holds of its own.
 pub fn of_target(
   under under: List(lasting.Held),
@@ -1519,7 +1517,7 @@ pub fn press_unread_types(
 /// The PrerequisiteTypes, in the prerequisite and the rows it nests, that a unit the
 /// caster struck cannot be checked against, each once: 15, 59 and 129, which read every
 /// caster's casts on the unit, so only the unit's owner can hold them (the creature holds
-/// none until issue 569 moves the casts into it). Every other type is one of the
+/// none, since the casts are not moved into it). Every other type is one of the
 /// creature's own facts (`of_creature`) or the caster's, and is read.
 pub fn struck_unread_types(
   prerequisite prerequisite: Prerequisite,
@@ -1711,7 +1709,7 @@ pub fn check(
 
 /// The prerequisite checked for what a unit's visibility prerequisite decides: as `check`,
 /// except that type 47, which fails every cast, effect and gossip entry, is `NotRead`, so
-/// a creature behind it stays shown (gap, issue 818).
+/// a creature behind it stays shown.
 pub fn check_for_visibility(
   prerequisite prerequisite: Prerequisite,
   subject subject: Subject,
@@ -2078,8 +2076,7 @@ fn condition_decided(
     )
     // No 0xc7 is ever sent, so the client's challenge list is empty and no challenge
     // flag is set: not in cooldown, not active, not unlocked (`opcode.0xc7`,
-    // `0x140c65948`). Gap: the challenge records wait for "Public events and
-    // challenges work on the real client" (issue 52).
+    // `0x140c65948`).
     ChallengeFlag(comparison:) -> #(rolls, asked(comparison:, holds: False))
     TitleOwned(comparison:) -> #(rolls, case subject.first_unit {
       UnknownUnit -> NotRead(prerequisite_type: 288)
@@ -2088,8 +2085,7 @@ fn condition_decided(
     })
     NeverMet -> #(rolls, Fails)
     // Type 47 is never met by a cast, an effect or a gossip entry; the visibility
-    // check does not decide it, so the creature stays shown. Gap: the condition's real
-    // test waits for issue 818.
+    // check does not decide it, so the creature stays shown.
     ServerGated ->
       case purpose {
         Gating -> #(rolls, Fails)
@@ -2139,7 +2135,7 @@ fn condition_decided(
         equality_verdict(comparison:, equal: checker.world_difficulty == value)
     })
     // The server holds no public event, so every objective has status 0
-    // (`Prerequisite.prerequisiteTypeId.118`). Gap: public events wait for issue 52.
+    // (`Prerequisite.prerequisiteTypeId.118`).
     ObjectiveStatus(comparison:, value:, ..) -> #(
       rolls,
       equality_verdict(comparison:, equal: value == 0),
@@ -2452,4 +2448,34 @@ fn floats_compare(
     False -> 0.0
   }
   holds(relation:, ordering: float.compare(measured, value))
+}
+
+/// What the prerequisite conditions read that the server does not hold.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Prerequisites",
+      missing: "the status of a public event objective (type 118): the server holds no public event, so every objective reads inactive",
+    ),
+    gap.Entry(
+      area: "Prerequisites",
+      missing: "a player's challenge records (types 125, 69 and 74): the server holds none, so every flag reads clear",
+    ),
+    gap.Entry(
+      area: "Prerequisites",
+      missing: "a player's owned titles (type 288): the server owns no title, so the set reads empty",
+    ),
+    gap.Entry(
+      area: "Prerequisites",
+      missing: "an item in the checker's satchel and in the item locations 5, 8, 9 and 10 (types 13, 14 and 246): the server saves items only in locations 0, 1 and 2, so an item there reads as not held",
+    ),
+    gap.Entry(
+      area: "Prerequisites",
+      missing: "the real test of a type 47 condition, whose ids the client never reads: a cast, an effect or a gossip entry behind it fails, and a creature it hides stays shown",
+    ),
+    gap.Entry(
+      area: "Prerequisites",
+      missing: "the casts of every other caster on a creature (types 15, 59 and 129): the check of a creature a player struck leaves them unread",
+    ),
+  ]
 }

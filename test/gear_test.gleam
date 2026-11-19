@@ -21,8 +21,8 @@
 //// - The properties without a shield: the UnitProperty2 rows' defaultValue of 41
 ////   (ShieldCapacityMax) 0.0, 175 (ShieldMitigationMax) 0.0, 176 (ShieldRegenPct) 0.25
 ////   and 178 (ShieldRebootTime) 2500.0 (`UnitProperty2.client_value`).
-//// - An item the reader leaves unread: the PvP flags 0x8000 (the PvP gap record, open
-////   issue #56) and `0x1404445d0` (the flags 0x4000), as `item_property` records.
+//// - An item the reader leaves unread: the PvP flags 0x8000 and `0x1404445d0` (the flags
+////   0x4000), as `item_property` records.
 
 import fixture_tables
 import genesis_prime/game/gear
@@ -39,6 +39,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
+import gleam/string
 import novice_tables.{type Set}
 import owned_test
 import planted_table.{Integer}
@@ -276,7 +277,7 @@ pub fn without_a_shield_its_four_properties_are_the_defaults_test() -> Nil {
     as "0x14040dbf0: the Novice shield's capacity, mitigation, regeneration and reboot time replace the defaults"
 }
 
-pub fn an_item_the_reader_refuses_is_worn_and_shown_but_gives_nothing_test() -> Nil {
+pub fn a_worn_item_with_an_unread_branch_warns_with_the_reason_and_no_issue_test() -> Nil {
   use <- owned_test.run(60_000)
   let nothing =
     ItemProperties(
@@ -290,7 +291,7 @@ pub fn an_item_the_reader_refuses_is_worn_and_shown_but_gives_nothing_test() -> 
   let chest_slot =
     ItemVisual(slot: 1, display_id: 3838, item_color_set_id: 0, dye: 0)
   // A copy of the Warrior's chest that is a PvP item, flags 0x8000: its budget rows are
-  // read, its PvP branches are not, and its warning names the open issue.
+  // read, its PvP branches are not, and its warning gives the reason.
   fixture_tables.added(
     table: "Item2",
     copy_of: 81_359,
@@ -326,9 +327,14 @@ pub fn an_item_the_reader_refuses_is_worn_and_shown_but_gives_nothing_test() -> 
         as "it is listed unread, with its id and its reason"
       assert gear.warnings(gear: worn, known: None)
         == [
-          "the worn item 99001 gives no properties: the item 99001 is not read: it is a PvP item (open issue 56)",
+          "the worn item 99001 gives no properties: the item 99001 is not read: it is a PvP item",
         ]
-        as "one warning names the item, the reason and the open issue that closes it"
+        as "one warning names the item and the reason, and ends there"
+      assert !string.contains(
+        string.join(gear.warnings(gear: worn, known: None), " "),
+        "issue",
+      )
+        as "no open issue is named"
     },
   )
   // A copy with the flags 0x4000: not read, and the client never dresses it.
@@ -362,6 +368,11 @@ pub fn an_item_the_reader_refuses_is_worn_and_shown_but_gives_nothing_test() -> 
         #(Item2Id(99_001), item_property.Unread(item2_id: 99_001, ..)),
       ] = worn.unread
         as "it is listed unread"
+      assert gear.warnings(gear: worn, known: None)
+        == [
+          "the worn item 99001 gives no properties: the item 99001 is not read: its flags hold 0x4000, so the client takes its fields from a proxy item",
+        ]
+        as "the warning of a proxy item ends at its reason too"
       Nil
     },
   )

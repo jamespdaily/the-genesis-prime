@@ -9,7 +9,8 @@
 //// - `0x140557000`: a fixed TradeSkillXp row refuses the turn-in for a player with no learned
 ////   tradeskill; a type 5 row is not refused (the server's choice, `quest_turn_in`'s own rule).
 //// - The lines a turn-in leaves out are the server's own text, one per kind, in the order
-////   reputation, currency, rotation, tradeskill, each naming the issue that closes it.
+////   reputation, currency, rotation, tradeskill, contract, each saying the server does not
+////   give that reward.
 //// - Quest 10520 is the quest Dorian Walker receives: no Quest2Reward row, difficulty 6
 ////   whose cashRewardMultiplier is 0, so it pays no credits of its own; its rows are
 ////   added here, each a copy of Quest2Reward 2471 with the cells named.
@@ -21,9 +22,9 @@ import genesis_prime/step.{LogWarning}
 import genesis_prime/store.{NewStack, Placed}
 import genesis_prime/table/id.{Item2Id}
 import genesis_prime/table/loader/store as table_store
-import gleam/int
 import gleam/list
 import gleam/option
+import gleam/set
 import gleam/string
 import owned_test
 import planted_table.{Integer}
@@ -116,7 +117,10 @@ pub fn a_fixed_tradeskill_experience_reward_declines_the_turn_in_and_a_new_trade
       as "the refusal names the reward"
   }
   let #(_, lines) = turned_in(rewards: fixed(5))
-  assert list.map(lines, string.contains(_, "#677")) == [True]
+  assert lines
+    == [
+      "quest 10520 has a tradeskill reward the server does not give; the turn-in goes on without it",
+    ]
     as "a fixed type 5 row does not refuse the turn-in; it is left out with the tradeskill line"
 }
 
@@ -180,38 +184,85 @@ pub fn item_rewards_of_one_item_add_together_and_place_in_order_of_first_appeara
     as "the two rows of 6998 are one stack of 5, placed first; 179 follows; the reputation and money rows name 6998 and 179 as objects and place nothing"
 }
 
-pub fn each_reward_kind_the_server_leaves_out_has_its_own_line_in_its_order_test() -> Nil {
+pub fn each_reward_kind_the_turn_in_leaves_out_is_worded_without_an_issue_and_keeps_its_key_test() -> Nil {
   use <- owned_test.run(60_000)
-  let one = fn(type_number, object_id, flags) {
-    let #(_, lines) =
-      turned_in(rewards: [
-        Reward(type_number:, object_id:, amount: 1, flags:),
-      ])
-    lines
+  let left_out = fn(rewards: List(Reward)) {
+    use tables <- with_rewards(rewards)
+    let assert Ok(quest_turn_in.Asks(effects:, logged:, ..)) =
+      support.taken(scene: scene_for(rewards:), tables:)
+      as "the turn-in passes every check, so the store is asked"
+    #(
+      list.map(effects, fn(effect) {
+        let assert Log(text:, ..) = effect as "each line is a log"
+        text
+      }),
+      set.to_list(logged),
+    )
   }
-  let named = fn(lines: List(String), issues: List(String)) {
-    list.length(lines) == list.length(issues)
-    && list.all(list.zip(lines, issues), fn(pair) {
-      string.contains(pair.0, pair.1)
-    })
+  let said = fn(kind: String) {
+    "quest 10520 has "
+    <> kind
+    <> " the server does not give; the turn-in goes on without it"
   }
-  assert named(one(2, 1, 0), ["#674"]) as "type 2 is a reputation reward"
-  assert named(one(3, 4, 0), ["#675"])
-    as "type 3 of currency 4 is a reward of a currency but credits"
-  assert named(one(7, 1, 0), ["#675"]) as "type 7 is an account currency"
-  assert named(one(10, 1, 0), ["#676"]) as "type 10 is rotation essence"
-  assert named(one(4, 1, 1), ["#677"])
-    as "type 4 chosen is left out with the tradeskill line"
-  assert named(one(5, 1, 0), ["#677"]) as "type 5 is left out with it too"
-  assert one(3, 1, 0) == [] as "a credits reward is given, not left out"
-  assert one(1, 179, 0) == [] as "an item reward is placed, not left out"
-  assert one(6, 1, 0)
-    == [
-      "quest 10520 has a reward of type 6, which the client's tables do not name for the server; the turn-in goes on without it",
-    ]
+  // The reward rows, the key each logs under, the kind its text names and why.
+  let cases = [
+    #(
+      [Reward(type_number: 2, object_id: 1, amount: 1, flags: 0)],
+      "reputation reward",
+      "a reputation reward",
+      "type 2 is a reputation reward",
+    ),
+    #(
+      [Reward(type_number: 3, object_id: 4, amount: 1, flags: 0)],
+      "currency reward",
+      "a reward of a currency but credits",
+      "type 3 of currency 4 is a reward of a currency but credits",
+    ),
+    #(
+      [Reward(type_number: 7, object_id: 1, amount: 1, flags: 0)],
+      "currency reward",
+      "a reward of a currency but credits",
+      "type 7 is an account currency",
+    ),
+    #(
+      [Reward(type_number: 10, object_id: 1, amount: 1, flags: 0)],
+      "rotation essence reward",
+      "a rotation essence reward",
+      "type 10 is rotation essence",
+    ),
+    #(
+      [Reward(type_number: 4, object_id: 1, amount: 1, flags: 1)],
+      "tradeskill reward kind",
+      "a tradeskill reward",
+      "type 4 chosen is left out with the tradeskill line",
+    ),
+    #(
+      [Reward(type_number: 5, object_id: 1, amount: 1, flags: 0)],
+      "tradeskill reward kind",
+      "a tradeskill reward",
+      "type 5 is left out with it too",
+    ),
+  ]
+  list.each(cases, fn(row) {
+    let #(rewards, key, kind, reason) = row
+    assert left_out(rewards) == #([said(kind)], [key]) as reason
+  })
+  assert left_out([Reward(type_number: 3, object_id: 1, amount: 1, flags: 0)])
+    == #([], [])
+    as "a credits reward is given, not left out"
+  assert left_out([Reward(type_number: 1, object_id: 179, amount: 1, flags: 0)])
+    == #([], [])
+    as "an item reward is placed, not left out"
+  assert left_out([Reward(type_number: 6, object_id: 1, amount: 1, flags: 0)])
+    == #(
+      [
+        "quest 10520 has a reward of type 6, which the client's tables do not name for the server; the turn-in goes on without it",
+      ],
+      ["unknown reward type"],
+    )
     as "no row of the client has type 6: the one line names the number"
-  let #(_, together) =
-    turned_in(rewards: [
+  let #(together, _) =
+    left_out([
       Reward(type_number: 6, object_id: 1, amount: 1, flags: 0),
       Reward(type_number: 10, object_id: 1, amount: 1, flags: 0),
       Reward(type_number: 7, object_id: 1, amount: 1, flags: 0),
@@ -219,9 +270,22 @@ pub fn each_reward_kind_the_server_leaves_out_has_its_own_line_in_its_order_test
       Reward(type_number: 2, object_id: 1, amount: 1, flags: 0),
       Reward(type_number: 4, object_id: 1, amount: 1, flags: 1),
     ])
-  assert named(together, ["#674", "#675", "#676", "#677", "type 6"])
-    as {
-      "one line for each kind in the order of their issues, and the unknown type last, whatever the order of the rows: "
-      <> int.to_string(list.length(together))
-    }
+  assert together
+    == [
+      said("a reputation reward"),
+      said("a reward of a currency but credits"),
+      said("a rotation essence reward"),
+      said("a tradeskill reward"),
+      "quest 10520 has a reward of type 6, which the client's tables do not name for the server; the turn-in goes on without it",
+    ]
+    as "one line for each kind in the order reputation, currency, rotation, tradeskill, and the unknown type last, whatever the order of the rows"
+  use tables <- support.with_changes(changes: [
+    #("Quest2", quest_id, [#("flags", Integer(0x80000))]),
+  ])
+  let assert Ok(quest_turn_in.Asks(effects:, logged:, ..)) =
+    support.taken(scene: support.scene(quest_id:), tables:)
+    as "a contract quest is turned in"
+  assert effects == [Log(level: LogWarning, text: said("a contract reward"))]
+    as "Quest2 flag 0x80000 is a contract, whose reward is left out"
+  assert set.to_list(logged) == ["contract reward"]
 }
