@@ -8,6 +8,7 @@
 //// ```
 //// chat_message ─▶ Command(session, written, command) ─▶ run
 ////   Summon                           ─▶ chat.summoning ─▶ the map is asked
+////   GiveItem                         ─▶ info log, vendor_purchase.given ─▶ the store is asked, or one system line
 ////   RaiseToLevel / RaiseToExperience ─▶ experience.raised(held, target)
 ////        Ok(credited) ─▶ info log, connection/experience.gained (0x1ac, 0x938 ...), one system line
 ////        Already, Lowering ─▶ one system line, nothing changes
@@ -23,17 +24,29 @@
 ////   its record.
 //// - **A raise asks no process**: the new level and experience are saved with the
 ////   place by the next save, as any gain is.
+//// - **An item is a purchase of no cost**: `GiveItem` asks the store the buy of a vendor
+////   asks (genesis_prime/game/connection/vendor_purchase `given`), the connection waits in
+////   `Buying`, and the answer is a purchase's with the Cheat reason and a system line in
+////   place of the vendor's 0x106. A store that gives no answer ends the connection with
+////   reason 8 and saves the place; the statement may have committed, so the next login
+////   holds the items though the connection never did.
 
 import genesis_prime/client_connection.{type Request, Asking, Continue, Done}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/chat
 import genesis_prime/game/connection/chat as connection_chat
 import genesis_prime/game/connection/experience as connection_experience
-import genesis_prime/game/connection/state.{type Session} as connection_state
+import genesis_prime/game/connection/state.{
+  type Session, AwaitingHelloReply, Buying, ClaimingSession, EnteringWorld,
+  InCharacterSelect, InWorld, LeavingMap, MovingItem, SavingPlace, Selling,
+  SpendingCharge, Summoning, TakingSessionKey, TurningIn, WaitingToClaim,
+} as connection_state
+import genesis_prime/game/connection/vendor_purchase as connection_vendor_purchase
 import genesis_prime/game/dev_command
 import genesis_prime/game/experience.{type Progress, Already, Lowering, Progress}
 import genesis_prime/game/world_entry
 import genesis_prime/step.{type ConnectionEffect, type Effect, type Now}
+import genesis_prime/table/id.{type Item2Id}
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
@@ -88,6 +101,56 @@ fn run(
         written:,
         named: "!xp " <> int.to_string(total),
         target: experience.ToExperience(experience: total),
+      )
+    dev_command.GiveItem(item2_id:, count:) ->
+      given(session:, now:, written:, item2_id:, count:)
+  }
+}
+
+/// The items of an `!item` line put in the bag: the store is asked for them as a purchase of
+/// no cost and the answer's frames and one system line follow (genesis_prime/game/vendor_purchase),
+/// or one system line says the bag has no room. A status other than `InWorld` cannot have
+/// taken the line, so it is a bug that ends the connection.
+fn given(
+  session session: Session,
+  now now: Now,
+  written written: List(Effect(ConnectionEffect(Request))),
+  item2_id item2_id: Item2Id,
+  count count: Int,
+) -> client_connection.Handled(Session) {
+  case session.status {
+    InWorld(holder:, entered:) ->
+      connection_vendor_purchase.given(
+        session:,
+        now:,
+        holder:,
+        entered:,
+        written:,
+        logged_as: "dev command !item "
+          <> int.to_string(item2_id.value)
+          <> " "
+          <> int.to_string(count),
+        item2_id:,
+        count:,
+      )
+    Summoning(..)
+    | MovingItem(..)
+    | SpendingCharge(..)
+    | Buying(..)
+    | Selling(..)
+    | TurningIn(..)
+    | SavingPlace(..)
+    | LeavingMap(..)
+    | EnteringWorld(..)
+    | ClaimingSession(..)
+    | WaitingToClaim(..)
+    | InCharacterSelect(..)
+    | AwaitingHelloReply
+    | TakingSessionKey ->
+      connection_state.end_for(
+        session:,
+        now:,
+        text: "!item was run while the player was not in the world",
       )
   }
 }

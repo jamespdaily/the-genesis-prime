@@ -10,16 +10,22 @@
 //// experience of level 50 is 26,360,090 (XpPerLevel row 50, minXpForLevel).
 
 import fixture_tables
+import genesis_prime/game/currency
 import genesis_prime/game/dev_command.{
-  ExperienceOutOfRange, ExperienceTakesAWholeNumber, LevelOutOfRange,
+  ExperienceOutOfRange, ExperienceTakesAWholeNumber, GiveItem, ItemCountIsZero,
+  ItemHasNoRow, ItemIsAProxy, ItemTakesAnItem2IdAndACount, LevelOutOfRange,
   LevelTakesAWholeNumber, RaiseToExperience, RaiseToLevel,
   SummonLevelIsNotAWholeNumber, SummonTakesACreature2Id, UnknownCommand,
 }
+import genesis_prime/game/vendor_purchase
+import genesis_prime/game/vendor_trade
 import genesis_prime/message/bit_stream
-import genesis_prime/table/id.{Creature2Id}
+import genesis_prime/message/chat_line
+import genesis_prime/table/id.{Creature2Id, Item2Id}
 import gleam/bool
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/set
 import owned_test
 import qcheck
 
@@ -307,4 +313,97 @@ pub fn a_level_or_experience_the_tables_do_not_hold_is_refused_by_checked_before
     )
     == Ok(dev_command.Summon(creature2_id: Creature2Id(75_048), level: None))
     as "a summon's rows are the map's check"
+}
+
+pub fn item_takes_an_item2_id_and_an_optional_count_as_whole_decimal_numbers_test() -> Nil {
+  use <- owned_test.run(5000)
+  list.each(
+    [
+      #(
+        "!item 90021",
+        Ok(GiveItem(item2_id: Item2Id(90_021), count: 1)),
+        "no count is a count of 1",
+      ),
+      #(
+        "!item 90021 3",
+        Ok(GiveItem(item2_id: Item2Id(90_021), count: 3)),
+        "an Item2 id and a count",
+      ),
+      #("!item", Error(ItemTakesAnItem2IdAndACount), "no argument"),
+      #("!item 1 2 3", Error(ItemTakesAnItem2IdAndACount), "three arguments"),
+    ],
+    fn(row) {
+      assert parsed(row.0) == row.1 as row.2
+    },
+  )
+}
+
+pub fn an_item_the_tables_do_not_hold_is_refused_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = fixture_tables.shared()
+  list.each(
+    [
+      #(
+        GiveItem(item2_id: Item2Id(90_021), count: 1),
+        Ok(GiveItem(item2_id: Item2Id(90_021), count: 1)),
+        "Item2 90021 is a row, not a proxy",
+      ),
+      #(
+        GiveItem(item2_id: Item2Id(999_999_999), count: 1),
+        Error(ItemHasNoRow(item2_id: Item2Id(999_999_999))),
+        "no Item2 row has the id",
+      ),
+      #(
+        GiveItem(item2_id: Item2Id(29_213), count: 1),
+        Error(ItemIsAProxy(item2_id: Item2Id(29_213))),
+        "Item2 29213 has the proxy flag 0x4000",
+      ),
+      #(
+        GiveItem(item2_id: Item2Id(90_021), count: 0),
+        Error(ItemCountIsZero),
+        "a count of 0 gives nothing",
+      ),
+    ],
+    fn(row) {
+      assert dev_command.checked(command: row.0, tables:) == row.1 as row.2
+    },
+  )
+  assert dev_command.describe(refusal: ItemTakesAnItem2IdAndACount)
+    == "!item takes an Item2 id and an optional count, as !item 90021 or !item 90021 3"
+  assert dev_command.describe(refusal: ItemHasNoRow(item2_id: Item2Id(5)))
+    == "!item 5 is no row of the Item2 table"
+  assert dev_command.describe(refusal: ItemIsAProxy(item2_id: Item2Id(29_213)))
+    == "!item does not give a proxy item (29213): the client reads its stack limit and its deletable flag from another item, and the server reads the item's own row"
+  assert dev_command.describe(refusal: ItemCountIsZero)
+    == "!item's count is at least 1"
+}
+
+pub fn an_item_count_of_any_length_parses_and_is_answered_bag_full_not_by_a_crash_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let assert Ok(GiveItem(item2_id:, count:)) =
+    parsed("!item 90021 99999999999999999999999999")
+    as "a number of any length parses"
+  assert count == 99_999_999_999_999_999_999_999_999
+  let tables = fixture_tables.shared()
+  assert dev_command.checked(command: GiveItem(item2_id:, count:), tables:)
+    == Ok(GiveItem(item2_id:, count:))
+    as "the tables bound no count; the bag does"
+  let assert Ok(vendor_purchase.Refused(effects:, ..)) =
+    vendor_purchase.given(
+      item2_id:,
+      count:,
+      items: [],
+      currencies: currency.from_held(held: []),
+      tables:,
+      now_unix_ms: 0,
+      logged: set.new(),
+    )
+    as "inventory.placed is bounded by the bag's slots, so the count is refused, not asked"
+  let assert [vendor_trade.Send(frame:)] = effects
+    as "one system line and no 0x106"
+  let assert Ok(line) = chat_line.decode(frame.body)
+  assert line.text
+    == bit_stream.utf16_units(
+      "bag full: no room for 99999999999999999999999999 x Item2 90021",
+    )
 }

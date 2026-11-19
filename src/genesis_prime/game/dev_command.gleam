@@ -17,15 +17,27 @@
 ////   Whether a CreatureLevel row has the level is the map's check.
 ////   `level` takes one whole decimal number, a level, and `xp` one, a total
 ////   experience; a number has any length, so the tables refuse one too large.
+////   `item` takes one whole decimal number, an Item2 id, and then optionally a
+////   second, the count, which is 1 when there is none.
 //// - **The tables' refusals** are `checked`'s: a level outside 1 to the highest
-////   level (GameFormula 145 dataint0) and an experience above the highest
-////   level's minXpForLevel (its XpPerLevel row), compared as whole numbers.
+////   level (GameFormula 145 dataint0), an experience above the highest
+////   level's minXpForLevel (its XpPerLevel row), an item with no Item2 row, a
+////   proxy item and a count of 0, compared as whole numbers.
+//// - **A proxy item is refused**: the client reads its stack limit and its
+////   deletable flag from another item, and the server reads the item's own row
+////   (`item_property.is_proxy`, Item2 flags 0x4000), so a given one could be
+////   made with a stack the client would not hold.
 //// - **A word with no command**, and a command whose arguments are not what it
 ////   takes, are each answered with a system line, never as a Say line, so a
 ////   mistyped command is not said aloud to the players who see the speaker.
 
+import genesis_prime/game/item_property
 import genesis_prime/game/level
-import genesis_prime/table/id.{type Creature2Id, Creature2Id, XpPerLevelId}
+import genesis_prime/gap
+import genesis_prime/table/id.{
+  type Creature2Id, type Item2Id, Creature2Id, Item2Id, XpPerLevelId,
+}
+import genesis_prime/table/item2
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/xp_per_level
 import gleam/int
@@ -46,6 +58,10 @@ pub type Command {
   /// `!xp <total>`: raise the player's experience to that total, with the
   /// client's own gain and, when it crosses a level, level rise.
   RaiseToExperience(experience: Int)
+  /// `!item <Item2 id>` or `!item <Item2 id> <count>`: put `count` of the item
+  /// in the player's bag, saved as a purchase of no cost, with the client's
+  /// own loot notice.
+  GiveItem(item2_id: Item2Id, count: Int)
 }
 
 /// Why a `!` line is no command.
@@ -66,6 +82,15 @@ pub type Refusal {
   LevelOutOfRange(level: Int, highest: Int)
   /// The experience is above `highest`, the highest level's minXpForLevel.
   ExperienceOutOfRange(experience: Int, highest: Int)
+  /// The word is `item`, but what follows is not a whole number for the Item2
+  /// id, or one and a count, and nothing more.
+  ItemTakesAnItem2IdAndACount
+  /// The Item2 table has no row with the id.
+  ItemHasNoRow(item2_id: Item2Id)
+  /// The item is a proxy item.
+  ItemIsAProxy(item2_id: Item2Id)
+  /// The count is 0.
+  ItemCountIsZero
 }
 
 /// Whether the text is a command line: its first UTF-16 unit is `!`.
@@ -107,14 +132,21 @@ pub fn parse(text text: List(Int)) -> Result(Command, Refusal) {
           |> result.replace_error(ExperienceTakesAWholeNumber)
         [] | [_, _, ..] -> Error(ExperienceTakesAWholeNumber)
       }
+    [command, ..arguments] if command == item_word ->
+      case arguments {
+        [item] -> item_of(item:, count: Ok(1))
+        [item, count] -> item_of(item:, count: decimal(units: count))
+        [] | [_, _, _, ..] -> Error(ItemTakesAnItem2IdAndACount)
+      }
     [_, ..] | [] -> Error(UnknownCommand)
   }
 }
 
 /// The command the tables allow, or the refusal that names what they do not
-/// hold: a level outside 1 to the highest level and an experience above the
-/// highest level's minXpForLevel, compared as whole numbers so a number of any
-/// length is a refusal.
+/// hold: a level outside 1 to the highest level, an experience above the
+/// highest level's minXpForLevel, an item with no Item2 row, a proxy item and a
+/// count of 0, compared as whole numbers so a number of any length is a
+/// refusal.
 pub fn checked(
   command command: Command,
   tables tables: table_store.Tables,
@@ -129,6 +161,16 @@ pub fn checked(
         False -> Error(LevelOutOfRange(level:, highest:))
       }
     }
+    GiveItem(item2_id:, count:) ->
+      case item2.get(tables:, id: item2_id) {
+        Error(Nil) -> Error(ItemHasNoRow(item2_id:))
+        Ok(row) ->
+          case item_property.is_proxy(row), count {
+            True, _ -> Error(ItemIsAProxy(item2_id:))
+            False, 0 -> Error(ItemCountIsZero)
+            False, _ -> Ok(command)
+          }
+      }
     RaiseToExperience(experience:) -> {
       let assert Ok(highest_level) = level.highest_level(tables)
         as "the load requires GameFormula row 145"
@@ -154,6 +196,17 @@ fn summon(
   |> result.replace_error(SummonTakesACreature2Id)
 }
 
+/// The item of the units' Item2 id and the count, when both are whole numbers.
+fn item_of(
+  item item: List(Int),
+  count count: Result(Int, Nil),
+) -> Result(Command, Refusal) {
+  case decimal(units: item), count {
+    Ok(number), Ok(count) -> Ok(GiveItem(item2_id: Item2Id(number), count:))
+    Error(Nil), _ | _, Error(Nil) -> Error(ItemTakesAnItem2IdAndACount)
+  }
+}
+
 /// `!summon` as the UTF-16 units the client sends.
 const summon_word = [0x21, 0x73, 0x75, 0x6D, 0x6D, 0x6F, 0x6E]
 
@@ -162,6 +215,9 @@ const level_word = [0x21, 0x6C, 0x65, 0x76, 0x65, 0x6C]
 
 /// `!xp` as the UTF-16 units the client sends.
 const experience_word = [0x21, 0x78, 0x70]
+
+/// `!item` as the UTF-16 units the client sends.
+const item_word = [0x21, 0x69, 0x74, 0x65, 0x6D]
 
 /// The words of the units, split at spaces (0x20), in order: a run of spaces is
 /// one split, and spaces at either end hold no word.
@@ -217,5 +273,26 @@ pub fn describe(refusal refusal: Refusal) -> String {
       <> int.to_string(experience)
       <> " is above the experience of the highest level, "
       <> int.to_string(highest)
+    ItemTakesAnItem2IdAndACount ->
+      "!item takes an Item2 id and an optional count, as !item 90021 or !item 90021 3"
+    ItemHasNoRow(item2_id:) ->
+      "!item "
+      <> int.to_string(item2_id.value)
+      <> " is no row of the Item2 table"
+    ItemIsAProxy(item2_id:) ->
+      "!item does not give a proxy item ("
+      <> int.to_string(item2_id.value)
+      <> "): the client reads its stack limit and its deletable flag from another item, and the server reads the item's own row"
+    ItemCountIsZero -> "!item's count is at least 1"
   }
+}
+
+/// What the commands leave undone, for the coverage measure.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Development commands",
+      missing: "`!item` of a proxy item, whose stack limit and deletable flag the client reads from another item",
+    ),
+  ]
 }
