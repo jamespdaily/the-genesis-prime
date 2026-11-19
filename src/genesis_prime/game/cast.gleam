@@ -3605,7 +3605,8 @@ fn start(
       primary_target:,
       caster:,
       activating: case role {
-        Activation(..) -> True
+        Activation(activating: Activating(by_item: False, ..), ..) -> True
+        Activation(activating: Activating(by_item: True, ..), ..) -> False
         Child(..) | Base(..) | Stage(..) | Passive | Shortcut(..) -> False
       },
       caster_item_level: case pressed {
