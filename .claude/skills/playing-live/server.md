@@ -5,6 +5,7 @@ The play server runs as a Podman container on Jim's Mac, rebuilt from main by a 
 - `podman ps` shows `genesis-play` (the server) and `genesis-play-postgres` (the play database, `postgres:18`, data in the volume `genesis-play-data`). `podman logs genesis-play` is the server's log.
 - `~/.genesis-prime/play-service.log` holds one line per action of the updater: each build, migration and restart, and each commit it left alone and why.
 - To stop it by hand: `dev/play_service/stop.sh --hold` (the updater then leaves it alone); `dev/play_service/start.sh` starts it again and releases the hold.
+- Before a stop by hand, check no player is connected: `lsof -nP -iTCP:24000 -sTCP:ESTABLISHED`. A merge during a sitting restarts the server within minutes (the updater runs every 2 minutes), players connected or not: hold it first with `stop.sh --hold` or tell Jim; never promise the old build stays. (Promised wrongly after the crowd-control merge, 2026-11-14.)
 - `scripts/session.sh` stops the container before its run and starts it after, also when the run fails, and the updater does nothing while the live lock is held.
 
 ## The play database
