@@ -150,3 +150,20 @@ pub fn the_measure_prints_the_gaps_section_with_every_registered_entry_test() ->
       as { "the sentence " <> entry.missing }
   })
 }
+
+pub fn the_dev_command_gap_entry_is_printed_by_the_registry_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tags(["dev_tool", "coverage"])
+  let proxy =
+    Entry(
+      area: "Development commands",
+      missing: "`!item` of a proxy item, whose stack limit and deletable flag the client reads from another item",
+    )
+  assert list.contains(gaps.registry(), proxy)
+    as "dev_command.gaps() is registered"
+  assert string.contains(
+    gaps.report(),
+    "Development commands:\n- " <> proxy.missing,
+  )
+    as "the gaps section prints the entry under its area"
+}

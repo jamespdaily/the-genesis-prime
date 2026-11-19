@@ -10,6 +10,9 @@
 ////    ─▶ Bought(amount, made)   ─▶ answered: entered.currencies and entered.items updated; 0x919 of the currency's kind, then 0x111 / 0x17F reason 7 (16 and a 0xBD after them for a buy back); status InWorld; held frames replayed
 ////    ─▶ ItemsNotSaved | SaveRefused(constraint) ─▶ 0x106 5 and a warning; nothing in memory changes; status InWorld
 ////    ─▶ unavailable, not running, past deadline ─▶ the connection ends, reason 8 (as an item move)
+//// a development command's `given` ─▶ the same ask at a cost of 0 after the command's own effects and its info line;
+////    no room: the rule's one system line after those effects, nothing asked; the answer is a purchase's
+////    with the reason 4, no 0x919 and a system line in place of the 0x106 (genesis_prime/game/connection/dev_command)
 //// ```
 ////
 //// | Case | Killed there | Twice at once | Times out |
@@ -31,7 +34,11 @@ import genesis_prime/game/vendor_purchase
 import genesis_prime/game/vendor_trade as trade_rule
 import genesis_prime/game/world_entry
 import genesis_prime/hand_off.{type Holder}
-import genesis_prime/step.{type Now, type Outcome}
+import genesis_prime/step.{
+  type ConnectionEffect, type Effect, type Now, type Outcome,
+}
+import genesis_prime/table/id.{type Item2Id}
+import gleam/list
 
 /// The client's 0x00BE, taken from inside 0x038C with the player in the world: a refusal is
 /// written and the player stays in the world; an accepted buy asks the store and the
@@ -49,6 +56,7 @@ pub fn purchase_message(
     now:,
     holder:,
     entered:,
+    before: [],
     taken: vendor_purchase.take(
       body: inner.body,
       items: entered.items,
@@ -81,6 +89,7 @@ pub fn buy_back_message(
     now:,
     holder:,
     entered:,
+    before: [],
     taken: vendor_purchase.take_back(
       body: inner.body,
       items: entered.items,
@@ -115,20 +124,63 @@ fn window_of(
   )
 }
 
-/// What the rule made of a buy or a buy back: a refusal is written, an accepted one asks the
-/// store, and a refusal that ends the connection ends it.
+/// The items a development command gives, from the player in the world: the one info line
+/// `logged_as` after the effects `written` and then the ask of the store, when the bag has the
+/// room; otherwise the rule's one system line after `written` and nothing is asked.
+pub fn given(
+  session session: Session,
+  now now: Now,
+  holder holder: Holder,
+  entered entered: world_entry.Entered,
+  written written: List(Effect(ConnectionEffect(client_connection.Request))),
+  logged_as logged_as: String,
+  item2_id item2_id: Item2Id,
+  count count: Int,
+) -> client_connection.Handled(Session) {
+  let given =
+    vendor_purchase.given(
+      item2_id:,
+      count:,
+      items: entered.items,
+      currencies: entered.currencies,
+      tables: session.settings.tables,
+      now_unix_ms: step.unix_milliseconds(now:),
+      logged: session.interaction_logged,
+    )
+  let logged = case given {
+    Ok(vendor_purchase.Asks(..)) -> [
+      connection_state.log(session:, level: step.LogInfo, text: logged_as),
+    ]
+    Ok(vendor_purchase.Refused(..))
+    | Error(trade_rule.NotDecoded(..))
+    | Error(trade_rule.NoItemRow(..)) -> []
+  }
+  taken(
+    session:,
+    now:,
+    holder:,
+    entered:,
+    before: list.append(written, logged),
+    taken: given,
+  )
+}
+
+/// What the rule made of a buy, a buy back or items a command gives: a refusal is written
+/// after the effects `before`, an accepted one asks the store after them, and a refusal that
+/// ends the connection ends it.
 fn taken(
   session session: Session,
   now now: Now,
   holder holder: Holder,
   entered entered: world_entry.Entered,
+  before before: List(Effect(ConnectionEffect(client_connection.Request))),
   taken taken: Result(vendor_purchase.Taken, trade_rule.Refusal),
 ) -> client_connection.Handled(Session) {
   case taken {
     Ok(vendor_purchase.Refused(effects:, logged:)) ->
       Continue(
         Session(..session, interaction_logged: logged),
-        vendor_trade.effects_of(session:, effects:),
+        list.append(before, vendor_trade.effects_of(session:, effects:)),
       )
     Ok(vendor_purchase.Asks(purchase:, logged:)) -> {
       let tables = session.settings.tables
@@ -152,7 +204,7 @@ fn taken(
           character_id: entered.character_id,
           session_epoch: movement.session_epoch(state: entered.movement),
         )),
-        before: [],
+        before:,
       )
     }
     Error(refusal) ->

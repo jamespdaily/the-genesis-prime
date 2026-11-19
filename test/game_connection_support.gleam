@@ -1688,6 +1688,45 @@ pub fn entered_with_quests_and_items_on(
   answer(state:, taken:, outcome: step.Answer(FromMap(map_answer(taken))))
 }
 
+/// `entered_with_quests_and_items_on` with the development commands on, for a character that
+/// holds `credits` (no credits row when 0), its burst taken.
+pub fn entered_with_dev_commands(
+  tables tables: store_tables.Tables,
+  quests quests: List(store.QuestRow),
+  items items: List(store.HeldItem),
+  credits credits: Int,
+) -> game_connection.State {
+  let fresh = accepted(Settings(..settings_with_dev_commands(), tables:)).0
+  let character = world_character()
+  let #(state, taken) =
+    playing_from(in_character_select: in_select_from(fresh), character_id: 42)
+  let #(state, taken) =
+    answer(
+      state:,
+      taken:,
+      outcome: step.Answer(
+        FromStore(
+          ForWorld(
+            CharacterLoaded(
+              character,
+              character_support.epoch(1),
+              None,
+              None,
+              list.append(world_entry_support.novice_items(character:), items),
+              [],
+              quests,
+              case credits {
+                0 -> []
+                _ -> [HeldCurrency(currency_type_id: 1, amount: credits)]
+              },
+            ),
+          ),
+        ),
+      ),
+    )
+  answer(state:, taken:, outcome: step.Answer(FromMap(map_answer(taken)))).0
+}
+
 /// The Medic of these tables in the world, whose log holds these quests.
 pub fn medic_in_holding(
   tables tables: store_tables.Tables,

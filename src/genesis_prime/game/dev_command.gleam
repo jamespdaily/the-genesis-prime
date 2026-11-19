@@ -19,10 +19,13 @@
 ////   experience; a number has any length, so the tables refuse one too large.
 ////   `go` takes a World id, a WorldZone id and x, y, z (each coordinate with an
 ////   optional leading `-`), or one WorldLocation2 id.
+////   `item` takes one whole decimal number, an Item2 id, and then optionally a
+////   second, the count, which is 1 when there is none.
 ////   `quest` takes one whole decimal number, a Quest2 id, and the word `done`.
 //// - **The tables' refusals** are `checked`'s: a level outside 1 to the highest
 ////   level (GameFormula 145 dataint0), an experience above the highest
-////   level's minXpForLevel (its XpPerLevel row), compared as whole numbers, a
+////   level's minXpForLevel (its XpPerLevel row), an item with no Item2 row, a
+////   proxy item and a count of 0, compared as whole numbers, a
 ////   quest with no Quest2 row (the client refuses a quest it has no row for,
 ////   FindQuestById 0xa00b0001); for `go`, a World, WorldZone or WorldLocation2 id
 ////   with no row and a position outside the box the client clamps a unit's drawn
@@ -30,16 +33,23 @@
 ////   compared as whole numbers so a number of any length is a refusal. A named
 ////   place is checked by its row's own world, zone and position, as a coordinate
 ////   place is.
+//// - **A proxy item is refused**: the client reads its stack limit and its
+////   deletable flag from another item, and the server reads the item's own row
+////   (`item_property.is_proxy`, Item2 flags 0x4000), so a given one could be
+////   made with a stack the client would not hold.
 //// - **A word with no command**, and a command whose arguments are not what it
 ////   takes, are each answered with a system line, never as a Say line, so a
 ////   mistyped command is not said aloud to the players who see the speaker.
 
+import genesis_prime/game/item_property
 import genesis_prime/game/level
 import genesis_prime/game/start_place
+import genesis_prime/gap
 import genesis_prime/table/id.{
-  type Creature2Id, type Quest2Id, Creature2Id, Quest2Id, WorldId,
-  WorldLocation2Id, WorldZoneId, XpPerLevelId,
+  type Creature2Id, type Item2Id, type Quest2Id, Creature2Id, Item2Id, Quest2Id,
+  WorldId, WorldLocation2Id, WorldZoneId, XpPerLevelId,
 }
+import genesis_prime/table/item2
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest2
 import genesis_prime/table/world
@@ -68,6 +78,10 @@ pub type Command {
   /// `!go <World id> <WorldZone id> <x> <y> <z>` or `!go <WorldLocation2 id>`:
   /// place the player at once at that place.
   Go(destination: Destination)
+  /// `!item <Item2 id>` or `!item <Item2 id> <count>`: put `count` of the item
+  /// in the player's bag, saved as a purchase of no cost, with the client's
+  /// own loot notice.
+  GiveItem(item2_id: Item2Id, count: Int)
   /// `!quest <Quest2 id> done`: complete that quest in the player's log, with the
   /// follow-ups a turn-in's completion has and none of the quest's own rewards.
   CompleteQuest(quest2_id: Quest2Id)
@@ -119,6 +133,15 @@ pub type Refusal {
   /// The coordinate on `axis`, whole, is outside the box the client clamps a
   /// unit's drawn position to.
   PositionOutsideTheBox(axis: Axis, coordinate: Int)
+  /// The word is `item`, but what follows is not a whole number for the Item2
+  /// id, or one and a count, and nothing more.
+  ItemTakesAnItem2IdAndACount
+  /// The Item2 table has no row with the id.
+  ItemHasNoRow(item2_id: Item2Id)
+  /// The item is a proxy item.
+  ItemIsAProxy(item2_id: Item2Id)
+  /// The count is 0.
+  ItemCountIsZero
   /// The word is `quest`, but what follows is not one whole number and the word
   /// `done`, and nothing more.
   QuestTakesAQuest2IdAndDone
@@ -196,6 +219,12 @@ pub fn parse(text text: List(Int)) -> Result(Command, Refusal) {
         [] | [_, _] | [_, _, _] | [_, _, _, _] | [_, _, _, _, _, ..] ->
           Error(GoTakesAPlace)
       }
+    [command, ..arguments] if command == item_word ->
+      case arguments {
+        [item] -> item_of(item:, count: Ok(1))
+        [item, count] -> item_of(item:, count: decimal(units: count))
+        [] | [_, _, _, ..] -> Error(ItemTakesAnItem2IdAndACount)
+      }
     [command, ..arguments] if command == quest_word ->
       case arguments {
         [quest, done] if done == done_word ->
@@ -212,10 +241,11 @@ pub fn parse(text text: List(Int)) -> Result(Command, Refusal) {
 
 /// The command the tables allow, or the refusal that names what they do not
 /// hold: a level outside 1 to the highest level, an experience above the
-/// highest level's minXpForLevel, compared as whole numbers so a number of any
-/// length is a refusal; for a `!go`, a World, WorldZone or WorldLocation2 with no
-/// row, and a position outside the box, in that order; for a `!quest`, a quest with
-/// no Quest2 row.
+/// highest level's minXpForLevel, an item with no Item2 row, a proxy item and a
+/// count of 0, compared as whole numbers so a number of any length is a
+/// refusal; for a `!go`, a World, WorldZone or WorldLocation2 with no row, and a
+/// position outside the box, in that order; and for a `!quest`, a quest with no
+/// Quest2 row.
 pub fn checked(
   command command: Command,
   tables tables: table_store.Tables,
@@ -230,6 +260,16 @@ pub fn checked(
         False -> Error(LevelOutOfRange(level:, highest:))
       }
     }
+    GiveItem(item2_id:, count:) ->
+      case item2.get(tables:, id: item2_id) {
+        Error(Nil) -> Error(ItemHasNoRow(item2_id:))
+        Ok(row) ->
+          case item_property.is_proxy(row), count {
+            True, _ -> Error(ItemIsAProxy(item2_id:))
+            False, 0 -> Error(ItemCountIsZero)
+            False, _ -> Ok(command)
+          }
+      }
     RaiseToExperience(experience:) -> {
       let assert Ok(highest_level) = level.highest_level(tables)
         as "the load requires GameFormula row 145"
@@ -378,6 +418,17 @@ fn summon(
   |> result.replace_error(SummonTakesACreature2Id)
 }
 
+/// The item of the units' Item2 id and the count, when both are whole numbers.
+fn item_of(
+  item item: List(Int),
+  count count: Result(Int, Nil),
+) -> Result(Command, Refusal) {
+  case decimal(units: item), count {
+    Ok(number), Ok(count) -> Ok(GiveItem(item2_id: Item2Id(number), count:))
+    Error(Nil), _ | _, Error(Nil) -> Error(ItemTakesAnItem2IdAndACount)
+  }
+}
+
 /// `!summon` as the UTF-16 units the client sends.
 const summon_word = [0x21, 0x73, 0x75, 0x6D, 0x6D, 0x6F, 0x6E]
 
@@ -389,6 +440,9 @@ const experience_word = [0x21, 0x78, 0x70]
 
 /// `!go` as the UTF-16 units the client sends.
 const go_word = [0x21, 0x67, 0x6F]
+
+/// `!item` as the UTF-16 units the client sends.
+const item_word = [0x21, 0x69, 0x74, 0x65, 0x6D]
 
 /// `!quest` as the UTF-16 units the client sends.
 const quest_word = [0x21, 0x71, 0x75, 0x65, 0x73, 0x74]
@@ -488,9 +542,30 @@ pub fn describe(refusal refusal: Refusal) -> String {
       <> " to "
       <> int.to_string(limit)
     }
+    ItemTakesAnItem2IdAndACount ->
+      "!item takes an Item2 id and an optional count, as !item 90021 or !item 90021 3"
+    ItemHasNoRow(item2_id:) ->
+      "!item "
+      <> int.to_string(item2_id.value)
+      <> " is no row of the Item2 table"
+    ItemIsAProxy(item2_id:) ->
+      "!item does not give a proxy item ("
+      <> int.to_string(item2_id.value)
+      <> "): the client reads its stack limit and its deletable flag from another item, and the server reads the item's own row"
+    ItemCountIsZero -> "!item's count is at least 1"
     QuestTakesAQuest2IdAndDone ->
       "!quest takes a Quest2 id and the word done, as !quest 5972 done"
     NoQuest2Row(quest2_id: Quest2Id(value:)) ->
       "!quest " <> int.to_string(value) <> " names no Quest2 row"
   }
+}
+
+/// What the commands leave undone, for the coverage measure.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Development commands",
+      missing: "`!item` of a proxy item, whose stack limit and deletable flag the client reads from another item",
+    ),
+  ]
 }

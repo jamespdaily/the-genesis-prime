@@ -38,8 +38,9 @@ pub type BuyFromVendorRow {
 /// ($3) is still the one that login was told (load_character.sql), only while the character
 /// holds exactly `$5` of that currency (the total the login holds) and at least `$6`, and
 /// only when each stack to raise is the character's, of the Item2 `$7`, with the count it is
-/// held with; otherwise it changes nothing and returns no row. The account's id is in the
-/// statement, as for a load.
+/// held with; otherwise it changes nothing and returns no row. A character with no row for the
+/// currency holds 0 of it, so it passes only at a `$6` of 0, and then the statement makes the
+/// row at 0. The account's id is in the statement, as for a load.
 ///
 /// The rows it returns are one for each stack made, each with the amount left and the word, charges, flags byte and moment it
 /// runs out it was made with; one row with
@@ -58,8 +59,8 @@ pub fn buy_from_vendor(
   character_id: Int,
   character_account_id: Int,
   character_session_epoch: Int,
-  balance_currency_type_id: Int,
-  balance_amount: Int,
+  held_currency_type_id: Int,
+  arg_5: Int,
   arg_6: Int,
   held_item2_id: Int,
   arg_8: List(Int),
@@ -105,8 +106,9 @@ pub fn buy_from_vendor(
 -- ($3) is still the one that login was told (load_character.sql), only while the character
 -- holds exactly `$5` of that currency (the total the login holds) and at least `$6`, and
 -- only when each stack to raise is the character's, of the Item2 `$7`, with the count it is
--- held with; otherwise it changes nothing and returns no row. The account's id is in the
--- statement, as for a load.
+-- held with; otherwise it changes nothing and returns no row. A character with no row for the
+-- currency holds 0 of it, so it passes only at a `$6` of 0, and then the statement makes the
+-- row at 0. The account's id is in the statement, as for a load.
 --
 -- The rows it returns are one for each stack made, each with the amount left and the word, charges, flags byte and moment it
 -- runs out it was made with; one row with
@@ -122,16 +124,19 @@ with grown as (
     as grow (item_guid, held_count, new_count)
 ),
 allowed as (
-  select balance.character_id
+  select character.character_id
   from character
-  join character_currency as balance on balance.character_id = character.character_id
   where character.character_id = $1
     and character.account_id = $2
     and character.session_epoch = $3
-    and balance.currency_type_id = $4
-    and balance.amount = $5
+    and coalesce((
+      select held.amount
+      from character_currency as held
+      where held.character_id = character.character_id
+        and held.currency_type_id = $4
+    ), 0) = $5
     and $6 >= 0
-    and balance.amount >= $6
+    and $5 >= $6
     and (
       select count(*)
       from grown
@@ -142,12 +147,12 @@ allowed as (
     ) = (select count(*) from grown)
 ),
 spent as (
-  update character_currency as balance
-  set amount = balance.amount - $6
+  insert into character_currency (character_id, currency_type_id, amount)
+  select allowed.character_id, $4, 0
   from allowed
-  where balance.character_id = allowed.character_id
-    and balance.currency_type_id = $4
-  returning balance.amount
+  on conflict (character_id, currency_type_id) do update
+    set amount = character_currency.amount - $6
+  returning amount
 ),
 raised as (
   update character_item as held
@@ -184,8 +189,8 @@ order by made.item_guid;
   |> pog.parameter(pog.int(character_id))
   |> pog.parameter(pog.int(character_account_id))
   |> pog.parameter(pog.int(character_session_epoch))
-  |> pog.parameter(pog.int(balance_currency_type_id))
-  |> pog.parameter(pog.int(balance_amount))
+  |> pog.parameter(pog.int(held_currency_type_id))
+  |> pog.parameter(pog.int(arg_5))
   |> pog.parameter(pog.int(arg_6))
   |> pog.parameter(pog.int(held_item2_id))
   |> pog.parameter(pog.array(fn(value) { pog.int(value) }, arg_8))

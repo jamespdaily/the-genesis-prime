@@ -25,6 +25,7 @@ import genesis_prime/game/click_objective
 import genesis_prime/game/communicator
 import genesis_prime/game/connection/dev_command as connection_dev_command
 import genesis_prime/game/cooldown
+import genesis_prime/game/dev_command
 import genesis_prime/game/forced_move
 import genesis_prime/game/hit
 import genesis_prime/game/interaction
@@ -80,6 +81,7 @@ pub fn registry() -> List(Entry) {
     target_group.gaps(),
     interaction.gaps(),
     vendor_purchase.gaps(),
+    dev_command.gaps(),
     vendor_sale.gaps(),
     world_entry.gaps(),
     spell_plan.gaps(),
