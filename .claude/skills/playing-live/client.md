@@ -5,6 +5,7 @@ Each script's header is its contract: what it runs on the PC, what it refuses, a
 ## What the scripts cannot enforce
 
 - For a click at a point the script does not name, or a named one that misses, read the point from a screenshot (`scripts/screenshot.sh`).
+- `scripts/client.sh rclick <x> <y> --pc-free` right-clicks a point, as `click` left-clicks it (the same checks and gate); a creature's right-click is its interact and a bag item's is its use. The named points are the login and character-creation screens only.
 - The client uploads its error reports to `crash.na.wildstar-online.com`, which still resolves; the PC's hosts file maps it to `0.0.0.0`. A new play PC needs the same line before its first session.
 - Save the `client.sh start` line, with the program's SHA-256, in the session folder.
 
