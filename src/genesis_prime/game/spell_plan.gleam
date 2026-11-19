@@ -6815,7 +6815,7 @@ fn global_cooldown_of(
 ///   the activate target (the client sends no cast at a creature in combat);
 /// - bits 6 and 7 (118, 120): pass, because no unit the server shows is seated on another;
 /// - bit 5 (116): passes, pending the decoder question of what the client's unit word
-///   0xc4 holds (#334).
+///   0xc4 holds (gap, issue 1053).
 /// A mask bit outside these is a condition the server does not judge.
 pub const target_mask_read = 227
 

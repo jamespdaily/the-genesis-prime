@@ -816,7 +816,7 @@ pub fn a_press_at_a_player_that_reaches_the_faction_test_is_not_built_test() -> 
   let assert [line] = warnings(effects:)
   assert string.contains(
     line,
-    "Quests, zones and prerequisites work on the real client",
+    "An effect a player casts on another player lands on that player",
   )
     as "the log names the open issue"
   let #(_, own) =
@@ -833,7 +833,7 @@ pub fn a_press_at_a_player_that_reaches_the_faction_test_is_not_built_test() -> 
   let assert [own_line] = warnings(effects: own)
   assert string.contains(
     own_line,
-    "Quests, zones and prerequisites work on the real client",
+    "An effect a player casts on another player lands on that player",
   )
     as "the log names the same issue"
 }
@@ -974,8 +974,8 @@ pub fn a_target_condition_the_server_does_not_hold_refuses_as_not_built_test() -
   let assert [line] = warnings(effects: first)
   assert string.contains(line, "43164") && string.contains(line, "71")
     as "the log names the spell and the type"
-  assert string.contains(line, "(#334)") && !string.contains(line, "(#336)")
-    as "a prerequisite the server does not read is the issue of the prerequisites, #334"
+  assert string.contains(line, "(#818)") && !string.contains(line, "(#336)")
+    as "a prerequisite the server does not read is the issue of the prerequisite types, #818"
   let #(_, second) =
     press_at(scene:, state:, spell4_id: 43_164, target: 911, at: 2000)
   assert support.refusal_results(effects: second)
@@ -1001,8 +1001,8 @@ pub fn a_caster_condition_of_an_unread_type_refuses_as_not_built_test() -> Nil {
     as "Spell4 32581's CasterCast is Prerequisite 28094, a type 16 the server does not read"
   let assert [line] = warnings(effects:)
   assert string.contains(line, "16") as "the log names the type"
-  assert string.contains(line, "(#334)")
-    as "a caster condition the server does not read is the issue of the prerequisites, #334"
+  assert string.contains(line, "(#818)")
+    as "a caster condition the server does not read is the issue of the prerequisite types, #818"
 }
 
 pub fn a_press_of_a_targeted_spell_that_cannot_be_planned_stays_not_built_test() -> Nil {

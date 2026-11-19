@@ -2,9 +2,8 @@
 //// (`genesis_prime/game/item_use`). Expected values come from these places.
 //// - UseItem `0x1403998e0` and StartItemUseCast `0x140398cc0`: the item's spell is
 ////   ItemSpecial.spell4IdOnActivate of Item2.itemSpecialId00; the checks run in the
-////   order the prerequisite of Item2.prerequisiteId (17, UseItem), charges (25, kept as
-////   not built: #333), level (26), second place (always {300, 0xffffffff} unless the
-////   spell's targetType is 6; a second place the client never sends ends the connection
+////   order the prerequisite of Item2.prerequisiteId (17, UseItem), charges (25), level (26),
+////   second place (always {300, 0xffffffff} unless the spell's targetType is 6; a second place the client never sends ends the connection
 ////   first, whatever else fails), then the quest checks when Item2.quest2IdActivationRequired is
 ////   set: a whole quest (objective -1) gives 29 in state 2 or 3 and 28 unless the
 ////   state is 1; a named objective gives 29 when done and 28 when not open; a

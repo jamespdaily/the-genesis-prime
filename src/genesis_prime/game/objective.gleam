@@ -80,7 +80,7 @@
 //// objective with no pane), and each unit once, as a type
 //// 23 objective does (`quest_log.used`; the client keeps no per-unit record, so the once is
 //// the server's choice, and an objective in `reused` counts the same unit again); a cast of a spell aimed at the caster names no unit and counts
-//// at each go. Gaps, each closed by the quests, zones and prerequisites issue (#334): the
+//// at each go. Gaps, each closed by issue 1055: the
 //// go is the moment a cast counts by a guess, until a retail recording of quest 3915, 4832
 //// or 7618 shows it; the place an objective names is not tested; a spell aimed at the
 //// caster whose objective sets a reward pane (rows 14187 and 14203) counts at the go, not
@@ -783,8 +783,7 @@ fn activates_creature(
 /// `unix_ms`, the Unix time in milliseconds, whose repeat periods `numbers` sets). The
 /// objective counts when it is open, and an objective that this opens counts in the same
 /// call. That a completion is what sets it is read from the objective's text and title,
-/// not from client code (a gap in the fact's record; the issue "Quests, zones and
-/// prerequisites work on the real client" closes it by recording quest 7540 live).
+/// not from client code (a gap in the fact's record; recording quest 7540 live would settle it).
 pub fn settle(
   log log: QuestLog,
   tables tables: table_store.Tables,

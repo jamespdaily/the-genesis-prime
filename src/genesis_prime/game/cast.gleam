@@ -97,19 +97,19 @@ import genesis_prime/game/cast/state.{
   type Lingering, type Listed, type Live, type Message, type Paid,
   type PressedFrom, type Reached, type Refusal, type Resolution,
   type Restricting, type Role, type State, type Struck, type TargetVerdict,
-  type TickAsked, type Used, type UsedUnit, Accept, Activated, Activating,
-  Activation, ActivationStart, Aimed, AimedPress, AnswerSucceeded, Answered,
-  AwaitingAnswer, Base, Cancelled, CannotTell, CastClears, CasterChangeEnds,
-  CasterChangeStarts, ChargeLevel, Child, CooldownEnds, CooldownKept,
-  CooldownModifierEnds, CooldownModifierStarts, Deflected, Finish,
+  type TickAsked, type Used, type UsedUnit, Accept, ActivateCastIssue, Activated,
+  Activating, Activation, ActivationStart, Aimed, AimedPress, AnswerSucceeded,
+  Answered, AwaitingAnswer, Base, Cancelled, CannotTell, CastClears,
+  CasterChangeEnds, CasterChangeStarts, ChargeLevel, Child, CooldownEnds,
+  CooldownKept, CooldownModifierEnds, CooldownModifierStarts, Deflected, Finish,
   ForcedMoveStart, Frames, GateFails, Go, GoAsked, Healing, Held, HeldProc, Hit,
-  Hold, HoldForCast, Holding, Immune, Item, ItemAtPlace, ItemPress, ItemsIssue,
-  KeyHeld, Lingering, Listed, Live, Log, ModifierEnd, ModifierStart,
-  NoClientCastId, NoInteraction, NoInteractionWaits, NoItemSpell, NodesEnd,
-  NotBuilt, NotDecoded, NotSentByClient, Passive, Plain, PrerequisitesIssue,
-  Pressed, PressedAt, ProcDue, QuestAdvanceDue, QuestAdvanced, QuestButton,
-  Reached, Refuse, RepeatHeld, Resolution, ResourceMoved, RestrictionEnd, Send,
-  Shortcut, ShortcutCast, SpellsIssue, Stage, StartChild, StartHeld, Started,
+  Hold, HoldForCast, Holding, Immune, Item, ItemAtPlace, ItemPress, KeyHeld,
+  Lingering, Listed, Live, Log, ModifierEnd, ModifierStart, NoClientCastId,
+  NoInteraction, NoInteractionWaits, NoItemSpell, NodesEnd, NotBuilt, NotDecoded,
+  NotSentByClient, Passive, Plain, PrerequisitesIssue, Pressed, PressedAt,
+  ProcDue, QuestAdvanceDue, QuestAdvanced, QuestButton, Reached, Refuse,
+  RepeatHeld, Resolution, ResourceMoved, RestrictionEnd, Send, Shortcut,
+  ShortcutCast, SpellsIssue, Stage, StartChild, StartHeld, Started,
   StartedMoving, Starts, State, StateEnd, StealthChanged, Strike,
   TargetModifierStart, Tell, Threshold, Tick, UnbuiltItemSpell, UnbuiltShortcut,
   UnbuiltSpell, UnknownAnswer, UnknownCancel, UnreadItemPrerequisite,
@@ -607,7 +607,7 @@ fn item_on_a_unit(
         key: UnbuiltItemSpell(spell4_id:),
         result: cast_result.IllegalSpellCast,
         why: "has no Activate and no QuestAdvanceObjective effect, which is all the server plays of an item's spell cast at a unit",
-        issue: ItemsIssue,
+        issue: ActivateCastIssue,
       ))
     Ok(activate.NoSpell4Row) -> refusal(spell4_id, cast_result.SpellUnknown)
     Ok(activate.CannotBePlanned(why:)) ->
@@ -989,6 +989,7 @@ fn aimed_in_group(
         why: "names a creature whose activate pick rests on a prerequisite of the type "
           <> int.to_string(prerequisite_type)
           <> ", which the server does not read",
+        issue: PrerequisitesIssue,
       )
   }
 }

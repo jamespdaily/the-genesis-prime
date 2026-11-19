@@ -48,7 +48,7 @@ pub fn a_type_47_visibility_condition_is_not_decided_test() -> Nil {
   // cast, effect and gossip entry (`Prerequisite.prerequisiteTypeId.47`, slot 0x140001ba0
   // returns false), but the client never tests Creature2's visibility column, so a
   // creature behind it stays shown until the server's reading of that gate is settled
-  // (issue 334).
+  // (issue 818).
   let gated =
     prerequisite_support.single(id: 13_046, condition: #(47, 2, 0, 12_156))
   let subject = player_with(log: quest_support.log_of(rows: []))

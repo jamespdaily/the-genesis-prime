@@ -30,7 +30,7 @@
 ////   decides: `can_accept` gives the code the client would show, or the gap it names when
 ////   the server does not read what the check needs (reputation, a prerequisite item's
 ////   per-item counter, an unread prerequisite type, a drawn periodic quest, a contract;
-////   the quest log step, #334). A quest the server cannot say a gap of is never accepted.
+////   each gap's issue is `gap_issue`). A quest the server cannot say a gap of is never accepted.
 //// - **Abandon** follows `CanAbandonQuest` (`0x140552930`): a Botched quest (4) may always
 ////   be let go, otherwise Quest2 flags 0x4000 forbid it and an Achieved quest (2) with flags
 ////   0x8000 may not be, and past those only an Accepted, Achieved or Botched quest (1, 2, 4)
@@ -102,8 +102,8 @@ pub type Message {
   Ignore
 }
 
-/// What the server does not read that a check of the client's needs. Each is a
-/// gap of the quests, zones and prerequisites step (#334).
+/// What the server does not read that a check of the client's needs. `gap_issue`
+/// names the open issue that closes each.
 pub type Gap {
   /// The reputation a quest requires (Quest2 `factionIdPreq`): the server holds none.
   Reputation
@@ -909,6 +909,15 @@ pub fn describe(error error: CheckError) -> String {
   }
 }
 
+/// The open issue that closes a gap.
+fn gap_issue(gap gap: Gap) -> Int {
+  case gap {
+    Reputation | PrerequisiteItemCounter | PeriodicDraw(..) -> 1054
+    PrerequisiteType(..) -> 818
+    Contract -> 678
+  }
+}
+
 /// A sentence that says what the server does not read, for the log.
 pub fn describe_gap(gap gap: Gap) -> String {
   case gap {
@@ -1472,7 +1481,9 @@ fn describe_declined(
       <> of(quest_id)
       <> ", which needs "
       <> describe_gap(gap:)
-      <> " (#334): nothing is answered"
+      <> " (#"
+      <> int.to_string(gap_issue(gap:))
+      <> "): nothing is answered"
     Unchecked(quest_id:, error:) ->
       request
       <> of(quest_id)

@@ -1118,12 +1118,14 @@ fn mint_from(
 
 /// The open issue that owns a gap the server logs as not built.
 pub type Issue {
-  /// The cast conditions and prerequisites the server does not read.
+  /// The prerequisite types the server does not read.
   PrerequisitesIssue
   /// The spells the server cannot plan or whose states it does not judge.
   SpellsIssue
-  /// The items' charges and the checks of an item's use the server does not build.
-  ItemsIssue
+  /// The activate cast's checks and effects the server does not build.
+  ActivateCastIssue
+  /// An effect cast at another player's unit, which the server does not carry.
+  PlayerTargetIssue
   /// The crowd-control states that last until removed, which no rule ends with their spell.
   UntilRemovedIssue
 }

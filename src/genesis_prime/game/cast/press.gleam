@@ -85,17 +85,18 @@ import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/state.{
   type AimedPress, type Caster, type Effect, type Interaction, type Issue,
   type Refusal, type Resolution, type Role, type State, type Threshold,
-  type Unbuilt, type Verdict, Activation, AnswerSucceeded, AwaitingAnswer, Base,
-  CancelTimer, CannotTell, ChargeLevel, Child, CooldownModifierEnds,
-  CooldownModifierStarts, DroppedControls, DroppedDespawns, DroppedSignals,
-  DroppedUnitStates, Finish, ForcedMoveStart, GateFails, Go, Hold, HoldForCast,
-  Holding, ItemsIssue, Log, ModifierEnd, ModifierStart, NoInteraction, NodesEnd,
-  NotBuilt, Passive, PrerequisitesIssue, ProcDue, QuestAdvanceDue, Refuse,
-  RepeatHeld, Resolution, RestrictionEnd, Shortcut, SpellsIssue, Stage,
-  StartChild, StartHeld, Starts, State, StateEnd, TargetModifierStart, Tick,
-  UnbuiltItemSpell, UnbuiltPlayerTarget, UnbuiltShortcut, UnbuiltSpell, Unheld,
-  Unpaid, UnreadItemPrerequisite, UnreadLinkPrerequisite, UnreadPrerequisite,
-  UnreadShortcutPick, UnreadSpend, UntilRemovedIssue, WindowEnd,
+  type Unbuilt, type Verdict, ActivateCastIssue, Activation, AnswerSucceeded,
+  AwaitingAnswer, Base, CancelTimer, CannotTell, ChargeLevel, Child,
+  CooldownModifierEnds, CooldownModifierStarts, DroppedControls, DroppedDespawns,
+  DroppedSignals, DroppedUnitStates, Finish, ForcedMoveStart, GateFails, Go,
+  Hold, HoldForCast, Holding, Log, ModifierEnd, ModifierStart, NoInteraction,
+  NodesEnd, NotBuilt, Passive, PlayerTargetIssue, PrerequisitesIssue, ProcDue,
+  QuestAdvanceDue, Refuse, RepeatHeld, Resolution, RestrictionEnd, Shortcut,
+  SpellsIssue, Stage, StartChild, StartHeld, Starts, State, StateEnd,
+  TargetModifierStart, Tick, UnbuiltItemSpell, UnbuiltPlayerTarget,
+  UnbuiltShortcut, UnbuiltSpell, Unheld, Unpaid, UnreadItemPrerequisite,
+  UnreadLinkPrerequisite, UnreadPrerequisite, UnreadShortcutPick, UnreadSpend,
+  UntilRemovedIssue, WindowEnd,
 } as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/crowd_control
@@ -120,10 +121,12 @@ import gleam/string
 
 pub fn issue_name(issue issue: Issue) -> String {
   case issue {
-    ItemsIssue ->
-      "Items, equipment, vendors, levels and currency work on the real client (#333)"
+    ActivateCastIssue ->
+      "A cast at a unit is judged and timed as the client does (#1053)"
+    PlayerTargetIssue ->
+      "An effect a player casts on another player lands on that player (#570)"
     PrerequisitesIssue ->
-      "Quests, zones and prerequisites work on the real client (#334)"
+      "The prerequisite types effects use that the server does not read yet are read (#818)"
     SpellsIssue -> "Spells work in depth on the real client (#336)"
     UntilRemovedIssue ->
       "A crowd-control state that lasts until removed ends when its spell ends (#803)"
@@ -158,6 +161,7 @@ pub fn press_unbuilt(
   press press: AimedPress,
   key key: Unbuilt,
   why why: String,
+  issue issue: Issue,
 ) -> Result(#(State, List(Effect)), Refusal) {
   not_built_refusal(
     cast: press.cast,
@@ -166,7 +170,7 @@ pub fn press_unbuilt(
     key:,
     result: cast_result.IllegalSpellCast,
     why:,
-    issue: PrerequisitesIssue,
+    issue:,
   )
 }
 
@@ -178,6 +182,7 @@ fn press_at_player_unbuilt(
     press:,
     key: UnbuiltPlayerTarget(spell4_id: press.spell.spell4_id.value),
     why:,
+    issue: PlayerTargetIssue,
   )
 }
 
@@ -370,8 +375,7 @@ pub fn interaction_of(spell spell: Spell) -> Interaction {
 /// Gap: a Channeled spell whose activate time is not its channelMaxTime (one whose own
 /// castTime is 0 with no creature time, or a creature time other than the channel's) is
 /// cast as a Normal spell: the client keeps its go count and the times the server picks
-/// for them are not settled, the issue "Quests, zones and prerequisites work on the real
-/// client" (#334).
+/// for them are not settled (issue 1053).
 pub fn activation_spell(
   spell spell: Spell,
   cast_time_ms cast_time_ms: Int,

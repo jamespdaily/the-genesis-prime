@@ -664,7 +664,7 @@ fn state_allows(
 /// Achieved (2), as `0x14043c700` requires before it opens the dialog, and
 /// `communicator.turn_in` allows it. The communicator does not complete a quest that
 /// completes without being taken: the client's path for it needs a side-list entry only a
-/// call from the server makes, and the server sends no call (#334).
+/// call from the server makes, and the server sends no call (gap, issue 1054).
 fn by_communicator_allows(
   turning turning: String,
   row row: Quest2,
@@ -686,7 +686,7 @@ fn by_communicator_allows(
         && int.bitwise_and(row.flags, completes_by_call_flags) != 0
       {
         True ->
-          ", and with flag 1 or 4 it completes over the communicator only through a side-list entry a call from the server makes, which the server does not send (#334)"
+          ", and with flag 1 or 4 it completes over the communicator only through a side-list entry a call from the server makes, which the server does not send (#1054)"
         False -> ""
       },
     )),

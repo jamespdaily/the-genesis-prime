@@ -821,8 +821,7 @@ fn closed(place: ItemPlace) -> Bool {
 /// at the destination.
 ///
 /// Not built: the client's loop that refuses an item whose runes are of a kind
-/// another worn item holds (rune-unique); it waits for the issue "Items,
-/// equipment, vendors, levels and currency work on the real client".
+/// another worn item holds (rune-unique).
 fn unique_at(
   items items: List(HeldItem),
   tables tables: table_store.Tables,
