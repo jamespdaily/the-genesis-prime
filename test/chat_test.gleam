@@ -12,6 +12,7 @@ import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/chat.{type Chat}
 import genesis_prime/game/chat_channel
 import genesis_prime/game/chat_tell.{Line, Said, Speaker}
+import genesis_prime/game/dev_command
 import genesis_prime/game/top_zone
 import genesis_prime/message/bit_stream
 import genesis_prime/message/chat_channel_joined.{ChatChannelJoined}
@@ -147,16 +148,16 @@ fn frames_of(effects: List(chat.Effect)) -> List(Frame) {
       | chat.JoinGroup(..)
       | chat.LeaveGroup(..)
       | chat.Unhandled(..)
-      | chat.AskSummon(..) -> Error(Nil)
+      | chat.RunCommand(..) -> Error(Nil)
     }
   })
 }
 
-/// Whether the effects ask the map for a summon.
-fn asks_summon(effects: List(chat.Effect)) -> Bool {
+/// Whether the effects ask the connection to run a command.
+fn runs_a_command(effects: List(chat.Effect)) -> Bool {
   list.any(effects, fn(effect) {
     case effect {
-      chat.AskSummon(..) -> True
+      chat.RunCommand(..) -> True
       chat.Send(..)
       | chat.Tell(..)
       | chat.TellWatched(..)
@@ -185,7 +186,7 @@ fn tells_of(
       | chat.JoinGroup(..)
       | chat.LeaveGroup(..)
       | chat.Unhandled(..)
-      | chat.AskSummon(..) -> Error(Nil)
+      | chat.RunCommand(..) -> Error(Nil)
     }
   })
 }
@@ -991,15 +992,14 @@ pub fn with_the_setting_off_a_summon_line_is_a_say_line_and_nothing_is_asked_tes
   let assert [#(_, Said(line:, ..)), ..] = tells_of(effects)
   assert line.text == bit_stream.utf16_units("!summon 75048")
     && line.channel_type == chat_channel.Say
-  assert !asks_summon(effects) as "nothing is asked of the map"
+  assert !runs_a_command(effects) as "nothing is asked of the map"
 }
 
 pub fn with_the_setting_on_a_summon_line_is_answered_told_to_no_viewer_and_asks_the_summon_last_test() -> Nil {
   use <- owned_test.run(5000)
   let effects = say_taken(text: "!summon 75048", dev_commands: True)
-  let assert [chat.Send(frame:), chat.AskSummon(creature2_id:, level:)] =
-    effects
-    as "the 0x1c2, then the ask last: the connection's ask ends the step"
+  let assert [chat.Send(frame:), chat.RunCommand(command:)] = effects
+    as "the 0x1c2, then the command last: the connection's ask ends the step"
   assert accepted([chat.Send(frame:)])
     == ChatLineAccepted(
       chat_message_id: 1,
@@ -1010,7 +1010,7 @@ pub fn with_the_setting_on_a_summon_line_is_answered_told_to_no_viewer_and_asks_
       premium_tier: 0,
     )
     as "opcode.0x1c2: the same answer as for a said line, so the client shows the line it typed"
-  assert creature2_id == Creature2Id(75_048) && level == None
+  assert command == dev_command.Summon(Creature2Id(75_048), None)
     as "no level was typed, so none is asked for"
   assert tells_of(effects) == []
     as "the design: the line is told to no viewer, so a command is not said aloud"
@@ -1040,15 +1040,52 @@ pub fn a_summon_with_no_number_or_a_bad_one_answers_its_usage_as_one_system_line
   })
 }
 
-pub fn a_summon_with_a_level_asks_the_summon_at_that_level_test() -> Nil {
+pub fn a_command_line_with_the_setting_on_asks_the_connection_to_run_it_test() -> Nil {
   use <- owned_test.run(5000)
-  let effects = say_taken(text: "!summon 75048 3", dev_commands: True)
-  let assert [chat.Send(_), chat.AskSummon(creature2_id:, level:)] = effects
-    as "the 0x1c2, then the ask last"
-  assert creature2_id == Creature2Id(75_048) && level == Some(3)
-    as "the creature and the level the line names"
-  assert tells_of(effects) == []
-    as "the design: the line is told to no viewer, so a command is not said aloud"
+  list.each(
+    [
+      #(
+        "!summon 75048 3",
+        dev_command.Summon(Creature2Id(75_048), Some(3)),
+        "the creature and the level the line names",
+      ),
+      #("!level 4", dev_command.RaiseToLevel(level: 4), "a level"),
+      #(
+        "!xp 2859",
+        dev_command.RaiseToExperience(experience: 2859),
+        "an experience",
+      ),
+    ],
+    fn(row) {
+      let effects = say_taken(text: row.0, dev_commands: True)
+      let assert [chat.Send(frame:), chat.RunCommand(command:)] = effects
+        as "opcode.0x1c2, then the command last"
+      assert accepted([chat.Send(frame:)]).chat_message_id == 1
+      assert command == row.1 as row.2
+      assert tells_of(effects) == []
+        as "the design: the line is told to no viewer, so a command is not said aloud"
+    },
+  )
+}
+
+pub fn a_refused_or_unknown_command_is_one_system_line_and_nothing_to_run_test() -> Nil {
+  use <- owned_test.run(5000)
+  list.each(
+    [
+      #("!teleport 1", "unknown command", "a word with no command"),
+      #("!Level 4", "unknown command", "the word is read as typed"),
+      #(
+        "!level 51",
+        "!level 51 is outside the levels 1 to 50",
+        "GameFormula 145: the highest level is 50",
+      ),
+    ],
+    fn(row) {
+      let effects = say_taken(text: row.0, dev_commands: True)
+      assert system_line_of(effects) == system_line_with(row.1) as row.2
+      assert !runs_a_command(effects) as "nothing is run"
+    },
+  )
 }
 
 pub fn a_summon_with_a_level_that_is_no_whole_number_or_with_extra_words_answers_one_system_line_and_asks_nothing_test() -> Nil {
@@ -1078,31 +1115,35 @@ pub fn a_summon_with_a_level_that_is_no_whole_number_or_with_extra_words_answers
         as "chat.system_line: the design's text for the refusal, as a System line"
       assert tells_of(effects) == []
         as "the design: a refused command is not said aloud"
-      assert !asks_summon(effects) as "no summon is asked of the map"
+      assert !runs_a_command(effects) as "no summon is asked of the map"
     },
   )
 }
 
 pub fn a_bang_line_on_another_channel_is_a_line_of_that_channel_with_the_setting_on_test() -> Nil {
   use <- owned_test.run(5000)
-  list.each([5, 8], fn(type_id) {
-    let #(_, effects) =
-      take_with(
-        message: chat.LineSent,
-        chat: a_chat(),
-        body: body(
-          type_id:,
-          channel_id: 0,
-          text: bit_stream.utf16_units("!summon 75048"),
-          formats: [],
-          message_id: 1,
-        ),
-        viewers: [7, 8],
-        dev_commands: True,
-      )
-    assert said_to(effects) == [7, 8]
-      as "the design: a command is a line on Say only; a yell or an emote that starts with `!` is said"
-    assert list.length(frames_of(effects)) == 1
+  list.each(["!summon 75048", "!level 4", "!xp 2859"], fn(text) {
+    list.each([5, 8], fn(type_id) {
+      let #(_, effects) =
+        take_with(
+          message: chat.LineSent,
+          chat: a_chat(),
+          body: body(
+            type_id:,
+            channel_id: 0,
+            text: bit_stream.utf16_units(text),
+            formats: [],
+            message_id: 1,
+          ),
+          viewers: [7, 8],
+          dev_commands: True,
+        )
+      assert said_to(effects) == [7, 8]
+        as "the design: a command is a line on Say only; a yell or an emote that starts with `!` is said"
+      assert list.length(frames_of(effects)) == 1
+      assert !runs_a_command(effects)
+        as "a line of another channel runs nothing"
+    })
   })
 }
 
@@ -1336,7 +1377,7 @@ fn unknown_zones_of(effects: List(chat.Effect)) -> List(Int) {
       | chat.JoinGroup(..)
       | chat.LeaveGroup(..)
       | chat.Unhandled(..)
-      | chat.AskSummon(..) -> Error(Nil)
+      | chat.RunCommand(..) -> Error(Nil)
     }
   })
 }
@@ -1689,7 +1730,7 @@ pub fn the_memberships_one_player_holds_after_entering_changing_zone_camping_and
         | chat.Watch(..)
         | chat.Unwatch(..)
         | chat.Unhandled(..)
-        | chat.AskSummon(..) -> groups
+        | chat.RunCommand(..) -> groups
       }
     })
   }
@@ -1921,7 +1962,7 @@ fn drop_unwatch(effects: List(chat.Effect)) -> List(chat.Effect) {
       | chat.JoinGroup(..)
       | chat.LeaveGroup(..)
       | chat.Unhandled(..)
-      | chat.AskSummon(..) -> True
+      | chat.RunCommand(..) -> True
     }
   })
 }
@@ -2377,7 +2418,7 @@ pub fn every_0x1d4_gets_exactly_one_answer_except_an_empty_whisper_to_a_found_ta
         | chat.JoinGroup(..)
         | chat.LeaveGroup(..)
         | chat.Unhandled(..)
-        | chat.AskSummon(..) -> False
+        | chat.RunCommand(..) -> False
       }
     })
   case waits_on_a_target {

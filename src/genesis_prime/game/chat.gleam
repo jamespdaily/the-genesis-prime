@@ -234,13 +234,12 @@ import genesis_prime/message/send_whisper.{type SendWhisper}
 import genesis_prime/message/whisper_failed.{WhisperFailed}
 import genesis_prime/step.{type Address, type ConnectionId, type WatchId}
 import genesis_prime/table/chat_channel.{type ChatChannel} as chat_channel_table
-import genesis_prime/table/id.{type Creature2Id, ChatChannelId}
+import genesis_prime/table/id.{ChatChannelId}
 import genesis_prime/table/loader/store as table_store
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
-import gleam/option.{type Option}
 import gleam/result
 import gleam/set.{type Set}
 import gleam/string
@@ -280,12 +279,11 @@ pub type Effect {
   /// The channel is one the server does not build: the rule logs it as
   /// unhandled once per channel on a connection.
   Unhandled(channel_type: ChannelType)
-  /// A `!summon` line of the player: the connection asks the player's map to
-  /// start the creature, at the level the line named if it named one
-  /// (genesis_prime/world_map/map `Summon`), and writes the
-  /// system line of its answer (`system_line_frame`). The rule gives it last
-  /// among the effects of a line, since the ask ends the step.
-  AskSummon(creature2_id: Creature2Id, level: Option(Int))
+  /// A development command line of the player that the tables allow: the
+  /// connection carries the command out (genesis_prime/game/connection/dev_command)
+  /// and writes its system line. The rule gives it last among the effects of a
+  /// line, since a command can end the step with an ask.
+  RunCommand(command: dev_command.Command)
 }
 
 /// Why a chat message is refused so that the connection ends: the client's own
@@ -691,7 +689,7 @@ fn line_sent(
     ])
     Ok(Say) if is_command -> #(chat, [
       Send(accepted_frame(chat:, chat_message_id: sent.chat_message_id)),
-      ..command_line(text: sent.text)
+      ..command_line(text: sent.text, tables:)
     ])
     Ok(reach) -> {
       let line =
@@ -738,13 +736,20 @@ fn line_sent(
 /// What a `!` line on Say does when the setting is on: nothing is told to the
 /// players who see the speaker, the speaker's slot is answered by the 0x1c2 the
 /// caller writes (every 0x1c3 gets one answer, `opcode.0x1c2`), and the command
-/// is carried out (`AskSummon`) or refused with one system line
-/// (`system_line_frame` of `dev_command.describe`).
-fn command_line(text text: List(Int)) -> List(Effect) {
-  case dev_command.parse(text:) {
-    Ok(dev_command.Summon(creature2_id:, level:)) -> [
-      AskSummon(creature2_id:, level:),
-    ]
+/// is carried out (`RunCommand`) or refused with one system line
+/// (`system_line_frame` of `dev_command.describe`), by the grammar or by the
+/// tables.
+fn command_line(
+  text text: List(Int),
+  tables tables: table_store.Tables,
+) -> List(Effect) {
+  case
+    result.try(dev_command.parse(text:), dev_command.checked(
+      command: _,
+      tables:,
+    ))
+  {
+    Ok(command) -> [RunCommand(command:)]
     Error(refusal) -> [
       Send(system_line_frame(text: dev_command.describe(refusal:))),
     ]

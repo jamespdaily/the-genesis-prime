@@ -5,16 +5,23 @@
 //// its arguments split at spaces; `summon` takes one whole decimal number, a
 //// Creature2 id, and then optionally a second, the level; the word is read as typed, in lower case; a line the grammar
 //// refuses is answered, never said. The one Creature2 id, 75048, is Commander
-//// Durek's, the live check's creature.
+//// Durek's, the live check's creature. `level` and `xp` each take one whole
+//// decimal number. The highest level is 50 (GameFormula 145 dataint0) and the
+//// experience of level 50 is 26,360,090 (XpPerLevel row 50, minXpForLevel).
 
+import fixture_tables
 import genesis_prime/game/dev_command.{
+  ExperienceOutOfRange, ExperienceTakesAWholeNumber, LevelOutOfRange,
+  LevelTakesAWholeNumber, RaiseToExperience, RaiseToLevel,
   SummonLevelIsNotAWholeNumber, SummonTakesACreature2Id, UnknownCommand,
 }
 import genesis_prime/message/bit_stream
 import genesis_prime/table/id.{Creature2Id}
+import gleam/bool
 import gleam/list
 import gleam/option.{None, Some}
 import owned_test
+import qcheck
 
 fn parsed(text: String) -> Result(dev_command.Command, dev_command.Refusal) {
   dev_command.parse(text: bit_stream.utf16_units(text))
@@ -149,4 +156,155 @@ pub fn the_answers_to_a_refused_line_say_what_was_wrong_test() -> Nil {
   assert dev_command.describe(refusal: SummonLevelIsNotAWholeNumber)
     == "!summon's level is a whole number, as !summon 75048 3"
     as "the design: a level that is no whole number answers what it takes"
+  assert dev_command.describe(refusal: LevelOutOfRange(level: 51, highest: 50))
+    == "!level 51 is outside the levels 1 to 50"
+    as "the design: a level out of range names the command, the value and the range"
+  assert dev_command.describe(refusal: ExperienceOutOfRange(
+      experience: 26_360_091,
+      highest: 26_360_090,
+    ))
+    == "!xp 26360091 is above the experience of the highest level, 26360090"
+    as "the design: an experience out of range names the command, the value and the top"
+  assert dev_command.describe(refusal: LevelTakesAWholeNumber)
+    == "!level takes one whole number, a level, as !level 10"
+    as "the design: a malformed !level answers its usage"
+  assert dev_command.describe(refusal: ExperienceTakesAWholeNumber)
+    == "!xp takes one whole number, a total experience, as !xp 2860"
+    as "the design: a malformed !xp answers its usage"
+}
+
+pub fn level_and_experience_take_whole_decimal_numbers_test() -> Nil {
+  use <- owned_test.run(5000)
+  list.each(
+    [
+      #("!level 4", Ok(RaiseToLevel(level: 4)), "a level is one whole number"),
+      #(
+        "!xp 2859",
+        Ok(RaiseToExperience(experience: 2859)),
+        "an experience is one whole number",
+      ),
+      #("!level", Error(LevelTakesAWholeNumber), "no argument"),
+      #("!level 4 5", Error(LevelTakesAWholeNumber), "two arguments"),
+      #("!xp 1x", Error(ExperienceTakesAWholeNumber), "a letter in the number"),
+    ],
+    fn(row) {
+      assert parsed(row.0) == row.1 as row.2
+    },
+  )
+}
+
+/// A unit that is no ASCII digit and no space (which would split the word).
+fn not_a_digit(unit: Int) -> Int {
+  use <- bool.guard(unit >= 0x30 && unit <= 0x39 || unit == 0x20, 0x41)
+  unit
+}
+
+pub fn a_number_with_any_other_unit_than_an_ascii_digit_is_refused_or_checked_not_crashed_on_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let digits =
+    qcheck.generic_list(
+      qcheck.bounded_int(from: 0x30, to: 0x39),
+      qcheck.bounded_int(from: 0, to: 4),
+    )
+  use #(level_word, before, bad, after) <- qcheck.given(qcheck.tuple4(
+    qcheck.bool(),
+    digits,
+    qcheck.map(qcheck.bounded_int(from: 0, to: 0xFFFF), not_a_digit),
+    digits,
+  ))
+  let word = case level_word {
+    True -> "!level "
+    False -> "!xp "
+  }
+  let text = list.flatten([bit_stream.utf16_units(word), before, [bad], after])
+  assert dev_command.parse(text:)
+    == Error(case level_word {
+      True -> LevelTakesAWholeNumber
+      False -> ExperienceTakesAWholeNumber
+    })
+    as "the grammar: a number is ASCII digits only, whatever unit sits among them"
+  list.each(
+    [
+      #("!level -4", Error(LevelTakesAWholeNumber), "a sign"),
+      #("!level 4.5", Error(LevelTakesAWholeNumber), "a fraction"),
+      #("!level \u{FF14}", Error(LevelTakesAWholeNumber), "a full-width digit"),
+      #(
+        "!xp \u{0664}\u{0662}",
+        Error(ExperienceTakesAWholeNumber),
+        "Arabic-Indic digits",
+      ),
+      #(
+        "!level 99999999999999999999",
+        Ok(RaiseToLevel(level: 99_999_999_999_999_999_999)),
+        "a number of any length parses: its table check refuses it",
+      ),
+      #(
+        "!xp 99999999999999999999",
+        Ok(RaiseToExperience(experience: 99_999_999_999_999_999_999)),
+        "a number of any length parses: its table check refuses it",
+      ),
+    ],
+    fn(row) {
+      assert parsed(row.0) == row.1 as row.2
+    },
+  )
+  let tables = fixture_tables.shared()
+  assert dev_command.checked(
+      command: RaiseToLevel(level: 99_999_999_999_999_999_999),
+      tables:,
+    )
+    == Error(LevelOutOfRange(level: 99_999_999_999_999_999_999, highest: 50))
+    as "GameFormula 145: the highest level is 50"
+  assert dev_command.checked(
+      command: RaiseToExperience(experience: 99_999_999_999_999_999_999),
+      tables:,
+    )
+    == Error(ExperienceOutOfRange(
+      experience: 99_999_999_999_999_999_999,
+      highest: 26_360_090,
+    ))
+    as "XpPerLevel row 50: the highest minXpForLevel is 26360090"
+}
+
+pub fn a_level_or_experience_the_tables_do_not_hold_is_refused_by_checked_before_anything_is_asked_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = fixture_tables.shared()
+  list.each(
+    [
+      #(
+        RaiseToLevel(level: 0),
+        Error(LevelOutOfRange(level: 0, highest: 50)),
+        "level 0 is below the first level",
+      ),
+      #(
+        RaiseToLevel(level: 51),
+        Error(LevelOutOfRange(level: 51, highest: 50)),
+        "level 51 is above GameFormula 145's 50",
+      ),
+      #(RaiseToLevel(level: 1), Ok(RaiseToLevel(level: 1)), "level 1"),
+      #(RaiseToLevel(level: 50), Ok(RaiseToLevel(level: 50)), "level 50"),
+      #(
+        RaiseToExperience(experience: 26_360_090),
+        Ok(RaiseToExperience(experience: 26_360_090)),
+        "level 50's own minXpForLevel",
+      ),
+      #(
+        RaiseToExperience(experience: 26_360_091),
+        Error(ExperienceOutOfRange(experience: 26_360_091, highest: 26_360_090)),
+        "one above level 50's minXpForLevel",
+      ),
+    ],
+    fn(row) {
+      assert dev_command.checked(command: row.0, tables:) == row.1 as row.2
+    },
+  )
+  assert dev_command.checked(
+      command: dev_command.Summon(
+        creature2_id: Creature2Id(75_048),
+        level: None,
+      ),
+      tables:,
+    )
+    == Ok(dev_command.Summon(creature2_id: Creature2Id(75_048), level: None))
+    as "a summon's rows are the map's check"
 }

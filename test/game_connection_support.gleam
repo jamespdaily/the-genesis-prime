@@ -33,7 +33,9 @@ import genesis_prime/game/vendor.{type Vendors}
 import genesis_prime/game_settings.{GameSettings}
 import genesis_prime/hand_off.{Holder, NoHolder, Taken}
 import genesis_prime/login/guid
+import genesis_prime/message/bit_stream
 import genesis_prime/message/cast_result
+import genesis_prime/message/chat_line
 import genesis_prime/message/combat_result
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/damage_type
@@ -50,6 +52,7 @@ import genesis_prime/message/movement_rotation.{MovementRotation}
 import genesis_prime/message/movement_state_flags.{MovementStateFlags}
 import genesis_prime/message/play_character.{PlayCharacter}
 import genesis_prime/message/relayed_movement
+import genesis_prime/message/send_chat_line.{SendChatLine}
 import genesis_prime/message/spell_cast_refused
 import genesis_prime/message/spell_damage_description.{SpellDamageDescription}
 import genesis_prime/message/spell_go
@@ -960,6 +963,45 @@ pub fn summon_asked(
 /// The 0x262 among the burst, decoded.
 pub fn player_in(taken: ConnectionStep(Request)) -> UnitCreatePlayer {
   game_client.unit_create_player_in(frames: heard(taken:, cipher: keyed()))
+}
+
+/// A 0x1c3 on (type, 0) inside 0x038C, as the client sends it, with slot 1.
+pub fn chat_line_message(type_id type_id: Int, text text: String) -> BitArray {
+  chat_line_with(type_id:, text:, message_id: 1)
+}
+
+pub fn chat_line_with(
+  type_id type_id: Int,
+  text text: String,
+  message_id message_id: Int,
+) -> BitArray {
+  let assert Ok(body) =
+    send_chat_line.encode(SendChatLine(
+      channel_type: type_id,
+      channel_id: 0,
+      text: bit_stream.utf16_units(text),
+      formats: [],
+      chat_message_id: message_id,
+    ))
+  world_message(message_id: send_chat_line.message_id, body:)
+}
+
+/// The text of each system line the step writes, in order.
+pub fn system_lines(taken taken: ConnectionStep(Request)) -> List(String) {
+  list.filter_map(heard(taken:, cipher: keyed()), fn(frame) {
+    case frame.message_id == chat_line.message_id {
+      False -> Error(Nil)
+      True -> {
+        let assert Ok(line) = chat_line.decode(frame.body)
+        assert line.channel_type == 2 && line.channel_id == 0
+          as "chat.system_line: channel type 2"
+        assert line.sender_name == "" && line.unit_id == 0
+          as "chat.system_line: no speaker"
+        let assert Ok(text) = bit_stream.from_utf16(line.text)
+        Ok(text)
+      }
+    }
+  })
 }
 
 /// A world message as the client sends it: inside 0x038C, whose first byte is

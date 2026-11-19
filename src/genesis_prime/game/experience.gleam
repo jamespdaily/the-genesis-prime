@@ -49,6 +49,7 @@ import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/order
 import gleam/result
 
 /// The credit for a kill a creature tells the connection of the player whose blow
@@ -73,6 +74,10 @@ const kill_kind = 2
 
 /// The source kind a quest's 0x1ac carries, Quest (`CombatFloater.CodeEnumExpReason`).
 pub const quest_kind = 3
+
+/// The source kind a development command's 0x1ac carries, Cheat
+/// (`CombatFloater.CodeEnumExpReason`, `opcode.0x1ac.kind.1`).
+const cheat_kind = 1
 
 /// What a gain asks the connection to do.
 pub type Effect {
@@ -210,4 +215,61 @@ fn added_to(
     GainSent(gain: experience - progress.experience, kind:, unit_id:),
     ..rise
   ])
+}
+
+/// What `raised` is asked to reach.
+pub type Target {
+  /// The least experience of this level (XpPerLevel minXpForLevel).
+  ToLevel(level: Int)
+  /// This total of experience.
+  ToExperience(experience: Int)
+}
+
+/// Why a target is no raise: the client's experience only grows, by 0x1ac adding
+/// to it (`opcode.0x1ac`).
+pub type NotRaised {
+  /// The target is the level held (whatever experience inside it) or the
+  /// experience held.
+  Already
+  /// The target is below the level or the experience held.
+  Lowering
+}
+
+/// The progress after raising it to the target, with the gain of source kind
+/// `cheat_kind` that reaches it, or why it is no raise. A target level above the
+/// held one gains the difference to that level's least experience; a target
+/// experience above the held gains the difference. The target must name a level
+/// the tables have a row for (`dev_command.checked`).
+pub fn raised(
+  progress progress: Progress,
+  target target: Target,
+  tables tables: table_store.Tables,
+) -> Result(Credited, NotRaised) {
+  let reached = case target {
+    ToLevel(level:) ->
+      case int.compare(level, progress.level) {
+        order.Lt -> Error(Lowering)
+        order.Eq -> Error(Already)
+        order.Gt -> {
+          let assert Ok(row) =
+            xp_per_level.get(tables:, id: XpPerLevelId(level))
+            as "the target level has an XpPerLevel row"
+          Ok(row.min_xp_for_level)
+        }
+      }
+    ToExperience(experience:) ->
+      case int.compare(experience, progress.experience) {
+        order.Lt -> Error(Lowering)
+        order.Eq -> Error(Already)
+        order.Gt -> Ok(experience)
+      }
+  }
+  use experience <- result.map(reached)
+  gained(
+    progress:,
+    gain: experience - progress.experience,
+    kind: cheat_kind,
+    unit_id: 0,
+    tables:,
+  )
 }
