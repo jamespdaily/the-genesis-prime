@@ -10,7 +10,7 @@ pub type Entry {
     /// The part of the game the gap is in, such as "Quest acceptance".
     area: String,
     /// What the server does not do that the client does, or what the client's code does
-    /// not show, as one sentence that names no issue and no row.
+    /// not show, as one plain sentence with no row's id in it.
     missing: String,
   )
 }
