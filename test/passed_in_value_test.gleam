@@ -9,6 +9,7 @@
 
 import client_tables
 import fixture_tables
+import genesis_prime/game/damage
 import genesis_prime/game/item_property
 import genesis_prime/game/passed_in_value
 import genesis_prime/message/float32
@@ -56,8 +57,9 @@ pub fn an_items_value_is_the_curve_at_its_power_level_test() -> Nil {
   list.each(
     [
       #(14_838, 5, float32.rounded(6.5)),
-      // GameFormula 65 at 60 less its dataint0 (50): between 20.0 at 50 and 47.2 at 130.
-      #(49_372, 60, passed_in_value.of_level(tables:, level: 60)),
+      // The curve past its value 20.0 at 50 grows by e^(0.01 x (60 - 50)) (GameFormula 65,
+      // `0x14041f1b0`): 20 x e^0.1 = 22.10342, in 32 bits.
+      #(49_372, 60, float32.rounded(22.103418)),
     ],
     fn(row) {
       let assert Ok(item) = item2.get(tables:, id: Item2Id(row.0))
@@ -70,10 +72,6 @@ pub fn an_items_value_is_the_curve_at_its_power_level_test() -> Nil {
       )
     },
   )
-  assert passed_in_value.of_level(tables:, level: 60) >. 20.0
-    as "the curve rises past its value at 50"
-  assert passed_in_value.of_level(tables:, level: 60) <. 47.2
-    as "and is below its value at 130"
 }
 
 pub fn no_item_whose_spell_holds_a_type_18_row_has_the_level_1_flag_test() -> Nil {
@@ -82,17 +80,7 @@ pub fn no_item_whose_spell_holds_a_type_18_row_has_the_level_1_flag_test() -> Ni
   let tables = client_tables.shared()
   let passed_in_spells =
     spell4_effects.all(tables)
-    |> list.filter(fn(effect) {
-      list.any(
-        [
-          #(effect.parameter_type00, effect.parameter_value00),
-          #(effect.parameter_type01, effect.parameter_value01),
-          #(effect.parameter_type02, effect.parameter_value02),
-          #(effect.parameter_type03, effect.parameter_value03),
-        ],
-        fn(parameter) { parameter.0 == 18 && parameter.1 != 0.0 },
-      )
-    })
+    |> list.filter(fn(effect) { damage.holds_passed_in(effect:) })
     |> list.map(fn(effect) { effect.spell_id })
     |> set.from_list
   let with_type_18 =

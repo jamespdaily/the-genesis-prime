@@ -605,6 +605,15 @@ pub type EquipRequirements {
   )
 }
 
+/// The Spell4 ids the client's items cast when used (`ItemSpecial.spell4IdOnActivate`),
+/// each once; an ItemSpecial row with none casts nothing.
+pub fn spells_on_activate(tables tables: table_store.Tables) -> List(Int) {
+  item_special.all(tables)
+  |> list.map(fn(row) { row.spell4_id_on_activate })
+  |> list.filter(fn(spell4_id) { spell4_id != 0 })
+  |> list.unique
+}
+
 /// The item's equip requirements. Only a missing Item2, category or ItemSpecial
 /// row is an error; a category with no ItemProficiency row needs no proficiency
 /// (HasItemProficiency 0x1403ca2b0).

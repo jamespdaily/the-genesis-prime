@@ -20,7 +20,7 @@
 //// ◀── 0x817 {ability, index}           the next tap's stage, or the next charge level (a timer)
 ////                            cast time 0: the go at once; else StartTimer(go)
 //// ◀── 0x7f4 {k, phase 0, no target, no effect}  ◀── Tell(each viewer, CastWent) ─▶ 0x7f4, for a cast it wrote
-////                            the spell's own cooldown starts at the go its method names
+////                            the spell's own cooldown and its groups start at the go its method names
 ////                            each Proxy of the phase: StartTimer(delay), or at once for delay 0
 ////                            a child: id k2 = mint, root = the pressed spell, parent = the proxying spell
 //// ◀── 0x7ff {k2, ..}        Tell(each viewer, CastStarted) ───────────────▶ 0x7ff
@@ -471,13 +471,10 @@ fn activation_answered(
   result.map(taken, ActivationAnswered)
 }
 
-/// The cast of an item's spell, which the item's checks let through, at the unit the
-/// press names (`item_used`): refused as not built when the spell has no Activate and no
-/// QuestAdvanceObjective effect,
-/// refused 91 for a unit not shown and 100 for another player. At a creature the target's
-/// life and states come first (`cast_press.target_state_refusal`), then 89 for a unit the spell's cast
-/// group refuses (`activate.passes_cast_group`), else the activate cast of the unit, which
-/// refuses by range (`0x1403b2240` tests in that order).
+/// The cast of an item's spell, which the item's checks let through (`item_used`): a spell
+/// that is refused by its rows is answered 285 (`shortcut_spell.item_spell_of`), a Caster-kind
+/// spell is cast on the user (`item_on_user`), and a spell of any other kind goes to the unit
+/// the press names (`item_on_a_unit`).
 fn item_spell_cast(
   cast cast: State,
   caster caster: Caster,
@@ -581,7 +578,12 @@ fn item_on_user(
 }
 
 /// The cast of an item's spell at the unit the press names, which the creature's activate
-/// cast plays.
+/// cast plays: refused as not built when the spell has no Activate and no
+/// QuestAdvanceObjective effect, refused 91 for a unit not shown and 100 for another player.
+/// At a creature the target's life and states come first
+/// (`cast_press.target_state_refusal`), then 89 for a unit the spell's cast group refuses
+/// (`activate.passes_cast_group`), else the activate cast of the unit, which refuses by
+/// range (`0x1403b2240` tests in that order).
 fn item_on_a_unit(
   cast cast: State,
   caster caster: Caster,
@@ -2004,7 +2006,7 @@ fn proc_started(
     parent: Some(holder.spell.spell4_id),
     primary_target: at,
     client_cast_id: None,
-    role: Child(counted_with: WithNothing),
+    role: Child(counted_with: WithNothing, from: None),
     spent: None,
     reserved: [],
   )
@@ -2762,7 +2764,14 @@ fn fire(
         Tick(cast_id:, ..) ->
           cast_tick.ticks_due(cast:, caster:, now_ms:, cast_id:)
         Finish(cast_id:) -> finish_fired(cast:, cast_id:, now_ms:)
-        StartChild(root:, parent:, proxy:, primary_target:, counted_with:) ->
+        StartChild(
+          root:,
+          parent:,
+          proxy:,
+          primary_target:,
+          counted_with:,
+          from:,
+        ) ->
           start(
             cast:,
             caster:,
@@ -2772,7 +2781,7 @@ fn fire(
             parent: Some(parent),
             primary_target:,
             client_cast_id: None,
-            role: Child(counted_with:),
+            role: Child(counted_with:, from:),
             spent: None,
             reserved: [],
           )
@@ -3444,7 +3453,7 @@ pub fn level_up_started(
     parent: None,
     primary_target: caster.unit_id,
     client_cast_id: None,
-    role: Child(counted_with: WithNothing),
+    role: Child(counted_with: WithNothing, from: None),
     spent: None,
     reserved: [],
   )
@@ -3630,23 +3639,10 @@ fn start(
         Activation(interaction:, ..) | Shortcut(interaction:, ..) -> interaction
         Child(..) | Base(..) | Stage(..) | Passive -> NoInteraction
       },
-      shortcut: case role {
-        Shortcut(from: QuestButton, ..) -> True
-        Shortcut(from: Item(..), ..)
-        | Child(..)
-        | Base(..)
-        | Stage(..)
-        | Passive
-        | Activation(..) -> False
-      },
-      passed_in: case role {
-        Shortcut(from: Item(passed_in:, ..), ..) -> Some(passed_in)
-        Shortcut(from: QuestButton, ..)
-        | Child(..)
-        | Base(..)
-        | Stage(..)
-        | Passive
-        | Activation(..) -> None
+      pressed: case role {
+        Shortcut(from:, ..) -> Some(from)
+        Child(from:, ..) -> from
+        Base(..) | Stage(..) | Passive | Activation(..) -> None
       },
       aimed: case role {
         Shortcut(aimed:, ..) -> aimed
@@ -3657,7 +3653,7 @@ fn start(
         Shortcut(from: QuestButton, aimed:, ..) ->
           WithCast(spell4_id: spell.spell4_id.value, target: aimed)
         Shortcut(from: Item(..), ..) -> WithNothing
-        Child(counted_with:) -> counted_with
+        Child(counted_with:, ..) -> counted_with
         Base(..) | Stage(..) | Passive -> WithNothing
       },
       advance_rows_applied: set.new(),
@@ -3991,9 +3987,8 @@ fn end_base_cast(
   }
 }
 
-/// The spell's own cooldown starts now, unless it is running already or the spell
-/// has none. Its group cooldowns do not start: the server keeps none, so it is never
-/// stricter than the client.
+/// The spell's own cooldown and each of its cooldown groups start now, unless the spell
+/// has a cooldown running already (`cooldown.start`).
 fn start_cooldown(
   cast cast: State,
   spell spell: Spell,
@@ -4200,7 +4195,7 @@ fn go(
           cast:,
           cast_id:,
           caster:,
-          passed_in: live.passed_in,
+          passed_in: cast_state.passed_in_of(live:),
           aimed:,
           struck:,
         )
@@ -4313,7 +4308,7 @@ fn go(
       }
       // The first go of a quest button's cast counts the objective: a later go of the
       // same cast counts nothing more.
-      let counted = case live.shortcut && live.gone == 1 {
+      let counted = case live.pressed == Some(QuestButton) && live.gone == 1 {
         True -> [
           ShortcutCast(spell4_id: spell.spell4_id.value, target: live.aimed),
         ]
@@ -4762,7 +4757,7 @@ pub fn aimed_at(
     products_made(
       reached: walk.reached,
       caster:,
-      passed_in: live.passed_in,
+      passed_in: cast_state.passed_in_of(live:),
       longer_of_delay_and_duration: live.spell.longer_of_delay_and_duration,
     )
   let rolls = walk.rolls
@@ -4775,7 +4770,11 @@ pub fn aimed_at(
         spell: live.spell,
         gates_passed:,
       )),
-      cast_heal.ticking_heals(reached:, caster:, passed_in: live.passed_in),
+      cast_heal.ticking_heals(
+        reached:,
+        caster:,
+        passed_in: cast_state.passed_in_of(live:),
+      ),
     )
   let listed =
     list.flatten([
@@ -5151,15 +5150,15 @@ fn waits_rearmed(
 ) -> #(State, List(Effect)) {
   let #(cast, held) = case cast.held {
     Some(Held(resolution:, until: CooldownEnds, ..)) -> {
-      let #(global_left, own_left) =
-        cast_cost.cooldown_left_ms(cast:, spell: resolution.spell, now_ms:)
+      let left =
+        cast_cost.cooldowns_left(cast:, spell: resolution.spell, now_ms:)
       let #(cast, cancels) =
         cast_state.cancel_timers(cast:, matching: fn(due) { due == StartHeld })
       let #(cast, _, start) =
         cast_state.armed(
           cast:,
           due: StartHeld,
-          after_ms: int.max(global_left, own_left),
+          after_ms: cast_cost.longest_left_ms(left:),
         )
       #(cast, list.append(cancels, [start]))
     }
@@ -5344,7 +5343,10 @@ fn child(
         parent: Some(live.spell.spell4_id),
         primary_target:,
         client_cast_id: None,
-        role: Child(counted_with: live.counted_with),
+        role: Child(
+          counted_with: live.counted_with,
+          from: cast_state.handed_down(live:),
+        ),
         spent: None,
         reserved: [],
       )
@@ -5358,6 +5360,7 @@ fn child(
             primary_target:,
             proxy:,
             counted_with: live.counted_with,
+            from: cast_state.handed_down(live:),
           ),
           after_ms: proxy.delay_ms,
         )

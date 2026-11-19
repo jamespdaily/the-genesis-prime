@@ -22,10 +22,12 @@ import fixture_tables
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{type Request, CastStarted}
 import genesis_prime/game/strike_tell
+import genesis_prime/message/cast_result
 import genesis_prime/message/item_count_changed
 import genesis_prime/message/item_place.{ItemPlace}
 import genesis_prime/message/item_use.{ItemUse}
 import genesis_prime/message/player_health
+import genesis_prime/message/spell_cast_refused
 import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_go
 import genesis_prime/message/unit_properties_changed
@@ -33,7 +35,7 @@ import genesis_prime/step.{type ConnectionStep, OwnEvent}
 import genesis_prime/store.{AccountId, CharacterId, SpendItem}
 import gleam/int
 import gleam/list
-import gleam/option.{Some}
+import gleam/option.{None, Some}
 import item_charge_support as support_items
 import owned_test
 import spawn_support
@@ -247,6 +249,22 @@ pub fn a_consumables_use_shows_its_heal_or_its_buff_and_spends_one_of_the_stack_
           assert described(taken: answered, effect_id:) == [amount] as scene.why
           assert healths(taken: answered) == [int.min(full, hurt + amount)]
             as scene.why
+          let #(_, again) =
+            connection_support.at(
+              state:,
+              ms: 2000,
+              event: OwnEvent(step.Read(press(client_cast_id: 2))),
+            )
+          let assert [refusal] =
+            connection_support.heard(again, connection_support.keyed())
+            as "a second press inside the group's 180,000 ms is answered with one frame"
+          let assert Ok(refused) = spell_cast_refused.decode(refusal.body)
+            as "the answer is a 0x7fc"
+          assert refusal.message_id == 0x07FC
+            && cast_result.to_value(refused.result) == 16
+            as "SpellCoolDown 130 holds 180,000 ms: the client refuses it 16 (0x1403b14c0), and the server refuses a press the client would not send"
+          assert support.asked(again) == None
+            as "a refused press asks the store for nothing: the stack stays"
         }
         Buffs(property_id:, ends_after_ms:, item_level:) -> {
           assert started.creature_activate == 0

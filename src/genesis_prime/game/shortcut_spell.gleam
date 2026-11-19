@@ -23,6 +23,7 @@
 
 import genesis_prime/game/activate
 import genesis_prime/game/effect_row_read
+import genesis_prime/game/item_property
 import genesis_prime/game/objective_kind
 import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{type Spell}
@@ -30,7 +31,6 @@ import genesis_prime/game/target_mechanic
 import genesis_prime/table/id.{
   Spell4ConditionsId, Spell4Id, Spell4TargetMechanicsId, Spell4ValidTargetsId,
 }
-import genesis_prime/table/item_special
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest_objective
 import genesis_prime/table/spell4
@@ -177,10 +177,7 @@ fn build(tables tables: table_store.Tables) -> Shortcuts {
 /// The Spell4 ids items cast (ItemSpecial.spell4IdOnActivate) whose Spell4, Spell4Base and
 /// Spell4TargetMechanics rows are in the tables and are of a Caster kind.
 fn item_spells_on_the_user(tables tables: table_store.Tables) -> List(Int) {
-  item_special.all(tables)
-  |> list.map(fn(row) { row.spell4_id_on_activate })
-  |> list.filter(fn(spell4_id) { spell4_id != 0 })
-  |> list.unique
+  item_property.spells_on_activate(tables:)
   |> list.filter(fn(spell4_id) {
     case spell4.get(tables:, id: Spell4Id(spell4_id)) {
       Error(Nil) -> False

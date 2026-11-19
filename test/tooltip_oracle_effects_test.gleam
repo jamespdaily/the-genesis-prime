@@ -736,7 +736,7 @@ fn picked_by(selector selector: cooldown.Selector) -> cooldown.Keys {
         spell4_id: Spell4Id(1),
         spell4_base_id: Spell4BaseId(1),
         spell_groups: [],
-        cooldown_groups: [group],
+        cooldown_groups: [cooldown.Group(id: group, time_ms: 0)],
       )
     cooldown.EverySpell(..) ->
       cooldown.keys(

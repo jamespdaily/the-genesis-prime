@@ -22,17 +22,22 @@
 ////   product is rounded once from the exact 64-bit product of two 32-bit values.
 //// - **A time of 0 ends the cooldown** (`0x1407a0320`, `0x1407a0390`), and a new
 ////   cooldown is made only for a time above 0 (`0x14046a3d0`).
-//// - **A cooldown starts only while the spell has none** (`0x14046b1e0`), and its time
-////   goes through the kept modifiers in the order they were added (`0x14046a890`).
+//// - **A go starts the spell's own cooldown and each of its cooldown groups** (type 1
+////   and type 2 entries, `0x14046b1e0`), only while no entry carries the spell's id,
+////   its own or a group's. A group is looked up by its id when a press is checked
+////   (`0x1403b14c0`), whichever spell started it, and a modifier picks it with the spell
+////   that started it (`0x14046b920`). A group set again while it runs takes the new time
+////   as it is, and a time of 0 ends it (`opcode.0x804`, `0x14046a3d0`).
+//// - **A new cooldown's time** goes through the kept modifiers in the order they were
+////   added (`0x14046a890`).
 //// - **The global cooldown is not here:** its entry has spell id 0, which a modifier
 ////   skips (`0x14046b920`), so the cast rule keeps it apart.
 ////
-//// Gaps: no group cooldowns (a group's own time, `SpellCoolDown.cooldownTime`, and the
-//// refusal 16) and no cooldown rate (unit property 0xa04), so the server is never
-//// stricter than the client, which refuses a press the server would accept; no
-//// ability charges. The client's 32-bit wrap of a result outside 0 to 2^31 - 1 is not
-//// modelled, because no row reaches it: the result is held inside the range. A source
-//// kept again is held once, at the end of the list: the server's choice.
+//// Gaps: no cooldown rate (unit properties 0xa04 and 0x88), so the server is never
+//// stricter than the client, which refuses a press the server would accept; no ability
+//// charges. The client's 32-bit wrap of a result outside 0 to 2^31 - 1 is not modelled,
+//// because no row reaches it: the result is held inside the range. A source kept again
+//// is held once, at the end of the list: the server's choice.
 
 import genesis_prime/game/unit_properties.{type Source}
 import genesis_prime/message/float32
@@ -46,8 +51,11 @@ import gleam/list
 /// A unit's running cooldowns and its kept modifiers.
 pub opaque type Book {
   Book(
-    /// The cooldowns that run, by the Spell4 id of the spell that started each.
+    /// The cooldowns of spells that run, by the Spell4 id of the spell that started each.
     running: Dict(Int, Running),
+    /// The cooldowns of groups that run, by the group's SpellCoolDown id. Each carries the
+    /// keys of the spell that started it, so a selector picks it with that spell.
+    grouped: Dict(Int, Running),
     /// The kept modifiers in the order they were added, each with what keeps it.
     lasting: List(#(Source, Modifier)),
   )
@@ -59,14 +67,22 @@ type Running {
 }
 
 /// The ids of a spell that a selector tests: its Spell4, its Spell4Base, its spell
-/// groups and its cooldown groups.
+/// groups and its cooldown groups, each with the time it runs.
 pub opaque type Keys {
   Keys(
     spell4_id: Spell4Id,
     spell4_base_id: Spell4BaseId,
     spell_groups: List(Int),
-    cooldown_groups: List(Int),
+    cooldown_groups: List(Group),
   )
+}
+
+/// A cooldown group of a spell (a SpellCoolDown row named by `spellCoolDownId00` to `02`)
+/// and the time it runs from the spell's go: the row's `cooldownTime`, or the spell's own
+/// cooldown when the row holds 0 and the client scales the spell's cooldowns
+/// (`spell_plan.cooldown_groups_of`). A time of 0 starts none.
+pub type Group {
+  Group(id: Int, time_ms: Int)
 }
 
 /// Which running cooldowns a modifier picks (`Spell4Effects.effectType.73`: dataBits00
@@ -99,7 +115,7 @@ pub type Modifier {
 
 /// A unit with no cooldown running and no modifier kept.
 pub fn new() -> Book {
-  Book(running: dict.new(), lasting: [])
+  Book(running: dict.new(), grouped: dict.new(), lasting: [])
 }
 
 /// The ids of a spell that its cooldown carries, for a selector to test.
@@ -107,14 +123,16 @@ pub fn keys(
   spell4_id spell4_id: Spell4Id,
   spell4_base_id spell4_base_id: Spell4BaseId,
   spell_groups spell_groups: List(Int),
-  cooldown_groups cooldown_groups: List(Int),
+  cooldown_groups cooldown_groups: List(Group),
 ) -> Keys {
   Keys(spell4_id:, spell4_base_id:, spell_groups:, cooldown_groups:)
 }
 
-/// The spell's own cooldown of `cooldown_ms` starts now, unless the spell has one
-/// running or the time is 0 (`0x14046b1e0`). The time goes through the kept modifiers
-/// in the order they were added, and a result of 0 starts none (`0x14046a3d0`).
+/// The spell's own cooldown of `cooldown_ms` and each of its cooldown groups start now,
+/// unless an entry that carries the spell's id runs already, its own or a group's
+/// (`0x14046b1e0`). Each time goes through the kept modifiers in the order they were
+/// added, and a result of 0 starts none (`0x14046a3d0`). A group that runs already is set
+/// to the new time as it is, which ends it for 0 (`opcode.0x804`).
 pub fn start(
   book book: Book,
   keys keys: Keys,
@@ -122,20 +140,93 @@ pub fn start(
   now_ms now_ms: Int,
 ) -> Book {
   use <- bool.guard(
-    when: cooldown_ms <= 0
-      || left_ms(book:, spell4_id: keys.spell4_id, now_ms:) > 0,
+    when: carries(book:, spell4_id: keys.spell4_id, now_ms:),
     return: book,
   )
-  let time_ms = through_kept(lasting: book.lasting, keys:, time_ms: cooldown_ms)
-  Book(..book, running: case time_ms > 0 {
+  let book = case cooldown_ms > 0 {
+    True ->
+      Book(
+        ..book,
+        running: started(
+          entries: book.running,
+          key: keys.spell4_id.value,
+          lasting: book.lasting,
+          keys:,
+          time_ms: cooldown_ms,
+          now_ms:,
+        ),
+      )
+    False -> book
+  }
+  list.fold(keys.cooldown_groups, book, fn(book, group) {
+    Book(
+      ..book,
+      grouped: case left(entries: book.grouped, key: group.id, now_ms:) > 0 {
+        True -> set(entries: book.grouped, group:, keys:, now_ms:)
+        False ->
+          started(
+            entries: book.grouped,
+            key: group.id,
+            lasting: book.lasting,
+            keys:,
+            time_ms: group.time_ms,
+            now_ms:,
+          )
+      },
+    )
+  })
+}
+
+/// Whether an entry that runs carries the spell's id: the spell's own cooldown, or a
+/// group's that the spell started.
+fn carries(
+  book book: Book,
+  spell4_id spell4_id: Spell4Id,
+  now_ms now_ms: Int,
+) -> Bool {
+  left_ms(book:, spell4_id:, now_ms:) > 0
+  || list.any(dict.values(book.grouped), fn(running) {
+    running.keys.spell4_id == spell4_id && running.ends_ms > now_ms
+  })
+}
+
+/// A new entry of `time_ms` through the kept modifiers, made only for a time above 0;
+/// a stale entry under the key is taken out.
+fn started(
+  entries entries: Dict(Int, Running),
+  key key: Int,
+  lasting lasting: List(#(Source, Modifier)),
+  keys keys: Keys,
+  time_ms time_ms: Int,
+  now_ms now_ms: Int,
+) -> Dict(Int, Running) {
+  let time_ms = case time_ms > 0 {
+    True -> through_kept(lasting:, keys:, time_ms:)
+    False -> 0
+  }
+  case time_ms > 0 {
+    True -> dict.insert(entries, key, Running(ends_ms: now_ms + time_ms, keys:))
+    False -> dict.delete(entries, key)
+  }
+}
+
+/// A group entry that runs set to the group's time as it is, without the kept modifiers;
+/// a time of 0 ends it.
+fn set(
+  entries entries: Dict(Int, Running),
+  group group: Group,
+  keys keys: Keys,
+  now_ms now_ms: Int,
+) -> Dict(Int, Running) {
+  case group.time_ms > 0 {
     True ->
       dict.insert(
-        book.running,
-        keys.spell4_id.value,
-        Running(ends_ms: now_ms + time_ms, keys:),
+        entries,
+        group.id,
+        Running(ends_ms: now_ms + group.time_ms, keys:),
       )
-    False -> dict.delete(book.running, keys.spell4_id.value)
-  })
+    False -> dict.delete(entries, group.id)
+  }
 }
 
 /// A new cooldown's time put through the kept modifiers in the order they were added:
@@ -160,14 +251,35 @@ pub fn left_ms(
   spell4_id spell4_id: Spell4Id,
   now_ms now_ms: Int,
 ) -> Int {
-  case dict.get(book.running, spell4_id.value) {
+  left(entries: book.running, key: spell4_id.value, now_ms:)
+}
+
+/// The longest time any of the groups has left at `now_ms`, 0 when none runs: the
+/// client's press check looks each group of the spell up by its id, whichever spell
+/// started it (`0x1403b14c0`).
+pub fn group_left_ms(
+  book book: Book,
+  groups groups: List(Group),
+  now_ms now_ms: Int,
+) -> Int {
+  list.fold(groups, 0, fn(longest, group) {
+    int.max(longest, left(entries: book.grouped, key: group.id, now_ms:))
+  })
+}
+
+fn left(
+  entries entries: Dict(Int, Running),
+  key key: Int,
+  now_ms now_ms: Int,
+) -> Int {
+  case dict.get(entries, key) {
     Ok(running) -> int.max(0, running.ends_ms - now_ms)
     Error(Nil) -> 0
   }
 }
 
-/// Changes the time left of every cooldown that runs and that the modifier's selector
-/// picks; a new time of 0 ends the cooldown (`0x14046b920`).
+/// Changes the time left of every cooldown that runs, a spell's or a group's, and that
+/// the modifier's selector picks; a new time of 0 ends the cooldown (`0x14046b920`).
 pub fn modify(
   book book: Book,
   modifier modifier: Modifier,
@@ -175,25 +287,32 @@ pub fn modify(
 ) -> Book {
   Book(
     ..book,
-    running: dict.fold(book.running, dict.new(), fn(kept, spell4_id, running) {
-      let left_ms = running.ends_ms - now_ms
-      case
-        left_ms > 0 && picks(selector: modifier.selector, keys: running.keys)
-      {
-        False -> dict.insert(kept, spell4_id, running)
-        True ->
-          case changed(operation: modifier.operation, left_ms:) {
-            0 -> kept
-            new_left_ms ->
-              dict.insert(
-                kept,
-                spell4_id,
-                Running(..running, ends_ms: now_ms + new_left_ms),
-              )
-          }
-      }
-    }),
+    running: modified(entries: book.running, modifier:, now_ms:),
+    grouped: modified(entries: book.grouped, modifier:, now_ms:),
   )
+}
+
+fn modified(
+  entries entries: Dict(Int, Running),
+  modifier modifier: Modifier,
+  now_ms now_ms: Int,
+) -> Dict(Int, Running) {
+  dict.fold(entries, dict.new(), fn(kept, key, running) {
+    let left_ms = running.ends_ms - now_ms
+    case left_ms > 0 && picks(selector: modifier.selector, keys: running.keys) {
+      False -> dict.insert(kept, key, running)
+      True ->
+        case changed(operation: modifier.operation, left_ms:) {
+          0 -> kept
+          new_left_ms ->
+            dict.insert(
+              kept,
+              key,
+              Running(..running, ends_ms: now_ms + new_left_ms),
+            )
+        }
+    }
+  })
 }
 
 /// A modifier kept for the cooldowns that start from now on (`0x14046b7f0`), after the
@@ -235,7 +354,8 @@ fn picks(selector selector: Selector, keys keys: Keys) -> Bool {
     Base(base) -> keys.spell4_base_id == base
     Spell(spell4_id) -> keys.spell4_id == spell4_id
     SpellGroup(group) -> list.contains(keys.spell_groups, group)
-    CooldownGroup(group) -> list.contains(keys.cooldown_groups, group)
+    CooldownGroup(id) ->
+      list.any(keys.cooldown_groups, fn(group) { group.id == id })
     EverySpell(..) -> True
   }
 }

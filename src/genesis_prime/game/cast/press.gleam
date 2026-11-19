@@ -14,7 +14,7 @@
 ////   not make), and a refusal is a 0x7fc with client cast id 0
 ////   (`cast.hold_answer`). The client holds no repeat timer, so while the key is
 ////   held the server casts the ability again, when its last cast is over and the
-////   global cooldown it started and the ability's own cooldown have ended, on a
+////   global cooldown it started, the ability's own cooldown and its groups have ended, on a
 ////   timer of the rule; a press behind another cast waits for its end, never
 ////   refused 13, which the client hides under the setting (`cast.hold_repeat`; the
 ////   server's choice). A second ability's held 1 replaces the held one, and a second
@@ -52,7 +52,10 @@
 ////   refuses.
 //// - **A press within 500 ms of a cooldown's end** is held: the client queues it
 ////   (317) and sends it (`0x1403b14c0`), so the server starts it when the
-////   cooldown ends, from a timer, and answers nothing before. A second press
+////   cooldown ends, from a timer, and answers nothing before. A press with more left
+////   of the global cooldown, the spell's own cooldown or one of its cooldown groups is
+////   refused 14, 15 or 16, whichever of those runs last in that order
+////   (`cast_cost.cooldown_refusal`). A second press
 ////   while one is held is refused 13 (the server's choice). The held press keeps
 ////   the stage it resolved to when it came, as the client does. The release of a
 ////   ChargeRelease threshold is resolved before any caster check, so a held press
@@ -693,7 +696,7 @@ pub fn no_stage_left(
 }
 
 /// How long a held ability waits before it casts again: until the global cooldown
-/// its last cast started and the spell's own cooldown have both ended, whether or
+/// its last cast started, the spell's own cooldown and its cooldown groups have all ended, whether or
 /// not the global cooldown would refuse the spell (the server's choice,
 /// `cast.hold_repeat`). Every level-1 ability and stage starts a global cooldown or
 /// has a cooldown of its own, so a repeat is never at once; a later ability with
@@ -703,13 +706,13 @@ pub fn cooldown_wait_ms(
   spell spell: Spell,
   now_ms now_ms: Int,
 ) -> Int {
-  let #(_, own_left) = cast_cost.cooldown_left_ms(cast:, spell:, now_ms:)
+  let left = cast_cost.cooldowns_left(cast:, spell:, now_ms:)
   let global_left =
     option.map(cast.global_cooldown_ends_ms, fn(ends_ms) {
       int.max(0, ends_ms - now_ms)
     })
     |> option.unwrap(0)
-  int.max(global_left, own_left)
+  int.max(global_left, int.max(left.own_ms, left.group_ms))
 }
 
 /// The open threshold a press finds, as the client finds it: the one whose second spell
@@ -935,16 +938,11 @@ pub fn verdict(
     },
   )
   use <- cast_cost.refuse_when(cast_cost.restricted(cast:, spell:))
-  let #(global_left, own_left) =
-    cast_cost.cooldown_left_ms(cast:, spell:, now_ms:)
-  use <- bool.guard(
-    when: global_left > cast_state.queue_window_ms,
-    return: Refuse(result: cast_result.SpellGlobalCooldown),
-  )
-  use <- bool.guard(
-    when: own_left > cast_state.queue_window_ms,
-    return: Refuse(result: cast_result.SpellCooldown),
-  )
+  let left = cast_cost.cooldowns_left(cast:, spell:, now_ms:)
+  use <- cast_cost.refuse_when(cast_cost.cooldown_refusal(
+    left:,
+    window_ms: cast_state.queue_window_ms,
+  ))
   case
     cast_tick.requirement_refusal(cast:, caster:, spell:),
     cast_cost.costs_paid(
@@ -972,7 +970,7 @@ pub fn verdict(
     None, Ok(paid) ->
       case
         cast_cost.lacks_the_weapon(spell:, caster:),
-        int.max(global_left, own_left)
+        cast_cost.longest_left_ms(left:)
       {
         True, _ -> Refuse(result: cast_result.WeaponSlot)
         False, 0 ->

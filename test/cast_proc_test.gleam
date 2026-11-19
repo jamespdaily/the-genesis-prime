@@ -1148,8 +1148,8 @@ pub fn death_casts_63366_after_the_casts_it_ends_and_cuts_the_stealth_cooldown_t
       target: 0,
       at: 3100,
     )
-  assert support.refusal_results(effects: control) == [15]
-    as "the control: a player who held no passive has 22 s of cooldown left, refused 15"
+  assert support.refusal_results(effects: control) == [16]
+    as "the control: a player who held no passive has 22 s of cooldown left, refused 16: the Stealth button's groups 182 and 248 run too, and an ability press meets the last result (0x1403b14c0)"
 }
 
 pub fn leaving_combat_casts_63366_once_a_second_and_cuts_the_stealth_cooldown_to_250_ms_test() -> Nil {
@@ -1168,8 +1168,8 @@ pub fn leaving_combat_casts_63366_once_a_second_and_cuts_the_stealth_cooldown_to
       target: 0,
       at: 5100,
     )
-  assert support.refusal_results(effects: before) == [15]
-    as "the control: in combat the Stealth button's 25000 ms cooldown stands"
+  assert support.refusal_results(effects: before) == [16]
+    as "the control: in combat the Stealth button's 25000 ms cooldown stands, and its group 182 with it, whose result 16 an ability press meets (0x1403b14c0)"
   let leaves = fn(state, at) {
     let #(state, effects) =
       combat_left(cast: state, caster: out, now: support.at(ms: at))

@@ -16,11 +16,11 @@
 import client_tables
 import fixture_tables
 import genesis_prime/game/activate
+import genesis_prime/game/item_property
 import genesis_prime/game/shortcut_spell.{Aimed, CannotBePlanned, Planned}
 import genesis_prime/game/spell_plan
 import genesis_prime/game/target_mechanic
 import genesis_prime/table/id.{Spell4Id}
-import genesis_prime/table/item_special
 import genesis_prime/table/spell4
 import gleam/dict
 import gleam/int
@@ -144,12 +144,7 @@ pub fn every_item_spell_of_the_client_has_one_outcome_test() -> Nil {
   let tables = client_tables.shared()
   let shortcuts = shortcut_spell.shortcuts(tables:)
   let activations = activate.activations(tables:)
-  let item_spells =
-    item_special.all(tables)
-    |> list.map(fn(row) { row.spell4_id_on_activate })
-    |> list.filter(fn(spell4_id) { spell4_id != 0 })
-    |> set.from_list
-    |> set.to_list
+  let item_spells = item_property.spells_on_activate(tables:)
   let kinds =
     list.filter_map(item_spells, fn(spell4_id) {
       case spell4.get(tables:, id: Spell4Id(spell4_id)) {

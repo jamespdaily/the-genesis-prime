@@ -1520,12 +1520,30 @@ pub fn a_consumables_use_is_decided_by_its_spell_test() -> Nil {
         RefusedWith(result: 14),
       ),
       Drink(
-        "a second Medishot 1 s after the first is taken: the server keeps no cooldown group (130, 180,000 ms), the client holds it",
+        "a second Medishot 1 s after the first is refused 16: its go started the group 130 for SpellCoolDown 130's 180,000 ms (0x14046b1e0), and the refusal leaves the stack unspent",
+        14_838,
+        1,
+        0,
+        DrinkAt(item: 14_838, ms: 1000),
+        2000,
+        RefusedWith(result: 16),
+      ),
+      Drink(
+        "another Medishot item of the same spell 1 s after is refused 16 too: the group is the spell's, not the item's",
         49_372,
         50,
         0,
         DrinkAt(item: 14_838, ms: 1000),
         2000,
+        RefusedWith(result: 16),
+      ),
+      Drink(
+        "a Medishot when the group's 180,000 ms have run out is taken: 1000 + 180,000",
+        49_372,
+        50,
+        0,
+        DrinkAt(item: 14_838, ms: 1000),
+        181_000,
         Heals(amount: 4421, item_level: 60),
       ),
       Drink(
@@ -1719,6 +1737,51 @@ pub fn a_heal_over_time_with_a_type_18_parameter_ticks_by_the_items_level_test()
     )
     == [cast_state.Heal(vital: effect_kind.Health, amount: 1900)]
     as "each tick reads the passed-in value at the item's level, not the player's"
+}
+
+pub fn a_child_an_items_cast_starts_heals_by_the_items_level_test() -> Nil {
+  use <- owned_test.run(20_000)
+  // Spell4Effects 6403, the buff potion's row (Item2 4730, power level 15), made a Proxy
+  // aimed at the caster that starts Medishot's Spell4 34985, whose Heal row 69917 is
+  // parameter 18 x 200: at the item's level, the curve at 15 is 9.5 (GameFormula 991), so
+  // the child heals 1,900 whatever the player's level (1 would give 200 x 5.3 = 1,060).
+  use edited <- fixture_tables.changed(table: "Spell4Effects", id: 6403, with: [
+    #("effectType", Integer(26)),
+    #("dataBits00", Integer(34_985)),
+    #("dataBits01", Integer(0)),
+    #("dataBits02", Integer(0)),
+    #("dataBits03", Integer(0)),
+    #("durationTime", Integer(0)),
+  ])
+  let case_ =
+    Drink(
+      "the child of the buff potion's cast",
+      4730,
+      1,
+      0,
+      NothingEarlier,
+      1000,
+      Buffs,
+    )
+  let used =
+    used_with(
+      tables: edited,
+      state: cast_state.new(),
+      caster: drinker(level: 1),
+      held: Some(4730),
+      charges: 1,
+      body: the_body(
+        client_cast_id: clients_cast_id,
+        item: the_item_place,
+        target_unit_id: 0,
+      ),
+      target: activate.Unseen,
+      at: 1000,
+    )
+  let #(_, effects) = started(used:, before: cast_state.new(), case_:)
+  assert list.map(support.caster_change_starts(effects:), fn(start) { start.1 })
+    == [cast_state.Heal(vital: effect_kind.Health, amount: 1900)]
+    as "the Proxy's child reads the passed-in value at the item's level, as the item's own cast does"
 }
 
 pub fn an_item_spell_with_no_activate_effect_is_refused_285_and_logged_once_test() -> Nil {

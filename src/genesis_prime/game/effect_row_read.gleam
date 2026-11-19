@@ -155,12 +155,7 @@ fn unplayed_why(
 fn holds_passed_in(effect effect: Spell4Effects) -> Bool {
   effect_kind.kind_of(effect_type: effect.effect_type)
   == effect_kind.PropertyModifier
-  && result.map(damage.formula_of(effect:), fn(formula) {
-    list.any(formula.parameters, fn(parameter) {
-      parameter.kind == 18 && parameter.value != 0.0
-    })
-  })
-  |> result.unwrap(False)
+  && damage.holds_passed_in(effect:)
 }
 
 /// Whether the state a UnitStateSet row holds can refuse anything: it has a reading

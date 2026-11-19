@@ -241,6 +241,18 @@ pub fn unread_on_caster(formula formula: Formula) -> Option(Unread) {
   first_unread(formula:, is_read: is_read_on_caster)
 }
 
+/// Whether the effect row's formula holds the passed-in value (parameter type 18) with a
+/// factor; a row whose multiplier is not finite holds none.
+pub fn holds_passed_in(effect effect: spell4_effects.Spell4Effects) -> Bool {
+  case formula_of(effect:) {
+    Ok(formula) ->
+      list.any(formula.parameters, fn(parameter) {
+        parameter.kind == 18 && parameter.value != 0.0
+      })
+    Error(Nil) -> False
+  }
+}
+
 /// The first parameter with a factor whose type `is_read` refuses.
 fn first_unread(
   formula formula: Formula,

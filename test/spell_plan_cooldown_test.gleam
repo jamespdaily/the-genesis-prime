@@ -351,10 +351,82 @@ pub fn a_spell_holds_the_cooldown_groups_its_row_names_test() -> Nil {
       }),
     )
   let assert Ok(spell) = spell_tables.planned_strike(rows:)
-  assert spell.cooldown_groups == [133, 134]
+  assert list.map(spell.cooldown_groups, fn(group) { group.id }) == [133, 134]
     as "the non-zero of spellCoolDownId00 to 02, in column order (0x14055e180 lines 898-913)"
   let without = spell_tables.fixture_strike()
   assert without.cooldown_groups == [] as "a column holding 0 names no group"
+}
+
+pub fn a_client_spells_cooldown_groups_run_for_their_rows_times_test() -> Nil {
+  use <- owned_test.run(60_000)
+  list.each(
+    [
+      #(
+        "Basic Medishot 34985: group 130, SpellCoolDown 130 holds 180,000 ms",
+        34_985,
+        [cooldown.Group(id: 130, time_ms: 180_000)],
+      ),
+      #(
+        "Charged Shot 34718: group 133 holds 0 and its tag 1 is one the client scales, so the group takes the spell's own 10,000 ms",
+        34_718,
+        [cooldown.Group(id: 133, time_ms: 10_000)],
+      ),
+      #(
+        "Stalker's Offensive Activate 46073: groups 182 (25,000 ms) and 248 (350 ms), no tag",
+        46_073,
+        [
+          cooldown.Group(id: 182, time_ms: 25_000),
+          cooldown.Group(id: 248, time_ms: 350),
+        ],
+      ),
+    ],
+    fn(row) {
+      assert spell_tables.client_spell(spell4_id: row.1).cooldown_groups
+        == row.2
+        as row.0
+    },
+  )
+}
+
+pub fn a_group_row_of_zero_gives_the_spells_own_cooldown_only_for_a_tag_the_client_scales_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Telekinetic Strike with a cooldown of 5000 ms and the group 133 (SpellCoolDown 133
+  // holds 0), one of the five tag columns changed (`0x1404823c0`: the tags 1, 2 and 7 are
+  // the ones the client scales).
+  list.each(
+    [
+      #("no tag: a group row of 0 starts none", [], 0),
+      #("tag 1, Assault", [#("spell4TagId00", Integer(1))], 5000),
+      #("tag 2, Support", [#("spell4TagId02", Integer(2))], 5000),
+      #(
+        "tag 7, Utility, in the last column",
+        [#("spell4TagId04", Integer(7))],
+        5000,
+      ),
+      #(
+        "tag 3 is not one the client scales",
+        [#("spell4TagId01", Integer(3))],
+        0,
+      ),
+    ],
+    fn(row) {
+      let assert Ok(spell) =
+        spell_tables.planned_strike(
+          rows: spell_tables.rows_with_strike_columns(columns: [
+            #("spellCoolDown", Integer(5000)),
+            #("spellCoolDownId00", Integer(133)),
+            #("spell4TagId00", Integer(0)),
+            #("spell4TagId01", Integer(0)),
+            #("spell4TagId02", Integer(0)),
+            #("spell4TagId03", Integer(0)),
+            #("spell4TagId04", Integer(0)),
+            ..row.1
+          ]),
+        )
+      assert spell.cooldown_groups == [cooldown.Group(id: 133, time_ms: row.2)]
+        as row.0
+    },
+  )
 }
 
 pub fn a_cooldown_group_with_no_spellcooldown_row_fails_the_load_test() -> Nil {
@@ -505,6 +577,6 @@ pub fn the_kits_five_rows_are_read_from_the_clients_tables_test() -> Nil {
   let assert GatedOnCaster(gates: [_]) = second.condition
     as "231992 and 231993 hold the caster apply prerequisite 4585"
   let charged_shot = spell_in_trees(plans:, spell4_id: 34_718)
-  assert charged_shot.cooldown_groups == [133]
+  assert list.map(charged_shot.cooldown_groups, fn(group) { group.id }) == [133]
     as "Spell4 34718: spellCoolDownId00 133 (table_rows -- Spell4 34718)"
 }

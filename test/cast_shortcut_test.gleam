@@ -26,6 +26,7 @@ import genesis_prime/client_connection.{CastStarted}
 import genesis_prime/game/activate.{type Target, Body, Usable}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
+import genesis_prime/game/item_property
 import genesis_prime/game/objective_kind
 import genesis_prime/game/shortcut_spell
 import genesis_prime/game/shown
@@ -45,7 +46,6 @@ import genesis_prime/message/spell_go
 import genesis_prime/step.{LogWarning}
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id, Spell4EffectsId}
-import genesis_prime/table/item_special
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/prerequisite
 import genesis_prime/table/quest_objective
@@ -882,8 +882,7 @@ pub fn no_real_spell_a_press_reaches_has_a_creature_id_target_cast_test() -> Nil
             row.spell4_id_activate03,
           ]
         }),
-      item_special.all(tables)
-        |> list.map(fn(row) { row.spell4_id_on_activate }),
+      item_property.spells_on_activate(tables:),
     ])
   let reaching =
     spell4.all(tables)

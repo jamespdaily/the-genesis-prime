@@ -435,6 +435,7 @@ pub type Due {
     primary_target: Int,
     proxy: Proxy,
     counted_with: AdvanceWith,
+    from: Option(PressedFrom),
   )
   /// The earliest node of the lingering cast `cast_id` ends: its units' 0x811, or
   /// the finish when no node is left.
@@ -671,8 +672,9 @@ pub type Role {
   /// A child a Proxy started, or a cast the server starts of its own for no press (the level-up
   /// fanfare): no threshold is touched. It counts its QuestAdvanceObjective rows with the use
   /// or cast of the cast that started it, `counted_with` (none for a child a proc fire or the
-  /// server started).
-  Child(counted_with: AdvanceWith)
+  /// server started), and reads an item's passed-in value as the item's cast does: `from` is
+  /// the item's use that pressed the cast that started it (`handed_down`), none otherwise.
+  Child(counted_with: AdvanceWith, from: Option(PressedFrom))
   /// The ability's own spell, which opens a threshold when its method has one.
   Base(ability: Spell, bag_spell: Spell4Id)
   /// The stage at `index` of the ability's open threshold.
@@ -701,6 +703,25 @@ pub type PressedFrom {
   /// passed-in value at that level (genesis_prime/game/passed_in_value), which the cast's
   /// heals and absorbs read in place of the player's own.
   Item(item_level: Int, passed_in: Float)
+}
+
+/// The passed-in value the cast's heals and absorbs read in place of the caster's own: an
+/// item's, for the item's cast and the children of it.
+pub fn passed_in_of(live live: Live) -> Option(Float) {
+  case live.pressed {
+    Some(Item(passed_in:, ..)) -> Some(passed_in)
+    Some(QuestButton) | None -> None
+  }
+}
+
+/// What a child of this cast takes from what pressed it: an item's use, so the child's
+/// heals read the item's value too; never a quest button, whose objective only the cast
+/// itself counts.
+pub fn handed_down(live live: Live) -> Option(PressedFrom) {
+  case live.pressed {
+    Some(Item(..) as from) -> Some(from)
+    Some(QuestButton) | None -> None
+  }
 }
 
 /// The unit an activate cast activates and what its go names on it.
@@ -771,11 +792,10 @@ pub type Live {
     /// What the client's interaction has answered, for a spell of castMethod 5 that an
     /// activate or shortcut cast casts.
     interaction: Interaction,
-    /// Whether the cast is a quest button's, whose first go counts the objective.
-    shortcut: Bool,
-    /// The passed-in value the cast's heals and absorbs read in place of the caster's own,
-    /// for an item's cast (`Item`).
-    passed_in: Option(Float),
+    /// What pressed the cast, for a cast of a spell on its caster and for a child of an item's
+    /// cast: a quest button's first go counts its objective, and an item's value is what the
+    /// heals and absorbs read in place of the caster's own (`passed_in_of`).
+    pressed: Option(PressedFrom),
     /// The unit a quest button's cast was aimed at, when it takes one.
     aimed: Option(PressedAt),
     /// The use or cast the cast's QuestAdvanceObjective rows count with: its own for an activate

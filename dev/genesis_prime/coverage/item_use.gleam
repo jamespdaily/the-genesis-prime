@@ -17,10 +17,11 @@
 
 import genesis_prime/game/activate
 import genesis_prime/game/damage
+import genesis_prime/game/effect_kind
+import genesis_prime/game/item_use
 import genesis_prime/game/shortcut_spell
-import genesis_prime/table/id.{ItemSpecialId, Spell4Id}
+import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/table/item2
-import genesis_prime/table/item_special
 import genesis_prime/table/loader/store
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_effects
@@ -55,14 +56,9 @@ pub fn measure(tables tables: store.Tables) -> Report {
   let activations = activate.activations(tables:)
   let spell_ids =
     list.filter_map(item2.all(tables), fn(row) {
-      item_special.get(tables:, id: ItemSpecialId(row.item_special_id00))
-      |> result.map(fn(special) { special.spell4_id_on_activate })
-      |> result.try(fn(spell4_id) {
-        case spell4_id {
-          0 -> Error(Nil)
-          _ -> Ok(spell4_id)
-        }
-      })
+      item_use.spell_of(tables:, row:)
+      |> result.map(fn(spell4_id) { spell4_id.value })
+      |> result.replace_error(Nil)
     })
   let outcomes =
     list.map(spell_ids, fn(spell4_id) {
@@ -155,16 +151,17 @@ fn replace_number(word: String) -> String {
 fn passed_in_spells(tables tables: store.Tables) -> set.Set(Int) {
   spell4_effects.all(tables)
   |> list.filter(fn(effect) {
-    list.contains([10, 118, 29], effect.effect_type)
-    && result.map(damage.formula_of(effect:), fn(formula) {
-      list.any(formula.parameters, fn(parameter) {
-        parameter.kind == 18 && parameter.value != 0.0
-      })
-    })
-    |> result.unwrap(False)
+    heals_or_absorbs(effect:) && damage.holds_passed_in(effect:)
   })
   |> list.map(fn(effect) { effect.spell_id })
   |> set.from_list
+}
+
+fn heals_or_absorbs(effect effect: spell4_effects.Spell4Effects) -> Bool {
+  let kind = effect_kind.kind_of(effect_type: effect.effect_type)
+  kind == effect_kind.Heal(vital: effect_kind.Health)
+  || kind == effect_kind.Heal(vital: effect_kind.Shield)
+  || kind == effect_kind.Absorption
 }
 
 /// The measure's lines.

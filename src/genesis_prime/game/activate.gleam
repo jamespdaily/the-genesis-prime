@@ -44,6 +44,7 @@
 ////   fight-state conditions and the unit word 0xc4 that bit 5 reads (`planned`).
 
 import genesis_prime/game/effect_kind
+import genesis_prime/game/item_property
 import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/spell_plan.{type Spell}
 import genesis_prime/game/start_place.{type Place}
@@ -55,7 +56,6 @@ import genesis_prime/table/id.{
   Spell4EffectsId, Spell4Id,
 }
 import genesis_prime/table/item2
-import genesis_prime/table/item_special
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_base
@@ -405,16 +405,13 @@ fn item_spell_ids(
   tables tables: table_store.Tables,
   sources sources: spell_plan.Sources,
 ) -> List(Int) {
-  item_special.all(tables)
-  |> list.map(fn(row) { row.spell4_id_on_activate })
+  item_property.spells_on_activate(tables:)
   |> list.filter(fn(spell4_id) {
-    spell4_id != 0
-    && list.any(spell_plan.effects_of(sources:, spell4_id:), fn(effect) {
+    list.any(spell_plan.effects_of(sources:, spell4_id:), fn(effect) {
       let kind = effect_kind.kind_of(effect_type: effect.effect_type)
       kind == effect_kind.Activate || kind == effect_kind.QuestAdvance
     })
   })
-  |> list.unique
 }
 
 /// The ids of the Prerequisite rows the creatures' link columns name

@@ -611,16 +611,19 @@ fn cooldown_of(rows rows: Rows, root root: Spell) -> Result(Int, Unread) {
 }
 
 /// The time from the release to the end of the cooldown the release's go started,
-/// found by pressing again: the press is refused 15 while more than the queue window
-/// (500 ms, `0x1403b14c0`) of the own cooldown is left, and held for what is left after
-/// that.
+/// found by pressing again: the press is refused 15 (16 when the spell's cooldown group
+/// runs too) while more than the queue window (500 ms, `0x1403b14c0`) of the cooldown is
+/// left, and held for what is left after that.
 fn cooldown_end_after(
   press press: Press,
   state state: State,
   release_ms release_ms: Int,
 ) -> Result(Int, Unread) {
   let own = fn(at_ms) {
-    support.refusal_results(effects: press(state, at_ms).1) == [15]
+    list.contains(
+      [[15], [16]],
+      support.refusal_results(effects: press(state, at_ms).1),
+    )
   }
   let early = release_ms + 1200
   let late = release_ms + 100_000
