@@ -26,10 +26,8 @@
 ////   a spell's own rows hit foes.
 //// - An item's cast plays a row when the plan reads it and it is no Activate row (the
 ////   right-click of a unit), holds no suspend prerequisite (a Prerequisite the server does
-////   not read gates when the row works) and is not a type 11 row with a type 18 parameter
-////   (the plan applies that row from its data bits and drops the parameters).
+////   not read gates when the row works).
 
-import genesis_prime/game/damage
 import genesis_prime/game/effect_kind
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan
@@ -139,23 +137,8 @@ fn unplayed_why(
         <> int.to_string(suspend)
         <> ", which the server does not read",
       )
-    True ->
-      case holds_passed_in(effect:) {
-        True ->
-          Some(
-            row
-            <> " holds a type 18 parameter, which a modifier row's amount does not read",
-          )
-        False -> None
-      }
+    True -> None
   }
-}
-
-/// Whether a type 11 row has a type 18 parameter with a factor.
-fn holds_passed_in(effect effect: Spell4Effects) -> Bool {
-  effect_kind.kind_of(effect_type: effect.effect_type)
-  == effect_kind.PropertyModifier
-  && damage.holds_passed_in(effect:)
 }
 
 /// Whether the state a UnitStateSet row holds can refuse anything: it has a reading

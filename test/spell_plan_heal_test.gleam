@@ -271,9 +271,10 @@ pub fn a_heal_shields_row_with_a_parameter_the_caster_formula_does_not_read_fail
     let row =
       Spell4Effects(..energize_row(), id: 99_118, parameter_type00: kind)
     assert heal_read(effect: row)
-      == Error(spell_plan.HealParameterNotRead(
+      == Error(spell_plan.ParameterNotRead(
         spell4_id: 69_450,
         effect_id: 99_118,
+        row: spell_plan.HealRow,
         parameter_kind: kind,
       ))
       as {
@@ -584,9 +585,10 @@ pub fn a_heal_row_with_an_unread_parameter_or_number_is_refused_test() -> Nil {
     as "and keeps it as the row gives it"
   let weapon_dps = Spell4Effects(..passed_in, parameter_type00: 9)
   assert heal_read(effect: weapon_dps)
-    == Error(spell_plan.HealParameterNotRead(
+    == Error(spell_plan.ParameterNotRead(
       spell4_id: 34_985,
       effect_id: 69_917,
+      row: spell_plan.HealRow,
       parameter_kind: 9,
     ))
     as "parameter 9, the caster's Weapon DPS, is not read"

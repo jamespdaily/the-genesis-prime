@@ -210,8 +210,8 @@ pub fn attacker_of(
   )
 }
 
-/// A parameter type the formula does not read for a player caster, which fails
-/// the load of the spell that holds it.
+/// A parameter type with a factor that a rule does not read, which fails the load of the
+/// spell that holds it.
 pub type Unread {
   Unread(parameter_kind: Int)
 }
@@ -231,14 +231,14 @@ pub fn power_of(rating rating: Float) -> Float {
 /// 19, 21 to 23, 25 and 26 (`0x140565600`, `0x140566d40`, `0x140566ad0`). The caster's
 /// Weapon and Weapon DPS (6 and 9, #807) and the passed-in value (18, #336) are not read.
 pub fn unread(formula formula: Formula) -> Option(Unread) {
-  first_unread(formula:, is_read:)
+  first_unread(parameters: formula.parameters, is_read:)
 }
 
 /// The first parameter type of the formula that an effect on its caster does not read:
 /// `unread` less the passed-in value (18), which `value_on_caster` multiplies by the
 /// caster's `passed_in`.
 pub fn unread_on_caster(formula formula: Formula) -> Option(Unread) {
-  first_unread(formula:, is_read: is_read_on_caster)
+  first_unread(parameters: formula.parameters, is_read: is_read_on_caster)
 }
 
 /// Whether the effect row's formula holds the passed-in value (parameter type 18) with a
@@ -254,24 +254,22 @@ pub fn holds_passed_in(effect effect: spell4_effects.Spell4Effects) -> Bool {
 }
 
 /// The first parameter type of the effect row whose factor is not 0.0, whatever its
-/// type but 0, which names no parameter (`is_read`): for a row whose data bits are no
-/// formula, such as a stat modifier's, whose amount the plan reads from its data bits alone.
+/// type but 0, which names no parameter: for a row whose data bits are no formula, such as
+/// a stat modifier's, whose amount the plan takes from its data bits alone.
 pub fn first_parameter_with_factor(
   effect effect: spell4_effects.Spell4Effects,
 ) -> Option(Unread) {
-  list.find(parameters_of(effect:), fn(parameter) {
-    parameter.kind != 0 && parameter.value != 0.0
+  first_unread(parameters: parameters_of(effect:), is_read: fn(kind) {
+    kind == 0
   })
-  |> result.map(fn(parameter) { Unread(parameter_kind: parameter.kind) })
-  |> option.from_result
 }
 
 /// The first parameter with a factor whose type `is_read` refuses.
 fn first_unread(
-  formula formula: Formula,
+  parameters parameters: List(Parameter),
   is_read is_read: fn(Int) -> Bool,
 ) -> Option(Unread) {
-  list.find(formula.parameters, fn(parameter) {
+  list.find(parameters, fn(parameter) {
     parameter.value != 0.0 && !is_read(parameter.kind)
   })
   |> result.map(fn(parameter) { Unread(parameter_kind: parameter.kind) })
@@ -624,7 +622,7 @@ pub type CreatureScaling {
 /// The first parameter type the creature formula does not read, or `None`: it reads
 /// Strength (type 1), Assault Power (12) and the level (10).
 pub fn creature_unread(formula formula: Formula) -> Option(Unread) {
-  first_unread(formula:, is_read: is_read_for_a_creature)
+  first_unread(parameters: formula.parameters, is_read: is_read_for_a_creature)
 }
 
 fn is_read_for_a_creature(kind: Int) -> Bool {

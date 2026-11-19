@@ -133,7 +133,7 @@
 ////   tickTime, with neither a durationTime nor flags bit 2, with a non-finite number or a
 ////   parameter kind not read fails the load, as does one whose aim names the primary target in
 ////   a child a Proxy starts on each struck unit (`AbsorptionPeriodic`,
-////   `AbsorptionHasNoLifetime`, `AbsorptionNumberNotFinite`, `AbsorptionParameterNotRead`,
+////   `AbsorptionHasNoLifetime`, `AbsorptionNumberNotFinite`, `ParameterNotRead`,
 ////   `AbsorptionOnStruckUnit`); a row aimed only at other units is not read.
 //// - **The heals.** A Heal effect (`Spell4Effects.effectType.10`) or a HealShields effect
 ////   (`.118`) whose targetFlags include the caster (bit 1), or are the primary target
@@ -2240,6 +2240,16 @@ pub type DisguiseGap {
   DisplayHasNoSlot(item_display_id: Int)
 }
 
+/// The kind of effect row whose parameter the plan does not read (`ParameterNotRead`).
+pub type ParameterRow {
+  /// A Heal or HealShields row.
+  HealRow
+  /// An Absorption row.
+  AbsorptionRow
+  /// A UnitPropertyModifier row.
+  ModifierRow
+}
+
 /// Why the plans cannot be built from the tables.
 pub type PlanError {
   /// A table row the tree names is missing: the table, and the id.
@@ -2336,11 +2346,6 @@ pub type PlanError {
   /// amount, or a UnitPropertyConversion effect a share, that is not a finite number:
   /// `column` is its dataBits column.
   ModifierNumberNotFinite(spell4_id: Int, effect_id: Int, column: String)
-  /// A UnitPropertyModifier effect of a tree has a parameter with a factor, of type
-  /// `parameter_kind`: the amount the client shows adds the parameter's stat or flat value
-  /// to the data bits, which the plan does not
-  /// (`Spell4Effects.effectType.11.change`).
-  ModifierParameterNotRead(spell4_id: Int, effect_id: Int, parameter_kind: Int)
   /// A ModifySpellCooldown effect of a tree has a dataBits03 that is not a finite
   /// number, for an operation that reads it (`Spell4Effects.effectType.73`).
   CooldownNumberNotFinite(spell4_id: Int, effect_id: Int)
@@ -2360,9 +2365,17 @@ pub type PlanError {
   /// A spell of a tree has a spellCastStealthChange that is not 0, 1 or 2
   /// (`Spell4.spellCastStealthChange`).
   StealthChangeNotRead(spell4_id: Int, value: Int)
-  /// A Heal or HealShields effect of a tree has a parameter type the formula for an effect on
-  /// its caster does not read (`damage.unread_on_caster`).
-  HealParameterNotRead(spell4_id: Int, effect_id: Int, parameter_kind: Int)
+  /// An effect of a tree, of the kind `row`, has a parameter with a factor of type
+  /// `parameter_kind` that the plan does not read: for a heal or an absorb, a type the
+  /// formula for an effect on its caster does not read (`damage.unread_on_caster`); for a
+  /// stat modifier, any type, since the plan takes its amount from the data bits alone
+  /// (`Spell4Effects.effectType.11.change`).
+  ParameterNotRead(
+    spell4_id: Int,
+    effect_id: Int,
+    row: ParameterRow,
+    parameter_kind: Int,
+  )
   /// A Heal or HealShields effect of a tree has a dataBits00 that is not a finite 32-bit float.
   HealNumberNotFinite(spell4_id: Int, effect_id: Int)
   /// A periodic Heal or HealShields effect lasts until removed (flags bit 2): its reading
@@ -2386,13 +2399,6 @@ pub type PlanError {
     spell4_id: Int,
     proxy_effect_id: Int,
     effect_id: Int,
-  )
-  /// An Absorption effect of a tree has a parameter type the formula for an effect on its
-  /// caster does not read (`damage.unread_on_caster`).
-  AbsorptionParameterNotRead(
-    spell4_id: Int,
-    effect_id: Int,
-    parameter_kind: Int,
   )
   /// An Absorption effect of a tree has a dataBits00 or dataBits01 that is not a finite
   /// 32-bit float.
@@ -2630,14 +2636,6 @@ pub fn describe(error error: PlanError) -> String {
       <> " whose "
       <> column
       <> " is not a finite number"
-    ModifierParameterNotRead(spell4_id:, effect_id:, parameter_kind:) ->
-      "the Spell4 row "
-      <> int.to_string(spell4_id)
-      <> " has a UnitPropertyModifier effect "
-      <> int.to_string(effect_id)
-      <> " with a parameter of type "
-      <> int.to_string(parameter_kind)
-      <> ", whose amount is not read"
     CooldownNumberNotFinite(spell4_id:, effect_id:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -2678,14 +2676,16 @@ pub fn describe(error error: PlanError) -> String {
       <> " has a spellCastStealthChange of "
       <> int.to_string(value)
       <> ", and only 0, 1 and 2 are read"
-    HealParameterNotRead(spell4_id:, effect_id:, parameter_kind:) ->
+    ParameterNotRead(spell4_id:, effect_id:, row:, parameter_kind:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
-      <> " has a Heal or HealShields effect "
+      <> " has "
+      <> parameter_row_name(row:)
+      <> " effect "
       <> int.to_string(effect_id)
       <> " with a parameter of type "
       <> int.to_string(parameter_kind)
-      <> ", which the caster's formula does not read"
+      <> ", which the plan does not read"
     HealNumberNotFinite(spell4_id:, effect_id:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -2732,14 +2732,6 @@ pub fn describe(error error: PlanError) -> String {
       <> " that starts a child on each struck unit, which holds the ModifyInterruptArmor effect "
       <> int.to_string(effect_id)
       <> " whose aim names that unit, and Interrupt Armor on a struck unit is not built"
-    AbsorptionParameterNotRead(spell4_id:, effect_id:, parameter_kind:) ->
-      "the Spell4 row "
-      <> int.to_string(spell4_id)
-      <> " has an Absorption effect "
-      <> int.to_string(effect_id)
-      <> " with a parameter of type "
-      <> int.to_string(parameter_kind)
-      <> ", which the caster's formula does not read"
     AbsorptionNumberNotFinite(spell4_id:, effect_id:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -2975,14 +2967,12 @@ pub fn is_unbuilt(error error: PlanError) -> Bool {
     | StealthBreaksNotRead(..)
     | StealthConditionNotRead(..)
     | StealthChangeNotRead(..)
-    | ModifierParameterNotRead(..)
-    | HealParameterNotRead(..)
+    | ParameterNotRead(..)
     | HealUntilRemovedNotRead(..)
     | HealNoTick(..)
     | HealOnStruckUnit(..)
     | InterruptArmorTakeBackNotRead(..)
     | InterruptArmorOnStruckUnit(..)
-    | AbsorptionParameterNotRead(..)
     | AbsorptionAmountNotRead(..)
     | AbsorptionPeriodic(..)
     | AbsorptionHasNoLifetime(..)
@@ -3826,9 +3816,12 @@ fn heal_of(
     caster_formula_read(
       formula: damage.formula_of(effect:),
       not_finite: HealNumberNotFinite(spell4_id:, effect_id: effect.id),
-      not_read: fn(parameter_kind) {
-        HealParameterNotRead(spell4_id:, effect_id: effect.id, parameter_kind:)
-      },
+      not_read: ParameterNotRead(
+        spell4_id:,
+        effect_id: effect.id,
+        row: HealRow,
+        parameter_kind: _,
+      ),
     ),
   )
   let effect_id = Spell4EffectsId(effect.id)
@@ -4114,7 +4107,7 @@ fn helper_row_move(
 /// property, which UnitProperty2 must have a row for, dataBits01 the mode, dataBits02 the
 /// multiplier, dataBits03 the flat amount and dataBits04 the amount for each level, all
 /// three as the 32-bit floats their columns hold, which must be finite; a parameter with a
-/// factor makes it `ModifierParameterNotRead`. A type 145 row
+/// factor makes it `ParameterNotRead`. A type 145 row
 /// (`conversion_of`).
 pub fn modifier_of(
   tables tables: table_store.Tables,
@@ -4356,6 +4349,15 @@ fn caster_formula_read(
   }
 }
 
+/// The words for a kind of row in a plan error's text.
+fn parameter_row_name(row row: ParameterRow) -> String {
+  case row {
+    HealRow -> "a Heal or HealShields"
+    AbsorptionRow -> "an Absorption"
+    ModifierRow -> "a UnitPropertyModifier"
+  }
+}
+
 /// The pool an Absorption row gives (`Spell4Effects.effectType.29`), or the error that
 /// fails the load: dataBits00 and dataBits01 must be finite 32-bit floats, the formula
 /// must read only the parameter types an effect on its caster reads
@@ -4371,13 +4373,12 @@ fn absorption_read(
     caster_formula_read(
       formula: damage.absorption_formula_of(effect:),
       not_finite: AbsorptionNumberNotFinite(spell4_id:, effect_id: effect.id),
-      not_read: fn(parameter_kind) {
-        AbsorptionParameterNotRead(
-          spell4_id:,
-          effect_id: effect.id,
-          parameter_kind:,
-        )
-      },
+      not_read: ParameterNotRead(
+        spell4_id:,
+        effect_id: effect.id,
+        row: AbsorptionRow,
+        parameter_kind: _,
+      ),
     ),
   )
   use Nil <- result.try(case effect.tick_time {
@@ -4450,18 +4451,18 @@ fn modifier_not_on_a_struck_unit(
   }
 }
 
-/// Whether a UnitPropertyModifier row's amount is its data bits alone: a row with a
-/// parameter that has a factor adds the parameter's value to them in the client's
-/// tooltip, which the plan does not, so it is `ModifierParameterNotRead`.
+/// Whether a UnitPropertyModifier row has no parameter with a factor: the plan takes its
+/// amount from the data bits alone, so a row with one is `ParameterNotRead`.
 fn modifier_parameters_read(
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(Nil, PlanError) {
   case damage.first_parameter_with_factor(effect:) {
     Some(damage.Unread(parameter_kind:)) ->
-      Error(ModifierParameterNotRead(
+      Error(ParameterNotRead(
         spell4_id:,
         effect_id: effect.id,
+        row: ModifierRow,
         parameter_kind:,
       ))
     None -> Ok(Nil)

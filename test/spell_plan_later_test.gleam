@@ -40,7 +40,7 @@ const later_spell = 57_694
 
 /// Row 138014 is a damage row with two parameter factors; a case that makes it a type 11
 /// row zeroes them, since a modifier row with a parameter factor is not read
-/// (`ModifierParameterNotRead`) and the case is about another refusal.
+/// (`ParameterNotRead`) and the case is about another refusal.
 const later_effect = 138_014
 
 const level_one_spell = 32_078
@@ -237,14 +237,14 @@ fn errors() -> List(#(PlanError, Bool)) {
     #(spell_plan.StealthBreaksNotRead(1, 2, 3), True),
     #(spell_plan.StealthConditionNotRead(1, 2), True),
     #(spell_plan.StealthChangeNotRead(1, 2), True),
-    #(spell_plan.ModifierParameterNotRead(1, 2, 3), True),
-    #(spell_plan.HealParameterNotRead(1, 2, 3), True),
+    #(spell_plan.ParameterNotRead(1, 2, spell_plan.ModifierRow, 3), True),
+    #(spell_plan.ParameterNotRead(1, 2, spell_plan.HealRow, 3), True),
     #(spell_plan.HealUntilRemovedNotRead(1, 2), True),
     #(spell_plan.HealNoTick(1, 2, 3, 4), True),
     #(spell_plan.HealOnStruckUnit(1, 2, 3), True),
     #(spell_plan.InterruptArmorTakeBackNotRead(1, 2, 3), True),
     #(spell_plan.InterruptArmorOnStruckUnit(1, 2, 3), True),
-    #(spell_plan.AbsorptionParameterNotRead(1, 2, 3), True),
+    #(spell_plan.ParameterNotRead(1, 2, spell_plan.AbsorptionRow, 3), True),
     #(spell_plan.AbsorptionAmountNotRead(1, 2), True),
     #(spell_plan.AbsorptionPeriodic(1, 2, 3), True),
     #(spell_plan.AbsorptionHasNoLifetime(1, 2), True),

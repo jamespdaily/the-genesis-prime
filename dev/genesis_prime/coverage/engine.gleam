@@ -350,7 +350,7 @@ fn spell_effects() -> EngineDeclaration {
       ),
       Missing(
         type_number: 11,
-        reason: "rows aimed at another player, which the cast applies to creatures only (#570, under #336); rows behind an apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses; rows with a parameter that has a factor, which the plan refuses (`ModifierParameterNotRead`)",
+        reason: "rows aimed at another player, which the cast applies to creatures only (#570, under #336); rows behind an apply prerequisite whose conditions the plan cannot check (#817, #818), which the plan refuses; rows with a parameter that has a factor, which the plan refuses (`ParameterNotRead`) because no rule reads a stat modifier's parameter factors into its amount (the work that builds that reading closes this gap)",
         fact_key: "Spell4Effects.effectType.11",
       ),
       Missing(

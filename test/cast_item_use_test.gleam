@@ -1382,7 +1382,7 @@ pub fn an_item_spell_with_a_type_42_row_is_planned_and_cast_without_a_use_of_its
 //   20.0 x e^(0.01 x 10) (GameFormula 65 at 60 - 50), 22.10, so 200 x it is 4,421.
 // - Item2 37649 -> Spell4 34993: Heal row 69936 of 206 every 2,000 ms for 20,000 ms.
 // - Item2 4730 -> Spell4 3792: a type 11 row 6403 of 900,000 ms, globalCooldownEnum 0.
-// - Item2 14850 -> 35022 (row 69997, type 11 with a type 18 parameter), 13027 -> 28682 (row
+// - Item2 14850 -> 35022 (row 69997, type 11 with a type 18 parameter, which the plan does not read), 13027 -> 28682 (row
 //   49524, type 38), 2900 -> 1664 (Activate row 2530) and 90021 -> 87129 (rows holding the
 //   suspend prerequisite 43393).
 // - Item2 461 -> Spell4 28, a Targeted kind with no rows: the creature's activate cast has no
@@ -1575,13 +1575,15 @@ pub fn a_consumables_use_is_decided_by_its_spell_test() -> Nil {
         Heals(amount: 1300, item_level: 5),
       ),
       Drink(
-        "a type 11 row with a type 18 parameter is not built",
+        "a type 11 row with a type 18 parameter is not built: the spell cannot be planned",
         14_850,
         50,
         0,
         NothingEarlier,
         1000,
-        NotBuilt("#336", ["69997", "type 11"]),
+        NotBuilt("#336", [
+          "UnitPropertyModifier effect 69997 with a parameter of type 18",
+        ]),
       ),
       Drink(
         "a type 38 row is not built",

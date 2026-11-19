@@ -402,12 +402,13 @@ pub fn a_modifier_row_whose_parameters_have_factors_is_not_read_on_the_clients_s
       spell4_id: spell_with_parameters,
       chain: [],
     )
-    == Error(spell_plan.ModifierParameterNotRead(
+    == Error(spell_plan.ParameterNotRead(
       spell4_id: spell_with_parameters,
       effect_id: 86_849,
+      row: spell_plan.ModifierRow,
       parameter_kind: 12,
     ))
-    as "row 86849's parameter 12 has the factor 0.19: the amount the tooltip shows is not the data bits alone, and the plan does not give them"
+    as "row 86849's parameter 12 has the factor 0.19, and the plan does not read a stat modifier's parameter factors"
 }
 
 pub fn no_level_one_or_innate_ability_holds_a_modifier_row_with_a_parameter_factor_test() -> Nil {

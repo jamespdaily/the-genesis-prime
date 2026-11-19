@@ -7,7 +7,7 @@
 ////   14838 -> Spell4 34985 (Basic Medishot: Heal row 69917, parameter 18); 37649 -> 34993
 ////   (Heal row 69936, tick 2,000 ms for 20,000 ms); 4730 -> 3792 (a caster-aimed type 11
 ////   BaseHealth row 6403, no parameter); 14850 -> 35022 (type 11 row 69997 with a type 18
-////   parameter); 13027 -> 28682 (type 38 row 49524); 2900 -> 1664 (Activate row 2530);
+////   parameter, which the plan does not read, so the spell cannot be planned); 13027 -> 28682 (type 38 row 49524); 2900 -> 1664 (Activate row 2530);
 ////   90021 -> 87129 (type 11 rows 227562, 227573 and 227574 holding the suspend
 ////   prerequisite 43393); 6914 -> 34776 (VitalModifier row 88371 of vital 15, which the
 ////   plan cannot read); 5733 -> 5640 (a Ground kind); 6017 -> 7103 (which a quest
@@ -52,8 +52,10 @@ pub fn an_item_spell_is_planned_or_refused_by_its_rows_test() -> Nil {
       #(3792, Plays, "a caster-aimed type 11 row 6403 with no parameter"),
       #(
         35_022,
-        Refused(["69997", "type 11"]),
-        "a type 11 row with a type 18 parameter",
+        CannotPlan([
+          "UnitPropertyModifier effect 69997 with a parameter of type 18",
+        ]),
+        "Spell4Effects 69997 is a type 11 row with a type 18 parameter, which the plan does not read, so the spell cannot be planned",
       ),
       #(28_682, Refused(["49524", "type 38"]), "no rule reads type 38"),
       #(1664, Refused(["2530", "Activate"]), "an Activate row is a unit's use"),

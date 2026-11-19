@@ -497,9 +497,10 @@ pub fn a_modifier_row_with_a_parameter_factor_is_not_read_and_one_without_still_
       }
       Error(parameter_kind) -> {
         assert planned
-          == Error(spell_plan.ModifierParameterNotRead(
+          == Error(spell_plan.ParameterNotRead(
             spell4_id: strike,
             effect_id: id,
+            row: spell_plan.ModifierRow,
             parameter_kind:,
           ))
           as why
