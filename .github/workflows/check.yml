@@ -187,8 +187,8 @@ jobs:
           --health-retries 15
     env:
       GENESIS_NO_CLIENT: "1"
-      # gh reads the open issues for the gap-owner test, when a pull request adds or changes it.
-      GH_TOKEN: ${{ github.token }}
+      # The gap-owner test reads the open issues from GitHub, not the code under repeat.
+      GENESIS_TEST_SKIP_GITHUB: "1"
       PGHOST: localhost
       PGPORT: "5432"
       PGUSER: postgres

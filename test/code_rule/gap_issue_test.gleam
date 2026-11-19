@@ -8,6 +8,7 @@ import code_rule/raw_type.{Gap}
 import code_rule/repository
 import gleam/io
 import gleam/list
+import gleam/string
 import owned_test
 import unitest
 
@@ -28,6 +29,8 @@ pub fn a_comment_naming_a_closed_issue_fails_naming_the_file_and_line_test() -> 
   let breaches = gap_issue.breaches(files: [file], gaps: [], open_issues: [334])
   assert list.map(breaches, fn(breach) { #(breach.path, breach.line) })
     == [#(path, 3)]
+  let assert [breach] = breaches
+  assert string.contains(breach.rule, "issue 333")
 }
 
 pub fn a_comment_naming_an_open_issue_passes_test() -> Nil {
@@ -107,60 +110,56 @@ pub fn the_open_issue_list_is_read_from_gh_output_test() -> Nil {
   })
 }
 
-pub fn github_not_reached_is_reported_on_a_development_machine_and_fails_in_ci_test() -> Nil {
+pub fn only_an_issue_confirmed_closed_fails_and_a_github_failure_skips_test() -> Nil {
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
   let file = planted.file(path, ["/// Waits for issue 333."])
-  let not_reached = Error(NotRead("no network"))
-  assert gap_issue.verdict(
-      files: [file],
-      gaps: [],
-      open_issues: not_reached,
-      in_ci: False,
-    )
-    == NotChecked("no network")
-  let assert Checked([breach]) =
-    gap_issue.verdict(
-      files: [file],
-      gaps: [],
-      open_issues: not_reached,
-      in_ci: True,
-    )
-  assert breach.rule == "the open issues were not read in CI: no network"
+  let skipped = fn(reason) { NotChecked(reason) }
+  // Each row: what gh gave (answers as `open_issues` builds them from gh's exit
+  // and output), the verdict, and why.
+  let cases = [
+    #(Error(NotRead("gh is not installed")), skipped("gh is not installed")),
+    #(
+      Error(NotRead("gh exited with status 1 (rate limited)")),
+      skipped("gh exited with status 1 (rate limited)"),
+    ),
+    #(
+      gap_issue.parse_open_issues("warning: not json"),
+      skipped("gh's answer is not a list of issue numbers"),
+    ),
+    #(Ok([333]), Checked([])),
+  ]
+  list.each(cases, fn(row) {
+    assert gap_issue.verdict(files: [file], gaps: [], open_issues: row.0)
+      == row.1
+  })
   let assert Checked([closed]) =
-    gap_issue.verdict(
-      files: [file],
-      gaps: [],
-      open_issues: Ok([334]),
-      in_ci: True,
-    )
+    gap_issue.verdict(files: [file], gaps: [], open_issues: Ok([334]))
   assert closed.line == 1
-  assert gap_issue.verdict(
-      files: [file],
-      gaps: [],
-      open_issues: Ok([333]),
-      in_ci: True,
-    )
-    == Checked([])
+  assert string.contains(closed.rule, "issue 333")
 }
 
 pub fn each_issue_a_comment_in_src_names_is_open_test() -> Nil {
   // Deadline: gh answers in about a second and the source is read once per
-  // run; the 60 s `gh` limit sits inside this 90 s.
+  // run; the 60 s `gh` limit sits inside this 90 s. Tagged `github` so a
+  // repeated run, which reads the network and not the code under repeat, skips it
+  // (`GENESIS_TEST_SKIP_GITHUB`).
   use <- owned_test.run(90_000)
-  use <- unitest.tag("code_rule")
+  use <- unitest.tags(["code_rule", "github"])
   let verdict =
     gap_issue.verdict(
       files: repository.sources(["src"]),
       gaps: raw_type.known_gaps,
       open_issues: gap_issue.open_issues(),
-      in_ci: gap_issue.in_ci(),
     )
   case verdict {
     Checked(breaches) -> {
       assert breaches == []
     }
     NotChecked(reason) ->
-      io.println("gap owners not checked, open issues not read: " <> reason)
+      io.println(
+        "WARNING: gap owners not checked, the open issues were not read: "
+        <> reason,
+      )
   }
 }

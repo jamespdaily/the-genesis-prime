@@ -6,7 +6,7 @@
 ////
 //// ```text
 //// src files -> issues named in comments -> minus the open issues -> breaches
-//// gh issue list --state open ------------^   (not read: skipped, or a breach in CI)
+//// gh issue list --state open ------------^   (not read: skipped with a warning)
 //// ```
 ////
 //// - A citation is `#` and digits, or `issue` or `issues` and digits, in a
@@ -15,12 +15,13 @@
 ////   double quotes that open before it and close after it on the line (a client
 ////   text such as "Auto-Attack #1").
 //// - The open issues come from `gh`, in CI with the workflow's token. When
-////   they cannot be read, a development machine skips the rule with the reason
-////   and CI (`GITHUB_ACTIONS` set) fails, so CI cannot pass by not looking.
+////   they cannot be read (gh missing, unreachable, rate-limited or answering
+////   something else), the rule is skipped with a warning that names the reason, on
+////   a development machine and in CI alike: a GitHub failure is no fault of the
+////   code. Only an issue confirmed closed fails.
 
 import code_rule/raw_type.{type Gap}
 import code_rule/source.{type Breach, type SourceFile, Breach}
-import envoy
 import gleam/dynamic/decode
 import gleam/int
 import gleam/json
@@ -33,8 +34,8 @@ pub type NotRead {
   NotRead(reason: String)
 }
 
-/// What the rule found: the breaches, or that the open issues were not read on
-/// a development machine, with the reason.
+/// What the rule found: the breaches, or that the open issues were not read,
+/// with the reason.
 pub type Verdict {
   Checked(breaches: List(Breach))
   NotChecked(reason: String)
@@ -64,11 +65,6 @@ pub fn parse_open_issues(output: String) -> Result(List(Int), NotRead) {
     }),
   )
   |> result.replace_error(NotRead("gh's answer is not a list of issue numbers"))
-}
-
-/// Whether this machine is CI's.
-pub fn in_ci() -> Bool {
-  result.is_ok(envoy.get("GITHUB_ACTIONS"))
 }
 
 /// Each issue a comment line names, with the file and line, in order.
@@ -163,8 +159,9 @@ pub fn breaches(
         line: citation.line,
         rule: "the comment names issue "
           <> int.to_string(citation.issue)
-          <> ", which is not open: name the open issue that holds the gap, or"
-          <> " drop the citation if it is no gap",
+          <> ", which is not open (it closed after this comment was written, or"
+          <> " this was no gap): name the open issue that now holds the gap, or"
+          <> " drop the citation",
       )
     })
   let listed =
@@ -178,30 +175,23 @@ pub fn breaches(
           <> gap.function
           <> "` names issue "
           <> int.to_string(gap.issue)
-          <> ", which is not open",
+          <> ", which is not open: name the open issue that now holds the gap in"
+          <> " `raw_type.known_gaps`",
       )
     })
   list.append(cited, listed)
 }
 
-/// The rule's verdict from what `gh` answered. A development machine that
-/// could not read the open issues skips the rule; CI fails.
+/// The rule's verdict from what `gh` answered. When the open issues could not be
+/// read, the rule is skipped with the reason, in CI as on a development machine;
+/// only an issue confirmed closed is a breach.
 pub fn verdict(
   files files: List(SourceFile),
   gaps gaps: List(Gap),
   open_issues open_issues: Result(List(Int), NotRead),
-  in_ci in_ci: Bool,
 ) -> Verdict {
-  case open_issues, in_ci {
-    Ok(open), _ -> Checked(breaches(files:, gaps:, open_issues: open))
-    Error(NotRead(reason)), False -> NotChecked(reason)
-    Error(NotRead(reason)), True ->
-      Checked([
-        Breach(
-          path: "gh issue list",
-          line: 1,
-          rule: "the open issues were not read in CI: " <> reason,
-        ),
-      ])
+  case open_issues {
+    Ok(open) -> Checked(breaches(files:, gaps:, open_issues: open))
+    Error(NotRead(reason)) -> NotChecked(reason)
   }
 }

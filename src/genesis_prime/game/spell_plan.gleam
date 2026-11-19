@@ -58,7 +58,9 @@
 ////   the caster dataBits02 points of the resource slot of its vital (6 is slot 1, 8
 ////   slot 3), behind its caster apply prerequisite, which the cast rule checks
 ////   (genesis_prime/game/prerequisite). A child started at each struck unit gives
-////   its first phase's gains once per go of its parent, not once per unit, so the plan moves them onto the `Proxy`. A gain with a
+////   its first phase's gains once per go of its parent, not once per unit (client texts
+////   240824 and 314851; retail records: the Tenton Hammer Esper guide and the WildStar
+////   fandom Esper Assault list), so the plan moves them onto the `Proxy`. A gain with a
 ////   tickTime is a `TickingGain`, which the cast rule does not apply. The effect's
 ////   delayTime is not waited for (the server's choice: 10 ms in each kit row, under
 ////   a client frame).
