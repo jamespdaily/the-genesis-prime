@@ -355,6 +355,7 @@ pub fn applied(
     | store.MergeItems(..)
     | store.BuyFromVendor(..)
     | store.SellToVendor(..)
+    | store.SetCurrency(..)
     | store.TurnInQuest(..) -> panic as "only a spend or a delete is applied"
   }
 }

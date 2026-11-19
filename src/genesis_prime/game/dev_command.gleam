@@ -25,7 +25,9 @@
 ////   mistyped command is not said aloud to the players who see the speaker.
 
 import genesis_prime/game/level
-import genesis_prime/table/id.{type Creature2Id, Creature2Id, XpPerLevelId}
+import genesis_prime/table/id.{
+  type Creature2Id, type CurrencyTypeId, Creature2Id, XpPerLevelId,
+}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/xp_per_level
 import gleam/int
@@ -46,6 +48,17 @@ pub type Command {
   /// `!xp <total>`: raise the player's experience to that total, with the
   /// client's own gain and, when it crosses a level, level rise.
   RaiseToExperience(experience: Int)
+  /// `!currency <type> <amount>`: set the player's total of that currency to the
+  /// amount, saved at once (genesis_prime/store `SetCurrency`), and give the client
+  /// the new total (`opcode.0x919`). The total may be lower than the one held.
+  SetCurrency(currency_type_id: CurrencyTypeId, amount: Int)
+}
+
+/// A `!currency` total asked of the store, kept while its answer is awaited: the
+/// currency type and the total the player held before it, from which the answer's
+/// frames and line are made. The new total is the answer's.
+pub type Grant {
+  Grant(currency_type_id: Int, held: Int)
 }
 
 /// Why a `!` line is no command.
@@ -141,6 +154,8 @@ pub fn checked(
           Error(ExperienceOutOfRange(experience:, highest: top.min_xp_for_level))
       }
     }
+    SetCurrency(..) ->
+      panic as "the tables' refusals of !currency are not written"
   }
 }
 

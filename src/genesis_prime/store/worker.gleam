@@ -96,16 +96,16 @@ import genesis_prime/store.{
   type WorldRequest, Account, AccountFound, AccountId, ActiveQuest, Bought,
   BuyFromVendor, Character, CharacterCreated, CharacterDeleted, CharacterId,
   CharacterLoaded, CharacterRenamed, ChargesFilled, CreateCharacter,
-  CreateForNoSuchAccount, Created, DeleteCharacter, DeleteItem, Deleted,
-  ExperienceRefused, FillCharges, FindAccount, ForItems, ForLogin, ForMove,
-  ForSelect, ForWorld, HealthRefused, HeldCurrency, HeldItem, ItemMade,
+  CreateForNoSuchAccount, Created, CurrencySet, DeleteCharacter, DeleteItem,
+  Deleted, ExperienceRefused, FillCharges, FindAccount, ForItems, ForLogin,
+  ForMove, ForSelect, ForWorld, HealthRefused, HeldCurrency, HeldItem, ItemMade,
   ItemWords, Items, ItemsNotSaved, ItemsSaved, ListCharacters, Listed,
   LoadCharacter, Login, MergeItems, Move, MoveItems, NameBreaksRule, NameStands,
   NameTaken, NeedsRename, NewNameBreaksRule, NewNameTaken, NoFreeSlot,
   NoSuchAccount, NoSuchCharacter, NotTheAccounts, NothingSaved, PlaceRefused,
   PlaceSaved, QuestLogRefused, QuestRow, RenameCharacter, Renamed, SavePlace,
-  SaveRefused, Select, SellToVendor, SpendItem, SplitItem, TurnInQuest, TurnedIn,
-  Unavailable, UnsetItem, World,
+  SaveRefused, Select, SellToVendor, SetCurrency, SpendItem, SplitItem,
+  TurnInQuest, TurnedIn, Unavailable, UnsetItem, World,
 }
 import genesis_prime/store/sql
 import genesis_prime/table/id.{type Item2Id, ClassId, Item2Id, RaceId}
@@ -334,12 +334,14 @@ fn run_request(request: Request, pool: pog.Connection) -> Answer {
 /// character's row lock (lock_character_for_save.sql) and then one statement
 /// that names the account, the character, the epoch and each item as the request
 /// holds it (move_character_items.sql, split_character_item.sql,
-/// merge_character_items.sql, delete_character_item.sql, buy_from_vendor.sql). A
+/// merge_character_items.sql, delete_character_item.sql, buy_from_vendor.sql,
+/// set_currency.sql). A
 /// move answers `ItemsSaved` when it moved as many items as the request has moves,
 /// a split `ItemMade` with the new stack's guid, a merge and a delete `ItemsSaved`,
 /// a purchase `Bought` with the amount of its currency left and the stacks it made, a
 /// sale `Sold` with the amount of its currency held after it, a turn-in `TurnedIn` with the
-/// credits held after it and the stacks it made;
+/// credits held after it and the stacks it made, a currency set `CurrencySet` with the
+/// amount held after it;
 /// each answers `ItemsNotSaved` when it changed nothing and `SaveRefused` when a
 /// check or the unique key of the character_item table refused a place;
 /// `Error(Nil)` when the database is away.
@@ -437,6 +439,23 @@ fn items(
         held:,
         after:,
         sold:,
+      )
+    SetCurrency(
+      account_id:,
+      character_id:,
+      session_epoch:,
+      currency_type_id:,
+      held:,
+      after:,
+    ) ->
+      set_currency(
+        pool:,
+        account_id:,
+        character_id:,
+        session_epoch:,
+        currency_type_id:,
+        held:,
+        after:,
       )
     TurnInQuest(
       account_id:,
@@ -663,6 +682,36 @@ fn sell_to_vendor(
         )
       }),
     )
+  })
+}
+
+/// A currency set: set_currency.sql, answered with `CurrencySet` and the amount held of
+/// the currency after, when it set the currency to `after` for the held total.
+fn set_currency(
+  pool pool: pog.Connection,
+  account_id account_id: store.AccountId,
+  character_id character_id: store.CharacterId,
+  session_epoch session_epoch: store.SessionEpoch,
+  currency_type_id currency_type_id: Int,
+  held held: Int,
+  after after: Int,
+) -> Result(ItemsAnswer, Nil) {
+  let AccountId(account_id) = account_id
+  let CharacterId(character_id) = character_id
+  locked(pool:, account_id:, character_id:, statement: fn(connection) {
+    sql.set_currency(
+      connection,
+      character_id,
+      account_id,
+      store.session_epoch_number(session_epoch),
+      currency_type_id,
+      held,
+      after,
+    )
+  })
+  |> items_answer(saved: fn(rows) {
+    let assert [first, ..] = rows as "the statement returns a row or none"
+    CurrencySet(amount: first.amount)
   })
 }
 

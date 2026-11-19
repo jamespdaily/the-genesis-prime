@@ -467,6 +467,19 @@ pub type ItemsRequest {
     after: Int,
     sold: List(SoldStack),
   )
+  /// A currency set to a total, for a development command (genesis_prime/game/dev_command):
+  /// one statement that sets the currency `currency_type_id` to `after` (making its row when
+  /// none is held, and lowering the total when `after` is below it), only while the character
+  /// holds exactly `held` of it (the total the connection holds; a missing row reads as 0).
+  /// Answered by `CurrencySet` with the amount held after.
+  SetCurrency(
+    account_id: AccountId,
+    character_id: CharacterId,
+    session_epoch: SessionEpoch,
+    currency_type_id: Int,
+    held: Int,
+    after: Int,
+  )
   /// A quest turned in, all or none: the place, experience, level and quest rows saved as
   /// `SavePlace` saves them (the quest log then holds the quest Completed), and then
   /// the credits set to `credits_after` only while the character holds exactly
@@ -652,6 +665,9 @@ pub type ItemsAnswer {
   /// A turn-in's rows are saved: `credits` is what the character holds of credits after
   /// the turn-in, and `made` the new stacks, each with the guid the database gave it.
   TurnedIn(credits: Int, made: List(HeldItem))
+  /// A currency's total is set: `amount` is what the character holds of the request's
+  /// currency after it.
+  CurrencySet(amount: Int)
   /// Nothing was saved, for one of three causes the statement cannot tell apart:
   /// a later login raised the character's `session_epoch` past the request's, a
   /// row was not as the request held it, or the account has no such character.

@@ -74,9 +74,10 @@ import genesis_prime/game/connection/select as connection_select
 import genesis_prime/game/connection/state.{
   type AfterLeave, type AfterSave, type EntryFrom, type Session,
   AwaitingHelloReply, Buying, Camped, ClaimingSession, EnteringWorld,
-  FromCharacterSelect, FromInWorld, InCharacterSelect, InWorld, JoinAt, Leaving,
-  LeavingMap, MovingItem, Playing, SavingPlace, Selling, Session, SpendingCharge,
-  Summoning, TakingSessionKey, ToCharacterSelect, TurningIn, WaitingToClaim,
+  FromCharacterSelect, FromInWorld, Granting, InCharacterSelect, InWorld, JoinAt,
+  Leaving, LeavingMap, MovingItem, Playing, SavingPlace, Selling, Session,
+  SpendingCharge, Summoning, TakingSessionKey, ToCharacterSelect, TurningIn,
+  WaitingToClaim,
 } as connection_state
 import genesis_prime/game/deadline_timer
 import genesis_prime/game/innate_choice
@@ -194,6 +195,7 @@ fn outside_the_world(
     | MovingItem(..)
     | SpendingCharge(..)
     | Buying(..)
+    | Granting(..)
     | Selling(..)
     | TurningIn(..)
     | SavingPlace(then: Playing, ..)
@@ -234,6 +236,7 @@ pub fn save_due(
     | MovingItem(..)
     | SpendingCharge(..)
     | Buying(..)
+    | Granting(..)
     | Selling(..)
     | TurningIn(..)
     | SavingPlace(..)
@@ -294,6 +297,7 @@ pub fn quest_reset_due(
     | MovingItem(..)
     | SpendingCharge(..)
     | Buying(..)
+    | Granting(..)
     | Selling(..)
     | TurningIn(..)
     | SavingPlace(..)
@@ -361,6 +365,7 @@ pub fn quest_deadline_due(
     | MovingItem(..)
     | SpendingCharge(..)
     | Buying(..)
+    | Granting(..)
     | Selling(..)
     | TurningIn(..)
     | SavingPlace(..)
@@ -431,6 +436,7 @@ pub fn item_expiry_due(
     | MovingItem(..)
     | SpendingCharge(..)
     | Buying(..)
+    | Granting(..)
     | Selling(..)
     | TurningIn(..)
     | SavingPlace(..)

@@ -169,9 +169,10 @@ import genesis_prime/game/connection/resource as connection_resource
 import genesis_prime/game/connection/select as connection_select
 import genesis_prime/game/connection/state.{
   type Ending, type Session, type Status, AwaitingHelloReply, Busy, Buying,
-  ClaimingSession, Ending, EnteringWorld, Greeting, InCharacterSelect, InWorld,
-  LeavingMap, MovingItem, Present, SavingPlace, Selecting, Selling, Session,
-  SpendingCharge, Summoning, TakingSessionKey, TurningIn, WaitingToClaim,
+  ClaimingSession, Ending, EnteringWorld, Granting, Greeting, InCharacterSelect,
+  InWorld, LeavingMap, MovingItem, Present, SavingPlace, Selecting, Selling,
+  Session, SpendingCharge, Summoning, TakingSessionKey, TurningIn,
+  WaitingToClaim,
 } as connection_state
 import genesis_prime/game/connection/vendor_purchase as connection_vendor_purchase
 import genesis_prime/game/connection/vendor_sale as connection_vendor_sale
@@ -452,6 +453,7 @@ fn asking(status: Status) -> Bool {
     | MovingItem(..)
     | SpendingCharge(..)
     | Buying(..)
+    | Granting(..)
     | Selling(..)
     | TurningIn(..)
     | SavingPlace(..)
@@ -1183,6 +1185,15 @@ fn answered_by_status(
         holder:,
         entered:,
         purchase:,
+        outcome:,
+      )
+    Granting(holder:, entered:, grant:) ->
+      connection_dev_command.granted(
+        session:,
+        now:,
+        holder:,
+        entered:,
+        grant:,
         outcome:,
       )
     TurningIn(holder:, entered:, turn_in:) ->

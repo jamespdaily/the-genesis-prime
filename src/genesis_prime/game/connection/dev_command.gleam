@@ -24,7 +24,9 @@
 //// - **A raise asks no process**: the new level and experience are saved with the
 ////   place by the next save, as any gain is.
 
-import genesis_prime/client_connection.{type Request, Asking, Continue, Done}
+import genesis_prime/client_connection.{
+  type Answer, type Request, Asking, Continue, Done,
+}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/chat
 import genesis_prime/game/connection/chat as connection_chat
@@ -33,7 +35,10 @@ import genesis_prime/game/connection/state.{type Session} as connection_state
 import genesis_prime/game/dev_command
 import genesis_prime/game/experience.{type Progress, Already, Lowering, Progress}
 import genesis_prime/game/world_entry
-import genesis_prime/step.{type ConnectionEffect, type Effect, type Now}
+import genesis_prime/hand_off.{type Holder}
+import genesis_prime/step.{
+  type ConnectionEffect, type Effect, type Now, type Outcome,
+}
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
@@ -89,7 +94,24 @@ fn run(
         named: "!xp " <> int.to_string(total),
         target: experience.ToExperience(experience: total),
       )
+    dev_command.SetCurrency(..) ->
+      panic as "!currency is asked of the store when its grammar is written"
   }
+}
+
+/// The store's answer to a `!currency` ask: the player is in the world again with the
+/// currency total the answer holds and the client's frames and one system line written, or
+/// the failure logged and one system line written with nothing changed; a store that did not
+/// answer ends the connection with reason 8.
+pub fn granted(
+  session _session: Session,
+  now _now: Now,
+  holder _holder: Holder,
+  entered _entered: world_entry.Entered,
+  grant _grant: dev_command.Grant,
+  outcome _outcome: Outcome(Answer),
+) -> client_connection.Handled(Session) {
+  panic as "the answer to !currency is taken when its grammar is written"
 }
 
 /// A raise of the held level or experience to the target: the gain's frames and
