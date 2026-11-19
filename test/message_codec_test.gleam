@@ -6,20 +6,33 @@
 //// and that the committed files are the generated ones. Every case is planted from the generated files, so
 //// no expected text is written here.
 
+import genesis_prime/gap
 import genesis_prime/message/ability_points.{AbilityPoints}
 import genesis_prime/message/bit_stream
 import genesis_prime/message/cast_result
 import genesis_prime/message/item_charges_changed.{ItemChargesChanged}
 import genesis_prime/message/item_flags_changed.{ItemFlagsChanged}
+import genesis_prime/message/movement_kind_4
+import genesis_prime/message/movement_path
+import genesis_prime/message/movement_timed_path
+import genesis_prime/message/quest_log
 import genesis_prime/message/replay_level_up.{ReplayLevelUp}
+import genesis_prime/message/reward_property_integer
+import genesis_prime/message/shared_item
+import genesis_prime/message/spell_damage_description
+import genesis_prime/message/spell_missed
+import genesis_prime/message/spell_started
+import genesis_prime/message/vendor_items
 import genesis_prime/message_generator.{
   type GeneratedFile, Edited, GeneratedFile, Missing, Stale,
 }
+import genesis_prime/message_schema
 import gleam/list
 import gleam/result
 import gleam/string
 import message_support
 import owned_test
+import simplifile
 
 fn generated() -> List(GeneratedFile) {
   let assert Ok(files) = message_generator.generated_files()
@@ -565,4 +578,53 @@ pub fn the_replay_level_up_is_one_32_bit_level_test() -> Nil {
   assert replay_level_up.decode(<<4, 0, 0, 0, 0>>)
     == Error(bit_stream.TrailingBytes(count: 1))
     as "the client's writer adds 32 bits, so a body of five bytes is longer than any the client writes"
+}
+
+/// The `gaps()` of each generated module the schema gives gaps, by the module's name.
+fn generated_gaps() -> List(#(String, List(gap.Entry))) {
+  [
+    #("movement_kind_4", movement_kind_4.gaps()),
+    #("movement_path", movement_path.gaps()),
+    #("movement_timed_path", movement_timed_path.gaps()),
+    #("quest_log", quest_log.gaps()),
+    #("reward_property_integer", reward_property_integer.gaps()),
+    #("shared_item", shared_item.gaps()),
+    #("spell_damage_description", spell_damage_description.gaps()),
+    #("spell_missed", spell_missed.gaps()),
+    #("spell_started", spell_started.gaps()),
+    #("vendor_items", vendor_items.gaps()),
+  ]
+}
+
+pub fn the_committed_message_modules_equal_the_generator_output_and_hold_each_schema_gap_test() -> Nil {
+  use <- owned_test.run(10_000)
+  assert message_generator.mismatches(generated(), committed()) == []
+    as "regeneration of the real schema reproduces every committed module"
+  let assert Ok(text) = simplifile.read(message_generator.schema_path)
+    as "the schema file reads"
+  let assert Ok(schema) = message_schema.parse(text)
+    as "the schema file is a schema"
+  let schema_gaps =
+    list.append(
+      list.map(schema.messages, fn(message) { #(message.name, message.gaps) }),
+      list.map(schema.records, fn(record) { #(record.name, record.gaps) }),
+    )
+    |> list.filter(fn(named) { named.1 != [] })
+  assert list.sort(list.map(schema_gaps, fn(named) { named.0 }), string.compare)
+    == list.sort(
+      list.map(generated_gaps(), fn(named) { named.0 }),
+      string.compare,
+    )
+    as "the modules this test checks are the messages and records the schema lists gaps for"
+  list.each(schema_gaps, fn(named) {
+    let #(name, schema_entries) = named
+    let assert Ok(#(_, module_entries)) =
+      list.find(generated_gaps(), fn(found) { found.0 == name })
+      as { "the test lists the gaps of " <> name }
+    assert module_entries
+      == list.map(schema_entries, fn(entry) {
+        gap.Entry(area: entry.area, missing: entry.missing)
+      })
+      as { name <> "'s gaps() holds the schema's entries, in order" }
+  })
 }

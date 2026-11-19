@@ -5,12 +5,11 @@
 //// GUID, the item id, the location and bag index, the stack count and charges,
 //// the random-stat word, the durability, the dye, the flags, the refund and
 //// trade windows, the refund price entries, the rune slots and rune data, the
-//// stat multipliers and the level-scaling input. Gap: the server writes no id
-//// in the list of realm and character ids (a count of 0), since the width of
-//// one entry is not read. Its fields are listed in `schema.toml` with the
-//// client's evidence, and the fact file's `opcode.0x111.ability_bag` names the
-//// record.
+//// stat multipliers and the level-scaling input. Its fields are listed in
+//// `schema.toml` with the client's evidence, and the fact file's
+//// `opcode.0x111.ability_bag` names the record.
 
+import genesis_prime/gap
 import genesis_prime/message/bit_stream.{
   type DecodeError, type Reader, type Writer,
 }
@@ -44,8 +43,8 @@ pub type SharedItem {
     item_flags: Int,
     /// Open: How long is the refund window a bought item gets, and which
     /// message asks for the refund? opcode.0x111.shared_item_unnamed names the
-    /// field; its gap leaves the retail length and the request unread, so the
-    /// server sends 0 and refunds are off.
+    /// field; the retail length and the request are unread, so the server sends
+    /// 0 and refunds are off.
     refund_window_ms: Int,
     time_left_ms: Int,
     /// Safe by `opcode.0x111.shared_item_unnamed`: the client's code gives this
@@ -261,4 +260,14 @@ pub fn read(reader: Reader) -> Result(#(SharedItem, Reader), DecodeError) {
     ),
     reader,
   ))
+}
+
+/// The gaps in this record's codec, which the coverage measure prints.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Item records",
+      missing: "the ids in an item record's list of realm and character ids: the server writes a count of 0, since the width of one entry is not read",
+    ),
+  ]
 }

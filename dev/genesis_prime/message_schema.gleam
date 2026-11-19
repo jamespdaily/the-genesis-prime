@@ -27,7 +27,8 @@ pub type Direction {
 }
 
 /// One message: its number, its name, which way it travels, the fact-file key
-/// of its record and a sentence on what the client does with it.
+/// of its record, a sentence on what the client does with it and the gaps its
+/// codec has.
 pub type Message {
   Message(
     id: Int,
@@ -35,6 +36,7 @@ pub type Message {
     direction: Direction,
     evidence: String,
     summary: String,
+    gaps: List(Gap),
     fields: List(Field),
   )
 }
@@ -42,7 +44,21 @@ pub type Message {
 /// A part of a message body that has fields of its own and repeats in an
 /// array, such as one realm of the realm list.
 pub type Record {
-  Record(name: String, evidence: String, summary: String, fields: List(Field))
+  Record(
+    name: String,
+    evidence: String,
+    summary: String,
+    gaps: List(Gap),
+    fields: List(Field),
+  )
+}
+
+/// One gap of a message's or record's codec: the part of the game it is in and
+/// one plain sentence of what the client's code does not show or the server
+/// does not do. The generator writes each as a `gap.Entry` in the module's
+/// `gaps` function.
+pub type Gap {
+  Gap(area: String, missing: String)
 }
 
 /// An item of a list that is one of several records, picked by the item's
@@ -554,12 +570,13 @@ fn parse_message(
   })
   use evidence <- result.try(string_of(table:, owner: name, key: "evidence"))
   use summary <- result.try(string_of(table:, owner: name, key: "summary"))
+  use gaps <- result.try(parse_gaps(table:, owner: name))
   use fields <- result.try(parse_fields(
     owner: table,
     owner_name: name,
     record_names:,
   ))
-  Ok(Message(id:, name:, direction:, evidence:, summary:, fields:))
+  Ok(Message(id:, name:, direction:, evidence:, summary:, gaps:, fields:))
 }
 
 fn parse_record(
@@ -569,12 +586,30 @@ fn parse_record(
   use name <- result.try(string_of(table:, owner: "record", key: "name"))
   use evidence <- result.try(string_of(table:, owner: name, key: "evidence"))
   use summary <- result.try(string_of(table:, owner: name, key: "summary"))
+  use gaps <- result.try(parse_gaps(table:, owner: name))
   use fields <- result.try(parse_fields(
     owner: table,
     owner_name: name,
     record_names:,
   ))
-  Ok(Record(name:, evidence:, summary:, fields:))
+  Ok(Record(name:, evidence:, summary:, gaps:, fields:))
+}
+
+/// The `gaps` of a message or record, none when the key is absent.
+fn parse_gaps(
+  table table: Dict(String, Toml),
+  owner owner: String,
+) -> Result(List(Gap), SchemaError) {
+  use gap_tables <- result.try(optional_tables(table:, owner:, key: "gaps"))
+  list.try_map(gap_tables, fn(gap_table) {
+    use area <- result.try(string_of(table: gap_table, owner:, key: "area"))
+    use missing <- result.map(string_of(
+      table: gap_table,
+      owner:,
+      key: "missing",
+    ))
+    Gap(area:, missing:)
+  })
 }
 
 fn parse_fields(

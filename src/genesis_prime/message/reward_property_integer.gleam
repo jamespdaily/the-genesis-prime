@@ -3,11 +3,11 @@
 ////
 //// A record inside a message body: a reward property's value in the integer
 //// form (type 1), the only form the server writes: the client also reads types
-//// 0 and 2 as a 32-bit float, which are a gap until a property the server
-//// sends needs one, and type 3 refuses the message. Its fields are listed in
-//// `schema.toml` with the client's evidence, and the fact file's `0x140c1f178`
-//// names the record.
+//// 0 and 2 as a 32-bit float, which the server does not write, and type 3
+//// refuses the message. Its fields are listed in `schema.toml` with the
+//// client's evidence, and the fact file's `0x140c1f178` names the record.
 
+import genesis_prime/gap
 import genesis_prime/message/bit_stream.{
   type DecodeError, type Reader, type Writer,
 }
@@ -37,4 +37,14 @@ pub fn read(
   use reader <- result.try(bit_stream.read_constant(reader, "type", 2, 1))
   use #(value, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   Ok(#(RewardPropertyInteger(value:), reader))
+}
+
+/// The gaps in this record's codec, which the coverage measure prints.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Reward properties",
+      missing: "a reward property's value in the float form (types 0 and 2): the server writes only the integer form",
+    ),
+  ]
 }

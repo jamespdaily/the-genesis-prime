@@ -19,10 +19,10 @@
 ////   spell effect or item names it (`objective_action.named`): an objective a cast
 ////   advances stays open until the cast counts, not when a creature dies.
 ////
-//// - **A gap.** The load has no spawn table, so it does not check that a creature of the pane
-////   starts in its marker's world and that a player can fight it; the world-data check of
-////   `./check` does. A row added for a creature that never starts loads, and stops a quest
-////   that completes on accept from completing until that check runs.
+//// - **A pane creature's start and fight** are not checked by the load, which has no spawn
+////   table; the world-data check of `./check` does. A row added for a creature that never
+////   starts loads, and stops a quest that completes on accept from completing until that
+////   check runs.
 ////
 //// The failure points are those of `objective_row`.
 
@@ -30,6 +30,7 @@ import genesis_prime/content/refusal.{type Refusal}
 import genesis_prime/game/objective
 import genesis_prime/game/objective_action
 import genesis_prime/game/objective_row
+import genesis_prime/gap
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/table/loader/store as table_store
@@ -89,4 +90,14 @@ fn fights(
       == creation_type.NonPlayer
     Error(Nil) -> False
   }
+}
+
+/// What the load of kill objectives does not check.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Kill objectives",
+      missing: "that a creature of a kill objective's pane starts in its marker's world and that a player can fight it: the load has no spawn table to check it, so a row for a creature that never starts loads and keeps the quest from completing",
+    ),
+  ]
 }

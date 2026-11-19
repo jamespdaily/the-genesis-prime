@@ -2,15 +2,18 @@
 //// one module for each under `src/genesis_prime/message/`, with its type, and
 //// for a message `encode` and `decode`, for a record or a union `write` and
 //// `read`; and the `client_message` and `server_message` modules, which decode
-//// a message the client or the server sends by its number. The text is
+//// a message the client or the server sends by its number. A message or record
+//// whose schema entry lists gaps also gets `pub fn gaps() -> List(gap.Entry)`,
+//// which the coverage measure's registry calls. The text is
 //// already in `gleam format`'s layout, so a regenerated file equals the
 //// committed one byte for byte, and `mismatches` names each file that does
 //// not.
 
 import genesis_prime/message_schema.{
-  type Field, type Kind, type Message, type NamedValues, type Record,
+  type Field, type Gap, type Kind, type Message, type NamedValues, type Record,
   type Schema, type Union, type Variant,
 }
+import genesis_prime/table_rows
 import gleam/float
 import gleam/int
 import gleam/list
@@ -226,7 +229,10 @@ fn message_module(message: Message) -> String {
   lines_to_text(
     list.flatten([
       header(head),
-      imports(message.fields, ["DecodeError", "EncodeError"]),
+      imports(fields: message.fields, gaps: message.gaps, types: [
+        "DecodeError",
+        "EncodeError",
+      ]),
       [
         "/// The message's number.",
         "pub const message_id = " <> hex_id(message.id),
@@ -249,6 +255,7 @@ fn message_module(message: Message) -> String {
       decode_head,
       decode_body(message.fields, type_name),
       ["}"],
+      gaps_function(message.gaps, "message"),
     ]),
   )
 }
@@ -267,7 +274,11 @@ fn record_module(record: Record) -> String {
   lines_to_text(
     list.flatten([
       header(head),
-      imports(record.fields, ["DecodeError", "Reader", "Writer"]),
+      imports(fields: record.fields, gaps: record.gaps, types: [
+        "DecodeError",
+        "Reader",
+        "Writer",
+      ]),
       wrap(
         "///",
         "The record's fields in wire order. A field named `field_N` is the Nth of the record: its own doc names the fact that shows its value is safe, and one with no such doc has no use the client's code shows.",
@@ -291,6 +302,7 @@ fn record_module(record: Record) -> String {
       read_steps(record.fields),
       construct_with_reader(record.fields, type_name),
       ["}"],
+      gaps_function(record.gaps, "record"),
     ]),
   )
 }
@@ -866,9 +878,14 @@ fn header(description: List(String)) -> List(String) {
   ])
 }
 
-/// The import lines: the bit stream module with the types the code names, each
-/// record module an array field reads, and `gleam/result`.
-fn imports(fields: List(Field), types: List(String)) -> List(String) {
+/// The import lines: the gap module when there are gaps, the bit stream module
+/// with the types the code names, each record module an array field reads, and
+/// `gleam/result`.
+fn imports(
+  fields fields: List(Field),
+  gaps gaps: List(Gap),
+  types types: List(String),
+) -> List(String) {
   let uses_endpoint =
     list.any(fields, fn(field) { field.kind == message_schema.Endpoint })
   let named = case uses_endpoint {
@@ -893,13 +910,56 @@ fn imports(fields: List(Field), types: List(String)) -> List(String) {
     list.map(modules, fn(module) {
       #(module.0, type_import(module: module.0, type_name: module.1))
     })
+  let gap_import = case gaps {
+    [] -> []
+    [_, ..] -> ["import genesis_prime/gap"]
+  }
   list.flatten([
+    gap_import,
     sorted_message_imports([
       #("bit_stream", bit_stream_import(named)),
       ..module_imports
     ]),
     ["import gleam/result", ""],
   ])
+}
+
+/// The `gaps` function of a message or record: one `gap.Entry` for each gap, in
+/// the order the schema lists them, each on one line when it fits and else one
+/// argument to a line, as `gleam format` lays it out. None when there are no
+/// gaps.
+fn gaps_function(gaps: List(Gap), subject: String) -> List(String) {
+  case gaps {
+    [] -> []
+    [_, ..] ->
+      list.flatten([
+        [
+          "",
+          "/// The gaps in this "
+            <> subject
+            <> "'s codec, which the coverage measure prints.",
+          "pub fn gaps() -> List(gap.Entry) {",
+          "  [",
+        ],
+        list.flat_map(gaps, fn(gap) {
+          call(
+            indent: 4,
+            head: "gap.Entry",
+            arguments: [
+              "area: " <> string_literal(gap.area),
+              "missing: " <> string_literal(gap.missing),
+            ],
+            tail: ",",
+          )
+        }),
+        ["  ]", "}"],
+      ])
+  }
+}
+
+/// A text as a Gleam string literal.
+fn string_literal(text: String) -> String {
+  "\"" <> string.replace(table_rows.escaped(text), "\"", "\\\"") <> "\""
 }
 
 /// The imports of message modules in the order `gleam format` keeps them: by

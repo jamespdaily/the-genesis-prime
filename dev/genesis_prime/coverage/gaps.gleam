@@ -13,21 +13,38 @@
 //// - The render groups the entries by area in the order each area is first met, and keeps
 ////   the entries' order within an area.
 
+import genesis_prime/game/click_objective
 import genesis_prime/game/communicator
+import genesis_prime/game/cooldown
+import genesis_prime/game/hit
 import genesis_prime/game/interaction
 import genesis_prime/game/item_price
 import genesis_prime/game/item_property
 import genesis_prime/game/item_use
+import genesis_prime/game/kill_objective
+import genesis_prime/game/look
 import genesis_prime/game/objective
 import genesis_prime/game/prerequisite
 import genesis_prime/game/quest
 import genesis_prime/game/quest_turn_in
 import genesis_prime/game/random_stat
+import genesis_prime/game/server_proxy
+import genesis_prime/game/strike
 import genesis_prime/game/target_group
 import genesis_prime/game/vendor_purchase
 import genesis_prime/game/vendor_sale
 import genesis_prime/game/world_entry
 import genesis_prime/gap.{type Entry}
+import genesis_prime/message/movement_kind_4
+import genesis_prime/message/movement_path
+import genesis_prime/message/movement_timed_path
+import genesis_prime/message/quest_log
+import genesis_prime/message/reward_property_integer
+import genesis_prime/message/shared_item
+import genesis_prime/message/spell_damage_description
+import genesis_prime/message/spell_missed
+import genesis_prime/message/spell_started
+import genesis_prime/message/vendor_items
 import gleam/int
 import gleam/list
 import gleam/string
@@ -49,6 +66,23 @@ pub fn registry() -> List(Entry) {
     vendor_purchase.gaps(),
     vendor_sale.gaps(),
     world_entry.gaps(),
+    movement_kind_4.gaps(),
+    movement_path.gaps(),
+    movement_timed_path.gaps(),
+    quest_log.gaps(),
+    reward_property_integer.gaps(),
+    shared_item.gaps(),
+    spell_damage_description.gaps(),
+    spell_missed.gaps(),
+    spell_started.gaps(),
+    vendor_items.gaps(),
+    server_proxy.gaps(),
+    cooldown.gaps(),
+    look.gaps(),
+    hit.gaps(),
+    strike.gaps(),
+    click_objective.gaps(),
+    kill_objective.gaps(),
   ])
 }
 

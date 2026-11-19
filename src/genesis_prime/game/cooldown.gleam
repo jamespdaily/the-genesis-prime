@@ -33,13 +33,12 @@
 //// - **The global cooldown is not here:** its entry has spell id 0, which a modifier
 ////   skips (`0x14046b920`), so the cast rule keeps it apart.
 ////
-//// Gaps: no cooldown rate (unit properties 0xa04 and 0x88), so the server is never
-//// stricter than the client, which refuses a press the server would accept; no ability
-//// charges. The client's 32-bit wrap of a result outside 0 to 2^31 - 1 is not modelled,
-//// because no row reaches it: the result is held inside the range. A source kept again
-//// is held once, at the end of the list: the server's choice.
+//// - **A result is held inside 0 to 2^31 - 1**, since no row reaches the client's 32-bit
+////   wrap of a result outside it.
+//// - **A source kept again is held once**, at the end of the list: the server's choice.
 
 import genesis_prime/game/unit_properties.{type Source}
+import genesis_prime/gap
 import genesis_prime/message/float32
 import genesis_prime/table/id.{type Spell4BaseId, type Spell4Id}
 import gleam/bool
@@ -391,4 +390,22 @@ fn product(left_ms left_ms: Int, factor factor: Float) -> Int {
 
 fn within(time_ms: Int) -> Int {
   int.clamp(time_ms, min: 0, max: largest_ms)
+}
+
+/// What the kept cooldowns do not do that the client's do.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Cooldowns",
+      missing: "the cooldown rate of unit properties 0xa04 and 0x88: the server never makes a cooldown longer than the client does, so the client refuses a press the server would accept",
+    ),
+    gap.Entry(
+      area: "Cooldowns",
+      missing: "the charges of an ability: the server keeps none",
+    ),
+    gap.Entry(
+      area: "Cooldowns",
+      missing: "the client's 32-bit wrap of a cooldown result outside 0 to 2^31 - 1: no row reaches it, and the server holds the result inside the range",
+    ),
+  ]
 }
