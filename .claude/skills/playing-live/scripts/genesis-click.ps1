@@ -1,8 +1,8 @@
 # Clicks in the WildStar window with the real mouse, in takeover mode: it brings the window forward,
 # moves the real cursor to a point of the window's client area and presses and releases the left
-# button there. It reads genesis-click.ps1.in (UTF-8: the pid of the client client.sh started, a
-# newline, that process's start time as a file time in UTC, a newline, the client x, a newline, the
-# client y), deletes it, and writes genesis-click-result.txt last, all at once (a .tmp moved into
+# or the right button there. It reads genesis-click.ps1.in (UTF-8: the pid of the client client.sh
+# started, a newline, that process's start time as a file time in UTC, a newline, the client x, a
+# newline, the client y, a newline, left or right; left when the line is absent), deletes it, and writes genesis-click-result.txt last, all at once (a .tmp moved into
 # place). It acts only on the process with that pid, the name WildStar64 and that start time, so a
 # reused pid never reaches another client, the person's own included. client.sh runs it only with
 # --pc-free (or GENESIS_PC_FREE=1): it takes the person's focus and mouse.
@@ -43,8 +43,10 @@ public class Click {
 
 $inputFile = "$PSCommandPath.in"
 $resultFile = "$env:USERPROFILE\genesis-click-result.txt"
-$leftDown = 0x0002
-$leftUp = 0x0004
+$buttonDown = 0x0002  # MOUSEEVENTF_LEFTDOWN
+$buttonUp = 0x0004    # MOUSEEVENTF_LEFTUP
+$rightDown = 0x0008   # MOUSEEVENTF_RIGHTDOWN
+$rightUp = 0x0010     # MOUSEEVENTF_RIGHTUP
 $restore = 9
 $rootAncestor = 2
 
@@ -55,6 +57,13 @@ try {
   $wantedStart = [int64]$lines[1]
   $x = [int]$lines[2]
   $y = [int]$lines[3]
+  $button = if ($lines.Count -gt 4 -and $lines[4].Trim() -ne '') { $lines[4].Trim() } else { 'left' }
+  if ($button -eq 'right') {
+    $buttonDown = $rightDown
+    $buttonUp = $rightUp
+  } elseif ($button -ne 'left') {
+    throw "the button $button is neither left nor right"
+  }
 
   $p = Get-Process -Id $wanted -ErrorAction SilentlyContinue
   if (-not $p -or $p.ProcessName -ne 'WildStar64' -or $p.StartTime.ToFileTimeUtc() -ne $wantedStart) {
@@ -99,12 +108,12 @@ try {
   if ($under -eq 0 -or [Click]::GetAncestor($under, $rootAncestor) -ne $window) {
     throw "the window under the cursor at $($point.X),$($point.Y) is not the client's"
   }
-  [Click]::mouse_event($leftDown, 0, 0, 0, [UIntPtr]::Zero)
+  [Click]::mouse_event($buttonDown, 0, 0, 0, [UIntPtr]::Zero)
   Start-Sleep -Milliseconds 80
-  [Click]::mouse_event($leftUp, 0, 0, 0, [UIntPtr]::Zero)
+  [Click]::mouse_event($buttonUp, 0, 0, 0, [UIntPtr]::Zero)
   $cursor = New-Object Click+POINT
   [Click]::GetCursorPos([ref]$cursor) | Out-Null
-  $result = "clicked=$x,$y screen=$($point.X),$($point.Y) cursor_after=$($cursor.X),$($cursor.Y) foreground_is_client=$([Click]::GetForegroundWindow() -eq $window) pid=$($p.Id)"
+  $result = "clicked=$x,$y button=$button screen=$($point.X),$($point.Y) cursor_after=$($cursor.X),$($cursor.Y) foreground_is_client=$([Click]::GetForegroundWindow() -eq $window) pid=$($p.Id)"
 } catch {
   $result = 'error: ' + ($_.Exception.Message -replace '\s+', ' ')
 } finally {
