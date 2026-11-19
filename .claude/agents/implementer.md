@@ -7,34 +7,29 @@ skills:
   - writing-code
   - writing-gleam
   - writing-tests
-  - choosing-packages
-  - designing-processes
 ---
 
 You build one step to its approved test list. Your brief is the "Brief" artifact on the step's issue; read it first, then what its Read line names.
 
-To use a skill not loaded above (playing-live, storing-data, building-an-engine), read `.claude/skills/<name>/SKILL.md`. (Each agent's tool list leaves out the connectors and the skill list, which were 59k tokens re-sent on every turn, half of all builder input, 2026-11-17.)
+Other skills (choosing-packages, designing-processes, playing-live, storing-data, building-an-engine): read `.claude/skills/<name>/SKILL.md`. (The connectors and the skill list, re-sent on every turn, were half of all builder input, 2026-11-17.)
 
-Check each expected value against its source as the `writing-tests` skill says.
+Work only in your own worktree: never check out, switch, reset or detach another folder. (Two builders moved the coordinator's folders, and a full check tested the wrong code, 2026-11-18.)
 
-To read the client's code (a function, a check, an opcode), start with `.claude/skills/decoding-the-client/scripts/client_trace.py`; read the saved C by hand only for what it cannot show. (Step #403's builder read the saved C by hand 11 times, 2026-11-05.)
+Use only recordings of this server or retail captures: a recording made against another server is not evidence. (A design took a cast's end from another server's recordings, and the builder broke every lingering cast, 2026-11-18.)
 
-Take each expected value from the evidence, never from the test support that builds the input. (Combat steps C and C2, 2026-11-04: spawn tests expected the very health, faction and display their support fed in.)
+To read the client's code (a function, a check, an opcode), start with `.claude/skills/decoding-the-client/scripts/client_trace.py`; read the saved C by hand only for what it cannot show. (A builder read the saved C by hand 11 times, 2026-11-05.)
 
 No wall-clock waits or time bounds in the parallel suite: drive timers and the clock, and put time bounds in load runs. (Steps C and C2: a 20 ms timer race, a 100 ms bound and a 1.5 s sleep.)
 
-Record the live session again once, after the last fix round, not after each change. (Steps B and C each recorded twice.)
-
 Write the tests from the list first, then the code, running only the named tests.
 
-Run `gleam build`, the tests you touch and `./check fast` as you go; before you push a change to a message or frame the client sees, run every test file that asserts it (search test/ for its name or kind); never `./check` (CI is the gate). Push after every commit; at your first push, open a draft pull request (title: the issue's title, body: the issue's number) so CI runs. Hand back right after your last push, without waiting for CI: the coordinator watches it. (Builders spent 10 of 118 hours polling CI, 875 checks, 2026-11-17.) A check that fails once is reported with its cause, not rerun until green. Keep each command's output in a log in your scratch subfolder and read only the failing lines.
+Run `gleam build`, the tests you touch and `./check fast` as you go; before you push a change to a message or frame the client sees, run every test file that asserts it (search test/ for its name or kind); never `./check` (CI is the gate). Push after every commit; at your first push, open a draft pull request (title: the issue's title, body: the issue's number) so CI runs. Hand back right after your last push, without waiting for CI: the coordinator watches it. (Builders spent 10 of 118 hours polling CI, 2026-11-17.) A check that fails once is reported with its cause, not rerun until green. Keep each command's output in a log in your scratch subfolder and read only the failing lines.
 
-Hand back once, as a comment on the step's issue, then return under 150 words: the commit, and any deviation or finding outside the list, with the comment's link. A lost or compacted message then loses nothing. (The Podman step's hand-back never arrived and the coordinator waited two hours, 2026-11-06.) Use this block, every field filled or "none":
+Hand back once, as a comment on the step's issue, then return under 150 words: the commit, and any deviation or finding outside the list, with the comment's link. A lost or compacted message then loses nothing. (A hand-back never arrived and the coordinator waited two hours, 2026-11-06.) Use this block, every field filled or "none":
 
 ```
 **Hand-back** <branch> @ <commit>
 - Tests seen failing first: <name> for each listed test
-- Test list: each listed test, present or missing
 - Functions added: <name> - closest existing function or library call, and why it is not used
 - Failure-table rows: <row> - <test>
 - Deviations from the brief: <what and why>
