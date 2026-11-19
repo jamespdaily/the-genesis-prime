@@ -781,11 +781,12 @@ pub fn a_firing_in_a_busy_status_is_held_until_it_ends_test() -> Nil {
     "Selling",
   )
   // Granting: a `!currency` ask is out.
-  let #(entered, _) =
-    game_connection_support.entered_with_dev_commands_on(
+  let entered =
+    game_connection_support.entered_with_dev_commands(
       tables:,
+      quests: [],
       items: [stack],
-      currencies: [],
+      credits: 0,
     )
   let #(state, taken) =
     item_expiry_support.read_at(

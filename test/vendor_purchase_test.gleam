@@ -46,7 +46,9 @@ import genesis_prime/game/vendor_trade.{
   type Effect, Log, NotDecoded, Refuse, Send,
 }
 import genesis_prime/game/world_entry.{type Buyback, Buyback, BuybackEntry}
+import genesis_prime/message/bit_stream
 import genesis_prime/message/buyback_removed
+import genesis_prime/message/chat_line
 import genesis_prime/message/currency_changed.{CurrencyChanged}
 import genesis_prime/message/currency_gained
 import genesis_prime/message/item_added
@@ -1635,4 +1637,329 @@ pub fn a_buy_sends_no_gain_test() -> Nil {
     frame.message_id == currency_gained.message_id
   })
     as "opcode.0xdd: a buy back is a spend, so no gain line"
+}
+
+// ---- items a development command gives ----
+//
+// Expected values: the Item2 rows (`fixture_tables`, the client's own): 90021 has maxStackCount
+// 1 and maxCharges 5, 14838 stacks to 50 with maxCharges 1, 37649 has maxStackCount 1,
+// maxCharges 1 and expirationTimeMinutes 30. The reason is `Item.CodeEnumItemUpdateReason` 4
+// (Cheat), which the client shows as one loot-channel notice (`opcode.0x111.reason_cheat`).
+// Where the items go is the buy's choice (see above). The texts of the system lines are the
+// design's choices for the development commands.
+
+/// The stack a given item is made as: a stack of `count` at `bag_index` with `charges` and
+/// `expires_at_unix_ms`.
+fn made_stack(
+  bag_index bag_index: Int,
+  count count: Int,
+  charges charges: Int,
+  expires_at_unix_ms expires_at_unix_ms: Option(Int),
+) -> store.NewStack {
+  NewStack(
+    location: 1,
+    bag_index:,
+    stack_count: count,
+    words: store.ItemWords(
+      random_stats: 0,
+      charges:,
+      item_flags: 0,
+      expires_at_unix_ms:,
+    ),
+  )
+}
+
+/// A bag with every one of the 16 slots held by a full stack of Item2 14838.
+fn full_bag() -> List(HeldItem) {
+  list.index_map(list.repeat(Nil, 16), fn(_, index) {
+    in_bag(guid: index + 1, item2_id: 14_838, index:, count: 50)
+  })
+}
+
+/// The rule's answer to a command that gives `count` of `item2_id`: the purchase it asks the
+/// store for, or the text of the one system line that refuses it.
+fn given_as(
+  item2_id item2_id: Int,
+  count count: Int,
+  items items: List(HeldItem),
+  credits credits: Currencies,
+  now_unix_ms now_unix_ms: Int,
+) -> Result(vendor_purchase.Purchase, List(Int)) {
+  let assert Ok(taken) =
+    vendor_purchase.given(
+      item2_id: Item2Id(item2_id),
+      count:,
+      items:,
+      currencies: credits,
+      tables: character_tables.shared(),
+      now_unix_ms:,
+      logged: set.new(),
+    )
+    as "the Item2 rows are in the tables"
+  case taken {
+    Asks(purchase:, ..) -> Ok(purchase)
+    Refused(effects:, ..) -> {
+      let assert [Send(frame:)] = effects
+        as "a refusal of given items is one system line and no 0x106"
+      let assert Ok(line) = chat_line.decode(frame.body)
+      Error(line.text)
+    }
+  }
+}
+
+/// The purchase the rule asks the store for: `count` of the Item2 for no credits.
+fn given_purchase(
+  make make: List(store.NewStack),
+  grow grow: List(store.StackGrowth),
+  item2_id item2_id: Int,
+  count count: Int,
+  held held: Int,
+) -> vendor_purchase.Purchase {
+  Purchase(
+    kind: vendor_purchase.Given,
+    unit_id: 0,
+    item2_id: Item2Id(item2_id),
+    items_bought: count,
+    cost: 0,
+    currency_type_id: 1,
+    held:,
+    grow:,
+    make:,
+  )
+}
+
+pub fn a_given_item_is_a_purchase_of_no_cost_that_places_like_a_buy_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let no_credits = currency.from_held(held: [])
+  let none = None
+  list.each(
+    [
+      #(
+        "90021 into an empty bag is one stack at the first slot with the row's 5 charges, and a character with no credits row holds 0",
+        given_as(
+          item2_id: 90_021,
+          count: 1,
+          items: [],
+          credits: no_credits,
+          now_unix_ms: 0,
+        ),
+        Ok(given_purchase(
+          make: [
+            made_stack(
+              bag_index: 0,
+              count: 1,
+              charges: 5,
+              expires_at_unix_ms: none,
+            ),
+          ],
+          grow: [],
+          item2_id: 90_021,
+          count: 1,
+          held: 0,
+        )),
+      ),
+      #(
+        "90021 does not stack (maxStackCount 1): three items are three stacks, lowest slots first",
+        given_as(
+          item2_id: 90_021,
+          count: 3,
+          items: [],
+          credits: no_credits,
+          now_unix_ms: 0,
+        ),
+        Ok(given_purchase(
+          make: [
+            made_stack(
+              bag_index: 0,
+              count: 1,
+              charges: 5,
+              expires_at_unix_ms: none,
+            ),
+            made_stack(
+              bag_index: 1,
+              count: 1,
+              charges: 5,
+              expires_at_unix_ms: none,
+            ),
+            made_stack(
+              bag_index: 2,
+              count: 1,
+              charges: 5,
+              expires_at_unix_ms: none,
+            ),
+          ],
+          grow: [],
+          item2_id: 90_021,
+          count: 3,
+          held: 0,
+        )),
+      ),
+      #(
+        "14838 stacks to 50: 5 items grow the held 48 by 2 and make a stack of 3",
+        given_as(
+          item2_id: 14_838,
+          count: 5,
+          items: [in_bag(guid: 12, item2_id: 14_838, index: 3, count: 48)],
+          credits: no_credits,
+          now_unix_ms: 0,
+        ),
+        Ok(given_purchase(
+          make: [
+            made_stack(
+              bag_index: 0,
+              count: 3,
+              charges: 1,
+              expires_at_unix_ms: none,
+            ),
+          ],
+          grow: [StackGrowth(item_guid: 12, held_count: 48, new_count: 50)],
+          item2_id: 14_838,
+          count: 5,
+          held: 0,
+        )),
+      ),
+      #(
+        "a full bag has no place for one more item",
+        given_as(
+          item2_id: 90_021,
+          count: 1,
+          items: full_bag(),
+          credits: no_credits,
+          now_unix_ms: 0,
+        ),
+        Error(bit_stream.utf16_units("bag full: no room for 1 x Item2 90021")),
+      ),
+      #(
+        "37649 runs out its expirationTimeMinutes of 30 after it is made",
+        given_as(
+          item2_id: 37_649,
+          count: 1,
+          items: [],
+          credits: no_credits,
+          now_unix_ms: 1_000_000,
+        ),
+        Ok(given_purchase(
+          make: [
+            made_stack(
+              bag_index: 0,
+              count: 1,
+              charges: 1,
+              expires_at_unix_ms: Some(1_000_000 + 30 * 60_000),
+            ),
+          ],
+          grow: [],
+          item2_id: 37_649,
+          count: 1,
+          held: 0,
+        )),
+      ),
+      #(
+        "a count of 10^26 does not fit the bag, however large",
+        given_as(
+          item2_id: 90_021,
+          count: 100_000_000_000_000_000_000_000_000,
+          items: [],
+          credits: no_credits,
+          now_unix_ms: 0,
+        ),
+        Error(bit_stream.utf16_units(
+          "bag full: no room for 100000000000000000000000000 x Item2 90021",
+        )),
+      ),
+      #(
+        "the purchase holds the credits the character has, at a cost of 0 in currency type 1",
+        given_as(
+          item2_id: 90_021,
+          count: 1,
+          items: [],
+          credits: credits(total: 700),
+          now_unix_ms: 0,
+        ),
+        Ok(given_purchase(
+          make: [
+            made_stack(
+              bag_index: 0,
+              count: 1,
+              charges: 5,
+              expires_at_unix_ms: none,
+            ),
+          ],
+          grow: [],
+          item2_id: 90_021,
+          count: 1,
+          held: 700,
+        )),
+      ),
+    ],
+    fn(row) {
+      assert row.1 == row.2 as row.0
+    },
+  )
+}
+
+pub fn a_given_items_answer_sends_the_stack_frames_with_reason_4_then_one_system_line_and_no_credit_frame_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let items = [in_bag(guid: 12, item2_id: 14_838, index: 3, count: 48)]
+  let assert Ok(purchase) =
+    given_as(
+      item2_id: 14_838,
+      count: 5,
+      items:,
+      credits: credits(total: 700),
+      now_unix_ms: 0,
+    )
+    as "the items fit"
+  let bag = in_bag(guid: 500, item2_id: 14_838, index: 0, count: 3)
+  let made = HeldItem(..bag, words: store.ItemWords(..bag.words, charges: 1))
+  let answered = fn(answer) {
+    vendor_purchase.answered(
+      purchase:,
+      items:,
+      currencies: credits(total: 700),
+      buyback: held_back(),
+      answer:,
+      now_unix_ms: 0,
+    )
+  }
+  // The store made the stack and the credits row is as it was.
+  let #(held, held_credits, buyback, effects) =
+    answered(Bought(amount: 700, made: [made]))
+  assert buyback == held_back()
+    as "a given item leaves the buyback list as it was"
+  assert currency.credits(currencies: held_credits) == 700
+    as "no credit was taken"
+  assert list.sort(held, fn(a, b) { int.compare(a.item_guid, b.item_guid) })
+    == [in_bag(guid: 12, item2_id: 14_838, index: 3, count: 50), made]
+    as "the grown stack holds 50 and the new stack has the guid the store gave"
+  let assert [grown, added, told] = frames(effects:)
+    as "a 0x17F for the grown stack, a 0x111 for the new one and one system line: no 0x919"
+  assert item_count_changed.decode(grown.body)
+    == Ok(ItemCountChanged(item_guid: 12, count: 50, reason: 4))
+    as "Item.CodeEnumItemUpdateReason: Cheat is 4"
+  assert added.message_id == item_added.message_id
+  assert added_item(effects:).held_item.reason == 4
+    as "Item.CodeEnumItemUpdateReason: Cheat is 4"
+  let assert Ok(line) = chat_line.decode(told.body)
+  assert line.text == bit_stream.utf16_units("gave 5 x Item2 14838")
+  assert list.length(effects) == 3 as "no log and no 0x106 for a saved gift"
+  // A store that saved nothing: the log and one line, never the vendor's 0x106.
+  list.each(
+    [
+      #(ItemsNotSaved, LogWarning, "a later login"),
+      #(SaveRefused(constraint: "item_place_key"), LogError, "item_place_key"),
+    ],
+    fn(row) {
+      let #(held, held_credits, _, effects) = answered(row.0)
+      assert held == items as "no item changed"
+      assert currency.credits(currencies: held_credits) == 700
+      let assert [Log(level:, text:), Send(frame:)] = effects
+        as "a log line and one system line, and no 0x106"
+      assert level == row.1
+      assert string.contains(text, row.2)
+      assert string.contains(text, "the gift of 5 of Item2 14838")
+        as "the log names the gift, not a purchase"
+      let assert Ok(line) = chat_line.decode(frame.body)
+      assert line.text == bit_stream.utf16_units("not given: 5 x Item2 14838")
+    },
+  )
 }

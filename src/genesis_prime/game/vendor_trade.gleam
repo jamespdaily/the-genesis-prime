@@ -214,32 +214,41 @@ pub fn refused_logged(
 /// The client's code for a change that was not saved (DbFailure).
 const db_failure = 5
 
-/// The effects for a store that answered ItemsNotSaved to the change of `what`: a later
+/// The log line for a store that answered ItemsNotSaved to the change of `what`: a later
 /// login holds the character, or the credits or the items are not as the connection holds
 /// them.
-pub fn not_saved(what what: String) -> List(Effect) {
-  [
-    Log(
-      level: LogWarning,
-      text: what
-        <> ": a later login holds the character, or the credits or the items are not as the connection holds them",
-    ),
-    Refuse(code: db_failure),
-  ]
+pub fn not_saved_log(what what: String) -> Effect {
+  Log(
+    level: LogWarning,
+    text: what
+      <> ": a later login holds the character, or the credits or the items are not as the connection holds them",
+  )
 }
 
-/// The effects for a store that refused the change of `what` by a constraint.
+/// The effects for a store that answered ItemsNotSaved to the change of `what`: its log
+/// line and the 0x106 of DbFailure.
+pub fn not_saved(what what: String) -> List(Effect) {
+  [not_saved_log(what:), Refuse(code: db_failure)]
+}
+
+/// The log line for a store that refused the change of `what` by a constraint.
+pub fn save_refused_log(
+  what what: String,
+  constraint constraint: String,
+) -> Effect {
+  Log(
+    level: LogError,
+    text: what
+      <> ": the store refused the change by the constraint "
+      <> constraint,
+  )
+}
+
+/// The effects for a store that refused the change of `what` by a constraint: its log line
+/// and the 0x106 of DbFailure.
 pub fn save_refused(
   what what: String,
   constraint constraint: String,
 ) -> List(Effect) {
-  [
-    Log(
-      level: LogError,
-      text: what
-        <> ": the store refused the change by the constraint "
-        <> constraint,
-    ),
-    Refuse(code: db_failure),
-  ]
+  [save_refused_log(what:, constraint:), Refuse(code: db_failure)]
 }

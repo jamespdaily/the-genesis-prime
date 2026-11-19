@@ -3908,6 +3908,116 @@ pub fn a_buy_with_only_grown_stacks_answers_the_credits_left_and_no_made_stack_t
   account_store_support.stop(store)
 }
 
+/// The credits rows and the items a login finds.
+fn loaded_rows(
+  stored stored: account_store_support.Stored,
+) -> #(List(store.HeldCurrency), List(store.HeldItem)) {
+  let assert ForWorld(CharacterLoaded(currencies:, items:, ..)) =
+    account_store_support.ask(
+      store: stored.store,
+      request: World(LoadCharacter(stored.account, stored.character_id, 0)),
+    )
+    as "the account's character loads"
+  #(currencies, items)
+}
+
+/// A purchase of a stack of 3 of the stackable Item2 at the first bag slot, for `cost` of the
+/// credits, by a character that holds `held` of them.
+fn buy_one_stack(
+  stored stored: account_store_support.Stored,
+  held held: Int,
+  cost cost: Int,
+) -> store.Answer {
+  let #(epoch, _) =
+    account_store_support.login(
+      store: stored.store,
+      account: stored.account,
+      character_id: stored.character_id,
+    )
+  buy(
+    store: stored.store,
+    account: stored.account,
+    character_id: stored.character_id,
+    epoch:,
+    held:,
+    cost:,
+    grow: [],
+    make: [
+      store.NewStack(
+        location: 1,
+        bag_index: 0,
+        stack_count: 3,
+        words: store.ItemWords(
+          random_stats: 0,
+          charges: 0,
+          item_flags: 0,
+          expires_at_unix_ms: None,
+        ),
+      ),
+    ],
+  )
+}
+
+pub fn a_buy_of_cost_0_for_a_character_with_no_credits_row_makes_the_row_and_the_stacks_test() -> Nil {
+  use <- owned_test.run(60_000)
+  list.each(
+    [
+      #(0, True, "no row and a cost of 0: a row of 0 is made with the stack"),
+      #(
+        5,
+        False,
+        "no row and a cost above 0: the character holds 0, so nothing is saved",
+      ),
+    ],
+    fn(row) {
+      let stored =
+        account_store_support.stored_holding_credits(
+          worn: [],
+          items: [],
+          starting_credits: 0,
+        )
+      assert loaded_rows(stored:).0 == []
+        as "create_character.sql makes a credits row only above 0 starting credits"
+      let answer = buy_one_stack(stored:, held: 0, cost: row.0)
+      let #(rows, items) = loaded_rows(stored:)
+      case row.1 {
+        True -> {
+          let assert ForItems(store.Bought(amount: 0, made: [made])) = answer
+            as row.2
+          assert rows == [store.HeldCurrency(currency_type_id: 1, amount: 0)]
+            as row.2
+          assert items == [made] as row.2
+          assert made.stack_count == 3
+        }
+        False -> {
+          assert answer == ForItems(ItemsNotSaved) as row.2
+          assert rows == [] as "no row is made"
+          assert items == [] as "no stack is made"
+        }
+      }
+      account_store_support.stop(stored.store)
+    },
+  )
+}
+
+pub fn a_cost_0_buy_with_a_credits_row_leaves_the_credits_as_they_are_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let stored =
+    account_store_support.stored_holding_credits(
+      worn: [],
+      items: [],
+      starting_credits: 700,
+    )
+  let assert ForItems(store.Bought(amount: 700, made: [made])) =
+    buy_one_stack(stored:, held: 700, cost: 0)
+    as "a purchase of cost 0 answers the credits as they are"
+  let #(rows, items) = loaded_rows(stored:)
+  assert rows == [store.HeldCurrency(currency_type_id: 1, amount: 700)]
+    as "the row still holds 700"
+  assert items == [made]
+  account_store_support.stop(stored.store)
+}
+
 pub fn a_buy_under_a_stale_epoch_changes_nothing_test() -> Nil {
   use <- owned_test.run(60_000)
   let store = account_store_support.start_store(pool_size: 2)

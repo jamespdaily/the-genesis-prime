@@ -1,11 +1,10 @@
 //// What the development command tests on the real store share: a connection's
 //// ask made the stored character's own and answered by the store.
 
-import account_store_support.{type Stored, Stored}
+import account_store_support.{type Stored}
 import genesis_prime/client_connection
 import genesis_prime/store.{
-  CharacterCreated, CharacterLoaded, CreateCharacter, Created, ForSelect,
-  ForWorld, Items, LoadCharacter, Move, NewCharacter, SavePlace, Select, World,
+  CharacterLoaded, ForWorld, Items, LoadCharacter, Move, SavePlace, World,
 }
 import gleam/int
 import gleam/list
@@ -40,28 +39,6 @@ pub fn through_the_store(
       panic as "through_the_store makes an items ask and a place save the stored character's"
   }
   account_store_support.ask(store: stored.store, request: own)
-}
-
-/// A stored character created with `starting_credits` credits, on a store of its own: with
-/// 0 it has no credits row (`create_character.sql` makes the row only for an amount above 0).
-pub fn stored_with_credits(starting_credits starting_credits: Int) -> Stored {
-  let store = account_store_support.start_store(pool_size: 2)
-  let account =
-    account_store_support.insert_account(store:, login_name: "login-1")
-  let assert ForSelect(Created(CharacterCreated(character_id:))) =
-    account_store_support.ask(
-      store:,
-      request: Select(CreateCharacter(
-        account_id: account,
-        character: NewCharacter(
-          ..account_store_support.a_new_character("Ab Cd"),
-          starting_credits:,
-        ),
-        character_slots: 1,
-      )),
-    )
-    as "a character is created with the starting credits"
-  Stored(store:, account:, character_id:)
 }
 
 /// The currency rows the stored character's next login finds, sorted by type.

@@ -42,7 +42,7 @@ import genesis_prime/message/whisper_failed.{type WhisperFailed, WhisperFailed}
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/chat_channel as chat_channel_table
 import genesis_prime/table/id.{
-  ChatChannelId, Creature2Id, CurrencyTypeId, Quest2Id,
+  ChatChannelId, Creature2Id, CurrencyTypeId, Item2Id, Quest2Id,
 }
 import genesis_prime/world_map/map_id.{MapId}
 import gleam/int
@@ -1066,6 +1066,11 @@ pub fn a_command_line_with_the_setting_on_asks_the_connection_to_run_it_test() -
         "a currency type and a total",
       ),
       #(
+        "!item 90021 3",
+        dev_command.GiveItem(item2_id: Item2Id(90_021), count: 3),
+        "the Item2 and the count the line names",
+      ),
+      #(
         "!quest 5972 done",
         dev_command.CompleteQuest(quest2_id: Quest2Id(5972)),
         "a quest the tables hold",
@@ -1098,6 +1103,11 @@ pub fn a_refused_or_unknown_command_is_one_system_line_and_nothing_to_run_test()
         "!currency 99 1",
         "!currency 99 is no currency type the client keeps (1 to 7 and 9 to 14)",
         "CurrencyType has no row 99",
+      ),
+      #(
+        "!item 29213",
+        "!item does not give a proxy item (29213): the client reads its stack limit and its deletable flag from another item, and the server reads the item's own row",
+        "Item2 29213 has the proxy flag 0x4000",
       ),
     ],
     fn(row) {
@@ -1147,6 +1157,7 @@ pub fn a_bang_line_on_another_channel_is_a_line_of_that_channel_with_the_setting
       "!summon 75048",
       "!level 4",
       "!xp 2859",
+      "!item 90021 3",
       "!quest 5972 done",
       "!currency 1 5000",
     ],

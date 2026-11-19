@@ -202,15 +202,34 @@ pub fn stored_holding(
   worn worn: List(store.NewItem),
   items items: List(store.NewItem),
 ) -> Stored {
+  stored_holding_credits(
+    worn:,
+    items:,
+    starting_credits: a_new_character("Ab Cd").starting_credits,
+  )
+}
+
+/// As `stored_holding`, for a character created with `starting_credits`: with 0 it has no
+/// credits row (`create_character.sql` makes one only above 0).
+pub fn stored_holding_credits(
+  worn worn: List(store.NewItem),
+  items items: List(store.NewItem),
+  starting_credits starting_credits: Int,
+) -> Stored {
   let store = start_store(pool_size: 2)
   let account = insert_account(store:, login_name: "login-1")
-  let assert CharacterCreated(character_id:) =
-    create_holding(
+  let assert ForSelect(Created(CharacterCreated(character_id:))) =
+    ask(
       store:,
-      account:,
-      name: "Ab Cd",
-      slots: 1,
-      items: list.append(worn, items),
+      request: Select(CreateCharacter(
+        account_id: account,
+        character: NewCharacter(
+          ..a_new_character("Ab Cd"),
+          starting_items: list.append(worn, items),
+          starting_credits:,
+        ),
+        character_slots: 1,
+      )),
     )
     as "a character holding the worn items and the bag items"
   Stored(store:, account:, character_id:)

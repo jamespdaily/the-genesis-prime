@@ -8,6 +8,7 @@
 //// ```
 //// chat_message ─▶ Command(session, written, command) ─▶ run
 ////   Summon                           ─▶ chat.summoning ─▶ the map is asked
+////   GiveItem                         ─▶ info log, vendor_purchase.given ─▶ the store is asked, or one system line
 ////   RaiseToLevel / RaiseToExperience ─▶ experience.raised(held, target)
 ////        Ok(credited) ─▶ info log, connection/experience.gained (0x1ac, 0x938 ...), one system line
 ////        Already, Lowering ─▶ one system line, nothing changes
@@ -41,6 +42,12 @@
 //// - **Lines read after an ask**: bytes, map messages and timers that arrive in
 ////   `Granting` are held until the answer, as in `Buying`, so a second line reads the
 ////   new total.
+//// - **An item is a purchase of no cost**: `GiveItem` asks the store the buy of a vendor
+////   asks (genesis_prime/game/connection/vendor_purchase `given`), the connection waits in
+////   `Buying`, and the answer is a purchase's with the Cheat reason and a system line in
+////   place of the vendor's 0x106. A store that gives no answer ends the connection with
+////   reason 8 and saves the place; the statement may have committed, so the next login
+////   holds the items though the connection never did.
 //// - **A quest is done in the log only**: the entry becomes Completed at now and
 ////   the client takes state 3 for a quest it holds no entry of
 ////   (`opcode.0x35c.complete_unheld`), with none of the quest's own rewards. A
@@ -69,6 +76,7 @@ import genesis_prime/game/connection/state.{
   Selling, Session, SpendingCharge, Summoning, TakingSessionKey, TurningIn,
   WaitingToClaim,
 } as connection_state
+import genesis_prime/game/connection/vendor_purchase as connection_vendor_purchase
 import genesis_prime/game/currency
 import genesis_prime/game/deadline_timer
 import genesis_prime/game/dev_command
@@ -82,7 +90,7 @@ import genesis_prime/step.{
 }
 import genesis_prime/store
 import genesis_prime/table/currency_type
-import genesis_prime/table/id.{CurrencyTypeId}
+import genesis_prime/table/id.{type Item2Id, CurrencyTypeId}
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
@@ -143,6 +151,8 @@ fn run(
       currency_type_id: CurrencyTypeId(type_number),
       amount:,
     ) -> granting(session:, now:, written:, type_number:, amount:)
+    dev_command.GiveItem(item2_id:, count:) ->
+      given(session:, now:, written:, item2_id:, count:)
     dev_command.CompleteQuest(quest2_id:) ->
       completed(session:, now:, written:, quest_id: quest2_id.value)
   }
@@ -217,6 +227,55 @@ fn granting(
         session:,
         now:,
         text: "!currency was run while the player was not in the world",
+      )
+  }
+}
+
+/// The items of an `!item` line put in the bag: the store is asked for them as a purchase of
+/// no cost and the answer's frames and one system line follow (genesis_prime/game/vendor_purchase),
+/// or one system line says the bag has no room. A status other than `InWorld` cannot have
+/// taken the line, so it is a bug that ends the connection.
+fn given(
+  session session: Session,
+  now now: Now,
+  written written: List(Effect(ConnectionEffect(Request))),
+  item2_id item2_id: Item2Id,
+  count count: Int,
+) -> client_connection.Handled(Session) {
+  case session.status {
+    InWorld(holder:, entered:) ->
+      connection_vendor_purchase.given(
+        session:,
+        now:,
+        holder:,
+        entered:,
+        written:,
+        logged_as: "dev command !item "
+          <> int.to_string(item2_id.value)
+          <> " "
+          <> int.to_string(count),
+        item2_id:,
+        count:,
+      )
+    Summoning(..)
+    | MovingItem(..)
+    | SpendingCharge(..)
+    | Buying(..)
+    | Granting(..)
+    | Selling(..)
+    | TurningIn(..)
+    | SavingPlace(..)
+    | LeavingMap(..)
+    | EnteringWorld(..)
+    | ClaimingSession(..)
+    | WaitingToClaim(..)
+    | InCharacterSelect(..)
+    | AwaitingHelloReply
+    | TakingSessionKey ->
+      connection_state.end_for(
+        session:,
+        now:,
+        text: "!item was run while the player was not in the world",
       )
   }
 }

@@ -27,8 +27,11 @@
 
 import ability_book_support as book_support
 import ability_points_support as points_support
+import character_support
+import character_tables
 import connection_rule_support as rule_support
 import experience_support
+import fixture_tables
 import game_connection_dev_command_support as dev_support
 import game_connection_support as support
 import genesis_prime/client_connection.{type Answer, type Request, FromStore}
@@ -48,11 +51,15 @@ import genesis_prime/step.{
   ConnectionId, OwnEvent, StoppedWaiting, TimerId, WatchEnded, WatchId, Woken,
 }
 import genesis_prime/store
+import genesis_prime/table/id.{Item2Id}
 import gleam/int
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
 import gleam/string
+import item_expiry_support
+import message_support
 import owned_test
+import planted_table.{Integer}
 import quest_support
 import quest_turn_in_support
 
@@ -233,6 +240,260 @@ pub fn each_accepted_command_is_logged_once_at_info_and_a_refused_one_not_test()
   let #(_, refused) = dev_support.said(state: medic(), text: "!level 51")
   assert rule_support.logs(refused) == []
     as "a refused command is its System line, with no log"
+}
+
+// ---- !item ----
+//
+// Expected values: Item2 90021 (maxStackCount 1, maxCharges 5), 14838 (maxStackCount 50),
+// 37649 (maxStackCount 1, maxCharges 1, expirationTimeMinutes 30) and 48169 (a random-stat
+// row, ItemStat 432) are the client's rows (`fixture_tables`); the stacks go to the first free
+// bag slots (`vendor_purchase`), and the Novice set is worn at location 0, so slot 0 is free.
+// A given item is a purchase of cost 0 in credits (the design's choice); its frames are
+// `opcode.0x111` and `opcode.0x17f` with the reason 4, Cheat (`opcode.0x111.reason_cheat`).
+
+/// The tests' connection with the development commands on, holding `credits`, in the world.
+fn holding(credits credits: Int) -> game_connection.State {
+  support.entered_with_dev_commands(
+    tables: character_tables.shared(),
+    quests: [],
+    items: [],
+    credits:,
+  )
+}
+
+/// The stack the connection's ask makes of a given item at the first bag slot.
+fn new_stack(
+  count count: Int,
+  charges charges: Int,
+  expires_at_unix_ms expires_at_unix_ms: Option(Int),
+) -> store.NewStack {
+  store.NewStack(
+    location: 1,
+    bag_index: 0,
+    stack_count: count,
+    words: store.ItemWords(
+      random_stats: 0,
+      charges:,
+      item_flags: 0,
+      expires_at_unix_ms:,
+    ),
+  )
+}
+
+/// The purchase of cost 0 the connection asks the store for: the account 7, the character 42
+/// and the epoch 1 the tests' connection holds.
+fn asked_for(
+  item2_id item2_id: Int,
+  held held: Int,
+  make make: List(store.NewStack),
+) -> client_connection.Request {
+  client_connection.AskStore(
+    store.Items(store.BuyFromVendor(
+      account_id: store.AccountId(7),
+      character_id: store.CharacterId(42),
+      session_epoch: character_support.epoch(1),
+      currency_type_id: 1,
+      held:,
+      cost: 0,
+      grow: [],
+      make:,
+      item2_id: Item2Id(item2_id),
+    )),
+  )
+}
+
+pub fn an_item_command_asks_the_store_for_a_purchase_of_no_cost_and_waits_in_buying_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(state, taken) =
+    dev_support.said(state: holding(credits: 700), text: "!item 90021")
+  assert support.written_ids(taken) == [0x01C2]
+    as "opcode.0x1c2: only the line's own answer, the items are shown after the store's"
+  assert support.ask_request(taken)
+    == asked_for(item2_id: 90_021, held: 700, make: [
+      new_stack(count: 1, charges: 5, expires_at_unix_ms: None),
+    ])
+    as "a purchase of cost 0 holding the 700 credits, one stack with the row's 5 charges and no roll (no random-stat row)"
+  let assert Some(ask) = rule_support.asked(taken)
+  assert ask.deadline_ms == rule_support.now_ms + 4000
+    as "the settings' ask deadline from the time of the input"
+  let #(_, held) = dev_support.said(state:, text: "!item 90021")
+  assert support.written_ids(held) == [] && rule_support.asked(held) == None
+    as "the connection waits for the answer in Buying: a second line is held, not run"
+  // Item2 48169 has a random-stat row, so the stack is made with a rolled word.
+  let #(_, rolling) =
+    dev_support.said(state: holding(credits: 0), text: "!item 48169")
+  let assert client_connection.AskStore(store.Items(store.BuyFromVendor(
+    make: [made],
+    held: 0,
+    ..,
+  ))) = support.ask_request(rolling)
+    as "a character with no credits row holds 0"
+  assert made.words.random_stats != 0
+    as "ItemStat 432's kind-2 entries are rolled as a bought item's are"
+}
+
+pub fn an_item_answer_updates_the_items_and_writes_the_frames_and_one_line_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let expires = Some(item_expiry_support.unix_at(30 * 60_000))
+  let #(state, taken) =
+    dev_support.said(state: holding(credits: 0), text: "!item 37649")
+  assert support.ask_request(taken)
+    == asked_for(item2_id: 37_649, held: 0, make: [
+      new_stack(count: 1, charges: 1, expires_at_unix_ms: expires),
+    ])
+    as "Item2 37649 runs out 30 minutes after it is made (expirationTimeMinutes 30)"
+  let #(state, answered) =
+    support.answer(
+      state:,
+      taken:,
+      outcome: step.Answer(
+        client_connection.FromStore(
+          store.ForItems(
+            store.Bought(amount: 0, made: [
+              item_expiry_support.held(
+                guid: 900,
+                item2: 37_649,
+                location: 1,
+                bag_index: 0,
+                count: 1,
+                expires_at_unix_ms: expires,
+              ),
+            ]),
+          ),
+        ),
+      ),
+    )
+  assert support.written_ids(answered) == [0x0111, 0x01C8]
+    as "the stack's 0x111 and one line, and no 0x919: the credits did not change"
+  assert support.system_lines(answered) == ["gave 1 x Item2 37649"]
+  assert item_expiry_support.timers(taken: answered) == [#("start", 1_800_000)]
+    as "the timed item starts the item expiry timer for its lifetime"
+  assert item_expiry_support.times_left(taken: answered) == [#(900, 1_800_000)]
+    as "opcode.0x111.time_left: the new item is sent with its whole lifetime"
+  let #(_, next) = dev_support.said(state:, text: "!item 90021")
+  let assert client_connection.AskStore(store.Items(store.BuyFromVendor(
+    make: [second],
+    ..,
+  ))) = support.ask_request(next)
+    as "the next item is asked for"
+  assert second.bag_index == 1
+    as "the connection holds the new stack in slot 0, so the next one goes to slot 1"
+}
+
+pub fn a_store_that_gives_no_answer_to_an_item_ask_ends_the_connection_with_reason_8_and_saves_the_place_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(state, taken) =
+    dev_support.said(state: holding(credits: 0), text: "!item 90021")
+  let #(state, answered) =
+    support.answer(state:, taken:, outcome: step.NoAnswerInTime)
+  assert support.written_ids(answered) == []
+    as "no item frame: the items were never shown"
+  let assert client_connection.AskStore(store.Move(store.SavePlace(..))) =
+    support.ask_request(answered)
+    as "the place is saved once, as in the world"
+  assert list.length(rule_support.logs_of(step: answered, level: step.LogError))
+    == 1
+    as "a purchase whose outcome is unknown is an error line"
+  let #(_, ended) =
+    support.answer(state:, taken: answered, outcome: support.place_saved())
+  assert support.disconnect(ended, support.keyed()) == LostUserServer
+    as "0x036A reason 8 when the save is answered, and the connection ends"
+}
+
+pub fn a_collect_objective_the_given_item_closes_advances_after_the_answer_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Quest 1854's objective 1959 (type 4, count 3) names Item2 3993, which the Item2 table
+  // lacks, so its data is changed to 14838 as `game_connection_objective_test` does.
+  let rows = case
+    fixture_tables.change(
+      rows: fixture_tables.rows(),
+      table: "QuestObjective",
+      id: 1959,
+      with: [#("data", Integer(14_838))],
+    )
+  {
+    Ok(changed) -> changed
+    Error(refusal) -> panic as fixture_tables.describe(refusal)
+  }
+  use tables <- fixture_tables.on_rows(rows:, reaching: [])
+  let state =
+    support.entered_with_dev_commands(
+      tables:,
+      quests: [quest_support.accepted(quest_id: 1854, progress: [0])],
+      items: [],
+      credits: 0,
+    )
+  let #(state, taken) = dev_support.said(state:, text: "!item 14838 3")
+  let #(_, answered) =
+    support.answer(
+      state:,
+      taken:,
+      outcome: step.Answer(
+        client_connection.FromStore(
+          store.ForItems(
+            store.Bought(amount: 0, made: [
+              item_expiry_support.held(
+                guid: 900,
+                item2: 14_838,
+                location: 1,
+                bag_index: 0,
+                count: 3,
+                expires_at_unix_ms: None,
+              ),
+            ]),
+          ),
+        ),
+      ),
+    )
+  assert support.written_ids(answered) == [0x0111, 0x01C8, 0x0361, 0x035C]
+    as "the stack and the line, then the objective's progress and its state: the items close it"
+  let quest_frames =
+    list.filter_map(support.written(answered), fn(frame) {
+      case frame.message_id == 0x0361 || frame.message_id == 0x035C {
+        True -> Ok(#(frame.message_id, frame.body))
+        False -> Error(Nil)
+      }
+    })
+  assert quest_frames
+    == [
+      #(0x0361, message_support.packed([#(15, 1854), #(32, 0), #(32, 3)])),
+      #(0x035C, message_support.packed([#(15, 1854), #(32, 2), #(32, 0)])),
+    ]
+    as "opcode.0x361: 3 of 3 for objective 0, and opcode.0x35c: the quest is Achieved (2)"
+}
+
+pub fn each_item_use_is_logged_once_at_info_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(_, accepted) =
+    dev_support.said(state: holding(credits: 0), text: "!item 90021 2")
+  let assert [line] = rule_support.logs_of(step: accepted, level: step.LogInfo)
+    as "one info line for an accepted command"
+  assert string.contains(line.text, "!item 90021 2")
+    as "it names the command and its values"
+  let full =
+    support.entered_with_dev_commands(
+      tables: character_tables.shared(),
+      quests: [],
+      items: list.index_map(list.repeat(Nil, 16), fn(_, index) {
+        item_expiry_support.held(
+          guid: 700 + index,
+          item2: 14_838,
+          location: 1,
+          bag_index: index,
+          count: 50,
+          expires_at_unix_ms: None,
+        )
+      }),
+      credits: 0,
+    )
+  let #(_, refused) = dev_support.said(state: full, text: "!item 90021")
+  assert support.system_lines(refused)
+    == ["bag full: no room for 1 x Item2 90021"]
+    as "a bag with no room is one system line"
+  assert support.written_ids(refused) == [0x01C2, 0x01C8]
+    && rule_support.asked(refused) == None
+    && rule_support.logs(refused) == []
+    as "nothing is asked and a refused command has no log"
 }
 
 // ---------------------------------------------------------------- !quest
