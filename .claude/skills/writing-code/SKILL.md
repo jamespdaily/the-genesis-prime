@@ -42,7 +42,7 @@ A comment describes the code as it stands, for a person reading it.
 - A public function or type has a doc comment that says what it does and why, in plain words. An inline comment is for a line whose reason the doc comment cannot carry.
 - A module's doc comment holds what the module is for, one diagram of its flow, and one line per rule with its evidence. How each case behaves is a test named for that case, not a paragraph; a paragraph a test's name already says is cut.
 - Client evidence is cited in a comment as a pointer, after the plain sentence: a table, a row or a code address. The fact file holds the fact and its proof, and the fact checker fails a cited address with no record.
-- A gap is stated as what the code does. Change-log words ("now", "no longer", "used to", "not yet", "for now", "so far") and plans stay out.
-- No links to issues, pull requests or decisions in code, and no dates, except a patch marker's link to its upstream bug and the open issue a gap names (CLAUDE.md). A comment names an issue for a gap only; `test/code_rule/gap_issue.gleam` fails a comment whose issue is closed.
+- A gap is stated as what the code does, and its module lists it for the coverage measure. Change-log words ("now", "no longer", "used to", "not yet", "for now", "so far") and plans stay out.
+- No links to issues, pull requests or decisions in code, and no dates. A code rule fails a line in the server or the dev tools that names an issue.
 - No comparisons with another codebase in code, and no counts of this code. Counts of the client's fixed data are fine.
 - A script's docstring or header is its contract: what an operator runs, when, and what it refuses. Guidance points to it rather than repeating it.
