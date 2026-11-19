@@ -914,7 +914,13 @@ fn goes_on_in_the_world(state: game_connection.State) -> Bool {
 pub fn with_the_setting_off_a_command_line_is_said_and_nothing_is_asked_test() -> Nil {
   use <- owned_test.run(10_000)
   list.each(
-    ["!summon 75048", "!level 4", "!xp 2859", "!go 22 1189 1 2 3"],
+    [
+      "!summon 75048",
+      "!level 4",
+      "!xp 2859",
+      "!quest 5972 done",
+      "!go 22 1189 1 2 3",
+    ],
     fn(text) {
       let state =
         game_connection_support.watched_by(game_connection_support.in_world(), [

@@ -11,6 +11,10 @@
 ////   RaiseToLevel / RaiseToExperience ─▶ experience.raised(held, target)
 ////        Ok(credited) ─▶ info log, connection/experience.gained (0x1ac, 0x938 ...), one system line
 ////        Already, Lowering ─▶ one system line, nothing changes
+////   CompleteQuest                    ─▶ quest_log.finished
+////        finished ─▶ one system line, nothing changes
+////        else ─▶ quest_log.complete, info log, 0x35C state 3, the deadline timer moved,
+////                connection/objective.settled, one system line
 ////   Go ─▶ dead, or the place is in another world ─▶ one system line, nothing changes
 ////      └ the player's world ─▶ info log, the current cast stopped, projector.placed_at,
 ////                              one system line, objectives settled
@@ -26,6 +30,18 @@
 ////   its record.
 //// - **A raise asks no process**: the new level and experience are saved with the
 ////   place by the next save, as any gain is.
+//// - **A quest is done in the log only**: the entry becomes Completed at now and
+////   the client takes state 3 for a quest it holds no entry of
+////   (`opcode.0x35c.complete_unheld`), with none of the quest's own rewards. A
+////   quest whose Completed entry is of the current period (`quest_log.finished`) is
+////   answered with a line; a periodic quest completed in an earlier period is
+////   completed again.
+//// - **A quest's completion has a turn-in's follow-ups**: the deadline timer is
+////   moved from the log before to the log after, and the objectives are settled, so
+////   a quest waiting on this one finishes and a finished quest no creature receives
+////   is completed by the server through its own store ask
+////   (genesis_prime/game/connection/quest_turn_in `completing`). The command's own
+////   line comes after those frames.
 //// - **A `!go` in the player's world is the client's own in-world placement**: 0x83c,
 ////   0x639, 0x638 and 0x636 (`opcode.0x83c`), since an in-world 0xAD names a full world
 ////   change (`opcode.0xad.same_world`). The place carries the commanded zone until the
@@ -43,10 +59,12 @@ import genesis_prime/game/connection/experience as connection_experience
 import genesis_prime/game/connection/objective as connection_objective
 import genesis_prime/game/connection/projector as connection_projector
 import genesis_prime/game/connection/state.{type Session} as connection_state
+import genesis_prime/game/deadline_timer
 import genesis_prime/game/dev_command
 import genesis_prime/game/experience.{type Progress, Already, Lowering, Progress}
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
+import genesis_prime/game/quest_log
 import genesis_prime/game/start_place
 import genesis_prime/game/world_entry
 import genesis_prime/gap
@@ -107,9 +125,119 @@ fn run(
         named: "!xp " <> int.to_string(total),
         target: experience.ToExperience(experience: total),
       )
+    dev_command.CompleteQuest(quest2_id:) ->
+      completed(session:, now:, written:, quest_id: quest2_id.value)
     dev_command.Go(destination:) -> went(session:, now:, written:, destination:)
   }
 }
+
+/// A quest completed in the player's log: one system line when the log holds it
+/// finished (a Completed entry of the current period), and else the entry made
+/// Completed at now (`completion`).
+fn completed(
+  session session: Session,
+  now now: Now,
+  written written: List(Effect(ConnectionEffect(Request))),
+  quest_id quest_id: Int,
+) -> client_connection.Handled(Session) {
+  case connection_state.entered_of(session.status) {
+    None ->
+      connection_state.end_for(
+        session:,
+        now:,
+        text: "!quest "
+          <> int.to_string(quest_id)
+          <> " done was run while the player was not in the world",
+      )
+    Some(entered) ->
+      case
+        quest_log.finished(
+          log: entered.quests,
+          quest_id:,
+          tables: session.settings.tables,
+          numbers: session.settings.numbers,
+          unix_ms: step.unix_milliseconds(now:),
+        )
+      {
+        True ->
+          Continue(
+            session,
+            list.append(written, [
+              line(
+                session:,
+                text: "quest " <> int.to_string(quest_id) <> " is already done",
+              ),
+            ]),
+          )
+        False -> completion(session:, now:, written:, entered:, quest_id:)
+      }
+  }
+}
+
+/// The entry of the quest made Completed at now, then in order: an info log, 0x35C
+/// state 3, the quest deadline timer moved from the log before to the log after, the
+/// objectives settled, which can finish a quest that waits on this one, and one system
+/// line. A quest that finishes and that no creature receives is completed by the server
+/// as any is (genesis_prime/game/connection/quest_turn_in `completing`).
+fn completion(
+  session session: Session,
+  now now: Now,
+  written written: List(Effect(ConnectionEffect(Request))),
+  entered entered: world_entry.Entered,
+  quest_id quest_id: Int,
+) -> client_connection.Handled(Session) {
+  let log =
+    quest_log.complete(
+      log: entered.quests,
+      quest_id:,
+      at_seconds: step.unix_milliseconds(now:) / 1000,
+    )
+  let session =
+    connection_state.with_entered(session:, change: fn(entered) {
+      world_entry.Entered(..entered, quests: log)
+    })
+  let timers =
+    list.map(
+      deadline_timer.moved(
+        before: quest_log.next_deadline(log: entered.quests),
+        after: quest_log.next_deadline(log:),
+        now_ms: now.monotonic_ms,
+      ),
+      connection_state.deadline_timer_move(
+        connection_state.quest_deadline_timer,
+        _,
+      ),
+    )
+  let #(session, settled) = connection_objective.settled(session:, now:)
+  let quest = int.to_string(quest_id)
+  Continue(
+    session,
+    list.flatten([
+      written,
+      [
+        connection_state.log(
+          session:,
+          level: step.LogInfo,
+          text: "dev command !quest " <> quest <> " done: completed",
+        ),
+        connection_state.to_client(
+          session,
+          quest_log.quest_state_frame(
+            quest_id:,
+            state: completed_state,
+            objective_id: 0,
+          ),
+        ),
+      ],
+      timers,
+      settled,
+      [line(session:, text: "quest " <> quest <> " completed")],
+    ]),
+  )
+}
+
+/// The state 0x35C gives a completed quest.
+const completed_state = 3
 
 /// A `!go`: the player placed at the destination when it is in their world, or one
 /// system line and nothing changed when the player is dead, the tables lack what

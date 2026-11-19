@@ -19,14 +19,17 @@
 ////   experience; a number has any length, so the tables refuse one too large.
 ////   `go` takes a World id, a WorldZone id and x, y, z (each coordinate with an
 ////   optional leading `-`), or one WorldLocation2 id.
+////   `quest` takes one whole decimal number, a Quest2 id, and the word `done`.
 //// - **The tables' refusals** are `checked`'s: a level outside 1 to the highest
-////   level (GameFormula 145 dataint0) and an experience above the highest
-////   level's minXpForLevel (its XpPerLevel row), compared as whole numbers; for
-////   `go`, a World, WorldZone or WorldLocation2 id with no row and a position
-////   outside the box the client clamps a unit's drawn position to (x and z
-////   -32768 to 32768, y -2048 to 2048, `0x1405b5070`), compared as whole numbers
-////   so a number of any length is a refusal. A named place is checked by its
-////   row's own world, zone and position, as a coordinate place is.
+////   level (GameFormula 145 dataint0), an experience above the highest
+////   level's minXpForLevel (its XpPerLevel row), compared as whole numbers, a
+////   quest with no Quest2 row (the client refuses a quest it has no row for,
+////   FindQuestById 0xa00b0001); for `go`, a World, WorldZone or WorldLocation2 id
+////   with no row and a position outside the box the client clamps a unit's drawn
+////   position to (x and z -32768 to 32768, y -2048 to 2048, `0x1405b5070`),
+////   compared as whole numbers so a number of any length is a refusal. A named
+////   place is checked by its row's own world, zone and position, as a coordinate
+////   place is.
 //// - **A word with no command**, and a command whose arguments are not what it
 ////   takes, are each answered with a system line, never as a Say line, so a
 ////   mistyped command is not said aloud to the players who see the speaker.
@@ -34,10 +37,11 @@
 import genesis_prime/game/level
 import genesis_prime/game/start_place
 import genesis_prime/table/id.{
-  type Creature2Id, Creature2Id, WorldId, WorldLocation2Id, WorldZoneId,
-  XpPerLevelId,
+  type Creature2Id, type Quest2Id, Creature2Id, Quest2Id, WorldId,
+  WorldLocation2Id, WorldZoneId, XpPerLevelId,
 }
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/table/quest2
 import genesis_prime/table/world
 import genesis_prime/table/world_location2
 import genesis_prime/table/world_zone
@@ -64,6 +68,9 @@ pub type Command {
   /// `!go <World id> <WorldZone id> <x> <y> <z>` or `!go <WorldLocation2 id>`:
   /// place the player at once at that place.
   Go(destination: Destination)
+  /// `!quest <Quest2 id> done`: complete that quest in the player's log, with the
+  /// follow-ups a turn-in's completion has and none of the quest's own rewards.
+  CompleteQuest(quest2_id: Quest2Id)
 }
 
 /// Where a `!go` places the player.
@@ -112,6 +119,11 @@ pub type Refusal {
   /// The coordinate on `axis`, whole, is outside the box the client clamps a
   /// unit's drawn position to.
   PositionOutsideTheBox(axis: Axis, coordinate: Int)
+  /// The word is `quest`, but what follows is not one whole number and the word
+  /// `done`, and nothing more.
+  QuestTakesAQuest2IdAndDone
+  /// The quest has no Quest2 row.
+  NoQuest2Row(quest2_id: Quest2Id)
 }
 
 /// Whether the text is a command line: its first UTF-16 unit is `!`.
@@ -184,15 +196,26 @@ pub fn parse(text text: List(Int)) -> Result(Command, Refusal) {
         [] | [_, _] | [_, _, _] | [_, _, _, _] | [_, _, _, _, _, ..] ->
           Error(GoTakesAPlace)
       }
+    [command, ..arguments] if command == quest_word ->
+      case arguments {
+        [quest, done] if done == done_word ->
+          decimal(units: quest)
+          |> result.map(fn(number) {
+            CompleteQuest(quest2_id: Quest2Id(number))
+          })
+          |> result.replace_error(QuestTakesAQuest2IdAndDone)
+        [] | [_] | [_, _] | [_, _, _, ..] -> Error(QuestTakesAQuest2IdAndDone)
+      }
     [_, ..] | [] -> Error(UnknownCommand)
   }
 }
 
 /// The command the tables allow, or the refusal that names what they do not
-/// hold: a level outside 1 to the highest level and an experience above the
+/// hold: a level outside 1 to the highest level, an experience above the
 /// highest level's minXpForLevel, compared as whole numbers so a number of any
 /// length is a refusal; for a `!go`, a World, WorldZone or WorldLocation2 with no
-/// row, and a position outside the box, in that order.
+/// row, and a position outside the box, in that order; for a `!quest`, a quest with
+/// no Quest2 row.
 pub fn checked(
   command command: Command,
   tables tables: table_store.Tables,
@@ -223,6 +246,11 @@ pub fn checked(
       go_refusal(destination:, tables:)
       |> option.map(Error)
       |> option.unwrap(Ok(command))
+    CompleteQuest(quest2_id:) ->
+      case quest2.get(tables:, id: quest2_id) {
+        Ok(_) -> Ok(command)
+        Error(Nil) -> Error(NoQuest2Row(quest2_id:))
+      }
   }
 }
 
@@ -362,6 +390,12 @@ const experience_word = [0x21, 0x78, 0x70]
 /// `!go` as the UTF-16 units the client sends.
 const go_word = [0x21, 0x67, 0x6F]
 
+/// `!quest` as the UTF-16 units the client sends.
+const quest_word = [0x21, 0x71, 0x75, 0x65, 0x73, 0x74]
+
+/// `done` as the UTF-16 units the client sends.
+const done_word = [0x64, 0x6F, 0x6E, 0x65]
+
 /// The words of the units, split at spaces (0x20), in order: a run of spaces is
 /// one split, and spaces at either end hold no word.
 fn words(
@@ -454,5 +488,9 @@ pub fn describe(refusal refusal: Refusal) -> String {
       <> " to "
       <> int.to_string(limit)
     }
+    QuestTakesAQuest2IdAndDone ->
+      "!quest takes a Quest2 id and the word done, as !quest 5972 done"
+    NoQuest2Row(quest2_id: Quest2Id(value:)) ->
+      "!quest " <> int.to_string(value) <> " names no Quest2 row"
   }
 }

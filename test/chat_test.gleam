@@ -41,7 +41,7 @@ import genesis_prime/message/send_whisper.{SendWhisper}
 import genesis_prime/message/whisper_failed.{type WhisperFailed, WhisperFailed}
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/chat_channel as chat_channel_table
-import genesis_prime/table/id.{ChatChannelId, Creature2Id}
+import genesis_prime/table/id.{ChatChannelId, Creature2Id, Quest2Id}
 import genesis_prime/world_map/map_id.{MapId}
 import gleam/int
 import gleam/list
@@ -1071,6 +1071,11 @@ pub fn a_command_line_with_the_setting_on_asks_the_connection_to_run_it_test() -
         dev_command.Go(destination: dev_command.Named(world_location2_id: 8300)),
         "a place by a WorldLocation2 row the tables hold",
       ),
+      #(
+        "!quest 5972 done",
+        dev_command.CompleteQuest(quest2_id: Quest2Id(5972)),
+        "a quest the tables hold",
+      ),
     ],
     fn(row) {
       let effects = say_taken(text: row.0, dev_commands: True)
@@ -1144,7 +1149,13 @@ pub fn a_summon_with_a_level_that_is_no_whole_number_or_with_extra_words_answers
 pub fn a_bang_line_on_another_channel_is_a_line_of_that_channel_with_the_setting_on_test() -> Nil {
   use <- owned_test.run(5000)
   list.each(
-    ["!summon 75048", "!level 4", "!xp 2859", "!go 22 1189 1 2 3"],
+    [
+      "!summon 75048",
+      "!level 4",
+      "!xp 2859",
+      "!quest 5972 done",
+      "!go 22 1189 1 2 3",
+    ],
     fn(text) {
       list.each([5, 8], fn(type_id) {
         let #(_, effects) =
