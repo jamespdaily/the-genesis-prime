@@ -10,6 +10,7 @@
 import driven_time
 import frame_peer
 import genesis_prime/service/shell.{type ServiceTime}
+import gleam/bit_array
 import gleam/erlang/process.{type Subject}
 import gleam/list
 import gleam/option.{None}
@@ -17,6 +18,7 @@ import gleam/otp/actor
 import gleam/string
 import login_client
 import mailbox_support
+import mug
 import open_wait
 import owned_test
 import socket_read
@@ -72,7 +74,16 @@ fn warnings_after(steps: List(Step)) -> List(String) {
       })
     },
   )
-  mailbox_support.drain(warnings)
+  hopeless_lines(mailbox_support.drain(warnings))
+}
+
+/// The lines of the warnings that name a wait that can no longer end: the
+/// deadline warning names the same wait, and a slow machine may give it too.
+fn hopeless_lines(warnings: List(String)) -> List(String) {
+  list.filter(warnings, string.contains(
+    _,
+    "is in a wait that can no longer end",
+  ))
 }
 
 pub fn a_wait_cannot_end_when_no_input_was_taken_since_the_last_empty_look_after_one_was_test() -> Nil {
@@ -138,7 +149,7 @@ pub fn a_wait_in_a_test_with_no_driven_clock_is_never_judged_test() -> Nil {
       })
     },
   )
-  assert mailbox_support.drain(warnings) == []
+  assert hopeless_lines(mailbox_support.drain(warnings)) == []
 }
 
 pub fn a_read_that_can_no_longer_end_warns_naming_the_test_and_the_wait_and_the_run_passes_test() -> Nil {
@@ -169,9 +180,55 @@ pub fn a_read_that_can_no_longer_end_warns_naming_the_test_and_the_wait_and_the_
       },
     )
   assert read == Ok(<<7>>) as "the read ended with what the peer wrote"
-  assert mailbox_support.drain(warnings)
+  assert hopeless_lines(mailbox_support.drain(warnings))
     == [
       "check WARNING: test hopeless_wait_test:a_read_that_can_no_longer_end_warns_naming_the_test_and_the_wait_and_the_run_passes_test is in a wait that can no longer end, since the server took no input since the last look and the clock does not move: "
       <> waiting_for,
     ]
+}
+
+/// More bytes than the loopback socket's buffers hold, so the peer's send
+/// blocks until the test reads.
+const burst_bytes = 4_000_000
+
+fn read_all(client: mug.Socket, left: Int) -> Nil {
+  case left {
+    0 -> Nil
+    _ -> {
+      let assert Ok(bytes) = socket_read.looking(client)
+        as "the burst's bytes came"
+      read_all(client, left - bit_array.byte_size(bytes))
+    }
+  }
+}
+
+pub fn a_wait_whose_server_sends_a_large_burst_after_an_empty_look_still_passes_with_no_warning_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let #(listener, port) = frame_peer.listen()
+  let client = login_client.connect(port)
+  let peer = frame_peer.accept(listener)
+  let warnings = process.new_subject()
+  owned_test.run_warning_to(
+    warn: fn(text) { process.send(warnings, text) },
+    progress_file: None,
+    timeout_ms: 30_000,
+    body: fn() {
+      let time = driven_time.new()
+      let participant = start_participant(driven_time.service_time(time))
+      read_by(participant)
+      open_wait.named(waiting_for, fn() {
+        // The look found nothing; the server then starts a burst whose send
+        // cannot finish until the test reads. The judge only reads a count, so
+        // it holds back neither the test's read nor the server's send.
+        open_wait.looked_and_found_nothing()
+        let _writer =
+          process.spawn(fn() {
+            frame_peer.write(peer, <<0:size(burst_bytes)-unit(8)>>)
+          })
+        read_all(client, burst_bytes)
+      })
+    },
+  )
+  assert hopeless_lines(mailbox_support.drain(warnings)) == []
+    as "the read took the whole burst and said nothing"
 }

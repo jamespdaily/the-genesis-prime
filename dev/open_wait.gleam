@@ -16,9 +16,10 @@
 ////
 //// A read that looks at its socket again after each empty look tells
 //// `looked_and_found_nothing`. A test body that has a way to tell whether
-//// anything can still end the wait (`judging`: a driven clock, which knows
-//// whether the server took an input) is told, once for each wait, when it
-//// cannot: the test's owner warns and the wait goes on.
+//// anything can still end the wait (`judging`: a driven clock, which counts the
+//// inputs the server takes) is told, once for each wait, when it cannot: the
+//// test's owner warns and the wait goes on. The judgement only reads a count;
+//// it never stops the read or the server.
 
 import gleam/erlang/process.{type Selector, type Subject}
 
@@ -50,18 +51,19 @@ pub fn selected(selector selector: Selector(a), what what: String) -> a {
 }
 
 /// Makes the calling process a test body that can tell whether anything can
-/// still end a wait it is in: `can_still_end` answers whether the server is
-/// doing something that could write what the wait waits for.
-pub fn judging(can_still_end can_still_end: fn() -> Bool) -> Nil {
-  judge_with(can_still_end)
+/// still end a wait it is in: `taken_inputs` counts the inputs the server has
+/// taken so far, 0 while it has taken none.
+pub fn judging(taken_inputs taken_inputs: fn() -> Int) -> Nil {
+  judge_with(taken_inputs)
 }
 
 /// Tells the calling process that a look at the socket found nothing, which
 /// the innermost wait it is in was waiting for. When the process judges
-/// (`judging`) and the judgement says nothing can still end the wait, the
-/// test's owner is told once for that wait (the `Hopeless` slot of
-/// `reporting`). A process that does not judge, or is in no wait, is not
-/// told anything.
+/// (`judging`) and the server has taken inputs, but none since this wait's last
+/// empty look, nothing can still end the wait and the test's owner is told once
+/// for that wait (the `Hopeless` slot of `reporting`). A wait's first empty look
+/// has none to compare with. A process that does not judge, or is in no wait, is
+/// not told anything.
 pub fn looked_and_found_nothing() -> Nil {
   looked_without_finding()
 }
@@ -81,7 +83,7 @@ pub fn reporting(
 fn named_in_process(what: String, wait: fn() -> a) -> a
 
 @external(erlang, "open_wait_ffi", "judge_with")
-fn judge_with(can_still_end: fn() -> Bool) -> Nil
+fn judge_with(taken_inputs: fn() -> Int) -> Nil
 
 @external(erlang, "open_wait_ffi", "looked_without_finding")
 fn looked_without_finding() -> Nil

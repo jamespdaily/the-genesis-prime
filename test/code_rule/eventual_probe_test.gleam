@@ -87,6 +87,48 @@ pub fn a_probe_inside_an_event_wait_closure_is_not_a_breach_test() -> Nil {
       ],
       "both functions imported unqualified",
     ),
+    #(
+      [
+        "import gleam/erlang/process",
+        "import mailbox_support",
+        "",
+        "pub fn planted() {",
+        "  assert mailbox_support.queued(process.self()) == 0",
+        "}",
+      ],
+      "a probe of the test's own mailbox",
+    ),
+    #(
+      [
+        "import gleam/erlang/process as p",
+        "import mailbox_support as mailbox",
+        "",
+        "pub fn planted() {",
+        "  assert mailbox.tagged(pid: p.self(), tag: tag) == 0",
+        "}",
+      ],
+      "a probe of the test's own mailbox, both modules under an alias",
+    ),
+    #(
+      [
+        "import mailbox_support",
+        "",
+        "pub fn planted() {",
+        "  assert mailbox_support.monitored(mailbox_support.settled(pid)) == []",
+        "}",
+      ],
+      "a probe of a process that has taken what it was sent",
+    ),
+    #(
+      [
+        "import mailbox_support.{settled}",
+        "",
+        "pub fn planted() {",
+        "  assert mailbox_support.queued(pid: settled(pid)) == 0",
+        "}",
+      ],
+      "a settled process given by label, `settled` imported unqualified",
+    ),
   ]
   list.each(cases, fn(case_) {
     let #(lines, reason) = case_
@@ -129,6 +171,14 @@ pub fn a_probe_outside_an_event_wait_closure_is_a_breach_at_its_line_test() -> N
       ],
       [8],
       "a probe after the wait has ended",
+    ),
+    #(
+      [
+        "  let taken = mailbox_support.settled(pid)",
+        "  assert mailbox_support.queued(taken) == 0",
+      ],
+      [8],
+      "a settled pid held in a variable is not the settled form: the process may have been sent more since",
     ),
     #(
       [

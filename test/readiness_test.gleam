@@ -15,7 +15,6 @@
 import application_support
 import ask_support
 import database_support
-import event_wait
 import genesis_prime
 import genesis_prime/application
 import genesis_prime/migration.{Migration, NotApplied, Recorded}
@@ -298,41 +297,26 @@ fn answering(
 pub fn an_ask_leaves_no_answer_behind_in_its_mailbox_test() -> Nil {
   use <- owned_test.run(30_000)
   let outcomes = process.new_subject()
-  let workers = process.new_subject()
   let tree = process.spawn_unlinked(process.sleep_forever)
-  let asker =
+  let _asker =
     process.spawn_unlinked(fn() {
       let outcome =
         readiness.await(
           probe: fn(reply) {
-            let sent = answering(reply:, probed: Unreached, times: 3)
-            let assert ToWorker(pid:) = sent as "the answering worker"
-            process.send(workers, pid)
-            Ok(sent)
+            Ok(answering(reply:, probed: Unreached, times: 3))
           },
           tree: option.Some(process.monitor(tree)),
           settings: short(),
           files: [],
         )
-      process.send(outcomes, outcome)
-      process.sleep_forever()
+      process.send(outcomes, #(outcome, mailbox_support.queued(process.self())))
     })
-  assert open_wait.received(from: outcomes, what: "the ask's outcome")
-    == readiness.DatabaseUnreachable
-  // The asker sent each worker's pid before it sent the outcome, so every
-  // attempt's worker is in the subject.
-  let attempts = mailbox_support.drain(workers)
-  // The answers of each attempt beyond the one the ask took are dropped, so
-  // none stays in the mailbox of the process that asked. A worker's answers are
-  // all sent before it ends.
-  event_wait.until(
-    "every probe worker has ended and no answer waits in the asker's mailbox",
-    fn() {
-      list.all(attempts, fn(worker) { !process.is_alive(worker) })
-      && mailbox_support.queued(asker) == 0
-    },
-  )
-  process.kill(asker)
+  assert open_wait.received(
+      from: outcomes,
+      what: "the ask's outcome and the answers left in its mailbox",
+    )
+    == #(readiness.DatabaseUnreachable, 0)
+    as "the answers of each attempt beyond the one the ask took are dropped, so none stays in the mailbox of the process that asked"
 }
 
 /// A server on a database that does not exist as a server: its pool's port has

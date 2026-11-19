@@ -60,6 +60,7 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/order
 import gleam/otp/actor
+import mailbox_support
 import open_wait
 
 /// How far ahead of the node's own time the clock starts.
@@ -90,7 +91,6 @@ type State {
     pending: List(Pending),
     changes: Int,
     participants: List(Pid),
-    judged_changes: Option(Int),
   )
 }
 
@@ -109,10 +109,6 @@ type Message {
   /// The change counter and the participants still running; an ended one is dropped
   /// and counts as a change.
   Observe(reply: Subject(Participation))
-  /// A look of the test's open read that found nothing: whether the change
-  /// counter moved since the last such look, or no participant has ever taken an
-  /// input. The counter is then remembered for the next look.
-  Judge(reply: Subject(Bool))
   Start(
     owner: Pid,
     subject: Subject(Elapsed),
@@ -134,21 +130,22 @@ pub fn new() -> Time {
   let monotonic_ms = monotonic_ms + ahead_ms
   let filetime = filetime + ahead_ms * 10_000
   let assert Ok(started) =
-    actor.new(State(
-      now_ms: monotonic_ms,
-      start_ms: monotonic_ms,
-      start_filetime: filetime,
-      next_number: 0,
-      pending: [],
-      changes: 0,
-      participants: [],
-      judged_changes: None,
-    ))
+    actor.new(
+      State(
+        now_ms: monotonic_ms,
+        start_ms: monotonic_ms,
+        start_filetime: filetime,
+        next_number: 0,
+        pending: [],
+        changes: 0,
+        participants: [],
+      ),
+    )
     |> actor.on_message(handle)
     |> actor.start
     as "the driven clock started"
   let time = Time(driver: started.data)
-  open_wait.judging(fn() { can_still_end(time) })
+  open_wait.judging(fn() { taken_inputs(time) })
   time
 }
 
@@ -174,14 +171,6 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
         state.changes + list.length(state.participants) - list.length(running)
       process.send(reply, Participation(changes:, running:))
       actor.continue(State(..state, changes:, participants: running))
-    }
-    Judge(reply:) -> {
-      let moved = case state.judged_changes {
-        Some(before) -> before != state.changes
-        None -> True
-      }
-      process.send(reply, moved || state.changes == 0)
-      actor.continue(State(..state, judged_changes: Some(state.changes)))
     }
     Start(owner:, subject:, timer:, reference:, after_ms:, reply:) -> {
       process.send(reply, state.next_number)
@@ -437,31 +426,18 @@ fn pass(
   }
 }
 
-/// Whether anything can still end a read of the test that owns this clock,
-/// asked after each look of the read that found nothing
-/// (`open_wait.looked_and_found_nothing`). The test is in its read, so it moves
-/// neither the clock nor a timer: only a participant taking an input can still
-/// bring a frame. After the barrier, so work in progress has ended, the answer is
-/// no when no participant read the clock (or ended) since the last such look,
-/// and at least one has read it. A participant that has never read the clock
-/// leaves the answer yes: the server may not have begun.
-fn can_still_end(time: Time) -> Bool {
-  wait_until_quiet(time)
-  asked(time:, make: Judge)
+/// How many inputs the participants have taken so far, which the test's open
+/// reads look at after each empty look (`open_wait.looked_and_found_nothing`):
+/// the counter of reads of the clock, which each input moves when it starts. It
+/// is a look at the counter, so it neither waits for a participant nor holds one
+/// back.
+fn taken_inputs(time: Time) -> Int {
+  asked(time:, make: Observe).changes
 }
 
 /// Returns when the participant has taken what was in its mailbox when this was
-/// called (`sys:suspend` is answered in the order of its mailbox), or has ended.
-/// The wait has no limit of its own (`open_wait`).
+/// called, or has ended (`mailbox_support.settled`).
 pub fn settled(participant: Pid) -> Nil {
-  open_wait.named("a driven process to take its mailbox", fn() {
-    taken_or_ended(participant)
-  })
+  let _settled = mailbox_support.settled(participant)
+  Nil
 }
-
-/// `sys:suspend` and `sys:resume` of the process, which wait until the process
-/// answers or ends; the call monitors the process, so one that ends gives its exit
-/// at once and leaves no crash report. The ones in `gleam/otp/system` have no way
-/// to lift their five seconds, and `get_state` copies the process's whole state.
-@external(erlang, "driven_time_ffi", "taken_or_ended")
-fn taken_or_ended(participant: Pid) -> Nil
