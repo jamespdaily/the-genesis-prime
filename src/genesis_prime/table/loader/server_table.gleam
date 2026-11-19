@@ -162,6 +162,9 @@ import genesis_prime/table/xp_per_level
 /// - Race: a player's hit radius (genesis_prime/game/hit_radius).
 /// - RewardPropertyPremiumModifier: the bag and bank slots a premium tier gives
 ///   (genesis_prime/game/reward_property).
+/// - World: the worlds a map can run in, each of which gets a term of its spawns
+///   (genesis_prime/world_map/spawn), and the worlds a `!go` may name
+///   (genesis_prime/game/dev_command).
 /// - WorldLocation2: the start places (genesis_prime/game/start_place).
 /// - WorldZone: the top zone of each zone (genesis_prime/game/top_zone).
 pub fn entries() -> List(store.Entry) {
@@ -238,6 +241,7 @@ pub fn entries() -> List(store.Entry) {
     telegraph_damage.entry(),
     tradeskill_schematic2.entry(),
     unit_property2.entry(),
+    world.entry(),
     world_location2.entry(),
     world_zone.entry(),
     xp_per_level.entry(),
@@ -248,15 +252,12 @@ pub fn entries() -> List(store.Entry) {
 /// from `entries` so that they are read beside the server's tables on the caller's
 /// heap and the server's tables hold only what its rules read:
 /// - Creature2OutfitInfo: the outfit of a spawn (genesis_prime/world_map/spawn).
-/// - World: the worlds a map can run in, each of which gets a term of its spawns
-///   (genesis_prime/world_map/spawn).
 /// - Tutorial: the category of each row a zone's welcome names
 ///   (genesis_prime/game/zone_welcome).
 pub fn content_entries() -> List(store.Entry) {
   [
     creature2_outfit_info.entry(),
     tutorial.entry(),
-    world.entry(),
   ]
 }
 

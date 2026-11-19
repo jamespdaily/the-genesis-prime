@@ -86,7 +86,6 @@ pub fn content_files() -> List(#(String, BitArray)) {
     [
       creature2_outfit_info.schema,
       tutorial.schema,
-      world.schema,
     ],
     fixture_tables.file,
   )

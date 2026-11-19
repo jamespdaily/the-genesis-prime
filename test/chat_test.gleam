@@ -1056,6 +1056,22 @@ pub fn a_command_line_with_the_setting_on_asks_the_connection_to_run_it_test() -
         "an experience",
       ),
       #(
+        "!go 22 1189 1 2 3",
+        dev_command.Go(destination: dev_command.Coordinates(
+          world_id: 22,
+          world_zone_id: 1189,
+          x: 1,
+          y: 2,
+          z: 3,
+        )),
+        "a place by coordinates, in a World and a WorldZone the tables hold",
+      ),
+      #(
+        "!go 8300",
+        dev_command.Go(destination: dev_command.Named(world_location2_id: 8300)),
+        "a place by a WorldLocation2 row the tables hold",
+      ),
+      #(
         "!item 90021 3",
         dev_command.GiveItem(item2_id: Item2Id(90_021), count: 3),
         "the Item2 and the count the line names",
@@ -1088,6 +1104,11 @@ pub fn a_refused_or_unknown_command_is_one_system_line_and_nothing_to_run_test()
         "!level 51",
         "!level 51 is outside the levels 1 to 50",
         "GameFormula 145: the highest level is 50",
+      ),
+      #(
+        "!go 99999 1 0 0 0",
+        "!go: World 99999 is not in the client's tables",
+        "a World the tables do not hold",
       ),
       #(
         "!item 29213",
@@ -1144,6 +1165,7 @@ pub fn a_bang_line_on_another_channel_is_a_line_of_that_channel_with_the_setting
       "!xp 2859",
       "!item 90021 3",
       "!quest 5972 done",
+      "!go 22 1189 1 2 3",
     ],
     fn(text) {
       list.each([5, 8], fn(type_id) {

@@ -39,16 +39,21 @@ import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/departures
 import genesis_prime/game/experience.{Credit}
 import genesis_prime/message/bit_stream
+import genesis_prime/message/client_control_granted.{ClientControlGranted}
 import genesis_prime/message/disconnect_reason.{LostUserServer}
 import genesis_prime/message/experience_gained.{
   type ExperienceGained, ExperienceGained,
 }
+import genesis_prime/message/float32
 import genesis_prime/message/item_place
+import genesis_prime/message/movement_rotation.{MovementRotation}
 import genesis_prime/message/player_health.{PlayerHealth}
 import genesis_prime/message/quest_accept.{QuestAccept}
 import genesis_prime/message/quest_periodic_reset.{QuestPeriodicReset}
 import genesis_prime/message/quest_state.{QuestState}
+import genesis_prime/message/relayed_movement
 import genesis_prime/message/send_chat_line.{SendChatLine}
+import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/step.{
   type ConnectionEvent, type Event, OwnEffect, OwnEvent, StartTimer, TimerFired,
   TimerId, WatchEnded, WatchId,
@@ -1161,6 +1166,53 @@ pub fn an_xp_command_in_two_steps_reaches_the_level_at_its_minimum_test() -> Nil
     client_connection.Level(level: 4),
   )
     as "a watcher is told the level"
+}
+
+pub fn go_in_the_same_world_moves_the_unit_the_client_sees_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let state =
+    dev_support.entered_among_watchers(class_id: 4, level: 3, experience: 1800)
+  let #(_, taken) = dev_support.said(state:, text: "!go 3460 5967 100 -50 200")
+  let at_the_place =
+    UnitPositionCommand(
+      x: float32.to_bits(100.0),
+      y: float32.to_bits(-50.0),
+      z: float32.to_bits(200.0),
+      blends: 0,
+    )
+  list.each([2, 3, 4, 5], fn(viewer) {
+    assert list.contains(connection_support.peer_tells(taken), #(
+      viewer,
+      connection_support.moving(
+        unit_id: connection_support.own_unit_id,
+        server_time_ms: 1000,
+        commands: [
+          relayed_movement.Position(at_the_place),
+          relayed_movement.Rotation(MovementRotation(
+            yaw: 0,
+            pitch: 0,
+            roll: 0,
+            blends: 0,
+          )),
+        ],
+      ),
+    ))
+      as "opcode.0x638: each watcher is sent the unit's move to the commanded position, at the facing the player has, so its client places the unit there"
+  })
+  let assert [granted] =
+    connection_support.decoded(
+      connection_support.written(taken:),
+      0x0636,
+      client_control_granted.decode,
+    )
+    as "the player's client reads one 0x636"
+  assert granted
+    == ClientControlGranted(
+      echo_value: 1,
+      reset_movement: 1,
+      unit_id: connection_support.own_unit_id,
+    )
+    as "opcode.0x636: the echo is the first move number, with control given back to the player's own unit"
 }
 
 /// 0x035B of the dialog's place (location 300, bag index 0xFFFFFFFF) for this quest.

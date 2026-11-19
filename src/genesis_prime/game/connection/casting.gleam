@@ -1074,6 +1074,27 @@ fn stopped_by_move(
   }
 }
 
+/// The player's current cast stopped by a placement the server made, as the client's 0x83c
+/// stops it (`cast.stopped_by_placement`): the cast's end is written before the placement's
+/// frames. A player with no current cast, or none in the world, changes nothing.
+pub fn stopped_by_placement(
+  session session: Session,
+  now now: Now,
+) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  case connection_state.entered_of(session.status) {
+    Some(entered) -> {
+      let #(stopped, effects) =
+        cast.stopped_by_placement(
+          cast: entered.cast,
+          caster: caster_of(tables: session.settings.tables, entered:),
+          now:,
+        )
+      cast_effects(session: with_cast(session:, cast: stopped), now:, effects:)
+    }
+    None -> #(session, [])
+  }
+}
+
 /// The effects carried out in order, with no proc fired: a strike's own results are carried
 /// out inside the effect that asked for them, and the pending events wait for the input's
 /// effects to end (`cast_effects`).
