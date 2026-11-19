@@ -898,11 +898,12 @@ fn measured_shield_rows(
 pub fn the_measure_counts_ticking_and_refused_heal_shields_rows_as_not_read_test() -> Nil {
   use <- owned_test.run(10_000)
   use <- unitest.tags(["dev_tool", "coverage"])
-  // Planted: five type 118 rows, one for each case the plan leaves out or refuses and two
-  // it reads: flags 4 (aimed at the area); flags 1 with a tickTime of 1000 and a
-  // durationTime of 3000 (three ticks); flags 1 with a tickTime of 1000, no durationTime
-  // and flags bit 2 (until removed); flags 1 with parameter type 18 (a passed-in value);
-  // and flags 1 with parameter type 22 (target missing shield). And a type 64 pair, flags
+  // Planted: five type 118 rows, two the plan leaves out and three it reads: flags 4
+  // (aimed at the area); flags 1 with a tickTime of 1000 and a durationTime of 3000
+  // (three ticks); flags 1 with a tickTime of 1000, no durationTime and flags bit 2
+  // (until removed); flags 1 with parameter type 18 (a passed-in value, which
+  // `damage.unread_on_caster` reads as the caster's `passed_in`); and flags 1 with
+  // parameter type 22 (target missing shield). And a type 64 pair, flags
   // 4 and 2.
   let assert Measured(types:, ..) =
     measured_shield_rows(type_: 118, rows: [
@@ -924,9 +925,9 @@ pub fn the_measure_counts_ticking_and_refused_heal_shields_rows_as_not_read_test
     == HandledWithGap(
       reason: "rows aimed at another unit, periodic rows that last until removed (flags bit 2, #803), rows behind an apply prerequisite whose conditions the plan cannot check (#817, #818) or with a formula parameter the plan refuses",
       fact_key: "Spell4Effects.effectType.118",
-      unread_rows: 3,
+      unread_rows: 2,
     )
-    as "the area row is aimed at others, the periodic row that lasts until removed is left out, and the kind 18 row fails the plan's formula: three of five are not read; the periodic row of three ticks is read"
+    as "the area row is aimed at others and the periodic row that lasts until removed is left out: two of five are not read; the periodic row of three ticks and the kind 18 row (a passed-in value the plan reads) are read"
   let assert Measured(types:, ..) =
     measured_shield_rows(type_: 64, rows: [
       once(aim: 4, parameter: 0),
