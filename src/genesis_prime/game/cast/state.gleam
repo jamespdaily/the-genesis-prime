@@ -1116,20 +1116,6 @@ fn mint_from(
   }
 }
 
-/// The open issue that owns a gap the server logs as not built.
-pub type Issue {
-  /// The prerequisite types the server does not read.
-  PrerequisitesIssue
-  /// The spells the server cannot plan or whose states it does not judge.
-  SpellsIssue
-  /// The activate cast's checks and effects the server does not build.
-  ActivateCastIssue
-  /// An effect cast at another player's unit, which the server does not carry.
-  PlayerTargetIssue
-  /// The crowd-control states that last until removed, which no rule ends with their spell.
-  UntilRemovedIssue
-}
-
 /// What an aimed press carries through the client's checks.
 pub type AimedPress {
   AimedPress(
@@ -1239,10 +1225,10 @@ pub type Verdict {
   /// The caster's current cast has 500 ms or less left: the press waits for the go
   /// or finish that clears it, which is the server's choice (`cast.press_queue`).
   HoldForCast
-  /// The spell waits for a later step: its method is not built, its cost needs a
+  /// The server does not build the spell: its method is not built, its cost needs a
   /// vital the server does not hold, or a cast condition or waiver is of a type the
-  /// server does not read. It is refused, and logged once with the issue that owns it.
-  NotBuilt(result: cast_result.CastResult, why: String, issue: Issue)
+  /// server does not read. It is refused, and logged once.
+  NotBuilt(result: cast_result.CastResult, why: String)
 }
 
 /// Why a press's costs are not paid.

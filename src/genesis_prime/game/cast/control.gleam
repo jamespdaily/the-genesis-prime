@@ -37,9 +37,8 @@
 ////   cast's persistence stops holding, when the caster dies (but for the innate passive's
 ////   cast) and when the player leaves; a start still waiting for its delay is cancelled
 ////   with it and told nothing. A later go of the cast on the same creature starts it
-////   again from that go. A row aimed at another player is left out until a modifier on
-////   another player is built (#570), and the stacking of casters' modifiers on one
-////   creature is not built (#569).
+////   again from that go. A row aimed at another player is left out, and casters'
+////   modifiers on one creature do not stack.
 //// - **A go's throws of creatures** (type 3 rows whose targetFlags name a unit other than
 ////   the caster, a `StruckMove`, genesis_prime/game/forced_move; 3, 5 and 7 also move
 ////   the caster): each is aimed at the creatures the go
@@ -156,6 +155,7 @@ import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{type Spell}
 import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_properties
+import genesis_prime/gap
 import genesis_prime/message/crowd_control_state
 import genesis_prime/table/id.{type Spell4EffectsId}
 import genesis_prime/world_map/map
@@ -409,8 +409,7 @@ pub fn restrictions_numbered(
 /// alone: the message sets the anchor of the unit the receiving client controls and
 /// names no unit, so the audience, whose clients control other units, gets none
 /// (`opcode.0x881`). That the anchor is the caster's own unit is a guess; no client
-/// value names it, and the issue "Spells work in depth on the real client: cast times, telegraphs, buffs,
-/// crowd control and ticking effects" will settle it.
+/// value names it.
 pub fn restrictions_shown(
   restricting restricting: List(Restricting),
   caster caster: Caster,
@@ -680,7 +679,7 @@ fn creature_modifier_armed(
 /// plus its delay; each go's throw is its own, so a later go of the cast leaves an
 /// earlier go's waiting throw to start. A unit that is not a `HitCreature` of the
 /// round is not thrown (a deflected one included, as for a property modifier), and neither
-/// is the caster or another player (a move of another player is issue 570).
+/// is the caster or another player (the server moves no other player).
 pub fn struck_moves_armed(
   cast cast: State,
   cast_id cast_id: Int,
@@ -970,4 +969,14 @@ pub fn caster_rows(spell spell: Spell) -> List(spell_plan.PropertyModifier) {
       | spell_plan.AbsorbChange(..) -> True
     }
   })
+}
+
+/// What the lasting effects of a cast do not do.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Casting",
+      missing: "The stacking of the property modifiers that different casters put on one creature is not built, so each caster's modifier on the creature is kept by its caster.",
+    ),
+  ]
 }

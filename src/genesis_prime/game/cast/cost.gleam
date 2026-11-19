@@ -87,16 +87,16 @@ import genesis_prime/game/cast/state.{
   type Caster, type CostRefusal, type Effect, type Paid, type State,
   type Verdict, Activated, CancelTimer, Caster, CasterChangeEnds,
   CasterChangeStarts, CreatureDespawns, CreatureHoldsUnitStates,
-  ForcedMoveStarts, Gain, Log, NotBuilt, Paid, Pay, PrerequisitesIssue,
-  QuestAdvanced, Refuse, Send, ShortcutCast, StartTimer, StealthChanged, Strike,
-  TargetChangeEnds, TargetChangeStarts, Tell, TickStrike, Unheld, Unpaid,
-  UnreadSpend,
+  ForcedMoveStarts, Gain, Log, NotBuilt, Paid, Pay, QuestAdvanced, Refuse, Send,
+  ShortcutCast, StartTimer, StealthChanged, Strike, TargetChangeEnds,
+  TargetChangeStarts, Tell, TickStrike, Unheld, Unpaid, UnreadSpend,
 }
 import genesis_prime/game/class_resource.{type Payment, type Resources, Payment}
 import genesis_prime/game/cooldown
 import genesis_prime/game/crowd_control
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{type Spell}
+import genesis_prime/gap
 import genesis_prime/message/cast_result
 import genesis_prime/table/id.{type Spell4Id}
 import gleam/bool
@@ -110,7 +110,7 @@ import gleam/result
 /// The result the caster's own held states give a press whose caster conditions mask one
 /// of them: the lowest masked state's Caster_CannotBe result (`CheckSpellCCConditions`,
 /// `0x1403b2c40`, called by `CheckCastCaster` at `0x1403affa2`), none when the mask holds
-/// none of them. Gap: the client's cast request word at 0x48 is read as 0 for every
+/// none of them. The client's cast request word at 0x48 is read as 0 for every
 /// press, so the check always applies; the client sets it for the presses the ride spells
 /// make, which this server does not read.
 pub fn restricted(
@@ -164,7 +164,6 @@ pub fn condition_verdict(
         why: "has a cast condition of the PrerequisiteType "
           <> int.to_string(prerequisite_type)
           <> ", which the server does not read",
-        issue: PrerequisitesIssue,
       ))
   }
 }
@@ -483,11 +482,10 @@ pub fn cooldown_refusal(
 /// The methods the rule casts; a spell of any other is refused 285.
 ///
 /// A press of a spell of castMethod 5 (`ClientSideInteraction`) is refused too, and only
-/// the activate cast runs one (`cast_press.activation_spell`). Gap: the client opens its interaction
+/// the activate cast runs one (`cast_press.activation_spell`). The client opens its interaction
 /// on the 0x7fd of any pending cast of the player, an ability's or an item's as well
 /// (`opcode.0x7fd.csi`), so a pressed castMethod 5 spell is a cast the client would run;
-/// the server does not build it, a gap in the issue "Spells work in depth on the real
-/// client: cast times, telegraphs, buffs, crowd control and ticking effects".
+/// the server does not build it.
 pub fn is_built(method: spell_plan.CastMethod) -> Bool {
   case method {
     spell_plan.Normal
@@ -523,4 +521,14 @@ pub fn casting(cast: State) -> Bool {
         Error(Nil) -> False
       }
   }
+}
+
+/// What the cost and restriction checks of a press do not read.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Casting",
+      missing: "The client's cast request word, which it sets for the presses the ride spells make, is read as 0 for every press, so the caster's Ability Restriction is checked for those presses too.",
+    ),
+  ]
 }

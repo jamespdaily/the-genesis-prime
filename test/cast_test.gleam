@@ -39,6 +39,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{None}
 import gleam/result
+import gleam/string
 import owned_test
 import qcheck
 import world_entry_support
@@ -785,6 +786,14 @@ pub fn a_non_normal_ability_is_refused_285_and_logged_once_test() -> Nil {
     })
   }
   assert list.length(logs(first)) == 1 as "logged for the coverage measure"
+  let assert [cast_state.Log(text:, ..)] = logs(first)
+  assert string.ends_with(
+      text,
+      " is not cast by a method that is built: it is refused with 285",
+    )
+    && string.starts_with(text, "the ability with Spell4 ")
+    && !string.contains(text, "#")
+    as "the log says what is missing and names no issue"
   let #(_, second) =
     support.pressed(
       state:,

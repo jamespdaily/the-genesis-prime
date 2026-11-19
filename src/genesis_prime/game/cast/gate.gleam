@@ -310,7 +310,7 @@ pub fn rows_with_units(
 ///   unit a Proxy's child is started on (`spell_plan.not_on_a_struck_unit`), and the
 ///   client's absorb and Interrupt Armor rows with flags 3 or 7 are in no such child.
 /// - A property modifier aimed at struck units (`StruckChange`) lands on a creature the go
-///   hit; a player it names is left out until a modifier on another player is built (#570).
+///   hit; a player it names is left out.
 pub fn modifier_applies(
   row row: spell_plan.PropertyModifier,
   unit_id unit_id: Int,

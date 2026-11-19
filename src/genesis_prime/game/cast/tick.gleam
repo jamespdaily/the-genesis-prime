@@ -23,10 +23,10 @@ import genesis_prime/game/cast/state.{
   type Verdict, Absorb, Accept, CancelTimer, Caster, CasterChangeStarts,
   CasterSide, ChargeLevel, CooldownModifierEnds, CooldownModifierStarts,
   Deflected, Finish, ForcedMoveStart, Go, Heal, Healed, Hit, Immune, Lingering,
-  Live, Look, ModifierEnd, ModifierStart, NodesEnd, NotBuilt, PrerequisitesIssue,
-  ProcDue, Property, QuestAdvanceDue, Refuse, RepeatHeld, RestrictionEnd, Send,
-  StartChild, StartHeld, Starts, State, StateEnd, TargetChangeEnds,
-  TargetModifierStart, Tell, Tick, TickAsked, TickStrike, UnitSide, WindowEnd,
+  Live, Look, ModifierEnd, ModifierStart, NodesEnd, NotBuilt, ProcDue, Property,
+  QuestAdvanceDue, Refuse, RepeatHeld, RestrictionEnd, Send, StartChild,
+  StartHeld, Starts, State, StateEnd, TargetChangeEnds, TargetModifierStart,
+  Tell, Tick, TickAsked, TickStrike, UnitSide, WindowEnd,
 } as cast_state
 import genesis_prime/game/class_resource
 import genesis_prime/game/cooldown
@@ -132,7 +132,6 @@ pub fn requirement_refusal(
               why: "has a caster requirement whose waiver is a condition of the PrerequisiteType "
                 <> int.to_string(prerequisite_type)
                 <> ", which the server does not read",
-              issue: PrerequisitesIssue,
             ))
         }
     }

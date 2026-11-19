@@ -1114,8 +1114,10 @@ pub fn a_heal_aimed_at_another_unit_lands_nothing_test() -> Nil {
     as "and no go lists a heal description for it"
   let assert [#(LogDebug, line)] = support.logs(effects: on_struck)
     as "one debug line says why"
-  assert string.contains(line, "62019") && string.contains(line, "570")
-    as "it names the row and the issue that will build heals on other units"
+  assert string.contains(line, "62019")
+    && string.contains(line, "the server heals no other unit")
+    && !string.contains(line, "#")
+    as "it names the row and says what is missing, with no issue named"
 }
 
 pub fn a_delayed_heal_holds_the_finish_and_drops_on_death_test() -> Nil {

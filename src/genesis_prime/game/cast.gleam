@@ -97,24 +97,24 @@ import genesis_prime/game/cast/state.{
   type Lingering, type Listed, type Live, type Message, type Paid,
   type PressedFrom, type Reached, type Refusal, type Resolution,
   type Restricting, type Role, type State, type Struck, type TargetVerdict,
-  type TickAsked, type Used, type UsedUnit, Accept, ActivateCastIssue, Activated,
-  Activating, Activation, ActivationStart, Aimed, AimedPress, AnswerSucceeded,
-  Answered, AwaitingAnswer, Base, Cancelled, CannotTell, CastClears,
-  CasterChangeEnds, CasterChangeStarts, ChargeLevel, Child, CooldownEnds,
-  CooldownKept, CooldownModifierEnds, CooldownModifierStarts, Deflected, Finish,
+  type TickAsked, type Used, type UsedUnit, Accept, Activated, Activating,
+  Activation, ActivationStart, Aimed, AimedPress, AnswerSucceeded, Answered,
+  AwaitingAnswer, Base, Cancelled, CannotTell, CastClears, CasterChangeEnds,
+  CasterChangeStarts, ChargeLevel, Child, CooldownEnds, CooldownKept,
+  CooldownModifierEnds, CooldownModifierStarts, Deflected, Finish,
   ForcedMoveStart, Frames, GateFails, Go, GoAsked, Healing, Held, HeldProc, Hit,
   Hold, HoldForCast, Holding, Immune, Item, ItemAtPlace, ItemPress, KeyHeld,
   Lingering, Listed, Live, Log, ModifierEnd, ModifierStart, NoClientCastId,
   NoInteraction, NoInteractionWaits, NoItemSpell, NodesEnd, NotBuilt, NotDecoded,
-  NotSentByClient, Passive, Plain, PrerequisitesIssue, Pressed, PressedAt,
-  ProcDue, QuestAdvanceDue, QuestAdvanced, QuestButton, Reached, Refuse,
-  RepeatHeld, Resolution, ResourceMoved, RestrictionEnd, Send, Shortcut,
-  ShortcutCast, SpellsIssue, Stage, StartChild, StartHeld, Started,
-  StartedMoving, Starts, State, StateEnd, StealthChanged, Strike,
-  TargetModifierStart, Tell, Threshold, Tick, UnbuiltItemSpell, UnbuiltShortcut,
-  UnbuiltSpell, UnknownAnswer, UnknownCancel, UnreadItemPrerequisite,
-  UnreadLinkPrerequisite, UnreadPrerequisite, UnreadShortcutPick, UsedUnit,
-  WindowEnd, WithCast, WithNothing, WithUse, WrongAnswerSpell,
+  NotSentByClient, Passive, Plain, Pressed, PressedAt, ProcDue, QuestAdvanceDue,
+  QuestAdvanced, QuestButton, Reached, Refuse, RepeatHeld, Resolution,
+  ResourceMoved, RestrictionEnd, Send, Shortcut, ShortcutCast, Stage, StartChild,
+  StartHeld, Started, StartedMoving, Starts, State, StateEnd, StealthChanged,
+  Strike, TargetModifierStart, Tell, Threshold, Tick, UnbuiltItemSpell,
+  UnbuiltShortcut, UnbuiltSpell, UnknownAnswer, UnknownCancel,
+  UnreadItemPrerequisite, UnreadLinkPrerequisite, UnreadPrerequisite,
+  UnreadShortcutPick, UsedUnit, WindowEnd, WithCast, WithNothing, WithUse,
+  WrongAnswerSpell,
 } as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/class_resource.{type Payment}
@@ -128,6 +128,7 @@ import genesis_prime/game/shortcut_spell
 import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{type Plans, type Proxy, type Spell}
 import genesis_prime/game/unit_properties
+import genesis_prime/gap
 import genesis_prime/message/ability_hold
 import genesis_prime/message/cancel_cast.{type CancelCast}
 import genesis_prime/message/cast_ability
@@ -396,7 +397,6 @@ fn item_used(
             why: "is gated by a prerequisite of the type "
               <> int.to_string(prerequisite_type)
               <> ", which the server does not read",
-            issue: PrerequisitesIssue,
           ))
         Ok(spell4_id) ->
           item_spell_cast(
@@ -508,7 +508,6 @@ fn item_spell_cast(
         key: UnbuiltItemSpell(spell4_id:),
         result: cast_result.IllegalSpellCast,
         why:,
-        issue: SpellsIssue,
       ))
     shortcut_spell.PlayedOnUser(spell:) ->
       item_on_user(
@@ -607,7 +606,6 @@ fn item_on_a_unit(
         key: UnbuiltItemSpell(spell4_id:),
         result: cast_result.IllegalSpellCast,
         why: "has no Activate and no QuestAdvanceObjective effect, which is all the server plays of an item's spell cast at a unit",
-        issue: ActivateCastIssue,
       ))
     Ok(activate.NoSpell4Row) -> refusal(spell4_id, cast_result.SpellUnknown)
     Ok(activate.CannotBePlanned(why:)) ->
@@ -618,7 +616,6 @@ fn item_on_a_unit(
         key: UnbuiltItemSpell(spell4_id:),
         result: cast_result.IllegalSpellCast,
         why: "cannot be planned: " <> why,
-        issue: SpellsIssue,
       ))
     Ok(activate.Planned(spell:, effects:, dropped:, limits:, cast_group_id:)) ->
       // A creature's `withheld` and `ClosedLink` are what the client's interact menu does
@@ -730,7 +727,6 @@ fn item_cast_group(
         why: "of a creature activates through a prerequisite of the type "
           <> int.to_string(prerequisite_type)
           <> ", which the server does not read",
-        issue: PrerequisitesIssue,
       ))
   }
 }
@@ -815,7 +811,6 @@ fn shortcut_pressed(
         key: UnbuiltShortcut(spell4_id:),
         result: cast_result.IllegalSpellCast,
         why: "cannot be planned: " <> why,
-        issue: SpellsIssue,
       )
     Ok(shortcut_spell.Planned(spell:)) ->
       accepted_press(
@@ -862,10 +857,8 @@ fn shortcut_pressed(
 /// any cast's with the unit as the TargetCast's first unit. Then started on
 /// the unit. A player or the caster itself reaches the client's player faction test, which
 /// the server does not build, and another player's life and combat are not held: those
-/// are refused 285 as not built. The target states the server does not hold (96
-/// invulnerable, 140 zone, 98 vital, 92 immunity) are not checked: a gap in the issue
-/// "Spells work in depth on the real client: cast times, telegraphs, buffs, crowd control
-/// and ticking effects".
+/// are refused 285 as not built. The target's zone (140) and vital (98) states are not
+/// checked.
 fn aimed_shortcut(
   cast cast: State,
   caster caster: Caster,
@@ -989,7 +982,6 @@ fn aimed_in_group(
         why: "names a creature whose activate pick rests on a prerequisite of the type "
           <> int.to_string(prerequisite_type)
           <> ", which the server does not read",
-        issue: PrerequisitesIssue,
       )
   }
 }
@@ -1277,7 +1269,6 @@ fn activation_pressed(
         why: "of a creature whose link to an objective rests on a prerequisite of the type "
           <> int.to_string(prerequisite_type)
           <> ", which the server does not read",
-        issue: PrerequisitesIssue,
       )
     activate.Usable(
       creature_id:,
@@ -1328,7 +1319,6 @@ fn activation_pressed(
             why: "of a creature activates through a prerequisite of the type "
               <> int.to_string(prerequisite_type)
               <> ", which the server does not read",
-            issue: PrerequisitesIssue,
           )
         activate.Picked(spell4_id:) ->
           case activate.planned_of(activations:, spell4_id:) {
@@ -1342,7 +1332,6 @@ fn activation_pressed(
                 key: UnbuiltSpell(spell4_id:),
                 result: cast_result.IllegalSpellCast,
                 why: "cannot be planned: " <> why,
-                issue: SpellsIssue,
               )
             Ok(activate.Planned(spell:, effects:, dropped:, limits:, ..)) ->
               activation_in_range(
@@ -1653,7 +1642,7 @@ fn press_checked(
     Refuse(result:) -> refusal(result)
     Hold(..) -> refusal(cast_result.SpellGlobalCooldown)
     HoldForCast -> refusal(cast_result.SpellAlreadyCasting)
-    NotBuilt(result:, why:, issue:) ->
+    NotBuilt(result:, why:) ->
       Error(cast_press.not_built_refusal(
         cast:,
         client_cast_id:,
@@ -1665,7 +1654,6 @@ fn press_checked(
         },
         result:,
         why:,
-        issue:,
       ))
     Accept(paid:) -> Ok(paid)
   }
@@ -2425,7 +2413,7 @@ fn press_resolved(
           refusal(result),
         ],
       )
-    NotBuilt(result:, why:, issue:) ->
+    NotBuilt(result:, why:) ->
       case set.contains(cast.logged, UnbuiltSpell(spell.spell4_id.value)) {
         True ->
           cast_press.refused_hold(
@@ -2452,8 +2440,6 @@ fn press_resolved(
                   <> int.to_string(spell.spell4_id.value)
                   <> " "
                   <> why
-                  <> ", the issue "
-                  <> cast_press.issue_name(issue:)
                   <> ": it is refused with "
                   <> int.to_string(cast_result.to_value(result)),
               ),
@@ -3245,11 +3231,11 @@ pub fn combat_left(
 /// of a type not read, a roll (none is drawn) and a creature target keep the cast, with
 /// one debug line for the spell.
 ///
-/// Gap (#336): the hoverboard's ride 85563 holds Ability Restriction under a persistence
+/// The hoverboard's ride 85563 holds Ability Restriction under a persistence
 /// of "under 85562" (Prerequisite 41771), and 85562's SummonMount (type 36) is not read,
 /// so no node of 85562 is held and the ride ends in the input of its own go: the client
 /// is shown 0x87f, 0x7f9 and 0x880 at once, and a press is refused 302 only while the
-/// go's own input is taken. The ride closes this.
+/// go's own input is taken.
 pub fn persisted(
   cast cast: State,
   caster caster: Caster,
@@ -5482,4 +5468,14 @@ fn finish_or_linger(
       #(cast, list.flatten([ticks, expired, armed, closed]))
     }
   }
+}
+
+/// What a lasting cast does not hold.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Casting",
+      missing: "A cast whose persistence is that the caster holds a mount, the hoverboard's ride, ends in the input of its own go, because the server does not read a mount summon: the client is shown the ride's Ability Restriction and its end at once.",
+    ),
+  ]
 }
