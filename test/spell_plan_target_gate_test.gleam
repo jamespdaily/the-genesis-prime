@@ -18,8 +18,7 @@
 //// - `Spell4Effects.prerequisiteIdTargetApply`: its first unit is the unit the effect
 ////   reaches and its second unit the caster; the types whose reading the server has not
 ////   decoded (`prerequisite.is_read`) and the types that read a struck creature's own state
-////   have no check, so a row behind either is refused at load, naming the issue that will
-////   read it.
+////   have no check, so a row behind either is refused at load, naming what is not read.
 //// - `Prerequisite.prerequisiteTypeId.37` draws a roll for each test and reads none of the
 ////   unit's own state, so a row past the caster behind a type 37 condition plans: the
 ////   client's own type 80 remove 173068 (Spell4 41193, target apply 650) is one.
@@ -93,7 +92,7 @@ pub fn remove_behind_target_gate_reads_with_its_gate_test() -> Nil {
     as "Spell4Effects.144869: prerequisiteIdTargetApply 13148"
 }
 
-pub fn target_gate_with_undecoded_type_is_refused_naming_its_issue_test() -> Nil {
+pub fn target_gate_with_undecoded_type_is_refused_naming_what_it_does_not_read_test() -> Nil {
   use <- owned_test.run(60_000)
   assert !prerequisite.is_read(type_id: 12)
     as "Prerequisite 18863 holds types 47 and 12, and the server has not decoded 12"
@@ -106,8 +105,9 @@ pub fn target_gate_with_undecoded_type_is_refused_naming_its_issue_test() -> Nil
       prerequisite_type: 12,
     )
   let text = spell_plan.describe(error:)
-  assert string.contains(text, "12") && string.contains(text, "#818")
-    as "the refusal names the type and the issue that will read it"
+  assert string.contains(text, "12")
+    && string.ends_with(text, "which is not decoded")
+    as "the refusal names the type and says it is not decoded, with no issue"
 }
 
 pub fn target_gate_reading_struck_state_is_refused_past_the_caster_test() -> Nil {
@@ -121,8 +121,12 @@ pub fn target_gate_reading_struck_state_is_refused_past_the_caster_test() -> Nil
       prerequisite_type: 15,
     )
   let text = spell_plan.describe(error:)
-  assert string.contains(text, "15") && string.contains(text, "#569")
-    as "the refusal names the type and the issue that will read it"
+  assert string.contains(text, "15")
+    && string.ends_with(
+      text,
+      "which reads what the casts held on the creature it strikes hold",
+    )
+    as "the refusal names the type and says its casts are not read, with no issue"
   let assert Ok(on_the_caster) = plan_of(spell4_id: 30_458)
     as "a row aimed only at the caster reads the caster's own state, so the same type plans"
   let assert GatedOnTarget(prerequisite:) =
@@ -333,7 +337,7 @@ pub fn gate_mixing_creature_state_with_cast_state_stays_refused_test() -> Nil {
   use <- owned_test.run(60_000)
   // Kept edit: Prerequisite 13148 made two conditions, type 15 (comparison 1), which reads
   // the casts held on the unit, and type 28 (comparison 1). The creature checks no row that
-  // reads the casts held on it until they are its own (#569).
+  // reads the casts held on it, since a creature holds none of them.
   use tables <- fixture_tables.changed(table: "Prerequisite", id: 13_148, with: [
     #("prerequisiteTypeId0", planted_table.Integer(15)),
     #("prerequisiteComparisonId0", planted_table.Integer(1)),

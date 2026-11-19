@@ -39,8 +39,8 @@
 ////   reads it (`unread_on_caster`): a strike would read the caster's value at the go, not
 ////   the level of an item's spell.
 //// - **What is not built:** the caster's Weapon and Weapon DPS (types 6 and 9,
-////   `Spell4Effects.parameterType.6_9`, #807), the passed-in value in a strike's row
-////   (18, #336), and types 20, 24 and any above 26, which neither part reads; a formula
+////   `Spell4Effects.parameterType.6_9`), the passed-in value in a strike's row
+////   (18), and types 20, 24 and any above 26, which neither part reads; a formula
 ////   that names one with a factor is refused at load (genesis_prime/game/spell_area,
 ////   `unread`).
 //// - **The multiplier** M is the caster's DamageDealtMultiplier for the damage type,
@@ -229,7 +229,7 @@ pub fn power_of(rating rating: Float) -> Float {
 /// formula reads only what a player caster and its target hold, or a caster that is also
 /// its target: the stat kinds 1 to 5 and 11 to 13 and the flat kinds 7, 8, 10, 14 to 17,
 /// 19, 21 to 23, 25 and 26 (`0x140565600`, `0x140566d40`, `0x140566ad0`). The caster's
-/// Weapon and Weapon DPS (6 and 9, #807) and the passed-in value (18, #336) are not read.
+/// Weapon and Weapon DPS (6 and 9) and the passed-in value (18) are not read.
 pub fn unread(formula formula: Formula) -> Option(Unread) {
   first_unread(parameters: formula.parameters, is_read:)
 }

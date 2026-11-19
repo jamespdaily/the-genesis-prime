@@ -89,6 +89,33 @@ pub fn the_registry_is_not_empty_and_each_entry_is_plain_and_unique_test() -> Ni
     as "a change-log word is a breach, and a word that holds one (known) is not"
 }
 
+pub fn the_registry_holds_the_spell_plans_and_the_creatures_entries_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tags(["dev_tool", "coverage"])
+  let entries = gaps.registry()
+  let known = [
+    Entry(
+      area: "Forced moves",
+      missing: "a PositionSwitch forced move, which moves a player and has no data in the client",
+    ),
+    Entry(
+      area: "Procs",
+      missing: "a Proc on landing a critical heal, which never fires because no heal is rolled a critical",
+    ),
+    Entry(
+      area: "Property modifiers",
+      missing: "a conversion into the source of a conversion that started earlier: the earlier one does not see the change, so a chain of conversions does not settle",
+    ),
+    Entry(
+      area: "Creature crowd control",
+      missing: "a crowd-control state held by a creature when a viewer arrives: the viewer is not told of it, since the 0x262 does not carry it",
+    ),
+  ]
+  list.each(known, fn(entry) {
+    assert list.contains(entries, entry) as entry.missing
+  })
+}
+
 pub fn the_measure_prints_the_gaps_section_with_every_registered_entry_test() -> Nil {
   use <- owned_test.run(5000)
   use <- unitest.tags(["dev_tool", "coverage"])

@@ -459,9 +459,9 @@ pub fn creature_bases_match_virtual_battle_beast_test() -> Nil {
 
 pub fn two_casters_sources_both_count_test() -> Nil {
   use <- owned_test.run(5000)
-  // Today's rule, which the module's doc names as a gap (#569 builds the stacking of the
-  // client's Spell4StackGroup rule): two casters' modifiers on one property each count,
-  // in start order, and taking one off leaves the other applied.
+  // The per-source rule, not the client's Spell4StackGroup rule (the module's `gaps` says
+  // so): two casters' modifiers on one property each count, in start order, and taking
+  // one off leaves the other applied.
   let properties =
     unit_properties.of_creature(
       bases: spawn_support.loaded_beast().bases,

@@ -16,6 +16,7 @@
 import genesis_prime/game/click_objective
 import genesis_prime/game/communicator
 import genesis_prime/game/cooldown
+import genesis_prime/game/forced_move
 import genesis_prime/game/hit
 import genesis_prime/game/interaction
 import genesis_prime/game/item_price
@@ -29,8 +30,11 @@ import genesis_prime/game/quest
 import genesis_prime/game/quest_turn_in
 import genesis_prime/game/random_stat
 import genesis_prime/game/server_proxy
+import genesis_prime/game/spell_plan
 import genesis_prime/game/strike
 import genesis_prime/game/target_group
+import genesis_prime/game/ticking
+import genesis_prime/game/unit_properties
 import genesis_prime/game/vendor_purchase
 import genesis_prime/game/vendor_sale
 import genesis_prime/game/world_entry
@@ -45,6 +49,8 @@ import genesis_prime/message/spell_damage_description
 import genesis_prime/message/spell_missed
 import genesis_prime/message/spell_started
 import genesis_prime/message/vendor_items
+import genesis_prime/world_map/creature
+import genesis_prime/world_map/creature_control
 import gleam/int
 import gleam/list
 import gleam/string
@@ -66,6 +72,12 @@ pub fn registry() -> List(Entry) {
     vendor_purchase.gaps(),
     vendor_sale.gaps(),
     world_entry.gaps(),
+    spell_plan.gaps(),
+    ticking.gaps(),
+    forced_move.gaps(),
+    unit_properties.gaps(),
+    creature_control.gaps(),
+    creature.gaps(),
     movement_kind_4.gaps(),
     movement_path.gaps(),
     movement_timed_path.gaps(),
