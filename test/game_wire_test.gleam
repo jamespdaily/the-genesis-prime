@@ -8957,3 +8957,70 @@ pub fn a_level_ups_0x07a5_is_answered_with_the_level_up_cast_and_a_player_in_sig
   game_client.close(game: second)
   login_support.stop(started)
 }
+
+// ---- a development command's items ----
+
+/// The tree started with the development commands on.
+fn started_with_dev_commands() -> login_support.Started {
+  login_support.start_with(change: fn(settings) {
+    let game = settings.game
+    server.Settings(
+      ..settings,
+      game: server.Served(
+        ..game,
+        settings: connection_state.Settings(
+          ..game.settings,
+          game: GameSettings(..game.settings.game, dev_commands: True),
+        ),
+      ),
+    )
+  })
+}
+
+pub fn an_item_command_puts_the_item_in_the_bag_the_client_reads_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The line `!item 90021` on Say is a purchase of cost 0 on the whole server. Item2 90021
+  // has maxCharges 5. The client reads the 0x111 of the stack with the reason 4 (Cheat),
+  // which raises its loot-channel notice (`opcode.0x111.reason_cheat`), in the first bag slot.
+  let started = started_with_dev_commands()
+  let #(game, character) =
+    new_player_at_level(
+      started:,
+      number: 1,
+      character_name: "Zed Qu",
+      class_id: 4,
+      level: 1,
+    )
+  send_play(game:, character_id: character)
+  let #(_, have) =
+    game_client.read_until(game:, have: <<>>, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x01BC })
+    })
+  game_client.say(game:, text: "!item 90021", chat_message_id: 1)
+  let given = fn(frames: List(Frame)) {
+    list.filter_map(frames, fn(frame) {
+      case frame.message_id == item_added.message_id {
+        True ->
+          case item_added.decode(frame.body) {
+            Ok(added) if added.held_item.item.item_id == 90_021 ->
+              Ok(added.held_item)
+            Ok(_) | Error(_) -> Error(Nil)
+          }
+        False -> Error(Nil)
+      }
+    })
+  }
+  let #(frames, _) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      given(frames) != []
+    })
+  let assert [held] = given(frames)
+    as "one 0x111 for the one item the line gave"
+  assert held.reason == 4 as "Item.CodeEnumItemUpdateReason: Cheat"
+  assert held.item.location == 1 && held.item.bag_index == 0
+    as "the first slot of the inventory"
+  assert held.item.charges == 5 as "Item2 90021's maxCharges"
+  assert held.item.stack_count == 1
+  game_client.close(game:)
+  login_support.stop(started)
+}

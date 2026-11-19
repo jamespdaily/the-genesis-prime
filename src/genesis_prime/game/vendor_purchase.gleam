@@ -11,6 +11,10 @@
 ////                       Bought(amount, made): items and the currency spent updated, 0x919 then 0x111 / 0x17F
 ////                       ItemsNotSaved:       Warning, 0x106 5, nothing changed
 ////                       SaveRefused(c):      Warning naming c, 0x106 5, nothing changed
+//// a development command's items ─▶ given(item2_id, count, items, currencies) ─▶ the same ask at cost 0 (Kind.Given)
+////                                   ├─ no room ─▶ Refused([one system line])
+////                                   └─ Bought(amount, made): 0x17F / 0x111 with the reason 4, then one system line, no 0x919
+////                                      ItemsNotSaved, SaveRefused: the log and one system line, no 0x106
 //// ```
 ////
 //// - **The client checks neither stock nor cash in code** (`opcode.0xbe`): only the addon
@@ -59,6 +63,11 @@
 ////   answer is the buy's, with
 ////   the reason 16 (Item.CodeEnumItemUpdateReason Buyback) and then a 0xBD naming the entry,
 ////   which leaves the list; an answer that saved nothing leaves the list as it was.
+//// - **Given items** are a purchase of no cost in credits with no vendor: the checks of the
+////   inventory (8 above), the roll and the placement are the buy's, the reason is 4 (Cheat),
+////   which the client shows as a loot-channel notice (`opcode.0x111.reason_cheat`), and no
+////   credit frame is written since the credits do not change. A chat command shows no 0x106,
+////   so a full bag and a failed save are each one system line.
 //// - **The roll.** A bought item with random stat entries is made with a word rolled when
 ////   the store is asked (`entropy_needed`, `rolled`, `genesis_prime/game/random_stat`), one
 ////   roll for each made stack. A buy back makes no roll: the entry's word returns with the item.
@@ -75,6 +84,7 @@
 
 import genesis_prime/client_connection
 import genesis_prime/connection/frame.{type Frame}
+import genesis_prime/game/chat
 import genesis_prime/game/currency.{type Currencies}
 import genesis_prime/game/interaction
 import genesis_prime/game/inventory
@@ -112,13 +122,16 @@ pub const message_id = vendor_purchase_message.message_id
 /// The id of the buy back's message.
 pub const buy_back_message_id = vendor_buyback.message_id
 
-/// What a purchase is: an item of the open vendor's stock (0x00BE), or an entry of the
-/// player's buyback list, by the id it was added with (0x00BB). The store is asked the same
-/// for both; they differ in the price, the reason the client shows and the entry that leaves
-/// the list.
+/// What a purchase is: an item of the open vendor's stock (0x00BE), an entry of the
+/// player's buyback list, by the id it was added with (0x00BB), or items a development
+/// command gives. The store is asked the same for all three; they differ in the price, the
+/// reason the client shows, the entry that leaves the list and the words of the reply.
 pub type Kind {
   Bought
   BoughtBack(buyback_id: Int)
+  /// Items a development command gives: a purchase of no cost with no vendor, shown with
+  /// the Cheat reason, whose answer writes no credit frame and ends in a system line.
+  Given
 }
 
 /// A buy the rule accepted and the store is asked for: its kind, the unit it was made at, the
@@ -190,6 +203,10 @@ const vendor_reason = 7
 
 /// The reason a bought-back item is shown for (Item.CodeEnumItemUpdateReason 16, Buyback).
 const buyback_reason = 16
+
+/// The reason a given item is shown for (Item.CodeEnumItemUpdateReason 4, Cheat): the
+/// client raises one loot-channel notice for it (`opcode.0x111.reason_cheat`).
+const cheat_reason = 4
 
 /// What the client's 0x00BE is answered with: a refusal with the code of the first check it
 /// breaks, or the store's ask, or the refusal for a body the client's reader refuses.
@@ -304,7 +321,7 @@ pub fn take_back(
         Ok(entry) ->
           asked(
             kind: BoughtBack(buyback_id: entry.buyback_id),
-            window:,
+            unit_id: window.unit_id,
             item2_id: entry.item2_id,
             items_bought: entry.quantity,
             cost: entry.amount,
@@ -358,7 +375,7 @@ fn buy_from(
   )
   asked(
     kind: Bought,
-    window:,
+    unit_id: window.unit_id,
     item2_id:,
     items_bought:,
     cost: stocked.price * items_bought,
@@ -372,11 +389,44 @@ fn buy_from(
   )
 }
 
+/// Items a development command gives: `count` of an Item2 into the inventory as a purchase of
+/// no cost in credits, with the checks of the inventory and no vendor. A bag that cannot hold
+/// them is one system line and nothing is asked.
+pub fn given(
+  item2_id item2_id: Item2Id,
+  count count: Int,
+  items items: List(HeldItem),
+  currencies currencies: Currencies,
+  tables tables: table_store.Tables,
+  now_unix_ms now_unix_ms: Int,
+  logged logged: Set(String),
+) -> Result(Taken, Refusal) {
+  use charges <- result.try(
+    item_property.max_charges(tables:, item2_id: item2_id.value)
+    |> result.replace_error(NoItemRow(item2_id:)),
+  )
+  asked(
+    kind: Given,
+    unit_id: 0,
+    item2_id:,
+    items_bought: count,
+    cost: 0,
+    currency_type_id: currency.credits_type,
+    words: store.ItemWords(..store.plain_words, charges:),
+    items:,
+    currencies:,
+    tables:,
+    now_unix_ms:,
+    logged:,
+  )
+}
+
 /// A buy of `items_bought` of an Item2 for `cost` of a currency that the player may make: the
-/// checks of the currency and the inventory, shared by the buy and the buy back.
+/// checks of the currency and the inventory, shared by the buy, the buy back and the items a
+/// command gives.
 fn asked(
   kind kind: Kind,
-  window window: vendor.Opened,
+  unit_id unit_id: Int,
   item2_id item2_id: Item2Id,
   items_bought items_bought: Int,
   cost cost: Int,
@@ -420,12 +470,12 @@ fn asked(
       words: store.ItemWords(..words, expires_at_unix_ms:),
     )
   {
-    Error(Nil) -> Ok(refused(code: inventory_full, logged:))
+    Error(Nil) -> Ok(full(kind:, items_bought:, item2_id:, logged:))
     Ok(#(grow, make)) -> {
       Ok(Asks(
         purchase: Purchase(
           kind:,
-          unit_id: window.unit_id,
+          unit_id:,
           item2_id:,
           items_bought:,
           cost:,
@@ -442,14 +492,14 @@ fn asked(
 
 /// The bytes of entropy the purchase needs to roll the stats of the items it makes: the roll
 /// of each made stack, 0 for a buy back (the item returns with the word it was sold with)
-/// and for an item with no random stat entry.
+/// and for an item with no random stat entry. Given items roll as bought ones do.
 pub fn entropy_needed(
   purchase purchase: Purchase,
   tables tables: table_store.Tables,
 ) -> Int {
   case purchase.kind {
     BoughtBack(..) -> 0
-    Bought ->
+    Bought | Given ->
       random_stat.stacks_bytes(
         tables:,
         item2_id: { purchase.item2_id }.value,
@@ -466,7 +516,7 @@ pub fn rolled(
 ) -> Purchase {
   case purchase.kind {
     BoughtBack(..) -> purchase
-    Bought -> {
+    Bought | Given -> {
       let #(make, _) =
         random_stat.roll_stacks(
           tables:,
@@ -482,6 +532,37 @@ pub fn rolled(
 /// A refusal of a buy by the client's code, with nothing to log.
 fn refused(code code: Int, logged logged: Set(String)) -> Taken {
   Refused(effects: [Refuse(code:)], logged:)
+}
+
+/// The refusal of items the inventory has no place for: the client's code for a buy, and for
+/// items a command gives one system line, as no 0x106 is a chat command's answer.
+fn full(
+  kind kind: Kind,
+  items_bought items_bought: Int,
+  item2_id item2_id: Item2Id,
+  logged logged: Set(String),
+) -> Taken {
+  case kind {
+    Bought | BoughtBack(..) -> refused(code: inventory_full, logged:)
+    Given ->
+      Refused(
+        effects: [
+          Send(chat.system_line_frame(
+            text: "bag full: no room for "
+            <> quantity_text(items_bought:, item2_id:),
+          )),
+        ],
+        logged:,
+      )
+  }
+}
+
+/// The items as a system line names them: `3 x Item2 14838`.
+fn quantity_text(
+  items_bought items_bought: Int,
+  item2_id item2_id: Item2Id,
+) -> String {
+  int.to_string(items_bought) <> " x Item2 " <> int.to_string(item2_id.value)
 }
 
 /// The row a held item lacks, which only the inventory's size reads.
@@ -528,9 +609,10 @@ pub fn answered(
       let reason = case purchase.kind {
         Bought -> vendor_reason
         BoughtBack(..) -> buyback_reason
+        Given -> cheat_reason
       }
       let #(buyback, removal) = case purchase.kind {
-        Bought -> #(buyback, [])
+        Bought | Given -> #(buyback, [])
         BoughtBack(buyback_id:) -> #(
           Buyback(
             ..buyback,
@@ -550,12 +632,15 @@ pub fn answered(
         ),
         buyback,
         list.flatten([
-          [
-            Send(currency.changed_frame(
-              currency_type_id: purchase.currency_type_id,
-              total: amount,
-            )),
-          ],
+          case purchase.kind {
+            Given -> []
+            Bought | BoughtBack(..) -> [
+              Send(currency.changed_frame(
+                currency_type_id: purchase.currency_type_id,
+                total: amount,
+              )),
+            ]
+          },
           list.map(purchase.grow, fn(growth) {
             Send(inventory.count_changed_frame(
               guid: growth.item_guid,
@@ -567,20 +652,44 @@ pub fn answered(
             Send(inventory.held_item_frame(item:, now_unix_ms:, reason:))
           }),
           removal,
+          case purchase.kind {
+            Given -> [
+              Send(chat.system_line_frame(
+                text: "gave "
+                <> quantity_text(
+                  items_bought: purchase.items_bought,
+                  item2_id: purchase.item2_id,
+                ),
+              )),
+            ]
+            Bought | BoughtBack(..) -> []
+          },
         ]),
       )
     }
-    ItemsNotSaved -> #(
-      items,
-      currencies,
-      buyback,
-      vendor_trade.not_saved(what: not_bought(purchase:)),
-    )
+    ItemsNotSaved -> #(items, currencies, buyback, case purchase.kind {
+      Given -> [
+        vendor_trade.not_saved_log(what: not_bought(purchase:)),
+        not_given(purchase:),
+      ]
+      Bought | BoughtBack(..) ->
+        vendor_trade.not_saved(what: not_bought(purchase:))
+    })
     SaveRefused(constraint:) -> #(
       items,
       currencies,
       buyback,
-      vendor_trade.save_refused(what: not_bought(purchase:), constraint:),
+      case purchase.kind {
+        Given -> [
+          vendor_trade.save_refused_log(
+            what: not_bought(purchase:),
+            constraint:,
+          ),
+          not_given(purchase:),
+        ]
+        Bought | BoughtBack(..) ->
+          vendor_trade.save_refused(what: not_bought(purchase:), constraint:)
+      },
     )
     store.ItemsSaved
     | store.ItemMade(..)
@@ -598,20 +707,38 @@ fn removed_frame(buyback_id buyback_id: Int) -> Frame {
   frame.Frame(message_id: buyback_removed.message_id, body:)
 }
 
+/// The system line that says the items a command gave were not saved.
+fn not_given(purchase purchase: Purchase) -> Effect {
+  Send(chat.system_line_frame(
+    text: "not given: "
+    <> quantity_text(
+      items_bought: purchase.items_bought,
+      item2_id: purchase.item2_id,
+    ),
+  ))
+}
+
 /// What a buy that was not saved did not do, for the log.
 pub fn not_bought(purchase purchase: Purchase) -> String {
+  let priced =
+    " for "
+    <> int.to_string(purchase.cost)
+    <> " of currency type "
+    <> int.to_string(purchase.currency_type_id)
+  let what =
+    int.to_string(purchase.items_bought)
+    <> " of Item2 "
+    <> int.to_string({ purchase.item2_id }.value)
   case purchase.kind {
-    Bought -> "the purchase of "
+    Bought -> "the purchase of " <> what <> priced
     BoughtBack(buyback_id:) ->
-      "the buy back of entry " <> int.to_string(buyback_id) <> ", "
+      "the buy back of entry "
+      <> int.to_string(buyback_id)
+      <> ", "
+      <> what
+      <> priced
+    Given -> "the gift of " <> what
   }
-  <> int.to_string(purchase.items_bought)
-  <> " of Item2 "
-  <> int.to_string({ purchase.item2_id }.value)
-  <> " for "
-  <> int.to_string(purchase.cost)
-  <> " of currency type "
-  <> int.to_string(purchase.currency_type_id)
   <> " was not saved"
 }
 

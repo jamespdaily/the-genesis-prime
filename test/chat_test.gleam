@@ -41,7 +41,7 @@ import genesis_prime/message/send_whisper.{SendWhisper}
 import genesis_prime/message/whisper_failed.{type WhisperFailed, WhisperFailed}
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/chat_channel as chat_channel_table
-import genesis_prime/table/id.{ChatChannelId, Creature2Id, Quest2Id}
+import genesis_prime/table/id.{ChatChannelId, Creature2Id, Item2Id, Quest2Id}
 import genesis_prime/world_map/map_id.{MapId}
 import gleam/int
 import gleam/list
@@ -1056,6 +1056,11 @@ pub fn a_command_line_with_the_setting_on_asks_the_connection_to_run_it_test() -
         "an experience",
       ),
       #(
+        "!item 90021 3",
+        dev_command.GiveItem(item2_id: Item2Id(90_021), count: 3),
+        "the Item2 and the count the line names",
+      ),
+      #(
         "!quest 5972 done",
         dev_command.CompleteQuest(quest2_id: Quest2Id(5972)),
         "a quest the tables hold",
@@ -1083,6 +1088,11 @@ pub fn a_refused_or_unknown_command_is_one_system_line_and_nothing_to_run_test()
         "!level 51",
         "!level 51 is outside the levels 1 to 50",
         "GameFormula 145: the highest level is 50",
+      ),
+      #(
+        "!item 29213",
+        "!item does not give a proxy item (29213): the client reads its stack limit and its deletable flag from another item, and the server reads the item's own row",
+        "Item2 29213 has the proxy flag 0x4000",
       ),
     ],
     fn(row) {
@@ -1128,7 +1138,13 @@ pub fn a_summon_with_a_level_that_is_no_whole_number_or_with_extra_words_answers
 pub fn a_bang_line_on_another_channel_is_a_line_of_that_channel_with_the_setting_on_test() -> Nil {
   use <- owned_test.run(5000)
   list.each(
-    ["!summon 75048", "!level 4", "!xp 2859", "!quest 5972 done"],
+    [
+      "!summon 75048",
+      "!level 4",
+      "!xp 2859",
+      "!item 90021 3",
+      "!quest 5972 done",
+    ],
     fn(text) {
       list.each([5, 8], fn(type_id) {
         let #(_, effects) =
