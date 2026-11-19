@@ -84,12 +84,13 @@
 ////   (`spell_plan.UnreadSpendCost`) is refused with the cost's result and logged once.
 
 import genesis_prime/game/cast/state.{
-  type Caster, type CostRefusal, type Effect, type Issue, type Paid, type State,
+  type Caster, type CostRefusal, type Effect, type Paid, type State,
   type Verdict, Activated, CancelTimer, Caster, CasterChangeEnds,
   CasterChangeStarts, CreatureDespawns, CreatureHoldsUnitStates,
-  ForcedMoveStarts, Gain, Log, NotBuilt, Paid, Pay, QuestAdvanced, Refuse, Send,
-  ShortcutCast, StartTimer, StealthChanged, Strike, TargetChangeEnds,
-  TargetChangeStarts, Tell, TickStrike, Unheld, Unpaid, UnreadSpend,
+  ForcedMoveStarts, Gain, Log, NotBuilt, Paid, Pay, PrerequisitesIssue,
+  QuestAdvanced, Refuse, Send, ShortcutCast, StartTimer, StealthChanged, Strike,
+  TargetChangeEnds, TargetChangeStarts, Tell, TickStrike, Unheld, Unpaid,
+  UnreadSpend,
 }
 import genesis_prime/game/class_resource.{type Payment, type Resources, Payment}
 import genesis_prime/game/cooldown
@@ -153,7 +154,6 @@ pub fn condition_verdict(
   gate gate: Option(prerequisite.Prerequisite),
   subject subject: prerequisite.Subject,
   result result: cast_result.CastResult,
-  issue issue: Issue,
 ) -> Option(Verdict) {
   case column_verdict(gate:, subject:) {
     prerequisite.Passes -> None
@@ -164,7 +164,7 @@ pub fn condition_verdict(
         why: "has a cast condition of the PrerequisiteType "
           <> int.to_string(prerequisite_type)
           <> ", which the server does not read",
-        issue:,
+        issue: PrerequisitesIssue,
       ))
   }
 }

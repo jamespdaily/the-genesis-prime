@@ -974,8 +974,8 @@ pub fn a_target_condition_the_server_does_not_hold_refuses_as_not_built_test() -
   let assert [line] = warnings(effects: first)
   assert string.contains(line, "43164") && string.contains(line, "71")
     as "the log names the spell and the type"
-  assert string.contains(line, "(#851)") && !string.contains(line, "(#336)")
-    as "a target condition the server does not read is the issue of the creature-state prerequisites, #851"
+  assert string.contains(line, "(#818)") && !string.contains(line, "(#336)")
+    as "a target condition the server does not read is the issue of the prerequisite types, #818"
   let #(_, second) =
     press_at(scene:, state:, spell4_id: 43_164, target: 911, at: 2000)
   assert support.refusal_results(effects: second)

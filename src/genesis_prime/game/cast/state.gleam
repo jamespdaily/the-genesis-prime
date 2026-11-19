@@ -1124,8 +1124,6 @@ pub type Issue {
   SpellsIssue
   /// The activate cast's checks and effects the server does not build.
   ActivateCastIssue
-  /// The target prerequisites that read a struck creature's own facts.
-  CreatureStateIssue
   /// An effect cast at another player's unit, which the server does not carry.
   PlayerTargetIssue
   /// The crowd-control states that last until removed, which no rule ends with their spell.

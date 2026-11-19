@@ -22,12 +22,11 @@ import genesis_prime/game/cast/state.{
   type TargetVerdict, type TickAsked, type TickKey, type Ticking, type TickingOn,
   type Verdict, Absorb, Accept, CancelTimer, Caster, CasterChangeStarts,
   CasterSide, ChargeLevel, CooldownModifierEnds, CooldownModifierStarts,
-  CreatureStateIssue, Deflected, Finish, ForcedMoveStart, Go, Heal, Healed, Hit,
-  Immune, Lingering, Live, Look, ModifierEnd, ModifierStart, NodesEnd, NotBuilt,
-  PrerequisitesIssue, ProcDue, Property, QuestAdvanceDue, Refuse, RepeatHeld,
-  RestrictionEnd, Send, StartChild, StartHeld, Starts, State, StateEnd,
-  TargetChangeEnds, TargetModifierStart, Tell, Tick, TickAsked, TickStrike,
-  UnitSide, WindowEnd,
+  Deflected, Finish, ForcedMoveStart, Go, Heal, Healed, Hit, Immune, Lingering,
+  Live, Look, ModifierEnd, ModifierStart, NodesEnd, NotBuilt, PrerequisitesIssue,
+  ProcDue, Property, QuestAdvanceDue, Refuse, RepeatHeld, RestrictionEnd, Send,
+  StartChild, StartHeld, Starts, State, StateEnd, TargetChangeEnds,
+  TargetModifierStart, Tell, Tick, TickAsked, TickStrike, UnitSide, WindowEnd,
 } as cast_state
 import genesis_prime/game/class_resource
 import genesis_prime/game/cooldown
@@ -186,7 +185,6 @@ pub fn cast_conditions(
       gate: caster_gate,
       subject:,
       result: cast_result.PrereqCasterCast,
-      issue: PrerequisitesIssue,
     )
   {
     Some(refusal) -> refusal
@@ -196,7 +194,6 @@ pub fn cast_conditions(
           gate: spell.target_cast,
           subject: option.unwrap(target_subject, subject),
           result: cast_result.PrereqTargetCast,
-          issue: CreatureStateIssue,
         )
       {
         Some(refusal) -> refusal

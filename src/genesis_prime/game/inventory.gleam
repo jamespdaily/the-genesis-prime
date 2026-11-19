@@ -67,9 +67,7 @@
 ////   For a swap checks 8 to 11 are made again for the item at the destination
 ////   going to the source, after the moved item's. An item with no row in the
 ////   tables is the server's own broken state, not a code: the connection ends
-////   (`NoItemRow`). The client's rune-unique loop is not built; it waits for the
-////   issue "Items, equipment, vendors, levels and currency work on the real
-////   client".
+////   (`NoItemRow`). The client's rune-unique loop is not built.
 ////   12. any other location the server keeps no items at (3 to 99 except 10): 1
 ////       Params, a server choice
 //// - **What the client never sends.** The client refuses locally, before its dead
