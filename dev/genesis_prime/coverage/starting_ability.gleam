@@ -416,11 +416,8 @@ fn describe_proc_left_out(why why: spell_plan.LeftOutReason) -> String {
       "the spell it casts, Spell4 "
       <> int.to_string(spell4_id)
       <> ", has no row"
-    spell_plan.ProcKindWaits(kind:, issue:) ->
-      "its kind "
-      <> int.to_string(kind)
-      <> " waits on issue "
-      <> int.to_string(issue)
+    spell_plan.ProcKindWaits(kind:, event:) ->
+      "its kind " <> int.to_string(kind) <> " is not raised: " <> event
     spell_plan.TypeNotRead
     | spell_plan.AimedAtOtherUnits
     | spell_plan.ProcOfAnotherKind(_)

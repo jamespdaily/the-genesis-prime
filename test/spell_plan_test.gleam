@@ -1043,3 +1043,59 @@ pub fn a_tap_or_charge_ability_with_no_threshold_time_fails_the_load_naming_the_
     as "0x1403bfd60: a press of a RapidTap or ChargeRelease spell with a thresholdTime of 0 is refused 285 by the client, so the load fails"
   assert string.contains(table_store.describe(error), "38765")
 }
+
+pub fn a_plan_error_says_what_is_not_read_without_an_issue_test() -> Nil {
+  use <- owned_test.run(5000)
+  let cases = [
+    #(
+      "an effect behind an apply prerequisite of an undecoded type",
+      spell_plan.ApplyPrerequisiteNotRead(
+        spell4_id: 1,
+        effect_id: 2,
+        prerequisite_type: 12,
+      ),
+      "the Spell4 row 1 has an effect 2 behind an apply prerequisite with a condition of type 12, which is not decoded",
+    ),
+    #(
+      "a target prerequisite that reads the casts a struck creature holds",
+      spell_plan.TargetPrerequisiteReadsStruckUnit(
+        spell4_id: 1,
+        effect_id: 2,
+        prerequisite_type: 15,
+      ),
+      "the Spell4 row 1 has an effect 2 aimed past the caster behind a target apply prerequisite with a condition of type 15, which reads what the casts held on the creature it strikes hold",
+    ),
+    #(
+      "a target prerequisite that reads a struck creature's own state",
+      spell_plan.TargetPrerequisiteReadsStruckUnit(
+        spell4_id: 1,
+        effect_id: 2,
+        prerequisite_type: 38,
+      ),
+      "the Spell4 row 1 has an effect 2 aimed past the caster behind a target apply prerequisite with a condition of type 38, which reads the state of the creature it strikes, and the row is not one its strike carries to the creature",
+    ),
+    #(
+      "a friendly spell's area",
+      spell_plan.FriendlyAreaNotRead(
+        spell4_id: 1,
+        effect_id: 2,
+        target_flags: 5,
+      ),
+      "the Spell4 row 1 hits no foes and has an effect 2 aimed by flags 5, which hold the caster and the area: a friendly spell's area finds the caster's allies, which the server does not read",
+    ),
+    #(
+      "a state kept by a persistence prerequisite",
+      spell_plan.ControlPersistenceNotRead(spell4_id: 1, effect_id: 2),
+      "the Spell4 row 1 has a CCStateSet effect 2 on another unit kept through death or leaving by a persistence prerequisite, which the server does not read",
+    ),
+    #(
+      "an aim with bit 8",
+      spell_plan.ControlAimNotRead(spell4_id: 1, effect_id: 2, target_flags: 8),
+      "the Spell4 row 1 has a CCStateSet effect 2 aimed by flags 8, and only the values 1 to 7 are read; bit 8's meaning is not known",
+    ),
+  ]
+  list.each(cases, fn(row) {
+    let #(name, error, sentence) = row
+    assert spell_plan.describe(error:) == sentence as name
+  })
+}

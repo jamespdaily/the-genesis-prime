@@ -63,9 +63,8 @@
 ////     that spell to a caster holding it.
 ////   - `hard_held`: a Stun, Knockdown or Knockback refuses every cast. The client's rows hold
 ////     no such rule; it is a retail record (WildStar wiki, Combat, "Moment of Opportunity").
-////   A charge starts only while no state at all is held (`holds`), which is a gap: the
-////   client's conditions for the charge spells mask nothing, and the issue "Creatures cast
-////   spells, and the effect types only creature spells use work" closes it.
+////   A charge starts only while no state at all is held (`holds`), although the
+////   client's conditions for the charge spells mask nothing.
 //// - **Each landed state is its own control**, with its own timer and its own 0x880: two
 ////   players' states, or one caster's two states of a kind, are held side by side, and
 ////   the creature runs again when no state that stops its run is held (`cc_state.instance_id`).
@@ -82,7 +81,7 @@
 //// | A control is held, its timer armed | as above | one caster's two states of a kind are held separately | n/a |
 //// | A control's timer fires | as above | two ending in one millisecond: two 0x880 | fires after the death: no frame |
 //// | The creature dies holding a state | no 0x880: death clears the client's states, and the timers are cancelled | | |
-//// | A viewer arrives while a state is held | not told: the 0x262 does not carry it (a gap) | | |
+//// | A viewer arrives while a state is held | not told: the 0x262 does not carry it | | |
 //// | The maximum is raised or lowered by a modifier | the creature restarts at full armor of its own maximum | n/a | the refill timer fires after the change: the armor is back at the maximum then in force |
 //// | Armor is worn down or refills | the creature restarts at full armor; the refill timer is cancelled at the death | two strikes in a row: each wears down what is left, the second restarts the refill | the refill timer fires after the death or at full armor: nothing |
 //// | The caster's cast lingers past the state's end | the node's life is the effect's, and the cast rule's timer ends it (genesis_prime/game/lasting) | | |
@@ -92,6 +91,7 @@ import genesis_prime/game/crowd_control
 import genesis_prime/game/strike_tell.{
   type ControlLanded, type Tell, ControlLanded,
 }
+import genesis_prime/gap
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/step.{type Address}
 import genesis_prime/world_map/creature_life.{type InterruptArmor}
@@ -183,9 +183,7 @@ pub fn stops_moving(state state: State, stopped_by stopped_by: Int) -> Bool {
 /// the client's rows say only what each spell's own conditions mask. CCStates flag 0x10,
 /// set on Stun, Sleep, Knockdown, Knockback, Pull, Pushback, Hold, Disable and
 /// DisableCinematic, is the likely client signal and is not decoded (fact
-/// `CCStates.flags.hard_held`), so the choice stands until the issue "Spells work in depth on the
-/// real client: cast times, telegraphs, buffs, crowd control and ticking effects"
-/// reads it.
+/// `CCStates.flags.hard_held`), so the choice stands.
 const hard_held_mask = 0x10101
 
 /// Whether the creature holds a state of `hard_held_mask`.
@@ -402,4 +400,22 @@ pub fn died(state state: State) -> #(State, List(Effect)) {
       },
     ),
   )
+}
+
+/// What a creature's held crowd-control states do not do that the client's rows ask for.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Creature crowd control",
+      missing: "a charge of a creature that holds a crowd-control state: it starts only while no state is held, although the client's conditions for the charge spells mask nothing",
+    ),
+    gap.Entry(
+      area: "Creature crowd control",
+      missing: "a crowd-control state held by a creature when a viewer arrives: the viewer is not told of it, since the 0x262 does not carry it",
+    ),
+    gap.Entry(
+      area: "Creature crowd control",
+      missing: "the client's signal that a Stun, Knockdown or Knockback stops every cast (CCStates flag 0x10, not decoded): the server follows a retail record instead",
+    ),
+  ]
 }

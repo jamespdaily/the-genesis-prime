@@ -834,7 +834,7 @@ pub fn a_spell_refuses_the_life_its_caster_condition_names_test() -> Nil {
     == None
 }
 
-// ---- the fairly-sure kinds, each read or refused with its issue ----
+// ---- the fairly-sure kinds, each read or left out naming its event ----
 
 /// The fairly-sure kinds the server reads, each with its trigger
 /// (`Spell4Effects.effectType.14.dataBits00.fairly_sure`).
@@ -855,17 +855,40 @@ fn fairly_sure_read() -> List(#(Int, spell_plan.Trigger)) {
   ]
 }
 
-/// The fairly-sure kinds the server refuses, with the open issue each waits on (the
-/// approved test list of issue 792).
-fn fairly_sure_refused() -> List(#(Int, Int)) {
+/// The fairly-sure kinds the server does not raise, each with the event its group's texts
+/// name (`Spell4Effects.effectType.14.dataBits00.fairly_sure`): nine groups, 25 kinds.
+fn fairly_sure_refused() -> List(#(Int, String)) {
   list.flatten([
-    list.map([57, 40, 117, 154], fn(kind) { #(kind, 869) }),
-    list.map([23, 50, 114, 131, 234, 249], fn(kind) { #(kind, 870) }),
-    list.map([124, 102, 112], fn(kind) { #(kind, 871) }),
-    [#(152, 872)],
-    list.map([155, 197, 159, 41, 153, 236], fn(kind) { #(kind, 801) }),
-    [#(46, 803), #(2, 56), #(148, 830)],
-    list.map([251, 253], fn(kind) { #(kind, 336) }),
+    list.map([57, 40, 117, 154], fn(kind) {
+      #(
+        kind,
+        "the holder entering combat, or its health or shield crossing a value",
+      )
+    }),
+    list.map([23, 50, 114, 131, 234, 249], fn(kind) {
+      #(
+        kind,
+        "the holder taking a blow: direct, magic or critical damage, damage to its shield, an absorb destroyed, or a glance",
+      )
+    }),
+    list.map([124, 102, 112], fn(kind) {
+      #(kind, "the holder dashing, dodging, or using up its endurance")
+    }),
+    [#(152, "the holder's focus dropping below a value")],
+    list.map([155, 197, 159, 41, 153, 236], fn(kind) {
+      #(
+        kind,
+        "the holder being stunned, snared, rooted or crowd-controlled, breaking a crowd control, or having its cast interrupted",
+      )
+    }),
+    [
+      #(46, "a crowd control on the holder ending"),
+      #(2, "the holder killing a player"),
+      #(148, "the holder receiving a critical heal"),
+    ],
+    list.map([251, 253], fn(kind) {
+      #(kind, "the holder landing a multi-hit strike or heal")
+    }),
   ])
 }
 
@@ -880,18 +903,6 @@ pub fn proc_every_kind_read_or_refused_test() -> Nil {
         "Spell4Effects.effectType.14.dataBits00.fairly_sure: kind "
         <> int.to_string(kind.0)
         <> " is read"
-      }
-  })
-  list.each(fairly_sure_refused(), fn(kind) {
-    let effect = Spell4Effects(..row(id: 99_021), data_bits00: kind.0)
-    assert spell_plan.proc_read(spell4_id: holder, effect:)
-      == Ok(
-        ProcIsLeftOut(why: spell_plan.ProcKindWaits(kind: kind.0, issue: kind.1)),
-      )
-      as {
-        "kind "
-        <> int.to_string(kind.0)
-        <> " is left out with a named reason, never as another kind"
       }
   })
   assert list.length(fairly_sure_read()) + list.length(fairly_sure_refused())
@@ -916,7 +927,33 @@ pub fn proc_every_kind_read_or_refused_test() -> Nil {
   })
 }
 
-pub fn proc_refused_kind_names_issue_test() -> Nil {
+pub fn a_proc_of_a_kind_the_server_does_not_raise_is_left_out_naming_the_event_test() -> Nil {
+  use <- owned_test.run(5000)
+  list.each(fairly_sure_refused(), fn(kind) {
+    let effect = Spell4Effects(..row(id: 99_021), data_bits00: kind.0)
+    assert spell_plan.proc_read(spell4_id: holder, effect:)
+      == Ok(
+        ProcIsLeftOut(why: spell_plan.ProcKindWaits(kind: kind.0, event: kind.1)),
+      )
+      as {
+        "kind "
+        <> int.to_string(kind.0)
+        <> " is left out naming its event, never as another kind"
+      }
+  })
+  assert spell_plan.proc_read(
+      spell4_id: holder,
+      effect: Spell4Effects(..row(id: 99_021), data_bits00: 27),
+    )
+    == Error(spell_plan.ProcKindNotRead(
+      spell4_id: holder,
+      effect_id: 99_021,
+      kind: 27,
+    ))
+    as "a kind of no group reads as before"
+}
+
+pub fn the_plan_leaves_a_proc_of_a_kind_the_server_does_not_raise_out_naming_the_event_test() -> Nil {
   use <- owned_test.run(5000)
   list.each(fairly_sure_refused(), fn(kind) {
     assert planned(
@@ -925,14 +962,13 @@ pub fn proc_refused_kind_names_issue_test() -> Nil {
       == Ok(
         spell_plan.LeftOut(why: spell_plan.ProcKindWaits(
           kind: kind.0,
-          issue: kind.1,
+          event: kind.1,
         )),
       )
       as {
         "the plan leaves kind "
         <> int.to_string(kind.0)
-        <> " out, naming issue "
-        <> int.to_string(kind.1)
+        <> " out, naming its event"
       }
   })
   assert planned(effect: Spell4Effects(..row(id: 99_023), data_bits00: 27))

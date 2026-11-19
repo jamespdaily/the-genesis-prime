@@ -733,7 +733,7 @@ pub fn describe(unevaluated unevaluated: Unevaluated) -> String {
       <> int.to_string(spell4_id)
       <> " strikes at "
       <> gos_sentence(gos:)
-      <> ", which a creature's fight does not run: the step 'A creature's cast with several hits, or hits before its last go, strikes at each hit's phase' of issue 801 closes it"
+      <> ", which a creature's fight does not run"
     StrikesBeforeTheLastGo(spell4_id:, go:, last_go:) ->
       "Spell4 "
       <> int.to_string(spell4_id)
@@ -741,7 +741,7 @@ pub fn describe(unevaluated unevaluated: Unevaluated) -> String {
       <> int.to_string(go)
       <> " but its last go is go "
       <> int.to_string(last_go)
-      <> ", which a creature's fight does not run: the step 'A creature's cast with several hits, or hits before its last go, strikes at each hit's phase' of issue 801 closes it"
+      <> ", which a creature's fight does not run"
     OtherEffectType(spell4_effects_id:, effect_type:) ->
       "Spell4Effects "
       <> int.to_string(spell4_effects_id)

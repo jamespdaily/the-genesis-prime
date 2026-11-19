@@ -46,14 +46,11 @@
 ////   creature keeps no random state.
 //// - **The only clip** is the leash circle `creature_path.toward` clips a chase at.
 ////
-//// Gaps, each stated where it is enforced:
-////
 //// - **No ground or walls.** The server holds no terrain, so a thrown creature can end inside a
-////   wall or in the air past a ledge: "A thrown creature stops at walls and lands on the ground
-////   the zone's map shows" is part of issue 1010 ("The server knows each zone's ground and walls").
+////   wall or in the air past a ledge.
 //// - **No turn rate and no PositionSwitch.** dataBits08 feeds the client's kind 20 timed turn,
 ////   which is not decoded, so the creature does not spin; PositionSwitch has no data in the
-////   client and moves a player. Both are issue 825.
+////   client and moves a player.
 ////
 //// What happens at each failure point of a throw:
 ////
@@ -73,6 +70,7 @@
 //// | a viewer arrives in flight, or after it | it is sent the rest of the path, or the 0x262 at the landing |
 
 import genesis_prime/game/start_place.{type Facing, type Place}
+import genesis_prime/gap
 import genesis_prime/message/float32
 import genesis_prime/random
 import genesis_prime/table/spell4_effects
@@ -447,4 +445,26 @@ fn facing_along(from from: Place, to to: Place) -> Facing {
     pitch: 0.0,
     roll: 0.0,
   )
+}
+
+/// What a forced move does not do that the client does.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Forced moves",
+      missing: "the ground and walls a thrown creature meets: the server holds no terrain, so a creature can end inside a wall or in the air past a ledge",
+    ),
+    gap.Entry(
+      area: "Forced moves",
+      missing: "the turn rate of a forced move (dataBits08), which feeds the client's timed turn of kind 20 that the server does not decode, so a thrown creature does not spin",
+    ),
+    gap.Entry(
+      area: "Forced moves",
+      missing: "a PositionSwitch forced move, which moves a player and has no data in the client",
+    ),
+    gap.Entry(
+      area: "Forced moves",
+      missing: "a forced move of the caster or of another player: only creatures are thrown",
+    ),
+  ]
 }
