@@ -13,14 +13,12 @@ import genesis_prime/game/start_place.{Facing}
 import genesis_prime/message/disconnect_reason.{
   AccountDisconnected, LostUserServer,
 }
-import genesis_prime/message/fall_value.{FallValue}
 import genesis_prime/message/fell_below_floor.{FellBelowFloor}
+import genesis_prime/message/impact_severity.{ImpactSeverity}
 import genesis_prime/message/move_speed_setting.{MoveSpeedSetting}
 import genesis_prime/message/movement_command
 import genesis_prime/message/movement_platform.{MovementPlatform}
-import genesis_prime/message/movement_send_interval_answer.{
-  MovementSendIntervalAnswer,
-}
+import genesis_prime/message/world_entry_options.{WorldEntryOptions}
 import genesis_prime/message/world_zone_changed.{WorldZoneChanged}
 import genesis_prime/step.{
   type ConnectionEvent, type Event, CancelTimer, LogError, LogInfo, LogWarning,
@@ -208,15 +206,16 @@ fn decoded_and_dropped() -> List(#(Int, BitArray)) {
       old_world_zone_id: 6009,
       new_world_zone_id: 4962,
     ))
-  let assert Ok(interval) =
-    movement_send_interval_answer.encode(MovementSendIntervalAnswer(
-      field_1: 4,
-      field_2: 1,
-      field_3: 14,
+  let assert Ok(options) =
+    world_entry_options.encode(WorldEntryOptions(
+      input_flags: 4,
+      combat_log_hides_other_players: 1,
+      combat_log_hidden_kinds: 14,
     ))
   let assert Ok(speed) =
     move_speed_setting.encode(MoveSpeedSetting(move_speed: 2))
-  let assert Ok(fall) = fall_value.encode(FallValue(field_1: 0x40490FDB))
+  let assert Ok(severity) =
+    impact_severity.encode(ImpactSeverity(impact_severity: 0x40490FDB))
   let assert Ok(floor) =
     fell_below_floor.encode(FellBelowFloor(
       no_ground: 1,
@@ -226,9 +225,9 @@ fn decoded_and_dropped() -> List(#(Int, BitArray)) {
     ))
   [
     #(0x063A, zone),
-    #(0x00D5, interval),
+    #(0x00D5, options),
     #(0x063B, speed),
-    #(0x00FB, fall),
+    #(0x00FB, severity),
     #(0x00FC, floor),
   ]
 }

@@ -62,11 +62,11 @@ import genesis_prime/message/create_character_carrier
 import genesis_prime/message/credd_exchange_request
 import genesis_prime/message/delete_character
 import genesis_prime/message/dialog_responses_shown
-import genesis_prime/message/fall_value
 import genesis_prime/message/fell_below_floor
 import genesis_prime/message/frame_time_report
 import genesis_prime/message/game_hello_reply
 import genesis_prime/message/graphics_report
+import genesis_prime/message/impact_severity
 import genesis_prime/message/innate_index_chosen
 import genesis_prime/message/input_key_set_request
 import genesis_prime/message/interaction_request
@@ -75,7 +75,6 @@ import genesis_prime/message/item_move
 import genesis_prime/message/item_split
 import genesis_prime/message/item_use
 import genesis_prime/message/move_speed_setting
-import genesis_prime/message/movement_send_interval_answer
 import genesis_prime/message/network_report
 import genesis_prime/message/own_auctions_request
 import genesis_prime/message/own_commodity_orders_request
@@ -97,6 +96,7 @@ import genesis_prime/message/terrain_loaded
 import genesis_prime/message/trade_cancel
 import genesis_prime/message/watchdog_report
 import genesis_prime/message/window_opened
+import genesis_prime/message/world_entry_options
 import genesis_prime/message/world_message
 import genesis_prime/message/world_zone_changed
 import gleam/list
@@ -245,9 +245,9 @@ const table = [
     [AtWorld],
   ),
   Row(
-    movement_send_interval_answer.message_id,
+    world_entry_options.message_id,
     InsideWorldMessage,
-    Movement(movement.IntervalAnswered),
+    Movement(movement.WorldEntryOptionsSent),
     [AtWorld],
   ),
   Row(
@@ -263,9 +263,9 @@ const table = [
     [AtWorld],
   ),
   Row(
-    fall_value.message_id,
+    impact_severity.message_id,
     InsideWorldMessage,
-    Movement(movement.Fell),
+    Movement(movement.ImpactSeverityReported),
     [AtWorld],
   ),
   Row(

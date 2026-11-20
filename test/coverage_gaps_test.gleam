@@ -116,7 +116,7 @@ pub fn the_registry_holds_the_spell_plans_and_the_creatures_entries_test() -> Ni
   })
 }
 
-pub fn the_registry_holds_the_item_refund_and_the_kind_4_meaning_entries_test() -> Nil {
+pub fn the_registry_holds_the_item_refund_and_the_kind_4_point_count_entries_test() -> Nil {
   use <- owned_test.run(5000)
   use <- unitest.tags(["dev_tool", "coverage"])
   let entries = gaps.registry()
@@ -127,7 +127,7 @@ pub fn the_registry_holds_the_item_refund_and_the_kind_4_meaning_entries_test() 
     ),
     Entry(
       area: "Movement paths",
-      missing: "what the mode, the 32-bit value and the last bit of a kind 4 command do in the client: the codec carries them as `mode`, `field_5` and `field_6` without a meaning",
+      missing: "that a kind 4 command read from the client holds the number of points its path type needs: the codec does not check the count",
     ),
   ]
   list.each(known, fn(entry) {

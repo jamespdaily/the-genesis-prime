@@ -36,10 +36,10 @@ const stages = [BeforeHelloReply, AtCharacterSelect, AtWorld]
 const movement_rows = [
   #(0x0637, movement.PlayerMoved),
   #(0x063A, movement.ZoneChanged),
-  #(0x00D5, movement.IntervalAnswered),
+  #(0x00D5, movement.WorldEntryOptionsSent),
   #(0x063B, movement.SpeedChosen),
   #(0x00F2, movement.TerrainReady),
-  #(0x00FB, movement.Fell),
+  #(0x00FB, movement.ImpactSeverityReported),
   #(0x00FC, movement.FellBelowFloor),
   #(0x0635, movement.ControlEchoed),
 ]
@@ -149,9 +149,9 @@ pub fn the_connection_imports_no_message_only_a_feature_decodes_test() -> Nil {
     syntax.imported_modules(SourceFile(path:, text: source.read(path)))
   list.each(
     [
-      "player_movement", "world_zone_changed", "movement_send_interval_answer",
-      "move_speed_setting", "terrain_loaded", "fall_value", "fell_below_floor",
-      "camp_request", "camp_finished", "camp_countdown",
+      "player_movement", "world_zone_changed", "world_entry_options",
+      "move_speed_setting", "terrain_loaded", "impact_severity",
+      "fell_below_floor", "camp_request", "camp_finished", "camp_countdown",
       "character_select_start", "create_character_carrier", "delete_character",
       "rename_character", "play_character", "interaction_request",
       "dialog_responses_shown", "cast_activate", "cast_objective_ability",

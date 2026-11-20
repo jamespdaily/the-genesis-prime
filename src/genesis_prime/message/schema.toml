@@ -1024,14 +1024,14 @@ fields = [
 
 [[message]]
 id = 0x00D5
-name = "movement_send_interval_answer"
+name = "world_entry_options"
 direction = "client_to_server"
 evidence = "opcode.0xd5"
-summary = "the client's answer to 0xF1, with three values the world handler keeps, whose meaning the client's code does not show"
+summary = "the client's world-entry options, which it sends once after it applies 0xF1: its input flags (4 bits), whether its combat log hides other players (1 bit) and the kinds of combat log entry it hides (14 bits of flags)"
 fields = [
-  { name = "field_1", kind = "unsigned", bits = 4, evidence = "opcode.0xd5" },
-  { name = "field_2", kind = "unsigned", bits = 1, evidence = "opcode.0xd5" },
-  { name = "field_3", kind = "unsigned", bits = 14, evidence = "opcode.0xd5" },
+  { name = "input_flags", kind = "unsigned", bits = 4, evidence = "opcode.0xd5", named_by = "opcode.0xd5.input_flags" },
+  { name = "combat_log_hides_other_players", kind = "unsigned", bits = 1, evidence = "opcode.0xd5", named_by = "opcode.0xd5.combat_log_options" },
+  { name = "combat_log_hidden_kinds", kind = "unsigned", bits = 14, evidence = "opcode.0xd5", named_by = "opcode.0xd5.combat_log_options" },
 ]
 
 [[message]]
@@ -1046,12 +1046,12 @@ fields = [
 
 [[message]]
 id = 0x00FB
-name = "fall_value"
+name = "impact_severity"
 direction = "client_to_server"
 evidence = "opcode.0xfb"
-summary = "one float the client sends after a flush of its movement, when a movement value of the player's is above 0, likely a fall's distance or speed"
+summary = "one float the client sends after a flush of its movement, when the impact severity its movement physics has added up for the player is above 0: a unitless measure of how hard the player hit something, not a height"
 fields = [
-  { name = "field_1", kind = "float32", evidence = "opcode.0xfb" },
+  { name = "impact_severity", kind = "float32", evidence = "opcode.0xfb", named_by = "opcode.0xfb.severity" },
 ]
 
 [[message]]
@@ -1092,20 +1092,20 @@ fields = [
 [[record]]
 name = "movement_kind_3"
 evidence = "0x140c1f070"
-summary = "a movement command of kind 3, whose meaning the client's code does not show: n values of 32 bits (n in 10 bits), n vectors of three 32-bit floats, 2 bits, 32 bits and one bit"
+summary = "a movement command of kind 3, timed points: the times (32 bits each, a count in 10 bits), a point of three 32-bit floats for each time, the path type in 2 bits (0 straight lines, 1 a curve), a 32-bit time offset in ms that shifts the sampling time, and the blend bit. The client itself sends it only as the forced-move flight, with type 0, offset 0 and blend 0"
 fields = [
   { name = "kind", kind = "constant", bits = 5, value = 3, evidence = "0x140c1f070", named_by = "0x140c1f070" },
-  { name = "field_2", kind = "array", count_bits = 10, element = "unsigned", element_bits = 32, evidence = "0x140c1f070" },
-  { name = "field_3", kind = "array", counted_by = "field_2", element = "movement_float_vector", evidence = "0x140c1f070" },
-  { name = "field_4", kind = "unsigned", bits = 2, evidence = "0x140c1f070" },
-  { name = "field_5", kind = "unsigned", bits = 32, evidence = "0x140c1f070" },
-  { name = "field_6", kind = "unsigned", bits = 1, evidence = "0x140c1f070" },
+  { name = "times", kind = "array", count_bits = 10, element = "unsigned", element_bits = 32, evidence = "0x140c1f070", named_by = "movement_command.kind_3" },
+  { name = "points", kind = "array", counted_by = "times", element = "movement_float_vector", evidence = "0x140c1f070", named_by = "movement_command.kind_3" },
+  { name = "path_type", kind = "unsigned", bits = 2, evidence = "0x140c1f070", named_by = "movement_command.kind_3" },
+  { name = "time_offset", kind = "unsigned", bits = 32, evidence = "0x140c1f070", named_by = "movement_command.kind_3_4.time_offset" },
+  { name = "blends", kind = "unsigned", bits = 1, evidence = "0x140c1f070", named_by = "movement_command.kind_3.blend_bit" },
 ]
 
 [[record]]
 name = "movement_timed_path"
 evidence = "movement_command.kind_3"
-summary = "a movement command of kind 3 as the server writes it, a timed path: the times of its points (32 bits each, a count in 10 bits) and the points (three floats each, one for each time), which the client draws as straight lines between the points, holding the first before the first time and the last after the last. The path type is 0 (straight lines; 1 is a curve), and the server writes 0 in the value that shifts the sampling time and 0 in the blend bit"
+summary = "a movement command of kind 3 as the server writes it, a timed path: the times of its points (32 bits each, a count in 10 bits) and the points (three floats each, one for each time), which the client draws as straight lines between the points, holding the first before the first time and the last after the last. The path type is 0 (straight lines; 1 is a curve), and the server writes 0 in the time offset that shifts the sampling time and 0 in the blend bit"
 gaps = [
   { area = "Movement paths", missing = "that the times of a timed path rise and that it holds a point: the codec writes and reads any times and any number of points" },
 ]
@@ -1114,16 +1114,15 @@ fields = [
   { name = "times", kind = "array", count_bits = 10, element = "unsigned", element_bits = 32, evidence = "movement_command.kind_3", named_by = "movement_command.kind_3" },
   { name = "points", kind = "array", counted_by = "times", element = "movement_float_vector", evidence = "movement_command.kind_3", named_by = "movement_command.kind_3" },
   { name = "path_type", kind = "constant", bits = 2, value = 0, evidence = "movement_command.kind_3", named_by = "movement_command.kind_3" },
-  { name = "value", kind = "constant", bits = 32, value = 0, evidence = "movement_command.kind_3", named_by = "movement_command.kind_3" },
-  { name = "blend", kind = "constant", bits = 1, value = 0, evidence = "movement_command.kind_3", named_by = "movement_command.kind_3" },
+  { name = "time_offset", kind = "constant", bits = 32, value = 0, evidence = "movement_command.kind_3", named_by = "movement_command.kind_3_4.time_offset" },
+  { name = "blends", kind = "constant", bits = 1, value = 0, evidence = "movement_command.kind_3", named_by = "movement_command.kind_3.blend_bit" },
 ]
 
 [[record]]
 name = "movement_kind_4"
 evidence = "0x140c1f070"
-summary = "a movement command of kind 4, a path: the points (three floats each), the speed in units a second as a half float, which the client's apply fails below 0.00001, the path type (0 is straight lines through at least one point, 1 a curve through at least three, and the client's apply fails 2 and 3), a 4-bit mode, a 32-bit value and one bit"
+summary = "a movement command of kind 4, a path: the points (three floats each), the speed in units a second as a half float, which the client's apply fails below 0.00001, the path type (0 is straight lines through at least one point, 1 a curve through at least three, and the client's apply fails 2 and 3), a 4-bit walk mode, a 32-bit time offset in ms and the blend bit"
 gaps = [
-  { area = "Movement paths", missing = "what the mode, the 32-bit value and the last bit of a kind 4 command do in the client: the codec carries them as `mode`, `field_5` and `field_6` without a meaning" },
   { area = "Movement paths", missing = "that a kind 4 command read from the client holds the number of points its path type needs: the codec does not check the count" },
 ]
 fields = [
@@ -1132,8 +1131,8 @@ fields = [
   { name = "speed", kind = "half_float_at_least", minimum = "0.00001", evidence = "movement_command.kind_4", named_by = "movement_command.kind_4" },
   { name = "path_type", kind = "unsigned_below", bits = 2, limit = 2, evidence = "movement_command.kind_4", named_by = "movement_command.kind_4" },
   { name = "mode", kind = "unsigned", bits = 4, evidence = "movement_command.kind_4", named_by = "movement_command.kind_4" },
-  { name = "field_5", kind = "unsigned", bits = 32, evidence = "movement_command.kind_4" },
-  { name = "field_6", kind = "unsigned", bits = 1, evidence = "movement_command.kind_4" },
+  { name = "time_offset", kind = "unsigned", bits = 32, evidence = "movement_command.kind_4", named_by = "movement_command.kind_3_4.time_offset" },
+  { name = "blends", kind = "unsigned", bits = 1, evidence = "movement_command.kind_4", named_by = "movement_command.kind_4.blend_bit" },
 ]
 
 [[record]]
@@ -1141,7 +1140,6 @@ name = "movement_path"
 evidence = "movement_command.kind_4"
 summary = "a movement command of kind 4 as the server writes it, a path: the points (three floats each), the speed in units a second as a half float, which the client's apply fails below 0.00001, the path type (0 is straight lines through at least one point, 1 a curve through at least three, and the client's apply fails 2 and 3) and a 4-bit mode"
 gaps = [
-  { area = "Movement paths", missing = "what the mode, the 32-bit value and the last bit of a path command do: the client's code does not show it, so the server writes 0 in the value and the bit" },
   { area = "Movement paths", missing = "that a path command the server writes holds the number of points its path type needs: the codec does not check the count" },
 ]
 fields = [
@@ -1150,66 +1148,66 @@ fields = [
   { name = "speed", kind = "half_float_at_least", minimum = "0.00001", evidence = "movement_command.kind_4", named_by = "movement_command.kind_4" },
   { name = "path_type", kind = "unsigned_below", bits = 2, limit = 2, evidence = "movement_command.kind_4", named_by = "movement_command.kind_4" },
   { name = "mode", kind = "unsigned", bits = 4, evidence = "movement_command.kind_4", named_by = "movement_command.kind_4" },
-  { name = "value", kind = "constant", bits = 32, value = 0, evidence = "movement_command.kind_4", named_by = "movement_command.kind_4" },
-  { name = "last_bit", kind = "constant", bits = 1, value = 0, evidence = "movement_command.kind_4", named_by = "movement_command.kind_4" },
+  { name = "time_offset", kind = "constant", bits = 32, value = 0, evidence = "movement_command.kind_4", named_by = "movement_command.kind_3_4.time_offset" },
+  { name = "blends", kind = "constant", bits = 1, value = 0, evidence = "movement_command.kind_4", named_by = "movement_command.kind_4.blend_bit" },
 ]
 
 [[record]]
 name = "movement_kind_5"
 evidence = "0x140c1f070"
-summary = "a movement command of kind 5, whose meaning the client's code does not show: 32 bits, two 32-bit floats, three values of 16 bits, 4 bits, 32 bits and three single bits"
+summary = "a movement command of kind 5, the unit moves along one authored spline (a Spline2 row): the spline id in 32 bits, the speed as a 32-bit float, the start position along the spline as a 32-bit float (1.0 is the end), an offset of three 16-bit half floats, a 4-bit walk mode, a 32-bit time offset in ms, the blend bit and two bits the client reads and never uses"
 fields = [
   { name = "kind", kind = "constant", bits = 5, value = 5, evidence = "0x140c1f070", named_by = "0x140c1f070" },
-  { name = "field_2", kind = "unsigned", bits = 32, evidence = "0x140c1f070" },
-  { name = "field_3", kind = "float32", evidence = "0x140c1f070" },
-  { name = "field_4", kind = "float32", evidence = "0x140c1f070" },
-  { name = "field_5", kind = "unsigned", bits = 16, evidence = "0x140c1f070" },
-  { name = "field_6", kind = "unsigned", bits = 16, evidence = "0x140c1f070" },
-  { name = "field_7", kind = "unsigned", bits = 16, evidence = "0x140c1f070" },
-  { name = "field_8", kind = "unsigned", bits = 4, evidence = "0x140c1f070" },
-  { name = "field_9", kind = "unsigned", bits = 32, evidence = "0x140c1f070" },
-  { name = "field_10", kind = "unsigned", bits = 1, evidence = "0x140c1f070" },
-  { name = "field_11", kind = "unsigned", bits = 1, evidence = "0x140c1f070" },
-  { name = "field_12", kind = "unsigned", bits = 1, evidence = "0x140c1f070" },
+  { name = "spline_id", kind = "unsigned", bits = 32, evidence = "0x140c1f070", named_by = "movement_command.kind_5.fields" },
+  { name = "speed", kind = "float32", evidence = "0x140c1f070", named_by = "movement_command.kind_5.fields" },
+  { name = "start_position", kind = "float32", evidence = "0x140c1f070", named_by = "movement_command.kind_5.fields" },
+  { name = "offset_x", kind = "unsigned", bits = 16, evidence = "0x140c1f070", named_by = "movement_command.kind_5.fields" },
+  { name = "offset_y", kind = "unsigned", bits = 16, evidence = "0x140c1f070", named_by = "movement_command.kind_5.fields" },
+  { name = "offset_z", kind = "unsigned", bits = 16, evidence = "0x140c1f070", named_by = "movement_command.kind_5.fields" },
+  { name = "mode", kind = "unsigned", bits = 4, evidence = "0x140c1f070", named_by = "movement_command.kind_5.fields" },
+  { name = "time_offset", kind = "unsigned", bits = 32, evidence = "0x140c1f070", named_by = "movement_command.kind_5.fields" },
+  { name = "blends", kind = "unsigned", bits = 1, evidence = "0x140c1f070", named_by = "movement_command.kind_5.fields" },
+  { name = "unread_11", kind = "unsigned", bits = 1, evidence = "0x140c1f070", named_by = "movement_command.kind_5.fields" },
+  { name = "unread_12", kind = "unsigned", bits = 1, evidence = "0x140c1f070", named_by = "movement_command.kind_5.fields" },
 ]
 
 [[record]]
 name = "movement_kind_6"
 evidence = "0x140c1f070"
-summary = "a movement command of kind 6, whose meaning the client's code does not show: n values of 32 bits (n in 10 bits), 16 bits, three 32-bit floats, three values of 16 bits, 4 bits, two values of 32 bits and two single bits"
+summary = "a movement command of kind 6, the unit moves along a chain of authored splines (the taxi flight path): the spline ids (32 bits each, a count in 10 bits), the speed as a 16-bit half float, the start position along the chain as a 32-bit float, the takeoff height and the landing height as 32-bit floats, an offset of three 16-bit half floats, a 4-bit walk mode, a 32-bit time offset in ms, 32 bits of chain flags, the blend bit and one bit the client reads and never uses"
 fields = [
   { name = "kind", kind = "constant", bits = 5, value = 6, evidence = "0x140c1f070", named_by = "0x140c1f070" },
-  { name = "field_2", kind = "array", count_bits = 10, element = "unsigned", element_bits = 32, evidence = "0x140c1f070" },
-  { name = "field_3", kind = "unsigned", bits = 16, evidence = "0x140c1f070" },
-  { name = "field_4", kind = "float32", evidence = "0x140c1f070" },
-  { name = "field_5", kind = "float32", evidence = "0x140c1f070" },
-  { name = "field_6", kind = "float32", evidence = "0x140c1f070" },
-  { name = "field_7", kind = "unsigned", bits = 16, evidence = "0x140c1f070" },
-  { name = "field_8", kind = "unsigned", bits = 16, evidence = "0x140c1f070" },
-  { name = "field_9", kind = "unsigned", bits = 16, evidence = "0x140c1f070" },
-  { name = "field_10", kind = "unsigned", bits = 4, evidence = "0x140c1f070" },
-  { name = "field_11", kind = "unsigned", bits = 32, evidence = "0x140c1f070" },
-  { name = "field_12", kind = "unsigned", bits = 32, evidence = "0x140c1f070" },
-  { name = "field_13", kind = "unsigned", bits = 1, evidence = "0x140c1f070" },
-  { name = "field_14", kind = "unsigned", bits = 1, evidence = "0x140c1f070" },
+  { name = "spline_ids", kind = "array", count_bits = 10, element = "unsigned", element_bits = 32, evidence = "0x140c1f070", named_by = "movement_command.kind_6.fields" },
+  { name = "speed", kind = "unsigned", bits = 16, evidence = "0x140c1f070", named_by = "movement_command.kind_6.fields" },
+  { name = "start_position", kind = "float32", evidence = "0x140c1f070", named_by = "movement_command.kind_6.fields" },
+  { name = "takeoff_height", kind = "float32", evidence = "0x140c1f070", named_by = "movement_command.kind_6.fields" },
+  { name = "landing_height", kind = "float32", evidence = "0x140c1f070", named_by = "movement_command.kind_6.fields" },
+  { name = "offset_x", kind = "unsigned", bits = 16, evidence = "0x140c1f070", named_by = "movement_command.kind_6.fields" },
+  { name = "offset_y", kind = "unsigned", bits = 16, evidence = "0x140c1f070", named_by = "movement_command.kind_6.fields" },
+  { name = "offset_z", kind = "unsigned", bits = 16, evidence = "0x140c1f070", named_by = "movement_command.kind_6.fields" },
+  { name = "mode", kind = "unsigned", bits = 4, evidence = "0x140c1f070", named_by = "movement_command.kind_6.fields" },
+  { name = "time_offset", kind = "unsigned", bits = 32, evidence = "0x140c1f070", named_by = "movement_command.kind_6.fields" },
+  { name = "chain_flags", kind = "unsigned", bits = 32, evidence = "0x140c1f070", named_by = "movement_command.kind_6.fields" },
+  { name = "blends", kind = "unsigned", bits = 1, evidence = "0x140c1f070", named_by = "movement_command.kind_6.fields" },
+  { name = "unread_14", kind = "unsigned", bits = 1, evidence = "0x140c1f070", named_by = "movement_command.kind_6.fields" },
 ]
 
 [[record]]
 name = "movement_kind_7"
 evidence = "0x140c1f070"
-summary = "a movement command of kind 7, whose meaning the client's code does not show: six 32-bit floats, 32 bits, a 32-bit float, 32 bits and one bit"
+summary = "a movement command of kind 7, a ballistic arc to a point: the end point and the start point (three 32-bit floats each), the flight time in ms (32 bits), the gravity as a 32-bit float, a 32-bit time offset in ms that shortens the flight, and the blend bit"
 fields = [
   { name = "kind", kind = "constant", bits = 5, value = 7, evidence = "0x140c1f070", named_by = "0x140c1f070" },
-  { name = "field_2", kind = "float32", evidence = "0x140c1f070" },
-  { name = "field_3", kind = "float32", evidence = "0x140c1f070" },
-  { name = "field_4", kind = "float32", evidence = "0x140c1f070" },
-  { name = "field_5", kind = "float32", evidence = "0x140c1f070" },
-  { name = "field_6", kind = "float32", evidence = "0x140c1f070" },
-  { name = "field_7", kind = "float32", evidence = "0x140c1f070" },
-  { name = "field_8", kind = "unsigned", bits = 32, evidence = "0x140c1f070" },
-  { name = "field_9", kind = "float32", evidence = "0x140c1f070" },
-  { name = "field_10", kind = "unsigned", bits = 32, evidence = "0x140c1f070" },
-  { name = "field_11", kind = "unsigned", bits = 1, evidence = "0x140c1f070" },
+  { name = "end_x", kind = "float32", evidence = "0x140c1f070", named_by = "movement_command.kind_7.fields" },
+  { name = "end_y", kind = "float32", evidence = "0x140c1f070", named_by = "movement_command.kind_7.fields" },
+  { name = "end_z", kind = "float32", evidence = "0x140c1f070", named_by = "movement_command.kind_7.fields" },
+  { name = "start_x", kind = "float32", evidence = "0x140c1f070", named_by = "movement_command.kind_7.fields" },
+  { name = "start_y", kind = "float32", evidence = "0x140c1f070", named_by = "movement_command.kind_7.fields" },
+  { name = "start_z", kind = "float32", evidence = "0x140c1f070", named_by = "movement_command.kind_7.fields" },
+  { name = "flight_time_ms", kind = "unsigned", bits = 32, evidence = "0x140c1f070", named_by = "movement_command.kind_7.fields" },
+  { name = "gravity", kind = "float32", evidence = "0x140c1f070", named_by = "movement_command.kind_7.fields" },
+  { name = "time_offset", kind = "unsigned", bits = 32, evidence = "0x140c1f070", named_by = "movement_command.kind_7.fields" },
+  { name = "blends", kind = "unsigned", bits = 1, evidence = "0x140c1f070", named_by = "movement_command.kind_7.blend_bit" },
 ]
 
 [[record]]
@@ -1227,14 +1225,14 @@ fields = [
 [[record]]
 name = "movement_kind_9"
 evidence = "0x140c1f070"
-summary = "a movement command of kind 9, whose meaning the client's code does not show: n values of 32 bits (n in 10 bits), n vectors of three 16-bit values, 2 bits, 32 bits and one bit"
+summary = "a movement command of kind 9, timed velocity keys: the times (32 bits each, a count in 10 bits), a velocity of three 16-bit half floats for each time, the path type in 2 bits (0 straight lines, 1 a curve), a 32-bit time offset in ms and the blend bit"
 fields = [
   { name = "kind", kind = "constant", bits = 5, value = 9, evidence = "0x140c1f070", named_by = "0x140c1f070" },
-  { name = "field_2", kind = "array", count_bits = 10, element = "unsigned", element_bits = 32, evidence = "0x140c1f070" },
-  { name = "field_3", kind = "array", counted_by = "field_2", element = "movement_half_vector", evidence = "0x140c1f070" },
-  { name = "field_4", kind = "unsigned", bits = 2, evidence = "0x140c1f070" },
-  { name = "field_5", kind = "unsigned", bits = 32, evidence = "0x140c1f070" },
-  { name = "field_6", kind = "unsigned", bits = 1, evidence = "0x140c1f070" },
+  { name = "times", kind = "array", count_bits = 10, element = "unsigned", element_bits = 32, evidence = "0x140c1f070", named_by = "movement_command.kind_9" },
+  { name = "velocities", kind = "array", counted_by = "times", element = "movement_half_vector", evidence = "0x140c1f070", named_by = "movement_command.kind_9" },
+  { name = "path_type", kind = "unsigned", bits = 2, evidence = "0x140c1f070", named_by = "movement_command.kind_9" },
+  { name = "time_offset", kind = "unsigned", bits = 32, evidence = "0x140c1f070", named_by = "movement_command.timed_keys.time_offset" },
+  { name = "blends", kind = "unsigned", bits = 1, evidence = "0x140c1f070", named_by = "movement_command.kind_9" },
 ]
 
 [[record]]
@@ -1261,14 +1259,14 @@ fields = [
 [[record]]
 name = "movement_kind_12"
 evidence = "0x140c1f070"
-summary = "a movement command of kind 12, whose meaning the client's code does not show: n values of 32 bits (n in 10 bits), n vectors of three 16-bit values, 2 bits, 32 bits and one bit"
+summary = "a movement command of kind 12, timed requested-move keys: the times (32 bits each, a count in 10 bits), a move of three 16-bit half floats for each time, the path type in 2 bits (0 straight lines, 1 a curve), a 32-bit time offset in ms and the blend bit"
 fields = [
   { name = "kind", kind = "constant", bits = 5, value = 12, evidence = "0x140c1f070", named_by = "0x140c1f070" },
-  { name = "field_2", kind = "array", count_bits = 10, element = "unsigned", element_bits = 32, evidence = "0x140c1f070" },
-  { name = "field_3", kind = "array", counted_by = "field_2", element = "movement_half_vector", evidence = "0x140c1f070" },
-  { name = "field_4", kind = "unsigned", bits = 2, evidence = "0x140c1f070" },
-  { name = "field_5", kind = "unsigned", bits = 32, evidence = "0x140c1f070" },
-  { name = "field_6", kind = "unsigned", bits = 1, evidence = "0x140c1f070" },
+  { name = "times", kind = "array", count_bits = 10, element = "unsigned", element_bits = 32, evidence = "0x140c1f070", named_by = "movement_command.kind_12" },
+  { name = "moves_asked", kind = "array", counted_by = "times", element = "movement_half_vector", evidence = "0x140c1f070", named_by = "movement_command.kind_12" },
+  { name = "path_type", kind = "unsigned", bits = 2, evidence = "0x140c1f070", named_by = "movement_command.kind_12" },
+  { name = "time_offset", kind = "unsigned", bits = 32, evidence = "0x140c1f070", named_by = "movement_command.timed_keys.time_offset" },
+  { name = "blends", kind = "unsigned", bits = 1, evidence = "0x140c1f070", named_by = "movement_command.kind_12" },
 ]
 
 [[record]]
@@ -1295,46 +1293,46 @@ fields = [
 [[record]]
 name = "movement_kind_15"
 evidence = "0x140c1f070"
-summary = "a movement command of kind 15, whose meaning the client's code does not show: n values of 32 bits (n in 10 bits), n vectors of three 32-bit floats, 2 bits, 32 bits and one bit"
+summary = "a movement command of kind 15, timed rotation keys: the times (32 bits each, a count in 10 bits), a rotation of three 32-bit floats for each time, the path type in 2 bits (0 straight lines, 1 a curve), a 32-bit time offset in ms and the blend bit"
 fields = [
   { name = "kind", kind = "constant", bits = 5, value = 15, evidence = "0x140c1f070", named_by = "0x140c1f070" },
-  { name = "field_2", kind = "array", count_bits = 10, element = "unsigned", element_bits = 32, evidence = "0x140c1f070" },
-  { name = "field_3", kind = "array", counted_by = "field_2", element = "movement_float_vector", evidence = "0x140c1f070" },
-  { name = "field_4", kind = "unsigned", bits = 2, evidence = "0x140c1f070" },
-  { name = "field_5", kind = "unsigned", bits = 32, evidence = "0x140c1f070" },
-  { name = "field_6", kind = "unsigned", bits = 1, evidence = "0x140c1f070" },
+  { name = "times", kind = "array", count_bits = 10, element = "unsigned", element_bits = 32, evidence = "0x140c1f070", named_by = "movement_command.kind_15" },
+  { name = "rotations", kind = "array", counted_by = "times", element = "movement_float_vector", evidence = "0x140c1f070", named_by = "movement_command.kind_15" },
+  { name = "path_type", kind = "unsigned", bits = 2, evidence = "0x140c1f070", named_by = "movement_command.kind_15" },
+  { name = "time_offset", kind = "unsigned", bits = 32, evidence = "0x140c1f070", named_by = "movement_command.timed_keys.time_offset" },
+  { name = "blends", kind = "unsigned", bits = 1, evidence = "0x140c1f070", named_by = "movement_command.kind_15" },
 ]
 
 [[record]]
 name = "movement_kind_16"
 evidence = "0x140c1f070"
-summary = "a movement command of kind 16, whose meaning the client's code does not show: 32 bits, 16 bits, a 32-bit float, 4 bits, 32 bits and two single bits"
+summary = "a movement command of kind 16, the unit's rotation follows an authored spline's orientation: the spline id in 32 bits, the speed as a 16-bit half float, the start position along the spline as a 32-bit float, a 4-bit walk mode, a 32-bit time offset in ms, the blend bit and one bit the client reads and never uses"
 fields = [
   { name = "kind", kind = "constant", bits = 5, value = 16, evidence = "0x140c1f070", named_by = "0x140c1f070" },
-  { name = "field_2", kind = "unsigned", bits = 32, evidence = "0x140c1f070" },
-  { name = "field_3", kind = "unsigned", bits = 16, evidence = "0x140c1f070" },
-  { name = "field_4", kind = "float32", evidence = "0x140c1f070" },
-  { name = "field_5", kind = "unsigned", bits = 4, evidence = "0x140c1f070" },
-  { name = "field_6", kind = "unsigned", bits = 32, evidence = "0x140c1f070" },
-  { name = "field_7", kind = "unsigned", bits = 1, evidence = "0x140c1f070" },
-  { name = "field_8", kind = "unsigned", bits = 1, evidence = "0x140c1f070" },
+  { name = "spline_id", kind = "unsigned", bits = 32, evidence = "0x140c1f070", named_by = "movement_command.kind_16" },
+  { name = "speed", kind = "unsigned", bits = 16, evidence = "0x140c1f070", named_by = "movement_command.kind_16" },
+  { name = "start_position", kind = "float32", evidence = "0x140c1f070", named_by = "movement_command.kind_16" },
+  { name = "mode", kind = "unsigned", bits = 4, evidence = "0x140c1f070", named_by = "movement_command.kind_16" },
+  { name = "time_offset", kind = "unsigned", bits = 32, evidence = "0x140c1f070", named_by = "movement_command.kind_16" },
+  { name = "blends", kind = "unsigned", bits = 1, evidence = "0x140c1f070", named_by = "movement_command.kind_16" },
+  { name = "unread_8", kind = "unsigned", bits = 1, evidence = "0x140c1f070", named_by = "movement_command.kind_16.last_bit" },
 ]
 
 [[record]]
 name = "movement_kind_17"
 evidence = "0x140c1f070"
-summary = "a movement command of kind 17, whose meaning the client's code does not show: n values of 32 bits (n in 10 bits), 16 bits, three 32-bit floats, 4 bits, two values of 32 bits and one bit"
+summary = "a movement command of kind 17, the unit's rotation follows a chain of authored splines: the spline ids (32 bits each, a count in 10 bits), the speed as a 16-bit half float, the start position along the chain, the takeoff height and the landing height as 32-bit floats, a 4-bit walk mode, a 32-bit time offset in ms, 32 bits of chain flags and the blend bit"
 fields = [
   { name = "kind", kind = "constant", bits = 5, value = 17, evidence = "0x140c1f070", named_by = "0x140c1f070" },
-  { name = "field_2", kind = "array", count_bits = 10, element = "unsigned", element_bits = 32, evidence = "0x140c1f070" },
-  { name = "field_3", kind = "unsigned", bits = 16, evidence = "0x140c1f070" },
-  { name = "field_4", kind = "float32", evidence = "0x140c1f070" },
-  { name = "field_5", kind = "float32", evidence = "0x140c1f070" },
-  { name = "field_6", kind = "float32", evidence = "0x140c1f070" },
-  { name = "field_7", kind = "unsigned", bits = 4, evidence = "0x140c1f070" },
-  { name = "field_8", kind = "unsigned", bits = 32, evidence = "0x140c1f070" },
-  { name = "field_9", kind = "unsigned", bits = 32, evidence = "0x140c1f070" },
-  { name = "field_10", kind = "unsigned", bits = 1, evidence = "0x140c1f070" },
+  { name = "spline_ids", kind = "array", count_bits = 10, element = "unsigned", element_bits = 32, evidence = "0x140c1f070", named_by = "movement_command.kind_17" },
+  { name = "speed", kind = "unsigned", bits = 16, evidence = "0x140c1f070", named_by = "movement_command.kind_17" },
+  { name = "start_position", kind = "float32", evidence = "0x140c1f070", named_by = "movement_command.kind_17" },
+  { name = "takeoff_height", kind = "float32", evidence = "0x140c1f070", named_by = "movement_command.kind_17" },
+  { name = "landing_height", kind = "float32", evidence = "0x140c1f070", named_by = "movement_command.kind_17" },
+  { name = "mode", kind = "unsigned", bits = 4, evidence = "0x140c1f070", named_by = "movement_command.kind_17" },
+  { name = "time_offset", kind = "unsigned", bits = 32, evidence = "0x140c1f070", named_by = "movement_command.kind_17" },
+  { name = "chain_flags", kind = "unsigned", bits = 32, evidence = "0x140c1f070", named_by = "movement_command.kind_17" },
+  { name = "blends", kind = "unsigned", bits = 1, evidence = "0x140c1f070", named_by = "movement_command.kind_17" },
 ]
 
 [[record]]
@@ -1362,16 +1360,16 @@ fields = [
 [[record]]
 name = "movement_kind_20"
 evidence = "0x140c1f070"
-summary = "a movement command of kind 20, whose meaning the client's code does not show: three 32-bit floats, 32 bits, 16 bits, 32 bits and one bit"
+summary = "a movement command of kind 20, the unit spins: the start yaw, pitch and roll as 32-bit floats, the duration in ms (32 bits), the turn rate in radians a second as a 16-bit half float, a 32-bit time offset in ms and the blend bit"
 fields = [
   { name = "kind", kind = "constant", bits = 5, value = 20, evidence = "0x140c1f070", named_by = "0x140c1f070" },
-  { name = "field_2", kind = "float32", evidence = "0x140c1f070" },
-  { name = "field_3", kind = "float32", evidence = "0x140c1f070" },
-  { name = "field_4", kind = "float32", evidence = "0x140c1f070" },
-  { name = "field_5", kind = "unsigned", bits = 32, evidence = "0x140c1f070" },
-  { name = "field_6", kind = "unsigned", bits = 16, evidence = "0x140c1f070" },
-  { name = "field_7", kind = "unsigned", bits = 32, evidence = "0x140c1f070" },
-  { name = "field_8", kind = "unsigned", bits = 1, evidence = "0x140c1f070" },
+  { name = "yaw", kind = "float32", evidence = "0x140c1f070", named_by = "movement_command.kind_20.blend_and_writer" },
+  { name = "pitch", kind = "float32", evidence = "0x140c1f070", named_by = "movement_command.kind_20" },
+  { name = "roll", kind = "float32", evidence = "0x140c1f070", named_by = "movement_command.kind_20" },
+  { name = "duration_ms", kind = "unsigned", bits = 32, evidence = "0x140c1f070", named_by = "movement_command.kind_20" },
+  { name = "turn_rate", kind = "unsigned", bits = 16, evidence = "0x140c1f070", named_by = "movement_command.kind_20" },
+  { name = "time_offset", kind = "unsigned", bits = 32, evidence = "0x140c1f070", named_by = "movement_command.kind_20" },
+  { name = "blends", kind = "unsigned", bits = 1, evidence = "0x140c1f070", named_by = "movement_command.kind_20.blend_and_writer" },
 ]
 
 [[record]]
@@ -1386,24 +1384,24 @@ fields = [
 [[record]]
 name = "movement_kind_22"
 evidence = "0x140c1f070"
-summary = "a movement command of kind 22, whose meaning the client's code does not show: 16 bits and one bit"
+summary = "a movement command of kind 22, the unit's scale: a 16-bit half float and the blend bit"
 fields = [
   { name = "kind", kind = "constant", bits = 5, value = 22, evidence = "0x140c1f070", named_by = "0x140c1f070" },
-  { name = "field_2", kind = "unsigned", bits = 16, evidence = "0x140c1f070" },
-  { name = "field_3", kind = "unsigned", bits = 1, evidence = "0x140c1f070" },
+  { name = "scale", kind = "unsigned", bits = 16, evidence = "0x140c1f070", named_by = "movement_command.kind_22.fields" },
+  { name = "blends", kind = "unsigned", bits = 1, evidence = "0x140c1f070", named_by = "movement_command.kind_22.fields" },
 ]
 
 [[record]]
 name = "movement_kind_23"
 evidence = "0x140c1f070"
-summary = "a movement command of kind 23, whose meaning the client's code does not show: n values of 32 bits (n in 8 bits), n values of 16 bits, 2 bits, 32 bits and one bit"
+summary = "a movement command of kind 23, timed scale keys: the times (32 bits each, a count in 8 bits), a scale as a 16-bit half float for each time, the path type in 2 bits (0 straight lines, 1 a curve), a 32-bit time offset in ms and the blend bit"
 fields = [
   { name = "kind", kind = "constant", bits = 5, value = 23, evidence = "0x140c1f070", named_by = "0x140c1f070" },
-  { name = "field_2", kind = "array", count_bits = 8, element = "unsigned", element_bits = 32, evidence = "0x140c1f070" },
-  { name = "field_3", kind = "array", counted_by = "field_2", element = "unsigned", element_bits = 16, evidence = "0x140c1f070" },
-  { name = "field_4", kind = "unsigned", bits = 2, evidence = "0x140c1f070" },
-  { name = "field_5", kind = "unsigned", bits = 32, evidence = "0x140c1f070" },
-  { name = "field_6", kind = "unsigned", bits = 1, evidence = "0x140c1f070" },
+  { name = "times", kind = "array", count_bits = 8, element = "unsigned", element_bits = 32, evidence = "0x140c1f070", named_by = "movement_command.kind_23" },
+  { name = "scales", kind = "array", counted_by = "times", element = "unsigned", element_bits = 16, evidence = "0x140c1f070", named_by = "movement_command.kind_23" },
+  { name = "path_type", kind = "unsigned", bits = 2, evidence = "0x140c1f070", named_by = "movement_command.kind_23" },
+  { name = "time_offset", kind = "unsigned", bits = 32, evidence = "0x140c1f070", named_by = "movement_command.kind_23" },
+  { name = "blends", kind = "unsigned", bits = 1, evidence = "0x140c1f070", named_by = "movement_command.kind_23" },
 ]
 
 [[record]]
@@ -1418,12 +1416,12 @@ fields = [
 [[record]]
 name = "movement_kind_25"
 evidence = "0x140c1f070"
-summary = "a movement command of kind 25, whose meaning the client's code does not show: n values of 32 bits (n in 8 bits), n more values of 32 bits and one value of 32 bits"
+summary = "a movement command of kind 25, timed movement state flags: the times (32 bits each, a count in 8 bits), 32 bits of state flags for each time and a 32-bit time offset in ms"
 fields = [
   { name = "kind", kind = "constant", bits = 5, value = 25, evidence = "0x140c1f070", named_by = "0x140c1f070" },
-  { name = "field_2", kind = "array", count_bits = 8, element = "unsigned", element_bits = 32, evidence = "0x140c1f070" },
-  { name = "field_3", kind = "array", counted_by = "field_2", element = "unsigned", element_bits = 32, evidence = "0x140c1f070" },
-  { name = "field_4", kind = "unsigned", bits = 32, evidence = "0x140c1f070" },
+  { name = "times", kind = "array", count_bits = 8, element = "unsigned", element_bits = 32, evidence = "0x140c1f070", named_by = "movement_command.kind_25" },
+  { name = "state_flags", kind = "array", counted_by = "times", element = "unsigned", element_bits = 32, evidence = "0x140c1f070", named_by = "movement_command.kind_25" },
+  { name = "time_offset", kind = "unsigned", bits = 32, evidence = "0x140c1f070", named_by = "movement_command.timed_list_offset" },
 ]
 
 [[record]]
@@ -1447,21 +1445,21 @@ fields = [
 [[record]]
 name = "movement_kind_28"
 evidence = "0x140c1f070"
-summary = "a movement command of kind 28, whose meaning the client's code does not show: n values of 32 bits (n in 8 bits), n more values of 32 bits and one value of 32 bits"
+summary = "a movement command of kind 28, timed movement modes: the times (32 bits each, a count in 8 bits), a 32-bit mode for each time and a 32-bit time offset in ms"
 fields = [
   { name = "kind", kind = "constant", bits = 5, value = 28, evidence = "0x140c1f070", named_by = "0x140c1f070" },
-  { name = "field_2", kind = "array", count_bits = 8, element = "unsigned", element_bits = 32, evidence = "0x140c1f070" },
-  { name = "field_3", kind = "array", counted_by = "field_2", element = "unsigned", element_bits = 32, evidence = "0x140c1f070" },
-  { name = "field_4", kind = "unsigned", bits = 32, evidence = "0x140c1f070" },
+  { name = "times", kind = "array", count_bits = 8, element = "unsigned", element_bits = 32, evidence = "0x140c1f070", named_by = "movement_command.timed_list_offset" },
+  { name = "modes", kind = "array", counted_by = "times", element = "unsigned", element_bits = 32, evidence = "0x140c1f070", named_by = "movement_command.timed_list_offset" },
+  { name = "time_offset", kind = "unsigned", bits = 32, evidence = "0x140c1f070", named_by = "movement_command.timed_list_offset" },
 ]
 
 [[record]]
 name = "movement_kind_29"
 evidence = "0x140c1f070"
-summary = "a movement command of kind 29, whose meaning the client's code does not show: one bit"
+summary = "a movement command of kind 29, which resets the unit's movement mode to its default: one bit the client reads and never uses"
 fields = [
   { name = "kind", kind = "constant", bits = 5, value = 29, evidence = "0x140c1f070", named_by = "0x140c1f070" },
-  { name = "field_2", kind = "unsigned", bits = 1, evidence = "0x140c1f070" },
+  { name = "unread_2", kind = "unsigned", bits = 1, evidence = "0x140c1f070", named_by = "movement_command.kind_29" },
 ]
 
 [[record]]
@@ -1477,11 +1475,11 @@ fields = [
 [[record]]
 name = "movement_half_vector"
 evidence = "0x140c1f070"
-summary = "one vector of a movement command's list: three values of 16 bits"
+summary = "one vector of a movement command's list: x, y and z as 16-bit half floats"
 fields = [
-  { name = "field_1", kind = "unsigned", bits = 16, evidence = "0x140c1f070" },
-  { name = "field_2", kind = "unsigned", bits = 16, evidence = "0x140c1f070" },
-  { name = "field_3", kind = "unsigned", bits = 16, evidence = "0x140c1f070" },
+  { name = "x", kind = "unsigned", bits = 16, evidence = "0x140c1f070", named_by = "0x1401adb90" },
+  { name = "y", kind = "unsigned", bits = 16, evidence = "0x140c1f070", named_by = "0x1401adb90" },
+  { name = "z", kind = "unsigned", bits = 16, evidence = "0x140c1f070", named_by = "0x1401adb90" },
 ]
 
 [[union]]

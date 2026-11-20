@@ -19,9 +19,9 @@
 
 import genesis_prime/message/bit_stream
 import genesis_prime/message/client_message
-import genesis_prime/message/fall_value.{FallValue}
 import genesis_prime/message/fell_below_floor.{FellBelowFloor}
 import genesis_prime/message/half_float.{Finite, Infinite}
+import genesis_prime/message/impact_severity.{ImpactSeverity}
 import genesis_prime/message/move_speed_setting.{MoveSpeedSetting}
 import genesis_prime/message/movement_command.{
   type MovementCommand, FacePoint, FaceUnit, Kind10, Kind12, Kind13, Kind15,
@@ -57,9 +57,6 @@ import genesis_prime/message/movement_mode.{MovementMode}
 import genesis_prime/message/movement_move_asked.{MovementMoveAsked}
 import genesis_prime/message/movement_platform.{MovementPlatform}
 import genesis_prime/message/movement_rotation.{MovementRotation}
-import genesis_prime/message/movement_send_interval_answer.{
-  MovementSendIntervalAnswer,
-}
 import genesis_prime/message/movement_state_flags.{MovementStateFlags}
 import genesis_prime/message/movement_time.{MovementTime}
 import genesis_prime/message/movement_velocity.{MovementVelocity}
@@ -67,6 +64,7 @@ import genesis_prime/message/player_movement.{PlayerMovement}
 import genesis_prime/message/relayed_movement
 import genesis_prime/message/unit_movement.{UnitMovement}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
+import genesis_prime/message/world_entry_options.{WorldEntryOptions}
 import genesis_prime/message/world_zone_changed.{WorldZoneChanged}
 import gleam/int
 import gleam/list
@@ -145,8 +143,8 @@ fn float_vector_data() -> List(Bits) {
 
 fn half_vectors() -> List(movement_half_vector.MovementHalfVector) {
   [
-    MovementHalfVector(field_1: 0x3C00, field_2: 0xBC00, field_3: 0x7C00),
-    MovementHalfVector(field_1: 4, field_2: 5, field_3: 0xFFFF),
+    MovementHalfVector(x: 0x3C00, y: 0xBC00, z: 0x7C00),
+    MovementHalfVector(x: 4, y: 5, z: 0xFFFF),
   ]
 }
 
@@ -178,11 +176,11 @@ fn kinds() -> List(Kind) {
         [#(2, 3), u32(31), bit(1)],
       ]),
       Kind3(MovementKind3(
-        field_2: [11, 12],
-        field_3: float_vectors(),
-        field_4: 3,
-        field_5: 31,
-        field_6: 1,
+        times: [11, 12],
+        points: float_vectors(),
+        path_type: 3,
+        time_offset: 31,
+        blends: 1,
       )),
     ),
     Kind(
@@ -197,8 +195,8 @@ fn kinds() -> List(Kind) {
         speed: 0x4900,
         path_type: 1,
         mode: 9,
-        field_5: 77,
-        field_6: 1,
+        time_offset: 77,
+        blends: 1,
       )),
     ),
     Kind(
@@ -217,17 +215,17 @@ fn kinds() -> List(Kind) {
         bit(1),
       ],
       Kind5(MovementKind5(
-        field_2: 1,
-        field_3: 0x3F800002,
-        field_4: 0x3F800003,
-        field_5: 4,
-        field_6: 5,
-        field_7: 6,
-        field_8: 7,
-        field_9: 8,
-        field_10: 1,
-        field_11: 0,
-        field_12: 1,
+        spline_id: 1,
+        speed: 0x3F800002,
+        start_position: 0x3F800003,
+        offset_x: 4,
+        offset_y: 5,
+        offset_z: 6,
+        mode: 7,
+        time_offset: 8,
+        blends: 1,
+        unread_11: 0,
+        unread_12: 1,
       )),
     ),
     Kind(
@@ -250,19 +248,19 @@ fn kinds() -> List(Kind) {
         bit(0),
       ],
       Kind6(MovementKind6(
-        field_2: [21, 22],
-        field_3: 23,
-        field_4: 0x3F800024,
-        field_5: 0x3F800025,
-        field_6: 0x3F800026,
-        field_7: 27,
-        field_8: 28,
-        field_9: 29,
-        field_10: 5,
-        field_11: 31,
-        field_12: 32,
-        field_13: 1,
-        field_14: 0,
+        spline_ids: [21, 22],
+        speed: 23,
+        start_position: 0x3F800024,
+        takeoff_height: 0x3F800025,
+        landing_height: 0x3F800026,
+        offset_x: 27,
+        offset_y: 28,
+        offset_z: 29,
+        mode: 5,
+        time_offset: 31,
+        chain_flags: 32,
+        blends: 1,
+        unread_14: 0,
       )),
     ),
     Kind(
@@ -280,16 +278,16 @@ fn kinds() -> List(Kind) {
         bit(1),
       ],
       Kind7(MovementKind7(
-        field_2: 0x3F800001,
-        field_3: 0x3F800002,
-        field_4: 0x3F800003,
-        field_5: 0x3F800004,
-        field_6: 0x3F800005,
-        field_7: 0x3F800006,
-        field_8: 7,
-        field_9: 0x3F800008,
-        field_10: 9,
-        field_11: 1,
+        end_x: 0x3F800001,
+        end_y: 0x3F800002,
+        end_z: 0x3F800003,
+        start_x: 0x3F800004,
+        start_y: 0x3F800005,
+        start_z: 0x3F800006,
+        flight_time_ms: 7,
+        gravity: 0x3F800008,
+        time_offset: 9,
+        blends: 1,
       )),
     ),
     Kind(
@@ -305,11 +303,11 @@ fn kinds() -> List(Kind) {
         [#(2, 2), u32(43), bit(1)],
       ]),
       Kind9(MovementKind9(
-        field_2: [41, 42],
-        field_3: half_vectors(),
-        field_4: 2,
-        field_5: 43,
-        field_6: 1,
+        times: [41, 42],
+        velocities: half_vectors(),
+        path_type: 2,
+        time_offset: 43,
+        blends: 1,
       )),
     ),
     Kind(10, [bit(1)], Kind10(MovementKind10(blends: 1))),
@@ -326,11 +324,11 @@ fn kinds() -> List(Kind) {
         [#(2, 1), u32(53), bit(0)],
       ]),
       Kind12(MovementKind12(
-        field_2: [51, 52],
-        field_3: half_vectors(),
-        field_4: 1,
-        field_5: 53,
-        field_6: 0,
+        times: [51, 52],
+        moves_asked: half_vectors(),
+        path_type: 1,
+        time_offset: 53,
+        blends: 0,
       )),
     ),
     Kind(13, [bit(0)], Kind13(MovementKind13(blends: 0))),
@@ -352,24 +350,24 @@ fn kinds() -> List(Kind) {
         [#(2, 0), u32(63), bit(1)],
       ]),
       Kind15(MovementKind15(
-        field_2: [61, 62],
-        field_3: float_vectors(),
-        field_4: 0,
-        field_5: 63,
-        field_6: 1,
+        times: [61, 62],
+        rotations: float_vectors(),
+        path_type: 0,
+        time_offset: 63,
+        blends: 1,
       )),
     ),
     Kind(
       16,
       [u32(1), #(16, 2), u32(0x3F800003), #(4, 4), u32(5), bit(1), bit(0)],
       Kind16(MovementKind16(
-        field_2: 1,
-        field_3: 2,
-        field_4: 0x3F800003,
-        field_5: 4,
-        field_6: 5,
-        field_7: 1,
-        field_8: 0,
+        spline_id: 1,
+        speed: 2,
+        start_position: 0x3F800003,
+        mode: 4,
+        time_offset: 5,
+        blends: 1,
+        unread_8: 0,
       )),
     ),
     Kind(
@@ -388,15 +386,15 @@ fn kinds() -> List(Kind) {
         bit(1),
       ],
       Kind17(MovementKind17(
-        field_2: [71, 72],
-        field_3: 73,
-        field_4: 0x3F800074,
-        field_5: 0x3F800075,
-        field_6: 0x3F800076,
-        field_7: 6,
-        field_8: 77,
-        field_9: 78,
-        field_10: 1,
+        spline_ids: [71, 72],
+        speed: 73,
+        start_position: 0x3F800074,
+        takeoff_height: 0x3F800075,
+        landing_height: 0x3F800076,
+        mode: 6,
+        time_offset: 77,
+        chain_flags: 78,
+        blends: 1,
       )),
     ),
     Kind(
@@ -426,20 +424,20 @@ fn kinds() -> List(Kind) {
         bit(1),
       ],
       Kind20(MovementKind20(
-        field_2: 0x3F800001,
-        field_3: 0x3F800002,
-        field_4: 0x3F800003,
-        field_5: 4,
-        field_6: 5,
-        field_7: 6,
-        field_8: 1,
+        yaw: 0x3F800001,
+        pitch: 0x3F800002,
+        roll: 0x3F800003,
+        duration_ms: 4,
+        turn_rate: 5,
+        time_offset: 6,
+        blends: 1,
       )),
     ),
     Kind(21, [bit(1)], Kind21(MovementKind21(blends: 1))),
     Kind(
       22,
       [#(16, 0x1234), bit(1)],
-      Kind22(MovementKind22(field_2: 0x1234, field_3: 1)),
+      Kind22(MovementKind22(scale: 0x1234, blends: 1)),
     ),
     Kind(
       23,
@@ -454,27 +452,31 @@ fn kinds() -> List(Kind) {
         bit(1),
       ],
       Kind23(MovementKind23(
-        field_2: [81, 82],
-        field_3: [83, 84],
-        field_4: 3,
-        field_5: 85,
-        field_6: 1,
+        times: [81, 82],
+        scales: [83, 84],
+        path_type: 3,
+        time_offset: 85,
+        blends: 1,
       )),
     ),
     Kind(24, [u32(0x3FFFF)], StateFlags(MovementStateFlags(flags: 0x3FFFF))),
     Kind(
       25,
       [#(8, 2), u32(91), u32(92), u32(93), u32(94), u32(95)],
-      Kind25(MovementKind25(field_2: [91, 92], field_3: [93, 94], field_4: 95)),
+      Kind25(MovementKind25(
+        times: [91, 92],
+        state_flags: [93, 94],
+        time_offset: 95,
+      )),
     ),
     Kind(26, [bit(0)], Kind26(MovementKind26(blends: 0))),
     Kind(27, [u32(3)], Mode(MovementMode(mode: 3))),
     Kind(
       28,
       [#(8, 1), u32(101), u32(102), u32(103)],
-      Kind28(MovementKind28(field_2: [101], field_3: [102], field_4: 103)),
+      Kind28(MovementKind28(times: [101], modes: [102], time_offset: 103)),
     ),
-    Kind(29, [bit(1)], Kind29(MovementKind29(field_2: 1))),
+    Kind(29, [bit(1)], Kind29(MovementKind29(unread_2: 1))),
   ]
 }
 
@@ -687,14 +689,18 @@ pub fn world_zone_changed_is_two_values_of_15_bits_test() -> Nil {
   )
 }
 
-pub fn the_answer_to_0xf1_is_values_of_4_1_and_14_bits_test() -> Nil {
+pub fn the_world_entry_options_are_values_of_4_1_and_14_bits_test() -> Nil {
   use <- owned_test.run(5000)
   message_support.assert_codec(
     name: "opcode.0xd5: 4, 1 and 14 bits",
     body: message_support.packed([#(4, 0xA), #(1, 1), #(14, 0x2ABC)]),
-    value: MovementSendIntervalAnswer(field_1: 0xA, field_2: 1, field_3: 0x2ABC),
-    encode: movement_send_interval_answer.encode,
-    decode: movement_send_interval_answer.decode,
+    value: WorldEntryOptions(
+      input_flags: 0xA,
+      combat_log_hides_other_players: 1,
+      combat_log_hidden_kinds: 0x2ABC,
+    ),
+    encode: world_entry_options.encode,
+    decode: world_entry_options.decode,
   )
 }
 
@@ -709,14 +715,14 @@ pub fn the_move_speed_setting_is_one_32_bit_value_test() -> Nil {
   )
 }
 
-pub fn the_fall_value_is_one_32_bit_float_test() -> Nil {
+pub fn the_impact_severity_is_one_32_bit_float_test() -> Nil {
   use <- owned_test.run(5000)
   message_support.assert_codec(
     name: "opcode.0xfb: one float of 32 bits, here 2.0",
     body: message_support.packed([u32(0x40000000)]),
-    value: FallValue(field_1: 0x40000000),
-    encode: fall_value.encode,
-    decode: fall_value.decode,
+    value: ImpactSeverity(impact_severity: 0x40000000),
+    encode: impact_severity.encode,
+    decode: impact_severity.decode,
   )
 }
 

@@ -968,3 +968,21 @@ pub fn the_item_and_vendor_messages_carry_no_untraced_field_test() -> Nil {
   use <- unitest.tag("code_rule")
   assert_owners_are_traced(item_and_vendor_owners)
 }
+
+/// The owners of the movement commands the client's reader takes in 0x637 and
+/// that no other list holds (kinds 3 to 29), the half-float vector their keys
+/// use, and the world-entry options and impact severity messages, each a
+/// message or a record of the schema.
+const client_movement_owners = [
+  "movement_kind_3", "movement_kind_4", "movement_kind_5", "movement_kind_6",
+  "movement_kind_7", "movement_kind_9", "movement_kind_12", "movement_kind_15",
+  "movement_kind_16", "movement_kind_17", "movement_kind_20", "movement_kind_22",
+  "movement_kind_23", "movement_kind_25", "movement_kind_28", "movement_kind_29",
+  "movement_half_vector", "world_entry_options", "impact_severity",
+]
+
+pub fn the_client_movement_messages_carry_no_untraced_field_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use <- unitest.tag("code_rule")
+  assert_owners_are_traced(client_movement_owners)
+}

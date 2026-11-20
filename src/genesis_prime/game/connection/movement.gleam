@@ -55,10 +55,10 @@ pub fn movement_message(
     | movement.PlayerMoved, player_life.Alive, world_entry.ClientReady
     | movement.ControlEchoed, _, _
     | movement.ZoneChanged, _, _
-    | movement.IntervalAnswered, _, _
+    | movement.WorldEntryOptionsSent, _, _
     | movement.SpeedChosen, _, _
     | movement.TerrainReady, _, _
-    | movement.Fell, _, _
+    | movement.ImpactSeverityReported, _, _
     | movement.FellBelowFloor, _, _
     -> body_moving(session:, now:, holder:, entered:, inner:, message:)
   }

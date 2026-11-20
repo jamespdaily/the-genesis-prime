@@ -32,11 +32,11 @@ import genesis_prime/message/create_character_carrier.{CreateCharacterCarrier}
 import genesis_prime/message/credd_exchange_request.{CreddExchangeRequest}
 import genesis_prime/message/delete_character.{DeleteCharacter}
 import genesis_prime/message/dialog_responses_shown.{DialogResponsesShown}
-import genesis_prime/message/fall_value.{FallValue}
 import genesis_prime/message/fell_below_floor.{FellBelowFloor}
 import genesis_prime/message/frame_time_report.{FrameTimeReport}
 import genesis_prime/message/game_hello_reply.{GameHelloReply}
 import genesis_prime/message/graphics_report.{GraphicsReport}
+import genesis_prime/message/impact_severity.{ImpactSeverity}
 import genesis_prime/message/innate_index_chosen.{InnateIndexChosen}
 import genesis_prime/message/input_key_set_request.{InputKeySetRequest}
 import genesis_prime/message/interaction_request.{InteractionRequest}
@@ -50,9 +50,6 @@ import genesis_prime/message/login_request.{LoginRequest}
 import genesis_prime/message/move_speed_setting.{MoveSpeedSetting}
 import genesis_prime/message/movement_command
 import genesis_prime/message/movement_mode.{MovementMode}
-import genesis_prime/message/movement_send_interval_answer.{
-  MovementSendIntervalAnswer,
-}
 import genesis_prime/message/movement_time.{MovementTime}
 import genesis_prime/message/network_report.{NetworkReport}
 import genesis_prime/message/own_auctions_request.{OwnAuctionsRequest}
@@ -85,6 +82,7 @@ import genesis_prime/message/vendor_sale.{VendorSale}
 import genesis_prime/message/vendor_sell_junk.{VendorSellJunk}
 import genesis_prime/message/watchdog_report.{WatchdogReport}
 import genesis_prime/message/window_opened.{WindowOpened}
+import genesis_prime/message/world_entry_options.{WorldEntryOptions}
 import genesis_prime/message/world_message.{WorldMessage}
 import genesis_prime/message/world_zone_changed.{WorldZoneChanged}
 import genesis_prime/message_schema
@@ -304,15 +302,22 @@ fn client_samples() -> List(#(Int, client_message.ClientMessage)) {
     ),
     #(
       0x00D5,
-      client_message.MovementSendIntervalAnswer(
-        message: MovementSendIntervalAnswer(field_1: 1, field_2: 0, field_3: 3),
-      ),
+      client_message.WorldEntryOptions(message: WorldEntryOptions(
+        input_flags: 1,
+        combat_log_hides_other_players: 0,
+        combat_log_hidden_kinds: 3,
+      )),
     ),
     #(
       0x063B,
       client_message.MoveSpeedSetting(message: MoveSpeedSetting(move_speed: 2)),
     ),
-    #(0x00FB, client_message.FallValue(message: FallValue(field_1: 0x40000000))),
+    #(
+      0x00FB,
+      client_message.ImpactSeverity(message: ImpactSeverity(
+        impact_severity: 0x40000000,
+      )),
+    ),
     #(
       0x00FC,
       client_message.FellBelowFloor(message: FellBelowFloor(

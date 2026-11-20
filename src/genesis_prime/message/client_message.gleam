@@ -33,11 +33,11 @@ import genesis_prime/message/create_character_carrier.{
 import genesis_prime/message/credd_exchange_request.{type CreddExchangeRequest}
 import genesis_prime/message/delete_character.{type DeleteCharacter}
 import genesis_prime/message/dialog_responses_shown.{type DialogResponsesShown}
-import genesis_prime/message/fall_value.{type FallValue}
 import genesis_prime/message/fell_below_floor.{type FellBelowFloor}
 import genesis_prime/message/frame_time_report.{type FrameTimeReport}
 import genesis_prime/message/game_hello_reply.{type GameHelloReply}
 import genesis_prime/message/graphics_report.{type GraphicsReport}
+import genesis_prime/message/impact_severity.{type ImpactSeverity}
 import genesis_prime/message/innate_index_chosen.{type InnateIndexChosen}
 import genesis_prime/message/input_key_set_request.{type InputKeySetRequest}
 import genesis_prime/message/interaction_request.{type InteractionRequest}
@@ -47,9 +47,6 @@ import genesis_prime/message/item_split.{type ItemSplit}
 import genesis_prime/message/item_use.{type ItemUse}
 import genesis_prime/message/login_request.{type LoginRequest}
 import genesis_prime/message/move_speed_setting.{type MoveSpeedSetting}
-import genesis_prime/message/movement_send_interval_answer.{
-  type MovementSendIntervalAnswer,
-}
 import genesis_prime/message/network_report.{type NetworkReport}
 import genesis_prime/message/own_auctions_request.{type OwnAuctionsRequest}
 import genesis_prime/message/own_commodity_orders_request.{
@@ -81,6 +78,7 @@ import genesis_prime/message/vendor_sale.{type VendorSale}
 import genesis_prime/message/vendor_sell_junk.{type VendorSellJunk}
 import genesis_prime/message/watchdog_report.{type WatchdogReport}
 import genesis_prime/message/window_opened.{type WindowOpened}
+import genesis_prime/message/world_entry_options.{type WorldEntryOptions}
 import genesis_prime/message/world_message.{type WorldMessage}
 import genesis_prime/message/world_zone_changed.{type WorldZoneChanged}
 
@@ -114,9 +112,9 @@ pub type ClientMessage {
   CampFinished(message: CampFinished)
   PlayerMovement(message: PlayerMovement)
   WorldZoneChanged(message: WorldZoneChanged)
-  MovementSendIntervalAnswer(message: MovementSendIntervalAnswer)
+  WorldEntryOptions(message: WorldEntryOptions)
   MoveSpeedSetting(message: MoveSpeedSetting)
-  FallValue(message: FallValue)
+  ImpactSeverity(message: ImpactSeverity)
   FellBelowFloor(message: FellBelowFloor)
   SendChatLine(message: SendChatLine)
   SendWhisper(message: SendWhisper)
@@ -222,15 +220,10 @@ pub fn decode(
     0x063A ->
       decoded(body, message_id, world_zone_changed.decode, WorldZoneChanged)
     0x00D5 ->
-      decoded(
-        body,
-        message_id,
-        movement_send_interval_answer.decode,
-        MovementSendIntervalAnswer,
-      )
+      decoded(body, message_id, world_entry_options.decode, WorldEntryOptions)
     0x063B ->
       decoded(body, message_id, move_speed_setting.decode, MoveSpeedSetting)
-    0x00FB -> decoded(body, message_id, fall_value.decode, FallValue)
+    0x00FB -> decoded(body, message_id, impact_severity.decode, ImpactSeverity)
     0x00FC -> decoded(body, message_id, fell_below_floor.decode, FellBelowFloor)
     0x01C3 -> decoded(body, message_id, send_chat_line.decode, SendChatLine)
     0x01D4 -> decoded(body, message_id, send_whisper.decode, SendWhisper)
@@ -345,10 +338,9 @@ pub fn encode(message: ClientMessage) -> Result(BitArray, EncodeError) {
     CampFinished(message:) -> camp_finished.encode(message)
     PlayerMovement(message:) -> player_movement.encode(message)
     WorldZoneChanged(message:) -> world_zone_changed.encode(message)
-    MovementSendIntervalAnswer(message:) ->
-      movement_send_interval_answer.encode(message)
+    WorldEntryOptions(message:) -> world_entry_options.encode(message)
     MoveSpeedSetting(message:) -> move_speed_setting.encode(message)
-    FallValue(message:) -> fall_value.encode(message)
+    ImpactSeverity(message:) -> impact_severity.encode(message)
     FellBelowFloor(message:) -> fell_below_floor.encode(message)
     SendChatLine(message:) -> send_chat_line.encode(message)
     SendWhisper(message:) -> send_whisper.encode(message)
@@ -421,9 +413,9 @@ pub fn message_id(message: ClientMessage) -> Int {
     CampFinished(..) -> camp_finished.message_id
     PlayerMovement(..) -> player_movement.message_id
     WorldZoneChanged(..) -> world_zone_changed.message_id
-    MovementSendIntervalAnswer(..) -> movement_send_interval_answer.message_id
+    WorldEntryOptions(..) -> world_entry_options.message_id
     MoveSpeedSetting(..) -> move_speed_setting.message_id
-    FallValue(..) -> fall_value.message_id
+    ImpactSeverity(..) -> impact_severity.message_id
     FellBelowFloor(..) -> fell_below_floor.message_id
     SendChatLine(..) -> send_chat_line.message_id
     SendWhisper(..) -> send_whisper.message_id
@@ -494,9 +486,9 @@ pub fn name(message: ClientMessage) -> String {
     CampFinished(..) -> "camp_finished"
     PlayerMovement(..) -> "player_movement"
     WorldZoneChanged(..) -> "world_zone_changed"
-    MovementSendIntervalAnswer(..) -> "movement_send_interval_answer"
+    WorldEntryOptions(..) -> "world_entry_options"
     MoveSpeedSetting(..) -> "move_speed_setting"
-    FallValue(..) -> "fall_value"
+    ImpactSeverity(..) -> "impact_severity"
     FellBelowFloor(..) -> "fell_below_floor"
     SendChatLine(..) -> "send_chat_line"
     SendWhisper(..) -> "send_whisper"
