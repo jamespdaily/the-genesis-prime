@@ -1473,3 +1473,6 @@ TelegraphDamage	3029	a pie, shape 5, turned 150	spell_area_test
 TelegraphDamage	6957	a pie, shape 5, turned 180	spell_area_test
 TelegraphDamage	2920	two boxes, shape 3	spell_area_test
 TelegraphDamage	4664	an unhalved box, shape 6	spell_area_test
+Spell4	46353	a charge with a client-placed target row (row 4796)	telegraph_entries_test
+Spell4	39641	a charge with a 0x1000-only target row (row 2376)	telegraph_entries_test
+Spell4	61275	a charge with a 0x5000 target row (row 9129)	telegraph_entries_test

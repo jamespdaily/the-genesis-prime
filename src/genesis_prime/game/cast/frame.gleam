@@ -428,11 +428,13 @@ pub fn closed_frame(
 }
 
 /// 0x7ff for a creature's cast of its attack spell on its target, from where it
-/// stands: the target is the cast's primary target, the spell its own root, and the
+/// stands: the target is the cast's primary target, which the client draws a client-placed
+/// target row on (`0x140546e60.placement_branches`), the spell its own root, and the
 /// safe values are a player's cast's (`started_message`). The positions are the
 /// `opening` of the spell's server-placed telegraph rows, which the client draws only
-/// from them (`0x140546e60`, `spell.telegraph_position`); a spell with none is sent
-/// `telegraph_entries.none`. A row the client places on the caster itself needs no
+/// from them (`0x140546e60`, `spell.telegraph_position`), those of the caster and of the
+/// target; a spell with none is sent `telegraph_entries.none`. A row the client places on
+/// the caster or the target itself needs no
 /// entry: it draws it from the caster's own place and facing each frame (Spell4Telegraph
 /// 57886 for 85469 and 57885 for 86978, each TelegraphDamage row 16212: a rectangle 3 wide
 /// and 30 long, targetTypeFlags 1, `0x14054b1b0.follows_caster`), which a 0x7ff yaw does

@@ -40,6 +40,7 @@ import genesis_prime/game/strike_tell.{
   type Key, Answered, Attacks, CreatureStriker, Immune, Key, Landed,
   PlayerStriker, Refused, Released, Strike, Threatened,
 }
+import genesis_prime/game/telegraph_entries
 import genesis_prime/game/unit_properties.{type Modifier, Change}
 import genesis_prime/message/combat_result
 import genesis_prime/message/crowd_control_state
@@ -3721,34 +3722,53 @@ pub fn a_viewer_arriving_mid_charge_gets_the_open_cast_test() -> Nil {
     as "the arriving viewer is told the go and the finish too"
 }
 
-pub fn a_viewer_arriving_mid_charge_is_told_the_current_target_in_the_open_cast_test() -> Nil {
+pub fn a_viewer_arriving_mid_charge_is_told_the_casts_own_target_test() -> Nil {
   use <- owned_test.run(5000)
-  // Player 5 takes the top of the threat list from player 2 while the turret charges: the
-  // 0x908 a later viewer gets names player 5, and so does its 0x7ff, the target the
-  // turret's cast is on now.
-  let #(state, aggro) = fought(viewers: [2, 5])
-  let #(state, _, _) = charge_opened(state:, aggro:)
+  // Player 2 is the cast's target and stands at (0, -8) where a row fixed on its target is
+  // drawn. Player 5 takes the top of the threat list while the cast is under way, so the 0x908
+  // a later viewer gets names player 5; its 0x7ff still names player 2, the unit the cast
+  // began on (`opcode.0x7ff`: the client draws a client-placed target row on cast 0x158), and
+  // carries the entries the start made.
+  let #(state, opened, _) =
+    target_cast_opened(
+      special: target_roar(
+        spell4_id: 55_846,
+        anchor: area.FixedAtTarget,
+        placements: [circle(radius: 4.0)],
+      ),
+      others: [#(5, 3.0, -8.0)],
+    )
+  let assert [CastStarted(start:)] = casts_of(opened, 2)
+  assert list.length(start.initial_positions) == 1
+    && list.length(start.telegraph_positions) == 1
+    as "the start made the target's entries"
   let #(state, struck) =
     tell(
       state:,
-      at_ms: 5000,
+      at_ms: 3000,
       message: strike_of(number: 5, cast_id: 1, blows: [#(1, 10, 1.0)]),
     )
-  assert list.contains(said(struck), "0x908(50, 10) to 2")
+  assert list.contains(said(struck), "0x908(50, 11) to 2")
     as "player 5 is the target now"
   let #(_, watched) =
     tell(
       state:,
-      at_ms: 6000,
+      at_ms: 3500,
       message: creature.Watched(
         by: ConnectionId(9),
         stay: map_support.stay(count: 9),
       ),
     )
-  let assert [_, _, targeting, _, CastStarted(start:)] = news_to(watched, 9)
-  assert name_of(targeting) == "0x908(50, 10)"
-  assert start.primary_target_unit_id == 50
-    as "the open cast is sent on the unit the fight targets now, not the one it began on"
+  assert list.any(news_to(watched, 9), fn(news) {
+    name_of(news) == "0x908(50, 11)"
+  })
+    as "the late viewer's 0x908 names the fight's target now"
+  let assert [CastStarted(start: late)] = casts_of(watched, 9)
+  assert late.primary_target_unit_id == 20
+    as "the open cast is sent on the unit the cast began on, not the one the fight targets now"
+  assert late.initial_positions == start.initial_positions
+    && late.telegraph_positions == start.telegraph_positions
+    as "the same entries as the cast's start"
 }
 
 pub fn a_state_that_takes_hold_during_the_charge_breaks_it_so_the_cast_end_strikes_no_one_test() -> Nil {
@@ -7804,4 +7824,378 @@ pub fn a_furthest_special_strikes_the_far_fighter_and_a_random_one_by_its_cast_i
   assert struck == [2] as "the fighter the cast id's mix puts first"
   assert struck_in_order(order: area.Random) == #(struck, cast_id)
     as "the same round, the same fighter"
+}
+
+/// A circle placed on the centre, as a TelegraphDamage row of shape 0 gives it.
+fn circle(radius radius: Float) -> area.Placement {
+  area.Placement(
+    shape: area.Circle(radius:),
+    ahead: 0.0,
+    aside: 0.0,
+    turn_degrees: 0.0,
+  )
+}
+
+/// Earthen Roar's timeline (casts 3000 ms, goes at 2500 and 3000 ms, strikes at the second)
+/// as the real spell `spell4_id` with its hit on the `placements` around `anchor`, and a reach
+/// of 20 so the target 8 units off is in reach. The draws are the spell's own rows.
+fn target_roar(
+  spell4_id spell4_id: Int,
+  anchor anchor: area.Anchor,
+  placements placements: List(area.Placement),
+) -> creature_life.Special {
+  let roar = spawn_support.earthen_roar(hold_ms: 1000)
+  let assert creature_life.Charged(..) as charged = roar.attack.cast
+    as "Earthen Roar is a charge"
+  creature_life.Special(
+    ..roar,
+    attack: creature_life.Attack(
+      ..roar.attack,
+      spell4_id: Spell4Id(spell4_id),
+      reach: 20.0,
+      cast: creature_life.Charged(
+        ..charged,
+        anchor:,
+        inside: area.InsideShapes(placements:),
+        draws: telegraph_entries.draws_of(
+          tables: fixture_tables.shared(),
+          spell4_id: Spell4Id(spell4_id),
+        ),
+      ),
+    ),
+  )
+}
+
+/// The Beast casting `special` at player 2, who comes near at (0, -8) facing -z at 0 ms; each
+/// of `others` (number, x, z) joins the fight standing there. The cast opens at 1500 ms: the
+/// state, the step of its start and the timer of its first go.
+fn target_cast_opened(
+  special special: creature_life.Special,
+  others others: List(#(Int, Float, Float)),
+) -> #(State, ServiceStep(creature.Outgoing), step.TimerId) {
+  let #(state, aggro) =
+    tell(
+      state: rootbrute_with(special:, viewers: [
+        2,
+        ..list.map(others, fn(other) { other.0 })
+      ]),
+      at_ms: 0,
+      message: approached_at(number: 2, x: 0.0, z: -8.0, seq: 1),
+    )
+  let state =
+    list.fold(others, state, fn(state, other) {
+      with_player_at(state:, number: other.0, x: other.1, z: other.2)
+    })
+  roar_opened(state:, aggro:)
+}
+
+/// The players the strike go of the open cast strikes, in order of number, after the go
+/// before it.
+fn struck_at_the_strike_go(
+  state state: State,
+  go go: step.TimerId,
+) -> List(Int) {
+  let #(state, _, strike) = first_go_passed(state:, go:)
+  let #(_, struck) = strike_go_reached(state:, strike:)
+  list.sort(list.map(fights_told(struck), fn(told) { told.0 }), int.compare)
+}
+
+/// The player moving to `x`, `z` and turning to face `yaw`.
+fn moved_facing(
+  number number: Int,
+  x x: Float,
+  z z: Float,
+  yaw yaw: Float,
+  seq seq: Int,
+) -> creature.Message {
+  creature.TargetMoved(
+    by: ConnectionId(number),
+    place: start_place.turned(
+      place: at_xz(x:, z:),
+      facing: start_place.Facing(yaw:, pitch: 0.0, roll: 0.0),
+    ),
+    seq:,
+    stay: map_support.stay(count: number),
+    hit_radius: place_support.player_hit_radius,
+  )
+}
+
+pub fn a_charge_on_a_target_row_opens_with_the_target_in_its_0x7ff_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Row 7874 (0x905000, targetTypeFlags 2) of Laser Bolt 55846 is drawn from the entries of
+  // its target: player 2 (unit 20) at (0, -8) facing -z, which the creature at the origin
+  // faces too. The entries carry the role bit 2 and no entry names the creature (unit 7); the
+  // 0x7ff's own place is the creature's (`opcode.0x7ff`, `spell.initial_position_flags`).
+  let #(_, opened, _) =
+    target_cast_opened(
+      special: target_roar(
+        spell4_id: 55_846,
+        anchor: area.FixedAtTarget,
+        placements: [circle(radius: 4.0)],
+      ),
+      others: [],
+    )
+  let assert [CastStarted(start:)] = casts_of(opened, 2)
+  let target_place =
+    SpellPosition(
+      x: float32.to_bits(0.0),
+      y: float32.to_bits(0.0),
+      z: float32.to_bits(-8.0),
+    )
+  assert start.spell4_id == 55_846
+    && start.caster_unit_id == 7
+    && start.primary_target_unit_id == 20
+  assert start.position
+    == SpellPosition(
+      x: float32.to_bits(0.0),
+      y: float32.to_bits(0.0),
+      z: float32.to_bits(0.0),
+    )
+    as "the cast's own place is the creature's"
+  assert start.initial_positions
+    == [
+      SpellInitialPosition(
+        unit_id: 20,
+        target_flags: 2,
+        position: target_place,
+        yaw: float32.to_bits(0.0),
+        anchor_unit_id: 0,
+      ),
+    ]
+    as "one initial position, the target's, with the role bit 2"
+  assert start.telegraph_positions
+    == [
+      SpellTelegraphPosition(
+        telegraph_damage_id: 7874,
+        unit_id: 20,
+        target_flags: 2,
+        position: target_place,
+        yaw: float32.to_bits(0.0),
+        anchor_unit_id: 0,
+      ),
+    ]
+    as "one telegraph position of the row on the target"
+}
+
+pub fn a_fixed_target_row_strikes_around_where_the_target_stood_at_the_start_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Row 7874 is a circle of 4 and Laser Bolt's area row 116 reaches 10. The creature stands at
+  // (0, 0); player 2, the target, at (0, -8); player 5 at (3, -8), 3 from the circle's centre,
+  // inside 4 plus the player hit radius 1.2; player 6 at (8, -8), 8 from it, outside 5.2 though
+  // within the area row's 10. Player 2 then steps to (0, -14), 6 from the centre, outside
+  // 5.2. The circle stays where the start put it (Jim's answer on the series: a guess,
+  // marked): only player 5 is struck. A centre that followed player 2 would strike player 2,
+  // and the creature as centre none of them.
+  let #(state, _, go) =
+    target_cast_opened(
+      special: target_roar(
+        spell4_id: 55_846,
+        anchor: area.FixedAtTarget,
+        placements: [circle(radius: 4.0)],
+      ),
+      others: [#(5, 3.0, -8.0), #(6, 8.0, -8.0)],
+    )
+  let #(state, _) =
+    tell(
+      state:,
+      at_ms: 3000,
+      message: moved_at(number: 2, x: 0.0, z: -14.0, seq: 3),
+    )
+  assert struck_at_the_strike_go(state:, go:) == [5]
+    as "the fighter in the circle where the target stood is struck, the target who left is not"
+}
+
+pub fn a_client_placed_target_row_strikes_around_the_cast_targets_place_at_the_strike_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Row 4796 of Spell4 46353 is client-placed, a circle of 5: the client draws it on the unit
+  // of cast 0x158 each frame (`0x14054b1b0`). Player 2, the target, stands at (0, -8) at the
+  // start with player 6 at (2, -8) and player 5 at (0, -19). Player 2 steps to (0, -16)
+  // before the strike go: player 5 is 3 from it, inside 5 plus 1.2, and player 6 is 8.2 from
+  // it, outside 6.2 though it was inside the start's circle: player 2 and player 5 are struck.
+  let #(state, _, go) =
+    target_cast_opened(
+      special: target_roar(
+        spell4_id: 46_353,
+        anchor: area.FollowsTarget,
+        placements: [circle(radius: 5.0)],
+      ),
+      others: [#(5, 0.0, -19.0), #(6, 2.0, -8.0)],
+    )
+  let #(state, _) =
+    tell(
+      state:,
+      at_ms: 3000,
+      message: moved_at(number: 2, x: 0.0, z: -16.0, seq: 3),
+    )
+  assert struck_at_the_strike_go(state:, go:) == [2, 5]
+    as "the circle is around where the target stands at the strike"
+}
+
+/// A case of `a_cone_on_the_target_turns_with_the_targets_facing_test`: the yaw the target
+/// turns to before the strike go and the fighters struck besides the target.
+type TargetTurn {
+  TargetTurn(reason: String, yaw: Float, struck: List(Int))
+}
+
+pub fn a_cone_on_the_target_turns_with_the_targets_facing_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Spell4 48590's rows 5671 and 5672 (client-placed, targetTypeFlags 2) are two 180 degree
+  // cones out to 15 with rotations -45 and 225: together all but a 90 degree wedge centred on
+  // -x of the unit's facing (`0x14054b1b0.shape_turn`: rotation -45 points to (+0.71, -0.71),
+  // 225 to (+0.71, +0.71) at yaw 0, the wedge between them at -x). The target stands at
+  // (0, -8) with a fighter 8 to its -x side (player 5) and one 8 to its +x side (player 6).
+  // The target itself, at the apex, is not asserted. Gap: the facing the cones turn with is
+  // the newest sighting's, not the client's current yaw of the unit.
+  let cones = [
+    area.Placement(
+      shape: area.Cone(inner: 0.0, outer: 15.0, degrees: 180.0),
+      ahead: 0.0,
+      aside: 0.0,
+      turn_degrees: -45.0,
+    ),
+    area.Placement(
+      shape: area.Cone(inner: 0.0, outer: 15.0, degrees: 180.0),
+      ahead: 0.0,
+      aside: 0.0,
+      turn_degrees: 225.0,
+    ),
+  ]
+  [
+    TargetTurn(
+      reason: "facing -z: the wedge is at -x, so the fighter at +x is struck",
+      yaw: 0.0,
+      struck: [6],
+    ),
+    TargetTurn(
+      reason: "turned to yaw pi: the wedge is at +x, so the fighter at -x is struck",
+      yaw: 3.141_592_653_589_793,
+      struck: [5],
+    ),
+  ]
+  |> list.each(fn(case_) {
+    let #(state, _, go) =
+      target_cast_opened(
+        special: target_roar(
+          spell4_id: 46_353,
+          anchor: area.FollowsTarget,
+          placements: cones,
+        ),
+        others: [#(5, -8.0, -8.0), #(6, 8.0, -8.0)],
+      )
+    let #(state, _) =
+      tell(
+        state:,
+        at_ms: 3000,
+        message: moved_facing(
+          number: 2,
+          x: 0.0,
+          z: -8.0,
+          yaw: case_.yaw,
+          seq: 3,
+        ),
+      )
+    assert list.filter(struck_at_the_strike_go(state:, go:), fn(number) {
+        number != 2
+      })
+      == case_.struck
+      as case_.reason
+  })
+}
+
+pub fn a_target_row_uses_the_cast_target_not_the_0x908_target_of_the_moment_test() -> Nil {
+  use <- owned_test.run(5000)
+  // A circle of 5 follows the cast's target, player 2 at (0, -8), with player 6 beside it at
+  // (2, -8). Player 5 at (0, -19) strikes harder after the cast opened, so the creature's
+  // 0x908 target is player 5 (`opcode.0x908`) while the cast is still on player 2
+  // (`opcode.0x7ff`, cast 0x158): the circle is around player 2 and the fighter beside it, and
+  // player 5, 11 away, is outside it. A circle around player 5 would strike player 5 alone.
+  let #(state, _, go) =
+    target_cast_opened(
+      special: target_roar(
+        spell4_id: 46_353,
+        anchor: area.FollowsTarget,
+        placements: [circle(radius: 5.0)],
+      ),
+      others: [#(5, 0.0, -19.0), #(6, 2.0, -8.0)],
+    )
+  let #(state, retargeted) =
+    tell(
+      state:,
+      at_ms: 3000,
+      message: strike_of(number: 5, cast_id: 1, blows: [#(1, 10, 1.0)]),
+    )
+  assert list.contains(said(retargeted), "0x908(50, 11) to 2")
+    as "player 5 is the 0x908 target now"
+  assert struck_at_the_strike_go(state:, go:) == [2, 6]
+    as "the circle is still around the cast's target"
+}
+
+/// A case of `a_following_target_row_strikes_nobody_when_its_cast_target_is_gone_test`: the
+/// spell and anchor of the row, and the players its circle strikes after the target died.
+type GoneTarget {
+  GoneTarget(
+    reason: String,
+    spell4_id: Int,
+    anchor: area.Anchor,
+    struck: List(Int),
+  )
+}
+
+pub fn a_following_target_row_strikes_nobody_when_its_cast_target_is_gone_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Player 2, the cast's target, dies after the cast opened: the map's `PlayerDied` takes it
+  // off the threat list. The client removes a telegraph whose unit is not found
+  // (`0x14054b1b0`): a row that follows the target strikes nobody, though player 6 stands
+  // where the target stood. A row fixed where the target stood at the start still strikes by
+  // its stored place, the fighter standing in it.
+  [
+    GoneTarget(
+      reason: "a row that follows the gone target strikes nobody",
+      spell4_id: 46_353,
+      anchor: area.FollowsTarget,
+      struck: [],
+    ),
+    GoneTarget(
+      reason: "a row fixed at the start still strikes the fighter standing in it",
+      spell4_id: 55_846,
+      anchor: area.FixedAtTarget,
+      struck: [6],
+    ),
+  ]
+  |> list.each(fn(case_) {
+    let #(state, _, go) =
+      target_cast_opened(
+        special: target_roar(
+          spell4_id: case_.spell4_id,
+          anchor: case_.anchor,
+          placements: [circle(radius: 4.0)],
+        ),
+        others: [#(5, 0.0, -19.0), #(6, 2.0, -8.0)],
+      )
+    let #(state, _) =
+      tell(
+        state:,
+        at_ms: 3000,
+        message: creature.PlayerDied(by: ConnectionId(2)),
+      )
+    let #(state, _, strike) = first_go_passed(state:, go:)
+    let #(_, struck) = strike_go_reached(state:, strike:)
+    assert list.sort(
+        list.map(fights_told(struck), fn(told) { told.0 }),
+        int.compare,
+      )
+      == case_.struck
+      as case_.reason
+    case case_.struck {
+      [] -> {
+        let assert [CastWent(went), ..] = news_to(struck, 5)
+        assert went.phase == 1 && went.targets == []
+          as { case_.reason <> ": the go names no unit" }
+        assert list.contains(said(struck), "0x7fe to 5")
+          as { case_.reason <> ": the cast finishes" }
+        Nil
+      }
+      [_, ..] -> Nil
+    }
+  })
 }

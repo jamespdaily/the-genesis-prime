@@ -101,6 +101,17 @@ pub type Anchor {
   /// cast's start, so the hit is centred on the pose the cast started at
   /// (`0x14054b1b0.fixed_placement`).
   FixedAtCaster
+  /// Rows with neither 0x4000 nor 0x1000 placed on the cast's target (`targetTypeFlags` 0 or
+  /// bit 2): the client draws them on the unit of the cast's primary target each frame, so
+  /// the hit is centred on that target where it stands at the strike, with its facing
+  /// (`0x14054b1b0.follows_caster`, `0x140546e60.placement_branches`). A target that is gone
+  /// leaves the row nobody, as the client removes a telegraph whose unit it cannot find.
+  FollowsTarget
+  /// Rows with 0x4000 or 0x1000 placed on the cast's target: the client draws them at the
+  /// entries the 0x7ff carried, so the hit is centred on the pose the target stood in when
+  /// the cast began, and stays there whatever the target does (a server choice, a guess: the
+  /// client only draws the entry where it is told, `0x14054b1b0.fixed_placement`).
+  FixedAtTarget
 }
 
 /// A shape placed on the caster: where it lies against the caster's place and
