@@ -170,11 +170,80 @@ pub fn a_cooldown_below_the_strike_deadline_is_refused_test() -> Nil {
   Nil
 }
 
-pub fn a_spell_with_no_cast_time_is_refused_test() -> Nil {
+pub fn a_special_with_a_cast_time_of_0_loads_when_its_plan_reads_it_test() -> Nil {
   use <- owned_test.run(60_000)
-  let rule = rule_of(row: special(spell4_id: 33_251))
-  assert string.contains(rule, "33251") && string.contains(rule, "cast time")
-    as "Spell4 33251 has castTime 0: a special is a cast with a cast bar"
+  // Each spell has castTime 0 (`table_rows -- Spell4 N`) and a creature the retail record
+  // pairs with it (the lowest Creature2 id of the Jabbithole pairing the import reads).
+  list.each(
+    [
+      #(34_262, 4148, "Multiphase, castBarType 1, gos at 200 to 1,600 ms"),
+      #(34_252, 35_947, "Multiphase whose first go is at 0"),
+      #(70_136, 20_775, "no SpellPhase row: no bar, one go"),
+      #(52_150, 17_079, "a channel of eight pulses"),
+    ],
+    fn(row) {
+      let #(spell4_id, creature_id, what) = row
+      let assert Ok(_) =
+        creature_kind.select(
+          rows: [default_row],
+          special_rows: [
+            Row(..special(spell4_id:), creature_id:),
+          ],
+          auto_attack_rows: [],
+          tables: fixture_tables.shared(),
+        )
+        as {
+          "Spell4 "
+          <> int.to_string(spell4_id)
+          <> " ("
+          <> what
+          <> ") loads for Creature2 "
+          <> int.to_string(creature_id)
+        }
+    },
+  )
+}
+
+pub fn an_auto_attack_listed_as_a_special_is_refused_for_its_missing_area_row_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4 33251, `[AUTO-ATTACK]` Yeti Auto-Attack #1: no cast prerequisite, innate cost or
+  // target condition, its damage rows 184751 and 184829 (type 8, phaseFlags -1, no tickTime)
+  // carry only the difficulty prerequisites, the plan reads one go at 0 that they name, and
+  // spell4AoeTargetConstraintsId is 0 (`table_rows -- Spell4`, `-- Spell4Effects spellId=33251`):
+  // the area rule is the first it breaks.
+  assert rule_of(row: special(spell4_id: 33_251))
+    == "the special Spell4 33251 of Creature2 12212 is refused: Spell4 33251 has no area row (spell4AoeTargetConstraintsId 0), so its telegraph selects nobody"
+    as "a cast time of 0 is no reason to refuse; the missing area is"
+}
+
+pub fn a_channel_the_creatures_round_cannot_carry_is_refused_by_name_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4 47977, Forge Lava: castMethod 3 (ChanneledField). The client keeps a channel record
+  // for it (`0x14055e180`) that the plan does not read, so its go count is not settled.
+  let field = rule_of(row: special(spell4_id: 47_977))
+  assert string.contains(field, "47977")
+    && string.contains(field, "ChanneledField")
+    as "the refusal names the spell and the method"
+  // Synthetic, a cell of Spell4 52150's row: pulses at 250 ms steps end at 2,500, 100 ms before
+  // a channelMaxTime of 2,600, where the client's cast ends; the round writes its 0x7fe after
+  // the last go and has no later finish.
+  let late_finish =
+    refused_when(spell4_id: 52_150, table: "Spell4", id: 52_150, cells: [
+      #("channelMaxTime", Integer(2600)),
+    ])
+  assert string.contains(late_finish, "52150")
+    && string.contains(late_finish, "2600")
+    && string.contains(late_finish, "2500")
+    as "the refusal names the spell, the channelMaxTime and the last pulse"
+  // A channelMaxTime of 100 is before the first pulse at 250: the channel has no pulse, so the
+  // refusal is the missing go, not a last pulse at 0.
+  let no_pulse =
+    refused_when(spell4_id: 52_150, table: "Spell4", id: 52_150, cells: [
+      #("channelMaxTime", Integer(100)),
+    ])
+  assert string.contains(no_pulse, "has no go time")
+    && !string.contains(no_pulse, "last pulse")
+    as "a channel with no pulse is refused for having no go"
 }
 
 pub fn a_spell_with_another_effect_type_is_refused_naming_it_test() -> Nil {
@@ -556,6 +625,53 @@ fn strikes_of(
   list.map(gos, fn(go) { go.strike })
 }
 
+/// The load of each pair (Spell4, a Creature2 the retail record pairs with it, the number of gos
+/// its damage rows name) over these content tables: the kind load takes the special, the spawn
+/// builds it as a charge whose strike gos are that many, each carrying blows and a hit shape;
+/// the shape of a spell in `unshaped`, which has no hit row, is its area row. For each pair, the
+/// number of gos the plan gives and the number of strike gos.
+fn lifted_over(
+  tables tables: table_store.Tables,
+  pairs pairs: List(#(Int, Int, Int)),
+  unshaped unshaped: List(Int),
+) -> List(#(Int, Int)) {
+  list.map(pairs, fn(pair) {
+    let #(spell4_id, creature_id, strike_gos) = pair
+    assert refused_over(tables:, creature_id:, spell4_ids: [spell4_id]) == []
+      as {
+        "the kind load takes Spell4 "
+        <> int.to_string(spell4_id)
+        <> " for Creature2 "
+        <> int.to_string(creature_id)
+      }
+    let strikes = strikes_of(tables:, creature_id:, spell4_id:)
+    let struck =
+      list.filter_map(strikes, fn(strike) { option.to_result(strike, Nil) })
+    assert list.length(struck) == strike_gos
+      as {
+        "Spell4 "
+        <> int.to_string(spell4_id)
+        <> " strikes at the gos its damage rows name, as the measure counts them"
+      }
+    list.each(struck, fn(strike) {
+      assert strike.spell4_effects_ids != []
+        as {
+          "each strike go of Spell4 "
+          <> int.to_string(spell4_id)
+          <> " carries blows"
+        }
+      assert { strike.inside == area.InsideRow }
+        == list.contains(unshaped, spell4_id)
+        as {
+          "each strike go of Spell4 "
+          <> int.to_string(spell4_id)
+          <> " carries a hit shape, or its area row where the spell has no hit row"
+        }
+    })
+    #(list.length(strikes), list.length(struck))
+  })
+}
+
 pub fn the_target_row_lift_loads_the_named_specials_and_two_of_the_three_it_held_back_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
@@ -698,40 +814,7 @@ pub fn the_multi_hit_lift_loads_the_named_specials_and_leaves_the_rest_refused_b
     #(72_012, 40_168, 8),
   ]
   let strike_counts =
-    list.map(pairs, fn(pair) {
-      let #(spell4_id, creature_id, strike_gos) = pair
-      assert refused_over(tables:, creature_id:, spell4_ids: [spell4_id]) == []
-        as {
-          "the kind load takes Spell4 "
-          <> int.to_string(spell4_id)
-          <> " for Creature2 "
-          <> int.to_string(creature_id)
-        }
-      let strikes = strikes_of(tables:, creature_id:, spell4_id:)
-      let struck =
-        list.filter_map(strikes, fn(strike) { option.to_result(strike, Nil) })
-      assert list.length(struck) == strike_gos
-        as {
-          "Spell4 "
-          <> int.to_string(spell4_id)
-          <> " strikes at the gos its damage rows name, as the measure counts them"
-        }
-      list.each(struck, fn(strike) {
-        assert strike.spell4_effects_ids != []
-          as {
-            "each strike go of Spell4 "
-            <> int.to_string(spell4_id)
-            <> " carries blows"
-          }
-        assert strike.inside != area.InsideRow
-          as {
-            "each strike go of Spell4 "
-            <> int.to_string(spell4_id)
-            <> " carries a hit shape"
-          }
-      })
-      list.length(struck)
-    })
+    list.map(lifted_over(tables:, pairs:, unshaped: []), fn(counts) { counts.1 })
   assert list.length(list.filter(strike_counts, fn(count) { count == 1 })) == 22
     as "22 of the 63 strike at one go"
   assert list.length(list.filter(strike_counts, fn(count) { count > 1 })) == 41
@@ -752,4 +835,95 @@ pub fn the_multi_hit_lift_loads_the_named_specials_and_leaves_the_rest_refused_b
     && string.contains(crowd_control, "129708")
     && string.contains(crowd_control, "type 4")
     as "54675's crowd-control row, not its gos"
+}
+
+pub fn the_cast_time_0_lift_loads_the_named_specials_on_the_real_tables_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  // The 50 spells of the retail-listed specials with a castTime of 0 that the lift loads, each
+  // with the lowest Creature2 id of the Jabbithole pairing the import reads, the number of gos
+  // its plan gives and the number of gos its damage rows name at which a hit row is drawn
+  // (`table_rows -- SpellPhase spell4IdOwner=N`, `-- Spell4Effects spellId=N`, `--
+  // TelegraphDamage`), over the client's own tables. Spell4 72808 takes Creature2 61635: the
+  // lowest, 26042, is friendly to both player factions and would not start (both have
+  // creature2DifficultyId 5). Its damage row 188167 (phaseFlags 0x7e) names gos 1 to 6, but
+  // its hit rows 12150 and 12151 (phaseFlags 0x7c) name gos 2 to 6 and a Multiphase cast
+  // compares the phase, so the go at 1,000 ms strikes nobody: 5 of its 7 gos. The counts of
+  // 52150 (6) and 72808 (5) rest on `telegraph_window`'s marked guess that a hit row is drawn
+  // at a go equal to its end. 52150's hit row
+  // 7108 ends at 1,500 ms, so its pulses at 1,750 and 2,000 strike nobody; 48482 and 48497
+  // hold a go no hit row is drawn at; 42531 and 42533 name every one of 481 gos (phaseFlags
+  // -1). 63724 and 63726 have no hit row and strike inside their area row.
+  let tables = client_tables.with_content_tables()
+  let pairs = [
+    #(33_919, 9573, 5, 5),
+    #(34_227, 13_768, 4, 4),
+    #(34_252, 26_662, 7, 5),
+    #(34_262, 4148, 4, 4),
+    #(34_564, 13_759, 5, 3),
+    #(35_343, 14_863, 2, 1),
+    #(35_963, 13_831, 5, 4),
+    #(42_531, 30_635, 481, 481),
+    #(42_533, 30_635, 481, 481),
+    #(44_634, 51_743, 4, 4),
+    #(47_284, 32_858, 10, 10),
+    #(47_711, 24_249, 7, 6),
+    #(48_482, 17_918, 8, 7),
+    #(48_497, 17_918, 8, 7),
+    #(48_766, 13_636, 7, 3),
+    #(49_888, 17_817, 12, 12),
+    #(50_027, 26_419, 5, 3),
+    #(50_103, 17_817, 8, 6),
+    #(50_317, 49_548, 9, 9),
+    #(51_993, 13_728, 9, 8),
+    #(52_150, 17_079, 8, 6),
+    #(52_235, 13_728, 4, 2),
+    #(52_475, 14_863, 3, 1),
+    #(52_968, 16_632, 3, 1),
+    #(53_415, 24_098, 3, 2),
+    #(54_823, 9635, 5, 3),
+    #(54_923, 9635, 3, 1),
+    #(57_420, 10_440, 4, 1),
+    #(58_666, 26_677, 1, 1),
+    #(58_775, 32_213, 7, 6),
+    #(63_724, 14_612, 1, 1),
+    #(63_726, 14_612, 1, 1),
+    #(70_015, 24_249, 1, 1),
+    #(70_136, 20_775, 1, 1),
+    #(70_151, 32_213, 7, 6),
+    #(70_152, 32_213, 7, 6),
+    #(70_153, 46_462, 7, 6),
+    #(70_154, 32_213, 7, 6),
+    #(70_412, 41_878, 12, 12),
+    #(70_497, 41_877, 5, 3),
+    #(70_572, 59_831, 5, 4),
+    #(71_203, 30_321, 5, 4),
+    #(71_259, 55_000, 6, 5),
+    #(71_430, 26_041, 2, 1),
+    #(71_903, 26_040, 5, 4),
+    #(71_980, 38_207, 5, 4),
+    #(72_001, 40_168, 6, 4),
+    #(72_036, 48_592, 2, 1),
+    #(72_808, 61_635, 7, 5),
+    #(73_289, 30_317, 5, 4),
+  ]
+  let counts =
+    lifted_over(
+      tables:,
+      pairs: list.map(pairs, fn(pair) { #(pair.0, pair.1, pair.3) }),
+      unshaped: [63_724, 63_726],
+    )
+  list.zip(pairs, counts)
+  |> list.each(fn(found) {
+    let #(#(spell4_id, _, go_count, _), #(planned_gos, _)) = found
+    assert planned_gos == go_count
+      as {
+        "Spell4 "
+        <> int.to_string(spell4_id)
+        <> " is cast as a charge with the gos of its plan"
+      }
+  })
+  assert list.length(pairs) == 50 as "50 spells"
+  assert list.length(list.filter(pairs, fn(pair) { pair.2 == 1 })) == 5
+    as "5 of them have one go"
 }
