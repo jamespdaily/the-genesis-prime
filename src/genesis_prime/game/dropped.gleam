@@ -139,12 +139,12 @@ pub fn take(
       statistic_event.decode(body)
       |> client_connection.decoded(message_id: statistic_event.message_id)
       |> result.map_error(NotDecoded)
-      |> result.try(fn(opened) {
-        use Nil <- result.try(window_names_own_character(
-          named: opened.character_id,
+      |> result.try(fn(event) {
+        use Nil <- result.try(event_names_own_character(
+          named: event.character_id,
           own: character_id,
         ))
-        event_text_within_limit(units: list.length(opened.event_text), tables:)
+        event_text_within_limit(units: list.length(event.event_text), tables:)
       })
     PreGameActivity ->
       pre_game_activity.decode(body)
@@ -186,10 +186,10 @@ fn decoded(
   |> result.replace(Nil)
 }
 
-/// The report names the character the connection plays: the client's first
+/// The event names the character the connection plays: the client's first
 /// 64-bit value is its own character id in every recorded send
 /// (`opcode.0x23d`).
-fn window_names_own_character(
+fn event_names_own_character(
   named named: Int,
   own own: Option(Int),
 ) -> Result(Nil, Refusal) {

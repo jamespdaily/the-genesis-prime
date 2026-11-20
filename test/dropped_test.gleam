@@ -51,22 +51,22 @@ const messages = [
   #(0x0570, dropped.InputKeySetRequest),
 ]
 
-/// A 0x023D body: the 50 bytes before the name, from the recorded body of the
+/// A 0x023D body: the 50 bytes before the text, from the recorded body of the
 /// event with an empty text (its 6 bits, 10-bit event id and six 64-bit values),
-/// then a name of this many units, each the letter A.
+/// then a text of this many units, each the letter A.
 fn statistic_event_with_text(units units: Int) -> BitArray {
-  let assert Ok(before_name) = bit_array.slice(empty_text_event(), 0, 50)
-  let name =
-    list.fold(list.repeat(Nil, units), <<>>, fn(name, _) {
-      <<name:bits, 0x41, 0x00>>
+  let assert Ok(before_text) = bit_array.slice(empty_text_event(), 0, 50)
+  let text =
+    list.fold(list.repeat(Nil, units), <<>>, fn(text, _) {
+      <<text:bits, 0x41, 0x00>>
     })
   case units < 128 {
-    True -> <<before_name:bits, { units * 2 }:size(8), name:bits>>
+    True -> <<before_text:bits, { units * 2 }:size(8), text:bits>>
     False -> {
       // The flag bit 1, then the count in 15 bits: the count's low 7 bits
       // shifted past the flag fill the first byte, the rest is the second.
       let low = int.bitwise_or(1, int.bitwise_shift_left(units % 128, 1))
-      <<before_name:bits, low:size(8), { units / 128 }:size(8), name:bits>>
+      <<before_text:bits, low:size(8), { units / 128 }:size(8), text:bits>>
     }
   }
 }
@@ -75,7 +75,8 @@ fn empty_text_event() -> BitArray {
   let assert Ok(Recorded(body:, ..)) =
     list.find(dropped_support.recorded(), fn(recorded) {
       recorded.message_id == 0x023D
-      && recorded.what == "a window with an empty name, 51 bytes"
+      && recorded.what
+      == "the interface reload event with an empty text, 51 bytes"
     })
   body
 }
@@ -122,7 +123,7 @@ pub fn a_statistic_event_naming_another_character_is_refused_test() -> Nil {
         event_text: [],
       ),
     )
-    as "opcode.0x23d: in 2026-11-05-main the window names the character its connection played"
+    as "opcode.0x23d: in 2026-11-05-main the event names the character its connection played"
   assert take(
       message: dropped.StatisticEvent,
       body: statistic_event_of(character_id: 13),
@@ -158,9 +159,9 @@ pub fn values_the_client_would_not_send_are_refused_test() -> Nil {
         <> ") is a body the client sent"
       }
   })
-  // 0x023D: the name limit is GameFormula row 2375's dataint02.
+  // 0x023D: the event text limit is GameFormula row 2375's dataint02.
   assert statistic_event_with_text(units: 0) == empty_text_event()
-    as "the body built here with no name is the recorded body of a window with none"
+    as "the body built here with no text is the recorded body of the event with none"
   assert take(
       message: dropped.StatisticEvent,
       body: statistic_event_with_text(units: 128),
@@ -172,7 +173,7 @@ pub fn values_the_client_would_not_send_are_refused_test() -> Nil {
       body: statistic_event_with_text(units: 129),
     )
     == Error(EventTextTooLong(units: 129, limit: 128))
-    as "opcode.0x23d: the client does not send a name of 129 units"
+    as "opcode.0x23d: the client does not send an event text of 129 units"
   // The limit is the table's, not a number of the rule's.
   fixture_tables.changed(
     table: "GameFormula",

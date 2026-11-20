@@ -565,6 +565,81 @@ pub fn a_record_a_sent_message_reaches_is_sent_and_one_only_a_received_message_h
   ])
 }
 
+pub fn a_position_name_in_what_the_client_sends_is_listed_unless_it_is_open_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let holding = fn(direction, entry_fields) {
+    planted(
+      direction:,
+      fields: [entries_field],
+      record_fields: entry_fields,
+      unions: [],
+    )
+  }
+  let rows: List(#(String, String, List(String))) = [
+    #(
+      "a field of a client to server message",
+      planted_with(
+        direction: "client_to_server",
+        fields: [unsigned("field_1", "")],
+        records: [#("planted_entry", [good_field])],
+        unions: [],
+      ),
+      ["planted_hello.field_1"],
+    ),
+    #(
+      "a field of a message either side sends",
+      planted_with(
+        direction: "both",
+        fields: [unsigned("field_1", "")],
+        records: [#("planted_entry", [good_field])],
+        unions: [],
+      ),
+      ["planted_hello.field_1"],
+    ),
+    #(
+      "a field of a server to client message",
+      planted_with(
+        direction: "server_to_client",
+        fields: [unsigned("field_1", "")],
+        records: [#("planted_entry", [good_field])],
+        unions: [],
+      ),
+      [],
+    ),
+    #(
+      "an open field of a client to server message",
+      planted_with(
+        direction: "client_to_server",
+        fields: [unsigned("field_1", ", open = \"what is it\"")],
+        records: [#("planted_entry", [good_field])],
+        unions: [],
+      ),
+      [],
+    ),
+    #(
+      "a record only a client to server message holds",
+      holding("client_to_server", [unsigned("field_3", "")]),
+      ["planted_entry.field_3"],
+    ),
+    #(
+      "a record only a message either side sends holds",
+      holding("both", [unsigned("field_3", "")]),
+      ["planted_entry.field_3"],
+    ),
+    #(
+      "a record only a server to client message holds",
+      holding("server_to_client", [unsigned("field_3", "")]),
+      [],
+    ),
+  ]
+  list.each(rows, fn(row) {
+    let assert Ok(schema) = message_schema.parse(row.1)
+      as { row.0 <> ": the planted schema is a schema" }
+    assert schema_evidence.unmarked_placeholders(schema) == row.2 as { row.0 }
+  })
+}
+
 // ---- the kinds of a union of a message the server sends ----
 
 const never_damage =

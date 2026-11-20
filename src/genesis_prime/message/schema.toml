@@ -3147,9 +3147,9 @@ summary = "the client's report to the world server of its frame timing (telemetr
 fields = [
   { name = "window_mean_frame", kind = "unsigned", bits = 32, evidence = "opcode.0x240.body", named_by = "opcode.0x240" },
   { name = "window_slowest_frame", kind = "unsigned", bits = 32, evidence = "opcode.0x240.body", named_by = "opcode.0x240" },
-  { name = "camera_x", kind = "float32", evidence = "opcode.0x240.body", named_by = "opcode.0x240.camera_value" },
-  { name = "camera_y", kind = "float32", evidence = "opcode.0x240.body", named_by = "opcode.0x240.camera_value" },
-  { name = "camera_z", kind = "float32", evidence = "opcode.0x240.body", named_by = "opcode.0x240.camera_value" },
+  { name = "camera_x", kind = "float32", evidence = "opcode.0x240.body", named_by = "opcode.0x240" },
+  { name = "camera_y", kind = "float32", evidence = "opcode.0x240.body", named_by = "opcode.0x240" },
+  { name = "camera_z", kind = "float32", evidence = "opcode.0x240.body", named_by = "opcode.0x240" },
   { name = "field_6", kind = "float32", evidence = "opcode.0x240.body", open = "What does slot 1 of the game's camera object (game 0x71a8, else 0x71a0) return at the window's slowest frame? The recorded values fit a heading in radians; it is not a time step (opcode.0x240.camera_value)." },
   { name = "session_mean_frame", kind = "unsigned", bits = 32, evidence = "opcode.0x240.body", named_by = "opcode.0x240" },
 ]
