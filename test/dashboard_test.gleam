@@ -16,6 +16,7 @@ import genesis_prime/dashboard/log_lines
 import genesis_prime/dashboard/overview.{Model}
 import genesis_prime/dashboard/read_poll
 import genesis_prime/dashboard/secret
+import genesis_prime/dashboard/socket
 import gleam/bit_array
 import gleam/bool
 import gleam/erlang/process
@@ -684,6 +685,97 @@ pub fn a_logs_socket_is_upgraded_only_once_its_runtime_has_started_test() -> Nil
   let _first = frames_holding(connection, ["one", "alpha"])
   assert dashboard.runtime_count(running) == 1
   dashboard_support.close(connection)
+}
+
+pub fn a_handshake_whose_factory_dies_before_it_answers_is_answered_503_and_the_next_is_served_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use home <- dashboard_support.with_home
+  plant_logs(home:, updater: "one\n", launchd: "alpha\n")
+  let settings = dashboard_support.settings(home)
+  let running = started(settings)
+  let key = dashboard_support.written_key(home:)
+
+  // The factory holds the start the handshake asks of it and then dies: the
+  // ask ends with an exit, not an error, and the answer is the one of a start
+  // that did not happen, never an HTTP 500 of the server's own.
+  answered_503_when_the_factory_dies(
+    running:,
+    port: settings.port,
+    key:,
+    route: "ws",
+    runtimes: running.runtimes,
+  )
+  answered_503_when_the_factory_dies(
+    running:,
+    port: settings.port,
+    key:,
+    route: "logs-ws",
+    runtimes: running.log_runtimes,
+  )
+}
+
+fn answered_503_when_the_factory_dies(
+  running running: dashboard.Running,
+  port port: Int,
+  key key: String,
+  route route: String,
+  runtimes runtimes: socket.Runtimes(argument, message),
+) -> Nil {
+  let connection =
+    dashboard_support.with_factory_held(runtimes:, during: fn(start_asked) {
+      let connection =
+        dashboard_support.handshake_sent(
+          port:,
+          path: "/k/" <> key <> "/" <> route,
+          headers: [
+            #("Origin", "http://127.0.0.1:" <> int.to_string(port)),
+            ..dashboard_support.browser(port:)
+          ],
+        )
+      start_asked()
+      dashboard_support.kill_factory(runtimes)
+      connection
+    })
+  assert dashboard_support.handshake_reply(connection).status == 503 as route
+  dashboard_support.close(connection)
+
+  // The tree starts the factory again, and the next tab is served by it.
+  let socket = opened_socket_at(port:, key:, route:)
+  assert dashboard.runtime_count(running) == 1 as route
+  dashboard_support.close(socket)
+  event_wait.until("the runtime of " <> route <> " to end", fn() {
+    dashboard.runtime_count(running) == 0
+  })
+}
+
+pub fn a_handshake_the_websocket_upgrade_refuses_stops_the_runtime_it_started_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use home <- dashboard_support.with_home
+  plant_logs(home:, updater: "one\n", launchd: "alpha\n")
+  let settings = dashboard_support.settings(home)
+  let running = started(settings)
+  let key = dashboard_support.written_key(home:)
+  let headers = [
+    #("Origin", "http://127.0.0.1:" <> int.to_string(settings.port)),
+    ..dashboard_support.browser(port: settings.port)
+  ]
+
+  // The gate allows the request: its key prefix and origin are right. The
+  // upgrade is refused for the missing `Sec-WebSocket-Key` after the runtime
+  // started, and the runtime does not stay with no socket to serve.
+  list.each(["ws", "logs-ws"], fn(route) {
+    let #(connection, reply) =
+      dashboard_support.handshake_without_key(
+        port: settings.port,
+        path: "/k/" <> key <> "/" <> route,
+        headers:,
+      )
+    dashboard_support.close(connection)
+    assert reply.status == 400 as route
+    event_wait.until("the runtime of " <> route <> " to end", fn() {
+      dashboard.runtime_count(running) == 0
+    })
+  })
 }
 
 pub fn a_dead_follower_takes_the_log_runtimes_with_it_and_a_new_tab_is_served_test() -> Nil {

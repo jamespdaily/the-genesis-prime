@@ -13,6 +13,7 @@ import genesis_prime/dashboard/page.{type Page}
 import genesis_prime/dashboard/socket.{type Runtimes}
 import genesis_prime/dashboard/web
 import gleam/bit_array
+import gleam/erlang/process.{type Pid}
 import gleam/http.{type Method}
 import gleam/http/request.{type Request}
 import gleam/http/response.{type Response}
@@ -75,12 +76,17 @@ fn read_reply(
 pub fn has_bytes(connection: Connection) -> Bool
 
 /// Holds the factory of page runtimes: a start asked of it waits in its
-/// mailbox.
+/// mailbox. Gives the process held.
 @external(erlang, "dashboard_support_ffi", "suspend")
-fn suspend(runtimes: Runtimes(argument, message)) -> Nil
+fn suspend(runtimes: Runtimes(argument, message)) -> Pid
 
+/// Lets a held factory go; a factory that has ended is left as it is.
 @external(erlang, "dashboard_support_ffi", "resume")
-fn resume(runtimes: Runtimes(argument, message)) -> Nil
+fn resume(held: Pid) -> Nil
+
+/// Ends the process that is the factory now, as a crash does.
+@external(erlang, "dashboard_support_ffi", "kill")
+fn kill(runtimes: Runtimes(argument, message)) -> Nil
 
 /// How many asks wait in the factory's mailbox.
 @external(erlang, "dashboard_support_ffi", "queued_calls")
@@ -293,21 +299,42 @@ pub fn handshake_reply(connection: Connection) -> Reply {
 }
 
 /// Runs `during` while the factory of page runtimes holds every ask made of it,
-/// and lets the factory go afterwards. `during` is given a function that waits
-/// until an ask is in the factory's mailbox.
+/// and lets the factory go afterwards (a factory that `during` ended stays
+/// ended). `during` is given a function that waits until an ask is in the
+/// factory's mailbox.
 pub fn with_factory_held(
   runtimes runtimes: Runtimes(argument, message),
   during during: fn(fn() -> Nil) -> a,
 ) -> a {
-  suspend(runtimes)
+  let held = suspend(runtimes)
   let result =
     during(fn() {
       event_wait.until("a start to be asked of the held factory", fn() {
         queued_calls(runtimes) > 0
       })
     })
-  resume(runtimes)
+  resume(held)
   result
+}
+
+/// Ends the factory of page runtimes as a crash does, and with it the asks
+/// waiting in it. The tree starts a new factory.
+pub fn kill_factory(runtimes runtimes: Runtimes(argument, message)) -> Nil {
+  kill(runtimes)
+}
+
+/// A handshake as `handshake` makes it but with no `Sec-WebSocket-Key`, which
+/// the server's websocket upgrade refuses.
+pub fn handshake_without_key(
+  port port: Int,
+  path path: String,
+  headers headers: List(#(String, String)),
+) -> #(Connection, Reply) {
+  let upgrade =
+    list.filter(upgrade_headers, fn(header) { header.0 != "Sec-WebSocket-Key" })
+  let #(connection, status, reply_headers, body) =
+    open(port, request_bytes(path:, headers: list.append(headers, upgrade)))
+  #(connection, Reply(status:, headers: reply_headers, body:))
 }
 
 const upgrade_headers = [

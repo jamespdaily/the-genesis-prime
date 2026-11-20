@@ -468,7 +468,8 @@ fn upgraded(
         )
       {
         Ok(upgraded) -> upgraded
-        // A runtime that did not start: the client asks again.
+        // A runtime that did not start, as a factory that ended does not start
+        // one: the client asks again.
         Error(Nil) -> rebuilding()
       }
     // The page runtimes are being rebuilt; the client asks again.

@@ -1,7 +1,7 @@
 -module(dashboard_support_ffi).
 -export([free_port/0, bound_addresses/1, accepts/1, open/2, connect_and_send/2, read_reply/1, has_bytes/1,
          read_text_frame/1, close/1, process_alive/1, closes/1, os_pid/0, suspend/1, resume/1,
-         queued_calls/1]).
+         kill/1, queued_calls/1]).
 
 %% A loopback port the system chose: listens on port 0 and closes the socket
 %% again, so nothing listens on the port that is returned. The dashboard's
@@ -94,27 +94,37 @@ has_bytes(Socket) ->
 
 %% Holds a factory supervisor so that a call to it stays in its mailbox, and
 %% lets it go again. The factory's value is Gleam's `{supervisor, Handle}`, the
-%% handle being its registered name or its pid.
--spec suspend({supervisor, atom() | pid()}) -> nil.
-suspend({supervisor, Handle}) ->
-    ok = sys:suspend(Handle),
-    nil.
+%% handle being its registered name or its pid. Gives the process held, so the
+%% release reaches it and never a process that took its name later.
+-spec suspend({supervisor, atom() | pid()}) -> pid().
+suspend(Factory) ->
+    Pid = factory_pid(Factory),
+    ok = sys:suspend(Pid),
+    Pid.
 
--spec resume({supervisor, atom() | pid()}) -> nil.
-resume({supervisor, Handle}) ->
-    ok = sys:resume(Handle),
+%% Lets a held process go. One that has ended is left as it is.
+-spec resume(pid()) -> nil.
+resume(Pid) ->
+    try sys:resume(Pid) of
+        ok -> nil
+    catch
+        exit:{noproc, _} -> nil
+    end.
+
+%% Ends the process that is the factory now, as a crash does.
+-spec kill({supervisor, atom() | pid()}) -> nil.
+kill(Factory) ->
+    exit(factory_pid(Factory), kill),
     nil.
 
 %% How many messages wait in the mailbox of a factory supervisor.
 -spec queued_calls({supervisor, atom() | pid()}) -> integer().
-queued_calls({supervisor, Handle}) ->
-    Pid =
-        case is_pid(Handle) of
-            true -> Handle;
-            false -> whereis(Handle)
-        end,
-    {message_queue_len, Length} = process_info(Pid, message_queue_len),
+queued_calls(Factory) ->
+    {message_queue_len, Length} = process_info(factory_pid(Factory), message_queue_len),
     Length.
+
+factory_pid({supervisor, Handle}) when is_pid(Handle) -> Handle;
+factory_pid({supervisor, Handle}) -> whereis(Handle).
 
 read_head(Socket, Seen) ->
     case binary:split(Seen, <<"\r\n\r\n">>) of
