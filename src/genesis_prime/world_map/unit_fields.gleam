@@ -120,7 +120,9 @@ pub fn resource_max_property(slot slot: Int) -> Int {
 /// The record after a unit's type data: the stats, the movement commands that
 /// place it, the properties, the item visuals, the faction and the base faction,
 /// the world object it claims (0 and 0 for none), the display and the outfit,
-/// and the time its place is stamped with; every other field 0 or empty.
+/// and the time its place is stamped with; every other field 0 or empty, among
+/// them the casts and the cast in progress, which a player's connection fills
+/// when the unit comes into sight.
 pub fn tail(
   stats stats: List(UnitStat),
   movement_commands movement_commands: List(StartMovement),
@@ -141,6 +143,7 @@ pub fn tail(
     movement_commands:,
     properties:,
     item_visuals:,
+    casts: [],
     cast_id: 0,
     faction_id:,
     base_faction_id:,
