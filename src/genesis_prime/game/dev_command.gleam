@@ -16,7 +16,8 @@
 ////   optionally a second, the level; the word is read as typed, in lower case.
 ////   Whether a CreatureLevel row has the level is the map's check.
 ////   `level` takes one whole decimal number, a level, and `xp` one, a total
-////   experience; a number has any length, so the tables refuse one too large.
+////   experience; `currency` takes two, a currency type and an amount; a number
+////   has any length, so the tables refuse one too large.
 ////   `go` takes a World id, a WorldZone id and x, y, z (each coordinate with an
 ////   optional leading `-`), or one WorldLocation2 id.
 ////   `item` takes one whole decimal number, an Item2 id, and then optionally a
@@ -27,12 +28,15 @@
 ////   level's minXpForLevel (its XpPerLevel row), an item with no Item2 row, a
 ////   proxy item and a count of 0, compared as whole numbers, a
 ////   quest with no Quest2 row (the client refuses a quest it has no row for,
-////   FindQuestById 0xa00b0001); for `go`, a World, WorldZone or WorldLocation2 id
-////   with no row and a position outside the box the client clamps a unit's drawn
-////   position to (x and z -32768 to 32768, y -2048 to 2048, `0x1405b5070`),
-////   compared as whole numbers so a number of any length is a refusal. A named
-////   place is checked by its row's own world, zone and position, as a coordinate
-////   place is.
+////   FindQuestById 0xa00b0001); a currency type with no CurrencyType row (the
+////   client keeps types 1 to 14 and the table has no row 8), an amount above the
+////   column's 2^63 - 1 and an amount above the type's cap
+////   (genesis_prime/game/currency `cap`); for `go`, a World, WorldZone or
+////   WorldLocation2 id with no row and a position outside the box the client
+////   clamps a unit's drawn position to (x and z -32768 to 32768, y -2048 to 2048,
+////   `0x1405b5070`), compared as whole numbers so a number of any length is a
+////   refusal. A named place is checked by its row's own world, zone and position,
+////   as a coordinate place is.
 //// - **A proxy item is refused**: the client reads its stack limit and its
 ////   deletable flag from another item, and the server reads the item's own row
 ////   (`item_property.is_proxy`, Item2 flags 0x4000), so a given one could be
@@ -41,13 +45,16 @@
 ////   takes, are each answered with a system line, never as a Say line, so a
 ////   mistyped command is not said aloud to the players who see the speaker.
 
+import genesis_prime/game/currency
 import genesis_prime/game/item_property
 import genesis_prime/game/level
 import genesis_prime/game/start_place
 import genesis_prime/gap
+import genesis_prime/table/currency_type
 import genesis_prime/table/id.{
-  type Creature2Id, type Item2Id, type Quest2Id, Creature2Id, Item2Id, Quest2Id,
-  WorldId, WorldLocation2Id, WorldZoneId, XpPerLevelId,
+  type Creature2Id, type CurrencyTypeId, type Item2Id, type Quest2Id,
+  Creature2Id, CurrencyTypeId, Item2Id, Quest2Id, WorldId, WorldLocation2Id,
+  WorldZoneId, XpPerLevelId,
 }
 import genesis_prime/table/item2
 import genesis_prime/table/loader/store as table_store
@@ -56,6 +63,7 @@ import genesis_prime/table/world
 import genesis_prime/table/world_location2
 import genesis_prime/table/world_zone
 import genesis_prime/table/xp_per_level
+import gleam/bool
 import gleam/float
 import gleam/int
 import gleam/list
@@ -75,6 +83,10 @@ pub type Command {
   /// `!xp <total>`: raise the player's experience to that total, with the
   /// client's own gain and, when it crosses a level, level rise.
   RaiseToExperience(experience: Int)
+  /// `!currency <type> <amount>`: set the player's total of that currency to the
+  /// amount, saved at once (genesis_prime/store `SetCurrency`), and give the client
+  /// the new total (`opcode.0x919`). The total may be lower than the one held.
+  SetCurrency(currency_type_id: CurrencyTypeId, amount: Int)
   /// `!go <World id> <WorldZone id> <x> <y> <z>` or `!go <WorldLocation2 id>`:
   /// place the player at once at that place.
   Go(destination: Destination)
@@ -85,6 +97,13 @@ pub type Command {
   /// `!quest <Quest2 id> done`: complete that quest in the player's log, with the
   /// follow-ups a turn-in's completion has and none of the quest's own rewards.
   CompleteQuest(quest2_id: Quest2Id)
+}
+
+/// A `!currency` total asked of the store, kept while its answer is awaited: the
+/// currency type and the total the player held before it, from which the answer's
+/// frames and line are made. The new total is the answer's.
+pub type Grant {
+  Grant(currency_type_id: Int, held: Int)
 }
 
 /// Where a `!go` places the player.
@@ -121,6 +140,17 @@ pub type Refusal {
   LevelOutOfRange(level: Int, highest: Int)
   /// The experience is above `highest`, the highest level's minXpForLevel.
   ExperienceOutOfRange(experience: Int, highest: Int)
+  /// The word is `currency`, but what follows is not two whole numbers, a currency
+  /// type and an amount.
+  CurrencyTakesATypeAndAnAmount
+  /// No CurrencyType row has the number, so the client keeps no such currency
+  /// (it keeps types 1 to 14, and the table has no row 8).
+  CurrencyTypeIsNotKept(currency_type_id: Int)
+  /// The amount is above `cap`, the most the currency holds (genesis_prime/game/currency `cap`).
+  CurrencyAmountAboveCap(currency_type_id: Int, amount: Int, cap: Int)
+  /// The amount is above `highest`, the most the character_currency amount column
+  /// (a bigint) holds.
+  CurrencyAmountAboveColumn(amount: Int, highest: Int)
   /// The word is `go`, but what follows is not a World id, a WorldZone id and
   /// three coordinates, or one WorldLocation2 id.
   GoTakesAPlace
@@ -188,6 +218,20 @@ pub fn parse(text text: List(Int)) -> Result(Command, Refusal) {
           |> result.replace_error(ExperienceTakesAWholeNumber)
         [] | [_, _, ..] -> Error(ExperienceTakesAWholeNumber)
       }
+    [command, ..arguments] if command == currency_word ->
+      case arguments {
+        [currency_type, amount] ->
+          case decimal(units: currency_type), decimal(units: amount) {
+            Ok(currency_type), Ok(amount) ->
+              Ok(SetCurrency(
+                currency_type_id: CurrencyTypeId(currency_type),
+                amount:,
+              ))
+            Error(Nil), _ | _, Error(Nil) ->
+              Error(CurrencyTakesATypeAndAnAmount)
+          }
+        [] | [_] | [_, _, _, ..] -> Error(CurrencyTakesATypeAndAnAmount)
+      }
     [command, ..arguments] if command == go_word ->
       case arguments {
         [location] ->
@@ -244,8 +288,9 @@ pub fn parse(text text: List(Int)) -> Result(Command, Refusal) {
 /// highest level's minXpForLevel, an item with no Item2 row, a proxy item and a
 /// count of 0, compared as whole numbers so a number of any length is a
 /// refusal; for a `!go`, a World, WorldZone or WorldLocation2 with no row, and a
-/// position outside the box, in that order; and for a `!quest`, a quest with no
-/// Quest2 row.
+/// position outside the box, in that order; for a `!quest`, a quest with no
+/// Quest2 row; and for a `!currency`, a currency type with no row or an amount
+/// above the column's limit or the type's cap.
 pub fn checked(
   command command: Command,
   tables tables: table_store.Tables,
@@ -282,6 +327,8 @@ pub fn checked(
           Error(ExperienceOutOfRange(experience:, highest: top.min_xp_for_level))
       }
     }
+    SetCurrency(currency_type_id:, amount:) ->
+      checked_currency(command:, currency_type_id:, amount:, tables:)
     Go(destination:) ->
       go_refusal(destination:, tables:)
       |> option.map(Error)
@@ -291,6 +338,31 @@ pub fn checked(
         Ok(_) -> Ok(command)
         Error(Nil) -> Error(NoQuest2Row(quest2_id:))
       }
+  }
+}
+
+/// The `!currency` command when the type has a CurrencyType row and the amount is within
+/// the column's limit and the type's cap; the column is tested first, so a number of any
+/// length is refused for it.
+fn checked_currency(
+  command command: Command,
+  currency_type_id currency_type_id: CurrencyTypeId,
+  amount amount: Int,
+  tables tables: table_store.Tables,
+) -> Result(Command, Refusal) {
+  let CurrencyTypeId(number) = currency_type_id
+  use _ <- result.try(
+    currency_type.get(tables:, id: currency_type_id)
+    |> result.replace_error(CurrencyTypeIsNotKept(currency_type_id: number)),
+  )
+  use <- bool.guard(
+    when: amount > column_limit,
+    return: Error(CurrencyAmountAboveColumn(amount:, highest: column_limit)),
+  )
+  case currency.cap(tables:, currency_type_id: number) {
+    Some(cap) if amount > cap ->
+      Error(CurrencyAmountAboveCap(currency_type_id: number, amount:, cap:))
+    Some(_) | None -> Ok(command)
   }
 }
 
@@ -438,6 +510,12 @@ const level_word = [0x21, 0x6C, 0x65, 0x76, 0x65, 0x6C]
 /// `!xp` as the UTF-16 units the client sends.
 const experience_word = [0x21, 0x78, 0x70]
 
+/// `!currency` as the UTF-16 units the client sends.
+const currency_word = [0x21, 0x63, 0x75, 0x72, 0x72, 0x65, 0x6E, 0x63, 0x79]
+
+/// The most the character_currency amount column holds: a bigint, 2^63 - 1.
+const column_limit = 9_223_372_036_854_775_807
+
 /// `!go` as the UTF-16 units the client sends.
 const go_word = [0x21, 0x67, 0x6F]
 
@@ -512,6 +590,24 @@ pub fn describe(refusal refusal: Refusal) -> String {
       "!xp "
       <> int.to_string(experience)
       <> " is above the experience of the highest level, "
+      <> int.to_string(highest)
+    CurrencyTakesATypeAndAnAmount ->
+      "!currency takes a currency type and an amount, as !currency 1 5000"
+    CurrencyTypeIsNotKept(currency_type_id:) ->
+      "!currency "
+      <> int.to_string(currency_type_id)
+      <> " is no currency type the client keeps (1 to 7 and 9 to 14)"
+    CurrencyAmountAboveCap(currency_type_id:, amount:, cap:) ->
+      "!currency "
+      <> int.to_string(currency_type_id)
+      <> " "
+      <> int.to_string(amount)
+      <> " is above the most that currency holds, "
+      <> int.to_string(cap)
+    CurrencyAmountAboveColumn(amount:, highest:) ->
+      "!currency amount "
+      <> int.to_string(amount)
+      <> " is above the most a total can hold, "
       <> int.to_string(highest)
     GoTakesAPlace ->
       "!go takes a World id, a WorldZone id and x y z, as !go 22 1189 -5438 -966 -1093, or a WorldLocation2 id, as !go 8300"

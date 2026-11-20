@@ -13,6 +13,7 @@ import genesis_prime/game/activate
 import genesis_prime/game/character_select
 import genesis_prime/game/class_resource
 import genesis_prime/game/deadline_timer
+import genesis_prime/game/dev_command
 import genesis_prime/game/inventory
 import genesis_prime/game/item_charge
 import genesis_prime/game/level_up
@@ -296,6 +297,16 @@ pub type Status {
   /// saves it as one in `InWorld` does; the held items, credits and buyback list in
   /// `entered` are the ones before the sale, which the answer replaces.
   Selling(holder: Holder, entered: world_entry.Entered, sale: vendor_sale.Sale)
+  /// The player is in the world and the store is asked to set a currency's total for the
+  /// development command `!currency` (`grant`, genesis_prime/game/dev_command), whose
+  /// answer is awaited with the client's frames held. The player's place is not saved yet,
+  /// so a connection that ends in this status saves it as one in `InWorld` does; the
+  /// currencies in `entered` are the ones before the command, which the answer replaces.
+  Granting(
+    holder: Holder,
+    entered: world_entry.Entered,
+    grant: dev_command.Grant,
+  )
   /// The player is in the world and the store is asked to complete the quest the player's
   /// 0x35D turned in and to give its rewards (`turn_in`, genesis_prime/game/quest_turn_in),
   /// whose answer is awaited with the client's frames held. The store's request saves the
@@ -452,6 +463,7 @@ pub fn standing(status: Status) -> Standing {
     | MovingItem(..)
     | SpendingCharge(..)
     | Buying(..)
+    | Granting(..)
     | Selling(..)
     | TurningIn(..)
     | SavingPlace(..)
@@ -548,6 +560,7 @@ pub fn held_in_the_world(
     | MovingItem(..)
     | SpendingCharge(..)
     | Buying(..)
+    | Granting(..)
     | Selling(..)
     | TurningIn(..)
     | SavingPlace(..)
@@ -558,8 +571,8 @@ pub fn held_in_the_world(
 }
 
 /// Whether the status is one whose answer returns the connection to the world: a
-/// summon, an item move, a purchase, a sale, a quest turn-in, the periodic place
-/// save, or the claim made again with the player in the world. What other processes
+/// summon, an item move, a purchase, a sale, a currency set, a quest turn-in, the
+/// periodic place save, or the claim made again with the player in the world. What other processes
 /// send for a stay meanwhile, and the connection's own timers that fire, are held, not
 /// dropped. A save before leaving or camping is not one: its stay ends, and the timers
 /// of the stay were cancelled with it. Nor is a claim made again from character select.
@@ -569,6 +582,7 @@ pub fn holds_map_messages(status: Status) -> Bool {
     | MovingItem(..)
     | SpendingCharge(..)
     | Buying(..)
+    | Granting(..)
     | Selling(..)
     | TurningIn(..)
     | ClaimingSession(resume: ResumeWorld(..), ..)
@@ -599,6 +613,7 @@ pub fn holds_timer(status status: Status, timer timer: TimerId) -> Bool {
     | MovingItem(..)
     | SpendingCharge(..)
     | Buying(..)
+    | Granting(..)
     | Selling(..)
     | TurningIn(..)
     | SavingPlace(..)
@@ -624,6 +639,7 @@ pub fn saves_the_place(status: Status) -> Bool {
     | MovingItem(..)
     | SpendingCharge(..)
     | Buying(..)
+    | Granting(..)
     | Selling(..)
     | InWorld(..)
     | WaitingToClaim(..)
@@ -723,6 +739,7 @@ pub fn with_entered(
     | MovingItem(..)
     | SpendingCharge(..)
     | Buying(..)
+    | Granting(..)
     | Selling(..)
     | TurningIn(..)
     | SavingPlace(..)
@@ -860,6 +877,7 @@ pub fn holds_a_player(
     | MovingItem(holder:, entered:, ..)
     | SpendingCharge(holder:, entered:, ..)
     | Buying(holder:, entered:, ..)
+    | Granting(holder:, entered:, ..)
     | Selling(holder:, entered:, ..)
     | ClaimingSession(holder:, resume: ResumeWorld(entered:), ..)
     | WaitingToClaim(holder:, resume: ResumeWorld(entered:), ..) ->
@@ -956,6 +974,7 @@ pub fn entered_of(status: Status) -> Option(world_entry.Entered) {
     | MovingItem(entered:, ..)
     | SpendingCharge(entered:, ..)
     | Buying(entered:, ..)
+    | Granting(entered:, ..)
     | Selling(entered:, ..)
     | TurningIn(entered:, ..)
     | SavingPlace(entered:, ..)
@@ -997,6 +1016,7 @@ fn account_id_of(status: Status) -> Option(Int) {
         ..,
       )
     | Buying(holder: hand_off.Holder(account_id: store.AccountId(id), ..), ..)
+    | Granting(holder: hand_off.Holder(account_id: store.AccountId(id), ..), ..)
     | Selling(holder: hand_off.Holder(account_id: store.AccountId(id), ..), ..)
     | TurningIn(
         holder: hand_off.Holder(account_id: store.AccountId(id), ..),

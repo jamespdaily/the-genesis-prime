@@ -920,6 +920,7 @@ pub fn with_the_setting_off_a_command_line_is_said_and_nothing_is_asked_test() -
       "!xp 2859",
       "!item 90021 3",
       "!quest 5972 done",
+      "!currency 1 5000",
       "!go 22 1189 1 2 3",
     ],
     fn(text) {

@@ -164,7 +164,8 @@ pub fn answered(
           store.ItemMade(..)
           | store.Bought(..)
           | store.Sold(..)
-          | store.TurnedIn(..) ->
+          | store.TurnedIn(..)
+          | store.CurrencySet(..) ->
             connection_inventory.lost(
               session:,
               now:,

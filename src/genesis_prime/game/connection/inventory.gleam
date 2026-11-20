@@ -178,7 +178,8 @@ pub fn move_answered(
             | store.ItemMade(..)
             | store.Bought(..)
             | store.Sold(..)
-            | store.TurnedIn(..) -> connection_item_expiry.retried(handled:)
+            | store.TurnedIn(..)
+            | store.CurrencySet(..) -> connection_item_expiry.retried(handled:)
           }
         inventory.Moved(..)
         | inventory.Merged(..)

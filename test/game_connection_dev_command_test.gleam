@@ -36,8 +36,12 @@ import fixture_tables
 import game_client
 import game_connection_dev_command_support as dev_support
 import game_connection_support as support
-import genesis_prime/client_connection.{type Request, TellMoved, TellTargetMoved}
+import genesis_prime/client_connection.{
+  type Answer, type Request, FromStore, TellMoved, TellTargetMoved,
+}
 import genesis_prime/connection/frame.{type Frame}
+import genesis_prime/game/chat_channel
+import genesis_prime/game/chat_tell
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/start_place.{type Place}
@@ -45,9 +49,12 @@ import genesis_prime/game/strike_tell
 import genesis_prime/message/cast_activate.{CastActivate}
 import genesis_prime/message/client_control_echoed.{ClientControlEchoed}
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
-import genesis_prime/message/disconnect_reason.{LostUserServer}
+import genesis_prime/message/disconnect_reason.{
+  AccountDisconnected, LostUserServer,
+}
 import genesis_prime/message/experience_gained.{ExperienceGained}
 import genesis_prime/message/float32
+import genesis_prime/message/player_health
 import genesis_prime/message/quest_objective_progress.{
   type QuestObjectiveProgress, QuestObjectiveProgress,
 }
@@ -58,7 +65,9 @@ import genesis_prime/message/unit_position_command.{
   type UnitPositionCommand, UnitPositionCommand,
 }
 import genesis_prime/step.{
-  type ConnectionStep, ConnectionId, OwnEffect, OwnEvent, Unwatch, Watch,
+  type ConnectionEvent, type ConnectionStep, type Event, type Outcome,
+  ConnectionId, OwnEffect, OwnEvent, StoppedWaiting, TimerId, Unwatch, Watch,
+  WatchEnded, WatchId, Woken,
 }
 import genesis_prime/store
 import genesis_prime/table/id.{Item2Id}
@@ -843,6 +852,441 @@ pub fn a_command_for_a_quest_the_server_is_completing_runs_after_its_turn_in_and
     as "the server's completion writes 9695's state 3 once, and the command writes none"
   assert support.system_lines(third) == ["quest 9695 is already done"]
     as "the held command finds the quest finished by the server's completion"
+}
+
+// ---- !currency ----
+//
+// Expected values come from these places.
+// - `opcode.0x919` and `opcode.0xdd.with_0x919`: a set writes the 0x919 total, and the 0xdd
+//   gain only when the total is higher; the 0x1c8 line is the command's System line.
+// - `character_currency` holds one row for each currency the player has: the connection
+//   holds what the store's load gave (a missing row reads as 0) and the request names it.
+// - The tests' player is account 7, character 42, epoch 1 (`game_connection_support`).
+
+const credits_800 = store.HeldCurrency(currency_type_id: 1, amount: 800)
+
+/// The player holding these currencies after it said the line.
+fn granting(
+  currencies currencies: List(store.HeldCurrency),
+  text text: String,
+) -> #(game_connection.State, step.ConnectionStep(Request)) {
+  dev_support.said(
+    state: dev_support.in_world_holding_currencies(currencies:),
+    text:,
+  )
+}
+
+/// The step after the store answered the ask `taken` ended with.
+fn answered(
+  state state: game_connection.State,
+  taken taken: step.ConnectionStep(Request),
+  outcome outcome: Outcome(Answer),
+) -> #(game_connection.State, step.ConnectionStep(Request)) {
+  support.answer(state:, taken:, outcome:)
+}
+
+/// The step after this event, at the monotonic time 1 ms.
+fn fed(
+  state state: game_connection.State,
+  event event: Event(ConnectionEvent(client_connection.Message, Answer)),
+) -> #(game_connection.State, step.ConnectionStep(Request)) {
+  support.at(state:, ms: 1, event:)
+}
+
+pub fn a_currency_command_asks_the_store_and_waits_in_granting_test() -> Nil {
+  use <- owned_test.run(60_000)
+  list.each(
+    [
+      #(
+        [credits_800],
+        "!currency 1 5000",
+        800,
+        5000,
+        "a character with credits",
+      ),
+      #([], "!currency 1 5000", 0, 5000, "no credits row reads as 0 held"),
+      #(
+        [store.HeldCurrency(currency_type_id: 1, amount: 8000)],
+        "!currency 1 100",
+        8000,
+        100,
+        "a lowering is asked too",
+      ),
+    ],
+    fn(row) {
+      let #(currencies, text, held, after, why) = row
+      let #(_, taken) = granting(currencies:, text:)
+      assert support.ask_request(taken)
+        == dev_support.currency_asked(currency_type_id: 1, held:, after:)
+        as why
+      let assert Some(ask) = rule_support.asked(taken)
+      assert ask.deadline_ms == rule_support.now_ms + 4000
+        as "the settings' ask deadline from the time of the input"
+      assert support.written_ids(taken) == [0x01C2]
+        as "opcode.0x1c2: the line is answered before the ask, and nothing else is written until the answer"
+      assert !rule_support.stops(taken)
+    },
+  )
+}
+
+pub fn a_chat_line_during_the_grant_waits_and_reads_the_new_amount_after_the_answer_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(state, taken) =
+    granting(currencies: [credits_800], text: "!currency 1 5000")
+  let #(state, second) = dev_support.said(state:, text: "!currency 1 100")
+  let #(state, third) = dev_support.said(state:, text: "!level 4")
+  assert rule_support.asked(second) == None
+    && support.written_ids(second) == []
+    && rule_support.asked(third) == None
+    && support.written_ids(third) == []
+    as "the bytes of two lines wait in the connection while the first ask is out: nothing is asked or written"
+  let #(state, first_answer) =
+    answered(state:, taken:, outcome: dev_support.currency_set(amount: 5000))
+  assert support.ask_request(first_answer)
+    == dev_support.currency_asked(currency_type_id: 1, held: 5000, after: 100)
+    as "the held second line is read after the answer, when the player holds the new 5000"
+  let #(_, second_answer) =
+    answered(
+      state:,
+      taken: first_answer,
+      outcome: dev_support.currency_set(amount: 100),
+    )
+  assert list.contains(support.written_ids(second_answer), 0x01AC)
+    as "opcode.0x1ac: the held !level 4 is taken after the second answer and raises the level"
+  // The held bytes are bounded: past the limit the connection ends.
+  let #(state, _) = granting(currencies: [], text: "!currency 1 5000")
+  let #(state, kept) =
+    support.read(state, <<0:size(rule_support.held_limit * 8)>>)
+  assert !rule_support.stops(kept)
+    as "bytes up to the limit are kept for after the answer"
+  let #(_, over) = support.read(state, <<0>>)
+  assert rule_support.stops(over) && rule_support.asked(over) == None
+    as "one byte past the limit ends the connection with nothing asked"
+}
+
+pub fn a_map_message_and_a_timer_during_the_grant_are_taken_in_order_after_its_answer_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(state, taken) =
+    granting(currencies: [credits_800], text: "!currency 1 5000")
+  let #(state, struck) =
+    support.at(
+      state:,
+      ms: 1,
+      event: support.a_beast_strike(support.own_unit_id),
+    )
+  assert support.written_ids(struck) == [] && rule_support.asked(struck) == None
+    as "the strike on the player waits behind the ask"
+  let #(state, fired) =
+    support.fired_at(state:, timer: connection_state.save_timer, ms: 2)
+  assert support.written_ids(fired) == [] && rule_support.asked(fired) == None
+    as "the save timer waits behind the ask and does not end the connection"
+  let assert Some(ask) = rule_support.asked(taken)
+  let #(_, answer) =
+    support.at(
+      state:,
+      ms: 3,
+      event: OwnEvent(step.Answered(
+        ask: ask.ask,
+        outcome: dev_support.currency_set(amount: 5000),
+      )),
+    )
+  let ids = support.written_ids(answer)
+  assert list.take(ids, 3) == [0x0919, 0x00DD, 0x01C8]
+    as "the command's frames and line come first"
+  assert list.last(ids) == Ok(player_health.message_id)
+    as "the strike is taken after them, its health the last frame"
+  let assert client_connection.AskStore(store.Move(store.SavePlace(health:, ..))) =
+    support.ask_request(answer)
+    as "the held save timer is taken last and asks to save the place"
+  assert health == Some(735)
+    as "the place is saved with the health the strike left, so the save came after it"
+}
+
+/// A player of another connection, who speaks.
+fn another_speaker() -> chat_tell.Speaker {
+  chat_tell.Speaker(
+    realm_id: 1,
+    character_id: 7,
+    name: "Zed Other",
+    faction_id: 167,
+    unit_id: 9,
+    map: support.camp_map(),
+    incarnation: support.incarnation,
+  )
+}
+
+fn a_line(
+  channel_type channel_type: chat_channel.ChannelType,
+) -> chat_tell.Line {
+  chat_tell.Line(channel_type:, channel_id: 0, text: [0x48, 0x69], formats: [])
+}
+
+/// The chat tells the step sends other connections.
+fn chat_tells(
+  taken taken: step.ConnectionStep(Request),
+) -> List(#(step.Address, chat_tell.Tell)) {
+  list.filter_map(rule_support.effects_of(taken), fn(effect) {
+    case effect {
+      step.OwnEffect(step.Tell(to:, request: client_connection.TellChat(tell:))) ->
+        Ok(#(to, tell))
+      step.OwnEffect(_)
+      | step.Watch(..)
+      | step.Unwatch(..)
+      | step.Log(..)
+      | step.Stop -> Error(Nil)
+    }
+  })
+}
+
+pub fn a_chat_delivery_during_the_grant_is_dropped_and_a_whisper_is_answered_not_heard_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(state, _) =
+    granting(currencies: [credits_800], text: "!currency 1 5000")
+  let said =
+    chat_tell.Said(
+      speaker: another_speaker(),
+      line: a_line(channel_type: chat_channel.Say),
+    )
+  let #(_, said) =
+    fed(state:, event: OwnEvent(Woken(client_connection.SentByChat(said))))
+  assert support.written_ids(said) == []
+    && chat_tells(taken: said) == []
+    && !rule_support.stops(said)
+    as "a said line is dropped: the player waits on the store, so the client's chat is not written"
+  let whisper =
+    chat_tell.Whisper(
+      whisper: 5,
+      speaker: another_speaker(),
+      from: ConnectionId(8),
+      line: a_line(channel_type: chat_channel.Whisper),
+    )
+  let #(_, whispered) =
+    fed(state:, event: OwnEvent(Woken(client_connection.SentByChat(whisper))))
+  assert support.written_ids(whispered) == []
+    && chat_tells(taken: whispered)
+    == [#(step.Connection(ConnectionId(8)), chat_tell.NotHeard(whisper: 5))]
+    as "a whisper is answered NotHeard to its sender"
+}
+
+pub fn a_connection_end_during_the_grant_saves_the_place_then_ends_test() -> Nil {
+  use <- owned_test.run(60_000)
+  list.each(
+    [
+      #(
+        "the peer closed",
+        OwnEvent(step.PeerClosed),
+        rule_support.now_ms + 4000,
+        None,
+      ),
+      #(
+        "a read failed",
+        OwnEvent(step.ReadFailed(step.OtherSocketFailure(reason: "broken"))),
+        rule_support.now_ms + 4000,
+        None,
+      ),
+      #(
+        "the server stops with less time than the ask's deadline",
+        step.Stopping(deadline_ms: 3000),
+        3000,
+        Some(LostUserServer),
+      ),
+      #(
+        "another login takes the account's session",
+        support.taken_over(),
+        rule_support.now_ms + 4000,
+        Some(AccountDisconnected),
+      ),
+    ],
+    fn(row) {
+      let #(why, event, deadline_ms, notice) = row
+      let #(state, asking) =
+        granting(currencies: [credits_800], text: "!currency 1 5000")
+      assert support.ask_request(asking)
+        == dev_support.currency_asked(
+          currency_type_id: 1,
+          held: 800,
+          after: 5000,
+        )
+        as "the connection waits on the store"
+      let #(state, ending) = support.feed(state:, event:)
+      assert support.ask_request(ending)
+        == support.save_asked(1, support.entry_place())
+        as { why <> ": the place is saved first, as in the world" }
+      let assert Some(ask) = rule_support.asked(ending)
+      assert ask.deadline_ms == deadline_ms as why
+      let #(_, saved) =
+        support.answer(state:, taken: ending, outcome: support.place_saved())
+      assert rule_support.stops(saved)
+        as { why <> ": then the connection ends" }
+      assert option.map(notice, fn(_) {
+          support.disconnect(saved, support.keyed())
+        })
+        == notice
+        as why
+    },
+  )
+}
+
+pub fn a_watch_that_ends_or_a_claim_timer_that_fires_during_the_grant_ends_the_connection_as_a_bug_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let claim_timer = TimerId(1)
+  let #(state, taken) =
+    granting(currencies: [credits_800], text: "!currency 1 5000")
+  let #(_, watch) = fed(state:, event: WatchEnded(WatchId(2)))
+  assert support.ask_request(watch)
+    == support.save_asked(1, support.entry_place())
+    && list.length(rule_support.logs_of(step: watch, level: step.LogError)) == 1
+    as "the map's watch ending is a bug: one error line, and the held player's place is saved first, as for any end"
+  let #(state, held) =
+    fed(state:, event: OwnEvent(step.TimerFired(claim_timer)))
+  assert rule_support.asked(held) == None && !rule_support.stops(held)
+    as "a firing in the wait is held, as every timer is"
+  let #(_, answer) =
+    answered(state:, taken:, outcome: dev_support.currency_set(amount: 5000))
+  assert support.ask_request(answer)
+    == support.save_asked(1, support.entry_place())
+    && list.length(rule_support.logs_of(step: answer, level: step.LogError))
+    == 1
+    as "taken after the answer, a claim timer the rule did not start is a bug: one error line and the place saved"
+}
+
+/// One answer of the store to a `!currency 1 5000` of a player holding 800 credits.
+type Answered {
+  Answered(
+    why: String,
+    outcome: Outcome(Answer),
+    ids: List(Int),
+    lines: List(String),
+    warnings: Int,
+    errors: Int,
+    held_after: Int,
+  )
+}
+
+pub fn a_currency_answer_updates_the_amounts_and_writes_the_frames_and_one_line_test() -> Nil {
+  use <- owned_test.run(60_000)
+  list.each(
+    [
+      Answered(
+        why: "CurrencySet: the total and the gain, then the line",
+        outcome: dev_support.currency_set(amount: 5000),
+        ids: [0x0919, 0x00DD, 0x01C8],
+        lines: ["credits 5000"],
+        warnings: 0,
+        errors: 0,
+        held_after: 5000,
+      ),
+      Answered(
+        why: "ItemsNotSaved: the warning and the not-set line, nothing changed",
+        outcome: step.Answer(FromStore(store.ForItems(store.ItemsNotSaved))),
+        ids: [0x01C8],
+        lines: ["!currency 1 was not set"],
+        warnings: 1,
+        errors: 0,
+        held_after: 800,
+      ),
+      Answered(
+        why: "SaveRefused: the error and the not-set line, nothing changed",
+        outcome: step.Answer(
+          FromStore(
+            store.ForItems(store.SaveRefused(
+              constraint: "character_currency_type_is_kept",
+            )),
+          ),
+        ),
+        ids: [0x01C8],
+        lines: ["!currency 1 was not set"],
+        warnings: 0,
+        errors: 1,
+        held_after: 800,
+      ),
+    ],
+    fn(row) {
+      let #(state, taken) =
+        granting(currencies: [credits_800], text: "!currency 1 5000")
+      let #(state, answer) = answered(state:, taken:, outcome: row.outcome)
+      assert support.written_ids(answer) == row.ids as row.why
+      assert support.system_lines(answer) == row.lines as row.why
+      assert list.length(rule_support.logs_of(
+          step: answer,
+          level: step.LogWarning,
+        ))
+        == row.warnings
+        as row.why
+      assert list.length(rule_support.logs_of(
+          step: answer,
+          level: step.LogError,
+        ))
+        == row.errors
+        as row.why
+      assert !rule_support.stops(answer) && rule_support.asked(answer) == None
+        as "the connection goes on in the world"
+      let #(_, next) = dev_support.said(state:, text: "!currency 1 1")
+      assert support.ask_request(next)
+        == dev_support.currency_asked(
+          currency_type_id: 1,
+          held: row.held_after,
+          after: 1,
+        )
+        as { row.why <> ": the next ask holds the total the answer left" }
+    },
+  )
+}
+
+pub fn a_store_that_gives_no_answer_to_a_currency_ask_ends_the_connection_with_reason_8_and_saves_the_place_test() -> Nil {
+  use <- owned_test.run(60_000)
+  list.each(
+    [
+      #(step.Answer(FromStore(store.Unavailable)), 1),
+      #(step.NotRunning, 1),
+      #(step.NoAnswerInTime, 1),
+      #(step.EndedBeforeAnswer, 1),
+      #(StoppedWaiting, 0),
+    ],
+    fn(row) {
+      let #(outcome, errors) = row
+      let #(state, taken) =
+        granting(currencies: [credits_800], text: "!currency 1 5000")
+      let #(state, answer) = answered(state:, taken:, outcome:)
+      assert support.ask_request(answer)
+        == support.save_asked(1, support.entry_place())
+        as "one SavePlace ask, as in the world"
+      let assert Some(ask) = rule_support.asked(answer)
+      assert ask.deadline_ms == rule_support.now_ms + 4000
+        as "the settings' ask deadline, not a stop's"
+      assert list.length(rule_support.logs_of(
+          step: answer,
+          level: step.LogError,
+        ))
+        == errors
+        as "an error line for a store that failed, none for a stop"
+      assert support.written_ids(answer) == []
+        as "no frame and no line: nothing says whether the total was set"
+      let #(_, saved) =
+        support.answer(state:, taken: answer, outcome: support.place_saved())
+      assert support.disconnect(saved, support.keyed()) == LostUserServer
+        as "the place saved, 0x036A reason 8"
+    },
+  )
+}
+
+pub fn each_currency_use_is_logged_once_at_info_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(state, taken) =
+    granting(currencies: [credits_800], text: "!currency 1 5000")
+  let assert [line] = rule_support.logs_of(step: taken, level: step.LogInfo)
+    as "one info line for an accepted command, before its ask"
+  assert string.contains(line.text, "!currency 1 5000")
+    && string.contains(line.text, "800")
+    as "it names the command and the total held"
+  let #(_, answer) =
+    answered(state:, taken:, outcome: dev_support.currency_set(amount: 5000))
+  assert rule_support.logs(answer) == []
+    as "the answer logs nothing more for a set that was saved"
+  let #(_, refused) =
+    granting(currencies: [credits_800], text: "!currency 99 1")
+  assert rule_support.logs(refused) == []
+    as "a refused command is its System line, with no log"
 }
 
 // A `!go`: the placement the client takes as the server's move within a world

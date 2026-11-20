@@ -2,7 +2,12 @@
 //// ask made the stored character's own and answered by the store.
 
 import account_store_support.{type Stored}
-import genesis_prime/store.{Items, Move, SavePlace}
+import genesis_prime/client_connection
+import genesis_prime/store.{
+  CharacterLoaded, ForWorld, Items, LoadCharacter, Move, SavePlace, World,
+}
+import gleam/int
+import gleam/list
 
 /// The store's answer to the connection's ask, made the stored character's
 /// own: the ask names the account, character and session epoch the tests'
@@ -34,4 +39,26 @@ pub fn through_the_store(
       panic as "through_the_store makes an items ask and a place save the stored character's"
   }
   account_store_support.ask(store: stored.store, request: own)
+}
+
+/// The currency rows the stored character's next login finds, sorted by type.
+pub fn currencies_found(stored stored: Stored) -> List(store.HeldCurrency) {
+  let assert ForWorld(CharacterLoaded(currencies:, ..)) =
+    account_store_support.ask(
+      store: stored.store,
+      request: World(LoadCharacter(stored.account, stored.character_id, 0)),
+    )
+    as "the account's character loads"
+  list.sort(currencies, fn(a, b) {
+    int.compare(a.currency_type_id, b.currency_type_id)
+  })
+}
+
+/// The store request of an ask of the store.
+pub fn store_request(
+  request request: client_connection.Request,
+) -> store.Request {
+  let assert client_connection.AskStore(request) = request
+    as "the ask is the store's"
+  request
 }

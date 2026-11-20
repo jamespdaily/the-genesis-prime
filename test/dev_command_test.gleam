@@ -15,20 +15,22 @@
 import fixture_tables
 import genesis_prime/game/currency
 import genesis_prime/game/dev_command.{
-  AxisX, AxisY, AxisZ, CompleteQuest, Coordinates, ExperienceOutOfRange,
-  ExperienceTakesAWholeNumber, GiveItem, Go, GoTakesAPlace, ItemCountIsZero,
-  ItemHasNoRow, ItemIsAProxy, ItemTakesAnItem2IdAndACount, LevelOutOfRange,
-  LevelTakesAWholeNumber, Named, NoQuest2Row, PositionOutsideTheBox,
-  QuestTakesAQuest2IdAndDone, RaiseToExperience, RaiseToLevel,
-  SummonLevelIsNotAWholeNumber, SummonTakesACreature2Id, UnknownCommand,
-  WorldHasNoRow, WorldLocation2HasNoRow, WorldZoneHasNoRow,
+  AxisX, AxisY, AxisZ, CompleteQuest, Coordinates, CurrencyAmountAboveCap,
+  CurrencyAmountAboveColumn, CurrencyTakesATypeAndAnAmount,
+  CurrencyTypeIsNotKept, ExperienceOutOfRange, ExperienceTakesAWholeNumber,
+  GiveItem, Go, GoTakesAPlace, ItemCountIsZero, ItemHasNoRow, ItemIsAProxy,
+  ItemTakesAnItem2IdAndACount, LevelOutOfRange, LevelTakesAWholeNumber, Named,
+  NoQuest2Row, PositionOutsideTheBox, QuestTakesAQuest2IdAndDone,
+  RaiseToExperience, RaiseToLevel, SummonLevelIsNotAWholeNumber,
+  SummonTakesACreature2Id, UnknownCommand, WorldHasNoRow, WorldLocation2HasNoRow,
+  WorldZoneHasNoRow,
 }
 import genesis_prime/game/start_place
 import genesis_prime/game/vendor_purchase
 import genesis_prime/game/vendor_trade
 import genesis_prime/message/bit_stream
 import genesis_prime/message/chat_line
-import genesis_prime/table/id.{Creature2Id, Item2Id, Quest2Id}
+import genesis_prime/table/id.{Creature2Id, CurrencyTypeId, Item2Id, Quest2Id}
 import gleam/bool
 import gleam/float
 import gleam/int
@@ -518,6 +520,117 @@ pub fn a_quest_the_tables_do_not_hold_is_refused_by_checked_before_anything_is_a
       assert dev_command.checked(command: row.0, tables:) == row.1 as row.2
     },
   )
+}
+
+fn currency(type_id: Int, amount: Int) -> dev_command.Command {
+  dev_command.SetCurrency(currency_type_id: CurrencyTypeId(type_id), amount:)
+}
+
+pub fn currency_takes_a_type_and_an_amount_as_whole_decimal_numbers_test() -> Nil {
+  use <- owned_test.run(5000)
+  list.each(
+    [
+      #(
+        "!currency 1 5000",
+        Ok(currency(1, 5000)),
+        "a currency type and an amount, each one whole decimal number",
+      ),
+      #(
+        "!currency 1",
+        Error(CurrencyTakesATypeAndAnAmount),
+        "the amount is missing: a usage refusal",
+      ),
+    ],
+    fn(row) {
+      assert parsed(row.0) == row.1 as row.2
+    },
+  )
+}
+
+pub fn a_currency_value_the_tables_do_not_hold_is_refused_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = fixture_tables.shared()
+  let column_limit = 9_223_372_036_854_775_807
+  list.each(
+    [
+      #(currency(1, 5000), Ok(currency(1, 5000)), "credits: CurrencyType row 1"),
+      #(currency(2, 5000), Ok(currency(2, 5000)), "Renown: CurrencyType row 2"),
+      #(
+        currency(8, 1),
+        Error(CurrencyTypeIsNotKept(currency_type_id: 8)),
+        "CurrencyType has no row 8",
+      ),
+      #(
+        currency(15, 1),
+        Error(CurrencyTypeIsNotKept(currency_type_id: 15)),
+        "CurrencyType has no row 15: the client keeps types 1 to 14",
+      ),
+      #(
+        currency(1, 500_000),
+        Ok(currency(1, 500_000)),
+        "GameFormula 1115 dataint0: the credits cap, 500,000",
+      ),
+      #(
+        currency(1, 500_001),
+        Error(CurrencyAmountAboveCap(
+          currency_type_id: 1,
+          amount: 500_001,
+          cap: 500_000,
+        )),
+        "one above the credits cap",
+      ),
+      #(
+        currency(2, 5001),
+        Error(CurrencyAmountAboveCap(
+          currency_type_id: 2,
+          amount: 5001,
+          cap: 5000,
+        )),
+        "GameFormula 1116 dataint0: the Renown cap, 5,000",
+      ),
+      #(
+        currency(5, 12_001),
+        Error(CurrencyAmountAboveCap(
+          currency_type_id: 5,
+          amount: 12_001,
+          cap: 12_000,
+        )),
+        "CurrencyType row 5: capAmount 12000",
+      ),
+      #(
+        currency(3, 1_000_000_000_000),
+        Ok(currency(3, 1_000_000_000_000)),
+        "CurrencyType row 3: capAmount 0, no cap",
+      ),
+      #(
+        currency(3, column_limit + 1),
+        Error(CurrencyAmountAboveColumn(
+          amount: column_limit + 1,
+          highest: column_limit,
+        )),
+        "the character_currency.amount column is a bigint: 2^63 - 1",
+      ),
+    ],
+    fn(row) {
+      assert dev_command.checked(command: row.0, tables:) == row.1 as row.2
+    },
+  )
+}
+
+pub fn a_currency_amount_of_any_length_is_refused_by_the_column_limit_not_by_a_crash_test() -> Nil {
+  use <- owned_test.run(5000)
+  let amount = 99_999_999_999_999_999_999
+  assert parsed("!currency 1 99999999999999999999") == Ok(currency(1, amount))
+    as "a number of any length parses: its check refuses it"
+  assert dev_command.checked(
+      command: currency(1, amount),
+      tables: fixture_tables.shared(),
+    )
+    == Error(CurrencyAmountAboveColumn(
+      amount:,
+      highest: 9_223_372_036_854_775_807,
+    ))
+    as "the column's 63-bit limit is tested before the credits cap, which the amount is also above"
 }
 
 /// A `!go` to World 22 and WorldZone 1189, rows of the client's tables, at a position.

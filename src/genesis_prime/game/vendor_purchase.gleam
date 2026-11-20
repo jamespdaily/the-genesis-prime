@@ -694,7 +694,8 @@ pub fn answered(
     store.ItemsSaved
     | store.ItemMade(..)
     | store.Sold(..)
-    | store.TurnedIn(..) ->
+    | store.TurnedIn(..)
+    | store.CurrencySet(..) ->
       panic as "the store answers a purchase with Bought, ItemsNotSaved or SaveRefused"
   }
 }

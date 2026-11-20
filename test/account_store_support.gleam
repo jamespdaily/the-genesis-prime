@@ -10,7 +10,7 @@ import genesis_prime/store.{
   type AccountId, AccountId, BuyFromVendor, CharacterCreated, CharacterLoaded,
   CreateCharacter, Created, DeleteItem, ForSelect, ForWorld, LoadCharacter,
   LookEntry, MergeItems, MoveItems, NewCharacter, Select, SellToVendor,
-  SpendItem, SplitItem, TurnInQuest, World,
+  SetCurrency, SpendItem, SplitItem, TurnInQuest, World,
 }
 import genesis_prime/store/worker
 import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
@@ -272,6 +272,8 @@ pub fn own_request(
       BuyFromVendor(..request, account_id:, character_id:, session_epoch:)
     SellToVendor(..) ->
       SellToVendor(..request, account_id:, character_id:, session_epoch:)
+    SetCurrency(..) ->
+      SetCurrency(..request, account_id:, character_id:, session_epoch:)
     TurnInQuest(..) ->
       TurnInQuest(..request, account_id:, character_id:, session_epoch:)
   }

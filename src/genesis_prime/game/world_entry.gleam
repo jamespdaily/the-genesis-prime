@@ -778,7 +778,8 @@ pub fn loaded(
         store.ItemMade(..)
         | store.Bought(..)
         | store.Sold(..)
-        | store.TurnedIn(..) ->
+        | store.TurnedIn(..)
+        | store.CurrencySet(..) ->
           panic as "the store answers a fill of charges only with ItemsSaved, ItemsNotSaved or SaveRefused"
       })
     Loading(..), store.ChargesFilled(..)

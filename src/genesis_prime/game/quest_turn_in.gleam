@@ -1226,7 +1226,11 @@ pub fn answered(
             <> "; nothing changed",
         ),
       ])
-    store.ItemsSaved | store.ItemMade(..) | store.Bought(..) | store.Sold(..) ->
+    store.ItemsSaved
+    | store.ItemMade(..)
+    | store.Bought(..)
+    | store.Sold(..)
+    | store.CurrencySet(..) ->
       panic as "the store answers a turn-in with TurnedIn, ItemsNotSaved or SaveRefused"
   }
 }

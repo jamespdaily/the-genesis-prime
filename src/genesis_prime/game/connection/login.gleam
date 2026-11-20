@@ -48,7 +48,7 @@ import genesis_prime/client_connection.{
 import genesis_prime/game/character_select
 import genesis_prime/game/connection/state.{
   type Resume, type Session, AwaitingHelloReply, Buying, ClaimingSession,
-  EnteringWorld, InCharacterSelect, InWorld, LeavingMap, MovingItem,
+  EnteringWorld, Granting, InCharacterSelect, InWorld, LeavingMap, MovingItem,
   ResumeSelect, ResumeWorld, SavingPlace, Selling, Session, SpendingCharge,
   Summoning, TakingSessionKey, TurningIn, WaitingToClaim,
 } as connection_state
@@ -255,6 +255,7 @@ pub fn sessions_sent(
     | account_session.TakenOver, MovingItem(..)
     | account_session.TakenOver, SpendingCharge(..)
     | account_session.TakenOver, Buying(..)
+    | account_session.TakenOver, Granting(..)
     | account_session.TakenOver, Selling(..)
     | account_session.TakenOver, TurningIn(..)
     | account_session.TakenOver, SavingPlace(..)
@@ -309,6 +310,7 @@ pub fn own_watch_ended(
     | MovingItem(..), _
     | SpendingCharge(..), _
     | Buying(..), _
+    | Granting(..), _
     | Selling(..), _
     | TurningIn(..), _
     | SavingPlace(..), _
@@ -366,6 +368,7 @@ pub fn claim_wait_over(
     | MovingItem(..)
     | SpendingCharge(..)
     | Buying(..)
+    | Granting(..)
     | Selling(..)
     | TurningIn(..)
     | SavingPlace(..)

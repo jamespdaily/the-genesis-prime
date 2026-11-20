@@ -22,6 +22,7 @@
 import character_support
 import connection_rule_support as support
 import fixture_tables
+import game_connection_dev_command_support as dev_support
 import game_connection_support
 import genesis_prime/account_session.{Claimed}
 import genesis_prime/client_connection.{
@@ -778,6 +779,29 @@ pub fn a_firing_in_a_busy_status_is_held_until_it_ends_test() -> Nil {
       ),
     ),
     "Selling",
+  )
+  // Granting: a `!currency` ask is out.
+  let entered =
+    game_connection_support.entered_with_dev_commands(
+      tables:,
+      quests: [],
+      items: [stack],
+      credits: 0,
+    )
+  let #(state, taken) =
+    item_expiry_support.read_at(
+      state: entered,
+      bytes: game_connection_support.chat_line_message(4, "!currency 1 5000"),
+      after_ms: 29_000,
+    )
+  assert game_connection_support.ask_request(taken)
+    == dev_support.currency_asked(currency_type_id: 1, held: 0, after: 5000)
+    as "the connection waits on the store"
+  held_while(
+    state,
+    taken,
+    step.Answer(FromStore(ForItems(store.CurrencySet(amount: 5000)))),
+    "Granting",
   )
 }
 

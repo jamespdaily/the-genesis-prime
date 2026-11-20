@@ -147,8 +147,8 @@ import genesis_prime/message/shared_item.{SharedItem}
 import genesis_prime/step.{type LogLevel, LogError, LogWarning}
 import genesis_prime/store.{
   type AccountId, type CharacterId, type HeldItem, type ItemMove,
-  type ItemsAnswer, type SessionEpoch, Bought, ItemMade, ItemsNotSaved,
-  ItemsSaved, SaveRefused, Sold, TurnedIn,
+  type ItemsAnswer, type SessionEpoch, Bought, CurrencySet, ItemMade,
+  ItemsNotSaved, ItemsSaved, SaveRefused, Sold, TurnedIn,
 }
 import genesis_prime/table/id.{type Item2Id}
 import genesis_prime/table/loader/store as table_store
@@ -1403,6 +1403,8 @@ pub fn answered(
     Sold(..) -> panic as "the store answers a sale only to a vendor sale"
     TurnedIn(..) ->
       panic as "the store answers a turn-in only to a quest turned in"
+    CurrencySet(..) ->
+      panic as "the store answers a currency set only to a development command"
     ItemsNotSaved -> #(
       items,
       refused(

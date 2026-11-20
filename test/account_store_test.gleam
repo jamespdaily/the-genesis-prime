@@ -4625,6 +4625,113 @@ pub fn a_sale_in_another_currency_writes_that_currency_and_makes_its_row_when_no
   account_store_support.stop(store)
 }
 
+/// One `set_currency` row: what the request holds, the answer, and every amount the next
+/// login finds.
+type CurrencyRow {
+  CurrencyRow(
+    name: String,
+    stale: Bool,
+    currency_type_id: Int,
+    held: Int,
+    after: Int,
+    answer: store.Answer,
+    found: List(store.HeldCurrency),
+  )
+}
+
+pub fn set_currency_makes_or_sets_the_row_only_for_the_current_login_and_the_held_amount_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let credits = store.HeldCurrency(currency_type_id: 1, amount: 1000)
+  let unchanged = [credits]
+  list.each(
+    [
+      CurrencyRow(
+        name: "no row and held 0 makes it",
+        stale: False,
+        currency_type_id: 7,
+        held: 0,
+        after: 60,
+        answer: ForItems(store.CurrencySet(amount: 60)),
+        found: [credits, store.HeldCurrency(currency_type_id: 7, amount: 60)],
+      ),
+      CurrencyRow(
+        name: "an existing row is set",
+        stale: False,
+        currency_type_id: 1,
+        held: 1000,
+        after: 5000,
+        answer: ForItems(store.CurrencySet(amount: 5000)),
+        found: [store.HeldCurrency(currency_type_id: 1, amount: 5000)],
+      ),
+      CurrencyRow(
+        name: "a lower total is set",
+        stale: False,
+        currency_type_id: 1,
+        held: 1000,
+        after: 100,
+        answer: ForItems(store.CurrencySet(amount: 100)),
+        found: [store.HeldCurrency(currency_type_id: 1, amount: 100)],
+      ),
+      CurrencyRow(
+        name: "a held total that is not the saved one changes nothing",
+        stale: False,
+        currency_type_id: 1,
+        held: 999,
+        after: 5000,
+        answer: ForItems(store.ItemsNotSaved),
+        found: unchanged,
+      ),
+      CurrencyRow(
+        name: "an older login's request changes nothing",
+        stale: True,
+        currency_type_id: 1,
+        held: 1000,
+        after: 5000,
+        answer: ForItems(store.ItemsNotSaved),
+        found: unchanged,
+      ),
+      CurrencyRow(
+        name: "a type the client keeps no row for is refused by the table's check",
+        stale: False,
+        currency_type_id: 15,
+        held: 0,
+        after: 1,
+        answer: ForItems(store.SaveRefused(
+          constraint: "character_currency_type_is_kept",
+        )),
+        found: unchanged,
+      ),
+    ],
+    fn(row) {
+      let store = account_store_support.start_store(pool_size: 2)
+      let #(account, character_id, _) = holding_stacks(store:, stacks: [])
+      let #(stale, _) =
+        account_store_support.login(store:, account:, character_id:)
+      let #(epoch, _) =
+        account_store_support.login(store:, account:, character_id:)
+      assert account_store_support.ask(
+          store:,
+          request: Items(store.SetCurrency(
+            account_id: account,
+            character_id:,
+            session_epoch: character_support.epoch(case row.stale {
+              True -> stale
+              False -> epoch
+            }),
+            currency_type_id: row.currency_type_id,
+            held: row.held,
+            after: row.after,
+          )),
+        )
+        == row.answer
+        as row.name
+      assert held_everything(store:, account:, character_id:).0 == row.found
+        as { row.name <> ": what the next login finds" }
+      account_store_support.stop(store)
+    },
+  )
+}
+
 pub fn a_sale_of_a_worn_stack_deletes_it_from_its_worn_place_test() -> Nil {
   use <- owned_test.run(60_000)
   let store = account_store_support.start_store(pool_size: 2)
