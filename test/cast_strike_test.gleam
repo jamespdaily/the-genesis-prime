@@ -11,9 +11,11 @@
 //// - Telekinetic Strike: bag index 0, a cast time of 1250 ms (`Spell4.32893`).
 
 import cast_support as support
+import genesis_prime/game/area.{Point, Pose}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{Deflected, GoAsked, Hit} as cast_state
 import genesis_prime/game/hit.{type Description, Description}
+import genesis_prime/game/start_place
 import genesis_prime/message/cast_result
 import genesis_prime/message/combat_result
 import genesis_prime/message/damage_type
@@ -27,9 +29,11 @@ import genesis_prime/message/spell_miss.{SpellMiss}
 import genesis_prime/message/spell_missed
 import genesis_prime/message/spell_started
 import genesis_prime/table/id.{Spell4Id}
+import gleam/dict
 import gleam/list
 import gleam/option.{None}
 import owned_test
+import place_support
 
 /// 2^31 + 7 x 2^11: the caster 7's first cast id.
 const first_cast = 2_147_497_984
@@ -61,6 +65,7 @@ pub fn a_go_with_damage_asks_for_its_targets_and_writes_nothing_until_the_round_
       spell4_id: Spell4Id(32_893),
       primary_target: 7,
       spent: None,
+      started_at: Pose(at: Point(x: 4605.65, z: 494.996), yaw: 0.0),
     )),
   )
     as "the go asks the connection for its targets, with the caster as the primary target"
@@ -360,4 +365,85 @@ pub fn a_proxy_aimed_at_the_area_starts_one_child_for_each_hit_unit_and_none_for
     })
   assert starts == [#(30_900, 10), #(30_900, 12)]
     as "Spell4Effects 62204 is a Proxy to 30900 aimed at the area: one child for each Hit unit, with that unit as its primary target, and none for the deflected 11"
+}
+
+/// A place standing at `x` and `z` in the live character's zone, turned to `yaw`.
+fn standing(x x: Float, z z: Float, yaw yaw: Float) -> start_place.Place {
+  start_place.turned(
+    place: place_support.at(
+      world_id: 3460,
+      world_zone_id: 6009,
+      x:,
+      y: -7.5,
+      z:,
+    ),
+    facing: start_place.Facing(yaw:, pitch: 0.0, roll: 0.0),
+  )
+}
+
+pub fn a_go_asked_carries_the_pose_its_cast_started_at_not_where_the_caster_stands_by_then_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The 0x7fd and 0x7ff carry the caster's position and yaw when the cast starts, which the
+  // client stores once (`0x1405a4e60`); the caster here moves 40 m and turns before the go.
+  let first = standing(x: 4605.5, z: 494.25, yaw: 1.25)
+  let moved = standing(x: 4645.5, z: 494.25, yaw: -2.5)
+  let started_at = Pose(at: Point(x: 4605.5, z: 494.25), yaw: 1.25)
+  let at_the_go = Pose(at: Point(x: 4645.5, z: 494.25), yaw: -2.5)
+  // A pressed spell: Telekinetic Strike's go is 1250 ms after the press.
+  let #(state, pressed) =
+    support.pressed_raw(
+      state: cast_state.new(),
+      caster: cast_state.Caster(..support.caster(), place: first),
+      bag_index: 0,
+      target: 0,
+      at: 1000,
+    )
+  let assert [#(timer, 1250)] = support.started_timers(effects: pressed)
+    as "the cast time of Spell4.32893"
+  let #(_, gone) =
+    support.fired_raw_as(
+      caster: cast_state.Caster(..support.caster(), place: moved),
+      state:,
+      timer:,
+      at: 2250,
+    )
+  let assert [asked] = support.goes_asked(effects: gone)
+    as "the go asks for its targets"
+  assert asked.started_at == started_at
+    as "the pressed spell's go carries the pose of the press, not the caster's pose at the go"
+  assert asked.started_at != at_the_go
+  // A child a go started: the pressed spell's go starts it on the struck unit 20 with the
+  // caster at its new place, the place the child's own 0x7ff carries.
+  let child = support.child(spell4_id: 91_001, base: 5)
+  let #(state, raw) =
+    support.pressed_raw_in(
+      plans: support.plans_starting_on_each_struck(started: child),
+      state: cast_state.new(),
+      caster: cast_state.Caster(..support.caster(), place: first),
+      bag_index: support.started_bag_index,
+      target: 0,
+      at: 1000,
+    )
+  let assert [parent_asked] = support.goes_asked(effects: raw)
+  assert parent_asked.started_at == started_at
+    as "the parent's go carries the press's pose"
+  let #(_, started) =
+    cast.went(
+      cast: state,
+      caster: cast_state.Caster(..support.caster(), place: moved),
+      now: support.at(ms: 1000),
+      cast_id: parent_asked.cast_id,
+      phase: parent_asked.phase,
+      spell: Error(Nil),
+      struck: support.hits([20]),
+      gates_passed: dict.new(),
+      poses: dict.new(),
+      indexes: dict.new(),
+      units: dict.new(),
+      rolls: [],
+    )
+  let assert [child_asked] = support.goes_asked(effects: started)
+    as "the parent's go starts the child, which asks for its own go"
+  assert child_asked.primary_target == 20 && child_asked.started_at == at_the_go
+    as "the child's start is the caster's place at the go that started it"
 }
