@@ -8,7 +8,8 @@ card:
   a pull request opened from it           pull request <P> opened on <sha7>
   its checks ended (dev/pr_wait.sh P)     CI passed on <sha7>, pull request <P>, attempt <a>
                                           (or "CI failed on ...")
-  its merge (gh pr merge P)               merged: pull request <P> (<merge sha7>)           Done, when P closes n
+  its merge (gh pr merge P, or            merged: pull request <P> (<merge sha7>)           Done, when P closes n
+   dev/merge_when_green.sh P)
                                           and, when P closes n, `dev/step_measure.py n` as a
                                           comment headed "Measure (draft for the closing summary)"
   (at the merge, the CI line of the merged head comes first, when the issue lacks it)
@@ -53,6 +54,9 @@ Rules:
     number is not read at all.
   - A merged pull request closes the step only when it closes issue n; a fix branch's merge
     posts its CI and merge lines and nothing else.
+  - `dev/merge_when_green.sh P` runs `gh pr merge` inside itself, which the hook cannot see, so
+    the script's own command line is read as the merge of P; a run that stopped before merging
+    leaves P OPEN and posts nothing.
   - Settings hooks fire for a subagent's tool calls too, so a builder's push is seen.
 
 It posts as the jamespdaily login, as dev/card.sh does, unless GH_TOKEN is set. An event made
@@ -204,10 +208,10 @@ def _gh_pull_events(simple: Simple, output: str) -> list:
 
 def events_of(hook) -> list:
     """What a Bash call did that the hook reports: pushes, a pull request created, a wait on a
-    pull request's checks, a merge. Only the command and its output are read (a call that
-    exited non-zero reaches the hook as PostToolUseFailure, whose `error` holds the output);
-    GitHub fills in the rest. Anything that is not a Bash call with a command gives an empty
-    list."""
+    pull request's checks, a merge (`gh pr merge` or `dev/merge_when_green.sh`). Only the
+    command and its output are read (a call that exited non-zero reaches the hook as
+    PostToolUseFailure, whose `error` holds the output); GitHub fills in the rest. Anything
+    that is not a Bash call with a command gives an empty list."""
     if not isinstance(hook, dict) or hook.get("tool_name") != "Bash":
         return []
     tool_input, response = hook.get("tool_input"), hook.get("tool_response")
@@ -226,6 +230,10 @@ def events_of(hook) -> list:
             pushes += [Push(t.branch, t.folder, t.remote) for t in git_pushes(simple)]
         elif program == "gh":
             others += _gh_pull_events(simple, output)
+        elif program == "merge_when_green.sh":
+            event = _pull_named(Merged, None, simple.words[1] if len(simple.words) > 1 else None,
+                                simple.folder)
+            others += [event] if event else []
         elif program == "pr_wait.sh":
             event = _pull_named(Checked, None, simple.words[1] if len(simple.words) > 1 else None,
                                 simple.folder)
