@@ -1201,6 +1201,7 @@ fn combat_of(
   use #(attack, scaling, attack_effects) <- result.try(attack_of(
     catalog:,
     formulas:,
+    role: AutoAttack,
     spell4_id: kind.attack_spell4_id,
     creature:,
     level:,
@@ -1213,6 +1214,7 @@ fn combat_of(
       attack_of(
         catalog:,
         formulas:,
+        role: AutoAttack,
         spell4_id:,
         creature:,
         level:,
@@ -1228,6 +1230,7 @@ fn combat_of(
       attack_of(
         catalog:,
         formulas:,
+        role: Special,
         spell4_id: id.Spell4Id(ref.spell4_id),
         creature:,
         level:,
@@ -1369,14 +1372,23 @@ fn defence_of(
   )
 }
 
+/// What a kind lists a spell as: its auto-attack (the attack and its alternates) or one of its
+/// specials. The kind's list decides how a spell with a cast time of 0 is cast (`attack_of`),
+/// as the same spell may be listed as either.
+type Role {
+  AutoAttack
+  Special
+}
+
 /// The attack of the spell `spell4_id` (genesis_prime/world_map/creature_life `Attack`),
 /// for the creature's own attack, each of its alternates and each of its specials: the spell, the damage effect its difficulty chooses by the effect's caster
 /// prerequisite (type 179, `0x14049eeb0`), its blow by the creature formula
 /// (`0x140565600`, GameFormula 712), its critical hit chance, severity and
 /// strikethrough from its properties, its run speed (Creature2DisplayInfo.runLand
 /// times property 100, `0x1405b45e0`) and its reach (the spell's `targetMaxRange`
-/// plus `hit_radius`). A spell with a cast time (`Spell4.castTime` above 0) is a charge:
-/// it carries that time and its area and anchor (`spell_area.area_of_spell`), the telegraph rows
+/// plus `hit_radius`). A special, and an auto-attack with a cast time (`Spell4.castTime` above
+/// 0), is a charge, an auto-attack with a cast time of 0 strikes at once (`Instant`): a charge
+/// carries that time and its area and anchor (`spell_area.area_of_spell`), the telegraph rows
 /// the client makes of it (`telegraph_entries.draws_of`), whether its aim follows the target
 /// (`Spell4.propertyFlags` bit 0x2), its gos and its hold
 /// (`timeline_of`), and an area it lacks or cannot read fails the load. A charge on its
@@ -1393,6 +1405,7 @@ fn defence_of(
 fn attack_of(
   catalog catalog: Catalog,
   formulas formulas: Formulas,
+  role role: Role,
   spell4_id spell4_id: Spell4Id,
   creature creature: Creature2,
   level level: Int,
@@ -1465,9 +1478,13 @@ fn attack_of(
         formula:,
       )
     })
-  use cast <- result.try(case spell.cast_time > 0 {
-    False -> Ok(creature_life.Instant)
-    True ->
+  let instant = case role {
+    AutoAttack -> spell.cast_time <= 0
+    Special -> False
+  }
+  use cast <- result.try(case instant {
+    True -> Ok(creature_life.Instant)
+    False ->
       case
         spell_area.area_of_spell(tables: catalog.tables, spell4_id: spell4_id)
       {
@@ -1477,6 +1494,7 @@ fn attack_of(
         Ok(Some(spell_area.CreatureArea(row: area_row, inside:, anchor:))) -> {
           use #(gos, hold_ms) <- result.map(timeline_of(
             catalog:,
+            role:,
             creature_id:,
             spell4_id:,
             cast_ms: spell.cast_time,
@@ -1548,23 +1566,29 @@ fn attack_of(
   Ok(#(attack, creature_scaling, attack_effects))
 }
 
-/// The gos of a charge and the hold after it. A spell a kind lists as a special has the gos of
+/// The gos of a charge and the hold after it. A special has the gos of
 /// its plan (`spell_plan.go_times_ms`): each go the `applied` damage rows name strikes with those
 /// rows' blows inside the hit shapes its phase names that the client is drawing then
 /// (`spell_area.hit_shapes_by_go`), a go with no such rows or no such shape strikes nobody, and
 /// the hold is the summed `delay_ms` and `duration_ms` of its NpcExecutionDelay rows at the
-/// cast's last go. Any other charge has one go at its cast time that strikes with every applied
-/// row inside `inside`, and no hold. A special the plan could not read, one with no go time or
+/// cast's last go. An auto-attack with a cast time has one go at its cast time that strikes with
+/// every applied row inside `inside`, and no hold, whether or not another kind lists its spell
+/// as a special. A special the plan could not read, one with no go time or
 /// one whose shapes cannot be read fails the load.
 fn timeline_of(
   catalog catalog: Catalog,
+  role role: Role,
   creature_id creature_id: Creature2Id,
   spell4_id spell4_id: Spell4Id,
   cast_ms cast_ms: Int,
   applied applied: List(spell4_effects.Spell4Effects),
   inside inside: area.Inside,
 ) -> Result(#(List(creature_life.Go), Int), SpawnError) {
-  case dict.get(catalog.special_plans, spell4_id.value) {
+  let plan = case role {
+    AutoAttack -> Error(Nil)
+    Special -> dict.get(catalog.special_plans, spell4_id.value)
+  }
+  case plan {
     Error(Nil) ->
       Ok(#(
         [

@@ -34,6 +34,12 @@ const spell_47033 = [1500, 2500, 2750, 3200]
 
 const spell_39943 = [500, 1500, 1600, 1650, 1700]
 
+const savage_shred = [0, 1, 200, 700, 1200, 1700, 2800]
+
+const ground_pound = [200, 666, 1100, 1600]
+
+const suppressing_fire = [250, 500, 750, 1000, 1250, 1500, 1750, 2000]
+
 pub fn a_hit_row_is_drawn_at_a_go_by_its_time_window_and_display_flags_test() -> Nil {
   use <- owned_test.run(60_000)
   // Each case: the row, the spell's go times, a go, whether the client draws the row then, and why.
@@ -75,6 +81,29 @@ pub fn a_hit_row_is_drawn_at_a_go_by_its_time_window_and_display_flags_test() ->
     ),
     #(5010, spell_47033, 2, False, "as 5009"),
     #(10_908, spell_39943, 1, False, "flag 0x40, a twin, is never drawn"),
+    #(
+      1061,
+      savage_shred,
+      0,
+      True,
+      "no end, displayFlags 14: bit 8 shows it from the first go, at 0",
+    ),
+    #(1061, savage_shred, 6, True, "and to the finish"),
+    #(
+      145,
+      ground_pound,
+      0,
+      True,
+      "0 to 1,800, displayFlags 14: drawn at go 0, 200",
+    ),
+    #(
+      7108,
+      suppressing_fire,
+      0,
+      True,
+      "0 to 1,500, displayFlags 12: drawn at go 0, 250",
+    ),
+    #(7108, suppressing_fire, 7, False, "1,500 ms is before the pulse at 2,000"),
   ]
   |> list.each(fn(found) {
     let #(row_id, go_times_ms, go, drawn, reason) = found
@@ -94,6 +123,19 @@ pub fn a_hit_row_is_drawn_at_a_go_by_its_time_window_and_display_flags_test() ->
         <> reason
       }
   })
+  // Synthetic: row 1061 (start 0, no end) with displayFlags 4 in place of 14. It appears at 0,
+  // the cast's first go, and bit 4 shows a row before the first go only: it is never drawn at
+  // go 0 (`0x140542d90`).
+  use tables <- fixture_tables.changed(
+    table: "TelegraphDamage",
+    id: 1061,
+    with: [#("displayFlags", Integer(4))],
+  )
+  let assert Ok(row) =
+    telegraph_damage.get(tables:, id: TelegraphDamageId(1061))
+    as "the changed row is there"
+  assert !telegraph_window.drawn_at(row:, go_times_ms: savage_shred, go: 0)
+    as "a row with displayFlags 4 alone is never drawn at a first go at 0"
 }
 
 pub fn a_row_that_appears_from_the_first_go_without_display_flag_8_is_never_drawn_test() -> Nil {

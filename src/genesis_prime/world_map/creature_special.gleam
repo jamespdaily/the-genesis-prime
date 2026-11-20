@@ -18,7 +18,9 @@
 ////   `RowId` holds one integer, so the sentence carries the Spell4.
 //// - **The load refuses** a Spell4 the client lacks; a cooldown below the strike deadline
 ////   (`strike_tell.deadline_ms`), since two rounds would be open at once; and a spell
-////   `creature_attack.special_checked` refuses: no cast time, no readable area (rows
+////   `creature_attack.special_checked` refuses: a ChanneledField cast with a cast time of 0
+////   or a channel with a finish after its last pulse (`creature_attack.channel_carried`),
+////   no readable area (rows
 ////   placed apart, on the caster and the target or drawn where the cast starts and following a
 ////   unit, are not readable: `spell_area.PlacedApart`; a row on each struck unit, the ground or
 ////   two units: `spell_area.TelegraphOnStruckUnits`, `spell_area.TelegraphNotOnCaster`; an area
@@ -37,6 +39,9 @@
 ////   fail the creature's difficulty, or at which no hit row is drawn, strikes nobody; the special
 ////   still loads when another go can strike, and is refused when none can
 ////   (`creature_attack.NoGoCanStrike`). The hold follows the cast's last go.
+//// - **A special is cast whatever its `castTime`**: it has the gos of its plan, which may be
+////   many, the first possibly at 0, whatever its cast time: 0, or above it (Haymaker 66285, a
+////   Multiphase cast, has 3033) (`spawn` `attack_of`); the client draws the cast bar by the spell's own rows.
 //// - **The formula is read**: a special whose damage formula the creature rule does not
 ////   read for the creature's difficulty is refused (`creature_attack.loadable`), which the
 ////   spawn load would refuse later.
@@ -45,6 +50,7 @@
 
 import genesis_prime/game/spell_plan
 import genesis_prime/game/strike_tell
+import genesis_prime/gap
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id, Spell4Id}
 import genesis_prime/table/loader/store as table_store
@@ -194,4 +200,35 @@ pub fn refs_of(
   |> list.map(fn(row) {
     Ref(spell4_id: row.spell4_id, cooldown_ms: row.cooldown_ms)
   })
+}
+
+/// What the load of the specials leaves undone, for the coverage measure.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Creature specials",
+      missing: "a multi-hit special with no cast bar is broken by a stun or a knockdown as one with a bar is: the client has no rule for it, so it is a server choice",
+    ),
+    gap.Entry(
+      area: "Creature specials",
+      missing: "a special whose cast lasts as long as its cooldown is cast again as soon as its hold ends, so such a creature may never use its auto-attack",
+    ),
+    gap.Entry(
+      area: "Creature specials",
+      missing: "a ChanneledField special with a cast time of 0 is refused, as the number of gos the client expects of it is not settled",
+    ),
+    gap.Entry(
+      area: "Creature specials",
+      missing: "a ChanneledField special with a cast time above 0 (Spell4 47518 and 47627) is cast as the one go at its cast time, 200 ms, although the client keeps a 20 s channel record for each: the number of gos the client expects of it is not settled",
+    ),
+    gap.Entry(
+      area: "Creature specials",
+      missing: "a channel whose last pulse falls before its channelMaxTime, where the client's cast ends, is refused, as the creature's round writes its 0x7fe after the last go and has no later finish",
+    ),
+
+    gap.Entry(
+      area: "Creature specials",
+      missing: "an auto-attack the importer lists as a special because its description lacks the auto-attack marker is read as a special when it loads (4 spells) and is refused for having no area row otherwise (203 unmarked `Auto-Attack #n` spells)",
+    ),
+  ]
 }
