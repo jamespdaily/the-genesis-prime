@@ -276,6 +276,7 @@ pub fn rejoining(
       entered: world_entry.Entered(..entered, character:),
       place: landing,
       health: None,
+      told: None,
       connection: ConnectionId(1),
       stay: map_support.stay(count: 2),
       tables:,
@@ -316,7 +317,7 @@ pub fn entry_at(
   quests quests: List(QuestRow),
   now now: Now,
 ) -> #(List(world_entry.Effect), world_entry.Entered) {
-  let assert world_entry.InTheWorld(entered:, effects:) =
+  let assert world_entry.InTheWorld(entered:, effects:, ..) =
     answered_at(tables:, character:, items:, quests:, now:)
     as "the map's answer to the join puts the player in the world"
   #(effects, entered)

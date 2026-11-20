@@ -323,10 +323,11 @@ pub type Status {
   /// awaited; `then` says what follows it. A connection in this status ends
   /// without a second save: the save out is the one its end waits for.
   SavingPlace(holder: Holder, entered: world_entry.Entered, then: AfterSave)
-  /// The camp's place is saved and the map's run is asked to take the player
-  /// out (`world_map/map.Leave`), and its answer is awaited. A connection in this
-  /// status ends without a save: the place is already saved, and the map drops
-  /// a player whose connection ends. `then` says what follows `Left`.
+  /// The map's run is asked to take the player out (`world_map/map.Leave`), and its
+  /// answer is awaited. A connection in this status ends without a save, and the map
+  /// drops a player whose connection ends. The camp's place is saved before the ask;
+  /// a move to another place (`JoinAt`) saves nothing, so the next login finds the
+  /// last save. `then` says what follows `Left`.
   LeavingMap(holder: Holder, entered: world_entry.Entered, then: AfterLeave)
 }
 
@@ -334,10 +335,11 @@ pub type Status {
 pub type AfterLeave {
   /// The camp: 0x0594 and a new character select.
   ToCharacterSelect
-  /// The Holocrypt or a departures terminal: the map of `place`'s world is asked
-  /// to take the player there (`world_entry.rejoining`), with `health` as its
-  /// saved health (`None` is a full one), and its entry burst follows.
-  JoinAt(place: Place, health: Option(Int))
+  /// The Holocrypt, a departures terminal or a `!go` into another world: the map of
+  /// `place`'s world is asked to take the player there (`world_entry.rejoining`),
+  /// with `health` as its saved health (`None` is a full one), and its entry burst
+  /// follows, then the system line `told` when there is one.
+  JoinAt(place: Place, health: Option(Int), told: Option(String))
 }
 
 /// Where an entry into the world started, for what its refusal does.
@@ -867,7 +869,8 @@ pub fn end_with(
 /// account again with the player in the world. A connection already in
 /// `SavingPlace` or `TurningIn` holds the player too, but its save is out (the
 /// turn-in's transaction saves the place), so its end saves nothing more; in
-/// `LeavingMap` the place is already saved.
+/// `LeavingMap` and `EnteringWorld` an end saves nothing, and the next login finds
+/// the last save.
 pub fn holds_a_player(
   status: Status,
 ) -> Option(#(Holder, world_entry.Entered)) {

@@ -297,11 +297,13 @@ pub opaque type State {
 
 /// Which way the player comes into a world: a play from character select, which
 /// the client starts a new game object for and so needs its 0x25E (the frame,
-/// built before the map is asked), or the Holocrypt's join, a 0xAD in the world on
-/// the same game object, which sends none.
+/// built before the map is asked), or a join from inside the world (the Holocrypt, a
+/// departures landing, a `!go`), a 0xAD on the same game object, which sends none
+/// and may carry one system line (`told`) for the connection to write after the
+/// chat burst.
 type Entry {
   PlayEntry(character_state: Frame)
-  InWorldEntry(completing: List(Int))
+  InWorldEntry(completing: List(Int), told: Option(String))
 }
 
 /// What the store's read of the character leads to.
@@ -322,8 +324,9 @@ pub type Loaded {
 /// What the map's answer to the join leads to.
 pub type Joined {
   /// The player is in the world: what it keeps, and the messages that put it
-  /// there.
-  InTheWorld(entered: Entered, effects: List(Effect))
+  /// there, and the system line to write after them and the chat burst, when the
+  /// entry carries one.
+  InTheWorld(entered: Entered, effects: List(Effect), told: Option(String))
   /// The map refused the character (`map.NotJoined`); character select refuses
   /// the play, as it does for a character with no saved place.
   NotInTheWorld(character_id: Int, warning: String)
@@ -1113,6 +1116,7 @@ pub fn joined(
               passive_started(loadout:),
               unread_warned(gear: worn),
             ]),
+            told: told_after(entry:),
           ))
         }
         map.NotJoined(reason:) -> {
@@ -1273,7 +1277,7 @@ fn quest_log_sent(
         )
       ])
     }
-    InWorldEntry(completing:) -> {
+    InWorldEntry(completing:, ..) -> {
       let buttons = objective.buttons(log: quests, tables:)
       #(
         quests,
@@ -1306,7 +1310,15 @@ pub fn button_frame(change change: objective.ButtonChange) -> Frame {
   Frame(message_id: quest_spell_shortcut.message_id, body:)
 }
 
-/// 0x25E for a play, and nothing for the Holocrypt's join.
+/// The system line a join from inside the world carries, and none for a play.
+fn told_after(entry entry: Entry) -> Option(String) {
+  case entry {
+    PlayEntry(..) -> None
+    InWorldEntry(told:, ..) -> told
+  }
+}
+
+/// 0x25E for a play, and nothing for a join from inside the world.
 fn character_state_sent(entry entry: Entry) -> List(Effect) {
   case entry {
     PlayEntry(character_state:) -> [Send(frame: character_state)]
@@ -1318,11 +1330,13 @@ fn character_state_sent(entry entry: Entry) -> List(Effect) {
 /// departures terminal's landing): the map of `place`'s world is asked to take it
 /// there for the stay `stay`, with the earlier stay's movement placed at `place`
 /// and `health` as its saved health (`None` is a full one, as the Holocrypt's join
-/// gives). The map's answer comes back to `joined`, as at a play.
+/// gives). The system line `told`, when there is one, is written after the entry
+/// burst. The map's answer comes back to `joined`, as at a play.
 pub fn rejoining(
   entered entered: Entered,
   place place: Place,
   health health: Option(Int),
+  told told: Option(String),
   connection connection: ConnectionId,
   stay stay: Stay,
   tables tables: table_store.Tables,
@@ -1340,7 +1354,7 @@ pub fn rejoining(
     buyback: entered.buyback,
     connection:,
     stay:,
-    entry: InWorldEntry(completing: entered.completing),
+    entry: InWorldEntry(completing: entered.completing, told:),
     tables:,
     visibility:,
   )

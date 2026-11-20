@@ -20,9 +20,12 @@
 ////        finished ─▶ one system line, nothing changes
 ////        else ─▶ quest_log.complete, info log, 0x35C state 3, the deadline timer moved,
 ////                connection/objective.settled, one system line
-////   Go ─▶ dead, or the place is in another world ─▶ one system line, nothing changes
+////   Go ─▶ dead ─▶ one system line, nothing changes
 ////      └ the player's world ─▶ info log, the current cast stopped, projector.placed_at,
 ////                              one system line, objectives settled
+////      └ another world ─▶ info log, world.leaving_to (the unit leaves its viewers, the map is asked
+////                          to take the player out) ─▶ Left ─▶ the new map's join ─▶ Joined: the
+////                          entry burst, the chat burst, one system line
 //// ```
 ////
 //// - **The client takes experience only upward**, by 0x1ac adding to it, so a
@@ -68,8 +71,11 @@
 ////   change (`opcode.0xad.same_world`). The place carries the commanded zone until the
 ////   client's next zone report replaces it, which drives the zone chat group and the
 ////   objectives (`movement.take`). The place is saved by the next save, as a move is.
-//// - **A `!go` refuses while the player is dead**, as the departures' move does, and a
-////   `!go` into another world is refused with a system line.
+//// - **A `!go` into another world is the leave and join of the Holocrypt's move**
+////   (`world.leaving_to`): the player keeps its items, credits, quests, level, experience and
+////   saved health, and the place is saved by the next stay's timer, so a connection that ends
+////   while it leaves or joins makes no final save. The line comes after the join.
+//// - **A `!go` refuses while the player is dead**, as the departures' move does.
 
 import genesis_prime/client_connection.{
   type Answer, type Request, Asking, Continue, Done,
@@ -89,6 +95,7 @@ import genesis_prime/game/connection/state.{
   WaitingToClaim,
 } as connection_state
 import genesis_prime/game/connection/vendor_purchase as connection_vendor_purchase
+import genesis_prime/game/connection/world as connection_world
 import genesis_prime/game/currency
 import genesis_prime/game/deadline_timer
 import genesis_prime/game/dev_command
@@ -98,7 +105,6 @@ import genesis_prime/game/player_life
 import genesis_prime/game/quest_log
 import genesis_prime/game/start_place
 import genesis_prime/game/world_entry
-import genesis_prime/gap
 import genesis_prime/hand_off.{type Holder}
 import genesis_prime/step.{
   type ConnectionEffect, type Effect, type Now, type Outcome,
@@ -542,23 +548,19 @@ fn currency_name(
 /// The state 0x35C gives a completed quest.
 const completed_state = 3
 
-/// A `!go`: the player placed at the destination when it is in their world, or one
-/// system line and nothing changed when the player is dead, the tables lack what
-/// the place needs, or the place is in another world.
+/// A `!go`: the player placed at the destination when it is in their world, taken to
+/// the map of its world when it is in another (`crossed`), or one system line and
+/// nothing changed when the player is dead or the tables lack what the place needs. A
+/// status other than `InWorld` cannot have taken the line, so it is a bug that ends
+/// the connection.
 fn went(
   session session: Session,
   now now: Now,
   written written: List(Effect(ConnectionEffect(Request))),
   destination destination: dev_command.Destination,
 ) -> client_connection.Handled(Session) {
-  case connection_state.entered_of(session.status) {
-    None ->
-      connection_state.end_for(
-        session:,
-        now:,
-        text: "!go was run while the player was not in the world",
-      )
-    Some(entered) ->
+  case session.status {
+    InWorld(holder:, entered:) ->
       case player_life.state(life: entered.life) {
         player_life.Dead -> refused(session:, written:, text: dead_text)
         player_life.Alive ->
@@ -577,16 +579,81 @@ fn went(
                 == start_place.world_id(movement.place(state: entered.movement))
               {
                 True -> placed(session:, now:, written:, place:)
-                False -> refused(session:, written:, text: another_world_text)
+                False ->
+                  crossed(session:, now:, holder:, entered:, written:, place:)
               }
           }
       }
+    Summoning(..)
+    | MovingItem(..)
+    | SpendingCharge(..)
+    | Buying(..)
+    | Granting(..)
+    | Selling(..)
+    | TurningIn(..)
+    | SavingPlace(..)
+    | LeavingMap(..)
+    | EnteringWorld(..)
+    | ClaimingSession(..)
+    | WaitingToClaim(..)
+    | InCharacterSelect(..)
+    | AwaitingHelloReply
+    | TakingSessionKey ->
+      connection_state.end_for(
+        session:,
+        now:,
+        text: "!go was run while the player was not in the world",
+      )
   }
 }
 
 const dead_text = "!go is refused while the player is dead"
 
-const another_world_text = "!go to another world is not built"
+/// Where a `!go` put the player, for its log and its system line.
+fn described(place place: start_place.Place) -> String {
+  "world "
+  <> int.to_string(start_place.world_id(place))
+  <> ", zone "
+  <> int.to_string(start_place.world_zone_id(place))
+  <> ", ("
+  <> float.to_string(start_place.x(place))
+  <> ", "
+  <> float.to_string(start_place.y(place))
+  <> ", "
+  <> float.to_string(start_place.z(place))
+  <> ")"
+}
+
+/// The player taken to `place`, in another world: the info log, then the map is asked
+/// to take the player out and, once it has, the map of the place's world to take it
+/// in with the saved health (`world.leaving_to`). The system line comes after the
+/// entry burst and nothing is saved before it. A departures landing still kept is
+/// cleared, so its timer finds nothing.
+fn crossed(
+  session session: Session,
+  now now: Now,
+  holder holder: Holder,
+  entered entered: world_entry.Entered,
+  written written: List(Effect(ConnectionEffect(Request))),
+  place place: start_place.Place,
+) -> client_connection.Handled(Session) {
+  let logged =
+    connection_state.log(
+      session:,
+      level: step.LogInfo,
+      text: "dev command !go: left for " <> described(place:),
+    )
+  connection_world.leaving_to(
+    session:,
+    now:,
+    holder:,
+    entered: world_entry.Entered(..entered, departing: None),
+    place:,
+    health: Some(player_life.saved_health(life: entered.life)),
+    told: Some("moved to " <> described(place:)),
+    before: list.append(written, [logged]),
+  )
+}
 
 /// The player placed at `place`, in their world: the current cast stopped as the
 /// client's 0x83c stops it, the placement's frames, one system line and then the
@@ -597,23 +664,11 @@ fn placed(
   written written: List(Effect(ConnectionEffect(Request))),
   place place: start_place.Place,
 ) -> client_connection.Handled(Session) {
-  let described =
-    "world "
-    <> int.to_string(start_place.world_id(place))
-    <> ", zone "
-    <> int.to_string(start_place.world_zone_id(place))
-    <> ", ("
-    <> float.to_string(start_place.x(place))
-    <> ", "
-    <> float.to_string(start_place.y(place))
-    <> ", "
-    <> float.to_string(start_place.z(place))
-    <> ")"
   let logged =
     connection_state.log(
       session:,
       level: step.LogInfo,
-      text: "dev command !go: placed at " <> described,
+      text: "dev command !go: placed at " <> described(place:),
     )
   let #(session, stopped) = casting.stopped_by_placement(session:, now:)
   let #(session, moved) = connection_projector.placed_at(session:, now:, place:)
@@ -625,7 +680,7 @@ fn placed(
       [logged],
       stopped,
       moved,
-      [line(session:, text: "moved to " <> described)],
+      [line(session:, text: "moved to " <> described(place:))],
       settled,
     ]),
   )
@@ -774,14 +829,4 @@ fn line(
   text text: String,
 ) -> Effect(ConnectionEffect(Request)) {
   connection_state.to_client(session, chat.system_line_frame(text:))
-}
-
-/// What `!go` leaves undone.
-pub fn gaps() -> List(gap.Entry) {
-  [
-    gap.Entry(
-      area: "Development commands",
-      missing: "a `!go` into another world than the player's: it is refused with a system line",
-    ),
-  ]
 }

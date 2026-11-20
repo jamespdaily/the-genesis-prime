@@ -4,6 +4,7 @@
 
 import character_support
 import connection_rule_support as rule_support
+import departures_support
 import game_connection_support as support
 import genesis_prime/client_connection.{
   type Answer, type Request, AskMap, AskStore, FromMap, FromStore, SentByMap,
@@ -17,6 +18,7 @@ import genesis_prime/table/id.{ClassId}
 import genesis_prime/world_map/map
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import place_support
 import world_entry_support
 
 /// The tests' player of this class, level and experience in the world, its
@@ -87,6 +89,16 @@ pub fn entered_among_watchers(
   level level: Int,
   experience experience: Int,
 ) -> game_connection.State {
+  entered_among_watchers_in_a_map(class_id:, level:, experience:).0
+}
+
+/// `entered_among_watchers`, with the state of the map that took the player after
+/// the join, for a test that steps the map again.
+pub fn entered_among_watchers_in_a_map(
+  class_id class_id: Int,
+  level level: Int,
+  experience experience: Int,
+) -> #(game_connection.State, map.State) {
   let #(state, joining) =
     support.joining_holding(
       in_character_select: support.in_select_from(
@@ -103,7 +115,7 @@ pub fn entered_among_watchers(
     )
   let assert AskMap(message:, ..) = support.ask_request(joining)
     as "the player's first join is asked of the map"
-  let #(_, joined) =
+  let #(map_state, joined) =
     map.step(
       support.map_with_four_players(),
       rule_support.input(
@@ -118,16 +130,18 @@ pub fn entered_among_watchers(
       taken: joining,
       outcome: step.Answer(FromMap(answer)),
     )
-  list.fold(rule_support.sends(joined), state, fn(state, sent) {
-    case sent {
-      #(1, map.Noticed(stay:, notice:)) ->
-        support.feed(
-          state:,
-          event: support.for_stay(stay:, sent: SentByMap(notice)),
-        ).0
-      #(_, _) -> state
-    }
-  })
+  let state =
+    list.fold(rule_support.sends(joined), state, fn(state, sent) {
+      case sent {
+        #(1, map.Noticed(stay:, notice:)) ->
+          support.feed(
+            state:,
+            event: support.for_stay(stay:, sent: SentByMap(notice)),
+          ).0
+        #(_, _) -> state
+      }
+    })
+  #(state, map_state)
 }
 
 /// The connection after the player said this text on Say.
@@ -169,6 +183,50 @@ pub fn in_world_at_place(place place: Place) -> game_connection.State {
     character: store.Character(..support.world_character(), place: Some(place)),
     experience: None,
   )
+}
+
+/// The tests' player in World 22 (zone 1189), with the development commands on, its
+/// store holding this saved health (`None` for a full one), its burst taken.
+pub fn in_world_22(
+  saved_health saved_health: Option(Int),
+) -> game_connection.State {
+  support.entered_saved(
+    in_character_select: support.in_select_from(
+      support.accepted(support.settings_with_dev_commands()).0,
+    ),
+    character: store.Character(
+      ..support.world_character(),
+      place: Some(world_22_place()),
+    ),
+    saved_health:,
+  ).0
+}
+
+/// The place of `in_world_22`.
+pub fn world_22_place() -> Place {
+  place_support.at(world_id: 22, world_zone_id: 1189, x: 1.0, y: 2.0, z: 3.0)
+}
+
+/// The leave a `!go` into another world asked of the player's map, answered `Left`: the
+/// connection after it and the step that asks the new world's map to take the player.
+pub fn left_the_map(
+  state state: game_connection.State,
+  leaving leaving: ConnectionStep(Request),
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  support.answer(
+    state:,
+    taken: leaving,
+    outcome: step.Answer(FromMap(map.Left)),
+  )
+}
+
+/// The map of World 870 answering the join in `joining`, and the step of the connection
+/// taking the answer.
+pub fn joined_world_870(
+  state state: game_connection.State,
+  joining joining: ConnectionStep(Request),
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  departures_support.joined_at(state:, joining:, world: 870)
 }
 
 /// The connection after the player said this text on Say at this system time, as
@@ -224,4 +282,14 @@ pub fn saved_quests(
     support.ask_request(taken)
     as "the save timer asks the store to save the place and the quest log"
   quests
+}
+
+/// The connection after its save timer fires, and the step of the firing.
+pub fn save_timer_fires(
+  state state: game_connection.State,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  support.feed(
+    state:,
+    event: OwnEvent(step.TimerFired(connection_state.save_timer)),
+  )
 }

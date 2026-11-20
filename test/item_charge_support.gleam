@@ -139,7 +139,7 @@ pub fn entry_of(
       y: -853.0,
       z: -560.0,
     )
-  let assert world_entry.InTheWorld(entered:, effects:) =
+  let assert world_entry.InTheWorld(entered:, effects:, ..) =
     world_entry_support.joined_state(
       state:,
       tables:,

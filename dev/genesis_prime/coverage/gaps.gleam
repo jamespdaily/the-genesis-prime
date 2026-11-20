@@ -23,7 +23,6 @@ import genesis_prime/game/cast/press as cast_press
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/click_objective
 import genesis_prime/game/communicator
-import genesis_prime/game/connection/dev_command as connection_dev_command
 import genesis_prime/game/cooldown
 import genesis_prime/game/dev_command
 import genesis_prime/game/forced_move
@@ -116,7 +115,6 @@ pub fn registry() -> List(Entry) {
     cast_cost.gaps(),
     cast_heal.gaps(),
     cast_proc.gaps(),
-    connection_dev_command.gaps(),
   ])
 }
 

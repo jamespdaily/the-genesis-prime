@@ -1,7 +1,7 @@
 //// The player's stay in the world on the game connection
 //// (genesis_prime/game/connection): world entry's answers, the camp, the saves
 //// of the player's place and their answers, leaving the map, and joining again
-//// at the Holocrypt.
+//// at another place (the Holocrypt, a departures landing, a `!go`).
 ////
 //// - **Entering the world** is world entry's own feature
 ////   (genesis_prime/game/world_entry), as character select is: it asks the
@@ -586,10 +586,10 @@ pub fn save_answered(
   }
 }
 
-/// The camp's save is answered, or the player chose the Holocrypt: the map's run
-/// that took the player is asked to take it out, after the effects `before` and
-/// the unit's 0x355 to each viewer, and the connection waits in `LeavingMap` for
-/// what comes `then`.
+/// The camp's save is answered, or the player moves to another place
+/// (`leaving_to`): the map's run that took the player is asked to take it out,
+/// after the effects `before` and the unit's 0x355 to each viewer, and the
+/// connection waits in `LeavingMap` for what comes `then`.
 pub fn leaving_the_map(
   session session: Session,
   now now: Now,
@@ -615,7 +615,36 @@ pub fn leaving_the_map(
   )
 }
 
-/// The map's answer to the camp's leave ask: `Left`, a map that is not running
+/// A player in the world moves to `place`, which may be in another world: its
+/// unit is removed from its viewers, its chat groups, casts and strikes are left
+/// and its stay's timers cancelled (`connection/effects.world_left`), after the
+/// effects `before`, and its map is asked to take it out. The join at `place`
+/// follows `Left`, with `health` as its saved health (`None` is a full one) and
+/// the system line `told` after the entry burst. Nothing is saved: the next stay's
+/// timer saves the new place.
+pub fn leaving_to(
+  session session: Session,
+  now now: Now,
+  holder holder: Holder,
+  entered entered: world_entry.Entered,
+  place place: Place,
+  health health: Option(Int),
+  told told: Option(String),
+  before before: List(Effect(ConnectionEffect(Request))),
+) -> client_connection.Handled(Session) {
+  let #(session, left_behind) =
+    connection_effects.world_left(session:, now:, entered:)
+  leaving_the_map(
+    session:,
+    now:,
+    holder:,
+    entered:,
+    before: list.append(before, left_behind),
+    then: JoinAt(place:, health:, told:),
+  )
+}
+
+/// The map's answer to a leave ask: `Left`, a map that is not running
 /// and a run that ended before its answer all put the client back in character
 /// select with 0x0594, the map's watch dropped and a new character select; no
 /// answer in time ends the connection with 0x036A reason 8, with no second
@@ -631,8 +660,8 @@ pub fn leave_answered(
   case outcome {
     step.Answer(FromMap(map.Left)) | step.NotRunning | step.EndedBeforeAnswer ->
       case then {
-        JoinAt(place:, health:) ->
-          joining_at(session:, now:, holder:, entered:, place:, health:)
+        JoinAt(place:, health:, told:) ->
+          joining_at(session:, now:, holder:, entered:, place:, health:, told:)
         ToCharacterSelect ->
           in_character_select(session:, holder:, written: [
             Unwatch(watch: connection_state.map_watch),
@@ -672,7 +701,7 @@ pub fn leave_answered(
 }
 
 /// The second step of a move inside the game (the Holocrypt, a departures
-/// terminal), after the map's leave: the map of the place's world is asked to
+/// terminal, a `!go`), after the map's leave: the map of the place's world is asked to
 /// take the player at `place` for a new stay, with the earlier stay's movement
 /// and `health` as its saved health (`world_entry.rejoining`), the old map's watch
 /// dropped, in `EnteringWorld` from the world.
@@ -683,6 +712,7 @@ fn joining_at(
   entered entered: world_entry.Entered,
   place place: Place,
   health health: Option(Int),
+  told told: Option(String),
 ) -> client_connection.Handled(Session) {
   let stay = stay.next(session.last_stay)
   let #(entry, effects) =
@@ -690,6 +720,7 @@ fn joining_at(
       entered:,
       place:,
       health:,
+      told:,
       connection: client_connection.connection(session.link),
       stay:,
       tables: session.settings.tables,
@@ -800,8 +831,8 @@ pub fn entry_answered(
           now:,
         )
       {
-        Ok(world_entry.InTheWorld(entered:, effects:)) ->
-          in_the_world(session:, now:, holder:, entered:, effects:)
+        Ok(world_entry.InTheWorld(entered:, effects:, told:)) ->
+          in_the_world(session:, now:, holder:, entered:, effects:, told:)
         Ok(world_entry.GearFault(text:)) ->
           connection_state.told(
             session:,
@@ -896,14 +927,16 @@ fn refused_play(
   #(select, [character_select.Warn(text: warning), ..effects])
 }
 
-/// The player is in the world: the messages that put it there are written,
-/// its map is watched and its place is saved every `movement.save_period_ms`.
+/// The player is in the world: the messages that put it there are written, then
+/// the chat burst and the system line `told`, its map is watched and its place is
+/// saved every `movement.save_period_ms`.
 fn in_the_world(
   session session: Session,
   now now: Now,
   holder holder: Holder,
   entered entered: world_entry.Entered,
   effects effects: List(world_entry.Effect),
+  told told: Option(String),
 ) -> client_connection.Handled(Session) {
   let #(updated, burst) =
     chat.entered_world(
@@ -925,7 +958,12 @@ fn in_the_world(
     now:,
     effects: list.flatten([
       list.map(effects, connection_effects.from_entry),
-      [Chats(effects: burst), StartsSaveTimer],
+      [Chats(effects: burst)],
+      case told {
+        option.Some(text) -> [ToClient(frame: chat.system_line_frame(text:))]
+        option.None -> []
+      },
+      [StartsSaveTimer],
       reset,
       list.map(
         deadline_timer.moved(

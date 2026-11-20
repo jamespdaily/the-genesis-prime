@@ -1258,11 +1258,13 @@ pub fn leaving_the_map() -> #(game_connection.State, ConnectionStep(Request)) {
 /// The ask of the player's leave: the run of the map that took the player, 77
 /// (`incarnation`), with the connection's id.
 pub fn leave_asked() -> Request {
-  AskMapRun(
-    map: camp_map(),
-    incarnation:,
-    message: Leave(connection: ConnectionId(1)),
-  )
+  leave_asked_from(map: camp_map())
+}
+
+/// The ask of the leave of a player the map `map` took, for a player who joined
+/// another world than the tests' camp.
+pub fn leave_asked_from(map map: MapId) -> Request {
+  AskMapRun(map:, incarnation:, message: Leave(connection: ConnectionId(1)))
 }
 
 /// The connection after the map answered `Left`: 0x594 is written and the
@@ -1381,6 +1383,15 @@ pub fn mapped(
   map_state map_state: map.State,
   taken taken: ConnectionStep(Request),
 ) -> #(map.State, map.Outgoing) {
+  let #(map_state, outgoing, _) = mapped_logging(map_state:, taken:)
+  #(map_state, outgoing)
+}
+
+/// `mapped`, with the log lines the map wrote for the ask.
+pub fn mapped_logging(
+  map_state map_state: map.State,
+  taken taken: ConnectionStep(Request),
+) -> #(map.State, map.Outgoing, List(step.LogLine)) {
   let message = case ask_request(taken) {
     AskMap(message:, ..) | AskMapRun(message:, ..) -> message
     AskStore(..)
@@ -1410,7 +1421,7 @@ pub fn mapped(
     )
   let assert [#(CallerId(1), outgoing)] = support.replies(mapped)
     as "the map answers the ask once, to its caller"
-  #(map_state, outgoing)
+  #(map_state, outgoing, support.logs(mapped))
 }
 
 /// A message for the stay `stay` of the tests' player.
