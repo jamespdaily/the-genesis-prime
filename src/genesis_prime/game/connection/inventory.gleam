@@ -317,11 +317,10 @@ fn effects_of(
   session session: Session,
   effects effects: List(inventory.Effect),
 ) -> List(Effect(ConnectionEffect(client_connection.Request))) {
-  list.map(effects, fn(effect) {
+  connection_state.told_effects(session:, effects:, told: fn(effect) {
     case effect {
-      inventory.Send(frame:) -> connection_state.to_client(session, frame)
-      inventory.Log(level:, text:) ->
-        connection_state.log(session:, level:, text:)
+      inventory.Send(frame:) -> connection_state.Sent(frame:)
+      inventory.Log(level:, text:) -> connection_state.Logged(level:, text:)
     }
   })
 }

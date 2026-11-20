@@ -12,7 +12,6 @@ import genesis_prime/game/limited_action_set
 import genesis_prime/game/player_life
 import genesis_prime/game/world_entry
 import genesis_prime/step.{type Now}
-import gleam/list
 
 /// What the 0xB1 taken from inside 0x038C with the player in the world does.
 pub fn take_message(
@@ -47,12 +46,11 @@ pub fn take_message(
         connection_state.with_entered(session:, change: fn(entered) {
           world_entry.Entered(..entered, action_sets: saved)
         }),
-        list.map(effects, fn(effect) {
+        connection_state.told_effects(session:, effects:, told: fn(effect) {
           case effect {
-            limited_action_set.Send(frame:) ->
-              connection_state.to_client(session, frame)
+            limited_action_set.Send(frame:) -> connection_state.Sent(frame:)
             limited_action_set.Log(level:, text:) ->
-              connection_state.log(session:, level:, text:)
+              connection_state.Logged(level:, text:)
           }
         }),
       )

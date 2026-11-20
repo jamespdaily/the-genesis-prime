@@ -24,20 +24,23 @@
 ////   player in combat 30, a set other than the active one 40, then slot by slot: an id in
 ////   slot 8 or later 18, an id in a slot not open at the player's level 2, an id the book
 ////   does not hold 18, and last an id twice 13. The client makes 25, 27 and 30 itself and never
-////   sends them; 2, 13, 18 and 40 are the server's mapping, since the client names the checks
-////   and does not make them. The code the server picks is invisible to the player: the client
-////   shows a text only for result 39.
+////   sends them, in that order (`0x1407580e0`); 2, 13, 18 and 40 are the server's mapping,
+////   since the client names the checks and does not make them, and the order of 40, 18, 2 and
+////   13 is the server's own choice too. The code the server picks is invisible to the
+////   player: the client shows a text only for result 39.
 //// - **A slot opens** by the client's own reading of its ActionSlotPrereq row's Prerequisite
 ////   row (`ActionSlotPrereq.prerequisiteIdUnlock`): the conditions the client keeps are all
 ////   of type 177 (the unit's level) and each holds at the player's level
 ////   (`Prerequisite.prerequisiteTypeId.177`).
 //// - **The book** is what the player holds: the bag and the alternates the plans add
-////   (genesis_prime/game/ability_book `book`). The gadget and path slots (8 and 9) hold none.
+////   (genesis_prime/game/ability_book `book`). The gadget and path slots (8 and 9) hold none, so an id there is refused with 18 although the
+////   client calls it InvalidSlot 24 (`0x1404aacb0`).
 //// - **The answer** is the active set (0) and the held bar of twelve shortcuts, an empty slot
 ////   as type 0 so the client clears it, then 0xB2, whose bit is 1 for an accepted save and 0
 ////   for a refused one. The bit is a guess: the client only adds a combat log line for it.
 //// - **The load fails** for an ActionSlotPrereq row with a slot index outside 0 to 11, a slot with
-////   no row or two, and a row whose Prerequisite row is missing.
+////   no row or two, and a row whose Prerequisite row is missing, which includes the prerequisite
+////   id 0 that the client reads as "always open" (`0x140758020`): no row holds it.
 
 import genesis_prime/client_connection.{type Undecoded}
 import genesis_prime/connection/frame.{type Frame}
@@ -446,7 +449,9 @@ fn dropped_edits(save save: action_set_save.ActionSetSave) -> List(Effect) {
   }
 }
 
-/// The first check the save fails, in the order of the rule's doc.
+/// The first check the save fails, in the order of the rule's doc. Only 25 before 27 before
+/// 30 is the client's own order (`0x1407580e0`); where 40 sits and the order of 18, 2 and 13
+/// are the server's choice, since the client makes none of those checks.
 fn fault_of(
   unlocks unlocks: Unlocks,
   player player: Player,
@@ -526,7 +531,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Ability builder",
-      missing: "The gadget and path slots never open, because the prerequisite types their rows name are not read and no gadget or path ability is in the book.",
+      missing: "The gadget and path slots never open, because the prerequisite types their rows name are not read and no gadget or path ability is in the book; every answer sends them empty, so the client clears them.",
     ),
     gap.Entry(
       area: "Ability builder",

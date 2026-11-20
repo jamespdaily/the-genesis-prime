@@ -36,6 +36,7 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
 import limited_action_set_support as support
+import message_support
 import owned_test
 import planted_table.{Integer}
 import unitest
@@ -174,6 +175,17 @@ pub fn a_slot_row_the_rule_does_not_read_never_opens_and_a_missing_row_fails_the
     as "slot 3's Prerequisite row is missing"
   assert string.contains(table_store.describe(error), "Prerequisite 8237")
     as "the load names the missing Prerequisite row"
+  let assert Ok(slot_2_twice) =
+    fixture_tables.change(
+      rows: fixture_tables.rows(),
+      table: "ActionSlotPrereq",
+      id: 4,
+      with: [#("slotIndex", Integer(2))],
+    )
+  let assert Error(error) = fixture_tables.load(rows: slot_2_twice)
+    as "two rows for slot 2 do not load"
+  assert string.contains(table_store.describe(error), "slot 2")
+    as "the load names the slot"
   let assert Ok(slot_12) =
     fixture_tables.change(
       rows: fixture_tables.rows(),
@@ -193,10 +205,6 @@ type Accepted {
   Accepted(level: Int, bodies: List(BitArray), expected: List(Int), why: String)
 }
 
-fn hex(text: String) -> BitArray {
-  support.hex(text)
-}
-
 pub fn a_save_the_stock_builder_sends_is_accepted_and_becomes_the_set_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = fixture_tables.shared()
@@ -205,25 +213,32 @@ pub fn a_save_the_stock_builder_sends_is_accepted_and_becomes_the_set_test() -> 
     [
       Accepted(
         4,
-        [hex(support.save_a)],
+        [message_support.hex(support.save_a)],
         support.ids_a,
         "the sitting's save, sequence 16176",
       ),
       Accepted(
         4,
-        [hex(support.save_a), hex(support.save_b)],
+        [
+          message_support.hex(support.save_a),
+          message_support.hex(support.save_b),
+        ],
         support.ids_b,
         "a swap and a removal of the set of the first save, sequence 16317",
       ),
       Accepted(
         4,
-        [hex(support.save_a), hex(support.save_b), hex(support.save_c)],
+        [
+          message_support.hex(support.save_a),
+          message_support.hex(support.save_b),
+          message_support.hex(support.save_c),
+        ],
         support.ids_c,
         "one removed, sequence 16356",
       ),
       Accepted(
         4,
-        [hex(support.save_a), support.body(ids: zeros, set: 0)],
+        [message_support.hex(support.save_a), support.body(ids: zeros, set: 0)],
         zeros,
         "all twelve empty is a saved set of nothing, not no set",
       ),
@@ -268,10 +283,14 @@ pub fn a_save_the_stock_builder_sends_is_accepted_and_becomes_the_set_test() -> 
     support.taken(
       saved: limited_action_set.none(),
       level: 4,
-      body: hex(support.save_a),
+      body: message_support.hex(support.save_a),
     )
   let #(twice, second) =
-    support.taken(saved: once, level: 4, body: hex(support.save_a))
+    support.taken(
+      saved: once,
+      level: 4,
+      body: message_support.hex(support.save_a),
+    )
   assert support.held_ids(tables:, saved: twice)
     == support.held_ids(tables:, saved: once)
     as "a save of the held bar changes nothing"
@@ -340,6 +359,14 @@ pub fn a_save_the_server_refuses_gets_the_clients_result_and_changes_nothing_tes
         13,
       ),
       Refused(
+        3,
+        False,
+        False,
+        message_support.hex(support.save_a),
+        2,
+        "20718 in slot 3 at level 3: slot 3 opens at level 4 and the level 3 book lacks 20718, and the slot is checked first",
+      ),
+      Refused(
         4,
         False,
         False,
@@ -357,12 +384,19 @@ pub fn a_save_the_server_refuses_gets_the_clients_result_and_changes_nothing_tes
       ),
       refuse("11 entries", list.take(support.ids_a, 11), 25),
       refuse("no entries", [], 25),
-      Refused(4, True, False, hex(support.save_a), 27, "the player is dead"),
+      Refused(
+        4,
+        True,
+        False,
+        message_support.hex(support.save_a),
+        27,
+        "the player is dead",
+      ),
       Refused(
         4,
         False,
         True,
-        hex(support.save_a),
+        message_support.hex(support.save_a),
         30,
         "the player is in combat",
       ),
@@ -381,7 +415,7 @@ pub fn a_save_the_server_refuses_gets_the_clients_result_and_changes_nothing_tes
         support.taken(
           saved: limited_action_set.none(),
           level:,
-          body: hex(support.save_a),
+          body: message_support.hex(support.save_a),
         )
       let assert Ok(#(after, effects)) =
         limited_action_set.take(
@@ -429,7 +463,7 @@ pub fn the_answer_is_the_set_then_0xb2_and_a_refusal_carries_the_result_and_the_
     support.taken(
       saved: limited_action_set.none(),
       level: 4,
-      body: hex(support.save_a),
+      body: message_support.hex(support.save_a),
     )
   let frames = support.frames_of(effects: accepted)
   assert list.map(frames, fn(frame) { frame.message_id }) == [0x019D, 0x00B2]
@@ -448,7 +482,7 @@ pub fn the_answer_is_the_set_then_0xb2_and_a_refusal_carries_the_result_and_the_
     support.taken(
       saved: limited_action_set.none(),
       level: 4,
-      body: hex(support.save_a),
+      body: message_support.hex(support.save_a),
     )
   let too_early = support.body(ids: a_with(slot: 4, id: 20_718), set: 0)
   let #(_, refused) = support.taken(saved: held, level: 4, body: too_early)
@@ -480,7 +514,7 @@ pub fn tier_changes_and_amps_in_a_save_are_dropped_and_the_bar_is_kept_test() ->
     support.taken(
       saved: limited_action_set.none(),
       level: 10,
-      body: hex(support.save_d),
+      body: message_support.hex(support.save_d),
     )
   assert support.held_ids(tables:, saved:) == support.ids_a
     as "the bar of the save is kept"
@@ -488,7 +522,7 @@ pub fn tier_changes_and_amps_in_a_save_are_dropped_and_the_bar_is_kept_test() ->
     support.taken(
       saved: limited_action_set.none(),
       level: 10,
-      body: hex(support.save_a),
+      body: message_support.hex(support.save_a),
     )
   assert support.frames_of(effects:) == support.frames_of(effects: plain)
     as "the answer is the accepted answer of a save with no edits"

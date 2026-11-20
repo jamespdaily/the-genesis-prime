@@ -413,6 +413,9 @@ pub fn the_action_set_answer_is_one_bit_test() -> Nil {
     encode: action_set_saved.encode,
     decode: action_set_saved.decode,
   )
+  assert action_set_saved.encode(ActionSetSaved(add_combat_log_line: 2))
+    == Error(bit_stream.ValueDoesNotFit("add_combat_log_line", 1, 2))
+    as "opcode.0xb2 (reader 0x1400807f0): the field is one bit, so a value of 2 does not fit"
 }
 
 pub fn a_creature_is_created_as_type_0_with_its_row_id_and_the_players_tail_test() -> Nil {
