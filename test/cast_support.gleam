@@ -33,11 +33,20 @@ import genesis_prime/game/spend
 import genesis_prime/game/unit_properties
 import genesis_prime/message/cancel_cast.{CancelCast}
 import genesis_prime/message/cast_result.{type CastResult}
+import genesis_prime/message/combat_result
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_cast_refused
+import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
+import genesis_prime/message/spell_effect_info.{
+  type SpellEffectInfo, SpellEffectInfo,
+}
+import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_stack_removed
+import genesis_prime/message/spell_target_info.{
+  type SpellTargetInfo, SpellTargetInfo,
+}
 import genesis_prime/message/spell_targets_removed
 import genesis_prime/step.{
   type ConnectionId, type LogLevel, type Now, type TimerId, ConnectionId, Now,
@@ -386,7 +395,7 @@ pub fn caster() -> Caster {
     weapon: Some(Item2Id(81_351)),
     audience: set.from_list([ConnectionId(2), ConnectionId(3)]),
     dead: False,
-    resources: class_resource.new(resource: full_slot_1()),
+    resources: class_resource_support.new(resource: full_slot_1()),
     in_combat: False,
     life_vitals: dict.new(),
     factions: prerequisite.Factions(current: 167, base: 167),
@@ -428,6 +437,7 @@ pub fn full_slot_1() -> class_resource.Resource {
     refill_after_combat_ms: None,
     drain: None,
     empty_after_combat_ms: None,
+    focus: None,
   )
 }
 
@@ -446,6 +456,24 @@ pub fn holding(
       ..class_resource_support.resource_of(class_id),
       start: value,
     ),
+    properties: class_resource_support.properties_of(
+      class_id:,
+      changes: [],
+      level: 1,
+    ),
+  )
+}
+
+/// The class's resource holding `focus` points of Focus, a pool of that size (property 5
+/// at `focus`), and its slot at its start; a class that holds no Focus holds none.
+pub fn holding_focus(
+  class_id class_id: Int,
+  focus focus: Float,
+) -> class_resource.Resources {
+  class_resource_support.resources_with(
+    class_id:,
+    changes: [#(5, focus)],
+    level: 1,
   )
 }
 
@@ -2132,4 +2160,71 @@ pub fn tick_strikes(
       | cast_state.StealthChanged(..) -> Error(Nil)
     }
   })
+}
+
+// ---- what a unit create lists of a cast ----
+
+/// The effect info of an effect that tells no value, as a unit create (0x262) lists it:
+/// the bit's own value is read by no client code (`opcode.0x7f4.effect_time`). Written out
+/// here, not built by `target_info`, which is the code these expected values check.
+pub fn listed_effect_info(
+  effect_id effect_id: Int,
+  instance_id instance_id: Int,
+  delay_ms delay_ms: Int,
+  lifetime_ms lifetime_ms: Int,
+) -> SpellEffectInfo {
+  SpellEffectInfo(
+    spell4_effects_id: effect_id,
+    instance_id:,
+    delay_ms:,
+    lifetime_ms:,
+    result: spell_effect_result.Bit(SpellEffectBit(unread_2: 0)),
+  )
+}
+
+/// The target info of one unit as a unit create lists it: target flags 0 and a Hit
+/// (`opcode.0x7f4.target_info`).
+pub fn listed_target_info(
+  unit_id unit_id: Int,
+  index index: Int,
+  count count: Int,
+  effects effects: List(SpellEffectInfo),
+) -> SpellTargetInfo {
+  SpellTargetInfo(
+    unit_id:,
+    index:,
+    flags: 0,
+    instance_count: count,
+    combat_result: combat_result.Hit,
+    effects:,
+  )
+}
+
+/// The state with each live cast holding one node, on the unit 7, kept until 4000 by a
+/// crowd-control state, with these effects.
+pub fn live_casts_holding_only_a_node(
+  state state: State,
+  effects effects: List(lasting.NodeEffect),
+) -> State {
+  cast_state.State(
+    ..state,
+    casts: dict.map_values(state.casts, fn(_, live) {
+      cast_state.Live(
+        ..live,
+        nodes: dict.from_list([
+          #(
+            7,
+            lasting.Node(
+              unit_id: 7,
+              count: 1,
+              life: lasting.EndsAt(ms: 4000),
+              effects:,
+              armed_ms: 1000,
+              held_until_ms: Some(4000),
+            ),
+          ),
+        ]),
+      )
+    }),
+  )
 }

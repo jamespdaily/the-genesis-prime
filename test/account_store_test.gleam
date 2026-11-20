@@ -34,19 +34,19 @@ import genesis_prime/game/start_place.{Facing}
 import genesis_prime/login/guid
 import genesis_prime/service.{ToWorker}
 import genesis_prime/store.{
-  type AccountId, type ActiveQuest, type QuestRow, Account, AccountFound,
-  AccountId, ActiveQuest, Character, CharacterCreated, CharacterDeleted,
-  CharacterId, CharacterLoaded, CharacterRenamed, CreateCharacter,
-  CreateForNoSuchAccount, Created, DeleteCharacter, DeleteItem, Deleted,
-  ExperienceRefused, FindAccount, ForItems, ForLogin, ForMove, ForSelect,
-  ForWorld, HealthRefused, HeldItem, ItemMade, ItemMove, ItemPlace, Items,
-  ItemsNotSaved, ItemsSaved, ListCharacters, Listed, LoadCharacter, Login,
-  LookEntry, MergeItems, Move, MoveItems, NameBreaksRule, NameStands, NameTaken,
-  NeedsRename, NewCharacter, NewItem, NewNameBreaksRule, NewNameTaken,
-  NoFreeSlot, NoSuchAccount, NoSuchCharacter, NotRenamable, NotTheAccounts,
-  NothingSaved, PlaceRefused, PlaceSaved, QuestLogRefused, QuestRow,
-  RenameCharacter, Renamed, SavePlace, SaveRefused, Select, SpendItem, SplitItem,
-  Unavailable, World,
+  type AccountId, type ActionSlotRow, type ActiveQuest, type QuestRow, Account,
+  AccountFound, AccountId, ActionSetRefused, ActionSets, ActionSlotRow,
+  ActiveQuest, Character, CharacterCreated, CharacterDeleted, CharacterId,
+  CharacterLoaded, CharacterRenamed, CreateCharacter, CreateForNoSuchAccount,
+  Created, DeleteCharacter, DeleteItem, Deleted, ExperienceRefused, FindAccount,
+  ForItems, ForLogin, ForMove, ForSelect, ForWorld, HealthRefused, HeldItem,
+  ItemMade, ItemMove, ItemPlace, Items, ItemsNotSaved, ItemsSaved,
+  ListCharacters, Listed, LoadCharacter, Login, LookEntry, MergeItems, Move,
+  MoveItems, NameBreaksRule, NameStands, NameTaken, NeedsRename, NewCharacter,
+  NewItem, NewNameBreaksRule, NewNameTaken, NoFreeSlot, NoSuchAccount,
+  NoSuchCharacter, NotRenamable, NotTheAccounts, NothingSaved, PlaceRefused,
+  PlaceSaved, QuestLogRefused, QuestRow, RenameCharacter, Renamed, SavePlace,
+  SaveRefused, Select, SpendItem, SplitItem, Unavailable, World,
 }
 import genesis_prime/store/worker
 import genesis_prime/table/id.{
@@ -61,6 +61,7 @@ import gleam/option.{type Option, None, Some}
 import gleam/otp/static_supervisor as supervisor
 import gleam/result
 import gleam/string
+import limited_action_set_support
 import login_support
 import open_wait
 import owned_test
@@ -960,18 +961,17 @@ pub fn a_stored_character_with_world_0_loads_as_no_place_test() -> Nil {
       store:,
       request: World(LoadCharacter(account, CharacterId(character_id), 0)),
     )
-    == ForWorld(
-      CharacterLoaded(
-        character,
-        character_support.epoch(1),
-        None,
-        None,
-        [],
-        [],
-        [],
-        [],
-      ),
-    )
+    == ForWorld(CharacterLoaded(
+      character,
+      character_support.epoch(1),
+      None,
+      None,
+      [],
+      [],
+      [],
+      [],
+      ActionSets(slots: []),
+    ))
     as "the load reads the same row the same way, and raises the epoch of a character made at 0 to 1"
   account_store_support.stop(store)
 }
@@ -1044,37 +1044,36 @@ pub fn a_load_gives_the_accounts_character_with_its_saved_place_and_not_another_
       store:,
       request: World(LoadCharacter(account, CharacterId(mine), 0)),
     )
-    == ForWorld(
-      CharacterLoaded(
-        Character(
-          character_id: CharacterId(mine),
-          name: "Zed Qu",
-          gender: 1,
-          race_id: RaceId(3),
-          class_id: ClassId(12),
-          faction_id: 166,
-          level: 9,
-          path: 2,
-          place: Some(place_support.at(
-            world_id: 1387,
-            world_zone_id: 1100,
-            x: 1.5,
-            y: 2.5,
-            z: 3.5,
-          )),
-          look: [],
-          bones: [],
-          naming: NameStands,
-        ),
-        character_support.epoch(1),
-        None,
-        None,
-        [],
-        [],
-        [],
-        [],
+    == ForWorld(CharacterLoaded(
+      Character(
+        character_id: CharacterId(mine),
+        name: "Zed Qu",
+        gender: 1,
+        race_id: RaceId(3),
+        class_id: ClassId(12),
+        faction_id: 166,
+        level: 9,
+        path: 2,
+        place: Some(place_support.at(
+          world_id: 1387,
+          world_zone_id: 1100,
+          x: 1.5,
+          y: 2.5,
+          z: 3.5,
+        )),
+        look: [],
+        bones: [],
+        naming: NameStands,
       ),
-    )
+      character_support.epoch(1),
+      None,
+      None,
+      [],
+      [],
+      [],
+      [],
+      ActionSets(slots: []),
+    ))
     as "the row as character_support inserted it: the saved world, zone and position come with it, the epoch the load raised from 0 to 1, and no saved health: a character never saved enters at full health"
   assert account_store_support.ask(
       store:,
@@ -1353,19 +1352,18 @@ fn save_progress(
 ) -> store.Answer {
   account_store_support.ask(
     store:,
-    request: Move(
-      SavePlace(
-        account_id: account,
-        character_id: CharacterId(character_id),
-        session_epoch: character_support.epoch(epoch),
-        save_sequence: sequence,
-        place:,
-        health:,
-        experience:,
-        level:,
-        quests: [],
-      ),
-    ),
+    request: Move(SavePlace(
+      account_id: account,
+      character_id: CharacterId(character_id),
+      session_epoch: character_support.epoch(epoch),
+      save_sequence: sequence,
+      place:,
+      health:,
+      experience:,
+      level:,
+      quests: [],
+      action_sets: ActionSets(slots: []),
+    )),
   )
 }
 
@@ -2016,19 +2014,27 @@ pub fn every_constraint_the_worker_maps_exists_in_the_schema_by_that_name_test()
       "character_quest_kill_mask_fits_7_bits",
       "character_quest_active_has_its_kill_mask",
       "character_quest_kill_mask_has_six_slots",
+      "character_action_slot_set_is_one_of_four",
+      "character_action_slot_slot_is_one_of_twelve",
+      "character_action_slot_ability_fits_the_message",
+      "character_action_slot_one_place_per_ability",
     ]
-    as "the refusals the worker answers for: a name taken, a name that breaks rule 0, a health below 0, an experience below 0 and each check of a quest row"
+    as "the refusals the worker answers for: a name taken, a name that breaks rule 0, a health below 0, an experience below 0, each check of a quest row and each check of an action slot row"
   list.each(worker.mapped_constraints(), fn(name) {
     let assert Ok(returned) =
       pog.query(
-        "select count(*)::int from (select conname::text as name from pg_constraint union all select c.relname::text from pg_class c where c.relkind = 'i') as names where name = $1",
+        "select count(*)::int from (select conname::text as name from pg_constraint union all select c.relname::text from pg_class c where c.relkind = 'i' and not exists (select 1 from pg_constraint k where k.conindid = c.oid and k.contype in ('p', 'u', 'x'))) as names where name = $1",
       )
       |> pog.parameter(pog.text(name))
       |> pog.returning(decode.at([0], decode.int))
       |> pog.execute(store.pool)
       as "the catalogue was read"
     assert returned.rows == [1]
-      as { "the schema has one constraint or unique index named " <> name }
+      as {
+        "the schema has one constraint or unique index named "
+        <> name
+        <> " (the index of a unique or primary key constraint is the constraint, counted once)"
+      }
   })
   account_store_support.stop(store)
 }
@@ -3176,6 +3182,7 @@ fn save_log(
       experience: 0,
       level: 1,
       quests:,
+      action_sets: ActionSets(slots: []),
     )),
   )
 }
@@ -6898,4 +6905,379 @@ fn rows_with_guid(store store: Store, guid guid: Int) -> Int {
     |> pog.execute(store.pool)
     as "the rows were counted"
   count
+}
+
+// ---- the action slots saved with the place ----
+
+/// A place save of a login naming these action slots, with no quest and no health to keep.
+fn save_slots(
+  store store: Store,
+  account account: AccountId,
+  character_id character_id: Int,
+  epoch epoch: Int,
+  sequence sequence: Int,
+  place place: start_place.Place,
+  action_sets action_sets: store.ActionSets,
+) -> store.Answer {
+  account_store_support.ask(
+    store:,
+    request: Move(SavePlace(
+      account_id: account,
+      character_id: CharacterId(character_id),
+      session_epoch: character_support.epoch(epoch),
+      save_sequence: sequence,
+      place:,
+      health: None,
+      experience: 0,
+      level: 1,
+      quests: [],
+      action_sets:,
+    )),
+  )
+}
+
+/// The slots of a saved set as the store holds them: the rows of `ids` in set `set`.
+fn slots_of(set set: Int, ids ids: List(Int)) -> store.ActionSets {
+  store.ActionSets(slots: limited_action_set_support.rows_of(set:, ids:))
+}
+
+/// What a load answers with, which raises the epoch: the epoch it gave, the action sets and
+/// the place the character holds.
+fn action_sets_of_load(
+  store store: Store,
+  account account: AccountId,
+  character_id character_id: store.CharacterId,
+) -> #(Int, store.ActionSets, Option(start_place.Place)) {
+  let assert ForWorld(CharacterLoaded(
+    session_epoch:,
+    action_sets:,
+    character:,
+    ..,
+  )) =
+    account_store_support.ask(
+      store:,
+      request: World(LoadCharacter(account, character_id, 0)),
+    )
+    as "the account has the character"
+  #(store.session_epoch_number(session_epoch), action_sets, character.place)
+}
+
+/// The slot rows the table holds for the character, read straight from the database, in set
+/// then slot order, with the row version each has (`xmin`, which a write of the row changes).
+fn stored_slots(
+  store store: Store,
+  character_id character_id: Int,
+) -> List(#(ActionSlotRow, String)) {
+  let assert Ok(returned) =
+    pog.query(
+      "select action_set::int, slot::int, spell4_base_id, xmin::text from character_action_slot where character_id = $1 order by action_set, slot",
+    )
+    |> pog.parameter(pog.int(character_id))
+    |> pog.returning({
+      use action_set <- decode.field(0, decode.int)
+      use slot <- decode.field(1, decode.int)
+      use spell4_base_id <- decode.field(2, decode.optional(decode.int))
+      use version <- decode.field(3, decode.string)
+      decode.success(#(
+        ActionSlotRow(action_set:, slot:, spell4_base_id:),
+        version,
+      ))
+    })
+    |> pog.execute(store.pool)
+    as "the slot rows read"
+  returned.rows
+}
+
+/// The slot rows without their versions.
+fn stored_rows(
+  store store: Store,
+  character_id character_id: Int,
+) -> List(ActionSlotRow) {
+  list.map(stored_slots(store:, character_id:), fn(held) { held.0 })
+}
+
+/// The save sequence the character's row holds.
+fn stored_sequence(store store: Store, character_id character_id: Int) -> Int {
+  let assert Ok(returned) =
+    pog.query("select save_sequence from character where character_id = $1")
+    |> pog.parameter(pog.int(character_id))
+    |> pog.returning(decode.at([0], decode.int))
+    |> pog.execute(store.pool)
+    as "the save sequence read"
+  let assert [sequence] = returned.rows as "the character exists"
+  sequence
+}
+
+pub fn a_saved_set_is_loaded_after_a_login_and_a_save_the_fence_refuses_writes_none_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = account_store_support.start_store(pool_size: 2)
+  let #(account, character_id, _) = holding_stacks(store:, stacks: [#(1, 10)])
+  let CharacterId(id) = character_id
+  let first =
+    place_facing(x: 1.0, y: 2.0, z: 3.0, yaw: 0.0, pitch: 0.0, roll: 0.0)
+  let second =
+    place_facing(x: 4.0, y: 5.0, z: 6.0, yaw: 0.0, pitch: 0.0, roll: 0.0)
+  let other =
+    place_facing(x: 7.0, y: 8.0, z: 9.0, yaw: 0.0, pitch: 0.0, roll: 0.0)
+  let saved = fn(epoch, sequence, place, sets) {
+    save_slots(
+      store:,
+      account:,
+      character_id: id,
+      epoch:,
+      sequence:,
+      place:,
+      action_sets: sets,
+    )
+  }
+  let #(first_login, loaded, _) =
+    action_sets_of_load(store:, account:, character_id:)
+  assert loaded == store.ActionSets(slots: [])
+    as "a character that never saved a bar loads no rows: its bar is the class's"
+  assert saved(
+      first_login,
+      1,
+      first,
+      slots_of(set: 0, ids: limited_action_set_support.ids_a),
+    )
+    == ForMove(PlaceSaved)
+  assert stored_rows(store:, character_id: id)
+    == limited_action_set_support.rows_of(
+      set: 0,
+      ids: limited_action_set_support.ids_a,
+    )
+    as "twelve rows of set 0 in slot order, the empty slots with no ability"
+  let #(second_login, loaded, place) =
+    action_sets_of_load(store:, account:, character_id:)
+  assert loaded == slots_of(set: 0, ids: limited_action_set_support.ids_a)
+    as "a new login loads the saved set's twelve rows, in set then slot order"
+  assert place == Some(first)
+  assert saved(
+      second_login,
+      3,
+      second,
+      slots_of(set: 0, ids: limited_action_set_support.ids_b),
+    )
+    == ForMove(PlaceSaved)
+  assert saved(
+      second_login,
+      2,
+      other,
+      slots_of(set: 0, ids: limited_action_set_support.ids_c),
+    )
+    == ForMove(NothingSaved)
+    as "a save of this login older than the last stored one changes nothing"
+  assert stored_rows(store:, character_id: id)
+    == limited_action_set_support.rows_of(
+      set: 0,
+      ids: limited_action_set_support.ids_b,
+    )
+    as "no slot row changed for the older sequence"
+  let #(_, _, place) = action_sets_of_load(store:, account:, character_id:)
+  assert place == Some(second)
+    as "nor did the place: the older save's place was not written"
+  assert saved(
+      second_login,
+      9,
+      other,
+      slots_of(set: 0, ids: limited_action_set_support.ids_c),
+    )
+    == ForMove(NothingSaved)
+    as "a save under the epoch of a login another login has since replaced changes nothing"
+  assert stored_rows(store:, character_id: id)
+    == limited_action_set_support.rows_of(
+      set: 0,
+      ids: limited_action_set_support.ids_b,
+    )
+    as "no slot row changed for the stale epoch"
+  let #(fourth_login, _, place) =
+    action_sets_of_load(store:, account:, character_id:)
+  assert place == Some(second)
+    as "nor did the place: the stale save's place was not written"
+  let assert ForItems(store.TurnedIn(..)) =
+    turn_in(
+      store:,
+      account:,
+      character_id:,
+      epoch: fourth_login,
+      sequence: 1,
+      quests: [completed_quest(1001)],
+      credits_held: 1000,
+      credits_after: 1145,
+      placed: [],
+    )
+    as "a quest turn-in saves the place in its own transaction"
+  assert stored_rows(store:, character_id: id)
+    == limited_action_set_support.rows_of(
+      set: 0,
+      ids: limited_action_set_support.ids_b,
+    )
+    as "the turn-in carries no slot rows and writes none: the saved set stands"
+  let before = stored_slots(store:, character_id: id)
+  assert saved(
+      fourth_login,
+      2,
+      second,
+      slots_of(set: 0, ids: limited_action_set_support.ids_b),
+    )
+    == ForMove(PlaceSaved)
+  assert stored_slots(store:, character_id: id) == before
+    as "the same twelve rows again write no row: every row keeps its version"
+  assert saved(
+      fourth_login,
+      3,
+      second,
+      slots_of(set: 0, ids: [
+        20_684,
+        27_638,
+        20_718,
+        20_325,
+        ..list.repeat(0, 8)
+      ]),
+    )
+    == ForMove(PlaceSaved)
+  let changed =
+    list.zip(before, stored_slots(store:, character_id: id))
+    |> list.filter(fn(pair) { pair.0.1 != pair.1.1 })
+    |> list.map(fn(pair) { pair.1.0 })
+  assert changed
+    == [ActionSlotRow(action_set: 0, slot: 3, spell4_base_id: Some(20_325))]
+    as "only the slot that changed is written"
+  account_store_support.stop(store)
+}
+
+pub fn a_slot_row_the_table_refuses_is_refused_by_name_and_a_swap_in_one_save_is_accepted_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = account_store_support.start_store(pool_size: 2)
+  let #(account, id) = one_character(store:)
+  let epoch = epoch_of_load(store:, account:, character_id: id)
+  let place =
+    place_facing(x: 1.0, y: 2.0, z: 3.0, yaw: 0.0, pitch: 0.0, roll: 0.0)
+  let saved = fn(sequence, sets) {
+    save_slots(
+      store:,
+      account:,
+      character_id: id,
+      epoch:,
+      sequence:,
+      place:,
+      action_sets: sets,
+    )
+  }
+  let row = fn(set, slot, ability) {
+    ActionSlotRow(action_set: set, slot:, spell4_base_id: ability)
+  }
+  let refusals = [
+    #(
+      "a set of 4: the client has four sets, 0 to 3",
+      [row(4, 0, Some(27_638))],
+      "character_action_slot_set_is_one_of_four",
+    ),
+    #(
+      "slot 12: a bar has twelve slots, 0 to 11",
+      [row(0, 12, Some(27_638))],
+      "character_action_slot_slot_is_one_of_twelve",
+    ),
+    #(
+      "id 0: no ability has it, an empty slot is a row with none",
+      [row(0, 0, Some(0))],
+      "character_action_slot_ability_fits_the_message",
+    ),
+    #(
+      "id 262144: the message carries 18 bits (opcode.0x1a0)",
+      [row(0, 0, Some(262_144))],
+      "character_action_slot_ability_fits_the_message",
+    ),
+    #(
+      "the same ability in two slots of one set",
+      [row(0, 0, Some(27_638)), row(0, 1, Some(27_638))],
+      "character_action_slot_one_place_per_ability",
+    ),
+  ]
+  list.each(refusals, fn(refusal) {
+    let #(why, rows, constraint) = refusal
+    assert saved(1, store.ActionSets(slots: rows))
+      == ForMove(ActionSetRefused(constraint:))
+      as why
+    assert stored_rows(store:, character_id: id) == []
+      as "a refused save writes no slot row"
+    assert stored_sequence(store:, character_id: id) == 0
+      as "nor the place beside it: the save took no sequence"
+  })
+  assert saved(1, slots_of(set: 0, ids: [27_638, 20_684, ..list.repeat(0, 10)]))
+    == ForMove(PlaceSaved)
+    as "each refusal was one statement that stored nothing, and the store goes on"
+  assert saved(2, slots_of(set: 0, ids: [20_684, 27_638, ..list.repeat(0, 10)]))
+    == ForMove(PlaceSaved)
+    as "two abilities swapped between two slots in one save: the unique key is checked at the statement's end"
+  assert stored_rows(store:, character_id: id)
+    == limited_action_set_support.rows_of(set: 0, ids: [
+      20_684,
+      27_638,
+      ..list.repeat(0, 10)
+    ])
+    as "the swap is saved"
+  let refused = [row(0, 0, Some(27_638)), row(0, 1, Some(27_638))]
+  assert saved(3, store.ActionSets(slots: refused))
+    == ForMove(ActionSetRefused(
+      constraint: "character_action_slot_one_place_per_ability",
+    ))
+  assert saved(4, store.ActionSets(slots: refused))
+    == ForMove(ActionSetRefused(
+      constraint: "character_action_slot_one_place_per_ability",
+    ))
+    as "the next place save of the session that carries the same rows is refused again, as a quest row the table refuses is"
+  assert stored_sequence(store:, character_id: id) == 2
+    as "no later save wrote the place: the last one stored is the swap"
+  account_store_support.stop(store)
+}
+
+pub fn the_action_slot_migration_makes_the_table_with_its_named_checks_and_cascades_with_the_character_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = account_store_support.start_store(pool_size: 2)
+  let #(_, id) = one_character(store:)
+  let constraints = fn() {
+    let assert Ok(returned) =
+      pog.query(
+        "select conname::text, condeferrable, condeferred from pg_constraint where conrelid = 'character_action_slot'::regclass and contype <> 'n' order by conname",
+      )
+      |> pog.returning({
+        use name <- decode.field(0, decode.string)
+        use deferrable <- decode.field(1, decode.bool)
+        use deferred <- decode.field(2, decode.bool)
+        decode.success(#(name, deferrable, deferred))
+      })
+      |> pog.execute(store.pool)
+      as "the catalogue was read"
+    returned.rows
+  }
+  assert constraints()
+    == [
+      #("character_action_slot_ability_fits_the_message", False, False),
+      #("character_action_slot_character_exists", False, False),
+      #("character_action_slot_one_place_per_ability", True, False),
+      #("character_action_slot_pkey", False, False),
+      #("character_action_slot_set_is_one_of_four", False, False),
+      #("character_action_slot_slot_is_one_of_twelve", False, False),
+    ]
+    as "the primary key and the five named constraints; only the one-place key is deferrable, and it is checked at each statement's end"
+  let insert = fn(character_id) {
+    pog.query(
+      "insert into character_action_slot (character_id, action_set, slot, spell4_base_id) values ($1, 0, 0, 27638)",
+    )
+    |> pog.parameter(pog.int(character_id))
+    |> pog.execute(store.pool)
+  }
+  let assert Ok(_) = insert(id) as "a row for a character that exists"
+  assert list.length(stored_rows(store:, character_id: id)) == 1
+  let assert Error(pog.ConstraintViolated(constraint:, ..)) = insert(id + 1000)
+    as "a row for no character is refused"
+  assert constraint == "character_action_slot_character_exists"
+  execute(
+    store.pool,
+    "delete from character where character_id = " <> int.to_string(id),
+  )
+  assert stored_rows(store:, character_id: id) == []
+    as "deleting the character deletes its slot rows"
+  account_store_support.stop(store)
 }

@@ -74,8 +74,9 @@
 ////   audience, no strike; the base cast of a charge ends its threshold too, with
 ////   0x814 before its 0x7fe. A cast that is not live is a debug line. Any other
 ////   reason or bit is one the client never sends, and ends the connection.
-//// - **The audience** of a cast is the caster's viewers when it starts; its go and
-////   finish go to them. A viewer writes a 0x7ff only when its client shows the
+//// - **The audience** of a cast is the caster's viewers when it starts, and each viewer
+////   that comes into sight while a unit create of the caster lists the cast
+////   (`cast_state.audience_joined`); its go and finish go to them. A viewer writes a 0x7ff only when its client shows the
 ////   caster, and a go, or a finish, only for a cast it wrote
 ////   (genesis_prime/game/connection). The threshold messages go to the caster only.
 
@@ -3010,6 +3011,7 @@ fn went_asked(
           spell4_id: live.spell.spell4_id,
           primary_target: live.primary_target,
           spent: live.spent,
+          started_at: live.started_at,
         )),
       ]),
     )
@@ -3648,6 +3650,7 @@ fn start(
       root:,
       parent:,
       primary_target:,
+      started_at: area.pose_of(place: caster.place),
       audience:,
       gone: 0,
       started_ms: now_ms,

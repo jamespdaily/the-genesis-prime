@@ -113,6 +113,74 @@ order by account_id;
   |> pog.execute(db)
 }
 
+/// A row you get from running the `action_slots_of_characters_of_accounts_named` query
+/// defined in `./src/genesis_prime/wire_recording/fixture/sql/action_slots_of_characters_of_accounts_named.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type ActionSlotsOfCharactersOfAccountsNamedRow {
+  ActionSlotsOfCharactersOfAccountsNamedRow(
+    character_id: Int,
+    action_set: Int,
+    slot: Int,
+    spell4_base_id: Option(Int),
+  )
+}
+
+/// The action slots saved for the characters of the accounts with these login names,
+/// in the order of their characters, sets and slots, with every column the fixture
+/// of a recorded session keeps (genesis_prime/wire_recording/fixture): the
+/// character, the set, the slot and the ability, NULL for an empty slot.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn action_slots_of_characters_of_accounts_named(
+  db: pog.Connection,
+  arg_1: List(String),
+) -> Result(
+  pog.Returned(ActionSlotsOfCharactersOfAccountsNamedRow),
+  pog.QueryError,
+) {
+  let decoder = {
+    use character_id <- decode.field(0, decode.int)
+    use action_set <- decode.field(1, decode.int)
+    use slot <- decode.field(2, decode.int)
+    use spell4_base_id <- decode.field(3, decode.optional(decode.int))
+    decode.success(ActionSlotsOfCharactersOfAccountsNamedRow(
+      character_id:,
+      action_set:,
+      slot:,
+      spell4_base_id:,
+    ))
+  }
+
+  "-- The action slots saved for the characters of the accounts with these login names,
+-- in the order of their characters, sets and slots, with every column the fixture
+-- of a recorded session keeps (genesis_prime/wire_recording/fixture): the
+-- character, the set, the slot and the ability, NULL for an empty slot.
+select
+  character_id,
+  action_set::int as action_set,
+  slot::int as slot,
+  spell4_base_id
+from character_action_slot
+where character_id in (
+  select character_id
+  from character
+  where account_id in (
+    select account_id from account where login_name = any($1)
+  )
+)
+order by character_id, action_set, slot;
+"
+  |> pog.query
+  |> pog.parameter(pog.array(fn(value) { pog.text(value) }, arg_1))
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
 /// A row you get from running the `character_item_sequence` query
 /// defined in `./src/genesis_prime/wire_recording/fixture/sql/character_item_sequence.sql`.
 ///

@@ -27,8 +27,8 @@ import genesis_prime/step.{
   WatchId,
 }
 import genesis_prime/store.{
-  AccountId, CharacterLoaded, ForSelect, ForWorld, ListCharacters, Listed,
-  Select, Unavailable,
+  AccountId, ActionSets, CharacterLoaded, ForSelect, ForWorld, ListCharacters,
+  Listed, Select, Unavailable,
 }
 import genesis_prime/world_map/map.{Left}
 import gleam/bit_array
@@ -399,20 +399,19 @@ pub fn after_a_camp_a_play_request_enters_the_world_again_as_a_new_unit_with_the
       taken:,
       outcome: step.Answer(
         FromStore(
-          ForWorld(
-            CharacterLoaded(
-              game_connection_support.world_character(),
-              character_support.epoch(1),
-              None,
-              None,
-              world_entry_support.novice_items(
-                character: game_connection_support.world_character(),
-              ),
-              [],
-              [],
-              [],
+          ForWorld(CharacterLoaded(
+            game_connection_support.world_character(),
+            character_support.epoch(1),
+            None,
+            None,
+            world_entry_support.novice_items(
+              character: game_connection_support.world_character(),
             ),
-          ),
+            [],
+            [],
+            [],
+            action_sets: ActionSets(slots: []),
+          )),
         ),
       ),
     )

@@ -219,6 +219,26 @@ pub type QuestRow {
   )
 }
 
+/// One slot of an action set's bar as the character_action_slot table keeps it:
+/// the set (0 to 3), the slot (0 to 11) and the Spell4Base id of the ability in it
+/// (18 bits, `None` for an empty slot). The table's checks hold the ranges; the
+/// ability builder's rule (genesis_prime/game/limited_action_set) reads rows into
+/// the bars a player holds and writes the rows it saves.
+pub type ActionSlotRow {
+  ActionSlotRow(action_set: Int, slot: Int, spell4_base_id: Option(Int))
+}
+
+/// The slots of every action set a character has saved, whole sets in set then slot
+/// order, twelve rows for each; none for a character that never saved a bar. It is
+/// one record so that what the builder keeps later (tiers, AMPs) joins it without a
+/// new field on the requests and answers that carry it. A save is refused by name
+/// only for a row the table's checks refuse. Two rows for one slot, or a set or slot
+/// beyond 16 bits, fail the statement with an error no check names, which crashes the
+/// worker; `limited_action_set.rows` never builds either.
+pub type ActionSets {
+  ActionSets(slots: List(ActionSlotRow))
+}
+
 /// The entry the client's active list carries for a quest (opcode.0x35f): the
 /// placeholder objective's id (0 for none), whether the quest is tracked, the done
 /// mask (a bit for each of the six objectives), the progress of each objective, the
@@ -348,7 +368,11 @@ pub type MoveRequest {
   /// that changed and deletes the rows it no longer holds, both under the same
   /// fence, so a refused save changes no quest row. A row a check of the
   /// character_quest table refuses is `QuestLogRefused`, which no log the rule
-  /// keeps breaks.
+  /// keeps breaks. The character's `action_sets` are the slots of the bars it has
+  /// saved: the statement writes the slots that changed and no other, under the
+  /// same fence, and none for an empty record; a slot a check of the
+  /// character_action_slot table refuses, or an ability twice in one set, is
+  /// `ActionSetRefused`, which nothing the rule keeps breaks.
   SavePlace(
     account_id: AccountId,
     character_id: CharacterId,
@@ -359,6 +383,7 @@ pub type MoveRequest {
     experience: Int,
     level: Int,
     quests: List(QuestRow),
+    action_sets: ActionSets,
   )
 }
 
@@ -598,8 +623,9 @@ pub type WorldAnswer {
   /// the rows of its quest log, in quest id order (none for a character with no
   /// quest) and the currencies it holds, by type (none for a character that holds
   /// none). The rows are read in the transaction that raised the epoch, so no
-  /// delete lands between them. Asking again takes the character again and raises
-  /// it again.
+  /// delete lands between them, and the slots of the action sets it has saved
+  /// (none for a character that never saved a bar). Asking again takes the
+  /// character again and raises it again.
   CharacterLoaded(
     character: Character,
     session_epoch: SessionEpoch,
@@ -609,6 +635,7 @@ pub type WorldAnswer {
     unset: List(UnsetItem),
     quests: List(QuestRow),
     currencies: List(HeldCurrency),
+    action_sets: ActionSets,
   )
   /// The account has no character with the id.
   NotTheAccounts
@@ -637,6 +664,10 @@ pub type MoveAnswer {
   /// name, which no log the rule keeps breaks: a bug of the server's, so nothing
   /// was saved, neither the quest rows nor the place beside them.
   QuestLogRefused(constraint: String)
+  /// The database refused a slot of the action sets for the check constraint or the
+  /// unique key of this name, which nothing the rule keeps breaks: a bug of the
+  /// server's, so nothing was saved, neither the slots nor the place beside them.
+  ActionSetRefused(constraint: String)
   /// The database refused the health (`character_health_is_not_negative`),
   /// which the rule never asks to keep below 0: a bug of the server's, so
   /// nothing was saved, neither the health nor the place beside it.

@@ -240,8 +240,10 @@
 ////   types 4, 12, 13, 14, 18 and 19 go to the class's slots that hold that vital, the
 ////   last one's result given when none passes (Gamma Rays is 55); on a threshold
 ////   row's cost the same types go to the first such slot that holds a point
-////   (`RowClassCost`). Health (1), shield (3), focus (15)
-////   and 16 (slot 7) give their own results (44, 176, 167, 177) and are held by no
+////   (`RowClassCost`). Focus (15) on a Spell4 row is a `FocusCost` of its amount, which
+////   the caster's own Focus meets or is refused 167 (`CheckInnateCost` 0x1403b3320 case
+////   0xe, genesis_prime/game/class_resource); Health (1), shield (3), Focus on a threshold
+////   row and 16 (slot 7) give their own results (44, 176, 167, 177) and are held by no
 ////   rule of the server; any other type, the client's slots 8 to 10 (types 27 to 29)
 ////   among them, is an `UnreadCost`.
 //// - **The spend.** A cost's Spell4 EMM id (`Spell4.innateCostEMMId0`, genesis_prime/game/spend)
@@ -1333,8 +1335,13 @@ pub type Cost {
   /// `row_class_cost`, `0x1403c0620`): the points held must be at least `amount`,
   /// with no maximum, and a refusal is the vital slot's result or 175.
   RowClassCost(vital: Int, amount: Int)
-  /// A cost in a vital no rule of the server holds (health, shield or focus):
-  /// refused with `result`, and logged once.
+  /// `amount` points of Focus on a Spell4 row's innate cost (type 15,
+  /// `CheckInnateCost` 0x1403b3320 case 0xe): the press needs the whole points
+  /// `class_resource.focus_required` gives, from the caster's own Focus (a class that holds
+  /// none is refused 167), and the cast pays them.
+  FocusCost(amount: Int)
+  /// A cost in a vital no rule of the server holds (health, shield, or Focus on a stage's
+  /// threshold row): refused with `result`, and logged once.
   UnheldCost(result: Int)
   /// A slot cost whose Spell4 EMM id the server reads as a spend of every point
   /// held (genesis_prime/game/spend `AllHeld`): refused with `result` when the slot
@@ -3144,6 +3151,7 @@ fn opening_costs_lifted(spell spell: Spell) -> Spell {
             RowClassCost(..) -> True
             SlotCost(..)
             | ClassVitalCost(..)
+            | FocusCost(..)
             | UnheldCost(..)
             | SpendAllCost(..)
             | UnreadSpendCost(..) -> False
@@ -5013,6 +5021,7 @@ fn spends_all_of(costs costs: List(Cost)) -> Bool {
       SlotCost(..)
       | ClassVitalCost(..)
       | RowClassCost(..)
+      | FocusCost(..)
       | UnheldCost(..)
       | UnreadSpendCost(..) -> False
     }
@@ -6950,12 +6959,17 @@ fn unread_spend(cost cost: Option(Cost), emm_id emm_id: Int) -> Cost {
     | Some(SpendAllCost(result:, ..))
     | Some(UnheldCost(result:))
     | Some(UnreadSpendCost(result:, ..)) -> result
+    Some(FocusCost(..)) -> focus_refusal
     Some(ClassVitalCost(..)) | Some(RowClassCost(..)) ->
       panic as "a class cost is never read as a spend"
     None -> 285
   }
   UnreadSpendCost(result:, emm_id:)
 }
+
+/// The result a Focus cost the caster cannot meet is refused with
+/// (`Spell4CastResult.vital_cost`, `CasterVitalCostFocus`).
+const focus_refusal = 167
 
 /// The EMM id beside each of the Spell4 row's two innate costs, 0 for a cost that holds
 /// none: an id with no cost is no spend (`has_cost`), which `cost_of` refuses the press
@@ -6994,7 +7008,13 @@ fn cost_of(
   case cost_type, slot_of(vital_type: cost_type) {
     1, _ -> Ok(Some(UnheldCost(result: 44)))
     3, _ -> Ok(Some(UnheldCost(result: 176)))
-    15, _ -> Ok(Some(UnheldCost(result: 167)))
+    15, _ ->
+      Ok(
+        Some(case on_row {
+          True -> UnheldCost(result: focus_refusal)
+          False -> FocusCost(amount:)
+        }),
+      )
     16, _ -> Ok(Some(UnheldCost(result: 177)))
     _, Ok(#(slot, result)) -> Ok(Some(SlotCost(slot:, amount:, result:)))
     4, _ | 12, _ | 13, _ | 14, _ | 18, _ | 19, _ ->

@@ -278,10 +278,9 @@ pub fn run_scripted(
 
 /// The folder of the session recorded live: the real client's
 /// login through the STS, auth and game servers, played into the world with a
-/// level-3 Medic character (`session.sh` of the playing-live skill), with the
+/// level-5 Medic character (`session.sh` of the playing-live skill), with the
 /// server taking the client's movement messages and saving the player's place.
-pub const committed_session =
-  "test/wire_recording/2026-11-18-ability-points-session"
+pub const committed_session = "test/wire_recording/2026-11-20-focus-session"
 
 /// The recording of the connection of the rule `rule` in the committed session,
 /// with its file's name.

@@ -17,6 +17,7 @@ import genesis_prime/game/dev_command
 import genesis_prime/game/inventory
 import genesis_prime/game/item_charge
 import genesis_prime/game/level_up
+import genesis_prime/game/limited_action_set
 import genesis_prime/game/movement
 import genesis_prime/game/objective
 import genesis_prime/game/player_life
@@ -429,6 +430,29 @@ pub fn to_client(
   )
 }
 
+/// What one effect of a feature rule that only writes frames and log lines comes to.
+pub type Told {
+  /// A message to the client.
+  Sent(frame: Frame)
+  /// A log line of the connection.
+  Logged(level: step.LogLevel, text: String)
+}
+
+/// The connection's effects for a feature rule's effects, in order: `told` says which
+/// of the two each one is.
+pub fn told_effects(
+  session session: Session,
+  effects effects: List(effect),
+  told told: fn(effect) -> Told,
+) -> List(Effect(ConnectionEffect(Request))) {
+  list.map(effects, fn(effect) {
+    case told(effect) {
+      Sent(frame:) -> to_client(session:, inner: frame)
+      Logged(level:, text:) -> log(session:, level:, text:)
+    }
+  })
+}
+
 /// 0x036A with the reason, in the game wrapper under the cipher the
 /// connection holds, so the client leaves its prompt.
 pub fn notice(
@@ -774,6 +798,7 @@ pub fn saving(
       experience: entered.experience,
       level: entered.character.level,
       quests: quest_log.rows(log: entered.quests, now_ms: now.monotonic_ms),
+      action_sets: limited_action_set.rows(saved: entered.action_sets),
     )
   ask_within(
     session: Session(

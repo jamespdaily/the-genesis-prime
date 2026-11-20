@@ -19,8 +19,16 @@
 ////   (a server choice); the Esper's Psi Points go to 0 ten seconds after it leaves
 ////   combat (a retail record).
 //// - The design's rows of migrations 0011, 0012 and 0018, with their names and units.
+//// - The design of issue 945 (Jim's decision): Focus is a pool of 1000 points at every
+////   level plus what worn items add (UnitProperty2 5), held by the classes whose level
+////   grants cost it, full at entry and when coming back; it recovers each 500 ms
+////   (GameFormula 88) by the maximum x the share x 0.5, the share being UnitProperty2 108
+////   out of combat and the curve of GameFormula 1237 over properties 107 and 6 in
+////   combat (`FUN_1404602f0`, `GetFocusRegenNonCombat` 0x14064ac80); a 0x935 of stat 1
+////   (`ApplyUnitStat` 0x1403d9a60 case 1) tells each change, Focus being slot -1.
 
 import class_resource_support
+import client_tables
 import content_support
 import database_support
 import fixture_tables
@@ -31,10 +39,18 @@ import genesis_prime/game/class_resource.{
   Payment, Resource, Row, StartTimer,
 }
 import genesis_prime/step
+import genesis_prime/table/id.{ClassId}
+import genesis_prime/table/loader/store as table_store
+import genesis_prime/table/spell4
+import genesis_prime/table/spell_level
 import gleam/float
+import gleam/int
 import gleam/list
+import gleam/set
 import gleam/string
 import owned_test
+import qcheck
+import unitest
 
 fn design_rows() -> List(class_resource.Row) {
   class_resource_support.rows()
@@ -45,7 +61,7 @@ fn resource_of(class_id: Int) -> Resource {
 }
 
 fn new(class_id: Int) -> Resources {
-  class_resource.new(resource: resource_of(class_id))
+  class_resource_support.resources_of(class_id)
 }
 
 fn changes(effects: List(Effect)) -> List(#(Int, Float)) {
@@ -125,7 +141,7 @@ pub fn each_class_starts_with_the_slot_max_and_value_the_design_gives_test() -> 
     assert resource.max == max as "the design's maximum"
     assert resource.start == start
       as "full or empty by the client's text (LocalizedEnum.CRB_StalkerResource)"
-    let resources = class_resource.new(resource:)
+    let resources = new(class_id)
     assert class_resource.value(resources:, slot:) == start
     assert class_resource.max(resources:, slot:) == max
     assert class_resource.value(resources:, slot: slot + 1) == 0.0
@@ -315,7 +331,14 @@ pub fn a_warriors_gain_of_180_from_0_is_one_change_and_starts_the_drain_wait_tes
 pub fn a_gain_is_clamped_to_the_max_test() -> Nil {
   use <- owned_test.run(5000)
   let resources =
-    class_resource.new(resource: Resource(..resource_of(1), start: 900.0))
+    class_resource.new(
+      resource: Resource(..resource_of(1), start: 900.0),
+      properties: class_resource_support.properties_of(
+        class_id: 1,
+        changes: [],
+        level: 1,
+      ),
+    )
   let #(resources, effects) = gain(resources:, slot: 1, amount: 180)
   assert changes(effects) == [#(1, 1000.0)]
     as "900 + 180 is clamped to the Warrior's 1000 (migration 0011)"
@@ -620,12 +643,12 @@ pub fn a_migrated_database_holds_the_designs_rows_each_with_its_source_and_reaso
     content_class_resource.rows(db: content_support.connect(database:))
     as "the query ran"
   assert rows == design_rows()
-    as "the rows of migrations 0011, 0012 and 0018, in class and name order: the values tables of the designs of issues 403, 418 and 419"
+    as "the rows of migrations 0011, 0012, 0018 and 0048, in class and name order: the values tables of the designs of issues 403, 418, 419 and 945"
   assert content_support.count(
       database:,
       sql: "select count(*) from class_resource where source in ('client', 'retail_record', 'server_choice') and reason is not null",
     )
-    == 19
+    == 22
     as "each row is the client's, a retail record or a server choice and states its reason"
   assert content_support.count(
       database:,
@@ -637,8 +660,14 @@ pub fn a_migrated_database_holds_the_designs_rows_each_with_its_source_and_reaso
       database:,
       sql: "select count(*) from class_resource where source = 'server_choice'",
     )
-    == 8
-    as "the Medic's refill, the three ticks, the Warrior's drain amount, period and wait (Jim's choices) and the Engineer's empty wait (Jim's decision, issue 419) are the server's"
+    == 11
+    as "the Medic's refill, the three ticks, the Warrior's drain amount, period and wait (Jim's choices), the Engineer's empty wait (Jim's decision, issue 419) and the three Focus pools (Jim's decision, issue 945) are the server's"
+  assert content_support.count(
+      database:,
+      sql: "select count(*) from class_resource where name = 'focus_pool' and class_id in (3, 4, 7) and value = 1000 and unit = 'points' and source = 'server_choice' and reason like '%guess%' and reason like '%Jim%' and reason like '%137%152%'",
+    )
+    == 3
+    as "the Esper, Medic and Spellslinger each hold a flat 1000-point pool, a guess whose reason names Jim's decision and the level-6 costs of 137 to 152 that rule out a pool growing with level"
 }
 
 pub fn the_database_refuses_each_bad_row_under_its_own_constraint_test() -> Nil {
@@ -707,4 +736,569 @@ pub fn the_database_refuses_each_bad_row_under_its_own_constraint_test() -> Nil 
         as "the refusal names its constraint"
     },
   )
+}
+
+// ---- Focus ----
+
+/// The Focus timer, numbered 14 in `started` and `cancelled`.
+const focus_timer = 14
+
+fn focus_tick(resources: Resources) -> #(Resources, List(Effect)) {
+  class_resource.timer_fired(resources:, timer: class_resource.focus_timer)
+}
+
+fn focus_of(resources: Resources) -> Float {
+  class_resource.value(resources:, slot: class_resource.focus_slot)
+}
+
+fn near(first: Float, second: Float) -> Bool {
+  float.loosely_equals(first, second, tolerating: 0.001)
+}
+
+pub fn the_running_timers_are_one_set_and_left_and_died_cancel_each_in_timer_id_order_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(slinger, _) = pay(resources: new(7), slot: 4, amount: 10)
+  let #(slinger, focus_started) = pay(resources: slinger, slot: -1, amount: 15)
+  assert started(focus_started) == [#(focus_timer, 500)]
+    as "the first Focus payment below the pool starts its timer, GameFormula 88's 500 ms"
+  let #(_, left) = class_resource.left(resources: slinger)
+  assert cancelled(left) == [regen, focus_timer]
+    as "a Spellslinger's slot regeneration (4) and its Focus (14), in timer-id order"
+  let #(_, died) = class_resource.died(resources: slinger)
+  assert cancelled(died) == [regen, focus_timer]
+  let #(medic, refilling) = pay(resources: new(4), slot: 1, amount: 1)
+  assert started(refilling) == [#(refill, 3000)]
+  let #(_, left) = class_resource.left(resources: medic)
+  assert cancelled(left) == [refill] as "a Medic's refill after combat (5)"
+  let #(_, none) = class_resource.left(resources: new(5))
+  assert none == [] as "no timer running: nothing to cancel"
+}
+
+pub fn owns_names_each_timer_of_the_rule_and_no_other_connection_timer_test() -> Nil {
+  use <- owned_test.run(5000)
+  list.each([4, 5, 6, 7, 14], fn(number) {
+    assert class_resource.owns(timer: step.TimerId(number))
+      as "the rule's own timers: the regeneration, refill, drain, empty and Focus"
+  })
+  list.each([1, 2, 3, 8, 9, 10, 11, 12, 13, 1000], fn(number) {
+    assert !class_resource.owns(timer: step.TimerId(number))
+      as "the save, claim and strike timers (state.gleam, login.gleam, strike.gleam), the life's and the departures' (player_life.gleam, departures.gleam) and the cast rule's from 1000 belong to others"
+  })
+}
+
+pub fn focus_is_a_second_vital_reached_as_slot_minus_1_and_a_class_slot_payment_never_touches_it_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(medic, _) = pay(resources: new(4), slot: 1, amount: 1)
+  assert focus_of(medic) == 1000.0
+    as "a payment of the Medic's slot 1 leaves Focus alone"
+  assert class_resource.value(resources: medic, slot: 1) == 3.0
+  let #(medic, _) = pay(resources: new(4), slot: -1, amount: 20)
+  assert class_resource.value(resources: medic, slot: 1) == 4.0
+    as "a payment of Focus leaves the Medic's Actuators alone"
+  assert focus_of(medic) == 980.0
+  let warrior = new(1)
+  assert focus_of(warrior) == 0.0
+    && class_resource.max(resources: warrior, slot: -1) == 0.0
+    as "a Warrior holds no Focus: a value and a maximum of 0"
+  let #(slinger, _) = pay(resources: new(7), slot: 4, amount: 10)
+  let #(slinger, _) = pay(resources: slinger, slot: -1, amount: 15)
+  assert class_resource.value(resources: slinger, slot: 4) == 90.0
+    && focus_of(slinger) == 985.0
+    as "a Spellslinger holds Spell Power at slot 4 and Focus at slot -1, each paid apart"
+}
+
+pub fn a_new_healer_holds_its_focus_at_the_maximum_of_property_5_and_a_class_with_none_holds_0_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Class id, what gear adds to property 5, the Focus held and its maximum.
+  [
+    #(4, 0.0, 1000.0),
+    #(3, 0.0, 1000.0),
+    #(7, 0.0, 1000.0),
+    #(4, 150.0, 1150.0),
+    #(1, 0.0, 0.0),
+    #(2, 0.0, 0.0),
+    #(5, 0.0, 0.0),
+  ]
+  |> list.each(fn(row) {
+    let #(class_id, gear, held) = row
+    let changes = case gear {
+      0.0 -> []
+      points -> [#(5, class_resource_support.focus_pool_of(class_id) +. points)]
+    }
+    let resources =
+      class_resource_support.resources_with(class_id:, changes:, level: 1)
+    assert focus_of(resources) == held
+      as "full at entry (Jim's decision): the maximum of property 5, the pool plus gear; a class with no Focus holds 0"
+    assert class_resource.max(resources:, slot: -1) == held
+  })
+}
+
+pub fn a_focus_payment_lowers_the_pool_by_the_points_and_sends_one_change_and_a_payment_below_the_maximum_starts_the_timer_once_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(medic, first) = pay(resources: new(4), slot: -1, amount: 15)
+  assert first
+    == [
+      Changed(slot: -1, value: 985.0),
+      StartTimer(timer: class_resource.focus_timer, after_ms: 500),
+    ]
+    as "0x935 of stat 1 (opcode.0x935), and the first tick GameFormula 88 dataint0 later"
+  let #(_, second) = pay(resources: medic, slot: -1, amount: 10)
+  assert second == [Changed(slot: -1, value: 975.0)]
+    as "a second payment starts no second timer"
+  let #(emptied, over) = pay(resources: new(4), slot: -1, amount: 1200)
+  assert focus_of(emptied) == 0.0
+  assert over
+    == [
+      Changed(slot: -1, value: 0.0),
+      StartTimer(timer: class_resource.focus_timer, after_ms: 500),
+    ]
+    as "a payment past the pool clamps at 0"
+  let #(warrior, ignored) = pay(resources: new(1), slot: -1, amount: 15)
+  assert ignored == [] && focus_of(warrior) == 0.0
+    as "a class with no Focus ignores a payment of it"
+}
+
+pub fn each_500_ms_tick_adds_the_maximum_times_the_share_times_one_half_and_stops_at_full_test() -> Nil {
+  use <- owned_test.run(5000)
+  let again = StartTimer(timer: class_resource.focus_timer, after_ms: 500)
+  // Name, properties changed, in combat, points paid, then what the tick sends.
+  [
+    #("out of combat", [], False, 100, [Changed(-1, 905.5), again]),
+    #("in combat, no rating", [], True, 100, [Changed(-1, 905.5), again]),
+    #("a pool of 1500", [#(5, 1500.0)], False, 100, [
+      Changed(-1, 1408.25),
+      again,
+    ]),
+    #("a value of 998", [], False, 2, [Changed(-1, 1000.0)]),
+  ]
+  |> list.each(fn(row) {
+    let #(name, changes, in_combat, paid, sent) = row
+    let resources =
+      class_resource_support.resources_with(class_id: 4, changes:, level: 1)
+    let #(resources, _) = class_resource.combat_changed(resources:, in_combat:)
+    let #(resources, _) = pay(resources:, slot: -1, amount: paid)
+    let #(_, effects) = focus_tick(resources)
+    assert effects == sent
+      as {
+        name
+        <> ": maximum x 0.011 x 500 ms x 0.001 (UnitProperty2 107 and 108 defaults, GameFormula 88), clamped to the maximum, a full pool starting no timer"
+      }
+  })
+  let #(_, full) = focus_tick(new(4))
+  assert full == [] as "a full pool with no timer running sends nothing"
+}
+
+pub fn a_combat_flag_change_changes_the_share_at_the_next_tick_and_restarts_no_timer_test() -> Nil {
+  use <- owned_test.run(5000)
+  let medic =
+    class_resource_support.resources_with(
+      class_id: 4,
+      changes: [#(6, 450.0)],
+      level: 6,
+    )
+  let #(medic, _) = pay(resources: medic, slot: -1, amount: 100)
+  let #(medic, entered) =
+    class_resource.combat_changed(resources: medic, in_combat: True)
+  assert entered == [] as "combat starting restarts no timer and sends nothing"
+  let #(medic, in_combat) = focus_tick(medic)
+  assert changes(in_combat) == [#(-1, 909.25)]
+    as "rating 450 at level 6 on base 0.011: 0.0075 + 0.011 of 1000 x 0.5 = 9.25"
+  let #(medic, left) =
+    class_resource.combat_changed(resources: medic, in_combat: False)
+  assert left == [] as "combat ending restarts no timer"
+  let #(_, out_of_combat) = focus_tick(medic)
+  assert changes(out_of_combat) == [#(-1, 914.75)]
+    as "out of combat property 108 alone: 5.5 (GetFocusRegenNonCombat 0x14064ac80)"
+  let #(slinger, _) = pay(resources: new(7), slot: 4, amount: 10)
+  let #(slinger, _) = pay(resources: slinger, slot: -1, amount: 100)
+  let #(slinger, entered) =
+    class_resource.combat_changed(resources: slinger, in_combat: True)
+  let #(slinger, left) =
+    class_resource.combat_changed(resources: slinger, in_combat: False)
+  assert entered == [] && left == []
+    as "the Spellslinger's slot regenerates in and out of combat: combat touches neither timer"
+  let #(_, cancels) = class_resource.left(resources: slinger)
+  assert cancelled(cancels) == [regen, focus_timer]
+}
+
+pub fn a_spellslinger_regenerates_spell_power_and_focus_on_two_timers_neither_starting_or_stopping_the_other_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(slinger, slot_started) = pay(resources: new(7), slot: 4, amount: 10)
+  assert started(slot_started) == [#(regen, 1000)]
+  let #(slinger, focus_started) = pay(resources: slinger, slot: -1, amount: 15)
+  assert started(focus_started) == [#(focus_timer, 500)]
+    as "both below their maximums: two timers"
+  let #(slinger, slot_tick) = tick(slinger)
+  assert started(slot_tick) == [#(regen, 1000)] && cancelled(slot_tick) == []
+    as "the slot's tick restarts its own timer and leaves Focus's running"
+  let #(slinger, focus_ticked) = focus_tick(slinger)
+  assert started(focus_ticked) == [#(focus_timer, 500)]
+    && changes(focus_ticked) == [#(-1, 990.5)]
+  let #(_, cancels) = class_resource.left(resources: slinger)
+  assert cancelled(cancels) == [regen, focus_timer]
+  let #(slinger, _) = pay(resources: new(7), slot: 4, amount: 10)
+  let #(slinger, _) = pay(resources: slinger, slot: -1, amount: 2)
+  let #(slinger, full) = focus_tick(slinger)
+  assert full == [Changed(slot: -1, value: 1000.0)]
+    as "998 + 5.5 clamps to the pool: one change and no restart"
+  let #(_, cancels) = class_resource.left(resources: slinger)
+  assert cancelled(cancels) == [regen]
+    as "Focus at its maximum stopped its timer and left the slot's"
+}
+
+pub fn a_maximum_that_falls_below_the_value_clamps_it_with_one_change_and_one_that_rises_starts_the_timer_test() -> Nil {
+  use <- owned_test.run(5000)
+  let followed = fn(resources, maximum) {
+    class_resource.properties_followed(
+      resources:,
+      properties: class_resource_support.properties_of(
+        class_id: 4,
+        changes: [#(5, maximum)],
+        level: 1,
+      ),
+    )
+  }
+  let #(medic, _) = pay(resources: new(4), slot: -1, amount: 50)
+  let #(medic, lowered) = followed(medic, 900.0)
+  assert lowered
+    == [
+      Changed(slot: -1, value: 900.0),
+      CancelTimer(timer: class_resource.focus_timer),
+    ]
+    as "1000 to 900 at 950 held: one 0x935 at the new maximum, and the timer of a pool now full stops"
+  assert class_resource.max(resources: medic, slot: -1) == 900.0
+  let #(_, raised) = followed(new(4), 1100.0)
+  assert raised
+    == [StartTimer(timer: class_resource.focus_timer, after_ms: 500)]
+    as "1000 to 1100 at 1000 held: below the new maximum, no change to send"
+  let #(medic, _) = pay(resources: new(4), slot: -1, amount: 200)
+  let #(_, kept) = followed(medic, 900.0)
+  assert kept == [] as "a lowered maximum above the value held changes nothing"
+}
+
+type Moved {
+  Moved(
+    name: String,
+    properties: List(#(Int, Float)),
+    level: Int,
+    in_combat: Bool,
+    maximum: Float,
+    tick_adds: Float,
+    needed_for_100: Int,
+  )
+}
+
+pub fn each_property_the_focus_vital_reads_changes_its_number_when_the_properties_follow_test() -> Nil {
+  use <- owned_test.run(5000)
+  let none = Moved("none moved", [], 1, False, 1000.0, 5.5, 100)
+  [
+    none,
+    Moved(
+      ..none,
+      name: "5 BaseFocusPool",
+      properties: [#(5, 1500.0)],
+      maximum: 1500.0,
+      tick_adds: 8.25,
+    ),
+    Moved(
+      ..none,
+      name: "6 RatingFocusRecovery in combat",
+      properties: [#(6, 450.0)],
+      level: 6,
+      in_combat: True,
+      tick_adds: 9.25,
+    ),
+    Moved(..none, name: "6 out of combat", properties: [#(6, 450.0)], level: 6),
+    Moved(
+      ..none,
+      name: "6 at level 50: a lower curve",
+      properties: [#(6, 450.0)],
+      level: 50,
+      in_combat: True,
+      tick_adds: 5.95,
+    ),
+    Moved(
+      ..none,
+      name: "56 RatingIntensity",
+      properties: [#(56, 300.0)],
+      level: 6,
+      needed_for_100: 107,
+    ),
+    Moved(
+      ..none,
+      name: "158 BaseIntensity",
+      properties: [#(158, 0.5)],
+      needed_for_100: 150,
+    ),
+    Moved(
+      ..none,
+      name: "107 BaseFocusRecoveryInCombat in combat",
+      properties: [#(107, 0.02)],
+      in_combat: True,
+      tick_adds: 10.0,
+    ),
+    Moved(..none, name: "107 out of combat", properties: [#(107, 0.02)]),
+    Moved(
+      ..none,
+      name: "108 BaseFocusRecoveryOutofCombat out of combat",
+      properties: [#(108, 0.02)],
+      tick_adds: 10.0,
+    ),
+    Moved(
+      ..none,
+      name: "108 in combat",
+      properties: [#(108, 0.02)],
+      in_combat: True,
+    ),
+    Moved(
+      ..none,
+      name: "135 FocusCostModifier",
+      properties: [#(135, 0.5)],
+      needed_for_100: 50,
+    ),
+  ]
+  |> list.each(fn(row) {
+    let #(resources, _) = pay(resources: new(4), slot: -1, amount: 500)
+    let #(resources, _) =
+      class_resource.combat_changed(resources:, in_combat: row.in_combat)
+    let #(resources, _) =
+      class_resource.properties_followed(
+        resources:,
+        properties: class_resource_support.properties_of(
+          class_id: 4,
+          changes: row.properties,
+          level: row.level,
+        ),
+      )
+    assert class_resource.max(resources:, slot: -1) == row.maximum
+      as {
+        row.name
+        <> ": the maximum is property 5's value (GetMaxFocus 0x14064a810)"
+      }
+    let before = focus_of(resources)
+    let #(resources, _) = focus_tick(resources)
+    assert near(focus_of(resources) -. before, row.tick_adds)
+      as {
+        row.name
+        <> ": the tick adds the maximum x the share x 0.5 (FUN_1404602f0, 0x14064ac80)"
+      }
+    assert class_resource.focus_required(resources:, amount: 100)
+      == row.needed_for_100
+      as {
+        row.name
+        <> ": the cost is int(m x 100 + 0.5), m from properties 135, 56 and 158 (FUN_140462a90)"
+      }
+  })
+  let held = new(4)
+  let #(same, nothing) =
+    class_resource.properties_followed(
+      resources: held,
+      properties: class_resource_support.properties_of(
+        class_id: 4,
+        changes: [],
+        level: 1,
+      ),
+    )
+  assert nothing == [] && same == held
+    as "a follow with nothing changed sends nothing"
+}
+
+pub fn death_cancels_the_timers_coming_back_refills_to_the_maximum_and_a_timer_after_the_cancel_changes_nothing_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(medic, _) = pay(resources: new(4), slot: -1, amount: 100)
+  let #(medic, died) = class_resource.died(resources: medic)
+  assert cancelled(died) == [focus_timer] && changes(died) == []
+    as "death cancels the running Focus timer and sends nothing"
+  let #(medic, late) = focus_tick(medic)
+  assert late == [] as "a tick that fires after death changes nothing"
+  assert focus_of(medic) == 900.0
+  let #(medic, back) = class_resource.came_back(resources: medic)
+  assert back == [Changed(slot: -1, value: 1000.0)]
+    as "back at the maximum, as health and shield come back full"
+  let #(medic, late) = focus_tick(medic)
+  assert late == [] as "a stale tick after coming back changes nothing"
+  let #(medic, died) = class_resource.died(resources: medic)
+  assert died == []
+  let #(medic, back) = class_resource.came_back(resources: medic)
+  assert back == [] as "coming back at the maximum sends nothing"
+  let #(medic, _) = pay(resources: medic, slot: -1, amount: 100)
+  let #(medic, left) = class_resource.left(resources: medic)
+  assert cancelled(left) == [focus_timer] && changes(left) == []
+    as "leaving cancels the timer and sends nothing"
+  let #(_, late) = focus_tick(medic)
+  assert late == [] as "a tick after leaving changes nothing"
+}
+
+type Event {
+  PayFocus(points: Int)
+  FocusTicks
+  MaximumBecomes(points: Float)
+  CombatChanges(in_combat: Bool)
+  Dies
+  ComesBack
+  PaySpellPower(points: Int)
+  SpellPowerTicks
+}
+
+fn event_of(drawn: #(Int, Int)) -> Event {
+  let #(kind, number) = drawn
+  case kind {
+    0 -> PayFocus(points: number)
+    1 -> FocusTicks
+    2 -> MaximumBecomes(points: int.to_float(500 + number % 1001))
+    3 -> CombatChanges(in_combat: number % 2 == 0)
+    4 -> Dies
+    5 -> ComesBack
+    6 -> PaySpellPower(points: number % 30)
+    _ -> SpellPowerTicks
+  }
+}
+
+/// The Spellslinger after the event, the Focus maximum it holds and whether it lives.
+fn after(
+  event event: Event,
+  state state: #(Resources, Float, Bool),
+) -> #(Resources, Float, Bool) {
+  let #(resources, maximum, alive) = state
+  case event {
+    PayFocus(points:) -> #(
+      pay(resources:, slot: -1, amount: points).0,
+      maximum,
+      alive,
+    )
+    FocusTicks -> #(focus_tick(resources).0, maximum, alive)
+    MaximumBecomes(points:) -> #(
+      class_resource.properties_followed(
+        resources:,
+        properties: class_resource_support.properties_of(
+          class_id: 7,
+          changes: [#(5, points)],
+          level: 1,
+        ),
+      ).0,
+      points,
+      alive,
+    )
+    CombatChanges(in_combat:) -> #(
+      class_resource.combat_changed(resources:, in_combat:).0,
+      maximum,
+      alive,
+    )
+    Dies -> #(class_resource.died(resources:).0, maximum, False)
+    ComesBack -> #(class_resource.came_back(resources:).0, maximum, True)
+    PaySpellPower(points:) -> #(
+      pay(resources:, slot: 4, amount: points).0,
+      maximum,
+      alive,
+    )
+    SpellPowerTicks -> #(tick(resources).0, maximum, alive)
+  }
+}
+
+pub fn focus_stays_between_0_and_the_maximum_through_any_sequence_of_payments_ticks_and_property_changes_test() -> Nil {
+  use <- owned_test.run(30_000)
+  qcheck.given(
+    qcheck.list_from(qcheck.tuple2(
+      qcheck.bounded_int(from: 0, to: 7),
+      qcheck.bounded_int(from: 0, to: 1200),
+    )),
+    fn(drawn) {
+      list.fold(
+        list.map(drawn, event_of),
+        #(new(7), 1000.0, True),
+        fn(state, event) {
+          let #(resources, maximum, alive) = after(event:, state:)
+          let held = focus_of(resources)
+          assert held >=. 0.0 && held <=. maximum
+            as "Focus stays within [0, the maximum]"
+          let spell_power = class_resource.value(resources:, slot: 4)
+          assert spell_power >=. 0.0 && spell_power <=. 100.0
+            as "the Spellslinger's slot behaves as before"
+          let running =
+            list.contains(
+              cancelled(class_resource.left(resources:).1),
+              focus_timer,
+            )
+          assert running == { alive && held <. maximum }
+            as "the Focus timer runs exactly while the pool is below its maximum and the player lives"
+          #(resources, maximum, alive)
+        },
+      )
+      Nil
+    },
+  )
+}
+
+pub fn a_class_that_holds_focus_with_no_pool_row_is_refused_by_name_and_a_pool_row_of_another_class_is_refused_test() -> Nil {
+  use <- owned_test.run(5000)
+  let without =
+    list.filter(design_rows(), fn(row) {
+      !{ row.class_id == 4 && row.name == "focus_pool" }
+    })
+  let assert Error([refused]) =
+    class_resource.select(rows: without, tables: fixture_tables.shared())
+  assert refused
+    == Refusal(
+      table: "class_resource",
+      row: RowName("4 focus_pool"),
+      rule: "the table has no such row, which this class needs",
+    )
+    as "the Medic's level grants cost Focus, so it needs its pool"
+  let with_extra =
+    list.append(design_rows(), [
+      Row(class_id: 1, name: "focus_pool", value: 1000.0, unit: "points"),
+    ])
+  let assert Error([refused]) =
+    class_resource.select(rows: with_extra, tables: fixture_tables.shared())
+  assert refused
+    == Refusal(
+      table: "class_resource",
+      row: RowName("1 focus_pool"),
+      rule: "the server holds no Focus for that class",
+    )
+    as "no level grant of the Warrior costs Focus"
+}
+
+/// Whether a Spell4 row costs Focus (type 15) in either innate column.
+fn costs_focus(row row: spell4.Spell4) -> Bool {
+  { row.innate_cost_type0 == 15 && row.innate_cost0 != 0 }
+  || { row.innate_cost_type1 == 15 && row.innate_cost1 != 0 }
+}
+
+/// The Spell4Base ids of the level grants (no prerequisite) of the class whose Spell4 costs
+/// Focus.
+fn focus_grant_bases(
+  tables tables: table_store.Tables,
+  class_id class_id: Int,
+) -> set.Set(Int) {
+  list.filter_map(spell_level.all(tables), fn(grant) {
+    let ClassId(grant_class) = spell_level.class_id(grant)
+    let assert Ok(row) = spell4.get(tables:, id: spell_level.spell4_id(grant))
+      as "a level grant names a Spell4 row"
+    case
+      grant_class == class_id && grant.prerequisite_id == 0 && costs_focus(row:)
+    {
+      True -> Ok(row.spell4_base_id_base_spell)
+      False -> Error(Nil)
+    }
+  })
+  |> set.from_list
+}
+
+pub fn the_classes_that_hold_focus_are_those_whose_level_grants_cost_it_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  // Per class that has any: the number of bases of its level grants that cost Focus.
+  let by_class =
+    list.filter_map(class_resource.playable_class_ids(), fn(class_id) {
+      case set.size(focus_grant_bases(tables:, class_id:)) {
+        0 -> Error(Nil)
+        count -> Ok(#(class_id, count))
+      }
+    })
+  assert by_class == [#(3, 11), #(4, 10), #(7, 10)]
+    as "Esper, Medic and Spellslinger: SpellLevel rows with no prerequisite whose Spell4 costs type 15"
+  assert class_resource.focus_class_ids() == [3, 4, 7]
+    as "the classes the server gives a pool are those the tables say"
 }

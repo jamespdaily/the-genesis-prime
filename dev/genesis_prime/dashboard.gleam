@@ -455,16 +455,25 @@ fn upgraded(
   argument argument: argument,
   request request: Request(Connection),
 ) -> Response(ResponseData) {
+  let rebuilding = fn() {
+    response.new(503) |> response.set_body(mist.Bytes(bytes_tree.new()))
+  }
   case process.named(runtimes_name) {
     Ok(_) ->
-      socket.upgrade(
-        request:,
-        runtimes: factory_supervisor.get_by_name(runtimes_name),
-        argument:,
-      )
+      case
+        socket.upgrade(
+          request:,
+          runtimes: factory_supervisor.get_by_name(runtimes_name),
+          argument:,
+        )
+      {
+        Ok(upgraded) -> upgraded
+        // A runtime that did not start, as a factory that ended does not start
+        // one: the client asks again.
+        Error(Nil) -> rebuilding()
+      }
     // The page runtimes are being rebuilt; the client asks again.
-    Error(Nil) ->
-      response.new(503) |> response.set_body(mist.Bytes(bytes_tree.new()))
+    Error(Nil) -> rebuilding()
   }
 }
 

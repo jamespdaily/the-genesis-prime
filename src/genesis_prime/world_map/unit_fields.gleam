@@ -87,7 +87,8 @@ pub fn integer_stat(stat_id stat_id: Int, value value: Int) -> UnitStat {
 
 /// The stat that sets resource slot `slot` (0 to 7) of a new unit: stat slot + 2,
 /// kept by the client only in the float form (`opcode.0x262.resource_stats`), and
-/// the stat a 0x935 names to change it (`opcode.0x935`).
+/// the stat a 0x935 names to change it (`opcode.0x935`). Slot -1 is Focus, stat 1
+/// (`ApplyUnitStat` 0x1403d9a60 case 1).
 pub fn resource_stat_id(slot slot: Int) -> Int {
   slot + 2
 }
@@ -103,9 +104,11 @@ pub fn resource_stat(slot slot: Int, value value: Float) -> UnitStat {
 
 /// The UnitProperty2 id of resource slot `slot`'s maximum, ResourceMax_n: 9 to 15
 /// for slots 0 to 6, 38 for 7, and 50, 52 and 54 for 8 to 10
-/// (`UnitProperty2.ResourceMax_0`, `0x140466360`).
+/// (`UnitProperty2.ResourceMax_0`, `0x140466360`); slot -1, Focus, has BaseFocusPool, 5
+/// (`GetMaxFocus` `0x14064a810`).
 pub fn resource_max_property(slot slot: Int) -> Int {
   case slot {
+    -1 -> 5
     7 -> 38
     8 -> 50
     9 -> 52

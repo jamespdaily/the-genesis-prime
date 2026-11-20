@@ -46,6 +46,10 @@
 ////   nearest first and Furthest the farthest first, each the lower unit id first on a tie;
 ////   Random takes the units by a 32-bit mix of a seed and the unit id (`mix`), a guess: the
 ////   client names Random and orders nothing. A player's strike is always Nearest.
+//// - **Where a player's strike is centred** is `centre_of`, by the spell's anchor: the caster's
+////   pose now for a row the client draws on the caster each frame, the pose the cast started at
+////   for a row it holds there (`0x14054b1b0.follows_caster`, `0x14054b1b0.fixed_placement`,
+////   `0x14053a210.held_position`).
 
 import genesis_prime/game/start_place.{type Place}
 import gleam/float
@@ -89,9 +93,10 @@ pub type Shape {
   Rectangle(width: Float, length: Float)
 }
 
-/// Where a creature special's hit is centred, which is where its picture is drawn
+/// Where a spell's hit is centred, which is where its picture is drawn
 /// (genesis_prime/game/telegraph_entries): a spell has one anchor, which the load reads from the
-/// hit rows' `targetTypeFlags` and flags (genesis_prime/game/spell_area `anchor_of`).
+/// hit rows' `targetTypeFlags` and flags (genesis_prime/game/spell_area `anchor_of`). A player's
+/// spell holds `FollowsCaster`, `FixedAtCaster` or, with no hit row, `FollowsTarget`.
 pub type Anchor {
   /// Rows with neither 0x4000 nor 0x1000: the client draws them on the caster each frame
   /// from its own place and facing, so the hit is centred on the caster where it stands at
@@ -99,7 +104,9 @@ pub type Anchor {
   FollowsCaster
   /// Rows with 0x4000 or 0x1000: the client draws them where the server put them at the
   /// cast's start, so the hit is centred on the pose the cast started at
-  /// (`0x14054b1b0.fixed_placement`).
+  /// (`0x14054b1b0.fixed_placement`). So are a player's rows placed at the position the cast
+  /// holds (`targetTypeFlags` 8), which the client stores once at the start and draws there
+  /// (`0x140546e60.placement_branches`, `0x14053a210.held_position`).
   FixedAtCaster
   /// Rows with neither 0x4000 nor 0x1000 placed on the cast's target (`targetTypeFlags` 0 or
   /// bit 2): the client draws them on the unit of the cast's primary target each frame, so
@@ -116,6 +123,35 @@ pub type Anchor {
   /// bound to the target's unit as well (`0x14054b1b0.unit_gone`), so it too finds nobody once
   /// the target is no longer in the creature's viewers.
   FixedAtTarget
+}
+
+/// The cast's primary target as a strike centres a row on it: the caster itself, or another
+/// unit the picture shows at a pose (a child cast on a struck unit).
+pub type Primary {
+  TheCaster
+  AnotherUnit(pose: Pose)
+}
+
+/// Where a player's hit is centred, by the spell's anchor: a row that follows the caster is
+/// on the caster's pose now (`caster`); a row fixed at the caster is on the pose the cast
+/// started at (`started_at`), whatever the caster has done since; a row on the primary
+/// target follows it (the caster's pose now when the caster is the primary target) and a
+/// fixed one stays at the start pose when the caster is the primary target, else on the
+/// pose the picture shows the target at.
+pub fn centre_of(
+  anchor anchor: Anchor,
+  caster caster: Pose,
+  started_at started_at: Pose,
+  primary primary: Primary,
+) -> Pose {
+  case anchor, primary {
+    FollowsCaster, TheCaster | FollowsCaster, AnotherUnit(..) -> caster
+    FixedAtCaster, TheCaster | FixedAtCaster, AnotherUnit(..) -> started_at
+    FollowsTarget, TheCaster -> caster
+    FixedAtTarget, TheCaster -> started_at
+    FollowsTarget, AnotherUnit(pose:) | FixedAtTarget, AnotherUnit(pose:) ->
+      pose
+  }
 }
 
 /// A shape placed on a unit, the caster or the cast's target: where it lies against that

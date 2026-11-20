@@ -145,6 +145,7 @@ fn selection(
       spell4_id: Spell4Id(58_591),
       primary_target: 7,
       spent: None,
+      started_at: strike_support.start_pose(),
     ),
     units: list.map(units, fn(unit_id) { Aimed(unit_id:, life: 3) }),
     area: units,

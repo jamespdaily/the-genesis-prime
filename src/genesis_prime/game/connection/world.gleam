@@ -833,7 +833,8 @@ pub fn entry_answered(
       {
         Ok(world_entry.InTheWorld(entered:, effects:, told:)) ->
           in_the_world(session:, now:, holder:, entered:, effects:, told:)
-        Ok(world_entry.GearFault(text:)) ->
+        Ok(world_entry.GearFault(text:))
+        | Ok(world_entry.ActionSlotFault(text:)) ->
           connection_state.told(
             session:,
             now:,

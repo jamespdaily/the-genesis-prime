@@ -315,7 +315,7 @@ fn stat_frame(
 
 /// 0x935 of the stat of resource slot `slot`: the unit's slot now holds `value`,
 /// the only message after a unit's creation that sets a resource slot
-/// (`opcode.0x935`, `opcode.0x938.resource_stats`).
+/// (`opcode.0x935`, `opcode.0x938.resource_stats`); slot -1 is Focus, stat 1.
 pub fn resource_frame(
   unit_id unit_id: Int,
   slot slot: Int,
@@ -327,7 +327,7 @@ pub fn resource_frame(
       stat_id: unit_fields.resource_stat_id(slot:),
       value: float32.to_bits(value),
     ))
-    as "a unit id of 32 bits, a stat of slot 0 to 7 plus 2 and a float fit the message"
+    as "a unit id of 32 bits, a stat of slot -1 to 7 plus 2 and a float fit the message"
   Frame(message_id: unit_float_stat_changed.message_id, body:)
 }
 

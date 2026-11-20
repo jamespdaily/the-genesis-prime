@@ -614,6 +614,7 @@ pub fn joining_holding_currencies(
           [],
           quests,
           currencies,
+          store.ActionSets(slots: []),
         )),
       ),
     ),
@@ -951,18 +952,17 @@ pub fn entered_stocking_with_quests(
       taken:,
       outcome: step.Answer(
         FromStore(
-          ForWorld(
-            CharacterLoaded(
-              character,
-              character_support.epoch(1),
-              None,
-              None,
-              list.append(world_entry_support.novice_items(character:), items),
-              [],
-              quests,
-              [HeldCurrency(currency_type_id: 1, amount: credits)],
-            ),
-          ),
+          ForWorld(CharacterLoaded(
+            character,
+            character_support.epoch(1),
+            None,
+            None,
+            list.append(world_entry_support.novice_items(character:), items),
+            [],
+            quests,
+            [HeldCurrency(currency_type_id: 1, amount: credits)],
+            store.ActionSets(slots: []),
+          )),
         ),
       ),
     )
@@ -1132,19 +1132,18 @@ pub fn save_asked_keeping(
   health health: Option(Int),
 ) -> Request {
   AskStore(
-    Move(
-      SavePlace(
-        account_id: AccountId(7),
-        character_id: CharacterId(42),
-        session_epoch: character_support.epoch(1),
-        save_sequence: sequence,
-        place:,
-        health:,
-        experience: 0,
-        level: 1,
-        quests: [],
-      ),
-    ),
+    Move(SavePlace(
+      account_id: AccountId(7),
+      character_id: CharacterId(42),
+      session_epoch: character_support.epoch(1),
+      save_sequence: sequence,
+      place:,
+      health:,
+      experience: 0,
+      level: 1,
+      quests: [],
+      action_sets: store.ActionSets(slots: []),
+    )),
   )
 }
 
@@ -1846,21 +1845,20 @@ pub fn entered_with_dev_commands(
       taken:,
       outcome: step.Answer(
         FromStore(
-          ForWorld(
-            CharacterLoaded(
-              character,
-              character_support.epoch(1),
-              None,
-              None,
-              list.append(world_entry_support.novice_items(character:), items),
-              [],
-              quests,
-              case credits {
-                0 -> []
-                _ -> [HeldCurrency(currency_type_id: 1, amount: credits)]
-              },
-            ),
-          ),
+          ForWorld(CharacterLoaded(
+            character,
+            character_support.epoch(1),
+            None,
+            None,
+            list.append(world_entry_support.novice_items(character:), items),
+            [],
+            quests,
+            case credits {
+              0 -> []
+              _ -> [HeldCurrency(currency_type_id: 1, amount: credits)]
+            },
+            store.ActionSets(slots: []),
+          )),
         ),
       ),
     )
@@ -2805,22 +2803,63 @@ pub fn entered_with_server_proxies(
   proxies proxies: server_proxy.ServerProxies,
   tables tables: store_tables.Tables,
 ) -> #(game_connection.State, Int, Int) {
+  let #(state, _, unit_id, bag_index) =
+    entered_burst_with_server_proxies(
+      class_id:,
+      level: 1,
+      ability:,
+      proxies:,
+      tables:,
+    )
+  #(state, unit_id, bag_index)
+}
+
+/// `entered_with_spell_trees` for a player of this level, who holds the abilities its
+/// class has gained by it, and the step that took the player in, whose frames are the
+/// entry burst.
+pub fn entered_burst_with_spell_trees(
+  class_id class_id: Int,
+  level level: Int,
+  ability ability: Int,
+) -> #(game_connection.State, ConnectionStep(Request), Int, Int) {
+  entered_burst_with_server_proxies(
+    class_id:,
+    level:,
+    ability:,
+    proxies: server_proxy_support.none(),
+    tables: character_tables.shared(),
+  )
+}
+
+fn entered_burst_with_server_proxies(
+  class_id class_id: Int,
+  level level: Int,
+  ability ability: Int,
+  proxies proxies: server_proxy.ServerProxies,
+  tables tables: store_tables.Tables,
+) -> #(game_connection.State, ConnectionStep(Request), Int, Int) {
   let fresh =
     accepted(Settings(..settings(), tables:, server_proxies: proxies)).0
   let #(state, entered) =
     entered_from(
       in_character_select: in_select_from(fresh),
-      character: Character(..world_character(), class_id: ClassId(class_id)),
+      character: Character(
+        ..world_character(),
+        class_id: ClassId(class_id),
+        level:,
+      ),
     )
   let unit_id = player_in(entered).unit_id
   let assert Ok(set) =
     loadout.of(tables:, class_id: ClassId(class_id), faction_id: 166)
     as "the tables hold the class's Novice set"
   let assert Ok(bag_index) =
-    list.index_map(set.abilities, fn(base, index) { #(base, index) })
+    list.index_map(ability_book.bag(loadout: set, level:), fn(base, index) {
+      #(base, index)
+    })
     |> list.key_find(Spell4BaseId(ability))
-    as "a level-1 player of the class holds the ability"
-  #(state, unit_id, bag_index)
+    as "a player of the class at this level holds the ability"
+  #(state, entered, unit_id, bag_index)
 }
 
 /// A step of the connection at the monotonic time `ms`.

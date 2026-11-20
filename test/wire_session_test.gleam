@@ -1,9 +1,9 @@
-//// The committed session (`test/wire_recording/2026-11-18-ability-points-session`)
+//// The committed session (`test/wire_recording/2026-11-20-focus-session`)
 //// replayed through the real server tree on a database of its own, with the
 //// recorded seed, times and fixture, and compared byte for byte. Expected
 //// values come from these places.
 //// - The recordings: a live login of the real client through the STS, auth and
-////   game servers, played into the world with a level-3 Medic character
+////   game servers, played into the world with a level-5 Medic character
 ////   (the playing-live skill's `session.sh`, with no person), recorded by the
 ////   server as wire recordings of the bytes, times, seeds and answers. The
 ////   client's own movement messages (0x0637, 0x063A, 0x00D5, 0x063B and
@@ -15,7 +15,7 @@
 ////   world messages inside 0x038C are logged under their own id), and one for
 ////   each STS request the STS rule has no handler for (`/Auth/PageVerifiedIps`).
 //// - The rows the store answered: the account `genesis` and its eight
-////   characters, the first of them `Grozim Vroc` (id 13, level 3, class 4 the
+////   characters, the first of them `Grozim Vroc` (id 13, level 5, class 4 the
 ////   Medic, race 13, faction 166), the character the client played (verdict.txt:
 ////   strName = 'Grozim Vroc').
 //// - The character list (0x0117) carries the FILETIME of the answer that made

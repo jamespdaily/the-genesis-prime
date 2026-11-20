@@ -114,6 +114,13 @@ pub const magic = UnitProperty2Id(3)
 /// Wisdom (4): the attribute a formula's parameter type 5 reads (`0x140566d40`).
 pub const wisdom = UnitProperty2Id(4)
 
+/// BaseFocusPool (5): the maximum Focus `Unit:GetMaxFocus` reads (`0x14064a810`).
+pub const focus_pool = UnitProperty2Id(5)
+
+/// RatingFocusRecovery (6): the rating that raises the in-combat Focus recovery
+/// (`FUN_1404602f0`).
+pub const focus_recovery_rating = UnitProperty2Id(6)
+
 /// BaseHealth (7): the maximum health `Unit:GetMaxHealth` reads
 /// (`Unit.GetMaxHealth`).
 pub const base_health = UnitProperty2Id(7)
@@ -180,6 +187,25 @@ pub const heal_to_shield_conversion = UnitProperty2Id(111)
 
 /// ShieldMitigationMax (175): the most of a blow the shield takes.
 pub const shield_mitigation_max = UnitProperty2Id(175)
+
+/// RatingIntensity (56): the rating the Focus cost's intensity fraction reads
+/// (`FUN_140462af0`).
+pub const intensity_rating = UnitProperty2Id(56)
+
+/// BaseFocusRecoveryInCombat (107): the share of the Focus pool recovered a second in
+/// combat, the base the recovery rating adds to (`FUN_1404602f0`).
+pub const focus_recovery_in_combat = UnitProperty2Id(107)
+
+/// BaseFocusRecoveryOutofCombat (108): the share of the Focus pool recovered a second
+/// out of combat (`GetFocusRegenNonCombat` `0x14064ac80`).
+pub const focus_recovery_out_of_combat = UnitProperty2Id(108)
+
+/// FocusCostModifier (135): what a Focus cost is multiplied by (`FUN_140462a90`).
+pub const focus_cost_modifier = UnitProperty2Id(135)
+
+/// BaseIntensity (158): the base the Focus cost's intensity fraction adds to
+/// (`FUN_140462af0`).
+pub const intensity_base = UnitProperty2Id(158)
 
 /// ShieldRegenPct (176): the share of its capacity the shield regenerates a tick.
 pub const shield_regen_percent = UnitProperty2Id(176)
@@ -263,6 +289,13 @@ type DefaultsError {
 /// The properties the server's rules read, each with a UnitProperty2 row the tables
 /// must hold.
 const named = [
+  focus_pool,
+  focus_recovery_rating,
+  intensity_rating,
+  focus_recovery_in_combat,
+  focus_recovery_out_of_combat,
+  focus_cost_modifier,
+  intensity_base,
   base_health,
   health_regen_multiplier,
   assault_rating,
@@ -362,6 +395,11 @@ pub fn at_level(
   level level: Int,
 ) -> Properties {
   Properties(..properties, level:)
+}
+
+/// The level the properties weigh a per-level amount by: the player's level.
+pub fn level(properties properties: Properties) -> Int {
+  properties.level
 }
 
 /// The properties of a creature at `level`: each of `bases` as base and value, every

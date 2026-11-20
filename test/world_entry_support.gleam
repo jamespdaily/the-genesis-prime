@@ -111,6 +111,7 @@ pub fn loaded_seeing(
     saved_health:,
     saved_experience:,
     quests:,
+    action_sets: store.ActionSets(slots: []),
     visibility:,
   )
 }
@@ -131,6 +132,28 @@ pub fn loaded_with_unset(
     saved_health: None,
     saved_experience: None,
     quests: [],
+    action_sets: store.ActionSets(slots: []),
+    visibility: dict.new(),
+  )
+}
+
+/// What the store's answer to a play of the character leads to when the store holds
+/// these action slot rows for it and these items with no charges recorded.
+pub fn loaded_with_action_sets(
+  tables tables: table_store.Tables,
+  character character: Character,
+  action_sets action_sets: store.ActionSets,
+  unset unset: List(UnsetItem),
+) -> #(world_entry.State, world_entry.Loaded) {
+  loaded_answer(
+    tables:,
+    character:,
+    items: novice_items(character:),
+    unset:,
+    saved_health: None,
+    saved_experience: None,
+    quests: [],
+    action_sets:,
     visibility: dict.new(),
   )
 }
@@ -143,6 +166,7 @@ fn loaded_answer(
   saved_health saved_health: Option(Int),
   saved_experience saved_experience: Option(Int),
   quests quests: List(QuestRow),
+  action_sets action_sets: store.ActionSets,
   visibility visibility: Dict(Int, List(Prerequisite)),
 ) -> #(world_entry.State, world_entry.Loaded) {
   let assert Ok(body) = play_character.encode(PlayCharacter(character_id: 42))
@@ -166,6 +190,7 @@ fn loaded_answer(
         quests:,
         currencies: [],
         unset:,
+        action_sets:,
       ),
       connection: ConnectionId(1),
       stay: map_support.stay(count: 1),
@@ -260,9 +285,20 @@ pub fn rejoining(
   entered_at entered_at: Int,
   risen_to risen_to: Int,
 ) -> List(Frame) {
-  let tables = character_tables.shared()
   let #(_, entered) = entering(class_id:, level: entered_at)
-  let character = Character(..entered.character, level: risen_to)
+  rejoining_from(
+    entered: world_entry.Entered(
+      ..entered,
+      character: Character(..entered.character, level: risen_to),
+    ),
+  )
+}
+
+/// The frames of the Holocrypt's join of this player on the committed rows: what it keeps of
+/// the stay it leaves is sent again.
+pub fn rejoining_from(entered entered: world_entry.Entered) -> List(Frame) {
+  let tables = character_tables.shared()
+  let character = entered.character
   let landing =
     place_support.at(
       world_id: 426,
@@ -273,7 +309,7 @@ pub fn rejoining(
     )
   let #(state, _) =
     world_entry.rejoining(
-      entered: world_entry.Entered(..entered, character:),
+      entered:,
       place: landing,
       health: None,
       told: None,
@@ -334,18 +370,58 @@ pub fn answered_at(
   quests quests: List(QuestRow),
   now now: Now,
 ) -> world_entry.Joined {
-  let place =
-    place_support.at(
-      world_id: 3460,
-      world_zone_id: 6009,
-      x: 29.0,
-      y: -853.0,
-      z: -560.0,
-    )
   let assert #(_, world_entry.Join(state:, ..)) =
     loaded_holding(tables:, character:, items:, saved_experience: None, quests:)
     as "the store holds the character, its place and its level's row"
-  joined_state(state:, tables:, character:, place:, now:)
+  joined_state(state:, tables:, character:, place: join_place(), now:)
+}
+
+fn join_place() -> Place {
+  place_support.at(
+    world_id: 3460,
+    world_zone_id: 6009,
+    x: 29.0,
+    y: -853.0,
+    z: -560.0,
+  )
+}
+
+/// What the rule makes of the map's answer to the join of a Dominion character of the class
+/// and level on the committed rows when the store holds these action slot rows for it and
+/// these items with no charges recorded. With none unset the load goes straight to the join;
+/// with some the store is asked to fill them, and the join follows the fill's answer.
+pub fn joined_with_action_sets(
+  class_id class_id: Int,
+  level level: Int,
+  action_sets action_sets: store.ActionSets,
+  unset unset: List(UnsetItem),
+) -> world_entry.Joined {
+  let tables = character_tables.shared()
+  let character = character(class: class_id, faction: 166, level:)
+  let #(_, loaded) =
+    loaded_with_action_sets(tables:, character:, action_sets:, unset:)
+  let joining = case loaded {
+    world_entry.Join(state:, ..) -> state
+    world_entry.Fill(state: filling, ..) -> {
+      let assert Ok(world_entry.Join(state:, ..)) =
+        answered(
+          state: filling,
+          answer: store.ChargesFilled(answer: store.ItemsSaved),
+          tables:,
+        )
+        as "the fill's answer goes on to the join"
+      state
+    }
+    world_entry.Refused(..) | world_entry.Fault(..) ->
+      panic as "the store holds the character, its place and its level's row"
+  }
+  joined_state(
+    state: joining,
+    tables:,
+    character:,
+    place: join_place(),
+    now: now(),
+  )
 }
 
 /// What the rule makes of the map's answer to the join `state` asked for, the answer

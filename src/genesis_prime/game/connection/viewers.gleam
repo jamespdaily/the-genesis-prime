@@ -180,8 +180,10 @@ import gleam/set
 /// objects its player sees (`ObjectsSeen`) and stops seeing (`ObjectsUnseen`),
 /// written as `viewer_takes` writes a unit's 0x262 and 0x355. A connection
 /// sends everything about its own unit itself: told `SeenBy(by, stay)` it keeps
-/// `by` with its stay, puts `by` in the audience of its casts and sends it its 0x262 at its
-/// current place, with its health now and the cast it holds the bar of; told `UnseenBy(by)`
+/// `by` with its stay, puts `by` in the audience of the casts its 0x262 lists (not when `by`
+/// already sees the player: it drops the second 0x262, so it was listed none) and sends it
+/// that 0x262 at its current place, with its health now and the cast it holds the bar of;
+/// told `UnseenBy(by)`
 /// it takes `by` out of those audiences and sends its 0x355. The shell takes a send between steps, after
 /// the ask's outcome and the step it starts are done
 /// (genesis_prime/connection/shell), and world entry writes its whole burst in the
@@ -199,7 +201,17 @@ pub fn map_sent(
       Continue(
         connection_casting.with_cast(
           session: viewers_changed(session:, change: dict.insert(_, by, stay)),
-          cast: cast_state.audience_joined(cast: entered.cast, viewer: by),
+          cast: case dict.has_key(entered.viewers, by) {
+            // A viewer that already sees the player drops the second create, so it
+            // was listed no cast by it and is joined to none.
+            True -> entered.cast
+            False ->
+              cast_state.audience_joined(
+                cast: entered.cast,
+                viewer: by,
+                caster_unit_id: entered.unit_id,
+              )
+          },
         ),
         [
           connection_state.news_to(
@@ -1173,9 +1185,10 @@ fn casts_listed(
 /// (`opcode.0x938`) and its Interrupt Armor as stat 21 while it is above 0
 /// (`opcode.0x938.interrupt_armor`: the create's stat list sets it) and its absorption as
 /// stat 22 while it is above 0 (`opcode.0x938`, `0x14064fb40`: the create's stat list sets
-/// it), without its class resource: the stat and the ResourceMax
-/// property of the player's own 0x262 are left out, since a 0x935 goes to the
-/// player alone (`opcode.0x262.resource_stats`), and stamped from the map's clock,
+/// it), without its class resource and its Focus: the stat and the ResourceMax
+/// property of the player's own 0x262, and stat 1, are left out, since a 0x935 goes to the
+/// player alone (`opcode.0x262.resource_stats`); property 5, the Focus maximum, stays, a gear
+/// property like the rest that 0x93a keeps current; stamped from the map's clock,
 /// from the origin `Joined` carried (`map.server_time`).
 fn appearance(
   entered entered: world_entry.Entered,
@@ -1193,15 +1206,19 @@ fn appearance(
   let absorption = player_life.absorption(life: entered.life)
   let slot = class_resource.slot(resources: entered.resources)
   let resource_stat = unit_fields.resource_stat_id(slot:)
+  let focus_stat = unit_fields.resource_stat_id(slot: class_resource.focus_slot)
   let resource_max = unit_fields.resource_max_property(slot:)
   UnitCreatePlayer(
     ..unit,
     tail: UnitCreateTail(
       ..unit.tail,
-      casts: unit_casts.entries_of(views: cast_state.views(
-        cast: entered.cast,
-        caster_unit_id: entered.unit_id,
-      )),
+      casts: unit_casts.entries_of(
+        views: cast_state.views(
+          cast: entered.cast,
+          caster_unit_id: entered.unit_id,
+        ),
+        now_ms: now.monotonic_ms,
+      ),
       cast_id: cast_state.current_cast_id(cast: entered.cast),
       stats: list.append(
         list.filter_map(unit.tail.stats, fn(stat) {
@@ -1210,7 +1227,7 @@ fn appearance(
               Ok(unit_fields.integer_stat(stat_id: id, value: health))
             id if id == unit_fields.shield_stat ->
               Ok(unit_fields.integer_stat(stat_id: id, value: shield))
-            id if id == resource_stat -> Error(Nil)
+            id if id == resource_stat || id == focus_stat -> Error(Nil)
             _ -> Ok(stat)
           }
         }),

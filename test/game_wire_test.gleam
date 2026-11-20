@@ -62,13 +62,14 @@ import genesis_prime/message/ability_tiers
 import genesis_prime/message/bit_stream
 import genesis_prime/message/camp_countdown
 import genesis_prime/message/cast_activate.{CastActivate}
-import genesis_prime/message/cast_result.{SpellUnknown, TargetIsNotUseable}
+import genesis_prime/message/cast_result.{TargetIsNotUseable}
 import genesis_prime/message/character_list
 import genesis_prime/message/character_list_entry
 import genesis_prime/message/chat_line_accepted
 import genesis_prime/message/client_side_interaction_result.{
   ClientSideInteractionResult,
 }
+import genesis_prime/message/combat_result
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/create_character_result
 import genesis_prime/message/create_result
@@ -105,6 +106,7 @@ import genesis_prime/message/rename_character_result.{RenameCharacterResult}
 import genesis_prime/message/rename_result
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_go
+import genesis_prime/message/spell_position
 import genesis_prime/message/spell_started
 import genesis_prime/message/start_movement
 import genesis_prime/message/static_unit_type
@@ -157,6 +159,7 @@ import gleam/result
 import gleam_community/maths
 import item_bot
 import level_up_support
+import limited_action_set_support as limited
 import log_capture
 import login_client
 import login_support
@@ -2733,6 +2736,108 @@ pub fn a_viewer_joining_beside_a_casting_player_shows_its_cast_bar_and_writes_it
   login_support.stop(started)
 }
 
+/// `opcode.0x262.casts`, `opcode.0x811` and `cast.target_node_end`: a player that enters
+/// beside a Medic whose Discharge has pulsed once (410 ms after the press, starting a
+/// Power Charge, Spell4 42569, whose Fluff row 96819 lasts until removed) is created the
+/// Medic's unit with Discharge listed as the cast in progress and the Power Charge listed
+/// beside it with a target info on the Medic's unit (index 0, flags 0, count 1, a Hit, the
+/// row at delay 0 and lifetime 0); the clock then moves past the pulse that takes the
+/// Power Charges off the Medic (Spell4Effects 212836, Spell4 80383), and the viewer is
+/// written the 0x811 that ends the Power Charge it was listed, since the client ends a
+/// buff only by what it is sent.
+pub fn a_viewer_joining_beside_a_medic_holding_power_charges_lists_them_and_writes_their_end_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let time = driven_time.new()
+  let TwoEntered(
+    started:,
+    first:,
+    second:,
+    second_burst:,
+    first_have:,
+    second_have:,
+    ..,
+  ) =
+    two_players_enter_after(
+      started: started_on(tables: character_tables.shared(), time:),
+      first_class: 4,
+      level: 9,
+      first_acts: fn(first, have) {
+        // Discharge is the Medic's first level-1 ability, so bag index 0.
+        game_client.press_ability(
+          game: first,
+          client_cast_id: 1,
+          bag_index: 0,
+          target: 0,
+        )
+        let #(pressed, have) =
+          game_client.read_until_pong(game: first, have:, number: 1)
+        // The first pulse comes 410 ms after the press (channelPulseTime).
+        driven_time.advance(time:, ms: 500)
+        let #(pulsed, have) =
+          game_client.read_until_pong(game: first, have:, number: 2)
+        #(list.append(pressed, pulsed), have)
+      },
+    )
+  let assert Ok(seen_first) = list.last(second_burst)
+    as "the second player's entry ends with the 0x262 of the first"
+  let created = game_client.unit_create_player_in(frames: [seen_first])
+  assert created.unit_id == 1
+  let assert [discharge, power_charge] =
+    list.sort(created.tail.casts, fn(left, right) {
+      int.compare(left.cast_id, right.cast_id)
+    })
+    as "the create lists Discharge and the one Power Charge the first pulse started"
+  assert #(
+      discharge.caster_unit_id,
+      discharge.spell4_id,
+      discharge.started,
+      discharge.targets,
+    )
+    == #(1, 58_832, 0, [])
+    as "Discharge is listed in state 3 (its first go has gone) and holds no node"
+  assert #(
+      power_charge.caster_unit_id,
+      power_charge.spell4_id,
+      power_charge.started,
+    )
+    == #(1, 42_569, 0)
+    as "the Power Charge is listed in state 3, a cast of the Medic that is not the current cast"
+  assert list.map(power_charge.targets, fn(target) {
+      #(
+        target.unit_id,
+        target.index,
+        target.flags,
+        target.instance_count,
+        target.combat_result,
+        list.map(target.effects, fn(effect) {
+          #(
+            effect.spell4_effects_id,
+            effect.instance_id,
+            effect.delay_ms,
+            effect.lifetime_ms,
+          )
+        }),
+      )
+    })
+    == [#(1, 0, 0, 1, combat_result.Hit, [#(96_819, 1, 0, 0)])]
+    as "its one target is the Medic's unit with row 96819, delay 0 and lifetime 0 (until removed)"
+  assert created.tail.cast_id == discharge.cast_id
+    as "the cast in progress is Discharge, which the client looks up in that list"
+  driven_time.advance(time:, ms: 800)
+  let #(_, _) =
+    game_client.read_until_pong(game: first, have: first_have, number: 3)
+  let #(later, _) =
+    game_client.read_until_pong(game: second, have: second_have, number: 1)
+  assert list.contains(
+    game_client.targets_removed_in(frames: later),
+    #(power_charge.cast_id, [1]),
+  )
+    as "the viewer is written the 0x811 that takes the Power Charge off the Medic: the buff it was listed ends on its screen"
+  game_client.close(game: first)
+  game_client.close(game: second)
+  login_support.stop(started)
+}
+
 pub fn a_stalkers_two_taps_of_shred_open_and_close_the_threshold_and_a_player_in_sight_reads_both_casts_on_the_whole_server_test() -> Nil {
   use <- owned_test.run(60_000)
   let time = driven_time.new()
@@ -4643,11 +4748,12 @@ pub fn a_placed_target_is_shown_killed_and_counted_test() -> Nil {
 /// The Medic of the marker ring that levels from 3 to 4 on the kill at slot 0: its abilities
 /// are the level-1 three and the innate, then SpellLevel 614's base 26038 (Fissure) at bag
 /// index 4, written after the level and before the properties, on the whole server and again
-/// at the entry of the relog. Fissure has no plan (`spell_plan.unplanned`, issue #1003: its second spell's
-/// hit telegraph 2996 is placed by flags 8, which the area rule does not build), so the press
-/// of slot 4 at the other creature of the ring is refused unknown, as any bag slot with no
-/// plan is (`0x14039a040`); the press of a level-up ability that has a plan is the cast
-/// tests' (`experience_book_test`). The clock is driven and nothing waits on real time.
+/// at the entry of the relog. Fissure is planned (its second spell's hit telegraphs 2996 to 2998
+/// are placed by flag 8, the position the cast holds), so the press of slot 4 is accepted. The
+/// Medic stands 8 m from the ring's other creature and faces it, so the creature is inside the
+/// first rectangle of the press pose; before the second and third go the Medic moves 40 m aside
+/// and turns half a turn, and the strike still lands where the press drew its rectangles. The
+/// clock is driven and nothing waits on real time.
 pub fn a_medic_that_levels_from_3_to_4_holds_fissure_castable_and_a_relog_at_4_holds_it_test() -> Nil {
   use <- owned_test.run(120_000)
   use tables <- on_rows_without_paralytic_surges_recharge()
@@ -4704,16 +4810,118 @@ pub fn a_medic_that_levels_from_3_to_4_holds_fissure_castable_and_a_relog_at_4_h
       AbilityTier(spell4_base_id: 26_038, tier: 1, action_set_index:)
     })
     as "opcode.0x1a0: tier 1 of the base in each of the four action sets"
-  // The press of slot 4 at the ring's other creature, which stands alive and untouched.
+  // The Medic walks to 8 m from the ring's other creature, which stands alive and untouched,
+  // and faces it: it is 8 m ahead of the press pose, inside the first rectangle of Fissure's
+  // rows (TelegraphDamage 2998: 10 wide, from 1 to 15 m ahead).
+  let creature_at = game_client.placed_by_tail(tail: other.tail)
+  let press_at = #(creature_at.0 +. 8.0, creature_at.1, creature_at.2)
+  game_client.move_to(
+    game:,
+    clock: 200,
+    x: press_at.0,
+    y: press_at.1,
+    z: press_at.2,
+  )
+  let facing_the_creature =
+    game_client.yaw_toward(from: #(press_at.0, press_at.2), target: #(
+      creature_at.0,
+      creature_at.2,
+    ))
+  game_client.face(game:, yaw: facing_the_creature, clock: 210)
+  let #(_, have) = game_client.read_until_pong(game:, have:, number: 8)
+  // The last Paralytic Surge lingers 2700 ms (`fight_bot.paralytic_surge_lingers_ms`) and holds
+  // the press of any other ability inside the 500 ms queue window (`cast_press.verdict`), so the
+  // clock moves past that lingering first.
+  driven_time.advance(time:, ms: 3000)
   game_client.press_ability(
     game:,
     client_cast_id: 50,
     bag_index: 4,
     target: other.unit_id,
   )
-  let #(pressed, have) = game_client.read_until_pong(game:, have:, number: 8)
-  assert refusals(frames: pressed) == [cast_result.to_value(SpellUnknown)]
-    as "opcode.0x7fc: Fissure has no plan, so the press is refused unknown"
+  // The connection writes the confirm and the child's start before its pong, so a press that is
+  // held or refused ends this wait at the assertions below; the first go comes from the cast's
+  // timer, which a confirmed press has armed.
+  let #(first_go, have) = game_client.read_until_pong(game:, have:, number: 10)
+  assert refusals(frames: first_go) == []
+    as "opcode.0x7fc: Fissure is planned, so the press is not refused"
+  let assert Ok(confirmed_frame) =
+    list.find(first_go, fn(frame) { frame.message_id == 0x07FD })
+    as "opcode.0x7fd: the press is confirmed; none came, so the press was held behind a lingering cast or not made"
+  let assert Ok(confirmed) = spell_cast_confirmed.decode(confirmed_frame.body)
+  let starts =
+    list.filter(first_go, fn(frame) { frame.message_id == 0x07FF })
+    |> list.map(fn(frame) {
+      let assert Ok(started) = spell_started.decode(frame.body)
+        as "0x7ff decodes"
+      started
+    })
+  let assert Ok(child_started) =
+    list.find(starts, fn(started) { started.spell4_id == 41_844 })
+    as "opcode.0x7ff: the child 41844 starts"
+  assert #(child_started.root_spell4_id, child_started.parent_spell4_id)
+    == #(41_843, 41_843)
+    as "Spell4Effects 94215 starts child 41844 of the pressed 41843"
+  let held =
+    spell_position.SpellPosition(
+      x: float32.to_bits(press_at.0),
+      y: float32.to_bits(press_at.1),
+      z: float32.to_bits(press_at.2),
+    )
+  assert confirmed.position == held && child_started.position == held
+    as "opcode.0x7fd, opcode.0x7ff: the position the cast holds is the Medic's place at the press"
+  assert confirmed.yaw == float32.to_bits(facing_the_creature)
+    && child_started.yaw == float32.to_bits(facing_the_creature)
+    as "opcode.0x7fd, opcode.0x7ff: the yaw the client turns the picture by is the facing the Medic had at the press (the client's own yaw is the caster's facing, a marked guess)"
+  let #(first_goes, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      fissure_goes(frames: first_go, in: list.append(first_go, frames)) != []
+    })
+  // The go leaves a unit whose hit the roll deflected out of its targets and a 0x7fb names it
+  // (`strike`'s deflect), so each go is read up to a pong, which follows the go and its 0x7fb.
+  let #(first_flushed, have) =
+    game_client.read_until_pong(game:, have:, number: 11)
+  assert fissure_struck(
+      frames: first_go,
+      in: list.flatten([first_go, first_goes, first_flushed]),
+    )
+    == [[other.unit_id]]
+    as "opcode.0x7f4, opcode.0x7fb: the child's first go strikes the creature 8 m ahead of the press pose, inside Fissure's first rectangle, by a hit or a deflect"
+  // The Medic turns its back and walks 40 m aside before the later gos (SpellPhase 5061 and
+  // 5062, 250 ms after the one before): the rectangles stay where the press drew them.
+  game_client.move_to(
+    game:,
+    clock: 300,
+    x: press_at.0,
+    y: press_at.1,
+    z: press_at.2 +. 40.0,
+  )
+  game_client.face(game:, yaw: facing_the_creature +. 3.1415927, clock: 310)
+  let #(_, have) = game_client.read_until_pong(game:, have:, number: 9)
+  // One step for each go, so each go is struck at its own time on the driven clock: the ring's
+  // creature chases the Medic once hit, and a strike round that ran after both steps would find
+  // it somewhere else.
+  driven_time.advance(time:, ms: 250)
+  let #(second, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      fissure_goes(frames: first_go, in: frames) != []
+    })
+  let #(second_flushed, have) =
+    game_client.read_until_pong(game:, have:, number: 12)
+  driven_time.advance(time:, ms: 250)
+  let #(third, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      fissure_goes(frames: first_go, in: frames) != []
+    })
+  let #(third_flushed, have) =
+    game_client.read_until_pong(game:, have:, number: 13)
+  let later_goes =
+    list.append(
+      fissure_struck(frames: first_go, in: list.append(second, second_flushed)),
+      fissure_struck(frames: first_go, in: list.append(third, third_flushed)),
+    )
+  assert later_goes == [[other.unit_id], [other.unit_id]]
+    as "Spell4Effects 94283 and 94284: the second and third phase, one go each, and each strikes the creature, by a hit or a deflect, which stands inside all three rectangles (TelegraphDamage 2996 to 2998, 2 to 10 wide, centred, reaching past 8 m): the strike is where the press drew them, not where the Medic stands"
   // The relog at level 4 holds the same five abilities, the new one in slot 4.
   let #(second_entry, _) =
     game_client.camp_and_play(game:, have:, character_id: character)
@@ -4728,6 +4936,55 @@ pub fn a_medic_that_levels_from_3_to_4_holds_fissure_castable_and_a_relog_at_4_h
     as "the entry's location-4 items are the level-1 three, the innate and Fissure's base in slot 4: a relog holds the book a rise made"
   game_client.close(game:)
   login_support.stop(started)
+}
+
+/// The targets of each go, in order, of the child 41844 of Fissure whose 0x7ff is among
+/// `frames`, read in `in`.
+fn fissure_goes(
+  frames frames: List(Frame),
+  in read: List(Frame),
+) -> List(List(Int)) {
+  let events = game_client.casts_in(frames:)
+  case game_client.starts_of(events:, spell4_id: 41_844) {
+    [#(cast_id, _), ..] ->
+      list.filter_map(game_client.go_targets_in(frames: read), fn(go) {
+        case go.0 == cast_id {
+          True -> Ok(go.1)
+          False -> Error(Nil)
+        }
+      })
+    [] -> []
+  }
+}
+
+/// The units each go of the child 41844 of Fissure strikes, in order, read in `in`: the targets
+/// the go names, and for a go that names none the units of the next 0x7fb of the cast, which
+/// are the ones whose hit the roll deflected (`hit`: the deflect roll is drawn from the
+/// caster's seed, which the driven clock's scripts draw from the operating system, so any go
+/// may be deflected).
+fn fissure_struck(
+  frames frames: List(Frame),
+  in read: List(Frame),
+) -> List(List(Int)) {
+  let events = game_client.casts_in(frames:)
+  case game_client.starts_of(events:, spell4_id: 41_844) {
+    [#(cast_id, _), ..] -> {
+      let misses =
+        list.filter_map(game_client.missed_in(frames: read), fn(missed) {
+          case missed.0 == cast_id {
+            True -> Ok(missed.1)
+            False -> Error(Nil)
+          }
+        })
+      list.map_fold(fissure_goes(frames:, in: read), misses, fn(left, go) {
+        case go, left {
+          [], [missed, ..rest] -> #(rest, missed)
+          _, _ -> #(left, go)
+        }
+      }).1
+    }
+    [] -> []
+  }
 }
 
 /// The player at the marker ring faces the target at ring slot 0 and presses Paralytic Surge on
@@ -9150,6 +9407,82 @@ pub fn an_item_command_puts_the_item_in_the_bag_the_client_reads_test() -> Nil {
     as "the first slot of the inventory"
   assert held.item.charges == 5 as "Item2 90021's maxCharges"
   assert held.item.stack_count == 1
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+/// The (bag index, Spell4Base id) of the type 4 shortcuts of the one 0x019D among frames.
+fn bar_shortcuts(frames frames: List(Frame)) -> List(#(Int, Int)) {
+  limited.the_action_set(frames:).shortcuts
+  |> list.filter(fn(shortcut) { shortcut.shortcut_type == 4 })
+  |> list.map(fn(shortcut) { #(shortcut.bag_index, shortcut.object_id) })
+}
+
+/// A Spellslinger of level 4 who sets its bar with the client's own 0xB1 (the 2026-11-19
+/// sitting's saves A and C, whose bytes the part 1 tests hold) and plays again after a camp.
+/// The class loadout is the three level 1 abilities in slots 0 to 2 (SpellLevel 1011, 1036 and
+/// 1236); the saved bar is what the next entry's 0x019D carries (`opcode.0x19d`) and the
+/// answer is 0x019D then 0x00B2 (`opcode.0xb2`).
+pub fn a_bar_saved_with_the_clients_0xb1_is_back_after_a_relog_on_the_whole_server_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let started = login_support.start()
+  let #(game, character) =
+    new_player_at_level(
+      started:,
+      number: 1,
+      character_name: "Zed Qu",
+      class_id: limited.spellslinger,
+      level: 4,
+    )
+  send_play(game:, character_id: character)
+  let #(entry, have) =
+    game_client.read_until(game:, have: <<>>, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x01BC })
+    })
+  assert bar_shortcuts(frames: entry)
+    == [#(0, 27_638), #(1, 20_684), #(2, 20_325)]
+    as "a character that saved nothing enters with the class's three abilities"
+  game_client.send_world(
+    game:,
+    message_id: 0x00B1,
+    body: limited.hex(limited.save_a),
+  )
+  let #(answer, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x00B2 })
+    })
+  assert list.filter_map(answer, fn(frame) {
+      case frame.message_id {
+        0x019D | 0x00B2 -> Ok(frame.message_id)
+        _ -> Error(Nil)
+      }
+    })
+    == [0x019D, 0x00B2]
+    as "the answer is the set then 0xB2"
+  assert limited.the_action_set(frames: answer).result == 1
+    as "the sitting's first save is accepted at level 4"
+  assert bar_shortcuts(frames: answer)
+    == [#(0, 27_638), #(1, 20_684), #(2, 20_325), #(3, 20_718)]
+    as "slots 0 to 3 are the abilities of the save"
+  assert limited.the_answer_bit(frames: answer) == 1
+  let #(second_entry, have) =
+    game_client.camp_and_play(game:, have:, character_id: character)
+  assert bar_shortcuts(frames: second_entry)
+    == [#(0, 27_638), #(1, 20_684), #(2, 20_325), #(3, 20_718)]
+    as "the next entry holds the four shortcuts of the save, not the class's three"
+  game_client.send_world(
+    game:,
+    message_id: 0x00B1,
+    body: limited.hex(limited.save_c),
+  )
+  let #(_, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x00B2 })
+    })
+  let #(third_entry, _) =
+    game_client.camp_and_play(game:, have:, character_id: character)
+  assert bar_shortcuts(frames: third_entry) == [#(0, 27_638), #(1, 20_684)]
+    as "after the sitting's third save and a relog the entry holds 27638 and 20684 only"
   game_client.close(game:)
   login_support.stop(started)
 }

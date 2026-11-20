@@ -101,8 +101,8 @@ fn limits() -> List(Limit) {
     Limit(
       ability_points.gaps(),
       "Abilities",
-      ["tier", "action set"],
-      "tier spending and action set edits are not built",
+      ["tier", "dropped"],
+      "tier spending is not built: the tier changes of the builder's save are dropped",
     ),
     Limit(
       cast_proc.gaps(),

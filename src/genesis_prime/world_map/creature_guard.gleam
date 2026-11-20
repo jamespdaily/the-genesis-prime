@@ -81,12 +81,12 @@
 import genesis_prime/client_connection.{type News}
 import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/cast/state as cast_state
+import genesis_prime/game/lasting
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/telegraph_entries
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/message/spell_targets_removed.{SpellTargetsRemoved}
 import genesis_prime/world_map/creature_guard_spells.{type Guard}
-import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 
@@ -453,7 +453,10 @@ fn opening_cast(
         cast_state.CreatureEffect(
           effect_id: effect.effect_id,
           instance_id: effect.instance_id,
-          lifetime_ms: int.max(1, effect.lifetime_ms - elapsed_ms),
+          lifetime_ms: lasting.time_left_ms(
+            end_ms: effect.lifetime_ms,
+            now_ms: elapsed_ms,
+          ),
         )
       }),
     )),

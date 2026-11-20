@@ -5,6 +5,7 @@
 //// entry is read by none. The coverage tool and the tests of the client's
 //// tables load every table (`genesis_prime/table.load`).
 
+import genesis_prime/table/action_slot_prereq
 import genesis_prime/table/cc_state_additional_data
 import genesis_prime/table/cc_states
 import genesis_prime/table/character_creation
@@ -88,6 +89,8 @@ import genesis_prime/table/world_zone
 import genesis_prime/table/xp_per_level
 
 /// The entry of each table the server loads, in file-name order.
+/// - ActionSlotPrereq, with Prerequisite: the level each action bar slot opens at
+///   (genesis_prime/game/limited_action_set).
 /// - CharacterCreation: the row a create request names
 ///   (genesis_prime/game/character_creation).
 /// - ChatChannel: the flags of each chat channel (genesis_prime/game/chat).
@@ -169,6 +172,7 @@ import genesis_prime/table/xp_per_level
 /// - WorldZone: the top zone of each zone (genesis_prime/game/top_zone).
 pub fn entries() -> List(store.Entry) {
   [
+    action_slot_prereq.entry(),
     cc_state_additional_data.entry(),
     cc_states.entry(),
     character_creation.entry(),
