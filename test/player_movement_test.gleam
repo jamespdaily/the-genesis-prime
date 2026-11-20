@@ -14,6 +14,11 @@
 ////   client's own builders send state flags in bits 0 to 17 only (up to 0x3ffff)
 ////   and a mode of 0, 1 or 3.
 //// - The fact `0x140c45dd0`: the move speed setting holds 0 to 2.
+//// - The fact `opcode.0x637.sent_kinds`: the client's 0x637 carries only kinds
+////   0, 1, 2, 3, 8, 10, 11, 13, 14, 18, 20, 24, 25 and 27. The facts
+////   `opcode.0x637.kinds_3_to_6`, `opcode.0x637.kinds_10_13`,
+////   `opcode.0x637.kind_18`, `opcode.0x637.kind_20` and `opcode.0x637.kind_25`:
+////   the values it writes in kinds 3, 10, 13, 18, 20 and 25.
 //// - The fact `0x140c1f070`: each command's kind and layout, so which record is
 ////   which kind. The fact `0x140715350`: kind 14 is yaw, pitch and roll.
 //// - IEEE 754 binary32: an exponent of all ones is infinity (0x7F800000,
@@ -22,19 +27,45 @@
 
 import character_support
 import genesis_prime/game/movement.{
-  type Command, type Refusal, type State, BelowTheWorld, Fault, Mode, Moves,
-  NotFinite, Note, Other, Position, Rotation, Standing, StateFlags, UnknownMode,
-  UnknownSpeedSetting, UnknownStateFlags,
+  type Command, type Refusal, type State, BelowTheWorld, Fault, Kind10, Kind13,
+  Kind18, Kind20, Kind25, Kind3, Mode, Moves, NotFinite, Note, Other, Position,
+  Rotation, Standing, StateFlags, UnknownMode, UnknownSpeedSetting,
+  UnknownStateFlags, Unsent, UnsentKind, UnwrittenValue,
 }
 import genesis_prime/game/start_place.{type Facing, Facing}
 import genesis_prime/message/float32
-import genesis_prime/message/movement_command
+import genesis_prime/message/movement_command.{type MovementCommand}
+import genesis_prime/message/movement_face_point.{MovementFacePoint}
+import genesis_prime/message/movement_face_unit.{MovementFaceUnit}
+import genesis_prime/message/movement_float_vector.{MovementFloatVector}
+import genesis_prime/message/movement_half_vector.{MovementHalfVector}
+import genesis_prime/message/movement_kind_10.{MovementKind10}
+import genesis_prime/message/movement_kind_12.{MovementKind12}
+import genesis_prime/message/movement_kind_13.{MovementKind13}
+import genesis_prime/message/movement_kind_15.{MovementKind15}
+import genesis_prime/message/movement_kind_16.{MovementKind16}
+import genesis_prime/message/movement_kind_17.{MovementKind17}
+import genesis_prime/message/movement_kind_20.{MovementKind20}
+import genesis_prime/message/movement_kind_21.{MovementKind21}
+import genesis_prime/message/movement_kind_22.{MovementKind22}
+import genesis_prime/message/movement_kind_23.{MovementKind23}
+import genesis_prime/message/movement_kind_25.{MovementKind25}
+import genesis_prime/message/movement_kind_26.{MovementKind26}
+import genesis_prime/message/movement_kind_28.{MovementKind28}
 import genesis_prime/message/movement_kind_29.{MovementKind29}
+import genesis_prime/message/movement_kind_3.{MovementKind3}
+import genesis_prime/message/movement_kind_4.{MovementKind4}
+import genesis_prime/message/movement_kind_5.{MovementKind5}
+import genesis_prime/message/movement_kind_6.{MovementKind6}
+import genesis_prime/message/movement_kind_7.{MovementKind7}
+import genesis_prime/message/movement_kind_9.{MovementKind9}
 import genesis_prime/message/movement_mode.{MovementMode}
+import genesis_prime/message/movement_move_asked.{MovementMoveAsked}
 import genesis_prime/message/movement_platform.{MovementPlatform}
 import genesis_prime/message/movement_rotation.{MovementRotation}
 import genesis_prime/message/movement_state_flags.{MovementStateFlags}
 import genesis_prime/message/movement_time.{MovementTime}
+import genesis_prime/message/movement_velocity.{MovementVelocity}
 import genesis_prime/message/player_movement.{PlayerMovement}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/store.{
@@ -371,6 +402,389 @@ pub fn every_refusal_is_described_for_the_log_by_what_the_client_sent_test() -> 
     == "0x063B holds the move speed setting 3, above 2"
 }
 
+// ---- the kinds and values the client's own code never sends ----
+
+/// One command of each kind the client never sends, as a decoded 0x637 holds
+/// it, with its kind. The fields do not matter: the kind is what is refused.
+fn unsent_kinds() -> List(#(Int, MovementCommand)) {
+  let half = MovementHalfVector(x: 0, y: 0, z: 0)
+  let float = MovementFloatVector(x: 0, y: 0, z: 0)
+  [
+    #(
+      4,
+      movement_command.Kind4(MovementKind4(
+        points: [float],
+        speed: 0,
+        path_type: 0,
+        mode: 0,
+        time_offset: 0,
+        blends: 0,
+      )),
+    ),
+    #(
+      5,
+      movement_command.Kind5(MovementKind5(
+        spline_id: 1,
+        speed: 0,
+        start_position: 0,
+        offset_x: 0,
+        offset_y: 0,
+        offset_z: 0,
+        mode: 0,
+        time_offset: 0,
+        blends: 0,
+        unread_11: 0,
+        unread_12: 0,
+      )),
+    ),
+    #(
+      6,
+      movement_command.Kind6(MovementKind6(
+        spline_ids: [1],
+        speed: 0,
+        start_position: 0,
+        takeoff_height: 0,
+        landing_height: 0,
+        offset_x: 0,
+        offset_y: 0,
+        offset_z: 0,
+        mode: 0,
+        time_offset: 0,
+        chain_flags: 0,
+        blends: 0,
+        unread_14: 0,
+      )),
+    ),
+    #(
+      7,
+      movement_command.Kind7(MovementKind7(
+        end_x: 0,
+        end_y: 0,
+        end_z: 0,
+        start_x: 0,
+        start_y: 0,
+        start_z: 0,
+        flight_time_ms: 0,
+        gravity: 0,
+        time_offset: 0,
+        blends: 0,
+      )),
+    ),
+    #(
+      9,
+      movement_command.Kind9(MovementKind9(
+        times: [1],
+        velocities: [half],
+        path_type: 0,
+        time_offset: 0,
+        blends: 0,
+      )),
+    ),
+    #(
+      12,
+      movement_command.Kind12(MovementKind12(
+        times: [1],
+        moves_asked: [half],
+        path_type: 0,
+        time_offset: 0,
+        blends: 0,
+      )),
+    ),
+    #(
+      15,
+      movement_command.Kind15(MovementKind15(
+        times: [1],
+        rotations: [float],
+        path_type: 0,
+        time_offset: 0,
+        blends: 0,
+      )),
+    ),
+    #(
+      16,
+      movement_command.Kind16(MovementKind16(
+        spline_id: 1,
+        speed: 0,
+        start_position: 0,
+        mode: 0,
+        time_offset: 0,
+        blends: 0,
+        unread_8: 0,
+      )),
+    ),
+    #(
+      17,
+      movement_command.Kind17(MovementKind17(
+        spline_ids: [1],
+        speed: 0,
+        start_position: 0,
+        takeoff_height: 0,
+        landing_height: 0,
+        mode: 0,
+        time_offset: 0,
+        chain_flags: 0,
+        blends: 0,
+      )),
+    ),
+    #(
+      19,
+      movement_command.FacePoint(MovementFacePoint(x: 0, y: 0, z: 0, blends: 0)),
+    ),
+    #(21, movement_command.Kind21(MovementKind21(blends: 0))),
+    #(22, movement_command.Kind22(MovementKind22(scale: 0, blends: 0))),
+    #(
+      23,
+      movement_command.Kind23(MovementKind23(
+        times: [1],
+        scales: [0],
+        path_type: 0,
+        time_offset: 0,
+        blends: 0,
+      )),
+    ),
+    #(26, movement_command.Kind26(MovementKind26(blends: 0))),
+    #(
+      28,
+      movement_command.Kind28(MovementKind28(
+        times: [1],
+        modes: [0],
+        time_offset: 0,
+      )),
+    ),
+    #(29, movement_command.Kind29(MovementKind29(unread_2: 0))),
+  ]
+}
+
+pub fn a_command_kind_the_clients_code_never_sends_is_refused_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert list.map(unsent_kinds(), fn(row) { row.0 })
+    == [4, 5, 6, 7, 9, 12, 15, 16, 17, 19, 21, 22, 23, 26, 28, 29]
+    as "opcode.0x637.sent_kinds: the 16 kinds the client's 0x637 never carries"
+  list.each(unsent_kinds(), fn(row) {
+    let #(kind, command) = row
+    let moves =
+      movement.moves(
+        PlayerMovement(client_clock: 0x1234, commands: [
+          movement_command.Position(UnitPositionCommand(
+            x: 0x41200000,
+            y: 0x41200000,
+            z: 0x41200000,
+            blends: 0,
+          )),
+          command,
+        ]),
+      )
+    assert movement.moved(state: entered(), moves:) == Error(UnsentKind(kind:))
+      as "opcode.0x637.sent_kinds: the kind is refused, and the position before it is not kept"
+  })
+}
+
+/// What the one command does to the entered player.
+fn alone(command: Command) -> Result(State, Refusal) {
+  moved(state: entered(), commands: [command])
+}
+
+pub fn a_flight_path_with_a_value_the_client_never_writes_is_refused_test() -> Nil {
+  use <- owned_test.run(5000)
+  let rows = [
+    #(
+      Kind3(path_type: 1, time_offset: 0, blends: 0),
+      UnwrittenValue(kind: 3, field: "path type", value: 1),
+      "opcode.0x637.kinds_3_to_6: the flight's path type is 0",
+    ),
+    #(
+      Kind3(path_type: 0, time_offset: 1, blends: 0),
+      UnwrittenValue(kind: 3, field: "time offset", value: 1),
+      "opcode.0x637.kinds_3_to_6: the flight's time offset is 0",
+    ),
+    #(
+      Kind3(path_type: 0, time_offset: 0, blends: 1),
+      UnwrittenValue(kind: 3, field: "blend", value: 1),
+      "opcode.0x637.kinds_3_to_6: the flight's blend bit is 0",
+    ),
+    #(
+      Kind25(state_flags: [0x100, 0x4], time_offset: 0),
+      UnwrittenValue(kind: 25, field: "state flags", value: 0x4),
+      "opcode.0x637.kind_25: 0x4 is a flag a kind 24 holds, and none of the four words kind 25 writes",
+    ),
+    #(
+      Kind25(state_flags: [0x10C], time_offset: 0),
+      UnwrittenValue(kind: 25, field: "state flags", value: 0x10C),
+      "opcode.0x637.kind_25: 0x100 and 0xc together mix two of the words: the words are a set, not a mask",
+    ),
+    #(
+      Kind25(state_flags: [0x100], time_offset: 1),
+      UnwrittenValue(kind: 25, field: "time offset", value: 1),
+      "opcode.0x637.kind_25: the flags' time offset is 0",
+    ),
+  ]
+  list.each(rows, fn(row) {
+    let #(command, refusal, why) = row
+    assert alone(command) == Error(refusal) as why
+  })
+}
+
+pub fn a_follow_path_face_unit_or_spin_with_a_value_the_client_never_writes_is_refused_test() -> Nil {
+  use <- owned_test.run(5000)
+  let rows = [
+    #(
+      Kind10(blends: 1),
+      UnwrittenValue(kind: 10, field: "blend", value: 1),
+      "opcode.0x637.kinds_10_13: the bit is always 0",
+    ),
+    #(
+      Kind13(blends: 1),
+      UnwrittenValue(kind: 13, field: "blend", value: 1),
+      "opcode.0x637.kinds_10_13: the bit is always 0",
+    ),
+    #(
+      Kind18(blends: 0),
+      UnwrittenValue(kind: 18, field: "blend", value: 0),
+      "opcode.0x637.kind_18: the bit is always 1",
+    ),
+    #(
+      Kind20(roll: 0x3F800000, time_offset: 0, blends: 0),
+      UnwrittenValue(kind: 20, field: "roll", value: 0x3F800000),
+      "opcode.0x637.kind_20: DirectionToEulerAngles' roll is 0",
+    ),
+    #(
+      Kind20(roll: 0, time_offset: 1, blends: 0),
+      UnwrittenValue(kind: 20, field: "time offset", value: 1),
+      "opcode.0x637.kind_20: the offset is 0",
+    ),
+    #(
+      Kind20(roll: 0, time_offset: 0, blends: 1),
+      UnwrittenValue(kind: 20, field: "blend", value: 1),
+      "opcode.0x637.kind_20: the bit is 0",
+    ),
+  ]
+  list.each(rows, fn(row) {
+    let #(command, refusal, why) = row
+    assert alone(command) == Error(refusal) as why
+  })
+}
+
+/// One of each command the client sends, in the form it writes it, as a
+/// decoded 0x637 holds it, with what the row is.
+fn sent_forms() -> List(#(String, MovementCommand)) {
+  let float = MovementFloatVector(x: 0, y: 0, z: 0)
+  let flight = fn(points) {
+    movement_command.Kind3(MovementKind3(
+      times: list.repeat(1, points),
+      points: list.repeat(float, points),
+      path_type: 0,
+      time_offset: 0,
+      blends: 0,
+    ))
+  }
+  let flags = fn(keys, words) {
+    movement_command.Kind25(MovementKind25(
+      times: list.repeat(1, keys),
+      state_flags: list.take(list.flatten(list.repeat(words, keys)), keys),
+      time_offset: 0,
+    ))
+  }
+  let spin = fn(turn_rate) {
+    movement_command.Kind20(MovementKind20(
+      yaw: 0x3F800000,
+      pitch: 0x3F000000,
+      roll: 0,
+      duration_ms: 1500,
+      turn_rate:,
+      time_offset: 0,
+      blends: 0,
+    ))
+  }
+  [
+    #("kind 0", movement_command.Time(MovementTime(time: 0x1335))),
+    #("kind 1", movement_command.Platform(MovementPlatform(unit_id: 7))),
+    #(
+      "kind 2",
+      movement_command.Position(UnitPositionCommand(
+        x: 0x3F800000,
+        y: 0x40000000,
+        z: 0xC0400000,
+        blends: 1,
+      )),
+    ),
+    #("kind 3 with 1 point", flight(1)),
+    #("kind 3 with 1023 points", flight(1023)),
+    #("kind 25 with 1 key", flags(1, [0x100])),
+    #("kind 25 with 255 keys", flags(255, [0x100, 0x130, 0xC, 0x3C])),
+    #("kind 25 with 0x130", flags(1, [0x130])),
+    #("kind 25 with 0xc", flags(1, [0xC])),
+    #("kind 25 with 0x3c", flags(1, [0x3C])),
+    #(
+      "kind 8",
+      movement_command.Velocity(MovementVelocity(
+        x: 0x3C00,
+        y: 0,
+        z: 0x4000,
+        blends: 1,
+      )),
+    ),
+    #("kind 10", movement_command.Kind10(MovementKind10(blends: 0))),
+    #(
+      "kind 11",
+      movement_command.MoveAsked(MovementMoveAsked(
+        x: 0,
+        y: 0,
+        z: 0x4400,
+        blends: 0,
+      )),
+    ),
+    #("kind 13", movement_command.Kind13(MovementKind13(blends: 0))),
+    #(
+      "kind 14",
+      movement_command.Rotation(MovementRotation(
+        yaw: 0x3F800000,
+        pitch: 0,
+        roll: 0,
+        blends: 1,
+      )),
+    ),
+    #(
+      "kind 18",
+      movement_command.FaceUnit(MovementFaceUnit(unit_id: 9, blends: 1)),
+    ),
+    #("kind 20 with a turn rate", spin(0x0001)),
+    #("kind 20 with a turn rate of 0", spin(0)),
+    #(
+      "kind 24",
+      movement_command.StateFlags(MovementStateFlags(flags: 0x3FFFF)),
+    ),
+    #("kind 27", movement_command.Mode(MovementMode(mode: 3))),
+  ]
+}
+
+pub fn each_kind_the_client_sends_in_its_own_form_is_taken_test() -> Nil {
+  use <- owned_test.run(5000)
+  list.each(sent_forms(), fn(row) {
+    let #(name, command) = row
+    let moves =
+      movement.moves(PlayerMovement(client_clock: 0x1234, commands: [command]))
+    assert result.is_ok(movement.moved(state: entered(), moves:))
+      as {
+        name
+        <> ": the client writes this form (opcode.0x637.sent_kinds, and the kind's record)"
+      }
+  })
+}
+
+pub fn each_new_refusal_says_what_the_client_sent_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert movement.describe(UnsentKind(kind: 4))
+    == "0x0637 holds a command of kind 4, which the client never sends"
+  assert movement.describe(UnwrittenValue(
+      kind: 25,
+      field: "state flags",
+      value: 0x104,
+    ))
+    == "0x0637 holds kind 25's state flags 260 (0x104), which the client never writes"
+  assert movement.describe(UnwrittenValue(kind: 3, field: "path type", value: 1))
+    == "0x0637 holds kind 3's path type 1 (0x1), which the client never writes"
+}
+
 // ---- test 15: the client's clock ----
 
 pub fn the_clock_of_the_message_and_the_time_command_change_nothing_test() -> Nil {
@@ -433,10 +847,10 @@ pub fn the_commands_of_a_decoded_message_are_the_rules_commands_by_kind_test() -
       Rotation(yaw: raw(minus_three), pitch: raw(one), roll: raw(two)),
       StateFlags(flags: 0x2A),
       Mode(mode: 3),
-      Other(29),
+      Unsent(29),
       footing(0),
     ]
-    as "0x140c1f070: kind 0 and every kind the rule does not act on are `Other` with their kind; kind 1's 0 is the world's frame, any other unit id a platform's"
+    as "0x140c1f070: kind 0 is `Other`, kind 29 is one the client never sends (opcode.0x637.sent_kinds); kind 1's 0 is the world's frame, any other unit id a platform's"
 }
 
 pub fn a_unit_id_that_is_no_32_bit_number_is_no_footing_test() -> Nil {

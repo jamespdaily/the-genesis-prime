@@ -48,6 +48,9 @@ import genesis_prime/message/item_move
 import genesis_prime/message/item_place
 import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
 import genesis_prime/message/movement_command
+import genesis_prime/message/movement_face_point.{MovementFacePoint}
+import genesis_prime/message/movement_float_vector.{MovementFloatVector}
+import genesis_prime/message/movement_kind_3.{MovementKind3}
 import genesis_prime/message/movement_mode.{MovementMode}
 import genesis_prime/message/movement_rotation.{MovementRotation}
 import genesis_prime/message/movement_state_flags.{MovementStateFlags}
@@ -1182,6 +1185,29 @@ pub fn refused_moves() -> List(#(BitArray, String)) {
     #(
       moves_message([movement_command.Mode(MovementMode(mode: 2))]),
       "a mode other than 0, 1 and 3",
+    ),
+    #(
+      moves_message([
+        movement_command.FacePoint(MovementFacePoint(
+          x: zero,
+          y: zero,
+          z: zero,
+          blends: 0,
+        )),
+      ]),
+      "a kind the client never sends (opcode.0x637.sent_kinds)",
+    ),
+    #(
+      moves_message([
+        movement_command.Kind3(MovementKind3(
+          times: [1],
+          points: [MovementFloatVector(x: zero, y: zero, z: zero)],
+          path_type: 1,
+          time_offset: 0,
+          blends: 0,
+        )),
+      ]),
+      "a flight path of a type the client never writes (opcode.0x637.kinds_3_to_6)",
     ),
     #(
       moves_message([

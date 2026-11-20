@@ -22,12 +22,22 @@
 ////   (the client raises it to -2048 before it sends,
 ////   movement_command.position_bound), state flags above 0x3ffff and a mode
 ////   other than 0, 1 and 3 (movement_command.kind_24, movement_command.kind_27),
-////   and a move speed setting above 2 (0x140c45dd0). A height below -2048 in a
+////   a move speed setting above 2 (0x140c45dd0), a command of a kind the client
+////   never queues, 4, 5, 6, 7, 9, 12, 15, 16, 17, 19, 21, 22, 23, 26, 28 or 29
+////   (opcode.0x637.sent_kinds), and a value the client never writes in a kind
+////   it does send: kind 3's path type, time offset and blend bit are 0
+////   (opcode.0x637.kinds_3_to_6); kind 25's flags words are each 0x100, 0x130,
+////   0xc or 0x3c and its time offset is 0 (opcode.0x637.kind_25); kinds 10 and
+////   13 have blend 0 (opcode.0x637.kinds_10_13); kind 18 has blend 1
+////   (opcode.0x637.kind_18); kind 20's roll, time offset and blend are 0
+////   (opcode.0x637.kind_20). A height below -2048 in a
 ////   platform's frame is that unit's own, which the client's clamp does not
 ////   bound, so it is not refused. x and z beyond +-32768 and y above 2048 are
 ////   kept as sent: the client sends them by up to one frame's movement past the
 ////   box it clamps to, and how far one frame goes is not read
 ////   (movement_command.position_bound).
+//// - **What is not checked** is listed by `gaps`: the records of the client's
+////   decode do not settle it, or settling it needs the map's units.
 //// - **The client's clock** and kind 0's time are the client's own milliseconds
 ////   (0x140c3a004, 0x14057a190); nothing here reads them or compares them with
 ////   the server's clock.
@@ -49,6 +59,7 @@
 
 import genesis_prime/client_connection
 import genesis_prime/game/start_place.{type Facing, type Place, Facing}
+import genesis_prime/gap
 import genesis_prime/message/bit_stream
 import genesis_prime/message/client_control_echoed
 import genesis_prime/message/fell_below_floor
@@ -56,6 +67,12 @@ import genesis_prime/message/float32.{type Bits}
 import genesis_prime/message/impact_severity
 import genesis_prime/message/move_speed_setting
 import genesis_prime/message/movement_command.{type MovementCommand}
+import genesis_prime/message/movement_face_unit.{MovementFaceUnit}
+import genesis_prime/message/movement_kind_10.{MovementKind10}
+import genesis_prime/message/movement_kind_13.{MovementKind13}
+import genesis_prime/message/movement_kind_20.{MovementKind20}
+import genesis_prime/message/movement_kind_25.{MovementKind25}
+import genesis_prime/message/movement_kind_3.{MovementKind3}
 import genesis_prime/message/movement_mode.{MovementMode}
 import genesis_prime/message/movement_platform.{MovementPlatform}
 import genesis_prime/message/movement_rotation.{MovementRotation}
@@ -156,8 +173,33 @@ pub type Command {
   StateFlags(flags: Int)
   /// Kind 27: the movement mode.
   Mode(mode: Int)
-  /// Any other kind, its data read and not kept: kind 0 is the client's own
-  /// clock, which nothing compares with the server's.
+  /// Kind 3, the ForcedMove flight's timed path, with the three values the
+  /// client writes as fixed (opcode.0x637.kinds_3_to_6). Its points and times
+  /// are not read: the count of points is the wire's 1 to 1023 and the server
+  /// does not use the path.
+  Kind3(path_type: Int, time_offset: Int, blends: Int)
+  /// Kind 10, the velocity that follows the path, with its blend bit
+  /// (opcode.0x637.kinds_10_13).
+  Kind10(blends: Int)
+  /// Kind 13, the move asked that follows the path, with its blend bit
+  /// (opcode.0x637.kinds_10_13).
+  Kind13(blends: Int)
+  /// Kind 18, face a unit, with its blend bit (opcode.0x637.kind_18). Which
+  /// unit it names is not read.
+  Kind18(blends: Int)
+  /// Kind 20, the spin, with the three values the client writes as fixed
+  /// (opcode.0x637.kind_20). Its angles, duration and turn rate are not read.
+  Kind20(roll: Int, time_offset: Int, blends: Int)
+  /// Kind 25, the timed state flags: the flags word of each key and the time
+  /// offset (opcode.0x637.kind_25). The count of keys is not read.
+  Kind25(state_flags: List(Int), time_offset: Int)
+  /// A kind the client's own code never queues for sending
+  /// (opcode.0x637.sent_kinds): 4, 5, 6, 7, 9, 12, 15, 16, 17, 19, 21, 22, 23,
+  /// 26, 28 or 29.
+  Unsent(kind: Int)
+  /// Kind 0, 8 or 11, its data read and not kept: kind 0 is the client's own
+  /// clock, which nothing compares with the server's; kinds 8 and 11 are the
+  /// velocity and the move asked, which the server relays and does not use.
   Other(kind: Int)
 }
 
@@ -182,6 +224,13 @@ pub type Refusal {
   UnknownMode(mode: Int)
   /// A move speed setting above 2 (0x140c45dd0).
   UnknownSpeedSetting(setting: Int)
+  /// A kind the client's own code never sends (opcode.0x637.sent_kinds).
+  UnsentKind(kind: Int)
+  /// A value the client's own code never writes in a kind it does send:
+  /// `field` names it in the words of the log line (opcode.0x637.kinds_3_to_6,
+  /// opcode.0x637.kinds_10_13, opcode.0x637.kind_18, opcode.0x637.kind_20,
+  /// opcode.0x637.kind_25).
+  UnwrittenValue(kind: Int, field: String, value: Int)
   /// A body the client's own reader would refuse.
   NotDecoded(undecoded: client_connection.Undecoded)
 }
@@ -245,7 +294,9 @@ pub fn facing(state state: State) -> Facing {
 
 /// The commands of a decoded 0x637 as the rule takes them: kind 1 as the frame
 /// it names, kinds 2 and 14 with their floats as 32 bits, kinds 24 and 27 with
-/// their values, and every other kind, its data read, as `Other`.
+/// their values, kinds 3, 10, 13, 18, 20 and 25 with the values the rule checks,
+/// the kinds the client never sends as `Unsent`, and kinds 0, 8 and 11, their
+/// data read, as `Other`.
 pub fn moves(message message: PlayerMovement) -> Moves {
   Moves(
     client_clock: message.client_clock,
@@ -270,30 +321,33 @@ fn command(command: MovementCommand) -> Command {
       StateFlags(flags:)
     movement_command.Mode(MovementMode(mode:)) -> Mode(mode:)
     movement_command.Time(_) -> Other(kind: 0)
-    movement_command.Kind3(_) -> Other(kind: 3)
-    movement_command.Kind4(_) -> Other(kind: 4)
-    movement_command.Kind5(_) -> Other(kind: 5)
-    movement_command.Kind6(_) -> Other(kind: 6)
-    movement_command.Kind7(_) -> Other(kind: 7)
+    movement_command.Kind3(MovementKind3(path_type:, time_offset:, blends:, ..)) ->
+      Kind3(path_type:, time_offset:, blends:)
+    movement_command.Kind4(_) -> Unsent(kind: 4)
+    movement_command.Kind5(_) -> Unsent(kind: 5)
+    movement_command.Kind6(_) -> Unsent(kind: 6)
+    movement_command.Kind7(_) -> Unsent(kind: 7)
     movement_command.Velocity(_) -> Other(kind: 8)
-    movement_command.Kind9(_) -> Other(kind: 9)
-    movement_command.Kind10(_) -> Other(kind: 10)
+    movement_command.Kind9(_) -> Unsent(kind: 9)
+    movement_command.Kind10(MovementKind10(blends:)) -> Kind10(blends:)
     movement_command.MoveAsked(_) -> Other(kind: 11)
-    movement_command.Kind12(_) -> Other(kind: 12)
-    movement_command.Kind13(_) -> Other(kind: 13)
-    movement_command.Kind15(_) -> Other(kind: 15)
-    movement_command.Kind16(_) -> Other(kind: 16)
-    movement_command.Kind17(_) -> Other(kind: 17)
-    movement_command.FaceUnit(_) -> Other(kind: 18)
-    movement_command.FacePoint(_) -> Other(kind: 19)
-    movement_command.Kind20(_) -> Other(kind: 20)
-    movement_command.Kind21(_) -> Other(kind: 21)
-    movement_command.Kind22(_) -> Other(kind: 22)
-    movement_command.Kind23(_) -> Other(kind: 23)
-    movement_command.Kind25(_) -> Other(kind: 25)
-    movement_command.Kind26(_) -> Other(kind: 26)
-    movement_command.Kind28(_) -> Other(kind: 28)
-    movement_command.Kind29(_) -> Other(kind: 29)
+    movement_command.Kind12(_) -> Unsent(kind: 12)
+    movement_command.Kind13(MovementKind13(blends:)) -> Kind13(blends:)
+    movement_command.Kind15(_) -> Unsent(kind: 15)
+    movement_command.Kind16(_) -> Unsent(kind: 16)
+    movement_command.Kind17(_) -> Unsent(kind: 17)
+    movement_command.FaceUnit(MovementFaceUnit(blends:, ..)) -> Kind18(blends:)
+    movement_command.FacePoint(_) -> Unsent(kind: 19)
+    movement_command.Kind20(MovementKind20(roll:, time_offset:, blends:, ..)) ->
+      Kind20(roll:, time_offset:, blends:)
+    movement_command.Kind21(_) -> Unsent(kind: 21)
+    movement_command.Kind22(_) -> Unsent(kind: 22)
+    movement_command.Kind23(_) -> Unsent(kind: 23)
+    movement_command.Kind25(MovementKind25(state_flags:, time_offset:, ..)) ->
+      Kind25(state_flags:, time_offset:)
+    movement_command.Kind26(_) -> Unsent(kind: 26)
+    movement_command.Kind28(_) -> Unsent(kind: 28)
+    movement_command.Kind29(_) -> Unsent(kind: 29)
   }
 }
 
@@ -521,8 +575,8 @@ fn undecoded(
 /// What a 0x637 does to where the player stands, command by command in the
 /// order sent: the frame of kind 1 holds for the commands after it and for later
 /// messages; a position or rotation in the world's frame is kept; a command
-/// the client's own code never sends is refused, and then nothing of the
-/// message is kept.
+/// the client's own code never sends, in a kind or a value, is refused, and then
+/// nothing of the message is kept.
 pub fn moved(state state: State, moves moves: Moves) -> Result(State, Refusal) {
   list.try_fold(moves.commands, state, apply)
 }
@@ -565,8 +619,70 @@ fn apply(state: State, command: Command) -> Result(State, Refusal) {
       Ok(State(..state, moving: int.bitwise_and(flags, 0x2) != 0))
     Mode(mode: 0) | Mode(mode: 1) | Mode(mode: 3) -> Ok(state)
     Mode(mode:) -> Error(UnknownMode(mode:))
+    Kind3(path_type:, time_offset:, blends:) -> {
+      use _ <- result.try(
+        written(kind: 3, field: "path type", value: path_type, only: [0]),
+      )
+      use _ <- result.try(
+        written(kind: 3, field: "time offset", value: time_offset, only: [0]),
+      )
+      use _ <- result.map(
+        written(kind: 3, field: "blend", value: blends, only: [0]),
+      )
+      state
+    }
+    Kind10(blends:) ->
+      written(kind: 10, field: "blend", value: blends, only: [0])
+      |> result.replace(state)
+    Kind13(blends:) ->
+      written(kind: 13, field: "blend", value: blends, only: [0])
+      |> result.replace(state)
+    Kind18(blends:) ->
+      written(kind: 18, field: "blend", value: blends, only: [1])
+      |> result.replace(state)
+    Kind20(roll:, time_offset:, blends:) -> {
+      use _ <- result.try(
+        written(kind: 20, field: "roll", value: roll, only: [0]),
+      )
+      use _ <- result.try(
+        written(kind: 20, field: "time offset", value: time_offset, only: [0]),
+      )
+      use _ <- result.map(
+        written(kind: 20, field: "blend", value: blends, only: [0]),
+      )
+      state
+    }
+    Kind25(state_flags:, time_offset:) -> {
+      use _ <- result.try(
+        list.try_each(state_flags, fn(flags) {
+          written(kind: 25, field: "state flags", value: flags, only: [
+            0x100,
+            0x130,
+            0xc,
+            0x3c,
+          ])
+        }),
+      )
+      use _ <- result.map(
+        written(kind: 25, field: "time offset", value: time_offset, only: [0]),
+      )
+      state
+    }
+    Unsent(kind:) -> Error(UnsentKind(kind:))
     Other(..) -> Ok(state)
   }
+}
+
+/// Whether `value` of `field` in a command of `kind` is one the client writes,
+/// among `only`, or why the command is refused.
+fn written(
+  kind kind: Int,
+  field field: String,
+  value value: Int,
+  only only: List(Int),
+) -> Result(Nil, Refusal) {
+  use <- bool.guard(when: list.contains(only, value), return: Ok(Nil))
+  Error(UnwrittenValue(kind:, field:, value:))
 }
 
 /// The float the bits of a command of `kind` hold, or why the command is
@@ -582,6 +698,25 @@ pub fn speed_setting(setting setting: Int) -> Result(Nil, Refusal) {
     return: Error(UnknownSpeedSetting(setting:)),
   )
   Ok(Nil)
+}
+
+/// What the rule leaves unchecked in the client's 0x637, for the coverage
+/// measure.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Movement",
+      missing: "A 0x637 is not refused for a kind 0 time too far before the message's clock, a per-frame yaw outside one turn, a count of 0 keys in kind 3 or kind 25, or kind 20's turn rate of 0: the client's records do not settle them (a tiny turn rate can round to 0 in the half float the client writes).",
+    ),
+    gap.Entry(
+      area: "Movement",
+      missing: "A 0x637 is not refused for a kind 1 platform or a kind 18 unit whose unit type the client never names, or that is no unit the player has: that needs the map's units.",
+    ),
+    gap.Entry(
+      area: "Movement",
+      missing: "A blend of 1 in kinds 2, 8, 11 and 14 is taken: the client's per-frame update writes 0 or 1 and the other builders write 0, and the server cannot tell which builder sent the command.",
+    ),
+  ]
 }
 
 /// A sentence that says what the client sent that is refused, for the log.
@@ -603,6 +738,20 @@ pub fn describe(refusal refusal: Refusal) -> String {
       "0x063B holds the move speed setting "
       <> int.to_string(setting)
       <> ", above 2"
+    UnsentKind(kind:) ->
+      "0x0637 holds a command of kind "
+      <> int.to_string(kind)
+      <> ", which the client never sends"
+    UnwrittenValue(kind:, field:, value:) ->
+      "0x0637 holds kind "
+      <> int.to_string(kind)
+      <> "'s "
+      <> field
+      <> " "
+      <> int.to_string(value)
+      <> " (0x"
+      <> int.to_base16(value)
+      <> "), which the client never writes"
     NotDecoded(undecoded:) -> client_connection.describe_undecoded(undecoded:)
   }
 }
