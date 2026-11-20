@@ -1495,3 +1495,12 @@ Spell4	47746	a cast whose one go falls after its only hit row (5529) has ended	c
 Spell4	54339	a cast whose go 4 falls after its only hit row (4310) has ended, with gos 0 to 3 inside it	spell_area_go_test
 Spell4	80315	a cast whose damage row names both its gos and whose one hit row (15196) names the second alone	creature_special_test
 Spell4	31546	a channel whose one hit row (2151) names pulse 0 alone and is drawn through every pulse	spell_area_go_test
+Spell4	34252	Savage Shred, a Multiphase cast of a cast time of 0 whose first go is at 0 and whose gos are 0, 1, 200, 700, 1200, 1700 and 2800 ms	creature_special_test, spawn_test, telegraph_window_test, world_creature_test
+Spell4	34262	Ground Pound, a Multiphase cast of a cast time of 0 whose gos are 200, 666, 1100 and 1600 ms	creature_special_test, spawn_test, telegraph_window_test
+Spell4	52150	Suppressing Fire, a channel of a cast time of 0 with eight pulses	creature_special_test, spawn_test, telegraph_window_test
+Spell4	70136	Fighting Dirty, a cast of a cast time of 0 with no SpellPhase row, one go and no cast bar	creature_special_test, spawn_test
+Spell4	47977	Forge Lava, a ChanneledField cast of a cast time of 0	creature_special_test
+Creature2	35947	Sandthorne Malverine, which casts Savage Shred	creature_special_test, spawn_test, world_creature_test
+Creature2	4148	Grimstone Digger, which casts Ground Pound	creature_special_test, spawn_test
+Creature2	17079	a creature that casts Suppressing Fire	creature_special_test, spawn_test
+Creature2	20775	Razortail Flinger, which casts Fighting Dirty	creature_special_test, spawn_test

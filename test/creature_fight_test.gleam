@@ -6027,6 +6027,70 @@ pub fn a_state_between_gos_breaks_the_special_and_the_cooldown_stays_spent_test(
     as "the cooldown the broken cast spent (to 11 500 ms) is still running: the instant attack"
 }
 
+/// Earthen Roar's cast with a cast time of 0 and the first gos of a Multiphase special that
+/// starts at 0 (Savage Shred, Spell4 34252: delays 0, 1, 199, 500): the gos at 0 and 1 ms
+/// strike nobody, the three after strike with the roar's cone.
+fn roar_with_gos_at_0_and_1_ms() -> creature_life.Special {
+  spawn_support.special_with_charged(
+    special: spawn_support.earthen_roar(hold_ms: 1000),
+    change: fn(cast) {
+      let assert creature_life.Charged(inside:, ..) = cast
+        as "Earthen Roar is a charge"
+      let strike =
+        Some(creature_life.GoStrike(spell4_effects_ids: [131_967], inside:))
+      creature_life.Charged(..cast, cast_ms: 0, gos: [
+        creature_life.Go(at_ms: 0, strike: None),
+        creature_life.Go(at_ms: 1, strike: None),
+        creature_life.Go(at_ms: 200, strike:),
+        creature_life.Go(at_ms: 700, strike:),
+        creature_life.Go(at_ms: 1200, strike:),
+      ])
+    },
+  )
+}
+
+pub fn a_state_that_lands_after_two_gos_at_0_and_1_ms_breaks_only_the_gos_to_come_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) =
+    roar_fought_by(
+      state: rootbrute_with(special: roar_with_gos_at_0_and_1_ms(), viewers: [2]),
+    )
+  let #(state, opened) =
+    fire(state:, at_ms: 1500, timer: timer_for(aggro, 1500))
+  assert said(opened) == ["0x638 to 2", "0x7ff to 2"]
+    as "the 0x7ff comes with the turn, and no go is written in it"
+  let #(state, first) = fire(state:, at_ms: 1500, timer: timer_for(opened, 0))
+  assert said(first) == ["0x7f4 to 2"]
+    as "the go at 0 writes its entry, striking nobody"
+  let #(state, second) = fire(state:, at_ms: 1501, timer: timer_for(first, 1))
+  assert said(second) == ["0x7f4 to 2"] as "and the go at 1 ms"
+  let strike = timer_for(second, 199)
+  let #(state, stunned) = stunned_at(state:, at_ms: 1600)
+  assert list.drop_while(said(stunned), fn(line) { line != "0x87f to 2" })
+    == ["0x87f to 2", "0x7f9 to 2"]
+    as "the state, then the broken cast: 0x7f9 (the viewer's connection writes the 0x7fe after it)"
+  let assert [client_connection.CastInterrupted(cast_id:)] =
+    list.filter(news_to(stunned, 2), fn(news) {
+      creature_news_support.name_of(news) == "0x7f9"
+    })
+  assert cast_id == cast_id_sent(opened, 2)
+  assert list.contains(timers_cancelled(stunned), strike)
+    as "the pending go's timer is cancelled"
+  assert list.contains(list.map(timers(stunned), fn(timer) { timer.1 }), 1500)
+    as "the next attack tick comes after the interval, not the hold"
+  let #(state, late) = fire(state:, at_ms: 1700, timer: strike)
+  assert said(late) == [] && fights_told(late) == [] && timers(late) == []
+    as "the go at 200 ms fires all the same and strikes nobody: no strike of the gos to come is told"
+  let #(state, held) =
+    fire(state:, at_ms: 3100, timer: timer_for(stunned, 1500))
+  assert said(held) == [] as "the state still holds: no cast"
+  let #(state, _) = fire(state:, at_ms: 4100, timer: timer_for(stunned, 2500))
+  let #(_, after) = fire(state:, at_ms: 4600, timer: timer_for(held, 1500))
+  let assert [CastStarted(start:)] = casts_of(after, 2)
+  assert start.spell4_id == 5649
+    as "the cooldown the broken cast spent (to 11 500 ms) is still running: the instant attack"
+}
+
 pub fn an_interrupt_after_the_strike_go_breaks_nothing_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, aggro) = roar_fought(viewers: [2])

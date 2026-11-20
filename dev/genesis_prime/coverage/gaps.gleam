@@ -67,6 +67,7 @@ import genesis_prime/message/vendor_items
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_control
 import genesis_prime/world_map/creature_fight
+import genesis_prime/world_map/creature_special
 import gleam/int
 import gleam/list
 import gleam/string
@@ -100,6 +101,7 @@ pub fn registry() -> List(Entry) {
     creature_control.gaps(),
     creature.gaps(),
     creature_fight.gaps(),
+    creature_special.gaps(),
     movement.gaps(),
     movement_kind_4.gaps(),
     movement_path.gaps(),

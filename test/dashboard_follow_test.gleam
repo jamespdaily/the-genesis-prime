@@ -87,6 +87,7 @@ fn shown(followed: Followed) -> List(String) {
       Line(text:, ..) -> text
       Marker(mark: LogReplaced, ..) -> "[replaced]"
       Marker(mark: LogCutShorter, ..) -> "[cut shorter]"
+      Marker(mark: log_lines.ContainerReplaced, ..) -> "[container replaced]"
     }
   })
 }
