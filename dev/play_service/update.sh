@@ -81,60 +81,44 @@ if [ -e "$state/held" ]; then
 fi
 
 mkdir -p "$state"
-lock=$state/update.lock
-
-# lock_owner: the process id in the lock's owner file, empty when it has none.
-lock_owner() { cat "$lock/owner" 2>/dev/null || true; }
-
-# lock_is_stale: the lock's owner is gone, or the lock has no owner file and is over
-# a minute old.
-lock_is_stale() {
-  local owner
-  owner=$(lock_owner)
-  if [ -n "$owner" ]; then
-    ! kill -0 "$owner" 2>/dev/null
-  else
-    [ -n "$(find "$lock" -maxdepth 0 -mmin +1 2>/dev/null)" ]
-  fi
-}
 
 # write_owner: records this process as the lock's owner, whole, by a move.
 write_owner() {
-  echo $$ >"$lock/owner.next"
-  mv -f "$lock/owner.next" "$lock/owner"
+  echo $$ >"$update_lock/owner.next"
+  mv -f "$update_lock/owner.next" "$update_lock/owner"
 }
 
 # take_lock: makes the lock or, when it is stale, takes it over under a second
 # folder only one run can make, so two runs never both remove a lock and make one.
 take_lock() {
-  if mkdir "$lock" 2>/dev/null; then
+  if mkdir "$update_lock" 2>/dev/null; then
     write_owner
     return 0
   fi
-  if [ -d "$lock.takeover" ] && [ -n "$(find "$lock.takeover" -maxdepth 0 -mmin +1 2>/dev/null)" ]; then
-    rmdir "$lock.takeover" 2>/dev/null || true
+  if older_than_a_minute "$update_lock.takeover"; then
+    rmdir "$update_lock.takeover" 2>/dev/null || true
   fi
-  mkdir "$lock.takeover" 2>/dev/null || return 1
-  if lock_is_stale; then
-    rm -rf "$lock"
-    if mkdir "$lock" 2>/dev/null; then
+  mkdir "$update_lock.takeover" 2>/dev/null || return 1
+  if update_lock_is_stale; then
+    rm -rf "$update_lock"
+    if mkdir "$update_lock" 2>/dev/null; then
       write_owner
-      rmdir "$lock.takeover"
+      rmdir "$update_lock.takeover"
       return 0
     fi
   fi
-  rmdir "$lock.takeover"
+  rmdir "$update_lock.takeover"
   return 1
 }
 
 if ! take_lock; then
-  log_once "another update runs (process $(lock_owner)); nothing done"
+  log_once "another update runs (process $(update_lock_owner)); nothing done"
   exit 0
 fi
 context=
 scripts_folder=
 cleanup() {
-  rm -rf "$lock"
+  rm -rf "$update_lock"
   [ -z "$context" ] || rm -rf "$context"
   [ -z "$scripts_folder" ] || rm -rf "$scripts_folder"
 }

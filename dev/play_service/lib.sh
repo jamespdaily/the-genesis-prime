@@ -1,4 +1,4 @@
-# Sourced by update.sh, start.sh, stop.sh and install.sh, never run: the play
+# Sourced by update.sh, start.sh, stop.sh, state.sh and install.sh, never run: the play
 # service's names, and what two or more of them do. The play server runs as two
 # containers on one Podman network (a pod would keep the game ports bound while
 # the server container is stopped, and a recording run needs them free):
@@ -35,11 +35,22 @@
 #                                  or the hold has stood over an hour while the remote's branch is
 #                                  at a commit the server container does not run; never takes the
 #                                  lock or the hold over
+#   update_lock                    the folder update.sh's lock is
+#   older_than_a_minute PATH       whether the file or folder was last changed over a minute ago;
+#                                  false when it is missing
+#   update_lock_owner              the process id the lock's owner file holds, empty when none
+#   update_lock_is_stale           whether the lock's owner is gone, or it has no owner file and
+#                                  is over a minute old
+#   machine_running                whether the Podman machine answers
 #   machine_up                     starts the Podman machine when it is not running
 #   container_running NAME         whether the container exists and is running
+#   container_status NAME          prints the container's status; 1 when there is none
+#   postgres_ready                 whether Postgres accepts a connection to the play database now
 #   ensure_postgres                makes the network and the Postgres container, starts it,
 #                                  and returns once it accepts connections
-#   server_state                   prints "REVISION ADDRESS RUNNING" of the server container,
+#   server_labels                  prints "REVISION ADDRESS RUNNING" of the server container;
+#                                  podman's status when it could not
+#   server_state                   server_labels with its failure and its error text dropped:
 #                                  nothing when there is none
 #   run_server IMAGE REVISION ADDRESS   replaces the server container with a new one
 #   wait_up                        waits for the server container's ready line; on a container
@@ -59,6 +70,7 @@ postgres_container=genesis-play-postgres
 postgres_volume=genesis-play-data
 postgres_image=docker.io/library/postgres:18
 postgres_port=5434
+game_port=24000
 server_container=genesis-play
 play_database=genesis_play
 
@@ -141,6 +153,31 @@ lock_owner_running() {
   [ "$(ps -o lstart= -p "$pid" 2>/dev/null | awk '{ $1 = $1; print }')" = "$started" ]
 }
 
+# older_than_a_minute PATH: whether the file or folder was last changed over a minute ago.
+# A missing path, or a path find cannot read, is not old.
+older_than_a_minute() {
+  [ -n "$(find "$1" -maxdepth 0 -mmin +1 2>/dev/null)" ]
+}
+
+# The updater's lock: a folder whose owner file holds the process id of the run that
+# took it (update.sh takes and releases it).
+update_lock=$state/update.lock
+
+# update_lock_owner: the process id in the lock's owner file, empty when it has none.
+update_lock_owner() { cat "$update_lock/owner" 2>/dev/null || true; }
+
+# update_lock_is_stale: the lock's owner is gone, or the lock has no owner file and is over
+# a minute old.
+update_lock_is_stale() {
+  local owner
+  owner=$(update_lock_owner)
+  if [ -n "$owner" ]; then
+    ! kill -0 "$owner" 2>/dev/null
+  else
+    older_than_a_minute "$update_lock"
+  fi
+}
+
 # stale_stand_description KIND: who holds the live lock, or the hold, and the command that
 # releases it, as one phrase for the alert.
 stale_stand_description() {
@@ -211,11 +248,14 @@ alert_stale_stands() {
   done
 }
 
+# machine_running: whether the Podman machine answers; podman's own status when it does not.
+machine_running() { podman info >/dev/null 2>&1; }
+
 machine_up() {
-  podman info >/dev/null 2>&1 && return 0
+  machine_running && return 0
   log "the Podman machine is not running; starting it"
   podman machine start >/dev/null 2>&1 || true
-  podman info >/dev/null 2>&1
+  machine_running
 }
 
 # container_running NAME: whether the container exists and is running. The
@@ -227,12 +267,29 @@ container_running() {
   [ "$running" = true ]
 }
 
+# container_status NAME: prints the container's State.Status as Podman words it (running,
+# stopping, exited, created ...). Returns 1 when there is no such container, and podman's
+# own status when it could not say.
+container_status() {
+  local exists=0 status
+  podman container exists "$1" >/dev/null 2>&1 || exists=$?
+  [ "$exists" -eq 0 ] || return "$exists"
+  status=$(podman container inspect --format '{{.State.Status}}' "$1" 2>/dev/null) || return $?
+  printf '%s\n' "$status"
+}
+
+# postgres_ready: whether Postgres in its container accepts a connection to the play
+# database now; pg_isready's status when it does not.
+postgres_ready() {
+  podman exec "$postgres_container" pg_isready -q -U postgres -d "$play_database"
+}
+
 # Waits until Postgres in its container accepts a connection to the play database:
 # GENESIS_PLAY_POSTGRES_ATTEMPTS asks (default 120) GENESIS_PLAY_POLL_SECONDS
 # apart (default 1).
 wait_for_postgres() {
   local waited=0
-  until podman exec "$postgres_container" pg_isready -q -U postgres -d "$play_database"; do
+  until postgres_ready; do
     waited=$((waited + 1))
     if [ "$waited" -ge "${GENESIS_PLAY_POSTGRES_ATTEMPTS:-120}" ]; then
       log "Postgres did not accept a connection in ${GENESIS_PLAY_POSTGRES_ATTEMPTS:-120} asks"
@@ -262,18 +319,22 @@ ensure_postgres() {
   wait_for_postgres
 }
 
-server_state() {
+# server_labels: prints "REVISION ADDRESS RUNNING" of the server container, and returns
+# podman's own status when it could not say.
+server_labels() {
   podman container inspect \
     --format '{{index .Config.Labels "genesis.revision"}} {{index .Config.Labels "genesis.address"}} {{.State.Running}}' \
-    "$server_container" 2>/dev/null || true
+    "$server_container"
 }
+
+server_state() { server_labels 2>/dev/null || true; }
 
 run_server() {
   local image=$1 revision=$2 address=$3
   mkdir -p "$home/sittings"
   podman run -d --replace --name "$server_container" --network "$network" \
     --restart=on-failure:5 --memory 3g --stop-timeout 60 \
-    -p 6600:6600 -p 23115:23115 -p 24000:24000 \
+    -p 6600:6600 -p 23115:23115 -p "$game_port:$game_port" \
     -v "$tables:/tables:ro" -v "$terrain:/terrain:ro" -v "$home/sittings:/sittings" \
     --label "genesis.revision=$revision" --label "genesis.address=$address" \
     -e PGHOST="$postgres_container" -e PGPORT=5432 -e PGUSER=postgres \
