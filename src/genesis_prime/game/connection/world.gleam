@@ -590,7 +590,7 @@ pub fn save_answered(
 /// (`leaving_to`): the map's run that took the player is asked to take it out,
 /// after the effects `before` and the unit's 0x355 to each viewer, and the
 /// connection waits in `LeavingMap` for what comes `then`.
-pub fn leaving_the_map(
+fn leaving_the_map(
   session session: Session,
   now now: Now,
   holder holder: Holder,
