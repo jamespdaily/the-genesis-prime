@@ -252,7 +252,11 @@ pub fn with_home(body body: fn(String) -> a) -> a {
 /// made when a page subscribes or a test asks for one, and ends with the script.
 /// The log followers' timers never come either (a day): a log is read when a page
 /// subscribes or a test calls `follow.read_now`, and no one is told of the
-/// followers' reads unless the test sets `log_watcher`.
+/// followers' reads unless the test sets `log_watcher`. The containers' logs are
+/// read through a `podman` that is not there (`home`'s `no-podman`), so no test
+/// that opens the Logs page runs the developer's real `podman`: each container
+/// shows as unreadable until a test plants one; the container followers' timers
+/// never come and no call is ended by its deadline (a day).
 pub fn settings(home home: String) -> dashboard.Settings {
   dashboard.Settings(
     port: free_port(),
@@ -263,6 +267,9 @@ pub fn settings(home home: String) -> dashboard.Settings {
     poll_interval_ms: 86_400_000,
     read_deadline_ms: 86_400_000,
     log_interval_ms: 86_400_000,
+    podman_path: home <> "/no-podman",
+    container_interval_ms: 86_400_000,
+    container_call_deadline_ms: 86_400_000,
     log_watcher: None,
   )
 }

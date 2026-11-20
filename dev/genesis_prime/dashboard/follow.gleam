@@ -84,11 +84,13 @@ pub type Fetched {
   )
 }
 
-/// Why a read gave nothing: the file is not there, or it cannot be read, with
-/// the reason as the operating system names it.
+/// Why a read gave nothing: the file or the container is not there, it cannot be
+/// read, with the reason as the operating system names it, or Podman cannot be
+/// reached (a container's log only), with the words it said.
 pub type Trouble {
   NotThere
   Unreadable(reason: String)
+  PodmanUnreachable(reason: String)
 }
 
 /// A read: the path and the cursor in, what the file gave, or why not.
@@ -414,7 +416,8 @@ fn read(state: State) -> State {
     }
     Error(NotThere) ->
       State(..state, cursor: after_gone(state.cursor), trouble: Some(NotThere))
-    Error(Unreadable(_) as trouble) -> State(..state, trouble: Some(trouble))
+    Error(Unreadable(_) as trouble) | Error(PodmanUnreachable(_) as trouble) ->
+      State(..state, trouble: Some(trouble))
   }
 }
 

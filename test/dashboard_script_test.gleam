@@ -13,6 +13,7 @@ import gleam/bit_array
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/result
 import gleam/string
 import owned_test
 import simplifile
@@ -163,6 +164,126 @@ fn ended_after_writing_its_pid(
     Error(reason) ->
       panic as {
         "the script never wrote its process id: "
+        <> simplifile.describe_error(reason)
+      }
+  }
+}
+
+/// What the program planted by `printf_arguments` prints: each argument it was
+/// given on a line of its own, between angle brackets.
+fn printf_arguments(path: String) -> Nil {
+  let assert Ok(Nil) =
+    simplifile.write(
+      path,
+      "#!/bin/bash\nfor argument in \"$@\"; do printf '<%s>\\n' \"$argument\"; done\n",
+    )
+  let assert Ok(Nil) = simplifile.set_permissions_octal(path, 0o755)
+  Nil
+}
+
+pub fn a_program_gets_its_arguments_whole_and_one_that_passes_its_deadline_is_gone_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use home <- dashboard_support.with_home
+
+  // Arguments reach the program as given: a space, a leading dash, quotes and
+  // a dollar sign stay inside one argument, and no shell reads them.
+  let path = home <> "/arguments.sh"
+  printf_arguments(path)
+  assert script.run_with(
+      path:,
+      arguments: [
+        "a b",
+        "-x",
+        "--since",
+        "it's \"quoted\"",
+        "$HOME `id` ;",
+        "",
+      ],
+      environment: [],
+      deadline_ms: 600_000,
+    )
+    == Ok(Finished(
+      output: bit_array.from_string(
+        "<a b>\n<-x>\n<--since>\n<it's \"quoted\">\n<$HOME `id` ;>\n<>\n",
+      ),
+      status: 0,
+    ))
+
+  // The output is merged as `run`'s is: the standard error lands in it.
+  let merged = home <> "/merged.sh"
+  let assert Ok(Nil) =
+    simplifile.write(
+      merged,
+      "#!/bin/bash\necho \"out $1\"; echo \"err $1\" >&2; exit 125\n",
+    )
+  let assert Ok(Nil) = simplifile.set_permissions_octal(merged, 0o755)
+  assert script.run_with(
+      path: merged,
+      arguments: ["one"],
+      environment: [],
+      deadline_ms: 600_000,
+    )
+    == Ok(Finished(output: <<"out one\nerr one\n":utf8>>, status: 125))
+
+  // A program that cannot run is refused as `run` refuses it.
+  assert script.run_with(
+      path: home <> "/missing",
+      arguments: ["a"],
+      environment: [],
+      deadline_ms: 600_000,
+    )
+    == Error(NotFound(home <> "/missing"))
+
+  // A program that blocks is ended at the deadline, and its recorded process id
+  // is not alive when `run_with` returns.
+  let sleeper = home <> "/sleeper.sh"
+  let pid_file = home <> "/pid"
+  let assert Ok(Nil) =
+    simplifile.write(sleeper, "#!/bin/bash\necho $$ > \"$1\"\nexec sleep 600\n")
+  let assert Ok(Nil) = simplifile.set_permissions_octal(sleeper, 0o755)
+  let pid = ended_with_arguments(path: sleeper, pid_file:, deadline_ms: 200)
+  assert !dashboard_support.process_alive(pid)
+    as "the program is still running after run_with returned"
+
+  // A program on the search path is found by its name, and one that is not
+  // there is not.
+  assert script.find_on_path("sh") |> result.map(string.ends_with(_, "/sh"))
+    == Ok(True)
+  assert script.find_on_path("no-such-program-for-the-dashboard") == Error(Nil)
+
+  // `run` with no arguments answers as before.
+  assert script.run(path:, environment: [], deadline_ms: 600_000)
+    == Ok(Finished(output: <<"":utf8>>, status: 0))
+}
+
+/// Runs the program with the pid file's path as its argument until a run reaches
+/// its deadline after the program wrote its process id; gives that id.
+fn ended_with_arguments(
+  path path: String,
+  pid_file pid_file: String,
+  deadline_ms deadline_ms: Int,
+) -> Int {
+  let _removed = simplifile.delete(pid_file)
+  assert script.run_with(
+      path:,
+      arguments: [pid_file],
+      environment: [],
+      deadline_ms:,
+    )
+    == Error(DeadlineReached(deadline_ms))
+  case simplifile.read(pid_file) {
+    Ok(text) -> {
+      let assert Ok(pid) = int.parse(string.trim(text))
+        as "the program wrote something other than its id"
+      pid
+    }
+    Error(reason) if deadline_ms < 6400 -> {
+      assert reason == simplifile.Enoent as "the id file could not be read"
+      ended_with_arguments(path:, pid_file:, deadline_ms: deadline_ms * 2)
+    }
+    Error(reason) ->
+      panic as {
+        "the program never wrote its process id: "
         <> simplifile.describe_error(reason)
       }
   }

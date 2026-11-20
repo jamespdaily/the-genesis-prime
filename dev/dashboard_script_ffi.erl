@@ -4,23 +4,26 @@
 %% output. A script still running at the deadline gets SIGTERM, and SIGKILL if
 %% it has not ended `?end_wait_ms` later, and this returns once it has ended.
 -module(dashboard_script_ffi).
--export([run/3]).
+-export([run/4, find_on_path/1]).
 
 -define(end_wait_ms, 2000).
 
--spec run(binary(), [{binary(), binary()}], integer()) ->
+-spec run(binary(), [binary()], [{binary(), binary()}], integer()) ->
     {ok, {finished, binary(), integer()}}
     | {error, {not_found, binary()}}
     | {error, {not_executable, binary()}}
     | {error, {not_started, binary(), binary()}}
     | {error, {deadline_reached, integer()}}.
-run(Path, Environment, DeadlineMs) ->
+run(Path, Arguments, Environment, DeadlineMs) ->
     Executable = unicode:characters_to_list(Path),
     Env = [
         {unicode:characters_to_list(Name), unicode:characters_to_list(Value)}
      || {Name, Value} <- Environment
     ],
-    Options = [binary, exit_status, stderr_to_stdout, use_stdio, hide, {env, Env}],
+    Args = [unicode:characters_to_list(Argument) || Argument <- Arguments],
+    Options = [
+        binary, exit_status, stderr_to_stdout, use_stdio, hide, {env, Env}, {args, Args}
+    ],
     try open_port({spawn_executable, Executable}, Options) of
         Port ->
             Deadline = erlang:monotonic_time(millisecond) + DeadlineMs,
@@ -75,4 +78,13 @@ wait_for_end(Port) ->
         {Port, {exit_status, _}} -> ended
     after ?end_wait_ms ->
         still_running
+    end.
+
+%% The path of the executable `Name` on this VM's search path, as the shell would
+%% find it.
+-spec find_on_path(binary()) -> {ok, binary()} | {error, nil}.
+find_on_path(Name) ->
+    case os:find_executable(unicode:characters_to_list(Name)) of
+        false -> {error, nil};
+        Path -> {ok, unicode:characters_to_binary(Path)}
     end.

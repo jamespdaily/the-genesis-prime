@@ -4,15 +4,17 @@
 //// dashboards must not run, and a key that cannot be kept must not be
 //// served) and the listener's rule (the loopback address only).
 
+import dashboard_otp_log_support as otp_support
 import dashboard_support
 import event_wait
 import frame_peer
 import genesis_prime/dashboard
 import genesis_prime/dashboard/access
+import genesis_prime/dashboard/container_follow
 import genesis_prime/dashboard/follow
 import genesis_prime/dashboard/host
 import genesis_prime/dashboard/host_reading.{type Reading}
-import genesis_prime/dashboard/log_lines.{LaunchdLog, UpdaterLog}
+import genesis_prime/dashboard/log_lines
 import genesis_prime/dashboard/overview.{Model}
 import genesis_prime/dashboard/secret
 import gleam/bit_array
@@ -604,25 +606,6 @@ pub fn the_logs_page_follows_the_updater_log_and_launchds_log_through_a_browsers
   dashboard_support.close(bare_socket)
 }
 
-/// Waits until both followers have told the watcher they dropped a subscriber.
-fn both_dropped(
-  watcher watcher: process.Subject(follow.Event),
-  updater_seen updater_seen: Bool,
-  launchd_seen launchd_seen: Bool,
-) -> Nil {
-  use <- bool.guard(when: updater_seen && launchd_seen, return: Nil)
-  case open_wait.received(from: watcher, what: "a follower's report") {
-    follow.SubscriberDropped(UpdaterLog) ->
-      both_dropped(watcher:, updater_seen: True, launchd_seen:)
-    follow.SubscriberDropped(LaunchdLog) ->
-      both_dropped(watcher:, updater_seen:, launchd_seen: True)
-    follow.ReadMade(_)
-    | follow.SubscriberDropped(log_lines.ServerLog)
-    | follow.SubscriberDropped(log_lines.DatabaseLog) ->
-      both_dropped(watcher:, updater_seen:, launchd_seen:)
-  }
-}
-
 pub fn closing_the_logs_socket_ends_its_runtime_and_the_followers_reads_test() -> Nil {
   use <- owned_test.run(120_000)
   use home <- dashboard_support.with_home
@@ -641,9 +624,10 @@ pub fn closing_the_logs_socket_ends_its_runtime_and_the_followers_reads_test() -
   let _first = frames_holding(socket, ["one", "alpha"])
   assert dashboard.runtime_count(running) == 1
 
-  // Closed: the runtime ends and both followers drop their subscriber.
+  // Closed: the runtime ends and every follower, the containers' included, drops
+  // its subscriber.
   dashboard_support.close(socket)
-  both_dropped(watcher:, updater_seen: False, launchd_seen: False)
+  all_dropped(watcher:, seen: [])
   event_wait.until("the logs runtime to end", fn() {
     dashboard.runtime_count(running) == 0
   })
@@ -685,5 +669,308 @@ pub fn a_dead_follower_takes_the_log_runtimes_with_it_and_a_new_tab_is_served_te
   let second = opened_socket_at(port: settings.port, key:, route: "logs-ws")
   let _second = frames_holding(second, ["one", "alpha"])
   assert dashboard.runtime_count(running) == 1
+
+  // A container's follower dies: the same, and the tab after it is served.
+  let assert Ok(container_pid) = process.subject_owner(running.server_log)
+  process.kill(container_pid)
+  assert dashboard_support.closes(second) as "the page's socket stayed open"
+  let third = opened_socket_at(port: settings.port, key:, route: "logs-ws")
+  let _third = frames_holding(third, ["one", "alpha"])
+  assert dashboard.runtime_count(running) == 1
+  dashboard_support.close(third)
+}
+
+// ---------------------------------------------------------------------------
+// The containers' logs, read through a fake `podman`.
+
+/// The second the fake `podman` prints before every line it logs first.
+const log_second = "2026-11-20T09:10:12-05:00"
+
+/// The id of the server's container, and of the container that replaced it.
+const first_id =
+  "1111111111111111111111111111111111111111111111111111111111111111"
+
+const second_id =
+  "2222222222222222222222222222222222222222222222222222222222222222"
+
+/// The lines as `podman logs --timestamps` prints them, each after `second`.
+fn logged(lines lines: List(String), second second: String) -> String {
+  list.map(lines, fn(line) { second <> " " <> line <> "\n" })
+  |> string.concat
+}
+
+/// A scene whose `podman` knows both containers: the server's log is the
+/// captures of an OTP crash and of a pgo crash that prints the password, the
+/// database's the captured sample of Postgres' log. Gives the dashboard's
+/// settings, reading through that `podman`.
+fn with_containers(body body: fn(support.Scene, dashboard.Settings) -> a) -> a {
+  use scene <- support.with_scene
+  let podman = support.plant_podman(scene)
+  support.plant_identity(scene:, name: support.server_container, id: first_id)
+  support.plant_container_log(
+    scene:,
+    name: support.server_container,
+    text: logged(
+      lines: list.append(
+        otp_support.capture("c2_progress_crash_supervisor_plain.txt"),
+        otp_support.capture("c5b_pgo_crash_long_password_wraps.txt"),
+      ),
+      second: log_second,
+    ),
+  )
+  support.plant_identity(scene:, name: support.database_container, id: first_id)
+  support.plant_container_log(
+    scene:,
+    name: support.database_container,
+    text: logged(
+      lines: otp_support.capture("c4_postgres_container_sample.txt"),
+      second: log_second,
+    ),
+  )
+  body(
+    scene,
+    dashboard.Settings(
+      ..dashboard_support.settings(scene.home),
+      podman_path: podman,
+    ),
+  )
+}
+
+/// The planted password of the capture of a pgo crash.
+const planted_password =
+  "ZZ0123456789abcdefghijklmnopqrstuvwxyzQQ0123456789abcdefghijklmnopqrstuvwxyzQQ0123456789abcdefgZZ"
+
+/// A list item of the page as the frames hold it: the rest of its text after
+/// the words that were looked for, and its role.
+type Item {
+  Item(rest_of_text: String, role: String)
+}
+
+/// Each list item whose text holds `words`. The frames hold the page's elements
+/// as JSON, an element's text before its class.
+fn items_holding(frames: String, words: String) -> List(Item) {
+  string.split(frames, words)
+  |> list.drop(1)
+  |> list.map(fn(after) {
+    let assert Ok(#(rest_of_text, after_text)) =
+      string.split_once(after, "\",\"kind\":2}")
+      as "an item's text ends with its node"
+    let assert Ok(#(_, after_class)) =
+      string.split_once(after_text, "\"value\":\"line role-")
+      as "an item's class follows its text"
+    let assert Ok(#(role, _)) = string.split_once(after_class, " ")
+    Item(rest_of_text:, role:)
+  })
+}
+
+pub fn the_logs_page_shows_the_two_containers_through_a_browsers_socket_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use scene, settings <- with_containers
+  let running = started(settings)
+  let key = dashboard_support.written_key(home: settings.genesis_home)
+  let socket = opened_socket_at(port: settings.port, key:, route: "logs-ws")
+
+  // The frames hold the four sources, the containers by the call that shows
+  // them, and the lines of both containers.
+  let first =
+    frames_holding(socket, [
+      "Updater log",
+      "launchd log",
+      "Server log",
+      "Database log",
+      "podman logs genesis-play",
+      "podman logs genesis-play-postgres",
+      "=CRASH REPORT====",
+      "creature2_id",
+      "[hidden]",
+    ])
+
+  // The server's crash reports are each one entry, in the role of a failure.
+  let crashes = items_holding(first, "=CRASH REPORT====")
+  assert list.length(crashes) == 3 as "the three crash reports are three items"
+  list.each(crashes, fn(crash) {
+    assert crash.role == "bad" as "a crash report is in the role of a failure"
+    assert string.contains(crash.rest_of_text, "crasher:")
+      as "a crash report is one item with its body"
+  })
+
+  // The database's ERROR line is a failure, and its LOG lines are not.
+  assert list.map(items_holding(first, "] ERROR:  column"), fn(item) {
+      item.role
+    })
+    == ["bad"]
+  assert list.map(items_holding(first, "] LOG:  checkpoint starting"), fn(item) {
+      item.role
+    })
+    == ["text"]
+
+  // The planted password is in no frame the page was sent.
+  assert !string.contains(first, planted_password)
+    as "the password reached a frame"
+
+  // A line the container logs later arrives once.
+  support.plant_container_log(
+    scene:,
+    name: support.server_container,
+    text: logged(
+      lines: list.append(
+        otp_support.capture("c2_progress_crash_supervisor_plain.txt"),
+        otp_support.capture("c5b_pgo_crash_long_password_wraps.txt"),
+      ),
+      second: log_second,
+    )
+      <> "2026-11-20T09:10:30-05:00 a line logged later\n",
+  )
+  container_follow.read_now(running.server_log)
+  let later = frames_holding(socket, ["a line logged later"])
+  assert string.split(later, "a line logged later") |> list.length == 2
+    as "the line came once"
+  assert !string.contains(later, planted_password)
+  dashboard_support.close(socket)
+}
+
+pub fn a_podman_that_goes_away_and_returns_is_shown_stale_with_its_reason_and_then_fresh_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use scene, settings <- with_containers
+  let running = started(settings)
+  let key = dashboard_support.written_key(home: settings.genesis_home)
+  let first = opened_socket_at(port: settings.port, key:, route: "logs-ws")
+  let _lines = frames_holding(first, ["creature2_id", "=CRASH REPORT===="])
+
+  // Podman is not reachable: a frame with the reason, and a page opened now
+  // shows the lines the follower kept, dimmed.
+  support.plant_unreachable(scene:, name: support.server_container)
+  container_follow.read_now(running.server_log)
+  let _reason =
+    frames_holding(first, [
+      "Podman is not reachable",
+      "unable to connect to Podman socket",
+    ])
+  let second = opened_socket_at(port: settings.port, key:, route: "logs-ws")
+  let kept =
+    frames_holding(second, [
+      "Podman is not reachable",
+      "=CRASH REPORT====",
+      "stale",
+    ])
+  assert string.contains(kept, "role-warn")
   dashboard_support.close(second)
+
+  // Podman answers again, and a line was logged meanwhile: it comes once, and
+  // a page opened now shows no reason and no dimming.
+  support.plant_identity(scene:, name: support.server_container, id: first_id)
+  support.plant_container_log(
+    scene:,
+    name: support.server_container,
+    text: logged(
+      lines: list.append(
+        otp_support.capture("c2_progress_crash_supervisor_plain.txt"),
+        otp_support.capture("c5b_pgo_crash_long_password_wraps.txt"),
+      ),
+      second: log_second,
+    )
+      <> "2026-11-20T09:10:31-05:00 logged meanwhile\n",
+  )
+  container_follow.read_now(running.server_log)
+  let back = frames_holding(first, ["logged meanwhile"])
+  assert string.split(back, "logged meanwhile") |> list.length == 2
+    as "the line logged meanwhile came once"
+  let third = opened_socket_at(port: settings.port, key:, route: "logs-ws")
+  let fresh = frames_holding(third, ["logged meanwhile", "=CRASH REPORT===="])
+  assert !string.contains(fresh, "Podman is not reachable")
+  assert !string.contains(fresh, "stale")
+  dashboard_support.close(third)
+
+  // The container was replaced: a frame with the mark, then its lines.
+  support.plant_identity(scene:, name: support.server_container, id: second_id)
+  support.plant_container_log(
+    scene:,
+    name: support.server_container,
+    text: logged(lines: ["the new container's line"], second: log_second),
+  )
+  container_follow.read_now(running.server_log)
+  let replaced =
+    frames_holding(first, [
+      "the container was replaced",
+      "the new container's line",
+    ])
+  assert !string.contains(replaced, planted_password)
+  dashboard_support.close(first)
+}
+
+/// Waits until every follower of the four sources has told the watcher it
+/// dropped a subscriber.
+fn all_dropped(
+  watcher watcher: process.Subject(follow.Event),
+  seen seen: List(log_lines.Source),
+) -> Nil {
+  use <- bool.guard(when: list.length(seen) == 4, return: Nil)
+  case open_wait.received(from: watcher, what: "a follower's report") {
+    follow.SubscriberDropped(source) ->
+      all_dropped(watcher:, seen: list.unique([source, ..seen]))
+    follow.ReadMade(_) -> all_dropped(watcher:, seen:)
+  }
+}
+
+pub fn closing_the_logs_socket_stops_the_podman_calls_and_leaves_no_process_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use scene, settings <- with_containers
+  let watcher = process.new_subject()
+  let settings = dashboard.Settings(..settings, log_watcher: Some(watcher))
+  let running = started(settings)
+  let key = dashboard_support.written_key(home: settings.genesis_home)
+  let socket = opened_socket_at(port: settings.port, key:, route: "logs-ws")
+  let _first =
+    frames_holding(socket, [
+      "creature2_id",
+      "=CRASH REPORT====",
+    ])
+
+  // Closed: every follower drops its subscriber, and a read asked for after
+  // that makes no call of podman.
+  dashboard_support.close(socket)
+  all_dropped(watcher:, seen: [])
+  let before = support.calls(scene)
+  assert before != [] as "the page's reads called podman"
+  container_follow.read_now(running.server_log)
+  container_follow.read_now(running.database_log)
+  assert container_follow.subscriber_count(running.server_log) == 0
+  assert container_follow.subscriber_count(running.database_log) == 0
+  assert support.calls(scene) == before
+    as "a follower called podman with no page open"
+
+  // A `logs` call that blocks when the socket closes is ended by the read's
+  // deadline, and is gone when its process id is dead. The dashboard of this part
+  // ends a call after the test's own 5 s, long enough for the fake's other calls
+  // (0.15 s) under load.
+  let settings =
+    dashboard.Settings(
+      ..settings,
+      port: dashboard_support.free_port(),
+      container_call_deadline_ms: 5000,
+    )
+  let _second = started(settings)
+  let key = dashboard_support.written_key(home: settings.genesis_home)
+  support.plant_block(
+    scene:,
+    key: support.container_log(support.server_container),
+  )
+  let blocked = opened_socket_at(port: settings.port, key:, route: "logs-ws")
+  event_wait.until("the blocked call to record its process id", fn() {
+    support.blocked_pids(
+      scene:,
+      key: support.container_log(support.server_container),
+    )
+    != []
+  })
+  dashboard_support.close(blocked)
+  all_dropped(watcher:, seen: [])
+  let assert [pid, ..] =
+    support.blocked_pids(
+      scene:,
+      key: support.container_log(support.server_container),
+    )
+  event_wait.until("the blocked call to be ended by its deadline", fn() {
+    !support.alive(pid)
+  })
 }
