@@ -7,16 +7,25 @@
 ////
 //// - The upgrade reaches this module only after the gate allowed it
 ////   (`web.handle`), so a refused handshake starts no runtime.
-//// - A tab's runtime is started under the page's factory supervisor when the
-////   socket opens and stopped when it closes, so tabs share nothing. The
-////   socket is the same for every page: the page's message type and the
-////   argument its runtime starts with are the caller's.
+//// - A tab's runtime is started under the page's factory supervisor before the
+////   handshake is answered and stopped when the socket closes, so tabs share
+////   nothing. A start that fails, or whose factory ends during the ask, is a
+////   503 for the caller to answer, and a handshake mist refuses stops the
+////   runtime. The socket is the same for every page: the page's message type
+////   and the argument its runtime starts with are the caller's.
+//// - Mist ends a socket whose init takes over 500 ms with an HTTP answer after
+////   the 101. The init is only constant work in the socket's own process: it
+////   makes a subject, sends the runtime one message, monitors the runtime and
+////   builds a selector, beside mist's own set-up of the compression state of a
+////   permessage-deflate handshake. None of it receives, calls or waits for
+////   another process, so only a stall of the whole machine can make it late.
 //// - The socket monitors its runtime: a runtime that ends (the supervisor
 ////   rebuilds the page runtimes together with what they follow) closes the socket
 ////   with an abnormal end, so the tab's client reconnects and gets a new one.
 //// - A text frame that is not a runtime message ends the connection, as a
 ////   reader that refuses a frame does.
 
+import exception
 import gleam/erlang/process.{type Subject}
 import gleam/http/request.{type Request}
 import gleam/http/response.{type Response}
@@ -25,6 +34,7 @@ import gleam/json
 import gleam/list
 import gleam/option.{Some}
 import gleam/otp/factory_supervisor
+import gleam/result
 import lustre
 import lustre/server_component
 import mist.{type Connection, type ResponseData}
@@ -54,37 +64,59 @@ type Socket(message) {
   )
 }
 
-/// Upgrades the request to a websocket whose runtime is started in
-/// `runtimes`, with the `argument` the page subscribes by.
+/// Starts the page's runtime in `runtimes` with the `argument` the page
+/// subscribes by, then upgrades the request to a websocket on it. The runtime
+/// starts before the handshake is answered, so a start that is slow or fails is
+/// the handshake's answer and never a failure after the upgrade. The error is
+/// that the runtime did not start: the factory returned an error, or it was
+/// gone or ended while the ask waited, which makes the asking process exit.
 pub fn upgrade(
   request request: Request(Connection),
   runtimes runtimes: Runtimes(argument, message),
   argument argument: argument,
-) -> Response(ResponseData) {
-  mist.websocket(
-    request:,
-    on_init: fn(_connection) {
-      let assert Ok(started) =
+) -> Result(Response(ResponseData), Nil) {
+  use started <- result.try(
+    case
+      exception.rescue(fn() {
         factory_supervisor.start_child(runtimes, argument)
-        as "the page's runtime did not start"
-      let client = process.new_subject()
-      process.send(started.data, server_component.register_subject(client))
-      let _monitor = process.monitor(started.pid)
-      let selector =
-        process.new_selector()
-        |> process.select_map(client, FromRuntime)
-        |> process.select_monitors(fn(_down) { RuntimeEnded })
-      #(Socket(runtime: started.data, client:), Some(selector))
-    },
-    handler: handle,
-    on_close: fn(socket: Socket(message)) {
-      process.send(
-        socket.runtime,
-        server_component.deregister_subject(socket.client),
-      )
-      process.send(socket.runtime, lustre.shutdown())
+      })
+    {
+      Ok(Ok(started)) -> Ok(started)
+      Ok(Error(_)) | Error(_) -> Error(Nil)
     },
   )
+  let response =
+    mist.websocket(
+      request:,
+      on_init: fn(_connection) {
+        // Runs under mist's 500 ms limit: only the constant work the module
+        // lists. A send to a runtime that has ended is dropped and the monitor
+        // of one answers at once, which closes the socket.
+        let client = process.new_subject()
+        process.send(started.data, server_component.register_subject(client))
+        let _monitor = process.monitor(started.pid)
+        let selector =
+          process.new_selector()
+          |> process.select_map(client, FromRuntime)
+          |> process.select_monitors(fn(_down) { RuntimeEnded })
+        #(Socket(runtime: started.data, client:), Some(selector))
+      },
+      handler: handle,
+      on_close: fn(socket: Socket(message)) {
+        process.send(
+          socket.runtime,
+          server_component.deregister_subject(socket.client),
+        )
+        process.send(socket.runtime, lustre.shutdown())
+      },
+    )
+  // A body that is not the websocket is mist's refusal of the handshake: no
+  // socket is left to serve, so the runtime is stopped.
+  case response.body {
+    mist.Websocket -> Nil
+    _refused -> process.send(started.data, lustre.shutdown())
+  }
+  Ok(response)
 }
 
 fn handle(
