@@ -175,8 +175,8 @@ pub type Command {
   Mode(mode: Int)
   /// Kind 3, the ForcedMove flight's timed path, with the three values the
   /// client writes as fixed (opcode.0x637.kinds_3_to_6). Its points and times
-  /// are not read: the count of points is the wire's 1 to 1023 and the server
-  /// does not use the path.
+  /// are not read: the client writes 1 to 1023 points, the wire holds 0 to
+  /// 1023 and a count of 0 is not refused.
   Kind3(path_type: Int, time_offset: Int, blends: Int)
   /// Kind 10, the velocity that follows the path, with its blend bit
   /// (opcode.0x637.kinds_10_13).
@@ -706,7 +706,7 @@ pub fn gaps() -> List(gap.Entry) {
   [
     gap.Entry(
       area: "Movement",
-      missing: "A 0x637 is not refused for a kind 0 time too far before the message's clock, a per-frame yaw outside one turn, a count of 0 keys in kind 3 or kind 25, or kind 20's turn rate of 0: the client's records do not settle them (a tiny turn rate can round to 0 in the half float the client writes).",
+      missing: "A 0x637 is not refused for a kind 0 time too far before the message's clock, a per-frame yaw outside one turn, a count of 0 points in kind 3 or 0 keys in kind 25, or kind 20's turn rate of 0: the client's records do not settle them (a tiny turn rate can round to 0 in the half float the client writes).",
     ),
     gap.Entry(
       area: "Movement",

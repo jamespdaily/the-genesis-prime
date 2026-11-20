@@ -27,10 +27,9 @@
 
 import character_support
 import genesis_prime/game/movement.{
-  type Command, type Refusal, type State, BelowTheWorld, Fault, Kind10, Kind13,
-  Kind18, Kind20, Kind25, Kind3, Mode, Moves, NotFinite, Note, Other, Position,
-  Rotation, Standing, StateFlags, UnknownMode, UnknownSpeedSetting,
-  UnknownStateFlags, Unsent, UnsentKind, UnwrittenValue,
+  type Command, type Refusal, type State, BelowTheWorld, Fault, Mode, Moves,
+  NotFinite, Note, Other, Position, Rotation, Standing, StateFlags, UnknownMode,
+  UnknownSpeedSetting, UnknownStateFlags, Unsent, UnsentKind, UnwrittenValue,
 }
 import genesis_prime/game/start_place.{type Facing, Facing}
 import genesis_prime/message/float32
@@ -579,42 +578,93 @@ pub fn a_command_kind_the_clients_code_never_sends_is_refused_test() -> Nil {
   })
 }
 
-/// What the one command does to the entered player.
-fn alone(command: Command) -> Result(State, Refusal) {
-  moved(state: entered(), commands: [command])
+/// What the entered player's movement makes of one decoded command, taken
+/// through `movement.moves` as the connection takes a 0x637, so each field of
+/// the record reaches the rule in its own place.
+fn alone(command: MovementCommand) -> Result(State, Refusal) {
+  let moves =
+    movement.moves(PlayerMovement(client_clock: 0x1234, commands: [command]))
+  movement.moved(state: entered(), moves:)
+}
+
+/// A kind 3 of `points` points, whose times and points the rule does not read.
+fn flight_path(
+  points points: Int,
+  path_type path_type: Int,
+  time_offset time_offset: Int,
+  blends blends: Int,
+) -> MovementCommand {
+  movement_command.Kind3(MovementKind3(
+    times: list.repeat(1, points),
+    points: list.repeat(MovementFloatVector(x: 0, y: 0, z: 0), points),
+    path_type:,
+    time_offset:,
+    blends:,
+  ))
+}
+
+/// A kind 25 with one key for each flags word given, at the time offset given.
+fn timed_flags(
+  state_flags state_flags: List(Int),
+  time_offset time_offset: Int,
+) -> MovementCommand {
+  movement_command.Kind25(MovementKind25(
+    times: list.map(state_flags, fn(_) { 1 }),
+    state_flags:,
+    time_offset:,
+  ))
+}
+
+/// A kind 20 whose yaw, pitch and duration are values the rule does not read
+/// and that differ from each other and from the three it checks.
+fn spin(
+  roll roll: Int,
+  time_offset time_offset: Int,
+  blends blends: Int,
+  turn_rate turn_rate: Int,
+) -> MovementCommand {
+  movement_command.Kind20(MovementKind20(
+    yaw: 0x3F800000,
+    pitch: 0x3F000001,
+    roll:,
+    duration_ms: 1500,
+    turn_rate:,
+    time_offset:,
+    blends:,
+  ))
 }
 
 pub fn a_flight_path_with_a_value_the_client_never_writes_is_refused_test() -> Nil {
   use <- owned_test.run(5000)
   let rows = [
     #(
-      Kind3(path_type: 1, time_offset: 0, blends: 0),
+      flight_path(points: 2, path_type: 1, time_offset: 0, blends: 0),
       UnwrittenValue(kind: 3, field: "path type", value: 1),
       "opcode.0x637.kinds_3_to_6: the flight's path type is 0",
     ),
     #(
-      Kind3(path_type: 0, time_offset: 1, blends: 0),
-      UnwrittenValue(kind: 3, field: "time offset", value: 1),
+      flight_path(points: 2, path_type: 0, time_offset: 7, blends: 0),
+      UnwrittenValue(kind: 3, field: "time offset", value: 7),
       "opcode.0x637.kinds_3_to_6: the flight's time offset is 0",
     ),
     #(
-      Kind3(path_type: 0, time_offset: 0, blends: 1),
+      flight_path(points: 2, path_type: 0, time_offset: 0, blends: 1),
       UnwrittenValue(kind: 3, field: "blend", value: 1),
       "opcode.0x637.kinds_3_to_6: the flight's blend bit is 0",
     ),
     #(
-      Kind25(state_flags: [0x100, 0x4], time_offset: 0),
+      timed_flags(state_flags: [0x100, 0x4], time_offset: 0),
       UnwrittenValue(kind: 25, field: "state flags", value: 0x4),
       "opcode.0x637.kind_25: 0x4 is a flag a kind 24 holds, and none of the four words kind 25 writes",
     ),
     #(
-      Kind25(state_flags: [0x10C], time_offset: 0),
+      timed_flags(state_flags: [0x10C], time_offset: 0),
       UnwrittenValue(kind: 25, field: "state flags", value: 0x10C),
       "opcode.0x637.kind_25: 0x100 and 0xc together mix two of the words: the words are a set, not a mask",
     ),
     #(
-      Kind25(state_flags: [0x100], time_offset: 1),
-      UnwrittenValue(kind: 25, field: "time offset", value: 1),
+      timed_flags(state_flags: [0x100], time_offset: 7),
+      UnwrittenValue(kind: 25, field: "time offset", value: 7),
       "opcode.0x637.kind_25: the flags' time offset is 0",
     ),
   ]
@@ -628,32 +678,32 @@ pub fn a_follow_path_face_unit_or_spin_with_a_value_the_client_never_writes_is_r
   use <- owned_test.run(5000)
   let rows = [
     #(
-      Kind10(blends: 1),
+      movement_command.Kind10(MovementKind10(blends: 1)),
       UnwrittenValue(kind: 10, field: "blend", value: 1),
       "opcode.0x637.kinds_10_13: the bit is always 0",
     ),
     #(
-      Kind13(blends: 1),
+      movement_command.Kind13(MovementKind13(blends: 1)),
       UnwrittenValue(kind: 13, field: "blend", value: 1),
       "opcode.0x637.kinds_10_13: the bit is always 0",
     ),
     #(
-      Kind18(blends: 0),
+      movement_command.FaceUnit(MovementFaceUnit(unit_id: 9, blends: 0)),
       UnwrittenValue(kind: 18, field: "blend", value: 0),
       "opcode.0x637.kind_18: the bit is always 1",
     ),
     #(
-      Kind20(roll: 0x3F800000, time_offset: 0, blends: 0),
-      UnwrittenValue(kind: 20, field: "roll", value: 0x3F800000),
+      spin(roll: 0x3F000002, time_offset: 0, blends: 0, turn_rate: 5),
+      UnwrittenValue(kind: 20, field: "roll", value: 0x3F000002),
       "opcode.0x637.kind_20: DirectionToEulerAngles' roll is 0",
     ),
     #(
-      Kind20(roll: 0, time_offset: 1, blends: 0),
-      UnwrittenValue(kind: 20, field: "time offset", value: 1),
+      spin(roll: 0, time_offset: 7, blends: 0, turn_rate: 5),
+      UnwrittenValue(kind: 20, field: "time offset", value: 7),
       "opcode.0x637.kind_20: the offset is 0",
     ),
     #(
-      Kind20(roll: 0, time_offset: 0, blends: 1),
+      spin(roll: 0, time_offset: 0, blends: 1, turn_rate: 5),
       UnwrittenValue(kind: 20, field: "blend", value: 1),
       "opcode.0x637.kind_20: the bit is 0",
     ),
@@ -667,33 +717,17 @@ pub fn a_follow_path_face_unit_or_spin_with_a_value_the_client_never_writes_is_r
 /// One of each command the client sends, in the form it writes it, as a
 /// decoded 0x637 holds it, with what the row is.
 fn sent_forms() -> List(#(String, MovementCommand)) {
-  let float = MovementFloatVector(x: 0, y: 0, z: 0)
   let flight = fn(points) {
-    movement_command.Kind3(MovementKind3(
-      times: list.repeat(1, points),
-      points: list.repeat(float, points),
-      path_type: 0,
-      time_offset: 0,
-      blends: 0,
-    ))
+    flight_path(points:, path_type: 0, time_offset: 0, blends: 0)
   }
   let flags = fn(keys, words) {
-    movement_command.Kind25(MovementKind25(
-      times: list.repeat(1, keys),
+    timed_flags(
       state_flags: list.take(list.flatten(list.repeat(words, keys)), keys),
       time_offset: 0,
-    ))
+    )
   }
-  let spin = fn(turn_rate) {
-    movement_command.Kind20(MovementKind20(
-      yaw: 0x3F800000,
-      pitch: 0x3F000000,
-      roll: 0,
-      duration_ms: 1500,
-      turn_rate:,
-      time_offset: 0,
-      blends: 0,
-    ))
+  let turning = fn(turn_rate) {
+    spin(roll: 0, time_offset: 0, blends: 0, turn_rate:)
   }
   [
     #("kind 0", movement_command.Time(MovementTime(time: 0x1335))),
@@ -747,8 +781,8 @@ fn sent_forms() -> List(#(String, MovementCommand)) {
       "kind 18",
       movement_command.FaceUnit(MovementFaceUnit(unit_id: 9, blends: 1)),
     ),
-    #("kind 20 with a turn rate", spin(0x0001)),
-    #("kind 20 with a turn rate of 0", spin(0)),
+    #("kind 20 with a turn rate", turning(0x0001)),
+    #("kind 20 with a turn rate of 0", turning(0)),
     #(
       "kind 24",
       movement_command.StateFlags(MovementStateFlags(flags: 0x3FFFF)),
