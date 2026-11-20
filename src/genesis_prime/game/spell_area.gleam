@@ -55,14 +55,18 @@
 ////   and the shapes of the level-1 trees) and a creature's special (`CreatureReading`: also
 ////   Furthest, Random, rings, crosses, pies and unhalved boxes), so a player's strike
 ////   refuses orders 2 to 5 and shapes 1, 3, 5 and 6.
-//// - **Where a creature special's hit is centred** is its anchor, one for the spell
-////   (`anchor_of`): a hit row is placed on the caster (`targetTypeFlags` 1) or on the cast's
+//// - **Where a hit is centred** is its anchor, one for the spell (`anchor_of`): a hit row is
+////   placed on the caster (`targetTypeFlags` 1) or, for a creature's special, on the cast's
 ////   target (0 or 2), and drawn where the cast's 0x7ff puts it and stays there (TelegraphDamage
 ////   flag 0x4000 or 0x1000: `FixedAtCaster`, `FixedAtTarget`) or follows its unit
-////   (`FollowsCaster`, `FollowsTarget`). A spell whose rows, or whose hit twin and drawn
-////   row, are not placed alike is refused (`PlacedApart`), so the hit is always where the
+////   (`FollowsCaster`, `FollowsTarget`). A creature special whose rows, or whose hit twin and
+////   drawn row, are not placed alike is refused (`PlacedApart`), so the hit is always where the
 ////   picture is (`0x140546e60.placement_branches`, `0x14054b1b0.fixed_placement`,
-////   `0x14054b1b0.follows_caster`). A player's cast keeps the caster's pose for every row.
+////   `0x14054b1b0.follows_caster`). A player's row placed at the position the cast holds
+////   (`targetTypeFlags` 8) is `FixedAtCaster` whatever its flags: the client stores that
+////   position and yaw once, when the cast starts (`0x14053a210.held_position`). A player's hit
+////   rows alone decide the anchor, and a spell with none is `FollowsTarget`, struck around
+////   its primary target.
 //// - **Which spells** are read: the spells of each level-1 ability's tree
 ////   (genesis_prime/game/spell_plan), its threshold stages (Spell4Thresholds) included,
 ////   a Proxy behind a target prerequisite excepted, since it is never started. A spell
@@ -70,9 +74,10 @@
 //// - **What fails the load:** a row the tree names that the tables lack; a
 ////   `targetSelection` other than 1 (a creature's: other than 1 to 3, with 4 and 5 named by
 ////   `SelectionNeedsHealth`); a valid-targets bitmask other than 0 on a spell
-////   with an area row; a hit row placed on any unit but the caster (`targetTypeFlags`
-////   other than 1; for a creature other than 0 to 2: `TelegraphOnStruckUnits` for bit 4, else
-////   `TelegraphNotOnCaster`); a creature special's rows placed apart (`PlacedApart`); a shape
+////   with an area row; a hit row placed on anything but the caster and the held position
+////   (`targetTypeFlags` other than 1 and 8; for a creature other than 0 to 2:
+////   `TelegraphOnStruckUnits` for bit 4, else `TelegraphNotOnCaster`); a spell's hit rows placed
+////   apart (`PlacedApart`); a shape
 ////   the rule does not build (for a player 1, 3, 5, 6, or 8 with
 ////   a box that has a width or a length: the box's height, p4, is never tested; for a
 ////   creature 8 with such a box alone); a damage effect
@@ -201,6 +206,9 @@ pub type SpellArea {
     /// rows without bit 0x20 (all of them when each has it). Empty for a spell with no
     /// telegraph row.
     shapes: List(Placement),
+    /// Where the hit is centred, one for the spell, from its hit rows (`anchor_of`):
+    /// `FollowsTarget` for a spell with none, which strikes around its primary target.
+    anchor: Anchor,
     /// Every damage effect of the spell that strikes once, each with its tag.
     damage: List(DamageEffect),
     /// Every periodic damage effect of the spell, each with its schedule; a row that
@@ -228,9 +236,9 @@ pub type AreaError {
   SelectionNeedsHealth(spell4_id: Int, target_selection: Int)
   /// A spell's valid targets hold a bit: it would strike the dead or more.
   ValidTargetsNotAlive(spell4_id: Int, target_bitmask: Int)
-  /// A hit row is placed on a unit the reading does not build: for a player's ability any
-  /// but the caster (`targetTypeFlags` other than 1); for a creature's special the ground
-  /// (bit 8) or two units at once (3, 9).
+  /// A hit row is placed on what the reading does not build: for a player's ability anything
+  /// but the caster and the position the cast holds (`targetTypeFlags` other than 1 and 8); for
+  /// a creature's special the ground (bit 8) or two units at once (3, 9).
   TelegraphNotOnCaster(
     spell4_id: Int,
     telegraph_id: Int,
@@ -312,7 +320,7 @@ pub fn describe(error error: AreaError) -> String {
       <> int.to_string(telegraph_id)
       <> " placed by flags "
       <> int.to_string(target_type_flags)
-      <> ", and only the caster (1) is built for a player, the caster and the cast's target (0 to 2) for a creature"
+      <> ", and only the caster (1) and the cast's start position (8) are built for a player, the caster and the cast's target (0 to 2) for a creature"
     TelegraphOnStruckUnits(spell4_id:, telegraph_id:, target_type_flags:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -526,12 +534,19 @@ fn area_of(
     id:,
     reading: PlayerReading,
   ))
+  use anchor <- result.try(anchor_of(
+    tables:,
+    links:,
+    id:,
+    reading: PlayerReading,
+  ))
   use #(damage, ticking) <- result.try(damage_effects_of(tables:, effects:, id:))
   let area =
     SpellArea(
       spell4_id: spell.spell4_id,
       row: area_row,
       shapes:,
+      anchor:,
       damage:,
       ticking:,
       spell:,
@@ -701,31 +716,35 @@ fn hit_rows_among(
   }
 }
 
-/// The unit a row the reading builds is placed on.
+/// What a row the reading builds is placed on: the caster, the cast's target or, for a
+/// player, the position and facing the cast holds from its start.
 type Role {
   OnTheCaster
   OnTheTarget
+  OnTheStart
 }
 
-/// The unit a row is placed on, or `Error(Nil)` for flags the reading builds no anchor for:
-/// the caster for 1, and for a creature the cast's target for 0 and 2
-/// (`0x140546e60.placement_branches`: the client-placed target is the cast's unit when the
-/// flags are 0 or have bit 2).
+/// What a row is placed on, or `Error(Nil)` for flags the reading builds no anchor for: the
+/// caster for 1, the position the cast holds for 8 (a player's only), and for a creature the
+/// cast's target for 0 and 2 (`0x140546e60.placement_branches`: the client-placed target is the
+/// cast's unit when the flags are 0 or have bit 2).
 fn role_of(
   target_type_flags target_type_flags: Int,
   reading reading: Reading,
 ) -> Result(Role, Nil) {
   case reading, target_type_flags {
     PlayerReading, 1 | CreatureReading, 1 -> Ok(OnTheCaster)
+    PlayerReading, 8 -> Ok(OnTheStart)
     CreatureReading, 0 | CreatureReading, 2 -> Ok(OnTheTarget)
     PlayerReading, _ | CreatureReading, _ -> Error(Nil)
   }
 }
 
-/// The unit a hit row is placed on, or the refusal of a row the reading does not build: for a
+/// What a hit row is placed on, or the refusal of a row the reading does not build: for a
 /// creature a row on each struck unit (bit 4) is refused by name, since the cast cannot know
 /// them when it starts, and the ground (bit 8) or two units at once (3, 9) as not on the
-/// caster; for a player any unit but the caster (`0x140546e60.placement_branches`).
+/// caster; for a player anything but the caster and the position the cast holds
+/// (`0x140546e60.placement_branches`).
 fn placed_on_a_unit_built(
   id id: Int,
   row row: telegraph_damage.TelegraphDamage,
@@ -752,14 +771,16 @@ fn placed_on_a_unit_built(
   }
 }
 
-/// The anchor one creature row gives: its unit, and fixed where the 0x7ff puts it (flag
-/// 0x4000 or 0x1000) or following the unit each frame (`0x14054b1b0.fixed_placement`,
-/// `0x14054b1b0.follows_caster`).
+/// The anchor one row gives: its unit, and fixed where the 0x7ff puts it (flag 0x4000 or
+/// 0x1000) or following the unit each frame (`0x14054b1b0.fixed_placement`,
+/// `0x14054b1b0.follows_caster`); a row at the position the cast holds is fixed whatever its
+/// placing flags (`0x14053a210.held_position`).
 fn anchor_of_row(
   row row: telegraph_damage.TelegraphDamage,
   role role: Role,
 ) -> Anchor {
   case role, telegraph_entries.placing_of(flags: row.telegraph_damage_flags) {
+    OnTheStart, _ -> FixedAtCaster
     OnTheCaster, telegraph_entries.OnTheUnit -> FollowsCaster
     OnTheCaster, telegraph_entries.AtInitialPosition
     | OnTheCaster, telegraph_entries.AtTelegraphPosition
@@ -771,44 +792,49 @@ fn anchor_of_row(
   }
 }
 
-/// The anchor a creature's row gives, or the refusal of a row on units the reading does not
-/// build (`placed_on_a_unit_built`).
+/// The anchor a row gives, or the refusal of a row on units the reading does not build
+/// (`placed_on_a_unit_built`).
 fn anchored(
   id id: Int,
   row row: telegraph_damage.TelegraphDamage,
+  reading reading: Reading,
 ) -> Result(Anchor, AreaError) {
-  use role <- result.map(placed_on_a_unit_built(
-    id:,
-    row:,
-    reading: CreatureReading,
-  ))
+  use role <- result.map(placed_on_a_unit_built(id:, row:, reading:))
   anchor_of_row(row:, role:)
 }
 
-/// Where the hit rows of a creature's spell `id` are drawn, so where its hit is centred: the
-/// anchor its rows give (`anchor_of_row`), `FollowsCaster` for a spell with none. When the hit
-/// rows give different anchors, or a hit twin (flag 0x40, never drawn) gives another than the
-/// rows the client draws (`telegraph_entries.drawn_rows`), no one centre is where the picture
-/// is: `PlacedApart` names the first hit row and the first row that differs from it. A drawn
-/// row beside a twin is refused like a hit row when it is on units the reading does not build.
+/// Where the hit rows of the spell `id` are drawn, so where its hit is centred: the anchor its
+/// rows give (`anchor_of_row`), for a spell with none `FollowsCaster` for a creature's and
+/// `FollowsTarget` for a player's (the primary target, as a spell with no hit row strikes
+/// around it). When the hit rows give different anchors, no one centre is where the picture is:
+/// `PlacedApart` names the first hit row and the first row that differs from it. A creature's
+/// hit twin (flag 0x40, never drawn) must also give the anchor of the rows the client draws
+/// (`telegraph_entries.drawn_rows`), and a drawn row beside a twin is refused like a hit row
+/// when it is on units the reading does not build; a player's drawn rows are not compared with
+/// its hit rows (`gaps`).
 fn anchor_of(
   tables tables: table_store.Tables,
   links links: Dict(Int, List(spell4_telegraph.Spell4Telegraph)),
   id id: Int,
+  reading reading: Reading,
 ) -> Result(Anchor, AreaError) {
   let linked = linked_rows_of(tables:, links:, id:)
   let hit_rows = hit_rows_among(rows: linked)
   case hit_rows {
-    [] -> Ok(FollowsCaster)
+    [] ->
+      Ok(case reading {
+        PlayerReading -> FollowsTarget
+        CreatureReading -> FollowsCaster
+      })
     [first, ..] -> {
-      use anchor <- result.try(anchored(id:, row: first))
-      let drawn = case list.any(hit_rows, is_twin) {
-        True -> telegraph_entries.drawn_rows(rows: linked)
-        False -> []
+      use anchor <- result.try(anchored(id:, row: first, reading:))
+      let drawn = case reading, list.any(hit_rows, is_twin) {
+        CreatureReading, True -> telegraph_entries.drawn_rows(rows: linked)
+        CreatureReading, False | PlayerReading, _ -> []
       }
       use others <- result.try(
         list.try_map(list.append(hit_rows, drawn), fn(row) {
-          use found <- result.map(anchored(id:, row:))
+          use found <- result.map(anchored(id:, row:, reading:))
           #(row, found)
         }),
       )
@@ -1177,7 +1203,12 @@ pub fn area_of_spell(
         id:,
         reading: CreatureReading,
       ))
-      use anchor <- result.map(anchor_of(tables:, links:, id:))
+      use anchor <- result.map(anchor_of(
+        tables:,
+        links:,
+        id:,
+        reading: CreatureReading,
+      ))
       Some(CreatureArea(row: area_row, inside: inside_of(shapes:), anchor:))
     }
   }
@@ -1292,11 +1323,19 @@ pub fn gaps() -> List(gap.Entry) {
   [
     gap.Entry(
       area: "Spell telegraphs",
-      missing: "a player's ability whose drawn caster row is placed by the server (two of the planned abilities have one) is sent no initial or telegraph position in its 0x7ff and 0x7fd, so the client draws none of that row; only a creature's special is sent them",
+      missing: "a player's ability whose drawn row is placed by the server (three of the planned abilities have one) is sent no initial or telegraph position in its 0x7ff and 0x7fd, so the client draws none of that row; only a creature's special is sent them",
     ),
     gap.Entry(
       area: "Creature target and ground rows",
-      missing: "a creature's hit row placed on the ground (targetTypeFlags bit 8, 34 listed spells with it alone) or on each unit the strike finds (bit 4, 3 listed spells) is refused, as is one placed on two units at once (flags 3 and 9); a player's ability whose hit row is placed on its target is refused, so a player's strike centres on the caster",
+      missing: "a creature's hit row placed on the ground (targetTypeFlags bit 8, 34 listed spells with it alone) or on each unit the strike finds (bit 4, 3 listed spells) is refused, as is one placed on two units at once (flags 3 and 9); a player's ability whose hit row is placed on its target (flags 0 or 2), on each struck unit (bit 4) or on two units at once is refused, so a player's strike centres on the caster, the cast's start position or the primary target of a spell with no hit row",
+    ),
+    gap.Entry(
+      area: "Player hit rows by anchor",
+      missing: "a player's drawn row placed otherwise than its hit rows is not compared with them, so the picture and the hit disagree when the caster has moved between the start and the go (three planned abilities); a player's strike takes every hit row of the spell at each go, so a cast whose rows differ by phase strikes their union at every go (six planned abilities)",
+    ),
+    gap.Entry(
+      area: "Player held position",
+      missing: "the yaw of a player's row placed at the position the cast holds is the caster's facing yaw, where the client copies its own unit word, which the server does not hold (a guess); a flag-8 row of a child cast on each struck unit is centred on the caster's place when the child starts, where retail may centre it on the struck unit (a guess, one planned ability)",
     ),
     gap.Entry(
       area: "Creature hit rows by go",

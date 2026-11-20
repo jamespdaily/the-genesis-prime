@@ -329,3 +329,62 @@ fn base_of(
     as "a SpellLevel row names a Spell4 row"
   Spell4BaseId(row.spell4_base_id_base_spell)
 }
+
+/// The eight abilities held back only by a hit row placed by flag 8, which the player's
+/// reading builds: Leap, Bum Rush, Unsteady Miasma, Personal Defense Unit, Concentrated
+/// Blade, Fissure, Urgency and Razor Disk (`table_rows -- TelegraphDamage` 3390, 723 to
+/// 724, 10954, 4029, 4081, 2998, 1721 and 2123, each `targetTypeFlags` 8).
+const flag_8_abilities = [
+  32_128, 59_080, 41_484, 44_471, 44_641, 41_843, 41_551, 39_268,
+]
+
+/// The abilities held back by a hit row placed on the cast's target (flags 0 or 2) or by
+/// a row of a spell with another refusal first: Flash Bang, Bio Shell, Telekinetic Storm,
+/// Field Probes, Rapid Fire, Pyrokinetic Flame, Reverie, Mortar Strike and Tether Mine.
+const flag_0_or_2_abilities = [
+  32_320, 41_341, 32_814, 41_398, 35_356, 36_821, 33_181, 41_543, 38_860,
+]
+
+pub fn the_abilities_held_back_only_by_a_flag_8_hit_row_are_planned_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let assert Ok(left_out) =
+    spell_plan.unplanned(tables:, area_checked: spell_area.checker)
+  let unplanned = list.map(left_out, fn(one) { one.spell4_id })
+  list.each(flag_8_abilities, fn(spell4_id) {
+    assert !list.contains(unplanned, spell4_id)
+      as "a flag 8 row is at the position the cast holds, which the player's reading builds"
+    let assert Ok(spell4_row) = spell4.get(tables:, id: Spell4Id(spell4_id))
+      as "the ability is a Spell4 row"
+    assert case
+      spell_plan.in_plans(
+        plans: spell_plan.plans_with_later(tables:),
+        base: Spell4BaseId(spell4_row.spell4_base_id_base_spell),
+      )
+    {
+      Ok(_) -> True
+      Error(Nil) -> False
+    }
+      as "and the plans hold it"
+  })
+  assert list.length(left_out) == 51 - list.length(flag_8_abilities)
+    as "the base left 51 abilities unplanned; these 8 leave the list and no other does"
+  assert list.contains(unplanned, 34_426)
+    as "Energy Auger stays listed: its valid targets are bitmask 4"
+  list.each(flag_0_or_2_abilities, fn(spell4_id) {
+    let assert Ok(one) =
+      list.find(left_out, fn(one) { one.spell4_id == spell4_id })
+      as "a hit row placed on the cast's target keeps its ability listed"
+    let sentence = spell_plan.describe(error: one.error)
+    assert string.contains(
+      sentence,
+      "only the caster (1) and the cast's start position (8) are built for a player",
+    )
+      as { "the sentence names the rows that are built: " <> sentence }
+  })
+  list.each([57_978, 39_157, 42_676], fn(spell4_id) {
+    assert !list.contains(unplanned, spell4_id)
+      as "Smackdown, Whiplash and Pounce are planned before and after"
+  })
+}

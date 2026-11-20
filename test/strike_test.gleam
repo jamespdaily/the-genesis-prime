@@ -23,6 +23,7 @@ import class_resource_support
 import client_tables
 import crowd_control_support
 import genesis_prime/client_connection
+import genesis_prime/game/area.{Point, Pose}
 import genesis_prime/game/cast/state.{type GoAsked, GoAsked} as cast_state
 import genesis_prime/game/class_resource.{Resource}
 import genesis_prime/game/crowd_control
@@ -72,6 +73,7 @@ fn asked(cast_id cast_id: Int, phase phase: Int) -> GoAsked {
     spell4_id: Spell4Id(58_591),
     primary_target: 7,
     spent: None,
+    started_at: strike_support.start_pose(),
   )
 }
 
@@ -1038,6 +1040,7 @@ pub fn a_damage_aimed_at_the_cast_target_strikes_the_primary_target_alone_test()
         spell4_id: Spell4Id(38_781),
         primary_target: 20,
         spent: None,
+        started_at: strike_support.start_pose(),
       ),
       attacker: strike_support.attacker(),
       picture: picture(),
@@ -1098,6 +1101,7 @@ pub fn a_despawn_row_selects_no_player_and_no_static_object_test() -> Nil {
         spell4_id: Spell4Id(spell_tables.despawn_only_spell4_id),
         primary_target:,
         spent: None,
+        started_at: strike_support.start_pose(),
       ),
       attacker: strike_support.attacker(),
       picture:,
@@ -1122,6 +1126,7 @@ pub fn a_spell_the_areas_do_not_hold_strikes_nobody_test() -> Nil {
         spell4_id: Spell4Id(1),
         primary_target: 7,
         spent: None,
+        started_at: strike_support.start_pose(),
       ),
       attacker: strike_support.attacker(),
       picture: picture(),
@@ -1138,6 +1143,100 @@ fn foe_at(x x: Float, z z: Float) -> shown.Shown {
     z:,
     alive: True,
     attackable: Attackable(exile: True, dominion: True),
+  )
+}
+
+/// The foes `select` finds in the area of `spell4_id` for a go whose cast started at the
+/// origin facing -z, struck by a caster that has since moved to x 40 and turned half a turn
+/// (facing +z): the ids of the units in `candidates`, nearest first. The primary target is
+/// `primary_target`.
+fn selected_after_the_caster_moved(
+  areas areas: spell_area.Areas,
+  spell4_id spell4_id: Int,
+  primary_target primary_target: Int,
+  candidates candidates: List(#(Int, Float, Float)),
+) -> List(Int) {
+  let moved = Pose(at: Point(x: 40.0, z: 0.0), yaw: 3.1415927)
+  let chosen =
+    strike.select(
+      asked: GoAsked(
+        cast_id: 5,
+        phase: 0,
+        spell4_id: Spell4Id(spell4_id),
+        primary_target:,
+        spent: None,
+        started_at: Pose(at: Point(x: 0.0, z: 0.0), yaw: 0.0),
+      ),
+      attacker: strike.Attacker(..strike_support.attacker(), pose: moved),
+      picture: dict.from_list(
+        list.map(candidates, fn(candidate) {
+          #(candidate.0, foe_at(x: candidate.1, z: candidate.2))
+        }),
+      ),
+      areas:,
+      now_ms: 0,
+    )
+  chosen.area
+}
+
+pub fn a_row_fixed_at_the_cast_start_strikes_where_the_cast_started_and_one_that_follows_strikes_where_the_caster_stands_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  let areas = spell_area.areas(tables: client_tables.shared())
+  // The start pose faces -z from the origin, so 6 m ahead of it is (0, -6); the moved caster
+  // at (40, 0) faces +z, so 6 m ahead of it is (40, 6). A creature's hit radius is 3. A fixed
+  // row of a child cast on a struck unit (Unsteady Miasma's 41491) is not here: its damage
+  // row is periodic and lasts until removed, which the area load leaves out, so the child
+  // selects nobody; `area_test` holds that case of the centre.
+  list.each(
+    [
+      #(
+        41_844,
+        7,
+        [#(21, 0.0, -6.0), #(22, 40.0, 6.0)],
+        [21],
+        "Fissure's child: TelegraphDamage 2998, a rectangle 10 wide from 1 to 15 m ahead, flag 8, holds the creature 6 m ahead of the start and not the one 6 m ahead of the moved caster",
+      ),
+      #(
+        39_269,
+        7,
+        [#(21, 0.0, -20.0), #(22, 40.0, 20.0)],
+        [21],
+        "Razor Disk's child: TelegraphDamage 2123, a rectangle 3 wide from 1 to 30 m ahead, flag 8: the creature 20 m ahead of the start",
+      ),
+      #(
+        58_591,
+        7,
+        [#(21, 0.0, -5.0), #(22, 40.0, 5.0)],
+        [22],
+        "Kick: TelegraphDamage 168, flag 1, follows the caster: the creature 5 m ahead of where the caster stands",
+      ),
+      #(
+        41_844,
+        99,
+        [#(21, 0.0, -6.0)],
+        [],
+        "a primary target the picture does not show strikes nobody, whatever the anchor",
+      ),
+      #(
+        58_591,
+        99,
+        [#(22, 40.0, 5.0)],
+        [],
+        "the same for a row that follows the caster",
+      ),
+    ],
+    fn(row) {
+      let #(spell4_id, primary_target, candidates, expected, reason) = row
+      assert selected_after_the_caster_moved(
+          areas:,
+          spell4_id:,
+          primary_target:,
+          candidates:,
+        )
+        == expected
+        as reason
+    },
   )
 }
 
@@ -1162,6 +1261,7 @@ pub fn crushs_second_spell_strikes_up_to_four_within_4_m_of_the_struck_foe_and_t
         spell4_id: Spell4Id(42_297),
         primary_target: 21,
         spent: None,
+        started_at: strike_support.start_pose(),
       ),
       attacker: strike_support.attacker(),
       picture: around_the_foe,
@@ -1197,6 +1297,7 @@ pub fn staggers_multiphase_spell_selects_up_to_five_within_8_m_at_each_phase_and
           spell4_id: Spell4Id(38_780),
           primary_target: 7,
           spent: None,
+          started_at: strike_support.start_pose(),
         ),
         attacker: strike_support.attacker(),
         picture: close_by,
@@ -1217,6 +1318,7 @@ pub fn staggers_multiphase_spell_selects_up_to_five_within_8_m_at_each_phase_and
         spell4_id: Spell4Id(38_781),
         primary_target: 22,
         spent: None,
+        started_at: strike_support.start_pose(),
       ),
       attacker: strike_support.attacker(),
       picture: close_by,
@@ -1252,6 +1354,7 @@ pub fn each_pulse_of_electrocutes_channel_selects_the_foes_its_area_row_names_te
           spell4_id: Spell4Id(41_276),
           primary_target: 7,
           spent: None,
+          started_at: strike_support.start_pose(),
         ),
         attacker: strike_support.attacker(),
         picture: close_by,

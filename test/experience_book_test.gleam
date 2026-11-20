@@ -12,8 +12,8 @@
 //// - `XpPerLevel.minXpForLevel`: level 4 from 2860, level 5 from 4320 and level 6 from 6280;
 ////   a quest of the tests' tables gives 1055 experience (`game_connection_quest_turn_in_test`).
 //// - `SpellLevel.spell4Id.no_prerequisite`: the rows and bases of `ability_book_test`; the
-////   Medic's 614 (Fissure, Spell4Base 26038), 1191 (25530) and 1194 (25579) and the Warrior's
-////   921 (18359) have no plan (`spell_plan.unplanned`; issue #1003 builds them), the others named here do.
+////   Medic's 1191 (25530) and 1194 (25579) have no plan (`spell_plan.unplanned`), the others
+////   named here do, Fissure (614, Spell4Base 26038) and Leap (921, 18359) among them.
 //// - `opcode.0x7fc`: a press of a bag slot whose base has no plan is refused with result 4,
 ////   the unknown spell (`0x14039a040`).
 

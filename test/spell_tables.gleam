@@ -4,6 +4,7 @@
 
 import database_support
 import fixture_tables
+import genesis_prime/game/area
 import genesis_prime/game/effect_row_read
 import genesis_prime/game/server_proxy
 import genesis_prime/game/spell_area
@@ -678,6 +679,7 @@ fn only_effect_area(
     spell4_id: Spell4Id(despawn_only_spell4_id),
     row: None,
     shapes: [],
+    anchor: area.FollowsTarget,
     damage: [],
     ticking: [],
     spell: spell_plan.Spell(

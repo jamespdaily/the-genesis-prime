@@ -46,6 +46,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
+import gleam/string
 import owned_test
 import planted_table.{Integer}
 import spell_tables
@@ -387,6 +388,145 @@ pub fn a_hit_row_placed_on_another_unit_than_the_caster_fails_the_load_test() ->
       target_type_flags: 2,
     ))
     as "0x14054d170: flag 1 places a shape on the caster; every row of the nine abilities has it"
+}
+
+pub fn a_player_hit_row_placed_by_flag_8_is_anchored_at_the_cast_start_and_a_flag_1_row_follows_the_caster_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Kick's row 168 changed (synthetic: the client's rows of the trees hold each pair of
+  // flags): the client places a row with neither 0x4000 nor 0x1000 by its targetTypeFlags
+  // (bit 1 the caster, bit 8 the position the cast holds); a row with 0x4000 or 0x1000 stays
+  // at the entry, and a bit-8 row is at the held position whatever its placing
+  // (`0x140546e60.placement_branches`, `0x14054b1b0.fixed_placement`).
+  let kick_anchor = fn(target_type_flags, telegraph_damage_flags) {
+    area_tables.built(
+      kick: area_tables.Kick(
+        ..area_tables.kick(),
+        telegraph_target_type_flags: target_type_flags,
+        telegraph_damage_flags:,
+      ),
+    )
+    |> result.map(fn(areas) {
+      let assert Ok(found) =
+        spell_area.of_spell(areas:, spell4_id: Spell4Id(58_591))
+        as "Kick is in its own areas"
+      found.anchor
+    })
+  }
+  list.each(
+    [
+      #(
+        1,
+        0x200,
+        Ok(area.FollowsCaster),
+        "a caster row with no placing flag follows the caster",
+      ),
+      #(
+        1,
+        0x1200,
+        Ok(area.FixedAtCaster),
+        "a caster row with 0x1000 stays at the 0x7ff's entry",
+      ),
+      #(
+        1,
+        0x4200,
+        Ok(area.FixedAtCaster),
+        "a caster row with 0x4000 stays at its telegraph position",
+      ),
+      #(
+        8,
+        0x200,
+        Ok(area.FixedAtCaster),
+        "a bit-8 row is at the position the cast holds",
+      ),
+      #(
+        8,
+        0x1200,
+        Ok(area.FixedAtCaster),
+        "a bit-8 row with 0x1000 is at the held position too",
+      ),
+      #(
+        8,
+        0x4200,
+        Ok(area.FixedAtCaster),
+        "a bit-8 row with 0x4000 is at the held position too",
+      ),
+      #(
+        3,
+        0x200,
+        Error(TelegraphNotOnCaster(58_591, 168, 3)),
+        "the caster and the target at once is not built",
+      ),
+      #(
+        9,
+        0x200,
+        Error(TelegraphNotOnCaster(58_591, 168, 9)),
+        "the caster and the held position at once is not built",
+      ),
+    ],
+    fn(row) {
+      let #(target_type_flags, telegraph_damage_flags, expected, reason) = row
+      assert kick_anchor(target_type_flags, telegraph_damage_flags) == expected
+        as reason
+    },
+  )
+  assert string.contains(
+    spell_area.describe(error: TelegraphNotOnCaster(58_591, 168, 3)),
+    "(8)",
+  )
+    as "the refusal names flag 8 among the flags a player's row may have"
+}
+
+pub fn the_anchor_of_a_planned_spell_is_read_from_its_hit_rows_on_the_clients_rows_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  let areas = spell_area.areas(tables: client_tables.shared())
+  // Rows by `table_rows -- Spell4Telegraph spell4Id=<id>` and `-- TelegraphDamage <id>`.
+  list.each(
+    [
+      #(
+        41_844,
+        area.FixedAtCaster,
+        "Fissure's child: rows 2996, 2997 and 2998, flag 8",
+      ),
+      #(
+        58_501,
+        area.FixedAtCaster,
+        "Bum Rush's child: the never-drawn twins 724, 1767 and 1768, flag 8, whose drawn row 723 is flag 1 and is not compared",
+      ),
+      #(
+        44_641,
+        area.FixedAtCaster,
+        "Concentrated Blade: the twin 4081, flag 8, beside the drawn row 4080, flag 1",
+      ),
+      #(32_128, area.FixedAtCaster, "Leap: row 3390, flag 8"),
+      #(44_471, area.FixedAtCaster, "Personal Defense Unit: row 4029, flag 8"),
+      #(41_551, area.FixedAtCaster, "Urgency: row 1721, flag 8"),
+      #(39_269, area.FixedAtCaster, "Razor Disk's child: the twin 2123, flag 8"),
+      #(
+        41_491,
+        area.FixedAtCaster,
+        "Unsteady Miasma's child: row 10954, flag 8",
+      ),
+      #(
+        42_676,
+        area.FollowsCaster,
+        "Pounce: the twin 3579, flag 1, beside the drawn row 3578, flag 8, which is not compared",
+      ),
+      #(58_591, area.FollowsCaster, "Kick: row 168, flag 1"),
+      #(
+        42_297,
+        area.FollowsTarget,
+        "Crush's second spell has no hit row, so it is centred on its primary target as before",
+      ),
+    ],
+    fn(row) {
+      let #(spell4_id, anchor, reason) = row
+      let assert Ok(found) =
+        spell_area.of_spell(areas:, spell4_id: Spell4Id(spell4_id))
+        as "the spell is a spell of a planned ability's tree"
+      assert found.anchor == anchor as reason
+    },
+  )
 }
 
 pub fn a_shape_the_rule_does_not_build_fails_the_load_naming_it_test() -> Nil {
@@ -1288,6 +1428,7 @@ fn planned_alone(spell4_id spell4_id: Int) -> spell_area.SpellArea {
     spell4_id: Spell4Id(spell4_id),
     row: None,
     shapes: [],
+    anchor: area.FollowsTarget,
     damage: [],
     ticking: [],
     spell:,
@@ -1480,6 +1621,7 @@ pub fn a_throw_only_spell_aimed_at_the_target_strikes_the_primary_target_test() 
       spell4_id: Spell4Id(36_010),
       row: None,
       shapes: [],
+      anchor: area.FollowsTarget,
       damage: [],
       ticking: [],
       spell:,

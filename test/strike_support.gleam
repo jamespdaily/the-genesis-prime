@@ -2,7 +2,7 @@
 //// begin a round with.
 
 import attacker_support
-import genesis_prime/game/area.{Point, Pose}
+import genesis_prime/game/area.{type Pose, Point, Pose}
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/damage
 import genesis_prime/game/shown.{Exile}
@@ -37,6 +37,11 @@ pub fn attacker() -> Attacker {
     vitals: attacker_support.novice_vitals(),
     properties: properties_support.fresh(level: 1),
   )
+}
+
+/// The pose a go's cast started at when a test is not about the start: the attacker's own.
+pub fn start_pose() -> Pose {
+  attacker().pose
 }
 
 /// A damage effect on every phase that aims at the area, which makes a round wait for the
