@@ -64,6 +64,9 @@
 ////   crash for either. The statement also writes the character's quest log under
 ////   the same fence (save_place.sql); a check of the character_quest table that
 ////   refuses a quest row is `QuestLogRefused` with that check's name.
+////   The same statement writes the changed slots of the character's action sets
+////   (save_place.sql); a check or the unique key of the character_action_slot table
+////   that refuses a slot is `ActionSetRefused` with its name.
 //// - **A delete and a rename are one statement each.** Both name the account's
 ////   id, so another account's character is never touched; a rename also
 ////   clears the character's mark in the same update, and its name's
@@ -93,19 +96,20 @@ import genesis_prime/store.{
   type MoveAnswer, type MoveRequest, type Naming, type NewCharacter,
   type NewItem, type QuestRow, type RenameAnswer, type Request,
   type SelectAnswer, type SelectRequest, type UnsetItem, type WorldAnswer,
-  type WorldRequest, Account, AccountFound, AccountId, ActiveQuest, Bought,
-  BuyFromVendor, Character, CharacterCreated, CharacterDeleted, CharacterId,
-  CharacterLoaded, CharacterRenamed, ChargesFilled, CreateCharacter,
-  CreateForNoSuchAccount, Created, CurrencySet, DeleteCharacter, DeleteItem,
-  Deleted, ExperienceRefused, FillCharges, FindAccount, ForItems, ForLogin,
-  ForMove, ForSelect, ForWorld, HealthRefused, HeldCurrency, HeldItem, ItemMade,
-  ItemWords, Items, ItemsNotSaved, ItemsSaved, ListCharacters, Listed,
-  LoadCharacter, Login, MergeItems, Move, MoveItems, NameBreaksRule, NameStands,
-  NameTaken, NeedsRename, NewNameBreaksRule, NewNameTaken, NoFreeSlot,
-  NoSuchAccount, NoSuchCharacter, NotTheAccounts, NothingSaved, PlaceRefused,
-  PlaceSaved, QuestLogRefused, QuestRow, RenameCharacter, Renamed, SavePlace,
-  SaveRefused, Select, SellToVendor, SetCurrency, SpendItem, SplitItem,
-  TurnInQuest, TurnedIn, Unavailable, UnsetItem, World,
+  type WorldRequest, Account, AccountFound, AccountId, ActionSetRefused,
+  ActionSlotRow, ActiveQuest, Bought, BuyFromVendor, Character, CharacterCreated,
+  CharacterDeleted, CharacterId, CharacterLoaded, CharacterRenamed,
+  ChargesFilled, CreateCharacter, CreateForNoSuchAccount, Created, CurrencySet,
+  DeleteCharacter, DeleteItem, Deleted, ExperienceRefused, FillCharges,
+  FindAccount, ForItems, ForLogin, ForMove, ForSelect, ForWorld, HealthRefused,
+  HeldCurrency, HeldItem, ItemMade, ItemWords, Items, ItemsNotSaved, ItemsSaved,
+  ListCharacters, Listed, LoadCharacter, Login, MergeItems, Move, MoveItems,
+  NameBreaksRule, NameStands, NameTaken, NeedsRename, NewNameBreaksRule,
+  NewNameTaken, NoFreeSlot, NoSuchAccount, NoSuchCharacter, NotTheAccounts,
+  NothingSaved, PlaceRefused, PlaceSaved, QuestLogRefused, QuestRow,
+  RenameCharacter, Renamed, SavePlace, SaveRefused, Select, SellToVendor,
+  SetCurrency, SpendItem, SplitItem, TurnInQuest, TurnedIn, Unavailable,
+  UnsetItem, World,
 }
 import genesis_prime/store/sql
 import genesis_prime/table/id.{type Item2Id, ClassId, Item2Id, RaceId}
@@ -156,6 +160,18 @@ const quest_checks = [
   "character_quest_kill_mask_has_six_slots",
 ]
 
+/// The checks and the unique key of the character_action_slot table (migration 0049), one
+/// for each limit of the client's an action slot row can break. A save one of them
+/// refuses answers `ActionSetRefused` with its own name. The table's primary key and its
+/// foreign key to the character are not among them: neither is a limit of the client's,
+/// and a refused one is a refused place.
+const action_slot_checks = [
+  "character_action_slot_set_is_one_of_four",
+  "character_action_slot_slot_is_one_of_twelve",
+  "character_action_slot_ability_fits_the_message",
+  "character_action_slot_one_place_per_ability",
+]
+
 /// Every constraint or unique index the worker answers for by name. The schema
 /// holds each by this name, which a test reads from the catalogue.
 pub fn mapped_constraints() -> List(String) {
@@ -164,7 +180,7 @@ pub fn mapped_constraints() -> List(String) {
     character_name_follows_rule_0,
     character_health_is_not_negative,
     character_experience_is_not_negative,
-    ..quest_checks
+    ..list.append(quest_checks, action_slot_checks)
   ]
 }
 
@@ -520,6 +536,7 @@ fn turn_in_quest(
       experience:,
       level:,
       quests:,
+      action_sets: store.ActionSets(slots: []),
     )
   let AccountId(account_id) = account_id
   let CharacterId(character_id) = character_id
@@ -1112,7 +1129,8 @@ fn fill_charges(
 /// `NothingSaved` when it matched none, `HealthRefused` when the table's
 /// `character_health_is_not_negative` refused the health, `ExperienceRefused` when
 /// `character_experience_is_not_negative` refused the experience, `QuestLogRefused`
-/// when a check of the character_quest table refused a quest row and `PlaceRefused` when
+/// when a check of the character_quest table refused a quest row, `ActionSetRefused` when a
+/// check or the unique key of the character_action_slot table refused a slot and `PlaceRefused` when
 /// another check of the table refused the place; `Error(Nil)` when the database
 /// is away.
 fn move(pool: pog.Connection, request: MoveRequest) -> Result(MoveAnswer, Nil) {
@@ -1135,9 +1153,13 @@ fn move(pool: pog.Connection, request: MoveRequest) -> Result(MoveAnswer, Nil) {
       if constraint == character_experience_is_not_negative
     -> Ok(ExperienceRefused)
     Error(Refused(constraint:, ..)) ->
-      case list.contains(quest_checks, constraint) {
-        True -> Ok(QuestLogRefused(constraint:))
-        False -> Ok(PlaceRefused(constraint:))
+      case
+        list.contains(quest_checks, constraint),
+        list.contains(action_slot_checks, constraint)
+      {
+        True, _ -> Ok(QuestLogRefused(constraint:))
+        _, True -> Ok(ActionSetRefused(constraint:))
+        False, False -> Ok(PlaceRefused(constraint:))
       }
     Error(Unexpected(error:)) -> exit_with(error)
   }
@@ -1159,6 +1181,7 @@ fn save_place(
     experience:,
     level:,
     quests:,
+    action_sets:,
   ) = request
   let facing = start_place.facing(place)
   // squirrel cannot type a parameter that may be NULL (save_place.sql): the
@@ -1186,6 +1209,7 @@ fn save_place(
     experience,
     level,
     quests_json(quests),
+    action_slots_json(action_sets:),
   )
 }
 
@@ -1198,6 +1222,19 @@ fn list_characters(
   let AccountId(account_id) = account_id
   query(fn() { sql.list_characters(pool, account_id) })
   |> result.map(list.map(_, character))
+}
+
+/// The rows of one kind (items, quests, currencies, action slots) of the character a
+/// load found: `read` runs only when the load found exactly one character, and no
+/// character gives no rows. A failed read is passed on, so the transaction ends.
+fn of_the_loaded(
+  characters characters: List(a),
+  read read: fn() -> Result(pog.Returned(b), pog.QueryError),
+) -> Result(pog.Returned(b), pog.QueryError) {
+  case characters {
+    [_] -> read()
+    _ -> Ok(pog.Returned(count: 0, rows: []))
+  }
 }
 
 /// The account's character with the id, taken in one transaction: one statement
@@ -1224,25 +1261,31 @@ fn load_character(
         character_id,
         account_id,
       ))
-      use item_rows <- result.try(case loaded.rows {
-        [_] -> {
+      use item_rows <- result.try(
+        of_the_loaded(characters: loaded.rows, read: fn() {
           use _ <- result.try(sql.delete_expired_character_items(
             connection,
             character_id,
             now_unix_ms,
           ))
           sql.load_character_items(connection, character_id)
-        }
-        _ -> Ok(pog.Returned(count: 0, rows: []))
-      })
-      use quest_rows <- result.try(case loaded.rows {
-        [_] -> sql.load_quest_log(connection, character_id)
-        _ -> Ok(pog.Returned(count: 0, rows: []))
-      })
-      use currency_rows <- result.map(case loaded.rows {
-        [_] -> sql.load_character_currencies(connection, character_id)
-        _ -> Ok(pog.Returned(count: 0, rows: []))
-      })
+        }),
+      )
+      use quest_rows <- result.try(
+        of_the_loaded(characters: loaded.rows, read: fn() {
+          sql.load_quest_log(connection, character_id)
+        }),
+      )
+      use currency_rows <- result.try(
+        of_the_loaded(characters: loaded.rows, read: fn() {
+          sql.load_character_currencies(connection, character_id)
+        }),
+      )
+      use action_slot_rows <- result.map(
+        of_the_loaded(characters: loaded.rows, read: fn() {
+          sql.load_character_action_slots(connection, character_id)
+        }),
+      )
       pog.Returned(
         ..loaded,
         rows: list.map(loaded.rows, fn(row) {
@@ -1251,6 +1294,7 @@ fn load_character(
             items: item_rows.rows,
             quests: quest_rows.rows,
             currencies: currency_rows.rows,
+            action_slots: action_slot_rows.rows,
           )
         }),
       )
@@ -1264,6 +1308,7 @@ fn load_character(
         items: item_rows,
         quests: quest_rows,
         currencies: currency_rows,
+        action_slots: action_slot_rows,
       ),
     ] -> {
       let assert Ok(epoch) = store.session_epoch(row.session_epoch)
@@ -1305,6 +1350,7 @@ fn load_character(
             amount: row.amount,
           )
         }),
+        action_sets: action_sets_of(rows: action_slot_rows),
       )
     }
     [] -> NotTheAccounts
@@ -1313,13 +1359,43 @@ fn load_character(
 }
 
 /// The one row a load's transaction gives: the character whose epoch the
-/// update raised, with its items, quest log and currencies.
+/// update raised, with its items, quest log, currencies and action slots.
 type LoadRow {
   LoadedRow(
     row: sql.LoadCharacterRow,
     items: List(sql.LoadCharacterItemsRow),
     quests: List(sql.LoadQuestLogRow),
     currencies: List(sql.LoadCharacterCurrenciesRow),
+    action_slots: List(sql.LoadCharacterActionSlotsRow),
+  )
+}
+
+/// The action sets a load's rows hold, in the order the query gave them (set, then slot).
+fn action_sets_of(
+  rows rows: List(sql.LoadCharacterActionSlotsRow),
+) -> store.ActionSets {
+  store.ActionSets(
+    slots: list.map(rows, fn(row) {
+      ActionSlotRow(
+        action_set: row.action_set,
+        slot: row.slot,
+        spell4_base_id: row.spell4_base_id,
+      )
+    }),
+  )
+}
+
+/// The action slots as the JSON array save_place.sql unpacks, one object for each slot
+/// whose keys are the character_action_slot columns, a null ability for an empty slot.
+fn action_slots_json(action_sets action_sets: store.ActionSets) -> Json {
+  json.preprocessed_array(
+    list.map(action_sets.slots, fn(slot) {
+      json.object([
+        #("action_set", json.int(slot.action_set)),
+        #("slot", json.int(slot.slot)),
+        #("spell4_base_id", json.nullable(slot.spell4_base_id, json.int)),
+      ])
+    }),
   )
 }
 

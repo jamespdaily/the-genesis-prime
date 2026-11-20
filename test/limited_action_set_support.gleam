@@ -12,6 +12,7 @@ import genesis_prime/game/limited_action_set.{type Effect, Log, Send}
 import genesis_prime/message/action_set.{type ActionSet}
 import genesis_prime/message/action_set_saved
 import genesis_prime/step.{type LogLevel}
+import genesis_prime/store
 import genesis_prime/table/id.{type Spell4BaseId}
 import genesis_prime/table/loader/store as table_store
 import gleam/int
@@ -56,6 +57,17 @@ pub const ids_c = [27_638, 20_684, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
 /// The class's bar at entry: its level 1 abilities in slots 0 to 2.
 pub const class_bar = [27_638, 20_684, 20_325, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+/// The rows of one saved set for these ids, slot 0 first, 0 for an empty slot (a row with no
+/// ability): the shape the store hands the load.
+pub fn rows_of(set set: Int, ids ids: List(Int)) -> List(store.ActionSlotRow) {
+  list.index_map(ids, fn(id, slot) {
+    store.ActionSlotRow(action_set: set, slot:, spell4_base_id: case id {
+      0 -> None
+      id -> Some(id)
+    })
+  })
+}
 
 /// The bytes of a vector written as hexadecimal.
 pub fn hex(text text: String) -> BitArray {

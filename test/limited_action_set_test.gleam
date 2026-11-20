@@ -21,24 +21,29 @@
 import client_tables
 import fixture_tables
 import genesis_prime/game/ability_book
-import genesis_prime/game/limited_action_set.{Player}
+import genesis_prime/game/limited_action_set.{
+  Player, RowOutsideTable, RowRepeated,
+}
 import genesis_prime/game/loadout
 import genesis_prime/game/prerequisite
 import genesis_prime/message/action_set
 import genesis_prime/message/action_shortcut.{ActionShortcut}
 import genesis_prime/step.{LogDebug, LogWarning}
-import genesis_prime/table/id.{ClassId, PrerequisiteId}
+import genesis_prime/store.{ActionSets}
+import genesis_prime/table/id.{ClassId, PrerequisiteId, Spell4BaseId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/prerequisite as prerequisite_table
 import genesis_prime/table/spell4_base
 import gleam/int
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
+import gleam/result
 import gleam/string
 import limited_action_set_support as support
 import message_support
 import owned_test
 import planted_table.{Integer}
+import qcheck
 import unitest
 
 /// The slots 0 to 7 and the level each opens at (`ActionSlotPrereq.prerequisiteIdUnlock`).
@@ -659,4 +664,202 @@ pub fn every_ability_the_book_offers_the_bar_is_a_class_ability_of_its_own_class
       })
     })
   })
+}
+
+/// What a load of rows leads to: the ids of set 0 the player holds, or the refused row.
+type Entering {
+  Holds(set_zero: List(Int))
+  Refuses(error: limited_action_set.RowError)
+}
+
+pub fn entering_keeps_a_saved_ability_the_player_still_holds_and_drops_one_the_player_no_longer_holds_or_a_slot_no_longer_open_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = fixture_tables.shared()
+  let level_4 = support.player(tables:, level: 4)
+  let enter = fn(rows) {
+    limited_action_set.entering(
+      unlocks: limited_action_set.unlocks(tables:),
+      level: level_4.level,
+      book: level_4.book,
+      rows: ActionSets(slots: rows),
+    )
+  }
+  let no_slots = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+  let zeros = fn(count) { list.repeat(0, count) }
+  let outside = fn(set, slot, id) {
+    store.ActionSlotRow(action_set: set, slot:, spell4_base_id: id)
+  }
+  list.each(
+    [
+      #(
+        "all of A: slots 0 to 3 hold abilities of the level 4 book, open at level 4",
+        support.rows_of(set: 0, ids: support.ids_a),
+        Holds(support.ids_a),
+      ),
+      #(
+        "23468 (level 10) saved in slot 3, which opens at 4: the level 4 book does not hold it",
+        support.rows_of(set: 0, ids: [
+          27_638,
+          20_684,
+          20_325,
+          23_468,
+          ..zeros(8)
+        ]),
+        Holds([27_638, 20_684, 20_325, ..zeros(9)]),
+      ),
+      #(
+        "20718 saved in slot 5, which opens at 7: a level 4 player has no such slot",
+        support.rows_of(set: 0, ids: [
+          27_638,
+          20_684,
+          20_325,
+          0,
+          0,
+          20_718,
+          ..zeros(6)
+        ]),
+        Holds([27_638, 20_684, 20_325, ..zeros(9)]),
+      ),
+      #(
+        "a Medic ability (Class 4, 26038) in slot 0 of a Spellslinger",
+        support.rows_of(set: 0, ids: [26_038, 20_684, 20_325, ..zeros(9)]),
+        Holds([0, 20_684, 20_325, ..zeros(9)]),
+      ),
+      #(
+        "seven rows of a set: the five slots with no row are empty and the others stay",
+        support.rows_of(set: 0, ids: [27_638, 20_684, 20_325, 20_718, 0, 0, 0]),
+        Holds(support.ids_a),
+      ),
+      #(
+        "[27638, empty, 20325]: the filled slot after an empty one keeps its slot",
+        support.rows_of(set: 0, ids: [27_638, 0, 20_325, ..zeros(9)]),
+        Holds([27_638, 0, 20_325, ..zeros(9)]),
+      ),
+      #(
+        "a saved empty set: a saved set with nothing in it is not the class's bar",
+        support.rows_of(set: 0, ids: no_slots),
+        Holds(no_slots),
+      ),
+      #(
+        "a row of set 4, which the table's check refuses",
+        [outside(4, 0, Some(27_638))],
+        Refuses(RowOutsideTable(row: outside(4, 0, Some(27_638)))),
+      ),
+      #(
+        "a row of slot 12, which the table's check refuses",
+        list.append(support.rows_of(set: 0, ids: support.ids_a), [
+          outside(0, 12, Some(27_638)),
+        ]),
+        Refuses(RowOutsideTable(row: outside(0, 12, Some(27_638)))),
+      ),
+      #(
+        "an ability of id 262144, wider than the 18 bits of the message",
+        [outside(0, 0, Some(262_144))],
+        Refuses(RowOutsideTable(row: outside(0, 0, Some(262_144)))),
+      ),
+      #(
+        "two rows for slot 0 of set 0, which the primary key refuses",
+        [outside(0, 0, Some(27_638)), outside(0, 0, Some(20_684))],
+        Refuses(RowRepeated(row: outside(0, 0, Some(20_684)))),
+      ),
+    ],
+    fn(row) {
+      let #(why, rows, expected) = row
+      let held = case enter(rows) {
+        Ok(saved) -> Holds(support.held_ids(tables:, saved:))
+        Error(error) -> Refuses(error)
+      }
+      assert held == expected as why
+    },
+  )
+  let assert Ok(saved) = enter(support.rows_of(set: 2, ids: support.ids_a))
+    as "rows of set 2 are rows the table's checks hold"
+  assert limited_action_set.rows(saved:)
+    == ActionSets(slots: support.rows_of(set: 2, ids: support.ids_a))
+    as "the rows of set 2 are kept as set 2, each in its slot"
+  assert support.held_ids(tables:, saved:) == support.class_bar
+    as "a player who saved only set 2 has the class's bar in set 0"
+  let assert Error(error) = enter([outside(4, 0, Some(27_638))])
+    as "a row of set 4 ends the entry"
+  assert string.contains(limited_action_set.describe_row(error:), "set 4")
+    && string.contains(limited_action_set.describe_row(error:), "slot 0")
+    as "the sentence names the row's set and slot"
+}
+
+/// A drawn set as the slots a player can hold: slots 8 and 9 never open (their
+/// prerequisites are types the server does not read), every other slot is open at level
+/// 100, and an ability is in one place of its set, as the table's unique key holds.
+fn holdable(drawn drawn: List(Option(Int))) -> List(Option(Int)) {
+  list.index_map(drawn, fn(slot, at) {
+    case at {
+      8 | 9 -> None
+      _ -> slot
+    }
+  })
+  |> list.fold([], fn(so_far, slot) {
+    case slot {
+      Some(_) ->
+        case list.contains(so_far, slot) {
+          True -> [None, ..so_far]
+          False -> [slot, ..so_far]
+        }
+      None -> [None, ..so_far]
+    }
+  })
+  |> list.reverse
+}
+
+pub fn saved_sets_round_trip_through_their_rows_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = fixture_tables.shared()
+  let unlocks = limited_action_set.unlocks(tables:)
+  let drawn_set =
+    qcheck.option_from(qcheck.fixed_length_list_from(
+      qcheck.option_from(qcheck.bounded_int(1, 262_143)),
+      12,
+    ))
+  qcheck.given(
+    qcheck.tuple4(drawn_set, drawn_set, drawn_set, drawn_set),
+    fn(drawn) {
+      let rows =
+        [drawn.0, drawn.1, drawn.2, drawn.3]
+        |> list.index_map(fn(set, number) { #(number, set) })
+        |> list.flat_map(fn(numbered) {
+          case numbered.1 {
+            None -> []
+            Some(slots) ->
+              list.index_map(holdable(drawn: slots), fn(held, slot) {
+                store.ActionSlotRow(
+                  action_set: numbered.0,
+                  slot:,
+                  spell4_base_id: held,
+                )
+              })
+          }
+        })
+      let book =
+        list.filter_map(rows, fn(row) {
+          option.to_result(row.spell4_base_id, Nil)
+          |> result.map(Spell4BaseId)
+        })
+      let assert Ok(saved) =
+        limited_action_set.entering(
+          unlocks:,
+          level: 100,
+          book:,
+          rows: ActionSets(slots: rows),
+        )
+        as "rows the table's checks hold are read"
+      assert limited_action_set.rows(saved:) == ActionSets(slots: rows)
+        as "a saved set is twelve rows, in set then slot order, and no set gives none"
+      assert limited_action_set.entering(
+          unlocks:,
+          level: 100,
+          book:,
+          rows: limited_action_set.rows(saved:),
+        )
+        == Ok(saved)
+        as "the rows of the sets read back as the same sets"
+    },
+  )
 }

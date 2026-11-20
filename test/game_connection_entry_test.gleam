@@ -49,9 +49,10 @@ import genesis_prime/step.{
   StoppedWaiting, TimerFired, TimerId, Unwatch, Watch, WatchEnded, WatchId,
 }
 import genesis_prime/store.{
-  AccountId, Character, CharacterId, CharacterLoaded, ChargesFilled, FillCharges,
-  ForSelect, ForWorld, ItemFill, ItemsNotSaved, ItemsSaved, ListCharacters,
-  Listed, LoadCharacter, NotTheAccounts, Select, Unavailable, UnsetItem, World,
+  AccountId, ActionSets, Character, CharacterId, CharacterLoaded, ChargesFilled,
+  FillCharges, ForSelect, ForWorld, ItemFill, ItemsNotSaved, ItemsSaved,
+  ListCharacters, Listed, LoadCharacter, NotTheAccounts, Select, Unavailable,
+  UnsetItem, World,
 }
 import genesis_prime/table/id.{Item2Id}
 import genesis_prime/world_map/map.{Join}
@@ -88,20 +89,19 @@ pub fn message_0x07dd_asks_the_store_for_the_character_then_the_map_and_the_answ
       taken:,
       outcome: step.Answer(
         FromStore(
-          ForWorld(
-            CharacterLoaded(
-              game_connection_support.world_character(),
-              character_support.epoch(1),
-              None,
-              None,
-              world_entry_support.novice_items(
-                character: game_connection_support.world_character(),
-              ),
-              [],
-              [],
-              [],
+          ForWorld(CharacterLoaded(
+            game_connection_support.world_character(),
+            character_support.epoch(1),
+            None,
+            None,
+            world_entry_support.novice_items(
+              character: game_connection_support.world_character(),
             ),
-          ),
+            [],
+            [],
+            [],
+            action_sets: ActionSets(slots: []),
+          )),
         ),
       ),
     )
@@ -183,31 +183,30 @@ pub fn a_load_with_an_unset_item_asks_the_store_to_fill_it_before_the_map_is_ask
       taken:,
       outcome: step.Answer(
         FromStore(
-          ForWorld(
-            CharacterLoaded(
+          ForWorld(CharacterLoaded(
+            character: game_connection_support.world_character(),
+            session_epoch: character_support.epoch(1),
+            saved_health: None,
+            saved_experience: None,
+            items: world_entry_support.novice_items(
               character: game_connection_support.world_character(),
-              session_epoch: character_support.epoch(1),
-              saved_health: None,
-              saved_experience: None,
-              items: world_entry_support.novice_items(
-                character: game_connection_support.world_character(),
-              ),
-              unset: [
-                UnsetItem(
-                  item_guid: 21,
-                  item2_id: Item2Id(2509),
-                  location: 1,
-                  bag_index: 0,
-                  stack_count: 1,
-                  random_stats: 0,
-                  item_flags: 0,
-                  expires_at_unix_ms: None,
-                ),
-              ],
-              currencies: [],
-              quests: [],
             ),
-          ),
+            unset: [
+              UnsetItem(
+                item_guid: 21,
+                item2_id: Item2Id(2509),
+                location: 1,
+                bag_index: 0,
+                stack_count: 1,
+                random_stats: 0,
+                item_flags: 0,
+                expires_at_unix_ms: None,
+              ),
+            ],
+            currencies: [],
+            quests: [],
+            action_sets: ActionSets(slots: []),
+          )),
         ),
       ),
     )
@@ -499,20 +498,19 @@ pub fn an_answer_that_is_none_world_entry_asked_for_is_a_bug_with_reason_8_and_a
         game_connection_support.joining(),
         step.Answer(
           FromStore(
-            ForWorld(
-              CharacterLoaded(
-                game_connection_support.world_character(),
-                character_support.epoch(1),
-                None,
-                None,
-                world_entry_support.novice_items(
-                  character: game_connection_support.world_character(),
-                ),
-                [],
-                [],
-                [],
+            ForWorld(CharacterLoaded(
+              game_connection_support.world_character(),
+              character_support.epoch(1),
+              None,
+              None,
+              world_entry_support.novice_items(
+                character: game_connection_support.world_character(),
               ),
-            ),
+              [],
+              [],
+              [],
+              action_sets: ActionSets(slots: []),
+            )),
           ),
         ),
       ),

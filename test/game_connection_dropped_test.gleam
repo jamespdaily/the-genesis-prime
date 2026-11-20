@@ -22,7 +22,8 @@ import genesis_prime/game/connection as game_connection
 import genesis_prime/hand_off.{Taken}
 import genesis_prime/step.{LogError}
 import genesis_prime/store.{
-  Character, CharacterId, CharacterLoaded, ForSelect, ForWorld, Listed,
+  ActionSets, Character, CharacterId, CharacterLoaded, ForSelect, ForWorld,
+  Listed,
 }
 import gleam/bit_array
 import gleam/int
@@ -185,18 +186,17 @@ pub fn pre_game_activity_before_world_entry_is_dropped_test() -> Nil {
       taken:,
       outcome: step.Answer(
         FromStore(
-          ForWorld(
-            CharacterLoaded(
-              connection_support.world_character(),
-              character_support.epoch(1),
-              None,
-              saved_experience: None,
-              items: [],
-              unset: [],
-              quests: [],
-              currencies: [],
-            ),
-          ),
+          ForWorld(CharacterLoaded(
+            connection_support.world_character(),
+            character_support.epoch(1),
+            None,
+            saved_experience: None,
+            items: [],
+            unset: [],
+            quests: [],
+            currencies: [],
+            action_sets: ActionSets(slots: []),
+          )),
         ),
       ),
     )

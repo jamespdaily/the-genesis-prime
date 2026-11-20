@@ -976,6 +976,59 @@ returning
   |> pog.execute(db)
 }
 
+/// A row you get from running the `load_character_action_slots` query
+/// defined in `./src/genesis_prime/store/sql/load_character_action_slots.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type LoadCharacterActionSlotsRow {
+  LoadCharacterActionSlotsRow(
+    action_set: Int,
+    slot: Int,
+    spell4_base_id: Option(Int),
+  )
+}
+
+/// The slots of the action sets a character has saved, in set then slot order, as the
+/// load hands them to the ability builder's entry (genesis_prime/game/limited_action_set).
+/// An empty slot has a NULL ability.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn load_character_action_slots(
+  db: pog.Connection,
+  character_id: Int,
+) -> Result(pog.Returned(LoadCharacterActionSlotsRow), pog.QueryError) {
+  let decoder = {
+    use action_set <- decode.field(0, decode.int)
+    use slot <- decode.field(1, decode.int)
+    use spell4_base_id <- decode.field(2, decode.optional(decode.int))
+    decode.success(LoadCharacterActionSlotsRow(
+      action_set:,
+      slot:,
+      spell4_base_id:,
+    ))
+  }
+
+  "-- The slots of the action sets a character has saved, in set then slot order, as the
+-- load hands them to the ability builder's entry (genesis_prime/game/limited_action_set).
+-- An empty slot has a NULL ability.
+select
+  action_set::int as action_set,
+  slot::int as slot,
+  spell4_base_id
+from character_action_slot
+where character_id = $1
+order by action_set, slot;
+"
+  |> pog.query
+  |> pog.parameter(pog.int(character_id))
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
 /// A row you get from running the `load_character_currencies` query
 /// defined in `./src/genesis_prime/store/sql/load_character_currencies.sql`.
 ///
@@ -1604,6 +1657,15 @@ pub type SavePlaceRow {
 /// waited would delete or keep quest rows by the log the earlier save had not yet
 /// written, and leave a quest the later log dropped.
 ///
+/// The action slots are $18, a JSON array with one object for each slot of each
+/// action set the character has saved, whose keys are the columns of
+/// `character_action_slot`; an empty array writes nothing. A slot that changed is
+/// written through the row the fence above matched, so a save the fence refuses
+/// writes no slot either; one that did not change is not written, and no slot is
+/// deleted (a saved set is never un-saved). Two abilities swapped between two
+/// slots in one save are two updates of one statement, which the table's unique
+/// key accepts because it is checked at the statement's end.
+///
 /// > 🐿️ This function was generated automatically using v4.7.0 of
 /// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
 ///
@@ -1626,6 +1688,7 @@ pub fn save_place(
   arg_15: Int,
   arg_16: Int,
   arg_17: Json,
+  arg_18: Json,
 ) -> Result(pog.Returned(SavePlaceRow), pog.QueryError) {
   let decoder = {
     use character_id <- decode.field(0, decode.int)
@@ -1660,6 +1723,15 @@ pub fn save_place(
 -- before it waits for a row another save holds, so without the lock a save that
 -- waited would delete or keep quest rows by the log the earlier save had not yet
 -- written, and leave a quest the later log dropped.
+--
+-- The action slots are $18, a JSON array with one object for each slot of each
+-- action set the character has saved, whose keys are the columns of
+-- `character_action_slot`; an empty array writes nothing. A slot that changed is
+-- written through the row the fence above matched, so a save the fence refuses
+-- writes no slot either; one that did not change is not written, and no slot is
+-- deleted (a saved set is never un-saved). Two abilities swapped between two
+-- slots in one save are two updates of one statement, which the table's unique
+-- key accepts because it is checked at the statement's end.
 with saved as (
   update character
   set
@@ -1762,6 +1834,33 @@ put as (
     excluded.objective_ms_left,
     excluded.kill_mask
   )
+),
+incoming_slots as (
+  select *
+  from jsonb_to_recordset($18::jsonb) as slot_row(
+    action_set smallint,
+    slot smallint,
+    spell4_base_id integer
+  )
+),
+put_slots as (
+  insert into character_action_slot (
+    character_id,
+    action_set,
+    slot,
+    spell4_base_id
+  )
+  select
+    saved.character_id,
+    incoming_slots.action_set,
+    incoming_slots.slot,
+    incoming_slots.spell4_base_id
+  from saved
+  cross join incoming_slots
+  on conflict (character_id, action_set, slot) do update
+  set spell4_base_id = excluded.spell4_base_id
+  where character_action_slot.spell4_base_id
+    is distinct from excluded.spell4_base_id
 )
 select character_id from saved;
 "
@@ -1783,6 +1882,7 @@ select character_id from saved;
   |> pog.parameter(pog.int(arg_15))
   |> pog.parameter(pog.int(arg_16))
   |> pog.parameter(pog.text(json.to_string(arg_17)))
+  |> pog.parameter(pog.text(json.to_string(arg_18)))
   |> pog.returning(decoder)
   |> pog.execute(db)
 }

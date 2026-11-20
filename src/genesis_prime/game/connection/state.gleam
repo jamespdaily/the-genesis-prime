@@ -17,6 +17,7 @@ import genesis_prime/game/dev_command
 import genesis_prime/game/inventory
 import genesis_prime/game/item_charge
 import genesis_prime/game/level_up
+import genesis_prime/game/limited_action_set
 import genesis_prime/game/movement
 import genesis_prime/game/objective
 import genesis_prime/game/player_life
@@ -797,6 +798,7 @@ pub fn saving(
       experience: entered.experience,
       level: entered.character.level,
       quests: quest_log.rows(log: entered.quests, now_ms: now.monotonic_ms),
+      action_sets: limited_action_set.rows(saved: entered.action_sets),
     )
   ask_within(
     session: Session(

@@ -1,13 +1,14 @@
 //// The fixture beside a wire recording (genesis_prime/wire_recording/fixture):
 //// the rows of the session's account, its characters and their held items,
-//// currencies and quests, and where the id sequences stood, as data-only SQL a
-//// replay applies after the migrations.
+//// currencies, quests and saved action bars, and where the id sequences stood, as
+//// data-only SQL a replay applies after the migrations.
 //// Expected values come from these places.
 //// - The rows the tests insert, and the tables' columns in
 ////   `priv/migrations/0001_account_and_character.sql` through
 ////   `priv/migrations/0004_character_needs_rename.sql`, and of the character's
 ////   quests and currencies in `priv/migrations/0021_character_quest.sql` and
-////   `priv/migrations/0024_character_currency.sql`.
+////   `priv/migrations/0024_character_currency.sql`, and of the character's action
+////   slots in `priv/migrations/0049_character_action_slot.sql`.
 //// - The fixture's own contract in its module doc: the named accounts and their
 ////   characters only, every column but `created_at`, ids kept as they were (they
 ////   are identity columns, so the inserts override them), each id sequence set
@@ -151,6 +152,7 @@ pub fn the_fixtures_columns_are_the_tables_columns_but_created_at_test() -> Nil 
   let source = pool()
   insert_rows(source)
   insert_currencies_and_quests(source)
+  insert_action_slots(source)
   let path = path_in(folder)
   assert fixture.write(source, path, ["genesis"]) == Ok(Nil)
   let assert Ok(text) = simplifile.read(path) as "the fixture reads"
@@ -161,6 +163,7 @@ pub fn the_fixtures_columns_are_the_tables_columns_but_created_at_test() -> Nil 
       "character_item",
       "character_currency",
       "character_quest",
+      "character_action_slot",
     ],
     fn(table) {
       let assert Ok(statement) =
@@ -201,6 +204,25 @@ fn insert_currencies_and_quests(pool: pog.Connection) -> Nil {
   run(
     pool,
     "insert into character_quest (character_id, quest_id, state, completed_at, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left, kill_mask) values (1, 100, 1, null, 5, true, 3, '{2,0}', 60000, '{1000,0}', '{5,0,0,0,0,127}'), (1, 101, 3, '2026-11-08 10:00:00.123456+00', null, null, null, null, null, null, null), (1, 102, 4, null, null, null, null, null, null, null, null), (6, 100, 2, null, 0, false, 0, '{}', 0, '{}', '{0,0,0,0,0,0}')",
+  )
+}
+
+/// Action slots of the characters `insert_rows` makes: a saved set with an
+/// empty slot between two abilities, a second set, and a set of the character of
+/// the other account.
+fn insert_action_slots(pool: pog.Connection) -> Nil {
+  run(
+    pool,
+    "insert into character_action_slot (character_id, action_set, slot, spell4_base_id) values (1, 0, 0, 27638), (1, 0, 1, null), (1, 0, 2, 20325), (1, 2, 11, 262143), (6, 0, 0, 27638)",
+  )
+}
+
+/// The action slot rows, one text each, with every column; an empty slot reads
+/// `null`.
+fn action_slot_rows(pool: pog.Connection) -> List(String) {
+  query_texts(
+    pool,
+    "select concat_ws('|', character_id, action_set, slot, coalesce(spell4_base_id::text, 'null')) from character_action_slot order by character_id, action_set, slot",
   )
 }
 
@@ -253,6 +275,26 @@ pub fn the_quests_of_the_named_accounts_characters_are_kept_test() -> Nil {
       "6|100|2|null|0|false|0|{}|0|{}|{0,0,0,0,0,0}",
     ]
     as "an active quest with its objectives and timers, a completed quest with its time to the microsecond, a known quest with no active columns, and an active quest with empty objectives, as inserted"
+}
+
+pub fn the_action_slots_of_the_named_accounts_characters_are_kept_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use folder <- recording_support.in_folder
+  let source = pool()
+  insert_rows(source)
+  insert_action_slots(source)
+  let path = path_in(folder)
+  assert fixture.write(source, path, ["genesis"]) == Ok(Nil)
+  let target = pool()
+  assert fixture.apply(target, path) == Ok(Nil)
+  assert action_slot_rows(target)
+    == [
+      "1|0|0|27638",
+      "1|0|1|null",
+      "1|0|2|20325",
+      "1|2|11|262143",
+    ]
+    as "each slot of the named account's character as inserted, an empty slot between two abilities and the last slot of a later set included, and not the set of the other account's character"
 }
 
 pub fn a_fixture_file_with_no_currency_or_quest_rows_leaves_those_tables_empty_test() -> Nil {

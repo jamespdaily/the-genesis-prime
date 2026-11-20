@@ -1,30 +1,33 @@
 //// The rows a recorded session starts from, saved beside its recordings as a
 //// file of data-only SQL (`INSERT` statements for the account, character,
-//// character item, character currency and character quest tables, no schema), so
-//// a replay applies every migration and then the fixture, and the session finds
-//// the same account, characters, held items, currencies and quests it found live.
+//// character item, character currency, character quest and character action slot
+//// tables, no schema), so a replay applies every migration and then the fixture,
+//// and the session finds the same account, characters, held items, currencies,
+//// quests and saved action bars it found live.
 ////
 //// - **What is kept.** The accounts the session names by login name, their
-////   characters and the items, currencies and quests those characters hold, never
-////   the rest of the database, and every column of the five tables but
+////   characters and the items, currencies, quests and action slots those
+////   characters hold, never the rest of the database, and every column of the six
+////   tables but
 ////   `created_at`, which no flow reads. The ids and an item's guid are identity
 ////   columns, so each insert overrides its own. A statement after the rows of each table sets its
 ////   sequence to where the live database's stood (its last value and whether it
 ////   had given one), so a row a replay makes gets the id or guid it got live,
 ////   whatever rows the live database lost since: a deleted character or item, a
-////   rolled-back insert, a row of another account. The currency and quest tables
-////   have no id to restore.
+////   rolled-back insert, a row of another account. The currency, quest and action
+////   slot tables have no id to restore.
 //// - **The order.** Accounts first, then the characters that reference them,
-////   then the items, currencies and quests that reference the characters.
+////   then the items, currencies, quests and action slots that reference the
+////   characters.
 //// - **The file.** One statement for each row, each ending in a semicolon and a
 ////   line feed. A text is quoted by doubling its quotes and a byte string is
 ////   written in hexadecimal, so no value is read as SQL; the tables' columns
 ////   hold no line feed followed by a semicolon (a login name or a character
 ////   name is letters and a space; an item row holds numbers only).
 //// - **Applying.** The statements run in one transaction, so a statement the
-////   database refuses leaves no row of the file behind. A file with no currency
-////   or quest statement leaves those tables empty, as a file written before they
-////   were kept does.
+////   database refuses leaves no row of the file behind. A file with no currency,
+////   quest or action slot statement leaves those tables empty, as a file written
+////   before they were kept does.
 
 import genesis_prime/store/worker
 import genesis_prime/wire_recording
@@ -53,8 +56,8 @@ pub type FixtureError {
 }
 
 /// Saves the accounts of `login_names`, their characters and the items,
-/// currencies and quests those characters hold from the database `database`
-/// reaches, and where its three sequences stand, as data-only SQL in the file at
+/// currencies, quests and action slots those characters hold from the database
+/// `database` reaches, and where its three sequences stand, as data-only SQL in the file at
 /// `path`, in an order that satisfies each table's references. A
 /// login name the database has no account for is `NoSuchAccount`, and a file
 /// already there is never overwritten. A sitting writes it before it accepts
@@ -76,22 +79,31 @@ pub fn write(
       }
     }),
   )
-  use characters <- result.try(
-    sql.characters_of_accounts_named(database, login_names)
-    |> result.map_error(database_failed),
-  )
-  use items <- result.try(
-    sql.items_of_characters_of_accounts_named(database, login_names)
-    |> result.map_error(database_failed),
-  )
-  use currencies <- result.try(
-    sql.currencies_of_characters_of_accounts_named(database, login_names)
-    |> result.map_error(database_failed),
-  )
-  use quests <- result.try(
-    sql.quests_of_characters_of_accounts_named(database, login_names)
-    |> result.map_error(database_failed),
-  )
+  use characters <- result.try(read(
+    sql.characters_of_accounts_named,
+    database,
+    login_names,
+  ))
+  use items <- result.try(read(
+    sql.items_of_characters_of_accounts_named,
+    database,
+    login_names,
+  ))
+  use currencies <- result.try(read(
+    sql.currencies_of_characters_of_accounts_named,
+    database,
+    login_names,
+  ))
+  use quests <- result.try(read(
+    sql.quests_of_characters_of_accounts_named,
+    database,
+    login_names,
+  ))
+  use action_slots <- result.try(read(
+    sql.action_slots_of_characters_of_accounts_named,
+    database,
+    login_names,
+  ))
   use account_sequence <- result.try(
     sql.account_sequence(database) |> result.map_error(database_failed),
   )
@@ -129,9 +141,21 @@ pub fn write(
       ),
       currencies: currencies.rows,
       quests: quests.rows,
+      action_slots: action_slots.rows,
     ),
   )
   |> result.map_error(file_failed(path))
+}
+
+/// The rows one of the fixture's queries reads for the characters of the accounts
+/// with these login names.
+fn read(
+  query: fn(pog.Connection, List(String)) ->
+    Result(pog.Returned(row), pog.QueryError),
+  database: pog.Connection,
+  login_names: List(String),
+) -> Result(pog.Returned(row), FixtureError) {
+  query(database, login_names) |> result.map_error(database_failed)
 }
 
 /// Where an id sequence stands: the last value it gave, or the value it gives
@@ -144,7 +168,7 @@ type Sequence {
 /// statement that sets the account id sequence, an insert for each character, the
 /// statement that sets the character id sequence, an insert for each item, the
 /// statement that sets the item guid sequence, and an insert for each currency
-/// and each quest.
+/// and each quest and action slot.
 fn render(
   accounts accounts: List(sql.AccountsNamedRow),
   account_sequence account_sequence: Sequence,
@@ -154,6 +178,7 @@ fn render(
   item_sequence item_sequence: Sequence,
   currencies currencies: List(sql.CurrenciesOfCharactersOfAccountsNamedRow),
   quests quests: List(sql.QuestsOfCharactersOfAccountsNamedRow),
+  action_slots action_slots: List(sql.ActionSlotsOfCharactersOfAccountsNamedRow),
 ) -> String {
   string.concat(
     list.flatten([
@@ -183,6 +208,7 @@ fn render(
       ],
       list.map(currencies, currency_statement),
       list.map(quests, quest_statement),
+      list.map(action_slots, action_slot_statement),
     ]),
   )
 }
@@ -220,25 +246,58 @@ pub fn apply(
 /// The name of the fixture's file inside a recording folder.
 pub const file_name = "fixture.sql"
 
+/// The statement that inserts one row into `table`: `values` are the literals of
+/// `columns`, in order. `identity` is true for a table whose id is an identity
+/// column, which the insert then overrides with the row's own.
+fn insert_statement(
+  table table: String,
+  identity identity: Bool,
+  columns columns: List(String),
+  values values: List(String),
+) -> String {
+  "insert into "
+  <> table
+  <> " ("
+  <> string.join(columns, ", ")
+  <> ")"
+  <> case identity {
+    True -> " overriding system value"
+    False -> ""
+  }
+  <> " values ("
+  <> string.join(values, ", ")
+  <> ");\n"
+}
+
 fn account_statement(row: sql.AccountsNamedRow) -> String {
-  "insert into account (account_id, login_name, srp_salt, srp_verifier, game_account_id) overriding system value values ("
-  <> string.join(
-    [
+  insert_statement(
+    table: "account",
+    identity: True,
+    columns: [
+      "account_id", "login_name", "srp_salt", "srp_verifier", "game_account_id",
+    ],
+    values: [
       int.to_string(row.account_id),
       text(row.login_name),
       bytes(row.srp_salt),
       bytes(row.srp_verifier),
       text(row.game_account_id),
     ],
-    ", ",
   )
-  <> ");\n"
 }
 
 fn character_statement(row: sql.CharactersOfAccountsNamedRow) -> String {
-  "insert into character (character_id, account_id, session_epoch, save_sequence, name, gender, race_id, class_id, faction_id, level, path, world_id, world_zone_id, position_x, position_y, position_z, rotation_yaw, rotation_pitch, rotation_roll, look_labels, look_values, bones, needs_rename, health, experience) overriding system value values ("
-  <> string.join(
-    [
+  insert_statement(
+    table: "character",
+    identity: True,
+    columns: [
+      "character_id", "account_id", "session_epoch", "save_sequence", "name",
+      "gender", "race_id", "class_id", "faction_id", "level", "path", "world_id",
+      "world_zone_id", "position_x", "position_y", "position_z", "rotation_yaw",
+      "rotation_pitch", "rotation_roll", "look_labels", "look_values", "bones",
+      "needs_rename", "health", "experience",
+    ],
+    values: [
       int.to_string(row.character_id),
       int.to_string(row.account_id),
       int.to_string(row.session_epoch),
@@ -265,15 +324,19 @@ fn character_statement(row: sql.CharactersOfAccountsNamedRow) -> String {
       nullable(row.health, int.to_string),
       nullable(row.experience, int.to_string),
     ],
-    ", ",
   )
-  <> ");\n"
 }
 
 fn item_statement(row: sql.ItemsOfCharactersOfAccountsNamedRow) -> String {
-  "insert into character_item (item_guid, character_id, item2_id, location, bag_index, stack_count, random_stats, charges, item_flags, expires_at_unix_ms) overriding system value values ("
-  <> string.join(
-    [
+  insert_statement(
+    table: "character_item",
+    identity: True,
+    columns: [
+      "item_guid", "character_id", "item2_id", "location", "bag_index",
+      "stack_count", "random_stats", "charges", "item_flags",
+      "expires_at_unix_ms",
+    ],
+    values: [
       int.to_string(row.item_guid),
       int.to_string(row.character_id),
       int.to_string(row.item2_id),
@@ -285,24 +348,22 @@ fn item_statement(row: sql.ItemsOfCharactersOfAccountsNamedRow) -> String {
       int.to_string(row.item_flags),
       nullable(row.expires_at_unix_ms, int.to_string),
     ],
-    ", ",
   )
-  <> ");\n"
 }
 
 fn currency_statement(
   row: sql.CurrenciesOfCharactersOfAccountsNamedRow,
 ) -> String {
-  "insert into character_currency (character_id, currency_type_id, amount) values ("
-  <> string.join(
-    [
+  insert_statement(
+    table: "character_currency",
+    identity: False,
+    columns: ["character_id", "currency_type_id", "amount"],
+    values: [
       int.to_string(row.character_id),
       int.to_string(row.currency_type_id),
       int.to_string(row.amount),
     ],
-    ", ",
   )
-  <> ");\n"
 }
 
 /// The state of a completed quest, the only state whose row holds a time
@@ -310,9 +371,15 @@ fn currency_statement(
 const completed_quest_state = 3
 
 fn quest_statement(row: sql.QuestsOfCharactersOfAccountsNamedRow) -> String {
-  "insert into character_quest (character_id, quest_id, state, completed_at, placeholder_objective_id, tracked, done_mask, progress, quest_ms_left, objective_ms_left, kill_mask) values ("
-  <> string.join(
-    [
+  insert_statement(
+    table: "character_quest",
+    identity: False,
+    columns: [
+      "character_id", "quest_id", "state", "completed_at",
+      "placeholder_objective_id", "tracked", "done_mask", "progress",
+      "quest_ms_left", "objective_ms_left", "kill_mask",
+    ],
+    values: [
       int.to_string(row.character_id),
       int.to_string(row.quest_id),
       int.to_string(row.state),
@@ -328,9 +395,23 @@ fn quest_statement(row: sql.QuestsOfCharactersOfAccountsNamedRow) -> String {
       nullable(row.objective_ms_left, integers),
       nullable(row.kill_mask, integers),
     ],
-    ", ",
   )
-  <> ");\n"
+}
+
+fn action_slot_statement(
+  row: sql.ActionSlotsOfCharactersOfAccountsNamedRow,
+) -> String {
+  insert_statement(
+    table: "character_action_slot",
+    identity: False,
+    columns: ["character_id", "action_set", "slot", "spell4_base_id"],
+    values: [
+      int.to_string(row.character_id),
+      int.to_string(row.action_set),
+      int.to_string(row.slot),
+      nullable(row.spell4_base_id, int.to_string),
+    ],
+  )
 }
 
 /// The statement that sets the id sequence of `table` to `state`.

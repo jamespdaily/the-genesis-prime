@@ -49,7 +49,7 @@ import genesis_prime/message/float32
 import genesis_prime/message/item_added
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/message/unit_property.{type UnitProperty}
-import genesis_prime/store.{type Character, HeldItem}
+import genesis_prime/store.{type Character, ActionSets, HeldItem}
 import genesis_prime/table/character_creation
 import genesis_prime/table/id.{ClassId, Item2Id, Spell4BaseId}
 import genesis_prime/world_map/unit_fields
@@ -59,6 +59,7 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
 import gleam/string
+import item_charge_support
 import limited_action_set_support
 import owned_test
 import unitest
@@ -300,6 +301,119 @@ pub fn a_rejoin_sends_the_bar_the_player_saved_in_the_compact_form_and_an_entry_
   assert shortcuts_of(limited_action_set.none())
     == [#(0, 27_638), #(1, 20_684), #(2, 20_325)]
     as "no saved set sends the class's bar, as the entry does"
+}
+
+pub fn an_entry_with_saved_rows_sends_the_saved_bar_and_one_with_no_rows_sends_the_class_loadout_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let zeros = fn(count) { list.repeat(0, count) }
+  let entry_with = fn(rows, unset) {
+    world_entry_support.joined_with_action_sets(
+      class_id: 7,
+      level: 4,
+      action_sets: ActionSets(slots: rows),
+      unset:,
+    )
+  }
+  let sent_with = fn(rows, unset) {
+    let assert world_entry.InTheWorld(effects:, ..) = entry_with(rows, unset)
+      as "the entry puts the player in the world"
+    let frames = world_entry_support.frames_of(effects:)
+    let assert Ok(set) =
+      action_set.decode(
+        { world_entry_support.only_frame(frames:, message_id: 0x019D) }.body,
+      )
+      as "0x19d decodes"
+    assert set.action_set_index == 0 && set.result == 1 && set.unlocked == 1
+      as "opcode.0x19d: set 0, result 1, unlocked"
+    list.map(set.shortcuts, fn(shortcut) {
+      assert shortcut.shortcut_type == 4 && shortcut.location == 4
+        as "opcode.0x19d: type 4 by Spell4Base id in the ability location, as the sitting's entry sends it"
+      #(shortcut.bag_index, shortcut.object_id)
+    })
+  }
+  list.each(
+    [
+      #(
+        "rows of A: the four abilities of the sitting's save, each at its own slot",
+        limited_action_set_support.rows_of(
+          set: 0,
+          ids: limited_action_set_support.ids_a,
+        ),
+        [],
+        [#(0, 27_638), #(1, 20_684), #(2, 20_325), #(3, 20_718)],
+      ),
+      #(
+        "no rows: the class's loadout, the three level 1 abilities in slots 0 to 2",
+        [],
+        [],
+        [#(0, 27_638), #(1, 20_684), #(2, 20_325)],
+      ),
+      #(
+        "rows naming 23468 (a level 10 ability) in slot 3: the level 4 book does not hold it",
+        limited_action_set_support.rows_of(set: 0, ids: [
+          27_638,
+          20_684,
+          20_325,
+          23_468,
+          ..zeros(8)
+        ]),
+        [],
+        [#(0, 27_638), #(1, 20_684), #(2, 20_325)],
+      ),
+      #(
+        "a gap: the filled slot after an empty one keeps its index, 2 and not 1",
+        limited_action_set_support.rows_of(set: 0, ids: [
+          27_638,
+          0,
+          20_325,
+          ..zeros(9)
+        ]),
+        [],
+        [#(0, 27_638), #(2, 20_325)],
+      ),
+      #(
+        "a saved empty set: twelve rows of no ability send no shortcut, not the class's bar",
+        limited_action_set_support.rows_of(set: 0, ids: zeros(12)),
+        [],
+        [],
+      ),
+      #(
+        "rows of A and an item with no charges recorded: the store fills the charges first, and the bar of A follows the fill",
+        limited_action_set_support.rows_of(
+          set: 0,
+          ids: limited_action_set_support.ids_a,
+        ),
+        [
+          item_charge_support.unset(
+            guid: 21,
+            item2: 2509,
+            location: 1,
+            bag_index: 0,
+            count: 1,
+          ),
+        ],
+        [#(0, 27_638), #(1, 20_684), #(2, 20_325), #(3, 20_718)],
+      ),
+    ],
+    fn(row) {
+      let #(why, rows, unset, expected) = row
+      assert sent_with(rows, unset) == expected as why
+    },
+  )
+  let assert world_entry.ActionSlotFault(text:) =
+    entry_with(
+      [
+        store.ActionSlotRow(
+          action_set: 4,
+          slot: 0,
+          spell4_base_id: Some(27_638),
+        ),
+      ],
+      [],
+    )
+    as "a row of set 4, which the table refuses, ends the entry"
+  assert string.contains(text, "set 4") && string.contains(text, "slot 0")
+    as "the sentence names the row"
 }
 
 pub fn the_loadout_comes_after_0x19b_and_before_0x61_with_the_equipped_items_first_and_the_set_last_test() -> Nil {

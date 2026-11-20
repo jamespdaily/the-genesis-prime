@@ -159,6 +159,7 @@ import gleam/result
 import gleam_community/maths
 import item_bot
 import level_up_support
+import limited_action_set_support as limited
 import log_capture
 import login_client
 import login_support
@@ -9406,6 +9407,82 @@ pub fn an_item_command_puts_the_item_in_the_bag_the_client_reads_test() -> Nil {
     as "the first slot of the inventory"
   assert held.item.charges == 5 as "Item2 90021's maxCharges"
   assert held.item.stack_count == 1
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+/// The (bag index, Spell4Base id) of the type 4 shortcuts of the one 0x019D among frames.
+fn bar_shortcuts(frames frames: List(Frame)) -> List(#(Int, Int)) {
+  limited.the_action_set(frames:).shortcuts
+  |> list.filter(fn(shortcut) { shortcut.shortcut_type == 4 })
+  |> list.map(fn(shortcut) { #(shortcut.bag_index, shortcut.object_id) })
+}
+
+/// A Spellslinger of level 4 who sets its bar with the client's own 0xB1 (the 2026-11-19
+/// sitting's saves A and C, whose bytes the part 1 tests hold) and plays again after a camp.
+/// The class loadout is the three level 1 abilities in slots 0 to 2 (SpellLevel 1011, 1036 and
+/// 1236); the saved bar is what the next entry's 0x019D carries (`opcode.0x19d`) and the
+/// answer is 0x019D then 0x00B2 (`opcode.0xb2`).
+pub fn a_bar_saved_with_the_clients_0xb1_is_back_after_a_relog_on_the_whole_server_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let started = login_support.start()
+  let #(game, character) =
+    new_player_at_level(
+      started:,
+      number: 1,
+      character_name: "Zed Qu",
+      class_id: limited.spellslinger,
+      level: 4,
+    )
+  send_play(game:, character_id: character)
+  let #(entry, have) =
+    game_client.read_until(game:, have: <<>>, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x01BC })
+    })
+  assert bar_shortcuts(frames: entry)
+    == [#(0, 27_638), #(1, 20_684), #(2, 20_325)]
+    as "a character that saved nothing enters with the class's three abilities"
+  game_client.send_world(
+    game:,
+    message_id: 0x00B1,
+    body: limited.hex(limited.save_a),
+  )
+  let #(answer, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x00B2 })
+    })
+  assert list.filter_map(answer, fn(frame) {
+      case frame.message_id {
+        0x019D | 0x00B2 -> Ok(frame.message_id)
+        _ -> Error(Nil)
+      }
+    })
+    == [0x019D, 0x00B2]
+    as "the answer is the set then 0xB2"
+  assert limited.the_action_set(frames: answer).result == 1
+    as "the sitting's first save is accepted at level 4"
+  assert bar_shortcuts(frames: answer)
+    == [#(0, 27_638), #(1, 20_684), #(2, 20_325), #(3, 20_718)]
+    as "slots 0 to 3 are the abilities of the save"
+  assert limited.the_answer_bit(frames: answer) == 1
+  let #(second_entry, have) =
+    game_client.camp_and_play(game:, have:, character_id: character)
+  assert bar_shortcuts(frames: second_entry)
+    == [#(0, 27_638), #(1, 20_684), #(2, 20_325), #(3, 20_718)]
+    as "the next entry holds the four shortcuts of the save, not the class's three"
+  game_client.send_world(
+    game:,
+    message_id: 0x00B1,
+    body: limited.hex(limited.save_c),
+  )
+  let #(_, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      list.any(frames, fn(frame) { frame.message_id == 0x00B2 })
+    })
+  let #(third_entry, _) =
+    game_client.camp_and_play(game:, have:, character_id: character)
+  assert bar_shortcuts(frames: third_entry) == [#(0, 27_638), #(1, 20_684)]
+    as "after the sitting's third save and a relog the entry holds 27638 and 20684 only"
   game_client.close(game:)
   login_support.stop(started)
 }
