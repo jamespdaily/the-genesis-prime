@@ -69,12 +69,21 @@ pub fn ahead_of_the_player(
   hit_radius hit_radius: Float,
   gap gap: Float,
 ) -> start_place.Place {
-  let entry = connection_support.entry_place()
+  ahead_of(place: connection_support.entry_place(), hit_radius:, gap:)
+}
+
+/// The place of a creature of this hit radius straight ahead of a player standing at
+/// `place`, `gap` from the player's edge to its own.
+pub fn ahead_of(
+  place place: start_place.Place,
+  hit_radius hit_radius: Float,
+  gap gap: Float,
+) -> start_place.Place {
   start_place.moved(
-    place: entry,
-    x: start_place.x(entry),
-    y: start_place.y(entry),
-    z: start_place.z(entry) -. { gap +. player_radius +. hit_radius },
+    place:,
+    x: start_place.x(place),
+    y: start_place.y(place),
+    z: start_place.z(place) -. { gap +. player_radius +. hit_radius },
   )
 }
 
@@ -113,22 +122,40 @@ pub fn picture_with_walker(gap gap: Float) -> shown.Picture {
 pub fn at_the_vendor(
   state state: game_connection.State,
 ) -> game_connection.State {
-  let place = ahead_of_the_player(hit_radius: 1.0, gap: 1.0)
+  at_the_vendor_for_a_player_at(
+    state:,
+    player: connection_support.entry_place(),
+    stay_count: 1,
+  )
+}
+
+/// The same for a player standing at `player` in its `stay_count`th stay: Dorian Walker is
+/// straight ahead of it.
+pub fn at_the_vendor_for_a_player_at(
+  state state: game_connection.State,
+  player player: start_place.Place,
+  stay_count stay_count: Int,
+) -> game_connection.State {
+  let place = ahead_of(place: player, hit_radius: 1.0, gap: 1.0)
   let walker = spawn_support.dorian_walker(number: 1, place:)
   let #(state, _) =
     connection_support.feed(
       state:,
-      event: connection_support.creature_appears(
-        unit_id: walker_unit,
-        creature_id: 74_812,
-        display_info_id: walker.display_info_id,
-        outfit_info_id: walker.outfit_info_id,
-        hit_radius: walker.combat.hit_radius,
-        place: ahead_of_the_player(
+      event: connection_support.in_stay(
+        count: stay_count,
+        event: connection_support.creature_appears(
+          unit_id: walker_unit,
+          creature_id: 74_812,
+          display_info_id: walker.display_info_id,
+          outfit_info_id: walker.outfit_info_id,
           hit_radius: walker.combat.hit_radius,
-          gap: 1.0,
+          place: ahead_of(
+            place: player,
+            hit_radius: walker.combat.hit_radius,
+            gap: 1.0,
+          ),
+          hostile_to: Hostile(exile: False, dominion: False),
         ),
-        hostile_to: Hostile(exile: False, dominion: False),
       ),
     )
   let #(state, _) =

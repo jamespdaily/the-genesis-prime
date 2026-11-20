@@ -20,6 +20,7 @@ import genesis_prime/client_connection.{
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/game/ability_book
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{type Settings, Settings}
@@ -1639,6 +1640,25 @@ pub fn zone_changed_message(old old: Int, new new: Int) -> BitArray {
       new_world_zone_id: new,
     ))
   world_message(message_id: world_zone_changed.message_id, body:)
+}
+
+/// The bag index of an ability of the Stalker's Novice set (class 5, Exile) at level 1,
+/// from the fixture's rows.
+pub fn stalker_bag_index_of(base base: Int) -> Int {
+  let assert Ok(set) =
+    loadout.of(
+      tables: fixture_tables.shared(),
+      class_id: ClassId(5),
+      faction_id: 166,
+    )
+    as "the fixture holds the Stalker's Novice set"
+  let assert Ok(index) =
+    list.index_map(ability_book.bag(loadout: set, level: 1), fn(held, index) {
+      #(held, index)
+    })
+    |> list.key_find(Spell4BaseId(base))
+    as "the Stalker's bag holds the ability"
+  index
 }
 
 /// The Medic of level 1 in the world, who presses Paralytic Surge at bag index 2.

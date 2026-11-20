@@ -616,12 +616,62 @@ fn described(place place: start_place.Place) -> String {
   <> ", zone "
   <> int.to_string(start_place.world_zone_id(place))
   <> ", ("
-  <> float.to_string(start_place.x(place))
+  <> plain_decimal(value: start_place.x(place))
   <> ", "
-  <> float.to_string(start_place.y(place))
+  <> plain_decimal(value: start_place.y(place))
   <> ", "
-  <> float.to_string(start_place.z(place))
+  <> plain_decimal(value: start_place.z(place))
   <> ")"
+}
+
+/// A position as a plain decimal in the shortest digits that read back the same:
+/// the exponent form of `float.to_string` (`-7.7e3`) is written out (`-7700.0`).
+pub fn plain_decimal(value value: Float) -> String {
+  case string.split(float.to_string(value), "e") {
+    [mantissa, exponent] -> {
+      let assert Ok(exponent) = int.parse(string.replace(exponent, "+", ""))
+        as "float.to_string writes an integer exponent"
+      let #(sign, mantissa) = case string.starts_with(mantissa, "-") {
+        True -> #("-", string.drop_start(mantissa, 1))
+        False -> #("", mantissa)
+      }
+      let #(whole, fraction) = case string.split(mantissa, ".") {
+        [whole, fraction] -> #(whole, fraction)
+        _ -> #(mantissa, "")
+      }
+      // The digits and where the point falls among them.
+      let digits = whole <> fraction
+      let point = string.length(whole) + exponent
+      let #(before, after) = case point <= 0 {
+        True -> #("0", string.repeat("0", -point) <> digits)
+        False ->
+          case point >= string.length(digits) {
+            True -> #(
+              digits <> string.repeat("0", point - string.length(digits)),
+              "",
+            )
+            False -> #(
+              string.slice(digits, 0, point),
+              string.drop_start(digits, point),
+            )
+          }
+      }
+      sign <> before <> "." <> trimmed_fraction(fraction: after)
+    }
+    _ -> float.to_string(value)
+  }
+}
+
+/// A fraction without its trailing zeros, one zero when nothing is left.
+fn trimmed_fraction(fraction fraction: String) -> String {
+  case string.ends_with(fraction, "0") {
+    True -> trimmed_fraction(fraction: string.drop_end(fraction, 1))
+    False ->
+      case fraction {
+        "" -> "0"
+        _ -> fraction
+      }
+  }
 }
 
 /// The player taken to `place`, in another world: the info log, then the map is asked

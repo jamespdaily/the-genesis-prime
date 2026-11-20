@@ -33,6 +33,7 @@
 
 import ability_book_support as book_support
 import ability_points_support as points_support
+import cast_support
 import character_support
 import character_tables
 import connection_rule_support as rule_support
@@ -50,9 +51,11 @@ import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/chat_channel
 import genesis_prime/game/chat_tell
 import genesis_prime/game/connection as game_connection
+import genesis_prime/game/connection/dev_command as connection_dev_command
 import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/departures
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/game/strike
 import genesis_prime/game/strike_tell
 import genesis_prime/message/cast_activate.{CastActivate}
 import genesis_prime/message/client_control_echoed.{ClientControlEchoed}
@@ -63,6 +66,7 @@ import genesis_prime/message/disconnect_reason.{
 import genesis_prime/message/enter_world
 import genesis_prime/message/experience_gained.{ExperienceGained}
 import genesis_prime/message/float32
+import genesis_prime/message/item_place.{ItemPlace}
 import genesis_prime/message/player_health
 import genesis_prime/message/quest_objective_progress.{
   type QuestObjectiveProgress, QuestObjectiveProgress,
@@ -75,10 +79,10 @@ import genesis_prime/message/unit_position_command.{
 }
 import genesis_prime/step.{
   type ConnectionEvent, type ConnectionStep, type Event, type Outcome,
-  CancelTimer, ConnectionId, OwnEffect, OwnEvent, StoppedWaiting, TimerFired,
-  TimerId, Unwatch, Watch, WatchEnded, WatchId, Woken,
+  CancelTimer, ConnectionId, OwnEffect, OwnEvent, StartTimer, StoppedWaiting,
+  TimerFired, TimerId, Unwatch, Watch, WatchEnded, WatchId, Woken,
 }
-import genesis_prime/store.{Move, SavePlace}
+import genesis_prime/store.{ForItems, Items, Move, SavePlace}
 import genesis_prime/table/id.{Item2Id}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId, MapId}
@@ -95,6 +99,7 @@ import place_support
 import planted_table.{Integer}
 import quest_support
 import quest_turn_in_support
+import vendor_support
 
 /// A Medic (class 4), level 3, holding 1800 experience: 90 past level 3's 1710.
 fn medic() -> game_connection.State {
@@ -355,7 +360,7 @@ pub fn an_item_command_asks_the_store_for_a_purchase_of_no_cost_and_waits_in_buy
   // Item2 48169 has a random-stat row, so the stack is made with a rolled word.
   let #(_, rolling) =
     dev_support.said(state: holding(credits: 0), text: "!item 48169")
-  let assert client_connection.AskStore(store.Items(store.BuyFromVendor(
+  let assert client_connection.AskStore(Items(store.BuyFromVendor(
     make: [made],
     held: 0,
     ..,
@@ -404,7 +409,7 @@ pub fn an_item_answer_updates_the_items_and_writes_the_frames_and_one_line_test(
   assert item_expiry_support.times_left(taken: answered) == [#(900, 1_800_000)]
     as "opcode.0x111.time_left: the new item is sent with its whole lifetime"
   let #(_, next) = dev_support.said(state:, text: "!item 90021")
-  let assert client_connection.AskStore(store.Items(store.BuyFromVendor(
+  let assert client_connection.AskStore(Items(store.BuyFromVendor(
     make: [second],
     ..,
   ))) = support.ask_request(next)
@@ -773,7 +778,7 @@ pub fn the_quest_the_command_completes_finishes_the_quest_waiting_on_it_and_the_
     as "0x361: the type 24 objective 18604, the second of 9497, is done"
   assert list.last(support.written_ids(taken)) == Ok(0x01C8)
     as "the command's line is written after the follow-ups' frames"
-  let assert client_connection.AskStore(store.Items(store.TurnInQuest(
+  let assert client_connection.AskStore(Items(store.TurnInQuest(
     quests: asked,
     ..,
   ))) = support.ask_request(taken)
@@ -850,7 +855,7 @@ pub fn a_command_for_a_quest_the_server_is_completing_runs_after_its_turn_in_and
       taken: entry,
       outcome: support.turn_in_saved(taken: entry),
     )
-  let assert client_connection.AskStore(store.Items(store.TurnInQuest(..))) =
+  let assert client_connection.AskStore(Items(store.TurnInQuest(..))) =
     support.ask_request(second)
     as "the answer's input asks for the quest that waited in the queue"
   let #(_, third) =
@@ -1371,6 +1376,29 @@ type Placed {
   )
 }
 
+pub fn a_position_is_written_as_a_plain_decimal_test() -> Nil {
+  use <- owned_test.run(60_000)
+  list.each(
+    [
+      #(
+        -7700.0,
+        "-7700.0",
+        "a whole number that float.to_string writes as -7.7e3",
+      ),
+      #(100.0, "100.0", "a whole number it writes plainly"),
+      #(20_000.0, "20000.0", "a whole number it writes as 2.0e4"),
+      #(-7700.970703125, "-7700.970703125", "a fraction it writes plainly"),
+      #(0.00001, "0.00001", "a fraction below one it writes as 1.0e-5"),
+      #(-0.00000015, "-0.00000015", "a negative fraction it writes as -1.5e-7"),
+      #(0.0, "0.0", "zero"),
+    ],
+    fn(row) {
+      assert connection_dev_command.plain_decimal(value: row.0) == row.1
+        as row.2
+    },
+  )
+}
+
 pub fn a_go_in_the_same_world_places_the_player_at_once_and_tells_the_map_test() -> Nil {
   use <- owned_test.run(60_000)
   list.each(
@@ -1782,7 +1810,7 @@ fn joining_world_870() -> #(game_connection.State, step.ConnectionStep(Request))
 }
 
 /// The system line of the `!go` into World 870.
-const line_of_the_go = "moved to world 870, zone 1227, (-7.7e3, -941.0, -659.0)"
+const line_of_the_go = "moved to world 870, zone 1227, (-7700.0, -941.0, -659.0)"
 
 type Crossing {
   Crossing(
@@ -1896,6 +1924,7 @@ pub fn a_go_to_another_world_leaves_the_map_then_joins_the_new_one_at_the_place_
         as "the new stay's save timer saves the place"
       assert start_place.world_id(saved) == 870
         && start_place.x(saved) == row.x
+        && start_place.y(saved) == row.y
         && start_place.z(saved) == row.z
         as "the next save holds the new place"
       assert health == Some(1) as "the saved health is kept, not made full"
@@ -1911,6 +1940,194 @@ pub fn a_go_to_another_world_leaves_the_map_then_joins_the_new_one_at_the_place_
           after: 6000,
         )
         as "the credits are kept"
+    },
+  )
+}
+
+/// A player holding two stacks of Item2 20791, `sold_stack` (guid 500, bag slot 0, 5) and
+/// `kept_stack` (guid 501, bag slot 1, 3), at the vendor Dorian Walker (Creature2
+/// 74812) with the development commands on and 1000 credits.
+fn at_the_vendor_holding_two_stacks() -> game_connection.State {
+  let settings =
+    connection_state.Settings(
+      ..support.settings_with_dev_commands(),
+      vendors: vendor_support.stocking(creature_ids: [74_812]),
+    )
+  vendor_support.at_the_vendor(
+    state: support.entered_stocking_holding(
+      in_character_select: support.in_select_from(support.accepted(settings).0),
+      credits: 1000,
+      items: [
+        item_expiry_support.held(
+          guid: 500,
+          item2: 20_791,
+          location: 1,
+          bag_index: 0,
+          count: 5,
+          expires_at_unix_ms: None,
+        ),
+        item_expiry_support.held(
+          guid: 501,
+          item2: 20_791,
+          location: 1,
+          bag_index: 1,
+          count: 3,
+          expires_at_unix_ms: None,
+        ),
+      ],
+    ),
+  )
+}
+
+pub fn a_go_to_another_world_keeps_the_bag_and_the_buyback_list_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let state = at_the_vendor_holding_two_stacks()
+  let #(state, taken) =
+    support.sale_requested(
+      state:,
+      place: ItemPlace(location: 1, bag_index: 0),
+      quantity: 5,
+    )
+  let #(state, _) =
+    support.answer(
+      state:,
+      taken:,
+      outcome: step.Answer(
+        FromStore(
+          ForItems(
+            store.Sold(amount: 1013, words: [
+              store.SoldWord(item_guid: 500, words: store.plain_words),
+            ]),
+          ),
+        ),
+      ),
+    )
+  let #(state, leaving) =
+    dev_support.said(state:, text: "!go 870 1227 29 -853 -560")
+  let #(state, joining) = dev_support.left_the_map(state:, leaving:)
+  let #(state, _) = dev_support.joined_world_870(state:, joining:)
+  let state =
+    vendor_support.at_the_vendor_for_a_player_at(
+      state:,
+      player: place_support.at(
+        world_id: 870,
+        world_zone_id: 1227,
+        x: 29.0,
+        y: -853.0,
+        z: -560.0,
+      ),
+      stay_count: 2,
+    )
+  let #(_, selling) =
+    support.sale_requested(
+      state:,
+      place: ItemPlace(location: 1, bag_index: 1),
+      quantity: 3,
+    )
+  let assert AskStore(Items(store.SellToVendor(sold: [kept], ..))) =
+    support.ask_request(selling)
+    as "the stack kept in the bag is still held and can be sold"
+  assert kept.item_guid == 501 as "the second stack, guid 501"
+  let #(_, buying) = support.buyback_requested(state:, buyback_id: 1)
+  let assert AskStore(Items(store.BuyFromVendor(grow:, make:, item2_id:, ..))) =
+    support.ask_request(buying)
+    as "the entry the earlier sale put on the buyback list is still there"
+  assert item2_id == Item2Id(20_791) && make == []
+    as "the entry is the 5 of Item2 20791 the sale took"
+  assert grow
+    == [store.StackGrowth(item_guid: 501, held_count: 3, new_count: 8)]
+    as "they join the stack of 3 the player kept, guid 501: the bag is still held"
+}
+
+/// Impale (Spell4Base 23161) of the Stalker's Novice set, whose go strikes the creatures
+/// it reaches (`game_connection_strike_gate`).
+const impale_base = 23_161
+
+pub fn a_go_to_another_world_leaves_the_cast_and_the_strike_in_progress_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(state, _) =
+    support.entered_with(
+      settings: support.settings_with_dev_commands(),
+      class_id: 5,
+      saved_health: None,
+    )
+  let #(state, _) =
+    support.feed(
+      state,
+      support.creature_of_beast_appears_facing(
+        unit_id: 42,
+        creature_id: 48_404,
+        yaw: 0.0,
+      ),
+    )
+  let #(state, pressed) =
+    support.at(
+      state:,
+      ms: 1000,
+      event: OwnEvent(
+        step.Read(support.world_message(
+          message_id: 0x009A,
+          body: cast_support.press_body(
+            client_cast_id: 1,
+            bag_index: support.stalker_bag_index_of(base: impale_base),
+            target: 0,
+            press: 1,
+          ),
+        )),
+      ),
+    )
+  let #(state, _, pending, steps) =
+    support.casts_left_answered(
+      state:,
+      world: Nil,
+      pending: support.cast_timers(steps: [pressed], ms: 1000),
+      until_ms: 1400,
+      steps: [pressed],
+      answer: fn(world, state, _, taken) { #(world, state, [taken]) },
+    )
+  let #(state, pressed_again) =
+    support.at(
+      state:,
+      ms: 1400,
+      event: OwnEvent(
+        step.Read(support.world_message(
+          message_id: 0x009A,
+          body: cast_support.press_body(
+            client_cast_id: 2,
+            bag_index: support.stalker_bag_index_of(base: impale_base),
+            target: 0,
+            press: 1,
+          ),
+        )),
+      ),
+    )
+  assert pending == [] as "the first cast is over with its go"
+  assert support.cast_timers(steps: [pressed_again], ms: 1400)
+    == [#(1500, TimerId(1002))]
+    as "the second press is a cast in progress: its go is a timer due at 1500"
+  assert list.any(steps, fn(taken) {
+    list.contains(
+      rule_support.effects_of(taken),
+      OwnEffect(StartTimer(timer: strike.strike_timer, after_ms: 1000)),
+    )
+  })
+    as "the go struck the beast, whose answer is awaited: the strike timer is set"
+  let #(_, went) =
+    support.at(
+      state:,
+      ms: 1450,
+      event: OwnEvent(
+        step.Read(support.chat_line_message(4, "!go 870 1227 -7700 -941 -659")),
+      ),
+    )
+  let effects = rule_support.effects_of(went)
+  list.each(
+    [
+      #(strike.strike_timer, "the open strike round's timer"),
+      #(TimerId(1002), "the cast in progress's go timer"),
+    ],
+    fn(row) {
+      assert list.contains(effects, OwnEffect(CancelTimer(row.0))) as row.1
     },
   )
 }

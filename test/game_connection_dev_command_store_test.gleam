@@ -420,6 +420,7 @@ fn is_the_place_commanded(place place: Option(Place)) -> Bool {
       start_place.world_id(place) == 870
       && start_place.world_zone_id(place) == 1227
       && start_place.x(place) == -7700.0
+      && start_place.y(place) == -941.0
       && start_place.z(place) == -659.0
     None -> False
   }
