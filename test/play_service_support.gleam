@@ -5,6 +5,10 @@
 //// then `/usr/bin:/bin` only. The real `podman` and `lsof` are not on that
 //// path, so a call a test did not plan fails closed and CI needs no Podman.
 ////
+//// `state.sh` waits for a bounded call by looks; each run's `look` is the fake
+//// `play_service_fake_look.sh`, so a call that answers never outlasts its bound
+//// and a blocked call is ended after its counted looks, whatever the load.
+////
 //// Real `ps`, `sed`, `find`, `kill` and `touch` run: a lock owner is a real
 //// process, and its `started` text is read by `ps`.
 
@@ -58,6 +62,11 @@ pub fn with_scene(body body: fn(Scene) -> a) -> a {
     let assert Ok(Nil) = simplifile.write(path, tool)
     let assert Ok(Nil) = simplifile.set_permissions_octal(path, 0o755)
   })
+  let assert Ok(look) = simplifile.read("test/play_service_fake_look.sh")
+    as "the fake look's script is in the repository"
+  let look_path = scene.fakes <> "/look"
+  let assert Ok(Nil) = simplifile.write(look_path, look)
+  let assert Ok(Nil) = simplifile.set_permissions_octal(look_path, 0o755)
   body(scene)
 }
 
@@ -92,12 +101,33 @@ pub fn plant_block(scene scene: Scene, key key: String) -> Nil {
 
 /// The process ids the blocked call `key` recorded, one per call.
 pub fn blocked_pids(scene scene: Scene, key key: String) -> List(Int) {
-  result.unwrap(
-    simplifile.read(scene.fakes <> "/answers/" <> key <> ".pid"),
-    "",
-  )
+  result.unwrap(simplifile.read(blocked_pid_path(scene:, key:)), "")
   |> string.split("\n")
   |> list.filter_map(fn(line) { int.parse(string.trim(line)) })
+}
+
+/// Holds every look of a bounded call until `release_looks` is called; the first
+/// look records the process id of the shell that waits for the call.
+pub fn hold_looks(scene scene: Scene) -> Nil {
+  let assert Ok(Nil) = simplifile.write(scene.fakes <> "/look.hold", "")
+  Nil
+}
+
+/// Lets the held looks go on.
+pub fn release_looks(scene scene: Scene) -> Nil {
+  let assert Ok(Nil) = simplifile.delete(scene.fakes <> "/look.hold")
+  Nil
+}
+
+/// The path of the file that holds the process id of the shell that waits for
+/// a call whose looks are held.
+pub fn look_waiter_path(scene: Scene) -> String {
+  scene.fakes <> "/look.waiter"
+}
+
+/// The path of the file the blocked call `key` records its process id in.
+pub fn blocked_pid_path(scene scene: Scene, key key: String) -> String {
+  scene.fakes <> "/answers/" <> key <> ".pid"
 }
 
 /// The key of `podman info`.
@@ -184,6 +214,7 @@ fn environment(
       "GENESIS_HOME=" <> scene.home,
       "FAKE_DIR=" <> scene.fakes,
       "TMPDIR=" <> scene.folder,
+      "GENESIS_PLAY_LOOK_COMMAND=" <> scene.fakes <> "/look",
     ],
     list.map(extra, fn(pair) { pair.0 <> "=" <> pair.1 }),
   ])
@@ -303,6 +334,19 @@ pub fn make_old(path path: String) -> Nil {
     shellout.command(
       run: "touch",
       with: ["-t", "200001010000", path],
+      in: ".",
+      opt: [],
+    )
+  Nil
+}
+
+/// Makes the file or folder at `path` newer than any minute the test can take:
+/// its time is far ahead, so it is under a minute old whatever the load.
+pub fn make_young(path path: String) -> Nil {
+  let assert Ok(_) =
+    shellout.command(
+      run: "touch",
+      with: ["-t", "209901010000", path],
       in: ".",
       opt: [],
     )

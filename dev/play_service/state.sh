@@ -54,9 +54,12 @@
 # smaller of its bound and what is left of the budget, and once the budget is used up
 # the calls that remain are not made and print unreadable. Bounds and budget are in
 # tenths of a second so a test can set them small; they are counted in looks of 0.05 s,
-# so under load a call can end a little after its bound. The calls that read local files
-# and the process table (ps, sed, find, cat, tail) are not bounded. A read ended by
-# SIGKILL leaves its scratch folder under $TMPDIR (play-service-state.*) behind.
+# so under load a call can end a little after its bound; a test sets
+# GENESIS_PLAY_LOOK_COMMAND to a command that is run as `COMMAND PID` for each look in
+# place of the 0.05 s wait, so what a bound or the budget decides does not depend on
+# the machine's speed. The calls that read local files and the process table (ps, sed,
+# find, cat, tail) are not bounded. A read ended by SIGKILL leaves its scratch folder
+# under $TMPDIR (play-service-state.*) behind.
 #
 # bash 3.2 (the /bin/bash launchd runs) and later; the lib.sh note on `${x:?word}` holds.
 #
@@ -72,6 +75,9 @@ bound_tenths=${GENESIS_PLAY_COMMAND_BOUND_TENTHS:-30}
 # The longest the calls of one read may run together: 10 s, a guess under the runner's
 # 15 s deadline, which is also a guess.
 budget_tenths=${GENESIS_PLAY_READ_BUDGET_TENTHS:-100}
+
+# What a look waits with: empty for the 0.05 s wait, or a test's command (see above).
+look_command=${GENESIS_PLAY_LOOK_COMMAND:-}
 
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/play-service-state.XXXXXX") || exit 1
 echo 0 >"$scratch/used"
@@ -108,7 +114,7 @@ bounded() {
         echo "$((used + waited))" >"$scratch/used"
         exit 124
       fi
-      sleep 0.05
+      if [ -n "$look_command" ]; then "$look_command" "$pid"; else sleep 0.05; fi
       waited=$((waited + 1))
     done
     wait "$pid"
