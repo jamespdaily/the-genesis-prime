@@ -25,9 +25,11 @@
 #                                  one, so a decision that stays is written once
 #   skip_commit COMMIT, is_skipped COMMIT   the commits not to try again (a file in state)
 #   read_environment_file          reads env.sh when there is one, setting nothing else
-#   load_environment               reads env.sh and checks the values above are set
+#   refuse MESSAGE                 logs MESSAGE and ends the script with status 1
+#   load_environment               reads env.sh and checks the values above are set; refuses when
+#                                  one is not
 #   load_config                    reads $state/config.sh and checks it sets remote and repository;
-#                                  branch defaults to main
+#                                  branch defaults to main; refuses when it is missing or lacks one
 #   remote_head                    prints the commit the remote's branch is at; fails when it
 #                                  cannot be read
 #   live_lock_held                 whether a live session holds ~/.genesis-prime/live.lock
@@ -101,11 +103,25 @@ read_environment_file() {
   fi
 }
 
+# refuse MESSAGE: logs MESSAGE (and prints it to standard error unless log has printed it)
+# and ends the script with status 1. A script that needs a value uses this, not
+# `${x:?word}` nor a bare `.` of a file that may be missing: bash 3.2 (the /bin/bash launchd
+# runs) ends a script that sets an EXIT trap with status 0 on those, because the trap
+# already sees `$?` as 0.
+refuse() {
+  log "$1"
+  if [ ! -t 1 ]; then printf '%s\n' "$1" >&2; fi
+  exit 1
+}
+
+# require_value NAME MESSAGE: refuses with MESSAGE when the variable NAME is empty or unset.
+require_value() { [ -n "${!1:-}" ] || refuse "$2"; }
+
 load_environment() {
   read_environment_file
-  : "${GENESIS_PLAY_ADDRESS:?set GENESIS_PLAY_ADDRESS (the address of this machine on the PC network) in $home/env.sh}"
-  : "${GENESIS_PLAY_ACCOUNT:?set GENESIS_PLAY_ACCOUNT in $home/env.sh}"
-  : "${GENESIS_PLAY_PGPASSWORD:?set GENESIS_PLAY_PGPASSWORD (the password of the play Postgres) in $home/env.sh; dev/play_service/install.sh makes it}"
+  require_value GENESIS_PLAY_ADDRESS "set GENESIS_PLAY_ADDRESS (the address of this machine on the PC network) in $home/env.sh"
+  require_value GENESIS_PLAY_ACCOUNT "set GENESIS_PLAY_ACCOUNT in $home/env.sh"
+  require_value GENESIS_PLAY_PGPASSWORD "set GENESIS_PLAY_PGPASSWORD (the password of the play Postgres) in $home/env.sh; dev/play_service/install.sh makes it"
   tables=${GENESIS_TABLE_DIR:-$home/tables}
   terrain=${GENESIS_TERRAIN_DIR:-$home/terrain}
   PGPASSWORD=$GENESIS_PLAY_PGPASSWORD
@@ -116,9 +132,11 @@ load_environment() {
 # load_config: reads config.sh, which install.sh wrote: the remote, the repository and,
 # to follow a branch other than main before it merges, a `branch=` line.
 load_config() {
+  [ -f "$state/config.sh" ] || refuse "config.sh is missing in $state; dev/play_service/install.sh writes it"
   # shellcheck source=/dev/null
   . "$state/config.sh"
-  : "${remote:?config.sh sets no remote}" "${repository:?config.sh sets no repository}"
+  require_value remote "config.sh sets no remote"
+  require_value repository "config.sh sets no repository"
   branch=${branch:-main}
 }
 
