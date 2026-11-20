@@ -1174,24 +1174,30 @@ pub fn nodes_aimed(aimed aimed: Aimed) -> List(Int) {
   )
 }
 
-/// The life a reached effect gives the node on its unit: a Fluff row, a property or
-/// cooldown modifier, a stealth and a proc row live their own delay and duration, a heal
-/// applied at once lives its delay so the 0x7fe waits for it. The other kinds give the node
-/// no life: they land at the go, or their own state (a crowd-control state, a periodic
-/// row) gives it.
-fn node_row_of(entry entry: Reached) -> Result(lasting.LastingRow, Nil) {
+/// The effect a reached row gives the node on its unit, with the life it gives: a Fluff
+/// row, a property or cooldown modifier, a stealth and a proc row live their own delay and
+/// duration and are listed in a unit create (`Listed`, with the row's Spell4Effects id); a
+/// heal applied at once lives its delay so the 0x7fe waits for it and is not listed
+/// (`LifeOnly`). The other kinds give the node no life: they land at the go, or their own
+/// state (a crowd-control state, a periodic row) gives it.
+fn node_row_of(entry entry: Reached) -> Result(lasting.NodeEffect, Nil) {
+  let listed = fn(row: lasting.LastingRow) {
+    Ok(lasting.Listed(effect_id: entry.effect.effect_id, row:))
+  }
   case entry.effect.kind, entry.product {
-    spell_plan.LastingEffect(lasting: row), _ -> Ok(row.row)
-    spell_plan.ModifierEffect(modifier: row), _ -> Ok(row.row)
-    spell_plan.CooldownEffect(modifier: row), _ -> Ok(row.row)
-    spell_plan.StealthEffect(stealth: row), _ -> Ok(row.row)
-    spell_plan.ProcEffect(proc: row), _ -> Ok(row.row)
+    spell_plan.LastingEffect(lasting: row), _ -> listed(row.row)
+    spell_plan.ModifierEffect(modifier: row), _ -> listed(row.row)
+    spell_plan.CooldownEffect(modifier: row), _ -> listed(row.row)
+    spell_plan.StealthEffect(stealth: row), _ -> listed(row.row)
+    spell_plan.ProcEffect(proc: row), _ -> listed(row.row)
     spell_plan.HealEffect(..), cast_state.Healing(healed:) ->
-      Ok(lasting.LastingRow(
-        delay_ms: healed.delay_ms,
-        duration_ms: 0,
-        until_removed: False,
-      ))
+      Ok(
+        lasting.LifeOnly(row: lasting.LastingRow(
+          delay_ms: healed.delay_ms,
+          duration_ms: 0,
+          until_removed: False,
+        )),
+      )
     spell_plan.HealEffect(..), cast_state.Plain
     | spell_plan.HealEffect(..), cast_state.CooldownKept(..)
     | spell_plan.ProxyEffect(..), _
@@ -1213,7 +1219,8 @@ fn node_row_of(entry entry: Reached) -> Result(lasting.LastingRow, Nil) {
 /// the go lists for it (`lasting.given`), a periodic row living its own delay and
 /// durationTime as the client's node does (`opcode.0x7f4.effect_time`), held past that
 /// only while a tick round on the unit is open (`ended_and_kept`); none when no effect has
-/// a life.
+/// a life. A periodic row is listed with its Spell4Effects id; an ability restriction
+/// only gives the node its life.
 pub fn node_of(
   spell spell: Spell,
   held held: Option(lasting.Node),
@@ -1234,11 +1241,13 @@ pub fn node_of(
       list.filter_map(aimed.restrictions, fn(entry) {
         case entry.1 == unit_id {
           True ->
-            Ok(lasting.LastingRow(
-              delay_ms: entry.0.row.row.delay_ms,
-              duration_ms: entry.0.row.row.duration_ms,
-              until_removed: entry.0.row.row.until_removed,
-            ))
+            Ok(
+              lasting.LifeOnly(row: lasting.LastingRow(
+                delay_ms: entry.0.row.row.delay_ms,
+                duration_ms: entry.0.row.row.duration_ms,
+                until_removed: entry.0.row.row.until_removed,
+              )),
+            )
           False -> Error(Nil)
         }
       }),
@@ -1247,10 +1256,13 @@ pub fn node_of(
       list.filter_map(aimed.ticking, fn(row) {
         case row.unit_id == unit_id {
           True ->
-            Ok(lasting.LastingRow(
-              delay_ms: row.schedule.delay_ms,
-              duration_ms: row.schedule.duration_ms,
-              until_removed: False,
+            Ok(lasting.Listed(
+              effect_id: row.effect_id,
+              row: lasting.LastingRow(
+                delay_ms: row.schedule.delay_ms,
+                duration_ms: row.schedule.duration_ms,
+                until_removed: False,
+              ),
             ))
           False -> Error(Nil)
         }
