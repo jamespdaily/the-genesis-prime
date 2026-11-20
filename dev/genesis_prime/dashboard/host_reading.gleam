@@ -255,13 +255,17 @@ fn container(
 }
 
 fn server(lines: Dict(String, String)) -> Result(Server, Unreadable) {
-  use state <- result.map(container(lines, "server"))
+  use state <- result.try(container(lines, "server"))
   let label = fn(key) { dict.get(lines, key) |> result.unwrap("") |> present }
-  Server(
-    state:,
-    revision: label("server_revision"),
-    address: label("server_address"),
-  )
+  case dict.get(lines, "server_labels") {
+    Ok("unreadable") -> Error(Unreadable(reason_of(lines, "server_labels")))
+    Ok(_) | Error(Nil) ->
+      Ok(Server(
+        state:,
+        revision: label("server_revision"),
+        address: label("server_address"),
+      ))
+  }
 }
 
 fn connections(lines: Dict(String, String)) -> Result(Int, Unreadable) {

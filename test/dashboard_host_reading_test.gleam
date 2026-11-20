@@ -423,6 +423,76 @@ pub fn a_wrong_or_missing_line_makes_only_its_section_unreadable_test() -> Nil {
       list.append(support.healthy_lines(), [#("colour", "red")]),
       healthy,
     ),
+    ReadRow(
+      "the server's labels could not be read: the server is unreadable with the reason, in place of its labels",
+      support.changed([
+        support.Drop("server_revision"),
+        support.Drop("server_address"),
+        support.Set("server_labels", "unreadable"),
+        support.Set("server_labels_reason", "timed out at its 3.0 s bound"),
+      ]),
+      Report(
+        ..healthy,
+        server: Error(host_reading.Unreadable("timed out at its 3.0 s bound")),
+      ),
+    ),
+    ReadRow(
+      "the server's labels are unreadable and give no reason",
+      support.changed([
+        support.Drop("server_revision"),
+        support.Drop("server_address"),
+        support.Set("server_labels", "unreadable"),
+      ]),
+      Report(
+        ..healthy,
+        server: Error(host_reading.Unreadable("server_labels could not be read")),
+      ),
+    ),
+    ReadRow(
+      "a call timed out at its bound",
+      support.changed([
+        support.Set("game_connections", "unreadable"),
+        support.Set("game_connections_reason", "timed out at its 3.0 s bound"),
+      ]),
+      Report(
+        ..healthy,
+        connections: Error(host_reading.Unreadable(
+          "timed out at its 3.0 s bound",
+        )),
+      ),
+    ),
+    ReadRow(
+      "the read's budget ran out during a call",
+      support.changed([
+        support.Set("database_ready", "unreadable"),
+        support.Set(
+          "database_ready_reason",
+          "timed out: the read's 10.0 s budget ran out",
+        ),
+      ]),
+      Report(
+        ..healthy,
+        database: Error(host_reading.Unreadable(
+          "timed out: the read's 10.0 s budget ran out",
+        )),
+      ),
+    ),
+    ReadRow(
+      "the read's budget was used up before a call, which was not made",
+      support.changed([
+        support.Set("game_connections", "unreadable"),
+        support.Set(
+          "game_connections_reason",
+          "not asked: the read's 10.0 s budget was used up",
+        ),
+      ]),
+      Report(
+        ..healthy,
+        connections: Error(host_reading.Unreadable(
+          "not asked: the read's 10.0 s budget was used up",
+        )),
+      ),
+    ),
   ]
   list.each(rows, fn(row) {
     assert host_reading.parse(support.text(row.lines)) == row.expected
@@ -442,6 +512,27 @@ pub fn a_wrong_or_missing_line_makes_only_its_section_unreadable_test() -> Nil {
     <> "trailing words\n"
   assert host_reading.parse(bit_array.from_string(noisy)) == healthy
     as "diagnostic lines are ignored"
+
+  // The owner file of the update lock may hold more than its first line; the
+  // script prints the first as the process id, and a line after it is not one.
+  let owner =
+    string.concat(
+      list.map(
+        support.changed([
+          support.Set("update_lock", "run"),
+          support.Set("update_lock_pid", "40826"),
+        ]),
+        fn(line) { line.0 <> "=" <> line.1 <> "\n" },
+      ),
+    )
+    <> "a second line of the owner file\n"
+  assert host_reading.parse(bit_array.from_string(owner)).updater
+    == Ok(Updater(
+      held: False,
+      lock: UpdateLockRun(40_826),
+      last_line: support.last_line,
+    ))
+    as "only the first line of the owner file is the process id"
 
   // An empty report and bytes that are not text give no fact.
   assert host_reading.parse(<<>>) == unreadable_all("the report is empty")
@@ -641,6 +732,71 @@ pub fn a_failed_read_keeps_each_sections_last_value_and_marks_it_stale_test() ->
           database: Stale(
             Database(state: host_reading.ContainerRunning, ready: True),
             failed("the Podman machine is down"),
+            1000,
+          ),
+        ),
+      ),
+    ),
+    MergeRow(
+      "a good read then labels that timed out: only the server is stale, with the reason",
+      Some(support.fresh(1000)),
+      finished(
+        support.changed([
+          support.Drop("server_revision"),
+          support.Drop("server_address"),
+          support.Set("server_labels", "unreadable"),
+          support.Set("server_labels_reason", "timed out at its 3.0 s bound"),
+        ]),
+      ),
+      5000,
+      Some(
+        Reading(
+          ..support.fresh(5000),
+          server: Stale(
+            support.running_server(),
+            failed("timed out at its 3.0 s bound"),
+            1000,
+          ),
+        ),
+      ),
+    ),
+    MergeRow(
+      "a good read then a read whose budget ran out: the facts it could not ask are stale, the rest fresh",
+      Some(support.fresh(1000)),
+      finished([
+        #("machine", "up"),
+        #("server", "running"),
+        #("server_revision", "9d2015a0"),
+        #("server_address", "192.168.1.5"),
+        #("database", "unreadable"),
+        #("database_reason", "timed out: the read's 10.0 s budget ran out"),
+        #("database_ready", "unreadable"),
+        #(
+          "database_ready_reason",
+          "timed out: the read's 10.0 s budget ran out",
+        ),
+        #("game_connections", "unreadable"),
+        #(
+          "game_connections_reason",
+          "not asked: the read's 10.0 s budget was used up",
+        ),
+        #("held", "no"),
+        #("update_lock", "free"),
+        #("live_lock", "free"),
+        #("updater_last_line", support.last_line),
+      ]),
+      12_000,
+      Some(
+        Reading(
+          ..support.fresh(12_000),
+          connections: Stale(
+            0,
+            failed("not asked: the read's 10.0 s budget was used up"),
+            1000,
+          ),
+          database: Stale(
+            support.ready_database(),
+            failed("timed out: the read's 10.0 s budget ran out"),
             1000,
           ),
         ),
