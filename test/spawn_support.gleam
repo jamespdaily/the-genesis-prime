@@ -781,6 +781,7 @@ pub fn earthen_roar(hold_ms hold_ms: Int) -> creature_life.Special {
           max_range: 10.0,
           degrees: 360.0,
           target_count: 10,
+          order: area.Nearest,
         ),
         inside: area.InsideShapes(placements: [
           area.Placement(

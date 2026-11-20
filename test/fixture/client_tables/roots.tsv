@@ -1465,3 +1465,11 @@ Spell4	44466	a spell whose caster row follows the caster and whose propertyFlags
 Spell4	41024	a spell with a never-drawn row (flag 0x40, row 2739)	telegraph_entries_test
 Spell4	29710	a spell with a never-drawn row (flag 0x100, row 63)	telegraph_entries_test
 Spell4	33582	a spell with a fixed row offset 4 ahead (row 3939)	telegraph_entries_test
+Spell4	63569	Void Blast, a charge whose area row selects Random and has no telegraph row	creature_special_test, world_creature_test
+Spell4	70256	a charge whose area row selects Random and names a target row	creature_special_test
+Spell4	55846	a charge with a target row and an area row selecting Closest	creature_special_test
+TelegraphDamage	3852	a ring, shape 1	spell_area_test
+TelegraphDamage	3029	a pie, shape 5, turned 150	spell_area_test
+TelegraphDamage	6957	a pie, shape 5, turned 180	spell_area_test
+TelegraphDamage	2920	two boxes, shape 3	spell_area_test
+TelegraphDamage	4664	an unhalved box, shape 6	spell_area_test

@@ -31,6 +31,7 @@ import genesis_prime/client_connection.{
   CreatureFaces, CreatureMoved, CreaturePlaced, Health, PeerNews, Targeting,
   Threat,
 }
+import genesis_prime/game/area
 import genesis_prime/game/crowd_control
 import genesis_prime/game/forced_move
 import genesis_prime/game/hit.{Blow, Offence, Rolls, Worked}
@@ -7742,4 +7743,65 @@ pub fn the_rotated_cone_of_52448_strikes_where_the_client_draws_it_test() -> Nil
   // degrees off, inside.
   assert struck_by_the_loaded_special(spell4_id: 52_448) == [2, 5]
     as "the fighter at +x and the target ahead are struck, the one at -x is not"
+}
+
+/// Earthen Roar with its area row taking one unit in `order`: the cone (5.5 m, 40 degrees) is
+/// the hit shape and the row's range and count cap it.
+fn roar_in_order(order order: area.Order) -> creature_life.Special {
+  let roar = spawn_support.earthen_roar(hold_ms: 1000)
+  let assert creature_life.Charged(area: row, ..) as charged = roar.attack.cast
+    as "Earthen Roar is a charge"
+  creature_life.Special(
+    ..roar,
+    attack: creature_life.Attack(
+      ..roar.attack,
+      cast: creature_life.Charged(
+        ..charged,
+        area: area.Row(..row, order:, target_count: 1),
+      ),
+    ),
+  )
+}
+
+/// The fighters struck by the special of `order` when players 2, 4, 5 and 7 fight the Beast and
+/// all four stand in its cone (player 2 4 ahead, 5 2 ahead, 4 3 ahead and 0.3 aside, 7 2.5
+/// ahead and 0.3 the other aside), and the cast id of its round.
+fn struck_in_order(order order: area.Order) -> #(List(Int), Int) {
+  let #(state, aggro) =
+    roar_fought_by(
+      state: rootbrute_with(special: roar_in_order(order:), viewers: [
+        2,
+        4,
+        5,
+        7,
+      ]),
+    )
+  let state = with_player_at(state:, number: 5, x: 0.0, z: -2.0)
+  let state = with_player_at(state:, number: 4, x: 0.3, z: -3.0)
+  let state = with_player_at(state:, number: 7, x: -0.3, z: -2.5)
+  let #(state, opened, go) = roar_opened(state:, aggro:)
+  let #(state, _, strike) = first_go_passed(state:, go:)
+  let #(_, struck) = strike_go_reached(state:, strike:)
+  #(list.map(fights_told(struck), fn(told) { told.0 }), cast_id_sent(opened, 2))
+}
+
+pub fn a_furthest_special_strikes_the_far_fighter_and_a_random_one_by_its_cast_id_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Nearest strikes player 5, 2 ahead; Furthest strikes player 2, 4 ahead, the farthest in the
+  // cone (the order is the rule's, `area` tests 1 and 2). Random strikes by the round's cast id
+  // as its seed (the guess marked in `area`: the MurmurHash3 finalizer of
+  // `seed * 0x9E3779B1 + unit_id`, masked to 32 bits; a unit's id is 10 times its number).
+  // Worked outside the code for cast id 2147497985: units 20, 50, 40 and 70 give 1852897559,
+  // 3119742477, 3645587042 and 2859683438, so unit 20, player 2, is first. With the seed 0 a
+  // plain `select` would pass, they give 3528132897, 4276596341, 1732903491 and 3699139156,
+  // so unit 40, player 4, is first: a strike that ignored the round would fail here.
+  assert struck_in_order(order: area.Nearest).0 == [5]
+    as "the nearest fighter in the cone"
+  assert struck_in_order(order: area.Furthest).0 == [2]
+    as "the farthest fighter in the cone"
+  let #(struck, cast_id) = struck_in_order(order: area.Random)
+  assert cast_id == 2_147_497_985 as "the round's cast id"
+  assert struck == [2] as "the fighter the cast id's mix puts first"
+  assert struck_in_order(order: area.Random) == #(struck, cast_id)
+    as "the same round, the same fighter"
 }

@@ -3158,3 +3158,100 @@ pub fn a_creature_fighting_a_player_standing_apart_faces_the_player_through_chas
     as "the home turn with the facing of the spawn's 0x262, which a viewer blends"
   world_support.stop(world:)
 }
+
+/// The key of a strike the creature told the connection's player to take.
+fn strike_told(message: Message) -> Result(strike_tell.Key, Nil) {
+  case message {
+    ForStay(
+      sent: client_connection.SentByFoe(strike_tell.Attacks(tell: strike_tell.Strike(
+        key:,
+        ..,
+      ))),
+      ..,
+    ) -> Ok(key)
+    ForStay(..)
+    | client_connection.SentBySessions(..)
+    | client_connection.SentByChat(..) -> Error(Nil)
+  }
+}
+
+/// A fight of the Rootbrute Grimspore with Spell4 63569 as its special, against player 1 (unit
+/// 10, on it) and player 2 (unit 20, 5 aside): the cast id of the special's round and the unit
+/// it struck, after both players have seen the cast and its go.
+fn void_blast_fight() -> #(Int, Int) {
+  let roaring =
+    fight_of(
+      creature: spawn_support.special_creature(
+        number: 1,
+        creature_id: 12_212,
+        spell4_id: 63_569,
+      ),
+      damage_effects_id: 159_886,
+    )
+  let received_2 = world_support.connection(world: roaring.world, id: 2)
+  let _player = world_watch_support.join(run: roaring.run, connection: 2)
+  let _appeared =
+    world_watch_support.next(
+      received: received_2,
+      what: "the creature's 0x262 for player 2",
+      wanted: world_watch_support.appearance,
+    )
+  struck_from(
+    world: roaring.world,
+    run: roaring.run,
+    connection: 2,
+    unit_id: roaring.unit_id,
+    x: 5.0,
+    damage: 1,
+    cast_id: 2,
+  )
+  driven_time.advance(time: roaring.time, ms: 1500)
+  let start = next_cast_started(received: roaring.received)
+  assert start.spell4_id == 63_569 as "player 1 sees the special's cast"
+  assert next_cast_started(received: received_2).cast_id == start.cast_id
+    as "player 2 sees the same cast"
+  driven_time.advance(time: roaring.time, ms: 160)
+  driven_time.settled(roaring.pid)
+  let told =
+    list.append(
+      sent_so_far(
+        world: roaring.world,
+        id: 1,
+        received: roaring.received,
+        wanted: strike_told,
+      ),
+      sent_so_far(
+        world: roaring.world,
+        id: 2,
+        received: received_2,
+        wanted: strike_told,
+      ),
+    )
+  let assert [key] = told as "one of the two players is told to take the strike"
+  assert key.cast_id == start.cast_id as "under the cast's id"
+  answer(roaring:, key:)
+  list.each([roaring.received, received_2], fn(received) {
+    let went = next_cast_went(received:)
+    assert went.cast_id == start.cast_id
+      && list.map(went.targets, fn(target) { target.unit_id }) == [key.unit_id]
+      as "both players see the go name the struck player alone"
+  })
+  world_support.stop(world: roaring.world)
+  #(start.cast_id, key.unit_id)
+}
+
+pub fn a_creature_with_the_special_63569_strikes_the_unit_its_cast_id_picks_test() -> Nil {
+  use <- owned_test.run(90_000)
+  // Spell4 63569 (castTime 160, one go) has area row 541: 360 degrees, 70 m, one unit, order 3
+  // (Random), and no telegraph row, so both players are inside. The round's cast id is the
+  // seed, and the Random order is the guess marked in `area` (units by the MurmurHash3
+  // finalizer of `seed * 0x9E3779B1 + unit_id`, masked to 32 bits). Worked outside the code
+  // for cast id 2147487745: unit 10 gives 2166553108 and unit 20 gives 3475147392, so unit 10
+  // is first; with the seed 0 a plain `select` would pass, unit 20 is first (the strike
+  // would fail here if it ignored the round).
+  let #(cast_id, struck) = void_blast_fight()
+  assert cast_id == 2_147_487_745 as "the round's cast id"
+  assert struck == 10 as "the unit the cast id's mix puts first"
+  assert void_blast_fight() == #(cast_id, struck)
+    as "the same cast id, the same unit"
+}
