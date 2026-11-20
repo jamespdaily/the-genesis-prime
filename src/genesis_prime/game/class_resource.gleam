@@ -554,11 +554,6 @@ pub fn base_focus_pool(resources resources: Resources) -> Float {
   focus_pool(resource: resources.resource)
 }
 
-/// The resource of the class the player holds.
-pub fn resource(resources resources: Resources) -> Resource {
-  resources.resource
-}
-
 /// The Focus held, none for a class that holds none.
 pub fn focus_held(resources resources: Resources) -> Option(Float) {
   option.map(resources.focus, fn(pool) { pool.value })
