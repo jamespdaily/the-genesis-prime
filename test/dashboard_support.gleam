@@ -65,9 +65,25 @@ fn open(
   request: BitArray,
 ) -> #(Connection, Int, List(#(String, String)), BitArray)
 
-/// The payload of the next websocket frame the server sends on the connection.
-@external(erlang, "dashboard_support_ffi", "read_frame")
-pub fn read_frame(connection: Connection) -> BitArray
+/// The payload of the next websocket text frame the server sends on the
+/// connection, or the first byte of what came instead (a close frame is 0x88, a
+/// binary frame 0x82, an HTTP answer starts with `H`, 0x48).
+@external(erlang, "dashboard_support_ffi", "read_text_frame")
+pub fn try_read_frame(connection: Connection) -> Result(BitArray, Int)
+
+/// The payload of the next websocket text frame; anything else fails the test
+/// naming the byte that came.
+pub fn read_frame(connection: Connection) -> BitArray {
+  case try_read_frame(connection) {
+    Ok(payload) -> payload
+    Error(first_byte) ->
+      panic as {
+        "the next websocket frame is not a text frame: its first byte is "
+        <> int.to_string(first_byte)
+        <> ", not 129"
+      }
+  }
+}
 
 @external(erlang, "dashboard_support_ffi", "close")
 pub fn close(connection: Connection) -> Nil

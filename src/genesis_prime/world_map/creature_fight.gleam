@@ -66,39 +66,41 @@
 ////
 //// A charge, the attack of a creature whose spell has a cast time (`creature_life.Charged`): the
 //// attack of the kind or one of its specials (`creature_life.Special`), whose gos (`Go`) are the
-//// spell's phases:
+//// spell's phases, each with the strike its damage rows name or none:
 ////
 //// ```
 //// the attack tick, the target in reach of the attack `chosen` (the first ready special that
 //// reaches it, else the attack), no round open:
 ////                                                         a creature that can move turns to face the target:
 ////                                                         ─0x638 (a kind 14 turn in place)─────────────────▶
-////                                                         round = Charging(CastEnds generation, go 0);
+////                                                         round = Charging(CastEnds generation, go 0, no entries);
 ////                                                            the attack tick's generation moves on and no
 ////                                                            next attack tick starts: the round's close starts it
 ////                                                         ─0x7ff(cast id, spell, target, C's place)────────▶ the client draws the
 ////                                                         StartTimer(CastEnds, first go's due time)          telegraph from the spell
-//// CastEnds of the round's generation, a go that does not strike:
-////                                                         ─0x7f4 (the go's index, no unit)─────────────────▶
-////                                                         StartTimer(CastEnds, next go, of a new generation)
-//// CastEnds of the round's generation, the strike go, C alive and Fighting:
-////                                                         the fighters on the threat list inside the
-////                                                         attack's area (from C's place along its aim) by
-////                                                         their newest sightings
-////                                                         none inside: ─0x7f4 (no unit) 0x7fe───▶ round closed; the
-////                                                            next attack tick (the hold, else interval) is started
-////                                                         some inside: round = Striking, one awaiting entry
-////                                                            per fighter
-//// ◀─── Attacks(Strike(key AtGo(go), C, CreatureStriker(unit, spell4_id), offence)) to each fighter ─ StartTimer(strike deadline, 1 s)
-//// each fighter's answer, the strike round's way (above) ───▶ the last answer or the deadline closes the round
-////                                                         (0x7f4 listing each fighter that landed, 0x7fe); the
-////                                                         next attack tick (the hold, else interval) is started
+//// CastEnds of the round's generation, a go C reaches (alive and Fighting):
+////                                                         the go joins the round's entries in go order, and the
+////                                                         next go's CastEnds is armed (a new generation); after
+////                                                         the last go the round is Striking
+////                                                         a go with no strike, or that strikes nobody: an empty
+////                                                            entry, complete at once
+////                                                         a strike go: the fighters on the threat list inside the
+////                                                         shapes of the go's own strike (from C's place along its
+////                                                         aim) by their newest sightings
+//// ◀─── Attacks(Strike(key AtGo(go), C, CreatureStriker(unit, spell4_id), the go's blows)) to each fighter ─ StartTimer(the go's strike deadline, 1 s)
+//// each fighter's answer, or the go's deadline ───▶ the entry is complete when no answer is awaited
+////                                                         each complete entry at the front of the entries is written:
+////                                                         ─0x7f4 (the go's index, each fighter that landed)─▶
+////                                                         after the last go's entry: ─0x7fe─▶ and the next attack
+////                                                            tick (the hold, else interval) is started
 //// a viewer that arrives while the charge is open:
 ////                                                         ─0x7ff(the open charge's cast id, spell, target, place),
-////                                                            then the 0x7f4 of each go that went─▶
-//// a crowd-control state takes hold of C while the round is Charging (`Controlled`):
-////                                                         CancelTimer(CastEnds); round closed, the next attack
-////                                                            tick (interval) started
+////                                                            then the 0x7f4 of each go already written, no unit─▶
+//// a crowd-control state or a throw takes hold of C while a go is still to come (`Controlled`, `Thrown`):
+////                                                         CancelTimer(CastEnds) and each open deadline; each entry
+////                                                            reached is written at once, in go order, as it stands;
+////                                                            the next attack tick (interval) started
+////                                                         ─0x7f4 of each entry─▶
 ////                                                         ─0x7f9(cast id, result 11) 0x7fe─────────────────▶
 ////                                                         ChargeInterrupted(cast id) ─▶ creature_guard `Interrupted`
 //// ```
@@ -149,9 +151,13 @@
 ////   genesis_prime/world_map/creature_life `Attack`).
 //// - **One round at a time.** The attack interval is never below the strike
 ////   deadline (genesis_prime/world_map/creature_kind), so a tick of an attack with no cast
-////   time never finds a round open. A charge is the open round before its strike (`Charging`,
-////   then `Striking`): it starts no attack tick, the close of its round starts the next, and
-////   a tick that finds a charge open does nothing, so there is never a second round.
+////   time never finds a round open. A charge is the open round while a go is still to come
+////   (`Charging`) and while an entry is open after the last go (`Striking`): it starts no attack
+////   tick, the close of its round starts the next, and a tick that finds a charge open does
+////   nothing, so there is never a second round. The strikes of two gos may be open at once, each
+////   with its own deadline timer, and their 0x7f4 are written in go order: the client keeps the
+////   phase it was last told (`opcode.0x7f4.phase`), and the player's own cast closes its rounds
+////   in the order they began (`game/strike.gleam` `close_ready`).
 //// - **The charge's area** is the attack spell's damage telegraph, in the order of its area
 ////   row: nearest or furthest first, or Random by the round's cast id as the seed
 ////   (genesis_prime/game/spell_area `area_of_spell`, genesis_prime/game/area `select_ordered`),
@@ -269,18 +275,20 @@
 ////     tick: out of reach at its leash circle it stays in the fight, with its threat and its health,
 ////     and leashes at the first tick after the state ends. It leashes in place only when its
 ////     last threat entry goes while it is held (`Released`), when the walk home waits for `ControlEnded`.
-//// - **A state breaks a charge.** Any crowd-control state that takes hold while the round is
-////   `Charging` ends the cast. The authority is Jim's decision of 2026-11-11 ("any crowd control
+//// - **A state breaks a charge.** Any crowd-control state, or a throw, that takes hold while the
+////   round is `Charging` (a go is still to come) ends the cast; the hits that went stand. The authority is Jim's decision of 2026-11-11 ("any crowd control
 ////   that lands during the charge is the interrupt"); the client holds no rule for it. Spell4 85474's
 ////   tooltip, text 748852 ("unless it is interrupted while charging"), and Spell4 85469's hint, text
 ////   748860, are evidence for the Sim-Turrets only. Interrupt Armor already decides whether a state
 ////   lands (genesis_prime/world_map/creature_control), so the fight breaks the charge only when a
-////   state took hold. The fight cancels the `CastEnds` timer, writes 0x7f9 with result
-////   11 (SpellInterrupted) and the 0x7fe, closes the round, starts the next attack tick and asks the
+////   state took hold. The fight cancels the `CastEnds` timer and each open deadline, writes
+////   every entry reached in go order with what was struck so far (a viewer's connection forgets a
+////   cast at its 0x7f9, and the client drops a 0x7f4 of a cast it no longer holds), then 0x7f9 with
+////   result 11 (SpellInterrupted) and the 0x7fe, closes the round, starts the next attack tick and asks the
 ////   creature's rule to tell the guard (`ChargeInterrupted`, with the charge's cast id), which opens the creature
 ////   (genesis_prime/world_map/creature_guard). A creature holding a state starts no charge, so a state
-////   that lands in a charge is the first; once the go is out (`Striking`) the strikes are out and
-////   nothing breaks. The break is the fight's
+////   that lands in a charge is the first; once the last go is reached (`Striking`) the strikes are
+////   out and nothing breaks. The break is the fight's
 ////   for any creature with a charge, guarded or not: a bare turret's charge breaks the same way
 ////   and the guard, finding itself `Bare`, opens nothing.
 //// - **An opened creature is held** (`Fighter.still`, `attack_refused` and `holds_a_state`): it
@@ -313,9 +321,19 @@
 //// | CastEnds timer: a turret's charge whose spell lacks propertyFlags 0x2, and the target walked round it | the rectangle stays at the aim it had at the cast's start | `a_turret_whose_spell_lacks_the_aim_bit_holds_its_aim_from_the_start_test` |
 //// | CastEnds timer: a fixed row with a rotation | the hit is where the client draws the turned shape | `the_rotated_cone_of_52448_strikes_where_the_client_draws_it_test` |
 //// | Charge start: a second attack tick finds the charge open | nothing: the tick it came from is of an old generation | `a_second_attack_tick_during_a_charge_starts_nothing_test`, `a_second_attack_tick_during_a_special_starts_nothing_test` |
-//// | a special's go that does not strike is handled late | the next go's timer is armed for what is left of its due time, never below 0 | `a_late_go_timer_arms_the_next_go_for_what_is_left_of_its_due_time_test` |
+//// | a special's go, a strike go too, is handled late | the next go's timer is armed for what is left of its due time, never below 0; a strike's deadline is 1,000 ms from the handling | `a_late_go_timer_arms_the_next_go_for_what_is_left_of_its_due_time_test` |
 //// | a go's timer fires of an earlier generation, or after the round closed | it does nothing | `a_stale_go_timer_does_nothing_test` |
 //// | a state takes hold between a special's gos | the cast breaks as a charge does, the cooldown stays spent | `a_state_between_gos_breaks_the_special_and_the_cooldown_stays_spent_test` |
+//// | a special has several strike gos | each strike go strikes at its own phase, with the blows that name it; the 0x7f4 of each go is written when its entry is complete and every entry before it is written; the cast finishes after the last go's entry, and the hold counts from that close | `each_damage_go_strikes_at_its_phase_and_the_cast_finishes_after_the_last_go_test` |
+//// | the strikes of two gos are open at once | each has its own deadline timer; the entries are written in go order, a late or missing answer holding the entries behind it until its answer or its deadline | `the_rounds_of_overlapping_hits_are_written_in_go_order_test` |
+//// | a hit selects nobody, or its row is on a target that is gone | an empty entry in go order; the cast goes on | `a_hit_that_selects_nobody_is_an_empty_entry_and_the_cast_goes_on_test` |
+//// | the hits of one cast have different shapes and blows | each strikes the fighters inside its own go's shapes, with the blows that name its go and the attack's crit and strikethrough | `each_hit_strikes_the_fighters_and_the_blows_that_name_its_go_test` |
+//// | a hit kills a fighter | the next hit does not strike it; a kill that empties the threat list leashes inside the answer | `a_fighter_the_first_hit_killed_is_not_struck_by_the_second_test` |
+//// | a state or a throw takes hold between hits | the pending go and each open deadline are cancelled, the open entries are written at once as they stand, then 0x7f9; the later timers and answers do nothing; a second state finds none | `a_state_between_hits_ends_the_rest_of_the_cast_and_closes_the_open_rounds_at_once_test` |
+//// | a state takes hold between the hits of a guarded creature's cast | the viewer is sent the stun, the open entries' 0x7f4, the 0x7f9, then the guard's opening, once | `a_stun_between_hits_of_a_guarded_creatures_cast_opens_it_once_after_the_cast_is_closed_test` |
+//// | death or the leash between hits | every timer of the cast is cancelled once; death sends the 0x7fe alone, the leash writes the open entries first; a late timer or answer does nothing | `death_and_the_leash_between_hits_cancel_every_timer_and_close_the_cast_once_test` |
+//// | a viewer arrives between hits | it is sent the open cast and the 0x7f4 of the gos already written, with no target; the rest reaches it when it is written; none after a break | `a_viewer_arriving_between_hits_is_told_only_the_gos_already_written_test` |
+//// | a go's timer or an answer comes again, or the last answer and a deadline cross | the other rounds are left alone and an entry is written once | `a_timer_or_an_answer_that_comes_again_leaves_the_other_rounds_alone_test` |
 //// | death or the leash between a special's gos | the pending go's timer is cancelled and the cast finishes | `death_between_gos_ends_the_special_test`, `leash_between_gos_ends_the_special_test` |
 //// | the target or another fighter moves, is named or leaves, a state that held it ends, or a kill retargets, in a hold, a cast or the strikes of a charged round | the creature starts no path | `a_creature_in_its_hold_neither_chases_nor_strikes_test`, `a_specials_cone_faces_its_target_test`, `no_path_starts_while_a_charged_round_strikes_or_holds_test` |
 //// | a ready special whose reach the target is beyond | the creature closes to the special's reach, then casts it | `a_ready_special_closes_to_its_own_reach_test` |
@@ -475,10 +493,53 @@ pub type Threat {
 /// The round the creature waits on: the number of its cast (`cast_state.cast_id`, the 0x7ff,
 /// 0x7f4 and 0x7fe of the round name it), the Spell4 it casts (the attack of the round is
 /// found by this id in the fighter each time, `attack_named`, so a property change between
-/// gos works the strike out again), what the cast fixed when it started and how far it has
-/// got.
+/// gos works the strike out again), what the cast fixed when it started, how far it has
+/// got, and the gos it has reached whose 0x7f4 is not written yet.
 pub type Round {
-  Round(cast_id: Int, spell4_id: Spell4Id, start: Start, stage: Stage)
+  Round(
+    cast_id: Int,
+    spell4_id: Spell4Id,
+    start: Start,
+    stage: Stage,
+    go_rounds: List(GoRound),
+  )
+}
+
+/// One go of a round that was reached and not yet written (0x7f4), in go order: what it still
+/// awaits (`Awaiting`) and what the answers struck so far. An entry is complete when it awaits
+/// nothing (no strike, a strike that struck nobody, every answer in, or its deadline passed);
+/// it is written when it is complete and every entry before it is written.
+pub type GoRound {
+  GoRound(phase: Int, awaiting: Awaiting, struck: List(cast_state.Struck))
+}
+
+/// The strikes of a go not answered yet. `Pending` holds the generation of the go's
+/// `StrikeDeadline` timer with the key of each strike not answered, each with the connection it
+/// went to. It is built only by `pending` and `without_answer`, which give `Complete` for no
+/// key, so a go never awaits an answer with no deadline to end the wait, and a deadline is
+/// never held for a go that awaits nothing.
+pub type Awaiting {
+  Complete
+  Pending(deadline: Int, keys: Dict(Key, ConnectionId))
+}
+
+/// The go awaits the strikes of `keys` until its `StrikeDeadline` of `deadline`; no key is
+/// `Complete`.
+fn pending(
+  deadline deadline: Int,
+  keys keys: Dict(Key, ConnectionId),
+) -> Awaiting {
+  use <- bool.guard(when: dict.is_empty(keys), return: Complete)
+  Pending(deadline:, keys:)
+}
+
+/// `awaiting` after the answer of `key`: `Complete` when it was the last one awaited.
+fn without_answer(awaiting awaiting: Awaiting, key key: Key) -> Awaiting {
+  case awaiting {
+    Complete -> Complete
+    Pending(deadline:, keys:) ->
+      pending(deadline:, keys: dict.delete(keys, key))
+  }
 }
 
 /// What a cast fixed when it started: the creature's pose, which is its facing after it turned
@@ -503,9 +564,9 @@ pub type CastTarget {
   CastTarget(connection: ConnectionId, placed: telegraph_entries.Placed)
 }
 
-/// Where a round stands. An attack with no cast time starts at `Striking` with one
-/// awaiting entry; a charge is `Charging` first, then `Striking` with an entry for each
-/// fighter inside its rectangle.
+/// Where a round stands. An attack with no cast time starts at `Striking` with one entry
+/// awaiting its answer; a charge is `Charging` while a go is still to come, then `Striking`:
+/// every go has been reached and the entries still open are all that is left.
 pub type Stage {
   /// The cast is under way: the generation of the `CastEnds` timer of the go it waits for, the
   /// index of that go in the attack's `Charged.gos` (the phase its 0x7f4 carries), and the
@@ -513,15 +574,8 @@ pub type Stage {
   /// armed for `max(0, due - now_ms)`, so a late timer does not push the later gos. A state
   /// that takes hold while it lasts breaks it (`held`).
   Charging(ends: Int, go: Int, started_ms: Int)
-  /// The strikes are out: the generation of the deadline timer, the key of each strike
-  /// not answered yet with the connection it went to, and what the answers struck so far
-  /// (the go lists them). The round closes when none is awaited or at the deadline.
-  Striking(
-    deadline: Int,
-    awaiting: Dict(Key, ConnectionId),
-    struck: List(cast_state.Struck),
-    phase: Int,
-  )
+  /// Every go is reached. The round closes (0x7fe) when its last entry is written.
+  Striking
 }
 
 /// The newest place the creature knows a connection's player at, with the move
@@ -820,20 +874,17 @@ fn stepped(
       }
     TimerFired(timer: StrikeDeadline(generation:)) ->
       case state.status {
-        Fighting(
-          round: Some(
-            Round(stage: Striking(deadline:, struck:, phase:, ..), ..) as round,
-          ),
-          ..,
-        )
-          if deadline == generation
-        -> {
-          let #(state, closed) =
-            round_closed(state:, round:, phase:, struck:, now_ms:)
-          let #(state, ticking) =
-            ticking_again(state:, fighter:, round:, now_ms:)
-          #(state, list.append(closed, ticking))
-        }
+        Fighting(round: Some(round), ..) ->
+          case deadline_entry(round:, generation:) {
+            Ok(entry) -> {
+              let round =
+                with_entry(round:, entry: GoRound(..entry, awaiting: Complete))
+              let #(state, written, ticking) =
+                settled(state:, fighter:, round:, now_ms:)
+              #(state, list.append(written, ticking))
+            }
+            Error(Nil) -> #(state, [])
+          }
         Fighting(..) | Resting | Returning(..) -> #(state, [])
       }
     TimerFired(timer: CastEnds(generation:)) ->
@@ -959,7 +1010,7 @@ fn thrown(
     Running(..) -> panic as "a throw's path is Standing or Timed"
   }
   let #(state, broken) = case displaced {
-    True -> charge_broken(state:, fighter:)
+    True -> charge_broken(state:, fighter:, now_ms:)
     False -> #(state, [])
   }
   let #(state, left) = flight_cleared(state:)
@@ -1165,7 +1216,7 @@ fn wanted(
 fn round_fixes_the_turn(state state: State, fighter fighter: Fighter) -> Bool {
   case state.status {
     Fighting(round: Some(Round(stage: Charging(..), ..)), ..) -> True
-    Fighting(round: Some(Round(stage: Striking(..), spell4_id:, ..)), ..) ->
+    Fighting(round: Some(Round(stage: Striking, spell4_id:, ..)), ..) ->
       case attack_named(fighter:, spell4_id:).cast {
         Charged(..) -> True
         Instant -> False
@@ -1197,8 +1248,9 @@ fn faced(
 /// combat flag (0x89a), the target (0x908) and each other entry (0x90a); a charge that is
 /// open, its 0x7ff again on the cast's own target (`Start.target`, not the 0x908 target of
 /// now) with the entries of the start and its cast id, which the later go names, and the 0x7f4 of each go
-/// that went before the strike go (the viewer's cast bar runs from its arrival, not from the
-/// cast's start); and on a path not yet run, the rest of it from where the creature is now (0x638).
+/// already written, with no target (the viewer's cast bar runs from its arrival, not from the
+/// cast's start; a go still open is written to every viewer when it closes); and on a path not
+/// yet run, the rest of it from where the creature is now (0x638).
 pub fn arrival_news(
   state state: State,
   fighter fighter: Fighter,
@@ -1227,16 +1279,20 @@ pub fn arrival_news(
     ]
   }
   let charge = case state.status {
-    Fighting(round: Some(Round(cast_id:, spell4_id:, start:, stage:)), ..) ->
+    Fighting(
+      round: Some(Round(cast_id:, spell4_id:, start:, stage:, go_rounds:)),
+      ..,
+    ) ->
       case attack_named(fighter:, spell4_id:).cast {
         Charged(gos:, ..) -> {
           let assert Some(cast_target) = start.target
             as "a charge is cast on a target"
           let place = place_at(state:, now_ms:)
-          let gone = case stage {
+          let reached = case stage {
             Charging(go:, ..) -> go
-            Striking(phase:, ..) -> phase
+            Striking -> list.length(gos)
           }
+          let gone = reached - list.length(go_rounds)
           [
             client_connection.CastStarted(start: cast_frame.creature_started(
               cast_id:,
@@ -1800,12 +1856,11 @@ fn strikes(
       target: None,
       opening: telegraph_entries.none,
     )
-  let stage =
-    Striking(
-      deadline:,
-      awaiting: dict.from_list([#(key, target)]),
-      struck: [],
+  let entry =
+    GoRound(
       phase: 0,
+      awaiting: pending(deadline:, keys: dict.from_list([#(key, target)])),
+      struck: [],
     )
   #(
     State(
@@ -1813,7 +1868,11 @@ fn strikes(
       next_cast: cast_state.number_of(cast_id:) + 1,
       status: Fighting(
         ..fighting,
-        round: Some(Round(cast_id:, spell4_id:, start:, stage:)),
+        round: Some(
+          Round(cast_id:, spell4_id:, start:, stage: Striking, go_rounds: [
+            entry,
+          ]),
+        ),
       ),
     ),
     [
@@ -1851,8 +1910,9 @@ fn strikes(
 
 /// A fighter's answer to a strike of the open round: its go names what landed, and a
 /// fighter the strike killed, or found dead, is released and leaves the near players, so
-/// the creature's home timer or corpse timer does not aggro the body. The round closes
-/// with the last answer; a charging creature then starts its next attack tick.
+/// the creature's home timer or corpse timer does not aggro the body. An entry is written
+/// when its last answer is in and every entry before it is written; the round closes with
+/// its last entry, and a charging creature then starts its next attack tick.
 fn answered_strike(
   state state: State,
   fighter fighter: Fighter,
@@ -1860,54 +1920,95 @@ fn answered_strike(
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
   case state.status {
-    Fighting(
-      round: Some(Round(stage: Striking(awaiting:, ..), ..) as round),
-      ..,
-    ) ->
-      case dict.get(awaiting, answered.key) {
-        Ok(target) ->
-          answer_taken(state:, fighter:, round:, target:, answered:, now_ms:)
+    Fighting(round: Some(round), ..) ->
+      case answered_entry(round:, key: answered.key) {
+        Ok(#(entry, target)) ->
+          answer_taken(
+            state:,
+            fighter:,
+            round:,
+            entry:,
+            target:,
+            answered:,
+            now_ms:,
+          )
         Error(Nil) -> #(state, [])
       }
     Fighting(..) | Resting | Returning(..) -> #(state, [])
   }
 }
 
-/// The answer of the fighter of `target`, to the strike round `round`: it joins the go, the
-/// round closes when no answer is awaited, and a fighter the answer ends is released.
+/// The entry of `round` that awaits the answer of `key`, with the connection it went to.
+fn answered_entry(
+  round round: Round,
+  key key: Key,
+) -> Result(#(GoRound, ConnectionId), Nil) {
+  list.find_map(round.go_rounds, fn(entry) {
+    case entry.awaiting {
+      Pending(keys:, ..) ->
+        dict.get(keys, key) |> result.map(fn(target) { #(entry, target) })
+      Complete -> Error(Nil)
+    }
+  })
+}
+
+/// The entry of `round` whose `StrikeDeadline` is of `generation` and still awaits an answer.
+fn deadline_entry(
+  round round: Round,
+  generation generation: Int,
+) -> Result(GoRound, Nil) {
+  list.find(round.go_rounds, fn(entry) {
+    case entry.awaiting {
+      Pending(deadline:, ..) -> deadline == generation
+      Complete -> False
+    }
+  })
+}
+
+/// The round with `entry` in place of its go's.
+fn with_entry(round round: Round, entry entry: GoRound) -> Round {
+  Round(
+    ..round,
+    go_rounds: list.map(round.go_rounds, fn(listed) {
+      case listed.phase == entry.phase {
+        True -> entry
+        False -> listed
+      }
+    }),
+  )
+}
+
+/// The answer of the fighter of `target`, to the strike of `entry`: it joins the go, the
+/// entry's deadline is cancelled when no answer is awaited, and a fighter the answer ends is
+/// released.
 fn answer_taken(
   state state: State,
   fighter fighter: Fighter,
   round round: Round,
+  entry entry: GoRound,
   target target: ConnectionId,
   answered answered: Answered,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
-  let assert Striking(deadline:, awaiting:, struck: so_far, phase:) =
-    round.stage
-    as "an answer is taken only in a Striking round"
   let #(struck, ends_target, target_dead) = answer_of(answered:)
-  let struck = list.append(so_far, struck)
-  let awaiting = dict.delete(awaiting, answered.key)
-  let last = dict.is_empty(awaiting)
-  let #(state, closed) = case last {
-    True -> {
-      let #(state, closed) =
-        round_closed(state:, round:, phase:, struck:, now_ms:)
-      #(state, [CancelTimer(timer: StrikeDeadline(deadline)), ..closed])
-    }
-    False -> {
-      let stage = Striking(deadline:, awaiting:, struck:, phase:)
-      #(with_round(state:, round: Round(..round, stage:)), [])
-    }
+  let was_awaiting = entry.awaiting
+  let entry =
+    GoRound(
+      ..entry,
+      awaiting: without_answer(awaiting: entry.awaiting, key: answered.key),
+      struck: list.append(entry.struck, struck),
+    )
+  let round = with_entry(round:, entry:)
+  let cancelled = case entry.awaiting, was_awaiting {
+    Complete, Pending(deadline:, ..) -> [
+      CancelTimer(timer: StrikeDeadline(deadline)),
+    ]
+    Complete, Complete | Pending(..), _ -> []
   }
+  let #(state, written, ticking) = settled(state:, fighter:, round:, now_ms:)
   // The next tick and its hold are set before the target's entry ends, so the retarget that
   // follows a kill finds the hold and starts no path (`chase`). A leash after it leaves
   // `Fighting`, which drops the hold with the fight, and its tick is not started.
-  let #(state, ticking) = case last {
-    True -> ticking_again(state:, fighter:, round:, now_ms:)
-    False -> #(state, [])
-  }
   let #(state, ended) = case ends_target, target_dead {
     False, _ -> #(state, [])
     True, True -> fell(state:, fighter:, by: target, now_ms:)
@@ -1917,7 +2018,7 @@ fn answer_taken(
     Fighting(..) -> ticking
     Resting | Returning(..) -> []
   }
-  #(state, list.flatten([closed, ended, ticking]))
+  #(state, list.flatten([cancelled, written, ended, ticking]))
 }
 
 /// The state with `round` as its open round.
@@ -1968,40 +2069,67 @@ fn answer_of(
   }
 }
 
-/// The round closes: its go (0x7f4) names the units struck, the 0x7fb any deflect,
-/// and the cast finishes (0x7fe).
-fn round_closed(
+/// Writes what is ready of the round `round`, which the state then holds: each complete entry
+/// at the front of its list, in go order, is written (0x7f4 naming the units struck, the 0x7fb
+/// any deflect); an entry waits for every entry before it. When every go is reached and the
+/// last entry is written, the cast finishes (0x7fe) and the round is closed. The effects of
+/// the writing, then the next attack tick's (the hold, else the interval: `ticking_again`),
+/// which only a closed round has.
+fn settled(
   state state: State,
+  fighter fighter: Fighter,
   round round: Round,
-  phase phase: Int,
-  struck struck: List(cast_state.Struck),
   now_ms now_ms: Int,
-) -> #(State, List(Effect)) {
-  let assert Fighting(..) as fighting = state.status
-    as "a round closes only while Fighting"
+) -> #(State, List(Effect), List(Effect)) {
   let here = creature_path.place_at(path: state.path, now_ms:)
+  let #(ready, waiting) =
+    list.split_while(round.go_rounds, fn(entry) { entry.awaiting == Complete })
+  let written = list.flat_map(ready, written_entry(round:, entry: _, here:))
+  case round.stage, waiting {
+    Striking, [] -> {
+      let assert Fighting(..) as fighting = state.status
+        as "a round closes only while Fighting"
+      let state = State(..state, status: Fighting(..fighting, round: None))
+      let #(state, ticking) = ticking_again(state:, fighter:, round:, now_ms:)
+      #(
+        state,
+        list.append(written, [
+          ToViewers(client_connection.CastFinished(cast_id: round.cast_id)),
+        ]),
+        ticking,
+      )
+    }
+    Striking, [_, ..] | Charging(..), _ -> #(
+      with_round(state:, round: Round(..round, go_rounds: waiting)),
+      written,
+      [],
+    )
+  }
+}
+
+/// The go of `entry` written to the viewers: its 0x7f4 naming the units struck, and the
+/// 0x7fb when one was deflected.
+fn written_entry(
+  round round: Round,
+  entry entry: GoRound,
+  here here: Place,
+) -> List(Effect) {
   let cast_id = round.cast_id
-  let missed = case cast_frame.creature_missed(cast_id:, struck:) {
+  let missed = case cast_frame.creature_missed(cast_id:, struck: entry.struck) {
     Some(missed) -> [ToViewers(client_connection.CastMissed(missed:))]
     None -> []
   }
-  #(
-    State(..state, status: Fighting(..fighting, round: None)),
-    list.flatten([
-      [
-        ToViewers(
-          client_connection.CastWent(go: cast_frame.creature_went(
-            cast_id:,
-            phase:,
-            place: here,
-            struck:,
-          )),
-        ),
-      ],
-      missed,
-      [ToViewers(client_connection.CastFinished(cast_id:))],
-    ]),
-  )
+  [
+    ToViewers(
+      client_connection.CastWent(go: cast_frame.creature_went(
+        cast_id:,
+        phase: entry.phase,
+        place: here,
+        struck: entry.struck,
+      )),
+    ),
+    ..missed
+  ]
 }
 
 /// The creature opens a charge on its target: it turns to face it (`turned_to_face`), round
@@ -2061,6 +2189,7 @@ fn charges(
       spell4_id:,
       start: Start(aim:, target: Some(cast_target), opening:),
       stage: Charging(ends:, go: 0, started_ms: now_ms),
+      go_rounds: [],
     )
   let ready_at = case special_named(fighter:, spell4_id:) {
     Ok(special) ->
@@ -2107,14 +2236,16 @@ fn due_in(
 }
 
 /// A go of the open charge is due (`CastEnds` of the round's generation, C alive and Fighting).
-/// A go that does not strike sends 0x7f4 of its phase, the go's index, with no target, and arms
-/// the `CastEnds` of the next go, of a new generation, for what is left of its due time
-/// (`go_passed`). The strike go selects the fighters on the threat list inside the attack's area
-/// (`game/spell_area`, `game/area` select) and the round becomes `Striking`, its strikes keyed
-/// `AtGo(phase)` (`strikes_sent`); with none inside, or no centre (`centre_of`: a row on a target
-/// that is no longer a viewer), the go names no unit, the cast finishes and
-/// the next attack tick starts (after the attack's hold, `ticking_again`). No state is held
-/// then: one that took hold during the charge broke it (`held`), and its `CastEnds` is stale.
+/// The go joins the round's entries in go order (`GoRound`). A go that strikes selects the
+/// fighters on the threat list inside the shapes of its own strike (`game/spell_area`,
+/// `game/area` select) and tells each to take the blows that name the go (`strikes_sent`); a go
+/// with no strike, or whose strike finds no one inside, or no centre (`centre_of`: a row on a
+/// target that is no longer a viewer), is an empty entry, complete at once. The `CastEnds` of
+/// the next go is armed, of a new generation, for what is left of its due time; after the last
+/// go the round is `Striking`. Whatever is ready is then written (`settled`), so a go is
+/// written only after every go before it, and the cast finishes after its last entry. No state is
+/// held then: one that took hold between the gos broke the cast (`held`), and its `CastEnds` is
+/// stale.
 fn go_reached(
   state state: State,
   fighter fighter: Fighter,
@@ -2129,68 +2260,54 @@ fn go_reached(
     as "a go is reached only by a charging round"
   let assert Ok(this) = list.first(list.drop(gos, go))
     as "the round's go is one of the attack's gos"
-  case this.strikes {
-    False -> {
-      let assert Ok(next) = list.first(list.drop(gos, go + 1))
-        as "a go that does not strike is followed by one"
-      go_passed(
+  let #(state, entry, struck) = case this.strike {
+    Some(strike) ->
+      go_strikes(
         state:,
+        fighter:,
         round:,
+        attack:,
+        strike:,
         go:,
-        started_ms:,
-        next_at_ms: next.at_ms,
+        viewers:,
         now_ms:,
       )
-    }
-    True ->
-      go_strikes(state:, fighter:, round:, attack:, go:, viewers:, now_ms:)
+    None -> #(state, GoRound(phase: go, awaiting: Complete, struck: []), [])
   }
-}
-
-/// A go that strikes no one: its 0x7f4 with no target, and the `CastEnds` of the next go.
-fn go_passed(
-  state state: State,
-  round round: Round,
-  go go: Int,
-  started_ms started_ms: Int,
-  next_at_ms next_at_ms: Int,
-  now_ms now_ms: Int,
-) -> #(State, List(Effect)) {
-  let here = creature_path.place_at(path: state.path, now_ms:)
-  let #(state, ends) = generation(state)
-  let stage = Charging(ends:, go: go + 1, started_ms:)
-  #(with_round(state:, round: Round(..round, stage:)), [
-    ToViewers(
-      client_connection.CastWent(
-        go: cast_frame.creature_went(
-          cast_id: round.cast_id,
-          phase: go,
-          place: here,
-          struck: [],
+  let #(state, stage, armed) = case list.first(list.drop(gos, go + 1)) {
+    Ok(next) -> {
+      let #(state, ends) = generation(state)
+      #(state, Charging(ends:, go: go + 1, started_ms:), [
+        StartTimer(
+          timer: CastEnds(ends),
+          after_ms: due_in(started_ms:, at_ms: next.at_ms, now_ms:),
         ),
-      ),
-    ),
-    StartTimer(
-      timer: CastEnds(ends),
-      after_ms: due_in(started_ms:, at_ms: next_at_ms, now_ms:),
-    ),
-  ])
+      ])
+    }
+    Error(Nil) -> #(state, Striking, [])
+  }
+  let round =
+    Round(..round, stage:, go_rounds: list.append(round.go_rounds, [entry]))
+  let #(state, written, ticking) = settled(state:, fighter:, round:, now_ms:)
+  #(state, list.flatten([struck, armed, written, ticking]))
 }
 
-/// The go that strikes: the fighters inside the area are told to take the attack.
+/// The go that strikes: the fighters inside the shapes of its strike are told to take the
+/// attack. The entry of the go and the strikes sent; an entry with nobody awaited when no one
+/// is inside.
 fn go_strikes(
   state state: State,
   fighter fighter: Fighter,
   round round: Round,
   attack attack: Attack,
+  strike strike: creature_life.GoStrike,
   go go: Int,
   viewers viewers: Dict(ConnectionId, Stay),
   now_ms now_ms: Int,
-) -> #(State, List(Effect)) {
+) -> #(State, GoRound, List(Effect)) {
   let assert Fighting(threat:, target:, ..) = state.status
     as "a go is reached only while Fighting"
-  let assert Charged(area: row, inside:, anchor:, aims_at_target:, ..) =
-    attack.cast
+  let assert Charged(area: row, anchor:, aims_at_target:, ..) = attack.cast
     as "a charge is a round of a charged attack"
   let here = creature_path.place_at(path: state.path, now_ms:)
   let centre =
@@ -2209,7 +2326,7 @@ fn go_strikes(
       inside_rectangle(
         state:,
         row:,
-        inside:,
+        inside: strike.inside,
         centre:,
         fighters: map.sorted_by_connection(threat),
         seed: round.cast_id,
@@ -2217,26 +2334,24 @@ fn go_strikes(
     None -> []
   }
   case struck {
-    [] -> {
-      let #(state, closed) =
-        round_closed(state:, round:, phase: go, struck: [], now_ms:)
-      let #(state, ticking) = ticking_again(state:, fighter:, round:, now_ms:)
-      #(state, list.append(closed, ticking))
-    }
-    [_, ..] -> strikes_sent(state:, fighter:, round:, attack:, go:, struck:)
+    [] -> #(state, GoRound(phase: go, awaiting: Complete, struck: []), [])
+    [_, ..] ->
+      strikes_sent(state:, fighter:, round:, attack:, strike:, go:, struck:)
   }
 }
 
-/// The round is `Striking`: each fighter inside the area gets the attack's strike, keyed
-/// `AtGo(go)`, and the round's deadline starts.
+/// Each fighter inside the area gets the attack's strike for the go, keyed `AtGo(go)`, with
+/// the blows that name the go (`creature_life.offence_of_go`), and the go's deadline starts.
+/// The go's entry awaits each of them.
 fn strikes_sent(
   state state: State,
   fighter fighter: Fighter,
   round round: Round,
   attack attack: Attack,
+  strike strike: creature_life.GoStrike,
   go go: Int,
   struck struck: List(#(ConnectionId, Threat, Sighting)),
-) -> #(State, List(Effect)) {
+) -> #(State, GoRound, List(Effect)) {
   let #(state, deadline) = generation(state)
   let keyed =
     list.map(struck, fn(found) {
@@ -2251,15 +2366,16 @@ fn strikes_sent(
         ),
       )
     })
-  let stage =
-    Striking(
-      deadline:,
-      awaiting: dict.from_list(
-        list.map(keyed, fn(found) { #(found.2, found.0) }),
+  let entry =
+    GoRound(
+      phase: go,
+      awaiting: pending(
+        deadline:,
+        keys: dict.from_list(list.map(keyed, fn(found) { #(found.2, found.0) })),
       ),
       struck: [],
-      phase: go,
     )
+  let offence = creature_life.offence_of_go(attack:, strike:)
   let strikes =
     list.map(keyed, fn(found) {
       ToPlayer(
@@ -2273,7 +2389,7 @@ fn strikes_sent(
               unit_id: fighter.unit_id,
               spell4_id: attack.spell4_id,
             ),
-            offence: attack.offence,
+            offence:,
             controls: [],
             gates: [],
           ),
@@ -2281,7 +2397,8 @@ fn strikes_sent(
       )
     })
   #(
-    with_round(state:, round: Round(..round, stage:)),
+    state,
+    entry,
     list.append(strikes, [
       StartTimer(
         timer: StrikeDeadline(deadline),
@@ -2537,37 +2654,49 @@ fn turned_to_face(
   ])
 }
 
-/// The round ends before its go: a strike round closes as its deadline closes it, with
-/// what was struck so far; a charge only cancels its `CastEnds` and finishes the cast
-/// (0x7fe), with no go, since nothing went.
+/// The round ends at the leash: every timer it waits on is cancelled, every entry reached is
+/// written in go order with what was struck so far, then the cast finishes (0x7fe).
 fn round_ended(
   state state: State,
   round round: Round,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
-  case round.stage {
-    Striking(struck:, phase:, ..) -> {
-      let #(state, closed) =
-        round_closed(state:, round:, phase:, struck:, now_ms:)
-      #(state, [cancel_of(round:), ..closed])
-    }
-    Charging(..) -> {
-      let assert Fighting(..) as fighting = state.status
-        as "a round ends only while Fighting"
-      #(State(..state, status: Fighting(..fighting, round: None)), [
-        cancel_of(round:),
-        ToViewers(client_connection.CastFinished(cast_id: round.cast_id)),
-      ])
-    }
-  }
+  let assert Fighting(..) as fighting = state.status
+    as "a round ends only while Fighting"
+  let here = creature_path.place_at(path: state.path, now_ms:)
+  #(
+    State(..state, status: Fighting(..fighting, round: None)),
+    list.flatten([
+      cancels_of(round:),
+      written_all(round:, here:),
+      [ToViewers(client_connection.CastFinished(cast_id: round.cast_id))],
+    ]),
+  )
 }
 
-/// The timer that ends the round, to cancel when the round ends first.
-fn cancel_of(round round: Round) -> Effect {
-  case round.stage {
-    Striking(deadline:, ..) -> CancelTimer(timer: StrikeDeadline(deadline))
-    Charging(ends:, ..) -> CancelTimer(timer: CastEnds(ends))
+/// Every entry the round reached and has not written, written in go order with what was
+/// struck so far.
+fn written_all(round round: Round, here here: Place) -> List(Effect) {
+  list.flat_map(round.go_rounds, written_entry(round:, entry: _, here:))
+}
+
+/// The timers the round waits on, to cancel when it ends first: the pending `CastEnds`, then the
+/// `StrikeDeadline` of each entry that still awaits an answer (a complete entry's is
+/// cancelled or has fired).
+fn cancels_of(round round: Round) -> List(Effect) {
+  let pending = case round.stage {
+    Charging(ends:, ..) -> [CancelTimer(timer: CastEnds(ends))]
+    Striking -> []
   }
+  let deadlines =
+    list.filter_map(round.go_rounds, fn(entry) {
+      case entry.awaiting {
+        Pending(deadline:, ..) ->
+          Ok(CancelTimer(timer: StrikeDeadline(deadline)))
+        Complete -> Error(Nil)
+      }
+    })
+  list.append(pending, deadlines)
 }
 
 /// The creature runs toward its target when the target is beyond reach of where its
@@ -2606,7 +2735,7 @@ fn chase(
 fn casting_or_holding(state state: State, fighter fighter: Fighter) -> Bool {
   case state.status {
     Fighting(round: Some(Round(stage: Charging(..), ..)), ..) -> True
-    Fighting(round: Some(Round(stage: Striking(..), spell4_id:, ..)), ..) ->
+    Fighting(round: Some(Round(stage: Striking, spell4_id:, ..)), ..) ->
       case attack_named(fighter:, spell4_id:).cast {
         Charged(..) -> True
         Instant -> False
@@ -2850,19 +2979,23 @@ fn held(
     Returning(home:), True -> [CancelTimer(timer: HomeArrival(home))]
     Returning(..), False | Resting, _ | Fighting(..), _ -> []
   }
-  let #(state, broken) = charge_broken(state:, fighter:)
+  let #(state, broken) = charge_broken(state:, fighter:, now_ms:)
   #(state, list.flatten([placed, stopped, broken]))
 }
 
-/// An open charge is broken, by a state or a throw: `CancelTimer(CastEnds)`, 0x7f9 of
+/// An open charge is broken, by a state or a throw: every timer it waits on is cancelled, the
+/// entries it reached are written at once in go order with what was struck so far (the viewers'
+/// connections forget a cast at its 0x7f9, so a go listed after it would be lost), then 0x7f9 of
 /// result 11 and 0x7fe of its cast, the round closed, the next attack tick started and
-/// `ChargeInterrupted`. A creature with no charge open is as it was.
+/// `ChargeInterrupted`. A creature with no charge open, or whose last go is reached, is as it was.
 fn charge_broken(
   state state: State,
   fighter fighter: Fighter,
+  now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
   case state.status {
-    Fighting(round: Some(Round(cast_id:, stage: Charging(ends:, ..), ..)), ..) as fighting -> {
+    Fighting(round: Some(Round(cast_id:, stage: Charging(..), ..) as round), ..) as fighting -> {
+      let here = creature_path.place_at(path: state.path, now_ms:)
       let #(state, ticked) =
         next_tick(
           state: State(..state, status: Fighting(..fighting, round: None)),
@@ -2872,10 +3005,9 @@ fn charge_broken(
       #(
         state,
         list.flatten([
-          [
-            CancelTimer(timer: CastEnds(ends)),
-            ToViewers(client_connection.CastInterrupted(cast_id:)),
-          ],
+          cancels_of(round:),
+          written_all(round:, here:),
+          [ToViewers(client_connection.CastInterrupted(cast_id:))],
           ticked,
           [ChargeInterrupted(cast_id:)],
         ]),
@@ -2914,10 +3046,10 @@ fn killed(
   case state.status {
     Fighting(threat:, round:, ..) -> {
       let finished = case round {
-        Some(round) -> [
-          cancel_of(round:),
-          ToViewers(client_connection.CastFinished(cast_id: round.cast_id)),
-        ]
+        Some(round) ->
+          list.append(cancels_of(round:), [
+            ToViewers(client_connection.CastFinished(cast_id: round.cast_id)),
+          ])
         None -> []
       }
       #(
@@ -3046,6 +3178,14 @@ fn whole(threat: Float) -> Int {
 /// What a creature's fight does that the client's rules ask differently.
 pub fn gaps() -> List(gap.Entry) {
   [
+    gap.Entry(
+      area: "Creature fights",
+      missing: "a viewer that arrives in the middle of a cast with several hits is sent the gos already written with no target, so it does not see the hits taken before it arrived",
+    ),
+    gap.Entry(
+      area: "Creature fights",
+      missing: "a strike's answer that arrives after a state broke the cast, or after the leash, is left out of that go's 0x7f4; the hit stands on the player",
+    ),
     gap.Entry(
       area: "Creature fights",
       missing: "a viewer that arrives mid-cast on a target row whose client does not know the cast's target (it is not in the viewer's picture): the client draws no entry for it, while the creature's hit still lands; the turn a client-placed cone follows is the target's newest sighting, not the client's current yaw",
