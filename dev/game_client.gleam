@@ -282,15 +282,66 @@ pub fn world_body(
   carried
 }
 
-/// Sends a world message as the client does: inside 0x038C, whose first byte is
-/// the 5-bit value 3 of SendWorldMessage (opcode.0x38c), inside 0x244 under the
-/// session cipher.
+/// The ids the client sends through SendWorldMessageKind0B, at the kind 11
+/// (0x1403f4740; `opcode.0x38c.send_kind`).
+const world_ids_at_kind_11 = [
+  0x01BA, 0x01BD, 0x01BE, 0x01C3, 0x01CD, 0x01CE, 0x01CF, 0x01D0, 0x01D2, 0x01D4,
+  0x0398, 0x03B3, 0x03B4, 0x03B7, 0x03BC, 0x03BD, 0x03BF, 0x03C1, 0x03C2, 0x03C7,
+  0x03C8, 0x0406, 0x0408, 0x0411, 0x0412, 0x0428, 0x042B, 0x042E, 0x0446, 0x044A,
+  0x045C, 0x0463, 0x0490, 0x04B1, 0x0512, 0x0513, 0x0515, 0x0518, 0x052A, 0x052C,
+  0x052D, 0x052F, 0x0538, 0x0546, 0x0549, 0x054B, 0x057C, 0x0597, 0x059C, 0x0693,
+  0x0719, 0x071B, 0x076E, 0x076F, 0x07B4, 0x07B6, 0x07CC, 0x0959,
+]
+
+/// The ids the client sends on the game connection through 0x140016010, also at
+/// the kind 11 (`opcode.0x38c.send_kind`).
+const game_ids_at_kind_11 = [
+  0x03F2, 0x078F, 0x0799, 0x079A, 0x079E, 0x0828, 0x0839,
+]
+
+/// The ids the client sends on the game connection through SendGameMessageKind13,
+/// at the kind 19 (0x1400161d0; `opcode.0x38c.send_kind`).
+const game_ids_at_kind_19 = [
+  0x0233, 0x0397, 0x039B, 0x039D, 0x039E, 0x03A1, 0x03A2, 0x03A7, 0x03AC, 0x03AF,
+  0x03CD, 0x03D3, 0x03D4, 0x03E7, 0x03F1, 0x0770, 0x07C6, 0x0823, 0x0825, 0x082A,
+  0x082C, 0x082D, 0x082E,
+]
+
+/// The 5-bit kind the client writes in 0x038C for a message id
+/// (`opcode.0x38c.send_kind`): 19 for the ids of SendGameMessageKind13, 11 for
+/// those of SendWorldMessageKind0B and of 0x140016010, and 3 for every other id,
+/// which is SendWorldMessage's. No id goes through two senders, and an id no sender
+/// writes goes at 3.
+pub fn world_send_kind(message_id message_id: Int) -> Int {
+  case
+    list.contains(game_ids_at_kind_19, message_id),
+    list.contains(world_ids_at_kind_11, message_id)
+    || list.contains(game_ids_at_kind_11, message_id)
+  {
+    True, _ -> 19
+    False, True -> 11
+    False, False -> 3
+  }
+}
+
+/// The body of 0x38C the client sends for a world message: the kind of the
+/// sender it sends this id through (`world_send_kind`), then the message's whole
+/// frame.
+pub fn world_message_body(
+  message_id message_id: Int,
+  body body: BitArray,
+) -> BitArray {
+  world_body(kind: world_send_kind(message_id:), message_id:, body:)
+}
+
+/// Sends a world message as the client does: inside 0x038C
+/// (`world_message_body`), inside 0x244 under the session cipher.
 pub fn send_world(
   game game: Game,
   message_id message_id: Int,
   body body: BitArray,
 ) -> Nil {
-  send(game:, message_id: 0x038C, body: world_body(kind: 3, message_id:, body:))
+  send(game:, message_id: 0x038C, body: world_message_body(message_id:, body:))
 }
 
 /// Presses the ability held at `bag_index`, as the client's action bar does

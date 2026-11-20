@@ -4,30 +4,37 @@
 ////   write the 64-bit value 0 and the last value 3.
 //// - `opcode.0x58f.account_id`: the first value is the account id of the
 ////   0x03DB the client was handed.
-//// - The recorded reply: in each of the 32 logins of this server's sittings
-////   the reply holds account id 1, 0 and 3, after a 0x03DB with account id 1
+//// - The recorded reply: the 0x058F the real client sent in the committed
+////   session (`wire_replay_support.committed_session`), decoded from its
+////   bytes. In each of the 32
+////   logins of this server's sittings the reply holds account id 1, 0 and 3
 ////   (sitting 2026-11-05-main, sequence 30, and the others).
 
 import genesis_prime/client_connection.{Unwritten}
+import genesis_prime/game/connection as game_connection
 import genesis_prime/game/hello_reply.{AccountNotHandedOff, NotWritten}
 import genesis_prime/hand_off.{Holder}
 import genesis_prime/login/guid
-import genesis_prime/message/game_hello_reply.{GameHelloReply}
+import genesis_prime/message/client_message
+import genesis_prime/message/game_hello_reply.{
+  type GameHelloReply, GameHelloReply,
+}
+import genesis_prime/recorded_message.{Received}
 import genesis_prime/store.{AccountId}
 import gleam/list
 import owned_test
+import wire_replay_support as support
 
-/// The reply of sitting 2026-11-05-main, sequence 30.
-fn recorded() -> game_hello_reply.GameHelloReply {
-  GameHelloReply(
-    account_id: 1,
-    session_key: <<
-      102, 249, 91, 111, 247, 132, 162, 137, 250, 15, 11, 62, 149, 196, 88, 213,
-    >>,
-    zero: 0,
-    account_name: "genesis",
-    three: 3,
-  )
+/// The 0x058F the real client sent in the committed recorded session, decoded
+/// from its bytes.
+fn recorded() -> GameHelloReply {
+  let #(messages, _) = support.committed_frames(game_connection.rule_name)
+  let assert [
+    Received(message: client_message.GameHelloReply(message:), ..),
+    ..
+  ] = messages
+    as "the committed session's game connection starts with the hello reply"
+  message
 }
 
 /// A holder of this account, as the hand-off gives it for the session key.
@@ -95,7 +102,7 @@ pub fn the_recorded_reply_with_its_hand_off_is_taken_test() -> Nil {
       holder: holder_of(account_id: 1),
     )
     == Ok(Nil)
-    as "the recorded 0x03DB gave account id 1, and the reply sends it back"
+    as "the committed session's account is id 1 (its fixture.sql), and the reply sends it back"
   assert hello_reply.written(
       reply: GameHelloReply(..recorded(), account_name: "another", session_key: <<
         0:128,

@@ -35,9 +35,9 @@ import genesis_prime/message/movement_mode
 import genesis_prime/message/movement_state_flags
 import genesis_prime/message/ping.{Ping}
 import genesis_prime/recorded_message.{
-  type Received, type Unread, Bare, CutShort, Decoded, FramesRead, Inside,
-  NoDecoder, NotDecoded, NotRead, PlatformLogin, RuleNotKnown, StsMessageRefused,
-  Unread, Wrapped,
+  type Received, Bare, CutShort, Decoded, FramesRead, Inside, NoDecoder,
+  NotDecoded, NotRead, PlatformLogin, RuleNotKnown, StsMessageRefused, Unread,
+  Wrapped,
 }
 import genesis_prime/wire_recording.{type Recording, Accepted, Client, Read}
 import gleam/bit_array
@@ -48,31 +48,6 @@ import gleam/string
 import owned_test
 import recording_support
 import wire_replay_support as support
-
-/// The recording of the connection of the rule `rule` in the committed session,
-/// with its file's name.
-fn committed(rule: String) -> #(String, Recording) {
-  let assert Ok(connection) =
-    list.find(
-      support.load(support.committed_session).connections,
-      fn(connection) { connection.recording.header.rule == rule },
-    )
-    as { "the committed session holds a connection of " <> rule }
-  #(connection.name, connection.recording)
-}
-
-fn read_committed(rule: String) -> recorded_message.Sent {
-  let #(name, recording) = committed(rule)
-  let assert Ok(Some(sent)) = recorded_message.read(name, recording)
-    as { name <> " holds client bytes and they read" }
-  sent
-}
-
-fn frames_of(rule: String) -> #(List(Received), List(Unread)) {
-  let assert FramesRead(messages:, without_decoder:) = read_committed(rule)
-    as { rule <> " is a connection of frames" }
-  #(messages, without_decoder)
-}
 
 /// A recording of the connection of `rule` whose reads are `reads`, written in
 /// `folder` as a session of its own and read back.
@@ -184,7 +159,8 @@ pub fn every_movement_message_in_every_wire_recording_decodes_and_encodes_back_t
         <> ": the message encodes to the body the client sent"
       }
   })
-  let #(_, without_decoder) = frames_of(game_connection.rule_name)
+  let #(_, without_decoder) =
+    support.committed_frames(game_connection.rule_name)
   assert list.filter(without_decoder, fn(unread) {
       list.contains(moving_ids, unread.message_id)
     })
@@ -270,7 +246,7 @@ pub fn the_recorded_world_zone_and_move_speed_are_what_the_client_keeps_test() -
 pub fn the_login_session_holds_the_platform_logins_clear_requests_up_to_key_data_test() -> Nil {
   use <- owned_test.run(30_000)
   let assert PlatformLogin(requests:, ciphered_reads:) =
-    read_committed(sts_connection.rule_name)
+    support.read_committed(sts_connection.rule_name)
     as "the STS connection reads as requests"
   // A read's line depends on how the network cut the client's bytes, so the
   // requests are checked in order, not by line.
@@ -290,7 +266,7 @@ pub fn the_login_session_holds_the_platform_logins_clear_requests_up_to_key_data
   // The client's pings on an idle connection are the network layer's, bare, and
   // may come before the login (opcode.0x0): only the wrapper's messages count.
   let assert [#(_, login), ..] =
-    as_pairs(wrapped_only(frames_of(auth_connection.rule_name).0))
+    as_pairs(wrapped_only(support.committed_frames(auth_connection.rule_name).0))
     as "the auth connection holds a message in the client's wrapper"
   let assert client_message.LoginRequest(message: request) = login
     as "the auth connection's message is the login request"
@@ -314,7 +290,8 @@ fn as_pairs(
 
 pub fn the_auth_connection_holds_the_login_request_in_its_wrapper_test() -> Nil {
   use <- owned_test.run(30_000)
-  let assert #(messages, []) = frames_of(auth_connection.rule_name)
+  let assert #(messages, []) =
+    support.committed_frames(auth_connection.rule_name)
     as "the auth connection holds no message without a decoder"
   let assert [login] = wrapped_only(messages)
     as "and one message in the client's wrapper; the pings the client sends on its idle connections are the network layer's, bare"
@@ -328,7 +305,7 @@ pub fn the_auth_connection_holds_the_login_request_in_its_wrapper_test() -> Nil 
 
 pub fn the_game_connection_holds_the_hello_reply_then_select_start_then_the_play_request_test() -> Nil {
   use <- owned_test.run(30_000)
-  let #(messages, _) = frames_of(game_connection.rule_name)
+  let #(messages, _) = support.committed_frames(game_connection.rule_name)
   let ids =
     list.filter_map(messages, fn(message) {
       case message.carried {
@@ -347,7 +324,7 @@ pub fn the_game_connection_holds_the_hello_reply_then_select_start_then_the_play
 pub fn the_clients_pings_count_up_and_start_again_at_20_test() -> Nil {
   use <- owned_test.run(30_000)
   let numbers =
-    frames_of(game_connection.rule_name).0
+    support.committed_frames(game_connection.rule_name).0
     |> list.filter(fn(message) {
       client_message.message_id(message.message) == ping.message_id
     })
@@ -369,7 +346,8 @@ pub fn the_clients_pings_count_up_and_start_again_at_20_test() -> Nil {
 
 /// The body of the login request in the committed session.
 fn recorded_login_request_body() -> BitArray {
-  let assert [login] = wrapped_only(frames_of(auth_connection.rule_name).0)
+  let assert [login] =
+    wrapped_only(support.committed_frames(auth_connection.rule_name).0)
     as "the committed session's auth connection holds one message in the client's wrapper"
   login.body
 }
@@ -484,7 +462,8 @@ pub fn a_wrapper_ciphered_under_another_key_does_not_read_as_the_message_test() 
 pub fn the_frames_after_0x058f_are_read_under_the_session_key_test() -> Nil {
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
-  let assert #([hello, ..], _) = frames_of(game_connection.rule_name)
+  let assert #([hello, ..], _) =
+    support.committed_frames(game_connection.rule_name)
     as "the game connection holds 0x058F first"
   let assert client_message.GameHelloReply(message: reply) = hello.message
     as "the first message is 0x058F"
