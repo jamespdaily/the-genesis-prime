@@ -100,8 +100,18 @@ pub type Unevaluated {
   MultiplierNotFinite(spell4_effects_id: Int, bits: Int)
   /// The special's Spell4 has no row in the client's table.
   NoSpellRow(spell4_id: Int)
-  /// The special's cast time is 0: a special is a cast with a cast bar.
-  NotACast(spell4_id: Int)
+  /// The special is a ChanneledField cast (Spell4Base.castMethod 3) with a cast time of 0: the
+  /// client keeps a channel record for it that the plan does not read, so the number of gos the
+  /// client expects of it is not settled.
+  ChanneledFieldNotRead(spell4_id: Int)
+  /// The special is a channel whose last pulse falls before its channelMaxTime, where the
+  /// client's cast ends; the creature's round writes its 0x7fe after the last go and has no
+  /// later finish.
+  ChannelEndsAfterItsLastPulse(
+    spell4_id: Int,
+    max_time_ms: Int,
+    last_pulse_ms: Int,
+  )
   /// The special's Spell4 names a target conditions row (`spell4CCConditionsIdTarget`), a
   /// state its target must or must not hold, which no creature special reads.
   TargetConditionNotRead(spell4_id: Int, conditions_id: Int)
@@ -251,8 +261,9 @@ pub fn evaluated(
 }
 
 /// The first reason the spell is not one the creature's fight can cast as a special, or
-/// `Ok(Nil)`: it has a cast time (a cast bar); the attack rule evaluates it (`evaluated`);
-/// it names no target conditions; the plan reads it; its damage rows name at least one go; it
+/// `Ok(Nil)`: the attack rule evaluates it (`evaluated`); it names no target conditions; the
+/// plan reads it, and a channel is one the round can carry (`channel_carried`); its damage rows
+/// name at least one go; it
 /// holds rows of damage (8) and NpcExecutionDelay (35) alone; its area and the hit shapes of
 /// each go read (`spell_area.hit_shapes_by_go`), one of the gos its damage rows name having a
 /// hit shape; and each delay row aims at the caster alone
@@ -267,10 +278,6 @@ pub fn special_checked(
     spell4.get(tables:, id: Spell4Id(spell4_id))
     |> result.replace_error(NoSpellRow(spell4_id:)),
   )
-  use Nil <- result.try(case row.cast_time > 0 {
-    True -> Ok(Nil)
-    False -> Error(NotACast(spell4_id:))
-  })
   use Nil <- result.try(evaluated(tables:, spell4_id:))
   use Nil <- result.try(case row.spell4_cc_conditions_id_target {
     0 -> Ok(Nil)
@@ -280,6 +287,7 @@ pub fn special_checked(
     spell_plan.spell_alone(tables:, sources:, spell4_id:, chain: [])
     |> result.map_error(fn(error) { NotPlanned(spell4_id:, error:) }),
   )
+  use Nil <- result.try(channel_carried(spell4_id:, spell:))
   let times_ms = spell_plan.go_times_ms(spell:)
   use Nil <- result.try(gos_rise(spell4_id:, times_ms:))
   let effects = spell_plan.effects_of(sources:, spell4_id:)
@@ -288,6 +296,27 @@ pub fn special_checked(
   use Nil <- result.try(only_damage_and_delay(effects:))
   use Nil <- result.try(area_read(tables:, spell4_id:, times_ms:, effects:))
   delays_checked(sources:, tables:, spell4_id:, effects:, go_count:)
+}
+
+/// A channel the creature's round can carry: a ChanneledField cast with a cast time of 0 is
+/// refused (with a cast time the plan's one go at that time is what a creature's special has
+/// been cast with), and so is a channel with a finish after its last pulse
+/// (`spell_plan.finish_after_ms`).
+fn channel_carried(
+  spell4_id spell4_id: Int,
+  spell spell: spell_plan.Spell,
+) -> Result(Nil, Unevaluated) {
+  case spell.method, spell.cast_time_ms, spell_plan.finish_after_ms(spell:) {
+    spell_plan.ChanneledField, 0, _ -> Error(ChanneledFieldNotRead(spell4_id:))
+    _, _, Some(max_time_ms) ->
+      Error(ChannelEndsAfterItsLastPulse(
+        spell4_id:,
+        max_time_ms:,
+        last_pulse_ms: list.last(spell_plan.go_times_ms(spell:))
+          |> result.unwrap(0),
+      ))
+    _, _, None -> Ok(Nil)
+  }
 }
 
 /// The go times of a special: at least one, each above the one before.
@@ -721,10 +750,18 @@ pub fn describe(unevaluated unevaluated: Unevaluated) -> String {
       "Spell4 "
       <> int.to_string(spell4_id)
       <> " has no row in the client's Spell4 table"
-    NotACast(spell4_id:) ->
+    ChanneledFieldNotRead(spell4_id:) ->
       "Spell4 "
       <> int.to_string(spell4_id)
-      <> " has a cast time of 0 (castTime), and a special is a cast with a cast bar"
+      <> " is a ChanneledField cast (castMethod 3) with a cast time of 0, whose channel record the plan does not read, so its go count is not settled"
+    ChannelEndsAfterItsLastPulse(spell4_id:, max_time_ms:, last_pulse_ms:) ->
+      "Spell4 "
+      <> int.to_string(spell4_id)
+      <> " is a channel whose last pulse is at "
+      <> int.to_string(last_pulse_ms)
+      <> " ms and whose cast ends at channelMaxTime "
+      <> int.to_string(max_time_ms)
+      <> " ms, which the creature's round has no finish for"
     TargetConditionNotRead(spell4_id:, conditions_id:) ->
       "Spell4 "
       <> int.to_string(spell4_id)

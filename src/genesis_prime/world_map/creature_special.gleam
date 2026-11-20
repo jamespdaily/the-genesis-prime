@@ -18,7 +18,8 @@
 ////   `RowId` holds one integer, so the sentence carries the Spell4.
 //// - **The load refuses** a Spell4 the client lacks; a cooldown below the strike deadline
 ////   (`strike_tell.deadline_ms`), since two rounds would be open at once; and a spell
-////   `creature_attack.special_checked` refuses: no cast time, no readable area (rows
+////   `creature_attack.special_checked` refuses: a ChanneledField cast with a cast time of 0 or a channel with a finish after
+////   its last pulse (`creature_attack.channel_carried`), no readable area (rows
 ////   placed apart, on the caster and the target or drawn where the cast starts and following a
 ////   unit, are not readable: `spell_area.PlacedApart`; a row on each struck unit, the ground or
 ////   two units: `spell_area.TelegraphOnStruckUnits`, `spell_area.TelegraphNotOnCaster`; an area
@@ -37,6 +38,14 @@
 ////   fail the creature's difficulty, or at which no hit row is drawn, strikes nobody; the special
 ////   still loads when another go can strike, and is refused when none can
 ////   (`creature_attack.NoGoCanStrike`). The hold follows the cast's last go.
+//// - **A special is cast whatever its `castTime`**: a Multiphase cast, a channel and a cast
+////   with no phase row have a cast time of 0 and the gos of their plan, the first possibly at 0
+////   (`spawn` `attack_of`); the client draws the cast bar by the spell's own rows.
+//// - **Gaps for the coverage measure**: a special with no cast bar and several gos is broken by
+////   a state as one with a bar is, a server choice; a special whose cast lasts as long as its
+////   cooldown is cast again as soon as its hold ends, so a creature may never auto-attack;
+////   a ChanneledField cast with a cast time of 0 is refused for its go count, which is not settled; an auto-attack
+////   named without the `[AUTO-ATTACK]` marker is read as a special when it loads.
 //// - **The formula is read**: a special whose damage formula the creature rule does not
 ////   read for the creature's difficulty is refused (`creature_attack.loadable`), which the
 ////   spawn load would refuse later.

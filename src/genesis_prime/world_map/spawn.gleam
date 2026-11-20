@@ -1201,6 +1201,7 @@ fn combat_of(
   use #(attack, scaling, attack_effects) <- result.try(attack_of(
     catalog:,
     formulas:,
+    role: AutoAttack,
     spell4_id: kind.attack_spell4_id,
     creature:,
     level:,
@@ -1213,6 +1214,7 @@ fn combat_of(
       attack_of(
         catalog:,
         formulas:,
+        role: AutoAttack,
         spell4_id:,
         creature:,
         level:,
@@ -1228,6 +1230,7 @@ fn combat_of(
       attack_of(
         catalog:,
         formulas:,
+        role: Special,
         spell4_id: id.Spell4Id(ref.spell4_id),
         creature:,
         level:,
@@ -1369,14 +1372,23 @@ fn defence_of(
   )
 }
 
+/// What a kind lists a spell as: its auto-attack (the attack and its alternates) or one of its
+/// specials. The kind's list decides how a spell with a cast time of 0 is cast (`attack_of`),
+/// as the same spell may be listed as either.
+type Role {
+  AutoAttack
+  Special
+}
+
 /// The attack of the spell `spell4_id` (genesis_prime/world_map/creature_life `Attack`),
 /// for the creature's own attack, each of its alternates and each of its specials: the spell, the damage effect its difficulty chooses by the effect's caster
 /// prerequisite (type 179, `0x14049eeb0`), its blow by the creature formula
 /// (`0x140565600`, GameFormula 712), its critical hit chance, severity and
 /// strikethrough from its properties, its run speed (Creature2DisplayInfo.runLand
 /// times property 100, `0x1405b45e0`) and its reach (the spell's `targetMaxRange`
-/// plus `hit_radius`). A spell with a cast time (`Spell4.castTime` above 0) is a charge:
-/// it carries that time and its area and anchor (`spell_area.area_of_spell`), the telegraph rows
+/// plus `hit_radius`). A special, and an auto-attack with a cast time (`Spell4.castTime` above
+/// 0), is a charge, an auto-attack with a cast time of 0 strikes at once (`Instant`): a charge
+/// carries that time and its area and anchor (`spell_area.area_of_spell`), the telegraph rows
 /// the client makes of it (`telegraph_entries.draws_of`), whether its aim follows the target
 /// (`Spell4.propertyFlags` bit 0x2), its gos and its hold
 /// (`timeline_of`), and an area it lacks or cannot read fails the load. A charge on its
@@ -1393,6 +1405,7 @@ fn defence_of(
 fn attack_of(
   catalog catalog: Catalog,
   formulas formulas: Formulas,
+  role role: Role,
   spell4_id spell4_id: Spell4Id,
   creature creature: Creature2,
   level level: Int,
@@ -1465,9 +1478,13 @@ fn attack_of(
         formula:,
       )
     })
-  use cast <- result.try(case spell.cast_time > 0 {
-    False -> Ok(creature_life.Instant)
-    True ->
+  let instant = case role {
+    AutoAttack -> spell.cast_time <= 0
+    Special -> False
+  }
+  use cast <- result.try(case instant {
+    True -> Ok(creature_life.Instant)
+    False ->
       case
         spell_area.area_of_spell(tables: catalog.tables, spell4_id: spell4_id)
       {

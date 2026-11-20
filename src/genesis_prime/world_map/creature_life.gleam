@@ -97,11 +97,12 @@ pub type Attack {
   )
 }
 
-/// How a creature's attack spell is cast, by the spell's `castTime`.
+/// How a creature's attack spell is cast: by the spell's `castTime` for an auto-attack, and
+/// as a charge whatever the time for a special.
 pub type Cast {
-  /// A cast time of 0: the attack strikes its target at once.
+  /// An auto-attack with a cast time of 0: it strikes its target at once.
   Instant
-  /// A cast time above 0: a charge, which strikes each fighter inside the area of each of its
+  /// A special, or an auto-attack with a cast time above 0: a charge, which strikes each fighter inside the area of each of its
   /// strike gos (`Go.strike`). `area` is the row that chooses the fighters, `inside` the union
   /// of the cast's shapes the reach is read from, and `anchor` where the area is centred
   /// (genesis_prime/game/spell_area `area_of_spell`); a spell with a cast time and no area it
@@ -119,7 +120,8 @@ pub type Cast {
   /// 35) whose phase flags name the cast's last go, 0 for none; the load refuses a delay row
   /// that names another go. The hold counts from the cast's close, after the last go and
   /// every round of its strikes. An attack that is not a special has one go, at `cast_ms`,
-  /// that strikes, and no hold.
+  /// that strikes, and no hold. A special's `cast_ms` is its castTime, 0 for a Multiphase
+  /// spell, a channel or a spell with no cast bar, whose first go may be at 0.
   Charged(
     cast_ms: Int,
     area: Row,
