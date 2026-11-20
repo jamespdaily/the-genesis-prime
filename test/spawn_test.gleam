@@ -44,6 +44,7 @@ import genesis_prime/table/id.{
 }
 import genesis_prime/table/loader/store
 import genesis_prime/world_map/creature_faction.{type Factions}
+import genesis_prime/world_map/creature_kind.{Kinds}
 import genesis_prime/world_map/creature_life.{Attackable, Charged, Hostile}
 import genesis_prime/world_map/creature_unit_type.{Turret}
 import genesis_prime/world_map/spawn.{
@@ -1920,6 +1921,123 @@ pub fn a_special_follows_its_gos_when_they_end_before_the_cast_time_test() -> Ni
     as "the delays 0, 2500 and 200 sum to 2700, below the cast time; the damage row 166493 (phaseFlags 4) is go 2"
   assert hold_ms == 1500
     as "Spell4Effects 166492: durationTime 1500, phaseFlags 0xffff0004 names go 2"
+}
+
+pub fn a_special_with_a_cast_time_of_0_is_charged_with_the_gos_of_its_plan_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Each case is a spell with castTime 0 (`table_rows -- Spell4 N`) as the Beast's special: its
+  // gos from `table_rows -- SpellPhase spell4IdOwner=N` (the running sum of the delays; the
+  // pulses of a channel: channelInitialDelay 250, channelMaxTime 2000, channelPulseTime 250; the
+  // cast time, 0, when it has neither), the blows each strikes with from `-- Spell4Effects
+  // spellId=N` (the damage rows' phaseFlags name the gos), and the hold from the
+  // NpcExecutionDelay row at the last go.
+  [
+    #(
+      "Savage Shred: delays 0, 1, 199, 500, 500, 500 and 1100, the first go at 0; 67447 to 67451 name gos 2 to 6",
+      34_252,
+      [
+        #(0, None),
+        #(1, None),
+        #(200, Some([67_447])),
+        #(700, Some([67_448])),
+        #(1200, Some([67_449])),
+        #(1700, Some([67_450])),
+        #(2800, Some([67_451])),
+      ],
+      1200,
+    ),
+    #(
+      "Ground Pound: delays 200, 466, 434 and 500; 67504 to 67507 name gos 0 to 3",
+      34_262,
+      [
+        #(200, Some([67_504])),
+        #(666, Some([67_505])),
+        #(1100, Some([67_506])),
+        #(1600, Some([67_507])),
+      ],
+      1000,
+    ),
+    #(
+      "Suppressing Fire: eight pulses 250 ms apart; 123152 (phaseFlags -1) names all, and its one hit row, 7108 (0 to 1,500 ms), is drawn at the first six",
+      52_150,
+      [
+        #(250, Some([123_152])),
+        #(500, Some([123_152])),
+        #(750, Some([123_152])),
+        #(1000, Some([123_152])),
+        #(1250, Some([123_152])),
+        #(1500, Some([123_152])),
+        #(1750, None),
+        #(2000, None),
+      ],
+      0,
+    ),
+    #(
+      "Fighting Dirty: no SpellPhase row, so one go at the cast time, 0, with 177440",
+      70_136,
+      [#(0, Some([177_440]))],
+      0,
+    ),
+  ]
+  |> list.each(fn(found) {
+    let #(reason, spell4_id, expected_gos, expected_hold_ms) = found
+    let assert Charged(cast_ms:, gos:, hold_ms:, ..) =
+      the_special_of(beast: special_beast(spell4_ids: [spell4_id])).attack.cast
+      as { reason <> ": a special is a charge whatever its cast time" }
+    assert cast_ms == 0 as { reason <> ": castTime 0" }
+    assert go_blows(gos) == expected_gos as { reason <> ": gos" }
+    assert hold_ms == expected_hold_ms as { reason <> ": hold" }
+  })
+}
+
+pub fn the_attacks_role_decides_whether_a_cast_time_of_0_is_instant_or_charged_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4 34252 has castTime 0 and 33251 (`[AUTO-ATTACK]`) too. The kind's list decides: an
+  // auto-attack or an alternate strikes at once, a special is a cast with its own gos.
+  assert the_special_of(beast: special_beast(spell4_ids: [34_252])).attack.cast
+    != creature_life.Instant
+    as "34252 listed as a special is a charge"
+  assert autos_beast(spell4_ids: [34_252]).combat.attack.cast
+    == creature_life.Instant
+    as "34252 listed as the kind's auto-attack is instant"
+  let assert [alternate] =
+    autos_beast(spell4_ids: [33_251, 34_252]).combat.alternates
+    as "the kind lists one alternate and the spawn carries it"
+  assert alternate.cast == creature_life.Instant
+    as "34252 listed as an alternate auto-attack is instant"
+  assert autos_beast(spell4_ids: [33_251]).combat.attack.cast
+    == creature_life.Instant
+    as "the kind's auto-attack 33251 is instant"
+}
+
+pub fn an_auto_attack_with_a_cast_time_has_one_go_though_another_kind_lists_its_spell_as_a_special_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4 55317 has castTime 3000 and a plan of two gos, 2500 and 3000 ms
+  // (`table_rows -- SpellPhase spell4IdOwner=55317`). One kind lists it as a special; the
+  // Beast's kind lists it as the auto-attack, which has the one go at its cast time and
+  // strikes with every applied row.
+  let autos = spawn_support.kinds_with_beast_autos(spell4_ids: [55_317])
+  let specials =
+    spawn_support.kinds_with_specials(creature_id: 1, spell4_ids: [55_317])
+  let selection =
+    spawn.select(
+      rows: [spawn_support.beast_row(number: 1)],
+      tables: character_tables.content_tables(),
+      formulas: rating_support.formulas(),
+      kinds: Kinds(
+        ..autos,
+        by_creature: dict.merge(autos.by_creature, specials.by_creature),
+      ),
+      vendors: vendor.none(),
+      factions: creature_faction.none(),
+    )
+  assert selection.refusals == [] as "the Beast's row is taken"
+  let assert Ok(world) = dict.get(selection.worlds, 3460) as "world 3460"
+  let assert Ok(beast) = dict.get(world.by_id, SpawnId(1)) as "spawn 1 starts"
+  let assert Charged(gos:, ..) = beast.combat.attack.cast
+    as "a cast time above 0 is a charge"
+  assert go_blows(gos) == [#(3000, Some([131_967]))]
+    as "one go at the cast time, striking with the row 131967"
 }
 
 pub fn a_charge_carries_the_draws_the_anchor_and_the_aim_bit_of_its_spell_test() -> Nil {
