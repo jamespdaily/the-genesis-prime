@@ -36,6 +36,8 @@
 #                                  at a commit the server container does not run; never takes the
 #                                  lock or the hold over
 #   update_lock                    the folder update.sh's lock is
+#   older_than_a_minute PATH       whether the file or folder was last changed over a minute ago;
+#                                  false when it is missing
 #   update_lock_owner              the process id the lock's owner file holds, empty when none
 #   update_lock_is_stale           whether the lock's owner is gone, or it has no owner file and
 #                                  is over a minute old
@@ -46,7 +48,9 @@
 #   postgres_ready                 whether Postgres accepts a connection to the play database now
 #   ensure_postgres                makes the network and the Postgres container, starts it,
 #                                  and returns once it accepts connections
-#   server_state                   prints "REVISION ADDRESS RUNNING" of the server container,
+#   server_labels                  prints "REVISION ADDRESS RUNNING" of the server container;
+#                                  podman's status when it could not
+#   server_state                   server_labels with its failure and its error text dropped:
 #                                  nothing when there is none
 #   run_server IMAGE REVISION ADDRESS   replaces the server container with a new one
 #   wait_up                        waits for the server container's ready line; on a container
@@ -66,6 +70,7 @@ postgres_container=genesis-play-postgres
 postgres_volume=genesis-play-data
 postgres_image=docker.io/library/postgres:18
 postgres_port=5434
+game_port=24000
 server_container=genesis-play
 play_database=genesis_play
 
@@ -148,6 +153,12 @@ lock_owner_running() {
   [ "$(ps -o lstart= -p "$pid" 2>/dev/null | awk '{ $1 = $1; print }')" = "$started" ]
 }
 
+# older_than_a_minute PATH: whether the file or folder was last changed over a minute ago.
+# A missing path, or a path find cannot read, is not old.
+older_than_a_minute() {
+  [ -n "$(find "$1" -maxdepth 0 -mmin +1 2>/dev/null)" ]
+}
+
 # The updater's lock: a folder whose owner file holds the process id of the run that
 # took it (update.sh takes and releases it).
 update_lock=$state/update.lock
@@ -163,7 +174,7 @@ update_lock_is_stale() {
   if [ -n "$owner" ]; then
     ! kill -0 "$owner" 2>/dev/null
   else
-    [ -n "$(find "$update_lock" -maxdepth 0 -mmin +1 2>/dev/null)" ]
+    older_than_a_minute "$update_lock"
   fi
 }
 
@@ -308,18 +319,22 @@ ensure_postgres() {
   wait_for_postgres
 }
 
-server_state() {
+# server_labels: prints "REVISION ADDRESS RUNNING" of the server container, and returns
+# podman's own status when it could not say.
+server_labels() {
   podman container inspect \
     --format '{{index .Config.Labels "genesis.revision"}} {{index .Config.Labels "genesis.address"}} {{.State.Running}}' \
-    "$server_container" 2>/dev/null || true
+    "$server_container"
 }
+
+server_state() { server_labels 2>/dev/null || true; }
 
 run_server() {
   local image=$1 revision=$2 address=$3
   mkdir -p "$home/sittings"
   podman run -d --replace --name "$server_container" --network "$network" \
     --restart=on-failure:5 --memory 3g --stop-timeout 60 \
-    -p 6600:6600 -p 23115:23115 -p 24000:24000 \
+    -p 6600:6600 -p 23115:23115 -p "$game_port:$game_port" \
     -v "$tables:/tables:ro" -v "$terrain:/terrain:ro" -v "$home/sittings:/sittings" \
     --label "genesis.revision=$revision" --label "genesis.address=$address" \
     -e PGHOST="$postgres_container" -e PGPORT=5432 -e PGUSER=postgres \

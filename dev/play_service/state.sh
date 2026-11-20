@@ -4,16 +4,23 @@
 # starts, stops and makes nothing, never calls machine_up, never reads env.sh (so it
 # needs no password and prints none), and writes no file of the service's.
 #
+# A line is `KEY=VALUE`: the key ends at the first `=` and the value is the rest of the
+# line, which may hold `=` itself (updater_last_line, live_lock_folder, any _reason).
+#
 #   machine=up|down|unreadable            `podman info` answered, failed (a closed machine
-#                                          exits 125 or 1), or could not be read; with the
-#                                          machine down or unreadable the lines for the
-#                                          containers and the connections are left out
+#                                          exits 125, measured; 1 is a guess), or could not
+#                                          be read; with the machine down or unreadable the
+#                                          lines for the containers and the connections are
+#                                          left out
 #   server=running|stopping|exited|created|missing|unreadable
 #                                          the server container's State.Status as Podman
 #                                          words it (any other word is passed on as it is),
 #                                          or missing when there is none
 #   server_revision=, server_address=      the container's genesis.revision and
-#                                          genesis.address labels, when it exists
+#                                          genesis.address labels, when it exists and they
+#                                          could be read; when they could not,
+#                                          server_labels=unreadable and server_labels_reason=
+#                                          stand in their place
 #   database=...                           the same for the Postgres container
 #   database_ready=yes|no|unreadable       pg_isready's answer; no without asking when the
 #                                          container is not running
@@ -24,7 +31,8 @@
 #                                          old: its taker is still writing it), gone (its
 #                                          owner is gone, or no owner file over a minute: the
 #                                          next update takes it over)
-#   update_lock_pid=                       the owner's process id, when the lock names one
+#   update_lock_pid=                       the owner's process id (the first line of the
+#                                          owner file), when the lock names one
 #   live_lock=free|client|run|ownerless|gone
 #                                          the live lock: client or run is a live owner of
 #                                          that kind (anything but client counts as run, as
@@ -41,9 +49,14 @@
 #
 # Every call that can hang (podman, lsof: a Podman machine that is stopping holds a
 # call open) runs under its own bound and is ended at it, so a hung call leaves no
-# process behind, also when this script is ended meanwhile. The bound is in tenths of a
-# second so a test can set it small. The calls that read local files and the process
-# table (ps, sed, find, cat, tail) are not bounded.
+# process behind, also when this script is ended meanwhile. The whole read has one
+# budget, so the calls together stay under the runner's 15 s deadline: a call gets the
+# smaller of its bound and what is left of the budget, and once the budget is used up
+# the calls that remain are not made and print unreadable. Bounds and budget are in
+# tenths of a second so a test can set them small; they are counted in looks of 0.05 s,
+# so under load a call can end a little after its bound. The calls that read local files
+# and the process table (ps, sed, find, cat, tail) are not bounded. A read ended by
+# SIGKILL leaves its scratch folder under $TMPDIR (play-service-state.*) behind.
 #
 # bash 3.2 (the /bin/bash launchd runs) and later; the lib.sh note on `${x:?word}` holds.
 #
@@ -56,27 +69,43 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # at a load average of 3.9).
 bound_tenths=${GENESIS_PLAY_COMMAND_BOUND_TENTHS:-30}
 
-# The port run_server publishes for the game.
-game_port=24000
+# The longest the calls of one read may run together: 10 s, a guess under the runner's
+# 15 s deadline, which is also a guess.
+budget_tenths=${GENESIS_PLAY_READ_BUDGET_TENTHS:-100}
 
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/play-service-state.XXXXXX") || exit 1
+echo 0 >"$scratch/used"
 trap 'rm -rf "$scratch"' EXIT
 trap 'exit 143' HUP INT TERM
 
 # bounded COMMAND ARGUMENT...: runs the command, prints its standard output and returns
 # its status; its standard error is kept in $scratch/error. A command still running after
-# bound_tenths tenths of a second is ended and the status is 124. The waiting is done by
-# a shell of its own that looks twenty times a second, so it goes on and ends the command
-# even when this script is ended.
+# its allowance (the bound, or what is left of the budget if that is less) is ended and
+# the status is 124; with the budget used up it is not run, and $scratch/exhausted says
+# so. The allowance is kept in $scratch/allowed and the looks used so far in
+# $scratch/used (counts of looks, twenty to a second, in files because each call runs in
+# a subshell). The waiting is done by a shell of its own that looks twenty times a
+# second, so it goes on and ends the command even when this script is ended.
 bounded() {
   (
+    used=$(cat "$scratch/used")
+    allowed=$((bound_tenths * 2))
+    if [ "$((budget_tenths * 2 - used))" -lt "$allowed" ]; then
+      allowed=$((budget_tenths * 2 - used))
+    fi
+    echo "$allowed" >"$scratch/allowed"
+    if [ "$allowed" -le 0 ]; then
+      : >"$scratch/exhausted"
+      exit 124
+    fi
     waited=0
     command "$@" >"$scratch/output" 2>"$scratch/error" &
     pid=$!
     while kill -0 "$pid" 2>/dev/null; do
-      if [ "$waited" -ge "$((bound_tenths * 2))" ]; then
+      if [ "$waited" -ge "$allowed" ]; then
         kill -9 "$pid" 2>/dev/null
         wait "$pid" 2>/dev/null
+        echo "$((used + waited))" >"$scratch/used"
         exit 124
       fi
       sleep 0.05
@@ -84,6 +113,7 @@ bounded() {
     done
     wait "$pid"
     status=$?
+    echo "$((used + waited))" >"$scratch/used"
     cat "$scratch/output"
     exit "$status"
   )
@@ -93,11 +123,21 @@ bounded() {
 podman() { bounded podman "$@"; }
 lsof() { bounded lsof "$@"; }
 
-# failure_reason COMMAND STATUS: why a call failed, in one line.
+# seconds_text TENTHS: a count of tenths of a second as seconds, one decimal.
+seconds_text() { printf '%s.%s s' "$(($1 / 10))" "$(($1 % 10))"; }
+
+# failure_reason COMMAND STATUS: why the call just made failed, in one line.
 failure_reason() {
-  local detail
+  local detail allowed_tenths
   if [ "$2" -eq 124 ]; then
-    printf 'timed out after %s.%s s' "$((bound_tenths / 10))" "$((bound_tenths % 10))"
+    allowed_tenths=$(($(cat "$scratch/allowed") / 2))
+    if [ -e "$scratch/exhausted" ]; then
+      printf "not asked: the read's %s budget was used up" "$(seconds_text "$budget_tenths")"
+    elif [ "$allowed_tenths" -lt "$bound_tenths" ]; then
+      printf "timed out: the read's %s budget ran out" "$(seconds_text "$budget_tenths")"
+    else
+      printf 'timed out at its %s bound' "$(seconds_text "$bound_tenths")"
+    fi
     return 0
   fi
   detail=$(head -n 1 "$scratch/error" 2>/dev/null | tr -d '\r')
@@ -107,11 +147,6 @@ failure_reason() {
 
 # unreadable KEY WHY: the lines of a fact that could not be read.
 unreadable() { printf '%s=unreadable\n%s_reason=%s\n' "$1" "$1" "$2"; }
-
-# older_than_a_minute PATH: whether the file or folder was last changed over a minute ago.
-older_than_a_minute() {
-  [ -n "$(find "$1" -maxdepth 0 -mmin +1 2>/dev/null)" ]
-}
 
 # container_report PREFIX NAME: prints the container's status line; sets container_word
 # to the status, or to missing or unreadable.
@@ -146,15 +181,18 @@ machine_report() {
 }
 
 server_report() {
-  local revision address
+  local labels code=0 revision address
   container_report server "$server_container"
   case "$container_word" in
-    missing | unreadable) ;;
-    *)
-      read -r revision address _ <<<"$(server_state)"
-      printf 'server_revision=%s\nserver_address=%s\n' "${revision:-}" "${address:-}"
-      ;;
+    missing | unreadable) return 0 ;;
   esac
+  labels=$(server_labels) || code=$?
+  if [ "$code" -ne 0 ]; then
+    unreadable server_labels "$(failure_reason podman "$code")"
+    return 0
+  fi
+  read -r revision address _ <<<"$labels"
+  printf 'server_revision=%s\nserver_address=%s\n' "${revision:-}" "${address:-}"
 }
 
 database_report() {
@@ -196,6 +234,10 @@ update_lock_report() {
     return 0
   fi
   owner=$(update_lock_owner)
+  if [ -z "$owner" ] && [ ! -d "$update_lock" ]; then
+    echo update_lock=free
+    return 0
+  fi
   if update_lock_is_stale; then
     echo update_lock=gone
   elif [ -n "$owner" ]; then
@@ -203,7 +245,7 @@ update_lock_report() {
   else
     echo update_lock=ownerless
   fi
-  if [ -n "$owner" ]; then printf 'update_lock_pid=%s\n' "$owner"; fi
+  if [ -n "$owner" ]; then printf 'update_lock_pid=%s\n' "$(printf '%s\n' "$owner" | head -n 1)"; fi
 }
 
 live_lock_report() {

@@ -537,11 +537,12 @@ type Hang {
     name: String,
     key: String,
     present: List(#(String, String)),
+    absent: List(String),
     still_printed: List(String),
   )
 }
 
-const bound = "timed out after 0.2 s"
+const bound = "timed out at its 0.2 s bound"
 
 pub fn a_hung_read_ends_within_its_bound_and_leaves_no_process_test() -> Nil {
   use <- owned_test.run(60_000)
@@ -550,6 +551,7 @@ pub fn a_hung_read_ends_within_its_bound_and_leaves_no_process_test() -> Nil {
       name: "podman info blocks",
       key: support.info,
       present: [#("machine", "unreadable"), #("machine_reason", bound)],
+      absent: [],
       still_printed: ["held", "update_lock", "live_lock", "updater_last_line"],
     ),
     Hang(
@@ -563,6 +565,21 @@ pub fn a_hung_read_ends_within_its_bound_and_leaves_no_process_test() -> Nil {
         #("database_ready", "yes"),
         #("game_connections", "0"),
       ],
+      absent: [],
+      still_printed: ["held", "update_lock", "live_lock", "updater_last_line"],
+    ),
+    Hang(
+      name: "the server's labels inspect blocks",
+      key: support.labels(server),
+      present: [
+        #("machine", "up"),
+        #("server", "running"),
+        #("server_labels", "unreadable"),
+        #("server_labels_reason", bound),
+        #("database", "running"),
+        #("game_connections", "0"),
+      ],
+      absent: ["server_revision", "server_address"],
       still_printed: ["held", "update_lock", "live_lock", "updater_last_line"],
     ),
     Hang(
@@ -575,6 +592,7 @@ pub fn a_hung_read_ends_within_its_bound_and_leaves_no_process_test() -> Nil {
         #("game_connections", "unreadable"),
         #("game_connections_reason", bound),
       ],
+      absent: [],
       still_printed: ["held", "update_lock", "live_lock", "updater_last_line"],
     ),
   ]
@@ -587,6 +605,10 @@ pub fn a_hung_read_ends_within_its_bound_and_leaves_no_process_test() -> Nil {
     list.each(hang.present, fn(line) {
       assert dict.get(report, line.0) == Ok(line.1)
         as { hang.name <> ": " <> line.0 <> " in " <> ran.output }
+    })
+    list.each(hang.absent, fn(key) {
+      assert dict.get(report, key) == Error(Nil)
+        as { hang.name <> ": " <> key <> " is not printed in " <> ran.output }
     })
     list.each(hang.still_printed, fn(key) {
       assert dict.has_key(report, key)
@@ -601,8 +623,11 @@ pub fn a_hung_read_ends_within_its_bound_and_leaves_no_process_test() -> Nil {
   })
 
   // The script itself is killed while `podman info` blocks: the call is still
-  // ended at its bound, by the shell that waits for it. The test's shell waits
-  // for the call's end, which ends by the call's own condition.
+  // ended at its bound, by the shell that waits for it. The test's shell looks
+  // for the call's end a counted number of times (100 looks, far more than the
+  // 0.2 s bound needs) and, if the call is still there, ends it itself and
+  // prints `left`, so a call that nothing ends fails here instead of waiting out
+  // the fake's own sleep.
   use scene <- support.with_scene
   healthy(scene)
   support.plant_block(scene:, key: support.info)
@@ -615,17 +640,75 @@ pub fn a_hung_read_ends_within_its_bound_and_leaves_no_process_test() -> Nil {
         <> recorded
         <> " ]; do sleep 0.05; done; "
         <> "kill -9 $reader; "
-        <> "until ! kill -0 $(cat "
+        <> "looks=0; "
+        <> "while kill -0 $(cat "
         <> recorded
-        <> ") 2>/dev/null; do sleep 0.05; done",
+        <> ") 2>/dev/null && [ $looks -lt 100 ]; do sleep 0.05; looks=$((looks + 1)); done; "
+        <> "if kill -0 $(cat "
+        <> recorded
+        <> ") 2>/dev/null; then kill -9 $(cat "
+        <> recorded
+        <> "); echo left; fi",
       extra: [#("GENESIS_PLAY_COMMAND_BOUND_TENTHS", "2")],
     )
   assert ran.status == 0 as { "the test's shell ended: " <> ran.output }
+  assert !string.contains(ran.output, "left")
+    as "the call of a killed script was still there after 100 looks"
   let pids = support.blocked_pids(scene:, key: support.info)
   assert pids != [] as "the blocked call started"
   list.each(pids, fn(pid) {
     assert !support.alive(pid) as "the call of a killed script is gone"
   })
+}
+
+pub fn a_read_that_used_its_budget_asks_nothing_more_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use scene <- support.with_scene
+  healthy(scene)
+  support.plant_block(scene:, key: support.status(server))
+  let ran =
+    run_state(scene, [
+      #("GENESIS_PLAY_COMMAND_BOUND_TENTHS", "10"),
+      #("GENESIS_PLAY_READ_BUDGET_TENTHS", "3"),
+    ])
+  let report = support.report(ran)
+  let used_up = "not asked: the read's 0.3 s budget was used up"
+  let expected = [
+    #("server", "unreadable"),
+    #("server_reason", "timed out: the read's 0.3 s budget ran out"),
+    #("database", "unreadable"),
+    #("database_reason", used_up),
+    #("database_ready", "unreadable"),
+    #("game_connections", "unreadable"),
+    #("game_connections_reason", used_up),
+  ]
+  list.each(expected, fn(line) {
+    assert dict.get(report, line.0) == Ok(line.1)
+      as { line.0 <> " in " <> ran.output }
+  })
+  list.each(["held", "update_lock", "live_lock", "updater_last_line"], fn(key) {
+    assert dict.has_key(report, key) as { key <> " in " <> ran.output }
+  })
+  assert !list.any(support.calls(scene), string.contains(_, "lsof"))
+    as "lsof is not called once the budget is used up"
+}
+
+pub fn a_damaged_update_lock_owner_file_prints_one_line_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use scene <- support.with_scene
+  machine_down(scene)
+  let pid = int.to_string(support.os_pid())
+  support.plant_update_lock(scene:, owner: Some(support.os_pid()))
+  let assert Ok(Nil) =
+    simplifile.write(
+      support.update_lock_path(scene) <> "/owner",
+      pid <> "\n4242\n",
+    )
+  let ran = run_state(scene, [])
+  assert dict.get(support.report(ran), "update_lock_pid") == Ok(pid)
+    as "the first line of the owner file"
+  assert !string.contains(ran.output, "4242")
+    as { "the second line of the owner file is not printed: " <> ran.output }
 }
 
 /// The bash 4 features the scripts must not use: `/bin/bash` here is 3.2, which

@@ -95,7 +95,7 @@ take_lock() {
     write_owner
     return 0
   fi
-  if [ -d "$update_lock.takeover" ] && [ -n "$(find "$update_lock.takeover" -maxdepth 0 -mmin +1 2>/dev/null)" ]; then
+  if older_than_a_minute "$update_lock.takeover"; then
     rmdir "$update_lock.takeover" 2>/dev/null || true
   fi
   mkdir "$update_lock.takeover" 2>/dev/null || return 1

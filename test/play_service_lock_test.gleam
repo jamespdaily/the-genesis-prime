@@ -21,6 +21,16 @@ fn log_of(scene: Scene) -> String {
   result.unwrap(simplifile.read(scene.home <> "/play-service.log"), "")
 }
 
+/// Plants the folder a run makes while it takes a stale update lock over.
+fn plant_takeover(scene: Scene, old old: Bool) -> Nil {
+  let folder = support.update_lock_path(scene) <> ".takeover"
+  let assert Ok(Nil) = simplifile.create_directory_all(folder)
+  case old {
+    True -> support.make_old(folder)
+    False -> Nil
+  }
+}
+
 type Stand {
   /// The run stands down and the log holds the words.
   Stands(says: String)
@@ -88,6 +98,28 @@ pub fn update_sh_still_decides_by_the_moved_lock_check_test() -> Nil {
       fn(scene) { support.plant_update_lock(scene:, owner: Some(dead)) },
       fn(_) { TakesOver },
       False,
+    ),
+    UpdateRow(
+      "the owner is gone and a takeover folder over a minute old stands",
+      fn(scene) {
+        support.plant_update_lock(scene:, owner: Some(dead))
+        plant_takeover(scene, old: True)
+      },
+      fn(_) { TakesOver },
+      False,
+    ),
+    UpdateRow(
+      "the owner is gone and a takeover folder under a minute old stands",
+      fn(scene) {
+        support.plant_update_lock(scene:, owner: Some(dead))
+        plant_takeover(scene, old: False)
+      },
+      fn(_) {
+        Stands(
+          "another update runs (process " <> pid(dead) <> "); nothing done",
+        )
+      },
+      True,
     ),
     UpdateRow(
       "no owner file under a minute",
