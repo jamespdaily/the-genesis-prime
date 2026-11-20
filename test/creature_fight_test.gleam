@@ -295,6 +295,11 @@ fn fights_told(
   list.map(fights_told_for(taken), fn(told) { #(told.0, told.2) })
 }
 
+/// The numbers of the players the step tells to take a strike, in order.
+fn struck_numbers(taken: ServiceStep(creature.Outgoing)) -> List(Int) {
+  list.sort(list.map(fights_told(taken), fn(told) { told.0 }), int.compare)
+}
+
 /// The same, each with the stay it goes for.
 fn fights_told_for(
   taken: ServiceStep(creature.Outgoing),
@@ -407,6 +412,17 @@ fn news_to(taken: ServiceStep(creature.Outgoing), number: Int) -> List(News) {
         Ok(news)
       _ -> Error(Nil)
     }
+  })
+}
+
+/// Whether the step sends the viewer `to` a 0x908 naming this unit as the creature's target.
+fn names_target(
+  taken: ServiceStep(creature.Outgoing),
+  unit_id unit_id: Int,
+  to to: Int,
+) -> Bool {
+  list.any(news_to(taken, to), fn(news) {
+    string.starts_with(name_of(news), "0x908(" <> int.to_string(unit_id) <> ",")
   })
 }
 
@@ -3748,7 +3764,7 @@ pub fn a_viewer_arriving_mid_charge_is_told_the_casts_own_target_test() -> Nil {
       at_ms: 3000,
       message: strike_of(number: 5, cast_id: 1, blows: [#(1, 10, 1.0)]),
     )
-  assert list.contains(said(struck), "0x908(50, 11) to 2")
+  assert names_target(struck, unit_id: 50, to: 2)
     as "player 5 is the target now"
   let #(_, watched) =
     tell(
@@ -3759,9 +3775,7 @@ pub fn a_viewer_arriving_mid_charge_is_told_the_casts_own_target_test() -> Nil {
         stay: map_support.stay(count: 9),
       ),
     )
-  assert list.any(news_to(watched, 9), fn(news) {
-    name_of(news) == "0x908(50, 11)"
-  })
+  assert names_target(watched, unit_id: 50, to: 9)
     as "the late viewer's 0x908 names the fight's target now"
   let assert [CastStarted(start: late)] = casts_of(watched, 9)
   assert late.primary_target_unit_id == 20
@@ -5653,11 +5667,7 @@ pub fn the_strike_go_strikes_only_the_fighters_inside_the_cone_test() -> Nil {
   let #(state, opened, go) = roar_opened(state:, aggro:)
   let #(state, _, strike) = first_go_passed(state:, go:)
   let #(_, struck) = strike_go_reached(state:, strike:)
-  assert list.sort(
-      list.map(fights_told(struck), fn(told) { told.0 }),
-      int.compare,
-    )
-    == [2, 5]
+  assert struck_numbers(struck) == [2, 5]
     as "players 2 and 5 are struck; 6 is not"
   let assert [#(_, Attacks(tell: Strike(key:, striker:, offence:, ..))), ..] =
     fights_told(struck)
@@ -7620,7 +7630,7 @@ fn turret_walked_round(
 /// The players the end of the charge strikes, in order.
 fn struck_at_the_end(state state: State, ends ends: step.TimerId) -> List(Int) {
   let #(_, went) = fire(state:, at_ms: 11_000, timer: ends)
-  list.sort(list.map(fights_told(went), fn(told) { told.0 }), int.compare)
+  struck_numbers(went)
 }
 
 pub fn a_turret_strikes_a_fixed_caster_row_from_the_pose_stored_at_the_start_test() -> Nil {
@@ -7727,7 +7737,7 @@ fn struck_by_the_loaded_special(spell4_id spell4_id: Int) -> List(Int) {
   let #(state, opened) =
     fire(state:, at_ms: 1500, timer: timer_for(aggro, 1500))
   let #(_, struck) = through_the_gos(state:, step: opened, gos:, passed_ms: 0)
-  list.sort(list.map(fights_told(struck), fn(told) { told.0 }), int.compare)
+  struck_numbers(struck)
 }
 
 /// Each go of the cast at its time, from the one the step armed, up to the strike go: the
@@ -7889,15 +7899,14 @@ fn target_cast_opened(
   roar_opened(state:, aggro:)
 }
 
-/// The players the strike go of the open cast strikes, in order of number, after the go
-/// before it.
-fn struck_at_the_strike_go(
+/// The step of the strike go of the open cast, after the go before it.
+fn strike_go_of_the_cast(
   state state: State,
   go go: step.TimerId,
-) -> List(Int) {
+) -> ServiceStep(creature.Outgoing) {
   let #(state, _, strike) = first_go_passed(state:, go:)
   let #(_, struck) = strike_go_reached(state:, strike:)
-  list.sort(list.map(fights_told(struck), fn(told) { told.0 }), int.compare)
+  struck
 }
 
 /// The player moving to `x`, `z` and turning to face `yaw`.
@@ -8001,7 +8010,7 @@ pub fn a_fixed_target_row_strikes_around_where_the_target_stood_at_the_start_tes
       at_ms: 3000,
       message: moved_at(number: 2, x: 0.0, z: -14.0, seq: 3),
     )
-  assert struck_at_the_strike_go(state:, go:) == [5]
+  assert struck_numbers(strike_go_of_the_cast(state:, go:)) == [5]
     as "the fighter in the circle where the target stood is struck, the target who left is not"
 }
 
@@ -8027,7 +8036,7 @@ pub fn a_client_placed_target_row_strikes_around_the_cast_targets_place_at_the_s
       at_ms: 3000,
       message: moved_at(number: 2, x: 0.0, z: -16.0, seq: 3),
     )
-  assert struck_at_the_strike_go(state:, go:) == [2, 5]
+  assert struck_numbers(strike_go_of_the_cast(state:, go:)) == [2, 5]
     as "the circle is around where the target stands at the strike"
 }
 
@@ -8094,9 +8103,10 @@ pub fn a_cone_on_the_target_turns_with_the_targets_facing_test() -> Nil {
           seq: 3,
         ),
       )
-    assert list.filter(struck_at_the_strike_go(state:, go:), fn(number) {
-        number != 2
-      })
+    assert list.filter(
+        struck_numbers(strike_go_of_the_cast(state:, go:)),
+        fn(number) { number != 2 },
+      )
       == case_.struck
       as case_.reason
   })
@@ -8124,42 +8134,71 @@ pub fn a_target_row_uses_the_cast_target_not_the_0x908_target_of_the_moment_test
       at_ms: 3000,
       message: strike_of(number: 5, cast_id: 1, blows: [#(1, 10, 1.0)]),
     )
-  assert list.contains(said(retargeted), "0x908(50, 11) to 2")
+  assert names_target(retargeted, unit_id: 50, to: 2)
     as "player 5 is the 0x908 target now"
-  assert struck_at_the_strike_go(state:, go:) == [2, 6]
+  assert struck_numbers(strike_go_of_the_cast(state:, go:)) == [2, 6]
     as "the circle is still around the cast's target"
 }
 
-/// A case of `a_following_target_row_strikes_nobody_when_its_cast_target_is_gone_test`: the
-/// spell and anchor of the row, and the players its circle strikes after the target died.
-type GoneTarget {
-  GoneTarget(
+/// A case of `a_target_row_strikes_while_its_cast_target_is_in_the_world_test`: the spell and
+/// anchor of the row, what happens to the cast's target after the cast opened, and the players
+/// its circle strikes.
+type TargetDeparture {
+  TargetDeparture(
     reason: String,
     spell4_id: Int,
     anchor: area.Anchor,
+    departure: creature.Message,
     struck: List(Int),
   )
 }
 
-pub fn a_following_target_row_strikes_nobody_when_its_cast_target_is_gone_test() -> Nil {
+pub fn a_target_row_strikes_while_its_cast_target_is_in_the_world_test() -> Nil {
   use <- owned_test.run(5000)
-  // Player 2, the cast's target, dies after the cast opened: the map's `PlayerDied` takes it
-  // off the threat list. The client removes a telegraph whose unit is not found
-  // (`0x14054b1b0`): a row that follows the target strikes nobody, though player 6 stands
-  // where the target stood. A row fixed where the target stood at the start still strikes by
-  // its stored place, the fighter standing in it.
+  // The client removes a unit-placed or server-placed telegraph when the unit it is bound to
+  // is no longer found in its world, and not when the unit leaves the fight
+  // (`0x14054b1b0.unit_gone`, for a server-placed row too). Player 2, the cast's target, stands at
+  // (0, -8) with player 6 beside it at (2, -8) and player 5 far off at (0, -19). A target that
+  // dies or leaves the creature's ring stays in the world, as a body or as a unit: a row
+  // following it is still drawn on it, and a fixed row is still drawn at its stored place. A
+  // target the map no longer shows the creature (`Unwatched`: it left, logged out or camped,
+  // or was despawned) is gone from the viewers' world, so neither row is drawn and nobody
+  // is struck.
   [
-    GoneTarget(
-      reason: "a row that follows the gone target strikes nobody",
+    TargetDeparture(
+      reason: "a target that died leaves a body: the row on it still strikes the fighter beside it",
       spell4_id: 46_353,
       anchor: area.FollowsTarget,
-      struck: [],
+      departure: creature.PlayerDied(by: ConnectionId(2)),
+      struck: [6],
     ),
-    GoneTarget(
-      reason: "a row fixed at the start still strikes the fighter standing in it",
+    TargetDeparture(
+      reason: "a target that died leaves the fixed row where it stood",
       spell4_id: 55_846,
       anchor: area.FixedAtTarget,
+      departure: creature.PlayerDied(by: ConnectionId(2)),
       struck: [6],
+    ),
+    TargetDeparture(
+      reason: "a target that left the ring is still in the world: both fighters are struck",
+      spell4_id: 46_353,
+      anchor: area.FollowsTarget,
+      departure: creature.Withdrew(by: ConnectionId(2)),
+      struck: [2, 6],
+    ),
+    TargetDeparture(
+      reason: "a target the creature no longer sees takes the following row with it",
+      spell4_id: 46_353,
+      anchor: area.FollowsTarget,
+      departure: creature.Unwatched(by: ConnectionId(2)),
+      struck: [],
+    ),
+    TargetDeparture(
+      reason: "a target the creature no longer sees takes the fixed row with it",
+      spell4_id: 55_846,
+      anchor: area.FixedAtTarget,
+      departure: creature.Unwatched(by: ConnectionId(2)),
+      struck: [],
     ),
   ]
   |> list.each(fn(case_) {
@@ -8172,20 +8211,9 @@ pub fn a_following_target_row_strikes_nobody_when_its_cast_target_is_gone_test()
         ),
         others: [#(5, 0.0, -19.0), #(6, 2.0, -8.0)],
       )
-    let #(state, _) =
-      tell(
-        state:,
-        at_ms: 3000,
-        message: creature.PlayerDied(by: ConnectionId(2)),
-      )
-    let #(state, _, strike) = first_go_passed(state:, go:)
-    let #(_, struck) = strike_go_reached(state:, strike:)
-    assert list.sort(
-        list.map(fights_told(struck), fn(told) { told.0 }),
-        int.compare,
-      )
-      == case_.struck
-      as case_.reason
+    let #(state, _) = tell(state:, at_ms: 3000, message: case_.departure)
+    let struck = strike_go_of_the_cast(state:, go:)
+    assert struck_numbers(struck) == case_.struck as case_.reason
     case case_.struck {
       [] -> {
         let assert [CastWent(went), ..] = news_to(struck, 5)
