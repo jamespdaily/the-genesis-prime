@@ -29,7 +29,7 @@
 ////
 ////   ```
 ////   0x15a {P, 2, 0} ─▶ the coming back's frames and news; the unit's 0x355 to each viewer
-////                    ─▶ map run: Leave(connection)                       (LeavingMap, JoinAt(place, None))
+////                    ─▶ map run: Leave(connection)                       (LeavingMap, JoinAt(place, None, None))
 ////   Left, NotRunning or EndedBeforeAnswer
 ////                    ─▶ the map's watch dropped; map of place's world: Join(connection, character, place)
 ////                                                                        (EnteringWorld, FromInWorld)
@@ -71,10 +71,9 @@ import genesis_prime/game/cast
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection/casting as connection_casting
-import genesis_prime/game/connection/effects as connection_effects
 import genesis_prime/game/connection/life_effect
 import genesis_prime/game/connection/resource as connection_resource
-import genesis_prime/game/connection/state.{type Session, JoinAt, Session} as connection_state
+import genesis_prime/game/connection/state.{type Session, Session} as connection_state
 import genesis_prime/game/connection/world as connection_world
 import genesis_prime/game/hit
 import genesis_prime/game/movement
@@ -467,14 +466,14 @@ fn leaving_for_the_holocrypt(
       world_id: start_place.world_id(movement.place(entered.movement)),
     )
     |> result.unwrap(entered.entered_at)
-  let #(session, left_behind) =
-    connection_effects.world_left(session:, now:, entered:)
-  connection_world.leaving_the_map(
+  connection_world.leaving_to(
     session:,
     now:,
     holder:,
     entered:,
-    before: list.append(before, left_behind),
-    then: JoinAt(place:, health: None),
+    place:,
+    health: None,
+    told: None,
+    before:,
   )
 }

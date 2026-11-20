@@ -20,6 +20,7 @@ import genesis_prime/client_connection.{
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/game/ability_book
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{type Settings, Settings}
@@ -1258,11 +1259,13 @@ pub fn leaving_the_map() -> #(game_connection.State, ConnectionStep(Request)) {
 /// The ask of the player's leave: the run of the map that took the player, 77
 /// (`incarnation`), with the connection's id.
 pub fn leave_asked() -> Request {
-  AskMapRun(
-    map: camp_map(),
-    incarnation:,
-    message: Leave(connection: ConnectionId(1)),
-  )
+  leave_asked_from(map: camp_map())
+}
+
+/// The ask of the leave of a player the map `map` took, for a player who joined
+/// another world than the tests' camp.
+pub fn leave_asked_from(map map: MapId) -> Request {
+  AskMapRun(map:, incarnation:, message: Leave(connection: ConnectionId(1)))
 }
 
 /// The connection after the map answered `Left`: 0x594 is written and the
@@ -1381,6 +1384,15 @@ pub fn mapped(
   map_state map_state: map.State,
   taken taken: ConnectionStep(Request),
 ) -> #(map.State, map.Outgoing) {
+  let #(map_state, outgoing, _) = mapped_logging(map_state:, taken:)
+  #(map_state, outgoing)
+}
+
+/// `mapped`, with the log lines the map wrote for the ask.
+pub fn mapped_logging(
+  map_state map_state: map.State,
+  taken taken: ConnectionStep(Request),
+) -> #(map.State, map.Outgoing, List(step.LogLine)) {
   let message = case ask_request(taken) {
     AskMap(message:, ..) | AskMapRun(message:, ..) -> message
     AskStore(..)
@@ -1410,7 +1422,7 @@ pub fn mapped(
     )
   let assert [#(CallerId(1), outgoing)] = support.replies(mapped)
     as "the map answers the ask once, to its caller"
-  #(map_state, outgoing)
+  #(map_state, outgoing, support.logs(mapped))
 }
 
 /// A message for the stay `stay` of the tests' player.
@@ -1628,6 +1640,25 @@ pub fn zone_changed_message(old old: Int, new new: Int) -> BitArray {
       new_world_zone_id: new,
     ))
   world_message(message_id: world_zone_changed.message_id, body:)
+}
+
+/// The bag index of an ability of the Stalker's Novice set (class 5, Exile) at level 1,
+/// from the fixture's rows.
+pub fn stalker_bag_index_of(base base: Int) -> Int {
+  let assert Ok(set) =
+    loadout.of(
+      tables: fixture_tables.shared(),
+      class_id: ClassId(5),
+      faction_id: 166,
+    )
+    as "the fixture holds the Stalker's Novice set"
+  let assert Ok(index) =
+    list.index_map(ability_book.bag(loadout: set, level: 1), fn(held, index) {
+      #(held, index)
+    })
+    |> list.key_find(Spell4BaseId(base))
+    as "the Stalker's bag holds the ability"
+  index
 }
 
 /// The Medic of level 1 in the world, who presses Paralytic Surge at bag index 2.

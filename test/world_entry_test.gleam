@@ -9,14 +9,18 @@
 ////   whose choice objectives are QuestObjective 21328 and 21329 of Quest2 10528.
 
 import character_tables
+import genesis_prime/game/currency
 import genesis_prime/game/player_life
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/world_entry
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/store.{type Character, type QuestRow, Character}
+import genesis_prime/table/id.{Item2Id}
 import genesis_prime/world_map/map
 import gleam/dict
+import gleam/list
 import gleam/option.{None, Some}
+import item_expiry_support
 import map_support
 import owned_test
 import place_support
@@ -102,6 +106,7 @@ pub fn a_departure_rejoin_keeps_the_players_health_test() -> Nil {
         entered:,
         place: landing,
         health:,
+        told: None,
         connection: ConnectionId(1),
         stay: map_support.stay(count: 2),
         tables:,
@@ -137,6 +142,104 @@ pub fn a_departure_rejoin_keeps_the_players_health_test() -> Nil {
   )
 }
 
+pub fn a_rejoin_keeps_what_the_player_holds_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.shared()
+  let character = tutorial_character()
+  let bag_item =
+    item_expiry_support.held(
+      guid: 900,
+      item2: 20_791,
+      location: 1,
+      bag_index: 0,
+      count: 5,
+      expires_at_unix_ms: None,
+    )
+  let #(_, entered) =
+    world_entry_support.entry_at(
+      tables:,
+      character:,
+      items: list.append(world_entry_support.novice_items(character:), [
+        bag_item,
+      ]),
+      quests: [
+        quest_support.active(
+          quest_id: 10_528,
+          state: 2,
+          placeholder: 0,
+          tracked: False,
+          done_mask: 1,
+          progress: [1, 0, 0, 0, 0],
+        ),
+      ],
+      now: world_entry_support.now(),
+    )
+  let sold =
+    world_entry.Buyback(next_id: 4, entries: [
+      world_entry.BuybackEntry(
+        buyback_id: 3,
+        item2_id: Item2Id(20_791),
+        quantity: 2,
+        words: store.plain_words,
+        currency_type_id: 1,
+        amount: 77,
+      ),
+    ])
+  let entered =
+    world_entry.Entered(
+      ..entered,
+      experience: 2860,
+      buyback: sold,
+      completing: [10_528],
+      currencies: currency.with_amount(
+        currencies: entered.currencies,
+        currency_type_id: 1,
+        total: 5000,
+      ),
+    )
+  let landing =
+    place_support.at(
+      world_id: 870,
+      world_zone_id: 1227,
+      x: -7700.0,
+      y: -941.0,
+      z: -659.0,
+    )
+  let #(state, effects) =
+    world_entry.rejoining(
+      entered:,
+      place: landing,
+      health: Some(1),
+      told: None,
+      connection: ConnectionId(1),
+      stay: map_support.stay(count: 2),
+      tables:,
+      visibility: dict.new(),
+    )
+  let assert world_entry.InTheWorld(entered: rejoined, ..) =
+    world_entry_support.joined_state(
+      state:,
+      tables:,
+      character:,
+      place: landing,
+      now: world_entry_support.now(),
+    )
+    as "the map's answer to the rejoin puts the player in the world"
+  assert list.contains(rejoined.items, bag_item)
+    && rejoined.items == entered.items
+    as "the held items, bag and worn, are the stay's own"
+  assert rejoined.buyback == sold
+    as "the Buyback list is the stay's own: the client keeps its tab across a world change"
+  assert rejoined.completing == [10_528]
+    as "a quest waiting for the server to complete it is still waiting"
+  assert currency.credits(currencies: rejoined.currencies) == 5000
+    as "the credits are the stay's own"
+  assert rejoined.quests == entered.quests as "the quest log is the stay's own"
+  assert rejoined.experience == 2860 as "the experience is the stay's own"
+  assert asked_place(effects:) == landing
+    as "the map of the landing's world is asked to take the player there"
+}
+
 pub fn a_rejoin_starts_in_world_loading_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = character_tables.shared()
@@ -157,6 +260,7 @@ pub fn a_rejoin_starts_in_world_loading_test() -> Nil {
       entered: played,
       place: landing,
       health: None,
+      told: None,
       connection: ConnectionId(1),
       stay: map_support.stay(count: 2),
       tables:,

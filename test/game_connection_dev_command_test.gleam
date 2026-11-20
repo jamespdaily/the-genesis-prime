@@ -24,9 +24,16 @@
 //// - QuestObjective 18604 (type 24, data 9695) of Quest2 9497 is done when quest 9695 is
 ////   finished; no Creature2 row receives 9497 or 9695, so the server completes them
 ////   (`communicator.completed_by_server`).
+//// - A `!go` into another world is the leave and join of the Holocrypt's move: the old
+////   map is asked to take the player out, the new world's map to take it in (`opcode.0xad`
+////   names the world the client loads), and the entry burst has no 0x25E and no 0x35F
+////   (`game_connection_departures`). WorldLocation2 8300 is in World 870, zone 1227, at the
+////   float bits 0xc5f0a7c4, 0xc46b4091, 0xc424d2a8. WorldZone 1189 is in top zone 483 by
+////   parentZoneId (1530, 495, 1215). The reply is the Design's choice (a System line).
 
 import ability_book_support as book_support
 import ability_points_support as points_support
+import cast_support
 import character_support
 import character_tables
 import connection_rule_support as rule_support
@@ -37,23 +44,29 @@ import game_client
 import game_connection_dev_command_support as dev_support
 import game_connection_support as support
 import genesis_prime/client_connection.{
-  type Answer, type Request, FromStore, TellMoved, TellTargetMoved,
+  type Answer, type Request, AskMap, AskStore, FromMap, FromStore, Removed,
+  TellMoved, TellTargetMoved,
 }
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/chat_channel
 import genesis_prime/game/chat_tell
 import genesis_prime/game/connection as game_connection
+import genesis_prime/game/connection/dev_command as connection_dev_command
 import genesis_prime/game/connection/state as connection_state
+import genesis_prime/game/departures
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/game/strike
 import genesis_prime/game/strike_tell
 import genesis_prime/message/cast_activate.{CastActivate}
 import genesis_prime/message/client_control_echoed.{ClientControlEchoed}
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
 import genesis_prime/message/disconnect_reason.{
-  AccountDisconnected, LostUserServer,
+  type DisconnectReason, AccountDisconnected, LostUserServer,
 }
+import genesis_prime/message/enter_world
 import genesis_prime/message/experience_gained.{ExperienceGained}
 import genesis_prime/message/float32
+import genesis_prime/message/item_place.{ItemPlace}
 import genesis_prime/message/player_health
 import genesis_prime/message/quest_objective_progress.{
   type QuestObjectiveProgress, QuestObjectiveProgress,
@@ -66,23 +79,27 @@ import genesis_prime/message/unit_position_command.{
 }
 import genesis_prime/step.{
   type ConnectionEvent, type ConnectionStep, type Event, type Outcome,
-  ConnectionId, OwnEffect, OwnEvent, StoppedWaiting, TimerId, Unwatch, Watch,
-  WatchEnded, WatchId, Woken,
+  CancelTimer, ConnectionId, OwnEffect, OwnEvent, StartTimer, StoppedWaiting,
+  TimerFired, TimerId, Unwatch, Watch, WatchEnded, WatchId, Woken,
 }
-import genesis_prime/store
+import genesis_prime/store.{ForItems, Items, Move, SavePlace}
 import genesis_prime/table/id.{Item2Id}
+import genesis_prime/world_map/map
+import genesis_prime/world_map/map_id.{type MapId, MapId}
 import genesis_prime/world_map/spawn
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/string
 import item_expiry_support
+import map_support
 import message_support
 import owned_test
 import place_support
 import planted_table.{Integer}
 import quest_support
 import quest_turn_in_support
+import vendor_support
 
 /// A Medic (class 4), level 3, holding 1800 experience: 90 past level 3's 1710.
 fn medic() -> game_connection.State {
@@ -343,7 +360,7 @@ pub fn an_item_command_asks_the_store_for_a_purchase_of_no_cost_and_waits_in_buy
   // Item2 48169 has a random-stat row, so the stack is made with a rolled word.
   let #(_, rolling) =
     dev_support.said(state: holding(credits: 0), text: "!item 48169")
-  let assert client_connection.AskStore(store.Items(store.BuyFromVendor(
+  let assert client_connection.AskStore(Items(store.BuyFromVendor(
     make: [made],
     held: 0,
     ..,
@@ -392,7 +409,7 @@ pub fn an_item_answer_updates_the_items_and_writes_the_frames_and_one_line_test(
   assert item_expiry_support.times_left(taken: answered) == [#(900, 1_800_000)]
     as "opcode.0x111.time_left: the new item is sent with its whole lifetime"
   let #(_, next) = dev_support.said(state:, text: "!item 90021")
-  let assert client_connection.AskStore(store.Items(store.BuyFromVendor(
+  let assert client_connection.AskStore(Items(store.BuyFromVendor(
     make: [second],
     ..,
   ))) = support.ask_request(next)
@@ -761,7 +778,7 @@ pub fn the_quest_the_command_completes_finishes_the_quest_waiting_on_it_and_the_
     as "0x361: the type 24 objective 18604, the second of 9497, is done"
   assert list.last(support.written_ids(taken)) == Ok(0x01C8)
     as "the command's line is written after the follow-ups' frames"
-  let assert client_connection.AskStore(store.Items(store.TurnInQuest(
+  let assert client_connection.AskStore(Items(store.TurnInQuest(
     quests: asked,
     ..,
   ))) = support.ask_request(taken)
@@ -838,7 +855,7 @@ pub fn a_command_for_a_quest_the_server_is_completing_runs_after_its_turn_in_and
       taken: entry,
       outcome: support.turn_in_saved(taken: entry),
     )
-  let assert client_connection.AskStore(store.Items(store.TurnInQuest(..))) =
+  let assert client_connection.AskStore(Items(store.TurnInQuest(..))) =
     support.ask_request(second)
     as "the answer's input asks for the quest that waited in the queue"
   let #(_, third) =
@@ -1359,6 +1376,29 @@ type Placed {
   )
 }
 
+pub fn a_position_is_written_as_a_plain_decimal_test() -> Nil {
+  use <- owned_test.run(60_000)
+  list.each(
+    [
+      #(
+        -7700.0,
+        "-7700.0",
+        "a whole number that float.to_string writes as -7.7e3",
+      ),
+      #(100.0, "100.0", "a whole number it writes plainly"),
+      #(20_000.0, "20000.0", "a whole number it writes as 2.0e4"),
+      #(-7700.970703125, "-7700.970703125", "a fraction it writes plainly"),
+      #(0.00001, "0.00001", "a fraction below one it writes as 1.0e-5"),
+      #(-0.00000015, "-0.00000015", "a negative fraction it writes as -1.5e-7"),
+      #(0.0, "0.0", "zero"),
+    ],
+    fn(row) {
+      assert connection_dev_command.plain_decimal(value: row.0) == row.1
+        as row.2
+    },
+  )
+}
+
 pub fn a_go_in_the_same_world_places_the_player_at_once_and_tells_the_map_test() -> Nil {
   use <- owned_test.run(60_000)
   list.each(
@@ -1725,18 +1765,608 @@ pub fn a_go_the_tables_refuse_never_leaves_the_map_test() -> Nil {
   )
 }
 
-pub fn a_go_to_another_world_is_refused_with_one_line_until_it_is_built_test() -> Nil {
+// A `!go` into another world: the leave of the old map and the join of the new one
+// (`opcode.0xad`), as the Holocrypt's and the departures' moves do them. World 870 is
+// WorldLocation2 8300's world, zone 1227, at x -7700.970703125, y -941.0088500976562,
+// z -659.29150390625 (the row's float bits 0xc5f0a7c4, 0xc46b4091, 0xc424d2a8).
+
+/// The map of World 22, which the tests' player in World 22 joined.
+fn map_of_world_22() -> MapId {
+  MapId(world_id: 22, instance: 0)
+}
+
+/// The player in World 22 after the earlier commands of a sitting: level 4 (experience
+/// 2860, XpPerLevel.minXpForLevel), quest 5972 done and 5000 credits, seen by these
+/// viewers, holding a health of 1 (the store's saved health).
+fn commanded_in_world_22(viewers viewers: List(Int)) -> game_connection.State {
+  let state =
+    support.watched_by(
+      state: dev_support.in_world_22(saved_health: Some(1)),
+      viewers:,
+    )
+  let #(state, _) = dev_support.said(state:, text: "!level 4")
+  let #(state, _) = dev_support.said(state:, text: "!quest 5972 done")
+  let #(state, granting) = dev_support.said(state:, text: "!currency 1 5000")
+  support.answer(
+    state:,
+    taken: granting,
+    outcome: dev_support.currency_set(amount: 5000),
+  ).0
+}
+
+/// The commanded player after a `!go` into World 870: the step of the line, which asks the
+/// leave.
+fn leaving_world_22() -> #(game_connection.State, step.ConnectionStep(Request)) {
+  dev_support.said(
+    state: commanded_in_world_22(viewers: [2, 3]),
+    text: "!go 870 1227 -7700 -941 -659",
+  )
+}
+
+/// The commanded player after the leave was answered: the step that asks the join.
+fn joining_world_870() -> #(game_connection.State, step.ConnectionStep(Request)) {
+  let #(state, leaving) = leaving_world_22()
+  dev_support.left_the_map(state:, leaving:)
+}
+
+/// The system line of the `!go` into World 870.
+const line_of_the_go = "moved to world 870, zone 1227, (-7700.0, -941.0, -659.0)"
+
+type Crossing {
+  Crossing(
+    text: String,
+    x: Float,
+    y: Float,
+    z: Float,
+    line: String,
+    why: String,
+  )
+}
+
+pub fn a_go_to_another_world_leaves_the_map_then_joins_the_new_one_at_the_place_test() -> Nil {
   use <- owned_test.run(60_000)
-  let origin =
-    place_support.at(world_id: 22, world_zone_id: 1189, x: 1.0, y: 2.0, z: 3.0)
-  let state = dev_support.in_world_at_place(place: origin)
+  list.each(
+    [
+      Crossing(
+        text: "!go 870 1227 -7700 -941 -659",
+        x: -7700.0,
+        y: -941.0,
+        z: -659.0,
+        line: line_of_the_go,
+        why: "coordinates: the place is as asked",
+      ),
+      Crossing(
+        text: "!go 8300",
+        x: -7700.970703125,
+        y: -941.0088500976562,
+        z: -659.29150390625,
+        line: "moved to world 870, zone 1227, (-7700.970703125, -941.0088500976562, -659.29150390625)",
+        why: "WorldLocation2 8300: a named place is the row's own world, zone and position",
+      ),
+    ],
+    fn(row) {
+      let state = commanded_in_world_22(viewers: [2, 3])
+      let #(state, leaving) = dev_support.said(state:, text: row.text)
+      assert support.written_ids(leaving) == [0x01C2]
+        as "opcode.0x1c2: only the line's echo is written before the join"
+      assert support.ask_request(leaving)
+        == support.leave_asked_from(map: map_of_world_22())
+        as "the run of the map that took the player is asked to take it out"
+      list.each([2, 3], fn(viewer) {
+        assert support.news_told(taken: leaving, viewer:) == [Removed]
+          as "the unit's 0x355: each viewer sees the unit leave"
+      })
+      let effects = rule_support.effects_of(leaving)
+      list.each(
+        [
+          OwnEffect(step.LeaveGroup(step.CharacterNamed("ab cd"))),
+          OwnEffect(
+            step.LeaveGroup(step.ZoneChannel(
+              map: map_of_world_22(),
+              incarnation: support.incarnation,
+              top_zone_id: 483,
+            )),
+          ),
+          OwnEffect(CancelTimer(TimerId(8))),
+          OwnEffect(CancelTimer(connection_state.save_timer)),
+          OwnEffect(CancelTimer(TimerId(10))),
+          OwnEffect(CancelTimer(TimerId(11))),
+          OwnEffect(CancelTimer(TimerId(13))),
+        ],
+        fn(left_behind) {
+          assert list.contains(effects, left_behind)
+            as "the chat groups are left (WorldZone 1189 is in top zone 483 by parentZoneId: 1530, 495, 1215) and the stay's regeneration, save, quest reset, quest deadline and item expiry timers cancelled"
+        },
+      )
+      let #(state, joining) = dev_support.left_the_map(state:, leaving:)
+      let assert AskMap(
+        map: map_id,
+        message: map.Join(place:, stay:, alive:, ..),
+      ) = support.ask_request(joining)
+        as "the answer to the leave is the new world's join"
+      assert map_id == MapId(world_id: 870, instance: 0) as row.why
+      assert alive as "a player holding a health of 1 is alive"
+      assert stay == map_support.stay(count: 2) as "the join is a new stay"
+      assert start_place.world_id(place) == 870
+        && start_place.world_zone_id(place) == 1227
+        && start_place.x(place) == row.x
+        && start_place.y(place) == row.y
+        && start_place.z(place) == row.z
+        as row.why
+      assert support.written_ids(joining) == []
+        as "nothing is written between the leave's answer and the join's"
+      let #(state, joined) = dev_support.joined_world_870(state:, joining:)
+      assert game_client.without_passive_cast(ids: support.written_ids(joined))
+        == list.append(game_client.holocrypt_entry_ids(), [0x01C8])
+        as "the entry burst with no 0x25E and no 0x35F, then the chat burst, then the line"
+      let assert [entered] =
+        support.decoded(
+          support.written(taken: joined),
+          enter_world.message_id,
+          enter_world.decode,
+        )
+        as "one 0xAD"
+      assert entered.world_id == 870
+        && entered.position_x == float32.to_bits(row.x)
+        && entered.position_y == float32.to_bits(row.y)
+        && entered.position_z == float32.to_bits(row.z)
+        as "opcode.0xad: the client loads World 870 at the place"
+      assert support.system_lines(joined) == [row.line] as row.why
+      let #(_, save) = dev_support.save_timer_fires(state:)
+      let assert AskStore(Move(SavePlace(
+        place: saved,
+        health:,
+        experience:,
+        level:,
+        quests:,
+        ..,
+      ))) = support.ask_request(save)
+        as "the new stay's save timer saves the place"
+      assert start_place.world_id(saved) == 870
+        && start_place.x(saved) == row.x
+        && start_place.y(saved) == row.y
+        && start_place.z(saved) == row.z
+        as "the next save holds the new place"
+      assert health == Some(1) as "the saved health is kept, not made full"
+      assert level == 4 && experience == 2860
+        as "XpPerLevel: the level and experience a `!level 4` set are kept"
+      assert quests == [quest_support.completed(5972, at: now_seconds)]
+        as "the quest log is kept"
+      let #(_, granting) = dev_support.said(state:, text: "!currency 1 6000")
+      assert support.ask_request(granting)
+        == dev_support.currency_asked(
+          currency_type_id: 1,
+          held: 5000,
+          after: 6000,
+        )
+        as "the credits are kept"
+    },
+  )
+}
+
+/// A player holding two stacks of Item2 20791, `sold_stack` (guid 500, bag slot 0, 5) and
+/// `kept_stack` (guid 501, bag slot 1, 3), at the vendor Dorian Walker (Creature2
+/// 74812) with the development commands on and 1000 credits.
+fn at_the_vendor_holding_two_stacks() -> game_connection.State {
+  let settings =
+    connection_state.Settings(
+      ..support.settings_with_dev_commands(),
+      vendors: vendor_support.stocking(creature_ids: [74_812]),
+    )
+  vendor_support.at_the_vendor(
+    state: support.entered_stocking_holding(
+      in_character_select: support.in_select_from(support.accepted(settings).0),
+      credits: 1000,
+      items: [
+        item_expiry_support.held(
+          guid: 500,
+          item2: 20_791,
+          location: 1,
+          bag_index: 0,
+          count: 5,
+          expires_at_unix_ms: None,
+        ),
+        item_expiry_support.held(
+          guid: 501,
+          item2: 20_791,
+          location: 1,
+          bag_index: 1,
+          count: 3,
+          expires_at_unix_ms: None,
+        ),
+      ],
+    ),
+  )
+}
+
+pub fn a_go_to_another_world_keeps_the_bag_and_the_buyback_list_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let state = at_the_vendor_holding_two_stacks()
   let #(state, taken) =
+    support.sale_requested(
+      state:,
+      place: ItemPlace(location: 1, bag_index: 0),
+      quantity: 5,
+    )
+  let #(state, _) =
+    support.answer(
+      state:,
+      taken:,
+      outcome: step.Answer(
+        FromStore(
+          ForItems(
+            store.Sold(amount: 1013, words: [
+              store.SoldWord(item_guid: 500, words: store.plain_words),
+            ]),
+          ),
+        ),
+      ),
+    )
+  let #(state, leaving) =
+    dev_support.said(state:, text: "!go 870 1227 29 -853 -560")
+  let #(state, joining) = dev_support.left_the_map(state:, leaving:)
+  let #(state, _) = dev_support.joined_world_870(state:, joining:)
+  let state =
+    vendor_support.at_the_vendor_for_a_player_at(
+      state:,
+      player: place_support.at(
+        world_id: 870,
+        world_zone_id: 1227,
+        x: 29.0,
+        y: -853.0,
+        z: -560.0,
+      ),
+      stay_count: 2,
+    )
+  let #(_, selling) =
+    support.sale_requested(
+      state:,
+      place: ItemPlace(location: 1, bag_index: 1),
+      quantity: 3,
+    )
+  let assert AskStore(Items(store.SellToVendor(sold: [kept], ..))) =
+    support.ask_request(selling)
+    as "the stack kept in the bag is still held and can be sold"
+  assert kept.item_guid == 501 as "the second stack, guid 501"
+  let #(_, buying) = support.buyback_requested(state:, buyback_id: 1)
+  let assert AskStore(Items(store.BuyFromVendor(grow:, make:, item2_id:, ..))) =
+    support.ask_request(buying)
+    as "the entry the earlier sale put on the buyback list is still there"
+  assert item2_id == Item2Id(20_791) && make == []
+    as "the entry is the 5 of Item2 20791 the sale took"
+  assert grow
+    == [store.StackGrowth(item_guid: 501, held_count: 3, new_count: 8)]
+    as "they join the stack of 3 the player kept, guid 501: the bag is still held"
+}
+
+/// Impale (Spell4Base 23161) of the Stalker's Novice set, whose go strikes the creatures
+/// it reaches (`game_connection_strike_gate`).
+const impale_base = 23_161
+
+pub fn a_go_to_another_world_leaves_the_cast_and_the_strike_in_progress_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(state, _) =
+    support.entered_with(
+      settings: support.settings_with_dev_commands(),
+      class_id: 5,
+      saved_health: None,
+    )
+  let #(state, _) =
+    support.feed(
+      state,
+      support.creature_of_beast_appears_facing(
+        unit_id: 42,
+        creature_id: 48_404,
+        yaw: 0.0,
+      ),
+    )
+  let #(state, pressed) =
+    support.at(
+      state:,
+      ms: 1000,
+      event: OwnEvent(
+        step.Read(support.world_message(
+          message_id: 0x009A,
+          body: cast_support.press_body(
+            client_cast_id: 1,
+            bag_index: support.stalker_bag_index_of(base: impale_base),
+            target: 0,
+            press: 1,
+          ),
+        )),
+      ),
+    )
+  let #(state, _, pending, steps) =
+    support.casts_left_answered(
+      state:,
+      world: Nil,
+      pending: support.cast_timers(steps: [pressed], ms: 1000),
+      until_ms: 1400,
+      steps: [pressed],
+      answer: fn(world, state, _, taken) { #(world, state, [taken]) },
+    )
+  let #(state, pressed_again) =
+    support.at(
+      state:,
+      ms: 1400,
+      event: OwnEvent(
+        step.Read(support.world_message(
+          message_id: 0x009A,
+          body: cast_support.press_body(
+            client_cast_id: 2,
+            bag_index: support.stalker_bag_index_of(base: impale_base),
+            target: 0,
+            press: 1,
+          ),
+        )),
+      ),
+    )
+  assert pending == [] as "the first cast is over with its go"
+  assert support.cast_timers(steps: [pressed_again], ms: 1400)
+    == [#(1500, TimerId(1002))]
+    as "the second press is a cast in progress: its go is a timer due at 1500"
+  assert list.any(steps, fn(taken) {
+    list.contains(
+      rule_support.effects_of(taken),
+      OwnEffect(StartTimer(timer: strike.strike_timer, after_ms: 1000)),
+    )
+  })
+    as "the go struck the beast, whose answer is awaited: the strike timer is set"
+  let #(_, went) =
+    support.at(
+      state:,
+      ms: 1450,
+      event: OwnEvent(
+        step.Read(support.chat_line_message(4, "!go 870 1227 -7700 -941 -659")),
+      ),
+    )
+  let effects = rule_support.effects_of(went)
+  list.each(
+    [
+      #(strike.strike_timer, "the open strike round's timer"),
+      #(TimerId(1002), "the cast in progress's go timer"),
+    ],
+    fn(row) {
+      assert list.contains(effects, OwnEffect(CancelTimer(row.0))) as row.1
+    },
+  )
+}
+
+pub fn a_go_to_another_world_replies_once_after_the_join_and_not_before_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(state, leaving) = leaving_world_22()
+  let #(state, joining) = dev_support.left_the_map(state:, leaving:)
+  assert support.system_lines(leaving) == []
+    && support.system_lines(joining) == []
+    as "no system line is written before the join is answered"
+  let #(_, joined) = dev_support.joined_world_870(state:, joining:)
+  assert support.system_lines(joined) == [line_of_the_go]
+    as "one line after the join"
+  let ids = support.written_ids(joined)
+  assert list.last(ids) == Ok(0x01C8)
+    as "the line comes after the entry burst and the chat burst"
+  assert list.length(list.filter(ids, fn(id) { id == 0x01C8 })) == 1 as "once"
+}
+
+pub fn a_new_map_that_refuses_the_join_returns_the_client_to_character_select_and_saves_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(state, joining) = joining_world_870()
+  let #(state, refused) =
+    support.answer(
+      state:,
+      taken: joining,
+      outcome: step.Answer(
+        FromMap(
+          map.NotJoined(reason: map.NoLoadout(class_id: 1, faction_id: 166)),
+        ),
+      ),
+    )
+  assert support.written_ids(refused) == [0x0594]
+    as "the player is in no map: 0x0594 puts the client in character select"
+  assert list.length(rule_support.logs_of(step: refused, level: step.LogWarning))
+    == 1
+    as "the refusal is logged once"
+  assert support.system_lines(refused) == []
+    as "the client is no longer in a world"
+  assert rule_support.asked(refused) == None as "no save is asked"
+  let #(_, listing) = support.read(state, support.select_start())
+  assert support.ask_request(listing)
+    == AskStore(store.Select(store.ListCharacters(store.AccountId(7))))
+    as "a new character select takes the client's 0x07E0"
+  list.each(
+    [
+      #(step.NotRunning, "the new map is not running"),
+      #(step.NoAnswerInTime, "the new map gives no answer in time"),
+    ],
+    fn(row) {
+      let #(state, joining) = joining_world_870()
+      let #(_, ended) = support.answer(state:, taken: joining, outcome: row.0)
+      assert support.disconnect(ended, support.keyed()) == LostUserServer
+        as { row.1 <> ": 0x036A reason 8" }
+      assert rule_support.asked(ended) == None
+        as { row.1 <> ": no SavePlace is asked" }
+    },
+  )
+}
+
+pub fn an_old_map_that_gives_no_answer_ends_the_connection_without_a_save_and_one_that_is_gone_lets_the_join_go_on_test() -> Nil {
+  use <- owned_test.run(60_000)
+  list.each(
+    [
+      #(step.NoAnswerInTime, "the old map gives no answer in time"),
+      #(StoppedWaiting, "the server stops while the leave is out"),
+    ],
+    fn(row) {
+      let #(state, leaving) = leaving_world_22()
+      let #(_, ended) = support.answer(state:, taken: leaving, outcome: row.0)
+      assert support.disconnect(ended, support.keyed()) == LostUserServer
+        as { row.1 <> ": 0x036A reason 8, then the end" }
+      assert rule_support.asked(ended) == None
+        as { row.1 <> ": no SavePlace is asked" }
+    },
+  )
+  let #(state, leaving) = leaving_world_22()
+  let #(_, joining) =
+    support.answer(state:, taken: leaving, outcome: step.NotRunning)
+  let #(map_id, _, _) = departures_support.join_of(taken: joining)
+  assert map_id == MapId(world_id: 870, instance: 0)
+    as "a map that is gone has nothing to leave: the join goes on"
+}
+
+type Ending {
+  Ending(
+    event: Event(ConnectionEvent(client_connection.Message, Answer)),
+    notice: Option(DisconnectReason),
+    why: String,
+  )
+}
+
+pub fn a_connection_that_ends_while_leaving_or_entering_makes_no_final_save_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let endings = [
+    Ending(
+      event: OwnEvent(step.PeerClosed),
+      notice: None,
+      why: "the peer closed",
+    ),
+    Ending(
+      event: support.taken_over(),
+      notice: Some(AccountDisconnected),
+      why: "another login takes the account's session",
+    ),
+  ]
+  list.each(endings, fn(ending) {
+    list.each(
+      [
+        #("the leave is out", leaving_world_22()),
+        #("the join is out", {
+          let #(state, leaving) = leaving_world_22()
+          dev_support.left_the_map(state:, leaving:)
+        }),
+      ],
+      fn(waiting) {
+        let why = ending.why <> " while " <> waiting.0
+        let #(_, ended) = support.feed(state: waiting.1.0, event: ending.event)
+        assert rule_support.asked(ended) == None
+          as { why <> ": no SavePlace is asked" }
+        assert rule_support.stops(ended)
+          as { why <> ": the connection ends at once" }
+        assert option.map(ending.notice, fn(_) {
+            support.disconnect(ended, support.keyed())
+          })
+          == ending.notice
+          as why
+      },
+    )
+  })
+}
+
+pub fn what_other_processes_send_while_leaving_or_entering_is_dropped_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let seen_by =
+    support.sent_by_the_map(map.SeenBy(
+      by: ConnectionId(4),
+      stay: support.viewer_stay(4),
+    ))
+  let #(_, taken) =
+    support.feed(state: commanded_in_world_22(viewers: []), event: seen_by)
+  assert support.peer_tells(taken) != []
+    as "the same message is taken by a connection that stands in the world"
+  let #(leaving_state, leaving) = leaving_world_22()
+  let #(entering_state, _) = joining_world_870()
+  list.each(
+    [
+      #(leaving_state, seen_by, "a map message for the old stay in LeavingMap"),
+      #(
+        entering_state,
+        seen_by,
+        "a map message for the old stay in EnteringWorld",
+      ),
+      #(
+        leaving_state,
+        OwnEvent(TimerFired(connection_state.save_timer)),
+        "the old stay's save timer firing in LeavingMap",
+      ),
+    ],
+    fn(row) {
+      let #(_, dropped) = support.feed(state: row.0, event: row.1)
+      assert rule_support.effects_of(dropped) == [] as row.2
+    },
+  )
+  let whisper =
+    chat_tell.Whisper(
+      whisper: 5,
+      speaker: another_speaker(),
+      from: ConnectionId(8),
+      line: a_line(channel_type: chat_channel.Whisper),
+    )
+  let #(_, whispered) =
+    support.feed(
+      state: leaving_state,
+      event: OwnEvent(Woken(client_connection.SentByChat(whisper))),
+    )
+  assert chat_tells(taken: whispered)
+    == [#(step.Connection(ConnectionId(8)), chat_tell.NotHeard(whisper: 5))]
+    as "a whisper in LeavingMap is answered NotHeard to its sender"
+  let #(state, joining) =
+    dev_support.left_the_map(state: leaving_state, leaving:)
+  let #(state, _) = dev_support.joined_world_870(state:, joining:)
+  let #(_, late) = support.feed(state:, event: seen_by)
+  assert rule_support.effects_of(late) == []
+    as "after the join, a message that carries the old stay's number is dropped"
+}
+
+pub fn a_go_clears_a_departures_landing_kept_and_its_timer_finds_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // An Exile in the tutorial, which said yes at the Northern Wilds terminal (Creature2 73606,
+  // Spell4Base 20650): the yes keeps a landing and starts the 0 ms departures timer.
+  let state =
+    departures_support.seeing(
+      state: support.entered_under(
+        settings: support.settings_with_dev_commands(),
+        character: store.Character(
+          ..support.world_character(),
+          faction_id: spawn.exile_faction,
+        ),
+        quests: [departures_support.after_the_talk(quest_id: 10_528)],
+      ).0,
+      creature_id: 73_606,
+    )
+  let #(state, yes) = departures_support.yes(state:, spell4_base_id: 20_650)
+  assert departures_support.started_timers(taken: yes)
+    == [#(departures.timer, 0)]
+    as "the yes keeps a landing and starts the departures timer"
+  let #(state, leaving) =
     dev_support.said(state:, text: "!go 870 1227 -7700 -941 -659")
-  assert support.written_ids(taken) == [0x01C2, 0x01C8]
-    as "the line is answered with one system line and nothing else"
-  assert support.system_lines(taken) == ["!go to another world is not built"]
-  assert rule_support.asked(taken) == None as "no Leave is asked"
-  assert support.told_the_map(taken) == []
-  assert rule_support.logs(taken) == [] as "a refused command writes no log"
-  assert dev_support.saved_place(state:) == origin as "nothing changed"
+  assert support.ask_request(leaving) == support.leave_asked()
+    as "the `!go` leaves the tutorial's map"
+  let #(state, fired) = departures_support.timer_fires(state:)
+  assert rule_support.effects_of(fired) == []
+    as "the timer finds no landing: no second leave and no retry"
+  let #(state, joining) = dev_support.left_the_map(state:, leaving:)
+  let #(state, _) = dev_support.joined_world_870(state:, joining:)
+  let #(_, fired) = departures_support.timer_fires(state:)
+  assert rule_support.effects_of(fired) == []
+    as "after the join the timer still finds nothing"
+}
+
+pub fn each_accepted_go_is_logged_once_at_info_test() -> Nil {
+  use <- owned_test.run(60_000)
+  list.each(
+    [
+      #("!go 22 1189 100 -50 200", "in the player's world"),
+      #("!go 870 1227 -7700 -941 -659", "into another world"),
+    ],
+    fn(row) {
+      let #(_, taken) =
+        dev_support.said(
+          state: dev_support.in_world_22(saved_health: None),
+          text: row.0,
+        )
+      let assert [logged] =
+        rule_support.logs_of(step: taken, level: step.LogInfo)
+        as { row.1 <> ": one info line" }
+      assert rule_support.says(logged, "!go") as row.1
+    },
+  )
 }

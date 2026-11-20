@@ -27,12 +27,13 @@ import connection_rule_support as support
 import departures_support
 import experience_support
 import fixture_tables
+import game_client
 import game_connection_dev_command_support as dev_support
 import game_connection_support as connection_support
 import genesis_prime/account_session.{Claimed}
 import genesis_prime/client_connection.{
   type Answer, type Message, type Request, FromMap, FromSessions, FromStore,
-  SentByKill,
+  Removed, SentByKill,
 }
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
@@ -43,6 +44,7 @@ import genesis_prime/message/client_control_granted.{ClientControlGranted}
 import genesis_prime/message/currency_changed.{CurrencyChanged}
 import genesis_prime/message/currency_gained.{CurrencyGained}
 import genesis_prime/message/disconnect_reason.{LostUserServer}
+import genesis_prime/message/enter_world
 import genesis_prime/message/experience_gained.{
   type ExperienceGained, ExperienceGained,
 }
@@ -1303,4 +1305,63 @@ pub fn quest_done_lets_the_player_accept_the_quest_that_needs_it_test() -> Nil {
     )
     == [QuestState(quest_id: 5918, state: 1, objective_id: 0)]
     as "opcode.0x35c: with 5972 done the accept is answered in state 1"
+}
+
+pub fn go_to_another_world_enters_it_and_the_first_maps_watcher_sees_the_unit_leave_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(state, first_map) =
+    dev_support.entered_among_watchers_in_a_map(
+      class_id: 4,
+      level: 3,
+      experience: 1800,
+    )
+  let #(state, leaving) = dev_support.said(state:, text: "!go 8300")
+  list.each([2, 3, 4, 5], fn(viewer) {
+    assert connection_support.news_told(taken: leaving, viewer:) == [Removed]
+      as "the unit's 0x355: each watcher of the first map is told the unit is gone"
+  })
+  let #(first_map, left, held) =
+    connection_support.mapped_logging(map_state: first_map, taken: leaving)
+  assert left == Left as "the first map answers the leave"
+  assert held == [] as "the first map held the player: its leave logs no error"
+  let #(_, _, held) =
+    connection_support.mapped_logging(map_state: first_map, taken: leaving)
+  assert list.length(held) == 1
+    as "the first map no longer holds the player: a second leave logs an error"
+  let #(state, joining) =
+    connection_support.answer(
+      state:,
+      taken: leaving,
+      outcome: step.Answer(FromMap(left)),
+    )
+  let second_map =
+    connection_support.map_of_world_with_four_players(
+      map: MapId(world_id: 870, instance: 0),
+      run: 5,
+    )
+  let #(second_map, joined, logs) =
+    connection_support.mapped_logging(map_state: second_map, taken: joining)
+  assert logs == [] as "the second map takes the join without a line"
+  let #(_, burst) =
+    connection_support.answer(
+      state:,
+      taken: joining,
+      outcome: step.Answer(FromMap(joined)),
+    )
+  let frames = connection_support.written(taken: burst)
+  let assert [entered] =
+    connection_support.decoded(
+      frames,
+      enter_world.message_id,
+      enter_world.decode,
+    )
+    as "the client reads one 0xAD"
+  assert entered.world_id == 870 as "opcode.0xad: the client loads World 870"
+  assert game_client.unit_create_player_in(frames:).unit_id
+    == connection_support.own_unit_id
+    as "0x262: the player's unit is the second map's fifth, after its four others"
+  let #(_, _, logs) =
+    connection_support.mapped_logging(map_state: second_map, taken: leaving)
+  assert logs == []
+    as "the second map holds the player: its leave logs no error"
 }

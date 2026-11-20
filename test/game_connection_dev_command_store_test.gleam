@@ -16,6 +16,7 @@ import game_connection_support as support
 import genesis_prime/client_connection.{type Request, AskStore, FromStore}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
+import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/disconnect_reason.{LostUserServer}
 import genesis_prime/message/item_added
 import genesis_prime/step.{type ConnectionStep}
@@ -25,7 +26,7 @@ import genesis_prime/store.{
 }
 import genesis_prime/table/id.{Item2Id}
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
 import item_expiry_support
 import owned_test
 
@@ -345,4 +346,182 @@ pub fn the_quest_commanded_is_loaded_by_the_next_login_test() -> Nil {
   assert option.is_some(row.completed_at)
     as "save_place.sql: a Completed row keeps its completion time"
   account_store_support.stop(stored.store)
+}
+
+// ---- !go into another world ----
+//
+// The move saves nothing: the next stay's 60 s timer saves the new place, and a connection that
+// ends while it leaves or joins leaves the last save (`holds_a_player`). World 870 is
+// WorldLocation2 8300's world.
+
+/// What a login of the stored character finds.
+type Found {
+  Found(
+    place: Option(Place),
+    level: Int,
+    experience: Option(Int),
+    quests: List(store.QuestRow),
+  )
+}
+
+/// The place, level, experience and quest log the stored character's next login loads.
+fn found(stored stored: account_store_support.Stored) -> Found {
+  let assert ForWorld(CharacterLoaded(
+    character:,
+    saved_experience:,
+    quests:,
+    ..,
+  )) =
+    account_store_support.ask(
+      store: stored.store,
+      request: World(LoadCharacter(stored.account, stored.character_id, 0)),
+    )
+    as "the account's character loads"
+  Found(
+    place: character.place,
+    level: character.level,
+    experience: saved_experience,
+    quests:,
+  )
+}
+
+/// The stored character in the world after the commands of a sitting that came before a
+/// move, `!level 4` and `!quest 5972 done`, and the `!go` into World 870: the connection
+/// and the step of the line, which asks the leave.
+fn going(
+  stored stored: account_store_support.Stored,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let state = entered(stored:)
+  let #(state, _) = dev_support.said(state:, text: "!level 4")
+  let #(state, _) = dev_support.said(state:, text: "!quest 5972 done")
+  dev_support.said(state:, text: "!go 870 1227 -7700 -941 -659")
+}
+
+/// The same after the leave is answered: the step asks the join.
+fn joining(
+  stored stored: account_store_support.Stored,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let #(state, leaving) = going(stored:)
+  dev_support.left_the_map(state:, leaving:)
+}
+
+/// The same after the join is answered: the player is in World 870.
+fn in_world_870(
+  stored stored: account_store_support.Stored,
+) -> game_connection.State {
+  let #(state, joining) = joining(stored:)
+  dev_support.joined_world_870(state:, joining:).0
+}
+
+/// Whether the place is World 870, zone 1227, at the commanded x and z.
+fn is_the_place_commanded(place place: Option(Place)) -> Bool {
+  case place {
+    Some(place) ->
+      start_place.world_id(place) == 870
+      && start_place.world_zone_id(place) == 1227
+      && start_place.x(place) == -7700.0
+      && start_place.y(place) == -941.0
+      && start_place.z(place) == -659.0
+    None -> False
+  }
+}
+
+pub fn a_completed_cross_world_go_is_saved_by_the_next_stays_timer_and_the_next_login_enters_there_test() -> Nil {
+  use <- owned_test.run(120_000)
+  let stored = account_store_support.stored_holding(worn: [], items: [])
+  let before = found(stored:)
+  assert !is_the_place_commanded(place: before.place)
+    && before.level == 3
+    && before.experience == Some(1710)
+    && before.quests == []
+    as "the stored character starts in the camp, at level 3, experience 1710, with no quest"
+  let state = in_world_870(stored:)
+  assert found(stored:) == before
+    as "the move itself saves nothing: the leave and the join run no request on the store"
+  let #(state, save) = dev_support.save_timer_fires(state:)
+  let assert AskStore(Move(SavePlace(..)) as asked) = support.ask_request(save)
+    as "the new stay's timer saves the place"
+  let answer = store_support.through_the_store(stored:, request: asked)
+  assert answer == ForMove(PlaceSaved) as "the store saved the place"
+  let #(_, _) =
+    support.answer(state:, taken: save, outcome: step.Answer(FromStore(answer)))
+  let after = found(stored:)
+  assert is_the_place_commanded(place: after.place)
+    as "the next login enters World 870 at the place"
+  assert after.level == 4 && after.experience == Some(2860)
+    as "XpPerLevel: level 4 starts at 2860"
+  let assert [row] = after.quests as "one quest"
+  assert row.quest_id == 5972 && row.state == 3 as "quest 5972 is Completed"
+  account_store_support.stop(stored.store)
+}
+
+pub fn a_failed_save_leaves_the_previous_save_and_the_next_save_stores_the_commanded_state_test() -> Nil {
+  use <- owned_test.run(120_000)
+  // A periodic save that is not committed, and a save at an end that is not answered.
+  let stored = account_store_support.stored_holding(worn: [], items: [])
+  let before = found(stored:)
+  let state = in_world_870(stored:)
+  let #(state, save) = dev_support.save_timer_fires(state:)
+  let #(state, failed) =
+    support.answer(
+      state:,
+      taken: save,
+      outcome: step.Answer(FromStore(store.Unavailable)),
+    )
+  assert !rule_support.stops(failed)
+    as "a save that fails in the world: the player goes on"
+  assert list.length(rule_support.logs_of(step: failed, level: step.LogWarning))
+    == 1
+    as "a warning is logged"
+  assert found(stored:) == before as "a load finds the earlier place"
+  let #(state, save) = dev_support.save_timer_fires(state:)
+  let #(_, _) =
+    support.answer(
+      state:,
+      taken: save,
+      outcome: stored_answer(stored:, taken: save),
+    )
+  assert is_the_place_commanded(place: found(stored:).place)
+    as "the next save stores the commanded place"
+  account_store_support.stop(stored.store)
+
+  let stored = account_store_support.stored_holding(worn: [], items: [])
+  let before = found(stored:)
+  let state = in_world_870(stored:)
+  let #(state, ending) =
+    support.feed(state:, event: step.OwnEvent(step.PeerClosed))
+  let assert AskStore(Move(SavePlace(..))) = support.ask_request(ending)
+    as "a connection that ends in the world saves the place"
+  let #(_, ended) =
+    support.answer(state:, taken: ending, outcome: step.NoAnswerInTime)
+  assert rule_support.stops(ended)
+    as "a save that is not answered at an end ends the connection"
+  assert found(stored:) == before as "a load finds the earlier place"
+  account_store_support.stop(stored.store)
+}
+
+pub fn a_termination_during_the_leave_or_the_join_leaves_the_previous_save_to_the_next_login_test() -> Nil {
+  use <- owned_test.run(120_000)
+  list.each(
+    [
+      #("the leave is out", fn(stored) { going(stored:) }),
+      #("the join is out", fn(stored) { joining(stored:) }),
+    ],
+    fn(row) {
+      let stored = account_store_support.stored_holding(worn: [], items: [])
+      let before = found(stored:)
+      let #(state, _) = row.1(stored)
+      let #(_, ended) =
+        support.feed(state:, event: step.OwnEvent(step.PeerClosed))
+      assert rule_support.asked(ended) == None
+        as { row.0 <> ": no request is run on the store" }
+      assert rule_support.stops(ended) as row.0
+      assert found(stored:) == before
+        as {
+          row.0
+          <> ": a load finds the last save's place, level, experience and quests, not the commanded ones"
+        }
+      account_store_support.stop(stored.store)
+    },
+  )
 }

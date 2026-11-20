@@ -6,7 +6,7 @@
 ////
 //// ```
 //// timer ─▶ due ─ in the world, alive, departing = Some(place)
-////                  ─▶ world_left; map run: Leave(connection)   (LeavingMap, JoinAt(place, health))
+////                  ─▶ world.leaving_to: world_left; map run: Leave(connection)   (LeavingMap, JoinAt(place, health, None))
 ////           Left ─▶ the map's watch dropped; the landing's map: Join(.., health)
 ////           Joined ─▶ 0xad, 0x262, .. 0x61, with no 0x25e and no 0x35f (`InWorldEntry`)
 ////      └ fired in a wait whose answer returns the player to the world (a purchase, a sale,
@@ -33,9 +33,8 @@
 ////   has returned the player.
 
 import genesis_prime/client_connection.{type Request, Continue}
-import genesis_prime/game/connection/effects as connection_effects
 import genesis_prime/game/connection/state.{
-  type Session, Busy, Greeting, JoinAt, Present, Selecting,
+  type Session, Busy, Greeting, Present, Selecting,
 } as connection_state
 import genesis_prime/game/connection/world as connection_world
 import genesis_prime/game/departures
@@ -91,20 +90,16 @@ fn leaving(
     connection_state.with_entered(session:, change: fn(_) { cleared })
   case entered.departing, player_life.state(life: entered.life) {
     None, _ | _, player_life.Dead -> Continue(session, [])
-    Some(place), player_life.Alive -> {
-      let #(session, left_behind) =
-        connection_effects.world_left(session:, now:, entered: cleared)
-      connection_world.leaving_the_map(
+    Some(place), player_life.Alive ->
+      connection_world.leaving_to(
         session:,
         now:,
         holder:,
         entered: cleared,
-        before: left_behind,
-        then: JoinAt(
-          place:,
-          health: Some(player_life.saved_health(life: entered.life)),
-        ),
+        place:,
+        health: Some(player_life.saved_health(life: entered.life)),
+        told: None,
+        before: [],
       )
-    }
   }
 }
