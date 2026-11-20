@@ -143,8 +143,9 @@ pub fn get(path path: String) -> Request(String) {
   )
 }
 
+/// The dashboard's own page list.
 pub fn pages() -> List(Page) {
-  [page.Page(title: "Overview", path: "/")]
+  dashboard.pages()
 }
 
 /// A web context whose files are `files`, by the path the route reads.
@@ -181,7 +182,7 @@ pub fn answer(
 ) -> Response(BitArray) {
   case web.handle(context, request) {
     web.Answer(response) -> response
-    web.Upgrade -> panic as "the request was upgraded, not answered"
+    web.Upgrade(_) -> panic as "the request was upgraded, not answered"
   }
 }
 
@@ -249,6 +250,9 @@ pub fn with_home(body body: fn(String) -> a) -> a {
 /// developer's real `podman`. Its poller's timer never comes within a test (the
 /// interval is a day) and no read is ended by its deadline (a day): a read is
 /// made when a page subscribes or a test asks for one, and ends with the script.
+/// The log followers' timers never come either (a day): a log is read when a page
+/// subscribes or a test calls `follow.read_now`, and no one is told of the
+/// followers' reads unless the test sets `log_watcher`.
 pub fn settings(home home: String) -> dashboard.Settings {
   dashboard.Settings(
     port: free_port(),
@@ -258,6 +262,8 @@ pub fn settings(home home: String) -> dashboard.Settings {
     state_script: "test/dashboard_state_report.sh",
     poll_interval_ms: 86_400_000,
     read_deadline_ms: 86_400_000,
+    log_interval_ms: 86_400_000,
+    log_watcher: None,
   )
 }
 

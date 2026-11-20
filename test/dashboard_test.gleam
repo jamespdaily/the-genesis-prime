@@ -5,11 +5,14 @@
 //// served) and the listener's rule (the loopback address only).
 
 import dashboard_support
+import event_wait
 import frame_peer
 import genesis_prime/dashboard
 import genesis_prime/dashboard/access
+import genesis_prime/dashboard/follow
 import genesis_prime/dashboard/host
 import genesis_prime/dashboard/host_reading.{type Reading}
+import genesis_prime/dashboard/log_lines.{LaunchdLog, UpdaterLog}
 import genesis_prime/dashboard/overview.{Model}
 import genesis_prime/dashboard/secret
 import gleam/bit_array
@@ -203,7 +206,10 @@ pub fn every_route_and_the_websocket_refuse_without_the_key_and_a_refused_upgrad
   // Every route without the key prefix, or with another key, is the one
   // refusal.
   list.each(
-    ["/", "/style.css", "/palette.css", "/art/cube-cond.ttf", "/ws"],
+    [
+      "/", "/style.css", "/palette.css", "/art/cube-cond.ttf", "/ws", "/logs",
+      "/logs-ws",
+    ],
     fn(path) {
       list.each([path, "/k/wrong" <> path], fn(spelled) {
         let reply = dashboard_support.send(port, spelled, browser)
@@ -216,6 +222,7 @@ pub fn every_route_and_the_websocket_refuse_without_the_key_and_a_refused_upgrad
   // A handshake outside the key prefix, with another key, or with the key and
   // a foreign origin or none, is refused before a runtime starts.
   let socket = "/k/" <> key <> "/ws"
+  let logs_socket = "/k/" <> key <> "/logs-ws"
   let refused = [
     #("no key prefix", "/ws", [#("Origin", origin), ..browser]),
     #("another key", "/k/wrong/ws", [#("Origin", origin), ..browser]),
@@ -224,6 +231,13 @@ pub fn every_route_and_the_websocket_refuse_without_the_key_and_a_refused_upgrad
       ..browser
     ]),
     #("no origin", socket, browser),
+    #("logs: no key prefix", "/logs-ws", [#("Origin", origin), ..browser]),
+    #("logs: another key", "/k/wrong/logs-ws", [#("Origin", origin), ..browser]),
+    #("logs: a foreign origin", logs_socket, [
+      #("Origin", "https://evil.example"),
+      ..browser
+    ]),
+    #("logs: no origin", logs_socket, browser),
   ]
   list.each(refused, fn(row) {
     let #(connection, reply) =
@@ -248,22 +262,34 @@ pub fn every_route_and_the_websocket_refuse_without_the_key_and_a_refused_upgrad
   dashboard_support.close(connection)
 }
 
-/// Opens the page's websocket as a browser does and returns the connection
-/// once the server has upgraded it. The runtimes' factory is rebuilt for a
-/// moment when the poller was, and the server then answers 503; the next ask
-/// is made at once, since each ends with the server's answer.
+/// Opens the Overview's websocket as a browser does and returns the connection
+/// once the server has upgraded it.
 fn opened_socket(port: Int, key: String) -> dashboard_support.Connection {
+  opened_socket_at(port:, key:, route: "ws")
+}
+
+/// Opens the websocket at `route` inside the key prefix as a browser does and
+/// returns the connection once the server has upgraded it. The runtimes'
+/// factory is rebuilt for a moment when what it follows was, and the server
+/// then answers 503; the next ask is made at once, since each ends with the
+/// server's answer.
+fn opened_socket_at(
+  port port: Int,
+  key key: String,
+  route route: String,
+) -> dashboard_support.Connection {
   let origin = "http://127.0.0.1:" <> int.to_string(port)
   let #(connection, reply) =
-    dashboard_support.handshake(port:, path: "/k/" <> key <> "/ws", headers: [
-      #("Origin", origin),
-      ..dashboard_support.browser(port:)
-    ])
+    dashboard_support.handshake(
+      port:,
+      path: "/k/" <> key <> "/" <> route,
+      headers: [#("Origin", origin), ..dashboard_support.browser(port:)],
+    )
   case reply.status {
     101 -> connection
     503 -> {
       dashboard_support.close(connection)
-      opened_socket(port, key)
+      opened_socket_at(port:, key:, route:)
     }
     status -> panic as { "the socket answered " <> int.to_string(status) }
   }
@@ -480,4 +506,181 @@ pub fn the_overview_shows_what_state_sh_reports_and_marks_it_stale_when_it_fails
   assert_shows(html: without, words: [not_found], stage: "the script removed")
   let _gone = frames_holding(socket, [not_found])
   dashboard_support.close(socket)
+}
+
+const stamp = "2026-11-20 02:00:0"
+
+fn plant_logs(
+  home home: String,
+  updater updater: String,
+  launchd launchd: String,
+) -> Nil {
+  let assert Ok(Nil) = simplifile.write(home <> "/play-service.log", updater)
+  let assert Ok(Nil) =
+    simplifile.write(home <> "/play-service.launchd.log", launchd)
+  Nil
+}
+
+pub fn the_logs_page_follows_the_updater_log_and_launchds_log_through_a_browsers_socket_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use home <- dashboard_support.with_home
+  let updater_path = home <> "/play-service.log"
+  let escape = "\u{1B}"
+  plant_logs(
+    home:,
+    updater: stamp
+      <> "0 play-service: first line\n"
+      <> stamp
+      <> "1 play-service: second line\n"
+      <> stamp
+      <> "2 play-service: third line\n"
+      <> stamp
+      <> "3 play-service: genesis-play did not come up: state running, exit code 0, restarted 1 times; its last lines: |  genesis_prime.load_content"
+      <> escape
+      <> "[90m src/genesis_prime.gleam:137"
+      <> escape
+      <> "[0m\n",
+    launchd: "Error: building at STEP \"RUN gleam deps download\": exit status 1\n",
+  )
+  let settings = dashboard_support.settings(home)
+  let running = started(settings)
+  let key = dashboard_support.written_key(home:)
+  let socket = opened_socket_at(port: settings.port, key:, route: "logs-ws")
+
+  // The first frames hold the lines of both sources, the ANSI line as text and
+  // the failures in the role of a failure.
+  let first =
+    frames_holding(socket, [
+      "first line",
+      "third line",
+      "load_content src/genesis_prime.gleam:137",
+      "Error: building at STEP",
+      "role-bad",
+    ])
+  assert !string.contains(first, "[90m") as "the colour code is not shown"
+  assert !string.contains(first, "u001b") as "no escape reaches the page"
+
+  // A line appended to the updater's log is the next frame's.
+  let assert Ok(Nil) =
+    simplifile.append(updater_path, stamp <> "4 play-service: fourth line\n")
+  follow.read_now(running.updater_log)
+  let _appended = frames_holding(socket, ["fourth line"])
+
+  // The file cut shorter: a frame with the mark.
+  let assert Ok(Nil) = simplifile.write(updater_path, "short\n")
+  follow.read_now(running.updater_log)
+  let _cut = frames_holding(socket, ["the log was cut shorter", "short"])
+
+  // The file removed: a frame that says there is no log yet.
+  let assert Ok(Nil) = simplifile.delete(updater_path)
+  follow.read_now(running.updater_log)
+  let _removed = frames_holding(socket, ["no log yet"])
+  dashboard_support.close(socket)
+
+  // A dashboard started with neither file serves the page and says so for
+  // both.
+  use bare <- dashboard_support.with_home
+  let bare_settings = dashboard_support.settings(bare)
+  let _bare = started(bare_settings)
+  let bare_key = dashboard_support.written_key(home: bare)
+  let page =
+    dashboard_support.send(
+      bare_settings.port,
+      "/k/" <> bare_key <> "/logs",
+      dashboard_support.browser(port: bare_settings.port),
+    )
+  assert page.status == 200
+  assert string.contains(result_text(page.body), "route=\"logs-ws\"")
+  let bare_socket =
+    opened_socket_at(port: bare_settings.port, key: bare_key, route: "logs-ws")
+  let empty =
+    frames_holding(bare_socket, [
+      bare <> "/play-service.log",
+      bare <> "/play-service.launchd.log",
+      "no log yet",
+    ])
+  assert list.length(string.split(empty, "no log yet")) >= 3
+    as "both sources say there is no log yet"
+  dashboard_support.close(bare_socket)
+}
+
+/// Waits until both followers have told the watcher they dropped a subscriber.
+fn both_dropped(
+  watcher watcher: process.Subject(follow.Event),
+  updater_seen updater_seen: Bool,
+  launchd_seen launchd_seen: Bool,
+) -> Nil {
+  use <- bool.guard(when: updater_seen && launchd_seen, return: Nil)
+  case open_wait.received(from: watcher, what: "a follower's report") {
+    follow.SubscriberDropped(UpdaterLog) ->
+      both_dropped(watcher:, updater_seen: True, launchd_seen:)
+    follow.SubscriberDropped(LaunchdLog) ->
+      both_dropped(watcher:, updater_seen:, launchd_seen: True)
+    follow.ReadMade(_) -> both_dropped(watcher:, updater_seen:, launchd_seen:)
+  }
+}
+
+pub fn closing_the_logs_socket_ends_its_runtime_and_the_followers_reads_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use home <- dashboard_support.with_home
+  plant_logs(home:, updater: "one\n", launchd: "alpha\n")
+  let watcher = process.new_subject()
+  let settings =
+    dashboard.Settings(
+      ..dashboard_support.settings(home),
+      log_watcher: Some(watcher),
+    )
+  let running = started(settings)
+  let key = dashboard_support.written_key(home:)
+
+  // Open: one runtime, both sources' lines.
+  let socket = opened_socket_at(port: settings.port, key:, route: "logs-ws")
+  let _first = frames_holding(socket, ["one", "alpha"])
+  assert dashboard.runtime_count(running) == 1
+
+  // Closed: the runtime ends and both followers drop their subscriber.
+  dashboard_support.close(socket)
+  both_dropped(watcher:, updater_seen: False, launchd_seen: False)
+  event_wait.until("the logs runtime to end", fn() {
+    dashboard.runtime_count(running) == 0
+  })
+
+  // A line appended afterwards is read by no one.
+  let assert Ok(Nil) = simplifile.append(home <> "/play-service.log", "two\n")
+  follow.read_now(running.updater_log)
+  follow.read_now(running.launchd_log)
+  assert follow.subscriber_count(running.updater_log) == 0
+  assert follow.subscriber_count(running.launchd_log) == 0
+  assert process.receive(watcher, 0) == Error(Nil)
+    as "a follower read with no page open"
+
+  // A second socket gets the newest lines again.
+  let second = opened_socket_at(port: settings.port, key:, route: "logs-ws")
+  let _again = frames_holding(second, ["one", "two", "alpha"])
+  dashboard_support.close(second)
+}
+
+pub fn a_dead_follower_takes_the_log_runtimes_with_it_and_a_new_tab_is_served_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use home <- dashboard_support.with_home
+  plant_logs(home:, updater: "one\n", launchd: "alpha\n")
+  let settings = dashboard_support.settings(home)
+  let running = started(settings)
+  let key = dashboard_support.written_key(home:)
+
+  let first = opened_socket_at(port: settings.port, key:, route: "logs-ws")
+  let _first = frames_holding(first, ["one", "alpha"])
+  assert dashboard.runtime_count(running) == 1
+
+  // A follower dies: the supervisor rebuilds the followers with the factory of
+  // the log runtimes, so the page's socket closes.
+  let assert Ok(follower_pid) = process.subject_owner(running.updater_log)
+  process.kill(follower_pid)
+  assert dashboard_support.closes(first) as "the page's socket stayed open"
+
+  // A new tab is served: one runtime, and the lines.
+  let second = opened_socket_at(port: settings.port, key:, route: "logs-ws")
+  let _second = frames_holding(second, ["one", "alpha"])
+  assert dashboard.runtime_count(running) == 1
+  dashboard_support.close(second)
 }

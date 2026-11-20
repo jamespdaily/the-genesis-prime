@@ -18,6 +18,8 @@
 ////   at once.
 //// - A read that ends or passes its deadline while no page is subscribed is
 ////   dropped.
+//// - A tick of an earlier timer chain is dropped (`subscribers`), so a page that
+////   leaves and returns never doubles the interval.
 //// - A tick while a read runs starts no second read; it only lets a read that
 ////   has run too long show the facts last read as stale (`host_reading`).
 //// - A read that has not ended at the deadline is sent as stale with that
@@ -28,6 +30,7 @@
 
 import genesis_prime/dashboard/host_reading.{type Reading, Ran, Waiting}
 import genesis_prime/dashboard/script
+import genesis_prime/dashboard/subscribers.{type Subscribers}
 import gleam/bool
 import gleam/erlang/process.{type Name, type Subject}
 import gleam/list
@@ -56,7 +59,7 @@ const initialiser_ms = 1000
 pub opaque type Message {
   Subscribe(subscriber: Subject(Reading))
   Unsubscribe(subscriber: Subject(Reading))
-  Tick
+  Tick(chain: Int)
   PollNow
   SubscriberDown(down: process.Down)
   ReadEnded(read: Int, result: Result(script.Finished, script.Failure))
@@ -69,18 +72,16 @@ pub opaque type Message {
 ///
 /// `start_read` starts one read and gives its answer to the function it is
 /// handed, from any process; it must not wait for the read. `now_ms` is the
-/// clock the readings are stamped by.
+/// clock the readings are stamped by. `arm` arms the interval timer
+/// (`subscribers.send_after`, or a test's own).
 pub type Settings {
   Settings(
     start_read: fn(fn(Result(script.Finished, script.Failure)) -> Nil) -> Nil,
     now_ms: fn() -> Int,
     interval_ms: Int,
     deadline_ms: Int,
+    arm: subscribers.Arm(Message),
   )
-}
-
-type Subscriber {
-  Subscriber(subject: Subject(Reading), monitor: process.Monitor)
 }
 
 /// The read in flight and the timer of its deadline.
@@ -92,10 +93,9 @@ type State {
   State(
     self: Subject(Message),
     settings: Settings,
-    subscribers: List(Subscriber),
+    subscribers: Subscribers(Reading, Message),
     latest: Option(Reading),
     read: Option(Read),
-    tick: Option(process.Timer),
     next_read: Int,
   )
 }
@@ -127,10 +127,14 @@ fn builder(
     State(
       self:,
       settings:,
-      subscribers: [],
+      subscribers: subscribers.new(
+        owner: self,
+        interval_ms: settings.interval_ms,
+        arm: settings.arm,
+        tick: Tick,
+      ),
       latest: None,
       read: None,
-      tick: None,
       next_read: 0,
     )
     |> actor.initialised
@@ -197,10 +201,16 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
   case message {
     Subscribe(subscriber:) -> actor.continue(subscribed(state, subscriber))
     Unsubscribe(subscriber:) ->
-      actor.continue(left(state, fn(entry) { entry.subject == subscriber }))
+      actor.continue(left(
+        state,
+        subscribers.leave(state.subscribers, subscriber:),
+      ))
     SubscriberDown(down:) ->
-      actor.continue(left(state, fn(entry) { entry.monitor == down.monitor }))
-    Tick -> actor.continue(ticked(state))
+      actor.continue(left(
+        state,
+        subscribers.leave_ended(state.subscribers, monitor: down.monitor),
+      ))
+    Tick(chain:) -> actor.continue(ticked(state, chain))
     PollNow -> actor.continue(polled(state))
     ReadEnded(read:, result:) ->
       actor.continue(read_ended(state:, read:, result:))
@@ -212,7 +222,7 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
       }
     DeadlineNow -> actor.continue(deadline_passed(state))
     CountSubscribers(reply:) -> {
-      process.send(reply, list.length(state.subscribers))
+      process.send(reply, subscribers.count(state.subscribers))
       actor.continue(state)
     }
   }
@@ -221,63 +231,51 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
 /// A page subscribes: a new one is monitored, handed the latest reading, and
 /// when it is the first starts the timer and a read, unless a read still runs.
 fn subscribed(state: State, subscriber: Subject(Reading)) -> State {
-  let already =
-    list.any(state.subscribers, fn(entry) { entry.subject == subscriber })
-  use <- bool.guard(when: already, return: state)
-  let assert Ok(pid) = process.subject_owner(subscriber)
-    as "a page's subject has an owner"
-  let entry = Subscriber(subject: subscriber, monitor: process.monitor(pid))
-  option.map(state.latest, process.send(subscriber, _))
-  let first = state.subscribers == []
-  let state = State(..state, subscribers: [entry, ..state.subscribers])
-  use <- bool.guard(when: !first, return: state)
-  let state = arm_tick(state)
-  case state.read {
-    Some(_) -> state
-    None -> start_read(state)
+  case subscribers.join(state.subscribers, subscriber:) {
+    subscribers.AlreadyJoined -> state
+    subscribers.LaterJoined(joined) -> {
+      option.map(state.latest, process.send(subscriber, _))
+      State(..state, subscribers: joined)
+    }
+    subscribers.FirstJoined(joined) -> {
+      option.map(state.latest, process.send(subscriber, _))
+      let state = State(..state, subscribers: joined)
+      case state.read {
+        Some(_) -> state
+        None -> start_read(state)
+      }
+    }
   }
 }
 
-/// Drops the subscribers `leaves` picks; the last to leave stops the timer and
-/// drops the latest reading, and leaves a read that runs to end.
-fn left(state: State, leaves: fn(Subscriber) -> Bool) -> State {
-  let #(gone, staying) = list.partition(state.subscribers, leaves)
-  list.each(gone, fn(entry) { process.demonitor_process(entry.monitor) })
-  let state = State(..state, subscribers: staying)
-  case gone, staying {
-    [], _ | _, [_, ..] -> state
-    [_, ..], [] -> idle(state)
+/// The last page to leave drops the latest reading; a read that runs is left to
+/// end, with its deadline, so that a page that opens before it ends does not
+/// start a second one; its answer is dropped.
+fn left(state: State, left: subscribers.Left(Reading, Message)) -> State {
+  case left {
+    subscribers.StillSubscribed(remaining) ->
+      State(..state, subscribers: remaining)
+    subscribers.LastLeft(remaining) ->
+      State(..state, subscribers: remaining, latest: None)
   }
 }
 
-/// Nobody is subscribed: no timer and no latest reading. A read in flight stays,
-/// with its deadline, so that a page that opens before it ends does not start a
-/// second one; its answer is dropped.
-fn idle(state: State) -> State {
-  option.map(state.tick, process.cancel_timer)
-  State(..state, tick: None, latest: None)
-}
-
-fn arm_tick(state: State) -> State {
-  let timer = process.send_after(state.self, state.settings.interval_ms, Tick)
-  State(..state, tick: Some(timer))
-}
-
-/// The timer's tick: arms the next while a page is subscribed, then polls.
-fn ticked(state: State) -> State {
-  case state.subscribers {
-    [] -> State(..state, tick: None)
-    [_, ..] -> state |> arm_tick |> polled
+/// The timer's tick: while a page is subscribed and the tick is of the
+/// current chain, the next is armed and the poller polls.
+fn ticked(state: State, chain: Int) -> State {
+  case subscribers.next_tick(state.subscribers, chain:) {
+    Ok(armed) -> polled(State(..state, subscribers: armed))
+    Error(Nil) -> state
   }
 }
 
 /// Reads now when a page is subscribed and no read runs; while one runs,
 /// shows a read that has run too long as the last facts stale.
 fn polled(state: State) -> State {
-  case state.subscribers, state.read {
-    [], _ -> state
-    [_, ..], None -> start_read(state)
-    [_, ..], Some(_) -> {
+  case subscribers.is_empty(state.subscribers), state.read {
+    True, _ -> state
+    False, None -> start_read(state)
+    False, Some(_) -> {
       let now_ms = state.settings.now_ms()
       let reading = host_reading.after_read(state.latest, Waiting, now_ms)
       case reading == state.latest {
@@ -336,14 +334,13 @@ fn deadline_passed(state: State) -> State {
 }
 
 fn end_read(state: State, outcome: host_reading.Outcome) -> State {
-  case state.subscribers {
-    [] -> state
-    [_, ..] -> {
-      let reading =
-        host_reading.after_read(state.latest, outcome, state.settings.now_ms())
-      shown(state, reading)
-    }
-  }
+  use <- bool.guard(
+    when: subscribers.is_empty(state.subscribers),
+    return: state,
+  )
+  let reading =
+    host_reading.after_read(state.latest, outcome, state.settings.now_ms())
+  shown(state, reading)
 }
 
 /// Keeps the reading as the latest and sends it to every subscriber.
@@ -351,9 +348,10 @@ fn shown(state: State, reading: Option(Reading)) -> State {
   case reading {
     None -> state
     Some(reading) -> {
-      list.each(state.subscribers, fn(entry) {
-        process.send(entry.subject, reading)
-      })
+      list.each(subscribers.subjects(state.subscribers), process.send(
+        _,
+        reading,
+      ))
       State(..state, latest: Some(reading))
     }
   }

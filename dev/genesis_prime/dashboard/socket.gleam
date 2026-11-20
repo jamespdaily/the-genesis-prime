@@ -7,16 +7,16 @@
 ////
 //// - The upgrade reaches this module only after the gate allowed it
 ////   (`web.handle`), so a refused handshake starts no runtime.
-//// - A tab's runtime is started under the factory supervisor when the socket
-////   opens and stopped when it closes, so tabs share nothing.
+//// - A tab's runtime is started under the page's factory supervisor when the
+////   socket opens and stopped when it closes, so tabs share nothing. The
+////   socket is the same for every page: the page's message type and the
+////   argument its runtime starts with are the caller's.
 //// - The socket monitors its runtime: a runtime that ends (the supervisor
-////   rebuilds the page runtimes together with the poller) closes the socket
+////   rebuilds the page runtimes together with what they follow) closes the socket
 ////   with an abnormal end, so the tab's client reconnects and gets a new one.
 //// - A text frame that is not a runtime message ends the connection, as a
 ////   reader that refuses a frame does.
 
-import genesis_prime/dashboard/host
-import genesis_prime/dashboard/overview
 import gleam/erlang/process.{type Subject}
 import gleam/http/request.{type Request}
 import gleam/http/response.{type Response}
@@ -30,40 +30,42 @@ import lustre/server_component
 import mist.{type Connection, type ResponseData}
 
 /// The factory supervisor that holds a page's runtimes; each is started with
-/// the poller it subscribes to.
-pub type Runtimes =
+/// the argument the page subscribes by (the poller, or the followers it
+/// follows).
+pub type Runtimes(argument, message) =
   factory_supervisor.Supervisor(
-    Subject(host.Message),
-    Subject(lustre.RuntimeMessage(overview.Message)),
+    argument,
+    Subject(lustre.RuntimeMessage(message)),
   )
 
 /// What a websocket is told: the runtime sent the page a change, or the
 /// runtime ended.
-type Event {
-  FromRuntime(server_component.ClientMessage(overview.Message))
+type Event(message) {
+  FromRuntime(server_component.ClientMessage(message))
   RuntimeEnded
 }
 
 /// What a websocket holds: its page's runtime and the subject the runtime
 /// sends the page's changes to.
-type Socket {
+type Socket(message) {
   Socket(
-    runtime: Subject(lustre.RuntimeMessage(overview.Message)),
-    client: Subject(server_component.ClientMessage(overview.Message)),
+    runtime: Subject(lustre.RuntimeMessage(message)),
+    client: Subject(server_component.ClientMessage(message)),
   )
 }
 
 /// Upgrades the request to a websocket whose runtime is started in
-/// `runtimes`, subscribed to `poller`.
+/// `runtimes`, with the `argument` the page subscribes by.
 pub fn upgrade(
   request request: Request(Connection),
-  runtimes runtimes: Runtimes,
-  poller poller: Subject(host.Message),
+  runtimes runtimes: Runtimes(argument, message),
+  argument argument: argument,
 ) -> Response(ResponseData) {
   mist.websocket(
     request:,
     on_init: fn(_connection) {
-      let assert Ok(started) = factory_supervisor.start_child(runtimes, poller)
+      let assert Ok(started) =
+        factory_supervisor.start_child(runtimes, argument)
         as "the page's runtime did not start"
       let client = process.new_subject()
       process.send(started.data, server_component.register_subject(client))
@@ -75,7 +77,7 @@ pub fn upgrade(
       #(Socket(runtime: started.data, client:), Some(selector))
     },
     handler: handle,
-    on_close: fn(socket: Socket) {
+    on_close: fn(socket: Socket(message)) {
       process.send(
         socket.runtime,
         server_component.deregister_subject(socket.client),
@@ -86,10 +88,10 @@ pub fn upgrade(
 }
 
 fn handle(
-  socket socket: Socket,
-  message message: mist.WebsocketMessage(Event),
+  socket socket: Socket(message),
+  message message: mist.WebsocketMessage(Event(message)),
   connection connection: mist.WebsocketConnection,
-) -> mist.Next(Socket, Event) {
+) -> mist.Next(Socket(message), Event(message)) {
   case message {
     mist.Text(text) ->
       case json.parse(text, server_component.runtime_message_decoder()) {
