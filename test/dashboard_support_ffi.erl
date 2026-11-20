@@ -1,5 +1,5 @@
 -module(dashboard_support_ffi).
--export([free_port/0, bound_addresses/1, accepts/1, open/2, read_frame/1, close/1, process_alive/1, closes/1, os_pid/0]).
+-export([free_port/0, bound_addresses/1, accepts/1, open/2, read_text_frame/1, close/1, process_alive/1, closes/1, os_pid/0]).
 
 %% A loopback port the system chose: listens on port 0 and closes the socket
 %% again, so nothing listens on the port that is returned. The dashboard's
@@ -38,7 +38,9 @@ accepts(Port) ->
 
 %% Connects to the loopback port, sends the request bytes and reads the answer's
 %% head and as much body as its content-length says. The socket stays open for
-%% a websocket that was upgraded. A read waits for the server to write: it ends
+%% a websocket that was upgraded, and the bytes the server wrote after the head
+%% (its first frame, when it wrote the frame before this read ran) stay on the
+%% socket for `read_text_frame`. A read waits for the server to write: it ends
 %% with the bytes, not with a time.
 -spec open(inet:port_number(), binary()) ->
     {port(), integer(), [{binary(), binary()}], binary()}.
@@ -56,7 +58,9 @@ open(Port, Request) ->
         end,
     Body =
         case binary_to_integer(Status) of
-            101 -> <<>>;
+            101 ->
+                ok = gen_tcp:unrecv(Socket, Rest),
+                <<>>;
             _ -> read_body(Socket, Rest, Length)
         end,
     {Socket, binary_to_integer(Status), Headers, Body}.
@@ -81,23 +85,33 @@ header(Line) ->
     {string:lowercase(Name), string:trim(Value)}.
 
 %% The payload of the next websocket text frame the server sends (unmasked, with
-%% a 7-bit or 16-bit length), after the upgrade's head.
--spec read_frame(port()) -> binary().
-read_frame(Socket) ->
-    {ok, <<_Fin:8, Length:8>>} = gen_tcp:recv(Socket, 2, infinity),
-    Size =
-        case Length of
-            126 ->
-                {ok, <<Long:16>>} = gen_tcp:recv(Socket, 2, infinity),
-                Long;
-            127 ->
-                {ok, <<Huge:64>>} = gen_tcp:recv(Socket, 8, infinity),
-                Huge;
-            _ ->
-                Length
-        end,
-    {ok, Payload} = gen_tcp:recv(Socket, Size, infinity),
-    Payload.
+%% a 7-bit, 16-bit or 64-bit length), after the upgrade's head. A frame whose
+%% first byte is not 0x81 (FIN and the text opcode: a close, a binary frame, or
+%% the bytes of an HTTP answer written on the upgraded connection) is not read
+%% further: the result is the byte that came, so a stream that holds no frame
+%% fails the test at once instead of waiting for one.
+-spec read_text_frame(port()) -> {ok, binary()} | {error, 0..255}.
+read_text_frame(Socket) ->
+    {ok, <<First:8>>} = gen_tcp:recv(Socket, 1, infinity),
+    case First of
+        16#81 ->
+            {ok, <<Length:8>>} = gen_tcp:recv(Socket, 1, infinity),
+            Size =
+                case Length of
+                    126 ->
+                        {ok, <<Long:16>>} = gen_tcp:recv(Socket, 2, infinity),
+                        Long;
+                    127 ->
+                        {ok, <<Huge:64>>} = gen_tcp:recv(Socket, 8, infinity),
+                        Huge;
+                    _ ->
+                        Length
+                end,
+            {ok, Payload} = gen_tcp:recv(Socket, Size, infinity),
+            {ok, Payload};
+        _ ->
+            {error, First}
+    end.
 
 -spec close(port()) -> nil.
 close(Socket) ->
