@@ -41,10 +41,14 @@ import genesis_prime/game/unit_properties.{type Modifier, Change}
 import genesis_prime/message/combat_result
 import genesis_prime/message/crowd_control_state
 import genesis_prime/message/damage_type
+import genesis_prime/message/float32
 import genesis_prime/message/spell_damage_description.{SpellDamageDescription}
 import genesis_prime/message/spell_go
+import genesis_prime/message/spell_initial_position.{SpellInitialPosition}
+import genesis_prime/message/spell_position.{SpellPosition}
 import genesis_prime/message/spell_target_info.{SpellTargetInfo}
 import genesis_prime/message/spell_targets_removed.{SpellTargetsRemoved}
+import genesis_prime/message/spell_telegraph_position.{SpellTelegraphPosition}
 import genesis_prime/step.{
   type ConnectionId, type ServiceStep, Connection, ConnectionId, CreatureStart,
   OwnEffect, OwnEvent, ServiceTimerFired, StartServiceTimer, Started, Told,
@@ -5412,14 +5416,46 @@ pub fn a_ready_special_in_reach_is_chosen_and_opens_its_cast_test() -> Nil {
     as "one timer, the first go 2500 ms later (SpellPhase 11191), and no attack tick"
 }
 
-pub fn the_specials_cast_start_carries_no_telegraph_positions_test() -> Nil {
+pub fn the_specials_cast_start_carries_the_entries_of_its_server_placed_rows_test() -> Nil {
   use <- owned_test.run(5000)
-  // The client draws the cone on the caster from the spell's TelegraphDamage row
-  // (`0x140546e60`), so the 0x7ff names no positions.
-  let #(state, aggro) = roar_fought(viewers: [2])
+  // Earthen Roar's row 7880 has TelegraphDamage flags 0x105000 and targetTypeFlags 1: the client
+  // draws it only at a telegraph position of (7880, the caster), which it looks up for the
+  // caster's initial position (`0x140546e60`, `spell.telegraph_position`). The creature at the
+  // origin turns to its target 3 ahead and 3 aside first, so the pose is yaw pi / 4 (the
+  // `turned_to_face` kind 14 turn); the row has no offset or rotation.
+  let #(state, aggro) =
+    tell(
+      state: rootbrute(viewers: [2]),
+      at_ms: 0,
+      message: approached_at(number: 2, x: -3.0, z: -3.0, seq: 1),
+    )
   let #(_, opened, _) = roar_opened(state:, aggro:)
   let assert [CastStarted(start:)] = casts_of(opened, 2)
-  assert start.telegraph_positions == [] && start.initial_positions == []
+  let pose = SpellPosition(x: 0, y: 0, z: 0)
+  let yaw = float32.to_bits(0.785_398_163_397_448_3)
+  assert start.initial_positions
+    == [
+      SpellInitialPosition(
+        unit_id: 7,
+        target_flags: 1,
+        position: pose,
+        yaw:,
+        anchor_unit_id: 0,
+      ),
+    ]
+    as "the caster's one initial position, at its turned pose, with the caster's role bit"
+  assert start.telegraph_positions
+    == [
+      SpellTelegraphPosition(
+        telegraph_damage_id: 7880,
+        unit_id: 7,
+        target_flags: 1,
+        position: pose,
+        yaw:,
+        anchor_unit_id: 0,
+      ),
+    ]
+    as "the entry the cone is drawn from: row 7880 on the caster, at the same pose"
 }
 
 pub fn a_creature_that_can_move_turns_to_face_its_target_before_the_special_test() -> Nil {
