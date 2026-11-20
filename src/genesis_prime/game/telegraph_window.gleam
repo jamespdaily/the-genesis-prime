@@ -13,8 +13,12 @@
 ////   first go, and a row that would appear from it without bit 8 is never drawn.
 //// - **A row with no end** goes at the first go at or after it appears when its displayFlags
 ////   lacks 8, else when the cast finishes, taken as the last go (`0x140546b70`, `0x1405465f0`).
-//// - **A row with an end and displayFlags bit 0x10** also goes when the cast finishes.
-//// - **A row that would appear after the cast's finish**, the last go, is never drawn at any go.
+//// - **A row with an end and displayFlags bit 0x10** also goes when the cast finishes, which
+////   changes nothing here: the finish is the last go, no strike follows it, and a go is asked
+////   at its own time (`0x140546b70`).
+//// - **A row that appears at a go** is made at that go, the last included, before the go ends
+////   rows with no end (`ApplySpellGo 0x14053e5a0` line 216); one that would appear after the
+////   last go is drawn at none.
 //// - **A row flagged 0x40 or 0x100** is never drawn (`0x140542d90`).
 //// - **A row is drawn at a go equal to its end**: a marked guess, since the client's order of the
 ////   end and the go is not read (`TelegraphDamage.telegraphTimeStartMs`).
@@ -25,7 +29,6 @@
 import genesis_prime/game/spell_effect
 import genesis_prime/game/telegraph_entries
 import genesis_prime/table/telegraph_damage.{type TelegraphDamage}
-import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 
@@ -69,11 +72,7 @@ fn window_of(
   }
   let has_end = row.telegraph_time_end_ms != 0
   let goes_ms = case has_end {
-    True ->
-      case spell_effect.has_flag(flags:, bit: 0x10) {
-        True -> int.min(row.telegraph_time_end_ms, finish_ms)
-        False -> row.telegraph_time_end_ms
-      }
+    True -> row.telegraph_time_end_ms
     False ->
       case spell_effect.has_flag(flags:, bit: 8) {
         True -> finish_ms

@@ -113,6 +113,9 @@ pub type Unevaluated {
   GosDoNotRise(spell4_id: Int, times_ms: List(Int))
   /// No damage row of the special names a go, so the cast strikes nobody.
   NoStrikePhase(spell4_id: Int)
+  /// Every go the special's damage rows name has no hit row drawn at its time, so the cast
+  /// strikes nobody whatever creature casts it.
+  NoGoCanStrike(spell4_id: Int)
   /// An effect row of the special is of a type other than damage (8) and NpcExecutionDelay
   /// (35).
   OtherEffectType(spell4_effects_id: Int, effect_type: Int)
@@ -251,7 +254,8 @@ pub fn evaluated(
 /// `Ok(Nil)`: it has a cast time (a cast bar); the attack rule evaluates it (`evaluated`);
 /// it names no target conditions; the plan reads it; its damage rows name at least one go; it
 /// holds rows of damage (8) and NpcExecutionDelay (35) alone; its area and the hit shapes of
-/// each go read (`spell_area.hit_shapes_by_go`); and each delay row aims at the caster alone
+/// each go read (`spell_area.hit_shapes_by_go`), one of the gos its damage rows name having a
+/// hit shape; and each delay row aims at the caster alone
 /// with a duration, names the cast's last go alone and sits behind no prerequisite. `sources`
 /// are the plan's rows (`spell_plan.sources_of`), grouped once by the load.
 pub fn special_checked(
@@ -282,7 +286,7 @@ pub fn special_checked(
   let go_count = list.length(times_ms)
   use Nil <- result.try(strike_gos_named(spell4_id:, effects:, go_count:))
   use Nil <- result.try(only_damage_and_delay(effects:))
-  use Nil <- result.try(area_read(tables:, spell4_id:, times_ms:))
+  use Nil <- result.try(area_read(tables:, spell4_id:, times_ms:, effects:))
   delays_checked(sources:, tables:, spell4_id:, effects:, go_count:)
 }
 
@@ -312,12 +316,22 @@ fn gos_named(
 ) -> List(Int) {
   int.range(from: 0, to: go_count, with: [], run: fn(gos, go) { [go, ..gos] })
   |> list.reverse
-  |> list.filter(fn(go) {
-    spell_effect.has_flag(
-      flags: phase_flags,
-      bit: spell_effect.phase_bit(phase: go),
-    )
+  |> list.filter(fn(go) { spell_effect.names_phase(phase_flags:, phase: go) })
+}
+
+/// The indexes of the gos the damage rows of the spell name, in go order.
+fn damage_gos_named(
+  effects effects: List(Spell4Effects),
+  go_count go_count: Int,
+) -> List(Int) {
+  list.filter(effects, fn(effect) {
+    effect_kind.kind_of(effect.effect_type) == effect_kind.Damage
   })
+  |> list.flat_map(fn(effect) {
+    gos_named(phase_flags: effect.phase_flags, go_count:)
+  })
+  |> list.unique
+  |> list.sort(int.compare)
 }
 
 /// The damage rows name at least one go of the cast: `NoStrikePhase` otherwise.
@@ -326,14 +340,7 @@ fn strike_gos_named(
   effects effects: List(Spell4Effects),
   go_count go_count: Int,
 ) -> Result(Nil, Unevaluated) {
-  let named =
-    list.filter(effects, fn(effect) {
-      effect_kind.kind_of(effect.effect_type) == effect_kind.Damage
-    })
-    |> list.flat_map(fn(effect) {
-      gos_named(phase_flags: effect.phase_flags, go_count:)
-    })
-  case named {
+  case damage_gos_named(effects:, go_count:) {
     [] -> Error(NoStrikePhase(spell4_id:))
     [_, ..] -> Ok(Nil)
   }
@@ -384,24 +391,40 @@ fn only_damage_and_delay(
 
 /// The spell has an area row its telegraph can be read from by the creature reading
 /// (`spell_area.CreatureReading`: Closest, Furthest or Random, and the shapes it builds), its
-/// rows are placed alike, on the caster or on the cast's target (`spell_area.PlacedApart`), and
-/// the hit shapes of each of its gos read (`spell_area.hit_shapes_by_go`).
+/// rows are placed alike, on the caster or on the cast's target (`spell_area.PlacedApart`), the
+/// hit shapes of each of its gos read (`spell_area.hit_shapes_by_go`), and at least one go its
+/// damage rows name has a hit shape: a cast none of whose strike gos can strike is
+/// `NoGoCanStrike`, whatever creature casts it.
 fn area_read(
   tables tables: table_store.Tables,
   spell4_id spell4_id: Int,
   times_ms times_ms: List(Int),
+  effects effects: List(Spell4Effects),
 ) -> Result(Nil, Unevaluated) {
   case spell_area.area_of_spell(tables:, spell4_id: Spell4Id(spell4_id)) {
     Error(error) -> Error(AreaNotRead(spell4_id:, error:))
     Ok(None) -> Error(NoAreaRow(spell4_id:))
-    Ok(Some(_)) ->
-      spell_area.hit_shapes_by_go(
-        tables:,
-        spell4_id: Spell4Id(spell4_id),
-        go_times_ms: times_ms,
+    Ok(Some(_)) -> {
+      use shapes <- result.try(
+        spell_area.hit_shapes_by_go(
+          tables:,
+          spell4_id: Spell4Id(spell4_id),
+          go_times_ms: times_ms,
+        )
+        |> result.map_error(fn(error) { AreaNotRead(spell4_id:, error:) }),
       )
-      |> result.map(fn(_) { Nil })
-      |> result.map_error(fn(error) { AreaNotRead(spell4_id:, error:) })
+      let strike_gos =
+        damage_gos_named(effects:, go_count: list.length(times_ms))
+      let can_strike =
+        list.index_map(shapes, fn(shape, go) {
+          option.is_some(shape) && list.contains(strike_gos, go)
+        })
+        |> list.any(fn(strikes) { strikes })
+      case can_strike {
+        True -> Ok(Nil)
+        False -> Error(NoGoCanStrike(spell4_id:))
+      }
+    }
   }
 }
 
@@ -726,6 +749,10 @@ pub fn describe(unevaluated unevaluated: Unevaluated) -> String {
       "Spell4 "
       <> int.to_string(spell4_id)
       <> " has no damage row whose phaseFlags name a go, so its cast strikes nobody"
+    NoGoCanStrike(spell4_id:) ->
+      "Spell4 "
+      <> int.to_string(spell4_id)
+      <> " has no go its damage rows name at which a hit row is drawn, so its cast strikes nobody"
     OtherEffectType(spell4_effects_id:, effect_type:) ->
       "Spell4Effects "
       <> int.to_string(spell4_effects_id)

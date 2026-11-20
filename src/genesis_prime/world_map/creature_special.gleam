@@ -32,10 +32,11 @@
 ////   behind a prerequisite, and any caster prerequisite the attack rule refuses. A bad row is
 ////   refused, never left out silently.
 //// - **A cast strikes at each go its damage rows name**: with those rows' blows, inside the hit
-////   rows its phase names that the client is drawing at the go's time
-////   (`spell_area.hit_shapes_by_go`). A go whose damage rows all fail the creature's difficulty,
-////   or none of whose named hit rows is drawn, strikes nobody; the special still loads. The hold
-////   follows the cast's last go.
+////   rows the client is drawing at the go's time, and, for a cast whose phase the client
+////   compares, that its phase names (`spell_area.hit_shapes_by_go`). A go whose damage rows all
+////   fail the creature's difficulty, or at which no hit row is drawn, strikes nobody; the special
+////   still loads when another go can strike, and is refused when none can
+////   (`creature_attack.NoGoCanStrike`). The hold follows the cast's last go.
 //// - **The formula is read**: a special whose damage formula the creature rule does not
 ////   read for the creature's difficulty is refused (`creature_attack.loadable`), which the
 ////   spawn load would refuse later.

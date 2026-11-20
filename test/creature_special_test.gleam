@@ -260,6 +260,37 @@ pub fn a_special_the_go_rule_hid_is_refused_for_its_own_row_test() -> Nil {
     as "and no go: the cast's gos are no reason to refuse it"
 }
 
+pub fn a_special_none_of_whose_strike_gos_has_a_hit_row_drawn_is_refused_by_name_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4 47746 is not Multiphase: its one go falls at its cast time, 2,500 ms, and its one
+  // hit row, 5529 (phaseFlags -1), ends at 2,000 ms, so no hit row is drawn at the one go its
+  // damage row 112217 names (`table_rows -- Spell4Effects spellId=47746`, `-- TelegraphDamage
+  // 5529`): the cast strikes nobody, whatever creature casts it.
+  let rule = rule_of(row: special(spell4_id: 47_746))
+  assert string.contains(rule, "47746")
+    && string.contains(rule, "strikes nobody")
+    as "the refusal names the spell and says no strike go can strike"
+}
+
+pub fn a_special_with_some_strike_gos_that_can_never_strike_loads_and_strikes_at_its_drawn_gos_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4 80315: gos at 0 and 750 ms (SpellPhase rows 21538 and 21539); its one damage row,
+  // 212555 (phaseFlags -1), names both. Its one hit row, 15196, names go 1 alone
+  // (`table_rows -- Spell4Effects spellId=80315`, `-- TelegraphDamage 15196`), so go 0 has no hit
+  // row and can never strike; go 1 does (Jim: option A, per go).
+  let assert Ok(_) =
+    creature_kind.select(
+      rows: [default_row],
+      special_rows: [special(spell4_id: 80_315)],
+      auto_attack_rows: [],
+      tables: fixture_tables.shared(),
+    )
+    as "a cast with a strike go that can strike is taken"
+  assert loaded_special(spell4_id: 80_315)
+    == #([#(0, option.None), #(750, Some([212_555]))], 0)
+    as "nobody is struck at go 0 and the blow lands at go 1"
+}
+
 pub fn a_delay_row_behind_a_prerequisite_is_refused_test() -> Nil {
   use <- owned_test.run(60_000)
   // Synthetic: the client's Spell4Effects 131968 has no prerequisite; the load reads none
@@ -582,8 +613,8 @@ pub fn the_target_row_lift_loads_the_named_specials_and_two_of_the_three_it_held
       }
   })
   // Laser Barrage 41187 strikes at several gos, but its damage row 92235 reads a parameter
-  // (type 3, `table_rows -- Spell4Effects spellId=41187`) the creature formula does not, which
-  // the go rule used to hide: it stays refused, for its own row.
+  // (type 3, `table_rows -- Spell4Effects spellId=41187`) the creature formula does not read:
+  // it is refused, for its own row.
   let assert [rule] =
     refused_over(tables:, creature_id: 12_212, spell4_ids: [41_187])
     as "Laser Barrage is refused"
@@ -595,79 +626,80 @@ pub fn the_target_row_lift_loads_the_named_specials_and_two_of_the_three_it_held
 pub fn the_multi_hit_lift_loads_the_named_specials_and_leaves_the_rest_refused_by_name_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
-  // The 63 retail-listed specials that strike at several gos, or before their last go, and
-  // a creature the retail record pairs each with (the lowest Creature2 id of the
-  // Jabbithole pairing the import reads), over the client's own tables. The measure counts
-  // 22 that strike at one go and 41 at two or more.
+  // The 63 retail-listed specials that strike at several gos, or before their last go, a
+  // creature the retail record pairs each with (the lowest Creature2 id of the Jabbithole
+  // pairing the import reads) and the number of gos the measure counts as strike gos (the
+  // gos its damage rows name, `~/.genesis-prime/sweep-1106/drawn_at_go.txt`), over the
+  // client's own tables. The measure counts 22 that strike at one go and 41 at two or more.
   let tables = client_tables.with_content_tables()
   let pairs = [
-    #(34_050, 17_908),
-    #(34_055, 9598),
-    #(34_286, 30_635),
-    #(35_487, 30_377),
-    #(35_727, 12_930),
-    #(39_434, 24_229),
-    #(39_943, 24_745),
-    #(45_335, 13_639),
-    #(45_494, 9593),
-    #(45_605, 24_038),
-    #(45_746, 24_035),
-    #(45_756, 24_035),
-    #(45_950, 45_809),
-    #(45_951, 45_797),
-    #(45_995, 24_266),
-    #(46_149, 19_892),
-    #(46_692, 9794),
-    #(46_933, 9570),
-    #(47_033, 9794),
-    #(51_329, 20_452),
-    #(51_586, 53_175),
-    #(52_473, 9606),
-    #(52_604, 63_533),
-    #(52_658, 21_558),
-    #(52_789, 26_193),
-    #(53_247, 19_873),
-    #(53_272, 2409),
-    #(54_241, 12_655),
-    #(54_327, 12_925),
-    #(54_742, 17_080),
-    #(55_185, 14_612),
-    #(55_286, 27_449),
-    #(55_289, 27_878),
-    #(55_290, 30_263),
-    #(55_292, 11_071),
-    #(55_294, 20_811),
-    #(55_302, 25_978),
-    #(55_303, 26_362),
-    #(55_305, 11_925),
-    #(55_306, 30_267),
-    #(55_311, 27_876),
-    #(55_324, 24_054),
-    #(55_366, 12_526),
-    #(55_433, 24_140),
-    #(55_434, 11_951),
-    #(55_439, 24_425),
-    #(55_440, 61_523),
-    #(55_632, 11_948),
-    #(55_635, 11_945),
-    #(55_721, 27_451),
-    #(55_765, 24_216),
-    #(55_766, 11_953),
-    #(55_843, 11_910),
-    #(56_037, 20_957),
-    #(56_425, 20_902),
-    #(56_614, 13_008),
-    #(57_321, 46_403),
-    #(57_350, 38_059),
-    #(57_624, 15_263),
-    #(65_991, 56_967),
-    #(71_293, 26_041),
-    #(71_861, 55_000),
-    #(72_012, 40_168),
+    #(34_050, 17_908, 3),
+    #(34_055, 9598, 3),
+    #(34_286, 30_635, 8),
+    #(35_487, 30_377, 4),
+    #(35_727, 12_930, 4),
+    #(39_434, 24_229, 2),
+    #(39_943, 24_745, 4),
+    #(45_335, 13_639, 2),
+    #(45_494, 9593, 5),
+    #(45_605, 24_038, 3),
+    #(45_746, 24_035, 3),
+    #(45_756, 24_035, 7),
+    #(45_950, 45_809, 4),
+    #(45_951, 45_797, 2),
+    #(45_995, 24_266, 4),
+    #(46_149, 19_892, 4),
+    #(46_692, 9794, 4),
+    #(46_933, 9570, 2),
+    #(47_033, 9794, 2),
+    #(51_329, 20_452, 5),
+    #(51_586, 53_175, 4),
+    #(52_473, 9606, 5),
+    #(52_604, 63_533, 3),
+    #(52_658, 21_558, 2),
+    #(52_789, 26_193, 3),
+    #(53_247, 19_873, 5),
+    #(53_272, 2409, 2),
+    #(54_241, 12_655, 4),
+    #(54_327, 12_925, 5),
+    #(54_742, 17_080, 4),
+    #(55_185, 14_612, 4),
+    #(55_286, 27_449, 1),
+    #(55_289, 27_878, 1),
+    #(55_290, 30_263, 1),
+    #(55_292, 11_071, 1),
+    #(55_294, 20_811, 1),
+    #(55_302, 25_978, 1),
+    #(55_303, 26_362, 1),
+    #(55_305, 11_925, 1),
+    #(55_306, 30_267, 1),
+    #(55_311, 27_876, 1),
+    #(55_324, 24_054, 1),
+    #(55_366, 12_526, 1),
+    #(55_433, 24_140, 1),
+    #(55_434, 11_951, 1),
+    #(55_439, 24_425, 1),
+    #(55_440, 61_523, 1),
+    #(55_632, 11_948, 1),
+    #(55_635, 11_945, 2),
+    #(55_721, 27_451, 1),
+    #(55_765, 24_216, 1),
+    #(55_766, 11_953, 1),
+    #(55_843, 11_910, 1),
+    #(56_037, 20_957, 5),
+    #(56_425, 20_902, 3),
+    #(56_614, 13_008, 3),
+    #(57_321, 46_403, 3),
+    #(57_350, 38_059, 5),
+    #(57_624, 15_263, 5),
+    #(65_991, 56_967, 3),
+    #(71_293, 26_041, 5),
+    #(71_861, 55_000, 1),
+    #(72_012, 40_168, 8),
   ]
   let strike_counts =
     list.map(pairs, fn(pair) {
-      let #(spell4_id, creature_id) = pair
+      let #(spell4_id, creature_id, strike_gos) = pair
       assert refused_over(tables:, creature_id:, spell4_ids: [spell4_id]) == []
         as {
           "the kind load takes Spell4 "
@@ -678,14 +710,24 @@ pub fn the_multi_hit_lift_loads_the_named_specials_and_leaves_the_rest_refused_b
       let strikes = strikes_of(tables:, creature_id:, spell4_id:)
       let struck =
         list.filter_map(strikes, fn(strike) { option.to_result(strike, Nil) })
-      assert struck != []
-        as { "Spell4 " <> int.to_string(spell4_id) <> " has a strike go" }
+      assert list.length(struck) == strike_gos
+        as {
+          "Spell4 "
+          <> int.to_string(spell4_id)
+          <> " strikes at the gos its damage rows name, as the measure counts them"
+        }
       list.each(struck, fn(strike) {
         assert strike.spell4_effects_ids != []
           as {
             "each strike go of Spell4 "
             <> int.to_string(spell4_id)
             <> " carries blows"
+          }
+        assert strike.inside != area.InsideRow
+          as {
+            "each strike go of Spell4 "
+            <> int.to_string(spell4_id)
+            <> " carries a hit shape"
           }
       })
       list.length(struck)

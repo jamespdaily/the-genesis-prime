@@ -270,3 +270,26 @@ pub fn a_ticking_heal_and_a_ticking_gain_keep_their_tick_and_duration_test() -> 
     as "the gains view holds the ticking gain"
   assert tick_ms == 500 && duration_ms == 4000
 }
+
+pub fn a_row_names_the_phases_its_phase_flags_hold_and_minus_one_names_all_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // `Spell4Effects.phaseFlags`: bit n is phase n and -1 holds every bit. 6 is Ice Breath's
+  // damage row 132757 (`table_rows -- Spell4Effects spellId=55635`), phases 1 and 2.
+  [
+    #(6, 0, False, "bit 0 of 6 is clear"),
+    #(6, 1, True, "bit 1 of 6 is set"),
+    #(6, 2, True, "bit 2 of 6 is set"),
+    #(6, 3, False, "bit 3 of 6 is clear"),
+    #(1, 0, True, "1 names the first phase"),
+    #(1, 1, False, "and no other"),
+    #(0, 0, False, "0 names none"),
+    #(-1, 0, True, "-1 names the first phase"),
+    #(-1, 7, True, "and the eighth"),
+    #(-1, 15, True, "and the sixteenth"),
+    #(0x8000, 15, True, "bit 15 names the sixteenth phase"),
+  ]
+  |> list.each(fn(found) {
+    let #(phase_flags, phase, named, reason) = found
+    assert spell_effect.names_phase(phase_flags:, phase:) == named as reason
+  })
+}

@@ -20,6 +20,7 @@ import genesis_prime/table/telegraph_damage
 import gleam/int
 import gleam/list
 import owned_test
+import planted_table.{Integer}
 
 const ice_breath = [2600, 3000, 3500, 3800]
 
@@ -92,5 +93,25 @@ pub fn a_hit_row_is_drawn_at_a_go_by_its_time_window_and_display_flags_test() ->
         <> ": "
         <> reason
       }
+  })
+}
+
+pub fn a_row_that_appears_from_the_first_go_without_display_flag_8_is_never_drawn_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Synthetic: row 4527 (2,600 to 3,600 ms, displayFlags 14) over spell 45746's gos at 1,400,
+  // 2,600, 3,600 and 4,600 ms has displayFlags 4 in place of 14. It appears at 2,600, after the
+  // first go, and bit 4 shows a row before the first go only: the client never draws it
+  // (`0x140542d90`, `TelegraphDamage.telegraphTimeStartMs`).
+  use tables <- fixture_tables.changed(
+    table: "TelegraphDamage",
+    id: 4527,
+    with: [#("displayFlags", Integer(4))],
+  )
+  let assert Ok(row) =
+    telegraph_damage.get(tables:, id: TelegraphDamageId(4527))
+    as "the changed row is there"
+  list.each([0, 1, 2, 3], fn(go) {
+    assert !telegraph_window.drawn_at(row:, go_times_ms: spell_45746, go:)
+      as { "go " <> int.to_string(go) <> " draws none of it" }
   })
 }

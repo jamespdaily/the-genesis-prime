@@ -1627,10 +1627,7 @@ fn strike_of_go(
 ) -> Option(creature_life.GoStrike) {
   let named =
     list.filter(applied, fn(row) {
-      spell_effect.has_flag(
-        flags: row.phase_flags,
-        bit: spell_effect.phase_bit(phase: go),
-      )
+      spell_effect.names_phase(phase_flags: row.phase_flags, phase: go)
     })
   case named, inside {
     [], _ | _, None -> None

@@ -1491,3 +1491,7 @@ Spell4	34286	a cast with a row shown before the first go that goes at it (row 34
 Spell4	47033	a cast whose rows end 50 ms before the go that names them (rows 5009 and 5010)	telegraph_window_test, spell_area_test
 Spell4	39943	a cast whose hit shapes are never-drawn twin rows (row 10908)	telegraph_window_test, spell_area_test
 Spell4	45746	a cast whose rows end and start exactly at a go (rows 4526 and 4527)	telegraph_window_test, spell_area_test
+Spell4	47746	a cast whose one go falls after its only hit row (5529) has ended	creature_special_test
+Spell4	54339	a cast whose go 4 falls after its only hit row (4310) has ended, with gos 0 to 3 inside it	spell_area_go_test
+Spell4	80315	a cast whose damage row names both its gos and whose one hit row (15196) names the second alone	creature_special_test
+Spell4	31546	a channel whose one hit row (2151) names pulse 0 alone and is drawn through every pulse	spell_area_go_test

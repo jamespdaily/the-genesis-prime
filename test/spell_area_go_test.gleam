@@ -152,6 +152,19 @@ pub fn a_cast_strikes_at_each_go_with_the_hit_rows_its_phase_names_and_the_clien
       [None, twin(5.0), twin(9.0), twin(13.0), twin(17.0)],
     ),
     #(
+      "54339: row 4310 (a circle of 3.5) ends at 3,000 ms, so go 4 at 4,500 names it and it has gone; go 5 names no row",
+      54_339,
+      [500, 1000, 1500, 2000, 4500, 5000],
+      [
+        drawn([placed(Circle(radius: 3.5), 0.0)]),
+        drawn([placed(Circle(radius: 3.5), 0.0)]),
+        drawn([placed(Circle(radius: 3.5), 0.0)]),
+        drawn([placed(Circle(radius: 3.5), 0.0)]),
+        None,
+        None,
+      ],
+    ),
+    #(
       "63569 has no telegraph row: its one go is read by the area row",
       63_569,
       [160],
@@ -168,6 +181,30 @@ pub fn a_cast_strikes_at_each_go_with_the_hit_rows_its_phase_names_and_the_clien
       == Ok(expected)
       as reason
   })
+}
+
+pub fn a_channel_compares_a_hit_rows_phase_only_when_its_channel_flags_have_bit_1_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4 31546 is a channel of nine pulses (channelPulseTime 500, spellChannelFlags 0). Its one
+  // hit row, 2151, names pulse 0 alone (phaseFlags 1), has no end and displayFlags 14, so the
+  // client draws it through every pulse, comparing its phase only for a Multiphase cast or a
+  // channel whose spellChannelFlags has bit 1 (`opcode.0x7f4.phase`, `0x1405458e0`).
+  let go_times_ms = [500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500]
+  let circle = drawn([placed(Circle(radius: 3.0), 0.0)])
+  assert shapes_by_go(
+      tables: fixture_tables.shared(),
+      spell4_id: 31_546,
+      go_times_ms:,
+    )
+    == Ok(list.repeat(circle, times: 9))
+    as "a channel with flags 0 strikes with the row at every pulse"
+  // Synthetic: spellChannelFlags 1 on the real row makes the client compare the phase.
+  use tables <- fixture_tables.changed(table: "Spell4", id: 31_546, with: [
+    #("spellChannelFlags", Integer(1)),
+  ])
+  assert shapes_by_go(tables:, spell4_id: 31_546, go_times_ms:)
+    == Ok([circle, ..list.repeat(None, times: 8)])
+    as "a channel with bit 1 strikes with the row at the pulse its phase names"
 }
 
 pub fn a_hit_row_timed_from_a_go_is_refused_and_a_named_row_not_drawn_leaves_the_go_with_nothing_test() -> Nil {
