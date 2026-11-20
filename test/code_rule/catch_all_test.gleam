@@ -4,7 +4,9 @@
 //// clause matches a constructor other than `True`, `False`, `Ok`, `Error`,
 //// `Some`, `None` or `Nil`; a catch-all over integers or strings, or beside
 //// only those constructors, passes. The breach is reported at the catch-all
-//// pattern's line. Every case is planted in a made-up file.
+//// pattern's line. The rule binds the server's code (`src/`) and the tools'
+//// code (`dev/`); a test may use a catch-all to pick one case. Every case is
+//// planted in a made-up file.
 
 import code_rule/catch_all
 import code_rule/planted
@@ -165,11 +167,26 @@ pub fn a_case_that_names_every_constructor_is_not_a_breach_test() -> Nil {
   assert breach_lines(lines) == []
 }
 
-pub fn no_case_in_src_or_test_has_a_catch_all_beside_a_growing_type_test() -> Nil {
+pub fn a_catch_all_in_a_test_is_no_breach_and_one_in_src_still_is_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let lines = shape_case(["    Circle -> 1", "    _ -> 2"])
+  let breaches_at = fn(path) {
+    planted.file(path, lines) |> catch_all.breaches |> planted.lines
+  }
+  assert breaches_at("test/planted_test.gleam") == []
+    as "no breach in a test file"
+  assert breaches_at("src/planted.gleam") == [9] as "a breach in src"
+  assert breaches_at("dev/planted.gleam") == [9] as "a breach in dev"
+}
+
+pub fn no_case_in_src_has_a_catch_all_beside_a_growing_type_test() -> Nil {
+  // The scan reads src/. dev/ holds catch-alls over growing types that it does
+  // not read.
   // Deadline: the body took 374 to 392 ms in three runs alone, so 5 s is more
   // than 3 times that.
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
-  let files = repository.sources(["src", "test"])
+  let files = repository.sources(["src"])
   assert list.flat_map(files, catch_all.breaches) == []
 }

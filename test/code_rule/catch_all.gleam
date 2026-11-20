@@ -1,4 +1,6 @@
-//// No catch-all clause over a type that can gain variants.
+//// No catch-all clause over a type that can gain variants, in the server's
+//// code (`src/`) and the tools' code (`dev/`). A test may use a catch-all to
+//// pick one case, so a file under any other folder has no breach.
 
 import code_rule/source.{type Breach, type SourceFile, Breach}
 import code_rule/syntax
@@ -6,6 +8,7 @@ import glance
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/string
 
 /// Constructors of types that cannot gain variants, so a catch-all beside
 /// them is fine.
@@ -19,8 +22,20 @@ const fixed_constructors = [
   "Nil",
 ]
 
-/// Each case clause that is a catch-all beside a constructor of a type that can grow.
+/// Each case clause that is a catch-all beside a constructor of a type that
+/// can grow, in a file under `src/` or `dev/`; a file elsewhere has none.
 pub fn breaches(file: SourceFile) -> List(Breach) {
+  case binds(file.path) {
+    True -> growing_type_breaches(file)
+    False -> []
+  }
+}
+
+fn binds(path: String) -> Bool {
+  string.starts_with(path, "src/") || string.starts_with(path, "dev/")
+}
+
+fn growing_type_breaches(file: SourceFile) -> List(Breach) {
   syntax.expressions(syntax.parse(file))
   |> list.flat_map(fn(expression) {
     case expression {
