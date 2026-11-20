@@ -82,6 +82,7 @@ import genesis_prime/game/effect_kind
 import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{type Aim, type Spell}
 import genesis_prime/game/spend
+import genesis_prime/game/telegraph_entries
 import genesis_prime/game/ticking
 import genesis_prime/gap
 import genesis_prime/table/id.{
@@ -606,7 +607,8 @@ fn anchor_of(
 ) -> Result(Anchor, AreaError) {
   let #(fixed, following) =
     list.partition(hit_rows_of(tables:, links:, id:), fn(row) {
-      spell_effect.has_flag(flags: row.telegraph_damage_flags, bit: 0x5000)
+      telegraph_entries.placing_of(flags: row.telegraph_damage_flags)
+      != telegraph_entries.OnTheUnit
     })
   case fixed, following {
     [], _ -> Ok(FollowsCaster)

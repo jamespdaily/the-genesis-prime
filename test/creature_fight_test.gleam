@@ -5464,9 +5464,10 @@ pub fn the_specials_cast_start_carries_the_entries_of_its_server_placed_rows_tes
 
 pub fn a_creature_that_can_move_turns_to_face_its_target_before_the_special_test() -> Nil {
   use <- owned_test.run(5000)
-  // The client never turns a creature by itself (`creature.facing`) and the cone follows the
-  // caster's yaw (`0x14054b1b0.follows_caster`): the target 3 ahead and 3 aside is at atan2(3, 3)
-  // = pi / 4 off the creature's facing, which is the yaw of a kind 14 turn.
+  // The client never turns a creature by itself (`creature.facing`) and the cone is drawn from
+  // the 0x7ff's entry, which holds the facing the creature has when the cast starts
+  // (`0x14054b1b0.fixed_placement`): the target 3 ahead and 3 aside is at atan2(3, 3) = pi / 4
+  // off the creature's facing, which is the yaw of a kind 14 turn.
   let #(state, aggro) =
     tell(
       state: rootbrute(viewers: [2]),

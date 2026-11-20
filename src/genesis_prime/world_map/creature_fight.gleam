@@ -182,9 +182,11 @@
 ////   the face changes: a new target, the leash (kind 19 toward home, `movement_command.kind_19`), the
 ////   arrival home (`Home`, the spawn's facing, which a viewer's frame writes as a blended kind 19 along it), a charge, a state, a flight, a death.
 ////   - A charge turns the creature once before the 0x7ff (`turned_to_face`, kind 14) and holds that turn
-////     through the cast and the strikes: the cone follows the caster's yaw (`0x14054b1b0.follows_caster`), so
-////     the facing the creature has when the 0x7ff arrives is the facing the client draws the cone along, and
-////     the strike go's area points along it (`aim_of`). The close of the round turns it to its target again,
+////     through the cast and the strikes: the 0x7ff's entries are made from the pose the creature has when
+////     the cast starts, so a cone drawn from an entry (flag 0x4000, as Earthen Roar's) points along that
+////     facing and stays there, and a cone the client draws on the caster each frame
+////     (`0x14054b1b0.follows_caster`) points along the facing the creature holds; the strike go's area
+////     points along it (`aim_of`). The close of the round turns it to its target again,
 ////     and so does the hold after a special, in which it starts no path.
 ////   - A Stun, Knockdown, Knockback or an opened guard (`Fighter.turn_held`) stands the creature as it
 ////     faces, by a kind 14 at that facing (a server's choice, a guess: no client fact covers it); a Root
@@ -2424,9 +2426,10 @@ fn next_auto(state state: State, fighter fighter: Fighter) -> Attack {
 /// stands still through the cast and the hold (`casting_or_holding`): one `CreatureMoved` of a
 /// one-point timed path at its place now, turned along the bearing to the target
 /// (`movement_command.kind_14`), which also stops a path it was running. The client never
-/// turns a creature by itself (`creature.facing`) and a cast telegraph on the caster follows the
-/// caster's world yaw (`0x14054b1b0.follows_caster`), so the facing it holds when the 0x7ff
-/// arrives is the facing the cone is drawn along, and the strike go's area points along it
+/// turns a creature by itself (`creature.facing`), so the facing it holds when the 0x7ff
+/// arrives is the yaw of the entries the 0x7ff carries (a cone with flag 0x4000 is drawn from
+/// them and stays there, `0x14054b1b0.fixed_placement`) and the facing a cone drawn on the
+/// caster each frame follows (`0x14054b1b0.follows_caster`); the strike go's area points along it
 /// (`aim_of`). A creature that cannot move aims itself (a turret, `0x14046cdc0.turret_cast_aim`):
 /// it sends none.
 fn turned_to_face(

@@ -56,6 +56,20 @@ pub type Placing {
   AtTelegraphPosition
 }
 
+/// How the client places a row with these TelegraphDamage flags: 0x4000 first, then 0x1000,
+/// else on the unit (`0x140546e60.placement_branches`). The picture (`draws_of`) and the hit
+/// (`spell_area` `anchor_of`) both read a row's placement through it.
+pub fn placing_of(flags flags: Int) -> Placing {
+  case
+    spell_effect.has_flag(flags:, bit: 0x4000),
+    spell_effect.has_flag(flags:, bit: 0x1000)
+  {
+    True, _ -> AtTelegraphPosition
+    False, True -> AtInitialPosition
+    False, False -> OnTheUnit
+  }
+}
+
 /// One telegraph row of a spell that the client makes: its TelegraphDamage id, how it is
 /// placed, the unit roles it is placed on (`targetTypeFlags`), and the offsets ahead, aside
 /// and up and the rotation in degrees that its place is moved and turned by.
@@ -112,14 +126,7 @@ pub fn draws_of(
       False ->
         Ok(Draw(
           telegraph_damage_id: row.id,
-          placing: case
-            spell_effect.has_flag(flags:, bit: 0x4000),
-            spell_effect.has_flag(flags:, bit: 0x1000)
-          {
-            True, _ -> AtTelegraphPosition
-            False, True -> AtInitialPosition
-            False, False -> OnTheUnit
-          },
+          placing: placing_of(flags:),
           target_type_flags: row.target_type_flags,
           ahead: row.z_position_offset,
           aside: row.x_position_offset,
@@ -189,10 +196,9 @@ fn telegraph_position_of(
   )
 }
 
-/// A place's position as a 0x7ff holds it (the same three 32-bit floats `cast/state`
-/// writes for a cast's position, which this module cannot import: it reaches the creature
-/// rule that imports this one).
-fn position_of(place place: Place) -> SpellPosition {
+/// A place's position as a 0x7ff holds it: three 32-bit floats. The entries and every
+/// other position of a cast message are written through it.
+pub fn position_of(place place: Place) -> SpellPosition {
   SpellPosition(
     x: float32.to_bits(start_place.x(place)),
     y: float32.to_bits(start_place.y(place)),

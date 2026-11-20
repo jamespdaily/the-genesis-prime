@@ -267,7 +267,7 @@ pub fn started_message(
     caster_unit_id: caster.unit_id,
     caster_item_level:,
     primary_target_unit_id: primary_target,
-    position: cast_state.position_of(place: caster.place),
+    position: telegraph_entries.position_of(place: caster.place),
     yaw: cast_state.yaw_of(place: caster.place),
     initial_positions: [],
     telegraph_positions: [],
@@ -306,7 +306,7 @@ pub fn go_message(
   SpellGo(
     cast_id:,
     ignore_cooldown: 0,
-    destination: cast_state.position_of(place:),
+    destination: telegraph_entries.position_of(place:),
     targets: list.append(hits, unstruck)
       |> list.index_map(fn(hit, index) {
         target_info(
@@ -453,7 +453,7 @@ pub fn creature_started(
     caster_unit_id:,
     caster_item_level: 0,
     primary_target_unit_id: target_unit_id,
-    position: cast_state.position_of(place:),
+    position: telegraph_entries.position_of(place:),
     yaw: cast_state.yaw_of(place:),
     initial_positions: opening.initial_positions,
     telegraph_positions: opening.telegraph_positions,
@@ -486,7 +486,7 @@ pub fn creature_applied(
   SpellGo(
     cast_id:,
     ignore_cooldown: 0,
-    destination: cast_state.position_of(place:),
+    destination: telegraph_entries.position_of(place:),
     targets: [
       SpellTargetInfo(
         unit_id: target_unit_id,

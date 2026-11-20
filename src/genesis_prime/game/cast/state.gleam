@@ -42,7 +42,6 @@ import genesis_prime/message/item_place.{type ItemPlace}
 import genesis_prime/message/spell_damage_description.{
   type SpellDamageDescription,
 }
-import genesis_prime/message/spell_position.{type SpellPosition, SpellPosition}
 import genesis_prime/step.{
   type ConnectionId, type LogLevel, type TimerId, TimerId,
 }
@@ -1623,14 +1622,6 @@ fn new_timer(cast cast: State) -> #(State, TimerId) {
   #(
     State(..cast, timers_started: cast.timers_started + 1),
     TimerId(first_timer + cast.timers_started),
-  )
-}
-
-pub fn position_of(place place: Place) -> SpellPosition {
-  SpellPosition(
-    x: float32.to_bits(start_place.x(place)),
-    y: float32.to_bits(start_place.y(place)),
-    z: float32.to_bits(start_place.z(place)),
   )
 }
 
