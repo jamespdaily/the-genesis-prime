@@ -44,7 +44,7 @@ The brief is a "Brief" artifact on the step's issue, and the builder's prompt is
 - **Reuse:** a gatherer's map, made before the brief: each existing function, type and test support the build touches or reuses, with its file and line on the base commit, its signature and its call sites. Builders start from the map and search only for what it does not name. (The boot check's builders, briefed with a map, took 75 and 31 turns, against 216 for the procs fix round, 2026-11-17.)
 - **Failure table,** for a step with a shape commit, or with locks, timers or remote steps: each step of the flow, and what happens if it is killed there, run twice at once, or times out. Each row is answered in the design. A row gets its own test when it is a new mechanism (a timer, a process death, an ordering) or a bug was found there; a row that repeats a tested mechanism names the test that covers it. The shape review reads the table with the shape.
 - **Tests:** the test list, each decision tested at the lowest layer that makes it, and whole-server tests only for what the client sees.
-- **Done when:** `dev/test_list_check.py N origin/main HEAD` exits 0 and the last commit is pushed; the coordinator watches CI.
+- **Done when:** `dev/test_list_check.py N origin/main HEAD` exits 0, the test files the step touches and `./check fast` pass, and the last commit is pushed; the coordinator watches CI, which runs the whole suite (a brief never asks the builder for it).
 - **Live check:** the scenario a live sitting runs.
 - **Scratch:** its own scratch subfolder, `<step>-<role>`.
 
