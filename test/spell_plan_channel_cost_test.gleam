@@ -250,7 +250,7 @@ pub fn every_costed_channeled_row_plans_its_costs_test() -> Nil {
       #(23_699, 39_366, 8, 10, 6, [
         spell_plan.SlotCost(slot: 3, amount: 10, result: 53),
       ]),
-      #(38_210, 58_841, 15, 15, 3, [spell_plan.UnheldCost(result: 167)]),
+      #(38_210, 58_841, 15, 15, 3, [spell_plan.FocusCost(amount: 15)]),
     ],
     fn(base) {
       let #(base_id, first_row, cost_type, amount, gos, planned_cost) = base
@@ -258,7 +258,7 @@ pub fn every_costed_channeled_row_plans_its_costs_test() -> Nil {
         as {
           "7.4: the ability of base "
           <> int.to_string(base_id)
-          <> " plans the one cost, a slot cost of the class resource's slot (5 to 8 are slots 0 to 3) or Focus, which the server does not hold"
+          <> " plans the one cost, a slot cost of the class resource's slot (5 to 8 are slots 0 to 3) or Focus, which a Spell4 row plans as a FocusCost of its amount"
         }
       let own =
         list.filter(rows, fn(row) { row.spell4_base_id_base_spell == base_id })
@@ -338,6 +338,7 @@ fn planned_costs(tables: store.Tables, spell4_id: Int) -> List(Cost) {
 fn kind_of(cost: Cost) -> String {
   case cost {
     spell_plan.UnheldCost(result:) -> "unheld " <> int.to_string(result)
+    spell_plan.FocusCost(..) -> "focus"
     spell_plan.UnreadSpendCost(..) -> "unread spend"
     spell_plan.SlotCost(..) -> "slot"
     spell_plan.SpendAllCost(..) -> "spend all"
@@ -351,7 +352,7 @@ fn kind_of(cost: Cost) -> String {
 fn expected_kind(cost: #(Int, Int)) -> String {
   case cost.0, cost.1 {
     3, _ -> "unheld 176"
-    15, _ -> "unheld 167"
+    15, _ -> "focus"
     16, _ -> "unheld 177"
     4, _ -> "class vital"
     5, 7 | 6, 7 | 7, 7 | 8, 7 | 10, 7 -> "spend all"

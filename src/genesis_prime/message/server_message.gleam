@@ -14,6 +14,7 @@ import genesis_prime/message/ability_points.{type AbilityPoints}
 import genesis_prime/message/ability_tiers.{type AbilityTiers}
 import genesis_prime/message/account_entitlements.{type AccountEntitlements}
 import genesis_prime/message/action_set.{type ActionSet}
+import genesis_prime/message/action_set_saved.{type ActionSetSaved}
 import genesis_prime/message/bit_stream.{type DecodeError}
 import genesis_prime/message/buyback_added.{type BuybackAdded}
 import genesis_prime/message/buyback_list.{type BuybackList}
@@ -176,6 +177,7 @@ pub type ServerMessage {
   AbilityTiers(message: AbilityTiers)
   AbilityPoints(message: AbilityPoints)
   ActionSet(message: ActionSet)
+  ActionSetSaved(message: ActionSetSaved)
   InnateIndexSet(message: InnateIndexSet)
   UnitCreateCreature(message: UnitCreateCreature)
   UnitCreateStatic(message: UnitCreateStatic)
@@ -395,6 +397,7 @@ pub fn decode(
     0x01A0 -> decoded(body, message_id, ability_tiers.decode, AbilityTiers)
     0x0169 -> decoded(body, message_id, ability_points.decode, AbilityPoints)
     0x019D -> decoded(body, message_id, action_set.decode, ActionSet)
+    0x00B2 -> decoded(body, message_id, action_set_saved.decode, ActionSetSaved)
     0x019F -> decoded(body, message_id, innate_index_set.decode, InnateIndexSet)
     0x07FC ->
       decoded(body, message_id, spell_cast_refused.decode, SpellCastRefused)
@@ -562,6 +565,7 @@ pub fn name(message: ServerMessage) -> String {
     AbilityTiers(..) -> "ability_tiers"
     AbilityPoints(..) -> "ability_points"
     ActionSet(..) -> "action_set"
+    ActionSetSaved(..) -> "action_set_saved"
     InnateIndexSet(..) -> "innate_index_set"
     UnitCreateCreature(..) -> "unit_create_creature"
     UnitCreateStatic(..) -> "unit_create_static"

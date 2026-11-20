@@ -233,7 +233,7 @@ pub fn a_folder_with_no_tables_ends_the_node_before_its_ready_line_test() -> Nil
   let report = unreached_report(node:, wanted: ready_line())
   assert string.contains(report, "the node ended with status 1")
     as "the report names the exit status"
-  assert string.contains(report, "CCStateAdditionalData.tbl could not be read")
+  assert string.contains(report, "ActionSlotPrereq.tbl could not be read")
     as "the report holds the node's last lines, naming the first table file"
 }
 

@@ -505,32 +505,63 @@ pub fn a_watched_makes_the_owner_send_the_viewer_its_0x262_at_its_current_place_
 }
 
 pub fn a_viewers_copy_of_a_player_carries_no_class_resource_stat_or_maximum_test() -> Nil {
-  use <- owned_test.run(10_000)
-  // The player's own 0x262 holds the Engineer's Volatility as stat 3 and
-  // ResourceMax_1 as property 10 (opcode.0x262.resource_stats,
-  // UnitProperty2.ResourceMax_0); a 0x935 goes to the player only, so a viewer's
-  // copy would go stale (the step's design).
-  let own =
-    game_connection_support.player_in(game_connection_support.entered().1)
-  assert list.any(own.tail.stats, fn(stat) { stat.stat_id == 3 })
-    && list.any(own.tail.properties, fn(property) { property.property_id == 10 })
-    as "the player's own record carries the resource"
-  let #(_, taken) =
-    game_connection_support.feed(
-      game_connection_support.in_world(),
-      game_connection_support.sent_by_the_map(SeenBy(
-        by: ConnectionId(2),
-        stay: game_connection_support.viewer_stay(2),
-      )),
-    )
-  let assert [#(2, PeerNews(news: Appeared(unit:), ..))] =
-    game_connection_support.peer_tells(taken)
-  assert list.map(unit.tail.stats, fn(stat) { stat.stat_id }) == [0, 10, 20]
-    as "health, level and shield only: no stat 3"
-  assert !list.any(unit.tail.properties, fn(property) {
-    property.property_id == 10
+  use <- owned_test.run(30_000)
+  // The player's own 0x262 holds the class slot as a stat (slot + 2) and its
+  // ResourceMax property (opcode.0x262.resource_stats, UnitProperty2.ResourceMax_0), and
+  // a healer's Focus as stat 1 and property 5 (`ApplyUnitStat` 0x1403d9a60 case 1,
+  // `GetMaxFocus` 0x14064a810); a 0x935 goes to the player only, so a viewer's copy of a
+  // stat would go stale (the step's design). Property 5 is the true maximum and stays.
+  // Class id, the class slot's stat and maximum property, whether Focus is held.
+  [
+    #(2, 3, 10, False),
+    #(3, 3, 10, True),
+    #(4, 3, 10, True),
+    #(7, 6, 13, True),
+  ]
+  |> list.each(fn(row) {
+    let #(class_id, resource_stat, resource_max, holds_focus) = row
+    let #(state, entered) =
+      game_connection_support.entered_as(
+        Character(
+          ..game_connection_support.world_character(),
+          class_id: ClassId(class_id),
+        ),
+      )
+    let own = game_connection_support.player_in(entered)
+    assert list.any(own.tail.stats, fn(stat) { stat.stat_id == resource_stat })
+      && list.any(own.tail.properties, fn(property) {
+        property.property_id == resource_max
+      })
+      as "the player's own record carries the class resource"
+    assert list.any(own.tail.stats, fn(stat) { stat.stat_id == 1 })
+      == holds_focus
+      && list.any(own.tail.properties, fn(property) {
+        property.property_id == 5
+      })
+      == holds_focus
+      as "and a healer's own record carries Focus: stat 1 and property 5"
+    let #(_, taken) =
+      game_connection_support.feed(
+        state,
+        game_connection_support.sent_by_the_map(SeenBy(
+          by: ConnectionId(2),
+          stay: game_connection_support.viewer_stay(2),
+        )),
+      )
+    let assert [#(2, PeerNews(news: Appeared(unit:), ..))] =
+      game_connection_support.peer_tells(taken)
+    assert list.map(unit.tail.stats, fn(stat) { stat.stat_id }) == [0, 10, 20]
+      as "health, level and shield only: no class slot's stat and no stat 1"
+    assert !list.any(unit.tail.properties, fn(property) {
+      property.property_id == resource_max
+    })
+      as "no ResourceMax of the class slot"
+    assert list.any(unit.tail.properties, fn(property) {
+        property.property_id == 5
+      })
+      == holds_focus
+      as "property 5, the Focus maximum, stays: it is a gear budget property like the rest and 0x93a keeps it current"
   })
-    as "no ResourceMax_1"
 }
 
 pub fn a_move_the_owner_took_before_a_watched_is_in_the_0x262_the_new_viewer_is_sent_test() -> Nil {

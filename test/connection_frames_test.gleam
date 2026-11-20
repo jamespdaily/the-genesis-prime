@@ -27,6 +27,7 @@ import genesis_prime/message/movement_timed_path.{MovementTimedPath}
 import genesis_prime/message/relayed_movement
 import genesis_prime/message/unit_create_ghost
 import genesis_prime/message/unit_create_player.{UnitCreatePlayer}
+import genesis_prime/message/unit_float_stat_changed.{UnitFloatStatChanged}
 import genesis_prime/message/unit_movement.{type UnitMovement, UnitMovement}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/step.{Now}
@@ -637,4 +638,25 @@ pub fn a_ghost_wears_the_characters_own_bone_values_test() -> Nil {
     as "the frame is a 0x262 of type 23 the client's reader takes"
   assert ghost.bone_values == [3, 7, 11]
     as "the six-bit count and the three 32-bit values the player's 0x262 carries"
+}
+
+/// 0x935 of the stat of a resource slot: slot -1 is stat 1, Focus, and slots 0 to 7 are
+/// stats 2 to 9 (`opcode.0x935`, `ApplyUnitStat` 0x1403d9a60 case 1 stores the float at
+/// the unit's +0x218, Focus; `opcode.0x262.resource_stats` for the slots).
+pub fn a_resource_frame_of_slot_minus_1_is_0x935_of_stat_1_and_slots_0_to_7_keep_their_stats_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Slot, the stat it is written as.
+  [#(-1, 1), #(0, 2), #(7, 9)]
+  |> list.each(fn(row) {
+    let #(slot, stat_id) = row
+    let Frame(message_id:, body:) =
+      frames.resource_frame(unit_id: 0x1001, slot:, value: 35.0)
+    assert message_id == 0x0935
+    assert unit_float_stat_changed.decode(body)
+      == Ok(UnitFloatStatChanged(
+        unit_id: 0x1001,
+        stat_id:,
+        value: float32.to_bits(35.0),
+      ))
+  })
 }

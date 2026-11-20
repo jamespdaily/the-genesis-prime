@@ -1495,6 +1495,12 @@ Spell4	47746	a cast whose one go falls after its only hit row (5529) has ended	c
 Spell4	54339	a cast whose go 4 falls after its only hit row (4310) has ended, with gos 0 to 3 inside it	spell_area_go_test
 Spell4	80315	a cast whose damage row names both its gos and whose one hit row (15196) names the second alone	creature_special_test
 Spell4	31546	a channel whose one hit row (2151) names pulse 0 alone and is drawn through every pulse	spell_area_go_test
+Spell4	32820	Mind Over Body, an Esper's Focus cost of 22 with a cast time	cast_focus_test
+Spell4	32821	Bolster, an Esper's instant Focus cost of 70	cast_focus_test
+Spell4	39121	Healing Salve, a Spellslinger's Focus cost	cast_focus_test
+Spell4	33257	Mental Boon, a Psi Points cost of 1 and a Focus cost of 73	cast_focus_test
+Spell4	30354	Shield Surge, an Actuator cost of 2 and a Focus cost of 86	cast_focus_test
+Item2	11671	boots whose ItemStat names property 5, BaseFocusPool	gear_test
 Spell4	34252	Savage Shred, a Multiphase cast of a cast time of 0 whose first go is at 0 and whose gos are 0, 1, 200, 700, 1200, 1700 and 2800 ms	creature_special_test, spawn_test, telegraph_window_test, world_creature_test
 Spell4	34262	Ground Pound, a Multiphase cast of a cast time of 0 whose gos are 200, 666, 1100 and 1600 ms	creature_special_test, spawn_test, telegraph_window_test
 Spell4	52150	Suppressing Fire, a channel of a cast time of 0 with eight pulses	creature_special_test, spawn_test, telegraph_window_test

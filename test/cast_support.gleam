@@ -386,7 +386,7 @@ pub fn caster() -> Caster {
     weapon: Some(Item2Id(81_351)),
     audience: set.from_list([ConnectionId(2), ConnectionId(3)]),
     dead: False,
-    resources: class_resource.new(resource: full_slot_1()),
+    resources: class_resource_support.new(resource: full_slot_1()),
     in_combat: False,
     life_vitals: dict.new(),
     factions: prerequisite.Factions(current: 167, base: 167),
@@ -428,6 +428,7 @@ pub fn full_slot_1() -> class_resource.Resource {
     refill_after_combat_ms: None,
     drain: None,
     empty_after_combat_ms: None,
+    focus: None,
   )
 }
 
@@ -446,6 +447,24 @@ pub fn holding(
       ..class_resource_support.resource_of(class_id),
       start: value,
     ),
+    properties: class_resource_support.properties_of(
+      class_id:,
+      changes: [],
+      level: 1,
+    ),
+  )
+}
+
+/// The class's resource holding `focus` points of Focus, a pool of that size (property 5
+/// at `focus`), and its slot at its start; a class that holds no Focus holds none.
+pub fn holding_focus(
+  class_id class_id: Int,
+  focus focus: Float,
+) -> class_resource.Resources {
+  class_resource_support.resources_with(
+    class_id:,
+    changes: [#(5, focus)],
+    level: 1,
   )
 }
 

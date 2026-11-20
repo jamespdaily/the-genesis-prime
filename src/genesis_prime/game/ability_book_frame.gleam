@@ -5,6 +5,8 @@
 //// ```
 //// a bag slot ─▶ 0x0111 (location 4, reason 49)       the item in its bag slot, a press names the slot
 //// the book   ─▶ 0x01A0 (tier 1 in each action set)   the entry the book window and the bar read
+//// a bar      ─▶ 0x019D (one action set)              the shortcuts the bar slots hold
+//// a save     ─▶ 0x00B2 (one bit)                     the answer to the builder's Save
 //// ```
 
 import genesis_prime/connection/frame.{type Frame, Frame}
@@ -14,11 +16,15 @@ import genesis_prime/game/loadout.{type Loadout}
 import genesis_prime/game/spell_plan
 import genesis_prime/message/ability_tier.{AbilityTier}
 import genesis_prime/message/ability_tiers.{AbilityTiers}
+import genesis_prime/message/action_set
+import genesis_prime/message/action_set_saved.{ActionSetSaved}
+import genesis_prime/message/action_shortcut.{ActionShortcut}
 import genesis_prime/table/id.{type Spell4BaseId}
 import gleam/list
+import gleam/option.{type Option, None, Some}
 
 /// The location of the held items that are abilities (`opcode.0x111.ability_bag`).
-pub const ability_location = 4
+const ability_location = 4
 
 /// The reason an item is added for when it is held from the start: 49, which adds an
 /// ability without raising the ability book's change (`opcode.0x111.ability_level_up`)
@@ -31,6 +37,88 @@ const action_sets = [0, 1, 2, 3]
 
 /// The tier every ability starts at (`opcode.0x1a0`: tier 0 counts as 1).
 const first_tier = 1
+
+/// The result of an action set the client takes as ok (`opcode.0x19d`).
+pub const action_set_ok = 1
+
+/// The shortcut type of an ability, by its Spell4Base id (`opcode.0x19d`).
+const ability_shortcut = 4
+
+/// The shortcut type that empties the slot it names (`opcode.0x19d`).
+const empty_shortcut = 0
+
+/// The 2-bit value of an action set: bit 0 set marks the set unlocked, which the
+/// ability book's set arrows and the active set's switch read; nothing in casting
+/// or the bar reads it (`opcode.0x19d.set_value`). The one set the server sends is
+/// unlocked.
+const set_unlocked = 1
+
+/// Which slots of a bar a 0x019D names.
+pub type Shortcuts {
+  /// Each of the bar's slots: an empty one clears the slot, which a changed bar needs.
+  EverySlot
+  /// Only the filled slots, each at its own place, for a client whose bar is empty.
+  FilledSlots
+}
+
+/// 0x019D of one action set: the bar's slots, each an ability by its Spell4Base id or
+/// empty, in slot order, with the result the client raises ActionSetError for unless it
+/// is `action_set_ok`. A shortcut of type 4 names the slot in the field the client calls
+/// the bag index; the client reads its location for no type 4 shortcut (`0x1403c1bf0`),
+/// so it is the ability location.
+pub fn action_set(
+  set set: Int,
+  result result: Int,
+  slots slots: List(Option(Spell4BaseId)),
+  shortcuts shortcuts: Shortcuts,
+) -> Frame {
+  let named =
+    list.index_map(slots, fn(slot, bag_index) {
+      case slot, shortcuts {
+        Some(ability), _ ->
+          Ok(ActionShortcut(
+            shortcut_type: ability_shortcut,
+            location: ability_location,
+            bag_index:,
+            object_id: ability.value,
+          ))
+        None, EverySlot ->
+          Ok(ActionShortcut(
+            shortcut_type: empty_shortcut,
+            location: 0,
+            bag_index:,
+            object_id: 0,
+          ))
+        None, FilledSlots -> Error(Nil)
+      }
+    })
+    |> list.filter_map(fn(shortcut) { shortcut })
+  let assert Ok(body) =
+    action_set.encode(action_set.ActionSet(
+      action_set_index: set,
+      unlocked: set_unlocked,
+      result:,
+      shortcuts: named,
+    ))
+    as "a set below 8, a result of 6 bits, a bar slot below 48 and an id of 32 bits fit the message"
+  Frame(message_id: action_set.message_id, body:)
+}
+
+/// 0x00B2, the answer to the builder's Save: the bit asks the client for a combat log
+/// line (`opcode.0xb2`).
+pub fn action_set_saved(
+  add_combat_log_line add_combat_log_line: Bool,
+) -> Frame {
+  let assert Ok(body) =
+    action_set_saved.encode(
+      ActionSetSaved(add_combat_log_line: case add_combat_log_line {
+        True -> 1
+        False -> 0
+      }),
+    )
+    as "one bit fits the message"
+  Frame(message_id: action_set_saved.message_id, body:)
+}
 
 /// 0x0111 of the ability at a bag index of the ability location.
 pub fn held_ability(
