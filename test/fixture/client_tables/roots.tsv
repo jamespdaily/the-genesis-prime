@@ -1455,3 +1455,13 @@ Quest2	9497	quest whose objective 18604 is a type 24 on quest 9695	game_connecti
 Quest2	9695	quest the type 24 objective of quest 9497 waits on	game_connection_dev_command
 QuestObjective	18252	type 3 objective of quest 9497	game_connection_dev_command
 QuestObjective	18604	type 24 objective of quest 9497 on quest 9695	game_connection_dev_command
+Spell4	52448	a fixed 240 degree cone rotated -90 degrees (row 7182, flag 0x1000 only)	telegraph_entries_test, creature_fight_test, spawn_test
+Spell4	52504	a spell whose fixed rows hold an offset and a rotation of 215 degrees (row 7195)	telegraph_entries_test, spawn_test
+Spell4	54838	two fixed caster rows on one unit (rows 7814 and 7815)	telegraph_entries_test, spell_area_test
+Spell4	44146	a spell whose 0x4000 rows hold offsets and rotations (row 3881)	telegraph_entries_test
+Spell4	34009	four never-drawn twins and one drawn row	telegraph_entries_test
+Spell4	55635	two drawn fixed rows (7956 and 7957)	telegraph_entries_test
+Spell4	44466	a spell whose caster row follows the caster and whose propertyFlags has 0x2	spawn_test
+Spell4	41024	a spell with a never-drawn row (flag 0x40, row 2739)	telegraph_entries_test
+Spell4	29710	a spell with a never-drawn row (flag 0x100, row 63)	telegraph_entries_test
+Spell4	33582	a spell with a fixed row offset 4 ahead (row 3939)	telegraph_entries_test

@@ -82,6 +82,7 @@ import genesis_prime/client_connection.{type News}
 import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/game/telegraph_entries
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/message/spell_targets_removed.{SpellTargetsRemoved}
 import genesis_prime/world_map/creature_guard_spells.{type Guard}
@@ -389,7 +390,9 @@ fn opens(
 }
 
 /// The 0x7ff and 0x7f4 of the guard's cast on the creature: its effect with its instance id and
-/// lifetime 0, which no 0x7fe ends.
+/// lifetime 0, which no 0x7fe ends. It is an effect cast on the creature itself and its 0x7ff
+/// carries no telegraph entry (whether a guard spell has a drawn server-placed row is not
+/// read; the guard spells come from the importer).
 fn guard_cast(
   state state: State,
   guard guard: Guard,
@@ -404,6 +407,7 @@ fn guard_cast(
       caster_unit_id: unit_id,
       target_unit_id: unit_id,
       place:,
+      opening: telegraph_entries.none,
     )),
     client_connection.CastWent(
       go: cast_frame.creature_applied(
@@ -439,6 +443,7 @@ fn opening_cast(
       caster_unit_id: unit_id,
       target_unit_id: unit_id,
       place:,
+      opening: telegraph_entries.none,
     )),
     client_connection.CastWent(go: cast_frame.creature_applied(
       cast_id:,

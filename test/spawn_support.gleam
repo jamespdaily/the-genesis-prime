@@ -23,6 +23,7 @@ import genesis_prime/game/area
 import genesis_prime/game/hit.{Blow, Defence, Offence, Worked}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
+import genesis_prime/game/telegraph_entries
 import genesis_prime/game/vendor
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id, Spell4Id}
@@ -526,7 +527,16 @@ pub fn the_turrets_are_given_their_factions(
 /// 85469 with the area its rows give, and a run speed of 0. The test stands it where it
 /// likes and reads what the load made of it.
 pub fn sim_turret(number number: Int, place place: Place) -> Spawn {
-  let tables = character_tables.content_tables()
+  sim_turret_over(tables: character_tables.content_tables(), number:, place:)
+}
+
+/// The Exile Sim-Turret as `sim_turret` starts it, over these content tables, for a test
+/// that changes a row of the turret's spell.
+pub fn sim_turret_over(
+  tables tables: table_store.Tables,
+  number number: Int,
+  place place: Place,
+) -> Spawn {
   let assert Ok(creature) = creature2.get(tables, Creature2Id(73_494))
     as "the client holds the Exile Sim-Turret"
   let row =
@@ -780,6 +790,12 @@ pub fn earthen_roar(hold_ms hold_ms: Int) -> creature_life.Special {
             turn_degrees: 0.0,
           ),
         ]),
+        anchor: area.FixedAtCaster,
+        draws: telegraph_entries.draws_of(
+          tables: character_tables.content_tables(),
+          spell4_id: Spell4Id(55_317),
+        ),
+        aims_at_target: False,
         gos: [
           creature_life.Go(at_ms: 2500, strikes: False),
           creature_life.Go(at_ms: 3000, strikes: True),

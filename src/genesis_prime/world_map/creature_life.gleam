@@ -30,13 +30,14 @@
 ////   retiring until the creature ends, so no viewer is sent a corpse the spawn's next
 ////   creature does not know.
 
-import genesis_prime/game/area.{type Inside, type Row}
+import genesis_prime/game/area.{type Anchor, type Inside, type Row}
 import genesis_prime/game/damage
 import genesis_prime/game/hit.{type Defence, type Offence}
 import genesis_prime/game/strike_tell.{
   type Answered, type Tell, Answered, CreatureStriker, Landed, PlayerStriker,
   Refused,
 }
+import genesis_prime/game/telegraph_entries.{type Draw}
 import genesis_prime/table/id.{type Spell4Id}
 import gleam/float
 import gleam/int
@@ -93,16 +94,31 @@ pub type Cast {
   /// A cast time of 0: the attack strikes its target at once.
   Instant
   /// A cast time above 0: a charge, which strikes each fighter inside `area` at its
-  /// strike go. `inside` is how a unit counts as inside the area
-  /// (genesis_prime/game/spell_area `area_of_spell`); a spell with a cast time and no
-  /// area it can read fails the load. `gos` is the cast's timeline (`Go`): never empty,
+  /// strike go. `inside` is how a unit counts as inside the area and `anchor` where the
+  /// area is centred (genesis_prime/game/spell_area `area_of_spell`); a spell with a cast
+  /// time and no area it can read fails the load. `draws` are the spell's telegraph rows
+  /// the client makes, from which the cast's 0x7ff names the positions the picture is
+  /// drawn at (genesis_prime/game/telegraph_entries). `aims_at_target` is the spell's
+  /// `Spell4.propertyFlags` bit 0x2: a creature that cannot move keeps turning its aim
+  /// toward its 0x908 target through a cast of such a spell, and holds the aim it had at
+  /// the cast's start through any other (`0x14046cdc0.turret_cast_aim`). `gos` is the
+  /// cast's timeline (`Go`): never empty,
   /// each `at_ms` above the one before, exactly one go strikes and it is the last.
   /// `hold_ms` is how long the creature then stands still before it attacks again: the
   /// summed `delay_ms + duration_ms` of the NpcExecutionDelay rows (Spell4Effects type 35)
   /// whose phase flags name the strike go, 0 for none; the load refuses a delay row that
   /// names another go. An attack that is not a special has one go, at `cast_ms`, that
   /// strikes, and no hold.
-  Charged(cast_ms: Int, area: Row, inside: Inside, gos: List(Go), hold_ms: Int)
+  Charged(
+    cast_ms: Int,
+    area: Row,
+    inside: Inside,
+    anchor: Anchor,
+    draws: List(Draw),
+    aims_at_target: Bool,
+    gos: List(Go),
+    hold_ms: Int,
+  )
 }
 
 /// One go of a cast (0x7f4), by the Spell4's phases (genesis_prime/game/spell_plan

@@ -22,8 +22,10 @@
 //// - The threatMultiplier of Spell4Effects 125182 is 2.0 (the client's row).
 
 import cast_support
+import character_tables
 import connection_rule_support as support
 import crowd_control_support
+import fixture_tables
 import genesis_prime/client_connection.{
   type News, CastFinished, CastStarted, CastWent, CombatState, CreatureAppeared,
   CreatureFaces, CreatureMoved, CreaturePlaced, Health, PeerNews, Targeting,
@@ -41,15 +43,20 @@ import genesis_prime/game/unit_properties.{type Modifier, Change}
 import genesis_prime/message/combat_result
 import genesis_prime/message/crowd_control_state
 import genesis_prime/message/damage_type
+import genesis_prime/message/float32
 import genesis_prime/message/spell_damage_description.{SpellDamageDescription}
 import genesis_prime/message/spell_go
+import genesis_prime/message/spell_initial_position.{SpellInitialPosition}
+import genesis_prime/message/spell_position.{SpellPosition}
 import genesis_prime/message/spell_target_info.{SpellTargetInfo}
 import genesis_prime/message/spell_targets_removed.{SpellTargetsRemoved}
+import genesis_prime/message/spell_telegraph_position.{SpellTelegraphPosition}
 import genesis_prime/step.{
   type ConnectionId, type ServiceStep, Connection, ConnectionId, CreatureStart,
   OwnEffect, OwnEvent, ServiceTimerFired, StartServiceTimer, Started, Told,
 }
 import genesis_prime/table/id.{Creature2Id, Spell4Id, UnitProperty2Id}
+import genesis_prime/table/loader/store
 import genesis_prime/world_map/creature.{type State, Settings}
 import genesis_prime/world_map/creature_fight
 import genesis_prime/world_map/creature_kind.{type Kind, type Kinds, Kind}
@@ -74,6 +81,7 @@ import gleam_community/maths
 import map_support
 import owned_test
 import place_support
+import planted_table
 import qcheck
 import spawn_support
 
@@ -5412,21 +5420,54 @@ pub fn a_ready_special_in_reach_is_chosen_and_opens_its_cast_test() -> Nil {
     as "one timer, the first go 2500 ms later (SpellPhase 11191), and no attack tick"
 }
 
-pub fn the_specials_cast_start_carries_no_telegraph_positions_test() -> Nil {
+pub fn the_specials_cast_start_carries_the_entries_of_its_server_placed_rows_test() -> Nil {
   use <- owned_test.run(5000)
-  // The client draws the cone on the caster from the spell's TelegraphDamage row
-  // (`0x140546e60`), so the 0x7ff names no positions.
-  let #(state, aggro) = roar_fought(viewers: [2])
+  // Earthen Roar's row 7880 has TelegraphDamage flags 0x105000 and targetTypeFlags 1: the client
+  // draws it only at a telegraph position of (7880, the caster), which it looks up for the
+  // caster's initial position (`0x140546e60`, `spell.telegraph_position`). The creature at the
+  // origin turns to its target 3 ahead and 3 aside first, so the pose is yaw pi / 4 (the
+  // `turned_to_face` kind 14 turn); the row has no offset or rotation.
+  let #(state, aggro) =
+    tell(
+      state: rootbrute(viewers: [2]),
+      at_ms: 0,
+      message: approached_at(number: 2, x: -3.0, z: -3.0, seq: 1),
+    )
   let #(_, opened, _) = roar_opened(state:, aggro:)
   let assert [CastStarted(start:)] = casts_of(opened, 2)
-  assert start.telegraph_positions == [] && start.initial_positions == []
+  let pose = SpellPosition(x: 0, y: 0, z: 0)
+  let yaw = float32.to_bits(0.785_398_163_397_448_3)
+  assert start.initial_positions
+    == [
+      SpellInitialPosition(
+        unit_id: 7,
+        target_flags: 1,
+        position: pose,
+        yaw:,
+        anchor_unit_id: 0,
+      ),
+    ]
+    as "the caster's one initial position, at its turned pose, with the caster's role bit"
+  assert start.telegraph_positions
+    == [
+      SpellTelegraphPosition(
+        telegraph_damage_id: 7880,
+        unit_id: 7,
+        target_flags: 1,
+        position: pose,
+        yaw:,
+        anchor_unit_id: 0,
+      ),
+    ]
+    as "the entry the cone is drawn from: row 7880 on the caster, at the same pose"
 }
 
 pub fn a_creature_that_can_move_turns_to_face_its_target_before_the_special_test() -> Nil {
   use <- owned_test.run(5000)
-  // The client never turns a creature by itself (`creature.facing`) and the cone follows the
-  // caster's yaw (`0x14054b1b0.follows_caster`): the target 3 ahead and 3 aside is at atan2(3, 3)
-  // = pi / 4 off the creature's facing, which is the yaw of a kind 14 turn.
+  // The client never turns a creature by itself (`creature.facing`) and the cone is drawn from
+  // the 0x7ff's entry, which holds the facing the creature has when the cast starts
+  // (`0x14054b1b0.fixed_placement`): the target 3 ahead and 3 aside is at atan2(3, 3) = pi / 4
+  // off the creature's facing, which is the yaw of a kind 14 turn.
   let #(state, aggro) =
     tell(
       state: rootbrute(viewers: [2]),
@@ -7497,4 +7538,208 @@ pub fn the_walk_home_arrival_sends_the_creature_placed_at_home_before_the_turn_t
   assert said(at_home)
     == ["0x638(placed) to 5", "turn(kind 19, spawn facing) to 5"]
     as "the stop, then the spawn's facing it takes on arrival"
+}
+
+// ---- where a charge's picture is and where its hit is ----
+//
+// The Sim-Turret of the tests below stands at the origin and aims at its 0x908 target, player 2,
+// who comes near at (3, -4): the aim is atan2(-3, 4) = -0.6435011 (yaw 0 faces -z,
+// `movement_command.kind_14.facing`), the way (0.6, -0.8), so player 5 at (12, -16), 20 along
+// that line, is in the 30 m rectangle. Player 2 then walks to (-8, -1), behind the turret's
+// start aim and where the aim would turn to if it followed. Spell4 85469's row 16212 is
+// changed for the cases: no client row of a spell that loads is a fixed row of a turret, and
+// seven of the loadable following-caster spells lack propertyFlags 0x2.
+
+/// The yaw of the turret's aim at the start: the bearing of (3, -4) from the origin.
+const start_aim = -0.643_501_108_793_284_4
+
+/// The Sim-Turret built over these tables at the origin, started for players 2 and 5.
+fn turret_over(tables tables: store.Tables) -> State {
+  let spawn =
+    spawn_support.sim_turret_over(
+      tables: character_tables.content_over(tables:),
+      number: 1,
+      place: at(0.0),
+    )
+  let assert Ok(kind) =
+    dict.get(spawn_support.turret_kinds().by_creature, 73_494)
+    as "migration 0029 gives the Exile turret its kind"
+  started_with(
+    source: spawn_source.Stored(id: SpawnId(1)),
+    spawn:,
+    kind:,
+    viewers: [2, 5],
+    armor: creature_life.NoArmor,
+  ).0
+}
+
+/// The turret opens its charge at 3000 ms with player 2 at (3, -4) and player 5 on the line of
+/// its aim, then player 2 walks to (-8, -1) at 5000 ms: the state, the step that opened the
+/// charge and the timer of its end.
+fn turret_walked_round(
+  state state: State,
+) -> #(State, ServiceStep(creature.Outgoing), step.TimerId) {
+  let #(state, aggro) =
+    tell(
+      state:,
+      at_ms: 0,
+      message: approached_at(number: 2, x: 3.0, z: -4.0, seq: 1),
+    )
+  let state = with_player_5_at(state:, x: 12.0, z: -16.0)
+  let #(state, opened, ends) = charge_opened(state:, aggro:)
+  let #(state, _) =
+    tell(
+      state:,
+      at_ms: 5000,
+      message: moved_at(number: 2, x: -8.0, z: -1.0, seq: 3),
+    )
+  #(state, opened, ends)
+}
+
+/// The players the end of the charge strikes, in order.
+fn struck_at_the_end(state state: State, ends ends: step.TimerId) -> List(Int) {
+  let #(_, went) = fire(state:, at_ms: 11_000, timer: ends)
+  list.sort(list.map(fights_told(went), fn(told) { told.0 }), int.compare)
+}
+
+pub fn a_turret_strikes_a_fixed_caster_row_from_the_pose_stored_at_the_start_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Row 16212 with flag 0x1000: the client draws it once at the turret's initial position and
+  // it stays there (`0x14054b1b0.fixed_placement`), though the turret's aim turns with its
+  // target (`0x14046cdc0.turret_cast_aim` turns the aim, not a fixed picture). The 0x7ff names
+  // the start aim; after player 2 walks round, the rectangle is still that one: player 5 on its
+  // line is struck, player 2 is not.
+  use tables <- fixture_tables.changed(
+    table: "TelegraphDamage",
+    id: 16_212,
+    with: [#("telegraphDamageFlags", planted_table.Integer(0x1000))],
+  )
+  let #(state, opened, ends) = turret_walked_round(state: turret_over(tables:))
+  let assert [CastStarted(start:)] = news_to(opened, 2)
+  assert start.initial_positions
+    == [
+      SpellInitialPosition(
+        unit_id: 7,
+        target_flags: 1,
+        position: SpellPosition(x: 0, y: 0, z: 0),
+        yaw: float32.to_bits(start_aim),
+        anchor_unit_id: 0,
+      ),
+    ]
+    && start.telegraph_positions == []
+    as "an initial position at the aim at the start, and no telegraph position for a 0x1000 row"
+  assert struck_at_the_end(state:, ends:) == [5]
+    as "the rectangle the 0x7ff showed, not turned to the target"
+}
+
+pub fn a_turret_whose_spell_lacks_the_aim_bit_holds_its_aim_from_the_start_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Spell4 85469 has propertyFlags 0x40002; a cast without bit 0x2 holds the aim where it was
+  // when the cast began (`0x14046cdc0.turret_cast_aim`). With propertyFlags 0 the rectangle,
+  // drawn on the turret each frame, stays along the start aim: player 5 is struck and player 2,
+  // who walked round it, is not. The unchanged spell turns to player 2: it strikes player 2
+  // and not player 5.
+  let held = {
+    use tables <- fixture_tables.changed(table: "Spell4", id: 85_469, with: [
+      #("propertyFlags", planted_table.Integer(0)),
+    ])
+    let #(state, _, ends) = turret_walked_round(state: turret_over(tables:))
+    struck_at_the_end(state:, ends:)
+  }
+  assert held == [5] as "the aim held from the cast's start"
+  let #(state, _, ends) =
+    turret_walked_round(state: turret_over(tables: fixture_tables.shared()))
+  assert struck_at_the_end(state:, ends:) == [2]
+    as "with bit 0x2 the aim follows the 0x908 target, as the client's does"
+}
+
+pub fn a_viewer_arriving_mid_charge_gets_the_entries_of_the_cast_start_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Row 16212 with flags 0x5000 is drawn at a telegraph position of (16212, the turret), made at
+  // the start from the aim at the start. A viewer that arrives after player 2 walked round is
+  // sent those entries, not ones made from where the turret would aim now
+  // (`TelegraphDamage.telegraphDamageFlags.0x1000`: a fixed row "stays where the server put it").
+  use tables <- fixture_tables.changed(
+    table: "TelegraphDamage",
+    id: 16_212,
+    with: [#("telegraphDamageFlags", planted_table.Integer(0x5000))],
+  )
+  let #(state, opened, _) = turret_walked_round(state: turret_over(tables:))
+  let assert [CastStarted(start:)] = news_to(opened, 2)
+  assert list.map(start.telegraph_positions, fn(entry) { entry.yaw })
+    == [float32.to_bits(start_aim)]
+    as "the start's entry holds the start aim"
+  let #(_, watched) =
+    tell(
+      state:,
+      at_ms: 6000,
+      message: creature.Watched(
+        by: ConnectionId(9),
+        stay: map_support.stay(count: 9),
+      ),
+    )
+  let assert Ok(CastStarted(start: late)) =
+    list.find(news_to(watched, 9), fn(news) { name_of(news) == "0x7ff" })
+    as "the arriving viewer is sent the open cast"
+  assert late.initial_positions == start.initial_positions
+    && late.telegraph_positions == start.telegraph_positions
+    as "the same entries as the cast's start, not the aim toward where player 2 stands now"
+}
+
+/// The strike go of Spell4 `spell4_id`, loaded for the Beast as the content load builds it,
+/// reached at its time for a Beast that player 2 fights at (0, -4.5) with player 5 at (4.5, 0)
+/// and player 6 at (-4.5, 0): the players the strike goes to, in order.
+fn struck_by_the_loaded_special(spell4_id spell4_id: Int) -> List(Int) {
+  let assert [special] =
+    spawn_support.special_creature(number: 1, creature_id: 73_464, spell4_id:).combat.specials
+    as "the Beast's kind lists the one special"
+  let assert creature_life.Charged(gos:, ..) = special.attack.cast
+    as "the spell is a charge"
+  let #(state, aggro) =
+    tell(
+      state: rootbrute_with(special:, viewers: [2, 5, 6]),
+      at_ms: 0,
+      message: approached_at(number: 2, x: 0.0, z: -4.5, seq: 1),
+    )
+  let state = with_player_at(state:, number: 5, x: 4.5, z: 0.0)
+  let state = with_player_at(state:, number: 6, x: -4.5, z: 0.0)
+  let #(state, opened) =
+    fire(state:, at_ms: 1500, timer: timer_for(aggro, 1500))
+  let #(_, struck) = through_the_gos(state:, step: opened, gos:, passed_ms: 0)
+  list.sort(list.map(fights_told(struck), fn(told) { told.0 }), int.compare)
+}
+
+/// Each go of the cast at its time, from the one the step armed, up to the strike go: the
+/// step of the strike go.
+fn through_the_gos(
+  state state: State,
+  step taken: ServiceStep(creature.Outgoing),
+  gos gos: List(creature_life.Go),
+  passed_ms passed_ms: Int,
+) -> #(State, ServiceStep(creature.Outgoing)) {
+  let assert [go, ..rest] = gos as "the cast has a strike go"
+  let #(state, fired) =
+    fire(
+      state:,
+      at_ms: 1500 + go.at_ms,
+      timer: timer_for(taken, go.at_ms - passed_ms),
+    )
+  case go.strikes {
+    True -> #(state, fired)
+    False ->
+      through_the_gos(state:, step: fired, gos: rest, passed_ms: go.at_ms)
+  }
+}
+
+pub fn the_rotated_cone_of_52448_strikes_where_the_client_draws_it_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Spell4 52448's row 7182 is a cone 4 to 5 m out and 240 degrees across with rotationDegrees
+  // -90 and flag 0x1000. The client draws it as if the creature faced yaw - 90 degrees, so at
+  // yaw 0 (the target straight ahead, -z) its centre line points to +x (`0x14054b1b0.shape_turn`:
+  // "Spell4 52448's row 7182 placed at yaw 0 is centred on +x"). Player 5, 4.5 out at +x, is in
+  // it; player 6, 4.5 out at -x, is 180 degrees off its centre line, beyond its 120 degree half
+  // angle and out of reach of the row's other circle (radius 2); player 2, 4.5 ahead, is 90
+  // degrees off, inside.
+  assert struck_by_the_loaded_special(spell4_id: 52_448) == [2, 5]
+    as "the fighter at +x and the target ahead are struck, the one at -x is not"
 }

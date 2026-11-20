@@ -479,3 +479,76 @@ pub fn a_places_pose_is_its_ground_point_and_its_yaw_test() -> Nil {
   assert area.pose_of(place:) == Pose(at: Point(x: 12.5, z: -30.25), yaw: 1.25)
     as "the point on the ground (x and z) and the yaw; pitch, roll and the height play no part"
 }
+
+pub fn the_origin_of_a_placement_is_the_point_the_hit_measures_from_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The point itself is the client's: worked from the matrix of `0x14054b1b0.aside_offset` and
+  // `0x14054b1b0.shape_turn` (the offset (-aside, -ahead) turned by the rows (cos, -sin) and
+  // (sin, cos) of the yaw), not computed by `origin_of`. x offset 1 at yaw 0 -> (-1, 0) and at
+  // yaw 90 -> (0, 1) are the emulator's runs; a z offset of 2 lies 2 along -z at yaw 0 and 2
+  // along -x at yaw 90; row 3881 (z offset 16, x offset -6) from a unit at (100, 200) gives
+  // (106, 184) at yaw 0 and (84, 194) at yaw 90.
+  let quarter = maths.pi() /. 2.0
+  list.each(
+    [
+      #(Point(x: 0.0, z: 0.0), 0.0, 0.0, 1.0, Point(x: -1.0, z: 0.0)),
+      #(Point(x: 0.0, z: 0.0), quarter, 0.0, 1.0, Point(x: 0.0, z: 1.0)),
+      #(Point(x: 0.0, z: 0.0), 0.0, 2.0, 0.0, Point(x: 0.0, z: -2.0)),
+      #(Point(x: 0.0, z: 0.0), quarter, 2.0, 0.0, Point(x: -2.0, z: 0.0)),
+      #(Point(x: 100.0, z: 200.0), 0.0, 16.0, -6.0, Point(x: 106.0, z: 184.0)),
+      #(
+        Point(x: 100.0, z: 200.0),
+        quarter,
+        16.0,
+        -6.0,
+        Point(x: 84.0, z: 194.0),
+      ),
+    ],
+    fn(case_) {
+      let #(at, yaw, ahead, aside, wanted) = case_
+      let got = area.origin_of(centre: Pose(at:, yaw:), ahead:, aside:)
+      assert float.loosely_equals(got.x, wanted.x, tolerating: 0.000_001)
+        && float.loosely_equals(got.z, wanted.z, tolerating: 0.000_001)
+        as "the origin is the point the client's matrix puts the offsets at"
+    },
+  )
+  // The hit measures its shapes from that same point, so a fighter standing on it is inside a
+  // circle of any radius and a box centred there, whatever the pose and the row's offsets.
+  qcheck.given(
+    qcheck.tuple4(
+      qcheck.tuple3(
+        qcheck.bounded_float(from: -500.0, to: 500.0),
+        qcheck.bounded_float(from: -500.0, to: 500.0),
+        qcheck.bounded_float(from: -3.1, to: 3.1),
+      ),
+      qcheck.bounded_float(from: -20.0, to: 20.0),
+      qcheck.bounded_float(from: -20.0, to: 20.0),
+      qcheck.bounded_float(from: 0.5, to: 10.0),
+    ),
+    fn(drawn) {
+      let #(#(x, z, yaw), ahead, aside, size) = drawn
+      let pose = Pose(at: Point(x:, z:), yaw:)
+      let there = area.origin_of(centre: pose, ahead:, aside:)
+      list.each(
+        [Circle(radius: size), Box(width: size, length: size)],
+        fn(shape) {
+          assert area.select(
+              candidates: [Candidate(unit_id: 1, at: there, hit_radius: 0.0)],
+              centre: pose,
+              row: Row(
+                min_range: 0.0,
+                max_range: 1000.0,
+                degrees: 360.0,
+                target_count: 1,
+              ),
+              inside: InsideShapes([
+                Placement(shape:, ahead:, aside:, turn_degrees: 0.0),
+              ]),
+            )
+            == [1]
+            as "a fighter on the origin is inside a shape centred there"
+        },
+      )
+    },
+  )
+}

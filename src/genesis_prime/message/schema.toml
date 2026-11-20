@@ -2372,6 +2372,7 @@ evidence = "opcode.0x7ff"
 summary = "a unit starts a cast: the cast id, the Spell4 id and its root and parent, the caster, the caster's item level, the primary target, the field position and the yaw, the initial and telegraph positions, the own-cast bit and the creature-activate bit; the client shows the caster's cast bar when it has the caster, and starts the player's global cooldown when the caster is the player"
 gaps = [
   { area = "Cast start", missing = "what the client does with the root and parent Spell4 ids of a started cast: no use of them is read" },
+  { area = "Cast start", missing = "what retail's server put in the flags byte of an initial or telegraph position, and whether it anchored them to a unit: a creature's cast sends the unit's role bit (1 for the caster), the bit the telegraph rows and a spell's client missiles match, and no anchor unit, a choice the client's code does not settle" },
 ]
 fields = [
   { name = "cast_id", kind = "unsigned", bits = 32, evidence = "opcode.0x7ff", named_by = "opcode.0x7ff" },

@@ -40,6 +40,7 @@ import genesis_prime/game/quest
 import genesis_prime/game/quest_turn_in
 import genesis_prime/game/random_stat
 import genesis_prime/game/server_proxy
+import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan
 import genesis_prime/game/strike
 import genesis_prime/game/target_group
@@ -85,6 +86,7 @@ pub fn registry() -> List(Entry) {
     vendor_sale.gaps(),
     world_entry.gaps(),
     spell_plan.gaps(),
+    spell_area.gaps(),
     ticking.gaps(),
     forced_move.gaps(),
     unit_properties.gaps(),

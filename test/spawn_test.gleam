@@ -30,6 +30,7 @@
 import character_tables
 import fixture_tables
 import genesis_prime/content/refusal.{Refusal}
+import genesis_prime/game/area
 import genesis_prime/game/faction_level
 import genesis_prime/game/hit.{Blow, Worked}
 import genesis_prime/game/prerequisite
@@ -1916,6 +1917,67 @@ pub fn a_special_follows_its_gos_when_they_end_before_the_cast_time_test() -> Ni
     as "the delays 0, 2500 and 200 sum to 2700, below the cast time; the damage row 166493 (phaseFlags 4) is go 2"
   assert hold_ms == 1500
     as "Spell4Effects 166492: durationTime 1500, phaseFlags 0xffff0004 names go 2"
+}
+
+pub fn a_charge_carries_the_draws_the_anchor_and_the_aim_bit_of_its_spell_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Each case is a spell as a creature's charge, read from its rows: its anchor is how the
+  // client places its hit rows (flag 0x4000 or 0x1000: fixed where the 0x7ff puts them; neither:
+  // on the caster each frame), its aim bit is Spell4.propertyFlags 0x2 (55317: 0x800000,
+  // 85469: 0x40002, 52448: 0xc00000, 44466: 0xc00002), and its draws are the rows of
+  // Spell4Telegraph the client makes (TelegraphDamage 7880; 16212; 7178 and 7182, both 0x1000;
+  // 3985, flags 0x1000000).
+  let turret_charge =
+    spawn_support.sim_turret(
+      number: 1,
+      place: place_support.at(
+        world_id: 3460,
+        world_zone_id: 6009,
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+      ),
+    ).combat.attack.cast
+  let charge_of = fn(spell4_id) {
+    the_special_of(beast: special_beast(spell4_ids: [spell4_id])).attack.cast
+  }
+  [
+    #(
+      "Earthen Roar: a 0x4000 caster row, the aim not followed",
+      charge_of(55_317),
+      area.FixedAtCaster,
+      False,
+      [7880],
+    ),
+    #(
+      "the Sim-Turret's charge: a client-placed row, the aim followed",
+      turret_charge,
+      area.FollowsCaster,
+      True,
+      [16_212],
+    ),
+    #("52448: 0x1000 rows only", charge_of(52_448), area.FixedAtCaster, False, [
+      7178,
+      7182,
+    ]),
+    #(
+      "44466: a client-placed row, the aim followed",
+      charge_of(44_466),
+      area.FollowsCaster,
+      True,
+      [3985],
+    ),
+  ]
+  |> list.each(fn(found) {
+    let #(reason, cast, anchor, aims_at_target, draws) = found
+    let assert Charged(anchor: held, aims_at_target: aims, draws: drawn, ..) =
+      cast
+      as { reason <> ": the spell is a charge" }
+    assert held == anchor as { reason <> ": anchor" }
+    assert aims == aims_at_target as { reason <> ": aim bit" }
+    assert list.map(drawn, fn(draw) { draw.telegraph_damage_id }) == draws
+      as { reason <> ": draws" }
+  })
 }
 
 /// The properties of the spawn's creature with the multiplier of its Physical damage
