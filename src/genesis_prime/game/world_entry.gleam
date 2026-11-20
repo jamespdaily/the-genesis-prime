@@ -257,6 +257,7 @@ pub opaque type State {
     items: List(store.HeldItem),
     currencies: Currencies,
     quests: QuestLog,
+    action_sets: store.ActionSets,
   )
   /// The map is asked to take the character at `place`, with the movement it
   /// enters with: at a play, the saved place as the login whose epoch the store
@@ -269,7 +270,10 @@ pub opaque type State {
   /// are the items the character holds, which the Holocrypt's join keeps from the
   /// stay it leaves. `quests` is the quest log the character holds
   /// (genesis_prime/game/quest_log), which the Holocrypt's join keeps from the
-  /// stay it leaves as well. `buyback` is the list the player has to buy back
+  /// stay it leaves as well. `action_sets` is the slots of the bars the character saved
+  /// in the ability builder (genesis_prime/game/limited_action_set): the store's rows at a
+  /// play, the stay's own bars written as rows at the Holocrypt's join, which `joined` reads
+  /// against the loadout the map answers with. `buyback` is the list the player has to buy back
   /// (genesis_prime/game/vendor_sale): a play starts it empty and the Holocrypt's join
   /// keeps the stay's own, as the client keeps its Buyback tab across the world
   /// change (only a 0xBC replaces it).
@@ -285,7 +289,7 @@ pub opaque type State {
     items: List(store.HeldItem),
     currencies: Currencies,
     quests: QuestLog,
-    action_sets: limited_action_set.Saved,
+    action_sets: store.ActionSets,
     buyback: Buyback,
     map: MapId,
     stay: Stay,
@@ -333,6 +337,10 @@ pub type Joined {
   /// health is unknown: no unit of it is made, the connection is ended and the text,
   /// which names the level, is logged as an error.
   GearFault(text: String)
+  /// The character's saved action slots hold a row the table's checks cannot hold, which
+  /// the load never gives: no unit of it is made, the connection is ended and the text,
+  /// which names the row, is logged as an error.
+  ActionSlotFault(text: String)
 }
 
 /// A player in the world: its character as the store loaded it (which a join at
@@ -393,9 +401,10 @@ pub type Entered {
     /// The quest log the character holds (genesis_prime/game/quest_log): the
     /// connection saves it with the place and, at a play, sends it after 0x25E.
     quests: QuestLog,
-    /// The bars the player saved in the ability builder this session
-    /// (genesis_prime/game/limited_action_set): a play starts with none, the class's bar
-    /// shows, and the Holocrypt's join keeps them. They are not saved with the place.
+    /// The bars the player saved in the ability builder
+    /// (genesis_prime/game/limited_action_set): a play starts with the ones the store
+    /// loaded, none for a player who never saved (the class's bar shows), and the
+    /// Holocrypt's join keeps them. The connection saves them with the place.
     action_sets: limited_action_set.Saved,
     /// The spell buttons the client holds for the open cast objectives of the quest log
     /// (genesis_prime/game/objective `buttons`): what the connection last told it with
@@ -685,6 +694,7 @@ pub fn loaded(
         unset:,
         currencies:,
         quests:,
+        action_sets:,
       )
     ->
       Ok(case character.place {
@@ -716,6 +726,7 @@ pub fn loaded(
                     items:,
                     currencies: currency.from_held(held: currencies),
                     quests: log,
+                    action_sets:,
                     connection:,
                     stay:,
                     tables:,
@@ -733,6 +744,7 @@ pub fn loaded(
                     unset:,
                     currencies: currency.from_held(held: currencies),
                     quests: log,
+                    action_sets:,
                     tables:,
                   )
               }
@@ -747,6 +759,7 @@ pub fn loaded(
       items:,
       currencies:,
       quests:,
+      action_sets:,
       ..,
     ),
       store.ChargesFilled(answer:)
@@ -762,6 +775,7 @@ pub fn loaded(
             items:,
             currencies:,
             quests:,
+            action_sets:,
             connection:,
             stay:,
             tables:,
@@ -827,6 +841,7 @@ fn charges_asked(
   unset unset: List(store.UnsetItem),
   currencies currencies: Currencies,
   quests quests: QuestLog,
+  action_sets action_sets: store.ActionSets,
   tables tables: table_store.Tables,
 ) -> Loaded {
   let filled =
@@ -854,6 +869,7 @@ fn charges_asked(
           items: list.append(items, filled) |> in_sending_order,
           currencies:,
           quests:,
+          action_sets:,
         ),
         effects: [
           AskStore(request: store.FillCharges(
@@ -885,6 +901,7 @@ fn joining_a_play(
   items items: List(store.HeldItem),
   currencies currencies: Currencies,
   quests quests: QuestLog,
+  action_sets action_sets: store.ActionSets,
   connection connection: ConnectionId,
   stay stay: Stay,
   tables tables: table_store.Tables,
@@ -923,7 +940,7 @@ fn joining_a_play(
           items:,
           currencies:,
           quests:,
-          action_sets: limited_action_set.none(),
+          action_sets:,
           buyback: Buyback(next_id: 1, entries: []),
           connection:,
           stay:,
@@ -983,6 +1000,14 @@ pub fn joined(
             worn:,
             level: character.level,
             focus_pool: class_resource.focus_pool(resource:),
+          )
+          let book =
+            ability_book.book(tables:, loadout:, level: character.level)
+          use action_sets <- with_saved_bars(
+            tables:,
+            character:,
+            book:,
+            rows: action_sets,
           )
           let assert Ok(max_health) =
             gear.max_health(tables:, gear: worn, level: character.level)
@@ -1118,11 +1143,7 @@ pub fn joined(
                 loadout:,
                 level: character.level,
                 action_sets:,
-                book: ability_book.book(
-                  tables:,
-                  loadout:,
-                  level: character.level,
-                ),
+                book:,
               ),
               [player_path(character:)],
               control_at_entry(life:, unit_id:),
@@ -1208,6 +1229,35 @@ fn with_bases(
   case gear.bases(tables:, gear: worn, level:, focus_pool:) {
     Ok(bases) -> next(bases)
     Error(error) -> Ok(GearFault(text: gear.describe(error:)))
+  }
+}
+
+/// The bars the character has from its saved action slots, judged as at entry against the
+/// player's `book` and level, handed to `next`, or the fault that ends the connection when a
+/// saved row is outside the table's checks.
+fn with_saved_bars(
+  tables tables: table_store.Tables,
+  character character: Character,
+  book book: List(Spell4BaseId),
+  rows rows: store.ActionSets,
+  next next: fn(limited_action_set.Saved) -> Result(Joined, Nil),
+) -> Result(Joined, Nil) {
+  case
+    limited_action_set.entering(
+      unlocks: limited_action_set.unlocks(tables:),
+      level: character.level,
+      book:,
+      rows:,
+    )
+  {
+    Ok(saved) -> next(saved)
+    Error(error) ->
+      Ok(ActionSlotFault(
+        text: "a play of character "
+        <> int.to_string(character_number(character))
+        <> ", whose saved action slots hold a row the table's checks cannot: "
+        <> limited_action_set.describe_row(error:),
+      ))
   }
 }
 
@@ -1371,7 +1421,7 @@ pub fn rejoining(
     items: entered.items,
     currencies: entered.currencies,
     quests: entered.quests,
-    action_sets: entered.action_sets,
+    action_sets: limited_action_set.rows(saved: entered.action_sets),
     buyback: entered.buyback,
     connection:,
     stay:,
@@ -1394,7 +1444,7 @@ fn joining(
   items items: List(store.HeldItem),
   currencies currencies: Currencies,
   quests quests: QuestLog,
-  action_sets action_sets: limited_action_set.Saved,
+  action_sets action_sets: store.ActionSets,
   buyback buyback: Buyback,
   connection connection: ConnectionId,
   stay stay: Stay,
@@ -1585,8 +1635,8 @@ fn items_sent(
 
 /// The loadout's messages, in order: each ability and the innate, the tiers of the
 /// ability book (the bag and the alternates a surged press casts, `ability_book.book`),
-/// action set 0 with the bar the player has (the class's, or the one saved in the builder
-/// this session) and the innate's index.
+/// action set 0 with the bar the player has (the class's, or the one saved in the builder)
+/// and the innate's index.
 fn loadout_sent(
   character_number character_number: Int,
   loadout loadout: Loadout,

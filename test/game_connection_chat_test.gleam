@@ -31,7 +31,9 @@ import genesis_prime/step.{
   EndedBeforeAnswer, LogError, NoAnswerInTime, NotRunning, OwnEffect, OwnEvent,
   StoppedWaiting, Unwatch, Watch, WatchEnded, WatchId, Woken,
 }
-import genesis_prime/store.{CharacterLoaded, ForSelect, ForWorld, Listed}
+import genesis_prime/store.{
+  ActionSets, CharacterLoaded, ForSelect, ForWorld, Listed,
+}
 import genesis_prime/table/id.{Creature2Id, Spell4Id}
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_kind.{Kind}
@@ -758,18 +760,17 @@ pub fn the_whisper_numbers_count_for_the_connections_life_across_a_camp_and_a_ne
       taken:,
       outcome: step.Answer(
         FromStore(
-          ForWorld(
-            CharacterLoaded(
-              game_connection_support.world_character(),
-              character_support.epoch(1),
-              None,
-              None,
-              [],
-              [],
-              [],
-              [],
-            ),
-          ),
+          ForWorld(CharacterLoaded(
+            game_connection_support.world_character(),
+            character_support.epoch(1),
+            None,
+            None,
+            [],
+            [],
+            [],
+            [],
+            ActionSets(slots: []),
+          )),
         ),
       ),
     )

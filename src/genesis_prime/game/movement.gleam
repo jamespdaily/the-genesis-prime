@@ -8,7 +8,7 @@
 //// 0x637, 0x63A, 0xD5, 0x63B, 0xF2, 0xFB, 0xFC, 0x635, inside 0x38C
 ////                         ─▶ take         ─▶ the new state, or a refusal that ends the connection
 //// 0x637, decoded          ─▶ moves, moved ─▶ the place kept, or a refusal that ends the connection
-//// the 60 s timer          ─▶ save         ─▶ Ask store SavePlace(account, character, epoch, sequence, place, health, quests)
+//// the 60 s timer          ─▶ save         ─▶ Ask store SavePlace(account, character, epoch, sequence, place, health, quests, action_sets)
 //// the store's answer      ─▶ saved        ─▶ a log line when nothing was saved
 //// ```
 ////
@@ -84,9 +84,10 @@ import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/world_entry_options
 import genesis_prime/message/world_zone_changed
 import genesis_prime/store.{
-  type AccountId, type CharacterId, type MoveAnswer, type MoveRequest,
-  type QuestRow, type SessionEpoch, ExperienceRefused, HealthRefused,
-  NothingSaved, PlaceRefused, PlaceSaved, QuestLogRefused, SavePlace,
+  type AccountId, type ActionSets, type CharacterId, type MoveAnswer,
+  type MoveRequest, type QuestRow, type SessionEpoch, ActionSetRefused,
+  ExperienceRefused, HealthRefused, NothingSaved, PlaceRefused, PlaceSaved,
+  QuestLogRefused, SavePlace,
 }
 import gleam/bool
 import gleam/float
@@ -762,7 +763,8 @@ pub fn next_save(state state: State) -> #(State, Int) {
 /// numbered one above the last save this login asked, and the state that holds
 /// that number, with the `health` the player keeps (`player_life.saved_health`)
 /// and the `experience` and `level` it has and the `quests` rows of the quest
-/// log the player keeps (`quest_log.rows`). A save asked and never answered
+/// log the player keeps (`quest_log.rows`) and the `action_sets` slots of the bars
+/// it has saved (`limited_action_set.rows`). A save asked and never answered
 /// keeps its number, so a late answer is never taken for a newer save's.
 pub fn save(
   state state: State,
@@ -772,6 +774,7 @@ pub fn save(
   experience experience: Int,
   level level: Int,
   quests quests: List(QuestRow),
+  action_sets action_sets: ActionSets,
 ) -> #(State, MoveRequest) {
   let save_sequence = state.save_sequence + 1
   #(
@@ -786,13 +789,14 @@ pub fn save(
       experience:,
       level:,
       quests:,
+      action_sets:,
     ),
   )
 }
 
 /// What the store's answer to the save says: nothing for a saved place, a note
-/// for a save that changed nothing, and an error for a place, a quest row, a
-/// health or an experience the database refused.
+/// for a save that changed nothing, and an error for a place, a quest row, an
+/// action slot, a health or an experience the database refused.
 pub fn saved(answer answer: MoveAnswer) -> List(Effect) {
   case answer {
     PlaceSaved -> []
@@ -810,6 +814,12 @@ pub fn saved(answer answer: MoveAnswer) -> List(Effect) {
     QuestLogRefused(constraint:) -> [
       Fault(
         text: "the database refused a quest row of the log it was asked to save, by the constraint "
+        <> constraint,
+      ),
+    ]
+    ActionSetRefused(constraint:) -> [
+      Fault(
+        text: "the database refused a slot of the action sets it was asked to save, by the constraint "
         <> constraint,
       ),
     ]

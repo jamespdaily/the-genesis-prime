@@ -614,6 +614,7 @@ pub fn joining_holding_currencies(
           [],
           quests,
           currencies,
+          store.ActionSets(slots: []),
         )),
       ),
     ),
@@ -951,18 +952,17 @@ pub fn entered_stocking_with_quests(
       taken:,
       outcome: step.Answer(
         FromStore(
-          ForWorld(
-            CharacterLoaded(
-              character,
-              character_support.epoch(1),
-              None,
-              None,
-              list.append(world_entry_support.novice_items(character:), items),
-              [],
-              quests,
-              [HeldCurrency(currency_type_id: 1, amount: credits)],
-            ),
-          ),
+          ForWorld(CharacterLoaded(
+            character,
+            character_support.epoch(1),
+            None,
+            None,
+            list.append(world_entry_support.novice_items(character:), items),
+            [],
+            quests,
+            [HeldCurrency(currency_type_id: 1, amount: credits)],
+            store.ActionSets(slots: []),
+          )),
         ),
       ),
     )
@@ -1132,19 +1132,18 @@ pub fn save_asked_keeping(
   health health: Option(Int),
 ) -> Request {
   AskStore(
-    Move(
-      SavePlace(
-        account_id: AccountId(7),
-        character_id: CharacterId(42),
-        session_epoch: character_support.epoch(1),
-        save_sequence: sequence,
-        place:,
-        health:,
-        experience: 0,
-        level: 1,
-        quests: [],
-      ),
-    ),
+    Move(SavePlace(
+      account_id: AccountId(7),
+      character_id: CharacterId(42),
+      session_epoch: character_support.epoch(1),
+      save_sequence: sequence,
+      place:,
+      health:,
+      experience: 0,
+      level: 1,
+      quests: [],
+      action_sets: store.ActionSets(slots: []),
+    )),
   )
 }
 
@@ -1846,21 +1845,20 @@ pub fn entered_with_dev_commands(
       taken:,
       outcome: step.Answer(
         FromStore(
-          ForWorld(
-            CharacterLoaded(
-              character,
-              character_support.epoch(1),
-              None,
-              None,
-              list.append(world_entry_support.novice_items(character:), items),
-              [],
-              quests,
-              case credits {
-                0 -> []
-                _ -> [HeldCurrency(currency_type_id: 1, amount: credits)]
-              },
-            ),
-          ),
+          ForWorld(CharacterLoaded(
+            character,
+            character_support.epoch(1),
+            None,
+            None,
+            list.append(world_entry_support.novice_items(character:), items),
+            [],
+            quests,
+            case credits {
+              0 -> []
+              _ -> [HeldCurrency(currency_type_id: 1, amount: credits)]
+            },
+            store.ActionSets(slots: []),
+          )),
         ),
       ),
     )

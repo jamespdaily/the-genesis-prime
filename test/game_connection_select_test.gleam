@@ -39,11 +39,12 @@ import genesis_prime/step.{
   NotRunning, StoppedWaiting,
 }
 import genesis_prime/store.{
-  AccountId, Character, CharacterCreated, CharacterDeleted, CharacterId,
-  CharacterLoaded, CharacterRenamed, Created, Deleted, ForSelect, ForWorld,
-  ListCharacters, Listed, LoadCharacter, LookEntry, NameBreaksRule, NameTaken,
-  NewCharacter, NewNameBreaksRule, NewNameTaken, NoFreeSlot, NoSuchCharacter,
-  NotRenamable, NotTheAccounts, Renamed, Select, Unavailable, World,
+  AccountId, ActionSets, Character, CharacterCreated, CharacterDeleted,
+  CharacterId, CharacterLoaded, CharacterRenamed, Created, Deleted, ForSelect,
+  ForWorld, ListCharacters, Listed, LoadCharacter, LookEntry, NameBreaksRule,
+  NameTaken, NewCharacter, NewNameBreaksRule, NewNameTaken, NoFreeSlot,
+  NoSuchCharacter, NotRenamable, NotTheAccounts, Renamed, Select, Unavailable,
+  World,
 }
 import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
 import genesis_prime/world_map/map
@@ -285,18 +286,17 @@ pub fn a_play_of_a_character_with_no_saved_place_is_refused_the_same_way_and_the
       taken:,
       outcome: step.Answer(
         FromStore(
-          ForWorld(
-            CharacterLoaded(
-              no_place,
-              character_support.epoch(1),
-              None,
-              None,
-              [],
-              [],
-              [],
-              [],
-            ),
-          ),
+          ForWorld(CharacterLoaded(
+            no_place,
+            character_support.epoch(1),
+            None,
+            None,
+            [],
+            [],
+            [],
+            [],
+            ActionSets(slots: []),
+          )),
         ),
       ),
     )

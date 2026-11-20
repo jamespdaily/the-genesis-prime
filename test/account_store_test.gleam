@@ -35,12 +35,12 @@ import genesis_prime/login/guid
 import genesis_prime/service.{ToWorker}
 import genesis_prime/store.{
   type AccountId, type ActiveQuest, type QuestRow, Account, AccountFound,
-  AccountId, ActiveQuest, Character, CharacterCreated, CharacterDeleted,
-  CharacterId, CharacterLoaded, CharacterRenamed, CreateCharacter,
-  CreateForNoSuchAccount, Created, DeleteCharacter, DeleteItem, Deleted,
-  ExperienceRefused, FindAccount, ForItems, ForLogin, ForMove, ForSelect,
-  ForWorld, HealthRefused, HeldItem, ItemMade, ItemMove, ItemPlace, Items,
-  ItemsNotSaved, ItemsSaved, ListCharacters, Listed, LoadCharacter, Login,
+  AccountId, ActionSets, ActiveQuest, Character, CharacterCreated,
+  CharacterDeleted, CharacterId, CharacterLoaded, CharacterRenamed,
+  CreateCharacter, CreateForNoSuchAccount, Created, DeleteCharacter, DeleteItem,
+  Deleted, ExperienceRefused, FindAccount, ForItems, ForLogin, ForMove,
+  ForSelect, ForWorld, HealthRefused, HeldItem, ItemMade, ItemMove, ItemPlace,
+  Items, ItemsNotSaved, ItemsSaved, ListCharacters, Listed, LoadCharacter, Login,
   LookEntry, MergeItems, Move, MoveItems, NameBreaksRule, NameStands, NameTaken,
   NeedsRename, NewCharacter, NewItem, NewNameBreaksRule, NewNameTaken,
   NoFreeSlot, NoSuchAccount, NoSuchCharacter, NotRenamable, NotTheAccounts,
@@ -959,18 +959,17 @@ pub fn a_stored_character_with_world_0_loads_as_no_place_test() -> Nil {
       store:,
       request: World(LoadCharacter(account, CharacterId(character_id), 0)),
     )
-    == ForWorld(
-      CharacterLoaded(
-        character,
-        character_support.epoch(1),
-        None,
-        None,
-        [],
-        [],
-        [],
-        [],
-      ),
-    )
+    == ForWorld(CharacterLoaded(
+      character,
+      character_support.epoch(1),
+      None,
+      None,
+      [],
+      [],
+      [],
+      [],
+      ActionSets(slots: []),
+    ))
     as "the load reads the same row the same way, and raises the epoch of a character made at 0 to 1"
   account_store_support.stop(store)
 }
@@ -1043,37 +1042,36 @@ pub fn a_load_gives_the_accounts_character_with_its_saved_place_and_not_another_
       store:,
       request: World(LoadCharacter(account, CharacterId(mine), 0)),
     )
-    == ForWorld(
-      CharacterLoaded(
-        Character(
-          character_id: CharacterId(mine),
-          name: "Zed Qu",
-          gender: 1,
-          race_id: RaceId(3),
-          class_id: ClassId(12),
-          faction_id: 166,
-          level: 9,
-          path: 2,
-          place: Some(place_support.at(
-            world_id: 1387,
-            world_zone_id: 1100,
-            x: 1.5,
-            y: 2.5,
-            z: 3.5,
-          )),
-          look: [],
-          bones: [],
-          naming: NameStands,
-        ),
-        character_support.epoch(1),
-        None,
-        None,
-        [],
-        [],
-        [],
-        [],
+    == ForWorld(CharacterLoaded(
+      Character(
+        character_id: CharacterId(mine),
+        name: "Zed Qu",
+        gender: 1,
+        race_id: RaceId(3),
+        class_id: ClassId(12),
+        faction_id: 166,
+        level: 9,
+        path: 2,
+        place: Some(place_support.at(
+          world_id: 1387,
+          world_zone_id: 1100,
+          x: 1.5,
+          y: 2.5,
+          z: 3.5,
+        )),
+        look: [],
+        bones: [],
+        naming: NameStands,
       ),
-    )
+      character_support.epoch(1),
+      None,
+      None,
+      [],
+      [],
+      [],
+      [],
+      ActionSets(slots: []),
+    ))
     as "the row as character_support inserted it: the saved world, zone and position come with it, the epoch the load raised from 0 to 1, and no saved health: a character never saved enters at full health"
   assert account_store_support.ask(
       store:,
@@ -1352,19 +1350,18 @@ fn save_progress(
 ) -> store.Answer {
   account_store_support.ask(
     store:,
-    request: Move(
-      SavePlace(
-        account_id: account,
-        character_id: CharacterId(character_id),
-        session_epoch: character_support.epoch(epoch),
-        save_sequence: sequence,
-        place:,
-        health:,
-        experience:,
-        level:,
-        quests: [],
-      ),
-    ),
+    request: Move(SavePlace(
+      account_id: account,
+      character_id: CharacterId(character_id),
+      session_epoch: character_support.epoch(epoch),
+      save_sequence: sequence,
+      place:,
+      health:,
+      experience:,
+      level:,
+      quests: [],
+      action_sets: ActionSets(slots: []),
+    )),
   )
 }
 
@@ -2014,8 +2011,12 @@ pub fn every_constraint_the_worker_maps_exists_in_the_schema_by_that_name_test()
       "character_quest_kill_mask_fits_7_bits",
       "character_quest_active_has_its_kill_mask",
       "character_quest_kill_mask_has_six_slots",
+      "character_action_slot_set_is_one_of_four",
+      "character_action_slot_slot_is_one_of_twelve",
+      "character_action_slot_ability_fits_the_message",
+      "character_action_slot_one_place_per_ability",
     ]
-    as "the refusals the worker answers for: a name taken, a name that breaks rule 0, a health below 0, an experience below 0 and each check of a quest row"
+    as "the refusals the worker answers for: a name taken, a name that breaks rule 0, a health below 0, an experience below 0, each check of a quest row and each check of an action slot row"
   list.each(worker.mapped_constraints(), fn(name) {
     let assert Ok(returned) =
       pog.query(
@@ -3174,6 +3175,7 @@ fn save_log(
       experience: 0,
       level: 1,
       quests:,
+      action_sets: ActionSets(slots: []),
     )),
   )
 }

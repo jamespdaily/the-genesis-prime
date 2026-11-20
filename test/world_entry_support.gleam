@@ -111,6 +111,7 @@ pub fn loaded_seeing(
     saved_health:,
     saved_experience:,
     quests:,
+    action_sets: store.ActionSets(slots: []),
     visibility:,
   )
 }
@@ -131,6 +132,27 @@ pub fn loaded_with_unset(
     saved_health: None,
     saved_experience: None,
     quests: [],
+    action_sets: store.ActionSets(slots: []),
+    visibility: dict.new(),
+  )
+}
+
+/// What the store's answer to a play of the character leads to when the store holds
+/// these action slot rows for it.
+pub fn loaded_with_action_sets(
+  tables tables: table_store.Tables,
+  character character: Character,
+  action_sets action_sets: store.ActionSets,
+) -> #(world_entry.State, world_entry.Loaded) {
+  loaded_answer(
+    tables:,
+    character:,
+    items: novice_items(character:),
+    unset: [],
+    saved_health: None,
+    saved_experience: None,
+    quests: [],
+    action_sets:,
     visibility: dict.new(),
   )
 }
@@ -143,6 +165,7 @@ fn loaded_answer(
   saved_health saved_health: Option(Int),
   saved_experience saved_experience: Option(Int),
   quests quests: List(QuestRow),
+  action_sets action_sets: store.ActionSets,
   visibility visibility: Dict(Int, List(Prerequisite)),
 ) -> #(world_entry.State, world_entry.Loaded) {
   let assert Ok(body) = play_character.encode(PlayCharacter(character_id: 42))
@@ -166,6 +189,7 @@ fn loaded_answer(
         quests:,
         currencies: [],
         unset:,
+        action_sets:,
       ),
       connection: ConnectionId(1),
       stay: map_support.stay(count: 1),

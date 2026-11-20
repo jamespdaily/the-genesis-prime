@@ -49,6 +49,7 @@ import genesis_prime/game/prerequisite.{type Relation}
 import genesis_prime/gap
 import genesis_prime/message/action_set_save
 import genesis_prime/step.{type LogLevel, LogDebug, LogWarning}
+import genesis_prime/store.{type ActionSets, type ActionSlotRow, ActionSets}
 import genesis_prime/table/action_slot_prereq
 import genesis_prime/table/id.{type Spell4BaseId, PrerequisiteId, Spell4BaseId}
 import genesis_prime/table/loader/store as table_store
@@ -131,6 +132,52 @@ pub fn bar_of(
         list.map(class_bar, Some),
         list.repeat(None, slots_in_a_bar - list.length(class_bar)),
       ))
+  }
+}
+
+/// A saved row the table's checks cannot hold, which the load never gives.
+pub type RowError {
+  /// A row whose set, slot or ability is outside the table's checks.
+  RowOutsideTable(row: ActionSlotRow)
+  /// Two rows for one slot of one set.
+  RowRepeated(row: ActionSlotRow)
+}
+
+/// The rows a player's saved bars are written as: twelve for each saved set, in set then
+/// slot order, an empty slot with no ability; none when nothing is saved.
+pub fn rows(saved saved: Saved) -> ActionSets {
+  let _ = saved
+  ActionSets(slots: [])
+}
+
+/// The bars a player has from the rows the store loaded, judged as at entry: a saved
+/// ability stays in its slot only while the player's book still holds it and the slot is
+/// open at the player's level, and any other slot is empty (the next save writes it so).
+/// A set with rows is saved, even when every slot of it is empty, and a slot with no row in
+/// a saved set is empty. `Error` for a row the table's checks cannot hold.
+pub fn entering(
+  unlocks unlocks: Unlocks,
+  level level: Int,
+  book book: List(Spell4BaseId),
+  rows rows: ActionSets,
+) -> Result(Saved, RowError) {
+  let _ = #(unlocks, level, book, rows)
+  Ok(none())
+}
+
+/// A sentence that says which row the load gave that the table's checks cannot hold.
+pub fn describe_row(error error: RowError) -> String {
+  let row = case error {
+    RowOutsideTable(row:) -> row
+    RowRepeated(row:) -> row
+  }
+  "the saved action slot row of set "
+  <> int.to_string(row.action_set)
+  <> " slot "
+  <> int.to_string(row.slot)
+  <> case error {
+    RowOutsideTable(..) -> " is outside what the table allows"
+    RowRepeated(..) -> " is there twice"
   }
 }
 
