@@ -479,3 +479,47 @@ pub fn a_places_pose_is_its_ground_point_and_its_yaw_test() -> Nil {
   assert area.pose_of(place:) == Pose(at: Point(x: 12.5, z: -30.25), yaw: 1.25)
     as "the point on the ground (x and z) and the yaw; pitch, roll and the height play no part"
 }
+
+pub fn the_origin_of_a_placement_is_the_point_the_hit_measures_from_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The picture's entry names `area.origin_of` and the hit measures its shapes from the same
+  // point, so a fighter standing on it is inside a circle of any radius and a box centred
+  // there, whatever the pose and the row's offsets.
+  qcheck.given(
+    qcheck.tuple4(
+      qcheck.tuple3(
+        qcheck.bounded_float(from: -500.0, to: 500.0),
+        qcheck.bounded_float(from: -500.0, to: 500.0),
+        qcheck.bounded_float(from: -3.1, to: 3.1),
+      ),
+      qcheck.bounded_float(from: -20.0, to: 20.0),
+      qcheck.bounded_float(from: -20.0, to: 20.0),
+      qcheck.bounded_float(from: 0.5, to: 10.0),
+    ),
+    fn(drawn) {
+      let #(#(x, z, yaw), ahead, aside, size) = drawn
+      let pose = Pose(at: Point(x:, z:), yaw:)
+      let there = area.origin_of(centre: pose, ahead:, aside:)
+      list.each(
+        [Circle(radius: size), Box(width: size, length: size)],
+        fn(shape) {
+          assert area.select(
+              candidates: [Candidate(unit_id: 1, at: there, hit_radius: 0.0)],
+              centre: pose,
+              row: Row(
+                min_range: 0.0,
+                max_range: 1000.0,
+                degrees: 360.0,
+                target_count: 1,
+              ),
+              inside: InsideShapes([
+                Placement(shape:, ahead:, aside:, turn_degrees: 0.0),
+              ]),
+            )
+            == [1]
+            as "a fighter on the origin is inside a shape centred there"
+        },
+      )
+    },
+  )
+}

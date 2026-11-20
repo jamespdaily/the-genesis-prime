@@ -49,6 +49,12 @@
 //// - **Closest first.** Every area row of the level-1 abilities has `targetSelection`
 ////   1, and none strikes a dead unit (`Spell4AoeTargetConstraints.targetSelection`,
 ////   `Spell4ValidTargets.targetBitmask`).
+//// - **Where a creature special's hit is centred** is its anchor, one for the spell
+////   (`anchor_of`): its hit rows with TelegraphDamage flag 0x4000 or 0x1000 are drawn where
+////   the cast's 0x7ff puts them and stay there (`FixedAtCaster`), the others follow the
+////   caster (`FollowsCaster`), and a spell with both is refused (`PlacedApart`), so the hit is
+////   always where the picture is (`0x14054b1b0.fixed_placement`,
+////   `0x14054b1b0.follows_caster`). A player's cast keeps the caster's pose for every row.
 //// - **Which spells** are read: the spells of each level-1 ability's tree
 ////   (genesis_prime/game/spell_plan), its threshold stages (Spell4Thresholds) included,
 ////   a Proxy behind a target prerequisite excepted, since it is never started. A spell
@@ -56,7 +62,8 @@
 //// - **What fails the load:** a row the tree names that the tables lack; a
 ////   `targetSelection` other than 1; a valid-targets bitmask other than 0 on a spell
 ////   with an area row; a hit row placed on any unit but the caster (`targetTypeFlags`
-////   other than 1); a shape the rule does not build (1, 3, 5, 6, or 8 with a box that
+////   other than 1); a creature special's hit rows some fixed and some following the caster
+////   (`PlacedApart`); a shape the rule does not build (1, 3, 5, 6, or 8 with a box that
 ////   has a width or a length: the box's height, p4, is never tested); a damage effect
 ////   (type 8) aimed by a flag value not read; a formula that reads a parameter the
 ////   player's value does not (genesis_prime/game/damage `unread`: the weapon kinds 6
@@ -66,8 +73,9 @@
 ////   a spell's shapes hold for each of its gos.
 
 import genesis_prime/game/area.{
-  type Inside, type Placement, type Row, Box, Circle, Cone, InsideRow,
-  InsideShapes, Placement, Rectangle, Row,
+  type Anchor, type Inside, type Placement, type Row, Box, Circle, Cone,
+  FixedAtCaster, FollowsCaster, InsideRow, InsideShapes, Placement, Rectangle,
+  Row,
 }
 import genesis_prime/game/damage.{type Formula}
 import genesis_prime/game/effect_kind
@@ -75,6 +83,7 @@ import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{type Aim, type Spell}
 import genesis_prime/game/spend
 import genesis_prime/game/ticking
+import genesis_prime/gap
 import genesis_prime/table/id.{
   type Spell4EffectsId, type Spell4Id, Spell4AoeTargetConstraintsId,
   Spell4EffectsId, Spell4ValidTargetsId, TelegraphDamageId,
@@ -194,6 +203,14 @@ pub type AreaError {
   )
   /// A hit row's shape is not one the rule builds.
   ShapeNotBuilt(spell4_id: Int, telegraph_id: Int, shape: Int)
+  /// A creature special's hit rows are placed apart: one is drawn where the cast started
+  /// (flag 0x4000 or 0x1000) and another follows the caster, so no one centre is where the
+  /// picture is.
+  PlacedApart(
+    spell4_id: Int,
+    fixed_telegraph_id: Int,
+    following_telegraph_id: Int,
+  )
   /// A damage effect is aimed by a flag value not read.
   AimNotRead(spell4_id: Int, effect_id: Int, target_flags: Int)
   /// A damage effect's formula reads a parameter a player's value does not.
@@ -254,6 +271,14 @@ pub fn describe(error error: AreaError) -> String {
       <> " of shape "
       <> int.to_string(shape)
       <> ", which is not built"
+    PlacedApart(spell4_id:, fixed_telegraph_id:, following_telegraph_id:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a hit telegraph "
+      <> int.to_string(fixed_telegraph_id)
+      <> " drawn where the cast started and another, "
+      <> int.to_string(following_telegraph_id)
+      <> ", that follows the caster, which no one centre serves"
     AimNotRead(spell4_id:, effect_id:, target_flags:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -371,6 +396,7 @@ fn plan_error_of(
     | ValidTargetsNotAlive(..)
     | TelegraphNotOnCaster(..)
     | ShapeNotBuilt(..)
+    | PlacedApart(..)
     | AimNotRead(..)
     | FormulaNotRead(..)
     | TickingUntilRemoved(..)
@@ -524,6 +550,18 @@ pub fn hit_shapes_of(
   links links: Dict(Int, List(spell4_telegraph.Spell4Telegraph)),
   id id: Int,
 ) -> Result(List(Placement), AreaError) {
+  list.try_map(hit_rows_of(tables:, links:, id:), fn(row) {
+    placement_of(id:, row:)
+  })
+}
+
+/// The TelegraphDamage rows of the spell `id` that say who is hit, as `hit_shapes_of`
+/// chooses them.
+fn hit_rows_of(
+  tables tables: table_store.Tables,
+  links links: Dict(Int, List(spell4_telegraph.Spell4Telegraph)),
+  id id: Int,
+) -> List(telegraph_damage.TelegraphDamage) {
   let rows =
     dict.get(links, id)
     |> result.unwrap([])
@@ -537,7 +575,7 @@ pub fn hit_shapes_of(
     list.filter(rows, fn(row) {
       spell_effect.has_flag(flags: row.telegraph_damage_flags, bit: 0x40)
     })
-  let chosen = case twins {
+  case twins {
     [] -> {
       let drawn =
         list.filter(rows, fn(row) {
@@ -554,7 +592,32 @@ pub fn hit_shapes_of(
     }
     twins -> twins
   }
-  list.try_map(chosen, fn(row) { placement_of(id:, row:) })
+}
+
+/// Where the hit rows of a creature's spell `id` are drawn, so where its hit is centred:
+/// `FixedAtCaster` when each has flag 0x4000 or 0x1000 (the client draws it where the 0x7ff
+/// puts it), `FollowsCaster` when none has or the spell has no row (the client draws it on
+/// the caster each frame), and `PlacedApart` naming the first row of each when they differ
+/// (`0x14054b1b0.fixed_placement`).
+fn anchor_of(
+  tables tables: table_store.Tables,
+  links links: Dict(Int, List(spell4_telegraph.Spell4Telegraph)),
+  id id: Int,
+) -> Result(Anchor, AreaError) {
+  let #(fixed, following) =
+    list.partition(hit_rows_of(tables:, links:, id:), fn(row) {
+      spell_effect.has_flag(flags: row.telegraph_damage_flags, bit: 0x5000)
+    })
+  case fixed, following {
+    [], _ -> Ok(FollowsCaster)
+    _, [] -> Ok(FixedAtCaster)
+    [fixed, ..], [following, ..] ->
+      Error(PlacedApart(
+        spell4_id: id,
+        fixed_telegraph_id: fixed.id,
+        following_telegraph_id: following.id,
+      ))
+  }
 }
 
 fn placement_of(
@@ -850,15 +913,20 @@ fn inside_of(shapes shapes: List(Placement)) -> Inside {
   }
 }
 
+/// What a creature's spell strikes: the area row, how a unit counts as inside it (the same
+/// pair a player's cast selects by, `inside`) and the anchor its hit is centred by.
+pub type CreatureArea {
+  CreatureArea(row: Row, inside: Inside, anchor: Anchor)
+}
+
 /// The area of a spell read from its own rows, for a spell no player's ability tree
-/// holds, such as a creature's charge: the area row and how a unit counts as inside it,
-/// the same pair a player's cast selects by (`inside`). `None` for a spell with no
-/// `Spell4AoeTargetConstraints` row. A row the tables lack, or a shape the
-/// rule does not build, is the refusal.
+/// holds, such as a creature's charge. `None` for a spell with no
+/// `Spell4AoeTargetConstraints` row. A row the tables lack, a shape the rule does not
+/// build, or hit rows placed apart, is the refusal.
 pub fn area_of_spell(
   tables tables: table_store.Tables,
   spell4_id spell4_id: Spell4Id,
-) -> Result(Option(#(Row, Inside)), AreaError) {
+) -> Result(Option(CreatureArea), AreaError) {
   let id = spell4_id.value
   use row <- result.try(
     spell4.get(tables:, id: spell4_id)
@@ -868,12 +936,10 @@ pub fn area_of_spell(
   case area_row {
     None -> Ok(None)
     Some(area_row) -> {
-      use shapes <- result.try(hit_shapes_of(
-        tables:,
-        links: telegraph_links_by_spell(tables:),
-        id:,
-      ))
-      Ok(Some(#(area_row, inside_of(shapes:))))
+      let links = telegraph_links_by_spell(tables:)
+      use shapes <- result.try(hit_shapes_of(tables:, links:, id:))
+      use anchor <- result.map(anchor_of(tables:, links:, id:))
+      Some(CreatureArea(row: area_row, inside: inside_of(shapes:), anchor:))
     }
   }
 }
@@ -899,4 +965,14 @@ pub fn phase(
     return: Error(Nil),
   )
   Ok(phase_of(spell:, phase:, spent:))
+}
+
+/// What the area rule leaves undone.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Spell telegraphs",
+      missing: "a player's ability whose drawn caster row is placed by the server (two of the planned abilities have one) is sent no initial or telegraph position in its 0x7ff and 0x7fd, so the client draws none of that row; only a creature's special is sent them",
+    ),
+  ]
 }

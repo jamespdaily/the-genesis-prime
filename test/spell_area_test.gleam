@@ -24,7 +24,7 @@ import genesis_prime/game/area.{
 import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
 import genesis_prime/game/spell_area.{
-  AimNotRead, FormulaNotRead, MultiplierNotFinite, Once, Periodic,
+  AimNotRead, FormulaNotRead, MultiplierNotFinite, Once, Periodic, PlacedApart,
   SelectionNotClosest, ShapeNotBuilt, TelegraphNotOnCaster, TickingNoTick,
   TickingUntilRemoved, ValidTargetsNotAlive,
 }
@@ -391,6 +391,34 @@ pub fn a_shape_the_rule_does_not_build_fails_the_load_naming_it_test() -> Nil {
       == Error(ShapeNotBuilt(spell4_id: 58_591, telegraph_id: 168, shape:))
       as "TelegraphDamage.damageShapeEnum: 1 ring, 3, 5 pie and 6 are not built"
   })
+}
+
+pub fn a_spell_whose_caster_rows_are_not_placed_alike_is_refused_by_name_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4 54838's rows 7814 and 7815 both have flag 0x1000, so the client draws both where the
+  // 0x7ff puts them and the hit is centred on that pose (`0x14054b1b0.fixed_placement`). Synthetic:
+  // no client spell holds one fixed and one following caster row, so row 7815 is changed to
+  // flags 0x0, which the client places on the caster each frame (`0x14054b1b0.follows_caster`):
+  // no one centre is where both pictures are.
+  let assert Ok(Some(spell_area.CreatureArea(anchor:, ..))) =
+    spell_area.area_of_spell(
+      tables: fixture_tables.shared(),
+      spell4_id: Spell4Id(54_838),
+    )
+    as "the unchanged spell loads"
+  assert anchor == area.FixedAtCaster as "both rows are fixed"
+  use tables <- fixture_tables.changed(
+    table: "TelegraphDamage",
+    id: 7815,
+    with: [#("telegraphDamageFlags", Integer(0))],
+  )
+  assert spell_area.area_of_spell(tables:, spell4_id: Spell4Id(54_838))
+    == Error(PlacedApart(
+      spell4_id: 54_838,
+      fixed_telegraph_id: 7814,
+      following_telegraph_id: 7815,
+    ))
+    as "the refusal names the spell and a row of each placing"
 }
 
 pub fn a_damage_multiplier_that_is_not_a_finite_float_fails_the_load_naming_the_effect_test() -> Nil {

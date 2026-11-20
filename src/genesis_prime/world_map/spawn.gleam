@@ -86,9 +86,11 @@ import genesis_prime/game/objective_link
 import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/rating.{type Formulas}
 import genesis_prime/game/spell_area
+import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{type PlanError, type Spell}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/target_group
+import genesis_prime/game/telegraph_entries
 import genesis_prime/game/unit_properties.{type Properties}
 import genesis_prime/game/vendor.{type Vendors}
 import genesis_prime/message/damage_type
@@ -1373,7 +1375,9 @@ fn defence_of(
 /// strikethrough from its properties, its run speed (Creature2DisplayInfo.runLand
 /// times property 100, `0x1405b45e0`) and its reach (the spell's `targetMaxRange`
 /// plus `hit_radius`). A spell with a cast time (`Spell4.castTime` above 0) is a charge:
-/// it carries that time and its area (`spell_area.area_of_spell`), its gos and its hold
+/// it carries that time and its area and anchor (`spell_area.area_of_spell`), the telegraph rows
+/// the client makes of it (`telegraph_entries.draws_of`), whether its aim follows the target
+/// (`Spell4.propertyFlags` bit 0x2), its gos and its hold
 /// (`timeline_of`), its reach is the smaller of the area row's `maxRange` and the farthest
 /// point of its hit shapes (`area.farthest_of`: 85469 and 86978 have a `targetMaxRange` of
 /// 0 and a 30 m rectangle, 55317 a cone to 5.5 under a `maxRange` of 10), and an area it
@@ -1464,7 +1468,7 @@ fn attack_of(
         Error(error) -> Error(AttackAreaNotRead(creature_id:, error:))
         Ok(None) ->
           Error(ChargeHasNoArea(creature_id:, spell4_id: spell4_id.value))
-        Ok(Some(#(area, inside))) -> {
+        Ok(Some(spell_area.CreatureArea(row: area_row, inside:, anchor:))) -> {
           use #(gos, hold_ms) <- result.map(timeline_of(
             catalog:,
             creature_id:,
@@ -1473,8 +1477,17 @@ fn attack_of(
           ))
           creature_life.Charged(
             cast_ms: spell.cast_time,
-            area:,
+            area: area_row,
             inside:,
+            anchor:,
+            draws: telegraph_entries.draws_of(
+              tables: catalog.tables,
+              spell4_id:,
+            ),
+            aims_at_target: spell_effect.has_flag(
+              flags: spell.property_flags,
+              bit: 0x2,
+            ),
             gos:,
             hold_ms:,
           )

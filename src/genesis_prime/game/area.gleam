@@ -26,7 +26,9 @@
 ////   (`Spell4.58591.area`: Kick's cone is narrower than its 180 degrees.)
 //// - **A hit shape** is a telegraph's damage shape placed on the caster: its
 ////   offsets, x and z negated before the turn so a positive z is ahead
-////   (`0x14054b1b0`), and its turn. A unit is inside when its hit circle touches the
+////   (`0x14054b1b0`), and its turn, which adds to the centre's yaw as a turn of the
+////   unit itself does (`0x14054b1b0.shape_turn`, `0x14054b1b0.aside_offset`). The
+////   point the shape is measured from is `origin_of`. A unit is inside when its hit circle touches the
 ////   shape: the distance from its centre to the nearest point of the shape is at most
 ////   its hit radius. The client sizes a drawn shape by the viewer's own radius
 ////   (`0x14054d170` case 4, `0x14054da10`) and tests no unit against a shape
@@ -34,8 +36,7 @@
 ////   whatever flag 0x200 says, is the server's choice. The shapes are a circle, a
 ////   rectangle or box (the nearest point is the centre clamped to it, so a corner is
 ////   round) and a cone, an annular sector from its inner to its outer radius over its
-////   angle, which has no point at its tip when its inner radius is above 0. The
-////   direction of a row's turn is not read; every shape built so far has none.
+////   angle, which has no point at its tip when its inner radius is above 0.
 //// - **Distance and order** are horizontal, from centre to centre; the vertical
 ////   range is -1 for every row and the shapes lie on the ground
 ////   (`Spell4AoeTargetConstraints.targetVerticalRange`). Closest is the one order
@@ -81,6 +82,20 @@ pub type Shape {
   Cone(inner: Float, outer: Float, degrees: Float)
   /// Shape 7: from the placement, `length` ahead of it.
   Rectangle(width: Float, length: Float)
+}
+
+/// Where a creature special's hit is centred, which is where its picture is drawn
+/// (genesis_prime/game/telegraph_entries): a spell has one anchor, read from its hit rows'
+/// flags (genesis_prime/game/spell_area `anchor_of`).
+pub type Anchor {
+  /// Rows with neither 0x4000 nor 0x1000: the client draws them on the caster each frame
+  /// from its own place and facing, so the hit is centred on the caster where it stands at
+  /// the strike (`0x14054b1b0.follows_caster`).
+  FollowsCaster
+  /// Rows with 0x4000 or 0x1000: the client draws them where the server put them at the
+  /// cast's start, so the hit is centred on the pose the cast started at
+  /// (`0x14054b1b0.fixed_placement`).
+  FixedAtCaster
 }
 
 /// A shape placed on the caster: where it lies against the caster's place and
@@ -198,27 +213,31 @@ fn is_inside(
   }
 }
 
+/// The point a row's shape is measured from when it is placed on a unit at `centre`: the
+/// unit's point moved `ahead` along its facing and `aside` to the side a positive x offset
+/// lies on, (-cos yaw, sin yaw). The telegraph's entry names this point for a row the client
+/// does not offset itself, and the hit measures from it, so the picture and the hit agree.
+pub fn origin_of(
+  centre centre: Pose,
+  ahead ahead: Float,
+  aside aside: Float,
+) -> Point {
+  let facing_x = float.negate(maths.sin(centre.yaw))
+  let facing_z = float.negate(maths.cos(centre.yaw))
+  Point(
+    x: centre.at.x +. ahead *. facing_x -. aside *. maths.cos(centre.yaw),
+    z: centre.at.z +. ahead *. facing_z +. aside *. maths.sin(centre.yaw),
+  )
+}
+
 /// Whether the unit's hit circle overlaps the placed shape.
 fn in_shape(
   candidate candidate: Candidate,
   centre centre: Pose,
   placement placement: Placement,
 ) -> Bool {
-  let facing_x = float.negate(maths.sin(centre.yaw))
-  let facing_z = float.negate(maths.cos(centre.yaw))
   let origin =
-    Point(
-      x: centre.at.x
-        +. placement.ahead
-        *. facing_x
-        -. placement.aside
-        *. maths.cos(centre.yaw),
-      z: centre.at.z
-        +. placement.ahead
-        *. facing_z
-        +. placement.aside
-        *. maths.sin(centre.yaw),
-    )
+    origin_of(centre:, ahead: placement.ahead, aside: placement.aside)
   let yaw = centre.yaw +. maths.degrees_to_radians(placement.turn_degrees)
   let shape_x = float.negate(maths.sin(yaw))
   let shape_z = float.negate(maths.cos(yaw))

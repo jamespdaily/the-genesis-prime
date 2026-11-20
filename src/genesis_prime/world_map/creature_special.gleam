@@ -18,7 +18,9 @@
 ////   `RowId` holds one integer, so the sentence carries the Spell4.
 //// - **The load refuses** a Spell4 the client lacks; a cooldown below the strike deadline
 ////   (`strike_tell.deadline_ms`), since two rounds would be open at once; and a spell
-////   `creature_attack.special_checked` refuses: no cast time, no readable area, an effect
+////   `creature_attack.special_checked` refuses: no cast time, no readable area (hit rows
+////   placed apart, some drawn where the cast starts and some on the caster, are not
+////   readable: `spell_area.PlacedApart`), an effect
 ////   type other than 8 (damage) and 35 (NpcExecutionDelay), no damage phase, several, or
 ////   one before the last go, a phase flag naming no go, an empty or non-increasing go
 ////   schedule, a delay row the plan leaves out (aimed at another unit, or with no duration)

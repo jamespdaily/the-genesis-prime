@@ -54,7 +54,9 @@ import genesis_prime/message/movement_timed_path.{MovementTimedPath}
 import genesis_prime/message/relayed_movement
 import genesis_prime/message/spell_damage_description
 import genesis_prime/message/spell_go
+import genesis_prime/message/spell_initial_position.{SpellInitialPosition}
 import genesis_prime/message/spell_started
+import genesis_prime/message/spell_telegraph_position.{SpellTelegraphPosition}
 import genesis_prime/message/start_movement
 import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
 import genesis_prime/message/unit_dialog_open.{UnitDialogOpen}
@@ -2650,6 +2652,78 @@ pub fn a_struck_rootbrute_grimspore_casts_earthen_roar_with_a_cast_bar_two_gos_a
       as "then its auto-attack, the special being on cooldown"
     world_support.stop(world: roaring.world)
   })
+}
+
+/// The 0x7ff as the client reads it: encoded and decoded by the generated codec.
+fn read_by_the_client(
+  start start: spell_started.SpellStarted,
+) -> spell_started.SpellStarted {
+  let assert Ok(body) = spell_started.encode(start)
+    as "the cast start's lists fit the wire's counts"
+  let assert Ok(read) = spell_started.decode(body)
+    as "the client's reader takes the body"
+  read
+}
+
+pub fn a_viewer_of_a_rootbrute_grimspores_cast_gets_the_positions_the_client_draws_its_cone_from_test() -> Nil {
+  use <- owned_test.run(90_000)
+  // Earthen Roar's row 7880 has TelegraphDamage flags 0x105000 and targetTypeFlags 1: the client
+  // draws it only at a telegraph position of (7880, the caster), found through the caster's
+  // initial position (`0x140546e60`, `spell.telegraph_position`). The row has no offset or
+  // rotation, so both entries are the creature's own pose, which the 0x7ff's own position and
+  // yaw carry (the entries' flags byte is the caster's role bit 1, the anchor 0). Player 2
+  // arrives while the cast bar runs and is sent the same positions; the gos and the finish
+  // follow, and the hit is by the cone the picture shows: the player on the creature is struck.
+  let roaring = roaring_fight()
+  let received_2 = world_support.connection(world: roaring.world, id: 2)
+  driven_time.advance(time: roaring.time, ms: 1500)
+  let start =
+    read_by_the_client(start: next_cast_started(received: roaring.received))
+  assert start.initial_positions
+    == [
+      SpellInitialPosition(
+        unit_id: roaring.unit_id,
+        target_flags: 1,
+        position: start.position,
+        yaw: start.yaw,
+        anchor_unit_id: 0,
+      ),
+    ]
+    as "the caster's initial position, at its pose"
+  assert start.telegraph_positions
+    == [
+      SpellTelegraphPosition(
+        telegraph_damage_id: 7880,
+        unit_id: roaring.unit_id,
+        target_flags: 1,
+        position: start.position,
+        yaw: start.yaw,
+        anchor_unit_id: 0,
+      ),
+    ]
+    as "the entry the cone is drawn from: row 7880 on the caster, at the same pose"
+  driven_time.advance(time: roaring.time, ms: 500)
+  let _player = world_watch_support.join(run: roaring.run, connection: 2)
+  let late = read_by_the_client(start: next_cast_started(received: received_2))
+  assert late.cast_id == start.cast_id
+    && late.initial_positions == start.initial_positions
+    && late.telegraph_positions == start.telegraph_positions
+    as "a viewer arriving mid-cast is sent the same cast and the same positions"
+  driven_time.advance(time: roaring.time, ms: 2000)
+  let first = next_cast_went(received: roaring.received)
+  assert first.phase == 0 && first.cast_id == start.cast_id
+    as "the first go follows as before"
+  driven_time.advance(time: roaring.time, ms: 500)
+  let key = next_strike_told(received: roaring.received)
+  assert key.occasion == strike_tell.AtGo(phase: 1) && key.unit_id == 10
+    as "the player on the creature, inside the cone drawn, is told to take the hit"
+  answer(roaring:, key:)
+  let second = next_cast_went(received: roaring.received)
+  assert second.phase == 1
+    && list.map(second.targets, fn(target) { target.unit_id }) == [10]
+    as "the strike go lists the player"
+  next_cast_finished(received: roaring.received, cast_id: start.cast_id)
+  world_support.stop(world: roaring.world)
 }
 
 pub fn a_player_outside_the_cone_sees_the_cast_and_takes_nothing_test() -> Nil {

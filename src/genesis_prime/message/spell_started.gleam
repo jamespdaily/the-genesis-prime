@@ -158,5 +158,9 @@ pub fn gaps() -> List(gap.Entry) {
       area: "Cast start",
       missing: "what the client does with the root and parent Spell4 ids of a started cast: no use of them is read",
     ),
+    gap.Entry(
+      area: "Cast start",
+      missing: "what retail's server put in the flags byte of an initial or telegraph position, and whether it anchored them to a unit: a creature's cast sends the unit's role bit (1 for the caster), the bit the telegraph rows and a spell's client missiles match, and no anchor unit, a choice the client's code does not settle",
+    ),
   ]
 }
