@@ -7,7 +7,7 @@
 //// client                          rule                              asks
 //// connects                     ◀─ hello 0x3, bare
 ////                              ◀─ the planted frame, when the dev start sets one
-//// 0x592 in 0x244               ─▶ build 16042? else 0x63d 19
+//// 0x592 in 0x244               ─▶ build 16042? else 0x63d 19; the unset word 0? else the end
 ////                                                                ─▶ hand-off: Take(GameToken)
 ////   Taken(holder), UserId is the holder's   ─▶ session key from the seed
 ////                                                                ─▶ hand-off: Put(SessionKey)
@@ -29,6 +29,11 @@
 ////   12, "NCSoft login service finish timeout", with a warning, when the
 ////   hand-off gives no answer, since the failure is the server's
 ////   (opcode.0x63d).
+//// - **The login request's unset word** is 0: no client code writes the
+////   global it is read from. A request holding another value is from no
+////   client, so the connection ends with an error line and nothing
+////   written; it is checked after the build, since the evidence is of
+////   build 16042 (`opcode.0x592.unset_word`).
 //// - **Ciphers.** The hello and the ping's pong travel bare; every other
 ////   frame each way travels in the wrapper (0x244 from the client, 0x76 to it)
 ////   under the client's base key (genesis_prime/connection/encrypted_frame).
@@ -370,7 +375,9 @@ fn unhandled(
   )
 }
 
-/// The client's login request: a build other than 16042 is refused; else the
+/// The client's login request: a build other than 16042 is refused; else a
+/// word no client code writes ends the connection (`opcode.0x592.unset_word`,
+/// checked after the build because its evidence is of build 16042); else the
 /// game token it shows is taken from the hand-off.
 fn login_requested(
   session session: Session,
@@ -381,17 +388,29 @@ fn login_requested(
     AwaitingLoginRequest ->
       case request.build == build {
         False -> refuse(session:, reason: reason_version_mismatch, before: [])
-        True -> {
-          let assert Ok(user_id) = guid.from_wire(request.user_id)
-            as "the request's UserId is 16 bytes"
-          let assert Ok(token) = guid.from_wire(request.game_token)
-            as "the request's game token is 16 bytes"
-          ask(
-            session: Session(..session, status: TakingToken(user_id:)),
-            now:,
-            request: AskHandOff(Take(GameToken(token:))),
-          )
-        }
+        True ->
+          case
+            client_connection.written(
+              message_id: login_request.message_id,
+              field: "the word",
+              value: request.unset_word,
+              only: [0],
+            )
+          {
+            Error(unwritten) ->
+              end_for(session, client_connection.describe_unwritten(unwritten:))
+            Ok(Nil) -> {
+              let assert Ok(user_id) = guid.from_wire(request.user_id)
+                as "the request's UserId is 16 bytes"
+              let assert Ok(token) = guid.from_wire(request.game_token)
+                as "the request's game token is 16 bytes"
+              ask(
+                session: Session(..session, status: TakingToken(user_id:)),
+                now:,
+                request: AskHandOff(Take(GameToken(token:))),
+              )
+            }
+          }
       }
     TakingToken(..) | KeepingSessionKey(..) | HandedOff(..) ->
       unhandled(session, login_request.message_id)

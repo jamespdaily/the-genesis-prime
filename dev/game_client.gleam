@@ -150,15 +150,17 @@ pub fn client_bytes(
   bytes
 }
 
-/// The body of 0x58F: the value from the hand-off (0), the 16-byte session
-/// key, a 64-bit 0, the account name and the 32-bit 3 (opcode.0x58f).
+/// The body of 0x58F: the account id of the 0x03DB the client was handed, the
+/// 16-byte session key, a 64-bit 0, the account name and the 32-bit 3
+/// (opcode.0x58f).
 pub fn hello_reply_body(
+  account_id account_id: Int,
   session_key session_key: BitArray,
   account_name account_name: String,
 ) -> BitArray {
   let assert Ok(body) =
     game_hello_reply.encode(GameHelloReply(
-      account_id: 0,
+      account_id:,
       session_key:,
       zero: 0,
       account_name:,
@@ -169,13 +171,14 @@ pub fn hello_reply_body(
 }
 
 /// The bytes of 0x58F inside 0x244 under the base key.
-pub fn hello_reply(
+fn hello_reply(
+  account_id account_id: Int,
   session_key session_key: BitArray,
   account_name account_name: String,
 ) -> BitArray {
   client_bytes(
     message_id: game_hello_reply.message_id,
-    body: hello_reply_body(session_key:, account_name:),
+    body: hello_reply_body(account_id:, session_key:, account_name:),
     cipher: cipher.base(),
   )
 }
@@ -215,25 +218,33 @@ fn open(port: Int, limit: Limit) -> mug.Socket {
 /// the cipher from the session key.
 fn answer_hello(
   socket socket: mug.Socket,
+  account_id account_id: Int,
   session_key session_key: BitArray,
   account_name account_name: String,
   limit limit: Limit,
 ) -> Game {
   let assert Ok(Nil) =
-    mug.send(socket, hello_reply(session_key:, account_name:))
+    mug.send(socket, hello_reply(account_id:, session_key:, account_name:))
     as "the server closed the connection before 0x58F"
   new(socket:, cipher: session_cipher(session_key:), limit:)
 }
 
-/// Connects, reads the hello and answers it. The reads of the game it gives wait
-/// by `limit`.
+/// Connects, reads the hello and answers it with the account id of the 0x03DB
+/// the client was handed. The reads of the game it gives wait by `limit`.
 pub fn connect(
   port port: Int,
+  account_id account_id: Int,
   session_key session_key: BitArray,
   account_name account_name: String,
   limit limit: Limit,
 ) -> Game {
-  answer_hello(socket: open(port, limit), session_key:, account_name:, limit:)
+  answer_hello(
+    socket: open(port, limit),
+    account_id:,
+    session_key:,
+    account_name:,
+    limit:,
+  )
 }
 
 /// Sends a message inside 0x244 under the session cipher.
@@ -271,15 +282,66 @@ pub fn world_body(
   carried
 }
 
-/// Sends a world message as the client does: inside 0x038C, whose first byte is
-/// the 5-bit value 3 of SendWorldMessage (opcode.0x38c), inside 0x244 under the
-/// session cipher.
+/// The ids the client sends through SendWorldMessageKind0B, at the kind 11
+/// (0x1403f4740; `opcode.0x38c.send_kind`).
+const world_ids_at_kind_11 = [
+  0x01BA, 0x01BD, 0x01BE, 0x01C3, 0x01CD, 0x01CE, 0x01CF, 0x01D0, 0x01D2, 0x01D4,
+  0x0398, 0x03B3, 0x03B4, 0x03B7, 0x03BC, 0x03BD, 0x03BF, 0x03C1, 0x03C2, 0x03C7,
+  0x03C8, 0x0406, 0x0408, 0x0411, 0x0412, 0x0428, 0x042B, 0x042E, 0x0446, 0x044A,
+  0x045C, 0x0463, 0x0490, 0x04B1, 0x0512, 0x0513, 0x0515, 0x0518, 0x052A, 0x052C,
+  0x052D, 0x052F, 0x0538, 0x0546, 0x0549, 0x054B, 0x057C, 0x0597, 0x059C, 0x0693,
+  0x0719, 0x071B, 0x076E, 0x076F, 0x07B4, 0x07B6, 0x07CC, 0x0959,
+]
+
+/// The ids the client sends on the game connection through 0x140016010, also at
+/// the kind 11 (`opcode.0x38c.send_kind`).
+const game_ids_at_kind_11 = [
+  0x03F2, 0x078F, 0x0799, 0x079A, 0x079E, 0x0828, 0x0839,
+]
+
+/// The ids the client sends on the game connection through SendGameMessageKind13,
+/// at the kind 19 (0x1400161d0; `opcode.0x38c.send_kind`).
+const game_ids_at_kind_19 = [
+  0x0233, 0x0397, 0x039B, 0x039D, 0x039E, 0x03A1, 0x03A2, 0x03A7, 0x03AC, 0x03AF,
+  0x03CD, 0x03D3, 0x03D4, 0x03E7, 0x03F1, 0x0770, 0x07C6, 0x0823, 0x0825, 0x082A,
+  0x082C, 0x082D, 0x082E,
+]
+
+/// The 5-bit kind the client writes in 0x038C for a message id
+/// (`opcode.0x38c.send_kind`): 19 for the ids of SendGameMessageKind13, 11 for
+/// those of SendWorldMessageKind0B and of 0x140016010, and 3 for every other id,
+/// which is SendWorldMessage's. No id goes through two senders, and an id no sender
+/// writes goes at 3.
+pub fn world_send_kind(message_id message_id: Int) -> Int {
+  case
+    list.contains(game_ids_at_kind_19, message_id),
+    list.contains(world_ids_at_kind_11, message_id)
+    || list.contains(game_ids_at_kind_11, message_id)
+  {
+    True, _ -> 19
+    False, True -> 11
+    False, False -> 3
+  }
+}
+
+/// The body of 0x38C the client sends for a world message: the kind of the
+/// sender it sends this id through (`world_send_kind`), then the message's whole
+/// frame.
+pub fn world_message_body(
+  message_id message_id: Int,
+  body body: BitArray,
+) -> BitArray {
+  world_body(kind: world_send_kind(message_id:), message_id:, body:)
+}
+
+/// Sends a world message as the client does: inside 0x038C
+/// (`world_message_body`), inside 0x244 under the session cipher.
 pub fn send_world(
   game game: Game,
   message_id message_id: Int,
   body body: BitArray,
 ) -> Nil {
-  send(game:, message_id: 0x038C, body: world_body(kind: 3, message_id:, body:))
+  send(game:, message_id: 0x038C, body: world_message_body(message_id:, body:))
 }
 
 /// Presses the ability held at `bag_index`, as the client's action bar does

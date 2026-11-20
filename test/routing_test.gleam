@@ -17,6 +17,7 @@
 
 import code_rule/source.{SourceFile}
 import code_rule/syntax
+import genesis_prime/client_connection.{Unwritten}
 import genesis_prime/game/camp
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/character_select
@@ -313,4 +314,31 @@ pub fn each_report_and_window_request_is_taken_at_its_stages_test() -> Nil {
     assert routing.route(stage, InsideWorldMessage, 0x0241) == Error(Nil)
       as "0x0241 inside 0x038C is not what the client sends"
   })
+}
+
+pub fn send_kinds_the_client_writes_are_taken_and_every_other_is_refused_test() -> Nil {
+  use <- owned_test.run(5000)
+  // `opcode.0x38c.send_kind`: the four senders write 3 (0x1403f4900), 11
+  // (0x1403f4740 and 0x140016010) and 19 (0x1400161d0); the field has 5 bits.
+  let taken = [3, 11, 19]
+  let kinds =
+    int.range(from: 0, to: 32, with: [], run: fn(kinds, kind) {
+      [kind, ..kinds]
+    })
+  list.each(kinds, fn(kind) {
+    let expected = case list.contains(taken, kind) {
+      True -> Ok(Nil)
+      False ->
+        Error(Unwritten(message_id: 0x038C, field: "the kind", value: kind))
+    }
+    assert routing.send_kind_written(send_kind: kind) == expected
+      as { "0x038C's kind " <> int.to_string(kind) }
+  })
+}
+
+pub fn the_refusal_says_the_kind_test() -> Nil {
+  use <- owned_test.run(5000)
+  let assert Error(unwritten) = routing.send_kind_written(send_kind: 4)
+  assert client_connection.describe_unwritten(unwritten:)
+    == "0x038C holds the kind 4 (0x4), which the client never writes"
 }

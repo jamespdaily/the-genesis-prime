@@ -53,6 +53,7 @@ import genesis_prime/game/connection/state.{
   Summoning, TakingSessionKey, TurningIn, WaitingToClaim,
 } as connection_state
 import genesis_prime/game/connection/world as connection_world
+import genesis_prime/game/hello_reply
 import genesis_prime/hand_off.{type Holder}
 import genesis_prime/message/disconnect_reason.{
   AccountDisconnected, LostUserServer,
@@ -61,6 +62,7 @@ import genesis_prime/step.{
   type Now, type Outcome, type TimerId, type WatchId, LogInfo, LogWarning,
   OwnEffect, Sessions, StartTimer, TimerId, Unwatch, Watch, WatchId,
 }
+import genesis_prime/store.{type AccountId}
 import gleam/list
 
 /// How long a connection waits before it claims again after Sessions ended or
@@ -89,11 +91,21 @@ const claim_timer = TimerId(1)
 pub fn key_taken(
   session session: Session,
   now now: Now,
+  account_id account_id: AccountId,
   outcome outcome: Outcome(Answer),
 ) -> client_connection.Handled(Session) {
   case outcome {
     step.Answer(FromHandOff(hand_off.Taken(holder:))) ->
-      claim(session:, now:, holder:, resume: ResumeSelect, retries: 0)
+      case hello_reply.names_handed_off(named: account_id, holder:) {
+        Ok(Nil) ->
+          claim(session:, now:, holder:, resume: ResumeSelect, retries: 0)
+        Error(refusal) ->
+          connection_state.end_for(
+            session:,
+            now:,
+            text: hello_reply.describe(refusal:),
+          )
+      }
     step.Answer(FromHandOff(hand_off.NoHolder)) ->
       connection_state.told(
         session:,
@@ -262,7 +274,7 @@ pub fn sessions_sent(
     | account_session.TakenOver, LeavingMap(..)
     -> taken_over(session, now)
     account_session.TakenOver, AwaitingHelloReply
-    | account_session.TakenOver, TakingSessionKey
+    | account_session.TakenOver, TakingSessionKey(..)
     ->
       connection_state.end_for(
         session:,
@@ -316,7 +328,7 @@ pub fn own_watch_ended(
     | SavingPlace(..), _
     | LeavingMap(..), _
     | AwaitingHelloReply, _
-    | TakingSessionKey, _
+    | TakingSessionKey(..), _
     ->
       connection_state.end_for(
         session:,
@@ -374,7 +386,7 @@ pub fn claim_wait_over(
     | SavingPlace(..)
     | LeavingMap(..)
     | AwaitingHelloReply
-    | TakingSessionKey ->
+    | TakingSessionKey(..) ->
       connection_state.end_for(
         session:,
         now:,

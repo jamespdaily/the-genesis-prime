@@ -6,9 +6,34 @@
 //// - `opcode.0x241`: the client sends 0x0241 with an empty body and waits for
 ////   no answer.
 
+import genesis_prime/message/statistic_event.{type StatisticEvent}
+import gleam/list
+
 /// One body the client sent: its message id, the bytes, and where it was seen.
 pub type Recorded {
   Recorded(message_id: Int, body: BitArray, what: String, seen_in: String)
+}
+
+/// The recorded 0x023D with an empty text: the interface reload event 513.
+pub fn empty_text_event() -> BitArray {
+  let assert Ok(Recorded(body:, ..)) =
+    list.find(recorded(), fn(recorded) {
+      recorded.message_id == 0x023D
+      && recorded.what
+      == "the interface reload event with an empty text, 51 bytes"
+    })
+  body
+}
+
+/// The recorded event with an empty text, with the fields `change` sets
+/// different.
+pub fn statistic_event_changed(
+  change change: fn(StatisticEvent) -> StatisticEvent,
+) -> BitArray {
+  let assert Ok(recorded) = statistic_event.decode(empty_text_event())
+  let assert Ok(body) = statistic_event.encode(change(recorded))
+    as "the message the client's recorded body decodes to encodes again"
+  body
 }
 
 /// Every body of the thirteen messages the client was seen to send, one or

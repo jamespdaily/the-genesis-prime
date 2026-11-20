@@ -226,11 +226,10 @@ pub type Refusal {
   UnknownSpeedSetting(setting: Int)
   /// A kind the client's own code never sends (opcode.0x637.sent_kinds).
   UnsentKind(kind: Int)
-  /// A value the client's own code never writes in a kind it does send:
-  /// `field` names it in the words of the log line (opcode.0x637.kinds_3_to_6,
-  /// opcode.0x637.kinds_10_13, opcode.0x637.kind_18, opcode.0x637.kind_20,
-  /// opcode.0x637.kind_25).
-  UnwrittenValue(kind: Int, field: String, value: Int)
+  /// A value the client's own code never writes in a kind it does send; its
+  /// field names the kind (opcode.0x637.kinds_3_to_6, opcode.0x637.kinds_10_13,
+  /// opcode.0x637.kind_18, opcode.0x637.kind_20, opcode.0x637.kind_25).
+  NotWritten(unwritten: client_connection.Unwritten)
   /// A body the client's own reader would refuse.
   NotDecoded(undecoded: client_connection.Undecoded)
 }
@@ -681,8 +680,13 @@ fn written(
   value value: Int,
   only only: List(Int),
 ) -> Result(Nil, Refusal) {
-  use <- bool.guard(when: list.contains(only, value), return: Ok(Nil))
-  Error(UnwrittenValue(kind:, field:, value:))
+  client_connection.written(
+    message_id: player_movement.message_id,
+    field: "kind " <> int.to_string(kind) <> "'s " <> field,
+    value:,
+    only:,
+  )
+  |> result.map_error(NotWritten)
 }
 
 /// The float the bits of a command of `kind` hold, or why the command is
@@ -742,16 +746,7 @@ pub fn describe(refusal refusal: Refusal) -> String {
       "0x0637 holds a command of kind "
       <> int.to_string(kind)
       <> ", which the client never sends"
-    UnwrittenValue(kind:, field:, value:) ->
-      "0x0637 holds kind "
-      <> int.to_string(kind)
-      <> "'s "
-      <> field
-      <> " "
-      <> int.to_string(value)
-      <> " (0x"
-      <> int.to_base16(value)
-      <> "), which the client never writes"
+    NotWritten(unwritten:) -> client_connection.describe_unwritten(unwritten:)
     NotDecoded(undecoded:) -> client_connection.describe_undecoded(undecoded:)
   }
 }

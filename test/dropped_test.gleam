@@ -18,11 +18,11 @@
 ////   sittings.
 //// - The recorded bodies of `dropped_support`.
 
-import dropped_support.{Recorded}
+import dropped_support
 import fixture_tables
+import genesis_prime/client_connection.{Unwritten}
 import genesis_prime/game/dropped.{
-  EventNamesAnotherCharacter, EventTextTooLong, InputFlagsNotSent,
-  OptionTypeNotSent, SharedChallengeNotABool,
+  EventNamesAnotherCharacter, EventTextTooLong, NotWritten,
 }
 import genesis_prime/message/statistic_event.{StatisticEvent}
 import genesis_prime/table/game_formula
@@ -55,7 +55,8 @@ const messages = [
 /// event with an empty text (its 6 bits, 10-bit event id and six 64-bit values),
 /// then a text of this many units, each the letter A.
 fn statistic_event_with_text(units units: Int) -> BitArray {
-  let assert Ok(before_text) = bit_array.slice(empty_text_event(), 0, 50)
+  let assert Ok(before_text) =
+    bit_array.slice(dropped_support.empty_text_event(), 0, 50)
   let text =
     list.fold(list.repeat(Nil, units), <<>>, fn(text, _) {
       <<text:bits, 0x41, 0x00>>
@@ -69,16 +70,6 @@ fn statistic_event_with_text(units units: Int) -> BitArray {
       <<before_text:bits, low:size(8), { units / 128 }:size(8), text:bits>>
     }
   }
-}
-
-fn empty_text_event() -> BitArray {
-  let assert Ok(Recorded(body:, ..)) =
-    list.find(dropped_support.recorded(), fn(recorded) {
-      recorded.message_id == 0x023D
-      && recorded.what
-      == "the interface reload event with an empty text, 51 bytes"
-    })
-  body
 }
 
 /// The character the recorded bodies were sent by: the 0x07DD of that
@@ -100,16 +91,27 @@ fn take(
 /// The recorded event with an empty text, with the character id it names
 /// changed.
 fn statistic_event_of(character_id character_id: Int) -> BitArray {
-  let assert Ok(recorded) = statistic_event.decode(empty_text_event())
-  let assert Ok(body) =
-    statistic_event.encode(StatisticEvent(..recorded, character_id:))
-    as "the message the client's recorded body decodes to encodes again"
-  body
+  dropped_support.statistic_event_changed(fn(recorded) {
+    StatisticEvent(..recorded, character_id:)
+  })
+}
+
+/// The refusal of a value of 0x012B the client never writes.
+fn option_not_written(
+  field field: String,
+  value value: Int,
+) -> dropped.Refusal {
+  NotWritten(Unwritten(message_id: 0x012B, field:, value:))
+}
+
+/// The refusal of a value of 0x023D the client never writes.
+fn event_not_written(field field: String, value value: Int) -> dropped.Refusal {
+  NotWritten(Unwritten(message_id: 0x023D, field:, value:))
 }
 
 pub fn a_statistic_event_naming_another_character_is_refused_test() -> Nil {
   use <- owned_test.run(10_000)
-  assert statistic_event.decode(empty_text_event())
+  assert statistic_event.decode(dropped_support.empty_text_event())
     == Ok(
       StatisticEvent(
         category: 35,
@@ -160,7 +162,8 @@ pub fn values_the_client_would_not_send_are_refused_test() -> Nil {
       }
   })
   // 0x023D: the event text limit is GameFormula row 2375's dataint02.
-  assert statistic_event_with_text(units: 0) == empty_text_event()
+  assert statistic_event_with_text(units: 0)
+    == dropped_support.empty_text_event()
     as "the body built here with no text is the recorded body of the event with none"
   assert take(
       message: dropped.StatisticEvent,
@@ -226,7 +229,7 @@ pub fn values_the_client_would_not_send_are_refused_test() -> Nil {
     as "the client's GameFormula holds row 2375"
   // 0x012B: the types and values a sender writes.
   assert take(message: dropped.ClientOption, body: <<2, 0, 0, 0, 0, 0, 0, 0>>)
-    == Error(OptionTypeNotSent(2))
+    == Error(option_not_written(field: "the option type", value: 2))
     as "opcode.0x12b: the senders write type 0 or 1"
   assert take(message: dropped.ClientOption, body: <<
       0xFF,
@@ -238,23 +241,93 @@ pub fn values_the_client_would_not_send_are_refused_test() -> Nil {
       0,
       0,
     >>)
-    == Error(OptionTypeNotSent(0xFFFFFFFF))
+    == Error(option_not_written(field: "the option type", value: 0xFFFFFFFF))
   assert take(message: dropped.ClientOption, body: <<1, 0, 0, 0, 2, 0, 0, 0>>)
-    == Error(SharedChallengeNotABool(2))
+    == Error(option_not_written(field: "type 1's value", value: 2))
     as "opcode.0x12b: type 1 is the bool of SetSharedChallengePreference"
   assert take(message: dropped.ClientOption, body: <<1, 0, 0, 0, 1, 0, 0, 0>>)
     == Ok(Nil)
     as "the bool true"
   assert take(message: dropped.ClientOption, body: <<0, 0, 0, 0, 0, 0, 0, 0>>)
-    == Error(InputFlagsNotSent(0))
+    == Error(option_not_written(field: "type 0's input flags", value: 0))
     as "opcode.0x12b: type 0 always has the input flag 1 set"
   assert take(message: dropped.ClientOption, body: <<0, 0, 0, 0, 2, 0, 0, 0>>)
-    == Error(InputFlagsNotSent(2))
+    == Error(option_not_written(field: "type 0's input flags", value: 2))
     as "flag 2 alone leaves flag 1 clear"
   assert take(message: dropped.ClientOption, body: <<0, 0, 0, 0, 0x11, 0, 0, 0>>)
-    == Error(InputFlagsNotSent(0x11))
+    == Error(option_not_written(field: "type 0's input flags", value: 0x11))
     as "a bit above 8 has no flag"
   assert take(message: dropped.ClientOption, body: <<0, 0, 0, 0, 0x0F, 0, 0, 0>>)
     == Ok(Nil)
     as "flags 1, 2, 4 and 8 together are the largest the senders write"
+}
+
+pub fn statistic_event_values_the_client_never_writes_are_refused_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // `opcode.0x23d.category` and `opcode.0x23d.zero_values`: the category is 35
+  // and the 2nd and 6th values are 0 from every sender.
+  let rows = [
+    #(
+      fn(event) { StatisticEvent(..event, category: 34) },
+      event_not_written(field: "the category", value: 34),
+      "the category is 35 from every sender",
+    ),
+    #(
+      fn(event) { StatisticEvent(..event, category: 0) },
+      event_not_written(field: "the category", value: 0),
+      "no sender writes category 0",
+    ),
+    #(
+      fn(event) { StatisticEvent(..event, zero_value_2: 1) },
+      event_not_written(field: "the second value", value: 1),
+      "the 2nd value is 0 from every sender",
+    ),
+    #(
+      fn(event) { StatisticEvent(..event, zero_value_6: 1) },
+      event_not_written(field: "the sixth value", value: 1),
+      "the 6th value is 0 from every sender",
+    ),
+    #(
+      fn(event) { StatisticEvent(..event, category: 34, character_id: 14) },
+      event_not_written(field: "the category", value: 34),
+      "the values are checked before the character, so a character other than the connection's does not hide them",
+    ),
+  ]
+  list.each(rows, fn(row) {
+    let #(change, refusal, why) = row
+    assert take(
+        message: dropped.StatisticEvent,
+        body: dropped_support.statistic_event_changed(change),
+      )
+      == Error(refusal)
+      as why
+  })
+  // The ids with emitters, with category 35, are taken.
+  list.each(
+    [499, 502, 503, 504, 505, 506, 507, 508, 509, 510, 512, 513],
+    fn(id) {
+      assert take(
+          message: dropped.StatisticEvent,
+          body: dropped_support.statistic_event_changed(fn(event) {
+            StatisticEvent(..event, event_id: id)
+          }),
+        )
+        == Ok(Nil)
+        as {
+          "opcode.0x23d.events: event "
+          <> int.to_string(id)
+          <> " has an emitter"
+        }
+    },
+  )
+}
+
+pub fn each_statistic_refusal_says_what_the_client_sent_test() -> Nil {
+  use <- owned_test.run(10_000)
+  assert dropped.describe(event_not_written(field: "the category", value: 34))
+    == "0x023D holds the category 34 (0x22), which the client never writes"
+  assert dropped.describe(event_not_written(field: "the second value", value: 1))
+    == "0x023D holds the second value 1 (0x1), which the client never writes"
+  assert dropped.describe(event_not_written(field: "the sixth value", value: 1))
+    == "0x023D holds the sixth value 1 (0x1), which the client never writes"
 }

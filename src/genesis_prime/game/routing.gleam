@@ -31,6 +31,7 @@
 ////   player in the world, and 0x241 on its own in character select and in the
 ////   world.
 
+import genesis_prime/client_connection
 import genesis_prime/game/camp
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/character_select
@@ -45,6 +46,7 @@ import genesis_prime/game/quest
 import genesis_prime/game/quest_turn_in
 import genesis_prime/game/vendor_purchase
 import genesis_prime/game/vendor_sale
+import genesis_prime/gap
 import genesis_prime/message/ability_hold
 import genesis_prime/message/camp_finished
 import genesis_prime/message/camp_request
@@ -531,4 +533,34 @@ pub fn message_ids(arrival arrival: Arrival) -> List(Int) {
       False -> Error(Nil)
     }
   })
+}
+
+/// The values of 0x038C's 5-bit kind the client writes: 3 from the sender of
+/// the world messages, 11 from the two senders of the second group and 19 from
+/// the sender of the third, which carries the store catalog request that opens
+/// every login (`opcode.0x38c.send_kind`).
+const send_kinds = [3, 11, 19]
+
+/// Whether the kind of a 0x038C is one the client writes, or the refusal that
+/// says it is not. Character select and the world share the one game
+/// connection, so one set serves both stages.
+pub fn send_kind_written(
+  send_kind send_kind: Int,
+) -> Result(Nil, client_connection.Unwritten) {
+  client_connection.written(
+    message_id: world_message.message_id,
+    field: "the kind",
+    value: send_kind,
+    only: send_kinds,
+  )
+}
+
+/// What the routing leaves unchecked in 0x038C, for the coverage measure.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "World messages",
+      missing: "A 0x038C is not refused for a kind that does not match the message it carries: the client sends each message id at one kind (chat and whispers at 11, the store catalog request at 19), and the server takes any message at any of the three kinds.",
+    ),
+  ]
 }

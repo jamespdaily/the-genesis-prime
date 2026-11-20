@@ -88,6 +88,7 @@ pub fn a_sitting_records_each_sts_auth_and_game_connection_test() -> Nil {
   let game =
     game_client.connect(
       port: ports.game_port,
+      account_id: handed.account_id,
       session_key: handed.session_key,
       account_name: vector.name,
       limit: socket_read.Open,

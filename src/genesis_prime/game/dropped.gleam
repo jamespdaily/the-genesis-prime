@@ -23,8 +23,10 @@
 ////   row 2375's dataint02, which the client's sender reads as the limit and
 ////   does not send past (`opcode.0x23d`). Its character id is refused when it
 ////   is not the id of the character the connection plays: every recorded send
-////   names it (`opcode.0x23d`). The category and the event id are read and
-////   not checked.
+////   names it (`opcode.0x23d`). Its category is refused when it is not 35
+////   (`opcode.0x23d.category`) and its 2nd and 6th 64-bit values when they are
+////   not 0 (`opcode.0x23d.zero_values`). The event id and the other values are
+////   read and not checked (`gaps`).
 //// - **0x0180's profile** is read and not checked: what a value means is not
 ////   read, and no scanbot is made to compare it with (`opcode.0x180`).
 //// - **0x0570's key set id** is read and not checked: the player's key sets
@@ -34,7 +36,8 @@
 //// - **A signed 32-bit field of 0x23C** is read as unsigned 32 bits: the bits
 ////   are the same, and nothing is done with the value.
 
-import genesis_prime/client_connection.{type Undecoded}
+import genesis_prime/client_connection.{type Undecoded, type Unwritten}
+import genesis_prime/gap
 import genesis_prime/message/bit_stream
 import genesis_prime/message/client_option
 import genesis_prime/message/credd_exchange_request
@@ -104,12 +107,11 @@ pub type Refusal {
   /// A statistics event that names a character other than the one the connection
   /// plays (`own` is `None` when it has none in the world).
   EventNamesAnotherCharacter(named: Int, own: Option(Int))
-  /// An option type no sender writes.
-  OptionTypeNotSent(option_type: Int)
-  /// A shared-challenge preference that is not 0 or 1.
-  SharedChallengeNotABool(value: Int)
-  /// Input flags with flag 1 clear or a bit above flag 8 set.
-  InputFlagsNotSent(value: Int)
+  /// A value no sender writes: a statistics event's category or one of its
+  /// two zero values (`opcode.0x23d.category`, `opcode.0x23d.zero_values`), an
+  /// option type, a shared-challenge preference that is not 0 or 1, or input
+  /// flags with flag 1 clear or a bit above flag 8 set (`opcode.0x12b`).
+  NotWritten(unwritten: Unwritten)
 }
 
 /// The message taken: `Ok(Nil)` when the body is one the client sends, and the
@@ -140,6 +142,7 @@ pub fn take(
       |> client_connection.decoded(message_id: statistic_event.message_id)
       |> result.map_error(NotDecoded)
       |> result.try(fn(event) {
+        use Nil <- result.try(event_values_written(event))
         use Nil <- result.try(event_names_own_character(
           named: event.character_id,
           own: character_id,
@@ -186,6 +189,38 @@ fn decoded(
   |> result.replace(Nil)
 }
 
+/// The category and the two values the client's emitters always write as 0
+/// (`opcode.0x23d.category`, `opcode.0x23d.zero_values`).
+fn event_values_written(
+  event: statistic_event.StatisticEvent,
+) -> Result(Nil, Refusal) {
+  use Nil <- result.try(
+    written(
+      message_id: statistic_event.message_id,
+      field: "the category",
+      value: event.category,
+      only: [event_category],
+    ),
+  )
+  use Nil <- result.try(
+    written(
+      message_id: statistic_event.message_id,
+      field: "the second value",
+      value: event.zero_value_2,
+      only: [0],
+    ),
+  )
+  written(
+    message_id: statistic_event.message_id,
+    field: "the sixth value",
+    value: event.zero_value_6,
+    only: [0],
+  )
+}
+
+/// The category every sender of 0x023D writes (`opcode.0x23d.category`).
+const event_category = 35
+
 /// The event names the character the connection plays: the client's first
 /// 64-bit value is its own character id in every recorded send
 /// (`opcode.0x23d`).
@@ -212,18 +247,44 @@ fn event_text_within_limit(
 }
 
 /// The types and values a sender of 0x012B writes: type 0 with the input flags
-/// (flag 1 always set, 2, 4 and 8 as the settings are), type 1 with a bool.
+/// (flag 1 always set, 2, 4 and 8 as the settings are), type 1 with a bool
+/// (`opcode.0x12b`).
 fn option_sent(option: client_option.ClientOption) -> Result(Nil, Refusal) {
-  case option.option_type, option.value {
-    0, flags ->
-      case flags >= 1 && flags <= 15 && int.is_odd(flags) {
-        True -> Ok(Nil)
-        False -> Error(InputFlagsNotSent(value: flags))
-      }
-    1, 0 | 1, 1 -> Ok(Nil)
-    1, value -> Error(SharedChallengeNotABool(value:))
-    option_type, _ -> Error(OptionTypeNotSent(option_type:))
+  use Nil <- result.try(
+    written(
+      message_id: client_option.message_id,
+      field: "the option type",
+      value: option.option_type,
+      only: [0, 1],
+    ),
+  )
+  case option.option_type {
+    0 ->
+      written(
+        message_id: client_option.message_id,
+        field: "type 0's input flags",
+        value: option.value,
+        only: [1, 3, 5, 7, 9, 11, 13, 15],
+      )
+    _ ->
+      written(
+        message_id: client_option.message_id,
+        field: "type 1's value",
+        value: option.value,
+        only: [0, 1],
+      )
   }
+}
+
+/// Whether a value is one the client writes, as this module's refusal.
+fn written(
+  message_id message_id: Int,
+  field field: String,
+  value value: Int,
+  only only: List(Int),
+) -> Result(Nil, Refusal) {
+  client_connection.written(message_id:, field:, value:, only:)
+  |> result.map_error(NotWritten)
 }
 
 /// A sentence that says what the client sent that is refused, for the log.
@@ -244,18 +305,7 @@ pub fn describe(refusal refusal: Refusal) -> String {
         Some(own) -> "the connection plays character " <> int.to_string(own)
         None -> "the connection has no character in the world"
       }
-    OptionTypeNotSent(option_type:) ->
-      "0x012B has option type "
-      <> int.to_string(option_type)
-      <> ": the client sends type 0 or 1"
-    SharedChallengeNotABool(value:) ->
-      "0x012B type 1 has value "
-      <> int.to_string(value)
-      <> ": the client sends 0 or 1"
-    InputFlagsNotSent(value:) ->
-      "0x012B type 0 has input flags "
-      <> int.to_string(value)
-      <> ": the client always sets flag 1 and no flag above 8"
+    NotWritten(unwritten:) -> client_connection.describe_unwritten(unwritten:)
   }
 }
 
@@ -266,6 +316,17 @@ pub fn requirements() -> List(table_store.Requirement) {
     formula_requirement.row_present(
       from_table: "the server's event text limit",
       id: event_text_formula,
+    ),
+  ]
+}
+
+/// What the rule leaves unchecked in the client's reports and requests, for the
+/// coverage measure.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Dropped messages",
+      missing: "A 0x23D is not refused for an event id other than 499, 502 to 510, 512 and 513 (the ids the client's emitters send; 500, 501 and 511 have none in the client's code that was found), for a text on an event other than 508 and 512, or for a third, fourth or fifth value the client's emitter would not send.",
     ),
   ]
 }

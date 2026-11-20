@@ -214,6 +214,7 @@ pub fn play(
   let game =
     game_client.connect(
       port: ports.game_port,
+      account_id: handed.account_id,
       session_key: handed.session_key,
       account_name: account.login_name,
       limit: answer_within,
@@ -300,6 +301,7 @@ pub fn log_in(
   let game =
     game_client.connect(
       port: ports.game_port,
+      account_id: handed.account_id,
       session_key: handed.session_key,
       account_name: account.login_name,
       limit: answer_within,

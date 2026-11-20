@@ -61,7 +61,9 @@
 ////   read are read under the session key
 ////   (vector.0x14003827c.session_fold). The first client message must be
 ////   0x058F, and only one is taken: another first message, or a second 0x058F,
-////   is logged as an error and ends the connection.
+////   is logged as an error and ends the connection. Its 64-bit value and last
+////   value are checked before the ask, and its account id against the holder
+////   when the hand-off answers (genesis_prime/game/hello_reply).
 //// - **Reads during an ask.** Frames after the one that asked stay in the
 ////   bytes read and are taken once the answer comes, so 0x07E0 is taken after
 ////   the hand-off's and Sessions' answers, and 0x038C and 0x0241 after the
@@ -109,7 +111,8 @@
 ////   frame (0x14007e180, opcode.0x38c): every message the client sends in the
 ////   world is inside one (0x1403f4900 nests 0x637 in it). The inner message is
 ////   routed by the table, and logged as unhandled under its own id when it has
-////   no row at the stage. A body that holds no whole frame, or
+////   no row at the stage. A kind other than 3, 11 and 19
+////   (`opcode.0x38c.send_kind`), a body that holds no whole frame, or
 ////   bytes after it, is one the client never writes, and ends the connection.
 //// - **Network messages** are answered before any wrapper is read: a ping 0
 ////   gets a pong 1 (opcode.0x0), a pong or close notice nothing
@@ -180,6 +183,7 @@ import genesis_prime/game/connection/viewers as connection_viewers
 import genesis_prime/game/connection/visibility_check
 import genesis_prime/game/connection/world as connection_world
 import genesis_prime/game/departures
+import genesis_prime/game/hello_reply
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
 import genesis_prime/game/routing
@@ -198,6 +202,7 @@ import genesis_prime/step.{
   type Outcome, type TimerId, type WatchId, Effects, LogDebug, LogWarning,
   OwnEffect, OwnEvent, Stopping, TimerFired, WatchEnded, Woken, Write,
 }
+import genesis_prime/store.{AccountId}
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/int
 import gleam/list
@@ -445,7 +450,7 @@ fn settled(
 /// Whether an ask is in flight, so the frames after the one that asked wait.
 fn asking(status: Status) -> Bool {
   case status {
-    TakingSessionKey
+    TakingSessionKey(..)
     | ClaimingSession(..)
     | WaitingToClaim(..)
     | EnteringWorld(..)
@@ -683,8 +688,9 @@ fn procs_after_movement(
 /// (opcode.0x38c), which is every message the client sends in the world. The
 /// routing table says which feature takes the inner message with the player in
 /// the world (genesis_prime/game/routing), and any other is logged as unhandled
-/// under its own id. A body that holds no whole frame, or bytes after it, is
-/// one the client never writes, and ends the connection.
+/// under its own id. A kind the client never writes (genesis_prime/game/routing),
+/// a body that holds no whole frame, or bytes after it, are ones the client never
+/// writes, and end the connection.
 fn world_carried(
   session session: Session,
   now now: Now,
@@ -701,14 +707,23 @@ fn world_carried(
         )),
       )
     Ok(carried) ->
-      case frame.parse(carried.inner_frame) {
-        Error(error) ->
+      case
+        routing.send_kind_written(send_kind: carried.send_kind),
+        frame.parse(carried.inner_frame)
+      {
+        Error(unwritten), _ ->
+          connection_state.end_for(
+            session:,
+            now:,
+            text: client_connection.describe_unwritten(unwritten:),
+          )
+        Ok(Nil), Error(error) ->
           connection_state.end_for(
             session:,
             now:,
             text: "0x038C holds no whole frame: " <> frame.describe(error),
           )
-        Ok(whole) ->
+        Ok(Nil), Ok(whole) ->
           case connection_state.standing(session.status) {
             Present(holder:, entered:) ->
               case
@@ -911,26 +926,41 @@ fn hello_replied(
         text: "the game hello reply 0x058F does not decode: "
           <> bit_stream.describe_decode(error:),
       )
-    Ok(reply) -> {
-      let assert Ok(key) = guid.from_wire(reply.session_key)
-        as "the reply's session key is 16 bytes"
-      case rekeyed(session_key: reply.session_key) {
-        Error(error) ->
+    Ok(reply) ->
+      case hello_reply.written(reply:) {
+        Error(refusal) ->
           connection_state.end_for(
             session:,
             now:,
-            text: "the session key makes no cipher: "
-              <> describe_key_error(error),
+            text: hello_reply.describe(refusal:),
           )
-        Ok(keyed) ->
-          connection_state.ask(
-            session: Session(..session, cipher: keyed, status: TakingSessionKey),
-            now:,
-            request: AskHandOff(Take(SessionKey(key:))),
-            before: [],
-          )
+        Ok(Nil) -> {
+          let assert Ok(key) = guid.from_wire(reply.session_key)
+            as "the reply's session key is 16 bytes"
+          case rekeyed(session_key: reply.session_key) {
+            Error(error) ->
+              connection_state.end_for(
+                session:,
+                now:,
+                text: "the session key makes no cipher: "
+                  <> describe_key_error(error),
+              )
+            Ok(keyed) ->
+              connection_state.ask(
+                session: Session(
+                  ..session,
+                  cipher: keyed,
+                  status: TakingSessionKey(account_id: AccountId(
+                    reply.account_id,
+                  )),
+                ),
+                now:,
+                request: AskHandOff(Take(SessionKey(key:))),
+                before: [],
+              )
+          }
+        }
       }
-    }
   }
 }
 
@@ -1124,7 +1154,8 @@ fn answered_by_status(
   outcome outcome: Outcome(Answer),
 ) -> client_connection.Handled(Session) {
   case session.status {
-    TakingSessionKey -> connection_login.key_taken(session:, now:, outcome:)
+    TakingSessionKey(account_id:) ->
+      connection_login.key_taken(session:, now:, account_id:, outcome:)
     ClaimingSession(holder:, resume:, retries:) ->
       connection_login.claim_answered(
         session:,
