@@ -150,15 +150,17 @@ pub fn client_bytes(
   bytes
 }
 
-/// The body of 0x58F: the value from the hand-off (0), the 16-byte session
-/// key, a 64-bit 0, the account name and the 32-bit 3 (opcode.0x58f).
+/// The body of 0x58F: the account id of the 0x03DB the client was handed, the
+/// 16-byte session key, a 64-bit 0, the account name and the 32-bit 3
+/// (opcode.0x58f).
 pub fn hello_reply_body(
+  account_id account_id: Int,
   session_key session_key: BitArray,
   account_name account_name: String,
 ) -> BitArray {
   let assert Ok(body) =
     game_hello_reply.encode(GameHelloReply(
-      account_id: 0,
+      account_id:,
       session_key:,
       zero: 0,
       account_name:,
@@ -170,12 +172,13 @@ pub fn hello_reply_body(
 
 /// The bytes of 0x58F inside 0x244 under the base key.
 pub fn hello_reply(
+  account_id account_id: Int,
   session_key session_key: BitArray,
   account_name account_name: String,
 ) -> BitArray {
   client_bytes(
     message_id: game_hello_reply.message_id,
-    body: hello_reply_body(session_key:, account_name:),
+    body: hello_reply_body(account_id:, session_key:, account_name:),
     cipher: cipher.base(),
   )
 }
@@ -215,25 +218,33 @@ fn open(port: Int, limit: Limit) -> mug.Socket {
 /// the cipher from the session key.
 fn answer_hello(
   socket socket: mug.Socket,
+  account_id account_id: Int,
   session_key session_key: BitArray,
   account_name account_name: String,
   limit limit: Limit,
 ) -> Game {
   let assert Ok(Nil) =
-    mug.send(socket, hello_reply(session_key:, account_name:))
+    mug.send(socket, hello_reply(account_id:, session_key:, account_name:))
     as "the server closed the connection before 0x58F"
   new(socket:, cipher: session_cipher(session_key:), limit:)
 }
 
-/// Connects, reads the hello and answers it. The reads of the game it gives wait
-/// by `limit`.
+/// Connects, reads the hello and answers it with the account id of the 0x03DB
+/// the client was handed. The reads of the game it gives wait by `limit`.
 pub fn connect(
   port port: Int,
+  account_id account_id: Int,
   session_key session_key: BitArray,
   account_name account_name: String,
   limit limit: Limit,
 ) -> Game {
-  answer_hello(socket: open(port, limit), session_key:, account_name:, limit:)
+  answer_hello(
+    socket: open(port, limit),
+    account_id:,
+    session_key:,
+    account_name:,
+    limit:,
+  )
 }
 
 /// Sends a message inside 0x244 under the session cipher.

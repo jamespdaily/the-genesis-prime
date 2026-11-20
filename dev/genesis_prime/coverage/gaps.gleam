@@ -25,7 +25,9 @@ import genesis_prime/game/click_objective
 import genesis_prime/game/communicator
 import genesis_prime/game/cooldown
 import genesis_prime/game/dev_command
+import genesis_prime/game/dropped
 import genesis_prime/game/forced_move
+import genesis_prime/game/hello_reply
 import genesis_prime/game/hit
 import genesis_prime/game/interaction
 import genesis_prime/game/item_price
@@ -39,6 +41,7 @@ import genesis_prime/game/prerequisite
 import genesis_prime/game/quest
 import genesis_prime/game/quest_turn_in
 import genesis_prime/game/random_stat
+import genesis_prime/game/routing
 import genesis_prime/game/server_proxy
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan
@@ -83,6 +86,9 @@ pub fn registry() -> List(Entry) {
     interaction.gaps(),
     vendor_purchase.gaps(),
     dev_command.gaps(),
+    routing.gaps(),
+    hello_reply.gaps(),
+    dropped.gaps(),
     vendor_sale.gaps(),
     world_entry.gaps(),
     spell_plan.gaps(),

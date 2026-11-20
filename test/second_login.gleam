@@ -70,6 +70,7 @@ pub fn main() -> Nil {
   let game =
     game_client.connect(
       port: ports.game_port,
+      account_id: handed.account_id,
       session_key: handed.session_key,
       account_name: account,
       limit: socket_read.Within(wait_ms),

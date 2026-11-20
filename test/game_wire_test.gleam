@@ -185,6 +185,12 @@ fn session_key() -> BitArray {
   guid.to_wire(support.guid_of(1))
 }
 
+/// The number of an account, as the client sends it in 0x058F.
+fn account_number(account: AccountId) -> Int {
+  let AccountId(number) = account
+  number
+}
+
 /// The tree with the account of the library's vector inserted, the game
 /// listener's port and the account.
 fn start() -> #(login_support.Started, Int, AccountId) {
@@ -243,6 +249,7 @@ pub fn a_client_with_a_held_session_key_gets_the_hello_and_then_the_list_of_its_
   let game =
     game_client.connect(
       port:,
+      account_id: account_number(account),
       session_key: session_key(),
       account_name: "jim",
       limit: socket_read.Open,
@@ -302,10 +309,11 @@ pub fn a_second_login_to_the_account_disconnects_the_first_with_0x036a_reason_19
 
 pub fn a_client_whose_session_key_the_hand_off_does_not_hold_gets_0x036a_reason_19_and_is_disconnected_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(started, port, _account) = start()
+  let #(started, port, account) = start()
   let game =
     game_client.connect(
       port:,
+      account_id: account_number(account),
       session_key: session_key(),
       account_name: "jim",
       limit: socket_read.Open,
@@ -2303,6 +2311,7 @@ fn connected_as(
   let game =
     game_client.connect(
       port:,
+      account_id: account_number(account),
       session_key: guid.to_wire(key),
       account_name: login_name,
       limit: socket_read.Open,

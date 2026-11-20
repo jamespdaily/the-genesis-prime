@@ -200,7 +200,7 @@ fn outside_the_world(
     | TurningIn(..)
     | SavingPlace(then: Playing, ..)
     | AwaitingHelloReply
-    | TakingSessionKey ->
+    | TakingSessionKey(..) ->
       connection_state.end_for(
         session:,
         now:,
@@ -242,7 +242,7 @@ pub fn save_due(
     | SavingPlace(..)
     | LeavingMap(..)
     | AwaitingHelloReply
-    | TakingSessionKey -> outside_the_world(session:, now:)
+    | TakingSessionKey(..) -> outside_the_world(session:, now:)
   }
 }
 
@@ -303,7 +303,7 @@ pub fn quest_reset_due(
     | SavingPlace(..)
     | LeavingMap(..)
     | AwaitingHelloReply
-    | TakingSessionKey -> outside_the_world(session:, now:)
+    | TakingSessionKey(..) -> outside_the_world(session:, now:)
   }
 }
 
@@ -371,7 +371,7 @@ pub fn quest_deadline_due(
     | SavingPlace(..)
     | LeavingMap(..)
     | AwaitingHelloReply
-    | TakingSessionKey -> outside_the_world(session:, now:)
+    | TakingSessionKey(..) -> outside_the_world(session:, now:)
   }
 }
 
@@ -442,7 +442,7 @@ pub fn item_expiry_due(
     | SavingPlace(..)
     | LeavingMap(..)
     | AwaitingHelloReply
-    | TakingSessionKey -> outside_the_world(session:, now:)
+    | TakingSessionKey(..) -> outside_the_world(session:, now:)
   }
 }
 

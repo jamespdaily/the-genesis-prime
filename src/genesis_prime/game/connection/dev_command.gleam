@@ -245,7 +245,7 @@ fn granting(
     | WaitingToClaim(..)
     | InCharacterSelect(..)
     | AwaitingHelloReply
-    | TakingSessionKey ->
+    | TakingSessionKey(..) ->
       connection_state.end_for(
         session:,
         now:,
@@ -294,7 +294,7 @@ fn given(
     | WaitingToClaim(..)
     | InCharacterSelect(..)
     | AwaitingHelloReply
-    | TakingSessionKey ->
+    | TakingSessionKey(..) ->
       connection_state.end_for(
         session:,
         now:,
@@ -598,7 +598,7 @@ fn went(
     | WaitingToClaim(..)
     | InCharacterSelect(..)
     | AwaitingHelloReply
-    | TakingSessionKey ->
+    | TakingSessionKey(..) ->
       connection_state.end_for(
         session:,
         now:,

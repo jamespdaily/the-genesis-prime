@@ -37,6 +37,7 @@ import genesis_prime/message/bit_stream.{Endpoint}
 import genesis_prime/message/game_server_handoff.{GameServerHandoff}
 import genesis_prime/message/login_accepted.{LoginAccepted}
 import genesis_prime/message/login_refused
+import genesis_prime/message/login_request.{LoginRequest}
 import genesis_prime/message/server_hello.{ServerHello}
 import genesis_prime/step.{
   type ConnectionEvent, type ConnectionStep, type Event, type Outcome,
@@ -94,8 +95,18 @@ fn connected(seed seed: BitArray) -> auth_connection.State {
 /// The bytes of the client's login request for a UserId and a build, in its
 /// 0x244 wrapper under the base key.
 fn login_request(user_id user_id: guid.Guid, build build: Int) -> BitArray {
-  let outer =
-    scripted_client.login_request_frame(
+  login_request_with_word(user_id:, build:, unset_word: 0)
+}
+
+/// The bytes of a login request whose fourth 32-bit value, the client's global
+/// no code writes, is `unset_word`.
+fn login_request_with_word(
+  user_id user_id: guid.Guid,
+  build build: Int,
+  unset_word unset_word: Int,
+) -> BitArray {
+  let request =
+    scripted_client.login_request_of(
       login: StsLogin(
         user_id: guid.to_text(user_id),
         token: guid.to_text(token()),
@@ -103,6 +114,8 @@ fn login_request(user_id user_id: guid.Guid, build build: Int) -> BitArray {
       ),
       build:,
     )
+  let outer =
+    scripted_client.framed_login_request(LoginRequest(..request, unset_word:))
   let assert Ok(bytes) = frame.encode(outer.message_id, outer.body)
     as "the request frame encodes"
   bytes
@@ -304,6 +317,43 @@ pub fn a_build_other_than_16042_gets_0x63d_reason_19_test() -> Nil {
     as "opcode.0x63d: 19 is 'Client version does not match the game server version'"
   assert support.asked(taken) == None
     as "the token is not taken for a client of another build"
+}
+
+pub fn a_login_request_with_a_word_no_client_writes_ends_the_connection_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // `opcode.0x592.unset_word`: the word is a global no client code writes, 0
+  // in every recorded login.
+  list.each([1, 0xFFFF_FFFF], fn(word) {
+    let #(_, taken) =
+      read(
+        connected(seed: support.seed(first: 1)),
+        login_request_with_word(
+          user_id: holder().game_account_id,
+          build: 16_042,
+          unset_word: word,
+        ),
+      )
+    let assert [line] = support.logs_of(step: taken, level: LogError)
+      as "one error line says the client sent a value it never writes"
+    assert support.says(line, "0x0592")
+      && support.says(line, int.to_string(word))
+    assert support.writes(taken) == []
+      as "a client that writes such a word is no client: it is told nothing"
+    assert support.asked(taken) == None as "the token is not taken"
+    assert support.stops(taken)
+  })
+  // The build is checked first: a client of another build is told to update.
+  let #(_, taken) =
+    read(
+      connected(seed: support.seed(first: 1)),
+      login_request_with_word(
+        user_id: holder().game_account_id,
+        build: 16_041,
+        unset_word: 1,
+      ),
+    )
+  assert refusal(taken).reason == 19
+    as "opcode.0x63d: 19, whatever its word, because the word's evidence is of build 16042"
 }
 
 pub fn a_hand_off_that_does_not_answer_gets_0x63d_reason_12_and_a_warning_log_test() -> Nil {
