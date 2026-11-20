@@ -16,7 +16,9 @@
 ////   cast; the oldest cast goes first).
 
 import cast_support as support
-import genesis_prime/client_connection.{CastFinished}
+import genesis_prime/client_connection.{
+  type News, CastFinished, CastTargetsRemoved,
+}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
@@ -27,15 +29,22 @@ import genesis_prime/game/spell_plan.{
   Lasting,
 }
 import genesis_prime/game/spend
+import genesis_prime/game/unit_properties
 import genesis_prime/message/cast_result
+import genesis_prime/message/crowd_control_state
 import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
 import genesis_prime/message/spell_effect_info.{SpellEffectInfo}
 import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_go
+import genesis_prime/message/spell_targets_removed.{
+  type SpellTargetsRemoved, SpellTargetsRemoved,
+}
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
+import gleam/dict
 import gleam/list
 import gleam/option
+import gleam/set
 import gleam/string
 import owned_test
 import prerequisite_support
@@ -882,6 +891,14 @@ pub fn a_channel_that_holds_its_own_fluff_ends_its_other_steps_when_it_lingers_t
 /// A channel that pulses at 0, 3000 and 6000 after the press (no finish timer of its
 /// own) whose each go gives the caster a Fluff of 1000 ms.
 fn short_buff_on_a_long_channel() -> Plans {
+  short_buff_on_a_long_channel_with(cast_bar: spell_plan.HidesCastBar)
+}
+
+/// The channel of `short_buff_on_a_long_channel`, its cast bar as given: a cast that shows
+/// its bar is the caster's current cast while it lives.
+fn short_buff_on_a_long_channel_with(
+  cast_bar cast_bar: spell_plan.CastBar,
+) -> Plans {
   support.plans_of([
     spell_plan.Spell(
       ..channel(
@@ -899,7 +916,7 @@ fn short_buff_on_a_long_channel() -> Plans {
           pulse_time_ms: 3000,
         ),
       ),
-      cast_bar: spell_plan.HidesCastBar,
+      cast_bar:,
     ),
   ])
 }
@@ -1090,4 +1107,152 @@ pub fn a_timed_node_is_re_timed_from_a_later_go_of_its_cast_test() -> Nil {
     })
     == [#(2000, []), #(7000, [id])]
     as "the first go's timer for 6000 is replaced: the one 0x7fe is at 7000 (opcode.0x7f4.instance_count)"
+}
+
+// ---- the audience of a cast follows the viewers ----
+
+/// What the connection `viewer` is told over the timers of a state, in order.
+fn told_to(
+  fired fired: List(#(Int, List(cast_state.Effect))),
+  viewer viewer: Int,
+) -> List(News) {
+  list.flat_map(fired, fn(step) {
+    list.filter_map(support.tells(effects: step.1), fn(tell) {
+      case tell.0 == ConnectionId(viewer) {
+        True -> Ok(tell.1)
+        False -> Error(Nil)
+      }
+    })
+  })
+}
+
+/// `cast.target_node_end` (a node ends only by a 0x811 or a 0x7fe the client is sent) and
+/// `connection_state.news_to_connection` (a tell reaches only a current viewer): a viewer
+/// that comes into sight of the caster is told what the current cast does from then on,
+/// the cast its unit create lists (`opcode.0x262.casts`), and no other cast, and one that
+/// stops seeing the caster is told nothing, in every cast, live or lingering.
+pub fn a_cast_audience_is_the_current_viewers_test() -> Nil {
+  use <- owned_test.run(5000)
+  let viewer = ConnectionId(9)
+  let press = fn(plans, caster) {
+    let #(state, start) =
+      support.press_by(
+        plans:,
+        state: cast_state.new(),
+        caster:,
+        bag: bag_of_base_3,
+        at: 1000,
+      )
+    #(state, start, support.pressed_id(effects: start))
+  }
+  let told_after = fn(state, start) {
+    told_to(
+      fired: support.run_timers(state:, effects: start, from_ms: 1000).1,
+      viewer: 9,
+    )
+  }
+  let #(live, live_start, live_id) =
+    press(
+      short_buff_on_a_long_channel_with(cast_bar: spell_plan.ShowsCastBar),
+      support.caster(),
+    )
+  assert cast_state.current_cast_id(cast: live) == live_id
+    as "a channel that shows its cast bar is the current cast"
+  // A channel with pulses at 3000 and 6000 after the press, holding a 1 s node of its own
+  // on the caster at each: the nodes end at 2000, 4000 and 7000.
+  let joined = cast_state.audience_joined(cast: live, viewer:)
+  let told = told_after(joined, live_start)
+  assert list.take(told, 1)
+    == [
+      CastTargetsRemoved(removed: removal(cast_id: live_id), destroyed: False),
+    ]
+    as "a viewer that joined the current cast is told the end of the node the press made"
+  assert list.last(told) == Ok(CastFinished(cast_id: live_id))
+    as "and its 0x7fe"
+  assert list.length(told) == 5
+    as "and each news after the join: the node ends at 2000 and 4000, the pulses at 3000 and 6000, and the finish"
+  let twice =
+    cast_state.audience_joined(cast: joined, viewer:)
+    |> cast_state.audience_left(viewer:)
+    |> cast_state.audience_joined(viewer:)
+    |> cast_state.audience_joined(viewer:)
+  assert list.count(told_after(twice, live_start), fn(one) {
+      one == CastFinished(cast_id: live_id)
+    })
+    == 1
+    as "joining twice is one entry of the audience: one 0x7fe"
+  assert told_after(cast_state.audience_left(cast: joined, viewer:), live_start)
+    == []
+    as "a viewer that stopped seeing the caster is told nothing of a live cast"
+  let #(hidden, hidden_start, _) =
+    press(short_buff_on_a_long_channel(), support.caster())
+  assert told_after(
+      cast_state.audience_joined(cast: hidden, viewer:),
+      hidden_start,
+    )
+    == []
+    as "a live cast that is not the current cast is not joined: its unit create did not list it, so the viewer holds no such cast"
+  let #(lingering, lingering_start, lingering_id) =
+    press(eight_seconds_on_the_caster(), support.caster())
+  assert dict.has_key(lingering.lingering, lingering_id)
+    as "the 8 s buff leaves its cast lingering"
+  assert told_after(
+      cast_state.audience_joined(cast: lingering, viewer:),
+      lingering_start,
+    )
+    == []
+    as "nor is a lingering cast"
+  let #(told_at_start, told_start, _) =
+    press(
+      eight_seconds_on_the_caster(),
+      cast_state.Caster(
+        ..support.caster(),
+        audience: set.from_list([ConnectionId(2), viewer]),
+      ),
+    )
+  assert told_after(told_at_start, told_start)
+    == [CastFinished(cast_id: lingering_id)]
+    as "a viewer that was told the start of a cast that lingers is told its 0x7fe when its node ends"
+  assert told_after(
+      cast_state.audience_left(cast: told_at_start, viewer:),
+      told_start,
+    )
+    == []
+    as "and nothing once it stopped seeing the caster"
+  let held =
+    cast_state.State(
+      ..live,
+      restrictions: dict.from_list([
+        #(
+          unit_properties.Source(
+            cast_id: live_id,
+            effect_id: Spell4EffectsId(1),
+          ),
+          cast_state.HeldRestriction(
+            state: crowd_control_state.Stun,
+            instance_id: 1,
+            audience: set.from_list([ConnectionId(2), viewer]),
+          ),
+        ),
+      ]),
+    )
+  let audience = fn(state: State) {
+    let assert [restriction] = dict.values(state.restrictions)
+      as "the state holds the one restriction"
+    restriction.audience
+  }
+  assert audience(cast_state.audience_left(cast: held, viewer:))
+    == set.from_list([ConnectionId(2)])
+    as "a crowd-control state's audience loses the viewer that left"
+  assert audience(cast_state.audience_joined(
+      cast: held,
+      viewer: ConnectionId(4),
+    ))
+    == set.from_list([ConnectionId(2), viewer])
+    as "and gains none: a viewer that never saw the 0x87f is not told its end"
+}
+
+/// The 0x811 that takes the caster's own node (unit 7) off the cast.
+fn removal(cast_id cast_id: Int) -> SpellTargetsRemoved {
+  SpellTargetsRemoved(cast_id:, unit_ids: [7])
 }

@@ -6,11 +6,15 @@
 
 import fixture_tables
 import game_connection_support
-import genesis_prime/client_connection.{Appeared, CastStarted}
+import genesis_prime/client_connection.{
+  Appeared, CastFinished, CastStarted, CastWent, Removed,
+}
 import genesis_prime/message/combat_result
 import genesis_prime/message/damage_type
 import genesis_prime/message/spell_damage_description.{SpellDamageDescription}
 import genesis_prime/message/spell_effect_tick.{SpellEffectTick}
+import genesis_prime/message/spell_go.{SpellGo}
+import genesis_prime/message/spell_position.{SpellPosition}
 import genesis_prime/message/spell_stack_removed.{SpellStackRemoved}
 import genesis_prime/message/spell_targets_removed.{SpellTargetsRemoved}
 import genesis_prime/step
@@ -270,4 +274,70 @@ pub fn a_viewer_gets_a_tick_only_for_a_cast_it_was_shown_test() -> Nil {
       spell_effect_tick.decode,
     )
     == [tick]
+}
+
+/// `cast.target_node_end` and `opcode.0x811`: no timer ends a node on the client, and a
+/// message that names a cast it does not hold is dropped, so a viewer that was given a
+/// cast in a unit create is written the cast's later go, 0x811 and 0x7fe, and the 0x7fe of
+/// each cast of a unit that leaves sight comes before its 0x355 (`finishes_of_forgotten_casts`).
+pub fn a_cast_listed_in_a_unit_create_is_written_and_finished_like_a_watched_one_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let first = 2_147_497_985
+  let second = 2_147_497_986
+  let created =
+    game_connection_support.another_unit_casting(
+      casts: [
+        game_connection_support.listed_cast(cast_id: first, caster: 9),
+        game_connection_support.listed_cast(cast_id: second, caster: 9),
+      ],
+      cast_id: first,
+    )
+  let told = fn(state, news) {
+    game_connection_support.feed(
+      state,
+      game_connection_support.sent_by_a_peer(game_connection_support.news_of(
+        unit_id: 9,
+        news:,
+      )),
+    )
+  }
+  let #(state, taken) =
+    told(game_connection_support.in_world(), Appeared(created))
+  assert game_connection_support.written_ids(taken) == [0x0262]
+  let go =
+    CastWent(go: SpellGo(
+      cast_id: first,
+      ignore_cooldown: 0,
+      destination: SpellPosition(x: 0, y: 0, z: 0),
+      targets: [],
+      initial_positions: [],
+      telegraph_positions: [],
+      missiles: [],
+      phase: 0,
+    ))
+  let #(_, taken) = told(state, go)
+  assert game_connection_support.written_ids(taken) == [0x07F4]
+    as "a later go of a listed cast is written: the cast is recorded with its caster"
+  let #(_, taken) =
+    told(
+      state,
+      client_connection.CastTargetsRemoved(
+        removed: SpellTargetsRemoved(cast_id: first, unit_ids: [9]),
+        destroyed: False,
+      ),
+    )
+  assert game_connection_support.written_ids(taken) == [0x0811]
+    as "a listed cast's 0x811 is written"
+  let #(state, taken) = told(state, Appeared(created))
+  assert game_connection_support.written_ids(taken) == []
+    as "a second create of the shown unit writes nothing"
+  let #(after, taken) = told(state, CastFinished(cast_id: first))
+  assert game_connection_support.written_ids(taken) == [0x07FE]
+    as "a listed cast's 0x7fe is written, once"
+  let #(_, taken) = told(after, CastFinished(cast_id: first))
+  assert game_connection_support.written_ids(taken) == []
+    as "the finished cast is forgotten, so a second 0x7fe writes nothing"
+  let #(_, taken) = told(state, Removed)
+  assert game_connection_support.written_ids(taken) == [0x07FE, 0x07FE, 0x0355]
+    as "the caster's removal finishes each listed cast before the 0x355"
 }
