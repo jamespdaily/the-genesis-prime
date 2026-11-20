@@ -38,6 +38,7 @@
 import genesis_prime/client_connection
 import genesis_prime/game/ability_book_frame
 import genesis_prime/game/ability_points
+import genesis_prime/game/class_resource
 import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/properties as connection_properties
 import genesis_prime/game/connection/state.{type Session} as connection_state
@@ -90,7 +91,16 @@ pub fn gained(
   let Credited(progress:, effects:) = credited
   let tables = session.settings.tables
   let worn = gear.of_items(tables:, items: entered.items, level: progress.level)
-  case gear.bases(tables:, gear: worn, level: progress.level) {
+  case
+    gear.bases(
+      tables:,
+      gear: worn,
+      level: progress.level,
+      focus_pool: class_resource.focus_pool(resource: class_resource.resource(
+        resources: entered.resources,
+      )),
+    )
+  {
     Error(error) ->
       connection_state.end_for(session:, now:, text: gear.describe(error:))
     Ok(bases) -> {

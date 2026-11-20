@@ -298,6 +298,30 @@ pub fn with_gear(
   }
 }
 
+/// The player's 0x262 record with its Focus as stat 1 in the float form, at `value`
+/// (`SetUnitStatsFromCreate` 0x140458140 case 1: the client keeps the float form only);
+/// a class that holds none (`None`) is left as it is. The record holds the entry value
+/// only: a 0x935 changes it for the player's own client, and a viewer is created without
+/// it (genesis_prime/game/connection/viewers).
+pub fn with_focus(
+  record record: UnitCreatePlayer,
+  value value: Option(Float),
+) -> UnitCreatePlayer {
+  case value {
+    None -> record
+    Some(points) ->
+      UnitCreatePlayer(
+        ..record,
+        tail: UnitCreateTail(
+          ..record.tail,
+          stats: list.append(record.tail.stats, [
+            unit_fields.resource_stat(slot: -1, value: points),
+          ]),
+        ),
+      )
+  }
+}
+
 /// The player's 0x262 record with its class's resource, as its own client is
 /// created with it: the stat of the resource's slot at its start, in the float form
 /// (`opcode.0x262.resource_stats`), and the slot's ResourceMax property at its

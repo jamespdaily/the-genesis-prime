@@ -26,6 +26,7 @@
 import genesis_prime/client_connection.{type Answer, Continue, FromStore}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/character_state
+import genesis_prime/game/class_resource
 import genesis_prime/game/connection/item_expiry as connection_item_expiry
 import genesis_prime/game/connection/look as connection_look
 import genesis_prime/game/connection/objective as connection_objective
@@ -256,7 +257,16 @@ pub fn regeared(
     when: worn == entered.gear,
     return: Continue(session, moved),
   )
-  case gear.bases(tables:, gear: worn, level:) {
+  case
+    gear.bases(
+      tables:,
+      gear: worn,
+      level:,
+      focus_pool: class_resource.focus_pool(resource: class_resource.resource(
+        resources: entered.resources,
+      )),
+    )
+  {
     Error(error) ->
       lost(session:, now:, holder:, entered:, text: gear.describe(error:))
     Ok(bases) -> {
