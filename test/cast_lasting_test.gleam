@@ -23,15 +23,22 @@ import genesis_prime/game/cast
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
-import genesis_prime/game/lasting.{LastingRow, Stack}
+import genesis_prime/game/crowd_control
+import genesis_prime/game/damage.{Formula, Parameter}
+import genesis_prime/game/effect_kind
+import genesis_prime/game/heal_split
+import genesis_prime/game/lasting.{LastingRow, LifeOnly, Listed, Stack}
+import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{
   type Plans, type Spell, Always, ForceRemove, GatedOnCaster, GatedOnTarget,
   Lasting,
 }
 import genesis_prime/game/spend
+import genesis_prime/game/ticking
+import genesis_prime/game/unit_casts
 import genesis_prime/game/unit_properties
 import genesis_prime/message/cast_result
-import genesis_prime/message/crowd_control_state
+import genesis_prime/message/crowd_control_state.{AbilityRestriction}
 import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
 import genesis_prime/message/spell_effect_info.{SpellEffectInfo}
 import genesis_prime/message/spell_effect_result
@@ -921,6 +928,31 @@ fn short_buff_on_a_long_channel_with(
   ])
 }
 
+/// The channel of `short_buff_on_a_long_channel` whose first pulse waits 2000 ms: a live
+/// cast that is not the current cast and holds no node until then.
+fn channel_before_its_first_go() -> Plans {
+  support.plans_of([
+    spell_plan.Spell(
+      ..channel(
+        lasting: [
+          fluff(
+            id: 1,
+            aim: spell_plan.AimsAtCaster,
+            duration_ms: 1000,
+            until_removed: False,
+          ),
+        ],
+        channel: spell_plan.Channel(
+          initial_delay_ms: 2000,
+          max_time_ms: 6000,
+          pulse_time_ms: 3000,
+        ),
+      ),
+      cast_bar: spell_plan.HidesCastBar,
+    ),
+  ])
+}
+
 pub fn a_node_whose_life_ends_while_its_cast_is_live_is_ended_and_the_cast_goes_on_test() -> Nil {
   use <- owned_test.run(5000)
   let plans = short_buff_on_a_long_channel()
@@ -1128,9 +1160,10 @@ fn told_to(
 
 /// `cast.target_node_end` (a node ends only by a 0x811 or a 0x7fe the client is sent) and
 /// `connection_state.news_to_connection` (a tell reaches only a current viewer): a viewer
-/// that comes into sight of the caster is told what the current cast does from then on,
-/// the cast its unit create lists (`opcode.0x262.casts`), and no other cast, and one that
-/// stops seeing the caster is told nothing, in every cast, live or lingering.
+/// that comes into sight of the caster is told what each cast its unit create lists does
+/// from then on (`opcode.0x262.casts`: the current cast and each cast that holds a node
+/// with a listed effect, live or lingering), and no other cast, and one that stops seeing
+/// the caster is told nothing, in every cast.
 pub fn a_cast_audience_is_the_current_viewers_test() -> Nil {
   use <- owned_test.run(5000)
   let viewer = ConnectionId(9)
@@ -1144,6 +1177,9 @@ pub fn a_cast_audience_is_the_current_viewers_test() -> Nil {
         at: 1000,
       )
     #(state, start, support.pressed_id(effects: start))
+  }
+  let join = fn(state) {
+    cast_state.audience_joined(cast: state, viewer:, caster_unit_id: 7)
   }
   let told_after = fn(state, start) {
     told_to(
@@ -1160,7 +1196,7 @@ pub fn a_cast_audience_is_the_current_viewers_test() -> Nil {
     as "a channel that shows its cast bar is the current cast"
   // A channel with pulses at 3000 and 6000 after the press, holding a 1 s node of its own
   // on the caster at each: the nodes end at 2000, 4000 and 7000.
-  let joined = cast_state.audience_joined(cast: live, viewer:)
+  let joined = join(live)
   let told = told_after(joined, live_start)
   assert list.take(told, 1)
     == [
@@ -1172,10 +1208,10 @@ pub fn a_cast_audience_is_the_current_viewers_test() -> Nil {
   assert list.length(told) == 5
     as "and each news after the join: the node ends at 2000 and 4000, the pulses at 3000 and 6000, and the finish"
   let twice =
-    cast_state.audience_joined(cast: joined, viewer:)
+    join(joined)
     |> cast_state.audience_left(viewer:)
-    |> cast_state.audience_joined(viewer:)
-    |> cast_state.audience_joined(viewer:)
+    |> join
+    |> join
   assert list.count(told_after(twice, live_start), fn(one) {
       one == CastFinished(cast_id: live_id)
     })
@@ -1184,24 +1220,72 @@ pub fn a_cast_audience_is_the_current_viewers_test() -> Nil {
   assert told_after(cast_state.audience_left(cast: joined, viewer:), live_start)
     == []
     as "a viewer that stopped seeing the caster is told nothing of a live cast"
-  let #(hidden, hidden_start, _) =
+  let #(hidden, hidden_start, hidden_id) =
     press(short_buff_on_a_long_channel(), support.caster())
-  assert told_after(
-      cast_state.audience_joined(cast: hidden, viewer:),
-      hidden_start,
-    )
-    == []
-    as "a live cast that is not the current cast is not joined: its unit create did not list it, so the viewer holds no such cast"
+  assert cast_state.current_cast_id(cast: hidden) == 0
+    as "a channel that hides its cast bar is not the current cast"
+  let told_hidden = told_after(join(hidden), hidden_start)
+  assert list.take(told_hidden, 1)
+    == [
+      CastTargetsRemoved(removed: removal(cast_id: hidden_id), destroyed: False),
+    ]
+    as "a live cast that is not the current cast but holds a node is joined: its unit create lists it, so the viewer is told the node's end"
+  assert list.last(told_hidden) == Ok(CastFinished(cast_id: hidden_id))
+    as "and its 0x7fe"
   let #(lingering, lingering_start, lingering_id) =
     press(eight_seconds_on_the_caster(), support.caster())
   assert dict.has_key(lingering.lingering, lingering_id)
     as "the 8 s buff leaves its cast lingering"
+  assert told_after(join(lingering), lingering_start)
+    == [CastFinished(cast_id: lingering_id)]
+    as "a lingering cast is joined: the viewer is told its 0x7fe when its node ends"
+  let #(before_node, before_start, _) =
+    press(channel_before_its_first_go(), support.caster())
+  assert list.all(dict.values(before_node.casts), fn(live) {
+    dict.is_empty(live.nodes)
+  })
+    as "the cast holds no node before its first go"
+  assert told_after(join(before_node), before_start) == []
+    as "a live cast that is not the current cast and holds no node yet is not joined: its unit create does not list it"
+  let only_node = fn(state: State, effects: List(lasting.NodeEffect)) {
+    cast_state.State(
+      ..state,
+      casts: dict.map_values(state.casts, fn(_, live) {
+        cast_state.Live(
+          ..live,
+          nodes: dict.from_list([
+            #(
+              7,
+              lasting.Node(
+                unit_id: 7,
+                count: 1,
+                life: lasting.EndsAt(ms: 4000),
+                effects:,
+                armed_ms: 1000,
+                held_until_ms: option.Some(4000),
+              ),
+            ),
+          ]),
+        )
+      }),
+    )
+  }
+  assert told_after(join(only_node(hidden, [])), hidden_start) == []
+    as "a cast whose only node is held by a crowd-control state lists no effect and is not joined: the state's 0x87f is told by its own audience"
   assert told_after(
-      cast_state.audience_joined(cast: lingering, viewer:),
-      lingering_start,
+      join(
+        only_node(hidden, [
+          lasting.LifeOnly(row: LastingRow(
+            delay_ms: 0,
+            duration_ms: 3000,
+            until_removed: False,
+          )),
+        ]),
+      ),
+      hidden_start,
     )
     == []
-    as "nor is a lingering cast"
+    as "nor is a cast whose only node is held by an ability restriction"
   let #(told_at_start, told_start, _) =
     press(
       eight_seconds_on_the_caster(),
@@ -1247,6 +1331,7 @@ pub fn a_cast_audience_is_the_current_viewers_test() -> Nil {
   assert audience(cast_state.audience_joined(
       cast: held,
       viewer: ConnectionId(4),
+      caster_unit_id: 7,
     ))
     == set.from_list([ConnectionId(2), viewer])
     as "and gains none: a viewer that never saw the 0x87f is not told its end"
@@ -1255,4 +1340,298 @@ pub fn a_cast_audience_is_the_current_viewers_test() -> Nil {
 /// The 0x811 that takes the caster's own node (unit 7) off the cast.
 fn removal(cast_id cast_id: Int) -> SpellTargetsRemoved {
   SpellTargetsRemoved(cast_id:, unit_ids: [7])
+}
+
+// ---- what a go keeps of each effect on the node ----
+
+/// The reached row `kind` of Spell4Effects `id` on the player 7, with `product`.
+fn reached_on_caster(
+  id id: Int,
+  kind kind: spell_plan.Kind,
+  product product: cast_state.Product,
+) -> cast_state.Reached {
+  cast_state.Reached(
+    effect: spell_effect.PlannedEffect(
+      effect_id: Spell4EffectsId(id),
+      phase_flags: -1,
+      tag: spend.always,
+      kind:,
+    ),
+    unit_id: 7,
+    product:,
+  )
+}
+
+/// What a go aimed at the player 7 holds: these reached rows, restrictions and periodic
+/// rows.
+fn aimed_at_caster(
+  reached reached: List(cast_state.Reached),
+  restrictions restrictions: List(#(cast_state.Restricting, Int)),
+  ticking ticking: List(cast_state.TickingOn),
+) -> cast_state.Aimed {
+  cast_state.Aimed(
+    units: [],
+    reached:,
+    reach_logs: [],
+    controls: [],
+    restrictions:,
+    ticking:,
+    rolls_left: [],
+  )
+}
+
+pub fn a_go_keeps_each_effect_with_its_kind_and_effect_id_on_the_node_test() -> Nil {
+  use <- owned_test.run(5000)
+  let formula =
+    Formula(multiplier: 1.0, base: 40.0, parameters: [
+      Parameter(kind: 0, value: 0.0),
+      Parameter(kind: 0, value: 0.0),
+      Parameter(kind: 0, value: 0.0),
+      Parameter(kind: 0, value: 0.0),
+    ])
+  let fluff_row =
+    LastingRow(delay_ms: 0, duration_ms: 3000, until_removed: False)
+  let heal =
+    spell_plan.Heal(
+      effect_id: Spell4EffectsId(4),
+      vital: effect_kind.Health,
+      phase_flags: -1,
+      aim: spell_plan.AimsAtCaster,
+      condition: Always,
+      tag: spend.always,
+      formula:,
+      delay_ms: 500,
+    )
+  list.each(
+    [
+      #(
+        "a reached Fluff row is kept Listed with its Spell4Effects id",
+        aimed_at_caster(
+          reached: [
+            reached_on_caster(
+              id: 224_001,
+              kind: spell_plan.LastingEffect(Lasting(
+                effect_id: Spell4EffectsId(224_001),
+                phase_flags: -1,
+                aim: spell_plan.AimsAtCaster,
+                row: fluff_row,
+                condition: Always,
+                tag: spend.always,
+              )),
+              product: cast_state.Plain,
+            ),
+          ],
+          restrictions: [],
+          ticking: [],
+        ),
+        [Listed(effect_id: Spell4EffectsId(224_001), row: fluff_row)],
+      ),
+      #(
+        "a periodic row is kept Listed with the id of its TickingOn, its life its delay and duration and never until removed (ticking.schedule_of refuses flags bit 2)",
+        aimed_at_caster(reached: [], restrictions: [], ticking: [
+          cast_state.TickingOn(
+            unit_id: 7,
+            life: 0,
+            effect_id: Spell4EffectsId(96_125),
+            schedule: ticking.Schedule(
+              delay_ms: 0,
+              tick_ms: 2000,
+              duration_ms: 6000,
+              count: 3,
+            ),
+            kind: cast_state.heal_tick(
+              vital: effect_kind.Health,
+              formula:,
+              passed_in: option.None,
+            ),
+          ),
+        ]),
+        [
+          Listed(
+            effect_id: Spell4EffectsId(96_125),
+            row: LastingRow(
+              delay_ms: 0,
+              duration_ms: 6000,
+              until_removed: False,
+            ),
+          ),
+        ],
+      ),
+      #(
+        "an ability restriction row is kept LifeOnly: the 0x87f tells it, not a unit create",
+        aimed_at_caster(
+          reached: [],
+          restrictions: [
+            #(
+              cast_state.Restricting(
+                row: spell_plan.CrowdControl(
+                  effect_id: Spell4EffectsId(224_967),
+                  phase_flags: -1,
+                  aim: spell_plan.AimsAtCaster,
+                  row: crowd_control.Row(
+                    state: AbilityRestriction,
+                    delay_ms: 0,
+                    duration_ms: 5000,
+                    armor_removed: 0,
+                    until_removed: False,
+                  ),
+                  condition: Always,
+                  tag: spend.always,
+                  move: option.None,
+                ),
+                instance_id: 1,
+                fresh: True,
+              ),
+              7,
+            ),
+          ],
+          ticking: [],
+        ),
+        [
+          LifeOnly(row: LastingRow(
+            delay_ms: 0,
+            duration_ms: 5000,
+            until_removed: False,
+          )),
+        ],
+      ),
+      #(
+        "a heal applied at once is kept LifeOnly: its life is its delay, so the 0x7fe waits for it, and the go tells its value",
+        aimed_at_caster(
+          reached: [
+            reached_on_caster(
+              id: 4,
+              kind: spell_plan.HealEffect(heal),
+              product: cast_state.Healing(cast_state.Healed(
+                effect_id: Spell4EffectsId(4),
+                vital: effect_kind.Health,
+                delay_ms: 500,
+                amount: 40,
+                split: heal_split.Split(
+                  amount: 40,
+                  shield: 0,
+                  health: 40,
+                  overheal: 0,
+                ),
+              )),
+            ),
+          ],
+          restrictions: [],
+          ticking: [],
+        ),
+        [
+          LifeOnly(row: LastingRow(
+            delay_ms: 500,
+            duration_ms: 0,
+            until_removed: False,
+          )),
+        ],
+      ),
+    ],
+    fn(row) {
+      let #(reason, aimed, expected) = row
+      let assert Ok(node) =
+        cast_tick.node_of(
+          spell: support.child(spell4_id: 7, base: 3),
+          held: option.None,
+          aimed:,
+          unit_id: 7,
+          now_ms: 1000,
+        )
+        as reason
+      assert node.effects == expected as reason
+    },
+  )
+}
+
+// ---- the casts a player's unit create lists ----
+
+/// The views a unit create of the player 7 lists, each as its cast id, whether it is the
+/// current cast, whether its first go has gone and the units it holds a node on.
+fn listed_views(state state: State) -> List(#(Int, Bool, Bool, List(Int))) {
+  unit_casts.listed(views: cast_state.views(cast: state, caster_unit_id: 7))
+  |> list.map(fn(view) {
+    #(
+      view.cast_id,
+      view.current,
+      view.gone,
+      list.map(view.targets, fn(target) { target.unit_id }),
+    )
+  })
+}
+
+pub fn a_players_views_hold_every_live_and_lingering_cast_with_a_listed_target_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(hidden, hidden_effects) =
+    support.press(
+      plans: short_buff_on_a_long_channel(),
+      state: cast_state.new(),
+      bag: bag_of_base_3,
+      at: 1000,
+    )
+  let #(lingering, lingering_effects) =
+    support.press(
+      plans: eight_seconds_on_the_caster(),
+      state: cast_state.new(),
+      bag: bag_of_base_3,
+      at: 1000,
+    )
+  let #(waiting, _) =
+    support.press(
+      plans: channel_before_its_first_go(),
+      state: cast_state.new(),
+      bag: bag_of_base_3,
+      at: 1000,
+    )
+  let #(on_creature, creature_effects) =
+    press_striking(
+      plans: support.plans_of([
+        buff(spell4_id: 101, base: 3, lasting: [
+          fluff(
+            id: 1,
+            aim: spell_plan.AimsAtArea,
+            duration_ms: 3000,
+            until_removed: False,
+          ),
+        ]),
+      ]),
+      state: cast_state.new(),
+      bag: bag_of_base_3,
+      struck: support.hits([20]),
+      at: 1000,
+    )
+  assert dict.is_empty(waiting.lingering)
+    && list.all(dict.values(waiting.casts), fn(live) {
+      dict.is_empty(live.nodes)
+    })
+    as "the channel that waits holds a live cast and no node"
+  list.each(
+    [
+      #(
+        "a live cast that is not the current cast and holds a node is listed, its first go gone",
+        hidden,
+        [
+          #(support.pressed_id(effects: hidden_effects), False, True, [7]),
+        ],
+      ),
+      #("a lingering cast is listed, its first go gone", lingering, [
+        #(support.pressed_id(effects: lingering_effects), False, True, [7]),
+      ]),
+      #(
+        "a live cast that is not the current cast and holds no node yet is not listed",
+        waiting,
+        [],
+      ),
+      #(
+        "a cast whose node is on a creature lists the creature as its target",
+        on_creature,
+        [
+          #(support.pressed_id(effects: creature_effects), False, True, [20]),
+        ],
+      ),
+    ],
+    fn(row) {
+      assert listed_views(state: row.1) == row.2 as row.0
+    },
+  )
 }

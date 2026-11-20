@@ -29,8 +29,13 @@ import genesis_prime/client_connection.{
 }
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
+import genesis_prime/message/combat_result
 import genesis_prime/message/float32
 import genesis_prime/message/player_health
+import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
+import genesis_prime/message/spell_effect_info.{SpellEffectInfo}
+import genesis_prime/message/spell_effect_result
+import genesis_prime/message/spell_target_info.{SpellTargetInfo}
 import genesis_prime/message/unit_properties_changed
 import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
 import genesis_prime/step.{
@@ -255,6 +260,51 @@ pub fn a_viewer_arriving_while_the_buff_lasts_is_created_with_the_value_in_its_0
       base: bits(value: maximum),
       value: bits(value: maximum +. 100.0),
     ))
+  // The 0x262 also lists Gate's cast with each modifier row as an effect on the player, at
+  // the delay still to run and the time left when the viewer arrives at 1400 (the go was at
+  // 1000: row 67777 has delay 180 and duration 400, the added row 99901 delay 180 and
+  // duration 2000; `opcode.0x7f4.effect_delay`, `opcode.0x7f4.effect_time`).
+  let #(_, at_1400) =
+    support.at(
+      state:,
+      ms: 1400,
+      event: support.sent_by_the_map(SeenBy(
+        by: ConnectionId(6),
+        stay: support.viewer_stay(6),
+      )),
+    )
+  let assert [#(6, PeerNews(news: Appeared(unit: mid_buff), ..))] =
+    support.peer_tells(at_1400)
+  let assert [gate_cast] = mid_buff.tail.casts
+    as "Gate's cast holds a node on the player"
+  assert gate_cast.spell4_id == 34_355
+  assert gate_cast.targets
+    == [
+      SpellTargetInfo(
+        unit_id: support.own_unit_id,
+        index: 0,
+        flags: 0,
+        instance_count: 1,
+        combat_result: combat_result.Hit,
+        effects: [
+          SpellEffectInfo(
+            spell4_effects_id: 67_777,
+            instance_id: 1,
+            delay_ms: 0,
+            lifetime_ms: 180,
+            result: spell_effect_result.Bit(SpellEffectBit(unread_2: 0)),
+          ),
+          SpellEffectInfo(
+            spell4_effects_id: 99_901,
+            instance_id: 2,
+            delay_ms: 0,
+            lifetime_ms: 1780,
+            result: spell_effect_result.Bit(SpellEffectBit(unread_2: 0)),
+          ),
+        ],
+      ),
+    ]
+    as "each modifier row is listed at its time left from now: 1580 - 1400 and 3180 - 1400"
   // After every modifier ended the next viewer is created with the bases.
   let #(state, _) =
     list.fold(

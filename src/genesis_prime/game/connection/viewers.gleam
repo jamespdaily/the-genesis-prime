@@ -199,7 +199,11 @@ pub fn map_sent(
       Continue(
         connection_casting.with_cast(
           session: viewers_changed(session:, change: dict.insert(_, by, stay)),
-          cast: cast_state.audience_joined(cast: entered.cast, viewer: by),
+          cast: cast_state.audience_joined(
+            cast: entered.cast,
+            viewer: by,
+            caster_unit_id: entered.unit_id,
+          ),
         ),
         [
           connection_state.news_to(
@@ -1198,10 +1202,13 @@ fn appearance(
     ..unit,
     tail: UnitCreateTail(
       ..unit.tail,
-      casts: unit_casts.entries_of(views: cast_state.views(
-        cast: entered.cast,
-        caster_unit_id: entered.unit_id,
-      )),
+      casts: unit_casts.entries_of(
+        views: cast_state.views(
+          cast: entered.cast,
+          caster_unit_id: entered.unit_id,
+        ),
+        now_ms: now.monotonic_ms,
+      ),
       cast_id: cast_state.current_cast_id(cast: entered.cast),
       stats: list.append(
         list.filter_map(unit.tail.stats, fn(stat) {

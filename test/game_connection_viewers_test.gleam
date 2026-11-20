@@ -15,6 +15,7 @@ import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
+import genesis_prime/message/combat_result
 import genesis_prime/message/crowd_control_state
 import genesis_prime/message/float32
 import genesis_prime/message/item_place
@@ -27,12 +28,18 @@ import genesis_prime/message/movement_state_flags.{MovementStateFlags}
 import genesis_prime/message/movement_time.{MovementTime}
 import genesis_prime/message/movement_timed_path.{MovementTimedPath}
 import genesis_prime/message/relayed_movement
+import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
+import genesis_prime/message/spell_effect_info.{SpellEffectInfo}
+import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_started
+import genesis_prime/message/spell_target_info.{SpellTargetInfo}
 import genesis_prime/message/spell_targets_removed
 import genesis_prime/message/start_movement
 import genesis_prime/message/unit_cc_state_applied.{UnitCcStateApplied}
 import genesis_prime/message/unit_cc_state_ended.{UnitCcStateEnded}
-import genesis_prime/message/unit_create_cast.{UnitCreateCast}
+import genesis_prime/message/unit_create_cast.{
+  type UnitCreateCast, UnitCreateCast,
+}
 import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
 }
@@ -393,7 +400,11 @@ pub fn a_player_that_enters_again_shows_no_unit_and_has_none_gone_test() -> Nil 
 /// whose effects 104980, 177521, 177522 and 229304 write properties 141 to 143
 /// (DamageDealtMultiplier, default 1.0) and 60 (RatingMultiHitAmount, converted from
 /// property 47), each still at its UnitProperty2 default; the owner's record lists them.
-fn appearance_at(place: Place, time_ms: Int) -> UnitCreatePlayer {
+fn appearance_at(
+  place place: Place,
+  time_ms time_ms: Int,
+  casts casts: List(UnitCreateCast),
+) -> UnitCreatePlayer {
   let #(position, rotation) = player_unit.standing(place)
   let player =
     game_connection_support.player_in(game_connection_support.entered().1)
@@ -421,7 +432,41 @@ fn appearance_at(place: Place, time_ms: Int) -> UnitCreatePlayer {
         start_movement.Rotation(rotation),
       ],
       server_time_estimate_start: time_ms,
+      casts:,
     ),
+  )
+}
+
+/// The cast the Engineer's passive (Spell4 45000) is in a unit create: a cast of the unit
+/// on itself, in state 3 (its first go has gone), with its own unit as the one target and
+/// each of its four property rows (Spell4Effects 104980, 177521 and 177522, type 11, and
+/// 229304, type 145 UnitPropertyConversion: all flags 2, until removed, each a modifier row
+/// that gives the node its life) numbered from 1, delay 0 and lifetime 0. The cast id is
+/// the cast rule's counter, which no client rule fixes.
+fn engineer_passive(cast_id cast_id: Int) -> UnitCreateCast {
+  UnitCreateCast(
+    caster_unit_id: game_connection_support.own_unit_id,
+    primary_target_unit_id: game_connection_support.own_unit_id,
+    cast_id:,
+    spell4_id: 45_000,
+    started: 0,
+    targets: [
+      own_target(
+        effects: list.index_map(
+          [104_980, 177_521, 177_522, 229_304],
+          fn(effect_id, index) {
+            listed_effect(
+              effect_id:,
+              instance_id: index + 1,
+              delay_ms: 0,
+              lifetime_ms: 0,
+            )
+          },
+        ),
+      ),
+    ],
+    initial_positions: [],
+    telegraph_positions: [],
   )
 }
 
@@ -435,19 +480,27 @@ pub fn a_watched_makes_the_owner_send_the_viewer_its_0x262_at_its_current_place_
         stay: game_connection_support.viewer_stay(2),
       )),
     )
+  let assert [#(2, PeerNews(news: Appeared(unit: created), ..))] =
+    game_connection_support.peer_tells(taken)
+    as "the viewer is sent the unit at once"
+  let assert [passive] = created.tail.casts
+    as "the Engineer's innate passive is the one cast it holds"
   assert game_connection_support.peer_tells(taken)
     == [
       #(
         2,
         game_connection_support.told(
-          news: Appeared(unit: appearance_at(
-            game_connection_support.entry_place(),
-            1000,
-          )),
+          news: Appeared(
+            unit: appearance_at(
+              place: game_connection_support.entry_place(),
+              time_ms: 1000,
+              casts: [engineer_passive(cast_id: passive.cast_id)],
+            ),
+          ),
         ),
       ),
     ]
-    as "the viewer is sent the unit at once, from the origin the map's Joined carried: the map sends the client no unit"
+    as "the viewer is sent the unit at once, from the origin the map's Joined carried: the map sends the client no unit, and its copy lists the passive's buffs"
   assert support.writes(taken) == []
 }
 
@@ -1603,15 +1656,18 @@ pub fn a_unit_create_lists_only_casts_of_the_unit_it_creates_test() -> Nil {
 /// abilities with a cast bar, by Spell4Base.
 const gamma_rays_base = 16_322
 
+/// Gate (Spell4 34355), the Spellslinger's level-1 ability, by Spell4Base.
+const gate_base = 20_325
+
 const discharge_base = 38_201
 
 /// A Medic of the real tables that pressed the ability `ability` at 1000 ms, watched by the
-/// connection 2 and run to `until_ms`: the cast the watcher was told started first, and the
-/// 0x262 the player sends the arriving viewer 3.
+/// connection 2 and run to `until_ms`: the casts the watcher was told started, in order, and
+/// the 0x262 the player sends the arriving viewer 3.
 fn medic_casting_seen_by_a_new_viewer(
   ability ability: Int,
   until_ms until_ms: Int,
-) -> #(spell_started.SpellStarted, UnitCreatePlayer) {
+) -> #(List(spell_started.SpellStarted), UnitCreatePlayer) {
   let #(state, _, bag_index) =
     game_connection_support.entered_with_spell_trees(class_id: 4, ability:)
   let #(state, steps) =
@@ -1622,15 +1678,68 @@ fn medic_casting_seen_by_a_new_viewer(
       ms: 1000,
       until_ms:,
     )
-  let assert [start, ..] =
+  let starts =
     list.flat_map(steps, fn(taken) {
       game_connection_support.cast_starts(game_connection_support.news_told(
         taken:,
         viewer: 2,
       ))
     })
-    as "the watcher is told the pressed cast started, before any child"
-  #(start, game_connection_support.created_for(state:, viewer: 3))
+  assert starts != [] as "the watcher is told the pressed cast started"
+  #(starts, created_at(state:, viewer: 3, ms: until_ms))
+}
+
+/// The 0x262 the player's connection sends the viewer `viewer` that comes into sight at the
+/// monotonic time `ms`, the time its effects' delays and lifetimes are counted from.
+fn created_at(
+  state state: game_connection.State,
+  viewer viewer: Int,
+  ms ms: Int,
+) -> UnitCreatePlayer {
+  let #(_, taken) =
+    game_connection_support.at(
+      state:,
+      ms:,
+      event: game_connection_support.sent_by_the_map(SeenBy(
+        by: ConnectionId(viewer),
+        stay: game_connection_support.viewer_stay(viewer),
+      )),
+    )
+  let assert [#(_, PeerNews(news: Appeared(unit:), ..))] =
+    game_connection_support.peer_tells(taken)
+    as "the player's connection sends the arriving viewer its unit_create_player"
+  unit
+}
+
+/// The effect info of an effect that tells no value, as a unit create lists it.
+fn listed_effect(
+  effect_id effect_id: Int,
+  instance_id instance_id: Int,
+  delay_ms delay_ms: Int,
+  lifetime_ms lifetime_ms: Int,
+) -> spell_effect_info.SpellEffectInfo {
+  SpellEffectInfo(
+    spell4_effects_id: effect_id,
+    instance_id:,
+    delay_ms:,
+    lifetime_ms:,
+    result: spell_effect_result.Bit(SpellEffectBit(unread_2: 0)),
+  )
+}
+
+/// The target info a unit create lists for the player's own unit with these effects: the
+/// first target, flags 0, a count of 1 and a Hit.
+fn own_target(
+  effects effects: List(spell_effect_info.SpellEffectInfo),
+) -> spell_target_info.SpellTargetInfo {
+  SpellTargetInfo(
+    unit_id: game_connection_support.own_unit_id,
+    index: 0,
+    flags: 0,
+    instance_count: 1,
+    combat_result: combat_result.Hit,
+    effects:,
+  )
 }
 
 /// A viewer's coming into sight of the Medic or leaving it, at a time.
@@ -1732,13 +1841,86 @@ fn told_of(
   })
 }
 
+/// `opcode.0x262.casts` and `InitUnitFromCreate 0x140456960` (the unit is filed before its
+/// list, so its own buffs are built in the same frame): a unit create lists each cast of the
+/// player that holds a node with a listed effect, whatever the cast bar says, with each effect's
+/// delay still to run and time left from now (`opcode.0x7f4.effect_delay`,
+/// `opcode.0x7f4.effect_time`). A Spellslinger's Gate (Spell4 34355, row 67777: a property
+/// modifier of delay 180 and duration 400 on the caster) 100 ms after its go has 80 ms of delay
+/// to run and 480 ms to live, and the cast is not the current cast; the Engineer's passive
+/// outlives its owner's death, so a viewer that arrives to the corpse is listed it.
+pub fn a_player_that_comes_into_sight_lists_its_buffs_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(state, _, bag_index) =
+    game_connection_support.entered_with_spell_trees(
+      class_id: 7,
+      ability: gate_base,
+    )
+  let #(state, steps) =
+    game_connection_support.pressed_until(
+      state: game_connection_support.watched_by(state:, viewers: [2]),
+      bag_index:,
+      client_cast_id: 1,
+      ms: 1000,
+      until_ms: 1100,
+    )
+  let assert [gate, ..] =
+    list.flat_map(steps, fn(taken) {
+      game_connection_support.cast_starts(game_connection_support.news_told(
+        taken:,
+        viewer: 2,
+      ))
+    })
+    as "the watcher is told the pressed cast started"
+  let created = created_at(state:, viewer: 3, ms: 1100)
+  assert gate.spell4_id == 34_355
+  assert created.tail.casts
+    == [
+      UnitCreateCast(
+        caster_unit_id: game_connection_support.own_unit_id,
+        primary_target_unit_id: gate.primary_target_unit_id,
+        cast_id: gate.cast_id,
+        spell4_id: 34_355,
+        started: 0,
+        targets: [
+          own_target(effects: [
+            listed_effect(
+              effect_id: 67_777,
+              instance_id: 1,
+              delay_ms: 80,
+              lifetime_ms: 480,
+            ),
+          ]),
+        ],
+        initial_positions: [],
+        telegraph_positions: [],
+      ),
+    ]
+    as "Gate's one target is the Spellslinger, row 67777 at delay 80 and lifetime 480"
+  assert created.tail.cast_id == 0
+    as "Gate is no longer the current cast, yet it is listed for its buff"
+  let #(dead, _) =
+    game_connection_support.killed(
+      game_connection_support.watched_by(
+        state: game_connection_support.in_world(),
+        viewers: [2],
+      ),
+    )
+  let corpse = game_connection_support.created_for(state: dead, viewer: 3)
+  let assert [passive] = corpse.tail.casts
+    as "the passive is listed to a viewer that arrives to the corpse"
+  assert passive == engineer_passive(cast_id: passive.cast_id)
+  assert corpse.tail.cast_id == 0
+}
+
 /// `opcode.0x262.casts` and `SetUnitCast 0x1404697a0`: a unit create lists the cast the
 /// player holds the bar of, with the id the client looks the cast in progress up by, in
 /// state 2 (bit 1) until its first go and state 3 (bit 0) after; a cast that is no longer
-/// the current cast is not listed. And `cast.target_node_end`: a viewer is then told the
-/// later news of the cast it was listed and of no other (a 0x87f of a cast it does not
-/// hold would wait on the unit for ever), and one that left sight is told nothing of the
-/// casts it saw before.
+/// the current cast and holds no node is not listed, and one that holds a node with a
+/// listed effect still is (a Discharge's lingering Power Charge). And
+/// `cast.target_node_end`: a viewer is then told the later news of the casts it was
+/// listed and of no other (a 0x87f of a cast it does not hold would wait on the unit for
+/// ever), and one that left sight is told nothing of the casts it saw before.
 pub fn a_player_that_comes_into_sight_lists_its_current_cast_test() -> Nil {
   use <- owned_test.run(60_000)
   let none =
@@ -1758,7 +1940,7 @@ pub fn a_player_that_comes_into_sight_lists_its_current_cast_test() -> Nil {
         option.Some(1),
       ),
       #(
-        "Discharge, Channeled, 410 ms after its first go: listed in state 3",
+        "Discharge, Channeled, 410 ms after its first go: listed in state 3, with the Power Charge its first go left on the Medic, in state 3 with the Medic as its one target (Spell4Effects 96819, until removed)",
         discharge_base,
         58_832,
         1500,
@@ -1774,27 +1956,51 @@ pub fn a_player_that_comes_into_sight_lists_its_current_cast_test() -> Nil {
     ],
     fn(row) {
       let #(name, ability, spell4_id, until_ms, started) = row
-      let #(start, created) =
+      let #(starts, created) =
         medic_casting_seen_by_a_new_viewer(ability:, until_ms:)
+      let assert [start, ..] = starts
       assert start.spell4_id == spell4_id as name
       case started {
         option.None -> {
           assert created.tail.casts == [] && created.tail.cast_id == 0 as name
         }
         option.Some(started) -> {
-          assert created.tail.casts
-            == [
+          let cast =
+            UnitCreateCast(
+              caster_unit_id: game_connection_support.own_unit_id,
+              primary_target_unit_id: start.primary_target_unit_id,
+              cast_id: start.cast_id,
+              spell4_id:,
+              started:,
+              targets: [],
+              initial_positions: [],
+              telegraph_positions: [],
+            )
+          let power_charges =
+            list.filter(starts, fn(start) { start.spell4_id == 42_569 })
+            |> list.map(fn(power_charge) {
               UnitCreateCast(
-                caster_unit_id: game_connection_support.own_unit_id,
-                primary_target_unit_id: start.primary_target_unit_id,
-                cast_id: start.cast_id,
-                spell4_id:,
-                started:,
-                targets: [],
-                initial_positions: [],
-                telegraph_positions: [],
-              ),
-            ]
+                ..cast,
+                primary_target_unit_id: power_charge.primary_target_unit_id,
+                cast_id: power_charge.cast_id,
+                spell4_id: 42_569,
+                started: 0,
+                targets: [
+                  own_target(effects: [
+                    listed_effect(
+                      effect_id: 96_819,
+                      instance_id: 1,
+                      delay_ms: 0,
+                      lifetime_ms: 0,
+                    ),
+                  ]),
+                ],
+              )
+            })
+          assert created.tail.casts
+            == list.sort([cast, ..power_charges], fn(left, right) {
+              int.compare(left.cast_id, right.cast_id)
+            })
             as name
           assert created.tail.cast_id == start.cast_id as name
         }
@@ -1804,11 +2010,11 @@ pub fn a_player_that_comes_into_sight_lists_its_current_cast_test() -> Nil {
   list.each(
     [
       #(
-        "a viewer that comes into sight after Discharge's first go is told its finish, and nothing of the Power Charge the first go left",
+        "a viewer that comes into sight after Discharge's first go is told its finish and the end of the Power Charge the first go left, which its create listed",
         [Comes(1500)],
       ),
       #(
-        "a viewer that saw the Power Charge start, left and came back is told nothing of it",
+        "a viewer that saw the Power Charge start, left and came back is told the Power Charge's end once: it was listed it again",
         [Comes(1100), Goes(1500), Comes(1600)],
       ),
     ],
@@ -1822,7 +2028,21 @@ pub fn a_player_that_comes_into_sight_lists_its_current_cast_test() -> Nil {
       assert discharge.spell4_id == 58_832 as name
       assert list.contains(told, CastFinished(cast_id: discharge.cast_id))
         as name
-      assert !told_of(told:, cast_id: power_charge.cast_id) as name
+      assert told_of(told:, cast_id: power_charge.cast_id) as name
+      assert list.count(told, fn(news) {
+          list.any([False, True], fn(destroyed) {
+            news
+            == client_connection.CastTargetsRemoved(
+              removed: spell_targets_removed.SpellTargetsRemoved(
+                cast_id: power_charge.cast_id,
+                unit_ids: [game_connection_support.own_unit_id],
+              ),
+              destroyed:,
+            )
+          })
+        })
+        == 1
+        as name
     },
   )
 }
