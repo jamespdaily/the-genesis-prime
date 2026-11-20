@@ -117,24 +117,25 @@ pub fn describe(refusal: Refusal) -> String {
 
 /// Every package in the text of `manifest.toml` as (name, licences), the
 /// licences read from `<directory>/<name>/gleam.toml` for a Gleam package or
-/// `<directory>/<name>/src/<name>.app.src` for an Erlang one. A package whose
-/// file is missing has no licences.
+/// `<directory>/<name>/src/<otp_app>.app.src` for an Erlang one, `otp_app`
+/// being the application name the manifest gives (it differs from the package
+/// name for `hpack_erl`, whose application is `hpack`). A package whose file
+/// is missing has no licences.
 pub fn installed(
   manifest manifest: String,
   packages_directory packages_directory: String,
 ) -> List(#(String, List(String))) {
   list.map(project_file.manifest_packages(manifest), fn(package) {
-    let #(name, build_tools) = package
-    let directory = packages_directory <> "/" <> name
-    let licences = case list.contains(build_tools, "gleam") {
+    let directory = packages_directory <> "/" <> package.name
+    let licences = case list.contains(package.build_tools, "gleam") {
       True -> list.map(read(directory <> "/gleam.toml"), gleam_licences)
       False ->
         list.map(
-          read(directory <> "/src/" <> name <> ".app.src"),
+          read(directory <> "/src/" <> package.otp_app <> ".app.src"),
           erlang_licences,
         )
     }
-    #(name, list.flatten(licences))
+    #(package.name, list.flatten(licences))
   })
 }
 

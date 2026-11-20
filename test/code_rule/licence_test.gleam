@@ -8,7 +8,8 @@
 ////   Gleam project file. SSPL-1.0 is not an open-source licence and stays off.
 //// - A Gleam package states its licence in `licences` of its own project
 ////   file (glexer writes `licenses`); an Erlang package states it in the
-////   `{licenses, [...]}` entry of `src/<name>.app.src`. Both are read from
+////   `{licenses, [...]}` entry of `src/<otp_app>.app.src` (`otp_app` is the
+////   application name in `manifest.toml`). Both are read from
 ////   `build/packages/<name>/`.
 //// - A package that declares no licence there passes only when `declared`
 ////   under `[tools.licences]` names it, with an accepted licence and where it
@@ -17,9 +18,13 @@
 
 import code_rule/licence.{NoLicence, Unaccepted}
 import code_rule/source
+import envoy
 import gleam/list
+import gleam/result
 import gleam/string
 import owned_test
+import planted_table
+import simplifile
 import unitest
 
 const accepted_list = [
@@ -185,4 +190,41 @@ pub fn a_package_with_no_licence_passes_only_when_declared_test() -> Nil {
       licence.Unaccepted("planted_own", ["MIT"]),
     ]
     as "the listed package passes; the unlisted one is still refused"
+}
+
+pub fn an_erlang_package_is_read_from_the_application_file_its_manifest_entry_names_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  // `hpack_erl` is built as the application `hpack` (`otp_app` in the
+  // manifest), so its file is `src/hpack.app.src`; `plain` is named as its
+  // application is.
+  let manifest =
+    string.join(
+      [
+        "packages = [",
+        "  { name = \"hpack_erl\", version = \"0.3.0\", build_tools = [\"rebar3\"], requirements = [], otp_app = \"hpack\", source = \"hex\", outer_checksum = \"00\" },",
+        "  { name = \"plain\", version = \"1.0.0\", build_tools = [\"rebar3\"], requirements = [], otp_app = \"plain\", source = \"hex\", outer_checksum = \"00\" },",
+        "]",
+      ],
+      "\n",
+    )
+  use folder <- planted_table.with_folder(result.unwrap(
+    envoy.get("TMPDIR"),
+    "/tmp",
+  ))
+  let assert Ok(Nil) =
+    simplifile.create_directory_all(folder <> "/hpack_erl/src")
+  let assert Ok(Nil) = simplifile.create_directory_all(folder <> "/plain/src")
+  let assert Ok(Nil) =
+    simplifile.write(
+      folder <> "/hpack_erl/src/hpack.app.src",
+      "{application, hpack, [{licenses, [\"MIT\"]}]}.\n",
+    )
+  let assert Ok(Nil) =
+    simplifile.write(
+      folder <> "/plain/src/plain.app.src",
+      "{application, plain, [{licenses, [\"ISC\"]}]}.\n",
+    )
+  assert licence.installed(manifest, folder)
+    == [#("hpack_erl", ["MIT"]), #("plain", ["ISC"])]
 }
