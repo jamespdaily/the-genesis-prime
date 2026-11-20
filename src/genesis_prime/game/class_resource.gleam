@@ -76,6 +76,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
+import gleam/set.{type Set}
 
 /// Where a class's resource starts at entry, by the client's text
 /// (`LocalizedEnum.CRB_StalkerResource`).
@@ -360,10 +361,8 @@ pub opaque type Resources {
     value: Float,
     in_combat: Bool,
     alive: Bool,
-    regen_running: Bool,
-    refill_running: Bool,
-    drain_running: Bool,
-    empty_running: Bool,
+    /// The timers the rule has started and not yet seen fire or cancelled.
+    running: Set(TimerId),
   )
 }
 
@@ -401,13 +400,31 @@ pub const drain_timer = TimerId(6)
 /// The timer of the Esper's empty after combat.
 pub const empty_timer = TimerId(7)
 
+/// Every timer of this rule, in timer-id order.
+const timers = [regen_timer, refill_timer, drain_timer, empty_timer]
+
 /// Whether the timer is one of this rule's, for the connection to hand it to
 /// `timer_fired`.
 pub fn owns(timer timer: TimerId) -> Bool {
-  timer == regen_timer
-  || timer == refill_timer
-  || timer == drain_timer
-  || timer == empty_timer
+  list.contains(timers, timer)
+}
+
+fn is_running(resources resources: Resources, timer timer: TimerId) -> Bool {
+  set.contains(resources.running, timer)
+}
+
+fn running_with(
+  resources resources: Resources,
+  timer timer: TimerId,
+) -> Resources {
+  Resources(..resources, running: set.insert(resources.running, timer))
+}
+
+fn running_without(
+  resources resources: Resources,
+  timer timer: TimerId,
+) -> Resources {
+  Resources(..resources, running: set.delete(resources.running, timer))
 }
 
 /// A player entering the world: alive, out of combat, its slot at its start.
@@ -417,10 +434,7 @@ pub fn new(resource resource: Resource) -> Resources {
     value: float32.rounded(resource.start),
     in_combat: False,
     alive: True,
-    regen_running: False,
-    refill_running: False,
-    drain_running: False,
-    empty_running: False,
+    running: set.new(),
   )
 }
 
@@ -590,9 +604,9 @@ pub fn gain(
     })
   let #(resources, drain) = case resources.resource.drain {
     Some(Drain(after_ms:, ..)) -> #(
-      Resources(..resources, drain_running: True),
+      running_with(resources:, timer: drain_timer),
       list.append(
-        case resources.drain_running {
+        case is_running(resources:, timer: drain_timer) {
           True -> [CancelTimer(timer: drain_timer)]
           False -> []
         },
@@ -616,35 +630,42 @@ fn refills(resources resources: Resources) -> #(Resources, List(Effect)) {
     True -> #(resources, [])
     False -> {
       let #(resources, regen) = case resources.resource.regen {
-        Some(Regen(tick_ms:, ..)) if !resources.regen_running -> #(
-          Resources(..resources, regen_running: True),
-          [StartTimer(timer: regen_timer, after_ms: tick_ms)],
-        )
-        Some(..) | None -> #(resources, [])
+        Some(Regen(tick_ms:, ..)) ->
+          started(resources:, timer: regen_timer, after_ms: tick_ms)
+        None -> #(resources, [])
       }
       let #(resources, refill) = case
-        resources.resource.refill_after_combat_ms
+        resources.resource.refill_after_combat_ms,
+        resources.in_combat
       {
-        Some(after_ms) if !resources.in_combat && !resources.refill_running -> #(
-          Resources(..resources, refill_running: True),
-          [StartTimer(timer: refill_timer, after_ms:)],
-        )
-        Some(..) | None -> #(resources, [])
+        Some(after_ms), False ->
+          started(resources:, timer: refill_timer, after_ms:)
+        Some(_), True | None, _ -> #(resources, [])
       }
       #(resources, list.append(regen, refill))
     }
   }
-  let #(resources, emptying) = case resources.resource.empty_after_combat_ms {
-    Some(after_ms)
-      if !resources.in_combat
-      && resources.value >. 0.0
-      && !resources.empty_running
-    -> #(Resources(..resources, empty_running: True), [
-      StartTimer(timer: empty_timer, after_ms:),
-    ])
-    Some(_) | None -> #(resources, [])
+  let #(resources, emptying) = case
+    resources.resource.empty_after_combat_ms,
+    resources.in_combat || resources.value <=. 0.0
+  {
+    Some(after_ms), False -> started(resources:, timer: empty_timer, after_ms:)
+    Some(_), True | None, _ -> #(resources, [])
   }
   #(resources, list.append(below_max, emptying))
+}
+
+/// The timer started with a `StartTimer` unless it already runs.
+fn started(
+  resources resources: Resources,
+  timer timer: TimerId,
+  after_ms after_ms: Int,
+) -> #(Resources, List(Effect)) {
+  use <- bool.guard(
+    when: is_running(resources:, timer:),
+    return: #(resources, []),
+  )
+  #(running_with(resources:, timer:), [StartTimer(timer:, after_ms:)])
 }
 
 /// A timer of the rule fired: a tick of the refill over time, the Medic's refill, a
@@ -654,32 +675,24 @@ pub fn timer_fired(
   resources resources: Resources,
   timer timer: TimerId,
 ) -> #(Resources, List(Effect)) {
-  case resources.resource {
-    Resource(regen: Some(Regen(per_tick:, ..)), ..)
-      if timer == regen_timer && resources.regen_running
-    ->
-      changed_to(
-        resources: Resources(..resources, regen_running: False),
-        value: resources.value +. per_tick,
-      )
-    Resource(refill_after_combat_ms: Some(_), ..)
-      if timer == refill_timer && resources.refill_running
-    ->
-      changed_to(
-        resources: Resources(..resources, refill_running: False),
-        value: resources.resource.max,
-      )
-    Resource(drain: Some(Drain(per_tick:, tick_ms:, ..)), ..)
-      if timer == drain_timer && resources.drain_running
+  use <- bool.guard(
+    when: !is_running(resources:, timer:),
+    return: #(resources, []),
+  )
+  let resources = running_without(resources:, timer:)
+  case timer, resources.resource {
+    _, Resource(regen: Some(Regen(per_tick:, ..)), ..) if timer == regen_timer ->
+      changed_to(resources:, value: resources.value +. per_tick)
+    _, Resource(refill_after_combat_ms: Some(_), ..) if timer == refill_timer ->
+      changed_to(resources:, value: resources.resource.max)
+    _, Resource(drain: Some(Drain(per_tick:, tick_ms:, ..)), ..)
+      if timer == drain_timer
     -> {
       let #(resources, effects) =
-        changed_to(
-          resources: Resources(..resources, drain_running: False),
-          value: resources.value -. per_tick,
-        )
+        changed_to(resources:, value: resources.value -. per_tick)
       case resources.value >. 0.0 {
         True -> #(
-          Resources(..resources, drain_running: True),
+          running_with(resources:, timer:),
           list.append(effects, [
             StartTimer(timer: drain_timer, after_ms: tick_ms),
           ]),
@@ -687,14 +700,9 @@ pub fn timer_fired(
         False -> #(resources, effects)
       }
     }
-    Resource(empty_after_combat_ms: Some(_), ..)
-      if timer == empty_timer && resources.empty_running
-    ->
-      changed_to(
-        resources: Resources(..resources, empty_running: False),
-        value: 0.0,
-      )
-    Resource(..) -> #(resources, [])
+    _, Resource(empty_after_combat_ms: Some(_), ..) if timer == empty_timer ->
+      changed_to(resources:, value: 0.0)
+    _, Resource(..) -> #(resources, [])
   }
 }
 
@@ -728,17 +736,16 @@ pub fn combat_changed(
   let resources = Resources(..resources, in_combat:)
   case in_combat {
     True -> {
-      let refill = case resources.refill_running {
-        True -> [CancelTimer(timer: refill_timer)]
-        False -> []
-      }
-      let empty = case resources.empty_running {
-        True -> [CancelTimer(timer: empty_timer)]
-        False -> []
-      }
+      let cancels =
+        list.filter([refill_timer, empty_timer], is_running(
+          resources:,
+          timer: _,
+        ))
       #(
-        Resources(..resources, refill_running: False, empty_running: False),
-        list.append(refill, empty),
+        list.fold(cancels, resources, fn(resources, timer) {
+          running_without(resources:, timer:)
+        }),
+        list.map(cancels, fn(timer) { CancelTimer(timer:) }),
       )
     }
     False -> refills(resources:)
@@ -762,30 +769,8 @@ pub fn came_back(resources resources: Resources) -> #(Resources, List(Effect)) {
 /// The player left the world, or its connection ended: every timer is cancelled,
 /// and nothing is sent.
 pub fn left(resources resources: Resources) -> #(Resources, List(Effect)) {
-  let regen = case resources.regen_running {
-    True -> [CancelTimer(timer: regen_timer)]
-    False -> []
-  }
-  let refill = case resources.refill_running {
-    True -> [CancelTimer(timer: refill_timer)]
-    False -> []
-  }
-  let drain = case resources.drain_running {
-    True -> [CancelTimer(timer: drain_timer)]
-    False -> []
-  }
-  let empty = case resources.empty_running {
-    True -> [CancelTimer(timer: empty_timer)]
-    False -> []
-  }
-  #(
-    Resources(
-      ..resources,
-      regen_running: False,
-      refill_running: False,
-      drain_running: False,
-      empty_running: False,
-    ),
-    list.flatten([regen, refill, drain, empty]),
-  )
+  let cancels =
+    list.filter(timers, is_running(resources:, timer: _))
+    |> list.map(fn(timer) { CancelTimer(timer:) })
+  #(Resources(..resources, running: set.new()), cancels)
 }
