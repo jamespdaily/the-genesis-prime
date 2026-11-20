@@ -35,6 +35,7 @@ import genesis_prime/game/faction_level
 import genesis_prime/game/hit.{Blow, Worked}
 import genesis_prime/game/prerequisite
 import genesis_prime/game/start_place
+import genesis_prime/game/telegraph_entries
 import genesis_prime/game/unit_properties
 import genesis_prime/game/vendor
 import genesis_prime/table/creature2
@@ -2135,6 +2136,8 @@ pub fn a_specials_reach_is_the_extent_of_its_hit_shapes_and_the_turrets_stays_30
     as "the Sim-Turret's rectangle is 30 long, under the area row's maxRange 30.0"
   assert beast.combat.attack.reach == 8.0
     as "the attack's reach is the spell's targetMaxRange 5.0 plus the hit radius 3.0, as before"
+  assert !beast.combat.attack.adds_target_radius
+    as "an instant attack's reach never adds the target's radius"
   let turret =
     spawn_support.sim_turret(
       number: 1,
@@ -2148,4 +2151,109 @@ pub fn a_specials_reach_is_the_extent_of_its_hit_shapes_and_the_turrets_stays_30
     )
   assert turret.combat.attack.reach == 30.0
     as "the turret's own charge keeps the area row's 30.0"
+}
+
+pub fn a_charge_on_its_target_reaches_as_far_as_the_spells_target_max_range_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The client holds the gap between a caster's and a unit target's edges to
+  // Spell4.targetMaxRange (`0x1403b2240`), so a cast on a unit starts within that range plus
+  // both hit radii: the reach is that plus the caster's hit radius (the Eldan Security
+  // Construct's display row 23881: 1.0), and the target's radius is added by the fight
+  // (`adds_target_radius`). A targetMaxRange of 0 takes the area row's maxRange alone, a server
+  // choice the client's check does not cover, with no radius of either unit. Rows by
+  // `table_rows`: 55846 targetMaxRange 15; 55759 6; 46353 50 (area row 388, a circle of 5);
+  // 61226 0 (area row 629, maxRange 60); 55317 a charge on its caster.
+  [
+    #(
+      55_846,
+      16.0,
+      True,
+      "15 plus the hit radius, over the area row 116's maxRange of 10",
+    ),
+    #(55_759, 7.0, True, "6 plus the hit radius"),
+    #(
+      46_353,
+      51.0,
+      True,
+      "50 plus the hit radius, not capped by its area row or its shape",
+    ),
+    #(
+      61_226,
+      60.0,
+      False,
+      "targetMaxRange 0: the area row 629's maxRange, with no radius added",
+    ),
+    #(
+      55_317,
+      5.5,
+      False,
+      "a charge on its caster: the extent of its shapes, with no radius added",
+    ),
+  ]
+  |> list.each(fn(found) {
+    let #(spell4_id, reach, adds_target_radius, reason) = found
+    let special =
+      the_special_of(beast: spawn_support.special_creature(
+        number: 1,
+        creature_id: 25_986,
+        spell4_id:,
+      ))
+    assert #(special.attack.reach, special.attack.adds_target_radius)
+      == #(reach, adds_target_radius)
+      as reason
+  })
+}
+
+pub fn the_eldan_security_construct_loads_laser_bolt_with_its_circle_on_the_target_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The Constructs share display group 26468 (47430, a vignette one, has faction 219, which is
+  // friendly to both sides, so no spawn of it starts a fight). Laser Bolt (Spell4 55846):
+  // castTime 3000, area row 116, one SpellPhase (11613, delay 3000, index 0) and one damage
+  // row, so one strike go at 3000; its row 7874 is a circle of 4 (flags 0x905000, tt 2), fixed
+  // at the target.
+  list.each([25_986, 27_399], fn(creature_id) {
+    let special =
+      the_special_of(beast: spawn_support.special_creature(
+        number: 1,
+        creature_id:,
+        spell4_id: 55_846,
+      ))
+    let assert Charged(
+      cast_ms:,
+      area: row,
+      inside:,
+      anchor:,
+      draws:,
+      gos:,
+      aims_at_target:,
+      ..,
+    ) = special.attack.cast
+      as "Laser Bolt is a charge"
+    assert cast_ms == 3000
+    assert anchor == area.FixedAtTarget as "tt 2 with 0x1000 and 0x4000"
+    assert row.max_range == 10.0 as "area row 116"
+    assert inside
+      == area.InsideShapes(placements: [
+        area.Placement(
+          shape: area.Circle(radius: 4.0),
+          ahead: 0.0,
+          aside: 0.0,
+          turn_degrees: 0.0,
+        ),
+      ])
+    assert draws
+      == [
+        telegraph_entries.Draw(
+          telegraph_damage_id: 7874,
+          placing: telegraph_entries.AtTelegraphPosition,
+          target_type_flags: 2,
+          ahead: 0.0,
+          aside: 0.0,
+          up: 0.0,
+          turn_degrees: 0.0,
+        ),
+      ]
+    assert gos == [Go(at_ms: 3000, strikes: True)]
+    assert !aims_at_target as "propertyFlags 12582912 has no bit 0x2"
+  })
 }

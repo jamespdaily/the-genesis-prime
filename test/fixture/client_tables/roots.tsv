@@ -1476,3 +1476,12 @@ TelegraphDamage	4664	an unhalved box, shape 6	spell_area_test
 Spell4	46353	a charge with a client-placed target row (row 4796)	telegraph_entries_test
 Spell4	39641	a charge with a 0x1000-only target row (row 2376)	telegraph_entries_test
 Spell4	61275	a charge with a 0x5000 target row (row 9129)	telegraph_entries_test
+Spell4	48590	a charge with a client-placed cone on its target (rows 5671, 5672)	spell_area_test, creature_special_test
+Spell4	61226	a charge with a ring on its target (ten rows) and a targetMaxRange of 0	spell_area_test, spawn_test, creature_special_test
+Spell4	55759	a charge on its target with a targetMaxRange of 6 and a circle like Laser Bolt's	spell_area_test, spawn_test, creature_special_test
+Spell4	55847	Laser Bolt's 2,000 ms tier on area row 210	spell_area_test, creature_special_test
+Spell4	46696	a charge with a row placed on each struck unit (row 14428)	spell_area_test, creature_special_test
+Spell4	39905	a charge with a row placed on each struck unit (row 14629) and a target condition	spell_area_test, creature_special_test
+Creature2	25986	Levian Bay Eldan Security Construct, which casts Laser Bolt	spawn_test, world_creature_test
+Creature2	27399	Levian Bay Eldan Security Construct, Horde Act 1 Flavor	spawn_test
+Creature2	47430	an Eldan Security Construct of Levian Bay	spawn_test
