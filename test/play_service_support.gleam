@@ -82,13 +82,8 @@ pub fn plant(
   let assert Ok(Nil) =
     simplifile.write(base <> ".exit", string.join(exits, "\n") <> "\n")
   let assert Ok(Nil) = simplifile.write(base <> ".out", answer.output)
-  case answer.error {
-    "" -> Nil
-    error -> {
-      let assert Ok(Nil) = simplifile.write(base <> ".err", error)
-      Nil
-    }
-  }
+  let assert Ok(Nil) = simplifile.write(base <> ".err", answer.error)
+  Nil
 }
 
 /// Makes the call `key` names wait until its caller ends it, and record its
@@ -130,6 +125,12 @@ pub fn look_waiter_path(scene: Scene) -> String {
 pub fn blocked_pid_path(scene scene: Scene, key key: String) -> String {
   scene.fakes <> "/answers/" <> key <> ".pid"
 }
+
+/// The name of the server's container.
+pub const server_container = "genesis-play"
+
+/// The name of the play database's container.
+pub const database_container = "genesis-play-postgres"
 
 /// The key of `podman info`.
 pub const info = "info"
@@ -243,6 +244,16 @@ pub fn run_script(
       opt: [],
     ),
   )
+}
+
+/// The text of an executable file that runs the repository's script `path` as
+/// `run_script` does, for a caller that starts the script itself (the
+/// dashboard's runner); the scene's environment stands in place of the caller's.
+pub fn wrapper(scene scene: Scene, script path: String) -> String {
+  let words =
+    list.append(environment(scene:, extra: []), [bash(), path])
+    |> list.map(fn(word) { "'" <> string.replace(word, "'", "'\\''") <> "'" })
+  "#!/bin/bash\nexec /usr/bin/env " <> string.join(words, " ") <> "\n"
 }
 
 /// Runs `commands` in a shell that has sourced `lib.sh`, so a function of it is

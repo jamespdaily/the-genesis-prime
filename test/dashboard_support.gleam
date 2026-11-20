@@ -230,9 +230,9 @@ pub fn with_home(body body: fn(String) -> a) -> a {
 /// `home`, serves the client's fonts from `home`'s `client-files/UI/Fonts` and
 /// the stylesheets from the repository. Its state script prints a fixed report
 /// (`test/dashboard_state_report.sh`), so no test that opens a page runs the
-/// developer's real `podman`, and its poller's timer never comes within a
-/// test (the interval is a day): a read is made when a page subscribes or a
-/// test asks for one.
+/// developer's real `podman`. Its poller's timer never comes within a test (the
+/// interval is a day) and no read is ended by its deadline (a day): a read is
+/// made when a page subscribes or a test asks for one, and ends with the script.
 pub fn settings(home home: String) -> dashboard.Settings {
   dashboard.Settings(
     port: free_port(),
@@ -241,6 +241,7 @@ pub fn settings(home home: String) -> dashboard.Settings {
     stylesheet_folder: "dev/dashboard",
     state_script: "test/dashboard_state_report.sh",
     poll_interval_ms: 86_400_000,
+    read_deadline_ms: 86_400_000,
   )
 }
 

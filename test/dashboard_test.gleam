@@ -9,17 +9,20 @@ import frame_peer
 import genesis_prime/dashboard
 import genesis_prime/dashboard/access
 import genesis_prime/dashboard/host
+import genesis_prime/dashboard/host_reading.{type Reading}
+import genesis_prime/dashboard/overview.{Model}
 import genesis_prime/dashboard/secret
 import gleam/bit_array
 import gleam/bool
 import gleam/erlang/process
 import gleam/int
 import gleam/list
-import gleam/option.{None}
+import gleam/option.{None, Some}
 import gleam/string
+import lustre/element
 import open_wait
 import owned_test
-import shellout
+import play_service_support.{Answer} as support
 import simplifile
 
 fn started(settings: dashboard.Settings) -> dashboard.Running {
@@ -315,159 +318,154 @@ pub fn a_dead_poller_takes_the_page_runtimes_with_it_and_a_new_tab_is_served_tes
   dashboard_support.close(second)
 }
 
-/// Writes an executable file.
-fn plant_executable(path: String, text: String) -> Nil {
-  let assert Ok(Nil) = simplifile.write(path, text)
-  let assert Ok(Nil) = simplifile.set_permissions_octal(path, 0o755)
-  Nil
-}
-
-/// What `ps` says of when process `pid` started, with blanks collapsed, as the
-/// live lock's owner record keeps it.
-fn started_text(pid: Int) -> String {
-  let assert Ok(text) =
-    shellout.command(
-      run: "ps",
-      with: ["-o", "lstart=", "-p", int.to_string(pid)],
-      in: ".",
-      opt: [],
-    )
-    as "ps could not read the test's own process"
-  text
-  |> string.split(" ")
-  |> list.map(string.trim)
-  |> list.filter(fn(word) { word != "" })
-  |> string.join(" ")
-}
-
-/// A `podman` that answers as a healthy Podman does for what `state.sh` asks,
-/// unless the file `fails` stands beside it, when every call exits 2.
-const fake_podman =
-  "#!/bin/bash
-here=$(dirname \"$0\")
-if [ -e \"$here/fails\" ]; then
-  echo 'cannot reach the machine' >&2
-  exit 2
-fi
-case \"$1\" in
-  info | exec) exit 0 ;;
-  container)
-    case \"$2\" in
-      exists) exit 0 ;;
-      inspect)
-        case \"$*\" in
-          *genesis.revision*) echo '9d2015a0 192.168.1.5 true' ;;
-          *State.Status*) echo running ;;
-        esac
-        ;;
-    esac
-    ;;
-esac
+/// What `lsof` prints with two connections established on the game port.
+const two_connections =
+  "COMMAND   PID USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
+gvproxy  4242 jim   10u  IPv4 0x1      0t0  TCP 127.0.0.1:24000->127.0.0.1:50001 (ESTABLISHED)
+gvproxy  4242 jim   11u  IPv4 0x2      0t0  TCP 127.0.0.1:24000->127.0.0.1:50002 (ESTABLISHED)
 "
 
-/// An `lsof` that shows two established connections on the game port.
-const fake_lsof =
-  "#!/bin/bash
-echo 'COMMAND   PID USER   FD   TYPE DEVICE SIZE/OFF NODE NAME'
-echo 'gvproxy  4242 jim   10u  IPv4 0x1      0t0  TCP 127.0.0.1:24000->127.0.0.1:50001 (ESTABLISHED)'
-echo 'gvproxy  4242 jim   11u  IPv4 0x2      0t0  TCP 127.0.0.1:24000->127.0.0.1:50002 (ESTABLISHED)'
-"
+/// The Overview's markup for a reading, as the page's runtime renders it.
+fn overview_html(reading: Reading) -> String {
+  element.to_string(overview.view(Model(reading: Some(reading))))
+}
 
+/// Fails, naming the stage and the word, when the markup lacks one of `words`.
+fn assert_shows(
+  html html: String,
+  words words: List(String),
+  stage stage: String,
+) -> Nil {
+  list.each(words, fn(word) {
+    assert string.contains(html, word)
+      as { stage <> ": the Overview does not show " <> word }
+  })
+}
+
+/// The whole run: the real `state.sh` under fake `podman` and `lsof` (the
+/// scene's `PATH` holds no other), the poller, the page runtime and the
+/// socket. Every wait ends with a reading the poller sent or a frame of the
+/// page; the script's bounds count looks the fake look answers at once, and the
+/// poller's deadline is a day, so no machine's load can end a read early.
 pub fn the_overview_shows_what_state_sh_reports_and_marks_it_stale_when_it_fails_test() -> Nil {
   use <- owned_test.run(120_000)
-  use home <- dashboard_support.with_home
+  use scene <- support.with_scene
 
   // The planted world: a live lock of a client start and an update lock whose
-  // owner is this test's own process, a hold, and the updater's log.
-  let pid = dashboard_support.os_pid()
+  // owner is this test's own process, a hold, and the updater's log; Podman
+  // and the machine healthy, two connections on the game port.
+  let pid = support.os_pid()
   let process_words = "(process " <> int.to_string(pid) <> ")"
-  let assert Ok(Nil) =
-    simplifile.create_directory_all(home <> "/play-service/update.lock")
-  let assert Ok(Nil) = simplifile.create_directory_all(home <> "/live.lock")
-  let assert Ok(Nil) =
-    simplifile.write(
-      home <> "/live.lock/owner",
-      "token=planted\nkind=client\nfolder=\npid="
-        <> int.to_string(pid)
-        <> "\nstarted="
-        <> started_text(pid)
-        <> "\ncommit=planted\n",
+  let owner =
+    support.owner_record(
+      kind: "client",
+      folder: "",
+      pid:,
+      started: support.started_text(pid:),
     )
-  let assert Ok(Nil) =
-    simplifile.write(
-      home <> "/play-service/update.lock/owner",
-      int.to_string(pid) <> "\n",
-    )
-  let assert Ok(Nil) = simplifile.write(home <> "/play-service/held", "")
-  let assert Ok(Nil) =
-    simplifile.write(
-      home <> "/play-service.log",
-      "2026-11-20 02:00:00 play-service: older line\n2026-11-20 02:41:58 play-service: replacing genesis-play\n",
-    )
-
-  // Fake `podman` and `lsof` ahead of the system's on the PATH of a wrapper,
-  // which runs the repository's own `state.sh` under `/bin/bash`.
-  let fakes = home <> "/fakes"
-  let assert Ok(Nil) = simplifile.create_directory_all(fakes)
-  plant_executable(fakes <> "/podman", fake_podman)
-  plant_executable(fakes <> "/lsof", fake_lsof)
-  let assert Ok(repository) = simplifile.current_directory()
-  let wrapper = home <> "/state-wrapper.sh"
-  plant_executable(
-    wrapper,
-    "#!/bin/bash\nexport PATH="
-      <> fakes
-      <> ":/usr/bin:/bin\nexport GENESIS_HOME="
-      <> home
-      <> "\nexec /bin/bash "
-      <> repository
-      <> "/dev/play_service/state.sh\n",
+  support.plant_live_lock(scene:, record: Some(owner))
+  support.plant_update_lock(scene:, owner: Some(pid))
+  support.plant_hold(scene)
+  support.plant_home_file(
+    scene:,
+    name: "play-service.log",
+    text: "2026-11-20 02:00:00 play-service: older line\n2026-11-20 02:41:58 play-service: replacing genesis-play\n",
+  )
+  support.plant(scene:, key: support.info, answer: support.quiet)
+  support.plant_container(
+    scene:,
+    name: support.server_container,
+    status: "running",
+    labels: "9d2015a0 192.168.1.5 true",
+  )
+  support.plant_status(
+    scene:,
+    name: support.database_container,
+    status: "running",
+  )
+  support.plant(scene:, key: support.ready, answer: support.quiet)
+  support.plant(
+    scene:,
+    key: support.connections,
+    answer: Answer(..support.quiet, output: two_connections),
   )
 
+  // The dashboard runs a wrapper that runs the repository's `state.sh`.
+  let assert Ok(repository) = simplifile.current_directory()
+  let wrapper = scene.home <> "/state-wrapper.sh"
+  let assert Ok(Nil) =
+    simplifile.write(
+      wrapper,
+      support.wrapper(
+        scene:,
+        script: repository <> "/dev/play_service/state.sh",
+      ),
+    )
+  let assert Ok(Nil) = simplifile.set_permissions_octal(wrapper, 0o755)
   let settings =
     dashboard.Settings(
-      ..dashboard_support.settings(home),
+      ..dashboard_support.settings(scene.home),
       state_script: wrapper,
     )
   let running = started(settings)
-  let key = dashboard_support.written_key(home:)
+  let key = dashboard_support.written_key(home: scene.home)
 
-  // The page shows what the script reports. The probe is a second subscriber
-  // that tells when a reading has been made.
+  // The first reading shows what the script reports. The probe is a second
+  // subscriber that tells when a reading has been made.
   let probe = process.new_subject()
   host.subscribe(running.poller, probe)
-  let _first = open_wait.received(probe, "the first reading")
+  let healthy = [
+    "running",
+    "9d2015a0",
+    "192.168.1.5",
+    "running, ready",
+    "held",
+    "running " <> process_words,
+    "2026-11-20 02:41:58 play-service: replacing genesis-play",
+    "held by a client start " <> process_words,
+  ]
+  let first = overview_html(open_wait.received(probe, "the first reading"))
+  assert_shows(
+    html: first,
+    words: [healthy, ["<span class=\"state\">2</span>"]] |> list.flatten,
+    stage: "the first reading",
+  )
+  assert !string.contains(first, "stale") as "a healthy read is not stale"
   let socket = opened_socket(settings.port, key)
-  let shown =
-    frames_holding(socket, [
-      "running",
-      "9d2015a0",
-      "192.168.1.5",
-      "running, ready",
-      "held",
-      "running " <> process_words,
-      "2026-11-20 02:41:58 play-service: replacing genesis-play",
-      "held by a client start " <> process_words,
-      "\"2\"",
-    ])
+  let shown = frames_holding(socket, [healthy, ["\"2\""]] |> list.flatten)
   assert !string.contains(shown, "stale") as "a healthy read is not stale"
 
   // Podman fails: the same values are shown stale, with the reason and an age.
-  let assert Ok(Nil) = simplifile.write(fakes <> "/fails", "")
+  let stale_words = [
+    "stale ",
+    " s: the Podman machine could not be read",
+    " s: podman exited with status 2: cannot reach the machine",
+  ]
+  support.plant(
+    scene:,
+    key: support.info,
+    answer: Answer(
+      ..support.quiet,
+      exits: [2],
+      error: "cannot reach the machine\n",
+    ),
+  )
   host.poll_now(running.poller)
-  let _failing = open_wait.received(probe, "the reading with Podman failing")
-  let _stale =
-    frames_holding(socket, [
-      "stale ",
-      " s: the Podman machine could not be read",
-      " s: podman exited with status 2: cannot reach the machine",
-    ])
+  let failing =
+    overview_html(open_wait.received(probe, "the reading with Podman failing"))
+  assert_shows(html: failing, words: stale_words, stage: "Podman failing")
+  let _stale = frames_holding(socket, stale_words)
 
   // Podman works again: a page opened now shows no stale word.
-  let assert Ok(Nil) = simplifile.delete(fakes <> "/fails")
+  support.plant(scene:, key: support.info, answer: support.quiet)
   host.poll_now(running.poller)
-  let _recovered =
-    open_wait.received(probe, "the reading after Podman recovered")
+  let recovered =
+    overview_html(open_wait.received(
+      probe,
+      "the reading after Podman recovered",
+    ))
+  assert_shows(html: recovered, words: healthy, stage: "Podman recovered")
+  assert !string.contains(recovered, "stale") as "the stale words are gone"
   let later = opened_socket(settings.port, key)
   let again = frames_holding(later, ["9d2015a0", "running, ready"])
   assert !string.contains(again, "stale") as "the stale words are gone"
@@ -476,8 +474,10 @@ pub fn the_overview_shows_what_state_sh_reports_and_marks_it_stale_when_it_fails
   // The script is removed: every fact is stale, naming the path.
   let assert Ok(Nil) = simplifile.delete(wrapper)
   host.poll_now(running.poller)
-  let _without = open_wait.received(probe, "the reading without the script")
-  let _gone =
-    frames_holding(socket, ["the state script is not found: " <> wrapper])
+  let without =
+    overview_html(open_wait.received(probe, "the reading without the script"))
+  let not_found = "the state script is not found: " <> wrapper
+  assert_shows(html: without, words: [not_found], stage: "the script removed")
+  let _gone = frames_holding(socket, [not_found])
   dashboard_support.close(socket)
 }

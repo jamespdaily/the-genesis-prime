@@ -17,9 +17,9 @@ import simplifile
 
 const state_script = "dev/play_service/state.sh"
 
-const server = "genesis-play"
+const server = support.server_container
 
-const database = "genesis-play-postgres"
+const database = support.database_container
 
 /// A row: what its scene plants over the healthy base, the report lines it
 /// holds, the keys it leaves out, and the words no fake call may hold.

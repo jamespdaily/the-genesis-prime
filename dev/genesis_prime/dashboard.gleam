@@ -62,7 +62,8 @@ import mist.{type Connection, type ResponseData}
 import simplifile
 
 /// Where the dashboard listens, keeps its entry file and reads what it serves,
-/// and which script reports the play service and how often.
+/// and which script reports the play service, how often it is read and how long
+/// a read may run before it is ended.
 pub type Settings {
   Settings(
     port: Int,
@@ -71,6 +72,7 @@ pub type Settings {
     stylesheet_folder: String,
     state_script: String,
     poll_interval_ms: Int,
+    read_deadline_ms: Int,
   )
 }
 
@@ -123,6 +125,7 @@ fn settings_from_environment() -> Result(Settings, SettingsError) {
     stylesheet_folder: "dev/dashboard",
     state_script: "dev/play_service/state.sh",
     poll_interval_ms: host.interval_ms,
+    read_deadline_ms: host.deadline_ms,
   ))
 }
 
@@ -164,11 +167,11 @@ pub fn start(settings settings: Settings) -> Result(Running, StartError) {
       start_read: host.script_reader(
         path: settings.state_script,
         environment: [#("GENESIS_HOME", settings.genesis_home)],
-        deadline_ms: host.deadline_ms,
+        deadline_ms: settings.read_deadline_ms,
       ),
       now_ms: runtime.monotonic_ms,
       interval_ms: settings.poll_interval_ms,
-      deadline_ms: host.deadline_ms,
+      deadline_ms: settings.read_deadline_ms,
     )
   let start_tree = fn() {
     static_supervisor.new(static_supervisor.OneForOne)
