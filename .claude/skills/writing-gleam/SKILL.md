@@ -18,7 +18,7 @@ A comment is concise, self-contained and informational: it says what the code do
 
 ## Types and data
 
-- No catch-all `_` over a type that can gain variants (`test/code_rule/catch_all.gleam`).
+- No catch-all `_` over a type that can gain variants in `src/` and `dev/` (`test/code_rule/catch_all.gleam`); a test may use `_` to pick one case.
 - Decode every enum once at the edge (packet, row, table load) into a custom type with an `Other(id)` case, including bit flags and states.
 - Make invalid states impossible: fields that belong together sit in one variant; a `Bool` stays for a yes-or-no function, an answer read by its field name, a guard, a table or packet flag passed on, or a codec primitive, and becomes a type that names its states when callers pass a bare `True` or `False` by position.
 - A module guards its type's rules behind a small API; other modules cannot build an invalid value.
