@@ -717,15 +717,18 @@ pub fn a_damaged_update_lock_owner_file_prints_one_line_test() -> Nil {
   machine_down(scene)
   let pid = int.to_string(support.os_pid())
   support.plant_update_lock(scene:, owner: Some(support.os_pid()))
+  // The second line is text no report line can hold by chance (a number could
+  // match a pid or an age the report prints: 1 run in 40 failed that way).
+  let second_line = "second-line-of-a-damaged-owner-file"
   let assert Ok(Nil) =
     simplifile.write(
       support.update_lock_path(scene) <> "/owner",
-      pid <> "\n4242\n",
+      pid <> "\n" <> second_line <> "\n",
     )
   let ran = run_state(scene, [])
   assert dict.get(support.report(ran), "update_lock_pid") == Ok(pid)
     as "the first line of the owner file"
-  assert !string.contains(ran.output, "4242")
+  assert !string.contains(ran.output, second_line)
     as { "the second line of the owner file is not printed: " <> ran.output }
 }
 
