@@ -7835,8 +7835,8 @@ grade = "fairly sure"
 gap = "Not run live. Which button edge (down or up) makes the press depends on the hold-to-cast setting (0x1405c9900 states 0, 2, 3), read only in part. A live run of Shred and Charged Shot against the server settles the pacing."
 
 ["0x1403b3320"]
-statement = "Checks one of a spell's two innate costs against the caster's vitals before the client sends a cast. A cost of 0 or a type of 0 or above 30 passes. For the types read: Health (1) needs health at least the cost (44); Shield Capacity (3) gives 176; Vitals 5 to 11 (Endurance, Resource1 to Resource6) read the caster's resource slots 0 to 6 and need the slot at least the cost (50 to 56 CasterVitalCostResource0 to 6); Focus (15) is a percentage of the maximum (167); 16 gives 177, 20 to 24 and 27 to 29 their own results. Any other type (Actuator 18 among them) goes to the player's class mechanic (CheckClassResourceCost), or gives 175 when the caster is not the player. A negative cost compares absolute values. Impale (type 8, 35) needs resource slot 3 at least 35, else 53; Electrocute (type 6, 8) slot 1 at least 8, else 51; Mind Burst (type 6, 1) slot 1 at least 1, else 51; Gamma Rays (type 18, 2) goes to the Medic's class mechanic."
-proof = "llvm-objdump 0x1403b3331 mov edx, dword ptr [rsi + 4*rcx + 0xa8] (cost type); 0x1403b3340 cmp edx, 0x1f; 0x1403b334e mov ebx, dword ptr [rsi + 4*rcx + 0xb0] (cost); 0x1403b3373 test ebx, ebx; 0x1403b3397 jmp rax (switch on type - 1). Saved C 0x1403b3320.c (hash 8eb22adb6de47956): case 5 reads the unit's float at 0x220 (< cost -> 0x33), case 7 at 0x228 (-> 0x35), cases 4..10 at 0x21c..0x234 (-> 0x32..0x38), case 0 health (0x2c), default -> game 0x6d90 object's slot 0x78 call: 0x1403b3792 movd xmm2, ebx; 0x1403b3799 xorps xmm2 (sign mask bytes at 0x140b7b530: 00000080 x4); 0x1403b37a0 call qword ptr [rax + 0x78]. Vital names: Vital.tbl localizedTextIdDisplayText via client_files.py text (6 Resource1, 8 Resource3, 18 Actuator). CastResult names from the enum at 0x140c2f290. Rows: Spell4 38779, 41276, 32809, 29874 innate cost columns."
+statement = "Checks one of a spell's two innate costs against the caster's vitals before the client sends a cast. A cost of 0 or a type of 0 or above 30 passes. For the types read: Health (1) needs health at least the cost (44); Shield Capacity (3) gives 176; Vitals 5 to 11 (Endurance, Resource1 to Resource6) read the caster's resource slots 0 to 6 and need the slot at least the cost (50 to 56 CasterVitalCostResource0 to 6); Focus (15) needs whole points of Focus: the whole points held must be at least the cost times the Focus cost modifier plus one half, cut to a whole number (167); 16 gives 177, 20 to 24 and 27 to 29 their own results. Any other type (Actuator 18 among them) goes to the player's class mechanic (CheckClassResourceCost), or gives 175 when the caster is not the player. A cost of 0 or more and a negative cost take two copies of the type switch (0x1403b37a5 and 0x1403b337b); the Focus case differs between them as the proof says. Impale (type 8, 35) needs resource slot 3 at least 35, else 53; Electrocute (type 6, 8) slot 1 at least 8, else 51; Mind Burst (type 6, 1) slot 1 at least 1, else 51; Gamma Rays (type 18, 2) goes to the Medic's class mechanic."
+proof = "llvm-objdump 0x1403b3331 mov edx, dword ptr [rsi + 4*rcx + 0xa8] (cost type); 0x1403b3340 cmp edx, 0x1f; 0x1403b334e mov ebx, dword ptr [rsi + 4*rcx + 0xb0] (cost); 0x1403b3373 test ebx, ebx; 0x1403b3397 jmp rax (switch on type - 1). Saved C 0x1403b3320.c (hash 8eb22adb6de47956): case 5 reads the unit's float at 0x220 (< cost -> 0x33), case 7 at 0x228 (-> 0x35), cases 4..10 at 0x21c..0x234 (-> 0x32..0x38), case 0 health (0x2c), default -> game 0x6d90 object's slot 0x78 call: 0x1403b3792 movd xmm2, ebx; 0x1403b3799 xorps xmm2 (sign mask bytes at 0x140b7b530: 00000080 x4); 0x1403b37a0 call qword ptr [rax + 0x78]. Vital names: Vital.tbl localizedTextIdDisplayText via client_files.py text (6 Resource1, 8 Resource3, 18 Actuator). CastResult names from the enum at 0x140c2f290. Rows: Spell4 38779, 41276, 32809, 29874 innate cost columns. Case 0xe (type 15), saved C 0x1403b3320.c (hash 737aa5af0120fae9): refuses 0xa7 (167, CasterVitalCostFocus) when (int)focus < (int)(0x140462a90(unit) x cost + DAT_140b79e48 (0.5)); the focus is the unit's float at 0x218; for a cost of 0 or more the held Focus and the number are cut to 32-bit whole numbers and compared as they are (0x1403b37f0 mov eax, dword ptr [rsi + 4*rdi + 0xb0]; 0x1403b37fa cvtsi2ss xmm1, rax; 0x1403b37ff cvttss2si eax, xmm6 (the held Focus); 0x1403b3803 mulss; 0x1403b3807 addss 0.5; 0x1403b380f cvttss2si ecx, xmm0; 0x1403b3813 cmp eax, ecx; 0x1403b3815 jge passes, else 0xa7). For a negative cost (0x1403b3373 test ebx, ebx; jns to 0x1403b37a5 for 0 or more) the cost is loaded by movl into eax at 0x1403b33aa, which zero-extends to rax, and converted with cvtsi2ss from the 64-bit rax at 0x1403b33b4, so it is read as 2^32 + cost (about 4.29e9 as a 32-bit float); the product plus 0.5 (0x1403b33b9, 0x1403b33bd) is cut by cvttss2si to 32 bits at 0x1403b33c5, which gives 0x80000000 for a value out of range; both the number and the held Focus (0x1403b33ce cvttss2si) then go through the absolute value (cltd, xor, sub at 0x1403b33c9 to 0x1403b33d7; INT_MIN stays INT_MIN) and 0x1403b33d9 cmp eax, ecx; 0x1403b33db jge passes, else 0xa7. A negative cost with a multiplier of 0.5 or more therefore passes, and one with a smaller multiplier needs about m x 2^32 points. The percentage of the maximum is the caster requirement check 0x1403b1780, not this one."
 grade = "fairly sure"
 gap = "The switch's case list is read from the decompile, not each jump table entry. The innate cost EMM id (Mind Burst 4) is not read by this check, nor by any other reader found (Spell4.innateCostEMMId0): the check is against the base cost only."
 name = "CheckInnateCost"
@@ -17191,6 +17191,110 @@ proof = "Readers: GetTelegraphDamageRow 0x140241c40 is called only by 0x1405458e
 grade = "fairly sure"
 gap = "The 63 counts rest on the decoded rule, not a run; at a go that equals a row's end or the finish, the exact update order is not read. What the retail server struck at each go is not in the client."
 
+# Focus: the client's own readers of the vital
+
+["UnitStat.1.Focus"]
+statement = "Stat 1 of a unit is its Focus, a float the server sends: a new unit's create stat list sets it only in the float form (any other form leaves it 0), the message that changes one stat (0x935) sets it, and a unit holds 0 Focus until the server sends it. The player's resource bar reads it, and the maximum is the unit's BaseFocusPool property (5)."
+proof = "ApplyUnitStat 0x1403d9a60 case 1 stores the float value at the unit's Focus word (offset 0x218) and refreshes the player's resource display (saved C 0x1403d9a60.c lines 32 to 39); SetUnitStatsFromCreate 0x140458140 case 1 (saved C 0x140458140.c lines 30 to 58) keeps the float form only; ConstructUnit 0x140454380 zeroes the word (saved C 0x140454380.c line 113); CheckInnateCost 0x1403b3320 case 0xe and UnitVitalValue 0x140466520 case 0xf read it; message 0x938 passes a float of 0 (opcode.0x938.resource_stats), so it cannot set it."
+grade = "fairly sure"
+gap = "Read from the decompile, not run. A live run that sends a 0x935 of stat 1 and reads the Focus bar settles the display."
+
+["0x14064a770"]
+statement = "The script function that gives a unit's current Focus: the Focus word the server last sent, as a number; nothing for a unit that is not found."
+proof = "Saved C 0x14064a770.c (hash 8eb22adb6de47956): finds the unit named by the first argument and pushes the float at its Focus word (offset 0x218) as a number."
+grade = "fairly sure"
+gap = "The check on the unit's flag word (a unit it counts as gone gives nothing) is not read."
+name = "UnitGetFocus"
+
+["0x14064a810"]
+statement = "The script function that gives a unit's maximum Focus: its BaseFocusPool property (5) value as the server last sent it. The resource bars of the Esper, Spellslinger and Medic draw their Focus from it and the current Focus, flooring both, and the character sheet prints it as the Focus Pool."
+proof = "Saved C 0x14064a810.c (hash 8eb22adb6de47956): pushes the float at the unit's offset 0x5ec, which is the value word of property 5 (a property n's value word is at 0x5c4 + 8n, opcode.0x93a). Lua: ClassResources.lua 143 to 158, 288 to 310 and 429 to 450 call GetMaxFocus and GetFocus; Character.lua 919 to 921."
+grade = "fairly sure"
+gap = "Read from the decompile, not run."
+name = "UnitGetMaxFocus"
+
+["0x14064ac80"]
+statement = "The script function that gives the Focus a unit recovers each second out of combat: its BaseFocusRecoveryOutofCombat property (108) times its maximum Focus, with no rating."
+proof = "Saved C 0x14064ac80.c (hash 8eb22adb6de47956): the float at the unit's offset 0x924 (property 108's value word, 0x5c4 + 8 x 108) times the float at 0x5ec (property 5's value word)."
+grade = "fairly sure"
+gap = "Read from the decompile, not run."
+name = "UnitGetFocusRegenNonCombat"
+
+["0x14064a8b0"]
+statement = "The script function that gives the Focus a unit recovers each second in combat, as the tooltip arithmetic prices it: the per-tick amount of 0x1404602f0 times 1000 over GameFormula 88's tick, divided by the maximum Focus."
+proof = "Saved C 0x14064a8b0.c (hash 8eb22adb6de47956): calls 0x1404602f0 and the maximum at the unit's offset 0x5ec; the only callers of 0x1404602f0 are this and the other regeneration getter, so the client never regenerates Focus itself: the server does."
+grade = "fairly sure"
+gap = "Read from the decompile, not run; the tooltip's division is not read to its end."
+name = "UnitGetFocusRegenInCombat"
+
+["0x1404602f0"]
+statement = "The Focus a unit recovers in one tick in combat: GameFormula 88's tick in milliseconds (500) times 0.001 times the maximum Focus times the recovery share, the share being RatingToPercent over GameFormula 1237 at the unit's level with the base BaseFocusRecoveryInCombat (107) and the rating RatingFocusRecovery (6)."
+proof = "llvm-objdump: 0x140460311 movss 0x5f4(%rcx), %xmm7 (property 6's value word, the rating, stored at 0x140460463 to the call's stack); 0x140460322 movss 0x91c(%rcx), %xmm8 (property 107's value word, the base, stored at 0x140460469); 0x140460456 movl 0x3c(%rbx), %r8d with the fallback 0x14046045f movl 0x38(%rbx), %r8d (the level); 0x140460470 callq 0x1404539a0 (the inlined RatingToPercent, the same knee, cosine tail, hundredths and cap as 0x140453b60). Saved C 0x1404602f0.c (hash 8eb22adb6de47956): GameFormula 0x4d5 (1237) fields, and the 500 tick from GameFormula 88 times DAT_140b79d04 (0.001)."
+grade = "fairly sure"
+gap = "The tick's GameFormula 88 read and the maximum factor are read from the callers, not from this function's own body."
+name = "FocusRecoveryPerTick"
+
+["0x140462a90"]
+statement = "The factor a Focus cost is multiplied by: the Focus intensity fraction times GameFormula 1267's second float (1.0 in the table; one half when the row is missing) plus the unit's FocusCostModifier property (135, 1.0 by default)."
+proof = "Saved C 0x140462a90.c (hash 8eb22adb6de47956): returns FUN_140462af0(unit) x the float at GameFormula 0x4f3 (1267) offset 0x1c + the float at the unit's offset 0x9fc (property 135's value word, 0x5c4 + 8 x 135). Row: `gleam run -m genesis_prime/table_rows -- GameFormula 1267` (datafloat0 1.0, datafloat01 1.0)."
+grade = "fairly sure"
+gap = "Read from the decompile, not run."
+name = "FocusCostModifier"
+
+["0x140462af0"]
+statement = "The Focus intensity fraction of a unit: nothing (0.0) when both its RatingIntensity (56) and BaseIntensity (158) are 0, else RatingToPercent over GameFormula 1243 at the unit's level with that base and rating."
+proof = "llvm-objdump: 0x140462b0c movss 0xab4(%rcx), %xmm8 (property 158's value word); 0x140462b15 xorps %xmm0, %xmm0; 0x140462b1b ucomiss %xmm0, %xmm8; 0x140462b1f jne 0x140462b2a; 0x140462b21 ucomiss %xmm0, %xmm7 (property 56's value word, the rating); 0x140462b24 je 0x140462cd1, which returns with xmm0 at 0.0. The saved C 0x140462af0.c (hash 49fd5a78aaad3411) shows the function as void and hides the 0.0. 0x140462cc4 calls RatingToPercent 0x140453b60 with the level from the unit's offset 0x3c, falling back to 0x38."
+grade = "fairly sure"
+gap = "The nonzero path is read from the decompile, not run."
+name = "FocusIntensityFraction"
+
+["UnitProperty2.5"]
+statement = "BaseFocusPool, property 5: the maximum Focus of a unit, default 0, a budget property an item may give (valuePerPoint 1.5); no class, level or attribute table gives a player a pool."
+proof = "`gleam run -m genesis_prime/table_rows -- UnitProperty2 5` (defaultValue 0.0, valuePerPoint 1.5, flags 596); CreatureLevel unitPropertyValue05 is 0 in all 101 rows; no Class, ClassSecondaryStatBonus or AttributeMilestoneGroup row names property 5; 48 ItemStat rows name it; 0x14064a810 reads its value word."
+grade = "fairly sure"
+gap = "The base pool of a class is not in the client's tables: the server's choice (UnitProperty2.5.class_pool)."
+
+["UnitProperty2.5.class_pool"]
+statement = "The base Focus pool a healer holds is not in the client's data, so the server holds a flat 1000 at every level plus what worn items add, starting full."
+proof = "The client's costs rule out a pool that grows with level: every healer class unlocks a spell costing 137 to 152 Focus at level 6 (Spell4 32823: 149, 41382: 152, 39092: 137 by `table_rows -- Spell4`) and no cost scales with level; no table row gives a pool (UnitProperty2.5). The 1000 is the server's choice."
+grade = "guess"
+gap = "A retail recording of a healer's 0x262 or 0x93a with property 5 would give the real pool by level."
+
+["UnitProperty2.107"]
+statement = "BaseFocusRecoveryInCombat, property 107: the base share of the Focus pool recovered each second in combat, 0.011 by default; the rating adds to it by GameFormula 1237."
+proof = "`gleam run -m genesis_prime/table_rows -- UnitProperty2 107` (defaultValue 0.011, valuePerPoint 0); 0x1404602f0 reads its value word as the base."
+grade = "fairly sure"
+gap = "35 UnitPropertyModifier rows change related properties; whether retail players saw 1.1 percent a second is not recorded."
+
+["UnitProperty2.108"]
+statement = "BaseFocusRecoveryOutofCombat, property 108: the share of the Focus pool recovered each second out of combat, 0.011 by default, with no rating."
+proof = "`gleam run -m genesis_prime/table_rows -- UnitProperty2 108` (defaultValue 0.011); 0x14064ac80 reads its value word times the maximum."
+grade = "fairly sure"
+gap = "Read from the table and the decompile, not run."
+
+["UnitProperty2.135"]
+statement = "FocusCostModifier, property 135: what a Focus cost is multiplied by, 1.0 by default; modifiers on it lower or raise every Focus cost the client checks."
+proof = "`gleam run -m genesis_prime/table_rows -- UnitProperty2 135` (defaultValue 1.0); 0x140462a90 adds its value word to the intensity term."
+grade = "fairly sure"
+gap = "Read from the table and the decompile, not run."
+
+["UnitProperty2.6"]
+statement = "RatingFocusRecovery, property 6: the rating that raises the in-combat Focus recovery share by the curve of GameFormula 1237, 0 by default."
+proof = "`gleam run -m genesis_prime/table_rows -- UnitProperty2 6`; 0x140460311 movss 0x5f4(%rcx) reads its value word as the rating of 0x1404602f0."
+grade = "fairly sure"
+gap = "Read from the decompile, not run."
+
+["UnitProperty2.56"]
+statement = "RatingIntensity, property 56: the rating of the Focus cost's intensity fraction (0x140462af0), 0 by default."
+proof = "`gleam run -m genesis_prime/table_rows -- UnitProperty2 56`; 0x140462af0 reads its value word (offset 0x784 = 0x5c4 + 8 x 56) as the rating."
+grade = "fairly sure"
+gap = "Read from the decompile, not run."
+
+["UnitProperty2.158"]
+statement = "BaseIntensity, property 158: the base of the Focus cost's intensity fraction (0x140462af0), 0 by default."
+proof = "`gleam run -m genesis_prime/table_rows -- UnitProperty2 158`; 0x140462b0c movss 0xab4(%rcx), %xmm8 reads its value word (0x5c4 + 8 x 158) as the base."
+grade = "fairly sure"
+gap = "Read from the decompile, not run."
 ["0x140540430"]
 statement = "Plays a cast's visuals when the cast is set up (called once, from InitCast, so at a start, a replayed 0x7ff and a 0x262 list entry alike). It does nothing when the cast's visual group (cast word 0x348: Spell4.spell4VisualGroupId, or a creature activation's own group) is 0. Otherwise it looks the group up in the cast system's visual map, built at load from Spell4VisualGroup and keyed by group and by whether the spell is Multiphase (castMethod 8). The group's visuals filed under the start play at once from the caster (0x140543630, given the cast and the caster's id); for some cast methods (0, 2 and 7, and a few more under spell record words 0x7c and 0x9c) a second set plays at once too. Each visual filed under a later stage and a phase (0 to 31) that has a lead time is queued as a timer on the cast, due at the phase's time from the cast's start (0x140540b30; for a non-Multiphase cast with no channel record, phase 0 of a stage-2 visual is due at the cast's duration) less the visual's lead time, never below 0. It reads nothing a message sends except the caster, the spell and the cast's duration, so a client that sets up a cast from a 0x262 entry plays the start visuals at arrival and times the queued ones from arrival, not from the cast's real start."
 proof = "Saved C 0x140540430.c (hash 8eb22adb6de47956; `client_trace.py 0x140540430`): returns at once when cast 0x348 is 0. FUN_1405663f0(spell system DAT_140c65b70 + 0x650, ...) is an equal-range search of the tree at + 0x650/0x658 on the key (castMethod == 8 from spell 0x138 -> 0x70 word 0x18, cast 0x348, 0, 0, 0); for each node whose visual (node 0x38) lacks flag 0x100 in its word 0x10, FUN_140543630(cast, 0, visual, cast 0x154 (caster id), 0...). Second search with key (…, 1, 0, 0) under castMethod (record word 0x7c) < 8 and (0x85 >> castMethod) & 1, or record 0x18 == 3, record 0x9c == 0 and record 0x7c in {0, 4}. Then for stage 0 to 7 except 2 and phase 0 to 31, a lower/upper-bound walk on (…, stage, kind 2, phase); each node whose visual word 0x84 is not 0 gets a 0x60-byte 'EVNT' timer (FUN_140195960, callback LAB_14053c4f0) of max(0, FUN_140540b30(cast, phase) - word 0x84), with the time replaced by cast 0x50 when it is 0, the visual's word 8 is 2, castMethod != 8 and spell 0x50 (channel record) is null; the timer is appended to the cast's list at 0x1b8 (count 0x1c0). Map built by FUN_140562560 (saved C 8eb22adb6de47956), called from BuildSpellTables 0x14055e180 (saved C cabfc399c345589f) line 1486 with Spell4 row word 0x21; it looks the group up through FUN_14023d840 (8eb22adb6de47956), the Spell4VisualGroup table PTR_u_Spell4VisualGroup_140a6d690, and writes nodes keyed at 0x20 to 0x30 with the visual at 0x38. InitCast 0x14053d1f0 (saved C 5c0332ef738ce6d5) calls it at 0x14053d4a5, after setting 0x348 (see Spell4.spell4VisualGroupId)."

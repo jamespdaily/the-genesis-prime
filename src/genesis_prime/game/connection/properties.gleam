@@ -8,8 +8,10 @@
 //// the cast rule's CasterChangeEnds   ─▶ unit_properties.remove ─┤ changed entries
 ////                                                           ├─▶ 0x93a to the player's client
 ////                                                           ├─▶ PropertiesChanged to each viewer
-////                                                           └─▶ player_life.properties_changed:
-////                                                               maxima, armor, regeneration, 0x92f, 0x938
+////                                                           ├─▶ player_life.properties_changed:
+////                                                           │   maxima, armor, regeneration, 0x92f, 0x938
+////                                                           └─▶ class_resource.properties_followed:
+////                                                               Focus's pool, shares and cost modifier, 0x935
 //// ```
 ////
 //// - **The player and its viewers are told the same entries**, the base and the value
@@ -35,12 +37,18 @@
 ////   maxima, HealthRegenMultiplier and ShieldTickTime the regeneration's numbers; the
 ////   health and shield are kept and capped at a lowered maximum, which the player's
 ////   client and its viewers are told (`player_life.properties_changed`).
+//// - **Focus follows the properties**: BaseFocusPool is its maximum, the recovery
+////   shares and rating, the cost modifier and intensity and the level are the numbers its
+////   tick and its cost read; the pool is kept and capped at a lowered maximum, which the
+////   player's client is told, and a raised maximum starts the timer that fills it
+////   (`class_resource.properties_followed`).
 //// - **A player not held in the world** (a save, a leave) takes no change: its
 ////   properties go with its `Entered`.
 
 import genesis_prime/client_connection.{type Request}
 import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/life_effect
+import genesis_prime/game/connection/resource as connection_resource
 import genesis_prime/game/connection/state.{type Session} as connection_state
 import genesis_prime/game/item_property
 import genesis_prime/game/player_life
@@ -166,9 +174,13 @@ fn changed_to(
       let updated = world_entry.Entered(..entered, properties:, life:)
       let session =
         connection_state.with_entered(session:, change: fn(_) { updated })
+      let #(session, focus) = connection_resource.properties_followed(session:)
       #(
         session,
-        told(session:, now:, entered: updated, entries:, life_effects:),
+        list.append(
+          told(session:, now:, entered: updated, entries:, life_effects:),
+          focus,
+        ),
       )
     }
   }

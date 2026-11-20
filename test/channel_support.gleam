@@ -81,6 +81,34 @@ pub fn channel_scene(
   )
 }
 
+/// The spell as the caster's only ability, held by a caster of the class with this
+/// Class id who holds `focus` points of Focus.
+pub fn focus_scene(
+  spell spell: Spell,
+  class_id class_id: Int,
+  focus focus: Float,
+) -> Scene {
+  resources_scene(spell:, resources: support.holding_focus(class_id:, focus:))
+}
+
+/// The spell as the caster's only ability, held by a caster with these resources.
+pub fn resources_scene(
+  spell spell: Spell,
+  resources resources: class_resource.Resources,
+) -> Scene {
+  Scene(
+    spell:,
+    caster: cast_state.Caster(
+      ..support.caster(),
+      abilities: [spell.spell4_base_id],
+      resources:,
+    ),
+    plans: support.plans_with(spell:),
+    bag_index: 0,
+    struck: [],
+  )
+}
+
 /// The spell as a child a Proxy starts: the caster presses the ability whose go starts it on
 /// each unit that go struck (`cast_support.plans_starting_on_each_struck`), and every go
 /// strikes the unit 10.

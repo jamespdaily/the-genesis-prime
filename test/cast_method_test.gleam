@@ -19,7 +19,6 @@ import genesis_prime/client_connection.{CastFinished, CastStarted}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/cast/tick as cast_tick
-import genesis_prime/game/class_resource
 import genesis_prime/game/spell_plan.{AtFirstGo, Spell}
 import genesis_prime/game/strike
 import genesis_prime/game/strike_tell
@@ -1024,7 +1023,7 @@ pub fn the_four_costed_abilities_are_refused_with_their_slots_by_a_caster_that_h
   // none holds 2, and the last, slot 5, gives the result (0x1405e7980).
   let warrior =
     support.caster_holding(
-      resources: class_resource.new(
+      resources: class_resource_support.new(
         resource: class_resource_support.resource_of(1),
       ),
     )
