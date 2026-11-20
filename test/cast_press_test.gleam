@@ -110,6 +110,11 @@ pub fn the_abilities_a_flag_8_row_held_back_are_accepted_by_a_press_test() -> Ni
         book: [base],
         resources: class_resource.new(
           resource: class_resource.Resource(..resource, start: resource.max),
+          properties: class_resource_support.properties_of(
+            class_id: row.class_id,
+            changes: [],
+            level: row.character_level,
+          ),
         ),
         player: prerequisite.Player(
           ..support.caster().player,
