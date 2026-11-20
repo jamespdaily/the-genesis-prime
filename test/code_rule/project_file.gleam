@@ -19,9 +19,15 @@ pub fn strings(
   })
 }
 
-/// Every package in the text of `manifest.toml` as its name and the build
-/// tools it is built with.
-pub fn manifest_packages(manifest: String) -> List(#(String, List(String))) {
+/// A package of `manifest.toml`: its name, the build tools it is built with
+/// and the name of its OTP application (`otp_app`), which an Erlang package's
+/// application file is named after.
+pub type ManifestPackage {
+  ManifestPackage(name: String, build_tools: List(String), otp_app: String)
+}
+
+/// Every package in the text of `manifest.toml`.
+pub fn manifest_packages(manifest: String) -> List(ManifestPackage) {
   let assert Ok(parsed) = tom.parse(manifest) as "the manifest does not parse"
   let assert Ok(packages) = tom.get_array(parsed, ["packages"])
     as "the manifest lists no packages"
@@ -32,13 +38,16 @@ pub fn manifest_packages(manifest: String) -> List(#(String, List(String))) {
       as "a manifest package has no name"
     let assert Ok(build_tools) = tom.get_array(table, ["build_tools"])
       as "a manifest package has no build tools"
-    #(
-      name,
-      list.map(build_tools, fn(tool) {
+    let assert Ok(otp_app) = tom.get_string(table, ["otp_app"])
+      as "a manifest package has no otp_app"
+    ManifestPackage(
+      name:,
+      build_tools: list.map(build_tools, fn(tool) {
         let assert Ok(tool) = tom.as_string(tool)
           as "a build tool is not a string"
         tool
       }),
+      otp_app:,
     )
   })
 }

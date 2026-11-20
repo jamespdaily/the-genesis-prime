@@ -10,17 +10,17 @@ import owned_test
 
 pub fn the_navigation_lists_every_page_of_the_page_list_test() -> Nil {
   use <- owned_test.run(5000)
-  let pages = [Page("Alpha", "/alpha"), Page("Beta", "/beta")]
+  let pages = [Page("Alpha", "/"), Page("Beta", "/beta")]
   let html =
-    element.to_string(page.navigation(pages, current: Page("Alpha", "/alpha")))
+    element.to_string(page.navigation(pages, current: Page("Alpha", "/")))
 
   // Each link opens with `<a `; the text between two of them is one link.
   let assert [_before, ..links] = string.split(html, "<a ")
   assert list.length(links) == 2
   let assert [alpha, beta] = links
-  assert string.contains(alpha, "href=\"/alpha\"")
+  assert string.contains(alpha, "href=\"./\"")
   assert string.contains(alpha, "Alpha")
-  assert string.contains(beta, "href=\"/beta\"")
+  assert string.contains(beta, "href=\"beta\"")
   assert string.contains(beta, "Beta")
   assert string.contains(alpha, "aria-current=\"page\"")
     as "the current page is marked"

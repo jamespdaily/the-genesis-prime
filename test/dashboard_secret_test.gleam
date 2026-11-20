@@ -43,7 +43,7 @@ fn mode_of(path: String) -> Int {
 pub fn the_entry_file_is_private_and_holds_the_entry_url_test() -> Nil {
   use <- owned_test.run(5000)
   use home <- dashboard_support.with_home
-  let url = "http://127.0.0.1:7700/enter?key=first"
+  let url = "http://127.0.0.1:7700/k/first/"
   let assert Ok(entry) = secret.prepare_entry(home:, url:)
   let assert Ok(Nil) = secret.publish(entry)
   let folder = home <> "/dashboard"
@@ -58,7 +58,7 @@ pub fn the_entry_file_is_private_and_holds_the_entry_url_test() -> Nil {
   // to others.
   let assert Ok(Nil) = simplifile.set_permissions_octal(folder, 0o755)
   let assert Ok(Nil) = simplifile.set_permissions_octal(file, 0o644)
-  let again = "http://127.0.0.1:7700/enter?key=second"
+  let again = "http://127.0.0.1:7700/k/second/"
   let assert Ok(entry) = secret.prepare_entry(home:, url: again)
   assert !string.contains(read(file), "second")
     as "the file is replaced only when the second start serves"

@@ -2,8 +2,8 @@
 //// websocket exchanges over `gen_tcp` (the dashboard is read as a browser or
 //// another program reads it, not through its own functions), a planted
 //// folder for `GENESIS_HOME`, and requests and a web context for the pure
-//// tests. A request's host and cookie are written out in each test so the row
-//// shows what it presents.
+//// tests. A request's host and path are written out in each test so the row
+//// shows what it presents; the key rides in the path, as `/k/<key>/...`.
 
 import envoy
 import genesis_prime/dashboard
@@ -40,6 +40,12 @@ pub const previous_key = "p4Rb7YwQ2sTxNf1kJmV9LcHd0uEzA6oGiXaK3qMnW8Y"
 
 /// The port a pure test's gate stands on.
 pub const port = 7700
+
+/// The path of a route written without its prefix, under a pure test's key
+/// prefix.
+pub fn inside(path path: String) -> String {
+  "/k/" <> key <> path
+}
 
 @external(erlang, "dashboard_support_ffi", "free_port")
 pub fn free_port() -> Int
@@ -98,20 +104,13 @@ pub fn request(
   })
 }
 
-/// A GET with the dashboard's own host and a cookie header, which is the
-/// request of a browser that holds the cookie.
-pub fn get(
-  path path: String,
-  cookie cookie: Option(String),
-) -> Request(String) {
+/// A GET of `path` as written, with the dashboard's own host.
+pub fn get(path path: String) -> Request(String) {
   request(
     method: http.Get,
     path:,
     host: Some("127.0.0.1:" <> int.to_string(port)),
-    headers: case cookie {
-      Some(cookie) -> [#("cookie", cookie)]
-      None -> []
-    },
+    headers: [],
   )
 }
 
@@ -127,6 +126,22 @@ pub fn context(files files: List(#(String, BitArray))) -> web.Context {
     read_file: fn(path) { list.key_find(files, path) },
     client_fonts_folder: "fonts",
     stylesheet_folder: "styles",
+  )
+}
+
+/// The six files the dashboard serves, planted where `context` reads them,
+/// each holding "planted " and its path.
+pub fn planted_files() -> List(#(String, BitArray)) {
+  list.map(
+    [
+      "fonts/CubeOffcCond.ttf",
+      "fonts/CubeOffcCondLight.ttf",
+      "fonts/segoeui.ttf",
+      "fonts/seguisb.ttf",
+      "styles/style.css",
+      "styles/palette.css",
+    ],
+    fn(path) { #(path, bit_array.from_string("planted " <> path)) },
   )
 }
 
@@ -158,24 +173,16 @@ pub fn send(
   Reply(status:, headers: reply_headers, body:)
 }
 
-/// The headers a browser holding the cookie sends to the dashboard on `port`.
-pub fn browser(
-  port port: Int,
-  cookie cookie: Option(String),
-) -> List(#(String, String)) {
-  [
-    #("Host", "127.0.0.1:" <> int.to_string(port)),
-    ..case cookie {
-      Some(cookie) -> [#("Cookie", cookie)]
-      None -> []
-    }
-  ]
+/// The headers a browser sends to the dashboard on `port`.
+pub fn browser(port port: Int) -> List(#(String, String)) {
+  [#("Host", "127.0.0.1:" <> int.to_string(port))]
 }
 
-/// Sends a websocket handshake to `/ws` and reads the reply to it. The
+/// Sends a websocket handshake to `path` and reads the reply to it. The
 /// connection stays open for the caller to read frames from and close.
 pub fn handshake(
   port port: Int,
+  path path: String,
   headers headers: List(#(String, String)),
 ) -> #(Connection, Reply) {
   let upgrade = [
@@ -185,10 +192,7 @@ pub fn handshake(
     #("Sec-WebSocket-Version", "13"),
   ]
   let #(connection, status, reply_headers, body) =
-    open(
-      port,
-      request_bytes(path: "/ws", headers: list.append(headers, upgrade)),
-    )
+    open(port, request_bytes(path:, headers: list.append(headers, upgrade)))
   #(connection, Reply(status:, headers: reply_headers, body:))
 }
 
@@ -221,21 +225,19 @@ pub fn settings(home home: String) -> dashboard.Settings {
   )
 }
 
-/// The key a started dashboard wrote to its entry file: the text after
-/// `key=` in the entry URL.
-pub fn written_key(home home: String) -> String {
+/// The entry URL a started dashboard wrote to its entry file.
+pub fn written_url(home home: String) -> String {
   let assert Ok(text) = simplifile.read(home <> "/dashboard/entry-url")
     as "the entry file was not written"
-  let assert [_, key] = string.split(string.trim(text), "key=")
-    as "the entry URL holds no key"
-  key
+  string.trim(text)
 }
 
-/// The cookie header a browser sends after the entry exchange, from the
-/// `Set-Cookie` header the exchange answered with.
-pub fn cookie_from(reply reply: Reply) -> Option(String) {
-  header(reply:, name: "set-cookie")
-  |> option.map(fn(value) {
-    result.unwrap(list.first(string.split(value, ";")), "")
-  })
+/// The key a started dashboard wrote to its entry file: the path segment
+/// after `/k/` in the entry URL.
+pub fn written_key(home home: String) -> String {
+  let assert [_, after] = string.split(written_url(home:), "/k/")
+    as "the entry URL holds no key prefix"
+  let assert [key, ""] = string.split(after, "/")
+    as "the entry URL is not the key prefix and a slash"
+  key
 }

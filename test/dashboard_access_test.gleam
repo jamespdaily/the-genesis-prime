@@ -1,8 +1,10 @@
 //// The dashboard's gate. Expected values are the gate's rule: a container on
 //// this Mac reaches the dashboard's loopback port and can set any header, so
-//// a request is allowed only with this start's key in the `dashboard_key`
-//// cookie and the dashboard's own host; a websocket handshake also needs the
-//// dashboard's own origin, which a page's script cannot change.
+//// a request is allowed only with this start's key in the path
+//// (`/k/<key>/...`) and the dashboard's own host; a websocket handshake also
+//// needs the dashboard's own origin, which a page's script cannot change. The
+//// key is never a cookie: a browser sends a cookie for `127.0.0.1` to every
+//// port, so a page any container serves on another port would receive it.
 
 import dashboard_support
 import genesis_prime/dashboard/access.{Allowed, Document, Refused, Upgrade}
@@ -14,8 +16,9 @@ import owned_test
 type Row {
   Row(
     reason: String,
-    cookie: Option(String),
+    path: String,
     host: Option(String),
+    headers: List(#(String, String)),
     expected: access.Decision,
   )
 }
@@ -24,77 +27,113 @@ const own_host = "127.0.0.1:7700"
 
 pub fn a_request_is_allowed_only_with_this_starts_key_and_the_dashboards_own_host_test() -> Nil {
   use <- owned_test.run(5000)
-  let right = "dashboard_key=" <> dashboard_support.key
+  let key = dashboard_support.key
   let rows = [
-    Row("no cookie", None, Some(own_host), Refused),
+    Row("no key prefix", "/", Some(own_host), [], Refused),
     Row(
-      "a cookie of another name",
-      Some("session=" <> dashboard_support.key),
+      "a path outside the key prefix",
+      "/style.css",
       Some(own_host),
+      [],
       Refused,
     ),
-    Row("a wrong key", Some("dashboard_key=wrong"), Some(own_host), Refused),
+    Row("a wrong key in the path", "/k/wrong/", Some(own_host), [], Refused),
     Row(
       "the previous start's key",
-      Some("dashboard_key=" <> dashboard_support.previous_key),
+      "/k/" <> dashboard_support.previous_key <> "/",
       Some(own_host),
+      [],
+      Refused,
+    ),
+    Row("an empty key", "/k//", Some(own_host), [], Refused),
+    Row("the prefix without a key", "/k/", Some(own_host), [], Refused),
+    Row(
+      "the key's first characters",
+      "/k/Zk3x9QfW/",
+      Some(own_host),
+      [],
+      Refused,
+    ),
+    Row(
+      "the key and more characters",
+      "/k/" <> key <> "x/",
+      Some(own_host),
+      [],
+      Refused,
+    ),
+    Row(
+      "the key under another prefix",
+      "/x/k/" <> key <> "/",
+      Some(own_host),
+      [],
+      Refused,
+    ),
+    Row(
+      "the prefix in another case",
+      "/K/" <> key <> "/",
+      Some(own_host),
+      [],
+      Refused,
+    ),
+    Row("the key in the query", "/?key=" <> key, Some(own_host), [], Refused),
+    Row(
+      "the key in a cookie",
+      "/",
+      Some(own_host),
+      [#("cookie", "dashboard_key=" <> key)],
       Refused,
     ),
     Row(
       "the right key and the right host",
-      Some(right),
+      "/k/" <> key <> "/",
       Some(own_host),
-      Allowed,
+      [],
+      Allowed("/"),
+    ),
+    Row(
+      "the right key and a file under it",
+      "/k/" <> key <> "/art/cube-cond.ttf",
+      Some(own_host),
+      [],
+      Allowed("/art/cube-cond.ttf"),
+    ),
+    Row(
+      "the right key without the slash after it",
+      "/k/" <> key,
+      Some(own_host),
+      [],
+      Allowed(""),
     ),
     Row(
       "the right key and a foreign host",
-      Some(right),
+      "/k/" <> key <> "/",
       Some("rebind.example:7700"),
+      [],
       Refused,
     ),
-    Row("the right key and no Host", Some(right), None, Refused),
+    Row("the right key and no Host", "/k/" <> key <> "/", None, [], Refused),
     Row(
       "the right key and 127.0.0.1 with another port",
-      Some(right),
+      "/k/" <> key <> "/",
       Some("127.0.0.1:7701"),
+      [],
       Refused,
     ),
     Row(
       "the right key and the host without a port",
-      Some(right),
+      "/k/" <> key <> "/",
       Some("127.0.0.1"),
+      [],
       Refused,
-    ),
-    Row(
-      "the key twice, the wrong one last",
-      Some(right <> "; dashboard_key=wrong"),
-      Some(own_host),
-      Refused,
-    ),
-    Row(
-      "the key twice, the wrong one first",
-      Some("dashboard_key=wrong; " <> right),
-      Some(own_host),
-      Refused,
-    ),
-    Row(
-      "the right key among other cookies",
-      Some("theme=dark; " <> right <> "; lang=en"),
-      Some(own_host),
-      Allowed,
     ),
   ]
   list.each(rows, fn(row) {
-    let headers = case row.cookie {
-      Some(cookie) -> [#("cookie", cookie)]
-      None -> []
-    }
     let request =
       dashboard_support.request(
         method: http.Get,
-        path: "/",
+        path: row.path,
         host: row.host,
-        headers:,
+        headers: row.headers,
       )
     assert access.decide(dashboard_support.gate(), request, Document)
       == row.expected
@@ -105,7 +144,7 @@ pub fn a_request_is_allowed_only_with_this_starts_key_and_the_dashboards_own_hos
 type Handshake {
   Handshake(
     reason: String,
-    cookie: String,
+    path: String,
     origin: Option(String),
     expected: access.Decision,
   )
@@ -113,46 +152,57 @@ type Handshake {
 
 pub fn a_websocket_upgrade_also_needs_the_dashboards_own_origin_test() -> Nil {
   use <- owned_test.run(5000)
-  let right = "dashboard_key=" <> dashboard_support.key
+  let socket = dashboard_support.inside("/ws")
   let rows = [
-    Handshake("no Origin", right, None, Refused),
-    Handshake("an Origin of null", right, Some("null"), Refused),
+    Handshake("no Origin", socket, None, Refused),
+    Handshake("an Origin of null", socket, Some("null"), Refused),
     Handshake(
       "127.0.0.1 on another port",
-      right,
+      socket,
       Some("http://127.0.0.1:7701"),
       Refused,
     ),
     Handshake(
       "localhost on the port",
-      right,
+      socket,
       Some("http://localhost:7700"),
       Refused,
     ),
     Handshake(
       "https on the port",
-      right,
+      socket,
       Some("https://127.0.0.1:7700"),
       Refused,
     ),
-    Handshake("a foreign site", right, Some("https://evil.example"), Refused),
-    Handshake("the right origin", right, Some("http://127.0.0.1:7700"), Allowed),
+    Handshake("a foreign site", socket, Some("https://evil.example"), Refused),
+    Handshake(
+      "the right origin",
+      socket,
+      Some("http://127.0.0.1:7700"),
+      Allowed("/ws"),
+    ),
     Handshake(
       "a good origin with a wrong key",
-      "dashboard_key=wrong",
+      "/k/wrong/ws",
+      Some("http://127.0.0.1:7700"),
+      Refused,
+    ),
+    Handshake(
+      "a good origin outside the key prefix",
+      "/ws",
       Some("http://127.0.0.1:7700"),
       Refused,
     ),
   ]
   list.each(rows, fn(row) {
     let headers = case row.origin {
-      Some(origin) -> [#("cookie", row.cookie), #("origin", origin)]
-      None -> [#("cookie", row.cookie)]
+      Some(origin) -> [#("origin", origin)]
+      None -> []
     }
     let request =
       dashboard_support.request(
         method: http.Get,
-        path: "/ws",
+        path: row.path,
         host: Some(own_host),
         headers:,
       )

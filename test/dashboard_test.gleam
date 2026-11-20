@@ -12,7 +12,7 @@ import genesis_prime/dashboard/secret
 import gleam/bit_array
 import gleam/int
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{None}
 import gleam/string
 import owned_test
 import simplifile
@@ -29,7 +29,7 @@ pub fn the_start_report_prints_the_key_once_and_logs_it_never_test() -> Nil {
   let report = dashboard.start_report(gate)
   assert string.contains(
     report.print_line,
-    "http://127.0.0.1:7700/enter?key=" <> dashboard_support.key,
+    "http://127.0.0.1:7700/k/" <> dashboard_support.key <> "/",
   )
   assert report.log_lines != [] as "the start logs that it serves"
   list.each(report.log_lines, fn(line) {
@@ -71,6 +71,20 @@ pub fn a_busy_port_or_an_unwritable_key_folder_stops_the_dashboard_with_its_reas
     result
   assert !dashboard_support.accepts(settings.port)
     as "a key that cannot be kept is not served"
+
+  // The entry file cannot be published (a folder stands where it goes): the
+  // dashboard that had started is stopped, and no pending file is left.
+  use unpublishable <- dashboard_support.with_home
+  let assert Ok(Nil) =
+    simplifile.create_directory_all(secret.entry_path(unpublishable))
+  let settings = dashboard_support.settings(unpublishable)
+  let assert Error(dashboard.EntryNotKept(secret.FileNotPublished(..))) =
+    dashboard.start(settings)
+  assert !dashboard_support.accepts(settings.port)
+    as "a key that cannot be kept is not served"
+  assert simplifile.is_file(secret.entry_path(unpublishable) <> ".pending")
+    == Ok(False)
+    as "the pending entry file is removed"
 }
 
 pub fn the_dashboard_binds_the_loopback_address_only_test() -> Nil {
@@ -90,13 +104,17 @@ pub fn a_page_without_the_client_files_folder_falls_back_to_system_fonts_test() 
   use home <- dashboard_support.with_home
   let settings = dashboard_support.settings(home)
   let _running = started(settings)
-  let cookie = Some("dashboard_key=" <> dashboard_support.written_key(home))
-  let headers = dashboard_support.browser(port: settings.port, cookie:)
+  let prefix = "/k/" <> dashboard_support.written_key(home)
+  let headers = dashboard_support.browser(port: settings.port)
 
   let font =
-    dashboard_support.send(settings.port, "/art/cube-cond.ttf", headers)
+    dashboard_support.send(
+      settings.port,
+      prefix <> "/art/cube-cond.ttf",
+      headers,
+    )
   assert font.status == 404
-  let page = dashboard_support.send(settings.port, "/", headers)
+  let page = dashboard_support.send(settings.port, prefix <> "/", headers)
   assert page.status == 200
   assert string.contains(result_text(page.body), "lustre-server-component")
 
@@ -133,31 +151,33 @@ pub fn the_dashboard_serves_the_page_the_stylesheets_and_a_font_with_the_key_tes
     )
   let settings = dashboard_support.settings(home)
   let _running = started(settings)
-  let key = dashboard_support.written_key(home)
+  let prefix = "/k/" <> dashboard_support.written_key(home)
   let port = settings.port
+  let headers = dashboard_support.browser(port:)
 
-  // The entry exchanges the key for the cookie, and the next request carries it.
-  let entry =
-    dashboard_support.send(
-      port,
-      "/enter?key=" <> key,
-      dashboard_support.browser(port:, cookie: None),
-    )
-  assert entry.status == 303
-  let cookie = dashboard_support.cookie_from(entry)
-  assert cookie == Some("dashboard_key=" <> key)
-  let headers = dashboard_support.browser(port:, cookie:)
-
-  let page = dashboard_support.send(port, "/", headers)
+  // The entry URL is the page, and every link on it stays under the prefix.
+  let page = dashboard_support.send(port, prefix <> "/", headers)
   assert page.status == 200
   let text = result_text(page.body)
   assert string.contains(text, "lustre-server-component")
-  assert string.contains(text, "route=\"/ws\"")
-  assert dashboard_support.send(port, "/style.css", headers).status == 200
-  assert dashboard_support.send(port, "/palette.css", headers).status == 200
-  let font = dashboard_support.send(port, "/art/cube-cond.ttf", headers)
+  assert string.contains(text, "route=\"ws\"")
+  assert string.contains(text, "href=\"palette.css\"")
+  assert string.contains(text, "href=\"style.css\"")
+  assert dashboard_support.send(port, prefix <> "/palette.css", headers).status
+    == 200
+  let style = dashboard_support.send(port, prefix <> "/style.css", headers)
+  assert style.status == 200
+  assert !string.contains(result_text(style.body), "url(\"/")
+    as "a font url that starts at the root leaves the key prefix"
+  let font =
+    dashboard_support.send(port, prefix <> "/art/cube-cond.ttf", headers)
   assert font.status == 200
   assert font.body == font_bytes
+
+  // No answer sets a cookie.
+  list.each([page, style, font], fn(reply) {
+    assert dashboard_support.header(reply:, name: "set-cookie") == None
+  })
 }
 
 pub fn every_route_and_the_websocket_refuse_without_the_key_and_a_refused_upgrade_starts_no_runtime_test() -> Nil {
@@ -170,57 +190,48 @@ pub fn every_route_and_the_websocket_refuse_without_the_key_and_a_refused_upgrad
   let origin = "http://127.0.0.1:" <> int.to_string(port)
   assert dashboard.runtime_count(running) == 0
 
-  // Every route without the cookie is the one refusal.
+  let browser = dashboard_support.browser(port:)
+
+  // Every route without the key prefix, or with another key, is the one
+  // refusal.
   list.each(
-    [
-      "/",
-      "/style.css",
-      "/palette.css",
-      "/art/cube-cond.ttf",
-      "/ws",
-      "/enter?key=wrong",
-    ],
+    ["/", "/style.css", "/palette.css", "/art/cube-cond.ttf", "/ws"],
     fn(path) {
-      let reply =
-        dashboard_support.send(
-          port,
-          path,
-          dashboard_support.browser(port:, cookie: None),
-        )
-      assert reply.status == 403 as path
-      assert reply.body == <<>> as path
+      list.each([path, "/k/wrong" <> path], fn(spelled) {
+        let reply = dashboard_support.send(port, spelled, browser)
+        assert reply.status == 403 as spelled
+        assert reply.body == <<>> as spelled
+      })
     },
   )
 
-  // A handshake without the cookie, and with the cookie and a foreign origin,
-  // is refused before a runtime starts.
-  let cookie = Some("dashboard_key=" <> key)
+  // A handshake outside the key prefix, with another key, or with the key and
+  // a foreign origin or none, is refused before a runtime starts.
+  let socket = "/k/" <> key <> "/ws"
   let refused = [
-    #("no cookie", [
-      #("Origin", origin),
-      ..dashboard_support.browser(port:, cookie: None)
-    ]),
-    #("a foreign origin", [
+    #("no key prefix", "/ws", [#("Origin", origin), ..browser]),
+    #("another key", "/k/wrong/ws", [#("Origin", origin), ..browser]),
+    #("a foreign origin", socket, [
       #("Origin", "https://evil.example"),
-      ..dashboard_support.browser(port:, cookie:)
+      ..browser
     ]),
-    #("no origin", dashboard_support.browser(port:, cookie:)),
+    #("no origin", socket, browser),
   ]
   list.each(refused, fn(row) {
     let #(connection, reply) =
-      dashboard_support.handshake(port:, headers: row.1)
+      dashboard_support.handshake(port:, path: row.1, headers: row.2)
     dashboard_support.close(connection)
     assert reply.status == 403 as row.0
   })
   assert dashboard.runtime_count(running) == 0
     as "a refused handshake started a runtime"
 
-  // The right cookie and origin upgrade, and the runtime that serves the
-  // page's first message is the one the count then holds.
+  // The key prefix and the right origin upgrade, and the runtime that serves
+  // the page's first message is the one the count then holds.
   let #(connection, reply) =
-    dashboard_support.handshake(port:, headers: [
+    dashboard_support.handshake(port:, path: socket, headers: [
       #("Origin", origin),
-      ..dashboard_support.browser(port:, cookie:)
+      ..browser
     ])
   assert reply.status == 101
   let first = dashboard_support.read_frame(connection)

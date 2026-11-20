@@ -15,12 +15,13 @@
 ////                   entry file published, URL printed
 //// ```
 ////
-//// - The settings come from `GENESIS_HOME` (else `~/.genesis-prime`),
-////   `GENESIS_DASHBOARD_PORT` (default 7700) and `GENESIS_CLIENT_FILES_DIR`
-////   (else `client-files` under the home).
+//// - The settings come from `GENESIS_HOME` (else the user's `.genesis-prime`,
+////   as `table_folder.home` says), `GENESIS_DASHBOARD_PORT` (default 7700) and
+////   `GENESIS_CLIENT_FILES_DIR` (else `client-files` under the home).
 //// - The start refuses, with its reason, when the port is busy (two dashboards
-////   must not run) and when the key cannot be kept (a key that cannot be kept
-////   must not be served).
+////   must not run) and when the key cannot be kept, whether the entry file
+////   cannot be written or cannot be published (a key that cannot be kept must
+////   not be served).
 //// - A websocket's runtime is started only after the gate allows the upgrade,
 ////   so a refused handshake costs nothing; the runtime is stopped when the
 ////   socket closes.
@@ -97,22 +98,17 @@ fn settings_from_environment() -> Result(Settings, SettingsError) {
     Error(Nil) -> Ok(default_port)
     Ok(text) -> int.parse(text) |> result.replace_error(PortNotANumber(text:))
   })
-  let genesis_home = case envoy.get("GENESIS_HOME"), envoy.get("HOME") {
-    Ok(home), _ -> home
-    Error(Nil), Ok(home) -> home <> "/.genesis-prime"
-    Error(Nil), Error(Nil) -> ".genesis-prime"
-  }
   Ok(Settings(
     port:,
-    genesis_home:,
+    genesis_home: table_folder.home(),
     client_fonts_folder: table_folder.client_files_path() <> "/UI/Fonts",
     stylesheet_folder: "dev/dashboard",
   ))
 }
 
 /// Starts the dashboard, linked to the caller: a new key, the entry file, the
-/// page's runtime factory and the web server. Nothing serves, and the entry
-/// file of an earlier start is left as it was, unless every part started.
+/// page's runtime factory and the web server. A start that returns an error
+/// leaves nothing serving and the entry file of an earlier start as it was.
 pub fn start(settings settings: Settings) -> Result(Running, StartError) {
   let gate =
     Gate(key: secret.make(crypto.strong_random_bytes), port: settings.port)
@@ -155,7 +151,7 @@ pub fn start(settings settings: Settings) -> Result(Running, StartError) {
       secret.discard(pending)
       Error(ListenerNotStarted(reason))
     }
-    Ok(owner) ->
+    Ok(#(owner, tree)) ->
       case secret.publish(pending) {
         Ok(Nil) ->
           Ok(Running(
@@ -163,7 +159,11 @@ pub fn start(settings settings: Settings) -> Result(Running, StartError) {
             owner:,
             runtimes: factory_supervisor.get_by_name(runtimes_name),
           ))
-        Error(reason) -> Error(EntryNotKept(reason))
+        Error(reason) -> {
+          stop_tree(owner:, tree:)
+          secret.discard(pending)
+          Error(EntryNotKept(reason))
+        }
       }
   }
 }
@@ -171,20 +171,21 @@ pub fn start(settings settings: Settings) -> Result(Running, StartError) {
 /// Starts the tree in a process of its own, which traps exits so that a tree
 /// that fails to start comes back as an error and not as an exit signal to the
 /// caller. The tree stands while the caller lives: the owner ends when the
-/// caller or the tree does, and the tree then stops with it.
+/// caller or the tree does, and the tree then stops with it. Gives the owner
+/// and the tree's supervisor.
 fn start_owner(
   start_tree: fn() ->
     Result(actor.Started(static_supervisor.Supervisor), actor.StartError),
-) -> Result(Pid, actor.StartError) {
+) -> Result(#(Pid, Pid), actor.StartError) {
   let caller = process.self()
   let reply = process.new_subject()
   process.spawn_unlinked(fn() {
     process.trap_exits(True)
     case start_tree() {
       Error(reason) -> process.send(reply, Error(reason))
-      Ok(_) -> {
+      Ok(started) -> {
         let caller_down = process.monitor(caller)
-        process.send(reply, Ok(process.self()))
+        process.send(reply, Ok(#(process.self(), started.pid)))
         process.new_selector()
         |> process.select_specific_monitor(caller_down, fn(_down) { Nil })
         |> process.select_trapped_exits(fn(_exit) { Nil })
@@ -193,6 +194,17 @@ fn start_owner(
     }
   })
   process.receive_forever(reply)
+}
+
+/// Stops a tree that started: ends its owner, the supervisor's parent, and
+/// waits until the supervisor has stopped its children, so the port is free
+/// when this returns.
+fn stop_tree(owner owner: Pid, tree tree: Pid) -> Nil {
+  let tree_down = process.monitor(tree)
+  process.kill(owner)
+  process.new_selector()
+  |> process.select_specific_monitor(tree_down, fn(_down) { Nil })
+  |> process.selector_receive_forever
 }
 
 /// What the start says about a dashboard with this gate.

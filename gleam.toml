@@ -149,5 +149,4 @@ accepted = [
 # A package that states no licence where the rule reads it, checked by hand.
 declared = [
   { package = "ranch", licence = "ISC", evidence = "its LICENSE file and its Hex metadata, checked 2026-10-27" },
-  { package = "hpack_erl", licence = "MIT", evidence = "its Hex metadata and its LICENSE file, checked 2026-11-20; its application file is src/hpack.app.src, not src/hpack_erl.app.src, where the rule looks" },
 ]

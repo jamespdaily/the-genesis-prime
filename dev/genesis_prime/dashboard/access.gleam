@@ -3,36 +3,39 @@
 //// loopback port and can set any header, so the port's address is no gate.
 ////
 //// ```text
-//// request ──► host is 127.0.0.1:PORT? ──► key presented? ──► (upgrade) origin is http://127.0.0.1:PORT?
-////                  │ no                        │ no                     │ no
-////                  └───────────────────────────┴────────────────────────┴──► Refused
+//// request ──► host is 127.0.0.1:PORT? ──► path is /k/KEY/...? ──► (upgrade) origin is http://127.0.0.1:PORT?
+////                  │ no                        │ no                       │ no
+////                  └───────────────────────────┴──────────────────────────┴──► Refused
+////                                              │ yes
+////                                              └──► Allowed(the path inside /k/KEY)
 //// ```
 ////
-//// - A page, a stylesheet or a font is allowed with this start's key in the
-////   `dashboard_key` cookie and `Host` exactly the dashboard's own, which a
-////   page that rebinds a host name to this address cannot send.
-//// - The entry (`/enter?key=`) is allowed with the key in its query and the
-////   same `Host`; it is where the cookie comes from.
+//// - The key is the first path segment after `/k/`, and every route and the
+////   websocket live under that prefix; nothing outside it is answered. It is
+////   never a cookie: a browser sends a cookie for `127.0.0.1` to every port,
+////   so a page that any container serves on another port would receive it.
+//// - A request is allowed with this start's key in the path and `Host`
+////   exactly the dashboard's own, which a page that rebinds a host name to
+////   this address cannot send.
 //// - A websocket upgrade also needs `Origin` exactly the dashboard's own: a
 ////   browser sets it on a handshake and a page's script cannot change it, so
 ////   a page of another site in Jim's browser cannot open the socket.
-//// - A key is compared in constant time, and a request that presents the key
-////   twice is allowed only when every copy is right.
+//// - The key is compared in constant time.
 
 import gleam/bit_array
+import gleam/bool
 import gleam/crypto
 import gleam/http/request.{type Request}
 import gleam/int
-import gleam/list
-import gleam/result
+import gleam/string
 
 /// The address the dashboard listens on and the host it answers to: the
 /// literal loopback address, never `localhost` (which a name server or a hosts
 /// file could point elsewhere) and never `0.0.0.0`.
 pub const loopback = "127.0.0.1"
 
-/// The name of the cookie that carries the key.
-pub const cookie_name = "dashboard_key"
+/// The path segment before the key.
+const prefix = "/k/"
 
 /// This start's key and the port the dashboard listens on.
 pub type Gate {
@@ -43,12 +46,13 @@ pub type Gate {
 pub type Kind {
   Document
   Upgrade
-  Entry
 }
 
-/// The gate's answer.
+/// The gate's answer. An allowed request carries its path inside the key
+/// prefix, which is what the routes are matched against: `/` for the entry
+/// URL, and the empty path when the key is not followed by a slash.
 pub type Decision {
-  Allowed
+  Allowed(path: String)
   Refused
 }
 
@@ -58,17 +62,14 @@ pub fn decide(
   request request: Request(body),
   kind kind: Kind,
 ) -> Decision {
-  let allowed =
-    has_own_host(gate, request)
-    && case kind {
-      Document -> cookie_holds_key(gate, request)
-      Upgrade ->
-        cookie_holds_key(gate, request) && has_own_origin(gate, request)
-      Entry -> query_holds_key(gate, request)
-    }
-  case allowed {
-    True -> Allowed
-    False -> Refused
+  case has_own_host(gate, request), path_inside_prefix(gate, request), kind {
+    True, Ok(path), Document -> Allowed(path)
+    True, Ok(path), Upgrade ->
+      case has_own_origin(gate, request) {
+        True -> Allowed(path)
+        False -> Refused
+      }
+    False, _, _ | _, Error(Nil), _ -> Refused
   }
 }
 
@@ -82,9 +83,10 @@ pub fn origin(port: Int) -> String {
   "http://" <> host(port)
 }
 
-/// The URL that exchanges the key for the cookie, which the operator opens.
+/// The URL the operator opens: the key prefix and a slash, which is the first
+/// page.
 pub fn entry_url(gate gate: Gate) -> String {
-  origin(gate.port) <> "/enter?key=" <> gate.key
+  origin(gate.port) <> prefix <> gate.key <> "/"
 }
 
 fn has_own_host(gate: Gate, request: Request(body)) -> Bool {
@@ -95,27 +97,24 @@ fn has_own_origin(gate: Gate, request: Request(body)) -> Bool {
   request.get_header(request, "origin") == Ok(origin(gate.port))
 }
 
-fn cookie_holds_key(gate: Gate, request: Request(body)) -> Bool {
-  request.get_cookies(request)
-  |> list.filter(fn(cookie) { cookie.0 == cookie_name })
-  |> list.map(fn(cookie) { cookie.1 })
-  |> every_copy_is_the_key(gate)
-}
-
-fn query_holds_key(gate: Gate, request: Request(body)) -> Bool {
-  request.get_query(request)
-  |> result.unwrap([])
-  |> list.filter(fn(pair) { pair.0 == "key" })
-  |> list.map(fn(pair) { pair.1 })
-  |> every_copy_is_the_key(gate)
-}
-
-fn every_copy_is_the_key(presented: List(String), gate: Gate) -> Bool {
-  presented != []
-  && list.all(presented, fn(copy) {
+/// The request's path after `/k/KEY`, when `KEY` is this start's key.
+fn path_inside_prefix(
+  gate: Gate,
+  request: Request(body),
+) -> Result(String, Nil) {
+  use <- bool.guard(!string.starts_with(request.path, prefix), Error(Nil))
+  let after_prefix = string.drop_start(request.path, string.length(prefix))
+  let #(presented, inside) = case string.split_once(after_prefix, "/") {
+    Ok(#(presented, rest)) -> #(presented, "/" <> rest)
+    Error(Nil) -> #(after_prefix, "")
+  }
+  case
     crypto.secure_compare(
-      bit_array.from_string(copy),
+      bit_array.from_string(presented),
       bit_array.from_string(gate.key),
     )
-  })
+  {
+    True -> Ok(inside)
+    False -> Error(Nil)
+  }
 }

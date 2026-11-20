@@ -2,41 +2,41 @@
 //// responses so every decision is a function of the request.
 ////
 //// ```text
-//// request ──► GET? ──► route by path ──► access.decide ──► serve the route
-////               │ no                          │ Refused
-////               └──────────────► the one refusal (403, empty, sealed)
+//// request ──► access.decide ──► route by method and path inside /k/KEY ──► serve the route
+////                  │ Refused                      │ none
+////                  ▼                              ▼
+////     the one refusal (403, empty, sealed)      404, sealed
 //// ```
 ////
 //// - The route table lists `GET` routes and the one websocket upgrade: nothing
-////   but the authenticated websocket changes anything, and a request of any
-////   other method is refused like any request without the key.
+////   but the authenticated websocket changes anything. A route is found by its
+////   method and its path inside the key prefix, so a method the table does not
+////   list for a path is not served.
 //// - A refused request gets one answer whatever its path, so the port tells a
 ////   stranger only that it is open; a path that is not in the table is a 404
 ////   only behind the key.
 //// - Every answer carries `Cache-Control: no-store` and `Referrer-Policy:
-////   no-referrer`: the key sits in the entry URL, and a cache or a referrer
-////   would copy it.
-//// - `/enter?key=` trades the key for the `dashboard_key` cookie and redirects
-////   to `/`, so the key leaves the address bar.
+////   no-referrer` (the key sits in the URL, and a cache or a referrer would
+////   copy it) and forbids framing with `Content-Security-Policy:
+////   frame-ancestors 'none'` and `X-Frame-Options: DENY` (a page of another
+////   port on `127.0.0.1` must not frame the dashboard).
+//// - No answer sets a cookie: the key rides in the path (`dashboard/access`).
 
 import genesis_prime/dashboard/access.{
-  type Gate, Allowed, Document, Entry, Refused, Upgrade as UpgradeRequest,
+  type Gate, Allowed, Document, Refused, Upgrade as UpgradeRequest,
 }
 import genesis_prime/dashboard/art
 import genesis_prime/dashboard/page.{type Page}
 import gleam/bit_array
 import gleam/http.{type Method, Get}
-import gleam/http/cookie
 import gleam/http/request.{type Request}
 import gleam/http/response.{type Response}
 import gleam/list
-import gleam/option.{None, Some}
 
 /// What a route answers.
 pub type Serves {
   PageDocument(page: Page)
   Asset(asset: art.Asset)
-  EntryExchange
   Websocket
 }
 
@@ -68,17 +68,23 @@ pub type Outcome {
 /// The path the page's runtime connects to.
 const runtime_route = "/ws"
 
-/// Every route: each page, each file of the allow-list, the entry and the
-/// websocket.
+/// Every route: each page, each file of the allow-list and the websocket.
 pub fn routes(pages: List(Page)) -> List(Route) {
   list.flatten([
     list.map(pages, fn(page) { Route(Get, page.path, PageDocument(page)) }),
     list.map(art.assets(), fn(asset) { Route(Get, asset.path, Asset(asset)) }),
-    [
-      Route(Get, "/enter", EntryExchange),
-      Route(Get, runtime_route, Websocket),
-    ],
+    [Route(Get, runtime_route, Websocket)],
   ])
+}
+
+/// The route listed for this method and this path inside the key prefix. The
+/// match is on the whole path, so no other spelling of a path finds a route.
+pub fn find_route(
+  routes routes: List(Route),
+  method method: Method,
+  path path: String,
+) -> Result(Route, Nil) {
+  list.find(routes, fn(route) { route.method == method && route.path == path })
 }
 
 /// Decides what a request gets.
@@ -86,31 +92,31 @@ pub fn handle(
   context context: Context,
   request request: Request(body),
 ) -> Outcome {
-  case request.method {
-    Get -> {
-      let route =
-        list.find(routes(context.pages), fn(route) {
-          route.path == request.path
-        })
-      let kind = case route {
-        Ok(Route(serves: Websocket, ..)) -> UpgradeRequest
-        Ok(Route(serves: EntryExchange, ..)) -> Entry
-        _ -> Document
+  case access.decide(context.gate, request, Document) {
+    Refused -> Answer(refusal())
+    Allowed(path) ->
+      case
+        find_route(routes: routes(context.pages), method: request.method, path:)
+      {
+        Error(Nil) -> Answer(seal(not_found()))
+        Ok(route) -> serve(context:, request:, serves: route.serves)
       }
-      case access.decide(context.gate, request, kind), route {
-        Refused, _ -> Answer(refusal())
-        Allowed, Error(Nil) -> Answer(seal(not_found()))
-        Allowed, Ok(route) -> serve(context, route.serves)
-      }
-    }
-    _ -> Answer(refusal())
   }
 }
 
-fn serve(context: Context, serves: Serves) -> Outcome {
+/// The answer of a route the gate allowed. A websocket upgrade also needs the
+/// dashboard's own origin.
+fn serve(
+  context context: Context,
+  request request: Request(body),
+  serves serves: Serves,
+) -> Outcome {
   case serves {
-    Websocket -> Upgrade
-    EntryExchange -> Answer(seal(entry_exchange(context.gate)))
+    Websocket ->
+      case access.decide(context.gate, request, UpgradeRequest) {
+        Allowed(_) -> Upgrade
+        Refused -> Answer(refusal())
+      }
     PageDocument(page) ->
       Answer(
         seal(content(
@@ -145,27 +151,13 @@ fn not_found() -> Response(BitArray) {
   response.new(404) |> response.set_body(<<>>)
 }
 
-/// The cookie that carries the key, set on the redirect to the first page.
-fn entry_exchange(gate: Gate) -> Response(BitArray) {
-  let attributes =
-    cookie.Attributes(
-      max_age: None,
-      domain: None,
-      path: Some("/"),
-      secure: False,
-      http_only: True,
-      same_site: Some(cookie.Strict),
-    )
-  response.redirect("/")
-  |> response.set_cookie(access.cookie_name, gate.key, attributes)
-  |> response.map(fn(_) { <<>> })
-}
-
 /// The headers every answer carries.
 fn seal(response: Response(BitArray)) -> Response(BitArray) {
   response
   |> response.set_header("cache-control", "no-store")
   |> response.set_header("referrer-policy", "no-referrer")
+  |> response.set_header("content-security-policy", "frame-ancestors 'none'")
+  |> response.set_header("x-frame-options", "DENY")
 }
 
 /// The one answer to a request that may not be answered.

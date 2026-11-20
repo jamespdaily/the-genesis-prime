@@ -4,6 +4,7 @@
 //// value, so a new look is a swap of that file) and the shipment's rule (the
 //// image holds no development dependency).
 
+import dashboard_support
 import gleam/dict
 import gleam/list
 import gleam/set
@@ -179,15 +180,33 @@ pub fn no_stylesheet_or_view_holds_a_colour_literal_outside_a_palette_test() -> 
 
   assert colour_literals(without_comments(read("dev/dashboard/style.css")))
     == []
-  list.each(
-    [
-      "dev/genesis_prime/dashboard/page.gleam",
-      "dev/genesis_prime/dashboard/overview.gleam",
-    ],
-    fn(path) {
-      assert colour_literals(string_literals(read(path))) == [] as path
-    },
-  )
+
+  // The finder reads every Gleam file of the dashboard at any depth, so a
+  // module added later is checked without being named here.
+  use home <- dashboard_support.with_home
+  let assert Ok(Nil) = simplifile.create_directory_all(home <> "/deeper")
+  let assert Ok(Nil) = simplifile.write(home <> "/a.gleam", "")
+  let assert Ok(Nil) = simplifile.write(home <> "/deeper/b.gleam", "")
+  let assert Ok(Nil) = simplifile.write(home <> "/c.txt", "")
+  assert gleam_files(home) == [home <> "/a.gleam", home <> "/deeper/b.gleam"]
+
+  let views = [
+    "dev/genesis_prime/dashboard.gleam",
+    ..gleam_files("dev/genesis_prime/dashboard")
+  ]
+  assert list.contains(views, "dev/genesis_prime/dashboard/page.gleam")
+  assert list.contains(views, "dev/genesis_prime/dashboard/overview.gleam")
+  list.each(views, fn(path) {
+    assert colour_literals(string_literals(read(path))) == [] as path
+  })
+}
+
+/// Every Gleam file under `folder`, at any depth, in name order.
+fn gleam_files(folder: String) -> List(String) {
+  let assert Ok(files) = simplifile.get_files(folder)
+    as { "could not list " <> folder }
+  list.filter(files, string.ends_with(_, ".gleam"))
+  |> list.sort(string.compare)
 }
 
 pub fn the_dashboard_packages_are_development_only_test() -> Nil {
