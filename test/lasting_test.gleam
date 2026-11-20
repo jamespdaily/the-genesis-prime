@@ -19,7 +19,7 @@ import genesis_prime/game/lasting.{
   type Hold, Base, EndsAt, Group, Hold, LastingRow, NoLife, Node, NodeOff, Spell,
   Stack, StackOff, UntilRemoved,
 }
-import genesis_prime/table/id.{Spell4BaseId, Spell4Id}
+import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import owned_test
@@ -96,18 +96,43 @@ pub fn the_longest_effect_decides_the_life_test() -> Nil {
     == EndsAt(ms: 9000)
 }
 
-// ---- a later go on a unit the cast holds a node on ----
+// ---- the time left of an effect a unit create lists ----
 
-fn timed(duration_ms duration_ms: Int) -> lasting.LastingRow {
-  LastingRow(delay_ms: 0, duration_ms:, until_removed: False)
+pub fn the_time_left_of_an_end_is_never_less_than_1_test() -> Nil {
+  use <- owned_test.run(5000)
+  // opcode.0x7f4.effect_time: a lifetime of 0 in an effect info plays the row's own
+  // time again, so an end that has passed is told as 1, never 0.
+  [
+    #("an end that has passed", 1500, 2000, 1),
+    #("an end that is now", 2000, 2000, 1),
+    #("an end still to come", 2750, 2000, 750),
+  ]
+  |> list.each(fn(row) {
+    let #(reason, end_ms, now_ms, expected) = row
+    assert lasting.time_left_ms(end_ms:, now_ms:) == expected as reason
+  })
 }
 
-fn until_removed() -> lasting.LastingRow {
-  LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True)
+// ---- a later go on a unit the cast holds a node on ----
+
+/// A listed effect with a timed life; its id is only carried by the node, never read.
+fn timed(duration_ms duration_ms: Int) -> lasting.NodeEffect {
+  lasting.Listed(
+    effect_id: Spell4EffectsId(67_777),
+    row: LastingRow(delay_ms: 0, duration_ms:, until_removed: False),
+  )
+}
+
+/// A listed effect of flags bit 2: Power Charge's row 96819 lasts until removed.
+fn until_removed() -> lasting.NodeEffect {
+  lasting.Listed(
+    effect_id: Spell4EffectsId(96_819),
+    row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+  )
 }
 
 /// The node the first go at 1000 gives the unit 7 from these effects.
-fn first_node(effects effects: List(lasting.LastingRow)) -> lasting.Node {
+fn first_node(effects effects: List(lasting.NodeEffect)) -> lasting.Node {
   let assert Ok(node) =
     lasting.given(
       held: None,
@@ -124,7 +149,7 @@ fn first_node(effects effects: List(lasting.LastingRow)) -> lasting.Node {
 
 fn later_go(
   held held: lasting.Node,
-  effects effects: List(lasting.LastingRow),
+  effects effects: List(lasting.NodeEffect),
   count count: Int,
 ) -> Result(lasting.Node, Nil) {
   lasting.given(
@@ -506,7 +531,7 @@ pub fn the_cast_ids_listed_are_the_ones_pushed_off_in_age_order_test() -> Nil {
 /// until these times, from the node `held` the cast has there.
 fn with_states(
   held held: Option(lasting.Node),
-  effects effects: List(lasting.LastingRow),
+  effects effects: List(lasting.NodeEffect),
   until until: List(Int),
   go_ms go_ms: Int,
 ) -> Result(lasting.Node, Nil) {

@@ -1510,3 +1510,4 @@ Creature2	35947	Sandthorne Malverine, which casts Savage Shred	creature_special_
 Creature2	4148	Grimstone Digger, which casts Ground Pound	creature_special_test, spawn_test
 Creature2	17079	a creature that casts Suppressing Fire	creature_special_test, spawn_test
 Creature2	20775	Razortail Flinger, which casts Fighting Dirty	creature_special_test, spawn_test
+Spell4Effects	105548	Adventures - Caretaker Sky Green (Spell4 45375): a type 17 row of delay 500 held until removed	unit_casts_test

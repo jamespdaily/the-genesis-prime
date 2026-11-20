@@ -2521,7 +2521,7 @@ summary = "one effect on a target of a go: the Spell4Effects id, the effect inst
 fields = [
   { name = "spell4_effects_id", kind = "unsigned", bits = 19, evidence = "0x140094890", named_by = "0x140094890" },
   { name = "instance_id", kind = "unsigned", bits = 32, evidence = "0x140094890", named_by = "0x140094890" },
-  { name = "delay_ms", kind = "unsigned", bits = 32, evidence = "0x140094890", named_by = "0x140094890" },
+  { name = "delay_ms", kind = "unsigned", bits = 32, evidence = "0x140094890", named_by = "opcode.0x7f4.effect_delay" },
   { name = "lifetime_ms", kind = "unsigned", bits = 32, evidence = "0x140094890", named_by = "opcode.0x7f4.effect_time", safe_by = "opcode.0x7f4.effect_time" },
   { name = "result", kind = "record", record = "spell_effect_result", evidence = "0x140094890", named_by = "0x140094890" },
 ]

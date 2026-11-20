@@ -15,6 +15,7 @@ import genesis_prime/game/cast/state.{
   NoInteractionWaits, NoItemSpell, NotDecoded, NotSentByClient, Send, StateEnd,
   UnknownAnswer, UnknownCancel, WrongAnswerSpell,
 } as cast_state
+import genesis_prime/game/cast/target_info
 import genesis_prime/game/hit
 import genesis_prime/game/spell_plan.{type Spell}
 import genesis_prime/game/start_place.{type Place}
@@ -35,9 +36,7 @@ import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/message/miss_reason
 import genesis_prime/message/spell_cast_confirmed.{SpellCastConfirmed}
 import genesis_prime/message/spell_cast_refused.{SpellCastRefused}
-import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
 import genesis_prime/message/spell_effect_damage.{SpellEffectDamage}
-import genesis_prime/message/spell_effect_info.{SpellEffectInfo}
 import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_effect_tick.{type SpellEffectTick}
 import genesis_prime/message/spell_failed.{SpellFailed}
@@ -47,9 +46,7 @@ import genesis_prime/message/spell_miss.{SpellMiss}
 import genesis_prime/message/spell_missed.{type SpellMissed, SpellMissed}
 import genesis_prime/message/spell_stack_removed.{type SpellStackRemoved}
 import genesis_prime/message/spell_started.{type SpellStarted, SpellStarted}
-import genesis_prime/message/spell_target_info.{
-  type SpellTargetInfo, SpellTargetInfo,
-}
+import genesis_prime/message/spell_target_info.{type SpellTargetInfo}
 import genesis_prime/message/spell_targets_removed.{type SpellTargetsRemoved}
 import genesis_prime/message/spell_threshold_closed.{SpellThresholdClosed}
 import genesis_prime/message/spell_threshold_index.{SpellThresholdIndex}
@@ -355,7 +352,7 @@ pub fn go_message(
     destination: telegraph_entries.position_of(place:),
     targets: list.append(hits, unstruck)
       |> list.index_map(fn(hit, index) {
-        target_info(
+        struck_target(
           index:,
           unit_id: hit.0,
           descriptions: hit.1,
@@ -536,19 +533,18 @@ pub fn creature_applied(
     ignore_cooldown: 0,
     destination: telegraph_entries.position_of(place:),
     targets: [
-      SpellTargetInfo(
-        unit_id: target_unit_id,
+      target_info.target(
         index: 0,
-        flags: 0,
+        unit_id: target_unit_id,
         instance_count: 1,
         combat_result: combat_result.Hit,
         effects: list.map(effects, fn(effect) {
-          SpellEffectInfo(
-            spell4_effects_id: effect.effect_id,
+          target_info.effect(
+            effect_id: effect.effect_id,
             instance_id: effect.instance_id,
             delay_ms: 0,
             lifetime_ms: effect.lifetime_ms,
-            result: spell_effect_result.Bit(SpellEffectBit(unread_2: 0)),
+            result: target_info.bit(),
           )
         }),
       ),
@@ -662,16 +658,15 @@ pub fn describe(refusal refusal: Refusal) -> String {
 /// count and the effects' instance ids number from 1 (kept by the client, no reader
 /// traced), except a crowd-control state's, which is the id its tell gave
 /// (genesis_prime/game/crowd_control `instance_id`).
-fn target_info(
+fn struck_target(
   index index: Int,
   unit_id unit_id: Int,
   descriptions descriptions: List(hit.Description),
   listed listed: List(Listed),
 ) -> SpellTargetInfo {
-  SpellTargetInfo(
-    unit_id:,
+  target_info.target(
     index:,
-    flags: 0,
+    unit_id:,
     instance_count: 1,
     combat_result: case list.any(descriptions, hit.is_critical) {
       True -> combat_result.Critical
@@ -679,8 +674,8 @@ fn target_info(
     },
     effects: list.append(
       list.index_map(descriptions, fn(description, effect_index) {
-        SpellEffectInfo(
-          spell4_effects_id: description.spell4_effects_id,
+        target_info.effect(
+          effect_id: description.spell4_effects_id,
           instance_id: effect_index + 1,
           delay_ms: description.delay_ms,
           lifetime_ms: 0,
@@ -690,8 +685,8 @@ fn target_info(
         )
       }),
       list.index_map(listed, fn(effect, effect_index) {
-        SpellEffectInfo(
-          spell4_effects_id: effect.effect_id.value,
+        target_info.effect(
+          effect_id: effect.effect_id.value,
           instance_id: option.unwrap(
             effect.instance_id,
             list.length(descriptions) + effect_index + 1,
@@ -701,7 +696,7 @@ fn target_info(
           result: case effect.damage {
             Some(description) ->
               spell_effect_result.Damage(SpellEffectDamage(description:))
-            None -> spell_effect_result.Bit(SpellEffectBit(unread_2: 0))
+            None -> target_info.bit()
           },
         )
       }),

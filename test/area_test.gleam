@@ -28,9 +28,10 @@
 
 import client_shape_rows
 import genesis_prime/game/area.{
-  type Candidate, type Inside, type Placement, type Point, type Row, Box,
-  Candidate, Circle, Cone, InsideRow, InsideShapes, Placement, Point, Pose,
-  Rectangle, Row,
+  type Candidate, type Inside, type Placement, type Point, type Pose, type Row,
+  AnotherUnit, Box, Candidate, Circle, Cone, FixedAtCaster, FixedAtTarget,
+  FollowsCaster, FollowsTarget, InsideRow, InsideShapes, Placement, Point, Pose,
+  Rectangle, Row, TheCaster,
 }
 import genesis_prime/game/start_place
 import gleam/float
@@ -903,4 +904,127 @@ pub fn two_boxes_make_a_cross_and_shape_6_is_the_unhalved_box_test() -> Nil {
     as "the shape 2 box (1 by 2, centred 4 ahead) holds neither unit: 3 m out at 15 degrees is 0.78 aside, past its half width of 0.5, and 5.9 m is past its far side at 5"
   assert held(placements: [full], units: near, hit_radius: 0.0) == [1, 2]
     as "shape 6 on the same params is twice the box, 2 by 4 centred 4 ahead: its half width is 1 and it reaches 6"
+}
+
+fn pose_from(drawn: #(Float, Float, Float)) -> Pose {
+  Pose(at: Point(x: drawn.0, z: drawn.1), yaw: drawn.2)
+}
+
+fn drawn_pose() -> qcheck.Generator(Pose) {
+  qcheck.map(
+    qcheck.tuple3(
+      qcheck.bounded_float(from: -500.0, to: 500.0),
+      qcheck.bounded_float(from: -500.0, to: 500.0),
+      qcheck.bounded_float(from: -3.1, to: 3.1),
+    ),
+    pose_from,
+  )
+}
+
+pub fn an_anchor_fixed_at_the_start_never_follows_the_caster_and_a_following_one_never_reads_the_start_test() -> Nil {
+  use <- owned_test.run(5000)
+  qcheck.given(
+    qcheck.tuple3(
+      qcheck.tuple4(drawn_pose(), drawn_pose(), drawn_pose(), drawn_pose()),
+      drawn_pose(),
+      qcheck.bool(),
+    ),
+    fn(drawn) {
+      let #(#(caster, other_caster, started_at, other_start), unit, is_unit) =
+        drawn
+      let primary = case is_unit {
+        True -> AnotherUnit(pose: unit)
+        False -> TheCaster
+      }
+      assert area.centre_of(
+          anchor: FixedAtCaster,
+          caster:,
+          started_at:,
+          primary:,
+        )
+        == area.centre_of(
+          anchor: FixedAtCaster,
+          caster: other_caster,
+          started_at:,
+          primary:,
+        )
+        as "a row fixed at the start (0x1405a4e60 stores the pose once) does not move with the caster"
+      assert area.centre_of(
+          anchor: FollowsCaster,
+          caster:,
+          started_at:,
+          primary:,
+        )
+        == area.centre_of(
+          anchor: FollowsCaster,
+          caster:,
+          started_at: other_start,
+          primary:,
+        )
+        as "a row that follows its unit (0x14054b1b0.follows_caster) never reads the start"
+    },
+  )
+  each_anchor_by_each_primary()
+}
+
+/// The centre of each of the four anchors for each kind of primary target.
+fn each_anchor_by_each_primary() -> Nil {
+  let caster = Pose(at: Point(x: 10.0, z: 20.0), yaw: 1.0)
+  let started_at = Pose(at: Point(x: -3.0, z: 4.0), yaw: -0.5)
+  let unit = Pose(at: Point(x: 7.0, z: 8.0), yaw: 0.0)
+  [
+    #(
+      FollowsCaster,
+      TheCaster,
+      caster,
+      "a row drawn on the caster each frame is centred where it stands now",
+    ),
+    #(
+      FollowsCaster,
+      AnotherUnit(pose: unit),
+      caster,
+      "the caster's row is the caster's whoever the primary target is",
+    ),
+    #(
+      FixedAtCaster,
+      TheCaster,
+      started_at,
+      "a row drawn at the 0x7ff's entry stays at the start pose",
+    ),
+    #(
+      FixedAtCaster,
+      AnotherUnit(pose: unit),
+      started_at,
+      "a fixed row of a child cast on a struck unit is at the caster's start, not on the unit",
+    ),
+    #(
+      FollowsTarget,
+      TheCaster,
+      caster,
+      "the primary target is the caster: its place now",
+    ),
+    #(
+      FollowsTarget,
+      AnotherUnit(pose: unit),
+      unit,
+      "a row on another primary target is on that unit",
+    ),
+    #(
+      FixedAtTarget,
+      TheCaster,
+      started_at,
+      "the primary target is the caster: its start pose",
+    ),
+    #(
+      FixedAtTarget,
+      AnotherUnit(pose: unit),
+      unit,
+      "another primary target: the place the picture shows it at",
+    ),
+  ]
+  |> list.each(fn(row) {
+    let #(anchor, primary, expected, reason) = row
+    assert area.centre_of(anchor:, caster:, started_at:, primary:) == expected
+      as reason
+  })
 }
