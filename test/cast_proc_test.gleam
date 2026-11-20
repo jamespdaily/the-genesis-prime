@@ -3347,7 +3347,9 @@ fn controlling(
     unit_id:,
     unit: support.first_life,
     descriptions: [blow(result: combat_result.Hit, killed: 0)],
-    controls: [strike_tell.ControlLanded(tell:, ends_at_ms: 6000)],
+    controls: [
+      strike_tell.ControlLanded(tell:, ends_at_ms: 6000, interrupted: None),
+    ],
     armor_removed: 0,
     ticking: [],
   )

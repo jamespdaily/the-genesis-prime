@@ -18,12 +18,14 @@ import genesis_prime/game/cast/state.{
 import genesis_prime/game/hit
 import genesis_prime/game/spell_plan.{type Spell}
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/game/strike_tell
 import genesis_prime/game/telegraph_entries.{type Opening}
 import genesis_prime/message/cast_result
 import genesis_prime/message/combat_log.{CombatLog}
 import genesis_prime/message/combat_log_cc_state.{CombatLogCcState}
 import genesis_prime/message/combat_log_entry
 import genesis_prime/message/combat_log_immunity.{CombatLogImmunity}
+import genesis_prime/message/combat_log_interrupted.{CombatLogInterrupted}
 import genesis_prime/message/combat_log_modify_interrupt_armor.{
   CombatLogModifyInterruptArmor,
 }
@@ -120,7 +122,8 @@ pub fn control_ended_frame(
 }
 
 /// The caster's combat log of the states a go landed: an entry for each (0x247 of
-/// type 1, removed 0), and a timer for each state's end entry (removed 1) at the time
+/// type 1, removed 0), with the type 19 entry of the interrupt right after it for a state
+/// that broke a cast (`strike_tell.ControlLanded.interrupted`), and a timer for each state's end entry (removed 1) at the time
 /// the creature holds it until (`opcode.0x247.cc_state`). A state's end entry is never
 /// written for a unit the caster's client stopped showing: `cast_proc.unit_removed` cancels it.
 pub fn states_logged(
@@ -142,18 +145,61 @@ pub fn states_logged(
       )
     #(
       cast,
-      list.append(effects, [
-        Send(frame: control_logged_frame(
-          caster_unit_id: caster.unit_id,
-          unit_id:,
-          spell4_id:,
-          state:,
-          removed: False,
-        )),
-        start,
+      list.flatten([
+        effects,
+        [
+          Send(frame: control_logged_frame(
+            caster_unit_id: caster.unit_id,
+            unit_id:,
+            spell4_id:,
+            state:,
+            removed: False,
+          )),
+        ],
+        case landed.interrupted {
+          Some(strike_tell.Interrupted(spell4_id: interrupted)) -> [
+            Send(frame: interrupt_logged_frame(
+              caster_unit_id: caster.unit_id,
+              unit_id:,
+              interrupting_spell4_id: spell4_id,
+              interrupted_spell4_id: interrupted,
+            )),
+          ]
+          None -> []
+        },
+        [start],
       ]),
     )
   })
+}
+
+/// 0x247 of type 19: the caster's spell interrupted the unit's cast of
+/// `interrupted_spell4_id`. The client prints '<unit> is interrupted while casting
+/// <spell> by <caster>'s <interrupting spell>' from it. The cast result is
+/// SpellInterrupted as the cast's 0x7f9 gives, which the client prints only for a unit that
+/// interrupts itself, and the combat result is a choice, Hit, which the client shows to no
+/// one (`opcode.0x247.interrupted`).
+fn interrupt_logged_frame(
+  caster_unit_id caster_unit_id: Int,
+  unit_id unit_id: Int,
+  interrupting_spell4_id interrupting_spell4_id: Spell4Id,
+  interrupted_spell4_id interrupted_spell4_id: Spell4Id,
+) -> Frame {
+  let assert Ok(body) =
+    combat_log.encode(
+      CombatLog(
+        entry: combat_log_entry.Interrupted(CombatLogInterrupted(
+          interrupting_spell4_id: interrupting_spell4_id.value,
+          cast_result: cast_result.SpellInterrupted,
+          caster_unit_id:,
+          target_unit_id: unit_id,
+          spell4_id: interrupted_spell4_id.value,
+          combat_result: combat_result.Hit,
+        )),
+      ),
+    )
+    as "unit ids and Spell4 ids that fit their fields"
+  Frame(message_id: combat_log.message_id, body:)
 }
 
 /// 0x247 of type 1: the state set on the unit by the caster's spell, or ended. The

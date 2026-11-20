@@ -1729,6 +1729,7 @@ pub fn a_state_aimed_at_the_primary_target_is_told_to_it_alone_test() -> Nil {
     strike_tell.ControlLanded(
       tell: crowd_control_support.gate_stun(instance_id: 28_673),
       ends_at_ms: 4250,
+      interrupted: None,
     )
   let #(_, closed) =
     answer(
@@ -2153,4 +2154,43 @@ pub fn a_tick_left_out_at_the_deadline_test() -> Nil {
       now_ms: 3100,
     )
   assert late == [] as "a later answer finds no round and is dropped"
+}
+
+pub fn an_answer_after_the_deadline_that_broke_a_cast_logs_no_interrupt_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Unit 10 is stunned by the go and the stun broke its charge, but its answer, which carries
+  // the mark, arrives after the round's 1 s deadline: the go was written at the deadline with
+  // the unit left out, and the answer is dropped.
+  let #(state, _) =
+    begun(
+      state: strike.new(),
+      selection: stunning(
+        asked: asked(cast_id: 5, phase: 0),
+        units: [10],
+        aim: AimsAtArea,
+      ),
+      now_ms: 1000,
+    )
+  let #(state, due) = strike.timer_fired(strike: state, now: at(ms: 2000))
+  assert went(effects: due) == [#(5, 0, [])]
+    as "the round closes at its deadline with the unit left out: no state to log (type 1) and no mark (type 19)"
+  let marked =
+    strike_tell.ControlLanded(
+      ..crowd_control_support.kick_landed(ends_at_ms: 4166),
+      interrupted: Some(strike_tell.Interrupted(spell4_id: Spell4Id(85_469))),
+    )
+  let #(_, late) =
+    answer(
+      state:,
+      key: Key(cast_id: 5, occasion: strike_tell.AtGo(phase: 0), unit_id: 10),
+      outcome: Landed(
+        descriptions: [],
+        controls: [marked],
+        armor_removed: 0,
+        gates_passed: [],
+      ),
+      now_ms: 2500,
+    )
+  assert went(effects: late) == [] && tells(effects: late) == []
+    as "the late marked answer finds no round: nothing is written, so no line"
 }

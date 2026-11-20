@@ -7983,12 +7983,29 @@ fn interrupts_and_destroys(
         #(4, 2),
       ]),
     )
+  // The interrupt line (type 19, `opcode.0x247.interrupted`): Paralytic Surge 42352 as the
+  // interrupting spell, result 11 (SpellInterrupted), the medic as the caster, the turret
+  // as the unit interrupted, the charge's Spell4 85469 and the combat result Hit (2).
+  let interrupt =
+    Frame(
+      message_id: 0x0247,
+      body: message_support.packed([
+        #(6, 19),
+        #(18, 42_352),
+        #(9, 11),
+        #(32, own),
+        #(32, turret),
+        #(18, 85_469),
+        #(4, 2),
+      ]),
+    )
   let #(interrupted, have) =
     game_client.read_until(game:, have:, found: fn(frames) {
       list.contains(
         game_client.casts_in(frames:),
         game_client.CastFinished(cast_id: charge_cast),
       )
+      && list.contains(frames, interrupt)
       && game_client.starts_of(
         events: game_client.casts_in(frames:),
         spell4_id: 85_472,
@@ -8021,6 +8038,9 @@ fn interrupts_and_destroys(
     as "opcode.0x247.immunity: the press's striker is shown the turret's immunity, type 18 with Spell4 42352"
   assert list.any(interrupted, fn(frame) { frame.message_id == 0x087F })
     as "opcode.0x87f: the states of the stun and the opening are told"
+  assert list.filter(interrupted, fn(frame) { frame == interrupt })
+    == [interrupt]
+    as "opcode.0x247.interrupted: the stun's striker is shown the interrupt line once, type 19 with Spell4 42352 interrupting the charge 85469"
   // The opening lasts 15000 ms on the clock from the interrupting press, and a press's hit
   // lingers 2700 ms before the next (Spell4Effects 96126), so the presses at 2700, 5400,
   // 8100, 10800 and 13500 ms fit in it and a sixth, at 16200, would find the guard back.
@@ -8044,6 +8064,8 @@ fn interrupts_and_destroys(
   let seen = list.flatten([aggroed, opened, interrupted, lingered, killed])
   assert list.contains(game_client.deaths_in(frames: seen), #(turret, True))
     as "the opened turret takes the presses' damage and is destroyed within its 15 s"
+  assert list.filter(seen, fn(frame) { frame == interrupt }) == [interrupt]
+    as "no later press interrupts anything: the one line is the stun's"
   #(seen, have)
 }
 

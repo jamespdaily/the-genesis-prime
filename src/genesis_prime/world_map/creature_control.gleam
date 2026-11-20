@@ -275,13 +275,20 @@ fn held(state state: State, tell tell: Tell, now_ms now_ms: Int) -> Landing {
           controls: list.append(state.controls, [control]),
           next_number: state.next_number + 1,
         ),
-        #(ControlLanded(tell: told, ends_at_ms: control.ends_at_ms), [
-          ToViewers(client_connection.CrowdControlApplied(
-            state: told.row.state,
-            instance_id: told.instance_id,
-          )),
-          StartTimer(control: control.number, after_ms: hold_ms),
-        ]),
+        #(
+          ControlLanded(
+            tell: told,
+            ends_at_ms: control.ends_at_ms,
+            interrupted: None,
+          ),
+          [
+            ToViewers(client_connection.CrowdControlApplied(
+              state: told.row.state,
+              instance_id: told.instance_id,
+            )),
+            StartTimer(control: control.number, after_ms: hold_ms),
+          ],
+        ),
       )
     })
   Landing(

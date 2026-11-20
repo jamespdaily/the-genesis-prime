@@ -15,6 +15,7 @@ import genesis_prime/message/combat_log_cc_state_break.{
 }
 import genesis_prime/message/combat_log_death.{type CombatLogDeath}
 import genesis_prime/message/combat_log_immunity.{type CombatLogImmunity}
+import genesis_prime/message/combat_log_interrupted.{type CombatLogInterrupted}
 import genesis_prime/message/combat_log_modify_interrupt_armor.{
   type CombatLogModifyInterruptArmor,
 }
@@ -57,11 +58,8 @@ import gleam/result
 /// what builds it: the resource gains of spells are built and only this type
 /// logs them; did retail set bShowCombatLog for them (a recording of a resource
 /// gain settles it)) (layout so far in the fact file's
-/// `opcode.0x247.vital_modifier`); 19 (interrupted: what builds it: casts are
-/// interrupted and only this type logs it; which of its cast-data units is the
-/// interrupter is not read) (layout so far in the fact file's
-/// `opcode.0x247.interrupted`); 20 (kill_streak: what builds it: kill streaks,
-/// which only PvP raises) (layout so far in the fact file's
+/// `opcode.0x247.vital_modifier`); 20 (kill_streak: what builds it: kill
+/// streaks, which only PvP raises) (layout so far in the fact file's
 /// `opcode.0x247.kill_streak`); 21 (kill_pvp: what builds it: PvP kill assists)
 /// (layout so far in the fact file's `opcode.0x247.kill_pvp`); 25 (mount: what
 /// builds it: mounting and dismounting, which are not built) (layout so far in
@@ -103,6 +101,9 @@ pub type CombatLogEntry {
   /// Kind 18, read by `combat_log_immunity`. The fact file's
   /// `opcode.0x247.immunity` names the kind.
   Immunity(CombatLogImmunity)
+  /// Kind 19, read by `combat_log_interrupted`. The fact file's
+  /// `opcode.0x247.interrupted` names the kind.
+  Interrupted(CombatLogInterrupted)
   /// Kind 22, read by `combat_log_death`. The fact file's `opcode.0x247.death`
   /// names the kind.
   Death(CombatLogDeath)
@@ -122,6 +123,7 @@ pub fn write(writer writer: Writer, record record: CombatLogEntry) -> Writer {
     ModifyInterruptArmor(variant) ->
       combat_log_modify_interrupt_armor.write(writer, variant)
     Immunity(variant) -> combat_log_immunity.write(writer, variant)
+    Interrupted(variant) -> combat_log_interrupted.write(writer, variant)
     Death(variant) -> combat_log_death.write(writer, variant)
     Resurrect(variant) -> combat_log_resurrect.write(writer, variant)
     Stealth(variant) -> combat_log_stealth.write(writer, variant)
@@ -148,6 +150,10 @@ pub fn read(reader: Reader) -> Result(#(CombatLogEntry, Reader), DecodeError) {
       reader
       |> combat_log_immunity.read
       |> result.map(pair.map_first(_, Immunity))
+    19 ->
+      reader
+      |> combat_log_interrupted.read
+      |> result.map(pair.map_first(_, Interrupted))
     22 ->
       reader
       |> combat_log_death.read

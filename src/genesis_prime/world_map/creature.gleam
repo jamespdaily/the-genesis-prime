@@ -246,7 +246,9 @@ import genesis_prime/step.{
   ServiceTimerFired, Started, Stop, Stopping, TimerId, Told, Watch, WatchEnded,
   WatchId,
 }
-import genesis_prime/table/id.{type Creature2Id, type Faction2Id, Faction2Id}
+import genesis_prime/table/id.{
+  type Creature2Id, type Faction2Id, type Spell4Id, Faction2Id,
+}
 import genesis_prime/world_map/creature_control
 import genesis_prime/world_map/creature_fight.{
   type Fighter, AttackTick, CastEnds, ChaseArrival, Fighter, FlightEnds,
@@ -1590,15 +1592,17 @@ fn controls_after(
               now_ms:,
             )
           let state = State(..state, control: landing.state)
-          let #(state, stopped) = case landing.landed {
-            [_, ..] -> fought(state:, input: creature_fight.Controlled, now_ms:)
-            [] -> #(state, [])
+          let #(state, stopped, broke) = case landing.landed {
+            [_, ..] ->
+              fought_breaking(state:, input: creature_fight.Controlled, now_ms:)
+            [] -> #(state, [], None)
           }
+          let landed = first_marked(landed: landing.landed, broke:)
           let #(state, thrown_effects) =
             thrown_by_states(
               state:,
               outcome: reaction.answer.outcome,
-              landed: landing.landed,
+              landed:,
               now_ms:,
             )
           #(
@@ -1607,7 +1611,7 @@ fn controls_after(
               key: reaction.answer.key,
               outcome: with_controls(
                 outcome: reaction.answer.outcome,
-                controls: landing.landed,
+                controls: landed,
                 armor_removed: landing.armor_removed,
               ),
             ),
@@ -1624,6 +1628,25 @@ fn controls_after(
           [],
         )
       }
+  }
+}
+
+/// The states a strike landed, the first marked with the cast the strike's landing broke
+/// when it broke one (`strike_tell.ControlLanded.interrupted`): the caster's combat log
+/// shows the interrupt once, for the first state that landed.
+fn first_marked(
+  landed landed: List(strike_tell.ControlLanded),
+  broke broke: Option(Spell4Id),
+) -> List(strike_tell.ControlLanded) {
+  case landed, broke {
+    [first, ..rest], Some(spell4_id) -> [
+      strike_tell.ControlLanded(
+        ..first,
+        interrupted: Some(strike_tell.Interrupted(spell4_id:)),
+      ),
+      ..rest
+    ]
+    [], Some(..) | [_, ..], None | [], None -> landed
   }
 }
 
@@ -1897,6 +1920,16 @@ fn fought(
   input input: creature_fight.Input,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect(ServiceEffect(Outgoing)))) {
+  let #(state, carried_out, _) = fought_breaking(state:, input:, now_ms:)
+  #(state, carried_out)
+}
+
+/// The same, and the Spell4 of the charge the input broke, when it broke one.
+fn fought_breaking(
+  state state: State,
+  input input: creature_fight.Input,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect(ServiceEffect(Outgoing))), Option(Spell4Id)) {
   let #(fight, effects) =
     creature_fight.step(
       state: state.fight,
@@ -1929,7 +1962,7 @@ fn fought(
             ),
           )
         }
-        creature_fight.ChargeInterrupted(cast_id:) ->
+        creature_fight.ChargeInterrupted(cast_id:, ..) ->
           guard_stepped(
             state:,
             input: creature_guard.Interrupted(charge_cast: cast_id),
@@ -1947,7 +1980,19 @@ fn fought(
   // An effect can open the guard (`ChargeInterrupted`) after the step chose its turn by the
   // creature as it was.
   let #(state, reconsidered) = turn_reconsidered(state:, was_held:, now_ms:)
-  #(state, list.append(carried_out, reconsidered))
+  let broke =
+    list.find_map(effects, fn(effect) {
+      case effect {
+        creature_fight.ChargeInterrupted(spell4_id:, ..) -> Ok(spell4_id)
+        creature_fight.ToViewers(..)
+        | creature_fight.ToPlayer(..)
+        | creature_fight.RestoreHealth
+        | creature_fight.StartTimer(..)
+        | creature_fight.CancelTimer(..) -> Error(Nil)
+      }
+    })
+    |> option.from_result
+  #(state, list.append(carried_out, reconsidered), broke)
 }
 
 /// What the creature fights with: its unit and address, its spawn as home, its

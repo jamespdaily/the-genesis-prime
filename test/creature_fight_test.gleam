@@ -2162,6 +2162,7 @@ pub fn a_struck_creature_with_no_armor_holds_the_state_its_viewers_get_the_0x87f
       strike_tell.ControlLanded(
         tell: crowd_control_support.kick_knockdown(instance_id: 28_673),
         ends_at_ms: 14_166,
+        interrupted: None,
       ),
     ]
     as "the answer names it, with the time the creature holds it until: its arrival, 10000 + 1000, plus 166 plus 3000"
@@ -2437,6 +2438,7 @@ pub fn armor_wears_down_by_the_rows_points_and_the_state_lands_once_it_is_0_test
       strike_tell.ControlLanded(
         tell: crowd_control_support.stagger_stun(instance_id: 28_675),
         ends_at_ms: 15_500,
+        interrupted: None,
       ),
     ]
     as "the third finds the armor at 0 and lands: arrival 10000 + 3000, plus 2500"
@@ -3281,7 +3283,11 @@ pub fn creature_blow_uses_damage_dealt_multiplier_test() -> Nil {
 /// The Exile Sim-Turret at the origin as migration 0029 leaves it, started for these viewers,
 /// `Started` taken.
 fn turret(viewers viewers: List(Int)) -> State {
-  turret_in(kinds: spawn_support.turret_kinds(), viewers:).0
+  turret_in(
+    kinds: spawn_support.turret_kinds(),
+    viewers:,
+    armor: creature_life.NoArmor,
+  ).0
 }
 
 /// The same turret as migration 0030 leaves it, guarded by Spell4 85474 and opened by Spell4
@@ -3289,14 +3295,19 @@ fn turret(viewers viewers: List(Int)) -> State {
 fn guarded_turret(
   viewers viewers: List(Int),
 ) -> #(State, ServiceStep(creature.Outgoing)) {
-  turret_in(kinds: spawn_support.guarded_turret_kinds(), viewers:)
+  turret_in(
+    kinds: spawn_support.guarded_turret_kinds(),
+    viewers:,
+    armor: creature_life.NoArmor,
+  )
 }
 
-/// The Exile Sim-Turret of these kinds at the origin, started for these viewers: the state and
-/// the step of its `Started`.
+/// The Exile Sim-Turret of these kinds and this Interrupt Armor at the origin, started for
+/// these viewers: the state and the step of its `Started`.
 fn turret_in(
   kinds kinds: Kinds,
   viewers viewers: List(Int),
+  armor armor: creature_life.InterruptArmor,
 ) -> #(State, ServiceStep(creature.Outgoing)) {
   let spawn = spawn_support.sim_turret(number: 1, place: at(0.0))
   let assert Ok(kind) = dict.get(kinds.by_creature, 73_494)
@@ -3306,7 +3317,7 @@ fn turret_in(
     spawn:,
     kind:,
     viewers:,
-    armor: creature_life.NoArmor,
+    armor:,
   )
 }
 
@@ -4013,7 +4024,12 @@ pub fn a_turret_stands_holding_its_guard_test() -> Nil {
   let assert [#(224_666, instance_id, 0)] = effects_listed(go:)
     as "effect 224666 with lifetime 0"
   assert instance_id != 0
-  let #(_, bare) = turret_in(kinds: spawn_support.turret_kinds(), viewers: [2])
+  let #(_, bare) =
+    turret_in(
+      kinds: spawn_support.turret_kinds(),
+      viewers: [2],
+      armor: creature_life.NoArmor,
+    )
   assert said(bare) == ["0x262 to 2"] as "a turret with no guard is shown none"
 }
 
@@ -9538,4 +9554,455 @@ pub fn a_timer_or_an_answer_that_comes_again_leaves_the_other_rounds_alone_test(
   |> list.each(fn(row) {
     assert row.run() == row.expected as row.reason
   })
+}
+
+// ---- the player whose state broke a charge is told which spell it broke (opcode.0x247.interrupted) ----
+//
+// The mark rides the answer to the strike whose first landed state broke the charge, for the
+// stunner's connection to write the combat log line. The charges are the Sim-Turret's
+// (Spell4 85469, castTime 8000) and Rootbrute Grimspore's Earthen Roar (Spell4 55317).
+
+const turret_charge = 85_469
+
+const earthen_roar = 55_317
+
+/// The mark of each state the step's answers list, in order: the spell of the charge the state
+/// broke, or none.
+fn marks_of(
+  taken: ServiceStep(creature.Outgoing),
+) -> List(Option(strike_tell.Interrupted)) {
+  list.flat_map(answers_of(taken), fn(outcome) {
+    case outcome {
+      Landed(controls:, ..) | Immune(controls:, ..) ->
+        list.map(controls, fn(control) { control.interrupted })
+      strike_tell.Deflected(..) | Refused(..) -> []
+    }
+  })
+}
+
+fn marked(spell4_id spell4_id: Int) -> Option(strike_tell.Interrupted) {
+  Some(strike_tell.Interrupted(spell4_id: Spell4Id(spell4_id)))
+}
+
+/// A strike of player `number` with a blow of 10 and these states.
+fn striking_with(
+  number number: Int,
+  cast_id cast_id: Int,
+  controls controls: List(strike_tell.ControlTell),
+) -> creature.Message {
+  let assert creature.Strike(tell:) =
+    strike_of(number:, cast_id:, blows: [#(1, 10, 1.0)])
+    as "strike_of gives a strike"
+  creature.Strike(tell: Strike(..tell, controls:))
+}
+
+/// A scene with a charge open: its state, the time in ms a state strikes it at, and the spell
+/// of the charge.
+type OpenCast {
+  OpenCast(reason: String, state: State, at_ms: Int, spell4_id: Int)
+}
+
+fn open_casts(viewers viewers: List(Int)) -> List(OpenCast) {
+  let #(bare, aggro) = fought(viewers:)
+  let #(bare, _, _) = charge_opened(state: bare, aggro:)
+  let #(roar, roar_aggro) = roar_fought(viewers:)
+  let #(before_gos, _, first_go) = roar_opened(state: roar, aggro: roar_aggro)
+  let #(between_gos, _, _) = first_go_passed(state: before_gos, go: first_go)
+  [
+    OpenCast(
+      reason: "the Sim-Turret's charge",
+      state: bare,
+      at_ms: 4000,
+      spell4_id: turret_charge,
+    ),
+    OpenCast(
+      reason: "the guarded Sim-Turret's charge",
+      state: guarded_charge(viewers:).state,
+      at_ms: 4000,
+      spell4_id: turret_charge,
+    ),
+    OpenCast(
+      reason: "Earthen Roar before its first go",
+      state: before_gos,
+      at_ms: 2000,
+      spell4_id: earthen_roar,
+    ),
+    OpenCast(
+      reason: "Earthen Roar between its gos",
+      state: between_gos,
+      at_ms: 4200,
+      spell4_id: earthen_roar,
+    ),
+  ]
+}
+
+pub fn a_break_names_the_spell_of_the_charge_it_broke_test() -> Nil {
+  use <- owned_test.run(5000)
+  list.each(open_casts(viewers: [2]), fn(scene) {
+    let #(_, stunned) =
+      tell(
+        state: scene.state,
+        at_ms: scene.at_ms,
+        message: stunning(from: 2, cast_id: 1, instance_id: 28_673),
+      )
+    assert marks_of(stunned) == [marked(spell4_id: scene.spell4_id)]
+      as { scene.reason <> ": the state's mark names the charge's Spell4" }
+    assert list.contains(said(stunned), "0x7f9 to 2")
+      as { scene.reason <> ": the charge is broken in the same step" }
+  })
+}
+
+type StateRow {
+  StateRow(
+    reason: String,
+    scene: Int,
+    strike: creature.Message,
+    marks: List(Option(strike_tell.Interrupted)),
+    thrown: Bool,
+  )
+}
+
+pub fn the_first_state_a_strike_lands_in_a_charge_is_marked_with_the_charges_spell_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Scene 0 is the Sim-Turret's charge, 1 the guarded turret's, 2 Earthen Roar before its
+  // first go, whose beast moves and so can be thrown.
+  [
+    StateRow(
+      reason: "a Stagger stun that lands on Earthen Roar",
+      scene: 2,
+      strike: stunning(from: 2, cast_id: 1, instance_id: 28_673),
+      marks: [marked(spell4_id: earthen_roar)],
+      thrown: False,
+    ),
+    StateRow(
+      reason: "a stun with a blow on the guarded turret, which takes the blow as immune and the state",
+      scene: 1,
+      strike: striking_with(number: 2, cast_id: 1, controls: [
+        crowd_control_support.stagger_stun(instance_id: 28_673),
+      ]),
+      marks: [marked(spell4_id: turret_charge)],
+      thrown: False,
+    ),
+    StateRow(
+      reason: "Kick's knockdown on the turret",
+      scene: 0,
+      strike: controlling(number: 2, cast_id: 1, controls: [
+        crowd_control_support.kick_knockdown(instance_id: 28_673),
+      ]),
+      marks: [marked(spell4_id: turret_charge)],
+      thrown: False,
+    ),
+    StateRow(
+      reason: "a knockback with its throw: one mark, and the flight still starts",
+      scene: 2,
+      strike: controlling(number: 2, cast_id: 1, controls: [
+        knockback_state(instance_id: 28_673),
+      ]),
+      marks: [marked(spell4_id: earthen_roar)],
+      thrown: True,
+    ),
+    StateRow(
+      reason: "a strike with two states: only the first is marked",
+      scene: 2,
+      strike: controlling(number: 2, cast_id: 1, controls: [
+        crowd_control_support.stagger_stun(instance_id: 28_673),
+        crowd_control_support.kick_knockdown(instance_id: 28_674),
+      ]),
+      marks: [marked(spell4_id: earthen_roar), None],
+      thrown: False,
+    ),
+  ]
+  |> list.each(fn(row) {
+    let assert Ok(scene) =
+      list.first(list.drop(open_casts(viewers: [2]), row.scene))
+      as "the scene exists"
+    let #(_, taken) =
+      tell(state: scene.state, at_ms: scene.at_ms, message: row.strike)
+    assert marks_of(taken) == row.marks as row.reason
+    assert list.contains(said(taken), "0x638 to 2") == row.thrown
+      as { row.reason <> ": the throw starts the flight, or none" }
+  })
+}
+
+pub fn two_players_stunning_one_charge_mark_only_the_first_strike_the_creature_took_test() -> Nil {
+  use <- owned_test.run(5000)
+  [#(2, 5), #(5, 2)]
+  |> list.each(fn(order) {
+    let #(first, second) = order
+    let #(state, aggro) = fought(viewers: [2, 5])
+    let #(state, _, _) = charge_opened(state:, aggro:)
+    let #(state, first_taken) =
+      tell(
+        state:,
+        at_ms: 4000,
+        message: stunning(from: first, cast_id: 1, instance_id: 28_673),
+      )
+    let #(_, second_taken) =
+      tell(
+        state:,
+        at_ms: 4100,
+        message: controlling(number: second, cast_id: 1, controls: [
+          crowd_control_support.gate_stun(instance_id: 28_674),
+        ]),
+      )
+    assert marks_of(first_taken) == [marked(spell4_id: turret_charge)]
+      as "the strike the creature took first is marked"
+    assert marks_of(second_taken) == [None]
+      as "the second strike's state lands and is not marked"
+    assert list.contains(
+      said(second_taken),
+      "0x87f to " <> int.to_string(first),
+    )
+      as "the second state is shown to the viewers (0x87f)"
+    assert !list.contains(said(second_taken), "0x7f9 to 2")
+      as "and breaks nothing more"
+  })
+}
+
+pub fn a_state_that_breaks_no_charge_marks_nothing_test() -> Nil {
+  use <- owned_test.run(5000)
+  let armored_turret = fn(armor) {
+    turret_in(kinds: spawn_support.turret_kinds(), viewers: [2], armor:).0
+  }
+  let approached_turret = fn(armor) {
+    tell(
+      state: armored_turret(armor),
+      at_ms: 0,
+      message: approached_at(number: 2, x: 0.0, z: -10.0, seq: 1),
+    )
+  }
+  let charging = fn(armor) {
+    let #(state, aggro) = approached_turret(armor)
+    charge_opened(state:, aggro:)
+  }
+  let #(striking, _, striking_ends) = charging(creature_life.NoArmor)
+  let #(striking, _) =
+    fire(state: striking, at_ms: 11_000, timer: striking_ends)
+  [
+    #(
+      "armor above 0 takes the state's point and no state lands",
+      charging(creature_life.Armor(points: 2)).0,
+      4000,
+    ),
+    #(
+      "infinite armor: no state lands",
+      charging(creature_life.InfiniteArmor).0,
+      4000,
+    ),
+    #(
+      "no round open: the first attack tick is still to come",
+      approached_turret(creature_life.NoArmor).0,
+      1000,
+    ),
+    #("the round is striking: the last go is out", striking, 11_050),
+    #(
+      "a resting creature, in no fight",
+      armored_turret(creature_life.NoArmor),
+      0,
+    ),
+  ]
+  |> list.each(fn(row) {
+    let #(reason, state, at_ms) = row
+    let #(_, taken) =
+      tell(
+        state:,
+        at_ms:,
+        message: stunning(from: 2, cast_id: 1, instance_id: 28_673),
+      )
+    assert list.all(marks_of(taken), fn(mark) { mark == None }) as reason
+    assert !list.contains(said(taken), "0x7f9 to 2")
+      as { reason <> ": no charge is broken" }
+  })
+}
+
+pub fn a_death_or_a_leash_in_a_charge_marks_no_answer_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) = fought(viewers: [2])
+  let #(state, _, _) = charge_opened(state:, aggro:)
+  let assert creature.Strike(tell: lethal) =
+    strike_of(number: 2, cast_id: 1, blows: [#(1, 1_000_000, 1.0)])
+    as "strike_of gives a strike"
+  let #(_, killed) =
+    tell(
+      state:,
+      at_ms: 4000,
+      message: creature.Strike(
+        tell: Strike(..lethal, controls: [
+          crowd_control_support.stagger_stun(instance_id: 28_673),
+        ]),
+      ),
+    )
+  assert marks_of(killed) == [] && !list.contains(said(killed), "0x7f9 to 2")
+    as "a stun strike that kills in the charge: the states drop with the creature, nothing is marked, nothing is broken"
+  let #(_, leashed) =
+    tell(state:, at_ms: 4000, message: creature.Unwatched(by: ConnectionId(2)))
+  assert marks_of(leashed) == [] && !list.contains(said(leashed), "0x7f9 to 2")
+    as "the last fighter leaving ends the fight with no interrupter: no 0x7f9 and no answer"
+}
+
+type BreakOp {
+  Approach(Int)
+  StunBy(Int)
+  WoundBy(Int)
+  KillBy(Int)
+  FireAll
+}
+
+fn break_op_of(numbers: #(Int, Int)) -> BreakOp {
+  let player = numbers.1 % 3 * 3 + 2
+  case numbers.0 % 8 {
+    0 -> Approach(player)
+    1 | 2 | 3 -> StunBy(player)
+    4 | 5 -> WoundBy(player)
+    6 -> KillBy(player)
+    _ -> FireAll
+  }
+}
+
+fn armor_of_run(number: Int) -> creature_life.InterruptArmor {
+  case number % 3 {
+    0 -> creature_life.NoArmor
+    1 -> creature_life.Armor(points: 1)
+    _ -> creature_life.InfiniteArmor
+  }
+}
+
+/// The ids of the casts the step tells viewer 2 are broken (0x7f9).
+fn broken_casts(taken: ServiceStep(creature.Outgoing)) -> List(Int) {
+  list.filter_map(news_to(taken, 2), fn(news) {
+    case name_of(news) {
+      "0x7f9" -> {
+        let assert client_connection.CastInterrupted(cast_id:) = news
+          as "a 0x7f9 is a CastInterrupted"
+        Ok(cast_id)
+      }
+      _ -> Error(Nil)
+    }
+  })
+}
+
+/// The breaches of "each 0x7f9 comes with one marked state in its step, and a cast is broken
+/// once" over the operations on a turret watched by players 2, 5 and 8, each `FireAll`
+/// firing every timer the creature started. `marks_in` counts the marked states of a step,
+/// which the harness check plants.
+fn unpaired_breaks(
+  armor armor: creature_life.InterruptArmor,
+  ops ops: List(BreakOp),
+  marks_in marks_in: fn(ServiceStep(creature.Outgoing)) -> Int,
+) -> List(String) {
+  let #(state, _) =
+    turret_in(kinds: spawn_support.turret_kinds(), viewers: [2, 5, 8], armor:)
+  let #(_, _, _, _, found) =
+    list.fold(ops, #(state, [], 0, [], []), fn(held, op) {
+      let #(state, pending, at_ms, broken, found) = held
+      let at_ms = at_ms + 100
+      let #(state, taken) = case op {
+        Approach(n) ->
+          one_step(
+            state:,
+            at_ms:,
+            message: approached_at(number: n, x: 0.0, z: -10.0, seq: at_ms),
+          )
+        StunBy(n) ->
+          one_step(
+            state:,
+            at_ms:,
+            message: stunning(from: n, cast_id: at_ms, instance_id: at_ms),
+          )
+        WoundBy(n) ->
+          one_step(
+            state:,
+            at_ms:,
+            message: strike_of(number: n, cast_id: at_ms, blows: [#(1, 1, 1.0)]),
+          )
+        KillBy(n) ->
+          one_step(
+            state:,
+            at_ms:,
+            message: strike_of(number: n, cast_id: at_ms, blows: [
+              #(1, 1_000_000, 1.0),
+            ]),
+          )
+        FireAll ->
+          list.fold(
+            pending,
+            #(state, []),
+            fn(so_far, timer: #(step.TimerId, Int)) {
+              let #(state, taken) = so_far
+              let #(state, more) = fire(state:, at_ms:, timer: timer.0)
+              #(state, list.append(taken, [more]))
+            },
+          )
+      }
+      let pending = case op {
+        FireAll -> list.flat_map(taken, timers)
+        Approach(..) | StunBy(..) | WoundBy(..) | KillBy(..) ->
+          list.append(pending, list.flat_map(taken, timers))
+      }
+      let casts = list.flat_map(taken, broken_casts)
+      let marks = list.fold(taken, 0, fn(sum, step) { sum + marks_in(step) })
+      let found = case list.length(casts) == marks {
+        True -> found
+        False -> [
+          "at "
+            <> int.to_string(at_ms)
+            <> " ms the step breaks "
+            <> int.to_string(list.length(casts))
+            <> " cast(s) and marks "
+            <> int.to_string(marks),
+          ..found
+        ]
+      }
+      let found = case
+        list.any(casts, fn(cast) { list.contains(broken, cast) })
+      {
+        True -> ["a cast id is broken twice", ..found]
+        False -> found
+      }
+      #(state, pending, at_ms, list.append(casts, broken), found)
+    })
+  found
+}
+
+/// The step of one message, as a list of the one step.
+fn one_step(
+  state state: State,
+  at_ms at_ms: Int,
+  message message: creature.Message,
+) -> #(State, List(ServiceStep(creature.Outgoing))) {
+  let #(state, taken) = tell(state:, at_ms:, message:)
+  #(state, [taken])
+}
+
+fn marked_states(taken: ServiceStep(creature.Outgoing)) -> Int {
+  list.length(list.filter(marks_of(taken), option.is_some))
+}
+
+pub fn over_random_strikes_each_break_marks_exactly_one_answer_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use #(armor, numbers) <- qcheck.given(qcheck.tuple2(
+    qcheck.bounded_int(0, 2),
+    qcheck.generic_list(
+      qcheck.tuple2(qcheck.bounded_int(0, 1000), qcheck.bounded_int(0, 1000)),
+      qcheck.bounded_int(from: 1, to: 40),
+    ),
+  ))
+  assert unpaired_breaks(
+      armor: armor_of_run(armor),
+      ops: list.map(numbers, break_op_of),
+      marks_in: marked_states,
+    )
+    == []
+    as "a 0x7f9 comes with one marked state of its step, and no cast is broken twice"
+}
+
+pub fn the_harness_names_a_break_whose_state_is_not_marked_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The planted bug: no step marks anything.
+  assert unpaired_breaks(
+      armor: creature_life.NoArmor,
+      ops: [Approach(2), FireAll, StunBy(2)],
+      marks_in: fn(_) { 0 },
+    )
+    != []
 }

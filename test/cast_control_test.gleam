@@ -35,10 +35,13 @@ import genesis_prime/game/crowd_control
 import genesis_prime/game/lasting
 import genesis_prime/game/spell_plan.{type Spell, GlobalCooldown, Spell}
 import genesis_prime/game/spend
+import genesis_prime/game/strike_tell
 import genesis_prime/message/cast_result
 import genesis_prime/message/combat_log
 import genesis_prime/message/combat_log_cc_state.{CombatLogCcState}
 import genesis_prime/message/combat_log_entry
+import genesis_prime/message/combat_log_immunity.{CombatLogImmunity}
+import genesis_prime/message/combat_log_interrupted.{CombatLogInterrupted}
 import genesis_prime/message/combat_log_modify_interrupt_armor.{
   CombatLogModifyInterruptArmor,
 }
@@ -64,7 +67,7 @@ import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import gleam/int
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
 import owned_test
 import prerequisite_support
 
@@ -1231,4 +1234,131 @@ pub fn a_controls_row_aimed_at_the_caster_and_past_it_appears_in_both_readers_te
     as "the restrictions: a row that names the caster is among the caster's states"
   assert spell_plan.controls_in_phase(spell:, phase: 0, spent: None) == [row]
     as "the strike's controls: a row that names the primary target is among the creatures' states"
+}
+
+/// Kick pressed at 1000 whose round closed at 1000 having struck these units: the effects of
+/// its go.
+fn kick_answered_by(struck struck: List(cast_state.Struck)) -> List(Effect) {
+  let #(state, effects) =
+    support.pressed_raw_in(
+      plans: kick_plans(),
+      state: cast_state.new(),
+      caster: support.caster(),
+      bag_index: bag_of_base_3,
+      target: 0,
+      at: 1000,
+    )
+  support.answered_by(state:, effects:, at: 1000, struck:).1
+}
+
+/// Kick's Knockdown that landed on a unit, which broke the charge `broke` if it names one.
+fn knockdown_breaking(broke broke: Option(Int)) -> strike_tell.ControlLanded {
+  strike_tell.ControlLanded(
+    ..crowd_control_support.kick_landed(ends_at_ms: 4166),
+    interrupted: option.map(broke, fn(spell4_id) {
+      strike_tell.Interrupted(spell4_id: Spell4Id(spell4_id))
+    }),
+  )
+}
+
+fn state_line(target target: Int) -> combat_log_entry.CombatLogEntry {
+  combat_log_entry.CcState(CombatLogCcState(
+    state: Knockdown,
+    removed: 0,
+    interrupt_armor_hit: 0,
+    result: crowd_control_result.Ok,
+    diminishing_returns_id: 0,
+    caster_unit_id: 7,
+    target_unit_id: target,
+    spell4_id: 58_591,
+    combat_result: combat_result.Hit,
+  ))
+}
+
+fn interrupt_line(
+  target target: Int,
+  broke broke: Int,
+) -> combat_log_entry.CombatLogEntry {
+  combat_log_entry.Interrupted(CombatLogInterrupted(
+    interrupting_spell4_id: 58_591,
+    cast_result: cast_result.SpellInterrupted,
+    caster_unit_id: 7,
+    target_unit_id: target,
+    spell4_id: broke,
+    combat_result: combat_result.Hit,
+  ))
+}
+
+type InterruptRow {
+  InterruptRow(
+    reason: String,
+    struck: List(cast_state.Struck),
+    logged: List(combat_log_entry.CombatLogEntry),
+  )
+}
+
+pub fn a_go_logs_type_19_after_the_type_1_of_the_state_that_broke_a_cast_test() -> Nil {
+  use <- owned_test.run(5000)
+  let unit = cast_state.HitCreature(life: 1, struck_at_ms: 0)
+  let hit = fn(unit_id, broke) {
+    cast_state.Hit(
+      unit_id:,
+      unit:,
+      descriptions: [],
+      controls: [knockdown_breaking(broke:)],
+      armor_removed: 0,
+      ticking: [],
+    )
+  }
+  [
+    InterruptRow(
+      reason: "a hit whose state broke the Sim-Turret's charge: the type 1 line, then type 19 with Kick as the interrupter",
+      struck: [hit(20, Some(85_469))],
+      logged: [
+        state_line(target: 20),
+        interrupt_line(target: 20, broke: 85_469),
+      ],
+    ),
+    InterruptRow(
+      reason: "an immune creature whose state broke a charge: its immunity line (type 18), the type 1 line, then type 19",
+      struck: [
+        cast_state.Immune(
+          unit_id: 20,
+          unit:,
+          controls: [knockdown_breaking(broke: Some(85_469))],
+          armor_removed: 0,
+          ticking: [],
+        ),
+      ],
+      logged: [
+        combat_log_entry.Immunity(CombatLogImmunity(
+          caster_unit_id: 7,
+          target_unit_id: 20,
+          spell4_id: 58_591,
+          combat_result: combat_result.Hit,
+        )),
+        state_line(target: 20),
+        interrupt_line(target: 20, broke: 85_469),
+      ],
+    ),
+    InterruptRow(
+      reason: "a go over two broken creatures: one type 19 line each, each after its own type 1 line",
+      struck: [hit(20, Some(85_469)), hit(21, Some(55_317))],
+      logged: [
+        state_line(target: 20),
+        interrupt_line(target: 20, broke: 85_469),
+        state_line(target: 21),
+        interrupt_line(target: 21, broke: 55_317),
+      ],
+    ),
+    InterruptRow(
+      reason: "an unmarked state: the type 1 line alone",
+      struck: [hit(20, None)],
+      logged: [state_line(target: 20)],
+    ),
+  ]
+  |> list.each(fn(row) {
+    assert logged(effects: kick_answered_by(struck: row.struck)) == row.logged
+      as row.reason
+  })
 }
