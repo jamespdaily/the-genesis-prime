@@ -10,6 +10,7 @@ import genesis_prime/client_connection.{
 }
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
+import genesis_prime/game/start_place.{type Place}
 import genesis_prime/step.{type ConnectionStep, type Outcome, OwnEvent}
 import genesis_prime/store
 import genesis_prime/table/id.{ClassId}
@@ -161,6 +162,15 @@ pub fn currency_set(amount amount: Int) -> Outcome(Answer) {
   step.Answer(FromStore(store.ForItems(store.CurrencySet(amount:))))
 }
 
+/// The tests' player at `place`, in whatever world it names, with the development
+/// commands on and its burst taken.
+pub fn in_world_at_place(place place: Place) -> game_connection.State {
+  in_world_as(
+    character: store.Character(..support.world_character(), place: Some(place)),
+    experience: None,
+  )
+}
+
 /// The connection after the player said this text on Say at this system time, as
 /// a FILETIME.
 pub fn said_at(
@@ -186,6 +196,19 @@ pub fn in_world_holding_quests(
     character: store.Character(..support.world_character(), level:),
     quests:,
   ).0
+}
+
+/// The place the save timer's ask holds: the place the player would be saved at.
+pub fn saved_place(state state: game_connection.State) -> Place {
+  let #(_, taken) =
+    support.feed(
+      state:,
+      event: OwnEvent(step.TimerFired(connection_state.save_timer)),
+    )
+  let assert client_connection.AskStore(store.Move(store.SavePlace(place:, ..))) =
+    support.ask_request(taken)
+    as "the save timer asks the store to save the place"
+  place
 }
 
 /// The quest rows the connection saves at its next save timer: what the log holds.

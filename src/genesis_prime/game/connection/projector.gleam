@@ -1,13 +1,16 @@
-//// The move of a player a tutorial projector's cast makes on the game connection
-//// (genesis_prime/game/projector): at the cast's go the connection asks for the landing
-//// the projector names for the player's faction, and a landing the link allows is written
-//// as the client's placement (genesis_prime/game/in_world_move) and told to the player's map.
+//// The move of a player to a place within their world on the game connection: a tutorial
+//// projector's cast (genesis_prime/game/projector) and the development command `!go`
+//// (genesis_prime/game/connection/dev_command). At the cast's go the connection asks for the
+//// landing the projector names for the player's faction, and a landing the link allows is
+//// written as the client's placement (genesis_prime/game/in_world_move) and told to the
+//// player's map; `placed_at` is that write for any place.
 ////
 //// ```
 //// cast's go ─▶ link read (before the count) ─▶ the use counted ─▶ moved
-////   moved ─ landing ─▶ 0x83c, 0x639, 0x638, 0x636(echo); Tell(map, TellMoved(place, seq: echo))
-////         │            0x638 to each viewer; Tell(each fighter, TellTargetMoved(place, seq: echo))
+////   moved ─ landing ─▶ placed_at
 ////         └ no landing ─▶ nothing
+////   placed_at ─▶ 0x83c, 0x639, 0x638, 0x636(echo); Tell(map, TellMoved(place, seq: echo))
+////                0x638 to each viewer; Tell(each fighter, TellTargetMoved(place, seq: echo))
 //// ```
 ////
 //// - **The echo is the next move number**: the 0x636 carries `move_seq + 1`, the map is told the
@@ -24,6 +27,8 @@ import genesis_prime/game/hit_radius
 import genesis_prime/game/in_world_move
 import genesis_prime/game/player_life
 import genesis_prime/game/projector
+import genesis_prime/game/start_place.{type Place}
+import genesis_prime/game/world_entry
 import genesis_prime/step.{type ConnectionEffect, type Effect, type Now}
 import genesis_prime/table/id.{type Creature2Id}
 import gleam/list
@@ -53,55 +58,77 @@ pub fn moved(
           session,
           [],
         )
-        Ok(place) -> {
-          let echo_value = session.move_seq + 1
-          let #(placed, frames) =
-            in_world_move.begin(entered:, place:, echo_value:, now:)
-          let session =
-            Session(
-              ..connection_state.with_entered(session:, change: fn(_) { placed }),
-              move_seq: echo_value,
-            )
-          let connection = client_connection.connection(session.link)
-          let hit_radius =
-            hit_radius.of_playing(
-              tables: session.settings.tables,
-              race_id: placed.character.race_id,
-            )
-          #(
-            session,
-            list.flatten([
-              list.map(frames, fn(inner) {
-                connection_state.to_client(session:, inner:)
-              }),
-              [
-                connection_state.tells_the_map(
-                  entered: placed,
-                  request: client_connection.TellMoved(
-                    connection:,
-                    place:,
-                    seq: echo_value,
-                  ),
-                ),
-              ],
-              connection_movement.sends_the_move_to_the_viewers(
-                entered: placed,
-                now:,
-                commands: in_world_move.commands(place:),
-              ),
-              list.map(player_life.fighters(life: placed.life), fn(fighter) {
-                connection_movement.tells_a_fighter_the_place(
-                  connection:,
-                  entered: placed,
-                  fighter:,
-                  place:,
-                  seq: echo_value,
-                  hit_radius:,
-                )
-              }),
-            ]),
-          )
-        }
+        Ok(place) -> placed_at(session:, now:, place:)
       }
   }
+}
+
+/// The session with the player placed at `place`, and what is written for it: the client's
+/// placement frames, the tell of the move to the player's map, the move to each viewer and
+/// the place to each creature fighting the player. A connection with no player in the world
+/// writes nothing.
+pub fn placed_at(
+  session session: Session,
+  now now: Now,
+  place place: Place,
+) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  case connection_state.entered_of(session.status) {
+    None -> #(session, [])
+    Some(entered) -> placed(session:, now:, entered:, place:)
+  }
+}
+
+fn placed(
+  session session: Session,
+  now now: Now,
+  entered entered: world_entry.Entered,
+  place place: Place,
+) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  let echo_value = session.move_seq + 1
+  let #(placed, frames) =
+    in_world_move.begin(entered:, place:, echo_value:, now:)
+  let session =
+    Session(
+      ..connection_state.with_entered(session:, change: fn(_) { placed }),
+      move_seq: echo_value,
+    )
+  let connection = client_connection.connection(session.link)
+  let hit_radius =
+    hit_radius.of_playing(
+      tables: session.settings.tables,
+      race_id: placed.character.race_id,
+    )
+  #(
+    session,
+    list.flatten([
+      list.map(frames, fn(inner) {
+        connection_state.to_client(session:, inner:)
+      }),
+      [
+        connection_state.tells_the_map(
+          entered: placed,
+          request: client_connection.TellMoved(
+            connection:,
+            place:,
+            seq: echo_value,
+          ),
+        ),
+      ],
+      connection_movement.sends_the_move_to_the_viewers(
+        entered: placed,
+        now:,
+        commands: in_world_move.commands(place:),
+      ),
+      list.map(player_life.fighters(life: placed.life), fn(fighter) {
+        connection_movement.tells_a_fighter_the_place(
+          connection:,
+          entered: placed,
+          fighter:,
+          place:,
+          seq: echo_value,
+          hit_radius:,
+        )
+      }),
+    ]),
+  )
 }

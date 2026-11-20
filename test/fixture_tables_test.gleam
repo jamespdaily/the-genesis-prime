@@ -170,8 +170,8 @@ pub fn the_content_tables_are_committed_and_each_root_reaches_a_committed_row_te
   use <- owned_test.run(20_000)
   // `server_table.content_entries` are the tables only the content load reads:
   // the client's Faction2 holds 1189 rows and Faction2Relationship 1964, kept
-  // whole (`the_whole_content_tables_hold_every_row_the_client_holds_test`), and
-  // World is the rows the committed rows name.
+  // whole (`the_whole_content_tables_hold_every_row_the_client_holds_test`); the
+  // server's World is the rows the committed rows name.
   assert list.length(fixture_tables.committed_ids(faction2.schema)) == 1189
     as "Faction2 is whole"
   assert list.length(fixture_tables.committed_ids(faction2_relationship.schema))
@@ -459,24 +459,25 @@ pub fn an_edit_of_an_unknown_table_row_or_column_is_refused_test() -> Nil {
 pub fn an_edit_of_a_content_table_is_refused_naming_the_table_test() -> Nil {
   use <- owned_test.run(20_000)
   let rows = fixture_tables.rows()
-  let world = fixture_tables.ContentTable(table: "World")
-  assert fixture_tables.change(rows:, table: "World", id: 22, with: [
+  let tutorial = fixture_tables.ContentTable(table: "Tutorial")
+  assert fixture_tables.change(rows:, table: "Tutorial", id: 1, with: [
       #("flags", planted_table.Integer(1)),
     ])
-    == Error(world)
+    == Error(tutorial)
     as "a change of a content row is refused, not dropped"
   assert fixture_tables.add(
       rows:,
-      table: "World",
-      copy_of: 22,
+      table: "Tutorial",
+      copy_of: 1,
       id: 2_000_000_004,
       with: [],
     )
-    == Error(world)
+    == Error(tutorial)
     as "an added content row is refused, not dropped"
-  assert fixture_tables.remove(rows:, table: "World", id: 22) == Error(world)
+  assert fixture_tables.remove(rows:, table: "Tutorial", id: 1)
+    == Error(tutorial)
     as "a removed content row is refused, not dropped"
-  assert string.contains(fixture_tables.describe(world), "World")
+  assert string.contains(fixture_tables.describe(tutorial), "Tutorial")
     as "the refusal names the table"
 }
 

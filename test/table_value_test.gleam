@@ -30,11 +30,13 @@ import genesis_prime/game/spell_plan
 import genesis_prime/game/top_zone
 import genesis_prime/table/class
 import genesis_prime/table/creature2
+import genesis_prime/table/creature2_outfit_info
 import genesis_prime/table/id
 import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store
 import genesis_prime/table/localized_text
 import genesis_prime/table/spell4
+import genesis_prime/table/tutorial
 import genesis_prime/table/world
 import gleam/list
 import gleam/result
@@ -310,8 +312,11 @@ pub fn the_content_tables_are_read_beside_the_stored_tables() -> Nil {
   let assert Ok(with_content) =
     server_table.load_content_tables(over: stored, from: folder)
     as "the fixture content files load beside the server's tables"
-  assert world.all(with_content) != []
-    as "the content tables are read: the fixture's Worlds are there"
+  assert world.all(stored) != []
+    as "World is among the server's own tables: the stored value holds the fixture's Worlds"
+  assert tutorial.all(with_content) != []
+    && creature2_outfit_info.all(with_content) != []
+    as "Tutorial and Creature2OutfitInfo are read only by the content load: the fixture's rows are there"
   assert terms_held() == before
     as "reading the content tables puts no persistent term and erases none"
   Nil

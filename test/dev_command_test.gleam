@@ -15,24 +15,31 @@
 import fixture_tables
 import genesis_prime/game/currency
 import genesis_prime/game/dev_command.{
-  CompleteQuest, CurrencyAmountAboveCap, CurrencyAmountAboveColumn,
-  CurrencyTakesATypeAndAnAmount, CurrencyTypeIsNotKept, ExperienceOutOfRange,
-  ExperienceTakesAWholeNumber, GiveItem, ItemCountIsZero, ItemHasNoRow,
-  ItemIsAProxy, ItemTakesAnItem2IdAndACount, LevelOutOfRange,
-  LevelTakesAWholeNumber, NoQuest2Row, QuestTakesAQuest2IdAndDone,
+  AxisX, AxisY, AxisZ, CompleteQuest, Coordinates, CurrencyAmountAboveCap,
+  CurrencyAmountAboveColumn, CurrencyTakesATypeAndAnAmount,
+  CurrencyTypeIsNotKept, ExperienceOutOfRange, ExperienceTakesAWholeNumber,
+  GiveItem, Go, GoTakesAPlace, ItemCountIsZero, ItemHasNoRow, ItemIsAProxy,
+  ItemTakesAnItem2IdAndACount, LevelOutOfRange, LevelTakesAWholeNumber, Named,
+  NoQuest2Row, PositionOutsideTheBox, QuestTakesAQuest2IdAndDone,
   RaiseToExperience, RaiseToLevel, SummonLevelIsNotAWholeNumber,
-  SummonTakesACreature2Id, UnknownCommand,
+  SummonTakesACreature2Id, UnknownCommand, WorldHasNoRow, WorldLocation2HasNoRow,
+  WorldZoneHasNoRow,
 }
+import genesis_prime/game/start_place
 import genesis_prime/game/vendor_purchase
 import genesis_prime/game/vendor_trade
 import genesis_prime/message/bit_stream
 import genesis_prime/message/chat_line
 import genesis_prime/table/id.{Creature2Id, CurrencyTypeId, Item2Id, Quest2Id}
 import gleam/bool
+import gleam/float
+import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/set
+import gleam/string
 import owned_test
+import planted_table.{Float, Integer}
 import qcheck
 
 fn parsed(text: String) -> Result(dev_command.Command, dev_command.Refusal) {
@@ -177,6 +184,26 @@ pub fn the_answers_to_a_refused_line_say_what_was_wrong_test() -> Nil {
     ))
     == "!xp 26360091 is above the experience of the highest level, 26360090"
     as "the design: an experience out of range names the command, the value and the top"
+  assert dev_command.describe(refusal: GoTakesAPlace)
+    == "!go takes a World id, a WorldZone id and x y z, as !go 22 1189 -5438 -966 -1093, or a WorldLocation2 id, as !go 8300"
+    as "the design: a malformed !go answers its two forms"
+  assert dev_command.describe(refusal: WorldHasNoRow(world_id: 99_999))
+    == "!go: World 99999 is not in the client's tables"
+    as "the design: a table refusal names the table and the id"
+  assert dev_command.describe(refusal: WorldZoneHasNoRow(world_zone_id: 999_999))
+    == "!go: WorldZone 999999 is not in the client's tables"
+    as "the design: a table refusal names the table and the id"
+  assert dev_command.describe(refusal: WorldLocation2HasNoRow(
+      world_location2_id: 99_999_999,
+    ))
+    == "!go: WorldLocation2 99999999 is not in the client's tables"
+    as "the design: a table refusal names the table and the id"
+  assert dev_command.describe(refusal: PositionOutsideTheBox(
+      axis: AxisY,
+      coordinate: -2049,
+    ))
+    == "!go: y -2049 is outside -2048 to 2048"
+    as "the design: a position refusal names the axis, the value and the box"
   assert dev_command.describe(refusal: LevelTakesAWholeNumber)
     == "!level takes one whole number, a level, as !level 10"
     as "the design: a malformed !level answers its usage"
@@ -604,4 +631,263 @@ pub fn a_currency_amount_of_any_length_is_refused_by_the_column_limit_not_by_a_c
       highest: 9_223_372_036_854_775_807,
     ))
     as "the column's 63-bit limit is tested before the credits cap, which the amount is also above"
+}
+
+/// A `!go` to World 22 and WorldZone 1189, rows of the client's tables, at a position.
+fn at(x x: Int, y y: Int, z z: Int) -> dev_command.Command {
+  Go(destination: Coordinates(world_id: 22, world_zone_id: 1189, x:, y:, z:))
+}
+
+pub fn go_takes_a_place_by_coordinates_or_by_a_world_location2_row_test() -> Nil {
+  use <- owned_test.run(5000)
+  list.each(
+    [
+      #(
+        "!go 22 1189 -5438 -966 -1093",
+        Ok(at(x: -5438, y: -966, z: -1093)),
+        "a world, a zone and three coordinates, a sign allowed on a coordinate",
+      ),
+      #(
+        "!go 8300",
+        Ok(Go(destination: Named(world_location2_id: 8300))),
+        "a row",
+      ),
+      #("!go", Error(GoTakesAPlace), "no argument"),
+      #("!go 22 1189 1 2", Error(GoTakesAPlace), "four arguments"),
+      #("!go 22 1189 1 2 3 4 5 6", Error(GoTakesAPlace), "eight arguments"),
+      #("!go 1.5", Error(GoTakesAPlace), "a fraction as the row"),
+      #("!go 22 1189 - 2 3", Error(GoTakesAPlace), "a sign alone"),
+      #("!go 22 1189 --1 2 3", Error(GoTakesAPlace), "two signs"),
+    ],
+    fn(row) {
+      assert parsed(row.0) == row.1 as row.2
+    },
+  )
+}
+
+pub fn a_go_with_a_misplaced_sign_a_non_ascii_digit_or_a_huge_number_is_refused_test() -> Nil {
+  use <- owned_test.run(5000)
+  list.each(
+    [
+      #("!go -22 1189 1 2 3", "a sign on the world id"),
+      #("!go 22 -1189 1 2 3", "a sign on the zone id"),
+      #("!go -8300", "a sign on a row's id"),
+      #("!go 22 1189 \u{FF11} 2 3", "a full-width digit"),
+    ],
+    fn(row) {
+      assert parsed(row.0) == Error(GoTakesAPlace) as row.1
+    },
+  )
+  let digits = string.repeat("9", times: 400)
+  let assert Ok(huge) = int.parse(digits)
+  assert parsed("!go 22 1189 " <> digits <> " 2 3")
+    == Ok(at(x: huge, y: 2, z: 3))
+    as "a coordinate of any length parses"
+  assert dev_command.checked(
+      command: at(x: huge, y: 2, z: 3),
+      tables: fixture_tables.shared(),
+    )
+    == Error(PositionOutsideTheBox(axis: AxisX, coordinate: huge))
+    as "the box refuses it as a whole number, with no conversion to a float"
+}
+
+pub fn every_edge_of_the_position_box_is_accepted_and_one_beyond_it_is_refused_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = fixture_tables.shared()
+  use #(axis, negative, first, second) <- qcheck.given(qcheck.tuple4(
+    qcheck.bounded_int(from: 0, to: 2),
+    qcheck.bool(),
+    qcheck.bounded_int(from: -2048, to: 2048),
+    qcheck.bounded_int(from: -2048, to: 2048),
+  ))
+  // The box of the client's clamp: x and z 32768, y 2048 (`0x1405b5070`).
+  let #(name, limit) = case axis {
+    0 -> #(AxisX, 32_768)
+    1 -> #(AxisY, 2048)
+    _ -> #(AxisZ, 32_768)
+  }
+  let sign = case negative {
+    True -> -1
+    False -> 1
+  }
+  let placed = fn(value: Int) {
+    case name {
+      AxisX -> at(x: value, y: first, z: second)
+      AxisY -> at(x: first, y: value, z: second)
+      AxisZ -> at(x: first, y: second, z: value)
+    }
+  }
+  assert dev_command.checked(command: placed(sign * limit), tables:)
+    == Ok(placed(sign * limit))
+    as "the edge is inside the box, whatever the other axes hold"
+  assert dev_command.checked(command: placed(sign * { limit + 1 }), tables:)
+    == Error(PositionOutsideTheBox(axis: name, coordinate: sign * { limit + 1 }))
+    as "one whole number beyond the edge is outside it, whatever the other axes hold"
+}
+
+pub fn a_world_or_zone_the_tables_do_not_hold_is_refused_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = fixture_tables.shared()
+  list.each(
+    [
+      #(
+        22,
+        1189,
+        0,
+        None,
+        "World 22 and WorldZone 1189 are rows of the client's tables",
+      ),
+      #(
+        99_999,
+        1189,
+        0,
+        Some(WorldHasNoRow(world_id: 99_999)),
+        "World 99999 is no row",
+      ),
+      #(
+        22,
+        999_999,
+        0,
+        Some(WorldZoneHasNoRow(world_zone_id: 999_999)),
+        "WorldZone 999999 is no row",
+      ),
+      #(
+        99_999,
+        999_999,
+        40_000,
+        Some(WorldHasNoRow(world_id: 99_999)),
+        "the world is refused before the zone, and the zone before the position",
+      ),
+    ],
+    fn(row) {
+      let command =
+        Go(destination: Coordinates(
+          world_id: row.0,
+          world_zone_id: row.1,
+          x: 0,
+          y: 0,
+          z: row.2,
+        ))
+      let expected = case row.3 {
+        None -> Ok(command)
+        Some(refusal) -> Error(refusal)
+      }
+      assert dev_command.checked(command:, tables:) == expected as row.4
+    },
+  )
+}
+
+/// The first id of the planted WorldLocation2 rows (above the client's highest, which the
+/// table's lookup holds a slot for): each is a copy of row 8300 (World 870,
+/// WorldZone 1227, x -7700.97) with cells replaced, all in one load.
+const planted_first = 59_001
+
+pub fn a_named_place_is_checked_as_a_coordinate_one_is_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let planted = [
+    #([], Ok(Nil), "a row whose world, zone and position the tables hold"),
+    #(
+      [#("worldId", Integer(0))],
+      Error(WorldHasNoRow(world_id: 0)),
+      "a row in world 0, which `start_place.of_row` refuses, is refused as World 0 is",
+    ),
+    #(
+      [#("worldZoneId", Integer(999_999))],
+      Error(WorldZoneHasNoRow(world_zone_id: 999_999)),
+      "a row whose zone has no WorldZone row",
+    ),
+    #(
+      [#("worldId", Integer(99_999))],
+      Error(WorldHasNoRow(world_id: 99_999)),
+      "a row whose world has no World row",
+    ),
+    #(
+      [#("position0", Float(40_000.0))],
+      Error(PositionOutsideTheBox(axis: AxisX, coordinate: 40_000)),
+      "a row at x 40000, outside the box",
+    ),
+  ]
+  let rows =
+    list.index_fold(planted, fixture_tables.rows(), fn(rows, row, index) {
+      let assert Ok(rows) =
+        fixture_tables.add(
+          rows:,
+          table: "WorldLocation2",
+          copy_of: 8300,
+          id: planted_first + index,
+          with: row.0,
+        )
+        as "row 8300 is committed and its columns are the table's"
+      rows
+    })
+  use tables <- fixture_tables.on_rows(rows:, reaching: [])
+  list.index_fold(planted, Nil, fn(_, row, index) {
+    let command =
+      Go(destination: Named(world_location2_id: planted_first + index))
+    let expected = case row.1 {
+      Ok(Nil) -> Ok(command)
+      Error(refusal) -> Error(refusal)
+    }
+    assert dev_command.checked(command:, tables:) == expected as row.2
+  })
+  let tables = fixture_tables.shared()
+  assert dev_command.checked(
+      command: Go(destination: Named(world_location2_id: 8300)),
+      tables:,
+    )
+    == Ok(Go(destination: Named(world_location2_id: 8300)))
+    as "row 8300 of the client's tables is in World 870, zone 1227, inside the box"
+  assert dev_command.checked(
+      command: Go(destination: Named(world_location2_id: 99_999_999)),
+      tables:,
+    )
+    == Error(WorldLocation2HasNoRow(world_location2_id: 99_999_999))
+    as "a row id the table does not hold"
+}
+
+pub fn a_coordinate_go_keeps_the_facing_it_is_given_and_a_named_go_takes_the_rows_facing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = fixture_tables.shared()
+  let facing = start_place.Facing(yaw: 1.5, pitch: 0.25, roll: -0.5)
+  let assert Ok(coordinates) =
+    dev_command.place_of(
+      destination: Coordinates(
+        world_id: 22,
+        world_zone_id: 1189,
+        x: -5438,
+        y: -966,
+        z: -1093,
+      ),
+      facing:,
+      tables:,
+    )
+  assert start_place.world_id(coordinates) == 22
+  assert start_place.world_zone_id(coordinates) == 1189
+  assert #(
+      start_place.x(coordinates),
+      start_place.y(coordinates),
+      start_place.z(coordinates),
+    )
+    == #(-5438.0, -966.0, -1093.0)
+    as "the coordinates, whole, as the place's position"
+  assert start_place.facing(coordinates) == facing
+    as "a coordinate go keeps the facing it is given"
+  let assert Ok(named) =
+    dev_command.place_of(
+      destination: Named(world_location2_id: 8300),
+      facing:,
+      tables:,
+    )
+  assert start_place.world_id(named) == 870 as "WorldLocation2 8300: world 870"
+  assert start_place.world_zone_id(named) == 1227
+    as "WorldLocation2 8300: zone 1227"
+  assert #(start_place.x(named), start_place.y(named), start_place.z(named))
+    == #(-7700.970703125, -941.0088500976562, -659.29150390625)
+    as "WorldLocation2 8300's position"
+  let row_facing = start_place.facing(named)
+  // The row's quaternion (0, -0.66819, 0, 0.74399) is a turn about y of 2 atan2(y, w).
+  assert float.absolute_value(row_facing.yaw +. 1.4635471) <. 0.000001
+    as "the row's own facing, not the one given"
+  assert float.absolute_value(row_facing.pitch) <. 0.000001
+  assert float.absolute_value(row_facing.roll) <. 0.000001
 }

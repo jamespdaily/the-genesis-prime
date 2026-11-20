@@ -18,17 +18,25 @@
 ////   `level` takes one whole decimal number, a level, and `xp` one, a total
 ////   experience; `currency` takes two, a currency type and an amount; a number
 ////   has any length, so the tables refuse one too large.
+////   `go` takes a World id, a WorldZone id and x, y, z (each coordinate with an
+////   optional leading `-`), or one WorldLocation2 id.
 ////   `item` takes one whole decimal number, an Item2 id, and then optionally a
 ////   second, the count, which is 1 when there is none.
 ////   `quest` takes one whole decimal number, a Quest2 id, and the word `done`.
 //// - **The tables' refusals** are `checked`'s: a level outside 1 to the highest
 ////   level (GameFormula 145 dataint0), an experience above the highest
 ////   level's minXpForLevel (its XpPerLevel row), an item with no Item2 row, a
-////   proxy item and a count of 0, a quest with no Quest2 row (the client refuses
-////   a quest it has no row for, FindQuestById 0xa00b0001), a currency type with
-////   no CurrencyType row (the client keeps types 1 to 14 and the table has no
-////   row 8), an amount above the column's 2^63 - 1 and an amount above the type's
-////   cap (genesis_prime/game/currency `cap`), all compared as whole numbers.
+////   proxy item and a count of 0, compared as whole numbers, a
+////   quest with no Quest2 row (the client refuses a quest it has no row for,
+////   FindQuestById 0xa00b0001); a currency type with no CurrencyType row (the
+////   client keeps types 1 to 14 and the table has no row 8), an amount above the
+////   column's 2^63 - 1 and an amount above the type's cap
+////   (genesis_prime/game/currency `cap`); for `go`, a World, WorldZone or
+////   WorldLocation2 id with no row and a position outside the box the client
+////   clamps a unit's drawn position to (x and z -32768 to 32768, y -2048 to 2048,
+////   `0x1405b5070`), compared as whole numbers so a number of any length is a
+////   refusal. A named place is checked by its row's own world, zone and position,
+////   as a coordinate place is.
 //// - **A proxy item is refused**: the client reads its stack limit and its
 ////   deletable flag from another item, and the server reads the item's own row
 ////   (`item_property.is_proxy`, Item2 flags 0x4000), so a given one could be
@@ -40,17 +48,23 @@
 import genesis_prime/game/currency
 import genesis_prime/game/item_property
 import genesis_prime/game/level
+import genesis_prime/game/start_place
 import genesis_prime/gap
 import genesis_prime/table/currency_type
 import genesis_prime/table/id.{
   type Creature2Id, type CurrencyTypeId, type Item2Id, type Quest2Id,
-  Creature2Id, CurrencyTypeId, Item2Id, Quest2Id, XpPerLevelId,
+  Creature2Id, CurrencyTypeId, Item2Id, Quest2Id, WorldId, WorldLocation2Id,
+  WorldZoneId, XpPerLevelId,
 }
 import genesis_prime/table/item2
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest2
+import genesis_prime/table/world
+import genesis_prime/table/world_location2
+import genesis_prime/table/world_zone
 import genesis_prime/table/xp_per_level
 import gleam/bool
+import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -73,6 +87,9 @@ pub type Command {
   /// amount, saved at once (genesis_prime/store `SetCurrency`), and give the client
   /// the new total (`opcode.0x919`). The total may be lower than the one held.
   SetCurrency(currency_type_id: CurrencyTypeId, amount: Int)
+  /// `!go <World id> <WorldZone id> <x> <y> <z>` or `!go <WorldLocation2 id>`:
+  /// place the player at once at that place.
+  Go(destination: Destination)
   /// `!item <Item2 id>` or `!item <Item2 id> <count>`: put `count` of the item
   /// in the player's bag, saved as a purchase of no cost, with the client's
   /// own loot notice.
@@ -87,6 +104,22 @@ pub type Command {
 /// frames and line are made. The new total is the answer's.
 pub type Grant {
   Grant(currency_type_id: Int, held: Int)
+}
+
+/// Where a `!go` places the player.
+pub type Destination {
+  /// A World, a WorldZone and a position, each coordinate a whole number of any
+  /// length until `checked` has compared it with the box.
+  Coordinates(world_id: Int, world_zone_id: Int, x: Int, y: Int, z: Int)
+  /// The place a WorldLocation2 row holds: its world, zone, position and facing.
+  Named(world_location2_id: Int)
+}
+
+/// One of the three axes of a position.
+pub type Axis {
+  AxisX
+  AxisY
+  AxisZ
 }
 
 /// Why a `!` line is no command.
@@ -118,6 +151,18 @@ pub type Refusal {
   /// The amount is above `highest`, the most the character_currency amount column
   /// (a bigint) holds.
   CurrencyAmountAboveColumn(amount: Int, highest: Int)
+  /// The word is `go`, but what follows is not a World id, a WorldZone id and
+  /// three coordinates, or one WorldLocation2 id.
+  GoTakesAPlace
+  /// No World row has the id.
+  WorldHasNoRow(world_id: Int)
+  /// No WorldZone row has the id.
+  WorldZoneHasNoRow(world_zone_id: Int)
+  /// No WorldLocation2 row has the id.
+  WorldLocation2HasNoRow(world_location2_id: Int)
+  /// The coordinate on `axis`, whole, is outside the box the client clamps a
+  /// unit's drawn position to.
+  PositionOutsideTheBox(axis: Axis, coordinate: Int)
   /// The word is `item`, but what follows is not a whole number for the Item2
   /// id, or one and a count, and nothing more.
   ItemTakesAnItem2IdAndACount
@@ -187,6 +232,37 @@ pub fn parse(text text: List(Int)) -> Result(Command, Refusal) {
           }
         [] | [_] | [_, _, _, ..] -> Error(CurrencyTakesATypeAndAnAmount)
       }
+    [command, ..arguments] if command == go_word ->
+      case arguments {
+        [location] ->
+          decimal(units: location)
+          |> result.map(fn(id) {
+            Go(destination: Named(world_location2_id: id))
+          })
+          |> result.replace_error(GoTakesAPlace)
+        [world_id, world_zone_id, x, y, z] ->
+          case
+            decimal(units: world_id),
+            decimal(units: world_zone_id),
+            signed_decimal(units: x),
+            signed_decimal(units: y),
+            signed_decimal(units: z)
+          {
+            Ok(world_id), Ok(world_zone_id), Ok(x), Ok(y), Ok(z) ->
+              Ok(
+                Go(destination: Coordinates(
+                  world_id:,
+                  world_zone_id:,
+                  x:,
+                  y:,
+                  z:,
+                )),
+              )
+            _, _, _, _, _ -> Error(GoTakesAPlace)
+          }
+        [] | [_, _] | [_, _, _] | [_, _, _, _] | [_, _, _, _, _, ..] ->
+          Error(GoTakesAPlace)
+      }
     [command, ..arguments] if command == item_word ->
       case arguments {
         [item] -> item_of(item:, count: Ok(1))
@@ -209,10 +285,12 @@ pub fn parse(text text: List(Int)) -> Result(Command, Refusal) {
 
 /// The command the tables allow, or the refusal that names what they do not
 /// hold: a level outside 1 to the highest level, an experience above the
-/// highest level's minXpForLevel, an item with no Item2 row, a proxy item, a count
-/// of 0, a quest with no Quest2 row, and a currency type with no row or an amount
-/// above the column's limit or the type's cap, compared as whole numbers so a
-/// number of any length is a refusal.
+/// highest level's minXpForLevel, an item with no Item2 row, a proxy item and a
+/// count of 0, compared as whole numbers so a number of any length is a
+/// refusal; for a `!go`, a World, WorldZone or WorldLocation2 with no row, and a
+/// position outside the box, in that order; for a `!quest`, a quest with no
+/// Quest2 row; and for a `!currency`, a currency type with no row or an amount
+/// above the column's limit or the type's cap.
 pub fn checked(
   command command: Command,
   tables tables: table_store.Tables,
@@ -251,6 +329,10 @@ pub fn checked(
     }
     SetCurrency(currency_type_id:, amount:) ->
       checked_currency(command:, currency_type_id:, amount:, tables:)
+    Go(destination:) ->
+      go_refusal(destination:, tables:)
+      |> option.map(Error)
+      |> option.unwrap(Ok(command))
     CompleteQuest(quest2_id:) ->
       case quest2.get(tables:, id: quest2_id) {
         Ok(_) -> Ok(command)
@@ -283,6 +365,120 @@ fn checked_currency(
     Some(_) | None -> Ok(command)
   }
 }
+
+/// The place `destination` names for a player facing `facing`: the position as
+/// given with that facing for coordinates, the row's own facing for a named place.
+/// A destination `checked` allowed always has a place; the refusal is the one
+/// `checked` gives for what the place lacks.
+pub fn place_of(
+  destination destination: Destination,
+  facing facing: start_place.Facing,
+  tables tables: table_store.Tables,
+) -> Result(start_place.Place, Refusal) {
+  case destination {
+    Coordinates(world_id:, world_zone_id:, x:, y:, z:) ->
+      start_place.place(
+        world_id:,
+        world_zone_id:,
+        x: int.to_float(x),
+        y: int.to_float(y),
+        z: int.to_float(z),
+        facing:,
+      )
+      |> result.replace_error(WorldHasNoRow(world_id:))
+    Named(world_location2_id:) -> {
+      use row <- result.try(named_row(world_location2_id:, tables:))
+      start_place.of_row(row:)
+      |> result.replace_error(WorldHasNoRow(world_id: row.world_id))
+    }
+  }
+}
+
+/// The first refusal of a `!go` destination, or `None` when the tables allow it.
+fn go_refusal(
+  destination destination: Destination,
+  tables tables: table_store.Tables,
+) -> Option(Refusal) {
+  case destination {
+    Coordinates(world_id:, world_zone_id:, x:, y:, z:) ->
+      located(world_id:, world_zone_id:, tables:, outside: [
+        #(AxisX, x, x < -x_limit || x > x_limit),
+        #(AxisY, y, y < -y_limit || y > y_limit),
+        #(AxisZ, z, z < -z_limit || z > z_limit),
+      ])
+    Named(world_location2_id:) ->
+      case named_row(world_location2_id:, tables:) {
+        Error(refusal) -> Some(refusal)
+        Ok(row) ->
+          located(
+            world_id: row.world_id,
+            world_zone_id: row.world_zone_id,
+            tables:,
+            outside: [
+              #(
+                AxisX,
+                float.truncate(row.position0),
+                row.position0 <. int.to_float(-x_limit)
+                  || row.position0 >. int.to_float(x_limit),
+              ),
+              #(
+                AxisY,
+                float.truncate(row.position1),
+                row.position1 <. int.to_float(-y_limit)
+                  || row.position1 >. int.to_float(y_limit),
+              ),
+              #(
+                AxisZ,
+                float.truncate(row.position2),
+                row.position2 <. int.to_float(-z_limit)
+                  || row.position2 >. int.to_float(z_limit),
+              ),
+            ],
+          )
+      }
+  }
+}
+
+/// The refusal for a world or zone with no row, or else for the first axis whose
+/// coordinate is outside the box (`outside`: the axis, its whole number, and
+/// whether it is outside).
+fn located(
+  world_id world_id: Int,
+  world_zone_id world_zone_id: Int,
+  tables tables: table_store.Tables,
+  outside outside: List(#(Axis, Int, Bool)),
+) -> Option(Refusal) {
+  case
+    world.get(tables:, id: WorldId(world_id)),
+    world_zone.get(tables:, id: WorldZoneId(world_zone_id))
+  {
+    Error(Nil), _ -> Some(WorldHasNoRow(world_id:))
+    Ok(_), Error(Nil) -> Some(WorldZoneHasNoRow(world_zone_id:))
+    Ok(_), Ok(_) ->
+      list.find(outside, fn(axis) { axis.2 })
+      |> result.map(fn(axis) {
+        PositionOutsideTheBox(axis: axis.0, coordinate: axis.1)
+      })
+      |> option.from_result
+  }
+}
+
+/// The WorldLocation2 row of a named place, or the refusal that it has none.
+fn named_row(
+  world_location2_id world_location2_id: Int,
+  tables tables: table_store.Tables,
+) -> Result(world_location2.WorldLocation2, Refusal) {
+  world_location2.get(tables:, id: WorldLocation2Id(world_location2_id))
+  |> result.replace_error(WorldLocation2HasNoRow(world_location2_id:))
+}
+
+/// The box a position is clamped to by the client (`0x1405b5070`): x and z to
+/// 32768 either way, y to 2048.
+const x_limit = 32_768
+
+const z_limit = 32_768
+
+const y_limit = 2048
 
 /// The summon of the creature the units spell, at the level when there is one.
 fn summon(
@@ -319,6 +515,9 @@ const currency_word = [0x21, 0x63, 0x75, 0x72, 0x72, 0x65, 0x6E, 0x63, 0x79]
 
 /// The most the character_currency amount column holds: a bigint, 2^63 - 1.
 const column_limit = 9_223_372_036_854_775_807
+
+/// `!go` as the UTF-16 units the client sends.
+const go_word = [0x21, 0x67, 0x6F]
 
 /// `!item` as the UTF-16 units the client sends.
 const item_word = [0x21, 0x69, 0x74, 0x65, 0x6D]
@@ -358,6 +557,15 @@ fn decimal(units units: List(Int)) -> Result(Int, Nil) {
           False -> Error(Nil)
         }
       })
+  }
+}
+
+/// The whole number the units spell, with one optional leading `-` before its
+/// digits (`decimal`): `-` alone and `--1` are no number.
+fn signed_decimal(units units: List(Int)) -> Result(Int, Nil) {
+  case units {
+    [0x2D, ..digits] -> decimal(units: digits) |> result.map(int.negate)
+    [_, ..] | [] -> decimal(units:)
   }
 }
 
@@ -401,6 +609,35 @@ pub fn describe(refusal refusal: Refusal) -> String {
       <> int.to_string(amount)
       <> " is above the most a total can hold, "
       <> int.to_string(highest)
+    GoTakesAPlace ->
+      "!go takes a World id, a WorldZone id and x y z, as !go 22 1189 -5438 -966 -1093, or a WorldLocation2 id, as !go 8300"
+    WorldHasNoRow(world_id:) ->
+      "!go: World "
+      <> int.to_string(world_id)
+      <> " is not in the client's tables"
+    WorldZoneHasNoRow(world_zone_id:) ->
+      "!go: WorldZone "
+      <> int.to_string(world_zone_id)
+      <> " is not in the client's tables"
+    WorldLocation2HasNoRow(world_location2_id:) ->
+      "!go: WorldLocation2 "
+      <> int.to_string(world_location2_id)
+      <> " is not in the client's tables"
+    PositionOutsideTheBox(axis:, coordinate:) -> {
+      let #(name, limit) = case axis {
+        AxisX -> #("x", x_limit)
+        AxisY -> #("y", y_limit)
+        AxisZ -> #("z", z_limit)
+      }
+      "!go: "
+      <> name
+      <> " "
+      <> int.to_string(coordinate)
+      <> " is outside "
+      <> int.to_string(-limit)
+      <> " to "
+      <> int.to_string(limit)
+    }
     ItemTakesAnItem2IdAndACount ->
       "!item takes an Item2 id and an optional count, as !item 90021 or !item 90021 3"
     ItemHasNoRow(item2_id:) ->
