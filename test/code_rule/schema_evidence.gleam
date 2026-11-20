@@ -9,7 +9,11 @@
 //// A message is sent when it does not travel only from the client; a record is
 //// sent when a sent message holds it, directly or inside another sent record,
 //// and the records of a union's variants are held by whatever holds the union.
-//// A union is sent when a sent message or record holds it.
+//// A union is sent when a sent message or record holds it. The same rule read
+//// from the client's side gives what the client sends: a message is sent by the
+//// client when it does not travel only from the server, and its records and
+//// unions follow in the same way. A message that either side sends counts as
+//// sent on both sides.
 ////
 //// ```text
 //// schema.toml -> sent owners -> untraced fields, unclassified tags -> breaches
@@ -23,11 +27,11 @@
 
 import code_rule/source.{type Breach, type SourceFile, Breach}
 import genesis_prime/message_schema.{
-  type Field, type Record, type Schema, type Union, ArrayOfFloat32,
-  ArrayOfRecord, ArrayOfRecordCountedBy, ArrayOfUnsigned, ArrayOfWideText,
-  ClientToServer, Constant, CountedWideText, Endpoint, Float32, Guid,
-  HalfFloatAtLeast, OneRecord, RawBytes, Unsigned, UnsignedArrayCountedBy,
-  UnsignedBelow, WholeFrame, WideText, WideUnits,
+  type Direction, type Field, type Record, type Schema, type Union,
+  ArrayOfFloat32, ArrayOfRecord, ArrayOfRecordCountedBy, ArrayOfUnsigned,
+  ArrayOfWideText, ClientToServer, Constant, CountedWideText, Endpoint, Float32,
+  Guid, HalfFloatAtLeast, OneRecord, RawBytes, ServerToClient, Unsigned,
+  UnsignedArrayCountedBy, UnsignedBelow, WholeFrame, WideText, WideUnits,
 }
 import gleam/int
 import gleam/list
@@ -61,11 +65,12 @@ type Owner {
   Owner(name: String, evidence: String, fields: List(Field), sent: Bool)
 }
 
-fn owners(schema: Schema) -> List(Owner) {
+/// Every message and record of the schema, each marked sent when it is sent
+/// by the side the messages of direction `left_out` do not come from: the
+/// messages not of that direction, and the records they reach.
+fn owners(schema: Schema, left_out left_out: Direction) -> List(Owner) {
   let sent =
-    list.filter(schema.messages, fn(message) {
-      message.direction != ClientToServer
-    })
+    list.filter(schema.messages, fn(message) { message.direction != left_out })
   let sent_records =
     records_reached(
       records: schema.records,
@@ -170,6 +175,23 @@ fn sent_unions(schema: Schema, owners: List(Owner)) -> List(Union) {
   list.filter(schema.unions, fn(union) { list.contains(held, union.name) })
 }
 
+/// Each field, as `owner.field`, of a message the client sends (every message
+/// that does not travel only from the server) or of a record such a message
+/// holds, that is called by its position (`field_3`) and is not open with its
+/// question.
+pub fn unmarked_placeholders(schema: Schema) -> List(String) {
+  owners(schema, left_out: ServerToClient)
+  |> list.filter(fn(owner) { owner.sent })
+  |> list.flat_map(fn(owner) {
+    list.filter_map(owner.fields, fn(field) {
+      case is_position_name(field.name) && field.open == None {
+        True -> Ok(owner.name <> "." <> field.name)
+        False -> Error(Nil)
+      }
+    })
+  })
+}
+
 /// A field is traced when it names a fact and a name that is not its position,
 /// or is open with its question.
 pub fn is_traced(field: Field) -> Bool {
@@ -228,7 +250,7 @@ fn owners_breaches(
   fact_keys fact_keys: List(String),
 ) -> List(Breach) {
   let lines = string.split(file.text, "\n")
-  let owners = owners(schema)
+  let owners = owners(schema, left_out: ClientToServer)
   let sent_unions = sent_unions(schema, owners)
   list.flatten([
     list.flat_map(schema.unions, union_breaches(

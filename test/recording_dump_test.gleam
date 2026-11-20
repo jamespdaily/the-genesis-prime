@@ -258,11 +258,11 @@ pub fn the_servers_writes_after_0x058f_are_read_under_the_session_key_test() -> 
   use folder <- recording_support.in_folder
   let assert Ok(hello_body) =
     game_hello_reply.encode(game_hello_reply.GameHelloReply(
-      field_1: 0,
+      account_id: 0,
       session_key: message_support.session_key(),
-      field_3: 0,
+      zero: 0,
       account_name: "a",
-      field_5: 0,
+      three: 0,
     ))
     as "the hello reply encodes"
   let base = cipher.base()

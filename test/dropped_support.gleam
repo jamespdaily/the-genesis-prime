@@ -298,7 +298,7 @@ pub fn recorded() -> List(Recorded) {
         0x00,
         0x00,
       >>,
-      what: "a window with an empty name, 51 bytes",
+      what: "the interface reload event with an empty text, 51 bytes",
       seen_in: "2026-11-05-main",
     ),
     Recorded(

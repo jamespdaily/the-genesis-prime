@@ -74,6 +74,7 @@ import genesis_prime/message/replay_level_up.{ReplayLevelUp}
 import genesis_prime/message/scanbot_request.{ScanbotRequest}
 import genesis_prime/message/send_chat_line.{SendChatLine}
 import genesis_prime/message/send_whisper.{SendWhisper}
+import genesis_prime/message/statistic_event.{StatisticEvent}
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
 import genesis_prime/message/trade_cancel.{TradeCancel}
 import genesis_prime/message/vendor_buyback.{VendorBuyback}
@@ -81,7 +82,6 @@ import genesis_prime/message/vendor_purchase.{VendorPurchase}
 import genesis_prime/message/vendor_sale.{VendorSale}
 import genesis_prime/message/vendor_sell_junk.{VendorSellJunk}
 import genesis_prime/message/watchdog_report.{WatchdogReport}
-import genesis_prime/message/window_opened.{WindowOpened}
 import genesis_prime/message/world_entry_options.{WorldEntryOptions}
 import genesis_prime/message/world_message.{WorldMessage}
 import genesis_prime/message/world_zone_changed.{WorldZoneChanged}
@@ -156,10 +156,10 @@ fn client_samples() -> List(#(Int, client_message.ClientMessage)) {
         account_name: "account",
         user_id: <<1:size(128)>>,
         game_token: <<2:size(128)>>,
-        field_6: 6,
-        field_7: 7,
-        field_8: 8,
-        field_9: 9,
+        client_address: 6,
+        language: 7,
+        premium_system: 8,
+        unset_word: 9,
         processor_manufacturer: "maker",
         processor_name: "processor",
         processor_description: "description",
@@ -185,11 +185,11 @@ fn client_samples() -> List(#(Int, client_message.ClientMessage)) {
     #(
       0x058F,
       client_message.GameHelloReply(message: GameHelloReply(
-        field_1: 1,
+        account_id: 1,
         session_key: <<3:size(128)>>,
-        field_3: 3,
+        zero: 3,
         account_name: "account",
-        field_5: 5,
+        three: 5,
       )),
     ),
     #(
@@ -206,7 +206,7 @@ fn client_samples() -> List(#(Int, client_message.ClientMessage)) {
     #(
       0x038C,
       client_message.WorldMessage(
-        message: WorldMessage(field_1: 3, inner_frame: <<
+        message: WorldMessage(send_kind: 3, inner_frame: <<
           6:little-size(32),
           0xF2,
           0x00,
@@ -433,7 +433,7 @@ fn client_samples() -> List(#(Int, client_message.ClientMessage)) {
       client_message.CancelCast(message: CancelCast(
         cast_id: 0x80002804,
         reason: cast_result.SpellCancelled,
-        field_3: 1,
+        cancelled: 1,
       )),
     ),
     #(
@@ -451,40 +451,40 @@ fn client_samples() -> List(#(Int, client_message.ClientMessage)) {
       client_message.ChooseResurrection(message: ChooseResurrection(
         unit_id: 0x1001,
         choice: 1,
-        field_3: 0,
+        caster_unit_id: 0,
       )),
     ),
     #(
       0x023C,
       client_message.WatchdogReport(message: WatchdogReport(
-        field_1: 0x0123_4567_89AB_CDEF,
-        field_2: 2,
-        field_3: 3,
-        field_4: 0x3F80_0000,
-        field_5: 0x4000_0000,
-        field_6: 0x4040_0000,
-        field_7: 7,
+        integrity_key: 0x0123_4567_89AB_CDEF,
+        keyed_player_unit_checksum: 2,
+        longest_clock_step_ms: 3,
+        clock_fit_intercept: 0x3F80_0000,
+        clock_fit_slope_ms: 0x4000_0000,
+        clock_fit_residual: 0x4040_0000,
+        keyed_movement_sum: 7,
       )),
     ),
     #(
       0x0240,
       client_message.FrameTimeReport(message: FrameTimeReport(
-        field_1: 1,
-        field_2: 2,
-        field_3: 0x3F80_0000,
-        field_4: 0x4000_0000,
-        field_5: 0x4040_0000,
+        window_mean_frame: 1,
+        window_slowest_frame: 2,
+        camera_x: 0x3F80_0000,
+        camera_y: 0x4000_0000,
+        camera_z: 0x4040_0000,
         field_6: 0x4080_0000,
-        field_7: 7,
+        session_mean_frame: 7,
       )),
     ),
     #(
       0x023F,
       client_message.NetworkReport(message: NetworkReport(
-        field_1: 1,
-        field_2: 2,
-        field_3: 3,
-        field_4: 4,
+        mean_round_trip_ms: 1,
+        bytes_received_per_minute: 2,
+        bytes_sent_per_minute: 3,
+        known_unit_count: 4,
       )),
     ),
     #(
@@ -502,17 +502,17 @@ fn client_samples() -> List(#(Int, client_message.ClientMessage)) {
     ),
     #(
       0x023D,
-      client_message.WindowOpened(
-        message: WindowOpened(
-          field_1: 35,
-          window_id: 512,
+      client_message.StatisticEvent(
+        message: StatisticEvent(
+          category: 35,
+          event_id: 512,
           character_id: 13,
-          field_4: 0,
-          open_time: 90_720,
-          field_6: 0,
-          field_7: 0,
-          field_8: 0,
-          window_name: [
+          zero_value_2: 0,
+          event_value_3: 90_720,
+          event_value_4: 0,
+          event_value_5: 0,
+          zero_value_6: 0,
+          event_text: [
             0x52, 0x65, 0x73, 0x75, 0x72, 0x72, 0x65, 0x63, 0x74, 0x44, 0x69,
             0x61, 0x6C, 0x6F, 0x67,
           ],

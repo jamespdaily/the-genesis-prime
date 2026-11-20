@@ -721,7 +721,7 @@ pub fn a_cancelled_cast_is_its_id_a_result_and_a_bit_test() -> Nil {
     value: CancelCast(
       cast_id: server_cast_id,
       reason: SpellCancelled,
-      field_3: 1,
+      cancelled: 1,
     ),
     encode: cancel_cast.encode,
     decode: cancel_cast.decode,
@@ -896,7 +896,7 @@ pub fn a_resurrect_choice_is_the_player_a_choice_in_7_bits_and_a_value_test() ->
   message_support.assert_codec(
     name: "opcode.0x15a: unit id in 32 bits, choice 2 (Holocrypt) in 7, a 32-bit value 0",
     body: message_support.hex("01 10 00 00 02 00 00 00 00"),
-    value: ChooseResurrection(unit_id: 0x1001, choice: 2, field_3: 0),
+    value: ChooseResurrection(unit_id: 0x1001, choice: 2, caster_unit_id: 0),
     encode: choose_resurrection.encode,
     decode: choose_resurrection.decode,
   )

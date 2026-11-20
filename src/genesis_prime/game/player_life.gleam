@@ -912,8 +912,8 @@ pub fn take(
     return: Error(NotThePlayer(unit_id: chosen.unit_id)),
   )
   use <- bool.guard(
-    when: chosen.field_3 != 0,
-    return: Error(NonzeroValue(value: chosen.field_3)),
+    when: chosen.caster_unit_id != 0,
+    return: Error(NonzeroValue(value: chosen.caster_unit_id)),
   )
   case choice(value: chosen.choice) {
     WakeHere -> {
