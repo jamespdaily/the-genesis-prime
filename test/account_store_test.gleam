@@ -2021,7 +2021,7 @@ pub fn every_constraint_the_worker_maps_exists_in_the_schema_by_that_name_test()
   list.each(worker.mapped_constraints(), fn(name) {
     let assert Ok(returned) =
       pog.query(
-        "select count(distinct name)::int from (select conname::text as name from pg_constraint union all select c.relname::text from pg_class c where c.relkind = 'i') as names where name = $1",
+        "select count(*)::int from (select conname::text as name from pg_constraint union all select c.relname::text from pg_class c where c.relkind = 'i' and not exists (select 1 from pg_constraint k where k.conindid = c.oid and k.contype in ('p', 'u', 'x'))) as names where name = $1",
       )
       |> pog.parameter(pog.text(name))
       |> pog.returning(decode.at([0], decode.int))
@@ -2029,9 +2029,9 @@ pub fn every_constraint_the_worker_maps_exists_in_the_schema_by_that_name_test()
       as "the catalogue was read"
     assert returned.rows == [1]
       as {
-        "the schema has a constraint or unique index named "
+        "the schema has one constraint or unique index named "
         <> name
-        <> " (a unique constraint is also the index that enforces it)"
+        <> " (the index of a unique or primary key constraint is the constraint, counted once)"
       }
   })
   account_store_support.stop(store)

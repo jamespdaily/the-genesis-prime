@@ -231,7 +231,10 @@ pub type ActionSlotRow {
 /// The slots of every action set a character has saved, whole sets in set then slot
 /// order, twelve rows for each; none for a character that never saved a bar. It is
 /// one record so that what the builder keeps later (tiers, AMPs) joins it without a
-/// new field on the requests and answers that carry it.
+/// new field on the requests and answers that carry it. A save is refused by name
+/// only for a row the table's checks refuse. Two rows for one slot, or a set or slot
+/// beyond 16 bits, fail the statement with an error no check names, which crashes the
+/// worker; `limited_action_set.rows` never builds either.
 pub type ActionSets {
   ActionSets(slots: List(ActionSlotRow))
 }

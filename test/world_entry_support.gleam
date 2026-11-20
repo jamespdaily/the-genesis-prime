@@ -138,17 +138,18 @@ pub fn loaded_with_unset(
 }
 
 /// What the store's answer to a play of the character leads to when the store holds
-/// these action slot rows for it.
+/// these action slot rows for it and these items with no charges recorded.
 pub fn loaded_with_action_sets(
   tables tables: table_store.Tables,
   character character: Character,
   action_sets action_sets: store.ActionSets,
+  unset unset: List(UnsetItem),
 ) -> #(world_entry.State, world_entry.Loaded) {
   loaded_answer(
     tables:,
     character:,
     items: novice_items(character:),
-    unset: [],
+    unset:,
     saved_health: None,
     saved_experience: None,
     quests: [],
@@ -386,18 +387,41 @@ fn join_place() -> Place {
 }
 
 /// What the rule makes of the map's answer to the join of a Dominion character of the class
-/// and level on the committed rows when the store holds these action slot rows for it.
+/// and level on the committed rows when the store holds these action slot rows for it and
+/// these items with no charges recorded. With none unset the load goes straight to the join;
+/// with some the store is asked to fill them, and the join follows the fill's answer.
 pub fn joined_with_action_sets(
   class_id class_id: Int,
   level level: Int,
   action_sets action_sets: store.ActionSets,
+  unset unset: List(UnsetItem),
 ) -> world_entry.Joined {
   let tables = character_tables.shared()
   let character = character(class: class_id, faction: 166, level:)
-  let assert #(_, world_entry.Join(state:, ..)) =
-    loaded_with_action_sets(tables:, character:, action_sets:)
-    as "the store holds the character, its place and its level's row"
-  joined_state(state:, tables:, character:, place: join_place(), now: now())
+  let #(_, loaded) =
+    loaded_with_action_sets(tables:, character:, action_sets:, unset:)
+  let joining = case loaded {
+    world_entry.Join(state:, ..) -> state
+    world_entry.Fill(state: filling, ..) -> {
+      let assert Ok(world_entry.Join(state:, ..)) =
+        answered(
+          state: filling,
+          answer: store.ChargesFilled(answer: store.ItemsSaved),
+          tables:,
+        )
+        as "the fill's answer goes on to the join"
+      state
+    }
+    world_entry.Refused(..) | world_entry.Fault(..) ->
+      panic as "the store holds the character, its place and its level's row"
+  }
+  joined_state(
+    state: joining,
+    tables:,
+    character:,
+    place: join_place(),
+    now: now(),
+  )
 }
 
 /// What the rule makes of the map's answer to the join `state` asked for, the answer

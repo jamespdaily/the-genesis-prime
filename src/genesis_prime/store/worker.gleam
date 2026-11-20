@@ -1224,6 +1224,19 @@ fn list_characters(
   |> result.map(list.map(_, character))
 }
 
+/// The rows of one kind (items, quests, currencies, action slots) of the character a
+/// load found: `read` runs only when the load found exactly one character, and no
+/// character gives no rows. A failed read is passed on, so the transaction ends.
+fn of_the_loaded(
+  characters characters: List(a),
+  read read: fn() -> Result(pog.Returned(b), pog.QueryError),
+) -> Result(pog.Returned(b), pog.QueryError) {
+  case characters {
+    [_] -> read()
+    _ -> Ok(pog.Returned(count: 0, rows: []))
+  }
+}
+
 /// The account's character with the id, taken in one transaction: one statement
 /// names the account too, so another account's character is never taken, and
 /// raises the session epoch, which locks the character's row; the read of the
@@ -1248,29 +1261,31 @@ fn load_character(
         character_id,
         account_id,
       ))
-      use item_rows <- result.try(case loaded.rows {
-        [_] -> {
+      use item_rows <- result.try(
+        of_the_loaded(characters: loaded.rows, read: fn() {
           use _ <- result.try(sql.delete_expired_character_items(
             connection,
             character_id,
             now_unix_ms,
           ))
           sql.load_character_items(connection, character_id)
-        }
-        _ -> Ok(pog.Returned(count: 0, rows: []))
-      })
-      use quest_rows <- result.try(case loaded.rows {
-        [_] -> sql.load_quest_log(connection, character_id)
-        _ -> Ok(pog.Returned(count: 0, rows: []))
-      })
-      use currency_rows <- result.try(case loaded.rows {
-        [_] -> sql.load_character_currencies(connection, character_id)
-        _ -> Ok(pog.Returned(count: 0, rows: []))
-      })
-      use action_slot_rows <- result.map(case loaded.rows {
-        [_] -> sql.load_character_action_slots(connection, character_id)
-        _ -> Ok(pog.Returned(count: 0, rows: []))
-      })
+        }),
+      )
+      use quest_rows <- result.try(
+        of_the_loaded(characters: loaded.rows, read: fn() {
+          sql.load_quest_log(connection, character_id)
+        }),
+      )
+      use currency_rows <- result.try(
+        of_the_loaded(characters: loaded.rows, read: fn() {
+          sql.load_character_currencies(connection, character_id)
+        }),
+      )
+      use action_slot_rows <- result.map(
+        of_the_loaded(characters: loaded.rows, read: fn() {
+          sql.load_character_action_slots(connection, character_id)
+        }),
+      )
       pog.Returned(
         ..loaded,
         rows: list.map(loaded.rows, fn(row) {
