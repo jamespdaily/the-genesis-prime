@@ -12,6 +12,8 @@
 ////      a body the client's reader refuses ─▶ Refusal: the connection ends
 ////      every check passes  ─▶ Saved' and 0x019D (the 12 shortcuts, result 1), 0x00B2 (bit 1)
 ////      a check fails       ─▶ Saved as it was, 0x019D (the held bar, the result), 0x00B2 (bit 0), a warning
+//// place save ─▶ rows(saved) ─▶ the store's slot rows, 12 for each saved set
+//// entry      ─▶ entering(unlocks, level, book, rows) ─▶ Saved, or a RowError that ends the entry
 //// ```
 ////
 //// - **The client checks little before it sends** (`0x1407580e0`): the player exists, the
@@ -38,6 +40,12 @@
 //// - **The answer** is the active set (0) and the held bar of twelve shortcuts, an empty slot
 ////   as type 0 so the client clears it, then 0xB2, whose bit is 1 for an accepted save and 0
 ////   for a refused one. The bit is a guess: the client only adds a combat log line for it.
+//// - **A saved bar is kept at entry** only for the slots still open at the player's level
+////   and the abilities the book still holds, the same two tests a save passes, so a table
+////   change or a lower level cannot show an ability the player does not hold; a slot it drops
+////   is empty and the next save writes it so. A set with rows is saved, even when all twelve
+////   are empty, and a set with none shows the class's bar. A row outside the table's checks
+////   (set 0 to 3, slot 0 to 11, ability of 18 bits, one row for a slot) is a `RowError`.
 //// - **The load fails** for an ActionSlotPrereq row with a slot index outside 0 to 11, a slot with
 ////   no row or two, and a row whose Prerequisite row is missing, which includes the prerequisite
 ////   id 0 that the client reads as "always open" (`0x140758020`): no row holds it.
@@ -49,7 +57,9 @@ import genesis_prime/game/prerequisite.{type Relation}
 import genesis_prime/gap
 import genesis_prime/message/action_set_save
 import genesis_prime/step.{type LogLevel, LogDebug, LogWarning}
-import genesis_prime/store.{type ActionSets, type ActionSlotRow, ActionSets}
+import genesis_prime/store.{
+  type ActionSets, type ActionSlotRow, ActionSets, ActionSlotRow,
+}
 import genesis_prime/table/action_slot_prereq
 import genesis_prime/table/id.{type Spell4BaseId, PrerequisiteId, Spell4BaseId}
 import genesis_prime/table/loader/store as table_store
@@ -72,8 +82,11 @@ const ability_slots = 8
 /// The action sets there are (`AbilityBook.CodeEnumSpecConstant`, MaxNumSpecs).
 const action_sets = 4
 
+/// The largest Spell4Base id the 18 bits of the ability messages carry (`opcode.0x1a0`).
+const largest_ability_id = 262_143
+
 /// The bar of an action set: twelve slots, slot 0 first, each an ability or empty. Built by
-/// `take` or `bar_of`, read by `slots`.
+/// `take`, `bar_of` or `entering`, read by `slots`.
 pub opaque type Bar {
   Bar(slots: List(Option(Spell4BaseId)))
 }
@@ -146,8 +159,20 @@ pub type RowError {
 /// The rows a player's saved bars are written as: twelve for each saved set, in set then
 /// slot order, an empty slot with no ability; none when nothing is saved.
 pub fn rows(saved saved: Saved) -> ActionSets {
-  let _ = saved
-  ActionSets(slots: [])
+  ActionSets(
+    slots: dict.to_list(saved.bars)
+    |> list.sort(fn(a, b) { int.compare(a.0, b.0) })
+    |> list.flat_map(fn(saved_set) {
+      let #(action_set, bar) = saved_set
+      list.index_map(bar.slots, fn(slot_held, slot) {
+        ActionSlotRow(
+          action_set:,
+          slot:,
+          spell4_base_id: option.map(slot_held, fn(base) { base.value }),
+        )
+      })
+    }),
+  )
 }
 
 /// The bars a player has from the rows the store loaded, judged as at entry: a saved
@@ -161,8 +186,63 @@ pub fn entering(
   book book: List(Spell4BaseId),
   rows rows: ActionSets,
 ) -> Result(Saved, RowError) {
-  let _ = #(unlocks, level, book, rows)
-  Ok(none())
+  use sets <- result.map(sets_of(rows: rows.slots))
+  let open = open_slots(unlocks:, level:)
+  Saved(
+    bars: dict.map_values(sets, fn(_, slot_ids) {
+      Bar(
+        slots: list.repeat(Nil, slots_in_a_bar)
+        |> list.index_map(fn(_, slot) {
+          case dict.get(slot_ids, slot) {
+            Ok(Some(id)) ->
+              case
+                list.contains(open, slot),
+                list.contains(book, Spell4BaseId(id))
+              {
+                True, True -> Some(Spell4BaseId(id))
+                _, _ -> None
+              }
+            _ -> None
+          }
+        }),
+      )
+    }),
+  )
+}
+
+/// The rows of each set by slot, or the first row the table's checks cannot hold.
+fn sets_of(
+  rows rows: List(ActionSlotRow),
+) -> Result(Dict(Int, Dict(Int, Option(Int))), RowError) {
+  list.try_fold(rows, dict.new(), fn(sets, row) {
+    use <- bool.guard(
+      when: row.action_set < 0
+        || row.action_set >= action_sets
+        || row.slot < 0
+        || row.slot >= slots_in_a_bar
+        || !fits_the_message(ability: row.spell4_base_id),
+      return: Error(RowOutsideTable(row:)),
+    )
+    let held = result.unwrap(dict.get(sets, row.action_set), dict.new())
+    use <- bool.guard(
+      when: dict.has_key(held, row.slot),
+      return: Error(RowRepeated(row:)),
+    )
+    Ok(dict.insert(
+      sets,
+      row.action_set,
+      dict.insert(held, row.slot, row.spell4_base_id),
+    ))
+  })
+}
+
+/// Whether a saved ability is none or an id the 18 bits of the message carry
+/// (`opcode.0x1a0`), which the table's check holds.
+fn fits_the_message(ability ability: Option(Int)) -> Bool {
+  case ability {
+    None -> True
+    Some(id) -> id >= 1 && id <= largest_ability_id
+  }
 }
 
 /// A sentence that says which row the load gave that the table's checks cannot hold.
@@ -568,10 +648,6 @@ pub fn describe(refusal refusal: Refusal) -> String {
 /// What the builder's save leaves unchecked or undone, for the coverage measure.
 pub fn gaps() -> List(gap.Entry) {
   [
-    gap.Entry(
-      area: "Ability builder",
-      missing: "The bar a player saves is kept for the session only: a camp and a new login bring back the class's bar.",
-    ),
     gap.Entry(
       area: "Ability builder",
       missing: "The tier changes and AMP ids a save carries are read and not applied: ability tiers and AMP picks are not built.",

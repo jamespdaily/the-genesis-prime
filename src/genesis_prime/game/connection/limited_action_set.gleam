@@ -1,8 +1,9 @@
 //// The ability builder's save on the game connection (genesis_prime/game/limited_action_set):
 //// the rule judges the client's 0xB1 against the player's level, book, life and combat, and
 //// this writes the frames it answers with, in order, and keeps the bar it leaves in
-//// `Entered`, which a map or Holocrypt rejoin sends again. Nothing waits on the store. A
-//// body the client's reader refuses ends the connection with the sentence the rule gives.
+//// `Entered`, which the next place save carries to the store and a map or Holocrypt rejoin
+//// sends again. Nothing waits on the store. A body the client's reader refuses ends the
+//// connection with the sentence the rule gives.
 
 import genesis_prime/client_connection.{Continue}
 import genesis_prime/connection/frame.{type Frame}

@@ -97,7 +97,7 @@ import genesis_prime/store.{
   type NewItem, type QuestRow, type RenameAnswer, type Request,
   type SelectAnswer, type SelectRequest, type UnsetItem, type WorldAnswer,
   type WorldRequest, Account, AccountFound, AccountId, ActionSetRefused,
-  ActiveQuest, Bought, BuyFromVendor, Character, CharacterCreated,
+  ActionSlotRow, ActiveQuest, Bought, BuyFromVendor, Character, CharacterCreated,
   CharacterDeleted, CharacterId, CharacterLoaded, CharacterRenamed,
   ChargesFilled, CreateCharacter, CreateForNoSuchAccount, Created, CurrencySet,
   DeleteCharacter, DeleteItem, Deleted, ExperienceRefused, FillCharges,
@@ -1209,7 +1209,7 @@ fn save_place(
     experience,
     level,
     quests_json(quests),
-    action_slots_json(action_sets),
+    action_slots_json(action_sets:),
   )
 }
 
@@ -1335,7 +1335,7 @@ fn load_character(
             amount: row.amount,
           )
         }),
-        action_sets: action_sets_of(action_slot_rows),
+        action_sets: action_sets_of(rows: action_slot_rows),
       )
     }
     [] -> NotTheAccounts
@@ -1359,15 +1359,29 @@ type LoadRow {
 fn action_sets_of(
   rows rows: List(sql.LoadCharacterActionSlotsRow),
 ) -> store.ActionSets {
-  let _ = rows
-  store.ActionSets(slots: [])
+  store.ActionSets(
+    slots: list.map(rows, fn(row) {
+      ActionSlotRow(
+        action_set: row.action_set,
+        slot: row.slot,
+        spell4_base_id: row.spell4_base_id,
+      )
+    }),
+  )
 }
 
 /// The action slots as the JSON array save_place.sql unpacks, one object for each slot
 /// whose keys are the character_action_slot columns, a null ability for an empty slot.
 fn action_slots_json(action_sets action_sets: store.ActionSets) -> Json {
-  let _ = action_sets
-  json.preprocessed_array([])
+  json.preprocessed_array(
+    list.map(action_sets.slots, fn(slot) {
+      json.object([
+        #("action_set", json.int(slot.action_set)),
+        #("slot", json.int(slot.slot)),
+        #("spell4_base_id", json.nullable(slot.spell4_base_id, json.int)),
+      ])
+    }),
+  )
 }
 
 /// The rows of a character's quest log as the rows the store hands the quest log's

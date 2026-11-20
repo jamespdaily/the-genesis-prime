@@ -11,6 +11,9 @@
 ////   never sends them, so a server that is told one is told by a modified client or in a race.
 //// - `connection/casting.caster_of`: where the connection reads the player's level, life and
 ////   combat.
+//// - `genesis_prime/game/connection/world` ("Saving the place"): every end with the player in
+////   the world saves the place, and each save carries the bars the connection holds; the
+////   connection takes no other input while a save waits (`asking`).
 
 import ability_book_support
 import connection_rule_support as support
@@ -19,8 +22,8 @@ import genesis_prime/client_connection.{AskStore}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/strike_tell
-import genesis_prime/step
-import genesis_prime/store.{CharacterId, Move, SavePlace}
+import genesis_prime/step.{OwnEvent, TimerFired, TimerId, WatchEnded, WatchId}
+import genesis_prime/store.{ActionSets, CharacterId, Move, SavePlace}
 import genesis_prime/table/id.{ClassId}
 import gleam/bit_array
 import gleam/list
@@ -175,4 +178,114 @@ pub fn a_0xb1_before_the_world_is_logged_unhandled_and_the_connection_goes_on_te
     as "no row takes a 0xB1 at character select"
   assert support.writes(taken) == []
   assert !support.stops(taken)
+}
+
+/// The action slots the place save a step asks the store for carries.
+fn action_sets_asked(
+  taken taken: step.ConnectionStep(client_connection.Request),
+) -> store.ActionSets {
+  let assert AskStore(Move(SavePlace(action_sets:, ..))) =
+    connection_support.ask_request(taken)
+    as "the step asks the store to save the place"
+  action_sets
+}
+
+/// The state after the 60 s timer fires and the save is asked.
+fn timer_save(
+  state state: game_connection.State,
+) -> #(game_connection.State, step.ConnectionStep(client_connection.Request)) {
+  connection_support.feed(state:, event: OwnEvent(TimerFired(TimerId(2))))
+}
+
+/// The slots of a saved set the way the store holds them: twelve rows of set 0.
+fn slots_of_set_0(ids ids: List(Int)) -> store.ActionSets {
+  ActionSets(slots: limited.rows_of(set: 0, ids:))
+}
+
+pub fn every_save_of_the_place_carries_the_set_and_a_save_with_no_answer_is_carried_again_test() -> Nil {
+  use <- owned_test.run(120_000)
+  let after_a =
+    sent(state: in_world_at_level(level: 4), body: limited.hex(limited.save_a)).0
+  list.each(
+    [
+      #("(a) the 60 s timer", fn(state) { timer_save(state:).1 }),
+      #("(b) the camp finishing", fn(state) {
+        let #(state, _) =
+          connection_support.read(
+            state:,
+            bytes: connection_support.camp_request_message(True),
+          )
+        connection_support.read(
+          state:,
+          bytes: connection_support.camp_finished_message(),
+        ).1
+      }),
+      #("(c) the map's end", fn(state) {
+        connection_support.feed(state:, event: WatchEnded(WatchId(2))).1
+      }),
+      #("(d) a takeover", fn(state) {
+        connection_support.feed(state:, event: connection_support.taken_over()).1
+      }),
+    ],
+    fn(row) {
+      let #(why, save) = row
+      assert action_sets_asked(taken: save(after_a))
+        == slots_of_set_0(ids: limited.ids_a)
+        as why
+    },
+  )
+  list.each(connection_support.no_answers(), fn(outcome) {
+    let #(state, taken) = timer_save(state: after_a)
+    assert action_sets_asked(taken:) == slots_of_set_0(ids: limited.ids_a)
+      as "(e) the first timer save carries the set"
+    let #(state, _) = connection_support.answer(state:, taken:, outcome:)
+    let #(_, taken) = timer_save(state:)
+    assert action_sets_asked(taken:) == slots_of_set_0(ids: limited.ids_a)
+      as "(e) the save asked again after one with no answer holds the same twelve rows"
+  })
+  let #(_, taken) = timer_save(state: in_world_at_level(level: 4))
+  assert action_sets_asked(taken:) == ActionSets(slots: [])
+    as "(f) a player who saved nothing saves no row, so the class's bar stays the default"
+}
+
+pub fn a_refused_save_leaves_what_the_next_place_save_carries_unchanged_test() -> Nil {
+  use <- owned_test.run(120_000)
+  let refused =
+    limited.body(ids: [0, 0, 0, 0, 20_718, 0, 0, 0, 0, 0, 0, 0], set: 0)
+  let after_a =
+    sent(state: in_world_at_level(level: 4), body: limited.hex(limited.save_a)).0
+  let #(after_refusal, _, frames) = sent(state: after_a, body: refused)
+  assert limited.the_action_set(frames:).result == 2
+    as "slot 4 opens at level 5: the body is refused"
+  assert action_sets_asked(taken: timer_save(state: after_refusal).1)
+    == slots_of_set_0(ids: limited.ids_a)
+    as "the next save carries the rows of the set of A"
+  let #(from_nothing, _, frames) =
+    sent(state: in_world_at_level(level: 4), body: refused)
+  assert limited.the_action_set(frames:).result == 2
+  assert action_sets_asked(taken: timer_save(state: from_nothing).1)
+    == ActionSets(slots: [])
+    as "a refusal from no saved set leaves no rows to save"
+  let #(state, taken) = timer_save(state: in_world_at_level(level: 4))
+  let #(state, held) =
+    connection_support.read(
+      state:,
+      bytes: saved(body: limited.hex(limited.save_b)),
+    )
+  assert connection_support.written(taken: held) == []
+    as "the connection takes no other input while a save waits"
+  let #(state, taken) =
+    connection_support.answer(
+      state:,
+      taken:,
+      outcome: connection_support.place_saved(),
+    )
+  assert list.map(connection_support.written(taken:), fn(frame) {
+      frame.message_id
+    })
+    == [0x019D, 0x00B2]
+    as "the 0xB1 that waited is answered after the save"
+  assert action_sets_asked(taken: timer_save(state:).1)
+    == slots_of_set_0(ids: limited.ids_b)
+    as "the next save carries the set the waiting 0xB1 made"
 }

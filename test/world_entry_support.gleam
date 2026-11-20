@@ -369,18 +369,35 @@ pub fn answered_at(
   quests quests: List(QuestRow),
   now now: Now,
 ) -> world_entry.Joined {
-  let place =
-    place_support.at(
-      world_id: 3460,
-      world_zone_id: 6009,
-      x: 29.0,
-      y: -853.0,
-      z: -560.0,
-    )
   let assert #(_, world_entry.Join(state:, ..)) =
     loaded_holding(tables:, character:, items:, saved_experience: None, quests:)
     as "the store holds the character, its place and its level's row"
-  joined_state(state:, tables:, character:, place:, now:)
+  joined_state(state:, tables:, character:, place: join_place(), now:)
+}
+
+fn join_place() -> Place {
+  place_support.at(
+    world_id: 3460,
+    world_zone_id: 6009,
+    x: 29.0,
+    y: -853.0,
+    z: -560.0,
+  )
+}
+
+/// What the rule makes of the map's answer to the join of a Dominion character of the class
+/// and level on the committed rows when the store holds these action slot rows for it.
+pub fn joined_with_action_sets(
+  class_id class_id: Int,
+  level level: Int,
+  action_sets action_sets: store.ActionSets,
+) -> world_entry.Joined {
+  let tables = character_tables.shared()
+  let character = character(class: class_id, faction: 166, level:)
+  let assert #(_, world_entry.Join(state:, ..)) =
+    loaded_with_action_sets(tables:, character:, action_sets:)
+    as "the store holds the character, its place and its level's row"
+  joined_state(state:, tables:, character:, place: join_place(), now: now())
 }
 
 /// What the rule makes of the map's answer to the join `state` asked for, the answer
