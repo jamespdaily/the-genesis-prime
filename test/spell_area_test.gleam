@@ -28,7 +28,8 @@ import genesis_prime/game/damage
 import genesis_prime/game/spell_area.{
   AimNotRead, FormulaNotRead, MultiplierNotFinite, Once, Periodic, PlacedApart,
   SelectionNeedsHealth, SelectionNotBuilt, ShapeNotBuilt, TelegraphNotOnCaster,
-  TickingNoTick, TickingUntilRemoved, ValidTargetsNotAlive,
+  TelegraphOnStruckUnits, TickingNoTick, TickingUntilRemoved,
+  ValidTargetsNotAlive,
 }
 import genesis_prime/game/spell_plan
 import genesis_prime/game/spend.{EqualTo}
@@ -422,10 +423,213 @@ pub fn a_spell_whose_caster_rows_are_not_placed_alike_is_refused_by_name_test() 
   assert spell_area.area_of_spell(tables:, spell4_id: Spell4Id(54_838))
     == Error(PlacedApart(
       spell4_id: 54_838,
-      fixed_telegraph_id: 7814,
-      following_telegraph_id: 7815,
+      telegraph_id: 7814,
+      other_telegraph_id: 7815,
     ))
     as "the refusal names the spell and a row of each placing"
+}
+
+/// The anchor the creature reading builds for a spell of these tables, or its refusal.
+fn creature_anchor(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Int,
+) -> Result(area.Anchor, spell_area.AreaError) {
+  spell_area.area_of_spell(tables:, spell4_id: Spell4Id(spell4_id))
+  |> result.map(fn(found) {
+    let assert Some(spell_area.CreatureArea(anchor:, ..)) = found
+      as "the spell has an area row"
+    anchor
+  })
+}
+
+pub fn a_creature_row_is_anchored_by_who_it_is_placed_on_and_how_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The client places a row by targetTypeFlags (1 the caster, 0 or bit 2 the cast's target) and by
+  // TelegraphDamage flags (0x4000 or 0x1000 fixes it at the entry; else it follows its unit)
+  // (`0x140546e60.placement_branches`). Rows by `table_rows`: 4796 (tt 2, flags 0), 5671 and 5672
+  // (tt 2, flags 0), 7874 (tt 2, 0x905000), 2376 (tt 0, 0x1000), 9129 (tt 2, 0x5000).
+  let tables = fixture_tables.shared()
+  list.each(
+    [
+      #(46_353, area.FollowsTarget, "row 4796, tt 2, flags 0"),
+      #(48_590, area.FollowsTarget, "rows 5671 and 5672, tt 2, flags 0"),
+      #(61_226, area.FollowsTarget, "its ring rows, tt 2"),
+      #(55_846, area.FixedAtTarget, "row 7874, tt 2, flags 0x905000"),
+      #(39_641, area.FixedAtTarget, "row 2376, tt 0, flags 0x1000"),
+      #(61_275, area.FixedAtTarget, "row 9129, tt 2, flags 0x5000"),
+      #(85_469, area.FollowsCaster, "a caster row that follows"),
+      #(55_317, area.FixedAtCaster, "a caster row that is fixed"),
+    ],
+    fn(row) {
+      let #(spell4_id, anchor, reason) = row
+      assert creature_anchor(tables:, spell4_id:) == Ok(anchor) as reason
+    },
+  )
+  // Laser Bolt's tiers: area rows 116 (range 10, 10 units, 360 degrees) and 210 (range 12) and
+  // the circles of TelegraphDamage 7874 (4) and 7875 (6).
+  list.each([#(55_846, 10.0, 4.0), #(55_847, 12.0, 6.0)], fn(tier) {
+    let #(spell4_id, max_range, radius) = tier
+    let assert Ok(Some(spell_area.CreatureArea(row:, inside:, ..))) =
+      spell_area.area_of_spell(tables:, spell4_id: Spell4Id(spell4_id))
+      as "Laser Bolt's tiers load"
+    assert row
+      == Row(
+        min_range: 0.0,
+        max_range:,
+        degrees: 360.0,
+        target_count: 10,
+        order: area.Nearest,
+      )
+    assert inside
+      == InsideShapes(placements: [
+        Placement(
+          shape: Circle(radius:),
+          ahead: 0.0,
+          aside: 0.0,
+          turn_degrees: 0.0,
+        ),
+      ])
+  })
+}
+
+pub fn a_row_placed_on_each_struck_unit_or_on_the_ground_is_refused_by_name_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Bit 4 places a row on each unit the strike finds, which the cast cannot know at its start
+  // (TelegraphDamage 14428 of Spell4 46696 and the twin 14629 of 39905, both tt 4); bit 8 places
+  // it on the ground, a position the cast holds (`0x140546e60.placement_branches`). The changed
+  // rows are synthetic: no loadable special holds one.
+  assert creature_anchor(tables: fixture_tables.shared(), spell4_id: 46_696)
+    == Error(TelegraphOnStruckUnits(
+      spell4_id: 46_696,
+      telegraph_id: 14_428,
+      target_type_flags: 4,
+    ))
+  assert creature_anchor(tables: fixture_tables.shared(), spell4_id: 39_905)
+    == Error(TelegraphOnStruckUnits(
+      spell4_id: 39_905,
+      telegraph_id: 14_629,
+      target_type_flags: 4,
+    ))
+  list.each(
+    [
+      #(5, TelegraphOnStruckUnits(55_846, 7874, 5), "bit 4 among others"),
+      #(8, TelegraphNotOnCaster(55_846, 7874, 8), "the ground"),
+      #(3, TelegraphNotOnCaster(55_846, 7874, 3), "caster and target at once"),
+      #(9, TelegraphNotOnCaster(55_846, 7874, 9), "caster and ground at once"),
+    ],
+    fn(row) {
+      let #(target_type_flags, refusal, reason) = row
+      use tables <- fixture_tables.changed(
+        table: "TelegraphDamage",
+        id: 7874,
+        with: [#("targetTypeFlags", Integer(target_type_flags))],
+      )
+      assert creature_anchor(tables:, spell4_id: 55_846) == Error(refusal)
+        as reason
+    },
+  )
+}
+
+pub fn a_spell_whose_rows_are_not_placed_alike_is_refused_by_name_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Laser Bolt's row 7874 is a fixed row on the target. Each case links one more row placed
+  // otherwise: a caster row (7880, tt 1, fixed), a following target row (4796), and a copy of
+  // 7874 with the never-drawn flag 0x40 on the caster, which becomes the hit while the picture
+  // stays on the target; and, beside a twin placed as 7874 is, a drawn row on each struck unit,
+  // which no anchor serves and is refused as a hit row on them is. Synthetic: none of the
+  // loadable specials mixes them.
+  let linked = fn(rows, link_id, telegraph_damage_id) {
+    let assert Ok(rows) =
+      fixture_tables.add(
+        rows:,
+        table: "Spell4Telegraph",
+        copy_of: 16_625,
+        id: link_id,
+        with: [#("telegraphDamageId", Integer(telegraph_damage_id))],
+      )
+      as "Spell4Telegraph 16625 is Laser Bolt's own link"
+    rows
+  }
+  let copy_of_7874 = fn(rows, id, flags, target_type_flags) {
+    let assert Ok(rows) =
+      fixture_tables.add(
+        rows:,
+        table: "TelegraphDamage",
+        copy_of: 7874,
+        id:,
+        with: [
+          #("telegraphDamageFlags", Integer(flags)),
+          #("targetTypeFlags", Integer(target_type_flags)),
+        ],
+      )
+      as "TelegraphDamage 7874 is Laser Bolt's row"
+    rows
+  }
+  let with_caster_twin =
+    copy_of_7874(fixture_tables.rows(), 99_002, 0x905040, 1)
+  let with_target_twin =
+    copy_of_7874(fixture_tables.rows(), 99_002, 0x905040, 2)
+    |> copy_of_7874(99_003, 0x905000, 4)
+  list.each(
+    [
+      #(
+        linked(fixture_tables.rows(), 99_001, 7880),
+        PlacedApart(55_846, 7874, 7880),
+        "a caster row beside a target row",
+      ),
+      #(
+        linked(fixture_tables.rows(), 99_001, 4796),
+        PlacedApart(55_846, 7874, 4796),
+        "a fixed target row beside a following one",
+      ),
+      #(
+        linked(with_caster_twin, 99_001, 99_002),
+        PlacedApart(55_846, 99_002, 7874),
+        "a hit twin placed apart from the drawn row",
+      ),
+      #(
+        linked(with_target_twin, 99_001, 99_002) |> linked(99_004, 99_003),
+        TelegraphOnStruckUnits(55_846, 99_003, 4),
+        "a drawn row on each struck unit beside a twin on the target",
+      ),
+    ],
+    fn(row) {
+      let #(rows, refusal, reason) = row
+      use tables <- fixture_tables.on_rows(rows:, reaching: [])
+      assert creature_anchor(tables:, spell4_id: 55_846) == Error(refusal)
+        as reason
+    },
+  )
+}
+
+pub fn the_player_reading_still_refuses_target_rows_the_creature_reading_builds_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // A player's strike centres on the target at yaw 0, so a row placed on a unit but the caster
+  // stays refused for a player whatever its bits, bit 4 included, while the creature reading
+  // builds the target rows.
+  list.each([0, 2, 4], fn(target_type_flags) {
+    assert area_tables.built(
+        kick: area_tables.Kick(
+          ..area_tables.kick(),
+          telegraph_target_type_flags: target_type_flags,
+        ),
+      )
+      == Error(TelegraphNotOnCaster(
+        spell4_id: 58_591,
+        telegraph_id: 168,
+        target_type_flags:,
+      ))
+      as "the player's reading builds only the caster (1)"
+  })
+  assert creature_anchor(tables: fixture_tables.shared(), spell4_id: 46_353)
+    == Ok(area.FollowsTarget)
+  use tables <- fixture_tables.changed(
+    table: "TelegraphDamage",
+    id: 4796,
+    with: [#("targetTypeFlags", Integer(0))],
+  )
+  assert creature_anchor(tables:, spell4_id: 46_353) == Ok(area.FollowsTarget)
+    as "a row with 0 flags is placed on the target"
 }
 
 pub fn a_damage_multiplier_that_is_not_a_finite_float_fails_the_load_naming_the_effect_test() -> Nil {

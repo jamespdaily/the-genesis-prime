@@ -18,24 +18,28 @@
 ////   54675 (Wallop) has damage row 159798 with phaseFlags 4, go 2 of 4, and 66285 and 55317
 ////   strike at their last go.
 
+import client_tables
 import content_support
 import database_support
 import fixture_tables
 import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/refusal.{Refusal, RowId}
 import genesis_prime/game/area
+import genesis_prime/game/spell_area
 import genesis_prime/game/strike_tell
 import genesis_prime/table/id.{Spell4Id}
+import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_kind
 import genesis_prime/world_map/creature_life
 import genesis_prime/world_map/creature_special.{type Row, Ref, Row}
 import gleam/int
 import gleam/list
-import gleam/option
+import gleam/option.{Some}
 import gleam/string
 import owned_test
 import planted_table.{Integer}
 import spawn_support
+import unitest
 
 /// The default row as migration 0010 leaves it.
 const default_row =
@@ -56,12 +60,20 @@ fn special(spell4_id spell4_id: Int) -> Row {
 
 /// The refusals of the rows, with the default kind row beside them.
 fn refused(rows rows: List(Row)) -> List(refusal.Refusal) {
+  refused_on(tables: fixture_tables.shared(), rows:)
+}
+
+/// The refusals of the rows over these tables.
+fn refused_on(
+  tables tables: table_store.Tables,
+  rows rows: List(Row),
+) -> List(refusal.Refusal) {
   let assert Error(refusals) =
     creature_kind.select(
       rows: [default_row],
       special_rows: rows,
       auto_attack_rows: [],
-      tables: fixture_tables.shared(),
+      tables:,
     )
     as "the rows are refused"
   refusals
@@ -69,9 +81,14 @@ fn refused(rows rows: List(Row)) -> List(refusal.Refusal) {
 
 /// The one refusal of one special row, its sentence.
 fn rule_of(row row: Row) -> String {
+  rule_on(tables: fixture_tables.shared(), row:)
+}
+
+/// The one refusal of one special row over these tables, its sentence.
+fn rule_on(tables tables: table_store.Tables, row row: Row) -> String {
   let assert [
     Refusal(table: "creature_special", row: RowId(creature_id), rule:),
-  ] = refused(rows: [row])
+  ] = refused_on(tables:, rows: [row])
     as "the one row is refused, under its table and the creature's id"
   assert creature_id == row.creature_id as "the refusal names the creature"
   rule
@@ -315,34 +332,133 @@ pub fn every_refused_special_is_collected_test() -> Nil {
     as "each bad row beside its neighbours, as the other tables' refusals are"
 }
 
-pub fn the_order_lift_loads_63569_and_leaves_the_target_row_specials_to_4c_test() -> Nil {
+pub fn the_order_and_target_row_lifts_load_63569_70256_and_55846_test() -> Nil {
   use <- owned_test.run(60_000)
   // Spell4 63569: castTime 160, Spell4AoeTargetConstraints 541 (360 degrees, 1 unit, 0 to 70
-  // m, targetSelection 3, Random), no Spell4Telegraph row, no target conditions: its area row
-  // is the only thing the order lift changes for it. 70256 (area row 580, also Random) and
-  // 55846 (area row 116, Closest) name a Spell4Telegraph row each whose TelegraphDamage row
-  // (11230, 7874) is placed on a unit but the caster, so they stay refused for that row.
-  let spawn =
-    spawn_support.special_creature(
-      number: 1,
+  // m, targetSelection 3, Random), no Spell4Telegraph row, no target conditions. 70256 (area
+  // row 580, Random) names TelegraphDamage 11230 (tt 2, flags 0: it follows its target) and
+  // 55846 (area row 116, Closest) 7874 (tt 2, 0x905000: fixed at it). 46696 names 14428 (tt 4,
+  // each struck unit) and 39905 a target condition (spell4CCConditionsIdTarget 2), which the
+  // special's own check refuses before its area is read.
+  let charge_of = fn(spell4_id) {
+    let spawn =
+      spawn_support.special_creature(number: 1, creature_id: 12_212, spell4_id:)
+    let assert [loaded] = spawn.combat.specials
+      as "the kind lists the one special"
+    let assert creature_life.Charged(area: row, anchor:, ..) =
+      loaded.attack.cast
+      as "the spell is a charge"
+    #(row, anchor)
+  }
+  let #(row_541, anchor) = charge_of(63_569)
+  assert row_541
+    == area.Row(
+      min_range: 0.0,
+      max_range: 70.0,
+      degrees: 360.0,
+      target_count: 1,
+      order: area.Random,
+    )
+    as "63569 carries the whole of the area row 541"
+  assert anchor == area.FollowsCaster
+    as "no telegraph row: the hit follows its caster"
+  let #(row_580, anchor) = charge_of(70_256)
+  assert #(row_580.order, anchor) == #(area.Random, area.FollowsTarget)
+  let #(row_116, anchor) = charge_of(55_846)
+  assert #(row_116.order, anchor) == #(area.Nearest, area.FixedAtTarget)
+  assert string.contains(
+    rule_of(row: special(spell4_id: 46_696)),
+    "has no damage row whose phaseFlags name a go",
+  )
+    as "46696's damage rows name no go, which the special's own check finds before its area"
+  assert string.contains(
+    rule_of(row: special(spell4_id: 39_905)),
+    "target conditions row 2",
+  )
+    as "a target condition is refused before the area is read"
+  // No loadable special holds a row on each struck unit, so 55846's row 7874 is changed to tt 4.
+  use tables <- fixture_tables.changed(
+    table: "TelegraphDamage",
+    id: 7874,
+    with: [#("targetTypeFlags", Integer(4))],
+  )
+  assert string.contains(
+    rule_on(tables:, row: special(spell4_id: 55_846)),
+    "hit telegraph 7874 placed by flags 4, on each unit the strike finds",
+  )
+    as "a row on each struck unit is refused by its own sentence"
+}
+
+/// The refusals of these specials of the creature on the client's own tables.
+fn refused_on_the_clients_tables(
+  creature_id creature_id: Int,
+  spell4_ids spell4_ids: List(Int),
+) -> List(String) {
+  let rows =
+    list.index_map(spell4_ids, fn(spell4_id, index) {
+      Row(..special(spell4_id:), creature_id:, order_index: index)
+    })
+  case
+    creature_kind.select(
+      rows: [default_row],
+      special_rows: rows,
+      auto_attack_rows: [],
+      tables: client_tables.with_content_tables(),
+    )
+  {
+    Ok(..) -> []
+    Error(refusals) -> list.map(refusals, fn(refusal) { refusal.rule })
+  }
+}
+
+pub fn the_target_row_lift_loads_the_named_specials_and_the_gos_keep_three_waiting_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  // The twenty specials the order, shape and placement lifts make loadable, each with the anchor
+  // its rows give (`spell_area.area_of_spell`); 63569 has no telegraph row. Geyser Blast 55840
+  // and 55841 strike at go 0 while their last go is go 1, and Laser Barrage 41187 at several
+  // gos, which a creature's fight does not run: they stay refused for their gos, not for
+  // their placement.
+  let tables = client_tables.with_content_tables()
+  let following_target = [
+    43_989, 46_353, 47_319, 47_518, 47_627, 48_590, 48_591, 61_226, 61_416,
+    70_256,
+  ]
+  let fixed_at_target = [
+    39_641, 55_759, 55_760, 55_839, 55_846, 55_847, 55_885, 55_918, 61_275,
+  ]
+  let anchors = fn(spell4_ids, anchor) {
+    list.each(spell4_ids, fn(spell4_id) {
+      let assert Ok(Some(spell_area.CreatureArea(anchor: found, ..))) =
+        spell_area.area_of_spell(tables:, spell4_id: Spell4Id(spell4_id))
+        as { "Spell4 " <> int.to_string(spell4_id) <> " reads" }
+      assert found == anchor
+        as { "Spell4 " <> int.to_string(spell4_id) <> "'s anchor" }
+    })
+  }
+  anchors(following_target, area.FollowsTarget)
+  anchors(fixed_at_target, area.FixedAtTarget)
+  assert refused_on_the_clients_tables(
       creature_id: 12_212,
-      spell4_id: 63_569,
+      spell4_ids: list.flatten([[63_569], following_target, fixed_at_target]),
     )
-  let assert [loaded] = spawn.combat.specials
-    as "the kind lists the one special"
-  let assert creature_life.Charged(area: row, ..) = loaded.attack.cast
-    as "the spell is a charge"
-  assert row.order == area.Random
-    as "the charge carries the area row's order, Random"
-  assert row.target_count == 1 && row.max_range == 70.0
-    as "and the rest of row 541"
-  list.each([#(70_256, "11230"), #(55_846, "7874")], fn(case_) {
-    let rule = rule_of(row: special(spell4_id: case_.0))
-    assert string.contains(
-      rule,
-      "hit telegraph " <> case_.1 <> " placed by flags 2",
-    )
-      as "the refusal is the hit row placed on a unit but the caster"
-    assert !string.contains(rule, "order") as "and not the area row's order"
-  })
+    == []
+    as "the twenty load"
+  assert refused_on_the_clients_tables(creature_id: 47_430, spell4_ids: [55_846])
+    == []
+    as "Laser Bolt loads for the Construct of 47430, whose faction keeps it from a fight"
+  let refusals =
+    refused_on_the_clients_tables(creature_id: 12_212, spell4_ids: [
+      55_840,
+      55_841,
+      41_187,
+    ])
+  let assert [first, second, third] = refusals as "each of the three is refused"
+  assert string.contains(first, "strikes at go 0 but its last go is go 1")
+    && string.contains(first, "55840")
+  assert string.contains(second, "strikes at go 0 but its last go is go 1")
+    && string.contains(second, "55841")
+  assert string.contains(third, "which a creature's fight does not run")
+    && string.contains(third, "41187")
+    && !string.contains(third, "placed by")
 }

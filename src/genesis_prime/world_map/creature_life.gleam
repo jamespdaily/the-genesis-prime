@@ -78,6 +78,13 @@ pub type Attack {
     offence: Offence,
     run_speed: Float,
     reach: Float,
+    /// Whether the target's hit radius is added to `reach`, as the client ranges a cast on a
+    /// unit from edge to edge (`0x1403b2240`: the distance less both radii is held to
+    /// `targetMaxRange`). It is set for a charge on its target whose spell has a
+    /// `targetMaxRange`; a charge with none takes the area row's `maxRange` as `reach`, a
+    /// server choice the client's check does not cover, and an instant attack's reach is a
+    /// server choice too.
+    adds_target_radius: Bool,
     cast: Cast,
     /// The crowd-control states that refuse the attack's cast: the ccStateMask of the
     /// Spell4CCConditions row the attack spell's caster column names, 0 for no row; bit n

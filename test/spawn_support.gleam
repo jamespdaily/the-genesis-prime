@@ -597,6 +597,7 @@ pub fn beast_attack() -> Attack {
     ),
     run_speed: 10.0,
     reach: 8.0,
+    adds_target_radius: False,
     cast: Instant,
     caster_cc_mask: 0,
     run_stopped_by: 0,
@@ -783,6 +784,7 @@ pub fn earthen_roar(hold_ms hold_ms: Int) -> creature_life.Special {
       ),
       run_speed: 10.0,
       reach: 5.5,
+      adds_target_radius: False,
       cast: creature_life.Charged(
         cast_ms: 3000,
         area: area.Row(

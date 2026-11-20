@@ -295,30 +295,41 @@ pub fn state_sh_only_reads_test() -> Nil {
   })
 }
 
+/// How old a planted lock is when the script reads it: the rows that do not
+/// depend on it leave it as made, the others plant it far over or far under the
+/// minute the scripts count, so no load decides them.
+type Age {
+  AnyAge
+  UnderAMinute
+  OverAMinute
+}
+
+fn plant_age(path: String, age: Age) -> Nil {
+  case age {
+    AnyAge -> Nil
+    UnderAMinute -> support.make_young(path)
+    OverAMinute -> support.make_old(path)
+  }
+}
+
 fn locks_and_hold_rows() -> List(Row) {
   let alive = support.os_pid()
   let alive_text = support.started_text(alive)
   let dead = support.ended_pid()
-  let update_lock = fn(name, owner, old, expected) {
+  let update_lock = fn(name, owner, age, expected) {
     Row(
       ..row(name, fn(scene) {
         support.plant_update_lock(scene:, owner:)
-        case old {
-          True -> support.make_old(support.update_lock_path(scene))
-          False -> Nil
-        }
+        plant_age(support.update_lock_path(scene), age)
       }),
       present: [#("update_lock", expected)],
     )
   }
-  let live_lock = fn(name, record, old, expected) {
+  let live_lock = fn(name, record, age, expected) {
     Row(
       ..row(name, fn(scene) {
         support.plant_live_lock(scene:, record:)
-        case old {
-          True -> support.make_old(support.live_lock_path(scene))
-          False -> Nil
-        }
+        plant_age(support.live_lock_path(scene), age)
       }),
       present: [#("live_lock", expected)],
     )
@@ -342,7 +353,7 @@ fn locks_and_hold_rows() -> List(Row) {
       ..update_lock(
         "an update lock whose owner runs",
         Some(alive),
-        False,
+        AnyAge,
         "run",
       ),
       present: [#("update_lock", "run"), #("update_lock_pid", pid(alive))],
@@ -351,7 +362,7 @@ fn locks_and_hold_rows() -> List(Row) {
       ..update_lock(
         "an update lock whose owner is gone",
         Some(dead),
-        False,
+        AnyAge,
         "gone",
       ),
       present: [#("update_lock", "gone"), #("update_lock_pid", pid(dead))],
@@ -360,7 +371,7 @@ fn locks_and_hold_rows() -> List(Row) {
       ..update_lock(
         "an update lock with no owner file under a minute",
         None,
-        False,
+        UnderAMinute,
         "ownerless",
       ),
       absent: ["update_lock_pid"],
@@ -369,7 +380,7 @@ fn locks_and_hold_rows() -> List(Row) {
       ..update_lock(
         "an update lock with no owner file over a minute",
         None,
-        True,
+        OverAMinute,
         "gone",
       ),
       absent: ["update_lock_pid"],
@@ -383,7 +394,7 @@ fn locks_and_hold_rows() -> List(Row) {
       ..live_lock(
         "a client start whose owner runs",
         record("client", "", alive, alive_text),
-        False,
+        AnyAge,
         "client",
       ),
       present: [
@@ -397,7 +408,7 @@ fn locks_and_hold_rows() -> List(Row) {
       ..live_lock(
         "a run whose owner runs",
         record("run", "/sittings/run-1", alive, alive_text),
-        False,
+        AnyAge,
         "run",
       ),
       present: [
@@ -411,7 +422,7 @@ fn locks_and_hold_rows() -> List(Row) {
       ..live_lock(
         "a run whose owner is gone",
         record("run", "/sittings/run-2", dead, "Mon Jan 1 00:00:00 2001"),
-        False,
+        AnyAge,
         "gone",
       ),
       present: [
@@ -425,7 +436,7 @@ fn locks_and_hold_rows() -> List(Row) {
       ..live_lock(
         "a recorded pid a later process reuses",
         record("client", "", alive, "Mon Jan 1 00:00:00 2001"),
-        False,
+        AnyAge,
         "gone",
       ),
       present: [#("live_lock", "gone"), #("live_lock_kind", "client")],
@@ -434,7 +445,7 @@ fn locks_and_hold_rows() -> List(Row) {
       ..live_lock(
         "a live lock with no owner record under a minute",
         None,
-        False,
+        UnderAMinute,
         "ownerless",
       ),
       absent: ["live_lock_pid", "live_lock_kind"],
@@ -443,7 +454,7 @@ fn locks_and_hold_rows() -> List(Row) {
       ..live_lock(
         "a live lock with no owner record over a minute",
         None,
-        True,
+        OverAMinute,
         "gone",
       ),
       absent: ["live_lock_pid", "live_lock_kind"],
@@ -452,7 +463,7 @@ fn locks_and_hold_rows() -> List(Row) {
       ..live_lock(
         "an owner record with no pid line",
         Some("token=planted\nkind=run\nfolder=/sittings/run-3\n"),
-        False,
+        UnderAMinute,
         "ownerless",
       ),
       present: [
@@ -622,38 +633,45 @@ pub fn a_hung_read_ends_within_its_bound_and_leaves_no_process_test() -> Nil {
     })
   })
 
-  // The script itself is killed while `podman info` blocks: the call is still
-  // ended at its bound, by the shell that waits for it. The test's shell looks
-  // for the call's end a counted number of times (100 looks, far more than the
-  // 0.2 s bound needs) and, if the call is still there, ends it itself and
-  // prints `left`, so a call that nothing ends fails here instead of waiting out
-  // the fake's own sleep.
+  // The script itself is killed while `podman info` blocks and its first look is
+  // held: the shell that waits for the call (its pid is in look.waiter) goes on
+  // when the looks are released, and ends the call at its bound. The test's shell
+  // waits for the one event that settles it, the call gone or that shell gone,
+  // and prints `left` when the call outlived the shell.
   use scene <- support.with_scene
   healthy(scene)
   support.plant_block(scene:, key: support.info)
-  let recorded = scene.fakes <> "/answers/info.pid"
+  support.hold_looks(scene:)
+  let call = support.blocked_pid_path(scene:, key: support.info)
+  let waiter = support.look_waiter_path(scene)
   let ran =
     support.run_shell(
       scene:,
       commands: "/bin/bash dev/play_service/state.sh >/dev/null 2>&1 & reader=$!; "
-        <> "until [ -s "
-        <> recorded
-        <> " ]; do sleep 0.05; done; "
+        <> "until { [ -s "
+        <> call
+        <> " ] && [ -s "
+        <> waiter
+        <> " ]; } || ! kill -0 $reader 2>/dev/null; do sleep 0.05; done; "
         <> "kill -9 $reader; "
-        <> "looks=0; "
-        <> "while kill -0 $(cat "
-        <> recorded
-        <> ") 2>/dev/null && [ $looks -lt 100 ]; do sleep 0.05; looks=$((looks + 1)); done; "
+        <> "rm "
+        <> support.look_hold_path(scene:)
+        <> "; "
+        <> "until ! kill -0 $(cat "
+        <> call
+        <> ") 2>/dev/null || ! kill -0 $(cat "
+        <> waiter
+        <> ") 2>/dev/null; do sleep 0.05; done; "
         <> "if kill -0 $(cat "
-        <> recorded
+        <> call
         <> ") 2>/dev/null; then kill -9 $(cat "
-        <> recorded
+        <> call
         <> "); echo left; fi",
       extra: [#("GENESIS_PLAY_COMMAND_BOUND_TENTHS", "2")],
     )
   assert ran.status == 0 as { "the test's shell ended: " <> ran.output }
   assert !string.contains(ran.output, "left")
-    as "the call of a killed script was still there after 100 looks"
+    as "the call of a killed script was still there when its waiter was gone"
   let pids = support.blocked_pids(scene:, key: support.info)
   assert pids != [] as "the blocked call started"
   list.each(pids, fn(pid) {
@@ -699,15 +717,18 @@ pub fn a_damaged_update_lock_owner_file_prints_one_line_test() -> Nil {
   machine_down(scene)
   let pid = int.to_string(support.os_pid())
   support.plant_update_lock(scene:, owner: Some(support.os_pid()))
+  // The second line is text no report line can hold by chance (a number could
+  // match a pid or an age the report prints: 1 run in 40 failed that way).
+  let second_line = "second-line-of-a-damaged-owner-file"
   let assert Ok(Nil) =
     simplifile.write(
       support.update_lock_path(scene) <> "/owner",
-      pid <> "\n4242\n",
+      pid <> "\n" <> second_line <> "\n",
     )
   let ran = run_state(scene, [])
   assert dict.get(support.report(ran), "update_lock_pid") == Ok(pid)
     as "the first line of the owner file"
-  assert !string.contains(ran.output, "4242")
+  assert !string.contains(ran.output, second_line)
     as { "the second line of the owner file is not printed: " <> ran.output }
 }
 
