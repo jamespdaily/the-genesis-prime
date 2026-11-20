@@ -1,12 +1,13 @@
-//// The lines of one followed log, made from its bytes: where a line ends,
-//// what it shows, what level its words give it, and a ring of the newest
-//// ones.
+//// The entries of one followed log, made from its bytes: where a line ends,
+//// what it shows, what level its words give it, how an OTP report is grouped,
+//// and a ring of the newest entries.
 ////
 //// ```text
-//// bytes of a read ──feed──► carried partial line ──newline──► clean text ──► Line (with its level)
-////                              │ over the cap                                     │
-////                              └─ cut once, rest dropped to the newline           ▼
-//// mark (replaced, cut shorter) ───────────────────────────────────────► ring of the newest entries
+//// bytes of a read ──feed──► carried partial line ──newline──► clean text ──┬─► header: a new report entry
+////                              │ over the cap                              ├─► in a report: the entry grows
+////                              └─ cut once, rest dropped to the newline    └─► plain: a line entry
+////                                                                              │ the password mask on each text
+//// mark (replaced, cut shorter, container replaced) ──────────────────────────► ring of the newest entries
 //// ```
 ////
 //// - A line ends at a newline; a `\r` before it is not text. A line that has
@@ -21,17 +22,36 @@
 //// - The ring keeps 500 entries, a guess (a log of this machine holds 2,453
 ////   lines in 15 days). Each entry has a sequence number, counted from the
 ////   first line, so the view can tell one new line from the ring.
-//// - A mark (the log was replaced, the log was cut shorter) is an entry that
-////   takes a slot and is not a line, and it ends the partial line before it.
-//// - The level words are a guess from the line shapes of the two real logs;
-////   the scripts write no level. A shape no word names is `LevelInfo`.
+//// - A mark (the log was replaced, the log was cut shorter, the container was
+////   replaced) is an entry that takes a slot and is not a line, and it ends the
+////   partial line and the report before it.
+//// - An OTP report is one entry, from its header line to the next header or to
+////   a blank line, which ends it and is not shown (`otp_report`). The entry
+////   takes its slot when its header is read and grows in place, under the same
+////   sequence number, as its lines are read. Its level is the level OTP logged it
+////   at. A report is cut at `otp_report.report_cap_bytes`. Every source is read
+////   so; a header only starts a line, so a line the updater copied from a
+////   container (its newlines written as `|`) is one plain line.
+//// - The database's password is hidden in each entry's text each time the text
+////   changes, so a value that arrives after its key is never shown (`redaction`).
+////   A plain line that ends at the key hides the start of the next plain line, for
+////   a read that began inside a report.
+//// - The level words of a plain line are a guess from the line shapes of the real
+////   logs; the scripts write no level, and the server and Postgres write theirs
+////   in words. A shape no word names is `LevelInfo`. Gleam's panics and
+////   Postgres's multi-line entries (a statement after its error) are not grouped:
+////   each of their lines is one entry.
 ////
 //// The chunks a read was cut into never change the entries; the module's
-//// property test holds that.
+//// property tests hold that.
 
+import genesis_prime/dashboard/otp_report.{type Report}
+import genesis_prime/dashboard/redaction
 import gleam/bit_array
 import gleam/bool
 import gleam/list
+import gleam/option.{type Option, None, Some}
+import gleam/result
 import gleam/string
 
 /// How long a line may be, in bytes, before it is shown cut: a guess, seven
@@ -42,11 +62,14 @@ pub const line_cap_bytes = 4096
 pub const ring_lines = 500
 
 /// The log a line belongs to: the file the updater's script writes
-/// (`lib.sh`, `log_file`) or the file launchd writes the script's output and
-/// the tools' own output to (`install.sh`, `StandardOutPath`).
+/// (`lib.sh`, `log_file`), the file launchd writes the script's output and
+/// the tools' own output to (`install.sh`, `StandardOutPath`), or the output
+/// of the play server's container or of its database's container.
 pub type Source {
   UpdaterLog
   LaunchdLog
+  ServerLog
+  DatabaseLog
 }
 
 /// How a line looks, by its words: the palette's roles for state.
@@ -62,9 +85,11 @@ pub type Level {
 pub type Mark {
   LogReplaced
   LogCutShorter
+  ContainerReplaced
 }
 
-/// What the ring holds: a line, with whether it was shown cut, or a mark.
+/// What the ring holds: a line or a whole report (its lines apart by newlines)
+/// with whether it was shown cut, or a mark.
 pub type Entry {
   Line(sequence: Int, text: String, level: Level, cut: Bool)
   Marker(sequence: Int, mark: Mark)
@@ -80,11 +105,15 @@ type Partial {
   Skipping
 }
 
-/// The lines of one log: the partial line and the ring.
+/// The entries of one log: the partial line, the report being read (whose
+/// entry is the newest of the ring), whether the last plain line ended at a
+/// password key, and the ring.
 pub opaque type Lines {
   Lines(
     source: Source,
     partial: Partial,
+    open: Option(Report),
+    after_key: Bool,
     ring: List(Entry),
     kept: Int,
     next_sequence: Int,
@@ -93,14 +122,24 @@ pub opaque type Lines {
 
 /// No lines yet, for a log of this source.
 pub fn new(source: Source) -> Lines {
-  Lines(source:, partial: Carrying(<<>>), ring: [], kept: 0, next_sequence: 0)
+  Lines(
+    source:,
+    partial: Carrying(<<>>),
+    open: None,
+    after_key: False,
+    ring: [],
+    kept: 0,
+    next_sequence: 0,
+  )
 }
 
-/// The name of the file a source is, inside the dashboard's home.
-pub fn file_name(source: Source) -> String {
+/// The name of the file a source is, inside the dashboard's home; a container's
+/// log is no file.
+pub fn file_name(source: Source) -> Result(String, Nil) {
   case source {
-    UpdaterLog -> "play-service.log"
-    LaunchdLog -> "play-service.launchd.log"
+    UpdaterLog -> Ok("play-service.log")
+    LaunchdLog -> Ok("play-service.launchd.log")
+    ServerLog | DatabaseLog -> Error(Nil)
   }
 }
 
@@ -201,10 +240,89 @@ fn line_from(lines lines: Lines, raw raw: BitArray, cut cut: Bool) -> Lines {
     size if size > line_cap_bytes -> #(cut_to_cap(text), True)
     _ -> #(text, cut)
   }
+  take_line(lines:, text:, cut:)
+}
+
+/// A line of clean text: it starts a report, belongs to the report being read,
+/// ends that report, or is a plain line.
+fn take_line(lines lines: Lines, text text: String, cut cut: Bool) -> Lines {
+  case otp_report.header(text), lines.open {
+    Ok(title), _ -> start_report(lines:, title:, header: text)
+    Error(Nil), Some(report) ->
+      case text {
+        "" -> Lines(..lines, open: None)
+        _ -> grow_report(lines:, report:, text:, cut:)
+      }
+    Error(Nil), None -> plain_line(lines:, text:, cut:)
+  }
+}
+
+fn plain_line(lines lines: Lines, text text: String, cut cut: Bool) -> Lines {
+  let masked = case lines.after_key {
+    True -> redaction.hide_a_value_after_a_key(text)
+    False -> redaction.hide_passwords(text)
+  }
   let source = lines.source
-  push(lines, fn(sequence) {
-    Line(sequence:, text:, level: level(source:, text:), cut:)
-  })
+  let pushed =
+    push(lines, fn(sequence) {
+      Line(sequence:, text: masked, level: level(source:, text:), cut:)
+    })
+  Lines(..pushed, after_key: redaction.ends_at_a_password_key(text))
+}
+
+fn start_report(
+  lines lines: Lines,
+  title title: otp_report.Title,
+  header header: String,
+) -> Lines {
+  let report = otp_report.start(header:)
+  let #(text, cut) = shown_report(report)
+  let level = report_level(title)
+  let pushed =
+    push(lines, fn(sequence) { Line(sequence:, text:, level:, cut:) })
+  Lines(..pushed, open: Some(report))
+}
+
+fn grow_report(
+  lines lines: Lines,
+  report report: Report,
+  text text: String,
+  cut cut: Bool,
+) -> Lines {
+  let report = otp_report.add_line(report:, line: text, line_was_cut: cut)
+  let #(text, cut) = shown_report(report)
+  let ring = case lines.ring {
+    [Line(sequence:, level:, ..), ..older] -> [
+      Line(sequence:, text:, level:, cut:),
+      ..older
+    ]
+    [Marker(..), ..] | [] -> lines.ring
+  }
+  Lines(..lines, open: Some(report), ring:)
+}
+
+/// The text a report entry shows: the report with the password hidden, and cut
+/// to the report cap again when the mask made it longer.
+fn shown_report(report: Report) -> #(String, Bool) {
+  let masked = redaction.hide_passwords(otp_report.text(report))
+  case string.byte_size(masked) > otp_report.report_cap_bytes {
+    True -> #(
+      otp_report.cut_to_bytes(
+        text: masked,
+        cap_bytes: otp_report.report_cap_bytes,
+      ),
+      True,
+    )
+    False -> #(masked, otp_report.was_cut(report))
+  }
+}
+
+fn report_level(title: otp_report.Title) -> Level {
+  case otp_report.severity(title) {
+    otp_report.SeverityBad -> LevelBad
+    otp_report.SeverityWarn -> LevelWarn
+    otp_report.SeverityInfo -> LevelInfo
+  }
 }
 
 fn without_carriage_return(raw: BitArray) -> BitArray {
@@ -256,12 +374,7 @@ fn lead_of_last_character(
 
 /// The text cut to the cap, back to a whole character.
 fn cut_to_cap(text: String) -> String {
-  let assert Ok(head) =
-    bit_array.slice(bit_array.from_string(text), 0, line_cap_bytes)
-    as "the text is longer than the cap"
-  let assert Ok(cut) = bit_array.to_string(without_incomplete_character(head))
-    as "a text cut at a character is text"
-  cut
+  otp_report.cut_to_bytes(text:, cap_bytes: line_cap_bytes)
 }
 
 /// How `clean` is reading: ordinary text, just after an escape, or inside an
@@ -329,8 +442,9 @@ fn plain(kept: List(Int), code: Int) -> Cleaning {
   }
 }
 
-/// Adds an entry to the ring, numbered after the entries before it. The ring
-/// is trimmed to the cap when it holds twice that, so a push costs one step.
+/// Adds an entry to the ring, numbered after the entries before it; it ends
+/// the report being read and the key a plain line ended at. The ring is trimmed
+/// to the cap when it holds twice that, so a push costs one step.
 fn push(lines: Lines, entry: fn(Int) -> Entry) -> Lines {
   let ring = [entry(lines.next_sequence), ..lines.ring]
   let kept = lines.kept + 1
@@ -338,7 +452,14 @@ fn push(lines: Lines, entry: fn(Int) -> Entry) -> Lines {
     True -> #(list.take(ring, ring_lines), ring_lines)
     False -> #(ring, kept)
   }
-  Lines(..lines, ring:, kept:, next_sequence: lines.next_sequence + 1)
+  Lines(
+    ..lines,
+    open: None,
+    after_key: False,
+    ring:,
+    kept:,
+    next_sequence: lines.next_sequence + 1,
+  )
 }
 
 /// The level a line's words give it. The rules apply to the message the
@@ -346,10 +467,55 @@ fn push(lines: Lines, entry: fn(Int) -> Entry) -> Lines {
 /// from a container): a container's own words never change what the updater
 /// said. Bad words win over warn words, and warn over ok.
 pub fn level(source source: Source, text text: String) -> Level {
-  let message = message_of(text)
-  case words_level(message), source {
-    LevelInfo, LaunchdLog -> launchd_level(text)
-    found, _ -> found
+  case source {
+    UpdaterLog -> words_level(message_of(text))
+    LaunchdLog ->
+      case words_level(message_of(text)) {
+        LevelInfo -> launchd_level(text)
+        found -> found
+      }
+    ServerLog -> server_level(text)
+    DatabaseLog -> database_level(text)
+  }
+}
+
+/// A guess from what the server prints when it cannot run: Gleam's panic line,
+/// the runtime's boot failure and the line before a crash dump. Every other line
+/// of the server is info.
+fn server_level(text: String) -> Level {
+  use <- bool.guard(
+    when: string.starts_with(text, "runtime error: panic")
+      || string.starts_with(text, "Runtime terminating during boot")
+      || string.starts_with(text, "Crash dump is being written to:"),
+    return: LevelBad,
+  )
+  LevelInfo
+}
+
+/// The level word Postgres prints after its process number (`2026-11-09
+/// 00:56:22.092 UTC [69] LOG:  ...`); a line of another shape, such as the
+/// image's own entrypoint lines, is info.
+fn database_level(text: String) -> Level {
+  case postgres_word(text) {
+    Ok("ERROR") | Ok("FATAL") | Ok("PANIC") -> LevelBad
+    Ok("WARNING") -> LevelWarn
+    Ok(_) | Error(Nil) -> LevelInfo
+  }
+}
+
+fn postgres_word(text: String) -> Result(String, Nil) {
+  use #(stamp, rest) <- result.try(string.split_once(text, " ["))
+  use #(process, after) <- result.try(string.split_once(rest, "] "))
+  use #(word, _) <- result.try(string.split_once(after, ":"))
+  let starts_with_a_digit = case string.first(stamp) {
+    Ok(first) -> is_a_digit(first)
+    Error(Nil) -> False
+  }
+  let is_a_process_number =
+    process != "" && list.all(string.to_graphemes(process), is_a_digit)
+  case starts_with_a_digit && is_a_process_number {
+    True -> Ok(word)
+    False -> Error(Nil)
   }
 }
 

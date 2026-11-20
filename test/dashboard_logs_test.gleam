@@ -255,3 +255,74 @@ pub fn the_logs_page_is_in_the_page_list_and_its_runtime_route_is_its_own_test()
     })
   })
 }
+
+pub fn an_entry_of_several_lines_is_one_item_with_one_role_and_its_lines_in_order_test() -> Nil {
+  use <- owned_test.run(5000)
+  let report =
+    "=CRASH REPORT==== 20-Nov-2026::14:10:51.212935 ===\n  crasher:\n    pid: <0.84.0>\n  neighbours:"
+  let page =
+    Model(
+      updater: Some(
+        updater([
+          Line(0, "before", log_lines.LevelInfo, False),
+          Line(1, report, log_lines.LevelBad, False),
+          Marker(2, log_lines.ContainerReplaced),
+          Line(
+            3,
+            "=ERROR REPORT====\n<script>alert(1)</script>",
+            log_lines.LevelBad,
+            False,
+          ),
+          Line(
+            4,
+            "=ERROR REPORT====\nthe rest was dropped",
+            log_lines.LevelBad,
+            True,
+          ),
+          Line(5, "after", log_lines.LevelInfo, False),
+        ]),
+      ),
+      launchd: None,
+    )
+  let assert [part, _] = parts(page)
+
+  // The report is one item, in the role of its level, with its lines in order.
+  let item = item_holding(part, "=CRASH REPORT")
+  assert count(part, "<li ") == 6
+    as "one item for each entry, a report included"
+  assert string.contains(item, "role-bad")
+  assert string.contains(item, "class=\"line ")
+  let in_order = [
+    "=CRASH REPORT", "crasher:", "pid: &lt;0.84.0&gt;", "neighbours:",
+  ]
+  let read_to =
+    list.fold(in_order, 0, fn(from, word) {
+      let after = string.drop_start(item, from)
+      let assert Ok(#(before, _)) = string.split_once(after, word)
+        as { word <> " is in the report, after the words before it" }
+      from + string.length(before) + string.length(word)
+    })
+  assert read_to <= string.length(item)
+
+  // A mark of a replaced container is a mark, not a line.
+  let replaced = item_holding(part, "the container was replaced")
+  assert string.contains(replaced, "mark")
+  assert !string.contains(replaced, "class=\"line ")
+
+  // Markup inside a report is text.
+  assert !string.contains(part, "<script>")
+  assert string.contains(
+    item_holding(part, "&lt;script&gt;alert(1)&lt;/script&gt;"),
+    "role-bad",
+  )
+
+  // A report that was cut says so, in words that name the report's limit; a
+  // report that was not cut says nothing.
+  assert string.contains(
+    item_holding(part, "the rest was dropped"),
+    "report cut",
+  )
+  assert !string.contains(item, "cut")
+  assert !string.contains(item_holding(part, "&lt;script"), "cut")
+  assert !string.contains(item_holding(part, "after"), "cut")
+}

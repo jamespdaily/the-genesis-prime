@@ -28,11 +28,13 @@
 
 import genesis_prime/dashboard/follow.{type Followed}
 import genesis_prime/dashboard/log_lines.{type Entry, type Level, type Source}
+import genesis_prime/dashboard/otp_report
 import genesis_prime/dashboard/page.{type Page, LogsKey, Page}
 import gleam/erlang/process.{type Subject}
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/string
 import lustre
 import lustre/attribute
 import lustre/effect.{type Effect}
@@ -83,6 +85,8 @@ fn update(model: Model, message: Message) -> #(Model, Effect(Message)) {
   let model = case followed.source {
     log_lines.UpdaterLog -> Model(..model, updater: Some(followed))
     log_lines.LaunchdLog -> Model(..model, launchd: Some(followed))
+    // The page has no view of a container's log, and nothing sends one.
+    log_lines.ServerLog | log_lines.DatabaseLog -> model
   }
   #(model, effect.none())
 }
@@ -102,6 +106,8 @@ fn title(source: Source) -> String {
   case source {
     log_lines.UpdaterLog -> "Updater log"
     log_lines.LaunchdLog -> "launchd log"
+    log_lines.ServerLog -> "Server log"
+    log_lines.DatabaseLog -> "Database log"
   }
 }
 
@@ -177,13 +183,7 @@ fn entry_view(entry: Entry) -> Element(Message) {
         case cut {
           True -> [
             html.text(text),
-            html.span([attribute.class("cut")], [
-              html.text(
-                "line cut at "
-                <> int.to_string(log_lines.line_cap_bytes)
-                <> " bytes",
-              ),
-            ]),
+            html.span([attribute.class("cut")], [html.text(cut_words(text))]),
           ]
           False -> [html.text(text)]
         },
@@ -193,8 +193,24 @@ fn entry_view(entry: Entry) -> Element(Message) {
         html.text(case mark {
           log_lines.LogReplaced -> "the log was replaced"
           log_lines.LogCutShorter -> "the log was cut shorter"
+          log_lines.ContainerReplaced -> "the container was replaced"
         }),
       ])
+  }
+}
+
+/// What a cut entry says: a plain line holds no newline, so a cut entry that
+/// holds one is a report, cut because a line of it or the report was too long.
+fn cut_words(text: String) -> String {
+  case string.contains(text, "\n") {
+    True ->
+      "report cut (a line at "
+      <> int.to_string(log_lines.line_cap_bytes)
+      <> " bytes, the report at "
+      <> int.to_string(otp_report.report_cap_bytes)
+      <> " bytes)"
+    False ->
+      "line cut at " <> int.to_string(log_lines.line_cap_bytes) <> " bytes"
   }
 }
 

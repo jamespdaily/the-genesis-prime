@@ -5,6 +5,7 @@
 //// whatever its bytes), and the invariant that how a read was split into
 //// chunks never changes the lines.
 
+import dashboard_otp_log_support as support
 import genesis_prime/dashboard/log_lines.{
   type Entry, type Level, type Lines, LaunchdLog, LevelBad, LevelInfo, LevelOk,
   LevelWarn, Line, LogCutShorter, LogReplaced, Marker, UpdaterLog,
@@ -18,14 +19,6 @@ import qcheck
 import simplifile
 
 const cap = 4096
-
-/// The integers from `first` to `last`, both included.
-fn numbers(first: Int, last: Int) -> List(Int) {
-  int.range(from: first, to: last + 1, with: [], run: fn(all, number) {
-    [number, ..all]
-  })
-  |> list.reverse
-}
 
 fn bytes(text: String) -> BitArray {
   bit_array.from_string(text)
@@ -189,7 +182,7 @@ pub fn the_ring_keeps_the_newest_lines_in_order_and_counts_what_it_dropped_test(
   use <- owned_test.run(5000)
   assert log_lines.ring_lines == 500
   let numbered = fn(count: Int) -> BitArray {
-    numbers(0, count - 1)
+    support.numbers(first: 0, last: count - 1)
     |> list.map(fn(number) { "line " <> int.to_string(number) <> "\n" })
     |> string.concat
     |> bytes
@@ -204,16 +197,16 @@ pub fn the_ring_keeps_the_newest_lines_in_order_and_counts_what_it_dropped_test(
   assert sequences(few) == [0, 1, 2]
   let exact = fed([numbered(500)])
   assert list.length(log_lines.entries(exact)) == 500
-  assert sequences(exact) == numbers(0, 499)
+  assert sequences(exact) == support.numbers(first: 0, last: 499)
 
   // The cap plus 10,000 in one call keeps the last cap lines, in order, and
   // the first of them is numbered after the 10,000 that were dropped.
   let many = fed([numbered(10_500)])
   assert texts(many)
-    == list.map(numbers(10_000, 10_499), fn(number) {
+    == list.map(support.numbers(first: 10_000, last: 10_499), fn(number) {
       "line " <> int.to_string(number)
     })
-  assert sequences(many) == numbers(10_000, 10_499)
+  assert sequences(many) == support.numbers(first: 10_000, last: 10_499)
 
   // A mark takes one slot and is not a line.
   let marked = log_lines.mark(fed([numbered(499)]), LogReplaced)
@@ -395,7 +388,7 @@ pub fn the_followed_files_are_the_files_the_scripts_write_test() -> Nil {
 
   // `log_file=$home/NAME` in lib.sh.
   let assert Ok(log_name) = after_prefix(library, "log_file=$home/")
-  assert log_name == log_lines.file_name(UpdaterLog)
+  assert Ok(log_name) == log_lines.file_name(UpdaterLog)
 
   // `<key>StandardOutPath</key><string>$home/NAME</string>` in install.sh,
   // and the same name for standard error.
@@ -403,7 +396,7 @@ pub fn the_followed_files_are_the_files_the_scripts_write_test() -> Nil {
     after_prefix(installer, "<key>StandardOutPath</key><string>$home/")
   let assert Ok(error_name) =
     after_prefix(installer, "<key>StandardErrorPath</key><string>$home/")
-  assert out_name == log_lines.file_name(LaunchdLog)
+  assert Ok(out_name) == log_lines.file_name(LaunchdLog)
   assert error_name == out_name as "launchd's two keys name one file"
 }
 
@@ -434,22 +427,6 @@ fn alphabet(index: Int) -> Int {
   byte
 }
 
-fn split_at(bytes: BitArray, points: List(Int)) -> List(BitArray) {
-  let size = bit_array.byte_size(bytes)
-  let sorted =
-    list.map(points, fn(point) { point % int.max(size + 1, 1) })
-    |> list.sort(int.compare)
-    |> list.unique
-  let #(chunks, start) =
-    list.fold(sorted, #([], 0), fn(state, point) {
-      let #(chunks, start) = state
-      let assert Ok(chunk) = bit_array.slice(bytes, start, point - start)
-      #([chunk, ..chunks], point)
-    })
-  let assert Ok(rest) = bit_array.slice(bytes, start, size - start)
-  list.reverse([rest, ..chunks])
-}
-
 pub fn the_lines_do_not_depend_on_how_the_bytes_were_split_test() -> Nil {
   use <- owned_test.run(60_000)
   // Runs of one byte, up to past the cap, so the long-line cut is reached.
@@ -473,7 +450,7 @@ pub fn the_lines_do_not_depend_on_how_the_bytes_were_split_test() -> Nil {
         })
         |> bit_array.concat
       let together = fed([whole])
-      let split = fed(split_at(whole, points))
+      let split = fed(support.split_at(bytes: whole, points:))
       assert log_lines.entries(split) == log_lines.entries(together)
         as "the same entries however the bytes were cut"
       list.each(log_lines.entries(split), fn(entry: Entry) {
