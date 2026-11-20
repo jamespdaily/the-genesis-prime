@@ -41,11 +41,6 @@
 //// - **A special is cast whatever its `castTime`**: a Multiphase cast, a channel and a cast
 ////   with no phase row have a cast time of 0 and the gos of their plan, the first possibly at 0
 ////   (`spawn` `attack_of`); the client draws the cast bar by the spell's own rows.
-//// - **Gaps for the coverage measure**: a special with no cast bar and several gos is broken by
-////   a state as one with a bar is, a server choice; a special whose cast lasts as long as its
-////   cooldown is cast again as soon as its hold ends, so a creature may never auto-attack;
-////   a ChanneledField cast with a cast time of 0 is refused for its go count, which is not settled; an auto-attack
-////   named without the `[AUTO-ATTACK]` marker is read as a special when it loads.
 //// - **The formula is read**: a special whose damage formula the creature rule does not
 ////   read for the creature's difficulty is refused (`creature_attack.loadable`), which the
 ////   spawn load would refuse later.
@@ -54,6 +49,7 @@
 
 import genesis_prime/game/spell_plan
 import genesis_prime/game/strike_tell
+import genesis_prime/gap
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id, Spell4Id}
 import genesis_prime/table/loader/store as table_store
@@ -203,4 +199,26 @@ pub fn refs_of(
   |> list.map(fn(row) {
     Ref(spell4_id: row.spell4_id, cooldown_ms: row.cooldown_ms)
   })
+}
+
+/// What the load of the specials leaves undone, for the coverage measure.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Creature specials",
+      missing: "a multi-hit special with no cast bar is broken by a stun or a knockdown as one with a bar is: the client has no rule for it, so it is a server choice",
+    ),
+    gap.Entry(
+      area: "Creature specials",
+      missing: "a special whose cast lasts as long as its cooldown is cast again as soon as its hold ends, so such a creature may never use its auto-attack",
+    ),
+    gap.Entry(
+      area: "Creature specials",
+      missing: "a ChanneledField special with a cast time of 0 is refused, as the number of gos the client expects of it is not settled",
+    ),
+    gap.Entry(
+      area: "Creature specials",
+      missing: "an auto-attack the importer lists as a special because its description lacks the auto-attack marker is read as a special when it loads",
+    ),
+  ]
 }
