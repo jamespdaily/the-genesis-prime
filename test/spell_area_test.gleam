@@ -19,22 +19,26 @@ import area_tables
 import client_tables
 import fixture_tables
 import genesis_prime/game/area.{
-  Box, Circle, Cone, InsideRow, InsideShapes, Placement, Rectangle, Row,
+  type Placement, Box, Circle, Cone, InsideRow, InsideShapes, Placement,
+  Rectangle, Row,
 }
 import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
 import genesis_prime/game/spell_area.{
   AimNotRead, FormulaNotRead, MultiplierNotFinite, Once, Periodic, PlacedApart,
-  SelectionNotClosest, ShapeNotBuilt, TelegraphNotOnCaster, TickingNoTick,
-  TickingUntilRemoved, ValidTargetsNotAlive,
+  SelectionNeedsHealth, SelectionNotClosest, ShapeNotBuilt, TelegraphNotOnCaster,
+  TickingNoTick, TickingUntilRemoved, ValidTargetsNotAlive,
 }
 import genesis_prime/game/spell_plan
 import genesis_prime/game/spend.{EqualTo}
 import genesis_prime/game/ticking
 import genesis_prime/message/crowd_control_state
-import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
+import genesis_prime/table/id.{
+  Spell4BaseId, Spell4EffectsId, Spell4Id, TelegraphDamageId,
+}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4_effects
+import genesis_prime/table/telegraph_damage
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -79,7 +83,13 @@ pub fn kick_has_its_area_row_its_cone_and_its_damage_aimed_at_the_area_test() ->
   use <- owned_test.run(60_000)
   let kicked = client_kick()
   assert kicked.row
-    == Some(Row(min_range: 0.0, max_range: 8.0, degrees: 180.0, target_count: 5))
+    == Some(Row(
+      min_range: 0.0,
+      max_range: 8.0,
+      degrees: 180.0,
+      target_count: 5,
+      order: area.Nearest,
+    ))
     as "Spell4.58591.area: row 640"
   assert kicked.shapes
     == [
@@ -225,7 +235,13 @@ pub fn a_client_spell_with_no_telegraph_row_is_read_by_its_area_row_test() -> Ni
   use <- owned_test.run(60_000)
   let found = fixture_area(spell4_id: 42_297)
   assert found.row
-    == Some(Row(min_range: 0.0, max_range: 4.0, degrees: 360.0, target_count: 4))
+    == Some(Row(
+      min_range: 0.0,
+      max_range: 4.0,
+      degrees: 360.0,
+      target_count: 4,
+      order: area.Nearest,
+    ))
     as "Spell4.42297.area: Spell4AoeTargetConstraints 704 (angle 360, 4 units, 0 to 4 m)"
   assert found.shapes == []
     as "Spell4Telegraph holds no row of spell 42297, so it has no hit shape"
@@ -262,6 +278,7 @@ pub fn a_telegraph_link_to_a_row_the_table_lacks_is_left_out_as_the_client_leave
           tables:,
           links: spell_area.telegraph_links_by_spell(tables:),
           id: 29_874,
+          reading: spell_area.PlayerReading,
         )
         == Ok([
           Placement(
@@ -309,6 +326,7 @@ pub fn a_client_spell_with_a_never_drawn_row_strikes_through_it_test() -> Nil {
       tables:,
       links: spell_area.telegraph_links_by_spell(tables:),
       id: 36_373,
+      reading: spell_area.PlayerReading,
     )
     == Ok([
       Placement(
@@ -748,7 +766,13 @@ pub fn the_clients_tables_build_every_areas_kick_has_5_units_8_m_180_degrees_and
     spell_area.of_spell(areas:, spell4_id: Spell4Id(58_591))
     as "Kick is in the areas"
   assert kicked.row
-    == Some(Row(min_range: 0.0, max_range: 8.0, degrees: 180.0, target_count: 5))
+    == Some(Row(
+      min_range: 0.0,
+      max_range: 8.0,
+      degrees: 180.0,
+      target_count: 5,
+      order: area.Nearest,
+    ))
     as "Spell4.58591.area: row 640"
   let assert [Placement(shape: Cone(inner:, outer:, degrees:), ..)] =
     kicked.shapes
@@ -1321,4 +1345,158 @@ pub fn a_despawn_aimed_at_the_area_makes_the_phase_select_the_area_test() -> Nil
   assert phase.selects_area
     as "targetFlags 4 aims at the area, so the phase selects it"
   assert !phase.strikes_primary_target as "and not the primary target alone"
+}
+
+/// Spell4 55317 (Rootbrute Grimspore's Earthen Roar) with its hit row 7880, a cone on the
+/// caster (flags 0x105000, targetTypeFlags 1), changed to `edits`: what the creature reading
+/// makes of its shapes, or the refusal.
+fn roar_shapes_with(
+  edits edits: List(#(String, planted_table.Cell)),
+  reading reading: spell_area.Reading,
+) -> Result(List(Placement), spell_area.AreaError) {
+  use tables <- fixture_tables.changed(
+    table: "TelegraphDamage",
+    id: 7880,
+    with: edits,
+  )
+  spell_area.hit_shapes_of(
+    tables:,
+    links: spell_area.telegraph_links_by_spell(tables:),
+    id: 55_317,
+    reading:,
+  )
+}
+
+/// The edits that give row 7880 the shape, params, turn and offset of the client's
+/// TelegraphDamage row `row_id`, and its shape number.
+fn edits_of_row(
+  row_id row_id: Int,
+) -> #(List(#(String, planted_table.Cell)), Int) {
+  let assert Ok(row) =
+    telegraph_damage.get(
+      tables: fixture_tables.shared(),
+      id: TelegraphDamageId(row_id),
+    )
+    as "the row is a root of the fixture"
+  #(
+    [
+      #("damageShapeEnum", Integer(row.damage_shape_enum)),
+      #("param00", planted_table.Float(row.param00)),
+      #("param01", planted_table.Float(row.param01)),
+      #("param02", planted_table.Float(row.param02)),
+      #("zPositionOffset", planted_table.Float(row.z_position_offset)),
+      #("rotationDegrees", planted_table.Float(row.rotation_degrees)),
+    ],
+    row.damage_shape_enum,
+  )
+}
+
+pub fn the_creature_reading_builds_shapes_1_3_5_and_6_from_the_clients_rows_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Each case is a real TelegraphDamage row's shape, params, turn and offset (read from the
+  // fixture) put on row 7880, which keeps its flags and its targetTypeFlags 1 (the real row
+  // 2920 has targetTypeFlags 2, a unit but the caster, which a creature's hit is not placed
+  // on before it can be). The expected placements are `0x14054d170.shapes_1_3_5_6`: shape 1 a
+  // ring, so a cone of 360 degrees; 3 two boxes, the second with width and length swapped;
+  // 5 the arc of 360 less param02 with the facing turned by 180 degrees; 6 the unhalved box,
+  // 2 p0 by 2 p2 where shape 2 is p0 by p2.
+  let on_caster = fn(shape, turn_degrees, ahead) {
+    Placement(shape:, ahead:, aside: 0.0, turn_degrees:)
+  }
+  list.each(
+    [
+      #(3852, [
+        on_caster(Cone(inner: 3.0, outer: 5.0, degrees: 360.0), 0.0, 0.0),
+      ]),
+      #(3029, [
+        on_caster(Cone(inner: 0.0, outer: 7.0, degrees: 270.0), 330.0, 0.0),
+      ]),
+      #(6957, [
+        on_caster(Cone(inner: 4.0, outer: 13.0, degrees: 255.0), 360.0, 0.0),
+      ]),
+      #(2920, [
+        on_caster(Box(width: 2.5, length: 18.0), 0.0, 0.0),
+        on_caster(Box(width: 18.0, length: 2.5), 0.0, 0.0),
+      ]),
+      #(4664, [on_caster(Box(width: 2.0, length: 4.0), 0.0, 4.0)]),
+    ],
+    fn(case_) {
+      let #(row_id, wanted) = case_
+      let #(edits, shape) = edits_of_row(row_id:)
+      assert roar_shapes_with(edits:, reading: spell_area.CreatureReading)
+        == Ok(wanted)
+        as "the creature reading builds the shape the client draws for the row"
+      assert roar_shapes_with(edits:, reading: spell_area.PlayerReading)
+        == Error(ShapeNotBuilt(spell4_id: 55_317, telegraph_id: 7880, shape:))
+        as "a player's ability still refuses the shape (a level-1 tree holds none)"
+    },
+  )
+}
+
+pub fn the_creature_reading_takes_orders_2_and_3_and_refuses_4_and_5_by_name_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4 55317's area row is Spell4AoeTargetConstraints 116, which selects in order 1.
+  // Orders 4 and 5 (LowestAbsoluteHealth, MissingMostHealth) need a unit's health, which a
+  // creature's sighting of a fighter does not hold (`Spell4AoeTargetConstraints.targetSelection`).
+  let creature_order = fn(selection) {
+    use tables <- fixture_tables.changed(
+      table: "Spell4AoeTargetConstraints",
+      id: 116,
+      with: [#("targetSelection", Integer(selection))],
+    )
+    spell_area.area_of_spell(tables:, spell4_id: Spell4Id(55_317))
+    |> result.map(option.map(_, fn(found) { found.row.order }))
+  }
+  assert creature_order(1) == Ok(Some(area.Nearest))
+  assert creature_order(2) == Ok(Some(area.Furthest))
+  assert creature_order(3) == Ok(Some(area.Random))
+  assert creature_order(4)
+    == Error(SelectionNeedsHealth(spell4_id: 55_317, target_selection: 4))
+  assert creature_order(5)
+    == Error(SelectionNeedsHealth(spell4_id: 55_317, target_selection: 5))
+  assert creature_order(0)
+    == Error(SelectionNotClosest(spell4_id: 55_317, target_selection: 0))
+    as "an order the client's enum has no name for (0 is None) is refused"
+  list.each([2, 3, 4, 5], fn(selection) {
+    let assert Error(SelectionNotClosest(target_selection:, ..)) =
+      area_tables.built(
+        kick: area_tables.Kick(
+          ..area_tables.kick(),
+          target_selection: selection,
+        ),
+      )
+      as "a player's ability refuses every order but Closest"
+    assert target_selection == selection
+  })
+}
+
+pub fn a_shape_8_with_a_box_is_refused_by_name_for_a_creature_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // 0x14054d170 case 8 reads a box of param03 to param05 when its width (param03) or its length (param05)
+  // is above 0 (its height, param04, is never tested); the box geometry is not read, so such a row is refused,
+  // for a creature as for a player. No listed spell has one.
+  let shape_8 = [
+    #("damageShapeEnum", Integer(8)),
+    #("param00", planted_table.Float(0.0)),
+    #("param01", planted_table.Float(5.5)),
+    #("param02", planted_table.Float(40.0)),
+  ]
+  assert roar_shapes_with(edits: shape_8, reading: spell_area.CreatureReading)
+    == Ok([
+      Placement(
+        shape: Cone(inner: 0.0, outer: 5.5, degrees: 40.0),
+        ahead: 0.0,
+        aside: 0.0,
+        turn_degrees: 0.0,
+      ),
+    ])
+    as "a shape 8 with no box is the long cone"
+  list.each(["param03", "param05"], fn(column) {
+    assert roar_shapes_with(
+        edits: [#(column, planted_table.Float(2.0)), ..shape_8],
+        reading: spell_area.CreatureReading,
+      )
+      == Error(ShapeNotBuilt(spell4_id: 55_317, telegraph_id: 7880, shape: 8))
+      as "a box width or length refuses the row"
+  })
 }

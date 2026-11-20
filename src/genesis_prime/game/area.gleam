@@ -6,7 +6,8 @@
 //// ```
 //// candidates (alive foes the client shows)        centre: a unit's place and facing
 ////   keep those inside (the hit shapes capped by the area row's range, or the row alone)
-////   order by distance from the centre, the lower unit id first on a tie
+////   order them by the row's order: nearest or furthest from the centre first (the lower
+////   unit id first on a tie), or at random by a seed
 ////   take the row's target count
 //// ```
 ////
@@ -37,11 +38,14 @@
 ////   rectangle or box (the nearest point is the centre clamped to it, so a corner is
 ////   round) and a cone, an annular sector from its inner to its outer radius over its
 ////   angle, which has no point at its tip when its inner radius is above 0.
-//// - **Distance and order** are horizontal, from centre to centre; the vertical
-////   range is -1 for every row and the shapes lie on the ground
-////   (`Spell4AoeTargetConstraints.targetVerticalRange`). Closest is the one order
-////   the rows name (`Spell4AoeTargetConstraints.targetSelection`); what "closest"
-////   measures is the server's choice.
+//// - **Distance** is horizontal, from centre to centre; the vertical range is -1 for every
+////   row and the shapes lie on the ground (`Spell4AoeTargetConstraints.targetVerticalRange`);
+////   what "closest" measures is the server's choice.
+//// - **Order** is the area row's `targetSelection`, a name the client has and a rule it does
+////   not apply (`Spell4AoeTargetConstraints.targetSelection`): Nearest (Closest) takes the
+////   nearest first and Furthest the farthest first, each the lower unit id first on a tie;
+////   Random takes the units by a 32-bit mix of a seed and the unit id (`mix`), a guess: the
+////   client names Random and orders nothing. A player's strike is always Nearest.
 
 import genesis_prime/game/start_place.{type Place}
 import gleam/float
@@ -78,7 +82,8 @@ pub type Shape {
   Circle(radius: Float)
   /// Shape 2: a box centred on the placement.
   Box(width: Float, length: Float)
-  /// Shapes 4 and 8: from the inner to the outer radius, over `degrees` in all.
+  /// Shapes 1, 4, 5 and 8: from the inner to the outer radius, over `degrees` in all; a ring
+  /// is 360 degrees and a pie the arc of 360 less its missing slice (genesis_prime/game/spell_area).
   Cone(inner: Float, outer: Float, degrees: Float)
   /// Shape 7: from the placement, `length` ahead of it.
   Rectangle(width: Float, length: Float)
@@ -120,10 +125,27 @@ pub type Candidate {
   Candidate(unit_id: Int, at: Point, hit_radius: Float)
 }
 
-/// An area row: `Spell4AoeTargetConstraints` minRange, maxRange, angle and
-/// targetCount, in the client's units.
+/// The order an area takes the units inside it in (`Spell4AoeTargetConstraints.targetSelection`,
+/// the client's `CodeEnumAOESelectionType`): the first `target_count` are struck.
+pub type Order {
+  /// Closest (1): the nearest to the centre first.
+  Nearest
+  /// Furthest (2): the farthest from the centre first.
+  Furthest
+  /// Random (3): by `select_ordered`'s seed, a guess marked in `mix`.
+  Random
+}
+
+/// An area row: `Spell4AoeTargetConstraints` minRange, maxRange, angle, targetCount and
+/// targetSelection, in the client's units.
 pub type Row {
-  Row(min_range: Float, max_range: Float, degrees: Float, target_count: Int)
+  Row(
+    min_range: Float,
+    max_range: Float,
+    degrees: Float,
+    target_count: Int,
+    order: Order,
+  )
 }
 
 /// How a unit counts as inside the area (genesis_prime/game/spell_area `inside`).
@@ -353,25 +375,78 @@ fn length_of(a: Float, b: Float) -> Float {
   distance(from: Point(x: 0.0, z: 0.0), to: Point(x: a, z: b))
 }
 
-/// The unit ids the area strikes, nearest first: the candidates inside, ordered
+/// The unit ids a player's area strikes, nearest first: the candidates inside, ordered
 /// by distance from the centre with the lower unit id first on a tie, at most the
-/// row's target count.
+/// row's target count. The row's order is not read: a player's rows are Closest alone.
 pub fn select(
   candidates candidates: List(Candidate),
   centre centre: Pose,
   row row: Row,
   inside inside: Inside,
 ) -> List(Int) {
-  list.filter(candidates, fn(candidate) {
-    is_inside(candidate:, centre:, row:, inside:)
-  })
-  |> list.map(fn(candidate) {
-    #(distance(from: centre.at, to: candidate.at), candidate.unit_id)
-  })
-  |> list.sort(fn(first, second) {
-    float.compare(first.0, second.0)
-    |> order.break_tie(int.compare(first.1, second.1))
-  })
-  |> list.take(row.target_count)
+  select_ordered(
+    candidates:,
+    centre:,
+    row: Row(..row, order: Nearest),
+    inside:,
+    seed: 0,
+  )
+}
+
+/// The unit ids the area strikes in the row's order: the candidates inside, nearest or
+/// farthest from the centre first with the lower unit id first on a tie, or by `mix` of
+/// the seed and the unit id (the lower unit id first on a tie), at most the row's target
+/// count. The seed is read only by Random.
+pub fn select_ordered(
+  candidates candidates: List(Candidate),
+  centre centre: Pose,
+  row row: Row,
+  inside inside: Inside,
+  seed seed: Int,
+) -> List(Int) {
+  let found =
+    list.filter(candidates, fn(candidate) {
+      is_inside(candidate:, centre:, row:, inside:)
+    })
+    |> list.map(fn(candidate) {
+      #(distance(from: centre.at, to: candidate.at), candidate.unit_id)
+    })
+  let ordered = case row.order {
+    Nearest ->
+      list.sort(found, fn(first, second) {
+        float.compare(first.0, second.0)
+        |> order.break_tie(int.compare(first.1, second.1))
+      })
+    Furthest ->
+      list.sort(found, fn(first, second) {
+        float.compare(second.0, first.0)
+        |> order.break_tie(int.compare(first.1, second.1))
+      })
+    Random ->
+      list.sort(found, fn(first, second) {
+        int.compare(mix(seed:, unit_id: first.1), mix(seed:, unit_id: second.1))
+        |> order.break_tie(int.compare(first.1, second.1))
+      })
+  }
+  list.take(ordered, row.target_count)
   |> list.map(fn(found) { found.1 })
+}
+
+/// A unit's place in a Random order: a 32-bit hash of the seed and the unit id (the
+/// finalizer of MurmurHash3 over `seed * 0x9E3779B1 + unit_id`), so the same seed
+/// orders the same units the same way and each unit is as likely as another to come first.
+/// A guess: the client names Random (`Spell4AoeTargetConstraints.targetSelection` 3) and
+/// orders nothing, so the retail order is not known.
+fn mix(seed seed: Int, unit_id unit_id: Int) -> Int {
+  let word = int.bitwise_and(seed * 0x9E3779B1 + unit_id, 0xFFFFFFFF)
+  let word = xor_shifted(word:, bits: 16)
+  let word = int.bitwise_and(word * 0x85EBCA6B, 0xFFFFFFFF)
+  let word = xor_shifted(word:, bits: 13)
+  let word = int.bitwise_and(word * 0xC2B2AE35, 0xFFFFFFFF)
+  xor_shifted(word:, bits: 16)
+}
+
+/// The word xor itself shifted right by `bits`.
+fn xor_shifted(word word: Int, bits bits: Int) -> Int {
+  int.bitwise_exclusive_or(word, int.bitwise_shift_right(word, bits))
 }

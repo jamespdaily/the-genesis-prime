@@ -15,17 +15,25 @@
 //// - Facing: the unit faces (-sin yaw, -cos yaw), so a unit at distance d at the
 ////   angle a off the facing stands at d x (-sin(yaw + a), -cos(yaw + a)) from it
 ////   (`movement_command.kind_14.facing`, `0x1401b3170`).
-//// - Order: nearest first, the lower unit id on a tie (the step's design, section 1).
+//// - Order: nearest first, the lower unit id on a tie (the step's design, section 1);
+////   Furthest is Closest reversed with the same tie rule, and Random a guess marked in
+////   `area` (`Spell4AoeTargetConstraints.targetSelection`: the client names the orders and
+////   applies none).
+//// - Shapes 1, 3, 5 and 6: the client's drawing (`0x14054d170.shapes_1_3_5_6`), whose
+////   placements `spell_area` builds; the rows named in the tests are TelegraphDamage 3852,
+////   3029, 6957, 2920 and 4664.
 //// - Jim's choice: a unit is struck inside the telegraph's shape and within the area
 ////   row's range; a spell with no telegraph is struck by its area row's range and arc.
 //// - Crush's 42297 has no telegraph row, so its area row alone decides (`Spell4.32812.area`).
 
 import genesis_prime/game/area.{
-  type Candidate, type Inside, type Point, Box, Candidate, Circle, Cone,
-  InsideRow, InsideShapes, Placement, Point, Pose, Rectangle, Row,
+  type Candidate, type Inside, type Placement, type Point, type Row, Box,
+  Candidate, Circle, Cone, InsideRow, InsideShapes, Placement, Point, Pose,
+  Rectangle, Row,
 }
 import genesis_prime/game/start_place
 import gleam/float
+import gleam/int
 import gleam/list
 import gleam_community/maths
 import owned_test
@@ -35,7 +43,13 @@ import qcheck
 const beast_hit_radius = 3.0
 
 fn kick_row() -> area.Row {
-  Row(min_range: 0.0, max_range: 8.0, degrees: 180.0, target_count: 5)
+  Row(
+    min_range: 0.0,
+    max_range: 8.0,
+    degrees: 180.0,
+    target_count: 5,
+    order: area.Nearest,
+  )
 }
 
 fn kick_cone() -> Inside {
@@ -90,14 +104,26 @@ pub fn kick_strikes_a_unit_inside_its_drawn_cone_and_not_one_outside_it_test() -
     as "7.1 m is past the cone's 7 m, but the Beast's hit radius of 3 reaches it (a unit's radius counts for every shape)"
   assert struck(
       candidates: [beast(1, at(distance: 10.1, degrees: 0.0, yaw: 0.0))],
-      row: Row(min_range: 0.0, max_range: 30.0, degrees: 180.0, target_count: 5),
+      row: Row(
+        min_range: 0.0,
+        max_range: 30.0,
+        degrees: 180.0,
+        target_count: 5,
+        order: area.Nearest,
+      ),
       inside: kick_cone(),
     )
     == []
     as "10.1 m is past the cone's 7 m by more than the Beast's hit radius of 3 (a 30 m row, so the shape alone decides)"
   assert struck(
       candidates: [beast(1, at(distance: 3.0, degrees: 180.0, yaw: 0.0))],
-      row: Row(min_range: 0.0, max_range: 30.0, degrees: 360.0, target_count: 5),
+      row: Row(
+        min_range: 0.0,
+        max_range: 30.0,
+        degrees: 360.0,
+        target_count: 5,
+        order: area.Nearest,
+      ),
       inside: kick_cone(),
     )
     == []
@@ -129,7 +155,13 @@ pub fn a_spell_with_no_telegraph_is_struck_within_its_area_rows_range_and_arc_te
 pub fn crushs_twin_cone_strikes_a_beast_2_m_ahead_because_the_hit_circle_reaches_inside_its_inner_radius_test() -> Nil {
   use <- owned_test.run(5000)
   let row =
-    Row(min_range: 0.0, max_range: 25.0, degrees: 360.0, target_count: 1)
+    Row(
+      min_range: 0.0,
+      max_range: 25.0,
+      degrees: 360.0,
+      target_count: 1,
+      order: area.Nearest,
+    )
   let twin =
     InsideShapes([
       Placement(
@@ -151,7 +183,13 @@ pub fn crushs_twin_cone_strikes_a_beast_2_m_ahead_because_the_hit_circle_reaches
 pub fn a_unit_inside_the_telegraph_but_beyond_the_area_rows_range_is_not_struck_test() -> Nil {
   use <- owned_test.run(5000)
   let row =
-    Row(min_range: 0.0, max_range: 25.0, degrees: 360.0, target_count: 1)
+    Row(
+      min_range: 0.0,
+      max_range: 25.0,
+      degrees: 360.0,
+      target_count: 1,
+      order: area.Nearest,
+    )
   let long_cone =
     InsideShapes([
       Placement(
@@ -191,7 +229,13 @@ pub fn paralytic_surge_strikes_a_unit_in_its_box_only_in_its_cone_only_or_in_bot
       turn_degrees: 0.0,
     )
   let row =
-    Row(min_range: 0.0, max_range: 15.0, degrees: 180.0, target_count: 5)
+    Row(
+      min_range: 0.0,
+      max_range: 15.0,
+      degrees: 180.0,
+      target_count: 5,
+      order: area.Nearest,
+    )
   // The box is a square turned 45 degrees about its centre, 9.3 m ahead: its corner
   // nearest the caster is 9.3 - 5.66 = 3.64 m ahead and its farthest 14.96 m; the
   // cone reaches 10.75 m within 31.25 degrees of the facing. The units have no body
@@ -217,7 +261,13 @@ pub fn a_unit_behind_telekinetic_strike_is_struck_by_the_area_row_and_not_by_its
   use <- owned_test.run(5000)
   let behind = [beast(1, at(distance: 10.0, degrees: 180.0, yaw: 0.0))]
   let row =
-    Row(min_range: 0.0, max_range: 30.0, degrees: 360.0, target_count: 5)
+    Row(
+      min_range: 0.0,
+      max_range: 30.0,
+      degrees: 360.0,
+      target_count: 5,
+      order: area.Nearest,
+    )
   let rectangle =
     InsideShapes([
       Placement(
@@ -252,7 +302,13 @@ pub fn six_units_in_kicks_area_the_nearest_five_are_struck_and_a_tie_goes_to_the
 pub fn crush_strikes_one_unit_test() -> Nil {
   use <- owned_test.run(5000)
   let row =
-    Row(min_range: 0.0, max_range: 25.0, degrees: 360.0, target_count: 1)
+    Row(
+      min_range: 0.0,
+      max_range: 25.0,
+      degrees: 360.0,
+      target_count: 1,
+      order: area.Nearest,
+    )
   assert struck(
       candidates: [
         beast(2, at(distance: 9.0, degrees: 0.0, yaw: 0.0)),
@@ -291,7 +347,13 @@ pub fn turning_half_a_turn_moves_kicks_strike_to_the_beast_behind_test() -> Nil 
 pub fn zaps_rectangle_and_kicks_cone_both_grow_by_the_hit_radius_test() -> Nil {
   use <- owned_test.run(5000)
   let zap_row =
-    Row(min_range: 0.0, max_range: 25.0, degrees: 360.0, target_count: 5)
+    Row(
+      min_range: 0.0,
+      max_range: 25.0,
+      degrees: 360.0,
+      target_count: 5,
+      order: area.Nearest,
+    )
   let zap =
     InsideShapes([
       Placement(
@@ -317,7 +379,13 @@ pub fn zaps_rectangle_and_kicks_cone_both_grow_by_the_hit_radius_test() -> Nil {
 pub fn a_unit_just_outside_a_shape_by_less_than_its_hit_radius_is_struck_and_by_more_is_not_test() -> Nil {
   use <- owned_test.run(5000)
   let row =
-    Row(min_range: 0.0, max_range: 30.0, degrees: 360.0, target_count: 5)
+    Row(
+      min_range: 0.0,
+      max_range: 30.0,
+      degrees: 360.0,
+      target_count: 5,
+      order: area.Nearest,
+    )
   let placed = fn(shape, ahead) {
     InsideShapes([
       Placement(shape:, ahead:, aside: 0.0, turn_degrees: 0.0),
@@ -365,7 +433,13 @@ pub fn a_unit_just_outside_a_shape_by_less_than_its_hit_radius_is_struck_and_by_
 pub fn a_unit_just_outside_a_cones_side_by_less_than_its_hit_radius_is_struck_and_by_more_is_not_test() -> Nil {
   use <- owned_test.run(5000)
   let row =
-    Row(min_range: 0.0, max_range: 30.0, degrees: 360.0, target_count: 5)
+    Row(
+      min_range: 0.0,
+      max_range: 30.0,
+      degrees: 360.0,
+      target_count: 5,
+      order: area.Nearest,
+    )
   let cone =
     InsideShapes([
       Placement(
@@ -446,7 +520,14 @@ pub fn bearing_of_a_target_on_the_point_is_0_with_negative_zero_test() -> Nil {
 
 pub fn area_with_a_cone_takes_a_unit_on_its_centre_at_negative_zero_test() -> Nil {
   use <- owned_test.run(5000)
-  let row = Row(min_range: 0.0, max_range: 8.0, degrees: 90.0, target_count: 5)
+  let row =
+    Row(
+      min_range: 0.0,
+      max_range: 8.0,
+      degrees: 90.0,
+      target_count: 5,
+      order: area.Nearest,
+    )
   assert struck(
       candidates: [beast(1, Point(x: 0.0, z: 0.0))],
       row:,
@@ -540,6 +621,7 @@ pub fn the_origin_of_a_placement_is_the_point_the_hit_measures_from_test() -> Ni
                 max_range: 1000.0,
                 degrees: 360.0,
                 target_count: 1,
+                order: area.Nearest,
               ),
               inside: InsideShapes([
                 Placement(shape:, ahead:, aside:, turn_degrees: 0.0),
@@ -551,4 +633,279 @@ pub fn the_origin_of_a_placement_is_the_point_the_hit_measures_from_test() -> Ni
       )
     },
   )
+}
+
+fn ordered_row(order order: area.Order, target_count target_count: Int) -> Row {
+  Row(min_range: 0.0, max_range: 30.0, degrees: 360.0, target_count:, order:)
+}
+
+/// The ids `select_ordered` takes of `candidates` in an area that is the row's range alone.
+fn ordered(
+  candidates candidates: List(Candidate),
+  order order: area.Order,
+  target_count target_count: Int,
+  seed seed: Int,
+) -> List(Int) {
+  area.select_ordered(
+    candidates:,
+    centre: origin,
+    row: ordered_row(order:, target_count:),
+    inside: InsideRow,
+    seed:,
+  )
+}
+
+pub fn furthest_takes_the_farthest_inside_first_and_a_tie_goes_to_the_lower_unit_id_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Spell4AoeTargetConstraints.targetSelection 2 is Furthest; the client orders nothing, so
+  // the order is the rule's: Closest reversed, with Closest's tie rule (the lower unit id).
+  let candidates = [
+    beast(3, at(distance: 9.0, degrees: 0.0, yaw: 0.0)),
+    beast(8, at(distance: 6.0, degrees: 90.0, yaw: 0.0)),
+    beast(2, at(distance: 6.0, degrees: -90.0, yaw: 0.0)),
+    beast(1, at(distance: 2.0, degrees: 0.0, yaw: 0.0)),
+    beast(9, at(distance: 31.0, degrees: 0.0, yaw: 0.0)),
+  ]
+  list.each(
+    [
+      #(1, [3]),
+      #(2, [3, 2]),
+      #(3, [3, 2, 8]),
+      #(4, [3, 2, 8, 1]),
+      #(9, [3, 2, 8, 1]),
+    ],
+    fn(case_) {
+      let #(target_count, wanted) = case_
+      assert ordered(candidates:, order: area.Furthest, target_count:, seed: 0)
+        == wanted
+        as "the farthest inside first (unit 9 stands outside the 30 m row), units 2 and 8 tied at 6 m by the lower id, at most the target count"
+    },
+  )
+}
+
+/// Units `unit_ids`, each once, standing 5 m out at its own angle.
+fn spread(unit_ids unit_ids: List(Int)) -> List(Candidate) {
+  list.unique(unit_ids)
+  |> list.map(fn(unit_id) {
+    beast(unit_id, at(distance: 5.0, degrees: int.to_float(unit_id), yaw: 0.0))
+  })
+}
+
+pub fn random_is_the_same_for_a_seed_and_never_repeats_a_unit_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The client names Random and orders nothing, so the order is a guess marked in `area`:
+  // the same units in the same order for the same seed, each unit once.
+  qcheck.given(
+    qcheck.tuple3(
+      qcheck.bounded_int(from: 0, to: 1_000_000_000),
+      qcheck.list_from(qcheck.bounded_int(from: 1, to: 60)),
+      qcheck.bounded_int(from: 1, to: 8),
+    ),
+    fn(drawn) {
+      let #(seed, unit_ids, target_count) = drawn
+      let candidates = spread(unit_ids:)
+      let found = ordered(candidates:, order: area.Random, target_count:, seed:)
+      assert found
+        == ordered(candidates:, order: area.Random, target_count:, seed:)
+        as "the same seed gives the same units"
+      assert list.unique(found) == found as "a unit is taken once"
+      assert list.length(found)
+        == int.min(target_count, list.length(candidates))
+        as "as many as the target count, or all there are"
+    },
+  )
+}
+
+pub fn random_gives_each_inside_unit_a_fair_share_of_first_places_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The same guess; the bounds are this test's tolerance for the 32-bit mix over 3000 seeds
+  // (an even share is 33 percent).
+  let candidates = [
+    beast(10, at(distance: 4.0, degrees: 0.0, yaw: 0.0)),
+    beast(20, at(distance: 5.0, degrees: 90.0, yaw: 0.0)),
+    beast(30, at(distance: 6.0, degrees: 180.0, yaw: 0.0)),
+  ]
+  let firsts =
+    int.range(from: 0, to: 3000, with: [], run: fn(seeds, seed) {
+      [seed, ..seeds]
+    })
+    |> list.flat_map(fn(seed) {
+      ordered(candidates:, order: area.Random, target_count: 1, seed:)
+    })
+  list.each([10, 20, 30], fn(unit_id) {
+    let share = list.count(firsts, fn(first) { first == unit_id })
+    assert share >= 840 && share <= 1170
+      as "each of three units is first in 28 to 39 percent of 3000 seeds"
+  })
+}
+
+pub fn every_order_selects_only_units_inside_and_at_most_the_target_count_test() -> Nil {
+  use <- owned_test.run(60_000)
+  qcheck.given(
+    qcheck.tuple4(
+      qcheck.bounded_int(from: 0, to: 2),
+      qcheck.bounded_int(from: 0, to: 1_000_000_000),
+      qcheck.list_from(qcheck.bounded_int(from: 1, to: 40)),
+      qcheck.bounded_int(from: 0, to: 6),
+    ),
+    fn(drawn) {
+      let #(order_number, seed, unit_ids, target_count) = drawn
+      let order = case order_number {
+        0 -> area.Nearest
+        1 -> area.Furthest
+        _ -> area.Random
+      }
+      // Unit n stands n m out: the 30 m row holds units 1 to 30 and not 31 to 40.
+      let candidates =
+        list.unique(unit_ids)
+        |> list.map(fn(unit_id) {
+          beast(
+            unit_id,
+            at(distance: int.to_float(unit_id), degrees: 0.0, yaw: 0.0),
+          )
+        })
+      let row = ordered_row(order:, target_count:)
+      let found =
+        area.select_ordered(
+          candidates:,
+          centre: origin,
+          row:,
+          inside: InsideRow,
+          seed:,
+        )
+      assert list.all(found, fn(unit_id) { unit_id <= 30 })
+        as "a unit past the row's 30 m is never taken"
+      assert list.length(found) <= target_count
+        as "no more than the target count"
+      assert area.select(candidates:, centre: origin, row:, inside: InsideRow)
+        == area.select_ordered(
+          candidates:,
+          centre: origin,
+          row: Row(..row, order: area.Nearest),
+          inside: InsideRow,
+          seed: 0,
+        )
+        as "the player's select is Nearest with seed 0 whatever the row's order"
+    },
+  )
+}
+
+/// A placement on the caster with no offset of its own.
+fn on_the_caster(
+  shape shape: area.Shape,
+  turn_degrees turn_degrees: Float,
+) -> Placement {
+  Placement(shape:, ahead: 0.0, aside: 0.0, turn_degrees:)
+}
+
+/// The ids the placements hold among `units` (id, distance, degrees off the facing), for a
+/// hit radius of `hit_radius`, ascending.
+fn held(
+  placements placements: List(Placement),
+  units units: List(#(Int, Float, Float)),
+  hit_radius hit_radius: Float,
+) -> List(Int) {
+  area.select(
+    candidates: list.map(units, fn(unit) {
+      Candidate(
+        unit_id: unit.0,
+        at: at(distance: unit.1, degrees: unit.2, yaw: 0.0),
+        hit_radius:,
+      )
+    }),
+    centre: origin,
+    row: ordered_row(order: area.Nearest, target_count: 99),
+    inside: InsideShapes(placements),
+  )
+  |> list.sort(int.compare)
+}
+
+pub fn a_ring_and_a_pie_hold_the_units_the_clients_shape_code_draws_test() -> Nil {
+  use <- owned_test.run(5000)
+  // 0x14054d170 case 1: a ring from param00 to param01 whole round (the angle 2 pi, as shape 4
+  // with 360 degrees); case 5: a circle from param00 to param01 missing a slice of param02
+  // degrees, drawn as the arc 2 pi less param02 with the facing turned by pi (bytes at
+  // 0x140b79fac), so the slice lies ahead of the row's own turn. TelegraphDamage 3852 is the
+  // ring (3 to 5), 3029 the pie (0 to 7, 90 degrees, turned 150) and 6957 the pie (4 to 13,
+  // 105 degrees, turned 180); the placements are as those rows give them.
+  let ring =
+    on_the_caster(
+      shape: Cone(inner: 3.0, outer: 5.0, degrees: 360.0),
+      turn_degrees: 0.0,
+    )
+  let units = [
+    #(1, 4.0, 0.0),
+    #(2, 4.0, 180.0),
+    #(3, 2.0, 0.0),
+    #(4, 6.0, 90.0),
+  ]
+  assert held(placements: [ring], units:, hit_radius: 0.0) == [1, 2]
+    as "the units between the radii, in front and behind"
+  assert held(placements: [ring], units:, hit_radius: 1.5) == [1, 2, 3, 4]
+    as "a hit radius of 1.5 reaches in to 1.5 and out to 6.5 from the 3 to 5 ring"
+  let pie_3029 =
+    on_the_caster(
+      shape: Cone(inner: 0.0, outer: 7.0, degrees: 270.0),
+      turn_degrees: 330.0,
+    )
+  let round = [
+    #(1, 4.0, 0.0),
+    #(2, 4.0, 90.0),
+    #(3, 4.0, 150.0),
+    #(4, 4.0, 210.0),
+    #(5, 4.0, -90.0),
+    #(6, 8.0, 0.0),
+  ]
+  assert held(placements: [pie_3029], units: round, hit_radius: 0.0)
+    == [1, 2, 4, 5]
+    as "row 3029: everything within 7 m but the 90 degree slice ahead of its 150 degree turn (150 is in it; 90 and 210 are clear of it)"
+  assert held(placements: [pie_3029], units: round, hit_radius: 1.5)
+    == [1, 2, 4, 5, 6]
+    as "a hit radius of 1.5 reaches the unit at 8 m, 1 past the 7 m edge"
+  let pie_6957 =
+    on_the_caster(
+      shape: Cone(inner: 4.0, outer: 13.0, degrees: 255.0),
+      turn_degrees: 360.0,
+    )
+  let behind = [
+    #(1, 8.0, 0.0),
+    #(2, 8.0, 180.0),
+    #(3, 8.0, 120.0),
+    #(4, 2.0, 0.0),
+    #(5, 14.5, 0.0),
+  ]
+  assert held(placements: [pie_6957], units: behind, hit_radius: 0.0) == [1, 3]
+    as "row 6957: the 4 to 13 ring but the 105 degree slice ahead of its 180 degree turn, which is behind the caster; the units inside 4 and beyond 13 are out"
+}
+
+pub fn two_boxes_make_a_cross_and_shape_6_is_the_unhalved_box_test() -> Nil {
+  use <- owned_test.run(5000)
+  // 0x14054d170 case 3: box 0 has param00 wide and param02 long, box 1 the two swapped; case 6
+  // takes the params as the half sizes where case 2 halves them, so it is twice the box.
+  // TelegraphDamage 2920 is the cross (2.5 wide, 18 long) and 4664 shape 6 (params 1, 17, 2,
+  // 4 ahead); the placements are as those rows give them.
+  let units = [
+    #(1, 8.0, 0.0),
+    #(2, 8.0, 90.0),
+    #(3, 8.0, 180.0),
+    #(4, 8.0, 45.0),
+    #(5, 8.5, 270.0),
+  ]
+  let arm =
+    on_the_caster(shape: Box(width: 2.5, length: 18.0), turn_degrees: 0.0)
+  let cross = [
+    arm,
+    on_the_caster(shape: Box(width: 18.0, length: 2.5), turn_degrees: 0.0),
+  ]
+  assert held(placements: cross, units:, hit_radius: 0.0) == [1, 2, 3, 5]
+    as "inside along each arm, ahead, to the side and behind, and not on the diagonal at 45 degrees"
+  assert held(placements: [arm], units:, hit_radius: 0.0) == [1, 3]
+    as "the first box alone holds the units ahead and behind; the second is what the cross adds"
+  let half = Placement(..arm, shape: Box(width: 1.0, length: 2.0), ahead: 4.0)
+  let full = Placement(..half, shape: Box(width: 2.0, length: 4.0))
+  let near = [#(1, 3.0, 15.0), #(2, 5.9, 0.0)]
+  assert held(placements: [half], units: near, hit_radius: 0.0) == []
+    as "the shape 2 box (1 by 2, centred 4 ahead) holds neither unit: 3 m out at 15 degrees is 0.78 aside, past its half width of 0.5, and 5.9 m is past its far side at 5"
+  assert held(placements: [full], units: near, hit_radius: 0.0) == [1, 2]
+    as "shape 6 on the same params is twice the box, 2 by 4 centred 4 ahead: its half width is 1 and it reaches 6"
 }

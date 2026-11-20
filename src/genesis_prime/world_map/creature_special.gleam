@@ -20,7 +20,9 @@
 ////   (`strike_tell.deadline_ms`), since two rounds would be open at once; and a spell
 ////   `creature_attack.special_checked` refuses: no cast time, no readable area (hit rows
 ////   placed apart, some drawn where the cast starts and some on the caster, are not
-////   readable: `spell_area.PlacedApart`), an effect
+////   readable: `spell_area.PlacedApart`; an area row that selects by health, orders 4 and 5:
+////   `spell_area.SelectionNeedsHealth`; a hit row of shape 8 with a box: `spell_area.ShapeNotBuilt`),
+////   an effect
 ////   type other than 8 (damage) and 35 (NpcExecutionDelay), no damage phase, several, or
 ////   one before the last go, a phase flag naming no go, an empty or non-increasing go
 ////   schedule, a delay row the plan leaves out (aimed at another unit, or with no duration)

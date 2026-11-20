@@ -48,7 +48,13 @@
 ////   is left out and the load goes on (`TickingUntilRemoved`).
 //// - **Closest first.** Every area row of the level-1 abilities has `targetSelection`
 ////   1, and none strikes a dead unit (`Spell4AoeTargetConstraints.targetSelection`,
-////   `Spell4ValidTargets.targetBitmask`).
+////   `Spell4ValidTargets.targetBitmask`). A creature's special may also select Furthest (2)
+////   or Random (3); orders 4 and 5 need a unit's health, which a creature's sight of a
+////   fighter does not hold (`SelectionNeedsHealth`).
+//// - **Two readings** read a spell's rows: a player's ability (`PlayerReading`: Closest
+////   and the shapes of the level-1 trees) and a creature's special (`CreatureReading`: also
+////   Furthest, Random, rings, crosses, pies and unhalved boxes), so a player's strike
+////   refuses what it did before.
 //// - **Where a creature special's hit is centred** is its anchor, one for the spell
 ////   (`anchor_of`): its hit rows with TelegraphDamage flag 0x4000 or 0x1000 are drawn where
 ////   the cast's 0x7ff puts them and stay there (`FixedAtCaster`), the others follow the
@@ -60,11 +66,13 @@
 ////   a Proxy behind a target prerequisite excepted, since it is never started. A spell
 ////   with no area row selects nobody.
 //// - **What fails the load:** a row the tree names that the tables lack; a
-////   `targetSelection` other than 1; a valid-targets bitmask other than 0 on a spell
+////   `targetSelection` other than 1 (a creature's: other than 1 to 3, with 4 and 5 named by
+////   `SelectionNeedsHealth`); a valid-targets bitmask other than 0 on a spell
 ////   with an area row; a hit row placed on any unit but the caster (`targetTypeFlags`
 ////   other than 1); a creature special's hit rows some fixed and some following the caster
-////   (`PlacedApart`); a shape the rule does not build (1, 3, 5, 6, or 8 with a box that
-////   has a width or a length: the box's height, p4, is never tested); a damage effect
+////   (`PlacedApart`); a shape the rule does not build (for a player 1, 3, 5, 6, or 8 with
+////   a box that has a width or a length: the box's height, p4, is never tested; for a
+////   creature 8 with such a box alone); a damage effect
 ////   (type 8) aimed by a flag value not read; a formula that reads a parameter the
 ////   player's value does not (genesis_prime/game/damage `unread`: the weapon kinds 6
 ////   and 9, the passed-in value 18, and any kind above 26; the vital kinds are read,
@@ -74,8 +82,8 @@
 
 import genesis_prime/game/area.{
   type Anchor, type Inside, type Placement, type Row, Box, Circle, Cone,
-  FixedAtCaster, FollowsCaster, InsideRow, InsideShapes, Placement, Rectangle,
-  Row,
+  FixedAtCaster, FollowsCaster, Furthest, InsideRow, InsideShapes, Nearest,
+  Placement, Random, Rectangle, Row,
 }
 import genesis_prime/game/damage.{type Formula}
 import genesis_prime/game/effect_kind
@@ -99,10 +107,23 @@ import genesis_prime/table/spell4_valid_targets
 import genesis_prime/table/telegraph_damage
 import gleam/bool
 import gleam/dict.{type Dict}
+import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
+
+/// Whose area a spell's rows are read for: what the strike of each can take differs, since a
+/// player's strike has the health of the units it shows and a creature's does not, and a
+/// player's abilities (the level-1 trees) hold only the shapes and orders that
+/// `PlayerReading` builds.
+pub type Reading {
+  /// A player's ability: Closest alone, and the circle, box, cone and rectangle shapes.
+  PlayerReading
+  /// A creature's special: Closest, Furthest and Random, and also the ring, cross, pie and
+  /// unhalved-box shapes (`0x14054d170.shapes_1_3_5_6`).
+  CreatureReading
+}
 
 /// A damage effect of a spell: its row, damage type and delay, the phases it fires
 /// in, who it aims at, the formula its value is worked out by and the tag that
@@ -192,8 +213,12 @@ pub type AreaError {
   NoRow(table: String, id: Int)
   /// A spell strikes an area in one of its phases but names no area row.
   NoAreaRow(spell4_id: Int)
-  /// An area row selects in an order but Closest (`targetSelection` is not 1).
+  /// An area row selects in an order the reading does not build (a player's: not Closest, 1;
+  /// a creature's: not 1 to 3 and not 4 or 5).
   SelectionNotClosest(spell4_id: Int, target_selection: Int)
+  /// A creature's area row selects by a unit's health (`targetSelection` 4,
+  /// LowestAbsoluteHealth, or 5, MissingMostHealth), which its sight of a fighter lacks.
+  SelectionNeedsHealth(spell4_id: Int, target_selection: Int)
   /// A spell's valid targets hold a bit: it would strike the dead or more.
   ValidTargetsNotAlive(spell4_id: Int, target_bitmask: Int)
   /// A hit row is placed on a unit but the caster (`targetTypeFlags` other than 1).
@@ -249,7 +274,13 @@ pub fn describe(error error: AreaError) -> String {
       <> int.to_string(spell4_id)
       <> " has an area row that selects in order "
       <> int.to_string(target_selection)
-      <> ", and only Closest (1) is built"
+      <> ", which is not built (a player's ability takes Closest, 1; a creature's special 1 to 3)"
+    SelectionNeedsHealth(spell4_id:, target_selection:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has an area row that selects in order "
+      <> int.to_string(target_selection)
+      <> ", by a unit's health, which a creature's sight of a fighter does not hold"
     ValidTargetsNotAlive(spell4_id:, target_bitmask:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -394,6 +425,7 @@ fn plan_error_of(
     NoRow(..) | NoAreaRow(..) | MultiplierNotFinite(..) ->
       spell_plan.AreaDataFault(spell4_id:, reason: describe(error:))
     SelectionNotClosest(..)
+    | SelectionNeedsHealth(..)
     | ValidTargetsNotAlive(..)
     | TelegraphNotOnCaster(..)
     | ShapeNotBuilt(..)
@@ -444,12 +476,22 @@ fn area_of(
       id: spell.spell4_base_id.value,
     )),
   )
-  use area_row <- result.try(area_row_of(tables:, id:, row:))
+  use area_row <- result.try(area_row_of(
+    tables:,
+    id:,
+    row:,
+    reading: PlayerReading,
+  ))
   use Nil <- result.try(case area_row {
     Some(..) -> valid_targets_checked(tables:, id:, base:)
     None -> Ok(Nil)
   })
-  use shapes <- result.try(hit_shapes_of(tables:, links:, id:))
+  use shapes <- result.try(hit_shapes_of(
+    tables:,
+    links:,
+    id:,
+    reading: PlayerReading,
+  ))
   use #(damage, ticking) <- result.try(damage_effects_of(tables:, effects:, id:))
   let area =
     SpellArea(
@@ -506,6 +548,7 @@ fn area_row_of(
   tables tables: table_store.Tables,
   id id: Int,
   row row: spell4.Spell4,
+  reading reading: Reading,
 ) -> Result(Option(Row), AreaError) {
   case row.spell4_aoe_target_constraints_id {
     0 -> Ok(None)
@@ -520,17 +563,27 @@ fn area_row_of(
           id: constraints_id,
         )),
       )
-      case constraints.target_selection {
-        1 ->
-          Ok(
-            Some(Row(
-              min_range: constraints.min_range,
-              max_range: constraints.max_range,
-              degrees: constraints.angle,
-              target_count: constraints.target_count,
-            )),
-          )
-        selection ->
+      let row_of = fn(order) {
+        Ok(
+          Some(Row(
+            min_range: constraints.min_range,
+            max_range: constraints.max_range,
+            degrees: constraints.angle,
+            target_count: constraints.target_count,
+            order:,
+          )),
+        )
+      }
+      case constraints.target_selection, reading {
+        1, PlayerReading | 1, CreatureReading -> row_of(Nearest)
+        2, CreatureReading -> row_of(Furthest)
+        3, CreatureReading -> row_of(Random)
+        4, CreatureReading | 5, CreatureReading ->
+          Error(SelectionNeedsHealth(
+            spell4_id: id,
+            target_selection: constraints.target_selection,
+          ))
+        selection, PlayerReading | selection, CreatureReading ->
           Error(SelectionNotClosest(spell4_id: id, target_selection: selection))
       }
     }
@@ -545,15 +598,18 @@ fn area_row_of(
 /// not read, so a spell's shapes hold for each of its gos. A Spell4Telegraph row whose
 /// TelegraphDamage row the table lacks gives no shape, as the client leaves it out of its
 /// spell's telegraphs (`Spell4Telegraph.telegraphDamageId.no_row`). The shapes of the
-/// spell `id` that its Spell4Telegraph rows in `links` choose, or the refusal of one.
+/// spell `id` that its Spell4Telegraph rows in `links` choose, or the refusal of one; a row
+/// of a shape that is two boxes gives two.
 pub fn hit_shapes_of(
   tables tables: table_store.Tables,
   links links: Dict(Int, List(spell4_telegraph.Spell4Telegraph)),
   id id: Int,
+  reading reading: Reading,
 ) -> Result(List(Placement), AreaError) {
   list.try_map(hit_rows_of(tables:, links:, id:), fn(row) {
-    placement_of(id:, row:)
+    placements_of(id:, row:, reading:)
   })
+  |> result.map(list.flatten)
 }
 
 /// The TelegraphDamage rows of the spell `id` that say who is hit, as `hit_shapes_of`
@@ -622,10 +678,16 @@ fn anchor_of(
   }
 }
 
-fn placement_of(
+/// The placements of a hit row: its shape from the client's drawing (`0x14054d170`, case
+/// by case), each on the row's offset and turn. A player's reading builds the circle (0), box
+/// (2), cone (4), rectangle (7) and a long cone (8) with no box; a creature's also the ring
+/// (1), the cross (3, two boxes), the pie (5) and the unhalved box (6). A shape 8 with a box
+/// is refused for both: its box's geometry is not read.
+fn placements_of(
   id id: Int,
   row row: telegraph_damage.TelegraphDamage,
-) -> Result(Placement, AreaError) {
+  reading reading: Reading,
+) -> Result(List(Placement), AreaError) {
   use <- bool.guard(
     when: row.target_type_flags != 1,
     return: Error(TelegraphNotOnCaster(
@@ -640,25 +702,69 @@ fn placement_of(
       telegraph_id: row.id,
       shape: row.damage_shape_enum,
     ))
-  use shape <- result.try(case row.damage_shape_enum {
-    0 -> Ok(Circle(radius: row.param00))
-    2 -> Ok(Box(width: row.param00, length: row.param02))
-    4 -> Ok(Cone(inner: row.param00, outer: row.param01, degrees: row.param02))
-    7 -> Ok(Rectangle(width: row.param00, length: row.param02))
-    8 ->
+  let placed = fn(shape, turn_degrees) {
+    Placement(
+      shape:,
+      ahead: row.z_position_offset,
+      aside: row.x_position_offset,
+      turn_degrees:,
+    )
+  }
+  let turn = row.rotation_degrees
+  case row.damage_shape_enum, reading {
+    0, PlayerReading | 0, CreatureReading ->
+      Ok([placed(Circle(radius: row.param00), turn)])
+    2, PlayerReading | 2, CreatureReading ->
+      Ok([placed(Box(width: row.param00, length: row.param02), turn)])
+    4, PlayerReading | 4, CreatureReading ->
+      Ok([
+        placed(
+          Cone(inner: row.param00, outer: row.param01, degrees: row.param02),
+          turn,
+        ),
+      ])
+    7, PlayerReading | 7, CreatureReading ->
+      Ok([placed(Rectangle(width: row.param00, length: row.param02), turn)])
+    8, PlayerReading | 8, CreatureReading ->
       case row.param03 == 0.0 && row.param05 == 0.0 {
         True ->
-          Ok(Cone(inner: row.param00, outer: row.param01, degrees: row.param02))
+          Ok([
+            placed(
+              Cone(inner: row.param00, outer: row.param01, degrees: row.param02),
+              turn,
+            ),
+          ])
         False -> not_built
       }
-    _ -> not_built
-  })
-  Ok(Placement(
-    shape:,
-    ahead: row.z_position_offset,
-    aside: row.x_position_offset,
-    turn_degrees: row.rotation_degrees,
-  ))
+    1, CreatureReading ->
+      Ok([
+        placed(
+          Cone(inner: row.param00, outer: row.param01, degrees: 360.0),
+          turn,
+        ),
+      ])
+    3, CreatureReading ->
+      Ok([
+        placed(Box(width: row.param00, length: row.param02), turn),
+        placed(Box(width: row.param02, length: row.param00), turn),
+      ])
+    5, CreatureReading ->
+      Ok([
+        placed(
+          Cone(
+            inner: row.param00,
+            outer: row.param01,
+            degrees: float.clamp(360.0 -. row.param02, min: 0.0, max: 360.0),
+          ),
+          turn +. 180.0,
+        ),
+      ])
+    6, CreatureReading ->
+      Ok([
+        placed(Box(width: 2.0 *. row.param00, length: 2.0 *. row.param02), turn),
+      ])
+    _, PlayerReading | _, CreatureReading -> not_built
+  }
 }
 
 /// The damage effects of the spell (effect type 8), each with the unit it aims at and
@@ -934,12 +1040,22 @@ pub fn area_of_spell(
     spell4.get(tables:, id: spell4_id)
     |> result.replace_error(NoRow(table: "Spell4", id:)),
   )
-  use area_row <- result.try(area_row_of(tables:, id:, row:))
+  use area_row <- result.try(area_row_of(
+    tables:,
+    id:,
+    row:,
+    reading: CreatureReading,
+  ))
   case area_row {
     None -> Ok(None)
     Some(area_row) -> {
       let links = telegraph_links_by_spell(tables:)
-      use shapes <- result.try(hit_shapes_of(tables:, links:, id:))
+      use shapes <- result.try(hit_shapes_of(
+        tables:,
+        links:,
+        id:,
+        reading: CreatureReading,
+      ))
       use anchor <- result.map(anchor_of(tables:, links:, id:))
       Some(CreatureArea(row: area_row, inside: inside_of(shapes:), anchor:))
     }
@@ -975,6 +1091,10 @@ pub fn gaps() -> List(gap.Entry) {
     gap.Entry(
       area: "Spell telegraphs",
       missing: "a player's ability whose drawn caster row is placed by the server (two of the planned abilities have one) is sent no initial or telegraph position in its 0x7ff and 0x7fd, so the client draws none of that row; only a creature's special is sent them",
+    ),
+    gap.Entry(
+      area: "Creature area orders and shapes",
+      missing: "a creature's area that selects by a unit's health (Spell4AoeTargetConstraints targetSelection 4 and 5, 2 listed creature spells) is refused, since a creature's sight of a fighter holds no health; a hit row of shape 8 with a box (param03 or param05 above 0) is refused for a creature and a player, its box not read; Random's order is a guess, the client naming it and ordering nothing",
     ),
   ]
 }

@@ -33,6 +33,7 @@ import genesis_prime/client_connection.{
   type Message, ForStay, PeerNews, SentByMap, SentByPeer,
 }
 import genesis_prime/connection/frame.{Frame}
+import genesis_prime/game/area
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection/frames
 import genesis_prime/game/damage
@@ -3157,4 +3158,123 @@ pub fn a_creature_fighting_a_player_standing_apart_faces_the_player_through_chas
   assert arrived == creature_turn.Home(facing: start_place.facing(spawn.place))
     as "the home turn with the facing of the spawn's 0x262, which a viewer blends"
   world_support.stop(world:)
+}
+
+/// The key of a strike the creature told the connection's player to take.
+fn strike_told(message: Message) -> Result(strike_tell.Key, Nil) {
+  case message {
+    ForStay(
+      sent: client_connection.SentByFoe(strike_tell.Attacks(tell: strike_tell.Strike(
+        key:,
+        ..,
+      ))),
+      ..,
+    ) -> Ok(key)
+    ForStay(..)
+    | client_connection.SentBySessions(..)
+    | client_connection.SentByChat(..) -> Error(Nil)
+  }
+}
+
+/// A fight of the Rootbrute Grimspore with Spell4 63569 as its special, against player 1 (unit
+/// 10, on it) and player 2 (unit 20, 5 aside): the cast id of the special's round and the unit
+/// it struck, after both players have seen the cast and its go.
+fn void_blast_fight() -> #(Int, Int) {
+  let roaring =
+    fight_of(
+      creature: spawn_support.special_creature(
+        number: 1,
+        creature_id: 12_212,
+        spell4_id: 63_569,
+      ),
+      damage_effects_id: 159_886,
+    )
+  let received_2 = world_support.connection(world: roaring.world, id: 2)
+  let _player = world_watch_support.join(run: roaring.run, connection: 2)
+  let _appeared =
+    world_watch_support.next(
+      received: received_2,
+      what: "the creature's 0x262 for player 2",
+      wanted: world_watch_support.appearance,
+    )
+  struck_from(
+    world: roaring.world,
+    run: roaring.run,
+    connection: 2,
+    unit_id: roaring.unit_id,
+    x: 5.0,
+    damage: 1,
+    cast_id: 2,
+  )
+  driven_time.advance(time: roaring.time, ms: 1500)
+  let start = next_cast_started(received: roaring.received)
+  assert start.spell4_id == 63_569 as "player 1 sees the special's cast"
+  assert next_cast_started(received: received_2).cast_id == start.cast_id
+    as "player 2 sees the same cast"
+  driven_time.advance(time: roaring.time, ms: 160)
+  driven_time.settled(roaring.pid)
+  let told =
+    list.append(
+      sent_so_far(
+        world: roaring.world,
+        id: 1,
+        received: roaring.received,
+        wanted: strike_told,
+      ),
+      sent_so_far(
+        world: roaring.world,
+        id: 2,
+        received: received_2,
+        wanted: strike_told,
+      ),
+    )
+  let assert [key] = told as "one of the two players is told to take the strike"
+  assert key.cast_id == start.cast_id as "under the cast's id"
+  answer(roaring:, key:)
+  list.each([roaring.received, received_2], fn(received) {
+    let went = next_cast_went(received:)
+    assert went.cast_id == start.cast_id
+      && list.map(went.targets, fn(target) { target.unit_id }) == [key.unit_id]
+      as "both players see the go name the struck player alone"
+  })
+  world_support.stop(world: roaring.world)
+  #(start.cast_id, key.unit_id)
+}
+
+pub fn a_creature_with_the_special_63569_strikes_the_unit_its_cast_id_picks_test() -> Nil {
+  use <- owned_test.run(90_000)
+  // Spell4 63569 (castTime 160, one go) has area row 541: 360 degrees, 70 m, one unit, order 3
+  // (Random), and no telegraph row, so both players are inside. The unit it strikes is the one
+  // `area.select_ordered` takes for the round's cast id as its seed (`area` tests 2 and 11 are
+  // the rule); a second fight of the same creature has the same cast id and strikes the same
+  // unit.
+  let #(cast_id, struck) = void_blast_fight()
+  let picked =
+    area.select_ordered(
+      candidates: [
+        area.Candidate(
+          unit_id: 10,
+          at: area.Point(x: 0.0, z: 0.0),
+          hit_radius: 1.2,
+        ),
+        area.Candidate(
+          unit_id: 20,
+          at: area.Point(x: 5.0, z: 0.0),
+          hit_radius: 1.2,
+        ),
+      ],
+      centre: area.Pose(at: area.Point(x: 0.0, z: 0.0), yaw: 0.0),
+      row: area.Row(
+        min_range: 0.0,
+        max_range: 70.0,
+        degrees: 360.0,
+        target_count: 1,
+        order: area.Random,
+      ),
+      inside: area.InsideRow,
+      seed: cast_id,
+    )
+  assert [struck] == picked as "the unit the round's cast id picks"
+  assert void_blast_fight() == #(cast_id, struck)
+    as "the same cast id, the same unit"
 }

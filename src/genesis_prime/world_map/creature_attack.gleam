@@ -394,8 +394,9 @@ fn only_damage_and_delay(
   })
 }
 
-/// The spell has an area row its telegraph can be read from, and its hit rows are placed
-/// alike (`spell_area.PlacedApart`).
+/// The spell has an area row its telegraph can be read from by the creature reading
+/// (`spell_area.CreatureReading`: Closest, Furthest or Random, and the shapes it builds), and
+/// its hit rows are placed alike (`spell_area.PlacedApart`).
 fn area_read(
   tables tables: table_store.Tables,
   spell4_id spell4_id: Int,

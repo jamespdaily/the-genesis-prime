@@ -150,8 +150,9 @@
 ////   time never finds a round open. A charge is the open round before its strike (`Charging`,
 ////   then `Striking`): it starts no attack tick, the close of its round starts the next, and
 ////   a tick that finds a charge open does nothing, so there is never a second round.
-//// - **The charge's area** is the attack spell's damage telegraph, in the selection of its area
-////   row (genesis_prime/game/spell_area `area_of_spell`, genesis_prime/game/area `select`),
+//// - **The charge's area** is the attack spell's damage telegraph, in the order of its area
+////   row: nearest or furthest first, or Random by the round's cast id as the seed
+////   (genesis_prime/game/spell_area `area_of_spell`, genesis_prime/game/area `select_ordered`),
 ////   centred where the picture is (`Charged.anchor`). A row with TelegraphDamage flag 0x4000 or
 ////   0x1000 is drawn only from the positions the 0x7ff carries (genesis_prime/game/telegraph_entries),
 ////   made at the cast's start and kept in the round (`Round.start`), where it stays whatever
@@ -2166,6 +2167,7 @@ fn go_strikes(
       inside:,
       aim: centre,
       fighters: map.sorted_by_connection(threat),
+      seed: round.cast_id,
     )
   case struck {
     [] -> {
@@ -2292,21 +2294,23 @@ fn centre_of(
 }
 
 /// The fighters of the threat list, by their newest sightings, that the attack's area
-/// selects around the creature's place facing `aim`: nearest first, at most the area row's
-/// target count.
+/// selects around the creature's place facing `aim`, in the area row's order and at most its
+/// target count; a Random order is by `seed`, the round's cast id, so the same round strikes
+/// the same fighter.
 fn inside_rectangle(
   state state: State,
   row row: Row,
   inside inside: Inside,
   aim aim: area.Pose,
   fighters fighters: List(#(ConnectionId, Threat)),
+  seed seed: Int,
 ) -> List(#(ConnectionId, Threat, Sighting)) {
   let seen =
     list.filter_map(fighters, fn(entry) {
       dict.get(state.sightings, entry.0)
       |> result.map(fn(sighting) { #(entry.0, entry.1, sighting) })
     })
-  area.select(
+  area.select_ordered(
     candidates: list.map(seen, fn(found) {
       area.Candidate(
         unit_id: { found.2 }.unit_id,
@@ -2317,6 +2321,7 @@ fn inside_rectangle(
     centre: aim,
     row:,
     inside:,
+    seed:,
   )
   |> list.filter_map(fn(unit_id) {
     list.find(seen, fn(found) { { found.2 }.unit_id == unit_id })

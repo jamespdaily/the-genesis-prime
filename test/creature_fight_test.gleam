@@ -31,6 +31,7 @@ import genesis_prime/client_connection.{
   CreatureFaces, CreatureMoved, CreaturePlaced, Health, PeerNews, Targeting,
   Threat,
 }
+import genesis_prime/game/area
 import genesis_prime/game/crowd_control
 import genesis_prime/game/forced_move
 import genesis_prime/game/hit.{Blow, Offence, Rolls, Worked}
@@ -7742,4 +7743,100 @@ pub fn the_rotated_cone_of_52448_strikes_where_the_client_draws_it_test() -> Nil
   // degrees off, inside.
   assert struck_by_the_loaded_special(spell4_id: 52_448) == [2, 5]
     as "the fighter at +x and the target ahead are struck, the one at -x is not"
+}
+
+/// Earthen Roar with its area row taking one unit in `order`: the cone (5.5 m, 40 degrees) is
+/// the hit shape and the row's range and count cap it.
+fn roar_in_order(order order: area.Order) -> creature_life.Special {
+  let roar = spawn_support.earthen_roar(hold_ms: 1000)
+  let assert creature_life.Charged(area: row, ..) as charged = roar.attack.cast
+    as "Earthen Roar is a charge"
+  creature_life.Special(
+    ..roar,
+    attack: creature_life.Attack(
+      ..roar.attack,
+      cast: creature_life.Charged(
+        ..charged,
+        area: area.Row(..row, order:, target_count: 1),
+      ),
+    ),
+  )
+}
+
+/// The fighters struck by the special of `order` when players 2, 4, 5 and 7 fight the Beast and
+/// all four stand in its cone (player 2 4 ahead, 5 2 ahead, 4 3 ahead and 0.3 aside, 7 2.5
+/// ahead and 0.3 the other aside), and the cast id of its round.
+fn struck_in_order(order order: area.Order) -> #(List(Int), Int) {
+  let #(state, aggro) =
+    roar_fought_by(
+      state: rootbrute_with(special: roar_in_order(order:), viewers: [
+        2,
+        4,
+        5,
+        7,
+      ]),
+    )
+  let state = with_player_at(state:, number: 5, x: 0.0, z: -2.0)
+  let state = with_player_at(state:, number: 4, x: 0.3, z: -3.0)
+  let state = with_player_at(state:, number: 7, x: -0.3, z: -2.5)
+  let #(state, opened, go) = roar_opened(state:, aggro:)
+  let #(state, _, strike) = first_go_passed(state:, go:)
+  let #(_, struck) = strike_go_reached(state:, strike:)
+  #(list.map(fights_told(struck), fn(told) { told.0 }), cast_id_sent(opened, 2))
+}
+
+pub fn a_furthest_special_strikes_the_far_fighter_and_a_random_one_by_its_cast_id_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Nearest strikes player 5, 2 ahead; Furthest strikes player 2, 4 ahead, the farthest in the
+  // cone (the order is the rule's, `area` tests 1 and 2). Random takes the one unit
+  // `area.select_ordered` gives for the round's cast id as its seed (the player's unit id is
+  // 10 times its number); the cast id differs from 0, the seed a plain `select` would pass, in
+  // the unit it picks, so a strike that ignored the round would fail here.
+  assert struck_in_order(order: area.Nearest).0 == [5]
+    as "the nearest fighter in the cone"
+  assert struck_in_order(order: area.Furthest).0 == [2]
+    as "the farthest fighter in the cone"
+  let #(struck, cast_id) = struck_in_order(order: area.Random)
+  let picked = fn(seed) {
+    area.select_ordered(
+      candidates: [
+        area.Candidate(
+          unit_id: 20,
+          at: area.Point(x: 0.0, z: -4.0),
+          hit_radius: 1.2,
+        ),
+        area.Candidate(
+          unit_id: 50,
+          at: area.Point(x: 0.0, z: -2.0),
+          hit_radius: 1.2,
+        ),
+        area.Candidate(
+          unit_id: 40,
+          at: area.Point(x: 0.3, z: -3.0),
+          hit_radius: 1.2,
+        ),
+        area.Candidate(
+          unit_id: 70,
+          at: area.Point(x: -0.3, z: -2.5),
+          hit_radius: 1.2,
+        ),
+      ],
+      centre: area.Pose(at: area.Point(x: 0.0, z: 0.0), yaw: 0.0),
+      row: area.Row(
+        min_range: 0.0,
+        max_range: 10.0,
+        degrees: 360.0,
+        target_count: 1,
+        order: area.Random,
+      ),
+      inside: area.InsideRow,
+      seed:,
+    )
+  }
+  assert picked(cast_id) != picked(0)
+    as "the scene tells the round's seed from 0 by the unit it picks"
+  assert struck == list.map(picked(cast_id), fn(unit_id) { unit_id / 10 })
+    as "the unit the round's cast id picks"
+  assert struck_in_order(order: area.Random) == #(struck, cast_id)
+    as "the same round, the same fighter"
 }

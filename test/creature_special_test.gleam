@@ -23,9 +23,11 @@ import database_support
 import fixture_tables
 import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/refusal.{Refusal, RowId}
+import genesis_prime/game/area
 import genesis_prime/game/strike_tell
 import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/world_map/creature_kind
+import genesis_prime/world_map/creature_life
 import genesis_prime/world_map/creature_special.{type Row, Ref, Row}
 import gleam/int
 import gleam/list
@@ -33,6 +35,7 @@ import gleam/option
 import gleam/string
 import owned_test
 import planted_table.{Integer}
+import spawn_support
 
 /// The default row as migration 0010 leaves it.
 const default_row =
@@ -310,4 +313,36 @@ pub fn every_refused_special_is_collected_test() -> Nil {
   assert list.map(refusals, fn(refusal) { refusal.row })
     == [RowId(0), RowId(13_118), RowId(13_549)]
     as "each bad row beside its neighbours, as the other tables' refusals are"
+}
+
+pub fn the_order_lift_loads_63569_and_leaves_the_target_row_specials_to_4c_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4 63569: castTime 160, Spell4AoeTargetConstraints 541 (360 degrees, 1 unit, 0 to 70
+  // m, targetSelection 3, Random), no Spell4Telegraph row, no target conditions: its area row
+  // is the only thing the order lift changes for it. 70256 (area row 580, also Random) and
+  // 55846 (area row 116, Closest) name a Spell4Telegraph row each whose TelegraphDamage row
+  // (11230, 7874) is placed on a unit but the caster, so they stay refused for that row.
+  let spawn =
+    spawn_support.special_creature(
+      number: 1,
+      creature_id: 12_212,
+      spell4_id: 63_569,
+    )
+  let assert [loaded] = spawn.combat.specials
+    as "the kind lists the one special"
+  let assert creature_life.Charged(area: row, ..) = loaded.attack.cast
+    as "the spell is a charge"
+  assert row.order == area.Random
+    as "the charge carries the area row's order, Random"
+  assert row.target_count == 1 && row.max_range == 70.0
+    as "and the rest of row 541"
+  list.each([#(70_256, "11230"), #(55_846, "7874")], fn(case_) {
+    let rule = rule_of(row: special(spell4_id: case_.0))
+    assert string.contains(
+      rule,
+      "hit telegraph " <> case_.1 <> " placed by flags 2",
+    )
+      as "the refusal is the hit row placed on a unit but the caster"
+    assert !string.contains(rule, "order") as "and not the area row's order"
+  })
 }
