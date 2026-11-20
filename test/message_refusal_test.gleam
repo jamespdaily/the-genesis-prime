@@ -139,16 +139,16 @@ pub fn a_game_hello_reply_with_a_wide_value_is_refused_test() -> Nil {
   use <- owned_test.run(5000)
   let reply =
     GameHelloReply(
-      field_1: 0xA1B2C3D4,
+      account_id: 0xA1B2C3D4,
       session_key: message_support.session_key(),
-      field_3: 0,
+      zero: 0,
       account_name: "jim",
-      field_5: 3,
+      three: 3,
     )
   assert game_hello_reply.encode(
-      GameHelloReply(..reply, field_3: 0x1_0000_0000_0000_0000),
+      GameHelloReply(..reply, zero: 0x1_0000_0000_0000_0000),
     )
-    == Error(bit_stream.ValueDoesNotFit("field_3", 64, 0x1_0000_0000_0000_0000))
+    == Error(bit_stream.ValueDoesNotFit("zero", 64, 0x1_0000_0000_0000_0000))
     as "WriteMessage058FBody 0x14007e320: a 64-bit value"
   assert game_hello_reply.encode(GameHelloReply(..reply, session_key: <<>>))
     == Error(bit_stream.WrongByteCount("session_key", 16, 0))
@@ -270,13 +270,13 @@ pub fn a_wrapper_whose_inner_frame_length_is_not_its_size_is_refused_test() -> N
     == Error(bit_stream.InnerFrameDisagrees("inner_frame"))
     as "WriteWholeFrameBody 0x140079f30 copies from the frame to the end its first dword gives"
   assert world_message.encode(WorldMessage(
-      field_1: 0x20,
+      send_kind: 0x20,
       inner_frame: message_support.hex("06 00 00 00 e0 07"),
     ))
-    == Error(bit_stream.ValueDoesNotFit("field_1", 5, 0x20))
+    == Error(bit_stream.ValueDoesNotFit("send_kind", 5, 0x20))
     as "WriteMessage038CBody 0x14007e1c0 writes the value in 5 bits"
   assert world_message.encode(WorldMessage(
-      field_1: 3,
+      send_kind: 3,
       inner_frame: message_support.hex("09 00 00 00 e0 07"),
     ))
     == Error(bit_stream.InnerFrameDisagrees("inner_frame"))

@@ -117,7 +117,7 @@ pub fn choice_body(
     choose_resurrection.encode(ChooseResurrection(
       unit_id:,
       choice:,
-      field_3: value,
+      caster_unit_id: value,
     ))
     as "a unit id, a 7-bit choice and a 32-bit value fit the message"
   body

@@ -676,7 +676,7 @@ fn role_of(message: ClientMessage) -> Role {
     | client_message.FrameTimeReport(..)
     | client_message.NetworkReport(..)
     | client_message.GraphicsReport(..)
-    | client_message.WindowOpened(..)
+    | client_message.StatisticEvent(..)
     | client_message.PreGameActivity(..)
     | client_message.ClientOption(..)
     | client_message.ScanbotRequest(..)

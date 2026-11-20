@@ -18,7 +18,7 @@ pub const message_id = 0x015A
 /// `field_N` is the Nth of the body: its own doc names the fact that shows its
 /// value is safe, and one with no such doc has no use the client's code shows.
 pub type ChooseResurrection {
-  ChooseResurrection(unit_id: Int, choice: Int, field_3: Int)
+  ChooseResurrection(unit_id: Int, choice: Int, caster_unit_id: Int)
 }
 
 /// The message as the bytes of its body, or the first field that cannot be
@@ -27,7 +27,7 @@ pub fn encode(message: ChooseResurrection) -> Result(BitArray, EncodeError) {
   bit_stream.new_writer()
   |> bit_stream.write_unsigned("unit_id", message.unit_id, 32)
   |> bit_stream.write_unsigned("choice", message.choice, 7)
-  |> bit_stream.write_unsigned("field_3", message.field_3, 32)
+  |> bit_stream.write_unsigned("caster_unit_id", message.caster_unit_id, 32)
   |> bit_stream.finish
 }
 
@@ -36,7 +36,10 @@ pub fn decode(body: BitArray) -> Result(ChooseResurrection, DecodeError) {
   let reader = bit_stream.new_reader(body)
   use #(unit_id, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   use #(choice, reader) <- result.try(bit_stream.read_unsigned(reader, 7))
-  use #(field_3, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
+  use #(caster_unit_id, reader) <- result.try(bit_stream.read_unsigned(
+    reader,
+    32,
+  ))
   use Nil <- result.try(bit_stream.finish_reading(reader))
-  Ok(ChooseResurrection(unit_id:, choice:, field_3:))
+  Ok(ChooseResurrection(unit_id:, choice:, caster_unit_id:))
 }

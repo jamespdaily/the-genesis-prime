@@ -273,7 +273,7 @@ const dropped_world_rows = [
   #(0x0240, dropped.FrameTimeReport),
   #(0x023F, dropped.NetworkReport),
   #(0x023E, dropped.GraphicsReport),
-  #(0x023D, dropped.WindowOpened),
+  #(0x023D, dropped.StatisticEvent),
   #(0x012B, dropped.ClientOption),
   #(0x0180, dropped.ScanbotRequest),
   #(0x03ED, dropped.OwnAuctionsRequest),

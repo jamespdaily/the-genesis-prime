@@ -342,7 +342,7 @@ pub fn the_three_client_messages_are_taken_by_their_numbers_test() -> Nil {
       client_message.CancelCast(cancel_cast.CancelCast(
         cast_id: 0x80002804,
         reason: cast_result.SpellCancelled,
-        field_3: 1,
+        cancelled: 1,
       )),
     )
     as "opcode.0x801"
@@ -354,7 +354,7 @@ pub fn the_three_client_messages_are_taken_by_their_numbers_test() -> Nil {
       client_message.ChooseResurrection(choose_resurrection.ChooseResurrection(
         unit_id: 0x1001,
         choice: 2,
-        field_3: 0,
+        caster_unit_id: 0,
       )),
     )
     as "opcode.0x15a"

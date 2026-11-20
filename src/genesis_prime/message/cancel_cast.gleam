@@ -3,10 +3,10 @@
 ////
 //// Message 0x0801 (cancel_cast), client to server: the client cancels one of
 //// its player's casts: the cast id, the reason (6 when the cast's target died)
-//// and one bit, which the client's sender always sets; the other senders of
-//// the message and whether the id is the server's or the client's are not
-//// read. Its fields are listed in `schema.toml` with the client's evidence,
-//// and the fact file's `opcode.0x801` names the message.
+//// and one bit, 1 for a cancel with a reason and 0 for the end of a charge
+//// threshold at the player's death; whether the id is the server's or the
+//// client's is not read. Its fields are listed in `schema.toml` with the
+//// client's evidence, and the fact file's `opcode.0x801` names the message.
 
 import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}
 import genesis_prime/message/cast_result.{type CastResult}
@@ -19,7 +19,7 @@ pub const message_id = 0x0801
 /// `field_N` is the Nth of the body: its own doc names the fact that shows its
 /// value is safe, and one with no such doc has no use the client's code shows.
 pub type CancelCast {
-  CancelCast(cast_id: Int, reason: CastResult, field_3: Int)
+  CancelCast(cast_id: Int, reason: CastResult, cancelled: Int)
 }
 
 /// The message as the bytes of its body, or the first field that cannot be
@@ -32,7 +32,7 @@ pub fn encode(message: CancelCast) -> Result(BitArray, EncodeError) {
     cast_result.to_value(message.reason),
     9,
   )
-  |> bit_stream.write_unsigned("field_3", message.field_3, 1)
+  |> bit_stream.write_unsigned("cancelled", message.cancelled, 1)
   |> bit_stream.finish
 }
 
@@ -42,7 +42,7 @@ pub fn decode(body: BitArray) -> Result(CancelCast, DecodeError) {
   use #(cast_id, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   use #(reason, reader) <- result.try(bit_stream.read_unsigned(reader, 9))
   let reason = cast_result.from_value(reason)
-  use #(field_3, reader) <- result.try(bit_stream.read_unsigned(reader, 1))
+  use #(cancelled, reader) <- result.try(bit_stream.read_unsigned(reader, 1))
   use Nil <- result.try(bit_stream.finish_reading(reader))
-  Ok(CancelCast(cast_id:, reason:, field_3:))
+  Ok(CancelCast(cast_id:, reason:, cancelled:))
 }

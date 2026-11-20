@@ -16,14 +16,14 @@ pub const message_id = 0x038C
 /// `field_N` is the Nth of the body: its own doc names the fact that shows its
 /// value is safe, and one with no such doc has no use the client's code shows.
 pub type WorldMessage {
-  WorldMessage(field_1: Int, inner_frame: BitArray)
+  WorldMessage(send_kind: Int, inner_frame: BitArray)
 }
 
 /// The message as the bytes of its body, or the first field that cannot be
 /// written.
 pub fn encode(message: WorldMessage) -> Result(BitArray, EncodeError) {
   bit_stream.new_writer()
-  |> bit_stream.write_unsigned("field_1", message.field_1, 5)
+  |> bit_stream.write_unsigned("send_kind", message.send_kind, 5)
   |> bit_stream.write_whole_frame("inner_frame", message.inner_frame)
   |> bit_stream.finish
 }
@@ -31,8 +31,8 @@ pub fn encode(message: WorldMessage) -> Result(BitArray, EncodeError) {
 /// The message read from the bytes of a body, or why they are not one.
 pub fn decode(body: BitArray) -> Result(WorldMessage, DecodeError) {
   let reader = bit_stream.new_reader(body)
-  use #(field_1, reader) <- result.try(bit_stream.read_unsigned(reader, 5))
+  use #(send_kind, reader) <- result.try(bit_stream.read_unsigned(reader, 5))
   use #(inner_frame, reader) <- result.try(bit_stream.read_whole_frame(reader))
   use Nil <- result.try(bit_stream.finish_reading(reader))
-  Ok(WorldMessage(field_1:, inner_frame:))
+  Ok(WorldMessage(send_kind:, inner_frame:))
 }

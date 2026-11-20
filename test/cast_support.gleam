@@ -977,7 +977,7 @@ pub fn cancel_body(
   bit bit: Int,
 ) -> BitArray {
   let assert Ok(body) =
-    cancel_cast.encode(CancelCast(cast_id:, reason:, field_3: bit))
+    cancel_cast.encode(CancelCast(cast_id:, reason:, cancelled: bit))
     as "the cancel fits the message"
   body
 }

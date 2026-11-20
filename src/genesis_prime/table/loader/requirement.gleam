@@ -26,7 +26,7 @@ import gleam/list
 /// - The CustomizationParameter row of each CustomizationParameterMap row and
 ///   the CharacterCustomizationLabel row of each label of an indexed
 ///   CharacterCustomization row (genesis_prime/game/appearance).
-/// - GameFormula row 2375, the longest window name the client sends
+/// - GameFormula row 2375, the longest event text the client sends
 ///   (genesis_prime/game/dropped).
 /// - The Prerequisite row of each Item2 and ItemSpecial that names one, and the
 ///   ItemSpecial row of each Item2 that names one (genesis_prime/game/item_property).
