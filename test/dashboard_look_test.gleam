@@ -100,7 +100,8 @@ const colour_functions = [
 ]
 
 /// Each colour literal in the text: a `#` and 3, 4, 6 or 8 hex digits, a
-/// colour function, or a named colour as a whole word.
+/// colour function, or a named colour as a whole word. A word is letters and
+/// hyphens, so the property `white-space` is no colour.
 fn colour_literals(text: String) -> List(String) {
   let lowered = string.lowercase(text)
   let functions = list.filter(colour_functions, string.contains(lowered, _))
@@ -108,7 +109,7 @@ fn colour_literals(text: String) -> List(String) {
     lowered
     |> string.to_graphemes
     |> list.map(fn(grapheme) {
-      case string.contains("abcdefghijklmnopqrstuvwxyz", grapheme) {
+      case string.contains("abcdefghijklmnopqrstuvwxyz-", grapheme) {
         True -> grapheme
         False -> " "
       }
@@ -169,6 +170,8 @@ pub fn no_stylesheet_or_view_holds_a_colour_literal_outside_a_palette_test() -> 
   assert colour_literals("a { color: rgb(1, 2, 3) }") == ["rgb("]
   assert colour_literals("a { color: hsl(1 2% 3%) }") == ["hsl("]
   assert colour_literals("a { color: red }") == ["red"]
+  assert colour_literals("a { white-space: pre-wrap }") == []
+  assert colour_literals("a { border-color: red }") == ["red"]
   assert colour_literals(
       "a { color: var(--text); border: 1px solid var(--line) }",
     )

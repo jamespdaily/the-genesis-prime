@@ -22,6 +22,7 @@ import gleam/erlang/process.{type Subject}
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/result
 import gleam/string
 import open_wait
 import owned_test
@@ -187,9 +188,9 @@ pub fn the_real_reader_follows_a_planted_file_through_every_change_the_file_can_
   // A file nobody may read (the row needs a user who is not root, which can
   // read it): unreadable with the reason, then lines again once it can be read.
   let assert Ok(Nil) = simplifile.set_permissions_octal(path, 0o000)
-  case simplifile.read(path) {
-    Ok(_) -> Nil
-    Error(_) -> {
+  case result.is_ok(simplifile.read(path)) {
+    True -> Nil
+    False -> {
       let closed = read_and_update(follower, subscriber)
       assert closed.trouble == Some(Unreadable("eacces"))
       assert shown(closed) == shown(back)
@@ -398,7 +399,7 @@ pub fn new_lines_reach_each_subscriber_once_and_a_burst_is_one_update_test() -> 
   let assert Ok(Fetched(cursor: start, ..)) = reader(path, Unread)
   let grown = numbered(1, 70_000)
   let assert Ok(Nil) = simplifile.append(path, grown)
-  let pieces = pieces_from(reader, path, start, [])
+  let pieces = pieces_from(reader:, path:, cursor: start, pieces: [])
   assert list.length(pieces) > 1 as "the backlog was not read in one go"
   list.each(pieces, fn(piece) {
     assert bit_array.byte_size(piece) <= read_limit_bytes
@@ -409,15 +410,15 @@ pub fn new_lines_reach_each_subscriber_once_and_a_burst_is_one_update_test() -> 
 /// What the reader gives from `cursor` on, call after call, until a call
 /// gives nothing.
 fn pieces_from(
-  reader: Reader,
-  path: String,
-  cursor: Cursor,
-  pieces: List(BitArray),
+  reader reader: Reader,
+  path path: String,
+  cursor cursor: Cursor,
+  pieces pieces: List(BitArray),
 ) -> List(BitArray) {
   let assert Ok(Fetched(cursor: next, bytes:, ..)) = reader(path, cursor)
   case bit_array.byte_size(bytes) {
     0 -> list.reverse(pieces)
-    _ -> pieces_from(reader, path, next, [bytes, ..pieces])
+    _ -> pieces_from(reader:, path:, cursor: next, pieces: [bytes, ..pieces])
   }
 }
 

@@ -8,8 +8,8 @@
 ////     the one refusal (403, empty, sealed)      404, sealed
 //// ```
 ////
-//// - The route table lists `GET` routes and the one websocket upgrade: nothing
-////   but the authenticated websocket changes anything. A route is found by its
+//// - The route table lists `GET` routes and one websocket upgrade for each
+////   page: nothing but the authenticated websocket changes anything. A route is found by its
 ////   method and its path inside the key prefix, so a method the table does not
 ////   list for a path is not served.
 //// - A refused request gets one answer whatever its path, so the port tells a
@@ -37,7 +37,7 @@ import gleam/list
 pub type Serves {
   PageDocument(page: Page)
   Asset(asset: art.Asset)
-  Websocket
+  Websocket(page: Page)
 }
 
 /// One route: a method, a path and what it serves.
@@ -59,21 +59,20 @@ pub type Context {
 }
 
 /// What the web layer does with a request: answer it, or hand it on to be
-/// upgraded to the page's websocket.
+/// upgraded to the websocket of a page's runtime.
 pub type Outcome {
   Answer(response: Response(BitArray))
-  Upgrade
+  Upgrade(page: Page)
 }
 
-/// The path the page's runtime connects to.
-const runtime_route = "/ws"
-
-/// Every route: each page, each file of the allow-list and the websocket.
+/// Every route: each page and its websocket, and each file of the allow-list.
 pub fn routes(pages: List(Page)) -> List(Route) {
   list.flatten([
     list.map(pages, fn(page) { Route(Get, page.path, PageDocument(page)) }),
     list.map(art.assets(), fn(asset) { Route(Get, asset.path, Asset(asset)) }),
-    [Route(Get, runtime_route, Websocket)],
+    list.map(pages, fn(page) {
+      Route(Get, page.runtime_path(page), Websocket(page))
+    }),
   ])
 }
 
@@ -112,20 +111,16 @@ fn serve(
   serves serves: Serves,
 ) -> Outcome {
   case serves {
-    Websocket ->
+    Websocket(page) ->
       case access.decide(context.gate, request, UpgradeRequest) {
-        Allowed(_) -> Upgrade
+        Allowed(_) -> Upgrade(page)
         Refused -> Answer(refusal())
       }
     PageDocument(page) ->
       Answer(
         seal(content(
           "text/html; charset=utf-8",
-          bit_array.from_string(page.document(
-            context.pages,
-            page,
-            runtime_route,
-          )),
+          bit_array.from_string(page.document(context.pages, page)),
         )),
       )
     Asset(asset) -> {

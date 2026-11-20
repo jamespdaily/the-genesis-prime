@@ -30,6 +30,7 @@
 //// property test holds that.
 
 import gleam/bit_array
+import gleam/bool
 import gleam/list
 import gleam/string
 
@@ -123,14 +124,14 @@ pub fn start_inside_a_line(lines: Lines) -> Lines {
 
 /// Adds a mark to the ring. The partial line before it is dropped, since the
 /// bytes after it are another file's.
-pub fn mark(lines: Lines, mark: Mark) -> Lines {
+pub fn mark(lines lines: Lines, mark mark: Mark) -> Lines {
   Lines(..lines, partial: Carrying(<<>>))
   |> push(fn(sequence) { Marker(sequence:, mark:) })
 }
 
 /// Takes the bytes of a read: each line they end is added to the ring, and the
 /// bytes after the last newline are carried.
-pub fn feed(lines: Lines, bytes: BitArray) -> Lines {
+pub fn feed(lines lines: Lines, bytes bytes: BitArray) -> Lines {
   case newline_at(bytes, 0) {
     Error(Nil) -> absorb(lines, bytes)
     Ok(index) -> {
@@ -143,7 +144,7 @@ pub fn feed(lines: Lines, bytes: BitArray) -> Lines {
           bit_array.byte_size(bytes) - index - 1,
         )
         as "the bytes after the newline are inside the bytes"
-      lines |> absorb(before) |> end_line |> feed(after)
+      lines |> absorb(before) |> end_line |> feed(bytes: after)
     }
   }
 }
@@ -183,12 +184,12 @@ fn end_line(lines: Lines) -> Lines {
   let ended = Lines(..lines, partial: Carrying(<<>>))
   case lines.partial {
     Skipping -> ended
-    Carrying(bytes:) -> line_from(ended, bytes, cut: False)
-    Cutting(bytes:) -> line_from(ended, bytes, cut: True)
+    Carrying(bytes:) -> line_from(lines: ended, raw: bytes, cut: False)
+    Cutting(bytes:) -> line_from(lines: ended, raw: bytes, cut: True)
   }
 }
 
-fn line_from(lines: Lines, raw: BitArray, cut cut: Bool) -> Lines {
+fn line_from(lines lines: Lines, raw raw: BitArray, cut cut: Bool) -> Lines {
   let whole = case cut {
     True -> without_incomplete_character(raw)
     False -> without_carriage_return(raw)
@@ -202,7 +203,7 @@ fn line_from(lines: Lines, raw: BitArray, cut cut: Bool) -> Lines {
   }
   let source = lines.source
   push(lines, fn(sequence) {
-    Line(sequence:, text:, level: level(source, text), cut:)
+    Line(sequence:, text:, level: level(source:, text:), cut:)
   })
 }
 
@@ -222,57 +223,45 @@ fn without_carriage_return(raw: BitArray) -> BitArray {
 /// whose continuation bytes were cut off is dropped with the ones before it.
 fn without_incomplete_character(raw: BitArray) -> BitArray {
   let size = bit_array.byte_size(raw)
-  incomplete_from(raw, size, 1)
+  case lead_of_last_character(raw:, size:, back: 1) {
+    Ok(#(back, length)) if length > back -> {
+      let assert Ok(whole) = bit_array.slice(raw, 0, size - back)
+        as "the bytes before the lead are inside the bytes"
+      whole
+    }
+    Ok(_) | Error(Nil) -> raw
+  }
 }
 
-fn incomplete_from(raw: BitArray, size: Int, back: Int) -> BitArray {
-  case back > 3 || back > size {
-    True -> raw
-    False ->
-      case bit_array.slice(raw, size - back, 1) {
-        Ok(<<byte>>) if byte < 0x80 -> raw
-        // A continuation byte: look one byte further back for its lead.
-        Ok(<<byte>>) if byte < 0xC0 -> incomplete_from(raw, size, back + 1)
-        Ok(<<byte>>) -> {
-          let needed = case byte {
-            byte if byte < 0xE0 -> 2
-            byte if byte < 0xF0 -> 3
-            _ -> 4
-          }
-          case needed > back {
-            True -> {
-              let assert Ok(whole) = bit_array.slice(raw, 0, size - back)
-                as "the bytes before the lead are inside the bytes"
-              whole
-            }
-            False -> raw
-          }
-        }
-        _ -> raw
-      }
+/// How far back from the end the lead byte of the last character is, and the
+/// length of character that lead says. Nil when the last byte is ASCII or no
+/// lead is within the last three bytes.
+fn lead_of_last_character(
+  raw raw: BitArray,
+  size size: Int,
+  back back: Int,
+) -> Result(#(Int, Int), Nil) {
+  use <- bool.guard(when: back > 3 || back > size, return: Error(Nil))
+  case bit_array.slice(raw, size - back, 1) {
+    Ok(<<byte>>) if byte < 0x80 -> Error(Nil)
+    // A continuation byte: look one byte further back for its lead.
+    Ok(<<byte>>) if byte < 0xC0 ->
+      lead_of_last_character(raw:, size:, back: back + 1)
+    Ok(<<byte>>) if byte < 0xE0 -> Ok(#(back, 2))
+    Ok(<<byte>>) if byte < 0xF0 -> Ok(#(back, 3))
+    Ok(<<_>>) -> Ok(#(back, 4))
+    _ -> Error(Nil)
   }
 }
 
 /// The text cut to the cap, back to a whole character.
 fn cut_to_cap(text: String) -> String {
-  cut_to_cap_from(string.to_graphemes(text), 0, [])
-}
-
-fn cut_to_cap_from(
-  characters: List(String),
-  size: Int,
-  kept: List(String),
-) -> String {
-  case characters {
-    [] -> string.concat(list.reverse(kept))
-    [character, ..rest] -> {
-      let size = size + bit_array.byte_size(bit_array.from_string(character))
-      case size > line_cap_bytes {
-        True -> string.concat(list.reverse(kept))
-        False -> cut_to_cap_from(rest, size, [character, ..kept])
-      }
-    }
-  }
+  let assert Ok(head) =
+    bit_array.slice(bit_array.from_string(text), 0, line_cap_bytes)
+    as "the text is longer than the cap"
+  let assert Ok(cut) = bit_array.to_string(without_incomplete_character(head))
+    as "a text cut at a character is text"
+  cut
 }
 
 /// How `clean` is reading: ordinary text, just after an escape, or inside an
@@ -283,60 +272,60 @@ type Reading {
   Sequence
 }
 
+/// What `clean` has so far: how it is reading, and the codepoints it keeps,
+/// the last first.
+type Cleaning {
+  Cleaning(reading: Reading, kept: List(Int))
+}
+
 /// Bytes as text to show: invalid UTF-8 as U+FFFD, terminal escape sequences
 /// and control characters removed, the tab kept.
 fn clean(raw: BitArray) -> String {
-  clean_from(raw, Plain, [])
+  let cleaned = list.fold(codes(raw, []), Cleaning(Plain, []), take)
+  cleaned.kept
+  |> list.reverse
+  |> list.filter_map(string.utf_codepoint)
+  |> string.from_utf_codepoints
 }
 
-fn clean_from(
-  raw: BitArray,
-  reading: Reading,
-  kept: List(UtfCodepoint),
-) -> String {
+/// The codepoint of each character of the bytes; each byte that is not UTF-8
+/// is U+FFFD.
+fn codes(raw: BitArray, found: List(Int)) -> List(Int) {
   case raw {
-    <<>> -> string.from_utf_codepoints(list.reverse(kept))
     <<code:utf8_codepoint, rest:bits>> ->
-      step(rest, reading, kept, string.utf_codepoint_to_int(code), code)
-    <<_, rest:bits>> -> {
-      let assert Ok(replacement) = string.utf_codepoint(0xFFFD)
-        as "U+FFFD is a codepoint"
-      step(rest, reading, kept, 0xFFFD, replacement)
-    }
-    _ -> string.from_utf_codepoints(list.reverse(kept))
+      codes(rest, [string.utf_codepoint_to_int(code), ..found])
+    <<_, rest:bits>> -> codes(rest, [0xFFFD, ..found])
+    _ -> list.reverse(found)
   }
 }
 
-fn step(
-  rest: BitArray,
-  reading: Reading,
-  kept: List(UtfCodepoint),
-  code: Int,
-  codepoint: UtfCodepoint,
-) -> String {
-  case reading {
-    Plain ->
-      case code {
-        0x1B -> clean_from(rest, Escaped, kept)
-        code if code == 0x09 -> clean_from(rest, Plain, [codepoint, ..kept])
-        code if code < 0x20 || code == 0x7F || { code >= 0x80 && code < 0xA0 } ->
-          clean_from(rest, Plain, kept)
-        _ -> clean_from(rest, Plain, [codepoint, ..kept])
-      }
+fn take(cleaning: Cleaning, code: Int) -> Cleaning {
+  case cleaning.reading {
+    Plain -> plain(cleaning.kept, code)
     // An escape that opens no sequence is dropped alone.
     Escaped ->
       case code {
-        0x5B -> clean_from(rest, Sequence, kept)
-        _ -> step(rest, Plain, kept, code, codepoint)
+        0x5B -> Cleaning(Sequence, cleaning.kept)
+        _ -> plain(cleaning.kept, code)
       }
     // Parameters and intermediates, then a final byte; any other character
     // ends the sequence without being part of it.
     Sequence ->
       case code {
-        code if code >= 0x20 && code <= 0x3F -> clean_from(rest, Sequence, kept)
-        code if code >= 0x40 && code <= 0x7E -> clean_from(rest, Plain, kept)
-        _ -> step(rest, Plain, kept, code, codepoint)
+        code if code >= 0x20 && code <= 0x3F -> cleaning
+        code if code >= 0x40 && code <= 0x7E -> Cleaning(Plain, cleaning.kept)
+        _ -> plain(cleaning.kept, code)
       }
+  }
+}
+
+fn plain(kept: List(Int), code: Int) -> Cleaning {
+  case code {
+    0x1B -> Cleaning(Escaped, kept)
+    0x09 -> Cleaning(Plain, [code, ..kept])
+    code if code < 0x20 || code == 0x7F || { code >= 0x80 && code < 0xA0 } ->
+      Cleaning(Plain, kept)
+    _ -> Cleaning(Plain, [code, ..kept])
   }
 }
 
@@ -356,7 +345,7 @@ fn push(lines: Lines, entry: fn(Int) -> Entry) -> Lines {
 /// updater's script wrote (after its stamp, before the last lines it copied
 /// from a container): a container's own words never change what the updater
 /// said. Bad words win over warn words, and warn over ok.
-pub fn level(source: Source, text: String) -> Level {
+pub fn level(source source: Source, text text: String) -> Level {
   let message = message_of(text)
   case words_level(message), source {
     LevelInfo, LaunchdLog -> launchd_level(text)
@@ -420,15 +409,14 @@ fn words_level(message: String) -> Level {
 
 /// A guess from what git, Podman, gh and bash print into launchd's log.
 fn launchd_level(text: String) -> Level {
-  case
-    string.starts_with(text, "fatal:")
-    || string.starts_with(text, "Error:")
-    || string.starts_with(text, "gh: API rate limit")
-    || is_a_bash_error(text)
-  {
-    True -> LevelBad
-    False -> LevelInfo
-  }
+  use <- bool.guard(
+    when: string.starts_with(text, "fatal:")
+      || string.starts_with(text, "Error:")
+      || string.starts_with(text, "gh: API rate limit")
+      || is_a_bash_error(text),
+    return: LevelBad,
+  )
+  LevelInfo
 }
 
 /// Whether the line holds `: line N: `, how bash names the line of a script

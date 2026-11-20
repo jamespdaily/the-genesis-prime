@@ -173,7 +173,7 @@ fn read_piece(
 /// own inode and size call for, and closes it.
 pub fn file_reader() -> Reader {
   fn(path, cursor) {
-    read_piece(path, fn(inode, size) { plan(cursor, inode, size) })
+    read_piece(path, fn(inode, size) { plan(cursor:, inode:, size:) })
     |> result.map(fn(read) {
       let #(plan, bytes) = read
       Fetched(
@@ -190,7 +190,11 @@ pub fn file_reader() -> Reader {
 }
 
 /// What to read of a file with this inode and size, from this cursor.
-fn plan(cursor: Cursor, inode: Int, size: Int) -> #(Int, Int, Plan) {
+fn plan(
+  cursor cursor: Cursor,
+  inode inode: Int,
+  size size: Int,
+) -> #(Int, Int, Plan) {
   case cursor {
     At(inode: seen, offset:) if seen == inode && size >= offset -> {
       let length = int.min(read_limit_bytes, size - offset)

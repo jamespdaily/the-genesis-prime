@@ -1,7 +1,7 @@
 //// The dashboard's HTML document: the title bar with a link to every page of the
 //// page list, the stylesheets, and the server component element whose runtime
 //// the websocket starts. A page is a title and a path inside the key prefix
-//// (`dashboard/access`).
+//// (`dashboard/access`); its runtime has a path of its own.
 ////
 //// - Every link, stylesheet and the runtime's route is written relative to the
 ////   document (`style.css`, not `/style.css`), so it stays under the key
@@ -30,13 +30,19 @@ fn relative_link(path: String) -> String {
   }
 }
 
-/// The document served for `current`: its runtime connects to `runtime_route`,
-/// a path inside the key prefix.
-pub fn document(
-  pages pages: List(Page),
-  current current: Page,
-  runtime_route runtime_route: String,
-) -> String {
+/// The path inside the key prefix that a page's runtime connects to: the
+/// Overview's is `/ws` and every other page's is its path and `-ws`, so no two
+/// pages share one.
+pub fn runtime_path(page: Page) -> String {
+  case page.path {
+    "/" -> "/ws"
+    path -> path <> "-ws"
+  }
+}
+
+/// The document served for `current`: its runtime connects to the page's own
+/// runtime path.
+pub fn document(pages pages: List(Page), current current: Page) -> String {
   html.html([attribute.lang("en")], [
     html.head([], [
       html.meta([attribute.charset("utf-8")]),
@@ -63,7 +69,7 @@ pub fn document(
         ]),
         html.main([attribute.class("page")], [
           server_component.element(
-            [server_component.route(relative_link(runtime_route))],
+            [server_component.route(relative_link(runtime_path(current)))],
             [],
           ),
         ]),

@@ -6,9 +6,8 @@
 //// chunks never changes the lines.
 
 import genesis_prime/dashboard/log_lines.{
-  type Entry, type Level, type Lines, type Source, LaunchdLog, LevelBad,
-  LevelInfo, LevelOk, LevelWarn, Line, LogCutShorter, LogReplaced, Marker,
-  UpdaterLog,
+  type Entry, type Level, type Lines, LaunchdLog, LevelBad, LevelInfo, LevelOk,
+  LevelWarn, Line, LogCutShorter, LogReplaced, Marker, UpdaterLog,
 }
 import gleam/bit_array
 import gleam/int
@@ -238,22 +237,12 @@ pub fn the_ring_keeps_the_newest_lines_in_order_and_counts_what_it_dropped_test(
   assert log_lines.carried_bytes(after) == 0
 }
 
-/// A line shape found in a real log, with the source it was found in and the
-/// level its words give.
-fn shape(
-  source: Source,
-  text: String,
-  level: Level,
-) -> #(Source, String, Level) {
-  #(source, text, level)
-}
-
 pub fn a_line_has_the_level_its_words_give_test() -> Nil {
   use <- owned_test.run(5000)
   let stamp = "2026-11-08 19:58:30 play-service: "
   let sha = "9e559d87a4114fec0419cc01cd2865f1f1fa7eea"
   let updater = fn(message: String, level: Level) {
-    shape(UpdaterLog, stamp <> message, level)
+    #(UpdaterLog, stamp <> message, level)
   }
   let rows = [
     // The updater's log, bad.
@@ -339,48 +328,48 @@ pub fn a_line_has_the_level_its_words_give_test() -> Nil {
       LevelInfo,
     ),
     // A shape no word names is plain, in either log.
-    shape(UpdaterLog, "something a later script says", LevelInfo),
-    shape(LaunchdLog, "something a later tool says", LevelInfo),
-    shape(UpdaterLog, "", LevelInfo),
+    #(UpdaterLog, "something a later script says", LevelInfo),
+    #(LaunchdLog, "something a later tool says", LevelInfo),
+    #(UpdaterLog, "", LevelInfo),
     // The launchd log: git, podman and gh print their own words.
-    shape(
+    #(
       LaunchdLog,
       "fatal: unable to access 'https://github.com/jamespdaily/the-genesis-prime.git/': Could not resolve host: github.com",
       LevelBad,
     ),
-    shape(
+    #(
       LaunchdLog,
       "Error: building at STEP \"RUN gleam deps download\": while running runtime: exit status 1",
       LevelBad,
     ),
-    shape(
+    #(
       LaunchdLog,
       "gh: API rate limit exceeded for user ID 478289. If you reach out to GitHub Support for help, please include the request ID EEC1:11513C",
       LevelBad,
     ),
-    shape(
+    #(
       LaunchdLog,
       "/Users/jimd/.genesis-prime/play-service/bin/lib.sh: line 74: GENESIS_PLAY_ADDRESS: set GENESIS_PLAY_ADDRESS in /Users/jimd/.genesis-prime/env.sh",
       LevelBad,
     ),
-    shape(
+    #(
       LaunchdLog,
       "check_image: genesis-play:"
         <> sha
         <> " holds none of the 16044 files in /Users/jimd/.genesis-prime/tables",
       LevelInfo,
     ),
-    shape(LaunchdLog, "applying 0017_character_health_dead_is_0", LevelInfo),
-    shape(LaunchdLog, "", LevelInfo),
-    shape(LaunchdLog, "see the manual: line of text", LevelInfo),
+    #(LaunchdLog, "applying 0017_character_health_dead_is_0", LevelInfo),
+    #(LaunchdLog, "", LevelInfo),
+    #(LaunchdLog, "see the manual: line of text", LevelInfo),
     // The updater's own lines also reach launchd's log, stamped.
-    shape(
+    #(
       LaunchdLog,
       stamp
         <> "a live session holds /Users/jimd/.genesis-prime/live.lock; nothing done",
       LevelWarn,
     ),
-    shape(LaunchdLog, stamp <> sha <> " did not come up either", LevelBad),
+    #(LaunchdLog, stamp <> sha <> " did not come up either", LevelBad),
     // The container's own lines never change what the updater said.
     updater(
       "genesis-play did not come up: state running, exit code 0, restarted 1 times; its last lines: |genesis-play started|alert sent",
@@ -391,7 +380,7 @@ pub fn a_line_has_the_level_its_words_give_test() -> Nil {
       LevelInfo,
     ),
     // The rules for launchd's own words do not apply to the updater's log.
-    shape(UpdaterLog, "Error: a line the updater never writes", LevelInfo),
+    #(UpdaterLog, "Error: a line the updater never writes", LevelInfo),
   ]
   list.each(rows, fn(row) {
     let #(source, text, expected) = row

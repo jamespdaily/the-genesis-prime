@@ -8,11 +8,14 @@
 //// start ──► key ──► entry file written (private, not yet published)
 ////                         │
 ////          supervisor ────┼── (rebuilt together, poller first)
-////                         │     poller of the state script ──► page runtimes' readings
-////                         │     factory of the page's runtimes (one per tab)
+////                         │     poller of the state script ──► Overview runtimes' readings
+////                         │     factory of the Overview's runtimes (one per tab)
+////                         ├── (rebuilt together, followers first)
+////                         │     follower of each log file ──► Logs runtimes' lines
+////                         │     factory of the Logs page's runtimes (one per tab)
 ////                         └── mist on 127.0.0.1:PORT ── web.handle ──► answer
-////                                                           │ upgrade
-////                                                  websocket ── a runtime of its own
+////                                                           │ upgrade of a page
+////                                                  websocket ── a runtime of that page, its own
 ////                         │
 ////                   entry file published, URL printed
 //// ```
@@ -22,9 +25,12 @@
 ////   `GENESIS_CLIENT_FILES_DIR` (else `client-files` under the home). The
 ////   state script is `dev/play_service/state.sh` of the worktree the dashboard
 ////   runs from; it is run with `GENESIS_HOME` set to the settings' home.
-//// - A poller that dies is rebuilt together with the page runtimes, whose
-////   sockets then close, so every open page reconnects and subscribes again
-////   instead of showing its last reading as if it were fresh.
+//// - A poller that dies is rebuilt together with the Overview's runtimes, and a
+////   log follower that dies with the Logs page's runtimes, whose sockets then
+////   close, so every open page reconnects and subscribes again instead of
+////   showing its last reading or lines as if they were fresh.
+//// - The Logs page follows `play-service.log` and `play-service.launchd.log`
+////   inside the settings' home, which the updater's scripts write.
 //// - The start refuses, with its reason, when the port is busy (two dashboards
 ////   must not run) and when the key cannot be kept, whether the entry file
 ////   cannot be written or cannot be published (a key that cannot be kept must
@@ -35,7 +41,10 @@
 
 import envoy
 import genesis_prime/dashboard/access.{type Gate, Gate}
+import genesis_prime/dashboard/follow
 import genesis_prime/dashboard/host
+import genesis_prime/dashboard/log_lines
+import genesis_prime/dashboard/logs
 import genesis_prime/dashboard/overview
 import genesis_prime/dashboard/page.{type Page}
 import genesis_prime/dashboard/secret
@@ -52,6 +61,7 @@ import gleam/http/response.{type Response}
 import gleam/int
 import gleam/io
 import gleam/list
+import gleam/option.{type Option, None}
 import gleam/otp/actor
 import gleam/otp/factory_supervisor
 import gleam/otp/static_supervisor
@@ -62,8 +72,9 @@ import mist.{type Connection, type ResponseData}
 import simplifile
 
 /// Where the dashboard listens, keeps its entry file and reads what it serves,
-/// and which script reports the play service, how often it is read and how long
-/// a read may run before it is ended.
+/// which script reports the play service, how often it is read and how long a
+/// read may run before it is ended, how often the log files are read, and who
+/// is told of the log followers' reads and drops.
 pub type Settings {
   Settings(
     port: Int,
@@ -73,17 +84,23 @@ pub type Settings {
     state_script: String,
     poll_interval_ms: Int,
     read_deadline_ms: Int,
+    log_interval_ms: Int,
+    log_watcher: Option(Subject(follow.Event)),
   )
 }
 
 /// A dashboard that is serving: its gate, its owner process, the factory of
-/// the page runtimes and the poller the pages subscribe to.
+/// each page's runtimes, the poller the Overview subscribes to and the
+/// followers of the log files the Logs page subscribes to.
 pub type Running {
   Running(
     gate: Gate,
     owner: Pid,
-    runtimes: socket.Runtimes,
+    runtimes: socket.Runtimes(Subject(host.Message), overview.Message),
+    log_runtimes: socket.Runtimes(logs.Followers, logs.Message),
     poller: Subject(host.Message),
+    updater_log: Subject(follow.Message),
+    launchd_log: Subject(follow.Message),
   )
 }
 
@@ -108,8 +125,8 @@ pub type Report {
 const default_port = 7700
 
 /// The pages of the dashboard, in the order of the navigation.
-fn pages() -> List(Page) {
-  [overview.page()]
+pub fn pages() -> List(Page) {
+  [overview.page(), logs.page()]
 }
 
 /// Reads the settings from the environment.
@@ -126,6 +143,8 @@ fn settings_from_environment() -> Result(Settings, SettingsError) {
     state_script: "dev/play_service/state.sh",
     poll_interval_ms: host.interval_ms,
     read_deadline_ms: host.deadline_ms,
+    log_interval_ms: follow.interval_ms,
+    log_watcher: None,
   ))
 }
 
@@ -145,6 +164,14 @@ pub fn start(settings settings: Settings) -> Result(Running, StartError) {
   let runtimes_name = process.new_name("dashboard_runtimes")
   let poller_name = process.new_name("dashboard_poller")
   let poller = process.named_subject(poller_name)
+  let log_runtimes_name = process.new_name("dashboard_log_runtimes")
+  let updater_name = process.new_name("dashboard_updater_log")
+  let launchd_name = process.new_name("dashboard_launchd_log")
+  let followers =
+    logs.Followers(
+      updater: process.named_subject(updater_name),
+      launchd: process.named_subject(launchd_name),
+    )
   let context =
     web.Context(
       gate:,
@@ -157,7 +184,11 @@ pub fn start(settings settings: Settings) -> Result(Running, StartError) {
     )
   let server =
     mist.new(fn(request) {
-      respond(context:, runtimes_name:, poller:, request:)
+      respond(
+        context:,
+        served: Served(runtimes_name:, poller:, log_runtimes_name:, followers:),
+        request:,
+      )
     })
     |> mist.bind(access.loopback)
     |> mist.port(settings.port)
@@ -173,6 +204,15 @@ pub fn start(settings settings: Settings) -> Result(Running, StartError) {
       interval_ms: settings.poll_interval_ms,
       deadline_ms: settings.read_deadline_ms,
     )
+  let log_follower = fn(source) {
+    follow.Settings(
+      source:,
+      path: settings.genesis_home <> "/" <> log_lines.file_name(source),
+      reader: follow.file_reader(),
+      interval_ms: settings.log_interval_ms,
+      watcher: settings.log_watcher,
+    )
+  }
   let start_tree = fn() {
     static_supervisor.new(static_supervisor.OneForOne)
     |> static_supervisor.restart_tolerance(intensity: 3, period: 5)
@@ -192,6 +232,26 @@ pub fn start(settings settings: Settings) -> Result(Running, StartError) {
       )
       |> static_supervisor.supervised,
     )
+    |> static_supervisor.add(
+      static_supervisor.new(static_supervisor.RestForOne)
+      |> static_supervisor.restart_tolerance(intensity: 3, period: 5)
+      |> static_supervisor.add(follow.supervised(
+        settings: log_follower(log_lines.UpdaterLog),
+        name: updater_name,
+      ))
+      |> static_supervisor.add(follow.supervised(
+        settings: log_follower(log_lines.LaunchdLog),
+        name: launchd_name,
+      ))
+      |> static_supervisor.add(
+        lustre.factory(logs.app())
+        |> factory_supervisor.restart_strategy(supervision.Temporary)
+        |> factory_supervisor.restart_tolerance(intensity: 3, period: 5)
+        |> factory_supervisor.named(log_runtimes_name)
+        |> factory_supervisor.supervised,
+      )
+      |> static_supervisor.supervised,
+    )
     |> static_supervisor.add(mist.supervised(server))
     |> static_supervisor.start
   }
@@ -207,7 +267,10 @@ pub fn start(settings settings: Settings) -> Result(Running, StartError) {
             gate:,
             owner:,
             runtimes: factory_supervisor.get_by_name(runtimes_name),
+            log_runtimes: factory_supervisor.get_by_name(log_runtimes_name),
             poller:,
+            updater_log: followers.updater,
+            launchd_log: followers.launchd,
           ))
         Error(reason) -> {
           stop_tree(owner:, tree:)
@@ -270,20 +333,36 @@ pub fn start_report(gate gate: Gate) -> Report {
   )
 }
 
-/// How many page runtimes are alive.
+/// How many page runtimes are alive, of every page.
 pub fn runtime_count(running running: Running) -> Int {
   factory_supervisor.count_children(running.runtimes)
+  + factory_supervisor.count_children(running.log_runtimes)
+}
+
+/// What the pages' runtimes are started with and where their factories are
+/// named: the Overview's by the poller, the Logs page's by the log followers.
+type Served {
+  Served(
+    runtimes_name: process.Name(
+      factory_supervisor.Message(
+        Subject(host.Message),
+        Subject(lustre.RuntimeMessage(overview.Message)),
+      ),
+    ),
+    poller: Subject(host.Message),
+    log_runtimes_name: process.Name(
+      factory_supervisor.Message(
+        logs.Followers,
+        Subject(lustre.RuntimeMessage(logs.Message)),
+      ),
+    ),
+    followers: logs.Followers,
+  )
 }
 
 fn respond(
   context context: web.Context,
-  runtimes_name runtimes_name: process.Name(
-    factory_supervisor.Message(
-      Subject(host.Message),
-      Subject(lustre.RuntimeMessage(overview.Message)),
-    ),
-  ),
-  poller poller: Subject(host.Message),
+  served served: Served,
   request request: Request(Connection),
 ) -> Response(ResponseData) {
   case web.handle(context, request) {
@@ -291,19 +370,49 @@ fn respond(
       response.map(answer, fn(body) {
         mist.Bytes(bytes_tree.from_bit_array(body))
       })
-    web.Upgrade ->
-      case process.named(runtimes_name) {
-        Ok(_) ->
-          socket.upgrade(
+    web.Upgrade(page) ->
+      case page == overview.page(), page == logs.page() {
+        True, _ ->
+          upgraded(
+            runtimes_name: served.runtimes_name,
+            argument: served.poller,
             request:,
-            runtimes: factory_supervisor.get_by_name(runtimes_name),
-            poller:,
           )
-        // The page runtimes are being rebuilt; the client asks again.
-        Error(Nil) ->
-          response.new(503)
+        _, True ->
+          upgraded(
+            runtimes_name: served.log_runtimes_name,
+            argument: served.followers,
+            request:,
+          )
+        False, False ->
+          response.new(404)
           |> response.set_body(mist.Bytes(bytes_tree.new()))
       }
+  }
+}
+
+/// The websocket of a page whose runtimes are in the factory named
+/// `runtimes_name`.
+fn upgraded(
+  runtimes_name runtimes_name: process.Name(
+    factory_supervisor.Message(
+      argument,
+      Subject(lustre.RuntimeMessage(message)),
+    ),
+  ),
+  argument argument: argument,
+  request request: Request(Connection),
+) -> Response(ResponseData) {
+  case process.named(runtimes_name) {
+    Ok(_) ->
+      socket.upgrade(
+        request:,
+        runtimes: factory_supervisor.get_by_name(runtimes_name),
+        argument:,
+      )
+    // The page runtimes are being rebuilt; the client asks again.
+    Error(Nil) ->
+      response.new(503) |> response.set_body(mist.Bytes(bytes_tree.new()))
   }
 }
 

@@ -6,6 +6,7 @@
 
 import dashboard_support
 import genesis_prime/dashboard/access
+import genesis_prime/dashboard/overview
 import genesis_prime/dashboard/web
 import gleam/bit_array
 import gleam/http
@@ -50,8 +51,8 @@ pub fn the_key_rides_in_the_path_and_no_cookie_is_ever_set_test() -> Nil {
     let inside = with_origin(dashboard_support.inside(route.path))
     let outside = with_origin(route.path)
     case route.serves {
-      web.Websocket -> {
-        assert web.handle(context, inside) == web.Upgrade as route.path
+      web.Websocket(page:) -> {
+        assert web.handle(context, inside) == web.Upgrade(page) as route.path
         assert web.handle(context, outside) == web.Answer(web.refusal())
           as route.path
       }
@@ -158,14 +159,18 @@ pub fn no_route_but_the_websocket_changes_anything_test() -> Nil {
   use <- owned_test.run(5000)
   let routes = web.routes(dashboard_support.pages())
   assert reads_only(routes)
-  assert !reads_only([web.Route(http.Post, "/stop", web.Websocket)])
+  assert !reads_only([
+    web.Route(http.Post, "/stop", web.Websocket(overview.page())),
+  ])
     as "a table that lists a POST fails the check"
 
   // The lookup reads the route's method: a route listed for POST is found by
   // a POST and not by a GET.
-  let with_post = [web.Route(http.Post, "/stop", web.Websocket)]
+  let with_post = [
+    web.Route(http.Post, "/stop", web.Websocket(overview.page())),
+  ]
   assert web.find_route(with_post, http.Post, "/stop")
-    == Ok(web.Route(http.Post, "/stop", web.Websocket))
+    == Ok(web.Route(http.Post, "/stop", web.Websocket(overview.page())))
   assert web.find_route(with_post, http.Get, "/stop") == Error(Nil)
 
   // A method other than GET is never served: without the key it is the one
@@ -198,10 +203,17 @@ pub fn no_route_but_the_websocket_changes_anything_test() -> Nil {
   })
 }
 
-/// Every route is a GET, and exactly one of them is the websocket upgrade.
+/// Every route is a GET, and one of them for each page is the websocket
+/// upgrade.
 fn reads_only(routes: List(web.Route)) -> Bool {
   list.all(routes, fn(route) { route.method == http.Get })
-  && list.count(routes, fn(route) { route.serves == web.Websocket }) == 1
+  && list.count(routes, fn(route) {
+    case route.serves {
+      web.Websocket(_) -> True
+      web.PageDocument(_) | web.Asset(_) -> False
+    }
+  })
+  == list.length(dashboard_support.pages())
 }
 
 fn sorted(headers: List(#(String, String))) -> List(#(String, String)) {
