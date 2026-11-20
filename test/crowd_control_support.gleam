@@ -60,7 +60,11 @@ pub fn gate_stun(instance_id instance_id: Int) -> strike_tell.ControlTell {
 /// A Kick Knockdown with the instance id 28673 (unit 7's first) that a creature holds
 /// until `ends_at_ms`.
 pub fn kick_landed(ends_at_ms ends_at_ms: Int) -> strike_tell.ControlLanded {
-  ControlLanded(tell: kick_knockdown(instance_id: 28_673), ends_at_ms:)
+  ControlLanded(
+    tell: kick_knockdown(instance_id: 28_673),
+    ends_at_ms:,
+    interrupted: None,
+  )
 }
 
 /// A state of any kind a test strike carries, held for `duration_ms` from its landing:

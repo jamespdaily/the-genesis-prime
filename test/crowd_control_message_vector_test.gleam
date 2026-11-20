@@ -10,12 +10,17 @@
 //// `Unit.CodeEnumCCState` (0 Stun, 8 Knockdown); the unit 20, the instance id 28673
 //// (unit 7 x 4096 + 1) and Kick's Spell4 58591 are the values named beside each
 //// vector. The bytes decode to the values, the values encode back to them, and every
-//// shorter run of the bytes ends inside a field.
+//// shorter run of the bytes ends inside a field. The interrupt line
+//// (`opcode.0x247.interrupted`, type 19) is packed by `message_support.packed` from the
+//// widths of `0x14009f8f0`: the interrupting Spell4 id 18, the cast result 9, then the
+//// cast data.
 
+import genesis_prime/message/cast_result
 import genesis_prime/message/combat_log.{CombatLog}
 import genesis_prime/message/combat_log_cc_state.{CombatLogCcState}
 import genesis_prime/message/combat_log_cc_state_break.{CombatLogCcStateBreak}
 import genesis_prime/message/combat_log_entry
+import genesis_prime/message/combat_log_interrupted.{CombatLogInterrupted}
 import genesis_prime/message/combat_result
 import genesis_prime/message/crowd_control_result
 import genesis_prime/message/crowd_control_state.{Knockdown, Stun}
@@ -107,6 +112,34 @@ pub fn the_combat_log_carries_a_state_set_removed_or_broken_test() -> Nil {
       entry: combat_log_entry.CcStateBreak(CombatLogCcStateBreak(
         unit_id: 20,
         state: Knockdown,
+      )),
+    ),
+    encode: combat_log.encode,
+    decode: combat_log.decode,
+  )
+}
+
+pub fn an_interrupt_line_is_the_interrupting_spell_a_cast_result_the_cast_data_test() -> Nil {
+  use <- owned_test.run(5000)
+  message_support.assert_codec(
+    name: "opcode.0x247.interrupted type 19: Paralytic Surge 42352 in 18 bits, SpellInterrupted 11 in 9, caster 7, target 73494, Sim-Turret charge 85469 in 18, combat result Hit 2",
+    body: message_support.packed([
+      #(6, 19),
+      #(18, 42_352),
+      #(9, 11),
+      #(32, 7),
+      #(32, 73_494),
+      #(18, 85_469),
+      #(4, 2),
+    ]),
+    value: CombatLog(
+      entry: combat_log_entry.Interrupted(CombatLogInterrupted(
+        interrupting_spell4_id: 42_352,
+        cast_result: cast_result.SpellInterrupted,
+        caster_unit_id: 7,
+        target_unit_id: 73_494,
+        spell4_id: 85_469,
+        combat_result: combat_result.Hit,
       )),
     ),
     encode: combat_log.encode,

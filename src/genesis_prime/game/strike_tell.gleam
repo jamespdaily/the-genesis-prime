@@ -37,6 +37,12 @@
 ////   its damage, or alone: a phase with a stun and no damage still tells the unit
 ////   (Stagger's 38780). The creature answers `Landed` with the states it took, and
 ////   only those are listed in the caster's go (genesis_prime/world_map/creature_control).
+//// - **The answer marks the state that broke a cast**: the creature sets
+////   `ControlLanded.interrupted` on the first landed state of the strike that broke its
+////   open cast, so the striker's connection writes the combat log's interrupt line with the
+////   go (genesis_prime/game/cast/frame `states_logged`) and no message is added. A state
+////   that breaks nothing, a death and a leash carry no mark
+////   (genesis_prime/world_map/creature_control `gaps` lists what no mark covers).
 //// - **A strike carries the gates of its rows** (`Gate`): each row of the strike, damage,
 ////   crowd control or go, whose target apply prerequisite reads the struck creature's own
 ////   state, with the prerequisite as parsed. The creature checks them against its own state
@@ -111,9 +117,22 @@ pub type Gate {
 /// A state the unit took: the effect as it was told, and the monotonic time in
 /// milliseconds the creature holds it until (its arrival plus delay plus duration,
 /// on the clock the creature and the caster's connection share), so the caster's
-/// node for the state lives exactly as long as the state does.
+/// node for the state lives exactly as long as the state does. `interrupted` names the
+/// cast this state broke: the creature marks the first state that landed of the strike
+/// that broke an open charge or special, and no other, so the caster's combat log shows
+/// the interrupt once (`opcode.0x247.interrupted`).
 pub type ControlLanded {
-  ControlLanded(tell: ControlTell, ends_at_ms: Int)
+  ControlLanded(
+    tell: ControlTell,
+    ends_at_ms: Int,
+    interrupted: Option(Interrupted),
+  )
+}
+
+/// The cast of the creature that a state broke: the Spell4 of the charge or special, which
+/// the combat log line names as the spell interrupted.
+pub type Interrupted {
+  Interrupted(spell4_id: Spell4Id)
 }
 
 /// One CCStateSet effect a strike puts on the unit: its Spell4Effects id, the instance

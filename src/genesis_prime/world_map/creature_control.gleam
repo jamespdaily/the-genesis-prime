@@ -275,13 +275,20 @@ fn held(state state: State, tell tell: Tell, now_ms now_ms: Int) -> Landing {
           controls: list.append(state.controls, [control]),
           next_number: state.next_number + 1,
         ),
-        #(ControlLanded(tell: told, ends_at_ms: control.ends_at_ms), [
-          ToViewers(client_connection.CrowdControlApplied(
-            state: told.row.state,
-            instance_id: told.instance_id,
-          )),
-          StartTimer(control: control.number, after_ms: hold_ms),
-        ]),
+        #(
+          ControlLanded(
+            tell: told,
+            ends_at_ms: control.ends_at_ms,
+            interrupted: None,
+          ),
+          [
+            ToViewers(client_connection.CrowdControlApplied(
+              state: told.row.state,
+              instance_id: told.instance_id,
+            )),
+            StartTimer(control: control.number, after_ms: hold_ms),
+          ],
+        ),
       )
     })
   Landing(
@@ -412,6 +419,18 @@ pub fn gaps() -> List(gap.Entry) {
     gap.Entry(
       area: "Creature crowd control",
       missing: "a crowd-control state held by a creature when a viewer arrives: the viewer is not told of it, since the 0x262 does not carry it",
+    ),
+    gap.Entry(
+      area: "Creature crowd control",
+      missing: "the interrupt line of a creature's cast broken by a throw that carries no state: only a landed state is shown to its caster as the interrupter",
+    ),
+    gap.Entry(
+      area: "Creature crowd control",
+      missing: "the interrupt line for a player's own cancelled cast and for a creature that interrupts a player's cast: the client logs those only from a server line, and none is sent",
+    ),
+    gap.Entry(
+      area: "Creature crowd control",
+      missing: "the interrupt line when the creature's answer comes after the round's deadline: the go leaves that unit out and writes no line",
     ),
     gap.Entry(
       area: "Creature crowd control",

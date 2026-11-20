@@ -24,6 +24,7 @@ import ask_support
 import attacker_support
 import cast_support
 import character_tables
+import creature_news_support
 import crowd_control_support
 import driven_time
 import event_wait
@@ -70,7 +71,9 @@ import genesis_prime/service
 import genesis_prime/service/shell
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/store.{Character}
-import genesis_prime/table/id.{Creature2Id, Spell4BaseId, Spell4EffectsId}
+import genesis_prime/table/id.{
+  Creature2Id, Spell4BaseId, Spell4EffectsId, Spell4Id,
+}
 import genesis_prime/table/spell4_effects
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_faction
@@ -2301,6 +2304,29 @@ fn struck_from(
   damage damage: Int,
   cast_id cast_id: Int,
 ) -> Nil {
+  struck_with_states(
+    world:,
+    run:,
+    connection:,
+    unit_id:,
+    x:,
+    damage:,
+    cast_id:,
+    controls: [],
+  )
+}
+
+/// The same strike carrying these crowd-control states.
+fn struck_with_states(
+  world world: World,
+  run run: MapProcess,
+  connection connection: Int,
+  unit_id unit_id: Int,
+  x x: Float,
+  damage damage: Int,
+  cast_id cast_id: Int,
+  controls controls: List(strike_tell.ControlTell),
+) -> Nil {
   let assert creature.Strike(tell:) =
     world_watch_support.strike_message(
       unit_id:,
@@ -2328,6 +2354,7 @@ fn struck_from(
           hit_radius: place_support.player_hit_radius,
           rolls: hit.Rolls(crit: 0.5, deflect: 0.5, glance: 0.5),
         ),
+        controls:,
       ),
     )
   let assert Ok(Nil) =
@@ -2449,27 +2476,9 @@ fn sent_so_far(
 
 /// The cast news of the creature among what the connection has been sent so far.
 fn cast_news(message: Message) -> Result(String, Nil) {
-  case message {
-    ForStay(
-      sent: SentByPeer(PeerNews(news: client_connection.CastStarted(..), ..)),
-      ..,
-    ) -> Ok("0x7ff")
-    ForStay(
-      sent: SentByPeer(PeerNews(news: client_connection.CastWent(..), ..)),
-      ..,
-    ) -> Ok("0x7f4")
-    ForStay(
-      sent: SentByPeer(PeerNews(news: client_connection.CastFinished(..), ..)),
-      ..,
-    ) -> Ok("0x7fe")
-    ForStay(
-      sent: SentByPeer(PeerNews(news: client_connection.CastInterrupted(..), ..)),
-      ..,
-    ) -> Ok("0x7f9")
-    ForStay(..)
-    | client_connection.SentBySessions(..)
-    | client_connection.SentByChat(..) -> Error(Nil)
-  }
+  creature_news_support.named_among(names: ["0x7ff", "0x7f4", "0x7fe", "0x7f9"])(
+    message,
+  )
 }
 
 /// The answer of a fighter the strike hit, as its connection's hit rule gives it
@@ -3398,4 +3407,116 @@ pub fn an_eldan_security_construct_draws_its_laser_bolt_circle_under_the_player_
     && list.map(went.targets, fn(target) { target.unit_id }) == [20]
     as "the strike go is phase 0 and names player 2 alone"
   world_support.stop(world: roaring.world)
+}
+
+/// The mark of each state of the answers to the strike `cast_id` among what the connection
+/// was sent.
+fn marks_answered(
+  world world: World,
+  id id: Int,
+  received received: Subject(Message),
+  cast_id cast_id: Int,
+) -> List(option.Option(strike_tell.Interrupted)) {
+  sent_so_far(world:, id:, received:, wanted: fn(message) {
+    case message {
+      ForStay(
+        sent: client_connection.SentByTarget(answered: Answered(
+          key: Key(cast_id: answered_cast, ..),
+          outcome: Landed(controls:, ..),
+        )),
+        ..,
+      )
+        if answered_cast == cast_id
+      -> Ok(list.map(controls, fn(control) { control.interrupted }))
+      ForStay(..)
+      | client_connection.SentBySessions(..)
+      | client_connection.SentByChat(..) -> Error(Nil)
+    }
+  })
+  |> list.flatten
+}
+
+/// The state and cast-ending news a viewer's connection was sent, by the names of the frames
+/// each becomes. A broken cast is one `CastInterrupted` news, which the connection writes as
+/// the 0x7f9 and then the 0x7fe, so it is named "0x7f9" here and the creature sends no
+/// `CastFinished` news besides it.
+fn state_and_cast_news(message: Message) -> Result(String, Nil) {
+  creature_news_support.named_among(names: ["0x87f", "0x7f9", "0x7fe"])(message)
+}
+
+pub fn a_stun_between_the_gos_of_earthen_roar_marks_the_answer_to_the_stunner_alone_test() -> Nil {
+  use <- owned_test.run(30_000)
+  // Rootbrute Grimspore (Creature2 12212) casts Earthen Roar (Spell4 55317) 1500 ms after
+  // player 1's strike, its first go 2500 ms after the cast starts. Player 2's Stagger stun
+  // lands 500 ms into the cast. The second row's stunner is a connection the world has no
+  // process for: its answer is dropped, and the creature breaks the cast and goes on all
+  // the same.
+  [#("a stunner that is there", True), #("a stunner that is gone", False)]
+  |> list.each(fn(row) {
+    let #(reason, there) = row
+    let roaring = roaring_fight()
+    let received_2 = case there {
+      True -> Some(world_support.connection(world: roaring.world, id: 2))
+      False -> None
+    }
+    driven_time.advance(time: roaring.time, ms: 1500)
+    let start = next_cast_started(received: roaring.received)
+    driven_time.advance(time: roaring.time, ms: 500)
+    struck_with_states(
+      world: roaring.world,
+      run: roaring.run,
+      connection: 2,
+      unit_id: roaring.unit_id,
+      x: 0.0,
+      damage: 1,
+      cast_id: 7,
+      controls: [crowd_control_support.stagger_stun(instance_id: 28_673)],
+    )
+    driven_time.settled(roaring.pid)
+    assert list.filter_map(
+        world_support.sent_before_the_marker(
+          world: roaring.world,
+          id: 1,
+          received: roaring.received,
+        ),
+        state_and_cast_news,
+      )
+      == ["0x87f", "0x7f9"]
+      as {
+        reason
+        <> ": the other viewer is sent the state and the one news of the broken cast, which its connection writes as 0x7f9 then 0x7fe"
+      }
+    assert marks_answered(
+        world: roaring.world,
+        id: 1,
+        received: roaring.received,
+        cast_id: 7,
+      )
+      == []
+      as {
+        reason
+        <> ": the other viewer is sent no answer to a strike that is not its own"
+      }
+    case received_2 {
+      Some(received) -> {
+        assert marks_answered(
+            world: roaring.world,
+            id: 2,
+            received:,
+            cast_id: 7,
+          )
+          == [Some(strike_tell.Interrupted(spell4_id: Spell4Id(55_317)))]
+          as { reason <> ": the stunner's answer names Earthen Roar" }
+      }
+      None -> Nil
+    }
+    driven_time.advance(time: roaring.time, ms: 3000)
+    let next = next_cast_started(received: roaring.received)
+    assert next.spell4_id == 5649 && next.cast_id != start.cast_id
+      as {
+        reason
+        <> ": the stun ended and the creature attacks with its instant attack"
+      }
+    world_support.stop(world: roaring.world)
+  })
 }

@@ -102,7 +102,8 @@
 ////                                                            the next attack tick (interval) started
 ////                                                         ─0x7f4 of each entry─▶
 ////                                                         ─0x7f9(cast id, result 11) 0x7fe─────────────────▶
-////                                                         ChargeInterrupted(cast id) ─▶ creature_guard `Interrupted`
+////                                                         ChargeInterrupted(cast id, Spell4 id) ─▶ creature_guard `Interrupted`,
+////                                                            and the mark on the first state landed (strike_tell `Interrupted`)
 //// ```
 ////
 //// - **Aggro** comes only from a viewer, by `Approached` while Resting: the map
@@ -285,7 +286,7 @@
 ////   every entry reached in go order with what was struck so far (a viewer's connection forgets a
 ////   cast at its 0x7f9, and the client drops a 0x7f4 of a cast it no longer holds), then 0x7f9 with
 ////   result 11 (SpellInterrupted) and the 0x7fe, closes the round, starts the next attack tick and asks the
-////   creature's rule to tell the guard (`ChargeInterrupted`, with the charge's cast id), which opens the creature
+////   creature's rule to tell the guard (`ChargeInterrupted`, with the charge's cast id and Spell4, which the rule also puts on the first state the strike landed), which opens the creature
 ////   (genesis_prime/world_map/creature_guard). A creature holding a state starts no charge, so a state
 ////   that lands in a charge is the first; once the last go is reached (`Striking`) the strikes are
 ////   out and nothing breaks. The break is the fight's
@@ -350,6 +351,10 @@
 //// | CastEnds timer: it fires after an interrupt | the round was closed and the generation moved on, so it does nothing | `a_cast_end_after_an_interrupt_is_stale_test` |
 //// | a state takes hold after the go (the round is `Striking`) | nothing breaks: the strikes are out | `an_interrupt_after_the_go_opens_nothing_test` |
 //// | a second state takes hold in the same round | the first state closed the round, so the second finds no charge: nothing more | `a_second_state_in_the_same_round_opens_nothing_more_test` |
+//// | a state takes hold during a charge or a special | `ChargeInterrupted` names the charge's Spell4, which marks the first state of the strike that landed | `a_break_names_the_spell_of_the_charge_it_broke_test`, `the_first_state_a_strike_lands_in_a_charge_is_marked_with_the_charges_spell_test` |
+//// | a second player's state takes hold in the same round | the state lands and carries no mark | `two_players_stunning_one_charge_mark_only_the_first_strike_the_creature_took_test` |
+//// | armor stops the state, no round is open, the round is `Striking` or the creature rests | no charge breaks and nothing is marked | `a_state_that_breaks_no_charge_marks_nothing_test` |
+//// | death or a leash in a charge | no `ChargeInterrupted`, no mark | `a_death_or_a_leash_in_a_charge_marks_no_answer_test` |
 //// | CastEnds timer: a fighter was released during the charge | it is off the threat list, so it is not struck | `a_fighter_released_mid_charge_is_not_struck_test` |
 //// | Strike to a fighter: its answer, the last one or the deadline | each answer joins the go as a round's does; the last answer or the deadline closes the round (0x7f4, 0x7fe), and the next attack tick starts | `the_struck_go_and_finish_follow_the_answers_test` |
 //// | Death or leash during the charge: C is killed, or its last threat entry is released | `CancelTimer(CastEnds)` and 0x7fe for the charge, no 0x7f4, then the death or the release as without a charge; the later CastEnds does nothing | `death_during_a_charge_ends_it_test`, `leash_during_a_charge_ends_it_test` |
@@ -742,10 +747,12 @@ pub type Effect {
   /// The creature stands at full health again: creature_life's health is restored
   /// and each viewer is sent its 0x937.
   RestoreHealth
-  /// A crowd-control state broke the open charge: its `CancelTimer(CastEnds)`, the 0x7f9 of
-  /// result 11 and the 0x7fe are in the effects before it, and the creature's rule tells the
-  /// guard (`creature_guard.Interrupted`), which opens the creature.
-  ChargeInterrupted(cast_id: Int)
+  /// A crowd-control state broke the open charge `cast_id` of the Spell4 `spell4_id`: its
+  /// `CancelTimer(CastEnds)`, the 0x7f9 of result 11 and the 0x7fe are in the effects before
+  /// it, and the creature's rule tells the guard (`creature_guard.Interrupted`), which opens
+  /// the creature, and marks the first state of the strike that landed
+  /// (`strike_tell.ControlLanded.interrupted`) with the Spell4.
+  ChargeInterrupted(cast_id: Int, spell4_id: Spell4Id)
   StartTimer(timer: Timer, after_ms: Int)
   CancelTimer(timer: Timer)
 }
@@ -2994,7 +3001,10 @@ fn charge_broken(
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
   case state.status {
-    Fighting(round: Some(Round(cast_id:, stage: Charging(..), ..) as round), ..) as fighting -> {
+    Fighting(
+      round: Some(Round(cast_id:, spell4_id:, stage: Charging(..), ..) as round),
+      ..,
+    ) as fighting -> {
       let here = creature_path.place_at(path: state.path, now_ms:)
       let #(state, ticked) =
         next_tick(
@@ -3009,7 +3019,7 @@ fn charge_broken(
           written_all(round:, here:),
           [ToViewers(client_connection.CastInterrupted(cast_id:))],
           ticked,
-          [ChargeInterrupted(cast_id:)],
+          [ChargeInterrupted(cast_id:, spell4_id:)],
         ]),
       )
     }

@@ -881,8 +881,8 @@ const combat_and_stat_rows = [
     refused_from: 36,
     never: [3, 4, 6, 7, 12, 13, 17],
     open: [
-      0, 5, 8, 9, 10, 11, 15, 16, 19, 20, 21, 25, 26, 27, 28, 29, 30, 31, 32, 33,
-      34, 35,
+      0, 5, 8, 9, 10, 11, 15, 16, 20, 21, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
+      35,
     ],
     reason: "union-kinds.md: the client reads types 0 to 35; the NEVER rows are never sent, every other lacking type waits for its system or for a question about the client's dispatch",
   ),
