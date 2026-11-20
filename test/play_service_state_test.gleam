@@ -655,8 +655,8 @@ pub fn a_hung_read_ends_within_its_bound_and_leaves_no_process_test() -> Nil {
         <> " ]; } || ! kill -0 $reader 2>/dev/null; do sleep 0.05; done; "
         <> "kill -9 $reader; "
         <> "rm "
-        <> scene.fakes
-        <> "/look.hold; "
+        <> support.look_hold_path(scene:)
+        <> "; "
         <> "until ! kill -0 $(cat "
         <> call
         <> ") 2>/dev/null || ! kill -0 $(cat "

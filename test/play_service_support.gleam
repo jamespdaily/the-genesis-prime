@@ -106,16 +106,17 @@ pub fn blocked_pids(scene scene: Scene, key key: String) -> List(Int) {
   |> list.filter_map(fn(line) { int.parse(string.trim(line)) })
 }
 
-/// Holds every look of a bounded call until `release_looks` is called; the first
-/// look records the process id of the shell that waits for the call.
-pub fn hold_looks(scene scene: Scene) -> Nil {
-  let assert Ok(Nil) = simplifile.write(scene.fakes <> "/look.hold", "")
-  Nil
+/// The file whose presence holds every look of a bounded call; a test's shell
+/// removes it to let the looks go on.
+pub fn look_hold_path(scene scene: Scene) -> String {
+  scene.fakes <> "/look.hold"
 }
 
-/// Lets the held looks go on.
-pub fn release_looks(scene scene: Scene) -> Nil {
-  let assert Ok(Nil) = simplifile.delete(scene.fakes <> "/look.hold")
+/// Holds every look of a bounded call until the file at `look_hold_path` is
+/// removed; the first look records the process id of the shell that waits for
+/// the call.
+pub fn hold_looks(scene scene: Scene) -> Nil {
+  let assert Ok(Nil) = simplifile.write(look_hold_path(scene:), "")
   Nil
 }
 
