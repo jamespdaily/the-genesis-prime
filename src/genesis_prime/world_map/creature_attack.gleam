@@ -287,9 +287,9 @@ pub fn special_checked(
     spell_plan.spell_alone(tables:, sources:, spell4_id:, chain: [])
     |> result.map_error(fn(error) { NotPlanned(spell4_id:, error:) }),
   )
-  use Nil <- result.try(channel_carried(spell4_id:, spell:))
   let times_ms = spell_plan.go_times_ms(spell:)
   use Nil <- result.try(gos_rise(spell4_id:, times_ms:))
+  use Nil <- result.try(channel_carried(spell4_id:, spell:, times_ms:))
   let effects = spell_plan.effects_of(sources:, spell4_id:)
   let go_count = list.length(times_ms)
   use Nil <- result.try(strike_gos_named(spell4_id:, effects:, go_count:))
@@ -298,24 +298,27 @@ pub fn special_checked(
   delays_checked(sources:, tables:, spell4_id:, effects:, go_count:)
 }
 
-/// A channel the creature's round can carry: a ChanneledField cast with a cast time of 0 is
-/// refused (with a cast time the plan's one go at that time is what a creature's special has
-/// been cast with), and so is a channel with a finish after its last pulse
-/// (`spell_plan.finish_after_ms`).
+/// A channel the creature's round can carry, given the spell's go times (`times_ms`, which
+/// `gos_rise` has found to hold a go): a ChanneledField cast with a cast time of 0 is refused,
+/// and so is a channel with a finish after its last pulse (`spell_plan.finish_after_ms`). A
+/// ChanneledField cast with a cast time is cast as the plan's one go at that time, though the
+/// client keeps a channel record for it and the number of gos it expects is not settled.
 fn channel_carried(
   spell4_id spell4_id: Int,
   spell spell: spell_plan.Spell,
+  times_ms times_ms: List(Int),
 ) -> Result(Nil, Unevaluated) {
-  case spell.method, spell.cast_time_ms, spell_plan.finish_after_ms(spell:) {
-    spell_plan.ChanneledField, 0, _ -> Error(ChanneledFieldNotRead(spell4_id:))
-    _, _, Some(max_time_ms) ->
+  let field_unread =
+    spell.method == spell_plan.ChanneledField && spell.cast_time_ms == 0
+  case field_unread, spell_plan.finish_after_ms(spell:), list.last(times_ms) {
+    True, _, _ -> Error(ChanneledFieldNotRead(spell4_id:))
+    False, Some(max_time_ms), Ok(last_pulse_ms) ->
       Error(ChannelEndsAfterItsLastPulse(
         spell4_id:,
         max_time_ms:,
-        last_pulse_ms: list.last(spell_plan.go_times_ms(spell:))
-          |> result.unwrap(0),
+        last_pulse_ms:,
       ))
-    _, _, None -> Ok(Nil)
+    False, _, _ -> Ok(Nil)
   }
 }
 

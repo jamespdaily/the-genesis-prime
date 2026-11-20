@@ -1494,6 +1494,7 @@ fn attack_of(
         Ok(Some(spell_area.CreatureArea(row: area_row, inside:, anchor:))) -> {
           use #(gos, hold_ms) <- result.map(timeline_of(
             catalog:,
+            role:,
             creature_id:,
             spell4_id:,
             cast_ms: spell.cast_time,
@@ -1565,23 +1566,29 @@ fn attack_of(
   Ok(#(attack, creature_scaling, attack_effects))
 }
 
-/// The gos of a charge and the hold after it. A spell a kind lists as a special has the gos of
+/// The gos of a charge and the hold after it. A special has the gos of
 /// its plan (`spell_plan.go_times_ms`): each go the `applied` damage rows name strikes with those
 /// rows' blows inside the hit shapes its phase names that the client is drawing then
 /// (`spell_area.hit_shapes_by_go`), a go with no such rows or no such shape strikes nobody, and
 /// the hold is the summed `delay_ms` and `duration_ms` of its NpcExecutionDelay rows at the
-/// cast's last go. Any other charge has one go at its cast time that strikes with every applied
-/// row inside `inside`, and no hold. A special the plan could not read, one with no go time or
+/// cast's last go. An auto-attack with a cast time has one go at its cast time that strikes with
+/// every applied row inside `inside`, and no hold, whether or not another kind lists its spell
+/// as a special. A special the plan could not read, one with no go time or
 /// one whose shapes cannot be read fails the load.
 fn timeline_of(
   catalog catalog: Catalog,
+  role role: Role,
   creature_id creature_id: Creature2Id,
   spell4_id spell4_id: Spell4Id,
   cast_ms cast_ms: Int,
   applied applied: List(spell4_effects.Spell4Effects),
   inside inside: area.Inside,
 ) -> Result(#(List(creature_life.Go), Int), SpawnError) {
-  case dict.get(catalog.special_plans, spell4_id.value) {
+  let plan = case role {
+    AutoAttack -> Error(Nil)
+    Special -> dict.get(catalog.special_plans, spell4_id.value)
+  }
+  case plan {
     Error(Nil) ->
       Ok(#(
         [

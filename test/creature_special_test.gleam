@@ -235,6 +235,15 @@ pub fn a_channel_the_creatures_round_cannot_carry_is_refused_by_name_test() -> N
     && string.contains(late_finish, "2600")
     && string.contains(late_finish, "2500")
     as "the refusal names the spell, the channelMaxTime and the last pulse"
+  // A channelMaxTime of 100 is before the first pulse at 250: the channel has no pulse, so the
+  // refusal is the missing go, not a last pulse at 0.
+  let no_pulse =
+    refused_when(spell4_id: 52_150, table: "Spell4", id: 52_150, cells: [
+      #("channelMaxTime", Integer(100)),
+    ])
+  assert string.contains(no_pulse, "has no go time")
+    && !string.contains(no_pulse, "last pulse")
+    as "a channel with no pulse is refused for having no go"
 }
 
 pub fn a_spell_with_another_effect_type_is_refused_naming_it_test() -> Nil {
@@ -836,8 +845,12 @@ pub fn the_cast_time_0_lift_loads_the_named_specials_on_the_real_tables_test() -
   // its plan gives and the number of gos its damage rows name at which a hit row is drawn
   // (`table_rows -- SpellPhase spell4IdOwner=N`, `-- Spell4Effects spellId=N`, `--
   // TelegraphDamage`), over the client's own tables. Spell4 72808 takes Creature2 61635: the
-  // lowest, 26042, is friendly to both player factions and would not start; its difficulty
-  // names a damage row for one go fewer. 52150's hit row
+  // lowest, 26042, is friendly to both player factions and would not start (both have
+  // creature2DifficultyId 5). Its damage row 188167 (phaseFlags 0x7e) names gos 1 to 6, but
+  // its hit rows 12150 and 12151 (phaseFlags 0x7c) name gos 2 to 6 and a Multiphase cast
+  // compares the phase, so the go at 1,000 ms strikes nobody: 5 of its 7 gos. The counts of
+  // 52150 (6) and 72808 (5) rest on `telegraph_window`'s marked guess that a hit row is drawn
+  // at a go equal to its end. 52150's hit row
   // 7108 ends at 1,500 ms, so its pulses at 1,750 and 2,000 strike nobody; 48482 and 48497
   // hold a go no hit row is drawn at; 42531 and 42533 name every one of 481 gos (phaseFlags
   // -1). 63724 and 63726 have no hit row and strike inside their area row.

@@ -18,8 +18,9 @@
 ////   `RowId` holds one integer, so the sentence carries the Spell4.
 //// - **The load refuses** a Spell4 the client lacks; a cooldown below the strike deadline
 ////   (`strike_tell.deadline_ms`), since two rounds would be open at once; and a spell
-////   `creature_attack.special_checked` refuses: a ChanneledField cast with a cast time of 0 or a channel with a finish after
-////   its last pulse (`creature_attack.channel_carried`), no readable area (rows
+////   `creature_attack.special_checked` refuses: a ChanneledField cast with a cast time of 0
+////   or a channel with a finish after its last pulse (`creature_attack.channel_carried`),
+////   no readable area (rows
 ////   placed apart, on the caster and the target or drawn where the cast starts and following a
 ////   unit, are not readable: `spell_area.PlacedApart`; a row on each struck unit, the ground or
 ////   two units: `spell_area.TelegraphOnStruckUnits`, `spell_area.TelegraphNotOnCaster`; an area
@@ -38,9 +39,9 @@
 ////   fail the creature's difficulty, or at which no hit row is drawn, strikes nobody; the special
 ////   still loads when another go can strike, and is refused when none can
 ////   (`creature_attack.NoGoCanStrike`). The hold follows the cast's last go.
-//// - **A special is cast whatever its `castTime`**: a Multiphase cast, a channel and a cast
-////   with no phase row have a cast time of 0 and the gos of their plan, the first possibly at 0
-////   (`spawn` `attack_of`); the client draws the cast bar by the spell's own rows.
+//// - **A special is cast whatever its `castTime`**: it has the gos of its plan, which may be
+////   many, the first possibly at 0, whatever its cast time: 0, or above it (Haymaker 66285, a
+////   Multiphase cast, has 3033) (`spawn` `attack_of`); the client draws the cast bar by the spell's own rows.
 //// - **The formula is read**: a special whose damage formula the creature rule does not
 ////   read for the creature's difficulty is refused (`creature_attack.loadable`), which the
 ////   spawn load would refuse later.
@@ -218,7 +219,16 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Creature specials",
-      missing: "an auto-attack the importer lists as a special because its description lacks the auto-attack marker is read as a special when it loads",
+      missing: "a ChanneledField special with a cast time above 0 (Spell4 47518 and 47627) is cast as the one go at its cast time, 200 ms, although the client keeps a 20 s channel record for each: the number of gos the client expects of it is not settled",
+    ),
+    gap.Entry(
+      area: "Creature specials",
+      missing: "a channel whose last pulse falls before its channelMaxTime, where the client's cast ends, is refused, as the creature's round writes its 0x7fe after the last go and has no later finish",
+    ),
+
+    gap.Entry(
+      area: "Creature specials",
+      missing: "an auto-attack the importer lists as a special because its description lacks the auto-attack marker is read as a special when it loads (4 spells) and is refused for having no area row otherwise (203 unmarked `Auto-Attack #n` spells)",
     ),
   ]
 }

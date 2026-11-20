@@ -44,6 +44,7 @@ import genesis_prime/table/id.{
 }
 import genesis_prime/table/loader/store
 import genesis_prime/world_map/creature_faction.{type Factions}
+import genesis_prime/world_map/creature_kind.{Kinds}
 import genesis_prime/world_map/creature_life.{Attackable, Charged, Hostile}
 import genesis_prime/world_map/creature_unit_type.{Turret}
 import genesis_prime/world_map/spawn.{
@@ -2007,6 +2008,36 @@ pub fn the_attacks_role_decides_whether_a_cast_time_of_0_is_instant_or_charged_t
   assert autos_beast(spell4_ids: [33_251]).combat.attack.cast
     == creature_life.Instant
     as "the kind's auto-attack 33251 is instant"
+}
+
+pub fn an_auto_attack_with_a_cast_time_has_one_go_though_another_kind_lists_its_spell_as_a_special_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4 55317 has castTime 3000 and a plan of two gos, 2500 and 3000 ms
+  // (`table_rows -- SpellPhase spell4IdOwner=55317`). One kind lists it as a special; the
+  // Beast's kind lists it as the auto-attack, which has the one go at its cast time and
+  // strikes with every applied row.
+  let autos = spawn_support.kinds_with_beast_autos(spell4_ids: [55_317])
+  let specials =
+    spawn_support.kinds_with_specials(creature_id: 1, spell4_ids: [55_317])
+  let selection =
+    spawn.select(
+      rows: [spawn_support.beast_row(number: 1)],
+      tables: character_tables.content_tables(),
+      formulas: rating_support.formulas(),
+      kinds: Kinds(
+        ..autos,
+        by_creature: dict.merge(autos.by_creature, specials.by_creature),
+      ),
+      vendors: vendor.none(),
+      factions: creature_faction.none(),
+    )
+  assert selection.refusals == [] as "the Beast's row is taken"
+  let assert Ok(world) = dict.get(selection.worlds, 3460) as "world 3460"
+  let assert Ok(beast) = dict.get(world.by_id, SpawnId(1)) as "spawn 1 starts"
+  let assert Charged(gos:, ..) = beast.combat.attack.cast
+    as "a cast time above 0 is a charge"
+  assert go_blows(gos) == [#(3000, Some([131_967]))]
+    as "one go at the cast time, striking with the row 131967"
 }
 
 pub fn a_charge_carries_the_draws_the_anchor_and_the_aim_bit_of_its_spell_test() -> Nil {
