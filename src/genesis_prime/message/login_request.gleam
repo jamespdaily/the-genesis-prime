@@ -22,10 +22,10 @@ pub type LoginRequest {
     account_name: String,
     user_id: BitArray,
     game_token: BitArray,
-    field_6: Int,
-    field_7: Int,
-    field_8: Int,
-    field_9: Int,
+    client_address: Int,
+    language: Int,
+    premium_system: Int,
+    unset_word: Int,
     processor_manufacturer: String,
     processor_name: String,
     processor_description: String,
@@ -62,10 +62,10 @@ pub fn encode(message: LoginRequest) -> Result(BitArray, EncodeError) {
   )
   |> bit_stream.write_guid("user_id", message.user_id)
   |> bit_stream.write_guid("game_token", message.game_token)
-  |> bit_stream.write_unsigned("field_6", message.field_6, 32)
-  |> bit_stream.write_unsigned("field_7", message.field_7, 32)
-  |> bit_stream.write_unsigned("field_8", message.field_8, 32)
-  |> bit_stream.write_unsigned("field_9", message.field_9, 32)
+  |> bit_stream.write_unsigned("client_address", message.client_address, 32)
+  |> bit_stream.write_unsigned("language", message.language, 32)
+  |> bit_stream.write_unsigned("premium_system", message.premium_system, 32)
+  |> bit_stream.write_unsigned("unset_word", message.unset_word, 32)
   |> bit_stream.write_wide_text(
     "processor_manufacturer",
     message.processor_manufacturer,
@@ -149,10 +149,16 @@ pub fn decode(body: BitArray) -> Result(LoginRequest, DecodeError) {
   ))
   use #(user_id, reader) <- result.try(bit_stream.read_guid(reader))
   use #(game_token, reader) <- result.try(bit_stream.read_guid(reader))
-  use #(field_6, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
-  use #(field_7, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
-  use #(field_8, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
-  use #(field_9, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
+  use #(client_address, reader) <- result.try(bit_stream.read_unsigned(
+    reader,
+    32,
+  ))
+  use #(language, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
+  use #(premium_system, reader) <- result.try(bit_stream.read_unsigned(
+    reader,
+    32,
+  ))
+  use #(unset_word, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   use #(processor_manufacturer, reader) <- result.try(bit_stream.read_wide_text(
     reader,
   ))
@@ -226,10 +232,10 @@ pub fn decode(body: BitArray) -> Result(LoginRequest, DecodeError) {
     account_name:,
     user_id:,
     game_token:,
-    field_6:,
-    field_7:,
-    field_8:,
-    field_9:,
+    client_address:,
+    language:,
+    premium_system:,
+    unset_word:,
     processor_manufacturer:,
     processor_name:,
     processor_description:,

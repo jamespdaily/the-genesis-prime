@@ -46,7 +46,7 @@ fn carried(id id: Int) -> BitArray {
   let assert Ok(inner) = frame.encode(message_id: id, body: <<>>)
     as "the frame is within the size limit"
   let assert Ok(body) =
-    world_message.encode(WorldMessage(field_1: 0, inner_frame: inner))
+    world_message.encode(WorldMessage(send_kind: 0, inner_frame: inner))
     as "the carrier encodes"
   sent(id: 0x038C, body:)
 }

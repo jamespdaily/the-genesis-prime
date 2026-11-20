@@ -58,10 +58,10 @@ fields = [
   { name = "account_name", kind = "counted_wide_text", max_units = 250, evidence = "0x14007dd40", named_by = "opcode.0x592" },
   { name = "user_id", kind = "guid", evidence = "0x14007dd40", named_by = "opcode.0x592" },
   { name = "game_token", kind = "guid", evidence = "0x14007dd40", named_by = "opcode.0x592" },
-  { name = "field_6", kind = "unsigned", bits = 32, evidence = "0x14007dd40" },
-  { name = "field_7", kind = "unsigned", bits = 32, evidence = "0x14007dd40" },
-  { name = "field_8", kind = "unsigned", bits = 32, evidence = "0x14007dd40" },
-  { name = "field_9", kind = "unsigned", bits = 32, evidence = "0x14007dd40" },
+  { name = "client_address", kind = "unsigned", bits = 32, evidence = "0x14007dd40", named_by = "opcode.0x592.client_address" },
+  { name = "language", kind = "unsigned", bits = 32, evidence = "0x14007dd40", named_by = "opcode.0x592.language" },
+  { name = "premium_system", kind = "unsigned", bits = 32, evidence = "0x14007dd40", named_by = "opcode.0x592.gmode" },
+  { name = "unset_word", kind = "unsigned", bits = 32, evidence = "0x14007dd40", named_by = "opcode.0x592.unset_word" },
   { name = "processor_manufacturer", kind = "wide_text", evidence = "0x14007dd40", named_by = "opcode.0x592" },
   { name = "processor_name", kind = "wide_text", evidence = "0x14007dd40", named_by = "opcode.0x592" },
   { name = "processor_description", kind = "wide_text", evidence = "0x14007dd40", named_by = "opcode.0x592" },
@@ -129,11 +129,11 @@ direction = "client_to_server"
 evidence = "opcode.0x58f"
 summary = "the first message on a game connection, sent when the server's hello arrives, with the session key"
 fields = [
-  { name = "field_1", kind = "unsigned", bits = 32, evidence = "0x14007e320" },
+  { name = "account_id", kind = "unsigned", bits = 32, evidence = "0x14007e320", named_by = "opcode.0x58f.account_id" },
   { name = "session_key", kind = "guid", evidence = "0x14007e320", named_by = "opcode.0x58f" },
-  { name = "field_3", kind = "unsigned", bits = 64, evidence = "0x14007e320" },
+  { name = "zero", kind = "unsigned", bits = 64, evidence = "0x14007e320", named_by = "opcode.0x58f.zero" },
   { name = "account_name", kind = "wide_text", evidence = "0x14007e320", named_by = "opcode.0x58f" },
-  { name = "field_5", kind = "unsigned", bits = 32, evidence = "0x14007e320" },
+  { name = "three", kind = "unsigned", bits = 32, evidence = "0x14007e320", named_by = "opcode.0x58f.three" },
 ]
 
 [[message]]
@@ -226,7 +226,7 @@ direction = "client_to_server"
 evidence = "opcode.0x38c"
 summary = "carries one world message from the client, as a 5-bit value and the world message's whole frame"
 fields = [
-  { name = "field_1", kind = "unsigned", bits = 5, evidence = "0x14007e1c0" },
+  { name = "send_kind", kind = "unsigned", bits = 5, evidence = "0x14007e1c0", named_by = "opcode.0x38c.send_kind" },
   { name = "inner_frame", kind = "whole_frame", evidence = "0x14007e1c0" },
 ]
 
@@ -2609,11 +2609,11 @@ id = 0x0801
 name = "cancel_cast"
 direction = "client_to_server"
 evidence = "opcode.0x801"
-summary = "the client cancels one of its player's casts: the cast id, the reason (6 when the cast's target died) and one bit, which the client's sender always sets; the other senders of the message and whether the id is the server's or the client's are not read"
+summary = "the client cancels one of its player's casts: the cast id, the reason (6 when the cast's target died) and one bit, 1 for a cancel with a reason and 0 for the end of a charge threshold at the player's death; whether the id is the server's or the client's is not read"
 fields = [
   { name = "cast_id", kind = "unsigned", bits = 32, evidence = "opcode.0x801", named_by = "opcode.0x801" },
   { name = "reason", kind = "unsigned", bits = 9, evidence = "opcode.0x801", named_by = "opcode.0x801", values_type = "CastResult", values = [ { value = 1, name = "unable_to_create_spell", evidence = "Spell.CodeEnumCastResult" }, { value = 4, name = "spell_unknown", evidence = "Spell.CodeEnumCastResult" }, { value = 5, name = "spell_bad", evidence = "Spell.CodeEnumCastResult" }, { value = 6, name = "spell_cancelled", evidence = "opcode.0x801" }, { value = 11, name = "spell_interrupted", evidence = "opcode.0x801" }, { value = 13, name = "spell_already_casting", evidence = "Spell.CodeEnumCastResult" }, { value = 14, name = "spell_global_cooldown", evidence = "Spell.CodeEnumCastResult" }, { value = 15, name = "spell_cooldown", evidence = "Spell.CodeEnumCastResult" }, { value = 16, name = "spell_group_cooldown", evidence = "Spell.CodeEnumCastResult" }, { value = 17, name = "spell_pre_requisites", evidence = "Spell.CodeEnumCastResult" }, { value = 22, name = "item_bad", evidence = "0x1403998e0" }, { value = 25, name = "item_charges", evidence = "0x140398cc0" }, { value = 26, name = "item_too_high_level", evidence = "0x140398cc0" }, { value = 28, name = "item_quest_requirements_not_met", evidence = "0x140398cc0" }, { value = 29, name = "item_objective_complete", evidence = "0x140398cc0" }, { value = 30, name = "caster_unknown", evidence = "Spell.CodeEnumCastResult" }, { value = 31, name = "caster_must_have_target", evidence = "Spell.CodeEnumCastResult" }, { value = 32, name = "caster_cannot_be_primary_target", evidence = "Spell.CodeEnumCastResult" }, { value = 33, name = "caster_not_incontrol_of_self", evidence = "Spell.CodeEnumCastResult" }, { value = 34, name = "caster_movement", evidence = "Spell.CodeEnumCastResult" }, { value = 51, name = "caster_vital_cost_resource1", evidence = "Spell4CastResult.vital_cost" }, { value = 53, name = "caster_vital_cost_resource3", evidence = "Spell4CastResult.vital_cost" }, { value = 55, name = "caster_vital_cost_resource5", evidence = "Spell4CastResult.vital_cost" }, { value = 57, name = "caster_cannot_be_dead", evidence = "Spell.CodeEnumCastResult" }, { value = 89, name = "target_group", evidence = "0x1403b44b0" }, { value = 90, name = "target_unknown", evidence = "Spell.CodeEnumCastResult" }, { value = 91, name = "no_target", evidence = "Spell.CodeEnumCastResult" }, { value = 99, name = "target_faction", evidence = "Spell.CodeEnumCastResult" }, { value = 100, name = "target_is_not_useable", evidence = "Spell.CodeEnumCastResult" }, { value = 101, name = "target_orientation", evidence = "Spell.CodeEnumCastResult" }, { value = 102, name = "target_cannot_be_player", evidence = "Spell.CodeEnumCastResult" }, { value = 104, name = "target_range_min", evidence = "Spell.CodeEnumCastResult" }, { value = 105, name = "target_range_max", evidence = "Spell.CodeEnumCastResult" }, { value = 106, name = "target_cannot_be_dead", evidence = "Spell.CodeEnumCastResult" }, { value = 107, name = "target_must_be_dead", evidence = "Spell.CodeEnumCastResult" }, { value = 108, name = "target_cannot_be_in_combat", evidence = "Spell.CodeEnumCastResult" }, { value = 146, name = "client_side_interaction_fail", evidence = "Spell.CodeEnumCastResult.146" }, { value = 151, name = "prereq_caster_cast", evidence = "0x1405648a0" }, { value = 166, name = "caster_needs_los", evidence = "Spell.CodeEnumCastResult" }, { value = 169, name = "weapon_slot", evidence = "Spell.CodeEnumCastResult" }, { value = 182, name = "spell_no_charges", evidence = "Spell.CodeEnumCastResult" }, { value = 183, name = "target_range_vertical", evidence = "Spell.CodeEnumCastResult" }, { value = 281, name = "prereq_target_cast", evidence = "0x1405648a0" }, { value = 282, name = "prereq_caster_persistence", evidence = "0x1405648a0" }, { value = 283, name = "prereq_target_persistence", evidence = "0x1405648a0" }, { value = 285, name = "illegal_spell_cast", evidence = "Spell.CodeEnumCastResult" }, { value = 302, name = "caster_cannot_be_ability_restriction", evidence = "0x1403b2c40" }, { value = 303, name = "target_cannot_be_ability_restriction", evidence = "0x1403b2c40" }, { value = 306, name = "target_hostile_invulnerability", evidence = "Spell.CodeEnumCastResult.306_308" }, { value = 307, name = "target_invulnerable_to_other", evidence = "Spell.CodeEnumCastResult.306_308" }, { value = 308, name = "target_beneficial_invulnerability", evidence = "Spell.CodeEnumCastResult.306_308" }, { value = 317, name = "queued", evidence = "Spell.CodeEnumCastResult" } ] },
-  { name = "field_3", kind = "unsigned", bits = 1, evidence = "opcode.0x801" },
+  { name = "cancelled", kind = "unsigned", bits = 1, evidence = "opcode.0x801", named_by = "opcode.0x801.cancelled" },
 ]
 
 [[message]]
@@ -2980,7 +2980,7 @@ summary = "the player chose how to come back: the player's unit id (not the ghos
 fields = [
   { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x15a", named_by = "opcode.0x15a" },
   { name = "choice", kind = "unsigned", bits = 7, evidence = "opcode.0x15a", named_by = "lua.GameLib.RezType" },
-  { name = "field_3", kind = "unsigned", bits = 32, evidence = "opcode.0x15a" },
+  { name = "caster_unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x15a", named_by = "opcode.0x15a.caster_unit_id" },
 ]
 
 [[message]]
@@ -3129,13 +3129,13 @@ direction = "client_to_server"
 evidence = "opcode.0x23c.body"
 summary = "the client's report to the world server of its own integrity watchdog (telemetry): two 64-bit values, a 32-bit signed integer, three floats and a 32-bit value; nothing the player sees depends on it"
 fields = [
-  { name = "field_1", kind = "unsigned", bits = 64, evidence = "opcode.0x23c.body" },
-  { name = "field_2", kind = "unsigned", bits = 64, evidence = "opcode.0x23c.body" },
-  { name = "field_3", kind = "unsigned", bits = 32, evidence = "opcode.0x23c.body" },
-  { name = "field_4", kind = "float32", evidence = "opcode.0x23c.body" },
-  { name = "field_5", kind = "float32", evidence = "opcode.0x23c.body" },
-  { name = "field_6", kind = "float32", evidence = "opcode.0x23c.body" },
-  { name = "field_7", kind = "unsigned", bits = 32, evidence = "opcode.0x23c.body" },
+  { name = "integrity_key", kind = "unsigned", bits = 64, evidence = "opcode.0x23c.body", named_by = "opcode.0x23c" },
+  { name = "keyed_player_unit_checksum", kind = "unsigned", bits = 64, evidence = "opcode.0x23c.body", named_by = "opcode.0x23c" },
+  { name = "longest_clock_step_ms", kind = "unsigned", bits = 32, evidence = "opcode.0x23c.body", named_by = "opcode.0x23c" },
+  { name = "clock_fit_intercept", kind = "float32", evidence = "opcode.0x23c.body", named_by = "opcode.0x23c" },
+  { name = "clock_fit_slope_ms", kind = "float32", evidence = "opcode.0x23c.body", named_by = "opcode.0x23c" },
+  { name = "clock_fit_residual", kind = "float32", evidence = "opcode.0x23c.body", named_by = "opcode.0x23c" },
+  { name = "keyed_movement_sum", kind = "unsigned", bits = 32, evidence = "opcode.0x23c.body", named_by = "opcode.0x23c" },
 ]
 
 [[message]]
@@ -3145,13 +3145,13 @@ direction = "client_to_server"
 evidence = "opcode.0x240.body"
 summary = "the client's report to the world server of its frame timing (telemetry): two 32-bit values, four floats and a 32-bit value; nothing the player sees depends on it"
 fields = [
-  { name = "field_1", kind = "unsigned", bits = 32, evidence = "opcode.0x240.body" },
-  { name = "field_2", kind = "unsigned", bits = 32, evidence = "opcode.0x240.body" },
-  { name = "field_3", kind = "float32", evidence = "opcode.0x240.body" },
-  { name = "field_4", kind = "float32", evidence = "opcode.0x240.body" },
-  { name = "field_5", kind = "float32", evidence = "opcode.0x240.body" },
-  { name = "field_6", kind = "float32", evidence = "opcode.0x240.body" },
-  { name = "field_7", kind = "unsigned", bits = 32, evidence = "opcode.0x240.body" },
+  { name = "window_mean_frame", kind = "unsigned", bits = 32, evidence = "opcode.0x240.body", named_by = "opcode.0x240" },
+  { name = "window_slowest_frame", kind = "unsigned", bits = 32, evidence = "opcode.0x240.body", named_by = "opcode.0x240" },
+  { name = "camera_x", kind = "float32", evidence = "opcode.0x240.body", named_by = "opcode.0x240.camera_value" },
+  { name = "camera_y", kind = "float32", evidence = "opcode.0x240.body", named_by = "opcode.0x240.camera_value" },
+  { name = "camera_z", kind = "float32", evidence = "opcode.0x240.body", named_by = "opcode.0x240.camera_value" },
+  { name = "field_6", kind = "float32", evidence = "opcode.0x240.body", open = "What does slot 1 of the game's camera object (game 0x71a8, else 0x71a0) return at the window's slowest frame? The recorded values fit a heading in radians; it is not a time step (opcode.0x240.camera_value)." },
+  { name = "session_mean_frame", kind = "unsigned", bits = 32, evidence = "opcode.0x240.body", named_by = "opcode.0x240" },
 ]
 
 [[message]]
@@ -3159,12 +3159,12 @@ id = 0x023F
 name = "network_report"
 direction = "client_to_server"
 evidence = "opcode.0x23f.body"
-summary = "the client's report to the world server of its network statistics (telemetry): four 32-bit values; nothing the player sees depends on it"
+summary = "the client's report to the world server of its network statistics (telemetry): the mean round-trip time in milliseconds, the bytes received and sent per minute, and the known unit count times 2 plus a flag bit; nothing the player sees depends on it"
 fields = [
-  { name = "field_1", kind = "unsigned", bits = 32, evidence = "opcode.0x23f.body" },
-  { name = "field_2", kind = "unsigned", bits = 32, evidence = "opcode.0x23f.body" },
-  { name = "field_3", kind = "unsigned", bits = 32, evidence = "opcode.0x23f.body" },
-  { name = "field_4", kind = "unsigned", bits = 32, evidence = "opcode.0x23f.body" },
+  { name = "mean_round_trip_ms", kind = "unsigned", bits = 32, evidence = "opcode.0x23f.body", named_by = "opcode.0x23f" },
+  { name = "bytes_received_per_minute", kind = "unsigned", bits = 32, evidence = "opcode.0x23f.body", named_by = "opcode.0x23f" },
+  { name = "bytes_sent_per_minute", kind = "unsigned", bits = 32, evidence = "opcode.0x23f.body", named_by = "opcode.0x23f" },
+  { name = "known_unit_count", kind = "unsigned", bits = 32, evidence = "opcode.0x23f.body", named_by = "opcode.0x23f" },
 ]
 
 [[message]]
@@ -3186,20 +3186,20 @@ fields = [
 
 [[message]]
 id = 0x023D
-name = "window_opened"
+name = "statistic_event"
 direction = "client_to_server"
 evidence = "opcode.0x23d"
-summary = "the client says a UI window was opened (telemetry): the window id, six 64-bit values (the first is the sender's character id, the third is probably the time the window was open, the others are 0 in the recordings) and the window name; nothing the player sees depends on it"
+summary = "the client's statistics event (telemetry): an event category (35 from every sender), an event id (the store's events, a window's time open, the interface reloaded), six 64-bit values (the first is the sender's character id; the second and sixth are 0; the third to fifth depend on the event) and the event's text; nothing the player sees depends on it"
 fields = [
-  { name = "field_1", kind = "unsigned", bits = 6, evidence = "opcode.0x23d" },
-  { name = "window_id", kind = "unsigned", bits = 10, evidence = "opcode.0x23d", named_by = "opcode.0x23d" },
+  { name = "category", kind = "unsigned", bits = 6, evidence = "opcode.0x23d", named_by = "opcode.0x23d" },
+  { name = "event_id", kind = "unsigned", bits = 10, evidence = "opcode.0x23d", named_by = "opcode.0x23d" },
   { name = "character_id", kind = "unsigned", bits = 64, evidence = "opcode.0x23d", named_by = "opcode.0x23d" },
-  { name = "field_4", kind = "unsigned", bits = 64, evidence = "opcode.0x23d" },
-  { name = "open_time", kind = "unsigned", bits = 64, evidence = "opcode.0x23d", named_by = "opcode.0x23d" },
-  { name = "field_6", kind = "unsigned", bits = 64, evidence = "opcode.0x23d" },
-  { name = "field_7", kind = "unsigned", bits = 64, evidence = "opcode.0x23d" },
-  { name = "field_8", kind = "unsigned", bits = 64, evidence = "opcode.0x23d" },
-  { name = "window_name", kind = "wide_units", evidence = "opcode.0x23d", named_by = "opcode.0x23d" },
+  { name = "zero_value_2", kind = "unsigned", bits = 64, evidence = "opcode.0x23d", named_by = "opcode.0x23d" },
+  { name = "event_value_3", kind = "unsigned", bits = 64, evidence = "opcode.0x23d", named_by = "opcode.0x23d.events" },
+  { name = "event_value_4", kind = "unsigned", bits = 64, evidence = "opcode.0x23d", named_by = "opcode.0x23d.events" },
+  { name = "event_value_5", kind = "unsigned", bits = 64, evidence = "opcode.0x23d", named_by = "opcode.0x23d.events" },
+  { name = "zero_value_6", kind = "unsigned", bits = 64, evidence = "opcode.0x23d", named_by = "opcode.0x23d" },
+  { name = "event_text", kind = "wide_units", evidence = "opcode.0x23d", named_by = "opcode.0x23d.events" },
 ]
 
 [[message]]

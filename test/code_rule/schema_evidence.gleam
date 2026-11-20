@@ -26,8 +26,8 @@ import genesis_prime/message_schema.{
   type Field, type Record, type Schema, type Union, ArrayOfFloat32,
   ArrayOfRecord, ArrayOfRecordCountedBy, ArrayOfUnsigned, ArrayOfWideText,
   ClientToServer, Constant, CountedWideText, Endpoint, Float32, Guid,
-  HalfFloatAtLeast, OneRecord, RawBytes, Unsigned, UnsignedArrayCountedBy,
-  UnsignedBelow, WholeFrame, WideText, WideUnits,
+  HalfFloatAtLeast, OneRecord, RawBytes, ServerToClient, Unsigned,
+  UnsignedArrayCountedBy, UnsignedBelow, WholeFrame, WideText, WideUnits,
 }
 import gleam/int
 import gleam/list
@@ -168,6 +168,43 @@ fn sent_unions(schema: Schema, owners: List(Owner)) -> List(Union) {
     |> list.flat_map(fn(owner) { owner.fields })
     |> list.filter_map(fn(field) { option.to_result(held_record(field), Nil) })
   list.filter(schema.unions, fn(union) { list.contains(held, union.name) })
+}
+
+/// Each field, as `owner.field`, of a message the client sends (every message
+/// that does not travel only from the server) or of a record such a message
+/// holds, that is called by its position (`field_3`) and is not open with its
+/// question.
+pub fn unmarked_placeholders(schema: Schema) -> List(String) {
+  let client_sent =
+    list.filter(schema.messages, fn(message) {
+      message.direction != ServerToClient
+    })
+  let records =
+    records_reached(
+      records: schema.records,
+      unions: schema.unions,
+      from: list.flat_map(client_sent, fn(message) { message.fields }),
+      found: [],
+    )
+  let owners =
+    list.append(
+      list.map(client_sent, fn(message) { #(message.name, message.fields) }),
+      list.filter_map(schema.records, fn(record) {
+        case list.contains(records, record.name) {
+          True -> Ok(#(record.name, record.fields))
+          False -> Error(Nil)
+        }
+      }),
+    )
+  list.flat_map(owners, fn(owner) {
+    let #(name, fields) = owner
+    list.filter_map(fields, fn(field) {
+      case is_position_name(field.name) && field.open == None {
+        True -> Ok(name <> "." <> field.name)
+        False -> Error(Nil)
+      }
+    })
+  })
 }
 
 /// A field is traced when it names a fact and a name that is not its position,

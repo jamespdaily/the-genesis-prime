@@ -41,7 +41,7 @@ fn sent(message_id message_id: Int, body body: BitArray) -> BitArray {
 
 /// The connection in the world as the character the recorded bodies were sent
 /// by: the 0x07DD of that connection names 13 (2026-11-05-main), and the
-/// window report names the connection's own character (`opcode.0x23d`).
+/// statistics event names the connection's own character (`opcode.0x23d`).
 fn in_world_of_the_recorded_sender() -> game_connection.State {
   connection_support.entered_as(
     Character(

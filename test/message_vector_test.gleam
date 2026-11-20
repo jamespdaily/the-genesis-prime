@@ -85,10 +85,10 @@ pub fn login_request_is_the_clients_1168_bits_test() -> Nil {
       game_token: message_support.hex(
         "20 21 22 23 24 25 26 27 28 29 2a 2b 2c 2d 2e 2f",
       ),
-      field_6: 0x41,
-      field_7: 0x42,
-      field_8: 0x43,
-      field_9: 0x44,
+      client_address: 0x41,
+      language: 0x42,
+      premium_system: 0x43,
+      unset_word: 0x44,
       processor_manufacturer: "a",
       processor_name: "bc",
       processor_description: "",
@@ -192,11 +192,11 @@ pub fn game_hello_reply_is_the_clients_312_bits_test() -> Nil {
       "d4c3b2a1 0102030405060708090a0b0c0d0e0f10 0000000000000000 06 6a00 6900 6d00 03000000",
     ),
     value: GameHelloReply(
-      field_1: 0xA1B2C3D4,
+      account_id: 0xA1B2C3D4,
       session_key: message_support.session_key(),
-      field_3: 0,
+      zero: 0,
       account_name: "jim",
-      field_5: 3,
+      three: 3,
     ),
     encode: game_hello_reply.encode,
     decode: game_hello_reply.decode,
@@ -377,7 +377,7 @@ pub fn the_world_message_body_is_a_5_bit_value_then_the_inner_frame_test() -> Ni
   message_support.assert_codec(
     name: "opcode.0x38c",
     body: <<3, inner_frame:bits>>,
-    value: WorldMessage(field_1: 3, inner_frame:),
+    value: WorldMessage(send_kind: 3, inner_frame:),
     encode: world_message.encode,
     decode: world_message.decode,
   )

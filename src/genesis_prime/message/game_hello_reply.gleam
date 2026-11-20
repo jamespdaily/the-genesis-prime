@@ -17,11 +17,11 @@ pub const message_id = 0x058F
 /// value is safe, and one with no such doc has no use the client's code shows.
 pub type GameHelloReply {
   GameHelloReply(
-    field_1: Int,
+    account_id: Int,
     session_key: BitArray,
-    field_3: Int,
+    zero: Int,
     account_name: String,
-    field_5: Int,
+    three: Int,
   )
 }
 
@@ -29,22 +29,22 @@ pub type GameHelloReply {
 /// written.
 pub fn encode(message: GameHelloReply) -> Result(BitArray, EncodeError) {
   bit_stream.new_writer()
-  |> bit_stream.write_unsigned("field_1", message.field_1, 32)
+  |> bit_stream.write_unsigned("account_id", message.account_id, 32)
   |> bit_stream.write_guid("session_key", message.session_key)
-  |> bit_stream.write_unsigned("field_3", message.field_3, 64)
+  |> bit_stream.write_unsigned("zero", message.zero, 64)
   |> bit_stream.write_wide_text("account_name", message.account_name)
-  |> bit_stream.write_unsigned("field_5", message.field_5, 32)
+  |> bit_stream.write_unsigned("three", message.three, 32)
   |> bit_stream.finish
 }
 
 /// The message read from the bytes of a body, or why they are not one.
 pub fn decode(body: BitArray) -> Result(GameHelloReply, DecodeError) {
   let reader = bit_stream.new_reader(body)
-  use #(field_1, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
+  use #(account_id, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   use #(session_key, reader) <- result.try(bit_stream.read_guid(reader))
-  use #(field_3, reader) <- result.try(bit_stream.read_unsigned(reader, 64))
+  use #(zero, reader) <- result.try(bit_stream.read_unsigned(reader, 64))
   use #(account_name, reader) <- result.try(bit_stream.read_wide_text(reader))
-  use #(field_5, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
+  use #(three, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   use Nil <- result.try(bit_stream.finish_reading(reader))
-  Ok(GameHelloReply(field_1:, session_key:, field_3:, account_name:, field_5:))
+  Ok(GameHelloReply(account_id:, session_key:, zero:, account_name:, three:))
 }

@@ -158,11 +158,11 @@ pub fn hello_reply_body(
 ) -> BitArray {
   let assert Ok(body) =
     game_hello_reply.encode(GameHelloReply(
-      field_1: 0,
+      account_id: 0,
       session_key:,
-      field_3: 0,
+      zero: 0,
       account_name:,
-      field_5: 3,
+      three: 3,
     ))
     as "0x58F encodes"
   body
@@ -266,7 +266,7 @@ pub fn world_body(
 ) -> BitArray {
   let assert Ok(inner) = frame.encode(message_id, body) as "the message frames"
   let assert Ok(carried) =
-    world_message.encode(WorldMessage(field_1: kind, inner_frame: inner))
+    world_message.encode(WorldMessage(send_kind: kind, inner_frame: inner))
     as "0x38C encodes"
   carried
 }

@@ -70,6 +70,7 @@ import genesis_prime/message/replay_level_up.{type ReplayLevelUp}
 import genesis_prime/message/scanbot_request.{type ScanbotRequest}
 import genesis_prime/message/send_chat_line.{type SendChatLine}
 import genesis_prime/message/send_whisper.{type SendWhisper}
+import genesis_prime/message/statistic_event.{type StatisticEvent}
 import genesis_prime/message/terrain_loaded.{type TerrainLoaded}
 import genesis_prime/message/trade_cancel.{type TradeCancel}
 import genesis_prime/message/vendor_buyback.{type VendorBuyback}
@@ -77,7 +78,6 @@ import genesis_prime/message/vendor_purchase.{type VendorPurchase}
 import genesis_prime/message/vendor_sale.{type VendorSale}
 import genesis_prime/message/vendor_sell_junk.{type VendorSellJunk}
 import genesis_prime/message/watchdog_report.{type WatchdogReport}
-import genesis_prime/message/window_opened.{type WindowOpened}
 import genesis_prime/message/world_entry_options.{type WorldEntryOptions}
 import genesis_prime/message/world_message.{type WorldMessage}
 import genesis_prime/message/world_zone_changed.{type WorldZoneChanged}
@@ -136,7 +136,7 @@ pub type ClientMessage {
   FrameTimeReport(message: FrameTimeReport)
   NetworkReport(message: NetworkReport)
   GraphicsReport(message: GraphicsReport)
-  WindowOpened(message: WindowOpened)
+  StatisticEvent(message: StatisticEvent)
   PreGameActivity(message: PreGameActivity)
   ClientOption(message: ClientOption)
   ScanbotRequest(message: ScanbotRequest)
@@ -261,7 +261,7 @@ pub fn decode(
       decoded(body, message_id, frame_time_report.decode, FrameTimeReport)
     0x023F -> decoded(body, message_id, network_report.decode, NetworkReport)
     0x023E -> decoded(body, message_id, graphics_report.decode, GraphicsReport)
-    0x023D -> decoded(body, message_id, window_opened.decode, WindowOpened)
+    0x023D -> decoded(body, message_id, statistic_event.decode, StatisticEvent)
     0x0241 ->
       decoded(body, message_id, pre_game_activity.decode, PreGameActivity)
     0x012B -> decoded(body, message_id, client_option.decode, ClientOption)
@@ -363,7 +363,7 @@ pub fn encode(message: ClientMessage) -> Result(BitArray, EncodeError) {
     FrameTimeReport(message:) -> frame_time_report.encode(message)
     NetworkReport(message:) -> network_report.encode(message)
     GraphicsReport(message:) -> graphics_report.encode(message)
-    WindowOpened(message:) -> window_opened.encode(message)
+    StatisticEvent(message:) -> statistic_event.encode(message)
     PreGameActivity(message:) -> pre_game_activity.encode(message)
     ClientOption(message:) -> client_option.encode(message)
     ScanbotRequest(message:) -> scanbot_request.encode(message)
@@ -437,7 +437,7 @@ pub fn message_id(message: ClientMessage) -> Int {
     FrameTimeReport(..) -> frame_time_report.message_id
     NetworkReport(..) -> network_report.message_id
     GraphicsReport(..) -> graphics_report.message_id
-    WindowOpened(..) -> window_opened.message_id
+    StatisticEvent(..) -> statistic_event.message_id
     PreGameActivity(..) -> pre_game_activity.message_id
     ClientOption(..) -> client_option.message_id
     ScanbotRequest(..) -> scanbot_request.message_id
@@ -510,7 +510,7 @@ pub fn name(message: ClientMessage) -> String {
     FrameTimeReport(..) -> "frame_time_report"
     NetworkReport(..) -> "network_report"
     GraphicsReport(..) -> "graphics_report"
-    WindowOpened(..) -> "window_opened"
+    StatisticEvent(..) -> "statistic_event"
     PreGameActivity(..) -> "pre_game_activity"
     ClientOption(..) -> "client_option"
     ScanbotRequest(..) -> "scanbot_request"

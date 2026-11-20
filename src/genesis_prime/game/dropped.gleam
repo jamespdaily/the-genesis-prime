@@ -19,11 +19,11 @@
 //// - **The requests** 0x180, 0x3ED, 0x3EC, 0x269, 0x18F and 0x570 are taken
 ////   without the reply they ask for: the coverage measure's messages checklist lists
 ////   the reply each waits for.
-//// - **0x23D's name** is refused when it has more UTF-16 units than GameFormula
+//// - **0x23D's event text** is refused when it has more UTF-16 units than GameFormula
 ////   row 2375's dataint02, which the client's sender reads as the limit and
 ////   does not send past (`opcode.0x23d`). Its character id is refused when it
 ////   is not the id of the character the connection plays: every recorded send
-////   names it (`opcode.0x23d`). The 6 bits before the window id are read and
+////   names it (`opcode.0x23d`). The category and the event id are read and
 ////   not checked.
 //// - **0x0180's profile** is read and not checked: what a value means is not
 ////   read, and no scanbot is made to compare it with (`opcode.0x180`).
@@ -46,9 +46,9 @@ import genesis_prime/message/own_auctions_request
 import genesis_prime/message/own_commodity_orders_request
 import genesis_prime/message/pre_game_activity
 import genesis_prime/message/scanbot_request
+import genesis_prime/message/statistic_event
 import genesis_prime/message/trade_cancel
 import genesis_prime/message/watchdog_report
-import genesis_prime/message/window_opened
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{GameFormulaId}
 import genesis_prime/table/loader/formula_requirement
@@ -59,9 +59,9 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
 
-/// The GameFormula row whose dataint02 is the longest window name the client
+/// The GameFormula row whose dataint02 is the longest event text the client
 /// sends (`FUN_140200220(0x947)`, `opcode.0x23d`).
-const window_name_formula = 2375
+const event_text_formula = 2375
 
 /// The report or request the client sent, which the connection takes from
 /// inside 0x038C or, for 0x241, on its own.
@@ -74,8 +74,8 @@ pub type Message {
   NetworkReport
   /// 0x023E, the client's graphics report.
   GraphicsReport
-  /// 0x023D, a window the client opened.
-  WindowOpened
+  /// 0x023D, the client's statistics event.
+  StatisticEvent
   /// 0x0241, the client's activity signal before the world.
   PreGameActivity
   /// 0x012B, a client option.
@@ -99,11 +99,11 @@ pub type Message {
 pub type Refusal {
   /// A body the client's own reader would refuse.
   NotDecoded(undecoded: Undecoded)
-  /// A window name longer than the limit the client's sender holds.
-  WindowNameTooLong(units: Int, limit: Int)
-  /// A window report that names a character other than the one the connection
+  /// An event text longer than the limit the client's sender holds.
+  EventTextTooLong(units: Int, limit: Int)
+  /// A statistics event that names a character other than the one the connection
   /// plays (`own` is `None` when it has none in the world).
-  WindowNamesAnotherCharacter(named: Int, own: Option(Int))
+  EventNamesAnotherCharacter(named: Int, own: Option(Int))
   /// An option type no sender writes.
   OptionTypeNotSent(option_type: Int)
   /// A shared-challenge preference that is not 0 or 1.
@@ -135,19 +135,16 @@ pub fn take(
     GraphicsReport ->
       graphics_report.decode(body)
       |> decoded(graphics_report.message_id)
-    WindowOpened ->
-      window_opened.decode(body)
-      |> client_connection.decoded(message_id: window_opened.message_id)
+    StatisticEvent ->
+      statistic_event.decode(body)
+      |> client_connection.decoded(message_id: statistic_event.message_id)
       |> result.map_error(NotDecoded)
       |> result.try(fn(opened) {
         use Nil <- result.try(window_names_own_character(
           named: opened.character_id,
           own: character_id,
         ))
-        window_name_within_limit(
-          units: list.length(opened.window_name),
-          tables:,
-        )
+        event_text_within_limit(units: list.length(opened.event_text), tables:)
       })
     PreGameActivity ->
       pre_game_activity.decode(body)
@@ -197,19 +194,19 @@ fn window_names_own_character(
   own own: Option(Int),
 ) -> Result(Nil, Refusal) {
   use <- bool.guard(own == Some(named), Ok(Nil))
-  Error(WindowNamesAnotherCharacter(named:, own:))
+  Error(EventNamesAnotherCharacter(named:, own:))
 }
 
-/// The name of at most the limit's units.
-fn window_name_within_limit(
+/// The event text of at most the limit's units.
+fn event_text_within_limit(
   units units: Int,
   tables tables: table_store.Tables,
 ) -> Result(Nil, Refusal) {
   let assert Ok(row) =
-    game_formula.get(tables:, id: GameFormulaId(window_name_formula))
+    game_formula.get(tables:, id: GameFormulaId(event_text_formula))
     as "GameFormula row 2375 is required at load (requirements)"
   case units > row.dataint02 {
-    True -> Error(WindowNameTooLong(units:, limit: row.dataint02))
+    True -> Error(EventTextTooLong(units:, limit: row.dataint02))
     False -> Ok(Nil)
   }
 }
@@ -233,13 +230,13 @@ fn option_sent(option: client_option.ClientOption) -> Result(Nil, Refusal) {
 pub fn describe(refusal refusal: Refusal) -> String {
   case refusal {
     NotDecoded(undecoded:) -> client_connection.describe_undecoded(undecoded:)
-    WindowNameTooLong(units:, limit:) ->
-      "0x023D names a window with "
+    EventTextTooLong(units:, limit:) ->
+      "0x023D carries an event text of "
       <> int.to_string(units)
-      <> " units, but the client refuses to send a name of more than "
+      <> " units, but the client refuses to send a text of more than "
       <> int.to_string(limit)
       <> " (GameFormula row 2375)"
-    WindowNamesAnotherCharacter(named:, own:) ->
+    EventNamesAnotherCharacter(named:, own:) ->
       "0x023D names character "
       <> int.to_string(named)
       <> ", but "
@@ -267,8 +264,8 @@ pub fn describe(refusal refusal: Refusal) -> String {
 pub fn requirements() -> List(table_store.Requirement) {
   [
     formula_requirement.row_present(
-      from_table: "the server's window name limit",
-      id: window_name_formula,
+      from_table: "the server's event text limit",
+      id: event_text_formula,
     ),
   ]
 }

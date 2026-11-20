@@ -19,13 +19,13 @@ pub const message_id = 0x023C
 /// value is safe, and one with no such doc has no use the client's code shows.
 pub type WatchdogReport {
   WatchdogReport(
-    field_1: Int,
-    field_2: Int,
-    field_3: Int,
-    field_4: Int,
-    field_5: Int,
-    field_6: Int,
-    field_7: Int,
+    integrity_key: Int,
+    keyed_player_unit_checksum: Int,
+    longest_clock_step_ms: Int,
+    clock_fit_intercept: Int,
+    clock_fit_slope_ms: Int,
+    clock_fit_residual: Int,
+    keyed_movement_sum: Int,
   )
 }
 
@@ -33,34 +33,72 @@ pub type WatchdogReport {
 /// written.
 pub fn encode(message: WatchdogReport) -> Result(BitArray, EncodeError) {
   bit_stream.new_writer()
-  |> bit_stream.write_unsigned("field_1", message.field_1, 64)
-  |> bit_stream.write_unsigned("field_2", message.field_2, 64)
-  |> bit_stream.write_unsigned("field_3", message.field_3, 32)
-  |> bit_stream.write_float32_bits("field_4", message.field_4)
-  |> bit_stream.write_float32_bits("field_5", message.field_5)
-  |> bit_stream.write_float32_bits("field_6", message.field_6)
-  |> bit_stream.write_unsigned("field_7", message.field_7, 32)
+  |> bit_stream.write_unsigned("integrity_key", message.integrity_key, 64)
+  |> bit_stream.write_unsigned(
+    "keyed_player_unit_checksum",
+    message.keyed_player_unit_checksum,
+    64,
+  )
+  |> bit_stream.write_unsigned(
+    "longest_clock_step_ms",
+    message.longest_clock_step_ms,
+    32,
+  )
+  |> bit_stream.write_float32_bits(
+    "clock_fit_intercept",
+    message.clock_fit_intercept,
+  )
+  |> bit_stream.write_float32_bits(
+    "clock_fit_slope_ms",
+    message.clock_fit_slope_ms,
+  )
+  |> bit_stream.write_float32_bits(
+    "clock_fit_residual",
+    message.clock_fit_residual,
+  )
+  |> bit_stream.write_unsigned(
+    "keyed_movement_sum",
+    message.keyed_movement_sum,
+    32,
+  )
   |> bit_stream.finish
 }
 
 /// The message read from the bytes of a body, or why they are not one.
 pub fn decode(body: BitArray) -> Result(WatchdogReport, DecodeError) {
   let reader = bit_stream.new_reader(body)
-  use #(field_1, reader) <- result.try(bit_stream.read_unsigned(reader, 64))
-  use #(field_2, reader) <- result.try(bit_stream.read_unsigned(reader, 64))
-  use #(field_3, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
-  use #(field_4, reader) <- result.try(bit_stream.read_float32_bits(reader))
-  use #(field_5, reader) <- result.try(bit_stream.read_float32_bits(reader))
-  use #(field_6, reader) <- result.try(bit_stream.read_float32_bits(reader))
-  use #(field_7, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
+  use #(integrity_key, reader) <- result.try(bit_stream.read_unsigned(
+    reader,
+    64,
+  ))
+  use #(keyed_player_unit_checksum, reader) <- result.try(
+    bit_stream.read_unsigned(reader, 64),
+  )
+  use #(longest_clock_step_ms, reader) <- result.try(bit_stream.read_unsigned(
+    reader,
+    32,
+  ))
+  use #(clock_fit_intercept, reader) <- result.try(bit_stream.read_float32_bits(
+    reader,
+  ))
+  use #(clock_fit_slope_ms, reader) <- result.try(bit_stream.read_float32_bits(
+    reader,
+  ))
+  use #(clock_fit_residual, reader) <- result.try(bit_stream.read_float32_bits(
+    reader,
+  ))
+  use #(keyed_movement_sum, reader) <- result.try(bit_stream.read_unsigned(
+    reader,
+    32,
+  ))
   use Nil <- result.try(bit_stream.finish_reading(reader))
   Ok(WatchdogReport(
-    field_1:,
-    field_2:,
-    field_3:,
-    field_4:,
-    field_5:,
-    field_6:,
-    field_7:,
+    integrity_key:,
+    keyed_player_unit_checksum:,
+    longest_clock_step_ms:,
+    clock_fit_intercept:,
+    clock_fit_slope_ms:,
+    clock_fit_residual:,
+    keyed_movement_sum:,
   ))
 }

@@ -2494,11 +2494,11 @@ fn cancelled(
   use <- bool.guard(
     when: !{
       { reason == 6 || reason == 11 }
-      && cancel.field_3 == 1
+      && cancel.cancelled == 1
       || reason == 0
-      && cancel.field_3 == 0
+      && cancel.cancelled == 0
     },
-    return: Error(UnknownCancel(reason:, bit: cancel.field_3)),
+    return: Error(UnknownCancel(reason:, bit: cancel.cancelled)),
   )
   // A cancel is the player's intent to stop: the cast it names ends the hold that
   // started it (the server's choice), so nothing restarts or fires after it.
@@ -3396,7 +3396,7 @@ pub fn stopped_by_placement(
     None -> #(cast, [])
     Some(cast_id) -> {
       let cancel =
-        CancelCast(cast_id:, reason: cast_result.from_value(6), field_3: 1)
+        CancelCast(cast_id:, reason: cast_result.from_value(6), cancelled: 1)
       use <- settled(cast:, own: [])
       let #(unheld, stopped) = cast_press.stop_holding(cast:)
       let #(cast, ended) =

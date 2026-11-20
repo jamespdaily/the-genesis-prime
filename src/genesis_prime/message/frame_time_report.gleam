@@ -18,13 +18,16 @@ pub const message_id = 0x0240
 /// value is safe, and one with no such doc has no use the client's code shows.
 pub type FrameTimeReport {
   FrameTimeReport(
-    field_1: Int,
-    field_2: Int,
-    field_3: Int,
-    field_4: Int,
-    field_5: Int,
+    window_mean_frame: Int,
+    window_slowest_frame: Int,
+    camera_x: Int,
+    camera_y: Int,
+    camera_z: Int,
+    /// Open: What does slot 1 of the game's camera object (game 0x71a8, else
+    /// 0x71a0) return at the window's slowest frame? The recorded values fit a
+    /// heading in radians; it is not a time step (opcode.0x240.camera_value).
     field_6: Int,
-    field_7: Int,
+    session_mean_frame: Int,
   )
 }
 
@@ -32,34 +35,55 @@ pub type FrameTimeReport {
 /// written.
 pub fn encode(message: FrameTimeReport) -> Result(BitArray, EncodeError) {
   bit_stream.new_writer()
-  |> bit_stream.write_unsigned("field_1", message.field_1, 32)
-  |> bit_stream.write_unsigned("field_2", message.field_2, 32)
-  |> bit_stream.write_float32_bits("field_3", message.field_3)
-  |> bit_stream.write_float32_bits("field_4", message.field_4)
-  |> bit_stream.write_float32_bits("field_5", message.field_5)
+  |> bit_stream.write_unsigned(
+    "window_mean_frame",
+    message.window_mean_frame,
+    32,
+  )
+  |> bit_stream.write_unsigned(
+    "window_slowest_frame",
+    message.window_slowest_frame,
+    32,
+  )
+  |> bit_stream.write_float32_bits("camera_x", message.camera_x)
+  |> bit_stream.write_float32_bits("camera_y", message.camera_y)
+  |> bit_stream.write_float32_bits("camera_z", message.camera_z)
   |> bit_stream.write_float32_bits("field_6", message.field_6)
-  |> bit_stream.write_unsigned("field_7", message.field_7, 32)
+  |> bit_stream.write_unsigned(
+    "session_mean_frame",
+    message.session_mean_frame,
+    32,
+  )
   |> bit_stream.finish
 }
 
 /// The message read from the bytes of a body, or why they are not one.
 pub fn decode(body: BitArray) -> Result(FrameTimeReport, DecodeError) {
   let reader = bit_stream.new_reader(body)
-  use #(field_1, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
-  use #(field_2, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
-  use #(field_3, reader) <- result.try(bit_stream.read_float32_bits(reader))
-  use #(field_4, reader) <- result.try(bit_stream.read_float32_bits(reader))
-  use #(field_5, reader) <- result.try(bit_stream.read_float32_bits(reader))
+  use #(window_mean_frame, reader) <- result.try(bit_stream.read_unsigned(
+    reader,
+    32,
+  ))
+  use #(window_slowest_frame, reader) <- result.try(bit_stream.read_unsigned(
+    reader,
+    32,
+  ))
+  use #(camera_x, reader) <- result.try(bit_stream.read_float32_bits(reader))
+  use #(camera_y, reader) <- result.try(bit_stream.read_float32_bits(reader))
+  use #(camera_z, reader) <- result.try(bit_stream.read_float32_bits(reader))
   use #(field_6, reader) <- result.try(bit_stream.read_float32_bits(reader))
-  use #(field_7, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
+  use #(session_mean_frame, reader) <- result.try(bit_stream.read_unsigned(
+    reader,
+    32,
+  ))
   use Nil <- result.try(bit_stream.finish_reading(reader))
   Ok(FrameTimeReport(
-    field_1:,
-    field_2:,
-    field_3:,
-    field_4:,
-    field_5:,
+    window_mean_frame:,
+    window_slowest_frame:,
+    camera_x:,
+    camera_y:,
+    camera_z:,
     field_6:,
-    field_7:,
+    session_mean_frame:,
   ))
 }

@@ -92,10 +92,10 @@ import genesis_prime/message/replay_level_up
 import genesis_prime/message/scanbot_request
 import genesis_prime/message/send_chat_line
 import genesis_prime/message/send_whisper
+import genesis_prime/message/statistic_event
 import genesis_prime/message/terrain_loaded
 import genesis_prime/message/trade_cancel
 import genesis_prime/message/watchdog_report
-import genesis_prime/message/window_opened
 import genesis_prime/message/world_entry_options
 import genesis_prime/message/world_message
 import genesis_prime/message/world_zone_changed
@@ -451,9 +451,9 @@ const table = [
     [AtWorld],
   ),
   Row(
-    window_opened.message_id,
+    statistic_event.message_id,
     InsideWorldMessage,
-    Dropped(dropped.WindowOpened),
+    Dropped(dropped.StatisticEvent),
     [AtWorld],
   ),
   Row(
