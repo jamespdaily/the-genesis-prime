@@ -836,7 +836,8 @@ pub fn the_cast_time_0_lift_loads_the_named_specials_on_the_real_tables_test() -
   // its plan gives and the number of gos its damage rows name at which a hit row is drawn
   // (`table_rows -- SpellPhase spell4IdOwner=N`, `-- Spell4Effects spellId=N`, `--
   // TelegraphDamage`), over the client's own tables. Spell4 72808 takes Creature2 61635: the
-  // lowest, 26042, is friendly to both player factions and would not start. 52150's hit row
+  // lowest, 26042, is friendly to both player factions and would not start; its difficulty
+  // names a damage row for one go fewer. 52150's hit row
   // 7108 ends at 1,500 ms, so its pulses at 1,750 and 2,000 strike nobody; 48482 and 48497
   // hold a go no hit row is drawn at; 42531 and 42533 name every one of 481 gos (phaseFlags
   // -1). 63724 and 63726 have no hit row and strike inside their area row.
@@ -890,7 +891,7 @@ pub fn the_cast_time_0_lift_loads_the_named_specials_on_the_real_tables_test() -
     #(71_980, 38_207, 5, 4),
     #(72_001, 40_168, 6, 4),
     #(72_036, 48_592, 2, 1),
-    #(72_808, 61_635, 7, 6),
+    #(72_808, 61_635, 7, 5),
     #(73_289, 30_317, 5, 4),
   ]
   let counts =
