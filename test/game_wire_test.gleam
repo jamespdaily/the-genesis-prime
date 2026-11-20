@@ -69,6 +69,7 @@ import genesis_prime/message/chat_line_accepted
 import genesis_prime/message/client_side_interaction_result.{
   ClientSideInteractionResult,
 }
+import genesis_prime/message/combat_result
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/create_character_result
 import genesis_prime/message/create_result
@@ -2729,6 +2730,108 @@ pub fn a_viewer_joining_beside_a_casting_player_shows_its_cast_bar_and_writes_it
     ))
     == own_events
     as "the viewer is written the cast's go and its end: the cast is one it was given"
+  game_client.close(game: first)
+  game_client.close(game: second)
+  login_support.stop(started)
+}
+
+/// `opcode.0x262.casts`, `opcode.0x811` and `cast.target_node_end`: a player that enters
+/// beside a Medic whose Discharge has pulsed once (410 ms after the press, starting a
+/// Power Charge, Spell4 42569, whose Fluff row 96819 lasts until removed) is created the
+/// Medic's unit with Discharge listed as the cast in progress and the Power Charge listed
+/// beside it with a target info on the Medic's unit (index 0, flags 0, count 1, a Hit, the
+/// row at delay 0 and lifetime 0); the clock then moves past the pulse that takes the
+/// Power Charges off the Medic (Spell4Effects 212836, Spell4 80383), and the viewer is
+/// written the 0x811 that ends the Power Charge it was listed, since the client ends a
+/// buff only by what it is sent.
+pub fn a_viewer_joining_beside_a_medic_holding_power_charges_lists_them_and_writes_their_end_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let time = driven_time.new()
+  let TwoEntered(
+    started:,
+    first:,
+    second:,
+    second_burst:,
+    first_have:,
+    second_have:,
+    ..,
+  ) =
+    two_players_enter_after(
+      started: started_on(tables: character_tables.shared(), time:),
+      first_class: 4,
+      level: 9,
+      first_acts: fn(first, have) {
+        // Discharge is the Medic's first level-1 ability, so bag index 0.
+        game_client.press_ability(
+          game: first,
+          client_cast_id: 1,
+          bag_index: 0,
+          target: 0,
+        )
+        let #(pressed, have) =
+          game_client.read_until_pong(game: first, have:, number: 1)
+        // The first pulse comes 410 ms after the press (channelPulseTime).
+        driven_time.advance(time:, ms: 500)
+        let #(pulsed, have) =
+          game_client.read_until_pong(game: first, have:, number: 2)
+        #(list.append(pressed, pulsed), have)
+      },
+    )
+  let assert Ok(seen_first) = list.last(second_burst)
+    as "the second player's entry ends with the 0x262 of the first"
+  let created = game_client.unit_create_player_in(frames: [seen_first])
+  assert created.unit_id == 1
+  let assert [discharge, power_charge] =
+    list.sort(created.tail.casts, fn(left, right) {
+      int.compare(left.cast_id, right.cast_id)
+    })
+    as "the create lists Discharge and the one Power Charge the first pulse started"
+  assert #(
+      discharge.caster_unit_id,
+      discharge.spell4_id,
+      discharge.started,
+      discharge.targets,
+    )
+    == #(1, 58_832, 0, [])
+    as "Discharge is listed in state 3 (its first go has gone) and holds no node"
+  assert #(
+      power_charge.caster_unit_id,
+      power_charge.spell4_id,
+      power_charge.started,
+    )
+    == #(1, 42_569, 0)
+    as "the Power Charge is listed in state 3, a cast of the Medic that is not the current cast"
+  assert list.map(power_charge.targets, fn(target) {
+      #(
+        target.unit_id,
+        target.index,
+        target.flags,
+        target.instance_count,
+        target.combat_result,
+        list.map(target.effects, fn(effect) {
+          #(
+            effect.spell4_effects_id,
+            effect.instance_id,
+            effect.delay_ms,
+            effect.lifetime_ms,
+          )
+        }),
+      )
+    })
+    == [#(1, 0, 0, 1, combat_result.Hit, [#(96_819, 1, 0, 0)])]
+    as "its one target is the Medic's unit with row 96819, delay 0 and lifetime 0 (until removed)"
+  assert created.tail.cast_id == discharge.cast_id
+    as "the cast in progress is Discharge, which the client looks up in that list"
+  driven_time.advance(time:, ms: 800)
+  let #(_, _) =
+    game_client.read_until_pong(game: first, have: first_have, number: 3)
+  let #(later, _) =
+    game_client.read_until_pong(game: second, have: second_have, number: 1)
+  assert list.contains(
+    game_client.targets_removed_in(frames: later),
+    #(power_charge.cast_id, [1]),
+  )
+    as "the viewer is written the 0x811 that takes the Power Charge off the Medic: the buff it was listed ends on its screen"
   game_client.close(game: first)
   game_client.close(game: second)
   login_support.stop(started)

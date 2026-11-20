@@ -21,6 +21,7 @@
 //// - The health regeneration of `player_life`: a tick adds floor(maximum x 0.025 x
 ////   HealthRegenMultiplier 1.0), so the maximum a modifier raises changes the tick.
 
+import cast_support
 import connection_rule_support
 import fixture_tables
 import game_connection_support as support
@@ -255,6 +256,47 @@ pub fn a_viewer_arriving_while_the_buff_lasts_is_created_with_the_value_in_its_0
       base: bits(value: maximum),
       value: bits(value: maximum +. 100.0),
     ))
+  // The 0x262 also lists Gate's cast with each modifier row as an effect on the player, at
+  // the delay still to run and the time left when the viewer arrives at 1400 (the go was at
+  // 1000: row 67777 has delay 180 and duration 400, the added row 99901 delay 180 and
+  // duration 2000; `opcode.0x7f4.effect_delay`, `opcode.0x7f4.effect_time`).
+  let #(_, at_1400) =
+    support.at(
+      state:,
+      ms: 1400,
+      event: support.sent_by_the_map(SeenBy(
+        by: ConnectionId(6),
+        stay: support.viewer_stay(6),
+      )),
+    )
+  let assert [#(6, PeerNews(news: Appeared(unit: mid_buff), ..))] =
+    support.peer_tells(at_1400)
+  let assert [gate_cast] = mid_buff.tail.casts
+    as "Gate's cast holds a node on the player"
+  assert gate_cast.spell4_id == 34_355
+  assert gate_cast.targets
+    == [
+      cast_support.listed_target_info(
+        unit_id: support.own_unit_id,
+        index: 0,
+        count: 1,
+        effects: [
+          cast_support.listed_effect_info(
+            effect_id: 67_777,
+            instance_id: 1,
+            delay_ms: 0,
+            lifetime_ms: 180,
+          ),
+          cast_support.listed_effect_info(
+            effect_id: 99_901,
+            instance_id: 2,
+            delay_ms: 0,
+            lifetime_ms: 1780,
+          ),
+        ],
+      ),
+    ]
+    as "each modifier row is listed at its time left from now: 1580 - 1400 and 3180 - 1400"
   // After every modifier ended the next viewer is created with the bases.
   let #(state, _) =
     list.fold(

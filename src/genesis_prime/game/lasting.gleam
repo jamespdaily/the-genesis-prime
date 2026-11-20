@@ -70,7 +70,9 @@
 //// | The caster leaves | nothing is written: the viewers' 0x355 of the caster finishes its casts on their clients (`0x1404550d0`) | | |
 //// | A viewer leaves sight | the 0x7fe of each cast it wrote comes before the 0x355 | | |
 
-import genesis_prime/table/id.{type Spell4BaseId, type Spell4Id}
+import genesis_prime/table/id.{
+  type Spell4BaseId, type Spell4EffectsId, type Spell4Id,
+}
 import gleam/bool
 import gleam/int
 import gleam/list
@@ -98,10 +100,28 @@ pub type Node {
     unit_id: Int,
     count: Int,
     life: Life,
-    effects: List(LastingRow),
+    effects: List(NodeEffect),
     armed_ms: Int,
     held_until_ms: Option(Int),
   )
+}
+
+/// One effect a node holds. A `Listed` effect is one a unit create tells a viewer that
+/// comes into sight; a `LifeOnly` effect gives the node its life and is told no
+/// one (an ability restriction, whose state is the 0x87f's, and a heal applied at once,
+/// whose value is the go's: `opcode.0x262.casts`).
+pub type NodeEffect {
+  /// A Spell4Effects row the entry lists, with its id.
+  Listed(effect_id: Spell4EffectsId, row: LastingRow)
+  /// A row that only gives the node its life.
+  LifeOnly(row: LastingRow)
+}
+
+/// The columns of a node effect that give a node its life.
+fn row_of(effect effect: NodeEffect) -> LastingRow {
+  case effect {
+    Listed(row:, ..) | LifeOnly(row:) -> row
+  }
 }
 
 /// The columns of one Fluff row that give a node its life: the effect's delay and
@@ -141,6 +161,16 @@ pub fn life_of(
   EndsAt(ms: go_ms + longest)
 }
 
+/// The time left of an effect that ends at `end_ms`, as an effect info tells it: a unit
+/// create counts it from `now_ms` on the monotonic clock, and a creature's guard counts a
+/// relative lifetime from the time elapsed since its go. Never less than 1, since a
+/// lifetime of 0 in an effect info plays the row's own time again
+/// (`opcode.0x7f4.effect_time`), and an effect that a node outlives (an open tick round
+/// holds it) is still listed.
+pub fn time_left_ms(end_ms end_ms: Int, now_ms now_ms: Int) -> Int {
+  int.max(1, end_ms - now_ms)
+}
+
 /// One effect's lifetime from the go: its delay plus durationTime, or the larger of
 /// the two (`opcode.0x7f4.effect_time`).
 pub fn lifetime_of(
@@ -168,14 +198,15 @@ pub fn given(
   held held: Option(Node),
   unit_id unit_id: Int,
   count count: Int,
-  effects effects: List(LastingRow),
+  effects effects: List(NodeEffect),
   held_until_ms held_until_ms: List(Int),
   longer_of_delay_and_duration longer_of_delay_and_duration: Bool,
   go_ms go_ms: Int,
 ) -> Result(Node, Nil) {
   let earlier = case held {
     Some(node) ->
-      list.filter(node.effects, fn(row) {
+      list.filter(node.effects, fn(effect) {
+        let row = row_of(effect:)
         row.until_removed
         || node.armed_ms + lifetime_of(row:, longer_of_delay_and_duration:)
         > go_ms
@@ -195,7 +226,11 @@ pub fn given(
     |> list.reduce(int.max)
     |> option.from_result
   let life = case
-    life_of(effects: all, longer_of_delay_and_duration:, go_ms:),
+    life_of(
+      effects: list.map(all, fn(effect) { row_of(effect:) }),
+      longer_of_delay_and_duration:,
+      go_ms:,
+    ),
     held_until
   {
     UntilRemoved, _ -> Ok(UntilRemoved)
