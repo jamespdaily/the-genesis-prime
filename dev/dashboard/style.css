@@ -1,0 +1,105 @@
+/* The dashboard's layout. It names colours and fonts only by the roles that
+   palette.css defines. The client's fonts load from /art; where that answers
+   404 the font lists in palette.css end in system families. */
+@font-face {
+  font-family: "Cube Offc Cond";
+  src: url("/art/cube-cond.ttf") format("truetype");
+  font-weight: 400 600;
+}
+@font-face {
+  font-family: "Cube Offc Cond";
+  src: url("/art/cube-cond-light.ttf") format("truetype");
+  font-weight: 300;
+}
+@font-face {
+  font-family: "Segoe UI";
+  src: url("/art/segoe-ui.ttf") format("truetype");
+  font-weight: 400;
+}
+@font-face {
+  font-family: "Segoe UI";
+  src: url("/art/segoe-ui-semibold.ttf") format("truetype");
+  font-weight: 600;
+}
+
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--text);
+  font: 14px/1.45 var(--font-text);
+}
+.console {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0 28px 40px;
+}
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 14px 0 12px;
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.brand {
+  font-family: var(--font-title);
+  font-size: 26px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+.tabs {
+  display: flex;
+  gap: 4px;
+}
+.tabs a {
+  color: var(--text-dim);
+  padding: 8px 14px;
+  border-bottom: 2px solid transparent;
+  font-family: var(--font-title);
+  font-size: 16px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+.tabs a[aria-current="page"] {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+.page {
+  padding-top: 20px;
+}
+h2 {
+  margin: 0 0 10px;
+  font-family: var(--font-title);
+  font-weight: 600;
+  font-size: 18px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(12, 1fr);
+}
+.card {
+  grid-column: span 4;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  padding: 14px 16px;
+}
+.label {
+  color: var(--text-faint);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.empty {
+  color: var(--text-dim);
+  margin: 6px 0 0;
+}

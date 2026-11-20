@@ -1,0 +1,29 @@
+/* The dashboard's colours and fonts, by role. This is the only file that gives
+   a value; the stylesheet and the views name a role. The values are the Eldan
+   launcher's: green for measurements, pink for what to act on, amber and red
+   for state only. */
+:root {
+  --ground: #091211;
+  --surface: #0f1b1a;
+  --raised: #152422;
+  --line: #1d302d;
+  --line-strong: #2a423e;
+  --text: #e2ebe5;
+  --text-dim: #a2b5ad;
+  --text-faint: #82978e;
+  --log-ground: #070e0d;
+  --accent: #e35fcb;
+  --accent-wash: rgba(227, 95, 203, 0.13);
+  --on-accent: #160a14;
+  --data: #9bd35a;
+  --data-wash: rgba(155, 211, 90, 0.16);
+  --ok: #56c7b0;
+  --warn: #f0b44c;
+  --warn-wash: rgba(240, 180, 76, 0.12);
+  --bad: #ff6b4f;
+  --bad-wash: rgba(255, 107, 79, 0.1);
+  --idle: #55665f;
+  --font-title: "Cube Offc Cond", "Arial Narrow", system-ui, sans-serif;
+  --font-text: "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-code: ui-monospace, "SF Mono", Menlo, monospace;
+}
