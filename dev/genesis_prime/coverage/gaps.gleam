@@ -33,6 +33,7 @@ import genesis_prime/game/item_property
 import genesis_prime/game/item_use
 import genesis_prime/game/kill_objective
 import genesis_prime/game/look
+import genesis_prime/game/movement
 import genesis_prime/game/objective
 import genesis_prime/game/prerequisite
 import genesis_prime/game/quest
@@ -92,6 +93,7 @@ pub fn registry() -> List(Entry) {
     creature_control.gaps(),
     creature.gaps(),
     creature_fight.gaps(),
+    movement.gaps(),
     movement_kind_4.gaps(),
     movement_path.gaps(),
     movement_timed_path.gaps(),

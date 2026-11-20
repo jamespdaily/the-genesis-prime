@@ -13,9 +13,11 @@
 //// 0x0355 of that unit      ─▶ removed      ─▶ nothing left to replay
 //// ```
 ////
-//// - A replay is every command as the server relayed it (the kinds 1, 2, 8, 11,
-////   14, 24 and 27 of `relayed_movement`, the ones the server relays of the
-////   client's own batch, opcode.0x637), position included: the bot stands where
+//// - A replay is every command of the kinds 1, 2, 8, 11, 14, 24 and 27 as the
+////   server relayed it (the ones the server relays of the client's own batch,
+////   opcode.0x637), position included; any other kind is left out, since the
+////   server refuses the client's 0x0637 with a kind or value its code never
+////   sends (opcode.0x637.sent_kinds). The bot stands where
 ////   the named character stood, 2 s later. The velocity, the move asked, the
 ////   state flags, the mode and the rotation are the real client's, so the
 ////   animation they give is too.
@@ -31,8 +33,6 @@
 //// - A unit that stands still sends no 0x0638, so the bot stands still.
 
 import genesis_prime/message/movement_command.{type MovementCommand}
-import genesis_prime/message/movement_kind_3.{MovementKind3}
-import genesis_prime/message/movement_kind_4.{MovementKind4}
 import genesis_prime/message/movement_time.{MovementTime}
 import genesis_prime/message/relayed_movement.{type RelayedMovement}
 import gleam/bool
@@ -152,42 +152,30 @@ pub fn take_due(
   }
 }
 
-/// The commands of a 0x0638 as the client's own 0x0637 holds them: each one as
-/// relayed.
+/// The commands of a 0x0638 as the client's own 0x0637 holds them: each of the
+/// kinds 1, 2, 8, 11, 14, 24 and 27 as relayed. Any other kind is left out: the
+/// server refuses a 0x0637 that holds a kind, or a value of a kind, the client's
+/// own code never sends (opcode.0x637.sent_kinds), and a 0x0638 holds kinds the
+/// client's own batch of a player never does.
 pub fn replayed(commands: List(RelayedMovement)) -> List(MovementCommand) {
-  list.map(commands, fn(command) {
+  list.filter_map(commands, fn(command) {
     case command {
-      relayed_movement.Time(data) -> movement_command.Time(data)
-      relayed_movement.Platform(data) -> movement_command.Platform(data)
-      relayed_movement.Position(data) -> movement_command.Position(data)
-      relayed_movement.TimedPath(data) ->
-        movement_command.Kind3(MovementKind3(
-          times: data.times,
-          points: data.points,
-          path_type: 0,
-          time_offset: 0,
-          blends: 0,
-        ))
-      relayed_movement.Path(data) ->
-        movement_command.Kind4(MovementKind4(
-          points: data.points,
-          speed: data.speed,
-          path_type: data.path_type,
-          mode: data.mode,
-          time_offset: 0,
-          blends: 0,
-        ))
-      relayed_movement.VelocityDefault(data) -> movement_command.Kind10(data)
-      relayed_movement.Velocity(data) -> movement_command.Velocity(data)
-      relayed_movement.MoveAsked(data) -> movement_command.MoveAsked(data)
-      relayed_movement.MoveDefault(data) -> movement_command.Kind13(data)
-      relayed_movement.Rotation(data) -> movement_command.Rotation(data)
-      relayed_movement.FaceUnit(data) -> movement_command.FaceUnit(data)
-      relayed_movement.FacePoint(data) -> movement_command.FacePoint(data)
-      relayed_movement.RotationDefault(data) -> movement_command.Kind21(data)
-      relayed_movement.StateFlags(data) -> movement_command.StateFlags(data)
-      relayed_movement.StateDefault(data) -> movement_command.Kind26(data)
-      relayed_movement.Mode(data) -> movement_command.Mode(data)
+      relayed_movement.Platform(data) -> Ok(movement_command.Platform(data))
+      relayed_movement.Position(data) -> Ok(movement_command.Position(data))
+      relayed_movement.Velocity(data) -> Ok(movement_command.Velocity(data))
+      relayed_movement.MoveAsked(data) -> Ok(movement_command.MoveAsked(data))
+      relayed_movement.Rotation(data) -> Ok(movement_command.Rotation(data))
+      relayed_movement.StateFlags(data) -> Ok(movement_command.StateFlags(data))
+      relayed_movement.Mode(data) -> Ok(movement_command.Mode(data))
+      relayed_movement.Time(_)
+      | relayed_movement.TimedPath(_)
+      | relayed_movement.Path(_)
+      | relayed_movement.VelocityDefault(_)
+      | relayed_movement.MoveDefault(_)
+      | relayed_movement.FaceUnit(_)
+      | relayed_movement.FacePoint(_)
+      | relayed_movement.RotationDefault(_)
+      | relayed_movement.StateDefault(_) -> Error(Nil)
     }
   })
 }

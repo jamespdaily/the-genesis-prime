@@ -20,7 +20,7 @@ import genesis_prime/message/float32
 import genesis_prime/message/item_place
 import genesis_prime/message/movement_command
 import genesis_prime/message/movement_float_vector.{MovementFloatVector}
-import genesis_prime/message/movement_kind_26.{MovementKind26}
+import genesis_prime/message/movement_kind_10.{MovementKind10}
 import genesis_prime/message/movement_mode.{MovementMode}
 import genesis_prime/message/movement_move_asked.{MovementMoveAsked}
 import genesis_prime/message/movement_state_flags.{MovementStateFlags}
@@ -850,7 +850,7 @@ pub fn a_0x637_with_nothing_to_relay_tells_nobody_test() -> Nil {
 
 pub fn a_command_kind_that_is_not_relayed_is_named_once_a_connection_and_not_relayed_test() -> Nil {
   use <- owned_test.run(10_000)
-  let unrelayed = movement_command.Kind26(MovementKind26(blends: 0))
+  let unrelayed = movement_command.Kind10(MovementKind10(blends: 0))
   let message =
     game_connection_support.moves_message([
       unrelayed,
@@ -863,10 +863,10 @@ pub fn a_command_kind_that_is_not_relayed_is_named_once_a_connection_and_not_rel
     )
   let assert [line] = support.logs_of(step: first, level: LogInfo)
     as "an info line names the kind"
-  assert support.says(line, words: "kind 26")
+  assert support.says(line, words: "kind 10")
   let assert [#(2, PeerNews(news: Moving(commands:, ..), ..))] =
     game_connection_support.peer_tells(first)
-  assert list.length(commands) == 1 as "the kind 26 is not relayed"
+  assert list.length(commands) == 1 as "the kind 10 is not relayed"
   let #(_, second) = game_connection_support.read(state, message)
   assert support.logs_of(step: second, level: LogInfo) == []
     as "named once on a connection"

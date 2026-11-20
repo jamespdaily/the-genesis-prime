@@ -15,18 +15,27 @@
 
 import genesis_prime/message/float32
 import genesis_prime/message/movement_command
+import genesis_prime/message/movement_face_point.{MovementFacePoint}
+import genesis_prime/message/movement_face_unit.{MovementFaceUnit}
+import genesis_prime/message/movement_kind_10.{MovementKind10}
+import genesis_prime/message/movement_kind_13.{MovementKind13}
+import genesis_prime/message/movement_kind_21.{MovementKind21}
+import genesis_prime/message/movement_kind_26.{MovementKind26}
 import genesis_prime/message/movement_mode.{MovementMode}
 import genesis_prime/message/movement_move_asked.{MovementMoveAsked}
+import genesis_prime/message/movement_path.{MovementPath}
 import genesis_prime/message/movement_platform.{MovementPlatform}
 import genesis_prime/message/movement_rotation.{MovementRotation}
 import genesis_prime/message/movement_state_flags.{MovementStateFlags}
 import genesis_prime/message/movement_time.{MovementTime}
+import genesis_prime/message/movement_timed_path.{MovementTimedPath}
 import genesis_prime/message/movement_velocity.{MovementVelocity}
 import genesis_prime/message/relayed_movement.{type RelayedMovement}
 import genesis_prime/message/unit_position_command.{
   type UnitPositionCommand, UnitPositionCommand,
 }
 import genesis_prime/sitting_bot/follow
+import gleam/list
 import gleam/option.{None, Some}
 import owned_test
 import unitest
@@ -98,6 +107,31 @@ pub fn a_replay_is_every_command_as_relayed_the_position_too_test() -> Nil {
       movement_command.Mode(MovementMode(mode: 3)),
     ]
     as "opcode.0x637: the position, the velocity, the move asked, the state, the mode, the rotation and the platform are the real client's, so the bot walks the path the client walked"
+}
+
+pub fn a_replay_leaves_out_every_kind_the_client_never_sends_in_its_batch_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("dev_tool")
+  let others = [
+    relayed_movement.Time(MovementTime(time: 5)),
+    relayed_movement.TimedPath(MovementTimedPath(times: [1], points: [])),
+    relayed_movement.Path(MovementPath(
+      points: [],
+      speed: 0,
+      path_type: 0,
+      mode: 0,
+    )),
+    relayed_movement.VelocityDefault(MovementKind10(blends: 1)),
+    relayed_movement.MoveDefault(MovementKind13(blends: 1)),
+    relayed_movement.FaceUnit(MovementFaceUnit(unit_id: 9, blends: 1)),
+    relayed_movement.FacePoint(MovementFacePoint(x: 0, y: 0, z: 0, blends: 0)),
+    relayed_movement.RotationDefault(MovementKind21(blends: 0)),
+    relayed_movement.StateDefault(MovementKind26(blends: 0)),
+  ]
+  assert follow.replayed(list.append(others, relayed()))
+    == follow.replayed(relayed())
+    as "opcode.0x637.sent_kinds: the bot's 0x0637 holds the kinds 1, 2, 8, 11, 14, 24 and 27 only"
+  assert follow.replayed(others) == []
 }
 
 pub fn a_replay_is_sent_with_a_time_command_twice_the_send_interval_after_the_bots_clock_test() -> Nil {
