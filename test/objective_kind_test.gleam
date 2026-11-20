@@ -191,6 +191,7 @@ const unread_types = [
 
 pub fn objective_kind_has_a_variant_for_every_type_the_real_tables_use_that_the_code_reads_test() -> Nil {
   use <- owned_test.run(120_000)
+  use <- unitest.tag("registry")
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   let rows = quest_objective.all(tables)

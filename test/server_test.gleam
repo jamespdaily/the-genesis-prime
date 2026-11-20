@@ -40,9 +40,11 @@ import owned_test
 import place_support
 import supervisor_children.{ChildSettings}
 import supervisor_flags.{Flags}
+import unitest
 
 pub fn the_servers_own_settings_let_the_tree_restart_3_times_in_10_seconds_test() -> Nil {
   use <- owned_test.run(10_000)
+  use <- unitest.tag("registry")
   assert login_support.servers_settings().tree_restarts
     == server.Restarts(intensity: 3, period_s: 10)
     as "the limit the tree's doc comment states, which the settings the server starts with carry into its supervisor"

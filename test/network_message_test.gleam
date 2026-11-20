@@ -15,6 +15,7 @@ import genesis_prime/message/bit_stream
 import gleam/int
 import gleam/list
 import owned_test
+import unitest
 
 pub fn a_ping_is_answered_with_a_bare_pong_that_carries_its_number_test() -> Nil {
   use <- owned_test.run(5000)
@@ -68,6 +69,7 @@ pub fn any_other_message_is_not_the_network_layers_test() -> Nil {
 
 pub fn the_network_layer_takes_exactly_the_ids_it_names_among_those_the_client_sends_test() -> Nil {
   use <- owned_test.run(10_000)
+  use <- unitest.tag("registry")
   assert list.sort(network_message.taken_message_ids(), int.compare)
     == [0, 1, 2]
     as "fact 0x140332580: the network layer's own ids 0, 1 and 2, sent bare and never registered"

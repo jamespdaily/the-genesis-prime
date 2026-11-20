@@ -45,6 +45,7 @@ pub fn the_clients_labels_end_at_27_and_its_customization_rows_hold_genders_0_an
 // T3c-1 test 2
 pub fn the_content_tables_are_the_content_load_of_the_committed_files_over_the_shared_load_test() -> Nil {
   use <- owned_test.run(60_000)
+  use <- unitest.tag("registry")
   let content = character_tables.content_tables()
   // The client's Faction2 holds 1189 rows and Faction2Relationship 1964, and the
   // tests' maps run in, and the quest rows' zones are in, the Worlds the fixture keeps

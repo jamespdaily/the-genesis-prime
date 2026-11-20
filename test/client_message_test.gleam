@@ -92,9 +92,11 @@ import gleam/int
 import gleam/list
 import owned_test
 import simplifile
+import unitest
 
 pub fn every_message_the_client_sends_reaches_its_own_decoder_test() -> Nil {
   use <- owned_test.run(30_000)
+  use <- unitest.tag("registry")
   let samples = client_samples()
   let assert Ok(text) = simplifile.read("src/genesis_prime/message/schema.toml")
     as "the schema file could not be read"

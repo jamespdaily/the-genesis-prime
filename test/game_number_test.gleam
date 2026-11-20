@@ -29,6 +29,7 @@ import gleam/result
 import gleam/string
 import owned_key
 import owned_test
+import unitest
 
 /// The sight range, 1024 units (unit.range).
 const sight_range = 1024.0
@@ -246,6 +247,7 @@ pub fn an_aggro_range_not_below_sight_is_refused_test() -> Nil {
 
 pub fn a_migrated_database_holds_the_seeded_numbers_test() -> Nil {
   use <- owned_test.run(60_000)
+  use <- unitest.tag("registry")
   let database = database_support.new_database(on: database_support.shared())
   let assert Ok(rows) =
     content_game_number.rows(db: content_support.connect(database:))

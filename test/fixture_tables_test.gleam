@@ -168,6 +168,7 @@ pub fn every_reference_of_a_committed_row_reaches_a_committed_row_or_one_the_cli
 // T3c-1 test 1
 pub fn the_content_tables_are_committed_and_each_root_reaches_a_committed_row_test() -> Nil {
   use <- owned_test.run(20_000)
+  use <- unitest.tag("registry")
   // `server_table.content_entries` are the tables only the content load reads:
   // the client's Faction2 holds 1189 rows and Faction2Relationship 1964, kept
   // whole (`the_whole_content_tables_hold_every_row_the_client_holds_test`); the

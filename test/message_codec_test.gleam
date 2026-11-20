@@ -47,6 +47,7 @@ import message_support
 import owned_test
 import qcheck
 import simplifile
+import unitest
 
 fn generated() -> List(GeneratedFile) {
   let assert Ok(files) = message_generator.generated_files()
@@ -69,6 +70,7 @@ fn file_named(files: List(GeneratedFile), name: String) -> GeneratedFile {
 
 pub fn the_schema_generates_one_module_for_each_message_and_record_and_the_client_and_server_message_modules_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("registry")
   let paths =
     generated()
     |> list.map(fn(file) { file.path })

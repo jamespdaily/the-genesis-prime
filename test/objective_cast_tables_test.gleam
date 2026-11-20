@@ -35,6 +35,7 @@ fn cast_rows(tables tables: Tables) -> List(quest_objective.QuestObjective) {
 
 pub fn the_cast_objectives_without_a_spell_are_the_known_six_test() -> Nil {
   use <- owned_test.run(120_000)
+  use <- unitest.tag("registry")
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   let without =
@@ -212,6 +213,7 @@ fn target_cast_unread(
 
 pub fn every_targeted_rows_cast_conditions_are_read_but_the_known_eleven_test() -> Nil {
   use <- owned_test.run(120_000)
+  use <- unitest.tag("registry")
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   assert unjudgeable_rows(tables:)

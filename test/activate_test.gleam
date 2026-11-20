@@ -162,6 +162,7 @@ pub fn activate_spell_with_an_unread_target_effect_is_planned_test() -> Nil {
 
 pub fn every_client_side_interaction_activate_spell_is_planned_or_names_its_gap_test() -> Nil {
   use <- owned_test.run(120_000)
+  use <- unitest.tag("registry")
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   let activations = activate.activations(tables:)

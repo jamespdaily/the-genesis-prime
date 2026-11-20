@@ -32,6 +32,7 @@ import owned_test
 import pog
 import recording_support
 import simplifile
+import unitest
 import wire_replay_support
 
 /// A pool on a migrated database of the test's own.
@@ -148,6 +149,7 @@ pub fn the_rows_of_the_named_accounts_written_and_applied_to_a_new_database_are_
 
 pub fn the_fixtures_columns_are_the_tables_columns_but_created_at_test() -> Nil {
   use <- owned_test.run(60_000)
+  use <- unitest.tag("registry")
   use folder <- recording_support.in_folder
   let source = pool()
   insert_rows(source)
