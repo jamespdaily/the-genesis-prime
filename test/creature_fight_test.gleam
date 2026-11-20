@@ -24,12 +24,12 @@
 import cast_support
 import character_tables
 import connection_rule_support as support
+import creature_news_support
 import crowd_control_support
 import fixture_tables
 import genesis_prime/client_connection.{
-  type News, CastFinished, CastStarted, CastWent, CombatState, CreatureAppeared,
-  CreatureFaces, CreatureMoved, CreaturePlaced, Health, PeerNews, Targeting,
-  Threat,
+  type News, CastFinished, CastStarted, CastWent, CreatureAppeared,
+  CreatureFaces, CreatureMoved, CreaturePlaced, PeerNews,
 }
 import genesis_prime/game/area
 import genesis_prime/game/crowd_control
@@ -319,7 +319,8 @@ fn said(taken: ServiceStep(creature.Outgoing)) -> List(String) {
   list.map(support.sends(taken), fn(sent) {
     let to = " to " <> int.to_string(sent.0)
     case sent.1 {
-      creature.News(news: PeerNews(news:, ..), ..) -> name_of(news) <> to
+      creature.News(news: PeerNews(news:, ..), ..) ->
+        creature_news_support.name_of(news) <> to
       creature.FightTold(told: Threatened(unit_id:, life:), ..) ->
         "Threatened("
         <> int.to_string(unit_id)
@@ -344,66 +345,6 @@ fn said(taken: ServiceStep(creature.Outgoing)) -> List(String) {
   })
 }
 
-fn name_of(news: News) -> String {
-  case news {
-    Targeting(target_unit_id:, threat:) ->
-      "0x908("
-      <> int.to_string(target_unit_id)
-      <> ", "
-      <> int.to_string(threat)
-      <> ")"
-    Threat(other_unit_id:, threat:) ->
-      "0x90a("
-      <> int.to_string(other_unit_id)
-      <> ", "
-      <> int.to_string(threat)
-      <> ")"
-    CombatState(in_combat: True) -> "0x89a(1)"
-    CombatState(in_combat: False) -> "0x89a(0)"
-    CreatureMoved(..) -> "0x638"
-    CreaturePlaced(..) -> "0x638(placed)"
-    client_connection.CreatureFaces(face: creature_turn.Unit(unit_id:), ..) ->
-      "turn(kind 18, unit " <> int.to_string(unit_id) <> ")"
-    client_connection.CreatureFaces(face: creature_turn.Point(..), ..) ->
-      "turn(kind 19, home)"
-    client_connection.CreatureFaces(face: creature_turn.Fixed(..), ..) ->
-      "turn(kind 14)"
-    client_connection.CreatureFaces(face: creature_turn.Home(..), ..) ->
-      "turn(kind 19, spawn facing)"
-    CastStarted(..) -> "0x7ff"
-    CastWent(..) -> "0x7f4"
-    client_connection.CastMissed(..) -> "0x7fb"
-    client_connection.CastTicked(..) -> "0x7f8"
-    CastFinished(..) -> "0x7fe"
-    client_connection.CastInterrupted(..) -> "0x7f9"
-    client_connection.CastTargetsRemoved(..) -> "0x811"
-    Health(health:, ..) -> "0x937(" <> int.to_string(health) <> ")"
-    client_connection.Died -> "0x88c"
-    CreatureAppeared(..) -> "0x262"
-    client_connection.Removed -> "0x355"
-    client_connection.Appeared(..)
-    | client_connection.Moving(..)
-    | client_connection.CameBack
-    | client_connection.DeathLogged
-    | client_connection.CameBackLogged
-    | client_connection.CastStackRemoved(..)
-    | client_connection.Shield(..)
-    | client_connection.PropertiesChanged(..)
-    | client_connection.Stealth(..)
-    | client_connection.LookChanged(..)
-    | client_connection.UnitStateHeld(..)
-    | client_connection.UnitStateEnded(..) -> "other"
-    client_connection.CrowdControlApplied(..) -> "0x87f"
-    client_connection.CrowdControlEnded(..) -> "0x880"
-    client_connection.InterruptArmor(armor:) ->
-      "0x938(21, " <> int.to_string(armor) <> ")"
-    client_connection.Absorption(absorption:) ->
-      "0x938(22, " <> int.to_string(absorption) <> ")"
-    client_connection.Level(level:) ->
-      "0x938(10, " <> int.to_string(level) <> ")"
-  }
-}
-
 /// The news sent to viewer `number`, in order.
 fn news_to(taken: ServiceStep(creature.Outgoing), number: Int) -> List(News) {
   list.filter_map(support.sends(taken), fn(sent) {
@@ -422,7 +363,10 @@ fn names_target(
   to to: Int,
 ) -> Bool {
   list.any(news_to(taken, to), fn(news) {
-    string.starts_with(name_of(news), "0x908(" <> int.to_string(unit_id) <> ",")
+    string.starts_with(
+      creature_news_support.name_of(news),
+      "0x908(" <> int.to_string(unit_id) <> ",",
+    )
   })
 }
 
@@ -450,7 +394,9 @@ fn timer_for(
 /// The path of the step's 0x638 to a viewer.
 fn path_sent(taken: ServiceStep(creature.Outgoing)) -> creature_path.Path {
   let assert [CreatureMoved(path:), ..] =
-    list.filter(news_to(taken, 2), fn(news) { name_of(news) == "0x638" })
+    list.filter(news_to(taken, 2), fn(news) {
+      creature_news_support.name_of(news) == "0x638"
+    })
     as "the step sends a 0x638"
   path
 }
@@ -928,7 +874,7 @@ pub fn a_leash_in_the_millisecond_a_chase_began_still_tells_the_viewers_to_stop_
     as "the viewers' running path is replaced by the creature's place, home, though it is where its path began"
   let assert [CreaturePlaced(place:, at_ms:)] =
     list.filter(news_to(leashed, 5), fn(news) {
-      name_of(news) == "0x638(placed)"
+      creature_news_support.name_of(news) == "0x638(placed)"
     })
     as "one placement to the viewer"
   assert x_of(place) == 0.0 && at_ms == start_ms
@@ -1013,7 +959,7 @@ pub fn a_creature_killed_while_it_runs_places_its_viewers_where_it_fell_test() -
     )
   let assert [CreaturePlaced(place:, at_ms:)] =
     list.filter(news_to(killed, 5), fn(news) {
-      name_of(news) == "0x638(placed)"
+      creature_news_support.name_of(news) == "0x638(placed)"
     })
     as "the viewers hold a path that runs on past the corpse, so each is sent one placement"
   assert x_of(place) == 10.0 && at_ms == start_ms + 1000
@@ -1422,7 +1368,9 @@ pub fn a_viewer_arriving_between_a_running_creatures_death_and_its_respawn_sees_
     as "it fell 1 s into its run, 10 units along: the corpse lies there, not where the run would end"
   let #(_, stood) = fire(state:, at_ms: 61_000, timer: corpse)
   let appeared =
-    list.filter(news_to(stood, 9), fn(news) { name_of(news) == "0x262" })
+    list.filter(news_to(stood, 9), fn(news) {
+      creature_news_support.name_of(news) == "0x262"
+    })
     |> list.map(fn(news) {
       let assert CreatureAppeared(place:, ..) = news
         as "a 0x262 of the creature"
@@ -1595,7 +1543,7 @@ pub fn a_viewer_arriving_mid_chase_gets_the_fight_and_the_rest_of_the_path_test(
         stay: map_support.stay(count: 9),
       ),
     )
-  assert list.map(news_to(watched, 9), name_of)
+  assert list.map(news_to(watched, 9), creature_news_support.name_of)
     == ["0x262", "0x89a(1)", "0x908(20, 1)", "turn(kind 18, unit 20)", "0x638"]
     as "the viewer's client shows what the others' do: the creature in combat, its target, the turn to it, and its run"
   let assert [
@@ -1637,7 +1585,7 @@ pub fn a_viewer_arriving_mid_return_gets_the_path_home_and_no_fight_test() -> Ni
         stay: map_support.stay(count: 9),
       ),
     )
-  assert list.map(news_to(watched, 9), name_of)
+  assert list.map(news_to(watched, 9), creature_news_support.name_of)
     == ["0x262", "turn(kind 19, home)", "0x638"]
     as "out of combat: no 0x89a or 0x908, only the turn to home and the rest of the walk home"
   let assert [_, _, CreatureMoved(path: Running(from:, to:, ..))] =
@@ -1962,7 +1910,7 @@ pub fn a_stunned_creature_starts_no_chase_and_a_running_one_stops_where_it_stand
     )
   let assert [CreaturePlaced(place:, ..)] =
     list.filter(news_to(stunned, 2), fn(news) {
-      name_of(news) == "0x638(placed)"
+      creature_news_support.name_of(news) == "0x638(placed)"
     })
     as "a running path stops with 0x638 of kind 2 where the creature stands"
   assert x_of(place) == 5.0 as "10 units a second for 500 ms from x = 0"
@@ -2091,7 +2039,7 @@ fn state_news(
   number: Int,
 ) -> List(client_connection.News) {
   list.filter(news_to(taken, number), fn(news) {
-    list.contains(["0x87f", "0x880"], name_of(news))
+    list.contains(["0x87f", "0x880"], creature_news_support.name_of(news))
   })
 }
 
@@ -2181,7 +2129,8 @@ pub fn the_state_ends_with_a_0x880_at_arrival_plus_delay_plus_duration_and_not_b
         crowd_control_support.kick_knockdown(instance_id: 28_673),
       ]),
     )
-  assert list.map(state_news(taken, 2), name_of) == ["0x87f"]
+  assert list.map(state_news(taken, 2), creature_news_support.name_of)
+    == ["0x87f"]
     as "no 0x880 comes with the strike: the state ends only at its timer, 3166 ms on (Kick: 166 + 3000)"
   let #(state, ended) = fire(state:, at_ms: 4166, timer: timer_for(taken, 3166))
   let over =
@@ -2214,11 +2163,13 @@ pub fn two_states_of_one_kind_from_one_caster_are_held_separately_and_two_ending
     == [#(step.TimerId(11), 2500), #(step.TimerId(18), 2500)]
     as "two 0x87f and a timer for each state"
   let #(state, first) = fire(state:, at_ms: 3500, timer: step.TimerId(11))
-  assert list.map(state_news(first, 2), name_of) == ["0x880"]
+  assert list.map(state_news(first, 2), creature_news_support.name_of)
+    == ["0x880"]
     && creature.controlled(state:)
     as "one 0x880 for the first, and the second still holds"
   let #(state, second) = fire(state:, at_ms: 3500, timer: step.TimerId(18))
-  assert list.map(state_news(second, 2), name_of) == ["0x880"]
+  assert list.map(state_news(second, 2), creature_news_support.name_of)
+    == ["0x880"]
     && !creature.controlled(state:)
     as "each ends with its own 0x880, though both end in one millisecond"
 }
@@ -2241,13 +2192,17 @@ pub fn two_players_states_have_two_0x87f_and_two_0x880_each_with_its_own_instanc
         crowd_control_support.stagger_stun(instance_id: 40_961),
       ]),
     )
-  assert list.map(state_news(first, 5), name_of) == ["0x87f"]
-    && list.map(state_news(second, 5), name_of) == ["0x87f"]
+  assert list.map(state_news(first, 5), creature_news_support.name_of)
+    == ["0x87f"]
+    && list.map(state_news(second, 5), creature_news_support.name_of)
+    == ["0x87f"]
   let #(state, one) = fire(state:, at_ms: 3500, timer: step.TimerId(11))
-  assert list.map(state_news(one, 5), name_of) == ["0x880"]
+  assert list.map(state_news(one, 5), creature_news_support.name_of)
+    == ["0x880"]
     && creature.controlled(state:)
   let #(state, two) = fire(state:, at_ms: 4000, timer: step.TimerId(18))
-  assert list.map(state_news(two, 5), name_of) == ["0x880"]
+  assert list.map(state_news(two, 5), creature_news_support.name_of)
+    == ["0x880"]
     && !creature.controlled(state:)
     as "each state ends with its own 0x880; the creature is held until the later one"
 }
@@ -2321,7 +2276,7 @@ pub fn a_viewer_arriving_while_a_state_is_held_is_not_told_it_and_a_new_creature
         stay: map_support.stay(count: 9),
       ),
     )
-  let names = list.map(news_to(arrived, 9), name_of)
+  let names = list.map(news_to(arrived, 9), creature_news_support.name_of)
   assert list.first(names) == Ok("0x262") && !list.contains(names, "0x87f")
     as "the creature's 0x262 does not carry a state: a viewer that arrives mid-state is not told (a gap)"
   assert !creature.controlled(state: beast(viewers: []))
@@ -2837,10 +2792,13 @@ pub fn move_speed_change_while_walking_home_replans_the_walk_and_its_arrival_tes
         struck_at_ms: 1500,
       ),
     )
-  assert list.map(news_to(slowed, 5), name_of) == ["other", "0x638"]
+  assert list.map(news_to(slowed, 5), creature_news_support.name_of)
+    == ["other", "0x638"]
     as "the property, then the new walk"
   let assert [CreatureMoved(path: Running(from:, to:, started_ms:, speed:, ..))] =
-    list.filter(news_to(slowed, 5), fn(news) { name_of(news) == "0x638" })
+    list.filter(news_to(slowed, 5), fn(news) {
+      creature_news_support.name_of(news) == "0x638"
+    })
     as "one path to the viewer that stayed"
   assert x_of(from) == 5.0
     && x_of(to) == 0.0
@@ -3074,7 +3032,9 @@ pub fn run_speed_restored_walks_home_again_test() -> Nil {
       )),
     )
   let assert [CreatureMoved(path: Running(from:, to:, started_ms:, speed:, ..))] =
-    list.filter(news_to(back, 5), fn(news) { name_of(news) == "0x638" })
+    list.filter(news_to(back, 5), fn(news) {
+      creature_news_support.name_of(news) == "0x638"
+    })
     as "the walk home starts"
   assert x_of(from) == 10.0
     && x_of(to) == 0.0
@@ -3409,7 +3369,9 @@ fn charge_opened(
 /// face its target first (0x638), so the 0x7ff is the first cast news, not the first news.
 fn cast_id_sent(taken: ServiceStep(creature.Outgoing), number: Int) -> Int {
   let assert Ok(CastStarted(start:)) =
-    list.find(news_to(taken, number), fn(news) { name_of(news) == "0x7ff" })
+    list.find(news_to(taken, number), fn(news) {
+      creature_news_support.name_of(news) == "0x7ff"
+    })
     as "the step sends the 0x7ff"
   start.cast_id
 }
@@ -3733,7 +3695,7 @@ pub fn a_viewer_arriving_mid_charge_gets_the_open_cast_test() -> Nil {
         stay: map_support.stay(count: 9),
       ),
     )
-  assert list.map(news_to(watched, 9), name_of)
+  assert list.map(news_to(watched, 9), creature_news_support.name_of)
     == ["0x262", "0x89a(1)", "0x908(20, 1)", "0x7ff"]
     as "the fight, then the open cast: the 0x908 that names the target goes before the 0x7ff"
   let assert [_, _, _, CastStarted(start:)] = news_to(watched, 9)
@@ -3821,7 +3783,9 @@ pub fn a_state_that_takes_hold_during_the_charge_breaks_it_so_the_cast_end_strik
   assert list.contains(timers_cancelled(stunned), ends)
     as "the charge's cast end is cancelled"
   let assert [client_connection.CastInterrupted(cast_id:)] =
-    list.filter(news_to(stunned, 2), fn(news) { name_of(news) == "0x7f9" })
+    list.filter(news_to(stunned, 2), fn(news) {
+      creature_news_support.name_of(news) == "0x7f9"
+    })
     as "one 0x7f9"
   assert cast_id == cast_id_sent(opened, 2)
     as "of the cast the viewer was told the start of"
@@ -3911,7 +3875,7 @@ pub fn a_fighter_released_mid_charge_is_not_struck_test() -> Nil {
 // 224705 state 9, 224715 Fluff and 225189 state 12, each 15000 ms, and a Proxy that puts the
 // guard back after 15000 ms). Every id below is a row of the client's tables.
 
-/// The casts' and states' news a viewer is sent, by the names `name_of` gives them.
+/// The casts' and states' news a viewer is sent, by the names `creature_news_support.name_of` gives them.
 fn news_named(
   taken: ServiceStep(creature.Outgoing),
   number: Int,
@@ -3919,13 +3883,13 @@ fn news_named(
   list.filter(news_to(taken, number), fn(news) {
     list.contains(
       ["0x87f", "0x880", "0x7f9", "0x7fe", "0x7ff", "0x7f4", "0x811"],
-      name_of(news),
+      creature_news_support.name_of(news),
     )
   })
 }
 
 fn names_of(news: List(News)) -> List(String) {
-  list.map(news, name_of)
+  list.map(news, creature_news_support.name_of)
 }
 
 /// The outcomes of the strikes the step answers.
@@ -4494,7 +4458,7 @@ pub fn a_creature_attacks_or_chases_as_its_states_allow_test() -> Nil {
     beast_holding(held: crowd_control_state.Root, x: 30.0)
   let assert [CreaturePlaced(place:, ..)] =
     list.filter(news_to(rooted, 2), fn(news) {
-      name_of(news) == "0x638(placed)"
+      creature_news_support.name_of(news) == "0x638(placed)"
     })
     as "the running path stops with 0x638 of kind 2"
   assert x_of(place) == 5.0 as "10 units a second for 500 ms from x = 0"
@@ -4783,7 +4747,9 @@ pub fn a_landed_knockback_throws_the_creature_in_the_same_step_test() -> Nil {
     == ["0x638 to 5"]
     as "each viewer is sent the flight once, in the same step"
   let assert [CreatureMoved(path:)] =
-    list.filter(news_to(struck, 2), fn(news) { name_of(news) == "0x638" })
+    list.filter(news_to(struck, 2), fn(news) {
+      creature_news_support.name_of(news) == "0x638"
+    })
     as "the viewer is sent one flight"
   let assert [#(first_ms, first_x), #(last_ms, last_x)] = timed_xs(path:)
   assert first_ms == start_ms + 1000
@@ -4952,7 +4918,9 @@ pub fn a_throw_breaks_an_open_charge_test() -> Nil {
   assert said(thrown) == ["0x7f9 to 2", "0x638 to 2"]
     as "the charge is broken as a state breaks it, then the flight is sent"
   let assert [client_connection.CastInterrupted(cast_id:)] =
-    list.filter(news_to(thrown, 2), fn(news) { name_of(news) == "0x7f9" })
+    list.filter(news_to(thrown, 2), fn(news) {
+      creature_news_support.name_of(news) == "0x7f9"
+    })
   assert cast_id == cast_id_sent(opened, 2)
     as "of the cast the viewer was told the start of"
   assert timers_cancelled(thrown) == [ends]
@@ -5153,7 +5121,7 @@ pub fn an_arriving_viewer_mid_flight_is_sent_the_rest_of_the_path_test() -> Nil 
         stay: map_support.stay(count: 9),
       ),
     )
-  assert list.map(news_to(watched, 9), name_of)
+  assert list.map(news_to(watched, 9), creature_news_support.name_of)
     == ["0x262", "0x89a(1)", "0x908(20, 1)", "turn(kind 18, unit 20)", "0x638"]
     as "the creature in combat, its target, the turn to it, and its flight"
   let assert [CreatureAppeared(place:, ..), _, _, _, CreatureMoved(path:)] =
@@ -5449,7 +5417,9 @@ fn casts_of(
   taken: ServiceStep(creature.Outgoing),
   number: Int,
 ) -> List(client_connection.News) {
-  list.filter(news_to(taken, number), fn(news) { name_of(news) == "0x7ff" })
+  list.filter(news_to(taken, number), fn(news) {
+    creature_news_support.name_of(news) == "0x7ff"
+  })
 }
 
 pub fn a_ready_special_in_reach_is_chosen_and_opens_its_cast_test() -> Nil {
@@ -5526,7 +5496,8 @@ pub fn a_creature_that_can_move_turns_to_face_its_target_before_the_special_test
       message: approached_at(number: 2, x: -3.0, z: -3.0, seq: 1),
     )
   let #(_, opened, _) = roar_opened(state:, aggro:)
-  assert list.map(news_to(opened, 2), name_of) == ["0x638", "0x7ff"]
+  assert list.map(news_to(opened, 2), creature_news_support.name_of)
+    == ["0x638", "0x7ff"]
     as "the turn goes before the cast"
   let assert [
     CreatureMoved(path: Timed(first:, rest: [], turned_to: Some(facing))),
@@ -6034,7 +6005,9 @@ pub fn a_state_between_gos_breaks_the_special_and_the_cooldown_stays_spent_test(
     == ["0x87f to 2", "0x7f9 to 2"]
     as "the state, then the broken cast: 0x7f9 (the viewer's connection writes the 0x7fe after it)"
   let assert [client_connection.CastInterrupted(cast_id:)] =
-    list.filter(news_to(stunned, 2), fn(news) { name_of(news) == "0x7f9" })
+    list.filter(news_to(stunned, 2), fn(news) {
+      creature_news_support.name_of(news) == "0x7f9"
+    })
   assert cast_id == cast_id_sent(opened, 2)
   assert list.contains(timers_cancelled(stunned), strike)
     as "the pending go's timer is cancelled"
@@ -6144,7 +6117,7 @@ pub fn a_viewer_arriving_between_gos_gets_the_open_cast_and_the_gos_so_far_test(
     )
   }
   let #(state, watched) = watched_at(state, 4200, 9)
-  assert list.map(news_to(watched, 9), name_of)
+  assert list.map(news_to(watched, 9), creature_news_support.name_of)
     == ["0x262", "0x89a(1)", "0x908(20, 1)", "0x7ff", "0x7f4"]
     as "the fight, the open cast, then the go that went"
   let assert [_, _, _, CastStarted(start:), CastWent(went)] =
@@ -6158,7 +6131,7 @@ pub fn a_viewer_arriving_between_gos_gets_the_open_cast_and_the_gos_so_far_test(
   let #(state, struck) = strike_go_reached(state:, strike:)
   let assert [#(2, Attacks(tell: Strike(key:, ..)))] = fights_told(struck)
   let #(state, watched) = watched_at(state, 4550, 8)
-  assert list.map(news_to(watched, 8), name_of)
+  assert list.map(news_to(watched, 8), creature_news_support.name_of)
     == ["0x262", "0x89a(1)", "0x908(20, 1)", "0x7ff", "0x7f4"]
     as "while the strikes are out the same: the cast and the first go"
   let #(_, closed) = tell(state:, at_ms: 4600, message: landed(key:))
@@ -6259,7 +6232,9 @@ pub fn a_control_before_the_first_gos_timer_breaks_the_cast_and_the_late_timer_d
   let #(state, opened, go) = roar_opened(state:, aggro:)
   let #(state, stunned) = stunned_at(state:, at_ms: 2000)
   let assert [client_connection.CastInterrupted(cast_id:)] =
-    list.filter(news_to(stunned, 2), fn(news) { name_of(news) == "0x7f9" })
+    list.filter(news_to(stunned, 2), fn(news) {
+      creature_news_support.name_of(news) == "0x7f9"
+    })
   assert cast_id == cast_id_sent(opened, 2)
     as "the broken cast is the one that opened"
   assert list.contains(timers_cancelled(stunned), go)
@@ -6620,7 +6595,9 @@ fn faces_to(
   number: Int,
 ) -> List(creature_turn.Face) {
   news_to(taken, number)
-  |> list.filter(fn(news) { string.starts_with(name_of(news), "turn(") })
+  |> list.filter(fn(news) {
+    string.starts_with(creature_news_support.name_of(news), "turn(")
+  })
   |> list.map(fn(news) {
     let assert CreatureFaces(face:, ..) = news as "a turn news is CreatureFaces"
     face
@@ -6671,7 +6648,7 @@ pub fn a_creature_that_takes_its_target_faces_it_before_it_runs_test() -> Nil {
     as "0x908, 0x89a, the turn to the player's unit, then the path"
   let assert [CreatureFaces(face:, at_ms:)] =
     list.filter(news_to(aggro, 2), fn(news) {
-      string.starts_with(name_of(news), "turn(")
+      string.starts_with(creature_news_support.name_of(news), "turn(")
     })
   assert face == creature_turn.Unit(unit_id: 20) && at_ms == start_ms
     as "kind 18 names the player's unit, at the step's monotonic time"
@@ -7308,7 +7285,7 @@ pub fn a_viewer_arriving_mid_fight_is_sent_the_current_turn_after_the_0x262_test
       message: approached(number: 2, x: 5.0, seq: 1),
     )
   let #(_, in_reach) = watch(state, 100)
-  assert list.map(news_to(in_reach, 9), name_of)
+  assert list.map(news_to(in_reach, 9), creature_news_support.name_of)
     == ["0x262", "0x89a(1)", "0x908(20, 1)", "turn(kind 18, unit 20)"]
     as "in reach: the turn after 0x908"
   // In a wind-up the 0x262 carries the cone's yaw, so no turn is sent: the player stands 4
@@ -7328,14 +7305,14 @@ pub fn a_viewer_arriving_mid_fight_is_sent_the_current_turn_after_the_0x262_test
     tolerating: 0.000_001,
   )
     as "mid-wind-up the 0x262 is turned as the cone is"
-  assert list.map(news_to(winding, 9), name_of)
+  assert list.map(news_to(winding, 9), creature_news_support.name_of)
     == ["0x262", "0x89a(1)", "0x908(20, 1)", "0x7ff", "0x638"]
-    || list.map(news_to(winding, 9), name_of)
+    || list.map(news_to(winding, 9), creature_news_support.name_of)
     == ["0x262", "0x89a(1)", "0x908(20, 1)", "0x7ff"]
     as "and no turn news follows: the charge's rotation is fixed"
   // At rest: the 0x262 alone, in the spawn's facing.
   let #(_, rest) = watch(beast(viewers: [2]), 0)
-  assert list.map(news_to(rest, 9), name_of) == ["0x262"]
+  assert list.map(news_to(rest, 9), creature_news_support.name_of) == ["0x262"]
     as "at rest nothing follows the 0x262"
 }
 
@@ -7786,7 +7763,9 @@ pub fn a_viewer_arriving_mid_charge_gets_the_entries_of_the_cast_start_test() ->
       ),
     )
   let assert Ok(CastStarted(start: late)) =
-    list.find(news_to(watched, 9), fn(news) { name_of(news) == "0x7ff" })
+    list.find(news_to(watched, 9), fn(news) {
+      creature_news_support.name_of(news) == "0x7ff"
+    })
     as "the arriving viewer is sent the open cast"
   assert late.initial_positions == start.initial_positions
     && late.telegraph_positions == start.telegraph_positions
@@ -8462,7 +8441,7 @@ fn frames_of(
   number number: Int,
 ) -> List(String) {
   list.filter_map(news_to(taken, number), fn(news) {
-    case name_of(news) {
+    case creature_news_support.name_of(news) {
       "0x7f4" -> {
         let assert CastWent(go:) = news as "a 0x7f4 is a go"
         Ok(
@@ -9429,7 +9408,7 @@ pub fn a_viewer_arriving_between_hits_is_told_only_the_gos_already_written_test(
   let #(state, aggro) = ice_fought(viewers: [2])
   let ice = ice_through(state:, aggro:, through: 1)
   let #(state, watched) = watched_at(ice.state, 4800, 9)
-  assert list.map(news_to(watched, 9), name_of)
+  assert list.map(news_to(watched, 9), creature_news_support.name_of)
     == ["0x262", "0x89a(1)", "0x908(20, 1)", "0x7ff", "0x7f4"]
     as "the fight, the open cast and its first go only"
   let assert [_, _, _, CastStarted(start:), CastWent(went)] =
@@ -9449,7 +9428,7 @@ pub fn a_viewer_arriving_between_hits_is_told_only_the_gos_already_written_test(
   let ice = ice_through(state:, aggro:, through: 3)
   let #(ice, _) = ice_answered(ice:, phase: 1, at_ms: 4550)
   let #(state, watched) = watched_at(ice.state, 5350, 9)
-  assert list.map(news_to(watched, 9), name_of)
+  assert list.map(news_to(watched, 9), creature_news_support.name_of)
     == ["0x262", "0x89a(1)", "0x908(20, 1)", "0x7ff", "0x7f4", "0x7f4"]
     as "the cast and the two gos already written"
   assert frames_of(taken: watched, number: 9)
@@ -9465,7 +9444,7 @@ pub fn a_viewer_arriving_between_hits_is_told_only_the_gos_already_written_test(
   let #(state, _) = stunned_at(state: ice.state, at_ms: 4600)
   let #(_, watched) = watched_at(state, 4650, 9)
   assert !list.any(news_to(watched, 9), fn(news) {
-    list.contains(["0x7ff", "0x7f4"], name_of(news))
+    list.contains(["0x7ff", "0x7f4"], creature_news_support.name_of(news))
   })
     as "the cast is closed: the viewer is sent none of it"
 }
@@ -9870,7 +9849,7 @@ fn armor_of_run(number: Int) -> creature_life.InterruptArmor {
 /// The ids of the casts the step tells viewer 2 are broken (0x7f9).
 fn broken_casts(taken: ServiceStep(creature.Outgoing)) -> List(Int) {
   list.filter_map(news_to(taken, 2), fn(news) {
-    case name_of(news) {
+    case creature_news_support.name_of(news) {
       "0x7f9" -> {
         let assert client_connection.CastInterrupted(cast_id:) = news
           as "a 0x7f9 is a CastInterrupted"

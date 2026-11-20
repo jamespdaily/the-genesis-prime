@@ -81,11 +81,11 @@ fn kick_plans() -> spell_plan.Plans {
 
 const bag_of_base_3 = 11
 
-/// Kick pressed at 1000 whose round closed at `go_ms` having struck unit 20, which took
-/// the Knockdown until `ends_at_ms`.
-fn kicked(
+/// Kick pressed at 1000 whose round closed at `go_ms` having struck these units: the cast's
+/// state and the effects of its go.
+fn kick_answered(
   go_ms go_ms: Int,
-  ends_at_ms ends_at_ms: Int,
+  struck struck: List(cast_state.Struck),
 ) -> #(State, List(Effect)) {
   let #(state, effects) =
     support.pressed_raw_in(
@@ -96,7 +96,16 @@ fn kicked(
       target: 0,
       at: 1000,
     )
-  support.answered_by(state:, effects:, at: go_ms, struck: [
+  support.answered_by(state:, effects:, at: go_ms, struck:)
+}
+
+/// Kick pressed at 1000 whose round closed at `go_ms` having struck unit 20, which took
+/// the Knockdown until `ends_at_ms`.
+fn kicked(
+  go_ms go_ms: Int,
+  ends_at_ms ends_at_ms: Int,
+) -> #(State, List(Effect)) {
+  kick_answered(go_ms:, struck: [
     cast_state.Hit(
       unit_id: 20,
       unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
@@ -159,17 +168,8 @@ pub fn a_go_lists_a_state_the_creature_took_with_the_instance_id_its_strike_gave
 
 pub fn a_creature_that_took_no_state_has_no_effect_listed_for_it_test() -> Nil {
   use <- owned_test.run(5000)
-  let #(state, effects) =
-    support.pressed_raw_in(
-      plans: kick_plans(),
-      state: cast_state.new(),
-      caster: support.caster(),
-      bag_index: bag_of_base_3,
-      target: 0,
-      at: 1000,
-    )
   let #(_, effects) =
-    support.answered_by(state:, effects:, at: 1000, struck: [
+    kick_answered(go_ms: 1000, struck: [
       cast_state.Hit(
         unit_id: 20,
         unit: cast_state.HitCreature(life: 1, struck_at_ms: 0),
@@ -1098,18 +1098,9 @@ fn struck_for_armor(
   armor_removed armor_removed: Int,
   immune immune: Bool,
 ) -> List(combat_log_entry.CombatLogEntry) {
-  let #(state, effects) =
-    support.pressed_raw_in(
-      plans: kick_plans(),
-      state: cast_state.new(),
-      caster: support.caster(),
-      bag_index: bag_of_base_3,
-      target: 0,
-      at: 1000,
-    )
   let unit = cast_state.HitCreature(life: 1, struck_at_ms: 0)
   let #(_, effects) =
-    support.answered_by(state:, effects:, at: 1000, struck: [
+    kick_answered(go_ms: 1000, struck: [
       case immune {
         True ->
           cast_state.Immune(
@@ -1236,21 +1227,6 @@ pub fn a_controls_row_aimed_at_the_caster_and_past_it_appears_in_both_readers_te
     as "the strike's controls: a row that names the primary target is among the creatures' states"
 }
 
-/// Kick pressed at 1000 whose round closed at 1000 having struck these units: the effects of
-/// its go.
-fn kick_answered_by(struck struck: List(cast_state.Struck)) -> List(Effect) {
-  let #(state, effects) =
-    support.pressed_raw_in(
-      plans: kick_plans(),
-      state: cast_state.new(),
-      caster: support.caster(),
-      bag_index: bag_of_base_3,
-      target: 0,
-      at: 1000,
-    )
-  support.answered_by(state:, effects:, at: 1000, struck:).1
-}
-
 /// Kick's Knockdown that landed on a unit, which broke the charge `broke` if it names one.
 fn knockdown_breaking(broke broke: Option(Int)) -> strike_tell.ControlLanded {
   strike_tell.ControlLanded(
@@ -1358,7 +1334,8 @@ pub fn a_go_logs_type_19_after_the_type_1_of_the_state_that_broke_a_cast_test() 
     ),
   ]
   |> list.each(fn(row) {
-    assert logged(effects: kick_answered_by(struck: row.struck)) == row.logged
+    assert logged(effects: kick_answered(go_ms: 1000, struck: row.struck).1)
+      == row.logged
       as row.reason
   })
 }

@@ -24,6 +24,7 @@ import ask_support
 import attacker_support
 import cast_support
 import character_tables
+import creature_news_support
 import crowd_control_support
 import driven_time
 import event_wait
@@ -2475,27 +2476,9 @@ fn sent_so_far(
 
 /// The cast news of the creature among what the connection has been sent so far.
 fn cast_news(message: Message) -> Result(String, Nil) {
-  case message {
-    ForStay(
-      sent: SentByPeer(PeerNews(news: client_connection.CastStarted(..), ..)),
-      ..,
-    ) -> Ok("0x7ff")
-    ForStay(
-      sent: SentByPeer(PeerNews(news: client_connection.CastWent(..), ..)),
-      ..,
-    ) -> Ok("0x7f4")
-    ForStay(
-      sent: SentByPeer(PeerNews(news: client_connection.CastFinished(..), ..)),
-      ..,
-    ) -> Ok("0x7fe")
-    ForStay(
-      sent: SentByPeer(PeerNews(news: client_connection.CastInterrupted(..), ..)),
-      ..,
-    ) -> Ok("0x7f9")
-    ForStay(..)
-    | client_connection.SentBySessions(..)
-    | client_connection.SentByChat(..) -> Error(Nil)
-  }
+  creature_news_support.named_among(names: ["0x7ff", "0x7f4", "0x7fe", "0x7f9"])(
+    message,
+  )
 }
 
 /// The answer of a fighter the strike hit, as its connection's hit rule gives it
@@ -3453,28 +3436,12 @@ fn marks_answered(
   |> list.flatten
 }
 
-/// The state and cast news a viewer was sent, by the names of their frames.
+/// The state and cast-ending news a viewer's connection was sent, by the names of the frames
+/// each becomes. A broken cast is one `CastInterrupted` news, which the connection writes as
+/// the 0x7f9 and then the 0x7fe, so it is named "0x7f9" here and the creature sends no
+/// `CastFinished` news besides it.
 fn state_and_cast_news(message: Message) -> Result(String, Nil) {
-  case message {
-    ForStay(
-      sent: SentByPeer(PeerNews(
-        news: client_connection.CrowdControlApplied(..),
-        ..,
-      )),
-      ..,
-    ) -> Ok("0x87f")
-    ForStay(
-      sent: SentByPeer(PeerNews(news: client_connection.CastInterrupted(..), ..)),
-      ..,
-    ) -> Ok("0x7f9")
-    ForStay(
-      sent: SentByPeer(PeerNews(news: client_connection.CastFinished(..), ..)),
-      ..,
-    ) -> Ok("0x7fe")
-    ForStay(..)
-    | client_connection.SentBySessions(..)
-    | client_connection.SentByChat(..) -> Error(Nil)
-  }
+  creature_news_support.named_among(names: ["0x87f", "0x7f9", "0x7fe"])(message)
 }
 
 pub fn a_stun_between_the_gos_of_earthen_roar_marks_the_answer_to_the_stunner_alone_test() -> Nil {
@@ -3516,7 +3483,8 @@ pub fn a_stun_between_the_gos_of_earthen_roar_marks_the_answer_to_the_stunner_al
       )
       == ["0x87f", "0x7f9"]
       as {
-        reason <> ": the other viewer is shown the state and the broken cast"
+        reason
+        <> ": the other viewer is sent the state and the one news of the broken cast, which its connection writes as 0x7f9 then 0x7fe"
       }
     assert marks_answered(
         world: roaring.world,
