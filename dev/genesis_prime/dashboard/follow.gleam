@@ -132,12 +132,9 @@ pub type Settings {
 /// What the follower is told. Pages and tests send these through this module's
 /// functions.
 pub opaque type Message {
-  Subscribe(subscriber: Subject(Followed))
-  Unsubscribe(subscriber: Subject(Followed))
+  Pages(request: subscribers.Request(Followed))
   Tick(chain: Int)
   ReadNow
-  SubscriberDown(down: process.Down)
-  CountSubscribers(reply: Subject(Int))
 }
 
 type State {
@@ -228,7 +225,7 @@ fn builder(
     let selector =
       process.new_selector()
       |> process.select(self)
-      |> process.select_monitors(SubscriberDown)
+      |> subscribers.select_ended(Pages)
     State(
       self:,
       settings:,
@@ -273,7 +270,7 @@ pub fn subscribe(
   follower follower: Subject(Message),
   subscriber subscriber: Subject(Followed),
 ) -> Nil {
-  process.send(follower, Subscribe(subscriber:))
+  process.send(follower, Pages(subscribers.Join(subscriber:)))
 }
 
 /// Takes a page's subscription back.
@@ -281,7 +278,7 @@ pub fn unsubscribe(
   follower follower: Subject(Message),
   subscriber subscriber: Subject(Followed),
 ) -> Nil {
-  process.send(follower, Unsubscribe(subscriber:))
+  process.send(follower, Pages(subscribers.Leave(subscriber:)))
 }
 
 /// A tick without the timer: reads now when a page is subscribed.
@@ -292,25 +289,14 @@ pub fn read_now(follower follower: Subject(Message)) -> Nil {
 /// How many pages are subscribed, as of the follower's handling of everything
 /// sent to it before this. Waits as long as the follower takes.
 pub fn subscriber_count(follower follower: Subject(Message)) -> Int {
-  process.call_forever(follower, CountSubscribers)
+  process.call_forever(follower, fn(reply) { Pages(subscribers.Count(reply:)) })
 }
 
 fn handle(state: State, message: Message) -> actor.Next(State, Message) {
   case message {
-    Subscribe(subscriber:) -> actor.continue(subscribed(state, subscriber))
-    Unsubscribe(subscriber:) ->
-      actor.continue(left(
-        state,
-        subscribers.leave(state.subscribers, subscriber:),
-      ))
-    SubscriberDown(down:) -> {
-      let state =
-        left(
-          state,
-          subscribers.leave_ended(state.subscribers, monitor: down.monitor),
-        )
-      tell(state, SubscriberDropped(state.settings.source))
-      actor.continue(state)
+    Pages(request:) -> {
+      let #(pages, handled) = subscribers.handle(state.subscribers, request)
+      actor.continue(paged(State(..state, subscribers: pages), handled))
     }
     Tick(chain:) ->
       case subscribers.next_tick(state.subscribers, chain:) {
@@ -319,50 +305,54 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
         Error(Nil) -> actor.continue(state)
       }
     ReadNow -> actor.continue(read_and_send(state))
-    CountSubscribers(reply:) -> {
-      process.send(reply, subscribers.count(state.subscribers))
-      actor.continue(state)
-    }
   }
 }
 
-/// A page subscribes: it is monitored, and when it is the first the timer
-/// starts and the file is read. It is sent the newest lines at once.
-fn subscribed(state: State, subscriber: Subject(Followed)) -> State {
-  case subscribers.join(state.subscribers, subscriber:) {
-    subscribers.AlreadyJoined -> state
-    subscribers.LaterJoined(joined) -> {
-      let state = State(..state, subscribers: joined)
+/// What a page's request did: a page that joined is sent the newest lines at
+/// once, and the first one reads the file first; the last page to leave drops
+/// the lines and unreads the file, so the next page reads its tail; a page that
+/// ended is told to the watcher.
+fn paged(state: State, handled: subscribers.Handled(Followed)) -> State {
+  case handled {
+    subscribers.Unchanged -> state
+    subscribers.PageJoined(subscriber:, first:) -> {
+      let state = case first {
+        True -> read(state)
+        False -> state
+      }
       process.send(subscriber, followed(state))
       state
     }
-    subscribers.FirstJoined(joined) -> {
-      let state = read(State(..state, subscribers: joined))
-      process.send(subscriber, followed(state))
+    subscribers.PageLeft(last:, ended:) -> {
+      let state = case last {
+        True ->
+          State(
+            ..state,
+            lines: log_lines.new(state.settings.source),
+            cursor: Unread,
+            trouble: None,
+          )
+        False -> state
+      }
+      case ended {
+        True ->
+          tell(
+            watcher: state.settings.watcher,
+            event: SubscriberDropped(state.settings.source),
+          )
+        False -> Nil
+      }
       state
     }
   }
 }
 
-/// The last page to leave drops the lines and unreads the file, so the next
-/// page reads its tail.
-fn left(state: State, left: subscribers.Left(Followed, Message)) -> State {
-  case left {
-    subscribers.StillSubscribed(remaining) ->
-      State(..state, subscribers: remaining)
-    subscribers.LastLeft(remaining) ->
-      State(
-        ..state,
-        subscribers: remaining,
-        lines: log_lines.new(state.settings.source),
-        cursor: Unread,
-        trouble: None,
-      )
-  }
-}
-
-fn tell(state: State, event: Event) -> Nil {
-  option.map(state.settings.watcher, process.send(_, event))
+/// Tells the watcher of a follower, if it has one.
+pub fn tell(
+  watcher watcher: Option(Subject(Event)),
+  event event: Event,
+) -> Nil {
+  option.map(watcher, process.send(_, event))
   Nil
 }
 
@@ -396,7 +386,7 @@ fn followed(state: State) -> Followed {
 /// One read of the file: its bytes go to the lines, after the change of the
 /// file the reader saw; a failed read keeps the lines and the cursor.
 fn read(state: State) -> State {
-  tell(state, ReadMade(state.settings.source))
+  tell(watcher: state.settings.watcher, event: ReadMade(state.settings.source))
   case state.settings.reader(state.settings.path, state.cursor) {
     Ok(fetched) -> {
       let lines = case fetched.mark {

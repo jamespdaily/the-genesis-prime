@@ -39,6 +39,7 @@ import genesis_prime/dashboard/follow.{type Followed}
 import genesis_prime/dashboard/log_lines.{type Entry, type Level, type Source}
 import genesis_prime/dashboard/otp_report
 import genesis_prime/dashboard/page.{type Page, LogsKey, Page}
+import genesis_prime/dashboard/read_poll
 import gleam/erlang/process.{type Subject}
 import gleam/int
 import gleam/list
@@ -95,14 +96,8 @@ fn init(followers: Followers) -> #(Model, Effect(Message)) {
     server_component.select(fn(_dispatch, subject) {
       follow.subscribe(follower: followers.updater, subscriber: subject)
       follow.subscribe(follower: followers.launchd, subscriber: subject)
-      container_follow.subscribe(
-        follower: followers.server,
-        subscriber: subject,
-      )
-      container_follow.subscribe(
-        follower: followers.database,
-        subscriber: subject,
-      )
+      read_poll.subscribe(poll: followers.server, subscriber: subject)
+      read_poll.subscribe(poll: followers.database, subscriber: subject)
       process.new_selector() |> process.select_map(subject, Received)
     }),
   )

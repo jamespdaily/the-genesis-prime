@@ -7,6 +7,7 @@
 //// real reader runs the planted fake `podman` of the play service's tests. No
 //// test waits on a clock: the interval is a day and a tick is a message.
 
+import dashboard_support
 import genesis_prime/dashboard/container_follow
 import genesis_prime/dashboard/container_log.{
   type Cursor, type Line, Cursor, Line, Plan, Read, Tracking,
@@ -17,6 +18,7 @@ import genesis_prime/dashboard/follow.{
 import genesis_prime/dashboard/log_lines.{
   ContainerReplaced, DatabaseLog, ServerLog,
 }
+import genesis_prime/dashboard/read_poll
 import genesis_prime/dashboard/script.{
   DeadlineReached, Finished, NotExecutable, NotFound, NotStarted,
 }
@@ -374,6 +376,16 @@ pub fn the_containers_id_decides_between_continuing_and_a_replaced_container_tes
       ),
     ),
     PlanRow(
+      "a new id after reads that gave no line is a replaced container too: the mark",
+      Tracking(id: Some(old_id), cursor: None),
+      new_id,
+      Plan(
+        tracking: Tracking(id: Some(new_id), cursor: None),
+        mark: Some(ContainerReplaced),
+        arguments: from_the_tail,
+      ),
+    ),
+    PlanRow(
       "a new id is a replaced container: the mark, the cursor reset, the tail",
       Tracking(id: Some(old_id), cursor: Some(cursor)),
       new_id,
@@ -526,6 +538,11 @@ pub fn what_podman_says_when_it_cannot_answer_becomes_one_reason_each_test() -> 
       ),
     ),
     ReasonRow(
+      "blank lines before podman's words are not its first line",
+      finished("\nError: something\n", 125),
+      Unreadable("Error: something"),
+    ),
+    ReasonRow(
       "a first line over 200 characters is cut at 200",
       finished("Error: " <> string.repeat("x", 300) <> "\n", 125),
       Unreadable(string.slice("Error: " <> string.repeat("x", 300), 0, 200)),
@@ -639,7 +656,7 @@ fn next_call(calls: Subject(Call)) -> Call {
 /// would have started or an update it would have sent is already in the
 /// test's mailbox.
 fn handled(follower: Subject(container_follow.Message)) -> Nil {
-  let _count = container_follow.subscriber_count(follower)
+  let _count = read_poll.subscriber_count(follower)
   Nil
 }
 
@@ -683,7 +700,7 @@ pub fn a_failed_container_read_keeps_the_lines_and_says_why_and_a_good_read_cont
   let follower =
     following(source: ServerLog, calls: calls, deadline_ms: 86_400_000)
   let subscriber = process.new_subject()
-  container_follow.subscribe(follower:, subscriber:)
+  read_poll.subscribe(poll: follower, subscriber:)
 
   // The first read is of a container not read yet; nothing is sent before it
   // is answered, and then the three lines, once.
@@ -701,7 +718,7 @@ pub fn a_failed_container_read_keeps_the_lines_and_says_why_and_a_good_read_cont
 
   // Podman not reachable: the same lines, with the trouble; the tracking of the
   // last good read is what the next read is asked with.
-  container_follow.read_now(follower)
+  read_poll.read_now(follower)
   let second = next_call(calls)
   assert second.tracking == after_three
   second.answer(Error(PodmanUnreachable("down")))
@@ -710,7 +727,7 @@ pub fn a_failed_container_read_keeps_the_lines_and_says_why_and_a_good_read_cont
   assert unreachable.trouble == Some(PodmanUnreachable("down"))
 
   // A good read with one more line: that line once, and the trouble gone.
-  container_follow.read_now(follower)
+  read_poll.read_now(follower)
   let third = next_call(calls)
   assert third.tracking == after_three
   let after_four = tracked(id: old_id, token: t1, taken: 1)
@@ -720,19 +737,19 @@ pub fn a_failed_container_read_keeps_the_lines_and_says_why_and_a_good_read_cont
   assert four.trouble == None
 
   // A read that changes nothing sends nothing.
-  container_follow.read_now(follower)
+  read_poll.read_now(follower)
   next_call(calls).answer(gave(tracking: after_four, mark: None, text: ""))
   handled(follower)
   assert nothing_sent(subscriber) as "a read that gave nothing sends nothing"
 
   // The container is not there: the lines stay with the trouble. A new id after
   // it: the mark, then the new lines.
-  container_follow.read_now(follower)
+  read_poll.read_now(follower)
   next_call(calls).answer(Error(NotThere))
   let missing = update(subscriber)
   assert shown(missing) == ["a", "b", "c", "d"]
   assert missing.trouble == Some(NotThere)
-  container_follow.read_now(follower)
+  read_poll.read_now(follower)
   let fifth = next_call(calls)
   assert fifth.tracking == after_four
   fifth.answer(gave(
@@ -749,7 +766,7 @@ pub fn a_failed_container_read_keeps_the_lines_and_says_why_and_a_good_read_cont
   let other =
     following(source: DatabaseLog, calls: more_calls, deadline_ms: 86_400_000)
   let other_subscriber = process.new_subject()
-  container_follow.subscribe(follower: other, subscriber: other_subscriber)
+  read_poll.subscribe(poll: other, subscriber: other_subscriber)
   next_call(more_calls).answer(Error(Unreadable("timed out after 5 s")))
   let unreadable = update(other_subscriber)
   assert unreadable.entries == []
@@ -763,19 +780,17 @@ pub fn a_tick_while_a_container_read_runs_starts_no_second_read_test() -> Nil {
   let calls = process.new_subject()
   let follower = following(source: ServerLog, calls: calls, deadline_ms: 15_000)
   let subscriber = process.new_subject()
-  container_follow.subscribe(follower:, subscriber:)
+  read_poll.subscribe(poll: follower, subscriber:)
   let first = next_call(calls)
 
-  // Three ticks while the read has not answered make no second read.
-  container_follow.read_now(follower)
-  container_follow.read_now(follower)
-  container_follow.read_now(follower)
+  // The follower hands the shared read one start, and a tick starts no second.
+  read_poll.read_now(follower)
   handled(follower)
   assert nothing_sent(calls) as "a tick starts no second read"
 
   // The read's deadline comes: the follower shows it as failed, and the answer
   // that comes after is dropped.
-  container_follow.deadline_now(follower)
+  read_poll.deadline_now(follower)
   let timed_out = update(subscriber)
   assert timed_out.entries == []
   assert timed_out.trouble == Some(Unreadable("timed out after 15 s"))
@@ -788,7 +803,7 @@ pub fn a_tick_while_a_container_read_runs_starts_no_second_read_test() -> Nil {
   assert nothing_sent(subscriber) as "an answer after the deadline is dropped"
 
   // The next tick reads again, from what was tracked before the dropped read.
-  container_follow.read_now(follower)
+  read_poll.read_now(follower)
   let second = next_call(calls)
   assert second.tracking == container_log.unread
   second.answer(gave(
@@ -798,22 +813,23 @@ pub fn a_tick_while_a_container_read_runs_starts_no_second_read_test() -> Nil {
   ))
   assert shown(update(subscriber)) == ["fresh"]
 
-  // The last page leaves while a read runs: its answer is dropped, a page that
-  // subscribes meanwhile starts no second read, and gets a fresh read when the
-  // dropped one has ended.
-  container_follow.read_now(follower)
+  // The last page leaves while a read runs: the follower drops its tracking, so
+  // the read a page gets next starts from nothing and the old read's answer,
+  // which would continue from the dropped tracking, is not shown.
+  read_poll.read_now(follower)
   let running = next_call(calls)
-  container_follow.unsubscribe(follower:, subscriber:)
+  read_poll.unsubscribe(poll: follower, subscriber:)
   let later = process.new_subject()
-  container_follow.subscribe(follower:, subscriber: later)
-  handled(follower)
-  assert nothing_sent(calls) as "two reads never run at once"
+  read_poll.subscribe(poll: follower, subscriber: later)
   running.answer(gave(
     tracking: tracked(id: old_id, token: t2, taken: 1),
     mark: None,
     text: "stale\n",
   ))
-  let fresh = next_call(calls)
+  handled(follower)
+  assert nothing_sent(later) as "the answer of the dropped read was shown"
+  let assert Ok(fresh) = process.receive(calls, 0)
+    as "the returning page was given no read of its own"
   assert fresh.tracking == container_log.unread
   fresh.answer(gave(
     tracking: tracked(id: new_id, token: t2, taken: 1),
@@ -841,28 +857,21 @@ fn read_of(
   )
 }
 
-/// Reads with a blocked `logs` until the fake has recorded its process id (a
-/// cold start of the shell may not have by a short deadline, so the deadline
-/// doubles); gives the answer and the id.
+/// Reads with a blocked `logs` until the fake has recorded its process id;
+/// gives the answer and the id.
 fn blocked_read(
   scene scene: play.Scene,
   podman podman: String,
   tracking tracking: container_log.Tracking,
   deadline_ms deadline_ms: Int,
 ) -> #(Result(container_log.Read, follow.Trouble), Int) {
-  let answer =
-    read_of(
-      podman:,
-      container: "genesis-play",
-      tracking: tracking,
-      deadline_ms: deadline_ms,
-    )
-  case play.blocked_pids(scene:, key: "logs.genesis-play") {
-    [pid, ..] -> #(answer, pid)
-    [] if deadline_ms < 6400 ->
-      blocked_read(scene:, podman:, tracking:, deadline_ms: deadline_ms * 2)
-    [] -> panic as "the blocked call never recorded its process id"
-  }
+  dashboard_support.until_pid_recorded(
+    run: fn(deadline_ms) {
+      read_of(podman:, container: "genesis-play", tracking:, deadline_ms:)
+    },
+    recorded: fn() { play.blocked_pids(scene:, key: "logs.genesis-play") },
+    deadline_ms:,
+  )
 }
 
 pub fn the_real_reader_reads_both_commands_through_a_fake_podman_and_leaves_none_behind_test() -> Nil {

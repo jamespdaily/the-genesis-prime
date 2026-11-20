@@ -125,7 +125,13 @@ pub fn a_script_past_its_deadline_is_ended_and_gone_test() -> Nil {
   // A script that has not yet written its id when the deadline comes (a cold
   // start of the interpreter) shows nothing about being ended, so the run is
   // repeated with twice the deadline until the id is there.
-  let pid = ended_after_writing_its_pid(path:, pid_file:, deadline_ms: 200)
+  let pid =
+    ended_after_writing_its_pid(
+      path:,
+      arguments: [],
+      pid_file:,
+      deadline_ms: 200,
+    )
   assert !dashboard_support.process_alive(pid)
     as "the script is still running after the runner returned"
 
@@ -137,35 +143,40 @@ pub fn a_script_past_its_deadline_is_ended_and_gone_test() -> Nil {
     == Ok(Finished(output: <<"done\n":utf8>>, status: 0))
 }
 
-/// Runs the script until a run reaches its deadline after the script wrote its
-/// process id; gives that id. Every run must end with the deadline's failure.
+/// Runs the program with `arguments` until a run reaches its deadline after the
+/// program wrote its process id to `pid_file`; gives that id. Every run must end
+/// with the deadline's failure.
 fn ended_after_writing_its_pid(
   path path: String,
+  arguments arguments: List(String),
   pid_file pid_file: String,
   deadline_ms deadline_ms: Int,
 ) -> Int {
-  let _removed = simplifile.delete(pid_file)
-  assert script.run(path:, environment: [], deadline_ms:)
-    == Error(DeadlineReached(deadline_ms))
+  let #(Nil, pid) =
+    dashboard_support.until_pid_recorded(
+      run: fn(deadline_ms) {
+        let _removed = simplifile.delete(pid_file)
+        assert script.run_with(path:, arguments:, environment: [], deadline_ms:)
+          == Error(DeadlineReached(deadline_ms))
+      },
+      recorded: fn() { written_pid(pid_file) },
+      deadline_ms:,
+    )
+  pid
+}
+
+/// The process id in the file, or none when the program has not written it.
+fn written_pid(pid_file: String) -> List(Int) {
   case simplifile.read(pid_file) {
     Ok(text) -> {
       let assert Ok(pid) = int.parse(string.trim(text))
-        as "the script wrote something other than its id"
-      pid
+        as "the program wrote something other than its id"
+      [pid]
     }
-    Error(reason) if deadline_ms < 6400 -> {
+    Error(reason) -> {
       assert reason == simplifile.Enoent as "the id file could not be read"
-      ended_after_writing_its_pid(
-        path:,
-        pid_file:,
-        deadline_ms: deadline_ms * 2,
-      )
+      []
     }
-    Error(reason) ->
-      panic as {
-        "the script never wrote its process id: "
-        <> simplifile.describe_error(reason)
-      }
   }
 }
 
@@ -241,7 +252,13 @@ pub fn a_program_gets_its_arguments_whole_and_one_that_passes_its_deadline_is_go
   let assert Ok(Nil) =
     simplifile.write(sleeper, "#!/bin/bash\necho $$ > \"$1\"\nexec sleep 600\n")
   let assert Ok(Nil) = simplifile.set_permissions_octal(sleeper, 0o755)
-  let pid = ended_with_arguments(path: sleeper, pid_file:, deadline_ms: 200)
+  let pid =
+    ended_after_writing_its_pid(
+      path: sleeper,
+      arguments: [pid_file],
+      pid_file:,
+      deadline_ms: 200,
+    )
   assert !dashboard_support.process_alive(pid)
     as "the program is still running after run_with returned"
 
@@ -254,37 +271,4 @@ pub fn a_program_gets_its_arguments_whole_and_one_that_passes_its_deadline_is_go
   // `run` with no arguments answers as before.
   assert script.run(path:, environment: [], deadline_ms: 600_000)
     == Ok(Finished(output: <<"":utf8>>, status: 0))
-}
-
-/// Runs the program with the pid file's path as its argument until a run reaches
-/// its deadline after the program wrote its process id; gives that id.
-fn ended_with_arguments(
-  path path: String,
-  pid_file pid_file: String,
-  deadline_ms deadline_ms: Int,
-) -> Int {
-  let _removed = simplifile.delete(pid_file)
-  assert script.run_with(
-      path:,
-      arguments: [pid_file],
-      environment: [],
-      deadline_ms:,
-    )
-    == Error(DeadlineReached(deadline_ms))
-  case simplifile.read(pid_file) {
-    Ok(text) -> {
-      let assert Ok(pid) = int.parse(string.trim(text))
-        as "the program wrote something other than its id"
-      pid
-    }
-    Error(reason) if deadline_ms < 6400 -> {
-      assert reason == simplifile.Enoent as "the id file could not be read"
-      ended_with_arguments(path:, pid_file:, deadline_ms: deadline_ms * 2)
-    }
-    Error(reason) ->
-      panic as {
-        "the program never wrote its process id: "
-        <> simplifile.describe_error(reason)
-      }
-  }
 }

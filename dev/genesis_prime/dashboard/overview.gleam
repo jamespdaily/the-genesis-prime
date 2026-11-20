@@ -24,6 +24,7 @@ import genesis_prime/dashboard/host_reading.{
   type ContainerState, type LiveLock, type Reading, type Section,
 }
 import genesis_prime/dashboard/page.{type Page, OverviewKey, Page}
+import genesis_prime/dashboard/read_poll
 import gleam/erlang/process.{type Subject}
 import gleam/int
 import gleam/list
@@ -76,7 +77,7 @@ fn init(poller: Subject(host.Message)) -> #(Model, Effect(Message)) {
   #(
     Model(reading: None),
     server_component.select(fn(_dispatch, subject) {
-      host.subscribe(host: poller, subscriber: subject)
+      read_poll.subscribe(poll: poller, subscriber: subject)
       process.new_selector() |> process.select_map(subject, Received)
     }),
   )

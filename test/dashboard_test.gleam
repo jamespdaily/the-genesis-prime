@@ -10,12 +10,11 @@ import event_wait
 import frame_peer
 import genesis_prime/dashboard
 import genesis_prime/dashboard/access
-import genesis_prime/dashboard/container_follow
 import genesis_prime/dashboard/follow
-import genesis_prime/dashboard/host
 import genesis_prime/dashboard/host_reading.{type Reading}
 import genesis_prime/dashboard/log_lines
 import genesis_prime/dashboard/overview.{Model}
+import genesis_prime/dashboard/read_poll
 import genesis_prime/dashboard/secret
 import gleam/bit_array
 import gleam/bool
@@ -441,7 +440,7 @@ pub fn the_overview_shows_what_state_sh_reports_and_marks_it_stale_when_it_fails
   // The first reading shows what the script reports. The probe is a second
   // subscriber that tells when a reading has been made.
   let probe = process.new_subject()
-  host.subscribe(running.poller, probe)
+  read_poll.subscribe(running.poller, probe)
   let healthy = [
     "running",
     "9d2015a0",
@@ -478,7 +477,7 @@ pub fn the_overview_shows_what_state_sh_reports_and_marks_it_stale_when_it_fails
       error: "cannot reach the machine\n",
     ),
   )
-  host.poll_now(running.poller)
+  read_poll.read_now(running.poller)
   let failing =
     overview_html(open_wait.received(probe, "the reading with Podman failing"))
   assert_shows(html: failing, words: stale_words, stage: "Podman failing")
@@ -486,7 +485,7 @@ pub fn the_overview_shows_what_state_sh_reports_and_marks_it_stale_when_it_fails
 
   // Podman works again: a page opened now shows no stale word.
   support.plant(scene:, key: support.info, answer: support.quiet)
-  host.poll_now(running.poller)
+  read_poll.read_now(running.poller)
   let recovered =
     overview_html(open_wait.received(
       probe,
@@ -501,7 +500,7 @@ pub fn the_overview_shows_what_state_sh_reports_and_marks_it_stale_when_it_fails
 
   // The script is removed: every fact is stale, naming the path.
   let assert Ok(Nil) = simplifile.delete(wrapper)
-  host.poll_now(running.poller)
+  read_poll.read_now(running.poller)
   let without =
     overview_html(open_wait.received(probe, "the reading without the script"))
   let not_found = "the state script is not found: " <> wrapper
@@ -821,7 +820,7 @@ pub fn the_logs_page_shows_the_two_containers_through_a_browsers_socket_test() -
     )
       <> "2026-11-20T09:10:30-05:00 a line logged later\n",
   )
-  container_follow.read_now(running.server_log)
+  read_poll.read_now(running.server_log)
   let later = frames_holding(socket, ["a line logged later"])
   assert string.split(later, "a line logged later") |> list.length == 2
     as "the line came once"
@@ -840,7 +839,7 @@ pub fn a_podman_that_goes_away_and_returns_is_shown_stale_with_its_reason_and_th
   // Podman is not reachable: a frame with the reason, and a page opened now
   // shows the lines the follower kept, dimmed.
   support.plant_unreachable(scene:, name: support.server_container)
-  container_follow.read_now(running.server_log)
+  read_poll.read_now(running.server_log)
   let _reason =
     frames_holding(first, [
       "Podman is not reachable",
@@ -871,7 +870,7 @@ pub fn a_podman_that_goes_away_and_returns_is_shown_stale_with_its_reason_and_th
     )
       <> "2026-11-20T09:10:31-05:00 logged meanwhile\n",
   )
-  container_follow.read_now(running.server_log)
+  read_poll.read_now(running.server_log)
   let back = frames_holding(first, ["logged meanwhile"])
   assert string.split(back, "logged meanwhile") |> list.length == 2
     as "the line logged meanwhile came once"
@@ -888,7 +887,7 @@ pub fn a_podman_that_goes_away_and_returns_is_shown_stale_with_its_reason_and_th
     name: support.server_container,
     text: logged(lines: ["the new container's line"], second: log_second),
   )
-  container_follow.read_now(running.server_log)
+  read_poll.read_now(running.server_log)
   let replaced =
     frames_holding(first, [
       "the container was replaced",
@@ -927,17 +926,18 @@ pub fn closing_the_logs_socket_stops_the_podman_calls_and_leaves_no_process_test
     ])
 
   // Closed: every follower drops its subscriber, and a read asked for after
-  // that makes no call of podman.
+  // that starts no read. A follower tells the watcher before it starts a read,
+  // and its answer to the count comes after, so the watcher's mailbox shows
+  // every read the two asks started.
   dashboard_support.close(socket)
   all_dropped(watcher:, seen: [])
-  let before = support.calls(scene)
-  assert before != [] as "the page's reads called podman"
-  container_follow.read_now(running.server_log)
-  container_follow.read_now(running.database_log)
-  assert container_follow.subscriber_count(running.server_log) == 0
-  assert container_follow.subscriber_count(running.database_log) == 0
-  assert support.calls(scene) == before
-    as "a follower called podman with no page open"
+  assert support.calls(scene) != [] as "the page's reads called podman"
+  read_poll.read_now(running.server_log)
+  read_poll.read_now(running.database_log)
+  assert read_poll.subscriber_count(running.server_log) == 0
+  assert read_poll.subscriber_count(running.database_log) == 0
+  assert process.receive(watcher, 0) == Error(Nil)
+    as "a follower started a read with no page open"
 
   // A `logs` call that blocks when the socket closes is ended by the read's
   // deadline, and is gone when its process id is dead. The dashboard of this part
@@ -949,7 +949,7 @@ pub fn closing_the_logs_socket_stops_the_podman_calls_and_leaves_no_process_test
       port: dashboard_support.free_port(),
       container_call_deadline_ms: 5000,
     )
-  let _second = started(settings)
+  let second = started(settings)
   let key = dashboard_support.written_key(home: settings.genesis_home)
   support.plant_block(
     scene:,
@@ -957,6 +957,8 @@ pub fn closing_the_logs_socket_stops_the_podman_calls_and_leaves_no_process_test
   )
   let blocked = opened_socket_at(port: settings.port, key:, route: "logs-ws")
   event_wait.until("the blocked call to record its process id", fn() {
+    // A read whose `inspect` timed out never reached `logs`; ask for another.
+    read_poll.read_now(second.server_log)
     support.blocked_pids(
       scene:,
       key: support.container_log(support.server_container),

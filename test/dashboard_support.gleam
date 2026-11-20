@@ -101,6 +101,29 @@ pub fn os_pid() -> Int
 @external(erlang, "dashboard_support_ffi", "process_alive")
 pub fn process_alive(os_pid: Int) -> Bool
 
+/// The longest deadline `until_pid_recorded` tries.
+const longest_deadline_ms = 6400
+
+/// Runs a program that records its own process id and then blocks, until a run
+/// has the id recorded: a cold start of its interpreter may not have written it
+/// by a short deadline, so the run is repeated with twice the deadline. `run`
+/// makes one run with the deadline and gives its answer; `recorded` gives the
+/// ids recorded so far, none when the program has not written one yet. Gives the
+/// last run's answer and the first id recorded.
+pub fn until_pid_recorded(
+  run run: fn(Int) -> answer,
+  recorded recorded: fn() -> List(Int),
+  deadline_ms deadline_ms: Int,
+) -> #(answer, Int) {
+  let answer = run(deadline_ms)
+  case recorded() {
+    [pid, ..] -> #(answer, pid)
+    [] if deadline_ms < longest_deadline_ms ->
+      until_pid_recorded(run:, recorded:, deadline_ms: deadline_ms * 2)
+    [] -> panic as "the program never recorded its process id"
+  }
+}
+
 pub fn gate() -> Gate {
   Gate(key:, port:)
 }

@@ -13,6 +13,7 @@ import genesis_prime/dashboard/host
 import genesis_prime/dashboard/host_reading.{
   type Reading, Fresh, MachineUp, NoNewReading, ReadFailed, Stale,
 }
+import genesis_prime/dashboard/read_poll
 import genesis_prime/dashboard/script
 import genesis_prime/dashboard/subscribers
 import gleam/bool
@@ -128,7 +129,7 @@ fn next_reading(subscriber: Subject(Reading)) -> Reading {
 /// The poller has handled every message sent to it before this, so a read it
 /// would have started is already in `calls`.
 fn handled(host: Subject(host.Message)) -> Nil {
-  let _count = host.subscriber_count(host)
+  let _count = read_poll.subscriber_count(host)
   Nil
 }
 
@@ -155,12 +156,12 @@ pub fn the_poller_reads_only_while_a_page_is_subscribed_and_hands_each_subscribe
   let second = process.new_subject()
 
   // Nobody is subscribed: a tick reads nothing.
-  host.poll_now(host)
+  read_poll.read_now(host)
   handled(host)
   assert no_read_started(calls) as "a read started with no subscriber"
 
   // The first subscriber starts one read and gets its reading.
-  host.subscribe(host, first)
+  read_poll.subscribe(host, first)
   let read = next_read(calls)
   assert no_reading_sent(first) as "a reading came before the read ended"
   read.answer(report(1))
@@ -168,31 +169,31 @@ pub fn the_poller_reads_only_while_a_page_is_subscribed_and_hands_each_subscribe
   assert no_read_started(calls) as "the first subscriber started two reads"
 
   // A second subscriber gets the latest at once and starts no read.
-  host.subscribe(host, second)
+  read_poll.subscribe(host, second)
   let latest = next_reading(second)
   assert fresh_connections(latest) == 1
   handled(host)
   assert no_read_started(calls) as "a second subscriber started a read"
-  assert host.subscriber_count(host) == 2
+  assert read_poll.subscriber_count(host) == 2
 
   // Both gone: a tick reads nothing.
-  host.unsubscribe(host, first)
-  host.unsubscribe(host, second)
-  host.poll_now(host)
-  assert host.subscriber_count(host) == 0
+  read_poll.unsubscribe(host, first)
+  read_poll.unsubscribe(host, second)
+  read_poll.read_now(host)
+  assert read_poll.subscriber_count(host) == 0
   assert no_read_started(calls) as "a read started with nobody subscribed"
 
   // A page that opens after the pages left waits for a read of its own: it is
   // not handed a reading that was taken before.
   let third = process.new_subject()
-  host.subscribe(host, third)
+  read_poll.subscribe(host, third)
   let read = next_read(calls)
   handled(host)
   assert no_reading_sent(third) as "an old reading was handed to a new page"
   read.answer(report(2))
   assert fresh_connections(next_reading(third)) == 2
-  host.unsubscribe(host, third)
-  assert host.subscriber_count(host) == 0
+  read_poll.unsubscribe(host, third)
+  assert read_poll.subscriber_count(host) == 0
 }
 
 pub fn a_subscriber_that_dies_is_dropped_and_a_tick_then_reads_nothing_test() -> Nil {
@@ -206,7 +207,7 @@ pub fn a_subscriber_that_dies_is_dropped_and_a_tick_then_reads_nothing_test() ->
     process.spawn_unlinked(fn() {
       let mine = process.new_subject()
       let stop = process.new_subject()
-      host.subscribe(host, mine)
+      read_poll.subscribe(host, mine)
       let reading = next_reading(mine)
       process.send(ready, #(reading, stop))
       process.receive_forever(stop)
@@ -216,7 +217,7 @@ pub fn a_subscriber_that_dies_is_dropped_and_a_tick_then_reads_nothing_test() ->
   read.answer(report(1))
   let #(reading, stop) = open_wait.received(ready, "the subscriber's reading")
   assert fresh_connections(reading) == 1
-  assert host.subscriber_count(host) == 1
+  assert read_poll.subscriber_count(host) == 1
 
   process.send(stop, Nil)
   let _down =
@@ -227,7 +228,7 @@ pub fn a_subscriber_that_dies_is_dropped_and_a_tick_then_reads_nothing_test() ->
     )
   // The poller learns of the end by its own monitor; its count says when.
   wait_for_count(host, 0)
-  host.poll_now(host)
+  read_poll.read_now(host)
   handled(host)
   assert no_read_started(calls) as "a read started for a page that is gone"
 }
@@ -235,7 +236,10 @@ pub fn a_subscriber_that_dies_is_dropped_and_a_tick_then_reads_nothing_test() ->
 /// Asks the poller for its subscribers until it holds `count`; each ask ends
 /// with the poller's answer.
 fn wait_for_count(host: Subject(host.Message), count: Int) -> Nil {
-  use <- bool.guard(when: host.subscriber_count(host) == count, return: Nil)
+  use <- bool.guard(
+    when: read_poll.subscriber_count(host) == count,
+    return: Nil,
+  )
   wait_for_count(host, count)
 }
 
@@ -243,11 +247,11 @@ pub fn a_tick_while_a_read_runs_starts_no_second_read_test() -> Nil {
   use <- owned_test.run(60_000)
   let #(host, calls) = started()
   let page = process.new_subject()
-  host.subscribe(host, page)
+  read_poll.subscribe(host, page)
 
   // The read is not answered: a tick starts no second read and sends nothing.
   let read = next_read(calls)
-  host.poll_now(host)
+  read_poll.read_now(host)
   handled(host)
   assert no_read_started(calls) as "a tick started a second read"
   assert no_reading_sent(page) as "a tick sent a reading with no read ended"
@@ -255,7 +259,7 @@ pub fn a_tick_while_a_read_runs_starts_no_second_read_test() -> Nil {
   // The answer ends the read; the next tick reads again.
   read.answer(report(1))
   assert fresh_connections(next_reading(page)) == 1
-  host.poll_now(host)
+  read_poll.read_now(host)
   let again = next_read(calls)
   again.answer(report(2))
   assert fresh_connections(next_reading(page)) == 2
@@ -265,15 +269,15 @@ pub fn a_read_past_its_deadline_is_sent_as_stale_and_a_late_answer_is_dropped_te
   use <- owned_test.run(60_000)
   let #(host, calls) = started()
   let page = process.new_subject()
-  host.subscribe(host, page)
+  read_poll.subscribe(host, page)
   let first = next_read(calls)
   first.answer(report(1))
   assert fresh_connections(next_reading(page)) == 1
 
   // The second read hangs; the deadline comes.
-  host.poll_now(host)
+  read_poll.read_now(host)
   let hung = next_read(calls)
-  host.deadline_now(host)
+  read_poll.deadline_now(host)
   let stale = next_reading(page)
   let reason = ReadFailed("the state script did not finish in 15 s")
   assert stale.machine == Stale(MachineUp, reason, now_ms)
@@ -286,7 +290,7 @@ pub fn a_read_past_its_deadline_is_sent_as_stale_and_a_late_answer_is_dropped_te
   assert no_reading_sent(page) as "a late answer was sent"
 
   // The next tick reads again, and its answer is sent fresh.
-  host.poll_now(host)
+  read_poll.read_now(host)
   let next = next_read(calls)
   next.answer(report(2))
   assert fresh_connections(next_reading(page)) == 2
@@ -296,13 +300,13 @@ pub fn a_failing_script_is_sent_as_stale_with_its_reason_test() -> Nil {
   use <- owned_test.run(60_000)
   let #(host, calls) = started()
   let page = process.new_subject()
-  host.subscribe(host, page)
+  read_poll.subscribe(host, page)
   let first = next_read(calls)
   first.answer(report(1))
   let good = next_reading(page)
   assert good.updater == Fresh(support.idle_updater(), now_ms)
 
-  host.poll_now(host)
+  read_poll.read_now(host)
   let failing = next_read(calls)
   failing.answer(
     Ok(script.Finished(output: <<"podman: no route\nmore\n":utf8>>, status: 1)),
@@ -315,7 +319,7 @@ pub fn a_failing_script_is_sent_as_stale_with_its_reason_test() -> Nil {
   assert stale.connections == Stale(1, reason, now_ms)
 
   // A runner that could not run the script is the same: stale, with its reason.
-  host.poll_now(host)
+  read_poll.read_now(host)
   let missing = next_read(calls)
   missing.answer(Error(script.NotFound("dev/play_service/state.sh")))
   let absent = next_reading(page)
@@ -327,38 +331,47 @@ pub fn a_failing_script_is_sent_as_stale_with_its_reason_test() -> Nil {
     )
 }
 
-pub fn a_page_that_leaves_and_returns_while_a_read_runs_waits_for_that_read_test() -> Nil {
+pub fn a_page_that_leaves_and_returns_while_a_read_runs_is_not_handed_that_read_and_gets_a_fresh_one_test() -> Nil {
   use <- owned_test.run(60_000)
   let #(host, calls) = started()
 
-  // The page leaves while the read runs and another opens: no second read starts.
+  // The last page leaves while the read runs and another opens: no second read
+  // starts beside the one that runs.
   let first = process.new_subject()
-  host.subscribe(host, first)
+  read_poll.subscribe(poll: host, subscriber: first)
   let read = next_read(calls)
-  host.unsubscribe(host, first)
+  read_poll.unsubscribe(poll: host, subscriber: first)
   let second = process.new_subject()
-  host.subscribe(host, second)
+  read_poll.subscribe(poll: host, subscriber: second)
   handled(host)
   assert no_read_started(calls)
     as "a returning page started a read beside one that runs"
 
-  // The answer of the read that ran across the gap is the new page's reading.
+  // The answer of the read that began before the last page left is dropped, as
+  // it is for every page that comes after a gap; the page gets a read of its
+  // own, started when that read ended.
   read.answer(report(1))
-  assert fresh_connections(next_reading(second)) == 1
+  handled(host)
+  assert no_reading_sent(second)
+    as "a read from before the gap was handed to a returning page"
   assert no_reading_sent(first) as "a page that left was sent a reading"
+  let assert Ok(own) = process.receive(calls, 0)
+    as "the returning page was given no read of its own"
+  own.answer(report(2))
+  assert fresh_connections(next_reading(second)) == 2
   assert no_read_started(calls) as "the answer started a read"
 
   // A read that ends while nobody is subscribed is dropped: the next page waits
   // for a read of its own and is not handed it.
   let #(host, calls) = started()
   let third = process.new_subject()
-  host.subscribe(host, third)
+  read_poll.subscribe(poll: host, subscriber: third)
   let read = next_read(calls)
-  host.unsubscribe(host, third)
+  read_poll.unsubscribe(poll: host, subscriber: third)
   read.answer(report(2))
   handled(host)
   let fourth = process.new_subject()
-  host.subscribe(host, fourth)
+  read_poll.subscribe(poll: host, subscriber: fourth)
   let own = next_read(calls)
   handled(host)
   assert no_reading_sent(fourth)
@@ -372,17 +385,17 @@ pub fn a_tick_while_a_read_runs_past_six_seconds_shows_every_fact_stale_with_its
   let #(clock, set_clock) = moving_clock(1000)
   let #(host, calls) = started_by(clock)
   let page = process.new_subject()
-  host.subscribe(host, page)
+  read_poll.subscribe(host, page)
   next_read(calls).answer(report(0))
   assert next_reading(page)
     == support.every_fact(composed_ms: 1000, freshness: support.AllFresh(1000))
 
   // The second read hangs; six seconds after the last reading every fact is
   // shown stale because no new reading came, and nothing failed.
-  host.poll_now(host)
+  read_poll.read_now(host)
   let hung = next_read(calls)
   set_clock(7000)
-  host.poll_now(host)
+  read_poll.read_now(host)
   assert next_reading(page)
     == support.every_fact(
       composed_ms: 7000,
@@ -392,7 +405,7 @@ pub fn a_tick_while_a_read_runs_past_six_seconds_shows_every_fact_stale_with_its
 
   // The age goes on counting at the next tick.
   set_clock(9000)
-  host.poll_now(host)
+  read_poll.read_now(host)
   assert next_reading(page)
     == support.every_fact(
       composed_ms: 9000,
@@ -444,7 +457,7 @@ pub fn each_tick_arms_the_next_tick_for_as_long_as_a_page_is_subscribed_test() -
   use <- owned_test.run(5000)
   let events = process.new_subject()
   let #(host, calls) = started_driven(events)
-  host.subscribe(host:, subscriber: process.new_subject())
+  read_poll.subscribe(poll: host, subscriber: process.new_subject())
   let first = the_one_timer_armed(timers_changed(host, events))
   let _read = next_read(calls)
 
@@ -463,10 +476,10 @@ pub fn the_last_page_to_leave_cancels_the_timer_and_a_later_tick_of_it_arms_noth
   let events = process.new_subject()
   let #(host, _calls) = started_driven(events)
   let page = process.new_subject()
-  host.subscribe(host:, subscriber: page)
+  read_poll.subscribe(poll: host, subscriber: page)
   let armed = the_one_timer_armed(timers_changed(host, events))
 
-  host.unsubscribe(host:, subscriber: page)
+  read_poll.unsubscribe(poll: host, subscriber: page)
   let assert timers.Armed(timer:, ..) = armed
   assert timers_changed(host, events) == [timers.Cancelled(timer:)]
 
@@ -479,10 +492,10 @@ pub fn a_tick_sent_before_its_timer_was_cancelled_starts_no_second_timer_chain_t
   let events = process.new_subject()
   let #(host, _calls) = started_driven(events)
   let leaving = process.new_subject()
-  host.subscribe(host:, subscriber: leaving)
+  read_poll.subscribe(poll: host, subscriber: leaving)
   let stale = the_one_timer_armed(timers_changed(host, events))
-  host.unsubscribe(host:, subscriber: leaving)
-  host.subscribe(host:, subscriber: process.new_subject())
+  read_poll.unsubscribe(poll: host, subscriber: leaving)
+  read_poll.subscribe(poll: host, subscriber: process.new_subject())
   let assert [timers.Cancelled(..), current] = timers_changed(host, events)
     as "the first timer was cancelled and a second was armed"
 

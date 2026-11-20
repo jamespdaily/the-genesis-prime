@@ -12,25 +12,21 @@
 //// timer ──tick──► follower            timer ──deadline──► follower
 //// ```
 ////
-//// - The pages, their monitors and the one timer chain are `subscribers`'; a
-////   tick with no page subscribed, or of an earlier chain, reads nothing.
-//// - The first page to subscribe starts a read; a page that subscribes later is
-////   handed the lines at once, once a read has answered. A page that has not been
-////   sent anything shows no lines yet.
-//// - A tick while a read runs starts no second read. A read that has not
-////   answered at the deadline is shown as failed, and its answer, if it comes, is
-////   dropped.
+//// - The pages, their monitors, the timer chain and the read in flight are
+////   `read_poll`'s: the first page to subscribe starts a read, a tick while a
+////   read runs starts no second one, and a read that has not answered at the
+////   deadline is shown as failed, its answer, if it comes, dropped.
+//// - A page that subscribes is handed the lines at once, once a read has
+////   answered; a page that has not been sent anything shows no lines yet.
 //// - A read that failed sends the same lines with the reason; the tracking of the
 ////   last good read is kept, and the next tick tries again.
 //// - The last page to leave drops the lines and the tracking, so the next page
-////   reads the tail and is never handed old lines. A read that runs then goes on
-////   to its end and its answer is dropped; a page that subscribes before it ends
-////   waits for it, and a fresh read starts when it has ended, so two reads never
-////   run at once.
+////   reads the tail and is never handed old lines; a read that runs then is
+////   dropped when it ends, and a page that subscribed meanwhile gets a fresh
+////   read.
 //// - A page that gets an update is sent the whole ring (`log_lines` numbers each
 ////   entry); a read that changed nothing sends nothing.
-//// - A subscriber that ends is dropped by the follower's own monitor of it, and
-////   the follower tells its watcher, if it has one.
+//// - A subscriber that ends is told to the follower's watcher, if it has one.
 //// - The follower keeps no state a restart cannot rebuild: pages subscribe again
 ////   when their runtimes are rebuilt (the supervisor restarts both together).
 ////
@@ -44,8 +40,9 @@ import genesis_prime/dashboard/follow.{
   type Event, type Followed, type Trouble, Followed, ReadMade, SubscriberDropped,
 }
 import genesis_prime/dashboard/log_lines.{type Lines, type Source}
+import genesis_prime/dashboard/read_poll.{type Poll}
 import genesis_prime/dashboard/script
-import genesis_prime/dashboard/subscribers.{type Subscribers}
+import genesis_prime/dashboard/subscribers
 import gleam/erlang/process.{type Name, type Subject}
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -68,16 +65,15 @@ pub fn read_deadline_ms(call_deadline_ms call_deadline_ms: Int) -> Int {
   3 * call_deadline_ms
 }
 
-/// How long the supervisor waits for a follower to stop.
-const shutdown_ms = 1000
-
-/// How long the start waits for a follower's initialiser.
-const initialiser_ms = 1000
-
 /// Starts one read with this tracking and gives its answer to the function it
 /// is handed, from any process; it must not wait for the read.
 pub type StartRead =
   fn(Tracking, fn(Result(Read, Trouble)) -> Nil) -> Nil
+
+/// What the follower is told. Pages and tests send these through `read_poll`'s
+/// functions.
+pub type Message =
+  read_poll.Message(Followed, Result(Read, Trouble))
 
 /// What a follower follows and how: the container's log, how a read is started,
 /// how often it reads and how long a read may run, the arm of that timer
@@ -94,38 +90,15 @@ pub type Settings {
   )
 }
 
-/// What the follower is told. Pages and tests send these through this module's
-/// functions.
-pub opaque type Message {
-  Subscribe(subscriber: Subject(Followed))
-  Unsubscribe(subscriber: Subject(Followed))
-  Tick(chain: Int)
-  ReadNow
-  SubscriberDown(down: process.Down)
-  ReadEnded(read: Int, result: Result(Read, Trouble))
-  ReadDeadline(read: Int)
-  DeadlineNow
-  CountSubscribers(reply: Subject(Int))
-}
-
-/// The read in flight, the timer of its deadline, and whether its answer is
-/// wanted: it is not when the last page left after it started.
-type Running {
-  Running(id: Int, deadline: process.Timer, wanted: Bool)
-}
-
 type State {
   State(
-    self: Subject(Message),
     settings: Settings,
     path: String,
-    subscribers: Subscribers(Followed, Message),
+    poll: Poll(Followed, Result(Read, Trouble)),
     lines: Lines,
     tracking: Tracking,
     trouble: Option(Trouble),
     answered: Bool,
-    running: Option(Running),
-    next_read: Int,
   )
 }
 
@@ -179,46 +152,32 @@ pub fn podman_reader(
   }
 }
 
-fn builder(
-  settings: Settings,
-) -> actor.Builder(State, Message, Subject(Message)) {
-  actor.new_with_initialiser(initialiser_ms, fn(self) {
-    let selector =
-      process.new_selector()
-      |> process.select(self)
-      |> process.select_monitors(SubscriberDown)
+fn initial(settings: Settings) -> fn(Subject(Message)) -> State {
+  fn(self) {
     let assert Ok(container) = container_log.container_name(settings.source)
       as "a container follower follows the log of a container"
     State(
-      self:,
       settings:,
       path: path_of(container),
-      subscribers: subscribers.new(
+      poll: read_poll.new(
         owner: self,
         interval_ms: settings.interval_ms,
+        deadline_ms: settings.deadline_ms,
         arm: settings.arm,
-        tick: Tick,
       ),
       lines: log_lines.new(settings.source),
       tracking: container_log.unread,
       trouble: None,
       answered: False,
-      running: None,
-      next_read: 0,
     )
-    |> actor.initialised
-    |> actor.selecting(selector)
-    |> actor.returning(self)
-    |> Ok
-  })
-  |> actor.on_message(handle)
+  }
 }
 
 /// Starts a follower linked to the caller.
 pub fn start(
   settings settings: Settings,
 ) -> Result(actor.Started(Subject(Message)), actor.StartError) {
-  actor.start(builder(settings))
+  read_poll.start(initial(settings), handle)
 }
 
 /// The follower as a child of a supervisor, registered under `name` so that a
@@ -227,207 +186,64 @@ pub fn supervised(
   settings settings: Settings,
   name name: Name(Message),
 ) -> supervision.ChildSpecification(Subject(Message)) {
-  supervision.worker(fn() { actor.start(actor.named(builder(settings), name)) })
-  |> supervision.timeout(shutdown_ms)
-}
-
-/// Subscribes a page: it is sent the lines once a read has answered, and an
-/// update each time a read changes them.
-pub fn subscribe(
-  follower follower: Subject(Message),
-  subscriber subscriber: Subject(Followed),
-) -> Nil {
-  process.send(follower, Subscribe(subscriber:))
-}
-
-/// Takes a page's subscription back.
-pub fn unsubscribe(
-  follower follower: Subject(Message),
-  subscriber subscriber: Subject(Followed),
-) -> Nil {
-  process.send(follower, Unsubscribe(subscriber:))
-}
-
-/// A tick without the timer: reads now when a page is subscribed and no read
-/// runs.
-pub fn read_now(follower follower: Subject(Message)) -> Nil {
-  process.send(follower, ReadNow)
-}
-
-/// The deadline of the read in flight, now: the read is shown as failed as if
-/// its time had come. Nothing happens when no read runs.
-pub fn deadline_now(follower follower: Subject(Message)) -> Nil {
-  process.send(follower, DeadlineNow)
-}
-
-/// How many pages are subscribed, as of the follower's handling of everything
-/// sent to it before this. Waits as long as the follower takes.
-pub fn subscriber_count(follower follower: Subject(Message)) -> Int {
-  process.call_forever(follower, CountSubscribers)
+  read_poll.supervised(initial(settings), handle, name)
 }
 
 fn handle(state: State, message: Message) -> actor.Next(State, Message) {
-  case message {
-    Subscribe(subscriber:) -> actor.continue(subscribed(state, subscriber))
-    Unsubscribe(subscriber:) ->
-      actor.continue(left(
-        state,
-        subscribers.leave(state.subscribers, subscriber:),
-      ))
-    SubscriberDown(down:) -> {
-      let state =
-        left(
-          state,
-          subscribers.leave_ended(state.subscribers, monitor: down.monitor),
-        )
-      tell(state, SubscriberDropped(state.settings.source))
-      actor.continue(state)
-    }
-    Tick(chain:) ->
-      case subscribers.next_tick(state.subscribers, chain:) {
-        Ok(armed) -> actor.continue(polled(State(..state, subscribers: armed)))
-        Error(Nil) -> actor.continue(state)
-      }
-    ReadNow -> actor.continue(polled(state))
-    ReadEnded(read:, result:) ->
-      actor.continue(read_ended(state:, read:, result:))
-    ReadDeadline(read:) ->
-      case state.running {
-        Some(Running(id:, ..)) if id == read ->
-          actor.continue(deadline_passed(state))
-        Some(_) | None -> actor.continue(state)
-      }
-    DeadlineNow -> actor.continue(deadline_passed(state))
-    CountSubscribers(reply:) -> {
-      process.send(reply, subscribers.count(state.subscribers))
-      actor.continue(state)
-    }
-  }
-}
-
-/// A page subscribes: it is monitored and handed the lines when a read has
-/// answered, and when it is the first the timer starts and a read, unless one
-/// still runs.
-fn subscribed(state: State, subscriber: Subject(Followed)) -> State {
-  case subscribers.join(state.subscribers, subscriber:) {
-    subscribers.AlreadyJoined -> state
-    subscribers.LaterJoined(joined) -> {
-      let state = State(..state, subscribers: joined)
+  let #(poll, happened) =
+    read_poll.handle(state.poll, message, started_by(state))
+  let state = State(..state, poll:)
+  actor.continue(case happened {
+    read_poll.PageJoined(subscriber:) -> {
       case state.answered {
         True -> process.send(subscriber, followed(state))
         False -> Nil
       }
       state
     }
-    subscribers.FirstJoined(joined) -> {
-      let state = State(..state, subscribers: joined)
-      case state.running {
-        Some(_) -> state
-        None -> start_read(state)
+    read_poll.PageLeft(last:, ended:) -> {
+      let state = case last {
+        True -> dropped(state)
+        False -> state
       }
+      case ended {
+        True ->
+          follow.tell(
+            watcher: state.settings.watcher,
+            event: SubscriberDropped(state.settings.source),
+          )
+        False -> Nil
+      }
+      state
     }
-  }
-}
-
-/// The last page to leave drops the lines and the tracking, and tells a read
-/// that runs that its answer is not wanted.
-fn left(state: State, left: subscribers.Left(Followed, Message)) -> State {
-  case left {
-    subscribers.StillSubscribed(remaining) ->
-      State(..state, subscribers: remaining)
-    subscribers.LastLeft(remaining) ->
-      State(
-        ..state,
-        subscribers: remaining,
-        lines: log_lines.new(state.settings.source),
-        tracking: container_log.unread,
-        trouble: None,
-        answered: False,
-        running: option.map(state.running, fn(running) {
-          Running(..running, wanted: False)
-        }),
-      )
-  }
-}
-
-fn tell(state: State, event: Event) -> Nil {
-  option.map(state.settings.watcher, process.send(_, event))
-  Nil
-}
-
-/// Starts a read when a page is subscribed and no read runs.
-fn polled(state: State) -> State {
-  case subscribers.is_empty(state.subscribers), state.running {
-    True, _ | False, Some(_) -> state
-    False, None -> start_read(state)
-  }
-}
-
-/// Starts a read with the tracking, and the timer of its deadline.
-fn start_read(state: State) -> State {
-  tell(state, ReadMade(state.settings.source))
-  let id = state.next_read
-  let self = state.self
-  state.settings.start_read(state.tracking, fn(result) {
-    process.send(self, ReadEnded(read: id, result:))
+    read_poll.ReadAnswered(answer:) -> shown(state, answer)
+    read_poll.ReadTimedOut ->
+      shown(state, Error(container_log.timed_out(state.settings.deadline_ms)))
+    read_poll.ReadBusy | read_poll.Nothing -> state
   })
-  let deadline =
-    process.send_after(
-      state.self,
-      state.settings.deadline_ms,
-      ReadDeadline(read: id),
+}
+
+/// How a read starts: with the tracking as it stands, and the watcher told.
+fn started_by(state: State) -> read_poll.Start(Result(Read, Trouble)) {
+  fn(answer) {
+    follow.tell(
+      watcher: state.settings.watcher,
+      event: ReadMade(state.settings.source),
     )
+    state.settings.start_read(state.tracking, answer)
+  }
+}
+
+/// The last page left: the lines and the tracking are dropped, so the next page
+/// reads the tail.
+fn dropped(state: State) -> State {
   State(
     ..state,
-    running: Some(Running(id:, deadline:, wanted: True)),
-    next_read: id + 1,
+    lines: log_lines.new(state.settings.source),
+    tracking: container_log.unread,
+    trouble: None,
+    answered: False,
   )
-}
-
-/// A read answered: its answer is taken when it is wanted, and dropped when
-/// the deadline has passed it (it is no longer the read in flight) or the last
-/// page left after it started.
-fn read_ended(
-  state state: State,
-  read read: Int,
-  result result: Result(Read, Trouble),
-) -> State {
-  case state.running {
-    Some(Running(id:, deadline:, wanted:)) if id == read -> {
-      process.cancel_timer(deadline)
-      ended(state: State(..state, running: None), wanted:, outcome: result)
-    }
-    Some(_) | None -> state
-  }
-}
-
-/// The read in flight has run to its deadline.
-fn deadline_passed(state: State) -> State {
-  case state.running {
-    None -> state
-    Some(Running(deadline:, wanted:, ..)) -> {
-      process.cancel_timer(deadline)
-      ended(
-        state: State(..state, running: None),
-        wanted:,
-        outcome: Error(container_log.timed_out(state.settings.deadline_ms)),
-      )
-    }
-  }
-}
-
-/// A read ended: what it gave is taken and sent when it is wanted; a read that
-/// is not wanted is dropped, and a page that subscribed meanwhile gets a fresh
-/// read.
-fn ended(
-  state state: State,
-  wanted wanted: Bool,
-  outcome outcome: Result(Read, Trouble),
-) -> State {
-  case wanted {
-    True -> shown(state, outcome)
-    False -> polled(state)
-  }
 }
 
 /// Takes what a read gave and sends every subscriber the lines when it changed
@@ -451,8 +267,7 @@ fn shown(state: State, result: Result(Read, Trouble)) -> State {
   let after = followed(state)
   case before == Some(after) {
     True -> Nil
-    False ->
-      list.each(subscribers.subjects(state.subscribers), process.send(_, after))
+    False -> list.each(read_poll.subjects(state.poll), process.send(_, after))
   }
   state
 }
