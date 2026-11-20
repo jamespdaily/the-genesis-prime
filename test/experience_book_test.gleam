@@ -24,6 +24,8 @@ import genesis_prime/client_connection.{FromMap, FromStore}
 import genesis_prime/game/connection/casting
 import genesis_prime/game/connection/prerequisite_player
 import genesis_prime/game/connection/state.{Settings}
+import genesis_prime/game/spell_area
+import genesis_prime/game/spell_plan
 import genesis_prime/message/cast_result.{SpellUnknown}
 import genesis_prime/step
 import genesis_prime/store.{Character}
@@ -257,8 +259,39 @@ pub fn the_new_ability_is_in_the_casters_bag_and_the_ability_known_prerequisite_
 
 pub fn an_ability_with_no_plan_is_granted_and_its_press_is_refused_unknown_test() -> Nil {
   use <- owned_test.run(60_000)
-  // The Medic's 5 to 6 gives 25530 at slot 6 (SpellLevel 1191: a friendly spell whose area
-  // the server does not find allies for) and 38210 at slot 8, which has a plan.
+  // The Medic's 5 to 6 gives 25530 at slot 6 (SpellLevel 1191) and 25579 at slot 7 (1194),
+  // which have no plan, and 38210 at slot 8 (1221, Emission), which has one.
+  let assert Ok(unplanned) =
+    spell_plan.unplanned(
+      tables: character_tables.shared(),
+      area_checked: spell_area.checker,
+    )
+    as "the plans build"
+  // The base, the Spell4 row the plan refuses, and its own refusal.
+  let no_plan = [
+    #(
+      25_530,
+      41_333,
+      spell_plan.FriendlyAreaNotRead(41_333, 92_693, 5),
+      "Mending Probes hits no foes and has an effect aimed by flags 5, the caster and the area, a friendly spell's area that finds allies, which the server does not read",
+    ),
+    #(
+      25_579,
+      41_382,
+      spell_plan.AreaNotBuilt(
+        41_382,
+        "the Spell4 row 41382 has an area row that selects in order 5, which is not built (a player's ability takes Closest, 1; a creature's special 1 to 3)",
+      ),
+      "Crisis Wave's area row selects in an order the server does not build",
+    ),
+  ]
+  list.each(no_plan, fn(row) {
+    let #(_, spell4_id, error, why) = row
+    assert list.contains(unplanned, spell_plan.Unplanned(spell4_id:, error:))
+      as {
+        "the plan refuses Spell4 " <> int.to_string(spell4_id) <> ": " <> why
+      }
+  })
   let #(state, taken) = support.level_up(class_id: 4, from: 5, to: 6)
   assert list.map(support.added_in(frames: support.written(taken:)), fn(added) {
       added.bag_index
@@ -266,7 +299,9 @@ pub fn an_ability_with_no_plan_is_granted_and_its_press_is_refused_unknown_test(
     == [6, 7, 8]
     as "all three are granted, the unplanned ones too: the table says the player holds them"
   assert support.tiers_in(frames: support.written(taken:))
-    == support.tiers_of(bases: [25_530, 25_579, 38_210])
+    == support.tiers_of(
+      bases: list.append(list.map(no_plan, fn(row) { row.0 }), [38_210]),
+    )
     as "and their book entry is sent"
   list.each([6, 7], fn(bag_index) {
     assert connection_support.refusal_results(taken: support.pressed(
@@ -286,6 +321,6 @@ pub fn an_ability_with_no_plan_is_granted_and_its_press_is_refused_unknown_test(
       bag_index: 8,
       ms: 1000,
     ))
-    == [cast_result.Other(167)]
-    as "opcode.0x7fc: the press of slot 8 has a plan, so it is not refused unknown; its Spell4 58841 costs 15 focus (innateCostType0 15), a cost the caster holds none of, which the plan refuses with its own result 167 (`Spell4CastResult.vital_cost`)"
+    == []
+    as "opcode.0x7fc: the press of slot 8 has a plan, so it is not refused unknown; its Spell4 58841 costs 15 Focus (innateCostType0 15), which the Medic holds at its pool of 1000 (class_resource, a guess), so the cast is accepted"
 }

@@ -34,6 +34,7 @@ import genesis_prime/game/item_price
 import genesis_prime/game/item_property
 import genesis_prime/game/item_use
 import genesis_prime/game/kill_objective
+import genesis_prime/game/limited_action_set
 import genesis_prime/game/look
 import genesis_prime/game/movement
 import genesis_prime/game/objective
@@ -122,6 +123,7 @@ pub fn registry() -> List(Entry) {
     cast_press.gaps(),
     activate.gaps(),
     ability_points.gaps(),
+    limited_action_set.gaps(),
     cast.gaps(),
     cast_control.gaps(),
     cast_cost.gaps(),

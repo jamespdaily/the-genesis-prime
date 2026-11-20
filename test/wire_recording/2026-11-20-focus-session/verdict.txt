@@ -1,12 +1,12 @@
 ok   the report names a character: strName = 'Grozim Vroc'
 ok   the report is finished: bReported = True
 ok   the player is alive: bDead = False
-ok   the player has health: nHealth = 942
+ok   the player has health: nHealth = 1336
 ok   the player's unit is controlled: bControlled = True
 ok   the player's model is loaded: bModelLoaded = True
-ok   the level is the saved level: nLevel = 3, saved 3
+ok   the level is the saved level: nLevel = 5, saved 5
 ok   the path is the saved path: ePath = 1, saved 1
-ok   the position is the saved place: 0.000 units from the saved place (at most 1.0); saved at (-8093.959, -994.7713, -200.67833)
+ok   the position is the saved place: 0.000 units from the saved place (at most 1.0); saved at (4009.0215, -702.9344, -5319.633)
 ok   no addon raised an error: tAddonErrors is empty
 ok   no Lua error event was raised: tLuaErrorEvents is empty
 ok   the client logged no failure: 0 failure line(s)

@@ -7,12 +7,15 @@
 //// the cast rule's Pay (an accepted press)          ─▶ class_resource.pay
 //// the cast rule's Gain (a go's gains)              ─▶ class_resource.gain
 //// a timer class_resource.owns                     ─▶ class_resource.timer_fired
+//// the player's properties changed (0x93a)          ─▶ class_resource.properties_followed (Focus's pool,
+////                                                    shares and cost modifier)
 //// player_life's effects: 0x88c dead                ─▶ class_resource.died
 ////                        0x88c alive               ─▶ class_resource.came_back
 ////                        0x89a, the combat flag    ─▶ class_resource.combat_changed
 //// the stay left (camp, Holocrypt)                 ─▶ class_resource.left
 //// Changed(slot, value) ─▶ 0x935 to the player's own client only (the server's
-//// choice: a viewer's client shows no other unit's class resource)
+//// choice: a viewer's client shows no other unit's class resource or Focus); slot -1
+//// is Focus, stat 1
 //// a step that moved the class's slot             ─▶ cast.raised (ResourceMoved), left
 ////                                                    pending for the caller's proc pass
 //// StartTimer, CancelTimer ─▶ the connection's own timers, as the cast rule's are
@@ -104,6 +107,21 @@ pub fn gained(
   gains gains: List(class_resource.Gain),
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
   stepped(session:, change: class_resource.gain(resources: _, gains:))
+}
+
+/// The player's properties changed: Focus takes the new pool, shares and cost modifier
+/// from the player's properties as they now stand.
+pub fn properties_followed(
+  session session: Session,
+) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  case connection_state.entered_of(session.status) {
+    None -> #(session, [])
+    Some(entered) ->
+      stepped(session:, change: class_resource.properties_followed(
+        resources: _,
+        properties: entered.properties,
+      ))
+  }
 }
 
 /// A timer of the rule fired. With no player in the world to take it, it is

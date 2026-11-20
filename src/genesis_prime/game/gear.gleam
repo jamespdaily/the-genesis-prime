@@ -25,7 +25,9 @@
 ////   shield; with no shield worn the four shield properties are their UnitProperty2
 ////   defaults (`player.level1_gear_properties`, `UnitProperty2.client_value`). Every
 ////   other property an item's budget may give is its default plus the worn items'
-////   budget values, so taking an item off returns it to the default.
+////   budget values, so taking an item off returns it to the default. BaseFocusPool (5)
+////   is one of them, with the class's own base pool added (`bases`), so a healer's
+////   maximum Focus is that pool plus what its items give.
 
 import genesis_prime/game/item_property.{
   type ItemProperties, type ItemPropertyError, Shield,
@@ -187,12 +189,15 @@ pub fn max_health(
 /// The base of each property the gear sets at `level`: 7, 35, 36 and 42, and the four
 /// shield properties, which are their UnitProperty2 defaults when no shield is worn,
 /// then each property an item's budget may give (`item_property.budget_properties`), in
-/// id order, at its default plus what the worn items give.
+/// id order, at its default plus what the worn items give; BaseFocusPool (5) also holds
+/// `focus_pool`, the base pool of the player's class in points (0 for a class that holds
+/// no Focus), so taking a worn item off returns it to that base.
 /// `NoCreatureLevel` when the table has no Base Health row for the level.
 pub fn bases(
   tables tables: table_store.Tables,
   gear gear: Gear,
   level level: Int,
+  focus_pool focus_pool: Float,
 ) -> Result(List(#(UnitProperty2Id, Float)), HealthError) {
   use health <- result.map(max_health(tables:, gear:, level:))
   let defaults = unit_properties.defaults(tables:)
@@ -228,7 +233,11 @@ pub fn bases(
       #(
         property_id,
         default_of(defaults:, id: property_id)
-          +. result.unwrap(dict.get(properties.budget, property_id), 0.0),
+          +. result.unwrap(dict.get(properties.budget, property_id), 0.0)
+          +. case property_id == unit_properties.focus_pool {
+          True -> focus_pool
+          False -> 0.0
+        },
       )
     })
   list.append(fixed, budget)

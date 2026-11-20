@@ -260,9 +260,20 @@ pub fn rejoining(
   entered_at entered_at: Int,
   risen_to risen_to: Int,
 ) -> List(Frame) {
-  let tables = character_tables.shared()
   let #(_, entered) = entering(class_id:, level: entered_at)
-  let character = Character(..entered.character, level: risen_to)
+  rejoining_from(
+    entered: world_entry.Entered(
+      ..entered,
+      character: Character(..entered.character, level: risen_to),
+    ),
+  )
+}
+
+/// The frames of the Holocrypt's join of this player on the committed rows: what it keeps of
+/// the stay it leaves is sent again.
+pub fn rejoining_from(entered entered: world_entry.Entered) -> List(Frame) {
+  let tables = character_tables.shared()
+  let character = entered.character
   let landing =
     place_support.at(
       world_id: 426,
@@ -273,7 +284,7 @@ pub fn rejoining(
     )
   let #(state, _) =
     world_entry.rejoining(
-      entered: world_entry.Entered(..entered, character:),
+      entered:,
       place: landing,
       health: None,
       told: None,

@@ -229,6 +229,21 @@ pub fn the_level_up_request_is_a_row_taken_inside_0x038c_with_the_player_in_the_
     as "it is not taken outside 0x038C"
 }
 
+pub fn the_action_set_save_is_a_row_taken_inside_0x038c_with_the_player_in_the_world_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert routing.route(AtWorld, InsideWorldMessage, 0x00B1)
+    == Ok(routing.LimitedActionSet)
+    as "0x00B1 is the action set save row in the world (opcode.0xb1: sent by SendActionSetChanges through SendWorldMessage, so inside 0x038C)"
+  assert routing.route(AtCharacterSelect, InsideWorldMessage, 0x00B1)
+    == Error(Nil)
+    as "it is not taken in character select: the connection logs it as unhandled"
+  assert routing.route(BeforeHelloReply, InsideWorldMessage, 0x00B1)
+    == Error(Nil)
+    as "it is not taken before the hello reply"
+  assert routing.route(AtWorld, OnItsOwn, 0x00B1) == Error(Nil)
+    as "it is not taken outside 0x038C"
+}
+
 pub fn the_innate_choice_is_a_row_taken_inside_0x038c_with_the_player_in_the_world_test() -> Nil {
   use <- owned_test.run(5000)
   assert routing.route(AtWorld, InsideWorldMessage, 0x016F)

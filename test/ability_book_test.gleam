@@ -15,10 +15,14 @@ import ability_book_support as support
 import client_tables
 import fixture_tables
 import genesis_prime/game/ability_book
+import genesis_prime/game/loadout
 import genesis_prime/table/id.{type Spell4BaseId}
+import genesis_prime/table/loader/store as table_store
+import genesis_prime/table/spell4
 import gleam/int
 import gleam/list
 import gleam/option
+import gleam/result
 import owned_test
 import planted_table.{Integer}
 import unitest
@@ -167,5 +171,94 @@ pub fn a_character_of_any_class_at_level_50_holds_28_bag_entries_test() -> Nil {
     assert option.map(held.innate, fn(innate) { innate.active_base.value })
       == option.from_result(list.first(list.drop(bag, 3)))
       as "the innate stays at index 3 for every level"
+  })
+}
+
+/// The alternates the Spell4 rows name for the bag's abilities: the base of the Spell4 that
+/// each bag ability's tier 1 row names as its mechanic alternate
+/// (`Spell4.spell4IdMechanicAlternateSpell`), read from the rows and not from the plans.
+fn named_alternates(
+  tables tables: table_store.Tables,
+  bag bag: List(Spell4BaseId),
+) -> List(Int) {
+  list.filter_map(bag, fn(base) {
+    use row <- result.try(
+      list.find(spell4.all(tables), fn(row) {
+        spell4.spell4_base_id_base_spell(row) == base && row.tier_index == 1
+      }),
+    )
+    case spell4.spell4_id_mechanic_alternate_spell(row).value {
+      0 -> Error(Nil)
+      named -> {
+        use alternate <- result.map(spell4.get(tables:, id: id.Spell4Id(named)))
+        spell4.spell4_base_id_base_spell(alternate).value
+      }
+    }
+  })
+}
+
+pub fn the_book_at_a_level_holds_the_bag_and_the_alternates_the_plans_add_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  // Spell4Base 52215 is the alternate of Spellslinger 27638's tier 1 (`table_rows
+  // Spell4Base 52215`); the book lists it after the whole bag.
+  let spellslinger = support.loadout_of(tables:, class_id: 7)
+  list.each([1, 4, 10], fn(level) {
+    let bag = ability_book.bag(loadout: spellslinger, level:)
+    let book = ability_book.book(tables:, loadout: spellslinger, level:)
+    assert list.take(book, list.length(bag)) == bag
+      as {
+        "level "
+        <> int.to_string(level)
+        <> ": the book starts with each bag id once, in bag order"
+      }
+    assert list.contains(
+      list.drop(book, list.length(bag)),
+      id.Spell4BaseId(52_215),
+    )
+      as {
+        "level "
+        <> int.to_string(level)
+        <> ": Spell4Base 52215, the alternate of 27638's tier 1, is in the book"
+      }
+  })
+  // Every class and faction at level 50: each bag id is in the book once, and each extra
+  // is an alternate a bag id's tier 1 row names.
+  list.each([1, 2, 3, 4, 5, 7], fn(class_id) {
+    list.each([166, 167], fn(faction_id) {
+      let assert Ok(held) =
+        loadout.of(tables:, class_id: id.ClassId(class_id), faction_id:)
+        as "every class has a loadout in both factions"
+      let bag = ability_book.bag(loadout: held, level: 50)
+      let book = ability_book.book(tables:, loadout: held, level: 50)
+      let extras = list.drop(book, list.length(bag))
+      let named = named_alternates(tables:, bag:)
+      let counts =
+        "class "
+        <> int.to_string(class_id)
+        <> ", faction "
+        <> int.to_string(faction_id)
+        <> ": "
+        <> int.to_string(list.length(bag))
+        <> " bag ids, "
+        <> int.to_string(list.length(extras))
+        <> " alternates in the book, "
+        <> int.to_string(list.length(named))
+        <> " named by the rows"
+      assert list.take(book, list.length(bag)) == bag
+        as { counts <> ": the book starts with the bag" }
+      assert list.length(list.unique(book)) == list.length(book)
+        as { counts <> ": no id twice" }
+      list.each(extras, fn(extra) {
+        assert list.contains(named, extra.value)
+          as {
+            counts
+            <> ": Spell4Base "
+            <> int.to_string(extra.value)
+            <> " is no bag id's alternate"
+          }
+      })
+    })
   })
 }

@@ -8,6 +8,7 @@
 //// message has is reported as unknown.
 
 import genesis_prime/message/ability_hold.{type AbilityHold}
+import genesis_prime/message/action_set_save.{type ActionSetSave}
 import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}
 import genesis_prime/message/camp_finished.{type CampFinished}
 import genesis_prime/message/camp_request.{type CampRequest}
@@ -127,6 +128,7 @@ pub type ClientMessage {
   ItemMove(message: ItemMove)
   ItemSplit(message: ItemSplit)
   ItemDelete(message: ItemDelete)
+  ActionSetSave(message: ActionSetSave)
   InnateIndexChosen(message: InnateIndexChosen)
   ReplayLevelUp(message: ReplayLevelUp)
   CancelCast(message: CancelCast)
@@ -243,6 +245,7 @@ pub fn decode(
     0x0182 -> decoded(body, message_id, item_move.decode, ItemMove)
     0x017D -> decoded(body, message_id, item_split.decode, ItemSplit)
     0x0149 -> decoded(body, message_id, item_delete.decode, ItemDelete)
+    0x00B1 -> decoded(body, message_id, action_set_save.decode, ActionSetSave)
     0x016F ->
       decoded(body, message_id, innate_index_chosen.decode, InnateIndexChosen)
     0x07A5 -> decoded(body, message_id, replay_level_up.decode, ReplayLevelUp)
@@ -353,6 +356,7 @@ pub fn encode(message: ClientMessage) -> Result(BitArray, EncodeError) {
     ItemMove(message:) -> item_move.encode(message)
     ItemSplit(message:) -> item_split.encode(message)
     ItemDelete(message:) -> item_delete.encode(message)
+    ActionSetSave(message:) -> action_set_save.encode(message)
     InnateIndexChosen(message:) -> innate_index_chosen.encode(message)
     ReplayLevelUp(message:) -> replay_level_up.encode(message)
     CancelCast(message:) -> cancel_cast.encode(message)
@@ -428,6 +432,7 @@ pub fn message_id(message: ClientMessage) -> Int {
     ItemMove(..) -> item_move.message_id
     ItemSplit(..) -> item_split.message_id
     ItemDelete(..) -> item_delete.message_id
+    ActionSetSave(..) -> action_set_save.message_id
     InnateIndexChosen(..) -> innate_index_chosen.message_id
     ReplayLevelUp(..) -> replay_level_up.message_id
     CancelCast(..) -> cancel_cast.message_id
@@ -501,6 +506,7 @@ pub fn name(message: ClientMessage) -> String {
     ItemMove(..) -> "item_move"
     ItemSplit(..) -> "item_split"
     ItemDelete(..) -> "item_delete"
+    ActionSetSave(..) -> "action_set_save"
     InnateIndexChosen(..) -> "innate_index_chosen"
     ReplayLevelUp(..) -> "replay_level_up"
     CancelCast(..) -> "cancel_cast"

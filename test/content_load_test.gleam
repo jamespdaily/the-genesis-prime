@@ -621,6 +621,7 @@ pub fn the_load_puts_each_playable_classs_resource_in_a_term_test() -> Nil {
       refill_after_combat_ms: option.None,
       drain: option.None,
       empty_after_combat_ms: option.None,
+      focus: option.None,
     )
     as "the design: Suit Power in slot 3, 100, full at the start, +7 each second"
 }

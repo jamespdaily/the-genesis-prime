@@ -1387,7 +1387,7 @@ fn mind_burst_go(points points: Int) -> GoAsked {
     )
     as "the planted Esper holds Mind Burst"
   let resources =
-    class_resource.new(
+    class_resource_support.new(
       resource: Resource(
         ..class_resource_support.resource_of(3),
         start: int.to_float(points),
