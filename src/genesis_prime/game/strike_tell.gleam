@@ -41,7 +41,8 @@
 ////   `ControlLanded.interrupted` on the first landed state of the strike that broke its
 ////   open cast, so the striker's connection writes the combat log's interrupt line with the
 ////   go (genesis_prime/game/cast/frame `states_logged`) and no message is added. A state
-////   that breaks nothing, a death and a leash carry no mark.
+////   that breaks nothing, a death and a leash carry no mark
+////   (genesis_prime/world_map/creature_control `gaps` lists what no mark covers).
 //// - **A strike carries the gates of its rows** (`Gate`): each row of the strike, damage,
 ////   crowd control or go, whose target apply prerequisite reads the struck creature's own
 ////   state, with the prerequisite as parsed. The creature checks them against its own state

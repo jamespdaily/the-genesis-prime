@@ -422,6 +422,18 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Creature crowd control",
+      missing: "the interrupt line of a creature's cast broken by a throw that carries no state: only a landed state is shown to its caster as the interrupter",
+    ),
+    gap.Entry(
+      area: "Creature crowd control",
+      missing: "the interrupt line for a player's own cancelled cast and for a creature that interrupts a player's cast: the client logs those only from a server line, and none is sent",
+    ),
+    gap.Entry(
+      area: "Creature crowd control",
+      missing: "the interrupt line when the creature's answer comes after the round's deadline: the go leaves that unit out and writes no line",
+    ),
+    gap.Entry(
+      area: "Creature crowd control",
       missing: "the client's signal that a Stun, Knockdown or Knockback stops every cast (CCStates flag 0x10, not decoded): the server follows a retail record instead",
     ),
   ]
