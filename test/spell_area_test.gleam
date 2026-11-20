@@ -503,9 +503,9 @@ pub fn the_anchor_of_a_planned_spell_is_read_from_its_hit_rows_on_the_clients_ro
       #(41_551, area.FixedAtCaster, "Urgency: row 1721, flag 8"),
       #(39_269, area.FixedAtCaster, "Razor Disk's child: the twin 2123, flag 8"),
       #(
-        41_491,
+        58_868,
         area.FixedAtCaster,
-        "Unsteady Miasma's child: row 10954, flag 8",
+        "Nullifier, castable before flag 8 was read: row 2789, flags 1 with 0x1200 (0x1000 fixes it where the 0x7ff puts it); its phase holds no damage row and selects no area, so no strike of it moves",
       ),
       #(
         42_676,
@@ -527,6 +527,14 @@ pub fn the_anchor_of_a_planned_spell_is_read_from_its_hit_rows_on_the_clients_ro
       assert found.anchor == anchor as reason
     },
   )
+  let assert Ok(nullifier) =
+    spell_area.of_spell(areas:, spell4_id: Spell4Id(58_868))
+    as "Nullifier is a spell of a planned ability's tree"
+  let assert Ok(phase) =
+    spell_area.phase(spell: nullifier, phase: 0, spent: None)
+    as "Nullifier has a first phase"
+  assert phase.damage == [] && !phase.selects_area
+    as "Spell4Effects 141450 and 175305 are no damage row and select no area, so the anchor Nullifier's row gives moves no strike"
 }
 
 pub fn a_shape_the_rule_does_not_build_fails_the_load_naming_it_test() -> Nil {
@@ -1011,6 +1019,36 @@ pub fn until_removed_periodic_rows_are_left_out_test() -> Nil {
       duration_ms: 500,
     ))
     as "the load names the spell, the row, its tickTime and its durationTime"
+}
+
+pub fn a_spell_with_an_until_removed_damage_row_is_refused_by_the_checker_while_the_load_leaves_it_out_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Mind Burst's second damage row (61994, tickTime 0 in the client) is given a tickTime and
+  // flags bit 2, as in the test above: the row lasts until removed, which no schedule ends.
+  let changes = [
+    #("tickTime", Integer(1000)),
+    #("durationTime", Integer(0)),
+    #("flags", Integer(2)),
+  ]
+  let spell =
+    spell_tables.mind_burst_in(areas: spell_tables.fixture_areas()).spell
+  assert spell_area.checker(tables: fixture_tables.shared())(spell) == Ok(Nil)
+    as "Mind Burst as the client has it passes the checker"
+  let verdict =
+    fixture_tables.changed(
+      table: "Spell4Effects",
+      id: 61_994,
+      with: changes,
+      body: fn(tables) { spell_area.checker(tables:)(spell) },
+    )
+  let assert Error(spell_plan.AreaNotBuilt(spell4_id:, reason:)) = verdict
+    as "an until-removed damage row refuses the spell, so no ability holds a press that strikes nothing"
+  assert spell4_id == 32_809 as "the refusal names Mind Burst's Spell4 row"
+  assert string.contains(
+    reason,
+    "periodic damage effect 61994 that lasts until removed",
+  )
+    as { "the sentence names the row: " <> reason }
 }
 
 pub fn a_damage_row_the_area_load_refuses_is_not_read_test() -> Nil {

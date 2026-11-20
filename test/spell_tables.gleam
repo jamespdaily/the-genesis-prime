@@ -995,3 +995,12 @@ pub fn plans_with_server_proxies() -> spell_plan.Plans {
     server_proxy.planted_into(plans:, proxies:)
   })
 }
+
+/// The seven abilities whose only refusal was a hit row placed by flag 8, which the player's
+/// reading builds: Leap, Bum Rush, Personal Defense Unit, Concentrated Blade, Fissure, Urgency
+/// and Razor Disk (`table_rows -- TelegraphDamage` 3390, 723 to 724, 4029, 4081, 2998, 1721 and
+/// 2123, each `targetTypeFlags` 8). Unsteady Miasma 41484 (row 10954) is not among them: its
+/// child's only damage row lasts until removed, so it stays unplanned.
+pub const flag_8_abilities = [
+  32_128, 59_080, 44_471, 44_641, 41_843, 41_551, 39_268,
+]

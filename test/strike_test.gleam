@@ -1184,10 +1184,7 @@ pub fn a_row_fixed_at_the_cast_start_strikes_where_the_cast_started_and_one_that
   use <- unitest.guard(client_tables.present())
   let areas = spell_area.areas(tables: client_tables.shared())
   // The start pose faces -z from the origin, so 6 m ahead of it is (0, -6); the moved caster
-  // at (40, 0) faces +z, so 6 m ahead of it is (40, 6). A creature's hit radius is 3. A fixed
-  // row of a child cast on a struck unit (Unsteady Miasma's 41491) is not here: its damage
-  // row is periodic and lasts until removed, which the area load leaves out, so the child
-  // selects nobody; `area_test` holds that case of the centre.
+  // at (40, 0) faces +z, so 6 m ahead of it is (40, 6). A creature's hit radius is 3.
   list.each(
     [
       #(

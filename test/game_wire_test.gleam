@@ -4718,16 +4718,16 @@ pub fn a_medic_that_levels_from_3_to_4_holds_fissure_castable_and_a_relog_at_4_h
     y: press_at.1,
     z: press_at.2,
   )
-  game_client.face(
-    game:,
-    yaw: game_client.yaw_toward(from: #(press_at.0, press_at.2), target: #(
+  let facing_the_creature =
+    game_client.yaw_toward(from: #(press_at.0, press_at.2), target: #(
       creature_at.0,
       creature_at.2,
-    )),
-    clock: 210,
-  )
+    ))
+  game_client.face(game:, yaw: facing_the_creature, clock: 210)
   let #(_, have) = game_client.read_until_pong(game:, have:, number: 8)
-  // The global cooldown of the last press of Paralytic Surge (2700 ms of its lingering) is over.
+  // The last Paralytic Surge lingers 2700 ms (`fight_bot.paralytic_surge_lingers_ms`) and holds
+  // the press of any other ability inside the 500 ms queue window (`cast_press.verdict`), so the
+  // clock moves past that lingering first.
   driven_time.advance(time:, ms: 3000)
   game_client.press_ability(
     game:,
@@ -4735,15 +4735,15 @@ pub fn a_medic_that_levels_from_3_to_4_holds_fissure_castable_and_a_relog_at_4_h
     bag_index: 4,
     target: other.unit_id,
   )
-  let #(first_go, have) =
-    game_client.read_until(game:, have:, found: fn(frames) {
-      refusals(frames:) != [] || fissure_goes(frames:, in: frames) != []
-    })
+  // The connection writes the confirm and the child's start before its pong, so a press that is
+  // held or refused ends this wait at the assertions below; the first go comes from the cast's
+  // timer, which a confirmed press has armed.
+  let #(first_go, have) = game_client.read_until_pong(game:, have:, number: 10)
   assert refusals(frames: first_go) == []
     as "opcode.0x7fc: Fissure is planned, so the press is not refused"
   let assert Ok(confirmed_frame) =
     list.find(first_go, fn(frame) { frame.message_id == 0x07FD })
-    as "opcode.0x7fd: the press is confirmed"
+    as "opcode.0x7fd: the press is confirmed; none came, so the press was held behind a lingering cast or not made"
   let assert Ok(confirmed) = spell_cast_confirmed.decode(confirmed_frame.body)
   let starts =
     list.filter(first_go, fn(frame) { frame.message_id == 0x07FF })
@@ -4766,7 +4766,15 @@ pub fn a_medic_that_levels_from_3_to_4_holds_fissure_castable_and_a_relog_at_4_h
     )
   assert confirmed.position == held && child_started.position == held
     as "opcode.0x7fd, opcode.0x7ff: the position the cast holds is the Medic's place at the press"
-  assert fissure_goes(frames: first_go, in: first_go) == [[other.unit_id]]
+  assert confirmed.yaw == float32.to_bits(facing_the_creature)
+    && child_started.yaw == float32.to_bits(facing_the_creature)
+    as "opcode.0x7fd, opcode.0x7ff: the yaw the client turns the picture by is the facing the Medic had at the press (the client's own yaw is the caster's facing, a marked guess)"
+  let #(first_goes, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      fissure_goes(frames: first_go, in: list.append(first_go, frames)) != []
+    })
+  assert fissure_goes(frames: first_go, in: list.append(first_go, first_goes))
+    == [[other.unit_id]]
     as "opcode.0x7f4: the child's first go names the creature 8 m ahead of the press pose, inside Fissure's first rectangle"
   // The Medic turns its back and walks 40 m aside before the later gos (SpellPhase 5061 and
   // 5062, 250 ms after the one before): the rectangles stay where the press drew them.
@@ -4777,27 +4785,28 @@ pub fn a_medic_that_levels_from_3_to_4_holds_fissure_castable_and_a_relog_at_4_h
     y: press_at.1,
     z: press_at.2 +. 40.0,
   )
-  game_client.face(
-    game:,
-    yaw: game_client.yaw_toward(from: #(press_at.0, press_at.2), target: #(
-      creature_at.0,
-      creature_at.2,
-    ))
-      +. 3.1415927,
-    clock: 310,
-  )
+  game_client.face(game:, yaw: facing_the_creature +. 3.1415927, clock: 310)
   let #(_, have) = game_client.read_until_pong(game:, have:, number: 9)
+  // One step for each go, so each go is struck at its own time on the driven clock: the ring's
+  // creature chases the Medic once hit, and a strike round that ran after both steps would find
+  // it somewhere else.
   driven_time.advance(time:, ms: 250)
-  driven_time.advance(time:, ms: 250)
-  let #(later, have) =
+  let #(second, have) =
     game_client.read_until(game:, have:, found: fn(frames) {
-      list.length(fissure_goes(frames: first_go, in: frames)) >= 2
+      fissure_goes(frames: first_go, in: frames) != []
     })
-  let later_goes = fissure_goes(frames: first_go, in: later)
-  assert list.length(later_goes) == 2
-    as "Spell4Effects 94283 and 94284: the second and third phase, one go each"
-  assert list.any(later_goes, fn(targets) { targets == [other.unit_id] })
-    as "a go after the Medic moved and turned still names the creature: the hit is where the press drew the rectangles, not where the Medic stands"
+  driven_time.advance(time:, ms: 250)
+  let #(third, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      fissure_goes(frames: first_go, in: frames) != []
+    })
+  let later_goes =
+    list.append(
+      fissure_goes(frames: first_go, in: second),
+      fissure_goes(frames: first_go, in: third),
+    )
+  assert later_goes == [[other.unit_id], [other.unit_id]]
+    as "Spell4Effects 94283 and 94284: the second and third phase, one go each, and each names the creature, which stands inside all three rectangles (TelegraphDamage 2996 to 2998, 2 to 10 wide, centred, reaching past 8 m): the hit is where the press drew them, not where the Medic stands"
   // The relog at level 4 holds the same five abilities, the new one in slot 4.
   let #(second_entry, _) =
     game_client.camp_and_play(game:, have:, character_id: character)

@@ -45,7 +45,8 @@
 ////   tick of its schedule (genesis_prime/game/ticking), each tick its own 0x7f8 from the
 ////   server: the go selects with it as with any row, and `PhaseStrike.ticking` holds it
 ////   apart from the rows that strike once. A row that lasts until removed (flags bit 2)
-////   is left out and the load goes on (`TickingUntilRemoved`).
+////   is left out by the load (`TickingUntilRemoved`), and `checker` refuses a spell that holds
+////   one, so no planned ability's press waits on a damage row that is never played.
 //// - **Order.** Every area row of the level-1 abilities has `targetSelection`
 ////   1, and none strikes a dead unit (`Spell4AoeTargetConstraints.targetSelection`,
 ////   `Spell4ValidTargets.targetBitmask`). A creature's special may also select Furthest (2)
@@ -66,7 +67,8 @@
 ////   (`targetTypeFlags` 8) is `FixedAtCaster` whatever its flags: the client stores that
 ////   position and yaw once, when the cast starts (`0x14053a210.held_position`). A player's hit
 ////   rows alone decide the anchor, and a spell with none is `FollowsTarget`, struck around
-////   its primary target.
+////   its primary target. Nullifier 58868 (row 2789, flags 1 with 0x1000) is `FixedAtCaster`;
+////   its phase holds no damage row and selects no area, so its anchor moves no strike.
 //// - **Which spells** are read: the spells of each level-1 ability's tree
 ////   (genesis_prime/game/spell_plan), its threshold stages (Spell4Thresholds) included,
 ////   a Proxy behind a target prerequisite excepted, since it is never started. A spell
@@ -222,7 +224,7 @@ pub type SpellArea {
 
 /// Why the areas cannot be built from the tables. Every error but `TickingUntilRemoved`
 /// fails the area load; a periodic row that lasts until removed is left out of its
-/// spell's area.
+/// spell's area, and `checker` refuses the spell.
 pub type AreaError {
   /// A table row the tree names is missing: the table, and the id.
   NoRow(table: String, id: Int)
@@ -268,7 +270,8 @@ pub type AreaError {
   /// A damage effect's formula reads a parameter a player's value does not.
   FormulaNotRead(spell4_id: Int, effect_id: Int, parameter_kind: Int)
   /// A periodic damage effect lasts until removed (flags bit 2), which no schedule
-  /// ends: the load leaves the row out and the coverage measure counts it as not read.
+  /// ends: the load leaves the row out, `checker` refuses its spell and the coverage measure
+  /// counts it as not read.
   TickingUntilRemoved(spell4_id: Int, effect_id: Int)
   /// A periodic damage effect lives shorter than one tick (genesis_prime/game/ticking
   /// `NoTick`).
@@ -443,13 +446,16 @@ pub fn build(tables tables: table_store.Tables) -> Result(Areas, AreaError) {
 pub fn checker(tables tables: table_store.Tables) -> spell_plan.Checker {
   let effects = spell_plan.effects_by_spell(tables:)
   let links = telegraph_links_by_spell(tables:)
-  fn(spell) {
+  fn(spell: Spell) {
+    let id = spell.spell4_id.value
     area_of(tables:, effects:, links:, spell:)
-    |> result.replace(Nil)
-    |> result.map_error(plan_error_of(
-      error: _,
-      spell4_id: spell.spell4_id.value,
-    ))
+    |> result.try(fn(_) {
+      case until_removed_damage_row_of(tables:, effects:, id:) {
+        Some(error) -> Error(error)
+        None -> Ok(Nil)
+      }
+    })
+    |> result.map_error(plan_error_of(error: _, spell4_id: id))
   }
 }
 
@@ -915,6 +921,37 @@ fn placements_of(
   }
 }
 
+/// The damage rows of the spell (effect type 8), each read by `damage_row_of`.
+fn damage_rows_of(
+  tables tables: table_store.Tables,
+  effects effects: Dict(Int, List(spell4_effects.Spell4Effects)),
+  id id: Int,
+) -> List(Result(RowDamage, AreaError)) {
+  dict.get(effects, id)
+  |> result.unwrap([])
+  |> list.filter(fn(effect) {
+    effect_kind.kind_of(effect.effect_type) == effect_kind.Damage
+  })
+  |> list.map(fn(effect) { damage_row_of(tables:, spell4_id: id, effect:) })
+}
+
+/// The first damage row of the spell that lasts until removed (`TickingUntilRemoved`), which
+/// the area load leaves out and `checker` refuses.
+fn until_removed_damage_row_of(
+  tables tables: table_store.Tables,
+  effects effects: Dict(Int, List(spell4_effects.Spell4Effects)),
+  id id: Int,
+) -> Option(AreaError) {
+  damage_rows_of(tables:, effects:, id:)
+  |> list.find_map(fn(row) {
+    case row {
+      Error(TickingUntilRemoved(..) as error) -> Ok(error)
+      Ok(_) | Error(_) -> Error(Nil)
+    }
+  })
+  |> option.from_result
+}
+
 /// The damage effects of the spell (effect type 8), each with the unit it aims at and
 /// its formula: those that strike once, and the periodic ones with their schedules. A
 /// periodic row that lasts until removed (`TickingUntilRemoved`) is left out and the
@@ -924,13 +961,9 @@ fn damage_effects_of(
   effects effects: Dict(Int, List(spell4_effects.Spell4Effects)),
   id id: Int,
 ) -> Result(#(List(DamageEffect), List(TickingDamage)), AreaError) {
-  dict.get(effects, id)
-  |> result.unwrap([])
-  |> list.filter(fn(effect) {
-    effect_kind.kind_of(effect.effect_type) == effect_kind.Damage
-  })
-  |> list.try_map(fn(effect) {
-    case damage_row_of(tables:, spell4_id: id, effect:) {
+  damage_rows_of(tables:, effects:, id:)
+  |> list.try_map(fn(row) {
+    case row {
       Ok(row) -> Ok(Some(row))
       Error(TickingUntilRemoved(..)) -> Ok(None)
       Error(error) -> Error(error)
@@ -1336,6 +1369,10 @@ pub fn gaps() -> List(gap.Entry) {
     gap.Entry(
       area: "Player held position",
       missing: "the yaw of a player's row placed at the position the cast holds is the caster's facing yaw, where the client copies its own unit word, which the server does not hold (a guess); a flag-8 row of a child cast on each struck unit is centred on the caster's place when the child starts, where retail may centre it on the struck unit (a guess, one planned ability)",
+    ),
+    gap.Entry(
+      area: "Damage rows that last until removed",
+      missing: "a damage row that lasts until removed (flags bit 2) is never played, so an ability whose tree holds one is refused when its plan is built (Unsteady Miasma, whose child's only damage row, 229624, ticks until removed) and stays unplanned",
     ),
     gap.Entry(
       area: "Creature hit rows by go",

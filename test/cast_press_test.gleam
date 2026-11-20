@@ -24,6 +24,7 @@ import gleam/list
 import gleam/option.{None}
 import gleam/string
 import owned_test
+import spell_tables
 import unitest
 
 /// One family of `Unbuilt` key: the key for Spell4 100, and the log its first press writes.
@@ -85,19 +86,12 @@ pub fn a_press_the_server_cannot_build_is_refused_and_logged_once_with_what_is_m
   )
 }
 
-/// The eight abilities whose only refusal was a hit row placed by flag 8: Leap, Bum Rush,
-/// Unsteady Miasma, Personal Defense Unit, Concentrated Blade, Fissure, Urgency and Razor
-/// Disk (`SpellLevel` rows with no prerequisite, each at the level its row names).
-const flag_8_abilities = [
-  32_128, 59_080, 41_484, 44_471, 44_641, 41_843, 41_551, 39_268,
-]
-
 pub fn the_abilities_a_flag_8_row_held_back_are_accepted_by_a_press_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   let plans = spell_plan.plans_with_later(tables:)
-  list.each(flag_8_abilities, fn(spell4_id) {
+  list.each(spell_tables.flag_8_abilities, fn(spell4_id) {
     let assert Ok(row) =
       list.find(spell_level.all(tables), fn(row) {
         row.spell4_id == spell4_id && loadout.is_class_ability(row:)
