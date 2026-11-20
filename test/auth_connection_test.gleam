@@ -115,7 +115,9 @@ fn login_request_with_word(
       build:,
     )
   let outer =
-    scripted_client.framed_login_request(LoginRequest(..request, unset_word:))
+    scripted_client.framed_login_request(
+      request: LoginRequest(..request, unset_word:),
+    )
   let assert Ok(bytes) = frame.encode(outer.message_id, outer.body)
     as "the request frame encodes"
   bytes

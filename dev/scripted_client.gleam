@@ -286,7 +286,7 @@ pub type StsLogin {
 /// request the client writes, with its UserId and its game token parsed from
 /// their texts as UuidFromStringA does, in a 0x244 wrapper under the base key.
 pub fn login_request_frame(login login: StsLogin, build build: Int) -> Frame {
-  framed_login_request(login_request_of(login:, build:))
+  framed_login_request(request: login_request_of(login:, build:))
 }
 
 /// The login request the client writes for an STS login.

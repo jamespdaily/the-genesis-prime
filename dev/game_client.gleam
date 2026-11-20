@@ -171,7 +171,7 @@ pub fn hello_reply_body(
 }
 
 /// The bytes of 0x58F inside 0x244 under the base key.
-pub fn hello_reply(
+fn hello_reply(
   account_id account_id: Int,
   session_key session_key: BitArray,
   account_name account_name: String,
