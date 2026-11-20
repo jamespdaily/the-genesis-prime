@@ -207,9 +207,11 @@ pub fn start(settings settings: Settings) -> Result(Running, StartError) {
       arm: subscribers.send_after,
     )
   let log_follower = fn(source) {
+    let assert Ok(file_name) = log_lines.file_name(source)
+      as "the updater's log and launchd's log are files"
     follow.Settings(
       source:,
-      path: settings.genesis_home <> "/" <> log_lines.file_name(source),
+      path: settings.genesis_home <> "/" <> file_name,
       reader: follow.file_reader(),
       interval_ms: settings.log_interval_ms,
       arm: subscribers.send_after,

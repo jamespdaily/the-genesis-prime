@@ -1,0 +1,8 @@
+2026-11-17T00:10:50-05:00 PostgreSQL Database directory appears to contain a database; Skipping initialization
+2026-11-17T00:16:12-05:00 PostgreSQL Database directory appears to contain a database; Skipping initialization
+2026-11-08T19:56:22-05:00 2026-11-09 00:56:22.092 UTC [69] LOG:  checkpoint starting: time
+2026-11-08T19:56:39-05:00 2026-11-09 00:56:39.950 UTC [69] LOG:  checkpoint complete: wrote 232 buffers (1.4%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 4 recycled; write=17.849 s, sync=0.006 s, total=17.858 s; sync files=43, longest=0.004 s, average=0.001 s; distance=72354 kB, estimate=72354 kB; lsn=0/19A3BBE8, redo lsn=0/19A39DF0
+2026-11-15T23:44:50-05:00 2026-11-16 04:44:50.639 UTC [58529] ERROR:  column "creature2_id" does not exist at character 8
+2026-11-15T23:44:50-05:00 2026-11-16 04:44:50.639 UTC [58529] HINT:  Perhaps you meant to reference the column "spawn.creature_id".
+2026-11-15T23:44:50-05:00 2026-11-16 04:44:50.639 UTC [58529] STATEMENT:  select creature2_id, count(*) from spawn where creature2_id in (27768,28111,28112,29070) group by 1
+2026-11-17T00:10:50-05:00 2026-11-17 05:10:50.466 UTC [29] FATAL:  the database system is starting up

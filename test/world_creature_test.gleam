@@ -2980,27 +2980,27 @@ pub fn a_struck_yeti_snowstalker_strikes_with_maul_then_slam_test() -> Nil {
   world_support.stop(world: roaring.world)
 }
 
-/// What the Yeti's fight sent the connection, in order: a cast start, a go, a strike told to
+/// What a creature's fight sent the connection, in order: a cast start, a go, a strike told to
 /// take, a cast's finish.
-type IceBreathFrame {
-  IceBreathStarted(spell4_id: Int)
-  IceBreathWent(phase: Int, targets: List(Int))
-  IceBreathTold(key: strike_tell.Key)
-  IceBreathFinished(cast_id: Int)
+type CastFrame {
+  FrameStarted(spell4_id: Int)
+  FrameWent(phase: Int, targets: List(Int))
+  FrameTold(key: strike_tell.Key)
+  FrameFinished(cast_id: Int)
 }
 
 /// The frame of a message the connection was sent, or `Error(Nil)` for any other.
-fn ice_breath_frame(message: Message) -> Result(IceBreathFrame, Nil) {
+fn cast_frame_of(message: Message) -> Result(CastFrame, Nil) {
   case message {
     ForStay(
       sent: SentByPeer(PeerNews(news: client_connection.CastStarted(start:), ..)),
       ..,
-    ) -> Ok(IceBreathStarted(spell4_id: start.spell4_id))
+    ) -> Ok(FrameStarted(spell4_id: start.spell4_id))
     ForStay(
       sent: SentByPeer(PeerNews(news: client_connection.CastWent(go:), ..)),
       ..,
     ) ->
-      Ok(IceBreathWent(
+      Ok(FrameWent(
         phase: go.phase,
         targets: list.map(go.targets, fn(target) { target.unit_id }),
       ))
@@ -3010,14 +3010,14 @@ fn ice_breath_frame(message: Message) -> Result(IceBreathFrame, Nil) {
         ..,
       )),
       ..,
-    ) -> Ok(IceBreathFinished(cast_id:))
+    ) -> Ok(FrameFinished(cast_id:))
     ForStay(
       sent: client_connection.SentByFoe(strike_tell.Attacks(tell: strike_tell.Strike(
         key:,
         ..,
       ))),
       ..,
-    ) -> Ok(IceBreathTold(key:))
+    ) -> Ok(FrameTold(key:))
     ForStay(..)
     | client_connection.SentBySessions(..)
     | client_connection.SentByChat(..) -> Error(Nil)
@@ -3061,17 +3061,16 @@ pub fn a_yeti_snowstalker_casts_ice_breath_with_two_hits_and_four_gos_test() -> 
       world: fight.world,
       id: 1,
       received: fight.received,
-      wanted: ice_breath_frame,
+      wanted: cast_frame_of,
     )
   }
   let told_key = fn(frame) {
-    let assert IceBreathTold(key:) = frame
+    let assert FrameTold(key:) = frame
       as "the frame is a strike told to the player"
     key
   }
   driven_time.advance(time: fight.time, ms: 2600)
-  assert frames() == [IceBreathWent(phase: 0, targets: [])]
-    as "go 0 names no one"
+  assert frames() == [FrameWent(phase: 0, targets: [])] as "go 0 names no one"
   driven_time.advance(time: fight.time, ms: 400)
   let assert [first_told] = frames()
     as "go 1: the player is told one strike and nothing else is sent before it is answered"
@@ -3081,7 +3080,7 @@ pub fn a_yeti_snowstalker_casts_ice_breath_with_two_hits_and_four_gos_test() -> 
     && key_1.unit_id == 10
     as "the first hit is keyed AtGo(1)"
   answer(roaring: fight, key: key_1)
-  assert frames() == [IceBreathWent(phase: 1, targets: [10])]
+  assert frames() == [FrameWent(phase: 1, targets: [10])]
     as "go 1 lists the player"
   driven_time.advance(time: fight.time, ms: 500)
   let assert [second_told] = frames() as "go 2: the player is told one strike"
@@ -3091,20 +3090,103 @@ pub fn a_yeti_snowstalker_casts_ice_breath_with_two_hits_and_four_gos_test() -> 
     && key_2.unit_id == 10
     as "the second hit is keyed AtGo(2)"
   answer(roaring: fight, key: key_2)
-  assert frames() == [IceBreathWent(phase: 2, targets: [10])]
+  assert frames() == [FrameWent(phase: 2, targets: [10])]
     as "go 2 lists the player"
   driven_time.advance(time: fight.time, ms: 300)
   assert frames()
     == [
-      IceBreathWent(phase: 3, targets: []),
-      IceBreathFinished(cast_id: start.cast_id),
+      FrameWent(phase: 3, targets: []),
+      FrameFinished(cast_id: start.cast_id),
     ]
     as "go 3, the last, names no one, and the cast finishes"
   driven_time.advance(time: fight.time, ms: 500)
-  let assert [IceBreathStarted(spell4_id: next_spell4_id), ..] = frames()
+  let assert [FrameStarted(spell4_id: next_spell4_id), ..] = frames()
     as "after the hold the creature casts again"
   assert next_spell4_id == 5649
     as "its next attack is its 5649, the special being on cooldown"
+  world_support.stop(world: fight.world)
+}
+
+pub fn a_sandthorne_malverine_casts_savage_shred_from_its_0x7ff_with_gos_at_0_and_1_ms_five_hits_and_a_hold_test() -> Nil {
+  use <- owned_test.run(90_000)
+  // Creature2 35947 on the client's own rows with Savage Shred (Spell4 34252, castTime 0) as its
+  // special, fighting player 1 standing 3 units off on the x axis. Its gos fall 0, 1, 200, 700,
+  // 1,200, 1,700 and 2,800 ms after the cast starts (SpellPhase 436 to 442: delays 0, 1, 199,
+  // 500, 500, 500 and 1,100); the damage rows 67447 to 67451 (phaseFlags 4, 8, 16, 32 and 64)
+  // strike at gos 2 to 6, and the delay row 111462 (1,200 ms, phaseFlags 0xffff0040) holds after
+  // go 6 (`table_rows -- Spell4Effects spellId=34252`, `-- SpellPhase spell4IdOwner=34252`).
+  let fight =
+    fight_of(
+      creature: spawn_support.special_creature(
+        number: 1,
+        creature_id: 35_947,
+        spell4_id: 34_252,
+      ),
+      damage_effects_id: 67_447,
+      x: 3.0,
+    )
+  driven_time.advance(time: fight.time, ms: 1500)
+  let start =
+    read_by_the_client(start: next_cast_started(received: fight.received))
+  assert start.spell4_id == 34_252
+    && start.caster_unit_id == fight.unit_id
+    && start.primary_target_unit_id == 10
+    as "the 0x7ff: Savage Shred, cast on the player that struck the creature"
+  let frames = fn() {
+    driven_time.settled(fight.pid)
+    sent_so_far(
+      world: fight.world,
+      id: 1,
+      received: fight.received,
+      wanted: cast_frame_of,
+    )
+  }
+  let told_key = fn(frame, phase) {
+    let assert [FrameTold(key:)] = frame
+      as "the player is told one strike and nothing else is sent before it is answered"
+    assert key.occasion == strike_tell.AtGo(phase:)
+      && key.cast_id == start.cast_id
+      && key.unit_id == 10
+      as { "the hit is keyed AtGo(" <> int.to_string(phase) <> ")" }
+    key
+  }
+  driven_time.advance(time: fight.time, ms: 0)
+  assert frames() == [FrameWent(phase: 0, targets: [])]
+    as "the go at 0 is written the moment its timer fires, naming no one"
+  driven_time.advance(time: fight.time, ms: 1)
+  assert frames() == [FrameWent(phase: 1, targets: [])]
+    as "the go at 1 ms, naming no one"
+  // Each strike go: the delay to it, the damage row that answers it (`phaseFlags`).
+  list.each(
+    [
+      #(2, 199, 67_447),
+      #(3, 500, 67_448),
+      #(4, 500, 67_449),
+      #(5, 500, 67_450),
+    ],
+    fn(go) {
+      let #(phase, delay_ms, damage_effects_id) = go
+      driven_time.advance(time: fight.time, ms: delay_ms)
+      let key = told_key(frames(), phase)
+      answer(roaring: Roaring(..fight, damage_effects_id:), key:)
+      assert frames() == [FrameWent(phase:, targets: [10])]
+        as { "go " <> int.to_string(phase) <> " lists the player" }
+    },
+  )
+  driven_time.advance(time: fight.time, ms: 1100)
+  let key = told_key(frames(), 6)
+  answer(roaring: Roaring(..fight, damage_effects_id: 67_451), key:)
+  assert frames()
+    == [
+      FrameWent(phase: 6, targets: [10]),
+      FrameFinished(cast_id: start.cast_id),
+    ]
+    as "go 6, the last, lists the player and the cast finishes"
+  driven_time.advance(time: fight.time, ms: 1200)
+  let assert [FrameStarted(spell4_id: next_spell4_id), ..] = frames()
+    as "after the hold the creature casts again"
+  assert next_spell4_id == 5649
+    as "its next attack is its 5649, the special being on cooldown to 10,000 ms"
   world_support.stop(world: fight.world)
 }
 

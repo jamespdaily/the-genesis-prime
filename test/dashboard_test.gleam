@@ -616,7 +616,10 @@ fn both_dropped(
       both_dropped(watcher:, updater_seen: True, launchd_seen:)
     follow.SubscriberDropped(LaunchdLog) ->
       both_dropped(watcher:, updater_seen:, launchd_seen: True)
-    follow.ReadMade(_) -> both_dropped(watcher:, updater_seen:, launchd_seen:)
+    follow.ReadMade(_)
+    | follow.SubscriberDropped(log_lines.ServerLog)
+    | follow.SubscriberDropped(log_lines.DatabaseLog) ->
+      both_dropped(watcher:, updater_seen:, launchd_seen:)
   }
 }
 
