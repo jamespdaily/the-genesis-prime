@@ -48,9 +48,22 @@ pub fn tracked_paths() -> List(String) {
 /// Every tracked `.erl` file under the directories, sorted by path, which
 /// must hold at least one.
 pub fn erlang_sources(under directories: List(String)) -> List(SourceFile) {
+  tracked_sources(suffix: ".erl", under: directories)
+}
+
+/// Every tracked `.sh` file under the directories, sorted by path, which
+/// must hold at least one.
+pub fn shell_sources(under directories: List(String)) -> List(SourceFile) {
+  tracked_sources(suffix: ".sh", under: directories)
+}
+
+fn tracked_sources(
+  suffix suffix: String,
+  under directories: List(String),
+) -> List(SourceFile) {
   let files =
     tracked_paths()
-    |> list.filter(string.ends_with(_, ".erl"))
+    |> list.filter(string.ends_with(_, suffix))
     |> list.filter(fn(path) {
       list.any(directories, fn(directory) {
         string.starts_with(path, directory <> "/")
@@ -59,10 +72,10 @@ pub fn erlang_sources(under directories: List(String)) -> List(SourceFile) {
     |> list.sort(string.compare)
     |> list.map(fn(path) {
       let assert Ok(text) = simplifile.read(path)
-        as { "the Erlang file could not be read: " <> path }
+        as { "the tracked file could not be read: " <> path }
       SourceFile(path:, text:)
     })
-  let assert [_, ..] = files as "no tracked Erlang file found"
+  let assert [_, ..] = files as { "no tracked " <> suffix <> " file found" }
   files
 }
 

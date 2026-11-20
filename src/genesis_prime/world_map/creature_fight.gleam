@@ -156,11 +156,18 @@
 ////   centred where the picture is (`Charged.anchor`). A row with TelegraphDamage flag 0x4000 or
 ////   0x1000 is drawn only from the positions the 0x7ff carries (genesis_prime/game/telegraph_entries),
 ////   made at the cast's start and kept in the round (`Round.start`), where it stays whatever
-////   moves: its hit is centred on the pose the cast started at (`FixedAtCaster`), and a viewer
-////   that arrives mid-cast is sent the same entries. A row with neither is drawn by the
-////   client on the caster each frame from the caster's own yaw
-////   (`0x14054b1b0.follows_caster`), so its hit is centred on the creature at the strike
-////   (`FollowsCaster`); a creature that cannot move turns its aim toward its 0x908 target
+////   moves: its hit is centred on the pose the cast started at, the creature's
+////   (`FixedAtCaster`) or the cast target's (`FixedAtTarget`), and a viewer that arrives
+////   mid-cast is sent the same entries. A row with neither is drawn by the
+////   client on its unit each frame from that unit's own yaw
+////   (`0x14054b1b0.follows_caster`): on the caster, its hit is centred on the creature at the
+////   strike (`FollowsCaster`); on the cast's target, on that player's newest sighting with its
+////   facing (`FollowsTarget`). A row on the cast's target, following or fixed, is drawn for as
+////   long as the target's unit is in the viewers' world, so a target that died or left the
+////   fight still has its row struck, and nobody is struck when the target is no longer a
+////   viewer (`centre_of`, `0x14054b1b0.unit_gone`). The cast's target is the one the
+////   creature had when the cast began (`Start.target`, the 0x7ff's primary target), not the
+////   0x908 target of a later moment. A creature that cannot move turns its aim toward its 0x908 target
 ////   through the cast only when the spell has `Spell4.propertyFlags` 0x2, and holds the aim it
 ////   had at the cast's start otherwise (`0x14046cdc0.turret_cast_aim`).
 //// - **The auto-attacks alternate**: a creature whose kind lists several (`Fighter.attack`, then
@@ -327,7 +334,13 @@
 //// | Strike to a fighter: its answer, the last one or the deadline | each answer joins the go as a round's does; the last answer or the deadline closes the round (0x7f4, 0x7fe), and the next attack tick starts | `the_struck_go_and_finish_follow_the_answers_test` |
 //// | Death or leash during the charge: C is killed, or its last threat entry is released | `CancelTimer(CastEnds)` and 0x7fe for the charge, no 0x7f4, then the death or the release as without a charge; the later CastEnds does nothing | `death_during_a_charge_ends_it_test`, `leash_during_a_charge_ends_it_test` |
 //// | a viewer arrives while the charge is open | its news holds the charge's 0x7ff, with its cast id, so its client takes the later 0x7f4 | `a_viewer_arriving_mid_charge_gets_the_open_cast_test` |
-//// | a viewer arrives while the charge is open and the threat list's top entry changed since it began | its 0x7ff names the top entry, the target its 0x908 names | `a_viewer_arriving_mid_charge_is_told_the_current_target_in_the_open_cast_test` |
+//// | a viewer arrives while the charge is open and the threat list's top entry changed since it began | its 0x908 names the top entry, its 0x7ff the cast's own target and the entries of the start | `a_viewer_arriving_mid_charge_is_told_the_casts_own_target_test` |
+//// | Charge start: the special has a row placed on its target | the 0x7ff names the target as primary target and carries its initial position and telegraph position with the role bit 2 | `a_charge_on_a_target_row_opens_with_the_target_in_its_0x7ff_test` |
+//// | CastEnds timer: a target row the client draws fixed (`FixedAtTarget`), and the target moved since the start | the circle is the one the 0x7ff showed, around where the target stood | `a_fixed_target_row_strikes_around_where_the_target_stood_at_the_start_test` |
+//// | CastEnds timer: a target row the client draws on its target (`FollowsTarget`) | the area is around where the cast's target stands now, turned by its facing | `a_client_placed_target_row_strikes_around_the_cast_targets_place_at_the_strike_test`, `a_cone_on_the_target_turns_with_the_targets_facing_test` |
+//// | CastEnds timer: a target row, and the 0x908 target changed since the start | the area is around the cast's target, not the 0x908 target | `a_target_row_uses_the_cast_target_not_the_0x908_target_of_the_moment_test` |
+//// | CastEnds timer: the cast's target died or left the ring, and is still a viewer | the row follows the body or the unit, or stays at its stored place, and strikes the fighters in it | `a_target_row_strikes_while_its_cast_target_is_in_the_world_test` |
+//// | CastEnds timer: the cast's target is no longer a viewer (`Unwatched`) | a row on it, following or fixed, strikes nobody and the cast finishes as an empty strike does | `a_target_row_strikes_while_its_cast_target_is_in_the_world_test` |
 //// | a creature that cannot move: its target is out of reach, or beyond the leash range from home | out of reach: no 0x638, it keeps its place; beyond the leash range: the release as the leash does, with no walk, to Resting | `a_turret_never_chases_or_walks_home_test`, `a_turret_leashes_in_place_when_its_target_is_beyond_its_leash_range_test`, `a_creature_placed_as_part_of_a_map_object_does_not_chase_a_target_that_leaves_its_reach_test`, `a_creature_placed_as_part_of_a_map_object_leaves_combat_without_a_walk_home_test`, `a_creature_placed_as_part_of_a_map_object_leaves_combat_in_place_when_its_target_is_beyond_its_leash_range_test` |
 //// | `Thrown` reaches a creature that is dead, Returning, cannot move (a Turret, or a creature placed as part of a map object) or does not run (run speed 0) | the fight drops it: no path, no timer, no news | `a_turret_is_not_thrown_test`, `a_creature_placed_as_part_of_a_map_object_is_not_moved_by_a_forced_move_test`, `a_throw_at_a_dead_or_returning_creature_is_dropped_test` |
 //// | `Thrown` reaches a creature that runs, Fighting or Resting | the path is `Timed` from where it is, `FlightEnds` starts, the viewers are sent one 0x638; an open charge breaks as `held` does, unless the throw moves the creature nowhere | `a_thrown_creature_sends_its_viewers_the_flight_once_test`, `a_throw_breaks_an_open_charge_test`, `a_throw_that_moves_the_creature_nowhere_leaves_an_open_charge_test` |
@@ -467,11 +480,25 @@ pub type Round {
 }
 
 /// What a cast fixed when it started: the creature's pose, which is its facing after it turned
-/// to its target (a creature that cannot move: the aim toward its 0x908 target), and the
-/// entries its 0x7ff carried. A row the client draws where the 0x7ff put it keeps its hit at
-/// the pose, and a viewer that arrives later is sent the same entries.
+/// to its target (a creature that cannot move: the aim toward its 0x908 target), the unit the
+/// cast is on (none for an attack with no cast time), and the entries its 0x7ff carried. A row
+/// the client draws where the 0x7ff put it keeps its hit at the pose it names, and a viewer
+/// that arrives later is sent the same cast target and entries.
 pub type Start {
-  Start(aim: area.Pose, opening: telegraph_entries.Opening)
+  Start(
+    aim: area.Pose,
+    target: Option(CastTarget),
+    opening: telegraph_entries.Opening,
+  )
+}
+
+/// The unit a charge is cast on, which the 0x7ff names as its primary target and the client
+/// draws a client-placed target row on (`opcode.0x7ff`, `0x140546e60.placement_branches`): its
+/// connection, and its unit and place when the cast began, the one value the entries are made
+/// from and a fixed row is struck around. It is the target the creature had then; the 0x908
+/// target of a later moment does not change it.
+pub type CastTarget {
+  CastTarget(connection: ConnectionId, placed: telegraph_entries.Placed)
 }
 
 /// Where a round stands. An attack with no cast time starts at `Striking` with one
@@ -814,7 +841,7 @@ fn stepped(
           ..,
         )
           if ends == generation
-        -> go_reached(state:, fighter:, round:, now_ms:)
+        -> go_reached(state:, fighter:, round:, viewers:, now_ms:)
         Fighting(..) | Resting | Returning(..) -> #(state, [])
       }
     TimerFired(timer: HomeArrival(generation:)) ->
@@ -1166,7 +1193,8 @@ fn faced(
 /// What a viewer that arrives at monotonic time `now_ms` is sent after the
 /// creature's 0x262, so its client shows what the others' do: in a fight, the
 /// combat flag (0x89a), the target (0x908) and each other entry (0x90a); a charge that is
-/// open, its 0x7ff again with its cast id, which the later go names, and the 0x7f4 of each go
+/// open, its 0x7ff again on the cast's own target (`Start.target`, not the 0x908 target of
+/// now) with the entries of the start and its cast id, which the later go names, and the 0x7f4 of each go
 /// that went before the strike go (the viewer's cast bar runs from its arrival, not from the
 /// cast's start); and on a path not yet run, the rest of it from where the creature is now (0x638).
 pub fn arrival_news(
@@ -1197,16 +1225,11 @@ pub fn arrival_news(
     ]
   }
   let charge = case state.status {
-    Fighting(
-      threat:,
-      target:,
-      round: Some(Round(cast_id:, spell4_id:, start:, stage:)),
-      ..,
-    ) ->
+    Fighting(round: Some(Round(cast_id:, spell4_id:, start:, stage:)), ..) ->
       case attack_named(fighter:, spell4_id:).cast {
         Charged(gos:, ..) -> {
-          let assert Ok(top) = dict.get(threat, target)
-            as "the target is on the threat list"
+          let assert Some(cast_target) = start.target
+            as "a charge is cast on a target"
           let place = place_at(state:, now_ms:)
           let gone = case stage {
             Charging(go:, ..) -> go
@@ -1217,7 +1240,7 @@ pub fn arrival_news(
               cast_id:,
               spell4_id: spell4_id.value,
               caster_unit_id: fighter.unit_id,
-              target_unit_id: top.unit_id,
+              target_unit_id: cast_target.placed.unit_id,
               place:,
               opening: start.opening,
             )),
@@ -1769,7 +1792,11 @@ fn strikes(
   let spell4_id = attack.spell4_id
   // An attack with no cast time has no telegraph: the importer writes no telegraphed instant.
   let start =
-    Start(aim: area.pose_of(place: here), opening: telegraph_entries.none)
+    Start(
+      aim: area.pose_of(place: here),
+      target: None,
+      opening: telegraph_entries.none,
+    )
   let stage =
     Striking(
       deadline:,
@@ -2005,6 +2032,14 @@ fn charges(
     as "a creature charges only while Fighting"
   let spell4_id = attack.spell4_id
   let aim = aim_of(state:, fighter:, target:, here:)
+  let cast_target =
+    CastTarget(
+      connection: target,
+      placed: telegraph_entries.Placed(
+        unit_id: sighting.unit_id,
+        place: sighting.place,
+      ),
+    )
   let opening =
     telegraph_entries.opening_of(
       draws:,
@@ -2015,12 +2050,13 @@ fn charges(
           facing: start_place.Facing(..start_place.facing(here), yaw: aim.yaw),
         ),
       ),
+      target: Some(cast_target.placed),
     )
   let round =
     Round(
       cast_id:,
       spell4_id:,
-      start: Start(aim:, opening:),
+      start: Start(aim:, target: Some(cast_target), opening:),
       stage: Charging(ends:, go: 0, started_ms: now_ms),
     )
   let ready_at = case special_named(fighter:, spell4_id:) {
@@ -2072,13 +2108,15 @@ fn due_in(
 /// the `CastEnds` of the next go, of a new generation, for what is left of its due time
 /// (`go_passed`). The strike go selects the fighters on the threat list inside the attack's area
 /// (`game/spell_area`, `game/area` select) and the round becomes `Striking`, its strikes keyed
-/// `AtGo(phase)` (`strikes_sent`); with none inside, the go names no unit, the cast finishes and
+/// `AtGo(phase)` (`strikes_sent`); with none inside, or no centre (`centre_of`: a row on a target
+/// that is no longer a viewer), the go names no unit, the cast finishes and
 /// the next attack tick starts (after the attack's hold, `ticking_again`). No state is held
 /// then: one that took hold during the charge broke it (`held`), and its `CastEnds` is stale.
 fn go_reached(
   state state: State,
   fighter fighter: Fighter,
   round round: Round,
+  viewers viewers: Dict(ConnectionId, Stay),
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
   let attack = attack_named(fighter:, spell4_id: round.spell4_id)
@@ -2101,7 +2139,8 @@ fn go_reached(
         now_ms:,
       )
     }
-    True -> go_strikes(state:, fighter:, round:, attack:, go:, now_ms:)
+    True ->
+      go_strikes(state:, fighter:, round:, attack:, go:, viewers:, now_ms:)
   }
 }
 
@@ -2142,6 +2181,7 @@ fn go_strikes(
   round round: Round,
   attack attack: Attack,
   go go: Int,
+  viewers viewers: Dict(ConnectionId, Stay),
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
   let assert Fighting(threat:, target:, ..) = state.status
@@ -2158,17 +2198,21 @@ fn go_strikes(
       anchor:,
       aims_at_target:,
       target:,
+      viewers:,
       here:,
     )
-  let struck =
-    inside_rectangle(
-      state:,
-      row:,
-      inside:,
-      aim: centre,
-      fighters: map.sorted_by_connection(threat),
-      seed: round.cast_id,
-    )
+  let struck = case centre {
+    Some(centre) ->
+      inside_rectangle(
+        state:,
+        row:,
+        inside:,
+        centre:,
+        fighters: map.sorted_by_connection(threat),
+        seed: round.cast_id,
+      )
+    None -> []
+  }
   case struck {
     [] -> {
       let #(state, closed) =
@@ -2272,12 +2316,23 @@ fn aim_of(
   }
 }
 
-/// Where the strike go's area is centred, which is where the client draws it: a row the client
-/// drew at the 0x7ff's entries (`FixedAtCaster`) at the pose the cast started at, so a creature
-/// that was thrown or a turret whose target walked round it still strikes the picture; a row
-/// the client draws on the caster each frame (`FollowsCaster`) where the creature points now
-/// (`aim_of`), except that a creature that cannot move holds the aim it had at the start
-/// unless the spell's aim follows its target (`0x14046cdc0.turret_cast_aim`).
+/// Where the strike go's area is centred, which is where the client draws it, or none when
+/// the picture is gone and nobody is struck. A row the client drew at the 0x7ff's entries
+/// (`FixedAtCaster`, `FixedAtTarget`) is centred on the pose the entry holds, the creature's
+/// or the cast target's at the cast's start, so a creature that was thrown, a turret whose
+/// target walked round it or a target that stepped out still strikes the picture. A row the
+/// client draws on the caster each frame (`FollowsCaster`) is centred where the creature
+/// points now (`aim_of`), except that a creature that cannot move holds the aim it had at the
+/// start unless the spell's aim follows its 0x908 target (`0x14046cdc0.turret_cast_aim`). A
+/// row the client draws on the cast's target each frame (`FollowsTarget`) is centred on the
+/// target's newest sighting, with its facing.
+///
+/// A row on the cast's target, following or fixed, is bound to the target's unit: the client
+/// drops a telegraph when it cannot find that unit in its world (`0x14054b1b0.unit_gone`,
+/// which holds for a server-placed row too), not when the unit leaves the fight. So the row is struck while the target is a viewer, a target
+/// that died or left the threat list still being in the world, and nobody is struck once
+/// the target is no longer a viewer (`Unwatched`: it left, logged out, camped or was
+/// despawned).
 fn centre_of(
   state state: State,
   fighter fighter: Fighter,
@@ -2285,23 +2340,49 @@ fn centre_of(
   anchor anchor: area.Anchor,
   aims_at_target aims_at_target: Bool,
   target target: ConnectionId,
+  viewers viewers: Dict(ConnectionId, Stay),
   here here: Place,
-) -> area.Pose {
+) -> Option(area.Pose) {
   case anchor, cannot_move(fighter:) && !aims_at_target {
-    area.FixedAtCaster, _ | area.FollowsCaster, True -> round.start.aim
-    area.FollowsCaster, False -> aim_of(state:, fighter:, target:, here:)
+    area.FixedAtCaster, _ | area.FollowsCaster, True -> Some(round.start.aim)
+    area.FollowsCaster, False -> Some(aim_of(state:, fighter:, target:, here:))
+    area.FixedAtTarget, _ ->
+      option.map(cast_target_in_world(round:, viewers:), fn(cast_target) {
+        area.pose_of(place: cast_target.placed.place)
+      })
+    area.FollowsTarget, _ ->
+      option.map(cast_target_in_world(round:, viewers:), fn(cast_target) {
+        let assert Ok(sighting) =
+          dict.get(state.sightings, cast_target.connection)
+          as "a cast target was sighted, and a sighting is never dropped"
+        area.pose_of(place: sighting.place)
+      })
+  }
+}
+
+/// The unit the round's charge is cast on while it is in the viewers' world, which is while
+/// its connection is a viewer of the creature.
+fn cast_target_in_world(
+  round round: Round,
+  viewers viewers: Dict(ConnectionId, Stay),
+) -> Option(CastTarget) {
+  let assert Some(cast_target) = round.start.target
+    as "a charge is cast on a target"
+  case dict.has_key(viewers, cast_target.connection) {
+    True -> Some(cast_target)
+    False -> None
   }
 }
 
 /// The fighters of the threat list, by their newest sightings, that the attack's area
-/// selects around the creature's place facing `aim`, in the area row's order and at most its
-/// target count; a Random order is by `seed`, the round's cast id, so the same round strikes
-/// the same fighter.
+/// selects around the pose `centre`, the unit the area is placed on and its facing, in the
+/// area row's order and at most its target count; a Random order is by `seed`, the round's
+/// cast id, so the same round strikes the same fighter.
 fn inside_rectangle(
   state state: State,
   row row: Row,
   inside inside: Inside,
-  aim aim: area.Pose,
+  centre centre: area.Pose,
   fighters fighters: List(#(ConnectionId, Threat)),
   seed seed: Int,
 ) -> List(#(ConnectionId, Threat, Sighting)) {
@@ -2318,7 +2399,7 @@ fn inside_rectangle(
         hit_radius: { found.2 }.hit_radius,
       )
     }),
-    centre: aim,
+    centre:,
     row:,
     inside:,
     seed:,
@@ -2954,6 +3035,10 @@ fn whole(threat: Float) -> Int {
 /// What a creature's fight does that the client's rules ask differently.
 pub fn gaps() -> List(gap.Entry) {
   [
+    gap.Entry(
+      area: "Creature fights",
+      missing: "a viewer that arrives mid-cast on a target row whose client does not know the cast's target (it is not in the viewer's picture): the client draws no entry for it, while the creature's hit still lands; the turn a client-placed cone follows is the target's newest sighting, not the client's current yaw",
+    ),
     gap.Entry(
       area: "Creature fights",
       missing: "a player who dies and chooses Wake Here within a second of the death, inside the ring of the creature that killed it, when the creature's killing answer arrives after the wake's approach: the creature does not aggro the player until it leaves the ring and enters it again",

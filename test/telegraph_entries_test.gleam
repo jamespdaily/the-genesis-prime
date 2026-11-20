@@ -18,7 +18,7 @@
 import client_tables
 import fixture_tables
 import genesis_prime/game/start_place.{type Place, Facing}
-import genesis_prime/game/telegraph_entries.{type Opening, Placed}
+import genesis_prime/game/telegraph_entries.{type Opening, type Placed, Placed}
 import genesis_prime/message/float32
 import genesis_prime/message/spell_initial_position.{SpellInitialPosition}
 import genesis_prime/message/spell_position.{SpellPosition}
@@ -28,6 +28,7 @@ import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4_telegraph
 import gleam/int
 import gleam/list
+import gleam/option
 import owned_test
 import place_support
 import planted_table
@@ -55,9 +56,20 @@ fn opening_for(
   spell4_id spell4_id: Int,
   place place: Place,
 ) -> Opening {
+  opening_on_target(tables:, spell4_id:, place:, target: option.None)
+}
+
+/// The opening of a cast by the creature at `place` on `target`, a unit and its place.
+fn opening_on_target(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Int,
+  place place: Place,
+  target target: option.Option(Placed),
+) -> Opening {
   telegraph_entries.opening_of(
     draws: telegraph_entries.draws_of(tables:, spell4_id: Spell4Id(spell4_id)),
     caster: Placed(unit_id: unit, place:),
+    target:,
   )
 }
 
@@ -251,18 +263,142 @@ pub fn two_rows_on_one_unit_share_one_initial_position_test() -> Nil {
     as "one telegraph position for each row"
 }
 
+/// A case of `a_target_rows_entries_name_the_target_and_its_place_at_the_start_test`: the
+/// spell, the row it is about, the initial position that row must give the target (the flags
+/// byte) and the telegraph position (none for a row the client does not place from one).
+type TargetRow {
+  TargetRow(
+    reason: String,
+    spell4_id: Int,
+    row: Int,
+    initial_flags: option.Option(Int),
+    telegraph: Bool,
+  )
+}
+
+pub fn a_target_rows_entries_name_the_target_and_its_place_at_the_start_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The creature (unit 7) stands at (100, 3, 200) facing 0.5; its target, unit 50, stands at
+  // (110, 4, 190) facing 0.25, so an entry on the wrong unit or at the wrong place shows.
+  // `0x140546e60`: the client-placed target unit is the 0x7ff's primary target (tt 0 or bit 2);
+  // a 0x1000 row is drawn at each initial position whose flags byte shares a bit with tt, a
+  // tt of 0 matching bit 2; a 0x4000 row only at the telegraph position (row, that unit).
+  // The rows (`table_rows`): 7874 0x905000 tt 2 of 55846; 9129 0x5000 tt 2 of 61275; 2376
+  // 0x1000 tt 0 of 39641; 4796 flags 0, tt 2 of 46353. Eldan's flags 3 on the caster would
+  // draw a target row on the caster: nothing here names unit 7.
+  let tables = fixture_tables.shared()
+  let caster = standing(yaw: 0.5)
+  let target_place =
+    start_place.turned(
+      place: place_support.at(
+        world_id: 3460,
+        world_zone_id: 6009,
+        x: 110.0,
+        y: 4.0,
+        z: 190.0,
+      ),
+      facing: Facing(yaw: 0.25, pitch: 0.0, roll: 0.0),
+    )
+  [
+    TargetRow(
+      reason: "a 0x905000 row on the target: its initial position and its telegraph position",
+      spell4_id: 55_846,
+      row: 7874,
+      initial_flags: option.Some(2),
+      telegraph: True,
+    ),
+    TargetRow(
+      reason: "a 0x5000 row on the target: the same",
+      spell4_id: 61_275,
+      row: 9129,
+      initial_flags: option.Some(2),
+      telegraph: True,
+    ),
+    TargetRow(
+      reason: "a 0x1000 row with tt 0 matches bit 2: an initial position, no telegraph position",
+      spell4_id: 39_641,
+      row: 2376,
+      initial_flags: option.Some(2),
+      telegraph: False,
+    ),
+    TargetRow(
+      reason: "a client-placed row: the client follows the target itself, no entry",
+      spell4_id: 46_353,
+      row: 4796,
+      initial_flags: option.None,
+      telegraph: False,
+    ),
+  ]
+  |> list.each(fn(case_) {
+    let draws =
+      telegraph_entries.draws_of(tables:, spell4_id: Spell4Id(case_.spell4_id))
+    assert list.any(draws, fn(draw) { draw.telegraph_damage_id == case_.row })
+      as { case_.reason <> ": the spell holds the row" }
+    let opening =
+      opening_on_target(
+        tables:,
+        spell4_id: case_.spell4_id,
+        place: caster,
+        target: option.Some(Placed(unit_id: 50, place: target_place)),
+      )
+    assert opening.initial_positions
+      == case case_.initial_flags {
+        option.Some(flags) -> [
+          SpellInitialPosition(
+            unit_id: 50,
+            target_flags: flags,
+            position: position(x: 110.0, y: 4.0, z: 190.0),
+            yaw: float32.to_bits(0.25),
+            anchor_unit_id: 0,
+          ),
+        ]
+        option.None -> []
+      }
+      as case_.reason
+    assert opening.telegraph_positions
+      == case case_.telegraph {
+        True -> [
+          SpellTelegraphPosition(
+            telegraph_damage_id: case_.row,
+            unit_id: 50,
+            target_flags: 2,
+            position: position(x: 110.0, y: 4.0, z: 190.0),
+            yaw: float32.to_bits(0.25),
+            anchor_unit_id: 0,
+          ),
+        ]
+        False -> []
+      }
+      as case_.reason
+  })
+  assert opening_on_target(
+      tables:,
+      spell4_id: 55_846,
+      place: caster,
+      target: option.None,
+    )
+    == telegraph_entries.none
+    as "a target row names nothing without a target, and never the caster"
+}
+
 pub fn every_spells_entries_fit_the_wire_counts_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   // The 0x7ff's counts are 8 bits (`opcode.0x7ff`): no spell of the client's table makes
-  // more than 255 entries in either list.
+  // more than 255 entries in either list, with a creature and a target both placed.
   let tables = client_tables.shared()
   let spells =
     list.map(spell4_telegraph.all(tables), fn(link) { link.spell4_id })
     |> list.unique
   let counts =
     list.map(spells, fn(spell4_id) {
-      let opening = opening_for(tables:, spell4_id:, place: standing(yaw: 0.0))
+      let opening =
+        opening_on_target(
+          tables:,
+          spell4_id:,
+          place: standing(yaw: 0.0),
+          target: option.Some(Placed(unit_id: 50, place: standing(yaw: 0.0))),
+        )
       #(
         spell4_id,
         list.length(opening.initial_positions),

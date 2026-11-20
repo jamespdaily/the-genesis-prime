@@ -25,9 +25,13 @@
 #                                  one, so a decision that stays is written once
 #   skip_commit COMMIT, is_skipped COMMIT   the commits not to try again (a file in state)
 #   read_environment_file          reads env.sh when there is one, setting nothing else
-#   load_environment               reads env.sh and checks the values above are set
-#   load_config                    reads $state/config.sh and checks it sets remote and repository;
-#                                  branch defaults to main
+#   refuse MESSAGE                 log_once MESSAGE, then ends the script with status 1
+#   load_environment               reads env.sh and checks the values above are set; refuses when
+#                                  one is not
+#   read_config                    reads $state/config.sh and checks it sets remote and repository;
+#                                  branch defaults to main; returns 1 with config_problem set, and
+#                                  logs nothing, when it is missing or lacks one
+#   load_config                    read_config, refusing with config_problem when it returns 1
 #   remote_head                    prints the commit the remote's branch is at; fails when it
 #                                  cannot be read
 #   live_lock_held                 whether a live session holds ~/.genesis-prime/live.lock
@@ -101,11 +105,28 @@ read_environment_file() {
   fi
 }
 
+# refuse MESSAGE: logs MESSAGE as log_once does, prints it to standard error (which
+# launchd's log holds) when it was written, and ends the script with status 1, so a refusal
+# the next run repeats is written once. A script that needs a value uses this, not
+# `${x:?word}` nor a bare `.` of a file that may be missing: bash 3.2 (the /bin/bash launchd
+# runs) ends a script that sets an EXIT trap with status 0 on those, because the trap
+# already sees `$?` as 0.
+refuse() {
+  local before
+  before=$(cat "$state/last_line" 2>/dev/null || true)
+  log_once "$1"
+  if [ "$before" != "$1" ] && [ ! -t 1 ]; then printf '%s\n' "$1" >&2; fi
+  exit 1
+}
+
+# require_value NAME MESSAGE: refuses with MESSAGE when the variable NAME is empty or unset.
+require_value() { [ -n "${!1:-}" ] || refuse "$2"; }
+
 load_environment() {
   read_environment_file
-  : "${GENESIS_PLAY_ADDRESS:?set GENESIS_PLAY_ADDRESS (the address of this machine on the PC network) in $home/env.sh}"
-  : "${GENESIS_PLAY_ACCOUNT:?set GENESIS_PLAY_ACCOUNT in $home/env.sh}"
-  : "${GENESIS_PLAY_PGPASSWORD:?set GENESIS_PLAY_PGPASSWORD (the password of the play Postgres) in $home/env.sh; dev/play_service/install.sh makes it}"
+  require_value GENESIS_PLAY_ADDRESS "set GENESIS_PLAY_ADDRESS (the address of this machine on the PC network) in $home/env.sh"
+  require_value GENESIS_PLAY_ACCOUNT "set GENESIS_PLAY_ACCOUNT in $home/env.sh"
+  require_value GENESIS_PLAY_PGPASSWORD "set GENESIS_PLAY_PGPASSWORD (the password of the play Postgres) in $home/env.sh; dev/play_service/install.sh makes it"
   tables=${GENESIS_TABLE_DIR:-$home/tables}
   terrain=${GENESIS_TERRAIN_DIR:-$home/terrain}
   PGPASSWORD=$GENESIS_PLAY_PGPASSWORD
@@ -113,14 +134,30 @@ load_environment() {
   export PGPASSWORD POSTGRES_PASSWORD GENESIS_PLAY_ACCOUNT
 }
 
-# load_config: reads config.sh, which install.sh wrote: the remote, the repository and,
-# to follow a branch other than main before it merges, a `branch=` line.
-load_config() {
+# read_config: reads config.sh, which install.sh wrote: the remote, the repository and,
+# to follow a branch other than main before it merges, a `branch=` line. Writes nothing to
+# the log; when it returns 1, `config_problem` says why.
+read_config() {
+  config_problem=
+  if [ ! -f "$state/config.sh" ]; then
+    config_problem="config.sh is missing in $state; dev/play_service/install.sh writes it"
+    return 1
+  fi
   # shellcheck source=/dev/null
   . "$state/config.sh"
-  : "${remote:?config.sh sets no remote}" "${repository:?config.sh sets no repository}"
+  if [ -z "${remote:-}" ]; then
+    config_problem="config.sh sets no remote"
+    return 1
+  fi
+  if [ -z "${repository:-}" ]; then
+    config_problem="config.sh sets no repository"
+    return 1
+  fi
   branch=${branch:-main}
 }
+
+# load_config: read_config, refusing with its problem.
+load_config() { read_config || refuse "$config_problem"; }
 
 # remote_head: prints the commit the remote's branch is at. Fails when the remote cannot
 # be asked or has no such branch.
@@ -233,7 +270,7 @@ alert_stale_stands() {
     age=$(($(date +%s) - mtime))
     [ "$age" -gt "$stale_stand_seconds" ] || continue
     [ -f "$state/config.sh" ] || continue
-    branch_commit=$(load_config && remote_head) || continue
+    branch_commit=$(read_config && remote_head) || continue
     ! is_skipped "$branch_commit" || continue
     read -r deployed _ <<<"$(server_state)"
     deployed=${deployed:-}
