@@ -417,7 +417,7 @@ fn news_to(taken: ServiceStep(creature.Outgoing), number: Int) -> List(News) {
 
 /// Whether the step sends the viewer `to` a 0x908 naming this unit as the creature's target.
 fn names_target(
-  taken: ServiceStep(creature.Outgoing),
+  taken taken: ServiceStep(creature.Outgoing),
   unit_id unit_id: Int,
   to to: Int,
 ) -> Bool {
@@ -3764,7 +3764,7 @@ pub fn a_viewer_arriving_mid_charge_is_told_the_casts_own_target_test() -> Nil {
       at_ms: 3000,
       message: strike_of(number: 5, cast_id: 1, blows: [#(1, 10, 1.0)]),
     )
-  assert names_target(struck, unit_id: 50, to: 2)
+  assert names_target(taken: struck, unit_id: 50, to: 2)
     as "player 5 is the target now"
   let #(_, watched) =
     tell(
@@ -3775,7 +3775,7 @@ pub fn a_viewer_arriving_mid_charge_is_told_the_casts_own_target_test() -> Nil {
         stay: map_support.stay(count: 9),
       ),
     )
-  assert names_target(watched, unit_id: 50, to: 9)
+  assert names_target(taken: watched, unit_id: 50, to: 9)
     as "the late viewer's 0x908 names the fight's target now"
   let assert [CastStarted(start: late)] = casts_of(watched, 9)
   assert late.primary_target_unit_id == 20
@@ -8134,7 +8134,7 @@ pub fn a_target_row_uses_the_cast_target_not_the_0x908_target_of_the_moment_test
       at_ms: 3000,
       message: strike_of(number: 5, cast_id: 1, blows: [#(1, 10, 1.0)]),
     )
-  assert names_target(retargeted, unit_id: 50, to: 2)
+  assert names_target(taken: retargeted, unit_id: 50, to: 2)
     as "player 5 is the 0x908 target now"
   assert struck_numbers(strike_go_of_the_cast(state:, go:)) == [2, 6]
     as "the circle is still around the cast's target"
