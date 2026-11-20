@@ -46,9 +46,11 @@ import gleam/string
 import owned_test
 import planted_table
 import simplifile
+import unitest
 
 pub fn the_servers_tables_are_the_seventy_five_its_rules_read_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("registry")
   assert list.map(server_table.entries(), fn(entry) {
       table_store.schema(entry).table
     })

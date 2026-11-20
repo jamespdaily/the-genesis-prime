@@ -30,6 +30,7 @@ import gleam/list
 import gleam/option.{None, Some}
 import login_support
 import owned_test
+import unitest
 
 // ---- one login per account ----
 //
@@ -490,6 +491,7 @@ pub fn a_takeover_queued_behind_a_failing_store_ask_ends_with_reason_8_not_reaso
 
 pub fn the_game_rule_names_the_client_messages_it_takes_test() -> Nil {
   use <- owned_test.run(10_000)
+  use <- unitest.tag("registry")
   let named = list.sort(game_connection.taken_message_ids(), int.compare)
   assert named
     == [

@@ -44,6 +44,7 @@ import pog
 import recording_support
 import simplifile
 import socket_read
+import unitest
 
 pub fn a_sitting_records_each_sts_auth_and_game_connection_test() -> Nil {
   use <- owned_test.run(60_000)
@@ -141,6 +142,7 @@ pub fn a_sitting_records_each_sts_auth_and_game_connection_test() -> Nil {
 
 pub fn the_servers_own_settings_record_nothing_and_a_sitting_turns_it_on_test() -> Nil {
   use <- owned_test.run(60_000)
+  use <- unitest.tag("registry")
   let settings = login_support.servers_settings()
   assert settings.login.sts.wire_recorder == None
     && settings.login.auth.wire_recorder == None

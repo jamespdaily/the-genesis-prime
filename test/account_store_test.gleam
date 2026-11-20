@@ -67,6 +67,7 @@ import owned_test
 import place_support
 import pog
 import relay
+import unitest
 
 pub fn a_stored_login_name_gives_its_account_id_salt_verifier_and_game_account_id_test() -> Nil {
   use <- owned_test.run(60_000)
@@ -1994,6 +1995,7 @@ pub fn a_create_for_an_account_that_does_not_exist_is_create_for_no_such_account
 
 pub fn every_constraint_the_worker_maps_exists_in_the_schema_by_that_name_test() -> Nil {
   use <- owned_test.run(60_000)
+  use <- unitest.tag("registry")
   let store = account_store_support.start_store(pool_size: 2)
   assert worker.mapped_constraints()
     == [

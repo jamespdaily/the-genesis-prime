@@ -53,6 +53,7 @@ pub fn the_every_table_load_holds_every_one_of_the_clients_384_tables_test() -> 
 
 pub fn the_shared_load_holds_rows_of_every_table_the_servers_list_names_test() -> Nil {
   use <- owned_test.run(600_000)
+  use <- unitest.tag("registry")
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   list.each(server_table.entries(), fn(entry) {

@@ -2,8 +2,9 @@
 # The full check, run locally and in CI (.github/workflows/check.yml).
 #
 # Usage: ./check          every part, the gate before a merge
-#        ./check fast     format, gleam-build, glinter, code-rules and fact-checker
-#                         only, for the loop while editing and the gate before a push
+#        ./check fast     format, gleam-build, glinter, code-rules, registry-tests and
+#                         fact-checker only, for the loop while editing and the gate
+#                         before a push
 #
 # The wall time counts from the start of this script, setup check included. The
 # budget is a target: GENESIS_CHECK_BUDGET_SECONDS (default 157; ./check fast has
@@ -76,7 +77,7 @@
 #                  it never fails the part. Each test is also listed in
 #                  $work/gleam-test.running while it runs (GENESIS_TEST_PROGRESS_FILE,
 #                  test/test_progress.gleam), the real-start, world-data, client-suite
-#                  and code-rules parts' tests in files of their own, and when a hang
+#                  code-rules and registry-tests parts' tests in files of their own, and when a hang
 #                  stops the check, the summary names under each hung part the tests
 #                  that had started and not ended, with the seconds each had run.
 #                  Both runs print unitest's table of each
@@ -111,6 +112,13 @@
 #   code-rules     fast mode only: the tests tagged code_rule, the tests of
 #                  test/code_rule, each tagged with unitest.tag("code_rule")
 #                  (`./check fast` has its own budget, GENESIS_CHECK_FAST_BUDGET_SECONDS)
+#                                                       (after gleam-build)
+#   registry-tests fast mode only: the tests tagged registry, each one comparing a
+#                  hand-kept list with a registry of the whole server (the tables
+#                  the rules read, the messages the codec generates, the messages a
+#                  rule names, the spells the client activates), in a VM of its own
+#                  beside code-rules. The full check's gleam-test part runs them too
+#                  (a full check that is light runs this part, not gleam-test)
 #                                                       (after gleam-build)
 #   migrations     a fresh database with a unique name, every
 #                  priv/migrations/*.sql applied in name order and recorded in
@@ -237,7 +245,7 @@ literal_limit_percent=85
 export PGHOST PGPORT PGUSER
 
 # The parts of ./check fast, which a full check whose branch is light also runs.
-fast_parts="format gleam-build glinter code-rules fact-checker"
+fast_parts="format gleam-build glinter code-rules registry-tests fact-checker"
 
 work=$(mktemp -d)
 database="genesis_check_$$_${started}"
@@ -796,16 +804,18 @@ gleam_chain() {
   fi
 }
 
-# fast_chain: after gleam-build, glinter and the code-rule tests run beside each other,
-# started on the built code.
+# fast_chain: after gleam-build, glinter, the code-rule tests and the registry tests run
+# beside each other, started on the built code.
 fast_chain() {
   if step gleam-build gleam build --warnings-as-errors; then
     ( step glinter run_built glinter ) &
+    ( GENESIS_TEST_PROGRESS_FILE="$work/registry-tests.running" step registry-tests run_built genesis_prime_test --tag registry ) &
     GENESIS_TEST_PROGRESS_FILE="$work/code-rules.running" step code-rules run_built genesis_prime_test --tag code_rule
     wait
   else
     skip glinter "a part it needs failed: gleam-build"
     skip code-rules "a part it needs failed: gleam-build"
+    skip registry-tests "a part it needs failed: gleam-build"
   fi
 }
 
@@ -854,7 +864,7 @@ for part in $parts; do
     if [ "$hung" = yes ] && [ -f "$work/$part.started" ]; then
       printf '  %-18s FAILED  hung: still running at three times its budget\n' "$part"
       case "$part" in
-        gleam-test | real-start | world-data | client-suite | code-rules)
+        gleam-test | real-start | world-data | client-suite | code-rules | registry-tests)
           running_tests "$part" | sed 's/^/                       still running: /'
           ;;
       esac

@@ -52,6 +52,7 @@ import login_client
 import login_support
 import owned_test
 import scripted_client.{StsLogin}
+import unitest
 
 fn settings(planted planted: Option(Frame)) -> auth_connection.Settings {
   Settings(..login_support.auth_settings(), planted:)
@@ -484,6 +485,7 @@ pub fn the_session_key_comes_from_the_connections_seed_only_test() -> Nil {
 
 pub fn the_auth_rule_names_the_client_messages_it_takes_test() -> Nil {
   use <- owned_test.run(10_000)
+  use <- unitest.tag("registry")
   assert auth_connection.taken_message_ids() == [0x0592]
     as "opcode.0x592: the login request is the one message the auth rule takes"
 }

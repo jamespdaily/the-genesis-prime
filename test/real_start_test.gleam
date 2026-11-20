@@ -226,6 +226,7 @@ pub fn the_real_server_boots_and_a_bot_plays_the_opening_test() -> Nil {
 
 pub fn a_folder_with_no_tables_ends_the_node_before_its_ready_line_test() -> Nil {
   use <- owned_test.run(120_000)
+  use <- unitest.tag("registry")
   use empty <- recording_support.in_folder
   use node <- with_node(tables: empty, spawns: False)
   assert !serving_node.await_output(node, ready_line())

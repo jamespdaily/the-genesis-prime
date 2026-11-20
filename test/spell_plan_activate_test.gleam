@@ -38,6 +38,7 @@ import unitest
 
 pub fn every_activate_spell_has_a_plan_or_a_reason_test() -> Nil {
   use <- owned_test.run(120_000)
+  use <- unitest.tag("registry")
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   let activations = activate.activations(tables:)

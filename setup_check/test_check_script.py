@@ -12,10 +12,13 @@ the real toolchain, the real database or the real client:
   shell without a word when PLANT_FORMAT_KILLS_PARENT is set), except that `gleam format --check` fails when a file under src,
   test or dev holds PLANTED_FORMAT_ERROR, and any `gleam` run of tests (a `test`
   or a `run -m` of a module other than glinter, squirrel and table_generator)
-  fails when a file under test/code_rule holds PLANTED_BREACH; with
+  fails when a file under test/code_rule holds PLANTED_BREACH, and the registry run
+  (`gleam test -- --tag registry`) also fails when a file under test holds
+  PLANTED_REGISTRY_FAILURE and takes PLANT_REGISTRY_SECONDS (a test run other than
+  the registry run takes PLANT_GLEAM_TEST_SECONDS instead); with
   PLANT_RENDEZVOUS set, the plain test run (`gleam test -- --workers N`) waits until
   glinter, table_generator, squirrel, the world-data run and the boot-test run have each started, and
-  the code-rule run (`gleam test -- --tag code_rule`) until glinter has, so a part
+  the code-rule run (`gleam test -- --tag code_rule`) and the registry run until glinter has, so a part
   that is not run beside the test run makes it fail;
 - `erl` is a stub that stands in for the VM the check starts on the built code
   (run_built): it writes its whole command line to PLANT_LOG.erl, turns it into the
@@ -100,6 +103,7 @@ if [ -n "$PLANT_RENDEZVOUS" ]; then
     "test -- --tag real_start") touch "$rendezvous/real_start" ;;
     "test -- --workers "*) await glinter table_generator squirrel world_data real_start ;;
     "test -- --tag code_rule") await glinter ;;
+    "test -- --tag registry") await glinter ;;
   esac
 fi
 case "$1" in
@@ -165,8 +169,15 @@ if [ "$1" = test ] && [ -n "$PLANT_LISTED_TESTS" ] && [ -n "$GENESIS_TEST_PROGRE
   printf 'start 1.1 %%s planted_test:one_that_ended_test\nend 1.1\n' $((now - 7)) >>"$GENESIS_TEST_PROGRESS_FILE"
   [ "$PLANT_LISTED_TESTS" = ended ] || printf 'start 1.2 %%s planted_test:one_that_hung_test\n' $((now - 5)) >>"$GENESIS_TEST_PROGRESS_FILE"
 fi
-if [ "$1" = test ] && [ -n "$PLANT_GLEAM_TEST_SECONDS" ]; then
+if [ "$*" = "test -- --tag registry" ] && [ -n "$PLANT_REGISTRY_SECONDS" ]; then
+  sleep "$PLANT_REGISTRY_SECONDS"
+fi
+if [ "$1" = test ] && [ "$*" != "test -- --tag registry" ] && [ -n "$PLANT_GLEAM_TEST_SECONDS" ]; then
   sleep "$PLANT_GLEAM_TEST_SECONDS"
+fi
+if [ "$*" = "test -- --tag registry" ] && grep -rq PLANTED_REGISTRY_FAILURE test 2>/dev/null; then
+  echo "planted registry test failure"
+  exit 1
 fi
 if grep -rq PLANTED_BREACH test/code_rule 2>/dev/null; then
   echo "planted code-rule breach"
@@ -658,6 +669,14 @@ class HungPartTest(unittest.TestCase):
         )
         self.assert_stopped_as_hung(run, "code-rules")
 
+    def test_a_registry_run_that_hangs_is_stopped_and_named_hung(self):
+        run = shared_run(
+            "hung-registry", "fast", hang=lambda seconds: dict(PLANT_REGISTRY_SECONDS=seconds), timeout=40,
+            GENESIS_CHECK_FAST_BUDGET_SECONDS=str(self.BUDGET),
+        )
+        self.assert_stopped_as_hung(run, "registry-tests")
+        self.assertRegex(run.output, r"(?m)^  code-rules +ok\b")
+
     def hung_test_run(self, listed: str | None) -> Run:
         """The first test run hangs after listing tests (`listed`: "ended" lists one that
         ended and one that did not, "ended" alone one that ended, none lists nothing)."""
@@ -892,7 +911,7 @@ class FastModeTest(unittest.TestCase):
     The planted `gleam` stands for the tools: it fails the format check on a
     planted format error and any run of tests on a planted breach of a code
     rule, and the fact checker on a planted fact-file error. What these tests hold is
-    that the fast check runs each of those five and fails, naming the part, when one
+    that the fast check runs each of those six and fails, naming the part, when one
     fails, and that only a passing run on a clean tree records its commit."""
 
     def test_a_planted_format_error_fails_the_fast_check_naming_the_format_part(self):
@@ -904,6 +923,17 @@ class FastModeTest(unittest.TestCase):
         run = shared_run("fast-breach", "fast", prepare=lambda case: (case.repository / "test" / "code_rule" / "planted_test.gleam").write_text("// PLANTED_BREACH\n"))
         self.assertNotEqual(run.done.returncode, 0, run.output)
         self.assertRegex(failed_line(self, run.output), r"\bcode-rules\b")
+
+    def test_a_planted_failing_registry_test_fails_the_fast_check_naming_the_registry_tests_part(self):
+        def plant(case):
+            (case.repository / "test").mkdir(exist_ok=True)
+            (case.repository / "test" / "planted_registry_test.gleam").write_text("// PLANTED_REGISTRY_FAILURE\n")
+
+        run = shared_run("fast-registry-failure", "fast", prepare=plant)
+        self.assertNotEqual(run.done.returncode, 0, run.output)
+        self.assertRegex(failed_line(self, run.output), r"\bregistry-tests\b")
+        self.assertNotRegex(failed_line(self, run.output), r"\bcode-rules\b")
+        self.assertRegex(run.output, r"(?m)^  code-rules +ok\b")
 
     def test_a_planted_fact_file_error_fails_the_fast_check_naming_the_fact_checker_part(self):
         run = shared_run("fast-fact-error", "fast", prepare=lambda case: plant_fact_file_error(case))
@@ -934,12 +964,16 @@ class FastModeTest(unittest.TestCase):
         self.assertEqual(run.done.returncode, 0, run.output)
         self.assertEqual(run.recorded, "")
 
-    def test_the_fast_check_runs_the_five_parts_and_no_other(self):
+    def test_the_fast_check_runs_the_six_parts_registry_tests_among_them_and_no_other(self):
         run = shared_run("fast", "fast")
         self.assertEqual(run.done.returncode, 0, run.output)
         listed = re.findall(r"^\s*([a-z-]+)\s+(?:ok|FAILED)\b", run.output, re.MULTILINE)
-        self.assertEqual(sorted(listed), ["code-rules", "fact-checker", "format", "gleam-build", "glinter"])
+        self.assertEqual(sorted(listed), ["code-rules", "fact-checker", "format", "gleam-build", "glinter", "registry-tests"])
         commands = run.commands
+        self.assertIn("built test -- --tag registry", commands, commands)
+        self.assertLess(
+            commands.index("gleam build --warnings-as-errors"), commands.index("built test -- --tag registry"),
+            "the registry tests run on the built code, after gleam-build")
         self.assertTrue(any(c.startswith("gleam format --check") for c in commands), commands)
         self.assertIn("gleam build --warnings-as-errors", commands)
         self.assertIn("built run -m glinter", commands)
@@ -960,6 +994,9 @@ class FastModeTest(unittest.TestCase):
         run = shared_run("fast-build-fails", "fast", prepare=plant)
         self.assertNotEqual(run.done.returncode, 0, run.output)
         self.assertRegex(failed_line(self, run.output), r"gleam-build")
+        self.assertRegex(
+            run.output, r"(?m)^  registry-tests +skipped \(a part it needs failed: gleam-build\)")
+        self.assertFalse([c for c in run.commands if "--tag registry" in c], run.commands)
 
 
 FACT_FILE = ".claude/skills/decoding-the-client/references/client-facts.toml"
@@ -1011,7 +1048,7 @@ EVERY_PART = [
     "format", "gleam-build", "glinter", "generated-tables", "gleam-test", "real-start", "world-data", "literal-area",
     "migrations", "squirrel", "client-suite", "fact-checker",
 ]
-QUICK_PARTS = ["format", "gleam-build", "glinter", "code-rules", "fact-checker"]
+QUICK_PARTS = ["format", "gleam-build", "glinter", "code-rules", "registry-tests", "fact-checker"]
 
 # Files that guidance and untested tools are made of (the issue's light set), one per entry.
 LIGHT_FILES = [
@@ -1444,6 +1481,7 @@ class ParallelPartsTest(unittest.TestCase):
         run = shared_run("rendezvous-fast", "fast", PLANT_RENDEZVOUS="1")
         self.assertEqual(run.done.returncode, 0, run.output)
         self.assertRegex(run.output, r"(?m)^  code-rules +ok\b")
+        self.assertRegex(run.output, r"(?m)^  registry-tests +ok\b")
 
     def test_a_test_run_that_has_a_part_it_should_run_beside_unstarted_fails_the_planted_check(self):
         # The planted tool's own control: with the world-data run never started (no
@@ -1516,7 +1554,7 @@ class BuiltCodeTest(unittest.TestCase):
         self.assertEqual(self.compiles_after_the_build(run.commands), [])
         self.assertEqual(
             sorted(c for c in run.commands if c.startswith("built ")),
-            ["built run -m glinter", "built test -- --tag code_rule"])
+            ["built run -m glinter", "built test -- --tag code_rule", "built test -- --tag registry"])
 
     def test_a_part_is_started_with_the_packages_built_and_its_arguments_after_extra(self):
         lines = [line for line in shared_run("full").erl.splitlines() if line.endswith("--tag serial --reporter table --no-color")]
@@ -1758,8 +1796,8 @@ class ModuleTimeTest(unittest.TestCase):
         def plant(case):
             plant_table_rows(case, "workers", MODULE_ROWS + [("FAIL", "m03_test", "a_failing_test", "42ms")])
             executable(case.root / "tools" / "gleam", GLEAM_STUB.replace(
-                'if [ "$1" = test ] && [ -n "$PLANT_GLEAM_TEST_SECONDS" ]',
-                'case "$*" in *"--workers"*) exit 1 ;; esac\nif [ "$1" = test ] && [ -n "$PLANT_GLEAM_TEST_SECONDS" ]'))
+                'if [ "$*" = "test -- --tag registry" ] && [ -n "$PLANT_REGISTRY_SECONDS" ]',
+                'case "$*" in *"--workers"*) exit 1 ;; esac\nif [ "$*" = "test -- --tag registry" ] && [ -n "$PLANT_REGISTRY_SECONDS" ]'))
 
         run = shared_run("module-times-fail", prepare=plant)
         self.assertNotEqual(run.done.returncode, 0, run.output)
