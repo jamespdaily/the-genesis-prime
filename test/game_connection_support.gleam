@@ -66,9 +66,13 @@ import genesis_prime/message/spell_go
 import genesis_prime/message/spell_position
 import genesis_prime/message/spell_started
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
+import genesis_prime/message/unit_create_cast.{
+  type UnitCreateCast, UnitCreateCast,
+}
 import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
 }
+import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
 import genesis_prime/message/unit_stealth
@@ -699,6 +703,101 @@ pub fn map_of_world_with_four_players(
 /// other players (`mapped`).
 pub fn map_answer(taken: ConnectionStep(Request)) -> map.Outgoing {
   mapped(map_state: map_with_four_players(), taken:).1
+}
+
+/// The tests' connection made with `settings`, its character `character`, taken into the map
+/// `map_state` as the connection `connection`: the connection with the notices the map sent it
+/// taken, the map after, and what the map sent the other connections, by connection number.
+pub fn joined_among(
+  settings settings: game_connection.Settings,
+  character character: store.Character,
+  map_state map_state: map.State,
+  connection connection: Int,
+) -> #(game_connection.State, map.State, List(#(Int, map.Outgoing))) {
+  let #(state, joining) =
+    joining_holding(
+      in_character_select: in_select_from(accepted(settings).0),
+      character:,
+      saved_health: None,
+      saved_experience: None,
+      quests: [],
+    )
+  let assert AskMap(
+    message: Join(character:, place:, stay:, alive:, hidden:, ..),
+    ..,
+  ) = ask_request(joining)
+    as "the player's join is asked of the map"
+  let #(map_state, joined) =
+    map.step(
+      map_state,
+      support.input(
+        OwnEvent(step.Asked(
+          caller: CallerId(1),
+          message: Join(
+            connection: ConnectionId(connection),
+            character:,
+            place:,
+            stay:,
+            alive:,
+            hidden:,
+          ),
+        )),
+      ),
+    )
+  let assert [#(_, joined_answer)] = support.replies(joined)
+    as "the map answers the join once"
+  let #(state, _) =
+    answer(state:, taken: joining, outcome: step.Answer(FromMap(joined_answer)))
+  let #(own, others) =
+    list.partition(support.sends(joined), fn(sent) { sent.0 == connection })
+  let state =
+    list.fold(own, state, fn(state, sent) {
+      case sent {
+        #(_, map.Noticed(stay:, notice:)) ->
+          feed(state:, event: for_stay(stay:, sent: SentByMap(notice))).0
+        #(_, _) -> state
+      }
+    })
+  #(state, map_state, others)
+}
+
+/// Paralytic Surge (Spell4 42352 of Spell4Base 26543) has no cast time and no cast bar in
+/// the client's rows, so a press holds no current cast. The rows give it the bar
+/// (`castBarType` 1) and either a cast time of 1500 ms (a Normal cast) or the Channeled method
+/// with Electrocute's timing (Spell4 41276: 500 ms to the first go, 3000 ms in all, a pulse
+/// every 500 ms), the two shapes of a cast whose bar a viewer arriving mid-cast must show.
+pub fn with_a_cast_bar(
+  channeled channeled: Bool,
+  body body: fn(store_tables.Tables) -> a,
+) -> a {
+  let integer = planted_table.Integer
+  let assert Ok(rows) =
+    fixture_tables.change(
+      rows: fixture_tables.rows(),
+      table: "Spell4Base",
+      id: 26_543,
+      with: case channeled {
+        True -> [#("castBarType", integer(1)), #("castMethod", integer(1))]
+        False -> [#("castBarType", integer(1))]
+      },
+    )
+    as "the fixture holds Spell4Base 26543"
+  let assert Ok(rows) =
+    fixture_tables.change(
+      rows:,
+      table: "Spell4",
+      id: 42_352,
+      with: case channeled {
+        True -> [
+          #("channelInitialDelay", integer(500)),
+          #("channelMaxTime", integer(3000)),
+          #("channelPulseTime", integer(500)),
+        ]
+        False -> [#("castTime", integer(1500))]
+      },
+    )
+    as "the fixture holds Spell4 42352"
+  fixture_tables.on_rows(rows:, reaching: [], body:)
 }
 
 /// The map's answer to a join of the tests' player, for the tests that need an
@@ -1561,6 +1660,30 @@ pub fn sent_by_a_peer(
 /// Another player's unit: the tests' player's own record, as unit 9.
 pub fn another_unit() -> UnitCreatePlayer {
   UnitCreatePlayer(..player_in(entered().1), unit_id: 9, name: "Zed Other")
+}
+
+/// The unit 9's record with the casts a create lists and the cast in progress.
+pub fn another_unit_casting(
+  casts casts: List(UnitCreateCast),
+  cast_id cast_id: Int,
+) -> UnitCreatePlayer {
+  let unit = another_unit()
+  UnitCreatePlayer(..unit, tail: UnitCreateTail(..unit.tail, casts:, cast_id:))
+}
+
+/// One entry of a create's cast list: the cast `cast_id` of the unit `caster`, which
+/// has not gone (bit 1), with no target and no position.
+pub fn listed_cast(cast_id cast_id: Int, caster caster: Int) -> UnitCreateCast {
+  UnitCreateCast(
+    caster_unit_id: caster,
+    primary_target_unit_id: caster,
+    cast_id:,
+    spell4_id: 32_893,
+    started: 1,
+    targets: [],
+    initial_positions: [],
+    telegraph_positions: [],
+  )
 }
 
 pub fn moved_unit_commands() -> List(relayed_movement.RelayedMovement) {

@@ -8,8 +8,8 @@ import connection_rule_support as support
 import game_client
 import game_connection_support.{type Step, Appears, MapSaysGone, Moves, Removes}
 import genesis_prime/client_connection.{
-  Appeared, ForStay, FromMap, FromStore, LookChanged, Moving, PeerNews,
-  PropertiesChanged, Removed, SentByMap, SentByPeer, TellMoved,
+  Appeared, CastFinished, ForStay, FromMap, FromStore, LookChanged, Moving,
+  PeerNews, PropertiesChanged, Removed, SentByMap, SentByPeer, TellMoved,
 }
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/connection as game_connection
@@ -27,9 +27,11 @@ import genesis_prime/message/movement_state_flags.{MovementStateFlags}
 import genesis_prime/message/movement_time.{MovementTime}
 import genesis_prime/message/movement_timed_path.{MovementTimedPath}
 import genesis_prime/message/relayed_movement
+import genesis_prime/message/spell_started
 import genesis_prime/message/start_movement
 import genesis_prime/message/unit_cc_state_applied.{UnitCcStateApplied}
 import genesis_prime/message/unit_cc_state_ended.{UnitCcStateEnded}
+import genesis_prime/message/unit_create_cast.{UnitCreateCast}
 import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
 }
@@ -47,6 +49,7 @@ import genesis_prime/step.{
 }
 import genesis_prime/store.{Character, ForItems, ForSelect, ItemsSaved, Listed}
 import genesis_prime/table/id.{ClassId}
+import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/map.{
   Left, ObjectsSeen, ObjectsUnseen, SeenBy, UnseenBy,
@@ -1519,4 +1522,171 @@ pub fn an_object_unseen_and_seen_again_under_the_same_id_writes_a_0x355_then_a_0
   let #(_, again) = game_connection_support.feed(state, seen)
   assert support.writes(again) == []
     as "a second notice of the shown object writes nothing"
+}
+
+/// `opcode.0x262.casts` and `CreateCast 0x140561780`: the client links a listed cast into
+/// the unit it names as its caster, and a cast id 0 is filed as a pending cast, which makes
+/// the client skip the rest of the list; so a viewer writes only the entries of the unit
+/// the create is for and with a cast id above 0, and a cast it listed is one it later
+/// finishes (a 0x7fe is written only for a recorded cast, as for a watched one).
+pub fn a_unit_create_lists_only_casts_of_the_unit_it_creates_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let id = 2_147_497_985
+  let own = game_connection_support.listed_cast(cast_id: id, caster: 9)
+  list.each(
+    [
+      #(
+        "an entry of the created unit is kept and recorded",
+        [own],
+        id,
+        [own],
+        id,
+      ),
+      #(
+        "an entry whose caster is another unit is dropped, not recorded, and the cast in progress it named is 0",
+        [game_connection_support.listed_cast(cast_id: id, caster: 7)],
+        id,
+        [],
+        0,
+      ),
+      #(
+        "an entry with cast id 0 is dropped and not recorded",
+        [game_connection_support.listed_cast(cast_id: 0, caster: 9)],
+        0,
+        [],
+        0,
+      ),
+    ],
+    fn(row) {
+      let #(name, casts, cast_id, kept, written_cast_id) = row
+      let #(state, taken) =
+        game_connection_support.feed(
+          game_connection_support.in_world(),
+          game_connection_support.sent_by_a_peer(
+            game_connection_support.news_of(
+              unit_id: 9,
+              news: Appeared(game_connection_support.another_unit_casting(
+                casts:,
+                cast_id:,
+              )),
+            ),
+          ),
+        )
+      let assert [created] =
+        game_connection_support.decoded(
+          game_connection_support.heard(taken, game_connection_support.keyed()),
+          0x0262,
+          unit_create_player.decode,
+        )
+        as name
+      assert created.tail.casts == kept as name
+      assert created.tail.cast_id == written_cast_id as name
+      let #(_, finished) =
+        game_connection_support.feed(
+          state,
+          game_connection_support.sent_by_a_peer(
+            game_connection_support.news_of(
+              unit_id: 9,
+              news: CastFinished(cast_id:),
+            ),
+          ),
+        )
+      assert game_connection_support.written_ids(finished)
+        == list.map(kept, fn(_) { 0x07FE })
+        as name
+    },
+  )
+}
+
+/// What a Medic that pressed Paralytic Surge at 1000 ms and was run to `until_ms` tells
+/// the viewer 2 of its cast, and the 0x262 it sends the arriving viewer 3.
+fn medic_casting_seen_by_a_new_viewer(
+  tables tables: table_store.Tables,
+  until_ms until_ms: Int,
+) -> #(spell_started.SpellStarted, UnitCreatePlayer) {
+  let #(state, steps) =
+    game_connection_support.pressed_until(
+      state: game_connection_support.watched_by(
+        state: game_connection_support.medic_in(tables:),
+        viewers: [2],
+      ),
+      bag_index: 2,
+      client_cast_id: 1,
+      ms: 1000,
+      until_ms:,
+    )
+  let assert [start] =
+    list.flat_map(steps, fn(taken) {
+      game_connection_support.cast_starts(game_connection_support.news_told(
+        taken:,
+        viewer: 2,
+      ))
+    })
+    as "the watcher is told one cast started"
+  #(start, game_connection_support.created_for(state:, viewer: 3))
+}
+
+/// `opcode.0x262.casts` and `SetUnitCast 0x1404697a0`: a unit create lists the cast the
+/// player holds the bar of, with the id the client looks the cast in progress up by, in
+/// state 2 (bit 1) until its first go and state 3 (bit 0) after; a cast that is no longer
+/// the current cast is not listed.
+pub fn a_player_that_comes_into_sight_lists_its_current_cast_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let none =
+    game_connection_support.created_for(
+      state: game_connection_support.medic_in_world(),
+      viewer: 3,
+    )
+  assert none.tail.casts == [] && none.tail.cast_id == 0
+    as "a player that casts nothing lists no cast and no cast in progress"
+  list.each(
+    [
+      #(
+        "a cast bar before its first go is listed in state 2",
+        False,
+        1000,
+        option.Some(1),
+      ),
+      #(
+        "a Channeled cast after its first go is listed in state 3",
+        True,
+        1600,
+        option.Some(0),
+      ),
+      #(
+        "a Normal cast after its first go is no longer the current cast and is not listed",
+        False,
+        2600,
+        option.None,
+      ),
+    ],
+    fn(row) {
+      let #(name, channeled, until_ms, started) = row
+      use tables <- game_connection_support.with_a_cast_bar(channeled:)
+      let #(start, created) =
+        medic_casting_seen_by_a_new_viewer(tables:, until_ms:)
+      case started {
+        option.None -> {
+          assert created.tail.casts == [] && created.tail.cast_id == 0 as name
+        }
+        option.Some(started) -> {
+          assert created.tail.casts
+            == [
+              UnitCreateCast(
+                caster_unit_id: game_connection_support.own_unit_id,
+                primary_target_unit_id: start.primary_target_unit_id,
+                cast_id: start.cast_id,
+                spell4_id: start.spell4_id,
+                started:,
+                targets: [],
+                initial_positions: [],
+                telegraph_positions: [],
+              ),
+            ]
+            as name
+          assert created.tail.cast_id == start.cast_id as name
+        }
+      }
+    },
+  )
 }

@@ -33,6 +33,7 @@ import genesis_prime/game/spell_plan.{type Proxy, type Spell}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
 import genesis_prime/game/ticking
+import genesis_prime/game/unit_casts
 import genesis_prime/game/unit_properties
 import genesis_prime/game/unit_state
 import genesis_prime/message/cast_result
@@ -769,7 +770,8 @@ pub type Live {
     /// The spell whose Proxy started this one; none for the pressed spell.
     parent: Option(Spell4Id),
     primary_target: Int,
-    /// The connections told of the start, which its go and finish go to.
+    /// The connections that see the caster: those told of the start and those that came
+    /// into sight since (`audience_joined`), which its go and finish go to.
     audience: Set(ConnectionId),
     /// How many of its gos have been sent.
     gone: Int,
@@ -820,7 +822,8 @@ pub type Live {
 pub type Lingering {
   Lingering(
     spell: Spell,
-    /// The connections told of the cast's start, which its 0x811 and 0x7fe go to.
+    /// The connections that see the caster, as on its `Live` cast, which its 0x811 and
+    /// 0x7fe go to.
     audience: Set(ConnectionId),
     /// The monotonic time the cast started at: a removal takes the oldest cast
     /// first, and the cast id wraps, so the age is this.
@@ -1312,6 +1315,81 @@ pub fn holders(cast cast: State) -> List(#(Int, Holder)) {
     holder_of(cast:, cast_id:)
     |> result.map(fn(holder) { #(cast_id, holder) })
   })
+}
+
+/// The casts of the unit `caster_unit_id` that a unit create lists: its current cast,
+/// when that is a live cast.
+pub fn views(
+  cast cast: State,
+  caster_unit_id caster_unit_id: Int,
+) -> List(unit_casts.CastView) {
+  case cast.current {
+    Some(cast_id) ->
+      case dict.get(cast.casts, cast_id) {
+        Ok(live) -> [
+          unit_casts.CastView(
+            caster_unit_id:,
+            cast_id:,
+            spell4_id: live.spell.spell4_id,
+            primary_target: live.primary_target,
+            gone: live.gone > 0,
+            current: True,
+          ),
+        ]
+        Error(Nil) -> []
+      }
+    None -> []
+  }
+}
+
+/// The id of the current cast when it is a live cast, else 0: the cast bar a unit
+/// create shows (`SetUnitCast 0x1404697a0` looks the id up in the create's list).
+pub fn current_cast_id(cast cast: State) -> Int {
+  case cast.current {
+    Some(cast_id) ->
+      case dict.has_key(cast.casts, cast_id) {
+        True -> cast_id
+        False -> 0
+      }
+    None -> 0
+  }
+}
+
+/// The state with the connection told of every live and lingering cast from now on:
+/// a viewer that comes into sight of the caster is in each cast's audience, so it is
+/// written the go, the 0x811 and the 0x7fe of a cast whose 0x262 entry it was given. A
+/// crowd-control state the caster holds keeps the audience that was told its 0x87f,
+/// which the end goes to.
+pub fn audience_joined(cast cast: State, viewer viewer: ConnectionId) -> State {
+  State(
+    ..cast,
+    casts: dict.map_values(cast.casts, fn(_, live) {
+      Live(..live, audience: set.insert(live.audience, viewer))
+    }),
+    lingering: dict.map_values(cast.lingering, fn(_, lingering) {
+      Lingering(..lingering, audience: set.insert(lingering.audience, viewer))
+    }),
+  )
+}
+
+/// The state with the connection out of every audience: a viewer that stops seeing the
+/// caster has forgotten its casts, so none of their news goes to it.
+pub fn audience_left(cast cast: State, viewer viewer: ConnectionId) -> State {
+  State(
+    ..cast,
+    casts: dict.map_values(cast.casts, fn(_, live) {
+      Live(..live, audience: set.delete(live.audience, viewer))
+    }),
+    lingering: dict.map_values(cast.lingering, fn(_, lingering) {
+      Lingering(..lingering, audience: set.delete(lingering.audience, viewer))
+    }),
+    restrictions: dict.map_values(cast.restrictions, fn(_, restriction) {
+      HeldRestriction(
+        ..restriction,
+        audience: set.delete(restriction.audience, viewer),
+      )
+    }),
+  )
 }
 
 /// The unit ids of nodes, in unit id order.

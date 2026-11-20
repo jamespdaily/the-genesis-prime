@@ -16,7 +16,7 @@
 ////   cast; the oldest cast goes first).
 
 import cast_support as support
-import genesis_prime/client_connection.{CastFinished}
+import genesis_prime/client_connection.{type News, CastFinished}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
@@ -27,15 +27,19 @@ import genesis_prime/game/spell_plan.{
   Lasting,
 }
 import genesis_prime/game/spend
+import genesis_prime/game/unit_properties
 import genesis_prime/message/cast_result
+import genesis_prime/message/crowd_control_state
 import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
 import genesis_prime/message/spell_effect_info.{SpellEffectInfo}
 import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_go
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
+import gleam/dict
 import gleam/list
 import gleam/option
+import gleam/set
 import gleam/string
 import owned_test
 import prerequisite_support
@@ -1090,4 +1094,126 @@ pub fn a_timed_node_is_re_timed_from_a_later_go_of_its_cast_test() -> Nil {
     })
     == [#(2000, []), #(7000, [id])]
     as "the first go's timer for 6000 is replaced: the one 0x7fe is at 7000 (opcode.0x7f4.instance_count)"
+}
+
+// ---- the audience of a cast follows the viewers ----
+
+/// What the connection `viewer` is told over the timers of a state, in order.
+fn told_to(
+  fired fired: List(#(Int, List(cast_state.Effect))),
+  viewer viewer: Int,
+) -> List(News) {
+  list.flat_map(fired, fn(step) {
+    list.filter_map(support.tells(effects: step.1), fn(tell) {
+      case tell.0 == ConnectionId(viewer) {
+        True -> Ok(tell.1)
+        False -> Error(Nil)
+      }
+    })
+  })
+}
+
+/// `cast.target_node_end` (a node ends only by a 0x811 or a 0x7fe the client is sent) and
+/// `connection_state.news_to_connection` (a tell reaches only a current viewer): a viewer
+/// that comes into sight of the caster is told what the cast does from then on, and one
+/// that stops seeing the caster is told nothing, in every cast, live or lingering.
+pub fn a_cast_audience_is_the_current_viewers_test() -> Nil {
+  use <- owned_test.run(5000)
+  let live_plans = short_buff_on_a_long_channel()
+  let #(live, live_start) =
+    support.press(
+      plans: live_plans,
+      state: cast_state.new(),
+      bag: bag_of_base_3,
+      at: 1000,
+    )
+  let live_id = support.pressed_id(effects: live_start)
+  let #(lingering, lingering_start) =
+    support.press(
+      plans: eight_seconds_on_the_caster(),
+      state: cast_state.new(),
+      bag: bag_of_base_3,
+      at: 1000,
+    )
+  let lingering_id = support.pressed_id(effects: lingering_start)
+  assert dict.has_key(lingering.lingering, lingering_id)
+    as "the 8 s buff leaves its cast lingering"
+  let timers = fn(state, effects) {
+    support.run_timers(state:, effects:, from_ms: 1000).1
+  }
+  let viewer = ConnectionId(9)
+  // A live channel with pulses at 0, 3000 and 6000 after the press.
+  let joined = cast_state.audience_joined(cast: live, viewer:)
+  let told = told_to(fired: timers(joined, live_start), viewer: 9)
+  assert list.last(told) == Ok(CastFinished(cast_id: live_id))
+    as "a viewer that joined a live cast is told its 0x7fe"
+  assert list.length(told) == 3
+    as "and each go after the join: the pulses at 3000 and 6000 are its first two news"
+  let told =
+    told_to(
+      fired: timers(
+        cast_state.audience_joined(cast: lingering, viewer:),
+        lingering_start,
+      ),
+      viewer: 9,
+    )
+  assert told == [CastFinished(cast_id: lingering_id)]
+    as "a viewer that joined a lingering cast is told its 0x7fe when its node ends"
+  let twice =
+    cast_state.audience_joined(cast: joined, viewer:)
+    |> cast_state.audience_left(viewer:)
+    |> cast_state.audience_joined(viewer:)
+    |> cast_state.audience_joined(viewer:)
+  assert list.count(
+      told_to(fired: timers(twice, live_start), viewer: 9),
+      fn(one) { one == CastFinished(cast_id: live_id) },
+    )
+    == 1
+    as "joining twice is one entry of the audience: one 0x7fe"
+  let left = cast_state.audience_left(cast: joined, viewer:)
+  assert told_to(fired: timers(left, live_start), viewer: 9) == []
+    as "a viewer that stopped seeing the caster is told nothing of a live cast"
+  assert told_to(
+      fired: timers(
+        cast_state.audience_left(
+          cast: cast_state.audience_joined(cast: lingering, viewer:),
+          viewer:,
+        ),
+        lingering_start,
+      ),
+      viewer: 9,
+    )
+    == []
+    as "nor of a lingering one"
+  let held =
+    cast_state.State(
+      ..live,
+      restrictions: dict.from_list([
+        #(
+          unit_properties.Source(
+            cast_id: live_id,
+            effect_id: Spell4EffectsId(1),
+          ),
+          cast_state.HeldRestriction(
+            state: crowd_control_state.Stun,
+            instance_id: 1,
+            audience: set.from_list([ConnectionId(2), viewer]),
+          ),
+        ),
+      ]),
+    )
+  let audience = fn(state: State) {
+    let assert [restriction] = dict.values(state.restrictions)
+      as "the state holds the one restriction"
+    restriction.audience
+  }
+  assert audience(cast_state.audience_left(cast: held, viewer:))
+    == set.from_list([ConnectionId(2)])
+    as "a crowd-control state's audience loses the viewer that left"
+  assert audience(cast_state.audience_joined(
+      cast: held,
+      viewer: ConnectionId(4),
+    ))
+    == set.from_list([ConnectionId(2), viewer])
+    as "and gains none: a viewer that never saw the 0x87f is not told its end"
 }
