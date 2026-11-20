@@ -924,10 +924,18 @@ fn drawn_pose() -> qcheck.Generator(Pose) {
 pub fn an_anchor_fixed_at_the_start_never_follows_the_caster_and_a_following_one_never_reads_the_start_test() -> Nil {
   use <- owned_test.run(5000)
   qcheck.given(
-    qcheck.tuple4(drawn_pose(), drawn_pose(), drawn_pose(), drawn_pose()),
+    qcheck.tuple3(
+      qcheck.tuple4(drawn_pose(), drawn_pose(), drawn_pose(), drawn_pose()),
+      drawn_pose(),
+      qcheck.bool(),
+    ),
     fn(drawn) {
-      let #(caster, other_caster, started_at, other_start) = drawn
-      let primary = TheCaster
+      let #(#(caster, other_caster, started_at, other_start), unit, is_unit) =
+        drawn
+      let primary = case is_unit {
+        True -> AnotherUnit(pose: unit)
+        False -> TheCaster
+      }
       assert area.centre_of(
           anchor: FixedAtCaster,
           caster:,
