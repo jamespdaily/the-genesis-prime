@@ -103,3 +103,55 @@ h2 {
   color: var(--text-dim);
   margin: 6px 0 0;
 }
+.fact {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+  margin: 10px 0 0;
+}
+.fact .name {
+  flex-basis: 100%;
+  color: var(--text-faint);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.fact .state {
+  font-size: 16px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.fact .detail {
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+.fact .why {
+  flex-basis: 100%;
+  color: var(--text-dim);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.fact.stale {
+  opacity: 0.55;
+}
+.role-ok .state {
+  color: var(--ok);
+}
+.role-warn .state {
+  color: var(--warn);
+}
+.role-bad .state {
+  color: var(--bad);
+}
+.role-idle .state {
+  color: var(--idle);
+}
+.role-data .state {
+  color: var(--data);
+}
+.role-text .state {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 400;
+}

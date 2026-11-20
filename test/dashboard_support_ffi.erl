@@ -1,5 +1,5 @@
 -module(dashboard_support_ffi).
--export([free_port/0, bound_addresses/1, accepts/1, open/2, read_frame/1, close/1]).
+-export([free_port/0, bound_addresses/1, accepts/1, open/2, read_frame/1, close/1, process_alive/1, closes/1, os_pid/0]).
 
 %% A loopback port the system chose: listens on port 0 and closes the socket
 %% again, so nothing listens on the port that is returned. The dashboard's
@@ -103,3 +103,24 @@ read_frame(Socket) ->
 close(Socket) ->
     _ = gen_tcp:close(Socket),
     nil.
+
+%% Whether the operating-system process is alive: `kill -0` finds it.
+-spec process_alive(integer()) -> boolean().
+process_alive(OsPid) ->
+    os:cmd("kill -0 " ++ integer_to_list(OsPid) ++ " 2>&1") =:= [].
+
+%% Reads from the connection until the server closes it, whatever it sends
+%% first: true when the close came. A read waits for the server to write or
+%% close: it ends with the bytes or the close, not with a time.
+-spec closes(port()) -> boolean().
+closes(Socket) ->
+    case gen_tcp:recv(Socket, 0, infinity) of
+        {ok, _} -> closes(Socket);
+        {error, closed} -> true;
+        {error, _} -> true
+    end.
+
+%% The operating-system process id of this VM.
+-spec os_pid() -> integer().
+os_pid() ->
+    list_to_integer(os:getpid()).

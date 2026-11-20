@@ -7,7 +7,9 @@
 //// ```text
 //// start ──► key ──► entry file written (private, not yet published)
 ////                         │
-////            supervisor ──┼── factory of the page's runtimes (one per tab)
+////          supervisor ────┼── (rebuilt together, poller first)
+////                         │     poller of the state script ──► page runtimes' readings
+////                         │     factory of the page's runtimes (one per tab)
 ////                         └── mist on 127.0.0.1:PORT ── web.handle ──► answer
 ////                                                           │ upgrade
 ////                                                  websocket ── a runtime of its own
@@ -17,7 +19,12 @@
 ////
 //// - The settings come from `GENESIS_HOME` (else the user's `.genesis-prime`,
 ////   as `table_folder.home` says), `GENESIS_DASHBOARD_PORT` (default 7700) and
-////   `GENESIS_CLIENT_FILES_DIR` (else `client-files` under the home).
+////   `GENESIS_CLIENT_FILES_DIR` (else `client-files` under the home). The
+////   state script is `dev/play_service/state.sh` of the worktree the dashboard
+////   runs from; it is run with `GENESIS_HOME` set to the settings' home.
+//// - A poller that dies is rebuilt together with the page runtimes, whose
+////   sockets then close, so every open page reconnects and subscribes again
+////   instead of showing its last reading as if it were fresh.
 //// - The start refuses, with its reason, when the port is busy (two dashboards
 ////   must not run) and when the key cannot be kept, whether the entry file
 ////   cannot be written or cannot be published (a key that cannot be kept must
@@ -28,12 +35,14 @@
 
 import envoy
 import genesis_prime/dashboard/access.{type Gate, Gate}
+import genesis_prime/dashboard/host
 import genesis_prime/dashboard/overview
 import genesis_prime/dashboard/page.{type Page}
 import genesis_prime/dashboard/secret
 import genesis_prime/dashboard/socket
 import genesis_prime/dashboard/web
 import genesis_prime/dev_exit
+import genesis_prime/step/runtime
 import genesis_prime/table_folder
 import gleam/bytes_tree
 import gleam/crypto
@@ -52,19 +61,28 @@ import lustre
 import mist.{type Connection, type ResponseData}
 import simplifile
 
-/// Where the dashboard listens, keeps its entry file and reads what it serves.
+/// Where the dashboard listens, keeps its entry file and reads what it serves,
+/// and which script reports the play service and how often.
 pub type Settings {
   Settings(
     port: Int,
     genesis_home: String,
     client_fonts_folder: String,
     stylesheet_folder: String,
+    state_script: String,
+    poll_interval_ms: Int,
   )
 }
 
-/// A dashboard that is serving.
+/// A dashboard that is serving: its gate, its owner process, the factory of
+/// the page runtimes and the poller the pages subscribe to.
 pub type Running {
-  Running(gate: Gate, owner: Pid, runtimes: socket.Runtimes)
+  Running(
+    gate: Gate,
+    owner: Pid,
+    runtimes: socket.Runtimes,
+    poller: Subject(host.Message),
+  )
 }
 
 /// Why the dashboard did not start.
@@ -103,6 +121,8 @@ fn settings_from_environment() -> Result(Settings, SettingsError) {
     genesis_home: table_folder.home(),
     client_fonts_folder: table_folder.client_files_path() <> "/UI/Fonts",
     stylesheet_folder: "dev/dashboard",
+    state_script: "dev/play_service/state.sh",
+    poll_interval_ms: host.interval_ms,
   ))
 }
 
@@ -120,6 +140,8 @@ pub fn start(settings settings: Settings) -> Result(Running, StartError) {
     |> result.map_error(EntryNotKept),
   )
   let runtimes_name = process.new_name("dashboard_runtimes")
+  let poller_name = process.new_name("dashboard_poller")
+  let poller = process.named_subject(poller_name)
   let context =
     web.Context(
       gate:,
@@ -131,17 +153,41 @@ pub fn start(settings settings: Settings) -> Result(Running, StartError) {
       stylesheet_folder: settings.stylesheet_folder,
     )
   let server =
-    mist.new(fn(request) { respond(context:, runtimes_name:, request:) })
+    mist.new(fn(request) {
+      respond(context:, runtimes_name:, poller:, request:)
+    })
     |> mist.bind(access.loopback)
     |> mist.port(settings.port)
     |> mist.after_start(fn(_port, _scheme, _address) { Nil })
+  let poller_settings =
+    host.Settings(
+      start_read: host.script_reader(
+        path: settings.state_script,
+        environment: [#("GENESIS_HOME", settings.genesis_home)],
+        deadline_ms: host.deadline_ms,
+      ),
+      now_ms: runtime.monotonic_ms,
+      interval_ms: settings.poll_interval_ms,
+      deadline_ms: host.deadline_ms,
+    )
   let start_tree = fn() {
     static_supervisor.new(static_supervisor.OneForOne)
+    |> static_supervisor.restart_tolerance(intensity: 3, period: 5)
     |> static_supervisor.add(
-      lustre.factory(overview.app())
-      |> factory_supervisor.restart_strategy(supervision.Temporary)
-      |> factory_supervisor.named(runtimes_name)
-      |> factory_supervisor.supervised,
+      static_supervisor.new(static_supervisor.RestForOne)
+      |> static_supervisor.restart_tolerance(intensity: 3, period: 5)
+      |> static_supervisor.add(host.supervised(
+        settings: poller_settings,
+        name: poller_name,
+      ))
+      |> static_supervisor.add(
+        lustre.factory(overview.app())
+        |> factory_supervisor.restart_strategy(supervision.Temporary)
+        |> factory_supervisor.restart_tolerance(intensity: 3, period: 5)
+        |> factory_supervisor.named(runtimes_name)
+        |> factory_supervisor.supervised,
+      )
+      |> static_supervisor.supervised,
     )
     |> static_supervisor.add(mist.supervised(server))
     |> static_supervisor.start
@@ -158,6 +204,7 @@ pub fn start(settings settings: Settings) -> Result(Running, StartError) {
             gate:,
             owner:,
             runtimes: factory_supervisor.get_by_name(runtimes_name),
+            poller:,
           ))
         Error(reason) -> {
           stop_tree(owner:, tree:)
@@ -228,8 +275,12 @@ pub fn runtime_count(running running: Running) -> Int {
 fn respond(
   context context: web.Context,
   runtimes_name runtimes_name: process.Name(
-    factory_supervisor.Message(Nil, Subject(lustre.RuntimeMessage(Nil))),
+    factory_supervisor.Message(
+      Subject(host.Message),
+      Subject(lustre.RuntimeMessage(overview.Message)),
+    ),
   ),
+  poller poller: Subject(host.Message),
   request request: Request(Connection),
 ) -> Response(ResponseData) {
   case web.handle(context, request) {
@@ -238,10 +289,18 @@ fn respond(
         mist.Bytes(bytes_tree.from_bit_array(body))
       })
     web.Upgrade ->
-      socket.upgrade(
-        request:,
-        runtimes: factory_supervisor.get_by_name(runtimes_name),
-      )
+      case process.named(runtimes_name) {
+        Ok(_) ->
+          socket.upgrade(
+            request:,
+            runtimes: factory_supervisor.get_by_name(runtimes_name),
+            poller:,
+          )
+        // The page runtimes are being rebuilt; the client asks again.
+        Error(Nil) ->
+          response.new(503)
+          |> response.set_body(mist.Bytes(bytes_tree.new()))
+      }
   }
 }
 

@@ -72,6 +72,19 @@ pub fn read_frame(connection: Connection) -> BitArray
 @external(erlang, "dashboard_support_ffi", "close")
 pub fn close(connection: Connection) -> Nil
 
+/// Reads from the connection until the server closes it; true when it did.
+@external(erlang, "dashboard_support_ffi", "closes")
+pub fn closes(connection: Connection) -> Bool
+
+/// The operating-system process id of the test's own VM, a process that stays
+/// alive for as long as the test runs.
+@external(erlang, "dashboard_support_ffi", "os_pid")
+pub fn os_pid() -> Int
+
+/// Whether the operating-system process with this id is alive.
+@external(erlang, "dashboard_support_ffi", "process_alive")
+pub fn process_alive(os_pid: Int) -> Bool
+
 pub fn gate() -> Gate {
   Gate(key:, port:)
 }
@@ -215,13 +228,19 @@ pub fn with_home(body body: fn(String) -> a) -> a {
 
 /// Settings for a dashboard on a free port that keeps its entry file under
 /// `home`, serves the client's fonts from `home`'s `client-files/UI/Fonts` and
-/// the stylesheets from the repository.
+/// the stylesheets from the repository. Its state script prints a fixed report
+/// (`test/dashboard_state_report.sh`), so no test that opens a page runs the
+/// developer's real `podman`, and its poller's timer never comes within a
+/// test (the interval is a day): a read is made when a page subscribes or a
+/// test asks for one.
 pub fn settings(home home: String) -> dashboard.Settings {
   dashboard.Settings(
     port: free_port(),
     genesis_home: home,
     client_fonts_folder: home <> "/client-files/UI/Fonts",
     stylesheet_folder: "dev/dashboard",
+    state_script: "test/dashboard_state_report.sh",
+    poll_interval_ms: 86_400_000,
   )
 }
 
