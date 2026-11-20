@@ -17,9 +17,14 @@
 ////   text.
 //// - The mark says nothing of the value's length.
 ////
-//// Only this form has a rule. A password printed in another form (an
-//// environment dump, a connection URL) is shown, and so is a value that is
-//// not a string.
+//// Only this form has a rule. A password printed in another form is shown:
+//// an environment dump, a connection URL, pgo's own option form
+//// (`[{password,"x"}]`, the tuple `pgo_handler.erl:27` documents), and a value
+//// that is not a string. A string or binary that Erlang prints as numbers
+//// (`password => [112,8364,120]`, `<<112,226,130,172,120>>`, as it does for
+//// a control character or a character outside Latin-1) is shown too. The play
+//// database's password is `openssl rand -hex 16` (`install.sh`), which prints
+//// as a string.
 
 import gleam/string
 

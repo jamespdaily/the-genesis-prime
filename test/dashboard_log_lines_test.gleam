@@ -7,8 +7,8 @@
 
 import dashboard_otp_log_support as support
 import genesis_prime/dashboard/log_lines.{
-  type Entry, type Level, type Lines, LaunchdLog, LevelBad, LevelInfo, LevelOk,
-  LevelWarn, Line, LogCutShorter, LogReplaced, Marker, UpdaterLog,
+  type Level, type Lines, LaunchdLog, LevelBad, LevelInfo, LevelOk, LevelWarn,
+  Line, LogCutShorter, LogReplaced, Marker, UpdaterLog,
 }
 import gleam/bit_array
 import gleam/int
@@ -449,19 +449,12 @@ pub fn the_lines_do_not_depend_on_how_the_bytes_were_split_test() -> Nil {
           list.repeat(<<alphabet(index):8>>, length) |> bit_array.concat
         })
         |> bit_array.concat
-      let together = fed([whole])
-      let split = fed(support.split_at(bytes: whole, points:))
-      assert log_lines.entries(split) == log_lines.entries(together)
-        as "the same entries however the bytes were cut"
-      list.each(log_lines.entries(split), fn(entry: Entry) {
-        case entry {
-          Line(text:, ..) -> {
-            assert bit_array.byte_size(bytes(text)) <= cap
-              as "an entry is at most the cap"
-          }
-          Marker(..) -> Nil
-        }
-      })
+      support.reads_do_not_change_the_entries(
+        source: UpdaterLog,
+        bytes: whole,
+        points:,
+        cap_bytes: cap,
+      )
     },
   )
 }

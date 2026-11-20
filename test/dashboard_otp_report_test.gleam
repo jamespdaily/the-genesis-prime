@@ -314,6 +314,31 @@ fn assert_a_long_report_is_cut_once_and_the_next_one_is_whole() -> Nil {
       ..list.repeat(line, 16)
     ])
   let assert [Line(cut: False, ..)] = log_lines.entries(just_under)
+  // A report of exactly the cap whose short password the mark lengthens is cut
+  // again after the mask, and its text still fits the cap.
+  let key_line = "password => \"x\""
+  let without_padding =
+    [header_of("ERROR"), ..list.repeat(line, 16)]
+    |> list.append(["", key_line])
+    |> string.join("\n")
+  let padding =
+    string.repeat("p", report_cap - string.byte_size(without_padding))
+  let at_the_cap_lines =
+    list.flatten([
+      [header_of("ERROR")],
+      list.repeat(line, 16),
+      [padding, key_line],
+    ])
+  assert bit_array.byte_size(
+      bit_array.from_string(string.join(at_the_cap_lines, "\n")),
+    )
+    == report_cap
+    as "the report is exactly the cap before its mask"
+  let assert [Line(text: masked_text, cut: True, ..)] =
+    log_lines.entries(support.fed(source: ServerLog, lines: at_the_cap_lines))
+  assert bit_array.byte_size(bit_array.from_string(masked_text)) <= report_cap
+    as "the masked report is cut to the cap again"
+  assert !string.contains(masked_text, "\"x\"")
   let long_body = list.repeat(line, 40)
   let lines =
     list.flatten([
@@ -385,40 +410,33 @@ fn assert_a_report_grows_in_place_across_reads() -> Nil {
 
 pub fn the_entries_do_not_depend_on_how_the_lines_were_split_into_reads_test() -> Nil {
   use <- owned_test.run(120_000)
-  let captures = [
-    "c1_default_formatter_reports.txt",
-    "c2_progress_crash_supervisor_plain.txt",
-    "c5b_pgo_crash_long_password_wraps.txt",
+  let crash = support.capture("c5b_pgo_crash_long_password_wraps.txt")
+  // The captures, and the crash without its first line: a tail that begins
+  // inside the report, whose `password =>` lines are plain lines with their
+  // values on the next line.
+  let sources = [
+    support.capture("c1_default_formatter_reports.txt"),
+    support.capture("c2_progress_crash_supervisor_plain.txt"),
+    crash,
+    list.drop(crash, 1),
   ]
-  let whole_of = fn(lines) { support.bytes_of(lines) }
   let draws =
     qcheck.tuple2(
-      qcheck.bounded_int(from: 0, to: list.length(captures) - 1),
+      qcheck.bounded_int(from: 0, to: list.length(sources) - 1),
       qcheck.list_from(qcheck.bounded_int(from: 0, to: 30_000)),
     )
   qcheck.run(
-    qcheck.default_config() |> qcheck.with_test_count(60),
+    qcheck.default_config() |> qcheck.with_test_count(80),
     draws,
     fn(drawn) {
       let #(index, points) = drawn
-      let assert Ok(name) = list.drop(captures, index) |> list.first
-      let lines = support.capture(name)
-      let together = log_lines.feed(log_lines.new(ServerLog), whole_of(lines))
-      let split =
-        list.fold(
-          support.split_at(bytes: whole_of(lines), points:),
-          log_lines.new(ServerLog),
-          log_lines.feed,
-        )
-      assert log_lines.entries(split) == log_lines.entries(together)
-        as "the same entries, sequence numbers and levels however the lines were split"
-      list.each(log_lines.entries(split), fn(entry) {
-        assert bit_array.byte_size(
-            bit_array.from_string(support.text_of(entry)),
-          )
-          <= report_cap
-          as "an entry is at most the report cap"
-      })
+      let assert Ok(lines) = list.drop(sources, index) |> list.first
+      support.reads_do_not_change_the_entries(
+        source: ServerLog,
+        bytes: support.bytes_of(lines),
+        points:,
+        cap_bytes: report_cap,
+      )
     },
   )
   // The invariant holds for a report of many lines too, which the captures
@@ -437,21 +455,12 @@ pub fn the_entries_do_not_depend_on_how_the_lines_were_split_into_reads_test() -
           int.to_string(number) <> string.repeat("z", line_length)
         })
       let lines = list.flatten([[header_of("ERROR")], body, [""], ["after"]])
-      let together =
-        log_lines.feed(log_lines.new(UpdaterLog), support.bytes_of(lines))
-      let split =
-        list.fold(
-          support.split_at(bytes: support.bytes_of(lines), points:),
-          log_lines.new(UpdaterLog),
-          log_lines.feed,
-        )
-      assert log_lines.entries(split) == log_lines.entries(together)
-      list.each(log_lines.entries(split), fn(entry) {
-        assert bit_array.byte_size(
-            bit_array.from_string(support.text_of(entry)),
-          )
-          <= report_cap
-      })
+      support.reads_do_not_change_the_entries(
+        source: UpdaterLog,
+        bytes: support.bytes_of(lines),
+        points:,
+        cap_bytes: report_cap,
+      )
     },
   )
 }

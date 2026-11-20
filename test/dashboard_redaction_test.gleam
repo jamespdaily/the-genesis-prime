@@ -140,25 +140,38 @@ pub fn a_password_a_report_prints_is_hidden_wherever_it_sits_test() -> Nil {
 }
 
 pub fn no_entry_ever_holds_the_password_whatever_the_read_boundaries_are_test() -> Nil {
-  use <- owned_test.run(300_000)
+  use <- owned_test.run(60_000)
   let lines = support.capture("c5b_pgo_crash_long_password_wraps.txt")
   let whole = support.bytes_of(lines)
-  let size = bit_array.byte_size(whole)
   let holds_the_value = fn(lines: log_lines.Lines) {
     list.any(support.texts(lines), string.contains(_, planted))
   }
 
-  // The capture in two reads, split at each possible byte: no ring holds the
-  // value.
-  list.each(support.numbers(first: 0, last: size), fn(point) {
-    let assert Ok(first) = bit_array.slice(whole, 0, point)
-    let assert Ok(second) = bit_array.slice(whole, point, size - point)
-    let after_first = log_lines.feed(log_lines.new(ServerLog), first)
-    let after_second = log_lines.feed(after_first, second)
-    assert !holds_the_value(after_first)
-      as "the ring after the first read holds the value"
-    assert !holds_the_value(after_second)
-      as "the ring after the second read holds the value"
+  // The capture, and its tail without the first line, which begins inside the
+  // report: there a `password =>` line is a plain line and its value is the
+  // next line, which can be in the next read. Each in two reads cut at the end
+  // of each line: no ring holds the value. A log acts on whole lines only, so
+  // a cut inside a line gives what the cut at that line's start gives.
+  list.each([lines, list.drop(lines, 1)], fn(lines) {
+    let bytes = support.bytes_of(lines)
+    let size = bit_array.byte_size(bytes)
+    let ends =
+      list.scan(lines, 0, fn(at, line) { at + string.byte_size(line) + 1 })
+    list.each([0, ..ends], fn(point) {
+      let assert Ok(first) = bit_array.slice(bytes, 0, point)
+      let assert Ok(second) = bit_array.slice(bytes, point, size - point)
+      let after_first = log_lines.feed(log_lines.new(ServerLog), first)
+      let after_second = log_lines.feed(after_first, second)
+      assert !holds_the_value(after_first)
+        as "the ring after the first read holds the value"
+      assert !holds_the_value(after_second)
+        as "the ring after the second read holds the value"
+      assert list.any(support.texts(after_second), string.contains(
+        _,
+        "\"[hidden]\"",
+      ))
+        as "the ring after the second read shows the mask"
+    })
   })
 
   // The other sources, in one read.

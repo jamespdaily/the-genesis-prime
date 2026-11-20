@@ -183,9 +183,15 @@ fn is_digits(text text: String, from least: Int, to most: Int) -> Bool {
   let size = string.length(text)
   size >= least
   && size <= most
-  && list.all(string.to_graphemes(text), fn(character) {
-    string.contains("0123456789", character)
-  })
+  && list.all(string.to_graphemes(text), is_a_digit)
+}
+
+/// Whether the character is one of `0` to `9`.
+pub fn is_a_digit(character: String) -> Bool {
+  case character {
+    "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" -> True
+    _ -> False
+  }
 }
 
 /// A report that has read its header line.

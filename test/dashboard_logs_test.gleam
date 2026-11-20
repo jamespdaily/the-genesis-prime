@@ -295,14 +295,12 @@ pub fn an_entry_of_several_lines_is_one_item_with_one_role_and_its_lines_in_orde
   let in_order = [
     "=CRASH REPORT", "crasher:", "pid: &lt;0.84.0&gt;", "neighbours:",
   ]
-  let read_to =
-    list.fold(in_order, 0, fn(from, word) {
-      let after = string.drop_start(item, from)
-      let assert Ok(#(before, _)) = string.split_once(after, word)
-        as { word <> " is in the report, after the words before it" }
-      from + string.length(before) + string.length(word)
-    })
-  assert read_to <= string.length(item)
+  list.fold(in_order, 0, fn(from, word) {
+    let after = string.drop_start(item, from)
+    let assert Ok(#(before, _)) = string.split_once(after, word)
+      as { word <> " is in the report, after the words before it" }
+    from + string.length(before) + string.length(word)
+  })
 
   // A mark of a replaced container is a mark, not a line.
   let replaced = item_holding(part, "the container was replaced")

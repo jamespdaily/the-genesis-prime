@@ -108,3 +108,25 @@ pub fn split_at(
   let assert Ok(rest) = bit_array.slice(bytes, start, size - start)
   list.reverse([rest, ..chunks])
 }
+
+/// The invariant of the log's reads: these bytes fed to a new log of this
+/// source in reads cut at the points give the same entries (text, level,
+/// sequence number and cut mark) as one read of all of them, and no entry's
+/// text is longer than the cap. A mark has no text.
+pub fn reads_do_not_change_the_entries(
+  source source: Source,
+  bytes bytes: BitArray,
+  points points: List(Int),
+  cap_bytes cap_bytes: Int,
+) -> Nil {
+  let together = log_lines.feed(log_lines.new(source), bytes)
+  let split =
+    list.fold(split_at(bytes:, points:), log_lines.new(source), log_lines.feed)
+  assert log_lines.entries(split) == log_lines.entries(together)
+    as "the same entries however the bytes were cut into reads"
+  list.each(log_lines.entries(split), fn(entry) {
+    assert bit_array.byte_size(bit_array.from_string(text_of(entry)))
+      <= cap_bytes
+      as "an entry is at most the cap"
+  })
+}

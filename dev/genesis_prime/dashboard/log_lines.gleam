@@ -508,11 +508,12 @@ fn postgres_word(text: String) -> Result(String, Nil) {
   use #(process, after) <- result.try(string.split_once(rest, "] "))
   use #(word, _) <- result.try(string.split_once(after, ":"))
   let starts_with_a_digit = case string.first(stamp) {
-    Ok(first) -> is_a_digit(first)
+    Ok(first) -> otp_report.is_a_digit(first)
     Error(Nil) -> False
   }
   let is_a_process_number =
-    process != "" && list.all(string.to_graphemes(process), is_a_digit)
+    process != ""
+    && list.all(string.to_graphemes(process), otp_report.is_a_digit)
   case starts_with_a_digit && is_a_process_number {
     True -> Ok(word)
     False -> Error(Nil)
@@ -591,7 +592,8 @@ fn is_a_bash_error(text: String) -> Bool {
   case string.split(text, ": line ") {
     [_, ..after] ->
       list.any(after, fn(rest) {
-        let digits = string.to_graphemes(rest) |> list.take_while(is_a_digit)
+        let digits =
+          string.to_graphemes(rest) |> list.take_while(otp_report.is_a_digit)
         digits != []
         && string.starts_with(
           string.drop_start(rest, list.length(digits)),
@@ -599,12 +601,5 @@ fn is_a_bash_error(text: String) -> Bool {
         )
       })
     [] -> False
-  }
-}
-
-fn is_a_digit(character: String) -> Bool {
-  case character {
-    "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" -> True
-    _ -> False
   }
 }
