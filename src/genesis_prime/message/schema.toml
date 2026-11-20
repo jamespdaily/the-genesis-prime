@@ -2215,6 +2215,38 @@ fields = [
 ]
 
 [[message]]
+id = 0x00B1
+name = "action_set_save"
+direction = "client_to_server"
+evidence = "opcode.0xb1"
+summary = "the ability builder's Save: the twelve Spell4Base ids of the active action set's slots (eight abilities, the gadget, the path ability and two zeros; 0 is an empty slot), the active set, the tier edits and the AMP ids, which the client sends without checking that a slot is unlocked, an ability is held or an id appears once"
+fields = [
+  { name = "spell4_base_ids", kind = "array", count_bits = 4, element = "unsigned", element_bits = 32, evidence = "opcode.0xb1", named_by = "opcode.0xb1" },
+  { name = "action_set_index", kind = "unsigned", bits = 3, evidence = "opcode.0xb1", named_by = "opcode.0xb1" },
+  { name = "tier_changes", kind = "array", count_bits = 5, element = "action_set_tier_change", evidence = "opcode.0xb1", named_by = "opcode.0xb1" },
+  { name = "amp_ids", kind = "array", count_bits = 7, element = "unsigned", element_bits = 16, evidence = "opcode.0xb1", named_by = "opcode.0xb1" },
+]
+
+[[record]]
+name = "action_set_tier_change"
+evidence = "opcode.0xb1"
+summary = "one tier edit of the ability builder's save: the Spell4Base id and the tier the window edited it to"
+fields = [
+  { name = "spell4_base_id", kind = "unsigned", bits = 18, evidence = "opcode.0xb1", named_by = "opcode.0xb1" },
+  { name = "tier", kind = "unsigned", bits = 8, evidence = "opcode.0xb1", named_by = "opcode.0xb1" },
+]
+
+[[message]]
+id = 0x00B2
+name = "action_set_saved"
+direction = "server_to_client"
+evidence = "opcode.0xb2"
+summary = "the answer to the ability builder's Save: the client drops its uncommitted edits and redraws from what its book holds, and with the bit set adds a combat log line for the player; it changes neither the bar nor the tiers"
+fields = [
+  { name = "add_combat_log_line", kind = "unsigned", bits = 1, evidence = "opcode.0xb2", named_by = "opcode.0xb2" },
+]
+
+[[message]]
 id = 0x019F
 name = "innate_index_set"
 direction = "server_to_client"

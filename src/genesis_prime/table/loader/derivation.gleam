@@ -6,6 +6,7 @@ import genesis_prime/game/appearance
 import genesis_prime/game/communicator
 import genesis_prime/game/faction_level
 import genesis_prime/game/level_up
+import genesis_prime/game/limited_action_set
 import genesis_prime/game/loadout
 import genesis_prime/game/objective_action
 import genesis_prime/game/objective_link
@@ -57,6 +58,8 @@ import gleam/set.{type Set}
 ///   that has a relationship (genesis_prime/game/faction_level).
 /// - The communicator's index: the CommunicatorMessages rows of each quest they
 ///   deliver and the creatures that receive each quest (genesis_prime/game/communicator).
+/// - The action bar's slot unlocks: the level each of the twelve slots opens at, whose
+///   missing rows fail the load (genesis_prime/game/limited_action_set).
 /// - The quest rewards: each quest's Quest2Reward rows, which a turn-in reads
 ///   (genesis_prime/game/quest_turn_in).
 /// - The rating formulas: the hit rule's GameFormula rows (genesis_prime/game/rating).
@@ -81,6 +84,7 @@ pub fn all() -> List(store.Derivation) {
     passed_in_value.derivation(),
     shortcut_spell.derivation(),
     level_up.derivation(),
+    limited_action_set.derivation(),
     faction_level.derivation(),
     communicator.derivation(),
     quest_turn_in.derivation(),

@@ -117,7 +117,6 @@ import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/rating
 import genesis_prime/game/shown
 import genesis_prime/game/spell_area
-import genesis_prime/game/spell_plan
 import genesis_prime/game/spell_surge
 import genesis_prime/game/strike
 import genesis_prime/game/strike_tell.{type Answered}
@@ -808,13 +807,12 @@ pub fn caster_of(
   entered entered: world_entry.Entered,
 ) -> cast_state.Caster {
   let life = entered.life
-  let bag =
-    ability_book.bag(loadout: entered.loadout, level: entered.character.level)
+  let level = entered.character.level
   cast_state.Caster(
     unit_id: entered.unit_id,
     place: movement.place(entered.movement),
-    abilities: bag,
-    book: spell_plan.book(plans: spell_plan.plans_with_later(tables:), bag:),
+    abilities: ability_book.bag(loadout: entered.loadout, level:),
+    book: ability_book.book(tables:, loadout: entered.loadout, level:),
     surge_spell: spell_surge.spell(tables:),
     weapon: entered.gear.weapon,
     audience: connection_state.viewer_connections(entered:),

@@ -24,7 +24,9 @@
 ////   genesis_prime/table/loader/derivation holds the one switch that leaves them out.
 
 import genesis_prime/game/loadout.{type Loadout}
+import genesis_prime/game/spell_plan
 import genesis_prime/table/id.{type Spell4BaseId}
+import genesis_prime/table/loader/store as table_store
 import gleam/list
 import gleam/option.{None, Some}
 
@@ -35,6 +37,20 @@ pub fn bag(loadout loadout: Loadout, level level: Int) -> List(Spell4BaseId) {
     None -> loadout.abilities
   }
   list.append(start, granted(loadout:, from_level: 1, to_level: level))
+}
+
+/// The ability book as the client holds it at a level: the bag, then the alternate each
+/// bag ability names that the server can plan (`opcode.0x1a0`: the client's book holds
+/// the alternates a surged press casts). The one place a connection reads it from.
+pub fn book(
+  tables tables: table_store.Tables,
+  loadout loadout: Loadout,
+  level level: Int,
+) -> List(Spell4BaseId) {
+  spell_plan.book(
+    plans: spell_plan.plans_with_later(tables:),
+    bag: bag(loadout:, level:),
+  )
 }
 
 /// The abilities a rise from one level to a higher one gives, in bag order; none for a

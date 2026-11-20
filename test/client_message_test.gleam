@@ -7,6 +7,8 @@
 ////   bits (opcode.0x592).
 
 import genesis_prime/message/ability_hold.{AbilityHold}
+import genesis_prime/message/action_set_save.{ActionSetSave}
+import genesis_prime/message/action_set_tier_change.{ActionSetTierChange}
 import genesis_prime/message/bit_stream
 import genesis_prime/message/camp_finished.{CampFinished}
 import genesis_prime/message/camp_request.{CampRequest}
@@ -388,6 +390,17 @@ fn client_samples() -> List(#(Int, client_message.ClientMessage)) {
         target_unit_id: 0x12345,
         held: 1,
       )),
+    ),
+    #(
+      0x00B1,
+      client_message.ActionSetSave(
+        message: ActionSetSave(
+          spell4_base_ids: [27_638, 20_684, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+          action_set_index: 1,
+          tier_changes: [ActionSetTierChange(spell4_base_id: 20_684, tier: 2)],
+          amp_ids: [101],
+        ),
+      ),
     ),
     #(
       0x016F,
