@@ -7,6 +7,7 @@
 //// every row must end non-zero.
 
 import gleam/list
+import gleam/option.{Some}
 import gleam/result
 import gleam/string
 import owned_test
@@ -69,28 +70,41 @@ type Row {
   NoConfigFile
 }
 
+/// Every way a required value can be missing, each planted by `plant_row`.
+fn missing_rows() -> List(Row) {
+  list.flatten([
+    list.map(environment_values, fn(pair) { Unset(pair.0) }),
+    list.map(config_values, fn(pair) { Unset(pair.0) }),
+    [NoConfigFile],
+  ])
+}
+
+/// Plants the row's missing value and gives the row's label and the word the
+/// log line names it by.
+fn plant_row(scene scene: Scene, row row: Row) -> #(String, String) {
+  case row {
+    Unset(name) -> {
+      plant_missing(scene:, missing: name)
+      #(name, name)
+    }
+    NoConfigFile -> {
+      plant_missing(scene:, missing: "")
+      let assert Ok(Nil) =
+        simplifile.delete(scene.home <> "/play-service/config.sh")
+      #("no config.sh", "config.sh")
+    }
+  }
+}
+
+fn log_lines(scene: Scene) -> List(String) {
+  log_of(scene) |> string.split("\n") |> list.filter(fn(line) { line != "" })
+}
+
 pub fn a_missing_environment_value_ends_update_sh_non_zero_under_bash_3_2_test() -> Nil {
   use <- owned_test.run(60_000)
-  let rows =
-    list.flatten([
-      list.map(environment_values, fn(pair) { Unset(pair.0) }),
-      list.map(config_values, fn(pair) { Unset(pair.0) }),
-      [NoConfigFile],
-    ])
-  list.each(rows, fn(row) {
+  list.each(missing_rows(), fn(row) {
     use scene <- support.with_scene
-    let #(label, says) = case row {
-      Unset(name) -> {
-        plant_missing(scene:, missing: name)
-        #(name, name)
-      }
-      NoConfigFile -> {
-        plant_missing(scene:, missing: "")
-        let assert Ok(Nil) =
-          simplifile.delete(scene.home <> "/play-service/config.sh")
-        #("no config.sh", "config.sh")
-      }
-    }
+    let #(label, says) = plant_row(scene:, row:)
     let ran =
       support.run_script(
         scene:,
@@ -102,6 +116,66 @@ pub fn a_missing_environment_value_ends_update_sh_non_zero_under_bash_3_2_test()
       as { label <> ": the log names it, it holds " <> log_of(scene) }
     assert support.calls(scene) == []
       as { label <> ": a tool was called, so a step ran on" }
+  })
+}
+
+pub fn a_refusal_the_next_run_repeats_is_written_once_test() -> Nil {
+  use <- owned_test.run(60_000)
+  list.each(missing_rows(), fn(row) {
+    use scene <- support.with_scene
+    let #(label, _) = plant_row(scene:, row:)
+    let first =
+      support.run_script(
+        scene:,
+        script: "dev/play_service/update.sh",
+        extra: [],
+      )
+    let second =
+      support.run_script(
+        scene:,
+        script: "dev/play_service/update.sh",
+        extra: [],
+      )
+    assert first.status != 0 && second.status != 0
+      as { label <> ": a run ends well" }
+    assert list.length(log_lines(scene)) == 1
+      as { label <> ": two runs wrote " <> log_of(scene) }
+    assert second.output == ""
+      as { label <> ": the repeat printed " <> second.output }
+  })
+}
+
+pub fn a_stale_stand_with_an_incomplete_config_leaves_the_stand_line_written_once_test() -> Nil {
+  use <- owned_test.run(60_000)
+  list.each(config_values, fn(pair) {
+    use scene <- support.with_scene
+    plant_missing(scene:, missing: pair.0)
+    support.plant_live_lock(
+      scene:,
+      record: Some(support.owner_record(
+        kind: "session",
+        folder: "planted",
+        pid: support.ended_pid(),
+        started: "planted",
+      )),
+    )
+    support.make_old(path: support.live_lock_path(scene) <> "/owner")
+    list.each([1, 2, 3], fn(_) {
+      let ran =
+        support.run_script(
+          scene:,
+          script: "dev/play_service/update.sh",
+          extra: [],
+        )
+      assert ran.status == 0 as { pair.0 <> ": a held lock ends well" }
+    })
+    let lines = log_lines(scene)
+    assert list.length(lines) == 1
+      as { pair.0 <> ": three runs wrote " <> log_of(scene) }
+    assert string.contains(log_of(scene), "a live session holds")
+      as {
+        pair.0 <> ": the one line is the lock's, it holds " <> log_of(scene)
+      }
   })
 }
 
