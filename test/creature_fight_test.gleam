@@ -8467,6 +8467,24 @@ fn frames_of(
   })
 }
 
+/// The timers the step cancels, each named by the go it belongs to: "cancels deadline N" (the
+/// strike deadline of go N) or "cancels the pending go" (the `CastEnds` of `ice`).
+fn cancels_named(
+  taken taken: ServiceStep(creature.Outgoing),
+  ice ice: Ice,
+) -> List(String) {
+  list.map(timers_cancelled(taken), fn(timer) {
+    case list.find(ice.deadlines, fn(deadline) { deadline.1 == timer }) {
+      Ok(#(phase, _)) -> "cancels deadline " <> int.to_string(phase)
+      Error(Nil) ->
+        case ice.pending == Some(timer) {
+          True -> "cancels the pending go"
+          False -> "cancels another timer"
+        }
+    }
+  })
+}
+
 /// What the step does to the cast of `ice`: the timers it cancels (by go), the frames viewer
 /// `number` is sent and the timers it starts.
 fn observed(
@@ -8475,16 +8493,7 @@ fn observed(
   number number: Int,
 ) -> List(String) {
   list.flatten([
-    list.map(timers_cancelled(taken), fn(timer) {
-      case list.find(ice.deadlines, fn(deadline) { deadline.1 == timer }) {
-        Ok(#(phase, _)) -> "cancels deadline " <> int.to_string(phase)
-        Error(Nil) ->
-          case ice.pending == Some(timer) {
-            True -> "cancels the pending go"
-            False -> "cancels another timer"
-          }
-      }
-    }),
+    cancels_named(taken:, ice:),
     frames_of(taken:, number:),
     list.map(timers(taken), fn(started) {
       "starts " <> int.to_string(started.1)
@@ -8649,21 +8658,22 @@ pub fn the_rounds_of_overlapping_hits_are_written_in_go_order_test() -> Nil {
         // Strike gos 1,000 ms apart (as Spell4 45746's), so go 1's deadline and go 2 fall at
         // 5,500 ms.
         let spaced = fn() {
-          let special = spawn_support.ice_breath(hold_ms: 500)
-          let assert creature_life.Charged(gos: [_, first, second, last], ..) as charged =
-            special.attack.cast
           let special =
-            creature_life.Special(
-              ..special,
-              attack: creature_life.Attack(
-                ..special.attack,
-                cast: creature_life.Charged(..charged, gos: [
+            spawn_support.special_with_charged(
+              spawn_support.ice_breath(hold_ms: 500),
+              fn(charged) {
+                let assert creature_life.Charged(
+                  gos: [_, first, second, last],
+                  ..,
+                ) = charged
+                  as "Ice Breath has four gos"
+                creature_life.Charged(..charged, gos: [
                   creature_life.Go(at_ms: 2000, strike: None),
                   creature_life.Go(..first, at_ms: 3000),
                   creature_life.Go(..second, at_ms: 4000),
                   creature_life.Go(..last, at_ms: 4500),
-                ]),
-              ),
+                ])
+              },
             )
           let #(state, aggro) = ice_fought_with(special:, viewers: [2])
           let #(state, _, first_go) =
@@ -8749,15 +8759,14 @@ pub fn a_hit_that_selects_nobody_is_an_empty_entry_and_the_cast_goes_on_test() -
   // Row (b): the hits are on the cast's target (`FollowsTarget`), which is no longer a viewer,
   // with player 5 still fighting: go 1 and go 2 are empty entries written in order, go 3 is
   // written and the cast finishes.
-  let special = spawn_support.ice_breath(hold_ms: 500)
-  let assert creature_life.Charged(..) as charged = special.attack.cast
   let on_target =
-    creature_life.Special(
-      ..special,
-      attack: creature_life.Attack(
-        ..special.attack,
-        cast: creature_life.Charged(..charged, anchor: area.FollowsTarget),
-      ),
+    spawn_support.special_with_charged(
+      spawn_support.ice_breath(hold_ms: 500),
+      fn(charged) {
+        let assert creature_life.Charged(..) = charged
+          as "Ice Breath is a charge"
+        creature_life.Charged(..charged, anchor: area.FollowsTarget)
+      },
     )
   let #(state, aggro) = ice_fought_with(special: on_target, viewers: [2, 5])
   let state = with_player_at(state:, number: 5, x: 0.0, z: -3.0)
@@ -8797,14 +8806,12 @@ fn ice_with_players(
 
 /// The special with the blows and gos named, whatever else Ice Breath holds.
 fn ice_with_gos(gos gos: List(creature_life.Go)) -> creature_life.Special {
-  let special = spawn_support.ice_breath(hold_ms: 500)
-  let assert creature_life.Charged(..) as charged = special.attack.cast
-  creature_life.Special(
-    ..special,
-    attack: creature_life.Attack(
-      ..special.attack,
-      cast: creature_life.Charged(..charged, gos:),
-    ),
+  spawn_support.special_with_charged(
+    spawn_support.ice_breath(hold_ms: 500),
+    fn(charged) {
+      let assert creature_life.Charged(..) = charged as "Ice Breath is a charge"
+      creature_life.Charged(..charged, gos:)
+    },
   )
 }
 
@@ -8861,12 +8868,6 @@ pub fn each_hit_strikes_the_fighters_and_the_blows_that_name_its_go_test() -> Ni
   // Row (b): Spell4 45951's gos 200, 1,000, 1,200 and 1,800 ms with its two damage rows,
   // 107436 (phaseFlags 2: go 1) and 107454 (phaseFlags 8: go 3); crit chance, severity and
   // strikethrough are the attack's.
-  let two_rows =
-    creature_life.Special(
-      ..spawn_support.ice_breath(hold_ms: 0),
-      cooldown_ms: 10_000,
-    )
-  let assert creature_life.Charged(..) as charged = two_rows.attack.cast
   let blow = fn(id) {
     Blow(
       spell4_effects_id: id,
@@ -8876,18 +8877,13 @@ pub fn each_hit_strikes_the_fighters_and_the_blows_that_name_its_go_test() -> Ni
       threat_multiplier: 1.0,
     )
   }
-  let special =
-    creature_life.Special(
-      ..two_rows,
-      attack: creature_life.Attack(
-        ..two_rows.attack,
-        offence: Offence(
-          blows: [blow(107_436), blow(107_454)],
-          crit_chance: 0.25,
-          crit_severity: 1.75,
-          strikethrough: 0.125,
-        ),
-        cast: creature_life.Charged(..charged, cast_ms: 1800, gos: [
+  let two_rows =
+    spawn_support.special_with_charged(
+      spawn_support.ice_breath(hold_ms: 0),
+      fn(charged) {
+        let assert creature_life.Charged(..) = charged
+          as "Ice Breath is a charge"
+        creature_life.Charged(..charged, cast_ms: 1800, gos: [
           creature_life.Go(at_ms: 200, strike: None),
           creature_life.Go(
             at_ms: 1000,
@@ -8904,7 +8900,20 @@ pub fn each_hit_strikes_the_fighters_and_the_blows_that_name_its_go_test() -> Ni
               inside: spawn_support.ice_breath_cone(turn_degrees: 10.0),
             )),
           ),
-        ]),
+        ])
+      },
+    )
+  let special =
+    creature_life.Special(
+      ..two_rows,
+      attack: creature_life.Attack(
+        ..two_rows.attack,
+        offence: Offence(
+          blows: [blow(107_436), blow(107_454)],
+          crit_chance: 0.25,
+          crit_severity: 1.75,
+          strikethrough: 0.125,
+        ),
       ),
     )
   let #(state, aggro) = ice_fought_with(special:, viewers: [2])
@@ -8984,8 +8993,8 @@ type Break {
 }
 
 /// A row of the table of breaks between hits: the gos handled (`through`), the hits answered
-/// before the break, what breaks the cast and when, the frames the break sends viewer 2, how
-/// many timers it cancels, whether a second state follows and finds nothing, and the answer
+/// before the break, what breaks the cast and when, the frames the break sends viewer 2, the
+/// timers it cancels (`cancels_named`), whether a second state follows and finds nothing, and the answer
 /// that arrives after the break with the frames it sends.
 type BreakRow {
   BreakRow(
@@ -8995,7 +9004,7 @@ type BreakRow {
     interrupt: Break,
     at_ms: Int,
     frames: List(String),
-    cancelled: Int,
+    cancelled: List(String),
     second_state: Bool,
     then_answer: Option(Int),
     then_frames: List(String),
@@ -9028,7 +9037,7 @@ pub fn a_state_between_hits_ends_the_rest_of_the_cast_and_closes_the_open_rounds
       interrupt: Stun,
       at_ms: 4600,
       frames: ["0x7f4 phase 1 []", "0x7f9"],
-      cancelled: 2,
+      cancelled: ["cancels the pending go", "cancels deadline 1"],
       second_state: False,
       then_answer: Some(1),
       then_frames: [],
@@ -9040,7 +9049,7 @@ pub fn a_state_between_hits_ends_the_rest_of_the_cast_and_closes_the_open_rounds
       interrupt: Stun,
       at_ms: 4800,
       frames: ["0x7f9"],
-      cancelled: 1,
+      cancelled: ["cancels the pending go"],
       second_state: False,
       then_answer: None,
       then_frames: [],
@@ -9052,7 +9061,7 @@ pub fn a_state_between_hits_ends_the_rest_of_the_cast_and_closes_the_open_rounds
       interrupt: Stun,
       at_ms: 5100,
       frames: ["0x7f4 phase 2 []", "0x7f9"],
-      cancelled: 2,
+      cancelled: ["cancels the pending go", "cancels deadline 2"],
       second_state: False,
       then_answer: Some(2),
       then_frames: [],
@@ -9064,7 +9073,7 @@ pub fn a_state_between_hits_ends_the_rest_of_the_cast_and_closes_the_open_rounds
       interrupt: Stun,
       at_ms: 5350,
       frames: [],
-      cancelled: 0,
+      cancelled: [],
       second_state: False,
       then_answer: Some(2),
       then_frames: ["0x7f4 phase 2 [20]", "0x7f4 phase 3 []", "0x7fe"],
@@ -9076,7 +9085,7 @@ pub fn a_state_between_hits_ends_the_rest_of_the_cast_and_closes_the_open_rounds
       interrupt: Stun,
       at_ms: 4600,
       frames: ["0x7f4 phase 1 []", "0x7f9"],
-      cancelled: 2,
+      cancelled: ["cancels the pending go", "cancels deadline 1"],
       second_state: True,
       then_answer: None,
       then_frames: [],
@@ -9088,7 +9097,7 @@ pub fn a_state_between_hits_ends_the_rest_of_the_cast_and_closes_the_open_rounds
       interrupt: Throw,
       at_ms: 4600,
       frames: ["0x7f4 phase 1 []", "0x7f9"],
-      cancelled: 2,
+      cancelled: ["cancels the pending go", "cancels deadline 1"],
       second_state: False,
       then_answer: None,
       then_frames: [],
@@ -9104,7 +9113,7 @@ pub fn a_state_between_hits_ends_the_rest_of_the_cast_and_closes_the_open_rounds
     let #(state, broken) =
       broken_by(state: ice.state, interrupt: row.interrupt, at_ms: row.at_ms)
     assert frames_of(taken: broken, number: 2) == row.frames as row.reason
-    assert list.length(timers_cancelled(broken)) == row.cancelled
+    assert cancels_named(taken: broken, ice:) == row.cancelled
       as {
         row.reason <> ": the pending go and each open deadline are cancelled"
       }
@@ -9186,8 +9195,6 @@ fn guarded_turret_with(
   viewers viewers: List(Int),
 ) -> #(State, ServiceStep(creature.Outgoing)) {
   let spawn = spawn_support.sim_turret(number: 1, place: at(0.0))
-  let assert creature_life.Charged(..) as charged = spawn.combat.attack.cast
-    as "the turret's attack is a charge"
   let kinds = spawn_support.guarded_turret_kinds()
   let assert Ok(kind) = dict.get(kinds.by_creature, 73_494)
     as "migrations 0029 and 0030 give the Exile turret its kind"
@@ -9197,9 +9204,13 @@ fn guarded_turret_with(
       ..spawn,
       combat: creature_life.Combat(
         ..spawn.combat,
-        attack: creature_life.Attack(
-          ..spawn.combat.attack,
-          cast: creature_life.Charged(..charged, gos:),
+        attack: spawn_support.attack_with_charged(
+          attack: spawn.combat.attack,
+          change: fn(charged) {
+            let assert creature_life.Charged(..) = charged
+              as "the turret's attack is a charge"
+            creature_life.Charged(..charged, gos:)
+          },
         ),
       ),
     ),
@@ -9287,7 +9298,7 @@ pub fn death_and_the_leash_between_hits_cancel_every_timer_and_close_the_cast_on
       ends: Death,
       at_ms: 4600,
       frames: ["0x7fe"],
-      cancelled: 2,
+      cancelled: ["cancels the pending go", "cancels deadline 1"],
     ),
     DeathRow(
       reason: "the leash with strikes out at go 1 and go 2 and go 3 pending: both open rounds are written with no target, in order, then one 0x7fe",
@@ -9296,7 +9307,11 @@ pub fn death_and_the_leash_between_hits_cancel_every_timer_and_close_the_cast_on
       ends: Leash,
       at_ms: 5100,
       frames: ["0x7f4 phase 1 []", "0x7f4 phase 2 []", "0x7fe"],
-      cancelled: 3,
+      cancelled: [
+        "cancels the pending go",
+        "cancels deadline 1",
+        "cancels deadline 2",
+      ],
     ),
     DeathRow(
       reason: "death with every go reached, go 2's round open and go 3 complete behind it: go 2's deadline is cancelled once, one 0x7fe and no 0x7f4",
@@ -9305,7 +9320,7 @@ pub fn death_and_the_leash_between_hits_cancel_every_timer_and_close_the_cast_on
       ends: Death,
       at_ms: 5350,
       frames: ["0x7fe"],
-      cancelled: 1,
+      cancelled: ["cancels deadline 2"],
     ),
     DeathRow(
       reason: "the leash with every go reached: phase 2, then phase 3 with no target, then the 0x7fe",
@@ -9314,7 +9329,7 @@ pub fn death_and_the_leash_between_hits_cancel_every_timer_and_close_the_cast_on
       ends: Leash,
       at_ms: 5350,
       frames: ["0x7f4 phase 2 []", "0x7f4 phase 3 []", "0x7fe"],
-      cancelled: 1,
+      cancelled: ["cancels deadline 2"],
     ),
   ]
   |> list.each(fn(row) {
@@ -9341,7 +9356,7 @@ pub fn death_and_the_leash_between_hits_cancel_every_timer_and_close_the_cast_on
         )
     }
     assert frames_of(taken: ended, number: 3) == row.frames as row.reason
-    assert list.length(timers_cancelled(ended)) == row.cancelled
+    assert cancels_named(taken: ended, ice:) == row.cancelled
       as { row.reason <> ": every timer of the cast is cancelled once" }
     // Whatever fires after: the go timers, the deadlines and a late answer do nothing.
     list.each(
@@ -9377,7 +9392,7 @@ type DeathRow {
     ends: EndsBy,
     at_ms: Int,
     frames: List(String),
-    cancelled: Int,
+    cancelled: List(String),
   )
 }
 

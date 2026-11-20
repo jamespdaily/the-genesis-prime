@@ -505,19 +505,41 @@ pub type Round {
   )
 }
 
-/// One go of a round that was reached and not yet written (0x7f4), in go order. A go with no
-/// strike, or that strikes nobody, is an entry with no `deadline` and nothing awaited. A
-/// strike go holds the generation of its `StrikeDeadline` timer, the key of each strike not
-/// answered yet with the connection it went to, and what the answers struck so far. An entry
-/// is complete when none is awaited (every answer is in, or its deadline passed); it is
-/// written when it is complete and every entry before it is written.
+/// One go of a round that was reached and not yet written (0x7f4), in go order: what it still
+/// awaits (`Awaiting`) and what the answers struck so far. An entry is complete when it awaits
+/// nothing (no strike, a strike that struck nobody, every answer in, or its deadline passed);
+/// it is written when it is complete and every entry before it is written.
 pub type GoRound {
-  GoRound(
-    phase: Int,
-    deadline: Option(Int),
-    awaiting: Dict(Key, ConnectionId),
-    struck: List(cast_state.Struck),
-  )
+  GoRound(phase: Int, awaiting: Awaiting, struck: List(cast_state.Struck))
+}
+
+/// The strikes of a go not answered yet. `Pending` holds the generation of the go's
+/// `StrikeDeadline` timer with the key of each strike not answered, each with the connection it
+/// went to. It is built only by `pending` and `without_answer`, which give `Complete` for no
+/// key, so a go never awaits an answer with no deadline to end the wait, and a deadline is
+/// never held for a go that awaits nothing.
+pub type Awaiting {
+  Complete
+  Pending(deadline: Int, keys: Dict(Key, ConnectionId))
+}
+
+/// The go awaits the strikes of `keys` until its `StrikeDeadline` of `deadline`; no key is
+/// `Complete`.
+fn pending(
+  deadline deadline: Int,
+  keys keys: Dict(Key, ConnectionId),
+) -> Awaiting {
+  use <- bool.guard(when: dict.is_empty(keys), return: Complete)
+  Pending(deadline:, keys:)
+}
+
+/// `awaiting` after the answer of `key`: `Complete` when it was the last one awaited.
+fn without_answer(awaiting awaiting: Awaiting, key key: Key) -> Awaiting {
+  case awaiting {
+    Complete -> Complete
+    Pending(deadline:, keys:) ->
+      pending(deadline:, keys: dict.delete(keys, key))
+  }
 }
 
 /// What a cast fixed when it started: the creature's pose, which is its facing after it turned
@@ -856,10 +878,7 @@ fn stepped(
           case deadline_entry(round:, generation:) {
             Ok(entry) -> {
               let round =
-                with_entry(
-                  round:,
-                  entry: GoRound(..entry, awaiting: dict.new()),
-                )
+                with_entry(round:, entry: GoRound(..entry, awaiting: Complete))
               let #(state, written, ticking) =
                 settled(state:, fighter:, round:, now_ms:)
               #(state, list.append(written, ticking))
@@ -1840,8 +1859,7 @@ fn strikes(
   let entry =
     GoRound(
       phase: 0,
-      deadline: Some(deadline),
-      awaiting: dict.from_list([#(key, target)]),
+      awaiting: pending(deadline:, keys: dict.from_list([#(key, target)])),
       struck: [],
     )
   #(
@@ -1926,7 +1944,11 @@ fn answered_entry(
   key key: Key,
 ) -> Result(#(GoRound, ConnectionId), Nil) {
   list.find_map(round.go_rounds, fn(entry) {
-    dict.get(entry.awaiting, key) |> result.map(fn(target) { #(entry, target) })
+    case entry.awaiting {
+      Pending(keys:, ..) ->
+        dict.get(keys, key) |> result.map(fn(target) { #(entry, target) })
+      Complete -> Error(Nil)
+    }
   })
 }
 
@@ -1936,7 +1958,10 @@ fn deadline_entry(
   generation generation: Int,
 ) -> Result(GoRound, Nil) {
   list.find(round.go_rounds, fn(entry) {
-    entry.deadline == Some(generation) && !dict.is_empty(entry.awaiting)
+    case entry.awaiting {
+      Pending(deadline:, ..) -> deadline == generation
+      Complete -> False
+    }
   })
 }
 
@@ -1966,16 +1991,19 @@ fn answer_taken(
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
   let #(struck, ends_target, target_dead) = answer_of(answered:)
+  let was_awaiting = entry.awaiting
   let entry =
     GoRound(
       ..entry,
-      awaiting: dict.delete(entry.awaiting, answered.key),
+      awaiting: without_answer(awaiting: entry.awaiting, key: answered.key),
       struck: list.append(entry.struck, struck),
     )
   let round = with_entry(round:, entry:)
-  let cancelled = case dict.is_empty(entry.awaiting), entry.deadline {
-    True, Some(deadline) -> [CancelTimer(timer: StrikeDeadline(deadline))]
-    True, None | False, _ -> []
+  let cancelled = case entry.awaiting, was_awaiting {
+    Complete, Pending(deadline:, ..) -> [
+      CancelTimer(timer: StrikeDeadline(deadline)),
+    ]
+    Complete, Complete | Pending(..), _ -> []
   }
   let #(state, written, ticking) = settled(state:, fighter:, round:, now_ms:)
   // The next tick and its hold are set before the target's entry ends, so the retarget that
@@ -2055,9 +2083,7 @@ fn settled(
 ) -> #(State, List(Effect), List(Effect)) {
   let here = creature_path.place_at(path: state.path, now_ms:)
   let #(ready, waiting) =
-    list.split_while(round.go_rounds, fn(entry) {
-      dict.is_empty(entry.awaiting)
-    })
+    list.split_while(round.go_rounds, fn(entry) { entry.awaiting == Complete })
   let written = list.flat_map(ready, written_entry(round:, entry: _, here:))
   case round.stage, waiting {
     Striking, [] -> {
@@ -2246,11 +2272,7 @@ fn go_reached(
         viewers:,
         now_ms:,
       )
-    None -> #(
-      state,
-      GoRound(phase: go, deadline: None, awaiting: dict.new(), struck: []),
-      [],
-    )
+    None -> #(state, GoRound(phase: go, awaiting: Complete, struck: []), [])
   }
   let #(state, stage, armed) = case list.first(list.drop(gos, go + 1)) {
     Ok(next) -> {
@@ -2312,11 +2334,7 @@ fn go_strikes(
     None -> []
   }
   case struck {
-    [] -> #(
-      state,
-      GoRound(phase: go, deadline: None, awaiting: dict.new(), struck: []),
-      [],
-    )
+    [] -> #(state, GoRound(phase: go, awaiting: Complete, struck: []), [])
     [_, ..] ->
       strikes_sent(state:, fighter:, round:, attack:, strike:, go:, struck:)
   }
@@ -2351,9 +2369,9 @@ fn strikes_sent(
   let entry =
     GoRound(
       phase: go,
-      deadline: Some(deadline),
-      awaiting: dict.from_list(
-        list.map(keyed, fn(found) { #(found.2, found.0) }),
+      awaiting: pending(
+        deadline:,
+        keys: dict.from_list(list.map(keyed, fn(found) { #(found.2, found.0) })),
       ),
       struck: [],
     )
@@ -2672,10 +2690,10 @@ fn cancels_of(round round: Round) -> List(Effect) {
   }
   let deadlines =
     list.filter_map(round.go_rounds, fn(entry) {
-      case entry.deadline, dict.is_empty(entry.awaiting) {
-        Some(deadline), False ->
+      case entry.awaiting {
+        Pending(deadline:, ..) ->
           Ok(CancelTimer(timer: StrikeDeadline(deadline)))
-        Some(_), True | None, _ -> Error(Nil)
+        Complete -> Error(Nil)
       }
     })
   list.append(pending, deadlines)

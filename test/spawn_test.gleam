@@ -2234,8 +2234,8 @@ pub fn the_eldan_security_construct_loads_laser_bolt_with_its_circle_on_the_targ
     assert cast_ms == 3000
     assert anchor == area.FixedAtTarget as "tt 2 with 0x1000 and 0x4000"
     assert row.max_range == 10.0 as "area row 116"
-    assert inside
-      == area.InsideShapes(placements: [
+    let circle_of_4 =
+      area.InsideShapes(placements: [
         area.Placement(
           shape: area.Circle(radius: 4.0),
           ahead: 0.0,
@@ -2243,6 +2243,7 @@ pub fn the_eldan_security_construct_loads_laser_bolt_with_its_circle_on_the_targ
           turn_degrees: 0.0,
         ),
       ])
+    assert inside == circle_of_4
     assert draws
       == [
         telegraph_entries.Draw(
@@ -2255,7 +2256,17 @@ pub fn the_eldan_security_construct_loads_laser_bolt_with_its_circle_on_the_targ
           turn_degrees: 0.0,
         ),
       ]
-    assert gos == [Go(at_ms: 3000, strikes: True)]
+    assert gos
+      == [
+        creature_life.Go(
+          at_ms: 3000,
+          strike: Some(creature_life.GoStrike(
+            spell4_effects_ids: [133_289],
+            inside: circle_of_4,
+          )),
+        ),
+      ]
+      as "SpellPhase 11613 at 3000 and the damage row 133289 (phaseFlags 1, go 0)"
     assert !aims_at_target as "propertyFlags 12582912 has no bit 0x2"
   })
 }

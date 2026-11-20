@@ -573,6 +573,29 @@ pub fn beast_striker() -> strike_tell.Striker {
   strike_tell.CreatureStriker(unit_id: 7, spell4_id: beast_attack().spell4_id)
 }
 
+/// `attack` with its charge changed by `change`, whatever else the attack holds: `change`
+/// gets the charge and returns the charge to cast instead.
+pub fn attack_with_charged(
+  attack attack: creature_life.Attack,
+  change change: fn(creature_life.Cast) -> creature_life.Cast,
+) -> creature_life.Attack {
+  let assert creature_life.Charged(..) = attack.cast
+    as "only a charged attack has a charge to change"
+  creature_life.Attack(..attack, cast: change(attack.cast))
+}
+
+/// `special` with its charge changed by `change` (`attack_with_charged`), whatever else the
+/// special holds.
+pub fn special_with_charged(
+  special special: creature_life.Special,
+  change change: fn(creature_life.Cast) -> creature_life.Cast,
+) -> creature_life.Special {
+  creature_life.Special(
+    ..special,
+    attack: attack_with_charged(attack: special.attack, change:),
+  )
+}
+
 /// The Virtual Battle Beast's attack: Spell4 5649, whose effect 184741 hits for 12
 /// at difficulty 1 (`Spell4Effects.184741`, `0x140565600`), Physical (damage type
 /// 1), with no critical hit or strikethrough; a run speed of 10.0
@@ -859,6 +882,7 @@ pub fn ice_breath(hold_ms hold_ms: Int) -> creature_life.Special {
       ),
       run_speed: 10.0,
       reach: 5.5,
+      adds_target_radius: False,
       cast: creature_life.Charged(
         cast_ms: 3800,
         area: area.Row(
