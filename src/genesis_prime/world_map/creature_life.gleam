@@ -112,8 +112,9 @@ pub type Cast {
   /// toward its 0x908 target through a cast of such a spell, and holds the aim it had at
   /// the cast's start through any other (`0x14046cdc0.turret_cast_aim`). `gos` is the
   /// cast's timeline (`Go`): never empty, each `at_ms` above the one before; a go strikes
-  /// when damage rows name it, they apply to the creature's difficulty and a hit row it names
-  /// is drawn then. `hold_ms` is how long the creature then stands still before it attacks again:
+  /// when damage rows name it, they apply to the creature's difficulty and a hit row is drawn
+  /// then (a spell with no hit row strikes at every go it names, inside its area row).
+  /// `hold_ms` is how long the creature then stands still before it attacks again:
   /// the summed `delay_ms + duration_ms` of the NpcExecutionDelay rows (Spell4Effects type
   /// 35) whose phase flags name the cast's last go, 0 for none; the load refuses a delay row
   /// that names another go. The hold counts from the cast's close, after the last go and
