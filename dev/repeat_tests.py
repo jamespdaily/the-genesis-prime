@@ -18,21 +18,20 @@ because unitest runs one file per start. The skip variables are the ones ./check
 sets: the tests tagged serial (they share a machine-wide resource, so VMs side by side
 would break them), world_data, client_rows and dev_tool are not run.
 
-A time limit never fails the run, only a wrong result does. GENESIS_REPEAT_SECONDS (default
-450) is the budget for all the runs together: once it has passed, runs not yet started do not
-start, and one `check WARNING:` line says how many runs of each file were done of how many were
-planned. The default is the 15-minute job less about 90 seconds of setup less the 300 seconds
-a run already going at the budget may still take. A run still going after
-GENESIS_REPEAT_RUN_SECONDS (default 300) is killed so the job ends, and is printed as a
-`check WARNING:` line with its file, seed and the command that repeats it, then its output's
-`check WARNING:` lines (owned_test's name the waits still open) and its last lines; it is not
-counted as a failure. A file whose every test is skipped (or that has none) runs 0 tests; it is
-reported as "not repeated", never as passed, and its later runs do not start.
+A run that does not end fails the run: a test that hangs only under load is the
+timing fault this tool looks for. GENESIS_REPEAT_SECONDS (default 450) is the budget for
+all the runs together: once it has passed, runs not yet started do not start, and one
+`check WARNING:` line says how many runs of each file were done of how many were planned
+(a budget that ran out fails nothing). The default is the 15-minute job less about 90 seconds
+of setup less the 300 seconds a run already going at the budget may still take. A run still
+going after GENESIS_REPEAT_RUN_SECONDS (default 300) is killed so the job ends, and is
+reported as a failed run. A file whose every test is skipped (or that has none) runs 0 tests;
+it is reported as "not repeated", never as passed, and its later runs do not start.
 
 Each failing run is printed as soon as it ends: its file, seed, why it failed (failing
-tests, killed by a signal, a non-zero exit, no result line), the command that repeats it (`gleam test -- FILE --seed SEED`)
+tests, killed by a signal, a non-zero exit, no result line, still going at the run limit), the command that repeats it (`gleam test -- FILE --seed SEED`)
 and the part of its output that says why. The output of every run is kept in the folder
-the failure names. The script exits 1 only when a run's tests failed or the run crashed, 2 for a setting or a
+the failure names. The script exits 1 when a run's tests failed, a run crashed or a run was killed at the limit, 2 for a setting or a
 git answer it cannot use, and 0 otherwise, warnings included. It starts `erl` from PATH, so run it with the patched OTP first on PATH,
 as ./check does.
 """
@@ -187,10 +186,11 @@ def print_excerpt(lines: list[str]) -> None:
 
 def report_timeout(outcome: Outcome) -> None:
     run = outcome.run
-    print(
-        "%s %s with seed %d was %s, so it counts as neither passed nor failed; repeat it: gleam test -- %s --seed %d"
-        % (WARNING, run.file, run.seed, outcome.reason, run.file, run.seed),
-    )
+    print()
+    print("FAILED %s with seed %d (%s)" % (run.file, run.seed, outcome.reason))
+    print("  failing tests: none, the run never ended")
+    print("  repeat it: gleam test -- %s --seed %d" % (run.file, run.seed))
+    print("  output: %s" % outcome.log)
     # A seed orders the tests but does not replay a hang (the rolls come from the
     # operating system), so the log is the only record of what hung: owned_test's
     # warnings name the waits still open, and output after them can push them out
@@ -262,6 +262,7 @@ def main(arguments: list[str]) -> int:
                 failed += 1
                 report_failure(outcome)
             elif outcome.kind == "timed_out":
+                failed += 1
                 report_timeout(outcome)
             elif outcome.kind == "passed":
                 passed += 1

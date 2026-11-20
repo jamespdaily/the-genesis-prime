@@ -17,7 +17,8 @@ the status line, the seed, and for a failing run the "Failures:" section.
   failing test does;
 - PLANT_KILLED_ON_START=N: the Nth stub is killed (signal 9) after printing its seed,
   so its output has no "Failures:" section;
-- PLANT_HANGS_ON_START=N: the Nth stub never ends (the script's per-run limit kills it);
+- PLANT_HANGS_ON_START=N: the Nth stub never ends (the script's per-run limit kills it, and
+  the run counts as failed);
 - a file named *all_skipped* prints "0 passed, no failures, 3 skipped", as unitest does
   for a file whose tests are all skipped.
 
@@ -285,7 +286,6 @@ class RepeatTestsTest(PlantedRepeatCase):
             self.assertIn(row["file"], output)
         self.assertIn("planted_test.the_planted_rule_test", output)
         self.assertIn("killed by signal 9", output, "a run with no Failures section is still reported")
-        self.assertIn("check WARNING:", output, "a run over its limit is a warning, not a failure")
         self.assertIn("still going after 1 seconds", output)
         self.assertIn("    check WARNING: test planted_test:the_hung_test", output, "a killed run names its open waits")
         self.assertIn("    later output 30", output, "a killed run prints its last lines")
@@ -293,7 +293,24 @@ class RepeatTestsTest(PlantedRepeatCase):
         for row in rows:
             if row not in failing.values():
                 self.assertNotIn(row["seed"], output, "a passing run's seed is not named")
-        self.assertIn("2 of 39 runs failed", output)
+        self.assertIn("3 of 40 runs failed", output, "a killed run counts as failed")
+
+    def test_a_run_the_tool_killed_fails_the_repeat(self):
+        self.commit("change a test file", change=["test/changed_test.gleam"])
+        done = self.run_script(
+            GENESIS_REPEAT_RUNS="6",
+            GENESIS_REPEAT_AT_ONCE="3",
+            GENESIS_REPEAT_RUN_SECONDS="1",
+            PLANT_HANGS_ON_START="4",
+        )
+        output = done.stdout + done.stderr
+        self.assertEqual(done.returncode, 1, output)
+        hung = next(row for row in self.starts() if row["start"] == "4")
+        self.assertIn("FAILED test/changed_test.gleam with seed %s" % hung["seed"], output)
+        self.assertIn("still going after 1 seconds and was killed", output)
+        self.assertIn("    check WARNING: test planted_test:the_hung_test", output, "the open waits are named")
+        self.assertIn("1 of 6 runs failed", output)
+        self.assertNotIn("all ", output.splitlines()[-1], "a repeat with a killed run never says all passed")
 
 
 if __name__ == "__main__":
