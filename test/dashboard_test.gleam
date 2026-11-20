@@ -8,13 +8,21 @@ import dashboard_support
 import frame_peer
 import genesis_prime/dashboard
 import genesis_prime/dashboard/access
+import genesis_prime/dashboard/host
+import genesis_prime/dashboard/host_reading.{type Reading}
+import genesis_prime/dashboard/overview.{Model}
 import genesis_prime/dashboard/secret
 import gleam/bit_array
+import gleam/bool
+import gleam/erlang/process
 import gleam/int
 import gleam/list
-import gleam/option.{None}
+import gleam/option.{None, Some}
 import gleam/string
+import lustre/element
+import open_wait
 import owned_test
+import play_service_support.{Answer} as support
 import simplifile
 
 fn started(settings: dashboard.Settings) -> dashboard.Running {
@@ -238,4 +246,238 @@ pub fn every_route_and_the_websocket_refuse_without_the_key_and_a_refused_upgrad
   assert bit_array.byte_size(first) > 0
   assert dashboard.runtime_count(running) == 1
   dashboard_support.close(connection)
+}
+
+/// Opens the page's websocket as a browser does and returns the connection
+/// once the server has upgraded it. The runtimes' factory is rebuilt for a
+/// moment when the poller was, and the server then answers 503; the next ask
+/// is made at once, since each ends with the server's answer.
+fn opened_socket(port: Int, key: String) -> dashboard_support.Connection {
+  let origin = "http://127.0.0.1:" <> int.to_string(port)
+  let #(connection, reply) =
+    dashboard_support.handshake(port:, path: "/k/" <> key <> "/ws", headers: [
+      #("Origin", origin),
+      ..dashboard_support.browser(port:)
+    ])
+  case reply.status {
+    101 -> connection
+    503 -> {
+      dashboard_support.close(connection)
+      opened_socket(port, key)
+    }
+    status -> panic as { "the socket answered " <> int.to_string(status) }
+  }
+}
+
+/// The text of the frames the server sends on the connection until every
+/// needle has been in one of them.
+fn frames_holding(
+  connection: dashboard_support.Connection,
+  needles: List(String),
+) -> String {
+  frames_holding_after(connection:, needles:, seen: "")
+}
+
+fn frames_holding_after(
+  connection connection: dashboard_support.Connection,
+  needles needles: List(String),
+  seen seen: String,
+) -> String {
+  use <- bool.guard(
+    when: list.all(needles, string.contains(seen, _)),
+    return: seen,
+  )
+  let frame = dashboard_support.read_frame(connection)
+  let assert Ok(text) = bit_array.to_string(frame) as "a frame is not text"
+  frames_holding_after(connection:, needles:, seen: seen <> "\n" <> text)
+}
+
+pub fn a_dead_poller_takes_the_page_runtimes_with_it_and_a_new_tab_is_served_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use home <- dashboard_support.with_home
+  let settings = dashboard_support.settings(home)
+  let running = started(settings)
+  let key = dashboard_support.written_key(home:)
+
+  // A page is open: one runtime, and the reading the poller made.
+  let first = opened_socket(settings.port, key)
+  let _first = frames_holding(first, ["9d2015a0"])
+  assert dashboard.runtime_count(running) == 1
+
+  // The poller dies: the supervisor rebuilds it with the factory of the
+  // runtimes, so the page's socket closes.
+  let assert Ok(poller_pid) = process.subject_owner(running.poller)
+  process.kill(poller_pid)
+  assert dashboard_support.closes(first) as "the page's socket stayed open"
+
+  // A new tab is served: one runtime, the old one gone with its factory, and
+  // a reading from the rebuilt poller.
+  let second = opened_socket(settings.port, key)
+  let _second = frames_holding(second, ["9d2015a0"])
+  assert dashboard.runtime_count(running) == 1
+  dashboard_support.close(second)
+}
+
+/// What `lsof` prints with two connections established on the game port.
+const two_connections =
+  "COMMAND   PID USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
+gvproxy  4242 jim   10u  IPv4 0x1      0t0  TCP 127.0.0.1:24000->127.0.0.1:50001 (ESTABLISHED)
+gvproxy  4242 jim   11u  IPv4 0x2      0t0  TCP 127.0.0.1:24000->127.0.0.1:50002 (ESTABLISHED)
+"
+
+/// The Overview's markup for a reading, as the page's runtime renders it.
+fn overview_html(reading: Reading) -> String {
+  element.to_string(overview.view(Model(reading: Some(reading))))
+}
+
+/// Fails, naming the stage and the word, when the markup lacks one of `words`.
+fn assert_shows(
+  html html: String,
+  words words: List(String),
+  stage stage: String,
+) -> Nil {
+  list.each(words, fn(word) {
+    assert string.contains(html, word)
+      as { stage <> ": the Overview does not show " <> word }
+  })
+}
+
+/// The whole run: the real `state.sh` under fake `podman` and `lsof` (the
+/// scene's `PATH` holds no other), the poller, the page runtime and the
+/// socket. Every wait ends with a reading the poller sent or a frame of the
+/// page; the script's bounds count looks the fake look answers at once, and the
+/// poller's deadline is a day, so no machine's load can end a read early.
+pub fn the_overview_shows_what_state_sh_reports_and_marks_it_stale_when_it_fails_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use scene <- support.with_scene
+
+  // The planted world: a live lock of a client start and an update lock whose
+  // owner is this test's own process, a hold, and the updater's log; Podman
+  // and the machine healthy, two connections on the game port.
+  let pid = support.os_pid()
+  let process_words = "(process " <> int.to_string(pid) <> ")"
+  let owner =
+    support.owner_record(
+      kind: "client",
+      folder: "",
+      pid:,
+      started: support.started_text(pid:),
+    )
+  support.plant_live_lock(scene:, record: Some(owner))
+  support.plant_update_lock(scene:, owner: Some(pid))
+  support.plant_hold(scene)
+  support.plant_home_file(
+    scene:,
+    name: "play-service.log",
+    text: "2026-11-20 02:00:00 play-service: older line\n2026-11-20 02:41:58 play-service: replacing genesis-play\n",
+  )
+  support.plant(scene:, key: support.info, answer: support.quiet)
+  support.plant_container(
+    scene:,
+    name: support.server_container,
+    status: "running",
+    labels: "9d2015a0 192.168.1.5 true",
+  )
+  support.plant_status(
+    scene:,
+    name: support.database_container,
+    status: "running",
+  )
+  support.plant(scene:, key: support.ready, answer: support.quiet)
+  support.plant(
+    scene:,
+    key: support.connections,
+    answer: Answer(..support.quiet, output: two_connections),
+  )
+
+  // The dashboard runs a wrapper that runs the repository's `state.sh`.
+  let assert Ok(repository) = simplifile.current_directory()
+  let wrapper = scene.home <> "/state-wrapper.sh"
+  let assert Ok(Nil) =
+    simplifile.write(
+      wrapper,
+      support.wrapper(
+        scene:,
+        script: repository <> "/dev/play_service/state.sh",
+      ),
+    )
+  let assert Ok(Nil) = simplifile.set_permissions_octal(wrapper, 0o755)
+  let settings =
+    dashboard.Settings(
+      ..dashboard_support.settings(scene.home),
+      state_script: wrapper,
+    )
+  let running = started(settings)
+  let key = dashboard_support.written_key(home: scene.home)
+
+  // The first reading shows what the script reports. The probe is a second
+  // subscriber that tells when a reading has been made.
+  let probe = process.new_subject()
+  host.subscribe(running.poller, probe)
+  let healthy = [
+    "running",
+    "9d2015a0",
+    "192.168.1.5",
+    "running, ready",
+    "held",
+    "running " <> process_words,
+    "2026-11-20 02:41:58 play-service: replacing genesis-play",
+    "held by a client start " <> process_words,
+  ]
+  let first = overview_html(open_wait.received(probe, "the first reading"))
+  assert_shows(
+    html: first,
+    words: [healthy, ["<span class=\"state\">2</span>"]] |> list.flatten,
+    stage: "the first reading",
+  )
+  assert !string.contains(first, "stale") as "a healthy read is not stale"
+  let socket = opened_socket(settings.port, key)
+  let shown = frames_holding(socket, [healthy, ["\"2\""]] |> list.flatten)
+  assert !string.contains(shown, "stale") as "a healthy read is not stale"
+
+  // Podman fails: the same values are shown stale, with the reason and an age.
+  let stale_words = [
+    "stale ",
+    " s: the Podman machine could not be read",
+    " s: podman exited with status 2: cannot reach the machine",
+  ]
+  support.plant(
+    scene:,
+    key: support.info,
+    answer: Answer(
+      ..support.quiet,
+      exits: [2],
+      error: "cannot reach the machine\n",
+    ),
+  )
+  host.poll_now(running.poller)
+  let failing =
+    overview_html(open_wait.received(probe, "the reading with Podman failing"))
+  assert_shows(html: failing, words: stale_words, stage: "Podman failing")
+  let _stale = frames_holding(socket, stale_words)
+
+  // Podman works again: a page opened now shows no stale word.
+  support.plant(scene:, key: support.info, answer: support.quiet)
+  host.poll_now(running.poller)
+  let recovered =
+    overview_html(open_wait.received(
+      probe,
+      "the reading after Podman recovered",
+    ))
+  assert_shows(html: recovered, words: healthy, stage: "Podman recovered")
+  assert !string.contains(recovered, "stale") as "the stale words are gone"
+  let later = opened_socket(settings.port, key)
+  let again = frames_holding(later, ["9d2015a0", "running, ready"])
+  assert !string.contains(again, "stale") as "the stale words are gone"
+  dashboard_support.close(later)
+
+  // The script is removed: every fact is stale, naming the path.
+  let assert Ok(Nil) = simplifile.delete(wrapper)
+  host.poll_now(running.poller)
+  let without =
+    overview_html(open_wait.received(probe, "the reading without the script"))
+  let not_found = "the state script is not found: " <> wrapper
+  assert_shows(html: without, words: [not_found], stage: "the script removed")
+  let _gone = frames_holding(socket, [not_found])
+  dashboard_support.close(socket)
 }
