@@ -10,7 +10,7 @@
 import dashboard_reading_support as support
 import genesis_prime/dashboard/host
 import genesis_prime/dashboard/host_reading.{
-  type Reading, Fresh, MachineUp, ReadFailed, Stale,
+  type Reading, Fresh, MachineUp, NoNewReading, ReadFailed, Stale,
 }
 import genesis_prime/dashboard/script
 import gleam/bool
@@ -29,18 +29,55 @@ const now_ms = 5000
 
 const deadline_ms = 15_000
 
-/// A poller whose reads are recorded in `calls`.
+/// A poller whose reads are recorded in `calls`, by the stopped clock.
 fn started() -> #(Subject(host.Message), Subject(Call)) {
+  started_by(fn() { now_ms })
+}
+
+/// A poller whose reads are recorded in `calls`, stamped by `clock`.
+fn started_by(clock: fn() -> Int) -> #(Subject(host.Message), Subject(Call)) {
   let calls = process.new_subject()
   let settings =
     host.Settings(
       start_read: fn(answer) { process.send(calls, Call(answer:)) },
-      now_ms: fn() { now_ms },
+      now_ms: clock,
       interval_ms: 86_400_000,
       deadline_ms:,
     )
   let assert Ok(started) = host.start(settings) as "the poller did not start"
   #(started.data, calls)
+}
+
+/// What a clock process is told.
+type ClockMessage {
+  SetClock(ms: Int)
+  AskClock(reply: Subject(Int))
+}
+
+/// A clock the test moves: a process holds the time, and the poller asks it each
+/// time it stamps a reading. Returns the clock and the function that sets it.
+fn moving_clock(start_ms: Int) -> #(fn() -> Int, fn(Int) -> Nil) {
+  let made = process.new_subject()
+  let _clock =
+    process.spawn(fn() {
+      let inbox = process.new_subject()
+      process.send(made, inbox)
+      clock_loop(inbox, start_ms)
+    })
+  let inbox = open_wait.received(made, "the clock")
+  #(fn() { process.call_forever(inbox, AskClock) }, fn(ms) {
+    process.send(inbox, SetClock(ms:))
+  })
+}
+
+fn clock_loop(inbox: Subject(ClockMessage), ms: Int) -> Nil {
+  case process.receive_forever(inbox) {
+    SetClock(ms:) -> clock_loop(inbox, ms)
+    AskClock(reply:) -> {
+      process.send(reply, ms)
+      clock_loop(inbox, ms)
+    }
+  }
 }
 
 /// What the script gives when `connections` are open and all else is healthy.
@@ -265,4 +302,84 @@ pub fn a_failing_script_is_sent_as_stale_with_its_reason_test() -> Nil {
       ReadFailed("the state script is not found: dev/play_service/state.sh"),
       now_ms,
     )
+}
+
+pub fn a_page_that_leaves_and_returns_while_a_read_runs_waits_for_that_read_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(host, calls) = started()
+
+  // The page leaves while the read runs and another opens: no second read starts.
+  let first = process.new_subject()
+  host.subscribe(host, first)
+  let read = next_read(calls)
+  host.unsubscribe(host, first)
+  let second = process.new_subject()
+  host.subscribe(host, second)
+  handled(host)
+  assert no_read_started(calls)
+    as "a returning page started a read beside one that runs"
+
+  // The answer of the read that ran across the gap is the new page's reading.
+  read.answer(report(1))
+  assert fresh_connections(next_reading(second)) == 1
+  assert no_reading_sent(first) as "a page that left was sent a reading"
+  assert no_read_started(calls) as "the answer started a read"
+
+  // A read that ends while nobody is subscribed is dropped: the next page waits
+  // for a read of its own and is not handed it.
+  let #(host, calls) = started()
+  let third = process.new_subject()
+  host.subscribe(host, third)
+  let read = next_read(calls)
+  host.unsubscribe(host, third)
+  read.answer(report(2))
+  handled(host)
+  let fourth = process.new_subject()
+  host.subscribe(host, fourth)
+  let own = next_read(calls)
+  handled(host)
+  assert no_reading_sent(fourth)
+    as "a read from before the gap was handed to a new page"
+  own.answer(report(3))
+  assert fresh_connections(next_reading(fourth)) == 3
+}
+
+pub fn a_tick_while_a_read_runs_past_six_seconds_shows_every_fact_stale_with_its_age_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(clock, set_clock) = moving_clock(1000)
+  let #(host, calls) = started_by(clock)
+  let page = process.new_subject()
+  host.subscribe(host, page)
+  next_read(calls).answer(report(0))
+  assert next_reading(page)
+    == support.every_fact(composed_ms: 1000, freshness: support.AllFresh(1000))
+
+  // The second read hangs; six seconds after the last reading every fact is
+  // shown stale because no new reading came, and nothing failed.
+  host.poll_now(host)
+  let hung = next_read(calls)
+  set_clock(7000)
+  host.poll_now(host)
+  assert next_reading(page)
+    == support.every_fact(
+      composed_ms: 7000,
+      freshness: support.AllStale(NoNewReading, 1000),
+    )
+  assert no_read_started(calls) as "a tick started a second read"
+
+  // The age goes on counting at the next tick.
+  set_clock(9000)
+  host.poll_now(host)
+  assert next_reading(page)
+    == support.every_fact(
+      composed_ms: 9000,
+      freshness: support.AllStale(NoNewReading, 1000),
+    )
+
+  // The read's answer makes every fact fresh again.
+  set_clock(9500)
+  hung.answer(report(2))
+  let again = next_reading(page)
+  assert again.connections == Fresh(2, 9500)
+  assert again.server == Fresh(support.running_server(), 9500)
 }

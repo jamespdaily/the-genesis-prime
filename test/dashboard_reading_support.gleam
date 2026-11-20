@@ -4,8 +4,8 @@
 //// gives, written out value by value.
 
 import genesis_prime/dashboard/host_reading.{
-  type Reading, Database, Fresh, LiveLockFree, MachineUp, Reading, Server,
-  UpdateLockFree, Updater,
+  type Reading, type Section, Database, Fresh, LiveLockFree, MachineUp, Never,
+  Reading, Server, Stale, UpdateLockFree, Updater,
 }
 import gleam/bit_array
 import gleam/list
@@ -80,15 +80,41 @@ pub fn idle_updater() -> host_reading.Updater {
   Updater(held: False, lock: UpdateLockFree, last_line:)
 }
 
+/// How the facts of a reading stand: all fresh as of a read, all stale since a
+/// read for a cause, or none ever read for a reason.
+pub type Freshness {
+  AllFresh(read_ms: Int)
+  AllStale(cause: host_reading.Cause, read_ms: Int)
+  AllNever(reason: String)
+}
+
+fn section(value: a, freshness: Freshness) -> Section(a) {
+  case freshness {
+    AllFresh(read_ms:) -> Fresh(value, read_ms)
+    AllStale(cause:, read_ms:) -> Stale(value, cause, read_ms)
+    AllNever(reason:) -> Never(reason)
+  }
+}
+
+/// The reading composed at `composed_ms` that holds the facts of the healthy
+/// lines, every fact in the same freshness. The one place the six facts are
+/// listed.
+pub fn every_fact(
+  composed_ms composed_ms: Int,
+  freshness freshness: Freshness,
+) -> Reading {
+  Reading(
+    composed_ms:,
+    machine: section(MachineUp, freshness),
+    server: section(running_server(), freshness),
+    connections: section(0, freshness),
+    database: section(ready_database(), freshness),
+    updater: section(idle_updater(), freshness),
+    live_lock: section(LiveLockFree, freshness),
+  )
+}
+
 /// The reading the healthy lines give when read at `at`, every fact fresh.
 pub fn fresh(at: Int) -> Reading {
-  Reading(
-    composed_ms: at,
-    machine: Fresh(MachineUp, at),
-    server: Fresh(running_server(), at),
-    connections: Fresh(0, at),
-    database: Fresh(ready_database(), at),
-    updater: Fresh(idle_updater(), at),
-    live_lock: Fresh(LiveLockFree, at),
-  )
+  every_fact(composed_ms: at, freshness: AllFresh(at))
 }

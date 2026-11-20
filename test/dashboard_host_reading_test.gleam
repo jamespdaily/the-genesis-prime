@@ -8,7 +8,7 @@
 import dashboard_reading_support as support
 import genesis_prime/dashboard/host_reading.{
   type Reading, type Report, Database, Fresh, LiveLockClient, LiveLockFree,
-  LiveLockGone, LiveLockOwnerless, LiveLockRun, MachineDown, MachineUp, Never,
+  LiveLockGone, LiveLockOwnerless, LiveLockRun, MachineDown, MachineUp,
   NoNewReading, Ran, ReadFailed, Reading, Report, Server, Stale, UpdateLockFree,
   UpdateLockGone, UpdateLockOwnerless, UpdateLockRun, Updater, Waiting,
 }
@@ -36,17 +36,6 @@ fn healthy_report() -> Report {
       last_line: support.last_line,
     )),
     live_lock: Ok(LiveLockFree),
-  )
-}
-
-fn unreadable_all(reason: String) -> Report {
-  Report(
-    machine: Error(host_reading.Unreadable(reason)),
-    server: Error(host_reading.Unreadable(reason)),
-    connections: Error(host_reading.Unreadable(reason)),
-    database: Error(host_reading.Unreadable(reason)),
-    updater: Error(host_reading.Unreadable(reason)),
-    live_lock: Error(host_reading.Unreadable(reason)),
   )
 }
 
@@ -267,7 +256,7 @@ pub fn a_report_gives_each_section_its_state_test() -> Nil {
     ),
   ]
   list.each(rows, fn(row) {
-    assert host_reading.parse(support.text(row.lines)) == row.expected
+    assert host_reading.parse(support.text(row.lines)) == Ok(row.expected)
       as row.name
   })
 }
@@ -419,6 +408,26 @@ pub fn a_wrong_or_missing_line_makes_only_its_section_unreadable_test() -> Nil {
       ),
     ),
     ReadRow(
+      "a running server with no server_revision line",
+      support.changed([support.Drop("server_revision")]),
+      Report(
+        ..healthy,
+        server: Error(host_reading.Unreadable(
+          "the report has no server_revision line",
+        )),
+      ),
+    ),
+    ReadRow(
+      "a running server with no server_address line",
+      support.changed([support.Drop("server_address")]),
+      Report(
+        ..healthy,
+        server: Error(host_reading.Unreadable(
+          "the report has no server_address line",
+        )),
+      ),
+    ),
+    ReadRow(
       "an unknown key is ignored",
       list.append(support.healthy_lines(), [#("colour", "red")]),
       healthy,
@@ -495,7 +504,7 @@ pub fn a_wrong_or_missing_line_makes_only_its_section_unreadable_test() -> Nil {
     ),
   ]
   list.each(rows, fn(row) {
-    assert host_reading.parse(support.text(row.lines)) == row.expected
+    assert host_reading.parse(support.text(row.lines)) == Ok(row.expected)
       as row.name
   })
 
@@ -510,7 +519,7 @@ pub fn a_wrong_or_missing_line_makes_only_its_section_unreadable_test() -> Nil {
       }),
     )
     <> "trailing words\n"
-  assert host_reading.parse(bit_array.from_string(noisy)) == healthy
+  assert host_reading.parse(bit_array.from_string(noisy)) == Ok(healthy)
     as "diagnostic lines are ignored"
 
   // The owner file of the update lock may hold more than its first line; the
@@ -526,7 +535,8 @@ pub fn a_wrong_or_missing_line_makes_only_its_section_unreadable_test() -> Nil {
       ),
     )
     <> "a second line of the owner file\n"
-  assert host_reading.parse(bit_array.from_string(owner)).updater
+  let assert Ok(report) = host_reading.parse(bit_array.from_string(owner))
+  assert report.updater
     == Ok(Updater(
       held: False,
       lock: UpdateLockRun(40_826),
@@ -535,45 +545,24 @@ pub fn a_wrong_or_missing_line_makes_only_its_section_unreadable_test() -> Nil {
     as "only the first line of the owner file is the process id"
 
   // An empty report and bytes that are not text give no fact.
-  assert host_reading.parse(<<>>) == unreadable_all("the report is empty")
+  assert host_reading.parse(<<>>)
+    == Error(host_reading.Unreadable("the report is empty"))
   assert host_reading.parse(not_text)
-    == unreadable_all("the report is not text")
+    == Error(host_reading.Unreadable("the report is not text"))
 }
 
-/// The same reading with every fact stale for `cause`, composed at `now`.
+/// The healthy reading with every fact stale for `cause` since `from`, composed
+/// at `now`.
 fn stale(
   from from: Int,
   now now: Int,
   cause cause: host_reading.Cause,
 ) -> Reading {
-  let good = support.fresh(from)
-  let assert Fresh(machine, _) = good.machine
-  let assert Fresh(server, _) = good.server
-  let assert Fresh(connections, _) = good.connections
-  let assert Fresh(database, _) = good.database
-  let assert Fresh(updater, _) = good.updater
-  let assert Fresh(live_lock, _) = good.live_lock
-  Reading(
-    composed_ms: now,
-    machine: Stale(machine, cause, from),
-    server: Stale(server, cause, from),
-    connections: Stale(connections, cause, from),
-    database: Stale(database, cause, from),
-    updater: Stale(updater, cause, from),
-    live_lock: Stale(live_lock, cause, from),
-  )
+  support.every_fact(composed_ms: now, freshness: support.AllStale(cause, from))
 }
 
 fn never(reason: String, at: Int) -> Reading {
-  Reading(
-    composed_ms: at,
-    machine: Never(reason),
-    server: Never(reason),
-    connections: Never(reason),
-    database: Never(reason),
-    updater: Never(reason),
-    live_lock: Never(reason),
-  )
+  support.every_fact(composed_ms: at, freshness: support.AllNever(reason))
 }
 
 fn finished(lines: List(#(String, String))) -> host_reading.Outcome {
@@ -821,11 +810,14 @@ pub fn a_failed_read_keeps_each_sections_last_value_and_marks_it_stale_test() ->
       )),
     ),
     MergeRow(
-      "a read in flight under three intervals leaves the reading as it is",
+      "a read in flight under three intervals leaves every fact fresh",
       Some(support.fresh(1000)),
       Waiting,
       6999,
-      Some(support.fresh(1000)),
+      Some(support.every_fact(
+        composed_ms: 6999,
+        freshness: support.AllFresh(1000),
+      )),
     ),
     MergeRow(
       "a read in flight for three intervals marks every fresh fact stale though nothing failed",
@@ -842,6 +834,13 @@ pub fn a_failed_read_keeps_each_sections_last_value_and_marks_it_stale_test() ->
       Some(stale(from: 1000, now: 9000, cause: NoNewReading)),
     ),
     MergeRow(
+      "a read in flight keeps the age counting of facts stale for a failed read",
+      Some(stale(from: 1000, now: 5000, cause: exit_three)),
+      Waiting,
+      9000,
+      Some(stale(from: 1000, now: 9000, cause: exit_three)),
+    ),
+    MergeRow(
       "a read in flight when nothing was ever read gives no reading",
       None,
       Waiting,
@@ -853,7 +852,7 @@ pub fn a_failed_read_keeps_each_sections_last_value_and_marks_it_stale_test() ->
       Some(never("the state script is not found: x", 1000)),
       Waiting,
       60_000,
-      Some(never("the state script is not found: x", 1000)),
+      Some(never("the state script is not found: x", 60_000)),
     ),
   ]
   list.each(rows, fn(row) {

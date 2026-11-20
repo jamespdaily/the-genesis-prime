@@ -14,8 +14,8 @@
 ////   each key and its values).
 //// - A read that did not succeed (the script's status, its deadline, a script
 ////   that is missing) stales every fact the same way, with the reason.
-//// - A read still running after three of the poller's intervals stales every
-////   fresh fact: the poller reads every 2 s, so 6 s of silence is three misses.
+//// - A read still running 6 s after a fact was read stales that fact: the poller
+////   reads every 2 s, so 6 s of silence is three misses.
 //// - A fact never read stays unread, with the reason of the last attempt.
 
 import genesis_prime/dashboard/script
@@ -132,44 +132,34 @@ pub type Outcome {
 }
 
 /// How long a read may run before the facts last read are shown stale: three
-/// of the poller's 2 s intervals. A guess: a read takes about 0.6 s.
+/// of the poller's default 2 s intervals. A guess: a read takes 0.6 to 1.6 s.
 const stale_after_ms = 6000
 
 // PARSING ---------------------------------------------------------------------
 
 /// Reads the state script's output. A line that is not `key=value`, or has a
 /// key the script does not print, is ignored: the runner merges the script's
-/// standard error into its output.
-pub fn parse(output output: BitArray) -> Report {
+/// standard error into its output. Output that is empty or not text gives no
+/// fact, only the reason.
+pub fn parse(output output: BitArray) -> Result(Report, Unreadable) {
   case bit_array.to_string(output) {
-    Error(Nil) -> unreadable_all("the report is not text")
+    Error(Nil) -> Error(Unreadable("the report is not text"))
     Ok(text) ->
       case string.trim(text) {
-        "" -> unreadable_all("the report is empty")
+        "" -> Error(Unreadable("the report is empty"))
         _ -> {
           let lines = key_lines(text)
-          Report(
+          Ok(Report(
             machine: machine(lines),
             server: server(lines),
             connections: connections(lines),
             database: database(lines),
             updater: updater(lines),
             live_lock: live_lock(lines),
-          )
+          ))
         }
       }
   }
-}
-
-fn unreadable_all(reason: String) -> Report {
-  Report(
-    machine: Error(Unreadable(reason)),
-    server: Error(Unreadable(reason)),
-    connections: Error(Unreadable(reason)),
-    database: Error(Unreadable(reason)),
-    updater: Error(Unreadable(reason)),
-    live_lock: Error(Unreadable(reason)),
-  )
 }
 
 /// The `key=value` lines of the text, the first line of a key standing.
@@ -256,16 +246,29 @@ fn container(
 
 fn server(lines: Dict(String, String)) -> Result(Server, Unreadable) {
   use state <- result.try(container(lines, "server"))
-  let label = fn(key) { dict.get(lines, key) |> result.unwrap("") |> present }
-  case dict.get(lines, "server_labels") {
-    Ok("unreadable") -> Error(Unreadable(reason_of(lines, "server_labels")))
-    Ok(_) | Error(Nil) ->
-      Ok(Server(
-        state:,
-        revision: label("server_revision"),
-        address: label("server_address"),
-      ))
+  case state {
+    ContainerMissing -> Ok(Server(state:, revision: None, address: None))
+    ContainerRunning | ContainerStopping | ContainerExited | ContainerCreated ->
+      case dict.get(lines, "server_labels") {
+        Ok("unreadable") -> Error(Unreadable(reason_of(lines, "server_labels")))
+        Ok(_) | Error(Nil) -> {
+          use revision <- result.try(label(lines, "server_revision"))
+          use address <- result.map(label(lines, "server_address"))
+          Server(state:, revision:, address:)
+        }
+      }
   }
+}
+
+/// A label line of a server that exists: empty means the container has no such
+/// label; a missing line means the report left it out.
+fn label(
+  lines: Dict(String, String),
+  key: String,
+) -> Result(Option(String), Unreadable) {
+  dict.get(lines, key)
+  |> result.map(present)
+  |> result.replace_error(Unreadable("the report has no " <> key <> " line"))
 }
 
 fn connections(lines: Dict(String, String)) -> Result(Int, Unreadable) {
@@ -394,6 +397,14 @@ fn live_lock(lines: Dict(String, String)) -> Result(LiveLock, Unreadable) {
 
 // MERGING ---------------------------------------------------------------------
 
+/// What a reading is made from: a report, the reason no report was made, or
+/// that the read has not ended.
+type Input {
+  Parsed(report: Report)
+  Failed(reason: String)
+  StillRunning
+}
+
 /// The reading after `outcome`, from the `previous` one, at `now_ms`. A read
 /// still running (`Waiting`) with no earlier reading gives none.
 pub fn after_read(
@@ -402,19 +413,26 @@ pub fn after_read(
   now_ms now_ms: Int,
 ) -> Option(Reading) {
   case outcome {
-    Waiting -> waiting(previous, now_ms)
+    Waiting -> {
+      use _reading <- option.map(previous)
+      merge(previous:, input: StillRunning, now_ms:)
+    }
     Ran(Ok(script.Finished(output:, status: 0))) ->
-      Some(merge(previous:, report: parse(output:), now_ms:))
+      case parse(output:) {
+        Ok(report) -> Some(merge(previous:, input: Parsed(report:), now_ms:))
+        Error(Unreadable(reason:)) ->
+          Some(merge(previous:, input: Failed(reason:), now_ms:))
+      }
     Ran(Ok(script.Finished(output:, status:))) ->
       Some(merge(
         previous:,
-        report: unreadable_all(exit_reason(output, status)),
+        input: Failed(reason: exit_reason(output, status)),
         now_ms:,
       ))
     Ran(Error(failure)) ->
       Some(merge(
         previous:,
-        report: unreadable_all(failure_reason(failure)),
+        input: Failed(reason: failure_reason(failure)),
         now_ms:,
       ))
   }
@@ -450,49 +468,77 @@ fn failure_reason(failure: script.Failure) -> String {
   }
 }
 
+/// The six facts, each merged on its own: the one place a reading is listed
+/// fact by fact.
 fn merge(
   previous previous: Option(Reading),
-  report report: Report,
+  input input: Input,
   now_ms now_ms: Int,
 ) -> Reading {
   Reading(
     composed_ms: now_ms,
     machine: merged(
       before: option.map(previous, fn(reading) { reading.machine }),
-      read: report.machine,
+      input:,
+      pick: fn(report: Report) { report.machine },
       now_ms:,
     ),
     server: merged(
       before: option.map(previous, fn(reading) { reading.server }),
-      read: report.server,
+      input:,
+      pick: fn(report: Report) { report.server },
       now_ms:,
     ),
     connections: merged(
       before: option.map(previous, fn(reading) { reading.connections }),
-      read: report.connections,
+      input:,
+      pick: fn(report: Report) { report.connections },
       now_ms:,
     ),
     database: merged(
       before: option.map(previous, fn(reading) { reading.database }),
-      read: report.database,
+      input:,
+      pick: fn(report: Report) { report.database },
       now_ms:,
     ),
     updater: merged(
       before: option.map(previous, fn(reading) { reading.updater }),
-      read: report.updater,
+      input:,
+      pick: fn(report: Report) { report.updater },
       now_ms:,
     ),
     live_lock: merged(
       before: option.map(previous, fn(reading) { reading.live_lock }),
-      read: report.live_lock,
+      input:,
+      pick: fn(report: Report) { report.live_lock },
       now_ms:,
     ),
   )
 }
 
-/// One fact after a read: fresh when read, else its last value stale with the
-/// reason, else unread.
+/// One fact after a read: fresh when the report gives it; else its last value
+/// stale with the reason the report or the read gave; else unread. While the
+/// read is still running, a fresh fact older than `stale_after_ms` is stale for
+/// want of a new reading, and any other fact stays as it is.
 fn merged(
+  before before: Option(Section(a)),
+  input input: Input,
+  pick pick: fn(Report) -> Result(a, Unreadable),
+  now_ms now_ms: Int,
+) -> Section(a) {
+  case input, before {
+    Parsed(report:), _ -> after_fact(before:, read: pick(report), now_ms:)
+    Failed(reason:), _ ->
+      after_fact(before:, read: Error(Unreadable(reason)), now_ms:)
+    StillRunning, Some(Fresh(value:, read_ms:))
+      if now_ms - read_ms >= stale_after_ms
+    -> Stale(value:, cause: NoNewReading, read_ms:)
+    StillRunning, Some(section) -> section
+    StillRunning, None -> Never("no read has ended")
+  }
+}
+
+fn after_fact(
   before before: Option(Section(a)),
   read read: Result(a, Unreadable),
   now_ms now_ms: Int,
@@ -505,48 +551,5 @@ fn merged(
           Stale(value:, cause: ReadFailed(reason:), read_ms:)
         Some(Never(_)) | None -> Never(reason:)
       }
-  }
-}
-
-/// The reading while a read is still running: every fresh fact older than
-/// `stale_after_ms` is stale, and facts already stale for that reason count
-/// their age on. Anything else is left as it is.
-fn waiting(previous: Option(Reading), now_ms: Int) -> Option(Reading) {
-  use reading <- option.map(previous)
-  let changes =
-    changes_while_waiting(reading.machine, now_ms)
-    || changes_while_waiting(reading.server, now_ms)
-    || changes_while_waiting(reading.connections, now_ms)
-    || changes_while_waiting(reading.database, now_ms)
-    || changes_while_waiting(reading.updater, now_ms)
-    || changes_while_waiting(reading.live_lock, now_ms)
-  case changes {
-    False -> reading
-    True ->
-      Reading(
-        composed_ms: now_ms,
-        machine: after_wait(reading.machine, now_ms),
-        server: after_wait(reading.server, now_ms),
-        connections: after_wait(reading.connections, now_ms),
-        database: after_wait(reading.database, now_ms),
-        updater: after_wait(reading.updater, now_ms),
-        live_lock: after_wait(reading.live_lock, now_ms),
-      )
-  }
-}
-
-fn changes_while_waiting(section: Section(a), now_ms: Int) -> Bool {
-  case section {
-    Fresh(read_ms:, ..) -> now_ms - read_ms >= stale_after_ms
-    Stale(cause: NoNewReading, ..) -> True
-    Stale(cause: ReadFailed(_), ..) | Never(_) -> False
-  }
-}
-
-fn after_wait(section: Section(a), now_ms: Int) -> Section(a) {
-  case section {
-    Fresh(value:, read_ms:) if now_ms - read_ms >= stale_after_ms ->
-      Stale(value:, cause: NoNewReading, read_ms:)
-    Fresh(..) | Stale(..) | Never(_) -> section
   }
 }
