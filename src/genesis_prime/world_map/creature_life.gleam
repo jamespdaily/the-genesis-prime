@@ -41,6 +41,7 @@ import genesis_prime/game/telegraph_entries.{type Draw}
 import genesis_prime/table/id.{type Spell4Id}
 import gleam/float
 import gleam/int
+import gleam/list
 import gleam/option.{type Option, None, Some}
 
 /// Whether a creature may be attacked by a player of each faction, from its
@@ -93,22 +94,23 @@ pub type Attack {
 pub type Cast {
   /// A cast time of 0: the attack strikes its target at once.
   Instant
-  /// A cast time above 0: a charge, which strikes each fighter inside `area` at its
-  /// strike go. `inside` is how a unit counts as inside the area and `anchor` where the
-  /// area is centred (genesis_prime/game/spell_area `area_of_spell`); a spell with a cast
-  /// time and no area it can read fails the load. `draws` are the spell's telegraph rows
-  /// the client makes, from which the cast's 0x7ff names the positions the picture is
-  /// drawn at (genesis_prime/game/telegraph_entries). `aims_at_target` is the spell's
+  /// A cast time above 0: a charge, which strikes each fighter inside the area of each of its
+  /// strike gos (`Go.strike`). `area` is the row that chooses the fighters, `inside` the union
+  /// of the cast's shapes the reach is read from, and `anchor` where the area is centred
+  /// (genesis_prime/game/spell_area `area_of_spell`); a spell with a cast time and no area it
+  /// can read fails the load. `draws` are the spell's telegraph rows the client makes, from
+  /// which the cast's 0x7ff names the positions the picture is drawn at
+  /// (genesis_prime/game/telegraph_entries). `aims_at_target` is the spell's
   /// `Spell4.propertyFlags` bit 0x2: a creature that cannot move keeps turning its aim
   /// toward its 0x908 target through a cast of such a spell, and holds the aim it had at
   /// the cast's start through any other (`0x14046cdc0.turret_cast_aim`). `gos` is the
-  /// cast's timeline (`Go`): never empty,
-  /// each `at_ms` above the one before, exactly one go strikes and it is the last.
-  /// `hold_ms` is how long the creature then stands still before it attacks again: the
-  /// summed `delay_ms + duration_ms` of the NpcExecutionDelay rows (Spell4Effects type 35)
-  /// whose phase flags name the strike go, 0 for none; the load refuses a delay row that
-  /// names another go. An attack that is not a special has one go, at `cast_ms`, that
-  /// strikes, and no hold.
+  /// cast's timeline (`Go`): never empty, each `at_ms` above the one before, at least one
+  /// strikes. `hold_ms` is how long the creature then stands still before it attacks again:
+  /// the summed `delay_ms + duration_ms` of the NpcExecutionDelay rows (Spell4Effects type
+  /// 35) whose phase flags name the cast's last go, 0 for none; the load refuses a delay row
+  /// that names another go. The hold counts from the cast's close, after the last go and
+  /// every round of its strikes. An attack that is not a special has one go, at `cast_ms`,
+  /// that strikes, and no hold.
   Charged(
     cast_ms: Int,
     area: Row,
@@ -122,11 +124,32 @@ pub type Cast {
 }
 
 /// One go of a cast (0x7f4), by the Spell4's phases (genesis_prime/game/spell_plan
-/// `go_times_ms`): when it goes, counted from the cast's start, and whether it strikes
-/// the fighters inside the cast's area. The go's index in `gos` is the phase its 0x7f4
-/// carries.
+/// `go_times_ms`): when it goes, counted from the cast's start, and what it strikes. The go's
+/// index in `gos` is the phase its 0x7f4 carries. A go with no `strike` is a go of the
+/// cast bar only.
 pub type Go {
-  Go(at_ms: Int, strikes: Bool)
+  Go(at_ms: Int, strike: Option(GoStrike))
+}
+
+/// What a go strikes: the Spell4Effects ids of the damage rows that name the go, whose
+/// blows of the attack's offence it strikes with (`offence_of_go`), and the shapes the fighters
+/// must stand inside at the go.
+pub type GoStrike {
+  GoStrike(spell4_effects_ids: List(Int), inside: Inside)
+}
+
+/// The attack's offence for one go: its blows that the go names, with the attack's critical
+/// hit chance and severity and its strikethrough.
+pub fn offence_of_go(
+  attack attack: Attack,
+  strike strike: GoStrike,
+) -> Offence {
+  hit.Offence(
+    ..attack.offence,
+    blows: list.filter(attack.offence.blows, fn(blow) {
+      list.contains(strike.spell4_effects_ids, blow.spell4_effects_id)
+    }),
+  )
 }
 
 /// A spell a creature casts besides its attack, chosen by its kind's list

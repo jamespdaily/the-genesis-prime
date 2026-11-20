@@ -43,7 +43,7 @@ import genesis_prime/table/id.{
 }
 import genesis_prime/table/loader/store
 import genesis_prime/world_map/creature_faction.{type Factions}
-import genesis_prime/world_map/creature_life.{Attackable, Charged, Go, Hostile}
+import genesis_prime/world_map/creature_life.{Attackable, Charged, Hostile}
 import genesis_prime/world_map/creature_unit_type.{Turret}
 import genesis_prime/world_map/spawn.{
   type Row, type Selection, Dead, FriendlyToBoth,
@@ -56,7 +56,7 @@ import gleam/dict
 import gleam/float
 import gleam/int
 import gleam/list
-import gleam/option.{Some}
+import gleam/option.{None, Some}
 import gleam/result
 import gleam/string
 import owned_test
@@ -1891,16 +1891,23 @@ pub fn a_special_carries_the_gos_of_its_phases_and_strikes_at_the_last_test() ->
   let assert Charged(cast_ms:, gos:, hold_ms:, ..) = roar.attack.cast
     as "a spell with a cast time is a charge"
   assert cast_ms == 3000 as "Spell4 55317 has castTime 3000"
-  assert gos
-    == [Go(at_ms: 2500, strikes: False), Go(at_ms: 3000, strikes: True)]
+  assert go_blows(gos) == [#(2500, None), #(3000, Some([131_967]))]
     as "SpellPhase 11191 and 11192: delays 2500 and 500, the running sum; the damage row's phaseFlags 2 is go 1, the last"
   assert hold_ms == 1000
     as "Spell4Effects 131968: NpcExecutionDelay, delayTime 0, durationTime 1000, naming go 1"
   let assert Charged(gos: crash_gos, ..) =
     the_special_of(beast: special_beast(spell4_ids: [55_296])).attack.cast
-  assert crash_gos
-    == [Go(at_ms: 2800, strikes: False), Go(at_ms: 3000, strikes: True)]
-    as "SpellPhase of Spell4 55296: delays 2800 and 200"
+  assert go_blows(crash_gos) == [#(2800, None), #(3000, Some([131_925]))]
+    as "SpellPhase of Spell4 55296: delays 2800 and 200; its damage row 131925 has phaseFlags 2, go 1"
+}
+
+/// Each go's time and, for a go that strikes, the Spell4Effects ids it strikes with.
+fn go_blows(
+  gos: List(creature_life.Go),
+) -> List(#(Int, option.Option(List(Int)))) {
+  list.map(gos, fn(go) {
+    #(go.at_ms, option.map(go.strike, fn(strike) { strike.spell4_effects_ids }))
+  })
 }
 
 pub fn a_special_follows_its_gos_when_they_end_before_the_cast_time_test() -> Nil {
@@ -1908,12 +1915,7 @@ pub fn a_special_follows_its_gos_when_they_end_before_the_cast_time_test() -> Ni
   let haymaker = the_special_of(beast: special_beast(spell4_ids: [66_285]))
   let assert Charged(cast_ms:, gos:, hold_ms:, ..) = haymaker.attack.cast
   assert cast_ms == 3033 as "Spell4 66285 has castTime 3033"
-  assert gos
-    == [
-      Go(at_ms: 0, strikes: False),
-      Go(at_ms: 2500, strikes: False),
-      Go(at_ms: 2700, strikes: True),
-    ]
+  assert go_blows(gos) == [#(0, None), #(2500, None), #(2700, Some([166_493]))]
     as "the delays 0, 2500 and 200 sum to 2700, below the cast time; the damage row 166493 (phaseFlags 4) is go 2"
   assert hold_ms == 1500
     as "Spell4Effects 166492: durationTime 1500, phaseFlags 0xffff0004 names go 2"

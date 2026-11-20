@@ -1474,6 +1474,12 @@ fn attack_of(
             creature_id:,
             spell4_id:,
             cast_ms: spell.cast_time,
+            strike: creature_life.GoStrike(
+              spell4_effects_ids: list.map(attack_effects, fn(effect) {
+                effect.blow.spell4_effects_id
+              }),
+              inside:,
+            ),
           ))
           creature_life.Charged(
             cast_ms: spell.cast_time,
@@ -1525,7 +1531,7 @@ fn attack_of(
 }
 
 /// The gos of a charge and the hold after it. A spell a kind lists as a special has the
-/// gos of its plan (`spell_plan.go_times_ms`), the last striking, and a hold of the summed
+/// gos of its plan (`spell_plan.go_times_ms`), the last striking with `strike`, and a hold of the summed
 /// `delay_ms` and `duration_ms` of its NpcExecutionDelay rows at the strike go; any other
 /// charge has one go at its cast time that strikes, and no hold. A special the plan could
 /// not read, or one with no go time, fails the load.
@@ -1534,9 +1540,11 @@ fn timeline_of(
   creature_id creature_id: Creature2Id,
   spell4_id spell4_id: Spell4Id,
   cast_ms cast_ms: Int,
+  strike strike: creature_life.GoStrike,
 ) -> Result(#(List(creature_life.Go), Int), SpawnError) {
   case dict.get(catalog.special_plans, spell4_id.value) {
-    Error(Nil) -> Ok(#([creature_life.Go(at_ms: cast_ms, strikes: True)], 0))
+    Error(Nil) ->
+      Ok(#([creature_life.Go(at_ms: cast_ms, strike: Some(strike))], 0))
     Ok(Error(error)) ->
       Error(SpecialNotPlanned(creature_id:, spell4_id: spell4_id.value, error:))
     Ok(Ok(spell)) -> {
@@ -1554,7 +1562,10 @@ fn timeline_of(
         })
       Ok(#(
         list.index_map(times_ms, fn(at_ms, index) {
-          creature_life.Go(at_ms:, strikes: index == last)
+          creature_life.Go(at_ms:, strike: case index == last {
+            True -> Some(strike)
+            False -> None
+          })
         }),
         hold_ms,
       ))

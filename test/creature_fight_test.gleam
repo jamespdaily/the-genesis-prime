@@ -76,7 +76,7 @@ import gleam/dict
 import gleam/float
 import gleam/int
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
 import gleam/set
 import gleam/string
 import gleam_community/maths
@@ -5638,6 +5638,16 @@ pub fn a_late_go_timer_arms_the_next_go_for_what_is_left_of_its_due_time_test() 
   assert list.map(timers(late), fn(timer) { timer.1 }) == [200]
   let #(_, later) = fire(state:, at_ms: 5000, timer: go)
   assert list.map(timers(later), fn(timer) { timer.1 }) == [0]
+  // Ice Breath's go 1 (due at 4,500 ms) handled 300 ms late strikes then: its deadline is
+  // 1,000 ms from then, and go 2 (due at 5,000 ms) is armed for the 200 ms left.
+  let #(state, aggro) = ice_fought(viewers: [2])
+  let #(state, _, first) = ice_opened(state:, aggro:)
+  let #(state, zero) = fire(state:, at_ms: 4100, timer: first)
+  let #(_, struck) = fire(state:, at_ms: 4800, timer: timer_for(zero, 400))
+  assert struck_numbers(struck) == [2]
+  assert list.sort(list.map(timers(struck), fn(timer) { timer.1 }), int.compare)
+    == [200, 1000]
+    as "the deadline 1,000 ms from the late handling, and the next go for what is left"
 }
 
 pub fn a_go_before_the_strike_is_sent_with_its_phase_and_no_target_test() -> Nil {
@@ -6097,12 +6107,13 @@ pub fn the_sim_turrets_charge_has_one_go_that_strikes_test() -> Nil {
   // Spell4 85469: castTime 8000 and no phases (Spell4 85469, 86978): one go, at the cast time,
   // that strikes, and no hold.
   let spawn = spawn_support.sim_turret(number: 1, place: at(0.0))
-  let assert creature_life.Charged(cast_ms:, gos:, hold_ms:, ..) =
+  let assert creature_life.Charged(cast_ms:, gos:, hold_ms:, inside:, ..) =
     spawn.combat.attack.cast
-  assert cast_ms == 8000
-    && gos == [creature_life.Go(at_ms: 8000, strikes: True)]
-    && hold_ms == 0
-    as "one go, at 8000 ms, that strikes, and no hold"
+  assert cast_ms == 8000 && hold_ms == 0 as "the cast time 8000, and no hold"
+  let assert [creature_life.Go(at_ms: 8000, strike: Some(strike))] = gos
+    as "one go, at 8000 ms, that strikes"
+  assert strike.inside == inside && strike.spell4_effects_ids == [224_644]
+    as "with the charge's own shapes and its damage row, Spell4Effects 224644 (type 8, every phase)"
   let #(state, aggro) = fought(viewers: [2])
   let #(state, _, ends) = charge_opened(state:, aggro:)
   let #(state, went) = fire(state:, at_ms: 11_000, timer: ends)
@@ -7755,10 +7766,9 @@ fn through_the_gos(
       at_ms: 1500 + go.at_ms,
       timer: timer_for(taken, go.at_ms - passed_ms),
     )
-  case go.strikes {
-    True -> #(state, fired)
-    False ->
-      through_the_gos(state:, step: fired, gos: rest, passed_ms: go.at_ms)
+  case go.strike {
+    Some(_) -> #(state, fired)
+    None -> through_the_gos(state:, step: fired, gos: rest, passed_ms: go.at_ms)
   }
 }
 
@@ -7855,8 +7865,9 @@ fn target_roar(
   placements placements: List(area.Placement),
 ) -> creature_life.Special {
   let roar = spawn_support.earthen_roar(hold_ms: 1000)
-  let assert creature_life.Charged(..) as charged = roar.attack.cast
+  let assert creature_life.Charged(gos:, ..) as charged = roar.attack.cast
     as "Earthen Roar is a charge"
+  let inside = area.InsideShapes(placements:)
   creature_life.Special(
     ..roar,
     attack: creature_life.Attack(
@@ -7866,7 +7877,15 @@ fn target_roar(
       cast: creature_life.Charged(
         ..charged,
         anchor:,
-        inside: area.InsideShapes(placements:),
+        inside:,
+        gos: list.map(gos, fn(go) {
+          creature_life.Go(
+            ..go,
+            strike: option.map(go.strike, fn(strike) {
+              creature_life.GoStrike(..strike, inside:)
+            }),
+          )
+        }),
         draws: telegraph_entries.draws_of(
           tables: fixture_tables.shared(),
           spell4_id: Spell4Id(spell4_id),
@@ -8225,5 +8244,1234 @@ pub fn a_target_row_strikes_while_its_cast_target_is_in_the_world_test() -> Nil 
       }
       [_, ..] -> Nil
     }
+  })
+}
+
+// ---- a charged cast with several hits: Yeti Snowstalker's Ice Breath (Spell4 55635) ----
+//
+// The client's rows, read for this block (each value below is from them):
+// - Spell4 55635: castTime 3800, targetMaxRange 5.0, Spell4AoeTargetConstraints 116 (angle
+//   360, targetCount 10, minRange 0, maxRange 10.0), Spell4CCConditions 1.
+// - SpellPhase 11479 to 11482 (`table_rows -- SpellPhase spell4IdOwner=55635`): delays 2600,
+//   400, 500 and 300, so the gos are at 2600, 3000, 3500 and 3800 ms.
+// - Spell4Effects 132757 (type 8, damage, phaseFlags 6: gos 1 and 2) and 132758 (type 35,
+//   durationTime 500, phaseFlags 0xffff0008: go 3), `table_rows -- Spell4Effects spellId=55635`.
+// - TelegraphDamage 7956 and 7957 (`table_rows -- TelegraphDamage 7956 7957`): cones from 0 to
+//   5.5 m, 20 degrees across, on the caster, turned +10 and -10 degrees
+//   (`0x14054b1b0.shape_turn`).
+// The creature is the Beast of this file with the special planted by hand
+// (`spawn_support.ice_breath`). The cast opens at 1,500 ms and its gos fall at 4,100, 4,500,
+// 5,000 and 5,300 ms; a strike's deadline is 1,000 ms after it (`strike_tell.deadline_ms`).
+
+/// The times the gos of Ice Breath fall, counted from the test's start: the cast opens at 1,500
+/// ms.
+const ice_go_times_ms = [4100, 4500, 5000, 5300]
+
+/// The Beast casting Ice Breath, fought by player 2 who comes near 4 units ahead of it at 0
+/// ms: the state and the step of the aggro.
+fn ice_fought(
+  viewers viewers: List(Int),
+) -> #(State, ServiceStep(creature.Outgoing)) {
+  ice_fought_with(special: spawn_support.ice_breath(hold_ms: 500), viewers:)
+}
+
+fn ice_fought_with(
+  special special: creature_life.Special,
+  viewers viewers: List(Int),
+) -> #(State, ServiceStep(creature.Outgoing)) {
+  roar_fought_by(state: rootbrute_with(special:, viewers:))
+}
+
+/// The attack tick of 1,500 ms opens Ice Breath: the state, the step of its start and the
+/// timer of its first go, 2,600 ms later.
+fn ice_opened(
+  state state: State,
+  aggro aggro: ServiceStep(creature.Outgoing),
+) -> #(State, ServiceStep(creature.Outgoing), step.TimerId) {
+  opened_for(state:, aggro:, first_go_ms: 2600)
+}
+
+/// The same for a cast whose first go falls `first_go_ms` after its start.
+fn opened_for(
+  state state: State,
+  aggro aggro: ServiceStep(creature.Outgoing),
+  first_go_ms first_go_ms: Int,
+) -> #(State, ServiceStep(creature.Outgoing), step.TimerId) {
+  let #(state, opened) =
+    fire(state:, at_ms: 1500, timer: timer_for(aggro, 1500))
+  #(state, opened, timer_for(opened, first_go_ms))
+}
+
+/// An Ice Breath cast partly run: the state, the step that opened it, the step of the go last
+/// handled, the timers of the gos handled (by go) and of the go to come (none after the last),
+/// and each strike's deadline timer and key (by go; every strike is told to player 2).
+type Ice {
+  Ice(
+    state: State,
+    opened: ServiceStep(creature.Outgoing),
+    went: ServiceStep(creature.Outgoing),
+    handled: List(step.TimerId),
+    pending: Option(step.TimerId),
+    deadlines: List(#(Int, step.TimerId)),
+    keys: List(#(Int, Key)),
+  )
+}
+
+/// Ice Breath's gos handled at their times, from the first up to go `through`, with player 2
+/// inside both cones: every strike is out and none answered.
+fn ice_through(
+  state state: State,
+  aggro aggro: ServiceStep(creature.Outgoing),
+  through through: Int,
+) -> Ice {
+  let #(state, opened, first) = ice_opened(state:, aggro:)
+  let start =
+    Ice(
+      state:,
+      opened:,
+      went: opened,
+      handled: [],
+      pending: Some(first),
+      deadlines: [],
+      keys: [],
+    )
+  list.fold(list.take([0, 1, 2, 3], through + 1), start, ice_go)
+}
+
+/// The go `phase` handled at its time.
+fn ice_go(ice ice: Ice, phase phase: Int) -> Ice {
+  let assert Some(timer) = ice.pending as "a go is still to come"
+  let assert Ok(at_ms) = list.first(list.drop(ice_go_times_ms, phase))
+  let #(state, went) = fire(state: ice.state, at_ms:, timer:)
+  let strikes = phase == 1 || phase == 2
+  Ice(
+    ..ice,
+    state:,
+    went:,
+    handled: list.append(ice.handled, [timer]),
+    pending: case phase {
+      0 -> Some(timer_for(went, 400))
+      1 -> Some(timer_for(went, 500))
+      2 -> Some(timer_for(went, 300))
+      _ -> None
+    },
+    deadlines: case strikes {
+      True -> list.append(ice.deadlines, [#(phase, timer_for(went, 1000))])
+      False -> ice.deadlines
+    },
+    keys: case strikes {
+      True ->
+        list.append(ice.keys, [#(phase, strike_key(taken: went, number: 2))])
+      False -> ice.keys
+    },
+  )
+}
+
+/// The key of the strike the step tells player `number` to take.
+fn strike_key(
+  taken taken: ServiceStep(creature.Outgoing),
+  number number: Int,
+) -> Key {
+  let assert Ok(#(_, Attacks(tell: Strike(key:, ..)))) =
+    list.find(fights_told(taken), fn(told) { told.0 == number })
+    as "the step tells that player to take a strike"
+  key
+}
+
+/// Player 2's answer that the strike of go `phase` landed, at `at_ms`.
+fn ice_answered(
+  ice ice: Ice,
+  phase phase: Int,
+  at_ms at_ms: Int,
+) -> #(Ice, ServiceStep(creature.Outgoing)) {
+  let assert Ok(key) = list.key_find(ice.keys, phase)
+    as "that go struck player 2"
+  let #(state, answered) = tell(state: ice.state, at_ms:, message: landed(key:))
+  #(Ice(..ice, state:), answered)
+}
+
+/// The go and finish frames the step sends viewer `number`, in order: each 0x7f4 with its
+/// phase and the units it names, the 0x7fe and the 0x7f9.
+fn frames_of(
+  taken taken: ServiceStep(creature.Outgoing),
+  number number: Int,
+) -> List(String) {
+  list.filter_map(news_to(taken, number), fn(news) {
+    case name_of(news) {
+      "0x7f4" -> {
+        let assert CastWent(go:) = news as "a 0x7f4 is a go"
+        Ok(
+          "0x7f4 phase "
+          <> int.to_string(go.phase)
+          <> " ["
+          <> string.join(
+            list.map(go.targets, fn(target) { int.to_string(target.unit_id) }),
+            ",",
+          )
+          <> "]",
+        )
+      }
+      "0x7fe" -> Ok("0x7fe")
+      "0x7f9" -> Ok("0x7f9")
+      _ -> Error(Nil)
+    }
+  })
+}
+
+/// What the step does to the cast of `ice`: the timers it cancels (by go), the frames viewer
+/// `number` is sent and the timers it starts.
+fn observed(
+  taken taken: ServiceStep(creature.Outgoing),
+  ice ice: Ice,
+  number number: Int,
+) -> List(String) {
+  list.flatten([
+    list.map(timers_cancelled(taken), fn(timer) {
+      case list.find(ice.deadlines, fn(deadline) { deadline.1 == timer }) {
+        Ok(#(phase, _)) -> "cancels deadline " <> int.to_string(phase)
+        Error(Nil) ->
+          case ice.pending == Some(timer) {
+            True -> "cancels the pending go"
+            False -> "cancels another timer"
+          }
+      }
+    }),
+    frames_of(taken:, number:),
+    list.map(timers(taken), fn(started) {
+      "starts " <> int.to_string(started.1)
+    }),
+  ])
+}
+
+/// The strikes the step tells players to take, each as the go and the player.
+fn strikes_of(taken taken: ServiceStep(creature.Outgoing)) -> List(String) {
+  list.map(fights_told(taken), fn(told) {
+    let assert Attacks(tell: Strike(key:, ..)) = told.1
+      as "a creature's tell to a fighter is a strike"
+    let assert strike_tell.AtGo(phase:) = key.occasion
+      as "the strike of a charge is keyed to its go"
+    "strike at go " <> int.to_string(phase) <> " to " <> int.to_string(told.0)
+  })
+}
+
+pub fn each_damage_go_strikes_at_its_phase_and_the_cast_finishes_after_the_last_go_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, aggro) = ice_fought(viewers: [2])
+  let #(state, opened, first) = ice_opened(state:, aggro:)
+  // Go 0, the cast bar's: 0x7f4 phase 0 with no target.
+  let #(state, zero) = fire(state:, at_ms: 4100, timer: first)
+  assert frames_of(taken: zero, number: 2) == ["0x7f4 phase 0 []"]
+    && fights_told(zero) == []
+    as "go 0 names no unit and strikes nobody"
+  // Go 1 at 4,500 strikes player 2 under the key of go 1, with blow 132757 alone.
+  let #(state, one) = fire(state:, at_ms: 4500, timer: timer_for(zero, 400))
+  let assert [#(2, Attacks(tell: Strike(key: one_key, offence:, ..)))] =
+    fights_told(one)
+  assert one_key.occasion == strike_tell.AtGo(phase: 1)
+    && one_key.cast_id == cast_id_sent(opened, 2)
+    as "the strike of go 1 is keyed to its go, under the cast's id"
+  assert list.map(offence.blows, fn(blow) { blow.spell4_effects_id })
+    == [132_757]
+    as "Spell4Effects 132757 alone"
+  assert frames_of(taken: one, number: 2) == []
+    as "go 1 is written when it is answered"
+  let #(state, answered_one) =
+    tell(state:, at_ms: 4550, message: landed(key: one_key))
+  assert frames_of(taken: answered_one, number: 2) == ["0x7f4 phase 1 [20]"]
+    as "0x7f4 phase 1 lists player 2"
+  // Go 2 at 5,000.
+  let #(state, two) = fire(state:, at_ms: 5000, timer: timer_for(one, 500))
+  let two_key = strike_key(taken: two, number: 2)
+  assert two_key.occasion == strike_tell.AtGo(phase: 2)
+    as "the strike of go 2 is keyed to go 2"
+  let #(state, answered_two) =
+    tell(state:, at_ms: 5050, message: landed(key: two_key))
+  assert frames_of(taken: answered_two, number: 2) == ["0x7f4 phase 2 [20]"]
+    as "0x7f4 phase 2 lists player 2"
+  // Go 3, the last, at 5,300: its 0x7f4, then the finish, and the hold counts from here.
+  let #(_, last) = fire(state:, at_ms: 5300, timer: timer_for(two, 300))
+  assert frames_of(taken: last, number: 2) == ["0x7f4 phase 3 []", "0x7fe"]
+    as "the last go names no unit, and the cast finishes after it"
+  assert list.map(timers(last), fn(started) { started.1 }) == [500]
+    as "the next attack tick comes 500 ms after the close (Spell4Effects 132758)"
+}
+
+/// A row of the table of overlapping rounds: what its scene does, as lines, and the lines
+/// the rule gives.
+type Overlap {
+  Overlap(reason: String, run: fn() -> List(String), expected: List(String))
+}
+
+pub fn the_rounds_of_overlapping_hits_are_written_in_go_order_test() -> Nil {
+  use <- owned_test.run(5000)
+  let through = fn(go) {
+    let #(state, aggro) = ice_fought(viewers: [2])
+    ice_through(state:, aggro:, through: go)
+  }
+  [
+    Overlap(
+      reason: "both strikes out and none answered: each answer closes its own round, under its own deadline",
+      run: fn() {
+        let ice = through(2)
+        let #(ice, one) = ice_answered(ice:, phase: 1, at_ms: 5100)
+        let #(ice, two) = ice_answered(ice:, phase: 2, at_ms: 5150)
+        list.flatten([
+          [
+            case
+              list.key_find(ice.deadlines, 1) == list.key_find(ice.deadlines, 2)
+            {
+              True -> "the deadlines share a timer"
+              False -> "the deadlines are two timers"
+            },
+          ],
+          observed(taken: one, ice:, number: 2),
+          observed(taken: two, ice:, number: 2),
+        ])
+      },
+      expected: [
+        "the deadlines are two timers",
+        "cancels deadline 1",
+        "0x7f4 phase 1 [20]",
+        "cancels deadline 2",
+        "0x7f4 phase 2 [20]",
+      ],
+    ),
+    Overlap(
+      reason: "go 2 answered first: nothing is written until go 1's answer, which writes both in order",
+      run: fn() {
+        let ice = through(2)
+        let #(ice, two) = ice_answered(ice:, phase: 2, at_ms: 5010)
+        let #(ice, one) = ice_answered(ice:, phase: 1, at_ms: 5020)
+        list.append(
+          observed(taken: two, ice:, number: 2),
+          observed(taken: one, ice:, number: 2),
+        )
+      },
+      expected: [
+        "cancels deadline 2",
+        "cancels deadline 1",
+        "0x7f4 phase 1 [20]",
+        "0x7f4 phase 2 [20]",
+      ],
+    ),
+    Overlap(
+      reason: "go 1 never answered: its deadline writes it with no target, then go 2 behind it; its late answer changes nothing",
+      run: fn() {
+        let ice = through(2)
+        let #(ice, two) = ice_answered(ice:, phase: 2, at_ms: 5100)
+        let assert Ok(deadline) = list.key_find(ice.deadlines, 1)
+        let #(state, closed) =
+          fire(state: ice.state, at_ms: 5500, timer: deadline)
+        let ice = Ice(..ice, state:)
+        let #(ice, late) = ice_answered(ice:, phase: 1, at_ms: 5600)
+        list.flatten([
+          observed(taken: two, ice:, number: 2),
+          observed(taken: closed, ice:, number: 2),
+          observed(taken: late, ice:, number: 2),
+        ])
+      },
+      expected: [
+        "cancels deadline 2",
+        "0x7f4 phase 1 []",
+        "0x7f4 phase 2 [20]",
+      ],
+    ),
+    Overlap(
+      reason: "the last go waits behind go 2's open round: no finish and no hold until go 2's answer, which writes phase 2, phase 3 and the finish",
+      run: fn() {
+        let ice = through(2)
+        let #(ice, _) = ice_answered(ice:, phase: 1, at_ms: 5100)
+        let ice = ice_go(ice:, phase: 3)
+        let waited = observed(taken: ice.went, ice:, number: 2)
+        let #(ice, two) = ice_answered(ice:, phase: 2, at_ms: 5400)
+        list.append(waited, observed(taken: two, ice:, number: 2))
+      },
+      expected: [
+        "cancels deadline 2",
+        "0x7f4 phase 2 [20]",
+        "0x7f4 phase 3 []",
+        "0x7fe",
+        "starts 500",
+      ],
+    ),
+    Overlap(
+      reason: "a deadline and the next go due in the same millisecond give the same frames in either order",
+      run: fn() {
+        // Strike gos 1,000 ms apart (as Spell4 45746's), so go 1's deadline and go 2 fall at
+        // 5,500 ms.
+        let spaced = fn() {
+          let special = spawn_support.ice_breath(hold_ms: 500)
+          let assert creature_life.Charged(gos: [_, first, second, last], ..) as charged =
+            special.attack.cast
+          let special =
+            creature_life.Special(
+              ..special,
+              attack: creature_life.Attack(
+                ..special.attack,
+                cast: creature_life.Charged(..charged, gos: [
+                  creature_life.Go(at_ms: 2000, strike: None),
+                  creature_life.Go(..first, at_ms: 3000),
+                  creature_life.Go(..second, at_ms: 4000),
+                  creature_life.Go(..last, at_ms: 4500),
+                ]),
+              ),
+            )
+          let #(state, aggro) = ice_fought_with(special:, viewers: [2])
+          let #(state, _, first_go) =
+            opened_for(state:, aggro:, first_go_ms: 2000)
+          let #(state, zero) = fire(state:, at_ms: 3500, timer: first_go)
+          let #(state, one) =
+            fire(state:, at_ms: 4500, timer: timer_for(zero, 1000))
+          let assert [#(deadline, 1000), #(next_go, 1000)] = timers(one)
+            as "the strike's deadline and the next go, both 1,000 ms on"
+          #(state, deadline, next_go)
+        }
+        let #(state, deadline, next_go) = spaced()
+        let #(state, closed) = fire(state:, at_ms: 5500, timer: deadline)
+        let #(_, struck) = fire(state:, at_ms: 5500, timer: next_go)
+        let deadline_first =
+          list.sort(
+            list.append(
+              frames_of(taken: closed, number: 2),
+              strikes_of(taken: struck),
+            ),
+            string.compare,
+          )
+        let #(state, deadline, next_go) = spaced()
+        let #(state, struck) = fire(state:, at_ms: 5500, timer: next_go)
+        let #(_, closed) = fire(state:, at_ms: 5500, timer: deadline)
+        let go_first =
+          list.sort(
+            list.append(
+              frames_of(taken: closed, number: 2),
+              strikes_of(taken: struck),
+            ),
+            string.compare,
+          )
+        list.append(deadline_first, go_first)
+      },
+      expected: [
+        "0x7f4 phase 1 []",
+        "strike at go 2 to 2",
+        "0x7f4 phase 1 []",
+        "strike at go 2 to 2",
+      ],
+    ),
+  ]
+  |> list.each(fn(row) {
+    assert row.run() == row.expected as row.reason
+  })
+}
+
+pub fn a_hit_that_selects_nobody_is_an_empty_entry_and_the_cast_goes_on_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Row (a): player 2 steps out of both cones (9 away, beyond the cones' 5.5 and the hit
+  // radius 1.2) before go 1 and back before go 2: go 1 is an empty entry, written at once;
+  // go 2 strikes it again; the cast reaches its last go.
+  let #(state, aggro) = ice_fought(viewers: [2])
+  let #(state, _, first) = ice_opened(state:, aggro:)
+  let #(state, zero) = fire(state:, at_ms: 4100, timer: first)
+  let #(state, away) =
+    tell(
+      state:,
+      at_ms: 4300,
+      message: moved_at(number: 2, x: 0.0, z: -9.0, seq: 3),
+    )
+  assert said(away) == [] as "the creature does not move while it casts"
+  let #(state, one) = fire(state:, at_ms: 4500, timer: timer_for(zero, 400))
+  assert fights_told(one) == []
+    && frames_of(taken: one, number: 2) == ["0x7f4 phase 1 []"]
+    as "go 1 selects nobody: its 0x7f4 names no unit and is written at once"
+  let #(state, _) =
+    tell(
+      state:,
+      at_ms: 4800,
+      message: moved_at(number: 2, x: 0.0, z: -4.0, seq: 4),
+    )
+  let #(state, two) = fire(state:, at_ms: 5000, timer: timer_for(one, 500))
+  let key = strike_key(taken: two, number: 2)
+  assert key.occasion == strike_tell.AtGo(phase: 2)
+    as "go 2 strikes player 2 again"
+  let #(state, answered) = tell(state:, at_ms: 5050, message: landed(key:))
+  assert frames_of(taken: answered, number: 2) == ["0x7f4 phase 2 [20]"]
+  let #(_, last) = fire(state:, at_ms: 5300, timer: timer_for(two, 300))
+  assert frames_of(taken: last, number: 2) == ["0x7f4 phase 3 []", "0x7fe"]
+    as "the cast reaches its last go and finishes"
+  // Row (b): the hits are on the cast's target (`FollowsTarget`), which is no longer a viewer,
+  // with player 5 still fighting: go 1 and go 2 are empty entries written in order, go 3 is
+  // written and the cast finishes.
+  let special = spawn_support.ice_breath(hold_ms: 500)
+  let assert creature_life.Charged(..) as charged = special.attack.cast
+  let on_target =
+    creature_life.Special(
+      ..special,
+      attack: creature_life.Attack(
+        ..special.attack,
+        cast: creature_life.Charged(..charged, anchor: area.FollowsTarget),
+      ),
+    )
+  let #(state, aggro) = ice_fought_with(special: on_target, viewers: [2, 5])
+  let state = with_player_at(state:, number: 5, x: 0.0, z: -3.0)
+  let #(state, _, first) = ice_opened(state:, aggro:)
+  let #(state, gone) =
+    tell(state:, at_ms: 2000, message: creature.Unwatched(by: ConnectionId(2)))
+  assert frames_of(taken: gone, number: 5) == []
+  let #(state, zero) = fire(state:, at_ms: 4100, timer: first)
+  let #(state, one) = fire(state:, at_ms: 4500, timer: timer_for(zero, 400))
+  let #(state, two) = fire(state:, at_ms: 5000, timer: timer_for(one, 500))
+  let #(_, last) = fire(state:, at_ms: 5300, timer: timer_for(two, 300))
+  assert list.flat_map([zero, one, two, last], frames_of(taken: _, number: 5))
+    == [
+      "0x7f4 phase 0 []",
+      "0x7f4 phase 1 []",
+      "0x7f4 phase 2 []",
+      "0x7f4 phase 3 []",
+      "0x7fe",
+    ]
+    as "a row on a target that is gone strikes nobody: each go is an empty entry, written in order"
+  assert list.all([one, two], fn(taken) { fights_told(taken) == [] })
+    as "and nobody is told to take a strike"
+}
+
+/// Ice Breath's worked positions (the creature at (0, 0) turned to player 2 at (0, -4),
+/// facing -z): player 5 at (-1.545, -4.755), 5.0 away and 18 degrees toward -x, inside the +10
+/// degree cone (0 to 20 degrees toward -x) and outside the -10 degree cone; player 6 at the
+/// mirror place inside the -10 cone only.
+fn ice_with_players(
+  special special: creature_life.Special,
+) -> #(State, ServiceStep(creature.Outgoing)) {
+  let #(state, aggro) = ice_fought_with(special:, viewers: [2, 5, 6])
+  let state = with_player_at(state:, number: 5, x: -1.545, z: -4.755)
+  let state = with_player_at(state:, number: 6, x: 1.545, z: -4.755)
+  #(state, aggro)
+}
+
+/// The special with the blows and gos named, whatever else Ice Breath holds.
+fn ice_with_gos(gos gos: List(creature_life.Go)) -> creature_life.Special {
+  let special = spawn_support.ice_breath(hold_ms: 500)
+  let assert creature_life.Charged(..) as charged = special.attack.cast
+  creature_life.Special(
+    ..special,
+    attack: creature_life.Attack(
+      ..special.attack,
+      cast: creature_life.Charged(..charged, gos:),
+    ),
+  )
+}
+
+pub fn each_hit_strikes_the_fighters_and_the_blows_that_name_its_go_test() -> Nil {
+  use <- owned_test.run(5000)
+  let ice_gos = fn(first, second) {
+    ice_with_gos(gos: [
+      creature_life.Go(at_ms: 2600, strike: None),
+      creature_life.Go(
+        at_ms: 3000,
+        strike: Some(creature_life.GoStrike(
+          spell4_effects_ids: [132_757],
+          inside: first,
+        )),
+      ),
+      creature_life.Go(
+        at_ms: 3500,
+        strike: Some(creature_life.GoStrike(
+          spell4_effects_ids: [132_757],
+          inside: second,
+        )),
+      ),
+      creature_life.Go(at_ms: 3800, strike: None),
+    ])
+  }
+  // Row (a): who stands inside each go's own shapes.
+  [
+    #(
+      "the cones of rows 7956 and 7957: player 5 is inside the first only, player 6 the second only, player 2 on the axis both",
+      spawn_support.ice_breath(hold_ms: 500),
+      [2, 5],
+      [2, 6],
+    ),
+    #(
+      "a go whose shapes are the same for both hits strikes the same fighters at both",
+      ice_gos(
+        spawn_support.ice_breath_cone(turn_degrees: 10.0),
+        spawn_support.ice_breath_cone(turn_degrees: 10.0),
+      ),
+      [2, 5],
+      [2, 5],
+    ),
+  ]
+  |> list.each(fn(row) {
+    let #(reason, special, first_struck, second_struck) = row
+    let #(state, aggro) = ice_with_players(special:)
+    let ice = ice_through(state:, aggro:, through: 2)
+    assert struck_numbers(ice.went) == second_struck as reason
+    // Go 1's step is not kept by `ice_through`: run the cast again to its first strike.
+    let #(state, aggro) = ice_with_players(special:)
+    let ice = ice_through(state:, aggro:, through: 1)
+    assert struck_numbers(ice.went) == first_struck as reason
+  })
+  // Row (b): Spell4 45951's gos 200, 1,000, 1,200 and 1,800 ms with its two damage rows,
+  // 107436 (phaseFlags 2: go 1) and 107454 (phaseFlags 8: go 3); crit chance, severity and
+  // strikethrough are the attack's.
+  let two_rows =
+    creature_life.Special(
+      ..spawn_support.ice_breath(hold_ms: 0),
+      cooldown_ms: 10_000,
+    )
+  let assert creature_life.Charged(..) as charged = two_rows.attack.cast
+  let blow = fn(id) {
+    Blow(
+      spell4_effects_id: id,
+      damage_type: 1,
+      damage: Worked(21),
+      delay_ms: 0,
+      threat_multiplier: 1.0,
+    )
+  }
+  let special =
+    creature_life.Special(
+      ..two_rows,
+      attack: creature_life.Attack(
+        ..two_rows.attack,
+        offence: Offence(
+          blows: [blow(107_436), blow(107_454)],
+          crit_chance: 0.25,
+          crit_severity: 1.75,
+          strikethrough: 0.125,
+        ),
+        cast: creature_life.Charged(..charged, cast_ms: 1800, gos: [
+          creature_life.Go(at_ms: 200, strike: None),
+          creature_life.Go(
+            at_ms: 1000,
+            strike: Some(creature_life.GoStrike(
+              spell4_effects_ids: [107_436],
+              inside: spawn_support.ice_breath_cone(turn_degrees: 10.0),
+            )),
+          ),
+          creature_life.Go(at_ms: 1200, strike: None),
+          creature_life.Go(
+            at_ms: 1800,
+            strike: Some(creature_life.GoStrike(
+              spell4_effects_ids: [107_454],
+              inside: spawn_support.ice_breath_cone(turn_degrees: 10.0),
+            )),
+          ),
+        ]),
+      ),
+    )
+  let #(state, aggro) = ice_fought_with(special:, viewers: [2])
+  let #(state, _, first) = opened_for(state:, aggro:, first_go_ms: 200)
+  let #(state, zero) = fire(state:, at_ms: 1700, timer: first)
+  let #(state, one) = fire(state:, at_ms: 2500, timer: timer_for(zero, 800))
+  let #(state, two) = fire(state:, at_ms: 2700, timer: timer_for(one, 200))
+  let #(_, three) = fire(state:, at_ms: 3300, timer: timer_for(two, 600))
+  let blows_of = fn(taken) {
+    let assert [#(2, Attacks(tell: Strike(offence:, ..)))] = fights_told(taken)
+    #(
+      list.map(offence.blows, fn(blow) { blow.spell4_effects_id }),
+      offence.crit_chance,
+      offence.crit_severity,
+      offence.strikethrough,
+    )
+  }
+  assert blows_of(one) == #([107_436], 0.25, 1.75, 0.125)
+    as "the strike at go 1 carries blow 107436 alone, with the attack's crit and strikethrough"
+  assert blows_of(three) == #([107_454], 0.25, 1.75, 0.125)
+    as "the strike at go 3 carries blow 107454 alone"
+}
+
+pub fn a_fighter_the_first_hit_killed_is_not_struck_by_the_second_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Row (a): players 2 and 7 both on the axis. Both are struck at go 1; player 7 answers, then
+  // player 2's killing answer: go 2 strikes player 7 alone.
+  let #(state, aggro) = ice_fought(viewers: [2, 7])
+  let state = with_player_at(state:, number: 7, x: 0.0, z: -5.0)
+  let ice = ice_through(state:, aggro:, through: 1)
+  assert struck_numbers(ice.went) == [2, 7]
+    as "both fighters are struck by go 1"
+  let key_7 = strike_key(taken: ice.went, number: 7)
+  let #(state, _) =
+    tell(state: ice.state, at_ms: 4510, message: landed(key: key_7))
+  let #(state, killed) =
+    tell(
+      state:,
+      at_ms: 4520,
+      message: killing_answer(key: strike_key(taken: ice.went, number: 2)),
+    )
+  assert list.contains(said(killed), "Released(7) to 2")
+  let assert Some(pending) = ice.pending
+  let #(_, two) = fire(state:, at_ms: 5000, timer: pending)
+  assert struck_numbers(two) == [7] as "go 2 strikes the fighter that is left"
+  // Row (b): player 2 alone. Its killing answer writes go 1 listing it, then the threat list is
+  // empty and the leash runs inside the answer: the pending go cancelled, the cast finished,
+  // the fighter released; nothing strikes at 5,000.
+  let #(state, aggro) = ice_fought(viewers: [2])
+  let ice = ice_through(state:, aggro:, through: 1)
+  let #(state, killed) =
+    tell(
+      state: ice.state,
+      at_ms: 4550,
+      message: killing_answer(key: strike_key(taken: ice.went, number: 2)),
+    )
+  assert frames_of(taken: killed, number: 2) == ["0x7f4 phase 1 [20]", "0x7fe"]
+    as "go 1 lists the killed fighter, then the cast finishes"
+  let assert Some(pending) = ice.pending
+  assert list.contains(timers_cancelled(killed), pending)
+    as "the pending go's timer is cancelled"
+  assert list.contains(said(killed), "Released(7) to 2")
+  let #(state, late) = fire(state:, at_ms: 5000, timer: pending)
+  assert said(late) == [] && timers(late) == []
+    as "the old go timer does nothing"
+  let assert Ok(deadline) = list.key_find(ice.deadlines, 1)
+  let #(_, after) = fire(state:, at_ms: 5550, timer: deadline)
+  assert said(after) == [] && timers(after) == []
+    as "and so does go 1's deadline"
+}
+
+/// What interrupts an Ice Breath cast: a Stagger stun on the creature, or a knockback throw
+/// that carries it 10 units past its target.
+type Break {
+  Stun
+  Throw
+}
+
+/// A row of the table of breaks between hits: the gos handled (`through`), the hits answered
+/// before the break, what breaks the cast and when, the frames the break sends viewer 2, how
+/// many timers it cancels, whether a second state follows and finds nothing, and the answer
+/// that arrives after the break with the frames it sends.
+type BreakRow {
+  BreakRow(
+    reason: String,
+    through: Int,
+    answered: List(Int),
+    interrupt: Break,
+    at_ms: Int,
+    frames: List(String),
+    cancelled: Int,
+    second_state: Bool,
+    then_answer: Option(Int),
+    then_frames: List(String),
+  )
+}
+
+fn broken_by(
+  state state: State,
+  interrupt interrupt: Break,
+  at_ms at_ms: Int,
+) -> #(State, ServiceStep(creature.Outgoing)) {
+  case interrupt {
+    Stun -> stunned_at(state:, at_ms:)
+    Throw ->
+      tell(
+        state:,
+        at_ms:,
+        message: knockback_from(at_ms:, unit_at: at_xz(x: 0.0, z: 5.0)),
+      )
+  }
+}
+
+pub fn a_state_between_hits_ends_the_rest_of_the_cast_and_closes_the_open_rounds_at_once_test() -> Nil {
+  use <- owned_test.run(5000)
+  [
+    BreakRow(
+      reason: "a stun after go 1's strike went out with no answer, go 2 pending: go 1 is written with no target, then the 0x7f9",
+      through: 1,
+      answered: [],
+      interrupt: Stun,
+      at_ms: 4600,
+      frames: ["0x7f4 phase 1 []", "0x7f9"],
+      cancelled: 2,
+      second_state: False,
+      then_answer: Some(1),
+      then_frames: [],
+    ),
+    BreakRow(
+      reason: "a stun after go 1 was answered and written, before go 2: the 0x7f9 alone",
+      through: 1,
+      answered: [1],
+      interrupt: Stun,
+      at_ms: 4800,
+      frames: ["0x7f9"],
+      cancelled: 1,
+      second_state: False,
+      then_answer: None,
+      then_frames: [],
+    ),
+    BreakRow(
+      reason: "a stun with go 2's round open and go 3 pending: go 2 is written with no target, then the 0x7f9, and phase 3 is never written",
+      through: 2,
+      answered: [1],
+      interrupt: Stun,
+      at_ms: 5100,
+      frames: ["0x7f4 phase 2 []", "0x7f9"],
+      cancelled: 2,
+      second_state: False,
+      then_answer: Some(2),
+      then_frames: [],
+    ),
+    BreakRow(
+      reason: "a stun once every go is reached breaks nothing: go 2's answer writes phase 2, phase 3 and the finish",
+      through: 3,
+      answered: [1],
+      interrupt: Stun,
+      at_ms: 5350,
+      frames: [],
+      cancelled: 0,
+      second_state: False,
+      then_answer: Some(2),
+      then_frames: ["0x7f4 phase 2 [20]", "0x7f4 phase 3 []", "0x7fe"],
+    ),
+    BreakRow(
+      reason: "a second state in the same round finds no cast: one 0x7f9",
+      through: 1,
+      answered: [],
+      interrupt: Stun,
+      at_ms: 4600,
+      frames: ["0x7f4 phase 1 []", "0x7f9"],
+      cancelled: 2,
+      second_state: True,
+      then_answer: None,
+      then_frames: [],
+    ),
+    BreakRow(
+      reason: "a throw between hits breaks as a state does",
+      through: 1,
+      answered: [],
+      interrupt: Throw,
+      at_ms: 4600,
+      frames: ["0x7f4 phase 1 []", "0x7f9"],
+      cancelled: 2,
+      second_state: False,
+      then_answer: None,
+      then_frames: [],
+    ),
+  ]
+  |> list.each(fn(row) {
+    let #(state, aggro) = ice_fought(viewers: [2])
+    let ice = ice_through(state:, aggro:, through: row.through)
+    let ice =
+      list.fold(row.answered, ice, fn(ice, phase) {
+        ice_answered(ice:, phase:, at_ms: 4550).0
+      })
+    let #(state, broken) =
+      broken_by(state: ice.state, interrupt: row.interrupt, at_ms: row.at_ms)
+    assert frames_of(taken: broken, number: 2) == row.frames as row.reason
+    assert list.length(timers_cancelled(broken)) == row.cancelled
+      as {
+        row.reason <> ": the pending go and each open deadline are cancelled"
+      }
+    let started = list.map(timers(broken), fn(started) { started.1 })
+    assert list.contains(started, 1500) == { row.frames != [] }
+      as {
+        row.reason
+        <> ": a broken cast starts the next attack tick after the interval, not the hold"
+      }
+    // What fires after the break does nothing: the go timers and the deadlines.
+    case row.frames {
+      [] -> Nil
+      [_, ..] ->
+        list.each(
+          list.flatten([
+            ice.handled,
+            option.values([ice.pending]),
+            list.map(ice.deadlines, fn(deadline) { deadline.1 }),
+          ]),
+          fn(timer) {
+            let #(_, fired) = fire(state:, at_ms: 6000, timer:)
+            assert said(fired) == [] && timers(fired) == []
+              as { row.reason <> ": a timer of the broken cast does nothing" }
+          },
+        )
+    }
+    let state = case row.second_state {
+      False -> state
+      True -> {
+        let #(state, second) =
+          tell(
+            state:,
+            at_ms: row.at_ms + 50,
+            message: controlling(number: 2, cast_id: 3, controls: [
+              crowd_control_support.gate_stun(instance_id: 28_674),
+            ]),
+          )
+        assert frames_of(taken: second, number: 2) == []
+          as { row.reason <> ": the second state finds no cast" }
+        state
+      }
+    }
+    case row.then_answer {
+      None -> Nil
+      Some(phase) -> {
+        let assert Ok(key) = list.key_find(ice.keys, phase)
+        let #(_, after) =
+          tell(state:, at_ms: row.at_ms + 70, message: landed(key:))
+        assert frames_of(taken: after, number: 2) == row.then_frames
+          as row.reason
+      }
+    }
+    // The special's cooldown stays spent: once the throw's flight is over, the next attack tick
+    // (the hit left the target 6 units off) casts the instant attack, not the special again.
+    case row.interrupt {
+      Stun -> Nil
+      Throw -> {
+        assert list.contains(
+          list.drop_while(said(broken), fn(line) { line != "0x7f9 to 2" }),
+          "0x638 to 2",
+        )
+          as { row.reason <> ": the flight's 0x638 follows the 0x7f9" }
+        let #(state, _) =
+          fire(state:, at_ms: row.at_ms + 375, timer: timer_for(broken, 375))
+        let #(_, ticked) =
+          fire(state:, at_ms: row.at_ms + 1500, timer: timer_for(broken, 1500))
+        let assert [CastStarted(start:)] = casts_of(ticked, 2)
+        assert start.spell4_id == 5649
+          as { row.reason <> ": the cooldown the cast spent is still running" }
+      }
+    }
+  })
+}
+
+/// The Sim-Turret of migration 0030 (guarded by Spell4 85474, opened by 85472) with its
+/// charge's gos replaced: the state and the step of its `Started`.
+fn guarded_turret_with(
+  gos gos: List(creature_life.Go),
+  viewers viewers: List(Int),
+) -> #(State, ServiceStep(creature.Outgoing)) {
+  let spawn = spawn_support.sim_turret(number: 1, place: at(0.0))
+  let assert creature_life.Charged(..) as charged = spawn.combat.attack.cast
+    as "the turret's attack is a charge"
+  let kinds = spawn_support.guarded_turret_kinds()
+  let assert Ok(kind) = dict.get(kinds.by_creature, 73_494)
+    as "migrations 0029 and 0030 give the Exile turret its kind"
+  started_with(
+    source: spawn_source.Stored(id: SpawnId(1)),
+    spawn: Spawn(
+      ..spawn,
+      combat: creature_life.Combat(
+        ..spawn.combat,
+        attack: creature_life.Attack(
+          ..spawn.combat.attack,
+          cast: creature_life.Charged(..charged, gos:),
+        ),
+      ),
+    ),
+    kind:,
+    viewers:,
+    armor: creature_life.NoArmor,
+  )
+}
+
+pub fn a_stun_between_hits_of_a_guarded_creatures_cast_opens_it_once_after_the_cast_is_closed_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The Sim-Turret's charge with its one strike replaced by two strikes (at 3,000 and 5,000
+  // ms) and a last go (8,000 ms): no client turret casts a multi-hit cast, so this cast is
+  // planted. The charge opens at 3,000 ms, so the gos fall at 6,000, 8,000 and 11,000 ms.
+  let spawn = spawn_support.sim_turret(number: 1, place: at(0.0))
+  let assert creature_life.Charged(
+    gos: [creature_life.Go(strike: Some(strike), ..)],
+    ..,
+  ) = spawn.combat.attack.cast
+    as "the turret's charge has one go, which strikes"
+  let #(turret, started) =
+    guarded_turret_with(
+      gos: [
+        creature_life.Go(at_ms: 3000, strike: Some(strike)),
+        creature_life.Go(at_ms: 5000, strike: Some(strike)),
+        creature_life.Go(at_ms: 8000, strike: None),
+      ],
+      viewers: [2],
+    )
+  let assert [_, CastStarted(start: guard), ..] = news_to(started, 2)
+    as "the start sends the 0x262, then the guard's 0x7ff"
+  let #(state, aggro) =
+    tell(
+      state: turret,
+      at_ms: 0,
+      message: approached_at(number: 2, x: 0.0, z: -10.0, seq: 1),
+    )
+  let #(state, opened) =
+    fire(state:, at_ms: 3000, timer: timer_for(aggro, 3000))
+  let charge_cast = cast_id_sent(opened, 2)
+  let #(state, first) =
+    fire(state:, at_ms: 6000, timer: timer_for(opened, 3000))
+  let assert [#(2, Attacks(..))] = fights_told(first)
+    as "the first hit is out, unanswered"
+  let #(_, stunned) = stunned_at(state:, at_ms: 6500)
+  let assert [
+    client_connection.CrowdControlApplied(state: crowd_control_state.Stun, ..),
+    CastWent(go: written),
+    client_connection.CastInterrupted(cast_id: broken),
+    CastStarted(start: opening),
+    CastWent(go: opening_go),
+    client_connection.CastTargetsRemoved(removed:, destroyed: True),
+    client_connection.CrowdControlApplied(
+      state: crowd_control_state.Vulnerability,
+      ..,
+    ),
+    client_connection.CrowdControlApplied(
+      state: crowd_control_state.Disable,
+      ..,
+    ),
+  ] = news_named(stunned, 2)
+    as "the stun, the open hit's 0x7f4, the 0x7f9, then the guard's opening: its cast, the guard's removal, its states"
+  assert written.cast_id == charge_cast
+    && written.phase == 0
+    && written.targets == []
+    && broken == charge_cast
+    as "the hit is written for the charge, with no target, before the 0x7f9"
+  assert opening.spell4_id == 85_472
+    && opening.cast_id != guard.cast_id
+    && opening.cast_id != charge_cast
+    && opening_go.cast_id == opening.cast_id
+    && removed == SpellTargetsRemoved(cast_id: guard.cast_id, unit_ids: [unit])
+    as "the opening's cast id is neither the guard's nor the charge's"
+  assert openings_ending(stunned) == 1 as "one opening, one 15,000 ms timer"
+}
+
+pub fn death_and_the_leash_between_hits_cancel_every_timer_and_close_the_cast_once_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Viewer 3 only watches, so it is told what the fighters' leaving leaves to send.
+  [
+    DeathRow(
+      reason: "death with go 1's round open and go 2 pending: the pending go and go 1's deadline are cancelled, one 0x7fe and no 0x7f4",
+      through: 1,
+      answered: [],
+      ends: Death,
+      at_ms: 4600,
+      frames: ["0x7fe"],
+      cancelled: 2,
+    ),
+    DeathRow(
+      reason: "the leash with strikes out at go 1 and go 2 and go 3 pending: both open rounds are written with no target, in order, then one 0x7fe",
+      through: 2,
+      answered: [],
+      ends: Leash,
+      at_ms: 5100,
+      frames: ["0x7f4 phase 1 []", "0x7f4 phase 2 []", "0x7fe"],
+      cancelled: 3,
+    ),
+    DeathRow(
+      reason: "death with every go reached, go 2's round open and go 3 complete behind it: go 2's deadline is cancelled once, one 0x7fe and no 0x7f4",
+      through: 3,
+      answered: [1],
+      ends: Death,
+      at_ms: 5350,
+      frames: ["0x7fe"],
+      cancelled: 1,
+    ),
+    DeathRow(
+      reason: "the leash with every go reached: phase 2, then phase 3 with no target, then the 0x7fe",
+      through: 3,
+      answered: [1],
+      ends: Leash,
+      at_ms: 5350,
+      frames: ["0x7f4 phase 2 []", "0x7f4 phase 3 []", "0x7fe"],
+      cancelled: 1,
+    ),
+  ]
+  |> list.each(fn(row) {
+    let #(state, aggro) = ice_fought(viewers: [2, 3])
+    let ice = ice_through(state:, aggro:, through: row.through)
+    let ice =
+      list.fold(row.answered, ice, fn(ice, phase) {
+        ice_answered(ice:, phase:, at_ms: 4550).0
+      })
+    let #(state, ended) = case row.ends {
+      Death ->
+        tell(
+          state: ice.state,
+          at_ms: row.at_ms,
+          message: strike_of(number: 2, cast_id: 1, blows: [
+            #(1, 1_000_000, 1.0),
+          ]),
+        )
+      Leash ->
+        tell(
+          state: ice.state,
+          at_ms: row.at_ms,
+          message: creature.Unwatched(by: ConnectionId(2)),
+        )
+    }
+    assert frames_of(taken: ended, number: 3) == row.frames as row.reason
+    assert list.length(timers_cancelled(ended)) == row.cancelled
+      as { row.reason <> ": every timer of the cast is cancelled once" }
+    // Whatever fires after: the go timers, the deadlines and a late answer do nothing.
+    list.each(
+      list.flatten([
+        ice.handled,
+        option.values([ice.pending]),
+        list.map(ice.deadlines, fn(deadline) { deadline.1 }),
+      ]),
+      fn(timer) {
+        let #(_, fired) = fire(state:, at_ms: 6000, timer:)
+        assert frames_of(taken: fired, number: 3) == [] && timers(fired) == []
+          as { row.reason <> ": a timer of the closed cast does nothing" }
+      },
+    )
+    list.each(ice.keys, fn(keyed) {
+      let #(_, late) = tell(state:, at_ms: 6000, message: landed(key: keyed.1))
+      assert frames_of(taken: late, number: 3) == []
+        as { row.reason <> ": a late answer writes nothing" }
+    })
+  })
+}
+
+type EndsBy {
+  Death
+  Leash
+}
+
+type DeathRow {
+  DeathRow(
+    reason: String,
+    through: Int,
+    answered: List(Int),
+    ends: EndsBy,
+    at_ms: Int,
+    frames: List(String),
+    cancelled: Int,
+  )
+}
+
+pub fn a_viewer_arriving_between_hits_is_told_only_the_gos_already_written_test() -> Nil {
+  use <- owned_test.run(5000)
+  let watched_at = fn(state, at_ms, number) {
+    tell(
+      state:,
+      at_ms:,
+      message: creature.Watched(
+        by: ConnectionId(number),
+        stay: map_support.stay(count: number),
+      ),
+    )
+  }
+  // Row (a): player 9 watches at 4,800, go 1's round open: the cast and phase 0 only; phase 1
+  // reaches it once, when go 1 closes.
+  let #(state, aggro) = ice_fought(viewers: [2])
+  let ice = ice_through(state:, aggro:, through: 1)
+  let #(state, watched) = watched_at(ice.state, 4800, 9)
+  assert list.map(news_to(watched, 9), name_of)
+    == ["0x262", "0x89a(1)", "0x908(20, 1)", "0x7ff", "0x7f4"]
+    as "the fight, the open cast and its first go only"
+  let assert [_, _, _, CastStarted(start:), CastWent(went)] =
+    news_to(watched, 9)
+  assert start.cast_id == cast_id_sent(ice.opened, 2)
+    && went.cast_id == start.cast_id
+    && went.phase == 0
+    && went.targets == []
+    as "the same cast and its first go, so the later go names it"
+  let assert Ok(key) = list.key_find(ice.keys, 1)
+  let #(_, closed) = tell(state:, at_ms: 4850, message: landed(key:))
+  assert frames_of(taken: closed, number: 9) == ["0x7f4 phase 1 [20]"]
+    as "go 1 reaches the late viewer once, when it closes"
+  // Row (b): player 9 watches at 5,350, every go reached, go 2's round open and go 3 complete
+  // behind it: the cast and phases 0 and 1; phases 2 and 3 and the finish at go 2's close.
+  let #(state, aggro) = ice_fought(viewers: [2])
+  let ice = ice_through(state:, aggro:, through: 3)
+  let #(ice, _) = ice_answered(ice:, phase: 1, at_ms: 4550)
+  let #(state, watched) = watched_at(ice.state, 5350, 9)
+  assert list.map(news_to(watched, 9), name_of)
+    == ["0x262", "0x89a(1)", "0x908(20, 1)", "0x7ff", "0x7f4", "0x7f4"]
+    as "the cast and the two gos already written"
+  assert frames_of(taken: watched, number: 9)
+    == ["0x7f4 phase 0 []", "0x7f4 phase 1 []"]
+  let assert Ok(key) = list.key_find(ice.keys, 2)
+  let #(_, closed) = tell(state:, at_ms: 5400, message: landed(key:))
+  assert frames_of(taken: closed, number: 9)
+    == ["0x7f4 phase 2 [20]", "0x7f4 phase 3 []", "0x7fe"]
+    as "the rest reaches the late viewer when go 2 closes"
+  // Row (c): player 9 watches at 4,650 after a state broke the cast at 4,600: no cast news.
+  let #(state, aggro) = ice_fought(viewers: [2])
+  let ice = ice_through(state:, aggro:, through: 1)
+  let #(state, _) = stunned_at(state: ice.state, at_ms: 4600)
+  let #(_, watched) = watched_at(state, 4650, 9)
+  assert !list.any(news_to(watched, 9), fn(news) {
+    list.contains(["0x7ff", "0x7f4"], name_of(news))
+  })
+    as "the cast is closed: the viewer is sent none of it"
+}
+
+pub fn a_timer_or_an_answer_that_comes_again_leaves_the_other_rounds_alone_test() -> Nil {
+  use <- owned_test.run(5000)
+  let through = fn(go) {
+    let #(state, aggro) = ice_fought(viewers: [2])
+    ice_through(state:, aggro:, through: go)
+  }
+  [
+    Overlap(
+      reason: "go 1's go timer fires again after go 2 is armed: an old generation, nothing strikes",
+      run: fn() {
+        let ice = through(2)
+        let assert [_, first, ..] = ice.handled
+        let #(_, again) = fire(state: ice.state, at_ms: 5100, timer: first)
+        list.append(
+          said(again),
+          list.map(timers(again), fn(started) { int.to_string(started.1) }),
+        )
+      },
+      expected: [],
+    ),
+    Overlap(
+      reason: "go 1's deadline fires after its round closed by answers while go 2's is open: go 2's stays open and its answer still closes it",
+      run: fn() {
+        let ice = through(2)
+        let #(ice, _) = ice_answered(ice:, phase: 1, at_ms: 4550)
+        let assert Ok(deadline) = list.key_find(ice.deadlines, 1)
+        let #(state, fired) =
+          fire(state: ice.state, at_ms: 5500, timer: deadline)
+        let ice = Ice(..ice, state:)
+        let #(_, two) = ice_answered(ice:, phase: 2, at_ms: 5550)
+        list.append(
+          observed(taken: fired, ice:, number: 2),
+          observed(taken: two, ice:, number: 2),
+        )
+      },
+      expected: ["cancels deadline 2", "0x7f4 phase 2 [20]"],
+    ),
+    Overlap(
+      reason: "the same answer twice: the second is not written",
+      run: fn() {
+        let ice = through(1)
+        let #(ice, first) = ice_answered(ice:, phase: 1, at_ms: 4550)
+        let #(ice, second) = ice_answered(ice:, phase: 1, at_ms: 4560)
+        list.append(
+          observed(taken: first, ice:, number: 2),
+          observed(taken: second, ice:, number: 2),
+        )
+      },
+      expected: ["cancels deadline 1", "0x7f4 phase 1 [20]"],
+    ),
+    Overlap(
+      reason: "the last answer, then the deadline: the entry is written once",
+      run: fn() {
+        let ice = through(1)
+        let #(ice, answered) = ice_answered(ice:, phase: 1, at_ms: 4550)
+        let assert Ok(deadline) = list.key_find(ice.deadlines, 1)
+        let #(_, fired) = fire(state: ice.state, at_ms: 5500, timer: deadline)
+        list.append(
+          observed(taken: answered, ice:, number: 2),
+          observed(taken: fired, ice:, number: 2),
+        )
+      },
+      expected: ["cancels deadline 1", "0x7f4 phase 1 [20]"],
+    ),
+    Overlap(
+      reason: "the deadline, then the last answer: the entry is written once",
+      run: fn() {
+        let ice = through(1)
+        let assert Ok(deadline) = list.key_find(ice.deadlines, 1)
+        let #(state, fired) =
+          fire(state: ice.state, at_ms: 5500, timer: deadline)
+        let ice = Ice(..ice, state:)
+        let #(ice, answered) = ice_answered(ice:, phase: 1, at_ms: 5510)
+        list.append(
+          observed(taken: fired, ice:, number: 2),
+          observed(taken: answered, ice:, number: 2),
+        )
+      },
+      expected: ["0x7f4 phase 1 []"],
+    ),
+  ]
+  |> list.each(fn(row) {
+    assert row.run() == row.expected as row.reason
   })
 }

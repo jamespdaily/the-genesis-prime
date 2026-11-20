@@ -755,6 +755,15 @@ pub fn spawn_dealing(spawn spawn: Spawn, damage damage: Int) -> Spawn {
 
 /// Earthen Roar as a creature's special, with the hold the delay row 131968 gives (`hold_ms`).
 pub fn earthen_roar(hold_ms hold_ms: Int) -> creature_life.Special {
+  let roar_cone =
+    area.InsideShapes(placements: [
+      area.Placement(
+        shape: area.Cone(inner: 0.0, outer: 5.5, degrees: 40.0),
+        ahead: 0.0,
+        aside: 0.0,
+        turn_degrees: 0.0,
+      ),
+    ])
   creature_life.Special(
     attack: creature_life.Attack(
       spell4_id: Spell4Id(55_317),
@@ -783,14 +792,7 @@ pub fn earthen_roar(hold_ms hold_ms: Int) -> creature_life.Special {
           target_count: 10,
           order: area.Nearest,
         ),
-        inside: area.InsideShapes(placements: [
-          area.Placement(
-            shape: area.Cone(inner: 0.0, outer: 5.5, degrees: 40.0),
-            ahead: 0.0,
-            aside: 0.0,
-            turn_degrees: 0.0,
-          ),
-        ]),
+        inside: roar_cone,
         anchor: area.FixedAtCaster,
         draws: telegraph_entries.draws_of(
           tables: character_tables.content_tables(),
@@ -798,8 +800,109 @@ pub fn earthen_roar(hold_ms hold_ms: Int) -> creature_life.Special {
         ),
         aims_at_target: False,
         gos: [
-          creature_life.Go(at_ms: 2500, strikes: False),
-          creature_life.Go(at_ms: 3000, strikes: True),
+          creature_life.Go(at_ms: 2500, strike: option.None),
+          creature_life.Go(
+            at_ms: 3000,
+            strike: option.Some(creature_life.GoStrike(
+              spell4_effects_ids: [131_967],
+              inside: roar_cone,
+            )),
+          ),
+        ],
+        hold_ms:,
+      ),
+      caster_cc_mask: 218_960_739,
+      run_stopped_by: 0,
+    ),
+    cooldown_ms: 10_000,
+  )
+}
+
+/// The cone of a hit row of Ice Breath, TelegraphDamage 7956 and 7957: from 0 to 5.5 m, 20
+/// degrees across, on the caster, turned `turn_degrees` (the row's rotationDegrees).
+pub fn ice_breath_cone(turn_degrees turn_degrees: Float) -> area.Inside {
+  area.InsideShapes(placements: [
+    area.Placement(
+      shape: area.Cone(inner: 0.0, outer: 5.5, degrees: 20.0),
+      ahead: 0.0,
+      aside: 0.0,
+      turn_degrees:,
+    ),
+  ])
+}
+
+/// Yeti Snowstalker's Ice Breath (Spell4 55635) as a creature's special, with the hold of
+/// `hold_ms` (the delay row 132758 gives 500). Its four gos are SpellPhase 11479 to 11482
+/// (delays 2600, 400, 500 and 300): the second and third strike, each with the cone of its
+/// own row (7956 turned +10 degrees, 7957 turned -10) and the damage row 132757, whose
+/// phaseFlags 6 name them; the first and last are the cast bar's. The 10 000 ms cooldown is a
+/// guess, as Earthen Roar's.
+pub fn ice_breath(hold_ms hold_ms: Int) -> creature_life.Special {
+  creature_life.Special(
+    attack: creature_life.Attack(
+      spell4_id: Spell4Id(55_635),
+      offence: Offence(
+        blows: [
+          Blow(
+            spell4_effects_id: 132_757,
+            damage_type: 1,
+            damage: Worked(21),
+            delay_ms: 0,
+            threat_multiplier: 1.0,
+          ),
+        ],
+        crit_chance: 0.0,
+        crit_severity: 1.0,
+        strikethrough: 0.0,
+      ),
+      run_speed: 10.0,
+      reach: 5.5,
+      cast: creature_life.Charged(
+        cast_ms: 3800,
+        area: area.Row(
+          min_range: 0.0,
+          max_range: 10.0,
+          degrees: 360.0,
+          target_count: 10,
+          order: area.Nearest,
+        ),
+        inside: area.InsideShapes(placements: [
+          area.Placement(
+            shape: area.Cone(inner: 0.0, outer: 5.5, degrees: 20.0),
+            ahead: 0.0,
+            aside: 0.0,
+            turn_degrees: 10.0,
+          ),
+          area.Placement(
+            shape: area.Cone(inner: 0.0, outer: 5.5, degrees: 20.0),
+            ahead: 0.0,
+            aside: 0.0,
+            turn_degrees: -10.0,
+          ),
+        ]),
+        anchor: area.FixedAtCaster,
+        draws: telegraph_entries.draws_of(
+          tables: character_tables.content_tables(),
+          spell4_id: Spell4Id(55_635),
+        ),
+        aims_at_target: False,
+        gos: [
+          creature_life.Go(at_ms: 2600, strike: option.None),
+          creature_life.Go(
+            at_ms: 3000,
+            strike: option.Some(creature_life.GoStrike(
+              spell4_effects_ids: [132_757],
+              inside: ice_breath_cone(turn_degrees: 10.0),
+            )),
+          ),
+          creature_life.Go(
+            at_ms: 3500,
+            strike: option.Some(creature_life.GoStrike(
+              spell4_effects_ids: [132_757],
+              inside: ice_breath_cone(turn_degrees: -10.0),
+            )),
+          ),
+          creature_life.Go(at_ms: 3800, strike: option.None),
         ],
         hold_ms:,
       ),
