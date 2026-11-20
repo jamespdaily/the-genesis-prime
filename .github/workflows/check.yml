@@ -1,27 +1,36 @@
 name: check
 
+# A pull request merges through the merge queue, which runs this workflow on a merge_group
+# event for the pull request together with the ones ahead of it; the check job is the
+# status the queue requires.
 on:
   pull_request:
+  merge_group:
+    types: [checks_requested]
   push:
     branches: [main]
 
 permissions:
   contents: read
-  # tested reads the check runs of the pull request head a merge came from.
+  # tested reads the check runs of the pull request head a merge came from, and the
+  # workflow runs of the merge group that tested a commit.
   checks: read
+  actions: read
 
-# A newer push to the same branch cancels the run it replaces.
+# A newer push to the same branch cancels the run it replaces. A merge group has a branch
+# of its own for each rebuild, so none cancels another.
 concurrency:
   group: check-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   # On a push to main: whether the commit holds the files a passed run of the check
-  # and tools jobs tested (the merge commit of a pull request that was current with
-  # main does, and each job records the tree it tested as a notice). Then those two
-  # jobs skip and warm-caches runs instead: a second run of the same files only adds
-  # the chance of a flaky failure. Any error here leaves `tested` empty, and both
-  # jobs run.
+  # and tools jobs tested (the commit a merge group's run tested does, and so does the
+  # merge commit of a pull request that was current with main; each job records the
+  # tree it tested as a notice). Then those two jobs skip and warm-caches runs instead:
+  # a second run of the same files only adds the chance of a flaky failure. Any error
+  # here leaves `tested` empty, and both jobs run. On a merge group the job is skipped,
+  # and so are warm-caches: the group's own run is what tests its commit.
   tested:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
@@ -158,15 +167,16 @@ jobs:
 
   # The test files a pull request adds or changes, run many times at once (see
   # dev/repeat_tests.py), so a test that depends on timing fails in the pull request
-  # that brings it. It runs beside check on the same toolchain and build cache,
-  # builds the code itself and saves no cache (check does). A pull request's checkout
-  # is the merge of its head into its base, so the full history is fetched for the
-  # merge base with the base branch. The files are chosen first, and the toolchain,
-  # the build and the repeat run only when there are any. It does not wait for
-  # `tested`, which runs only on a push.
+  # that brings it, and again in the merge group that carries it. It runs beside check
+  # on the same toolchain and build cache, builds the code itself and saves no cache
+  # (check does). A pull request's checkout is the merge of its head into its base, and
+  # a merge group's is the group's commit on its parent, so the full history is fetched
+  # for the merge base with the base (dev/ci_base.py names it for each event). The files
+  # are chosen first, and the toolchain, the build and the repeat run only when there are
+  # any. It does not wait for `tested`, which runs only on a push.
   repeat:
     name: repeat
-    if: ${{ github.event_name == 'pull_request' }}
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
@@ -196,10 +206,8 @@ jobs:
           python-version: "3.13"
       - name: Choose the added or changed test files
         id: files
-        env:
-          BASE_BRANCH: ${{ github.base_ref }}
         run: |
-          files=$(python3.13 -I dev/repeat_tests.py --list "origin/$BASE_BRANCH")
+          files=$(python3.13 -I dev/repeat_tests.py --list "$(python3.13 -I dev/ci_base.py)")
           echo "$files"
           if [ -n "$files" ]; then
             echo "any=true" >> "$GITHUB_OUTPUT"
@@ -214,9 +222,7 @@ jobs:
         run: PATH="$GENESIS_OTP_DIR/bin:$PATH" gleam build
       - name: Repeat the added or changed test files
         if: steps.files.outputs.any == 'true'
-        env:
-          BASE_BRANCH: ${{ github.base_ref }}
-        run: PATH="$GENESIS_OTP_DIR/bin:$PATH" python3.13 -I dev/repeat_tests.py "origin/$BASE_BRANCH"
+        run: PATH="$GENESIS_OTP_DIR/bin:$PATH" python3.13 -I dev/repeat_tests.py "$(python3.13 -I dev/ci_base.py)"
 
   # On a push to main whose check was skipped: the caches a pull request restores
   # are only those saved on main, so this builds and saves what the key says is

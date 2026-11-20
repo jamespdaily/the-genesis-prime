@@ -8,9 +8,9 @@ card:
   a pull request opened from it           pull request <P> opened on <sha7>
   its checks ended (dev/pr_wait.sh P)     CI passed on <sha7>, pull request <P>, attempt <a>
                                           (or "CI failed on ...")
-  its merge (gh pr merge P)               merged: pull request <P> (<merge sha7>)           Done, when P closes n
-                                          and, when P closes n, `dev/step_measure.py n` as a
-                                          comment headed "Measure (draft for the closing summary)"
+  its merge (gh pr merge P, or the end    merged: pull request <P> (<merge sha7>)           Done, when P closes n
+   of a dev/pr_wait.sh P that followed    and, when P closes n, `dev/step_measure.py n` as a
+   P through the merge queue)             comment headed "Measure (draft for the closing summary)"
   (at the merge, the CI line of the merged head comes first, when the issue lacks it)
   after a merge, any merge: the branch's worktree and local branch are cleaned up
   (merge_cleanup), and each result is a note shown to Claude (`additionalContext`)
@@ -53,11 +53,16 @@ Rules:
     number is not read at all.
   - A merged pull request closes the step only when it closes issue n; a fix branch's merge
     posts its CI and merge lines and nothing else.
+  - A pull request added to the merge queue (`gh pr merge P --merge --auto`) is still OPEN when
+    that command ends, so it posts no merge line. The queue merges it later, and the call that
+    sees it MERGED posts the merge: a `dev/pr_wait.sh P`, which follows a queued pull request
+    until the queue merges it, or a repeated `gh pr merge P`.
   - Settings hooks fire for a subagent's tool calls too, so a builder's push is seen.
 
 It posts as the jamespdaily login, as dev/card.sh does, unless GH_TOKEN is set. An event made
 outside a Claude Code session is not seen. A wait started in the background posts nothing when
-it ends; the merge posts the CI line instead.
+it ends; the merge posts the CI line instead. A wait that ends on a MERGED pull request does the
+merge's work too (the queued merge).
 
   python3 -I dev/hooks/progress_lines.py            hook JSON on stdin, posts
   python3 -I dev/hooks/progress_lines.py --dry-run  prints "#n: line" instead of posting, and
@@ -383,12 +388,13 @@ def report_pull(event: Pull, github: GitHub, dry_run: bool, notes: list[str]) ->
         event = replace(event, number=pull["number"], head=pull["headRefOid"])
         for line in lines_for(event, github.comments(issue)):
             post(github, issue, line, dry_run)
-    elif isinstance(event, Checked):
+    elif isinstance(event, Checked) and pull["state"] != "MERGED":
         checked = checked_of(github, pull)
         if lines_for(checked, []):
             for line in lines_for(checked, github.comments(issue)):
                 post(github, issue, line, dry_run)
     else:
+        # A merge, or a wait that ended on a pull request the merge queue has merged since.
         report_merge(github, pull, issue, dry_run, notes)
 
 
