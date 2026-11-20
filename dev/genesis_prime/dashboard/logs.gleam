@@ -1,20 +1,27 @@
-//// The Logs page: the newest lines of the updater's log and of launchd's log,
-//// each line in the role its words give, following new lines as they are
-//// written.
+//// The Logs page: the newest lines of the updater's log, of launchd's log, of the
+//// play server's container and of its database's container, each line in the
+//// role its words give, following new lines as they are written.
 ////
 //// ```text
-//// follower (updater log)  ──Followed──►┐
-////                                      ├─► runtime (one per tab) ──view──► tab
-//// follower (launchd log)  ──Followed──►┘      subscribed in init, by server_component.select
+//// follower (updater log)   ──Followed──►┐
+//// follower (launchd log)   ──Followed──►┤
+////                                       ├─► runtime (one per tab) ──view──► tab
+//// follower (server)        ──Followed──►┤      subscribed in init, by server_component.select
+//// follower (database)      ──Followed──►┘
 //// ```
 ////
-//// - A tab's runtime subscribes to both followers when it starts, and each
-////   follower drops it when the runtime ends. A follower reads its file only
-////   while a tab is subscribed.
+//// - A tab's runtime subscribes to the four followers when it starts, and each
+////   follower drops it when the runtime ends. A follower reads only while a tab
+////   is subscribed.
 //// - A source says "No lines yet" until its follower has sent lines, or has
-////   read a file with none.
-//// - A log that is not there says "no log yet", and one that cannot be read
-////   says "cannot read" and the reason; the lines it had stay, dimmed.
+////   read a file or a container with none. A file shows its path and a container
+////   the call that shows its log (`podman logs NAME`).
+//// - A log file that is not there says "no log yet", and one that cannot be read
+////   says "cannot read" and the reason; the lines it had stay, dimmed only for
+////   the second.
+//// - A container's log that cannot be read shows its lines dimmed with the
+////   reason for every trouble: Podman not reachable (its own words), no
+////   container of that name, or a read that failed. The words are a guess.
 //// - A line is text, never markup: the view makes a text node of it, and the
 ////   page shows what `log_lines` made of its bytes. A line that was cut says so.
 //// - Each entry is one keyed element, keyed by its sequence number, so a new
@@ -26,10 +33,13 @@
 //// not come up, git's and gh's messages, and this Mac's paths. The page is
 //// behind the dashboard's key like every route.
 
+import genesis_prime/dashboard/container_follow
+import genesis_prime/dashboard/container_log
 import genesis_prime/dashboard/follow.{type Followed}
 import genesis_prime/dashboard/log_lines.{type Entry, type Level, type Source}
 import genesis_prime/dashboard/otp_report
 import genesis_prime/dashboard/page.{type Page, LogsKey, Page}
+import genesis_prime/dashboard/read_poll
 import gleam/erlang/process.{type Subject}
 import gleam/int
 import gleam/list
@@ -43,14 +53,25 @@ import lustre/element/html
 import lustre/element/keyed
 import lustre/server_component
 
-/// The followers a tab's runtime subscribes to: the updater's log and launchd's.
+/// The followers a tab's runtime subscribes to: the updater's log, launchd's, the
+/// play server's container and its database's.
 pub type Followers {
-  Followers(updater: Subject(follow.Message), launchd: Subject(follow.Message))
+  Followers(
+    updater: Subject(follow.Message),
+    launchd: Subject(follow.Message),
+    server: Subject(container_follow.Message),
+    database: Subject(container_follow.Message),
+  )
 }
 
 /// What the Logs page holds: what each follower last sent, once it has.
 pub type Model {
-  Model(updater: Option(Followed), launchd: Option(Followed))
+  Model(
+    updater: Option(Followed),
+    launchd: Option(Followed),
+    server: Option(Followed),
+    database: Option(Followed),
+  )
 }
 
 /// What the Logs page is told: a follower sent its log.
@@ -71,10 +92,12 @@ pub fn app() -> lustre.App(Followers, Model, Message) {
 
 fn init(followers: Followers) -> #(Model, Effect(Message)) {
   #(
-    Model(updater: None, launchd: None),
+    Model(updater: None, launchd: None, server: None, database: None),
     server_component.select(fn(_dispatch, subject) {
       follow.subscribe(follower: followers.updater, subscriber: subject)
       follow.subscribe(follower: followers.launchd, subscriber: subject)
+      read_poll.subscribe(poll: followers.server, subscriber: subject)
+      read_poll.subscribe(poll: followers.database, subscriber: subject)
       process.new_selector() |> process.select_map(subject, Received)
     }),
   )
@@ -85,8 +108,8 @@ fn update(model: Model, message: Message) -> #(Model, Effect(Message)) {
   let model = case followed.source {
     log_lines.UpdaterLog -> Model(..model, updater: Some(followed))
     log_lines.LaunchdLog -> Model(..model, launchd: Some(followed))
-    // The page has no view of a container's log, and nothing sends one.
-    log_lines.ServerLog | log_lines.DatabaseLog -> model
+    log_lines.ServerLog -> Model(..model, server: Some(followed))
+    log_lines.DatabaseLog -> Model(..model, database: Some(followed))
   }
   #(model, effect.none())
 }
@@ -98,6 +121,8 @@ pub fn view(model: Model) -> Element(Message) {
     html.div([attribute.class("logs")], [
       log(log_lines.UpdaterLog, model.updater),
       log(log_lines.LaunchdLog, model.launchd),
+      log(log_lines.ServerLog, model.server),
+      log(log_lines.DatabaseLog, model.database),
     ]),
   ])
 }
@@ -111,35 +136,14 @@ fn title(source: Source) -> String {
   }
 }
 
-/// One source: its name and path, what is known of its file, and its lines.
+/// One source: its name and path, what is known of its file or container, and
+/// its lines.
 fn log(source: Source, followed: Option(Followed)) -> Element(Message) {
   let #(path, status, entries, stale) = case followed {
     None -> #(None, [empty()], [], False)
     Some(followed) -> {
-      let path = Some(followed.path)
-      case followed.trouble {
-        None -> #(
-          path,
-          case followed.entries {
-            [] -> [empty()]
-            [_, ..] -> []
-          },
-          followed.entries,
-          False,
-        )
-        Some(follow.NotThere) -> #(
-          path,
-          [status("no log yet", "role-warn")],
-          followed.entries,
-          False,
-        )
-        Some(follow.Unreadable(reason:)) -> #(
-          path,
-          [status("cannot read: " <> reason, "role-bad")],
-          followed.entries,
-          True,
-        )
-      }
+      let #(status, stale) = trouble_view(followed)
+      #(Some(followed.path), status, followed.entries, stale)
     }
   }
   html.section([attribute.class("log")], [
@@ -152,6 +156,38 @@ fn log(source: Source, followed: Option(Followed)) -> Element(Message) {
     ]),
     ..list.append(status, [lines(entries, stale)])
   ])
+}
+
+/// What a source says of its last read, and whether its lines are dimmed. A
+/// container's lines are dimmed for every trouble: the lines of a container that
+/// is gone or cannot be reached are not current. A file that is not there has
+/// no lines to dim.
+fn trouble_view(followed: Followed) -> #(List(Element(Message)), Bool) {
+  case followed.trouble {
+    None -> #(
+      case followed.entries {
+        [] -> [empty()]
+        [_, ..] -> []
+      },
+      False,
+    )
+    Some(follow.NotThere) ->
+      case container_log.container_name(followed.source) {
+        Ok(name) -> #(
+          [status("no container named " <> name, "role-warn")],
+          True,
+        )
+        Error(Nil) -> #([status("no log yet", "role-warn")], False)
+      }
+    Some(follow.PodmanUnreachable(reason:)) -> #(
+      [status("Podman is not reachable: " <> reason, "role-warn")],
+      True,
+    )
+    Some(follow.Unreadable(reason:)) -> #(
+      [status("cannot read: " <> reason, "role-bad")],
+      True,
+    )
+  }
 }
 
 fn empty() -> Element(Message) {
