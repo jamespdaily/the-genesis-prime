@@ -420,7 +420,7 @@ pub fn the_commands_of_a_decoded_message_are_the_rules_commands_by_kind_test() -
     )),
     movement_command.StateFlags(MovementStateFlags(flags: 0x2A)),
     movement_command.Mode(MovementMode(mode: 3)),
-    movement_command.Kind29(MovementKind29(field_2: 9)),
+    movement_command.Kind29(MovementKind29(unread_2: 9)),
     movement_command.Platform(MovementPlatform(unit_id: 0)),
   ]
   let moves = movement.moves(PlayerMovement(client_clock: 0x1234, commands:))

@@ -51,20 +51,20 @@ import genesis_prime/client_connection
 import genesis_prime/game/start_place.{type Facing, type Place, Facing}
 import genesis_prime/message/bit_stream
 import genesis_prime/message/client_control_echoed
-import genesis_prime/message/fall_value
 import genesis_prime/message/fell_below_floor
 import genesis_prime/message/float32.{type Bits}
+import genesis_prime/message/impact_severity
 import genesis_prime/message/move_speed_setting
 import genesis_prime/message/movement_command.{type MovementCommand}
 import genesis_prime/message/movement_mode.{MovementMode}
 import genesis_prime/message/movement_platform.{MovementPlatform}
 import genesis_prime/message/movement_rotation.{MovementRotation}
-import genesis_prime/message/movement_send_interval_answer
 import genesis_prime/message/movement_state_flags.{MovementStateFlags}
 import genesis_prime/message/player_movement.{type PlayerMovement}
 import genesis_prime/message/relayed_movement.{type RelayedMovement}
 import genesis_prime/message/terrain_loaded
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
+import genesis_prime/message/world_entry_options
 import genesis_prime/message/world_zone_changed
 import genesis_prime/store.{
   type AccountId, type CharacterId, type MoveAnswer, type MoveRequest,
@@ -85,15 +85,15 @@ pub type Message {
   PlayerMoved
   /// 0x063A, the WorldZone id the player stands in changing.
   ZoneChanged
-  /// 0x00D5, the answer to the world's settings.
-  IntervalAnswered
+  /// 0x00D5, the client's world-entry options.
+  WorldEntryOptionsSent
   /// 0x063B, the move speed setting.
   SpeedChosen
   /// 0x00F2, the terrain near the player ready, with the WorldZone id the player
   /// stands in.
   TerrainReady
-  /// 0x00FB, a fall's value.
-  Fell
+  /// 0x00FB, the impact severity of the player's movement.
+  ImpactSeverityReported
   /// 0x00FC, a fall below the floor.
   FellBelowFloor
   /// 0x0635, the client's answer to a 0x636, carrying its value back.
@@ -453,9 +453,9 @@ pub fn take(
           ),
         )
       })
-    IntervalAnswered ->
-      movement_send_interval_answer.decode(body)
-      |> undecoded(movement_send_interval_answer.message_id)
+    WorldEntryOptionsSent ->
+      world_entry_options.decode(body)
+      |> undecoded(world_entry_options.message_id)
       |> result.replace(Kept(state))
     TerrainReady ->
       terrain_loaded.decode(body)
@@ -467,9 +467,9 @@ pub fn take(
           by: ReportedByTerrainReady,
         )
       })
-    Fell ->
-      fall_value.decode(body)
-      |> undecoded(fall_value.message_id)
+    ImpactSeverityReported ->
+      impact_severity.decode(body)
+      |> undecoded(impact_severity.message_id)
       |> result.replace(Kept(state))
     FellBelowFloor ->
       fell_below_floor.decode(body)

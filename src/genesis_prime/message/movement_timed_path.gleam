@@ -6,8 +6,8 @@
 //// 10 bits) and the points (three floats each, one for each time), which the
 //// client draws as straight lines between the points, holding the first before
 //// the first time and the last after the last. The path type is 0 (straight
-//// lines; 1 is a curve), and the server writes 0 in the value that shifts the
-//// sampling time and 0 in the blend bit. Its fields are listed in
+//// lines; 1 is a curve), and the server writes 0 in the time offset that
+//// shifts the sampling time and 0 in the blend bit. Its fields are listed in
 //// `schema.toml` with the client's evidence, and the fact file's
 //// `movement_command.kind_3` names the record.
 
@@ -40,8 +40,8 @@ pub fn write(
     movement_float_vector.write,
   )
   |> bit_stream.write_constant("path_type", 0, 2)
-  |> bit_stream.write_constant("value", 0, 32)
-  |> bit_stream.write_constant("blend", 0, 1)
+  |> bit_stream.write_constant("time_offset", 0, 32)
+  |> bit_stream.write_constant("blends", 0, 1)
 }
 
 /// Reads the record from the stream, and the stream after it.
@@ -60,8 +60,13 @@ pub fn read(
     movement_float_vector.read,
   ))
   use reader <- result.try(bit_stream.read_constant(reader, "path_type", 2, 0))
-  use reader <- result.try(bit_stream.read_constant(reader, "value", 32, 0))
-  use reader <- result.try(bit_stream.read_constant(reader, "blend", 1, 0))
+  use reader <- result.try(bit_stream.read_constant(
+    reader,
+    "time_offset",
+    32,
+    0,
+  ))
+  use reader <- result.try(bit_stream.read_constant(reader, "blends", 1, 0))
   Ok(#(MovementTimedPath(times:, points:), reader))
 }
 

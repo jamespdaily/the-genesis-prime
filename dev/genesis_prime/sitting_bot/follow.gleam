@@ -162,11 +162,11 @@ pub fn replayed(commands: List(RelayedMovement)) -> List(MovementCommand) {
       relayed_movement.Position(data) -> movement_command.Position(data)
       relayed_movement.TimedPath(data) ->
         movement_command.Kind3(MovementKind3(
-          field_2: data.times,
-          field_3: data.points,
-          field_4: 0,
-          field_5: 0,
-          field_6: 0,
+          times: data.times,
+          points: data.points,
+          path_type: 0,
+          time_offset: 0,
+          blends: 0,
         ))
       relayed_movement.Path(data) ->
         movement_command.Kind4(MovementKind4(
@@ -174,8 +174,8 @@ pub fn replayed(commands: List(RelayedMovement)) -> List(MovementCommand) {
           speed: data.speed,
           path_type: data.path_type,
           mode: data.mode,
-          field_5: 0,
-          field_6: 0,
+          time_offset: 0,
+          blends: 0,
         ))
       relayed_movement.VelocityDefault(data) -> movement_command.Kind10(data)
       relayed_movement.Velocity(data) -> movement_command.Velocity(data)

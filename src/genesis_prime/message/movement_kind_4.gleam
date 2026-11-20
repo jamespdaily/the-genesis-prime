@@ -5,9 +5,9 @@
 //// points (three floats each), the speed in units a second as a half float,
 //// which the client's apply fails below 0.00001, the path type (0 is straight
 //// lines through at least one point, 1 a curve through at least three, and the
-//// client's apply fails 2 and 3), a 4-bit mode, a 32-bit value and one bit.
-//// Its fields are listed in `schema.toml` with the client's evidence, and the
-//// fact file's `0x140c1f070` names the record.
+//// client's apply fails 2 and 3), a 4-bit walk mode, a 32-bit time offset in
+//// ms and the blend bit. Its fields are listed in `schema.toml` with the
+//// client's evidence, and the fact file's `0x140c1f070` names the record.
 
 import genesis_prime/gap
 import genesis_prime/message/bit_stream.{
@@ -25,8 +25,8 @@ pub type MovementKind4 {
     speed: Int,
     path_type: Int,
     mode: Int,
-    field_5: Int,
-    field_6: Int,
+    time_offset: Int,
+    blends: Int,
   )
 }
 
@@ -43,8 +43,8 @@ pub fn write(writer writer: Writer, record record: MovementKind4) -> Writer {
   |> bit_stream.write_half_float_at_least("speed", record.speed, 1.0e-5)
   |> bit_stream.write_unsigned_below("path_type", record.path_type, 2, 2)
   |> bit_stream.write_unsigned("mode", record.mode, 4)
-  |> bit_stream.write_unsigned("field_5", record.field_5, 32)
-  |> bit_stream.write_unsigned("field_6", record.field_6, 1)
+  |> bit_stream.write_unsigned("time_offset", record.time_offset, 32)
+  |> bit_stream.write_unsigned("blends", record.blends, 1)
 }
 
 /// Reads the record from the stream, and the stream after it.
@@ -67,10 +67,10 @@ pub fn read(reader: Reader) -> Result(#(MovementKind4, Reader), DecodeError) {
     2,
   ))
   use #(mode, reader) <- result.try(bit_stream.read_unsigned(reader, 4))
-  use #(field_5, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
-  use #(field_6, reader) <- result.try(bit_stream.read_unsigned(reader, 1))
+  use #(time_offset, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
+  use #(blends, reader) <- result.try(bit_stream.read_unsigned(reader, 1))
   Ok(#(
-    MovementKind4(points:, speed:, path_type:, mode:, field_5:, field_6:),
+    MovementKind4(points:, speed:, path_type:, mode:, time_offset:, blends:),
     reader,
   ))
 }
@@ -78,10 +78,6 @@ pub fn read(reader: Reader) -> Result(#(MovementKind4, Reader), DecodeError) {
 /// What this record's codec leaves unhandled, which the coverage measure prints.
 pub fn gaps() -> List(gap.Entry) {
   [
-    gap.Entry(
-      area: "Movement paths",
-      missing: "what the mode, the 32-bit value and the last bit of a kind 4 command do in the client: the codec carries them as `mode`, `field_5` and `field_6` without a meaning",
-    ),
     gap.Entry(
       area: "Movement paths",
       missing: "that a kind 4 command read from the client holds the number of points its path type needs: the codec does not check the count",

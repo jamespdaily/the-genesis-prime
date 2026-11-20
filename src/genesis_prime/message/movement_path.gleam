@@ -41,8 +41,8 @@ pub fn write(writer writer: Writer, record record: MovementPath) -> Writer {
   |> bit_stream.write_half_float_at_least("speed", record.speed, 1.0e-5)
   |> bit_stream.write_unsigned_below("path_type", record.path_type, 2, 2)
   |> bit_stream.write_unsigned("mode", record.mode, 4)
-  |> bit_stream.write_constant("value", 0, 32)
-  |> bit_stream.write_constant("last_bit", 0, 1)
+  |> bit_stream.write_constant("time_offset", 0, 32)
+  |> bit_stream.write_constant("blends", 0, 1)
 }
 
 /// Reads the record from the stream, and the stream after it.
@@ -65,18 +65,19 @@ pub fn read(reader: Reader) -> Result(#(MovementPath, Reader), DecodeError) {
     2,
   ))
   use #(mode, reader) <- result.try(bit_stream.read_unsigned(reader, 4))
-  use reader <- result.try(bit_stream.read_constant(reader, "value", 32, 0))
-  use reader <- result.try(bit_stream.read_constant(reader, "last_bit", 1, 0))
+  use reader <- result.try(bit_stream.read_constant(
+    reader,
+    "time_offset",
+    32,
+    0,
+  ))
+  use reader <- result.try(bit_stream.read_constant(reader, "blends", 1, 0))
   Ok(#(MovementPath(points:, speed:, path_type:, mode:), reader))
 }
 
 /// What this record's codec leaves unhandled, which the coverage measure prints.
 pub fn gaps() -> List(gap.Entry) {
   [
-    gap.Entry(
-      area: "Movement paths",
-      missing: "what the mode, the 32-bit value and the last bit of a path command do: the client's code does not show it, so the server writes 0 in the value and the bit",
-    ),
     gap.Entry(
       area: "Movement paths",
       missing: "that a path command the server writes holds the number of points its path type needs: the codec does not check the count",
