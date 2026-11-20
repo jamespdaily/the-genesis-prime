@@ -76,10 +76,11 @@
 #                  part's log and the world-data part's and the real-start part's;
 #                  it never fails the part. Each test is also listed in
 #                  $work/gleam-test.running while it runs (GENESIS_TEST_PROGRESS_FILE,
-#                  test/test_progress.gleam), the real-start, world-data, client-suite
-#                  code-rules and registry-tests parts' tests in files of their own, and when a hang
-#                  stops the check, the summary names under each hung part the tests
-#                  that had started and not ended, with the seconds each had run.
+#                  test/test_progress.gleam); the real-start, world-data, client-suite,
+#                  code-rules and registry-tests parts' tests are in files of their
+#                  own. When a hang stops the check, the summary names under each
+#                  hung part the tests that had started and not ended, with the
+#                  seconds each had run.
 #                  Both runs print unitest's table of each
 #                  test's duration (--reporter table), and the summary prints the ten
 #                  test modules with the most test time: the sum of the durations of
@@ -118,7 +119,12 @@
 #                  the rules read, the messages the codec generates, the messages a
 #                  rule names, the spells the client activates), in a VM of its own
 #                  beside code-rules. The full check's gleam-test part runs them too
-#                  (a full check that is light runs this part, not gleam-test)
+#                  (a full check that is light runs this part, not gleam-test).
+#                  Three of them (account_store_test, game_number_test,
+#                  wire_fixture_test) create a database of their own, so `./check
+#                  fast` needs the Postgres of PGHOST, PGPORT, PGUSER and PGPASSWORD:
+#                  with none reachable those tests panic with "Postgres is not
+#                  reachable" and the part fails; it is not skipped
 #                                                       (after gleam-build)
 #   migrations     a fresh database with a unique name, every
 #                  priv/migrations/*.sql applied in name order and recorded in

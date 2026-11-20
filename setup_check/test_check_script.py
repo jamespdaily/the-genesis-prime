@@ -12,8 +12,8 @@ the real toolchain, the real database or the real client:
   shell without a word when PLANT_FORMAT_KILLS_PARENT is set), except that `gleam format --check` fails when a file under src,
   test or dev holds PLANTED_FORMAT_ERROR, and any `gleam` run of tests (a `test`
   or a `run -m` of a module other than glinter, squirrel and table_generator)
-  fails when a file under test/code_rule holds PLANTED_BREACH, and the registry run
-  (`gleam test -- --tag registry`) also fails when a file under test holds
+  fails when a file under test/code_rule holds PLANTED_BREACH, except the registry run
+  (`gleam test -- --tag registry`), which instead fails when a file under test holds
   PLANTED_REGISTRY_FAILURE and takes PLANT_REGISTRY_SECONDS (a test run other than
   the registry run takes PLANT_GLEAM_TEST_SECONDS instead); with
   PLANT_RENDEZVOUS set, the plain test run (`gleam test -- --workers N`) waits until
@@ -179,7 +179,7 @@ if [ "$*" = "test -- --tag registry" ] && grep -rq PLANTED_REGISTRY_FAILURE test
   echo "planted registry test failure"
   exit 1
 fi
-if grep -rq PLANTED_BREACH test/code_rule 2>/dev/null; then
+if [ "$*" != "test -- --tag registry" ] && grep -rq PLANTED_BREACH test/code_rule 2>/dev/null; then
   echo "planted code-rule breach"
   exit 1
 fi
@@ -923,6 +923,8 @@ class FastModeTest(unittest.TestCase):
         run = shared_run("fast-breach", "fast", prepare=lambda case: (case.repository / "test" / "code_rule" / "planted_test.gleam").write_text("// PLANTED_BREACH\n"))
         self.assertNotEqual(run.done.returncode, 0, run.output)
         self.assertRegex(failed_line(self, run.output), r"\bcode-rules\b")
+        self.assertNotRegex(failed_line(self, run.output), r"\bregistry-tests\b")
+        self.assertRegex(run.output, r"(?m)^  registry-tests +ok\b")
 
     def test_a_planted_failing_registry_test_fails_the_fast_check_naming_the_registry_tests_part(self):
         def plant(case):
