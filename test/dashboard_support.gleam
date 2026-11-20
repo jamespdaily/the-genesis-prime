@@ -6,11 +6,14 @@
 //// shows what it presents; the key rides in the path, as `/k/<key>/...`.
 
 import envoy
+import event_wait
 import genesis_prime/dashboard
 import genesis_prime/dashboard/access.{type Gate, Gate}
 import genesis_prime/dashboard/page.{type Page}
+import genesis_prime/dashboard/socket.{type Runtimes}
 import genesis_prime/dashboard/web
 import gleam/bit_array
+import gleam/erlang/process.{type Pid}
 import gleam/http.{type Method}
 import gleam/http/request.{type Request}
 import gleam/http/response.{type Response}
@@ -58,6 +61,36 @@ pub fn bound_addresses(port: Int) -> List(String)
 /// Whether a connection to the loopback address on `port` is accepted.
 @external(erlang, "dashboard_support_ffi", "accepts")
 pub fn accepts(port: Int) -> Bool
+
+@external(erlang, "dashboard_support_ffi", "connect_and_send")
+fn connect_and_send(port: Int, request: BitArray) -> Connection
+
+@external(erlang, "dashboard_support_ffi", "read_reply")
+fn read_reply(
+  connection: Connection,
+) -> #(Connection, Int, List(#(String, String)), BitArray)
+
+/// Whether the server has already written bytes on the connection. The bytes
+/// stay for the next read.
+@external(erlang, "dashboard_support_ffi", "has_bytes")
+pub fn has_bytes(connection: Connection) -> Bool
+
+/// Holds the factory of page runtimes: a start asked of it waits in its
+/// mailbox. Gives the process held.
+@external(erlang, "dashboard_support_ffi", "suspend")
+fn suspend(runtimes: Runtimes(argument, message)) -> Pid
+
+/// Lets a held factory go; a factory that has ended is left as it is.
+@external(erlang, "dashboard_support_ffi", "resume")
+fn resume(held: Pid) -> Nil
+
+/// Ends the process that is the factory now, as a crash does.
+@external(erlang, "dashboard_support_ffi", "kill")
+fn kill(runtimes: Runtimes(argument, message)) -> Nil
+
+/// How many asks wait in the factory's mailbox.
+@external(erlang, "dashboard_support_ffi", "queued_calls")
+fn queued_calls(runtimes: Runtimes(argument, message)) -> Int
 
 @external(erlang, "dashboard_support_ffi", "open")
 fn open(
@@ -238,16 +271,78 @@ pub fn handshake(
   path path: String,
   headers headers: List(#(String, String)),
 ) -> #(Connection, Reply) {
-  let upgrade = [
-    #("Upgrade", "websocket"),
-    #("Connection", "Upgrade"),
-    #("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ=="),
-    #("Sec-WebSocket-Version", "13"),
-  ]
+  let #(connection, status, reply_headers, body) =
+    open(
+      port,
+      request_bytes(path:, headers: list.append(headers, upgrade_headers)),
+    )
+  #(connection, Reply(status:, headers: reply_headers, body:))
+}
+
+/// Sends a websocket handshake to `path` without reading the reply: the
+/// connection is for `handshake_reply` and `has_bytes`.
+pub fn handshake_sent(
+  port port: Int,
+  path path: String,
+  headers headers: List(#(String, String)),
+) -> Connection {
+  connect_and_send(
+    port,
+    request_bytes(path:, headers: list.append(headers, upgrade_headers)),
+  )
+}
+
+/// Reads the reply to a handshake sent with `handshake_sent`.
+pub fn handshake_reply(connection: Connection) -> Reply {
+  let #(_, status, reply_headers, body) = read_reply(connection)
+  Reply(status:, headers: reply_headers, body:)
+}
+
+/// Runs `during` while the factory of page runtimes holds every ask made of it,
+/// and lets the factory go afterwards (a factory that `during` ended stays
+/// ended). `during` is given a function that waits until an ask is in the
+/// factory's mailbox.
+pub fn with_factory_held(
+  runtimes runtimes: Runtimes(argument, message),
+  during during: fn(fn() -> Nil) -> a,
+) -> a {
+  let held = suspend(runtimes)
+  let result =
+    during(fn() {
+      event_wait.until("a start to be asked of the held factory", fn() {
+        queued_calls(runtimes) > 0
+      })
+    })
+  resume(held)
+  result
+}
+
+/// Ends the factory of page runtimes as a crash does, and with it the asks
+/// waiting in it. The tree starts a new factory.
+pub fn kill_factory(runtimes runtimes: Runtimes(argument, message)) -> Nil {
+  kill(runtimes)
+}
+
+/// A handshake as `handshake` makes it but with no `Sec-WebSocket-Key`, which
+/// the server's websocket upgrade refuses.
+pub fn handshake_without_key(
+  port port: Int,
+  path path: String,
+  headers headers: List(#(String, String)),
+) -> #(Connection, Reply) {
+  let upgrade =
+    list.filter(upgrade_headers, fn(header) { header.0 != "Sec-WebSocket-Key" })
   let #(connection, status, reply_headers, body) =
     open(port, request_bytes(path:, headers: list.append(headers, upgrade)))
   #(connection, Reply(status:, headers: reply_headers, body:))
 }
+
+const upgrade_headers = [
+  #("Upgrade", "websocket"),
+  #("Connection", "Upgrade"),
+  #("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ=="),
+  #("Sec-WebSocket-Version", "13"),
+]
 
 fn request_bytes(
   path path: String,
