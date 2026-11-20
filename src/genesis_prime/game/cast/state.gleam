@@ -1355,21 +1355,29 @@ pub fn current_cast_id(cast cast: State) -> Int {
   }
 }
 
-/// The state with the connection told of every live and lingering cast from now on:
-/// a viewer that comes into sight of the caster is in each cast's audience, so it is
-/// written the go, the 0x811 and the 0x7fe of a cast whose 0x262 entry it was given. A
-/// crowd-control state the caster holds keeps the audience that was told its 0x87f,
-/// which the end goes to.
+/// The state with the connection told of the cast a unit create lists, the current live
+/// cast, from now on: a viewer that comes into sight of the caster is written that cast's
+/// go, 0x811 and 0x7fe, since the client ends a cast only by what it is sent. Every other
+/// cast, and a crowd-control state the caster holds, keeps its audience: the viewer was
+/// never listed them, so it is told nothing of them (a 0x87f of a cast it does not hold
+/// would wait on the unit for ever).
 pub fn audience_joined(cast cast: State, viewer viewer: ConnectionId) -> State {
-  State(
-    ..cast,
-    casts: dict.map_values(cast.casts, fn(_, live) {
-      Live(..live, audience: set.insert(live.audience, viewer))
-    }),
-    lingering: dict.map_values(cast.lingering, fn(_, lingering) {
-      Lingering(..lingering, audience: set.insert(lingering.audience, viewer))
-    }),
-  )
+  case cast.current {
+    None -> cast
+    Some(cast_id) ->
+      case dict.get(cast.casts, cast_id) {
+        Ok(live) ->
+          State(
+            ..cast,
+            casts: dict.insert(
+              cast.casts,
+              cast_id,
+              Live(..live, audience: set.insert(live.audience, viewer)),
+            ),
+          )
+        Error(Nil) -> cast
+      }
+  }
 }
 
 /// The state with the connection out of every audience: a viewer that stops seeing the

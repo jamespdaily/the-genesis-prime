@@ -28,6 +28,7 @@ import genesis_prime/message/movement_time.{MovementTime}
 import genesis_prime/message/movement_timed_path.{MovementTimedPath}
 import genesis_prime/message/relayed_movement
 import genesis_prime/message/spell_started
+import genesis_prime/message/spell_targets_removed
 import genesis_prime/message/start_movement
 import genesis_prime/message/unit_cc_state_applied.{UnitCcStateApplied}
 import genesis_prime/message/unit_cc_state_ended.{UnitCcStateEnded}
@@ -49,7 +50,6 @@ import genesis_prime/step.{
 }
 import genesis_prime/store.{Character, ForItems, ForSelect, ItemsSaved, Listed}
 import genesis_prime/table/id.{ClassId}
-import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/map.{
   Left, ObjectsSeen, ObjectsUnseen, SeenBy, UnseenBy,
@@ -1598,38 +1598,147 @@ pub fn a_unit_create_lists_only_casts_of_the_unit_it_creates_test() -> Nil {
   )
 }
 
-/// What a Medic that pressed Paralytic Surge at 1000 ms and was run to `until_ms` tells
-/// the viewer 2 of its cast, and the 0x262 it sends the arriving viewer 3.
+/// Gamma Rays (Spell4 29874: castTime 1250 ms, a Normal cast with a cast bar) and Discharge
+/// (Spell4 58832: Channeled, first go 410 ms after the press), the Medic's level-1
+/// abilities with a cast bar, by Spell4Base.
+const gamma_rays_base = 16_322
+
+const discharge_base = 38_201
+
+/// A Medic of the real tables that pressed the ability `ability` at 1000 ms, watched by the
+/// connection 2 and run to `until_ms`: the cast the watcher was told started first, and the
+/// 0x262 the player sends the arriving viewer 3.
 fn medic_casting_seen_by_a_new_viewer(
-  tables tables: table_store.Tables,
+  ability ability: Int,
   until_ms until_ms: Int,
 ) -> #(spell_started.SpellStarted, UnitCreatePlayer) {
+  let #(state, _, bag_index) =
+    game_connection_support.entered_with_spell_trees(class_id: 4, ability:)
   let #(state, steps) =
     game_connection_support.pressed_until(
-      state: game_connection_support.watched_by(
-        state: game_connection_support.medic_in(tables:),
-        viewers: [2],
-      ),
-      bag_index: 2,
+      state: game_connection_support.watched_by(state:, viewers: [2]),
+      bag_index:,
       client_cast_id: 1,
       ms: 1000,
       until_ms:,
     )
-  let assert [start] =
+  let assert [start, ..] =
     list.flat_map(steps, fn(taken) {
       game_connection_support.cast_starts(game_connection_support.news_told(
         taken:,
         viewer: 2,
       ))
     })
-    as "the watcher is told one cast started"
+    as "the watcher is told the pressed cast started, before any child"
   #(start, game_connection_support.created_for(state:, viewer: 3))
+}
+
+/// A viewer's coming into sight of the Medic or leaving it, at a time.
+type Move {
+  Comes(at_ms: Int)
+  Goes(at_ms: Int)
+}
+
+/// The news the Medic's connection tells the viewer 3 after Discharge, pressed at 1000 ms
+/// with the connection 2 watching, as the viewer comes and goes by `moves`, and the casts
+/// the watcher 2 was told started. Discharge's first go, 410 ms in, starts a Power Charge
+/// (Spell4 42569) that no go of Discharge ends: its cast lingers until its buff ends.
+fn discharge_told_to_a_viewer(
+  moves moves: List(Move),
+) -> #(List(spell_started.SpellStarted), List(client_connection.News)) {
+  let #(state, _, bag_index) =
+    game_connection_support.entered_with_spell_trees(
+      class_id: 4,
+      ability: discharge_base,
+    )
+  let #(state, pressed) =
+    game_connection_support.pressed_until(
+      state: game_connection_support.watched_by(state:, viewers: [2]),
+      bag_index:,
+      client_cast_id: 1,
+      ms: 1000,
+      until_ms: 1000,
+    )
+  let #(state, pending, steps) =
+    list.fold(
+      moves,
+      #(state, game_connection_support.cast_timers(steps: pressed, ms: 1000), [
+        pressed,
+      ]),
+      fn(held, move) {
+        let #(state, pending, steps) = held
+        let #(state, pending, ran) =
+          game_connection_support.casts_left(
+            state:,
+            pending:,
+            until_ms: move.at_ms,
+            steps: [],
+          )
+        let notice = case move {
+          Comes(..) ->
+            SeenBy(
+              by: ConnectionId(3),
+              stay: game_connection_support.viewer_stay(3),
+            )
+          Goes(..) -> UnseenBy(by: ConnectionId(3))
+        }
+        let #(state, moved) =
+          game_connection_support.at(
+            state:,
+            ms: move.at_ms,
+            event: game_connection_support.sent_by_the_map(notice),
+          )
+        #(state, pending, list.append(steps, [ran, [moved]]))
+      },
+    )
+  let #(_, ran) =
+    game_connection_support.casts_run(
+      state:,
+      pending:,
+      until_ms: 100_000,
+      steps: [],
+    )
+  let steps = list.flatten([list.flatten(steps), ran])
+  #(
+    list.flat_map(steps, fn(taken) {
+      game_connection_support.cast_starts(game_connection_support.news_told(
+        taken:,
+        viewer: 2,
+      ))
+    }),
+    list.flat_map(steps, fn(taken) {
+      game_connection_support.news_told(taken:, viewer: 3)
+    }),
+  )
+}
+
+/// Whether the news end the cast `cast_id` for the viewer: its 0x811 that takes the Medic's
+/// node off it, or its 0x7fe.
+fn told_of(
+  told told: List(client_connection.News),
+  cast_id cast_id: Int,
+) -> Bool {
+  list.contains(told, CastFinished(cast_id:))
+  || list.any([False, True], fn(destroyed) {
+    list.contains(
+      told,
+      client_connection.CastTargetsRemoved(
+        removed: spell_targets_removed.SpellTargetsRemoved(cast_id:, unit_ids: [
+          game_connection_support.own_unit_id,
+        ]),
+        destroyed:,
+      ),
+    )
+  })
 }
 
 /// `opcode.0x262.casts` and `SetUnitCast 0x1404697a0`: a unit create lists the cast the
 /// player holds the bar of, with the id the client looks the cast in progress up by, in
 /// state 2 (bit 1) until its first go and state 3 (bit 0) after; a cast that is no longer
-/// the current cast is not listed.
+/// the current cast is not listed. And `cast.target_node_end`: a viewer is then told the
+/// later news of the cast it was listed and of no other (a 0x87f of a cast it does not
+/// hold would wait on the unit for ever), and one that left sight is told nothing of the
+/// casts it saw before.
 pub fn a_player_that_comes_into_sight_lists_its_current_cast_test() -> Nil {
   use <- owned_test.run(60_000)
   let none =
@@ -1642,29 +1751,32 @@ pub fn a_player_that_comes_into_sight_lists_its_current_cast_test() -> Nil {
   list.each(
     [
       #(
-        "a cast bar before its first go is listed in state 2",
-        False,
+        "Gamma Rays before its first go, a cast bar: listed in state 2",
+        gamma_rays_base,
+        29_874,
         1000,
         option.Some(1),
       ),
       #(
-        "a Channeled cast after its first go is listed in state 3",
-        True,
-        1600,
+        "Discharge, Channeled, 410 ms after its first go: listed in state 3",
+        discharge_base,
+        58_832,
+        1500,
         option.Some(0),
       ),
       #(
-        "a Normal cast after its first go is no longer the current cast and is not listed",
-        False,
+        "Gamma Rays after its first go, a Normal cast that is no longer the current cast: not listed",
+        gamma_rays_base,
+        29_874,
         2600,
         option.None,
       ),
     ],
     fn(row) {
-      let #(name, channeled, until_ms, started) = row
-      use tables <- game_connection_support.with_a_cast_bar(channeled:)
+      let #(name, ability, spell4_id, until_ms, started) = row
       let #(start, created) =
-        medic_casting_seen_by_a_new_viewer(tables:, until_ms:)
+        medic_casting_seen_by_a_new_viewer(ability:, until_ms:)
+      assert start.spell4_id == spell4_id as name
       case started {
         option.None -> {
           assert created.tail.casts == [] && created.tail.cast_id == 0 as name
@@ -1676,7 +1788,7 @@ pub fn a_player_that_comes_into_sight_lists_its_current_cast_test() -> Nil {
                 caster_unit_id: game_connection_support.own_unit_id,
                 primary_target_unit_id: start.primary_target_unit_id,
                 cast_id: start.cast_id,
-                spell4_id: start.spell4_id,
+                spell4_id:,
                 started:,
                 targets: [],
                 initial_positions: [],
@@ -1687,6 +1799,30 @@ pub fn a_player_that_comes_into_sight_lists_its_current_cast_test() -> Nil {
           assert created.tail.cast_id == start.cast_id as name
         }
       }
+    },
+  )
+  list.each(
+    [
+      #(
+        "a viewer that comes into sight after Discharge's first go is told its finish, and nothing of the Power Charge the first go left",
+        [Comes(1500)],
+      ),
+      #(
+        "a viewer that saw the Power Charge start, left and came back is told nothing of it",
+        [Comes(1100), Goes(1500), Comes(1600)],
+      ),
+    ],
+    fn(row) {
+      let #(name, moves) = row
+      let #(started, told) = discharge_told_to_a_viewer(moves:)
+      let assert [discharge, ..] = started
+      let assert Ok(power_charge) =
+        list.find(started, fn(start) { start.spell4_id == 42_569 })
+        as "the first go starts a Power Charge"
+      assert discharge.spell4_id == 58_832 as name
+      assert list.contains(told, CastFinished(cast_id: discharge.cast_id))
+        as name
+      assert !told_of(told:, cast_id: power_charge.cast_id) as name
     },
   )
 }
