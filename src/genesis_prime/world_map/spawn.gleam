@@ -1378,10 +1378,13 @@ fn defence_of(
 /// it carries that time and its area and anchor (`spell_area.area_of_spell`), the telegraph rows
 /// the client makes of it (`telegraph_entries.draws_of`), whether its aim follows the target
 /// (`Spell4.propertyFlags` bit 0x2), its gos and its hold
-/// (`timeline_of`), its reach is the smaller of the area row's `maxRange` and the farthest
-/// point of its hit shapes (`area.farthest_of`: 85469 and 86978 have a `targetMaxRange` of
-/// 0 and a 30 m rectangle, 55317 a cone to 5.5 under a `maxRange` of 10), and an area it
-/// lacks or cannot read fails the load. With it, the creature scaling and
+/// (`timeline_of`), and an area it lacks or cannot read fails the load. A charge on its
+/// caster reaches the smaller of the area row's `maxRange` and the farthest point of its hit
+/// shapes (`area.farthest_of`: 85469 and 86978 have a `targetMaxRange` of 0 and a 30 m
+/// rectangle, 55317 a cone to 5.5 under a `maxRange` of 10). A charge on its target is cast
+/// within the spell's own range, as the client ranges a cast on a unit (`0x1403b2240`): its
+/// `targetMaxRange` plus `hit_radius`, as an instant attack's, or the area row's `maxRange`
+/// alone when `targetMaxRange` is 0. With it, the creature scaling and
 /// each damage effect with its formula, which work the blows out again from changed
 /// properties.
 fn attack_of(
@@ -1495,10 +1498,18 @@ fn attack_of(
       }
   })
   let reach = case cast {
-    creature_life.Charged(area: row, inside:, ..) ->
-      case area.farthest_of(inside:) {
-        Some(farthest) -> float.min(row.max_range, farthest)
-        None -> row.max_range
+    creature_life.Charged(area: row, inside:, anchor:, ..) ->
+      case anchor {
+        area.FollowsCaster | area.FixedAtCaster ->
+          case area.farthest_of(inside:) {
+            Some(farthest) -> float.min(row.max_range, farthest)
+            None -> row.max_range
+          }
+        area.FollowsTarget | area.FixedAtTarget ->
+          case spell.target_max_range == 0.0 {
+            True -> row.max_range
+            False -> spell.target_max_range +. hit_radius.of_creature(display:)
+          }
       }
     creature_life.Instant ->
       spell.target_max_range +. hit_radius.of_creature(display:)

@@ -35,6 +35,7 @@ import genesis_prime/game/faction_level
 import genesis_prime/game/hit.{Blow, Worked}
 import genesis_prime/game/prerequisite
 import genesis_prime/game/start_place
+import genesis_prime/game/telegraph_entries
 import genesis_prime/game/unit_properties
 import genesis_prime/game/vendor
 import genesis_prime/table/creature2
@@ -2148,4 +2149,96 @@ pub fn a_specials_reach_is_the_extent_of_its_hit_shapes_and_the_turrets_stays_30
     )
   assert turret.combat.attack.reach == 30.0
     as "the turret's own charge keeps the area row's 30.0"
+}
+
+pub fn a_charge_on_its_target_reaches_as_far_as_the_spells_target_max_range_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // A cast on a unit starts within the spell's own range, as the client ranges a unit-target cast
+  // by Spell4.targetMaxRange (`0x1403b2240`) and an instant attack here does: that plus the
+  // caster's hit radius (the Eldan Security Construct's display row 23881: 1.0). A
+  // targetMaxRange of 0 takes the area row's maxRange alone. Rows by `table_rows`: 55846
+  // targetMaxRange 15; 55759 6; 46353 50 (area row 388, a circle of 5); 61226 0 (area row 629,
+  // maxRange 60).
+  [
+    #(
+      55_846,
+      16.0,
+      "15 plus the hit radius, over the area row 116's maxRange of 10",
+    ),
+    #(55_759, 7.0, "6 plus the hit radius"),
+    #(
+      46_353,
+      51.0,
+      "50 plus the hit radius, not capped by its area row or its shape",
+    ),
+    #(
+      61_226,
+      60.0,
+      "targetMaxRange 0: the area row 629's maxRange, no hit radius",
+    ),
+  ]
+  |> list.each(fn(found) {
+    let #(spell4_id, reach, reason) = found
+    let special =
+      the_special_of(beast: spawn_support.special_creature(
+        number: 1,
+        creature_id: 25_986,
+        spell4_id:,
+      ))
+    assert special.attack.reach == reach as reason
+  })
+}
+
+pub fn the_eldan_security_construct_loads_laser_bolt_with_its_circle_on_the_target_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The Constructs share display group 26468 (47430, a vignette one, has faction 219, which is
+  // friendly to both sides, so no spawn of it starts a fight). Laser Bolt (Spell4 55846):
+  // castTime 3000, area row 116, one SpellPhase (11613, delay 3000, index 0) and one damage
+  // row, so one strike go at 3000; its row 7874 is a circle of 4 (flags 0x905000, tt 2), fixed
+  // at the target.
+  list.each([25_986, 27_399], fn(creature_id) {
+    let special =
+      the_special_of(beast: spawn_support.special_creature(
+        number: 1,
+        creature_id:,
+        spell4_id: 55_846,
+      ))
+    let assert Charged(
+      cast_ms:,
+      area: row,
+      inside:,
+      anchor:,
+      draws:,
+      gos:,
+      aims_at_target:,
+      ..,
+    ) = special.attack.cast
+      as "Laser Bolt is a charge"
+    assert cast_ms == 3000
+    assert anchor == area.FixedAtTarget as "tt 2 with 0x1000 and 0x4000"
+    assert row.max_range == 10.0 as "area row 116"
+    assert inside
+      == area.InsideShapes(placements: [
+        area.Placement(
+          shape: area.Circle(radius: 4.0),
+          ahead: 0.0,
+          aside: 0.0,
+          turn_degrees: 0.0,
+        ),
+      ])
+    assert draws
+      == [
+        telegraph_entries.Draw(
+          telegraph_damage_id: 7874,
+          placing: telegraph_entries.AtTelegraphPosition,
+          target_type_flags: 2,
+          ahead: 0.0,
+          aside: 0.0,
+          up: 0.0,
+          turn_degrees: 0.0,
+        ),
+      ]
+    assert gos == [Go(at_ms: 3000, strikes: True)]
+    assert !aims_at_target as "propertyFlags 12582912 has no bit 0x2"
+  })
 }

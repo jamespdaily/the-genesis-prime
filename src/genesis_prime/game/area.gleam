@@ -90,9 +90,8 @@ pub type Shape {
 }
 
 /// Where a creature special's hit is centred, which is where its picture is drawn
-/// (genesis_prime/game/telegraph_entries): a spell has one anchor. The load reads the two caster
-/// anchors from the hit rows' flags (genesis_prime/game/spell_area `anchor_of`); the two target
-/// anchors are set on a special's `Charged` and the load does not produce them.
+/// (genesis_prime/game/telegraph_entries): a spell has one anchor, which the load reads from the
+/// hit rows' `targetTypeFlags` and flags (genesis_prime/game/spell_area `anchor_of`).
 pub type Anchor {
   /// Rows with neither 0x4000 nor 0x1000: the client draws them on the caster each frame
   /// from its own place and facing, so the hit is centred on the caster where it stands at

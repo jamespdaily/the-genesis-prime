@@ -29,7 +29,8 @@
 //// - **The anchor unit id is 0**, which leaves the entry in the world (`spell.position_unit`);
 ////   that retail sent 0 and not the unit's id is a guess.
 //// - **A row placed on each struck unit or on the ground** gets no entry here; the load
-////   refuses such a row for a creature (`spell_area.TelegraphNotOnCaster`).
+////   refuses such a row for a creature (`spell_area.TelegraphOnStruckUnits` for bit 4,
+////   `spell_area.TelegraphNotOnCaster` for the ground and for two units at once).
 
 import genesis_prime/game/area
 import genesis_prime/game/spell_effect

@@ -55,6 +55,7 @@ import genesis_prime/message/relayed_movement
 import genesis_prime/message/spell_damage_description
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_initial_position.{SpellInitialPosition}
+import genesis_prime/message/spell_position.{type SpellPosition, SpellPosition}
 import genesis_prime/message/spell_started
 import genesis_prime/message/spell_telegraph_position.{SpellTelegraphPosition}
 import genesis_prime/message/start_movement
@@ -3254,4 +3255,145 @@ pub fn a_creature_with_the_special_63569_strikes_the_unit_its_cast_id_picks_test
   assert struck == 10 as "the unit the cast id's mix puts first"
   assert void_blast_fight() == #(cast_id, struck)
     as "the same cast id, the same unit"
+}
+
+/// The connection's player, on the creature's threat list, moves to `x`: the connection tells
+/// the creature its new place, as it does for each move of a player it has struck.
+fn target_moved(
+  roaring roaring: Roaring,
+  connection connection: Int,
+  x x: Float,
+  seq seq: Int,
+) -> Nil {
+  let assert Ok(Nil) =
+    creature_registry.tell(
+      roaring.world.creatures,
+      map: world_watch_support.ship,
+      incarnation: roaring.run.incarnation,
+      unit_id: roaring.unit_id,
+      life: 2,
+      message: creature.TargetMoved(
+        by: ConnectionId(connection),
+        place: place_support.at(
+          world_id: 3460,
+          world_zone_id: spawn_support.warfare_woods,
+          x:,
+          y: 0.0,
+          z: 0.0,
+        ),
+        seq:,
+        stay: map_support.stay(count: 1),
+        hit_radius: place_support.player_hit_radius,
+      ),
+    )
+    as "the creature is found by its address and told"
+  driven_time.settled(roaring.pid)
+}
+
+/// The 0x7ff position of a place on the x axis at ground level, as the client reads it.
+fn on_the_x_axis(x x: Float) -> SpellPosition {
+  SpellPosition(x: float32.to_bits(x), y: float32.to_bits(0.0), z: 0)
+}
+
+pub fn an_eldan_security_construct_draws_its_laser_bolt_circle_under_the_player_and_strikes_the_fighters_in_it_test() -> Nil {
+  use <- owned_test.run(90_000)
+  // Levian Bay's Eldan Security Construct (Creature2 25986) casts Laser Bolt (Spell4 55846,
+  // damage effect 133289): row 7874 is a circle of 4 on the cast's target (flags 0x905000, tt
+  // 2), drawn where the 0x7ff puts it. On the x axis the creature stands at 0, player 1 (the
+  // target) at 8, player 2 at 9 (1 from the circle's centre) and player 3 at 2 (6 from it,
+  // outside 4 plus the player's hit radius 1.2); player 1 then steps to 14, still within the
+  // reach of 15 plus the Construct's hit radius 1.0, and 6 from the centre. The target's
+  // role bit 2 is the entry's flags byte (`spell.telegraph_position`, a marked guess), and the
+  // strike go is phase 0 (SpellPhase 11613 holds the one go), which the client's missile row
+  // 7473 (phaseFlags 1) launches in.
+  let roaring =
+    fight_of(
+      creature: spawn_support.special_creature(
+        number: 1,
+        creature_id: 25_986,
+        spell4_id: 55_846,
+      ),
+      damage_effects_id: 133_289,
+    )
+  let joined_at = fn(connection, x) {
+    let received =
+      world_support.connection(world: roaring.world, id: connection)
+    let _player = world_watch_support.join(run: roaring.run, connection:)
+    let _appeared =
+      world_watch_support.next(
+        received:,
+        what: "the creature's 0x262 for the player",
+        wanted: world_watch_support.appearance,
+      )
+    struck_from(
+      world: roaring.world,
+      run: roaring.run,
+      connection:,
+      unit_id: roaring.unit_id,
+      x:,
+      damage: 1,
+      cast_id: connection,
+    )
+    received
+  }
+  let received_2 = joined_at(2, 9.0)
+  let received_3 = joined_at(3, 2.0)
+  target_moved(roaring:, connection: 1, x: 8.0, seq: 2)
+  driven_time.advance(time: roaring.time, ms: 1500)
+  let start =
+    read_by_the_client(start: next_cast_started(received: roaring.received))
+  assert start.spell4_id == 55_846 && start.primary_target_unit_id == 10
+    as "the cast is on player 1, the creature's target"
+  let initial_at_the_target = [
+    SpellInitialPosition(
+      unit_id: 10,
+      target_flags: 2,
+      position: on_the_x_axis(x: 8.0),
+      yaw: 0,
+      anchor_unit_id: 0,
+    ),
+  ]
+  let circle_at_the_target = [
+    SpellTelegraphPosition(
+      telegraph_damage_id: 7874,
+      unit_id: 10,
+      target_flags: 2,
+      position: on_the_x_axis(x: 8.0),
+      yaw: 0,
+      anchor_unit_id: 0,
+    ),
+  ]
+  assert start.initial_positions == initial_at_the_target
+    as "the target's initial position, at its place, with the target's role bit"
+  assert start.telegraph_positions == circle_at_the_target
+    as "the circle of row 7874 under the target"
+  target_moved(roaring:, connection: 1, x: 14.0, seq: 3)
+  let received_4 = world_support.connection(world: roaring.world, id: 4)
+  let _late = world_watch_support.join(run: roaring.run, connection: 4)
+  let late = read_by_the_client(start: next_cast_started(received: received_4))
+  assert late.cast_id == start.cast_id
+    && late.primary_target_unit_id == 10
+    && late.initial_positions == initial_at_the_target
+    && late.telegraph_positions == circle_at_the_target
+    as "a viewer arriving mid-cast reads the same lists, though the target has stepped out"
+  driven_time.advance(time: roaring.time, ms: 3000)
+  driven_time.settled(roaring.pid)
+  let told = fn(id, received) {
+    sent_so_far(world: roaring.world, id:, received:, wanted: strike_told)
+  }
+  assert told(1, roaring.received) == []
+    as "player 1 stepped out of the circle and is not struck"
+  assert told(3, received_3) == []
+    as "player 3 stood outside the circle and is not struck"
+  let key = next_strike_told(received: received_2)
+  assert key.unit_id == 20
+    && key.cast_id == start.cast_id
+    && key.occasion == strike_tell.AtGo(phase: 0)
+    as "player 2 stands in the circle where player 1 stood, and is struck at the go"
+  answer(roaring:, key:)
+  let went = next_cast_went(received: roaring.received)
+  assert went.phase == 0
+    && list.map(went.targets, fn(target) { target.unit_id }) == [20]
+    as "the strike go is phase 0 and names player 2 alone"
+  world_support.stop(world: roaring.world)
 }
