@@ -12,6 +12,7 @@
 ////                         │     factory of the Overview's runtimes (one per tab)
 ////                         ├── (rebuilt together, followers first)
 ////                         │     follower of each log file ──► Logs runtimes' lines
+////                         │     follower of each container's log (reads through podman)
 ////                         │     factory of the Logs page's runtimes (one per tab)
 ////                         └── mist on 127.0.0.1:PORT ── web.handle ──► answer
 ////                                                           │ upgrade of a page
@@ -30,7 +31,10 @@
 ////   close, so every open page reconnects and subscribes again instead of
 ////   showing its last reading or lines as if they were fresh.
 //// - The Logs page follows `play-service.log` and `play-service.launchd.log`
-////   inside the settings' home, which the updater's scripts write.
+////   inside the settings' home, which the updater's scripts write, and the
+////   containers `genesis-play` and `genesis-play-postgres` through `podman`
+////   (found on the search path at the start; a start without one shows each
+////   container's log as unreadable, with that reason).
 //// - The start refuses, with its reason, when the port is busy (two dashboards
 ////   must not run) and when the key cannot be kept, whether the entry file
 ////   cannot be written or cannot be published (a key that cannot be kept must
@@ -41,12 +45,15 @@
 
 import envoy
 import genesis_prime/dashboard/access.{type Gate, Gate}
+import genesis_prime/dashboard/container_follow
+import genesis_prime/dashboard/container_log
 import genesis_prime/dashboard/follow
 import genesis_prime/dashboard/host
 import genesis_prime/dashboard/log_lines
 import genesis_prime/dashboard/logs
 import genesis_prime/dashboard/overview
 import genesis_prime/dashboard/page.{type Page}
+import genesis_prime/dashboard/script
 import genesis_prime/dashboard/secret
 import genesis_prime/dashboard/socket
 import genesis_prime/dashboard/subscribers
@@ -74,8 +81,10 @@ import simplifile
 
 /// Where the dashboard listens, keeps its entry file and reads what it serves,
 /// which script reports the play service, how often it is read and how long a
-/// read may run before it is ended, how often the log files are read, and who
-/// is told of the log followers' reads and drops.
+/// read may run before it is ended, how often the log files are read, the
+/// `podman` program the container logs are read through, how often they are
+/// read and how long one call of it may run, and who is told of the log
+/// followers' reads and drops (the containers' included).
 pub type Settings {
   Settings(
     port: Int,
@@ -86,13 +95,16 @@ pub type Settings {
     poll_interval_ms: Int,
     read_deadline_ms: Int,
     log_interval_ms: Int,
+    podman_path: String,
+    container_interval_ms: Int,
+    container_call_deadline_ms: Int,
     log_watcher: Option(Subject(follow.Event)),
   )
 }
 
 /// A dashboard that is serving: its gate, its owner process, the factory of
 /// each page's runtimes, the poller the Overview subscribes to and the
-/// followers of the log files the Logs page subscribes to.
+/// followers of the log files and the containers the Logs page subscribes to.
 pub type Running {
   Running(
     gate: Gate,
@@ -102,6 +114,8 @@ pub type Running {
     poller: Subject(host.Message),
     updater_log: Subject(follow.Message),
     launchd_log: Subject(follow.Message),
+    server_log: Subject(container_follow.Message),
+    database_log: Subject(container_follow.Message),
   )
 }
 
@@ -145,6 +159,10 @@ fn settings_from_environment() -> Result(Settings, SettingsError) {
     poll_interval_ms: host.interval_ms,
     read_deadline_ms: host.deadline_ms,
     log_interval_ms: follow.interval_ms,
+    // A name no search finds is run as it is, and its read says it was not found.
+    podman_path: result.unwrap(script.find_on_path("podman"), "podman"),
+    container_interval_ms: container_follow.interval_ms,
+    container_call_deadline_ms: container_follow.call_deadline_ms,
     log_watcher: None,
   ))
 }
@@ -168,10 +186,14 @@ pub fn start(settings settings: Settings) -> Result(Running, StartError) {
   let log_runtimes_name = process.new_name("dashboard_log_runtimes")
   let updater_name = process.new_name("dashboard_updater_log")
   let launchd_name = process.new_name("dashboard_launchd_log")
+  let server_name = process.new_name("dashboard_server_log")
+  let database_name = process.new_name("dashboard_database_log")
   let followers =
     logs.Followers(
       updater: process.named_subject(updater_name),
       launchd: process.named_subject(launchd_name),
+      server: process.named_subject(server_name),
+      database: process.named_subject(database_name),
     )
   let context =
     web.Context(
@@ -218,6 +240,24 @@ pub fn start(settings settings: Settings) -> Result(Running, StartError) {
       watcher: settings.log_watcher,
     )
   }
+  let container_follower = fn(source) {
+    let assert Ok(container) = container_log.container_name(source)
+      as "the server's log and the database's are containers'"
+    container_follow.Settings(
+      source:,
+      start_read: container_follow.podman_reader(
+        podman: settings.podman_path,
+        container:,
+        call_deadline_ms: settings.container_call_deadline_ms,
+      ),
+      interval_ms: settings.container_interval_ms,
+      deadline_ms: container_follow.read_deadline_ms(
+        call_deadline_ms: settings.container_call_deadline_ms,
+      ),
+      arm: subscribers.send_after,
+      watcher: settings.log_watcher,
+    )
+  }
   let start_tree = fn() {
     static_supervisor.new(static_supervisor.OneForOne)
     |> static_supervisor.restart_tolerance(intensity: 3, period: 5)
@@ -248,6 +288,14 @@ pub fn start(settings settings: Settings) -> Result(Running, StartError) {
         settings: log_follower(log_lines.LaunchdLog),
         name: launchd_name,
       ))
+      |> static_supervisor.add(container_follow.supervised(
+        settings: container_follower(log_lines.ServerLog),
+        name: server_name,
+      ))
+      |> static_supervisor.add(container_follow.supervised(
+        settings: container_follower(log_lines.DatabaseLog),
+        name: database_name,
+      ))
       |> static_supervisor.add(
         lustre.factory(logs.app())
         |> factory_supervisor.restart_strategy(supervision.Temporary)
@@ -276,6 +324,8 @@ pub fn start(settings settings: Settings) -> Result(Running, StartError) {
             poller:,
             updater_log: followers.updater,
             launchd_log: followers.launchd,
+            server_log: followers.server,
+            database_log: followers.database,
           ))
         Error(reason) -> {
           stop_tree(owner:, tree:)

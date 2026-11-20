@@ -11,8 +11,9 @@
 #               only when its caller ends it
 #
 # The key is worked out from the call: info, exists.NAME, status.NAME (inspect of
-# the status), labels.NAME (inspect of the labels), ready (exec of pg_isready),
-# machine.start and connections (lsof). A call that no key names answers 99
+# the status), labels.NAME (inspect of the labels), identity.NAME (inspect of the
+# id), logs.NAME (logs), ready (exec of pg_isready), machine.start and
+# connections (lsof). A call that no key names answers 99
 # without a file, so a call a test did not plan fails closed.
 
 fakes=${FAKE_DIR:?FAKE_DIR names the folder of fakes}
@@ -26,6 +27,7 @@ if [ "$tool" = lsof ]; then
 else
   case "$1" in
     info) key=info ;;
+    logs) key=logs.${*: -1} ;;
     exec) key=ready ;;
     machine) key=machine.$2 ;;
     container)
@@ -35,6 +37,7 @@ else
           case "$*" in
             *State.Status*) key=status.${*: -1} ;;
             *genesis.revision*) key=labels.${*: -1} ;;
+            *'{{.Id}}'*) key=identity.${*: -1} ;;
           esac
           ;;
       esac
