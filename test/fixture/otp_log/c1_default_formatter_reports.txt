@@ -1,0 +1,62 @@
+2026-11-20T09:10:12-05:00 =NOTICE REPORT==== 20-Nov-2026::14:10:12.631981 ===
+2026-11-20T09:10:12-05:00 a notice line
+2026-11-20T09:10:12-05:00 =WARNING REPORT==== 20-Nov-2026::14:10:12.633192 ===
+2026-11-20T09:10:12-05:00 a warning with text
+2026-11-20T09:10:12-05:00 =INFO REPORT==== 20-Nov-2026::14:10:12.633257 ===
+2026-11-20T09:10:12-05:00 an info line
+2026-11-20T09:10:12-05:00 =ERROR REPORT==== 20-Nov-2026::14:10:12.633320 ===
+2026-11-20T09:10:12-05:00 an error line~nwith a second line
+2026-11-20T09:10:12-05:00 =ERROR REPORT==== 20-Nov-2026::14:10:12.633351 ===
+2026-11-20T09:10:12-05:00     what: a map report
+2026-11-20T09:10:12-05:00     n: 1
+2026-11-20T09:10:12-05:00 =ERROR REPORT==== 20-Nov-2026::14:10:12.637855 ===
+2026-11-20T09:10:12-05:00 report: #{label => {mylib,thing},a => 1}
+2026-11-20T09:10:12-05:00 =ERROR REPORT==== 20-Nov-2026::14:10:12.638000 ===
+2026-11-20T09:10:12-05:00 Error in process <0.83.0> with exit value:
+2026-11-20T09:10:12-05:00 {boom,[{erl_eval,do_apply,7,[{file,"erl_eval.erl"},{line,1042}]}]}
+2026-11-20T09:10:12-05:00 
+2026-11-20T09:10:12-05:00 =CRASH REPORT==== 20-Nov-2026::14:10:12.840250 ===
+2026-11-20T09:10:12-05:00   crasher:
+2026-11-20T09:10:12-05:00     initial call: supervisor:supervisor/1
+2026-11-20T09:10:12-05:00     pid: <0.84.0>
+2026-11-20T09:10:12-05:00     registered_name: []
+2026-11-20T09:10:12-05:00     exception error: no function clause matching 
+2026-11-20T09:10:12-05:00                      supervisor:init({{one_for_one,0,1},
+2026-11-20T09:10:12-05:00                                       [#{id => c,
+2026-11-20T09:10:12-05:00                                          start =>
+2026-11-20T09:10:12-05:00                                           {proc_lib,start_link,
+2026-11-20T09:10:12-05:00                                            [erlang,apply,
+2026-11-20T09:10:12-05:00                                             [#Fun<erl_eval.43.130099583>,
+2026-11-20T09:10:12-05:00                                              []]]}}]}) (supervisor.erl:949)
+2026-11-20T09:10:12-05:00       in function  supervisor:init/1 (supervisor.erl:951)
+2026-11-20T09:10:12-05:00       in call from gen_server:init_it/2 (gen_server.erl:2276)
+2026-11-20T09:10:12-05:00       in call from gen_server:init_it/6 (gen_server.erl:2236)
+2026-11-20T09:10:12-05:00     ancestors: [<0.10.0>]
+2026-11-20T09:10:12-05:00     message_queue_len: 0
+2026-11-20T09:10:12-05:00     messages: []
+2026-11-20T09:10:12-05:00     links: [<0.10.0>]
+2026-11-20T09:10:12-05:00     dictionary: []
+2026-11-20T09:10:12-05:00     trap_exit: true
+2026-11-20T09:10:12-05:00     status: running
+2026-11-20T09:10:12-05:00     heap_size: 376
+2026-11-20T09:10:12-05:00     stack_size: 29
+2026-11-20T09:10:12-05:00     reductions: 68
+2026-11-20T09:10:12-05:00   neighbours:
+2026-11-20T09:10:12-05:00 
+2026-11-20T09:10:12-05:00 Error! Failed to eval: 
+2026-11-20T09:10:12-05:00 logger:set_primary_config(level, info),
+2026-11-20T09:10:12-05:00 logger:notice("a notice line"),
+2026-11-20T09:10:12-05:00 logger:warning("a warning ~ts", [<<"with text">>]),
+2026-11-20T09:10:12-05:00 logger:info("an info line"),
+2026-11-20T09:10:12-05:00 logger:error("an error line~nwith a second line"),
+2026-11-20T09:10:12-05:00 logger:error(#{what => "a map report", n => 1}),
+2026-11-20T09:10:12-05:00 logger:error(#{label => {mylib, thing}, a => 1}, #{report_cb => fun(R) -> {"report: ~p", [R]} end}),
+2026-11-20T09:10:12-05:00 spawn(fun() -> erlang:error(boom) end), timer:sleep(200),
+2026-11-20T09:10:12-05:00 {ok,_} = supervisor:start_link({local, s1}, supervisor, {{one_for_one,0,1}, [#{id=>c, start=>{proc_lib,start_link,[erlang,apply,[fun() -> exit(normal) end, []]]}}]}) , 
+2026-11-20T09:10:12-05:00 io:format(standard_error, "to stderr~n", []), io:format("to stdout~n"),
+2026-11-20T09:10:12-05:00 logger:error(lists:duplicate(20000, $x)),
+2026-11-20T09:10:12-05:00 timer:sleep(300), halt().
+2026-11-20T09:10:12-05:00 
+2026-11-20T09:10:12-05:00 Runtime terminating during boot ({{badmatch,{error,{function_clause,[{supervisor,init,[{{one_for_one,0,1},[#{id=>c,start=>{proc_lib,start_link,[erlang,apply,[#Fun<erl_eval.43.130099583>,[]]]}}]}],[{file,"supervisor.erl"},{line,949}]},{supervisor,init,1,[{file,"supervisor.erl"},{line,951}]},{gen_server,init_it,2,[{file,"gen_server.erl"},{line,2276}]},{gen_server,init_it,6,[{file,"gen_server.erl"},{line,2236}]},{proc_lib,init_p_do_apply,3,[{file,"proc_lib.erl"},{line,333}]}]}}},[{erl_eval,expr,6,[{file,"erl_eval.erl"},{line,796}]},{erl_eval,exprs,6,[{file,"erl_eval.erl"},{line,276}]},{init,start_it,1,[]},{init,start_em,1,[]},{init,do_boot,3,[]}]})
+2026-11-20T09:10:12-05:00 
+2026-11-20T09:10:12-05:00 Crash dump is being written to: erl_crash.dump...done
