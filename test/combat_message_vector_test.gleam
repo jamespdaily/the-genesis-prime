@@ -20,6 +20,9 @@ import genesis_prime/message/ability_hold.{AbilityHold}
 import genesis_prime/message/ability_tier.{AbilityTier}
 import genesis_prime/message/ability_tiers.{AbilityTiers}
 import genesis_prime/message/action_set.{ActionSet}
+import genesis_prime/message/action_set_save.{ActionSetSave}
+import genesis_prime/message/action_set_saved.{ActionSetSaved}
+import genesis_prime/message/action_set_tier_change.{ActionSetTierChange}
 import genesis_prime/message/action_shortcut.{ActionShortcut}
 import genesis_prime/message/bit_stream
 import genesis_prime/message/cancel_cast.{CancelCast}
@@ -98,8 +101,10 @@ import genesis_prime/message/unit_target.{UnitTarget}
 import genesis_prime/message/unit_threat.{UnitThreat}
 import genesis_prime/world_map/static_object
 import genesis_prime/world_map/unit_fields
+import gleam/bit_array
 import gleam/int
 import gleam/list
+import limited_action_set_support
 import message_support
 import owned_test
 
@@ -122,6 +127,9 @@ pub fn the_message_numbers_are_the_clients_test() -> Nil {
   assert ability_tiers.message_id == 0x1A0
     as "opcode.0x1a0: message 0x1a0 (416)"
   assert action_set.message_id == 0x19D as "opcode.0x19d: message 0x19d (413)"
+  assert action_set_save.message_id == 0xB1 as "opcode.0xb1: message 0xb1 (177)"
+  assert action_set_saved.message_id == 0xB2
+    as "opcode.0xb2: message 0xb2 (178)"
   assert innate_index_set.message_id == 0x19F
     as "opcode.0x19f: message 0x19f (415)"
   assert innate_index_chosen.message_id == 0x16F
@@ -306,6 +314,108 @@ pub fn an_action_set_is_an_index_a_value_a_result_and_its_shortcuts_test() -> Ni
     encode: action_set.encode,
     decode: action_set.decode,
   )
+}
+
+pub fn an_action_set_save_is_a_count_twelve_ids_a_set_tier_changes_and_amps_test() -> Nil {
+  use <- owned_test.run(5000)
+  let save = fn(ids: List(Int)) {
+    ActionSetSave(
+      spell4_base_ids: ids,
+      action_set_index: 0,
+      tier_changes: [],
+      amp_ids: [],
+    )
+  }
+  let zeros = fn(count) { list.repeat(0, count) }
+  let first_four = [27_638, 20_684, 20_325, 20_718]
+  [
+    #(
+      "opcode.0xb1, sitting sequences 16176 and 16252: four abilities in slots 0 to 3",
+      limited_action_set_support.save_a,
+      save(list.append(first_four, zeros(8))),
+    ),
+    #(
+      "opcode.0xb1, sitting sequence 16317: two swapped and one removed",
+      limited_action_set_support.save_b,
+      save(list.append([20_684, 27_638, 20_718], zeros(9))),
+    ),
+    #(
+      "opcode.0xb1, sitting sequence 16356: one removed",
+      limited_action_set_support.save_c,
+      save(list.append([27_638, 20_684], zeros(10))),
+    ),
+    #(
+      "opcode.0xb1, hand-packed: two tier changes (18 bits, 8 bits) and two AMP ids (16 bits)",
+      limited_action_set_support.save_d,
+      ActionSetSave(
+        spell4_base_ids: list.append(first_four, zeros(8)),
+        action_set_index: 0,
+        tier_changes: [
+          ActionSetTierChange(spell4_base_id: 20_684, tier: 2),
+          ActionSetTierChange(spell4_base_id: 27_638, tier: 3),
+        ],
+        amp_ids: [101, 202],
+      ),
+    ),
+  ]
+  |> list.each(fn(row) {
+    let #(name, hex, value) = row
+    message_support.assert_codec(
+      name:,
+      body: message_support.hex(hex),
+      value:,
+      encode: action_set_save.encode,
+      decode: action_set_save.decode,
+    )
+  })
+  let counted = fn(count) {
+    message_support.packed(
+      list.flatten([
+        [#(4, count)],
+        list.repeat(#(32, 20_684), count),
+        [#(3, 0), #(5, 0), #(7, 0)],
+      ]),
+    )
+  }
+  message_support.assert_codec(
+    name: "opcode.0xb1: a count of 11 reads as 11 ids (the rule, not the codec, refuses it)",
+    body: counted(11),
+    value: save(list.repeat(20_684, 11)),
+    encode: action_set_save.encode,
+    decode: action_set_save.decode,
+  )
+  message_support.assert_codec(
+    name: "opcode.0xb1: a count of 0 reads as no ids",
+    body: counted(0),
+    value: save([]),
+    encode: action_set_save.encode,
+    decode: action_set_save.decode,
+  )
+  let body = message_support.hex(limited_action_set_support.save_a)
+  assert action_set_save.decode(bit_array.append(body, <<0>>))
+    == Error(bit_stream.TrailingBytes(1))
+    as "opcode.0xb1: a byte after the layout's last bit is a trailing byte"
+}
+
+pub fn the_action_set_answer_is_one_bit_test() -> Nil {
+  use <- owned_test.run(5000)
+  message_support.assert_codec(
+    name: "opcode.0xb2 (reader 0x1400807f0): the bit set",
+    body: <<1>>,
+    value: ActionSetSaved(add_combat_log_line: 1),
+    encode: action_set_saved.encode,
+    decode: action_set_saved.decode,
+  )
+  message_support.assert_codec(
+    name: "opcode.0xb2: the bit clear",
+    body: <<0>>,
+    value: ActionSetSaved(add_combat_log_line: 0),
+    encode: action_set_saved.encode,
+    decode: action_set_saved.decode,
+  )
+  assert action_set_saved.encode(ActionSetSaved(add_combat_log_line: 2))
+    == Error(bit_stream.ValueDoesNotFit("add_combat_log_line", 1, 2))
+    as "opcode.0xb2 (reader 0x1400807f0): the field is one bit, so a value of 2 does not fit"
 }
 
 pub fn a_creature_is_created_as_type_0_with_its_row_id_and_the_players_tail_test() -> Nil {

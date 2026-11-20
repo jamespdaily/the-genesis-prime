@@ -1,0 +1,178 @@
+//// The builder's save, 0xB1, on the game connection (`genesis_prime/game/connection`): the rule
+//// is `limited_action_set_test`'s; this tests the connection's own job, one case per path: the
+//// answer written in order, the bar kept for the session, the player's life, combat and level
+//// read live, a body the client's reader refuses, and a message before the world. Expected
+//// values come from these places.
+//// - `opcode.0xb1` and the sitting's four saves (`limited_action_set_support.save_a` and the
+////   others): the client sends one 0xB1 inside 0x038C from the world.
+//// - `opcode.0xb2`: the builder redraws from the bar the server has set with 0x019D, so the
+////   answer is 0x019D then 0xB2.
+//// - `0x1407580e0`: the client refuses a save of a dead player and one in combat itself and
+////   never sends them, so a server that is told one is told by a modified client or in a race.
+//// - `connection/casting.caster_of`: where the connection reads the player's level, life and
+////   combat.
+
+import ability_book_support
+import connection_rule_support as support
+import game_connection_support as connection_support
+import genesis_prime/client_connection.{AskStore}
+import genesis_prime/connection/frame.{type Frame}
+import genesis_prime/game/connection as game_connection
+import genesis_prime/game/strike_tell
+import genesis_prime/step
+import genesis_prime/store.{CharacterId, Move, SavePlace}
+import genesis_prime/table/id.{ClassId}
+import gleam/bit_array
+import gleam/list
+import gleam/option.{None, Some}
+import limited_action_set_support as limited
+import owned_test
+
+/// A Spellslinger of the level in the world.
+fn in_world_at_level(level level: Int) -> game_connection.State {
+  connection_support.entered_as(
+    store.Character(
+      ..connection_support.world_character(),
+      class_id: ClassId(limited.spellslinger),
+      faction_id: limited.faction,
+      level:,
+    ),
+  ).0
+}
+
+/// A 0xB1 with this body, inside 0x038C.
+fn saved(body body: BitArray) -> BitArray {
+  connection_support.world_message(message_id: 0x00B1, body:)
+}
+
+/// The connection after a 0xB1 of this body, the step and the frames it wrote to the player.
+fn sent(
+  state state: game_connection.State,
+  body body: BitArray,
+) -> #(
+  game_connection.State,
+  step.ConnectionStep(client_connection.Request),
+  List(Frame),
+) {
+  let #(state, taken) = connection_support.read(state:, bytes: saved(body:))
+  #(state, taken, connection_support.written(taken:))
+}
+
+/// The result of the 0x019D a 0xB1 of this body is answered with.
+fn result_of(state state: game_connection.State, body body: BitArray) -> Int {
+  let #(_, _, frames) = sent(state:, body:)
+  limited.the_action_set(frames:).result
+}
+
+/// The ids the connection holds as the player's bar, read from the 0x019D of a refusal: a save
+/// of 20718 in slot 4, which opens at level 5, is refused at every level the tests use.
+fn held_ids(state state: game_connection.State) -> List(Int) {
+  let #(_, _, frames) =
+    sent(
+      state:,
+      body: limited.body(ids: [0, 0, 0, 0, 20_718, 0, 0, 0, 0, 0, 0, 0], set: 0),
+    )
+  list.map(limited.the_action_set(frames:).shortcuts, fn(shortcut) {
+    shortcut.object_id
+  })
+}
+
+pub fn a_0xb1_in_the_world_is_answered_0x19d_then_0xb2_and_kept_in_entered_test() -> Nil {
+  use <- owned_test.run(120_000)
+  let state = in_world_at_level(level: 4)
+  assert held_ids(state:) == limited.class_bar
+    as "a player who has saved nothing holds the class's bar"
+  let #(state, taken, frames) = sent(state:, body: limited.hex(limited.save_a))
+  assert list.map(frames, fn(frame) { frame.message_id }) == [0x019D, 0x00B2]
+    as "opcode.0xb2: the builder redraws from the set, so the set comes first"
+  assert support.asked(taken) == None as "nothing waits on the store"
+  assert held_ids(state:) == limited.ids_a
+    as "the set of the first save is held"
+  let #(state, _, _) = sent(state:, body: limited.hex(limited.save_b))
+  assert held_ids(state:) == limited.ids_b as "the second save replaces it"
+}
+
+pub fn a_refused_save_is_answered_with_the_held_bar_and_the_players_life_and_level_are_read_live_test() -> Nil {
+  use <- owned_test.run(120_000)
+  let state = in_world_at_level(level: 4)
+  let #(after, taken, frames) =
+    sent(
+      state:,
+      body: limited.body(ids: [0, 0, 0, 0, 20_718, 0, 0, 0, 0, 0, 0, 0], set: 0),
+    )
+  assert list.map(frames, fn(frame) { frame.message_id }) == [0x019D, 0x00B2]
+  assert limited.the_action_set(frames:).result == 2
+    as "slot 4 opens at level 5"
+  assert limited.the_answer_bit(frames:) == 0
+  assert !support.stops(taken)
+  assert held_ids(state: after) == limited.class_bar
+    as "a refusal leaves the bar as it was"
+  // A dead player, and one a creature holds on its threat list, each sending the sitting's
+  // first save.
+  let #(dead, _) = connection_support.killed(in_world_at_level(level: 4))
+  assert result_of(state: dead, body: limited.hex(limited.save_a)) == 27
+    as "a dead player: the connection reads the player's life as casting does"
+  let #(fighting, _) =
+    connection_support.feed(
+      state: in_world_at_level(level: 4),
+      event: connection_support.foe(strike_tell.Threatened(unit_id: 7, life: 3)),
+    )
+  assert result_of(state: fighting, body: limited.hex(limited.save_a)) == 30
+    as "a player in combat"
+  // A player of level 3 who rises to level 4 in the session: the same save is refused and then
+  // taken, so the level the connection reads is the one a level-up moves.
+  let experience = ability_book_support.experience_of(level: 4) - 1
+  let at_three =
+    ability_book_support.entered_at(
+      class_id: limited.spellslinger,
+      level: 3,
+      saved_experience: experience,
+    )
+  assert result_of(state: at_three, body: limited.hex(limited.save_a)) == 2
+    as "at level 3 slot 3 is not open"
+  let #(risen, _) =
+    ability_book_support.level_up(
+      class_id: limited.spellslinger,
+      from: 3,
+      to: 4,
+    )
+  assert result_of(state: risen, body: limited.hex(limited.save_a)) == 1
+    as "after the rise slot 3 is open and the level 4 ability is in the book"
+}
+
+pub fn a_0xb1_the_decoder_refuses_ends_the_connection_test() -> Nil {
+  use <- owned_test.run(120_000)
+  let state = in_world_at_level(level: 4)
+  let body = limited.hex(limited.save_a)
+  let assert Ok(cut) = bit_array.slice(body, 0, 50)
+  list.each(
+    [
+      #(cut, "50 of the 51 bytes end inside the last field"),
+      #(bit_array.append(body, <<0>>), "a byte after the layout's last bit"),
+    ],
+    fn(case_) {
+      let #(body, why) = case_
+      let #(_, taken, frames) = sent(state:, body:)
+      let assert [line] = support.logs_of(step: taken, level: step.LogError)
+        as why
+      assert support.says(line, "0x00B1") as why
+      assert frames == [] as why
+      let assert AskStore(Move(SavePlace(character_id: CharacterId(42), ..))) =
+        connection_support.ask_request(taken)
+        as "the place is saved as for any refused message, then the connection ends"
+    },
+  )
+}
+
+pub fn a_0xb1_before_the_world_is_logged_unhandled_and_the_connection_goes_on_test() -> Nil {
+  use <- owned_test.run(120_000)
+  let #(_, taken) =
+    connection_support.read(
+      state: connection_support.in_select(),
+      bytes: saved(body: limited.hex(limited.save_a)),
+    )
+  assert support.unhandled_ids(taken) == [Some(#("unhandled", 0x00B1))]
+    as "no row takes a 0xB1 at character select"
+  assert support.writes(taken) == []
+  assert !support.stops(taken)
+}

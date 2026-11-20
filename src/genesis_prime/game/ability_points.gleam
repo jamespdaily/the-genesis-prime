@@ -14,8 +14,9 @@
 ////   client never adds the column up; this sum is the server's.
 //// - **Points spent are 0.** The server saves no tier, so every point a level gives is
 ////   unspent and the two fields are equal. A tier button enables on the unspent points, and
-////   a click sends 0x00B1 or 0x017A, which the connection logs as unhandled: tier
-////   spending and action set edits are not built (`gaps`).
+////   the tier edits it makes go to the server in the builder's Save (0x00B1), whose tier
+////   changes the server reads and drops (genesis_prime/game/limited_action_set): tier
+////   spending is not built (`gaps`).
 
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/gap
@@ -70,7 +71,7 @@ pub fn gaps() -> List(gap.Entry) {
   [
     gap.Entry(
       area: "Abilities",
-      missing: "Spending ability points on a tier and editing the action set are not built: a tier button enables on the unspent points and its click is logged as unhandled, so every point a level gives stays unspent.",
+      missing: "Spending ability points on a tier is not built: a tier button enables on the unspent points and the tier changes of the builder's save are read and dropped, so every point a level gives stays unspent.",
     ),
   ]
 }

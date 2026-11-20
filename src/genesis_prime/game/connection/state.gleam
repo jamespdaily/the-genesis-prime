@@ -429,6 +429,29 @@ pub fn to_client(
   )
 }
 
+/// What one effect of a feature rule that only writes frames and log lines comes to.
+pub type Told {
+  /// A message to the client.
+  Sent(frame: Frame)
+  /// A log line of the connection.
+  Logged(level: step.LogLevel, text: String)
+}
+
+/// The connection's effects for a feature rule's effects, in order: `told` says which
+/// of the two each one is.
+pub fn told_effects(
+  session session: Session,
+  effects effects: List(effect),
+  told told: fn(effect) -> Told,
+) -> List(Effect(ConnectionEffect(Request))) {
+  list.map(effects, fn(effect) {
+    case told(effect) {
+      Sent(frame:) -> to_client(session:, inner: frame)
+      Logged(level:, text:) -> log(session:, level:, text:)
+    }
+  })
+}
+
 /// 0x036A with the reason, in the game wrapper under the cipher the
 /// connection holds, so the client leaves its prompt.
 pub fn notice(

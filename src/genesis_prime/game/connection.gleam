@@ -163,6 +163,7 @@ import genesis_prime/game/connection/inventory as connection_inventory
 import genesis_prime/game/connection/item_spend as connection_item_spend
 import genesis_prime/game/connection/level_up as connection_level_up
 import genesis_prime/game/connection/life as connection_life
+import genesis_prime/game/connection/limited_action_set as connection_limited_action_set
 import genesis_prime/game/connection/login as connection_login
 import genesis_prime/game/connection/movement as connection_movement
 import genesis_prime/game/connection/objective as connection_objective
@@ -600,6 +601,7 @@ fn routed(
     | Ok(routing.Life(..))
     | Ok(routing.Innate(..))
     | Ok(routing.LevelUp)
+    | Ok(routing.LimitedActionSet)
     | Ok(routing.Interaction(..))
     | Ok(routing.Quest(..))
     | Ok(routing.QuestTurnIn)
@@ -819,6 +821,13 @@ fn world_carried(
                   )
                 Ok(routing.LevelUp) ->
                   connection_level_up.take_message(
+                    session:,
+                    now:,
+                    entered:,
+                    inner: whole,
+                  )
+                Ok(routing.LimitedActionSet) ->
+                  connection_limited_action_set.take_message(
                     session:,
                     now:,
                     entered:,

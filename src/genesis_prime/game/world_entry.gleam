@@ -156,6 +156,7 @@ import genesis_prime/game/gear.{type Gear}
 import genesis_prime/game/innate
 import genesis_prime/game/inventory
 import genesis_prime/game/item_property
+import genesis_prime/game/limited_action_set
 import genesis_prime/game/loadout.{type Loadout}
 import genesis_prime/game/look
 import genesis_prime/game/movement
@@ -165,7 +166,6 @@ import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/reward_property
 import genesis_prime/game/shown
-import genesis_prime/game/spell_plan
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike
 import genesis_prime/game/tutorial
@@ -173,8 +173,6 @@ import genesis_prime/game/unit_properties
 import genesis_prime/game/vendor
 import genesis_prime/game/visibility
 import genesis_prime/gap
-import genesis_prime/message/action_set.{ActionSet}
-import genesis_prime/message/action_shortcut.{ActionShortcut}
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
 import genesis_prime/message/enter_world.{EnterWorld}
 import genesis_prime/message/float32
@@ -287,6 +285,7 @@ pub opaque type State {
     items: List(store.HeldItem),
     currencies: Currencies,
     quests: QuestLog,
+    action_sets: limited_action_set.Saved,
     buyback: Buyback,
     map: MapId,
     stay: Stay,
@@ -394,6 +393,10 @@ pub type Entered {
     /// The quest log the character holds (genesis_prime/game/quest_log): the
     /// connection saves it with the place and, at a play, sends it after 0x25E.
     quests: QuestLog,
+    /// The bars the player saved in the ability builder this session
+    /// (genesis_prime/game/limited_action_set): a play starts with none, the class's bar
+    /// shows, and the Holocrypt's join keeps them. They are not saved with the place.
+    action_sets: limited_action_set.Saved,
     /// The spell buttons the client holds for the open cast objectives of the quest log
     /// (genesis_prime/game/objective `buttons`): what the connection last told it with
     /// 0x176, which the next change to the log is told against.
@@ -920,6 +923,7 @@ fn joining_a_play(
           items:,
           currencies:,
           quests:,
+          action_sets: limited_action_set.none(),
           buyback: Buyback(next_id: 1, entries: []),
           connection:,
           stay:,
@@ -961,6 +965,7 @@ pub fn joined(
       items:,
       currencies:,
       quests:,
+      action_sets:,
       buyback:,
       map:,
       stay:,
@@ -1058,6 +1063,7 @@ pub fn joined(
               buyback:,
               experience:,
               quests:,
+              action_sets:,
               buttons:,
               completing:,
               gear: worn,
@@ -1111,9 +1117,11 @@ pub fn joined(
                 character_number: character_id_number,
                 loadout:,
                 level: character.level,
-                book: spell_plan.book(
-                  plans: spell_plan.plans_with_later(tables:),
-                  bag: ability_book.bag(loadout:, level: character.level),
+                action_sets:,
+                book: ability_book.book(
+                  tables:,
+                  loadout:,
+                  level: character.level,
                 ),
               ),
               [player_path(character:)],
@@ -1363,6 +1371,7 @@ pub fn rejoining(
     items: entered.items,
     currencies: entered.currencies,
     quests: entered.quests,
+    action_sets: entered.action_sets,
     buyback: entered.buyback,
     connection:,
     stay:,
@@ -1385,6 +1394,7 @@ fn joining(
   items items: List(store.HeldItem),
   currencies currencies: Currencies,
   quests quests: QuestLog,
+  action_sets action_sets: limited_action_set.Saved,
   buyback buyback: Buyback,
   connection connection: ConnectionId,
   stay stay: Stay,
@@ -1413,6 +1423,7 @@ fn joining(
       items:,
       currencies:,
       quests:,
+      action_sets:,
       buyback:,
       map:,
       stay:,
@@ -1551,24 +1562,9 @@ fn entered_world() -> Effect {
   Send(Frame(message_id: player_entered_world.message_id, body:))
 }
 
-/// The result of an action set the client takes as ok (`opcode.0x19d`).
-const action_set_ok = 1
-
-/// The action set shown until a message changes it (`opcode.0x19d`).
-const first_action_set = 0
-
-/// The shortcut type of an ability, by its Spell4Base id (`opcode.0x19d`).
-const ability_shortcut = 4
-
 /// The innate slot the client points its button at: the first of the Class row
 /// (`opcode.0x19f`).
 const first_innate_slot = 0
-
-/// The 2-bit value of an action set: bit 0 set marks the set unlocked, which the
-/// ability book's set arrows and the active set's switch read; nothing in casting
-/// or the bar reads it (`opcode.0x19d.set_value`). Set 0, the active set, is
-/// unlocked.
-const set_unlocked = 1
 
 /// The 0x111 of each saved item, in location then bag index order, each with the time it has
 /// left to run out (`item_expiry.time_left_ms`).
@@ -1588,12 +1584,14 @@ fn items_sent(
 }
 
 /// The loadout's messages, in order: each ability and the innate, the tiers of the
-/// ability book (the bag and the alternates a surged press casts, `spell_plan.book`),
-/// action set 0 and the innate's index.
+/// ability book (the bag and the alternates a surged press casts, `ability_book.book`),
+/// action set 0 with the bar the player has (the class's, or the one saved in the builder
+/// this session) and the innate's index.
 fn loadout_sent(
   character_number character_number: Int,
   loadout loadout: Loadout,
   level level: Int,
+  action_sets action_sets: limited_action_set.Saved,
   book book: List(Spell4BaseId),
 ) -> List(Effect) {
   let abilities =
@@ -1608,7 +1606,16 @@ fn loadout_sent(
     abilities,
     [
       Send(ability_book_frame.tiers(abilities: book)),
-      action_set_frame(abilities: loadout.abilities),
+      Send(ability_book_frame.action_set(
+        set: limited_action_set.set_number(set: limited_action_set.first_set()),
+        result: ability_book_frame.action_set_ok,
+        slots: limited_action_set.slots(bar: limited_action_set.bar_of(
+          saved: action_sets,
+          set: limited_action_set.first_set(),
+          class_bar: loadout.abilities,
+        )),
+        shortcuts: ability_book_frame.FilledSlots,
+      )),
     ],
     innate,
   ])
@@ -1630,29 +1637,6 @@ fn innate_index_frame() -> Effect {
     innate_index_set.encode(InnateIndexSet(innate_index: first_innate_slot))
     as "the first slot fits the message's 2 bits"
   Send(Frame(message_id: innate_index_set.message_id, body:))
-}
-
-/// 0x19D for action set 0, the abilities in bar slots 0, 1 and 2. A shortcut
-/// of type 4 names an ability by its Spell4Base id; the client reads its
-/// location for no type 4 shortcut (`0x1403c1bf0`), so it is the ability
-/// location.
-fn action_set_frame(abilities abilities: List(Spell4BaseId)) -> Effect {
-  let assert Ok(body) =
-    action_set.encode(ActionSet(
-      action_set_index: first_action_set,
-      unlocked: set_unlocked,
-      result: action_set_ok,
-      shortcuts: list.index_map(abilities, fn(ability, slot) {
-        ActionShortcut(
-          shortcut_type: ability_shortcut,
-          location: ability_book_frame.ability_location,
-          bag_index: slot,
-          object_id: ability.value,
-        )
-      }),
-    ))
-    as "a bar slot below 48 and an id of 32 bits fit the message"
-  Send(Frame(message_id: action_set.message_id, body:))
 }
 
 /// What the world entry tells that differs from the client's.

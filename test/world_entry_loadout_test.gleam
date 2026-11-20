@@ -37,6 +37,7 @@ import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/gear
 import genesis_prime/game/item_property
 import genesis_prime/game/item_stat_kind
+import genesis_prime/game/limited_action_set
 import genesis_prime/game/loadout
 import genesis_prime/game/random_stat
 import genesis_prime/game/world_entry
@@ -58,6 +59,7 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
 import gleam/string
+import limited_action_set_support
 import owned_test
 import unitest
 import world_entry_support
@@ -253,6 +255,51 @@ pub fn one_0x19d_sets_action_set_0_with_the_three_abilities_in_bar_slots_0_to_2_
       })
       as "opcode.0x19d: type 4 is an ability by its Spell4Base id, the bag index is the bar slot, 0 to 2 for the large buttons"
   })
+}
+
+pub fn a_rejoin_sends_the_bar_the_player_saved_in_the_compact_form_and_an_entry_with_none_sends_the_class_bar_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(_, entered) = world_entry_support.entering(class_id: 7, level: 4)
+  let shortcuts_of = fn(saved: limited_action_set.Saved) {
+    let frames =
+      world_entry_support.rejoining_from(
+        entered: world_entry.Entered(..entered, action_sets: saved),
+      )
+    let assert Ok(set) =
+      action_set.decode(
+        { world_entry_support.only_frame(frames:, message_id: 0x019D) }.body,
+      )
+      as "0x19d decodes"
+    assert set.action_set_index == 0 && set.result == 1
+    list.map(set.shortcuts, fn(shortcut) {
+      assert shortcut.shortcut_type == 4 && shortcut.location == 4
+        as "opcode.0x19d: type 4, an ability by its Spell4Base id, in the ability location"
+      #(shortcut.bag_index, shortcut.object_id)
+    })
+  }
+  let saved = fn(ids: List(Int)) {
+    limited_action_set_support.taken(
+      saved: limited_action_set.none(),
+      level: 4,
+      body: limited_action_set_support.body(ids:, set: 0),
+    ).0
+  }
+  let none = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+  assert shortcuts_of(
+      saved(list.append([20_684, 27_638, 20_718], list.drop(none, 3))),
+    )
+    == [#(0, 20_684), #(1, 27_638), #(2, 20_718)]
+    as "the set of the sitting's second save: each shortcut at its own slot"
+  assert shortcuts_of(
+      saved(list.append([27_638, 0, 20_325], list.drop(none, 3))),
+    )
+    == [#(0, 27_638), #(2, 20_325)]
+    as "a gap in the bar keeps the filled slot's index, 2 and not 1"
+  assert shortcuts_of(saved(none)) == []
+    as "a saved set of twelve empty slots sends no shortcut"
+  assert shortcuts_of(limited_action_set.none())
+    == [#(0, 27_638), #(1, 20_684), #(2, 20_325)]
+    as "no saved set sends the class's bar, as the entry does"
 }
 
 pub fn the_loadout_comes_after_0x19b_and_before_0x61_with_the_equipped_items_first_and_the_set_last_test() -> Nil {
