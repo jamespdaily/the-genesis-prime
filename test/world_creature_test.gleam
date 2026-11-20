@@ -33,7 +33,6 @@ import genesis_prime/client_connection.{
   type Message, ForStay, PeerNews, SentByMap, SentByPeer,
 }
 import genesis_prime/connection/frame.{Frame}
-import genesis_prime/game/area
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection/frames
 import genesis_prime/game/damage
@@ -3244,37 +3243,15 @@ fn void_blast_fight() -> #(Int, Int) {
 pub fn a_creature_with_the_special_63569_strikes_the_unit_its_cast_id_picks_test() -> Nil {
   use <- owned_test.run(90_000)
   // Spell4 63569 (castTime 160, one go) has area row 541: 360 degrees, 70 m, one unit, order 3
-  // (Random), and no telegraph row, so both players are inside. The unit it strikes is the one
-  // `area.select_ordered` takes for the round's cast id as its seed (`area` tests 2 and 11 are
-  // the rule); a second fight of the same creature has the same cast id and strikes the same
-  // unit.
+  // (Random), and no telegraph row, so both players are inside. The round's cast id is the
+  // seed, and the Random order is the guess marked in `area` (units by the MurmurHash3
+  // finalizer of `seed * 0x9E3779B1 + unit_id`, masked to 32 bits). Worked outside the code
+  // for cast id 2147487745: unit 10 gives 2166553108 and unit 20 gives 3475147392, so unit 10
+  // is first; with the seed 0 a plain `select` would pass, unit 20 is first (the strike
+  // would fail here if it ignored the round).
   let #(cast_id, struck) = void_blast_fight()
-  let picked =
-    area.select_ordered(
-      candidates: [
-        area.Candidate(
-          unit_id: 10,
-          at: area.Point(x: 0.0, z: 0.0),
-          hit_radius: 1.2,
-        ),
-        area.Candidate(
-          unit_id: 20,
-          at: area.Point(x: 5.0, z: 0.0),
-          hit_radius: 1.2,
-        ),
-      ],
-      centre: area.Pose(at: area.Point(x: 0.0, z: 0.0), yaw: 0.0),
-      row: area.Row(
-        min_range: 0.0,
-        max_range: 70.0,
-        degrees: 360.0,
-        target_count: 1,
-        order: area.Random,
-      ),
-      inside: area.InsideRow,
-      seed: cast_id,
-    )
-  assert [struck] == picked as "the unit the round's cast id picks"
+  assert cast_id == 2_147_487_745 as "the round's cast id"
+  assert struck == 10 as "the unit the cast id's mix puts first"
   assert void_blast_fight() == #(cast_id, struck)
     as "the same cast id, the same unit"
 }

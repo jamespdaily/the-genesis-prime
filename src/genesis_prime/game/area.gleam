@@ -411,23 +411,22 @@ pub fn select_ordered(
     |> list.map(fn(candidate) {
       #(distance(from: centre.at, to: candidate.at), candidate.unit_id)
     })
-  let ordered = case row.order {
-    Nearest ->
-      list.sort(found, fn(first, second) {
-        float.compare(first.0, second.0)
-        |> order.break_tie(int.compare(first.1, second.1))
-      })
-    Furthest ->
-      list.sort(found, fn(first, second) {
-        float.compare(second.0, first.0)
-        |> order.break_tie(int.compare(first.1, second.1))
-      })
-    Random ->
-      list.sort(found, fn(first, second) {
-        int.compare(mix(seed:, unit_id: first.1), mix(seed:, unit_id: second.1))
-        |> order.break_tie(int.compare(first.1, second.1))
-      })
+  let by_order = case row.order {
+    Nearest -> fn(first: #(Float, Int), second: #(Float, Int)) {
+      float.compare(first.0, second.0)
+    }
+    Furthest -> fn(first: #(Float, Int), second: #(Float, Int)) {
+      float.compare(second.0, first.0)
+    }
+    Random -> fn(first: #(Float, Int), second: #(Float, Int)) {
+      int.compare(mix(seed:, unit_id: first.1), mix(seed:, unit_id: second.1))
+    }
   }
+  let ordered =
+    list.sort(found, fn(first, second) {
+      by_order(first, second)
+      |> order.break_tie(int.compare(first.1, second.1))
+    })
   list.take(ordered, row.target_count)
   |> list.map(fn(found) { found.1 })
 }

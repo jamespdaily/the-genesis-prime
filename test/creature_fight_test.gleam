@@ -7788,55 +7788,20 @@ fn struck_in_order(order order: area.Order) -> #(List(Int), Int) {
 pub fn a_furthest_special_strikes_the_far_fighter_and_a_random_one_by_its_cast_id_test() -> Nil {
   use <- owned_test.run(5000)
   // Nearest strikes player 5, 2 ahead; Furthest strikes player 2, 4 ahead, the farthest in the
-  // cone (the order is the rule's, `area` tests 1 and 2). Random takes the one unit
-  // `area.select_ordered` gives for the round's cast id as its seed (the player's unit id is
-  // 10 times its number); the cast id differs from 0, the seed a plain `select` would pass, in
-  // the unit it picks, so a strike that ignored the round would fail here.
+  // cone (the order is the rule's, `area` tests 1 and 2). Random strikes by the round's cast id
+  // as its seed (the guess marked in `area`: the MurmurHash3 finalizer of
+  // `seed * 0x9E3779B1 + unit_id`, masked to 32 bits; a unit's id is 10 times its number).
+  // Worked outside the code for cast id 2147497985: units 20, 50, 40 and 70 give 1852897559,
+  // 3119742477, 3645587042 and 2859683438, so unit 20, player 2, is first. With the seed 0 a
+  // plain `select` would pass, they give 3528132897, 4276596341, 1732903491 and 3699139156,
+  // so unit 40, player 4, is first: a strike that ignored the round would fail here.
   assert struck_in_order(order: area.Nearest).0 == [5]
     as "the nearest fighter in the cone"
   assert struck_in_order(order: area.Furthest).0 == [2]
     as "the farthest fighter in the cone"
   let #(struck, cast_id) = struck_in_order(order: area.Random)
-  let picked = fn(seed) {
-    area.select_ordered(
-      candidates: [
-        area.Candidate(
-          unit_id: 20,
-          at: area.Point(x: 0.0, z: -4.0),
-          hit_radius: 1.2,
-        ),
-        area.Candidate(
-          unit_id: 50,
-          at: area.Point(x: 0.0, z: -2.0),
-          hit_radius: 1.2,
-        ),
-        area.Candidate(
-          unit_id: 40,
-          at: area.Point(x: 0.3, z: -3.0),
-          hit_radius: 1.2,
-        ),
-        area.Candidate(
-          unit_id: 70,
-          at: area.Point(x: -0.3, z: -2.5),
-          hit_radius: 1.2,
-        ),
-      ],
-      centre: area.Pose(at: area.Point(x: 0.0, z: 0.0), yaw: 0.0),
-      row: area.Row(
-        min_range: 0.0,
-        max_range: 10.0,
-        degrees: 360.0,
-        target_count: 1,
-        order: area.Random,
-      ),
-      inside: area.InsideRow,
-      seed:,
-    )
-  }
-  assert picked(cast_id) != picked(0)
-    as "the scene tells the round's seed from 0 by the unit it picks"
-  assert struck == list.map(picked(cast_id), fn(unit_id) { unit_id / 10 })
-    as "the unit the round's cast id picks"
+  assert cast_id == 2_147_497_985 as "the round's cast id"
+  assert struck == [2] as "the fighter the cast id's mix puts first"
   assert struck_in_order(order: area.Random) == #(struck, cast_id)
     as "the same round, the same fighter"
 }

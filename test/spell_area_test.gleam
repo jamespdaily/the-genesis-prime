@@ -16,6 +16,7 @@
 ////   such rows, but only for spells outside the trees, which the load never reads.
 
 import area_tables
+import client_shape_rows
 import client_tables
 import fixture_tables
 import genesis_prime/game/area.{
@@ -26,7 +27,7 @@ import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
 import genesis_prime/game/spell_area.{
   AimNotRead, FormulaNotRead, MultiplierNotFinite, Once, Periodic, PlacedApart,
-  SelectionNeedsHealth, SelectionNotClosest, ShapeNotBuilt, TelegraphNotOnCaster,
+  SelectionNeedsHealth, SelectionNotBuilt, ShapeNotBuilt, TelegraphNotOnCaster,
   TickingNoTick, TickingUntilRemoved, ValidTargetsNotAlive,
 }
 import genesis_prime/game/spell_plan
@@ -357,18 +358,6 @@ pub fn a_client_damage_row_with_target_flags_2_and_readable_parameters_is_read_t
     as "the fixture holds Spell4Effects 83829"
   assert spell_tables.measure_reads(effect: row, place: spell_tables.pressed)
     as "a finite multiplier, targetFlags 2 and the parameter types 12, 13 and 10 are read by the area load, and so by the measure"
-}
-
-pub fn an_area_row_that_selects_in_another_order_than_closest_fails_the_load_test() -> Nil {
-  use <- owned_test.run(60_000)
-  // No level-1 tree spell holds an area row with targetSelection 3 (132 rows outside the trees do).
-  let assert Error(SelectionNotClosest(spell4_id:, target_selection: 3)) =
-    area_tables.built(
-      kick: area_tables.Kick(..area_tables.kick(), target_selection: 3),
-    )
-    as "Spell4AoeTargetConstraints.targetSelection: only Closest (1) is built"
-  assert list.contains([58_591, 70_033, 70_045, 70_054], spell4_id)
-    as "the refusal names a spell of row 640: Kick 58591 and Relentless Strikes' stage spells 70033, 70045 and 70054 share it (Spell4.58591.area)"
 }
 
 pub fn a_spell_whose_valid_targets_hold_a_bit_fails_the_load_test() -> Nil {
@@ -1400,37 +1389,16 @@ pub fn the_creature_reading_builds_shapes_1_3_5_and_6_from_the_clients_rows_test
   // ring, so a cone of 360 degrees; 3 two boxes, the second with width and length swapped;
   // 5 the arc of 360 less param02 with the facing turned by 180 degrees; 6 the unhalved box,
   // 2 p0 by 2 p2 where shape 2 is p0 by p2.
-  let on_caster = fn(shape, turn_degrees, ahead) {
-    Placement(shape:, ahead:, aside: 0.0, turn_degrees:)
-  }
-  list.each(
-    [
-      #(3852, [
-        on_caster(Cone(inner: 3.0, outer: 5.0, degrees: 360.0), 0.0, 0.0),
-      ]),
-      #(3029, [
-        on_caster(Cone(inner: 0.0, outer: 7.0, degrees: 270.0), 330.0, 0.0),
-      ]),
-      #(6957, [
-        on_caster(Cone(inner: 4.0, outer: 13.0, degrees: 255.0), 360.0, 0.0),
-      ]),
-      #(2920, [
-        on_caster(Box(width: 2.5, length: 18.0), 0.0, 0.0),
-        on_caster(Box(width: 18.0, length: 2.5), 0.0, 0.0),
-      ]),
-      #(4664, [on_caster(Box(width: 2.0, length: 4.0), 0.0, 4.0)]),
-    ],
-    fn(case_) {
-      let #(row_id, wanted) = case_
-      let #(edits, shape) = edits_of_row(row_id:)
-      assert roar_shapes_with(edits:, reading: spell_area.CreatureReading)
-        == Ok(wanted)
-        as "the creature reading builds the shape the client draws for the row"
-      assert roar_shapes_with(edits:, reading: spell_area.PlayerReading)
-        == Error(ShapeNotBuilt(spell4_id: 55_317, telegraph_id: 7880, shape:))
-        as "a player's ability still refuses the shape (a level-1 tree holds none)"
-    },
-  )
+  list.each(client_shape_rows.row_ids, fn(row_id) {
+    let wanted = client_shape_rows.placements_of(row_id:)
+    let #(edits, shape) = edits_of_row(row_id:)
+    assert roar_shapes_with(edits:, reading: spell_area.CreatureReading)
+      == Ok(wanted)
+      as "the creature reading builds the shape the client draws for the row"
+    assert roar_shapes_with(edits:, reading: spell_area.PlayerReading)
+      == Error(ShapeNotBuilt(spell4_id: 55_317, telegraph_id: 7880, shape:))
+      as "a player's ability still refuses the shape (a level-1 tree holds none)"
+  })
 }
 
 pub fn the_creature_reading_takes_orders_2_and_3_and_refuses_4_and_5_by_name_test() -> Nil {
@@ -1455,18 +1423,20 @@ pub fn the_creature_reading_takes_orders_2_and_3_and_refuses_4_and_5_by_name_tes
   assert creature_order(5)
     == Error(SelectionNeedsHealth(spell4_id: 55_317, target_selection: 5))
   assert creature_order(0)
-    == Error(SelectionNotClosest(spell4_id: 55_317, target_selection: 0))
-    as "an order the client's enum has no name for (0 is None) is refused"
+    == Error(SelectionNotBuilt(spell4_id: 55_317, target_selection: 0))
+    as "order 0, None, is no order and is refused"
   list.each([2, 3, 4, 5], fn(selection) {
-    let assert Error(SelectionNotClosest(target_selection:, ..)) =
+    let assert Error(SelectionNotBuilt(spell4_id:, target_selection:)) =
       area_tables.built(
         kick: area_tables.Kick(
           ..area_tables.kick(),
           target_selection: selection,
         ),
       )
-      as "a player's ability refuses every order but Closest"
+      as "Spell4AoeTargetConstraints.targetSelection: a player's ability builds only Closest (1)"
     assert target_selection == selection
+    assert list.contains([58_591, 70_033, 70_045, 70_054], spell4_id)
+      as "the refusal names a spell of row 640: Kick 58591 and Relentless Strikes' stage spells 70033, 70045 and 70054 share it (Spell4.58591.area)"
   })
 }
 

@@ -26,6 +26,7 @@
 ////   row's range; a spell with no telegraph is struck by its area row's range and arc.
 //// - Crush's 42297 has no telegraph row, so its area row alone decides (`Spell4.32812.area`).
 
+import client_shape_rows
 import genesis_prime/game/area.{
   type Candidate, type Inside, type Placement, type Point, type Row, Box,
   Candidate, Circle, Cone, InsideRow, InsideShapes, Placement, Point, Pose,
@@ -693,8 +694,28 @@ fn spread(unit_ids unit_ids: List(Int)) -> List(Candidate) {
 
 pub fn random_is_the_same_for_a_seed_and_never_repeats_a_unit_test() -> Nil {
   use <- owned_test.run(60_000)
-  // The client names Random and orders nothing, so the order is a guess marked in `area`:
-  // the same units in the same order for the same seed, each unit once.
+  // The client names Random and orders nothing, so the order is a guess marked in `area`
+  // (units by the MurmurHash3 finalizer of `seed * 0x9E3779B1 + unit_id`, masked to 32
+  // bits). Worked outside the code: for units 10, 20 and 30, seed 0 puts 20, 10, 30 in
+  // that order and seed 7 puts 20, 30, 10, so the seed orders them. The property holds
+  // each unit once and no more than the target count.
+  let worked = spread(unit_ids: [10, 20, 30])
+  assert ordered(
+      candidates: worked,
+      order: area.Random,
+      target_count: 3,
+      seed: 0,
+    )
+    == [20, 10, 30]
+    as "seed 0 orders units 10, 20 and 30 as 20, 10, 30"
+  assert ordered(
+      candidates: worked,
+      order: area.Random,
+      target_count: 3,
+      seed: 7,
+    )
+    == [20, 30, 10]
+    as "seed 7 orders them as 20, 30, 10"
   qcheck.given(
     qcheck.tuple3(
       qcheck.bounded_int(from: 0, to: 1_000_000_000),
@@ -705,9 +726,6 @@ pub fn random_is_the_same_for_a_seed_and_never_repeats_a_unit_test() -> Nil {
       let #(seed, unit_ids, target_count) = drawn
       let candidates = spread(unit_ids:)
       let found = ordered(candidates:, order: area.Random, target_count:, seed:)
-      assert found
-        == ordered(candidates:, order: area.Random, target_count:, seed:)
-        as "the same seed gives the same units"
       assert list.unique(found) == found as "a unit is taken once"
       assert list.length(found)
         == int.min(target_count, list.length(candidates))
@@ -777,25 +795,18 @@ pub fn every_order_selects_only_units_inside_and_at_most_the_target_count_test()
         as "a unit past the row's 30 m is never taken"
       assert list.length(found) <= target_count
         as "no more than the target count"
+      // Unit n stands n m out, so the nearest first are the lowest ids.
       assert area.select(candidates:, centre: origin, row:, inside: InsideRow)
-        == area.select_ordered(
-          candidates:,
-          centre: origin,
-          row: Row(..row, order: area.Nearest),
-          inside: InsideRow,
-          seed: 0,
+        == list.take(
+          list.sort(
+            list.filter(list.unique(unit_ids), fn(id) { id <= 30 }),
+            int.compare,
+          ),
+          target_count,
         )
-        as "the player's select is Nearest with seed 0 whatever the row's order"
+        as "the player's select is the nearest units whatever the row's order"
     },
   )
-}
-
-/// A placement on the caster with no offset of its own.
-fn on_the_caster(
-  shape shape: area.Shape,
-  turn_degrees turn_degrees: Float,
-) -> Placement {
-  Placement(shape:, ahead: 0.0, aside: 0.0, turn_degrees:)
 }
 
 /// The ids the placements hold among `units` (id, distance, degrees off the facing), for a
@@ -828,11 +839,7 @@ pub fn a_ring_and_a_pie_hold_the_units_the_clients_shape_code_draws_test() -> Ni
   // 0x140b79fac), so the slice lies ahead of the row's own turn. TelegraphDamage 3852 is the
   // ring (3 to 5), 3029 the pie (0 to 7, 90 degrees, turned 150) and 6957 the pie (4 to 13,
   // 105 degrees, turned 180); the placements are as those rows give them.
-  let ring =
-    on_the_caster(
-      shape: Cone(inner: 3.0, outer: 5.0, degrees: 360.0),
-      turn_degrees: 0.0,
-    )
+  let assert [ring] = client_shape_rows.placements_of(row_id: 3852)
   let units = [
     #(1, 4.0, 0.0),
     #(2, 4.0, 180.0),
@@ -843,11 +850,7 @@ pub fn a_ring_and_a_pie_hold_the_units_the_clients_shape_code_draws_test() -> Ni
     as "the units between the radii, in front and behind"
   assert held(placements: [ring], units:, hit_radius: 1.5) == [1, 2, 3, 4]
     as "a hit radius of 1.5 reaches in to 1.5 and out to 6.5 from the 3 to 5 ring"
-  let pie_3029 =
-    on_the_caster(
-      shape: Cone(inner: 0.0, outer: 7.0, degrees: 270.0),
-      turn_degrees: 330.0,
-    )
+  let assert [pie_3029] = client_shape_rows.placements_of(row_id: 3029)
   let round = [
     #(1, 4.0, 0.0),
     #(2, 4.0, 90.0),
@@ -862,11 +865,7 @@ pub fn a_ring_and_a_pie_hold_the_units_the_clients_shape_code_draws_test() -> Ni
   assert held(placements: [pie_3029], units: round, hit_radius: 1.5)
     == [1, 2, 4, 5, 6]
     as "a hit radius of 1.5 reaches the unit at 8 m, 1 past the 7 m edge"
-  let pie_6957 =
-    on_the_caster(
-      shape: Cone(inner: 4.0, outer: 13.0, degrees: 255.0),
-      turn_degrees: 360.0,
-    )
+  let assert [pie_6957] = client_shape_rows.placements_of(row_id: 6957)
   let behind = [
     #(1, 8.0, 0.0),
     #(2, 8.0, 180.0),
@@ -891,18 +890,14 @@ pub fn two_boxes_make_a_cross_and_shape_6_is_the_unhalved_box_test() -> Nil {
     #(4, 8.0, 45.0),
     #(5, 8.5, 270.0),
   ]
-  let arm =
-    on_the_caster(shape: Box(width: 2.5, length: 18.0), turn_degrees: 0.0)
-  let cross = [
-    arm,
-    on_the_caster(shape: Box(width: 18.0, length: 2.5), turn_degrees: 0.0),
-  ]
+  let cross = client_shape_rows.placements_of(row_id: 2920)
+  let assert [arm, _] = cross as "the cross is two boxes"
   assert held(placements: cross, units:, hit_radius: 0.0) == [1, 2, 3, 5]
     as "inside along each arm, ahead, to the side and behind, and not on the diagonal at 45 degrees"
   assert held(placements: [arm], units:, hit_radius: 0.0) == [1, 3]
     as "the first box alone holds the units ahead and behind; the second is what the cross adds"
-  let half = Placement(..arm, shape: Box(width: 1.0, length: 2.0), ahead: 4.0)
-  let full = Placement(..half, shape: Box(width: 2.0, length: 4.0))
+  let assert [full] = client_shape_rows.placements_of(row_id: 4664)
+  let half = Placement(..full, shape: Box(width: 1.0, length: 2.0))
   let near = [#(1, 3.0, 15.0), #(2, 5.9, 0.0)]
   assert held(placements: [half], units: near, hit_radius: 0.0) == []
     as "the shape 2 box (1 by 2, centred 4 ahead) holds neither unit: 3 m out at 15 degrees is 0.78 aside, past its half width of 0.5, and 5.9 m is past its far side at 5"

@@ -46,7 +46,7 @@
 ////   server: the go selects with it as with any row, and `PhaseStrike.ticking` holds it
 ////   apart from the rows that strike once. A row that lasts until removed (flags bit 2)
 ////   is left out and the load goes on (`TickingUntilRemoved`).
-//// - **Closest first.** Every area row of the level-1 abilities has `targetSelection`
+//// - **Order.** Every area row of the level-1 abilities has `targetSelection`
 ////   1, and none strikes a dead unit (`Spell4AoeTargetConstraints.targetSelection`,
 ////   `Spell4ValidTargets.targetBitmask`). A creature's special may also select Furthest (2)
 ////   or Random (3); orders 4 and 5 need a unit's health, which a creature's sight of a
@@ -54,7 +54,7 @@
 //// - **Two readings** read a spell's rows: a player's ability (`PlayerReading`: Closest
 ////   and the shapes of the level-1 trees) and a creature's special (`CreatureReading`: also
 ////   Furthest, Random, rings, crosses, pies and unhalved boxes), so a player's strike
-////   refuses what it did before.
+////   refuses orders 2 to 5 and shapes 1, 3, 5 and 6.
 //// - **Where a creature special's hit is centred** is its anchor, one for the spell
 ////   (`anchor_of`): its hit rows with TelegraphDamage flag 0x4000 or 0x1000 are drawn where
 ////   the cast's 0x7ff puts them and stay there (`FixedAtCaster`), the others follow the
@@ -215,7 +215,7 @@ pub type AreaError {
   NoAreaRow(spell4_id: Int)
   /// An area row selects in an order the reading does not build (a player's: not Closest, 1;
   /// a creature's: not 1 to 3 and not 4 or 5).
-  SelectionNotClosest(spell4_id: Int, target_selection: Int)
+  SelectionNotBuilt(spell4_id: Int, target_selection: Int)
   /// A creature's area row selects by a unit's health (`targetSelection` 4,
   /// LowestAbsoluteHealth, or 5, MissingMostHealth), which its sight of a fighter lacks.
   SelectionNeedsHealth(spell4_id: Int, target_selection: Int)
@@ -269,7 +269,7 @@ pub fn describe(error error: AreaError) -> String {
       "the Spell4 row "
       <> int.to_string(spell4_id)
       <> " strikes an area in one of its phases and has no Spell4AoeTargetConstraints row"
-    SelectionNotClosest(spell4_id:, target_selection:) ->
+    SelectionNotBuilt(spell4_id:, target_selection:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
       <> " has an area row that selects in order "
@@ -424,7 +424,7 @@ fn plan_error_of(
     ApplyGateNotRead(error: inner) -> inner
     NoRow(..) | NoAreaRow(..) | MultiplierNotFinite(..) ->
       spell_plan.AreaDataFault(spell4_id:, reason: describe(error:))
-    SelectionNotClosest(..)
+    SelectionNotBuilt(..)
     | SelectionNeedsHealth(..)
     | ValidTargetsNotAlive(..)
     | TelegraphNotOnCaster(..)
@@ -584,7 +584,7 @@ fn area_row_of(
             target_selection: constraints.target_selection,
           ))
         selection, PlayerReading | selection, CreatureReading ->
-          Error(SelectionNotClosest(spell4_id: id, target_selection: selection))
+          Error(SelectionNotBuilt(spell4_id: id, target_selection: selection))
       }
     }
   }
@@ -711,38 +711,24 @@ fn placements_of(
     )
   }
   let turn = row.rotation_degrees
+  let cone = fn(degrees) {
+    Cone(inner: row.param00, outer: row.param01, degrees:)
+  }
   case row.damage_shape_enum, reading {
     0, PlayerReading | 0, CreatureReading ->
       Ok([placed(Circle(radius: row.param00), turn)])
     2, PlayerReading | 2, CreatureReading ->
       Ok([placed(Box(width: row.param00, length: row.param02), turn)])
     4, PlayerReading | 4, CreatureReading ->
-      Ok([
-        placed(
-          Cone(inner: row.param00, outer: row.param01, degrees: row.param02),
-          turn,
-        ),
-      ])
+      Ok([placed(cone(row.param02), turn)])
     7, PlayerReading | 7, CreatureReading ->
       Ok([placed(Rectangle(width: row.param00, length: row.param02), turn)])
     8, PlayerReading | 8, CreatureReading ->
       case row.param03 == 0.0 && row.param05 == 0.0 {
-        True ->
-          Ok([
-            placed(
-              Cone(inner: row.param00, outer: row.param01, degrees: row.param02),
-              turn,
-            ),
-          ])
+        True -> Ok([placed(cone(row.param02), turn)])
         False -> not_built
       }
-    1, CreatureReading ->
-      Ok([
-        placed(
-          Cone(inner: row.param00, outer: row.param01, degrees: 360.0),
-          turn,
-        ),
-      ])
+    1, CreatureReading -> Ok([placed(cone(360.0), turn)])
     3, CreatureReading ->
       Ok([
         placed(Box(width: row.param00, length: row.param02), turn),
@@ -751,11 +737,7 @@ fn placements_of(
     5, CreatureReading ->
       Ok([
         placed(
-          Cone(
-            inner: row.param00,
-            outer: row.param01,
-            degrees: float.clamp(360.0 -. row.param02, min: 0.0, max: 360.0),
-          ),
+          cone(float.clamp(360.0 -. row.param02, min: 0.0, max: 360.0)),
           turn +. 180.0,
         ),
       ])
