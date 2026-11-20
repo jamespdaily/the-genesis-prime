@@ -6,10 +6,12 @@
 //// and that the committed files are the generated ones. Every case is planted from the generated files, so
 //// no expected text is written here.
 
+import game_connection_support
 import genesis_prime/gap
 import genesis_prime/message/ability_points.{AbilityPoints}
 import genesis_prime/message/bit_stream
 import genesis_prime/message/cast_result
+import genesis_prime/message/combat_result
 import genesis_prime/message/item_charges_changed.{ItemChargesChanged}
 import genesis_prime/message/item_flags_changed.{ItemFlagsChanged}
 import genesis_prime/message/movement_kind_4
@@ -20,18 +22,30 @@ import genesis_prime/message/replay_level_up.{ReplayLevelUp}
 import genesis_prime/message/reward_property_integer
 import genesis_prime/message/shared_item
 import genesis_prime/message/spell_damage_description
+import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
+import genesis_prime/message/spell_effect_info.{SpellEffectInfo}
+import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_missed
 import genesis_prime/message/spell_started
+import genesis_prime/message/spell_target_info.{
+  type SpellTargetInfo, SpellTargetInfo,
+}
+import genesis_prime/message/unit_create_cast.{
+  type UnitCreateCast, UnitCreateCast,
+}
+import genesis_prime/message/unit_create_tail
 import genesis_prime/message/vendor_items
 import genesis_prime/message_generator.{
   type GeneratedFile, Edited, GeneratedFile, Missing, Stale,
 }
 import genesis_prime/message_schema
+import gleam/int
 import gleam/list
 import gleam/result
 import gleam/string
 import message_support
 import owned_test
+import qcheck
 import simplifile
 
 fn generated() -> List(GeneratedFile) {
@@ -302,6 +316,7 @@ pub fn the_schema_generates_one_module_for_each_message_and_record_and_the_clien
       "src/genesis_prime/message/unit_cc_state_applied.gleam",
       "src/genesis_prime/message/unit_cc_state_ended.gleam",
       "src/genesis_prime/message/unit_combat_state.gleam",
+      "src/genesis_prime/message/unit_create_cast.gleam",
       "src/genesis_prime/message/unit_create_creature.gleam",
       "src/genesis_prime/message/unit_create_door.gleam",
       "src/genesis_prime/message/unit_create_ghost.gleam",
@@ -628,4 +643,229 @@ pub fn the_committed_message_modules_equal_the_generator_output_and_hold_each_sc
       })
       as { name <> "'s gaps() holds the schema's entries, in order" }
   })
+}
+
+/// The numbers 1 to `most`.
+fn counted(most: Int) -> List(Int) {
+  list.index_map(list.repeat(Nil, most), fn(_, index) { index + 1 })
+}
+
+fn casts_encoded(
+  casts: List(UnitCreateCast),
+) -> Result(BitArray, bit_stream.EncodeError) {
+  bit_stream.new_writer()
+  |> bit_stream.write_array("casts", casts, 9, unit_create_cast.write)
+  |> bit_stream.finish
+}
+
+fn casts_decoded(
+  body: BitArray,
+) -> Result(List(UnitCreateCast), bit_stream.DecodeError) {
+  let reader = bit_stream.new_reader(body)
+  use #(casts, reader) <- result.try(bit_stream.read_array(
+    reader,
+    9,
+    unit_create_cast.read,
+  ))
+  use Nil <- result.map(bit_stream.finish_reading(reader))
+  casts
+}
+
+/// One entry of the 0x262 cast list in the order `ReadUnitCreateCast
+/// 0x140094bf0` reads it: caster 32, primary target 32, cast id 32, Spell4 id
+/// 18, one bit, a count of 32 bits and the target infos, a count of 8 bits and
+/// the initial positions, a count of 8 bits and the telegraph positions.
+fn cast_bits(
+  cast_id cast_id: Int,
+  started started: Int,
+  targets targets: List(List(#(Int, Int))),
+) -> List(#(Int, Int)) {
+  list.flatten([
+    [
+      #(32, 21),
+      #(32, 22),
+      #(32, cast_id),
+      #(18, 32_893),
+      #(1, started),
+      #(32, list.length(targets)),
+    ],
+    list.flatten(targets),
+    [#(8, 0), #(8, 0)],
+  ])
+}
+
+fn cast_of(
+  cast_id cast_id: Int,
+  started started: Int,
+  targets targets: List(SpellTargetInfo),
+) -> UnitCreateCast {
+  UnitCreateCast(
+    caster_unit_id: 21,
+    primary_target_unit_id: 22,
+    cast_id:,
+    spell4_id: 32_893,
+    started:,
+    targets:,
+    initial_positions: [],
+    telegraph_positions: [],
+  )
+}
+
+/// A target info as `ReadSpellTargetInfo 0x140094aa0` reads it, each effect
+/// an id of 19 bits, an instance id, a delay and a lifetime of 32 bits and a
+/// result of kind 0 with its one bit (`0x140094890`).
+fn target_bits(unit_id: Int, effects: List(Int)) -> List(#(Int, Int)) {
+  list.flatten([
+    [
+      #(32, unit_id),
+      #(8, 1),
+      #(8, 0),
+      #(16, 1),
+      #(4, 2),
+      #(8, list.length(effects)),
+    ],
+    list.flat_map(effects, fn(effect_id) {
+      [#(19, effect_id), #(32, 1), #(32, 0), #(32, 4000), #(2, 0), #(1, 0)]
+    }),
+  ])
+}
+
+fn target_of(unit_id: Int, effects: List(Int)) -> SpellTargetInfo {
+  SpellTargetInfo(
+    unit_id:,
+    index: 1,
+    flags: 0,
+    instance_count: 1,
+    combat_result: combat_result.Hit,
+    effects: list.map(effects, fn(effect_id) {
+      SpellEffectInfo(
+        spell4_effects_id: effect_id,
+        instance_id: 1,
+        delay_ms: 0,
+        lifetime_ms: 4000,
+        result: spell_effect_result.Bit(SpellEffectBit(unread_2: 0)),
+      )
+    }),
+  )
+}
+
+/// `opcode.0x262.casts`: the list is a 9-bit count and its entries in the
+/// reader's order, so 511 entries are the most it can hold. The codec refuses
+/// no cast id 0: the schema has no kind for it, and `unit_casts.entry_of` and
+/// the viewer's filter do.
+pub fn unit_create_casts_codec_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let many = counted(511)
+  let rows = [
+    #("no cast", [], [#(9, 0)]),
+    #(
+      "one cast with no target",
+      [cast_of(cast_id: 7, started: 1, targets: [])],
+      [#(9, 1), ..cast_bits(cast_id: 7, started: 1, targets: [])],
+    ),
+    #(
+      "one cast with two targets of two effects each",
+      [
+        cast_of(cast_id: 7, started: 0, targets: [
+          target_of(21, [100, 101]),
+          target_of(33, [200, 201]),
+        ]),
+      ],
+      [
+        #(9, 1),
+        ..cast_bits(cast_id: 7, started: 0, targets: [
+          target_bits(21, [100, 101]),
+          target_bits(33, [200, 201]),
+        ])
+      ],
+    ),
+    #(
+      "three casts",
+      [
+        cast_of(cast_id: 3, started: 1, targets: []),
+        cast_of(cast_id: 1, started: 0, targets: []),
+        cast_of(cast_id: 2, started: 1, targets: []),
+      ],
+      list.flatten([
+        [#(9, 3)],
+        cast_bits(cast_id: 3, started: 1, targets: []),
+        cast_bits(cast_id: 1, started: 0, targets: []),
+        cast_bits(cast_id: 2, started: 1, targets: []),
+      ]),
+    ),
+    #(
+      "511 entries",
+      list.map(many, fn(id) { cast_of(cast_id: id, started: 1, targets: []) }),
+      [
+        #(9, 511),
+        ..list.flat_map(many, fn(id) {
+          cast_bits(cast_id: id, started: 1, targets: [])
+        })
+      ],
+    ),
+  ]
+  list.each(rows, fn(row) {
+    let #(name, casts, bits) = row
+    message_support.assert_codec(
+      name:,
+      body: message_support.packed(bits),
+      value: casts,
+      encode: casts_encoded,
+      decode: casts_decoded,
+    )
+  })
+  assert casts_encoded(
+      list.map(counted(512), fn(id) {
+        cast_of(cast_id: id, started: 1, targets: [])
+      }),
+    )
+    == Error(bit_stream.ValueDoesNotFit(field: "casts", bits: 9, value: 512))
+    as "512 entries do not fit the list's 9-bit count"
+}
+
+/// `opcode.0x262.casts`: a tail with any list of up to 511 entries, targets
+/// and positions among them, reads back as written.
+pub fn unit_create_tail_with_casts_roundtrips_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tail = game_connection_support.another_unit().tail
+  use casts <- qcheck.given(
+    qcheck.from_weighted_generators(
+      #(9, qcheck.generic_list(cast_generator(), qcheck.bounded_int(0, 6))),
+      [
+        #(
+          1,
+          qcheck.map(cast_generator(), fn(cast) {
+            list.repeat(cast, times: 511)
+          }),
+        ),
+      ],
+    ),
+  )
+  let assert Ok(body) =
+    bit_stream.new_writer()
+    |> unit_create_tail.write(unit_create_tail.UnitCreateTail(..tail, casts:))
+    |> bit_stream.finish
+    as "a list of up to 511 entries is within the 9-bit count"
+  let assert Ok(#(read, reader)) =
+    unit_create_tail.read(bit_stream.new_reader(body))
+    as "the tail reads back"
+  assert read.casts == casts as "the list reads back as written"
+  assert bit_stream.finish_reading(reader) == Ok(Nil)
+    as "the tail ends where the last field did"
+}
+
+fn cast_generator() -> qcheck.Generator(UnitCreateCast) {
+  use cast_id <- qcheck.bind(qcheck.bounded_int(1, 0xFFFF_FFFF))
+  use started <- qcheck.bind(qcheck.bounded_int(0, 1))
+  use unit_ids <- qcheck.map(qcheck.generic_list(
+    qcheck.bounded_int(1, 0xFFFF_FFFF),
+    qcheck.bounded_int(0, 3),
+  ))
+  cast_of(
+    cast_id:,
+    started:,
+    targets: list.index_map(unit_ids, fn(unit_id, index) {
+      target_of(unit_id, counted(int.min(index + 1, 2)))
+    }),
+  )
 }

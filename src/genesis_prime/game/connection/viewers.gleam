@@ -126,6 +126,7 @@ import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/area
 import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/cast/proc as cast_proc
+import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/class_resource
 import genesis_prime/game/connection/casting as connection_casting
 import genesis_prime/game/connection/frames as connection_frames
@@ -138,6 +139,7 @@ import genesis_prime/game/player_life
 import genesis_prime/game/shown.{ShownCreature, ShownObject, ShownPlayer}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike
+import genesis_prime/game/unit_casts
 import genesis_prime/game/world_entry
 import genesis_prime/message/float32
 import genesis_prime/message/relayed_movement
@@ -178,8 +180,9 @@ import gleam/set
 /// objects its player sees (`ObjectsSeen`) and stops seeing (`ObjectsUnseen`),
 /// written as `viewer_takes` writes a unit's 0x262 and 0x355. A connection
 /// sends everything about its own unit itself: told `SeenBy(by, stay)` it keeps
-/// `by` with its stay and sends it its 0x262 at its current place, with its health
-/// now, told `UnseenBy(by)` its 0x355. The shell takes a send between steps, after
+/// `by` with its stay, puts `by` in the audience of its casts and sends it its 0x262 at its
+/// current place, with its health now and the cast it holds the bar of; told `UnseenBy(by)`
+/// it takes `by` out of those audiences and sends its 0x355. The shell takes a send between steps, after
 /// the ask's outcome and the step it starts are done
 /// (genesis_prime/connection/shell), and world entry writes its whole burst in the
 /// one step that takes the map's `Joined`, so a send of the map, which comes after
@@ -193,16 +196,25 @@ pub fn map_sent(
 ) -> client_connection.Handled(Session) {
   case notice {
     map.SeenBy(by:, stay:) ->
-      Continue(viewers_changed(session:, change: dict.insert(_, by, stay)), [
-        connection_state.news_to(
-          entered:,
-          viewer: #(by, stay),
-          news: client_connection.Appeared(unit: appearance(entered:, now:)),
+      Continue(
+        connection_casting.with_cast(
+          session: viewers_changed(session:, change: dict.insert(_, by, stay)),
+          cast: cast_state.audience_joined(cast: entered.cast, viewer: by),
         ),
-      ])
+        [
+          connection_state.news_to(
+            entered:,
+            viewer: #(by, stay),
+            news: client_connection.Appeared(unit: appearance(entered:, now:)),
+          ),
+        ],
+      )
     map.UnseenBy(by:) ->
       Continue(
-        viewers_changed(session:, change: dict.delete(_, by)),
+        connection_casting.with_cast(
+          session: viewers_changed(session:, change: dict.delete(_, by)),
+          cast: cast_state.audience_left(cast: entered.cast, viewer: by),
+        ),
         connection_state.news_to_connection(
           entered:,
           connection: by,
@@ -391,6 +403,20 @@ pub fn viewer_takes(
         when: shown || set.contains(entered.gone, unit_id),
         return: Continue(session, []),
       )
+      let unit = casts_listed(unit:, caster_unit_id: unit_id)
+      let session =
+        connection_state.with_entered(session:, change: fn(entered) {
+          world_entry.Entered(
+            ..entered,
+            casts_written: list.fold(
+              unit.tail.casts,
+              entered.casts_written,
+              fn(written, cast) {
+                dict.insert(written, cast.cast_id, cast.caster_unit_id)
+              },
+            ),
+          )
+        })
       Continue(
         shown_changed(session:, change: dict.insert(
           _,
@@ -1119,6 +1145,28 @@ fn finishes_of_forgotten_casts(
   })
 }
 
+/// The unit's record with the casts its client may be given: the entries of the unit
+/// the create is for and with a cast id above 0 (`CreateCast 0x140561780` links a cast
+/// into its caster and files cast id 0 as a pending cast, which makes the client skip the
+/// rest of the list), and the cast in progress only when an entry holds it
+/// (`SetUnitCast 0x1404697a0` looks it up in the list).
+fn casts_listed(
+  unit unit: UnitCreatePlayer,
+  caster_unit_id caster_unit_id: Int,
+) -> UnitCreatePlayer {
+  let casts =
+    list.filter(unit.tail.casts, fn(cast) {
+      cast.caster_unit_id == caster_unit_id && cast.cast_id != 0
+    })
+  let cast_id = case
+    list.any(casts, fn(cast) { cast.cast_id == unit.tail.cast_id })
+  {
+    True -> unit.tail.cast_id
+    False -> 0
+  }
+  UnitCreatePlayer(..unit, tail: UnitCreateTail(..unit.tail, casts:, cast_id:))
+}
+
 /// The unit of the player's own record as another player is created with it: at
 /// the place the player stands at now, with its health now as stat 0, so a dead
 /// player is created dead (`0x140457bc5`), its shield now as stat 20
@@ -1150,6 +1198,11 @@ fn appearance(
     ..unit,
     tail: UnitCreateTail(
       ..unit.tail,
+      casts: unit_casts.entries_of(views: cast_state.views(
+        cast: entered.cast,
+        caster_unit_id: entered.unit_id,
+      )),
+      cast_id: cast_state.current_cast_id(cast: entered.cast),
       stats: list.append(
         list.filter_map(unit.tail.stats, fn(stat) {
           case stat.stat_id {

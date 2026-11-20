@@ -1,6 +1,7 @@
 //// The pages a dashboard process serves with what it reads, and the one timer
-//// chain that reads while any page is subscribed. The Overview's poller
-//// (`host`) and each log follower (`follow`) keep their pages here.
+//// chain that reads while any page is subscribed. The Overview's poller and
+//// each log follower (`read_poll`, `follow`) keep their pages here, and take
+//// their pages' requests through `handle`.
 ////
 //// ```text
 //// page runtime ──join──► Subscribers ──arm──► timer ──Tick(chain)──► the process
@@ -15,6 +16,9 @@
 //// - A tick carries the number of the chain that armed it, and a tick of an
 ////   earlier chain (one already in the mailbox when its timer was cancelled)
 ////   is refused, so it never starts a second chain.
+//// - A page asks to join or leave, a page's end is reported by its monitor, and
+////   the process is asked for the count, all as one `Request` that the process
+////   wraps in a variant of its own messages; `handle` says what each did.
 //// - The timers are armed through `Arm`, which a test replaces to hold and send
 ////   the ticks itself.
 
@@ -59,9 +63,27 @@ pub opaque type Subscribers(item, message) {
   )
 }
 
+/// What a page, the runtime or a test asks of a process's subscribers.
+pub type Request(item) {
+  Join(subscriber: Subject(item))
+  Leave(subscriber: Subject(item))
+  Ended(down: process.Down)
+  Count(reply: Subject(Int))
+}
+
+/// What a request did, for the process to act on: a page joined (the first one
+/// started the timer chain), a page left or ended (the last one ended the
+/// chain), or nothing changed (a page that joined twice, or a count, which is
+/// answered).
+pub type Handled(item) {
+  PageJoined(subscriber: Subject(item), first: Bool)
+  PageLeft(last: Bool, ended: Bool)
+  Unchanged
+}
+
 /// What a page's join did: it was the first (the timer chain started), a later
 /// one, or already subscribed (nothing changed).
-pub type Joined(item, message) {
+type Joined(item, message) {
   FirstJoined(Subscribers(item, message))
   LaterJoined(Subscribers(item, message))
   AlreadyJoined
@@ -69,7 +91,7 @@ pub type Joined(item, message) {
 
 /// What a leave did: the last page left (the timer chain ended), or pages
 /// remain or none left.
-pub type Left(item, message) {
+type Left(item, message) {
   LastLeft(Subscribers(item, message))
   StillSubscribed(Subscribers(item, message))
 }
@@ -101,7 +123,7 @@ pub fn subjects(
 }
 
 /// How many pages are subscribed.
-pub fn count(subscribers: Subscribers(item, message)) -> Int {
+fn count(subscribers: Subscribers(item, message)) -> Int {
   list.length(subscribers.entries)
 }
 
@@ -110,8 +132,49 @@ pub fn is_empty(subscribers: Subscribers(item, message)) -> Bool {
   subscribers.entries == []
 }
 
+/// Does what a request asks, and says what it did.
+pub fn handle(
+  subscribers subscribers: Subscribers(item, message),
+  request request: Request(item),
+) -> #(Subscribers(item, message), Handled(item)) {
+  case request {
+    Join(subscriber:) ->
+      case join(subscribers:, subscriber:) {
+        AlreadyJoined -> #(subscribers, Unchanged)
+        FirstJoined(joined) -> #(joined, PageJoined(subscriber:, first: True))
+        LaterJoined(joined) -> #(joined, PageJoined(subscriber:, first: False))
+      }
+    Leave(subscriber:) -> left(leave(subscribers:, subscriber:), ended: False)
+    Ended(down:) ->
+      left(leave_ended(subscribers:, monitor: down.monitor), ended: True)
+    Count(reply:) -> {
+      process.send(reply, count(subscribers))
+      #(subscribers, Unchanged)
+    }
+  }
+}
+
+fn left(
+  left: Left(item, message),
+  ended ended: Bool,
+) -> #(Subscribers(item, message), Handled(item)) {
+  case left {
+    LastLeft(remaining) -> #(remaining, PageLeft(last: True, ended:))
+    StillSubscribed(remaining) -> #(remaining, PageLeft(last: False, ended:))
+  }
+}
+
+/// Adds to a selector the reports that a subscribed page ended, each wrapped
+/// in the process's own message.
+pub fn select_ended(
+  selector selector: process.Selector(message),
+  wrap wrap: fn(Request(item)) -> message,
+) -> process.Selector(message) {
+  process.select_monitors(selector, fn(down) { wrap(Ended(down)) })
+}
+
 /// Subscribes a page and monitors it; the first page starts the timer chain.
-pub fn join(
+fn join(
   subscribers subscribers: Subscribers(item, message),
   subscriber subscriber: Subject(item),
 ) -> Joined(item, message) {
@@ -136,7 +199,7 @@ pub fn join(
 
 /// Takes a page's subscription back; the last page to leave ends the timer
 /// chain.
-pub fn leave(
+fn leave(
   subscribers subscribers: Subscribers(item, message),
   subscriber subscriber: Subject(item),
 ) -> Left(item, message) {
@@ -145,7 +208,7 @@ pub fn leave(
 
 /// Drops the page whose monitor reported it ended; the last page to leave ends
 /// the timer chain.
-pub fn leave_ended(
+fn leave_ended(
   subscribers subscribers: Subscribers(item, message),
   monitor monitor: process.Monitor,
 ) -> Left(item, message) {

@@ -3,17 +3,18 @@
 ////
 //// A record inside a message body: the part of message 0x262 after the type's
 //// data, the same for every unit type: the create flags, the stats, the
-//// movement commands, the properties, the item visuals, the cast in progress,
-//// the two factions, who tagged the unit, three tagged values and the minimap
-//// marker, display info and outfit info; the lists the schema does not hold
-//// are sent empty. Its fields are listed in `schema.toml` with the client's
-//// evidence, and the fact file's `0x140096fa0` names the record.
+//// movement commands, the properties, the item visuals, the casts live on or
+//// by the unit, the cast in progress, the two factions, who tagged the unit,
+//// three tagged values and the minimap marker, display info and outfit info.
+//// Its fields are listed in `schema.toml` with the client's evidence, and the
+//// fact file's `0x140096fa0` names the record.
 
 import genesis_prime/message/bit_stream.{
   type DecodeError, type Reader, type Writer,
 }
 import genesis_prime/message/item_visual.{type ItemVisual}
 import genesis_prime/message/start_movement.{type StartMovement}
+import genesis_prime/message/unit_create_cast.{type UnitCreateCast}
 import genesis_prime/message/unit_property.{type UnitProperty}
 import genesis_prime/message/unit_stat.{type UnitStat}
 import gleam/result
@@ -29,10 +30,7 @@ pub type UnitCreateTail {
     movement_commands: List(StartMovement),
     properties: List(UnitProperty),
     item_visuals: List(ItemVisual),
-    /// Open: Which cast is the unit casting when it comes into sight? The
-    /// client sets the unit's cast bar from this id once the creation's casts
-    /// list holds the cast (SetUnitCast 0x1404697a0); the server sends 0, so a
-    /// viewer arriving mid-cast sees no bar.
+    casts: List(UnitCreateCast),
     cast_id: Int,
     faction_id: Int,
     base_faction_id: Int,
@@ -85,7 +83,7 @@ pub fn write(writer writer: Writer, record record: UnitCreateTail) -> Writer {
     7,
     item_visual.write,
   )
-  |> bit_stream.write_constant("no_other_entries", 0, 9)
+  |> bit_stream.write_array("casts", record.casts, 9, unit_create_cast.write)
   |> bit_stream.write_unsigned("cast_id", record.cast_id, 32)
   |> bit_stream.write_unsigned("faction_id", record.faction_id, 14)
   |> bit_stream.write_unsigned("base_faction_id", record.base_faction_id, 14)
@@ -142,11 +140,10 @@ pub fn read(reader: Reader) -> Result(#(UnitCreateTail, Reader), DecodeError) {
     7,
     item_visual.read,
   ))
-  use reader <- result.try(bit_stream.read_constant(
+  use #(casts, reader) <- result.try(bit_stream.read_array(
     reader,
-    "no_other_entries",
     9,
-    0,
+    unit_create_cast.read,
   ))
   use #(cast_id, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   use #(faction_id, reader) <- result.try(bit_stream.read_unsigned(reader, 14))
@@ -196,6 +193,7 @@ pub fn read(reader: Reader) -> Result(#(UnitCreateTail, Reader), DecodeError) {
       movement_commands:,
       properties:,
       item_visuals:,
+      casts:,
       cast_id:,
       faction_id:,
       base_faction_id:,

@@ -8,10 +8,11 @@
 
 import genesis_prime/dashboard
 import genesis_prime/dashboard/follow.{
-  type Followed, Followed, NotThere, Unreadable,
+  type Followed, Followed, NotThere, PodmanUnreachable, Unreadable,
 }
 import genesis_prime/dashboard/log_lines.{
-  type Entry, LaunchdLog, Line, LogCutShorter, LogReplaced, Marker, UpdaterLog,
+  type Entry, DatabaseLog, LaunchdLog, Line, LogCutShorter, LogReplaced, Marker,
+  ServerLog, UpdaterLog,
 }
 import genesis_prime/dashboard/logs.{Model}
 import genesis_prime/dashboard/overview
@@ -41,9 +42,9 @@ fn launchd(entries: List(Entry)) -> Followed {
 /// The page's markup with each source's part apart: the parts begin at the
 /// source's heading.
 fn parts(model: logs.Model) -> List(String) {
-  let assert [_, updater, launchd] =
+  let assert [_, updater, launchd, server, database] =
     string.split(element.to_string(logs.view(model)), "<h3>")
-  [updater, launchd]
+  [updater, launchd, server, database]
 }
 
 fn count(text: String, word: String) -> Int {
@@ -77,8 +78,10 @@ pub fn the_logs_page_shows_each_source_and_each_line_in_the_role_of_its_level_te
         ]),
       ),
       launchd: Some(launchd([])),
+      server: None,
+      database: None,
     )
-  let assert [updater_part, launchd_part] = parts(leveled)
+  let assert [updater_part, launchd_part, _, _] = parts(leveled)
   assert string.contains(updater_part, "Updater log")
   assert string.contains(updater_part, updater_path)
   assert string.contains(launchd_part, "launchd log")
@@ -97,7 +100,8 @@ pub fn the_logs_page_shows_each_source_and_each_line_in_the_role_of_its_level_te
 
   // A source with no lines yet, and a source not heard from yet.
   assert string.contains(launchd_part, "No lines yet")
-  let unheard = parts(Model(updater: None, launchd: None))
+  let unheard =
+    parts(Model(updater: None, launchd: None, server: None, database: None))
   list.each(unheard, fn(part) {
     assert string.contains(part, "No lines yet")
   })
@@ -114,8 +118,10 @@ pub fn the_logs_page_shows_each_source_and_each_line_in_the_role_of_its_level_te
         ),
       ),
       launchd: None,
+      server: None,
+      database: None,
     )
-  let assert [missing_part, _] = parts(missing)
+  let assert [missing_part, _, _, _] = parts(missing)
   assert string.contains(missing_part, "no log yet")
   assert string.contains(missing_part, updater_path)
 
@@ -132,8 +138,10 @@ pub fn the_logs_page_shows_each_source_and_each_line_in_the_role_of_its_level_te
         ),
       ),
       launchd: None,
+      server: None,
+      database: None,
     )
-  let assert [unreadable_part, _] = parts(unreadable)
+  let assert [unreadable_part, _, _, _] = parts(unreadable)
   assert string.contains(unreadable_part, "cannot read")
   assert string.contains(unreadable_part, "eacces")
   assert string.contains(unreadable_part, "an older line")
@@ -152,8 +160,10 @@ pub fn the_logs_page_shows_each_source_and_each_line_in_the_role_of_its_level_te
         ]),
       ),
       launchd: None,
+      server: None,
+      database: None,
     )
-  let assert [marked_part, _] = parts(marked)
+  let assert [marked_part, _, _, _] = parts(marked)
   let replaced = item_holding(marked_part, "the log was replaced")
   assert string.contains(replaced, "mark")
   assert !string.contains(replaced, "class=\"line ")
@@ -173,8 +183,10 @@ pub fn the_logs_page_shows_each_source_and_each_line_in_the_role_of_its_level_te
         ]),
       ),
       launchd: None,
+      server: None,
+      database: None,
     )
-  let assert [hostile_part, _] = parts(hostile)
+  let assert [hostile_part, _, _, _] = parts(hostile)
   assert !string.contains(hostile_part, "<script>")
   assert string.contains(hostile_part, "&lt;script&gt;alert(1)&lt;/script&gt;")
   assert count(hostile_part, long) == 1
@@ -211,11 +223,15 @@ fn assert_a_new_line_is_one_change_to_the_page() -> Nil {
     Model(
       updater: Some(updater(numbered_lines(0, log_lines.ring_lines))),
       launchd: None,
+      server: None,
+      database: None,
     )
   let after =
     Model(
       updater: Some(updater(numbered_lines(1, log_lines.ring_lines))),
       launchd: None,
+      server: None,
+      database: None,
     )
   let changed =
     diff.diff(cache.new(), logs.view(before), logs.view(after)).patch
@@ -283,8 +299,10 @@ pub fn an_entry_of_several_lines_is_one_item_with_one_role_and_its_lines_in_orde
         ]),
       ),
       launchd: None,
+      server: None,
+      database: None,
     )
-  let assert [part, _] = parts(page)
+  let assert [part, _, _, _] = parts(page)
 
   // The report is one item, in the role of its level, with its lines in order.
   let item = item_holding(part, "=CRASH REPORT")
@@ -323,4 +341,155 @@ pub fn an_entry_of_several_lines_is_one_item_with_one_role_and_its_lines_in_orde
   assert !string.contains(item, "cut")
   assert !string.contains(item_holding(part, "&lt;script"), "cut")
   assert !string.contains(item_holding(part, "after"), "cut")
+}
+
+const server_path = "podman logs genesis-play"
+
+const database_path = "podman logs genesis-play-postgres"
+
+fn container(
+  source source: log_lines.Source,
+  trouble trouble: option.Option(follow.Trouble),
+  entries entries: List(Entry),
+) -> Followed {
+  let path = case source {
+    ServerLog -> server_path
+    DatabaseLog | UpdaterLog | LaunchdLog -> database_path
+  }
+  Followed(source:, path:, trouble:, entries:)
+}
+
+/// A row of the container sources: what the follower sent and the words, the
+/// role and the dimming the page shows for it.
+type TroubleRow {
+  TroubleRow(
+    name: String,
+    trouble: option.Option(follow.Trouble),
+    words: String,
+    role: String,
+    dimmed: Bool,
+  )
+}
+
+pub fn a_container_log_says_why_it_is_stale_and_dims_its_lines_test() -> Nil {
+  use <- owned_test.run(5000)
+  let rows = [
+    TroubleRow(
+      "podman unreachable",
+      Some(PodmanUnreachable("unable to connect to Podman socket")),
+      "Podman is not reachable: unable to connect to Podman socket",
+      "role-warn",
+      True,
+    ),
+    TroubleRow(
+      "the container is not there",
+      Some(NotThere),
+      "no container named genesis-play",
+      "role-warn",
+      True,
+    ),
+    TroubleRow(
+      "the read failed",
+      Some(Unreadable("timed out after 5 s")),
+      "cannot read: timed out after 5 s",
+      "role-bad",
+      True,
+    ),
+    TroubleRow("a good read", None, "", "", False),
+  ]
+  list.each(rows, fn(row) {
+    let model =
+      Model(
+        updater: None,
+        launchd: None,
+        server: Some(
+          container(source: ServerLog, trouble: row.trouble, entries: [
+            Line(0, "the ready line", log_lines.LevelInfo, False),
+          ]),
+        ),
+        database: None,
+      )
+    let assert [_, _, part, _] = parts(model)
+    assert string.contains(part, "the ready line") as row.name
+    assert string.contains(part, server_path) as row.name
+    assert string.contains(part, "stale") == row.dimmed as row.name
+    case row.words {
+      "" -> {
+        assert !string.contains(part, "class=\"status") as row.name
+        assert !string.contains(part, "No lines yet") as row.name
+      }
+      words -> {
+        let assert Ok(status) =
+          string.split(part, "<p ")
+          |> list.find(fn(piece) { string.contains(piece, "status") })
+          as row.name
+        assert string.contains(status, words) as row.name
+        assert string.contains(status, row.role) as row.name
+      }
+    }
+  })
+
+  // The database's own container has its own name in the words.
+  let database_missing =
+    Model(
+      updater: None,
+      launchd: None,
+      server: None,
+      database: Some(
+        container(source: DatabaseLog, trouble: Some(NotThere), entries: []),
+      ),
+    )
+  let assert [_, _, _, database_part] = parts(database_missing)
+  assert string.contains(
+    database_part,
+    "no container named genesis-play-postgres",
+  )
+  assert string.contains(database_part, database_path)
+
+  // A container not heard from yet has no lines yet, and a file's missing log
+  // is still "no log yet" and not dimmed.
+  let unheard =
+    Model(updater: None, launchd: None, server: None, database: None)
+  list.each(parts(unheard), fn(part) {
+    assert string.contains(part, "No lines yet")
+  })
+  let file_missing =
+    Model(
+      updater: Some(
+        Followed(
+          source: UpdaterLog,
+          path: updater_path,
+          trouble: Some(NotThere),
+          entries: [],
+        ),
+      ),
+      launchd: None,
+      server: None,
+      database: None,
+    )
+  let assert [updater_part, _, _, _] = parts(file_missing)
+  assert string.contains(updater_part, "no log yet")
+  assert !string.contains(updater_part, "stale")
+
+  // The four sources come in the order updater, launchd, server, database.
+  let heard =
+    Model(
+      updater: Some(updater([])),
+      launchd: Some(launchd([])),
+      server: Some(container(source: ServerLog, trouble: None, entries: [])),
+      database: Some(container(source: DatabaseLog, trouble: None, entries: [])),
+    )
+  let assert [
+    updater_heading,
+    launchd_heading,
+    server_heading,
+    database_heading,
+  ] = parts(heard)
+  assert string.starts_with(updater_heading, "Updater log")
+  assert string.starts_with(launchd_heading, "launchd log")
+  assert string.starts_with(server_heading, "Server log")
+  assert string.starts_with(database_heading, "Database log")
+  assert string.contains(updater_heading, updater_path)
+  assert string.contains(server_heading, server_path)
+  assert !string.contains(server_heading, "play-service.log")
 }
