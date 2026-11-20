@@ -87,7 +87,7 @@ h2 {
   grid-template-columns: repeat(12, 1fr);
 }
 .card {
-  grid-column: span 4;
+  grid-column: span 3;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 2px;
