@@ -1983,6 +1983,158 @@ pub fn a_charge_carries_the_draws_the_anchor_and_the_aim_bit_of_its_spell_test()
   })
 }
 
+/// The charge of the Yeti Snowstalker (Creature2 51126) with the special `spell4_id`.
+fn yeti_charge(spell4_id: Int) -> creature_life.Cast {
+  yeti_charge_over(tables: character_tables.content_tables(), spell4_id:)
+}
+
+/// The charge of the Yeti Snowstalker with the special `spell4_id` over these content tables.
+fn yeti_charge_over(
+  tables tables: store.Tables,
+  spell4_id spell4_id: Int,
+) -> creature_life.Cast {
+  let assert Ok(yeti) =
+    spawn_support.special_creature_over(
+      tables:,
+      number: 1,
+      creature_id: 51_126,
+      spell4_id:,
+    )
+    as "the Yeti Snowstalker takes the special"
+  the_special_of(beast: yeti).attack.cast
+}
+
+/// A cone of 5.5 metres over 20 degrees from the caster, turned `turn` degrees: Ice Breath's
+/// TelegraphDamage rows 7956 (+10) and 7957 (-10).
+fn ice_breath_cone(turn turn: Float) -> area.Placement {
+  area.Placement(
+    shape: area.Cone(inner: 0.0, outer: 5.5, degrees: 20.0),
+    ahead: 0.0,
+    aside: 0.0,
+    turn_degrees: turn,
+  )
+}
+
+pub fn a_special_charge_carries_each_gos_blows_and_hit_shapes_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Ice Breath 55635: the damage row 132757 (phaseFlags 6) names gos 1 and 2 of four, the delay
+  // row 132758 the last, for 500 ms; its rows 7956 and 7957 are the cone turned +10, then -10.
+  let assert Charged(gos:, hold_ms:, inside:, anchor:, ..) = yeti_charge(55_635)
+    as "Ice Breath is a charge"
+  assert gos
+    == [
+      creature_life.Go(at_ms: 2600, strike: None),
+      creature_life.Go(
+        at_ms: 3000,
+        strike: Some(creature_life.GoStrike(
+          spell4_effects_ids: [132_757],
+          inside: area.InsideShapes([ice_breath_cone(turn: 10.0)]),
+        )),
+      ),
+      creature_life.Go(
+        at_ms: 3500,
+        strike: Some(creature_life.GoStrike(
+          spell4_effects_ids: [132_757],
+          inside: area.InsideShapes([ice_breath_cone(turn: -10.0)]),
+        )),
+      ),
+      creature_life.Go(at_ms: 3800, strike: None),
+    ]
+    as "the blow of row 132757 at gos 1 and 2, each with its own cone, and no strike at gos 0 and 3"
+  assert hold_ms == 500 as "Spell4Effects 132758 holds 500 ms"
+  assert inside
+    == area.InsideShapes([
+      ice_breath_cone(turn: 10.0),
+      ice_breath_cone(turn: -10.0),
+    ])
+    as "the charge's own shape is the union of the cast's cones"
+  assert anchor == area.FixedAtCaster as "both rows have flag 0x1000"
+  let assert Charged(gos: other_gos, ..) = yeti_charge(45_951)
+    as "Spell4 45951 is a charge"
+  assert other_gos
+    == [
+      creature_life.Go(at_ms: 200, strike: None),
+      creature_life.Go(
+        at_ms: 1000,
+        strike: Some(creature_life.GoStrike(
+          spell4_effects_ids: [107_436],
+          inside: area.InsideShapes([
+            area.Placement(
+              shape: area.Box(width: 2.0, length: 4.0),
+              ahead: 4.0,
+              aside: 0.0,
+              turn_degrees: 0.0,
+            ),
+          ]),
+        )),
+      ),
+      creature_life.Go(at_ms: 1200, strike: None),
+      creature_life.Go(
+        at_ms: 1800,
+        strike: Some(creature_life.GoStrike(
+          spell4_effects_ids: [107_454],
+          inside: area.InsideShapes([
+            area.Placement(
+              shape: area.Circle(radius: 4.0),
+              ahead: 0.0,
+              aside: 0.0,
+              turn_degrees: 0.0,
+            ),
+          ]),
+        )),
+      ),
+    ]
+    as "Spell4Effects 107436 (phaseFlags 2) strikes go 1 inside row 4664's box and 107454 (phaseFlags 8) go 3 inside row 4665's circle"
+  // A charge that is not a special has one go, at its cast time, that strikes with every blow
+  // and the charge's own shape: the Sim-Turret's Spell4 85469 has the one damage row 224644
+  // (`table_rows -- Spell4Effects spellId=85469`).
+  let assert Charged(cast_ms:, gos: turret_gos, inside: turret_inside, ..) =
+    spawn_support.sim_turret(
+      number: 1,
+      place: place_support.at(
+        world_id: 3460,
+        world_zone_id: 6009,
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+      ),
+    ).combat.attack.cast
+    as "the turret's attack is a charge"
+  assert turret_gos
+    == [
+      creature_life.Go(
+        at_ms: cast_ms,
+        strike: Some(creature_life.GoStrike(
+          spell4_effects_ids: [224_644],
+          inside: turret_inside,
+        )),
+      ),
+    ]
+    as "one go at the cast time, with the attack's blow and the charge's own shape"
+}
+
+pub fn a_go_whose_damage_rows_all_fail_the_creatures_difficulty_strikes_no_one_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Synthetic: Spell4Effects 132757 (Ice Breath's damage row) is given the caster prerequisite
+  // 30527, the one of Spell4Effects 184777: a type 179 condition of difficulty at least 7, which
+  // the Yeti Snowstalker's difficulty 4 fails (`creature_attack.applying`, `0x14049eeb0`).
+  use tables <- fixture_tables.changed(
+    table: "Spell4Effects",
+    id: 132_757,
+    with: [#("prerequisiteIdCasterApply", Integer(30_527))],
+  )
+  let assert Charged(gos:, hold_ms:, ..) =
+    yeti_charge_over(
+      tables: character_tables.content_over(tables:),
+      spell4_id: 55_635,
+    )
+    as "Ice Breath is still a charge"
+  assert list.map(gos, fn(go) { #(go.at_ms, go.strike) })
+    == [#(2600, None), #(3000, None), #(3500, None), #(3800, None)]
+    as "both damage gos have no blow left, so no go strikes, and the cast still has its four gos"
+  assert hold_ms == 500 as "and its hold"
+}
+
 /// The properties of the spawn's creature with the multiplier of its Physical damage
 /// (UnitProperty2 141, DamageDealtMultiplier of damage type 1) doubled.
 fn doubling_physical_damage(

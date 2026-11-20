@@ -379,32 +379,64 @@ fn summoned_with(
   creature_id creature_id: Int,
   kinds kinds: Kinds,
 ) -> Spawn {
-  let checks =
-    spawn.summon_checks(
+  let assert Ok(creature) =
+    summoned_over(
       tables: character_tables.content_tables(),
+      number:,
+      creature_id:,
+      kinds:,
+    )
+    as "the creature passes the summon checks over the client's committed rows"
+  creature
+}
+
+/// The creature `creature_id` standing at the Beast's place, summoned over `kinds` and these
+/// content tables, or the summon's refusal.
+fn summoned_over(
+  tables tables: table_store.Tables,
+  number number: Int,
+  creature_id creature_id: Int,
+  kinds kinds: Kinds,
+) -> Result(Spawn, spawn.SummonRefusal) {
+  spawn.summoned(
+    checks: spawn.summon_checks(
+      tables:,
       formulas: rating_support.formulas(),
       kinds:,
       factions: creature_faction.none(),
       vendors: vendor.none(),
-    )
-  let assert Ok(creature) =
-    spawn.summoned(
-      checks:,
-      summoned: Summoned(
-        id: SpawnId(number),
-        creature_id: Creature2Id(creature_id),
-        level: option.None,
-        place: place_support.at(
-          world_id: 3460,
-          world_zone_id: warfare_woods,
-          x: 0.0,
-          y: 0.0,
-          z: 0.0,
-        ),
+    ),
+    summoned: Summoned(
+      id: SpawnId(number),
+      creature_id: Creature2Id(creature_id),
+      level: option.None,
+      place: place_support.at(
+        world_id: 3460,
+        world_zone_id: warfare_woods,
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
       ),
-    )
-    as "the creature passes the summon checks over the client's committed rows"
-  creature
+    ),
+  )
+}
+
+/// A creature of the client's own rows standing at the Beast's place with the one special
+/// `spell4_id` (`special_creature`), summoned over these content tables (the server's tables
+/// with the content load's added, as `character_tables.content_over` or
+/// `client_tables.with_content_tables` give them), or the summon's refusal.
+pub fn special_creature_over(
+  tables tables: table_store.Tables,
+  number number: Int,
+  creature_id creature_id: Int,
+  spell4_id spell4_id: Int,
+) -> Result(Spawn, spawn.SummonRefusal) {
+  summoned_over(
+    tables:,
+    number:,
+    creature_id:,
+    kinds: kinds_with_specials(creature_id:, spell4_ids: [spell4_id]),
+  )
 }
 
 /// The kinds with the creature `creature_id` given a kind of its own: the default's fields

@@ -1485,3 +1485,9 @@ Spell4	39905	a charge with a row placed on each struck unit (row 14629) and a ta
 Creature2	25986	Levian Bay Eldan Security Construct, which casts Laser Bolt	spawn_test, world_creature_test
 Creature2	27399	Levian Bay Eldan Security Construct, Horde Act 1 Flavor	spawn_test
 Creature2	47430	an Eldan Security Construct of Levian Bay	spawn_test
+Spell4	55632	Claw Slam, which strikes at its first go and holds after its last, with one row drawn throughout (row 7877)	telegraph_window_test, spell_area_test, creature_special_test, spawn_test
+Spell4	45951	a cast whose blows and hit shapes differ by go (rows 4664 and 4665)	spell_area_test, spawn_test
+Spell4	34286	a cast with a row shown before the first go that goes at it (row 344) and one shown from it (row 14534)	telegraph_window_test, spell_area_test
+Spell4	47033	a cast whose rows end 50 ms before the go that names them (rows 5009 and 5010)	telegraph_window_test, spell_area_test
+Spell4	39943	a cast whose hit shapes are never-drawn twin rows (row 10908)	telegraph_window_test, spell_area_test
+Spell4	45746	a cast whose rows end and start exactly at a go (rows 4526 and 4527)	telegraph_window_test, spell_area_test

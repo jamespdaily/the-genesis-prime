@@ -113,12 +113,6 @@ pub type Unevaluated {
   GosDoNotRise(spell4_id: Int, times_ms: List(Int))
   /// No damage row of the special names a go, so the cast strikes nobody.
   NoStrikePhase(spell4_id: Int)
-  /// The special's damage rows name several gos (indexes in the spell's gos), which the
-  /// creature's fight does not run.
-  SeveralStrikes(spell4_id: Int, gos: List(Int))
-  /// The special's damage rows name one go and it is not the last, which the creature's
-  /// fight does not run.
-  StrikesBeforeTheLastGo(spell4_id: Int, go: Int, last_go: Int)
   /// An effect row of the special is of a type other than damage (8) and NpcExecutionDelay
   /// (35).
   OtherEffectType(spell4_effects_id: Int, effect_type: Int)
@@ -129,8 +123,8 @@ pub type Unevaluated {
   /// An NpcExecutionDelay row the plan does not apply: aimed at a unit other than the caster,
   /// with no duration, or selected by no phase.
   DelayNotApplied(spell4_effects_id: Int)
-  /// An NpcExecutionDelay row that names a go other than the strike go.
-  DelayNamesAnotherGo(spell4_effects_id: Int, gos: List(Int), strike_go: Int)
+  /// An NpcExecutionDelay row that names a go other than the cast's last.
+  DelayNamesAnotherGo(spell4_effects_id: Int, gos: List(Int), last_go: Int)
   /// An NpcExecutionDelay row behind a prerequisite, which no rule reads for a delay.
   DelayBehindPrerequisite(spell4_effects_id: Int, prerequisite_id: Int)
 }
@@ -255,12 +249,11 @@ pub fn evaluated(
 
 /// The first reason the spell is not one the creature's fight can cast as a special, or
 /// `Ok(Nil)`: it has a cast time (a cast bar); the attack rule evaluates it (`evaluated`);
-/// it names no target conditions; the plan reads it; its damage rows name exactly one go,
-/// the last; it holds rows of damage (8) and NpcExecutionDelay (35) alone; its area reads;
-/// and each delay row aims at the caster alone with a duration, names the strike go alone
-/// and sits behind no prerequisite. A cast with several hits or hits before its last go is
-/// one a later step of the creature-casts plan runs. `sources` are the plan's rows
-/// (`spell_plan.sources_of`), grouped once by the load.
+/// it names no target conditions; the plan reads it; its damage rows name at least one go; it
+/// holds rows of damage (8) and NpcExecutionDelay (35) alone; its area and the hit shapes of
+/// each go read (`spell_area.hit_shapes_by_go`); and each delay row aims at the caster alone
+/// with a duration, names the cast's last go alone and sits behind no prerequisite. `sources`
+/// are the plan's rows (`spell_plan.sources_of`), grouped once by the load.
 pub fn special_checked(
   tables tables: table_store.Tables,
   sources sources: spell_plan.Sources,
@@ -287,10 +280,10 @@ pub fn special_checked(
   use Nil <- result.try(gos_rise(spell4_id:, times_ms:))
   let effects = spell_plan.effects_of(sources:, spell4_id:)
   let go_count = list.length(times_ms)
-  use strike_go <- result.try(strike_go_of(spell4_id:, effects:, go_count:))
+  use Nil <- result.try(strike_gos_named(spell4_id:, effects:, go_count:))
   use Nil <- result.try(only_damage_and_delay(effects:))
-  use Nil <- result.try(area_read(tables:, spell4_id:))
-  delays_checked(sources:, tables:, spell4_id:, effects:, strike_go:, go_count:)
+  use Nil <- result.try(area_read(tables:, spell4_id:, times_ms:))
+  delays_checked(sources:, tables:, spell4_id:, effects:, go_count:)
 }
 
 /// The go times of a special: at least one, each above the one before.
@@ -327,12 +320,12 @@ fn gos_named(
   })
 }
 
-/// The one go the damage rows name, which has to be the last.
-fn strike_go_of(
+/// The damage rows name at least one go of the cast: `NoStrikePhase` otherwise.
+fn strike_gos_named(
   spell4_id spell4_id: Int,
   effects effects: List(Spell4Effects),
   go_count go_count: Int,
-) -> Result(Int, Unevaluated) {
+) -> Result(Nil, Unevaluated) {
   let named =
     list.filter(effects, fn(effect) {
       effect_kind.kind_of(effect.effect_type) == effect_kind.Damage
@@ -340,14 +333,9 @@ fn strike_go_of(
     |> list.flat_map(fn(effect) {
       gos_named(phase_flags: effect.phase_flags, go_count:)
     })
-    |> list.unique
-    |> list.sort(int.compare)
   case named {
     [] -> Error(NoStrikePhase(spell4_id:))
-    [go] if go == go_count - 1 -> Ok(go)
-    [go] ->
-      Error(StrikesBeforeTheLastGo(spell4_id:, go:, last_go: go_count - 1))
-    gos -> Error(SeveralStrikes(spell4_id:, gos:))
+    [_, ..] -> Ok(Nil)
   }
 }
 
@@ -395,27 +383,35 @@ fn only_damage_and_delay(
 }
 
 /// The spell has an area row its telegraph can be read from by the creature reading
-/// (`spell_area.CreatureReading`: Closest, Furthest or Random, and the shapes it builds), and
-/// its rows are placed alike, on the caster or on the cast's target (`spell_area.PlacedApart`).
+/// (`spell_area.CreatureReading`: Closest, Furthest or Random, and the shapes it builds), its
+/// rows are placed alike, on the caster or on the cast's target (`spell_area.PlacedApart`), and
+/// the hit shapes of each of its gos read (`spell_area.hit_shapes_by_go`).
 fn area_read(
   tables tables: table_store.Tables,
   spell4_id spell4_id: Int,
+  times_ms times_ms: List(Int),
 ) -> Result(Nil, Unevaluated) {
   case spell_area.area_of_spell(tables:, spell4_id: Spell4Id(spell4_id)) {
     Error(error) -> Error(AreaNotRead(spell4_id:, error:))
     Ok(None) -> Error(NoAreaRow(spell4_id:))
-    Ok(Some(_)) -> Ok(Nil)
+    Ok(Some(_)) ->
+      spell_area.hit_shapes_by_go(
+        tables:,
+        spell4_id: Spell4Id(spell4_id),
+        go_times_ms: times_ms,
+      )
+      |> result.map(fn(_) { Nil })
+      |> result.map_error(fn(error) { AreaNotRead(spell4_id:, error:) })
   }
 }
 
-/// Each NpcExecutionDelay row of the spell is one the plan applies, names the strike go and
+/// Each NpcExecutionDelay row of the spell is one the plan applies, names the cast's last go and
 /// no other, and sits behind no prerequisite.
 fn delays_checked(
   sources sources: spell_plan.Sources,
   tables tables: table_store.Tables,
   spell4_id spell4_id: Int,
   effects effects: List(Spell4Effects),
-  strike_go strike_go: Int,
   go_count go_count: Int,
 ) -> Result(Nil, Unevaluated) {
   let place =
@@ -447,12 +443,12 @@ fn delays_checked(
     })
     use Nil <- result.try(
       case gos_named(phase_flags: delay.phase_flags, go_count:) {
-        [go] if go == strike_go -> Ok(Nil)
+        [go] if go == go_count - 1 -> Ok(Nil)
         gos ->
           Error(DelayNamesAnotherGo(
             spell4_effects_id: effect.id,
             gos:,
-            strike_go:,
+            last_go: go_count - 1,
           ))
       },
     )
@@ -730,20 +726,6 @@ pub fn describe(unevaluated unevaluated: Unevaluated) -> String {
       "Spell4 "
       <> int.to_string(spell4_id)
       <> " has no damage row whose phaseFlags name a go, so its cast strikes nobody"
-    SeveralStrikes(spell4_id:, gos:) ->
-      "Spell4 "
-      <> int.to_string(spell4_id)
-      <> " strikes at "
-      <> gos_sentence(gos:)
-      <> ", which a creature's fight does not run"
-    StrikesBeforeTheLastGo(spell4_id:, go:, last_go:) ->
-      "Spell4 "
-      <> int.to_string(spell4_id)
-      <> " strikes at go "
-      <> int.to_string(go)
-      <> " but its last go is go "
-      <> int.to_string(last_go)
-      <> ", which a creature's fight does not run"
     OtherEffectType(spell4_effects_id:, effect_type:) ->
       "Spell4Effects "
       <> int.to_string(spell4_effects_id)
@@ -763,14 +745,14 @@ pub fn describe(unevaluated unevaluated: Unevaluated) -> String {
       "Spell4Effects "
       <> int.to_string(spell4_effects_id)
       <> " is an NpcExecutionDelay row the plan does not apply: it has to aim at the caster alone, with a durationTime and a phaseFlags that names a go"
-    DelayNamesAnotherGo(spell4_effects_id:, gos:, strike_go:) ->
+    DelayNamesAnotherGo(spell4_effects_id:, gos:, last_go:) ->
       "Spell4Effects "
       <> int.to_string(spell4_effects_id)
       <> " is an NpcExecutionDelay row that names "
       <> gos_sentence(gos:)
-      <> ", and the creature's hold follows the strike go, go "
-      <> int.to_string(strike_go)
-      <> " alone"
+      <> ", and the creature's hold follows the cast's last go, go "
+      <> int.to_string(last_go)
+      <> ", alone"
     DelayBehindPrerequisite(spell4_effects_id:, prerequisite_id:) ->
       "Spell4Effects "
       <> int.to_string(spell4_effects_id)
