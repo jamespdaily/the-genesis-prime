@@ -7,10 +7,14 @@
 ////
 //// - The upgrade reaches this module only after the gate allowed it
 ////   (`web.handle`), so a refused handshake starts no runtime.
-//// - A tab's runtime is started under the page's factory supervisor when the
-////   socket opens and stopped when it closes, so tabs share nothing. The
-////   socket is the same for every page: the page's message type and the
-////   argument its runtime starts with are the caller's.
+//// - A tab's runtime is started under the page's factory supervisor before the
+////   handshake is answered and stopped when the socket closes, so tabs share
+////   nothing. The socket's own init only registers with the runtime: mist ends
+////   a socket whose init takes over 500 ms with an HTTP answer after the 101,
+////   which a start of a runtime on a busy machine can reach. A start that fails
+////   answers the handshake with a refusal and a handshake mist refuses stops
+////   the runtime. The socket is the same for every page: the page's message
+////   type and the argument its runtime starts with are the caller's.
 //// - The socket monitors its runtime: a runtime that ends (the supervisor
 ////   rebuilds the page runtimes together with what they follow) closes the socket
 ////   with an abnormal end, so the tab's client reconnects and gets a new one.
@@ -25,6 +29,7 @@ import gleam/json
 import gleam/list
 import gleam/option.{Some}
 import gleam/otp/factory_supervisor
+import gleam/result
 import lustre
 import lustre/server_component
 import mist.{type Connection, type ResponseData}
@@ -54,37 +59,49 @@ type Socket(message) {
   )
 }
 
-/// Upgrades the request to a websocket whose runtime is started in
-/// `runtimes`, with the `argument` the page subscribes by.
+/// Starts the page's runtime in `runtimes` with the `argument` the page
+/// subscribes by, then upgrades the request to a websocket on it. The runtime
+/// starts before the handshake is answered, so a start that is slow or fails is
+/// the handshake's refusal and never a failure after the upgrade. The error is
+/// that the runtime did not start.
 pub fn upgrade(
   request request: Request(Connection),
   runtimes runtimes: Runtimes(argument, message),
   argument argument: argument,
-) -> Response(ResponseData) {
-  mist.websocket(
-    request:,
-    on_init: fn(_connection) {
-      let assert Ok(started) =
-        factory_supervisor.start_child(runtimes, argument)
-        as "the page's runtime did not start"
-      let client = process.new_subject()
-      process.send(started.data, server_component.register_subject(client))
-      let _monitor = process.monitor(started.pid)
-      let selector =
-        process.new_selector()
-        |> process.select_map(client, FromRuntime)
-        |> process.select_monitors(fn(_down) { RuntimeEnded })
-      #(Socket(runtime: started.data, client:), Some(selector))
-    },
-    handler: handle,
-    on_close: fn(socket: Socket(message)) {
-      process.send(
-        socket.runtime,
-        server_component.deregister_subject(socket.client),
-      )
-      process.send(socket.runtime, lustre.shutdown())
-    },
+) -> Result(Response(ResponseData), Nil) {
+  use started <- result.try(
+    factory_supervisor.start_child(runtimes, argument)
+    |> result.replace_error(Nil),
   )
+  let response =
+    mist.websocket(
+      request:,
+      on_init: fn(_connection) {
+        let client = process.new_subject()
+        process.send(started.data, server_component.register_subject(client))
+        let _monitor = process.monitor(started.pid)
+        let selector =
+          process.new_selector()
+          |> process.select_map(client, FromRuntime)
+          |> process.select_monitors(fn(_down) { RuntimeEnded })
+        #(Socket(runtime: started.data, client:), Some(selector))
+      },
+      handler: handle,
+      on_close: fn(socket: Socket(message)) {
+        process.send(
+          socket.runtime,
+          server_component.deregister_subject(socket.client),
+        )
+        process.send(socket.runtime, lustre.shutdown())
+      },
+    )
+  case response.body {
+    mist.Websocket -> Ok(response)
+    _refused -> {
+      process.send(started.data, lustre.shutdown())
+      Ok(response)
+    }
+  }
 }
 
 fn handle(

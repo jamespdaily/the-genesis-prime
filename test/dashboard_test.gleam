@@ -646,6 +646,46 @@ pub fn closing_the_logs_socket_ends_its_runtime_and_the_followers_reads_test() -
   dashboard_support.close(second)
 }
 
+pub fn a_logs_socket_is_upgraded_only_once_its_runtime_has_started_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use home <- dashboard_support.with_home
+  plant_logs(home:, updater: "one\n", launchd: "alpha\n")
+  let settings = dashboard_support.settings(home)
+  let running = started(settings)
+  let key = dashboard_support.written_key(home:)
+  let headers = [
+    #("Origin", "http://127.0.0.1:" <> int.to_string(settings.port)),
+    ..dashboard_support.browser(port: settings.port)
+  ]
+
+  // The factory holds the start the handshake asks of it: the server has not
+  // answered. Mist ends a socket whose init takes over 500 ms with an HTTP
+  // answer written after the 101, which a loaded machine reaches.
+  let connection =
+    dashboard_support.with_factory_held(
+      runtimes: running.log_runtimes,
+      during: fn(start_asked) {
+        let connection =
+          dashboard_support.handshake_sent(
+            port: settings.port,
+            path: "/k/" <> key <> "/logs-ws",
+            headers:,
+          )
+        start_asked()
+        assert !dashboard_support.has_bytes(connection)
+          as "the server upgraded the socket before its runtime had started"
+        connection
+      },
+    )
+
+  // The factory let go: the runtime starts, the socket is upgraded and the
+  // page's lines come.
+  assert dashboard_support.handshake_reply(connection).status == 101
+  let _first = frames_holding(connection, ["one", "alpha"])
+  assert dashboard.runtime_count(running) == 1
+  dashboard_support.close(connection)
+}
+
 pub fn a_dead_follower_takes_the_log_runtimes_with_it_and_a_new_tab_is_served_test() -> Nil {
   use <- owned_test.run(60_000)
   use home <- dashboard_support.with_home

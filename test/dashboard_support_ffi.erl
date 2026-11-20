@@ -1,5 +1,7 @@
 -module(dashboard_support_ffi).
--export([free_port/0, bound_addresses/1, accepts/1, open/2, read_text_frame/1, close/1, process_alive/1, closes/1, os_pid/0]).
+-export([free_port/0, bound_addresses/1, accepts/1, open/2, connect_and_send/2, read_reply/1, has_bytes/1,
+         read_text_frame/1, close/1, process_alive/1, closes/1, os_pid/0, suspend/1, resume/1,
+         queued_calls/1]).
 
 %% A loopback port the system chose: listens on port 0 and closes the socket
 %% again, so nothing listens on the port that is returned. The dashboard's
@@ -45,8 +47,19 @@ accepts(Port) ->
 -spec open(inet:port_number(), binary()) ->
     {port(), integer(), [{binary(), binary()}], binary()}.
 open(Port, Request) ->
+    read_reply(connect_and_send(Port, Request)).
+
+%% Connects to the loopback port and sends the request bytes, without reading.
+-spec connect_and_send(inet:port_number(), binary()) -> port().
+connect_and_send(Port, Request) ->
     {ok, Socket} = gen_tcp:connect({127, 0, 0, 1}, Port, [binary, {active, false}], infinity),
     ok = gen_tcp:send(Socket, Request),
+    Socket.
+
+%% Reads the answer to a request already sent: its head, and its body as `open`
+%% reads it.
+-spec read_reply(port()) -> {port(), integer(), [{binary(), binary()}], binary()}.
+read_reply(Socket) ->
     {Head, Rest} = read_head(Socket, <<>>),
     [StatusLine | HeaderLines] = binary:split(Head, <<"\r\n">>, [global]),
     [_Version, Status | _] = binary:split(StatusLine, <<" ">>, [global]),
@@ -64,6 +77,44 @@ open(Port, Request) ->
             _ -> read_body(Socket, Rest, Length)
         end,
     {Socket, binary_to_integer(Status), Headers, Body}.
+
+%% Whether the server has already written bytes on the connection: they are
+%% left on the socket for the next read. A write the server finished before
+%% this call is there, since the loopback delivers a write as it is made, so the
+%% answer is a fact about the server's writes so far, not a wait.
+-spec has_bytes(port()) -> boolean().
+has_bytes(Socket) ->
+    case gen_tcp:recv(Socket, 0, 0) of
+        {ok, Bytes} ->
+            ok = gen_tcp:unrecv(Socket, Bytes),
+            true;
+        {error, timeout} ->
+            false
+    end.
+
+%% Holds a factory supervisor so that a call to it stays in its mailbox, and
+%% lets it go again. The factory's value is Gleam's `{supervisor, Handle}`, the
+%% handle being its registered name or its pid.
+-spec suspend({supervisor, atom() | pid()}) -> nil.
+suspend({supervisor, Handle}) ->
+    ok = sys:suspend(Handle),
+    nil.
+
+-spec resume({supervisor, atom() | pid()}) -> nil.
+resume({supervisor, Handle}) ->
+    ok = sys:resume(Handle),
+    nil.
+
+%% How many messages wait in the mailbox of a factory supervisor.
+-spec queued_calls({supervisor, atom() | pid()}) -> integer().
+queued_calls({supervisor, Handle}) ->
+    Pid =
+        case is_pid(Handle) of
+            true -> Handle;
+            false -> whereis(Handle)
+        end,
+    {message_queue_len, Length} = process_info(Pid, message_queue_len),
+    Length.
 
 read_head(Socket, Seen) ->
     case binary:split(Seen, <<"\r\n\r\n">>) of
