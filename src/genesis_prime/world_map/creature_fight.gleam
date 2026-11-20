@@ -144,7 +144,9 @@
 ////   since its path ended sends nothing. A death mid-path places the viewers where
 ////   the creature fell the same way.
 //// - **Reach** is the attack spell's `targetMaxRange` plus the creature's hit radius,
-////   centre to centre (a server choice; genesis_prime/world_map/creature_life `Attack`).
+////   centre to centre (a server choice), and for a charge on its target the target's hit
+////   radius too, as the client ranges a cast on a unit (`0x1403b2240`;
+////   genesis_prime/world_map/creature_life `Attack`).
 //// - **One round at a time.** The attack interval is never below the strike
 ////   deadline (genesis_prime/world_map/creature_kind), so a tick of an attack with no cast
 ////   time never finds a round open. A charge is the open round before its strike (`Charging`,
@@ -1660,8 +1662,9 @@ fn ticked(
     Ok(sighting) -> {
       let distance = creature_path.distance(from: here, to: sighting.place)
       let attack = chosen(state:, fighter:, now_ms:)
-      let in_reach = distance <=. attack.reach
-      let in_attack_reach = distance <=. fighter.attack.reach
+      let in_reach = distance <=. reach_of(attack:, target: sighting)
+      let in_attack_reach =
+        distance <=. reach_of(attack: fighter.attack, target: sighting)
       let cannot_run = !creature_path.runs(speed: fighter.attack.run_speed)
       let at_circle = case cannot_move(fighter:) || cannot_run {
         True ->
@@ -2583,17 +2586,15 @@ fn chase(
       || casting_or_holding(state:, fighter:),
     return: #(state, []),
   )
-  let target_place = case state.status {
-    Fighting(target:, ..) ->
-      dict.get(state.sightings, target)
-      |> result.map(fn(sighting) { sighting.place })
+  let target = case state.status {
+    Fighting(target:, ..) -> dict.get(state.sightings, target)
     Resting | Returning(..) -> Error(Nil)
   }
-  case target_place {
+  case target {
     Error(Nil) -> #(state, [])
-    Ok(target_place) -> {
+    Ok(target) -> {
       let #(state, turned) = faced(state:, fighter:, now_ms:)
-      let #(state, chased) = chase_to(state:, fighter:, target_place:, now_ms:)
+      let #(state, chased) = chase_to(state:, fighter:, target:, now_ms:)
       #(state, list.append(turned, chased))
     }
   }
@@ -2615,16 +2616,26 @@ fn casting_or_holding(state state: State, fighter fighter: Fighter) -> Bool {
   }
 }
 
+/// How far the attack reaches, from the creature's centre to the target's: its `reach`, and
+/// the target's hit radius too when the attack adds it (`Attack.adds_target_radius`).
+fn reach_of(attack attack: Attack, target target: Sighting) -> Float {
+  case attack.adds_target_radius {
+    True -> attack.reach +. target.hit_radius
+    False -> attack.reach
+  }
+}
+
 /// The chase toward the target's place, unless it is in reach of where the path
 /// ends: the reach of the attack the creature goes for (`chosen`), so a ready special is
 /// closed in on to its own reach.
 fn chase_to(
   state state: State,
   fighter fighter: Fighter,
-  target_place target_place: Place,
+  target target: Sighting,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
-  let reach = chosen(state:, fighter:, now_ms:).reach
+  let reach = reach_of(attack: chosen(state:, fighter:, now_ms:), target:)
+  let target_place = target.place
   use <- bool.guard(
     when: creature_path.distance(
       from: creature_path.end(path: state.path),

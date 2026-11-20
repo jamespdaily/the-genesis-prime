@@ -111,9 +111,21 @@ pub type Opening {
 /// No positions: the opening of a cast with no server-placed row.
 pub const none = Opening(initial_positions: [], telegraph_positions: [])
 
+/// The rows among a spell's TelegraphDamage rows that the client draws: those not flagged 0x40
+/// (a hit twin, never drawn) or 0x100.
+pub fn drawn_rows(
+  rows rows: List(telegraph_damage.TelegraphDamage),
+) -> List(telegraph_damage.TelegraphDamage) {
+  list.filter(rows, fn(row) {
+    let flags = row.telegraph_damage_flags
+    !spell_effect.has_flag(flags:, bit: 0x40)
+    && !spell_effect.has_flag(flags:, bit: 0x100)
+  })
+}
+
 /// The rows of the spell that the client makes, in table order: each Spell4Telegraph row
 /// of the spell whose TelegraphDamage row exists (`Spell4Telegraph.telegraphDamageId.no_row`)
-/// and is not flagged 0x40 or 0x100.
+/// and is drawn (`drawn_rows`).
 pub fn draws_of(
   tables tables: table_store.Tables,
   spell4_id spell4_id: Spell4Id,
@@ -126,24 +138,17 @@ pub fn draws_of(
       id: TelegraphDamageId(link.telegraph_damage_id),
     )
   })
-  |> list.filter_map(fn(row) {
-    let flags = row.telegraph_damage_flags
-    case
-      spell_effect.has_flag(flags:, bit: 0x40)
-      || spell_effect.has_flag(flags:, bit: 0x100)
-    {
-      True -> Error(Nil)
-      False ->
-        Ok(Draw(
-          telegraph_damage_id: row.id,
-          placing: placing_of(flags:),
-          target_type_flags: row.target_type_flags,
-          ahead: row.z_position_offset,
-          aside: row.x_position_offset,
-          up: row.y_position_offset,
-          turn_degrees: row.rotation_degrees,
-        ))
-    }
+  |> drawn_rows
+  |> list.map(fn(row) {
+    Draw(
+      telegraph_damage_id: row.id,
+      placing: placing_of(flags: row.telegraph_damage_flags),
+      target_type_flags: row.target_type_flags,
+      ahead: row.z_position_offset,
+      aside: row.x_position_offset,
+      up: row.y_position_offset,
+      turn_degrees: row.rotation_degrees,
+    )
   })
 }
 

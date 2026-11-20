@@ -656,17 +656,23 @@ fn hit_rows_of(
   links links: Dict(Int, List(spell4_telegraph.Spell4Telegraph)),
   id id: Int,
 ) -> List(telegraph_damage.TelegraphDamage) {
-  let rows = linked_rows_of(tables:, links:, id:)
-  let twins =
-    list.filter(rows, fn(row) {
-      spell_effect.has_flag(flags: row.telegraph_damage_flags, bit: 0x40)
-    })
-  case twins {
+  hit_rows_among(rows: linked_rows_of(tables:, links:, id:))
+}
+
+/// Whether the row is a never-drawn twin (flag 0x40) that says who is hit in place of a
+/// drawn row.
+fn is_twin(row row: telegraph_damage.TelegraphDamage) -> Bool {
+  spell_effect.has_flag(flags: row.telegraph_damage_flags, bit: 0x40)
+}
+
+/// The rows among a spell's linked rows that say who is hit: its twins, else its drawn rows
+/// (`telegraph_entries.drawn_rows`) less those with bit 0x20 unless all have it.
+fn hit_rows_among(
+  rows rows: List(telegraph_damage.TelegraphDamage),
+) -> List(telegraph_damage.TelegraphDamage) {
+  case list.filter(rows, is_twin) {
     [] -> {
-      let drawn =
-        list.filter(rows, fn(row) {
-          !spell_effect.has_flag(flags: row.telegraph_damage_flags, bit: 0x100)
-        })
+      let drawn = telegraph_entries.drawn_rows(rows:)
       case
         list.filter(drawn, fn(row) {
           !spell_effect.has_flag(flags: row.telegraph_damage_flags, bit: 0x20)
@@ -680,89 +686,119 @@ fn hit_rows_of(
   }
 }
 
-/// The unit a creature special's row is placed on, by its `targetTypeFlags`.
+/// The unit a row the reading builds is placed on.
 type Role {
   OnTheCaster
   OnTheTarget
-  /// Flags no anchor is built for; `placements_of` refuses such a row.
-  OnOtherUnits
 }
 
-/// The unit a row is placed on: the caster for 1, the cast's target for 0 and 2
+/// The unit a row is placed on, or `Error(Nil)` for flags the reading builds no anchor for:
+/// the caster for 1, and for a creature the cast's target for 0 and 2
 /// (`0x140546e60.placement_branches`: the client-placed target is the cast's unit when the
 /// flags are 0 or have bit 2).
-fn role_of(target_type_flags target_type_flags: Int) -> Role {
-  case target_type_flags {
-    1 -> OnTheCaster
-    0 | 2 -> OnTheTarget
-    _ -> OnOtherUnits
+fn role_of(
+  target_type_flags target_type_flags: Int,
+  reading reading: Reading,
+) -> Result(Role, Nil) {
+  case reading, target_type_flags {
+    PlayerReading, 1 | CreatureReading, 1 -> Ok(OnTheCaster)
+    CreatureReading, 0 | CreatureReading, 2 -> Ok(OnTheTarget)
+    PlayerReading, _ | CreatureReading, _ -> Error(Nil)
+  }
+}
+
+/// The unit a hit row is placed on, or the refusal of a row the reading does not build: for a
+/// creature a row on each struck unit (bit 4) is refused by name, since the cast cannot know
+/// them when it starts, and the ground (bit 8) or two units at once (3, 9) as not on the
+/// caster; for a player any unit but the caster (`0x140546e60.placement_branches`).
+fn placed_on_a_unit_built(
+  id id: Int,
+  row row: telegraph_damage.TelegraphDamage,
+  reading reading: Reading,
+) -> Result(Role, AreaError) {
+  let flags = row.target_type_flags
+  case role_of(target_type_flags: flags, reading:) {
+    Ok(role) -> Ok(role)
+    Error(Nil) ->
+      case reading, spell_effect.has_flag(flags:, bit: 4) {
+        CreatureReading, True ->
+          Error(TelegraphOnStruckUnits(
+            spell4_id: id,
+            telegraph_id: row.id,
+            target_type_flags: flags,
+          ))
+        CreatureReading, False | PlayerReading, _ ->
+          Error(TelegraphNotOnCaster(
+            spell4_id: id,
+            telegraph_id: row.id,
+            target_type_flags: flags,
+          ))
+      }
   }
 }
 
 /// The anchor one creature row gives: its unit, and fixed where the 0x7ff puts it (flag
 /// 0x4000 or 0x1000) or following the unit each frame (`0x14054b1b0.fixed_placement`,
-/// `0x14054b1b0.follows_caster`). A row on other units gives none.
+/// `0x14054b1b0.follows_caster`).
 fn anchor_of_row(
+  row row: telegraph_damage.TelegraphDamage,
+  role role: Role,
+) -> Anchor {
+  case role, telegraph_entries.placing_of(flags: row.telegraph_damage_flags) {
+    OnTheCaster, telegraph_entries.OnTheUnit -> FollowsCaster
+    OnTheCaster, telegraph_entries.AtInitialPosition
+    | OnTheCaster, telegraph_entries.AtTelegraphPosition
+    -> FixedAtCaster
+    OnTheTarget, telegraph_entries.OnTheUnit -> FollowsTarget
+    OnTheTarget, telegraph_entries.AtInitialPosition
+    | OnTheTarget, telegraph_entries.AtTelegraphPosition
+    -> FixedAtTarget
+  }
+}
+
+/// The anchor a creature's row gives, or the refusal of a row on units the reading does not
+/// build (`placed_on_a_unit_built`).
+fn anchored(
   id id: Int,
   row row: telegraph_damage.TelegraphDamage,
 ) -> Result(Anchor, AreaError) {
-  case
-    role_of(target_type_flags: row.target_type_flags),
-    telegraph_entries.placing_of(flags: row.telegraph_damage_flags)
-  {
-    OnTheCaster, telegraph_entries.OnTheUnit -> Ok(FollowsCaster)
-    OnTheCaster, telegraph_entries.AtInitialPosition
-    | OnTheCaster, telegraph_entries.AtTelegraphPosition
-    -> Ok(FixedAtCaster)
-    OnTheTarget, telegraph_entries.OnTheUnit -> Ok(FollowsTarget)
-    OnTheTarget, telegraph_entries.AtInitialPosition
-    | OnTheTarget, telegraph_entries.AtTelegraphPosition
-    -> Ok(FixedAtTarget)
-    OnOtherUnits, _ ->
-      Error(TelegraphNotOnCaster(
-        spell4_id: id,
-        telegraph_id: row.id,
-        target_type_flags: row.target_type_flags,
-      ))
-  }
+  use role <- result.map(placed_on_a_unit_built(
+    id:,
+    row:,
+    reading: CreatureReading,
+  ))
+  anchor_of_row(row:, role:)
 }
 
 /// Where the hit rows of a creature's spell `id` are drawn, so where its hit is centred: the
 /// anchor its rows give (`anchor_of_row`), `FollowsCaster` for a spell with none. When the hit
 /// rows give different anchors, or a hit twin (flag 0x40, never drawn) gives another than the
-/// rows the client draws, no one centre is where the picture is: `PlacedApart` names the first
-/// hit row and the first row that differs from it.
+/// rows the client draws (`telegraph_entries.drawn_rows`), no one centre is where the picture
+/// is: `PlacedApart` names the first hit row and the first row that differs from it. A drawn
+/// row beside a twin is refused like a hit row when it is on units the reading does not build.
 fn anchor_of(
   tables tables: table_store.Tables,
   links links: Dict(Int, List(spell4_telegraph.Spell4Telegraph)),
   id id: Int,
 ) -> Result(Anchor, AreaError) {
-  let hit_rows = hit_rows_of(tables:, links:, id:)
+  let linked = linked_rows_of(tables:, links:, id:)
+  let hit_rows = hit_rows_among(rows: linked)
   case hit_rows {
     [] -> Ok(FollowsCaster)
     [first, ..] -> {
-      use anchor <- result.try(anchor_of_row(id:, row: first))
-      let has_twins =
-        list.any(hit_rows, fn(row) {
-          spell_effect.has_flag(flags: row.telegraph_damage_flags, bit: 0x40)
-        })
-      let drawn = case has_twins {
-        True ->
-          list.filter(linked_rows_of(tables:, links:, id:), fn(row) {
-            !spell_effect.has_flag(flags: row.telegraph_damage_flags, bit: 0x40)
-            && !spell_effect.has_flag(
-              flags: row.telegraph_damage_flags,
-              bit: 0x100,
-            )
-          })
+      use anchor <- result.try(anchored(id:, row: first))
+      let drawn = case list.any(hit_rows, is_twin) {
+        True -> telegraph_entries.drawn_rows(rows: linked)
         False -> []
       }
-      case
-        list.find(list.append(hit_rows, drawn), fn(row) {
-          anchor_of_row(id:, row:) != Ok(anchor)
-        })
-      {
-        Ok(other) ->
+      use others <- result.try(
+        list.try_map(list.append(hit_rows, drawn), fn(row) {
+          use found <- result.map(anchored(id:, row:))
+          #(row, found)
+        }),
+      )
+      case list.find(others, fn(other) { other.1 != anchor }) {
+        Ok(#(other, _)) ->
           Error(PlacedApart(
             spell4_id: id,
             telegraph_id: first.id,
@@ -771,44 +807,6 @@ fn anchor_of(
         Error(Nil) -> Ok(anchor)
       }
     }
-  }
-}
-
-/// Whether the unit a hit row is placed on is one the reading builds: for a player the caster
-/// alone (`targetTypeFlags` 1); for a creature also the cast's target (0 and 2). A creature's
-/// row on each struck unit (bit 4) is refused by name, since the cast cannot know them when
-/// it starts, and the ground (bit 8) or two units at once (3, 9) as not on the caster
-/// (`0x140546e60.placement_branches`).
-fn placed_on_a_unit_built(
-  id id: Int,
-  row row: telegraph_damage.TelegraphDamage,
-  reading reading: Reading,
-) -> Result(Nil, AreaError) {
-  let flags = row.target_type_flags
-  case reading, flags {
-    PlayerReading, 1 -> Ok(Nil)
-    CreatureReading, 0 | CreatureReading, 1 | CreatureReading, 2 -> Ok(Nil)
-    CreatureReading, _ ->
-      case spell_effect.has_flag(flags:, bit: 4) {
-        True ->
-          Error(TelegraphOnStruckUnits(
-            spell4_id: id,
-            telegraph_id: row.id,
-            target_type_flags: flags,
-          ))
-        False ->
-          Error(TelegraphNotOnCaster(
-            spell4_id: id,
-            telegraph_id: row.id,
-            target_type_flags: flags,
-          ))
-      }
-    PlayerReading, _ ->
-      Error(TelegraphNotOnCaster(
-        spell4_id: id,
-        telegraph_id: row.id,
-        target_type_flags: flags,
-      ))
   }
 }
 
@@ -822,7 +820,7 @@ fn placements_of(
   row row: telegraph_damage.TelegraphDamage,
   reading reading: Reading,
 ) -> Result(List(Placement), AreaError) {
-  use Nil <- result.try(placed_on_a_unit_built(id:, row:, reading:))
+  use _role <- result.try(placed_on_a_unit_built(id:, row:, reading:))
   let not_built =
     Error(ShapeNotBuilt(
       spell4_id: id,

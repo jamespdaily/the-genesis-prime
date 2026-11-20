@@ -535,47 +535,62 @@ pub fn a_spell_whose_rows_are_not_placed_alike_is_refused_by_name_test() -> Nil 
   // Laser Bolt's row 7874 is a fixed row on the target. Each case links one more row placed
   // otherwise: a caster row (7880, tt 1, fixed), a following target row (4796), and a copy of
   // 7874 with the never-drawn flag 0x40 on the caster, which becomes the hit while the picture
-  // stays on the target. Synthetic: none of the loadable specials mixes them.
-  let linked = fn(rows, telegraph_damage_id) {
+  // stays on the target; and, beside a twin placed as 7874 is, a drawn row on each struck unit,
+  // which no anchor serves and is refused as a hit row on them is. Synthetic: none of the
+  // loadable specials mixes them.
+  let linked = fn(rows, link_id, telegraph_damage_id) {
     let assert Ok(rows) =
       fixture_tables.add(
         rows:,
         table: "Spell4Telegraph",
         copy_of: 16_625,
-        id: 99_001,
+        id: link_id,
         with: [#("telegraphDamageId", Integer(telegraph_damage_id))],
       )
       as "Spell4Telegraph 16625 is Laser Bolt's own link"
     rows
   }
-  let assert Ok(with_twin) =
-    fixture_tables.add(
-      rows: fixture_tables.rows(),
-      table: "TelegraphDamage",
-      copy_of: 7874,
-      id: 99_002,
-      with: [
-        #("telegraphDamageFlags", Integer(0x905040)),
-        #("targetTypeFlags", Integer(1)),
-      ],
-    )
-    as "TelegraphDamage 7874 is Laser Bolt's row"
+  let copy_of_7874 = fn(rows, id, flags, target_type_flags) {
+    let assert Ok(rows) =
+      fixture_tables.add(
+        rows:,
+        table: "TelegraphDamage",
+        copy_of: 7874,
+        id:,
+        with: [
+          #("telegraphDamageFlags", Integer(flags)),
+          #("targetTypeFlags", Integer(target_type_flags)),
+        ],
+      )
+      as "TelegraphDamage 7874 is Laser Bolt's row"
+    rows
+  }
+  let with_caster_twin =
+    copy_of_7874(fixture_tables.rows(), 99_002, 0x905040, 1)
+  let with_target_twin =
+    copy_of_7874(fixture_tables.rows(), 99_002, 0x905040, 2)
+    |> copy_of_7874(99_003, 0x905000, 4)
   list.each(
     [
       #(
-        linked(fixture_tables.rows(), 7880),
+        linked(fixture_tables.rows(), 99_001, 7880),
         PlacedApart(55_846, 7874, 7880),
         "a caster row beside a target row",
       ),
       #(
-        linked(fixture_tables.rows(), 4796),
+        linked(fixture_tables.rows(), 99_001, 4796),
         PlacedApart(55_846, 7874, 4796),
         "a fixed target row beside a following one",
       ),
       #(
-        linked(with_twin, 99_002),
+        linked(with_caster_twin, 99_001, 99_002),
         PlacedApart(55_846, 99_002, 7874),
         "a hit twin placed apart from the drawn row",
+      ),
+      #(
+        linked(with_target_twin, 99_001, 99_002) |> linked(99_004, 99_003),
+        TelegraphOnStruckUnits(55_846, 99_003, 4),
+        "a drawn row on each struck unit beside a twin on the target",
       ),
     ],
     fn(row) {

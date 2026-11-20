@@ -3257,8 +3257,10 @@ pub fn a_creature_with_the_special_63569_strikes_the_unit_its_cast_id_picks_test
     as "the same cast id, the same unit"
 }
 
-/// The connection's player, on the creature's threat list, moves to `x`: the connection tells
-/// the creature its new place, as it does for each move of a player it has struck.
+/// The connection's player, on the creature's threat list, moves to `x`: the creature is sent
+/// the `TargetMoved` that the connection sends for each accepted move while the creature holds
+/// the player on its threat list (`movement.tells_a_fighter_the_place`). The stand-in
+/// connections here run no connection rule, so the test sends it.
 fn target_moved(
   roaring roaring: Roaring,
   connection connection: Int,

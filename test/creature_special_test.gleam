@@ -348,12 +348,24 @@ pub fn the_order_and_target_row_lifts_load_63569_70256_and_55846_test() -> Nil {
     let assert creature_life.Charged(area: row, anchor:, ..) =
       loaded.attack.cast
       as "the spell is a charge"
-    #(row.order, anchor)
+    #(row, anchor)
   }
-  assert charge_of(63_569) == #(area.Random, area.FollowsCaster)
+  let #(row_541, anchor) = charge_of(63_569)
+  assert row_541
+    == area.Row(
+      min_range: 0.0,
+      max_range: 70.0,
+      degrees: 360.0,
+      target_count: 1,
+      order: area.Random,
+    )
+    as "63569 carries the whole of the area row 541"
+  assert anchor == area.FollowsCaster
     as "no telegraph row: the hit follows its caster"
-  assert charge_of(70_256) == #(area.Random, area.FollowsTarget)
-  assert charge_of(55_846) == #(area.Nearest, area.FixedAtTarget)
+  let #(row_580, anchor) = charge_of(70_256)
+  assert #(row_580.order, anchor) == #(area.Random, area.FollowsTarget)
+  let #(row_116, anchor) = charge_of(55_846)
+  assert #(row_116.order, anchor) == #(area.Nearest, area.FixedAtTarget)
   assert string.contains(
     rule_of(row: special(spell4_id: 46_696)),
     "has no damage row whose phaseFlags name a go",

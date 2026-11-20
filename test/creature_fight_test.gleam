@@ -5949,6 +5949,55 @@ pub fn a_ready_special_closes_to_its_own_reach_test() -> Nil {
   assert fights_told(cast) == []
 }
 
+pub fn a_special_that_adds_the_targets_radius_casts_from_that_much_farther_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The client holds the gap between the two edges to the spell's range (`0x1403b2240`), so a
+  // special that adds the target's hit radius (1.2 for a player) to its reach of 16 casts at
+  // 17.0 (within 17.2) and runs in from 17.5 to within 17.2; one that does not add it runs in
+  // from 17.0 to within 16. Each target stands beyond the instant attack's reach of 8.
+  list.each(
+    [
+      #(True, -17.0, None, "within the reach and the target's radius: a cast"),
+      #(True, -17.5, Some(17.2), "beyond them: the creature runs in"),
+      #(False, -17.0, Some(16.0), "17.0 is beyond 16 without the radius"),
+    ],
+    fn(row) {
+      let #(adds_target_radius, z, ends_within, reason) = row
+      let roar = spawn_support.earthen_roar(hold_ms: 1000)
+      let special =
+        creature_life.Special(
+          ..roar,
+          attack: creature_life.Attack(
+            ..roar.attack,
+            reach: 16.0,
+            adds_target_radius:,
+          ),
+        )
+      let #(state, aggro) =
+        tell(
+          state: rootbrute_with(special:, viewers: [2]),
+          at_ms: 0,
+          message: approached_at(number: 2, x: 0.0, z:, seq: 1),
+        )
+      case ends_within {
+        None -> {
+          assert no_path(aggro) as reason
+          let #(_, cast) =
+            fire(state:, at_ms: 1500, timer: timer_for(aggro, 1500))
+          let assert [CastStarted(start:)] = casts_of(cast, 2)
+          assert start.spell4_id == 55_317 as reason
+        }
+        Some(reach) -> {
+          let assert Running(to:, ..) = path_sent(aggro)
+          assert creature_path.distance(from: to, to: at_xz(x: 0.0, z:))
+            <=. reach
+            as reason
+        }
+      }
+    },
+  )
+}
+
 pub fn a_state_between_gos_breaks_the_special_and_the_cooldown_stays_spent_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, aggro) = roar_fought(viewers: [2])
