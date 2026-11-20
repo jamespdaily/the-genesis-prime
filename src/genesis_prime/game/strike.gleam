@@ -293,16 +293,34 @@ pub fn select(
     })
   {
     Error(Nil) -> empty
-    Ok(#(area, phase)) -> {
-      let centre = case asked.primary_target == attacker.unit_id {
-        True -> Ok(attacker.pose)
+    Ok(#(spell_area_found, phase)) -> {
+      let primary = case asked.primary_target == attacker.unit_id {
+        True -> Ok(area.TheCaster)
         False ->
           shown.place_of(picture:, unit_id: asked.primary_target, now_ms:)
-          |> result.map(fn(place) { Pose(at: area.point_of(place), yaw: 0.0) })
+          |> result.map(fn(place) {
+            area.AnotherUnit(pose: Pose(at: area.point_of(place), yaw: 0.0))
+          })
       }
-      let from_area = case phase.selects_area, area.row, centre {
+      let centre =
+        result.map(primary, fn(primary) {
+          area.centre_of(
+            anchor: spell_area_found.anchor,
+            caster: attacker.pose,
+            started_at: asked.started_at,
+            primary:,
+          )
+        })
+      let from_area = case phase.selects_area, spell_area_found.row, centre {
         True, Some(row), Ok(centre) ->
-          area_selection(attacker:, picture:, area:, row:, centre:, now_ms:)
+          area_selection(
+            attacker:,
+            picture:,
+            area: spell_area_found,
+            row:,
+            centre:,
+            now_ms:,
+          )
         _, _, _ -> []
       }
       let with_primary = case

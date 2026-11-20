@@ -3011,6 +3011,7 @@ fn went_asked(
           spell4_id: live.spell.spell4_id,
           primary_target: live.primary_target,
           spent: live.spent,
+          started_at: live.started_at,
         )),
       ]),
     )
@@ -3649,6 +3650,7 @@ fn start(
       root:,
       parent:,
       primary_target:,
+      started_at: area.pose_of(place: caster.place),
       audience:,
       gone: 0,
       started_ms: now_ms,

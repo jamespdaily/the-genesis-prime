@@ -37,6 +37,8 @@ pub type Kick {
     target_bitmask: Int,
     /// TelegraphDamage.targetTypeFlags.
     telegraph_target_type_flags: Int,
+    /// TelegraphDamage.telegraphDamageFlags.
+    telegraph_damage_flags: Int,
     /// TelegraphDamage.damageShapeEnum.
     shape: Int,
     /// Spell4Effects.targetFlags of the damage effect.
@@ -84,6 +86,7 @@ pub fn kick() -> Kick {
     target_selection: area.target_selection,
     target_bitmask: valid_targets.target_bitmask,
     telegraph_target_type_flags: telegraph.target_type_flags,
+    telegraph_damage_flags: telegraph.telegraph_damage_flags,
     shape: telegraph.damage_shape_enum,
     effect_target_flags: effect.target_flags,
     multiplier_bits: effect.data_bits00,
@@ -146,6 +149,7 @@ pub fn kick_rows(kick kick: Kick) -> spell_tables.Rows {
       id: telegraph_row,
       with: [
         #("damageShapeEnum", Integer(kick.shape)),
+        #("telegraphDamageFlags", Integer(kick.telegraph_damage_flags)),
         #("targetTypeFlags", Integer(kick.telegraph_target_type_flags)),
       ],
     ),

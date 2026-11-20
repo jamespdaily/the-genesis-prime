@@ -37,6 +37,7 @@ import map_support
 import owned_test
 import place_support
 import properties_support
+import strike_support
 import unitest
 
 const centre_spell = 29_874
@@ -113,6 +114,7 @@ fn struck_by_the_three(
         spell4_id: Spell4Id(spell4_id),
         primary_target: caster.unit_id,
         spent: None,
+        started_at: strike_support.start_pose(),
       ),
       attacker: caster,
       picture:,

@@ -13,6 +13,7 @@
 import genesis_prime/client_connection.{type News}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/activate
+import genesis_prime/game/area
 import genesis_prime/game/class_resource.{type Payment, type Resources}
 import genesis_prime/game/cooldown
 import genesis_prime/game/damage
@@ -308,7 +309,9 @@ pub type PressedAt {
 /// the cast's primary target, which a child cast on a struck unit holds as that
 /// unit and any other cast as its caster, and the points the cast spent above its
 /// base cost, which choose the effects the go strikes with
-/// (genesis_prime/game/spend); none for a cast that spends no more than its cost.
+/// (genesis_prime/game/spend); none for a cast that spends no more than its cost; and the
+/// pose the cast started at, which a row the client holds at the start is struck at
+/// (genesis_prime/game/area `centre_of`).
 pub type GoAsked {
   GoAsked(
     cast_id: Int,
@@ -316,6 +319,7 @@ pub type GoAsked {
     spell4_id: Spell4Id,
     primary_target: Int,
     spent: Option(Int),
+    started_at: area.Pose,
   )
 }
 
@@ -770,6 +774,9 @@ pub type Live {
     /// The spell whose Proxy started this one; none for the pressed spell.
     parent: Option(Spell4Id),
     primary_target: Int,
+    /// The caster's pose when the cast started, which its 0x7fd or 0x7ff carries and the
+    /// client stores once (`0x14053a210.held_position`).
+    started_at: area.Pose,
     /// The connections that see the caster: those told of the start and those that came
     /// into sight since (`audience_joined`), which its go and finish go to.
     audience: Set(ConnectionId),

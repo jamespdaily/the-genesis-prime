@@ -62,7 +62,7 @@ import genesis_prime/message/ability_tiers
 import genesis_prime/message/bit_stream
 import genesis_prime/message/camp_countdown
 import genesis_prime/message/cast_activate.{CastActivate}
-import genesis_prime/message/cast_result.{SpellUnknown, TargetIsNotUseable}
+import genesis_prime/message/cast_result.{TargetIsNotUseable}
 import genesis_prime/message/character_list
 import genesis_prime/message/character_list_entry
 import genesis_prime/message/chat_line_accepted
@@ -106,6 +106,7 @@ import genesis_prime/message/rename_character_result.{RenameCharacterResult}
 import genesis_prime/message/rename_result
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_go
+import genesis_prime/message/spell_position
 import genesis_prime/message/spell_started
 import genesis_prime/message/start_movement
 import genesis_prime/message/static_unit_type
@@ -4746,11 +4747,12 @@ pub fn a_placed_target_is_shown_killed_and_counted_test() -> Nil {
 /// The Medic of the marker ring that levels from 3 to 4 on the kill at slot 0: its abilities
 /// are the level-1 three and the innate, then SpellLevel 614's base 26038 (Fissure) at bag
 /// index 4, written after the level and before the properties, on the whole server and again
-/// at the entry of the relog. Fissure has no plan (`spell_plan.unplanned`, issue #1003: its second spell's
-/// hit telegraph 2996 is placed by flags 8, which the area rule does not build), so the press
-/// of slot 4 at the other creature of the ring is refused unknown, as any bag slot with no
-/// plan is (`0x14039a040`); the press of a level-up ability that has a plan is the cast
-/// tests' (`experience_book_test`). The clock is driven and nothing waits on real time.
+/// at the entry of the relog. Fissure is planned (its second spell's hit telegraphs 2996 to 2998
+/// are placed by flag 8, the position the cast holds), so the press of slot 4 is accepted. The
+/// Medic stands 8 m from the ring's other creature and faces it, so the creature is inside the
+/// first rectangle of the press pose; before the second and third go the Medic moves 40 m aside
+/// and turns half a turn, and the strike still lands where the press drew its rectangles. The
+/// clock is driven and nothing waits on real time.
 pub fn a_medic_that_levels_from_3_to_4_holds_fissure_castable_and_a_relog_at_4_holds_it_test() -> Nil {
   use <- owned_test.run(120_000)
   use tables <- on_rows_without_paralytic_surges_recharge()
@@ -4807,16 +4809,107 @@ pub fn a_medic_that_levels_from_3_to_4_holds_fissure_castable_and_a_relog_at_4_h
       AbilityTier(spell4_base_id: 26_038, tier: 1, action_set_index:)
     })
     as "opcode.0x1a0: tier 1 of the base in each of the four action sets"
-  // The press of slot 4 at the ring's other creature, which stands alive and untouched.
+  // The Medic walks to 8 m from the ring's other creature, which stands alive and untouched,
+  // and faces it: it is 8 m ahead of the press pose, inside the first rectangle of Fissure's
+  // rows (TelegraphDamage 2998: 10 wide, from 1 to 15 m ahead).
+  let creature_at = game_client.placed_by_tail(tail: other.tail)
+  let press_at = #(creature_at.0 +. 8.0, creature_at.1, creature_at.2)
+  game_client.move_to(
+    game:,
+    clock: 200,
+    x: press_at.0,
+    y: press_at.1,
+    z: press_at.2,
+  )
+  let facing_the_creature =
+    game_client.yaw_toward(from: #(press_at.0, press_at.2), target: #(
+      creature_at.0,
+      creature_at.2,
+    ))
+  game_client.face(game:, yaw: facing_the_creature, clock: 210)
+  let #(_, have) = game_client.read_until_pong(game:, have:, number: 8)
+  // The last Paralytic Surge lingers 2700 ms (`fight_bot.paralytic_surge_lingers_ms`) and holds
+  // the press of any other ability inside the 500 ms queue window (`cast_press.verdict`), so the
+  // clock moves past that lingering first.
+  driven_time.advance(time:, ms: 3000)
   game_client.press_ability(
     game:,
     client_cast_id: 50,
     bag_index: 4,
     target: other.unit_id,
   )
-  let #(pressed, have) = game_client.read_until_pong(game:, have:, number: 8)
-  assert refusals(frames: pressed) == [cast_result.to_value(SpellUnknown)]
-    as "opcode.0x7fc: Fissure has no plan, so the press is refused unknown"
+  // The connection writes the confirm and the child's start before its pong, so a press that is
+  // held or refused ends this wait at the assertions below; the first go comes from the cast's
+  // timer, which a confirmed press has armed.
+  let #(first_go, have) = game_client.read_until_pong(game:, have:, number: 10)
+  assert refusals(frames: first_go) == []
+    as "opcode.0x7fc: Fissure is planned, so the press is not refused"
+  let assert Ok(confirmed_frame) =
+    list.find(first_go, fn(frame) { frame.message_id == 0x07FD })
+    as "opcode.0x7fd: the press is confirmed; none came, so the press was held behind a lingering cast or not made"
+  let assert Ok(confirmed) = spell_cast_confirmed.decode(confirmed_frame.body)
+  let starts =
+    list.filter(first_go, fn(frame) { frame.message_id == 0x07FF })
+    |> list.map(fn(frame) {
+      let assert Ok(started) = spell_started.decode(frame.body)
+        as "0x7ff decodes"
+      started
+    })
+  let assert Ok(child_started) =
+    list.find(starts, fn(started) { started.spell4_id == 41_844 })
+    as "opcode.0x7ff: the child 41844 starts"
+  assert #(child_started.root_spell4_id, child_started.parent_spell4_id)
+    == #(41_843, 41_843)
+    as "Spell4Effects 94215 starts child 41844 of the pressed 41843"
+  let held =
+    spell_position.SpellPosition(
+      x: float32.to_bits(press_at.0),
+      y: float32.to_bits(press_at.1),
+      z: float32.to_bits(press_at.2),
+    )
+  assert confirmed.position == held && child_started.position == held
+    as "opcode.0x7fd, opcode.0x7ff: the position the cast holds is the Medic's place at the press"
+  assert confirmed.yaw == float32.to_bits(facing_the_creature)
+    && child_started.yaw == float32.to_bits(facing_the_creature)
+    as "opcode.0x7fd, opcode.0x7ff: the yaw the client turns the picture by is the facing the Medic had at the press (the client's own yaw is the caster's facing, a marked guess)"
+  let #(first_goes, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      fissure_goes(frames: first_go, in: list.append(first_go, frames)) != []
+    })
+  assert fissure_goes(frames: first_go, in: list.append(first_go, first_goes))
+    == [[other.unit_id]]
+    as "opcode.0x7f4: the child's first go names the creature 8 m ahead of the press pose, inside Fissure's first rectangle"
+  // The Medic turns its back and walks 40 m aside before the later gos (SpellPhase 5061 and
+  // 5062, 250 ms after the one before): the rectangles stay where the press drew them.
+  game_client.move_to(
+    game:,
+    clock: 300,
+    x: press_at.0,
+    y: press_at.1,
+    z: press_at.2 +. 40.0,
+  )
+  game_client.face(game:, yaw: facing_the_creature +. 3.1415927, clock: 310)
+  let #(_, have) = game_client.read_until_pong(game:, have:, number: 9)
+  // One step for each go, so each go is struck at its own time on the driven clock: the ring's
+  // creature chases the Medic once hit, and a strike round that ran after both steps would find
+  // it somewhere else.
+  driven_time.advance(time:, ms: 250)
+  let #(second, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      fissure_goes(frames: first_go, in: frames) != []
+    })
+  driven_time.advance(time:, ms: 250)
+  let #(third, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      fissure_goes(frames: first_go, in: frames) != []
+    })
+  let later_goes =
+    list.append(
+      fissure_goes(frames: first_go, in: second),
+      fissure_goes(frames: first_go, in: third),
+    )
+  assert later_goes == [[other.unit_id], [other.unit_id]]
+    as "Spell4Effects 94283 and 94284: the second and third phase, one go each, and each names the creature, which stands inside all three rectangles (TelegraphDamage 2996 to 2998, 2 to 10 wide, centred, reaching past 8 m): the hit is where the press drew them, not where the Medic stands"
   // The relog at level 4 holds the same five abilities, the new one in slot 4.
   let #(second_entry, _) =
     game_client.camp_and_play(game:, have:, character_id: character)
@@ -4831,6 +4924,25 @@ pub fn a_medic_that_levels_from_3_to_4_holds_fissure_castable_and_a_relog_at_4_h
     as "the entry's location-4 items are the level-1 three, the innate and Fissure's base in slot 4: a relog holds the book a rise made"
   game_client.close(game:)
   login_support.stop(started)
+}
+
+/// The targets of each go, in order, of the child 41844 of Fissure whose 0x7ff is among
+/// `frames`, read in `in`.
+fn fissure_goes(
+  frames frames: List(Frame),
+  in read: List(Frame),
+) -> List(List(Int)) {
+  let events = game_client.casts_in(frames:)
+  case game_client.starts_of(events:, spell4_id: 41_844) {
+    [#(cast_id, _), ..] ->
+      list.filter_map(game_client.go_targets_in(frames: read), fn(go) {
+        case go.0 == cast_id {
+          True -> Ok(go.1)
+          False -> Error(Nil)
+        }
+      })
+    [] -> []
+  }
 }
 
 /// The player at the marker ring faces the target at ring slot 0 and presses Paralytic Surge on
