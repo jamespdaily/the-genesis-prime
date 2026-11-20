@@ -419,10 +419,11 @@ fn relay(command: MovementCommand) -> Relay {
 /// What one movement message does to where the player stands: the body is
 /// decoded and 0x0637 and 0x063B are checked as `moved` and `speed_setting`
 /// say; 0x063A and 0x00F2 give the WorldZone id they report; the others are
-/// decoded and nothing more, since what their values mean is not read (0xD5's
-/// three values are not read, 0xFB is a fall's value and 0xFC the fall below the
-/// floor). A body the client's reader would refuse, or a refused command, is the
-/// refusal that ends the connection.
+/// decoded and nothing more, since the server does nothing with their values:
+/// 0xD5 holds the client's world-entry options (input flags and combat log
+/// options), 0xFB an impact severity and 0xFC the fall below the floor. A body
+/// the client's reader would refuse, or a refused command, is the refusal that
+/// ends the connection.
 pub fn take(
   state state: State,
   message message: Message,

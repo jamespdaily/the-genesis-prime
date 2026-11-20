@@ -1321,17 +1321,17 @@ fields = [
 [[record]]
 name = "movement_kind_17"
 evidence = "0x140c1f070"
-summary = "a movement command of kind 17, the unit's rotation follows a chain of authored splines: the spline ids (32 bits each, a count in 10 bits), the speed as a 16-bit half float, the start position along the chain, the start height and the end height as 32-bit floats, a 4-bit walk mode, a 32-bit time offset in ms, 32 bits of spline flags and the blend bit"
+summary = "a movement command of kind 17, the unit's rotation follows a chain of authored splines: the spline ids (32 bits each, a count in 10 bits), the speed as a 16-bit half float, the start position along the chain, the takeoff height and the landing height as 32-bit floats, a 4-bit walk mode, a 32-bit time offset in ms, 32 bits of chain flags and the blend bit"
 fields = [
   { name = "kind", kind = "constant", bits = 5, value = 17, evidence = "0x140c1f070", named_by = "0x140c1f070" },
   { name = "spline_ids", kind = "array", count_bits = 10, element = "unsigned", element_bits = 32, evidence = "0x140c1f070", named_by = "movement_command.kind_17" },
   { name = "speed", kind = "unsigned", bits = 16, evidence = "0x140c1f070", named_by = "movement_command.kind_17" },
   { name = "start_position", kind = "float32", evidence = "0x140c1f070", named_by = "movement_command.kind_17" },
-  { name = "start_height", kind = "float32", evidence = "0x140c1f070", named_by = "movement_command.kind_17" },
-  { name = "end_height", kind = "float32", evidence = "0x140c1f070", named_by = "movement_command.kind_17" },
+  { name = "takeoff_height", kind = "float32", evidence = "0x140c1f070", named_by = "movement_command.kind_17" },
+  { name = "landing_height", kind = "float32", evidence = "0x140c1f070", named_by = "movement_command.kind_17" },
   { name = "mode", kind = "unsigned", bits = 4, evidence = "0x140c1f070", named_by = "movement_command.kind_17" },
   { name = "time_offset", kind = "unsigned", bits = 32, evidence = "0x140c1f070", named_by = "movement_command.kind_17" },
-  { name = "spline_flags", kind = "unsigned", bits = 32, evidence = "0x140c1f070", named_by = "movement_command.kind_17" },
+  { name = "chain_flags", kind = "unsigned", bits = 32, evidence = "0x140c1f070", named_by = "movement_command.kind_17" },
   { name = "blends", kind = "unsigned", bits = 1, evidence = "0x140c1f070", named_by = "movement_command.kind_17" },
 ]
 

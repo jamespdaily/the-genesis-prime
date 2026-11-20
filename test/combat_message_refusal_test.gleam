@@ -363,25 +363,25 @@ pub fn the_three_client_messages_are_taken_by_their_numbers_test() -> Nil {
     as "opcode.0x9a: 0x9b, the ground-placed cast, is a message the schema does not hold"
 }
 
-pub fn a_path_with_a_value_or_last_bit_the_server_does_not_write_is_refused_test() -> Nil {
+pub fn a_path_with_a_time_offset_or_blend_the_server_does_not_write_is_refused_test() -> Nil {
   use <- owned_test.run(5000)
-  // The kind 4 record's 32-bit value starts after the mode, 4 bits after the
-  // path type; the last bit follows it.
-  let value_bit = path_type_bit + 2 + 4
+  // The kind 4 record's 32-bit time offset starts after the mode, 4 bits after
+  // the path type; the blend bit follows it.
+  let time_offset_bit = path_type_bit + 2 + 4
   assert unit_movement.decode(message_support.set_bits(
       body: message_support.hex(straight_path_bytes),
-      at: value_bit,
+      at: time_offset_bit,
       width: 32,
       to: 77,
     ))
-    == Error(bit_stream.UnexpectedValue(field: "value", value: 77))
-    as "movement_command.kind_4: the value and the last bit are unread, so the server writes 0 and the codec takes no other"
+    == Error(bit_stream.UnexpectedValue(field: "time_offset", value: 77))
+    as "movement_command.kind_4: the server writes 0 in the time offset and the blend bit, and the codec takes no other"
   assert unit_movement.decode(message_support.set_bits(
       body: message_support.hex(straight_path_bytes),
-      at: value_bit + 32,
+      at: time_offset_bit + 32,
       width: 1,
       to: 1,
     ))
-    == Error(bit_stream.UnexpectedValue(field: "last_bit", value: 1))
-    as "and the same for the last bit"
+    == Error(bit_stream.UnexpectedValue(field: "blends", value: 1))
+    as "and the same for the blend bit"
 }
