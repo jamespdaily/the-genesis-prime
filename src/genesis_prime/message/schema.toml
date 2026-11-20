@@ -878,7 +878,7 @@ fields = [
 [[record]]
 name = "unit_create_tail"
 evidence = "0x140096fa0"
-summary = "the part of message 0x262 after the type's data, the same for every unit type: the create flags, the stats, the movement commands, the properties, the item visuals, the cast in progress, the two factions, who tagged the unit, three tagged values and the minimap marker, display info and outfit info; the lists the schema does not hold are sent empty"
+summary = "the part of message 0x262 after the type's data, the same for every unit type: the create flags, the stats, the movement commands, the properties, the item visuals, the casts live on or by the unit, the cast in progress, the two factions, who tagged the unit, three tagged values and the minimap marker, display info and outfit info"
 fields = [
   { name = "create_flags", kind = "unsigned", bits = 8, evidence = "0x140096fa0", named_by = "opcode.0x262.unit_fields" },
   { name = "stats", kind = "array", count_bits = 5, element = "unit_stat", evidence = "0x140096fa0", named_by = "0x140458140" },
@@ -886,8 +886,8 @@ fields = [
   { name = "movement_commands", kind = "array", count_bits = 5, element = "start_movement", evidence = "0x140096fa0", named_by = "0x1404586e0" },
   { name = "properties", kind = "array", count_bits = 8, element = "unit_property", evidence = "0x140096fa0", named_by = "0x1404584b0" },
   { name = "item_visuals", kind = "array", count_bits = 7, element = "item_visual", evidence = "0x140096fa0", named_by = "0x1400ab890" },
-  { name = "no_other_entries", kind = "constant", bits = 9, value = 0, evidence = "0x140096fa0", open = "Which casts does a unit coming into sight carry? The 9-bit count is the list of the unit's buffs and cast that the client applies on creation (opcode.0x262.casts); the server sends 0, so a buffed unit shows none of its buffs." },
-  { name = "cast_id", kind = "unsigned", bits = 32, evidence = "0x140096fa0", open = "Which cast is the unit casting when it comes into sight? The client sets the unit's cast bar from this id once the creation's casts list holds the cast (SetUnitCast 0x1404697a0); the server sends 0, so a viewer arriving mid-cast sees no bar." },
+  { name = "casts", kind = "array", count_bits = 9, element = "unit_create_cast", evidence = "0x140096fa0", named_by = "opcode.0x262.casts" },
+  { name = "cast_id", kind = "unsigned", bits = 32, evidence = "0x140096fa0", named_by = "opcode.0x262.casts" },
   { name = "faction_id", kind = "unsigned", bits = 14, evidence = "0x140096fa0", named_by = "opcode.0x262" },
   { name = "base_faction_id", kind = "unsigned", bits = 14, evidence = "0x140096fa0", named_by = "opcode.0x262" },
   { name = "tagged_by_unit_id", kind = "unsigned", bits = 32, evidence = "0x140096fa0", named_by = "0x14045bcd0" },
@@ -903,6 +903,21 @@ fields = [
   { name = "minimap_marker_id", kind = "unsigned", bits = 14, evidence = "0x140096fa0", named_by = "opcode.0x262.unit_fields" },
   { name = "display_info_id", kind = "unsigned", bits = 17, evidence = "0x140096fa0", named_by = "0x14047c210" },
   { name = "outfit_info_id", kind = "unsigned", bits = 15, evidence = "0x140096fa0", named_by = "0x14047c320" },
+]
+
+[[record]]
+name = "unit_create_cast"
+evidence = "0x140094bf0"
+summary = "one live cast of message 0x262: the caster, the primary target, the cast id, the Spell4 id, whether the cast is started (bit 1) or gone (bit 0), the targets with their effects as a go lists them, the initial positions and the telegraph positions"
+fields = [
+  { name = "caster_unit_id", kind = "unsigned", bits = 32, evidence = "0x140094bf0", named_by = "opcode.0x262.casts" },
+  { name = "primary_target_unit_id", kind = "unsigned", bits = 32, evidence = "0x140094bf0", named_by = "opcode.0x262.casts" },
+  { name = "cast_id", kind = "unsigned", bits = 32, evidence = "0x140094bf0", named_by = "opcode.0x262.casts" },
+  { name = "spell4_id", kind = "unsigned", bits = 18, evidence = "0x140094bf0", named_by = "opcode.0x262.casts" },
+  { name = "started", kind = "unsigned", bits = 1, evidence = "0x140094bf0", named_by = "opcode.0x262.casts" },
+  { name = "targets", kind = "array", count_bits = 32, element = "spell_target_info", evidence = "0x140094bf0", named_by = "opcode.0x262.casts" },
+  { name = "initial_positions", kind = "array", count_bits = 8, element = "spell_initial_position", evidence = "0x140094bf0", named_by = "opcode.0x262.casts" },
+  { name = "telegraph_positions", kind = "array", count_bits = 8, element = "spell_telegraph_position", evidence = "0x140094bf0", named_by = "opcode.0x262.casts" },
 ]
 
 [[record]]

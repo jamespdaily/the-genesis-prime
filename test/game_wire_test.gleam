@@ -2339,6 +2339,8 @@ type TwoEntered {
     second_character: Int,
     /// The first client's whole entry burst.
     first_burst: List(Frame),
+    /// The frames the first client read while it acted before the second played.
+    first_acted: List(Frame),
     /// The second client's whole entry burst and, after it, the 0x262 of the
     /// first player.
     second_burst: List(Frame),
@@ -2452,18 +2454,25 @@ fn two_players_enter_on(
   first_class first_class: Int,
   time time: driven_time.Time,
 ) -> TwoEntered {
-  let started =
-    login_support.start_with(change: fn(settings) {
-      let settings = login_support.driven_by(settings:, time:)
-      server.Settings(
-        ..settings,
-        game: server.Served(
-          ..settings.game,
-          settings: connection_state.Settings(..settings.game.settings, tables:),
-        ),
-      )
-    })
-  two_players_enter(started:, first_class:, level: 9)
+  two_players_enter(started: started_on(tables:, time:), first_class:, level: 9)
+}
+
+/// A server holding these tables, its game connections and its World taking their time and
+/// their timers from `time`.
+fn started_on(
+  tables tables: table_store.Tables,
+  time time: driven_time.Time,
+) -> login_support.Started {
+  login_support.start_with(change: fn(settings) {
+    let settings = login_support.driven_by(settings:, time:)
+    server.Settings(
+      ..settings,
+      game: server.Served(
+        ..settings.game,
+        settings: connection_state.Settings(..settings.game.settings, tables:),
+      ),
+    )
+  })
 }
 
 /// Two players of the level given enter one map, the first of the class given and the
@@ -2473,6 +2482,24 @@ fn two_players_enter(
   started started: login_support.Started,
   first_class first_class: Int,
   level level: Int,
+) -> TwoEntered {
+  two_players_enter_after(
+    started:,
+    first_class:,
+    level:,
+    first_acts: fn(_, have) { #([], have) },
+  )
+}
+
+/// As `two_players_enter`, the first player acting on its entry with `first_acts` (given
+/// its connection and the bytes it has read, giving the frames it read and the bytes it has
+/// read then) before the second plays.
+fn two_players_enter_after(
+  started started: login_support.Started,
+  first_class first_class: Int,
+  level level: Int,
+  first_acts first_acts: fn(game_client.Game, BitArray) ->
+    #(List(Frame), BitArray),
 ) -> TwoEntered {
   let #(first, first_character) =
     new_player_at_level(
@@ -2493,6 +2520,7 @@ fn two_players_enter(
   send_play(game: first, character_id: first_character)
   let #(first_burst, first_have) =
     game_client.read_entry_kept(game: first, have: <<>>)
+  let #(first_acted, first_have) = first_acts(first, first_have)
   send_play(game: second, character_id: second_character)
   let #(second_entry, second_have) =
     game_client.read_entry_kept(game: second, have: <<>>)
@@ -2507,6 +2535,7 @@ fn two_players_enter(
     second:,
     second_character:,
     first_burst:,
+    first_acted:,
     second_burst:,
     seen_second:,
     first_have:,
@@ -2630,6 +2659,75 @@ pub fn a_medics_discharge_pulses_three_times_and_a_player_in_sight_reads_the_sam
   assert cast_support.cast_lines(frames: seen)
     == ["started k1 58832 root 58832 parent 0", ..pulses]
     as "opcode.0x7ff, 0x7f4 and 0x7fe: a player in sight reads the same casts, started by unit 1 with no parent"
+  game_client.close(game: first)
+  game_client.close(game: second)
+  login_support.stop(started)
+}
+
+/// `opcode.0x262.casts` and `cast.target_node_end`: a player that enters beside a Medic
+/// holding the bar of Gamma Rays (Spell4 29874, castTime 1250 ms) is created the Medic's
+/// unit with the cast listed, not yet gone, and named as its cast in progress; the
+/// cast's go and its 0x7fe are then written to it, since the client ends a cast only by
+/// the 0x7fe it is sent.
+pub fn a_viewer_joining_beside_a_casting_player_shows_its_cast_bar_and_writes_its_end_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let time = driven_time.new()
+  let TwoEntered(
+    started:,
+    first:,
+    second:,
+    first_acted:,
+    second_burst:,
+    first_have:,
+    second_have:,
+    ..,
+  ) =
+    two_players_enter_after(
+      started: started_on(tables: character_tables.shared(), time:),
+      first_class: 4,
+      level: 9,
+      first_acts: fn(first, have) {
+        // Gamma Rays is the Medic's second level-1 ability, so bag index 1.
+        game_client.press_ability(
+          game: first,
+          client_cast_id: 1,
+          bag_index: 1,
+          target: 0,
+        )
+        game_client.read_until_pong(game: first, have:, number: 1)
+      },
+    )
+  let assert [game_client.CastConfirmed(server_cast_id: cast_id, ..)] =
+    game_client.casts_in(frames: first_acted)
+    as "the press is accepted (opcode.0x7fd) and Gamma Rays' cast time holds its first go"
+  let assert Ok(seen_first) = list.last(second_burst)
+    as "the second player's entry ends with the 0x262 of the first"
+  let created = game_client.unit_create_player_in(frames: [seen_first])
+  assert created.unit_id == 1
+  assert list.map(created.tail.casts, fn(entry) {
+      #(entry.caster_unit_id, entry.cast_id, entry.spell4_id, entry.started)
+    })
+    == [#(1, cast_id, 29_874, 1)]
+    as "opcode.0x262.casts: the create lists the cast the Medic holds the bar of, not yet gone (state 2, bit 1)"
+  assert created.tail.cast_id == cast_id
+    as "and names it as the cast in progress, which the client looks up in that list (SetUnitCast 0x1404697a0)"
+  driven_time.advance(time:, ms: 1250)
+  // The first player's pong comes after the go and the finish the clock moved, so the
+  // viewer's connection has been told them by the time its own pong comes.
+  let #(_, _) =
+    game_client.read_until_pong(game: first, have: first_have, number: 2)
+  let #(later, _) =
+    game_client.read_until_pong(game: second, have: second_have, number: 1)
+  let own_events = [
+    game_client.CastWent(cast_id:, phase: 0),
+    game_client.CastFinished(cast_id:),
+  ]
+  assert list.filter(game_client.casts_in(frames: later), list.contains(
+      own_events,
+      _,
+    ))
+    == own_events
+    as "the viewer is written the cast's go and its end: the cast is one it was given"
   game_client.close(game: first)
   game_client.close(game: second)
   login_support.stop(started)

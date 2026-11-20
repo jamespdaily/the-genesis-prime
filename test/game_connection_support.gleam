@@ -66,9 +66,13 @@ import genesis_prime/message/spell_go
 import genesis_prime/message/spell_position
 import genesis_prime/message/spell_started
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
+import genesis_prime/message/unit_create_cast.{
+  type UnitCreateCast, UnitCreateCast,
+}
 import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
 }
+import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
 import genesis_prime/message/unit_stealth
@@ -1561,6 +1565,30 @@ pub fn sent_by_a_peer(
 /// Another player's unit: the tests' player's own record, as unit 9.
 pub fn another_unit() -> UnitCreatePlayer {
   UnitCreatePlayer(..player_in(entered().1), unit_id: 9, name: "Zed Other")
+}
+
+/// The unit 9's record with the casts a create lists and the cast in progress.
+pub fn another_unit_casting(
+  casts casts: List(UnitCreateCast),
+  cast_id cast_id: Int,
+) -> UnitCreatePlayer {
+  let unit = another_unit()
+  UnitCreatePlayer(..unit, tail: UnitCreateTail(..unit.tail, casts:, cast_id:))
+}
+
+/// One entry of a create's cast list: the cast `cast_id` of the unit `caster`, which
+/// has not gone (bit 1), with no target and no position.
+pub fn listed_cast(cast_id cast_id: Int, caster caster: Int) -> UnitCreateCast {
+  UnitCreateCast(
+    caster_unit_id: caster,
+    primary_target_unit_id: caster,
+    cast_id:,
+    spell4_id: 32_893,
+    started: 1,
+    targets: [],
+    initial_positions: [],
+    telegraph_positions: [],
+  )
 }
 
 pub fn moved_unit_commands() -> List(relayed_movement.RelayedMovement) {

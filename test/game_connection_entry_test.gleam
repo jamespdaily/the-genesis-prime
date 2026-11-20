@@ -344,6 +344,7 @@ pub fn message_0x262_carries_the_characters_values_its_health_its_place_its_body
           ItemVisual(slot: 6, display_id: 3843, item_color_set_id: 0, dye: 0),
           ItemVisual(slot: 20, display_id: 3409, item_color_set_id: 0, dye: 0),
         ],
+        casts: [],
         cast_id: 0,
         faction_id: 166,
         base_faction_id: 166,

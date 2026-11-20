@@ -152,6 +152,8 @@ pub fn a_player_struck_to_0_dies_with_0x88c_0x89a_off_and_0x247_type_22_then_see
   assert ghost.bone_values == player.bone_values && ghost.bone_values != []
     as "the ghost wears the bone values of the player's own 0x262, which the character has (0x140096970, 0x140096970.ghost_fields)"
   assert ghost.tail.stats == [] as "the client reads no stat of a ghost"
+  assert ghost.tail.casts == [] && ghost.tail.cast_id == 0
+    as "the ghost lists no cast: the casts a unit create lists are the ones a viewer's copy of a living player holds (opcode.0x262.casts)"
   let assert [start_movement.Position(at), start_movement.Rotation(_)] =
     ghost.tail.movement_commands
     as "a position and a rotation, as the player's own 0x262 starts"
