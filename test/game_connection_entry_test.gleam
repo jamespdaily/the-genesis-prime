@@ -820,10 +820,7 @@ pub fn a_second_0x058f_or_a_play_in_the_world_is_not_taken_again_test() -> Nil {
   let second =
     game_connection_support.keyed_message(
       0x058F,
-      game_client.hello_reply_body(
-        session_key: game_connection_support.session_key(),
-        account_name: "jim",
-      ),
+      game_connection_support.hello_reply_body(),
     )
   let #(state, taken) =
     game_connection_support.read(game_connection_support.in_world(), second)

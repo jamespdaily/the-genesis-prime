@@ -13,13 +13,14 @@ import genesis_prime/game/zone_welcome
 import genesis_prime/login/auth_connection
 import genesis_prime/login/recorded_realm
 import genesis_prime/login/sts_connection
+import genesis_prime/recorded_message.{type Received, type Unread, FramesRead}
 import genesis_prime/seed.{type Seed}
 import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/step.{type Now}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/wire_recording.{
-  type Input, type Side, Closing, Header, Took, Wrote,
+  type Input, type Recording, type Side, Closing, Header, Took, Wrote,
 }
 import genesis_prime/wire_recording/fixture
 import genesis_prime/wire_recording/recorder
@@ -281,6 +282,34 @@ pub fn run_scripted(
 /// server taking the client's movement messages and saving the player's place.
 pub const committed_session =
   "test/wire_recording/2026-11-18-ability-points-session"
+
+/// The recording of the connection of the rule `rule` in the committed session,
+/// with its file's name.
+fn committed(rule: String) -> #(String, Recording) {
+  let assert Ok(connection) =
+    list.find(load(committed_session).connections, fn(connection) {
+      connection.recording.header.rule == rule
+    })
+    as { "the committed session holds a connection of " <> rule }
+  #(connection.name, connection.recording)
+}
+
+/// What the client sent on the connection of the rule `rule` in the committed
+/// session, read by the server's decoders.
+pub fn read_committed(rule: String) -> recorded_message.Sent {
+  let #(name, recording) = committed(rule)
+  let assert Ok(Some(sent)) = recorded_message.read(name, recording)
+    as { name <> " holds client bytes and they read" }
+  sent
+}
+
+/// The messages the client sent on the connection of `rule` in the committed
+/// session, and those it sent that no decoder reads.
+pub fn committed_frames(rule: String) -> #(List(Received), List(Unread)) {
+  let assert FramesRead(messages:, without_decoder:) = read_committed(rule)
+    as { rule <> " is a connection of frames" }
+  #(messages, without_decoder)
+}
 
 /// The folder every recorded session is kept in.
 const recordings_folder = "test/wire_recording"

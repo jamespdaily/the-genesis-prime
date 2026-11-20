@@ -26,10 +26,11 @@
 ////   2.0 is 0x40000000 and -3.0 is 0xC0400000.
 
 import character_support
+import genesis_prime/client_connection.{Unwritten}
 import genesis_prime/game/movement.{
   type Command, type Refusal, type State, BelowTheWorld, Fault, Mode, Moves,
-  NotFinite, Note, Other, Position, Rotation, Standing, StateFlags, UnknownMode,
-  UnknownSpeedSetting, UnknownStateFlags, Unsent, UnsentKind, UnwrittenValue,
+  NotFinite, NotWritten, Note, Other, Position, Rotation, Standing, StateFlags,
+  UnknownMode, UnknownSpeedSetting, UnknownStateFlags, Unsent, UnsentKind,
 }
 import genesis_prime/game/start_place.{type Facing, Facing}
 import genesis_prime/message/float32
@@ -71,6 +72,7 @@ import genesis_prime/store.{
   AccountId, CharacterId, ExperienceRefused, HealthRefused, NothingSaved,
   PlaceRefused, PlaceSaved, SavePlace,
 }
+import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
@@ -80,6 +82,16 @@ import place_support
 
 /// The infinity, minus infinity and not-a-number patterns of a 32-bit float.
 const not_finite = [0x7F800000, 0xFF800000, 0x7FC00000, 0x7F800001]
+
+/// The refusal of a value of a command's kind that the client never writes: the
+/// shared one, with the kind in its field's words.
+fn unwritten(kind kind: Int, field field: String, value value: Int) -> Refusal {
+  NotWritten(Unwritten(
+    message_id: 0x0637,
+    field: "kind " <> int.to_string(kind) <> "'s " <> field,
+    value:,
+  ))
+}
 
 /// A player who entered World 3460, zone 6009, at (1.0, 2.0, 3.0), facing
 /// 0, 0, 0, as the login whose epoch is 3.
@@ -639,32 +651,32 @@ pub fn a_flight_path_with_a_value_the_client_never_writes_is_refused_test() -> N
   let rows = [
     #(
       flight_path(points: 2, path_type: 1, time_offset: 0, blends: 0),
-      UnwrittenValue(kind: 3, field: "path type", value: 1),
+      unwritten(kind: 3, field: "path type", value: 1),
       "opcode.0x637.kinds_3_to_6: the flight's path type is 0",
     ),
     #(
       flight_path(points: 2, path_type: 0, time_offset: 7, blends: 0),
-      UnwrittenValue(kind: 3, field: "time offset", value: 7),
+      unwritten(kind: 3, field: "time offset", value: 7),
       "opcode.0x637.kinds_3_to_6: the flight's time offset is 0",
     ),
     #(
       flight_path(points: 2, path_type: 0, time_offset: 0, blends: 1),
-      UnwrittenValue(kind: 3, field: "blend", value: 1),
+      unwritten(kind: 3, field: "blend", value: 1),
       "opcode.0x637.kinds_3_to_6: the flight's blend bit is 0",
     ),
     #(
       timed_flags(state_flags: [0x100, 0x4], time_offset: 0),
-      UnwrittenValue(kind: 25, field: "state flags", value: 0x4),
+      unwritten(kind: 25, field: "state flags", value: 0x4),
       "opcode.0x637.kind_25: 0x4 is a flag a kind 24 holds, and none of the four words kind 25 writes",
     ),
     #(
       timed_flags(state_flags: [0x10C], time_offset: 0),
-      UnwrittenValue(kind: 25, field: "state flags", value: 0x10C),
+      unwritten(kind: 25, field: "state flags", value: 0x10C),
       "opcode.0x637.kind_25: 0x100 and 0xc together mix two of the words: the words are a set, not a mask",
     ),
     #(
       timed_flags(state_flags: [0x100], time_offset: 7),
-      UnwrittenValue(kind: 25, field: "time offset", value: 7),
+      unwritten(kind: 25, field: "time offset", value: 7),
       "opcode.0x637.kind_25: the flags' time offset is 0",
     ),
   ]
@@ -679,32 +691,32 @@ pub fn a_follow_path_face_unit_or_spin_with_a_value_the_client_never_writes_is_r
   let rows = [
     #(
       movement_command.Kind10(MovementKind10(blends: 1)),
-      UnwrittenValue(kind: 10, field: "blend", value: 1),
+      unwritten(kind: 10, field: "blend", value: 1),
       "opcode.0x637.kinds_10_13: the bit is always 0",
     ),
     #(
       movement_command.Kind13(MovementKind13(blends: 1)),
-      UnwrittenValue(kind: 13, field: "blend", value: 1),
+      unwritten(kind: 13, field: "blend", value: 1),
       "opcode.0x637.kinds_10_13: the bit is always 0",
     ),
     #(
       movement_command.FaceUnit(MovementFaceUnit(unit_id: 9, blends: 0)),
-      UnwrittenValue(kind: 18, field: "blend", value: 0),
+      unwritten(kind: 18, field: "blend", value: 0),
       "opcode.0x637.kind_18: the bit is always 1",
     ),
     #(
       spin(roll: 0x3F000002, time_offset: 0, blends: 0, turn_rate: 5),
-      UnwrittenValue(kind: 20, field: "roll", value: 0x3F000002),
+      unwritten(kind: 20, field: "roll", value: 0x3F000002),
       "opcode.0x637.kind_20: DirectionToEulerAngles' roll is 0",
     ),
     #(
       spin(roll: 0, time_offset: 7, blends: 0, turn_rate: 5),
-      UnwrittenValue(kind: 20, field: "time offset", value: 7),
+      unwritten(kind: 20, field: "time offset", value: 7),
       "opcode.0x637.kind_20: the offset is 0",
     ),
     #(
       spin(roll: 0, time_offset: 0, blends: 1, turn_rate: 5),
-      UnwrittenValue(kind: 20, field: "blend", value: 1),
+      unwritten(kind: 20, field: "blend", value: 1),
       "opcode.0x637.kind_20: the bit is 0",
     ),
   ]
@@ -809,13 +821,13 @@ pub fn each_new_refusal_says_what_the_client_sent_test() -> Nil {
   use <- owned_test.run(5000)
   assert movement.describe(UnsentKind(kind: 4))
     == "0x0637 holds a command of kind 4, which the client never sends"
-  assert movement.describe(UnwrittenValue(
+  assert movement.describe(unwritten(
       kind: 25,
       field: "state flags",
       value: 0x104,
     ))
     == "0x0637 holds kind 25's state flags 260 (0x104), which the client never writes"
-  assert movement.describe(UnwrittenValue(kind: 3, field: "path type", value: 1))
+  assert movement.describe(unwritten(kind: 3, field: "path type", value: 1))
     == "0x0637 holds kind 3's path type 1 (0x1), which the client never writes"
 }
 

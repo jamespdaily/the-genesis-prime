@@ -164,7 +164,7 @@ pub fn summoning(
     | WaitingToClaim(..)
     | InCharacterSelect(..)
     | AwaitingHelloReply
-    | TakingSessionKey ->
+    | TakingSessionKey(..) ->
       connection_state.end_for(
         session:,
         now:,

@@ -15,7 +15,7 @@ import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/login/guid
 import genesis_prime/login/srp
 import genesis_prime/login/sts_xml.{type Element}
-import genesis_prime/message/login_request.{LoginRequest}
+import genesis_prime/message/login_request.{type LoginRequest, LoginRequest}
 import gleam/bit_array
 import gleam/bool
 import gleam/crypto
@@ -286,42 +286,53 @@ pub type StsLogin {
 /// request the client writes, with its UserId and its game token parsed from
 /// their texts as UuidFromStringA does, in a 0x244 wrapper under the base key.
 pub fn login_request_frame(login login: StsLogin, build build: Int) -> Frame {
+  framed_login_request(request: login_request_of(login:, build:))
+}
+
+/// The login request the client writes for an STS login.
+pub fn login_request_of(
+  login login: StsLogin,
+  build build: Int,
+) -> LoginRequest {
   let assert Ok(user_id) = guid.from_text(login.user_id)
     as "the UserId is a GUID text"
   let assert Ok(token) = guid.from_text(login.token)
     as "the token is a GUID text"
-  let request =
-    LoginRequest(
-      build:,
-      files_digest: 0x0807060504030201,
-      account_name: login.name,
-      user_id: guid.to_wire(user_id),
-      game_token: guid.to_wire(token),
-      client_address: 0,
-      language: 0,
-      premium_system: 0,
-      unset_word: 0,
-      processor_manufacturer: "a",
-      processor_name: "bc",
-      processor_description: "",
-      processor_family: 0,
-      processor_level: 0,
-      processor_revision: 0,
-      processor_clock_speed: 0,
-      processor_core_count: 0,
-      memory_mebibytes: 0,
-      video_adapter_description: "d",
-      video_adapter_vendor_id: 0,
-      video_adapter_device_id: 0,
-      video_adapter_subsystem_id: 0,
-      video_adapter_revision: 0,
-      video_adapter_memory_mebibytes: 0,
-      processor_architecture: 0,
-      windows_version: 0,
-      service_pack: 0,
-      os_flags: 0,
-      realm_data_center_id: 0,
-    )
+  LoginRequest(
+    build:,
+    files_digest: 0x0807060504030201,
+    account_name: login.name,
+    user_id: guid.to_wire(user_id),
+    game_token: guid.to_wire(token),
+    client_address: 0,
+    language: 0,
+    premium_system: 0,
+    unset_word: 0,
+    processor_manufacturer: "a",
+    processor_name: "bc",
+    processor_description: "",
+    processor_family: 0,
+    processor_level: 0,
+    processor_revision: 0,
+    processor_clock_speed: 0,
+    processor_core_count: 0,
+    memory_mebibytes: 0,
+    video_adapter_description: "d",
+    video_adapter_vendor_id: 0,
+    video_adapter_device_id: 0,
+    video_adapter_subsystem_id: 0,
+    video_adapter_revision: 0,
+    video_adapter_memory_mebibytes: 0,
+    processor_architecture: 0,
+    windows_version: 0,
+    service_pack: 0,
+    os_flags: 0,
+    realm_data_center_id: 0,
+  )
+}
+
+/// A login request in a 0x244 wrapper under the base key.
+pub fn framed_login_request(request request: LoginRequest) -> Frame {
   let assert Ok(body) = login_request.encode(request) as "the request encodes"
   let assert Ok(base) = cipher.new(cipher.base_key) as "the base key"
   let assert Ok(bytes) =

@@ -740,6 +740,37 @@ pub fn describe_undecoded(undecoded undecoded: Undecoded) -> String {
   <> bit_stream.describe_decode(error: undecoded.error)
 }
 
+/// A value of a message the client's own code never writes, in a field it does
+/// write: the refusal every feature that limits a field to the values its
+/// senders write has. `field` names the field in the words of the log line.
+pub type Unwritten {
+  Unwritten(message_id: Int, field: String, value: Int)
+}
+
+/// Whether `value` of `field` of message `message_id` is one the client writes,
+/// among `only`, or the refusal that says it is not.
+pub fn written(
+  message_id message_id: Int,
+  field field: String,
+  value value: Int,
+  only only: List(Int),
+) -> Result(Nil, Unwritten) {
+  use <- bool.guard(when: list.contains(only, value), return: Ok(Nil))
+  Error(Unwritten(message_id:, field:, value:))
+}
+
+/// The sentence a value the client never writes is logged with.
+pub fn describe_unwritten(unwritten unwritten: Unwritten) -> String {
+  message_text(message_id: unwritten.message_id)
+  <> " holds "
+  <> unwritten.field
+  <> " "
+  <> int.to_string(unwritten.value)
+  <> " (0x"
+  <> int.to_base16(unwritten.value)
+  <> "), which the client never writes"
+}
+
 /// What an input is to a connection rule.
 pub type Heard {
   /// The connection was accepted.

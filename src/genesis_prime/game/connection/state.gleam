@@ -226,8 +226,9 @@ pub type Held {
 pub type Status {
   /// The hello is sent; waiting for 0x058F.
   AwaitingHelloReply
-  /// The hand-off is asked to take the session key.
-  TakingSessionKey
+  /// The hand-off is asked to take the session key; `account_id` is the one
+  /// the client's reply named, checked against the holder the hand-off gives.
+  TakingSessionKey(account_id: store.AccountId)
   /// Sessions is asked to make the connection the account's session, and its
   /// answer is awaited. `resume` is where the client is after the answer: a
   /// new character select for the first claim; a new one again, or its player
@@ -458,7 +459,7 @@ pub fn standing(status: Status) -> Standing {
     AwaitingHelloReply -> Greeting
     InCharacterSelect(holder:, ..) -> Selecting(holder:)
     InWorld(holder:, entered:) -> Present(holder:, entered:)
-    TakingSessionKey
+    TakingSessionKey(..)
     | ClaimingSession(..)
     | EnteringWorld(..)
     | Summoning(..)
@@ -568,7 +569,7 @@ pub fn held_in_the_world(
     | SavingPlace(..)
     | LeavingMap(..)
     | AwaitingHelloReply
-    | TakingSessionKey -> None
+    | TakingSessionKey(..) -> None
   }
 }
 
@@ -598,7 +599,7 @@ pub fn holds_map_messages(status: Status) -> Bool {
     | EnteringWorld(..)
     | LeavingMap(..)
     | AwaitingHelloReply
-    | TakingSessionKey -> False
+    | TakingSessionKey(..) -> False
   }
 }
 
@@ -625,7 +626,7 @@ pub fn holds_timer(status status: Status, timer timer: TimerId) -> Bool {
     | EnteringWorld(..)
     | LeavingMap(..)
     | AwaitingHelloReply
-    | TakingSessionKey -> holds_map_messages(status)
+    | TakingSessionKey(..) -> holds_map_messages(status)
   }
 }
 
@@ -650,7 +651,7 @@ pub fn saves_the_place(status: Status) -> Bool {
     | EnteringWorld(..)
     | LeavingMap(..)
     | AwaitingHelloReply
-    | TakingSessionKey -> False
+    | TakingSessionKey(..) -> False
   }
 }
 
@@ -747,7 +748,7 @@ pub fn with_entered(
     | SavingPlace(..)
     | LeavingMap(..)
     | AwaitingHelloReply
-    | TakingSessionKey -> session.status
+    | TakingSessionKey(..) -> session.status
   }
   Session(..session, status:)
 }
@@ -893,7 +894,7 @@ pub fn holds_a_player(
     | InCharacterSelect(..)
     | EnteringWorld(..)
     | AwaitingHelloReply
-    | TakingSessionKey -> None
+    | TakingSessionKey(..) -> None
   }
 }
 
@@ -989,7 +990,7 @@ pub fn entered_of(status: Status) -> Option(world_entry.Entered) {
     | InCharacterSelect(..)
     | EnteringWorld(..)
     | AwaitingHelloReply
-    | TakingSessionKey -> None
+    | TakingSessionKey(..) -> None
   }
 }
 
@@ -1041,6 +1042,6 @@ fn account_id_of(status: Status) -> Option(Int) {
         holder: hand_off.Holder(account_id: store.AccountId(id), ..),
         ..,
       ) -> Some(id)
-    AwaitingHelloReply | TakingSessionKey -> None
+    AwaitingHelloReply | TakingSessionKey(..) -> None
   }
 }

@@ -43,6 +43,9 @@ import genesis_prime/message/damage_type
 import genesis_prime/message/disconnect_notice.{DisconnectNotice}
 import genesis_prime/message/disconnect_reason
 import genesis_prime/message/float32
+import genesis_prime/message/game_hello_reply.{
+  type GameHelloReply, GameHelloReply,
+}
 import genesis_prime/message/interaction_request.{InteractionRequest}
 import genesis_prime/message/item_move
 import genesis_prime/message/item_place
@@ -228,9 +231,42 @@ pub fn connected() -> game_connection.State {
   accepted(settings()).0
 }
 
+/// The reply the client sends to the server's hello: the account id of the
+/// holder's 0x03DB, the session key, 0, the holder's login name and 3
+/// (opcode.0x58f).
+pub fn reply() -> GameHelloReply {
+  let AccountId(account_id) = holder().account_id
+  GameHelloReply(
+    account_id:,
+    session_key: session_key(),
+    zero: 0,
+    account_name: "jim",
+    three: 3,
+  )
+}
+
+/// The body of the reply, as the client sends it.
+pub fn hello_reply_body() -> BitArray {
+  game_client.hello_reply_body(
+    account_id: reply().account_id,
+    session_key: session_key(),
+    account_name: "jim",
+  )
+}
+
 /// What the client sends first: 0x058F, under the base key.
 pub fn hello_reply() -> BitArray {
-  game_client.hello_reply(session_key: session_key(), account_name: "jim")
+  hello_reply_of(reply())
+}
+
+/// A 0x058F with these values, under the base key.
+pub fn hello_reply_of(reply: GameHelloReply) -> BitArray {
+  let assert Ok(body) = game_hello_reply.encode(reply) as "0x058F encodes"
+  game_client.client_bytes(
+    message_id: game_hello_reply.message_id,
+    body:,
+    cipher: base(),
+  )
 }
 
 /// A message of the client's under the session key.
