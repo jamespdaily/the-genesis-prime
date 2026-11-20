@@ -91,6 +91,7 @@ import place_support
 import planted_table
 import properties_support
 import spell_tables
+import strike_support
 import tooltip_oracle_support.{
   type Asked, type Difference, type Drive, type Outcome, type Rows, type Unread,
   Asked, ClassMechanicSlot, Compared, Differs, Gap, HeldAs, HeldControl,
@@ -972,6 +973,7 @@ fn selected(
       spell4_id: spell.spell4_id,
       primary_target: primary,
       spent: None,
+      started_at: strike_support.start_pose(),
     ),
     attacker: caster_of_the_go(unit_id: caster),
     picture:,
