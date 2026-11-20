@@ -1,4 +1,4 @@
-# Sourced by update.sh, start.sh, stop.sh and install.sh, never run: the play
+# Sourced by update.sh, start.sh, stop.sh, state.sh and install.sh, never run: the play
 # service's names, and what two or more of them do. The play server runs as two
 # containers on one Podman network (a pod would keep the game ports bound while
 # the server container is stopped, and a recording run needs them free):
@@ -35,8 +35,15 @@
 #                                  or the hold has stood over an hour while the remote's branch is
 #                                  at a commit the server container does not run; never takes the
 #                                  lock or the hold over
+#   update_lock                    the folder update.sh's lock is
+#   update_lock_owner              the process id the lock's owner file holds, empty when none
+#   update_lock_is_stale           whether the lock's owner is gone, or it has no owner file and
+#                                  is over a minute old
+#   machine_running                whether the Podman machine answers
 #   machine_up                     starts the Podman machine when it is not running
 #   container_running NAME         whether the container exists and is running
+#   container_status NAME          prints the container's status; 1 when there is none
+#   postgres_ready                 whether Postgres accepts a connection to the play database now
 #   ensure_postgres                makes the network and the Postgres container, starts it,
 #                                  and returns once it accepts connections
 #   server_state                   prints "REVISION ADDRESS RUNNING" of the server container,
@@ -141,6 +148,25 @@ lock_owner_running() {
   [ "$(ps -o lstart= -p "$pid" 2>/dev/null | awk '{ $1 = $1; print }')" = "$started" ]
 }
 
+# The updater's lock: a folder whose owner file holds the process id of the run that
+# took it (update.sh takes and releases it).
+update_lock=$state/update.lock
+
+# update_lock_owner: the process id in the lock's owner file, empty when it has none.
+update_lock_owner() { cat "$update_lock/owner" 2>/dev/null || true; }
+
+# update_lock_is_stale: the lock's owner is gone, or the lock has no owner file and is over
+# a minute old.
+update_lock_is_stale() {
+  local owner
+  owner=$(update_lock_owner)
+  if [ -n "$owner" ]; then
+    ! kill -0 "$owner" 2>/dev/null
+  else
+    [ -n "$(find "$update_lock" -maxdepth 0 -mmin +1 2>/dev/null)" ]
+  fi
+}
+
 # stale_stand_description KIND: who holds the live lock, or the hold, and the command that
 # releases it, as one phrase for the alert.
 stale_stand_description() {
@@ -211,11 +237,14 @@ alert_stale_stands() {
   done
 }
 
+# machine_running: whether the Podman machine answers; podman's own status when it does not.
+machine_running() { podman info >/dev/null 2>&1; }
+
 machine_up() {
-  podman info >/dev/null 2>&1 && return 0
+  machine_running && return 0
   log "the Podman machine is not running; starting it"
   podman machine start >/dev/null 2>&1 || true
-  podman info >/dev/null 2>&1
+  machine_running
 }
 
 # container_running NAME: whether the container exists and is running. The
@@ -227,12 +256,29 @@ container_running() {
   [ "$running" = true ]
 }
 
+# container_status NAME: prints the container's State.Status as Podman words it (running,
+# stopping, exited, created ...). Returns 1 when there is no such container, and podman's
+# own status when it could not say.
+container_status() {
+  local exists=0 status
+  podman container exists "$1" >/dev/null 2>&1 || exists=$?
+  [ "$exists" -eq 0 ] || return "$exists"
+  status=$(podman container inspect --format '{{.State.Status}}' "$1" 2>/dev/null) || return $?
+  printf '%s\n' "$status"
+}
+
+# postgres_ready: whether Postgres in its container accepts a connection to the play
+# database now; pg_isready's status when it does not.
+postgres_ready() {
+  podman exec "$postgres_container" pg_isready -q -U postgres -d "$play_database"
+}
+
 # Waits until Postgres in its container accepts a connection to the play database:
 # GENESIS_PLAY_POSTGRES_ATTEMPTS asks (default 120) GENESIS_PLAY_POLL_SECONDS
 # apart (default 1).
 wait_for_postgres() {
   local waited=0
-  until podman exec "$postgres_container" pg_isready -q -U postgres -d "$play_database"; do
+  until postgres_ready; do
     waited=$((waited + 1))
     if [ "$waited" -ge "${GENESIS_PLAY_POSTGRES_ATTEMPTS:-120}" ]; then
       log "Postgres did not accept a connection in ${GENESIS_PLAY_POSTGRES_ATTEMPTS:-120} asks"
