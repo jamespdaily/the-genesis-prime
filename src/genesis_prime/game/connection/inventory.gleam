@@ -262,9 +262,7 @@ pub fn regeared(
       tables:,
       gear: worn,
       level:,
-      focus_pool: class_resource.focus_pool(resource: class_resource.resource(
-        resources: entered.resources,
-      )),
+      focus_pool: class_resource.base_focus_pool(resources: entered.resources),
     )
   {
     Error(error) ->

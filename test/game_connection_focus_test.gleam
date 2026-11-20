@@ -39,7 +39,7 @@ import gleam/result
 import owned_test
 import resource_frames_support as resources
 
-/// Emission's base: a level-1 ability of the Medic.
+/// Emission's base: an ability a Medic is granted at level 6 (SpellLevel row 1221).
 const emission_base = 38_210
 
 /// The level at which a Medic first holds a Focus spell: its level grants that cost Focus
@@ -256,6 +256,9 @@ pub fn wearing_a_focus_pool_item_raises_property_5_by_0x93a_and_starts_the_timer
     as "at the new maximum, the base pool"
   assert resources.resource_timers_started(off) == []
     as "the pool is full again: no timer starts"
+  assert resources.resource_timers_cancelled(off)
+    == [class_resource.focus_timer]
+    as "the timer that was filling the pool is cancelled, since the pool is full"
 }
 
 fn float32_of(bits bits: Int) -> Float {

@@ -2,9 +2,12 @@
 //// of the pool recovered and what each tick adds. Expected values come from these
 //// places, each named at its assertion:
 //// - `CheckInnateCost` 0x1403b3320 case 0xe: a cost needs `(int)(m x cost + 0.5)` whole
-////   points, compared as absolute values; `m` is `FUN_140462a90` = the intensity
-////   fraction x GameFormula 1267 datafloat01 + property 135 (the table row holds 1.0);
-////   DAT_140b79e48 is 0.5.
+////   points; `m` is `FUN_140462a90` = the intensity fraction x GameFormula 1267
+////   datafloat01 + property 135 (the table row holds 1.0); DAT_140b79e48 is 0.5. A cost of
+////   0 or more is compared as it is (0x1403b37f0 to 0x1403b3813). A negative cost is read
+////   as 2^32 + cost in a 32-bit float, the cut number is out of the 32-bit range from a
+////   multiplier of 0.5 up (the cut gives -2147483648) and is taken as an absolute value
+////   (0x1403b33aa to 0x1403b33d9); the rows below work each by hand in 32-bit floats.
 //// - `FUN_140462af0`: the intensity fraction is RatingToPercent (`0x140453b60`) over
 ////   GameFormula 1243 at the unit's level, with the base property 158 and the rating
 ////   property 56, and 0.0 when both are 0 (0x140462b15 to 0x140462b24, from the
@@ -73,7 +76,34 @@ pub fn the_required_points_are_the_clients_cost_times_the_modifier_plus_one_half
       "m = 0.1 x GameFormula 1267 datafloat01 (1.0) + 1.0 = 1.1; 1.1 x 150 + 0.5 = 165.5 cut to 165",
     ),
     #(1, 0.4, 0.0, 0, "0.4 x 1 + 0.5 = 0.9 cut to 0"),
-    #(-15, 1.0, 0.0, 15, "a negative cost compares as its absolute value"),
+    #(
+      15,
+      -1.0,
+      0.0,
+      -14,
+      "a negative modifier: -15 + 0.5 = -14.5 cut to -14, and a cost of 0 or more is not made an absolute value (0x1403b3813 compares it as it is)",
+    ),
+    #(
+      -15,
+      1.0,
+      0.0,
+      -2_147_483_648,
+      "a negative cost is read as 2^32 - 15 = 4294967281, which a 32-bit float holds as 2^32; x 1.0 + 0.5 is out of the 32-bit range, so the cut gives -2147483648, which the absolute value leaves (0x1403b33aa, 0x1403b33b4, 0x1403b33c5)",
+    ),
+    #(
+      -1,
+      0.4,
+      0.0,
+      1_717_986_944,
+      "2^32 - 1 is 2^32 in a 32-bit float; x 0.4 (the 32-bit float 0.4000000059604645) = 1717986944, + 0.5 is the same float, cut to 1717986944 and not lowered by the absolute value",
+    ),
+    #(
+      -15,
+      0.0,
+      0.0,
+      0,
+      "a negative cost with a multiplier of 0: 0 + 0.5 cut to 0",
+    ),
   ]
   |> list.each(fn(row) {
     let #(cost, modifier, intensity_fraction, points, reason) = row
@@ -259,7 +289,7 @@ pub fn the_required_points_and_the_tick_are_never_negative_and_the_in_combat_sha
   qcheck.given(
     qcheck.tuple5(
       qcheck.bounded_float(from: 0.0, to: 3.0),
-      qcheck.bounded_int(from: -500, to: 500),
+      qcheck.bounded_int(from: 0, to: 500),
       qcheck.bounded_float(from: 0.0, to: 5000.0),
       qcheck.bounded_float(from: 0.0, to: 0.5),
       qcheck.bounded_int(from: 1, to: 50),
@@ -267,14 +297,21 @@ pub fn the_required_points_and_the_tick_are_never_negative_and_the_in_combat_sha
     fn(drawn) {
       let #(modifier, cost, rating, base, level) = drawn
       let formulas = formulas()
-      assert focus.required_points(
-          formulas:,
-          cost:,
-          modifier:,
-          intensity_fraction: rating /. 5000.0,
-        )
-        >= 0
-        as "the points a cost needs are a count"
+      let intensity_fraction = rating /. 5000.0
+      let required =
+        focus.required_points(formulas:, cost:, modifier:, intensity_fraction:)
+      assert required >= 0
+        as "a cost of 0 or more with a modifier of 0 or more needs a count"
+      // The exact product the 32-bit arithmetic approximates: m x cost + 0.5, cut.
+      let exact =
+        { modifier +. intensity_fraction *. formulas.intensity_weight }
+        *. int.to_float(cost)
+        +. 0.5
+      let slack = 0.000001 *. exact +. 0.000001
+      assert int.to_float(required) <=. exact +. slack
+        as "the whole points never exceed m x cost + 0.5"
+      assert int.to_float(required) >. exact -. 1.0 -. slack
+        as "the cut takes less than one whole point"
       let share =
         focus.share(
           formulas:,

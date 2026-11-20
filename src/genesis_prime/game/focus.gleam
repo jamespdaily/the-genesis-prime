@@ -9,9 +9,11 @@
 //// share(numbers, in_combat) ─▶ per_tick(maximum, share) ─▶ the points a tick adds
 //// ```
 ////
-//// - **A cost needs `(int)(m x cost + 0.5)` whole points**, with a negative cost taken as
-////   its absolute value, where `m` is the intensity fraction x GameFormula 1267's
+//// - **A cost needs `(int)(m x cost + 0.5)` whole points**, where `m` is the intensity fraction x GameFormula 1267's
 ////   datafloat01 + property 135 (`CheckInnateCost` 0x1403b3320 case 0xe, `FUN_140462a90`).
+////   A negative cost is read by the client as an unsigned 32-bit number, about 4.29e9, and
+////   a number past the 32-bit range comes out as -2147483648 (`required_points`); no
+////   Spell4 row holds a negative Focus cost.
 //// - **The intensity fraction** is RatingToPercent over GameFormula 1243 with the base
 ////   property 158 and the rating property 56, and 0 when both are 0 (`FUN_140462af0`, the
 ////   early return at 0x140462b15 to 0x140462b24).
@@ -167,9 +169,17 @@ pub fn intensity_fraction(
   )
 }
 
-/// The whole points of Focus a cost needs: `(int)(m x cost + 0.5)` in the client's 32-bit
-/// floats, with `m` the cost modifier plus the intensity fraction x the formula's weight,
-/// a negative cost taken as its absolute value (`CheckInnateCost` 0x1403b3320 case 0xe).
+/// The whole points of Focus a cost needs, as the client's check works them out: `m x cost +
+/// 0.5` in 32-bit floats with `m` the cost modifier plus the intensity fraction x the
+/// formula's weight, cut to a signed 32-bit whole number, where a value out of that range
+/// gives -2147483648. The press passes when the whole points held are at least this
+/// number. A cost of 0 or more is read as it is (`CheckInnateCost` 0x1403b3320 case 0xe,
+/// 0x1403b37f0 to 0x1403b3813). A negative cost takes the other path (0x1403b33aa to
+/// 0x1403b33d9): the cost is loaded zero-extended into 64 bits and converted as a signed
+/// 64-bit number, so it is read as 2^32 + cost, and the cut number is taken as an absolute
+/// value in 32 bits, which leaves -2147483648 as it is; a negative cost with a multiplier
+/// from 0.5 up therefore passes. No Spell4 row holds a negative Focus cost
+/// (`table_rows -- Spell4 innateCostType0=15`).
 pub fn required_points(
   formulas formulas: Formulas,
   cost cost: Int,
@@ -184,14 +194,34 @@ pub fn required_points(
       ),
       right: float32.rounded(modifier),
     )
+  let unsigned_cost = case cost < 0 {
+    True -> cost + unsigned_range
+    False -> cost
+  }
   let scaled =
     float32.product(
       left: multiplier,
-      right: int.to_float(int.absolute_value(cost)),
+      right: float32.rounded(int.to_float(unsigned_cost)),
     )
-  float.truncate(float32.sum(left: scaled, right: 0.5))
-  |> int.absolute_value
+  let whole = float.truncate(float32.sum(left: scaled, right: 0.5))
+  let cut = case whole < smallest_whole || whole > largest_whole {
+    True -> smallest_whole
+    False -> whole
+  }
+  case cost < 0 && cut != smallest_whole {
+    True -> int.absolute_value(cut)
+    False -> cut
+  }
 }
+
+/// The 32-bit unsigned range, which the client reads a cost in.
+const unsigned_range = 4_294_967_296
+
+/// The smallest 32-bit signed whole number: what the client's float cut gives for a value
+/// out of range, and what its absolute value leaves unchanged.
+const smallest_whole = -2_147_483_648
+
+const largest_whole = 2_147_483_647
 
 /// The share of the pool recovered each second: in combat the curve of GameFormula 1237
 /// over properties 107 and 6 at the level, out of combat property 108 alone.

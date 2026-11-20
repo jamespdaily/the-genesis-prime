@@ -315,7 +315,10 @@ pub fn with_focus(
         tail: UnitCreateTail(
           ..record.tail,
           stats: list.append(record.tail.stats, [
-            unit_fields.resource_stat(slot: -1, value: points),
+            unit_fields.resource_stat(
+              slot: class_resource.focus_slot,
+              value: points,
+            ),
           ]),
         ),
       )

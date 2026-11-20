@@ -4,8 +4,8 @@
 -- any other class (genesis_prime/game/class_resource `select`).
 --
 -- The pool is the points a healer holds at every level before worn items add to it: the
--- client's tables hold no pool by class or level, so it is the server's choice, 1000 at
--- every level.
+-- client's tables hold no pool by class or level, so it is a guess (the fact
+-- UnitProperty2.5.class_pool): 1000 at every level.
 insert into class_resource_name (name, unit) values
   ('focus_pool', 'points');
 

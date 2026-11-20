@@ -63,12 +63,12 @@
 ////   combat, from the combat flag clearing or from a payment made out of combat (the
 ////   server's choice: "regenerate while out of combat", 500710). A full slot sends
 ////   nothing.
-//// - **Focus** is a second vital held beside the class slot by a Esper, Medic and
+//// - **Focus** is a second vital held beside the class slot by an Esper, Medic and
 ////   Spellslinger, reached as slot -1 (`focus_slot`): stat 1 of the player's unit and
 ////   0x935 (`ApplyUnitStat` 0x1403d9a60 case 1), with its maximum the player's property 5
-////   (`GetMaxFocus` 0x14064a810). The pool is a content row, `focus_pool`, the server's
-////   choice: a flat 1000 at every level plus what worn items add, full at entry and when
-////   coming back (migration 0048). A cost is paid like a slot's, at the cast's first go; the
+////   (`GetMaxFocus` 0x14064a810). The pool is a content row, `focus_pool`, a guess
+////   (`UnitProperty2.5.class_pool`): a flat 1000 at every level plus what worn items add, full
+////   at entry and when coming back (migration 0048). A cost is paid like a slot's, at the cast's first go; the
 ////   points are `focus.required_points`. It recovers each `focus.Formulas.tick_ms` by the
 ////   pool x the share x the tick (genesis_prime/game/focus), on `focus_timer`, which runs
 ////   exactly while the pool is below its maximum and the player lives. A class that holds
@@ -437,9 +437,9 @@ pub opaque type Resources {
   )
 }
 
-/// The Focus held now and the numbers its rules read.
+/// The Focus held now, the numbers its rules read and the formulas it reads them through.
 type Pool {
-  Pool(value: Float, numbers: focus.Numbers)
+  Pool(value: Float, numbers: focus.Numbers, formulas: focus.Formulas)
 }
 
 /// A cost the cast rule took at an accept: `amount` points of the resource slot
@@ -531,9 +531,9 @@ pub fn new(
     alive: True,
     running: set.new(),
     focus: case resource.focus {
-      Some(_) -> {
+      Some(FocusPool(formulas:, ..)) -> {
         let numbers = focus.numbers(properties:)
-        Some(Pool(value: float32.rounded(numbers.maximum), numbers:))
+        Some(Pool(value: float32.rounded(numbers.maximum), numbers:, formulas:))
       }
       None -> None
     },
@@ -547,6 +547,11 @@ pub fn focus_pool(resource resource: Resource) -> Float {
     Some(FocusPool(pool:, ..)) -> pool
     None -> 0.0
   }
+}
+
+/// The base pool of Focus the class of this player holds, in points (`focus_pool`).
+pub fn base_focus_pool(resources resources: Resources) -> Float {
+  focus_pool(resource: resources.resource)
 }
 
 /// The resource of the class the player holds.
@@ -567,18 +572,15 @@ pub fn focus_required(
   resources resources: Resources,
   amount amount: Int,
 ) -> Int {
-  case resources.focus, resources.resource.focus {
-    Some(pool), Some(FocusPool(formulas:, ..)) ->
+  case resources.focus {
+    Some(Pool(numbers:, formulas:, ..)) ->
       focus.required_points(
         formulas:,
         cost: amount,
-        modifier: pool.numbers.cost_modifier,
-        intensity_fraction: focus.intensity_fraction(
-          formulas:,
-          numbers: pool.numbers,
-        ),
+        modifier: numbers.cost_modifier,
+        intensity_fraction: focus.intensity_fraction(formulas:, numbers:),
       )
-    _, _ -> int.absolute_value(amount)
+    None -> amount
   }
 }
 
@@ -934,8 +936,8 @@ fn focus_changed_to(
 /// The Focus timer, which runs exactly while the player lives and the pool is below its
 /// maximum: started when it should run and does not, cancelled when it runs and should not.
 fn focus_refills(resources resources: Resources) -> #(Resources, List(Effect)) {
-  case resources.focus, resources.resource.focus {
-    Some(pool), Some(FocusPool(formulas:, ..)) -> {
+  case resources.focus {
+    Some(Pool(formulas:, ..) as pool) -> {
       let wanted = resources.alive && pool.value <. pool.numbers.maximum
       case wanted, is_running(resources:, timer: focus_timer) {
         True, False -> #(running_with(resources:, timer: focus_timer), [
@@ -947,14 +949,14 @@ fn focus_refills(resources resources: Resources) -> #(Resources, List(Effect)) {
         True, True | False, False -> #(resources, [])
       }
     }
-    _, _ -> #(resources, [])
+    None -> #(resources, [])
   }
 }
 
 /// A tick of Focus's recovery: the pool x the share (in combat or out) x the tick.
 fn focus_ticked(resources resources: Resources) -> #(Resources, List(Effect)) {
-  case resources.focus, resources.resource.focus {
-    Some(pool), Some(FocusPool(formulas:, ..)) -> {
+  case resources.focus {
+    Some(Pool(formulas:, ..) as pool) -> {
       let share =
         focus.share(
           formulas:,
@@ -967,7 +969,7 @@ fn focus_ticked(resources resources: Resources) -> #(Resources, List(Effect)) {
           +. focus.per_tick(formulas:, maximum: pool.numbers.maximum, share:),
       )
     }
-    _, _ -> #(resources, [])
+    None -> #(resources, [])
   }
 }
 
