@@ -1281,6 +1281,9 @@ pub type Holder {
     ticking: Dict(TickKey, Ticking),
     /// Whether the cast has gone for the last time and waits for its nodes to end.
     lingering: Bool,
+    /// Whether the cast's first go has gone: a lingering cast has, and a live cast has
+    /// once `Live.gone` counts a go (a node is made in the step that counts it).
+    gone: Bool,
   )
 }
 
@@ -1299,6 +1302,7 @@ pub fn holder_of(
         nodes: live.nodes,
         ticking: live.ticking,
         lingering: False,
+        gone: live.gone > 0,
       ))
     Error(Nil), Ok(lingering) ->
       Ok(Holder(
@@ -1309,6 +1313,7 @@ pub fn holder_of(
         nodes: lingering.nodes,
         ticking: lingering.ticking,
         lingering: True,
+        gone: True,
       ))
     Error(Nil), Error(Nil) -> Error(Nil)
   }
@@ -1324,29 +1329,33 @@ pub fn holders(cast cast: State) -> List(#(Int, Holder)) {
   })
 }
 
-/// The casts of the unit `caster_unit_id` that a unit create lists: its current cast,
-/// when that is a live cast.
+/// Every cast of the unit `caster_unit_id`, live or lingering, as a unit create sees it:
+/// the cast bar when it is the current cast and the units it holds a node on, in unit id
+/// order, with the effects of each node that a create lists. `unit_casts.listed` picks the
+/// ones a create tells.
 pub fn views(
   cast cast: State,
   caster_unit_id caster_unit_id: Int,
 ) -> List(unit_casts.CastView) {
-  case cast.current {
-    Some(cast_id) ->
-      case dict.get(cast.casts, cast_id) {
-        Ok(live) -> [
-          unit_casts.CastView(
-            caster_unit_id:,
-            cast_id:,
-            spell4_id: live.spell.spell4_id,
-            primary_target: live.primary_target,
-            gone: live.gone > 0,
-            current: True,
-          ),
-        ]
-        Error(Nil) -> []
-      }
-    None -> []
-  }
+  list.map(holders(cast:), fn(entry) {
+    let #(cast_id, holder) = entry
+    unit_casts.CastView(
+      caster_unit_id:,
+      cast_id:,
+      spell4_id: holder.spell.spell4_id,
+      primary_target: holder.primary_target,
+      gone: holder.gone,
+      current: !holder.lingering && cast.current == Some(cast_id),
+      targets: dict.to_list(holder.nodes)
+        |> list.sort(fn(left, right) { int.compare(left.0, right.0) })
+        |> list.filter_map(fn(node) {
+          unit_casts.target_of(
+            node: node.1,
+            longer_of_delay_and_duration: holder.spell.longer_of_delay_and_duration,
+          )
+        }),
+    )
+  })
 }
 
 /// The id of the current cast when it is a live cast, else 0: the cast bar a unit
@@ -1362,47 +1371,63 @@ pub fn current_cast_id(cast cast: State) -> Int {
   }
 }
 
-/// The state with the connection told of the cast a unit create lists, the current live
-/// cast, from now on: a viewer that comes into sight of the caster is written that cast's
-/// go, 0x811 and 0x7fe, since the client ends a cast only by what it is sent. Every other
-/// cast, and a crowd-control state the caster holds, keeps its audience: the viewer was
-/// never listed them, so it is told nothing of them (a 0x87f of a cast it does not hold
-/// would wait on the unit for ever).
-pub fn audience_joined(cast cast: State, viewer viewer: ConnectionId) -> State {
-  case cast.current {
-    None -> cast
-    Some(cast_id) ->
-      case dict.get(cast.casts, cast_id) {
-        Ok(live) ->
-          State(
-            ..cast,
-            casts: dict.insert(
-              cast.casts,
-              cast_id,
-              Live(..live, audience: set.insert(live.audience, viewer)),
-            ),
-          )
-        Error(Nil) -> cast
-      }
-  }
+/// The state with the connection told, from now on, of each cast a unit create of the
+/// unit `caster_unit_id` lists (`unit_casts.listed` over `views`): a viewer that comes into
+/// sight of the caster is written that cast's go, 0x811 and 0x7fe, since the client ends a
+/// cast only by what it is sent. Every other cast, and a crowd-control state the caster
+/// holds, keeps its audience: the viewer was never listed them, so it is told nothing of
+/// them (a 0x87f of a cast it does not hold would wait on the unit for ever).
+pub fn audience_joined(
+  cast cast: State,
+  viewer viewer: ConnectionId,
+  caster_unit_id caster_unit_id: Int,
+) -> State {
+  let listed =
+    unit_casts.listed(views: views(cast:, caster_unit_id:))
+    |> list.map(fn(view) { view.cast_id })
+  audiences_changed(
+    cast:,
+    of: fn(cast_id) { list.contains(listed, cast_id) },
+    change: fn(audience) { set.insert(audience, viewer) },
+  )
 }
 
 /// The state with the connection out of every audience: a viewer that stops seeing the
 /// caster has forgotten its casts, so none of their news goes to it.
 pub fn audience_left(cast cast: State, viewer viewer: ConnectionId) -> State {
   State(
-    ..cast,
-    casts: dict.map_values(cast.casts, fn(_, live) {
-      Live(..live, audience: set.delete(live.audience, viewer))
-    }),
-    lingering: dict.map_values(cast.lingering, fn(_, lingering) {
-      Lingering(..lingering, audience: set.delete(lingering.audience, viewer))
+    ..audiences_changed(cast:, of: fn(_) { True }, change: fn(audience) {
+      set.delete(audience, viewer)
     }),
     restrictions: dict.map_values(cast.restrictions, fn(_, restriction) {
       HeldRestriction(
         ..restriction,
         audience: set.delete(restriction.audience, viewer),
       )
+    }),
+  )
+}
+
+/// The state with `change` applied to the audience of each live and lingering cast whose
+/// id `of` accepts.
+fn audiences_changed(
+  cast cast: State,
+  of accepts: fn(Int) -> Bool,
+  change change: fn(Set(ConnectionId)) -> Set(ConnectionId),
+) -> State {
+  State(
+    ..cast,
+    casts: dict.map_values(cast.casts, fn(cast_id, live) {
+      case accepts(cast_id) {
+        True -> Live(..live, audience: change(live.audience))
+        False -> live
+      }
+    }),
+    lingering: dict.map_values(cast.lingering, fn(cast_id, lingering) {
+      case accepts(cast_id) {
+        True -> Lingering(..lingering, audience: change(lingering.audience))
+        False -> lingering
+      }
     }),
   )
 }
