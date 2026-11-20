@@ -184,25 +184,111 @@ pub fn a_spell_with_another_effect_type_is_refused_naming_it_test() -> Nil {
     as "Spell4Effects 97539 is the first row of Spell4 42764 that is neither damage (8) nor NpcExecutionDelay (35): type 17"
 }
 
-pub fn a_creature_fight_cast_with_several_hits_refuses_with_what_it_does_not_run_test() -> Nil {
-  use <- owned_test.run(60_000)
-  let rule = rule_of(row: special(spell4_id: 55_635))
-  assert string.contains(rule, "55635")
-    && string.contains(rule, "go 1 and go 2")
-    as "Spell4Effects 132757 strikes at phaseFlags 6: go 1 and go 2"
-  assert string.ends_with(rule, "which a creature's fight does not run")
-    as "the sentence says what the creature's fight does not run, with no step title"
-  assert !string.contains(rule, "issue") && !string.contains(rule, "step")
-    as "the sentence names no issue and no step"
+/// The special of Rootbrute Grimspore (Creature2 12212) with the Spell4, as the fixture's rows
+/// load it: its gos' times and what each strikes with, and its hold.
+fn loaded_special(
+  spell4_id spell4_id: Int,
+) -> #(List(#(Int, option.Option(List(Int)))), Int) {
+  let assert [loaded] =
+    spawn_support.special_creature(number: 1, creature_id: 12_212, spell4_id:).combat.specials
+    as "the kind lists the one special and the spawn carries it"
+  let assert creature_life.Charged(gos:, hold_ms:, ..) = loaded.attack.cast
+    as "the spell is a charge"
+  #(
+    list.map(gos, fn(go) {
+      #(
+        go.at_ms,
+        option.map(go.strike, fn(strike) { strike.spell4_effects_ids }),
+      )
+    }),
+    hold_ms,
+  )
 }
 
-pub fn a_spell_that_strikes_before_its_last_go_is_refused_test() -> Nil {
+pub fn a_cast_with_two_damage_gos_loads_and_holds_after_its_last_go_test() -> Nil {
   use <- owned_test.run(60_000)
+  // Spell4Effects 132757 (damage, phaseFlags 6) names gos 1 and 2 of Ice Breath's four; the delay
+  // row 132758 (NpcExecutionDelay, 500 ms, phaseFlags 0xffff0008) names the last, go 3
+  // (`table_rows -- Spell4Effects spellId=55635`, `-- SpellPhase spell4IdOwner=55635`).
+  let assert Ok(_) =
+    creature_kind.select(
+      rows: [default_row],
+      special_rows: [special(spell4_id: 55_635)],
+      auto_attack_rows: [],
+      tables: fixture_tables.shared(),
+    )
+    as "a cast that strikes at two gos is taken"
+  assert loaded_special(spell4_id: 55_635)
+    == #(
+      [
+        #(2600, option.None),
+        #(3000, Some([132_757])),
+        #(3500, Some([132_757])),
+        #(3800, option.None),
+      ],
+      500,
+    )
+    as "the damage row strikes at gos 1 and 2, and the creature holds 500 ms after go 3"
+}
+
+pub fn a_cast_that_strikes_before_its_last_go_loads_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Claw Slam 55632: Spell4Effects 132749 (damage, phaseFlags 1) names go 0 of two; the delay
+  // row 132750 (NpcExecutionDelay, 1,000 ms, phaseFlags 0xffff0002) names go 1, the last
+  // (`table_rows -- Spell4Effects spellId=55632`, `-- SpellPhase spell4IdOwner=55632`).
+  let assert Ok(_) =
+    creature_kind.select(
+      rows: [default_row],
+      special_rows: [special(spell4_id: 55_632)],
+      auto_attack_rows: [],
+      tables: fixture_tables.shared(),
+    )
+    as "a cast that strikes before its last go is taken"
+  assert loaded_special(spell4_id: 55_632)
+    == #([#(2900, Some([132_749])), #(3300, option.None)], 1000)
+    as "the blow lands at go 0 and the hold follows go 1"
+}
+
+pub fn a_special_the_go_rule_hid_is_refused_for_its_own_row_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4 54675 strikes at go 2 of 4 (Spell4Effects 159798, phaseFlags 4) and holds another
+  // row, 129708, of effect type 4 (crowd control), which a creature's special does not apply.
   let rule = rule_of(row: special(spell4_id: 54_675))
-  assert string.contains(rule, "54675")
-    && string.contains(rule, "go 2")
-    && string.contains(rule, "go 3")
-    as "Spell4Effects 159798 strikes at phaseFlags 4, go 2, and the spell's last of 4 gos is go 3"
+  assert string.contains(rule, "129708") && string.contains(rule, "type 4")
+    as "the refusal names the crowd-control row and its type"
+  assert !string.contains(rule, "last go")
+    as "and no go: the cast's gos are no reason to refuse it"
+}
+
+pub fn a_special_none_of_whose_strike_gos_has_a_hit_row_drawn_is_refused_by_name_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4 47746 is not Multiphase: its one go falls at its cast time, 2,500 ms, and its one
+  // hit row, 5529 (phaseFlags -1), ends at 2,000 ms, so no hit row is drawn at the one go its
+  // damage row 112217 names (`table_rows -- Spell4Effects spellId=47746`, `-- TelegraphDamage
+  // 5529`): the cast strikes nobody, whatever creature casts it.
+  let rule = rule_of(row: special(spell4_id: 47_746))
+  assert string.contains(rule, "47746")
+    && string.contains(rule, "strikes nobody")
+    as "the refusal names the spell and says no strike go can strike"
+}
+
+pub fn a_special_with_some_strike_gos_that_can_never_strike_loads_and_strikes_at_its_drawn_gos_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4 80315: gos at 0 and 750 ms (SpellPhase rows 21538 and 21539); its one damage row,
+  // 212555 (phaseFlags -1), names both. Its one hit row, 15196, names go 1 alone
+  // (`table_rows -- Spell4Effects spellId=80315`, `-- TelegraphDamage 15196`), so go 0 has no hit
+  // row and can never strike; go 1 does (Jim: option A, per go).
+  let assert Ok(_) =
+    creature_kind.select(
+      rows: [default_row],
+      special_rows: [special(spell4_id: 80_315)],
+      auto_attack_rows: [],
+      tables: fixture_tables.shared(),
+    )
+    as "a cast with a strike go that can strike is taken"
+  assert loaded_special(spell4_id: 80_315)
+    == #([#(0, option.None), #(750, Some([212_555]))], 0)
+    as "nobody is struck at go 0 and the blow lands at go 1"
 }
 
 pub fn a_delay_row_behind_a_prerequisite_is_refused_test() -> Nil {
@@ -236,13 +322,24 @@ fn roar_refused_when(
   id id: Int,
   cells cells: List(#(String, planted_table.Cell)),
 ) -> String {
+  refused_when(spell4_id: 55_317, table:, id:, cells:)
+}
+
+/// The one refusal of the special `spell4_id` of Rootbrute Grimspore when the client's row `id`
+/// of `table` holds `cells` in place of its own.
+fn refused_when(
+  spell4_id spell4_id: Int,
+  table table: String,
+  id id: Int,
+  cells cells: List(#(String, planted_table.Cell)),
+) -> String {
   use tables <- fixture_tables.changed(table:, id:, with: cells)
   let assert Error([
     Refusal(table: "creature_special", row: RowId(12_212), rule:),
   ]) =
     creature_kind.select(
       rows: [default_row],
-      special_rows: [special(spell4_id: 55_317)],
+      special_rows: [special(spell4_id:)],
       auto_attack_rows: [],
       tables:,
     )
@@ -293,9 +390,16 @@ pub fn the_refusals_each_name_what_the_changed_row_of_earthen_roar_breaks_test()
     roar_refused_when(table: "Spell4Effects", id: 131_968, cells: [
       #("phaseFlags", Integer(-1)),
     ]),
-    "go 0 and go 1",
+    "names go 0 and go 1, and the creature's hold follows the cast's last go, go 1, alone",
   )
-    as "a delay row in every phase names a go before the strike go"
+    as "a delay row in every phase names a go before the last"
+  assert string.contains(
+    refused_when(spell4_id: 55_635, table: "Spell4Effects", id: 132_758, cells: [
+      #("phaseFlags", Integer(4)),
+    ]),
+    "names go 2, and the creature's hold follows the cast's last go, go 3, alone",
+  )
+    as "Ice Breath's delay row moved to go 2 names a go before its last, go 3"
 }
 
 pub fn the_kinds_taken_keep_the_specials_the_load_takes_beside_a_refusal_test() -> Nil {
@@ -394,6 +498,19 @@ fn refused_on_the_clients_tables(
   creature_id creature_id: Int,
   spell4_ids spell4_ids: List(Int),
 ) -> List(String) {
+  refused_over(
+    tables: client_tables.with_content_tables(),
+    creature_id:,
+    spell4_ids:,
+  )
+}
+
+/// The refusals of these specials of the creature over these content tables.
+fn refused_over(
+  tables tables: table_store.Tables,
+  creature_id creature_id: Int,
+  spell4_ids spell4_ids: List(Int),
+) -> List(String) {
   let rows =
     list.index_map(spell4_ids, fn(spell4_id, index) {
       Row(..special(spell4_id:), creature_id:, order_index: index)
@@ -403,7 +520,7 @@ fn refused_on_the_clients_tables(
       rows: [default_row],
       special_rows: rows,
       auto_attack_rows: [],
-      tables: client_tables.with_content_tables(),
+      tables:,
     )
   {
     Ok(..) -> []
@@ -411,14 +528,39 @@ fn refused_on_the_clients_tables(
   }
 }
 
-pub fn the_target_row_lift_loads_the_named_specials_and_the_gos_keep_three_waiting_test() -> Nil {
+/// The gos of the special `spell4_id` of the creature `creature_id` over these content tables,
+/// each with the blows and the shape it strikes with, or `None` for a go of the cast bar alone.
+/// The load must take the pair.
+fn strikes_of(
+  tables tables: table_store.Tables,
+  creature_id creature_id: Int,
+  spell4_id spell4_id: Int,
+) -> List(option.Option(creature_life.GoStrike)) {
+  let assert Ok(spawn) =
+    spawn_support.special_creature_over(
+      tables:,
+      number: 1,
+      creature_id:,
+      spell4_id:,
+    )
+    as {
+      "Creature2 "
+      <> int.to_string(creature_id)
+      <> " takes Spell4 "
+      <> int.to_string(spell4_id)
+    }
+  let assert [loaded] = spawn.combat.specials
+    as "the kind lists the one special and the spawn carries it"
+  let assert creature_life.Charged(gos:, ..) = loaded.attack.cast
+    as "the spell is a charge"
+  list.map(gos, fn(go) { go.strike })
+}
+
+pub fn the_target_row_lift_loads_the_named_specials_and_two_of_the_three_it_held_back_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
   // The twenty specials the order, shape and placement lifts make loadable, each with the anchor
-  // its rows give (`spell_area.area_of_spell`); 63569 has no telegraph row. Geyser Blast 55840
-  // and 55841 strike at go 0 while their last go is go 1, and Laser Barrage 41187 at several
-  // gos, which a creature's fight does not run: they stay refused for their gos, not for
-  // their placement.
+  // its rows give (`spell_area.area_of_spell`); 63569 has no telegraph row.
   let tables = client_tables.with_content_tables()
   let following_target = [
     43_989, 46_353, 47_319, 47_518, 47_627, 48_590, 48_591, 61_226, 61_416,
@@ -447,18 +589,167 @@ pub fn the_target_row_lift_loads_the_named_specials_and_the_gos_keep_three_waiti
   assert refused_on_the_clients_tables(creature_id: 47_430, spell4_ids: [55_846])
     == []
     as "Laser Bolt loads for the Construct of 47430, whose faction keeps it from a fight"
-  let refusals =
+  // Geyser Blast 55840 and 55841 strike at go 0 of two: their one hit row each (7874 and 7875,
+  // `table_rows -- TelegraphDamage`) is drawn from the 0x7ff to the last go, so every strike go
+  // has its shape.
+  list.each([55_840, 55_841], fn(spell4_id) {
+    let strikes = strikes_of(tables:, creature_id: 12_212, spell4_id:)
+    let shaped =
+      list.filter_map(strikes, fn(strike) {
+        case strike {
+          Some(creature_life.GoStrike(inside: area.InsideShapes(_), ..)) ->
+            Ok(Nil)
+          _ -> Error(Nil)
+        }
+      })
+    assert shaped != []
+      as { "Spell4 " <> int.to_string(spell4_id) <> " strikes with a shape" }
+    assert list.length(shaped)
+      == list.length(list.filter(strikes, option.is_some))
+      as {
+        "each strike go of Spell4 "
+        <> int.to_string(spell4_id)
+        <> " has its shape"
+      }
+  })
+  // Laser Barrage 41187 strikes at several gos, but its damage row 92235 reads a parameter
+  // (type 3, `table_rows -- Spell4Effects spellId=41187`) the creature formula does not read:
+  // it is refused, for its own row.
+  let assert [rule] =
+    refused_over(tables:, creature_id: 12_212, spell4_ids: [41_187])
+    as "Laser Barrage is refused"
+  assert string.contains(rule, "92235")
+    && string.contains(rule, "parameter type 3")
+    as "the refusal names the row and the parameter"
+}
+
+pub fn the_multi_hit_lift_loads_the_named_specials_and_leaves_the_rest_refused_by_name_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  // The 63 retail-listed specials that strike at several gos, or before their last go, a
+  // creature the retail record pairs each with (the lowest Creature2 id of the Jabbithole
+  // pairing the import reads) and the number of gos the measure counts as strike gos (the
+  // gos its damage rows name, `~/.genesis-prime/sweep-1106/drawn_at_go.txt`), over the
+  // client's own tables. The measure counts 22 that strike at one go and 41 at two or more.
+  let tables = client_tables.with_content_tables()
+  let pairs = [
+    #(34_050, 17_908, 3),
+    #(34_055, 9598, 3),
+    #(34_286, 30_635, 8),
+    #(35_487, 30_377, 4),
+    #(35_727, 12_930, 4),
+    #(39_434, 24_229, 2),
+    #(39_943, 24_745, 4),
+    #(45_335, 13_639, 2),
+    #(45_494, 9593, 5),
+    #(45_605, 24_038, 3),
+    #(45_746, 24_035, 3),
+    #(45_756, 24_035, 7),
+    #(45_950, 45_809, 4),
+    #(45_951, 45_797, 2),
+    #(45_995, 24_266, 4),
+    #(46_149, 19_892, 4),
+    #(46_692, 9794, 4),
+    #(46_933, 9570, 2),
+    #(47_033, 9794, 2),
+    #(51_329, 20_452, 5),
+    #(51_586, 53_175, 4),
+    #(52_473, 9606, 5),
+    #(52_604, 63_533, 3),
+    #(52_658, 21_558, 2),
+    #(52_789, 26_193, 3),
+    #(53_247, 19_873, 5),
+    #(53_272, 2409, 2),
+    #(54_241, 12_655, 4),
+    #(54_327, 12_925, 5),
+    #(54_742, 17_080, 4),
+    #(55_185, 14_612, 4),
+    #(55_286, 27_449, 1),
+    #(55_289, 27_878, 1),
+    #(55_290, 30_263, 1),
+    #(55_292, 11_071, 1),
+    #(55_294, 20_811, 1),
+    #(55_302, 25_978, 1),
+    #(55_303, 26_362, 1),
+    #(55_305, 11_925, 1),
+    #(55_306, 30_267, 1),
+    #(55_311, 27_876, 1),
+    #(55_324, 24_054, 1),
+    #(55_366, 12_526, 1),
+    #(55_433, 24_140, 1),
+    #(55_434, 11_951, 1),
+    #(55_439, 24_425, 1),
+    #(55_440, 61_523, 1),
+    #(55_632, 11_948, 1),
+    #(55_635, 11_945, 2),
+    #(55_721, 27_451, 1),
+    #(55_765, 24_216, 1),
+    #(55_766, 11_953, 1),
+    #(55_843, 11_910, 1),
+    #(56_037, 20_957, 5),
+    #(56_425, 20_902, 3),
+    #(56_614, 13_008, 3),
+    #(57_321, 46_403, 3),
+    #(57_350, 38_059, 5),
+    #(57_624, 15_263, 5),
+    #(65_991, 56_967, 3),
+    #(71_293, 26_041, 5),
+    #(71_861, 55_000, 1),
+    #(72_012, 40_168, 8),
+  ]
+  let strike_counts =
+    list.map(pairs, fn(pair) {
+      let #(spell4_id, creature_id, strike_gos) = pair
+      assert refused_over(tables:, creature_id:, spell4_ids: [spell4_id]) == []
+        as {
+          "the kind load takes Spell4 "
+          <> int.to_string(spell4_id)
+          <> " for Creature2 "
+          <> int.to_string(creature_id)
+        }
+      let strikes = strikes_of(tables:, creature_id:, spell4_id:)
+      let struck =
+        list.filter_map(strikes, fn(strike) { option.to_result(strike, Nil) })
+      assert list.length(struck) == strike_gos
+        as {
+          "Spell4 "
+          <> int.to_string(spell4_id)
+          <> " strikes at the gos its damage rows name, as the measure counts them"
+        }
+      list.each(struck, fn(strike) {
+        assert strike.spell4_effects_ids != []
+          as {
+            "each strike go of Spell4 "
+            <> int.to_string(spell4_id)
+            <> " carries blows"
+          }
+        assert strike.inside != area.InsideRow
+          as {
+            "each strike go of Spell4 "
+            <> int.to_string(spell4_id)
+            <> " carries a hit shape"
+          }
+      })
+      list.length(struck)
+    })
+  assert list.length(list.filter(strike_counts, fn(count) { count == 1 })) == 22
+    as "22 of the 63 strike at one go"
+  assert list.length(list.filter(strike_counts, fn(count) { count > 1 })) == 41
+    as "41 strike at two to eight"
+  let assert [delay_row, crowd_control] =
     refused_on_the_clients_tables(creature_id: 12_212, spell4_ids: [
-      55_840,
-      55_841,
-      41_187,
+      34_054,
+      54_675,
     ])
-  let assert [first, second, third] = refusals as "each of the three is refused"
-  assert string.contains(first, "strikes at go 0 but its last go is go 1")
-    && string.contains(first, "55840")
-  assert string.contains(second, "strikes at go 0 but its last go is go 1")
-    && string.contains(second, "55841")
-  assert string.contains(third, "which a creature's fight does not run")
-    && string.contains(third, "41187")
-    && !string.contains(third, "placed by")
+    as "34054 and 54675 are refused"
+  assert string.contains(delay_row, "34054")
+    && string.contains(
+      delay_row,
+      "the creature's hold follows the cast's last go",
+    )
+    as "34054's delay row names a go before the last"
+  assert string.contains(crowd_control, "54675")
+    && string.contains(crowd_control, "129708")
+    && string.contains(crowd_control, "type 4")
+    as "54675's crowd-control row, not its gos"
 }

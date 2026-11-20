@@ -4454,10 +4454,7 @@ fn activation_listed_at(
 ) -> fn(activate.ActivateEffect) -> Bool {
   fn(effect: activate.ActivateEffect) {
     live.spell.method != spell_plan.Channeled
-    || spell_effect.has_flag(
-      flags: effect.phase_flags,
-      bit: spell_effect.phase_bit(phase:),
-    )
+    || spell_effect.names_phase(phase_flags: effect.phase_flags, phase:)
   }
 }
 

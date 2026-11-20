@@ -39,8 +39,14 @@ pub fn has_flag(flags flags: Int, bit bit: Int) -> Bool {
   int.bitwise_and(flags, bit) != 0
 }
 
-/// Whether a row with these phase flags and this tag applies in phase `phase`: bit n of the
-/// flags is phase n (every bit for -1) and the tag holds for the points the cast spent
+/// Whether the phase flags of a row name phase `phase`: bit n is phase n, and -1 names every
+/// phase (`Spell4Effects.phaseFlags`).
+pub fn names_phase(phase_flags phase_flags: Int, phase phase: Int) -> Bool {
+  has_flag(flags: phase_flags, bit: phase_bit(phase:))
+}
+
+/// Whether a row with these phase flags and this tag applies in phase `phase`: the flags name
+/// the phase (`names_phase`) and the tag holds for the points the cast spent
 /// (genesis_prime/game/spend `applies`).
 pub fn applies_in_phase(
   phase_flags phase_flags: Int,
@@ -48,8 +54,7 @@ pub fn applies_in_phase(
   phase phase: Int,
   spent spent: Option(Int),
 ) -> Bool {
-  has_flag(flags: phase_flags, bit: phase_bit(phase:))
-  && spend.applies(tag:, spent:)
+  names_phase(phase_flags:, phase:) && spend.applies(tag:, spent:)
 }
 
 /// The effects that apply in phase `phase`, in the order of the list (`applies_in_phase`).

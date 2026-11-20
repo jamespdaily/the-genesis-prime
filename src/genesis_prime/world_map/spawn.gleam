@@ -118,6 +118,7 @@ import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/path_mission
 import genesis_prime/table/quest_objective
 import genesis_prime/table/spell4
+import genesis_prime/table/spell4_effects
 import genesis_prime/table/unit_property2
 import genesis_prime/table/world
 import genesis_prime/world_map/checklist_index
@@ -1479,12 +1480,8 @@ fn attack_of(
             creature_id:,
             spell4_id:,
             cast_ms: spell.cast_time,
-            strike: creature_life.GoStrike(
-              spell4_effects_ids: list.map(attack_effects, fn(effect) {
-                effect.blow.spell4_effects_id
-              }),
-              inside:,
-            ),
+            applied: list.map(effects, fn(applied) { applied.0 }),
+            inside:,
           ))
           creature_life.Charged(
             cast_ms: spell.cast_time,
@@ -1551,25 +1548,50 @@ fn attack_of(
   Ok(#(attack, creature_scaling, attack_effects))
 }
 
-/// The gos of a charge and the hold after it. A spell a kind lists as a special has the
-/// gos of its plan (`spell_plan.go_times_ms`), the last striking with `strike`, and a hold of the summed
-/// `delay_ms` and `duration_ms` of its NpcExecutionDelay rows at the strike go; any other
-/// charge has one go at its cast time that strikes, and no hold. A special the plan could
-/// not read, or one with no go time, fails the load.
+/// The gos of a charge and the hold after it. A spell a kind lists as a special has the gos of
+/// its plan (`spell_plan.go_times_ms`): each go the `applied` damage rows name strikes with those
+/// rows' blows inside the hit shapes its phase names that the client is drawing then
+/// (`spell_area.hit_shapes_by_go`), a go with no such rows or no such shape strikes nobody, and
+/// the hold is the summed `delay_ms` and `duration_ms` of its NpcExecutionDelay rows at the
+/// cast's last go. Any other charge has one go at its cast time that strikes with every applied
+/// row inside `inside`, and no hold. A special the plan could not read, one with no go time or
+/// one whose shapes cannot be read fails the load.
 fn timeline_of(
   catalog catalog: Catalog,
   creature_id creature_id: Creature2Id,
   spell4_id spell4_id: Spell4Id,
   cast_ms cast_ms: Int,
-  strike strike: creature_life.GoStrike,
+  applied applied: List(spell4_effects.Spell4Effects),
+  inside inside: area.Inside,
 ) -> Result(#(List(creature_life.Go), Int), SpawnError) {
   case dict.get(catalog.special_plans, spell4_id.value) {
     Error(Nil) ->
-      Ok(#([creature_life.Go(at_ms: cast_ms, strike: Some(strike))], 0))
+      Ok(#(
+        [
+          creature_life.Go(
+            at_ms: cast_ms,
+            strike: Some(creature_life.GoStrike(
+              spell4_effects_ids: list.map(applied, fn(row) { row.id }),
+              inside:,
+            )),
+          ),
+        ],
+        0,
+      ))
     Ok(Error(error)) ->
       Error(SpecialNotPlanned(creature_id:, spell4_id: spell4_id.value, error:))
     Ok(Ok(spell)) -> {
       let times_ms = spell_plan.go_times_ms(spell:)
+      use shapes <- result.map(
+        spell_area.hit_shapes_by_go(
+          tables: catalog.tables,
+          spell4_id:,
+          go_times_ms: times_ms,
+        )
+        |> result.map_error(fn(error) {
+          AttackAreaNotRead(creature_id:, error:)
+        }),
+      )
       let last = list.length(times_ms) - 1
       let hold_ms =
         spell_plan.in_phase(
@@ -1581,16 +1603,39 @@ fn timeline_of(
         |> list.fold(0, fn(held, delay) {
           held + delay.delay_ms + delay.duration_ms
         })
-      Ok(#(
-        list.index_map(times_ms, fn(at_ms, index) {
-          creature_life.Go(at_ms:, strike: case index == last {
-            True -> Some(strike)
-            False -> None
-          })
-        }),
+      #(
+        list.zip(times_ms, shapes)
+          |> list.index_map(fn(go, index) {
+            creature_life.Go(
+              at_ms: go.0,
+              strike: strike_of_go(applied:, go: index, inside: go.1),
+            )
+          }),
         hold_ms,
-      ))
+      )
     }
+  }
+}
+
+/// What go `go` of a special strikes with: the applied damage rows whose phase flags name it,
+/// inside the hit shapes the go's phase names that the client draws then (`inside`, `None` when
+/// the spell has hit rows and none is drawn). Nothing when no row or no shape is left.
+fn strike_of_go(
+  applied applied: List(spell4_effects.Spell4Effects),
+  go go: Int,
+  inside inside: Option(area.Inside),
+) -> Option(creature_life.GoStrike) {
+  let named =
+    list.filter(applied, fn(row) {
+      spell_effect.names_phase(phase_flags: row.phase_flags, phase: go)
+    })
+  case named, inside {
+    [], _ | _, None -> None
+    rows, Some(inside) ->
+      Some(creature_life.GoStrike(
+        spell4_effects_ids: list.map(rows, fn(row) { row.id }),
+        inside:,
+      ))
   }
 }
 

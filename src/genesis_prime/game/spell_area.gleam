@@ -80,8 +80,11 @@
 ////   player's value does not (genesis_prime/game/damage `unread`: the weapon kinds 6
 ////   and 9, the passed-in value 18, and any kind above 26; the vital kinds are read,
 ////   the target's finished when the blow lands); and a phase that
-////   selects units from a spell with no area row. A hit row's phases are not read, so
-////   a spell's shapes hold for each of its gos.
+////   selects units from a spell with no area row; a creature's drawn hit row timed from a go
+////   (flag 0x2000: `TelegraphTimedFromAGo`).
+//// - **Each go of a creature's cast** is struck with the hit rows its phase names that the client
+////   is drawing at the go's time (`hit_shapes_by_go`, genesis_prime/game/telegraph_window); a
+////   player's strike takes the spell's shapes for every go (`SpellArea.shapes`).
 
 import genesis_prime/game/area.{
   type Anchor, type Inside, type Placement, type Row, Box, Circle, Cone,
@@ -94,6 +97,7 @@ import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{type Aim, type Spell}
 import genesis_prime/game/spend
 import genesis_prime/game/telegraph_entries
+import genesis_prime/game/telegraph_window
 import genesis_prime/game/ticking
 import genesis_prime/gap
 import genesis_prime/table/id.{
@@ -248,6 +252,9 @@ pub type AreaError {
   /// otherwise than the drawn row. `telegraph_id` is the first hit row and `other_telegraph_id`
   /// the first row placed otherwise.
   PlacedApart(spell4_id: Int, telegraph_id: Int, other_telegraph_id: Int)
+  /// A drawn hit row is timed from a phase's go instead of the cast's start (flag 0x2000), a
+  /// window the creature reading does not build.
+  TelegraphTimedFromAGo(spell4_id: Int, telegraph_id: Int)
   /// A damage effect is aimed by a flag value not read.
   AimNotRead(spell4_id: Int, effect_id: Int, target_flags: Int)
   /// A damage effect's formula reads a parameter a player's value does not.
@@ -330,6 +337,12 @@ pub fn describe(error error: AreaError) -> String {
       <> " and another, "
       <> int.to_string(other_telegraph_id)
       <> ", placed on another unit or drawn another way (at the cast's start, or following its unit), which no one centre serves"
+    TelegraphTimedFromAGo(spell4_id:, telegraph_id:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a hit telegraph "
+      <> int.to_string(telegraph_id)
+      <> " timed from a go (flag 0x2000), a window the load does not read"
     AimNotRead(spell4_id:, effect_id:, target_flags:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -450,6 +463,7 @@ fn plan_error_of(
     | TelegraphOnStruckUnits(..)
     | ShapeNotBuilt(..)
     | PlacedApart(..)
+    | TelegraphTimedFromAGo(..)
     | AimNotRead(..)
     | FormulaNotRead(..)
     | TickingUntilRemoved(..)
@@ -615,7 +629,8 @@ fn area_row_of(
 /// are pictures of another spell's hit shape (a spell's own copy of its child's beam),
 /// unless every drawn row has it: then they are all kept
 /// (`TelegraphDamage.telegraphDamageFlags.0x20.rows`). The phases a row fires in are
-/// not read, so a spell's shapes hold for each of its gos. A Spell4Telegraph row whose
+/// not read here: `SpellArea.shapes` holds for each of a player's gos, and a creature's cast
+/// takes them go by go (`hit_shapes_by_go`). A Spell4Telegraph row whose
 /// TelegraphDamage row the table lacks gives no shape, as the client leaves it out of its
 /// spell's telegraphs (`Spell4Telegraph.telegraphDamageId.no_row`). The shapes of the
 /// spell `id` that its Spell4Telegraph rows in `links` choose, or the refusal of one; a row
@@ -998,9 +1013,8 @@ fn phase_of(
   phase phase: Int,
   spent spent: Option(Int),
 ) -> PhaseStrike {
-  let bit = spell_effect.phase_bit(phase:)
   let fires = fn(effect: DamageEffect) {
-    spell_effect.has_flag(flags: effect.phase_flags, bit:)
+    spell_effect.names_phase(phase_flags: effect.phase_flags, phase:)
     && spend.applies(tag: effect.tag, spent:)
   }
   let firing = list.filter(spell.damage, fires)
@@ -1169,6 +1183,87 @@ pub fn area_of_spell(
   }
 }
 
+/// How a creature's cast of the spell counts a unit as inside its area at each go, in go order,
+/// for a cast whose gos fall `go_times_ms` after its start. A go strikes with the hit rows
+/// (`hit_shapes_of`) that the client is drawing at the go's time (genesis_prime/game/telegraph_window)
+/// and, for a cast whose phase the client compares with a row's (`spell_plan.compares_telegraph_phase`),
+/// whose phaseFlags name the go (bit n is go n): the shapes of those rows, or `None` when the
+/// spell has hit rows and the go has none, so it strikes nobody. A hit twin (flag 0x40) is
+/// never drawn, so it is chosen by its phase alone. A spell with no hit row is read by its area
+/// row at every go (`InsideRow`). A drawn hit row timed from a go (flag 0x2000) is refused, as
+/// is a row the creature reading does not build.
+pub fn hit_shapes_by_go(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Spell4Id,
+  go_times_ms go_times_ms: List(Int),
+) -> Result(List(Option(Inside)), AreaError) {
+  let id = spell4_id.value
+  use row <- result.try(
+    spell4.get(tables:, id: spell4_id)
+    |> result.replace_error(NoRow(table: "Spell4", id:)),
+  )
+  use base <- result.try(
+    spell4_base.get(tables:, id: spell4.spell4_base_id_base_spell(row))
+    |> result.replace_error(NoRow(
+      table: "Spell4Base",
+      id: row.spell4_base_id_base_spell,
+    )),
+  )
+  let phased = spell_plan.compares_telegraph_phase(row:, base:)
+  let links = telegraph_links_by_spell(tables:)
+  let hit_rows = hit_rows_of(tables:, links:, id:)
+  use Nil <- result.try(
+    list.try_each(hit_rows, fn(row) {
+      case !is_twin(row:) && telegraph_window.timed_from_a_go(row:) {
+        True ->
+          Error(TelegraphTimedFromAGo(spell4_id: id, telegraph_id: row.id))
+        False -> Ok(Nil)
+      }
+    }),
+  )
+  use placed <- result.try(
+    list.try_map(hit_rows, fn(row) {
+      use placements <- result.map(placements_of(
+        id:,
+        row:,
+        reading: CreatureReading,
+      ))
+      #(row, placements)
+    }),
+  )
+  Ok(
+    list.index_map(go_times_ms, fn(_, go) {
+      shapes_at_go(placed:, go_times_ms:, go:, phased:)
+    }),
+  )
+}
+
+/// How a unit counts as inside at go `go` of a cast with the hit rows `placed` (each with its
+/// placements): `InsideRow` when the spell has no hit row, `None` when it has some and none is
+/// drawn then. A row's phase is read only when the client compares it (`phased`).
+fn shapes_at_go(
+  placed placed: List(#(telegraph_damage.TelegraphDamage, List(Placement))),
+  go_times_ms go_times_ms: List(Int),
+  go go: Int,
+  phased phased: Bool,
+) -> Option(Inside) {
+  use <- bool.guard(when: placed == [], return: Some(InsideRow))
+  let struck =
+    list.filter(placed, fn(found) {
+      let #(row, _) = found
+      {
+        !phased
+        || spell_effect.names_phase(phase_flags: row.phase_flags, phase: go)
+      }
+      && { is_twin(row:) || telegraph_window.drawn_at(row:, go_times_ms:, go:) }
+    })
+  case struck {
+    [] -> None
+    [_, ..] ->
+      Some(inside_of(shapes: list.flat_map(struck, fn(found) { found.1 })))
+  }
+}
+
 /// How many gos the spell has (`spell_plan.go_count`): a pulse of a channel and a
 /// phase of a Multiphase spell are each a go. The count is at least 1: a spell held
 /// until its release has no go of its own, and its phase 0 is one no go asks for.
@@ -1202,6 +1297,10 @@ pub fn gaps() -> List(gap.Entry) {
     gap.Entry(
       area: "Creature target and ground rows",
       missing: "a creature's hit row placed on the ground (targetTypeFlags bit 8, 34 listed spells with it alone) or on each unit the strike finds (bit 4, 3 listed spells) is refused, as is one placed on two units at once (flags 3 and 9); a player's ability whose hit row is placed on its target is refused, so a player's strike centres on the caster",
+    ),
+    gap.Entry(
+      area: "Creature hit rows by go",
+      missing: "a creature's cast strikes with the hit rows the client draws at the go, and for a cast whose phase the client compares (a Multiphase cast, or a channel whose spellChannelFlags has bit 1) that its phase names: a row still counts as drawn at a go equal to its end, and a hit twin (flag 0x40, never drawn) is struck by its phase alone (at every go for a cast whose phase the client does not compare), both guesses the client's code does not settle; a hit row behind a caster prerequisite (prerequisiteIdCaster, which the client draws only while the caster passes it) is read as drawn whatever the caster, no row of the retail-listed specials has one; a drawn hit row timed from a go (flag 0x2000) is refused",
     ),
     gap.Entry(
       area: "Creature area orders and shapes",

@@ -2541,6 +2541,7 @@ fn rootbrute_fight(creature_id creature_id: Int) -> Roaring {
   fight_of(
     creature: roaring_rootbrute(creature_id:),
     damage_effects_id: 131_967,
+    x: 0.0,
   )
 }
 
@@ -2548,6 +2549,7 @@ fn rootbrute_fight(creature_id creature_id: Int) -> Roaring {
 fn fight_of(
   creature creature: spawn.Spawn,
   damage_effects_id damage_effects_id: Int,
+  x x: Float,
 ) -> Roaring {
   let time = driven_time.new()
   let world = roaring_world(time:, creature:)
@@ -2572,7 +2574,7 @@ fn fight_of(
     run:,
     connection: 1,
     unit_id: first.unit_id,
-    x: 0.0,
+    x:,
     damage: 5,
     cast_id: 1,
   )
@@ -2903,6 +2905,7 @@ pub fn the_creatures_of_the_other_three_zones_cast_their_specials_test() -> Nil 
             spell4_id:,
           ),
           damage_effects_id:,
+          x: 0.0,
         )
       driven_time.advance(time: fight.time, ms: 1500)
       let start = next_cast_started(received: fight.received)
@@ -2952,7 +2955,7 @@ pub fn a_struck_yeti_snowstalker_strikes_with_maul_then_slam_test() -> Nil {
       33_251,
       33_252,
     ])
-  let roaring = fight_of(creature: yeti, damage_effects_id: 184_751)
+  let roaring = fight_of(creature: yeti, damage_effects_id: 184_751, x: 0.0)
   driven_time.advance(time: roaring.time, ms: 1500)
   let maul = next_cast_started(received: roaring.received)
   assert maul.spell4_id == 33_251
@@ -2975,6 +2978,134 @@ pub fn a_struck_yeti_snowstalker_strikes_with_maul_then_slam_test() -> Nil {
     && again.spell4_id != 5649
     as "none is the default attack"
   world_support.stop(world: roaring.world)
+}
+
+/// What the Yeti's fight sent the connection, in order: a cast start, a go, a strike told to
+/// take, a cast's finish.
+type IceBreathFrame {
+  IceBreathStarted(spell4_id: Int)
+  IceBreathWent(phase: Int, targets: List(Int))
+  IceBreathTold(key: strike_tell.Key)
+  IceBreathFinished(cast_id: Int)
+}
+
+/// The frame of a message the connection was sent, or `Error(Nil)` for any other.
+fn ice_breath_frame(message: Message) -> Result(IceBreathFrame, Nil) {
+  case message {
+    ForStay(
+      sent: SentByPeer(PeerNews(news: client_connection.CastStarted(start:), ..)),
+      ..,
+    ) -> Ok(IceBreathStarted(spell4_id: start.spell4_id))
+    ForStay(
+      sent: SentByPeer(PeerNews(news: client_connection.CastWent(go:), ..)),
+      ..,
+    ) ->
+      Ok(IceBreathWent(
+        phase: go.phase,
+        targets: list.map(go.targets, fn(target) { target.unit_id }),
+      ))
+    ForStay(
+      sent: SentByPeer(PeerNews(
+        news: client_connection.CastFinished(cast_id:),
+        ..,
+      )),
+      ..,
+    ) -> Ok(IceBreathFinished(cast_id:))
+    ForStay(
+      sent: client_connection.SentByFoe(strike_tell.Attacks(tell: strike_tell.Strike(
+        key:,
+        ..,
+      ))),
+      ..,
+    ) -> Ok(IceBreathTold(key:))
+    ForStay(..)
+    | client_connection.SentBySessions(..)
+    | client_connection.SentByChat(..) -> Error(Nil)
+  }
+}
+
+pub fn a_yeti_snowstalker_casts_ice_breath_with_two_hits_and_four_gos_test() -> Nil {
+  use <- owned_test.run(90_000)
+  // Creature2 51126 on the client's own rows with Ice Breath (Spell4 55635) as its special, fighting
+  // player 1 standing 3 units off on the x axis. Its gos fall 2600, 3000, 3500 and 3800 ms after
+  // the cast starts (SpellPhase 11479 to 11482: delays 2600, 400, 500 and 300); the damage row
+  // 132757 (phaseFlags 6) strikes at gos 1 and 2 with the cone of row 7956, then 7957's; the delay row
+  // 132758 holds 500 ms after go 3 (`table_rows -- Spell4Effects spellId=55635`). Rows 7956 and 7957
+  // have flag 0x101000 and targetTypeFlags 1: the client draws both at the caster's initial
+  // position, so the 0x7ff carries that one position and no telegraph position
+  // (`0x14054b1b0.fixed_placement`, `telegraph_entries`).
+  let fight =
+    fight_of(
+      creature: spawn_support.special_creature(
+        number: 1,
+        creature_id: 51_126,
+        spell4_id: 55_635,
+      ),
+      damage_effects_id: 132_757,
+      x: 3.0,
+    )
+  driven_time.advance(time: fight.time, ms: 1500)
+  let start =
+    read_by_the_client(start: next_cast_started(received: fight.received))
+  assert start.spell4_id == 55_635
+    && start.caster_unit_id == fight.unit_id
+    && start.primary_target_unit_id == 10
+    as "the cast bar: Ice Breath, cast on the player that struck the creature"
+  assert list.map(start.initial_positions, fn(entry) { entry.unit_id })
+    == [fight.unit_id]
+    && start.telegraph_positions == []
+    as "both cones are drawn at the caster's one initial position"
+  let frames = fn() {
+    driven_time.settled(fight.pid)
+    sent_so_far(
+      world: fight.world,
+      id: 1,
+      received: fight.received,
+      wanted: ice_breath_frame,
+    )
+  }
+  let told_key = fn(frame) {
+    let assert IceBreathTold(key:) = frame
+      as "the frame is a strike told to the player"
+    key
+  }
+  driven_time.advance(time: fight.time, ms: 2600)
+  assert frames() == [IceBreathWent(phase: 0, targets: [])]
+    as "go 0 names no one"
+  driven_time.advance(time: fight.time, ms: 400)
+  let assert [first_told] = frames()
+    as "go 1: the player is told one strike and nothing else is sent before it is answered"
+  let key_1 = told_key(first_told)
+  assert key_1.occasion == strike_tell.AtGo(phase: 1)
+    && key_1.cast_id == start.cast_id
+    && key_1.unit_id == 10
+    as "the first hit is keyed AtGo(1)"
+  answer(roaring: fight, key: key_1)
+  assert frames() == [IceBreathWent(phase: 1, targets: [10])]
+    as "go 1 lists the player"
+  driven_time.advance(time: fight.time, ms: 500)
+  let assert [second_told] = frames() as "go 2: the player is told one strike"
+  let key_2 = told_key(second_told)
+  assert key_2.occasion == strike_tell.AtGo(phase: 2)
+    && key_2.cast_id == start.cast_id
+    && key_2.unit_id == 10
+    as "the second hit is keyed AtGo(2)"
+  answer(roaring: fight, key: key_2)
+  assert frames() == [IceBreathWent(phase: 2, targets: [10])]
+    as "go 2 lists the player"
+  driven_time.advance(time: fight.time, ms: 300)
+  assert frames()
+    == [
+      IceBreathWent(phase: 3, targets: []),
+      IceBreathFinished(cast_id: start.cast_id),
+    ]
+    as "go 3, the last, names no one, and the cast finishes"
+  driven_time.advance(time: fight.time, ms: 500)
+  let assert [IceBreathStarted(spell4_id: next_spell4_id), ..] = frames()
+    as "after the hold the creature casts again"
+  assert next_spell4_id == 5649
+    as "its next attack is its 5649, the special being on cooldown"
+  world_support.stop(world: fight.world)
 }
 
 /// What a connection was sent of a creature's aggro and turns, as the test reads it.
@@ -3197,6 +3328,7 @@ fn void_blast_fight() -> #(Int, Int) {
         spell4_id: 63_569,
       ),
       damage_effects_id: 159_886,
+      x: 0.0,
     )
   let received_2 = world_support.connection(world: roaring.world, id: 2)
   let _player = world_watch_support.join(run: roaring.run, connection: 2)
@@ -3325,6 +3457,7 @@ pub fn an_eldan_security_construct_draws_its_laser_bolt_circle_under_the_player_
         spell4_id: 55_846,
       ),
       damage_effects_id: 133_289,
+      x: 0.0,
     )
   let joined_at = fn(connection, x) {
     let received =

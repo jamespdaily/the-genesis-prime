@@ -23,15 +23,20 @@
 ////   unit, are not readable: `spell_area.PlacedApart`; a row on each struck unit, the ground or
 ////   two units: `spell_area.TelegraphOnStruckUnits`, `spell_area.TelegraphNotOnCaster`; an area
 ////   row that selects by health, orders 4 and 5: `spell_area.SelectionNeedsHealth`; a hit row
-////   of shape 8 with a box: `spell_area.ShapeNotBuilt`),
-////   an effect
-////   type other than 8 (damage) and 35 (NpcExecutionDelay), no damage phase, several, or
-////   one before the last go, a phase flag naming no go, an empty or non-increasing go
-////   schedule, a delay row the plan leaves out (aimed at another unit, or with no duration)
-////   or one that names a go other than the strike go, a target condition
-////   (`spell4CCConditionsIdTarget`) other than 0, a delay row behind a prerequisite, and any
-////   caster prerequisite the attack rule refuses. A bad row is refused, never left out
-////   silently.
+////   of shape 8 with a box: `spell_area.ShapeNotBuilt`; a drawn hit row timed from a go:
+////   `spell_area.TelegraphTimedFromAGo`), an effect
+////   type other than 8 (damage) and 35 (NpcExecutionDelay), no damage phase, a phase flag
+////   naming no go, an empty or non-increasing go schedule, a delay row the plan leaves out
+////   (aimed at another unit, or with no duration) or one that names a go other than the
+////   cast's last, a target condition (`spell4CCConditionsIdTarget`) other than 0, a delay row
+////   behind a prerequisite, and any caster prerequisite the attack rule refuses. A bad row is
+////   refused, never left out silently.
+//// - **A cast strikes at each go its damage rows name**: with those rows' blows, inside the hit
+////   rows the client is drawing at the go's time, and, for a cast whose phase the client
+////   compares, that its phase names (`spell_area.hit_shapes_by_go`). A go whose damage rows all
+////   fail the creature's difficulty, or at which no hit row is drawn, strikes nobody; the special
+////   still loads when another go can strike, and is refused when none can
+////   (`creature_attack.NoGoCanStrike`). The hold follows the cast's last go.
 //// - **The formula is read**: a special whose damage formula the creature rule does not
 ////   read for the creature's difficulty is refused (`creature_attack.loadable`), which the
 ////   spawn load would refuse later.

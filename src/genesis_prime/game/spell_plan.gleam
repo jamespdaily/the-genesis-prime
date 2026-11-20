@@ -6417,6 +6417,27 @@ fn channel_of(
   }
 }
 
+/// Whether the client compares a go's phase with the phaseFlags of the cast's TelegraphDamage
+/// rows: a Multiphase cast, and a Channeled or ChanneledField one whose spellChannelFlags has bit
+/// 1 (`opcode.0x7f4.phase`). Any other cast draws a row by its own time window alone.
+pub fn compares_telegraph_phase(
+  row row: spell4.Spell4,
+  base base: spell4_base.Spell4Base,
+) -> Bool {
+  case method_of(base.cast_method) {
+    Multiphase -> True
+    Channeled | ChanneledField ->
+      spell_effect.has_flag(flags: row.spell_channel_flags, bit: 1)
+    Normal
+    | PressHold
+    | ClientSideInteraction
+    | RapidTap
+    | ChargeRelease
+    | Transactional
+    | OtherMethod(..) -> False
+  }
+}
+
 fn method_of(cast_method: Int) -> CastMethod {
   case cast_method {
     0 -> Normal
