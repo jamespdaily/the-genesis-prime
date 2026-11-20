@@ -4876,9 +4876,16 @@ pub fn a_medic_that_levels_from_3_to_4_holds_fissure_castable_and_a_relog_at_4_h
     game_client.read_until(game:, have:, found: fn(frames) {
       fissure_goes(frames: first_go, in: list.append(first_go, frames)) != []
     })
-  assert fissure_goes(frames: first_go, in: list.append(first_go, first_goes))
+  // The go leaves a unit whose hit the roll deflected out of its targets and a 0x7fb names it
+  // (`strike`'s deflect), so each go is read up to a pong, which follows the go and its 0x7fb.
+  let #(first_flushed, have) =
+    game_client.read_until_pong(game:, have:, number: 11)
+  assert fissure_struck(
+      frames: first_go,
+      in: list.flatten([first_go, first_goes, first_flushed]),
+    )
     == [[other.unit_id]]
-    as "opcode.0x7f4: the child's first go names the creature 8 m ahead of the press pose, inside Fissure's first rectangle"
+    as "opcode.0x7f4, opcode.0x7fb: the child's first go strikes the creature 8 m ahead of the press pose, inside Fissure's first rectangle, by a hit or a deflect"
   // The Medic turns its back and walks 40 m aside before the later gos (SpellPhase 5061 and
   // 5062, 250 ms after the one before): the rectangles stay where the press drew them.
   game_client.move_to(
@@ -4898,18 +4905,22 @@ pub fn a_medic_that_levels_from_3_to_4_holds_fissure_castable_and_a_relog_at_4_h
     game_client.read_until(game:, have:, found: fn(frames) {
       fissure_goes(frames: first_go, in: frames) != []
     })
+  let #(second_flushed, have) =
+    game_client.read_until_pong(game:, have:, number: 12)
   driven_time.advance(time:, ms: 250)
   let #(third, have) =
     game_client.read_until(game:, have:, found: fn(frames) {
       fissure_goes(frames: first_go, in: frames) != []
     })
+  let #(third_flushed, have) =
+    game_client.read_until_pong(game:, have:, number: 13)
   let later_goes =
     list.append(
-      fissure_goes(frames: first_go, in: second),
-      fissure_goes(frames: first_go, in: third),
+      fissure_struck(frames: first_go, in: list.append(second, second_flushed)),
+      fissure_struck(frames: first_go, in: list.append(third, third_flushed)),
     )
   assert later_goes == [[other.unit_id], [other.unit_id]]
-    as "Spell4Effects 94283 and 94284: the second and third phase, one go each, and each names the creature, which stands inside all three rectangles (TelegraphDamage 2996 to 2998, 2 to 10 wide, centred, reaching past 8 m): the hit is where the press drew them, not where the Medic stands"
+    as "Spell4Effects 94283 and 94284: the second and third phase, one go each, and each strikes the creature, by a hit or a deflect, which stands inside all three rectangles (TelegraphDamage 2996 to 2998, 2 to 10 wide, centred, reaching past 8 m): the strike is where the press drew them, not where the Medic stands"
   // The relog at level 4 holds the same five abilities, the new one in slot 4.
   let #(second_entry, _) =
     game_client.camp_and_play(game:, have:, character_id: character)
@@ -4941,6 +4952,36 @@ fn fissure_goes(
           False -> Error(Nil)
         }
       })
+    [] -> []
+  }
+}
+
+/// The units each go of the child 41844 of Fissure strikes, in order, read in `in`: the targets
+/// the go names, and for a go that names none the units of the next 0x7fb of the cast, which
+/// are the ones whose hit the roll deflected (`hit`: the deflect roll is drawn from the
+/// caster's seed, which the driven clock's scripts draw from the operating system, so any go
+/// may be deflected).
+fn fissure_struck(
+  frames frames: List(Frame),
+  in read: List(Frame),
+) -> List(List(Int)) {
+  let events = game_client.casts_in(frames:)
+  case game_client.starts_of(events:, spell4_id: 41_844) {
+    [#(cast_id, _), ..] -> {
+      let misses =
+        list.filter_map(game_client.missed_in(frames: read), fn(missed) {
+          case missed.0 == cast_id {
+            True -> Ok(missed.1)
+            False -> Error(Nil)
+          }
+        })
+      list.map_fold(fissure_goes(frames:, in: read), misses, fn(left, go) {
+        case go, left {
+          [], [missed, ..rest] -> #(rest, missed)
+          _, _ -> #(left, go)
+        }
+      }).1
+    }
     [] -> []
   }
 }
