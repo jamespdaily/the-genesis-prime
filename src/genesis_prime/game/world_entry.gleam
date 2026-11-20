@@ -975,14 +975,19 @@ pub fn joined(
       case answer {
         map.Joined(unit:, loadout:, incarnation:, clock_origin_ms:) -> {
           let worn = gear.of_items(tables:, items:, level: character.level)
-          use bases <- with_bases(tables:, worn:, level: character.level)
+          let assert Ok(resource) =
+            class_resource.of_class(classes:, class_id: character.class_id)
+            as "character creation makes only playable classes, and the content load refuses a table with no resource for one"
+          use bases <- with_bases(
+            tables:,
+            worn:,
+            level: character.level,
+            focus_pool: class_resource.focus_pool(resource:),
+          )
           let assert Ok(max_health) =
             gear.max_health(tables:, gear: worn, level: character.level)
             as "the bases are found only for a level with a Base Health row"
           let sent = start_place.within_the_worlds_box(place)
-          let assert Ok(resource) =
-            class_resource.of_class(classes:, class_id: character.class_id)
-            as "character creation makes only playable classes, and the content load refuses a table with no resource for one"
           let unit =
             unit
             |> player_unit.with_gear(
@@ -998,6 +1003,12 @@ pub fn joined(
               defaults:,
               listed: unit.tail.properties,
               level: character.level,
+            )
+          let resources = class_resource.new(resource:, properties:)
+          let unit =
+            player_unit.with_focus(
+              record: unit,
+              value: class_resource.focus_held(resources:),
             )
           let #(life, life_effects) =
             player_life.entering(
@@ -1066,7 +1077,7 @@ pub fn joined(
               life:,
               properties:,
               look: look.new(base: unit.tail.item_visuals),
-              resources: class_resource.new(resource:),
+              resources:,
               camp: camp.none(),
               cast: cast_state.new(),
               strike: strike.new(),
@@ -1191,9 +1202,10 @@ fn with_bases(
   tables tables: table_store.Tables,
   worn worn: Gear,
   level level: Int,
+  focus_pool focus_pool: Float,
   next next: fn(List(#(UnitProperty2Id, Float))) -> Result(Joined, Nil),
 ) -> Result(Joined, Nil) {
-  case gear.bases(tables:, gear: worn, level:) {
+  case gear.bases(tables:, gear: worn, level:, focus_pool:) {
     Ok(bases) -> next(bases)
     Error(error) -> Ok(GearFault(text: gear.describe(error:)))
   }

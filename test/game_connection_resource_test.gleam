@@ -15,7 +15,6 @@ import connection_rule_support as support
 import game_client
 import game_connection_support
 import genesis_prime/client_connection.{type Request}
-import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/class_resource
 import genesis_prime/game/connection as game_connection
@@ -27,29 +26,13 @@ import genesis_prime/message/unit_float_stat_changed.{
   type UnitFloatStatChanged, UnitFloatStatChanged,
 }
 import genesis_prime/random
-import genesis_prime/step.{
-  type ConnectionStep, type TimerId, CancelTimer, OwnEffect, OwnEvent,
-  StartTimer, TimerFired, Unwatch, Watch,
-}
+import genesis_prime/step.{type ConnectionStep, OwnEvent, TimerFired}
 import genesis_prime/store.{Character}
 import genesis_prime/table/id.{ClassId}
 import gleam/list
 import gleam/result
 import owned_test
-
-/// The 0x935s among the frames, decoded.
-fn resource_changes(frames: List(Frame)) -> List(UnitFloatStatChanged) {
-  list.filter_map(frames, fn(frame) {
-    case frame.message_id == unit_float_stat_changed.message_id {
-      True -> {
-        let assert Ok(changed) = unit_float_stat_changed.decode(frame.body)
-          as "0x935 decodes"
-        Ok(changed)
-      }
-      False -> Error(Nil)
-    }
-  })
-}
+import resource_frames_support
 
 /// The press of the ability at this bag index, as a client sends it.
 fn press(
@@ -70,48 +53,6 @@ fn press(
   )
 }
 
-/// The 0x935s a step writes, decoded.
-fn changes_written(
-  taken: ConnectionStep(Request),
-) -> List(UnitFloatStatChanged) {
-  resource_changes(game_connection_support.heard(
-    taken,
-    game_connection_support.keyed(),
-  ))
-}
-
-/// The timers of the class resource a step starts, as (timer, after_ms).
-fn resource_timers_started(
-  taken: ConnectionStep(Request),
-) -> List(#(TimerId, Int)) {
-  list.filter_map(support.effects_of(taken), fn(effect) {
-    case effect {
-      OwnEffect(StartTimer(timer:, after_ms:)) ->
-        case class_resource.owns(timer:) {
-          True -> Ok(#(timer, after_ms))
-          False -> Error(Nil)
-        }
-      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
-        Error(Nil)
-    }
-  })
-}
-
-/// The timers of the class resource a step cancels.
-fn resource_timers_cancelled(taken: ConnectionStep(Request)) -> List(TimerId) {
-  list.filter_map(support.effects_of(taken), fn(effect) {
-    case effect {
-      OwnEffect(CancelTimer(timer:)) ->
-        case class_resource.owns(timer:) {
-          True -> Ok(timer)
-          False -> Error(Nil)
-        }
-      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
-        Error(Nil)
-    }
-  })
-}
-
 pub fn a_stalkers_impale_writes_its_suit_power_at_65_as_0x935_and_the_refill_writes_72_a_second_later_test() -> Nil {
   use <- owned_test.run(30_000)
   let #(state, unit_id, bag_index) =
@@ -120,7 +61,7 @@ pub fn a_stalkers_impale_writes_its_suit_power_at_65_as_0x935_and_the_refill_wri
       ability: 23_161,
     )
   let #(state, pressed) = press(state:, bag_index:)
-  assert changes_written(pressed)
+  assert resource_frames_support.changes_written(pressed)
     == [
       UnitFloatStatChanged(unit_id:, stat_id: 5, value: float32.to_bits(65.0)),
     ]
@@ -130,7 +71,7 @@ pub fn a_stalkers_impale_writes_its_suit_power_at_65_as_0x935_and_the_refill_wri
       state,
       OwnEvent(TimerFired(timer: class_resource.regen_timer)),
     )
-  assert changes_written(ticked)
+  assert resource_frames_support.changes_written(ticked)
     == [
       UnitFloatStatChanged(unit_id:, stat_id: 5, value: float32.to_bits(72.0)),
     ]
@@ -140,7 +81,7 @@ pub fn a_stalkers_impale_writes_its_suit_power_at_65_as_0x935_and_the_refill_wri
 fn all_changes(
   steps: List(ConnectionStep(Request)),
 ) -> List(UnitFloatStatChanged) {
-  list.flat_map(steps, changes_written)
+  list.flat_map(steps, resource_frames_support.changes_written)
 }
 
 /// Relentless Strikes and Rampage, the Warrior's (Spell4Base 18309 and 37968).
@@ -238,7 +179,7 @@ pub fn a_medic_struck_and_spending_actuators_is_refilled_to_4_three_seconds_afte
       state,
       game_connection_support.foe(strike_tell.Threatened(unit_id: 7, life: 3)),
     )
-  assert resource_timers_started(threatened) == []
+  assert resource_frames_support.resource_timers_started(threatened) == []
     as "a Medic starts nothing while it is full"
   let #(state, pressed) =
     game_connection_support.pressed_until(
@@ -262,23 +203,24 @@ pub fn a_medic_struck_and_spending_actuators_is_refilled_to_4_three_seconds_afte
       UnitFloatStatChanged(unit_id:, stat_id: 3, value: float32.to_bits(2.0)),
     ]
     as "Gamma Rays' go, 1250 ms after the press, pays: 4 Actuators less 2, as 0x935 of stat 3 (slot 1)"
-  assert list.flat_map(going, resource_timers_started) == []
+  assert list.flat_map(going, resource_frames_support.resource_timers_started)
+    == []
     as "in combat the Medic's refill waits (500710: regenerate while out of combat)"
   let #(state, released) =
     game_connection_support.feed(
       state,
       game_connection_support.foe(strike_tell.Released(unit_id: 7)),
     )
-  assert resource_timers_started(released)
+  assert resource_frames_support.resource_timers_started(released)
     == [#(class_resource.refill_timer, 3000)]
     as "the combat flag clears: the refill starts, 3 seconds (Jim's choice at the design)"
-  assert changes_written(released) == []
+  assert resource_frames_support.changes_written(released) == []
   let #(state, refilled) =
     game_connection_support.feed(
       state,
       OwnEvent(TimerFired(timer: class_resource.refill_timer)),
     )
-  assert changes_written(refilled)
+  assert resource_frames_support.changes_written(refilled)
     == [
       UnitFloatStatChanged(unit_id:, stat_id: 3, value: float32.to_bits(4.0)),
     ]
@@ -288,7 +230,8 @@ pub fn a_medic_struck_and_spending_actuators_is_refilled_to_4_three_seconds_afte
       state,
       OwnEvent(TimerFired(timer: class_resource.refill_timer)),
     )
-  assert changes_written(again) == [] as "a full slot sends nothing"
+  assert resource_frames_support.changes_written(again) == []
+    as "a full slot sends nothing"
 }
 
 pub fn a_player_killed_and_brought_back_gets_each_slot_at_its_start_in_one_0x935_test() -> Nil {
@@ -316,26 +259,27 @@ pub fn a_player_killed_and_brought_back_gets_each_slot_at_its_start_in_one_0x935
       state,
       game_connection_support.a_killing_strike(),
     )
-  assert changes_written(killed) == [] as "death writes no resource change"
+  assert resource_frames_support.changes_written(killed) == []
+    as "death writes no resource change"
   let #(state, back) =
     game_connection_support.read(
       state:,
       bytes: game_connection_support.wake_here(),
     )
-  assert changes_written(back)
+  assert resource_frames_support.changes_written(back)
     == [
       UnitFloatStatChanged(unit_id:, stat_id: 3, value: float32.to_bits(4.0)),
     ]
     as "the Medic's slot 1 comes back to its start, 4 (500710), the one slot that moved"
   let #(_, warrior_back) = warrior_killed_and_back()
-  assert changes_written(warrior_back) == []
+  assert resource_frames_support.changes_written(warrior_back) == []
     as "a Warrior spent nothing and its slot is at its start, 0 (500714): nothing moved"
   let #(_, refilled) =
     game_connection_support.feed(
       state,
       OwnEvent(TimerFired(timer: class_resource.refill_timer)),
     )
-  assert changes_written(refilled) == []
+  assert resource_frames_support.changes_written(refilled) == []
     as "a refill timer that fires after the player came back changes nothing"
 }
 
@@ -373,7 +317,7 @@ pub fn a_refill_timer_that_fires_after_the_player_left_sends_nothing_test() -> N
       ms: 1000,
       until_ms: 2250,
     )
-  assert list.flat_map(pressed, resource_timers_started)
+  assert list.flat_map(pressed, resource_frames_support.resource_timers_started)
     == [#(class_resource.refill_timer, 3000)]
     as "out of combat the Medic's payment, at the go, starts the refill (the server's choice)"
   let #(state, camp_asked) =
@@ -388,8 +332,8 @@ pub fn a_refill_timer_that_fires_after_the_player_left_sends_nothing_test() -> N
     )
   assert list.contains(
     list.append(
-      resource_timers_cancelled(camp_asked),
-      resource_timers_cancelled(camped),
+      resource_frames_support.resource_timers_cancelled(camp_asked),
+      resource_frames_support.resource_timers_cancelled(camped),
     ),
     class_resource.refill_timer,
   )
@@ -399,7 +343,7 @@ pub fn a_refill_timer_that_fires_after_the_player_left_sends_nothing_test() -> N
       state,
       OwnEvent(TimerFired(timer: class_resource.refill_timer)),
     )
-  assert changes_written(late) == []
+  assert resource_frames_support.changes_written(late) == []
   assert support.effects_of(late) == []
     as "a timer of a player no longer in the world is dropped"
 }

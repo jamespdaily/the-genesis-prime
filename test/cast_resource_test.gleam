@@ -94,7 +94,7 @@ pub fn impale_is_accepted_with_35_suit_power_and_paid_and_refused_53_at_34_test(
 pub fn electrocute_and_mind_burst_are_refused_51_at_their_empty_start_test() -> Nil {
   use <- owned_test.run(5000)
   assert press(
-      resources: class_resource.new(
+      resources: class_resource_support.new(
         resource: class_resource_support.resource_of(2),
       ),
       bag_index: electrocute,
@@ -102,7 +102,7 @@ pub fn electrocute_and_mind_burst_are_refused_51_at_their_empty_start_test() -> 
     == #([51], [])
     as "an Engineer starts with 0 Volatility (472510); 8 of slot 1 gives 51"
   assert press(
-      resources: class_resource.new(
+      resources: class_resource_support.new(
         resource: class_resource_support.resource_of(3),
       ),
       bag_index: mind_burst,
@@ -128,7 +128,7 @@ pub fn gamma_rays_passes_at_2_actuators_is_refused_55_at_1_and_at_3_with_a_max_o
     == #([55], [])
     as "1 - 2 < 0 in slot 1, and slots 2 to 5 hold 0: the last of them, slot 5, gives 55"
   let max_0 =
-    class_resource.new(
+    class_resource_support.new(
       resource: Resource(
         ..class_resource_support.resource_of(4),
         max: 0.0,
@@ -274,7 +274,7 @@ pub fn a_row_cost_has_no_maximum_and_a_vital_the_class_lacks_is_refused_175_test
     == #([], [])
     as "0x1403c0620: a cost of 0 passes, and takes nothing"
   let above_its_max =
-    class_resource.new(
+    class_resource_support.new(
       resource: Resource(
         ..class_resource_support.resource_of(4),
         max: 0.0,
@@ -324,7 +324,7 @@ pub fn each_comparison_reads_as_compare_by_eval_on_the_amount_and_on_the_percent
   use <- owned_test.run(5000)
   // Slot 1 at 500 of a maximum of 1000: 50 percent (0x1403b1780).
   let resources =
-    class_resource.new(
+    class_resource_support.new(
       resource: Resource(..class_resource_support.resource_of(1), start: 500.0),
     )
   let cases = [
@@ -364,7 +364,7 @@ pub fn each_comparison_reads_as_compare_by_eval_on_the_amount_and_on_the_percent
 pub fn a_percentage_of_a_maximum_of_0_passes_only_above_or_at_least_for_a_slot_above_0_test() -> Nil {
   use <- owned_test.run(5000)
   let at = fn(value) {
-    class_resource.new(
+    class_resource_support.new(
       resource: Resource(
         ..class_resource_support.resource_of(1),
         max: 0.0,

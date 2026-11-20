@@ -716,7 +716,13 @@ pub fn a_channel_that_ends_early_has_paid_only_for_the_gos_that_ran_test() -> Ni
 
 type Press {
   Refused(result: Int)
-  Accepted(first_go_pays: Payment)
+  Accepted(first_go_pays: Payment, after_ms: Int)
+}
+
+/// What a press's caster holds the points in: the class slot, or Focus.
+type Holds {
+  HoldsInSlot
+  HoldsFocus
 }
 
 type Pressing {
@@ -725,6 +731,7 @@ type Pressing {
     spell: Spell,
     class_id: Int,
     holding: Float,
+    holds: Holds,
     outcome: Press,
     reason: String,
   )
@@ -738,6 +745,7 @@ pub fn a_channel_press_is_refused_when_one_gos_cost_cannot_be_met_test() -> Nil 
       spell: electrocute(),
       class_id: engineer,
       holding: 7.0,
+      holds: HoldsInSlot,
       outcome: Refused(51),
       reason: "Electrocute costs 8 of vital 6: 7 is refused 50 + slot 1 (Spell4CastResult.vital_cost, 0x1403b3320)",
     ),
@@ -746,6 +754,7 @@ pub fn a_channel_press_is_refused_when_one_gos_cost_cannot_be_met_test() -> Nil 
       spell: particle_ejector(),
       class_id: engineer,
       holding: 4.0,
+      holds: HoldsInSlot,
       outcome: Refused(51),
       reason: "Spell4 34658 costs 5: 4 is refused 51",
     ),
@@ -754,6 +763,7 @@ pub fn a_channel_press_is_refused_when_one_gos_cost_cannot_be_met_test() -> Nil 
       spell: frenzy(),
       class_id: stalker,
       holding: 9.0,
+      holds: HoldsInSlot,
       outcome: Refused(53),
       reason: "Spell4 39366 costs 10 of slot 3: 9 is refused 50 + 3",
     ),
@@ -762,25 +772,38 @@ pub fn a_channel_press_is_refused_when_one_gos_cost_cannot_be_met_test() -> Nil 
       spell: emission(),
       class_id: medic,
       holding: 100.0,
-      outcome: Refused(167),
-      reason: "Spell4 58841 costs Focus, which the server does not hold: refused 167 (CasterVitalCostFocus), nothing reserved; the step that holds Focus changes this row to accepted and paying 3 times",
+      holds: HoldsFocus,
+      outcome: Accepted(
+        first_go_pays: Payment(slot: -1, amount: 15),
+        after_ms: 410,
+      ),
+      reason: "Spell4 58841 costs 15 of type 15 (Focus): 100 Focus holds it (0x1403b3320 case 0xe), and its first go, at 410, pays 15",
     ),
     Pressing(
       name: "5.5",
       spell: electrocute(),
       class_id: engineer,
       holding: 8.0,
-      outcome: Accepted(first_go_pays: volatility(8)),
+      holds: HoldsInSlot,
+      outcome: Accepted(first_go_pays: volatility(8), after_ms: 500),
       reason: "the press check is one go's cost (0x1403b3320): exactly 8 is accepted and its first go pays",
     ),
   ]
   |> list.each(fn(row) {
-    let scene =
-      channel_support.channel_scene(
-        spell: row.spell,
-        class_id: row.class_id,
-        holding: row.holding,
-      )
+    let scene = case row.holds {
+      HoldsInSlot ->
+        channel_support.channel_scene(
+          spell: row.spell,
+          class_id: row.class_id,
+          holding: row.holding,
+        )
+      HoldsFocus ->
+        channel_support.focus_scene(
+          spell: row.spell,
+          class_id: row.class_id,
+          focus: row.holding,
+        )
+    }
     let reason = row.name <> ": " <> row.reason
     case row.outcome {
       Refused(result:) -> {
@@ -797,13 +820,13 @@ pub fn a_channel_press_is_refused_when_one_gos_cost_cannot_be_met_test() -> Nil 
             row.name <> ": a refused press reserves nothing: no cast is live"
           }
       }
-      Accepted(first_go_pays:) -> {
+      Accepted(first_go_pays:, after_ms:) -> {
         let run = channel_support.run_channel(scene:)
         assert support.refusal_results(effects: channel_support.effects(run:))
           == []
           as reason
         assert list.first(channel_support.payments(run:))
-          == Ok(#(500, first_go_pays))
+          == Ok(#(after_ms, first_go_pays))
           as reason
       }
     }
@@ -843,6 +866,14 @@ pub fn each_paid_go_of_a_channel_is_one_spend_for_the_procs_test() -> Nil {
       reason: "the go that cannot be paid writes no Pay, so it raises no spend",
     ),
     Spends(
+      name: "6.4",
+      spell: emission(),
+      class_id: medic,
+      holding: 1000.0,
+      events: list.map([410, 820, 1230], fn(at) { #(at, 1) }),
+      reason: "Emission (Focus): three gos, each Pay of 15 raises one SpendsResource (Spell4Effects.effectType.14.dataBits00 kind 103, a guess already stated in cast/proc.resources_spent)",
+    ),
+    Spends(
       name: "6.3",
       spell: frenzy(),
       class_id: stalker,
@@ -852,13 +883,68 @@ pub fn each_paid_go_of_a_channel_is_one_spend_for_the_procs_test() -> Nil {
     ),
   ]
   |> list.each(fn(row) {
-    let run =
-      channel_support.run_channel(scene: channel_support.channel_scene(
-        spell: row.spell,
-        class_id: row.class_id,
-        holding: row.holding,
-      ))
+    let scene = case row.spell.costs {
+      [spell_plan.FocusCost(..)] ->
+        channel_support.focus_scene(
+          spell: row.spell,
+          class_id: row.class_id,
+          focus: row.holding,
+        )
+      _ ->
+        channel_support.channel_scene(
+          spell: row.spell,
+          class_id: row.class_id,
+          holding: row.holding,
+        )
+    }
+    let run = channel_support.run_channel(scene:)
     assert channel_support.spends(run:) == row.events
       as { row.name <> ": " <> row.reason }
+  })
+}
+
+// ---- 7: a Focus channel ----
+
+pub fn a_focus_channel_pays_15_at_each_of_emissions_3_gos_and_ends_when_the_pool_cannot_pay_the_next_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let focus_points = fn(points) { Payment(slot: -1, amount: points) }
+  // Name, the Focus held, the payments by time, the end (none: it ran its 3 gos), why.
+  [
+    #(
+      "7.1",
+      1000.0,
+      each(at: [410, 820, 1230], pays: focus_points(15)),
+      None,
+      "Spell4 58841: type 15 cost 15, delay 410, max 1250, pulse 410: 3 gos, each paying the cost (the tooltip prices every pulse, ToolTips.lua 2458-2491), 1000 less 45",
+    ),
+    #(
+      "7.2",
+      20.0,
+      each(at: [410], pays: focus_points(15)),
+      Some(820),
+      "20 pays the first go and the 5 left cannot pay the second: the channel ends as a cancel ends it (Jim's decision, issue 942), the paid go stays paid",
+    ),
+  ]
+  |> list.each(fn(row) {
+    let #(name, held, paid, ended_at, reason) = row
+    let run =
+      channel_support.run_channel(scene: channel_support.focus_scene(
+        spell: emission(),
+        class_id: medic,
+        focus: held,
+      ))
+    assert channel_support.payments(run:) == paid as { name <> ": " <> reason }
+    assert channel_support.failures(run:) == 0
+      as {
+        name
+        <> ": no 0x7f9, which would destroy the target nodes the server keeps (opcode.0x7f9)"
+      }
+    case ended_at {
+      Some(at) -> {
+        assert channel_support.finished_at(run:) == Ok(at)
+          as { name <> ": the end is the 0x7fe of the go that cannot be paid" }
+      }
+      None -> Nil
+    }
   })
 }

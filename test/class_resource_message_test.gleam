@@ -14,6 +14,11 @@
 //// - The bit stream writes each field from its lowest bit up, in field order, as
 ////   the client's reader reads it (the 0x938 vector of combat_message_vector_test).
 ////
+//// - The design of issue 945: Focus is stat 1 (`ApplyUnitStat` 0x1403d9a60 case 1,
+////   `SetUnitStatsFromCreate` 0x140458140 case 1: the float form only, at the unit's
+////   +0x218) with its maximum as property 5 (`GetMaxFocus` 0x14064a810), for the
+////   classes whose level grants cost it, at the pool of 1000 (Jim's decision).
+////
 //// Gap: no vector here is a client's or a recording's bytes. The 0x935 vector and
 //// the bytes of each 0x262 resource stat are built by hand from the schema's field
 //// order and sizes. The loadout session recorded live (`wire_recording`) shows the
@@ -172,4 +177,117 @@ pub fn the_server_writes_0x938_only_for_the_shield_never_a_resource_stat_test() 
   let resource = message_support.hex("01 10 00 00 63 0f 00 00 00")
   assert unit_stat_changed.decode(resource) |> result.is_error
     as "opcode.0x938.resource_stats: a 0x938 of stats 2 to 9 sets the slot to 0, so the server's 0x938 holds stat 20 alone"
+}
+
+// ---- Focus: stat 1 and property 5 ----
+
+/// The player's own 0x262 of a new character of the class, as the connection writes it
+/// at entry.
+fn entered_player_of(class_id: Int) -> UnitCreatePlayer {
+  game_connection_support.player_in(
+    game_connection_support.entered_as(
+      store.Character(
+        ..game_connection_support.world_character(),
+        class_id: ClassId(class_id),
+      ),
+    ).1,
+  )
+}
+
+pub fn a_healers_0x262_carries_stat_1_in_the_float_form_at_the_pool_and_property_5_at_the_pool_and_no_other_class_carries_either_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Class id, whether the class holds Focus.
+  [
+    #(1, False),
+    #(2, False),
+    #(3, True),
+    #(4, True),
+    #(5, False),
+    #(7, True),
+  ]
+  |> list.each(fn(row) {
+    let #(class_id, holds_focus) = row
+    let player = entered_player_of(class_id)
+    let focus_stats =
+      list.filter(player.tail.stats, fn(stat) { stat.stat_id == 1 })
+    let pools =
+      list.filter(player.tail.properties, fn(property) {
+        property.property_id == 5
+      })
+    case holds_focus {
+      True -> {
+        let assert [stat] = focus_stats as "one stat 1 in the 0x262 of a healer"
+        assert stat
+          == UnitStat(
+            stat_id: 1,
+            value: unit_stat_value.Float(
+              UnitStatFloat(value: float32.to_bits(1000.0)),
+            ),
+          )
+          as "form 1, the float form the client keeps (0x140458140 case 1), at the pool of 1000 (Jim's decision)"
+        assert stat_bytes(stat) == message_support.hex("21 00 00 3d 22")
+          as "stat 1 in 5 bits, form 1 in 2, then 1000.0 (0x447A0000); built by hand from the schema (module gap)"
+        let assert [pool] = pools as "one property 5"
+        assert pool.base == float32.to_bits(1000.0)
+          && pool.value == float32.to_bits(1000.0)
+          as "base and value alike (0x1404584b0)"
+      }
+      False -> {
+        assert focus_stats == [] && pools == []
+          as "a Warrior, Engineer or Stalker holds no Focus: no stat 1 and no property 5"
+      }
+    }
+  })
+  assert stat_bytes(unit_fields.integer_stat(stat_id: 1, value: 1000))
+    == message_support.hex("01 f4 01 00 00")
+    as "stat 1 in the integer form is form 0, which the client stores as 0 (0x140458140 case 1: the float form only), as the same stat of a slot is (the_same_stat_in_the_integer_form_is_another_form_on_the_wire_test)"
+}
+
+pub fn a_focus_change_is_0x935_of_stat_1_and_the_server_never_writes_0x938_for_it_test() -> Nil {
+  use <- owned_test.run(5000)
+  message_support.assert_codec(
+    name: "opcode.0x935: unit 0x1001, stat 1 (Focus), 35.0 (0x420C0000); bytes built by hand from the schema, no recorded 0x935 (module gap)",
+    body: message_support.hex("01 10 00 00 01 00 80 41 08"),
+    value: UnitFloatStatChanged(
+      unit_id: 0x1001,
+      stat_id: 1,
+      value: float32.to_bits(35.0),
+    ),
+    encode: unit_float_stat_changed.encode,
+    decode: unit_float_stat_changed.decode,
+  )
+  let focus = message_support.hex("01 10 00 00 61 0f 00 00 00")
+  assert unit_stat_changed.decode(focus) |> result.is_error
+    as "opcode.0x938.resource_stats: a 0x938 passes a float of 0 for the stat, so it cannot set Focus: the server's 0x938 holds stat 20 alone"
+}
+
+pub fn resource_max_property_answers_5_for_slot_minus_1_and_a_healers_0x262_resource_max_is_its_class_slots_only_test() -> Nil {
+  use <- owned_test.run(60_000)
+  assert unit_fields.resource_max_property(slot: -1) == 5
+    as "UnitProperty2 5 is BaseFocusPool, Focus's maximum (GetMaxFocus 0x14064a810); without a case slot -1 would answer 8, HealthRegenMultiplier"
+  assert unit_fields.resource_max_property(slot: 1) == 10
+    as "ResourceMax_1 (0x140466360)"
+  // Class id, the class slot's ResourceMax property and its maximum.
+  [#(3, 10, 5.0), #(4, 10, 4.0), #(7, 13, 100.0)]
+  |> list.each(fn(row) {
+    let #(class_id, resource_max, maximum) = row
+    let player = entered_player_of(class_id)
+    let max_of = fn(property_id) {
+      list.find(player.tail.properties, fn(property) {
+        property.property_id == property_id
+      })
+    }
+    let assert Ok(slot_max) = max_of(resource_max)
+      as "the class slot's ResourceMax is listed"
+    assert slot_max.value == float32.to_bits(maximum)
+    let assert Ok(pool) = max_of(5) as "property 5 is listed"
+    assert pool.value == float32.to_bits(1000.0)
+    assert max_of(8) == Error(Nil)
+      as "property 8 (HealthRegenMultiplier) stays at its default: the Focus maximum is not written to it"
+    assert list.filter(player.tail.properties, fn(property) {
+        property.property_id >= 9 && property.property_id <= 15
+      })
+      == [slot_max]
+      as "no other resource slot is given a maximum"
+  })
 }

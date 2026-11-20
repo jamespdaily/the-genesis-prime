@@ -215,7 +215,8 @@ pub fn without_the_chest_armor_and_health_fall_by_its_values_test() -> Nil {
   assert list.map(worn.visuals, fn(visual) { visual.slot }) == [2, 4, 5, 6, 20]
     as "the chest's slot 1 is not drawn, and the other four armor slots and the weapon are"
   assert worn.weapon == Some(Item2Id(81_346)) as "the weapon stays"
-  let assert Ok(health) = gear.bases(tables:, gear: worn, level: 1)
+  let assert Ok(health) =
+    gear.bases(tables:, gear: worn, level: 1, focus_pool: 0.0)
     as "CreatureLevel has row 1"
   assert health
     |> list.key_find(UnitProperty2Id(7))
@@ -241,7 +242,8 @@ pub fn without_a_shield_its_four_properties_are_the_defaults_test() -> Nil {
   let without_shield = list.filter(all, fn(item) { item.bag_index != 15 })
   let bare = gear.of_items(tables:, level: 1, items: without_shield)
   assert bare.properties.shield == None as "no shield is worn"
-  let assert Ok(bases) = gear.bases(tables:, gear: bare, level: 1)
+  let assert Ok(bases) =
+    gear.bases(tables:, gear: bare, level: 1, focus_pool: 0.0)
     as "CreatureLevel has row 1"
   assert list.filter(list.map(bases, fn(base) { { base.0 }.value }), fn(id) {
       list.contains([7, 35, 36, 41, 42, 175, 176, 178], id)
@@ -259,7 +261,8 @@ pub fn without_a_shield_its_four_properties_are_the_defaults_test() -> Nil {
     ]
     as "UnitProperty2's defaultValue of ShieldCapacityMax 0, ShieldMitigationMax 0, ShieldRegenPct 0.25 and ShieldRebootTime 2500"
   let shielded = gear.of_items(tables:, level: 1, items: all)
-  let assert Ok(with_shield) = gear.bases(tables:, gear: shielded, level: 1)
+  let assert Ok(with_shield) =
+    gear.bases(tables:, gear: shielded, level: 1, focus_pool: 0.0)
     as "CreatureLevel has row 1"
   let shield_part =
     list.filter(with_shield, fn(base) {
@@ -392,7 +395,8 @@ pub fn worn_level_scaled_gear_gives_its_bases_at_the_wearers_level_test() -> Nil
       items: one_item(item2_id: 13_394, location: 0, bag_index: 0),
     )
   assert worn.unread == [] as "the level-scaled armor is read"
-  let assert Ok(bases) = gear.bases(tables:, gear: worn, level: 10)
+  let assert Ok(bases) =
+    gear.bases(tables:, gear: worn, level: 10, focus_pool: 0.0)
     as "CreatureLevel has row 10"
   assert bases
     |> list.key_find(UnitProperty2Id(42))
@@ -426,11 +430,12 @@ pub fn max_health_at_a_level_uses_that_levels_creature_level_row_test() -> Nil {
   assert gear.max_health(tables:, gear: worn, level: 102)
     == Error(gear.NoCreatureLevel(level: 102))
     as "the client's CreatureLevel holds the rows 1 to 101 and none for level 102"
-  let assert Ok(bases) = gear.bases(tables:, gear: worn, level: 9)
+  let assert Ok(bases) =
+    gear.bases(tables:, gear: worn, level: 9, focus_pool: 0.0)
     as "CreatureLevel has row 9"
   assert list.key_find(bases, UnitProperty2Id(7)) == Ok(2895.0)
     as "property 7 at level 9 is the maximum health there"
-  assert gear.bases(tables:, gear: worn, level: 102)
+  assert gear.bases(tables:, gear: worn, level: 102, focus_pool: 0.0)
     == Error(gear.NoCreatureLevel(level: 102))
     as "no row, no bases"
 }
@@ -539,7 +544,8 @@ pub fn a_budget_rating_is_its_default_plus_the_worn_sum_and_returns_on_unequip_t
         items: one_item(item2_id: 1375, location:, bag_index: 5),
       )
     assert worn.unread == [] as "the gloves are read in full"
-    let assert Ok(bases) = gear.bases(tables:, gear: worn, level: 1)
+    let assert Ok(bases) =
+      gear.bases(tables:, gear: worn, level: 1, focus_pool: 0.0)
       as "CreatureLevel has row 1"
     list.key_find(bases, UnitProperty2Id(34))
   }
@@ -571,7 +577,8 @@ pub fn a_budget_base_health_adds_to_the_maximum_health_test() -> Nil {
     as "0x14040db30: Base Health from the budget, the 32-bit float 0x4305a667"
   assert gear.max_health(tables:, gear: worn, level: 1) == Ok(270)
     as "135.97 and 133.65 round to 270"
-  let assert Ok(bases) = gear.bases(tables:, gear: worn, level: 1)
+  let assert Ok(bases) =
+    gear.bases(tables:, gear: worn, level: 1, focus_pool: 0.0)
     as "CreatureLevel has row 1"
   assert list.key_find(bases, UnitProperty2Id(7)) == Ok(270.0)
     as "property 7 at level 1 is the maximum health there"
@@ -613,7 +620,8 @@ pub fn a_worn_rolled_item_adds_its_rolled_ratings_to_the_bases_test() -> Nil {
       items: one_rolled(random_stats: 0x0100000000030201),
     )
   assert worn.unread == [] as "the item is read in full with its word"
-  let assert Ok(bases) = gear.bases(tables:, gear: worn, level: 1)
+  let assert Ok(bases) =
+    gear.bases(tables:, gear: worn, level: 1, focus_pool: 0.0)
     as "CreatureLevel has row 1"
   let bits_of = fn(property_id) {
     list.key_find(bases, UnitProperty2Id(property_id))
@@ -668,4 +676,46 @@ pub fn a_worn_item_with_a_refused_roll_is_worn_and_gives_nothing_test() -> Nil {
       "the worn item 48169 gives no properties: the item 48169 has the random-stat word 72057594037928449, whose choice for entry 2 is 0 or past its group's rows, which the client refuses",
     ]
     as "one warning names the item and the word"
+}
+
+/// Item2 11671 (boots) has ItemBudget 3 (one share of 1.0) and ItemStat 12, which names
+/// property 5, BaseFocusPool (valuePerPoint 1.5). The base pool is the class's content
+/// row, 1000 for a healer, which `bases` adds to property 5's default 0 and what the worn
+/// items give (`0x14040db30`: a budget property is its default plus the worn sum), so
+/// taking the item off returns the base and the pool is not counted twice. A class with
+/// no Focus pool, which the caller gives 0, has the item's value alone.
+pub fn a_worn_items_focus_pool_adds_to_the_classes_base_and_returns_on_unequip_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = fixture_tables.shared()
+  // The boots' value: one budget share of 1.0 at power level 8, 7.5 + 0.35 x 8 = 10.3
+  // points (GameFormula 1028), x the feet's slot modifier 0.75 x property 5's valuePerPoint
+  // 1.5 = 11.5875; the client works in 32-bit floats, so a value is taken within 0.0001.
+  let item_value = 11.5875
+  let pool_of = fn(focus_pool, items) {
+    let worn = gear.of_items(tables:, level: 1, items:)
+    assert worn.unread == [] as "the boots are read in full"
+    let assert Ok(bases) =
+      gear.bases(tables:, gear: worn, level: 1, focus_pool:)
+      as "CreatureLevel has row 1"
+    list.key_find(bases, UnitProperty2Id(5))
+  }
+  let worn = one_item(item2_id: 11_671, location: 0, bag_index: 5)
+  let in_bag = one_item(item2_id: 11_671, location: 1, bag_index: 5)
+  // Name, the pool the class gives, the items held, property 5's base.
+  [
+    #("a Medic with no gear", 1000.0, [], 1000.0),
+    #("a Medic wearing the boots", 1000.0, worn, 1000.0 +. item_value),
+    #("the boots in the bag", 1000.0, in_bag, 1000.0),
+    #("a Warrior wearing them", 0.0, worn, item_value),
+    #("a Warrior with no gear", 0.0, [], 0.0),
+  ]
+  |> list.each(fn(row) {
+    let #(name, focus_pool, items, base) = row
+    let assert Ok(held) = pool_of(focus_pool, items) as "property 5 is listed"
+    assert close(value: held, to: base)
+      as {
+        name
+        <> ": property 5 is the class's pool, plus the worn items' budget on UnitProperty2 5's default 0"
+      }
+  })
 }

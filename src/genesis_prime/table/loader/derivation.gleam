@@ -5,6 +5,7 @@ import genesis_prime/game/activate
 import genesis_prime/game/appearance
 import genesis_prime/game/communicator
 import genesis_prime/game/faction_level
+import genesis_prime/game/focus
 import genesis_prime/game/level_up
 import genesis_prime/game/limited_action_set
 import genesis_prime/game/loadout
@@ -63,6 +64,8 @@ import gleam/set.{type Set}
 /// - The quest rewards: each quest's Quest2Reward rows, which a turn-in reads
 ///   (genesis_prime/game/quest_turn_in).
 /// - The rating formulas: the hit rule's GameFormula rows (genesis_prime/game/rating).
+/// - The Focus formulas: GameFormula 88, 1237, 1243 and 1267, which a healer's Focus
+///   reads, whose missing rows fail the load (genesis_prime/game/focus).
 /// - The top zones: each WorldZone's top zone, which a cycle in the parent chain
 ///   fails (genesis_prime/game/top_zone).
 /// - The unit property defaults: each UnitProperty2 row's defaultValue, the base of
@@ -89,6 +92,7 @@ pub fn all() -> List(store.Derivation) {
     communicator.derivation(),
     quest_turn_in.derivation(),
     rating.derivation(),
+    focus.derivation(),
     top_zone.derivation(),
     unit_properties.derivation(),
     creature_attack.derivation(),

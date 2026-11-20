@@ -194,7 +194,7 @@ fn mind_burst_held_behind_the_go(
 ) -> #(List(class_resource.Payment), List(List(class_resource.Gain)), List(Int)) {
   let caster =
     support.caster_holding(
-      resources: class_resource.new(
+      resources: class_resource_support.new(
         resource: class_resource_support.resource_of(3),
       ),
     )

@@ -256,6 +256,73 @@ pub fn wrapper(scene scene: Scene, script path: String) -> String {
   "#!/bin/bash\nexec /usr/bin/env " <> string.join(words, " ") <> "\n"
 }
 
+/// The key of `podman container inspect --format {{.Id}} NAME`.
+pub fn identity(name: String) -> String {
+  "identity." <> name
+}
+
+/// The key of `podman logs ... NAME`.
+pub fn container_log(name: String) -> String {
+  "logs." <> name
+}
+
+/// Plants the id that `podman container inspect --format {{.Id}} NAME` prints.
+pub fn plant_identity(
+  scene scene: Scene,
+  name name: String,
+  id id: String,
+) -> Nil {
+  plant(
+    scene:,
+    key: identity(name),
+    answer: Answer(exits: [0], output: id <> "\n", error: ""),
+  )
+}
+
+/// Plants what `podman logs ... NAME` prints, whatever it is asked.
+pub fn plant_container_log(
+  scene scene: Scene,
+  name name: String,
+  text text: String,
+) -> Nil {
+  plant(
+    scene:,
+    key: container_log(name),
+    answer: Answer(exits: [0], output: text, error: ""),
+  )
+}
+
+/// Plants a Podman that cannot be reached: every call of the container `name`
+/// fails with exit 125 and the words the measured Podman prints for a socket
+/// that is not there.
+pub fn plant_unreachable(scene scene: Scene, name name: String) -> Nil {
+  let words =
+    "Cannot connect to Podman. Please verify your connection to the Linux system using `podman system connection list`, or try `podman machine init` and `podman machine start` to manage a new Linux VM\nError: unable to connect to Podman socket: Get \"http://d/v6.1.4/libpod/_ping\": dial unix /nonexistent.sock: connect: no such file or directory\n"
+  list.each([identity(name), container_log(name)], fn(key) {
+    plant(scene:, key:, answer: Answer(exits: [125], output: "", error: words))
+  })
+}
+
+/// Writes an executable that runs the scene's fake `podman` with the scene's
+/// folder of fakes as its `FAKE_DIR`, for a caller that starts `podman` itself
+/// as a program (the dashboard's container reader), and gives its path. The
+/// fake takes the place of the program: one process, so the process id it
+/// records is the one the caller ends.
+pub fn plant_podman(scene scene: Scene) -> String {
+  let path = scene.fakes <> "/podman-run"
+  let assert Ok(Nil) =
+    simplifile.write(
+      path,
+      "#!/bin/bash\nexec /usr/bin/env -i PATH=/usr/bin:/bin 'FAKE_DIR="
+        <> string.replace(scene.fakes, "'", "'\\''")
+        <> "' '"
+        <> string.replace(scene.fakes <> "/podman", "'", "'\\''")
+        <> "' \"$@\"\n",
+    )
+  let assert Ok(Nil) = simplifile.set_permissions_octal(path, 0o755)
+  path
+}
+
 /// Runs `commands` in a shell that has sourced `lib.sh`, so a function of it is
 /// called as the scripts call it. The run ends by printing `returned N` with
 /// the last command's exit status.

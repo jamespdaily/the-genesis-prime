@@ -101,6 +101,29 @@ pub fn os_pid() -> Int
 @external(erlang, "dashboard_support_ffi", "process_alive")
 pub fn process_alive(os_pid: Int) -> Bool
 
+/// The longest deadline `until_pid_recorded` tries.
+const longest_deadline_ms = 6400
+
+/// Runs a program that records its own process id and then blocks, until a run
+/// has the id recorded: a cold start of its interpreter may not have written it
+/// by a short deadline, so the run is repeated with twice the deadline. `run`
+/// makes one run with the deadline and gives its answer; `recorded` gives the
+/// ids recorded so far, none when the program has not written one yet. Gives the
+/// last run's answer and the first id recorded.
+pub fn until_pid_recorded(
+  run run: fn(Int) -> answer,
+  recorded recorded: fn() -> List(Int),
+  deadline_ms deadline_ms: Int,
+) -> #(answer, Int) {
+  let answer = run(deadline_ms)
+  case recorded() {
+    [pid, ..] -> #(answer, pid)
+    [] if deadline_ms < longest_deadline_ms ->
+      until_pid_recorded(run:, recorded:, deadline_ms: deadline_ms * 2)
+    [] -> panic as "the program never recorded its process id"
+  }
+}
+
 pub fn gate() -> Gate {
   Gate(key:, port:)
 }
@@ -252,7 +275,11 @@ pub fn with_home(body body: fn(String) -> a) -> a {
 /// made when a page subscribes or a test asks for one, and ends with the script.
 /// The log followers' timers never come either (a day): a log is read when a page
 /// subscribes or a test calls `follow.read_now`, and no one is told of the
-/// followers' reads unless the test sets `log_watcher`.
+/// followers' reads unless the test sets `log_watcher`. The containers' logs are
+/// read through a `podman` that is not there (`home`'s `no-podman`), so no test
+/// that opens the Logs page runs the developer's real `podman`: each container
+/// shows as unreadable until a test plants one; the container followers' timers
+/// never come and no call is ended by its deadline (a day).
 pub fn settings(home home: String) -> dashboard.Settings {
   dashboard.Settings(
     port: free_port(),
@@ -263,6 +290,9 @@ pub fn settings(home home: String) -> dashboard.Settings {
     poll_interval_ms: 86_400_000,
     read_deadline_ms: 86_400_000,
     log_interval_ms: 86_400_000,
+    podman_path: home <> "/no-podman",
+    container_interval_ms: 86_400_000,
+    container_call_deadline_ms: 86_400_000,
     log_watcher: None,
   )
 }

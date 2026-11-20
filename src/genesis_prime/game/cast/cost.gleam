@@ -17,7 +17,9 @@
 ////   `Rampage` 51 below 250 Kinetic Energy unless the caster is under Overdrive 42908);
 ////   50 + the resource slot for a cost the caster's class
 ////   resource cannot pay (`0x1403b3320`, `0x1405e7980`,
-////   `Spell4CastResult.vital_cost`); 169 for a spell that needs the weapon when
+////   `Spell4CastResult.vital_cost`); 167 for a Focus cost the caster's Focus cannot meet,
+////   the whole points held against `class_resource.focus_required`, the client's
+////   `(int)(m x cost + 0.5)` (`0x1403b3320` case 0xe); 169 for a spell that needs the weapon when
 ////   slot 16 holds none (`0x1403afb10`); 151 for a spell whose CasterCast fails and
 ////   281 for one whose TargetCast does, the last checks of the press (`0x1403ace00`,
 ////   below); and 285 for a spell whose method is not
@@ -243,6 +245,19 @@ fn cost_taken(
     spell_plan.UnheldCost(result:) -> Error(Unheld(result:))
     spell_plan.UnreadSpendCost(result:, emm_id:) ->
       Error(UnreadSpend(result:, emm_id:))
+    spell_plan.FocusCost(amount:) -> {
+      let required = class_resource.focus_required(resources:, amount:)
+      case
+        whole_points(resources:, slot: class_resource.focus_slot) < required
+      {
+        True -> Error(Unpaid(result: 167))
+        False ->
+          Ok(adding(
+            paid:,
+            payment: Payment(slot: class_resource.focus_slot, amount: required),
+          ))
+      }
+    }
     spell_plan.SlotCost(slot:, amount:, result:) ->
       case whole_points(resources:, slot:) < int.absolute_value(amount) {
         True -> Error(Unpaid(result:))
@@ -365,6 +380,7 @@ fn spends_every_point(cost: spell_plan.Cost) -> Bool {
   case cost {
     spell_plan.SpendAllCost(..) -> True
     spell_plan.UnheldCost(..)
+    | spell_plan.FocusCost(..)
     | spell_plan.UnreadSpendCost(..)
     | spell_plan.SlotCost(..)
     | spell_plan.ClassVitalCost(..)
@@ -529,6 +545,18 @@ pub fn gaps() -> List(gap.Entry) {
     gap.Entry(
       area: "Casting",
       missing: "The client's cast request word, which it sets for the presses the ride spells make, is read as 0 for every press, so the caster's Ability Restriction is checked for those presses too.",
+    ),
+    gap.Entry(
+      area: "Focus",
+      missing: "A Focus cost on a stage's threshold row is refused as a vital the server does not hold, and a Focus cost on a per-tick effect row is not read.",
+    ),
+    gap.Entry(
+      area: "Focus",
+      missing: "A Proc of kind 152 or 103, which a Focus spend would raise, the Focus final multiplier (FocusFinalMultiplier, effect type 172) and a group member's Focus on the raid frame are not read, since no granted ability's tree holds them and the server holds no group.",
+    ),
+    gap.Entry(
+      area: "Focus",
+      missing: "A VitalModifier of the Focus vital gives nothing, a type 71 or 73 prerequisite on the Focus vital is not read, and a caster requirement on Focus (requirement type 15) is not planned, so the abilities that need them are not planned.",
     ),
   ]
 }
