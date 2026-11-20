@@ -90,8 +90,9 @@ pub type Shape {
 }
 
 /// Where a creature special's hit is centred, which is where its picture is drawn
-/// (genesis_prime/game/telegraph_entries): a spell has one anchor, read from its hit rows'
-/// flags (genesis_prime/game/spell_area `anchor_of`).
+/// (genesis_prime/game/telegraph_entries): a spell has one anchor. The load reads the two caster
+/// anchors from the hit rows' flags (genesis_prime/game/spell_area `anchor_of`); the two target
+/// anchors are set on a special's `Charged` and the load does not produce them.
 pub type Anchor {
   /// Rows with neither 0x4000 nor 0x1000: the client draws them on the caster each frame
   /// from its own place and facing, so the hit is centred on the caster where it stands at
@@ -101,19 +102,34 @@ pub type Anchor {
   /// cast's start, so the hit is centred on the pose the cast started at
   /// (`0x14054b1b0.fixed_placement`).
   FixedAtCaster
+  /// Rows with neither 0x4000 nor 0x1000 placed on the cast's target (`targetTypeFlags` 0 or
+  /// bit 2): the client draws them on the unit of the cast's primary target each frame, so
+  /// the hit is centred on that target where it stands at the strike, with its facing
+  /// (`0x14054b1b0.follows_caster`, `0x140546e60.placement_branches`). The client drops the
+  /// row when it cannot find the target's unit in its world, not when the target dies or leaves
+  /// the fight (`0x14054b1b0.unit_gone`), so the hit finds nobody only once the target is
+  /// no longer in the creature's viewers.
+  FollowsTarget
+  /// Rows with 0x4000 or 0x1000 placed on the cast's target: the client draws them at the
+  /// entries the 0x7ff carried, so the hit is centred on the pose the target stood in when
+  /// the cast began, and stays there whatever the target does (a server choice, a guess: the
+  /// client only draws the entry where it is told, `0x14054b1b0.fixed_placement`). The row is
+  /// bound to the target's unit as well (`0x14054b1b0.unit_gone`), so it too finds nobody once
+  /// the target is no longer in the creature's viewers.
+  FixedAtTarget
 }
 
-/// A shape placed on the caster: where it lies against the caster's place and
-/// facing. The struck unit's hit radius grows it.
+/// A shape placed on a unit, the caster or the cast's target: where it lies against that
+/// unit's place and facing. The struck unit's hit radius grows it.
 pub type Placement {
   Placement(
     shape: Shape,
-    /// The offset ahead of the caster, from the row's z (positive is ahead).
+    /// The offset ahead of the unit, from the row's z (positive is ahead).
     ahead: Float,
     /// The row's x offset, negated before the turn: a positive x lies at
-    /// (-cos yaw, sin yaw) from the caster.
+    /// (-cos yaw, sin yaw) from the unit.
     aside: Float,
-    /// The turn of the shape off the caster's facing, in degrees.
+    /// The turn of the shape off the unit's facing, in degrees.
     turn_degrees: Float,
   )
 }
