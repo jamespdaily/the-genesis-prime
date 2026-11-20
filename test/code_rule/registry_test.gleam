@@ -248,7 +248,7 @@ pub fn a_named_module_that_is_not_among_the_files_is_a_breach_test() -> Nil {
     ]
 }
 
-pub fn each_registry_test_is_tagged_registry_test() -> Nil {
+pub fn each_core_registry_module_has_a_test_tagged_registry_test() -> Nil {
   use <- owned_test.run(10_000)
   use <- unitest.tag("code_rule")
   assert registry.breaches(
