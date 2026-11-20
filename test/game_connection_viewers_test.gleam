@@ -4,7 +4,10 @@
 //// units, what an owner sends and what a viewer writes, and the messages of an
 //// earlier stay.
 
+import cast_support
+import character_tables
 import connection_rule_support as support
+import fixture_tables
 import game_client
 import game_connection_support.{type Step, Appears, MapSaysGone, Moves, Removes}
 import genesis_prime/client_connection.{
@@ -15,7 +18,6 @@ import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
-import genesis_prime/message/combat_result
 import genesis_prime/message/crowd_control_state
 import genesis_prime/message/float32
 import genesis_prime/message/item_place
@@ -28,11 +30,9 @@ import genesis_prime/message/movement_state_flags.{MovementStateFlags}
 import genesis_prime/message/movement_time.{MovementTime}
 import genesis_prime/message/movement_timed_path.{MovementTimedPath}
 import genesis_prime/message/relayed_movement
-import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
-import genesis_prime/message/spell_effect_info.{SpellEffectInfo}
-import genesis_prime/message/spell_effect_result
+import genesis_prime/message/spell_effect_info
 import genesis_prime/message/spell_started
-import genesis_prime/message/spell_target_info.{SpellTargetInfo}
+import genesis_prime/message/spell_target_info
 import genesis_prime/message/spell_targets_removed
 import genesis_prime/message/start_movement
 import genesis_prime/message/unit_cc_state_applied.{UnitCcStateApplied}
@@ -57,6 +57,7 @@ import genesis_prime/step.{
 }
 import genesis_prime/store.{Character, ForItems, ForSelect, ItemsSaved, Listed}
 import genesis_prime/table/id.{ClassId}
+import genesis_prime/table/loader/store as store_tables
 import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/map.{
   Left, ObjectsSeen, ObjectsUnseen, SeenBy, UnseenBy,
@@ -71,7 +72,9 @@ import gleam/result
 import map_support
 import owned_test
 import place_support
+import planted_table
 import quest_support
+import server_proxy_support
 import simple_unit_support
 import spawn_support
 
@@ -455,7 +458,7 @@ fn engineer_passive(cast_id cast_id: Int) -> UnitCreateCast {
         effects: list.index_map(
           [104_980, 177_521, 177_522, 229_304],
           fn(effect_id, index) {
-            listed_effect(
+            cast_support.listed_effect_info(
               effect_id:,
               instance_id: index + 1,
               delay_ms: 0,
@@ -1742,33 +1745,15 @@ fn created_at(
   unit
 }
 
-/// The effect info of an effect that tells no value, as a unit create lists it.
-fn listed_effect(
-  effect_id effect_id: Int,
-  instance_id instance_id: Int,
-  delay_ms delay_ms: Int,
-  lifetime_ms lifetime_ms: Int,
-) -> spell_effect_info.SpellEffectInfo {
-  SpellEffectInfo(
-    spell4_effects_id: effect_id,
-    instance_id:,
-    delay_ms:,
-    lifetime_ms:,
-    result: spell_effect_result.Bit(SpellEffectBit(unread_2: 0)),
-  )
-}
-
 /// The target info a unit create lists for the player's own unit with these effects: the
 /// first target, flags 0, a count of 1 and a Hit.
 fn own_target(
   effects effects: List(spell_effect_info.SpellEffectInfo),
 ) -> spell_target_info.SpellTargetInfo {
-  SpellTargetInfo(
+  cast_support.listed_target_info(
     unit_id: game_connection_support.own_unit_id,
     index: 0,
-    flags: 0,
-    instance_count: 1,
-    combat_result: combat_result.Hit,
+    count: 1,
     effects:,
   )
 }
@@ -1786,10 +1771,20 @@ type Move {
 fn discharge_told_to_a_viewer(
   moves moves: List(Move),
 ) -> #(List(spell_started.SpellStarted), List(client_connection.News)) {
+  discharge_told_on(tables: character_tables.shared(), moves:)
+}
+
+/// `discharge_told_to_a_viewer` on these tables.
+fn discharge_told_on(
+  tables tables: store_tables.Tables,
+  moves moves: List(Move),
+) -> #(List(spell_started.SpellStarted), List(client_connection.News)) {
   let #(state, _, bag_index) =
-    game_connection_support.entered_with_spell_trees(
+    game_connection_support.entered_with_server_proxies(
       class_id: 4,
       ability: discharge_base,
+      proxies: server_proxy_support.none(),
+      tables:,
     )
   let #(state, pressed) =
     game_connection_support.pressed_until(
@@ -1915,7 +1910,7 @@ pub fn a_player_that_comes_into_sight_lists_its_buffs_test() -> Nil {
         started: 0,
         targets: [
           own_target(effects: [
-            listed_effect(
+            cast_support.listed_effect_info(
               effect_id: 67_777,
               instance_id: 1,
               delay_ms: 80,
@@ -2018,7 +2013,7 @@ pub fn a_player_that_comes_into_sight_lists_its_current_cast_test() -> Nil {
                 started: 0,
                 targets: [
                   own_target(effects: [
-                    listed_effect(
+                    cast_support.listed_effect_info(
                       effect_id: 96_819,
                       instance_id: 1,
                       delay_ms: 0,
@@ -2074,6 +2069,44 @@ pub fn a_player_that_comes_into_sight_lists_its_current_cast_test() -> Nil {
         })
         == 1
         as name
+    },
+  )
+}
+
+/// `opcode.0x262.casts` and `cast.target_node_end`: a viewer is told the later news of the
+/// casts its create listed and of no other. The map's second join of a connection sends each
+/// player it sees a second `SeenBy`, and a viewer that already shows the player drops the
+/// second create, so the second `SeenBy` lists it nothing and joins it to no cast. Discharge's
+/// Power Charge (Spell4 42569) is given a cast time of 1000 ms, so that this child cast of
+/// the first go (410 ms in) waits 1000 ms before its own first go makes its node: a viewer that
+/// comes at 1500 ms is not listed it, and one that comes again at 2600 ms, after the node, is
+/// still not told its end.
+pub fn a_second_join_of_a_viewer_joins_it_to_no_cast_it_was_not_listed_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use tables <- fixture_tables.changed(table: "Spell4", id: 42_569, with: [
+    #("castTime", planted_table.Integer(1000)),
+  ])
+  list.each(
+    [
+      #(
+        "a viewer that comes while the Power Charge waits for its first go is not listed it, so it is told nothing of it",
+        [Comes(1500)],
+      ),
+      #("and a second join after the node does not add the viewer to the cast", [
+        Comes(1500),
+        Comes(2600),
+      ]),
+    ],
+    fn(row) {
+      let #(name, moves) = row
+      let #(started, told) = discharge_told_on(tables:, moves:)
+      let assert [discharge, ..] = started
+      let assert Ok(power_charge) =
+        list.find(started, fn(start) { start.spell4_id == 42_569 })
+        as "the first go starts a Power Charge"
+      assert list.contains(told, CastFinished(cast_id: discharge.cast_id))
+        as "the viewer was listed Discharge, the current cast, at its first join"
+      assert !told_of(told:, cast_id: power_charge.cast_id) as name
     },
   )
 }

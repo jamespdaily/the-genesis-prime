@@ -26,6 +26,10 @@
 ////   lifetime the time left from now, counted with that delay, never 0 for an
 ////   effect that still ends and 0 only for one that lasts until removed
 ////   (`opcode.0x7f4.effect_delay`, `opcode.0x7f4.effect_time`).
+//// - A node that holds an effect lasting until removed is told no delay of 1: the
+////   client's node sums its earliest start and its longest lifetime (all bits for
+////   such an effect) and builds no buff when that is 0, so a delay of 1 is told as 2
+////   (`opcode.0x7f4.first_start`).
 //// - An entry lists no position, so the client draws no server-placed
 ////   telegraph row.
 ////
@@ -34,6 +38,10 @@
 ////   no node yet (a child cast before its first go) is not listed that cast and
 ////   told none of its later news, including the node its go makes: the client can
 ////   build that node only from the cast.
+//// - The delay still to run of an effect an earlier go put on a node is counted from
+////   the node's latest go, so an arrival within a row's delay of a later go of a
+////   repeating cast is told a delay that already ran at the earlier go (the lifetime
+////   is right: the client arms it from the later go).
 //// - The item-use spells' telegraph rows that carry an end replay from the
 ////   viewer's arrival, not from where the cast stood.
 
@@ -47,6 +55,7 @@ import genesis_prime/message/unit_create_cast.{
 import genesis_prime/table/id.{type Spell4EffectsId, type Spell4Id}
 import gleam/int
 import gleam/list
+import gleam/result
 
 /// The most entries the list's 9-bit count holds.
 const most_entries = 511
@@ -100,28 +109,20 @@ pub fn target_of(
     list.filter_map(node.effects, fn(effect) {
       case effect {
         lasting.LifeOnly(..) -> Error(Nil)
-        lasting.Listed(effect_id:, row:) ->
-          case
+        lasting.Listed(effect_id:, row:) -> {
+          let life =
             lasting.life_of(
               effects: [row],
               longer_of_delay_and_duration:,
               go_ms: node.armed_ms,
             )
-          {
+          use ends <- result.map(case life {
             lasting.NoLife -> Error(Nil)
-            lasting.UntilRemoved ->
-              Ok(HeldEffect(
-                effect_id:,
-                starts_ms: node.armed_ms + row.delay_ms,
-                ends: UntilRemoved,
-              ))
-            lasting.EndsAt(ms:) ->
-              Ok(HeldEffect(
-                effect_id:,
-                starts_ms: node.armed_ms + row.delay_ms,
-                ends: EndsAt(ms:),
-              ))
-          }
+            lasting.UntilRemoved -> Ok(UntilRemoved)
+            lasting.EndsAt(ms:) -> Ok(EndsAt(ms:))
+          })
+          HeldEffect(effect_id:, starts_ms: node.armed_ms + row.delay_ms, ends:)
+        }
       }
     })
   case effects {
@@ -180,12 +181,17 @@ pub fn entries_of(
 }
 
 /// The target info of one target: each held effect with the delay still to run and the
-/// time left from `now_ms`, numbered from 1, a Hit with the node's count.
+/// time left from `now_ms`, numbered from 1, a Hit with the node's count. A node that
+/// holds an effect lasting until removed is told 2 for a delay of 1, as the client
+/// builds no buff for a node whose earliest start plus longest lifetime is 0
+/// (`opcode.0x7f4.first_start`).
 fn target_of_view(
   target target: ViewTarget,
   index index: Int,
   now_ms now_ms: Int,
 ) -> SpellTargetInfo {
+  let holds_until_removed =
+    list.any(target.effects, fn(held) { held.ends == UntilRemoved })
   target_info.target(
     index:,
     unit_id: target.unit_id,
@@ -195,7 +201,10 @@ fn target_of_view(
       target_info.effect(
         effect_id: held.effect_id.value,
         instance_id: effect_index + 1,
-        delay_ms: int.max(0, held.starts_ms - now_ms),
+        delay_ms: case int.max(0, held.starts_ms - now_ms) {
+          1 if holds_until_removed -> 2
+          delay_ms -> delay_ms
+        },
         lifetime_ms: case held.ends {
           EndsAt(ms:) -> lasting.time_left_ms(end_ms: ms, now_ms:)
           UntilRemoved -> 0

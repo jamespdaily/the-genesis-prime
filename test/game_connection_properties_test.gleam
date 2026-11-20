@@ -21,6 +21,7 @@
 //// - The health regeneration of `player_life`: a tick adds floor(maximum x 0.025 x
 ////   HealthRegenMultiplier 1.0), so the maximum a modifier raises changes the tick.
 
+import cast_support
 import connection_rule_support
 import fixture_tables
 import game_connection_support as support
@@ -29,13 +30,8 @@ import genesis_prime/client_connection.{
 }
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
-import genesis_prime/message/combat_result
 import genesis_prime/message/float32
 import genesis_prime/message/player_health
-import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
-import genesis_prime/message/spell_effect_info.{SpellEffectInfo}
-import genesis_prime/message/spell_effect_result
-import genesis_prime/message/spell_target_info.{SpellTargetInfo}
 import genesis_prime/message/unit_properties_changed
 import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
 import genesis_prime/step.{
@@ -280,26 +276,22 @@ pub fn a_viewer_arriving_while_the_buff_lasts_is_created_with_the_value_in_its_0
   assert gate_cast.spell4_id == 34_355
   assert gate_cast.targets
     == [
-      SpellTargetInfo(
+      cast_support.listed_target_info(
         unit_id: support.own_unit_id,
         index: 0,
-        flags: 0,
-        instance_count: 1,
-        combat_result: combat_result.Hit,
+        count: 1,
         effects: [
-          SpellEffectInfo(
-            spell4_effects_id: 67_777,
+          cast_support.listed_effect_info(
+            effect_id: 67_777,
             instance_id: 1,
             delay_ms: 0,
             lifetime_ms: 180,
-            result: spell_effect_result.Bit(SpellEffectBit(unread_2: 0)),
           ),
-          SpellEffectInfo(
-            spell4_effects_id: 99_901,
+          cast_support.listed_effect_info(
+            effect_id: 99_901,
             instance_id: 2,
             delay_ms: 0,
             lifetime_ms: 1780,
-            result: spell_effect_result.Bit(SpellEffectBit(unread_2: 0)),
           ),
         ],
       ),

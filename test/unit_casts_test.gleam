@@ -9,23 +9,19 @@
 //// still makes the node and a buff of 0 stacks). The effect rows are the client's
 //// Spell4Effects rows, each named where it is used.
 
+import cast_support as support
+import fixture_tables
 import genesis_prime/game/lasting.{LastingRow, LifeOnly, Listed, Node}
+import genesis_prime/game/spell_plan
 import genesis_prime/game/unit_casts.{
   type CastView, CastView, HeldEffect, UntilRemoved, ViewTarget,
 }
-import genesis_prime/message/combat_result
-import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
-import genesis_prime/message/spell_effect_info.{
-  type SpellEffectInfo, SpellEffectInfo,
-}
-import genesis_prime/message/spell_effect_result
-import genesis_prime/message/spell_target_info.{
-  type SpellTargetInfo, SpellTargetInfo,
-}
+import genesis_prime/message/spell_target_info.{type SpellTargetInfo}
 import genesis_prime/message/unit_create_cast.{
   type UnitCreateCast, UnitCreateCast,
 }
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
+import genesis_prime/table/spell4_effects
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
@@ -176,38 +172,6 @@ fn targets_at(
   entry.targets
 }
 
-/// The info of an effect that tells no value (the bit's value is read by no client code).
-fn info(
-  effect_id effect_id: Int,
-  instance_id instance_id: Int,
-  delay_ms delay_ms: Int,
-  lifetime_ms lifetime_ms: Int,
-) -> SpellEffectInfo {
-  SpellEffectInfo(
-    spell4_effects_id: effect_id,
-    instance_id:,
-    delay_ms:,
-    lifetime_ms:,
-    result: spell_effect_result.Bit(SpellEffectBit(unread_2: 0)),
-  )
-}
-
-fn target(
-  unit_id unit_id: Int,
-  index index: Int,
-  count count: Int,
-  effects effects: List(SpellEffectInfo),
-) -> SpellTargetInfo {
-  SpellTargetInfo(
-    unit_id:,
-    index:,
-    flags: 0,
-    instance_count: count,
-    combat_result: combat_result.Hit,
-    effects:,
-  )
-}
-
 /// Spell4Effects 67777 of Gate (34355): type 11, delay 180, duration 400, flags 0.
 fn gate_row() -> lasting.NodeEffect {
   Listed(
@@ -225,6 +189,35 @@ fn power_charge_row() -> lasting.NodeEffect {
   )
 }
 
+/// Spell4 38784 holds the cooldown modifier row 159128 (type 73, delay 0, duration 0) beside
+/// the proc row 178239 (type 14, 3000 ms): a node holds both, and only the proc has a life.
+fn cooldown_row() -> lasting.NodeEffect {
+  Listed(
+    effect_id: Spell4EffectsId(159_128),
+    row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: False),
+  )
+}
+
+fn proc_row() -> lasting.NodeEffect {
+  Listed(
+    effect_id: Spell4EffectsId(178_239),
+    row: LastingRow(delay_ms: 0, duration_ms: 3000, until_removed: False),
+  )
+}
+
+/// The client's Spell4Effects row `id`, a root of the fixture, as a node holds it. The
+/// lasting row is read by `spell_plan.lasting_row_of`, which the cast rule also uses.
+fn client_row(id id: Int) -> lasting.NodeEffect {
+  let id = fixture_tables.root(table: "Spell4Effects", id:)
+  let assert Ok(row) =
+    spell4_effects.get(tables: fixture_tables.shared(), id: Spell4EffectsId(id))
+    as "the fixture holds the root row"
+  Listed(
+    effect_id: Spell4EffectsId(id),
+    row: spell_plan.lasting_row_of(effect: row),
+  )
+}
+
 pub fn an_entry_lists_each_held_effect_with_its_delay_and_time_left_test() -> Nil {
   use <- owned_test.run(5000)
   list.each(
@@ -235,7 +228,7 @@ pub fn an_entry_lists_each_held_effect_with_its_delay_and_time_left_test() -> Ni
         False,
         1100,
         [
-          info(
+          support.listed_effect_info(
             effect_id: 67_777,
             instance_id: 1,
             delay_ms: 80,
@@ -248,14 +241,28 @@ pub fn an_entry_lists_each_held_effect_with_its_delay_and_time_left_test() -> Ni
         [gate_row()],
         False,
         2000,
-        [info(effect_id: 67_777, instance_id: 1, delay_ms: 0, lifetime_ms: 1)],
+        [
+          support.listed_effect_info(
+            effect_id: 67_777,
+            instance_id: 1,
+            delay_ms: 0,
+            lifetime_ms: 1,
+          ),
+        ],
       ),
       #(
         "an effect that lasts until removed (Power Charge's row 96819, flags 2) has delay 0 and lifetime 0",
         [power_charge_row()],
         False,
         1100,
-        [info(effect_id: 96_819, instance_id: 1, delay_ms: 0, lifetime_ms: 0)],
+        [
+          support.listed_effect_info(
+            effect_id: 96_819,
+            instance_id: 1,
+            delay_ms: 0,
+            lifetime_ms: 0,
+          ),
+        ],
       ),
       #(
         "for a spell with the longer-of flag the end is the larger of delay and duration, 400, so 300 ms are left",
@@ -263,11 +270,87 @@ pub fn an_entry_lists_each_held_effect_with_its_delay_and_time_left_test() -> Ni
         True,
         1100,
         [
-          info(
+          support.listed_effect_info(
             effect_id: 67_777,
             instance_id: 1,
             delay_ms: 80,
             lifetime_ms: 300,
+          ),
+        ],
+      ),
+      #(
+        "an effect that lasts until removed with 1 ms of delay to run is told a delay of 2: its lifetime is all bits in the client's node, so a start of 1 sums to 0 and the node would build no buff (row 105548 of Spell4 45375: type 17, delay 500, flags 2; the go at 1000, now 1499)",
+        [client_row(id: 105_548)],
+        False,
+        1499,
+        [
+          support.listed_effect_info(
+            effect_id: 105_548,
+            instance_id: 1,
+            delay_ms: 2,
+            lifetime_ms: 0,
+          ),
+        ],
+      ),
+      #(
+        "the earliest start is the node's, so an effect that ends is told 2 as well when the node holds one until removed (Gate's row 67777 at 1179 has 1 ms of delay to run)",
+        [client_row(id: 105_548), gate_row()],
+        False,
+        1179,
+        [
+          support.listed_effect_info(
+            effect_id: 105_548,
+            instance_id: 1,
+            delay_ms: 321,
+            lifetime_ms: 0,
+          ),
+          support.listed_effect_info(
+            effect_id: 67_777,
+            instance_id: 2,
+            delay_ms: 2,
+            lifetime_ms: 401,
+          ),
+        ],
+      ),
+      #(
+        "with 1 ms of delay to run, a node whose effects all end keeps the 1: the lifetime is not all bits, so the sum is not 0",
+        [gate_row()],
+        False,
+        1179,
+        [
+          support.listed_effect_info(
+            effect_id: 67_777,
+            instance_id: 1,
+            delay_ms: 1,
+            lifetime_ms: 401,
+          ),
+        ],
+      ),
+      #(
+        "an effect that lasts until removed with 2 ms of delay to run keeps the 2",
+        [client_row(id: 105_548)],
+        False,
+        1498,
+        [
+          support.listed_effect_info(
+            effect_id: 105_548,
+            instance_id: 1,
+            delay_ms: 2,
+            lifetime_ms: 0,
+          ),
+        ],
+      ),
+      #(
+        "an effect with neither delay nor duration is left out of the entry: Spell4 38784's cooldown row 159128 beside its proc row 178239",
+        [cooldown_row(), proc_row()],
+        False,
+        1100,
+        [
+          support.listed_effect_info(
+            effect_id: 178_239,
+            instance_id: 1,
+            delay_ms: 0,
+            lifetime_ms: 2900,
           ),
         ],
       ),
@@ -278,105 +361,96 @@ pub fn an_entry_lists_each_held_effect_with_its_delay_and_time_left_test() -> Ni
           view: view_of_nodes(nodes: [node(effects:)], longer_of:),
           now_ms:,
         )
-        == [target(unit_id: 7, index: 0, count: 1, effects: expected)]
+        == [
+          support.listed_target_info(
+            unit_id: 7,
+            index: 0,
+            count: 1,
+            effects: expected,
+          ),
+        ]
         as reason
     },
   )
-  // Spell4 38784 holds the cooldown modifier row 159128 (type 73, delay 0, duration 0) beside
-  // the proc row 178239 (type 14, 3000 ms): the node holds both, and only the proc has a life.
-  let cooldown_row =
-    Listed(
-      effect_id: Spell4EffectsId(159_128),
-      row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: False),
-    )
-  let proc_row =
-    Listed(
-      effect_id: Spell4EffectsId(178_239),
-      row: LastingRow(delay_ms: 0, duration_ms: 3000, until_removed: False),
-    )
-  assert targets_at(
-      view: view_of_nodes(
-        nodes: [node(effects: [cooldown_row, proc_row])],
-        longer_of: False,
-      ),
-      now_ms: 1100,
-    )
-    == [
-      target(unit_id: 7, index: 0, count: 1, effects: [
-        info(effect_id: 178_239, instance_id: 1, delay_ms: 0, lifetime_ms: 2900),
-      ]),
-    ]
-    as "an effect with neither delay nor duration is left out of the entry"
 }
 
 pub fn an_entry_lists_the_target_a_node_makes_test() -> Nil {
   use <- owned_test.run(5000)
-  let held = fn(count) { Node(..node(effects: [power_charge_row()]), count:) }
-  let power_charge = fn(count) {
-    [
-      target(unit_id: 7, index: 0, count:, effects: [
-        info(effect_id: 96_819, instance_id: 1, delay_ms: 0, lifetime_ms: 0),
-      ]),
-    ]
-  }
-  assert targets_at(
-      view: view_of_nodes(nodes: [held(1)], longer_of: False),
-      now_ms: 1100,
-    )
-    == power_charge(1)
-    as "a node's count is its cast's own: a cast that gave 1 stack lists a count of 1"
-  assert targets_at(
-      view: view_of_nodes(nodes: [held(0)], longer_of: False),
-      now_ms: 1100,
-    )
-    == power_charge(0)
-    as "a node stacked off to count 0 lists 0 stacks, and the buff is still made"
-  let two_units = [
-    node(effects: [power_charge_row(), gate_row()]),
-    Node(..node(effects: [power_charge_row(), gate_row()]), unit_id: 8),
-  ]
-  assert list.map(
-      targets_at(
-        view: view_of_nodes(nodes: two_units, longer_of: False),
-        now_ms: 1100,
+  let power_charge = fn(unit_id, index, count) {
+    support.listed_target_info(unit_id:, index:, count:, effects: [
+      support.listed_effect_info(
+        effect_id: 96_819,
+        instance_id: 1,
+        delay_ms: 0,
+        lifetime_ms: 0,
       ),
-      fn(target) {
-        #(
-          target.unit_id,
-          target.index,
-          target.flags,
-          target.combat_result,
-          list.map(target.effects, fn(effect) { effect.instance_id }),
-        )
-      },
-    )
-    == [
-      #(7, 0, 0, combat_result.Hit, [1, 2]),
-      #(8, 1, 0, combat_result.Hit, [1, 2]),
-    ]
-    as "each target is indexed by its place in the list with flags 0 and a Hit, its effects numbered from 1 per target"
+    ])
+  }
+  let on_unit_8 = fn(node: lasting.Node) { Node(..node, unit_id: 8) }
+  let power_charge_node = node(effects: [power_charge_row()])
+  let power_charge_and_gate = node(effects: [power_charge_row(), gate_row()])
   let restriction =
     LifeOnly(row: LastingRow(
       delay_ms: 0,
       duration_ms: 5000,
       until_removed: False,
     ))
-  assert targets_at(
-      view: view_of_nodes(
-        nodes: [node(effects: [restriction])],
-        longer_of: False,
+  list.each(
+    [
+      #(
+        "a node's count is its cast's own: a cast that gave 1 stack lists a count of 1",
+        [power_charge_node],
+        [power_charge(7, 0, 1)],
       ),
-      now_ms: 1100,
-    )
-    == []
-    as "a node that holds only an ability restriction or a heal applied at once lists no target: the 0x87f and the go tell them"
-  assert targets_at(
-      view: view_of_nodes(
-        nodes: [Node(..node(effects: []), held_until_ms: Some(4000))],
-        longer_of: False,
+      #(
+        "a node stacked off to count 0 lists 0 stacks, and the buff is still made",
+        [Node(..power_charge_node, count: 0)],
+        [power_charge(7, 0, 0)],
       ),
-      now_ms: 1100,
-    )
-    == []
-    as "a node only a crowd-control state holds (no effect, an end of its own) lists no target: the state takes hold on the 0x87f"
+      #(
+        "each target is indexed by its place in the list with flags 0 and a Hit, its effects numbered from 1 per target",
+        [power_charge_and_gate, on_unit_8(power_charge_and_gate)],
+        list.map([#(7, 0), #(8, 1)], fn(place) {
+          support.listed_target_info(
+            unit_id: place.0,
+            index: place.1,
+            count: 1,
+            effects: [
+              support.listed_effect_info(
+                effect_id: 96_819,
+                instance_id: 1,
+                delay_ms: 0,
+                lifetime_ms: 0,
+              ),
+              support.listed_effect_info(
+                effect_id: 67_777,
+                instance_id: 2,
+                delay_ms: 80,
+                lifetime_ms: 480,
+              ),
+            ],
+          )
+        }),
+      ),
+      #(
+        "a node that holds only an ability restriction or a heal applied at once lists no target: the 0x87f and the go tell them",
+        [node(effects: [restriction])],
+        [],
+      ),
+      #(
+        "a node only a crowd-control state holds (no effect, an end of its own) lists no target: the state takes hold on the 0x87f",
+        [Node(..node(effects: []), held_until_ms: Some(4000))],
+        [],
+      ),
+    ],
+    fn(row) {
+      let #(reason, nodes, expected) = row
+      assert targets_at(
+          view: view_of_nodes(nodes:, longer_of: False),
+          now_ms: 1100,
+        )
+        == expected
+        as reason
+    },
+  )
 }

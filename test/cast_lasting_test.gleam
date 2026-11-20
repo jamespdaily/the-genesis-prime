@@ -1247,45 +1247,32 @@ pub fn a_cast_audience_is_the_current_viewers_test() -> Nil {
     as "the cast holds no node before its first go"
   assert told_after(join(before_node), before_start) == []
     as "a live cast that is not the current cast and holds no node yet is not joined: its unit create does not list it"
-  let only_node = fn(state: State, effects: List(lasting.NodeEffect)) {
-    cast_state.State(
-      ..state,
-      casts: dict.map_values(state.casts, fn(_, live) {
-        cast_state.Live(
-          ..live,
-          nodes: dict.from_list([
-            #(
-              7,
-              lasting.Node(
-                unit_id: 7,
-                count: 1,
-                life: lasting.EndsAt(ms: 4000),
-                effects:,
-                armed_ms: 1000,
-                held_until_ms: option.Some(4000),
-              ),
-            ),
-          ]),
-        )
-      }),
-    )
-  }
-  assert told_after(join(only_node(hidden, [])), hidden_start) == []
-    as "a cast whose only node is held by a crowd-control state lists no effect and is not joined: the state's 0x87f is told by its own audience"
-  assert told_after(
-      join(
-        only_node(hidden, [
-          lasting.LifeOnly(row: LastingRow(
-            delay_ms: 0,
-            duration_ms: 3000,
-            until_removed: False,
-          )),
-        ]),
+  list.each(
+    [
+      #(
+        "a cast whose only node is held by a crowd-control state lists no effect and is not joined: the state's 0x87f is told by its own audience",
+        [],
       ),
-      hidden_start,
-    )
-    == []
-    as "nor is a cast whose only node is held by an ability restriction"
+      #("nor is a cast whose only node is held by an ability restriction", [
+        lasting.LifeOnly(row: LastingRow(
+          delay_ms: 0,
+          duration_ms: 3000,
+          until_removed: False,
+        )),
+      ]),
+    ],
+    fn(row) {
+      assert told_after(
+          join(support.live_casts_holding_only_a_node(
+            state: hidden,
+            effects: row.1,
+          )),
+          hidden_start,
+        )
+        == []
+        as row.0
+    },
+  )
   let #(told_at_start, told_start, _) =
     press(
       eight_seconds_on_the_caster(),
@@ -1600,6 +1587,23 @@ pub fn a_players_views_hold_every_live_and_lingering_cast_with_a_listed_target_t
       struck: support.hits([20]),
       at: 1000,
     )
+  let #(on_two_creatures, two_creature_effects) =
+    press_striking(
+      plans: support.plans_of([
+        buff(spell4_id: 101, base: 3, lasting: [
+          fluff(
+            id: 1,
+            aim: spell_plan.AimsAtArea,
+            duration_ms: 3000,
+            until_removed: False,
+          ),
+        ]),
+      ]),
+      state: cast_state.new(),
+      bag: bag_of_base_3,
+      struck: support.hits([21, 20]),
+      at: 1000,
+    )
   assert dict.is_empty(waiting.lingering)
     && list.all(dict.values(waiting.casts), fn(live) {
       dict.is_empty(live.nodes)
@@ -1618,6 +1622,14 @@ pub fn a_players_views_hold_every_live_and_lingering_cast_with_a_listed_target_t
         #(support.pressed_id(effects: lingering_effects), False, True, [7]),
       ]),
       #(
+        "a lingering cast is not the current cast, even in a state whose current names it (built by hand: the rule clears current when a cast starts to linger): the create's tail names cast 0 for it, so its entry must not claim the cast bar",
+        cast_state.State(
+          ..lingering,
+          current: option.Some(support.pressed_id(effects: lingering_effects)),
+        ),
+        [#(support.pressed_id(effects: lingering_effects), False, True, [7])],
+      ),
+      #(
         "a live cast that is not the current cast and holds no node yet is not listed",
         waiting,
         [],
@@ -1627,6 +1639,16 @@ pub fn a_players_views_hold_every_live_and_lingering_cast_with_a_listed_target_t
         on_creature,
         [
           #(support.pressed_id(effects: creature_effects), False, True, [20]),
+        ],
+      ),
+      #(
+        "a cast with nodes on two units lists them in unit id order, whatever order the area struck them in: the entry's target index is the place in that list",
+        on_two_creatures,
+        [
+          #(support.pressed_id(effects: two_creature_effects), False, True, [
+            20,
+            21,
+          ]),
         ],
       ),
     ],

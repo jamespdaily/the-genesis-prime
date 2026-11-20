@@ -161,8 +161,10 @@ pub fn life_of(
   EndsAt(ms: go_ms + longest)
 }
 
-/// The time left of an effect that ends at `end_ms`, as a unit create tells it: never
-/// less than 1, since a lifetime of 0 in an effect info plays the row's own time again
+/// The time left of an effect that ends at `end_ms`, as an effect info tells it: a unit
+/// create counts it from `now_ms` on the monotonic clock, and a creature's guard counts a
+/// relative lifetime from the time elapsed since its go. Never less than 1, since a
+/// lifetime of 0 in an effect info plays the row's own time again
 /// (`opcode.0x7f4.effect_time`), and an effect that a node outlives (an open tick round
 /// holds it) is still listed.
 pub fn time_left_ms(end_ms end_ms: Int, now_ms now_ms: Int) -> Int {
