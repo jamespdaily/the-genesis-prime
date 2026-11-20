@@ -228,6 +228,9 @@ pub fn the_logs_page_is_in_the_page_list_and_its_runtime_route_is_its_own_test()
   let pages = dashboard.pages()
   assert pages == [overview.page(), logs.page()]
   assert list.map(pages, fn(page) { page.title }) == ["Overview", "Logs"]
+  assert list.map(pages, fn(page) { page.key })
+    == [page.OverviewKey, page.LogsKey]
+    as "each page's socket is picked by its own key"
 
   let navigation =
     element.to_string(page.navigation(pages, current: logs.page()))

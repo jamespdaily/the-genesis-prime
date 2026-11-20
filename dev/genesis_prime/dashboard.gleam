@@ -49,6 +49,7 @@ import genesis_prime/dashboard/overview
 import genesis_prime/dashboard/page.{type Page}
 import genesis_prime/dashboard/secret
 import genesis_prime/dashboard/socket
+import genesis_prime/dashboard/subscribers
 import genesis_prime/dashboard/web
 import genesis_prime/dev_exit
 import genesis_prime/step/runtime
@@ -203,6 +204,7 @@ pub fn start(settings settings: Settings) -> Result(Running, StartError) {
       now_ms: runtime.monotonic_ms,
       interval_ms: settings.poll_interval_ms,
       deadline_ms: settings.read_deadline_ms,
+      arm: subscribers.send_after,
     )
   let log_follower = fn(source) {
     follow.Settings(
@@ -210,6 +212,7 @@ pub fn start(settings settings: Settings) -> Result(Running, StartError) {
       path: settings.genesis_home <> "/" <> log_lines.file_name(source),
       reader: follow.file_reader(),
       interval_ms: settings.log_interval_ms,
+      arm: subscribers.send_after,
       watcher: settings.log_watcher,
     )
   }
@@ -370,23 +373,20 @@ fn respond(
       response.map(answer, fn(body) {
         mist.Bytes(bytes_tree.from_bit_array(body))
       })
-    web.Upgrade(page) ->
-      case page == overview.page(), page == logs.page() {
-        True, _ ->
+    web.Upgrade(upgraded_page) ->
+      case upgraded_page.key {
+        page.OverviewKey ->
           upgraded(
             runtimes_name: served.runtimes_name,
             argument: served.poller,
             request:,
           )
-        _, True ->
+        page.LogsKey ->
           upgraded(
             runtimes_name: served.log_runtimes_name,
             argument: served.followers,
             request:,
           )
-        False, False ->
-          response.new(404)
-          |> response.set_body(mist.Bytes(bytes_tree.new()))
       }
   }
 }

@@ -8,14 +8,17 @@
 //// its deadline as the last reading marked stale with the reason.
 
 import dashboard_reading_support as support
+import dashboard_timer_support as timers
 import genesis_prime/dashboard/host
 import genesis_prime/dashboard/host_reading.{
   type Reading, Fresh, MachineUp, NoNewReading, ReadFailed, Stale,
 }
 import genesis_prime/dashboard/script
+import genesis_prime/dashboard/subscribers
 import gleam/bool
 import gleam/erlang/process.{type Subject}
 import gleam/int
+import gleam/list
 import open_wait
 import owned_test
 
@@ -36,13 +39,33 @@ fn started() -> #(Subject(host.Message), Subject(Call)) {
 
 /// A poller whose reads are recorded in `calls`, stamped by `clock`.
 fn started_by(clock: fn() -> Int) -> #(Subject(host.Message), Subject(Call)) {
+  started_with(clock, 86_400_000, subscribers.send_after)
+}
+
+/// The interval the driven poller is set to; its timers are armed for it.
+const driven_interval_ms = 2000
+
+/// A poller whose timers are the test's: each one armed or cancelled is sent to
+/// `events`, and none fires until the test fires it.
+fn started_driven(
+  events: Subject(timers.Event),
+) -> #(Subject(host.Message), Subject(Call)) {
+  started_with(fn() { now_ms }, driven_interval_ms, timers.arm(events))
+}
+
+fn started_with(
+  clock: fn() -> Int,
+  interval_ms: Int,
+  arm: subscribers.Arm(host.Message),
+) -> #(Subject(host.Message), Subject(Call)) {
   let calls = process.new_subject()
   let settings =
     host.Settings(
       start_read: fn(answer) { process.send(calls, Call(answer:)) },
       now_ms: clock,
-      interval_ms: 86_400_000,
+      interval_ms:,
       deadline_ms:,
+      arm:,
     )
   let assert Ok(started) = host.start(settings) as "the poller did not start"
   #(started.data, calls)
@@ -382,4 +405,93 @@ pub fn a_tick_while_a_read_runs_past_six_seconds_shows_every_fact_stale_with_its
   let again = next_reading(page)
   assert again.connections == Fresh(2, 9500)
   assert again.server == Fresh(support.running_server(), 9500)
+}
+
+// ---------------------------------------------------------------------------
+// The poller's timer, driven by the test.
+
+/// What the poller did to its timers since the last look, after it has handled
+/// what was sent to it.
+fn timers_changed(
+  host: Subject(host.Message),
+  events: Subject(timers.Event),
+) -> List(timers.Event) {
+  handled(host)
+  all_events(events, [])
+}
+
+fn all_events(
+  events: Subject(timers.Event),
+  found: List(timers.Event),
+) -> List(timers.Event) {
+  case timers.next(events:) {
+    Ok(next) -> all_events(events, [next, ..found])
+    Error(Nil) -> list.reverse(found)
+  }
+}
+
+/// The timer that is the only change, which is armed for the interval.
+fn the_one_timer_armed(changes: List(timers.Event)) -> timers.Event {
+  let assert [armed] = changes
+    as "one timer should have been armed, and nothing else"
+  let assert timers.Armed(after_ms:, ..) = armed
+    as "the change is not an arming"
+  assert after_ms == driven_interval_ms
+  armed
+}
+
+pub fn each_tick_arms_the_next_tick_for_as_long_as_a_page_is_subscribed_test() -> Nil {
+  use <- owned_test.run(5000)
+  let events = process.new_subject()
+  let #(host, calls) = started_driven(events)
+  host.subscribe(host:, subscriber: process.new_subject())
+  let first = the_one_timer_armed(timers_changed(host, events))
+  let _read = next_read(calls)
+
+  // A tick while the read runs starts no second read; it arms the next tick.
+  timers.fire(first)
+  let second = the_one_timer_armed(timers_changed(host, events))
+  assert no_read_started(calls)
+  timers.fire(second)
+  let _third = the_one_timer_armed(timers_changed(host, events))
+  assert no_read_started(calls)
+  Nil
+}
+
+pub fn the_last_page_to_leave_cancels_the_timer_and_a_later_tick_of_it_arms_nothing_test() -> Nil {
+  use <- owned_test.run(5000)
+  let events = process.new_subject()
+  let #(host, _calls) = started_driven(events)
+  let page = process.new_subject()
+  host.subscribe(host:, subscriber: page)
+  let armed = the_one_timer_armed(timers_changed(host, events))
+
+  host.unsubscribe(host:, subscriber: page)
+  let assert timers.Armed(timer:, ..) = armed
+  assert timers_changed(host, events) == [timers.Cancelled(timer:)]
+
+  timers.fire(armed)
+  assert timers_changed(host, events) == []
+}
+
+pub fn a_tick_sent_before_its_timer_was_cancelled_starts_no_second_timer_chain_test() -> Nil {
+  use <- owned_test.run(5000)
+  let events = process.new_subject()
+  let #(host, _calls) = started_driven(events)
+  let leaving = process.new_subject()
+  host.subscribe(host:, subscriber: leaving)
+  let stale = the_one_timer_armed(timers_changed(host, events))
+  host.unsubscribe(host:, subscriber: leaving)
+  host.subscribe(host:, subscriber: process.new_subject())
+  let assert [timers.Cancelled(..), current] = timers_changed(host, events)
+    as "the first timer was cancelled and a second was armed"
+
+  // The first timer's tick is in the mailbox: it is dropped and arms nothing.
+  timers.fire(stale)
+  assert timers_changed(host, events) == []
+
+  // The second timer's tick arms one timer.
+  timers.fire(current)
+  let _next = the_one_timer_armed(timers_changed(host, events))
+  Nil
 }

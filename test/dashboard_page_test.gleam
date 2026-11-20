@@ -2,7 +2,7 @@
 //// later page adds a module and one line in the page list, so the navigation
 //// holds one link per page of the list.
 
-import genesis_prime/dashboard/page.{Page}
+import genesis_prime/dashboard/page.{LogsKey, OverviewKey, Page}
 import gleam/list
 import gleam/string
 import lustre/element
@@ -10,9 +10,12 @@ import owned_test
 
 pub fn the_navigation_lists_every_page_of_the_page_list_test() -> Nil {
   use <- owned_test.run(5000)
-  let pages = [Page("Alpha", "/"), Page("Beta", "/beta")]
+  let pages = [Page(OverviewKey, "Alpha", "/"), Page(LogsKey, "Beta", "/beta")]
   let html =
-    element.to_string(page.navigation(pages, current: Page("Alpha", "/")))
+    element.to_string(page.navigation(
+      pages,
+      current: Page(OverviewKey, "Alpha", "/"),
+    ))
 
   // Each link opens with `<a `; the text between two of them is one link.
   let assert [_before, ..links] = string.split(html, "<a ")
@@ -27,7 +30,10 @@ pub fn the_navigation_lists_every_page_of_the_page_list_test() -> Nil {
   assert !string.contains(beta, "aria-current") as "no other page is marked"
 
   let on_beta =
-    element.to_string(page.navigation(pages, current: Page("Beta", "/beta")))
+    element.to_string(page.navigation(
+      pages,
+      current: Page(LogsKey, "Beta", "/beta"),
+    ))
   let assert [_, first, second] = string.split(on_beta, "<a ")
   assert !string.contains(first, "aria-current")
   assert string.contains(second, "aria-current=\"page\"")

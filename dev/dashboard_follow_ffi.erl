@@ -1,13 +1,14 @@
-%% Reads a piece of a file for `genesis_prime/dashboard/follow`: looks at the
-%% file's inode and size, asks the caller what to read, opens the file, reads
+%% Reads a piece of a file for `genesis_prime/dashboard/follow`: opens the file,
+%% looks at the open file's inode and size, asks the caller what to read, reads
 %% that piece with one positional read, and closes it. Nothing is kept open
 %% between calls and no operating-system process is started.
 %%
-%% The caller's `Decide` is given the inode and the size and returns
-%% `{Offset, Length, Decision}`; `Decision` is handed back untouched. The file
-%% is looked at by its path before it is opened (Erlang gives no look at an
-%% open file), so a file replaced between the two is read at the offsets of the
-%% one that was looked at; the caller's next read sees the new inode.
+%% The caller's `Decide` is given the inode and the size of the file that was
+%% opened and returns `{Offset, Length, Decision}`; `Decision` is handed back
+%% untouched. The file is looked at by its path first only to refuse what is not
+%% a regular file before opening it (opening a named pipe waits for a writer);
+%% the inode and the size are those of the open file, so a file replaced after
+%% that look is read as the file it is.
 -module(dashboard_follow_ffi).
 -export([read_piece/2]).
 
@@ -18,20 +19,27 @@
 read_piece(Path, Decide) ->
     Name = unicode:characters_to_list(Path),
     case file:read_file_info(Name) of
-        {ok, #file_info{type = regular, inode = Inode, size = Size}} ->
-            {Offset, Length, Decision} = Decide(Inode, Size),
-            read_from(Name, Offset, Length, Decision);
+        {ok, #file_info{type = regular}} -> open_and_read(Name, Decide);
         {ok, #file_info{type = directory}} -> unreadable(eisdir);
         {ok, #file_info{}} -> unreadable(not_a_regular_file);
         {error, enoent} -> {error, not_there};
         {error, Reason} -> unreadable(Reason)
     end.
 
-read_from(Name, Offset, Length, Decision) ->
+open_and_read(Name, Decide) ->
     case file:open(Name, [read, raw, binary]) of
         {ok, File} ->
-            try piece(File, Offset, Length, Decision) after file:close(File) end;
+            try opened(File, Decide) after file:close(File) end;
         {error, enoent} -> {error, not_there};
+        {error, Reason} -> unreadable(Reason)
+    end.
+
+opened(File, Decide) ->
+    case file:read_file_info(File) of
+        {ok, #file_info{type = regular, inode = Inode, size = Size}} ->
+            {Offset, Length, Decision} = Decide(Inode, Size),
+            piece(File, Offset, Length, Decision);
+        {ok, #file_info{}} -> unreadable(not_a_regular_file);
         {error, Reason} -> unreadable(Reason)
     end.
 

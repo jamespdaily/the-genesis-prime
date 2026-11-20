@@ -10,6 +10,7 @@
 //// and keeps the lines, and drops a subscriber that ends.
 
 import dashboard_support
+import dashboard_timer_support as timers
 import genesis_prime/dashboard/follow.{
   type Cursor, type Fetched, type Followed, type Reader, type Trouble, At,
   Fetched, Gone, NotThere, SubscriberDropped, Unread, Unreadable,
@@ -17,6 +18,7 @@ import genesis_prime/dashboard/follow.{
 import genesis_prime/dashboard/log_lines.{
   LaunchdLog, Line, LogCutShorter, LogReplaced, Marker, UpdaterLog,
 }
+import genesis_prime/dashboard/subscribers
 import gleam/bit_array
 import gleam/erlang/process.{type Subject}
 import gleam/int
@@ -46,6 +48,7 @@ fn following(
       path:,
       reader: follow.file_reader(),
       interval_ms: 86_400_000,
+      arm: subscribers.send_after,
       watcher: None,
     ))
   let subscriber = process.new_subject()
@@ -287,6 +290,7 @@ fn answered_followers(
       path: "/planted/play-service.log",
       reader: asked(calls),
       interval_ms: 86_400_000,
+      arm: subscribers.send_after,
       watcher:,
     ))
   #(started.data, calls)
@@ -298,6 +302,61 @@ fn next_call(calls: Subject(Call)) -> Call {
 
 fn no_call(calls: Subject(Call)) -> Bool {
   process.receive(calls, 0) == Error(Nil)
+}
+
+/// What came first: the follower's handling of everything sent to it, or a
+/// read it started.
+type Settled {
+  Handled
+  Started(Call)
+}
+
+/// The first of the follower's handling of everything sent to it before this,
+/// and a read it starts. A read waits for the test's answer, so a follower that
+/// reads when it should not never handles anything: the wait ends at its read
+/// instead of hanging.
+fn settled(follower: Subject(follow.Message), calls: Subject(Call)) -> Settled {
+  let done = process.new_subject()
+  let _helper =
+    process.spawn(fn() {
+      handled(follower)
+      process.send(done, Nil)
+    })
+  process.new_selector()
+  |> process.select_map(done, fn(_) { Handled })
+  |> process.select_map(calls, Started)
+  |> open_wait.selected(what: "the follower to handle what was sent, or read")
+}
+
+/// Whether the follower handled everything sent to it without starting a read.
+fn handled_without_a_read(
+  follower: Subject(follow.Message),
+  calls: Subject(Call),
+) -> Bool {
+  settled(follower, calls) == Handled
+}
+
+/// The read the follower started after what was sent to it; fails when it
+/// handled all of it without one.
+fn read_started(
+  follower: Subject(follow.Message),
+  calls: Subject(Call),
+) -> Call {
+  let assert Started(call) = settled(follower, calls)
+    as "the follower started no read"
+  call
+}
+
+/// The update the follower sent after what was sent to it, once its reads are
+/// answered; fails when it sent none.
+fn update_sent(
+  follower: Subject(follow.Message),
+  subscriber: Subject(Followed),
+) -> Followed {
+  handled(follower)
+  let assert Ok(followed) = process.receive(subscriber, 0)
+    as "the follower sent no update"
+  followed
 }
 
 fn lines_read(cursor: Cursor, text: String) -> Result(Fetched, Trouble) {
@@ -315,21 +374,20 @@ pub fn a_follower_reads_only_while_a_page_is_subscribed_and_hands_each_subscribe
 
   // Nobody subscribed: a read now reads nothing.
   follow.read_now(follower)
-  handled(follower)
-  assert no_call(calls)
+  assert handled_without_a_read(follower, calls)
 
   // The first subscriber: one read, from the start, and the newest lines.
   let first = process.new_subject()
   follow.subscribe(follower:, subscriber: first)
-  let call = next_call(calls)
+  let call = read_started(follower, calls)
   assert call.cursor == Unread
   process.send(call.answer, lines_read(At(inode: 7, offset: 6), "a\nb\nc\n"))
-  assert shown(update(first)) == ["a", "b", "c"]
+  assert shown(update_sent(follower, first)) == ["a", "b", "c"]
 
   // A second subscriber: the newest at once, and no new read.
   let second = process.new_subject()
   follow.subscribe(follower:, subscriber: second)
-  assert shown(update(second)) == ["a", "b", "c"]
+  assert shown(update_sent(follower, second)) == ["a", "b", "c"]
   assert no_call(calls)
   assert nothing_sent(first) as "the first is not sent the same lines again"
 
@@ -337,14 +395,13 @@ pub fn a_follower_reads_only_while_a_page_is_subscribed_and_hands_each_subscribe
   follow.unsubscribe(follower:, subscriber: first)
   follow.unsubscribe(follower:, subscriber: second)
   follow.read_now(follower)
-  handled(follower)
-  assert no_call(calls)
+  assert handled_without_a_read(follower, calls)
 
   // Subscribing again reads the tail again, from nothing: a line written while
   // nobody watched is there, and the lines of before are not kept.
   let third = process.new_subject()
   follow.subscribe(follower:, subscriber: third)
-  let again = next_call(calls)
+  let again = read_started(follower, calls)
   assert again.cursor == Unread
   process.send(
     again.answer,
@@ -353,7 +410,8 @@ pub fn a_follower_reads_only_while_a_page_is_subscribed_and_hands_each_subscribe
       "a\nb\nc\nwritten while nobody watched\n",
     ),
   )
-  assert shown(update(third)) == ["a", "b", "c", "written while nobody watched"]
+  assert shown(update_sent(follower, third))
+    == ["a", "b", "c", "written while nobody watched"]
 }
 
 pub fn new_lines_reach_each_subscriber_once_and_a_burst_is_one_update_test() -> Nil {
@@ -525,11 +583,11 @@ pub fn a_subscriber_that_ends_mid_follow_is_dropped_and_the_last_one_ends_the_re
   let #(leaving, leaving_pid) = ended_subscriber()
   let staying = process.new_subject()
   follow.subscribe(follower:, subscriber: leaving)
-  let first = next_call(calls)
+  let first = read_started(follower, calls)
   process.send(first.answer, lines_read(At(inode: 1, offset: 2), "a\n"))
   assert next_event(watcher) == follow.ReadMade(UpdaterLog)
   follow.subscribe(follower:, subscriber: staying)
-  assert texts(update(staying)) == ["a"]
+  assert texts(update_sent(follower, staying)) == ["a"]
 
   // One subscriber ends between a read and the next: the follower tells the
   // watcher it dropped one, does not crash, and the other still gets lines.
@@ -537,9 +595,9 @@ pub fn a_subscriber_that_ends_mid_follow_is_dropped_and_the_last_one_ends_the_re
   assert next_event(watcher) == SubscriberDropped(UpdaterLog)
   assert follow.subscriber_count(follower) == 1
   follow.read_now(follower)
-  let second = next_call(calls)
+  let second = read_started(follower, calls)
   process.send(second.answer, lines_read(At(inode: 1, offset: 4), "b\n"))
-  assert texts(update(staying)) == ["a", "b"]
+  assert texts(update_sent(follower, staying)) == ["a", "b"]
   assert next_event(watcher) == follow.ReadMade(UpdaterLog)
 
   // The last one ends: reads stop, and a new subscriber gets the tail again.
@@ -550,12 +608,155 @@ pub fn a_subscriber_that_ends_mid_follow_is_dropped_and_the_last_one_ends_the_re
   follow.unsubscribe(follower:, subscriber: staying)
   assert follow.subscriber_count(follower) == 0
   follow.read_now(follower)
-  handled(follower)
-  assert no_call(calls) as "no read once the last subscriber is gone"
+  assert handled_without_a_read(follower, calls)
+    as "no read once the last subscriber is gone"
   let fresh = process.new_subject()
   follow.subscribe(follower:, subscriber: fresh)
-  let again = next_call(calls)
+  let again = read_started(follower, calls)
   assert again.cursor == Unread
   process.send(again.answer, lines_read(At(inode: 1, offset: 2), "c\n"))
-  assert shown(update(fresh)) == ["c"]
+  assert shown(update_sent(follower, fresh)) == ["c"]
+}
+
+// ---------------------------------------------------------------------------
+// The follower's timer, driven by the test.
+
+/// The interval the driven follower is set to; its timers are armed for it.
+const driven_interval_ms = 1000
+
+/// A reader that tells the test the cursor of each read and gives an empty
+/// read, so a read changes nothing the page shows.
+fn counted(reads: Subject(Cursor)) -> Reader {
+  fn(_path, cursor) {
+    process.send(reads, cursor)
+    let offset = case cursor {
+      At(offset:, ..) -> offset + 1
+      Unread | Gone -> 1
+    }
+    Ok(Fetched(
+      cursor: At(inode: 1, offset:),
+      bytes: <<>>,
+      mark: None,
+      starts_inside_a_line: False,
+    ))
+  }
+}
+
+/// A follower whose timers are the test's (`timers`), and whose reads are the
+/// cursors sent to `reads`.
+fn driven() -> #(
+  Subject(follow.Message),
+  Subject(Cursor),
+  Subject(timers.Event),
+) {
+  let reads = process.new_subject()
+  let events = process.new_subject()
+  let assert Ok(started) =
+    follow.start(follow.Settings(
+      source: UpdaterLog,
+      path: "/planted/play-service.log",
+      reader: counted(reads),
+      interval_ms: driven_interval_ms,
+      arm: timers.arm(events),
+      watcher: None,
+    ))
+  #(started.data, reads, events)
+}
+
+/// The cursors of the reads made since the last look, after the follower has
+/// handled what was sent to it.
+fn reads_made(
+  follower: Subject(follow.Message),
+  reads: Subject(Cursor),
+) -> List(Cursor) {
+  handled(follower)
+  receive_all(reads, [])
+}
+
+/// What the follower did to its timers since the last look, after it has
+/// handled what was sent to it.
+fn timers_changed(
+  follower: Subject(follow.Message),
+  events: Subject(timers.Event),
+) -> List(timers.Event) {
+  handled(follower)
+  receive_all(events, [])
+}
+
+fn receive_all(subject: Subject(a), found: List(a)) -> List(a) {
+  case process.receive(subject, 0) {
+    Ok(next) -> receive_all(subject, [next, ..found])
+    Error(Nil) -> list.reverse(found)
+  }
+}
+
+/// The timer that is the only change, which is armed for the interval.
+fn the_one_timer_armed(changes: List(timers.Event)) -> timers.Event {
+  let assert [armed] = changes
+    as "one timer should have been armed, and nothing else"
+  let assert timers.Armed(after_ms:, ..) = armed
+    as "the change is not an arming"
+  assert after_ms == driven_interval_ms
+  armed
+}
+
+pub fn each_tick_reads_once_and_arms_the_next_tick_for_as_long_as_a_page_is_subscribed_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(follower, reads, events) = driven()
+  follow.subscribe(follower:, subscriber: process.new_subject())
+  assert reads_made(follower, reads) == [Unread]
+  let first = the_one_timer_armed(timers_changed(follower, events))
+
+  // Each tick reads once from where the last read ended and arms the next.
+  timers.fire(first)
+  assert reads_made(follower, reads) == [At(inode: 1, offset: 1)]
+  let second = the_one_timer_armed(timers_changed(follower, events))
+  timers.fire(second)
+  assert reads_made(follower, reads) == [At(inode: 1, offset: 2)]
+  let _third = the_one_timer_armed(timers_changed(follower, events))
+  Nil
+}
+
+pub fn the_last_page_to_leave_cancels_the_timer_and_a_later_tick_of_it_reads_nothing_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(follower, reads, events) = driven()
+  let page = process.new_subject()
+  follow.subscribe(follower:, subscriber: page)
+  let armed = the_one_timer_armed(timers_changed(follower, events))
+  assert reads_made(follower, reads) == [Unread]
+
+  follow.unsubscribe(follower:, subscriber: page)
+  let assert timers.Armed(timer:, ..) = armed
+  assert timers_changed(follower, events) == [timers.Cancelled(timer:)]
+
+  // A tick already sent when the timer was cancelled reads nothing and arms
+  // nothing.
+  timers.fire(armed)
+  assert reads_made(follower, reads) == []
+  assert timers_changed(follower, events) == []
+}
+
+pub fn a_tick_sent_before_its_timer_was_cancelled_starts_no_second_timer_chain_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(follower, reads, events) = driven()
+  let leaving = process.new_subject()
+  follow.subscribe(follower:, subscriber: leaving)
+  let stale = the_one_timer_armed(timers_changed(follower, events))
+  follow.unsubscribe(follower:, subscriber: leaving)
+  follow.subscribe(follower:, subscriber: process.new_subject())
+  assert reads_made(follower, reads) == [Unread, Unread]
+  let assert [timers.Cancelled(..), current] = timers_changed(follower, events)
+    as "the first timer was cancelled and a second was armed"
+
+  // The first timer's tick is in the mailbox: it is dropped, no timer is
+  // armed, and nothing is read.
+  timers.fire(stale)
+  assert reads_made(follower, reads) == []
+  assert timers_changed(follower, events) == []
+
+  // The second timer's tick reads once and arms one timer.
+  timers.fire(current)
+  assert reads_made(follower, reads) == [At(inode: 1, offset: 1)]
+  let _next = the_one_timer_armed(timers_changed(follower, events))
+  Nil
 }

@@ -23,7 +23,7 @@ import genesis_prime/dashboard/host
 import genesis_prime/dashboard/host_reading.{
   type ContainerState, type LiveLock, type Reading, type Section,
 }
-import genesis_prime/dashboard/page.{type Page, Page}
+import genesis_prime/dashboard/page.{type Page, OverviewKey, Page}
 import gleam/erlang/process.{type Subject}
 import gleam/int
 import gleam/list
@@ -63,7 +63,7 @@ type Shown {
 
 /// The Overview as an entry of the page list.
 pub fn page() -> Page {
-  Page(title: "Overview", path: "/")
+  Page(key: OverviewKey, title: "Overview", path: "/")
 }
 
 /// The Overview as a server component: its start argument is the poller it

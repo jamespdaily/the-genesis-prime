@@ -15,7 +15,7 @@ import genesis_prime/dashboard/host_reading.{
   Updater,
 }
 import genesis_prime/dashboard/overview.{Model}
-import genesis_prime/dashboard/page.{Page}
+import genesis_prime/dashboard/page.{OverviewKey, Page}
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
@@ -405,5 +405,5 @@ pub fn the_overview_keeps_its_four_cards_and_says_no_reading_before_the_first_te
   assert list.length(string.split(html, "No reading yet")) == 5
     as "each of the four cards says there is no reading yet"
 
-  assert overview.page() == Page(title: "Overview", path: "/")
+  assert overview.page() == Page(key: OverviewKey, title: "Overview", path: "/")
 }

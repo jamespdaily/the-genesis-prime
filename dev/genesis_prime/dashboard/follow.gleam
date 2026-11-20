@@ -7,43 +7,39 @@
 ////      └──── Followed ───────────┘  └── timer: tick (a read, then the next tick)
 //// ```
 ////
-//// - The first page to subscribe starts the interval timer and reads the file;
-////   a page that subscribes later is handed the newest lines at once, with no
-////   read. When the last page leaves, the timer stops and the lines are
-////   dropped, so the next page reads the tail again and is never handed old
-////   lines. A tick with no page subscribed reads nothing.
+//// - The pages, their monitors and the one timer chain are `subscribers`'; a
+////   tick with no page subscribed, or of an earlier chain, reads nothing.
+//// - The first page to subscribe reads the file; a later page is handed the
+////   newest lines at once, with no read.
+//// - The last page to leave drops the lines, so the next page reads the tail
+////   and is never handed old lines.
 //// - A read gives the bytes the file gained since the cursor, at most
-////   `read_limit_bytes` of them: a log that grew by more is read over the
-////   next ticks, never in one go, and each read is one update. The first read
-////   of a file, and the read of a file that was replaced, give its last
-////   `read_limit_bytes` bytes and drop the line they begin inside, so a large
-////   file is never read whole.
-//// - The reader follows the file by its inode and size: an inode that is not
-////   the cursor's is a replaced file (read from its start, after a mark); a
-////   size below the cursor's offset is a file cut shorter (read from its
-////   start, after a mark); a file that is gone is `NotThere` and is read from
-////   its start when it returns, after a mark. A file rewritten in place to the
-////   same size, or to a size past the cursor's offset, between two reads, is
-////   not seen: the new bytes are taken as the old file's growth. A file
-////   replaced between the reader's look at its inode and its read is read at
-////   the old file's offsets, and the next read sees the new inode.
+////   `read_limit_bytes`; a log that grew by more is read over the next ticks.
+//// - The first read of a file, and the read of a replaced file, give its last
+////   `read_limit_bytes` bytes without the line they begin inside.
+//// - The reader follows the file by the inode and size of the file it opened:
+////   another inode is a replaced file, a size below the cursor's offset is a cut
+////   file, each read from its start after a mark; a file that is gone is
+////   `NotThere` and is read from its start when it returns, after a mark.
+//// - A file rewritten in place to the same size, or to a size past the cursor's
+////   offset, between two reads is not seen: its new bytes are taken as growth.
 //// - A page that gets an update is sent the whole ring, so it can keep one
-////   element for each line (`log_lines` numbers each entry). A read that
-////   changed nothing sends nothing. A read that failed sends the same lines
-////   with the reason; the cursor of the last good read is kept, and the next
-////   tick tries again.
-//// - A subscriber that ends is dropped by the follower's own monitor of it,
-////   and the follower tells its watcher, if it has one.
-//// - The reader runs in the follower's process and takes at most one read of
-////   `read_limit_bytes` bytes; a file system that hangs holds the follower, and
-////   with it the pages that wait for lines.
-//// - The follower keeps no state a restart cannot rebuild: pages subscribe
-////   again when their runtimes are rebuilt (the supervisor restarts both
-////   together).
+////   element for each line (`log_lines` numbers each entry); a read that
+////   changed nothing sends nothing.
+//// - A read that failed sends the same lines with the reason; the cursor of the
+////   last good read is kept, and the next tick tries again.
+//// - A subscriber that ends is dropped by the follower's own monitor of it, and
+////   the follower tells its watcher, if it has one.
+//// - The reader runs in the follower's process, one read of at most
+////   `read_limit_bytes`; a file system that hangs holds the follower, and with
+////   it the pages that wait for lines.
+//// - The follower keeps no state a restart cannot rebuild: pages subscribe again
+////   when their runtimes are rebuilt (the supervisor restarts both together).
 
 import genesis_prime/dashboard/log_lines.{
   type Entry, type Lines, type Mark, type Source, LogCutShorter, LogReplaced,
 }
+import genesis_prime/dashboard/subscribers.{type Subscribers}
 import gleam/bit_array
 import gleam/bool
 import gleam/erlang/process.{type Name, type Subject}
@@ -118,13 +114,15 @@ pub type Event {
 }
 
 /// What a follower follows and how: the log, its file, the reader, how often
-/// it reads, and who is told of its reads and drops.
+/// it reads and the arm of that timer (`subscribers.send_after`, or a test's
+/// own), and who is told of its reads and drops.
 pub type Settings {
   Settings(
     source: Source,
     path: String,
     reader: Reader,
     interval_ms: Int,
+    arm: subscribers.Arm(Message),
     watcher: Option(Subject(Event)),
   )
 }
@@ -134,25 +132,20 @@ pub type Settings {
 pub opaque type Message {
   Subscribe(subscriber: Subject(Followed))
   Unsubscribe(subscriber: Subject(Followed))
-  Tick
+  Tick(chain: Int)
   ReadNow
   SubscriberDown(down: process.Down)
   CountSubscribers(reply: Subject(Int))
-}
-
-type Subscriber {
-  Subscriber(subject: Subject(Followed), monitor: process.Monitor)
 }
 
 type State {
   State(
     self: Subject(Message),
     settings: Settings,
-    subscribers: List(Subscriber),
+    subscribers: Subscribers(Followed, Message),
     lines: Lines,
     cursor: Cursor,
     trouble: Option(Trouble),
-    tick: Option(process.Timer),
   )
 }
 
@@ -234,15 +227,19 @@ fn builder(
       process.new_selector()
       |> process.select(self)
       |> process.select_monitors(SubscriberDown)
-    idle(State(
+    State(
       self:,
       settings:,
-      subscribers: [],
+      subscribers: subscribers.new(
+        owner: self,
+        interval_ms: settings.interval_ms,
+        arm: settings.arm,
+        tick: Tick,
+      ),
       lines: log_lines.new(settings.source),
       cursor: Unread,
       trouble: None,
-      tick: None,
-    ))
+    )
     |> actor.initialised
     |> actor.selecting(selector)
     |> actor.returning(self)
@@ -300,20 +297,28 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
   case message {
     Subscribe(subscriber:) -> actor.continue(subscribed(state, subscriber))
     Unsubscribe(subscriber:) ->
-      actor.continue(left(state, fn(entry) { entry.subject == subscriber }))
+      actor.continue(left(
+        state,
+        subscribers.leave(state.subscribers, subscriber:),
+      ))
     SubscriberDown(down:) -> {
-      let state = left(state, fn(entry) { entry.monitor == down.monitor })
+      let state =
+        left(
+          state,
+          subscribers.leave_ended(state.subscribers, monitor: down.monitor),
+        )
       tell(state, SubscriberDropped(state.settings.source))
       actor.continue(state)
     }
-    Tick ->
-      case state.subscribers {
-        [] -> actor.continue(State(..state, tick: None))
-        [_, ..] -> actor.continue(state |> arm_tick |> read_and_send)
+    Tick(chain:) ->
+      case subscribers.next_tick(state.subscribers, chain:) {
+        Ok(armed) ->
+          actor.continue(read_and_send(State(..state, subscribers: armed)))
+        Error(Nil) -> actor.continue(state)
       }
     ReadNow -> actor.continue(read_and_send(state))
     CountSubscribers(reply:) -> {
-      process.send(reply, list.length(state.subscribers))
+      process.send(reply, subscribers.count(state.subscribers))
       actor.continue(state)
     }
   }
@@ -322,50 +327,36 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
 /// A page subscribes: it is monitored, and when it is the first the timer
 /// starts and the file is read. It is sent the newest lines at once.
 fn subscribed(state: State, subscriber: Subject(Followed)) -> State {
-  let already =
-    list.any(state.subscribers, fn(entry) { entry.subject == subscriber })
-  use <- bool.guard(when: already, return: state)
-  let assert Ok(pid) = process.subject_owner(subscriber)
-    as "a page's subject has an owner"
-  let entry = Subscriber(subject: subscriber, monitor: process.monitor(pid))
-  let first = state.subscribers == []
-  let state = State(..state, subscribers: [entry, ..state.subscribers])
-  let state = case first {
-    True -> state |> arm_tick |> read
-    False -> state
-  }
-  process.send(subscriber, followed(state))
-  state
-}
-
-/// Drops the subscribers `leaves` picks; the last to leave stops the timer and
-/// drops the lines.
-fn left(state: State, leaves: fn(Subscriber) -> Bool) -> State {
-  let #(gone, staying) = list.partition(state.subscribers, leaves)
-  list.each(gone, fn(entry) { process.demonitor_process(entry.monitor) })
-  let state = State(..state, subscribers: staying)
-  case gone, staying {
-    [], _ | _, [_, ..] -> state
-    [_, ..], [] -> idle(state)
+  case subscribers.join(state.subscribers, subscriber:) {
+    subscribers.AlreadyJoined -> state
+    subscribers.LaterJoined(joined) -> {
+      let state = State(..state, subscribers: joined)
+      process.send(subscriber, followed(state))
+      state
+    }
+    subscribers.FirstJoined(joined) -> {
+      let state = read(State(..state, subscribers: joined))
+      process.send(subscriber, followed(state))
+      state
+    }
   }
 }
 
-/// Nobody is subscribed: no timer, no lines, and the file is unread, so the
-/// next page reads its tail.
-fn idle(state: State) -> State {
-  option.map(state.tick, process.cancel_timer)
-  State(
-    ..state,
-    tick: None,
-    lines: log_lines.new(state.settings.source),
-    cursor: Unread,
-    trouble: None,
-  )
-}
-
-fn arm_tick(state: State) -> State {
-  let timer = process.send_after(state.self, state.settings.interval_ms, Tick)
-  State(..state, tick: Some(timer))
+/// The last page to leave drops the lines and unreads the file, so the next
+/// page reads its tail.
+fn left(state: State, left: subscribers.Left(Followed, Message)) -> State {
+  case left {
+    subscribers.StillSubscribed(remaining) ->
+      State(..state, subscribers: remaining)
+    subscribers.LastLeft(remaining) ->
+      State(
+        ..state,
+        subscribers: remaining,
+        lines: log_lines.new(state.settings.source),
+        cursor: Unread,
+        trouble: None,
+      )
+  }
 }
 
 fn tell(state: State, event: Event) -> Nil {
@@ -376,22 +367,19 @@ fn tell(state: State, event: Event) -> Nil {
 /// Reads when a page is subscribed, and sends every subscriber the lines when
 /// the read changed them or the file's state.
 fn read_and_send(state: State) -> State {
-  case state.subscribers {
-    [] -> state
-    [_, ..] -> {
-      let before = followed(state)
-      let state = read(state)
-      let after = followed(state)
-      case after == before {
-        True -> Nil
-        False ->
-          list.each(state.subscribers, fn(entry) {
-            process.send(entry.subject, after)
-          })
-      }
-      state
-    }
+  use <- bool.guard(
+    when: subscribers.is_empty(state.subscribers),
+    return: state,
+  )
+  let before = followed(state)
+  let state = read(state)
+  let after = followed(state)
+  case after == before {
+    True -> Nil
+    False ->
+      list.each(subscribers.subjects(state.subscribers), process.send(_, after))
   }
+  state
 }
 
 fn followed(state: State) -> Followed {

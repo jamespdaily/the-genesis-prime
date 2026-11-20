@@ -28,7 +28,7 @@
 
 import genesis_prime/dashboard/follow.{type Followed}
 import genesis_prime/dashboard/log_lines.{type Entry, type Level, type Source}
-import genesis_prime/dashboard/page.{type Page, Page}
+import genesis_prime/dashboard/page.{type Page, LogsKey, Page}
 import gleam/erlang/process.{type Subject}
 import gleam/int
 import gleam/list
@@ -58,7 +58,7 @@ pub type Message {
 
 /// The Logs page as an entry of the page list.
 pub fn page() -> Page {
-  Page(title: "Logs", path: "/logs")
+  Page(key: LogsKey, title: "Logs", path: "/logs")
 }
 
 /// The Logs page as a server component: its start argument is the followers it

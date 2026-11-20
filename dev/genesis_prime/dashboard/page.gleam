@@ -15,10 +15,17 @@ import lustre/element.{type Element}
 import lustre/element/html
 import lustre/server_component
 
-/// One page of the dashboard: the title its link shows and the path it is
-/// served at.
+/// Which page a `Page` is, so that what a page needs to run (its runtimes, what
+/// they subscribe to) is chosen by the page itself and not by its title or path.
+pub type Key {
+  OverviewKey
+  LogsKey
+}
+
+/// One page of the dashboard: its key, the title its link shows and the path
+/// it is served at.
 pub type Page {
-  Page(title: String, path: String)
+  Page(key: Key, title: String, path: String)
 }
 
 /// A path inside the key prefix as a link relative to the document: the
