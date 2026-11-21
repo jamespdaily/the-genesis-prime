@@ -1477,6 +1477,7 @@ pub fn mapped_logging(
     | client_connection.TellThrown(..)
     | client_connection.TellDespawn(..)
     | client_connection.TellUnitStates(..)
+    | client_connection.TellCastView(..)
     | TellChat(..) ->
       panic as "the step ends in an ask of the map: a store, hand-off or Sessions ask, or a tell, is none"
   }
@@ -2146,6 +2147,26 @@ pub fn beast_appears_facing(
   unit_id unit_id: Int,
   yaw yaw: Float,
 ) -> Event(ConnectionEvent(Message, Answer)) {
+  beast_appears_listing(unit_id:, yaw:, casts: [])
+}
+
+/// The news `beast_appears_facing` gives, of a Beast whose Creature2 row is `creature_id`:
+/// it stays attackable and hostile as the Beast is.
+pub fn creature_of_beast_appears_facing(
+  unit_id unit_id: Int,
+  creature_id creature_id: Int,
+  yaw yaw: Float,
+) -> Event(ConnectionEvent(Message, Answer)) {
+  creature_of_beast_appears_listing(unit_id:, creature_id:, yaw:, casts: [])
+}
+
+/// The news of the Beast `unit_id` standing where `beast_appears` puts it, its 0x262
+/// giving it the yaw `yaw` and listing these casts.
+pub fn beast_appears_listing(
+  unit_id unit_id: Int,
+  yaw yaw: Float,
+  casts casts: List(UnitCreateCast),
+) -> Event(ConnectionEvent(Message, Answer)) {
   let Creature2Id(creature_id) =
     spawn_support.beast_at(
       number: 1,
@@ -2157,15 +2178,14 @@ pub fn beast_appears_facing(
         z: 0.0,
       ),
     ).creature_id
-  creature_of_beast_appears_facing(unit_id:, creature_id:, yaw:)
+  creature_of_beast_appears_listing(unit_id:, creature_id:, yaw:, casts:)
 }
 
-/// The news `beast_appears_facing` gives, of a Beast whose Creature2 row is `creature_id`:
-/// it stays attackable and hostile as the Beast is.
-pub fn creature_of_beast_appears_facing(
+fn creature_of_beast_appears_listing(
   unit_id unit_id: Int,
   creature_id creature_id: Int,
   yaw yaw: Float,
+  casts casts: List(UnitCreateCast),
 ) -> Event(ConnectionEvent(Message, Answer)) {
   beast_appearing(unit_id:, yaw:, as_spawn: fn(beast) {
     spawn.Spawn(..beast, creature_id: Creature2Id(creature_id))
@@ -2206,12 +2226,15 @@ fn beast_appearing(
     unit_id:,
     news: CreatureAppeared(
       unit_type: NonPlayer,
-      unit: creature_unit.create(
-        spawn: beast,
-        unit_id:,
-        health: 52,
-        interrupt_armor: option.None,
-        server_time_estimate_start: 0,
+      unit: creature_unit.with_casts(
+        creature_unit.create(
+          spawn: beast,
+          unit_id:,
+          health: 52,
+          interrupt_armor: option.None,
+          server_time_estimate_start: 0,
+        ),
+        casts,
       ),
       life: 4,
       place:,

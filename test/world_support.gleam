@@ -180,6 +180,23 @@ fn send(
 /// the test each message the world sends it, in the order it arrives.
 pub fn connection(world world: World, id id: Int) -> Subject(Message) {
   let received = process.new_subject()
+  join_connection(world:, id:, handle: process.send(received, _))
+  received
+}
+
+/// A process that is the connection with this id until the test ends and keeps
+/// nothing it is sent, for a test whose player must stay in the world but that
+/// reads none of what the world sends: a test body holds each message it is
+/// handed until it reads it, and a crowd's frames would fill its mailbox.
+pub fn connection_that_keeps_nothing(world world: World, id id: Int) -> Nil {
+  join_connection(world:, id:, handle: fn(_message) { Nil })
+}
+
+fn join_connection(
+  world world: World,
+  id id: Int,
+  handle handle: fn(Message) -> Nil,
+) -> Nil {
   let ready = process.new_subject()
   let _pid =
     process.spawn_unlinked(fn() {
@@ -191,11 +208,9 @@ pub fn connection(world world: World, id id: Int) -> Subject(Message) {
           fn(message) { message },
         )
       process.send(ready, Nil)
-      forward(selector:, to: received)
+      handle_each(selector:, handle:)
     })
-  let Nil =
-    open_wait.received(from: ready, what: "the connection to join the registry")
-  received
+  open_wait.received(from: ready, what: "the connection to join the registry")
 }
 
 /// Everything the world sent the connection `id` (the one `connection` made, whose messages
@@ -236,10 +251,10 @@ fn until_the_marker(
   }
 }
 
-fn forward(
+fn handle_each(
   selector selector: process.Selector(Message),
-  to received: Subject(Message),
+  handle handle: fn(Message) -> Nil,
 ) -> Nil {
-  process.send(received, process.selector_receive_forever(selector))
-  forward(selector:, to: received)
+  handle(process.selector_receive_forever(selector))
+  handle_each(selector:, handle:)
 }

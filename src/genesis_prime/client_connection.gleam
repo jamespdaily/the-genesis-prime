@@ -31,6 +31,7 @@ import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{
   type Answered, type Fight, type Tell as StrikeTell,
 }
+import genesis_prime/game/unit_casts.{type CastView}
 import genesis_prime/game/unit_properties.{type Modifier, type Source}
 import genesis_prime/game/unit_state
 import genesis_prime/hand_off
@@ -179,6 +180,25 @@ pub type Request {
   /// creature, tells its life. Told through the creature registry with no watch, and never
   /// asked.
   TellUnitStates(rows: List(unit_state.Row), struck_at_ms: Int, went_at_ms: Int)
+  /// What a `Tell` effect sends a creature (genesis_prime/step `Creature`) to tell it what
+  /// this connection's player's cast holds on it, for the life the go struck
+  /// (genesis_prime/world_map/creature `CastViewSet`, `CastViewEnds`): the creature keeps
+  /// the view, lists it in the 0x262 a viewer arriving later is sent, and watches this
+  /// connection while it keeps one. Told through the creature registry, which drops it
+  /// when no creature of that address and life is there, and never asked.
+  TellCastView(connection: ConnectionId, change: ViewChange)
+}
+
+/// What a cast holds on a creature, as `TellCastView` carries it.
+pub type ViewChange {
+  /// The cast holds `view` on the creature: its one target, the whole of it. The
+  /// creature ignores it when it has stood again since `struck_at_ms`, the monotonic
+  /// time of the round that struck it, and otherwise keeps it in place of the cast's
+  /// earlier view.
+  ViewSet(view: CastView, struck_at_ms: Int)
+  /// The cast `cast_id` holds nothing on the creature: the creature drops the view of
+  /// that cast when this connection holds it, and ignores the tell otherwise.
+  ViewEnds(cast_id: Int)
 }
 
 /// A property modifier of a cast on a creature, as `TellTargetChange` carries it.

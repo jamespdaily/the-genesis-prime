@@ -44,6 +44,7 @@ import genesis_prime/game/spell_plan
 import genesis_prime/game/spend
 import genesis_prime/game/start_place
 import genesis_prime/game/strike_tell.{Answered, Key, Landed}
+import genesis_prime/game/unit_casts
 import genesis_prime/game/world_entry
 import genesis_prime/group_registry
 import genesis_prime/message/buyback_list.{BuybackList}
@@ -503,19 +504,50 @@ pub fn a_map_sweeps_exactly_at_its_sweep_time_test() -> Nil {
   world_support.stop(world:)
 }
 
+/// A world of two Battle Beasts, at x 0 and x 100, whose maps and creatures take
+/// their time from `time`.
+fn two_beasts_timed(time time: driven_time.Time) -> World {
+  world_support.start_timed(
+    time: driven_time.service_time(time),
+    spawns: [
+      spawn_support.battle_beast(number: 1, x: 0.0),
+      spawn_support.battle_beast(number: 2, x: 100.0),
+    ],
+    respawn_ms: 60_000,
+    idle_stop_ms: world_watch_support.idle_stop_ms,
+    sweep_ms: world_watch_support.sweep_ms,
+  )
+}
+
+pub fn a_player_who_stays_keeps_the_creatures_in_sight_running_past_the_idle_stop_and_the_sweep_test() -> Nil {
+  use <- owned_test.run(30_000)
+  // A map holds a creature for as long as a player's connection sees it: the idle
+  // stop counts from the last sight. The connection is registered, so the map's
+  // watch on it stays open and the player stays.
+  let time = driven_time.new()
+  let world = two_beasts_timed(time:)
+  let run = world_watch_support.started(world)
+  let _received = world_support.connection(world:, id: 1)
+  let _player = world_watch_support.join(run:, connection: 1)
+  let first =
+    world_watch_support.creature_pid(world:, run:, unit_id: 2, life: 2)
+  let second =
+    world_watch_support.creature_pid(world:, run:, unit_id: 3, life: 3)
+  driven_time.advance(
+    time:,
+    ms: world_watch_support.idle_stop_ms + world_watch_support.sweep_ms,
+  )
+  assert process.is_alive(first) && process.is_alive(second)
+    as "the player stays in sight of both creatures, so no sweep retires either"
+  world_support.stop(world:)
+}
+
 pub fn a_map_run_that_ends_ends_its_creatures_test() -> Nil {
   use <- owned_test.run(30_000)
-  let world =
-    world_support.start(
-      spawns: [
-        spawn_support.battle_beast(number: 1, x: 0.0),
-        spawn_support.battle_beast(number: 2, x: 100.0),
-      ],
-      respawn_ms: 60_000,
-      idle_stop_ms: world_watch_support.idle_stop_ms,
-      sweep_ms: world_watch_support.sweep_ms,
-    )
+  let time = driven_time.new()
+  let world = two_beasts_timed(time:)
   let run = world_watch_support.started(world)
+  let _received = world_support.connection(world:, id: 1)
   let _player = world_watch_support.join(run:, connection: 1)
   let first =
     world_watch_support.creature_pid(world:, run:, unit_id: 2, life: 2)
@@ -553,6 +585,7 @@ pub fn a_map_run_that_ends_ends_its_creatures_test() -> Nil {
     )
     == Error(Nil)
   })
+  world_support.stop(world:)
 }
 
 /// How many spawns stand in sight of the joining player: the densest point of the
@@ -562,8 +595,8 @@ pub fn a_map_run_that_ends_ends_its_creatures_test() -> Nil {
 const spawns_in_sight = 2400
 
 /// A world whose one map has `spawns_in_sight` spawns around x 0 in sight of a
-/// player standing at x 100.
-fn crowded_world() -> World {
+/// player standing at x 100, on the driven clock `time`.
+fn crowded_world(time time: driven_time.Time) -> World {
   let spawns =
     list.repeat(Nil, spawns_in_sight)
     |> list.index_map(fn(_, index) {
@@ -572,7 +605,8 @@ fn crowded_world() -> World {
         x: int.to_float(index + 1) *. 0.4,
       )
     })
-  world_support.start(
+  world_support.start_timed(
+    time: driven_time.service_time(time),
     spawns:,
     respawn_ms: 60_000,
     idle_stop_ms: world_watch_support.idle_stop_ms,
@@ -582,8 +616,10 @@ fn crowded_world() -> World {
 
 pub fn a_join_with_2400_spawns_in_sight_is_answered_and_every_creature_started_and_found_test() -> Nil {
   use <- owned_test.run(30_000)
-  let world = crowded_world()
+  let time = driven_time.new()
+  let world = crowded_world(time:)
   let run = world_watch_support.started(world)
+  world_support.connection_that_keeps_nothing(world:, id: 1)
   let _player = world_watch_support.join(run:, connection: 1)
   let _last =
     world_watch_support.creature_pid(
@@ -594,6 +630,7 @@ pub fn a_join_with_2400_spawns_in_sight_is_answered_and_every_creature_started_a
     )
   assert list.length(world_support.creature_pids(world)) == spawns_in_sight
     as "a creature runs for each spawn in sight, each found at its address"
+  world_support.stop(world:)
 }
 
 pub fn a_map_that_ends_while_its_burst_of_starts_runs_ends_every_creature_it_started_test() -> Nil {
@@ -601,8 +638,10 @@ pub fn a_map_that_ends_while_its_burst_of_starts_runs_ends_every_creature_it_sta
   // Test 16: the Join is answered before its creatures start, so the map is killed
   // as soon as the first creature runs, with the burst of 2,400 starts under way;
   // every creature it did start watches the run and ends with it.
-  let world = crowded_world()
+  let time = driven_time.new()
+  let world = crowded_world(time:)
   let run = world_watch_support.started(world)
+  world_support.connection_that_keeps_nothing(world:, id: 1)
   let _player = world_watch_support.join(run:, connection: 1)
   event_wait.until("the first creature of the burst runs", fn() {
     world_support.creature_pids(world) != []
@@ -613,6 +652,7 @@ pub fn a_map_that_ends_while_its_burst_of_starts_runs_ends_every_creature_it_sta
   event_wait.until("every creature the map started has ended", fn() {
     world_support.creature_pids(world) == []
   })
+  world_support.stop(world:)
 }
 
 /// The blow of Spell4Effects 44477 (spell 26967, `table_rows -- Spell4Effects 44477`) as
@@ -1793,6 +1833,79 @@ pub fn tell_despawn_reaches_the_creature_as_despawn_test() -> Nil {
   assert delivered(client_connection.TellThrown(throw:, struck_at_ms: 900))
     == creature.Thrown(throw:, struck_at_ms: 900)
     as "a throw is still the creature's Thrown"
+  world_support.stop(world:)
+}
+
+pub fn tell_cast_view_reaches_the_creature_as_cast_view_set_and_ends_test() -> Nil {
+  use <- owned_test.run(30_000)
+  // A stand-in for the creature: the test process joins the address of a creature that
+  // does not run (unit 900, life 9), so what the registry delivers to it is what the
+  // server's `tell_creature` made of each request.
+  let world = one_beast(respawn_ms: 60_000)
+  let address =
+    step.Creature(
+      map: world_watch_support.ship,
+      incarnation: 1,
+      unit_id: 900,
+      life: 9,
+    )
+  let scope = creature_registry.scope(world.creatures)
+  group_registry.join(scope:, group: address, pid: process.self())
+  let next_delivered = fn() {
+    let assert service.TellCall(message:) =
+      group_registry.select_delivered(
+        scope:,
+        selector: process.new_selector(),
+        mapping: fn(call) { call },
+      )
+      |> process.selector_receive_forever
+    message
+  }
+  let delivered = fn(request) {
+    let assert Ok(Nil) =
+      server.tell_creature(creatures: world.creatures, to: address, request:)
+      as "the stand-in is found by its address and told"
+    next_delivered()
+  }
+  let view =
+    unit_casts.CastView(
+      caster_unit_id: 21,
+      cast_id: cast_state.cast_id(unit_id: 21, number: 1),
+      spell4_id: Spell4Id(41_886),
+      primary_target: 900,
+      gone: True,
+      current: False,
+      targets: [],
+    )
+  assert delivered(client_connection.TellCastView(
+      connection: ConnectionId(4),
+      change: client_connection.ViewSet(view:, struck_at_ms: 900),
+    ))
+    == creature.CastViewSet(by: ConnectionId(4), view:, struck_at_ms: 900)
+    as "a set is the creature's CastViewSet, with the connection that told it and the round's time"
+  assert delivered(client_connection.TellCastView(
+      connection: ConnectionId(4),
+      change: client_connection.ViewEnds(cast_id: view.cast_id),
+    ))
+    == creature.CastViewEnds(by: ConnectionId(4), cast_id: view.cast_id)
+    as "an end is the creature's CastViewEnds"
+  let another_life = step.Creature(..address, life: 8)
+  assert server.tell_creature(
+      creatures: world.creatures,
+      to: another_life,
+      request: client_connection.TellCastView(
+        connection: ConnectionId(4),
+        change: client_connection.ViewEnds(cast_id: 1),
+      ),
+    )
+    == Error(Nil)
+    as "a tell for a life no creature holds is dropped by the registry"
+  assert delivered(client_connection.TellCastView(
+      connection: ConnectionId(4),
+      change: client_connection.ViewEnds(cast_id: 2),
+    ))
+    == creature.CastViewEnds(by: ConnectionId(4), cast_id: 2)
+    as "and delivers nothing: the next message the stand-in takes is the later life-9 tell"
   world_support.stop(world:)
 }
 

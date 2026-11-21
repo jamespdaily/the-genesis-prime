@@ -11,9 +11,8 @@ import fixture_tables
 import game_client
 import game_connection_support
 import genesis_prime/client_connection.{
-  type Answer, type Message, type News, type Request, Appeared, AskHandOff,
-  AskMap, AskMapRun, AskSessions, AskStore, CastFinished, CastStarted, CastWent,
-  ForStay, FromMap, Removed, SentBySessions, TellChat, TellMoved, TellPeer,
+  type Answer, type Message, type News, type Request, Appeared, CastFinished,
+  CastStarted, CastWent, ForStay, FromMap, Removed, SentBySessions,
 }
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/connection as game_connection
@@ -1344,67 +1343,13 @@ fn to_the_medic(taken: step.ServiceStep(creature.Outgoing)) -> List(Message) {
   })
 }
 
-/// The connection's tells to the creature, as the creature takes them.
+/// The connection's tells to the creature, as the creature takes them
+/// (`server.creature_told`).
 fn to_the_beast(taken: ConnectionStep(Request)) -> List(creature.Message) {
   list.filter_map(support.effects_of(taken), fn(effect) {
     case effect {
       OwnEffect(step.Tell(to: step.Creature(unit_id: 7, ..), request:)) ->
-        case request {
-          client_connection.TellStrike(tell:) -> Ok(creature.Strike(tell:))
-          client_connection.TellTargetMoved(
-            connection:,
-            place:,
-            seq:,
-            stay:,
-            hit_radius:,
-          ) ->
-            Ok(creature.TargetMoved(
-              by: connection,
-              place:,
-              seq:,
-              stay:,
-              hit_radius:,
-            ))
-          client_connection.TellStrikeAnswered(answered:) ->
-            Ok(creature.StrikeAnswered(answered:))
-          client_connection.TellTargetChange(
-            connection:,
-            change: client_connection.ChangeStarts(
-              source:,
-              modifier:,
-              struck_at_ms:,
-            ),
-          ) ->
-            Ok(creature.ModifierStarts(
-              by: connection,
-              source:,
-              modifier:,
-              struck_at_ms:,
-            ))
-          client_connection.TellTargetChange(
-            change: client_connection.ChangeEnds(source:),
-            ..,
-          ) -> Ok(creature.ModifierEnds(source:))
-          client_connection.TellThrown(throw:, struck_at_ms:) ->
-            Ok(creature.Thrown(throw:, struck_at_ms:))
-          client_connection.TellDespawn(delay_ms:, struck_at_ms:, went_at_ms:) ->
-            Ok(creature.Despawn(delay_ms:, struck_at_ms:, went_at_ms:))
-          client_connection.TellUnitStates(rows:, struck_at_ms:, went_at_ms:) ->
-            Ok(creature.UnitStates(rows:, struck_at_ms:, went_at_ms:))
-          AskStore(..)
-          | AskHandOff(..)
-          | AskSessions(..)
-          | AskMap(..)
-          | AskMapRun(..)
-          | TellMoved(..)
-          | client_connection.TellReady(..)
-          | client_connection.TellStealthChanged(..)
-          | client_connection.TellVisibilityChanged(..)
-          | client_connection.TellLifeChanged(..)
-          | client_connection.TellReleased(..)
-          | TellPeer(..)
-          | TellChat(..) -> Error(Nil)
-        }
+        server.creature_told(request)
       OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
         Error(Nil)
     }

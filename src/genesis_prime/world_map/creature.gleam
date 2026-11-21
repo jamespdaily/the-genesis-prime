@@ -78,6 +78,21 @@
 ////                         else ─▶ at went_at_ms + delay_ms the creature leaves the field (`Despawn`'s doc):
 ////                                    the fight and the guard end as at a kill, the controls are dropped,
 ////                                    Send(each viewer, Removed); StartServiceTimer(corpse, respawn_ms)
+////
+//// caster's connection c0, what its cast holds on the creature, for the life the go struck
+//// CastViewSet(c0, view, struck_at_ms)
+////                         struck_at_ms < stood_again_ms: dropped
+////                         else ─▶ views[cast id] = (c0, view), in place of that cast's earlier view
+////                                    c0's first view or modifier: Watch(c0's watch, Connection(c0))
+////                                    an earlier holder of the cast id that holds nothing else: Unwatch
+////                                    no news: the viewers have the 0x7f4 from the caster's audience
+//// CastViewEnds(c0, cast_id)
+////                         held by c0 ─▶ dropped; c0 holding nothing else: Unwatch
+////                         else nothing
+//// c0's watch ends (WatchEnded) ─▶ every view and source of c0 dropped, no Unwatch
+//// the corpse timer ─────▶ every view dropped, each connection that held one or a source unwatched once
+//// a viewer's arrival (`Started`, `Watched`, `shown_again`) ─▶ the 0x262 lists each view
+////                                    (`unit_casts.entries_of`), with the tail's cast id 0
 //// ```
 ////
 //// - **The unit** is `creature_unit.create(spawn, unit_id, time)`, stamped with
@@ -234,6 +249,7 @@ import genesis_prime/game/strike_tell.{
   type Answered, type Fight, type Tell as StrikeTell, Answered, CreatureStriker,
   PlayerStriker, Refused,
 }
+import genesis_prime/game/unit_casts
 import genesis_prime/game/unit_properties.{
   type Modifier, type Properties, type Source,
 }
@@ -274,6 +290,7 @@ import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/pair
 import gleam/result
 import gleam/set.{type Set}
 
@@ -483,6 +500,34 @@ pub type Message {
   /// | a despawn reaches a blocking creature | it still removes the creature: a removal is not hostile |
   /// | the caster leaves or dies after the tell | no effect: the creature owns the end |
   UnitStates(rows: List(unit_state.Row), struck_at_ms: Int, went_at_ms: Int)
+  /// The caster's connection `by` tells the creature that its cast holds `view` on it
+  /// (a node of the cast's go on the creature), for the life the go struck:
+  /// `struck_at_ms` is the monotonic time of the round that struck it. The view is the
+  /// whole target: a later set for the same cast id replaces the earlier one. The
+  /// creature keeps it to list it in the 0x262 of each viewer that arrives, and watches
+  /// `by` while it holds a view or a modifier source of that connection.
+  ///
+  /// ```
+  /// CastViewSet(by, view, struck_at_ms)
+  ///     struck_at_ms < stood_again_ms: dropped (kept on a dead creature: a corpse keeps its nodes)
+  ///     else views[view.cast_id] = (by, view); Watch(Connection(by)) on its first holding
+  ///         the replaced entry held by another connection: that one is unwatched with its last holding
+  /// ```
+  ///
+  /// | If | Then |
+  /// |---|---|
+  /// | the tell is in flight when the creature ends, or is told for another life | the registry drops it |
+  /// | it was struck before the creature last stood again | dropped: the registry address is the same across lives |
+  /// | it reaches a dead creature | kept, and the corpse's 0x262 lists it |
+  /// | two casters' views | both kept, each under its own cast id (a cast id names its caster) |
+  /// | the caster's connection ends | its watch fires and every view of it is dropped |
+  /// | the creature crashes | the views are lost and the map starts the spawn again as a new unit |
+  CastViewSet(by: ConnectionId, view: unit_casts.CastView, struck_at_ms: Int)
+  /// The caster's connection `by` tells the creature that its cast `cast_id` holds
+  /// nothing on it any more. The creature drops the view of that cast when `by` holds
+  /// it, and unwatches `by` when that was its last holding; an end for a cast it does
+  /// not hold, or one held by another connection, changes nothing.
+  CastViewEnds(by: ConnectionId, cast_id: Int)
 }
 
 /// What a creature sends a connection without waiting.
@@ -517,7 +562,9 @@ pub type Outgoing {
 /// holds, the caster's connection of each modifier's source in the order the
 /// modifiers started, the id its next watch on a caster's connection takes, and the
 /// monotonic time it last stood again (none in its first life), and the monotonic time its
-/// pending despawn is due (none when none is pending).
+/// pending despawn is due (none when none is pending). `views` holds what players' casts
+/// hold on it, by cast id with the caster's connection that told it: its caster's watch
+/// covers them as it covers the modifiers' sources.
 pub opaque type State {
   State(
     settings: Settings,
@@ -531,6 +578,7 @@ pub opaque type State {
     properties: Properties,
     casters: Dict(ConnectionId, WatchId),
     held_by: List(#(Source, ConnectionId)),
+    views: Dict(Int, #(ConnectionId, unit_casts.CastView)),
     next_watch: Int,
     stood_again_ms: Option(Int),
     despawn_due_ms: Option(Int),
@@ -572,6 +620,7 @@ pub fn new(settings: Settings) -> State {
     properties: base_properties(settings:),
     casters: dict.new(),
     held_by: [],
+    views: dict.new(),
     next_watch: first_caster_watch,
     stood_again_ms: None,
     despawn_due_ms: None,
@@ -818,10 +867,29 @@ pub fn step(
       despawn_told(state:, delay_ms:, struck_at_ms:, went_at_ms:, now_ms:)
     OwnEvent(Told(message: UnitStates(rows:, struck_at_ms:, went_at_ms:))) ->
       unit_states_told(state:, rows:, struck_at_ms:, went_at_ms:, now_ms:)
+    OwnEvent(Told(message: CastViewSet(by:, view:, struck_at_ms:))) ->
+      view_set(state:, by:, view:, struck_at_ms:)
+    OwnEvent(Told(message: CastViewEnds(by:, cast_id:))) ->
+      view_ended(state:, by:, cast_id:)
     WatchEnded(watch:) if watch == run_watch -> #(state, Effects([Stop]))
     WatchEnded(watch:) -> caster_gone(state:, watch:, now_ms:)
     OwnEvent(Asked(..)) | OwnEvent(CreatureNotStarted(..)) ->
       panic as "a creature is told, and starts no creature"
+  }
+}
+
+/// Whether a tell struck at `struck_at_ms` struck the creature's life before the one it
+/// is in: the creature stood again after it, at a later time. The registry address is
+/// the same across lives, so the time of the round tells them apart. A creature that
+/// has not stood again is in its first life, and a tell struck at the very time it
+/// stood again struck the new one.
+fn struck_before_this_life(
+  state state: State,
+  struck_at_ms struck_at_ms: Int,
+) -> Bool {
+  case state.stood_again_ms {
+    Some(stood_ms) -> struck_at_ms < stood_ms
+    None -> False
   }
 }
 
@@ -836,18 +904,13 @@ fn thrown(
   struck_at_ms struck_at_ms: Int,
   now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
-  let struck_before_this_life = case state.stood_again_ms {
-    Some(stood_ms) -> struck_at_ms < stood_ms
-    None -> False
-  }
-  case
-    creature_life.is_dead(life: state.life)
-    || struck_before_this_life
-    || creature_unit_state.blocks_hostile(state: state.unit_state, now_ms:)
-  {
-    True -> #(state, Effects([]))
-    False -> fought_alone(state:, input: creature_fight.Thrown(throw:), now_ms:)
-  }
+  use <- bool.guard(
+    when: creature_life.is_dead(life: state.life)
+      || struck_before_this_life(state:, struck_at_ms:)
+      || creature_unit_state.blocks_hostile(state: state.unit_state, now_ms:),
+    return: #(state, Effects([])),
+  )
+  fought_alone(state:, input: creature_fight.Thrown(throw:), now_ms:)
 }
 
 /// A DespawnUnit effect reaches the creature (`Despawn`): dropped when the creature lies dead
@@ -864,14 +927,10 @@ fn despawn_told(
   went_at_ms went_at_ms: Int,
   now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
-  let struck_before_this_life = case state.stood_again_ms {
-    Some(stood_ms) -> struck_at_ms < stood_ms
-    None -> False
-  }
   let due_ms = went_at_ms + delay_ms
   case
     creature_life.despawned(life: state.life, body: state.body),
-    struck_before_this_life,
+    struck_before_this_life(state:, struck_at_ms:),
     state.despawn_due_ms,
     due_ms <= now_ms
   {
@@ -920,24 +979,20 @@ fn unit_states_told(
   went_at_ms went_at_ms: Int,
   now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
-  let struck_before_this_life = case state.stood_again_ms {
-    Some(stood_ms) -> struck_at_ms < stood_ms
-    None -> False
-  }
-  case creature_life.is_dead(life: state.life) || struck_before_this_life {
-    True -> #(state, Effects([]))
-    False -> {
-      let #(unit_state, effects) =
-        creature_unit_state.set(
-          state: state.unit_state,
-          rows:,
-          went_at_ms:,
-          now_ms:,
-        )
-      let state = State(..state, unit_state:)
-      #(state, Effects(unit_state_carried(state:, effects:)))
-    }
-  }
+  use <- bool.guard(
+    when: creature_life.is_dead(life: state.life)
+      || struck_before_this_life(state:, struck_at_ms:),
+    return: #(state, Effects([])),
+  )
+  let #(unit_state, effects) =
+    creature_unit_state.set(
+      state: state.unit_state,
+      rows:,
+      went_at_ms:,
+      now_ms:,
+    )
+  let state = State(..state, unit_state:)
+  #(state, Effects(unit_state_carried(state:, effects:)))
 }
 
 /// The unit-state timer fired: the holds whose start has come are told and the ones whose end
@@ -1078,27 +1133,64 @@ fn modifier_started(
   struck_at_ms struck_at_ms: Int,
   now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
-  let struck_before_this_life = case state.stood_again_ms {
-    Some(stood_ms) -> struck_at_ms < stood_ms
-    None -> False
+  use <- bool.guard(
+    when: creature_life.is_dead(life: state.life)
+      || struck_before_this_life(state:, struck_at_ms:)
+      || result.is_ok(list.key_find(state.held_by, source))
+      || creature_unit_state.blocks_hostile(state: state.unit_state, now_ms:),
+    return: #(state, Effects([])),
+  )
+  let #(properties, changed) =
+    unit_properties.apply(properties: state.properties, source:, modifier:)
+  let state =
+    State(..state, held_by: list.append(state.held_by, [#(source, by)]))
+  let #(state, watching) = watching(state:, by:)
+  let news = changed_news(state:, changed:)
+  let #(state, revalued) = revalued(state:, properties:, now_ms:)
+  #(state, Effects(list.flatten([watching, news, revalued])))
+}
+
+/// The caster of connection `by` tells the creature that its cast holds `view` on it:
+/// kept in place of that cast's earlier view, and `by` is watched from its first view
+/// or modifier on. A set struck before the creature last stood again changes nothing; a
+/// dead creature keeps it, as a corpse keeps its nodes. The holder a replaced entry
+/// belonged to is unwatched when it holds nothing else. No news goes to the viewers.
+fn view_set(
+  state state: State,
+  by by: ConnectionId,
+  view view: unit_casts.CastView,
+  struck_at_ms struck_at_ms: Int,
+) -> #(State, ServiceStep(Outgoing)) {
+  use <- bool.guard(
+    when: struck_before_this_life(state:, struck_at_ms:),
+    return: #(state, Effects([])),
+  )
+  let replaced = dict.get(state.views, view.cast_id)
+  let state =
+    State(..state, views: dict.insert(state.views, view.cast_id, #(by, view)))
+  let #(state, watching) = watching(state:, by:)
+  let #(state, unwatched) = case replaced {
+    Ok(#(earlier, _)) if earlier != by -> unwatching_last(state:, by: earlier)
+    Ok(_) | Error(Nil) -> #(state, [])
   }
-  case
-    creature_life.is_dead(life: state.life)
-    || struck_before_this_life
-    || result.is_ok(list.key_find(state.held_by, source))
-    || creature_unit_state.blocks_hostile(state: state.unit_state, now_ms:)
-  {
-    True -> #(state, Effects([]))
-    False -> {
-      let #(properties, changed) =
-        unit_properties.apply(properties: state.properties, source:, modifier:)
-      let state =
-        State(..state, held_by: list.append(state.held_by, [#(source, by)]))
-      let #(state, watching) = watching(state:, by:)
-      let news = changed_news(state:, changed:)
-      let #(state, revalued) = revalued(state:, properties:, now_ms:)
-      #(state, Effects(list.flatten([watching, news, revalued])))
+  #(state, Effects(list.append(watching, unwatched)))
+}
+
+/// The caster of connection `by` tells the creature that its cast `cast_id` holds
+/// nothing on it: the view is dropped when `by` holds it, and `by` is unwatched when
+/// that was its last holding. Any other end changes nothing.
+fn view_ended(
+  state state: State,
+  by by: ConnectionId,
+  cast_id cast_id: Int,
+) -> #(State, ServiceStep(Outgoing)) {
+  case dict.get(state.views, cast_id) {
+    Ok(#(holder, _)) if holder == by -> {
+      let state = State(..state, views: dict.delete(state.views, cast_id))
+      let #(state, unwatched) = unwatching_last(state:, by:)
+      #(state, Effects(unwatched))
     }
+    Ok(_) | Error(Nil) -> #(state, Effects([]))
   }
 }
 
@@ -1129,7 +1221,7 @@ fn stood_again(
   now_ms now_ms: Int,
 ) -> #(State, List(Effect(ServiceEffect(Outgoing)))) {
   let unwatched =
-    list.unique(list.map(state.held_by, fn(held) { held.1 }))
+    holding_connections(state:)
     |> list.filter_map(fn(by) {
       dict.get(state.casters, by)
       |> result.map(fn(watch) { step.Unwatch(watch:) })
@@ -1141,6 +1233,7 @@ fn stood_again(
       properties: base_properties(settings: state.settings),
       casters: dict.new(),
       held_by: [],
+      views: dict.new(),
       stood_again_ms: Some(now_ms),
     ),
     unwatched,
@@ -1245,23 +1338,59 @@ fn caster_gone(
   {
     Error(Nil) -> #(state, Effects([]))
     Ok(#(by, _)) -> {
-      let sources =
-        list.filter_map(state.held_by, fn(held) {
-          case held.1 == by {
-            True -> Ok(held.0)
-            False -> Error(Nil)
-          }
-        })
       let state = State(..state, casters: dict.delete(state.casters, by))
-      let #(state, effects) =
-        list.fold(sources, #(state, []), fn(so_far, source) {
-          let #(state, done) = so_far
-          let #(state, more) = source_removed(state:, source:, now_ms:)
-          #(state, list.append(done, more))
-        })
+      let #(state, effects) = dropped_from(state:, by:, now_ms:)
       #(state, Effects(effects))
     }
   }
+}
+
+/// What the connection `by` holds on the creature has gone: every view it told is
+/// dropped, and every source of it is removed in the order they started, each as
+/// `modifier_ended` removes it. The views are dropped by their holder, not by cast id: a
+/// later holder of a cast id keeps its view. The one place that knows each kind of holding
+/// a connection has on the creature, with `holds_from` and `holding_connections`. The
+/// caller has forgotten the watch on `by`, when it is `by`'s watch that ended.
+fn dropped_from(
+  state state: State,
+  by by: ConnectionId,
+  now_ms now_ms: Int,
+) -> #(State, List(Effect(ServiceEffect(Outgoing)))) {
+  let state =
+    State(
+      ..state,
+      views: dict.filter(state.views, fn(_, held) { held.0 != by }),
+    )
+  let sources =
+    list.filter_map(state.held_by, fn(held) {
+      case held.1 == by {
+        True -> Ok(held.0)
+        False -> Error(Nil)
+      }
+    })
+  list.fold(sources, #(state, []), fn(so_far, source) {
+    let #(state, done) = so_far
+    let #(state, more) = source_removed(state:, source:, now_ms:)
+    #(state, list.append(done, more))
+  })
+}
+
+/// Whether the connection `by` holds anything on the creature: a source of a property
+/// modifier or a view of a cast.
+fn holds_from(state state: State, by by: ConnectionId) -> Bool {
+  list.any(state.held_by, fn(held) { held.1 == by })
+  || list.any(dict.values(state.views), fn(held) { held.0 == by })
+}
+
+/// The connections that hold anything on the creature, each once: those that hold a
+/// modifier source in the order their sources started, then those that hold only views,
+/// by the lowest cast id each holds.
+fn holding_connections(state state: State) -> List(ConnectionId) {
+  let by_view =
+    dict.to_list(state.views)
+    |> list.sort(fn(left, right) { int.compare(left.0, right.0) })
+    |> list.map(fn(entry) { entry.1.0 })
+  list.unique(list.append(list.map(state.held_by, fn(held) { held.1 }), by_view))
 }
 
 /// The watch on the caster's connection `by`, started with its first modifier: none
@@ -1288,10 +1417,7 @@ fn unwatching_last(
   state state: State,
   by by: ConnectionId,
 ) -> #(State, List(Effect(ServiceEffect(Outgoing)))) {
-  use <- bool.guard(
-    when: list.any(state.held_by, fn(held) { held.1 == by }),
-    return: #(state, []),
-  )
+  use <- bool.guard(when: holds_from(state:, by:), return: #(state, []))
   case dict.get(state.casters, by) {
     Ok(watch) -> #(State(..state, casters: dict.delete(state.casters, by)), [
       step.Unwatch(watch:),
@@ -2218,21 +2344,27 @@ fn appeared(
     creature:,
     viewer:,
     news: CreatureAppeared(
-      unit: creature_unit.overlaid(
-        unit: creature_unit.create(
-          spawn: Spawn(..state.settings.spawn, place:),
-          unit_id: creature.unit_id,
-          health: creature_life.health(life: state.life),
-          interrupt_armor: creature_control.armor_now(
-            state: state.control,
-            armor: state.body.combat.interrupt_armor,
+      unit: creature_unit.with_casts(
+        unit: creature_unit.overlaid(
+          unit: creature_unit.create(
+            spawn: Spawn(..state.settings.spawn, place:),
+            unit_id: creature.unit_id,
+            health: creature_life.health(life: state.life),
+            interrupt_armor: creature_control.armor_now(
+              state: state.control,
+              armor: state.body.combat.interrupt_armor,
+            ),
+            server_time_estimate_start: map.server_time(
+              origin_ms: creature.clock_origin_ms,
+              monotonic_ms: now_ms,
+            ),
           ),
-          server_time_estimate_start: map.server_time(
-            origin_ms: creature.clock_origin_ms,
-            monotonic_ms: now_ms,
-          ),
+          properties: state.properties,
         ),
-        properties: state.properties,
+        casts: unit_casts.entries_of(
+          views: list.map(dict.values(state.views), pair.second),
+          now_ms:,
+        ),
       ),
       life: creature.life,
       place:,
