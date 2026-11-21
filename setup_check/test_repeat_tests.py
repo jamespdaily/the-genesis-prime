@@ -86,6 +86,8 @@ rm -f "$dir/alive.$$"
 if [ "$ticket" = "$PLANT_FAILS_ON_START" ]; then
   echo "=WARNING REPORT==== 21-Nov-2026::05:30:02.454814 ==="
   echo "0x035B names quest 10525, which no giver in reach starts: the client would not have sent it"
+  echo
+  echo "planted_test.another_planted_test ... ok"
   echo "=CRASH REPORT==== 21-Nov-2026::05:30:02.454912 ==="
   echo "  crasher:"
   echo "    initial call: planted:run/0"
@@ -338,6 +340,7 @@ class RepeatTestsTest(PlantedRepeatCase):
         self.assertEqual(output.count(refusal), 1, "the failing run's refusal line is printed, once")
         self.assertLess(output.index(refusal), output.index("Failures:"), "the warnings come before the section")
         self.assertNotIn("initial call: planted:run/0", output, "a crash report's lines are not warnings")
+        self.assertNotIn("another_planted_test ... ok", output, "a warning report ends at its blank line")
 
     def test_a_run_the_tool_killed_fails_the_repeat(self):
         self.commit("change a test file", change=["test/changed_test.gleam"])

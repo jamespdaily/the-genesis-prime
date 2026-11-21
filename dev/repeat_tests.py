@@ -197,13 +197,17 @@ def report_failure(outcome: Outcome) -> None:
 
 
 def warning_lines(lines: list[str]) -> list[str]:
-    """The text of each warning report among the lines, which the failures section comes after and so hides."""
+    """The text of each warning report among the lines, which the failures section comes after and so hides.
+
+    A report ends at its blank line, so the lines after it (the test runner's progress and counts) are not warnings."""
     kept: list[str] = []
     inside = False
     for line in lines:
         if ANY_REPORT.match(line):
             inside = line.startswith(WARNING_REPORT_MARK)
-        elif inside and line.strip():
+        elif not line.strip():
+            inside = False
+        elif inside:
             kept.append(line)
     return kept
 

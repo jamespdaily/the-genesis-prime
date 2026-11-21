@@ -8805,7 +8805,7 @@ pub fn a_released_quest_giver_is_out_of_reach_once_gone_and_the_other_giver_give
       tutorial: True,
     )
   let #(game, _, entry, have) = enter_the_tutorial(started)
-  let assert Ok(standing) =
+  let assert Ok(bot) =
     tutorial_bot.play_to_the_dorians(
       game:,
       have:,
@@ -8824,15 +8824,17 @@ pub fn a_released_quest_giver_is_out_of_reach_once_gone_and_the_other_giver_give
     as "the bot plays the tutorial to the Dorians"
   let dorian_creature = 73_491
   let assert Ok(#(giver_a, at_a)) =
-    tutorial_bot.nearest(units: standing.units, from: standing.at, creatures: [
-      dorian_creature,
-    ])
+    tutorial_bot.nearest(
+      units: tutorial_bot.units(bot:),
+      from: tutorial_bot.at(bot:),
+      creatures: [dorian_creature],
+    )
     as "a Dorian is in sight"
-  let standing = tutorial_bot.approach_unit(standing:, at: at_a)
+  let bot = tutorial_bot.approach_unit(bot:, at: at_a)
   // The use and the ping go in one write, so the pong comes before the map's 0x355
   // that the objective's release rule sends for the used giver.
   let #(used, have) =
-    quest_bot.use_unit(game:, have: standing.have, unit_id: giver_a)
+    quest_bot.use_unit(game:, have: tutorial_bot.have(bot:), unit_id: giver_a)
   assert list.contains(
     used.states,
     QuestState(quest_id: 10_529, state: 3, objective_id: 0),
@@ -8846,7 +8848,7 @@ pub fn a_released_quest_giver_is_out_of_reach_once_gone_and_the_other_giver_give
     })
   assert list.contains(game_client.removals_in(frames: gone), giver_a)
     as "objective.release: the map removes the used giver from the picture"
-  let units = tutorial_bot.hear(units: standing.units, frames: gone)
+  let bot = tutorial_bot.took_in(bot:, have:, frames: gone)
   let #(talked_at_a, have) = quest_bot.talk(game:, have:, unit_id: giver_a)
   assert talked_at_a.dialogs == []
     as "quest.in_reach: a removed giver opens no dialog"
@@ -8854,15 +8856,19 @@ pub fn a_released_quest_giver_is_out_of_reach_once_gone_and_the_other_giver_give
   assert accepted_at_a.states == []
     as "quest.in_reach: no giver of 10525 is in reach of a player beside the removed one, so the accept gives no 0x035C"
   let assert Ok(#(giver_b, at_b)) =
-    tutorial_bot.nearest(units:, from: standing.at, creatures: [dorian_creature])
+    tutorial_bot.nearest(
+      units: tutorial_bot.units(bot:),
+      from: tutorial_bot.at(bot:),
+      creatures: [dorian_creature],
+    )
     as "the other Dorian is in sight"
-  let standing =
+  let bot =
     tutorial_bot.approach_unit(
-      standing: tutorial_bot.Standing(..standing, have:, units:),
+      bot: tutorial_bot.took_in(bot:, have:, frames: []),
       at: at_b,
     )
   let #(talked_at_b, have) =
-    quest_bot.talk(game:, have: standing.have, unit_id: giver_b)
+    quest_bot.talk(game:, have: tutorial_bot.have(bot:), unit_id: giver_b)
   assert talked_at_b.dialogs != [] as "the other Dorian opens its dialog"
   let #(accepted_at_b, _) = quest_bot.accept(game:, have:, quest_id: 10_525)
   assert list.map(accepted_at_b.states, fn(told) {
