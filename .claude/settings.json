@@ -58,6 +58,11 @@
             "type": "command",
             "command": "test -f \"$CLAUDE_PROJECT_DIR\"/dev/hooks/agent_needs_type.py || exit 0; python3 -I \"$CLAUDE_PROJECT_DIR\"/dev/hooks/agent_needs_type.py",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "test -f \"$CLAUDE_PROJECT_DIR\"/dev/hooks/limit_builders.py || exit 0; python3 -I \"$CLAUDE_PROJECT_DIR\"/dev/hooks/limit_builders.py",
+            "timeout": 10
           }
         ]
       },
