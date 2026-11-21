@@ -106,35 +106,7 @@ pub fn every_creature_a_quest_names_as_giver_or_receiver_is_kept_test() -> Nil {
   use <- owned_test.run(300_000)
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.every_table()
-  let counted =
-    list.flat_map(quest2.all(tables), fn(quest) {
-      let assert Ok(of_quest) = quest_log.quest_of(tables:, id: quest.id)
-        as "the quest's rows are in the tables"
-      list.index_map(of_quest.objectives, fn(objective, index) {
-        case
-          objective_units.units_of(
-            tables:,
-            quest_id: quest.id,
-            index:,
-            objective:,
-          )
-        {
-          objective_units.Listed(creatures:) ->
-            list.filter_map(creatures, fn(creature_id) {
-              case creature2.get(tables, creature_id) {
-                Ok(row) ->
-                  case list.any(spawn.quest_ids(row), fn(id) { id != 0 }) {
-                    True -> Ok(#(quest.id, index, creature_id.value))
-                    False -> Error(Nil)
-                  }
-                Error(Nil) -> Error(Nil)
-              }
-            })
-          objective_units.Unlisted | objective_units.NoUnitEvent -> []
-        }
-      })
-      |> list.flatten
-    })
+  let counted = list.flat_map(quest2.all(tables), cases_of(tables:, quest: _))
   let released =
     list.filter(counted, fn(case_) {
       let #(quest_id, index, creature_id) = case_
@@ -195,4 +167,39 @@ fn release_of(advanced: Advanced) -> List(Int) {
       | objective.CompleteByServer(..) -> Error(Nil)
     }
   })
+}
+
+/// The (quest, objective index, creature) cases of the quest whose objective counts a use
+/// of a creature that gives or receives a quest.
+fn cases_of(
+  tables tables: table_store.Tables,
+  quest quest: quest2.Quest2,
+) -> List(#(Int, Int, Int)) {
+  let assert Ok(of_quest) = quest_log.quest_of(tables:, id: quest.id)
+    as "the quest's rows are in the tables"
+  list.index_map(of_quest.objectives, fn(objective, index) {
+    case
+      objective_units.units_of(tables:, quest_id: quest.id, index:, objective:)
+    {
+      objective_units.Listed(creatures:) ->
+        list.filter_map(creatures, fn(creature_id) {
+          case names_a_quest(tables:, creature_id:) {
+            True -> Ok(#(quest.id, index, creature_id.value))
+            False -> Error(Nil)
+          }
+        })
+      objective_units.Unlisted | objective_units.NoUnitEvent -> []
+    }
+  })
+  |> list.flatten
+}
+
+fn names_a_quest(
+  tables tables: table_store.Tables,
+  creature_id creature_id: id.Creature2Id,
+) -> Bool {
+  case creature2.get(tables, creature_id) {
+    Ok(row) -> list.any(spawn.quest_ids(row), fn(id) { id != 0 })
+    Error(Nil) -> False
+  }
 }

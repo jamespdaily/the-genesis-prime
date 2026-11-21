@@ -233,7 +233,7 @@ pub fn play_opening(
 
 /// Plays the first steps of `play` and stops with 10529 accepted and a Dorian
 /// (Creature2 73491) in sight: the entry, 10513, 10527 and 10518. The bot it gives is
-/// read and moved on with `units`, `at`, `have`, `took_in` and `approach_unit`.
+/// read and moved on with `units`, `at`, `have` and `approach_unit`.
 pub fn play_to_the_dorians(
   game game: Game,
   have have: BitArray,
@@ -263,16 +263,6 @@ pub fn at(bot bot: Bot) -> Point {
 /// The bytes the bot has read beyond the last frame it decoded.
 pub fn have(bot bot: Bot) -> BitArray {
   bot.have
-}
-
-/// The bot after another reader took `have` from its connection and read `frames` from
-/// it: the bot holds the bytes and hears the frames.
-pub fn took_in(
-  bot bot: Bot,
-  have have: BitArray,
-  frames frames: List(Frame),
-) -> Bot {
-  Bot(..bot, have:, units: hear(units: bot.units, frames:))
 }
 
 /// The bot after it moves to where a unit at `at` is within reach of use, and reads all
