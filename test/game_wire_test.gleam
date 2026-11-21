@@ -10113,9 +10113,9 @@ pub fn a_warrior_of_level_14_presses_flash_bang_and_the_struck_beasts_child_stri
       as "the world shows the Beast planted there"
     beast.unit_id
   }
-  let a = beast_at(1.5, 0.5)
-  let b = beast_at(4.5, 0.5)
-  let c = beast_at(1.5, -9.5)
+  let closest = beast_at(1.5, 0.5)
+  let beside = beast_at(4.5, 0.5)
+  let far = beast_at(1.5, -9.5)
   let assert Ok(#(bag_index, _)) =
     list.find(location_4_items(frames:), fn(item) { item.1 == 18_547 })
     as "SpellLevel 931 grants Flash Bang's base 18547 to a Warrior of level 14"
@@ -10139,7 +10139,7 @@ pub fn a_warrior_of_level_14_presses_flash_bang_and_the_struck_beasts_child_stri
       child.parent_spell4_id,
       child.primary_target_unit_id,
     )
-    == #(32_320, 32_320, a)
+    == #(32_320, 32_320, closest)
     as "Spell4Effects 60807 starts child 47202 of 32320 on the closest Beast, A, which is its primary target (opcode.0x7ff)"
   let goes_of_child = fn(frames: List(Frame)) {
     list.filter_map(game_client.go_targets_in(frames:), fn(go) {
@@ -10161,9 +10161,10 @@ pub fn a_warrior_of_level_14_presses_flash_bang_and_the_struck_beasts_child_stri
   let #(rest, _) = game_client.read_until_pong(game:, have:, number: 2)
   let seen = list.flatten([pressed, later, rest])
   let goes = goes_of_child(seen)
-  assert !list.any(goes, fn(targets) { list.contains(targets, c) })
+  assert !list.any(goes, fn(targets) { list.contains(targets, far) })
     as "no go of the child names C, 10 m from A"
-  assert goes != [] && list.all(goes, fn(targets) { targets == [a, b] })
+  assert goes != []
+    && list.all(goes, fn(targets) { targets == [closest, beside] })
     as "opcode.0x7f4: the child's gos name A (its own place, 0 m) and B (3 m, inside the circle of radius 4 and the area row's 4 m) and not C (10 m): TelegraphDamage 1766 is fixed at the unit it is cast on"
   game_client.close(game:)
   login_support.stop(started)
