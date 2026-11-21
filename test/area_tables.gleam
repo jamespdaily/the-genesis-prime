@@ -7,6 +7,7 @@
 //// - Spell4ValidTargets 1: bitmask 0.
 //// - Spell4Telegraph 18456 to TelegraphDamage 168: a cone from 1 to 7 m over 100
 ////   degrees, placed on the caster (targetTypeFlags 1), flag 0x200.
+//// - Spell4TargetMechanics 6, which Kick's Spell4Base 38017 names: targetType 2 (the caster).
 //// - Spell4Effects 140383: one Physical damage effect aimed at the area (targetFlags
 ////   4), multiplier 1.0, with the formula's parameters of kinds 12, 13 and 10.
 
@@ -15,12 +16,13 @@ import genesis_prime/game/effect_row_read
 import genesis_prime/game/spell_area.{type AreaError, type Areas}
 import genesis_prime/game/spell_plan
 import genesis_prime/table/id.{
-  Spell4AoeTargetConstraintsId, Spell4EffectsId, Spell4ValidTargetsId,
-  TelegraphDamageId,
+  Spell4AoeTargetConstraintsId, Spell4EffectsId, Spell4TargetMechanicsId,
+  Spell4ValidTargetsId, TelegraphDamageId,
 }
 import genesis_prime/table/loader/tbl_file
 import genesis_prime/table/spell4_aoe_target_constraints
 import genesis_prime/table/spell4_effects
+import genesis_prime/table/spell4_target_mechanics
 import genesis_prime/table/spell4_valid_targets
 import genesis_prime/table/telegraph_damage
 import gleam/int
@@ -37,6 +39,8 @@ pub type Kick {
     target_bitmask: Int,
     /// TelegraphDamage.targetTypeFlags.
     telegraph_target_type_flags: Int,
+    /// Spell4TargetMechanics.targetType of the mechanic row Kick's Spell4Base names.
+    target_type: Int,
     /// TelegraphDamage.telegraphDamageFlags.
     telegraph_damage_flags: Int,
     /// TelegraphDamage.damageShapeEnum.
@@ -60,6 +64,8 @@ const telegraph_row = 168
 
 const effect_row_id = 140_383
 
+const target_mechanic_row = 6
+
 /// Kick as the client's rows hold it, read from the typed records of the shared
 /// tables.
 pub fn kick() -> Kick {
@@ -82,10 +88,17 @@ pub fn kick() -> Kick {
   let assert Ok(telegraph) =
     telegraph_damage.get(tables:, id: TelegraphDamageId(telegraph_row))
     as "the rows hold Kick's telegraph"
+  let assert Ok(mechanic) =
+    spell4_target_mechanics.get(
+      tables:,
+      id: Spell4TargetMechanicsId(target_mechanic_row),
+    )
+    as "the rows hold Kick's target mechanic"
   Kick(
     target_selection: area.target_selection,
     target_bitmask: valid_targets.target_bitmask,
     telegraph_target_type_flags: telegraph.target_type_flags,
+    target_type: mechanic.target_type,
     telegraph_damage_flags: telegraph.telegraph_damage_flags,
     shape: telegraph.damage_shape_enum,
     effect_target_flags: effect.target_flags,
@@ -130,6 +143,12 @@ pub fn kick_rows(kick kick: Kick) -> spell_tables.Rows {
         #("dataBits00", Integer(kick.multiplier_bits)),
         ..parameters
       ],
+    ),
+    spell4_target_mechanics: changed(
+      rows: rows.spell4_target_mechanics,
+      schema: spell4_target_mechanics.schema,
+      id: target_mechanic_row,
+      with: [#("targetType", Integer(kick.target_type))],
     ),
     spell4_aoe_target_constraints: changed(
       rows: rows.spell4_aoe_target_constraints,

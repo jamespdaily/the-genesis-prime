@@ -1099,3 +1099,98 @@ pub fn a_plan_error_says_what_is_not_read_without_an_issue_test() -> Nil {
     assert spell_plan.describe(error:) == sentence as name
   })
 }
+
+/// The Spell4 ids of a tree with how each is started, in id order.
+fn started_ids(spell spell: Spell) -> List(#(Int, spell_plan.Start)) {
+  spell_plan.tree_started(spell:, started: fn(_) { True })
+  |> list.map(fn(started) { #({ started.0 }.spell4_id.value, started.1) })
+  |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
+}
+
+pub fn tree_started_names_how_each_spell_of_a_tree_is_started_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // `Spell4Effects.targetFlags` of the Proxy rows by `table_rows -- Spell4Effects spellId=<id>`:
+  // aimed at the area (4) a Proxy starts its child on each struck unit, aimed at the caster (1)
+  // on the caster (`cast` `children`).
+  assert started_ids(spell: spell_tables.client_spell(spell4_id: 32_893))
+    == [
+      #(30_900, spell_plan.Proxied(target: spell_plan.OnEachStruck)),
+      #(32_893, spell_plan.Pressed),
+      #(41_869, spell_plan.Proxied(target: spell_plan.OnCaster)),
+      #(77_116, spell_plan.Proxied(target: spell_plan.OnCaster)),
+    ]
+    as "Telekinetic Strike: the press, the child of the Proxy aimed at the area, and two aimed at the caster"
+  assert started_ids(spell: spell_tables.client_spell(spell4_id: 32_812))
+    == [
+      #(32_812, spell_plan.Pressed),
+      #(42_297, spell_plan.Proxied(target: spell_plan.OnEachStruck)),
+    ]
+    as "Crush: its second spell is started on each struck unit"
+  list.each([23_148, 18_309, 37_968, 20_684], fn(base) {
+    let ability = planted(base:)
+    let started = started_ids(spell: ability)
+    list.each(ability.stages, fn(stage) {
+      assert list.contains(started, #(
+        stage.spell.spell4_id.value,
+        spell_plan.Pressed,
+      ))
+        as "Spell4Thresholds: a press casts each stage on the caster, so it is pressed"
+    })
+  })
+}
+
+pub fn a_proxy_aimed_at_the_caster_and_the_area_starts_its_child_both_ways_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4Effects.targetFlags 5 holds the caster's bit and the area's, so `target_of` gives
+  // `OnCaster` and `OnEachStruck`. The planted row 300001 is a Proxy of Telekinetic Strike
+  // to 41869, which the strike's own Proxy row already starts on the caster; no client row is
+  // aimed so at a spell of the fixture's trees.
+  let assert Ok(strike) =
+    spell_tables.planned_strike(
+      rows: spell_tables.rows_with_effect(effect: spell_tables.effect_row(
+        id: 300_001,
+        spell: 32_893,
+        type_: 26,
+        target_flags: 5,
+        delay: 0,
+        phases: -1,
+        data: 41_869,
+        order: 9,
+      )),
+    )
+    as "the plan builds with a Proxy aimed at the caster and the area"
+  let started = started_ids(spell: strike)
+  assert list.contains(started, #(
+    41_869,
+    spell_plan.Proxied(target: spell_plan.OnEachStruck),
+  ))
+    as "the area's bit starts the child on each struck unit"
+  assert list.contains(started, #(
+    41_869,
+    spell_plan.Proxied(target: spell_plan.OnCaster),
+  ))
+    as "the caster's bit starts it on the caster"
+}
+
+pub fn the_spells_a_proc_casts_are_started_from_the_proc_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  // The Proc rows (effectType 14) of the Stalker's passive tree name 60769, 79932 and 63366 in
+  // dataBits01 (`Spell4Effects.effectType.14`, read by spell_plan_proc_test).
+  let assert Ok(passive) =
+    spell_plan.in_plans(
+      plans: spell_plan.plans(client_tables.shared()),
+      base: Spell4BaseId(29_131),
+    )
+    as "the plans hold the Stalker's innate passive"
+  let started = started_ids(spell: passive)
+  list.each([60_769, 79_932, 63_366], fn(spell4_id) {
+    assert list.contains(started, #(
+      spell4_id,
+      spell_plan.FromProc(aim: spell_plan.AtHolder),
+    ))
+      as "a proc's spell is cast by its proc"
+  })
+  assert list.contains(started, #(passive.spell4_id.value, spell_plan.Pressed))
+    as "the passive's own spell is the root, which nothing started but the plan"
+}

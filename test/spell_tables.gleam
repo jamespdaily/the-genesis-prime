@@ -26,6 +26,7 @@ import genesis_prime/table/spell4_conditions
 import genesis_prime/table/spell4_effects
 import genesis_prime/table/spell4_group_list
 import genesis_prime/table/spell4_stack_group
+import genesis_prime/table/spell4_target_mechanics
 import genesis_prime/table/spell4_telegraph
 import genesis_prime/table/spell4_thresholds
 import genesis_prime/table/spell4_valid_targets
@@ -49,6 +50,7 @@ pub type Rows {
     spell4: List(List(Cell)),
     spell4_conditions: List(List(Cell)),
     spell4_base: List(List(Cell)),
+    spell4_target_mechanics: List(List(Cell)),
     spell4_effects: List(List(Cell)),
     spell4_thresholds: List(List(Cell)),
     spell4_aoe_target_constraints: List(List(Cell)),
@@ -430,6 +432,7 @@ fn tables_of(rows rows: Rows) -> List(#(tbl_file.Schema, List(List(Cell)))) {
     #(spell_level.schema, rows.spell_levels),
     #(spell4.schema, rows.spell4),
     #(spell4_base.schema, rows.spell4_base),
+    #(spell4_target_mechanics.schema, rows.spell4_target_mechanics),
     #(spell4_conditions.schema, rows.spell4_conditions),
     #(spell4_effects.schema, rows.spell4_effects),
     #(spell4_group_list.schema, rows.spell4_group_lists),
@@ -709,6 +712,7 @@ pub fn fixture_rows() -> Rows {
     spell4: of(spell4.schema),
     spell4_conditions: of(spell4_conditions.schema),
     spell4_base: of(spell4_base.schema),
+    spell4_target_mechanics: of(spell4_target_mechanics.schema),
     spell4_effects: of(spell4_effects.schema),
     spell4_thresholds: of(spell4_thresholds.schema),
     spell4_aoe_target_constraints: of(spell4_aoe_target_constraints.schema),
@@ -743,11 +747,23 @@ pub fn rows_with_effects(effects effects: List(List(Cell))) -> Rows {
     let assert [Integer(id), ..] = effect as "a planted row holds its ID first"
     assert !client_row(id:)
       as "a planted id the client's table holds would replace the client's row"
+    assert id <= highest_planted_effect_id(rows:)
+      as "a planted id is at most 1,000,000 above the client's highest, since the planted table's lookup holds an entry for every id up to the highest, and one far above builds billions of entries"
   })
   Rows(
     ..rows,
     spell4_effects: sorted_by_id(list.append(effects, rows.spell4_effects)),
   )
+}
+
+/// The highest Spell4Effects id a planted row may have: 1,000,000 above the highest row the
+/// client's rows hold.
+fn highest_planted_effect_id(rows rows: Rows) -> Int {
+  1_000_000
+  + list.fold(rows.spell4_effects, 0, fn(highest, row) {
+    let assert [Integer(id), ..] = row as "a client row holds its id first"
+    int.max(highest, id)
+  })
 }
 
 /// Whether the client's Spell4Effects table holds a row of this id.
@@ -1004,3 +1020,12 @@ pub fn plans_with_server_proxies() -> spell_plan.Plans {
 pub const flag_8_abilities = [
   32_128, 59_080, 44_471, 44_641, 41_843, 41_551, 39_268,
 ]
+
+/// The three abilities whose only refusal was a hit row placed on the cast's target (flags 0 or
+/// 2), which the player's reading builds: Flash Bang, Bio Shell and Rapid Fire
+/// (`table_rows -- TelegraphDamage` 1766, 15498, 204 and 137, each `targetTypeFlags` 2).
+/// Telekinetic Storm 32814 and Pyrokinetic Flame 36821 are not among them: each holds a damage
+/// row that lasts until removed, so they stay unplanned. Field Probes 41398 is not among them
+/// either: its Proxies 92875 and 131252 name the buff and debuff spells in dataBits01, which
+/// the plan does not read, so it stays unplanned.
+pub const flag_0_or_2_abilities = [32_320, 41_341, 35_356]

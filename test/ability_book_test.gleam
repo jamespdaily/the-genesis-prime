@@ -98,8 +98,11 @@ pub fn a_row_with_a_prerequisite_or_above_the_level_is_never_in_the_bag_test() -
   )
   let set = support.loadout_of(tables:, class_id: 1)
   assert values(bases: ability_book.bag(loadout: set, level: 50))
-    == [18_309, 37_968, 38_017, 30_828, 18_359, 19_778, 37_245, 39_339, 18_578]
-    as "the Warrior's bag at level 50 holds 37245 once, from SpellLevel 929, and nothing from the row with a prerequisite"
+    == [
+      18_309, 37_968, 38_017, 30_828, 18_359, 19_778, 37_245, 39_339, 18_578,
+      18_547,
+    ]
+    as "the Warrior's bag at level 50 holds 37245 once, from SpellLevel 929, and nothing from the row with a prerequisite; the fixture's SpellLevel 931 (level 14, Spell4 32320, base 18547, no prerequisite) is the last row the Warrior's bag holds"
   assert values(bases: ability_book.granted(
       loadout: set,
       from_level: 1,
