@@ -1149,11 +1149,12 @@ fn foe_at(x x: Float, z z: Float) -> shown.Shown {
 
 /// The foes `select` finds in the area of `spell4_id` for a go whose cast started at the
 /// origin facing -z, struck by a caster that has since moved to x 40 and turned half a turn
-/// (facing +z): the ids of the units in `candidates`, nearest first. The primary target is
-/// `primary_target`.
+/// (facing +z): the ids of the units in `candidates`, nearest first, at go `phase`. The primary
+/// target is `primary_target`.
 fn selected_after_the_caster_moved(
   areas areas: spell_area.Areas,
   spell4_id spell4_id: Int,
+  phase phase: Int,
   primary_target primary_target: Int,
   candidates candidates: List(#(Int, Float, Float)),
 ) -> List(Int) {
@@ -1162,7 +1163,7 @@ fn selected_after_the_caster_moved(
     strike.select(
       asked: GoAsked(
         cast_id: 5,
-        phase: 0,
+        phase:,
         spell4_id: Spell4Id(spell4_id),
         primary_target:,
         spent: None,
@@ -1229,8 +1230,55 @@ pub fn a_row_fixed_at_the_cast_start_strikes_where_the_cast_started_and_one_that
       assert selected_after_the_caster_moved(
           areas:,
           spell4_id:,
+          phase: 0,
           primary_target:,
           candidates:,
+        )
+        == expected
+        as reason
+    },
+  )
+}
+
+pub fn a_fissure_go_strikes_the_foes_inside_its_own_rectangle_and_not_the_wider_one_of_the_go_before_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let areas = spell_tables.fixture_areas()
+  // The cast started at the origin facing -z, so 6 m ahead of the start is z -6. The
+  // rectangles of TelegraphDamage 2998, 2997 and 2996 are 10, 6 and 2 wide, so their half
+  // widths are 5, 3 and 1; a creature's hit radius is 3. Foe 21 (x 0) is inside all three,
+  // foe 22 (x 5) is 0, 2 and 4 m from them, foe 23 (x 7) is 2, 4 and 6 m from them. Foe 24
+  // stands where the moved caster would strike if the rows followed it.
+  let candidates = [
+    #(21, 0.0, -6.0),
+    #(22, 5.0, -6.0),
+    #(23, 7.0, -6.0),
+    #(24, 40.0, 6.0),
+  ]
+  list.each(
+    [
+      #(
+        0,
+        [21, 22, 23],
+        "go 0 strikes the 10 wide rectangle of row 2998, phaseFlags 1",
+      ),
+      #(
+        1,
+        [21, 22],
+        "go 1 strikes the 6 wide rectangle of row 2997, phaseFlags 2",
+      ),
+      #(2, [21], "go 2 strikes the 2 wide rectangle of row 2996, phaseFlags 4"),
+    ],
+    fn(row) {
+      let #(phase, expected, reason) = row
+      assert list.sort(
+          selected_after_the_caster_moved(
+            areas:,
+            spell4_id: 41_844,
+            phase:,
+            primary_target: 7,
+            candidates:,
+          ),
+          int.compare,
         )
         == expected
         as reason
@@ -1276,6 +1324,7 @@ pub fn a_row_placed_on_the_cast_target_strikes_around_the_unit_a_spell_is_starte
       assert selected_after_the_caster_moved(
           areas:,
           spell4_id:,
+          phase: 0,
           primary_target:,
           candidates:,
         )
