@@ -201,15 +201,12 @@ fn scripted(
 fn start(
   folder folder: String,
   scripts scripts: script.Scripts,
-  shutdown_ms shutdown_ms: Int,
 ) -> ask_support.Server {
-  ask_support.start_scripted(
+  ask_support.start_driven(
     rule: script_rule.rule(),
     directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
-    shutdown_ms:,
     wire_recorder: Some(recording_support.wire_recorder(folder)),
     scripts:,
-    send_deadline_ms: ask_support.beyond_the_test_ms,
     registry: None,
     locate: fn(_address) { Error(Nil) },
     with: fn(builder) { builder },
@@ -220,12 +217,7 @@ pub fn a_connection_is_recorded_input_by_input_with_the_time_its_script_gave_eac
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
   let given = process.new_subject()
-  let server =
-    start(
-      folder:,
-      scripts: scripted(5, given),
-      shutdown_ms: ask_support.beyond_the_test_ms,
-    )
+  let server = start(folder:, scripts: scripted(5, given))
   let client = ask_support.connect(server)
   let accepted_record = ask_support.read_bytes(client, 49)
   assert mug.send(client, <<1, 2, 3, 4>>) == Ok(Nil) as "bytes"
@@ -315,12 +307,7 @@ pub fn a_server_stop_ends_the_recording_from_the_servers_side_test() -> Nil {
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
   let given = process.new_subject()
-  let server =
-    start(
-      folder:,
-      scripts: scripted(1, given),
-      shutdown_ms: ask_support.beyond_the_test_ms,
-    )
+  let server = start(folder:, scripts: scripted(1, given))
   let client = ask_support.connect(server)
   let _accepted = ask_support.read_bytes(client, 49)
   ask_support.stop(server)
@@ -334,6 +321,8 @@ pub fn a_server_stop_ends_the_recording_from_the_servers_side_test() -> Nil {
   assert closing.by == Server as "the server's stop ended the connection"
 }
 
+/// The deadline is the supervisor's own kill timer, 300 ms, which no driven
+/// clock reaches: the test passes when the connection takes `Stopping` within it.
 pub fn a_rule_that_does_not_stop_in_time_is_killed_and_its_recording_is_cut_test() -> Nil {
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
@@ -377,12 +366,7 @@ pub fn a_recording_that_cannot_be_written_ends_the_connection_before_the_steps_e
   let assert Ok(Nil) = simplifile.write(blocked, "")
     as "a file stands where the folder should be"
   let given = process.new_subject()
-  let server =
-    start(
-      folder: blocked,
-      scripts: scripted(1, given),
-      shutdown_ms: ask_support.beyond_the_test_ms,
-    )
+  let server = start(folder: blocked, scripts: scripted(1, given))
   let client = ask_support.connect(server)
   assert socket_read.receive(
       limit: socket_read.Open,
@@ -394,18 +378,16 @@ pub fn a_recording_that_cannot_be_written_ends_the_connection_before_the_steps_e
   ask_support.stop(server)
 }
 
-pub fn an_input_taken_with_the_servers_script_carries_readings_between_the_tests_own_test() -> Nil {
+pub fn an_input_is_recorded_with_the_reading_its_scripts_clock_gave_at_its_cause_test() -> Nil {
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
   let time = driven_time.new()
   let server =
-    ask_support.start_scripted(
+    ask_support.start_driven(
       rule: script_rule.rule(),
       directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
-      shutdown_ms: 2 * ask_support.beyond_the_test_ms,
       wire_recorder: Some(recording_support.wire_recorder(folder)),
       scripts: ask_support.driven_scripts(time),
-      send_deadline_ms: ask_support.beyond_the_test_ms,
       registry: None,
       locate: fn(_address) { Error(Nil) },
       with: fn(builder) { builder },

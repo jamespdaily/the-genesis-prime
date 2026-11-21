@@ -132,13 +132,12 @@ fn step(
 fn settings(
   wire_recorder: Option(WireRecorder),
 ) -> shell.Settings(Nil, Nil, Nil, Nil, Nil) {
-  shell.Settings(
+  ask_support.driven_settings(
     rule: quiet_rule(),
-    send_deadline_ms: ask_support.beyond_the_test_ms,
-    shutdown_ms: 2 * ask_support.beyond_the_test_ms,
+    directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
     wire_recorder:,
     scripts: ask_support.driven_scripts(driven_time.new()),
-    directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
+    send_deadline_ms: ask_support.beyond_the_test_ms,
     registry: None,
     locate: fn(_address) { Error(Nil) },
     deliver: fn(_address, _request) { Error(Nil) },
@@ -146,13 +145,11 @@ fn settings(
 }
 
 fn start(wire_recorder: Option(WireRecorder)) -> ask_support.Server {
-  ask_support.start_scripted(
+  ask_support.start_driven(
     rule: quiet_rule(),
     directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
-    shutdown_ms: 2 * ask_support.beyond_the_test_ms,
     wire_recorder:,
     scripts: ask_support.driven_scripts(driven_time.new()),
-    send_deadline_ms: ask_support.beyond_the_test_ms,
     registry: None,
     locate: fn(_address) { Error(Nil) },
     with: fn(builder) { builder },

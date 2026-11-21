@@ -360,10 +360,10 @@ fn start(
   rule rule: ConnectionRule(settings, state, Nil, Nil, Nil),
   send_deadline_ms send_deadline_ms: Int,
 ) -> ask_support.Server {
-  ask_support.start_joined(
+  ask_support.start_driven_sending(
     rule:,
     directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
-    shutdown_ms: 2 * ask_support.beyond_the_test_ms,
+    wire_recorder: None,
     scripts: ask_support.driven_scripts(driven_time.new()),
     send_deadline_ms:,
     registry: None,
@@ -441,13 +441,11 @@ pub fn a_close_between_the_shells_write_for_a_timer_and_its_next_read_reaches_th
     )
   }
   let server =
-    ask_support.start_scripted(
+    ask_support.start_driven(
       rule:,
       directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
-      shutdown_ms: 2 * ask_support.beyond_the_test_ms,
       wire_recorder: None,
       scripts:,
-      send_deadline_ms: ask_support.beyond_the_test_ms,
       registry: None,
       locate: fn(_address) { Error(Nil) },
       with: fn(builder) { builder },

@@ -93,15 +93,124 @@ pub fn start_on(
     Result(service.Sent, Nil),
   with with: fn(supervisor.Builder) -> supervisor.Builder,
 ) -> Server {
-  start_joined(
+  start_driven(
     rule:,
     directory:,
-    shutdown_ms: 2 * beyond_the_test_ms,
+    wire_recorder: None,
     scripts: driven_scripts(time:),
-    send_deadline_ms: beyond_the_test_ms,
     registry: None,
     locate: fn(_address) { Error(Nil) },
     with:,
+  )
+}
+
+/// The settings of a connection that runs on a driven clock, which every
+/// driven listener and connection of the tests takes: its `scripts` (a driven
+/// clock's, `driven_scripts`), and a send deadline and a shutdown that no test
+/// reaches (`beyond_the_test_ms`), so a write or a stop ends by the test's own
+/// condition. `send_deadline_ms` is the one limit a test may pass, as 0, to
+/// fail a write.
+pub fn driven_settings(
+  rule rule: ConnectionRule(settings, state, request, message, answer),
+  directory directory: fn(request, Int, fn(answer) -> Nil) ->
+    Result(service.Sent, Nil),
+  wire_recorder wire_recorder: Option(WireRecorder),
+  scripts scripts: Scripts,
+  send_deadline_ms send_deadline_ms: Int,
+  registry registry: Option(Registry(message)),
+  locate locate: fn(Address) -> Result(watch.Found(fn(request) -> Nil), Nil),
+  deliver deliver: fn(Address, request) -> Result(Nil, Nil),
+) -> shell.Settings(settings, state, message, answer, request) {
+  shell.Settings(
+    rule:,
+    send_deadline_ms:,
+    shutdown_ms: 2 * beyond_the_test_ms,
+    wire_recorder:,
+    scripts:,
+    directory:,
+    registry:,
+    locate:,
+    deliver:,
+  )
+}
+
+/// Starts a listener whose connections run on a driven clock, with the limits
+/// of `driven_settings` and a send deadline of `beyond_the_test_ms`: they run
+/// `rule`, take their `scripts`, are recorded on the wire by `wire_recorder`,
+/// join `registry` when there is one, and find what their rule watches with
+/// `locate`.
+pub fn start_driven(
+  rule rule: ConnectionRule(settings, state, request, message, answer),
+  directory directory: fn(request, Int, fn(answer) -> Nil) ->
+    Result(service.Sent, Nil),
+  wire_recorder wire_recorder: Option(WireRecorder),
+  scripts scripts: Scripts,
+  registry registry: Option(Registry(message)),
+  locate locate: service.Locate,
+  with with: fn(supervisor.Builder) -> supervisor.Builder,
+) -> Server {
+  start_driven_sending(
+    rule:,
+    directory:,
+    wire_recorder:,
+    scripts:,
+    send_deadline_ms: beyond_the_test_ms,
+    registry:,
+    locate:,
+    with:,
+  )
+}
+
+/// Starts a listener as `start_driven` does, whose writes wait at most
+/// `send_deadline_ms`.
+pub fn start_driven_sending(
+  rule rule: ConnectionRule(settings, state, request, message, answer),
+  directory directory: fn(request, Int, fn(answer) -> Nil) ->
+    Result(service.Sent, Nil),
+  wire_recorder wire_recorder: Option(WireRecorder),
+  scripts scripts: Scripts,
+  send_deadline_ms send_deadline_ms: Int,
+  registry registry: Option(Registry(message)),
+  locate locate: service.Locate,
+  with with: fn(supervisor.Builder) -> supervisor.Builder,
+) -> Server {
+  start_with(
+    connection: driven_settings(
+      rule:,
+      directory:,
+      wire_recorder:,
+      scripts:,
+      send_deadline_ms:,
+      registry:,
+      locate: fn(address) { result.map(locate(address), watch.Watched) },
+      deliver: fn(_address, _request) { Error(Nil) },
+    ),
+    with:,
+  )
+}
+
+/// Starts a listener as `start_driven` does, whose connections also find the
+/// process a rule tells with `locate` (`Tellable`) and send the connections a
+/// rule tells with `deliver`.
+pub fn start_driven_telling(
+  rule rule: ConnectionRule(settings, state, request, message, answer),
+  scripts scripts: Scripts,
+  registry registry: Option(Registry(message)),
+  locate locate: fn(Address) -> Result(watch.Found(fn(request) -> Nil), Nil),
+  deliver deliver: fn(Address, request) -> Result(Nil, Nil),
+) -> Server {
+  start_with(
+    connection: driven_settings(
+      rule:,
+      directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
+      wire_recorder: None,
+      scripts:,
+      send_deadline_ms: beyond_the_test_ms,
+      registry:,
+      locate:,
+      deliver:,
+    ),
+    with: fn(builder) { builder },
   )
 }
 
@@ -178,9 +287,8 @@ pub fn start_telling(
   deliver deliver: fn(Address, request) -> Result(Nil, Nil),
   with with: fn(supervisor.Builder) -> supervisor.Builder,
 ) -> Server {
-  let name = process.new_name("test_listener")
-  let connection =
-    shell.Settings(
+  start_with(
+    connection: shell.Settings(
       rule:,
       send_deadline_ms:,
       shutdown_ms:,
@@ -190,7 +298,24 @@ pub fn start_telling(
       registry:,
       locate:,
       deliver:,
-    )
+    ),
+    with:,
+  )
+}
+
+/// Starts a listener whose connections start with `connection`, beside what
+/// `with` adds to the same supervisor.
+fn start_with(
+  connection connection: shell.Settings(
+    settings,
+    state,
+    message,
+    answer,
+    request,
+  ),
+  with with: fn(supervisor.Builder) -> supervisor.Builder,
+) -> Server {
+  let name = process.new_name("test_listener")
   let assert Ok(started) =
     supervisor.new(supervisor.OneForOne)
     |> with

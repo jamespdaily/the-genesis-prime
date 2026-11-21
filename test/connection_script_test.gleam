@@ -95,6 +95,67 @@ pub fn the_servers_scheduler_sends_the_timer_to_the_subject_after_its_time_test(
     as "the timer's message names the timer and the reference of its start"
 }
 
+/// The server's own script (`script.operating_system`) feeds the recorder: each
+/// input is recorded with the node's monotonic reading taken at its cause.
+pub fn the_servers_script_gives_the_recorder_readings_between_the_tests_own_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use folder <- recording_support.in_folder
+  let server =
+    ask_support.start_scripted(
+      rule: script_rule.rule(),
+      directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
+      shutdown_ms: ask_support.beyond_the_test_ms,
+      wire_recorder: Some(recording_support.wire_recorder(folder)),
+      scripts: script.operating_system,
+      send_deadline_ms: ask_support.beyond_the_test_ms,
+      registry: None,
+      locate: fn(_address) { Error(Nil) },
+      with: fn(builder) { builder },
+    )
+  // Each input is bounded by the test's own readings around the action that
+  // caused it, so a reading reused from an earlier input falls outside.
+  let before_accept = ask_support.monotonic_ms()
+  let client = ask_support.connect(server)
+  let _accepted = ask_support.read_bytes(client, 49)
+  let after_accept = ask_support.monotonic_ms()
+  let before_read = ask_support.monotonic_ms()
+  assert mug.send(client, <<1>>) == Ok(Nil) as "bytes"
+  let _read = ask_support.read_bytes(client, 17)
+  let after_read = ask_support.monotonic_ms()
+  let assert [connection] = ask_support.connections(server)
+    as "one connection process"
+  let watched = process.monitor(connection)
+  let before_close = ask_support.monotonic_ms()
+  assert mug.shutdown(client) == Ok(Nil) as "the client closed"
+  let _reason =
+    ask_support.ended(
+      watched: watched,
+      what: "the connection to end after the client closed",
+    )
+  let after_close = ask_support.monotonic_ms()
+  let assert Ok(Recording(header:, lines:, ..)) =
+    wire_recording.read(recording_support.wire_text_in(folder))
+    as "the recording is whole"
+  assert bit_array.byte_size(seed.bytes(header.seed)) == 32
+    as "the server's script draws 32 bytes"
+  let assert [
+    Took(at: accepted, ..),
+    Wrote(..),
+    Took(at: read, ..),
+    Wrote(..),
+    Took(at: closed, ..),
+  ] = lines
+    as "an accept, a read and a close, each with its writes"
+  assert accepted.monotonic_ms >= before_accept
+    && accepted.monotonic_ms <= after_accept
+    && read.monotonic_ms >= before_read
+    && read.monotonic_ms <= after_read
+    && closed.monotonic_ms >= before_close
+    && closed.monotonic_ms <= after_close
+    as "an input's reading lies between the test's readings around its cause"
+  ask_support.stop(server)
+}
+
 // ---- a given script ----
 
 /// A script with the seed `0..31`, the same time for every input and no timer.
@@ -121,13 +182,11 @@ fn counting_seed() -> seed.Seed {
 }
 
 fn start_script_rule(scripts: Scripts) -> ask_support.Server {
-  ask_support.start_scripted(
+  ask_support.start_driven(
     rule: script_rule.rule(),
     directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
-    shutdown_ms: 2 * ask_support.beyond_the_test_ms,
     wire_recorder: None,
     scripts:,
-    send_deadline_ms: ask_support.beyond_the_test_ms,
     registry: None,
     locate: fn(_address) { Error(Nil) },
     with: fn(builder) { builder },
@@ -241,13 +300,11 @@ pub fn a_timer_starts_through_the_scripts_scheduler_and_fires_when_the_script_sa
     )
   }
   let server =
-    ask_support.start_scripted(
+    ask_support.start_driven(
       rule: signalling_rule.rule(),
       directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
-      shutdown_ms: 2 * ask_support.beyond_the_test_ms,
       wire_recorder: None,
       scripts:,
-      send_deadline_ms: ask_support.beyond_the_test_ms,
       registry: None,
       locate: fn(_address) { Error(Nil) },
       with: fn(builder) { builder },
@@ -370,13 +427,11 @@ fn start_signalling(
   scope: registry.Registry(Int),
   scripts: Scripts,
 ) -> ask_support.Server {
-  ask_support.start_scripted(
+  ask_support.start_driven(
     rule: signalling_rule.rule(),
     directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
-    shutdown_ms: 2 * ask_support.beyond_the_test_ms,
     wire_recorder: None,
     scripts:,
-    send_deadline_ms: ask_support.beyond_the_test_ms,
     registry: Some(scope),
     locate: fn(address: Address) {
       case address {
@@ -448,13 +503,11 @@ pub fn a_recorded_read_the_socket_delivers_in_parts_reaches_the_rule_as_one_inpu
   use folder <- recording_support.in_folder
   let looked = process.new_subject()
   let server =
-    ask_support.start_scripted(
+    ask_support.start_driven(
       rule: script_rule.rule(),
       directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
-      shutdown_ms: 2 * ask_support.beyond_the_test_ms,
       wire_recorder: Some(recording_support.wire_recorder(folder)),
       scripts: reading(time:, wanted: 3, looked:),
-      send_deadline_ms: ask_support.beyond_the_test_ms,
       registry: None,
       locate: fn(_address) { Error(Nil) },
       with: fn(builder) { builder },
@@ -496,13 +549,11 @@ pub fn a_stop_while_the_shell_holds_part_of_a_read_reaches_the_rule_as_stopping_
   use folder <- recording_support.in_folder
   let looked = process.new_subject()
   let server =
-    ask_support.start_scripted(
+    ask_support.start_driven(
       rule: script_rule.rule(),
       directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
-      shutdown_ms: 2 * ask_support.beyond_the_test_ms,
       wire_recorder: Some(recording_support.wire_recorder(folder)),
       scripts: reading(time:, wanted: 3, looked:),
-      send_deadline_ms: ask_support.beyond_the_test_ms,
       registry: None,
       locate: fn(_address) { Error(Nil) },
       with: fn(builder) { builder },
