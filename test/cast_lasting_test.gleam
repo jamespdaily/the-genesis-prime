@@ -16,10 +16,12 @@
 ////   cast; the oldest cast goes first).
 
 import cast_support as support
+import fixture_tables
 import genesis_prime/client_connection.{
   type News, CastFinished, CastTargetsRemoved,
 }
 import genesis_prime/game/cast
+import genesis_prime/game/cast/creature_view
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
@@ -28,6 +30,7 @@ import genesis_prime/game/damage.{Formula, Parameter}
 import genesis_prime/game/effect_kind
 import genesis_prime/game/heal_split
 import genesis_prime/game/lasting.{LastingRow, LifeOnly, Listed, Stack}
+import genesis_prime/game/spell_area
 import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{
   type Plans, type Spell, Always, ForceRemove, GatedOnCaster, GatedOnTarget,
@@ -43,11 +46,12 @@ import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
 import genesis_prime/message/spell_effect_info.{SpellEffectInfo}
 import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_go
+import genesis_prime/message/spell_started
 import genesis_prime/message/spell_targets_removed.{
   type SpellTargetsRemoved, SpellTargetsRemoved,
 }
 import genesis_prime/step.{ConnectionId}
-import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
+import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
 import gleam/dict
 import gleam/list
 import gleam/option
@@ -55,6 +59,7 @@ import gleam/set
 import gleam/string
 import owned_test
 import prerequisite_support
+import qcheck
 
 // ---- the planted spells ----
 
@@ -1654,6 +1659,823 @@ pub fn a_players_views_hold_every_live_and_lingering_cast_with_a_listed_target_t
     ],
     fn(row) {
       assert listed_views(state: row.1) == row.2 as row.0
+    },
+  )
+}
+
+// ---- the creatures told what a cast holds on them ----
+
+/// A unit the round struck as the creature `unit_id` of `life`, at `struck_at_ms`.
+fn creature_hit(
+  unit_id unit_id: Int,
+  life life: Int,
+  struck_at_ms struck_at_ms: Int,
+) -> cast_state.Struck {
+  cast_state.Hit(
+    unit_id:,
+    unit: cast_state.HitCreature(life:, struck_at_ms:),
+    descriptions: [],
+    controls: [],
+    armor_removed: 0,
+    ticking: [],
+  )
+}
+
+/// The player `unit_id` a round struck, which is no creature.
+fn player_hit(unit_id unit_id: Int) -> cast_state.Struck {
+  cast_state.Hit(
+    unit_id:,
+    unit: cast_state.HitPlayer,
+    descriptions: [],
+    controls: [],
+    armor_removed: 0,
+    ticking: [],
+  )
+}
+
+/// What `creature_view.compared` gives the player 7 for each state in turn, the told map
+/// carried from one state to the next as the connection's state carries it.
+fn compared_in_turn(
+  states states: List(State),
+) -> List(List(creature_view.Change)) {
+  let #(_, changes) =
+    list.fold(states, #(dict.new(), []), fn(so_far, state) {
+      let #(told, changes) = so_far
+      let #(compared, now) =
+        creature_view.compared(
+          cast: cast_state.State(..state, creature_told: told),
+          caster_unit_id: 7,
+        )
+      #(compared.creature_told, list.append(changes, [now]))
+    })
+  changes
+}
+
+/// A spell whose go leaves a Fluff of `duration_ms` on each unit the round struck.
+fn area_buff(duration_ms duration_ms: Int) -> Plans {
+  support.plans_of([
+    buff(spell4_id: 101, base: 3, lasting: [
+      fluff(
+        id: 2,
+        aim: spell_plan.AimsAtArea,
+        duration_ms:,
+        until_removed: False,
+      ),
+    ]),
+  ])
+}
+
+/// A channel with gos at 1000 and 2000 after a press at 1000, each leaving a Fluff of 5 s on
+/// the units its round struck.
+fn two_gos_of_an_area_buff() -> Plans {
+  support.plans_of([
+    channel(
+      lasting: [
+        fluff(
+          id: 2,
+          aim: spell_plan.AimsAtArea,
+          duration_ms: 5000,
+          until_removed: False,
+        ),
+      ],
+      channel: spell_plan.Channel(
+        initial_delay_ms: 0,
+        max_time_ms: 1000,
+        pulse_time_ms: 1000,
+      ),
+    ),
+  ])
+}
+
+/// The view the cast `cast_id` of Spell4 `spell4_id` holds on the creature `unit_id`: its one
+/// effect `effect_id` from `starts_ms` to `ends_ms`, the first go gone and no cast in progress.
+fn creature_view_of(
+  cast_id cast_id: Int,
+  spell4_id spell4_id: Int,
+  primary_target primary_target: Int,
+  unit_id unit_id: Int,
+  count count: Int,
+  effect_id effect_id: Int,
+  starts_ms starts_ms: Int,
+  ends_ms ends_ms: Int,
+) -> unit_casts.CastView {
+  unit_casts.CastView(
+    caster_unit_id: 7,
+    cast_id:,
+    spell4_id: Spell4Id(spell4_id),
+    primary_target:,
+    gone: True,
+    current: False,
+    targets: [
+      unit_casts.ViewTarget(unit_id:, count:, effects: [
+        unit_casts.HeldEffect(
+          effect_id: Spell4EffectsId(effect_id),
+          starts_ms:,
+          ends: unit_casts.EndsAt(ms: ends_ms),
+        ),
+      ]),
+    ],
+  )
+}
+
+/// The change that tells the creature `unit_id` of `life` the view, for the round `struck_at_ms`.
+fn view_set(
+  unit_id unit_id: Int,
+  life life: Int,
+  struck_at_ms struck_at_ms: Int,
+  view view: unit_casts.CastView,
+) -> creature_view.Change {
+  creature_view.ViewSet(unit_id:, life:, struck_at_ms:, view:)
+}
+
+/// The state with the cast's node on each unit given by `change`.
+fn with_nodes_changed(
+  state state: State,
+  cast_id cast_id: Int,
+  change change: fn(lasting.Node) -> lasting.Node,
+) -> State {
+  let assert Ok(holder) = cast_state.holder_of(cast: state, cast_id:)
+    as "the cast holds nodes"
+  cast_tick.with_nodes(
+    cast: state,
+    cast_id:,
+    nodes: dict.map_values(holder.nodes, fn(_, node) { change(node) }),
+  )
+}
+
+/// `opcode.0x7f4.instance_count`: a later go of a cast arms its node again. The caster tells
+/// each creature the node its casts hold on it (`creature_view.compared`), for the round that
+/// struck it: the node a go left, the child cast Fissure's Proxy starts on the struck creature
+/// (Spell4Effects 141501, 94370: 8000 ms), a later go of the same cast, a stack off, and a
+/// compare that finds nothing new.
+pub fn the_caster_tells_each_creature_what_its_casts_hold_on_it_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(on_a_creature, creature_effects) =
+    press_striking(
+      plans: area_buff(duration_ms: 3000),
+      state: cast_state.new(),
+      bag: bag_of_base_3,
+      struck: [creature_hit(unit_id: 20, life: 3, struck_at_ms: 1000)],
+      at: 1000,
+    )
+  let creature_cast = support.pressed_id(effects: creature_effects)
+  let a_go =
+    creature_view_of(
+      cast_id: creature_cast,
+      spell4_id: 101,
+      primary_target: 7,
+      unit_id: 20,
+      count: 1,
+      effect_id: 2,
+      starts_ms: 1000,
+      ends_ms: 4000,
+    )
+  let #(on_the_caster, _) =
+    support.press(
+      plans: support.plans_of([
+        buff(spell4_id: 101, base: 3, lasting: [
+          fluff(
+            id: 2,
+            aim: spell_plan.AimsAtCaster,
+            duration_ms: 3000,
+            until_removed: False,
+          ),
+        ]),
+      ]),
+      state: cast_state.new(),
+      bag: bag_of_base_3,
+      at: 1000,
+    )
+  let #(on_a_player, _) =
+    press_striking(
+      plans: area_buff(duration_ms: 3000),
+      state: cast_state.new(),
+      bag: bag_of_base_3,
+      struck: [player_hit(unit_id: 21), cast_state.Deflected(unit_id: 20)],
+      at: 1000,
+    )
+  // Fissure: Spell4 41843 (Spell4Base 26038) starts the proxy 41844 on the caster, whose
+  // Proxy row 141501 starts 41886 on each unit its round hit; 41886's row 94370 holds the
+  // node. The two rounds are answered at their own life and time.
+  let fissure_caster =
+    cast_state.Caster(
+      ..support.caster(),
+      abilities: [Spell4BaseId(26_038)],
+      book: [Spell4BaseId(26_038)],
+    )
+  let #(fissure, fissure_effects) =
+    support.pressed_raw_in(
+      plans: spell_plan.plans_with_later(tables: fixture_tables.shared()),
+      state: cast_state.new(),
+      caster: fissure_caster,
+      bag_index: 0,
+      target: 0,
+      at: 1000,
+    )
+  let #(fissure, fissure_effects) =
+    support.answered_each(
+      caster: fissure_caster,
+      state: fissure,
+      effects: fissure_effects,
+      at: 1000,
+      struck_of: fn(asked) {
+        case asked.spell4_id.value {
+          41_886 -> [creature_hit(unit_id: 20, life: 2, struck_at_ms: 1500)]
+          _ -> [creature_hit(unit_id: 20, life: 1, struck_at_ms: 1000)]
+        }
+      },
+      rolls: [],
+      poses: dict.new(),
+    )
+  let assert Ok(child) =
+    list.filter_map(
+      support.frames_of(
+        message_id: spell_started.message_id,
+        effects: fissure_effects,
+      ),
+      fn(frame) {
+        let assert Ok(started) = spell_started.decode(frame.body)
+          as "a 0x7ff the rule wrote decodes"
+        case started.spell4_id {
+          41_886 -> Ok(started.cast_id)
+          _ -> Error(Nil)
+        }
+      },
+    )
+    |> list.first
+    as "the proxy's go started the child 41886"
+  // A channel with gos at 1000 and 2000: the second go re-arms the node, whether its round
+  // struck the creature again (a new round) or hit unit 20 as a player (no creature round).
+  let two_gos = fn(second_round) {
+    let #(first, effects) =
+      press_striking(
+        plans: two_gos_of_an_area_buff(),
+        state: cast_state.new(),
+        bag: bag_of_base_3,
+        struck: [creature_hit(unit_id: 20, life: 1, struck_at_ms: 1000)],
+        at: 1000,
+      )
+    let #(second, _) =
+      support.run_timers_posed(
+        caster: support.caster(),
+        state: first,
+        effects:,
+        from_ms: 1000,
+        struck_at: fn(_, _) { second_round },
+        poses: dict.new(),
+        until_ms: option.Some(2000),
+      )
+    #(first, second, support.pressed_id(effects:))
+  }
+  let #(first_go, again, channel_cast) =
+    two_gos([creature_hit(unit_id: 20, life: 1, struck_at_ms: 2000)])
+  let #(_, missed, _) = two_gos([player_hit(unit_id: 20)])
+  let in_a_channel = fn(starts_ms, ends_ms) {
+    creature_view_of(
+      cast_id: channel_cast,
+      spell4_id: 101,
+      primary_target: 7,
+      unit_id: 20,
+      count: 1,
+      effect_id: 2,
+      starts_ms:,
+      ends_ms:,
+    )
+  }
+  // The node keeps the effect its first go listed and lists the second go's again
+  // (`lasting.given`), so after a later go it holds the effect twice, both armed at the go.
+  let doubled = fn(view: unit_casts.CastView) {
+    unit_casts.CastView(
+      ..view,
+      targets: list.map(view.targets, fn(target) {
+        unit_casts.ViewTarget(
+          ..target,
+          effects: list.append(target.effects, target.effects),
+        )
+      }),
+    )
+  }
+  // Paralytic Surge's periodic row (Spell4Effects 96125) on the creature, ticking every 2000
+  // ms for 6000 ms: the first tick's round closes with no answer at 3000, which ends the node.
+  let ticking_row =
+    spell_area.TickingDamage(
+      damage: spell_area.DamageEffect(
+        effect_id: Spell4EffectsId(96_125),
+        damage_type: 2,
+        delay_ms: 0,
+        phase_flags: -1,
+        aim: spell_plan.AimsAtArea,
+        formula: Formula(multiplier: 1.0, base: 0.0, parameters: []),
+        threat_multiplier: 1.0,
+        condition: Always,
+        tag: spend.always,
+      ),
+      schedule: ticking.Schedule(
+        delay_ms: 0,
+        tick_ms: 2000,
+        duration_ms: 6000,
+        count: 3,
+      ),
+    )
+  let #(ticking_state, ticking_effects) =
+    press_striking(
+      plans: support.plans_of([support.child(spell4_id: 58_591, base: 3)]),
+      state: cast_state.new(),
+      bag: bag_of_base_3,
+      struck: [
+        cast_state.Hit(
+          unit_id: 20,
+          unit: cast_state.HitCreature(life: 3, struck_at_ms: 1000),
+          descriptions: [],
+          controls: [],
+          armor_removed: 0,
+          ticking: [ticking_row],
+        ),
+      ],
+      at: 1000,
+    )
+  let assert Ok(#(first_tick, _)) =
+    list.first(support.started_timers(effects: ticking_effects))
+    as "the go armed the first tick"
+  let #(ticking_open, tick_effects) =
+    support.fired_raw(state: ticking_state, timer: first_tick, at: 3000)
+  let assert [asked] = support.tick_strikes(effects: tick_effects)
+    as "the first tick asks the creature"
+  let #(ticking_closed, _) =
+    cast.ticked(
+      cast: ticking_open,
+      caster: support.caster(),
+      now: support.at(ms: 3000),
+      asked:,
+      struck: option.None,
+    )
+  let #(three, three_effects) =
+    press_striking(
+      plans: area_buff(duration_ms: 3000),
+      state: cast_state.new(),
+      bag: bag_of_base_3,
+      struck: [
+        creature_hit(unit_id: 22, life: 1, struck_at_ms: 1000),
+        creature_hit(unit_id: 20, life: 1, struck_at_ms: 1000),
+        creature_hit(unit_id: 21, life: 1, struck_at_ms: 1000),
+      ],
+      at: 1000,
+    )
+  let three_cast = support.pressed_id(effects: three_effects)
+  // A go gives each node the count 1, and a push off emits a stack off only for a node whose
+  // count is higher (`lasting.pushed_off`), so no cast reaches a count of 2 today: the node
+  // is built by hand, and the row holds the compare's reaction to a count change, which no
+  // real cast path exercises.
+  let stacked_twice =
+    with_nodes_changed(
+      state: on_a_creature,
+      cast_id: creature_cast,
+      change: fn(node) { lasting.Node(..node, count: 2) },
+    )
+  let #(one_off, _) =
+    cast_tick.stack_off(
+      cast: stacked_twice,
+      cast_id: creature_cast,
+      unit_id: 20,
+    )
+  let twice =
+    creature_view_of(
+      cast_id: creature_cast,
+      spell4_id: 101,
+      primary_target: 7,
+      unit_id: 20,
+      count: 2,
+      effect_id: 2,
+      starts_ms: 1000,
+      ends_ms: 4000,
+    )
+  list.each(
+    [
+      #(
+        "a go's node on a creature gives the creature's life and the time of the round that struck it, that creature's target alone and no cast in progress",
+        compared_in_turn(states: [on_a_creature]),
+        [[view_set(unit_id: 20, life: 3, struck_at_ms: 1000, view: a_go)]],
+      ),
+      #(
+        "a node only on the caster is told no creature",
+        compared_in_turn(states: [on_the_caster]),
+        [[]],
+      ),
+      #(
+        "a node on a player, and a unit the round deflected, is told no creature: no round struck it as a creature",
+        compared_in_turn(states: [on_a_player]),
+        [[]],
+      ),
+      #(
+        "Fissure's child go stamps the node with its own round (life 2, 1500), not the proxy's (life 1, 1000)",
+        compared_in_turn(states: [fissure]),
+        [
+          [
+            view_set(
+              unit_id: 20,
+              life: 2,
+              struck_at_ms: 1500,
+              view: creature_view_of(
+                cast_id: child,
+                spell4_id: 41_886,
+                primary_target: 20,
+                unit_id: 20,
+                count: 1,
+                effect_id: 94_370,
+                starts_ms: 1000,
+                ends_ms: 9000,
+              ),
+            ),
+          ],
+        ],
+      ),
+      #(
+        "a later go on the same creature gives a whole new set, its start and end armed again and the new round's time",
+        compared_in_turn(states: [first_go, again]),
+        [
+          [
+            view_set(
+              unit_id: 20,
+              life: 1,
+              struck_at_ms: 1000,
+              view: in_a_channel(1000, 6000),
+            ),
+          ],
+          [
+            view_set(
+              unit_id: 20,
+              life: 1,
+              struck_at_ms: 2000,
+              view: doubled(in_a_channel(2000, 7000)),
+            ),
+          ],
+        ],
+      ),
+      #(
+        "a later go whose round hit the unit as no creature keeps the earlier stamp, with the times armed again",
+        compared_in_turn(states: [first_go, missed]),
+        [
+          [
+            view_set(
+              unit_id: 20,
+              life: 1,
+              struck_at_ms: 1000,
+              view: in_a_channel(1000, 6000),
+            ),
+          ],
+          [
+            view_set(
+              unit_id: 20,
+              life: 1,
+              struck_at_ms: 1000,
+              view: doubled(in_a_channel(2000, 7000)),
+            ),
+          ],
+        ],
+      ),
+      #(
+        "a node whose count changes (hand-built: no cast path gives a count above 1) gives a set with the new count, and one with the count lowered after a stack off",
+        compared_in_turn(states: [on_a_creature, stacked_twice, one_off]),
+        [
+          [view_set(unit_id: 20, life: 3, struck_at_ms: 1000, view: a_go)],
+          [view_set(unit_id: 20, life: 3, struck_at_ms: 1000, view: twice)],
+          [view_set(unit_id: 20, life: 3, struck_at_ms: 1000, view: a_go)],
+        ],
+      ),
+      #(
+        "a second compare with no step between gives none",
+        compared_in_turn(states: [on_a_creature, on_a_creature]),
+        [
+          [view_set(unit_id: 20, life: 3, struck_at_ms: 1000, view: a_go)],
+          [],
+        ],
+      ),
+      #(
+        "a tick round that closes with no answer ends the node: its view ends, with no set before it",
+        compared_in_turn(states: [ticking_state, ticking_open, ticking_closed]),
+        [
+          [
+            view_set(
+              unit_id: 20,
+              life: 3,
+              struck_at_ms: 1000,
+              view: creature_view_of(
+                cast_id: asked.cast_id,
+                spell4_id: 58_591,
+                primary_target: 7,
+                unit_id: 20,
+                count: 1,
+                effect_id: 96_125,
+                starts_ms: 1000,
+                ends_ms: 7000,
+              ),
+            ),
+          ],
+          [],
+          [creature_view.ViewEnds(unit_id: 20, life: 3, cast_id: asked.cast_id)],
+        ],
+      ),
+      #(
+        "a go on three creatures gives one set each, in unit order",
+        compared_in_turn(states: [three]),
+        [
+          list.map([20, 21, 22], fn(unit_id) {
+            view_set(
+              unit_id:,
+              life: 1,
+              struck_at_ms: 1000,
+              view: creature_view_of(
+                cast_id: three_cast,
+                spell4_id: 101,
+                primary_target: 7,
+                unit_id:,
+                count: 1,
+                effect_id: 2,
+                starts_ms: 1000,
+                ends_ms: 4000,
+              ),
+            )
+          }),
+        ],
+      ),
+    ],
+    fn(row) {
+      assert row.1 == row.2 as row.0
+    },
+  )
+}
+
+/// `cast.target_node_end`: a node the client holds ends only by what the server sends, so a
+/// creature told a view is told it ended when the cast's holder is gone: its last node ends
+/// by time and the cast finishes (`finish_or_linger`), the caster dies (`all_ended`), the
+/// caster leaves the world (`cast_tick.left`); the passive a death sets aside and puts back
+/// in the same step holds its node throughout and is told nothing.
+pub fn a_holder_gone_or_left_is_told_by_the_compare_test() -> Nil {
+  use <- owned_test.run(5000)
+  let plans = area_buff(duration_ms: 3000)
+  let struck = [creature_hit(unit_id: 20, life: 3, struck_at_ms: 1000)]
+  let #(held, effects) =
+    press_striking(
+      plans:,
+      state: cast_state.new(),
+      bag: bag_of_base_3,
+      struck:,
+      at: 1000,
+    )
+  let id = support.pressed_id(effects:)
+  let assert [#(node_end, 3000)] = support.started_timers(effects:)
+  let #(finished, _) = support.fired(state: held, timer: node_end, at: 4000)
+  let #(dead, _) =
+    cast.died(
+      cast: held,
+      caster: support.dead_caster(),
+      now: support.at(ms: 2000),
+    )
+  let #(left, _) = cast_tick.left(cast: held)
+  let #(passive, passive_effects) =
+    cast.passive_started(
+      cast: cast_state.new(),
+      caster: support.caster(),
+      plans:,
+      base: Spell4BaseId(3),
+      now: support.at(ms: 1000),
+    )
+  let #(passive, _) =
+    support.answered_by(
+      state: passive,
+      effects: passive_effects,
+      at: 1000,
+      struck:,
+    )
+  let #(passive_after_death, _) =
+    cast.died(
+      cast: passive,
+      caster: support.dead_caster(),
+      now: support.at(ms: 2000),
+    )
+  let ends = creature_view.ViewEnds(unit_id: 20, life: 3, cast_id: id)
+  let #(passive_cast, _) = case cast_state.holders(cast: passive) {
+    [#(passive_id, _)] -> #(passive_id, Nil)
+    _ -> panic as "the passive is the one cast the state holds"
+  }
+  list.each(
+    [
+      #(
+        "a live cast whose last node ends by time finishes, and its view ends",
+        compared_in_turn(states: [held, finished]),
+        [[told_view(id:, ends_ms: 4000)], [ends]],
+      ),
+      #(
+        "the caster's death ends every cast, and each view",
+        compared_in_turn(states: [held, dead]),
+        [[told_view(id:, ends_ms: 4000)], [ends]],
+      ),
+      #(
+        "the caster leaving the world ends every told view",
+        compared_in_turn(states: [held, left]),
+        [[told_view(id:, ends_ms: 4000)], [ends]],
+      ),
+      #(
+        "the passive a death sets aside and puts back holds its node throughout: no change",
+        compared_in_turn(states: [passive, passive_after_death]),
+        [
+          [
+            view_set(
+              unit_id: 20,
+              life: 3,
+              struck_at_ms: 1000,
+              view: creature_view_of(
+                cast_id: passive_cast,
+                spell4_id: 101,
+                primary_target: 7,
+                unit_id: 20,
+                count: 1,
+                effect_id: 2,
+                starts_ms: 1000,
+                ends_ms: 4000,
+              ),
+            ),
+          ],
+          [],
+        ],
+      ),
+    ],
+    fn(row) {
+      assert row.1 == row.2 as row.0
+    },
+  )
+}
+
+/// The set of the area buff's cast `id` on the creature 20 of life 3, struck at 1000, ending
+/// at `ends_ms`.
+fn told_view(id id: Int, ends_ms ends_ms: Int) -> creature_view.Change {
+  view_set(
+    unit_id: 20,
+    life: 3,
+    struck_at_ms: 1000,
+    view: creature_view_of(
+      cast_id: id,
+      spell4_id: 101,
+      primary_target: 7,
+      unit_id: 20,
+      count: 1,
+      effect_id: 2,
+      starts_ms: 1000,
+      ends_ms:,
+    ),
+  )
+}
+
+/// The cast's live node on each of units 20 to 24 as the draw says: its effects (none, a
+/// listed one with a life, or one that only gives the node its life), whether a round
+/// struck it as a creature (and its life and time), and its count.
+fn node_drawn(
+  unit_id unit_id: Int,
+  draw draw: #(Int, Bool, Int, Int),
+) -> lasting.Node {
+  let #(kind, stamped, count, life) = draw
+  lasting.Node(
+    unit_id:,
+    count:,
+    life: lasting.EndsAt(ms: 4000),
+    effects: case kind {
+      0 -> []
+      1 -> [
+        Listed(
+          effect_id: Spell4EffectsId(2),
+          row: LastingRow(delay_ms: 0, duration_ms: 3000, until_removed: False),
+        ),
+      ]
+      _ -> [
+        LifeOnly(row: LastingRow(
+          delay_ms: 0,
+          duration_ms: 3000,
+          until_removed: False,
+        )),
+      ]
+    },
+    armed_ms: 1000,
+    held_until_ms: option.None,
+    struck: case stamped {
+      True ->
+        option.Some(lasting.StruckCreature(life:, struck_at_ms: life * 100))
+      False -> option.None
+    },
+  )
+}
+
+/// Whatever the caster's casts hold and whatever the creatures were told before, the changes
+/// `creature_view.compared` gives take the told map to exactly the nodes that list a target and
+/// a round struck as a creature, whichever way a node came or left the state; a second
+/// compare gives none (`creature_view`'s invariant).
+pub fn the_views_told_equal_what_the_caster_holds_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let #(base, effects) =
+    support.press(
+      plans: channel_before_its_first_go(),
+      state: cast_state.new(),
+      bag: bag_of_base_3,
+      at: 1000,
+    )
+  let id = support.pressed_id(effects:)
+  qcheck.given(
+    qcheck.tuple2(
+      qcheck.list_from(qcheck.tuple5(
+        qcheck.bounded_int(from: 20, to: 24),
+        qcheck.bounded_int(from: 0, to: 2),
+        qcheck.bool(),
+        qcheck.bounded_int(from: 1, to: 3),
+        qcheck.bounded_int(from: 1, to: 9),
+      )),
+      qcheck.list_from(qcheck.tuple4(
+        qcheck.bounded_int(from: 20, to: 25),
+        qcheck.bounded_int(from: 1, to: 2),
+        qcheck.bounded_int(from: 1, to: 9),
+        qcheck.bounded_int(from: 1, to: 3),
+      )),
+    ),
+    fn(drawn) {
+      let #(nodes, earlier) = drawn
+      let held =
+        cast_tick.with_nodes(
+          cast: base,
+          cast_id: id,
+          nodes: dict.from_list(
+            list.map(nodes, fn(node) {
+              let #(unit_id, kind, stamped, count, life) = node
+              #(
+                unit_id,
+                node_drawn(unit_id:, draw: #(kind, stamped, count, life)),
+              )
+            }),
+          ),
+        )
+      let told_before =
+        dict.from_list(
+          list.map(earlier, fn(entry) {
+            let #(unit_id, cast_choice, life, count) = entry
+            #(
+              #(
+                case cast_choice {
+                  1 -> id
+                  _ -> 5
+                },
+                unit_id,
+              ),
+              cast_state.Told(
+                life:,
+                struck_at_ms: life * 100,
+                target: unit_casts.ViewTarget(unit_id:, count:, effects: []),
+              ),
+            )
+          }),
+        )
+      let #(compared, changes) =
+        creature_view.compared(
+          cast: cast_state.State(..held, creature_told: told_before),
+          caster_unit_id: 7,
+        )
+      let applied =
+        list.fold(changes, told_before, fn(told, change) {
+          case change {
+            creature_view.ViewSet(unit_id:, life:, struck_at_ms:, view:) ->
+              case view.targets {
+                [target] ->
+                  dict.insert(
+                    told,
+                    #(view.cast_id, unit_id),
+                    cast_state.Told(life:, struck_at_ms:, target:),
+                  )
+                [] | [_, ..] -> told
+              }
+            creature_view.ViewEnds(unit_id:, cast_id:, ..) ->
+              dict.delete(told, #(cast_id, unit_id))
+          }
+        })
+      let expected =
+        dict.from_list(
+          list.map(nodes, fn(node) {
+            let #(unit_id, kind, stamped, _, life) = node
+            #(unit_id, #(kind, stamped, life))
+          }),
+        )
+        |> dict.to_list
+        |> list.filter_map(fn(entry) {
+          case entry.1 {
+            #(1, True, life) -> Ok(#(#(id, entry.0), #(life, life * 100)))
+            _ -> Error(Nil)
+          }
+        })
+        |> dict.from_list
+      assert dict.map_values(applied, fn(_, told) {
+          #(told.life, told.struck_at_ms)
+        })
+        == expected
+        as "the changes take the told map to the nodes that list a target and a creature round"
+      assert compared.creature_told == applied
+        as "the state records what it told"
+      assert creature_view.compared(cast: compared, caster_unit_id: 7).1 == []
+        as "a second compare with no step between gives none"
     },
   )
 }

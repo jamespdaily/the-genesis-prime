@@ -81,6 +81,7 @@ import genesis_prime/game/ability_book
 import genesis_prime/game/activate
 import genesis_prime/game/area
 import genesis_prime/game/cast
+import genesis_prime/game/cast/creature_view
 import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/persist as cast_persist
@@ -800,6 +801,70 @@ pub fn persisted(
   }
 }
 
+/// What an input decided, with each creature told what the player's casts now hold on it
+/// (`creature_view.compared`) after the input's own effects. It runs at the end of each
+/// input of a player in the world that goes on. An ask's status keeps no write to the
+/// player's cast state (`with_entered` leaves it as it is), so a change made while an ask is
+/// in flight is neither kept nor told, and the compare's record is kept only outside one; an
+/// input that ends in an ask is told at the end of the next input that goes on, the compare
+/// being against what each creature was told.
+pub fn creatures_told(
+  handled handled: client_connection.Handled(Session),
+) -> client_connection.Handled(Session) {
+  case handled {
+    Continue(session:, effects:) ->
+      case connection_state.entered_of(session.status) {
+        Some(entered) -> {
+          let #(compared, told) = creatures_settled(session:, entered:)
+          Continue(
+            with_cast(session:, cast: compared),
+            list.append(effects, told),
+          )
+        }
+        None -> handled
+      }
+    client_connection.Asking(..) | client_connection.Done(..) -> handled
+  }
+}
+
+/// The player's cast state compared against what the creatures were told
+/// (`creature_view.compared`), and the tell of each change.
+pub fn creatures_settled(
+  session session: Session,
+  entered entered: world_entry.Entered,
+) -> #(cast_state.State, List(Effect(ConnectionEffect(Request)))) {
+  let #(compared, changes) =
+    creature_view.compared(cast: entered.cast, caster_unit_id: entered.unit_id)
+  let connection = client_connection.connection(session.link)
+  #(
+    compared,
+    list.map(changes, fn(change) {
+      case change {
+        creature_view.ViewSet(unit_id:, life:, struck_at_ms:, view:) ->
+          tells_the_creature(
+            entered:,
+            unit_id:,
+            life:,
+            request: client_connection.TellCastView(
+              connection:,
+              change: client_connection.ViewSet(view:, struck_at_ms:),
+            ),
+          )
+        creature_view.ViewEnds(unit_id:, life:, cast_id:) ->
+          tells_the_creature(
+            entered:,
+            unit_id:,
+            life:,
+            request: client_connection.TellCastView(
+              connection:,
+              change: client_connection.ViewEnds(cast_id:),
+            ),
+          )
+      }
+    }),
+  )
+}
+
 /// The player as its cast rule takes it: who it is, where it stands, what it
 /// holds, who sees it, whether it is dead or in combat and its health and shield.
 pub fn caster_of(
@@ -1269,14 +1334,16 @@ fn carried_out(
         Some(entered)
       -> #(session, [
         tells_the_creature(
-          session:,
           entered:,
           unit_id:,
           life:,
-          change: client_connection.ChangeStarts(
-            source:,
-            modifier:,
-            struck_at_ms:,
+          request: client_connection.TellTargetChange(
+            connection: client_connection.connection(session.link),
+            change: client_connection.ChangeStarts(
+              source:,
+              modifier:,
+              struck_at_ms:,
+            ),
           ),
         ),
       ])
@@ -1285,11 +1352,13 @@ fn carried_out(
         session,
         [
           tells_the_creature(
-            session:,
             entered:,
             unit_id:,
             life:,
-            change: client_connection.ChangeEnds(source:),
+            request: client_connection.TellTargetChange(
+              connection: client_connection.connection(session.link),
+              change: client_connection.ChangeEnds(source:),
+            ),
           ),
         ],
       )
@@ -1426,15 +1495,13 @@ fn procs_fired(
 /// The bytes of a chance draw: one 32-bit word (`random.words`).
 const proc_word_bytes = 4
 
-/// The tell of a property modifier's start or end to the creature `unit_id` of
-/// `life`, in the run of the player's map, through the creature registry with no
-/// watch, as a strike's tell goes.
+/// The tell `request` to the creature `unit_id` of `life`, in the run of the player's
+/// map, through the creature registry with no watch, as a strike's tell goes.
 fn tells_the_creature(
-  session session: Session,
   entered entered: world_entry.Entered,
   unit_id unit_id: Int,
   life life: Int,
-  change change: client_connection.TargetChange,
+  request request: Request,
 ) -> Effect(ConnectionEffect(Request)) {
   OwnEffect(step.Tell(
     to: step.Creature(
@@ -1443,10 +1510,7 @@ fn tells_the_creature(
       unit_id:,
       life:,
     ),
-    request: client_connection.TellTargetChange(
-      connection: client_connection.connection(session.link),
-      change:,
-    ),
+    request:,
   ))
 }
 

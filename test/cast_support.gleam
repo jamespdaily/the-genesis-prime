@@ -2221,6 +2221,7 @@ pub fn live_casts_holding_only_a_node(
               effects:,
               armed_ms: 1000,
               held_until_ms: Some(4000),
+              struck: None,
             ),
           ),
         ]),

@@ -111,6 +111,7 @@ import genesis_prime/message/spell_started
 import genesis_prime/message/start_movement
 import genesis_prime/message/static_unit_type
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
+import genesis_prime/message/unit_create_cast
 import genesis_prime/message/unit_create_creature
 import genesis_prime/message/unit_create_player
 import genesis_prime/message/unit_create_static
@@ -120,7 +121,7 @@ import genesis_prime/message/unit_item_visuals_changed.{UnitItemVisualsChanged}
 import genesis_prime/message/unit_movement
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_properties_changed
-import genesis_prime/message/unit_property.{UnitProperty}
+import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
 import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed
 import genesis_prime/message/unit_stat_level.{UnitStatLevel}
@@ -5594,6 +5595,22 @@ fn world_with_beasts(
   tables tables: table_store.Tables,
   time time: driven_time.Time,
 ) -> login_support.Started {
+  world_with_spawns(
+    spawns: list.index_map(places, fn(place, index) {
+      spawn_support.beast_without_deflect_at(number: index + 1, place:)
+    }),
+    tables:,
+    time:,
+  )
+}
+
+/// A world 1387 with these spawns, which respawn after 1000 ms, on the tables given, its
+/// game connections and World taking their time and timers from `time`.
+fn world_with_spawns(
+  spawns spawns: List(spawn.Spawn),
+  tables tables: table_store.Tables,
+  time time: driven_time.Time,
+) -> login_support.Started {
   login_support.start_with(change: fn(settings) {
     let settings = login_support.driven_by(settings:, time:)
     server.Settings(
@@ -5604,13 +5621,7 @@ fn world_with_beasts(
       ),
       world: server.World(
         ..settings.world,
-        spawns: spawn_support.key_in(
-          world_id: 1387,
-          spawns: list.index_map(places, fn(place, index) {
-            spawn_support.beast_without_deflect_at(number: index + 1, place:)
-          }),
-          respawn_ms: 1000,
-        ),
+        spawns: spawn_support.key_in(world_id: 1387, spawns:, respawn_ms: 1000),
       ),
     )
   })
@@ -9484,5 +9495,281 @@ pub fn a_bar_saved_with_the_clients_0xb1_is_back_after_a_relog_on_the_whole_serv
   assert bar_shortcuts(frames: third_entry) == [#(0, 27_638), #(1, 20_684)]
     as "after the sitting's third save and a relog the entry holds 27638 and 20684 only"
   game_client.close(game:)
+  login_support.stop(started)
+}
+
+/// The cast entries of the 0x262 of the unit `unit_id` among the frames, as each cast id with
+/// the units it lists and, for each, the effects with the time left they were told with.
+fn cast_entries_of(
+  frames frames: List(Frame),
+  unit_id unit_id: Int,
+) -> List(#(Int, List(#(Int, List(#(Int, Int)))))) {
+  let casts =
+    list.flat_map(frames, fn(frame) {
+      case created_unit_of(frame:) {
+        Ok(#(created, casts)) if created == unit_id -> casts
+        Ok(_) | Error(Nil) -> []
+      }
+    })
+  list.map(casts, fn(cast) {
+    #(
+      cast.cast_id,
+      list.map(cast.targets, fn(target) {
+        #(
+          target.unit_id,
+          list.map(target.effects, fn(effect) {
+            #(effect.spell4_effects_id, effect.lifetime_ms)
+          }),
+        )
+      }),
+    )
+  })
+}
+
+/// The unit a 0x262 frame creates, with the casts its tail lists.
+fn created_unit_of(
+  frame frame: Frame,
+) -> Result(#(Int, List(unit_create_cast.UnitCreateCast)), Nil) {
+  use <- bool.guard(when: frame.message_id != 0x0262, return: Error(Nil))
+  use created <- result.map(game_client.created_unit(body: frame.body))
+  case created {
+    game_client.PlayerCreated(unit:) -> #(unit.unit_id, unit.tail.casts)
+    game_client.CreatureCreated(unit:) -> #(unit.unit_id, unit.tail.casts)
+    game_client.ObjectCreated(unit_id:, tail:, ..) -> #(unit_id, tail.casts)
+  }
+}
+
+/// Fissure's child 41886 started and gone on the Beast: its cast id.
+fn fissure_child_gone_on(
+  frames frames: List(Frame),
+  beast beast: Int,
+) -> Result(Int, Nil) {
+  use #(cast_id, _) <- result.try(
+    game_client.starts_of(
+      events: game_client.casts_in(frames:),
+      spell4_id: 41_886,
+    )
+    |> list.first,
+  )
+  case list.contains(game_client.go_targets_in(frames:), #(cast_id, [beast])) {
+    True -> Ok(cast_id)
+    False -> Error(Nil)
+  }
+}
+
+/// The viewer's arrival in the order that shows the Beast's own tell, which the test makes
+/// certain: the viewer reads the Medic's 0x262 and the Beast's, walks 1026.5 units along z,
+/// where the Medic (1023 away) is in sight and the Beast (1026 away) is not (`sight.range`,
+/// 1024), reads the Beast's removal, and walks back into the Beast's sight. The Medic's
+/// create is then read before the Beast's by the viewer's own steps, not by which of two
+/// senders wrote first. Gives the frames of the first arrival (the Medic's entry among
+/// them), the frames of the Beast coming into sight again, and the bytes beyond them.
+fn beast_comes_into_sight_after_the_medic(
+  game game: game_client.Game,
+  burst burst: List(Frame),
+  have have: BitArray,
+  beast beast: Int,
+) -> #(List(Frame), List(Frame), BitArray) {
+  let #(arrived, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      list.count(list.append(burst, frames), fn(frame) {
+        frame.message_id == 0x0262
+      })
+      >= 3
+    })
+  let entry = list.append(burst, arrived)
+  walk_to(game:, z: 1026.5, clock: 1)
+  let #(_, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      list.contains(game_client.removals_in(frames:), beast)
+    })
+  let #(_, have) = game_client.read_until_pong(game:, have:, number: 1)
+  walk_to(game:, z: 3.5, clock: 2)
+  let #(returned, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      list.any(game_client.creatures_created_in(frames:), fn(creature) {
+        creature.unit_id == beast
+      })
+    })
+  #(entry, returned, have)
+}
+
+/// The entries of property `property_id` that the 0x93a frames among `frames` give the unit
+/// `unit_id`, in order.
+fn property_entries_of(
+  frames frames: List(Frame),
+  unit_id unit_id: Int,
+  property_id property_id: Int,
+) -> List(UnitProperty) {
+  list.filter(frames, fn(frame) { frame.message_id == 0x093A })
+  |> list.flat_map(fn(frame) {
+    let assert Ok(changed) = unit_properties_changed.decode(frame.body)
+      as "0x93a decodes"
+    use <- bool.guard(when: changed.unit_id != unit_id, return: [])
+    list.filter(changed.properties, fn(entry) {
+      entry.property_id == property_id
+    })
+  })
+}
+
+/// The cast ids of the 0x7fe frames among `frames`, in order.
+fn finished_casts_in(frames frames: List(Frame)) -> List(Int) {
+  list.filter_map(game_client.casts_in(frames:), fn(event) {
+    case event {
+      game_client.CastFinished(cast_id:) -> Ok(cast_id)
+      _ -> Error(Nil)
+    }
+  })
+}
+
+/// `opcode.0x262.casts`: a viewer that comes into sight after a Medic's Fissure (Spell4Base
+/// 26038) has left its debuff on a Beast is shown the debuff, with the time it has left, and
+/// is told it ends at the end of the last phase's child. The child 41886's row 94370 holds
+/// 8000 ms and property 160. The viewer sees the Medic first and the Beast comes into its
+/// sight after (`beast_comes_into_sight_after_the_medic`), where the debuff shows once, from
+/// both entries. The clock is the test's.
+pub fn a_viewer_arriving_after_a_medic_fissures_a_beast_shows_the_debuff_on_the_beast_and_its_end_test() -> Nil {
+  use <- owned_test.run(120_000)
+  let time = driven_time.new()
+  // The Beast holds 5000 health as its spawn's own: a client-default Beast has 52, which
+  // Fissure's first go alone kills, and the child's property 160 modifier clamps health to
+  // that maximum; a dead Beast stands again at the next 1000 ms of the clock, which
+  // clears the views before the debuff's 8000 ms are over.
+  let started =
+    world_with_spawns(
+      spawns: [
+        spawn.Spawn(
+          ..spawn_support.beast_without_deflect_at(
+            number: 1,
+            place: beast_place(x: 1.5, z: 0.5),
+          ),
+          health: 5000,
+          health_source: unit_fields.Recorded,
+        ),
+      ],
+      tables: character_tables.shared(),
+      time:,
+    )
+  let facing_the_beast =
+    game_client.yaw_toward(from: #(1.5, 3.5), target: #(1.5, 0.5))
+  let TwoEntered(first:, second:, first_acted:, second_burst:, second_have:, ..) =
+    two_players_enter_after(
+      started:,
+      first_class: 4,
+      level: 4,
+      first_acts: fn(game, have) {
+        let #(seen, have) =
+          game_client.read_until(game:, have:, found: fn(frames) {
+            game_client.creatures_created_in(frames:) != []
+          })
+        let assert [beast, ..] = game_client.creatures_created_in(frames: seen)
+        game_client.face(game:, yaw: facing_the_beast, clock: 100)
+        game_client.press_ability(
+          game:,
+          client_cast_id: 1,
+          bag_index: 4,
+          target: 0,
+        )
+        let #(pressed, have) =
+          game_client.read_until(game:, have:, found: fn(frames) {
+            fissure_child_gone_on(
+              frames: list.append(seen, frames),
+              beast: beast.unit_id,
+            )
+            != Error(Nil)
+          })
+        driven_time.advance(time:, ms: 200)
+        let #(settled, have) =
+          game_client.read_until_pong(game:, have:, number: 5)
+        #(list.flatten([seen, pressed, settled]), have)
+      },
+    )
+  let assert [beast, ..] = game_client.creatures_created_in(frames: first_acted)
+  let assert Ok(child) =
+    fissure_child_gone_on(frames: first_acted, beast: beast.unit_id)
+  let #(frames, returned, have) =
+    beast_comes_into_sight_after_the_medic(
+      game: second,
+      burst: second_burst,
+      have: second_have,
+      beast: beast.unit_id,
+    )
+  let node = #(child, [#(beast.unit_id, [#(94_370, 7800)])])
+  assert cast_entries_of(frames:, unit_id: 1) == [node]
+    as "opcode.0x262.casts: the Medic's own entry lists its child cast with the Beast as a target, 8000 ms of row 94370 less the 200 ms since the go"
+  assert cast_entries_of(frames: returned, unit_id: beast.unit_id) == [node]
+    as "opcode.0x262.casts: the Beast's own entry lists the same node with the time left it was told, once: the viewer holds the Medic's cast by then"
+  let assert [shown, ..] =
+    list.filter(
+      game_client.creatures_created_in(frames: returned),
+      fn(creature) { creature.unit_id == beast.unit_id },
+    )
+  assert list.contains(
+    shown.tail.properties,
+    UnitProperty(
+      property_id: 160,
+      base: float32.to_bits(1.0),
+      value: 1_066_192_077,
+    ),
+  )
+    as "Spell4Effects 94370: the same go's modifier of property 160, mode 2, dataBits02 the bits of 1.1, is on the Beast the viewer is shown"
+  let #(settled, have) =
+    game_client.read_until_pong(game: second, have:, number: 6)
+  // Fissure's second and third phases, 250 ms and 500 ms after its first, start a child
+  // each, whose nodes push the earlier ones off the Beast at the stack cap (Jim's decision
+  // on stacking).
+  driven_time.advance(time:, ms: 500)
+  let #(phased, have) =
+    game_client.read_until_pong(game: second, have:, number: 7)
+  assert list.contains(
+    game_client.targets_removed_in(frames: phased),
+    #(child, [beast.unit_id]),
+  )
+    as "opcode.0x811: the viewer that was shown the node is told it ends when the next phase's node pushes it off, as the Medic's client is"
+  let assert Ok(#(last_child, _)) =
+    game_client.starts_of(
+      events: game_client.casts_in(frames: phased),
+      spell4_id: 41_886,
+    )
+    |> list.last
+    as "the viewer is written the start of each later phase's child"
+  assert last_child != child
+    as "the last phase's child is another cast than the first"
+  // The last child's node is the one nothing pushes off: it ends 8000 ms after its go.
+  driven_time.advance(time:, ms: 7000)
+  let #(holding, have) =
+    game_client.read_until_pong(game: second, have:, number: 8)
+  assert !list.contains(finished_casts_in(frames: holding), last_child)
+    && property_entries_of(
+      frames: holding,
+      unit_id: beast.unit_id,
+      property_id: 160,
+    )
+    == []
+    as "the last phase's child still holds the Beast, and its modifier, before its 8000 ms are over"
+  driven_time.advance(time:, ms: 2000)
+  let #(ended, _) = game_client.read_until_pong(game: second, have:, number: 9)
+  assert list.contains(finished_casts_in(frames: ended), last_child)
+    as "opcode.0x7fe: the last phase's child ends 8000 ms after its go, the finish alone ending its last node"
+  assert list.last(property_entries_of(
+      frames: ended,
+      unit_id: beast.unit_id,
+      property_id: 160,
+    ))
+    == Ok(UnitProperty(
+      property_id: 160,
+      base: float32.to_bits(1.0),
+      value: float32.to_bits(1.0),
+    ))
+    as "opcode.0x93a: the Beast is given property 160 back as the debuff ends"
+  let seen = list.flatten([frames, returned, settled, phased, holding, ended])
+  assert game_client.dead_in(frames: seen) == []
+    as "the Beast stays alive through the phases: its 5000 health"
+  assert list.all(game_client.health_in(frames: seen), fn(health) {
+    health.0 != beast.unit_id || { health.1 > 0 && !health.2 }
+  })
+    as "no 0x937 gives the Beast no health"
+  game_client.close(game: first)
+  game_client.close(game: second)
   login_support.stop(started)
 }

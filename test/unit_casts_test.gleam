@@ -146,6 +146,7 @@ fn node(effects effects: List(lasting.NodeEffect)) -> lasting.Node {
     effects:,
     armed_ms: 1000,
     held_until_ms: None,
+    struck: None,
   )
 }
 

@@ -221,7 +221,8 @@ pub fn carry_out(
     [LeavesWorld, ..] ->
       case connection_state.holds_a_player(session.status) {
         Some(#(holder, entered)) -> {
-          let #(session, left_behind) = world_left(session:, now:, entered:)
+          let #(session, entered, left_behind) =
+            world_left(session:, now:, entered:)
           connection_state.saving(
             session:,
             now:,
@@ -253,21 +254,27 @@ pub fn carry_out(
 /// or the Holocrypt: its chat groups, its casts and its strikes are left, its
 /// class resource's and its life's regeneration timers and the stay's timers
 /// (`stay_timers_cancelled`) cancelled; the session keeps the chat's next whisper number,
-/// which counts for the connection's life.
+/// which counts for the connection's life. Each creature is told its casts' views ended,
+/// after the cast effects, and the entered it returns holds the cast state of that
+/// compare: a creature's news during the ask that follows tells nothing again.
 pub fn world_left(
   session session: Session,
   now now: Now,
   entered entered: world_entry.Entered,
-) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+) -> #(Session, world_entry.Entered, List(Effect(ConnectionEffect(Request)))) {
+  let #(left, ended) = cast_tick.left(cast: entered.cast)
+  let #(compared, told) =
+    connection_casting.creatures_settled(
+      session:,
+      entered: world_entry.Entered(..entered, cast: left),
+    )
   #(
     Session(..session, next_whisper: chat.next_whisper(chat: entered.chat)),
+    world_entry.Entered(..entered, cast: compared),
     list.flatten([
       connection_chat.chat_effects(session:, effects: chat.left(entered.chat)).1,
-      connection_casting.cast_effects(
-        session:,
-        now:,
-        effects: cast_tick.left(cast: entered.cast).1,
-      ).1,
+      connection_casting.cast_effects(session:, now:, effects: ended).1,
+      told,
       connection_casting.carry_strike(
         session:,
         now:,

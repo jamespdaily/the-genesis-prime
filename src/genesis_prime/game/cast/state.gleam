@@ -996,7 +996,18 @@ pub type State {
     /// times that would wrap it, so a press whose id is not above this one is a repeat
     /// and starts and spends nothing.
     item_press_watermark: Option(Int),
+    /// What the caster last told each creature of a cast's node on it, by cast id and
+    /// unit id: the creature's life and the round told for, and the target
+    /// (`creature_view.compared`). It outlives the casts it names, so a node that left the
+    /// state is told ended.
+    creature_told: Dict(#(Int, Int), Told),
   )
+}
+
+/// What the caster last told a creature of one cast's node on it: the life and round
+/// it was told for and the target (count, effects with absolute starts and ends).
+pub type Told {
+  Told(life: Int, struck_at_ms: Int, target: unit_casts.ViewTarget)
 }
 
 /// A crowd-control state the caster holds on itself: the state, the instance id the 0x87f
@@ -1046,6 +1057,7 @@ pub fn new() -> State {
     restrictions: dict.new(),
     restrictions_told: 0,
     item_press_watermark: None,
+    creature_told: dict.new(),
   )
 }
 
@@ -1355,6 +1367,31 @@ pub fn views(
           )
         }),
     )
+  })
+}
+
+/// Each node of the unit `caster_unit_id`'s casts that a round struck as a creature and
+/// that `views` lists as a target, as the round's stamp, that creature's view of the cast
+/// (the cast with the creature's target alone and no cast in progress: a creature shows no
+/// player's cast bar) and the target. In cast id order, then unit id order.
+pub fn creature_views(
+  cast cast: State,
+  caster_unit_id caster_unit_id: Int,
+) -> List(#(lasting.StruckCreature, unit_casts.CastView, unit_casts.ViewTarget)) {
+  list.flat_map(views(cast:, caster_unit_id:), fn(view) {
+    case holder_of(cast:, cast_id: view.cast_id) {
+      Error(Nil) -> []
+      Ok(holder) ->
+        list.filter_map(view.targets, fn(target) {
+          use node <- result.try(dict.get(holder.nodes, target.unit_id))
+          use struck <- result.map(option.to_result(node.struck, Nil))
+          #(
+            struck,
+            unit_casts.CastView(..view, current: False, targets: [target]),
+            target,
+          )
+        })
+    }
   })
 }
 

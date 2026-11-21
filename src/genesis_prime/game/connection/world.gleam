@@ -632,7 +632,7 @@ pub fn leaving_to(
   told told: Option(String),
   before before: List(Effect(ConnectionEffect(Request))),
 ) -> client_connection.Handled(Session) {
-  let #(session, left_behind) =
+  let #(session, entered, left_behind) =
     connection_effects.world_left(session:, now:, entered:)
   leaving_the_map(
     session:,

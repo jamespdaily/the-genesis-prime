@@ -2499,10 +2499,17 @@ pub fn foe(
 
 /// The tells of a step to creatures, as the creature's unit and the request.
 pub fn told_creatures(taken: ConnectionStep(Request)) -> List(#(Int, Request)) {
+  list.map(creature_tells(taken), fn(tell) { #(tell.0, tell.2) })
+}
+
+/// The tells of a step to creatures, as the creature's unit, its life and the request.
+pub fn creature_tells(
+  taken: ConnectionStep(Request),
+) -> List(#(Int, Int, Request)) {
   list.filter_map(support.effects_of(taken), fn(effect) {
     case effect {
-      OwnEffect(step.Tell(to: step.Creature(unit_id:, ..), request:)) ->
-        Ok(#(unit_id, request))
+      OwnEffect(step.Tell(to: step.Creature(unit_id:, life:, ..), request:)) ->
+        Ok(#(unit_id, life, request))
       OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
         Error(Nil)
     }
@@ -2883,8 +2890,23 @@ fn entered_burst_with_server_proxies(
   proxies proxies: server_proxy.ServerProxies,
   tables tables: store_tables.Tables,
 ) -> #(game_connection.State, ConnectionStep(Request), Int, Int) {
-  let fresh =
-    accepted(Settings(..settings(), tables:, server_proxies: proxies)).0
+  entered_burst_with_settings(
+    settings: Settings(..settings(), tables:, server_proxies: proxies),
+    class_id:,
+    level:,
+    ability:,
+  )
+}
+
+/// `entered_burst_with_spell_trees` on these settings, whose tables the class's set is read
+/// from.
+pub fn entered_burst_with_settings(
+  settings settings: game_connection.Settings,
+  class_id class_id: Int,
+  level level: Int,
+  ability ability: Int,
+) -> #(game_connection.State, ConnectionStep(Request), Int, Int) {
+  let fresh = accepted(settings).0
   let #(state, entered) =
     entered_from(
       in_character_select: in_select_from(fresh),
@@ -2896,7 +2918,11 @@ fn entered_burst_with_server_proxies(
     )
   let unit_id = player_in(entered).unit_id
   let assert Ok(set) =
-    loadout.of(tables:, class_id: ClassId(class_id), faction_id: 166)
+    loadout.of(
+      tables: settings.tables,
+      class_id: ClassId(class_id),
+      faction_id: 166,
+    )
     as "the tables hold the class's Novice set"
   let assert Ok(bag_index) =
     list.index_map(ability_book.bag(loadout: set, level:), fn(base, index) {

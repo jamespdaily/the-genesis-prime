@@ -4,11 +4,14 @@
 //// (`opcode.0x811`: the client drops a message that names a cast it does not hold;
 //// `opcode.0x813`: the same). Expected values come from those records.
 
+import cast_support
 import fixture_tables
 import game_connection_support
 import genesis_prime/client_connection.{
   Appeared, CastFinished, CastStarted, CastWent, Removed,
 }
+import genesis_prime/game/connection as game_connection
+import genesis_prime/game/unit_casts
 import genesis_prime/message/combat_result
 import genesis_prime/message/damage_type
 import genesis_prime/message/spell_damage_description.{SpellDamageDescription}
@@ -16,8 +19,12 @@ import genesis_prime/message/spell_effect_tick.{SpellEffectTick}
 import genesis_prime/message/spell_go.{SpellGo}
 import genesis_prime/message/spell_position.{SpellPosition}
 import genesis_prime/message/spell_stack_removed.{SpellStackRemoved}
+import genesis_prime/message/spell_started
 import genesis_prime/message/spell_targets_removed.{SpellTargetsRemoved}
-import genesis_prime/step
+import genesis_prime/server
+import genesis_prime/step.{ConnectionId, OwnEvent}
+import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
+import genesis_prime/world_map/creature
 import gleam/list
 import owned_test
 import planted_table
@@ -340,4 +347,261 @@ pub fn a_cast_listed_in_a_unit_create_is_written_and_finished_like_a_watched_one
   let #(_, taken) = told(state, Removed)
   assert game_connection_support.written_ids(taken) == [0x07FE, 0x07FE, 0x0355]
     as "the caster's removal finishes each listed cast before the 0x355"
+}
+
+// ---- the caster tells the creature what its casts hold on it ----
+
+/// A level 4 Medic who has pressed Fissure (Spell4Base 26038) at the Beast 40 ahead of it:
+/// the proxy 41844's first round was struck at 1000 and landed at 1200, which started the
+/// child 41886, whose round was struck and landed at 1200. The node is stamped with the
+/// child's round (1200), not the proxy's (1000); the proxy's later phases (1250 and 1500
+/// after the press) are not run.
+type Fissure {
+  Fissure(
+    /// The connection after the child's landing.
+    state: game_connection.State,
+    /// The step of the child's landing, whose go leaves the node on the Beast.
+    landed: step.ConnectionStep(client_connection.Request),
+    /// The Medic's unit.
+    unit_id: Int,
+    /// The cast id the child was started under, read from its 0x7ff.
+    child_cast_id: Int,
+    /// The life of the Beast the child's strike was told to.
+    beast_life: Int,
+  )
+}
+
+/// A dev command chat line that leaves the map for another world.
+const go_elsewhere = "!go 870 1227 -7700 -941 -659"
+
+/// The Beast's life in the strikes the step tells creatures.
+fn struck_lives(
+  taken taken: step.ConnectionStep(client_connection.Request),
+) -> List(Int) {
+  list.filter_map(game_connection_support.creature_tells(taken), fn(tell) {
+    case tell {
+      #(_, life, client_connection.TellStrike(..)) -> Ok(life)
+      #(_, _, _) -> Error(Nil)
+    }
+  })
+}
+
+fn fissure_pressed() -> Fissure {
+  let #(state, _, unit_id, bag_index) =
+    game_connection_support.entered_burst_with_settings(
+      settings: game_connection_support.settings_with_dev_commands(),
+      class_id: 4,
+      level: 4,
+      ability: 26_038,
+    )
+  let #(state, _) =
+    game_connection_support.feed(
+      state,
+      game_connection_support.beast_appears(unit_id: 40),
+    )
+  let #(state, pressed) =
+    game_connection_support.at(
+      state:,
+      ms: 1000,
+      event: OwnEvent(
+        step.Read(game_connection_support.world_message(
+          message_id: 0x009A,
+          body: cast_support.press_body(
+            client_cast_id: 1,
+            bag_index:,
+            target: 0,
+            press: 1,
+          ),
+        )),
+      ),
+    )
+  // Each strike lands 200 ms after it is told, and each timer fires at its due time, so the
+  // child's round is struck when the proxy's lands.
+  let landing = fn(state, ms, taken) {
+    game_connection_support.landing(state:, ms: ms + 200, taken:)
+  }
+  let #(state, first) = landing(state, 1000, pressed)
+  let assert [_, ..after_press] = first
+  let #(state, _, steps) =
+    game_connection_support.casts_run_answered(
+      state:,
+      world: Nil,
+      pending: list.append(
+        game_connection_support.cast_timers(steps: [pressed], ms: 1000),
+        game_connection_support.cast_timers(steps: after_press, ms: 1200),
+      ),
+      until_ms: 1249,
+      steps: first,
+      answer: fn(world, state, ms, taken) {
+        let #(state, steps) = landing(state, ms, taken)
+        #(world, state, steps)
+      },
+    )
+  let assert Ok(landed) = list.last(steps)
+    as "the last step lands the child's round, whose go leaves the node"
+  let assert [beast_life] =
+    list.unique(list.flat_map(steps, fn(taken) { struck_lives(taken:) }))
+    as "both strikes are told to the Beast of one life"
+  let assert Ok(child_cast_id) =
+    list.flat_map(steps, fn(taken) {
+      game_connection_support.decoded(
+        game_connection_support.heard(taken, game_connection_support.keyed()),
+        0x07FF,
+        spell_started.decode,
+      )
+    })
+    |> list.find_map(fn(started) {
+      case started.spell4_id {
+        41_886 -> Ok(started.cast_id)
+        _ -> Error(Nil)
+      }
+    })
+    as "the child's start is written"
+  Fissure(state:, landed:, unit_id:, child_cast_id:, beast_life:)
+}
+
+/// The views the step tells creatures, as the creature's unit, its life and the message
+/// the creature takes the tell as (`server.creature_told`).
+fn views_told(
+  taken taken: step.ConnectionStep(client_connection.Request),
+) -> List(#(Int, Int, creature.Message)) {
+  list.filter_map(game_connection_support.creature_tells(taken), fn(tell) {
+    let #(unit_id, life, request) = tell
+    case server.creature_told(request) {
+      Ok(creature.CastViewSet(..) as told)
+      | Ok(creature.CastViewEnds(..) as told) -> Ok(#(unit_id, life, told))
+      Ok(_) | Error(Nil) -> Error(Nil)
+    }
+  })
+}
+
+/// The Beast's 0x355, as its process sends it when the Medic stops seeing it.
+fn beast_removed() -> step.Event(
+  step.ConnectionEvent(client_connection.Message, client_connection.Answer),
+) {
+  game_connection_support.sent_by_a_peer(game_connection_support.news_of(
+    unit_id: 40,
+    news: client_connection.Removed,
+  ))
+}
+
+/// `opcode.0x262.casts`: a creature that comes into sight lists the casts that hold a node on
+/// it, so each creature is told what the player's casts hold on it, after the input that
+/// changed it, whatever the input was: the answer that lands a round, the creature's own news,
+/// a camp, a move to another world and the player's death.
+///
+/// Gap: while an ask is in flight (`SavingPlace`, `LeavingMap`) the connection keeps no write
+/// to the player's cast state (`connection_state.with_entered` leaves an ask's status as it
+/// is), so the Beast's 0x355 there changes neither the state nor what the creature was told,
+/// whichever state the camp or the leave kept. The two rows that read the Beast's 0x355
+/// during an ask cannot fail while that holds; they stand to catch a later change that
+/// keeps a write during an ask.
+pub fn the_creature_is_told_after_each_input_that_changes_its_node_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let fissure = fissure_pressed()
+  let medic = ConnectionId(1)
+  let ends = creature.CastViewEnds(by: medic, cast_id: fissure.child_cast_id)
+  let #(_, removed) =
+    game_connection_support.feed(fissure.state, beast_removed())
+  let #(_, moved) =
+    game_connection_support.read(
+      fissure.state,
+      game_connection_support.a_move(1.5),
+    )
+  let #(camping, _) =
+    game_connection_support.read(
+      fissure.state,
+      game_connection_support.camp_request_message(True),
+    )
+  let #(saving, camped) =
+    game_connection_support.read(
+      camping,
+      game_connection_support.camp_finished_message(),
+    )
+  let #(_, removed_while_saving) =
+    game_connection_support.feed(saving, beast_removed())
+  let #(leaving, left) =
+    game_connection_support.at(
+      state: fissure.state,
+      ms: 2500,
+      event: OwnEvent(
+        step.Read(game_connection_support.chat_line_message(4, go_elsewhere)),
+      ),
+    )
+  let #(_, removed_while_leaving) =
+    game_connection_support.feed(leaving, beast_removed())
+  let #(_, killed) = game_connection_support.killed(fissure.state)
+  list.each(
+    [
+      #(
+        "the child's landing tells the Beast the node, for the child's round, after the go's frames",
+        views_told(taken: fissure.landed),
+        [
+          #(
+            40,
+            fissure.beast_life,
+            creature.CastViewSet(
+              by: medic,
+              view: unit_casts.CastView(
+                caster_unit_id: fissure.unit_id,
+                cast_id: fissure.child_cast_id,
+                spell4_id: Spell4Id(41_886),
+                primary_target: 40,
+                gone: True,
+                current: False,
+                targets: [
+                  unit_casts.ViewTarget(unit_id: 40, count: 1, effects: [
+                    unit_casts.HeldEffect(
+                      effect_id: Spell4EffectsId(94_370),
+                      starts_ms: 1200,
+                      ends: unit_casts.EndsAt(ms: 9200),
+                    ),
+                  ]),
+                ],
+              ),
+              struck_at_ms: 1200,
+            ),
+          ),
+        ],
+      ),
+      #(
+        "the Beast's 0x355 ends its node on the caster's client and tells the Beast the view ended",
+        views_told(taken: removed),
+        [#(40, fissure.beast_life, ends)],
+      ),
+      #(
+        "an input that changes no node tells nothing",
+        views_told(taken: moved),
+        [],
+      ),
+      #(
+        "a camp's end tells the Beast the view ended, before the save is asked",
+        views_told(taken: camped),
+        [#(40, fissure.beast_life, ends)],
+      ),
+      #(
+        "UNABLE TO FAIL (an ask keeps no cast-state write): the Beast's 0x355 during the save tells nothing again",
+        views_told(taken: removed_while_saving),
+        [],
+      ),
+      #(
+        "a move to another world tells the Beast the view ended, before the map is asked to leave",
+        views_told(taken: left),
+        [#(40, fissure.beast_life, ends)],
+      ),
+      #(
+        "UNABLE TO FAIL (an ask keeps no cast-state write): the Beast's 0x355 during the leave tells nothing again",
+        views_told(taken: removed_while_leaving),
+        [],
+      ),
+      #(
+        "a killing blow from the Beast ends the casts and tells the Beast the view ended",
+        views_told(taken: killed),
+        [#(40, fissure.beast_life, ends)],
+      ),
+    ],
+    fn(row) {
+      assert row.1 == row.2 as row.0
+    },
+  )
 }
