@@ -13,6 +13,8 @@ import genesis_prime/message/spell_effect_result.{type SpellEffectResult}
 import genesis_prime/message/spell_target_info.{
   type SpellTargetInfo, SpellTargetInfo,
 }
+import gleam/int
+import gleam/list
 
 /// One unit's target info: its place in the list, target flags 0
 /// (`opcode.0x7f4.target_info`), the cast's count on it and the combat result.
@@ -49,6 +51,24 @@ pub fn effect(
     lifetime_ms:,
     result:,
   )
+}
+
+/// The delay an effect info tells for an effect whose delay still to run is `delay_ms`, on
+/// a node whose effects have the delays `node_delays_ms` and that holds an effect lasting
+/// until removed or not. The client builds no buff for a node whose earliest start (its
+/// smallest delay) plus longest lifetime is 0 in 32 bits, and an effect that lasts until
+/// removed has all bits as its lifetime, so when the node's smallest delay is 1 and it holds
+/// one, a delay of 1 is told as 2. A node with an effect at delay 0 sums to all bits and
+/// every delay is told as it is (`opcode.0x7f4.first_start`).
+pub fn told_delay_ms(
+  delay_ms delay_ms: Int,
+  node_delays_ms node_delays_ms: List(Int),
+  holds_until_removed holds_until_removed: Bool,
+) -> Int {
+  case delay_ms, holds_until_removed, list.reduce(node_delays_ms, int.min) {
+    1, True, Ok(1) -> 2
+    _, _, _ -> delay_ms
+  }
 }
 
 /// The result of an effect that tells no value: the bit whose meaning the client's

@@ -2741,6 +2741,65 @@ pub fn a_players_press_is_answered_0x7fd_go_and_finish_and_a_player_in_sight_rea
   login_support.stop(started)
 }
 
+/// The unit and the Spell4Effects id and delay of each effect info of one decoded go.
+fn effect_infos_of(go go: spell_go.SpellGo) -> List(#(Int, List(#(Int, Int)))) {
+  list.map(go.targets, fn(target) {
+    #(
+      target.unit_id,
+      list.map(target.effects, fn(effect) {
+        #(effect.spell4_effects_id, effect.delay_ms)
+      }),
+    )
+  })
+}
+
+/// The effect infos of the go of the cast `cast_id` among the frames.
+fn go_effect_infos(
+  frames frames: List(Frame),
+  cast_id cast_id: Int,
+) -> List(#(Int, List(#(Int, Int)))) {
+  list.filter(frames, fn(frame) { frame.message_id == spell_go.message_id })
+  |> list.filter_map(fn(frame) { spell_go.decode(frame.body) })
+  |> list.filter(fn(go) { go.cast_id == cast_id })
+  |> list.flat_map(effect_infos_of)
+}
+
+pub fn a_watcher_is_told_the_delays_of_spell4_36201_as_the_table_has_them_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // No client row sends a player to cast Spell4 36201 (an explorer route's music), which
+  // holds the Spell4Effects row 74798 (type 17, flags 2, delay 1) and the type 80 row
+  // 135368 (delay 0) on the primary target: the Medic's bag index 2 (SpellLevel 1089,
+  // Paralytic Surge) is given it, so a whole server tells the go of a real spell with
+  // both rows.
+  use tables <- fixture_tables.changed(table: "SpellLevel", id: 1089, with: [
+    #("spell4Id", planted_table.Integer(36_201)),
+  ])
+  let time = driven_time.new()
+  let TwoEntered(started:, first:, second:, first_have:, second_have:, ..) =
+    two_players_enter_on(tables:, first_class: 4, time:)
+  game_client.press_ability(
+    game: first,
+    client_cast_id: 1,
+    bag_index: 2,
+    target: 0,
+  )
+  let #(own, _) =
+    game_client.read_until_pong(game: first, have: first_have, number: 1)
+  let assert Ok(cast_id) =
+    game_client.confirmed_cast_of(frames: own, client_cast_id: 1)
+    as "opcode.0x7fd: the press of Spell4 36201 is answered with its server cast id"
+  let #(seen, _) =
+    game_client.read_until(game: second, have: second_have, found: fn(frames) {
+      go_effect_infos(frames:, cast_id:) != []
+    })
+  assert go_effect_infos(frames: seen, cast_id:)
+    == [#(1, [#(74_798, 1), #(135_368, 0)])]
+    as "opcode.0x7f4.first_start: the type 80 row 135368 starts at delay 0, so the client builds the buff and row 74798 (delay 1, flags 2) is told its own 1"
+  game_client.close(game: first)
+  game_client.close(game: second)
+  login_support.stop(started)
+}
+
 pub fn a_medics_discharge_pulses_three_times_and_a_player_in_sight_reads_the_same_casts_on_the_whole_server_test() -> Nil {
   use <- owned_test.run(60_000)
   let time = driven_time.new()

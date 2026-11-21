@@ -1535,9 +1535,27 @@ pub type Listed {
   Listed(
     effect_id: Spell4EffectsId,
     delay_ms: Int,
+    /// Whether the row's flags have bit 2: the effect lasts until removed, which the
+    /// delay its info tells depends on (`target_info.told_delay_ms`).
+    until_removed: Bool,
     instance_id: Option(Int),
     /// The description a heal carries, in place of the plain bit of the other effects.
     damage: Option(SpellDamageDescription),
+  )
+}
+
+/// The `Listed` effect of a row with the columns that give a node its life: its delay and
+/// whether it lasts until removed, with no instance id of its own and no description.
+pub fn listed_by_row(
+  effect_id effect_id: Spell4EffectsId,
+  row row: lasting.LastingRow,
+) -> Listed {
+  Listed(
+    effect_id:,
+    delay_ms: row.delay_ms,
+    until_removed: row.until_removed,
+    instance_id: None,
+    damage: None,
   )
 }
 
