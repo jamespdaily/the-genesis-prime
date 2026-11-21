@@ -179,7 +179,7 @@ pub type Units {
 }
 
 /// Everything the bot keeps between steps.
-type Bot {
+pub opaque type Bot {
   Bot(
     game: Game,
     env: Env,
@@ -205,24 +205,14 @@ pub fn play(
   env env: Env,
 ) -> Result(Played, Stuck) {
   let bot = at_the_entry(game:, have:, entry:, env:)
-  use bot <- step(bot, "enter the simulation", entered)
-  use bot <- step(bot, "10513: visit the three places", the_first_visits)
-  use bot <- step(
-    bot,
-    "10527: hoverboard, finish line, projector",
-    hoverboard_run,
-  )
-  use bot <- step(
-    bot,
-    "10518: beasts, mines, turrets, ring",
-    the_training_fights,
-  )
+  use bot <- the_opening(bot)
+  use bot <- the_fights(bot)
   use bot <- step(bot, "10529 and 10525: Dorian, the talks", the_talks)
   use bot <- step(bot, "10540: the Solitude of Secrets", the_solitude)
   use bot <- step(bot, "10519: the three presses", the_presses)
   use bot <- step(bot, "10520: places, boss, last projector", the_last_island)
   use bot <- step(bot, "10528: Rhoda, the terminal's yes", the_departure)
-  Ok(Played(frames: list.flatten(list.reverse(bot.chunks))))
+  Ok(played(bot))
 }
 
 /// Plays the first steps of `play` and stops after one kill of the first beast: the
@@ -236,6 +226,67 @@ pub fn play_opening(
   env env: Env,
 ) -> Result(Played, Stuck) {
   let bot = at_the_entry(game:, have:, entry:, env:)
+  use bot <- the_opening(bot)
+  use bot <- step(bot, "10518: the first beast", the_first_kill)
+  Ok(played(bot))
+}
+
+/// Plays the first steps of `play` and stops with 10529 accepted and a Dorian
+/// (Creature2 73491) in sight: the entry, 10513, 10527 and 10518. The bot it gives is
+/// read and moved on with `units`, `at`, `have`, `took_in` and `approach_unit`.
+pub fn play_to_the_dorians(
+  game game: Game,
+  have have: BitArray,
+  entry entry: List(Frame),
+  env env: Env,
+) -> Result(Bot, Stuck) {
+  let bot = at_the_entry(game:, have:, entry:, env:)
+  use bot <- the_opening(bot)
+  use bot <- the_fights(bot)
+  use bot <- step(bot, "a Dorian in sight", fn(bot) {
+    let #(bot, _, _) = find(bot, [dorian])
+    Ok(bot)
+  })
+  Ok(bot)
+}
+
+/// What the bot has heard of the units around it.
+pub fn units(bot bot: Bot) -> Units {
+  bot.units
+}
+
+/// Where the bot stands.
+pub fn at(bot bot: Bot) -> Point {
+  bot.at
+}
+
+/// The bytes the bot has read beyond the last frame it decoded.
+pub fn have(bot bot: Bot) -> BitArray {
+  bot.have
+}
+
+/// The bot after another reader took `have` from its connection and read `frames` from
+/// it: the bot holds the bytes and hears the frames.
+pub fn took_in(
+  bot bot: Bot,
+  have have: BitArray,
+  frames frames: List(Frame),
+) -> Bot {
+  Bot(..bot, have:, units: hear(units: bot.units, frames:))
+}
+
+/// The bot after it moves to where a unit at `at` is within reach of use, and reads all
+/// the connection wrote in answer.
+pub fn approach_unit(bot bot: Bot, at at: Point) -> Bot {
+  approach(bot:, at:)
+}
+
+/// The steps every path starts with: the entry, 10513's three places, and 10527's
+/// hoverboard, finish line and projector.
+fn the_opening(
+  bot bot: Bot,
+  then then: fn(Bot) -> Result(played, Stuck),
+) -> Result(played, Stuck) {
   use bot <- step(bot, "enter the simulation", entered)
   use bot <- step(bot, "10513: visit the three places", the_first_visits)
   use bot <- step(
@@ -243,8 +294,25 @@ pub fn play_opening(
     "10527: hoverboard, finish line, projector",
     hoverboard_run,
   )
-  use bot <- step(bot, "10518: the first beast", the_first_kill)
-  Ok(Played(frames: list.flatten(list.reverse(bot.chunks))))
+  then(bot)
+}
+
+/// The step of 10518's beasts, mines, turrets and ring.
+fn the_fights(
+  bot bot: Bot,
+  then then: fn(Bot) -> Result(played, Stuck),
+) -> Result(played, Stuck) {
+  use bot <- step(
+    bot,
+    "10518: beasts, mines, turrets, ring",
+    the_training_fights,
+  )
+  then(bot)
+}
+
+/// Every frame the server wrote to the bot, in order.
+fn played(bot: Bot) -> Played {
+  Played(frames: list.flatten(list.reverse(bot.chunks)))
 }
 
 /// The bot standing where the entry placed it, holding the entry's frames.
@@ -283,8 +351,8 @@ fn step(
   bot bot: Bot,
   name name: String,
   run run: fn(Bot) -> Result(Bot, Blocked),
-  then then: fn(Bot) -> Result(Played, Stuck),
-) -> Result(Played, Stuck) {
+  then then: fn(Bot) -> Result(played, Stuck),
+) -> Result(played, Stuck) {
   case open_wait.named(name, fn() { run(bot) }) {
     Ok(bot) -> then(bot)
     Error(Blocked(reason:)) -> Error(Stuck(step: name, reason:))
@@ -366,6 +434,7 @@ fn the_talks(bot: Bot) -> Result(Bot, Blocked) {
     quest_bot.use_unit(game: bot.game, have: bot.have, unit_id: dorian_unit)
   let bot = took(bot:, frames: answer.frames, have:)
   let bot = await_state(bot:, quest_id: 10_529, state: 3)
+  let bot = spend(await_gone(bot:, unit_id: dorian_unit), dorian_unit)
   use bot <- result.try(accept_from(
     bot:,
     givers: [dorian],
@@ -597,6 +666,22 @@ fn await_state(bot bot: Bot, quest_id quest_id: Int, state state: Int) -> Bot {
         found: told,
       )
   }
+}
+
+/// Returns once the server has removed the unit from the bot's picture (0x355): at
+/// once when an earlier read held it, else when it comes. A unit the objective's
+/// release rule removes is removed by the map, so its 0x355 is not ordered against
+/// the pong that ended the use, and a unit chosen before it came would be gone by the
+/// next talk.
+fn await_gone(bot bot: Bot, unit_id unit_id: Int) -> Bot {
+  use <- bool.guard(when: !dict.has_key(bot.units.others, unit_id), return: bot)
+  read_until(
+    bot,
+    what: "0x355 of unit " <> int.to_string(unit_id),
+    found: fn(frames) {
+      list.contains(game_client.removals_in(frames:), unit_id)
+    },
+  )
 }
 
 // Moving
