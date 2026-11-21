@@ -23,7 +23,8 @@ start(Module, Environment) ->
     Eval = "genesis_prime@@main:run(" ++ binary_to_list(Module) ++ ")",
     Port = open_port({spawn_executable, Erl},
                      [{args, ["-noshell", "-pa" | Paths] ++ ["-eval", Eval]},
-                      {env, database_support_ffi:environment(Environment)},
+                      {env, fixed_seed_ffi:node_environment()
+                            ++ database_support_ffi:environment(Environment)},
                       exit_status, stderr_to_stdout, binary]),
     {os_pid, OsPid} = erlang:port_info(Port, os_pid),
     Owner = self(),

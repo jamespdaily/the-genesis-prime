@@ -7,7 +7,8 @@ that `./check` starts on the built code (run_built). The stub takes the argument
 the real VM takes (`-extra FILE --seed N --no-color`), keeps one line per start in
 PLANT_REPEAT/starts.log (its ticket number, seed, file, how many stubs were alive
 beside it, and the skip variables it was given), and prints what unitest prints:
-the status line, the seed, and for a failing run the "Failures:" section.
+the status line, the seed, and for a failing run the "Failures:" section. The log line
+ends with the GENESIS_TEST_SEED_SALT the stub was given (test/fixed_seed.gleam reads it).
 
 - PLANT_AT_ONCE=N: each of the first N stubs to start waits until all N have started
   (none leaves before the others have arrived), and fails when they have not within
@@ -63,9 +64,9 @@ ticket=1
 until (set -C; : >"$dir/ticket.$ticket") 2>/dev/null; do ticket=$((ticket + 1)); done
 touch "$dir/alive.$$"
 alive() { ls "$dir" | grep -c '^alive\\.'; }
-printf 'start %s seed %s file %s alive %s skip %s%s%s%s\\n' "$ticket" "$seed" "$file" "$(alive)" \\
+printf 'start %s seed %s file %s alive %s skip %s%s%s%s salt %s\\n' "$ticket" "$seed" "$file" "$(alive)" \\
   "$GENESIS_TEST_SKIP_SERIAL" "$GENESIS_TEST_SKIP_WORLD_DATA" "$GENESIS_TEST_SKIP_CLIENT_ROWS" \\
-  "$GENESIS_TEST_SKIP_DEV_TOOL" >>"$dir/starts.log"
+  "$GENESIS_TEST_SKIP_DEV_TOOL" "$GENESIS_TEST_SEED_SALT" >>"$dir/starts.log"
 if [ -n "$PLANT_AT_ONCE" ] && [ "$ticket" -le "$PLANT_AT_ONCE" ]; then
   touch "$dir/arrived.$ticket"
   arrived() { ls "$dir" | grep -c '^arrived\\.'; }
@@ -266,6 +267,33 @@ class RepeatTestsTest(PlantedRepeatCase):
         # The tests that need the whole machine are skipped as ./check's test run skips them.
         self.assertEqual({row["skip"] for row in rows}, {"1111"})
 
+    def test_each_run_gets_its_own_salt_and_a_failing_run_prints_the_command_that_repeats_it(self):
+        self.commit("change a test file", change=["test/changed_test.gleam"])
+        done = self.run_script(
+            GENESIS_REPEAT_RUNS="6",
+            GENESIS_REPEAT_AT_ONCE="3",
+            PLANT_FAILS_ON_START="4",
+            # A salt in the caller's environment is not the runs'.
+            GENESIS_TEST_SEED_SALT="from-the-caller",
+        )
+        output = done.stdout + done.stderr
+        self.assertEqual(done.returncode, 1, output)
+        rows = self.starts()
+        salts = [row["salt"] for row in rows]
+        self.assertEqual(len(rows), 6)
+        self.assertTrue(all(re.fullmatch(r"\d+", salt) for salt in salts), salts)
+        self.assertEqual(len(set(salts)), 6, "every run has a salt of its own, so each rolls other dice")
+        failing = next(row for row in rows if row["start"] == "4")
+        self.assertIn(
+            "repeat it: GENESIS_TEST_SEED_SALT=%s gleam test -- test/changed_test.gleam --seed %s"
+            % (failing["salt"], failing["seed"]),
+            output,
+            "the failing run's command names the salt its VM was given",
+        )
+        for row in rows:
+            if row is not failing:
+                self.assertNotIn("SALT=%s " % row["salt"], output, "a passing run's salt is not named")
+
     def test_one_failing_run_fails_it_naming_the_seed_and_test(self):
         self.commit("change two test files", change=["test/changed_test.gleam"], add=["test/added_test.gleam"])
         done = self.run_script(
@@ -308,6 +336,12 @@ class RepeatTestsTest(PlantedRepeatCase):
         hung = next(row for row in self.starts() if row["start"] == "4")
         self.assertIn("FAILED test/changed_test.gleam with seed %s" % hung["seed"], output)
         self.assertIn("still going after 1 seconds and was killed", output)
+        self.assertIn(
+            "repeat it: GENESIS_TEST_SEED_SALT=%s gleam test -- test/changed_test.gleam --seed %s"
+            % (hung["salt"], hung["seed"]),
+            output,
+            "a killed run's command names its salt too",
+        )
         self.assertIn("    check WARNING: test planted_test:the_hung_test", output, "the open waits are named")
         self.assertIn("1 of 6 runs failed", output)
         self.assertNotIn("all ", output.splitlines()[-1], "a repeat with a killed run never says all passed")

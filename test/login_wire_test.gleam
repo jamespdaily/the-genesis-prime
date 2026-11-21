@@ -208,3 +208,32 @@ pub fn a_client_that_reconnects_writing_login_start_before_connect_logs_in_to_th
   assert holder.login_name == vector.name
   login_support.stop(started)
 }
+
+/// The session key of one sts login of the library's vector on the tree at `ports`,
+/// with the client's SRP seed 7.
+fn session_key_of_a_login(ports: login_client.Ports) -> BitArray {
+  let client = login_client.sts_connect(ports)
+  let #(_answered, exchange) =
+    login_client.srp_exchange(
+      client:,
+      name: vector.name,
+      password: vector.password,
+      seed: 7,
+    )
+  exchange.session_key
+}
+
+pub fn the_sts_login_of_one_test_ends_in_the_same_key_on_two_trees_and_in_another_on_a_second_connection_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(first_tree, first_ports, _account) = login_support.start_with_jim()
+  let #(second_tree, second_ports, _account) = login_support.start_with_jim()
+  let first = session_key_of_a_login(first_ports)
+  let same_again_on_another_tree = session_key_of_a_login(second_ports)
+  let second_connection = session_key_of_a_login(first_ports)
+  assert first == same_again_on_another_tree
+    as "the first sts connection of each tree takes the seed of this test's first sts connection, so the server's b and the key are the same (sts_connection.gleam: b from the seed)"
+  assert first != second_connection
+    as "the second sts connection of a tree takes the seed of ordinal 2, so the server's b and the key differ"
+  login_support.stop(first_tree)
+  login_support.stop(second_tree)
+}

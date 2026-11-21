@@ -13,7 +13,10 @@ GENESIS_REPEAT_RUNS (default 40) is the number of VM starts in all; each file ge
 max(2, GENESIS_REPEAT_RUNS // files) of them, so a pull request with many test files gets
 fewer runs of each. Each run is a VM of its own on the code `gleam build` already built,
 with its own random seed, GENESIS_REPEAT_AT_ONCE VMs at a time (default the number of
-CPUs), so every run is under the load of the others. A VM takes the file as its one argument
+CPUs), so every run is under the load of the others. The seed orders the tests and is also
+the run's GENESIS_TEST_SEED_SALT (test/fixed_seed.gleam), so each run's whole-server tests
+roll other dice: without it all runs would roll the same ones, and a test that depends on a
+roll could not fail here. A VM takes the file as its one argument
 because unitest runs one file per start. The skip variables are the ones ./check's test run
 sets: the tests tagged serial (they share a machine-wide resource, so VMs side by side
 would break them), world_data, client_rows and dev_tool are not run.
@@ -29,8 +32,8 @@ reported as a failed run. A file whose every test is skipped (or that has none) 
 it is reported as "not repeated", never as passed, and its later runs do not start.
 
 Each failing run is printed as soon as it ends: its file, seed, why it failed (failing
-tests, killed by a signal, a non-zero exit, no result line, still going at the run limit), the command that repeats it (`gleam test -- FILE --seed SEED`)
-and the part of its output that says why. The output of every run is kept in the folder
+tests, killed by a signal, a non-zero exit, no result line, still going at the run limit), the command that repeats it
+(`GENESIS_TEST_SEED_SALT=SEED gleam test -- FILE --seed SEED`) and the part of its output that says why. The output of every run is kept in the folder
 the failure names. The script exits 1 when a run's tests failed, a run crashed or a run was killed at the limit, 2 for a setting or a
 git answer it cannot use, and 0 otherwise, warnings included. It starts `erl` from PATH, so run it with the patched OTP first on PATH,
 as ./check does.
@@ -56,6 +59,8 @@ MINIMUM_RUNS_PER_FILE = 2
 DEFAULT_RUN_SECONDS = 300
 DEFAULT_BUDGET_SECONDS = 450
 WARNING = "check WARNING:"
+# The variable test/fixed_seed.gleam reads: the salt every seed of a whole-server test is derived with.
+SALT_VARIABLE = "GENESIS_TEST_SEED_SALT"
 
 # The variables ./check's gleam_test sets for its first test run (test/genesis_prime_test.gleam
 # reads them), less the literal peak file.
@@ -143,7 +148,7 @@ def execute(run: Run, logs: Path, seconds: int, without_tests: set[str], deadlin
     if time.monotonic() >= deadline:
         return Outcome(run, "not_started", "", None)
     log = logs / ("run-%d.log" % run.number)
-    environment = {**os.environ, **{variable: "1" for variable in SKIP_VARIABLES}}
+    environment = {**os.environ, **{variable: "1" for variable in SKIP_VARIABLES}, SALT_VARIABLE: str(run.seed)}
     with open(log, "w") as output:
         try:
             done = subprocess.run(
@@ -163,6 +168,11 @@ def execute(run: Run, logs: Path, seconds: int, without_tests: set[str], deadlin
     return Outcome(run, "passed", "", log)
 
 
+def repeat_command(run: Run) -> str:
+    """The command that repeats the run: the same test order and the same dice."""
+    return "%s=%d gleam test -- %s --seed %d" % (SALT_VARIABLE, run.seed, run.file, run.seed)
+
+
 def report_failure(outcome: Outcome) -> None:
     assert outcome.log is not None
     text = outcome.log.read_text(errors="replace")
@@ -171,7 +181,7 @@ def report_failure(outcome: Outcome) -> None:
     print("FAILED %s with seed %d (%s)" % (run.file, run.seed, outcome.reason))
     names = FAILING_TEST.findall(text[text.find(FAILURES_MARK):] if FAILURES_MARK in text else "")
     print("  failing tests: %s" % (", ".join(names) if names else "none named, see the output"))
-    print("  repeat it: gleam test -- %s --seed %d" % (run.file, run.seed))
+    print("  repeat it: %s" % repeat_command(run))
     print("  output: %s" % outcome.log)
     lines = text.splitlines()
     start = lines.index(FAILURES_MARK) if FAILURES_MARK in lines else max(len(lines) - TAIL_LINES, 0)
@@ -189,12 +199,11 @@ def report_timeout(outcome: Outcome) -> None:
     print()
     print("FAILED %s with seed %d (%s)" % (run.file, run.seed, outcome.reason))
     print("  failing tests: none, the run never ended")
-    print("  repeat it: gleam test -- %s --seed %d" % (run.file, run.seed))
+    print("  repeat it: %s" % repeat_command(run))
     print("  output: %s" % outcome.log)
-    # A seed orders the tests but does not replay a hang (the rolls come from the
-    # operating system), so the log is the only record of what hung: owned_test's
-    # warnings name the waits still open, and output after them can push them out
-    # of the tail.
+    # A seed and its salt repeat the order and the dice but not the timing of a hang,
+    # so the log is the best record of what hung: owned_test's warnings name the waits
+    # still open, and output after them can push them out of the tail.
     assert outcome.log is not None
     lines = outcome.log.read_text(errors="replace").splitlines()
     warnings = [line for line in lines[:-TAIL_LINES] if line.startswith(WARNING)]

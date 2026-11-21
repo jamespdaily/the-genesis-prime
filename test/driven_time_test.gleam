@@ -11,13 +11,18 @@
 import ask_support
 import driven_time
 import event_wait
-import genesis_prime/connection/script.{type Elapsed, Elapsed}
+import genesis_prime/connection/script.{type Elapsed, Elapsed, Issued, Script}
+import genesis_prime/seed
 import genesis_prime/service/shell.{type ServiceTime}
-import genesis_prime/step.{TimerId}
+import genesis_prime/step.{Now, TimerId}
+import genesis_prime/wire_recording.{Accepted}
+import gleam/bit_array
 import gleam/dynamic.{type Dynamic}
 import gleam/erlang/atom
 import gleam/erlang/process.{type Pid, type Subject}
 import gleam/erlang/reference
+import gleam/list
+import gleam/option.{Some}
 import mailbox_support
 import open_wait
 import owned_test
@@ -335,4 +340,61 @@ pub fn a_timer_cancelled_before_its_time_never_fires_on_the_driven_clock_test() 
   // Absence check: the limit is how long this watches for a message that must
   // not come, here a look at the mailbox now.
   assert process.receive(fired, 0) == Error(Nil)
+}
+
+/// What a script over other scripts keeps and what the driven clock takes: the seed
+/// and ordinal the wrapped scripts gave stay, so a tree's seeded listener keeps its
+/// seed under a driven clock; the clock and the scheduler are the driven ones.
+pub fn scripts_over_other_scripts_keep_their_seed_and_take_the_driven_clock_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let time = driven_time.new()
+  let assert Ok(planted_seed) =
+    seed.from_bytes(bit_array.concat(list.repeat(<<9>>, seed.byte_count)))
+    as "32 bytes are a seed"
+  let scheduled_by_the_wrapped = process.new_subject()
+  let wrapped_now = Now(monotonic_ms: 4242, filetime: 7)
+  let over = fn() {
+    Ok(Issued(
+      ordinal: 7,
+      script: Script(
+        seed: planted_seed,
+        clock: fn(_input) { wrapped_now },
+        node_monotonic_ms: fn(_now) { 4243 },
+        schedule: fn(_subject, _timer, _reference, _after_ms) {
+          process.send(scheduled_by_the_wrapped, Nil)
+          fn() { Nil }
+        },
+        next_read: fn() { Some(5) },
+      ),
+    ))
+  }
+  let assert Ok(issued) = driven_time.scripts(time:, over:)()
+    as "the scripts hand out the wrapped script"
+  assert issued.ordinal == 7 as "the ordinal is the wrapped script's"
+  assert issued.script.seed == planted_seed
+    as "the seed is the wrapped script's, not one from the operating system"
+  assert issued.script.next_read() == Some(5)
+    as "the read size is the wrapped script's"
+  assert issued.script.clock(Accepted) == driven_time.now(time:)
+    as "the clock reads the driven time"
+  assert issued.script.clock(Accepted) != wrapped_now
+    as "the wrapped script's clock is not read"
+  let _cancel =
+    issued.script.schedule(
+      process.new_subject(),
+      TimerId(4),
+      reference.new(),
+      100,
+    )
+  assert driven_time.pending_of(time:, owner: process.self()) == [TimerId(4)]
+    as "the timer is started on the driven clock"
+  assert process.receive(scheduled_by_the_wrapped, 0) == Error(Nil)
+    as "the wrapped script's scheduler started nothing"
+}
+
+pub fn scripts_over_scripts_that_have_run_out_pass_the_end_through_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let time = driven_time.new()
+  assert driven_time.scripts(time:, over: fn() { Error(Nil) })() == Error(Nil)
+    as "a replay's scripts that have no connection left end the connection, as they do unwrapped"
 }
