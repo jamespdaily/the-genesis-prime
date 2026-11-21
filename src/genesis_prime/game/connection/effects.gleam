@@ -256,7 +256,8 @@ pub fn carry_out(
 /// (`stay_timers_cancelled`) cancelled; the session keeps the chat's next whisper number,
 /// which counts for the connection's life. Each creature is told its casts' views ended,
 /// after the cast effects, and the entered it returns holds the cast state of that
-/// compare: a creature's news during the ask that follows tells nothing again.
+/// compare. The stay's messages are dropped while the ask that follows is out
+/// (`connection.stay_sent`), so no creature's news reaches the cast state again.
 pub fn world_left(
   session session: Session,
   now now: Now,
