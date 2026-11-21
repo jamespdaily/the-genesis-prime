@@ -29,7 +29,7 @@ import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{type Spell}
 import genesis_prime/game/target_mechanic
 import genesis_prime/table/id.{
-  Spell4ConditionsId, Spell4Id, Spell4TargetMechanicsId, Spell4ValidTargetsId,
+  Spell4ConditionsId, Spell4Id, Spell4ValidTargetsId,
 }
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest_objective
@@ -287,16 +287,16 @@ fn mechanics_of(
   #(spell4_base.Spell4Base, spell4_target_mechanics.Spell4TargetMechanics),
   AimError,
 ) {
-  use base <- result.try(
-    spell4_base.get(tables:, id: spell4.spell4_base_id_base_spell(row))
-    |> result.replace_error(NoBaseRow),
-  )
-  spell4_target_mechanics.get(
+  target_mechanic.rows_of_base(
     tables:,
-    id: Spell4TargetMechanicsId(base.spell4_target_mechanic_id),
+    base_id: spell4.spell4_base_id_base_spell(row),
   )
-  |> result.replace_error(NoTargetMechanicsRow)
-  |> result.map(fn(mechanics) { #(base, mechanics) })
+  |> result.map_error(fn(missing) {
+    case missing {
+      target_mechanic.NoBaseRow(..) -> NoBaseRow
+      target_mechanic.NoTargetMechanicsRow(..) -> NoTargetMechanicsRow
+    }
+  })
 }
 
 /// The targetType of the spell's Spell4TargetMechanics row, or `Error(Nil)` when its

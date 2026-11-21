@@ -47,6 +47,11 @@
 ////   apart from the rows that strike once. A row that lasts until removed (flags bit 2)
 ////   is left out by the load (`TickingUntilRemoved`), and `checker` refuses a spell that holds
 ////   one, so no planned ability's press waits on a damage row that is never played.
+//// - **A Proxy with its spell in dataBits01** (dataBits00 0 and a Spell4 id in dataBits01,
+////   `ProxyNamesSpellInDataBits01`) starts nothing, since the Proxy reader reads dataBits00
+////   only (`Spell4Effects.effectType.26`), so `checker` refuses a spell that holds one beside
+////   a hit row placed on the cast's target: the ability that row would free casts and
+////   applies nothing.
 //// - **Order.** Every area row of the level-1 abilities has `targetSelection`
 ////   1, and none strikes a dead unit (`Spell4AoeTargetConstraints.targetSelection`,
 ////   `Spell4ValidTargets.targetBitmask`). A creature's special may also select Furthest (2)
@@ -59,9 +64,9 @@
 //// - **Where a hit is centred** is its anchor, one for the spell (`anchor_of`): a hit row is
 ////   placed on the caster (`targetTypeFlags` 1) or on the cast's target (0 or 2), and drawn where
 ////   the cast's 0x7ff puts it and stays there (TelegraphDamage flag 0x4000 or 0x1000:
-////   `FixedAtCaster`, `FixedAtTarget`) or follows its unit (`FollowsCaster`, `FollowsTarget`). A creature special whose rows, or whose hit twin and
-////   drawn row, are not placed alike is refused (`PlacedApart`), so the hit is always where the
-////   picture is (`0x140546e60.placement_branches`, `0x14054b1b0.fixed_placement`,
+////   `FixedAtCaster`, `FixedAtTarget`) or follows its unit (`FollowsCaster`, `FollowsTarget`).
+////   A creature special whose rows, or whose hit twin and drawn row, are not placed alike is
+////   refused (`PlacedApart`), so the hit is always where the picture is (`0x140546e60.placement_branches`, `0x14054b1b0.fixed_placement`,
 ////   `0x14054b1b0.follows_caster`). A player's row placed at the position the cast holds
 ////   (`targetTypeFlags` 8) is `FixedAtCaster` whatever its flags: the client stores that
 ////   position and yaw once, when the cast starts (`0x14053a210.held_position`). A player's hit
@@ -69,12 +74,14 @@
 ////   its primary target. Nullifier 58868 (row 2789, flags 1 with 0x1000) is `FixedAtCaster`;
 ////   its phase holds no damage row and selects no area, so its anchor moves no strike.
 //// - **Who the primary target is** follows from how the spell is started
-////   (genesis_prime/game/spell_plan `Start`): the caster for a press and a Proxy on the caster,
-////   another unit for a Proxy on each struck unit and a proc. A row on the target of a spell
-////   started on another unit is built only as a circle with no offset, which reads no yaw
-////   (`start_placed`), and a pressed spell's row on the target only when the spell is cast at
-////   the caster, since the press names the caster and reads no other target
-////   (`targeting_given`, `target_mechanic.kind_of`).
+////   (genesis_prime/game/spell_plan `Start`): the caster for a press, a Proxy on the caster and
+////   a proc aimed at its holder (`AtHolder`), the struck unit for a Proxy on each struck unit,
+////   and another unit for a proc aimed at one (`AtOtherUnit`, which falls back to the holder
+////   when the event has none, so its spell is still built only as for another unit). A row on
+////   the target of a spell started on a struck unit or by a proc aimed at another unit is built
+////   only as a circle with no offset, which reads no yaw (`start_placed`), and a pressed
+////   spell's row on the target only when the spell is cast at the caster, since the press names
+////   the caster and reads no other target (`targeting_given`, `target_mechanic.takes_caster`).
 //// - **Which spells** are read: the spells of each level-1 ability's tree
 ////   (genesis_prime/game/spell_plan), its threshold stages (Spell4Thresholds) included,
 ////   a Proxy behind a target prerequisite excepted, since it is never started. A spell
@@ -119,15 +126,13 @@ import genesis_prime/game/ticking
 import genesis_prime/gap
 import genesis_prime/table/id.{
   type Spell4EffectsId, type Spell4Id, Spell4AoeTargetConstraintsId,
-  Spell4EffectsId, Spell4TargetMechanicsId, Spell4ValidTargetsId,
-  TelegraphDamageId,
+  Spell4EffectsId, Spell4Id, Spell4ValidTargetsId, TelegraphDamageId,
 }
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_aoe_target_constraints
 import genesis_prime/table/spell4_base
 import genesis_prime/table/spell4_effects
-import genesis_prime/table/spell4_target_mechanics
 import genesis_prime/table/spell4_telegraph
 import genesis_prime/table/spell4_valid_targets
 import genesis_prime/table/telegraph_damage
@@ -286,6 +291,15 @@ pub type AreaError {
   /// A drawn hit row is timed from a phase's go instead of the cast's start (flag 0x2000), a
   /// window the creature reading does not build.
   TelegraphTimedFromAGo(spell4_id: Int, telegraph_id: Int)
+  /// A Proxy row names no spell in dataBits00 but holds the id of a Spell4 row in dataBits01
+  /// (`Spell4Effects.effectType.26` reads only dataBits00), in a spell whose hit row is placed
+  /// on the cast's target: `checker` refuses the spell, since the ability that row frees would
+  /// be planned and apply nothing.
+  ProxyNamesSpellInDataBits01(
+    spell4_id: Int,
+    effect_id: Int,
+    named_spell4_id: Int,
+  )
   /// A damage effect is aimed by a flag value not read.
   AimNotRead(spell4_id: Int, effect_id: Int, target_flags: Int)
   /// A damage effect's formula reads a parameter a player's value does not.
@@ -366,7 +380,10 @@ pub fn describe(error error: AreaError) -> String {
         spell_plan.Proxied(target: spell_plan.OnCaster) -> "on the caster"
         spell_plan.Proxied(target: spell_plan.OnEachStruck) ->
           "on each struck unit"
-        spell_plan.FromProc -> "by a proc"
+        spell_plan.FromProc(aim: spell_plan.AtHolder) ->
+          "by a proc aimed at its holder"
+        spell_plan.FromProc(aim: spell_plan.AtOtherUnit) ->
+          "by a proc aimed at another unit"
       }
       <> ", on a unit whose facing the strike does not know, and the row's shape is not a circle at that unit's place"
     TelegraphOnStruckUnits(spell4_id:, telegraph_id:, target_type_flags:) ->
@@ -399,6 +416,14 @@ pub fn describe(error error: AreaError) -> String {
       <> " has a hit telegraph "
       <> int.to_string(telegraph_id)
       <> " timed from a go (flag 0x2000), a window the load does not read"
+    ProxyNamesSpellInDataBits01(spell4_id:, effect_id:, named_spell4_id:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a Proxy effect "
+      <> int.to_string(effect_id)
+      <> " with no spell in dataBits00 and the Spell4 row "
+      <> int.to_string(named_spell4_id)
+      <> " in dataBits01, which the load does not read, so the ability would apply nothing"
     AimNotRead(spell4_id:, effect_id:, target_flags:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -485,23 +510,66 @@ pub fn build(tables tables: table_store.Tables) -> Result(Areas, AreaError) {
 }
 
 /// What a later ability's spells must pass to be planned (genesis_prime/game/spell_plan
-/// `Checker`): the area of each is built as `build` builds it, and an error of what the
-/// rule does not build leaves the ability out of the plans, so no ability holds a
-/// spell the load of the areas would refuse.
+/// `Checker`): the area of each is built as `build` builds it, no damage row lasts until
+/// removed and no Proxy holds a spell in dataBits01 alone beside a hit row placed on the cast's
+/// target, and an error of what the rule does
+/// not build leaves the ability out of the plans, so no ability holds a spell the load of the
+/// areas would refuse.
 pub fn checker(tables tables: table_store.Tables) -> spell_plan.Checker {
   let effects = spell_plan.effects_by_spell(tables:)
   let links = telegraph_links_by_spell(tables:)
   fn(spell: Spell, start: Start) {
     let id = spell.spell4_id.value
     area_of(tables:, effects:, links:, spell:)
-    |> result.try(fn(area) { start_checked(tables:, area:, start:) })
-    |> result.try(fn(_) {
+    |> result.try(fn(area) {
+      start_checked(tables:, area:, start:) |> result.replace(area)
+    })
+    |> result.try(fn(area) {
       case until_removed_damage_row_of(tables:, effects:, id:) {
         Some(error) -> Error(error)
-        None -> Ok(Nil)
+        None ->
+          case placed_on_the_target(area:) {
+            True -> proxy_naming_a_spell_in_data_of(tables:, effects:, id:)
+            False -> Ok(Nil)
+          }
       }
     })
     |> result.map_error(plan_error_of(error: _, spell4_id: id))
+  }
+}
+
+/// The refusal of the first Proxy row of the spell that has no spell in dataBits00 and the id
+/// of a Spell4 row in dataBits01 (`ProxyNamesSpellInDataBits01`). Only `checker` runs it, for a
+/// spell with a hit row on the cast's target; a Proxy with dataBits01 0 names nothing and stays
+/// accepted.
+fn proxy_naming_a_spell_in_data_of(
+  tables tables: table_store.Tables,
+  effects effects: Dict(Int, List(spell4_effects.Spell4Effects)),
+  id id: Int,
+) -> Result(Nil, AreaError) {
+  let found =
+    dict.get(effects, id)
+    |> result.unwrap([])
+    |> list.find_map(fn(effect) {
+      let is_proxy_with_no_spell =
+        effect_kind.kind_of(effect.effect_type) == effect_kind.Proxy
+        && effect.data_bits00 == 0
+      case
+        is_proxy_with_no_spell,
+        spell4.get(tables:, id: Spell4Id(effect.data_bits01))
+      {
+        True, Ok(_) ->
+          Ok(ProxyNamesSpellInDataBits01(
+            spell4_id: id,
+            effect_id: effect.id,
+            named_spell4_id: effect.data_bits01,
+          ))
+        True, Error(Nil) | False, Ok(_) | False, Error(Nil) -> Error(Nil)
+      }
+    })
+  case found {
+    Ok(error) -> Error(error)
+    Error(Nil) -> Ok(Nil)
   }
 }
 
@@ -528,6 +596,7 @@ fn plan_error_of(
     | TelegraphTimedFromAGo(..)
     | AimNotRead(..)
     | FormulaNotRead(..)
+    | ProxyNamesSpellInDataBits01(..)
     | TickingUntilRemoved(..)
     | TickingNoTick(..) ->
       spell_plan.AreaNotBuilt(spell4_id:, reason: describe(error:))
@@ -566,20 +635,24 @@ fn start_checked(
 
 /// Whether the strike centres a spell started as `start` where its hit rows are drawn. A
 /// press and a Proxy on the caster have the caster as their primary target, so every anchor is
-/// the caster's place. A spell started on a struck unit or by a proc has another unit as its
-/// primary target, whose place the strike knows and whose yaw it does not (`strike.select`: yaw
-/// 0.0): a row on the caster is centred on the caster, and a row on the target only when every
-/// hit shape is a circle with no offset, which reads no yaw (`area.in_shape`; a turned circle is
-/// the same circle). Any other shape of a row on the target is turned or moved by the unit's
-/// facing on the client (`0x14054b1b0.follows_caster`).
+/// the caster's place, and so does a proc aimed at its holder (`cast` `proc_started` casts it at
+/// the holder). A spell started on a struck unit, or by a proc aimed at another unit, has another
+/// unit as its primary target, whose place the strike knows and whose yaw it does not
+/// (`strike.select`: yaw 0.0): a row on the caster is centred on the caster, and a row on the
+/// target only when every hit shape is a circle with no offset, which reads no yaw
+/// (`area.in_shape`; a turned circle is the same circle). Any other shape of a row on the
+/// target is turned or moved by the unit's facing on the client (`0x14054b1b0.follows_caster`).
 pub fn start_placed(
   anchor anchor: Anchor,
   start start: Start,
   shapes shapes: List(Placement),
 ) -> Bool {
   case start {
-    spell_plan.Pressed | spell_plan.Proxied(target: spell_plan.OnCaster) -> True
-    spell_plan.Proxied(target: spell_plan.OnEachStruck) | spell_plan.FromProc ->
+    spell_plan.Pressed
+    | spell_plan.Proxied(target: spell_plan.OnCaster)
+    | spell_plan.FromProc(aim: spell_plan.AtHolder) -> True
+    spell_plan.Proxied(target: spell_plan.OnEachStruck)
+    | spell_plan.FromProc(aim: spell_plan.AtOtherUnit) ->
       case anchor {
         FollowsCaster | FixedAtCaster -> True
         FollowsTarget | FixedAtTarget -> list.all(shapes, is_plain_circle)
@@ -587,12 +660,19 @@ pub fn start_placed(
   }
 }
 
-/// Whether the placement is a circle on its unit's own place.
+/// Whether the placement is a circle on its unit's own place. An offset of -0.0 moves nothing,
+/// which the pattern `0.0` does not match.
 fn is_plain_circle(placement placement: Placement) -> Bool {
   case placement {
-    Placement(shape: Circle(..), ahead: 0.0, aside: 0.0, ..) -> True
+    Placement(shape: Circle(..), ahead:, aside:, ..) ->
+      is_zero(ahead) && is_zero(aside)
     Placement(..) -> False
   }
+}
+
+/// Whether the number is 0.0 or -0.0, which are equal as numbers but not as Erlang terms.
+fn is_zero(number: Float) -> Bool {
+  number >=. 0.0 && number <=. 0.0
 }
 
 /// The refusal of a pressed spell whose hit row is placed on the cast's target but whose target
@@ -607,17 +687,15 @@ fn targeting_given(
   case start, placed_on_the_target(area:) {
     spell_plan.Pressed, True -> {
       use kind <- result.try(target_kind_of(tables:, spell: area.spell))
-      case kind {
-        target_mechanic.Caster -> Ok(Nil)
-        target_mechanic.Targeted
-        | target_mechanic.Ground
-        | target_mechanic.Unread(..) ->
+      case target_mechanic.takes_caster(kind) {
+        True -> Ok(Nil)
+        False ->
           Error(TargetingNotBuilt(spell4_id: area.spell4_id.value, kind:))
       }
     }
     spell_plan.Pressed, False
     | spell_plan.Proxied(..), _
-    | spell_plan.FromProc, _
+    | spell_plan.FromProc(..), _
     -> Ok(Nil)
   }
 }
@@ -637,22 +715,15 @@ fn target_kind_of(
   tables tables: table_store.Tables,
   spell spell: Spell,
 ) -> Result(target_mechanic.Kind, AreaError) {
-  use base <- result.try(
-    spell4_base.get(tables:, id: spell.spell4_base_id)
-    |> result.replace_error(NoRow(
-      table: "Spell4Base",
-      id: spell.spell4_base_id.value,
-    )),
-  )
-  spell4_target_mechanics.get(
-    tables:,
-    id: Spell4TargetMechanicsId(base.spell4_target_mechanic_id),
-  )
-  |> result.map(target_mechanic.of_row)
-  |> result.replace_error(NoRow(
-    table: "Spell4TargetMechanics",
-    id: base.spell4_target_mechanic_id,
-  ))
+  target_mechanic.rows_of_base(tables:, base_id: spell.spell4_base_id)
+  |> result.map(fn(rows) { target_mechanic.of_row(rows.1) })
+  |> result.map_error(fn(missing) {
+    case missing {
+      target_mechanic.NoBaseRow(id:) -> NoRow(table: "Spell4Base", id:)
+      target_mechanic.NoTargetMechanicsRow(id:) ->
+        NoRow(table: "Spell4TargetMechanics", id:)
+    }
+  })
 }
 
 /// The Spell4Telegraph rows of each spell, in table order, grouped once.
@@ -1521,7 +1592,15 @@ pub fn gaps() -> List(gap.Entry) {
   [
     gap.Entry(
       area: "Spell telegraphs",
-      missing: "a player's ability whose drawn row is placed by the server (flag 0x1000 or 0x4000: Telekinetic Strike, Nullifier, Personal Defense Unit, Flash Bang, Field Probes and Rapid Fire) is sent no initial or telegraph position in its 0x7ff and 0x7fd, so the client draws none of that row; only a creature's special is sent them",
+      missing: "a player's ability whose drawn row is placed by the server (flag 0x1000 or 0x4000) is sent no initial or telegraph position in its 0x7ff and 0x7fd, so the client draws none of that row; only a creature's special is sent them",
+    ),
+    gap.Entry(
+      area: "Proc spells with a hit row on the target",
+      missing: "a hit row on the target of a spell a proc casts at another unit (ProcAim AtOtherUnit) is built only as a circle with no offset, since the strike does not know that unit's yaw, and the load does not tell whether the event has another unit, which the spell is then cast at the holder for; a spell aimed at its holder is built as a press's is",
+    ),
+    gap.Entry(
+      area: "Proxy rows that name their spell in dataBits01",
+      missing: "a later ability with a spell that holds a Proxy with dataBits00 0 and a Spell4 id in dataBits01 beside a hit row placed on the cast's target is refused when its plan is built (Field Probes, whose Proxies 92875 and 131252 hold Spell4 77068 and 77085), since the Proxy reader reads dataBits00 only and the ability would be planned and apply nothing",
     ),
     gap.Entry(
       area: "Creature target and ground rows",

@@ -472,8 +472,8 @@ pub fn a_player_hit_row_placed_by_flag_0_or_2_is_anchored_on_the_cast_target_and
 pub fn a_hit_row_of_a_spell_started_on_a_struck_unit_is_built_only_when_its_centre_is_that_units_place_test() -> Nil {
   use <- owned_test.run(60_000)
   // `strike.select` centres a spell started on another unit on that unit's shown place at yaw
-  // 0.0 (a Proxy on each struck unit, a proc), and a press or a Proxy on the caster on the
-  // caster. `area.in_shape` reads a circle only through its origin, which an offset moves along
+  // 0.0 (a Proxy on each struck unit, a proc aimed at another unit), and a press, a Proxy on
+  // the caster or a proc aimed at its holder on the caster (`cast.proc_started`). `area.in_shape` reads a circle only through its origin, which an offset moves along
   // the unit's yaw, so a circle with no offset is the same at any yaw and under any
   // `turn_degrees`; any other shape reads the yaw (`0x14054b1b0.follows_caster`).
   let placed = fn(shape, ahead, aside, turn_degrees) {
@@ -483,6 +483,9 @@ pub fn a_hit_row_of_a_spell_started_on_a_struck_unit_is_built_only_when_its_cent
   let turned_circle = placed(Circle(radius: 4.0), 0.0, 0.0, 90.0)
   let circle_ahead = placed(Circle(radius: 4.0), 2.0, 0.0, 0.0)
   let circle_aside = placed(Circle(radius: 4.0), 0.0, 2.0, 0.0)
+  // TelegraphDamage 7594, 7721 and 9343 (targetTypeFlags 2) hold an xPositionOffset of -0.0
+  // (`table_rows -- TelegraphDamage 7594 7721 9343`), which moves nothing.
+  let circle_negative_zero_aside = placed(Circle(radius: 4.0), 0.0, -0.0, 0.0)
   let box = placed(Box(width: 14.0, length: 14.0), 0.0, 0.0, 0.0)
   let cone = placed(Cone(inner: 1.0, outer: 7.0, degrees: 100.0), 0.0, 0.0, 0.0)
   let rectangle = placed(Rectangle(width: 2.0, length: 6.0), 0.0, 0.0, 0.0)
@@ -497,10 +500,11 @@ pub fn a_hit_row_of_a_spell_started_on_a_struck_unit_is_built_only_when_its_cent
   let on_the_caster_or_press = [
     spell_plan.Pressed,
     spell_plan.Proxied(target: spell_plan.OnCaster),
+    spell_plan.FromProc(aim: spell_plan.AtHolder),
   ]
   let on_another_unit = [
     spell_plan.Proxied(target: spell_plan.OnEachStruck),
-    spell_plan.FromProc,
+    spell_plan.FromProc(aim: spell_plan.AtOtherUnit),
   ]
   list.each(
     [
@@ -556,6 +560,13 @@ pub fn a_hit_row_of_a_spell_started_on_a_struck_unit_is_built_only_when_its_cent
       #(
         on_another_unit,
         on_the_target,
+        [circle_negative_zero_aside],
+        True,
+        "an x offset of -0.0 moves nothing, as 0.0 does not",
+      ),
+      #(
+        on_another_unit,
+        on_the_target,
         [circle_aside],
         False,
         "an x offset moves along the unit's yaw, which is not known",
@@ -604,6 +615,62 @@ pub fn a_hit_row_of_a_spell_started_on_a_struck_unit_is_built_only_when_its_cent
             as reason
         })
       })
+    },
+  )
+}
+
+pub fn a_proc_spell_aimed_at_its_holder_is_placed_as_a_press_and_one_aimed_at_another_unit_is_refused_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // `cast.proc_started` casts a proc's spell at the unit the proc is aimed at: the holder for
+  // dataBits03 bits 1, 2, 8 and 16 and none, the event's other unit for bit 4
+  // (`spell_plan.ProcAim`). A circle with an x offset on the target is centred right on the
+  // holder, whose yaw the strike knows, and wrong on another unit, whose yaw it does not.
+  let circle_aside =
+    Placement(
+      shape: Circle(radius: 4.0),
+      ahead: 0.0,
+      aside: 2.0,
+      turn_degrees: 0.0,
+    )
+  list.each(
+    [
+      #(1, True, "a proc aimed at its holder places its row as a press does"),
+      #(
+        4,
+        False,
+        "a proc aimed at the event's other unit has that unit's unknown yaw",
+      ),
+    ],
+    fn(row) {
+      let #(aim_bits, built, reason) = row
+      let spell =
+        spell_tables.planned_with_row(
+          row: spell_tables.effect_row_with(
+            id: 300_001,
+            effect_type: 14,
+            target_flags: 1,
+            columns: [
+              #("dataBits03", Integer(aim_bits)),
+              ..spell_tables.proc_columns(kind: 217)
+            ],
+          ),
+        )
+      let assert [start] =
+        spell_plan.tree_started(spell:, started: fn(_) { True })
+        |> list.filter_map(fn(started) {
+          case started.1 {
+            spell_plan.FromProc(..) -> Ok(started.1)
+            _ -> Error(Nil)
+          }
+        })
+        as "the planted Proc starts one spell"
+      assert spell_area.start_placed(
+          anchor: area.FollowsTarget,
+          start:,
+          shapes: [circle_aside],
+        )
+        == built
+        as reason
     },
   )
 }
@@ -776,16 +843,6 @@ pub fn the_anchor_of_a_planned_spell_is_read_from_its_hit_rows_on_the_clients_ro
         47_202,
         area.FixedAtTarget,
         "Flash Bang's child: row 1766, targetTypeFlags 2, flags 0x1200",
-      ),
-      #(
-        41_404,
-        area.FixedAtTarget,
-        "Field Probes' child: row 2899, targetTypeFlags 2, flags 0x1200",
-      ),
-      #(
-        55_046,
-        area.FixedAtTarget,
-        "Field Probes' second child: row 2900, targetTypeFlags 2, flags 0x1200",
       ),
       #(
         35_360,

@@ -7240,8 +7240,10 @@ pub type Start {
   /// By a Proxy of another spell, on the caster or on each unit that spell struck: the
   /// primary target is the caster for the first and the struck unit for the second.
   Proxied(target: ProxyTarget)
-  /// By a Proc effect, aimed at the unit the proc names: the primary target is another unit.
-  FromProc
+  /// By a Proc effect: the primary target is the unit the proc is aimed at, the holder for
+  /// `AtHolder` and, for `AtOtherUnit`, the creature a hit struck or the holder when the event
+  /// has none.
+  FromProc(aim: ProcAim)
 }
 
 /// Every spell of the tree (`tree`) with how it is started, a spell reached two ways once
@@ -7267,7 +7269,7 @@ fn walk_started(
     |> list.map(fn(proxy) { #(proxy.spell, Proxied(target: proxy.target)) })
   let procced =
     payloads(spell:, as_kind: as_proc)
-    |> list.map(fn(proc) { #(proc.spell, FromProc) })
+    |> list.map(fn(proc) { #(proc.spell, FromProc(aim: proc.aim)) })
   let pressed =
     list.map(spell.press_proxies, fn(proxy) { #(proxy.spell, start) })
   [

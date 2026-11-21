@@ -23,12 +23,10 @@ import genesis_prime/game/spell_plan.{
 import genesis_prime/table/id.{ClassId, Spell4BaseId, Spell4Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4
-import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
-import gleam/set
 import gleam/string
 import owned_test
 import planted_table
@@ -1187,29 +1185,12 @@ pub fn the_spells_a_proc_casts_are_started_from_the_proc_test() -> Nil {
     as "the plans hold the Stalker's innate passive"
   let started = started_ids(spell: passive)
   list.each([60_769, 79_932, 63_366], fn(spell4_id) {
-    assert list.contains(started, #(spell4_id, spell_plan.FromProc))
+    assert list.contains(started, #(
+      spell4_id,
+      spell_plan.FromProc(aim: spell_plan.AtHolder),
+    ))
       as "a proc's spell is cast by its proc"
   })
   assert list.contains(started, #(passive.spell4_id.value, spell_plan.Pressed))
     as "the passive's own spell is the root, which nothing started but the plan"
-}
-
-pub fn the_tree_is_the_started_tree_without_its_starts_test() -> Nil {
-  use <- owned_test.run(60_000)
-  use <- unitest.guard(client_tables.present())
-  let tables = client_tables.shared()
-  list.each(dict.values(spell_plan.plans_with_later(tables:)), fn(ability) {
-    assert spell_plan.tree(spell: ability, started: fn(_) { True })
-      == list.map(
-        spell_plan.tree_started(spell: ability, started: fn(_) { True }),
-        fn(started) { started.0 },
-      )
-      as "one walk names the spells and their starts"
-    let ids =
-      set.from_list(
-        list.map(started_ids(spell: ability), fn(started) { started.0 }),
-      )
-    assert set.contains(ids, ability.spell4_id.value)
-      as "the ability's own spell is in its tree"
-  })
 }

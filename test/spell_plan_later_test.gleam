@@ -430,14 +430,12 @@ pub fn the_abilities_held_back_only_by_a_flag_0_or_2_hit_row_are_planned_test() 
         fn(effect) {
           let place = place_of(effect.spell_id)
           assert effect_row_read.is_read(tables:, sources:, place:, effect:)
-            || spell_plan.read_row(tables:, sources:, place:, effect:)
-            == Ok(spell_plan.LeftOut(why: spell_plan.ProxyNamesNoSpell))
             as {
               "a freed ability that plans and does nothing is a silent wrong result: the row "
               <> int.to_string(effect.id)
               <> " of "
               <> int.to_string(spell.spell4_id.value)
-              <> " is read, or a Proxy that names no spell, which the client's Proxy reader starts nothing from"
+              <> " is read"
             }
         },
       )
@@ -466,6 +464,11 @@ pub fn the_abilities_held_back_only_by_a_flag_0_or_2_hit_row_are_planned_test() 
         "Tether Mine: the rows 1962 (flags 2) and 10894 (flags 1) are placed apart",
       ),
       #(41_543, "of shape 1", "Mortar Strike: row 2867 is of shape 1"),
+      #(
+        41_398,
+        "with no spell in dataBits00 and the Spell4 row 77068 in dataBits01",
+        "Field Probes: its Proxy 92875 (effectType 26, dataBits00 0, dataBits01 77068, Spell4 \"Medic - Field Probes - Buff - Tier 1\") starts nothing the plan reads, so the ability would be planned and apply nothing",
+      ),
     ],
     fn(row) {
       let #(spell4_id, sentence, reason) = row
