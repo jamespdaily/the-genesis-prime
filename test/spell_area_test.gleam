@@ -20,8 +20,8 @@ import client_shape_rows
 import client_tables
 import fixture_tables
 import genesis_prime/game/area.{
-  type Inside, type Placement, Box, Circle, Cone, InsideRow, InsideShapes,
-  Placement, Rectangle, Row,
+  type Inside, type Placement, type Row, Box, Circle, Cone, InsideRow,
+  InsideShapes, Placement, Rectangle, Row,
 }
 import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
@@ -2346,19 +2346,192 @@ pub fn the_creature_reading_takes_orders_2_and_3_and_refuses_4_and_5_by_name_tes
   assert creature_order(0)
     == Error(SelectionNotBuilt(spell4_id: 55_317, target_selection: 0))
     as "order 0, None, is no order and is refused"
-  list.each([2, 3, 4, 5], fn(selection) {
-    let assert Error(SelectionNotBuilt(spell4_id:, target_selection:)) =
-      area_tables.built(
-        kick: area_tables.Kick(
-          ..area_tables.kick(),
-          target_selection: selection,
-        ),
+}
+
+/// The result of building the areas with Kick's area row ordered `selection`, Kick's damage
+/// aimed by `effect_target_flags` and its valid targets `target_bitmask`: Kick's own area
+/// row with the order it builds, or the refusal.
+fn kick_built_with(
+  selection selection: Int,
+  effect_target_flags effect_target_flags: Int,
+  target_bitmask target_bitmask: Int,
+) -> Result(Option(Row), spell_area.AreaError) {
+  area_tables.built(
+    kick: area_tables.Kick(
+      ..area_tables.kick(),
+      target_selection: selection,
+      effect_target_flags:,
+      target_bitmask:,
+    ),
+  )
+  |> result.map(fn(areas) {
+    let assert Ok(found) =
+      spell_area.of_spell(areas:, spell4_id: Spell4Id(58_591))
+      as "Kick is in the areas"
+    found.row
+  })
+}
+
+pub fn a_players_row_builds_orders_2_and_3_reads_4_and_5_as_no_area_and_refuses_0_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let assert Some(kick_row) = client_kick().row
+    as "Kick's area row 640 is built"
+  // Each case is Kick's row 640 with `targetSelection` edited. Flag 1 on Kick's damage row
+  // aims it at the caster alone, so no go selects the area and a row ordered by health is
+  // read as no area. Orders 2 to 5 are named, never ordered, by the client
+  // (`Spell4AoeTargetConstraints.targetSelection`): the rows build as a guess the gap states.
+  let cases = [
+    #(1, 4, 0, Ok(Some(kick_row)), "Closest is the order Kick's row holds"),
+    #(
+      2,
+      4,
+      0,
+      Ok(Some(Row(..kick_row, order: area.Furthest))),
+      "Furthest builds with the row's range, arc and count unchanged",
+    ),
+    #(
+      3,
+      4,
+      0,
+      Ok(Some(Row(..kick_row, order: area.Random))),
+      "Random builds with the row's range, arc and count unchanged",
+    ),
+    #(4, 1, 0, Ok(None), "LowestAbsoluteHealth is read as no area"),
+    #(5, 1, 0, Ok(None), "MissingMostHealth is read as no area"),
+    #(
+      5,
+      1,
+      16,
+      Error(ValidTargetsNotAlive(spell4_id: 58_591, target_bitmask: 16)),
+      "the valid targets of a row read as no area are still refused",
+    ),
+  ]
+  list.each(cases, fn(case_) {
+    let #(selection, flags, bitmask, wanted, reason) = case_
+    assert kick_built_with(
+        selection:,
+        effect_target_flags: flags,
+        target_bitmask: bitmask,
       )
-      as "Spell4AoeTargetConstraints.targetSelection: a player's ability builds only Closest (1)"
+      == wanted
+      as reason
+  })
+  let assert Error(SelectionNotBuilt(spell4_id:, target_selection: 0)) =
+    kick_built_with(selection: 0, effect_target_flags: 4, target_bitmask: 0)
+    as "order 0, None, is no order and is refused for a player"
+  assert list.contains([58_591, 70_033, 70_045, 70_054], spell4_id)
+    as "the refusal names a spell of row 640: Kick 58591 and Relentless Strikes' stage spells 70033, 70045 and 70054 share it (Spell4.58591.area)"
+}
+
+pub fn a_players_phase_that_selects_the_area_by_health_is_refused_by_name_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // A row ordered by health is read as no area, so a phase that selects units from it would
+  // strike nobody: refused. A phase aimed at the cast's own target (flag 2) reads no order,
+  // so its row builds, which shows the check reads the phase and not the row alone.
+  list.each([4, 5], fn(selection) {
+    let assert Error(SelectionNeedsHealth(spell4_id:, target_selection:)) =
+      kick_built_with(selection:, effect_target_flags: 4, target_bitmask: 0)
+      as "Kick's damage aimed at the area selects units by health: refused by name"
     assert target_selection == selection
     assert list.contains([58_591, 70_033, 70_045, 70_054], spell4_id)
-      as "the refusal names a spell of row 640: Kick 58591 and Relentless Strikes' stage spells 70033, 70045 and 70054 share it (Spell4.58591.area)"
+      as "the refusal names a spell of row 640"
+    assert kick_built_with(
+        selection:,
+        effect_target_flags: 2,
+        target_bitmask: 0,
+      )
+      == Ok(None)
+      as "a phase that strikes only the cast's own target reads no order"
   })
+}
+
+pub fn the_clients_rows_hold_collapse_by_furthest_and_the_heals_by_health_and_no_go_of_them_selects_by_health_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let areas = spell_area.areas(tables: client_tables.shared())
+  let area_of = fn(spell4_id) {
+    let assert Ok(found) =
+      spell_area.of_spell(areas:, spell4_id: Spell4Id(spell4_id))
+      as "the spell is in the areas of the abilities the orders free"
+    found
+  }
+  let selects_at_any_go = fn(found: spell_area.SpellArea) {
+    list.any(
+      spell_plan.go_numbers(go_count: spell_area.phase_count(spell: found)),
+      fn(phase) {
+        let assert Ok(strike) =
+          spell_area.phase(spell: found, phase:, spent: None)
+          as "the go is one of the spell's"
+        strike.selects_area
+      },
+    )
+  }
+  // Spell4AoeTargetConstraints 677 (selection 2, 3 units, 0 to 10 m), 660 (5), 661 (5), 637
+  // (5) and 638 (1, 5 units, 0 to 25 m, 45 degrees); `table_rows -- Spell4AoeTargetConstraints
+  // 677 660 661 637 638`. The texts 320951 ("Pull the 3 furthest foes") and 245146, 361096,
+  // 315701 and 315089 name allies for the by-health rows.
+  let collapse = area_of(39_372)
+  assert option.map(collapse.row, fn(row) {
+      #(row.order, row.target_count, row.max_range)
+    })
+    == Some(#(area.Furthest, 3, 10.0))
+    as "Collapse pulls the 3 furthest foes inside 10 m (text 320951)"
+  assert selects_at_any_go(collapse)
+    as "Collapse's go selects units from its area"
+  list.each([36_897, 41_382, 39_223, 39_068], fn(spell4_id) {
+    let found = area_of(spell4_id)
+    assert found.row == None
+      as "a row ordered by health picks allies, which the server does not find, so it is no area"
+    assert !selects_at_any_go(found)
+      as "no go of a heal ordered by health selects units from the area"
+  })
+  let damage_child = area_of(39_379)
+  assert option.map(damage_child.row, fn(row) {
+      #(row.order, row.target_count, row.max_range)
+    })
+    == Some(#(area.Nearest, 5, 25.0))
+    as "Dual Fire's damage child strikes up to 5 foes in its 25 m cone"
+  assert selects_at_any_go(damage_child)
+    as "Dual Fire's damage child selects its units from the area"
+}
+
+pub fn a_spell_ordered_beyond_closest_that_holds_a_proxy_naming_its_spell_in_data_bits01_is_refused_and_a_closest_one_is_not_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let assert Ok(left_out) =
+    spell_plan.unplanned(tables:, area_checked: spell_area.checker)
+  // Restrictor 38279's field 38287 has the Random area row 391 and the Proxy 131274 (dataBits00
+  // 0, Snare 77118 in dataBits01, tickTime 500), which the plan does not start: a press would
+  // blink and the field would never snare. Nullifier 58868 holds the same Proxy shape (row
+  // 141450 naming 77099) on a Closest area row and is planned; the rule widens to it only by
+  // a decision, since that would unplan an ability that casts today
+  // (`table_rows -- Spell4Effects 131274 141450 -- Spell4AoeTargetConstraints 391 -- Spell4
+  // 77118 77099`).
+  let assert Ok(restrictor) =
+    list.find(left_out, fn(one) { one.spell4_id == 38_279 })
+    as "Restrictor stays unplanned"
+  let sentence = spell_plan.describe(error: restrictor.error)
+  list.each(
+    [
+      "Proxy effect 131274",
+      "Spell4 row 77118 in dataBits01",
+      "with no spell in dataBits00",
+    ],
+    fn(part) {
+      assert string.contains(sentence, part)
+        as { "Restrictor's refusal names " <> part <> ": " <> sentence }
+    },
+  )
+  assert !list.any(left_out, fn(one) { one.spell4_id == 58_868 })
+    as "Nullifier's ability is not listed unplanned"
+  let assert Ok(nullifier) = spell4.get(tables:, id: Spell4Id(58_868))
+    as "Nullifier is a Spell4 row"
+  assert result.is_ok(spell_plan.in_plans(
+    plans: spell_plan.plans_with_later(tables:),
+    base: Spell4BaseId(nullifier.spell4_base_id_base_spell),
+  ))
+    as "the plans hold Nullifier, whose area row is Closest"
 }
 
 pub fn a_shape_8_with_a_box_is_refused_by_name_for_a_creature_test() -> Nil {

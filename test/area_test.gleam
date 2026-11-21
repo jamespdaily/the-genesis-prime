@@ -89,7 +89,7 @@ fn struck(
   row row: area.Row,
   inside inside: Inside,
 ) -> List(Int) {
-  area.select(candidates:, centre: origin, row:, inside:)
+  area.select_ordered(candidates:, centre: origin, row:, inside:, seed: 0)
 }
 
 pub fn kick_strikes_a_unit_inside_its_drawn_cone_and_not_one_outside_it_test() -> Nil {
@@ -332,11 +332,12 @@ pub fn turning_half_a_turn_moves_kicks_strike_to_the_beast_behind_test() -> Nil 
     beast(2, at(distance: 3.0, degrees: 180.0, yaw: 0.0)),
   ]
   let facing = fn(yaw, inside) {
-    area.select(
+    area.select_ordered(
       candidates:,
       centre: Pose(at: Point(x: 0.0, z: 0.0), yaw:),
       row: kick_row(),
       inside:,
+      seed: 0,
     )
   }
   list.each([kick_cone(), InsideRow], fn(inside) {
@@ -615,7 +616,7 @@ pub fn the_origin_of_a_placement_is_the_point_the_hit_measures_from_test() -> Ni
       list.each(
         [Circle(radius: size), Box(width: size, length: size)],
         fn(shape) {
-          assert area.select(
+          assert area.select_ordered(
               candidates: [Candidate(unit_id: 1, at: there, hit_radius: 0.0)],
               centre: pose,
               row: Row(
@@ -628,6 +629,7 @@ pub fn the_origin_of_a_placement_is_the_point_the_hit_measures_from_test() -> Ni
               inside: InsideShapes([
                 Placement(shape:, ahead:, aside:, turn_degrees: 0.0),
               ]),
+              seed: 0,
             )
             == [1]
             as "a fighter on the origin is inside a shape centred there"
@@ -796,16 +798,24 @@ pub fn every_order_selects_only_units_inside_and_at_most_the_target_count_test()
         as "a unit past the row's 30 m is never taken"
       assert list.length(found) <= target_count
         as "no more than the target count"
-      // Unit n stands n m out, so the nearest first are the lowest ids.
-      assert area.select(candidates:, centre: origin, row:, inside: InsideRow)
-        == list.take(
-          list.sort(
-            list.filter(list.unique(unit_ids), fn(id) { id <= 30 }),
-            int.compare,
-          ),
-          target_count,
-        )
-        as "the player's select is the nearest units whatever the row's order"
+      // Unit n stands n m out, so the nearest first are the lowest ids and the furthest first
+      // the highest.
+      let inside_ids =
+        list.filter(list.unique(unit_ids), fn(id) { id <= 30 })
+        |> list.sort(int.compare)
+      case order {
+        area.Nearest -> {
+          assert found == list.take(inside_ids, target_count)
+            as "Closest takes the nearest units first"
+        }
+        area.Furthest -> {
+          assert found == list.take(list.reverse(inside_ids), target_count)
+            as "Furthest takes the farthest units first"
+        }
+        area.Random -> {
+          assert list.unique(found) == found as "Random takes no unit twice"
+        }
+      }
     },
   )
 }
@@ -817,7 +827,7 @@ fn held(
   units units: List(#(Int, Float, Float)),
   hit_radius hit_radius: Float,
 ) -> List(Int) {
-  area.select(
+  area.select_ordered(
     candidates: list.map(units, fn(unit) {
       Candidate(
         unit_id: unit.0,
@@ -828,6 +838,7 @@ fn held(
     centre: origin,
     row: ordered_row(order: area.Nearest, target_count: 99),
     inside: InsideShapes(placements),
+    seed: 0,
   )
   |> list.sort(int.compare)
 }

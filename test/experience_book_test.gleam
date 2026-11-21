@@ -259,8 +259,9 @@ pub fn the_new_ability_is_in_the_casters_bag_and_the_ability_known_prerequisite_
 
 pub fn an_ability_with_no_plan_is_granted_and_its_press_is_refused_unknown_test() -> Nil {
   use <- owned_test.run(60_000)
-  // The Medic's 5 to 6 gives 25530 at slot 6 (SpellLevel 1191) and 25579 at slot 7 (1194),
-  // which have no plan, and 38210 at slot 8 (1221, Emission), which has one.
+  // The Medic's 5 to 6 gives 25530 at slot 6 (SpellLevel 1191), which has no plan, 25579 at
+  // slot 7 (1194, Crisis Wave: its area row is ordered by health, read as no area, and its
+  // heal reaches the caster), which has one, and 38210 at slot 8 (1221, Emission), which has one.
   let assert Ok(unplanned) =
     spell_plan.unplanned(
       tables: character_tables.shared(),
@@ -275,15 +276,6 @@ pub fn an_ability_with_no_plan_is_granted_and_its_press_is_refused_unknown_test(
       spell_plan.FriendlyAreaNotRead(41_333, 92_693, 5),
       "Mending Probes hits no foes and has an effect aimed by flags 5, the caster and the area, a friendly spell's area that finds allies, which the server does not read",
     ),
-    #(
-      25_579,
-      41_382,
-      spell_plan.AreaNotBuilt(
-        41_382,
-        "the Spell4 row 41382 has an area row that selects in order 5, which is not built (a player's ability takes Closest, 1; a creature's special 1 to 3)",
-      ),
-      "Crisis Wave's area row selects in an order the server does not build",
-    ),
   ]
   list.each(no_plan, fn(row) {
     let #(_, spell4_id, error, why) = row
@@ -292,35 +284,35 @@ pub fn an_ability_with_no_plan_is_granted_and_its_press_is_refused_unknown_test(
         "the plan refuses Spell4 " <> int.to_string(spell4_id) <> ": " <> why
       }
   })
+  assert !list.any(unplanned, fn(one) { one.spell4_id == 41_382 })
+    as "Crisis Wave 41382 is planned: its area row is ordered by health, which is read as no area, and its heal reaches the caster"
   let #(state, taken) = support.level_up(class_id: 4, from: 5, to: 6)
   assert list.map(support.added_in(frames: support.written(taken:)), fn(added) {
       added.bag_index
     })
     == [6, 7, 8]
-    as "all three are granted, the unplanned ones too: the table says the player holds them"
+    as "all three are granted, the unplanned one too: the table says the player holds it"
   assert support.tiers_in(frames: support.written(taken:))
-    == support.tiers_of(
-      bases: list.append(list.map(no_plan, fn(row) { row.0 }), [38_210]),
-    )
+    == support.tiers_of(bases: [25_530, 25_579, 38_210])
     as "and their book entry is sent"
-  list.each([6, 7], fn(bag_index) {
+  assert connection_support.refusal_results(taken: support.pressed(
+      state:,
+      bag_index: 6,
+      ms: 1000,
+    ))
+    == [SpellUnknown]
+    as "opcode.0x7fc: the press of slot 6 has no plan, so it is refused unknown"
+  list.each([7, 8], fn(bag_index) {
     assert connection_support.refusal_results(taken: support.pressed(
         state:,
         bag_index:,
         ms: 1000,
       ))
-      == [SpellUnknown]
+      == []
       as {
         "opcode.0x7fc: the press of slot "
         <> int.to_string(bag_index)
-        <> " has no plan, so it is refused unknown"
+        <> " has a plan, so it is not refused unknown (Crisis Wave and Emission cost Focus the Medic holds at its pool of 1000, class_resource, a guess)"
       }
   })
-  assert connection_support.refusal_results(taken: support.pressed(
-      state:,
-      bag_index: 8,
-      ms: 1000,
-    ))
-    == []
-    as "opcode.0x7fc: the press of slot 8 has a plan, so it is not refused unknown; its Spell4 58841 costs 15 Focus (innateCostType0 15), which the Medic holds at its pool of 1000 (class_resource, a guess), so the cast is accepted"
 }

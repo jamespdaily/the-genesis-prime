@@ -480,3 +480,85 @@ pub fn the_abilities_held_back_only_by_a_flag_0_or_2_hit_row_are_planned_test() 
     },
   )
 }
+
+pub fn the_five_abilities_the_orders_free_are_planned_and_every_row_of_their_trees_is_read_but_the_allies_heal_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let assert Ok(left_out) =
+    spell_plan.unplanned(tables:, area_checked: spell_area.checker)
+  let unplanned = list.map(left_out, fn(one) { one.spell4_id })
+  let sources = spell_plan.sources_of(tables:)
+  let place_of =
+    effect_row_read.places(tables:, effects: spell4_effects.all(tables))
+  // Collapse 39372 (Furthest), Crisis Wave 41382, Soothe 33140 and Vitality Burst 39132
+  // (heals ordered by health) and Dual Fire 39068 (a heal by health beside a Closest damage
+  // child): `table_rows -- Spell4Effects spellId=39068`. Dual Fire's row 84876 has flags 4,
+  // the area alone, which the plan leaves out: its heal reaches nobody, and the heals of
+  // flags 5 reach the caster alone. The gaps `spell_plan` "Spell areas" (the caster's allies
+  // in a spell that hits no foes) and `cast/heal` "Casting" (a heal aimed at another unit
+  // lands nothing) state both.
+  list.each([39_372, 41_382, 33_140, 39_132, 39_068], fn(spell4_id) {
+    assert list.any(spell_level.all(tables), fn(row) {
+      row.spell4_id == spell4_id && loadout.is_class_ability(row:)
+    })
+      as "the id is a class ability's SpellLevel row"
+    assert !list.contains(unplanned, spell4_id)
+      as "an area ordered by Furthest, Random or health is built, so the ability is not listed"
+    let assert Ok(ability) =
+      spell_plan.in_plans(
+        plans: spell_plan.plans_with_later(tables:),
+        base: base_of(tables:, spell4_id:),
+      )
+      as "the plans hold the ability"
+    let rows =
+      list.flat_map(
+        spell_plan.tree(spell: ability, started: fn(_) { True }),
+        fn(spell) {
+          list.map(
+            spell_plan.effects_of(sources:, spell4_id: spell.spell4_id.value),
+            fn(effect) { #(spell.spell4_id.value, effect) },
+          )
+        },
+      )
+    list.each(rows, fn(row) {
+      let #(row_spell4_id, effect) = row
+      let place = place_of(effect.spell_id)
+      case effect.id {
+        84_876 -> {
+          assert spell_plan.read_row(tables:, sources:, place:, effect:)
+            == Ok(spell_plan.LeftOut(why: spell_plan.AimedAtOtherUnits))
+            as "Dual Fire's row 84876 (flags 4, the area alone) is the heal that reaches nobody"
+        }
+        _ -> {
+          assert effect_row_read.is_read(tables:, sources:, place:, effect:)
+            as {
+              "a freed ability that plans and does nothing is a silent wrong result: the row "
+              <> int.to_string(effect.id)
+              <> " of "
+              <> int.to_string(row_spell4_id)
+              <> " is read"
+            }
+        }
+      }
+    })
+  })
+  let assert Ok(collapse) =
+    spell_plan.in_plans(
+      plans: spell_plan.plans_with_later(tables:),
+      base: base_of(tables:, spell4_id: 39_372),
+    )
+    as "the plans hold Collapse"
+  let collapse_rows =
+    list.flat_map(
+      spell_plan.tree(spell: collapse, started: fn(_) { True }),
+      fn(spell) {
+        spell_plan.effects_of(sources:, spell4_id: spell.spell4_id.value)
+        |> list.map(fn(effect) { effect.id })
+      },
+    )
+  list.each([86_110, 141_664, 86_112, 145_055], fn(row) {
+    assert list.contains(collapse_rows, row)
+      as "Collapse's tree holds the row, which the loop above found read"
+  })
+}
