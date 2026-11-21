@@ -9,7 +9,8 @@ run is not counted.
 unitest's options (`--test`, `--tag`, `--seed`, `--module`, `--workers`, `--reporter`, `--sort`) match the
 exact word and take the next one; clip's `arg` skips an unknown word that starts with `-`
 (build/packages/clip/src/clip/arg.gleam), so `--test=x` ran the whole suite. The hook refuses that
-form and names `--test module.fn` with a space.
+form and names `--test module.fn` with a space, and does so even when `ps` fails; a failing `ps` counts no
+runs, so the slot limit passes.
 """
 
 import json
@@ -59,8 +60,11 @@ def main() -> int:
         command = json.load(sys.stdin)["tool_input"]["command"]
         if not STARTS.search(command):
             return 0
-        ps = subprocess.run(["ps", "-axo", "pid=,ppid=,command="], capture_output=True, text=True, timeout=10, check=True)
-        rows = [row.split(None, 2) for row in ps.stdout.splitlines()]
+        try:
+            ps = subprocess.run(["ps", "-axo", "pid=,ppid=,command="], capture_output=True, text=True, timeout=10, check=True)
+            rows = [row.split(None, 2) for row in ps.stdout.splitlines()]
+        except (OSError, subprocess.SubprocessError):
+            rows = []
         refused = refusal(command, rows)
     except Exception:
         return 0

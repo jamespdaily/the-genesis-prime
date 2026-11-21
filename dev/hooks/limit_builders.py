@@ -5,13 +5,15 @@ Up to six builders and reviewers ran at once and overloaded the machine (2026-11
 per subagent, `PROJECT/SESSION/subagents/agent-ID.meta.json` (`agentType`, `description`, `toolUseId`,
 `finished: true` once the agent ends) and `agent-ID.jsonl` (its transcript, appended each turn). A builder
 runs when its meta has `agentType == "implementer"`, no `finished`, and a transcript written within
-LIVE_SECONDS; a builder that died stops counting then. PROJECT is the folder of the hook input's
+LIVE_SECONDS; a builder that died stops counting then. A meta with no transcript yet is a builder
+starting, and counts for PENDING_SECONDS from the meta's own last write. PROJECT is the folder of the hook input's
 `transcript_path`, so builders of earlier sessions still count. Reviewers, investigators and other
 agents are neither counted nor refused.
 
 Two spawns in one message reach the hook before either agent's meta exists. Each allowed start is
 written to a ledger (`EPOCH TOOL_USE_ID` lines, under `fcntl.flock`) and counts as a running builder for
-PENDING_SECONDS, until a meta whose `toolUseId` equals it exists. This needs `tool_use_id` in the hook
+PENDING_SECONDS, until a meta whose `toolUseId` equals it exists; a ledger line that is not an epoch and an id is
+skipped and rewritten away. This needs `tool_use_id` in the hook
 input; a spawn without it is counted but not recorded, so two such spawns in one message can both pass.
 
 Exit 2 with a line naming the running builders refuses the spawn. Any error, unreadable input or missing
@@ -47,10 +49,14 @@ def running_builders(project: Path, now: float) -> tuple[list[tuple[str, str, fl
             shown.add(meta.get("toolUseId"))
             if meta.get("agentType") != "implementer" or meta.get("finished"):
                 continue
-            quiet = now - meta_path.with_name(f"agent-{agent_id}.jsonl").stat().st_mtime
+            transcript = meta_path.with_name(f"agent-{agent_id}.jsonl")
+            if transcript.exists():
+                quiet, limit = now - transcript.stat().st_mtime, LIVE_SECONDS
+            else:
+                quiet, limit = now - meta_path.stat().st_mtime, PENDING_SECONDS
         except (OSError, ValueError):
             continue
-        if quiet <= LIVE_SECONDS:
+        if quiet <= limit:
             live.append((agent_id, meta.get("description", ""), quiet))
     return live, shown
 
@@ -59,9 +65,13 @@ def pending_starts(lines: list[str], shown: set[str], now: float) -> list[tuple[
     """The ledger's starts under PENDING_SECONDS old whose agent has no meta yet."""
     starts = []
     for line in lines:
-        epoch, tool_use_id = line.split()
-        if now - float(epoch) < PENDING_SECONDS and tool_use_id not in shown:
-            starts.append((float(epoch), tool_use_id))
+        try:
+            epoch, tool_use_id = line.split()
+            started = float(epoch)
+        except ValueError:
+            continue
+        if now - started < PENDING_SECONDS and tool_use_id not in shown:
+            starts.append((started, tool_use_id))
     return starts
 
 

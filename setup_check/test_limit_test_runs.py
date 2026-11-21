@@ -12,6 +12,9 @@ reads it as a chosen run.
 Run: python3.13 -I -m unittest discover -s setup_check -p 'test_limit_test_runs.py'
 """
 
+import io
+import json
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -64,6 +67,19 @@ class LimitTestRunsTest(unittest.TestCase):
         ):
             with self.subTest(command=command):
                 self.assertIsNone(limit_test_runs.refusal(command, []))
+
+    def test_an_equals_option_is_refused_when_the_process_list_cannot_be_read(self):
+        def run_main(command: str) -> tuple[int, str]:
+            stdin = io.StringIO(json.dumps({"tool_input": {"command": command}}))
+            stderr = io.StringIO()
+            with mock.patch.object(sys, "stdin", stdin), mock.patch.object(sys, "stderr", stderr), \
+                    mock.patch.object(subprocess, "run", side_effect=OSError("no ps")):
+                return limit_test_runs.main(), stderr.getvalue()
+
+        code, message = run_main("gleam test -- --test=a_test.x_test")
+        self.assertEqual(code, 2)
+        self.assertIn("with a space", message)
+        self.assertEqual(run_main("gleam test -- --test a_test.x_test"), (0, ""), "no process list, no slot count: it passes")
 
     def test_the_limit_is_the_number_of_test_slots(self):
         with mock.patch.object(machine_slots, "TEST_SLOTS", 3):

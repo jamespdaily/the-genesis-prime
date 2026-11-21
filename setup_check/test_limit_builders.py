@@ -116,6 +116,25 @@ class LimitBuildersTest(unittest.TestCase):
         self.plant.ledger.write_text(f"{NOW - 59} toolu_young\n")
         self.assertIsNotNone(self.plant.ask(self.plant.spawn()), "an entry of 59 seconds is a builder starting")
 
+    def test_a_malformed_ledger_line_is_dropped_and_the_cap_still_holds(self):
+        self.plant.ledger.write_text(f"{NOW - 5} toolu_x\n{NOW - 5}\nnot a number toolu_y\n\n")
+        self.assertIsNone(self.plant.ask(self.plant.spawn(tool_use_id="toolu_A")))
+        self.assertEqual(self.plant.ledger_ids(), ["toolu_x", "toolu_A"], "the bad lines are rewritten away")
+        self.assertIsNotNone(self.plant.ask(self.plant.spawn(tool_use_id="toolu_B")))
+
+    def test_a_meta_whose_transcript_does_not_exist_yet_is_a_builder_starting(self):
+        self.plant.agent("a1")
+        self.plant.agent("a2")
+        (self.plant.subagents / "agent-a2.jsonl").unlink()
+        meta = self.plant.subagents / "agent-a2.meta.json"
+        os.utime(meta, (NOW - 5, NOW - 5))
+        self.plant.ledger.write_text(f"{NOW - 5} toolu_a2\n")
+        self.assertIsNotNone(self.plant.ask(self.plant.spawn()), "the entry and the bare meta are one builder, beside a1")
+        self.plant.ledger.write_text("")
+        self.assertIsNotNone(self.plant.ask(self.plant.spawn(tool_use_id=None)), "a bare meta counts without a ledger entry")
+        os.utime(meta, (NOW - 61, NOW - 61))
+        self.assertIsNone(self.plant.ask(self.plant.spawn(tool_use_id=None)), "a bare meta of 61 seconds counts for nothing")
+
     def test_a_spawn_without_a_tool_use_id_is_counted_but_not_recorded(self):
         self.assertIsNone(self.plant.ask(self.plant.spawn(tool_use_id=None)))
         self.assertEqual(self.plant.ledger.read_text(), "")
