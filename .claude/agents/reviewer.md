@@ -19,4 +19,6 @@ Check each finding against the code before you report it, and name the file and 
 
 A step that adds a third or later copy of an existing per-kind shape (a loop, a list, an enumeration) is a finding: merge the copies into one shared function first. (Spell plans grew 16 per-kind lists and about ten copied `_armed` loops, each review seeing one copy, 2026-11-16.)
 
+A test fix (a changed wait, step size, bound, order or retry) whose commit or hand-back does not name its cause with the evidence is a finding that blocks the merge, whatever the test does now. (A sibling of the deflect test was "fixed" by stepping slower with no cause named, 2026-11-20.)
+
 Post the whole review as one comment on the step's issue. Then return under 150 words: the count of findings by weight, one line for each finding that blocks the merge, and the comment's link. The coordinator reads the comment for the rest.
