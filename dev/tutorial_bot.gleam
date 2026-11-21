@@ -233,7 +233,7 @@ pub fn play_opening(
 
 /// Plays the first steps of `play` and stops with 10529 accepted and a Dorian
 /// (Creature2 73491) in sight: the entry, 10513, 10527 and 10518. The bot it gives is
-/// read and moved on with `units`, `at`, `have`, `took_in` and `approach_unit`.
+/// read and moved on with `units`, `at`, `have` and `approach_unit`.
 pub fn play_to_the_dorians(
   game game: Game,
   have have: BitArray,
@@ -263,16 +263,6 @@ pub fn at(bot bot: Bot) -> Point {
 /// The bytes the bot has read beyond the last frame it decoded.
 pub fn have(bot bot: Bot) -> BitArray {
   bot.have
-}
-
-/// The bot after another reader took `have` from its connection and read `frames` from
-/// it: the bot holds the bytes and hears the frames.
-pub fn took_in(
-  bot bot: Bot,
-  have have: BitArray,
-  frames frames: List(Frame),
-) -> Bot {
-  Bot(..bot, have:, units: hear(units: bot.units, frames:))
 }
 
 /// The bot after it moves to where a unit at `at` is within reach of use, and reads all
@@ -434,7 +424,6 @@ fn the_talks(bot: Bot) -> Result(Bot, Blocked) {
     quest_bot.use_unit(game: bot.game, have: bot.have, unit_id: dorian_unit)
   let bot = took(bot:, frames: answer.frames, have:)
   let bot = await_state(bot:, quest_id: 10_529, state: 3)
-  let bot = spend(await_gone(bot:, unit_id: dorian_unit), dorian_unit)
   use bot <- result.try(accept_from(
     bot:,
     givers: [dorian],
@@ -666,22 +655,6 @@ fn await_state(bot bot: Bot, quest_id quest_id: Int, state state: Int) -> Bot {
         found: told,
       )
   }
-}
-
-/// Returns once the server has removed the unit from the bot's picture (0x355): at
-/// once when an earlier read held it, else when it comes. A unit the objective's
-/// release rule removes is removed by the map, so its 0x355 is not ordered against
-/// the pong that ended the use, and a unit chosen before it came would be gone by the
-/// next talk.
-fn await_gone(bot bot: Bot, unit_id unit_id: Int) -> Bot {
-  use <- bool.guard(when: !dict.has_key(bot.units.others, unit_id), return: bot)
-  read_until(
-    bot,
-    what: "0x355 of unit " <> int.to_string(unit_id),
-    found: fn(frames) {
-      list.contains(game_client.removals_in(frames:), unit_id)
-    },
-  )
 }
 
 // Moving

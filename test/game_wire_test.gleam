@@ -8926,7 +8926,7 @@ pub fn a_bot_creates_an_exile_and_plays_the_tutorial_to_the_northern_wilds_landi
   login_support.stop(started)
 }
 
-pub fn a_released_quest_giver_is_out_of_reach_once_gone_and_the_other_giver_gives_the_quest_test() -> Nil {
+pub fn a_use_of_dorian_leaves_him_in_place_and_10525_is_taken_from_him_test() -> Nil {
   use <- owned_test.run(60_000)
   use tables <- on_rows_with_turrets_that_never_deflect()
   let time = driven_time.new()
@@ -8964,51 +8964,22 @@ pub fn a_released_quest_giver_is_out_of_reach_once_gone_and_the_other_giver_give
     )
     as "a Dorian is in sight"
   let bot = tutorial_bot.approach_unit(bot:, at: at_a)
-  // The use and the ping go in one write, so the pong comes before the map's 0x355
-  // that the objective's release rule sends for the used giver.
   let #(used, have) =
     quest_bot.use_unit(game:, have: tutorial_bot.have(bot:), unit_id: giver_a)
   assert list.contains(
     used.states,
     QuestState(quest_id: 10_529, state: 3, objective_id: 0),
   )
-    as "objective.release: the use of the giver completes 10529"
-  assert game_client.removals_in(frames: used.frames) == []
-    as "the removal is the map's, not ordered against the pong, so the answer to the use holds none"
-  let #(gone, have) =
-    game_client.read_until(game:, have:, found: fn(frames) {
-      list.contains(game_client.removals_in(frames:), giver_a)
-    })
-  assert list.contains(game_client.removals_in(frames: gone), giver_a)
-    as "objective.release: the map removes the used giver from the picture"
-  let bot = tutorial_bot.took_in(bot:, have:, frames: gone)
-  let #(talked_at_a, have) = quest_bot.talk(game:, have:, unit_id: giver_a)
-  assert talked_at_a.dialogs == []
-    as "quest.in_reach: a removed giver opens no dialog"
-  let #(accepted_at_a, have) = quest_bot.accept(game:, have:, quest_id: 10_525)
-  assert accepted_at_a.states == []
-    as "quest.in_reach: no giver of 10525 is in reach of a player beside the removed one, so the accept gives no 0x035C"
-  let assert Ok(#(giver_b, at_b)) =
-    tutorial_bot.nearest(
-      units: tutorial_bot.units(bot:),
-      from: tutorial_bot.at(bot:),
-      creatures: [dorian_creature],
-    )
-    as "the other Dorian is in sight"
-  let bot =
-    tutorial_bot.approach_unit(
-      bot: tutorial_bot.took_in(bot:, have:, frames: []),
-      at: at_b,
-    )
-  let #(talked_at_b, have) =
-    quest_bot.talk(game:, have: tutorial_bot.have(bot:), unit_id: giver_b)
-  assert talked_at_b.dialogs != [] as "the other Dorian opens its dialog"
-  let #(accepted_at_b, _) = quest_bot.accept(game:, have:, quest_id: 10_525)
-  assert list.map(accepted_at_b.states, fn(told) {
-      #(told.quest_id, told.state)
-    })
+    as "the use of Dorian completes 10529"
+  // The map's removal of a released unit is not ordered against the client's answers, so
+  // this test cannot prove that none comes; that Dorian is not released is decided by
+  // `objective_release_test`. Here the tutorial goes on with the Dorian the player used.
+  let #(talked, have) = quest_bot.talk(game:, have:, unit_id: giver_a)
+  assert talked.dialogs != [] as "the Dorian the use counted opens his dialog"
+  let #(accepted, _) = quest_bot.accept(game:, have:, quest_id: 10_525)
+  assert list.map(accepted.states, fn(told) { #(told.quest_id, told.state) })
     == [#(10_525, 1)]
-    as "quest.in_reach: the other giver gives 10525 in state 1"
+    as "quest.in_reach: the Dorian the use counted gives 10525 in state 1"
   game_client.close(game:)
   login_support.stop(started)
 }
