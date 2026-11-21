@@ -11,6 +11,8 @@ import code_rule/planted
 import code_rule/real_clock.{Exception}
 import code_rule/repository
 import code_rule/source
+import code_rule/syntax
+import glance
 import gleam/list
 import gleam/string
 import owned_test
@@ -262,6 +264,168 @@ pub fn a_helper_in_a_support_module_that_names_real_time_is_a_breach_test() -> N
   assert string.contains(breach.rule, "script.operating_system")
 }
 
+/// A planted test file that imports the support modules, then the body inside
+/// one function. The first body line is line 7.
+fn support_caller(body: List(String)) -> List(String) {
+  list.flatten([
+    [
+      "import ask_support",
+      "import content_support",
+      "import login_support",
+      "import world_support",
+      "",
+      "pub fn planted() {",
+    ],
+    body,
+    ["}"],
+  ])
+}
+
+pub fn a_call_of_a_support_function_that_runs_the_real_clock_is_a_breach_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  // Each row: the body's lines (the first is line 7), the breach lines, and why.
+  let rows = [
+    #(["  let started = login_support.start()"], [7], "the tree's start"),
+    #(
+      ["  login_support.start_with(change: fn(settings) { settings })"],
+      [7],
+      "the tree's start with a change",
+    ),
+    #(["  login_support.start_with_jim()"], [7], "the tree's start with Jim"),
+    #(["  login_support.settings(pool:)"], [7], "the settings of a real tree"),
+    #(
+      ["  ask_support.start(rule:, directory:, shutdown_ms: 1000, with:)"],
+      [7],
+      "a listener whose connections run on the operating system's script",
+    ),
+    #(["  ask_support.gate(name:, shutdown_ms: 1000)"], [7], "a real gate"),
+    #(["  content_support.load(database:)"], [7], "a load that waits 1 s"),
+    #(
+      [
+        "  world_support.start(time:, spawns:, respawn_ms: 1, idle_stop_ms: 1, sweep_ms: 1)",
+      ],
+      [7],
+      "a world that calls Maps within 1 s",
+    ),
+    #(
+      ["  login_support.start()", "  ask_support.gate(name:, shutdown_ms: 1)"],
+      [7, 8],
+      "each call, at its own line",
+    ),
+    #(["  login_support.stop(started)"], [], "the stop of a tree"),
+    #(
+      ["  login_support.driven_by(settings:, time:)"],
+      [],
+      "the driven clock's own setting",
+    ),
+    #(
+      ["  ask_support.start_tree(child)"],
+      [],
+      "a tree whose child decides its clock",
+    ),
+    #(
+      ["  content_support.load_asking(database:, ask:, probe:)"],
+      [],
+      "a load whose wait the caller gives",
+    ),
+    #(["  world_support.stop(world:)"], [], "the stop of a world"),
+    #(["  other.start()"], [], "start of another module"),
+  ]
+  list.each(rows, fn(row) {
+    let #(body, lines, reason) = row
+    assert breach_lines(support_caller(body)) == lines as reason
+  })
+  // Each row: the whole file's lines, the breach lines, and why.
+  let files = [
+    #(
+      [
+        "import login_support as logins",
+        "",
+        "pub fn planted() {",
+        "  logins.start()",
+        "}",
+      ],
+      [4],
+      "the support module imported under an alias",
+    ),
+    #(
+      [
+        "import login_support.{start}",
+        "",
+        "pub fn planted() {",
+        "  start()",
+        "}",
+      ],
+      [4],
+      "the function imported unqualified",
+    ),
+  ]
+  list.each(files, fn(row) {
+    let #(lines, expected, reason) = row
+    assert breach_lines(lines) == expected as reason
+  })
+}
+
+pub fn a_new_test_that_reaches_real_time_through_login_support_start_is_a_breach_outside_the_list_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let planted_test =
+    planted.file("test/planted_via_support_test.gleam", [
+      "import login_support",
+      "import owned_test",
+      "",
+      "pub fn a_new_test() {",
+      "  use <- owned_test.run(5000)",
+      "  login_support.start()",
+      "}",
+    ])
+  // The repository's own files are absent here, so each listed path is also
+  // reported as no file; only the planted file's breach is read.
+  let found =
+    real_clock.breaches_outside(
+      listed: real_clock.exceptions(),
+      gleam_files: [planted_test],
+      erlang_files: [],
+    )
+    |> list.filter(fn(breach: source.Breach) {
+      breach.path == planted_test.path
+    })
+  let assert [breach] = found as "expected exactly one breach"
+  assert breach.path == "test/planted_via_support_test.gleam"
+  assert breach.line == 6
+  assert string.contains(breach.rule, "login_support.start")
+}
+
+pub fn each_entry_point_is_a_public_function_of_its_support_module_and_a_breach_when_called_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let sources = repository.sources(["test"])
+  assert real_clock.entry_points() != [] as "the rule names its entry points"
+  list.each(real_clock.entry_points(), fn(entry) {
+    let path = "test/" <> entry.module <> ".gleam"
+    let assert Ok(file) = list.find(sources, fn(file) { file.path == path })
+      as { path <> " is a support module under test/" }
+    let module = syntax.parse(file)
+    assert list.any(module.functions, fn(definition) {
+      definition.definition.name == entry.function
+      && definition.definition.publicity == glance.Public
+    })
+      as { entry.module <> "." <> entry.function <> " is a public function" }
+    assert entry.because != "" as "each entry says what makes it real time"
+    let caller =
+      planted.file("test/planted_test.gleam", [
+        "import " <> entry.module,
+        "",
+        "pub fn planted() {",
+        "  " <> entry.module <> "." <> entry.function <> "()",
+        "}",
+      ])
+    assert planted.lines(real_clock.breaches(caller)) == [4]
+      as { entry.module <> "." <> entry.function <> " called is a breach" }
+  })
+}
+
 /// An Erlang file's breach lines.
 fn erlang_lines(source_lines: List(String)) -> List(Int) {
   planted.file("test/planted_ffi.erl", source_lines)
@@ -311,9 +475,45 @@ pub fn a_send_after_in_a_test_erlang_file_is_a_breach_test() -> Nil {
       "a receive inside a try with an after",
     ),
     #(
+      ["f() ->", "    timer:apply_after(20, m, f, [])."],
+      [2],
+      "timer:apply_after",
+    ),
+    #(
+      ["f() ->", "    timer:apply_interval(20, m, f, [])."],
+      [2],
+      "timer:apply_interval",
+    ),
+    #(
+      ["f() ->", "    timer:send_interval(20, tick)."],
+      [2],
+      "timer:send_interval",
+    ),
+    #(
       ["f() ->", "    receive tick -> ok after 0 -> none end."],
       [],
       "a receive that looks and gives up at once",
+    ),
+    #(
+      ["f() ->", "    receive tick -> ok after infinity -> never end."],
+      [],
+      "a receive that waits for ever has no time bound",
+    ),
+    #(
+      [
+        "f() ->",
+        "    receive",
+        "        tick ->",
+        "            maybe",
+        "                ok ?= work()",
+        "            else",
+        "                _ -> failed",
+        "            end",
+        "    after 5 -> late",
+        "    end.",
+      ],
+      [9],
+      "a maybe block in a receive's clause, which has its own end",
     ),
     #(
       ["f() ->", "    receive tick -> ok end."],

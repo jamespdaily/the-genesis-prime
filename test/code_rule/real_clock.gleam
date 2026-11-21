@@ -5,10 +5,12 @@
 //// refused where it is written.
 ////
 //// ```
-//// test file ──► Part A: a source of real time      ┐
-////          ──► Part B: a literal deadline < 30 s   ├─► breaches
-//// .erl file ──► a timer, a sleep, a timed receive  ┘      │
-////                                                          ▼
+//// test file ──► Part A: a source of real time, or a call  ┐
+////                       of a support function that starts │
+////                       one (`entry_points`)              │
+////          ──► Part B: a literal deadline < 30 s          ├─► breaches
+//// .erl file ──► a timer, a sleep, a timed receive         ┘      │
+////                                                                 ▼
 //// exception list ──► a listed file with a breach is clean; a listed file
 ////                    with none left (or none at all) is itself a breach
 //// ```
@@ -22,11 +24,18 @@
 //// - a `process.receive` or `process.selector_receive` whose bound is not the
 ////   literal 0, and a `socket_read.Within`, which wait a real time;
 //// - an import of `serving_node`, `fresh_node` or `real_start_node`, which
-////   start the release's own processes on the node's clock.
+////   start the release's own processes on the node's clock;
+//// - a call of a function in `entry_points`: the functions of `login_support`,
+////   `ask_support`, `world_support` and `content_support` that start the tree,
+////   a listener, a world, a gate or a load on the real clock, or hand out the
+////   settings that do. A file that calls one is on the real clock though its
+////   own text names no source, so it is listed like a file that names one. A
+////   test that moves to the driven clock stops calling them.
 ////
 //// An Erlang file under `test/` that calls `erlang:send_after`,
-//// `erlang:start_timer`, `timer:sleep` or `timer:send_after`, or has a receive
-//// with a timeout other than 0, is a breach too.
+//// `erlang:start_timer`, `timer:sleep`, `timer:send_after`,
+//// `timer:send_interval`, `timer:apply_after` or `timer:apply_interval`, or has
+//// a receive with a timeout other than 0 or `infinity`, is a breach too.
 ////
 //// Part B, short real deadlines: in the settings whose fields a process takes
 //// as a deadline at run time (`server.Settings`' send deadline, `server.World`'s
@@ -40,8 +49,24 @@
 //// The exception list has two parts. `genuine_real_time` holds the files that
 //// check real time itself, each with its reason. `still_on_the_real_clock` is
 //// the gap: the test files whose tests still run on the real clock, which the
-//// coverage measure lists and each step that moves a file deletes it from; a
-//// listed file with nothing left is a breach, so the list cannot go stale.
+//// coverage measure lists; a file leaves it with its last real-clock test, and
+//// a listed file with nothing left is a breach, so the list cannot go stale.
+////
+//// What the rule does not catch:
+//// - A support function that starts the real clock and is not in
+////   `entry_points`. A support module that names a source itself is read (and
+////   is listed), but a test that calls it is caught only for the functions
+////   named. `ask_support.await_new_pid` (a poll that sleeps 1 ms), and the
+////   waits of `event_wait`, `readiness_support` and `owned_test`, are not
+////   named: each ends by its own condition or by the test's deadline.
+//// - A file on `genuine_real_time` is exempt as a whole. `ask_test`,
+////   `connection_script_test`, `world_map_registry_test`, `application_test`
+////   and `readiness_test` also hold tests on the real clock that the reason
+////   does not name, and a new real-clock test added to one of them is not
+////   caught.
+//// - Part B reads a literal. A short deadline given through a variable, a
+////   module constant or a punned label is not read, and neither is a time given
+////   to `process.call` or `actor.call`.
 
 import code_rule/erlang_calls
 import code_rule/source.{type Breach, type SourceFile, Breach}
@@ -55,6 +80,59 @@ import gleam/string
 /// A file the rule does not read, and why.
 pub type Exception {
   Exception(path: String, reason: String)
+}
+
+/// A function of a support module under `test/` that starts something on the
+/// real clock, and what makes it real time.
+pub type EntryPoint {
+  EntryPoint(module: String, function: String, because: String)
+}
+
+const the_operating_system_script =
+  "runs its connections on the operating system's script"
+
+/// The functions of the support modules that start the real tree, a listener, a
+/// world or a connection on the real clock, or hand out the settings that do,
+/// each with what makes it real time. A test file that calls one is on the real
+/// clock, whatever its own text names.
+pub fn entry_points() -> List(EntryPoint) {
+  let tree =
+    "starts the tree whose STS and auth listeners serve on the operating system's script with a send deadline of 300 ms (`driven_by` moves the game listener and the World only)"
+  let settings =
+    "its settings serve on the operating system's script with real service time, a send deadline of 300 ms, a Maps call of 2 s and an ask of 5 s"
+  let gate = "runs the gate service on real service time"
+  let send_deadline =
+    "builds its connections' settings with a send deadline of 300 ms the caller cannot change"
+  let wait = "waits for the database under 1 s"
+  [
+    EntryPoint("login_support", "start", tree),
+    EntryPoint("login_support", "start_with", tree),
+    EntryPoint("login_support", "start_on", tree),
+    EntryPoint("login_support", "start_with_jim", tree),
+    EntryPoint("login_support", "start_recording_auth", tree),
+    EntryPoint("login_support", "settings", settings),
+    EntryPoint("login_support", "servers_settings", settings),
+    EntryPoint("login_support", "servers_settings_over", settings),
+    EntryPoint("login_support", "login", settings),
+    EntryPoint("login_support", "world", settings),
+    EntryPoint("login_support", "game", settings),
+    EntryPoint("ask_support", "start", the_operating_system_script),
+    EntryPoint("ask_support", "start_joined", the_operating_system_script),
+    EntryPoint("ask_support", "start_scripted", send_deadline),
+    EntryPoint("ask_support", "start_telling", send_deadline),
+    EntryPoint("ask_support", "started_listener", the_operating_system_script),
+    EntryPoint("ask_support", "gate", gate),
+    EntryPoint("ask_support", "reaching", gate),
+    EntryPoint("ask_support", "observed_gate", gate),
+    EntryPoint(
+      "world_support",
+      "start",
+      "calls Maps within 1 s, on the driven clock otherwise",
+    ),
+    EntryPoint("content_support", "asking", wait),
+    EntryPoint("content_support", "load", wait),
+    EntryPoint("content_support", "load_terrain", wait),
+  ]
 }
 
 /// The test's own deadline, `owned_test.run`'s upper limit: a deadline below it
@@ -134,6 +212,9 @@ const erlang_timers = [
   #("erlang", "start_timer"),
   #("timer", "sleep"),
   #("timer", "send_after"),
+  #("timer", "send_interval"),
+  #("timer", "apply_after"),
+  #("timer", "apply_interval"),
 ]
 
 /// Each source of real time and each short deadline a Gleam file names, at its
@@ -144,6 +225,7 @@ pub fn breaches(file: SourceFile) -> List(Breach) {
     named_sources(module),
     unbounded_receives(module),
     node_imports(module),
+    entry_point_calls(module),
     short_deadlines(module),
   ])
   |> list.map(fn(found) {
@@ -317,6 +399,27 @@ fn bound_of(
     Error(Nil), Ok(glance.UnlabelledField(item)) -> Some(item)
     Error(Nil), Ok(_) | Error(Nil), Error(Nil) -> None
   }
+}
+
+/// The offset of each reference to an entry point of a support module, with its
+/// rule.
+fn entry_point_calls(module: glance.Module) -> List(#(Int, String)) {
+  list.flat_map(entry_points(), fn(entry) {
+    let EntryPoint(module: from, function:, because:) = entry
+    syntax.references_to(module:, from: [from], named: [function])
+    |> list.map(fn(reference) {
+      #(
+        syntax.location_of(reference).start,
+        "names real time ("
+          <> from
+          <> "."
+          <> function
+          <> ", which "
+          <> because
+          <> ")",
+      )
+    })
+  })
 }
 
 /// The offset of each import of a module that starts the release's processes.
@@ -557,11 +660,12 @@ pub fn genuine_real_time() -> List(Exception) {
 }
 
 /// The test files whose tests still run on the real clock: a connection on the
-/// operating system's script, a service on its real time, or a setting that
-/// gives a process a deadline the test can pass. The coverage measure lists
-/// each. A file listed here that names none is a breach, so its entry is
-/// deleted with its last real-clock test; the part is empty when every test runs
-/// on the driven clock.
+/// operating system's script, a service on its real time, a setting that gives a
+/// process a deadline the test can pass, or a call of a support function that
+/// starts one of these (`entry_points`). The coverage measure lists each. A file
+/// listed here that names none is a breach, so its entry is deleted with its
+/// last real-clock test; the part is empty when every test runs on the driven
+/// clock.
 pub fn still_on_the_real_clock() -> List(Exception) {
   [
     Exception(
@@ -574,31 +678,91 @@ pub fn still_on_the_real_clock() -> List(Exception) {
     ),
     Exception(
       "test/game_wire_test.gleam",
-      "its content load asks the database under a wait of 5 s",
+      "its content load asks the database under a wait of 5 s, and it calls login_support.start, start_with and start_with_jim",
+    ),
+    Exception(
+      "test/login_wire_test.gleam",
+      "calls login_support.start_with_jim, which starts the tree on the real clock",
+    ),
+    Exception(
+      "test/server_test.gleam",
+      "calls login_support.start and servers_settings, which start the tree and make its settings on the real clock",
+    ),
+    Exception(
+      "test/sitting_test.gleam",
+      "calls login_support.start_with, start_on and servers_settings, which start the tree and make its settings on the real clock",
+    ),
+    Exception(
+      "test/game_client_poll_test.gleam",
+      "calls login_support.start, which starts the tree on the real clock",
+    ),
+    Exception(
+      "test/load_run_test.gleam",
+      "calls login_support.start, which starts the tree on the real clock",
+    ),
+    Exception(
+      "test/load_sample_test.gleam",
+      "calls login_support.start, which starts the tree on the real clock",
+    ),
+    Exception(
+      "test/connection_flood_test.gleam",
+      "calls login_support.start_recording_auth, which drives the auth listener only, so the STS and game listeners and the World run on the real clock",
+    ),
+    Exception(
+      "test/wire_replay_support.gleam",
+      "calls ask_support.start_scripted, login_support.start_with and servers_settings, which start a listener and the tree on the real clock",
+    ),
+    Exception(
+      "test/wire_replay_test.gleam",
+      "calls ask_support.gate, which runs the gate service on real service time",
     ),
     Exception(
       "test/world_support.gleam",
       "starts the world with a Maps call of 1 s",
     ),
     Exception(
+      "test/world_creature_test.gleam",
+      "calls world_support.start, whose Maps call is 1 s",
+    ),
+    Exception(
+      "test/world_unit_state_test.gleam",
+      "calls world_support.start, whose Maps call is 1 s",
+    ),
+    Exception(
+      "test/world_watch_support.gleam",
+      "calls world_support.start, whose Maps call is 1 s",
+    ),
+    Exception(
       "test/ask_support.gleam",
-      "asks through the operating system's script, real service time and a sleep",
+      "asks through the operating system's script, real service time and a sleep, with a send deadline of 300 ms",
     ),
     Exception(
       "test/connection_actor_test.gleam",
-      "runs connections on the operating system's script",
+      "runs connections on the operating system's script (ask_support.start_scripted)",
     ),
     Exception(
       "test/connection_closing_test.gleam",
-      "runs connections on the operating system's script",
+      "runs connections on the operating system's script (ask_support.start_scripted)",
     ),
     Exception(
       "test/connection_shell_test.gleam",
-      "runs a connection on the operating system's script",
+      "runs a connection on the operating system's script (ask_support.start, start_scripted)",
     ),
     Exception(
       "test/connection_signal_test.gleam",
-      "runs connections on the operating system's script, so its timers fire on the operating system's scheduler",
+      "runs connections on the operating system's script, so its timers fire on the operating system's scheduler (ask_support.start_joined, start_telling)",
+    ),
+    Exception(
+      "test/closer_test.gleam",
+      "starts listeners on the operating system's script (ask_support.start, started_listener)",
+    ),
+    Exception(
+      "test/listener_test.gleam",
+      "starts listeners on the operating system's script (ask_support.started_listener)",
+    ),
+    Exception(
+      "test/account_store_test.gleam",
+      "its ask tests start a listener on the operating system's script (ask_support.start)",
     ),
     Exception(
       "test/owned_test_test.gleam",
@@ -606,15 +770,35 @@ pub fn still_on_the_real_clock() -> List(Exception) {
     ),
     Exception(
       "test/wire_recorder_test.gleam",
-      "records a connection run on the operating system's script",
+      "records a connection run on the operating system's script (ask_support.start_scripted)",
     ),
     Exception(
       "test/service_shell_test.gleam",
-      "starts service shells on their real time",
+      "starts service shells on their real time (ask_support.gate, reaching, observed_gate, start)",
+    ),
+    Exception(
+      "test/service_shell_creature_test.gleam",
+      "starts service shells on their real time (ask_support.reaching)",
     ),
     Exception(
       "test/content_support.gleam",
       "loads the content under a database wait of 1 s",
+    ),
+    Exception(
+      "test/content_terrain_test.gleam",
+      "loads the content under a database wait of 1 s (content_support.load_terrain)",
+    ),
+    Exception(
+      "test/content_vendor_test.gleam",
+      "loads the content under a database wait of 1 s (content_support.load)",
+    ),
+    Exception(
+      "test/creature_auto_attack_test.gleam",
+      "loads the content under a database wait of 1 s (content_support.load)",
+    ),
+    Exception(
+      "test/creature_special_test.gleam",
+      "loads the content under a database wait of 1 s (content_support.load)",
     ),
     Exception(
       "test/world_data_counts_test.gleam",

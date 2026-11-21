@@ -22,8 +22,9 @@ pub fn lines(text: String, targets: List(Target)) -> List(Int)
 pub fn atom_lines(text: String, name: String) -> List(Int)
 
 /// The line of the `after` of each `receive` whose timeout is not the integer
-/// 0, in order, so a receive that waits, and not one that only looks, is
-/// found; the `after` of a `try` is no timeout. Text that does not scan gives
+/// 0 or `infinity`, in order, so a receive that waits a time, and not one that
+/// only looks or waits for ever, is found; the `after` of a `try` is no
+/// timeout. Text that does not scan gives
 /// the line where it stops.
 @external(erlang, "erlang_calls_ffi", "timed_receive_lines")
 pub fn timed_receive_lines(text: String) -> List(Int)
