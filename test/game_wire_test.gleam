@@ -8971,19 +8971,15 @@ pub fn a_use_of_dorian_leaves_him_in_place_and_10525_is_taken_from_him_test() ->
     QuestState(quest_id: 10_529, state: 3, objective_id: 0),
   )
     as "the use of Dorian completes 10529"
+  // The map's removal of a released unit is not ordered against the client's answers, so
+  // this test cannot prove that none comes; that Dorian is not released is decided by
+  // `objective_release_test`. Here the tutorial goes on with the Dorian the player used.
   let #(talked, have) = quest_bot.talk(game:, have:, unit_id: giver_a)
-  assert talked.dialogs != []
-    as "objective.stays_for_another_quest: the Dorian the use counted opens his dialog, so the map has not released him"
-  let #(accepted, have) = quest_bot.accept(game:, have:, quest_id: 10_525)
+  assert talked.dialogs != [] as "the Dorian the use counted opens his dialog"
+  let #(accepted, _) = quest_bot.accept(game:, have:, quest_id: 10_525)
   assert list.map(accepted.states, fn(told) { #(told.quest_id, told.state) })
     == [#(10_525, 1)]
     as "quest.in_reach: the Dorian the use counted gives 10525 in state 1"
-  let #(later, _) = game_client.read_until_pong(game:, have:, number: 1)
-  assert game_client.removals_in(
-      frames: list.flatten([used.frames, talked.frames, accepted.frames, later]),
-    )
-    == []
-    as "objective.stays_for_another_quest: no 0x355 removes any unit after the use"
   game_client.close(game:)
   login_support.stop(started)
 }
