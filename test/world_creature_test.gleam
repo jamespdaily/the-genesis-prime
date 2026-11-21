@@ -44,6 +44,7 @@ import genesis_prime/game/spell_plan
 import genesis_prime/game/spend
 import genesis_prime/game/start_place
 import genesis_prime/game/strike_tell.{Answered, Key, Landed}
+import genesis_prime/game/unit_casts
 import genesis_prime/game/world_entry
 import genesis_prime/group_registry
 import genesis_prime/message/buyback_list.{BuybackList}
@@ -1832,6 +1833,79 @@ pub fn tell_despawn_reaches_the_creature_as_despawn_test() -> Nil {
   assert delivered(client_connection.TellThrown(throw:, struck_at_ms: 900))
     == creature.Thrown(throw:, struck_at_ms: 900)
     as "a throw is still the creature's Thrown"
+  world_support.stop(world:)
+}
+
+pub fn tell_cast_view_reaches_the_creature_as_cast_view_set_and_ends_test() -> Nil {
+  use <- owned_test.run(30_000)
+  // A stand-in for the creature: the test process joins the address of a creature that
+  // does not run (unit 900, life 9), so what the registry delivers to it is what the
+  // server's `tell_creature` made of each request.
+  let world = one_beast(respawn_ms: 60_000)
+  let address =
+    step.Creature(
+      map: world_watch_support.ship,
+      incarnation: 1,
+      unit_id: 900,
+      life: 9,
+    )
+  let scope = creature_registry.scope(world.creatures)
+  group_registry.join(scope:, group: address, pid: process.self())
+  let next_delivered = fn() {
+    let assert service.TellCall(message:) =
+      group_registry.select_delivered(
+        scope:,
+        selector: process.new_selector(),
+        mapping: fn(call) { call },
+      )
+      |> process.selector_receive_forever
+    message
+  }
+  let delivered = fn(request) {
+    let assert Ok(Nil) =
+      server.tell_creature(creatures: world.creatures, to: address, request:)
+      as "the stand-in is found by its address and told"
+    next_delivered()
+  }
+  let view =
+    unit_casts.CastView(
+      caster_unit_id: 21,
+      cast_id: cast_state.cast_id(unit_id: 21, number: 1),
+      spell4_id: Spell4Id(41_886),
+      primary_target: 900,
+      gone: True,
+      current: False,
+      targets: [],
+    )
+  assert delivered(client_connection.TellCastView(
+      connection: ConnectionId(4),
+      change: client_connection.ViewSet(view:, struck_at_ms: 900),
+    ))
+    == creature.CastViewSet(by: ConnectionId(4), view:, struck_at_ms: 900)
+    as "a set is the creature's CastViewSet, with the connection that told it and the round's time"
+  assert delivered(client_connection.TellCastView(
+      connection: ConnectionId(4),
+      change: client_connection.ViewEnds(cast_id: view.cast_id),
+    ))
+    == creature.CastViewEnds(by: ConnectionId(4), cast_id: view.cast_id)
+    as "an end is the creature's CastViewEnds"
+  let another_life = step.Creature(..address, life: 8)
+  assert server.tell_creature(
+      creatures: world.creatures,
+      to: another_life,
+      request: client_connection.TellCastView(
+        connection: ConnectionId(4),
+        change: client_connection.ViewEnds(cast_id: 1),
+      ),
+    )
+    == Error(Nil)
+    as "a tell for a life no creature holds is dropped by the registry"
+  assert delivered(client_connection.TellCastView(
+      connection: ConnectionId(4),
+      change: client_connection.ViewEnds(cast_id: 2),
+    ))
+    == creature.CastViewEnds(by: ConnectionId(4), cast_id: 2)
+    as "and delivers nothing: the next message the stand-in takes is the later life-9 tell"
   world_support.stop(world:)
 }
 

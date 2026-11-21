@@ -38,6 +38,7 @@
 import genesis_prime/game/unit_properties.{type Properties}
 import genesis_prime/message/bit_stream.{type EncodeError}
 import genesis_prime/message/static_unit_type
+import genesis_prime/message/unit_create_cast.{type UnitCreateCast}
 import genesis_prime/message/unit_create_creature.{
   type UnitCreateCreature, UnitCreateCreature,
 }
@@ -135,6 +136,16 @@ pub fn overlaid(
       ),
     ),
   )
+}
+
+/// The creature's 0x262 with `casts` as its list of the casts that hold something on
+/// it (`unit_casts.entries_of`), and the tail's cast id left 0: the creature has no cast
+/// in progress that the list holds.
+pub fn with_casts(
+  unit unit: UnitCreateCreature,
+  casts casts: List(UnitCreateCast),
+) -> UnitCreateCreature {
+  UnitCreateCreature(..unit, tail: UnitCreateTail(..unit.tail, casts:))
 }
 
 /// The health stat of a creature's 0x262: 0 for a creature that lies dead.

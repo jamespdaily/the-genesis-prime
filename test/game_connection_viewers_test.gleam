@@ -40,6 +40,7 @@ import genesis_prime/message/unit_cc_state_ended.{UnitCcStateEnded}
 import genesis_prime/message/unit_create_cast.{
   type UnitCreateCast, UnitCreateCast,
 }
+import genesis_prime/message/unit_create_creature
 import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
 }
@@ -2107,6 +2108,106 @@ pub fn a_second_join_of_a_viewer_joins_it_to_no_cast_it_was_not_listed_test() ->
       assert list.contains(told, CastFinished(cast_id: discharge.cast_id))
         as "the viewer was listed Discharge, the current cast, at its first join"
       assert !told_of(told:, cast_id: power_charge.cast_id) as name
+    },
+  )
+}
+
+/// A creature's 0x262 lists a cast that holds a node on it, and its entry makes that node
+/// in the client. A viewer not told of the cast is sent none of its 0x7fe, 0x7f9 or 0x811
+/// (`written_cast_frames`), so the node would stay until the creature leaves its sight
+/// (`cast.target_node_end`): a viewer keeps an entry only for a cast it was told of, by the
+/// caster's create or its 0x7ff, and is still to be told the end of (`CreateCast
+/// 0x140561780`, `casts_written`).
+pub fn a_creatures_entry_is_kept_only_for_a_cast_the_viewer_was_given_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let given = 2_147_497_985
+  let never_given = 2_147_497_986
+  let own_cast = 2_147_497_987
+  let from_the_caster = fn(news) {
+    game_connection_support.sent_by_a_peer(game_connection_support.news_of(
+      unit_id: 9,
+      news:,
+    ))
+  }
+  let caster_created_with_the_cast =
+    from_the_caster(
+      Appeared(game_connection_support.another_unit_casting(
+        casts: [game_connection_support.listed_cast(cast_id: given, caster: 9)],
+        cast_id: given,
+      )),
+    )
+  list.each(
+    [
+      #(
+        "kept when the cast id is one the viewer was given, and the cast stays recorded for its 0x7fe",
+        [caster_created_with_the_cast],
+        [game_connection_support.listed_cast(cast_id: given, caster: 9)],
+        [game_connection_support.listed_cast(cast_id: given, caster: 9)],
+        given,
+        [0x07FE],
+      ),
+      #(
+        "dropped when the viewer was never given the cast, and no 0x7fe is owed for it",
+        [],
+        [
+          game_connection_support.listed_cast(cast_id: never_given, caster: 9),
+        ],
+        [],
+        never_given,
+        [],
+      ),
+      #(
+        "dropped when the cast was given and then finished before the creature's create",
+        [caster_created_with_the_cast, from_the_caster(CastFinished(given))],
+        [game_connection_support.listed_cast(cast_id: given, caster: 9)],
+        [],
+        given,
+        [],
+      ),
+      #(
+        "dropped when it is the viewer's own cast, which its client holds itself",
+        [],
+        [
+          game_connection_support.listed_cast(
+            cast_id: own_cast,
+            caster: game_connection_support.own_unit_id,
+          ),
+        ],
+        [],
+        own_cast,
+        [],
+      ),
+    ],
+    fn(row) {
+      let #(name, setup, casts, kept, cast_id, finished) = row
+      let state =
+        list.fold(setup, game_connection_support.in_world(), fn(state, event) {
+          game_connection_support.feed(state, event).0
+        })
+      let #(state, taken) =
+        game_connection_support.feed(
+          state,
+          game_connection_support.beast_appears_listing(
+            unit_id: 40,
+            yaw: 0.0,
+            casts:,
+          ),
+        )
+      let assert [created] =
+        game_connection_support.decoded(
+          game_connection_support.written(taken:),
+          0x0262,
+          unit_create_creature.decode,
+        )
+        as "the creature's 0x262 is written once"
+      assert created.tail.casts == kept as name
+      assert created.tail.cast_id == 0 as name
+      let #(_, taken) =
+        game_connection_support.feed(
+          state,
+          from_the_caster(CastFinished(cast_id)),
+        )
+      assert game_connection_support.written_ids(taken) == finished as name
     },
   )
 }
