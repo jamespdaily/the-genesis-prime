@@ -60,6 +60,7 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/order
 import gleam/otp/actor
+import gleam/result
 import mailbox_support
 import open_wait
 
@@ -275,21 +276,20 @@ fn now_of(state: State) -> Now {
 }
 
 /// The scripts of the connections of a server: the scripts `over` hands out, with
-/// this clock and these timers in place of theirs (the seed stays).
+/// this clock and these timers in place of theirs (the seed stays). An
+/// `Error` of `over` (no connection left) is passed on.
 pub fn scripts(time time: Time, over over: Scripts) -> Scripts {
   fn() {
-    let assert Ok(issued) = over()
-    Ok(
-      Issued(
-        ..issued,
-        script: Script(
-          ..issued.script,
-          clock: fn(_taking) { read(time) },
-          node_monotonic_ms: fn(_now) { runtime.monotonic_ms() },
-          schedule: fn(subject, timer, reference, after_ms) {
-            started(time:, subject:, timer:, reference:, after_ms:)
-          },
-        ),
+    use issued <- result.map(over())
+    Issued(
+      ..issued,
+      script: Script(
+        ..issued.script,
+        clock: fn(_taking) { read(time) },
+        node_monotonic_ms: fn(_now) { runtime.monotonic_ms() },
+        schedule: fn(subject, timer, reference, after_ms) {
+          started(time:, subject:, timer:, reference:, after_ms:)
+        },
       ),
     )
   }

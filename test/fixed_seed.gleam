@@ -32,8 +32,10 @@
 ////   scripts (`game_client.connect` returns after the hello, so a test that
 ////   connects its clients one after the other has a fixed order).
 //// - The scripts are built in the test body, which holds the name (`enter`, called by
-////   `owned_test`), or in a node a test started, which holds it in
-////   GENESIS_TEST_NAME (`node_environment`, passed by the helpers that start nodes);
+////   `owned_test`), or in a node a test started, which holds the body's name, salt and
+////   seed name in GENESIS_TEST_NAME, GENESIS_TEST_SEED_SALT and GENESIS_TEST_SEED_NAME
+////   (`node_environment`, passed by the helpers that start nodes), so it issues the
+////   seeds its body would;
 ////   anywhere else they panic naming the cause. A node prints each seed it issues as
 ////   a line starting `seed `; a test body's seeds are told to the log of its
 ////   `owned_test.run`, which prints them when the body fails and drops them when it
@@ -59,6 +61,10 @@ pub const salt_variable = "GENESIS_TEST_SEED_SALT"
 /// The variable that carries a test's name to a node the test starts, which has
 /// no test body of its own.
 pub const test_variable = "GENESIS_TEST_NAME"
+
+/// The variable that carries the seed name a body gave (empty when none) to a node
+/// the test starts.
+pub const seed_name_variable = "GENESIS_TEST_SEED_NAME"
 
 /// Where a test body's seed lines are told, until its `owned_test.run` ends.
 pub type Log
@@ -158,7 +164,7 @@ fn seeded_listener(served: Served(a), listener: String) -> Served(a) {
 /// serve in a comment beside the call.
 pub fn name_the_seed(name name: String) -> Nil {
   let body = current()
-  put_body(body.name, Body(..body, seed_name: name))
+  put_body(body.name, body.salt, name, Body(..body, seed_name: name))
   case body.log {
     Some(log) -> log_seed_name(log, name)
     None -> Nil
@@ -168,7 +174,7 @@ pub fn name_the_seed(name name: String) -> Nil {
 /// Makes the calling process the body of the test `name`, under `salt`, with its
 /// seeds told to `log`.
 pub fn enter(name name: String, salt salt: String, log log: Log) -> Nil {
-  put_body(name, Body(name:, salt:, seed_name: "", log: Some(log)))
+  put_body(name, salt, "", Body(name:, salt:, seed_name: "", log: Some(log)))
 }
 
 /// An empty log for a test body's seed lines.
@@ -190,30 +196,36 @@ pub fn report(log log: Log, name name: String, salt salt: String) -> String {
       string.join(
         [
           "the seeds of the connections of " <> name <> ":",
-          "  "
-            <> salt_variable
-            <> ": "
-            <> case salt {
-            "" -> "unset"
-            _ -> salt
-          },
+          "  " <> salt_variable <> ": " <> salt_shown(salt),
           "  seed name: "
             <> case seed_name {
             "" -> "none"
             _ -> seed_name
           },
-          "  repeat it: "
-            <> case salt {
-            "" -> ""
-            _ -> salt_variable <> "=" <> salt <> " "
-          }
-            <> "gleam test -- "
-            <> test_file_of(name),
+          "  repeat it: " <> repeat_command(name:, salt:),
           ..lines
         ],
         "\n",
       )
   }
+}
+
+/// The salt as a failure report shows it: its value, or "unset".
+pub fn salt_shown(salt: String) -> String {
+  case salt {
+    "" -> "unset"
+    _ -> salt
+  }
+}
+
+/// The command that runs the file of the test `name` again under `salt`.
+pub fn repeat_command(name name: String, salt salt: String) -> String {
+  case salt {
+    "" -> ""
+    _ -> salt_variable <> "=" <> salt <> " "
+  }
+  <> "gleam test -- "
+  <> test_file_of(name)
 }
 
 /// The file of the test `module:function` names.
@@ -231,12 +243,24 @@ pub fn test_name() -> String {
   current().name
 }
 
+/// The salt of the seeds of the calling test body, or of the test that started
+/// this node.
+pub fn test_salt() -> String {
+  current().salt
+}
+
 fn current() -> Body {
   case get_body() {
     Ok(body) -> body
     Error(Nil) ->
       case envoy.get(test_variable) {
-        Ok(name) -> Body(name:, salt: salt(), seed_name: "", log: None)
+        Ok(name) ->
+          Body(
+            name:,
+            salt: salt(),
+            seed_name: result.unwrap(envoy.get(seed_name_variable), ""),
+            log: None,
+          )
         Error(Nil) ->
           panic as "no test name for the seeds: build the settings inside the test body (owned_test.run) or in a node that holds GENESIS_TEST_NAME"
       }
@@ -254,7 +278,7 @@ fn told(log: Option(Log), line: String) -> Nil {
 type Counter
 
 @external(erlang, "fixed_seed_ffi", "put_body")
-fn put_body(name: String, body: Body) -> Nil
+fn put_body(name: String, salt: String, seed_name: String, body: Body) -> Nil
 
 @external(erlang, "fixed_seed_ffi", "get_body")
 fn get_body() -> Result(Body, Nil)

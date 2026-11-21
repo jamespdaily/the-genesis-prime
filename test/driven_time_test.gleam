@@ -391,3 +391,10 @@ pub fn scripts_over_other_scripts_keep_their_seed_and_take_the_driven_clock_test
   assert process.receive(scheduled_by_the_wrapped, 0) == Error(Nil)
     as "the wrapped script's scheduler started nothing"
 }
+
+pub fn scripts_over_scripts_that_have_run_out_pass_the_end_through_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let time = driven_time.new()
+  assert driven_time.scripts(time:, over: fn() { Error(Nil) })() == Error(Nil)
+    as "a replay's scripts that have no connection left end the connection, as they do unwrapped"
+}

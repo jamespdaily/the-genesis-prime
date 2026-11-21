@@ -393,3 +393,30 @@ pub fn name_in_a_fresh_node() -> Nil {
     == "fixed_seed_test:a_fresh_node_a_test_starts_holds_the_tests_name_test"
     as "the node holds the name of the test that started it, so the settings it builds are seeded"
 }
+
+pub fn a_fresh_node_gets_the_seeds_of_the_body_that_started_it_test() -> Nil {
+  use <- owned_test.run(180_000)
+  let rows = [
+    #("the body names no seed", "", "s"),
+    #("the body names its seed", "x", "s"),
+    #("the body is under another salt", "x", "t"),
+  ]
+  use #(reason, seed_name, salt) <- list.each(rows)
+  owned_test.run_under_salt(salt:, timeout_ms: 100_000, body: fn() {
+    case seed_name {
+      "" -> Nil
+      _ -> fixed_seed.name_the_seed(name: seed_name)
+    }
+    let game_seed = fn() {
+      next_seed_of(fixed_seed.scripts(listener: "game", over: planted_scripts()))
+    }
+    let in_main = game_seed()
+    fresh_node.must_return_function(fn() {
+      assert game_seed() == in_main
+        as {
+          reason
+          <> ": the node issues the seed the main VM issues for the same name, seed name and salt"
+        }
+    })
+  })
+}

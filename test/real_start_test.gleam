@@ -25,6 +25,8 @@
 import client_tables
 import content_support
 import database_support
+import envoy
+import fixed_seed
 import genesis_prime/import_world_data
 import genesis_prime/load_player.{Account}
 import genesis_prime/table/loader/server_table
@@ -148,7 +150,16 @@ fn unreached_report(node node: Node, wanted wanted: String) -> String {
   <> string.join(list.drop(quest_steps, list.length(quest_steps) - 1), "\n")
   <> "\nthe last waits the bot named:\n"
   <> string.join(list.drop(waits, list.length(waits) - 3), "\n")
-  <> "\nthe seeds the node's listeners issued (they repeat under the test's name and GENESIS_TEST_SEED_SALT):\n"
+  <> "\nthe seeds the node's listeners issued under "
+  <> fixed_seed.salt_variable
+  <> ": "
+  <> fixed_seed.salt_shown(fixed_seed.test_salt())
+  <> " (repeat it: "
+  <> fixed_seed.repeat_command(
+    name: fixed_seed.test_name(),
+    salt: fixed_seed.test_salt(),
+  )
+  <> "):\n"
   <> string.join(seeds, "\n")
   <> "\nits last lines:\n"
   <> string.join(list.drop(lines, list.length(lines) - 25), "\n")
@@ -257,6 +268,19 @@ pub fn a_bot_that_cannot_go_on_names_its_last_step_test() -> Nil {
   )
     as report
   assert string.contains(report, "step: 0x262 of a unit of Creature2 73419")
+    as report
+  let salt_shown = case envoy.get("GENESIS_TEST_SEED_SALT") {
+    Ok(value) if value != "" -> value
+    Ok(_) | Error(Nil) -> "unset"
+  }
+  assert string.contains(
+    report,
+    "\nthe seeds the node's listeners issued under GENESIS_TEST_SEED_SALT: "
+      <> salt_shown
+      <> " (repeat it: ",
+  )
+    as report
+  assert string.contains(report, "gleam test -- test/real_start_test.gleam)")
     as report
   let assert Ok(#(_before, after_label)) =
     string.split_once(report, "\nseed connection 1 of the game listener: ")
