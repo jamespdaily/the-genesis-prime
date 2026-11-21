@@ -230,8 +230,9 @@ pub type News {
   /// (0 for a corpse). Sent by the creature's own process
   /// (genesis_prime/world_map/creature), which owns the unit, with what the viewer's
   /// strikes and requests need of it: its life, which its address needs, the hit
-  /// radius of its display, whom it may be attacked by and which player factions it
-  /// is Hostile to.
+  /// radius of its display, whom it may be attacked by, which player factions it
+  /// is Hostile to and whether it takes part in combat (`creature_life.Combat.fights`),
+  /// which an area's candidates read.
   CreatureAppeared(
     unit: UnitCreateCreature,
     unit_type: CreatureUnitType,
@@ -240,6 +241,7 @@ pub type News {
     hit_radius: Float,
     attackable: Attackable,
     hostile_to: Hostile,
+    fights: Bool,
   )
   /// The unit moved: the map's server time at the move (the map's clock,
   /// `world_map/map.server_time`) and at most 31 of its relayed commands in the

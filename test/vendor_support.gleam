@@ -111,6 +111,7 @@ pub fn picture_with_walker(gap gap: Float) -> shown.Picture {
         unit_states: [],
         face: option.None,
         faced_yaw: option.None,
+        fights: True,
       ),
     ),
     #(9, shown.ShownPlayer(at: option.None)),

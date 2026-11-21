@@ -507,11 +507,7 @@ fn plan(
   case marker_ids {
     [] -> #(None, [])
     _ -> {
-      let creature_ids = case named {
-        objective_kind.OneCreature(creature2_id:) -> [creature2_id.value]
-        objective_kind.GroupOf(target_group_id:) ->
-          target_group.listed_creatures(tables:, group: target_group_id.value)
-      }
+      let creature_ids = target_group.placed_creatures(tables:, placed: named)
       let no_group = case creature_ids {
         [] -> [
           Skipped(

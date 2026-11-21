@@ -447,6 +447,8 @@ import gleam/set.{type Set}
 ///   it did and does not turn to its target until that ends (a server's choice, a guess: the
 ///   client holds no rule for turning under a state; a Root and the other run-stopping states
 ///   leave it turning, since they only stop its run).
+/// - `fights`: the creature takes part in combat (`creature_life.Combat.fights`); one that does
+///   not starts no fight, whoever approaches or strikes it.
 /// An attack that is `Charged` is a charge.
 pub type Fighter {
   Fighter(
@@ -465,6 +467,7 @@ pub type Fighter {
     hit_radius: Float,
     specials: List(Special),
     turn_held: Bool,
+    fights: Bool,
   )
 }
 
@@ -1423,7 +1426,8 @@ fn near_viewers(
 
 /// A resting creature aggroes these players, each with the aggro threat, in the
 /// stay its sighting came with (`start_fight`). No player it has a place for in
-/// the stay it is a viewer in, no fight.
+/// the stay it is a viewer in, no fight, and a creature that does not fight
+/// (`Fighter.fights`) aggroes no one.
 fn aggro(
   state state: State,
   fighter fighter: Fighter,
@@ -1431,6 +1435,7 @@ fn aggro(
   players players: List(ConnectionId),
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
+  use <- bool.guard(when: !fighter.fights, return: #(state, []))
   let entries =
     list.filter_map(players, fn(player) {
       case dict.get(state.sightings, player) {
@@ -1526,7 +1531,8 @@ fn threatened_told(fighter fighter: Fighter) -> Told {
 
 /// A viewer's strike, in its stay `stay`, adds its threat: a resting creature
 /// starts a fight with it; a fighting one adds to its entry, naming a new top entry
-/// as its target (0x908), and any other entry's new threat in 0x90a.
+/// as its target (0x908), and any other entry's new threat in 0x90a. A creature that does
+/// not fight (`Fighter.fights`) takes the strike and starts no fight.
 fn threatened_by(
   state state: State,
   fighter fighter: Fighter,
@@ -1535,6 +1541,7 @@ fn threatened_by(
   threat threat: Float,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
+  use <- bool.guard(when: !fighter.fights, return: #(state, []))
   case state.status {
     Returning(..) -> #(state, [])
     Resting ->

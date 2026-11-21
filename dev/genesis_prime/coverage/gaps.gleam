@@ -68,6 +68,7 @@ import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_control
 import genesis_prime/world_map/creature_fight
 import genesis_prime/world_map/creature_special
+import genesis_prime/world_map/lying_body
 import gleam/int
 import gleam/list
 import gleam/string
@@ -85,6 +86,7 @@ pub fn registry() -> List(Entry) {
     item_use.gaps(),
     random_stat.gaps(),
     target_group.gaps(),
+    lying_body.gaps(),
     interaction.gaps(),
     vendor_purchase.gaps(),
     dev_command.gaps(),

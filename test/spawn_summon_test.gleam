@@ -425,3 +425,16 @@ pub fn a_summon_at_the_level_of_the_creatures_own_row_is_the_summon_with_no_leve
     == summoned_from_client(creature_id: beast)
     as "the Beast's minLevel is 1 (Creature2.73464), so naming level 1 changes nothing"
 }
+
+pub fn a_summoned_crash_site_body_never_fights_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Creature2 13277, Dead Crash Survivor: uiFlags 0x1AF holds bit 8
+  // (`Creature2.uiFlags.bit8`), so the client draws it lying dead at health 0 and a summon
+  // of it takes no part in combat, as a stored spawn of it does.
+  let assert Ok(body) = summoned_from_client(creature_id: 13_277)
+    as "the body passes the checks of a spawn"
+  assert !body.combat.fights
+  let assert Ok(creature) = summoned_from_client(creature_id: beast)
+    as "the Beast passes the checks of a spawn"
+  assert creature.combat.fights as "an ordinary enemy fights"
+}

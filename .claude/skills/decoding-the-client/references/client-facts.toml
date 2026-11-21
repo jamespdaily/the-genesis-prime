@@ -6072,7 +6072,7 @@ name = "HandleEntityHealthUpdate"
 statement = "Sets a unit's health (the value Unit:GetHealth returns) to the value given, with no bound to its maximum; a unit with a certain flag keeps its health."
 proof = "Decompiled seed_1404602e0: if (flags at 0x28 & 0x100) == 0, store the value at 0x40. Slot 0x50 of the unit class table 0x140b66fd0 (bytes at 0x140b67020)."
 grade = "fairly sure"
-gap = "What sets flag 0x100 is not read."
+gap = "Creature2.uiFlags.bit8 is the flag 0x100; any other setter of it is not read."
 name = "SetUnitHealth"
 
 ["opcode.0x92f"]
@@ -6672,6 +6672,12 @@ statement = "Creature2 flags bit 0 marks a creature that only its own activate s
 proof = "SetUnitCreature 0x140458a40 (hash 49fd5a78aaad3411): the creature record's word 0x24 to unit word 0x24 (record filled at 0x140661520 from Creature2 flags). CheckCastActivateSpell 0x1403b44b0 (hash 02ce70b035ab663d): target byte 0x24 & 1 with no cast group -> 0x59. PickNearbyCastTarget 0x14055a5f0 (hash 45db9ea8bc8ed260) line 74. Other writers of a bit-0 at offset 0x24 in the listing (0x1402890b0, 0x14037cc30, 0x1403830c0) work on world chunk objects, not units. Rows: Creature2.tbl read whole (56,369 rows, 31,874 with flags & 1); `gleam run -m genesis_prime/table_rows -- Creature2 8047`."
 grade = "fairly sure"
 gap = "Read from the decompile, not run; the Creature2 record builder's copy of flags is taken from SetUnitCreature's reading of record word 0x24, not traced column by column."
+
+["Creature2.uiFlags.bit8"]
+statement = "Creature2 uiFlags bit 8 (0x100) marks a creature the client draws as a lying body. When the unit is created (message 0x262), the client sets its dead pose, sets its health to 0 and clears the 44 bytes of state after it, whatever health the message holds; later health writes are ignored while the bit is set, so the client never shows the creature alive. The client does not mark such a unit dead in the sense of Unit:IsDead (the death word is not written), and does not read the bit for anything else in the creature's creation. The same three writes run when a server message changes the unit's uiFlags to hold the bit. Whether a body fights is not decided by the client: it only draws the body lying."
+proof = "InitUnitFromCreate 0x140456960 (saved C, hash cc54e920d5411539, lines 828-833): the dead-pose word 0x1348 (word index 0x269) is set from the death word 0x250 (index 0x4a), then, when the unit's uiFlags word (0x28, index 5; SetUnitCreature 0x140458a40 copies creature record word 0x25 into it, and FillCreatureInfoBase 0x1404852b0 fills that record word from Creature2 column 0x55, uiFlags) has 0x100: word 0x1348 is set to 1, the health word 0x40 (index 8) to 0, and 0x21c to 0x247 cleared. SetUnitHealth 0x1404602e0 (saved C, hash 49fd5a78aaad3411): stores the health only when (uiFlags & 0x100) == 0. The same three writes follow a uiFlags change in HandleMessage0889 0x1403dede0 (hash c46bd29540ae9b90, lines 20-28) and in 0x1405aec80 (hash cc54e920d5411539, lines 51-59). SetUnitDead 0x14045ec90 writes the dead-pose word from a real death, and the unit's animation update 0x14046cdc0 reads it (lines 63-64, 132). FUN_140458ec0 clears the dead-pose word for unit type 25 only. Rows: Creature2.tbl read whole: 89 of the creatures the world database spawns as type 0 have bit 8, among them 13277, 50716 and 50717 (Dead Crash Survivor, uiFlags 0x1AF), 40115 (Road Warrior, uiFlags 0x12F) and the [CORPSE] Nursery Prober 54312."
+grade = "fairly sure"
+gap = "Read from the saved C, not run. 0x1405aea60 (hash cc54e920d5411539, lines 22-27) saves the uiFlags, puts 0x40a3 in their place and clears the dead-pose word when bit 8 was set, until 0x1405aec80 restores them: some client feature stands a body up for a time, and it is not named (its callers go through 0x1405abbf0 and 0x1404c9e20). Whether the client's Unit:IsDead or the animation treats a body differently from a dead unit beyond the dead-pose word is not read."
 
 ["0x1404846c0"]
 statement = "Picks one entry of a creature display group at random, weighted: a number from 1 to the group's total weight, then the first entry whose running total reaches it."

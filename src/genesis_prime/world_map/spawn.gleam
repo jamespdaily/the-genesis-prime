@@ -58,6 +58,9 @@
 ////   the row's own (`opcode.0x262.creature`): the client's weighted display pick
 ////   runs only for the spawns it makes itself (`0x1404846c0`).
 //// - **A level outside its row's range** is kept and listed in an info line.
+//// - **Who takes part in combat** (`Combat.fights`): a creature the client draws as a lying
+////   body, and that no kill objective counts, does not (genesis_prime/world_map/lying_body,
+////   `Creature2.uiFlags.bit8`); its faction's `hostile_to` and `attackable` are kept.
 //// - **What a creature brings to a fight** (`Combat`) is worked out here with the rest of
 ////   its values: the hit radius of its display (Creature2DisplayInfo.hitRadius), whom it
 ////   may be attacked by (a faction level toward each player faction of 7 or less,
@@ -133,6 +136,7 @@ import genesis_prime/world_map/creature_life.{
 import genesis_prime/world_map/creature_unit_type.{
   type CreatureUnitType, NonPlayer, Turret,
 }
+import genesis_prime/world_map/lying_body
 import genesis_prime/world_map/spawn_cell.{type Cells}
 import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
 import genesis_prime/world_map/spawn_source.{type Summoned, Summoned}
@@ -579,6 +583,7 @@ type Catalog {
     property_rows: Dict(Int, #(Float, Int)),
     run_stopped_by: Int,
     special_plans: Dict(Int, Result(Spell, PlanError)),
+    kill_named: Set(Int),
   )
 }
 
@@ -1102,6 +1107,7 @@ fn catalog(tables tables: table_store.Tables, kinds kinds: Kinds) -> Catalog {
     ),
     run_stopped_by: crowd_control.stopping_mask(tables:),
     special_plans: special_plans(tables:, kinds:),
+    kill_named: lying_body.kill_named(tables:),
   )
 }
 
@@ -1268,6 +1274,7 @@ fn combat_of(
         ),
       ),
       hostile_to: hostile_to_players(levels: catalog.factions, faction_id:),
+      fights: lying_body.fights(kill_named: catalog.kill_named, creature:),
       defence: defence_of(formulas:, level:, value:),
       attack:,
       alternates: list.map(alternates, fn(alternate) { alternate.0 }),
