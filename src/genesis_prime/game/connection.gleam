@@ -444,7 +444,7 @@ fn settled(
 
 /// What every input of a player decided, finished in one order: the casts whose
 /// persistence stopped holding ended, each creature told what the player's casts now hold
-/// on it, the sight rechecked and the turn-in completed. The two that follow read no cast
+/// on it, the sight rechecked and the turn-in completed. The two that follow change no cast
 /// state, so nothing after the tell changes a node.
 fn input_settled(
   handled handled: client_connection.Handled(Session),

@@ -1346,12 +1346,10 @@ fn to_the_medic(taken: step.ServiceStep(creature.Outgoing)) -> List(Message) {
 /// The connection's tells to the creature, as the creature takes them
 /// (`server.creature_told`).
 fn to_the_beast(taken: ConnectionStep(Request)) -> List(creature.Message) {
-  list.filter_map(support.effects_of(taken), fn(effect) {
-    case effect {
-      OwnEffect(step.Tell(to: step.Creature(unit_id: 7, ..), request:)) ->
-        server.creature_told(request)
-      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
-        Error(Nil)
+  list.filter_map(game_connection_support.creature_tells(taken), fn(tell) {
+    case tell {
+      #(7, _, request) -> server.creature_told(request)
+      #(_, _, _) -> Error(Nil)
     }
   })
 }

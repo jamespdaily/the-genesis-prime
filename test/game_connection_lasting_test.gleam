@@ -5,7 +5,6 @@
 //// `opcode.0x813`: the same). Expected values come from those records.
 
 import cast_support
-import connection_rule_support as rule_support
 import fixture_tables
 import game_connection_support
 import genesis_prime/client_connection.{
@@ -22,8 +21,10 @@ import genesis_prime/message/spell_position.{SpellPosition}
 import genesis_prime/message/spell_stack_removed.{SpellStackRemoved}
 import genesis_prime/message/spell_started
 import genesis_prime/message/spell_targets_removed.{SpellTargetsRemoved}
-import genesis_prime/step.{OwnEffect, OwnEvent}
+import genesis_prime/server
+import genesis_prime/step.{ConnectionId, OwnEvent}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
+import genesis_prime/world_map/creature
 import gleam/list
 import owned_test
 import planted_table
@@ -377,13 +378,10 @@ const go_elsewhere = "!go 870 1227 -7700 -941 -659"
 fn struck_lives(
   taken taken: step.ConnectionStep(client_connection.Request),
 ) -> List(Int) {
-  list.filter_map(rule_support.effects_of(taken), fn(effect) {
-    case effect {
-      OwnEffect(step.Tell(
-        to: step.Creature(life:, ..),
-        request: client_connection.TellStrike(..),
-      )) -> Ok(life)
-      _ -> Error(Nil)
+  list.filter_map(game_connection_support.creature_tells(taken), fn(tell) {
+    case tell {
+      #(_, life, client_connection.TellStrike(..)) -> Ok(life)
+      #(_, _, _) -> Error(Nil)
     }
   })
 }
@@ -462,17 +460,17 @@ fn fissure_pressed() -> Fissure {
   Fissure(state:, landed:, unit_id:, child_cast_id:, beast_life:)
 }
 
-/// The views the step tells creatures, as the creature's unit, its life and the change.
+/// The views the step tells creatures, as the creature's unit, its life and the message
+/// the creature takes the tell as (`server.creature_told`).
 fn views_told(
   taken taken: step.ConnectionStep(client_connection.Request),
-) -> List(#(Int, Int, client_connection.ViewChange)) {
-  list.filter_map(rule_support.effects_of(taken), fn(effect) {
-    case effect {
-      OwnEffect(step.Tell(
-        to: step.Creature(unit_id:, life:, ..),
-        request: client_connection.TellCastView(change:, ..),
-      )) -> Ok(#(unit_id, life, change))
-      _ -> Error(Nil)
+) -> List(#(Int, Int, creature.Message)) {
+  list.filter_map(game_connection_support.creature_tells(taken), fn(tell) {
+    let #(unit_id, life, request) = tell
+    case server.creature_told(request) {
+      Ok(creature.CastViewSet(..) as told)
+      | Ok(creature.CastViewEnds(..) as told) -> Ok(#(unit_id, life, told))
+      Ok(_) | Error(Nil) -> Error(Nil)
     }
   })
 }
@@ -491,10 +489,18 @@ fn beast_removed() -> step.Event(
 /// it, so each creature is told what the player's casts hold on it, after the input that
 /// changed it, whatever the input was: the answer that lands a round, the creature's own news,
 /// a camp, a move to another world and the player's death.
+///
+/// Gap: while an ask is in flight (`SavingPlace`, `LeavingMap`) the connection keeps no write
+/// to the player's cast state (`connection_state.with_entered` leaves an ask's status as it
+/// is), so the Beast's 0x355 there changes neither the state nor what the creature was told,
+/// whichever state the camp or the leave kept. The two rows that read the Beast's 0x355
+/// during an ask cannot fail while that holds; they stand to catch a later change that
+/// keeps a write during an ask.
 pub fn the_creature_is_told_after_each_input_that_changes_its_node_test() -> Nil {
   use <- owned_test.run(60_000)
   let fissure = fissure_pressed()
-  let ends = client_connection.ViewEnds(cast_id: fissure.child_cast_id)
+  let medic = ConnectionId(1)
+  let ends = creature.CastViewEnds(by: medic, cast_id: fissure.child_cast_id)
   let #(_, removed) =
     game_connection_support.feed(fissure.state, beast_removed())
   let #(_, moved) =
@@ -534,7 +540,8 @@ pub fn the_creature_is_told_after_each_input_that_changes_its_node_test() -> Nil
           #(
             40,
             fissure.beast_life,
-            client_connection.ViewSet(
+            creature.CastViewSet(
+              by: medic,
               view: unit_casts.CastView(
                 caster_unit_id: fissure.unit_id,
                 cast_id: fissure.child_cast_id,
@@ -573,7 +580,7 @@ pub fn the_creature_is_told_after_each_input_that_changes_its_node_test() -> Nil
         [#(40, fissure.beast_life, ends)],
       ),
       #(
-        "the Beast's 0x355 during the save tells nothing again: the camp kept the compared state",
+        "UNABLE TO FAIL (an ask keeps no cast-state write): the Beast's 0x355 during the save tells nothing again",
         views_told(taken: removed_while_saving),
         [],
       ),
@@ -583,7 +590,7 @@ pub fn the_creature_is_told_after_each_input_that_changes_its_node_test() -> Nil
         [#(40, fissure.beast_life, ends)],
       ),
       #(
-        "the Beast's 0x355 during the leave tells nothing again",
+        "UNABLE TO FAIL (an ask keeps no cast-state write): the Beast's 0x355 during the leave tells nothing again",
         views_told(taken: removed_while_leaving),
         [],
       ),

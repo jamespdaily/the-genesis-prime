@@ -2022,7 +2022,10 @@ pub fn the_caster_tells_each_creature_what_its_casts_hold_on_it_test() -> Nil {
       at: 1000,
     )
   let three_cast = support.pressed_id(effects: three_effects)
-  // A node's count is 1 for an application, so a node with two stacks is built by hand.
+  // A go gives each node the count 1, and a push off emits a stack off only for a node whose
+  // count is higher (`lasting.pushed_off`), so no cast reaches a count of 2 today: the node
+  // is built by hand, and the row holds the compare's reaction to a count change, which no
+  // real cast path exercises.
   let stacked_twice =
     with_nodes_changed(
       state: on_a_creature,
@@ -2131,7 +2134,7 @@ pub fn the_caster_tells_each_creature_what_its_casts_hold_on_it_test() -> Nil {
         ],
       ),
       #(
-        "a stack off gives a set with the count lowered",
+        "a node whose count changes (hand-built: no cast path gives a count above 1) gives a set with the new count, and one with the count lowered after a stack off",
         compared_in_turn(states: [on_a_creature, stacked_twice, one_off]),
         [
           [view_set(unit_id: 20, life: 3, struck_at_ms: 1000, view: a_go)],

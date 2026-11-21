@@ -1371,13 +1371,13 @@ pub fn views(
 }
 
 /// Each node of the unit `caster_unit_id`'s casts that a round struck as a creature and
-/// that `views` lists as a target, as that creature's view of the cast: the cast with the
-/// creature's target alone and no cast in progress (a creature shows no player's cast
-/// bar), with the round's stamp. In cast id order, then unit id order.
+/// that `views` lists as a target, as the round's stamp, that creature's view of the cast
+/// (the cast with the creature's target alone and no cast in progress: a creature shows no
+/// player's cast bar) and the target. In cast id order, then unit id order.
 pub fn creature_views(
   cast cast: State,
   caster_unit_id caster_unit_id: Int,
-) -> List(#(Int, lasting.StruckCreature, unit_casts.CastView)) {
+) -> List(#(lasting.StruckCreature, unit_casts.CastView, unit_casts.ViewTarget)) {
   list.flat_map(views(cast:, caster_unit_id:), fn(view) {
     case holder_of(cast:, cast_id: view.cast_id) {
       Error(Nil) -> []
@@ -1386,9 +1386,9 @@ pub fn creature_views(
           use node <- result.try(dict.get(holder.nodes, target.unit_id))
           use struck <- result.map(option.to_result(node.struck, Nil))
           #(
-            target.unit_id,
             struck,
             unit_casts.CastView(..view, current: False, targets: [target]),
+            target,
           )
         })
     }

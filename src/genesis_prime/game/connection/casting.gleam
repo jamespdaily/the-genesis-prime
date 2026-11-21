@@ -803,9 +803,11 @@ pub fn persisted(
 
 /// What an input decided, with each creature told what the player's casts now hold on it
 /// (`creature_view.compared`) after the input's own effects. It runs at the end of each
-/// input of a player in the world that goes on, an ask in flight included (a creature's
-/// 0x355 changes nodes during one); an input that ends in an ask is told at the end of
-/// the next input that goes on, the compare being against what each creature was told.
+/// input of a player in the world that goes on. An ask's status keeps no write to the
+/// player's cast state (`with_entered` leaves it as it is), so a change made while an ask is
+/// in flight is neither kept nor told, and the compare's record is kept only outside one; an
+/// input that ends in an ask is told at the end of the next input that goes on, the compare
+/// being against what each creature was told.
 pub fn creatures_told(
   handled handled: client_connection.Handled(Session),
 ) -> client_connection.Handled(Session) {

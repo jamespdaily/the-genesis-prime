@@ -43,10 +43,13 @@ pub type Change {
   ViewEnds(unit_id: Int, life: Int, cast_id: Int)
 }
 
-/// The nodes the caster holds on creatures now, each with the round that struck it and its
-/// view, by cast id and unit id.
+/// The nodes the caster holds on creatures now, each with the round that struck it, its view
+/// and its target, by cast id and unit id.
 type Held =
-  Dict(#(Int, Int), #(lasting.StruckCreature, unit_casts.CastView))
+  Dict(
+    #(Int, Int),
+    #(lasting.StruckCreature, unit_casts.CastView, unit_casts.ViewTarget),
+  )
 
 /// Compares what the player's casts hold on creatures (`cast_state.creature_views`) with
 /// what the creatures were last told (`creature_told`): a `ViewSet` for each node that is
@@ -64,8 +67,8 @@ pub fn compared(
   )
   let held =
     list.map(state.creature_views(cast:, caster_unit_id:), fn(entry) {
-      let #(unit_id, struck, view) = entry
-      #(#(view.cast_id, unit_id), #(struck, view))
+      let #(_, view, target) = entry
+      #(#(view.cast_id, target.unit_id), entry)
     })
     |> dict.from_list
   let changes =
@@ -87,16 +90,20 @@ pub fn compared(
 fn set_of(
   told told: Dict(#(Int, Int), Told),
   key key: #(Int, Int),
-  held held: #(lasting.StruckCreature, unit_casts.CastView),
+  held held: #(
+    lasting.StruckCreature,
+    unit_casts.CastView,
+    unit_casts.ViewTarget,
+  ),
 ) -> Result(#(#(Int, Int), Change), Nil) {
-  let #(struck, view) = held
-  case view.targets, dict.get(told, key) {
-    [target], Ok(Told(life:, struck_at_ms:, target: earlier))
+  let #(struck, view, target) = held
+  case dict.get(told, key) {
+    Ok(Told(life:, struck_at_ms:, target: earlier))
       if life == struck.life
       && struck_at_ms == struck.struck_at_ms
       && earlier == target
     -> Error(Nil)
-    [_], Ok(_) | [_], Error(Nil) ->
+    Ok(_) | Error(Nil) ->
       Ok(#(
         key,
         ViewSet(
@@ -106,7 +113,6 @@ fn set_of(
           view:,
         ),
       ))
-    [], _ | [_, _, ..], _ -> Error(Nil)
   }
 }
 
@@ -125,19 +131,10 @@ fn ends_of(
 
 /// What the creatures are told once the held nodes are: each node's round and target.
 fn told_of(held held: Held) -> Dict(#(Int, Int), Told) {
-  dict.to_list(held)
-  |> list.filter_map(fn(entry) {
-    let #(key, #(struck, view)) = entry
-    case view.targets {
-      [target] ->
-        Ok(#(
-          key,
-          Told(life: struck.life, struck_at_ms: struck.struck_at_ms, target:),
-        ))
-      [] | [_, _, ..] -> Error(Nil)
-    }
+  dict.map_values(held, fn(_, entry) {
+    let #(struck, _, target) = entry
+    Told(life: struck.life, struck_at_ms: struck.struck_at_ms, target:)
   })
-  |> dict.from_list
 }
 
 /// Cast id order, then unit id order.

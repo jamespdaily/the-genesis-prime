@@ -2499,10 +2499,17 @@ pub fn foe(
 
 /// The tells of a step to creatures, as the creature's unit and the request.
 pub fn told_creatures(taken: ConnectionStep(Request)) -> List(#(Int, Request)) {
+  list.map(creature_tells(taken), fn(tell) { #(tell.0, tell.2) })
+}
+
+/// The tells of a step to creatures, as the creature's unit, its life and the request.
+pub fn creature_tells(
+  taken: ConnectionStep(Request),
+) -> List(#(Int, Int, Request)) {
   list.filter_map(support.effects_of(taken), fn(effect) {
     case effect {
-      OwnEffect(step.Tell(to: step.Creature(unit_id:, ..), request:)) ->
-        Ok(#(unit_id, request))
+      OwnEffect(step.Tell(to: step.Creature(unit_id:, life:, ..), request:)) ->
+        Ok(#(unit_id, life, request))
       OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
         Error(Nil)
     }
