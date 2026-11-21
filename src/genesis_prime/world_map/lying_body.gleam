@@ -16,6 +16,11 @@
 //// - A creature a kill objective names keeps fighting. Which creatures an objective names is
 ////   the mapping the objective's creatures are placed by (`target_group.placed_creatures`):
 ////   the creature of a type 2 objective and the creatures its type 8 or 16 TargetGroup lists.
+//// - A body that only a faction or race group, a reward pane or a kill script names stays out
+////   of combat: the client draws it lying dead, so a player cannot attack it as one of a
+////   group's members. The bodies of the "[CORPSE] Nursery" quest objective (QuestObjective
+////   18873, Creature2 54312 to 54314, 58 spawns) and of quest giver 11067 (QuestObjective
+////   18988) are such bodies.
 //// - The creature's faction is not touched: `hostile_to` and `attackable` stay the faction's,
 ////   so a click, a quest offer and a refusal code read what they read for any creature.
 
@@ -64,7 +69,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Creatures drawn dead",
-      missing: "a creature drawn as a lying body that a kill objective names by its id or its TargetGroup list keeps fighting, and no creature of the client's data is one; a kill objective that names creatures by faction or race, a reward pane and the content table's kill scripts are not read for it, so a body of such a race or faction takes no part in combat",
+      missing: "a creature drawn as a lying body is still struck by a single-target strike: it takes damage, dies, pays kill credit and is thrown, because only the area pick (shown) and the fight's start read `fights`; the client refuses a player's cast at a unit whose Creature2 flags have bit 0 (0x1403b44b0), so only a creature's own process or a crafted client reaches one",
     ),
   ]
 }

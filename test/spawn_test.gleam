@@ -2639,7 +2639,7 @@ pub fn only_a_creature_the_client_draws_dead_and_no_kill_objective_names_stays_o
   }
   assert list.map(list.filter(bodies, fights), fn(row) { row.id })
     == [37_640, 37_641, 37_642]
-    as "of the 969, only the three Augmented XAS Scientists (Dead) are named by a kill objective of the client's tables (QuestObjective 16224 and 16231, types 8 and 16 over TargetGroups that list them); the world database spawns none of the three"
+    as "of the 969, only the three Augmented XAS Scientists (Dead) are named by a kill objective of the client's tables (QuestObjective 16224 and 16231, types 8 and 16 over TargetGroups that list them); the world database spawns none of the three; the bodies a faction or race group names stay out of fights, as the \"[CORPSE] Nursery\" bodies (Creature2 54312 to 54314, QuestObjective 18873) and quest giver 11067 (QuestObjective 18988) do"
   assert list.all(others, fights)
     as "no row with bit 8 clear is kept out of fights"
 }

@@ -625,16 +625,16 @@ pub fn a_creature_that_never_fights_struck_by_a_player_starts_no_fight_test() ->
       )
     let #(_, approach) =
       tell(state:, at_ms: 0, message: approached(number: 2, x: 5.0, seq: 1))
-    assert { fight_lines(approach) != [] && timers(approach) != [] } == fights
-      as reason
+    assert { fight_lines(approach) == [] } == !fights as reason
+    assert { timers(approach) == [] } == !fights as reason
     let #(_, strike) =
       tell(
         state:,
         at_ms: 0,
         message: strike_of(number: 2, cast_id: 1, blows: [#(1, 5, 1.0)]),
       )
-    assert { fight_lines(strike) != [] && timers(strike) != [] } == fights
-      as reason
+    assert { fight_lines(strike) == [] } == !fights as reason
+    assert { timers(strike) == [] } == !fights as reason
   })
 }
 

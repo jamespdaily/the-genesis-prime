@@ -2187,7 +2187,7 @@ fn creature_of_beast_appears_listing(
   yaw yaw: Float,
   casts casts: List(UnitCreateCast),
 ) -> Event(ConnectionEvent(Message, Answer)) {
-  beast_appearing(unit_id:, yaw:, as_spawn: fn(beast) {
+  beast_appearing(unit_id:, yaw:, casts:, as_spawn: fn(beast) {
     spawn.Spawn(..beast, creature_id: Creature2Id(creature_id))
   })
 }
@@ -2197,7 +2197,7 @@ fn creature_of_beast_appears_listing(
 pub fn beast_appears_not_fighting(
   unit_id unit_id: Int,
 ) -> Event(ConnectionEvent(Message, Answer)) {
-  beast_appearing(unit_id:, yaw: 0.0, as_spawn: fn(beast) {
+  beast_appearing(unit_id:, yaw: 0.0, casts: [], as_spawn: fn(beast) {
     spawn.Spawn(
       ..beast,
       combat: creature_life.Combat(..beast.combat, fights: False),
@@ -2208,6 +2208,7 @@ pub fn beast_appears_not_fighting(
 fn beast_appearing(
   unit_id unit_id: Int,
   yaw yaw: Float,
+  casts casts: List(UnitCreateCast),
   as_spawn as_spawn: fn(spawn.Spawn) -> spawn.Spawn,
 ) -> Event(ConnectionEvent(Message, Answer)) {
   let place =
