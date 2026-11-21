@@ -14,6 +14,7 @@
 //// - `table_rows -- ItemStat 12`, `-- ItemBudget 3`, `-- Item2 11671`: boots whose one
 ////   budget share of 1.0 is property 5 (valuePerPoint 1.5) at power level 8.
 
+import character_tables
 import fixture_tables
 import game_connection_support
 import genesis_prime/client_connection.{type Request}
@@ -360,4 +361,81 @@ pub fn a_dead_healers_timer_is_cancelled_a_late_fire_or_one_after_leaving_writes
   assert resources.changes_written(after) == []
     && resources.resource_timers_started(after) == []
     as "a tick after leaving writes nothing"
+}
+
+/// Recharge's base: an ability a Medic is granted at level 14 (SpellLevel row 1224, Spell4
+/// 42596).
+const recharge_base = 26_786
+
+/// What a viewer is told about a cast: its start, goes, ticks and end.
+fn is_cast_news(news: client_connection.News) -> Bool {
+  case news {
+    client_connection.CastStarted(..)
+    | client_connection.CastWent(..)
+    | client_connection.CastMissed(..)
+    | client_connection.CastTicked(..)
+    | client_connection.CastTargetsRemoved(..)
+    | client_connection.CastStackRemoved(..)
+    | client_connection.CastFinished(..)
+    | client_connection.CastInterrupted(..) -> True
+    _ -> False
+  }
+}
+
+pub fn a_medics_recharge_sends_the_pool_back_its_focus_and_the_actuators_to_0_as_0x935_to_the_player_only_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4 42596 (Recharge, castTime 2000): its Focus share for 4 Actuators is 0.20 of the
+  // maximum (200 of 1000), and its -4 of vital 18 empties the Medic's slot 1 (stat 3). After
+  // Emission's three payments the pool is 955, so 955 + 200 clamps at 1000: the wire shows
+  // the clamp, which is what the player's client holds.
+  let #(state, _, unit_id, emission_index) =
+    game_connection_support.entered_burst_with_spell_trees(
+      class_id: 4,
+      level: 14,
+      ability: emission_base,
+    )
+  let recharge_index =
+    game_connection_support.bag_index_of(
+      tables: character_tables.shared(),
+      class_id: 4,
+      level: 14,
+      ability: recharge_base,
+    )
+  let state = game_connection_support.watched_by(state:, viewers: [2, 3])
+  let #(state, emission) =
+    game_connection_support.pressed_until(
+      state:,
+      bag_index: emission_index,
+      client_cast_id: 1,
+      ms: 1000,
+      until_ms: 2300,
+    )
+  assert list.last(list.flat_map(emission, resources.changes_written))
+    == Ok(focus_changed(unit_id:, to: 955.0))
+    as "Emission's three gos leave 955 of 1000"
+  let #(_, steps) =
+    game_connection_support.pressed_until(
+      state:,
+      bag_index: recharge_index,
+      client_cast_id: 2,
+      ms: 3000,
+      until_ms: 5100,
+    )
+  let assert [pressed, ..gos] = steps as "the press is the first step"
+  assert game_connection_support.refusal_results(pressed) == []
+    as "Recharge is accepted with 4 Actuators held (prerequisite 24152 needs 1)"
+  assert list.flat_map(steps, resources.changes_written)
+    == [
+      UnitFloatStatChanged(unit_id:, stat_id: 3, value: bits(0.0)),
+      focus_changed(unit_id:, to: pool),
+    ]
+    as "its go at 5000 ms writes the Actuators to 0 (stat 3) and Focus to the full pool (stat 1), one 0x935 each, the class slot first"
+  assert list.flat_map(gos, resources.resource_timers_cancelled)
+    == [class_resource.focus_timer]
+    as "the pool is full again, so the Focus timer Emission started is cancelled"
+  assert list.all(
+    list.flat_map(steps, game_connection_support.peer_tells),
+    fn(tell) { is_cast_news({ tell.1 }.news) },
+  )
+    as "the two viewers watching are told the cast and nothing of the player's resources"
 }

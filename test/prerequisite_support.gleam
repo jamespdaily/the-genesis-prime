@@ -1,6 +1,7 @@
 //// Prerequisite rows for tests that check a prerequisite
 //// (`genesis_prime/game/prerequisite`), built as the client's table holds them.
 
+import fixture_tables
 import genesis_prime/game/area.{type Pose, Point, Pose}
 import genesis_prime/game/lasting
 import genesis_prime/game/prerequisite.{
@@ -137,6 +138,21 @@ pub fn loaded_with_arcs(
 ) -> Prerequisite {
   let assert Ok(loaded) = load_with_arcs(id:, rows:, arcs:)
     as "the rows held in memory load: every id they name has a row"
+  loaded
+}
+
+/// The client's Prerequisite row of this id from the committed rows, loaded as the plan
+/// loads it, with every row it nests.
+pub fn fixture_row(row row: Int) -> Prerequisite {
+  let tables = fixture_tables.shared()
+  let assert Ok(loaded) =
+    prerequisite.load(
+      id: PrerequisiteId(row),
+      rows: prerequisite.table_rows(tables:),
+      arcs: prerequisite.table_arcs(tables:),
+      quests: prerequisite.table_quests(tables:),
+    )
+    as "the committed rows hold the prerequisite and what it reads"
   loaded
 }
 

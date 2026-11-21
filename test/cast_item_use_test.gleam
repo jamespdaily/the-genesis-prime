@@ -28,6 +28,7 @@ import genesis_prime/client_connection.{CastStarted}
 import genesis_prime/game/activate.{type Target, Body, NoLink, Usable}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
+import genesis_prime/game/class_resource
 import genesis_prime/game/effect_kind
 import genesis_prime/game/item_use
 import genesis_prime/game/passed_in_value
@@ -1849,4 +1850,57 @@ pub fn an_item_spell_with_no_activate_effect_is_refused_285_and_logged_once_test
   assert string.ends_with(line, ": it is refused with 285")
     && !string.contains(line, "#")
     as "and what is missing, with no issue named"
+}
+
+pub fn using_rations_gives_80_focus_at_a_go_of_their_channel_to_a_healer_test() -> Nil {
+  use <- owned_test.run(20_000)
+  // Item2 6914 (Rations) -> ItemSpecial 7476 -> Spell4 34776 (Basic Food): a channel (delay
+  // 1000, maximum 10000, pulse 1000) whose row 88371 gives 80 points of Focus, vital 15 (text
+  // 270070 "80 Focus every second while channeling"). A Medic holding 500 Focus uses it.
+  let rations = Drink("Rations", 6914, 1, 0, NothingEarlier, 1000, Buffs)
+  let healer =
+    cast_state.Caster(
+      ..drinker(level: 1),
+      resources: support.holding_focus(class_id: 4, focus: 1000.0),
+    )
+  let #(state, effects) =
+    started(
+      used: drink_press(state: cast_state.new(), case_: rations),
+      before: cast_state.new(),
+      case_: rations,
+    )
+  assert support.refusal_results(effects:) == [] as "the Rations are used"
+  let #(_, fired) =
+    support.run_timers_each(
+      caster: healer,
+      state:,
+      effects:,
+      from_ms: 1000,
+      struck_of: fn(_) { [] },
+    )
+  let gaining =
+    list.filter_map(fired, fn(step) {
+      case support.gains(effects: step.1) {
+        [] -> Error(Nil)
+        gains -> Ok(#(step.0, gains))
+      }
+    })
+  let assert [#(first_go_ms, first_gains), ..] = gaining
+    as "a go of the channel gives"
+  assert first_go_ms == 2000
+    as "the first go is the channel's delay of 1000 ms after the press"
+  assert list.all(gaining, fn(go) {
+    go.1 == [[class_resource.Gain(slot: class_resource.focus_slot, amount: 80)]]
+  })
+    as "every go gives 80 points of Focus"
+  let #(_, changes) =
+    class_resource.gain(
+      resources: class_resource.paid(resources: healer.resources, payments: [
+        class_resource.Payment(slot: -1, amount: 500),
+      ]),
+      gains: list.flatten(first_gains),
+    )
+  assert list.first(changes)
+    == Ok(class_resource.Changed(slot: class_resource.focus_slot, value: 580.0))
+    as "a healer holding 500 Focus holds 580: one 0x935 of stat 1"
 }

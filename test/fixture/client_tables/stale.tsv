@@ -188,6 +188,7 @@ Spell4Base	20591	Class	16
 Spell4Base	20592	Class	16
 Spell4Base	20593	Class	16
 Spell4Base	20594	Class	16
+Spell4Base	20599	Class	15
 Spell4Base	20683	Class	16
 Spell4Base	20897	Class	15
 Spell4Base	20903	Class	15
@@ -197,6 +198,8 @@ Spell4Base	23409	Class	16
 Spell4Base	23430	Class	15
 Spell4Base	23431	Class	15
 Spell4Base	23432	Class	15
+Spell4Base	23482	Class	15
+Spell4Base	23483	Class	15
 Spell4Base	23673	Class	15
 Spell4Base	23822	Class	15
 Spell4Base	23826	Class	15
@@ -229,6 +232,16 @@ Spell4Effects	131697	Spell4	23148
 Spell4Effects	198395	Spell4Base	76506
 Spell4Telegraph	69	TelegraphDamage	87
 Spell4Telegraph	70	TelegraphDamage	88
+Spell4Telegraph	3971	TelegraphDamage	2111
+Spell4Telegraph	3973	TelegraphDamage	2113
+Spell4Telegraph	3974	TelegraphDamage	2117
+Spell4Telegraph	3976	TelegraphDamage	2115
+Spell4Telegraph	3977	TelegraphDamage	2114
+Spell4Telegraph	3979	TelegraphDamage	2119
+Spell4Telegraph	3980	TelegraphDamage	2117
+Spell4Telegraph	3982	TelegraphDamage	2115
+Spell4Telegraph	3983	TelegraphDamage	2114
+Spell4Telegraph	3985	TelegraphDamage	2119
 Spell4Thresholds	1	Spell4	32194
 Spell4Thresholds	2	Spell4	32195
 Spell4Thresholds	16	Spell4	33310

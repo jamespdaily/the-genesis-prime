@@ -1204,3 +1204,47 @@ pub fn the_gos_of_a_cast_are_numbered_from_0_in_order_and_a_count_of_0_has_none_
   assert [] == spell_plan.go_numbers(go_count: 0)
     as "a ChargeRelease ability held until its release has no go (spell_plan.go_times_ms)"
 }
+
+pub fn a_requirement_of_type_15_plans_as_a_focus_requirement_with_result_167_and_a_type_18_one_is_not_read_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Spell4.casterInnateRequirement.15: type 15 tests the caster's Focus (slot -1) and its
+  // failure gives 167 (Spell4CastResult.167). Rows: 26636 holds eval 8 (a percentage, less
+  // than) of 100; 39136 holds eval 2 (the amount, at least) of 55.
+  assert spell_tables.client_spell(26_636).requirements
+    == [
+      spell_plan.Requirement(
+        slot: -1,
+        measure: spell_plan.PercentOfMax,
+        comparison: spell_plan.Less,
+        value: 100,
+        result: 167,
+      ),
+    ]
+    as "26636: type 15, eval 8, value 100"
+  assert spell_tables.client_spell(39_136).requirements
+    == [
+      spell_plan.Requirement(
+        slot: -1,
+        measure: spell_plan.Amount,
+        comparison: spell_plan.AtLeast,
+        value: 55,
+        result: 167,
+      ),
+    ]
+    as "39136: type 15, eval 2, value 55"
+  // 88568 (the Fusion Probe) holds type 18 in requirement0 and type 15 in requirement1:
+  // type 18 is read through the class mechanic's default case with registers the client
+  // never sets (the fact's open question), so it is not read and the whole spell is left out.
+  let tables = fixture_tables.shared()
+  assert spell_plan.spell_alone(
+      tables:,
+      sources: spell_plan.sources_of(tables:),
+      spell4_id: 88_568,
+      chain: [],
+    )
+    == Error(spell_plan.UnreadRequirement(
+      spell4_id: 88_568,
+      requirement_type: 18,
+    ))
+    as "requirement type 18 is not read"
+}

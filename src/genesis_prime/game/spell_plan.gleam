@@ -352,6 +352,7 @@ import genesis_prime/table/spell_phase
 import genesis_prime/table/unit_property2
 import gleam/bool
 import gleam/dict.{type Dict}
+import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -449,15 +450,14 @@ pub type Condition {
 }
 
 /// A resource gain of a spell: a VitalModifier aimed at the caster
-/// (`Spell4Effects.effectType.1`), `amount` points of resource slot `slot`, in the
-/// phases of `phase_flags`, given when its `condition` passes against the caster, whose
-/// own unit is the unit the row reaches, and when its `tag` holds for the points the cast
-/// spent (genesis_prime/game/spend).
+/// (`Spell4Effects.effectType.1`), what it `gift`s, in the phases of `phase_flags`, given
+/// when its `condition` passes against the caster, whose own unit is the unit the row
+/// reaches, and when its `tag` holds for the points the cast spent
+/// (genesis_prime/game/spend).
 pub type Gain {
   Gain(
     effect_id: Spell4EffectsId,
-    slot: Int,
-    amount: Int,
+    gift: Gift,
     phase_flags: Int,
     condition: Condition,
     tag: spend.Tag,
@@ -466,14 +466,26 @@ pub type Gain {
   /// durationTime), which the cast rule does not apply.
   TickingGain(
     effect_id: Spell4EffectsId,
-    slot: Int,
-    amount: Int,
+    gift: Gift,
     phase_flags: Int,
     condition: Condition,
     tag: spend.Tag,
     tick_ms: Int,
     duration_ms: Int,
   )
+}
+
+/// What a VitalModifier gives the caster, by the vital its dataBits00 names
+/// (`Spell4Effects.effectType.1`): points of the resource slot 1 or 3 (vitals 6 and 8),
+/// points of the slot of the player's class that names the vital
+/// (`Class.vitalEnumResource00` to `07`: vitals 4, 12, 13, 14, 18 and 19), or Focus
+/// (vital 15) as points or as a share of its maximum, which only the caster's property 5
+/// knows.
+pub type Gift {
+  SlotPoints(slot: Int, points: Int)
+  ClassVitalPoints(vital: Int, points: Int)
+  FocusPoints(points: Int)
+  FocusShare(share: Float)
 }
 
 /// Who an effect aims at (`Spell4Effects.targetFlags`), read once for the effects a
@@ -2281,6 +2293,15 @@ pub type PlanError {
   GainAimNotRead(spell4_id: Int, effect_id: Int, target_flags: Int)
   /// A VitalModifier of a tree changes a vital other than 6 or 8, which is not read.
   GainVitalNotRead(spell4_id: Int, effect_id: Int, vital: Int)
+  /// A VitalModifier of a tree holds a share of the maximum (dataBits05, with a dataBits02 of
+  /// 0) that is not read: a share of Focus above 1.0 or not a positive number, or any share of
+  /// a class vital. `data_bits05` is the column's 32 bits.
+  GainShareNotRead(
+    spell4_id: Int,
+    effect_id: Int,
+    vital: Int,
+    data_bits05: Int,
+  )
   /// An effect of a tree is behind a target apply prerequisite, or, for a lasting, remove,
   /// modifier or heal row, a caster apply prerequisite, with a condition of a type the
   /// server has not decoded (`prerequisite.unread_types`).
@@ -2509,7 +2530,20 @@ pub fn describe(error error: PlanError) -> String {
       <> int.to_string(effect_id)
       <> " of vital "
       <> int.to_string(vital)
-      <> ", and only vitals 6 and 8 are read"
+      <> ", and only vitals 6, 8, 15 and a class's vitals 4, 12, 13, 14, 18 and 19 are read"
+    GainShareNotRead(spell4_id:, effect_id:, vital:, data_bits05:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a VitalModifier effect "
+      <> int.to_string(effect_id)
+      <> " of vital "
+      <> int.to_string(vital)
+      <> " with a share of the maximum of "
+      <> case float32.of_column(number: data_bits05) {
+        Ok(share) -> float.to_string(share)
+        Error(Nil) -> "no number"
+      }
+      <> ", and only a share of Focus from above 0 to 1.0 is read"
     ApplyPrerequisiteNotRead(spell4_id:, effect_id:, prerequisite_type:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -2953,6 +2987,7 @@ pub fn is_unbuilt(error error: PlanError) -> Bool {
     | UnreadRequirement(..)
     | GainAimNotRead(..)
     | GainVitalNotRead(..)
+    | GainShareNotRead(..)
     | ApplyPrerequisiteNotRead(..)
     | TargetPrerequisiteReadsStruckUnit(..)
     | StruckMoveNotRead(error: forced_move.UnknownKind(..), ..)
@@ -3767,8 +3802,8 @@ fn gain_row_of(
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
 ) -> Result(Gain, PlanError) {
-  use slot <- result.try(case aim_of(target_flags: effect.target_flags) {
-    Ok(AimsAtCaster) -> gain_slot_of(spell4_id:, effect:)
+  use gift <- result.try(case aim_of(target_flags: effect.target_flags) {
+    Ok(AimsAtCaster) -> gift_of(spell4_id:, effect:)
     Ok(_) | Error(Nil) ->
       Error(GainAimNotRead(
         spell4_id:,
@@ -3783,16 +3818,14 @@ fn gain_row_of(
     data_bits06_names_a_gate: False,
   ))
   let effect_id = Spell4EffectsId(effect.id)
-  let amount = effect.data_bits02
   let phase_flags = effect.phase_flags
   let tag = tag_of(effect:)
   Ok(case effect.tick_time {
-    0 -> Gain(effect_id:, slot:, amount:, phase_flags:, condition:, tag:)
+    0 -> Gain(effect_id:, gift:, phase_flags:, condition:, tag:)
     tick_ms ->
       TickingGain(
         effect_id:,
-        slot:,
-        amount:,
+        gift:,
         phase_flags:,
         condition:,
         tag:,
@@ -6217,15 +6250,16 @@ pub fn tag_of(effect effect: spell4_effects.Spell4Effects) -> spend.Tag {
   spend.tag_of(comparison: effect.emm_comparison, value: effect.emm_value)
 }
 
-/// The resource slot of a gain's vital: 6 (Resource1) is slot 1 and 8 (Resource3)
-/// slot 3, the innate cost types' numbering (`Spell4Effects.effectType.1`); the
+/// What a gain gives: the resource slot of a gain's vital: 6 (Resource1) is slot 1 and 8
+/// (Resource3) slot 3, the innate cost types' numbering (`Spell4Effects.effectType.1`); the
 /// kit holds no other.
-fn gain_slot_of(
+fn gift_of(
   spell4_id spell4_id: Int,
   effect effect: spell4_effects.Spell4Effects,
-) -> Result(Int, PlanError) {
+) -> Result(Gift, PlanError) {
   case effect.data_bits00 {
-    6 | 8 -> Ok(effect.data_bits00 - 5)
+    6 | 8 ->
+      Ok(SlotPoints(slot: effect.data_bits00 - 5, points: effect.data_bits02))
     vital -> Error(GainVitalNotRead(spell4_id:, effect_id: effect.id, vital:))
   }
 }

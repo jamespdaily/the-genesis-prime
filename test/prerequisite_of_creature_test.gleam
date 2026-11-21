@@ -244,3 +244,25 @@ pub fn creature_subject_is_a_creature_of_its_row_that_is_no_player_test() -> Nil
   assert verdict(condition: #(118, 1, 53, 0), facts: facts()) == Passes
     as "type 118: the server holds no public event, so every objective has status 0"
 }
+
+pub fn a_creature_subject_holds_vital_15_as_0_of_0_test() -> Nil {
+  use <- owned_test.run(5000)
+  // `Vital.15.unit`: a creature's 0x262 sends no stat 1, so its Focus word is the 0
+  // ConstructUnit leaves and property 5 defaults to 0. Type 71 of 0 over 0 is no number,
+  // which only the equal comparison passes; type 73 reads the 0 points.
+  assert comparisons(type_id: 71, object_id: 15, value: 30, facts: facts())
+    == [Passes, Fails, Fails, Fails, Fails, Fails]
+    as "0 of 0 percent is no number: equal passes and every other comparison fails"
+  assert comparisons(type_id: 73, object_id: 15, value: 0, facts: facts())
+    == [Passes, Fails, Fails, Passes, Fails, Passes]
+    as "0 points against 0: equal, at least and at most"
+  assert comparisons(type_id: 73, object_id: 15, value: 5, facts: facts())
+    == [Fails, Passes, Fails, Fails, Passes, Passes]
+    as "0 points against 5: not equal, less and at most"
+  assert support.verdict(
+      condition: #(71, 1, 15, 30),
+      subject: prerequisite.of_difficulty(difficulty: 6),
+    )
+    == prerequisite.NotRead(prerequisite_type: 71)
+    as "a subject with no unit holds no Focus to read: the check stays unread"
+}

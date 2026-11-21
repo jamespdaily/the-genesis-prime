@@ -388,8 +388,7 @@ fn gain_behind(
 ) -> spell_plan.Gain {
   spell_plan.Gain(
     effect_id: Spell4EffectsId(2),
-    slot: 1,
-    amount: 5,
+    gift: spell_plan.SlotPoints(slot: 1, points: 5),
     phase_flags: 1,
     condition: spell_plan.GatedOnCaster(gates: [prerequisite]),
     tag: spend.always,
@@ -399,8 +398,7 @@ fn gain_behind(
 fn gain_under(condition condition: spell_plan.Condition) -> spell_plan.Gain {
   spell_plan.Gain(
     effect_id: Spell4EffectsId(2),
-    slot: 1,
-    amount: 5,
+    gift: spell_plan.SlotPoints(slot: 1, points: 5),
     phase_flags: 1,
     condition:,
     tag: spend.always,

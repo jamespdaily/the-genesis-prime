@@ -12,6 +12,7 @@
 //// The bag indices are `cast_support.abilities`'.
 
 import cast_support as support
+import channel_support
 import class_resource_support
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state as cast_state
@@ -22,6 +23,7 @@ import genesis_prime/message/spell_cast_refused
 import genesis_prime/message/spell_started
 import genesis_prime/step.{LogDebug}
 import genesis_prime/table/id.{Spell4BaseId, Spell4Id}
+import gleam/float
 import gleam/list
 import gleam/string
 import owned_test
@@ -266,4 +268,92 @@ pub fn a_press_held_behind_a_go_is_checked_against_the_bar_with_that_gos_gain_te
     as "Spell4.32809 costs 1 Psi Point (Spell4CastResult.vital_cost) and 0 Psi Points are refused 51 (CasterVitalCostResource1); Telekinetic Strike's go struck a foe and gave +1 (56858), so the held Mind Burst is accepted and pays it"
   assert mind_burst_held_behind_the_go(struck: []) == #([], [], [51])
     as "a go that struck nobody gives no Psi Point, so the held Mind Burst meets 0 and is refused 51"
+}
+
+// ---- Recharge and Meditate ----
+
+/// A Medic holding `actuators` presses the spell (the fixture's own plan) and every timer
+/// runs; the gains of each go that gave any, and the 0x7fc results of the press.
+fn run_of(
+  spell4_id spell4_id: Int,
+  class_id class_id: Int,
+  holding holding: Float,
+) -> channel_support.Run {
+  channel_support.run_channel(scene: channel_support.channel_scene(
+    spell: spell_tables.client_spell(spell4_id),
+    class_id:,
+    holding:,
+  ))
+}
+
+fn gains_of(run run: channel_support.Run) -> List(List(class_resource.Gain)) {
+  list.flat_map(run.steps, fn(step) { support.gains(effects: step.effects) })
+}
+
+/// Whether the gains are the shares then the class vital gains expected: a share is a 32-bit
+/// float of the column, compared to the decimal the client's text prints.
+fn gains_are(
+  got got: List(class_resource.Gain),
+  shares shares: List(Float),
+  vital_gains vital_gains: List(Int),
+) -> Bool {
+  let #(got_shares, got_vitals) =
+    list.partition(got, fn(gain) {
+      case gain {
+        class_resource.FocusShare(..) -> True
+        Gain(..) | class_resource.ClassVitalGain(..) -> False
+      }
+    })
+  list.length(got_shares) == list.length(shares)
+  && list.all(list.zip(got_shares, shares), fn(pair) {
+    case pair.0 {
+      class_resource.FocusShare(share:) ->
+        float.loosely_equals(share, pair.1, tolerating: 1.0e-6)
+      Gain(..) | class_resource.ClassVitalGain(..) -> False
+    }
+  })
+  && got_vitals
+  == list.map(vital_gains, fn(amount) {
+    class_resource.ClassVitalGain(vital: 18, amount:)
+  })
+}
+
+pub fn recharge_gives_the_share_the_actuators_held_name_and_takes_up_to_4_and_meditate_gives_its_share_at_each_go_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Recharge 42596 (Spell4Effects 228352, 228357, 228361, 228363 behind 43658, 43659, 43660
+  // and 29891, and 228362 of -4 of vital 18): the share row for the Actuators held, 0.05 each
+  // (text 383170), read on the one Subject taken before any gain applies, so the -4 does not
+  // change which row applies.
+  list.each([#(1.0, 0.05), #(2.0, 0.1), #(3.0, 0.15), #(4.0, 0.2)], fn(row) {
+    let #(held, share) = row
+    let run = run_of(spell4_id: 42_596, class_id: 4, holding: held)
+    let assert [gains] = gains_of(run:) as "one go, one list of gains"
+    assert gains_are(got: gains, shares: [share], vital_gains: [-4])
+      as {
+        float.to_string(held)
+        <> " Actuators give the share row that counts them and the -4 of vital 18"
+      }
+  })
+  // Tier 59885 holds a +2 after its -4 (Spell4Effects 228400 then 228405).
+  let tier = run_of(spell4_id: 59_885, class_id: 4, holding: 3.0)
+  let assert [tier_gains] = gains_of(run: tier) as "tier 59885 gives once"
+  assert gains_are(got: tier_gains, shares: [0.21], vital_gains: [-4, 2])
+    as "3 Actuators give 3 x 0.07 and the +2 follows the -4 in the plan's order"
+  // No Actuator held: the press prerequisite 24152 (type 73 of vital 6 at least 1) refuses it.
+  let none = run_of(spell4_id: 42_596, class_id: 4, holding: 0.0)
+  let assert [press, ..] = none.steps
+  assert support.refusal_results(effects: press.effects) == [151]
+    && gains_of(run: none) == []
+    as "with no Actuator Recharge is refused 151 by its CasterCast 24152 and gives nothing"
+  // Meditate 32818 (channel delay 1000, maximum 5000, pulse 1000): the 0.04 share of row
+  // 65493 at each go (text 243889).
+  let meditate = run_of(spell4_id: 32_818, class_id: 3, holding: 0.0)
+  let gos = channel_support.goes(run: meditate)
+  assert gos != [] as "the channel goes"
+  let meditate_gains = gains_of(run: meditate)
+  assert list.length(meditate_gains) == list.length(gos) as "each go gives"
+  assert list.all(meditate_gains, fn(gains) {
+    gains_are(got: gains, shares: [0.04], vital_gains: [])
+  })
+    as "the share of 65493 is 0.04 at every go"
 }

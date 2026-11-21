@@ -119,7 +119,7 @@ pub fn discharge_shows_power_charge_1_then_2_then_the_third_pulse_turns_the_stac
     == list.map(list.append(first_charge, second_charge), fn(id) { #(id, [7]) })
     as "80383 takes both Power Charge casts off the caster, oldest first: one 0x811 each (opcode.0x811)"
   assert list.any(support.gains(effects: third.1), fn(gains) {
-    list.any(gains, fn(gain: class_resource.Gain) { gain.amount == 1 })
+    list.contains(gains, class_resource.Gain(slot: 1, amount: 1))
   })
     as "80383 gives 1 Actuator (Proxy 212837 to 42568, trace §5)"
 }

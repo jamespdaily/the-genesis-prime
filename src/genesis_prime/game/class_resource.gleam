@@ -448,10 +448,14 @@ pub type Payment {
   Payment(slot: Int, amount: Int)
 }
 
-/// A gain the cast rule gave at a go: `amount` points into the resource slot
-/// `slot` (`Spell4Effects.effectType.1`).
+/// A gain the cast rule gave at a go (`Spell4Effects.effectType.1`): `amount` points into
+/// the resource slot `slot` (Focus for `focus_slot`), a class vital's `amount` points into
+/// the class's slot that names the vital (dropped by a class whose slot names another), or a
+/// `share` of the Focus maximum.
 pub type Gain {
   Gain(slot: Int, amount: Int)
+  ClassVitalGain(vital: Int, amount: Int)
+  FocusShare(share: Float)
 }
 
 /// What the rule asks the connection to do, in order.
@@ -753,7 +757,13 @@ pub fn gain(
   gains gains: List(Gain),
 ) -> #(Resources, List(Effect)) {
   let own =
-    list.filter(gains, fn(gain) { gain.slot == resources.resource.slot })
+    list.filter_map(gains, fn(gain) {
+      case gain {
+        Gain(slot:, amount:) if slot == resources.resource.slot ->
+          Ok(#(slot, amount))
+        Gain(..) | ClassVitalGain(..) | FocusShare(..) -> Error(Nil)
+      }
+    })
   use <- bool.guard(
     when: !resources.alive || own == [],
     return: #(resources, []),
@@ -761,11 +771,12 @@ pub fn gain(
   let #(resources, changes) =
     list.fold(own, #(resources, []), fn(so_far, gain) {
       let #(resources, changes) = so_far
+      let #(slot, amount) = gain
       let next =
-        clamped(resources:, value: resources.value +. int.to_float(gain.amount))
+        clamped(resources:, value: resources.value +. int.to_float(amount))
       let changes = case next == resources.value {
         True -> changes
-        False -> [Changed(slot: gain.slot, value: next), ..changes]
+        False -> [Changed(slot:, value: next), ..changes]
       }
       #(Resources(..resources, value: next), changes)
     })

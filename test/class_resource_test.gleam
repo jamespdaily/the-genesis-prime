@@ -1302,3 +1302,251 @@ pub fn the_classes_that_hold_focus_are_those_whose_level_grants_cost_it_test() -
   assert class_resource.focus_class_ids() == [3, 4, 7]
     as "the classes the server gives a pool are those the tables say"
 }
+
+// ---- Focus and class vital gains ----
+
+fn gained(
+  resources resources: Resources,
+  gains gains: List(class_resource.Gain),
+) -> #(Resources, List(Effect)) {
+  class_resource.gain(resources:, gains:)
+}
+
+/// A healer of the class whose Focus maximum is `pool` and who holds `held` (below it) of it,
+/// its Focus timer running.
+fn holding_focus(
+  class_id class_id: Int,
+  pool pool: Float,
+  held held: Int,
+) -> Resources {
+  pay(
+    resources: class_resource_support.resources_with(
+      class_id:,
+      changes: [#(5, pool)],
+      level: 1,
+    ),
+    slot: -1,
+    amount: float.truncate(pool) - held,
+  ).0
+}
+
+pub fn a_focus_gain_raises_the_pool_by_points_or_a_share_of_the_maximum_clamps_keeps_the_timer_and_changes_nothing_for_the_dead_or_a_class_with_none_test() -> Nil {
+  use <- owned_test.run(5000)
+  let focus_timer = class_resource.focus_timer
+  let dead = class_resource.died(resources: holding_focus(4, 1000.0, 500)).0
+  // Name, the resources, the gains, the changes (slot, value) and the timers started and
+  // cancelled. Points are dataBits02; a share is the fraction of the maximum, 0.04 for
+  // Meditate (text 243889 "Restore 4% of your maximum Focus"): 40 of 1000, 50 of 1250.
+  [
+    #(
+      "points",
+      holding_focus(4, 1000.0, 500),
+      [Gain(slot: -1, amount: 80)],
+      [#(-1, 580.0)],
+      [],
+      [],
+      "80 points of Focus (Rations): one change; the timer already runs below the pool",
+    ),
+    #(
+      "a share of 1000",
+      holding_focus(4, 1000.0, 500),
+      [class_resource.FocusShare(share: 0.04)],
+      [#(-1, 540.0)],
+      [],
+      [],
+      "4 percent of a maximum of 1000 is 40",
+    ),
+    #(
+      "a share of 1250",
+      holding_focus(4, 1250.0, 500),
+      [class_resource.FocusShare(share: 0.04)],
+      [#(-1, 550.0)],
+      [],
+      [],
+      "4 percent of an item-raised maximum of 1250 is 50, not 40: the share is of property 5's value",
+    ),
+    #(
+      "a gain that fills the pool",
+      holding_focus(4, 1000.0, 990),
+      [Gain(slot: -1, amount: 50)],
+      [#(-1, 1000.0)],
+      [],
+      [focus_timer],
+      "990 + 50 is clamped to the 1000 maximum, and the full pool needs no timer",
+    ),
+    #(
+      "a share that fills the pool",
+      holding_focus(4, 1000.0, 900),
+      [class_resource.FocusShare(share: 1.0)],
+      [#(-1, 1000.0)],
+      [],
+      [focus_timer],
+      "a share of 1.0 is the whole maximum",
+    ),
+    #(
+      "a share of 0",
+      holding_focus(4, 1000.0, 500),
+      [class_resource.FocusShare(share: 0.0)],
+      [],
+      [],
+      [],
+      "nothing moved: no change is sent",
+    ),
+    #(
+      "the dead",
+      dead,
+      [Gain(slot: -1, amount: 80), class_resource.FocusShare(share: 0.04)],
+      [],
+      [],
+      [],
+      "a dead player gains nothing (the guard stands before the Focus branch)",
+    ),
+    #(
+      "a class with no Focus: points",
+      new(1),
+      [Gain(slot: -1, amount: 80)],
+      [],
+      [],
+      [],
+      "a Warrior holds 0 of a maximum of 0 and ignores the gain",
+    ),
+    #(
+      "a class with no Focus: a share",
+      new(1),
+      [class_resource.FocusShare(share: 0.04)],
+      [],
+      [],
+      [],
+      "a Warrior ignores a share too",
+    ),
+  ]
+  |> list.each(fn(row) {
+    let #(name, resources, gains, expected, starts, cancels, why) = row
+    let #(_, effects) = gained(resources:, gains:)
+    assert changes(effects) == expected as { name <> ": " <> why }
+    assert started(effects) == list.map(starts, fn(timer) { #(14, timer) })
+      as { name <> ": no timer starts" }
+    assert list.filter(effects, fn(effect) {
+        effect == CancelTimer(timer: focus_timer)
+      })
+      == list.map(cancels, fn(timer) { CancelTimer(timer:) })
+      as {
+        name <> ": the Focus timer is cancelled exactly when the pool fills"
+      }
+  })
+}
+
+pub fn a_class_vital_gain_goes_to_the_slot_naming_the_vital_clamps_at_each_step_and_is_dropped_by_a_class_without_it_test() -> Nil {
+  use <- owned_test.run(5000)
+  let medic_holding = fn(actuators) {
+    class_resource.new(
+      resource: Resource(..resource_of(4), start: actuators),
+      properties: class_resource_support.properties_of(
+        class_id: 4,
+        changes: [],
+        level: 1,
+      ),
+    )
+  }
+  let #(spent, step_changes) =
+    gained(resources: medic_holding(2.0), gains: [
+      class_resource.ClassVitalGain(vital: 18, amount: -4),
+      class_resource.ClassVitalGain(vital: 18, amount: 2),
+    ])
+  // Class.vitalEnumResource01 is 18 for the Medic (slot 1), 4 for the Warrior (slot 1), 19
+  // for the Spellslinger at slot 4 (vitalEnumResource04) and 0 for the Esper's slot 1.
+  assert changes(step_changes) == [#(1, 0.0), #(1, 2.0)]
+    as "2 Actuators less 4 clamp at 0, then the +2 lands: the order of the rows decides the 2 left"
+  assert class_resource.value(resources: spent, slot: 1) == 2.0
+  let #(slinger, _) = pay(resources: new(7), slot: 4, amount: 50)
+  [
+    #(
+      "an Esper does not hold vital 18",
+      new(3),
+      class_resource.ClassVitalGain(vital: 18, amount: 3),
+      [],
+    ),
+    #(
+      "a Spellslinger's vital 19 lands in slot 4 (stat 6)",
+      slinger,
+      class_resource.ClassVitalGain(vital: 19, amount: 30),
+      [#(4, 80.0)],
+    ),
+    #(
+      "a Spellslinger does not hold vital 4",
+      slinger,
+      class_resource.ClassVitalGain(vital: 4, amount: 30),
+      [],
+    ),
+    #(
+      "a Warrior's vital 4 lands in slot 1",
+      new(1),
+      class_resource.ClassVitalGain(vital: 4, amount: 50),
+      [#(1, 50.0)],
+    ),
+    #(
+      "a Warrior does not hold vital 19",
+      new(1),
+      class_resource.ClassVitalGain(vital: 19, amount: 50),
+      [],
+    ),
+  ]
+  |> list.each(fn(row) {
+    let #(name, resources, gain, expected) = row
+    assert changes(gained(resources:, gains: [gain]).1) == expected as name
+  })
+}
+
+pub fn one_call_with_a_class_vital_gain_and_a_focus_share_changes_the_class_slot_first_and_a_focus_only_gain_restarts_no_drain_test() -> Nil {
+  use <- owned_test.run(5000)
+  let recharge = [
+    class_resource.FocusShare(share: 0.05),
+    class_resource.ClassVitalGain(vital: 18, amount: -4),
+  ]
+  let medic =
+    class_resource.new(
+      resource: Resource(..resource_of(4), start: 2.0),
+      properties: class_resource_support.properties_of(
+        class_id: 4,
+        changes: [],
+        level: 1,
+      ),
+    )
+  let medic = pay(resources: medic, slot: -1, amount: 500).0
+  let #(_, effects) = gained(resources: medic, gains: recharge)
+  assert changes(effects) == [#(1, 0.0), #(-1, 550.0)]
+    as "Recharge's pair, listed Focus first: the class slot changes first, then Focus, one change each"
+  // A resource that drains (the Warrior's) and holds Focus: no class has both, so the
+  // Warrior's row takes a Medic's Focus.
+  let draining =
+    class_resource.new(
+      resource: Resource(..resource_of(1), focus: resource_of(4).focus),
+      properties: class_resource_support.properties_of(
+        class_id: 4,
+        changes: [],
+        level: 1,
+      ),
+    )
+  let draining = pay(resources: draining, slot: -1, amount: 500).0
+  let drain_timer = class_resource.drain_timer
+  let #(_, focus_only) =
+    gained(resources: draining, gains: [class_resource.FocusShare(share: 0.05)])
+  assert changes(focus_only) == [#(-1, 550.0)]
+  assert !list.contains(
+    list.map(focus_only, fn(effect) {
+      case effect {
+        StartTimer(timer:, ..) | CancelTimer(timer:) -> Ok(timer)
+        Changed(..) -> Error(Nil)
+      }
+    }),
+    Ok(drain_timer),
+  )
+    as "a gain of Focus alone is no gain of the slot: the drain's wait is not restarted"
+  let #(_, with_slot) =
+    gained(resources: draining, gains: [
+      class_resource.FocusShare(share: 0.05),
+      Gain(slot: 1, amount: 180),
+    ])
+  assert started(with_slot) == [#(6, 1500)]
+    as "a gain that lands in the class slot restarts the drain's wait, whatever else the call holds"
+}

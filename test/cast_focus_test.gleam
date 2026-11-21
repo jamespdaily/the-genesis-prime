@@ -422,13 +422,95 @@ pub fn the_unread_focus_uses_are_listed_as_gaps_test() -> Nil {
     #("103", "Proc kind 103"),
     #("focusfinalmultiplier", "FocusFinalMultiplier"),
     #("group member", "a group member's Focus"),
-    #("vitalmodifier", "a VitalModifier of the Focus vital"),
-    #("type 71", "a type 71 or 73 prerequisite on the Focus vital"),
-    #("requirement type 15", "a caster requirement of type 15"),
+    #("share above 1.0", "a Focus share above 1.0"),
+    #("not saved", "Focus is not saved"),
+    #("requirement of type 18", "a caster requirement of type 18"),
   ]
   |> list.each(fn(row) {
     let #(needle, name) = row
     assert list.any(listed, string.contains(_, needle))
       as { name <> " is stated as a gap where the cost rule enforces it" }
+  })
+}
+
+/// Friendly Fire, a Spellslinger's: a caster requirement of Focus at least 55 (eval 2).
+fn friendly_fire() -> Spell {
+  spell_tables.client_spell(39_136)
+}
+
+/// The Stimpack, a deprecated potion: a caster requirement of Focus below 100 percent
+/// of its maximum (eval 8, value 100).
+fn stimpack() -> Spell {
+  spell_tables.client_spell(26_636)
+}
+
+/// A Medic whose Focus maximum an item raised to 1250 (property 5), holding `held` of it.
+fn raised_pool_scene(spell spell: Spell, held held: Int) -> Scene {
+  let resources =
+    class_resource_support.resources_with(
+      class_id: medic,
+      changes: [#(5, 1250.0)],
+      level: 1,
+    )
+  channel_support.resources_scene(
+    spell:,
+    resources: class_resource.paid(resources:, payments: [
+      Payment(slot: -1, amount: 1250 - held),
+    ]),
+  )
+}
+
+pub fn a_caster_requirement_of_focus_refuses_167_below_it_and_passes_at_it_a_percent_eval_reads_property_5_and_a_class_with_none_fails_test() -> Nil {
+  use <- owned_test.run(30_000)
+  // Spell4.casterInnateRequirement.15: the failed test gives 167 (Spell4CastResult.167);
+  // evals 0 to 4 compare the Focus held, 5 to 9 compare Focus x 100 / property 5's value,
+  // and a maximum of 0 is no number, which fails every comparison.
+  [
+    #(
+      "7.1",
+      scene(spell: friendly_fire(), class_id: spellslinger, focus: 54.9),
+      Refused(167),
+      "39136 needs at least 55 of the Focus held (eval 2): 54.9 fails",
+    ),
+    #(
+      "7.2",
+      scene(spell: friendly_fire(), class_id: spellslinger, focus: 55.0),
+      Pays([]),
+      "55.0 meets it, and the requirement pays nothing",
+    ),
+    #(
+      "7.3",
+      raised_pool_scene(spell: stimpack(), held: 1250),
+      Refused(167),
+      "26636 needs less than 100 percent (eval 8) of the 1250 maximum: a full pool is 100 percent",
+    ),
+    #(
+      "7.4",
+      raised_pool_scene(spell: stimpack(), held: 1238),
+      Pays([]),
+      "1238 of 1250 is 99.04 percent of property 5's value: it passes, though it is above 1000 (the base pool, which is not the maximum)",
+    ),
+    #(
+      "7.5",
+      raised_pool_scene(spell: stimpack(), held: 1000),
+      Pays([]),
+      "1000 of 1250 is 80 percent",
+    ),
+    #(
+      "7.6",
+      scene(spell: friendly_fire(), class_id: warrior, focus: 1000.0),
+      Refused(167),
+      "a Warrior holds no Focus (0 held): the amount 0 is below 55",
+    ),
+    #(
+      "7.7",
+      scene(spell: stimpack(), class_id: warrior, focus: 1000.0),
+      Refused(167),
+      "a Warrior's 0 of a maximum of 0 is no number: the percentage fails the comparison",
+    ),
+  ]
+  |> list.each(fn(row) {
+    let #(name, scene, outcome, reason) = row
+    assert outcome_of(scene:) == outcome as { name <> ": " <> reason }
   })
 }

@@ -9,8 +9,8 @@
 ////   BaseHealth row 6403, no parameter); 14850 -> 35022 (type 11 row 69997 with a type 18
 ////   parameter, which the plan does not read, so the spell cannot be planned); 13027 -> 28682 (type 38 row 49524); 2900 -> 1664 (Activate row 2530);
 ////   90021 -> 87129 (type 11 rows 227562, 227573 and 227574 holding the suspend
-////   prerequisite 43393); 6914 -> 34776 (VitalModifier row 88371 of vital 15, which the
-////   plan cannot read); 5733 -> 5640 (a Ground kind); 6017 -> 7103 (which a quest
+////   prerequisite 43393); 6914 -> 34776 (VitalModifier row 88371 of vital 15, 80 points of Focus,
+////   which the plan reads); 5733 -> 5640 (a Ground kind); 6017 -> 7103 (which a quest
 ////   objective also names).
 
 import client_tables
@@ -66,8 +66,8 @@ pub fn an_item_spell_is_planned_or_refused_by_its_rows_test() -> Nil {
       ),
       #(
         34_776,
-        CannotPlan(["15"]),
-        "a VitalModifier of vital 15 cannot be planned",
+        Plays,
+        "Rations: row 88371 gives 80 points of Focus, vital 15, which the plan reads",
       ),
       #(5640, LeftToActivations, "a Ground kind is cast at a place"),
     ],
