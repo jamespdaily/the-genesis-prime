@@ -2113,9 +2113,11 @@ pub fn a_second_join_of_a_viewer_joins_it_to_no_cast_it_was_not_listed_test() ->
 }
 
 /// A creature's 0x262 lists a cast that holds a node on it, and its entry makes that node
-/// in the client; only the cast's 0x7fe ends it (`cast.target_node_end`), so a viewer keeps
-/// an entry only for a cast it was told of, by the caster's create or its 0x7ff, and is
-/// still to be told the end of (`CreateCast 0x140561780`, `casts_written`).
+/// in the client. A viewer not told of the cast is sent none of its 0x7fe, 0x7f9 or 0x811
+/// (`written_cast_frames`), so the node would stay until the creature leaves its sight
+/// (`cast.target_node_end`): a viewer keeps an entry only for a cast it was told of, by the
+/// caster's create or its 0x7ff, and is still to be told the end of (`CreateCast
+/// 0x140561780`, `casts_written`).
 pub fn a_creatures_entry_is_kept_only_for_a_cast_the_viewer_was_given_test() -> Nil {
   use <- owned_test.run(10_000)
   let given = 2_147_497_985
@@ -2185,7 +2187,11 @@ pub fn a_creatures_entry_is_kept_only_for_a_cast_the_viewer_was_given_test() -> 
       let #(state, taken) =
         game_connection_support.feed(
           state,
-          game_connection_support.beast_appears_listing(unit_id: 40, casts:),
+          game_connection_support.beast_appears_listing(
+            unit_id: 40,
+            yaw: 0.0,
+            casts:,
+          ),
         )
       let assert [created] =
         game_connection_support.decoded(

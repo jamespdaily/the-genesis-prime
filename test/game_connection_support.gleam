@@ -69,7 +69,6 @@ import genesis_prime/message/terrain_loaded.{TerrainLoaded}
 import genesis_prime/message/unit_create_cast.{
   type UnitCreateCast, UnitCreateCast,
 }
-import genesis_prime/message/unit_create_creature.{UnitCreateCreature}
 import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
 }
@@ -2148,18 +2147,7 @@ pub fn beast_appears_facing(
   unit_id unit_id: Int,
   yaw yaw: Float,
 ) -> Event(ConnectionEvent(Message, Answer)) {
-  let Creature2Id(creature_id) =
-    spawn_support.beast_at(
-      number: 1,
-      place: place_support.at(
-        world_id: 3460,
-        world_zone_id: 6009,
-        x: 0.0,
-        y: 0.0,
-        z: 0.0,
-      ),
-    ).creature_id
-  creature_of_beast_appears_facing(unit_id:, creature_id:, yaw:)
+  beast_appears_listing(unit_id:, yaw:, casts: [])
 }
 
 /// The news `beast_appears_facing` gives, of a Beast whose Creature2 row is `creature_id`:
@@ -2172,10 +2160,11 @@ pub fn creature_of_beast_appears_facing(
   creature_of_beast_appears_listing(unit_id:, creature_id:, yaw:, casts: [])
 }
 
-/// The news of the Beast `unit_id` standing where `beast_appears` puts it, whose 0x262
-/// lists these casts.
+/// The news of the Beast `unit_id` standing where `beast_appears` puts it, its 0x262
+/// giving it the yaw `yaw` and listing these casts.
 pub fn beast_appears_listing(
   unit_id unit_id: Int,
+  yaw yaw: Float,
   casts casts: List(UnitCreateCast),
 ) -> Event(ConnectionEvent(Message, Answer)) {
   let Creature2Id(creature_id) =
@@ -2189,7 +2178,7 @@ pub fn beast_appears_listing(
         z: 0.0,
       ),
     ).creature_id
-  creature_of_beast_appears_listing(unit_id:, creature_id:, yaw: 0.0, casts:)
+  creature_of_beast_appears_listing(unit_id:, creature_id:, yaw:, casts:)
 }
 
 fn creature_of_beast_appears_listing(
@@ -2218,17 +2207,16 @@ fn creature_of_beast_appears_listing(
     unit_id:,
     news: CreatureAppeared(
       unit_type: NonPlayer,
-      unit: {
-        let unit =
-          creature_unit.create(
-            spawn: beast,
-            unit_id:,
-            health: 52,
-            interrupt_armor: option.None,
-            server_time_estimate_start: 0,
-          )
-        UnitCreateCreature(..unit, tail: UnitCreateTail(..unit.tail, casts:))
-      },
+      unit: creature_unit.with_casts(
+        creature_unit.create(
+          spawn: beast,
+          unit_id:,
+          health: 52,
+          interrupt_armor: option.None,
+          server_time_estimate_start: 0,
+        ),
+        casts,
+      ),
       life: 4,
       place:,
       hit_radius: beast.combat.hit_radius,

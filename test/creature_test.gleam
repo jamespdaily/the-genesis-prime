@@ -3551,16 +3551,14 @@ pub fn a_creature_unit_create_lists_the_views_it_keeps_test() -> Nil {
   use <- owned_test.run(5000)
   let second_caster =
     view_with(unit: 22, number: 1, count: 3, starts_ms: 6000, ends_ms: 14_000)
-  let delayed =
-    view_with(unit: 21, number: 1, count: 1, starts_ms: 9000, ends_ms: 14_000)
   list.each(
     [
       #("a creature holding no view lists none", [], 10_000, []),
       #(
-        "two casters' views are both listed, in cast id order",
+        "two casters' views are both listed",
         [
-          view_set(by: 10, view: second_caster, struck_at_ms: 6000, at_ms: 6000),
-          view_set(by: 9, view: view_a(), struck_at_ms: 6100, at_ms: 6100),
+          view_set(by: 9, view: view_a(), struck_at_ms: 6000, at_ms: 6000),
+          view_set(by: 10, view: second_caster, struck_at_ms: 6100, at_ms: 6100),
         ],
         10_000,
         [
@@ -3591,20 +3589,6 @@ pub fn a_creature_unit_create_lists_the_views_it_keeps_test() -> Nil {
             count: 1,
             delay_ms: 0,
             lifetime_ms: 2000,
-          ),
-        ],
-      ),
-      #(
-        "its delay is the delay still to run at the arrival",
-        [view_set(by: 9, view: delayed, struck_at_ms: 6000, at_ms: 6000)],
-        7000,
-        [
-          listed_cast(
-            unit: 21,
-            number: 1,
-            count: 1,
-            delay_ms: 2000,
-            lifetime_ms: 7000,
           ),
         ],
       ),

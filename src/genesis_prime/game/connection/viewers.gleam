@@ -1184,10 +1184,10 @@ fn casts_listed(
 }
 
 /// The creature's record with the casts its client was given: an entry of the list
-/// stays only when its cast id is in `casts_written`, since only a cast's 0x7fe ends
-/// the node an entry makes (`cast.target_node_end`), and the client has no 0x7fe to
-/// come for a cast it was not told of. The tail's cast id stays 0 and `casts_written`
-/// is not changed.
+/// stays only when its cast id is in `casts_written`. A viewer not told of a cast is
+/// sent none of its 0x7fe, 0x7f9 or 0x811 (`written_cast_frames`), so the node of an
+/// entry for it would stay until the creature leaves its sight (`cast.target_node_end`).
+/// The tail's cast id stays 0 and `casts_written` is not changed.
 fn creature_casts_kept(
   unit unit: UnitCreateCreature,
   written written: Dict(Int, Int),
