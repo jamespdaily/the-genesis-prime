@@ -50,7 +50,7 @@ pub fn a_sitting_records_each_sts_auth_and_game_connection_test() -> Nil {
   use <- owned_test.run(60_000)
   use folder <- recording_support.in_folder
   let started =
-    login_support.start_with(change: fn(settings) {
+    login_support.start_real_with(change: fn(settings) {
       sitting.recorded(
         settings:,
         folder:,
@@ -269,7 +269,7 @@ pub fn the_servers_start_records_a_connection_when_the_record_directory_is_set_t
     )
   let sitting_folder = folder <> "/sitting"
   let started =
-    login_support.start_on(shared:, database:, change: fn(settings) {
+    login_support.start_real_on(shared:, database:, change: fn(settings) {
       genesis_prime.with_sitting(
         settings:,
         tables: character_tables.shared(),

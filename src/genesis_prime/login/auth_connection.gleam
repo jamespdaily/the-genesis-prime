@@ -92,6 +92,11 @@ pub type Realm {
   )
 }
 
+/// How long a session key stays good in the hand-off on the server: a server
+/// choice, since the client shows the key to the game server right after it
+/// gets it.
+pub const session_key_lifetime_ms = 60_000
+
 /// What every auth connection is made with, at start.
 pub type Settings {
   Settings(

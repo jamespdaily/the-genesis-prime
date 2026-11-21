@@ -26,11 +26,11 @@
 //// - an import of `serving_node`, `fresh_node` or `real_start_node`, which
 ////   start the release's own processes on the node's clock;
 //// - a call of a function in `entry_points`: the functions of `login_support`,
-////   `ask_support`, `world_support` and `content_support` that start the tree,
-////   a listener, a world, a gate or a load on the real clock, or hand out the
-////   settings that do. A file that calls one is on the real clock though its
-////   own text names no source, so it is listed like a file that names one. A
-////   test that moves to the driven clock stops calling them.
+////   `ask_support` and `world_support` that start the tree, a listener, a world
+////   or a gate on the real clock, or hand out the settings that do. A file
+////   that calls one is on the real clock though its own text names no source,
+////   so it is listed like a file that names one. A test that moves to the
+////   driven clock stops calling them.
 ////
 //// An Erlang file under `test/` that calls `erlang:send_after`,
 //// `erlang:start_timer`, `timer:sleep`, `timer:send_after`,
@@ -97,20 +97,18 @@ const the_operating_system_script =
 /// clock, whatever its own text names.
 pub fn entry_points() -> List(EntryPoint) {
   let tree =
-    "starts the tree whose STS and auth listeners serve on the operating system's script with a send deadline of 300 ms (`driven_by` moves the game listener and the World only)"
+    "starts the tree on the operating system's script and real service time, with a send deadline of 300 ms"
   let settings =
     "its settings serve on the operating system's script with real service time, a send deadline of 300 ms, a Maps call of 2 s and an ask of 5 s"
   let gate = "runs the gate service on real service time"
   let send_deadline =
     "builds its connections' settings with a send deadline of 300 ms the caller cannot change"
-  let wait = "waits for the database under 1 s"
   [
-    EntryPoint("login_support", "start", tree),
-    EntryPoint("login_support", "start_with", tree),
-    EntryPoint("login_support", "start_on", tree),
-    EntryPoint("login_support", "start_with_jim", tree),
-    EntryPoint("login_support", "start_recording_auth", tree),
-    EntryPoint("login_support", "settings", settings),
+    EntryPoint("login_support", "start_real", tree),
+    EntryPoint("login_support", "start_real_with", tree),
+    EntryPoint("login_support", "start_real_on", tree),
+    EntryPoint("login_support", "start_real_with_jim", tree),
+    EntryPoint("login_support", "real_settings", settings),
     EntryPoint("login_support", "servers_settings", settings),
     EntryPoint("login_support", "servers_settings_over", settings),
     EntryPoint("login_support", "login", settings),
@@ -129,9 +127,6 @@ pub fn entry_points() -> List(EntryPoint) {
       "start",
       "calls Maps within 1 s, on the driven clock otherwise",
     ),
-    EntryPoint("content_support", "asking", wait),
-    EntryPoint("content_support", "load", wait),
-    EntryPoint("content_support", "load_terrain", wait),
   ]
 }
 
@@ -626,7 +621,7 @@ pub fn genuine_real_time() -> List(Exception) {
     ),
     Exception(
       "test/readiness_support.gleam",
-      "the settings of the tests of the wait for the database",
+      "the wait for the database that every tree start makes (login_support.started_from) and the readiness tests use: its window, attempts and pauses count the node's monotonic clock, since the database is a process outside the tree that no driven clock reaches",
     ),
     Exception(
       "test/content_load_test.gleam",
@@ -639,6 +634,10 @@ pub fn genuine_real_time() -> List(Exception) {
     Exception(
       "test/event_wait.gleam",
       "the wait for an event no clock causes, such as a pool's first connection",
+    ),
+    Exception(
+      "test/second_login.gleam",
+      "the live check's second login, run by hand against the running server on its default ports: its reads of the game server's bytes are bounded by real time, since no driven clock reaches a server in another node",
     ),
     Exception(
       "test/connection_script_test.gleam",
@@ -670,47 +669,39 @@ pub fn still_on_the_real_clock() -> List(Exception) {
   [
     Exception(
       "test/login_support.gleam",
-      "starts the tree on the operating system's script and real service time, with a send deadline of 300 ms, a Maps call of 2 s and an ask of 5 s",
-    ),
-    Exception(
-      "test/second_login.gleam",
-      "reads the second login's socket for a bounded real time",
+      "starts the tree on the operating system's script and real service time (real_settings), with a send deadline of 300 ms, a Maps call of 2 s and an ask of 5 s",
     ),
     Exception(
       "test/game_wire_test.gleam",
-      "its content load asks the database under a wait of 5 s, and it calls login_support.start, start_with and start_with_jim",
+      "calls login_support.start_real, start_real_with and start_real_with_jim, which start the tree on the real clock",
     ),
     Exception(
       "test/login_wire_test.gleam",
-      "calls login_support.start_with_jim, which starts the tree on the real clock",
+      "calls login_support.start_real_with_jim, which starts the tree on the real clock",
     ),
     Exception(
       "test/server_test.gleam",
-      "calls login_support.start and servers_settings, which start the tree and make its settings on the real clock",
+      "calls login_support.start_real and servers_settings, which start the tree and make its settings on the real clock",
     ),
     Exception(
       "test/sitting_test.gleam",
-      "calls login_support.start_with, start_on and servers_settings, which start the tree and make its settings on the real clock",
+      "calls login_support.start_real_with, start_real_on and servers_settings, which start the tree and make its settings on the real clock",
     ),
     Exception(
       "test/game_client_poll_test.gleam",
-      "calls login_support.start, which starts the tree on the real clock",
+      "calls login_support.start_real, which starts the tree on the real clock",
     ),
     Exception(
       "test/load_run_test.gleam",
-      "calls login_support.start, which starts the tree on the real clock",
+      "calls login_support.start_real, which starts the tree on the real clock",
     ),
     Exception(
       "test/load_sample_test.gleam",
-      "calls login_support.start, which starts the tree on the real clock",
-    ),
-    Exception(
-      "test/connection_flood_test.gleam",
-      "calls login_support.start_recording_auth, which drives the auth listener only, so the STS and game listeners and the World run on the real clock",
+      "calls login_support.start_real, which starts the tree on the real clock",
     ),
     Exception(
       "test/wire_replay_support.gleam",
-      "calls ask_support.start_scripted, login_support.start_with and servers_settings, which start a listener and the tree on the real clock",
+      "calls ask_support.start_scripted, login_support.start_real_with and servers_settings, which start a listener and the tree on the real clock",
     ),
     Exception(
       "test/wire_replay_test.gleam",
@@ -779,30 +770,6 @@ pub fn still_on_the_real_clock() -> List(Exception) {
     Exception(
       "test/service_shell_creature_test.gleam",
       "starts service shells on their real time (ask_support.reaching)",
-    ),
-    Exception(
-      "test/content_support.gleam",
-      "loads the content under a database wait of 1 s",
-    ),
-    Exception(
-      "test/content_terrain_test.gleam",
-      "loads the content under a database wait of 1 s (content_support.load_terrain)",
-    ),
-    Exception(
-      "test/content_vendor_test.gleam",
-      "loads the content under a database wait of 1 s (content_support.load)",
-    ),
-    Exception(
-      "test/creature_auto_attack_test.gleam",
-      "loads the content under a database wait of 1 s (content_support.load)",
-    ),
-    Exception(
-      "test/creature_special_test.gleam",
-      "loads the content under a database wait of 1 s (content_support.load)",
-    ),
-    Exception(
-      "test/world_data_counts_test.gleam",
-      "loads the world database under a wait of 5 s",
     ),
   ]
 }
