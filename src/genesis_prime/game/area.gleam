@@ -45,7 +45,8 @@
 ////   not apply (`Spell4AoeTargetConstraints.targetSelection`): Nearest (Closest) takes the
 ////   nearest first and Furthest the farthest first, each the lower unit id first on a tie;
 ////   Random takes the units by a 32-bit mix of a seed and the unit id (`mix`), a guess: the
-////   client names Random and orders nothing. A player's strike is always Nearest.
+////   client names Random and orders nothing. A player's strike seeds it with its cast id,
+////   so every go of one cast ranks the units alike.
 //// - **Where a player's strike is centred** is `centre_of`, by the spell's anchor: the caster's
 ////   pose now for a row the client draws on the caster each frame, the pose the cast started at
 ////   for a row it holds there (`0x14054b1b0.follows_caster`, `0x14054b1b0.fixed_placement`,
@@ -426,28 +427,11 @@ fn length_of(a: Float, b: Float) -> Float {
   distance(from: Point(x: 0.0, z: 0.0), to: Point(x: a, z: b))
 }
 
-/// The unit ids a player's area strikes, nearest first: the candidates inside, ordered
-/// by distance from the centre with the lower unit id first on a tie, at most the
-/// row's target count. The row's order is not read: a player's rows are Closest alone.
-pub fn select(
-  candidates candidates: List(Candidate),
-  centre centre: Pose,
-  row row: Row,
-  inside inside: Inside,
-) -> List(Int) {
-  select_ordered(
-    candidates:,
-    centre:,
-    row: Row(..row, order: Nearest),
-    inside:,
-    seed: 0,
-  )
-}
-
 /// The unit ids the area strikes in the row's order: the candidates inside, nearest or
 /// farthest from the centre first with the lower unit id first on a tie, or by `mix` of
 /// the seed and the unit id (the lower unit id first on a tie), at most the row's target
-/// count. The seed is read only by Random.
+/// count. The seed is read only by Random. A player's strike and a creature's share this
+/// function.
 pub fn select_ordered(
   candidates candidates: List(Candidate),
   centre centre: Pose,

@@ -5286,8 +5286,8 @@ pub fn a_medic_presses_fissure_among_still_beasts_and_each_go_strikes_only_the_b
 
 /// A level-6 Medic saved at 100 health holds Crisis Wave (Spell4Base 25579, Spell4 41382, bag
 /// index 7: the Medic's 5 to 6 rise gives it) and presses it on itself. Its area row 661 is
-/// ordered by health (MissingMostHealth), which the server reads as no area: the cast starts,
-/// its go lists the Medic alone with the heal of row 93037 (type 10, flags 5: the caster and the
+/// ordered by health (MissingMostHealth), which the server reads as no area: the press is
+/// confirmed, its go lists the Medic alone with the heal of row 93037 (type 10, flags 5: the caster and the
 /// area) and the Medic's health rises by the amount that heal's description gives. The allies
 /// the order would pick are not found. The clock is driven and nothing waits on real time.
 pub fn a_hurt_medic_presses_crisis_wave_and_the_cast_starts_goes_and_heals_the_caster_where_the_order_refused_it_test() -> Nil {
@@ -5321,14 +5321,11 @@ pub fn a_hurt_medic_presses_crisis_wave_and_the_cast_starts_goes_and_heals_the_c
   let #(pressed, have) = game_client.read_until_pong(game:, have:, number: 14)
   assert refusals(frames: pressed) == []
     as "opcode.0x7fc: Crisis Wave is planned, so the press is not refused"
-  let assert [#(cast_id, caster)] =
-    game_client.starts_of(
-      events: game_client.casts_in(frames: pressed),
-      spell4_id: 41_382,
-    )
-    as "opcode.0x7ff: the cast of 41382 starts"
-  assert caster == own as "the Medic's own unit casts it"
-  // Spell4.41382 castTime 1250: the go waits for the clock.
+  let assert Ok(cast_id) =
+    game_client.confirmed_cast_of(frames: pressed, client_cast_id: 1)
+    as "opcode.0x7fd: the press is confirmed with the server's cast id"
+  // Spell4.41382 castTime 1250: the go waits for the clock. A pressed cast is told its player
+  // by the 0x7fd and the go; the 0x7ff is for a child and for the viewers.
   driven_time.advance(time:, ms: 1250)
   let #(went, _) =
     game_client.read_until(game:, have:, found: fn(frames) {
@@ -5367,12 +5364,17 @@ pub fn a_hurt_medic_presses_crisis_wave_and_the_cast_starts_goes_and_heals_the_c
     as "the Medic's info holds the heal row 93037 (Spell4Effects 93037: type 10, flags 5)"
   let healed = description.health_damage_with_overkill - description.overkill
   assert healed > 0 as "the heal changes the Medic's health"
-  assert game_client.own_health_of(
+  // The 1250 ms the clock ran also fire the Medic's health regeneration (`player_life`), each
+  // tick its own 0x92f, so the heal is the last of them.
+  let assert [after, before, ..] =
+    game_client.own_health_of(
       events: game_client.fight_in(frames: went),
       unit: own,
     )
-    == [100 + healed]
-    as "opcode.0x92f: the Medic's health rises from 100 by the amount the heal's description gives"
+    |> list.reverse
+    as "the heal's 0x92f follows at least one regeneration tick"
+  assert after - before == healed
+    as "opcode.0x92f: the heal raises the Medic's health by the amount the heal's description gives"
   game_client.close(game:)
   login_support.stop(started)
 }

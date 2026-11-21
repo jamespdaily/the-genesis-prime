@@ -8,7 +8,7 @@
 //// ```
 //// cast rule                      this rule (the caster's connection)                       creature Ci
 //// go timer ─▶ Effect Strike(GoAsked k, phase, spell, primary)
-////   select(asked, attacker, picture, areas) ─▶ Selection: the units, nearest first
+////   select(asked, attacker, picture, areas) ─▶ Selection: the units, in the area row's order
 ////   the connection draws 12 bytes of its seed for each unit
 ////   begin: a round for (k, phase), its deadline now + 1 s
 ////     for each unit in selection order, the spell having damage, states or a gated row:
@@ -174,8 +174,8 @@ pub type Aimed {
   Aimed(unit_id: Int, life: Int)
 }
 
-/// What a go strikes: the units, nearest first with the primary target after the
-/// area's, which of them the area selected, the damage each is struck with, the
+/// What a go strikes: the units, in the area row's order (Closest, Furthest or Random by the
+/// cast id) with the primary target after the area's, which of them the area selected, the damage each is struck with, the
 /// periodic damage rows each is reached by and the crowd-control states each is told,
 /// both by the aim of their row, and the gates of its rows that the struck creature
 /// checks (`gates`: damage, state and go rows alike, each told to the units its aim
@@ -320,6 +320,7 @@ pub fn select(
             phase: asked.phase,
             row:,
             centre:,
+            seed: asked.cast_id,
             now_ms:,
           )
         _, _, _ -> []
@@ -357,12 +358,13 @@ fn area_selection(
   phase phase: Int,
   row row: area.Row,
   centre centre: Pose,
+  seed seed: Int,
   now_ms now_ms: Int,
 ) -> List(Int) {
   case spell_area.inside(spell: area, phase:) {
     None -> []
     Some(inside) ->
-      area.select(
+      area.select_ordered(
         candidates: shown.candidates(
           picture:,
           faction: attacker.faction,
@@ -372,6 +374,7 @@ fn area_selection(
         centre:,
         row:,
         inside:,
+        seed:,
       )
   }
 }

@@ -2348,9 +2348,9 @@ pub fn the_creature_reading_takes_orders_2_and_3_and_refuses_4_and_5_by_name_tes
     as "order 0, None, is no order and is refused"
 }
 
-/// The result of building the areas with Kick's area row ordered `selection`, Kick's damage
-/// aimed by `effect_target_flags` and its valid targets `target_bitmask`: Kick's own area
-/// row with the order it builds, or the refusal.
+/// The result of building the areas with Kick's area row ordered `selection`, its damage and
+/// crowd-control rows aimed by `effect_target_flags` and its valid targets `target_bitmask`:
+/// Kick's own area row with the order it builds, or the refusal.
 fn kick_built_with(
   selection selection: Int,
   effect_target_flags effect_target_flags: Int,
@@ -2361,6 +2361,7 @@ fn kick_built_with(
       ..area_tables.kick(),
       target_selection: selection,
       effect_target_flags:,
+      control_target_flags: effect_target_flags,
       target_bitmask:,
     ),
   )
@@ -2523,15 +2524,28 @@ pub fn a_spell_ordered_beyond_closest_that_holds_a_proxy_naming_its_spell_in_dat
         as { "Restrictor's refusal names " <> part <> ": " <> sentence }
     },
   )
-  assert !list.any(left_out, fn(one) { one.spell4_id == 58_868 })
+  let nullifier_abilities =
+    dict.values(spell_plan.plans_with_later(tables:))
+    |> list.filter(fn(ability) {
+      list.any(
+        spell_plan.tree(spell: ability, started: fn(_) { True }),
+        fn(spell) { spell.spell4_id == Spell4Id(58_868) },
+      )
+    })
+  assert list.length(nullifier_abilities) == 1
+    as "the plans hold one ability whose tree holds Nullifier's field 58868"
+  assert list.all(nullifier_abilities, fn(ability) {
+    !list.any(left_out, fn(one) { one.spell4_id == ability.spell4_id.value })
+  })
     as "Nullifier's ability is not listed unplanned"
-  let assert Ok(nullifier) = spell4.get(tables:, id: Spell4Id(58_868))
-    as "Nullifier is a Spell4 row"
-  assert result.is_ok(spell_plan.in_plans(
-    plans: spell_plan.plans_with_later(tables:),
-    base: Spell4BaseId(nullifier.spell4_base_id_base_spell),
-  ))
-    as "the plans hold Nullifier, whose area row is Closest"
+  let assert Ok(field) =
+    spell_area.of_spell(
+      areas: spell_area.areas(tables:),
+      spell4_id: Spell4Id(58_868),
+    )
+    as "Nullifier's field is in the areas"
+  assert option.map(field.row, fn(row) { row.order }) == Some(area.Nearest)
+    as "Nullifier's area row 119 is Closest, so the Proxy rule leaves it planned"
 }
 
 pub fn a_shape_8_with_a_box_is_refused_by_name_for_a_creature_test() -> Nil {
