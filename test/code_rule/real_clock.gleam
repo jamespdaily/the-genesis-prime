@@ -27,9 +27,10 @@
 ////   start the release's own processes on the node's clock;
 //// - a call of a function in `entry_points`: the functions of `login_support`,
 ////   `ask_support` and `world_support` that start the tree, a listener, a world
-////   or a gate on the real clock, or hand out the settings that do. A file that calls one is on the real clock though its
-////   own text names no source, so it is listed like a file that names one. A
-////   test that moves to the driven clock stops calling them.
+////   or a gate on the real clock, or hand out the settings that do. A file
+////   that calls one is on the real clock though its own text names no source,
+////   so it is listed like a file that names one. A test that moves to the
+////   driven clock stops calling them.
 ////
 //// An Erlang file under `test/` that calls `erlang:send_after`,
 //// `erlang:start_timer`, `timer:sleep`, `timer:send_after`,
@@ -620,7 +621,7 @@ pub fn genuine_real_time() -> List(Exception) {
     ),
     Exception(
       "test/readiness_support.gleam",
-      "the settings of the tests of the wait for the database",
+      "the wait for the database that every tree start makes (login_support.started_from) and the readiness tests use: its window, attempts and pauses count the node's monotonic clock, since the database is a process outside the tree that no driven clock reaches",
     ),
     Exception(
       "test/content_load_test.gleam",

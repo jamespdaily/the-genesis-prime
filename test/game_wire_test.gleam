@@ -83,6 +83,7 @@ import genesis_prime/message/disconnect_reason.{
 import genesis_prime/message/enter_world
 import genesis_prime/message/experience_gained
 import genesis_prime/message/float32
+import genesis_prime/message/game_server_handoff
 import genesis_prime/message/interaction_request.{InteractionRequest}
 import genesis_prime/message/interaction_result
 import genesis_prime/message/item_added
@@ -164,6 +165,7 @@ import limited_action_set_support as limited
 import log_capture
 import login_client
 import login_support
+import login_vectors as vector
 import mailbox_support
 import message_support
 import novice_tables
@@ -202,9 +204,46 @@ fn start() -> #(login_support.Started, Int, AccountId) {
   #(started, ports.game_port, AccountId(account_id))
 }
 
-/// How long the hand-off holds a session key the auth server gave: the server's
-/// setting, `session_key_lifetime_ms` of the auth settings (genesis_prime.gleam).
-const session_key_lifetime_ms = 60_000
+/// How long the hand-off holds a session key the auth server gives on this tree:
+/// the `session_key_lifetime_ms` of its auth settings, which the auth connection
+/// puts in each Put it sends the hand-off.
+fn session_key_lifetime_ms(started: login_support.Started) -> Int {
+  started.settings.login.auth.settings.session_key_lifetime_ms
+}
+
+/// The session key the auth server gives one login of the library's vector on
+/// the tree at `ports`, taken from its 0x3db.
+fn session_key_of_a_login(ports: login_client.Ports) -> guid.Guid {
+  let login =
+    login_client.sts_login(
+      ports:,
+      name: vector.name,
+      password: vector.password,
+      seed: 7,
+      limit: socket_read.Open,
+    )
+  let socket =
+    login_client.auth_login(
+      ports:,
+      login:,
+      build: 16_042,
+      limit: socket_read.Open,
+    )
+  let assert [_accepted, handoff] =
+    login_client.read_frames(
+      client: socket,
+      have: <<>>,
+      count: 2,
+      limit: socket_read.Open,
+    )
+    as "0x591 then 0x3db"
+  let assert Ok(handed) =
+    game_server_handoff.decode(login_client.in_the_auth_wrapper(handoff).body)
+    as "0x3db decodes"
+  let assert Ok(key) = guid.from_wire(handed.session_key)
+    as "the session key is a GUID"
+  key
+}
 
 /// Puts the session key in the tree's hand-off, held for the account.
 fn put_session_key(started: login_support.Started, account: AccountId) -> Nil {
@@ -253,7 +292,7 @@ fn offer_session_key(
         Put(
           key: SessionKey(key),
           holder: Holder(account_id: account, login_name:, game_account_id:),
-          lifetime_ms: session_key_lifetime_ms,
+          lifetime_ms: session_key_lifetime_ms(started),
         ),
         reply,
       )
@@ -359,14 +398,15 @@ pub fn a_client_whose_session_key_the_hand_off_does_not_hold_gets_0x036a_reason_
   login_support.stop(started)
 }
 
-pub fn a_session_key_the_hand_off_holds_expires_only_when_the_driven_clock_passes_its_lifetime_test() -> Nil {
+pub fn a_session_key_the_auth_server_gave_expires_only_when_the_driven_clock_passes_its_lifetime_test() -> Nil {
   use <- owned_test.run(60_000)
   let time = driven_time.new()
   let #(started, ports, account_id) = login_support.start_with_jim(time:)
   let account = AccountId(account_id)
-  let early = support.guid_of(1)
-  let late = support.guid_of(2)
-  let probe = support.guid_of(3)
+  let lifetime_ms = session_key_lifetime_ms(started)
+  let early = session_key_of_a_login(ports)
+  let late = session_key_of_a_login(ports)
+  let probe = session_key_of_a_login(ports)
   let offered = fn(key) {
     offer_session_key(
       started:,
@@ -376,10 +416,7 @@ pub fn a_session_key_the_hand_off_holds_expires_only_when_the_driven_clock_passe
       key:,
     )
   }
-  list.each([early, late, probe], fn(key) {
-    assert offered(key) == hand_off.Kept as "the hand-off kept the session key"
-  })
-  driven_time.advance(time:, ms: session_key_lifetime_ms - 1)
+  driven_time.advance(time:, ms: lifetime_ms - 1)
   assert offered(probe) == hand_off.AlreadyHeld
     as "1 ms before its lifetime has passed on the driven clock a key is still held"
   let held =

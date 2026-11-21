@@ -607,7 +607,7 @@ fn login() -> server.Login {
           game_server: Endpoint(address:, port: game_port),
         ),
         ask_deadline_ms:,
-        session_key_lifetime_ms: 60_000,
+        session_key_lifetime_ms: auth_connection.session_key_lifetime_ms,
         planted: None,
         rate: auth_rate(),
       ),

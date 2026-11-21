@@ -80,7 +80,7 @@ pub fn auth_settings() -> auth_connection.Settings {
   auth_connection.Settings(
     realm: realm(),
     ask_deadline_ms: 5000,
-    session_key_lifetime_ms: 60_000,
+    session_key_lifetime_ms: auth_connection.session_key_lifetime_ms,
     planted: None,
     rate: support.roomy(),
   )
