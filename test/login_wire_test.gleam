@@ -39,7 +39,8 @@ import socket_read
 
 pub fn the_sts_login_runs_plain_to_m2_and_then_both_ways_on_rc4_under_k_one_state_per_direction_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(started, ports, _account_id) = login_support.start_real_with_jim()
+  let time = driven_time.new()
+  let #(started, ports, _account_id) = login_support.start_with_jim(time:)
   let client = login_client.sts_connect(ports)
   let #(answered, exchange) =
     login_client.srp_exchange(
@@ -128,7 +129,8 @@ pub fn the_sts_and_auth_connections_take_their_time_from_the_trees_clock_test() 
 
 pub fn a_client_that_connects_to_the_auth_listener_gets_the_hello_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(started, ports, _account_id) = login_support.start_real_with_jim()
+  let time = driven_time.new()
+  let #(started, ports, _account_id) = login_support.start_with_jim(time:)
   let socket = login_client.connect(ports.auth_port)
   let assert [hello] =
     login_client.read_frames(
@@ -161,7 +163,8 @@ pub fn a_client_that_connects_to_the_auth_listener_gets_the_hello_test() -> Nil 
 
 pub fn a_login_request_with_the_stss_game_token_gets_0x591_then_0x3db_and_the_hand_off_keeps_the_session_key_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(started, ports, account_id) = login_support.start_real_with_jim()
+  let time = driven_time.new()
+  let #(started, ports, account_id) = login_support.start_with_jim(time:)
   let login =
     login_client.sts_login(
       ports: ports,
@@ -218,7 +221,8 @@ pub fn a_login_request_with_the_stss_game_token_gets_0x591_then_0x3db_and_the_ha
 
 pub fn a_client_that_reconnects_writing_login_start_before_connect_logs_in_to_the_game_token_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(started, ports, account_id) = login_support.start_real_with_jim()
+  let time = driven_time.new()
+  let #(started, ports, account_id) = login_support.start_with_jim(time:)
   let login =
     login_client.sts_login_in_order(
       ports:,
@@ -264,9 +268,10 @@ fn session_key_of_a_login(ports: login_client.Ports) -> BitArray {
 
 pub fn the_sts_login_of_one_test_ends_in_the_same_key_on_two_trees_and_in_another_on_a_second_connection_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(first_tree, first_ports, _account) = login_support.start_real_with_jim()
+  let time = driven_time.new()
+  let #(first_tree, first_ports, _account) = login_support.start_with_jim(time:)
   let #(second_tree, second_ports, _account) =
-    login_support.start_real_with_jim()
+    login_support.start_with_jim(time:)
   let first = session_key_of_a_login(first_ports)
   let same_again_on_another_tree = session_key_of_a_login(second_ports)
   let second_connection = session_key_of_a_login(first_ports)

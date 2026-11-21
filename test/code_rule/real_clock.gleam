@@ -107,7 +107,6 @@ pub fn entry_points() -> List(EntryPoint) {
     EntryPoint("login_support", "start_real", tree),
     EntryPoint("login_support", "start_real_with", tree),
     EntryPoint("login_support", "start_real_on", tree),
-    EntryPoint("login_support", "start_real_with_jim", tree),
     EntryPoint("login_support", "real_settings", settings),
     EntryPoint("login_support", "servers_settings", settings),
     EntryPoint("login_support", "servers_settings_over", settings),
@@ -652,6 +651,14 @@ pub fn genuine_real_time() -> List(Exception) {
       "checks Maps' deadlines passing on the node's time against a Maps that never answers",
     ),
     Exception(
+      "test/server_test.gleam",
+      "its settings tests read the server's own settings (login_support.servers_settings), which carry the operating system's script, real service time and production deadlines by design; they start no process",
+    ),
+    Exception(
+      "test/sitting_test.gleam",
+      "its settings tests read the server's own settings (login_support.servers_settings) to check what a sitting changes in them; they start no process",
+    ),
+    Exception(
       "test/literal_area_ffi.erl",
       "samples the VM's literal allocator on a process of its own; no test waits on it",
     ),
@@ -670,30 +677,6 @@ pub fn still_on_the_real_clock() -> List(Exception) {
     Exception(
       "test/login_support.gleam",
       "starts the tree on the operating system's script and real service time (real_settings), with a send deadline of 300 ms, a Maps call of 2 s and an ask of 5 s",
-    ),
-    Exception(
-      "test/login_wire_test.gleam",
-      "calls login_support.start_real_with_jim, which starts the tree on the real clock",
-    ),
-    Exception(
-      "test/server_test.gleam",
-      "calls login_support.start_real and servers_settings, which start the tree and make its settings on the real clock",
-    ),
-    Exception(
-      "test/sitting_test.gleam",
-      "calls login_support.start_real_with, start_real_on and servers_settings, which start the tree and make its settings on the real clock",
-    ),
-    Exception(
-      "test/game_client_poll_test.gleam",
-      "calls login_support.start_real, which starts the tree on the real clock",
-    ),
-    Exception(
-      "test/load_run_test.gleam",
-      "calls login_support.start_real, which starts the tree on the real clock",
-    ),
-    Exception(
-      "test/load_sample_test.gleam",
-      "calls login_support.start_real, which starts the tree on the real clock",
     ),
     Exception(
       "test/wire_replay_support.gleam",

@@ -12,6 +12,7 @@
 
 import application_support
 import ask_support
+import driven_time
 import fresh_node
 import genesis_prime/application.{Fatal, Orderly, Tree}
 import genesis_prime/server
@@ -77,16 +78,19 @@ pub fn a_tree_serves_while_it_runs_and_the_node_is_not_stopping_test() -> Nil {
 }
 
 /// The settings of a tree whose pool waits for no database: nothing here
-/// connects, and the listeners take ports the system picks.
-fn settings() -> server.Settings {
-  login_support.real_settings(
+/// connects, the listeners take ports the system picks, and every clock of the
+/// tree is the driven clock `time`.
+fn settings(time time: driven_time.Time) -> server.Settings {
+  login_support.settings(
     pool: pog.default_config(process.new_name("pool")),
+    time:,
   )
 }
 
 pub fn a_tree_started_under_the_root_gives_its_pid_and_a_monitor_on_it_test() -> Nil {
   use <- owned_test.run(60_000)
-  let assert Ok(tree) = application.start_server(settings: settings())
+  let time = driven_time.new()
+  let assert Ok(tree) = application.start_server(settings: settings(time:))
     as "the application's root is running in the test node, and starts the tree"
   application_support.guard(tree.pid)
   assert process.is_alive(tree.pid)
@@ -102,7 +106,8 @@ pub fn a_tree_started_under_the_root_gives_its_pid_and_a_monitor_on_it_test() ->
 
 pub fn a_tree_that_does_not_start_gives_the_reason_its_start_reported_test() -> Nil {
   use <- owned_test.run(60_000)
-  let settings = settings()
+  let time = driven_time.new()
+  let settings = settings(time:)
   let assert Ok(tree) = application.start_server(settings:)
     as "the first tree starts"
   application_support.guard(tree.pid)
@@ -125,7 +130,8 @@ pub fn without_the_applications_root_no_tree_starts_test() -> Nil {
 
 /// Run in a fresh node, where the application is not started and has no root.
 pub fn start_without_the_application() -> Nil {
-  assert application.start_server(settings: settings())
+  let time = driven_time.new()
+  assert application.start_server(settings: settings(time:))
     == Error(application.ApplicationNotRunning)
     as "application:get_supervisor finds no root for an application that is not running"
 }

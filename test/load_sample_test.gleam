@@ -7,7 +7,7 @@
 //// - The listeners are the tree's STS, auth and game, in that order.
 
 import ask_support
-import event_wait
+import driven_time
 import genesis_prime/load_sample.{Waiting}
 import gleam/erlang/process
 import gleam/list
@@ -47,7 +47,8 @@ pub fn the_sampler_reports_a_planted_processs_mailbox_and_heap_test() -> Nil {
 pub fn the_sampler_reports_each_listeners_connections_and_an_idle_stores_workers_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.tag("dev_tool")
-  let started = login_support.start_real()
+  let time = driven_time.new()
+  let started = login_support.start(time:)
   let ports = login_support.ports(started)
   let login = started.settings.login
   assert load_sample.connections(load_sample.take(started.settings))
@@ -70,9 +71,13 @@ pub fn the_sampler_reports_each_listeners_connections_and_an_idle_stores_workers
       limit: socket_read.Open,
     )
     as "and the second"
-  event_wait.until("both clients' connections are held", fn() {
-    list.length(ask_support.connections_of(login.auth.listener)) == 2
-  })
+  driven_time.wait_for(
+    time:,
+    what: "both clients' connections are held",
+    condition: fn() {
+      list.length(ask_support.connections_of(login.auth.listener)) == 2
+    },
+  )
   let sample = load_sample.take(started.settings)
   assert load_sample.connections(sample) == [0, 2, 0]
   assert load_sample.store_waiting(sample) == 0

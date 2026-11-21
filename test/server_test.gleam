@@ -54,7 +54,8 @@ pub fn the_servers_own_settings_let_the_tree_restart_3_times_in_10_seconds_test(
 
 pub fn the_tree_starts_the_pool_the_store_the_hand_off_sessions_the_world_the_two_subtrees_and_the_closer_last_in_that_order_each_with_its_settings_stated_test() -> Nil {
   use <- owned_test.run(60_000)
-  let started = login_support.start_real()
+  let time = driven_time.new()
+  let started = login_support.start(time:)
   let settings = started.settings
   let pool_name = settings.pool.pool_name
   let assert Ok(pool) = process.named(pool_name) as "the pool is registered"
@@ -135,7 +136,8 @@ fn listener_limits(listener: process.Name(Nil)) -> #(Int, Int) {
 
 pub fn each_listener_holds_the_connections_its_setting_gives_with_one_acceptor_test() -> Nil {
   use <- owned_test.run(60_000)
-  let started = login_support.start_real()
+  let time = driven_time.new()
+  let started = login_support.start(time:)
   let settings = started.settings
   assert listener_limits(settings.login.sts.listener)
     == #(login_support.sts_max_connections, 1)

@@ -15,6 +15,7 @@
 import application_support
 import ask_support
 import database_support
+import driven_time
 import genesis_prime
 import genesis_prime/application
 import genesis_prime/migration.{Migration, NotApplied, Recorded}
@@ -320,19 +321,21 @@ pub fn an_ask_leaves_no_answer_behind_in_its_mailbox_test() -> Nil {
 }
 
 /// A server on a database that does not exist as a server: its pool's port has
-/// no Postgres, and its connection waits are short.
-fn unreachable_settings() -> server.Settings {
+/// no Postgres, and its connection waits are short. Every clock of its tree is
+/// the driven clock `time`.
+fn unreachable_settings(time time: driven_time.Time) -> server.Settings {
   let shared = database_support.shared()
-  login_support.real_settings(
+  login_support.settings(
+    time:,
     pool: database_support.config(
       for: shared.settings,
       database: "unreachable",
       pool_name: process.new_name("pool"),
       pool_size: 1,
     )
-    |> pog.port(1)
-    |> pog.queue_target(50)
-    |> pog.queue_interval(100),
+      |> pog.port(1)
+      |> pog.queue_target(50)
+      |> pog.queue_interval(100),
   )
 }
 
@@ -392,7 +395,8 @@ fn stop(serving: Serving) -> Nil {
 
 pub fn a_database_that_does_not_answer_gets_a_warning_no_ready_line_and_a_login_answered_unavailable_test() -> Nil {
   use <- owned_test.run(60_000)
-  let settings = unreachable_settings()
+  let time = driven_time.new()
+  let settings = unreachable_settings(time:)
   let logged = process.new_subject()
   let serving = serve_in_a_process(settings:, ready: short(), logged:)
   let assert #("warning", line) =
@@ -421,13 +425,17 @@ pub fn a_database_that_does_not_answer_gets_a_warning_no_ready_line_and_a_login_
 pub fn a_database_that_answers_gets_the_ready_line_once_the_probe_returns_test() -> Nil {
   use <- owned_test.run(60_000)
   let shared = database_support.shared()
+  let time = driven_time.new()
   let settings =
-    login_support.real_settings(pool: database_support.config(
-      for: shared.settings,
-      database: database_support.new_database(on: shared),
-      pool_name: process.new_name("pool"),
-      pool_size: 2,
-    ))
+    login_support.settings(
+      time:,
+      pool: database_support.config(
+        for: shared.settings,
+        database: database_support.new_database(on: shared),
+        pool_name: process.new_name("pool"),
+        pool_size: 2,
+      ),
+    )
   let serving =
     serve_in_a_process(
       settings:,

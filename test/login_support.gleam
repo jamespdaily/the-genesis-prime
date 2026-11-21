@@ -418,14 +418,6 @@ pub fn start_with_jim(time time: driven_time.Time) -> #(Started, Ports, Int) {
   #(started, ports(started), account_id)
 }
 
-/// Starts the tree on the real clock and inserts the account of the library's
-/// vector, as `start_with_jim` does.
-pub fn start_real_with_jim() -> #(Started, Ports, Int) {
-  let started = start_real()
-  let account_id = insert_jim(started)
-  #(started, ports(started), account_id)
-}
-
 /// Stops the tree and waits for it to end.
 pub fn stop(started: Started) -> Nil {
   let _reason = ask_support.stop_tree(started.tree)
