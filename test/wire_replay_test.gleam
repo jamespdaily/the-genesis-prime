@@ -19,6 +19,7 @@
 
 import ask_support
 import asking_rule
+import driven_time
 import event_wait
 import genesis_prime/connection/frame
 import genesis_prime/connection/script
@@ -914,7 +915,14 @@ pub fn an_ask_nobody_answers_ends_at_its_own_deadline_and_the_replay_fails_where
         sent: ask_support.unreported,
       ),
       with: fn(builder) {
-        supervisor.add(builder, ask_support.gate(name: gate, shutdown_ms: 1000))
+        supervisor.add(
+          builder,
+          ask_support.gate(
+            name: gate,
+            shutdown_ms: 1000,
+            time: driven_time.new(),
+          ),
+        )
       },
     )
     as "the replay fails where the recording had an answer"
@@ -993,7 +1001,14 @@ pub fn a_service_that_crashes_is_restarted_as_live_and_the_replay_fails_only_if_
         process.send(reached, sent)
       }),
       with: fn(builder) {
-        supervisor.add(builder, ask_support.gate(name: gate, shutdown_ms: 1000))
+        supervisor.add(
+          builder,
+          ask_support.gate(
+            name: gate,
+            shutdown_ms: 1000,
+            time: driven_time.new(),
+          ),
+        )
       },
       actions: held_back,
       scripts: fn(replay) { replay.scripts },

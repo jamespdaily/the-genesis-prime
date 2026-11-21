@@ -28,6 +28,7 @@ import open_wait
 import owned_test
 import pog
 import qcheck
+import serving_node
 
 /// The scripts a listener wraps in these tests: its own clock and timers (planted),
 /// the seed 9 repeated, and the ordinal it was given.
@@ -335,15 +336,13 @@ pub fn a_test_that_names_its_seed_gets_other_seeds_than_its_name_gives_test() ->
 // ---- the tree's settings ----
 
 fn tree_settings() -> Settings {
-  login_support.real_settings(
-    pool: pog.default_config(process.new_name("pool")),
-  )
+  serving_node.real_settings(pool: pog.default_config(process.new_name("pool")))
 }
 
 pub fn the_trees_settings_seed_the_sts_auth_and_game_listeners_each_on_its_own_test() -> Nil {
   use <- owned_test.run(60_000)
   let makers = [
-    #("login_support.real_settings", tree_settings),
+    #("serving_node.real_settings", tree_settings),
     #("login_support.servers_settings", login_support.servers_settings),
   ]
   let first_seeds =

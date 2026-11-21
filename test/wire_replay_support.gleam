@@ -5,6 +5,7 @@
 
 import ask_support
 import client_tables
+import driven_time
 import genesis_prime/client_archive
 import genesis_prime/connection/script.{type Scripts}
 import genesis_prime/game/connection as game_connection
@@ -254,13 +255,11 @@ pub fn run_scripted(
   let session = load(folder)
   let replay = start_replay(session)
   let server =
-    ask_support.start_scripted(
+    ask_support.start_driven(
       rule:,
       directory:,
-      shutdown_ms: 1000,
       wire_recorder: None,
       scripts: scripts(replay),
-      send_deadline_ms: ask_support.real_send_deadline_ms(),
       registry: None,
       locate: fn(_address) { Error(Nil) },
       with:,
@@ -345,10 +344,10 @@ fn recorded_auth_realm(session: Session) -> auth_connection.Realm {
 /// the server's own.
 fn session_settings(
   settings settings: server.Settings,
+  servers servers: server.Settings,
   replay replay: wire_replay.Replay,
   realm realm: auth_connection.Realm,
 ) -> server.Settings {
-  let servers = login_support.servers_settings()
   server.Settings(
     ..settings,
     login: server.Login(
@@ -402,9 +401,12 @@ pub fn replay_tree(
     Error(refusal) -> #(Error(wire_replay.Refused(refusal)), [])
     Ok(Nil) -> {
       let replay = start_replay(session)
+      let time = driven_time.new()
+      let servers = login_support.servers_settings_on(time:)
       let started =
-        login_support.start_real_with(change: session_settings(
+        login_support.start_with(time:, change: session_settings(
           _,
+          servers,
           replay,
           recorded_auth_realm(session),
         ))
