@@ -10149,23 +10149,25 @@ pub fn a_warrior_of_level_14_presses_flash_bang_and_the_struck_beasts_child_stri
       }
     })
   }
-  let #(later, have) = case goes_of_child(pressed) {
-    [] -> {
-      driven_time.advance(time:, ms: 100)
-      game_client.read_until(game:, have:, found: fn(later) {
-        goes_of_child(list.append(pressed, later)) != []
-      })
-    }
-    [_, ..] -> #([], have)
-  }
+  // Phase 0 goes at once and phase 1 10 ms later (SpellPhase 8101 and 8102), so the clock moves
+  // past it before the second go is awaited; whether the first go reached the client before the
+  // press's pong is the connection's order of writes, which nothing here relies on.
+  driven_time.advance(time:, ms: 100)
+  let #(later, have) =
+    game_client.read_until(game:, have:, found: fn(later) {
+      list.any(
+        game_client.casts_in(frames: list.append(pressed, later)),
+        fn(event) {
+          event == game_client.CastWent(cast_id: child.cast_id, phase: 1)
+        },
+      )
+    })
   let #(rest, _) = game_client.read_until_pong(game:, have:, number: 2)
-  let seen = list.flatten([pressed, later, rest])
-  let goes = goes_of_child(seen)
+  let goes = goes_of_child(list.flatten([pressed, later, rest]))
   assert !list.any(goes, fn(targets) { list.contains(targets, far) })
     as "no go of the child names C, 10 m from A"
-  assert goes != []
-    && list.all(goes, fn(targets) { targets == [closest, beside] })
-    as "opcode.0x7f4: the child's gos name A (its own place, 0 m) and B (3 m, inside the circle of radius 4 and the area row's 4 m) and not C (10 m): TelegraphDamage 1766 is fixed at the unit it is cast on"
+  assert goes == [[closest, beside], [closest]]
+    as "opcode.0x7f4: the child's first go names A (its own place, 0 m) and B (3 m, inside the circle of radius 4 and the area row's 4 m) and not C (10 m): TelegraphDamage 1766 is fixed at the unit it is cast on; its second go holds only Spell4Effects 174854, a type 17 row aimed at the target (phaseFlags -1), so it names the primary target alone"
   game_client.close(game:)
   login_support.stop(started)
 }
