@@ -18,7 +18,6 @@ import genesis_prime/dashboard/follow.{
 import genesis_prime/dashboard/log_lines.{
   LaunchdLog, Line, LogCutShorter, LogReplaced, Marker, UpdaterLog,
 }
-import genesis_prime/dashboard/subscribers
 import gleam/bit_array
 import gleam/erlang/process.{type Subject}
 import gleam/int
@@ -48,7 +47,7 @@ fn following(
       path:,
       reader: follow.file_reader(),
       interval_ms: 86_400_000,
-      arm: subscribers.send_after,
+      arm: timers.arm(process.new_subject()),
       watcher: None,
     ))
   let subscriber = process.new_subject()
@@ -291,7 +290,7 @@ fn answered_followers(
       path: "/planted/play-service.log",
       reader: asked(calls),
       interval_ms: 86_400_000,
-      arm: subscribers.send_after,
+      arm: timers.arm(process.new_subject()),
       watcher:,
     ))
   #(started.data, calls)

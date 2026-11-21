@@ -66,7 +66,7 @@ fn calls_in(module: glance.Module) -> List(Call) {
   list.filter_map(syntax.expressions(module), fn(expression) {
     case expression {
       glance.Call(function:, arguments:, ..) ->
-        Ok(Call(function: location_of(function), arguments:))
+        Ok(Call(function: syntax.span_of(function), arguments:))
       glance.Int(..)
       | glance.Float(..)
       | glance.String(..)
@@ -146,7 +146,7 @@ fn called_function(
   case argument {
     glance.LabelledField(item: glance.Call(function:, ..), ..)
     | glance.UnlabelledField(glance.Call(function:, ..)) ->
-      Some(location_of(function))
+      Some(syntax.span_of(function))
     glance.LabelledField(..)
     | glance.UnlabelledField(..)
     | glance.ShorthandField(..) -> None
@@ -165,32 +165,6 @@ fn closures(
       | glance.ShorthandField(..) -> Error(Nil)
     }
   })
-}
-
-fn location_of(expression: glance.Expression) -> glance.Span {
-  case expression {
-    glance.FieldAccess(location:, ..) -> location
-    glance.Int(location:, ..)
-    | glance.Float(location:, ..)
-    | glance.String(location:, ..)
-    | glance.Variable(location:, ..)
-    | glance.NegateInt(location:, ..)
-    | glance.NegateBool(location:, ..)
-    | glance.Block(location:, ..)
-    | glance.Panic(location:, ..)
-    | glance.Todo(location:, ..)
-    | glance.Tuple(location:, ..)
-    | glance.List(location:, ..)
-    | glance.Fn(location:, ..)
-    | glance.RecordUpdate(location:, ..)
-    | glance.Call(location:, ..)
-    | glance.TupleIndex(location:, ..)
-    | glance.FnCapture(location:, ..)
-    | glance.BitString(location:, ..)
-    | glance.Case(location:, ..)
-    | glance.BinaryOperator(location:, ..)
-    | glance.Echo(location:, ..) -> location
-  }
 }
 
 fn contains(outer: glance.Span, inner: glance.Span) -> Bool {

@@ -40,7 +40,7 @@ fn started() -> #(Subject(host.Message), Subject(Call)) {
 
 /// A poller whose reads are recorded in `calls`, stamped by `clock`.
 fn started_by(clock: fn() -> Int) -> #(Subject(host.Message), Subject(Call)) {
-  started_with(clock, 86_400_000, subscribers.send_after)
+  started_with(clock, 86_400_000, timers.arm(process.new_subject()))
 }
 
 /// The interval the driven poller is set to; its timers are armed for it.

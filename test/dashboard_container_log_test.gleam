@@ -8,6 +8,7 @@
 //// test waits on a clock: the interval is a day and a tick is a message.
 
 import dashboard_support
+import dashboard_timer_support as timers
 import genesis_prime/dashboard/container_follow
 import genesis_prime/dashboard/container_log.{
   type Cursor, type Line, Cursor, Line, Plan, Read, Tracking,
@@ -22,7 +23,6 @@ import genesis_prime/dashboard/read_poll
 import genesis_prime/dashboard/script.{
   DeadlineReached, Finished, NotExecutable, NotFound, NotStarted,
 }
-import genesis_prime/dashboard/subscribers
 import gleam/bit_array
 import gleam/erlang/process.{type Subject}
 import gleam/int
@@ -642,7 +642,7 @@ fn following(
       },
       interval_ms: 86_400_000,
       deadline_ms:,
-      arm: subscribers.send_after,
+      arm: timers.arm(process.new_subject()),
       watcher: None,
     ))
   started.data
