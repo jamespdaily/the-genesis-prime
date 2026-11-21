@@ -27,12 +27,13 @@ import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
 import genesis_prime/game/spell_area.{
   AimNotRead, FormulaNotRead, MultiplierNotFinite, Once, Periodic, PlacedApart,
-  SelectionNeedsHealth, SelectionNotBuilt, ShapeNotBuilt, TelegraphNotOnCaster,
-  TelegraphOnStruckUnits, TickingNoTick, TickingUntilRemoved,
-  ValidTargetsNotAlive,
+  SelectionNeedsHealth, SelectionNotBuilt, ShapeNotBuilt, TargetingNotBuilt,
+  TelegraphNotOnCaster, TelegraphOnStruckUnits, TickingNoTick,
+  TickingUntilRemoved, ValidTargetsNotAlive,
 }
 import genesis_prime/game/spell_plan
 import genesis_prime/game/spend.{EqualTo}
+import genesis_prime/game/target_mechanic
 import genesis_prime/game/ticking
 import genesis_prime/message/crowd_control_state
 import genesis_prime/table/id.{
@@ -375,19 +376,291 @@ pub fn a_spell_whose_valid_targets_hold_a_bit_fails_the_load_test() -> Nil {
 
 pub fn a_hit_row_placed_on_another_unit_than_the_caster_fails_the_load_test() -> Nil {
   use <- owned_test.run(60_000)
-  // No level-1 tree spell has a TelegraphDamage row with targetTypeFlags 2 (3561 rows outside the trees do).
-  assert area_tables.built(
+  // The flags the player's reading refuses: 4 each struck unit, 6 the target and each struck
+  // unit, 10 the target and the held position (3 and 9 are rows of the flag-8 test). No level-1
+  // tree spell has such a TelegraphDamage row.
+  list.each(
+    [
+      #(
+        4,
+        "a row on each struck unit, which the cast cannot know when it starts",
+      ),
+      #(6, "the target and each struck unit at once"),
+      #(10, "the target and the held position at once"),
+    ],
+    fn(row) {
+      let #(target_type_flags, reason) = row
+      assert area_tables.built(
+          kick: area_tables.Kick(
+            ..area_tables.kick(),
+            telegraph_target_type_flags: target_type_flags,
+          ),
+        )
+        == Error(TelegraphNotOnCaster(
+          spell4_id: 58_591,
+          telegraph_id: 168,
+          target_type_flags:,
+        ))
+        as reason
+    },
+  )
+}
+
+/// The anchor Kick's spell gets when its row 168 has these flags, or why the areas do not build.
+fn kick_anchor(
+  target_type_flags target_type_flags: Int,
+  telegraph_damage_flags telegraph_damage_flags: Int,
+) -> Result(area.Anchor, spell_area.AreaError) {
+  area_tables.built(
+    kick: area_tables.Kick(
+      ..area_tables.kick(),
+      telegraph_target_type_flags: target_type_flags,
+      telegraph_damage_flags:,
+    ),
+  )
+  |> result.map(fn(areas) {
+    let assert Ok(found) =
+      spell_area.of_spell(areas:, spell4_id: Spell4Id(58_591))
+      as "Kick is in its own areas"
+    found.anchor
+  })
+}
+
+pub fn a_player_hit_row_placed_by_flag_0_or_2_is_anchored_on_the_cast_target_and_fixed_when_the_client_draws_it_at_a_position_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Kick's row 168 changed (synthetic: the client's trees hold each pair): a row with neither
+  // 0x4000 nor 0x1000 is placed by its targetTypeFlags, where 0 or bit 2 is the unit of cast
+  // 0x158, the 0x7ff's primary target; a row with 0x4000 or 0x1000 stays at the entry
+  // (`0x140546e60.placement_branches`, `0x14054b1b0.fixed_placement`,
+  // `0x14054b1b0.follows_caster`). Kick is a pressed spell of target mechanic kind 2, the
+  // caster, so the targeting rule lets each row through.
+  list.each([0, 2], fn(target_type_flags) {
+    list.each(
+      [
+        #(
+          0x200,
+          area.FollowsTarget,
+          "a target row with no placing flag follows its unit",
+        ),
+        #(
+          0x1200,
+          area.FixedAtTarget,
+          "a target row with 0x1000 stays at the 0x7ff's entry",
+        ),
+        #(
+          0x4200,
+          area.FixedAtTarget,
+          "a target row with 0x4000 stays at its telegraph position",
+        ),
+      ],
+      fn(row) {
+        let #(telegraph_damage_flags, anchor, reason) = row
+        assert kick_anchor(target_type_flags:, telegraph_damage_flags:)
+          == Ok(anchor)
+          as reason
+      },
+    )
+  })
+  let sentence =
+    spell_area.describe(error: TelegraphNotOnCaster(58_591, 168, 4))
+  list.each(["(1)", "(0 and 2)", "(8)"], fn(named) {
+    assert string.contains(sentence, named)
+      as "the refusal names the flags a player's row may have: 1, 0 and 2, and 8"
+  })
+}
+
+pub fn a_hit_row_of_a_spell_started_on_a_struck_unit_is_built_only_when_its_centre_is_that_units_place_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // `strike.select` centres a spell started on another unit on that unit's shown place at yaw
+  // 0.0 (a Proxy on each struck unit, a proc), and a press or a Proxy on the caster on the
+  // caster. `area.in_shape` reads a circle only through its origin, which an offset moves along
+  // the unit's yaw, so a circle with no offset is the same at any yaw and under any
+  // `turn_degrees`; any other shape reads the yaw (`0x14054b1b0.follows_caster`).
+  let placed = fn(shape, ahead, aside, turn_degrees) {
+    Placement(shape:, ahead:, aside:, turn_degrees:)
+  }
+  let circle = placed(Circle(radius: 4.0), 0.0, 0.0, 0.0)
+  let turned_circle = placed(Circle(radius: 4.0), 0.0, 0.0, 90.0)
+  let circle_ahead = placed(Circle(radius: 4.0), 2.0, 0.0, 0.0)
+  let circle_aside = placed(Circle(radius: 4.0), 0.0, 2.0, 0.0)
+  let box = placed(Box(width: 14.0, length: 14.0), 0.0, 0.0, 0.0)
+  let cone = placed(Cone(inner: 1.0, outer: 7.0, degrees: 100.0), 0.0, 0.0, 0.0)
+  let rectangle = placed(Rectangle(width: 2.0, length: 6.0), 0.0, 0.0, 0.0)
+  let every_anchor = [
+    area.FollowsCaster,
+    area.FixedAtCaster,
+    area.FollowsTarget,
+    area.FixedAtTarget,
+  ]
+  let on_the_caster = [area.FollowsCaster, area.FixedAtCaster]
+  let on_the_target = [area.FollowsTarget, area.FixedAtTarget]
+  let on_the_caster_or_press = [
+    spell_plan.Pressed,
+    spell_plan.Proxied(target: spell_plan.OnCaster),
+  ]
+  let on_another_unit = [
+    spell_plan.Proxied(target: spell_plan.OnEachStruck),
+    spell_plan.FromProc,
+  ]
+  list.each(
+    [
+      #(
+        on_the_caster_or_press,
+        every_anchor,
+        [box],
+        True,
+        "the primary target is the caster, so every anchor is the caster's place",
+      ),
+      #(
+        on_the_caster_or_press,
+        every_anchor,
+        [cone, rectangle],
+        True,
+        "a cone and a rectangle too",
+      ),
+      #(
+        on_another_unit,
+        on_the_caster,
+        [box],
+        True,
+        "a row on the caster is centred on the caster, whatever the start",
+      ),
+      #(
+        on_another_unit,
+        on_the_caster,
+        [cone, circle_aside],
+        True,
+        "a cone and an offset circle on the caster",
+      ),
+      #(
+        on_another_unit,
+        on_the_target,
+        [],
+        True,
+        "no hit shape, as Crush's second spell",
+      ),
+      #(
+        on_another_unit,
+        on_the_target,
+        [circle],
+        True,
+        "a circle with no offset is the unit's place",
+      ),
+      #(
+        on_another_unit,
+        on_the_target,
+        [circle, turned_circle],
+        True,
+        "a circle turned about its own centre is the same circle",
+      ),
+      #(
+        on_another_unit,
+        on_the_target,
+        [circle_aside],
+        False,
+        "an x offset moves along the unit's yaw, which is not known",
+      ),
+      #(
+        on_another_unit,
+        on_the_target,
+        [circle_ahead],
+        False,
+        "a z offset moves along the unit's yaw",
+      ),
+      #(
+        on_another_unit,
+        on_the_target,
+        [circle, circle_ahead],
+        False,
+        "one offset circle among others",
+      ),
+      #(
+        on_another_unit,
+        on_the_target,
+        [box],
+        False,
+        "a box is turned by the unit's yaw",
+      ),
+      #(
+        on_another_unit,
+        on_the_target,
+        [cone],
+        False,
+        "a cone is turned by the unit's yaw",
+      ),
+      #(
+        on_another_unit,
+        on_the_target,
+        [rectangle],
+        False,
+        "a rectangle is turned by the unit's yaw",
+      ),
+    ],
+    fn(row) {
+      let #(starts, anchors, shapes, expected, reason) = row
+      list.each(starts, fn(start) {
+        list.each(anchors, fn(anchor) {
+          assert spell_area.start_placed(anchor:, start:, shapes:) == expected
+            as reason
+        })
+      })
+    },
+  )
+}
+
+pub fn a_pressed_spell_whose_hit_row_needs_a_target_or_a_spot_the_press_does_not_give_is_refused_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // Kick's target mechanic row 6 changed (synthetic: no client ability changes verdict by this
+  // rule). `target_mechanic.kind_of` names each `targetType` (`Spell4TargetMechanics.targetType`,
+  // `0x14055bdc0`); the press names the caster as the primary target (`cast` `press_of`) and
+  // the 0x9b ground cast is not routed, so a row placed on the cast's target of a spell that
+  // is not cast at the caster would strike around the caster.
+  let built = fn(target_type, telegraph_target_type_flags) {
+    area_tables.built(
       kick: area_tables.Kick(
         ..area_tables.kick(),
-        telegraph_target_type_flags: 2,
+        target_type:,
+        telegraph_target_type_flags:,
       ),
     )
-    == Error(TelegraphNotOnCaster(
+    |> result.replace(Nil)
+  }
+  list.each(
+    [
+      #(0, Ok(Nil), "kind 0 takes the caster"),
+      #(2, Ok(Nil), "kind 2 takes the caster"),
+      #(6, Ok(Nil), "kind 6 takes the caster"),
+      #(7, Ok(Nil), "kind 7 takes the caster"),
+      #(1, Error(target_mechanic.Targeted), "kind 1 needs a target unit"),
+      #(3, Error(target_mechanic.Targeted), "kind 3 needs a target unit"),
+      #(5, Error(target_mechanic.Targeted), "kind 5 needs a target unit"),
+      #(8, Error(target_mechanic.Targeted), "kind 8 needs a target unit"),
+      #(4, Error(target_mechanic.Ground), "kind 4 is placed on the ground"),
+      #(
+        9,
+        Error(target_mechanic.Unread(target_type: 9)),
+        "the picker has no case for kind 9",
+      ),
+    ],
+    fn(row) {
+      let #(target_type, expected, reason) = row
+      assert built(target_type, 2)
+        == result.map_error(expected, fn(kind) {
+          TargetingNotBuilt(spell4_id: 58_591, kind:)
+        })
+        as reason
+      assert built(target_type, 1) == Ok(Nil)
+        as "a row on the caster is built whatever the spell is cast at"
+    },
+  )
+  let sentence =
+    spell_area.describe(error: TargetingNotBuilt(
       spell4_id: 58_591,
-      telegraph_id: 168,
-      target_type_flags: 2,
+      kind: target_mechanic.Targeted,
     ))
-    as "0x14054d170: flag 1 places a shape on the caster; every row of the nine abilities has it"
+  assert string.contains(sentence, "a unit the cast names")
+    && string.contains(sentence, "press does not read its target")
+    as "the sentence names the kind and says the press does not read the target"
 }
 
 pub fn a_player_hit_row_placed_by_flag_8_is_anchored_at_the_cast_start_and_a_flag_1_row_follows_the_caster_test() -> Nil {
@@ -397,21 +670,6 @@ pub fn a_player_hit_row_placed_by_flag_8_is_anchored_at_the_cast_start_and_a_fla
   // (bit 1 the caster, bit 8 the position the cast holds); a row with 0x4000 or 0x1000 stays
   // at the entry, and a bit-8 row is at the held position whatever its placing
   // (`0x140546e60.placement_branches`, `0x14054b1b0.fixed_placement`).
-  let kick_anchor = fn(target_type_flags, telegraph_damage_flags) {
-    area_tables.built(
-      kick: area_tables.Kick(
-        ..area_tables.kick(),
-        telegraph_target_type_flags: target_type_flags,
-        telegraph_damage_flags:,
-      ),
-    )
-    |> result.map(fn(areas) {
-      let assert Ok(found) =
-        spell_area.of_spell(areas:, spell4_id: Spell4Id(58_591))
-        as "Kick is in its own areas"
-      found.anchor
-    })
-  }
   list.each(
     [
       #(
@@ -465,7 +723,8 @@ pub fn a_player_hit_row_placed_by_flag_8_is_anchored_at_the_cast_start_and_a_fla
     ],
     fn(row) {
       let #(target_type_flags, telegraph_damage_flags, expected, reason) = row
-      assert kick_anchor(target_type_flags, telegraph_damage_flags) == expected
+      assert kick_anchor(target_type_flags:, telegraph_damage_flags:)
+        == expected
         as reason
     },
   )
@@ -513,6 +772,36 @@ pub fn the_anchor_of_a_planned_spell_is_read_from_its_hit_rows_on_the_clients_ro
         "Pounce: the twin 3579, flag 1, beside the drawn row 3578, flag 8, which is not compared",
       ),
       #(58_591, area.FollowsCaster, "Kick: row 168, flag 1"),
+      #(
+        47_202,
+        area.FixedAtTarget,
+        "Flash Bang's child: row 1766, targetTypeFlags 2, flags 0x1200",
+      ),
+      #(
+        41_404,
+        area.FixedAtTarget,
+        "Field Probes' child: row 2899, targetTypeFlags 2, flags 0x1200",
+      ),
+      #(
+        55_046,
+        area.FixedAtTarget,
+        "Field Probes' second child: row 2900, targetTypeFlags 2, flags 0x1200",
+      ),
+      #(
+        35_360,
+        area.FixedAtTarget,
+        "Rapid Fire: the twin 204 (0x801040) and the drawn row 137 (0xc81620), each with 0x1000 and targetTypeFlags 2",
+      ),
+      #(
+        76_838,
+        area.FixedAtTarget,
+        "Rapid Fire's alternate under Spell Surge: the same twin 204 and drawn row 137",
+      ),
+      #(
+        41_343,
+        area.FollowsTarget,
+        "Bio Shell's child: row 15498, targetTypeFlags 2, flags 0x1140220 with neither 0x1000 nor 0x4000",
+      ),
       #(
         42_297,
         area.FollowsTarget,
@@ -613,6 +902,15 @@ pub fn a_creature_row_is_anchored_by_who_it_is_placed_on_and_how_test() -> Nil {
       assert creature_anchor(tables:, spell4_id:) == Ok(anchor) as reason
     },
   )
+  {
+    use tables <- fixture_tables.changed(
+      table: "TelegraphDamage",
+      id: 4796,
+      with: [#("targetTypeFlags", Integer(0))],
+    )
+    assert creature_anchor(tables:, spell4_id: 46_353) == Ok(area.FollowsTarget)
+      as "row 4796 with targetTypeFlags 0 is placed on the target too"
+  }
   // Laser Bolt's tiers: area rows 116 (range 10, 10 units, 360 degrees) and 210 (range 12) and
   // the circles of TelegraphDamage 7874 (4) and 7875 (6).
   list.each([#(55_846, 10.0, 4.0), #(55_847, 12.0, 6.0)], fn(tier) {
@@ -748,36 +1046,6 @@ pub fn a_spell_whose_rows_are_not_placed_alike_is_refused_by_name_test() -> Nil 
         as reason
     },
   )
-}
-
-pub fn the_player_reading_still_refuses_target_rows_the_creature_reading_builds_test() -> Nil {
-  use <- owned_test.run(60_000)
-  // A player's strike centres on the target at yaw 0, so a row placed on a unit but the caster
-  // stays refused for a player whatever its bits, bit 4 included, while the creature reading
-  // builds the target rows.
-  list.each([0, 2, 4], fn(target_type_flags) {
-    assert area_tables.built(
-        kick: area_tables.Kick(
-          ..area_tables.kick(),
-          telegraph_target_type_flags: target_type_flags,
-        ),
-      )
-      == Error(TelegraphNotOnCaster(
-        spell4_id: 58_591,
-        telegraph_id: 168,
-        target_type_flags:,
-      ))
-      as "the player's reading builds only the caster (1)"
-  })
-  assert creature_anchor(tables: fixture_tables.shared(), spell4_id: 46_353)
-    == Ok(area.FollowsTarget)
-  use tables <- fixture_tables.changed(
-    table: "TelegraphDamage",
-    id: 4796,
-    with: [#("targetTypeFlags", Integer(0))],
-  )
-  assert creature_anchor(tables:, spell4_id: 46_353) == Ok(area.FollowsTarget)
-    as "a row with 0 flags is placed on the target"
 }
 
 pub fn a_damage_multiplier_that_is_not_a_finite_float_fails_the_load_naming_the_effect_test() -> Nil {
@@ -1032,14 +1300,20 @@ pub fn a_spell_with_an_until_removed_damage_row_is_refused_by_the_checker_while_
   ]
   let spell =
     spell_tables.mind_burst_in(areas: spell_tables.fixture_areas()).spell
-  assert spell_area.checker(tables: fixture_tables.shared())(spell) == Ok(Nil)
+  assert spell_area.checker(tables: fixture_tables.shared())(
+      spell,
+      spell_plan.Pressed,
+    )
+    == Ok(Nil)
     as "Mind Burst as the client has it passes the checker"
   let verdict =
     fixture_tables.changed(
       table: "Spell4Effects",
       id: 61_994,
       with: changes,
-      body: fn(tables) { spell_area.checker(tables:)(spell) },
+      body: fn(tables) {
+        spell_area.checker(tables:)(spell, spell_plan.Pressed)
+      },
     )
   let assert Error(spell_plan.AreaNotBuilt(spell4_id:, reason:)) = verdict
     as "an until-removed damage row refuses the spell, so no ability holds a press that strikes nothing"

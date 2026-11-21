@@ -1238,6 +1238,50 @@ pub fn a_row_fixed_at_the_cast_start_strikes_where_the_cast_started_and_one_that
   )
 }
 
+pub fn a_row_placed_on_the_cast_target_strikes_around_the_unit_a_spell_is_started_on_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  let areas = spell_area.areas(tables: client_tables.shared())
+  // The start pose faces -z from the origin; the moved caster (unit 7) stands at (40, 0). A
+  // creature's hit radius is 3 (`foe_at`).
+  list.each(
+    [
+      #(
+        47_202,
+        21,
+        [#(21, 10.0, 0.0), #(22, 13.0, 0.0), #(23, 20.0, 0.0), #(24, 40.0, 0.0)],
+        [21, 22],
+        "Flash Bang's child 47202, TelegraphDamage 1766 (a circle of radius 4, flags 0x1200, targetTypeFlags 2), started on the struck unit 21 shown at (10, 0): the unit itself and the creature 3 m from it are inside, the one 10 m from it and the one where the caster stands are not",
+      ),
+      #(
+        35_360,
+        21,
+        [#(21, 10.0, 0.0), #(22, 13.0, 0.0), #(23, 20.0, 0.0), #(24, 40.0, 0.0)],
+        [21, 22],
+        "Rapid Fire's child 35360, its twin TelegraphDamage 204 (a circle of radius 5, flags 0x801040, targetTypeFlags 2) beside the drawn row 137, started on the struck unit 21 shown at (10, 0): the unit and the creature 3 m from it are inside, the one 10 m from it is not",
+      ),
+      #(
+        41_343,
+        21,
+        [#(21, 10.0, 0.0), #(22, 13.0, 0.0), #(23, 20.0, 0.0), #(24, 40.0, 0.0)],
+        [21, 22],
+        "Bio Shell's child 41343, TelegraphDamage 15498 (a circle of radius 6, flags 0x1140220, targetTypeFlags 2, following its unit), started on the struck unit 21: the unit and the creature 3 m from it are inside, the one 10 m from it is not",
+      ),
+    ],
+    fn(row) {
+      let #(spell4_id, primary_target, candidates, expected, reason) = row
+      assert selected_after_the_caster_moved(
+          areas:,
+          spell4_id:,
+          primary_target:,
+          candidates:,
+        )
+        == expected
+        as reason
+    },
+  )
+}
+
 pub fn crushs_second_spell_strikes_up_to_four_within_4_m_of_the_struck_foe_and_the_foe_once_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())

@@ -2841,10 +2841,10 @@ pub fn derivation(
 }
 
 /// What a spell of a later ability must also pass to be planned: the area rule builds every
-/// spell of its tree (genesis_prime/game/spell_area `checker`). Its error is a `PlanError`,
+/// spell of its tree as it is started (genesis_prime/game/spell_area `checker`). Its error is a `PlanError`,
 /// and `is_unbuilt` says whether the ability is left out or the load fails.
 pub type Checker =
-  fn(Spell) -> Result(Nil, PlanError)
+  fn(Spell, Start) -> Result(Nil, PlanError)
 
 /// The rows the tree reads, grouped by the spell they belong to.
 pub opaque type Sources {
@@ -2924,7 +2924,7 @@ pub type Unplanned {
 /// derivation's body, and the function a test of a missing row or a cycle runs
 /// on planted tables.
 pub fn build(tables tables: table_store.Tables) -> Result(Plans, PlanError) {
-  use #(held, _) <- result.map(plan_all(tables:, checker: fn(_) { Ok(Nil) }))
+  use #(held, _) <- result.map(plan_all(tables:, checker: fn(_, _) { Ok(Nil) }))
   held.starting
 }
 
@@ -3070,8 +3070,8 @@ fn checked(
     Some(alternate) -> [spell, alternate]
     None -> [spell]
   }
-  list.flat_map(trees, tree(spell: _, started: fn(_) { True }))
-  |> list.try_each(checker)
+  list.flat_map(trees, tree_started(spell: _, started: fn(_) { True }))
+  |> list.try_each(fn(started) { checker(started.0, started.1) })
   |> result.replace(spell)
 }
 
@@ -7228,20 +7228,53 @@ pub fn tree(
   spell spell: Spell,
   started started: fn(Proxy) -> Bool,
 ) -> List(Spell) {
-  let stages = list.map(spell.stages, fn(stage) { stage.spell })
+  tree_started(spell:, started:) |> list.map(fn(started) { started.0 })
+}
+
+/// How a spell of a tree is started, which decides who its primary target is
+/// (`cast` `press_of`, `children`, `proc_started`).
+pub type Start {
+  /// By a press: the ability's own spell, a threshold stage and a Proxy the press walks. The
+  /// primary target is the caster, since a press does not read the player's target.
+  Pressed
+  /// By a Proxy of another spell, on the caster or on each unit that spell struck: the
+  /// primary target is the caster for the first and the struck unit for the second.
+  Proxied(target: ProxyTarget)
+  /// By a Proc effect, aimed at the unit the proc names: the primary target is another unit.
+  FromProc
+}
+
+/// Every spell of the tree (`tree`) with how it is started, a spell reached two ways once
+/// for each way (a Proxy row aimed at both the caster and the area).
+pub fn tree_started(
+  spell spell: Spell,
+  started started: fn(Proxy) -> Bool,
+) -> List(#(Spell, Start)) {
+  walk_started(spell:, start: Pressed, started:)
+}
+
+/// The spell as `start`, then the tree below it. A stage and a Proxy the press walks are cast as
+/// the spell is, a Proxy `started` accepts as the Proxy aims it and a Proc's spell by the proc.
+fn walk_started(
+  spell spell: Spell,
+  start start: Start,
+  started started: fn(Proxy) -> Bool,
+) -> List(#(Spell, Start)) {
+  let stages = list.map(spell.stages, fn(stage) { #(stage.spell, start) })
   let proxied =
     payloads(spell:, as_kind: as_proxy)
     |> list.filter(started)
-    |> list.map(fn(proxy) { proxy.spell })
+    |> list.map(fn(proxy) { #(proxy.spell, Proxied(target: proxy.target)) })
   let procced =
     payloads(spell:, as_kind: as_proc)
-    |> list.map(fn(proc) { proc.spell })
-  let pressed = list.map(spell.press_proxies, fn(proxy) { proxy.spell })
+    |> list.map(fn(proc) { #(proc.spell, FromProc) })
+  let pressed =
+    list.map(spell.press_proxies, fn(proxy) { #(proxy.spell, start) })
   [
-    spell,
+    #(spell, start),
     ..list.flat_map(
       list.flatten([stages, proxied, procced, pressed]),
-      fn(below) { tree(spell: below, started:) },
+      fn(below) { walk_started(spell: below.0, start: below.1, started:) },
     )
   ]
 }

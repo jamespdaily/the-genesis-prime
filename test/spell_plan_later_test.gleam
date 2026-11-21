@@ -14,18 +14,23 @@
 
 import client_tables
 import fixture_tables
+import genesis_prime/game/effect_row_read
 import genesis_prime/game/forced_move
 import genesis_prime/game/innate
 import genesis_prime/game/loadout
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_plan.{type PlanError}
 import genesis_prime/table/id.{
-  type Spell4BaseId, ClassId, Spell4BaseId, Spell4Id,
+  type Spell4BaseId, ClassId, Spell4BaseId, Spell4Id, TelegraphDamageId,
 }
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4
+import genesis_prime/table/spell4_effects
+import genesis_prime/table/spell4_telegraph
 import genesis_prime/table/spell_level
+import genesis_prime/table/telegraph_damage
 import gleam/dict
+import gleam/int
 import gleam/list
 import gleam/string
 import owned_test
@@ -331,13 +336,6 @@ fn base_of(
   Spell4BaseId(row.spell4_base_id_base_spell)
 }
 
-/// The abilities held back by a hit row placed on the cast's target (flags 0 or 2) or by
-/// a row of a spell with another refusal first: Flash Bang, Bio Shell, Telekinetic Storm,
-/// Field Probes, Rapid Fire, Pyrokinetic Flame, Reverie, Mortar Strike and Tether Mine.
-const flag_0_or_2_abilities = [
-  32_320, 41_341, 32_814, 41_398, 35_356, 36_821, 33_181, 41_543, 38_860,
-]
-
 pub fn the_abilities_held_back_only_by_a_flag_8_hit_row_are_planned_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
@@ -361,9 +359,6 @@ pub fn the_abilities_held_back_only_by_a_flag_8_hit_row_are_planned_test() -> Ni
     }
       as "and the plans hold it"
   })
-  assert list.length(left_out)
-    == 51 - list.length(spell_tables.flag_8_abilities)
-    as "the base left 51 abilities unplanned; these 7 leave the list and no other does"
   let assert Ok(miasma) =
     list.find(left_out, fn(one) { one.spell4_id == 41_484 })
     as "Unsteady Miasma stays listed"
@@ -377,19 +372,108 @@ pub fn the_abilities_held_back_only_by_a_flag_8_hit_row_are_planned_test() -> Ni
     }
   assert list.contains(unplanned, 34_426)
     as "Energy Auger stays listed: its valid targets are bitmask 4"
-  list.each(flag_0_or_2_abilities, fn(spell4_id) {
-    let assert Ok(one) =
-      list.find(left_out, fn(one) { one.spell4_id == spell4_id })
-      as "a hit row placed on the cast's target keeps its ability listed"
-    let sentence = spell_plan.describe(error: one.error)
-    assert string.contains(
-      sentence,
-      "only the caster (1) and the cast's start position (8) are built for a player",
-    )
-      as { "the sentence names the rows that are built: " <> sentence }
-  })
   list.each([57_978, 39_157, 42_676], fn(spell4_id) {
     assert !list.contains(unplanned, spell4_id)
       as "Smackdown, Whiplash and Pounce are planned before and after"
   })
+}
+
+/// The TelegraphDamage rows of a spell by Spell4Telegraph, read through the table readers.
+fn telegraph_rows_of(
+  tables tables: table_store.Tables,
+  spell4_id spell4_id: Int,
+) -> List(telegraph_damage.TelegraphDamage) {
+  spell4_telegraph.all(tables)
+  |> list.filter(fn(link) { link.spell4_id == spell4_id })
+  |> list.filter_map(fn(link) {
+    telegraph_damage.get(
+      tables:,
+      id: TelegraphDamageId(link.telegraph_damage_id),
+    )
+  })
+}
+
+pub fn the_abilities_held_back_only_by_a_flag_0_or_2_hit_row_are_planned_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let assert Ok(left_out) =
+    spell_plan.unplanned(tables:, area_checked: spell_area.checker)
+  let unplanned = list.map(left_out, fn(one) { one.spell4_id })
+  let sources = spell_plan.sources_of(tables:)
+  let place_of =
+    effect_row_read.places(tables:, effects: spell4_effects.all(tables))
+  list.each(spell_tables.flag_0_or_2_abilities, fn(spell4_id) {
+    assert list.any(spell_level.all(tables), fn(row) {
+      row.spell4_id == spell4_id && loadout.is_class_ability(row:)
+    })
+      as "the id is a class ability's SpellLevel row"
+    assert !list.contains(unplanned, spell4_id)
+      as "a hit row placed on the cast's target is built, so the ability is not listed"
+    let assert Ok(ability) =
+      spell_plan.in_plans(
+        plans: spell_plan.plans_with_later(tables:),
+        base: base_of(tables:, spell4_id:),
+      )
+      as "the plans hold the ability"
+    let tree = spell_plan.tree(spell: ability, started: fn(_) { True })
+    assert list.any(tree, fn(spell) {
+      list.any(
+        telegraph_rows_of(tables:, spell4_id: spell.spell4_id.value),
+        fn(row) { row.target_type_flags == 0 || row.target_type_flags == 2 },
+      )
+    })
+      as "a spell of its tree holds a hit row with targetTypeFlags 0 or 2"
+    list.each(tree, fn(spell) {
+      list.each(
+        spell_plan.effects_of(sources:, spell4_id: spell.spell4_id.value),
+        fn(effect) {
+          let place = place_of(effect.spell_id)
+          assert effect_row_read.is_read(tables:, sources:, place:, effect:)
+            || spell_plan.read_row(tables:, sources:, place:, effect:)
+            == Ok(spell_plan.LeftOut(why: spell_plan.ProxyNamesNoSpell))
+            as {
+              "a freed ability that plans and does nothing is a silent wrong result: the row "
+              <> int.to_string(effect.id)
+              <> " of "
+              <> int.to_string(spell.spell4_id.value)
+              <> " is read, or a Proxy that names no spell, which the client's Proxy reader starts nothing from"
+            }
+        },
+      )
+    })
+  })
+  list.each(
+    [
+      #(
+        32_814,
+        "periodic damage effect 62036 that lasts until removed",
+        "Telekinetic Storm: row 1888 is built, its spell 32828's damage row 62036 (tickTime 1000, flags 514) lasts until removed",
+      ),
+      #(
+        36_821,
+        "periodic damage effect 100978 that lasts until removed",
+        "Pyrokinetic Flame: row 10864 is built, its spell 43973's damage row 100978 (tickTime 1000, flags 514) lasts until removed",
+      ),
+      #(
+        33_181,
+        "placed on another unit or drawn another way",
+        "Reverie: the rows 195 (flags 0) and 1217 (flags 1) are placed apart",
+      ),
+      #(
+        38_860,
+        "placed on another unit or drawn another way",
+        "Tether Mine: the rows 1962 (flags 2) and 10894 (flags 1) are placed apart",
+      ),
+      #(41_543, "of shape 1", "Mortar Strike: row 2867 is of shape 1"),
+    ],
+    fn(row) {
+      let #(spell4_id, sentence, reason) = row
+      let assert Ok(one) =
+        list.find(left_out, fn(one) { one.spell4_id == spell4_id })
+        as reason
+      assert string.contains(spell_plan.describe(error: one.error), sentence)
+        as reason
+    },
+  )
 }

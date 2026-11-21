@@ -10069,3 +10069,102 @@ pub fn a_viewer_arriving_after_a_medic_fissures_a_beast_shows_the_debuff_on_the_
   game_client.close(game: second)
   login_support.stop(started)
 }
+
+/// A level-14 Warrior presses Flash Bang (Spell4 32320, base 18547) with three Beasts about
+/// it: A 3 m ahead, B 3 m from A and C 10 m from A, both behind A as the player sees them. The
+/// cast's area row (Spell4AoeTargetConstraints 113: 1 target, 0 to 20 m, 180 degrees, Closest)
+/// names A alone, so the Proxy 60807 aimed at the area starts one child, 47202, on A; the
+/// child's area row (704: 4 targets, 0 to 4 m, 360 degrees) and its hit row (TelegraphDamage
+/// 1766: a circle of radius 4, flags 0x1200, targetTypeFlags 2) centre the strike on A, so the
+/// child's go names A and B and not C. The clock is driven and the Beasts never deflect.
+pub fn a_warrior_of_level_14_presses_flash_bang_and_the_struck_beasts_child_strikes_around_that_beast_test() -> Nil {
+  use <- owned_test.run(120_000)
+  let time = driven_time.new()
+  let started =
+    world_with_beasts(
+      places: [
+        beast_place(x: 1.5, z: 0.5),
+        beast_place(x: 4.5, z: 0.5),
+        beast_place(x: 1.5, z: -9.5),
+      ],
+      tables: character_tables.shared(),
+      time:,
+    )
+  let #(game, character) =
+    new_player_at_level(
+      started:,
+      number: 1,
+      character_name: "Gor Qu",
+      class_id: 1,
+      level: 14,
+    )
+  send_play(game:, character_id: character)
+  let #(frames, have) =
+    game_client.read_until(game:, have: <<>>, found: fn(frames) {
+      list.length(game_client.creatures_created_in(frames:)) >= 3
+    })
+  let beast_at = fn(x, z) {
+    let assert Ok(beast) =
+      list.find(game_client.creatures_created_in(frames:), fn(beast) {
+        let placed = game_client.placed_by_tail(tail: beast.tail)
+        float.absolute_value(placed.0 -. x) <. 0.01
+        && float.absolute_value(placed.2 -. z) <. 0.01
+      })
+      as "the world shows the Beast planted there"
+    beast.unit_id
+  }
+  let a = beast_at(1.5, 0.5)
+  let b = beast_at(4.5, 0.5)
+  let c = beast_at(1.5, -9.5)
+  let assert Ok(#(bag_index, _)) =
+    list.find(location_4_items(frames:), fn(item) { item.1 == 18_547 })
+    as "SpellLevel 931 grants Flash Bang's base 18547 to a Warrior of level 14"
+  game_client.press_ability(game:, client_cast_id: 1, bag_index:, target: 0)
+  let #(pressed, have) = game_client.read_until_pong(game:, have:, number: 1)
+  assert refusals(frames: pressed) == []
+    as "opcode.0x7fc: Flash Bang is planned, so the press is not refused"
+  let starts_in = fn(frames: List(Frame)) {
+    list.filter(frames, fn(frame) { frame.message_id == 0x07FF })
+    |> list.map(fn(frame) {
+      let assert Ok(started) = spell_started.decode(frame.body)
+        as "0x7ff decodes"
+      started
+    })
+  }
+  let assert [child] =
+    list.filter(starts_in(pressed), fn(started) { started.spell4_id == 47_202 })
+    as "opcode.0x7ff: one child, because Spell4AoeTargetConstraints 113 selects 1 target"
+  assert #(
+      child.root_spell4_id,
+      child.parent_spell4_id,
+      child.primary_target_unit_id,
+    )
+    == #(32_320, 32_320, a)
+    as "Spell4Effects 60807 starts child 47202 of 32320 on the closest Beast, A, which is its primary target (opcode.0x7ff)"
+  let goes_of_child = fn(frames: List(Frame)) {
+    list.filter_map(game_client.go_targets_in(frames:), fn(go) {
+      case go.0 == child.cast_id {
+        True -> Ok(go.1)
+        False -> Error(Nil)
+      }
+    })
+  }
+  let #(later, have) = case goes_of_child(pressed) {
+    [] -> {
+      driven_time.advance(time:, ms: 100)
+      game_client.read_until(game:, have:, found: fn(later) {
+        goes_of_child(list.append(pressed, later)) != []
+      })
+    }
+    [_, ..] -> #([], have)
+  }
+  let #(rest, _) = game_client.read_until_pong(game:, have:, number: 2)
+  let seen = list.flatten([pressed, later, rest])
+  let goes = goes_of_child(seen)
+  assert !list.any(goes, fn(targets) { list.contains(targets, c) })
+    as "no go of the child names C, 10 m from A"
+  assert goes != [] && list.all(goes, fn(targets) { targets == [a, b] })
+    as "opcode.0x7f4: the child's gos name A (its own place, 0 m) and B (3 m, inside the circle of radius 4 and the area row's 4 m) and not C (10 m): TelegraphDamage 1766 is fixed at the unit it is cast on"
+  game_client.close(game:)
+  login_support.stop(started)
+}
